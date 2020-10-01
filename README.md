@@ -12,13 +12,13 @@ x9git and git are 100% compatible and interchangeable.
 
 One reason Git is so complex, is because it's so flexible. It's so flexible because it supports a wide variety of workflows and team sizes.
 
-Arguably, 90% of Git's complexity is due to covering a fringe 10% of use-cases. If you buy that argument, then axiomatically, if you lop off that 10% of fringe use-cases, then Git becomes 90% easier to work with.
+Arguably, about 90% of Git's complexity is due to covering a fringe about 10% of use-cases. If you buy that argument, then axiomatically, if you lop off that 10% of fringe use-cases, then Git becomes 90% easier to work with.
 
 Another reason Git is so complex, is because it deliberately supports a wide variety of workflows (or lack thereof).
 
-### Basic features
+## General attributes
 
-- x9git encourages (but doesn't necessarily enforce) an opinionated workflow
+- x9git encourages (but doesn't necessarily enforce) an opinionated workflow.
 - It doesn't cover fringe use-cases, which Git itself can cover while still using this for the more common stuff.
 - It's goal-oriented, rather than task-driven. (Which sounds like hand-wavy doublespeak, but is true. The subcommands themselves illustrate how.)
 
