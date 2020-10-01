@@ -1,4 +1,13 @@
+<!-- omit in toc -->
 # x9git
+
+<!-- omit in toc -->
+## Table of contents
+
+- [Summary](#summary)
+- [More detail](#more-detail)
+- [General attributes](#general-attributes)
+- ["Opinionated workflow": What are the opinions?](#opinionated-workflow-what-are-the-opinions)
 
 ## Summary
 
@@ -31,3 +40,9 @@ x9git can optionally be invoked by one or more simple custom wrapper scripts tha
 x9git was written and is actively used for personal use, and a small corporate production team project. It has not been tested in a large team environment, but no design choices have been made that conceptually limit team size.
 
 Note: This repo has no `develop` branch; feature branches are merged directly into `main`.
+
+## "Opinionated workflow": What are the opinions?
+
+- `git pull --ff-only` is safer than and preferrable to `git pull --rebase`.
+- `git push` only to a feature branch you created.
+- Don't `push` to `develop`, `main`, or `master`; instead, create a pull request. Even if you otherwise have the rights to, and even for small personal projects. While pull requests are overkill for small personal projects, it is nevertheless good hygene, and fosters good working habits and experience.
