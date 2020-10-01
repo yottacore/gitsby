@@ -1,11 +1,22 @@
 # x9git
-YAGW: Yet Another Git Wrapper. One reason Git is so complex, is because it's so flexible. It's so flexible because it supports a wide variety of workflows and team sizes.
 
-Arguably, 90% of Git's complexity is due to covering a fringe 10% of use-cases.
+## Summary
 
-If you buy that argument, then axiomatically, if you lop off that 10% of fringe use-cases, then Git becomes 90% easier to work with.
+Yet Another Git Wrapper.
 
-This project aims to get most of the way there:
+This one vastly simplifies Git - by encouraging an opinionated workflow, and ignoring ≈10% of Git functionality in order to remove ≈90% of its complexity.
+
+x9git and git are 100% compatible and interchangeable.
+
+## More detail
+
+One reason Git is so complex, is because it's so flexible. It's so flexible because it supports a wide variety of workflows and team sizes.
+
+Arguably, 90% of Git's complexity is due to covering a fringe 10% of use-cases. If you buy that argument, then axiomatically, if you lop off that 10% of fringe use-cases, then Git becomes 90% easier to work with.
+
+Another reason Git is so complex, is because it deliberately supports a wide variety of workflows (or lack thereof).
+
+### Basic features
 
 - x9git encourages (but doesn't necessarily enforce) an opinionated workflow
 - It doesn't cover fringe use-cases, which Git itself can cover while still using this for the more common stuff.
