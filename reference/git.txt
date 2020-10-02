@@ -4,6 +4,8 @@
 	* Pull frequently, push infrequently
 	# Commit [locally] before pull
 	# Pull before push
+	# pull --ff-only origin main|develop
+	#	Resolve with pull --rebase
 
 ## Clone repository for first time
 
@@ -11,16 +13,16 @@
 
 ## Change projects (if already exists)
 
-	cd ~/git/github.com/x9-testlab/x9git.git;  git remote set-url origin git@github.com:x9-testlab/x9git.git;  git pull --ff-only; d; git branch -vv; echo; git status; echo
+	cd ~/git/github.com/x9-testlab/x9git.git;  git remote set-url origin git@github.com:x9-testlab/x9git.git;  git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
 
 ## Switch to and follow different branch
 
-	git checkout develop; git pull --ff-only; d; git branch -vv; echo; git status; echo
+	git checkout develop; git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
 
 ## Do frequently
 
 	commitMessage=""
-	echo "commitMessage = '${commitMessage}'"; git add .; git commit -m "${commitMessage}"; git stash push --keep-index --include-untracked; git pull --ff-only; d; git branch -vv; echo; git status; echo
+	echo "commitMessage = '${commitMessage}'"; git add .; git commit -m "${commitMessage}"; git stash push --keep-index --include-untracked; git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
 
 ## Do infrequently
 
@@ -29,20 +31,23 @@
 	#or
 
 	commitMessage=""
-	echo "commitMessage = '${commitMessage}'"; git add .; git commit -m "${commitMessage}"; git stash push --keep-index --include-untracked; git pull --ff-only; git push; d; git branch -vv; echo; git status; echo
+	echo "commitMessage = '${commitMessage}'"; git add .; git commit -m "${commitMessage}"; git stash push --keep-index --include-untracked; git pull --ff-only origin ${sourceBranch} && git push; d; git branch -vv; echo; git status; echo
 
-## Feature branch: Create
+## Feature branch: Create off of main
 
 	featureBranch="MYFEATUREBRANCH"
+	sourceBranch="main"
+	echo -e "\nfeatureBranch ...: '${featureBranch}'\nsourceBranch ....: '${sourceBranch}'\n"
 	git stash push --keep-index --include-untracked; d; git branch -vv; echo; git status; echo
-	git checkout ${featureBranch}; git pull --ff-only; d; git branch -vv; echo; git status; echo
+	git checkout -b ${featureBranch} && git pull --ff-only && d; git branch -vv; echo; git status; echo
 	echo "featureBranch = '${featureBranch}'"; git checkout -b ${featureBranch}; git merge develop; d; git branch -vv; echo; git status; echo
 
 ## Feature branch: Keep in sync with develop
 
 	featureBranch="MYFEATUREBRANCH"
+	sourceBranch="develop"
 	git stash push --keep-index --include-untracked; d; git branch -vv; echo; git status; echo
-	echo "featureBranch = '${featureBranch}'"; git checkout develop; git pull --ff-only; d; git branch -vv; echo; git status; echo
+	echo "featureBranch = '${featureBranch}'"; git checkout develop; git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
 	echo "featureBranch = '${featureBranch}'"; git checkout ${featureBranch}; git merge develop; d; git branch -vv; echo; git status; echo
 
 ## Feature branch: Merge back with develop
@@ -50,9 +55,9 @@
 	mergeFromBranch="MYFEATUREBRANCH"
 	mergeToBranch="develop"
 	git stash push --keep-index --include-untracked; d; git branch -vv; echo; git status; echo
-	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git checkout ${mergeToBranch}; git pull --ff-only; d; git branch -vv; echo; git status; echo
+	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git checkout ${mergeToBranch}; git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
 	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git checkout ${mergeFromBranch}; git merge ${mergeToBranch}; d; git branch -vv; echo; git status; echo
-	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git checkout ${mergeToBranch}; git pull --ff-only; d; git branch -vv; echo; git status; echo
+	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git checkout ${mergeToBranch}; git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
 	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git merge ${mergeFromBranch}; d; git branch -vv; echo; git status; echo
 	git push origin ${mergeToBranch}
 
@@ -60,9 +65,9 @@
 
 	mergeFromBranch="develop"; mergeToBranch="main"
 	git stash push --keep-index --include-untracked; d; git branch -vv; echo; git status; echo
-	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git checkout ${mergeToBranch}; git pull --ff-only; d; git branch -vv; echo; git status; echo
+	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git checkout ${mergeToBranch}; git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
 	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git checkout ${mergeFromBranch}; git merge ${mergeToBranch}; d; git branch -vv; echo; git status; echo
-	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git checkout ${mergeToBranch}; git pull --ff-only; d; git branch -vv; echo; git status; echo
+	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git checkout ${mergeToBranch}; git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
 	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git merge ${mergeFromBranch}; d; git branch -vv; echo; git status; echo
 	git push origin ${mergeToBranch}
 
@@ -92,7 +97,7 @@
 	git push -u origin develop; d; echo; git branch -vv; echo; git branch -a; echo
 
 	## Make sure we're on develop locally
-	git checkout develop; git pull --ff-only; d; git branch -vv; echo; git status; echo
+	git checkout develop; git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
 
 	## Now Go to the github page for the repository, click on the "Settings" button.
 	## Click on the "Branches" tab.
@@ -111,12 +116,12 @@
 	git push origin main
 
 	## Get back on develop
-	git checkout develop; git pull --ff-only; d; git branch -vv; echo; git status; echo
+	git checkout develop; git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
 
 ## Delete a branch
 
 	## Switch to a different branch
-	git checkout main; git pull --ff-only; d; git branch -vv; echo; git status; echo
+	git checkout main; git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
 
 	declare branchName=""
 	echo -e "\nbranchName='${branchName}'\n"; git branch -d ${branchName}; d; git branch -vv; echo; git status; echo
