@@ -40,7 +40,7 @@
 	echo -e "\nfeatureBranch ...: '${featureBranch}'\nsourceBranch ....: '${sourceBranch}'\n"
 	git stash push --keep-index --include-untracked; d; git branch -vv; echo; git status; echo
 	git checkout -b ${featureBranch} && git pull --ff-only && d; git branch -vv; echo; git status; echo
-	echo "featureBranch = '${featureBranch}'"; git checkout -b ${featureBranch}; git merge develop; d; git branch -vv; echo; git status; echo
+	echo "featureBranch = '${featureBranch}'" && git checkout -b ${featureBranch} && git merge ${sourceBranch} && d; git branch -vv; echo; git status; echo
 
 ## Feature branch: Keep in sync with develop
 
