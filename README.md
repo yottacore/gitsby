@@ -35,7 +35,7 @@ To be super clear, x9git is not magic. It's just a bash shell script. There's ev
 
 x9git and regular git are fully compatible. x9git does nothing that git can't do directly (usually with about 4x as many commands). Axiomatically, nothing git can do, will cause x9git problems - at least, conceptually. It's nigh impossible to test every possible permutation, but a main driver of x9git is 1) to make few assumptions about underlying state, and 2) do things in a safe way [if occasionally redundant and/or unnecessary], that is tolerant of unexpected or inconsistent states.
 
-x9git can optionally be invoked by one or more simple custom wrapper scripts that optionally implements various pre- and/or post- hooks. This is as simple as writing a simple script (that maybe just copies a file somewhere, or invokes a build process), that starts off with `source x9git`.
+x9git can optionally be invoked by one or more simple wrapper scripts that optionally implements various pre- and/or post- hooks. This is as simple as writing a simple script (that maybe just copies a file somewhere, or invokes a build process), that starts off with `source x9git`.
 
 x9git was written and is actively used for personal use, and a small corporate production team project. It has not been tested in a large team environment, but no design choices have been made that conceptually limit team size.
 

@@ -1,0 +1,145 @@
+## Rules
+
+	# Commit frequently
+	* Pull frequently, push infrequently
+	# Commit [locally] before pull
+	# Pull before push
+
+## Clone repository for first time
+
+	mkdir -p ~/git/github.com/x9-testlab;  cd ~/git/github.com/x9-testlab;  git clone git@github.com:x9-testlab/x9git.git; cd x9git; d; git branch -vv; echo; git status; echo
+
+## Change projects (if already exists)
+
+	cd ~/git/github.com/x9-testlab/x9git.git;  git remote set-url origin git@github.com:x9-testlab/x9git.git;  git pull --ff-only; d; git branch -vv; echo; git status; echo
+
+## Switch to and follow different branch
+
+	git checkout develop; git pull --ff-only; d; git branch -vv; echo; git status; echo
+
+## Do frequently
+
+	commitMessage=""
+	echo "commitMessage = '${commitMessage}'"; git add .; git commit -m "${commitMessage}"; git stash push --keep-index --include-untracked; git pull --ff-only; d; git branch -vv; echo; git status; echo
+
+## Do infrequently
+
+	git push; d; git branch -vv; echo; git status; echo
+
+	#or
+
+	commitMessage=""
+	echo "commitMessage = '${commitMessage}'"; git add .; git commit -m "${commitMessage}"; git stash push --keep-index --include-untracked; git pull --ff-only; git push; d; git branch -vv; echo; git status; echo
+
+## Feature branch: Create
+
+	featureBranch="MYFEATUREBRANCH"
+	git stash push --keep-index --include-untracked; d; git branch -vv; echo; git status; echo
+	git checkout ${featureBranch}; git pull --ff-only; d; git branch -vv; echo; git status; echo
+	echo "featureBranch = '${featureBranch}'"; git checkout -b ${featureBranch}; git merge develop; d; git branch -vv; echo; git status; echo
+
+## Feature branch: Keep in sync with develop
+
+	featureBranch="MYFEATUREBRANCH"
+	git stash push --keep-index --include-untracked; d; git branch -vv; echo; git status; echo
+	echo "featureBranch = '${featureBranch}'"; git checkout develop; git pull --ff-only; d; git branch -vv; echo; git status; echo
+	echo "featureBranch = '${featureBranch}'"; git checkout ${featureBranch}; git merge develop; d; git branch -vv; echo; git status; echo
+
+## Feature branch: Merge back with develop
+
+	mergeFromBranch="MYFEATUREBRANCH"
+	mergeToBranch="develop"
+	git stash push --keep-index --include-untracked; d; git branch -vv; echo; git status; echo
+	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git checkout ${mergeToBranch}; git pull --ff-only; d; git branch -vv; echo; git status; echo
+	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git checkout ${mergeFromBranch}; git merge ${mergeToBranch}; d; git branch -vv; echo; git status; echo
+	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git checkout ${mergeToBranch}; git pull --ff-only; d; git branch -vv; echo; git status; echo
+	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git merge ${mergeFromBranch}; d; git branch -vv; echo; git status; echo
+	git push origin ${mergeToBranch}
+
+## Merge develop to main
+
+	mergeFromBranch="develop"; mergeToBranch="main"
+	git stash push --keep-index --include-untracked; d; git branch -vv; echo; git status; echo
+	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git checkout ${mergeToBranch}; git pull --ff-only; d; git branch -vv; echo; git status; echo
+	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git checkout ${mergeFromBranch}; git merge ${mergeToBranch}; d; git branch -vv; echo; git status; echo
+	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git checkout ${mergeToBranch}; git pull --ff-only; d; git branch -vv; echo; git status; echo
+	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git merge ${mergeFromBranch}; d; git branch -vv; echo; git status; echo
+	git push origin ${mergeToBranch}
+
+## Add/remove files
+
+	## Sync all file adds/deletes
+	git add .
+
+	## Add a file the git way
+	git add FILEorDIR
+	
+	## Remove a file the git way
+	git rm FILE
+
+	## Remove a folder the git way
+	git rm -r DIR
+
+## New github project: Change from master to develop, make develop the default, delete master, create new empty main.
+
+	## Get lastest files from whatever branch.
+	git checkout master; d; git branch -vv; echo; git status; echo
+
+	## Create a new branch named develop.
+	git branch develop
+
+	## Push this latest structure from master (or whatever) to develop, and track it (-u origin)
+	git push -u origin develop; d; echo; git branch -vv; echo; git branch -a; echo
+
+	## Make sure we're on develop locally
+	git checkout develop; git pull --ff-only; d; git branch -vv; echo; git status; echo
+
+	## Now Go to the github page for the repository, click on the "Settings" button.
+	## Click on the "Branches" tab.
+	## Change the "Default branch" dropdown list.
+
+	## Delete master locally
+	git branch -d master
+
+	## Delete master remotely (optional possibility: git branch -D master)
+	git push origin :master
+
+	## Create empty main (not "master" ... to avoid "master/slave" terminology)
+	git checkout --orphan main
+	git rm -rf .; d
+	git commit --allow-empty -m "Empty root commit"
+	git push origin main
+
+	## Get back on develop
+	git checkout develop; git pull --ff-only; d; git branch -vv; echo; git status; echo
+
+## Delete a branch
+
+	## Switch to a different branch
+	git checkout main; git pull --ff-only; d; git branch -vv; echo; git status; echo
+
+	declare branchName=""
+	echo -e "\nbranchName='${branchName}'\n"; git branch -d ${branchName}; d; git branch -vv; echo; git status; echo
+	echo -e "\nbranchName='${branchName}'\n"; git push origin :${branchName}; d; git branch -vv; echo; git status; echo
+
+## UN-track a branch
+
+	git branch --unset-upstream
+
+## Delete branch locally
+
+	git branch -d localBranchName
+
+## delete branch remotely
+
+	git push origin --delete remoteBranchName
+
+## Change default branch on github
+
+	## Go to the github page for the repository, click on the "Settings" button.
+	## Click on the "Branches" tab.
+	## Change the "Default branch" dropdown list.
+
+## With golang
+
+	go mod init github.com/user/repo  ## E.g.: go mod init github.com/x9-testlab/x9incexc-go
