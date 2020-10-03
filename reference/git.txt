@@ -43,7 +43,7 @@
 	git checkout -b ${featureBranch} && d; git branch -vv; echo; git status; echo
 	commitMessage="Created feature branch"
 	echo "commitMessage = '${commitMessage}'"; git add . && git commit -m "${commitMessage}" && git stash push --keep-index --include-untracked && d; git branch -vv; echo; git status; echo
-	git push && d; git branch -vv; echo; git status; echo
+	git push --set-upstream origin && d; git branch -vv; echo; git status; echo
 
 ## Feature branch: Keep in sync with develop
 
