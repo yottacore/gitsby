@@ -22,16 +22,16 @@
 ## Do frequently
 
 	commitMessage=""
-	echo "commitMessage = '${commitMessage}'"; git add .; git commit -m "${commitMessage}"; git stash push --keep-index --include-untracked; git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
+	echo "commitMessage = '${commitMessage}'"; git add . && git commit -m "${commitMessage}" && git stash push --keep-index --include-untracked && git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
 
 ## Do infrequently
 
-	git push; d; git branch -vv; echo; git status; echo
+	git push && d; git branch -vv; echo; git status; echo
 
 	#or
 
 	commitMessage=""
-	echo "commitMessage = '${commitMessage}'"; git add .; git commit -m "${commitMessage}"; git stash push --keep-index --include-untracked; git pull --ff-only origin ${sourceBranch} && git push; d; git branch -vv; echo; git status; echo
+	echo "commitMessage = '${commitMessage}'"; git add .; git commit -m "${commitMessage}"; git stash push --keep-index --include-untracked; git pull --ff-only origin ${sourceBranch} && git push && d; git branch -vv; echo; git status; echo
 
 ## Feature branch: Create off of main
 
@@ -39,16 +39,21 @@
 	sourceBranch="main"
 	echo -e "\nfeatureBranch ...: '${featureBranch}'\nsourceBranch ....: '${sourceBranch}'\n"
 	git stash push --keep-index --include-untracked; d; git branch -vv; echo; git status; echo
-	git checkout -b ${featureBranch} && git pull --ff-only && d; git branch -vv; echo; git status; echo
-	echo "featureBranch = '${featureBranch}'" && git checkout -b ${featureBranch} && git merge ${sourceBranch} && d; git branch -vv; echo; git status; echo
+	git checkout ${sourceBranch} && git pull --ff-only && d; git branch -vv; echo; git status; echo
+	git checkout -b ${featureBranch} && d; git branch -vv; echo; git status; echo
+	commitMessage="Created feature branch"
+	echo "commitMessage = '${commitMessage}'"; git add . && git commit -m "${commitMessage}" && git stash push --keep-index --include-untracked && d; git branch -vv; echo; git status; echo
+	git push && d; git branch -vv; echo; git status; echo
 
 ## Feature branch: Keep in sync with develop
 
 	featureBranch="MYFEATUREBRANCH"
 	sourceBranch="develop"
+	echo -e "\nfeatureBranch ...: '${featureBranch}'\nsourceBranch ....: '${sourceBranch}'\n"
 	git stash push --keep-index --include-untracked; d; git branch -vv; echo; git status; echo
-	echo "featureBranch = '${featureBranch}'"; git checkout develop; git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
-	echo "featureBranch = '${featureBranch}'"; git checkout ${featureBranch}; git merge develop; d; git branch -vv; echo; git status; echo
+##	git checkout ${sourceBranch}; git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
+	git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
+	git checkout ${featureBranch}; git merge develop; d; git branch -vv; echo; git status; echo
 
 ## Feature branch: Merge back with develop
 
