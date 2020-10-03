@@ -1,80 +1,99 @@
 ## Rules
 
-	# Commit frequently
-	* Pull frequently, push infrequently
-	# Commit [locally] before pull
-	# Pull before push
-	# pull --ff-only origin main|develop
-	#	Resolve with pull --rebase
+	## One-person projects (public or private):
+		- main branch only
+		- work on feature branches
+		- merge directly to main
+	## >1 people private projects
+		- develop and main branches
+		- work on feature branches
+		- merge to dev
+		- merge from dev to main
+	## >1 people public projects
+		- develop and main branches
+		- work on feature branches
+		- PRs to merge to develop
+		- Only admins merge to main
+	## Commit frequently
+	#* Pull frequently, push infrequently
+	## pull --ff-only origin main|develop
+	##	Resolve with pull --rebase
+	## Include --tags with push
+	## push hygene:
+	##	git stash
+	##	git pull --ff-only
+	##	git stash apply
+	##	git add .
+	##	git commit -m ""
+	##	git push
+	## References
+	##	https://gist.github.com/jakobgerstenlauer/2e6d99cf1ee8f7c9a5e890a2ff79fb08
+	##	https://medium.com/better-programming/six-rules-for-good-git-hygiene-5006cf9e9e2
 
 ## Clone repository for first time
 
-	mkdir -p ~/git/github.com/x9-testlab;  cd ~/git/github.com/x9-testlab;  git clone git@github.com:x9-testlab/x9git.git; cd x9git; d; git branch -vv; echo; git status; echo
+	mkdir -p ~/git/github.com/x9-testlab;  cd ~/git/github.com/x9-testlab;  git clone git@github.com:x9-testlab/x9git.git; cd x9git; d && git branch -vv && echo && git status && echo
 
 ## Change projects (if already exists)
 
-	cd ~/git/github.com/x9-testlab/x9git.git;  git remote set-url origin git@github.com:x9-testlab/x9git.git;  git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
+	cd ~/git/github.com/x9-testlab/x9git.git;  git remote set-url origin git@github.com:x9-testlab/x9git.git;  git pull --ff-only origin ${sourceBranch} && d && git branch -vv && echo && git status && echo
 
 ## Switch to and follow different branch
 
-	git checkout develop; git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
+	sourceBranch="main"  ## Or develop
+	git checkout ${sourceBranch}; git pull --ff-only origin ${sourceBranch} && d && git branch -vv && echo && git status && echo
 
-## Do frequently
-
-	commitMessage=""
-	echo "commitMessage = '${commitMessage}'"; git add . && git commit -m "${commitMessage}" && git stash push --keep-index --include-untracked && git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
-
-## Do infrequently
-
-	git push && d; git branch -vv; echo; git status; echo
-
-	#or
+## Do frequently: Sync with main [or develop]
 
 	commitMessage=""
-	echo "commitMessage = '${commitMessage}'"; git add .; git commit -m "${commitMessage}"; git stash push --keep-index --include-untracked; git pull --ff-only origin ${sourceBranch} && git push && d; git branch -vv; echo; git status; echo
+	sourceBranch="main"  ## Or develop
+	echo -e "\ncommitMessage = '${commitMessage}'\n"
+	git stash push --keep-index --include-untracked  ## Just in case
+	git add . && git commit -m "${commitMessage}"
+	git stash push --include-untracked
+	git pull --ff-only origin ${sourceBranch}  ## --rebase to resolve problems
+	git stash apply
+	git stash push --keep-index --include-untracked  ## Just in case
+	d && git branch -vv && echo && git status && echo
 
-## Feature branch: Create off of main
+	#git stash push --keep-index --include-untracked
+
+## Do infrequently: Push
+
+	git push && d && git branch -vv && echo && git status && echo
+
+## Feature branch: Create new based on existing "dirty" state
+
+	commitMessage="Created feature branch from unclean existing state"
+	featureBranch="$(date "+%Y%m%d-%H%M%S")_jc_oops"
+	sourceBranch="main"
+	echo -e "\nfeatureBranch ...: '${featureBranch}'\nsourceBranch ....: '${sourceBranch}'\ncommitMessage ...: '${commitMessage}'\n"
+	git stash push --keep-index --include-untracked && d && git branch -vv && echo && git status && echo
+	git checkout -b ${featureBranch} && d && git branch -vv && echo && git status && echo
+	git add . && git commit -m "${commitMessage}" && d && git branch -vv && echo && git status && echo
+	git push --set-upstream origin ${featureBranch} && d && git branch -vv && echo && git status && echo
+
+## Feature branch: Create off of main (assuming clean current state)
+
+	commitMessage="Created feature branch from clean existing state"
+	featureBranch="$(date "+%Y%m%d-%H%M%S")_jc_feature"
+	sourceBranch="main"
+	echo -e "\nfeatureBranch ...: '${featureBranch}'\nsourceBranch ....: '${sourceBranch}'\ncommitMessage ...: '${commitMessage}'\n"
+	git stash push --keep-index --include-untracked; d && git branch -vv && echo && git status && echo
+	git checkout ${sourceBranch} && git pull --ff-only origin ${sourceBranch} && d && git branch -vv && echo && git status && echo
+	git checkout -b ${featureBranch} && d && git branch -vv && echo && git status && echo
+	git push --set-upstream origin ${featureBranch} && d && git branch -vv && echo && git status && echo
+
+## Feature branch: Merge back to Main (assumes clean and pushed feature branch)
 
 	featureBranch="MYFEATUREBRANCH"
 	sourceBranch="main"
 	echo -e "\nfeatureBranch ...: '${featureBranch}'\nsourceBranch ....: '${sourceBranch}'\n"
-	git stash push --keep-index --include-untracked; d; git branch -vv; echo; git status; echo
-	git checkout ${sourceBranch} && git pull --ff-only && d; git branch -vv; echo; git status; echo
-	git checkout -b ${featureBranch} && d; git branch -vv; echo; git status; echo
-	commitMessage="Created feature branch"
-	echo "commitMessage = '${commitMessage}'"; git add . && git commit -m "${commitMessage}" && git stash push --keep-index --include-untracked && d; git branch -vv; echo; git status; echo
-	git push --set-upstream origin ${featureBranch} && d; git branch -vv; echo; git status; echo
-
-## Feature branch: Keep in sync with develop
-
-	featureBranch="MYFEATUREBRANCH"
-	sourceBranch="develop"
-	echo -e "\nfeatureBranch ...: '${featureBranch}'\nsourceBranch ....: '${sourceBranch}'\n"
-	git stash push --keep-index --include-untracked; d; git branch -vv; echo; git status; echo
-##	git checkout ${sourceBranch}; git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
-	git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
-	git checkout ${featureBranch}; git merge develop; d; git branch -vv; echo; git status; echo
-
-## Feature branch: Merge back with develop
-
-	mergeFromBranch="MYFEATUREBRANCH"
-	mergeToBranch="develop"
-	git stash push --keep-index --include-untracked; d; git branch -vv; echo; git status; echo
-	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git checkout ${mergeToBranch}; git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
-	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git checkout ${mergeFromBranch}; git merge ${mergeToBranch}; d; git branch -vv; echo; git status; echo
-	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git checkout ${mergeToBranch}; git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
-	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git merge ${mergeFromBranch}; d; git branch -vv; echo; git status; echo
-	git push origin ${mergeToBranch}
-
-## Merge develop to main
-
-	mergeFromBranch="develop"; mergeToBranch="main"
-	git stash push --keep-index --include-untracked; d; git branch -vv; echo; git status; echo
-	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git checkout ${mergeToBranch}; git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
-	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git checkout ${mergeFromBranch}; git merge ${mergeToBranch}; d; git branch -vv; echo; git status; echo
-	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git checkout ${mergeToBranch}; git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
-	echo -e "\nmergeFromBranch = '${mergeFromBranch}'\nmergeToBranch = '${mergeToBranch}'\n"; git merge ${mergeFromBranch}; d; git branch -vv; echo; git status; echo
-	git push origin ${mergeToBranch}
+	git stash push --keep-index --include-untracked  ## Just in case
+	git checkout ${featureBranch} && git pull --ff-only
+	git checkout ${sourceBranch} && git pull --ff-only
+	git merge --no-ff --no-commit ${featureBranch}
+	git commit -m "Merge ${featureBranch}" && git push
 
 ## Add/remove files
 
@@ -93,7 +112,7 @@
 ## New github project: Change from master to develop, make develop the default, delete master, create new empty main.
 
 	## Get lastest files from whatever branch.
-	git checkout master; d; git branch -vv; echo; git status; echo
+	git checkout master; d && git branch -vv && echo && git status && echo
 
 	## Create a new branch named develop.
 	git branch develop
@@ -102,7 +121,7 @@
 	git push -u origin develop; d; echo; git branch -vv; echo; git branch -a; echo
 
 	## Make sure we're on develop locally
-	git checkout develop; git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
+	git checkout develop; git pull --ff-only origin ${sourceBranch} && d && git branch -vv && echo && git status && echo
 
 	## Now Go to the github page for the repository, click on the "Settings" button.
 	## Click on the "Branches" tab.
@@ -121,16 +140,16 @@
 	git push origin main
 
 	## Get back on develop
-	git checkout develop; git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
+	git checkout develop; git pull --ff-only origin ${sourceBranch} && d && git branch -vv && echo && git status && echo
 
 ## Delete a branch
 
 	## Switch to a different branch
-	git checkout main; git pull --ff-only origin ${sourceBranch} && d; git branch -vv; echo; git status; echo
+	git checkout main; git pull --ff-only origin ${sourceBranch} && d && git branch -vv && echo && git status && echo
 
 	declare branchName=""
-	echo -e "\nbranchName='${branchName}'\n"; git branch -d ${branchName}; d; git branch -vv; echo; git status; echo
-	echo -e "\nbranchName='${branchName}'\n"; git push origin :${branchName}; d; git branch -vv; echo; git status; echo
+	echo -e "\nbranchName='${branchName}'\n"; git branch -d ${branchName}; d && git branch -vv && echo && git status && echo
+	echo -e "\nbranchName='${branchName}'\n"; git push origin :${branchName}; d && git branch -vv && echo && git status && echo
 
 ## UN-track a branch
 
