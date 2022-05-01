@@ -14,6 +14,9 @@
 ##	History:
 ##		- 20201002 JC: Created from TEMPLATE_single-file_2020921.
 
+##
+##	WARNING: THIS IS ALL JUST BOILERPLATE BASH FOR NOW. IT DOESN'T DO ANYTHING.
+##
 
 ## Boilerplate constants (but don't actually make read-only because of errors during script-managed recursion).
 declare -i    doDebug=0
@@ -23,6 +26,9 @@ declare       thisVersion="0.9.0"
 declare       copyrightYear="2020"
 declare       author="Jim Collier"
 
+echo
+echo "WARNING: THIS IS ALL JUST BOILERPLATE BASH FOR NOW. IT DOESN'T DO ANYTHING."
+exit 1
 
 function fPrint_About(){ _fdbgEnter "${FUNCNAME[0]}";
 	##	Purpose:
