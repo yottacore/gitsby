@@ -27,13 +27,14 @@
 ##				- Now must do 'git clone' yourself, until I make a new, simpler command for it.
 ##				- mtm now also pushes just in case (does what pushmtm used to).
 ##			- Removed all artificial dependencies on concept of system-wide 'top-level git directory', and '.x9git_current' file. Can now change projects at will just by changing directories.
-##			- Added commands: scommit and spulcom.
+##			- Added commands: scommit and scompul.
 ##			- Changed all 'git pull' to 'git pull --ff-only', based on hygene ideals.
 ##			- Updated help to suggest NOT using mtm.
 ##			- Massively cleaned up fMain.
 ##			- Flags get set more cleanly.
 ##			- Added lint flags to script.
 ##			- Added notes and todos.
+##		- 20220502 JC: Reverted most logic to old style which is known to work.
 ##	Notes:
 ##		- This is based on an ancient Bash template and varialbe namiing convention (from 2014, almost 8 years old). Don't judge me.
 ##	TODO:
@@ -44,7 +45,7 @@
 ##			- PRs to merge to develop
 ##			Y Commit frequently
 ##			Y Pull frequently, push infrequently
-##			Y Push hygene:
+##			Y Push hygene [note - this doesn't always work, so revert to old hygene]:
 ##			 	git stash
 ##			 	git pull --ff-only
 ##			 	git stash apply
@@ -81,15 +82,15 @@ function fIsLessVerbose() { echo "false"; }
 function fDescriptionAndCopyright() { fEcho_Clean "Various safer wrappers for 'git'."; }
 function fSyntax() {
 	fEcho_Clean "Common commands:"
-	fEcho_Clean "	spulcom [commit message] .............: Commit all local changes, stash to cloud, and pull updates. DO FREQUENTLY!"
+	fEcho_Clean "	scompul [commit message] .............: Commit all local changes, stash to cloud, and pull updates. DO FREQUENTLY!"
 	fEcho_Clean "	mkbranch <new branch name> ...........: Safer way to create a new branch."
 	fEcho_Clean "	chbranch <existing branch name> ......: Safer way to checkout an existing branch."
 	fEcho_Clean "	status ...............................: Shows current status."
 	fEcho_Clean "	list .................................: Refresh and list branches."
 	fEcho_Clean "Less common commands:"
 	fEcho_Clean "	spush [commit message] ...............: Safer way to push branch changes. Do infrequently."
-	fEcho_Clean "	spull ................................: Safer git pull, without commit."
-	fEcho_Clean "	scommit [commit message] .............: Safer way to commit all local changes and also stash to cloud, without pull."
+	fEcho_Clean "	spull ................................: Safer git pull (without commit)."
+	fEcho_Clean "	scommit [commit message] .............: Safer way to commit all local changes and also stash to cloud (without pull)."
 	fEcho_Clean "Reserved admin commands, eg for small projects:"
 	fEcho_Clean "	mtm [merge message] ..................: Safer way to push and merge current branch into ${nameMainOrMaster} (without changing to ${nameMainOrMaster} first)."
 	fEcho_Clean ""
@@ -196,7 +197,7 @@ function fpSetFlags() {
 			: ;;
 		"spull")
 			: ;;
-		"spulcom")
+		"scompul")
 			: ;;
 		"spush")
 			: ;;
@@ -235,7 +236,7 @@ function fpExecuteCommand() {
 		"status")      fStatus         "$@" ;;
 		"list")        fList           "$@" ;;
 		"scommit")     fCommit         "$@" ;;
-		"spulcom") fPullCommit     "$@" ;;
+		"scompul") fCommitPull     "$@" ;;
 		"spull")       fPull           "$@" ;;
 		"spush")       fPush           "$@" ;;
 		"mkbranch")    fMkBranch       "$@" ;;
@@ -281,8 +282,12 @@ function fPull() {
 	local commandName="fPull()"
 	fEcho_IfDebug "${commandName}"
 
+	## Old steps; known to work (#)
+#	fEchoOrEchoAndDo              "git pull"                                              "${flagExecOrNot}"       ## Pull changes
+
+	## "New" hygene (20220502), which doesn't work in some cases - so go back to reliable old steps
 	fEchoOrEchoAndDo              "git stash push --keep-index --include-untracked"       "${flagExecOrNot}"       ## Just in case
-	fEchoOrEchoAndDo              "git pull --ff-only"                                    "${flagExecOrNot}"       ## Pull changes
+	fEchoOrEchoAndDo              "git pull --ff-only"                                    "${flagExecOrNot}"       ## Pull changes; for use with the 'stash, pull, apply, commit' method.
 	fEchoOrEchoAndDo              "git stash apply"                                       "${flagExecOrNot}"
 
 }
@@ -301,7 +306,7 @@ function fCommit() {
 	vlsMessage="$(fStrSearchAndReplace "${vlsMessage}" "\"" "“")"  ## Replace double quotes with curly double quote
 	if [ -n "${vlsMessage}" ]; then vlsMessage="-m '${vlsMessage}'"; fi
 
-	fEchoOrEchoAndDo              "git stash push --keep-index --include-untracked"       "${flagExecOrNot}"
+#	fEchoOrEchoAndDo              "git stash push --keep-index --include-untracked"       "${flagExecOrNot}"
 	fEchoOrEchoAndDo              "git add --all"                                         "${flagExecOrNot}"  ## Add/delete files
 	fEchoOrEchoAndDo_IgnoreError  "git commit ${vlsMessage}"                              "${flagExecOrNot}"  ## Commit to local repository
 
@@ -309,21 +314,20 @@ function fCommit() {
 
 
 ##---------------------------------------------------------------------------------------
-function fPullCommit() {
+function fCommitPull() {
 	##	History
 	##		- 20220501 JC: Created.
 
-	## Input
-	local vlsMessage="$1"
-	vlsMessage="$(fStrSearchAndReplace "${vlsMessage}" "'" "’")"  ## Replace single quotes with curly quote
-	vlsMessage="$(fStrSearchAndReplace "${vlsMessage}" "\"" "“")"  ## Replace double quotes with curly double quote
-	if [ -n "${vlsMessage}" ]; then vlsMessage="-m '${vlsMessage}'"; fi
+	## Old steps; known to work
+	fCommit  "$1"
+	fPull
 
-	fEchoOrEchoAndDo              "git stash push --keep-index --include-untracked"       "${flagExecOrNot}"
-	fEchoOrEchoAndDo              "git pull --ff-only"                                    "${flagExecOrNot}"  ## Pull changes
-	fEchoOrEchoAndDo              "git stash apply"                                       "${flagExecOrNot}"
-	fEchoOrEchoAndDo              "git add --all"                                         "${flagExecOrNot}"  ## Add/delete files
-	fEchoOrEchoAndDo_IgnoreError  "git commit ${vlsMessage}"                              "${flagExecOrNot}"  ## Commit to local repository
+#	## "New" hygene (20220502), which doesn't work in some cases - so go back to reliable old steps
+#	fEchoOrEchoAndDo              "git stash push --keep-index --include-untracked"       "${flagExecOrNot}"
+#	fEchoOrEchoAndDo              "git pull --ff-only"                                    "${flagExecOrNot}"  ## Pull changes
+#	fEchoOrEchoAndDo              "git stash apply"                                       "${flagExecOrNot}"
+#	fEchoOrEchoAndDo              "git add --all"                                         "${flagExecOrNot}"  ## Add/delete files
+#	fEchoOrEchoAndDo_IgnoreError  "git commit ${vlsMessage}"                              "${flagExecOrNot}"  ## Commit to local repository
 
 }
 
@@ -341,22 +345,14 @@ function fpSafePush() {
 	local commandName="fpSafePush()"
 	fEcho_IfDebug "${commandName}"
 
-#	## Input
-#	local vlsMessage="$1"
-#	if [ "${vlsMessage}" == "-m" ]; then vlsMessage="$2"; fi
-#	if [ "${vlsMessage}" == "-m" ]; then vlsMessage="$3"; fi
-#	vlsMessage="$(fStrSearchAndReplace "${vlsMessage}" "'" "’")"  ## Replace single quotes with curly quote
-#	vlsMessage="$(fStrSearchAndReplace "${vlsMessage}" "\"" "“")"  ## Replace double quotes with curly double quote
-# 	if [ -n "${vlsMessage}" ]; then vlsMessage="-m '${vlsMessage}'"; fi
-
-	## Old hygene
+	## Old steps
 #	fEchoOrEchoAndDo              "git add --all"                                         "${flagExecOrNot}"  ## Add/delete files
 #	fEchoOrEchoAndDo_IgnoreError  "git commit ${vlsMessage}"                              "${flagExecOrNot}"  ## Commit to local repository
-#	fEchoOrEchoAndDo              "git pull --ff-only"                                    "${flagExecOrNot}"  ## Retrieves changes
+#	fEchoOrEchoAndDo              "git pull"                                              "${flagExecOrNot}"  ## Retrieves changes
 #	fEchoOrEchoAndDo              "git push"                                              "${flagExecOrNot}"  ## Check changes in to online repository
 
 	## New hygene
-	fPullCommit "$1"
+	fCommitPull "$1"
 	fEchoOrEchoAndDo              "git push"                                              "${flagExecOrNot}"  ## Check changes in to online repository
 
 }
@@ -380,8 +376,10 @@ function fMkBranch() {
 	## Variables
 	local vlsMessage="Committed by $(fGetFileName_OfMe).${commandName}"
 
+	## Commit and push existing work
+	fPush
+
 	## Create the new branch
-	fEchoOrEchoAndDo              "git stash push --keep-index --include-untracked"       "${flagExecOrNot}"       ## Just in case
 	fEchoOrEchoAndDo              "git checkout ${nameMainOrMaster}"                      "${flagExecOrNot}"       ## Change to ${nameMainOrMaster}
 	fEchoOrEchoAndDo              "git pull --ff-only"                                    "${flagExecOrNot}"       ## Pull changes
 	fEchoOrEchoAndDo              "git checkout -b ${vlsNewBranchName}"                   "${flagExecOrNot}"       ## Create new branch
@@ -408,8 +406,10 @@ function fChBranch() {
 	## Variables
 	local vlsMessage="Committed by $(fGetFileName_OfMe).${commandName}"
 
+	## Commit and push existing work
+	fPush
+
 	## Change to branch
-	fEchoOrEchoAndDo              "git stash push --keep-index --include-untracked"       "${flagExecOrNot}"       ## Just in case
 	fEchoOrEchoAndDo              "git checkout ${vlsBranch}"                             "${flagExecOrNot}"       ## Creates branch
 	fEchoOrEchoAndDo              "git pull --ff-only"                                    "${flagExecOrNot}"       ## For new branch
 
