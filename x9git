@@ -9,9 +9,9 @@
 ##		- [See fDescriptionAndCopyright below.]
 ##	History:
 ##		- 20140926 JC: Created based on TEMPLATE_simple_v20140615.
-##		- 20141003 JC: Consolidated multiple functions from different scripts, into this one script - so it works more like "git".
+##		- 20141003 JC: Consolidated multiple commands from different scripts, into this one script - so it works more like "git".
 ##		- 20141104 JC:
-##			- Finished, and added helper functions such as mtm.
+##			- Finished, and added helper commands such as mtm.
 ##			- Shortened function names.
 ##		- 20141110 JC:
 ##			- Fixed a 'merge' bug.
@@ -26,7 +26,7 @@
 ##			- Removed 'init', 'setrepo', and 'pushmtm' commands.
 ##				- Now must do 'git clone' yourself, until I make a new, simpler command for it.
 ##				- mtm now also pushes just in case (does what pushmtm used to).
-##			- Removed all artificial dependencies on concept of system-wide 'top-level git directory', and '.scgit_current' file. Can now change projects at will just by changing directories.
+##			- Removed all artificial dependencies on concept of system-wide 'top-level git directory', and '.x9git_current' file. Can now change projects at will just by changing directories.
 ##			- Added commands: scommit and spulcom.
 ##			- Changed all 'git pull' to 'git pull --ff-only', based on hygene ideals.
 ##			- Updated help to suggest NOT using mtm.
@@ -37,7 +37,7 @@
 ##	Notes:
 ##		- This is based on an ancient Bash template and varialbe namiing convention (from 2014, almost 8 years old). Don't judge me.
 ##	TODO:
-##		Y Remove the requirement to run with 'init', 'setrepo', and the use of '.scgit_current' file.
+##		Y Remove the requirement to run with 'init', 'setrepo', and the use of '.x9git_current' file.
 ##		Y Only do a git push or pull if necessary.
 ##		- Integrate these rules and ideals: https://github.com/x9-testlab/x9git/blob/main/reference/git.txt, including:
 ##			Y Work on feature branches
@@ -80,17 +80,17 @@ export GIT_MERGE_AUTOEDIT=no
 function fIsLessVerbose() { echo "false"; }
 function fDescriptionAndCopyright() { fEcho_Clean "Various safer wrappers for 'git'."; }
 function fSyntax() {
-	fEcho_Clean "Common functions:"
+	fEcho_Clean "Common commands:"
 	fEcho_Clean "	spulcom [commit message] .............: Commit all local changes, stash to cloud, and pull updates. DO FREQUENTLY!"
 	fEcho_Clean "	mkbranch <new branch name> ...........: Safer way to create a new branch."
 	fEcho_Clean "	chbranch <existing branch name> ......: Safer way to checkout an existing branch."
 	fEcho_Clean "	status ...............................: Shows current status."
 	fEcho_Clean "	list .................................: Refresh and list branches."
-	fEcho_Clean "Less common functions:"
+	fEcho_Clean "Less common commands:"
 	fEcho_Clean "	spush [commit message] ...............: Safer way to push branch changes. Do infrequently."
 	fEcho_Clean "	spull ................................: Safer git pull, without commit."
 	fEcho_Clean "	scommit [commit message] .............: Safer way to commit all local changes and also stash to cloud, without pull."
-	fEcho_Clean "Reserved admin functions, eg for small projects:"
+	fEcho_Clean "Reserved admin commands, eg for small projects:"
 	fEcho_Clean "	mtm [merge message] ..................: Safer way to push and merge current branch into ${nameMainOrMaster} (without changing to ${nameMainOrMaster} first)."
 	fEcho_Clean ""
 }
@@ -209,7 +209,7 @@ function fpSetFlags() {
 		"spushmtm")
 			: ;;
 		*)
-			fThrowError "${commandName}: Unknown scgit function '${commandName}'. Type 'scgit' for a list of functions."
+			fThrowError "${commandName}: Unknown x9git function '${commandName}'. Type 'x9git' for a list of commands."
 			: ;;
 	esac
 
@@ -242,7 +242,7 @@ function fpExecuteCommand() {
 		"chbranch")    fChBranch       "$@" ;;
 		"mtm")         fMtM            "$@" ;;
 		*)
-			fThrowError "${commandName}: Unknown scgit function '${commandName}'. Type 'scgit' for a list of functions."
+			fThrowError "${commandName}: Unknown x9git function '${commandName}'. Type 'x9git' for a list of commands."
 			;;
 	esac
 
@@ -332,7 +332,7 @@ function fPullCommit() {
 function fPush() { fpSafePush "$1"; }
 function fpSafePush() {
 	##	Purpose:
-	##		- Common safe push subroutine to be used by other functions
+	##		- Common safe push subroutine to be used by other commands
 	##	History
 	##		- 20141003 JC: Created.
 	##		- 20220501 JC: Updated with new hygene from https://raw.githubusercontent.com/x9-testlab/x9git/main/reference/git.txt.
