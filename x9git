@@ -34,7 +34,7 @@
 ##			- Flags get set more cleanly.
 ##			- Added lint flags to script.
 ##			- Added notes and todos.
-##		- 20220502 JC: Reverted most logic to old style which is known to work.
+##		- 20220502 JC: Updated.
 ##	Notes:
 ##		- This is based on an ancient Bash template and varialbe namiing convention (from 2014, almost 8 years old). Don't judge me.
 ##	TODO:
@@ -282,10 +282,10 @@ function fPull() {
 	local commandName="fPull()"
 	fEcho_IfDebug "${commandName}"
 
-	## Old steps; known to work (#)
+	## Old steps; known to work
 #	fEchoOrEchoAndDo              "git pull"                                              "${flagExecOrNot}"       ## Pull changes
 
-	## "New" hygene (20220502), which doesn't work in some cases - so go back to reliable old steps
+#	## "New" hygene (20220502), which doesn't work in some cases - so go back to reliable old steps
 	fEchoOrEchoAndDo              "git stash push --keep-index --include-untracked"       "${flagExecOrNot}"       ## Just in case
 	fEchoOrEchoAndDo              "git pull --ff-only"                                    "${flagExecOrNot}"       ## Pull changes; for use with the 'stash, pull, apply, commit' method.
 	fEchoOrEchoAndDo              "git stash apply"                                       "${flagExecOrNot}"
