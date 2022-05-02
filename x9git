@@ -5,2153 +5,2150 @@
 # shellcheck disable=2155  ## Disable check to 'Declare and assign separately to avoid masking return values'.
 # shellcheck disable=2120  ## OK with declaring variables that accept arguments, without calling with arguments (this is 'overloading').
 
-	#########################################################################################
-	##	Purpose:
-	##		- [See fDescriptionAndCopyright below.]
-	##	History:
-	##		- 20140926 JC: Created based on TEMPLATE_simple_v20140615.
-	##		- 20141003 JC: Consolidated multiple functions from different scripts, into this one script - so it works more like "git".
-	##		- 20141104 JC:
-	##			- Finished, and added helper functions such as mtm.
-	##			- Shortened function names.
-	##		- 20141110 JC:
-	##			- Fixed a 'merge' bug.
-	##			- Make function names match arguments
-	##			- Detect if "-m" is used for merge or push message.
-	##			- Don't default push or merge message.
-	##			- Turn off git's Nano-editor merge message
-	##		- 20141209 JC:
-	##			- Sanitize input message strings of solitary single quotes or double quotes.
-	##				- Fixes the bug of apostrophe's in a message string breaking a push.
-	##		- 20220501 JC:
-	##			- Removed 'init', 'setrepo', and 'pushmtm' commands.
-	##				- Now must do 'git clone' yourself, until I make a new, simpler command for it.
-	##				- mtm now also pushes just in case (does what pushmtm used to).
-	##			- Removed all artificial dependencies on concept of system-wide 'top-level git directory', and '.scgit_current' file. Can now change projects at will just by changing directories.
-	##			- Added commands: scommit and spulcom.
-	##			- Changed all 'git pull' to 'git pull --ff-only', based on hygene ideals.
-	##			- Updated help to suggest NOT using mtm.
-	##			- Massively cleaned up fMain.
-	##			- Flags get set more cleanly.
-	##			- Added lint flags to script.
-	##			- Added notes and todos.
-	##	Notes:
-	##		- This is based on an ancient Bash template and varialbe namiing convention (from 2014, almost 8 years old). Don't judge me.
-	##	TODO:
-	##		Y Remove the requirement to run with 'init', 'setrepo', and the use of '.scgit_current' file.
-	##		Y Only do a git push or pull if necessary.
-	##		- Integrate these rules and ideals: https://github.com/x9-testlab/x9git/blob/main/reference/git.txt, including:
-	##			Y Work on feature branches
-	##			- PRs to merge to develop
-	##			Y Commit frequently
-	##			Y Pull frequently, push infrequently
-	##			Y Push hygene:
-	##			 	git stash
-	##			 	git pull --ff-only
-	##			 	git stash apply
-	##			 	git add .
-	##			 	git commit -m ""
-	##			 	git push
-	##		- Refactor:
-	##			- Get function names the native way, rather than using a constant every time.
-	##			- Use newer, easier-to-maintain Bash template/boilerplate.
-	##			- Modernize variable naming convention.
+##	Purpose:
+##		- [See fDescriptionAndCopyright below.]
+##	History:
+##		- 20140926 JC: Created based on TEMPLATE_simple_v20140615.
+##		- 20141003 JC: Consolidated multiple functions from different scripts, into this one script - so it works more like "git".
+##		- 20141104 JC:
+##			- Finished, and added helper functions such as mtm.
+##			- Shortened function names.
+##		- 20141110 JC:
+##			- Fixed a 'merge' bug.
+##			- Make function names match arguments
+##			- Detect if "-m" is used for merge or push message.
+##			- Don't default push or merge message.
+##			- Turn off git's Nano-editor merge message
+##		- 20141209 JC:
+##			- Sanitize input message strings of solitary single quotes or double quotes.
+##				- Fixes the bug of apostrophe's in a message string breaking a push.
+##		- 20220501 JC:
+##			- Removed 'init', 'setrepo', and 'pushmtm' commands.
+##				- Now must do 'git clone' yourself, until I make a new, simpler command for it.
+##				- mtm now also pushes just in case (does what pushmtm used to).
+##			- Removed all artificial dependencies on concept of system-wide 'top-level git directory', and '.scgit_current' file. Can now change projects at will just by changing directories.
+##			- Added commands: scommit and spulcom.
+##			- Changed all 'git pull' to 'git pull --ff-only', based on hygene ideals.
+##			- Updated help to suggest NOT using mtm.
+##			- Massively cleaned up fMain.
+##			- Flags get set more cleanly.
+##			- Added lint flags to script.
+##			- Added notes and todos.
+##	Notes:
+##		- This is based on an ancient Bash template and varialbe namiing convention (from 2014, almost 8 years old). Don't judge me.
+##	TODO:
+##		Y Remove the requirement to run with 'init', 'setrepo', and the use of '.scgit_current' file.
+##		Y Only do a git push or pull if necessary.
+##		- Integrate these rules and ideals: https://github.com/x9-testlab/x9git/blob/main/reference/git.txt, including:
+##			Y Work on feature branches
+##			- PRs to merge to develop
+##			Y Commit frequently
+##			Y Pull frequently, push infrequently
+##			Y Push hygene:
+##			 	git stash
+##			 	git pull --ff-only
+##			 	git stash apply
+##			 	git add .
+##			 	git commit -m ""
+##			 	git push
+##		- Refactor:
+##			- Get function names the native way, rather than using a constant every time.
+##			- Use newer, easier-to-maintain Bash template/boilerplate.
+##			- Modernize variable naming convention.
 
-	#########################################################################################
+## Template settings
+	declare cmwNumberOfRequiredArgs=1
+#	declare -r cmbAlwaysShowDescriptionAndCopyright="true"
+#	declare -r cmbEchoAndDo_EchoOnly="true"
+#	declare -r cmbDebug="true"
 
-	## Template settings
-		declare cmwNumberOfRequiredArgs=1
-	#	declare -r cmbAlwaysShowDescriptionAndCopyright="true"
-	#	declare -r cmbEchoAndDo_EchoOnly="true"
-	#	declare -r cmbDebug="true"
+## Script settings
+declare nameMainOrMaster="main"
+declare flagExecOrNot=""
+declare flagIsFetchRequired=""
+declare flagIsPushRequired=""
+declare flagIsPullRequired=""
+declare flagDoSkipShowingStatus=""
+declare flagDoShowStatus_Before=""
+declare flagDoShowStatus_After=""
 
-	## Script settings
-	declare nameMainOrMaster="main"
-	declare flagExecOrNot=""
-	declare flagIsFetchRequired=""
-	declare flagIsPushRequired=""
-	declare flagIsPullRequired=""
-	declare flagDoSkipShowingStatus=""
-	declare flagDoShowStatus_Before=""
-	declare flagDoShowStatus_After=""
-
-	## Environment settings
-	export GIT_MERGE_AUTOEDIT=no
+## Environment settings
+export GIT_MERGE_AUTOEDIT=no
 
 
-	##---------------------------------------------------------------------------------------
-	function fIsLessVerbose() { echo "false"; }
-	function fDescriptionAndCopyright() { fEcho_Clean "Various safer wrappers for 'git'."; }
-	function fSyntax() {
-		fEcho_Clean "Common functions:"
-		fEcho_Clean "	spulcom [commit message] .............: Commit all local changes, stash to cloud, and pull updates. DO FREQUENTLY!"
-		fEcho_Clean "	mkbranch <new branch name> ...........: Safer way to create a new branch."
-		fEcho_Clean "	chbranch <existing branch name> ......: Safer way to checkout an existing branch."
-		fEcho_Clean "	status ...............................: Shows current status."
-		fEcho_Clean "	list .................................: Refresh and list branches."
-		fEcho_Clean "Less common functions:"
-		fEcho_Clean "	spush [commit message] ...............: Safer way to push branch changes. Do infrequently."
-		fEcho_Clean "	spull ................................: Safer git pull, without commit."
-		fEcho_Clean "	scommit [commit message] .............: Safer way to commit all local changes and also stash to cloud, without pull."
-		fEcho_Clean "Reserved admin functions, eg for small projects:"
-		fEcho_Clean "	mtm [merge message] ..................: Safer way to push and merge current branch into ${nameMainOrMaster} (without changing to ${nameMainOrMaster} first)."
-		fEcho_Clean ""
-	}
+##---------------------------------------------------------------------------------------
+function fIsLessVerbose() { echo "false"; }
+function fDescriptionAndCopyright() { fEcho_Clean "Various safer wrappers for 'git'."; }
+function fSyntax() {
+	fEcho_Clean "Common functions:"
+	fEcho_Clean "	spulcom [commit message] .............: Commit all local changes, stash to cloud, and pull updates. DO FREQUENTLY!"
+	fEcho_Clean "	mkbranch <new branch name> ...........: Safer way to create a new branch."
+	fEcho_Clean "	chbranch <existing branch name> ......: Safer way to checkout an existing branch."
+	fEcho_Clean "	status ...............................: Shows current status."
+	fEcho_Clean "	list .................................: Refresh and list branches."
+	fEcho_Clean "Less common functions:"
+	fEcho_Clean "	spush [commit message] ...............: Safer way to push branch changes. Do infrequently."
+	fEcho_Clean "	spull ................................: Safer git pull, without commit."
+	fEcho_Clean "	scommit [commit message] .............: Safer way to commit all local changes and also stash to cloud, without pull."
+	fEcho_Clean "Reserved admin functions, eg for small projects:"
+	fEcho_Clean "	mtm [merge message] ..................: Safer way to push and merge current branch into ${nameMainOrMaster} (without changing to ${nameMainOrMaster} first)."
+	fEcho_Clean ""
+}
 
 
-	##---------------------------------------------------------------------------------------
-	function fMain() {
-		##	History
-		##		- 20141003 JC: Created.
-		local commandName="fMain()"
-		fEcho_IfDebug "${commandName}"
+##---------------------------------------------------------------------------------------
+function fMain() {
+	##	History
+	##		- 20141003 JC: Created.
+	local commandName="fMain()"
+	fEcho_IfDebug "${commandName}"
 
-		## Get various flags depending on the function to execute
-		fpSetFlags "$@"
+	## Get various flags depending on the function to execute
+	fpSetFlags "$@"
 
-		if [[ "$(fIsCurrentDirGit)" == "false" ]]; then
-			fEcho_Clean "A current repository dir is required to execute '$(fGetFileName_OfMe) $@'."
-			fEcho_Clean "Change the current directory to a git project first."
-			fThrowError
-		else
+	if [[ "$(fIsCurrentDirGit)" == "false" ]]; then
+		fEcho_Clean "A current repository dir is required to execute '$(fGetFileName_OfMe) $@'."
+		fEcho_Clean "Change the current directory to a git project first."
+		fThrowError
+	else
 
-			## Do a fairly quiet git fetch so that we can see other's changes without affecting ours
-			if [[ "${flagIsFetchRequired}" == "true" ]]; then
-				fpGitFetch
-			fi
-
-			## Show status
-			if [[ "${flagDoShowStatus_Before}" == "true" ]]; then
-				fpShowGitStatus
-				fEcho ""
-			fi
-
-			## Show what is going to happen (without making any changes)
-			if [ "${flagDoSkipShowingStatus}" != "true" ]; then
-
-				flagExecOrNot="listonly"
-				fpEchoGoingToExecute_IfNotListOnly
-				fpExecuteCommand "$@"
-
-				## Prompt to continue
-				if [ "${vmbIgnorePrompt}" != "true" ]; then
-					fEcho_Clean ""
-					fPromptYN
-					fEcho_Clean ""
-				fi
-
-			fi
-
-			## Execute the function
-			flagExecOrNot=""
-			fpExecuteCommand "$@"
-
-			## Show status
-			if [ "${flagDoShowStatus_After}" == "true" ] && [ "$(fIsCurrentDirGit)" == "true" ]; then
-				fEcho ""
-				fpShowGitStatus
-			fi
-
+		## Do a fairly quiet git fetch so that we can see other's changes without affecting ours
+		if [[ "${flagIsFetchRequired}" == "true" ]]; then
+			fpGitFetch
 		fi
 
-		## Wrap up
-		fEcho ""
-		fEcho "Done."
-		fEcho ""
-
-	}
-
-
-	##---------------------------------------------------------------------------------------
-	function fpSetFlags() {
-		##	Purpose
-		##		- Sets various flags
-		##	History:
-		##		- 20141104 JC: Created.
-		##	Input:
-		##		- Same as script.
-		local commandName="fpExecuteCommand()"
-		fEcho_IfDebug "${commandName}"
-
-		## Get command name
-		local commandName="$(fStrToLower "$1")"
-
-		##
-		flagIsFetchRequired="true"
-		flagIsPushRequired="false"
-		flagIsPullRequired="false"
-		flagDoSkipShowingStatus="false"
-		flagDoShowStatus_Before="true"
-		flagDoShowStatus_After="true"
-
-		case "${commandName}" in
-			"status")
-				flagDoSkipShowingStatus="true"
-				flagDoShowStatus_Before="false"
-				flagDoShowStatus_After="false"
-				: ;;
-			"list")
-				flagDoSkipShowingStatus="true"
-				flagDoShowStatus_Before="false"
-				flagDoShowStatus_After="false"
-				: ;;
-			"scommit")
-				: ;;
-			"spull")
-				: ;;
-			"spulcom")
-				: ;;
-			"spush")
-				: ;;
-			"mkbranch")
-				: ;;
-			"chbranch")
-				: ;;
-			"mtm")
-				: ;;
-			"spushmtm")
-				: ;;
-			*)
-				fThrowError "${commandName}: Unknown scgit function '${commandName}'. Type 'scgit' for a list of functions."
-				: ;;
-		esac
-
-	}
-
-
-	##---------------------------------------------------------------------------------------
-	function fpExecuteCommand() {
-		##	Purpose
-		##		- Executes specified function. Broken out into subroutine so that fMain can call with and without 'listonly'.
-		##	History:
-		##		- 20141103 JC: Created.
-		##	Input:
-		##		- Same as script.
-		local commandName="fpExecuteCommand()"
-		fEcho_IfDebug "${commandName}"
-
-		## Get function name and shift remaining arguments down one
-		local commandName="$(fStrToLower "$1")"
-		shift
-
-		case "${commandName}" in
-			"status")      fStatus         "$@" ;;
-			"list")        fList           "$@" ;;
-			"scommit")     fCommit         "$@" ;;
-			"spulcom") fPullCommit     "$@" ;;
-			"spull")       fPull           "$@" ;;
-			"spush")       fPush           "$@" ;;
-			"mkbranch")    fMkBranch       "$@" ;;
-			"chbranch")    fChBranch       "$@" ;;
-			"mtm")         fMtM            "$@" ;;
-			*)
-				fThrowError "${commandName}: Unknown scgit function '${commandName}'. Type 'scgit' for a list of functions."
-				;;
-		esac
-
-	}
-
-
-	##---------------------------------------------------------------------------------------
-	function fStatus() {
-		##	History
-		##		- 20141003 JC: Created.
-		local commandName="fStatus()"
-		fEcho_IfDebug "${commandName}"
-
-		fpShowGitStatus
-
-	}
-
-
-	##---------------------------------------------------------------------------------------
-	function fList() {
-		##	History
-		##		- 20141003 JC: Created.
-		local commandName="fList()"
-		fEcho_IfDebug "${commandName}"
-
-		fEchoAndDo "git branch -a"
-
-	}
-
-
-	##---------------------------------------------------------------------------------------
-	function fPull() {
-		##	History
-		##		- 20150518 JC: Created.
-		##		- 20220501 JC: Resurrected; previously this did nothing, noted as 'this is done already by invoking function' (which was true until now that it is an explicit user option).
-		local commandName="fPull()"
-		fEcho_IfDebug "${commandName}"
-
-		fEchoOrEchoAndDo              "git stash push --keep-index --include-untracked"       "${flagExecOrNot}"       ## Just in case
-		fEchoOrEchoAndDo              "git pull --ff-only"                                    "${flagExecOrNot}"       ## Pull changes
-		fEchoOrEchoAndDo              "git stash apply"                                       "${flagExecOrNot}"
-
-	}
-
-
-	##---------------------------------------------------------------------------------------
-	function fCommit() {
-		##	History
-		##		- 20220501 JC: Created.
-		local commandName="fCommit()"
-		fEcho_IfDebug "${commandName}"
-
-		## Input
-		local vlsMessage="$1"
-		vlsMessage="$(fStrSearchAndReplace "${vlsMessage}" "'" "’")"  ## Replace single quotes with curly quote
-		vlsMessage="$(fStrSearchAndReplace "${vlsMessage}" "\"" "“")"  ## Replace double quotes with curly double quote
-		if [ -n "${vlsMessage}" ]; then vlsMessage="-m '${vlsMessage}'"; fi
-
-		fEchoOrEchoAndDo              "git stash push --keep-index --include-untracked"       "${flagExecOrNot}"
-		fEchoOrEchoAndDo              "git add --all"                                         "${flagExecOrNot}"  ## Add/delete files
-		fEchoOrEchoAndDo_IgnoreError  "git commit ${vlsMessage}"                              "${flagExecOrNot}"  ## Commit to local repository
-
-	}
-
-
-	##---------------------------------------------------------------------------------------
-	function fPullCommit() {
-		##	History
-		##		- 20220501 JC: Created.
-
-		## Input
-		local vlsMessage="$1"
-		vlsMessage="$(fStrSearchAndReplace "${vlsMessage}" "'" "’")"  ## Replace single quotes with curly quote
-		vlsMessage="$(fStrSearchAndReplace "${vlsMessage}" "\"" "“")"  ## Replace double quotes with curly double quote
-		if [ -n "${vlsMessage}" ]; then vlsMessage="-m '${vlsMessage}'"; fi
-
-		fEchoOrEchoAndDo              "git stash push --keep-index --include-untracked"       "${flagExecOrNot}"
-		fEchoOrEchoAndDo              "git pull --ff-only"                                    "${flagExecOrNot}"  ## Pull changes
-		fEchoOrEchoAndDo              "git stash apply"                                       "${flagExecOrNot}"
-		fEchoOrEchoAndDo              "git add --all"                                         "${flagExecOrNot}"  ## Add/delete files
-		fEchoOrEchoAndDo_IgnoreError  "git commit ${vlsMessage}"                              "${flagExecOrNot}"  ## Commit to local repository
-
-	}
-
-
-	##---------------------------------------------------------------------------------------
-	function fPush() { fpSafePush "$1"; }
-	function fpSafePush() {
-		##	Purpose:
-		##		- Common safe push subroutine to be used by other functions
-		##	History
-		##		- 20141003 JC: Created.
-		##		- 20220501 JC: Updated with new hygene from https://raw.githubusercontent.com/x9-testlab/x9git/main/reference/git.txt.
-		##	Input:
-		##		1 [optional]: Commit message.
-		local commandName="fpSafePush()"
-		fEcho_IfDebug "${commandName}"
-
-	#	## Input
-	#	local vlsMessage="$1"
-	#	if [ "${vlsMessage}" == "-m" ]; then vlsMessage="$2"; fi
-	#	if [ "${vlsMessage}" == "-m" ]; then vlsMessage="$3"; fi
-	#	vlsMessage="$(fStrSearchAndReplace "${vlsMessage}" "'" "’")"  ## Replace single quotes with curly quote
-	#	vlsMessage="$(fStrSearchAndReplace "${vlsMessage}" "\"" "“")"  ## Replace double quotes with curly double quote
-	# 	if [ -n "${vlsMessage}" ]; then vlsMessage="-m '${vlsMessage}'"; fi
-
-		## Old hygene
-	#	fEchoOrEchoAndDo              "git add --all"                                         "${flagExecOrNot}"  ## Add/delete files
-	#	fEchoOrEchoAndDo_IgnoreError  "git commit ${vlsMessage}"                              "${flagExecOrNot}"  ## Commit to local repository
-	#	fEchoOrEchoAndDo              "git pull --ff-only"                                    "${flagExecOrNot}"  ## Retrieves changes
-	#	fEchoOrEchoAndDo              "git push"                                              "${flagExecOrNot}"  ## Check changes in to online repository
-
-		## New hygene
-		fPullCommit "$1"
-		fEchoOrEchoAndDo              "git push"                                              "${flagExecOrNot}"  ## Check changes in to online repository
-
-	}
-
-
-	##---------------------------------------------------------------------------------------
-	function fMkBranch() {
-		##	History
-		##		- 20141003 JC: Created.
-		##	Input:
-		##		1 [REQUIRED]: New branch name
-		local commandName="fMkBranch()"
-		fEcho_IfDebug "${commandName}"
-
-		## Input
-		local vlsNewBranchName="$1"
-
-		## Validate
-		if [ -z "${vlsNewBranchName}" ]; then fThrowError "${commandName}: No branch specified."; fi
-
-		## Variables
-		local vlsMessage="Committed by $(fGetFileName_OfMe).${commandName}"
-
-		## Create the new branch
-		fEchoOrEchoAndDo              "git stash push --keep-index --include-untracked"       "${flagExecOrNot}"       ## Just in case
-		fEchoOrEchoAndDo              "git checkout ${nameMainOrMaster}"                      "${flagExecOrNot}"       ## Change to ${nameMainOrMaster}
-		fEchoOrEchoAndDo              "git pull --ff-only"                                    "${flagExecOrNot}"       ## Pull changes
-		fEchoOrEchoAndDo              "git checkout -b ${vlsNewBranchName}"                   "${flagExecOrNot}"       ## Create new branch
-		fEchoOrEchoAndDo              "git push --set-upstream origin ${vlsNewBranchName}"    "${flagExecOrNot}"       ## Tell ${nameMainOrMaster} about new branch
-		fEchoOrEchoAndDo              "git pull --ff-only"                                    "${flagExecOrNot}"       ## Pull changes (just to be safe)
-
-	}
-
-
-	##---------------------------------------------------------------------------------------
-	function fChBranch() {
-		##	History
-		##		- 20141003 JC: Created.
-		local commandName="fChBranch()"
-		fEcho_IfDebug "${commandName}"
-
-		## Input
-		local vlsBranch="$1"
-
-		## Validate
-		#if [ -z "${vlsBranch}" ]; then fThrowError "${commandName}: No branch specified."; fi
-		if [ -z "${vlsBranch}" ]; then vlsBranch="${nameMainOrMaster}"; fi
-
-		## Variables
-		local vlsMessage="Committed by $(fGetFileName_OfMe).${commandName}"
-
-		## Change to branch
-		fEchoOrEchoAndDo              "git stash push --keep-index --include-untracked"       "${flagExecOrNot}"       ## Just in case
-		fEchoOrEchoAndDo              "git checkout ${vlsBranch}"                             "${flagExecOrNot}"       ## Creates branch
-		fEchoOrEchoAndDo              "git pull --ff-only"                                    "${flagExecOrNot}"       ## For new branch
-
-	}
-
-
-	##---------------------------------------------------------------------------------------
-	function fMtM() {
-		##	Purpose:
-		##		- Merges the current working branch into ${nameMainOrMaster} (which is backwards but more intuitive from how git does it.)
-		##	Input:
-		##		1 [optional]: Merge message.
-		##	Assumptions:
-		##		- fpSafePush has already been performed.
-		##	History
-		##		- 20141004 JC: Created.
-		##		- 20250501 JC: Added call to fpSafePush.
-		local commandName="fMtM()"
-		fEcho_IfDebug "${commandName}"
-
-		## Constants
-		local clsMaster="${nameMainOrMaster}"
-		local vlsMessage="$1"
-		if [ "${vlsMessage}" == "-m" ]; then vlsMessage="$2"; fi
-		vlsMessage="$(fStrSearchAndReplace "${vlsMessage}" "'" "’")"  ## Replace single quotes with curly quote
-		vlsMessage="$(fStrSearchAndReplace "${vlsMessage}" "\"" "“")"  ## Replace double quotes with curly double quote
-		if [ -n "${vlsMessage}" ]; then vlsMessage="-m '${vlsMessage}'"; fi
-
-
-		## Variables
-		local vlsWorkingBranchName="$(fpGetCurrentBranch)"
-
-		## Validate
-		if [ -z "${vlsWorkingBranchName}" ]; then fThrowError "${commandName}: Current working branch not found. Are you in the right directory?"; fi
-		if [ "${vlsWorkingBranchName}" == "${clsMaster}" ]; then fThrowError "${commandName}: You are currently on the ${clsMaster} branch. You must call this while the branch you wish to merge into ${nameMainOrMaster} is active. This is backwards from the way 'git merge' works, but (normally) saves a step and is a little safer. You may want to first execute: $(fGetFileName_OfMe) chbranch <branch to merge into ${nameMainOrMaster}>"; fi
-
-		## Just in case
-		fpSafePush "$@"
-
-		## Switch to ${nameMainOrMaster}.
-		fEchoOrEchoAndDo              "git checkout ${clsMaster}"    "${flagExecOrNot}"
-
-		## Always pull before push
-		fEchoOrEchoAndDo              "git pull --ff-only"    "${flagExecOrNot}"
-
-		## Merge previous working repository.
-	#	fEchoOrEchoAndDo              "git merge --no-ff ${vlsWorkingBranchName} ${vlsMessage}"    "${flagExecOrNot}"
-		fEchoOrEchoAndDo              "git merge ${vlsWorkingBranchName} ${vlsMessage}"    "${flagExecOrNot}"
-
-		## Push current changes (not sure why this is required but git merge message regularly says to do so).
-		fEchoOrEchoAndDo              "git push"    "${flagExecOrNot}"
-
-		## Delete the feature branch.
-		fEchoOrEchoAndDo              "git branch -d ${vlsWorkingBranchName}"    "${flagExecOrNot}"
-
-		## Push the deletion to origin
-		fEchoOrEchoAndDo              "git push origin :${vlsWorkingBranchName}"    "${flagExecOrNot}"
-
-		## Just in case
-		fEchoOrEchoAndDo              "git pull --ff-only"    "${flagExecOrNot}"
-
-	}
-
-
-	##---------------------------------------------------------------------------------------
-	function fpGitFetch() {
-		##	Purpose:
-		##		- Common function to show status.
-		##	History
-		##		- 20141003 JC: Created.
-		local commandName="fpGitFetch()"
-		fEcho_IfDebug "${commandName}"
-
-		fEcho "Retrieving remote headers with: git fetch"
-		git fetch
-		#tput cuu1;tput el  ## Erases the previous line
-		flagIsFetchRequired="false"
-
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fpShowGitStatus() {
-		##	Purpose:
-		##		- Common function to show status.
-		##	History
-		##		- 20141003 JC: Created.
-		local commandName="fpShowGitStatus()"
-		fEcho_IfDebug "${commandName}"
-
-		## Validate
-		if [ "$(fIsCurrentDirGit)" == "true" ]; then
-
-			## Git remote repository
-			fDefineTrap_Error_Ignore
-				local vlsRepository="$(git config --get remote.origin.url 2> /dev/null)"
-			fDefineTrap_Error_Fatal
-
-			## Git status
-			local vlsStatus="$(git status)"
-			if [ -z "${vlsStatus}" ]; then
-				vlsStatus="(No status, for unkonwn reason[s].)"
-			else
-				fpDetermineIfPushOrPullIsNeeded
-			fi
-
-			if [ "${flagExecOrNot}" == "listonly" ]; then
-				fEcho_Clean "Current bash directory .............: $(pwd)"
-				fEcho_Clean "Current remote repository ..........: ${vlsRepository}"
+		## Show status
+		if [[ "${flagDoShowStatus_Before}" == "true" ]]; then
+			fpShowGitStatus
+			fEcho ""
+		fi
+
+		## Show what is going to happen (without making any changes)
+		if [ "${flagDoSkipShowingStatus}" != "true" ]; then
+
+			flagExecOrNot="listonly"
+			fpEchoGoingToExecute_IfNotListOnly
+			fpExecuteCommand "$@"
+
+			## Prompt to continue
+			if [ "${vmbIgnorePrompt}" != "true" ]; then
+				fEcho_Clean ""
+				fPromptYN
 				fEcho_Clean ""
 			fi
 
-		else
-			vlsStatus="There  is no current repository status to report status on. Change to a git-managed directory first."
 		fi
 
-		vlsStatus="$(echo -e "${vlsStatus}" | tr -s "\n\n" "\n")"
-		vlsStatus="$(fStrIndentAllLines "${vlsStatus}")"
+		## Execute the function
+		flagExecOrNot=""
+		fpExecuteCommand "$@"
 
-		fEcho_Clean "Current git status:"
-		fEcho_Clean ""
-		echo -e "${vlsStatus}"
-		fEcho_ResetBlankCounter
+		## Show status
+		if [ "${flagDoShowStatus_After}" == "true" ] && [ "$(fIsCurrentDirGit)" == "true" ]; then
+			fEcho ""
+			fpShowGitStatus
+		fi
 
-	}
+	fi
 
+	## Wrap up
+	fEcho ""
+	fEcho "Done."
+	fEcho ""
 
-	##---------------------------------------------------------------------------------------
-	function fpGetCurrentBranch() {
-		##	Purpose:
-		##		- Returns the current branch.
-		##	History
-		##		- 20141004 JC: Created.
-		local commandName="fpGetCurrentBranch()"
-
-		git rev-parse --abbrev-ref HEAD 2> /dev/null
-
-	}
+}
 
 
-	##---------------------------------------------------------------------------------------
-	function fpDetermineIfPushOrPullIsNeeded() {
-		## For now just punt the ball and say they both are needed, which is safe but slow.
-		flagIsPushRequired="true"
-		flagIsPullRequired="true"
-	}
+##---------------------------------------------------------------------------------------
+function fpSetFlags() {
+	##	Purpose
+	##		- Sets various flags
+	##	History:
+	##		- 20141104 JC: Created.
+	##	Input:
+	##		- Same as script.
+	local commandName="fpExecuteCommand()"
+	fEcho_IfDebug "${commandName}"
 
-	##---------------------------------------------------------------------------------------
-	function fpDetermineIfPushOrPullIsNeeded_DoesntWork() {
-		##	Purpose:
-		##		- Common function to show status.
-		##  DOESN'T WORK AS EXPECTED.
-		##	History
-		##		- 20141003 JC: Created.
-		local commandName="fpDetermineIfPushOrPullIsNeeded_DoesntWork()"
-		fEcho_IfDebug "${commandName}"
+	## Get command name
+	local commandName="$(fStrToLower "$1")"
 
+	##
+	flagIsFetchRequired="true"
+	flagIsPushRequired="false"
+	flagIsPullRequired="false"
+	flagDoSkipShowingStatus="false"
+	flagDoShowStatus_Before="true"
+	flagDoShowStatus_After="true"
+
+	case "${commandName}" in
+		"status")
+			flagDoSkipShowingStatus="true"
+			flagDoShowStatus_Before="false"
+			flagDoShowStatus_After="false"
+			: ;;
+		"list")
+			flagDoSkipShowingStatus="true"
+			flagDoShowStatus_Before="false"
+			flagDoShowStatus_After="false"
+			: ;;
+		"scommit")
+			: ;;
+		"spull")
+			: ;;
+		"spulcom")
+			: ;;
+		"spush")
+			: ;;
+		"mkbranch")
+			: ;;
+		"chbranch")
+			: ;;
+		"mtm")
+			: ;;
+		"spushmtm")
+			: ;;
+		*)
+			fThrowError "${commandName}: Unknown scgit function '${commandName}'. Type 'scgit' for a list of functions."
+			: ;;
+	esac
+
+}
+
+
+##---------------------------------------------------------------------------------------
+function fpExecuteCommand() {
+	##	Purpose
+	##		- Executes specified function. Broken out into subroutine so that fMain can call with and without 'listonly'.
+	##	History:
+	##		- 20141103 JC: Created.
+	##	Input:
+	##		- Same as script.
+	local commandName="fpExecuteCommand()"
+	fEcho_IfDebug "${commandName}"
+
+	## Get function name and shift remaining arguments down one
+	local commandName="$(fStrToLower "$1")"
+	shift
+
+	case "${commandName}" in
+		"status")      fStatus         "$@" ;;
+		"list")        fList           "$@" ;;
+		"scommit")     fCommit         "$@" ;;
+		"spulcom") fPullCommit     "$@" ;;
+		"spull")       fPull           "$@" ;;
+		"spush")       fPush           "$@" ;;
+		"mkbranch")    fMkBranch       "$@" ;;
+		"chbranch")    fChBranch       "$@" ;;
+		"mtm")         fMtM            "$@" ;;
+		*)
+			fThrowError "${commandName}: Unknown scgit function '${commandName}'. Type 'scgit' for a list of functions."
+			;;
+	esac
+
+}
+
+
+##---------------------------------------------------------------------------------------
+function fStatus() {
+	##	History
+	##		- 20141003 JC: Created.
+	local commandName="fStatus()"
+	fEcho_IfDebug "${commandName}"
+
+	fpShowGitStatus
+
+}
+
+
+##---------------------------------------------------------------------------------------
+function fList() {
+	##	History
+	##		- 20141003 JC: Created.
+	local commandName="fList()"
+	fEcho_IfDebug "${commandName}"
+
+	fEchoAndDo "git branch -a"
+
+}
+
+
+##---------------------------------------------------------------------------------------
+function fPull() {
+	##	History
+	##		- 20150518 JC: Created.
+	##		- 20220501 JC: Resurrected; previously this did nothing, noted as 'this is done already by invoking function' (which was true until now that it is an explicit user option).
+	local commandName="fPull()"
+	fEcho_IfDebug "${commandName}"
+
+	fEchoOrEchoAndDo              "git stash push --keep-index --include-untracked"       "${flagExecOrNot}"       ## Just in case
+	fEchoOrEchoAndDo              "git pull --ff-only"                                    "${flagExecOrNot}"       ## Pull changes
+	fEchoOrEchoAndDo              "git stash apply"                                       "${flagExecOrNot}"
+
+}
+
+
+##---------------------------------------------------------------------------------------
+function fCommit() {
+	##	History
+	##		- 20220501 JC: Created.
+	local commandName="fCommit()"
+	fEcho_IfDebug "${commandName}"
+
+	## Input
+	local vlsMessage="$1"
+	vlsMessage="$(fStrSearchAndReplace "${vlsMessage}" "'" "’")"  ## Replace single quotes with curly quote
+	vlsMessage="$(fStrSearchAndReplace "${vlsMessage}" "\"" "“")"  ## Replace double quotes with curly double quote
+	if [ -n "${vlsMessage}" ]; then vlsMessage="-m '${vlsMessage}'"; fi
+
+	fEchoOrEchoAndDo              "git stash push --keep-index --include-untracked"       "${flagExecOrNot}"
+	fEchoOrEchoAndDo              "git add --all"                                         "${flagExecOrNot}"  ## Add/delete files
+	fEchoOrEchoAndDo_IgnoreError  "git commit ${vlsMessage}"                              "${flagExecOrNot}"  ## Commit to local repository
+
+}
+
+
+##---------------------------------------------------------------------------------------
+function fPullCommit() {
+	##	History
+	##		- 20220501 JC: Created.
+
+	## Input
+	local vlsMessage="$1"
+	vlsMessage="$(fStrSearchAndReplace "${vlsMessage}" "'" "’")"  ## Replace single quotes with curly quote
+	vlsMessage="$(fStrSearchAndReplace "${vlsMessage}" "\"" "“")"  ## Replace double quotes with curly double quote
+	if [ -n "${vlsMessage}" ]; then vlsMessage="-m '${vlsMessage}'"; fi
+
+	fEchoOrEchoAndDo              "git stash push --keep-index --include-untracked"       "${flagExecOrNot}"
+	fEchoOrEchoAndDo              "git pull --ff-only"                                    "${flagExecOrNot}"  ## Pull changes
+	fEchoOrEchoAndDo              "git stash apply"                                       "${flagExecOrNot}"
+	fEchoOrEchoAndDo              "git add --all"                                         "${flagExecOrNot}"  ## Add/delete files
+	fEchoOrEchoAndDo_IgnoreError  "git commit ${vlsMessage}"                              "${flagExecOrNot}"  ## Commit to local repository
+
+}
+
+
+##---------------------------------------------------------------------------------------
+function fPush() { fpSafePush "$1"; }
+function fpSafePush() {
+	##	Purpose:
+	##		- Common safe push subroutine to be used by other functions
+	##	History
+	##		- 20141003 JC: Created.
+	##		- 20220501 JC: Updated with new hygene from https://raw.githubusercontent.com/x9-testlab/x9git/main/reference/git.txt.
+	##	Input:
+	##		1 [optional]: Commit message.
+	local commandName="fpSafePush()"
+	fEcho_IfDebug "${commandName}"
+
+#	## Input
+#	local vlsMessage="$1"
+#	if [ "${vlsMessage}" == "-m" ]; then vlsMessage="$2"; fi
+#	if [ "${vlsMessage}" == "-m" ]; then vlsMessage="$3"; fi
+#	vlsMessage="$(fStrSearchAndReplace "${vlsMessage}" "'" "’")"  ## Replace single quotes with curly quote
+#	vlsMessage="$(fStrSearchAndReplace "${vlsMessage}" "\"" "“")"  ## Replace double quotes with curly double quote
+# 	if [ -n "${vlsMessage}" ]; then vlsMessage="-m '${vlsMessage}'"; fi
+
+	## Old hygene
+#	fEchoOrEchoAndDo              "git add --all"                                         "${flagExecOrNot}"  ## Add/delete files
+#	fEchoOrEchoAndDo_IgnoreError  "git commit ${vlsMessage}"                              "${flagExecOrNot}"  ## Commit to local repository
+#	fEchoOrEchoAndDo              "git pull --ff-only"                                    "${flagExecOrNot}"  ## Retrieves changes
+#	fEchoOrEchoAndDo              "git push"                                              "${flagExecOrNot}"  ## Check changes in to online repository
+
+	## New hygene
+	fPullCommit "$1"
+	fEchoOrEchoAndDo              "git push"                                              "${flagExecOrNot}"  ## Check changes in to online repository
+
+}
+
+
+##---------------------------------------------------------------------------------------
+function fMkBranch() {
+	##	History
+	##		- 20141003 JC: Created.
+	##	Input:
+	##		1 [REQUIRED]: New branch name
+	local commandName="fMkBranch()"
+	fEcho_IfDebug "${commandName}"
+
+	## Input
+	local vlsNewBranchName="$1"
+
+	## Validate
+	if [ -z "${vlsNewBranchName}" ]; then fThrowError "${commandName}: No branch specified."; fi
+
+	## Variables
+	local vlsMessage="Committed by $(fGetFileName_OfMe).${commandName}"
+
+	## Create the new branch
+	fEchoOrEchoAndDo              "git stash push --keep-index --include-untracked"       "${flagExecOrNot}"       ## Just in case
+	fEchoOrEchoAndDo              "git checkout ${nameMainOrMaster}"                      "${flagExecOrNot}"       ## Change to ${nameMainOrMaster}
+	fEchoOrEchoAndDo              "git pull --ff-only"                                    "${flagExecOrNot}"       ## Pull changes
+	fEchoOrEchoAndDo              "git checkout -b ${vlsNewBranchName}"                   "${flagExecOrNot}"       ## Create new branch
+	fEchoOrEchoAndDo              "git push --set-upstream origin ${vlsNewBranchName}"    "${flagExecOrNot}"       ## Tell ${nameMainOrMaster} about new branch
+	fEchoOrEchoAndDo              "git pull --ff-only"                                    "${flagExecOrNot}"       ## Pull changes (just to be safe)
+
+}
+
+
+##---------------------------------------------------------------------------------------
+function fChBranch() {
+	##	History
+	##		- 20141003 JC: Created.
+	local commandName="fChBranch()"
+	fEcho_IfDebug "${commandName}"
+
+	## Input
+	local vlsBranch="$1"
+
+	## Validate
+	#if [ -z "${vlsBranch}" ]; then fThrowError "${commandName}: No branch specified."; fi
+	if [ -z "${vlsBranch}" ]; then vlsBranch="${nameMainOrMaster}"; fi
+
+	## Variables
+	local vlsMessage="Committed by $(fGetFileName_OfMe).${commandName}"
+
+	## Change to branch
+	fEchoOrEchoAndDo              "git stash push --keep-index --include-untracked"       "${flagExecOrNot}"       ## Just in case
+	fEchoOrEchoAndDo              "git checkout ${vlsBranch}"                             "${flagExecOrNot}"       ## Creates branch
+	fEchoOrEchoAndDo              "git pull --ff-only"                                    "${flagExecOrNot}"       ## For new branch
+
+}
+
+
+##---------------------------------------------------------------------------------------
+function fMtM() {
+	##	Purpose:
+	##		- Merges the current working branch into ${nameMainOrMaster} (which is backwards but more intuitive from how git does it.)
+	##	Input:
+	##		1 [optional]: Merge message.
+	##	Assumptions:
+	##		- fpSafePush has already been performed.
+	##	History
+	##		- 20141004 JC: Created.
+	##		- 20250501 JC: Added call to fpSafePush.
+	local commandName="fMtM()"
+	fEcho_IfDebug "${commandName}"
+
+	## Constants
+	local clsMaster="${nameMainOrMaster}"
+	local vlsMessage="$1"
+	if [ "${vlsMessage}" == "-m" ]; then vlsMessage="$2"; fi
+	vlsMessage="$(fStrSearchAndReplace "${vlsMessage}" "'" "’")"  ## Replace single quotes with curly quote
+	vlsMessage="$(fStrSearchAndReplace "${vlsMessage}" "\"" "“")"  ## Replace double quotes with curly double quote
+	if [ -n "${vlsMessage}" ]; then vlsMessage="-m '${vlsMessage}'"; fi
+
+
+	## Variables
+	local vlsWorkingBranchName="$(fpGetCurrentBranch)"
+
+	## Validate
+	if [ -z "${vlsWorkingBranchName}" ]; then fThrowError "${commandName}: Current working branch not found. Are you in the right directory?"; fi
+	if [ "${vlsWorkingBranchName}" == "${clsMaster}" ]; then fThrowError "${commandName}: You are currently on the ${clsMaster} branch. You must call this while the branch you wish to merge into ${nameMainOrMaster} is active. This is backwards from the way 'git merge' works, but (normally) saves a step and is a little safer. You may want to first execute: $(fGetFileName_OfMe) chbranch <branch to merge into ${nameMainOrMaster}>"; fi
+
+	## Just in case
+	fpSafePush "$@"
+
+	## Switch to ${nameMainOrMaster}.
+	fEchoOrEchoAndDo              "git checkout ${clsMaster}"    "${flagExecOrNot}"
+
+	## Always pull before push
+	fEchoOrEchoAndDo              "git pull --ff-only"    "${flagExecOrNot}"
+
+	## Merge previous working repository.
+#	fEchoOrEchoAndDo              "git merge --no-ff ${vlsWorkingBranchName} ${vlsMessage}"    "${flagExecOrNot}"
+	fEchoOrEchoAndDo              "git merge ${vlsWorkingBranchName} ${vlsMessage}"    "${flagExecOrNot}"
+
+	## Push current changes (not sure why this is required but git merge message regularly says to do so).
+	fEchoOrEchoAndDo              "git push"    "${flagExecOrNot}"
+
+	## Delete the feature branch.
+	fEchoOrEchoAndDo              "git branch -d ${vlsWorkingBranchName}"    "${flagExecOrNot}"
+
+	## Push the deletion to origin
+	fEchoOrEchoAndDo              "git push origin :${vlsWorkingBranchName}"    "${flagExecOrNot}"
+
+	## Just in case
+	fEchoOrEchoAndDo              "git pull --ff-only"    "${flagExecOrNot}"
+
+}
+
+
+##---------------------------------------------------------------------------------------
+function fpGitFetch() {
+	##	Purpose:
+	##		- Common function to show status.
+	##	History
+	##		- 20141003 JC: Created.
+	local commandName="fpGitFetch()"
+	fEcho_IfDebug "${commandName}"
+
+	fEcho "Retrieving remote headers with: git fetch"
+	git fetch
+	#tput cuu1;tput el  ## Erases the previous line
+	flagIsFetchRequired="false"
+
+}
+
+##---------------------------------------------------------------------------------------
+function fpShowGitStatus() {
+	##	Purpose:
+	##		- Common function to show status.
+	##	History
+	##		- 20141003 JC: Created.
+	local commandName="fpShowGitStatus()"
+	fEcho_IfDebug "${commandName}"
+
+	## Validate
+	if [ "$(fIsCurrentDirGit)" == "true" ]; then
+
+		## Git remote repository
 		fDefineTrap_Error_Ignore
-
-			vlsLocalHash="$(git rev-parse @)"
-			vlsRemoteHash="$(git rev-parse @{u})"
-			vlsBashHash=$(git merge-base @ @{u})
-
-			flagIsPushRequired="false"
-			flagIsPullRequired="false"
-
-			if [ $vlsLocalHash = $vlsRemoteHash ]; then
-			    echo "Local and remote are in sync."
-			elif [ $vlsLocalHash = $vlsBashHash ]; then
-			    echo "Need to pull."
-				flagIsPullRequired="true"
-			elif [ $vlsRemoteHash = $vlsBashHash ]; then
-			    echo "Need to push."
-				flagIsPushRequired="true"
-			else
-			    fThrowError "Local and remote repositories have diverged; manual reconciliation required."
-			fi
-
+			local vlsRepository="$(git config --get remote.origin.url 2> /dev/null)"
 		fDefineTrap_Error_Fatal
 
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fIsCurrentDirGit() {
-		##	Purpose: Echos "true" if the current repository is valid for Git.
-		##	History
-		##		- 20220501 JC: Created.
-		local commandName="fIsCurrentDirGit()"
-		local vlsReturn="false"
-		if [[ -f ".git/HEAD" ]]; then vlsReturn="true"; fi
-		echo "${vlsReturn}"
-	}
-
-
-	##---------------------------------------------------------------------------------------
-	function fpPushDir() {
-		##	History
-		##		- 20141003 JC: Created.
-		local commandName="fpPushDir()"
-		fEcho_IfDebug "${commandName}"
-
-		## Input
-		local vlsFolder="$1"
-
-		## Validate
-		if [ -z "${vlsFolder}" ]; then fThrowError "${commandName}: You must provide a directory to change to."; fi
-		if [ ! -d "${vlsFolder}" ]; then fThrowError "${commandName}: Directory '${vlsFolder}' does not exist."; fi
-
-		#pushd "${vlsFolder}" 1> /dev/null  ## Too many problems dealing with pushd; the console output, erroring if in a subdir, etc.
-		cd "${vlsFolder}"                   ## cd is much simpler; and who cares if it can't "pop" back to previous directory?
-
-	}
-
-
-	##---------------------------------------------------------------------------------------
-	function fpEchoGoingToExecute_IfNotListOnly() {
-		##	Purpose:
-		##		- Echos a brief header if flagExecOrNot is not = "listonly".
-		##	History
-		##		- 20141003 JC: Created.
-		local commandName="fpEchoGoingToExecute_IfNotListOnly()"
-		fEcho_IfDebug "${commandName}"
+		## Git status
+		local vlsStatus="$(git status)"
+		if [ -z "${vlsStatus}" ]; then
+			vlsStatus="(No status, for unkonwn reason[s].)"
+		else
+			fpDetermineIfPushOrPullIsNeeded
+		fi
 
 		if [ "${flagExecOrNot}" == "listonly" ]; then
-			fEcho_Clean "Going to execute:"
+			fEcho_Clean "Current bash directory .............: $(pwd)"
+			fEcho_Clean "Current remote repository ..........: ${vlsRepository}"
 			fEcho_Clean ""
 		fi
-	}
+
+	else
+		vlsStatus="There  is no current repository status to report status on. Change to a git-managed directory first."
+	fi
+
+	vlsStatus="$(echo -e "${vlsStatus}" | tr -s "\n\n" "\n")"
+	vlsStatus="$(fStrIndentAllLines "${vlsStatus}")"
+
+	fEcho_Clean "Current git status:"
+	fEcho_Clean ""
+	echo -e "${vlsStatus}"
+	fEcho_ResetBlankCounter
+
+}
 
 
+##---------------------------------------------------------------------------------------
+function fpGetCurrentBranch() {
+	##	Purpose:
+	##		- Returns the current branch.
+	##	History
+	##		- 20141004 JC: Created.
+	local commandName="fpGetCurrentBranch()"
+
+	git rev-parse --abbrev-ref HEAD 2> /dev/null
+
+}
 
 
+##---------------------------------------------------------------------------------------
+function fpDetermineIfPushOrPullIsNeeded() {
+	## For now just punt the ball and say they both are needed, which is safe but slow.
+	flagIsPushRequired="true"
+	flagIsPullRequired="true"
+}
 
+##---------------------------------------------------------------------------------------
+function fpDetermineIfPushOrPullIsNeeded_DoesntWork() {
+	##	Purpose:
+	##		- Common function to show status.
+	##  DOESN'T WORK AS EXPECTED.
+	##	History
+	##		- 20141003 JC: Created.
+	local commandName="fpDetermineIfPushOrPullIsNeeded_DoesntWork()"
+	fEcho_IfDebug "${commandName}"
 
+	fDefineTrap_Error_Ignore
 
+		vlsLocalHash="$(git rev-parse @)"
+		vlsRemoteHash="$(git rev-parse @{u})"
+		vlsBashHash=$(git merge-base @ @{u})
 
+		flagIsPushRequired="false"
+		flagIsPullRequired="false"
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-	##---------------------------------------------------------------------------------------
-	function fReentrantFunction() {
-		fEcho_IfDebug "fReentrantFunction()"
-		if [ "${vmbLessVerbose}" != "true" ]; then fEcho ""; fi
-
-		fFunctionArgumentCannotBeEmpty "fReentrantFunction()" "$1" "1"
-
-
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fCleanup() {
-		if [ ! "${vmbInSudoSection}" == "true" ]; then
-			## Exiting script under normal execution
-			fEcho_IfDebug "fCleanup()"
-
-			fEcho ""
+		if [ $vlsLocalHash = $vlsRemoteHash ]; then
+			echo "Local and remote are in sync."
+		elif [ $vlsLocalHash = $vlsBashHash ]; then
+			echo "Need to pull."
+			flagIsPullRequired="true"
+		elif [ $vlsRemoteHash = $vlsBashHash ]; then
+			echo "Need to push."
+			flagIsPushRequired="true"
 		else
-			## Exiting while running under ExecutionEngine's sudo loop (not guaranteed to be called - e.g. if already sudo when script invoked).
-			fEcho_IfDebug "fCleanup() [in sudo loop]"
-
-		fi
-	}
-
-
-	#########################################################################################
-	## Generic code - do not modify
-	#########################################################################################
-
-	##---------------------------------------------------------------------------------------
-	function fStrIndentAllLines() {
-		##	Purpose:
-		##		- For a multiline string, indent all lines.
-		##	History
-		##		- 20141003 JC: Created.
-		local commandName="fStrIndentAllLines()"
-		fEcho_IfDebug "${commandName}"
-
-		local vlsInput="$@"
-		local vlsReturn=""
-
-		if [ -n "${vlsInput}" ]; then
-			while read -r vlsLine; do
-				if [ -n "${vlsReturn}" ]; then
-					vlsReturn="${vlsReturn}\n"
-				fi
-				vlsReturn="${vlsReturn}    ${vlsLine}"
-			done <<< "${vlsInput}"
+			fThrowError "Local and remote repositories have diverged; manual reconciliation required."
 		fi
 
-		echo -e "${vlsReturn}"
+	fDefineTrap_Error_Fatal
 
-	}
+}
 
-	##---------------------------------------------------------------------------------------
-	function fEchoOrEchoAndDo_IgnoreError() {
-		##	Purpose:
-		##		- Echos what will be done, or echos it and does it.
-		##	Input:
-		##		1 [REQUIRED]: The command to echo [and possibly execute].
-		##		2 [optional]: "listonly" to just list and not execute.
-		##	History:
-		##		- 20141103 JC: Created.
-		local commandName="fEchoOrEchoAndDo_IgnoreError()"
-		fEcho_IfDebug "${commandName}"
-
-		local vlsCommand="$1"
-		local vlsListOnly="$(fStrToLower "$2")"
-
-		if [ "${vlsListOnly}" == "listonly" ]; then
-			fEcho_Clean "    $1"
-		else
-			fEcho ""
-			fEchoAndDo_IgnoreError "$1"
-		fi
-
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fEchoOrEchoAndDo() {
-		##	Purpose:
-		##		- Echos what will be done, or echos it and does it.
-		##	Input:
-		##		1 [REQUIRED]: The command to echo [and possibly execute].
-		##		2 [optional]: "listonly" to just list and not execute.
-		##	History:
-		##		- 20141103 JC: Created.
-		local commandName="fEchoOrEchoAndDo()"
-		fEcho_IfDebug "${commandName}"
-
-		local vlsCommand="$1"
-		local vlsListOnly="$(fStrToLower "$2")"
-
-		if [ "${vlsListOnly}" == "listonly" ]; then
-			fEcho_Clean "    $1"
-		else
-			fEcho ""
-			fEchoAndDo "$1"
-		fi
-
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fAppendStrToVariableContents() {
-		##	Purpose: Appends a substring as a new line to an existing string stored in specified variable.
-		##	Input:
-		##		1: The variable name to append the contents of.
-		##		2: The contents to append. Ignored if null.
-		##	History:
-		##		- 20140911 JC: Created.
-		fEcho_IfDebug "fAppendStrToVariableContents()"
-
-		## Arguments
-		local vlsVariableName="$1"
-		local vlsAppendStr="$2"
-		#fEcho_IfDebug "fAppendStrToVariableContents(): ${vlsVariableName}+='${vlsAppendStr}'"
-
-		if [ -z "${vlsVariableName}" ]; then
-			fThrowError "fAppendStrToVariableContents(): No variable name was specified"
-		else
-
-			local vlsContent="${!vlsVariableName}"
-
-			## Add a new line to the content if it isn't null
-			if [ -n "${vlsContent}" ]; then
-				vlsContent="${vlsContent}\n"
-			fi
-
-			## Append string to content, even if it is null
-			vlsContent="${vlsContent}${vlsAppendStr}"
-
-			## Store new content to named variable
-			eval "${vlsVariableName}=\"${vlsContent}\""
-
-		fi
-
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fAppendStrToVariableContents_ContentsRequired() {
-		##	Purpose: Appends a substring as a new line to an existing string stored in specified variable. Errors if there is no content.
-		##	Input:
-		##		1: The variable name to append the contents of.
-		##		2: The contents to append.
-		##	History:
-		##		- 20140911 JC: Created.
-		fEcho_IfDebug "fAppendStrToVariableContents_ContentsRequired()"
-
-		## Input
-		local vlsVariableName="$1"
-		local vlsAppendStr="$2"
-
-		## Validation
-		if [ -z "${vlsVariableName}" ]; then
-			fThrowError "fAppendStrToVariableContents_ContentsRequired(): No variable name was specified"
-		elif [ -z "${vlsAppendStr}" ]; then
-			fThrowError "fAppendStrToVariableContents_ContentsRequired(): No content was specified to append to variable '${vlsVariableName}'."
-		else
-			fAppendStrToVariableContents "${vlsVariableName}" "${vlsAppendStr}"
-		fi
-
-	}
+##---------------------------------------------------------------------------------------
+function fIsCurrentDirGit() {
+	##	Purpose: Echos "true" if the current repository is valid for Git.
+	##	History
+	##		- 20220501 JC: Created.
+	local commandName="fIsCurrentDirGit()"
+	local vlsReturn="false"
+	if [[ -f ".git/HEAD" ]]; then vlsReturn="true"; fi
+	echo "${vlsReturn}"
+}
 
 
-	##---------------------------------------------------------------------------------------
-	function fIsStringInFile() {
-		## 20140311 JC: Created
-		## Arg 1: String
-		## Arg 2: File
+##---------------------------------------------------------------------------------------
+function fpPushDir() {
+	##	History
+	##		- 20141003 JC: Created.
+	local commandName="fpPushDir()"
+	fEcho_IfDebug "${commandName}"
 
-		local vlsString="$1"
-		local vlsFile="$2"
+	## Input
+	local vlsFolder="$1"
 
-		local vlsReturn="false"
+	## Validate
+	if [ -z "${vlsFolder}" ]; then fThrowError "${commandName}: You must provide a directory to change to."; fi
+	if [ ! -d "${vlsFolder}" ]; then fThrowError "${commandName}: Directory '${vlsFolder}' does not exist."; fi
 
-		if [ -f "${vlsFile}" ]; then
-			fDefineTrap_Error_Ignore
-				local vlsContents="$(cat ${vlsFile} | grep ${vlsString})"
-			#	echo "vlsContents = '${vlsContents}'"; exit 0
-			fDefineTrap_Error_Fatal
-			if [ -n "${vlsContents}" ]; then
-				vlsReturn="true"
-			fi
-		fi
+	#pushd "${vlsFolder}" 1> /dev/null  ## Too many problems dealing with pushd; the console output, erroring if in a subdir, etc.
+	cd "${vlsFolder}"                   ## cd is much simpler; and who cares if it can't "pop" back to previous directory?
 
-		echo "${vlsReturn}"
+}
 
-	}
 
-	##---------------------------------------------------------------------------------------
-	function fStrToUpper() { echo "$(echo "$@" | tr "[:lower:]" "[:upper:]")"; }
-	function fStrToLower() { echo "$(echo "$@" | tr "[:upper:]" "[:lower:]")"; }
+##---------------------------------------------------------------------------------------
+function fpEchoGoingToExecute_IfNotListOnly() {
+	##	Purpose:
+	##		- Echos a brief header if flagExecOrNot is not = "listonly".
+	##	History
+	##		- 20141003 JC: Created.
+	local commandName="fpEchoGoingToExecute_IfNotListOnly()"
+	fEcho_IfDebug "${commandName}"
 
-	##---------------------------------------------------------------------------------------
-	function fStrReplaceWithCaseInsensitive() {
-		##	Purpose: For every a-z or A-Z character (let's say "x"), replaces them with "[Xx]".
-		##	Uses:    For case-insensitive matching in tools such as rsync, tar - with not-quite-regex matching.
-		##	Returns: Modified string via echo. Capture with: MyVariable="$(fStrReplaceWithCaseInsensitive "${MyVariable}")"
-		##	History:
-		##		- 20140615 JC: Created.
-		local vlsInput="$@"
-		local vlsReturn=""
-		local vlsChar=""
-		## Character subs
-		for (( vliCount=0; vliCount<${#vlsInput}; vliCount++ )); do
-			vlsChar="${vlsInput:$vliCount:1}"
-			case "${vlsChar}" in
-				[a-zA-Z])
-					vlsReturn="${vlsReturn}[$(fStrToUpper "${vlsChar}")$(fStrToLower "${vlsChar}")]"
-					;;
-				*)
-					vlsReturn="${vlsReturn}${vlsChar}"
-					;;
-			esac
-		done
-		echo "${vlsReturn}"
-	}
-	## Test
-	#	fStrReplaceWithCaseInsensitive "Now is the time FOR all._,123."; exit 0
+	if [ "${flagExecOrNot}" == "listonly" ]; then
+		fEcho_Clean "Going to execute:"
+		fEcho_Clean ""
+	fi
+}
 
-	##---------------------------------------------------------------------------------------
-	function fStrSearchAndReplace() {
-		##	Purpose: For every match in a string, substitutes a replacement..
-		##	Returns: Modified string via echo. Capture with: MyVariable="$(fStrSearchAndReplace "${MyVariable}")"
-		##	History:
-		##		- 20140615 JC: Created.
-		local vlsInput="$1"
-		local vlsFind="$2"
-		local vlsReplace="$3"
-		local vlsReturn="${vlsInput//${vlsFind}/${vlsReplace}}"
-		echo "${vlsReturn}"
-	}
-	## Test
-	#	fStrSearchAndReplace "x₦x" "₦" "[0-9]"; exit 0
 
-	##---------------------------------------------------------------------------------------
-	function fStrReplaceWithMultilinePermutations() {
-		##	Purpose: For every match in a string, substitutes a replacement..
-		##	Returns: Modified string via echo. Capture with: MyVariable="$(fStrSearchAndReplace "${MyVariable}")"
-		##	History:
-		##		- 20140615 JC: Created.
 
-		local vlsInput="$1"
-		local vlsFind="$2"
-		local -a vlsReplacements=("${@:3}")
-		local vlsCurrentReplacement=""
-		local vlsLastReplacement=""
-		local -a vlsReturnArray=""
-		local -i vliReturnArrayAddCount=0
-		local vlsTempReturnWithReplacements=""
-		local vlbAtLeastOneReplacementMade="false"
-		local vlsReturn=""
 
-		## The first return element is free
-		readarray -t vlsReturnArray <<<"$vlsInput"
-		#echo -e "DEBUG: vlsReturnArray[@]:\n$(printf -- '%s\n' "${vlsReturnArray[@]}")"; exit
 
-		if [ ${#vlsReturnArray[@]} -gt 0 ] && [ ${#vlsReplacements[@]} -gt 0 ]; then
-			while true; do
-				#echo; echo "DEBUG: Top of Main loop"
 
-				## Return array loop
-				local -a vlsTempArray=""
-				local -i vliTempArrayIndex=0
-				vlbAtLeastOneReplacementMade="false"
-				for vlsCurrentReturn in "${vlsReturnArray[@]}"; do
-					#echo "DEBUG: Top of Return array loop"
-					#echo "DEBUG: vlsCurrentReturn='${vlsCurrentReturn}'"
 
-					## Replacement array loop
-					vlsLastReplacement="ThisWontMatchAnythingUseful_LKJDFKLjsdflkjsdflkjdfqoiuweyrlkjvliuyqwer"
-					for vlsCurrentReplacement in "${vlsReplacements[@]}"; do
-						#echo "DEBUG: Top of Replacement array loop"
-						#echo "DEBUG: vlsLastReplacement   ='${vlsLastReplacement}'"
-						#echo "DEBUG: vlsCurrentReplacement='${vlsCurrentReplacement}'"; sleep 1
 
-						if [ "${vlsCurrentReplacement}" == "${vlsLastReplacement}" ]; then
-							#echo "DEBUG: Replacement array loop break; current replacement same as last"; echo
-							break
-						else
 
-							## Replace only the first match
-							vlsTempReturnWithReplacements="${vlsCurrentReturn/${vlsFind}/${vlsCurrentReplacement}}"
-							#echo "DEBUG: vlsTempReturnWithReplacements='${vlsTempReturnWithReplacements}'"
 
-							if [ "${vlsTempReturnWithReplacements}" != "${vlsCurrentReturn}" ]; then
 
-								## Append replacement to temp array
-								#echo "DEBUG: vliTempArrayIndex='${vliTempArrayIndex}'"
-								if [ $vliTempArrayIndex -le 0 ]; then
-									local -a vlsTempArray=("${vlsTempReturnWithReplacements}")
-								else
-									local -a vlsTempArray=("${vlsTempArray[@]}" "${vlsTempReturnWithReplacements}")
-								fi
-								#echo -e "DEBUG: vlsTempArray[@]:\n$(printf -- '%s\n' "${vlsTempArray[@]}")"
-								#echo "DEBUG: new size of vlsTempArray = '${#vlsTempArray[@]}'"; echo
-								vliTempArrayIndex=($vliTempArrayIndex+1)
-								vlbAtLeastOneReplacementMade="true"
 
-							fi
-						fi
-						vlsLastReplacement="${vlsCurrentReplacement}"
-					done
-					#echo "DEBUG: Replacement array loop end; no more replacement items"; echo
 
-				done
-				#echo "DEBUG: Return array loop end; no more return array items"; echo
 
-				## Replace the return array with temp
-				if [ "${vlbAtLeastOneReplacementMade}" == "true" ]; then
-					#echo "DEBUG: vliReturnArrayAddCount='${vliReturnArrayAddCount}'"
-					local -a vlsReturnArray=("${vlsTempArray[@]}")
-					#echo -e "DEBUG: vlsReturnArray[@]:\n$(printf -- '%s\n' "${vlsReturnArray[@]}")"
-					#echo "DEBUG: new size of vlsReturnArray = '${#vlsReturnArray[@]}'"; echo
-					vliReturnArrayAddCount=($vliReturnArrayAddCount+1)
-				else
-					#echo "DEBUG: Return array loop break; no more replacements to make"; echo
-					break
-				fi
 
-				#echo -e "\nDEBUG: Bottom of main loop.\nvlsReturnArray[@]:\n$(printf -- '%s\n' "${vlsReturnArray[@]}")"
-			done
-			#echo "DEBUG: Recursive array loop end; no more matches"; echo
-		fi
-		## Build output string
-		vlsReturn="$(printf -- '%s\n' "${vlsReturnArray[@]}")"
 
-		## Return value
-		echo -e "${vlsReturn}"
-	}
-	## Test
-	#	clear; echo "$(fStrReplaceWithMultilinePermutations "OK□to□delete" "□" "" "[X]" "[Y]")"; exit 0
 
-	##---------------------------------------------------------------------------------------
-	function fEchoExpandedMatchV2() {
-		##	Returns many permutations of a match, expanded to multiple lines with line breaks - for --exclude-from and --include-from with RSync, Tar, etc.
-		##	Special input characters:
-		##		"A"		         = "[Aa]"							All alphabetic characters are case-insensitive
-		##		"₴"		(U+20B4) = "[a-zA-Z]"						Exactly one alpha match
-		##		"₦"		(U+20A6) = "[0-9]"							Exactly one numeric match
-		##		"✻"		(U+25CB) = Null, and "[a-zA-Z]"				Zero or exactly one alpha match
-		##		"△"		(U+25B3) = Null, and "[0-9]"				Zero or exactly one numeric match
-		##		"□"	(U+25A1) = Null, and "[^0-9a-zA-Z]"			Zero or exactly one non-alphanum match
-		##		"▶"		(U+25B6) = "**/", "**[^0-9a-zA-Z]", and ""	Beginning of directory or non alphanumeric character
-		##		"◀"		(U+25C0) = "/**", "[^0-9a-zA-Z]**", and ""	End of directory or non alphanumeric character
 
-		local vlsReturn="$@"
-		if [ -n "${vlsReturn}" ]; then
-			vlsReturn="$(fStrReplaceWithCaseInsensitive "${vlsReturn}")"
-			vlsReturn="$(fStrSearchAndReplace "${vlsReturn}" "₴" "[a-zA-Z]")"
-			vlsReturn="$(fStrSearchAndReplace "${vlsReturn}" "₦" "[0-9]")"
-			vlsReturn="$(fStrReplaceWithMultilinePermutations "${vlsReturn}" "✻" "" "[a-zA-Z]")"
-			vlsReturn="$(fStrReplaceWithMultilinePermutations "${vlsReturn}" "△" "" "[0-9]")"
-			vlsReturn="$(fStrReplaceWithMultilinePermutations "${vlsReturn}" "□" "" "[^0-9a-zA-Z]")"
-			vlsReturn="$(fStrReplaceWithMultilinePermutations "${vlsReturn}" "▶" "" "**[^0-9a-zA-Z]")"
-			vlsReturn="$(fStrReplaceWithMultilinePermutations "${vlsReturn}" "◀" "" "/" "[^0-9a-zA-Z]**")"
-		fi
 
-		echo "${vlsReturn}"
-	}
-	## Test
-	#	clear; fEchoExpandedMatchV2 "▶1a2₴3₦4✻5△6□7◀"; exit 0
-	#	clear; fEchoExpandedMatchV2 "▶1"; exit 0
-	#	clear; fEchoExpandedMatchV2 "▶1◀"; exit 0
-	#	clear; cmsExcludeList_Folder="${HOME}/tmp"; cmsExcludeList_Filespec="${HOME}/tmp/debug_$(basename $0)_DEPRECATED_fSetRepo_ExcludesFile.txt"; DEPRECATED_fSetRepo_ExcludesFile; gedit "${cmsExcludeList_Filespec}" &> /dev/null & disown; sleep 5; rm "${cmsExcludeList_Filespec}"; exit 0
 
-	##---------------------------------------------------------------------------------------
-	function fDo_IgnoreError() {
-		## 20140520 JC: Created
-		fDefineTrap_Error_Ignore
-			eval "$@"
-		fDefineTrap_Error_Fatal
-	}
 
-	##---------------------------------------------------------------------------------------
-	function fEchoAndDo_IgnoreError() {
-		## 20140520 JC: Created
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+##---------------------------------------------------------------------------------------
+function fReentrantFunction() {
+	fEcho_IfDebug "fReentrantFunction()"
+	if [ "${vmbLessVerbose}" != "true" ]; then fEcho ""; fi
+
+	fFunctionArgumentCannotBeEmpty "fReentrantFunction()" "$1" "1"
+
+
+}
+
+##---------------------------------------------------------------------------------------
+function fCleanup() {
+	if [ ! "${vmbInSudoSection}" == "true" ]; then
+		## Exiting script under normal execution
+		fEcho_IfDebug "fCleanup()"
+
 		fEcho ""
-		fEcho "Executing: eval \"$@\""
-		fDefineTrap_Error_Ignore
-			eval "$@"
-		fDefineTrap_Error_Fatal
-		fEcho_ResetBlankCounter
-	}
+	else
+		## Exiting while running under ExecutionEngine's sudo loop (not guaranteed to be called - e.g. if already sudo when script invoked).
+		fEcho_IfDebug "fCleanup() [in sudo loop]"
 
-	## ----------------------------------------------------------------------------------------
-	function fTrimString() {
-		## Trims leading and trailing whitespace characters from a string
-		## To use this function: MyString="$(fTrimString \"${MyString}\"")"
-		## 20140519 JC: Created
-	    local returnVal=$@
-	    returnVal="${returnVal#"${returnVal%%[![:space:]]*}"}"   # remove leading whitespace characters
-	    returnVal="${returnVal%"${returnVal##*[![:space:]]}"}"   # remove trailing whitespace characters
-	    echo -n "${returnVal}"
-	}
+	fi
+}
 
 
-	##---------------------------------------------------------------------------------------
-	function fDoFunctionAs_SpecifiedUser() {
-		## 20140311 JC: Created
-		fEcho_IfDebug "fDoFunctionAs_SpecifiedUser()"
-		local vlsFunctionName="$1"
-		local vlsUserName="$2"
-		local vlsArgs="${@:3}"
-		if [ -n "${vlsFunctionName}" ]; then
-			if [ -n "${vlsUserName}" ]; then
-				if [ "${USER}" == "${vlsUserName}" ]; then
-					## Already running as sudo, so just do invoke the function directly.
-					## 20140224 JC: Fixed bug by removing quotes.
-					$vlsFunctionName ${vlsArgs}
-				else
-					## Need to call self re-entrantly as sudo. The execution control section at bottom will handle reentrancy and function calling.
-					local vlsPath_Me="$(fGetFilePathOf_Me)"
-					sudo -H -u $cmsRunAsUser bash -c "${vlsPath_Me} reentrant_do_function ${vlsFunctionName} ${vlsArgs}"
-				fi
-			else
-				fThrowError "fDoFunctionAs_SpecifiedUser(): Programmer error - no username specified as an argument."
+#########################################################################################
+## Generic code - do not modify
+#########################################################################################
+
+##---------------------------------------------------------------------------------------
+function fStrIndentAllLines() {
+	##	Purpose:
+	##		- For a multiline string, indent all lines.
+	##	History
+	##		- 20141003 JC: Created.
+	local commandName="fStrIndentAllLines()"
+	fEcho_IfDebug "${commandName}"
+
+	local vlsInput="$@"
+	local vlsReturn=""
+
+	if [ -n "${vlsInput}" ]; then
+		while read -r vlsLine; do
+			if [ -n "${vlsReturn}" ]; then
+				vlsReturn="${vlsReturn}\n"
 			fi
-		else
-			fThrowError "fDoFunctionAs_SpecifiedUser(): Programmer error - no function name specified as an argument."
+			vlsReturn="${vlsReturn}    ${vlsLine}"
+		done <<< "${vlsInput}"
+	fi
+
+	echo -e "${vlsReturn}"
+
+}
+
+##---------------------------------------------------------------------------------------
+function fEchoOrEchoAndDo_IgnoreError() {
+	##	Purpose:
+	##		- Echos what will be done, or echos it and does it.
+	##	Input:
+	##		1 [REQUIRED]: The command to echo [and possibly execute].
+	##		2 [optional]: "listonly" to just list and not execute.
+	##	History:
+	##		- 20141103 JC: Created.
+	local commandName="fEchoOrEchoAndDo_IgnoreError()"
+	fEcho_IfDebug "${commandName}"
+
+	local vlsCommand="$1"
+	local vlsListOnly="$(fStrToLower "$2")"
+
+	if [ "${vlsListOnly}" == "listonly" ]; then
+		fEcho_Clean "    $1"
+	else
+		fEcho ""
+		fEchoAndDo_IgnoreError "$1"
+	fi
+
+}
+
+##---------------------------------------------------------------------------------------
+function fEchoOrEchoAndDo() {
+	##	Purpose:
+	##		- Echos what will be done, or echos it and does it.
+	##	Input:
+	##		1 [REQUIRED]: The command to echo [and possibly execute].
+	##		2 [optional]: "listonly" to just list and not execute.
+	##	History:
+	##		- 20141103 JC: Created.
+	local commandName="fEchoOrEchoAndDo()"
+	fEcho_IfDebug "${commandName}"
+
+	local vlsCommand="$1"
+	local vlsListOnly="$(fStrToLower "$2")"
+
+	if [ "${vlsListOnly}" == "listonly" ]; then
+		fEcho_Clean "    $1"
+	else
+		fEcho ""
+		fEchoAndDo "$1"
+	fi
+
+}
+
+##---------------------------------------------------------------------------------------
+function fAppendStrToVariableContents() {
+	##	Purpose: Appends a substring as a new line to an existing string stored in specified variable.
+	##	Input:
+	##		1: The variable name to append the contents of.
+	##		2: The contents to append. Ignored if null.
+	##	History:
+	##		- 20140911 JC: Created.
+	fEcho_IfDebug "fAppendStrToVariableContents()"
+
+	## Arguments
+	local vlsVariableName="$1"
+	local vlsAppendStr="$2"
+	#fEcho_IfDebug "fAppendStrToVariableContents(): ${vlsVariableName}+='${vlsAppendStr}'"
+
+	if [ -z "${vlsVariableName}" ]; then
+		fThrowError "fAppendStrToVariableContents(): No variable name was specified"
+	else
+
+		local vlsContent="${!vlsVariableName}"
+
+		## Add a new line to the content if it isn't null
+		if [ -n "${vlsContent}" ]; then
+			vlsContent="${vlsContent}\n"
 		fi
-	}
 
-	##---------------------------------------------------------------------------------------
-	function fGetWhich() {
-		##	Echos:
-		##		Results "which" but without erroring.
-		##	History:
-		##		- 20140304 JC: Created.
-		local vlsReturn=""
+		## Append string to content, even if it is null
+		vlsContent="${vlsContent}${vlsAppendStr}"
+
+		## Store new content to named variable
+		eval "${vlsVariableName}=\"${vlsContent}\""
+
+	fi
+
+}
+
+##---------------------------------------------------------------------------------------
+function fAppendStrToVariableContents_ContentsRequired() {
+	##	Purpose: Appends a substring as a new line to an existing string stored in specified variable. Errors if there is no content.
+	##	Input:
+	##		1: The variable name to append the contents of.
+	##		2: The contents to append.
+	##	History:
+	##		- 20140911 JC: Created.
+	fEcho_IfDebug "fAppendStrToVariableContents_ContentsRequired()"
+
+	## Input
+	local vlsVariableName="$1"
+	local vlsAppendStr="$2"
+
+	## Validation
+	if [ -z "${vlsVariableName}" ]; then
+		fThrowError "fAppendStrToVariableContents_ContentsRequired(): No variable name was specified"
+	elif [ -z "${vlsAppendStr}" ]; then
+		fThrowError "fAppendStrToVariableContents_ContentsRequired(): No content was specified to append to variable '${vlsVariableName}'."
+	else
+		fAppendStrToVariableContents "${vlsVariableName}" "${vlsAppendStr}"
+	fi
+
+}
+
+
+##---------------------------------------------------------------------------------------
+function fIsStringInFile() {
+	## 20140311 JC: Created
+	## Arg 1: String
+	## Arg 2: File
+
+	local vlsString="$1"
+	local vlsFile="$2"
+
+	local vlsReturn="false"
+
+	if [ -f "${vlsFile}" ]; then
 		fDefineTrap_Error_Ignore
-			vlsReturn="$(which $@ 2> /dev/null)"
+			local vlsContents="$(cat ${vlsFile} | grep ${vlsString})"
+		#	echo "vlsContents = '${vlsContents}'"; exit 0
 		fDefineTrap_Error_Fatal
-		echo "${vlsReturn}"
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fGetUname() {
-		##	Echos:
-		##		Results of uname -s or uname -o
-		##	History:
-		##		- 20140304 JC: Created.
-
-		local vlsReturn=""
-
-		## Get major name
-		fDefineTrap_Error_Ignore
-			vlsReturn="$(uname -s 2> /dev/null)"
-			if [ -z "${vlsReturn}" ]; then
-				vlsReturn="$(uname -o 2> /dev/null)"
-			fi
-		fDefineTrap_Error_Fatal
-
-		## Sanitize
-		if [ -z "${vlsReturn}" ]; then
-			vlsReturn="unknown"
+		if [ -n "${vlsContents}" ]; then
+			vlsReturn="true"
 		fi
-		vlsReturn="${vlsReturn,,}"
+	fi
 
-		## Returns
-		echo "${vlsReturn}"
+	echo "${vlsReturn}"
 
-	}
+}
 
-	##---------------------------------------------------------------------------------------
-	function fGetPlatform() {
-		##	Echos:
-		##		cygwin, macosx, or linux
-		##	History:
-		##		- 20140304 JC: Created.
-		local vlsReturn=""
-		local vlsUname="$(fGetUname)"
-		case "${vlsUname}" in
-			"linux")
-				vlsReturn="linux"
-			;;
-			"darwin")
-				vlsReturn="macosx"
-			;;
-			"sunos")
-				vlsReturn="solaris"
-			;;
-			"cygwin")
-				vlsReturn="windows"
-			;;
-			"mingw")
-				vlsReturn="windows"
-			;;
-			"freebsd")
-				vlsReturn="bsd"
-			;;
-			"netbsd")
-				vlsReturn="bsd"
-			;;
-			"openbsd")
-				vlsReturn="bsd"
-			;;
-			"freebsd")
-				vlsReturn="bsd"
-			;;
+##---------------------------------------------------------------------------------------
+function fStrToUpper() { echo "$(echo "$@" | tr "[:lower:]" "[:upper:]")"; }
+function fStrToLower() { echo "$(echo "$@" | tr "[:upper:]" "[:lower:]")"; }
+
+##---------------------------------------------------------------------------------------
+function fStrReplaceWithCaseInsensitive() {
+	##	Purpose: For every a-z or A-Z character (let's say "x"), replaces them with "[Xx]".
+	##	Uses:    For case-insensitive matching in tools such as rsync, tar - with not-quite-regex matching.
+	##	Returns: Modified string via echo. Capture with: MyVariable="$(fStrReplaceWithCaseInsensitive "${MyVariable}")"
+	##	History:
+	##		- 20140615 JC: Created.
+	local vlsInput="$@"
+	local vlsReturn=""
+	local vlsChar=""
+	## Character subs
+	for (( vliCount=0; vliCount<${#vlsInput}; vliCount++ )); do
+		vlsChar="${vlsInput:$vliCount:1}"
+		case "${vlsChar}" in
+			[a-zA-Z])
+				vlsReturn="${vlsReturn}[$(fStrToUpper "${vlsChar}")$(fStrToLower "${vlsChar}")]"
+				;;
 			*)
-				vlsReturn="${vlsUname}"
-			;;
+				vlsReturn="${vlsReturn}${vlsChar}"
+				;;
 		esac
-		echo "${vlsReturn}"
-	}
+	done
+	echo "${vlsReturn}"
+}
+## Test
+#	fStrReplaceWithCaseInsensitive "Now is the time FOR all._,123."; exit 0
 
-	##---------------------------------------------------------------------------------------
-	function fGetOS() {
-		##	Echos:
-		##		ubuntu, linuxmint, solaris, cygwin, etc.
-		##	History:
-		##		- 20140304 JC: Created.
-		##	TODO: Test on different platforms.
-		local vlsReturn=""
-		local vlsUname="$(fGetUname)"
-		local vlsPlatform="$(fGetPlatform)"
-		local vlsLsbReleaseIs=""
-		fDefineTrap_Error_Ignore
-			vlsLsbReleaseIs="$(lsb_release -is 2> /dev/null)"
-			vlsLsbReleaseIs="${vlsLsbReleaseIs,,}"
-		fDefineTrap_Error_Fatal
+##---------------------------------------------------------------------------------------
+function fStrSearchAndReplace() {
+	##	Purpose: For every match in a string, substitutes a replacement..
+	##	Returns: Modified string via echo. Capture with: MyVariable="$(fStrSearchAndReplace "${MyVariable}")"
+	##	History:
+	##		- 20140615 JC: Created.
+	local vlsInput="$1"
+	local vlsFind="$2"
+	local vlsReplace="$3"
+	local vlsReturn="${vlsInput//${vlsFind}/${vlsReplace}}"
+	echo "${vlsReturn}"
+}
+## Test
+#	fStrSearchAndReplace "x₦x" "₦" "[0-9]"; exit 0
 
+##---------------------------------------------------------------------------------------
+function fStrReplaceWithMultilinePermutations() {
+	##	Purpose: For every match in a string, substitutes a replacement..
+	##	Returns: Modified string via echo. Capture with: MyVariable="$(fStrSearchAndReplace "${MyVariable}")"
+	##	History:
+	##		- 20140615 JC: Created.
 
-		case "${vlsPlatform}" in
-			"linux")
-				vlsReturn="${vlsLsbReleaseIs}"
-			;;
-			"macosx")
-				vlsReturn="${vlsLsbReleaseIs}"
-			;;
-			"solaris")
-				vlsReturn="${vlsLsbReleaseIs}"
-			;;
-			"windows")
-				vlsReturn="$(fGetUname)"
-			;;
-			*)
-				vlsReturn="unknown"
-			;;
-		esac
-		echo "${vlsReturn}"
-	}
+	local vlsInput="$1"
+	local vlsFind="$2"
+	local -a vlsReplacements=("${@:3}")
+	local vlsCurrentReplacement=""
+	local vlsLastReplacement=""
+	local -a vlsReturnArray=""
+	local -i vliReturnArrayAddCount=0
+	local vlsTempReturnWithReplacements=""
+	local vlbAtLeastOneReplacementMade="false"
+	local vlsReturn=""
 
-	##---------------------------------------------------------------------------------------
-	function fIsOS_DebianBased() {
-		##	Echos: true or false
-		##	History:
-		##		- 20140304 JC: Created.
-		local vlsReturn="false"
-		if [ "$(fGetPlatform)" == "linux" ]; then
-			case "$(fGetOS)" in
-				debian )
-					vlsReturn="true"
-				;;
-				ubuntu | xubuntu | kubuntu | lubuntu )
-					vlsReturn="true"
-				;;
-				mint | linuxmint )
-					vlsReturn="true"
-				;;
-			esac
-		fi
-		echo "${vlsReturn}"
-	}
+	## The first return element is free
+	readarray -t vlsReturnArray <<<"$vlsInput"
+	#echo -e "DEBUG: vlsReturnArray[@]:\n$(printf -- '%s\n' "${vlsReturnArray[@]}")"; exit
 
-	##---------------------------------------------------------------------------------------
-	function fIsOS_FedoraBased() {
-		##	Echos: true or false
-		##	History:
-		##		- 20140304 JC: Created.
-		local vlsReturn="false"
-		if [ "$(fGetPlatform)" == "linux" ]; then
-			case "$(fGetOS)" in
-				fedora | redhat | centos | oraclelinux )
-					vlsReturn="true"
-				;;
-			esac
-		fi
-		echo "${vlsReturn}"
-	}
+	if [ ${#vlsReturnArray[@]} -gt 0 ] && [ ${#vlsReplacements[@]} -gt 0 ]; then
+		while true; do
+			#echo; echo "DEBUG: Top of Main loop"
 
-	##---------------------------------------------------------------------------------------
-	function fGetPreferredEditor_GUI() {
-		## 20140224 JC: Created
-		local vlsReturn=""
-		if   [ "$(fIsInPath gedit)" == "true" ]; then
-			vlsReturn="gedit"
-		elif [ "$(fIsInPath pluma)" == "true" ]; then
-			vlsReturn="pluma"
-		elif [ "$(fIsInPath mousepad)" == "true" ]; then
-			vlsReturn="mousepad"
-		elif [ "$(fIsInPath geany)" == "true" ]; then
-			vlsReturn="geany"
-		else
-			fThrowError "No suitable GUI editor installed on system."
-		fi
-		echo "${vlsReturn}"
-	}
+			## Return array loop
+			local -a vlsTempArray=""
+			local -i vliTempArrayIndex=0
+			vlbAtLeastOneReplacementMade="false"
+			for vlsCurrentReturn in "${vlsReturnArray[@]}"; do
+				#echo "DEBUG: Top of Return array loop"
+				#echo "DEBUG: vlsCurrentReturn='${vlsCurrentReturn}'"
 
-	##---------------------------------------------------------------------------------------
-	function fGetPreferredEditor_CLI() {
-		## 20140224 JC: Created
-		local vlsReturn=""
-		if   [ "$(fIsInPath nano)" == "true" ]; then
-			vlsReturn="nano"
-		elif [ "$(fIsInPath pico)" == "true" ]; then
-			vlsReturn="pico"
-		elif [ "$(fIsInPath vi)" == "true" ]; then
-			vlsReturn="vi"
-		else
-			fThrowError "No suitable CLI editor installed on system."
-		fi
-		echo "${vlsReturn}"
-	}
+				## Replacement array loop
+				vlsLastReplacement="ThisWontMatchAnythingUseful_LKJDFKLjsdflkjsdflkjdfqoiuweyrlkjvliuyqwer"
+				for vlsCurrentReplacement in "${vlsReplacements[@]}"; do
+					#echo "DEBUG: Top of Replacement array loop"
+					#echo "DEBUG: vlsLastReplacement   ='${vlsLastReplacement}'"
+					#echo "DEBUG: vlsCurrentReplacement='${vlsCurrentReplacement}'"; sleep 1
 
-	##---------------------------------------------------------------------------------------
-	function fPromptYN() {
-		## 20140219 JRC: Copied/refactored from fPromptToRunScript().
-		fEcho_IfDebug "fPromptYN()"
-
-		local vlsTemp=""
-		local -l vlsResponse=""
-
-		read -p "Continue? (Y/n) " vlsTemp
-		vlsResponse="${vlsTemp,,}"  ## Convert to lower-case
-		fEcho_ResetBlankCounter
-
-		case "$vlsResponse" in
-			("y"|"ye"|"yes")
-				:
-			;;
-			(*)
-				fEcho "User declined."
-				exit 0
-			;;
-		esac
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fPromptToRunScript() {
-		## 20130514 JRC: Copied from old jclibrary001-v001 and stripped down to its essentials.
-		## 20140219 JC:
-		##		- Moved logic into fPromptYN()
-		##		- Renamed from fPromptToRunScript().
-		fEcho_IfDebug "fPromptToRunScript()"
-		fpGenericWrapper_ShowDescriptionAndCopyright
-		fPromptYN
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fFolderMustExist() {
-		## 20140219 JC: Created.
-		fEcho_IfDebug "fFolderMustExist()"
-		local vlsArg="$@"
-		if [ ! -d "${vlsArg}" ]; then
-			fThrowError "Folder doesn't exist: \"${vlsArg}\""
-		fi
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fFolderCannotExist() {
-		## 20140219-07 JC: Created.
-		fEcho_IfDebug "fFolderCannotExist()"
-		local vlsArg="$@"
-		if [ -d "${vlsArg}" ]; then
-			fThrowError "Folder must not exist: \"${vlsArg}\""
-		fi
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fIsInvokedFromCLI() {
-		## 20140219 JC: Copied/refactored/simplified from "...0-common/includes/...".
-		local -l vlbTemp="false"
-		if [ -t 0 ]; then
-			vlbTemp="true"
-		fi
-		echo "${vlbTemp}"
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fMsgBlocking() {
-		## 20140219 JC: Copied/refactored/simplified from "...0-common/includes/...".
-		fEcho_IfDebug "fMsgBlocking()"
-
-		local vlsMessage="$@"
-		local vlsScriptName="$(fGetFileName_OfMe)"
-
-		if [ "$(fIsInvokedFromCLI)" == "true" ]; then
-			if [ -z "${vlsMessage}" ]; then vlsMessage="Press [ENTER] when ready."; fi
-			read -p "${vlsMessage}"
-		else
-			if [ -z "${vlsMessage}" ]; then vlsMessage="Press [OK] when ready."; fi
-			zenity --info --title "${vlsScriptName} Pause" --text "${vlsMessage}"
-		fi
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fIsSessionGUI() {
-		## 20140219 JC: Copied/refactored/simplified from "...0-common/includes/...".
-		local -l vlbTemp="false"
-		if [ -n "${DISPLAY}" ]; then
-			vlbTemp="true"
-		fi
-		echo "${vlbTemp}"
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fEdit_Blocking() {
-		## 20140219 JC: Copied/refactored/simplified from "...0-common/includes/...".
-		fEcho_IfDebug "fEdit_Blocking()"
-		if [ "$(fIsSessionGUI)" == "true" ]; then
-			fEdit_GUI_Blocking "$@"
-		else
-			fEdit_CLI "$@"
-		fi
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fEdit_GUI_Blocking() {
-		## 20140219 JC: Copied/refactored/simplified from "...0-common/includes/...".
-		fEcho_IfDebug "fEdit_GUI()"
-		fFunctionArgumentCannotBeEmpty "fEdit_GUI()" "1" "$1"
-
-		if [ "$(fIsInvokedFromCLI)" == "true" ]; then
-			fEcho "Editing \"$@\"; script will resume when editor is closed."
-			$(fGetPreferredEditor_GUI) "$@" &> /dev/null
-		else
-			fEdit_GUI_NonBlocking
-			fMsgBlocking "Press [OK] when you are finished editing."
-		fi
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fEdit_GUI_NonBlocking() {
-		## 20140219 JC: Copied/refactored/simplified from "...0-common/includes/...".
-		fEcho_IfDebug "fEdit_GUI_NonBlocking()"
-		fFunctionArgumentCannotBeEmpty "fEdit_GUI_NonBlocking()" "1" "$1"
-		$(fGetPreferredEditor_GUI) "$@" &> /dev/null & disown
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fEdit_CLI() {
-		## 20140219 JC: Copied/refactored/simplified from "...0-common/includes/...".
-		fEcho_IfDebug "fEdit_CLI()"
-
-		fFunctionArgumentCannotBeEmpty "fEdit_CLI()" "1" "$1"
-
-		local vlsFile="$@"
-
-		$(fGetPreferredEditor_CLI) "${vlsFile}"
-
-		fEcho_ResetBlankCounter
-		fEcho ""
-		echo "------------------------------------ BOF --------------------------------------"
-		cat "${vlsFile}"
-		echo "------------------------------------ EOF --------------------------------------"
-		fEcho_ResetBlankCounter
-		fEcho ""
-
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fPing() {
-		## 20140219 JC: Copied/refactored/simplified from "jcPing".
-		fEcho_IfDebug "fPing()"
-
-		local vlsAddress="$1"
-		local vlsReply=""
-
-		## Do the ping.
-		fDefineTrap_Error_Ignore
-			vlsReply="$(ping -c 1 -w 2 -W 2 ${vlsAddress}  | grep icmp_ 2> /dev/null)"
-		fDefineTrap_Error_Fatal
-
-		##	Unused ping options:
-		##		-D .......... Print timestamp
-
-		## Note if no reply
-		if [ -z "${vlsReply}" ]; then vlsReply="(Unreachable, error, and/or no reply.)"; fi
-
-		## Pad output
-		vlsFill='...........'
-		local vlsOutput=""
-		local vlsTimestamp=$(date "+%Y%m%d-%H%M%S")
-		vlsOutput=$(printf "%s %s $vlsReply\n" $vlsAddress ${vlsFill:${#vlsAddress}})
-		echo "[ ${vlsTimestamp} ] ${vlsOutput}"
-
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fMakeDir() {
-		## 20140219 JC: Copied/refactored/simplified from "jcinit_custom-folders-and-symlinks2".
-		fEcho_IfDebug "fMakeDir()"
-
-		local vlsFolderPath="$1"
-
-		if [ "${mlbCheckOnly}" == "true" ]; then
-			## Check only
-
-			if [ -d "${vlsFolderPath}" ]; then
-				fEcho "FYI: The directory \"${vlsFolderPath}\" already exists."
-			fi
-
-		else
-			## Do it
-
-			## Make the folder
-			fEchoAndDo "mkdir -p ${vlsFolderPath}"
-
-		fi
-
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fMakeSymlink() {
-		## 20140219 JC: Copied/refactored/simplified from "jcinit_custom-folders-and-symlinks2".
-		fEcho_IfDebug "fMakeSymlink()"
-
-		local vlsSource="$1"
-		local vlsLink="$2"
-		local clsExistsAndNotLink="Object \"${vlsFolderPath}\" exists and is not a symlink."
-
-		if [ "${mlbCheckOnly}" == "true" ]; then
-			## Check only
-
-			if [ -e "${vlsSource}" ]; then
-				if [ -e "${vlsLink}" ]; then
-					if [ -h "${vlsLink}" ]; then
-						fEcho "FYI: The symlink \"${vlsLink}\" already exists but will be deleted and re-created."
+					if [ "${vlsCurrentReplacement}" == "${vlsLastReplacement}" ]; then
+						#echo "DEBUG: Replacement array loop break; current replacement same as last"; echo
+						break
 					else
-						fThrowError "${clsExistsAndNotLink}"
+
+						## Replace only the first match
+						vlsTempReturnWithReplacements="${vlsCurrentReturn/${vlsFind}/${vlsCurrentReplacement}}"
+						#echo "DEBUG: vlsTempReturnWithReplacements='${vlsTempReturnWithReplacements}'"
+
+						if [ "${vlsTempReturnWithReplacements}" != "${vlsCurrentReturn}" ]; then
+
+							## Append replacement to temp array
+							#echo "DEBUG: vliTempArrayIndex='${vliTempArrayIndex}'"
+							if [ $vliTempArrayIndex -le 0 ]; then
+								local -a vlsTempArray=("${vlsTempReturnWithReplacements}")
+							else
+								local -a vlsTempArray=("${vlsTempArray[@]}" "${vlsTempReturnWithReplacements}")
+							fi
+							#echo -e "DEBUG: vlsTempArray[@]:\n$(printf -- '%s\n' "${vlsTempArray[@]}")"
+							#echo "DEBUG: new size of vlsTempArray = '${#vlsTempArray[@]}'"; echo
+							vliTempArrayIndex=($vliTempArrayIndex+1)
+							vlbAtLeastOneReplacementMade="true"
+
+						fi
 					fi
-				else
-					if [ -h "${vlsLink}" ]; then
-						fEcho "FYI: The symlink \"${vlsLink}\" is a broken symlink and will be deleted and re-created."
-					fi
-				fi
+					vlsLastReplacement="${vlsCurrentReplacement}"
+				done
+				#echo "DEBUG: Replacement array loop end; no more replacement items"; echo
+
+			done
+			#echo "DEBUG: Return array loop end; no more return array items"; echo
+
+			## Replace the return array with temp
+			if [ "${vlbAtLeastOneReplacementMade}" == "true" ]; then
+				#echo "DEBUG: vliReturnArrayAddCount='${vliReturnArrayAddCount}'"
+				local -a vlsReturnArray=("${vlsTempArray[@]}")
+				#echo -e "DEBUG: vlsReturnArray[@]:\n$(printf -- '%s\n' "${vlsReturnArray[@]}")"
+				#echo "DEBUG: new size of vlsReturnArray = '${#vlsReturnArray[@]}'"; echo
+				vliReturnArrayAddCount=($vliReturnArrayAddCount+1)
 			else
-				fEcho "FYI: Source doesn't exist to link to: \"${vlsSource}\""
+				#echo "DEBUG: Return array loop break; no more replacements to make"; echo
+				break
 			fi
 
-		else
-			## Do it
-
-			## Just to be safe, double-check that it is a symlink before deleting it
-			if [ -e "${vlsLink}" ]; then
-				if [ -h "${vlsLink}" ]; then
-					## Remove the existing link
-					fEchoAndDo "rm ${vlsLink}"
-				else
-					## It's not a link; throw an error to avoid deleting data
-					fThrowError "${clsExistsAndNotLink}"
-				fi
-			else
-				if [ -h "${vlsLink}" ]; then
-					## It's a dead link; delete it
-					fEchoAndDo "rm ${vlsLink}"
-				fi
-			fi
-
-			## Create the new link
-			if [ -e "${vlsSource}" ]; then
-				fEchoAndDo "ln -s ${vlsSource} ${vlsLink}"
-			fi
-
-		fi
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fEcho_VariableAndValue() {
-		## 20140206-07 JC: Copied/refactored/simplified from "...0-common/includes/...".
-		local vlsVariableName="$1"
-		if [ -z "${vlsVariableName}" ]; then
-			fThrowError "fEcho_VariableAndValue(): No variable to echo value of."
-		else
-			local vlsValue="${!vlsVariableName}"
-			fEcho "${vlsVariableName} = \"${vlsValue}\""
-		fi
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fEcho_IfDebug_VariableAndValue() {
-		## 20140206-07 JC: Copied/refactored/simplified from "...0-common/includes/...".
-		local vlsVariableName="$1"
-		if [ -z "${vlsVariableName}" ]; then
-			fThrowError "fEcho_IfDebug_VariableAndValue(): No variable to echo value of."
-		else
-			local vlsValue="${!vlsVariableName}"
-			fEcho_IfDebug "${vlsVariableName} = \"${vlsValue}\""
-		fi
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fEcho_Clean() {
-		## 20140206-07 JC: Updated with "fold" to wrap at words.
-		if [ -n "$1" ]; then
-			local -i vliActualCols=$(tput cols)
-			local -i vliMaxIdealCols=200
-			local -i vliColumns=$(fMath_Int_Min $vliActualCols $vliMaxIdealCols)
-			echo "$@" | fold -s -w $vliColumns
-			vmbLastLineWasBlank="false"
-		else
-			if [ "${vmbLastLineWasBlank}" != "true" ]; then
-				echo
-			fi
-			vmbLastLineWasBlank="true"
-		fi
-	}
-	declare vmbLastEchoWasBlank="false"
-
-	##------------------------------------------------------------------------------
-	function fMath_Int_Max() {
-		## Echos the maximum of two integers
-		## 20140206-07 JC: Created.
-		local -i vliArg1=$1
-		local -i vliArg2=$2
-		local -i vliReturn=0
-		if [ $vliArg1 > $vliArg2 ]; then
-			vliReturn=vliArg1
-		else
-			vliReturn=vliArg2
-		fi
-		echo $vliReturn
-	}
-
-	##------------------------------------------------------------------------------
-	function fMath_Int_Min() {
-		## Echos the minimum of two integers
-		## 20140206-07 JC: Created.
-		local -i vliArg1=$1
-		local -i vliArg2=$2
-		local -i vliReturn=0
-		if [ $vliArg1 -lt $vliArg2 ]; then
-			vliReturn=vliArg1
-		else
-			vliReturn=vliArg2
-		fi
-		echo $vliReturn
-	}
-
-	##------------------------------------------------------------------------------
-	function fPrintLineTerminalWidth() {
-		## 20140206-07 JC: Created.
-		local -i vliCount
-		local -i vliColumns=$(tput cols)
-		local clsCharacter="—" ## ▞▚▒░▓䷀█▂▁▔—
-		local vlsOutput=""
-		for ((vliCount = 1 ; vliCount <= vliColumns ; vliCount++)); do
-			vlsOutput="${vlsOutput}${clsCharacter}"
+			#echo -e "\nDEBUG: Bottom of main loop.\nvlsReturnArray[@]:\n$(printf -- '%s\n' "${vlsReturnArray[@]}")"
 		done
-		#echo
-		echo "$(tput setaf 5)${vlsOutput}$(tput sgr 0)"
-		#echo
-	}
+		#echo "DEBUG: Recursive array loop end; no more matches"; echo
+	fi
+	## Build output string
+	vlsReturn="$(printf -- '%s\n' "${vlsReturnArray[@]}")"
 
-	##---------------------------------------------------------------------------------------
-	function fAppendToFile() {
-		## 20140206-07 JC: Created.
-		fEcho_IfDebug "fAppendToFile()"
+	## Return value
+	echo -e "${vlsReturn}"
+}
+## Test
+#	clear; echo "$(fStrReplaceWithMultilinePermutations "OK□to□delete" "□" "" "[X]" "[Y]")"; exit 0
 
-		local vlsFile="$1"
-		local vlsWhatToOutput="${@:2}"
+##---------------------------------------------------------------------------------------
+function fEchoExpandedMatchV2() {
+	##	Returns many permutations of a match, expanded to multiple lines with line breaks - for --exclude-from and --include-from with RSync, Tar, etc.
+	##	Special input characters:
+	##		"A"		         = "[Aa]"							All alphabetic characters are case-insensitive
+	##		"₴"		(U+20B4) = "[a-zA-Z]"						Exactly one alpha match
+	##		"₦"		(U+20A6) = "[0-9]"							Exactly one numeric match
+	##		"✻"		(U+25CB) = Null, and "[a-zA-Z]"				Zero or exactly one alpha match
+	##		"△"		(U+25B3) = Null, and "[0-9]"				Zero or exactly one numeric match
+	##		"□"	(U+25A1) = Null, and "[^0-9a-zA-Z]"			Zero or exactly one non-alphanum match
+	##		"▶"		(U+25B6) = "**/", "**[^0-9a-zA-Z]", and ""	Beginning of directory or non alphanumeric character
+	##		"◀"		(U+25C0) = "/**", "[^0-9a-zA-Z]**", and ""	End of directory or non alphanumeric character
 
-		fVariableCannotBeEmpty "vlsFile"
+	local vlsReturn="$@"
+	if [ -n "${vlsReturn}" ]; then
+		vlsReturn="$(fStrReplaceWithCaseInsensitive "${vlsReturn}")"
+		vlsReturn="$(fStrSearchAndReplace "${vlsReturn}" "₴" "[a-zA-Z]")"
+		vlsReturn="$(fStrSearchAndReplace "${vlsReturn}" "₦" "[0-9]")"
+		vlsReturn="$(fStrReplaceWithMultilinePermutations "${vlsReturn}" "✻" "" "[a-zA-Z]")"
+		vlsReturn="$(fStrReplaceWithMultilinePermutations "${vlsReturn}" "△" "" "[0-9]")"
+		vlsReturn="$(fStrReplaceWithMultilinePermutations "${vlsReturn}" "□" "" "[^0-9a-zA-Z]")"
+		vlsReturn="$(fStrReplaceWithMultilinePermutations "${vlsReturn}" "▶" "" "**[^0-9a-zA-Z]")"
+		vlsReturn="$(fStrReplaceWithMultilinePermutations "${vlsReturn}" "◀" "" "/" "[^0-9a-zA-Z]**")"
+	fi
 
-		echo "${vlsWhatToOutput}" >> "${vlsFile}"
+	echo "${vlsReturn}"
+}
+## Test
+#	clear; fEchoExpandedMatchV2 "▶1a2₴3₦4✻5△6□7◀"; exit 0
+#	clear; fEchoExpandedMatchV2 "▶1"; exit 0
+#	clear; fEchoExpandedMatchV2 "▶1◀"; exit 0
+#	clear; cmsExcludeList_Folder="${HOME}/tmp"; cmsExcludeList_Filespec="${HOME}/tmp/debug_$(basename $0)_DEPRECATED_fSetRepo_ExcludesFile.txt"; DEPRECATED_fSetRepo_ExcludesFile; gedit "${cmsExcludeList_Filespec}" &> /dev/null & disown; sleep 5; rm "${cmsExcludeList_Filespec}"; exit 0
 
-	}
+##---------------------------------------------------------------------------------------
+function fDo_IgnoreError() {
+	## 20140520 JC: Created
+	fDefineTrap_Error_Ignore
+		eval "$@"
+	fDefineTrap_Error_Fatal
+}
 
-	##---------------------------------------------------------------------------------------
-	function fAppendCommentToFile() {
-		fEcho_IfDebug "fAppendCommentToFile()"
+##---------------------------------------------------------------------------------------
+function fEchoAndDo_IgnoreError() {
+	## 20140520 JC: Created
+	fEcho ""
+	fEcho "Executing: eval \"$@\""
+	fDefineTrap_Error_Ignore
+		eval "$@"
+	fDefineTrap_Error_Fatal
+	fEcho_ResetBlankCounter
+}
 
-		local vlsFile="$1"
-		local vlsWhatToOutput="${@:2}"
+## ----------------------------------------------------------------------------------------
+function fTrimString() {
+	## Trims leading and trailing whitespace characters from a string
+	## To use this function: MyString="$(fTrimString \"${MyString}\"")"
+	## 20140519 JC: Created
+	local returnVal=$@
+	returnVal="${returnVal#"${returnVal%%[![:space:]]*}"}"   # remove leading whitespace characters
+	returnVal="${returnVal%"${returnVal##*[![:space:]]}"}"   # remove trailing whitespace characters
+	echo -n "${returnVal}"
+}
 
-		if [ -z "${vlsWhatToOutput}" ]; then
-			vlsWhatToOutput="##"
-		else
-			vlsWhatToOutput="## ${vlsWhatToOutput}"
-		fi
 
-		fAppendToFile "${vlsFile}" "${vlsWhatToOutput}"
-
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fVariableCannotBeEmpty() {
-		## 20140206-07 JC: Created.
-		fEcho_IfDebug "fVariableCannotBeEmpty()"
-
-		#local vlsCallingFunction="$1"  ## Too hard to remember to include this
-		local vlsVariableName="$1"
-		local vlsVariableValue="${!vlsVariableName}"
-
-		if [ -z "${vlsVariableValue}" ]; then
-			fThrowError "The variable \"${vlsVariableName}\" cannot be empty."
-		fi
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fFunctionArgumentCannotBeEmpty() {
-		## 20140206-07 JC: Created.
-		fEcho_IfDebug "fFunctionArgumentCannotBeEmpty()"
-
-		local vlsCallingFunction="$1"
-		local vlsVariableOrdinal="$2"
-		local vlsVariableValue="$3"
-
-		if [ -z "${vlsVariableValue}" ]; then
-			fThrowError "Parameter ${vlsVariableOrdinal} of function ${vlsCallingFunction} cannot be empty."
-		fi
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fFileMustExist() {
-		## 20140206-07 JC: Created.
-		fEcho_IfDebug "fFileMustExist()"
-		local vlsFile="$@"
-		#fEcho_IfDebug_VariableAndValue "vlsFile"
-		if [ ! -f "${vlsFile}" ]; then
-			fThrowError "File does not exist: \"${vlsFile}\""
-		fi
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fFileCannotExist() {
-		## 20140206-07 JC: Created.
-		fEcho_IfDebug "fFileCannotExist()"
-		local vlsFile="$@"
-		if [ -f "${vlsFile}" ]; then
-			fThrowError "File must not exist: \"${vlsFile}\""
-		fi
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fFolderCannotHaveContents() {
-		## 20140206-07 JC: Created.
-		fEcho_IfDebug "fFolderCannotHaveContents()"
-		local vlsFolder="$@"
-		if [ "$(fDoesFolderHaveContents \"${vlsFolder}\")" == "true" ]; then
-			fThrowError "Files already exist in folder \"${vlsFolder}\""
-		fi
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fDoesFolderHaveContents() {
-		## 20140206-07 JC: Created.
-		local vlsFolder="$@"
-		local vlsReturn="false"
-		if [ -d "${vlsFolder}" ]; then
-			if [ -n "$(ls -A \"${vlsFolder}\")" ]; then
-				vlsReturn="true"
-			fi
-		fi
-		echo "${vlsReturn}"
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fDoesFolderExist() {
-		## 20140206-07 JC: Created.
-		local vlsFolder="$@"
-		local vlsReturn="false"
-		if [ -d "${vlsFolder}" ]; then
-			vlsReturn="true"
-		fi
-		echo "${vlsReturn}"
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fDoesFileExist() {
-		## 20140206-07 JC: Created.
-		local vlsFile="$@"
-		local vlsReturn="false"
-		if [ -f "${vlsFile}" ]; then
-			vlsReturn="true"
-		fi
-		echo "${vlsReturn}"
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fDoesFileOrFolderExist() {
-		## 20140206-07 JC: Created.
-		local vlsFileOrFolder="$@"
-		local vlsReturn="false"
-		if [ -e "${vlsFileOrFolder}" ]; then
-			vlsReturn="true"
-		fi
-		echo "${vlsReturn}"
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fMustBeInPath() {
-		## 20140206-07 JC: Created.
-		fEcho_IfDebug "fMustBeInPath()"
-
-		local vlsCheck="$(fTrim $1)"
-		#fEcho_IfDebug_VariableAndValue "vlsCheck"
-
-		if [ -z "${vlsCheck}" ]; then
-			fThrowError "fMustBeInPath(): Nothing to check."
-		else
-
-			local vlsWhich=$(which ${vlsCheck})
-			#fEcho_IfDebug "fMustBeInPath(): which ${vlsCheck} = \"${vlsWhich}\")"
-
-			if [ -z "${vlsWhich}" ]; then
-				fThrowError "The command \"${vlsCheck}\" must be in path, but isn’t."
-			fi
-
-		fi
-
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fIsInPath() {
-		## 20140206-07 JC: Created.
-		local vlsCheck="$1"
-		local vlsReturn="false"
-		if [ -n "${vlsCheck}" ]; then
-			local vlsWhich=$(which ${vlsCheck})
-			#vlsWhich=$(fTrim ${vlsWhich})
-			if [ -n "${vlsWhich}" ]; then
-				vlsReturn="true"
-			fi
-		fi
-		echo "${vlsReturn}"
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fTrim() {
-		## 20140206-07 JC: Created.
-		local vlsTemp=$@
-		vlsTemp="${vlsTemp#"${vlsTemp%%[![:space:]]*}"}"   # remove leading whitespace characters
-		vlsTemp="${vlsTemp%"${vlsTemp##*[![:space:]]}"}"   # remove trailing whitespace characters
-		if [ -n "$vlsTemp" ]; then
-			echo -n "$vlsTemp"
-		fi
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fGetTimeStamp() {
-		## 20140129 JC: Created.
-		fEcho_IfDebug "fGetTimeStamp()"
-		echo $(date "+%Y%m%d-%H%M%S")
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fDoFunctionAs_Sudo() {
-		fEcho_IfDebug "fDoFunctionAs_Sudo()"
-		local vlsFunctionName="$1"
-		local vlsArgs="${@:2}"
-		if [ -n "${vlsFunctionName}" ]; then
-			if [ "$(fIsSudo)" == "true" ]; then
+##---------------------------------------------------------------------------------------
+function fDoFunctionAs_SpecifiedUser() {
+	## 20140311 JC: Created
+	fEcho_IfDebug "fDoFunctionAs_SpecifiedUser()"
+	local vlsFunctionName="$1"
+	local vlsUserName="$2"
+	local vlsArgs="${@:3}"
+	if [ -n "${vlsFunctionName}" ]; then
+		if [ -n "${vlsUserName}" ]; then
+			if [ "${USER}" == "${vlsUserName}" ]; then
 				## Already running as sudo, so just do invoke the function directly.
 				## 20140224 JC: Fixed bug by removing quotes.
 				$vlsFunctionName ${vlsArgs}
 			else
 				## Need to call self re-entrantly as sudo. The execution control section at bottom will handle reentrancy and function calling.
 				local vlsPath_Me="$(fGetFilePathOf_Me)"
-				fGetSudo
-				sudo $vlsPath_Me "reentrant_do_function" "${vlsFunctionName}" "${vlsArgs}"
+				sudo -H -u $cmsRunAsUser bash -c "${vlsPath_Me} reentrant_do_function ${vlsFunctionName} ${vlsArgs}"
 			fi
 		else
-			fThrowError "fDoFunctionAs_Sudo(): Programmer error - no function name specified as an argument."
+			fThrowError "fDoFunctionAs_SpecifiedUser(): Programmer error - no username specified as an argument."
 		fi
-	}
+	else
+		fThrowError "fDoFunctionAs_SpecifiedUser(): Programmer error - no function name specified as an argument."
+	fi
+}
 
-	##---------------------------------------------------------------------------------------
-	function fGetSudo() {
-		if [ "$(fIsSudoValid)" == "false" ] || [ "${vmbLessVerbose}" != "true" ]; then
-			fEcho "You may be prompted to enter password to verify sudo role ..."
-		fi
-		sudo echo "[ Sudo role verified. ]"
-		fEcho_ResetBlankCounter
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fIsSudo() {
-		local -l vlbReturn="false"
-		if [ "$(id -u)" == "0" ]; then
-			vlbReturn="true"
-		fi
-		echo "${vlbReturn}"
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fIsSudoValid() {
-		fDefineTrap_Error_Ignore
-			local -l vlbReturn="false"
-			## First check to see if we are already sudo
-			if [ "$(id -u)" == "0" ]; then
-				vlbReturn="true"
-			else
-				## Next, check to see if sudo is still cached
-				sudo -n echo &> /dev/null
-				if [ $? -eq 0 ]; then
-					vlbReturn="true"
-				fi
-			fi
-			echo "${vlbReturn}"
-		fDefineTrap_Error_Fatal
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fGetFilePathOf_Me() {
-		local vlsFileName="${BASH_SOURCE[2]}"   ## I invented/discovered this but have no idea why it works. No answers on interwebs.
-		local vlsReturnValue_FilePath="$(cd -P "$(dirname "${vlsFileName}")" && pwd)/$(basename ${vlsFileName})"  ## As found on interwebs.
-		echo "${vlsReturnValue_FilePath}"
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fGetFileName_OfMe() {
-		local vlsFileName="${BASH_SOURCE[2]}"   ## I invented/discovered this but have no idea why it works. No answers on interwebs.
-		local vlsReturnValue_FileName="$(basename "${vlsFileName}")"
-		echo "${vlsReturnValue_FileName}"
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fEcho() {
-		if [ -n "$1" ]; then
-			fEcho_Clean "[ $@ ]"
-		else
-			fEcho_Clean ""
-		fi
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fEcho_Force() {
-		fEcho_ResetBlankCounter
-		fEcho "$@"
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fEcho_IfDebug() {
-		if [ "${cmbDebug}" == "true" ]; then
-			echo "--- Debug: $@"
-		fi
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fEchoAndDo() {
-		fEcho "Executing: eval \"$@\""
-		if [ "${cmbEchoAndDo_EchoOnly}" != "true" ]; then
-			eval "$@"
-			fEcho_ResetBlankCounter
-		fi
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fEchoAndDo_Async() {
-		fEcho "Executing: eval \"$@\" & disown"
-		eval "$@" & disown
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fEchoAndDo_HideAllOutput() {
-		fEcho "Executing: eval \"$@\" &> /dev/null"
-		eval "$@" &> /dev/null
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fEchoAndDo_Async_HideAllOutput() {
-		fEcho "Executing: eval \"$@\" &> /dev/null & disown"
-		eval "$@" &> /dev/null & disown
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fEchoAndDo_HideNonError() {
-		fEcho "Executing: eval \"$@\" > /dev/null"
-		eval "$@" > /dev/null
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fThrowError() {
-		#fEcho_IfDebug "fThrowError()"
-		fDefineTrap_Error_Fatal
-		fpErrMsg "$@"
-		exit 1
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fEcho_ResetBlankCounter() {
-		vmbLastLineWasBlank="false"
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fDefineTrap_Error_Fatal() {
-		#fEcho_IfDebug "fDefineTrap_Error_Fatal()"
-		true
-		trap 'fTrap_Error_Fatal ${LINENO}' ERR
-#		set -e  ## This causes problems with sourced scripts
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fDefineTrap_Error_Ignore() {
-		fEcho_IfDebug "fDefineTrap_Error_Ignore()"
-		trap 'fTrap_Error_Ignore' ERR
-#		set +e  ## set -e  causes problems with sourced scripts
-	}
-
-
-	#########################################################################################
-	## Private functions (not intended to be user-callable)
-	#########################################################################################
-
-	##---------------------------------------------------------------------------------------
-	function fpErrMsg() {
-		#fEcho_IfDebug "fpErrMsg()"
-		fEcho ""
-		if [ -n "$1" ]; then
-			fEcho "Error: $@"
-		else
-			fEcho "An error occurred."
-		fi
-	#	fEcho ""
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fpTrap_Exit() {
-		fEcho_IfDebug "fpTrap_Exit()"
-		fCleanup
-	}
-
-	## ----------------------------------------------------------------------------------------
-	declare didOnce_Trap_Error_Fatal=0
-	function fTrap_Error_Fatal() {
-		## Generic: Visually indicates that an error happened.
-		## 20140519 JC: Updated with additional info.
-		## 20220501 JC: Make sure only runs once.
-		if [[ didOnce_Trap_Error_Fatal -le 0 ]]; then
-
-			local lineNumber="$1"
-			local errorDescription="$2"
-			local errorCode="${3:-1}"
-
-			echo
-			fEcho "An error occurred:"
-
-			## Script
-			fEcho_Clean "    In script .....: $(fGetFileName_OfMe)"
-
-			## Line number
-			if [ -n "${lineNumber}" ]; then
-				fEcho_Clean "    Near line# ....: ${lineNumber}"
-			fi
-
-			## Error code
-			if [ -n "${errorCode}" ]; then
-				fEcho_Clean "    Error code ....: ${errorCode}"
-			fi
-
-			## Description
-			if [ -n "${errorDescription}" ]; then
-				fEcho_Clean "    Description ...: ${errorDescription}"
-			fi
-
-		fi
-		didOnce_Trap_Error_Fatal=1
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fTrap_Error_Ignore() {
-		#fEcho_IfDebug "fTrap_Error_Ignore()"
-		true
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fpGenericWrapper_ShowDescriptionAndCopyright() {
-		#fEcho_IfDebug "fpGenericWrapper_ShowDescriptionAndCopyright()"
-		if [ ! "${vmbWasShown_DescriptionAndCopyright}" == "true" ]; then
-			vmbWasShown_DescriptionAndCopyright="true"
-		#	fEcho ""
-			fDescriptionAndCopyright
-		#	fEcho ""
-		fi
-	}
-
-	##---------------------------------------------------------------------------------------
-	function fpGenericWrapper_ShowSyntaxAndQuit() {
-		#fEcho_IfDebug "fpGenericWrapper_ShowSyntaxAndQuit()"
-	#	fEcho ""
-		fpGenericWrapper_ShowDescriptionAndCopyright
-		fEcho ""
-		fSyntax
-		fEcho ""
-		exit 1
-	}
-
-
-	#########################################################################################
-	## Initial settings and execution control
-	#########################################################################################
-
-	## Error handling
-	set -E  ## sourced scripts honor error handling
+##---------------------------------------------------------------------------------------
+function fGetWhich() {
+	##	Echos:
+	##		Results "which" but without erroring.
+	##	History:
+	##		- 20140304 JC: Created.
+	local vlsReturn=""
+	fDefineTrap_Error_Ignore
+		vlsReturn="$(which $@ 2> /dev/null)"
 	fDefineTrap_Error_Fatal
-	trap 'fpTrap_Exit' INT TERM EXIT
+	echo "${vlsReturn}"
+}
 
-	## Constants and variables
-	declare vmbLessVerbose="false"
-	declare vmbWasShown_DescriptionAndCopyright="false"
-	if [ -z "${vmbInSudoSection}" ]; then declare vmbInSudoSection=""; fi
-	if [ -z "${vmbInAsUserSection}" ]; then declare vmbInAsUserSection=""; fi
+##---------------------------------------------------------------------------------------
+function fGetUname() {
+	##	Echos:
+	##		Results of uname -s or uname -o
+	##	History:
+	##		- 20140304 JC: Created.
 
-	case "${1,,}" in
+	local vlsReturn=""
 
-		("-h"|"--help"|"/h"|"/help"|"/?")
+	## Get major name
+	fDefineTrap_Error_Ignore
+		vlsReturn="$(uname -s 2> /dev/null)"
+		if [ -z "${vlsReturn}" ]; then
+			vlsReturn="$(uname -o 2> /dev/null)"
+		fi
+	fDefineTrap_Error_Fatal
 
-			#######################################################################
-			## Help
-			#######################################################################
+	## Sanitize
+	if [ -z "${vlsReturn}" ]; then
+		vlsReturn="unknown"
+	fi
+	vlsReturn="${vlsReturn,,}"
 
-			fpGenericWrapper_ShowSyntaxAndQuit
+	## Returns
+	echo "${vlsReturn}"
 
+}
+
+##---------------------------------------------------------------------------------------
+function fGetPlatform() {
+	##	Echos:
+	##		cygwin, macosx, or linux
+	##	History:
+	##		- 20140304 JC: Created.
+	local vlsReturn=""
+	local vlsUname="$(fGetUname)"
+	case "${vlsUname}" in
+		"linux")
+			vlsReturn="linux"
 		;;
-		("reentrant_do_function")
-
-			#######################################################################
-			## Reentry point after invoking as Sudo
-			#######################################################################
-
-			fEcho_IfDebug "Reentrant subroutine section"
-			vmbInSudoSection="true"
-			vmsFunction="$2"
-			if [ -n "${vmsFunction}" ]; then
-				## Invoke the named subroutine (hoping that it's valid).
-				vmsArgsThreeAndOn=("${@:3}")
-				vmbLessVerbose="$(fIsLessVerbose ${vmsArgsThreeAndOn})"
-				${vmsFunction} $vmsArgsThreeAndOn
-			else
-				fThrowError "Script reentered with \"reentrant_do_function\" argument, but no function was specified."
-			fi
-
+		"darwin")
+			vlsReturn="macosx"
 		;;
-		(*)
-
-			#######################################################################
-			## Main entry point
-			#######################################################################
-
-			vmbLessVerbose="$(fIsLessVerbose $@)"
-			if [ "${vmbLessVerbose}" != "true" ]; then
-				fPrintLineTerminalWidth
-			fi
-			fEcho_IfDebug "Main entry point"
-			if [ -n "${cmwNumberOfRequiredArgs}" ]; then
-				if [ $# -ge $cmwNumberOfRequiredArgs ]; then
-					#echo "OK for fMain."
-					if [ "${cmbAlwaysShowDescriptionAndCopyright}" == "true" ] && [ "${vmbLessVerbose}" != "true" ]; then
-						fpGenericWrapper_ShowDescriptionAndCopyright
-					fi
-					fMain "$@"
-				else
-					#echo "No args."
-					fpGenericWrapper_ShowSyntaxAndQuit
-				fi
-			else
-				fThrowError "The variable 'cmwNumberOfRequiredArgs' is required but not declared."
-			fi
-
+		"sunos")
+			vlsReturn="solaris"
+		;;
+		"cygwin")
+			vlsReturn="windows"
+		;;
+		"mingw")
+			vlsReturn="windows"
+		;;
+		"freebsd")
+			vlsReturn="bsd"
+		;;
+		"netbsd")
+			vlsReturn="bsd"
+		;;
+		"openbsd")
+			vlsReturn="bsd"
+		;;
+		"freebsd")
+			vlsReturn="bsd"
+		;;
+		*)
+			vlsReturn="${vlsUname}"
 		;;
 	esac
+	echo "${vlsReturn}"
+}
+
+##---------------------------------------------------------------------------------------
+function fGetOS() {
+	##	Echos:
+	##		ubuntu, linuxmint, solaris, cygwin, etc.
+	##	History:
+	##		- 20140304 JC: Created.
+	##	TODO: Test on different platforms.
+	local vlsReturn=""
+	local vlsUname="$(fGetUname)"
+	local vlsPlatform="$(fGetPlatform)"
+	local vlsLsbReleaseIs=""
+	fDefineTrap_Error_Ignore
+		vlsLsbReleaseIs="$(lsb_release -is 2> /dev/null)"
+		vlsLsbReleaseIs="${vlsLsbReleaseIs,,}"
+	fDefineTrap_Error_Fatal
+
+
+	case "${vlsPlatform}" in
+		"linux")
+			vlsReturn="${vlsLsbReleaseIs}"
+		;;
+		"macosx")
+			vlsReturn="${vlsLsbReleaseIs}"
+		;;
+		"solaris")
+			vlsReturn="${vlsLsbReleaseIs}"
+		;;
+		"windows")
+			vlsReturn="$(fGetUname)"
+		;;
+		*)
+			vlsReturn="unknown"
+		;;
+	esac
+	echo "${vlsReturn}"
+}
+
+##---------------------------------------------------------------------------------------
+function fIsOS_DebianBased() {
+	##	Echos: true or false
+	##	History:
+	##		- 20140304 JC: Created.
+	local vlsReturn="false"
+	if [ "$(fGetPlatform)" == "linux" ]; then
+		case "$(fGetOS)" in
+			debian )
+				vlsReturn="true"
+			;;
+			ubuntu | xubuntu | kubuntu | lubuntu )
+				vlsReturn="true"
+			;;
+			mint | linuxmint )
+				vlsReturn="true"
+			;;
+		esac
+	fi
+	echo "${vlsReturn}"
+}
+
+##---------------------------------------------------------------------------------------
+function fIsOS_FedoraBased() {
+	##	Echos: true or false
+	##	History:
+	##		- 20140304 JC: Created.
+	local vlsReturn="false"
+	if [ "$(fGetPlatform)" == "linux" ]; then
+		case "$(fGetOS)" in
+			fedora | redhat | centos | oraclelinux )
+				vlsReturn="true"
+			;;
+		esac
+	fi
+	echo "${vlsReturn}"
+}
+
+##---------------------------------------------------------------------------------------
+function fGetPreferredEditor_GUI() {
+	## 20140224 JC: Created
+	local vlsReturn=""
+	if   [ "$(fIsInPath gedit)" == "true" ]; then
+		vlsReturn="gedit"
+	elif [ "$(fIsInPath pluma)" == "true" ]; then
+		vlsReturn="pluma"
+	elif [ "$(fIsInPath mousepad)" == "true" ]; then
+		vlsReturn="mousepad"
+	elif [ "$(fIsInPath geany)" == "true" ]; then
+		vlsReturn="geany"
+	else
+		fThrowError "No suitable GUI editor installed on system."
+	fi
+	echo "${vlsReturn}"
+}
+
+##---------------------------------------------------------------------------------------
+function fGetPreferredEditor_CLI() {
+	## 20140224 JC: Created
+	local vlsReturn=""
+	if   [ "$(fIsInPath nano)" == "true" ]; then
+		vlsReturn="nano"
+	elif [ "$(fIsInPath pico)" == "true" ]; then
+		vlsReturn="pico"
+	elif [ "$(fIsInPath vi)" == "true" ]; then
+		vlsReturn="vi"
+	else
+		fThrowError "No suitable CLI editor installed on system."
+	fi
+	echo "${vlsReturn}"
+}
+
+##---------------------------------------------------------------------------------------
+function fPromptYN() {
+	## 20140219 JRC: Copied/refactored from fPromptToRunScript().
+	fEcho_IfDebug "fPromptYN()"
+
+	local vlsTemp=""
+	local -l vlsResponse=""
+
+	read -p "Continue? (Y/n) " vlsTemp
+	vlsResponse="${vlsTemp,,}"  ## Convert to lower-case
+	fEcho_ResetBlankCounter
+
+	case "$vlsResponse" in
+		("y"|"ye"|"yes")
+			:
+		;;
+		(*)
+			fEcho "User declined."
+			exit 0
+		;;
+	esac
+}
+
+##---------------------------------------------------------------------------------------
+function fPromptToRunScript() {
+	## 20130514 JRC: Copied from old jclibrary001-v001 and stripped down to its essentials.
+	## 20140219 JC:
+	##		- Moved logic into fPromptYN()
+	##		- Renamed from fPromptToRunScript().
+	fEcho_IfDebug "fPromptToRunScript()"
+	fpGenericWrapper_ShowDescriptionAndCopyright
+	fPromptYN
+}
+
+##---------------------------------------------------------------------------------------
+function fFolderMustExist() {
+	## 20140219 JC: Created.
+	fEcho_IfDebug "fFolderMustExist()"
+	local vlsArg="$@"
+	if [ ! -d "${vlsArg}" ]; then
+		fThrowError "Folder doesn't exist: \"${vlsArg}\""
+	fi
+}
+
+##---------------------------------------------------------------------------------------
+function fFolderCannotExist() {
+	## 20140219-07 JC: Created.
+	fEcho_IfDebug "fFolderCannotExist()"
+	local vlsArg="$@"
+	if [ -d "${vlsArg}" ]; then
+		fThrowError "Folder must not exist: \"${vlsArg}\""
+	fi
+}
+
+##---------------------------------------------------------------------------------------
+function fIsInvokedFromCLI() {
+	## 20140219 JC: Copied/refactored/simplified from "...0-common/includes/...".
+	local -l vlbTemp="false"
+	if [ -t 0 ]; then
+		vlbTemp="true"
+	fi
+	echo "${vlbTemp}"
+}
+
+##---------------------------------------------------------------------------------------
+function fMsgBlocking() {
+	## 20140219 JC: Copied/refactored/simplified from "...0-common/includes/...".
+	fEcho_IfDebug "fMsgBlocking()"
+
+	local vlsMessage="$@"
+	local vlsScriptName="$(fGetFileName_OfMe)"
+
+	if [ "$(fIsInvokedFromCLI)" == "true" ]; then
+		if [ -z "${vlsMessage}" ]; then vlsMessage="Press [ENTER] when ready."; fi
+		read -p "${vlsMessage}"
+	else
+		if [ -z "${vlsMessage}" ]; then vlsMessage="Press [OK] when ready."; fi
+		zenity --info --title "${vlsScriptName} Pause" --text "${vlsMessage}"
+	fi
+}
+
+##---------------------------------------------------------------------------------------
+function fIsSessionGUI() {
+	## 20140219 JC: Copied/refactored/simplified from "...0-common/includes/...".
+	local -l vlbTemp="false"
+	if [ -n "${DISPLAY}" ]; then
+		vlbTemp="true"
+	fi
+	echo "${vlbTemp}"
+}
+
+##---------------------------------------------------------------------------------------
+function fEdit_Blocking() {
+	## 20140219 JC: Copied/refactored/simplified from "...0-common/includes/...".
+	fEcho_IfDebug "fEdit_Blocking()"
+	if [ "$(fIsSessionGUI)" == "true" ]; then
+		fEdit_GUI_Blocking "$@"
+	else
+		fEdit_CLI "$@"
+	fi
+}
+
+##---------------------------------------------------------------------------------------
+function fEdit_GUI_Blocking() {
+	## 20140219 JC: Copied/refactored/simplified from "...0-common/includes/...".
+	fEcho_IfDebug "fEdit_GUI()"
+	fFunctionArgumentCannotBeEmpty "fEdit_GUI()" "1" "$1"
+
+	if [ "$(fIsInvokedFromCLI)" == "true" ]; then
+		fEcho "Editing \"$@\"; script will resume when editor is closed."
+		$(fGetPreferredEditor_GUI) "$@" &> /dev/null
+	else
+		fEdit_GUI_NonBlocking
+		fMsgBlocking "Press [OK] when you are finished editing."
+	fi
+}
+
+##---------------------------------------------------------------------------------------
+function fEdit_GUI_NonBlocking() {
+	## 20140219 JC: Copied/refactored/simplified from "...0-common/includes/...".
+	fEcho_IfDebug "fEdit_GUI_NonBlocking()"
+	fFunctionArgumentCannotBeEmpty "fEdit_GUI_NonBlocking()" "1" "$1"
+	$(fGetPreferredEditor_GUI) "$@" &> /dev/null & disown
+}
+
+##---------------------------------------------------------------------------------------
+function fEdit_CLI() {
+	## 20140219 JC: Copied/refactored/simplified from "...0-common/includes/...".
+	fEcho_IfDebug "fEdit_CLI()"
+
+	fFunctionArgumentCannotBeEmpty "fEdit_CLI()" "1" "$1"
+
+	local vlsFile="$@"
+
+	$(fGetPreferredEditor_CLI) "${vlsFile}"
+
+	fEcho_ResetBlankCounter
+	fEcho ""
+	echo "------------------------------------ BOF --------------------------------------"
+	cat "${vlsFile}"
+	echo "------------------------------------ EOF --------------------------------------"
+	fEcho_ResetBlankCounter
+	fEcho ""
+
+}
+
+##---------------------------------------------------------------------------------------
+function fPing() {
+	## 20140219 JC: Copied/refactored/simplified from "jcPing".
+	fEcho_IfDebug "fPing()"
+
+	local vlsAddress="$1"
+	local vlsReply=""
+
+	## Do the ping.
+	fDefineTrap_Error_Ignore
+		vlsReply="$(ping -c 1 -w 2 -W 2 ${vlsAddress}  | grep icmp_ 2> /dev/null)"
+	fDefineTrap_Error_Fatal
+
+	##	Unused ping options:
+	##		-D .......... Print timestamp
+
+	## Note if no reply
+	if [ -z "${vlsReply}" ]; then vlsReply="(Unreachable, error, and/or no reply.)"; fi
+
+	## Pad output
+	vlsFill='...........'
+	local vlsOutput=""
+	local vlsTimestamp=$(date "+%Y%m%d-%H%M%S")
+	vlsOutput=$(printf "%s %s $vlsReply\n" $vlsAddress ${vlsFill:${#vlsAddress}})
+	echo "[ ${vlsTimestamp} ] ${vlsOutput}"
+
+}
+
+##---------------------------------------------------------------------------------------
+function fMakeDir() {
+	## 20140219 JC: Copied/refactored/simplified from "jcinit_custom-folders-and-symlinks2".
+	fEcho_IfDebug "fMakeDir()"
+
+	local vlsFolderPath="$1"
+
+	if [ "${mlbCheckOnly}" == "true" ]; then
+		## Check only
+
+		if [ -d "${vlsFolderPath}" ]; then
+			fEcho "FYI: The directory \"${vlsFolderPath}\" already exists."
+		fi
+
+	else
+		## Do it
+
+		## Make the folder
+		fEchoAndDo "mkdir -p ${vlsFolderPath}"
+
+	fi
+
+}
+
+##---------------------------------------------------------------------------------------
+function fMakeSymlink() {
+	## 20140219 JC: Copied/refactored/simplified from "jcinit_custom-folders-and-symlinks2".
+	fEcho_IfDebug "fMakeSymlink()"
+
+	local vlsSource="$1"
+	local vlsLink="$2"
+	local clsExistsAndNotLink="Object \"${vlsFolderPath}\" exists and is not a symlink."
+
+	if [ "${mlbCheckOnly}" == "true" ]; then
+		## Check only
+
+		if [ -e "${vlsSource}" ]; then
+			if [ -e "${vlsLink}" ]; then
+				if [ -h "${vlsLink}" ]; then
+					fEcho "FYI: The symlink \"${vlsLink}\" already exists but will be deleted and re-created."
+				else
+					fThrowError "${clsExistsAndNotLink}"
+				fi
+			else
+				if [ -h "${vlsLink}" ]; then
+					fEcho "FYI: The symlink \"${vlsLink}\" is a broken symlink and will be deleted and re-created."
+				fi
+			fi
+		else
+			fEcho "FYI: Source doesn't exist to link to: \"${vlsSource}\""
+		fi
+
+	else
+		## Do it
+
+		## Just to be safe, double-check that it is a symlink before deleting it
+		if [ -e "${vlsLink}" ]; then
+			if [ -h "${vlsLink}" ]; then
+				## Remove the existing link
+				fEchoAndDo "rm ${vlsLink}"
+			else
+				## It's not a link; throw an error to avoid deleting data
+				fThrowError "${clsExistsAndNotLink}"
+			fi
+		else
+			if [ -h "${vlsLink}" ]; then
+				## It's a dead link; delete it
+				fEchoAndDo "rm ${vlsLink}"
+			fi
+		fi
+
+		## Create the new link
+		if [ -e "${vlsSource}" ]; then
+			fEchoAndDo "ln -s ${vlsSource} ${vlsLink}"
+		fi
+
+	fi
+}
+
+##---------------------------------------------------------------------------------------
+function fEcho_VariableAndValue() {
+	## 20140206-07 JC: Copied/refactored/simplified from "...0-common/includes/...".
+	local vlsVariableName="$1"
+	if [ -z "${vlsVariableName}" ]; then
+		fThrowError "fEcho_VariableAndValue(): No variable to echo value of."
+	else
+		local vlsValue="${!vlsVariableName}"
+		fEcho "${vlsVariableName} = \"${vlsValue}\""
+	fi
+}
+
+##---------------------------------------------------------------------------------------
+function fEcho_IfDebug_VariableAndValue() {
+	## 20140206-07 JC: Copied/refactored/simplified from "...0-common/includes/...".
+	local vlsVariableName="$1"
+	if [ -z "${vlsVariableName}" ]; then
+		fThrowError "fEcho_IfDebug_VariableAndValue(): No variable to echo value of."
+	else
+		local vlsValue="${!vlsVariableName}"
+		fEcho_IfDebug "${vlsVariableName} = \"${vlsValue}\""
+	fi
+}
+
+##---------------------------------------------------------------------------------------
+function fEcho_Clean() {
+	## 20140206-07 JC: Updated with "fold" to wrap at words.
+	if [ -n "$1" ]; then
+		local -i vliActualCols=$(tput cols)
+		local -i vliMaxIdealCols=200
+		local -i vliColumns=$(fMath_Int_Min $vliActualCols $vliMaxIdealCols)
+		echo "$@" | fold -s -w $vliColumns
+		vmbLastLineWasBlank="false"
+	else
+		if [ "${vmbLastLineWasBlank}" != "true" ]; then
+			echo
+		fi
+		vmbLastLineWasBlank="true"
+	fi
+}
+declare vmbLastEchoWasBlank="false"
+
+##------------------------------------------------------------------------------
+function fMath_Int_Max() {
+	## Echos the maximum of two integers
+	## 20140206-07 JC: Created.
+	local -i vliArg1=$1
+	local -i vliArg2=$2
+	local -i vliReturn=0
+	if [ $vliArg1 > $vliArg2 ]; then
+		vliReturn=vliArg1
+	else
+		vliReturn=vliArg2
+	fi
+	echo $vliReturn
+}
+
+##------------------------------------------------------------------------------
+function fMath_Int_Min() {
+	## Echos the minimum of two integers
+	## 20140206-07 JC: Created.
+	local -i vliArg1=$1
+	local -i vliArg2=$2
+	local -i vliReturn=0
+	if [ $vliArg1 -lt $vliArg2 ]; then
+		vliReturn=vliArg1
+	else
+		vliReturn=vliArg2
+	fi
+	echo $vliReturn
+}
+
+##------------------------------------------------------------------------------
+function fPrintLineTerminalWidth() {
+	## 20140206-07 JC: Created.
+	local -i vliCount
+	local -i vliColumns=$(tput cols)
+	local clsCharacter="—" ## ▞▚▒░▓䷀█▂▁▔—
+	local vlsOutput=""
+	for ((vliCount = 1 ; vliCount <= vliColumns ; vliCount++)); do
+		vlsOutput="${vlsOutput}${clsCharacter}"
+	done
+	#echo
+	echo "$(tput setaf 5)${vlsOutput}$(tput sgr 0)"
+	#echo
+}
+
+##---------------------------------------------------------------------------------------
+function fAppendToFile() {
+	## 20140206-07 JC: Created.
+	fEcho_IfDebug "fAppendToFile()"
+
+	local vlsFile="$1"
+	local vlsWhatToOutput="${@:2}"
+
+	fVariableCannotBeEmpty "vlsFile"
+
+	echo "${vlsWhatToOutput}" >> "${vlsFile}"
+
+}
+
+##---------------------------------------------------------------------------------------
+function fAppendCommentToFile() {
+	fEcho_IfDebug "fAppendCommentToFile()"
+
+	local vlsFile="$1"
+	local vlsWhatToOutput="${@:2}"
+
+	if [ -z "${vlsWhatToOutput}" ]; then
+		vlsWhatToOutput="##"
+	else
+		vlsWhatToOutput="## ${vlsWhatToOutput}"
+	fi
+
+	fAppendToFile "${vlsFile}" "${vlsWhatToOutput}"
+
+}
+
+##---------------------------------------------------------------------------------------
+function fVariableCannotBeEmpty() {
+	## 20140206-07 JC: Created.
+	fEcho_IfDebug "fVariableCannotBeEmpty()"
+
+	#local vlsCallingFunction="$1"  ## Too hard to remember to include this
+	local vlsVariableName="$1"
+	local vlsVariableValue="${!vlsVariableName}"
+
+	if [ -z "${vlsVariableValue}" ]; then
+		fThrowError "The variable \"${vlsVariableName}\" cannot be empty."
+	fi
+}
+
+##---------------------------------------------------------------------------------------
+function fFunctionArgumentCannotBeEmpty() {
+	## 20140206-07 JC: Created.
+	fEcho_IfDebug "fFunctionArgumentCannotBeEmpty()"
+
+	local vlsCallingFunction="$1"
+	local vlsVariableOrdinal="$2"
+	local vlsVariableValue="$3"
+
+	if [ -z "${vlsVariableValue}" ]; then
+		fThrowError "Parameter ${vlsVariableOrdinal} of function ${vlsCallingFunction} cannot be empty."
+	fi
+}
+
+##---------------------------------------------------------------------------------------
+function fFileMustExist() {
+	## 20140206-07 JC: Created.
+	fEcho_IfDebug "fFileMustExist()"
+	local vlsFile="$@"
+	#fEcho_IfDebug_VariableAndValue "vlsFile"
+	if [ ! -f "${vlsFile}" ]; then
+		fThrowError "File does not exist: \"${vlsFile}\""
+	fi
+}
+
+##---------------------------------------------------------------------------------------
+function fFileCannotExist() {
+	## 20140206-07 JC: Created.
+	fEcho_IfDebug "fFileCannotExist()"
+	local vlsFile="$@"
+	if [ -f "${vlsFile}" ]; then
+		fThrowError "File must not exist: \"${vlsFile}\""
+	fi
+}
+
+##---------------------------------------------------------------------------------------
+function fFolderCannotHaveContents() {
+	## 20140206-07 JC: Created.
+	fEcho_IfDebug "fFolderCannotHaveContents()"
+	local vlsFolder="$@"
+	if [ "$(fDoesFolderHaveContents \"${vlsFolder}\")" == "true" ]; then
+		fThrowError "Files already exist in folder \"${vlsFolder}\""
+	fi
+}
+
+##---------------------------------------------------------------------------------------
+function fDoesFolderHaveContents() {
+	## 20140206-07 JC: Created.
+	local vlsFolder="$@"
+	local vlsReturn="false"
+	if [ -d "${vlsFolder}" ]; then
+		if [ -n "$(ls -A \"${vlsFolder}\")" ]; then
+			vlsReturn="true"
+		fi
+	fi
+	echo "${vlsReturn}"
+}
+
+##---------------------------------------------------------------------------------------
+function fDoesFolderExist() {
+	## 20140206-07 JC: Created.
+	local vlsFolder="$@"
+	local vlsReturn="false"
+	if [ -d "${vlsFolder}" ]; then
+		vlsReturn="true"
+	fi
+	echo "${vlsReturn}"
+}
+
+##---------------------------------------------------------------------------------------
+function fDoesFileExist() {
+	## 20140206-07 JC: Created.
+	local vlsFile="$@"
+	local vlsReturn="false"
+	if [ -f "${vlsFile}" ]; then
+		vlsReturn="true"
+	fi
+	echo "${vlsReturn}"
+}
+
+##---------------------------------------------------------------------------------------
+function fDoesFileOrFolderExist() {
+	## 20140206-07 JC: Created.
+	local vlsFileOrFolder="$@"
+	local vlsReturn="false"
+	if [ -e "${vlsFileOrFolder}" ]; then
+		vlsReturn="true"
+	fi
+	echo "${vlsReturn}"
+}
+
+##---------------------------------------------------------------------------------------
+function fMustBeInPath() {
+	## 20140206-07 JC: Created.
+	fEcho_IfDebug "fMustBeInPath()"
+
+	local vlsCheck="$(fTrim $1)"
+	#fEcho_IfDebug_VariableAndValue "vlsCheck"
+
+	if [ -z "${vlsCheck}" ]; then
+		fThrowError "fMustBeInPath(): Nothing to check."
+	else
+
+		local vlsWhich=$(which ${vlsCheck})
+		#fEcho_IfDebug "fMustBeInPath(): which ${vlsCheck} = \"${vlsWhich}\")"
+
+		if [ -z "${vlsWhich}" ]; then
+			fThrowError "The command \"${vlsCheck}\" must be in path, but isn’t."
+		fi
+
+	fi
+
+}
+
+##---------------------------------------------------------------------------------------
+function fIsInPath() {
+	## 20140206-07 JC: Created.
+	local vlsCheck="$1"
+	local vlsReturn="false"
+	if [ -n "${vlsCheck}" ]; then
+		local vlsWhich=$(which ${vlsCheck})
+		#vlsWhich=$(fTrim ${vlsWhich})
+		if [ -n "${vlsWhich}" ]; then
+			vlsReturn="true"
+		fi
+	fi
+	echo "${vlsReturn}"
+}
+
+##---------------------------------------------------------------------------------------
+function fTrim() {
+	## 20140206-07 JC: Created.
+	local vlsTemp=$@
+	vlsTemp="${vlsTemp#"${vlsTemp%%[![:space:]]*}"}"   # remove leading whitespace characters
+	vlsTemp="${vlsTemp%"${vlsTemp##*[![:space:]]}"}"   # remove trailing whitespace characters
+	if [ -n "$vlsTemp" ]; then
+		echo -n "$vlsTemp"
+	fi
+}
+
+##---------------------------------------------------------------------------------------
+function fGetTimeStamp() {
+	## 20140129 JC: Created.
+	fEcho_IfDebug "fGetTimeStamp()"
+	echo $(date "+%Y%m%d-%H%M%S")
+}
+
+##---------------------------------------------------------------------------------------
+function fDoFunctionAs_Sudo() {
+	fEcho_IfDebug "fDoFunctionAs_Sudo()"
+	local vlsFunctionName="$1"
+	local vlsArgs="${@:2}"
+	if [ -n "${vlsFunctionName}" ]; then
+		if [ "$(fIsSudo)" == "true" ]; then
+			## Already running as sudo, so just do invoke the function directly.
+			## 20140224 JC: Fixed bug by removing quotes.
+			$vlsFunctionName ${vlsArgs}
+		else
+			## Need to call self re-entrantly as sudo. The execution control section at bottom will handle reentrancy and function calling.
+			local vlsPath_Me="$(fGetFilePathOf_Me)"
+			fGetSudo
+			sudo $vlsPath_Me "reentrant_do_function" "${vlsFunctionName}" "${vlsArgs}"
+		fi
+	else
+		fThrowError "fDoFunctionAs_Sudo(): Programmer error - no function name specified as an argument."
+	fi
+}
+
+##---------------------------------------------------------------------------------------
+function fGetSudo() {
+	if [ "$(fIsSudoValid)" == "false" ] || [ "${vmbLessVerbose}" != "true" ]; then
+		fEcho "You may be prompted to enter password to verify sudo role ..."
+	fi
+	sudo echo "[ Sudo role verified. ]"
+	fEcho_ResetBlankCounter
+}
+
+##---------------------------------------------------------------------------------------
+function fIsSudo() {
+	local -l vlbReturn="false"
+	if [ "$(id -u)" == "0" ]; then
+		vlbReturn="true"
+	fi
+	echo "${vlbReturn}"
+}
+
+##---------------------------------------------------------------------------------------
+function fIsSudoValid() {
+	fDefineTrap_Error_Ignore
+		local -l vlbReturn="false"
+		## First check to see if we are already sudo
+		if [ "$(id -u)" == "0" ]; then
+			vlbReturn="true"
+		else
+			## Next, check to see if sudo is still cached
+			sudo -n echo &> /dev/null
+			if [ $? -eq 0 ]; then
+				vlbReturn="true"
+			fi
+		fi
+		echo "${vlbReturn}"
+	fDefineTrap_Error_Fatal
+}
+
+##---------------------------------------------------------------------------------------
+function fGetFilePathOf_Me() {
+	local vlsFileName="${BASH_SOURCE[2]}"   ## I invented/discovered this but have no idea why it works. No answers on interwebs.
+	local vlsReturnValue_FilePath="$(cd -P "$(dirname "${vlsFileName}")" && pwd)/$(basename ${vlsFileName})"  ## As found on interwebs.
+	echo "${vlsReturnValue_FilePath}"
+}
+
+##---------------------------------------------------------------------------------------
+function fGetFileName_OfMe() {
+	local vlsFileName="${BASH_SOURCE[2]}"   ## I invented/discovered this but have no idea why it works. No answers on interwebs.
+	local vlsReturnValue_FileName="$(basename "${vlsFileName}")"
+	echo "${vlsReturnValue_FileName}"
+}
+
+##---------------------------------------------------------------------------------------
+function fEcho() {
+	if [ -n "$1" ]; then
+		fEcho_Clean "[ $@ ]"
+	else
+		fEcho_Clean ""
+	fi
+}
+
+##---------------------------------------------------------------------------------------
+function fEcho_Force() {
+	fEcho_ResetBlankCounter
+	fEcho "$@"
+}
+
+##---------------------------------------------------------------------------------------
+function fEcho_IfDebug() {
+	if [ "${cmbDebug}" == "true" ]; then
+		echo "--- Debug: $@"
+	fi
+}
+
+##---------------------------------------------------------------------------------------
+function fEchoAndDo() {
+	fEcho "Executing: eval \"$@\""
+	if [ "${cmbEchoAndDo_EchoOnly}" != "true" ]; then
+		eval "$@"
+		fEcho_ResetBlankCounter
+	fi
+}
+
+##---------------------------------------------------------------------------------------
+function fEchoAndDo_Async() {
+	fEcho "Executing: eval \"$@\" & disown"
+	eval "$@" & disown
+}
+
+##---------------------------------------------------------------------------------------
+function fEchoAndDo_HideAllOutput() {
+	fEcho "Executing: eval \"$@\" &> /dev/null"
+	eval "$@" &> /dev/null
+}
+
+##---------------------------------------------------------------------------------------
+function fEchoAndDo_Async_HideAllOutput() {
+	fEcho "Executing: eval \"$@\" &> /dev/null & disown"
+	eval "$@" &> /dev/null & disown
+}
+
+##---------------------------------------------------------------------------------------
+function fEchoAndDo_HideNonError() {
+	fEcho "Executing: eval \"$@\" > /dev/null"
+	eval "$@" > /dev/null
+}
+
+##---------------------------------------------------------------------------------------
+function fThrowError() {
+	#fEcho_IfDebug "fThrowError()"
+	fDefineTrap_Error_Fatal
+	fpErrMsg "$@"
+	exit 1
+}
+
+##---------------------------------------------------------------------------------------
+function fEcho_ResetBlankCounter() {
+	vmbLastLineWasBlank="false"
+}
+
+##---------------------------------------------------------------------------------------
+function fDefineTrap_Error_Fatal() {
+	#fEcho_IfDebug "fDefineTrap_Error_Fatal()"
+	true
+	trap 'fTrap_Error_Fatal ${LINENO}' ERR
+#		set -e  ## This causes problems with sourced scripts
+}
+
+##---------------------------------------------------------------------------------------
+function fDefineTrap_Error_Ignore() {
+	fEcho_IfDebug "fDefineTrap_Error_Ignore()"
+	trap 'fTrap_Error_Ignore' ERR
+#		set +e  ## set -e  causes problems with sourced scripts
+}
+
+
+#########################################################################################
+## Private functions (not intended to be user-callable)
+#########################################################################################
+
+##---------------------------------------------------------------------------------------
+function fpErrMsg() {
+	#fEcho_IfDebug "fpErrMsg()"
+	fEcho ""
+	if [ -n "$1" ]; then
+		fEcho "Error: $@"
+	else
+		fEcho "An error occurred."
+	fi
+#	fEcho ""
+}
+
+##---------------------------------------------------------------------------------------
+function fpTrap_Exit() {
+	fEcho_IfDebug "fpTrap_Exit()"
+	fCleanup
+}
+
+## ----------------------------------------------------------------------------------------
+declare didOnce_Trap_Error_Fatal=0
+function fTrap_Error_Fatal() {
+	## Generic: Visually indicates that an error happened.
+	## 20140519 JC: Updated with additional info.
+	## 20220501 JC: Make sure only runs once.
+	if [[ didOnce_Trap_Error_Fatal -le 0 ]]; then
+
+		local lineNumber="$1"
+		local errorDescription="$2"
+		local errorCode="${3:-1}"
+
+		echo
+		fEcho "An error occurred:"
+
+		## Script
+		fEcho_Clean "    In script .....: $(fGetFileName_OfMe)"
+
+		## Line number
+		if [ -n "${lineNumber}" ]; then
+			fEcho_Clean "    Near line# ....: ${lineNumber}"
+		fi
+
+		## Error code
+		if [ -n "${errorCode}" ]; then
+			fEcho_Clean "    Error code ....: ${errorCode}"
+		fi
+
+		## Description
+		if [ -n "${errorDescription}" ]; then
+			fEcho_Clean "    Description ...: ${errorDescription}"
+		fi
+
+	fi
+	didOnce_Trap_Error_Fatal=1
+}
+
+##---------------------------------------------------------------------------------------
+function fTrap_Error_Ignore() {
+	#fEcho_IfDebug "fTrap_Error_Ignore()"
+	true
+}
+
+##---------------------------------------------------------------------------------------
+function fpGenericWrapper_ShowDescriptionAndCopyright() {
+	#fEcho_IfDebug "fpGenericWrapper_ShowDescriptionAndCopyright()"
+	if [ ! "${vmbWasShown_DescriptionAndCopyright}" == "true" ]; then
+		vmbWasShown_DescriptionAndCopyright="true"
+	#	fEcho ""
+		fDescriptionAndCopyright
+	#	fEcho ""
+	fi
+}
+
+##---------------------------------------------------------------------------------------
+function fpGenericWrapper_ShowSyntaxAndQuit() {
+	#fEcho_IfDebug "fpGenericWrapper_ShowSyntaxAndQuit()"
+#	fEcho ""
+	fpGenericWrapper_ShowDescriptionAndCopyright
+	fEcho ""
+	fSyntax
+	fEcho ""
+	exit 1
+}
+
+
+#########################################################################################
+## Initial settings and execution control
+#########################################################################################
+
+## Error handling
+set -E  ## sourced scripts honor error handling
+fDefineTrap_Error_Fatal
+trap 'fpTrap_Exit' INT TERM EXIT
+
+## Constants and variables
+declare vmbLessVerbose="false"
+declare vmbWasShown_DescriptionAndCopyright="false"
+if [ -z "${vmbInSudoSection}" ]; then declare vmbInSudoSection=""; fi
+if [ -z "${vmbInAsUserSection}" ]; then declare vmbInAsUserSection=""; fi
+
+case "${1,,}" in
+
+	("-h"|"--help"|"/h"|"/help"|"/?")
+
+		#######################################################################
+		## Help
+		#######################################################################
+
+		fpGenericWrapper_ShowSyntaxAndQuit
+
+	;;
+	("reentrant_do_function")
+
+		#######################################################################
+		## Reentry point after invoking as Sudo
+		#######################################################################
+
+		fEcho_IfDebug "Reentrant subroutine section"
+		vmbInSudoSection="true"
+		vmsFunction="$2"
+		if [ -n "${vmsFunction}" ]; then
+			## Invoke the named subroutine (hoping that it's valid).
+			vmsArgsThreeAndOn=("${@:3}")
+			vmbLessVerbose="$(fIsLessVerbose ${vmsArgsThreeAndOn})"
+			${vmsFunction} $vmsArgsThreeAndOn
+		else
+			fThrowError "Script reentered with \"reentrant_do_function\" argument, but no function was specified."
+		fi
+
+	;;
+	(*)
+
+		#######################################################################
+		## Main entry point
+		#######################################################################
+
+		vmbLessVerbose="$(fIsLessVerbose $@)"
+		if [ "${vmbLessVerbose}" != "true" ]; then
+			fPrintLineTerminalWidth
+		fi
+		fEcho_IfDebug "Main entry point"
+		if [ -n "${cmwNumberOfRequiredArgs}" ]; then
+			if [ $# -ge $cmwNumberOfRequiredArgs ]; then
+				#echo "OK for fMain."
+				if [ "${cmbAlwaysShowDescriptionAndCopyright}" == "true" ] && [ "${vmbLessVerbose}" != "true" ]; then
+					fpGenericWrapper_ShowDescriptionAndCopyright
+				fi
+				fMain "$@"
+			else
+				#echo "No args."
+				fpGenericWrapper_ShowSyntaxAndQuit
+			fi
+		else
+			fThrowError "The variable 'cmwNumberOfRequiredArgs' is required but not declared."
+		fi
+
+	;;
+esac
