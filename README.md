@@ -12,9 +12,9 @@
 
 ## Summary
 
-Yet Another Git Wrapper.
+An "extreme" Git wrapper.
 
-This one vastly simplifies Git - by encouraging an opinionated workflow, and ignoring ≈10% of Git functionality in order to remove ≈90% of its complexity.
+This one *vastly* simplifies Git - by encouraging an opinionated workflow, and ignoring ≈50% of Git's myriad functionality in order to remove ≈95% of its complexity.
 
 x9git and git are 100% compatible and interchangeable.
 
@@ -22,7 +22,7 @@ x9git and git are 100% compatible and interchangeable.
 
 One reason Git is so complex, is because it's so flexible. It's so flexible because it supports a wide variety of workflows, team sizes, and very narrow/hard edge-cases.
 
-Arguably, about 90% of Git's complexity is due to covering a fringe about 10% of use-cases. If you buy that argument, then axiomatically, if you lop off that 10% of fringe use-cases, then Git becomes 90% easier to work with. This goes further, lopping off maybe 50% of the functionality, and is about 95% easier to work with.
+Arguably, about 90% of Git's complexity is due to covering a fringe about 10% of use-cases. If you buy that argument, then axiomatically, if you lop off that 10% of fringe use-cases, then Git becomes 90% easier to work with. This goes further, lopping off (very approximately) half of the functionality, and is about 95% easier to work with.
 
 ## General attributes
 
