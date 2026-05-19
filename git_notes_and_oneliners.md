@@ -70,7 +70,7 @@ n8git_backup-and-publish
 or
 
 ~~~bash
-preCount=$(git stash list | wc -l); git stash push --include-untracked -m "auto-stash"; postCount=$(git stash list | wc -l); didStash=$((postCount > preCount ? 1 : 0)); git pull --rebase; ((didStash)) && git stash pop; git add --all && (git diff --cached --quiet || git commit -m "auto-commit") && git push -u origin HEAD; echo && git status && echo
+preCount=$(git stash list | wc -l); git stash push --include-untracked -m "auto-stash"; postCount=$(git stash list | wc -l); didStash=$((postCount > preCount ? 1 : 0)); git pull --rebase; ((didStash)) && git stash pop; git add --all && (git diff --cached --quiet || git commit) && git push -u origin HEAD; echo && git status && echo
 ~~~
 
 ### Read-only inspection
@@ -102,7 +102,7 @@ gitProj="feature/1-refactor-from-static-template-to-dynamic-library"
 branchName="feature/1-refactor-from-static-template-to-dynamic-library"
 
 ## Commit local changes and sync with upstream
-preCount=$(git stash list | wc -l); git stash push --include-untracked -m "auto-stash"; postCount=$(git stash list | wc -l); didStash=$((postCount > preCount ? 1 : 0)); git pull --rebase; ((didStash)) && git stash pop; git add --all && (git diff --cached --quiet || git commit -m "auto-commit") && git push -u origin HEAD; echo && git status && echo
+preCount=$(git stash list | wc -l); git stash push --include-untracked -m "auto-stash"; postCount=$(git stash list | wc -l); didStash=$((postCount > preCount ? 1 : 0)); git pull --rebase; ((didStash)) && git stash pop; git add --all && (git diff --cached --quiet || git commit) && git push -u origin HEAD; echo && git status && echo
 
 ## Merge to main (assumes clean working tree — run preceding block first)
 [[ -n "${branchName}" ]]  &&  git checkout main  &&  git pull --ff-only origin main  &&  git checkout "${branchName}"  &&  git merge main  &&  git checkout main  &&  git merge --no-ff "${branchName}"  &&  git push origin main  &&  echo  &&  git branch -vv  &&  echo  &&  git status  &&  echo
