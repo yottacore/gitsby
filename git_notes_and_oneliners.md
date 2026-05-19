@@ -48,8 +48,8 @@ Care is needed with `stash apply` or `stash pop`, because if the a `git stash pu
 #### Clone a project and start programming with it, using aliases in ~/.ssh/config
 
 ~~~bash
-gitProj="how-tos"
-gitUser="jim-collier"
+gitProj="REMOTE_REPO_NAME"
+gitUser="YOUR_GIT_USER_NAME"
 [[ -n "${gitProj}"  &&  -n "${gitUser}" ]]  &&  git clone "git@github_${gitUser}:${gitUser}/${gitProj}.git"  &&  cd "${gitProj}"  &&  echo  &&  git remote -v  &&  echo  &&  git config user.name  &&  git config user.email  &&  echo
 ~~~
 
@@ -113,7 +113,7 @@ preCount=$(git stash list | wc -l); git stash push --include-untracked -m "auto-
 #### Remove a file from git AND locally
 
 ~~~bash
-fileToDelete="myfilename.txt"
+fileToDelete="FILE_TO_DELETE"
 [[ -n "${fileToDelete}"  &&  -e "${fileToDelete}" ]]  &&  git rm --cached -r "${fileToDelete}"  &&  git commit -m "Remove '${fileToDelete}' from tracking."  &&  git push  &&  trash "${fileToDelete}"
 ~~~
 
