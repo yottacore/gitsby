@@ -32,13 +32,19 @@ Arguably, about 90% of Git's complexity is due to covering a fringe about 10% of
 
 - It's goal-oriented, rather than task-driven. (Which sounds like hand-wavy doublespeak, but is true. The subcommands themselves illustrate how.)
 
-To be clear, x9git is just a bash shell script. There's every very little "logic", it's more about exposing a set of goal-oriented commands, sanity-checking arguments and underlying filesystem, and then chaining together the appropriate git commands to accomplish that goal.
+To be clear, x9git is just a bash shell script. There's not much "logic", it's more about exposing a set of goal-oriented commands, sanity-checking arguments and underlying filesystem, and then chaining together the appropriate git commands to accomplish that goal.
 
-x9git and regular git are fully compatible. x9git does nothing that git can't do directly (usually with about 4x as many commands). Axiomatically, nothing git can do, will cause x9git problems - at least, conceptually. It's nigh impossible to test every possible permutation, but a main driver of x9git is 1) to make few assumptions about underlying state, and 2) do things in a safe way [if occasionally redundant and/or unnecessary], that is tolerant of unexpected or inconsistent states.
+x9git and regular git are fully compatible. x9git does nothing that git can't do directly (usually with about 4x as many commands). Axiomatically, nothing git can do, will cause x9git problems - at least, conceptually. But it's nigh impossible to test every possible permutation.
+
+Sub-objectives in the workflow of each x9git command:
+
+1. Make few assumptions about underlying state, and
+
+1. Do things in a safe way [if occasionally redundant and/or unnecessary], that is tolerant of unexpected or inconsistent states.
 
 ## "Opinionated workflow": What are the opinions?
 
-There are many implicit opinions baked in, but here are the main explicit ones:
+There are many implicit opinions baked in. Here are the main ones:
 
 - `git pull --ff-only` is safer than and preferrable to `git pull --rebase`.
 
@@ -46,17 +52,15 @@ There are many implicit opinions baked in, but here are the main explicit ones:
 
 - Don't `push` to `develop`, `main`, or `master`; instead, create a pull request. Even if you otherwise have the rights to, and even for small personal projects. While pull requests are overkill for small personal projects, it is nevertheless good hygene, and fosters good working habits and experience.
 
+*More existing explicit and implicit opinions documentation to come, most already documented in [archived notes](https://raw.githubusercontent.com/jim-collier/x9git/refs/heads/main/reference/git.txt)...*
+
 ## Installation
 
-> **Note**: An earlier version of this script was used for years in a production environment for years.<br />
-<br />
-However, it is currently somewhat broken in it's current state, nor is actively used. It needs some additional boundary checks to be be safe in it's "opinionated" operation, in some edge cases where the remote repo may not have been following the opinionated conventions.<br />
-> <br />
-> Therefore, the installation instructions have been removed for now. The only reason this repo is still public, is because this document still serves as a reference to the opinionated workflow, and will be further fleshed out (including by "markdown-izing" more notes from the [original text-based reference](https://raw.githubusercontent.com/jim-collier/x9git/refs/heads/main/reference/git.txt)).<br />
-> <br />
-> The WIP script is also still available in this repo.<br />
+> **Note**: An earlier version of this script was used for years in a production environment for years.<br /><br />However, it is currently somewhat broken in it's current state, nor is actively used. It needs some additional boundary checks to be be safe in it's "opinionated" operation, in some edge cases where the remote repo may not have been following the opinionated conventions.<br /><br />Therefore, the installation instructions have been removed for now. The only reason this repo is still public, is because this document still serves as a reference to the opinionated workflow, and will be further fleshed out (including by "markdown-izing" more notes from the [original text-based reference](https://raw.githubusercontent.com/jim-collier/x9git/refs/heads/main/reference/git.txt)).
 
-The new document "[Git notes and one-liners]()" covers some of what the script does.
+The WIP script is still available in this repo.
+
+The new document "[Git notes and one-liners]()" covers some of what the `x9git` script used to and may again some day.
 
 <!--
 - Installing from the web
