@@ -27,7 +27,9 @@ Arguably, about 90% of Git's complexity is due to covering a fringe about 10% of
 ## General attributes
 
 - x9git encourages an opinionated workflow.
+
 - It doesn't cover fringe use-cases, which Git itself can cover while still using this for the more common stuff.
+
 - It's goal-oriented, rather than task-driven. (Which sounds like hand-wavy doublespeak, but is true. The subcommands themselves illustrate how.)
 
 To be clear, x9git is just a bash shell script. There's every very little "logic", it's more about exposing a set of goal-oriented commands, sanity-checking arguments and underlying filesystem, and then chaining together the appropriate git commands to accomplish that goal.
@@ -39,11 +41,24 @@ x9git and regular git are fully compatible. x9git does nothing that git can't do
 There are many implicit opinions baked in, but here are the main explicit ones:
 
 - `git pull --ff-only` is safer than and preferrable to `git pull --rebase`.
+
 - `git push` only to a feature branch you created.
+
 - Don't `push` to `develop`, `main`, or `master`; instead, create a pull request. Even if you otherwise have the rights to, and even for small personal projects. While pull requests are overkill for small personal projects, it is nevertheless good hygene, and fosters good working habits and experience.
 
 ## Installation
 
+> **Note**: An earlier version of this script was used for years in a production environment for years.<br />
+<br />
+However, it is currently somewhat broken in it's current state, nor is actively used. It needs some additional boundary checks to be be safe in it's "opinionated" operation, in some edge cases where the remote repo may not have been following the opinionated conventions.<br />
+> <br />
+> Therefore, the installation instructions have been removed for now. The only reason this repo is still public, is because this document still serves as a reference to the opinionated workflow, and will be further fleshed out (including by "markdown-izing" more notes from the [original text-based reference](https://raw.githubusercontent.com/jim-collier/x9git/refs/heads/main/reference/git.txt)).<br />
+> <br />
+> The WIP script is also still available in this repo.<br />
+
+The new document "[Git notes and one-liners]()" covers some of what the script does.
+
+<!--
 - Installing from the web
   ~~~
   cd /tmp
@@ -51,7 +66,8 @@ There are many implicit opinions baked in, but here are the main explicit ones:
   chmod +x x9git
   cp x9git "/wherever/you/need/it/to/go/"
   ~~~
-- Updating existing version from local git copy
+- Updating existing version from local git copy, after running command above
   ~~~
   tmpExisting="$(which x9git)" && cp x9git "${tmpExisting}" && chmod +x "${tmpExisting}"
   ~~~
+-->
