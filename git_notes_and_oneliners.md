@@ -102,21 +102,21 @@ git fetch && echo && git status  &&  { echo; git diff HEAD @{u} | less -FRX; ech
 #### Check out an existing branch and start using it, while preserving local changes
 
 ~~~bash
-gitProj="feature/1-refactor-from-static-template-to-dynamic-library"
+gitProj="feature|bugfix/EXISTING_BRANCH_NAME"
 [[ -n "${gitProj}" ]]  &&  { preCount=$(git stash list | wc -l); git stash push --include-untracked -m "auto-stash"; postCount=$(git stash list | wc -l); didStash=$((postCount > preCount ? 1 : 0));  git fetch origin  &&  git checkout "${gitProj}"  &&  { ((didStash)) && git stash pop || true; }  &&  echo  &&  git status  &&  echo ; }
 ~~~
 
 #### Create a new branch and sync it to GitHub
 
 ~~~bash
-branchName="feature/YOUR_BRANCH_NAME"
+branchName="feature|bugfix/NEW_BRANCH_NAME"
 [[ -n "${branchName}" ]]  &&  { preCount=$(git stash list | wc -l); git stash push --include-untracked -m "auto-stash"; postCount=$(git stash list | wc -l); didStash=$((postCount > preCount ? 1 : 0));  git pull --ff-only  &&  git checkout -b "${branchName}"  &&  { ((didStash)) && git stash pop || true; }  &&  git push -u origin "${branchName}"  &&  echo  &&  git branch -vv  &&  echo  &&  git status  &&  echo ; }
 ~~~
 
 #### Merge current local feature branch to main, and return to main
 
 ~~~bash
-branchName="feature/1-refactor-from-static-template-to-dynamic-library"
+branchName="feature|bugfix/EXISTING_BRANCH_NAME"
 
 ## Commit local changes and sync with upstream
 preCount=$(git stash list | wc -l); git stash push --include-untracked -m "auto-stash"; postCount=$(git stash list | wc -l); didStash=$((postCount > preCount ? 1 : 0)); git pull --rebase; ((didStash)) && git stash pop; git add --all && (git diff --cached --quiet || git commit) && git push -u origin HEAD; echo && git status && echo
