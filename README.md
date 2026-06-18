@@ -60,7 +60,7 @@ There are many implicit opinions baked in. Here are the main ones:
 
 The WIP script is still available in this repo.
 
-The new document "[Git notes and one-liners]()" covers some of what the `x9git` script used to and may again some day.
+The new document "[Git notes and one-liners](https://github.com/jim-collier/x9git/blob/main/git_notes_and_oneliners.md)" covers some of what the `x9git` script used to and may again some day.
 
 <!--
 - Installing from the web

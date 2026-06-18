@@ -18,6 +18,7 @@ Command strings for common git tasks
 - [Commands for common tasks](#commands-for-common-tasks)
 	- [Basics using main or master](#basics-using-main-or-master)
 		- [Clone a project and start programming with it, using aliases in ~/.ssh/config](#clone-a-project-and-start-programming-with-it-using-aliases-in-sshconfig)
+		- [Reconnect to a project after renaming it remotely](#reconnect-to-a-project-after-renaming-it-remotely)
 	- [Regular use](#regular-use)
 		- [Refresh local with changes from upstream](#refresh-local-with-changes-from-upstream)
 		- [Push local changes to upstream](#push-local-changes-to-upstream)
@@ -27,6 +28,7 @@ Command strings for common git tasks
 	- [Branches](#branches)
 		- [Check out an existing branch and start using it, while preserving local changes](#check-out-an-existing-branch-and-start-using-it-while-preserving-local-changes)
 		- [Merge current local feature branch to main, and return to main](#merge-current-local-feature-branch-to-main-and-return-to-main)
+		- [Create a new branch and push it to GitHub](#create-a-new-branch-and-push-it-to-github)
 	- [Maintenance](#maintenance)
 		- [Remove a file from git AND locally](#remove-a-file-from-git-and-locally)
 - [References](#references)
@@ -51,6 +53,14 @@ Care is needed with `stash apply` or `stash pop`, because if the a `git stash pu
 gitProj="REMOTE_REPO_NAME"
 gitUser="YOUR_GIT_USER_NAME"
 [[ -n "${gitProj}"  &&  -n "${gitUser}" ]]  &&  git clone "git@github_${gitUser}:${gitUser}/${gitProj}.git"  &&  cd "${gitProj}"  &&  echo  &&  git remote -v  &&  echo  &&  git config user.name  &&  git config user.email  &&  echo
+~~~
+
+#### Reconnect to a project after renaming it remotely
+
+~~~bash
+gitProj="REMOTE_REPO_NAME"
+gitUser="YOUR_GIT_USER_NAME"
+[[ -n "${gitProj}"  &&  -n "${gitUser}" ]]  &&  git remote set-url origin "git@github_${gitUser}:${gitUser}/${gitProj}.git"  &&  echo -e "\ngit will be using this contact info:" ; git config user.name ; git config user.email; echo -e "\ngit remote info:" ; git remote -v; echo -e "\nSSH login test:" ; ssh -T git@github.com; echo  &&  git status  &&  echo
 ~~~
 
 ### Regular use
@@ -94,6 +104,13 @@ git fetch && echo && git status  &&  { echo; git diff HEAD @{u} | less -FRX; ech
 ~~~bash
 gitProj="feature/1-refactor-from-static-template-to-dynamic-library"
 [[ -n "${gitProj}" ]]  &&  { preCount=$(git stash list | wc -l); git stash push --include-untracked -m "auto-stash"; postCount=$(git stash list | wc -l); didStash=$((postCount > preCount ? 1 : 0));  git fetch origin  &&  git checkout "${gitProj}"  &&  { ((didStash)) && git stash pop || true; }  &&  echo  &&  git status  &&  echo ; }
+~~~
+
+#### Create a new branch and syng it to GitHub
+
+~~~bash
+branchName="feature/YOUR_BRANCH_NAME"
+[[ -n "${branchName}" ]]  &&  { preCount=$(git stash list | wc -l); git stash push --include-untracked -m "auto-stash"; postCount=$(git stash list | wc -l); didStash=$((postCount > preCount ? 1 : 0));  git pull --ff-only  &&  git checkout -b "${branchName}"  &&  { ((didStash)) && git stash pop || true; }  &&  git push -u origin "${branchName}"  &&  echo  &&  git branch -vv  &&  echo  &&  git status  &&  echo ; }
 ~~~
 
 #### Merge current local feature branch to main, and return to main
