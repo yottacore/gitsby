@@ -18,6 +18,7 @@ Command strings for common git tasks
 - [Commands for common tasks](#commands-for-common-tasks)
 	- [Basics using main or master](#basics-using-main-or-master)
 		- [Clone a project and start programming with it, using aliases in ~/.ssh/config](#clone-a-project-and-start-programming-with-it-using-aliases-in-sshconfig)
+		- [Initialize an existing local project with git and push it to a new github repo](#initialize-an-existing-local-project-with-git-and-push-it-to-a-new-github-repo)
 		- [Reconnect to a project after renaming it remotely](#reconnect-to-a-project-after-renaming-it-remotely)
 	- [Regular use](#regular-use)
 		- [Refresh local with changes from upstream](#refresh-local-with-changes-from-upstream)
@@ -54,6 +55,14 @@ Care is needed with `stash apply` or `stash pop`, because if the a `git stash pu
 gitProj="REMOTE_REPO_NAME"
 gitUser="YOUR_GIT_USER_NAME"
 [[ -n "${gitProj}"  &&  -n "${gitUser}" ]]  &&  git clone "git@github_${gitUser}:${gitUser}/${gitProj}.git"  &&  cd "${gitProj}"  &&  echo  &&  git remote -v  &&  echo  &&  git config user.name  &&  git config user.email  &&  echo
+~~~
+
+#### Initialize an existing local project with git and push it to a new github repo
+
+~~~bash
+gitProj="REMOTE_REPO_NAME"
+gitUser="YOUR_GIT_USER_NAME"
+[[ -n "${gitProj}"  &&  -n "${gitUser}" ]]  &&  git init  &&  git add --all  &&  git commit -m "Initial commit."  &&  git remote add origin "git@github_${gitUser}:${gitUser}/${gitProj}.git"  &&  git push -u origin main  &&  echo  &&  git remote -v  &&  echo  &&  git config user.name  &&  git config user.email  &&  echo
 ~~~
 
 #### Reconnect to a project after renaming it remotely
