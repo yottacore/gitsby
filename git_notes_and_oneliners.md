@@ -62,7 +62,7 @@ gitUser="YOUR_GIT_USER_NAME"
 ~~~bash
 gitProj="REMOTE_REPO_NAME"
 gitUser="YOUR_GIT_USER_NAME"
-[[ -n "${gitProj}"  &&  -n "${gitUser}" ]]  &&  git init  &&  git add --all  &&  git commit -m "Initial commit."  &&  git remote add origin "git@github_${gitUser}:${gitUser}/${gitProj}.git"  &&  git push -u origin main  &&  echo  &&  git remote -v  &&  echo  &&  git config user.name  &&  git config user.email  &&  echo
+[[ -n "${gitProj}"  &&  -n "${gitUser}" ]]  &&  git init -b main  &&  git add --all  &&  git commit -m "Initial commit."  &&  git remote add origin "git@github_${gitUser}:${gitUser}/${gitProj}.git"  &&  git push -u origin main  &&  echo  &&  git remote -v  &&  echo  &&  git config user.name  &&  git config user.email  &&  echo
 ~~~
 
 #### Reconnect to a project after renaming it remotely
