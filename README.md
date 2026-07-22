@@ -57,6 +57,7 @@ An "extreme" Git wrapper to speed and simplify Git workflow.
 	- [Bash](#bash)
 	- [PowerShell](#powershell)
 - [Git notes and one-liners](#git-notes-and-one-liners)
+- [Contributing](#contributing)
 - [Copyright and license](#copyright-and-license)
 
 <!-- /TOC -->
@@ -154,6 +155,10 @@ Then, decide to install for your user account only, or system-wide. (But to avoi
 ## Git notes and one-liners
 
 The document in this repo, "[Git notes and one-liners](https://github.com/jim-collier/x9git/blob/main/git_notes_and_oneliners.md)" covers some simplified versions of what the `x9git` does.
+
+## Contributing
+
+Contributions are welcome. Start with [contributing.md](contributing.md) for process, and [style-guide.md](style-guide.md) for prose style.
 
 ## Copyright and license
 
