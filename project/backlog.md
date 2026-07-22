@@ -49,9 +49,11 @@ In each section, items are listed approximately from newest to oldest.
 
 	- ✅ `dev` branch created from `main` and pushed; feature branches now merge to `dev`, `main` is release-only.
 
-- 🔘 Create PRs rather than pushing directly (for this project).
+- ✅ Create PRs rather than pushing directly (for this project).
+	- Feature branches now go up as PRs to `dev` and land via merge commit; direct local merges retired.
 
-- 🔘 Delete stale branch from 2020.
+- ✅ Delete stale branch from 2020.
+	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
 
 - 🛠️ CICD process (full spec in private notes):
 
