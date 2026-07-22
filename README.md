@@ -78,7 +78,6 @@ x9git and git are 100% compatible and interchangeable.
 
 100% compatible with GitHub and GitLab.
 
-
 Arguably, about 90% of Git's complexity is due to covering a fringe about 10% of use-cases. If you buy that argument, then axiomatically, if you lop off that 10% of fringe use-cases, then Git becomes 90% easier to work with. This goes further, lopping off (very approximately) half of the functionality, and is about 95% easier to work with.
 
 ## General attributes
