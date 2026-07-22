@@ -32,11 +32,11 @@
 
 ## Clone repository for first time
 
-	mkdir -p ~/git/github.com/x9-testlab;  cd ~/git/github.com/x9-testlab;  git clone git@github.com:x9-testlab/x9git.git; cd x9git; d && git branch -vv && echo && git status && echo
+	mkdir -p ~/git/github.com/x9-testlab;  cd ~/git/github.com/x9-testlab;  git clone git@github.com:x9-testlab/gitsby.git; cd gitsby; d && git branch -vv && echo && git status && echo
 
 ## Change projects (if already exists)
 
-	cd ~/git/github.com/x9-testlab/x9git.git;  git remote set-url origin git@github.com:x9-testlab/x9git.git;  git pull --ff-only origin ${sourceBranch} && d && git branch -vv && echo && git status && echo
+	cd ~/git/github.com/x9-testlab/gitsby.git;  git remote set-url origin git@github.com:x9-testlab/gitsby.git;  git pull --ff-only origin ${sourceBranch} && d && git branch -vv && echo && git status && echo
 
 ## Switch to and follow different branch
 

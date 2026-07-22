@@ -50,7 +50,7 @@ Canonical coding style for this project's Bash and PowerShell. For contribution 
 
 - Target Bash 5. Prefer its idioms over portable-but-clunky POSIX-only workarounds.
 
-- Must pass shellcheck. Per-file disables go at the top, each with a short reason (see the top of `bin/x9git`).
+- Must pass shellcheck. Per-file disables go at the top, each with a short reason (see the top of `bin/gitsby`).
 
 - Tabs for indentation, spaces for alignment.
 

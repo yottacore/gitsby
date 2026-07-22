@@ -240,7 +240,7 @@ else
 	fi
 fi
 
-## Stage 2: regression tests. The harness lands with the bin/x9git refactor;
+## Stage 2: regression tests. The harness lands with the bin/gitsby refactor;
 ## until then this stage reports itself absent rather than pretending to pass.
 fSection "2/6  Regression tests"
 if ((! do_test)); then
@@ -249,7 +249,7 @@ elif [[ -f "${TEST_CMD[0]:-}" ]]; then
 	"${TEST_CMD[@]}"
 	fEcho "OK: tests passed"
 else
-	fEcho_Clean "no test harness yet (${TEST_CMD[0]:-cicd/test.bash} - lands with the bin/x9git refactor)"
+	fEcho_Clean "no test harness yet (${TEST_CMD[0]:-cicd/test.bash} - lands with the bin/gitsby refactor)"
 fi
 
 ## Stage 3: fuzz + security (adversarial input against our parsing, plus checks
@@ -262,7 +262,7 @@ elif [[ -f "${FUZZ_CMD[0]:-}" ]]; then
 	"${FUZZ_CMD[@]}"
 	fEcho "OK: fuzz + security passed"
 else
-	fEcho_Clean "no fuzz harness yet (${FUZZ_CMD[0]:-cicd/fuzz.bash} - lands with the bin/x9git refactor)"
+	fEcho_Clean "no fuzz harness yet (${FUZZ_CMD[0]:-cicd/fuzz.bash} - lands with the bin/gitsby refactor)"
 fi
 
 ## Stage 4: dogfood. A script project's "release build" is the script itself;
@@ -301,7 +301,7 @@ fSection "5/6  Demo gif"
 if ((! DO_DEMOGIF)); then
 	fEcho_Clean "demo gif skipped$( ((quick)) && echo ' (--quick)')"
 elif [[ ! -f "${DEMOGIF_SCENARIO}" ]]; then
-	fEcho_Clean "no demo scenario yet (${DEMOGIF_SCENARIO} - lands after the bin/x9git refactor)"
+	fEcho_Clean "no demo scenario yet (${DEMOGIF_SCENARIO} - lands after the bin/gitsby refactor)"
 else
 	demogif_out="${root}/${DEMOGIF_OUT}"
 	demogif_tmp="${demogif_out}.new"
