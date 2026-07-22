@@ -11,6 +11,7 @@ Command strings for common git tasks
 
 <!-- TOC ignore:true -->
 ## Table of contents
+
 <!-- TOC -->
 
 - [General notes](#general-notes)
