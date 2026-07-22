@@ -45,7 +45,7 @@ In each section, items are listed approximately from newest to oldest.
 
 - 🔘 Create PRs rather than pushing directly (for this project).
 
-- 🛠️ CICD process (full spec in `.claude/details.md`):
+- 🛠️ CICD process (full spec in private notes):
 
 	- ✅ `cicd.bash`: `-q|--quiet`, `-m|--msg|--message`, prompt for commit message when neither given (CTRL+C aborts); silkterm output style; `fEcho`/`fParseArgs` conventions.
 
