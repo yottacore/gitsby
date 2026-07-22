@@ -60,10 +60,10 @@ In each section, items are listed approximately from newest to oldest.
 	- ✅ `cicd.bash`: `-q|--quiet`, `-m|--msg|--message`, prompt for commit message when neither given (CTRL+C aborts); silkterm output style; `fEcho`/`fParseArgs` conventions.
 
 	- ✅ Linting stage: shellcheck (+ markdownlint), no auto-format for Bash; output GFS-rotated to `cicd/artifacts/lint/`; zero-error goal.
-		- Legacy `bin/gitsby` lints report-only until the refactor retires its ~80 findings; everything else gates clean.
+		- Everything gates clean now, including `bin/gitsby` (the refactor cleared its ~80 legacy findings; report-only list emptied).
 
-	- 🛠️ Regression tests; keep updated as features/bugs land.
-		- Stage wired (`cicd/test.bash`); harness written against the refactored script, not the pre-refactor one.
+	- ✅ Regression tests; keep updated as features/bugs land.
+		- `cicd/test.bash` landed with the refactor: 39 checks against throwaway repos (bare origin + two clones); covers every command plus failure guards.
 
 	- 🛠️ Adversarial fuzz/security testing (our input surface + what we depend on).
 		- Stage wired (`cicd/fuzz.bash`); same timing as the test harness.
@@ -74,17 +74,21 @@ In each section, items are listed approximately from newest to oldest.
 	- 🛠️ Automated demo GIF (fake terminal, 640x360@50fps, `--quick` skips); copy `gen-demo-gif.py` from convert-base-v2; embed `assets/demo.gif` in README.
 		- Generator + stage wired; scenario + README embed after the refactor, so it demos working commands.
 
-- 🔘 Refactor the bash script:
+- ✅ Refactor the bash script:
+	- Rewritten 2142 -> ~620 lines on the current template generation (same one as `n8git_backup-and-publish`): strict mode, trap suite, arg parser, minified header trio.
 
-	- 🔘 Use newer, easier-to-maintain Bash template/boilerplate/common functions. (E.g. from sister project silkterm.) But even those examples need to be cleaner (don't change anything outside of repo.)
+	- ✅ Use newer, easier-to-maintain Bash template/boilerplate/common functions. (E.g. from sister project silkterm.) But even those examples need to be cleaner (don't change anything outside of repo.)
 
-	- 🔘 Modernize function and variable naming convention. Be descriptive with names, but not too long. Use of one-letter variables in small loop structures is OK.
+	- ✅ Modernize function and variable naming convention. Be descriptive with names, but not too long. Use of one-letter variables in small loop structures is OK.
 
-	- 🔘 Remove dead code.
+	- ✅ Remove dead code.
+		- Dropped the unused ~1400-line generic library (ping, symlink, editor pickers, sudo plumbing, glob-permutation engine, platform detection).
 
-	- 🔘 Refactor to maximize usefulness of idiomatic Bash 5 features.
+	- ✅ Refactor to maximize usefulness of idiomatic Bash 5 features.
+		- Argument arrays instead of eval (which also retired the curly-quote message mangling), `[[ -v ]]`, parameter transforms, arithmetic conditionals.
 
-- 🔘 Make sure everything done with git:
+- ✅ Make sure everything done with git:
+	- Every command verifies state first and is idempotent: stash only if dirty (pop only what was pushed), pull only with an upstream, push only if ahead, commit only if changes; main/master detected from origin HEAD, not hardcoded. All covered by the regression tests.
 
 	- Is done safely. E.g. before stashing, verify safely in a robust way that makes no assumptions, that there is anything to pull. `n8git_backup-and-publish` has examples.
 
@@ -92,7 +96,8 @@ In each section, items are listed approximately from newest to oldest.
 
 	- Everything must be idempotent.
 
-- 🔘 Integrate these rules and ideals: `reference/git.txt` (in this repo), including:
+- ✅ Integrate these rules and ideals: `reference/git.txt` (in this repo), including:
+	- Push hygiene (stash / pull --ff-only / stash apply / add / commit / push) is now the core of spull/scompul/spush; branch workflow lives in mkbranch/chbranch/mtm.
 	- Work on feature branches
 	- PRs to merge to develop
 	- Commit frequently
@@ -108,7 +113,8 @@ In each section, items are listed approximately from newest to oldest.
 		git push
 		~~~
 
-- 🔘 Get original commands and options working. At some point some just kind of broke (pre-git), and were never fixed.
+- ✅ Get original commands and options working. At some point some just kind of broke (pre-git), and were never fixed.
+	- All nine commands work and are regression-tested; scommit/scompul/spush/mtm take -m or a positional message, mkbranch/chbranch validate their branch argument.
 
 - 🔘 Create a release-install script per platform (`bash` and \[`pwsh` or `cmd`\]), runnable via a single `curl`/`wget` (etc.) and documented under "how to install". Downloads, installs, and runs the latest release, with an option to abort. Update README.md with one-liner for both local and system-level installs.
 
