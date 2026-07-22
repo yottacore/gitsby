@@ -42,7 +42,7 @@
 -->
 
 <!-- TOC ignore:true -->
-# gitsby
+# The Great Gitsby
 
 An "extreme" Git wrapper to speed and simplify Git workflow.
 
