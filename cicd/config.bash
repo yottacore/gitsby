@@ -3,7 +3,7 @@
 #  shellcheck disable=2034  ## 'variable appears unused.' Everything here is consumed by cicd.bash after sourcing.
 
 ##	Purpose:
-##		- Project-specific CI/CD settings for x9git.
+##		- Project-specific CI/CD settings for gitsby.
 ##		- The engine (cicd.bash) stays generic; everything project-specific lives here.
 ##		- To reuse the pipeline elsewhere, copy the cicd/ directory and edit this file.
 ##		- All paths are relative to the repo root; the engine cds there first.
@@ -21,8 +21,8 @@ declare -i isSourced_t6wqf=0; [[ "${BASH_SOURCE[0]}" == "${0}" ]] || isSourced_t
 
 
 ## Identity
-APP_NAME="x9git"
-EXE_NAME="x9git"
+APP_NAME="gitsby"
+EXE_NAME="gitsby"
 
 ## Stage 1: lint. Every first-party shell file (globs, expanded by the engine).
 ## shellcheck is gating; there is deliberately NO formatter stage - bash is
@@ -40,7 +40,7 @@ SHELL_LINT_GLOBS=(
 ## Report-only (findings warn, never gate): the pre-refactor legacy script. Move
 ## these up into SHELL_LINT_GLOBS as the refactor lands, so new code stays clean.
 SHELL_LINT_WARN_GLOBS=(
-	"bin/x9git"
+	"bin/gitsby"
 )
 MD_LINT_GLOBS=(
 	"*.md"
@@ -50,11 +50,11 @@ PY_LINT_FILES=(
 	"cicd/utility/gen-demo-gif.py"
 )
 
-## Stage 2: regression tests. The harness lands with the bin/x9git refactor;
+## Stage 2: regression tests. The harness lands with the bin/gitsby refactor;
 ## until the file exists the engine reports the stage absent (not passing).
 TEST_CMD=(cicd/test.bash)
 
-## Stage 3: fuzz + security (adversarial input against x9git's option/arg
+## Stage 3: fuzz + security (adversarial input against gitsby's option/arg
 ## parsing and repo-state handling). Same lands-later policy; skipped by --quick.
 FUZZ_CMD=(cicd/fuzz.bash)
 
@@ -66,7 +66,7 @@ LINT_LOG_DIR="cicd/artifacts/lint"          # relative to repo root; created if 
 ## Stage 4: dogfood. A script project's "release build" is the script itself:
 ## copy it over EXE_NAME in the first existing dir below (the stable path you
 ## launch by hand). The pwsh pair stays dormant until a PowerShell port exists.
-DOGFOOD_BASH_SRC="bin/x9git"
+DOGFOOD_BASH_SRC="bin/gitsby"
 DOGFOOD_BASH_DESTS=(
 	"${HOME}/synced/0-0/common/exec/util/linux/bash"
 	"/usr/local/sbin"
@@ -81,7 +81,7 @@ DOGFOOD_PWSH_DESTS=(
 ## each against the dogfooded script, renders the animated loop (640x360, 50fps,
 ## hard-cut loop boundary). Seeded, so an unchanged script + scenario reproduces
 ## the same file. Skipped by --quick / --no-demogif; self-skips until the
-## scenario file exists (it lands after the bin/x9git refactor).
+## scenario file exists (it lands after the bin/gitsby refactor).
 DO_DEMOGIF=1
 DEMOGIF_SCENARIO="cicd/demo-scenario.toml"
 DEMOGIF_CMD=(cicd/utility/gen-demo-gif.py --scenario "${DEMOGIF_SCENARIO}")

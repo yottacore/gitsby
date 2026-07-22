@@ -42,7 +42,7 @@
 -->
 
 <!-- TOC ignore:true -->
-# x9git
+# gitsby
 
 An "extreme" Git wrapper to speed and simplify Git workflow.
 
@@ -66,15 +66,15 @@ An "extreme" Git wrapper to speed and simplify Git workflow.
 
 One reason Git is so complex, is because it's so flexible. It's so flexible because it supports a wide variety of workflows, team sizes, and very narrow/hard edge-cases of conflict resolution.
 
-`x9git` vastly simplifies Git, by:
+`gitsby` vastly simplifies Git, by:
 
 - Applying an opinionated workflow, and ignoring the myriad other ways of doing the same thing.
 
 - By acknowledging that (arguably) some ≈90% of Git's complexity is devoted to to covering about ≈10% of use-cases, and ignoring most of them. (Not pretending they never happen, just not trying to be the tool to solve them.)
 
-x9git and git are 100% compatible and interchangeable.
+gitsby and git are 100% compatible and interchangeable.
 
-- *In fact in large projects, you'll still need raw `git` to resolve some sticky situations that `x9git` purposely doesn't try to tackle (in order to keep-it-simple and "do one thing well").*
+- *In fact in large projects, you'll still need raw `git` to resolve some sticky situations that `gitsby` purposely doesn't try to tackle (in order to keep-it-simple and "do one thing well").*
 
 100% compatible with GitHub and GitLab.
 
@@ -88,11 +88,11 @@ Arguably, about 90% of Git's complexity is due to covering a fringe about 10% of
 
 - It's goal-oriented, rather than task-driven. (Which sounds like hand-wavy doublespeak, but is accurate. The subcommands themselves illustrate how.)
 
-To be clear, x9git is just shell script. There's not much "logic", it's more about exposing a set of goal-oriented commands, sanity-checking arguments and underlying filesystem, and then chaining together the appropriate git commands to accomplish that goal.
+To be clear, gitsby is just shell script. There's not much "logic", it's more about exposing a set of goal-oriented commands, sanity-checking arguments and underlying filesystem, and then chaining together the appropriate git commands to accomplish that goal.
 
-x9git and regular git are fully compatible. x9git does nothing that git can't do directly (with many more commands and guards).
+gitsby and regular git are fully compatible. gitsby does nothing that git can't do directly (with many more commands and guards).
 
-Sub-objectives in the workflow of each x9git command:
+Sub-objectives in the workflow of each gitsby command:
 
 1. Make few assumptions about underlying state, and
 
@@ -131,11 +131,11 @@ Then, decide to install for your user account only, or system-wide. (But to avoi
 	~~~bash
 	cd /tmp
 
-	wget https://raw.githubusercontent.com/jim-collier/x9git/main/x9git
+	wget https://raw.githubusercontent.com/jim-collier/gitsby/main/gitsby
 
-	sudo cp x9git /usr/local/sbin/
+	sudo cp gitsby /usr/local/sbin/
 
-	sudo chmod +x x9git
+	sudo chmod +x gitsby
 	~~~
 
 ### PowerShell
@@ -153,7 +153,7 @@ Then, decide to install for your user account only, or system-wide. (But to avoi
 
 ## Git notes and one-liners
 
-The document in this repo, "[Git notes and one-liners](https://github.com/jim-collier/x9git/blob/main/git_notes_and_oneliners.md)" covers some simplified versions of what the `x9git` does.
+The document in this repo, "[Git notes and one-liners](https://github.com/jim-collier/gitsby/blob/main/git_notes_and_oneliners.md)" covers some simplified versions of what the `gitsby` does.
 
 ## Contributing
 

@@ -167,7 +167,7 @@ function fpSetFlags() {
 		"spushmtm")
 			: ;;
 		*)
-			fThrowError "${commandName}: Unknown x9git function '${commandName}'. Type 'x9git' for a list of commands."
+			fThrowError "${commandName}: Unknown gitsby function '${commandName}'. Type 'gitsby' for a list of commands."
 			: ;;
 	esac
 
@@ -200,7 +200,7 @@ function fpExecuteCommand() {
 		"chbranch")    fChBranch       "$@" ;;
 		"mtm")         fMtM            "$@" ;;
 		*)
-			fThrowError "${commandName}: Unknown x9git function '${commandName}'. Type 'x9git' for a list of commands."
+			fThrowError "${commandName}: Unknown gitsby function '${commandName}'. Type 'gitsby' for a list of commands."
 			;;
 	esac
 
@@ -296,7 +296,7 @@ function fpSafePush() {
 	##		- Common safe push subroutine to be used by other commands
 	##	History
 	##		- 20141003 JC: Created.
-	##		- 20220501 JC: Updated with new hygene from https://raw.githubusercontent.com/x9-testlab/x9git/main/reference/git.txt.
+	##		- 20220501 JC: Updated with new hygene from https://raw.githubusercontent.com/x9-testlab/gitsby/main/reference/git.txt.
 	##	Input:
 	##		1 [optional]: Commit message.
 	local commandName="fpSafePush()"
@@ -2131,7 +2131,7 @@ esac
 ##			- Removed 'init', 'setrepo', and 'pushmtm' commands.
 ##				- Now must do 'git clone' yourself, until I make a new, simpler command for it.
 ##				- mtm now also pushes just in case (does what pushmtm used to).
-##			- Removed all artificial dependencies on concept of system-wide 'top-level git directory', and '.x9git_current' file. Can now change projects at will just by changing directories.
+##			- Removed all artificial dependencies on concept of system-wide 'top-level git directory', and '.gitsby_current' file. Can now change projects at will just by changing directories.
 ##			- Added commands: scommit and scompul.
 ##			- Changed all 'git pull' to 'git pull --ff-only', based on hygene ideals.
 ##			- Updated help to suggest NOT using mtm.

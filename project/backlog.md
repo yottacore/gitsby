@@ -39,6 +39,12 @@ In each section, items are listed approximately from newest to oldest.
 
 ## Backlog
 
+### Misc to-do
+
+### Bugs
+
+### Features and enhancements
+
 - ✅ Work on dev branch. Push releases to main.
 
 	- ✅ `dev` branch created from `main` and pushed; feature branches now merge to `dev`, `main` is release-only.
@@ -50,7 +56,7 @@ In each section, items are listed approximately from newest to oldest.
 	- ✅ `cicd.bash`: `-q|--quiet`, `-m|--msg|--message`, prompt for commit message when neither given (CTRL+C aborts); silkterm output style; `fEcho`/`fParseArgs` conventions.
 
 	- ✅ Linting stage: shellcheck (+ markdownlint), no auto-format for Bash; output GFS-rotated to `cicd/artifacts/lint/`; zero-error goal.
-		- Legacy `bin/x9git` lints report-only until the refactor retires its ~80 findings; everything else gates clean.
+		- Legacy `bin/gitsby` lints report-only until the refactor retires its ~80 findings; everything else gates clean.
 
 	- 🛠️ Regression tests; keep updated as features/bugs land.
 		- Stage wired (`cicd/test.bash`); harness written against the refactored script, not the pre-refactor one.
@@ -63,8 +69,6 @@ In each section, items are listed approximately from newest to oldest.
 
 	- 🛠️ Automated demo GIF (fake terminal, 640x360@50fps, `--quick` skips); copy `gen-demo-gif.py` from convert-base-v2; embed `assets/demo.gif` in README.
 		- Generator + stage wired; scenario + README embed after the refactor, so it demos working commands.
-
-- ✋ PowerShell port of x9git (style guide already covers pwsh; dogfood pwsh leg activates when it lands).
 
 - 🔘 Refactor the bash script:
 
@@ -84,7 +88,7 @@ In each section, items are listed approximately from newest to oldest.
 
 	- Everything must be idempotent.
 
-- 🔘 Integrate these rules and ideals: <https://github.com/x9-testlab/x9git/blob/main/reference/git.txt>, including:
+- 🔘 Integrate these rules and ideals: `reference/git.txt` (in this repo), including:
 	- Work on feature branches
 	- PRs to merge to develop
 	- Commit frequently
@@ -106,11 +110,7 @@ In each section, items are listed approximately from newest to oldest.
 
 	- 🔘 Do the same thing for a dev-branch install script (Linux bash, macOS sh, Windows PowerShell), runnable via a single `curl`/`wget` and documented under "how to develop". Clones main, installs dependencies, and states what it will do with an option to abort. Update README.md with one-liner for both local and system-level installs.
 
-### Misc to-do
-
-### Bugs
-
-### Features and enhancements
+- 🔘 PowerShell port of gitsby (style guide already covers pwsh; dogfood pwsh leg activates when it lands).
 
 ### Done
 

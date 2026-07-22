@@ -157,5 +157,5 @@ fileToDelete="FILE_TO_DELETE"
 
 ## References
 
-- [x9git project](https://github.com/jim-collier/x9git/tree/main)
-- [x9git reference](https://github.com/jim-collier/x9git/blob/main/reference/git.txt)
+- [gitsby project](https://github.com/jim-collier/gitsby/tree/main)
+- [gitsby reference](https://github.com/jim-collier/gitsby/blob/main/reference/git.txt)
