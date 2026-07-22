@@ -45,6 +45,27 @@ In each section, items are listed approximately from newest to oldest.
 
 - 🔘 Create PRs rather than pushing directly (for this project).
 
+- 🛠️ CICD process (full spec in `.claude/details.md`):
+
+	- ✅ `cicd.bash`: `-q|--quiet`, `-m|--msg|--message`, prompt for commit message when neither given (CTRL+C aborts); silkterm output style; `fEcho`/`fParseArgs` conventions.
+
+	- ✅ Linting stage: shellcheck (+ markdownlint), no auto-format for Bash; output GFS-rotated to `cicd/artifacts/lint/`; zero-error goal.
+		- Legacy `bin/x9git` lints report-only until the refactor retires its ~80 findings; everything else gates clean.
+
+	- 🛠️ Regression tests; keep updated as features/bugs land.
+		- Stage wired (`cicd/test.bash`); harness written against the refactored script, not the pre-refactor one.
+
+	- 🛠️ Adversarial fuzz/security testing (our input surface + what we depend on).
+		- Stage wired (`cicd/fuzz.bash`); same timing as the test harness.
+
+	- ✅ Dogfood install stage: copy to first existing preferred dir (bash + pwsh lists).
+		- pwsh leg dormant until a port exists.
+
+	- 🛠️ Automated demo GIF (fake terminal, 640x360@50fps, `--quick` skips); copy `gen-demo-gif.py` from convert-base-v2; embed `assets/demo.gif` in README.
+		- Generator + stage wired; scenario + README embed after the refactor, so it demos working commands.
+
+- ✋ PowerShell port of x9git (style guide already covers pwsh; dogfood pwsh leg activates when it lands).
+
 - 🔘 Refactor the bash script:
 
 	- 🔘 Use newer, easier-to-maintain Bash template/boilerplate/common functions. (E.g. from sister project silkterm.) But even those examples need to be cleaner (don't change anything outside of repo.)
@@ -63,7 +84,7 @@ In each section, items are listed approximately from newest to oldest.
 
 	- Everything must be idempotent.
 
-- 🔘 Integrate these rules and ideals: https://github.com/x9-testlab/x9git/blob/main/reference/git.txt, including:
+- 🔘 Integrate these rules and ideals: <https://github.com/x9-testlab/x9git/blob/main/reference/git.txt>, including:
 	- Work on feature branches
 	- PRs to merge to develop
 	- Commit frequently

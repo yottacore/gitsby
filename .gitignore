@@ -1,0 +1,4 @@
+## CICD run artifacts (logs, lint output, profiling) - local only
+cicd/artifacts/
+*.gif.new
+__pycache__/

@@ -14,6 +14,7 @@ Canonical coding style for this project's Bash and PowerShell. For contribution 
 - [Both languages](#both-languages)
 	- [Naming](#naming)
 	- [Comments and headers](#comments-and-headers)
+	- [Misc](#misc)
 - [Bash](#bash)
 - [PowerShell](#powershell)
 
@@ -23,9 +24,9 @@ Canonical coding style for this project's Bash and PowerShell. For contribution 
 
 ### Naming
 
-- Use meaningful names a human can read, search for, and replace: `upperBound`, not `ub`.
+- Use meaningful names, e.g. that can be searched for. `upperBound`, not `ub`.
 
-- Don't overcorrect. Short conventional names are fine where the meaning is clear.
+- But short conventional names are fine where the meaning is clear.
 
 - Single-letter variables are fine for loop counters and iterators (`for i in ...`), where that's idiomatic.
 
@@ -33,15 +34,21 @@ Canonical coding style for this project's Bash and PowerShell. For contribution 
 
 - Terse. Explain *why*, not *what*. Don't restate the next line of code.
 
-- No decorative flair or banner dividers. (The one exception: full-width section-rule comments between major blocks, matching the existing ones.)
+- No decorative flair or banner dividers. (The one exception: full-width section-rule comments between major blocks.)
 
 - The file header carries purpose, copyright, and license, in the existing format: `©` copyright line, license name and URL, SPDX identifier.
 
 - Helper and utility scripts are usually MIT-licensed regardless of the project's license, and say so in their own header.
 
+### Misc
+
+- Functions should be idempotent.
+
+- Output should be "friendly", with a blank line to start, a blank line after the end, and never two blank lines in a row (except if beyond script control e.g. in the middle of external command output). The custom bash fEcho*() family of functions help with that.
+
 ## Bash
 
-- Target Bash 5. Prefer its idioms over portable-but-clunky workarounds.
+- Target Bash 5. Prefer its idioms over portable-but-clunky POSIX-only workarounds.
 
 - Must pass shellcheck. Per-file disables go at the top, each with a short reason (see the top of `bin/x9git`).
 
@@ -49,7 +56,9 @@ Canonical coding style for this project's Bash and PowerShell. For contribution 
 
 - Reuse the script's existing output helpers (`fEcho`, `fEcho_Clean`). Don't add new echo/printf wrapper functions.
 
-- Verify state before acting; make no assumptions about local or remote repo state. Every operation should be safe and idempotent.
+- Avoid shelling out unless necessary (e.g. for `git` commands).
+
+	- Borrow `fBgrep()` from `../bash5-marmot/github/bin/include/n8mod_string_v1`, if necessary for regex grep. Also `fBgrepQ()`, `fBhead()`, if needed.
 
 ## PowerShell
 
