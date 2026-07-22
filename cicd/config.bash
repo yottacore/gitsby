@@ -29,19 +29,16 @@ EXE_NAME="gitsby"
 ## hand-formatted on purpose. Markdown is probe-gated (markdownlint if installed);
 ## the .py just gets a compile check.
 SHELL_LINT_GLOBS=(
-	"cicd/cicd.bash"
-	"cicd/config.bash"
+	"bin/gitsby"
+	"cicd/*.bash"
 	"cicd/utility/lint-report.bash"
 	"cicd/utility/git-auto-msg.bash"
 	"cicd/utility/n8git_backup-and-publish"
 	"cicd/utility/include/*.bash"
 	"utility/*.bash"
 )
-## Report-only (findings warn, never gate): the pre-refactor legacy script. Move
-## these up into SHELL_LINT_GLOBS as the refactor lands, so new code stays clean.
-SHELL_LINT_WARN_GLOBS=(
-	"bin/gitsby"
-)
+## Report-only (findings warn, never gate). Empty since the bin/gitsby refactor.
+SHELL_LINT_WARN_GLOBS=()
 MD_LINT_GLOBS=(
 	"*.md"
 	"project/*.md"
