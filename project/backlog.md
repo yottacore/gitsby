@@ -39,7 +39,9 @@ In each section, items are listed approximately from newest to oldest.
 
 ## Backlog
 
-- 🔘 Work on dev branch. Push releases to main.
+- ✅ Work on dev branch. Push releases to main.
+
+	- ✅ `dev` branch created from `main` and pushed; feature branches now merge to `dev`, `main` is release-only.
 
 - 🔘 Create PRs rather than pushing directly (for this project).
 
