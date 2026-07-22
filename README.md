@@ -158,7 +158,7 @@ The document in this repo, "[Git notes and one-liners](https://github.com/jim-co
 
 ## Contributing
 
-Contributions are welcome. Start with [contributing.md](contributing.md) for process, and [style-guide.md](style-guide.md) for prose style.
+Contributions are welcome. Start with [contributing.md](contributing.md) for process, and [style-guide.md](style-guide.md) for coding style.
 
 ## Copyright and license
 
