@@ -141,7 +141,7 @@ Updating, improving and correcting the documentation
 
 ## Styleguides
 
-Prose (README, docs, comments) follows the project [style guide](style-guide.md).
+Code (Bash and PowerShell) follows the project [style guide](style-guide.md).
 
 <!-- TODO
 ### Commit Messages

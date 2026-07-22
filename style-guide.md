@@ -5,38 +5,78 @@
 <!-- markdownlint-disable MD041 -- First line in a file should be a top-level heading -->
 # Style guide
 
-This is the canonical style guide for prose in this project: README, guides, changelog, doc comments, and anything else a human reads. For contribution process, see [contributing.md](contributing.md).
+Canonical coding style for this project's Bash and PowerShell. For contribution process, see [contributing.md](contributing.md).
 
-## Prose
+<!-- TOC ignore:true -->
+## Table of contents
+<!-- TOC -->
 
-- Write for a human in a hurry. Short sentences. One idea per sentence.
+- [Both languages](#both-languages)
+	- [Naming](#naming)
+	- [Comments and headers](#comments-and-headers)
+- [Bash](#bash)
+- [PowerShell](#powershell)
 
-	- *Why: run-on sentences that chain several ideas with commas, dashes, and parentheticals are hard to scan, and even harder to translate.*
+<!-- /TOC -->
 
-- Prefer nested bullet points over long paragraphs when there is any structure to convey.
+## Both languages
 
-	- *Why: structure that lives in punctuation is invisible; structure that lives in indentation is not.*
+### Naming
 
-- Go easy on **bold**, *italics*, and ALL-CAPS. Use them for genuine emphasis, rarely.
+- Use meaningful names a human can read, search for, and replace: `upperBound`, not `ub`.
 
-- Skip flowery or dramatic adjectives and adverbs. "Fast" beats "blazingly fast".
+- Don't overcorrect. Short conventional names are fine where the meaning is clear.
 
-- Stick to ASCII. Use `->` not a unicode arrow, `-` not an em/en dash, straight quotes not curly ones. (The one welcome exception: `©`.)
+- Single-letter variables are fine for loop counters and iterators (`for i in ...`), where that's idiomatic.
 
-	- *Why: ASCII survives every terminal, diff tool, and grep unmangled.*
+### Comments and headers
 
-## Markdown mechanics
+- Terse. Explain *why*, not *what*. Don't restate the next line of code.
 
-- Never hard-wrap prose. One paragraph or one bullet is one physical line; let the editor soft-wrap it.
+- No decorative flair or banner dividers. (The one exception: full-width section-rule comments between major blocks, matching the existing ones.)
 
-	- *Why: hard-wrapped prose makes diffs noisy - a one-word edit reflows and touches many lines.*
+- The file header carries purpose, copyright, and license, in the existing format: `©` copyright line, license name and URL, SPDX identifier.
 
-- Tabs for indentation.
+- Helper and utility scripts are usually MIT-licensed regardless of the project's license, and say so in their own header.
 
-- Filenames are lower-case, except README.md.
+## Bash
 
-- Files should pass markdownlint, with the per-file disable pragmas at the top of each file (see the top of this one).
+- Target Bash 5. Prefer its idioms over portable-but-clunky workarounds.
 
-## Rationale, in general
+- Must pass shellcheck. Per-file disables go at the top, each with a short reason (see the top of `bin/x9git`).
 
-Consistency is the point. Any single rule above is debatable; a repo where every document follows the same rules is easier to read, edit, and review than one where each file has its own habits.
+- Tabs for indentation, spaces for alignment.
+
+- Reuse the script's existing output helpers (`fEcho`, `fEcho_Clean`). Don't add new echo/printf wrapper functions.
+
+- Verify state before acting; make no assumptions about local or remote repo state. Every operation should be safe and idempotent.
+
+## PowerShell
+
+- Objects, not text. The pipeline passes .NET objects, not strings. Never parse command output as text when you can access properties. Filter, select, and sort on properties (`Where-Object`, `Select-Object`, `Sort-Object`, `Group-Object`); don't string-munge grep/sed/awk-style. This is the #1 rule; Bash habits break here.
+
+- Use approved verbs (`Get-Verb`) for functions: Verb-Noun naming, PascalCase, singular noun (`Get-User`, not `Get-Users` or `Fetch-User`).
+
+- Full cmdlet names and full parameter names in scripts (`Where-Object` not `?`, `-Property` not positional). Aliases and positional parameters are for the interactive prompt, not committed code.
+
+- Advanced functions: `[CmdletBinding()]` and typed `param()` blocks. Declare parameter types; use `[Parameter(Mandatory)]`, validation attributes (`ValidateSet`, `ValidateNotNullOrEmpty`), and pipeline binding (`ValueFromPipeline`) with `begin`/`process`/`end` where relevant.
+
+- `Set-StrictMode -Version Latest`, and deliberate `$ErrorActionPreference` handling. Prefer terminating errors for real failures: `-ErrorAction Stop` plus `try`/`catch`, and `throw` for your own errors. Don't silently swallow with `-ErrorAction SilentlyContinue` unless you then check `$?`/`$Error` and mean it.
+
+- Output objects, don't `Write-Host`. Emit objects (or `[PSCustomObject]`) to the pipeline so callers can consume them. `Write-Host` is only for genuine console-only UI text. Use `Write-Verbose`/`Write-Warning`/`Write-Error` for diagnostics, gated by streams - not inline print debugging.
+
+- Return rich data as `[PSCustomObject]` with named properties, not formatted strings. Keep formatting (`Format-Table`/`Format-List`) at the very end of a pipeline, display layer only. Never feed `Format-*` output into further logic.
+
+- Comparison operators: `-eq -ne -lt -gt -match -contains` etc., not `<`, `>`, `==`. Remember `-eq` is case-insensitive by default (`-ceq` for case-sensitive). `$null` goes on the LEFT of `-eq` comparisons.
+
+- Prefer the pipeline and cmdlets over manual loops when readable. Use `foreach ($x in $y) {}` for complex per-item logic. Avoid array `+=` in loops (O(n^2) recopy); use a `List[T]` or collect pipeline output.
+
+- Quote deliberately: single quotes for literals, double quotes only when interpolating. Brace variables in strings when ambiguous: `"${name}"`.
+
+- Comment-based help (`.SYNOPSIS`/`.PARAMETER`/`.EXAMPLE`) on functions and scripts.
+
+- Cross-platform: target PowerShell 7+ (`pwsh`). Don't assume Windows-only cmdlets or paths. Use `Join-Path` and `$PSScriptRoot`, not hardcoded separators.
+
+- Must pass PSScriptAnalyzer clean (settings, if any, live in `PSScriptAnalyzerSettings.psd1`).
+
+- 4 spaces per indent (PowerShell convention; unlike the Bash side of this repo).
