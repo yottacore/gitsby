@@ -45,19 +45,19 @@ fAbout(){ { ((doQuietly)) || ((wasShown_About)); } && return; wasShown_About=1;
 fSyntax(){ { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax=1;
 	fEcho_Clean ""
 	fEcho_Clean "Common commands:"
-	fEcho_Clean "  scompul [msg] ........: Commit all local changes and pull updates. Do frequently!"
-	fEcho_Clean "  mkbranch <branch> ....: Create a new branch off ${defaultBranchLabel} (parks current work first)."
-	fEcho_Clean "  chbranch [branch] ....: Switch to an existing branch (parks current work first)."
-	fEcho_Clean "                          With no branch given, switches to ${defaultBranchLabel}."
-	fEcho_Clean "  status ...............: Fetch and show current status."
-	fEcho_Clean "  list .................: Fetch and list branches."
+	fEcho_Clean "  saveup [msg] ...: Commit all local changes and pull updates. Do frequently!"
+	fEcho_Clean "  newbr <branch> .: Create a new branch off ${mergeTargetLabel} (parks current work first)."
+	fEcho_Clean "  gobr [branch] ..: Switch to a branch (parks current work first). No arg: back to ${mergeTargetLabel}."
+	fEcho_Clean "  status .........: Fetch and show current status."
+	fEcho_Clean "  listbr .........: Fetch and list branches."
 	fEcho_Clean "Less common commands:"
-	fEcho_Clean "  spush [msg] ..........: Commit, pull, and push. Do infrequently."
-	fEcho_Clean "  spull ................: Pull only (auto-stashes around it if dirty)."
-	fEcho_Clean "  scommit [msg] ........: Commit all local changes (without pull)."
+	fEcho_Clean "  sync [msg] .....: Commit, pull, and push. Do infrequently."
+	fEcho_Clean "  pull ...........: Pull only (auto-stashes around it if dirty)."
+	fEcho_Clean "  commit [msg] ...: Commit all local changes (without pull)."
 	fEcho_Clean "Admin commands, e.g. for small solo projects:"
-	fEcho_Clean "  mtm [msg] ............: Merge the current branch into ${defaultBranchLabel} (--no-ff),"
-	fEcho_Clean "                          push, and delete the merged branch local + remote."
+	fEcho_Clean "  land [msg] .....: Merge current branch into ${mergeTargetLabel} (--no-ff), push, delete it local + remote."
+	fEcho_Clean "  pr [n | ok n] ..: List, review, or accept a pull request (needs gh)."
+	fEcho_Clean "  release [ver] ..: Cut a release: merge dev into main, tag, push. No ver: bump patch."
 	fEcho_Clean "Options:"
 	fEcho_Clean "  -m, --message MSG ....: Commit or merge message (or give it positionally)."
 	fEcho_Clean "  -q, --quiet ..........: No prompts; if committing with no message, one is generated."
@@ -70,7 +70,7 @@ fMain(){
 
 	## Generic variables
 	local -i wasShown_Copyright=0; local -i wasShown_About=0; local -i wasShown_Syntax=0
-	local -r defaultBranchLabel="main/master"  ## for help text, before we know we're in a repo
+	local -r mergeTargetLabel="dev/main"  ## for help text, before we know we're in a repo
 
 	## Check for need to show help
 	[[ -z "${1:-}" ]] && { fCopyright; fAbout; fSyntax; return 1; }
@@ -84,23 +84,50 @@ fMain(){
 
 	## Arguments
 	local cmdName=""        ## positional 1
-	local cmdArg=""         ## positional 2: message or branch name, depending on command
+	local cmdArg=""         ## positional 2: message, branch name, version, or PR number, depending on command
+	local cmdArg2=""        ## positional 3: PR number ('pr ok <n>')
 	local commitMessage=""  ## may be set by fParseArgs (-m/--message/--msg)
-	local -ri parseArgs_maxPositionalArgCount=2
+	local -ri parseArgs_maxPositionalArgCount=3
 	fParseArgs "${@}"
 	cmdName="${cmdName,,}"
 
 	## No tty = nobody to answer a prompt; behave as if -q.
 	[[ -t 0 ]] || doQuietly=1
 
+	## Old command names still work as hidden aliases (muscle memory), but stay out of the help.
+	case "${cmdName}" in
+		scommit)  cmdName="commit" ;;
+		spull)    cmdName="pull"   ;;
+		scompul)  cmdName="saveup" ;;
+		spush)    cmdName="sync"   ;;
+		mkbranch) cmdName="newbr"  ;;
+		chbranch) cmdName="gobr"   ;;
+		mtm)      cmdName="land"   ;;
+		list)     cmdName="listbr" ;;
+	esac
+
 	## Sort commands, and route positional arg 2 (message vs branch name; -m wins for messages).
 	local isMutating=1
 	case "${cmdName}" in
-		status|list)               isMutating=0 ;;
-		scommit|scompul|spush|mtm) [[ -z "${commitMessage}" ]] && commitMessage="${cmdArg}" ;;
-		spull|mkbranch|chbranch)   : ;;
+		status|listbr)           isMutating=0 ;;
+		pr)                      [[ "${cmdArg,,}" == "ok" ]] || isMutating=0 ;;
+		commit|saveup|sync|land) [[ -z "${commitMessage}" ]] && commitMessage="${cmdArg}" ;;
+		pull|newbr|gobr|release) : ;;
 		*) fThrowError "Unknown command '${cmdName}'. Run '${meName}' with no arguments for a list." ;;
 	esac
+
+	## pr needs gh and a valid number (except the bare list form).
+	local prNum=""
+	if [[ "${cmdName}" == "pr" ]]; then
+		fMustBeInPath gh
+		if [[ "${cmdArg,,}" == "ok" ]]; then
+			prNum="${cmdArg2}"
+			[[ "${prNum}" =~ ^[0-9]+$ ]] || fThrowError "Syntax: ${meName} pr ok <number>"
+		elif [[ -n "${cmdArg}" ]]; then
+			prNum="${cmdArg}"
+			[[ "${prNum}" =~ ^[0-9]+$ ]] || fThrowError "Syntax: ${meName} pr [<number> | ok <number>]"
+		fi
+	fi
 
 	## Every command needs a repo.
 	git rev-parse --is-inside-work-tree &>/dev/null || fThrowError "Not inside a git repository. Change to a git project directory first."
@@ -111,11 +138,16 @@ fMain(){
 		git fetch --quiet 2>/dev/null || fEcho "WARNING: git fetch failed (offline?); remote info may be stale."
 	fi
 
+	## Release version resolves up front so preview and command agree (and bad input dies early).
+	local releaseTag=""
+	[[ "${cmdName}" == "release" ]] && releaseTag="$(fReleaseVersion)"
+
 	## Read-only commands
 	if ((! isMutating)); then
 		case "${cmdName}" in
 			status) fpShowStatus ;;
-			list)   fEcho "git branch -a -vv"; git branch -a -vv; fEcho_ResetBlankCounter ;;
+			listbr) fEcho "git branch -a -vv"; git branch -a -vv; fEcho_ResetBlankCounter ;;
+			pr)     fCmdPrView "${prNum}" ;;
 		esac
 		fEcho_Clean ""
 		return 0
@@ -133,13 +165,15 @@ fMain(){
 	fi
 
 	case "${cmdName}" in
-		scommit)  fCmdCommit ;;
-		spull)    fCmdPull ;;
-		scompul)  fCmdCommitPull ;;
-		spush)    fCmdPush ;;
-		mkbranch) fCmdMkBranch "${cmdArg}" ;;
-		chbranch) fCmdChBranch "${cmdArg}" ;;
-		mtm)      fCmdMtm ;;
+		commit)  fCmdCommit ;;
+		pull)    fCmdPull ;;
+		saveup)  fCmdCommitPull ;;
+		sync)    fCmdPush ;;
+		newbr)   fCmdNewBranch "${cmdArg}" ;;
+		gobr)    fCmdGoBranch "${cmdArg}" ;;
+		land)    fCmdLand ;;
+		pr)      fCmdPrAccept "${prNum}" ;;
+		release) fCmdRelease ;;
 	esac
 
 	fEcho_Clean ""
@@ -201,13 +235,13 @@ fCmdPush(){
 	fi
 :;}
 
-fCmdMkBranch(){
+fCmdNewBranch(){
 	local -r newBranch="${1:-}"
-	[[ -n "${newBranch}" ]] || fThrowError "No branch name given. Syntax: ${meName} mkbranch <new branch name>"
+	[[ -n "${newBranch}" ]] || fThrowError "No branch name given. Syntax: ${meName} newbr <new branch name>"
 	git check-ref-format --branch "${newBranch}" >/dev/null 2>&1 || fThrowError "'${newBranch}' is not a valid branch name."
-	fBranchExistsLocal  "${newBranch}" && fThrowError "Branch '${newBranch}' already exists; use: ${meName} chbranch ${newBranch}"
-	fBranchExistsRemote "${newBranch}" && fThrowError "Branch '${newBranch}' already exists on origin; use: ${meName} chbranch ${newBranch}"
-	local -r baseBranch="$(fDefaultBranch)"
+	fBranchExistsLocal  "${newBranch}" && fThrowError "Branch '${newBranch}' already exists; use: ${meName} gobr ${newBranch}"
+	fBranchExistsRemote "${newBranch}" && fThrowError "Branch '${newBranch}' already exists on origin; use: ${meName} gobr ${newBranch}"
+	local -r baseBranch="$(fMergeTarget)"
 	fCmdPush  ## park current work safely first
 	if [[ "$(fCurrentBranch)" != "${baseBranch}" ]]; then
 		fRun git checkout "${baseBranch}"
@@ -219,35 +253,90 @@ fCmdMkBranch(){
 	fi
 :;}
 
-fCmdChBranch(){
+fCmdGoBranch(){
 	local targetBranch="${1:-}"
-	[[ -n "${targetBranch}" ]] || targetBranch="$(fDefaultBranch)"
+	[[ -n "${targetBranch}" ]] || targetBranch="$(fMergeTarget)"
 	if [[ "$(fCurrentBranch)" == "${targetBranch}" ]]; then
 		fEcho "Already on '${targetBranch}'."
 		fHasUpstream && fRun git pull --ff-only
 		return 0
 	fi
-	fBranchExistsLocal "${targetBranch}" || fBranchExistsRemote "${targetBranch}" || fThrowError "No branch '${targetBranch}' locally or on origin. To create it: ${meName} mkbranch ${targetBranch}"
+	fBranchExistsLocal "${targetBranch}" || fBranchExistsRemote "${targetBranch}" || fThrowError "No branch '${targetBranch}' locally or on origin. To create it: ${meName} newbr ${targetBranch}"
 	fCmdPush  ## park current work safely first
 	fRun git checkout "${targetBranch}"  ## auto-creates a tracking branch if it only exists on origin
 	fHasUpstream && fRun git pull --ff-only
 :;}
 
-fCmdMtm(){
-	## Merges the current branch into main/master - backwards from 'git merge', but saves a step.
-	local -r mainBranch="$(fDefaultBranch)"
+fCmdLand(){
+	## Merges the current branch into dev (or main/master) - backwards from 'git merge', but saves a step.
+	local -r targetBranch="$(fMergeTarget)"
 	local -r workBranch="$(fCurrentBranch)"
-	[[ "${workBranch}" != "${mainBranch}" ]] || fThrowError "Already on '${mainBranch}'. Run this from the branch to merge in: ${meName} chbranch <branch>, then ${meName} mtm"
+	[[ "${workBranch}" != "${targetBranch}" ]] || fThrowError "Already on '${targetBranch}'. Run this from the branch to merge in: ${meName} gobr <branch>, then ${meName} land"
+	[[ "${workBranch}" != "$(fDefaultBranch)" ]] || fThrowError "'${workBranch}' is the default branch; landing it on '${targetBranch}' is backwards. To cut a release: ${meName} release"
 	local mergeMessage="${commitMessage}"
 	[[ -n "${mergeMessage}" ]] || mergeMessage="Merge ${workBranch}"
 	fCmdPush
-	fRun git checkout "${mainBranch}"
+	fRun git checkout "${targetBranch}"
 	fHasUpstream && fRun git pull --ff-only
 	fRun git merge --no-ff "${workBranch}" -m "${mergeMessage}"
 	fHasUpstream && fRun git push
 	fRun git branch -d "${workBranch}"
 	fBranchExistsRemote "${workBranch}" && fRun git push origin --delete "${workBranch}"
 	fHasUpstream && fRun git pull --ff-only
+:;}
+
+fCmdPrView(){
+	## Bare: list open PRs. With a number: view it plus its diff.
+	local -r prNum="${1:-}"
+	if [[ -z "${prNum}" ]]; then
+		fRun gh pr list
+	else
+		fRun gh pr view "${prNum}"
+		fRun gh pr diff "${prNum}"
+	fi
+:;}
+
+fCmdPrAccept(){
+	local -r prNum="${1:-}"
+	fEcho_Clean ""
+	fEcho "gh pr review ${prNum} --approve ..."
+	## Best-effort: gh refuses to approve your own PR; merging is the part that matters.
+	gh pr review "${prNum}" --approve || fEcho "Could not approve (own PR?); merging anyway."
+	fEcho_ResetBlankCounter
+	fRun gh pr merge "${prNum}" --merge --delete-branch
+	fHasUpstream && fRun git pull --ff-only
+:;}
+
+fCmdRelease(){
+	## Cuts a release: merge dev into main/master --no-ff (if the repo has a dev), tag, push both.
+	local -r mainBranch="$(fDefaultBranch)"
+	local devBranch=""
+	{ fBranchExistsLocal dev || fBranchExistsRemote dev; } && devBranch="dev"
+	git rev-parse -q --verify "refs/tags/${releaseTag}" >/dev/null && fThrowError "Tag '${releaseTag}' already exists."
+	local -r startBranch="$(fCurrentBranch)"
+	fCmdPush  ## park current work safely first
+	if [[ -n "${devBranch}" && "$(fCurrentBranch)" != "${devBranch}" ]]; then
+		fRun git checkout "${devBranch}"  ## freshen dev so the release has all of it
+		fHasUpstream && fRun git pull --ff-only
+	fi
+	if [[ "$(fCurrentBranch)" != "${mainBranch}" ]]; then
+		fRun git checkout "${mainBranch}"
+	fi
+	fHasUpstream && fRun git pull --ff-only
+	if [[ -n "${devBranch}" ]]; then
+		local mergeMessage="${commitMessage}"
+		[[ -n "${mergeMessage}" ]] || mergeMessage="Release ${releaseTag}"
+		fRun git merge --no-ff "${devBranch}" -m "${mergeMessage}"
+	fi
+	fRun git tag -a "${releaseTag}" -m "${releaseTag}"
+	if git remote get-url origin &>/dev/null; then
+		fHasUpstream && fRun git push
+		fRun git push origin "${releaseTag}"
+	fi
+	## Don't leave the user parked on main.
+	if [[ -n "${startBranch}" && "${startBranch}" != "${mainBranch}" ]]; then
+		fRun git checkout "${startBranch}"
+	fi
 :;}
 
 
@@ -268,6 +357,32 @@ fDefaultBranch(){
 	git show-ref --verify --quiet refs/heads/main   && { echo "main"; return 0; }
 	git show-ref --verify --quiet refs/heads/master && { echo "master"; return 0; }
 	echo "main"
+:;}
+
+fMergeTarget(){
+	## Feature branches come off of - and land on - dev when the repo has one; else the default branch.
+	if fBranchExistsLocal dev || fBranchExistsRemote dev; then echo "dev"; else fDefaultBranch; fi
+:;}
+
+fReleaseVersion(){
+	## Resolve the release tag: validate the given version, or bump patch on the latest v* tag.
+	local ver="${cmdArg:-}"
+	ver="${ver#v}"
+	if [[ -n "${ver}" ]]; then
+		[[ "${ver}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]] || fThrowError "'${ver}' is not a version (want X.Y.Z, optional -suffix). Syntax: ${meName} release [version]"
+	else
+		local latest=""
+		latest="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n1)"
+		if [[ -n "${latest}" ]]; then
+			local -r base="${latest#v}"; local -r plain="${base%%-*}"
+			local maj="" min="" pat=""
+			IFS=. read -r maj min pat <<< "${plain}"
+			ver="${maj}.${min}.$((pat + 1))"
+		else
+			ver="0.1.0"  ## first release ever
+		fi
+	fi
+	echo "v${ver}"
 :;}
 
 fRun(){
@@ -297,44 +412,63 @@ fpPreview(){
 	local msgDisp="git commit"
 	[[ -n "${commitMessage}" ]] && msgDisp="git commit -m \"${commitMessage}\""
 	case "${1:-}" in
-		scommit)
+		commit)
 			fEcho_Clean "${p}git add --all"
 			fEcho_Clean "${p}${msgDisp} *"
 			;;
-		spull)
+		pull)
 			fEcho_Clean "${p}git stash push --include-untracked *"
 			fEcho_Clean "${p}git pull --ff-only *"
 			fEcho_Clean "${p}git stash pop *"
 			;;
-		scompul)
-			fpPreview scommit
-			fpPreview spull
+		saveup)
+			fpPreview commit
+			fpPreview pull
 			;;
-		spush)
-			fpPreview scompul
+		sync)
+			fpPreview saveup
 			fEcho_Clean "${p}git push *"
 			;;
-		mkbranch)
-			fpPreview spush
-			fEcho_Clean "${p}git checkout $(fDefaultBranch) *"
+		newbr)
+			fpPreview sync
+			fEcho_Clean "${p}git checkout $(fMergeTarget) *"
 			fEcho_Clean "${p}git pull --ff-only *"
 			fEcho_Clean "${p}git checkout -b ${cmdArg}"
 			fEcho_Clean "${p}git push -u origin ${cmdArg} *"
 			;;
-		chbranch)
-			fpPreview spush
-			fEcho_Clean "${p}git checkout ${cmdArg:-$(fDefaultBranch)}"
+		gobr)
+			fpPreview sync
+			fEcho_Clean "${p}git checkout ${cmdArg:-$(fMergeTarget)}"
 			fEcho_Clean "${p}git pull --ff-only *"
 			;;
-		mtm)
-			fpPreview spush
-			fEcho_Clean "${p}git checkout $(fDefaultBranch)"
+		land)
+			fpPreview sync
+			fEcho_Clean "${p}git checkout $(fMergeTarget)"
 			fEcho_Clean "${p}git pull --ff-only *"
 			fEcho_Clean "${p}git merge --no-ff $(fCurrentBranch)"
 			fEcho_Clean "${p}git push *"
 			fEcho_Clean "${p}git branch -d $(fCurrentBranch)"
 			fEcho_Clean "${p}git push origin --delete $(fCurrentBranch) *"
 			fEcho_Clean "${p}git pull --ff-only *"
+			;;
+		pr)
+			fEcho_Clean "${p}gh pr review ${prNum} --approve *"
+			fEcho_Clean "${p}gh pr merge ${prNum} --merge --delete-branch"
+			fEcho_Clean "${p}git pull --ff-only *"
+			;;
+		release)
+			fpPreview sync
+			if [[ "$(fMergeTarget)" == "dev" ]]; then
+				fEcho_Clean "${p}git checkout dev *"
+				fEcho_Clean "${p}git pull --ff-only *"
+			fi
+			fEcho_Clean "${p}git checkout $(fDefaultBranch) *"
+			fEcho_Clean "${p}git pull --ff-only *"
+			[[ "$(fMergeTarget)" == "dev" ]] && fEcho_Clean "${p}git merge --no-ff dev"
+			fEcho_Clean "${p}git tag -a ${releaseTag}"
+			fEcho_Clean "${p}git push *"
+			fEcho_Clean "${p}git push origin ${releaseTag} *"
+			fEcho_Clean "${p}git checkout $(fCurrentBranch) *"
 			;;
 	esac
 :;}
@@ -424,6 +558,7 @@ fParseArgs(){
 				case $positionalArgCounter in
 					1) cmdName="${currentArg}" ;;
 					2) cmdArg="${currentArg}"  ;;
+					3) cmdArg2="${currentArg}" ;;
 					*) fThrowError "Unexpected positional argument # ${positionalArgCounter}: '${currentArg}'." ;;
 				esac
 
@@ -573,3 +708,7 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##			- mkbranch/chbranch validate branch existence up front and park current work (commit+pull+push) before switching.
 ##			- Added -q/--quiet and -m/--message/--msg; message can still be given positionally.
 ##			- Removed the unused template library (~1400 lines).
+##		- 20260722 JC:
+##			- Renamed commands: scompul->saveup, spush->sync, scommit->commit, spull->pull, mkbranch->newbr, chbranch->gobr, list->listbr, mtm->land. Old names still work (hidden aliases).
+##			- newbr/gobr/land now target dev when the repo has one, else main/master.
+##			- Added pr (list / review / accept, via gh) and release (merge dev into main, tag, push; bumps patch when no version given).
