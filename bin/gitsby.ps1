@@ -194,6 +194,39 @@ function Get-MergeTarget {
     return (Get-DefaultBranch)
 }
 
+function Get-BranchSync {
+    ## Ahead/behind for the branch line; empty when in sync, so a quiet line means "nothing pending".
+    if (-not (Test-GitUpstream)) { return '(no upstream)' }
+    $counts = git rev-list --left-right --count '@{u}...HEAD' 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $counts) { return '' }
+    $parts = ([string]$counts) -split '\s+'
+    $behind = [int]$parts[0]
+    $ahead = [int]$parts[1]
+    $bits = @()
+    if ($ahead) { $bits += "ahead ${ahead}" }
+    if ($behind) { $bits += "behind ${behind}" }
+    if (-not $bits) { return '' }
+    return '[{0}]' -f ($bits -join ', ')
+}
+
+function Get-CommitIdentity {
+    ## What actually gets stamped on commits (config or GIT_AUTHOR_*) - and shown to everyone on the remote.
+    $ident = git var GIT_AUTHOR_IDENT 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $ident) { return '(unset)' }
+    ## Drop the trailing "timestamp timezone".
+    return (([string]$ident) -replace '\s+\S+\s+\S+$', '')
+}
+
+function Get-SshTarget {
+    ## Host to ask ssh about, pulled out of a remote URL. Empty for https and local-path remotes.
+    param([string]$Url)
+    if (-not $Url) { return '' }
+    if ($Url -match '^ssh://(?:[^@/]+@)?([^:/]+)') { return $Matches[1] }
+    if ($Url -match '^[a-z][a-z0-9+.-]*://') { return '' }   ## https/git/file: no ssh identity involved
+    if ($Url -match '^(?:[^@/]+@)?([^/:]+):') { return $Matches[1] }  ## scp-like: [user@]host:path
+    return ''
+}
+
 function Get-ReleaseVersion {
     ## Resolve the release tag: validate the given version, or bump patch on the latest v* tag.
     $ver = $script:cmdArg -replace '^v', ''
@@ -224,16 +257,88 @@ function Invoke-Git {
     Clear-BlankCounter
 }
 
+function Show-CappedList {
+    ## Indent and print a command's output, truncated to the terminal so nothing wraps and capped so a
+    ## huge working tree can't scroll the prompt off-screen - the 'less -FX' idea without a pager.
+    ## Returns the untruncated line count.
+    param([Parameter(Mandatory)][string[]]$GitArgs)
+    $maxLines = 25
+    $termWidth = 100
+    if ($Host.UI.RawUI -and $Host.UI.RawUI.WindowSize.Width -ge 40) { $termWidth = $Host.UI.RawUI.WindowSize.Width }
+    $outLines = @(git @GitArgs 2>$null)
+    $shown = 0
+    foreach ($line in $outLines) {
+        if ($shown -ge $maxLines) { break }
+        $text = [string]$line
+        if ($text.Length -gt $termWidth - 4) { $text = $text.Substring(0, $termWidth - 7) + '...' }
+        Write-PlainLine "    ${text}"
+        $shown++
+    }
+    if ($outLines.Count -gt $shown) { Write-PlainLine "    ... and $($outLines.Count - $shown) more" }
+    return $outLines.Count
+}
+
+function Show-LocalChangeList {
+    ## Short form on purpose: git status's long form buries the file list under paragraphs of hints.
+    Write-PlainLine 'Local changes:'
+    $count = Show-CappedList -GitArgs @('status', '--short')
+    if (-not $count) { Write-PlainLine '    (working tree clean)' }
+}
+
+function Show-Incoming {
+    ## The other half of "what's going to change": what a pull would bring down on top of your work.
+    if (-not (Test-GitUpstream)) { return }
+    $behind = git rev-list --count 'HEAD..@{u}' 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $behind -or [int]$behind -eq 0) { return }
+    Write-PlainLine ''
+    Write-PlainLine "Incoming (${behind} commit(s) to pull):"
+    $null = Show-CappedList -GitArgs @('diff', '--name-status', 'HEAD..@{u}')
+}
+
+function Show-Identity {
+    ## Who a remote-touching command will act as. Host aliases in ~/.ssh/config hide this, and with more
+    ## than one account configured it is easy to push as the wrong person.
+    param([string]$RemoteUrl)
+    $sshHostAlias = Get-SshTarget -Url $RemoteUrl
+    if ($sshHostAlias -and (Get-Command ssh -ErrorAction SilentlyContinue)) {
+        $sshUser = ''; $sshHost = ''; $keyFile = ''
+        foreach ($line in @(ssh -G $sshHostAlias 2>$null)) {
+            $key, $value = ([string]$line) -split '\s+', 2
+            switch ($key) {
+                'user' { if (-not $sshUser) { $sshUser = $value } }
+                'hostname' { if (-not $sshHost) { $sshHost = $value } }
+                'identityfile' {
+                    if (-not $keyFile) {
+                        $expanded = $value -replace '^~', $HOME
+                        if (Test-Path -LiteralPath $expanded) { $keyFile = $value }
+                    }
+                }
+            }
+        }
+        if ($sshHost) {
+            $sshLine = '{0}@{1}' -f $(if ($sshUser) { $sshUser } else { '?' }), $sshHost
+            if ($sshHostAlias -ne $sshHost) { $sshLine += " (alias '${sshHostAlias}')" }
+            if ($keyFile) { $sshLine += ", key ${keyFile}" }
+            Write-PlainLine "SSH ..........: ${sshLine}"
+        }
+    }
+    Write-PlainLine "Author .......: $(Get-CommitIdentity)"
+}
+
 function Show-RepoStatus {
+    ## -WithIdentity: also show who we'll be on the remote - pre-flight and 'status', but not the after-shot.
+    param([switch]$WithIdentity)
     $remote = git remote get-url origin 2>$null
     if ($LASTEXITCODE -ne 0 -or -not $remote) { $remote = '(none)' }
     Write-PlainLine ''
     Write-PlainLine "Directory ....: $(Get-Location)"
     Write-PlainLine "Remote .......: ${remote}"
-    Write-PlainLine "Branch .......: $(Get-CurrentBranch) (repo default: $(Get-DefaultBranch))"
+    if ($WithIdentity) { Show-Identity -RemoteUrl ([string]$remote) }
+    $branchLine = "$(Get-CurrentBranch) (repo default: $(Get-DefaultBranch)) $(Get-BranchSync)"
+    Write-PlainLine "Branch .......: $($branchLine.TrimEnd())"
     Write-PlainLine ''
-    Write-PlainLine 'git status:'
-    git status | ForEach-Object { Write-Host "    $_" }
+    Show-LocalChangeList
+    if ($WithIdentity) { Show-Incoming }
     Clear-BlankCounter
 }
 
@@ -558,7 +663,7 @@ try {
     ## Read-only commands
     if (-not $isMutating) {
         switch ($cmdName) {
-            'status' { Show-RepoStatus; break }
+            'status' { Show-RepoStatus -WithIdentity; break }
             'listbr' { Write-StatusLine 'git branch -a -vv'; git branch -a -vv; Clear-BlankCounter; break }
             'pr' { Invoke-GitsbyPrView -PrNumber $script:prNum; break }
         }
@@ -568,7 +673,7 @@ try {
 
     ## Mutating commands: show state and plan, confirm, execute, show state again.
     if (-not (Get-CurrentBranch)) { throw 'Detached HEAD (no current branch); resolve that manually first.' }
-    Show-RepoStatus
+    Show-RepoStatus -WithIdentity
     Write-PlainLine ''
     Write-PlainLine 'Going to do (steps marked * only if needed, based on repo state):'
     Show-CommandPreview -CommandName $cmdName
@@ -607,3 +712,4 @@ try {
 ##  History:
 ##      - 20260722 JC: Created; port of bin/gitsby (same commands, checks, and flow).
 ##      - 20260722 JC: Command renames (old names stay as hidden aliases), dev-aware merge target, pr and release commands - in step with bin/gitsby.
+##      - 20260723 JC: Pre-flight display (SSH identity, commit author, ahead/behind, incoming files) and the capped short-form change list - in step with bin/gitsby.

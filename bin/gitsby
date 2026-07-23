@@ -145,7 +145,7 @@ fMain(){
 	## Read-only commands
 	if ((! isMutating)); then
 		case "${cmdName}" in
-			status) fpShowStatus ;;
+			status) fpShowStatus 1 ;;
 			listbr) fEcho "git branch -a -vv"; git branch -a -vv; fEcho_ResetBlankCounter ;;
 			pr)     fCmdPrView "${prNum}" ;;
 		esac
@@ -155,7 +155,7 @@ fMain(){
 
 	## Mutating commands: show state and plan, confirm, execute, show state again.
 	[[ -n "$(fCurrentBranch)" ]] || fThrowError "Detached HEAD (no current branch); resolve that manually first."
-	fpShowStatus
+	fpShowStatus 1
 	fEcho_Clean ""
 	fEcho_Clean "Going to do (steps marked * only if needed, based on repo state):"
 	fpPreview "${cmdName}"
@@ -349,6 +349,36 @@ fIsAhead(){            [[ -n "$(git log '@{u}..' --oneline 2>/dev/null || true)"
 fBranchExistsLocal(){  git show-ref --verify --quiet "refs/heads/${1:-}" ;}
 fBranchExistsRemote(){ git show-ref --verify --quiet "refs/remotes/origin/${1:-}" ;}
 
+fBranchSync(){
+	## Ahead/behind for the branch line; empty when in sync, so a quiet line means "nothing pending".
+	fHasUpstream || { echo "(no upstream)"; return 0; }
+	local -i behind=0; local -i ahead=0
+	read -r behind ahead < <(git rev-list --left-right --count '@{u}...HEAD' 2>/dev/null || echo "0 0")
+	local out=""
+	((ahead))  && out="ahead ${ahead}"
+	((behind)) && { [[ -n "${out}" ]] && out="${out}, "; out="${out}behind ${behind}"; }
+	[[ -n "${out}" ]] && echo "[${out}]"
+:;}
+
+fCommitIdentity(){
+	## What actually gets stamped on commits (config or GIT_AUTHOR_*) - and shown to everyone on the remote.
+	local ident=""
+	ident="$(git var GIT_AUTHOR_IDENT 2>/dev/null || true)"
+	ident="${ident% * *}"  ## drop the trailing "timestamp timezone"
+	echo "${ident:-(unset)}"
+:;}
+
+fSshTarget(){
+	## Host to ask ssh about, pulled out of a remote URL. Empty for https and local-path remotes.
+	local url="${1:-}"
+	case "${url}" in
+		ssh://*) url="${url#ssh://}"; url="${url%%/*}"; url="${url##*@}"; echo "${url%%:*}" ;;
+		*://*)   : ;;                                    ## https/git/file: no ssh identity involved
+		*@*:*)   url="${url%%:*}"; echo "${url##*@}" ;;   ## scp-like: user@host:path
+		?*:*)    echo "${url%%:*}" ;;                    ## scp-like without a user
+	esac
+:;}
+
 fDefaultBranch(){
 	## Prefer origin's HEAD; fall back to whichever of main/master exists locally.
 	local originHead=""
@@ -393,16 +423,83 @@ fRun(){
 	fEcho_ResetBlankCounter
 :;}
 
-fIndent(){ local line=""; while IFS= read -r line; do echo "    ${line}"; done ;:;}
+fpCappedList(){
+	## Indent and print a command's output, truncated to the terminal so nothing wraps and capped so a
+	## huge working tree can't scroll the prompt off-screen - the 'less -FX' idea without a pager.
+	local -ri maxLines=25
+	local -i termWidth=100
+	if [[ -t 1 ]] && command -v tput &>/dev/null; then
+		termWidth="$(tput cols 2>/dev/null || echo 100)"
+		((termWidth >= 40)) || termWidth=100
+	fi
+	local -a outLines=()
+	mapfile -t outLines < <("${@}" 2>/dev/null || true)
+	local -i shown=0
+	local line=""
+	for line in "${outLines[@]}"; do
+		((shown >= maxLines)) && break
+		((${#line} > termWidth - 4)) && line="${line:0:termWidth-7}..."
+		fEcho_Clean "    ${line}"
+		shown=$((shown + 1))
+	done
+	((${#outLines[@]} > shown)) && fEcho_Clean "    ... and $((${#outLines[@]} - shown)) more"
+	_lastListCount=${#outLines[@]}  ## callers that need "was it empty?" read this
+:;}
+
+fpShowChanges(){
+	## Short form on purpose: git status's long form buries the file list under paragraphs of hints.
+	fEcho_Clean "Local changes:"
+	fpCappedList git status --short
+	((_lastListCount)) || fEcho_Clean "    (working tree clean)"
+:;}
+
+fpShowIncoming(){
+	## The other half of "what's going to change": what a pull would bring down on top of your work.
+	fHasUpstream || return 0
+	local -ri behind="$(git rev-list --count 'HEAD..@{u}' 2>/dev/null || echo 0)"
+	((behind)) || return 0
+	fEcho_Clean ""
+	fEcho_Clean "Incoming (${behind} commit(s) to pull):"
+	fpCappedList git diff --name-status 'HEAD..@{u}'
+:;}
+
+fpShowIdentity(){
+	## Who a remote-touching command will act as. Host aliases in ~/.ssh/config hide this, and with more
+	## than one account configured it is easy to push as the wrong person.
+	local -r remoteUrl="${1:-}"
+	local -r sshHostAlias="$(fSshTarget "${remoteUrl}")"
+	if [[ -n "${sshHostAlias}" ]] && command -v ssh &>/dev/null; then
+		local sshUser="" sshHost="" keyFile="" key="" value=""
+		while read -r key value; do
+			case "${key}" in
+				user)         [[ -n "${sshUser}" ]] || sshUser="${value}" ;;
+				hostname)     [[ -n "${sshHost}" ]] || sshHost="${value}" ;;
+				identityfile) [[ -n "${keyFile}" ]] || { [[ -r "${value/#\~/${HOME}}" ]] && keyFile="${value}"; } ;;
+			esac
+		done < <(ssh -G "${sshHostAlias}" 2>/dev/null || true)
+		if [[ -n "${sshHost}" ]]; then
+			local sshLine="${sshUser:-?}@${sshHost}"
+			[[ "${sshHostAlias}" != "${sshHost}" ]] && sshLine="${sshLine} (alias '${sshHostAlias}')"
+			[[ -n "${keyFile}" ]] && sshLine="${sshLine}, key ${keyFile}"
+			fEcho_Clean "SSH ..........: ${sshLine}"
+		fi
+	fi
+	fEcho_Clean "Author .......: $(fCommitIdentity)"
+:;}
 
 fpShowStatus(){
+	## Arg 1: also show who we'll be on the remote - pre-flight and 'status', but not the after-shot.
+	local -ri showIdentity="${1:-0}"
+	local -r remoteUrl="$(git remote get-url origin 2>/dev/null || echo "")"
 	fEcho_Clean ""
 	fEcho_Clean "Directory ....: ${PWD}"
-	fEcho_Clean "Remote .......: $(git remote get-url origin 2>/dev/null || echo "(none)")"
-	fEcho_Clean "Branch .......: $(fCurrentBranch) (repo default: $(fDefaultBranch))"
+	fEcho_Clean "Remote .......: ${remoteUrl:-(none)}"
+	((showIdentity)) && fpShowIdentity "${remoteUrl}"
+	local -r branchLine="$(fCurrentBranch) (repo default: $(fDefaultBranch)) $(fBranchSync)"
+	fEcho_Clean "Branch .......: ${branchLine% }"
 	fEcho_Clean ""
-	fEcho_Clean "git status:"
-	git status | fIndent
+	fpShowChanges
+	((showIdentity)) && fpShowIncoming
 	fEcho_ResetBlankCounter
 :;}
 
@@ -589,6 +686,7 @@ fPromptYN(){
 	{ [[ "${userAnswer,,}" == "y" ]] && return 0; } || return 1; }
 
 ## Echo-related
+declare -i _lastListCount=0  ## set by fpCappedList()
 declare -i _wasLastEchoBlank=0
 fEcho_ResetBlankCounter() { _wasLastEchoBlank=0; }
 fEcho_Clean()             { if [[ -n "${1:-}" ]]; then echo -e "$*"; _wasLastEchoBlank=0; elif [[ $_wasLastEchoBlank -eq 0 ]] && echo; then _wasLastEchoBlank=1; fi; }
@@ -712,3 +810,6 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##			- Renamed commands: scompul->saveup, spush->sync, scommit->commit, spull->pull, mkbranch->newbr, chbranch->gobr, list->listbr, mtm->land. Old names still work (hidden aliases).
 ##			- newbr/gobr/land now target dev when the repo has one, else main/master.
 ##			- Added pr (list / review / accept, via gh) and release (merge dev into main, tag, push; bumps patch when no version given).
+##		- 20260723 JC:
+##			- Pre-flight display before the confirm prompt: resolved SSH identity (alias -> real host, user, key), commit author, ahead/behind, and the files an incoming pull would change.
+##			- Changed files now list one per line, truncated to the terminal and capped, instead of git status's long form.
