@@ -47,6 +47,11 @@ MD_LINT_GLOBS=(
 PY_LINT_FILES=(
 	"cicd/utility/gen-demo-gif.py"
 )
+## PowerShell (probe-gated: needs pwsh + the PSScriptAnalyzer module).
+PS_LINT_GLOBS=(
+	"bin/gitsby.ps1"
+	"install*.ps1"
+)
 
 ## Stage 2: regression tests. The harness lands with the bin/gitsby refactor;
 ## until the file exists the engine reports the stage absent (not passing).
@@ -63,13 +68,13 @@ LINT_LOG_DIR="cicd/artifacts/lint"          # relative to repo root; created if 
 
 ## Stage 4: dogfood. A script project's "release build" is the script itself:
 ## copy it over EXE_NAME in the first existing dir below (the stable path you
-## launch by hand). The pwsh pair stays dormant until a PowerShell port exists.
+## launch by hand).
 DOGFOOD_BASH_SRC="bin/gitsby"
 DOGFOOD_BASH_DESTS=(
 	"${HOME}/synced/0-0/common/exec/util/linux/bash"
 	"/usr/local/sbin"
 )
-DOGFOOD_PWSH_SRC=""                          # no pwsh port yet; set to its path when one lands
+DOGFOOD_PWSH_SRC="bin/gitsby.ps1"
 DOGFOOD_PWSH_DESTS=(
 	"${HOME}/synced/0-0/common/exec/util/0_crossplatform"
 	"/usr/local/sbin"

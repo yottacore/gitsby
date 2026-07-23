@@ -139,7 +139,7 @@ Either way, the installer shows exactly what it will do and asks before doing it
 
 ### PowerShell
 
-*The PowerShell port hasn't shipped yet; until it does, the installer says so and points back at the Bash version.*
+*The PowerShell port is new and not in a release yet. Until one is cut, install it from the dev branch by adding `-Ref dev` to the scriptblock form below.*
 
 - User-only install
 
