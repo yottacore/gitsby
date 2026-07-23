@@ -30,6 +30,7 @@ EXE_NAME="gitsby"
 ## the .py just gets a compile check.
 SHELL_LINT_GLOBS=(
 	"bin/gitsby"
+	"install*.bash"
 	"cicd/*.bash"
 	"cicd/utility/lint-report.bash"
 	"cicd/utility/git-auto-msg.bash"

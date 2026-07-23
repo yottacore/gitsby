@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+
+##	Purpose:
+##		- Downloads and installs the latest gitsby release, after showing the plan
+##		  and asking first. Meant for one-liner use:
+##		      curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install.bash | bash
+##		  Flags go after 'bash -s --', e.g.:
+##		      ... | bash -s -- --system -y
+##		- Runs on bash 3.2+ (stock macOS bash), so no bash-4/5 features in here.
+##	History: At bottom of script.
+
+##	Copyright © 2026 Jim Collier (ID: 1cv◂‡Vᛦ)
+##	Licensed under The MIT License (MIT). Full text at:
+##		https://mit-license.org/
+##	SPDX-License-Identifier: MIT
+
+
+set -eu; set -o pipefail
+
+repo="jim-collier/gitsby"
+doSystem=0; doYes=0; ref=""; isRelease=1
+
+fEcho(){ echo "[ $* ]"; }
+fErr(){  echo "Error: $*" >&2; exit 1; }
+fSyntax(){
+	cat <<-EOF
+	Usage: install.bash [OPTIONS]
+	Downloads and installs the latest gitsby release (with confirmation).
+	Options:
+	  -s, --system     Install to /usr/local/bin for all users (default: ~/.local/bin).
+	  -y, --yes        Don't ask for confirmation.
+	  -r, --ref REF    Install from a branch/tag/commit instead of the latest release.
+	  -h, --help       This.
+	EOF
+}
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		-s|--system) doSystem=1 ;;
+		-y|--yes)    doYes=1 ;;
+		-r|--ref)    [[ $# -ge 2 ]] || fErr "--ref needs a value."; ref="$2"; shift ;;
+		-h|--help)   fSyntax; exit 0 ;;
+		*)           fErr "Unknown option: '$1' (try --help)." ;;
+	esac
+	shift
+done
+
+## Downloader: curl or wget, whichever exists.
+if   command -v curl >/dev/null 2>&1; then fFetch(){ curl -fsSL "$1"; }
+elif command -v wget >/dev/null 2>&1; then fFetch(){ wget -qO- "$1"; }
+else fErr "Need curl or wget."
+fi
+
+## No --ref: resolve the latest release tag (no jq dependency; scrape tag_name).
+if [[ -z "${ref}" ]]; then
+	ref="$(fFetch "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null | sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+	[[ -n "${ref}" ]] || fErr "Couldn't determine the latest release; pass e.g. '--ref main'."
+else
+	isRelease=0
+fi
+
+destDir="${HOME}/.local/bin"; needSudo=0
+if [[ ${doSystem} -eq 1 ]]; then
+	destDir="/usr/local/bin"
+	[[ -w "${destDir}" ]] || needSudo=1
+fi
+
+echo
+fEcho "gitsby installer"
+echo "This will:"
+echo "  - Download gitsby (${ref}) from github.com/${repo}"
+echo "  - Install it to ${destDir}/gitsby"
+[[ ${needSudo} -eq 1 ]] && echo "  - Use sudo for the install step (you may be prompted for your password)"
+echo "  - Run 'gitsby --version' to verify"
+if [[ ${doYes} -eq 0 ]]; then
+	answer=""
+	## When piped (curl | bash) stdin is the script, so confirm via the terminal.
+	## (-r /dev/tty isn't enough - it can exist yet fail to open with no
+	## controlling terminal - so test with a real open.)
+	if   [[ -t 0 ]];                  then read -r -p "Continue? [y/N] " answer
+	elif { : </dev/tty; } 2>/dev/null; then read -r -p "Continue? [y/N] " answer </dev/tty
+	else fErr "No terminal to confirm on; re-run with -y (e.g. '| bash -s -- -y')."
+	fi
+	case "${answer}" in y|Y|yes|Yes|YES) ;; *) echo "Aborted."; exit 1 ;; esac
+fi
+
+tmpFile="$(mktemp "${TMPDIR:-/tmp}/gitsby-install.XXXXXX")"
+trap 'rm -f "${tmpFile}"' EXIT
+
+echo
+fEcho "Downloading ..."
+## Prefer the release asset; fall back to the file in the tagged tree.
+if [[ ${isRelease} -eq 1 ]] && fFetch "https://github.com/${repo}/releases/download/${ref}/gitsby" > "${tmpFile}" 2>/dev/null; then
+	:
+elif fFetch "https://raw.githubusercontent.com/${repo}/${ref}/bin/gitsby" > "${tmpFile}" 2>/dev/null; then
+	:
+else
+	fErr "Couldn't download gitsby at '${ref}'. (Releases before v2 predate the current layout; try '--ref main'.)"
+fi
+head -n 1 "${tmpFile}" | grep -q '^#!/' || fErr "Downloaded file doesn't look like a script; aborting."
+
+fEcho "Installing to ${destDir}/gitsby ..."
+if [[ ${needSudo} -eq 1 ]]; then
+	sudo install -m 755 "${tmpFile}" "${destDir}/gitsby"
+else
+	mkdir -p "${destDir}"
+	install -m 755 "${tmpFile}" "${destDir}/gitsby"
+fi
+
+fEcho "Verifying ..."
+"${destDir}/gitsby" --version
+case ":${PATH}:" in
+	*":${destDir}:"*) ;;
+	*) echo "Note: ${destDir} isn't on your PATH; add it in your shell profile." ;;
+esac
+echo
+fEcho "Done."
+
+
+##	History:
+##		- 20260722 JC: Created.

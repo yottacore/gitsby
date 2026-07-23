@@ -22,6 +22,7 @@ All types of contributions are encouraged and valued. See the [Table of Contents
 - [I Want To Contribute](#i-want-to-contribute)
 	- [Reporting Bugs](#reporting-bugs)
 	- [Suggesting Enhancements](#suggesting-enhancements)
+	- [Your First Code Contribution](#your-first-code-contribution)
 - [Styleguides](#styleguides)
 
 ## Code of Conduct
@@ -126,11 +127,23 @@ Enhancement suggestions are tracked as [GitHub issues](https://github.com/jim-co
 
 <!-- You might want to create an issue template for enhancement suggestions that can be used as a guide and that defines the structure of the information to be included. If you do so, reference it here in the description. -->
 
-<!-- TODO
 ### Your First Code Contribution
-include Setup of env, IDE and typical getting started instructions?
 
--->
+One-liner dev setup (clones the repo, checks out the `dev` branch, and checks/installs the dev tooling; it shows the plan and asks before doing anything):
+
+- Linux / macOS:
+
+	~~~bash
+	curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install-dev.bash | bash
+	~~~
+
+- Windows (PowerShell 7+):
+
+	~~~pwsh
+	irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install-dev.ps1 | iex
+	~~~
+
+Then: work on a short-named feature branch off `dev`, run the local pipeline (`cicd/cicd.bash --quick`) before pushing, and open a PR back to `dev`. Coding style is in [style-guide.md](style-guide.md).
 
 <!-- TODO
 ### Improving The Documentation
