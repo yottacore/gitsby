@@ -56,7 +56,7 @@ In each section, items are listed approximately from newest to oldest.
 		- Both legs live since the pwsh port landed.
 
 	- ✅ Regression tests; keep updated as features/bugs land.
-		- `cicd/test.bash`: throwaway repos (bare origin + two clones), every command plus failure guards, run once per implementation - 130 checks.
+		- `cicd/test.bash`: throwaway repos (bare origin + two clones), every command plus failure guards, run once per implementation - 140 checks.
 
 	- 🛠️ Adversarial fuzz/security testing (our input surface + what we depend on).
 		- Stage wired (`cicd/fuzz.bash`); same timing as the test harness.
@@ -109,6 +109,15 @@ In each section, items are listed approximately from newest to oldest.
 #### Done - Bugs
 
 #### Done - Features and enhancements
+
+- ✅ Rename `saveup` to `update`.
+	- Done in both implementations; `saveup` stays as a hidden alias like the other old names. Docs and changelog swept.
+
+- ✅ Script output starts and ends with a blank line (breathing room between prompt text).
+	- Trailing blanks already existed on every exit path; added the leading one (both implementations). Error paths were already blank-wrapped.
+
+- ✅ After `release` merges dev to main, bring dev up to include the release merge and tag.
+	- Done via `git merge --ff-only main` on dev (then push), not `git branch -f dev main`: same result normally, but if dev gained commits mid-release it skips with a warning instead of discarding work. Previews updated; tests cover it.
 
 - ✅ 'git_notes_and_oneliners.md': Move the current commands under a "Bash" section, and add a "PowerShell" section below it, with pwsh v7 parity versions of the same one-liners.
 	- Two mirrored sections, same task headings in the same order, so the two are easy to compare side by side.

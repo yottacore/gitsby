@@ -8,10 +8,10 @@
     acting (stash only if dirty, pull only with an upstream, push only if
     ahead), so each is idempotent and safe to re-run.
 .PARAMETER Command
-    saveup | newbr | gobr | status | listbr | sync | pull | commit | land | pr | release
-    (old names scompul/mkbranch/chbranch/list/spush/spull/scommit/mtm still work)
+    update | newbr | gobr | status | listbr | sync | pull | commit | land | pr | release
+    (old names saveup/scompul/mkbranch/chbranch/list/spush/spull/scommit/mtm still work)
 .PARAMETER CommandArg
-    Message (commit/saveup/sync/land), branch name (newbr/gobr), version (release),
+    Message (commit/update/sync/land), branch name (newbr/gobr), version (release),
     or PR number / 'ok' (pr).
 .PARAMETER CommandArg2
     PR number, for 'pr ok <n>'.
@@ -20,7 +20,7 @@
 .PARAMETER Quiet
     No prompts; if committing with no message, one is generated.
 .EXAMPLE
-    gitsby.ps1 saveup "fixed the frobnicator"
+    gitsby.ps1 update "fixed the frobnicator"
 .EXAMPLE
     gitsby.ps1 newbr featx
 .NOTES
@@ -117,7 +117,7 @@ function Show-Syntax {
     $script:wasShownSyntax = $true
     Write-PlainLine ''
     Write-PlainLine 'Common commands:'
-    Write-PlainLine '  saveup [msg] ...: Commit all local changes and pull updates. Do frequently!'
+    Write-PlainLine '  update [msg] ...: Commit all local changes and pull updates. Do frequently!'
     Write-PlainLine "  newbr <branch> .: Create a new branch off ${script:mergeTargetLabel} (parks current work first)."
     Write-PlainLine "  gobr [branch] ..: Switch to a branch (parks current work first). No arg: back to ${script:mergeTargetLabel}."
     Write-PlainLine '  status .........: Fetch and show current status.'
@@ -360,13 +360,13 @@ function Show-CommandPreview {
             Write-PlainLine "${pad}git stash pop *"
             break
         }
-        'saveup' {
+        'update' {
             Show-CommandPreview -CommandName 'commit'
             Show-CommandPreview -CommandName 'pull'
             break
         }
         'sync' {
-            Show-CommandPreview -CommandName 'saveup'
+            Show-CommandPreview -CommandName 'update'
             Write-PlainLine "${pad}git push *"
             break
         }
@@ -414,6 +414,11 @@ function Show-CommandPreview {
             Write-PlainLine "${pad}git tag -a $($script:releaseTag)"
             Write-PlainLine "${pad}git push *"
             Write-PlainLine "${pad}git push origin $($script:releaseTag) *"
+            if ((Get-MergeTarget) -eq 'dev') {
+                Write-PlainLine "${pad}git checkout dev *"
+                Write-PlainLine "${pad}git merge --ff-only $(Get-DefaultBranch) *"
+                Write-PlainLine "${pad}git push *"
+            }
             Write-PlainLine "${pad}git checkout $(Get-CurrentBranch) *"
             break
         }
@@ -581,8 +586,20 @@ function Invoke-GitsbyRelease {
         if (Test-GitUpstream) { Invoke-Git -GitArgs @('push') }
         Invoke-Git -GitArgs @('push', 'origin', $script:releaseTag)
     }
+    ## Fast-forward dev to include the release merge and tag, so dev isn't left a commit behind.
+    ## ff-only (not branch -f): if dev moved mid-release, skip rather than discard work.
+    if ($devBranch) {
+        git merge-base --is-ancestor $devBranch $mainBranch *> $null
+        if ($LASTEXITCODE -eq 0) {
+            Invoke-Git -GitArgs @('checkout', $devBranch)
+            Invoke-Git -GitArgs @('merge', '--ff-only', $mainBranch)
+            if (Test-GitUpstream) { Invoke-Git -GitArgs @('push') }
+        } else {
+            Write-StatusLine "WARNING: '${devBranch}' gained commits during the release; leaving it as-is."
+        }
+    }
     ## Don't leave the user parked on main.
-    if ($startBranch -and ($startBranch -ne $mainBranch)) { Invoke-Git -GitArgs @('checkout', $startBranch) }
+    if ($startBranch -and ($startBranch -ne (Get-CurrentBranch)) -and ($startBranch -ne $mainBranch)) { Invoke-Git -GitArgs @('checkout', $startBranch) }
 }
 
 
@@ -597,6 +614,9 @@ try {
     if ($Help) { Show-Copyright; Show-About; Show-Syntax; exit 0 }
     if ($Version) { Show-Copyright; exit 0 }
     if (-not $Command) { Show-Copyright; Show-About; Show-Syntax; exit 1 }
+
+    ## Breathing room after the shell prompt (the matching trailing blank is at each exit path).
+    Write-PlainLine ''
 
     if (-not (Get-Command -Name git -ErrorAction SilentlyContinue)) { throw 'Not found in path: git' }
 
@@ -613,7 +633,8 @@ try {
     $cmdName = switch ($cmdName) {
         'scommit' { 'commit'; break }
         'spull' { 'pull'; break }
-        'scompul' { 'saveup'; break }
+        'scompul' { 'update'; break }
+        'saveup' { 'update'; break }
         'spush' { 'sync'; break }
         'mkbranch' { 'newbr'; break }
         'chbranch' { 'gobr'; break }
@@ -627,7 +648,7 @@ try {
     switch ($cmdName) {
         { $_ -in 'status', 'listbr' } { $isMutating = $false; break }
         'pr' { if ($CommandArg.ToLowerInvariant() -ne 'ok') { $isMutating = $false }; break }
-        { $_ -in 'commit', 'saveup', 'sync', 'land' } { if (-not $script:commitMessage) { $script:commitMessage = $CommandArg }; break }
+        { $_ -in 'commit', 'update', 'sync', 'land' } { if (-not $script:commitMessage) { $script:commitMessage = $CommandArg }; break }
         { $_ -in 'pull', 'newbr', 'gobr', 'release' } { break }
         default { throw "Unknown command '${cmdName}'. Run '${script:meName}' with no arguments for a list." }
     }
@@ -687,7 +708,7 @@ try {
     switch ($cmdName) {
         'commit' { Invoke-GitsbyCommit; break }
         'pull' { Invoke-GitsbyPull; break }
-        'saveup' { Invoke-GitsbyCommitPull; break }
+        'update' { Invoke-GitsbyCommitPull; break }
         'sync' { Invoke-GitsbyPush; break }
         'newbr' { Invoke-GitsbyMakeBranch -NewBranch $CommandArg; break }
         'gobr' { Invoke-GitsbyChangeBranch -TargetBranch $CommandArg; break }
@@ -713,3 +734,4 @@ try {
 ##      - 20260722 JC: Created; port of bin/gitsby (same commands, checks, and flow).
 ##      - 20260722 JC: Command renames (old names stay as hidden aliases), dev-aware merge target, pr and release commands - in step with bin/gitsby.
 ##      - 20260723 JC: Pre-flight display (SSH identity, commit author, ahead/behind, incoming files) and the capped short-form change list - in step with bin/gitsby.
+##      - 20260723 JC: Renamed saveup->update (old name aliased); release fast-forwards dev to main afterward; leading blank line on output - in step with bin/gitsby.

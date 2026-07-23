@@ -89,6 +89,12 @@ fRunSuite(){
 	( cd "${cloneA}" && echo alias > alias.txt )
 	fAssert "old alias 'scommit' still works"  bash -c "cd '${cloneA}' && '${gitsby}' -q scommit 'via alias'"
 
+	## update: commit + pull in one; old name still works
+	( cd "${cloneA}" && echo upd > upd.txt )
+	fAssert "update commits and pulls"        bash -c "cd '${cloneA}' && '${gitsby}' -q update 'add upd'"
+	fAssert "worktree clean after update"     bash -c "cd '${cloneA}' && [[ -z \"\$(git status --porcelain)\" ]]"
+	fAssert "old alias 'saveup' still works"  bash -c "cd '${cloneA}' && '${gitsby}' -q saveup"
+
 	## sync: publishes; remote matches local
 	fAssert "sync runs"            bash -c "cd '${cloneA}' && '${gitsby}' -q sync 'push file2'"
 	fAssert "remote main matches"  bash -c "cd '${cloneA}' && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]]"
@@ -153,6 +159,8 @@ fRunSuite(){
 	fAssert "release merged dev to main"  bash -c "cd '${cloneA}' && git ls-tree --name-only main | grep -qx feat2.txt"
 	fAssert "main pushed with tag"      bash -c "cd '${cloneA}' && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]] && git ls-remote --tags origin | grep -q 'refs/tags/v1.2.3'"
 	fAssert "back on dev after release"  bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == dev ]]"
+	fAssert "dev fast-forwarded to the release"  bash -c "cd '${cloneA}' && [[ \"\$(git rev-parse dev)\" == \"\$(git rev-parse main)\" ]]"
+	fAssert "dev pushed after release"           bash -c "cd '${cloneA}' && [[ \"\$(git rev-parse dev)\" == \"\$(git rev-parse origin/dev)\" ]]"
 	fAssertFail "release same version rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q release 1.2.3"
 	fAssertFail "release bad version rejected"   bash -c "cd '${cloneA}' && '${gitsby}' -q release bogus"
 	( cd "${cloneA}" && echo more > more.txt )
@@ -196,3 +204,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##	History:
 ##		- 20260722 JC: Created, alongside the bin/gitsby refactor.
 ##		- 20260722 JC: Run the suite per implementation; added the pwsh leg.
+##		- 20260723 JC: Checks for the update command (and its old name), and for dev fast-forwarding after a release.
