@@ -119,6 +119,28 @@ There are many implicit opinions baked in. Here are the main ones:
 
 	While PRs are overkill for small personal projects, it is nevertheless good hygiene, does not add much extra effort, and reinforces good working habits.
 
+- Pushed history is permanent. No rebase, no amend, no force-push, no rewriting.
+
+- Merges are always `--no-ff`, so the fact that a branch existed stays visible in history.
+
+- Feature branches are short-lived: branch off, do the work, land it, delete it (local and remote).
+
+- If the repo has a `dev` branch, feature branches come off of - and land back on - `dev`. `main` is then release-only: a `dev` -> `main` merge is a release cut, with a tag.
+
+- Commit the whole working tree (`git add --all`), every time. The staging area is not a workspace; partial staging is one of those fringe cases left to raw `git`.
+
+- Commit and pull frequently (`saveup`); push less often (`sync`).
+
+- Uncommitted work should never block anything. A pull auto-stashes around itself (untracked files included), and a branch switch parks current work first - commit, pull, push - so nothing is ever stranded or lost.
+
+- Every branch tracks a same-named branch on `origin`, from the moment it's created.
+
+- One remote, and it's named `origin`. (Multi-remote setups are another fringe case left to raw `git`.)
+
+- Releases are annotated semver tags (`vX.Y.Z`). If no version is given, bump the patch.
+
+- Look before you leap: fetch first, show the current state and the exact commands about to run, and ask before doing anything that mutates.
+
 ## Installation
 
 First, decide on the Bash or PowerShell version, mainly gating on *nix vs Windows.
