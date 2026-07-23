@@ -45,8 +45,6 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Features and enhancements
 
-- 🔘 'git_notes_and_oneliners.md': Move the current commands under a "Bash" section, and add a "PowerShell" section below it, with pwsh v7 parity versions of the same one-liners.
-
 - 🛠️ CICD process (full spec in private notes):
 
 	- ✅ `cicd.bash`: `-q|--quiet`, `-m|--msg|--message`, prompt for commit message when neither given (CTRL+C aborts); silkterm output style; `fEcho`/`fParseArgs` conventions.
@@ -111,6 +109,12 @@ In each section, items are listed approximately from newest to oldest.
 #### Done - Bugs
 
 #### Done - Features and enhancements
+
+- ✅ 'git_notes_and_oneliners.md': Move the current commands under a "Bash" section, and add a "PowerShell" section below it, with pwsh v7 parity versions of the same one-liners.
+	- Two mirrored sections, same task headings in the same order, so the two are easy to compare side by side.
+	- The PowerShell section opens with the three gotchas that bite when translating from Bash: `&&`/`||` need pwsh 7, `@{u}` has to be quoted, and staged-change tests read `$LASTEXITCODE`.
+	- Every pwsh one-liner was run against throwaway repos, not just eyeballed. Two spots deviate on purpose: no `less` (git pages its own diff), and `Remove-Item` deletes outright since there is no cross-platform `trash`.
+	- Also swapped the stale sister-tool reference in the Bash "push local changes" one-liner for `gitsby saveup`.
 
 - ✅ All potentially destructive or conflict-producing commands - or anything that will reveal a user identity on the remote - should:
 	- Show what's going to change (including a list of changed files, piped through an internal equivalent of `... | less -FX` if necessary)
