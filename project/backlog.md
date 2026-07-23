@@ -45,50 +45,44 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Features and enhancements
 
-- ✅ Work on dev branch. Push releases to main.
+- 🔘 All potentially destructive or conflict-producing commands - or anything that will reveal a user identity on the remote - should:
+	- Show what's going to change (including a list of changed files, piped through an internal equivalent of `... | less -FX` if necessary)
+	- git status without line-breaks, and SSH connection info. And a prompt to continue. All with standard 1 blank line where appropriate.
 
-	- ✅ `dev` branch created from `main` and pushed; feature branches now merge to `dev`, `main` is release-only.
-
-- ✅ Create PRs rather than pushing directly (for this project).
-	- Feature branches now go up as PRs to `dev` and land via merge commit; direct local merges retired.
-
-- ✅ Delete stale branch from 2020.
-	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
+- 🔘 'git_notes_and_oneliners.md': Move the current commands under a "Bash" section, and add a "PowerShell" section below it, with pwsh v7 parity versions of the same one-liners.
 
 - 🛠️ CICD process (full spec in private notes):
 
 	- ✅ `cicd.bash`: `-q|--quiet`, `-m|--msg|--message`, prompt for commit message when neither given (CTRL+C aborts); silkterm output style; `fEcho`/`fParseArgs` conventions.
 
 	- ✅ Linting stage: shellcheck (+ markdownlint), no auto-format for Bash; output GFS-rotated to `cicd/artifacts/lint/`; zero-error goal.
-		- Everything gates clean now, including `bin/gitsby` (the refactor cleared its ~80 legacy findings; report-only list emptied).
-
-	- ✅ Regression tests; keep updated as features/bugs land.
-		- `cicd/test.bash` landed with the refactor: 39 checks against throwaway repos (bare origin + two clones); covers every command plus failure guards.
-
-	- 🛠️ Adversarial fuzz/security testing (our input surface + what we depend on).
-		- Stage wired (`cicd/fuzz.bash`); same timing as the test harness.
+		- Legacy `bin/gitsby` lints report-only until the refactor retires its ~80 findings; everything else gates clean.
 
 	- ✅ Dogfood install stage: copy to first existing preferred dir (bash + pwsh lists).
 		- pwsh leg dormant until a port exists.
 
+	- 🛠️ Regression tests; keep updated as features/bugs land.
+		- Stage wired (`cicd/test.bash`); harness written against the refactored script, not the pre-refactor one.
+
+	- 🛠️ Adversarial fuzz/security testing (our input surface + what we depend on).
+		- Stage wired (`cicd/fuzz.bash`); same timing as the test harness.
+
 	- 🛠️ Automated demo GIF (fake terminal, 640x360@50fps, `--quick` skips); copy `gen-demo-gif.py` from convert-base-v2; embed `assets/demo.gif` in README.
 		- Generator + stage wired; scenario + README embed after the refactor, so it demos working commands.
 
-- ✅ Refactor the bash script:
-	- Rewritten 2142 -> ~620 lines on the current template generation (same one as `n8git_backup-and-publish`): strict mode, trap suite, arg parser, minified header trio.
+- 🔘 Add a PowerShell badge to README.md.
 
-	- ✅ Use newer, easier-to-maintain Bash template/boilerplate/common functions. (E.g. from sister project silkterm.) But even those examples need to be cleaner (don't change anything outside of repo.)
+- 🔘 Refactor the bash script:
 
-	- ✅ Modernize function and variable naming convention. Be descriptive with names, but not too long. Use of one-letter variables in small loop structures is OK.
+	- 🔘 Use newer, easier-to-maintain Bash template/boilerplate/common functions. (E.g. from sister project silkterm.) But even those examples need to be cleaner (don't change anything outside of repo.)
 
-	- ✅ Remove dead code.
-		- Dropped the unused ~1400-line generic library (ping, symlink, editor pickers, sudo plumbing, glob-permutation engine, platform detection).
+	- 🔘 Modernize function and variable naming convention. Be descriptive with names, but not too long. Use of one-letter variables in small loop structures is OK.
 
-	- ✅ Refactor to maximize usefulness of idiomatic Bash 5 features.
-		- Argument arrays instead of eval (which also retired the curly-quote message mangling), `[[ -v ]]`, parameter transforms, arithmetic conditionals.
+	- 🔘 Remove dead code.
 
-- ✅ Make sure everything done with git:
-	- Every command verifies state first and is idempotent: stash only if dirty (pop only what was pushed), pull only with an upstream, push only if ahead, commit only if changes; main/master detected from origin HEAD, not hardcoded. All covered by the regression tests.
+	- 🔘 Refactor to maximize usefulness of idiomatic Bash 5 features.
+
+- 🔘 Make sure everything done with git:
 
 	- Is done safely. E.g. before stashing, verify safely in a robust way that makes no assumptions, that there is anything to pull. `n8git_backup-and-publish` has examples.
 
@@ -96,8 +90,7 @@ In each section, items are listed approximately from newest to oldest.
 
 	- Everything must be idempotent.
 
-- ✅ Integrate these rules and ideals: `reference/git.txt` (in this repo), including:
-	- Push hygiene (stash / pull --ff-only / stash apply / add / commit / push) is now the core of spull/scompul/spush; branch workflow lives in mkbranch/chbranch/mtm.
+- 🔘 Integrate these rules and ideals: `reference/git.txt` (in this repo), including:
 	- Work on feature branches
 	- PRs to merge to develop
 	- Commit frequently
@@ -113,22 +106,13 @@ In each section, items are listed approximately from newest to oldest.
 		git push
 		~~~
 
-- ✅ Get original commands and options working. At some point some just kind of broke (pre-git), and were never fixed.
-	- All nine commands work and are regression-tested; scommit/scompul/spush/mtm take -m or a positional message, mkbranch/chbranch validate their branch argument.
+- 🔘 Get original commands and options working. At some point some just kind of broke (pre-git), and were never fixed.
 
-- ✅ Create a release-install script per platform (`bash` and \[`pwsh` or `cmd`\]), runnable via a single `curl`/`wget` (etc.) and documented under "how to install". Downloads, installs, and runs the latest release, with an option to abort. Update README.md with one-liner for both local and system-level installs.
-	- `install.bash` + `install.ps1` at repo root; plan-then-confirm, `--system`/`-y`/`--ref`; README Installation one-liners filled in (user + system, curl and wget). Resolves the latest release tag, prefers a release asset, falls back to the tagged tree. The 2022-era releases predate the `bin/` layout so the release path activates for real once a v2 release is cut (`--ref main`/`--ref dev` works today); the pwsh installer says the port hasn't shipped and points at the bash one until then.
+- 🔘 Create a release-install script per platform (`bash` and \[`pwsh` or `cmd`\]), runnable via a single `curl`/`wget` (etc.) and documented under "how to install". Downloads, installs, and runs the latest release, with an option to abort. Update README.md with one-liner for both local and system-level installs.
 
-	- ✅ Do the same thing for a dev-branch install script (Linux bash, macOS sh, Windows PowerShell), runnable via a single `curl`/`wget` and documented under "how to develop". Clones main, installs dependencies, and states what it will do with an option to abort. Update README.md with one-liner for both local and system-level installs.
-		- `install-dev.bash` + `install-dev.ps1`: clone, check out `dev`, check tooling (offers package-manager install where one is found), verify, print next steps. Documented in README "How to develop" + contributing.md "Your First Code Contribution". Bash installers run on macOS stock bash 3.2.
+	- 🔘 Do the same thing for a dev-branch install script (Linux bash, macOS sh, Windows PowerShell), runnable via a single `curl`/`wget` and documented under "how to develop". Clones main, installs dependencies, and states what it will do with an option to abort. Update README.md with one-liner for both local and system-level installs.
 
-- ✅ PowerShell port of gitsby (style guide already covers pwsh; dogfood pwsh leg activates when it lands).
-	- `bin/gitsby.ps1`: same commands, checks, and flow as the bash version. Regression suite now runs once per implementation (78 checks total); PSScriptAnalyzer joined the lint stage (gates all three .ps1 files); dogfood pwsh leg live. Not in a release yet - README says to use `-Ref dev` until one is cut.
-
-- ✅ Better command names; dev-aware merging; PR and release commands (both implementations).
-	- Renames: scompul->saveup, spush->sync, scommit->commit, spull->pull, mkbranch->newbr, chbranch->gobr, list->listbr, mtm->land. Old names still work as hidden aliases.
-	- newbr/gobr/land now branch off / land on dev when the repo has one, else main/master. land refuses to run from the default branch.
-	- New: pr (bare = list, n = view + diff, ok n = approve + merge, via gh), release (merge dev into main --no-ff, tag, push; no version = patch bump on the latest v* tag).
+- 🔘 PowerShell port of gitsby (style guide already covers pwsh; dogfood pwsh leg activates when it lands).
 
 ### Done
 
@@ -137,6 +121,16 @@ In each section, items are listed approximately from newest to oldest.
 #### Done - Bugs
 
 #### Done - Features and enhancements
+
+- ✅ Work on dev branch. Push releases to main.
+
+	- ✅ `dev` branch created from `main` and pushed; feature branches now merge to `dev`, `main` is release-only.
+
+- ✅ Create PRs rather than pushing directly (for this project).
+	- Feature branches now go up as PRs to `dev` and land via merge commit; direct local merges retired.
+
+- ✅ Delete stale branch from 2020.
+	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
 
 ### Future and/or deferred
 

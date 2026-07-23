@@ -44,7 +44,7 @@
 <!-- TOC ignore:true -->
 # The Great Gitsby
 
-An "extreme" Git wrapper to speed and simplify Git workflow.
+An opinionated Git wrapper to speed and simplify Git workflow.
 
 <!-- TOC ignore:true -->
 ## Table of contents
@@ -65,43 +65,49 @@ An "extreme" Git wrapper to speed and simplify Git workflow.
 
 ## Summary
 
-One reason Git is so complex, is because it's so flexible. It's so flexible because it supports a wide variety of workflows, team sizes, and very narrow/hard edge-cases of conflict resolution.
+If you're reading this, you probably know how to use Git. You probably also understand that it's complex, mostly because it's so flexible.
 
-`gitsby` vastly simplifies Git, by:
+Git is so flexible because it supports a wide variety of workflows, team sizes, and very narrow/hard edge-cases of conflict resolution.
 
-- Applying an opinionated workflow, and ignoring the myriad other ways of doing the same thing.
+Gitsby vastly simplifies Git, by:
 
-- By acknowledging that (arguably) some ≈90% of Git's complexity is devoted to to covering about ≈10% of use-cases, and ignoring most of them. (Not pretending they never happen, just not trying to be the tool to solve them.)
+- Applying an "opinionated" workflow, and ignoring the myriad other ways of doing the same thing.
 
-gitsby and git are 100% compatible and interchangeable.
+- By acknowledging that (arguably) some ≈90% of Git's complexity is devoted to to covering about ≈10% of edge use-cases, and purposely ignoring most of them. (That is to say, not pretending they never happen - just not trying to be the tool to solve them if and when they arise.)
+
+Gitsby and Git are 100% compatible and interchangeable.
 
 - *In fact in large projects, you'll still need raw `git` to resolve some sticky situations that `gitsby` purposely doesn't try to tackle (in order to keep-it-simple and "do one thing well").*
 
 100% compatible with GitHub and GitLab.
 
-Arguably, about 90% of Git's complexity is due to covering a fringe about 10% of use-cases. If you buy that argument, then axiomatically, if you lop off that 10% of fringe use-cases, then Git becomes 90% easier to work with. This goes further, lopping off (very approximately) half of the functionality, and is about 95% easier to work with.
-
 ## General attributes
 
-- Encourages an opinionated workflow.
+- Encourages an opinionated workflow. (More on what that means below, because it has besome an overloaded word.)
 
 - It doesn't cover fringe use-cases, which Git itself can cover while still using this for the more common stuff.
 
 - It's goal-oriented, rather than task-driven. (Which sounds like hand-wavy doublespeak, but is accurate. The subcommands themselves illustrate how.)
 
-To be clear, gitsby is just shell script. There's not much "logic", it's more about exposing a set of goal-oriented commands, sanity-checking arguments and underlying filesystem, and then chaining together the appropriate git commands to accomplish that goal.
+To be clear, gitsby is just shell script. (Two scripts actually, with the same syntax and results.) There's not much "logic", it's more about exposing a set of goal-oriented commands, sanity-checking arguments and underlying filesystem, and then chaining together the appropriate git commands to accomplish that goal.
 
-gitsby and regular git are fully compatible. gitsby does nothing that git can't do directly (with many more commands and guards).
+Gitsby does nothing that git can't do directly, with many more commands and guards.
 
 Sub-objectives in the workflow of each gitsby command:
 
-1. Make few assumptions about underlying state, and
+1. Don't make assumptions - about the underlying repo state.
 
-1. Do things in a safe way (if occasionally redundant and/or unnecessary), that is tolerant of unexpected or inconsistent states.
+1. Be safe - if occasionally redundant and/or unnecessary. Never risk losing work - yours locally, or others in the remote.
 
 1. Be idempotent.
 
+1. Be tolerant - of previous commands having been only half-finished, and other potential weirdness.
+
+1. Be forgiving - any sub-command can be run at any time, and if it doesn't make sense, it won't screw anything up.
+
 ## "Opinionated workflow": What are the opinions?
+
+The "opinions" are mostly informed by industry and conventional best-practices, learned over millions upon millions of programmer-hours. There is no reinvention of any wheels - it's just an exposed interface that places gentle guardrails and sanity checks around a way of working with Git that has proven to more easily scale and minimize trouble.
 
 There are many implicit opinions baked in. Here are the main ones:
 
@@ -109,7 +115,9 @@ There are many implicit opinions baked in. Here are the main ones:
 
 - `git push` only to a feature branch you created.
 
-- Don't `push` to `dev`, `main`, or `master`; instead, create a pull request. Even if you otherwise have the rights to, and even for small personal projects. While pull requests are overkill for small personal projects, it is nevertheless good hygiene, and fosters good working habits and experience.
+- Don't `push` to `dev`, `main`, or `master`; instead, create a Pull Request. Even if you otherwise have the rights to, and even for small personal projects.
+
+	While PRs are overkill for small personal projects, it is nevertheless good hygiene, does not add much extra effort, and reinforces good working habits.
 
 ## Installation
 
@@ -171,7 +179,7 @@ One-liner dev setup: clones the repo into `./gitsby`, checks out the `dev` branc
 
 ## Git notes and one-liners
 
-The document in this repo, "[Git notes and one-liners](https://github.com/jim-collier/gitsby/blob/main/git_notes_and_oneliners.md)" covers some simplified versions of what the `gitsby` does.
+The document in this repo, "[Git notes and one-liners](https://github.com/jim-collier/gitsby/blob/main/git_notes_and_oneliners.md)" covers some simplified versions of what Gitsby does. They differ slightly in some areas (mostly due to being limited to one-liners), but Gitsby is the cononical source of truth.
 
 ## Contributing
 
@@ -179,5 +187,5 @@ Contributions are welcome. Start with [contributing.md](contributing.md) for pro
 
 ## Copyright and license
 
-> Copyright © 2026 Jim Collier (ID: 1cv◂‡Vᛦ)<br />
+> Copyright © 2014-2026 Jim Collier (ID: 1cv◂‡Vᛦ)<br />
 > Licensed under the [MIT License](https://mit-license.org/). No warranty.
