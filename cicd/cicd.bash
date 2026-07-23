@@ -20,7 +20,7 @@
 ##	- Purpose: Local CI/CD pipeline. Generic engine for a Bash-script project;
 ##	  per-project settings live in config.bash.
 ##	- Stages (fail-fast, any error aborts before the next stage):
-##	   1. lint (bash -n + shellcheck gating; markdownlint + py_compile if available)
+##	   1. lint (bash -n + shellcheck gating; markdownlint + py_compile + PSScriptAnalyzer if available)
 ##	   2. regression tests (cicd/test.bash, once it exists)
 ##	   3. fuzz + security (cicd/fuzz.bash, once it exists; skipped under --quick)
 ##	   4. dogfood (install the script(s) to the first existing preferred dir)
@@ -125,7 +125,7 @@ fEcho_Clean "${APP_NAME} local CI/CD"
 fEcho_Clean
 fEcho_Clean "Repo root ...........: ${root}"
 if ((do_lint)); then
-	fEcho_Clean "Lint ................: shellcheck on ${#shell_files[@]} shell file(s) + ${#shell_warn_files[@]} legacy report-only  (+ markdownlint, py_compile if available)"
+	fEcho_Clean "Lint ................: shellcheck on ${#shell_files[@]} shell file(s) + ${#shell_warn_files[@]} legacy report-only  (+ markdownlint, py_compile, PSScriptAnalyzer if available)"
 else
 	fEcho_Clean "Lint ................: (skipped)"
 fi
@@ -237,6 +237,22 @@ else
 	if [[ -n "${PY_LINT_FILES+x}" ]] && ((${#PY_LINT_FILES[@]})); then
 		python3 -m py_compile "${PY_LINT_FILES[@]}" && rm -rf "${root}/cicd/utility/__pycache__"
 		fEcho "OK: py_compile (${#PY_LINT_FILES[@]} file(s))"
+	fi
+	if [[ -n "${PS_LINT_GLOBS+x}" ]] && ((${#PS_LINT_GLOBS[@]})); then
+		ps_files=()
+		_ng=0; shopt -q nullglob && _ng=1; shopt -s nullglob
+		for g in "${PS_LINT_GLOBS[@]}"; do for f in $g; do [[ -f "$f" ]] && ps_files+=("$f"); done; done
+		((_ng)) || shopt -u nullglob
+		if ((${#ps_files[@]})); then
+			if pwsh -NoProfile -Command "Get-Command Invoke-ScriptAnalyzer" >/dev/null 2>&1; then
+				for f in "${ps_files[@]}"; do
+					pwsh -NoProfile -Command "\$r = Invoke-ScriptAnalyzer -Path '${f}' -Severity Error,Warning,Information; \$r | Format-Table -AutoSize | Out-String -Width 200 | Write-Host; exit @(\$r).Count" || fDie "PSScriptAnalyzer findings in ${f}"
+				done
+				fEcho "OK: PSScriptAnalyzer clean (${#ps_files[@]} file(s))"
+			else
+				fEcho "WARNING: PSScriptAnalyzer skipped (pwsh + PSScriptAnalyzer module not both installed)"
+			fi
+		fi
 	fi
 fi
 
