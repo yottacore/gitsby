@@ -113,6 +113,8 @@ There are many implicit opinions baked in. Here are the main ones:
 
 - `git pull --ff-only` is safer than and preferable to `git pull --rebase`.
 
+- Merges are always `--no-ff`, so the fact that a branch existed stays visible in history.
+
 - `git push` only to a feature branch you created.
 
 - Don't `push` to `dev`, `main`, or `master`; instead, create a Pull Request. Even if you otherwise have the rights to, and even for small personal projects.
@@ -120,8 +122,6 @@ There are many implicit opinions baked in. Here are the main ones:
 	While PRs are overkill for small personal projects, it is nevertheless good hygiene, does not add much extra effort, and reinforces good working habits.
 
 - Pushed history is permanent. No rebase, no amend, no force-push, no rewriting.
-
-- Merges are always `--no-ff`, so the fact that a branch existed stays visible in history.
 
 - Feature branches are short-lived: branch off, do the work, land it, delete it (local and remote).
 
