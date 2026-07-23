@@ -56,6 +56,7 @@ An "extreme" Git wrapper to speed and simplify Git workflow.
 - [Installation](#installation)
 	- [Bash](#bash)
 	- [PowerShell](#powershell)
+- [How to develop](#how-to-develop)
 - [Git notes and one-liners](#git-notes-and-one-liners)
 - [Contributing](#contributing)
 - [Copyright and license](#copyright-and-license)
@@ -118,37 +119,54 @@ First, decide on the Bash or PowerShell version, mainly gating on *nix vs Window
 
 Then, decide to install for your user account only, or system-wide. (But to avoid future confusion, not both on the same machine.)
 
+Either way, the installer shows exactly what it will do and asks before doing it (add `-y`/`-Yes` to skip the prompt, e.g. for scripted installs).
+
 ### Bash
 
-- User-only install
+- User-only install (to `~/.local/bin`)
 
 	~~~bash
-
+	curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install.bash | bash
 	~~~
 
-- System-wide install
+- System-wide install (to `/usr/local/bin`, uses `sudo`)
 
 	~~~bash
-	cd /tmp
-
-	wget https://raw.githubusercontent.com/jim-collier/gitsby/main/gitsby
-
-	sudo cp gitsby /usr/local/sbin/
-
-	sudo chmod +x gitsby
+	curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install.bash | bash -s -- --system
 	~~~
+
+- No `curl`? Swap in `wget -qO-` for `curl -fsSL`. To install from a branch instead of the latest release, append `--ref dev` (or `--ref main`).
 
 ### PowerShell
 
+*The PowerShell port hasn't shipped yet; until it does, the installer says so and points back at the Bash version.*
+
 - User-only install
 
 	~~~pwsh
-
+	irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1 | iex
 	~~~
 
-- System-wide install
+- System-wide install (run from an elevated / sudo PowerShell)
 
 	~~~pwsh
+	& ([scriptblock]::Create((irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1))) -System
+	~~~
+
+## How to develop
+
+One-liner dev setup: clones the repo into `./gitsby`, checks out the `dev` branch, and checks (optionally installs) the dev tooling. Details in [contributing.md](contributing.md).
+
+- Linux / macOS
+
+	~~~bash
+	curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install-dev.bash | bash
+	~~~
+
+- Windows (PowerShell 7+)
+
+	~~~pwsh
+	irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install-dev.ps1 | iex
 	~~~
 
 ## Git notes and one-liners
