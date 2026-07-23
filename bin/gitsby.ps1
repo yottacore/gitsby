@@ -8,17 +8,21 @@
     acting (stash only if dirty, pull only with an upstream, push only if
     ahead), so each is idempotent and safe to re-run.
 .PARAMETER Command
-    scompul | mkbranch | chbranch | status | list | spush | spull | scommit | mtm
+    saveup | newbr | gobr | status | listbr | sync | pull | commit | land | pr | release
+    (old names scompul/mkbranch/chbranch/list/spush/spull/scommit/mtm still work)
 .PARAMETER CommandArg
-    Message (scommit/scompul/spush/mtm) or branch name (mkbranch/chbranch).
+    Message (commit/saveup/sync/land), branch name (newbr/gobr), version (release),
+    or PR number / 'ok' (pr).
+.PARAMETER CommandArg2
+    PR number, for 'pr ok <n>'.
 .PARAMETER Message
     Commit or merge message (-m/-msg also work; or give it positionally).
 .PARAMETER Quiet
     No prompts; if committing with no message, one is generated.
 .EXAMPLE
-    gitsby.ps1 scompul "fixed the frobnicator"
+    gitsby.ps1 saveup "fixed the frobnicator"
 .EXAMPLE
-    gitsby.ps1 mkbranch featx
+    gitsby.ps1 newbr featx
 .NOTES
     History at bottom of script. Copyright © 2026 Jim Collier (ID: 1cv◂‡Vᛦ).
     Licensed under The MIT License (MIT): https://mit-license.org/
@@ -33,6 +37,7 @@
 param(
     [Parameter(Position = 0)][string]$Command = '',
     [Parameter(Position = 1)][string]$CommandArg = '',
+    [Parameter(Position = 2)][string]$CommandArg2 = '',
     [Alias('m', 'msg')][string]$Message = '',
     [Alias('q')][switch]$Quiet,
     [Alias('h')][switch]$Help,
@@ -53,7 +58,7 @@ $script:wasLastEchoBlank = $false
 $script:wasShownCopyright = $false
 $script:wasShownAbout = $false
 $script:wasShownSyntax = $false
-$script:defaultBranchLabel = 'main/master'  ## for help text, before we know we're in a repo
+$script:mergeTargetLabel = 'dev/main'  ## for help text, before we know we're in a repo
 
 ## Never pop a merge-message editor mid-flow.
 $env:GIT_MERGE_AUTOEDIT = 'no'
@@ -112,19 +117,19 @@ function Show-Syntax {
     $script:wasShownSyntax = $true
     Write-PlainLine ''
     Write-PlainLine 'Common commands:'
-    Write-PlainLine '  scompul [msg] ........: Commit all local changes and pull updates. Do frequently!'
-    Write-PlainLine "  mkbranch <branch> ....: Create a new branch off ${script:defaultBranchLabel} (parks current work first)."
-    Write-PlainLine '  chbranch [branch] ....: Switch to an existing branch (parks current work first).'
-    Write-PlainLine "                          With no branch given, switches to ${script:defaultBranchLabel}."
-    Write-PlainLine '  status ...............: Fetch and show current status.'
-    Write-PlainLine '  list .................: Fetch and list branches.'
+    Write-PlainLine '  saveup [msg] ...: Commit all local changes and pull updates. Do frequently!'
+    Write-PlainLine "  newbr <branch> .: Create a new branch off ${script:mergeTargetLabel} (parks current work first)."
+    Write-PlainLine "  gobr [branch] ..: Switch to a branch (parks current work first). No arg: back to ${script:mergeTargetLabel}."
+    Write-PlainLine '  status .........: Fetch and show current status.'
+    Write-PlainLine '  listbr .........: Fetch and list branches.'
     Write-PlainLine 'Less common commands:'
-    Write-PlainLine '  spush [msg] ..........: Commit, pull, and push. Do infrequently.'
-    Write-PlainLine '  spull ................: Pull only (auto-stashes around it if dirty).'
-    Write-PlainLine '  scommit [msg] ........: Commit all local changes (without pull).'
+    Write-PlainLine '  sync [msg] .....: Commit, pull, and push. Do infrequently.'
+    Write-PlainLine '  pull ...........: Pull only (auto-stashes around it if dirty).'
+    Write-PlainLine '  commit [msg] ...: Commit all local changes (without pull).'
     Write-PlainLine 'Admin commands, e.g. for small solo projects:'
-    Write-PlainLine "  mtm [msg] ............: Merge the current branch into ${script:defaultBranchLabel} (--no-ff),"
-    Write-PlainLine '                          push, and delete the merged branch local + remote.'
+    Write-PlainLine "  land [msg] .....: Merge current branch into ${script:mergeTargetLabel} (--no-ff), push, delete it local + remote."
+    Write-PlainLine '  pr [n | ok n] ..: List, review, or accept a pull request (needs gh).'
+    Write-PlainLine '  release [ver] ..: Cut a release: merge dev into main, tag, push. No ver: bump patch.'
     Write-PlainLine 'Options:'
     Write-PlainLine '  -m, -Message MSG .....: Commit or merge message (or give it positionally).'
     Write-PlainLine '  -q, -Quiet ...........: No prompts; if committing with no message, one is generated.'
@@ -183,6 +188,32 @@ function Get-DefaultBranch {
     return 'main'
 }
 
+function Get-MergeTarget {
+    ## Feature branches come off of - and land on - dev when the repo has one; else the default branch.
+    if ((Test-GitBranchLocal -Branch 'dev') -or (Test-GitBranchRemote -Branch 'dev')) { return 'dev' }
+    return (Get-DefaultBranch)
+}
+
+function Get-ReleaseVersion {
+    ## Resolve the release tag: validate the given version, or bump patch on the latest v* tag.
+    $ver = $script:cmdArg -replace '^v', ''
+    if ($ver) {
+        if ($ver -notmatch '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$') {
+            throw "'${ver}' is not a version (want X.Y.Z, optional -suffix). Syntax: ${script:meName} release [version]"
+        }
+    } else {
+        $latest = @(git tag --list 'v[0-9]*' --sort=-v:refname 2>$null) | Select-Object -First 1
+        if ($latest) {
+            $plain = (([string]$latest) -replace '^v', '') -replace '-.*$', ''
+            $parts = $plain -split '\.'
+            $ver = '{0}.{1}.{2}' -f $parts[0], $parts[1], ([int]$parts[2] + 1)
+        } else {
+            $ver = '0.1.0'  ## first release ever
+        }
+    }
+    return "v${ver}"
+}
+
 function Invoke-Git {
     ## Announce and run a git command verbatim - argument array, no string re-parsing.
     param([Parameter(Mandatory)][string[]]$GitArgs)
@@ -213,51 +244,72 @@ function Show-CommandPreview {
     $msgDisp = 'git commit'
     if ($script:commitMessage) { $msgDisp = "git commit -m `"$($script:commitMessage)`"" }
     switch ($CommandName) {
-        'scommit' {
+        'commit' {
             Write-PlainLine "${pad}git add --all"
             Write-PlainLine "${pad}${msgDisp} *"
             break
         }
-        'spull' {
+        'pull' {
             Write-PlainLine "${pad}git stash push --include-untracked *"
             Write-PlainLine "${pad}git pull --ff-only *"
             Write-PlainLine "${pad}git stash pop *"
             break
         }
-        'scompul' {
-            Show-CommandPreview -CommandName 'scommit'
-            Show-CommandPreview -CommandName 'spull'
+        'saveup' {
+            Show-CommandPreview -CommandName 'commit'
+            Show-CommandPreview -CommandName 'pull'
             break
         }
-        'spush' {
-            Show-CommandPreview -CommandName 'scompul'
+        'sync' {
+            Show-CommandPreview -CommandName 'saveup'
             Write-PlainLine "${pad}git push *"
             break
         }
-        'mkbranch' {
-            Show-CommandPreview -CommandName 'spush'
-            Write-PlainLine "${pad}git checkout $(Get-DefaultBranch) *"
+        'newbr' {
+            Show-CommandPreview -CommandName 'sync'
+            Write-PlainLine "${pad}git checkout $(Get-MergeTarget) *"
             Write-PlainLine "${pad}git pull --ff-only *"
             Write-PlainLine "${pad}git checkout -b $($script:cmdArg)"
             Write-PlainLine "${pad}git push -u origin $($script:cmdArg) *"
             break
         }
-        'chbranch' {
-            Show-CommandPreview -CommandName 'spush'
-            $target = if ($script:cmdArg) { $script:cmdArg } else { Get-DefaultBranch }
+        'gobr' {
+            Show-CommandPreview -CommandName 'sync'
+            $target = if ($script:cmdArg) { $script:cmdArg } else { Get-MergeTarget }
             Write-PlainLine "${pad}git checkout ${target}"
             Write-PlainLine "${pad}git pull --ff-only *"
             break
         }
-        'mtm' {
-            Show-CommandPreview -CommandName 'spush'
-            Write-PlainLine "${pad}git checkout $(Get-DefaultBranch)"
+        'land' {
+            Show-CommandPreview -CommandName 'sync'
+            Write-PlainLine "${pad}git checkout $(Get-MergeTarget)"
             Write-PlainLine "${pad}git pull --ff-only *"
             Write-PlainLine "${pad}git merge --no-ff $(Get-CurrentBranch)"
             Write-PlainLine "${pad}git push *"
             Write-PlainLine "${pad}git branch -d $(Get-CurrentBranch)"
             Write-PlainLine "${pad}git push origin --delete $(Get-CurrentBranch) *"
             Write-PlainLine "${pad}git pull --ff-only *"
+            break
+        }
+        'pr' {
+            Write-PlainLine "${pad}gh pr review $($script:prNum) --approve *"
+            Write-PlainLine "${pad}gh pr merge $($script:prNum) --merge --delete-branch"
+            Write-PlainLine "${pad}git pull --ff-only *"
+            break
+        }
+        'release' {
+            Show-CommandPreview -CommandName 'sync'
+            if ((Get-MergeTarget) -eq 'dev') {
+                Write-PlainLine "${pad}git checkout dev *"
+                Write-PlainLine "${pad}git pull --ff-only *"
+            }
+            Write-PlainLine "${pad}git checkout $(Get-DefaultBranch) *"
+            Write-PlainLine "${pad}git pull --ff-only *"
+            if ((Get-MergeTarget) -eq 'dev') { Write-PlainLine "${pad}git merge --no-ff dev" }
+            Write-PlainLine "${pad}git tag -a $($script:releaseTag)"
+            Write-PlainLine "${pad}git push *"
+            Write-PlainLine "${pad}git push origin $($script:releaseTag) *"
+            Write-PlainLine "${pad}git checkout $(Get-CurrentBranch) *"
             break
         }
     }
@@ -317,12 +369,12 @@ function Invoke-GitsbyPush {
 
 function Invoke-GitsbyMakeBranch {
     param([string]$NewBranch = '')
-    if (-not $NewBranch) { throw "No branch name given. Syntax: ${script:meName} mkbranch <new branch name>" }
+    if (-not $NewBranch) { throw "No branch name given. Syntax: ${script:meName} newbr <new branch name>" }
     git check-ref-format --branch $NewBranch *> $null
     if ($LASTEXITCODE -ne 0) { throw "'${NewBranch}' is not a valid branch name." }
-    if (Test-GitBranchLocal -Branch $NewBranch) { throw "Branch '${NewBranch}' already exists; use: ${script:meName} chbranch ${NewBranch}" }
-    if (Test-GitBranchRemote -Branch $NewBranch) { throw "Branch '${NewBranch}' already exists on origin; use: ${script:meName} chbranch ${NewBranch}" }
-    $baseBranch = Get-DefaultBranch
+    if (Test-GitBranchLocal -Branch $NewBranch) { throw "Branch '${NewBranch}' already exists; use: ${script:meName} gobr ${NewBranch}" }
+    if (Test-GitBranchRemote -Branch $NewBranch) { throw "Branch '${NewBranch}' already exists on origin; use: ${script:meName} gobr ${NewBranch}" }
+    $baseBranch = Get-MergeTarget
     Invoke-GitsbyPush  ## park current work safely first
     if ((Get-CurrentBranch) -ne $baseBranch) { Invoke-Git -GitArgs @('checkout', $baseBranch) }
     if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
@@ -332,35 +384,100 @@ function Invoke-GitsbyMakeBranch {
 
 function Invoke-GitsbyChangeBranch {
     param([string]$TargetBranch = '')
-    if (-not $TargetBranch) { $TargetBranch = Get-DefaultBranch }
+    if (-not $TargetBranch) { $TargetBranch = Get-MergeTarget }
     if ((Get-CurrentBranch) -eq $TargetBranch) {
         Write-StatusLine "Already on '${TargetBranch}'."
         if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
         return
     }
     if (-not ((Test-GitBranchLocal -Branch $TargetBranch) -or (Test-GitBranchRemote -Branch $TargetBranch))) {
-        throw "No branch '${TargetBranch}' locally or on origin. To create it: ${script:meName} mkbranch ${TargetBranch}"
+        throw "No branch '${TargetBranch}' locally or on origin. To create it: ${script:meName} newbr ${TargetBranch}"
     }
     Invoke-GitsbyPush  ## park current work safely first
     Invoke-Git -GitArgs @('checkout', $TargetBranch)  ## auto-creates a tracking branch if it only exists on origin
     if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
 }
 
-function Invoke-GitsbyMergeToMain {
-    ## Merges the current branch into main/master - backwards from 'git merge', but saves a step.
-    $mainBranch = Get-DefaultBranch
+function Invoke-GitsbyLand {
+    ## Merges the current branch into dev (or main/master) - backwards from 'git merge', but saves a step.
+    $targetBranch = Get-MergeTarget
     $workBranch = Get-CurrentBranch
-    if ($workBranch -eq $mainBranch) { throw "Already on '${mainBranch}'. Run this from the branch to merge in: ${script:meName} chbranch <branch>, then ${script:meName} mtm" }
+    if ($workBranch -eq $targetBranch) { throw "Already on '${targetBranch}'. Run this from the branch to merge in: ${script:meName} gobr <branch>, then ${script:meName} land" }
+    if ($workBranch -eq (Get-DefaultBranch)) { throw "'${workBranch}' is the default branch; landing it on '${targetBranch}' is backwards. To cut a release: ${script:meName} release" }
     $mergeMessage = $script:commitMessage
     if (-not $mergeMessage) { $mergeMessage = "Merge ${workBranch}" }
     Invoke-GitsbyPush
-    Invoke-Git -GitArgs @('checkout', $mainBranch)
+    Invoke-Git -GitArgs @('checkout', $targetBranch)
     if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
     Invoke-Git -GitArgs @('merge', '--no-ff', $workBranch, '-m', $mergeMessage)
     if (Test-GitUpstream) { Invoke-Git -GitArgs @('push') }
     Invoke-Git -GitArgs @('branch', '-d', $workBranch)
     if (Test-GitBranchRemote -Branch $workBranch) { Invoke-Git -GitArgs @('push', 'origin', '--delete', $workBranch) }
     if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
+}
+
+function Invoke-GitsbyPrView {
+    ## Bare: list open PRs. With a number: view it plus its diff.
+    param([string]$PrNumber = '')
+    if (-not $PrNumber) {
+        Write-PlainLine ''
+        Write-StatusLine 'gh pr list ...'
+        gh pr list
+    } else {
+        Write-PlainLine ''
+        Write-StatusLine "gh pr view ${PrNumber} ..."
+        gh pr view $PrNumber
+        Write-PlainLine ''
+        Write-StatusLine "gh pr diff ${PrNumber} ..."
+        gh pr diff $PrNumber
+    }
+    if ($LASTEXITCODE -ne 0) { throw "gh failed (exit ${LASTEXITCODE})." }
+    Clear-BlankCounter
+}
+
+function Invoke-GitsbyPrAccept {
+    param([Parameter(Mandatory)][string]$PrNumber)
+    Write-PlainLine ''
+    Write-StatusLine "gh pr review ${PrNumber} --approve ..."
+    ## Best-effort: gh refuses to approve your own PR; merging is the part that matters.
+    gh pr review $PrNumber --approve
+    if ($LASTEXITCODE -ne 0) { Write-StatusLine 'Could not approve (own PR?); merging anyway.' }
+    Clear-BlankCounter
+    Write-PlainLine ''
+    Write-StatusLine "gh pr merge ${PrNumber} --merge --delete-branch ..."
+    gh pr merge $PrNumber --merge --delete-branch
+    if ($LASTEXITCODE -ne 0) { throw "gh pr merge failed (exit ${LASTEXITCODE})." }
+    Clear-BlankCounter
+    if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
+}
+
+function Invoke-GitsbyRelease {
+    ## Cuts a release: merge dev into main/master --no-ff (if the repo has a dev), tag, push both.
+    $mainBranch = Get-DefaultBranch
+    $devBranch = ''
+    if ((Test-GitBranchLocal -Branch 'dev') -or (Test-GitBranchRemote -Branch 'dev')) { $devBranch = 'dev' }
+    git rev-parse -q --verify "refs/tags/$($script:releaseTag)" *> $null
+    if ($LASTEXITCODE -eq 0) { throw "Tag '$($script:releaseTag)' already exists." }
+    $startBranch = Get-CurrentBranch
+    Invoke-GitsbyPush  ## park current work safely first
+    if ($devBranch -and ((Get-CurrentBranch) -ne $devBranch)) {
+        Invoke-Git -GitArgs @('checkout', $devBranch)  ## freshen dev so the release has all of it
+        if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
+    }
+    if ((Get-CurrentBranch) -ne $mainBranch) { Invoke-Git -GitArgs @('checkout', $mainBranch) }
+    if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
+    if ($devBranch) {
+        $mergeMessage = $script:commitMessage
+        if (-not $mergeMessage) { $mergeMessage = "Release $($script:releaseTag)" }
+        Invoke-Git -GitArgs @('merge', '--no-ff', $devBranch, '-m', $mergeMessage)
+    }
+    Invoke-Git -GitArgs @('tag', '-a', $script:releaseTag, '-m', $script:releaseTag)
+    if (Test-GitOrigin) {
+        if (Test-GitUpstream) { Invoke-Git -GitArgs @('push') }
+        Invoke-Git -GitArgs @('push', 'origin', $script:releaseTag)
+    }
+    ## Don't leave the user parked on main.
+    if ($startBranch -and ($startBranch -ne $mainBranch)) { Invoke-Git -GitArgs @('checkout', $startBranch) }
 }
 
 
@@ -381,18 +498,46 @@ try {
     ## Anything else option-shaped in the positional slots is a mistake, not data.
     if ($Command -match '^--?[^ -]') { throw "Unexpected option in this context: '${Command}'." }
     if ($CommandArg -match '^--$|^--?[^ -]') { throw "Unexpected option in this context: '${CommandArg}'." }
+    if ($CommandArg2 -match '^--$|^--?[^ -]') { throw "Unexpected option in this context: '${CommandArg2}'." }
 
     ## No tty = nobody to answer a prompt; behave as if -Quiet.
     if ([Console]::IsInputRedirected) { $script:doQuietly = $true }
 
-    ## Sort commands, and route positional arg 2 (message vs branch name; -m wins for messages).
+    ## Old command names still work as hidden aliases (muscle memory), but stay out of the help.
     $cmdName = $Command.ToLowerInvariant()
+    $cmdName = switch ($cmdName) {
+        'scommit' { 'commit'; break }
+        'spull' { 'pull'; break }
+        'scompul' { 'saveup'; break }
+        'spush' { 'sync'; break }
+        'mkbranch' { 'newbr'; break }
+        'chbranch' { 'gobr'; break }
+        'mtm' { 'land'; break }
+        'list' { 'listbr'; break }
+        default { $cmdName }
+    }
+
+    ## Sort commands, and route positional arg 2 (message vs branch name; -m wins for messages).
     $isMutating = $true
     switch ($cmdName) {
-        { $_ -in 'status', 'list' } { $isMutating = $false; break }
-        { $_ -in 'scommit', 'scompul', 'spush', 'mtm' } { if (-not $script:commitMessage) { $script:commitMessage = $CommandArg }; break }
-        { $_ -in 'spull', 'mkbranch', 'chbranch' } { break }
+        { $_ -in 'status', 'listbr' } { $isMutating = $false; break }
+        'pr' { if ($CommandArg.ToLowerInvariant() -ne 'ok') { $isMutating = $false }; break }
+        { $_ -in 'commit', 'saveup', 'sync', 'land' } { if (-not $script:commitMessage) { $script:commitMessage = $CommandArg }; break }
+        { $_ -in 'pull', 'newbr', 'gobr', 'release' } { break }
         default { throw "Unknown command '${cmdName}'. Run '${script:meName}' with no arguments for a list." }
+    }
+
+    ## pr needs gh and a valid number (except the bare list form).
+    $script:prNum = ''
+    if ($cmdName -eq 'pr') {
+        if (-not (Get-Command -Name gh -ErrorAction SilentlyContinue)) { throw 'Not found in path: gh' }
+        if ($CommandArg.ToLowerInvariant() -eq 'ok') {
+            $script:prNum = $CommandArg2
+            if ($script:prNum -notmatch '^[0-9]+$') { throw "Syntax: ${script:meName} pr ok <number>" }
+        } elseif ($CommandArg) {
+            $script:prNum = $CommandArg
+            if ($script:prNum -notmatch '^[0-9]+$') { throw "Syntax: ${script:meName} pr [<number> | ok <number>]" }
+        }
     }
 
     ## Every command needs a repo.
@@ -406,11 +551,16 @@ try {
         if ($LASTEXITCODE -ne 0) { Write-StatusLine 'WARNING: git fetch failed (offline?); remote info may be stale.' }
     }
 
+    ## Release version resolves up front so preview and command agree (and bad input dies early).
+    $script:releaseTag = ''
+    if ($cmdName -eq 'release') { $script:releaseTag = Get-ReleaseVersion }
+
     ## Read-only commands
     if (-not $isMutating) {
         switch ($cmdName) {
             'status' { Show-RepoStatus; break }
-            'list' { Write-StatusLine 'git branch -a -vv'; git branch -a -vv; Clear-BlankCounter; break }
+            'listbr' { Write-StatusLine 'git branch -a -vv'; git branch -a -vv; Clear-BlankCounter; break }
+            'pr' { Invoke-GitsbyPrView -PrNumber $script:prNum; break }
         }
         Write-PlainLine ''
         exit 0
@@ -430,13 +580,15 @@ try {
     }
 
     switch ($cmdName) {
-        'scommit' { Invoke-GitsbyCommit; break }
-        'spull' { Invoke-GitsbyPull; break }
-        'scompul' { Invoke-GitsbyCommitPull; break }
-        'spush' { Invoke-GitsbyPush; break }
-        'mkbranch' { Invoke-GitsbyMakeBranch -NewBranch $CommandArg; break }
-        'chbranch' { Invoke-GitsbyChangeBranch -TargetBranch $CommandArg; break }
-        'mtm' { Invoke-GitsbyMergeToMain; break }
+        'commit' { Invoke-GitsbyCommit; break }
+        'pull' { Invoke-GitsbyPull; break }
+        'saveup' { Invoke-GitsbyCommitPull; break }
+        'sync' { Invoke-GitsbyPush; break }
+        'newbr' { Invoke-GitsbyMakeBranch -NewBranch $CommandArg; break }
+        'gobr' { Invoke-GitsbyChangeBranch -TargetBranch $CommandArg; break }
+        'land' { Invoke-GitsbyLand; break }
+        'pr' { Invoke-GitsbyPrAccept -PrNumber $script:prNum; break }
+        'release' { Invoke-GitsbyRelease; break }
     }
 
     Write-PlainLine ''
@@ -454,3 +606,4 @@ try {
 
 ##  History:
 ##      - 20260722 JC: Created; port of bin/gitsby (same commands, checks, and flow).
+##      - 20260722 JC: Command renames (old names stay as hidden aliases), dev-aware merge target, pr and release commands - in step with bin/gitsby.
