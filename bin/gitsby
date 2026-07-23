@@ -45,7 +45,7 @@ fAbout(){ { ((doQuietly)) || ((wasShown_About)); } && return; wasShown_About=1;
 fSyntax(){ { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax=1;
 	fEcho_Clean ""
 	fEcho_Clean "Common commands:"
-	fEcho_Clean "  saveup [msg] ...: Commit all local changes and pull updates. Do frequently!"
+	fEcho_Clean "  update [msg] ...: Commit all local changes and pull updates. Do frequently!"
 	fEcho_Clean "  newbr <branch> .: Create a new branch off ${mergeTargetLabel} (parks current work first)."
 	fEcho_Clean "  gobr [branch] ..: Switch to a branch (parks current work first). No arg: back to ${mergeTargetLabel}."
 	fEcho_Clean "  status .........: Fetch and show current status."
@@ -79,6 +79,9 @@ fMain(){
 		*" -v "*|*" --ver "*|*" --version "*)  fCopyright;                  return 0; ;;
 	esac
 
+	## Breathing room after the shell prompt (the matching trailing blank is at each exit path).
+	fEcho_Clean ""
+
 	## Validate dependencies
 	fMustBeInPath git
 
@@ -98,7 +101,8 @@ fMain(){
 	case "${cmdName}" in
 		scommit)  cmdName="commit" ;;
 		spull)    cmdName="pull"   ;;
-		scompul)  cmdName="saveup" ;;
+		scompul)  cmdName="update" ;;
+		saveup)   cmdName="update" ;;
 		spush)    cmdName="sync"   ;;
 		mkbranch) cmdName="newbr"  ;;
 		chbranch) cmdName="gobr"   ;;
@@ -111,7 +115,7 @@ fMain(){
 	case "${cmdName}" in
 		status|listbr)           isMutating=0 ;;
 		pr)                      [[ "${cmdArg,,}" == "ok" ]] || isMutating=0 ;;
-		commit|saveup|sync|land) [[ -z "${commitMessage}" ]] && commitMessage="${cmdArg}" ;;
+		commit|update|sync|land) [[ -z "${commitMessage}" ]] && commitMessage="${cmdArg}" ;;
 		pull|newbr|gobr|release) : ;;
 		*) fThrowError "Unknown command '${cmdName}'. Run '${meName}' with no arguments for a list." ;;
 	esac
@@ -167,7 +171,7 @@ fMain(){
 	case "${cmdName}" in
 		commit)  fCmdCommit ;;
 		pull)    fCmdPull ;;
-		saveup)  fCmdCommitPull ;;
+		update)  fCmdCommitPull ;;
 		sync)    fCmdPush ;;
 		newbr)   fCmdNewBranch "${cmdArg}" ;;
 		gobr)    fCmdGoBranch "${cmdArg}" ;;
@@ -333,8 +337,19 @@ fCmdRelease(){
 		fHasUpstream && fRun git push
 		fRun git push origin "${releaseTag}"
 	fi
+	## Fast-forward dev to include the release merge and tag, so dev isn't left a commit behind.
+	## ff-only (not branch -f): if dev moved mid-release, skip rather than discard work.
+	if [[ -n "${devBranch}" ]]; then
+		if git merge-base --is-ancestor "${devBranch}" "${mainBranch}"; then
+			fRun git checkout "${devBranch}"
+			fRun git merge --ff-only "${mainBranch}"
+			fHasUpstream && fRun git push
+		else
+			fEcho "WARNING: '${devBranch}' gained commits during the release; leaving it as-is."
+		fi
+	fi
 	## Don't leave the user parked on main.
-	if [[ -n "${startBranch}" && "${startBranch}" != "${mainBranch}" ]]; then
+	if [[ -n "${startBranch}" && "${startBranch}" != "$(fCurrentBranch)" && "${startBranch}" != "${mainBranch}" ]]; then
 		fRun git checkout "${startBranch}"
 	fi
 :;}
@@ -518,12 +533,12 @@ fpPreview(){
 			fEcho_Clean "${p}git pull --ff-only *"
 			fEcho_Clean "${p}git stash pop *"
 			;;
-		saveup)
+		update)
 			fpPreview commit
 			fpPreview pull
 			;;
 		sync)
-			fpPreview saveup
+			fpPreview update
 			fEcho_Clean "${p}git push *"
 			;;
 		newbr)
@@ -565,6 +580,11 @@ fpPreview(){
 			fEcho_Clean "${p}git tag -a ${releaseTag}"
 			fEcho_Clean "${p}git push *"
 			fEcho_Clean "${p}git push origin ${releaseTag} *"
+			if [[ "$(fMergeTarget)" == "dev" ]]; then
+				fEcho_Clean "${p}git checkout dev *"
+				fEcho_Clean "${p}git merge --ff-only $(fDefaultBranch) *"
+				fEcho_Clean "${p}git push *"
+			fi
 			fEcho_Clean "${p}git checkout $(fCurrentBranch) *"
 			;;
 	esac
@@ -813,3 +833,7 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##		- 20260723 JC:
 ##			- Pre-flight display before the confirm prompt: resolved SSH identity (alias -> real host, user, key), commit author, ahead/behind, and the files an incoming pull would change.
 ##			- Changed files now list one per line, truncated to the terminal and capped, instead of git status's long form.
+##		- 20260723 JC:
+##			- Renamed saveup->update (saveup stays as a hidden alias).
+##			- release now fast-forwards dev to main afterward so dev includes the release merge and tag; skipped (with a warning) if dev moved mid-release.
+##			- Output starts with a blank line for breathing room after the shell prompt.

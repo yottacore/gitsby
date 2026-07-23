@@ -129,7 +129,7 @@ There are many implicit opinions baked in. Here are the main ones:
 
 - Commit the whole working tree (`git add --all`), every time. The staging area is not a workspace; partial staging is one of those fringe cases left to raw `git`.
 
-- Commit and pull frequently (`saveup`); push less often (`sync`).
+- Commit and pull frequently (`update`); push less often (`sync`).
 
 - Uncommitted work should never block anything. A pull auto-stashes around itself (untracked files included), and a branch switch parks current work first - commit, pull, push - so nothing is ever stranded or lost.
 

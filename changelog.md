@@ -28,7 +28,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- Renamed commands: `scompul`->`saveup`, `spush`->`sync`, `scommit`->`commit`, `spull`->`pull`, `mkbranch`->`newbr`, `chbranch`->`gobr`, `list`->`listbr`, `mtm`->`land`. The old names still work.
+- Renamed commands: `scompul`->`update`, `spush`->`sync`, `scommit`->`commit`, `spull`->`pull`, `mkbranch`->`newbr`, `chbranch`->`gobr`, `list`->`listbr`, `mtm`->`land`. The old names still work (as does the interim name `saveup`).
+- `release` now fast-forwards dev to main afterward, so dev includes the release merge and tag. If dev gained commits mid-release, the fast-forward is skipped with a warning instead of discarding anything.
+- Output starts and ends with a blank line, for breathing room between shell prompts.
 - Status now shows a compact one-line-per-file change list instead of `git status`'s long form, truncated to the terminal width and capped so a large working tree can't scroll the prompt out of view.
 - `newbr`, `gobr`, and `land` now branch off / land on `dev` when the repo has one, else the default branch. `land` refuses to run from the default branch.
 
