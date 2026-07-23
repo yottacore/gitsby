@@ -34,6 +34,10 @@ fFail(){ fail=$((fail+1)); echo "  FAIL: $*"; }
 ## Assert the command succeeds / fails (output discarded; -q keeps gitsby promptless).
 fAssert(){     local desc="$1"; shift; if   "$@" >/dev/null 2>&1; then fOk "$desc"; else fFail "$desc"; fi; }
 fAssertFail(){ local desc="$1"; shift; if ! "$@" >/dev/null 2>&1; then fOk "$desc"; else fFail "$desc"; fi; }
+## Assert the command's output matches an extended regex (for the pre-flight display).
+## Capture rather than pipe: 'grep -q' would close the pipe early and pipefail would call that a failure.
+fAssertOut(){  local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
+	if grep -qE "$pat" <<< "${out}"; then fOk "$desc"; else fFail "$desc"; fi; }
 
 ## Fixture: bare origin with an initial commit on main, plus two clones.
 fMakeFixture(){
@@ -68,6 +72,14 @@ fRunSuite(){
 	fAssert "listbr runs"  bash -c "cd '${cloneA}' && '${gitsby}' -q listbr"
 	fAssert "old alias 'list' still works"  bash -c "cd '${cloneA}' && '${gitsby}' -q list"
 
+	## Pre-flight display: who we act as, and a compact list of what changes
+	fAssertOut "status names the commit author"  'Author \.+:'            bash -c "cd '${cloneA}' && '${gitsby}' -q status"
+	fAssertOut "clean worktree says so"          '\(working tree clean\)' bash -c "cd '${cloneA}' && '${gitsby}' -q status"
+	( cd "${cloneA}" && echo probe > probe.txt )
+	fAssertOut "changed file listed"             '\?\? probe\.txt'        bash -c "cd '${cloneA}' && '${gitsby}' -q status"
+	fAssertOut "mutating command previews first" 'Going to do'            bash -c "cd '${cloneA}' && '${gitsby}' -q commit 'probe'"
+	( cd "${cloneA}" && git reset --quiet --hard HEAD~1 )
+
 	## commit: commits everything; idempotent when clean
 	( cd "${cloneA}" && echo two > file2.txt )
 	fAssert "commit commits new file"  bash -c "cd '${cloneA}' && '${gitsby}' -q commit 'add file2'"
@@ -90,6 +102,9 @@ fRunSuite(){
 		git push --quiet
 	)
 	( cd "${cloneA}" && echo dirty >> file1.txt )
+	fAssertOut "behind count on the branch line"  'behind 1'   bash -c "cd '${cloneA}' && '${gitsby}' -q status"
+	fAssertOut "incoming changes previewed"       'Incoming'   bash -c "cd '${cloneA}' && '${gitsby}' -q status"
+	fAssertOut "incoming file named"              'fileB\.txt' bash -c "cd '${cloneA}' && '${gitsby}' -q status"
 	fAssert "pull with dirty tree + remote ahead"  bash -c "cd '${cloneA}' && '${gitsby}' -q pull"
 	fAssert "remote commit arrived"                bash -c "cd '${cloneA}' && [[ -f fileB.txt ]]"
 	fAssert "local dirty edit survived"            bash -c "cd '${cloneA}' && grep -q dirty file1.txt && ! git diff --quiet"

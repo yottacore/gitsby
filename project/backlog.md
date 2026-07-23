@@ -45,10 +45,6 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Features and enhancements
 
-- 🔘 All potentially destructive or conflict-producing commands - or anything that will reveal a user identity on the remote - should:
-	- Show what's going to change (including a list of changed files, piped through an internal equivalent of `... | less -FX` if necessary)
-	- git status without line-breaks, and SSH connection info. And a prompt to continue. All with standard 1 blank line where appropriate.
-
 - 🔘 'git_notes_and_oneliners.md': Move the current commands under a "Bash" section, and add a "PowerShell" section below it, with pwsh v7 parity versions of the same one-liners.
 
 - 🛠️ CICD process (full spec in private notes):
@@ -62,7 +58,7 @@ In each section, items are listed approximately from newest to oldest.
 		- Both legs live since the pwsh port landed.
 
 	- ✅ Regression tests; keep updated as features/bugs land.
-		- `cicd/test.bash`: throwaway repos (bare origin + two clones), every command plus failure guards, run once per implementation - 78 checks.
+		- `cicd/test.bash`: throwaway repos (bare origin + two clones), every command plus failure guards, run once per implementation - 130 checks.
 
 	- 🛠️ Adversarial fuzz/security testing (our input surface + what we depend on).
 		- Stage wired (`cicd/fuzz.bash`); same timing as the test harness.
@@ -115,6 +111,13 @@ In each section, items are listed approximately from newest to oldest.
 #### Done - Bugs
 
 #### Done - Features and enhancements
+
+- ✅ All potentially destructive or conflict-producing commands - or anything that will reveal a user identity on the remote - should:
+	- Show what's going to change (including a list of changed files, piped through an internal equivalent of `... | less -FX` if necessary)
+	- git status without line-breaks, and SSH connection info. And a prompt to continue. All with standard 1 blank line where appropriate.
+	- Every mutating command already previewed its plan and prompted; this added the identity and change detail. `status` shows the same block.
+	- SSH line resolves the remote URL through `ssh -G`, so a `~/.ssh/config` host alias shows the real host, user, and key it will use - the point being to catch acting as the wrong account before you push. Author line shows what git will actually stamp on the commit.
+	- Changes list one file per line (short form), truncated to the terminal width and capped at 25 with an "and N more" tail - the `less -FX` idea without depending on a pager. Incoming section lists what a pull would change, and the branch line carries ahead/behind.
 
 - ✅ Better command names; dev-aware merging; PR and release commands (both implementations).
 	- Renames: scompul->saveup, spush->sync, scommit->commit, spull->pull, mkbranch->newbr, chbranch->gobr, list->listbr, mtm->land. Old names still work as hidden aliases.
