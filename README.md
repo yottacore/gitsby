@@ -46,6 +46,14 @@
 
 A simple, opinionated Git wrapper to speed and simplify everyday Git workflow. Unlimited project scaling.
 
+<div align="center">
+
+![gitsby demo](assets/demo.gif)
+
+<!-- Demo video: https://www.youtube.com/watch?v=REPLACE_WITH_VIDEO_ID -->
+
+</div>
+
 <!-- TOC ignore:true -->
 ## Table of contents
 <!-- TOC -->

@@ -1,0 +1,28 @@
+# Demo scenario for gen-demo-gif.py. Each [[step]] types its show= line into the
+# fake terminal, runs run= (default: show) for real, and shows the output. {prog}
+# renders as the program name; {bin} runs as the tested binary path. pause= is the
+# read time in seconds. overflow= is "truncate" (default) or "wrap". scrollrate=
+# (px/s) and linems= pace a step's output. end_hold/end_black (seconds) hold the
+# last frame, then show black, before looping.
+#
+# gitsby is stateful, so a helper builds a throwaway, anonymized repo (+ a local
+# bare "origin") the command acts on for real - see cicd/utility/demo-repo.bash.
+# One command, land, carries the whole story: it prints the plan (every git step
+# it will run) then does it - commit, push, merge back, delete the branch. The
+# step's run= builds the repo (output hidden), puts it on a feature branch with a
+# pending edit, sources the env the builder wrote, then lands. land needs -y with
+# no tty, so the typed line omits it and run= adds it.
+
+title = "gitsby"
+prog  = "gitsby"
+seed  = 11
+font  = ["Monaspace Argon SemiBold"]
+end_hold  = 1.6
+end_black = 2.0
+
+[[step]]
+note  = "One command: commit, push, merge, delete the branch - safely"
+show  = "{prog} land \"Add retries\""
+run   = "bash cicd/utility/demo-repo.bash >/dev/null 2>&1 && cd /tmp/gitsby-demo/acme-api && source /tmp/gitsby-demo/demo.env && git checkout -q -b retries && {bin} land \"Add retries\" -y"
+pause = 3.2
+scrollrate = 520

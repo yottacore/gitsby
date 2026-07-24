@@ -80,11 +80,11 @@ DOGFOOD_PWSH_DESTS=(
 	"/usr/local/sbin"
 )
 
-## Stage 5: demo gif. Types the scenario's commands into a fake terminal, runs
-## each against the dogfooded script, renders the animated loop (640x360, 50fps,
-## hard-cut loop boundary). Seeded, so an unchanged script + scenario reproduces
-## the same file. Skipped by --quick / --no-demogif; self-skips until the
-## scenario file exists (it lands after the bin/gitsby refactor).
+## Stage 5: demo gif. Types the scenario's command into a fake terminal, runs it
+## against the dogfooded script (in a throwaway anonymized repo the scenario
+## builds), renders the 960x540 animated loop (hard-cut boundary). Seeded + pinned
+## commit dates, so an unchanged script + scenario reproduces the same file byte
+## for byte. Skipped by --quick / --no-demogif; self-skips if the scenario is absent.
 DO_DEMOGIF=1
 DEMOGIF_SCENARIO="cicd/demo-scenario.toml"
 DEMOGIF_CMD=(cicd/utility/gen-demo-gif.py --scenario "${DEMOGIF_SCENARIO}")
