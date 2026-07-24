@@ -21,6 +21,11 @@ Design, requirements, and direction. The active pre-v1.0.0 bug/feature task list
 
 ## Direction decisions
 
+- Getting connected is two commands, not one overloaded one: `clone` (get an existing repo) and `connect` (publish local-only work). The mental models are opposite, and a single command inferring direction from directory state could silently do the wrong thing in the wrong directory.
+	- Both use the same preview-then-confirm flow as every other mutating command.
+	- `connect` refuses remotes that already have history rather than auto-merging: forgiving means not destroying either side. Reconciling unrelated histories stays raw-git territory.
+	- `owner/name` targets go through gh (create if missing, honoring gh's git_protocol setting); plain URLs never touch gh.
+
 ## Plan
 
 ## Architecture

@@ -8,13 +8,13 @@
     acting (stash only if dirty, pull only with an upstream, push only if
     ahead), so each is idempotent and safe to re-run.
 .PARAMETER Command
-    update | newbr | gobr | status | listbr | sync | pull | commit | land | pr | release
+    update | newbr | gobr | status | listbr | clone | connect | sync | pull | commit | land | pr | release
     (old names saveup/scompul/mkbranch/chbranch/list/spush/spull/scommit/mtm still work)
 .PARAMETER CommandArg
     Message (commit/update/sync/land), branch name (newbr/gobr), version (release),
-    or PR number / 'ok' (pr).
+    PR number / 'ok' (pr), URL (clone), or URL / owner/name (connect).
 .PARAMETER CommandArg2
-    PR number, for 'pr ok <n>'.
+    PR number ('pr ok <n>'), or target directory (clone).
 .PARAMETER Message
     Commit or merge message (-m/-msg also work; or give it positionally).
 .PARAMETER Quiet
@@ -43,6 +43,8 @@ param(
     [Alias('m', 'msg')][string]$Message = '',
     [Alias('q', 'y', 'yes')][switch]$Quiet,
     [Alias('offline')][switch]$NoFetch,
+    [switch]$Public,
+    [switch]$Private,
     [Alias('h')][switch]$Help,
     [Alias('v', 'ver')][switch]$Version
 )
@@ -64,6 +66,10 @@ $script:wasShownSyntax = $false
 $script:mergeTargetLabel = 'dev/main'  ## for help text, before we know we're in a repo
 $script:defaultBranchCache = ''  ## per-run constants, filled post-fetch
 $script:mergeTargetCache = ''
+$script:repoVisibility = if ($Public -and -not $Private) { 'public' } else { 'private' }  ## for connect's gh-create path
+$script:inRepo = $false
+$script:cloneUrl = ''; $script:cloneDir = ''
+$script:connectMode = ''; $script:connectUrl = ''; $script:ghTarget = ''  ## resolved by the connect validation
 
 
 #•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
@@ -124,6 +130,9 @@ function Show-Syntax {
     Write-PlainLine "  gobr [branch] ..: Switch to a branch (parks current work first). No arg: back to ${script:mergeTargetLabel}."
     Write-PlainLine '  status .........: Fetch and show current status.'
     Write-PlainLine '  listbr .........: Fetch and list branches.'
+    Write-PlainLine 'One-time setup commands:'
+    Write-PlainLine '  clone <url> ....: Clone a repo you don''t have yet, into [dir] (checks out dev if it has one).'
+    Write-PlainLine '  connect [target]: Connect this directory to a remote and push. ''owner/name'' creates the GitHub repo via gh if needed.'
     Write-PlainLine 'Less common commands:'
     Write-PlainLine '  sync [msg] .....: Commit, pull, and push. Do infrequently.'
     Write-PlainLine '  pull ...........: Pull only (auto-stashes around it if dirty).'
@@ -135,6 +144,7 @@ function Show-Syntax {
     Write-PlainLine 'Options:'
     Write-PlainLine '  -m, -Message MSG .....: Commit or merge message (or give it positionally).'
     Write-PlainLine '  -q, -Quiet, -y .......: Assume yes - no prompts; if committing with no message, one is generated.'
+    Write-PlainLine '  -Public / -Private ...: Visibility when connect creates a GitHub repo (default: private).'
     Write-PlainLine '  -NoFetch .............: Skip the pre-command fetch (offline, or a slow remote).'
     Write-PlainLine '  -h, -Help  /  -v, -Version'
     Write-PlainLine ''
@@ -246,6 +256,26 @@ function Get-SshTarget {
     if ($Url -match '^[a-z][a-z0-9+.-]*://') { return '' }   ## https/git/file: no ssh identity involved
     if ($Url -match '^(?:[^@/]+@)?([^/:]+):') { return $Matches[1] }  ## scp-like: [user@]host:path
     return ''
+}
+
+function Get-RemoteProbe {
+    ## One network round-trip: does the remote exist, and does it have history?
+    ## Returns missing | empty | nonempty. No auth prompts - a bad https URL would
+    ## otherwise stop and ask for credentials mid-run.
+    param([string]$Url)
+    $origPrompt = $env:GIT_TERMINAL_PROMPT
+    $origSsh = $env:GIT_SSH_COMMAND
+    $env:GIT_TERMINAL_PROMPT = '0'
+    if (-not $origSsh) { $env:GIT_SSH_COMMAND = 'ssh -o ConnectTimeout=3' }
+    try {
+        $refs = git ls-remote $Url 2>$null
+        if ($LASTEXITCODE -ne 0) { return 'missing' }
+        if ($refs -and @($refs).Count -gt 0) { return 'nonempty' }
+        return 'empty'
+    } finally {
+        if ($null -eq $origPrompt) { Remove-Item -Path Env:GIT_TERMINAL_PROMPT -ErrorAction SilentlyContinue } else { $env:GIT_TERMINAL_PROMPT = $origPrompt }
+        if (-not $origSsh) { Remove-Item -Path Env:GIT_SSH_COMMAND -ErrorAction SilentlyContinue }
+    }
 }
 
 function Get-ReleaseVersion {
@@ -416,6 +446,31 @@ function Show-CommandPreview {
             Write-PlainLine "${pad}git pull --ff-only *"
             break
         }
+        'clone' {
+            Write-PlainLine "${pad}git clone $(Get-MaskedUrl -Url $script:cloneUrl) $($script:cloneDir)"
+            Write-PlainLine "${pad}git -C $($script:cloneDir) checkout dev *"
+            break
+        }
+        'connect' {
+            if (-not $script:inRepo) { Write-PlainLine "${pad}git init -b main" }
+            Show-CommandPreview -CommandName 'commit'
+            switch ($script:connectMode) {
+                'create' {
+                    Write-PlainLine "${pad}gh repo create $($script:ghTarget) --$($script:repoVisibility) --source . --push --remote origin"
+                    break
+                }
+                'add' {
+                    Write-PlainLine "${pad}git remote add origin $(Get-MaskedUrl -Url $script:connectUrl)"
+                    Write-PlainLine "${pad}git push -u origin HEAD"
+                    break
+                }
+                'push' {
+                    Write-PlainLine "${pad}git push -u origin HEAD *"
+                    break
+                }
+            }
+            break
+        }
         'pr' {
             Write-PlainLine "${pad}gh pr review $($script:prNum) --approve *"
             Write-PlainLine "${pad}gh pr merge $($script:prNum) --merge --delete-branch"
@@ -553,6 +608,40 @@ function Invoke-GitsbyLand {
     if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
 }
 
+function Invoke-GitsbyClone {
+    Invoke-Git -GitArgs @('clone', $script:cloneUrl, $script:cloneDir)
+    ## Opinionated: if the repo works dev-first, start there.
+    git -C $script:cloneDir show-ref --verify --quiet refs/remotes/origin/dev *> $null
+    if ($LASTEXITCODE -eq 0) { Invoke-Git -GitArgs @('-C', $script:cloneDir, 'checkout', 'dev') }
+}
+
+function Invoke-GitsbyConnect {
+    if (-not $script:inRepo) { Invoke-Git -GitArgs @('init', '-b', 'main') }
+    Invoke-GitsbyCommit  ## publish everything as-is; no-op when clean
+    switch ($script:connectMode) {
+        'create' {
+            Write-PlainLine ''
+            Write-StatusLine "gh repo create $($script:ghTarget) --$($script:repoVisibility) --source . --push --remote origin ..."
+            gh repo create $script:ghTarget "--$($script:repoVisibility)" --source . --push --remote origin
+            if ($LASTEXITCODE -ne 0) { throw "'gh repo create' failed (exit ${LASTEXITCODE})." }
+            Clear-BlankCounter
+            break
+        }
+        'add' {
+            Invoke-Git -GitArgs @('remote', 'add', 'origin', $script:connectUrl)
+            Invoke-Git -GitArgs @('push', '-u', 'origin', 'HEAD')
+            break
+        }
+        'push' {
+            ## origin already set - just make sure everything is published
+            if (-not (Test-GitUpstream)) { Invoke-Git -GitArgs @('push', '-u', 'origin', 'HEAD') }
+            elseif (Test-GitAhead) { Invoke-Git -GitArgs @('push') }
+            else { Write-StatusLine 'Nothing to push; already connected and current.' }
+            break
+        }
+    }
+}
+
 function Invoke-GitsbyPrView {
     ## Bare: list open PRs. With a number: view it plus its diff.
     param([string]$PrNumber = '')
@@ -679,7 +768,7 @@ try {
             if ($CommandArg2) { throw "Unexpected extra argument '${CommandArg2}'; quote your commit message." }
             break
         }
-        { $_ -in 'pull', 'newbr', 'gobr', 'release' } { break }
+        { $_ -in 'pull', 'newbr', 'gobr', 'release', 'clone', 'connect' } { break }
         default { throw "Unknown command '${cmdName}'. Run '${script:meName}' with no arguments for a list." }
     }
 
@@ -703,14 +792,16 @@ try {
         }
     }
 
-    ## Every command needs a repo.
+    ## Every command needs a repo - except clone (works anywhere) and connect (a plain directory is the point).
     git rev-parse --is-inside-work-tree *> $null
-    if ($LASTEXITCODE -ne 0) { throw 'Not inside a git repository. Change to a git project directory first.' }
+    $script:inRepo = ($LASTEXITCODE -eq 0)
+    if (-not $script:inRepo -and $cmdName -notin 'clone', 'connect') { throw 'Not inside a git repository. Change to a git project directory first.' }
 
     ## Freshen remote refs so status/ahead-behind info is current. Never fatal - offline still works locally.
     ## --prune: stale origin/* refs would fool the existence checks. set-head heals a missing/stale
     ## origin/HEAD. ssh gets a connect timeout so a dead remote can't hang every command for minutes.
-    if (-not $NoFetch -and (Test-GitOrigin)) {
+    ## clone skips it: cwd may sit inside some unrelated repo, and the clone doesn't care about it.
+    if (-not $NoFetch -and $cmdName -ne 'clone' -and (Test-GitOrigin)) {
         Write-StatusLine 'git fetch ...'
         $hadSshCommand = [bool]$env:GIT_SSH_COMMAND
         if (-not $hadSshCommand) { $env:GIT_SSH_COMMAND = 'ssh -o ConnectTimeout=3' }
@@ -727,8 +818,10 @@ try {
     }
 
     ## These can't change mid-command, so resolve them once (post-fetch, so origin/HEAD is fresh).
-    $script:defaultBranchCache = Get-DefaultBranch
-    $script:mergeTargetCache = Get-MergeTarget
+    if ($script:inRepo) {
+        $script:defaultBranchCache = Get-DefaultBranch
+        $script:mergeTargetCache = Get-MergeTarget
+    }
 
     ## Release version resolves up front so preview and command agree (and bad input dies early).
     $script:releaseTag = ''
@@ -744,6 +837,73 @@ try {
     } elseif ($cmdName -eq 'gobr' -and $CommandArg) {
         if (-not ((Test-GitBranchLocal -Branch $CommandArg) -or (Test-GitBranchRemote -Branch $CommandArg))) {
             throw "No branch '${CommandArg}' locally or on origin. To create it: ${script:meName} newbr ${CommandArg}"
+        }
+    }
+
+    ## clone: derive the target dir, and make re-runs a no-op instead of an error.
+    if ($cmdName -eq 'clone') {
+        if (-not $CommandArg) { throw "No URL given. Syntax: ${script:meName} clone <url> [directory]" }
+        $script:cloneUrl = $CommandArg
+        $script:cloneDir = $CommandArg2
+        if (-not $script:cloneDir) {
+            $trimmed = $script:cloneUrl.TrimEnd('/') -replace '\.git$', ''
+            $script:cloneDir = @($trimmed -split '[/:]')[-1]
+            if (-not $script:cloneDir) { throw "Can't derive a directory name from '$($script:cloneUrl)'; give one explicitly." }
+        }
+        if (Test-Path -LiteralPath $script:cloneDir) {
+            $existingUrl = git -C $script:cloneDir remote get-url origin 2>$null
+            if ($LASTEXITCODE -ne 0 -or $null -eq $existingUrl) { $existingUrl = '' }
+            if ((Test-Path -LiteralPath (Join-Path -Path $script:cloneDir -ChildPath '.git')) -and (([string]$existingUrl) -ceq $script:cloneUrl)) {
+                Write-StatusLine "'$($script:cloneDir)' is already a clone of that URL; nothing to do."
+                Write-PlainLine ''
+                exit 0
+            }
+            ## An empty dir is fine (git allows it); anything else would clobber.
+            $entries = @(Get-ChildItem -LiteralPath $script:cloneDir -Force -ErrorAction SilentlyContinue)
+            if (-not ((Test-Path -LiteralPath $script:cloneDir -PathType Container) -and $entries.Count -eq 0)) {
+                throw "'$($script:cloneDir)' already exists and isn't a clone of that URL."
+            }
+        }
+    }
+
+    ## connect: resolve what we're connecting to before the preview, so the plan is real.
+    if ($cmdName -eq 'connect') {
+        $hasWork = $false
+        if ($script:inRepo) {
+            git rev-parse -q --verify HEAD *> $null
+            if ($LASTEXITCODE -eq 0 -or (Test-GitDirty)) { $hasWork = $true }
+        } elseif (@(Get-ChildItem -Force -ErrorAction SilentlyContinue).Count -gt 0) {
+            $hasWork = $true
+        }
+        if (-not $hasWork) { throw 'Nothing to connect here: no commits and no files.' }
+        $originUrl = ''
+        if ($script:inRepo -and (Test-GitOrigin)) { $originUrl = [string](git remote get-url origin 2>$null) }
+        if ($originUrl) {
+            if ($CommandArg -and ($CommandArg -cne $originUrl)) { throw "origin is already set to '$(Get-MaskedUrl -Url $originUrl)'; changing remotes is raw-git territory." }
+            $script:connectMode = 'push'; $script:connectUrl = $originUrl
+        } else {
+            if (-not $CommandArg) { throw "No remote configured and no target given. Syntax: ${script:meName} connect <url | owner/name>" }
+            if ($CommandArg -match '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' -and -not (Test-Path -LiteralPath $CommandArg)) {
+                ## owner/name shorthand: the gh path - create the repo if it doesn't exist yet.
+                if (-not (Get-Command -Name gh -ErrorAction SilentlyContinue)) { throw 'Not found in path: gh' }
+                $script:ghTarget = $CommandArg
+                $isEmpty = gh repo view $script:ghTarget --json isEmpty --jq .isEmpty 2>$null
+                if ($LASTEXITCODE -ne 0 -or -not $isEmpty) {
+                    $script:connectMode = 'create'
+                } elseif (([string]$isEmpty).Trim() -eq 'true') {
+                    $ghProto = gh config get -h github.com git_protocol 2>$null
+                    $script:connectUrl = if (([string]$ghProto).Trim() -eq 'ssh') { "git@github.com:$($script:ghTarget).git" } else { "https://github.com/$($script:ghTarget).git" }
+                    $script:connectMode = 'add'
+                } else {
+                    throw "github.com/$($script:ghTarget) already has commits; clone it instead (${script:meName} clone), or reconcile with raw git."
+                }
+            } else {
+                switch (Get-RemoteProbe -Url $CommandArg) {
+                    'missing' { throw "Can't reach '${CommandArg}' (doesn't exist, or no access). Create it first, or use '${script:meName} connect owner/name' to create it on GitHub via gh." }
+                    'nonempty' { throw "'$(Get-MaskedUrl -Url $CommandArg)' already has history; clone it instead (${script:meName} clone ${CommandArg}), or reconcile with raw git." }
+                    'empty' { $script:connectMode = 'add'; $script:connectUrl = $CommandArg }
+                }
+            }
         }
     }
 
@@ -765,8 +925,24 @@ try {
     }
 
     ## Mutating commands: show state and plan, confirm, execute, show state again.
-    if (-not (Get-CurrentBranch)) { throw 'Detached HEAD (no current branch); resolve that manually first.' }
-    Show-RepoStatus -WithIdentity
+    ## clone and connect-from-a-plain-dir have no repo state to show; a smaller header stands in.
+    if ($cmdName -eq 'clone') {
+        Write-PlainLine ''
+        Write-PlainLine "Directory ....: $(Get-Location)"
+        Write-PlainLine "Remote .......: $(Get-MaskedUrl -Url $script:cloneUrl)"
+        Show-Identity -RemoteUrl $script:cloneUrl
+        Write-PlainLine "Clone into ...: $($script:cloneDir)"
+    } elseif (-not $script:inRepo) {
+        $remoteDisp = if ($script:connectUrl) { Get-MaskedUrl -Url $script:connectUrl } else { "github.com/$($script:ghTarget) (to be created)" }
+        Write-PlainLine ''
+        Write-PlainLine "Directory ....: $(Get-Location)"
+        Write-PlainLine "Remote .......: ${remoteDisp}"
+        Show-Identity -RemoteUrl $script:connectUrl
+        Write-PlainLine 'Branch .......: (not a git repository yet)'
+    } else {
+        if (-not (Get-CurrentBranch)) { throw 'Detached HEAD (no current branch); resolve that manually first.' }
+        Show-RepoStatus -WithIdentity
+    }
     Write-PlainLine ''
     Write-PlainLine 'Going to do (steps marked * only if needed, based on repo state):'
     Show-CommandPreview -CommandName $cmdName
@@ -787,10 +963,16 @@ try {
         'land' { Invoke-GitsbyLand; break }
         'pr' { Invoke-GitsbyPrAccept -PrNumber $script:prNum; break }
         'release' { Invoke-GitsbyRelease; break }
+        'clone' { Invoke-GitsbyClone; break }
+        'connect' { Invoke-GitsbyConnect; break }
     }
 
     Write-PlainLine ''
-    Show-RepoStatus
+    if ($cmdName -eq 'clone') {
+        Write-StatusLine "Cloned into '$($script:cloneDir)'."  ## the after-status would show the wrong (current) directory
+    } else {
+        Show-RepoStatus
+    }
     Write-StatusLine ''
     Write-StatusLine 'Done.'
     Write-PlainLine ''
@@ -810,3 +992,4 @@ try {
 ##      - 20260724 JC: pull uses --autostash (failed pull leaves the tree intact); land publishes an upstream-less target before the remote branch delete; newbr carries dirty work off main/dev, gobr refuses to auto-commit there - in step with bin/gitsby.
 ##      - 20260724 JC: Non-tty mutating runs fail closed without -q; extra positional after a message rejected; case-sensitive branch compares; release tolerates short tags like v1.2; masked credentials in the displayed remote URL; fetch with --prune + origin/HEAD heal + ssh connect timeout; -NoFetch; tolerant remote-branch delete in land; exit-code checks in pr view/listbr; drive-letter remotes not treated as ssh hosts; ssh -G gets --; per-run default-branch/merge-target caching; dropped the redundant GIT_MERGE_AUTOEDIT (it leaked into the calling session) - in step with bin/gitsby.
 ##      - 20260724 JC: newbr/gobr branch arguments validate before the preview; bare 'help'/'version' words work; -y/-yes aliases for -Quiet; Test-GitAhead stops at the first commit - in step with bin/gitsby.
+##      - 20260724 JC: Added clone (checks out dev if the repo has one; re-run is a no-op) and connect (init if needed, commit, push to an empty remote, or gh repo create for owner/name; -Public/-Private) - in step with bin/gitsby.

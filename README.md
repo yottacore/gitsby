@@ -73,7 +73,7 @@ You probably also understand that it's complex, mostly because it's so flexible.
 
 Git has about 82 porcelain commands.
 
-Gitsby has 11.
+Gitsby has 13.
 
 - (*Granted, many developers don't interact with native bare `git` that much anymore - as it's integrated into IDEs, and AI coding agents. And it can be painful. Gitsby eases that pain.*)
 
@@ -159,10 +159,12 @@ There are many implicit opinions baked in. Here are the main ones:
 
 ## Commands
 
-The same 11 commands, in both implementations:
+The same 13 commands, in both implementations:
 
 | Command | What it does
 | :-- | :--
+| `clone <url> [dir]` | Clone a repo you don't have yet (checks out `dev` if it has one). Re-run is a no-op.
+| `connect [target]` | Connect local work to a remote and push it: `git init` if needed, commit, push. Takes a URL to an existing empty remote, or `owner/name` to create the GitHub repo via [gh](https://github.com/cli/cli) (`--public`/`--private`; private by default).
 | `update [msg]` | Commit all local changes and pull updates. Do frequently!
 | `newbr <branch>` | Create a new branch off `dev`/`main` (carries current uncommitted work to it).
 | `gobr [branch]` | Switch to a branch (parks current work first). No arg: back to `dev`/`main`.
@@ -180,6 +182,8 @@ Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (as
 A typical day:
 
 ~~~text
+gitsby clone git@github.com:you/proj.git   # day zero: get the repo
+                          # (or: gitsby connect you/proj - publish work that only exists locally)
 gitsby newbr featx        # branch off dev (or main), publish it
 ...hack hack hack...
 gitsby update "wip"       # commit + pull; do this all day long

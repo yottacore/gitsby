@@ -50,6 +50,9 @@ fSyntax(){ { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax=
 	fEcho_Clean "  gobr [branch] ..: Switch to a branch (parks current work first). No arg: back to ${mergeTargetLabel}."
 	fEcho_Clean "  status .........: Fetch and show current status."
 	fEcho_Clean "  listbr .........: Fetch and list branches."
+	fEcho_Clean "One-time setup commands:"
+	fEcho_Clean "  clone <url> ....: Clone a repo you don't have yet, into [dir] (checks out dev if it has one)."
+	fEcho_Clean "  connect [target]: Connect this directory to a remote and push. 'owner/name' creates the GitHub repo via gh if needed."
 	fEcho_Clean "Less common commands:"
 	fEcho_Clean "  sync [msg] .....: Commit, pull, and push. Do infrequently."
 	fEcho_Clean "  pull ...........: Pull only (auto-stashes around it if dirty)."
@@ -61,6 +64,7 @@ fSyntax(){ { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax=
 	fEcho_Clean "Options:"
 	fEcho_Clean "  -m, --message MSG ....: Commit or merge message (or give it positionally)."
 	fEcho_Clean "  -q, --quiet, -y ......: Assume yes - no prompts; if committing with no message, one is generated."
+	fEcho_Clean "  --public / --private .: Visibility when connect creates a GitHub repo (default: private)."
 	fEcho_Clean "  --no-fetch ...........: Skip the pre-command fetch (offline, or a slow remote)."
 	fEcho_Clean "  -h, --help  /  -v, --version"
 	fEcho_Clean "" ;:;}
@@ -93,7 +97,11 @@ fMain(){
 	local cmdArg2=""        ## positional 3: PR number ('pr ok <n>')
 	local commitMessage=""  ## may be set by fParseArgs (-m/--message/--msg)
 	local -i doFetch=1      ## cleared by --no-fetch
+	local repoVisibility="private"  ## --public/--private, for connect's gh-create path
 	local defaultBranchCache=""; local mergeTargetCache=""  ## per-run constants, filled post-fetch
+	local -i inRepo=0
+	local cloneUrl=""; local cloneDir=""
+	local connectMode=""; local connectUrl=""; local ghTarget=""  ## resolved by the connect validation
 	local -ri parseArgs_maxPositionalArgCount=3
 	fParseArgs "${@}"
 	cmdName="${cmdName,,}"
@@ -120,7 +128,7 @@ fMain(){
 			[[ -z "${commitMessage}" ]] && commitMessage="${cmdArg}"
 			[[ -n "${cmdArg2}" ]] && fThrowError_Usage "Unexpected extra argument '${cmdArg2}'; quote your commit message."
 			;;
-		pull|newbr|gobr|release) : ;;
+		pull|newbr|gobr|release|clone|connect) : ;;
 		*) fThrowError_Usage "Unknown command '${cmdName}'. Run '${meName}' with no arguments for a list." ;;
 	esac
 
@@ -144,18 +152,24 @@ fMain(){
 		fi
 	fi
 
-	## Every command needs a repo.
-	git rev-parse --is-inside-work-tree &>/dev/null || fThrowError_Usage "Not inside a git repository. Change to a git project directory first."
+	## Every command needs a repo - except clone (works anywhere) and connect (a plain directory is the point).
+	if git rev-parse --is-inside-work-tree &>/dev/null; then inRepo=1; fi
+	if ((! inRepo)) && [[ "${cmdName}" != "clone" && "${cmdName}" != "connect" ]]; then
+		fThrowError_Usage "Not inside a git repository. Change to a git project directory first."
+	fi
 
 	## Freshen remote refs so status/ahead-behind info is current. Never fatal - offline still works locally.
-	if ((doFetch)) && git remote get-url origin &>/dev/null; then
+	## clone skips it: cwd may sit inside some unrelated repo, and the clone doesn't care about it.
+	if ((doFetch)) && [[ "${cmdName}" != "clone" ]] && git remote get-url origin &>/dev/null; then
 		fEcho "git fetch ..."
 		fpFetchRemote
 	fi
 
 	## These can't change mid-command, so resolve them once (post-fetch, so origin/HEAD is fresh).
-	defaultBranchCache="$(fDefaultBranch)"
-	mergeTargetCache="$(fMergeTarget)"
+	if ((inRepo)); then
+		defaultBranchCache="$(fDefaultBranch)"
+		mergeTargetCache="$(fMergeTarget)"
+	fi
 
 	## Release version resolves up front so preview and command agree (and bad input dies early).
 	local releaseTag=""
@@ -171,6 +185,70 @@ fMain(){
 		fBranchExistsLocal "${cmdArg}" || fBranchExistsRemote "${cmdArg}" || fThrowError_Usage "No branch '${cmdArg}' locally or on origin. To create it: ${meName} newbr ${cmdArg}"
 	fi
 
+	## clone: derive the target dir, and make re-runs a no-op instead of an error.
+	if [[ "${cmdName}" == "clone" ]]; then
+		[[ -n "${cmdArg}" ]] || fThrowError_Usage "No URL given. Syntax: ${meName} clone <url> [directory]"
+		cloneUrl="${cmdArg}"
+		cloneDir="${cmdArg2}"
+		if [[ -z "${cloneDir}" ]]; then
+			cloneDir="${cloneUrl%/}"; cloneDir="${cloneDir%.git}"; cloneDir="${cloneDir##*/}"; cloneDir="${cloneDir##*:}"
+			[[ -n "${cloneDir}" ]] || fThrowError_Usage "Can't derive a directory name from '${cloneUrl}'; give one explicitly."
+		fi
+		if [[ -e "${cloneDir}" ]]; then
+			local existingUrl=""
+			existingUrl="$(git -C "${cloneDir}" remote get-url origin 2>/dev/null || true)"
+			if [[ -e "${cloneDir}/.git" && "${existingUrl}" == "${cloneUrl}" ]]; then
+				fEcho "'${cloneDir}' is already a clone of that URL; nothing to do."
+				fEcho_Clean ""
+				return 0
+			fi
+			## An empty dir is fine (git allows it); anything else would clobber.
+			[[ -d "${cloneDir}" && -z "$(ls -A "${cloneDir}" 2>/dev/null)" ]] || fThrowError_Usage "'${cloneDir}' already exists and isn't a clone of that URL."
+		fi
+	fi
+
+	## connect: resolve what we're connecting to before the preview, so the plan is real.
+	if [[ "${cmdName}" == "connect" ]]; then
+		local -i hasWork=0
+		if ((inRepo)); then
+			if git rev-parse -q --verify HEAD &>/dev/null || [[ -n "$(git status --porcelain 2>/dev/null || true)" ]]; then hasWork=1; fi
+		elif [[ -n "$(ls -A 2>/dev/null)" ]]; then
+			hasWork=1
+		fi
+		((hasWork)) || fThrowError_Usage "Nothing to connect here: no commits and no files."
+		local originUrl=""
+		((inRepo)) && originUrl="$(git remote get-url origin 2>/dev/null || true)"
+		if [[ -n "${originUrl}" ]]; then
+			[[ -z "${cmdArg}" || "${cmdArg}" == "${originUrl}" ]] || fThrowError_Usage "origin is already set to '$(fMaskUrl "${originUrl}")'; changing remotes is raw-git territory."
+			connectMode="push"; connectUrl="${originUrl}"
+		else
+			[[ -n "${cmdArg}" ]] || fThrowError_Usage "No remote configured and no target given. Syntax: ${meName} connect <url | owner/name>"
+			if [[ "${cmdArg}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ && ! -e "${cmdArg}" ]]; then
+				## owner/name shorthand: the gh path - create the repo if it doesn't exist yet.
+				fMustBeInPath gh
+				ghTarget="${cmdArg}"
+				local isEmpty=""
+				isEmpty="$(gh repo view "${ghTarget}" --json isEmpty --jq .isEmpty 2>/dev/null || true)"
+				if [[ -z "${isEmpty}" ]]; then
+					connectMode="create"
+				elif [[ "${isEmpty}" == "true" ]]; then
+					local ghProto=""
+					ghProto="$(gh config get -h github.com git_protocol 2>/dev/null || true)"
+					if [[ "${ghProto}" == "ssh" ]]; then connectUrl="git@github.com:${ghTarget}.git"; else connectUrl="https://github.com/${ghTarget}.git"; fi
+					connectMode="add"
+				else
+					fThrowError_Usage "github.com/${ghTarget} already has commits; clone it instead (${meName} clone), or reconcile with raw git."
+				fi
+			else
+				case "$(fpProbeRemote "${cmdArg}")" in
+					missing)  fThrowError_Usage "Can't reach '${cmdArg}' (doesn't exist, or no access). Create it first, or use '${meName} connect owner/name' to create it on GitHub via gh." ;;
+					nonempty) fThrowError_Usage "'$(fMaskUrl "${cmdArg}")' already has history; clone it instead (${meName} clone ${cmdArg}), or reconcile with raw git." ;;
+					empty)    connectMode="add"; connectUrl="${cmdArg}" ;;
+				esac
+			fi
+		fi
+	fi
+
 	## Read-only commands
 	if ((! isMutating)); then
 		case "${cmdName}" in
@@ -183,8 +261,25 @@ fMain(){
 	fi
 
 	## Mutating commands: show state and plan, confirm, execute, show state again.
-	[[ -n "$(fCurrentBranch)" ]] || fThrowError_Usage "Detached HEAD (no current branch); resolve that manually first."
-	fpShowStatus 1
+	## clone and connect-from-a-plain-dir have no repo state to show; a smaller header stands in.
+	if [[ "${cmdName}" == "clone" ]]; then
+		fEcho_Clean ""
+		fEcho_Clean "Directory ....: ${PWD}"
+		fEcho_Clean "Remote .......: $(fMaskUrl "${cloneUrl}")"
+		fpShowIdentity "${cloneUrl}"
+		fEcho_Clean "Clone into ...: ${cloneDir}"
+	elif ((! inRepo)); then
+		local remoteDisp="${connectUrl}"
+		[[ -n "${remoteDisp}" ]] && remoteDisp="$(fMaskUrl "${remoteDisp}")" || remoteDisp="github.com/${ghTarget} (to be created)"
+		fEcho_Clean ""
+		fEcho_Clean "Directory ....: ${PWD}"
+		fEcho_Clean "Remote .......: ${remoteDisp}"
+		fpShowIdentity "${connectUrl}"
+		fEcho_Clean "Branch .......: (not a git repository yet)"
+	else
+		[[ -n "$(fCurrentBranch)" ]] || fThrowError_Usage "Detached HEAD (no current branch); resolve that manually first."
+		fpShowStatus 1
+	fi
 	fEcho_Clean ""
 	fEcho_Clean "Going to do (steps marked * only if needed, based on repo state):"
 	fpPreview "${cmdName}"
@@ -203,10 +298,16 @@ fMain(){
 		land)    fCmdLand ;;
 		pr)      fCmdPrAccept "${prNum}" ;;
 		release) fCmdRelease ;;
+		clone)   fCmdClone ;;
+		connect) fCmdConnect ;;
 	esac
 
 	fEcho_Clean ""
-	fpShowStatus
+	if [[ "${cmdName}" == "clone" ]]; then
+		fEcho "Cloned into '${cloneDir}'."  ## the after-status would show the wrong (current) directory
+	else
+		fpShowStatus
+	fi
 	fEcho ""
 	fEcho "Done."
 	fEcho_Clean ""
@@ -320,6 +421,38 @@ fCmdLand(){
 		fEcho_ResetBlankCounter
 	fi
 	fHasUpstream && fRun git pull --ff-only
+:;}
+
+fCmdClone(){
+	fRun git clone "${cloneUrl}" "${cloneDir}"
+	## Opinionated: if the repo works dev-first, start there.
+	if git -C "${cloneDir}" show-ref --verify --quiet refs/remotes/origin/dev; then
+		fRun git -C "${cloneDir}" checkout dev
+	fi
+:;}
+
+fCmdConnect(){
+	((inRepo)) || fRun git init -b main
+	fCmdCommit  ## publish everything as-is; no-op when clean
+	case "${connectMode}" in
+		create)
+			fRun gh repo create "${ghTarget}" "--${repoVisibility}" --source . --push --remote origin
+			;;
+		add)
+			fRun git remote add origin "${connectUrl}"
+			fRun git push -u origin HEAD
+			;;
+		push)
+			## origin already set - just make sure everything is published
+			if ! fHasUpstream; then
+				fRun git push -u origin HEAD
+			elif fIsAhead; then
+				fRun git push
+			else
+				fEcho "Nothing to push; already connected and current."
+			fi
+			;;
+	esac
 :;}
 
 fCmdPrView(){
@@ -442,6 +575,21 @@ fSshTarget(){
 		*@*:*)   url="${url%%:*}"; echo "${url##*@}" ;;   ## scp-like: user@host:path
 		?*:*)    echo "${url%%:*}" ;;                    ## scp-like without a user
 	esac
+:;}
+
+fpProbeRemote(){
+	## One network round-trip: does the remote exist, and does it have history?
+	## Prints missing | empty | nonempty. No auth prompts - a bad https URL would
+	## otherwise stop and ask for credentials mid-run.
+	local -r url="${1:-}"
+	local -a probeEnv=(GIT_TERMINAL_PROMPT=0)
+	[[ -z "${GIT_SSH_COMMAND:-}" ]] && probeEnv+=(GIT_SSH_COMMAND="ssh -o ConnectTimeout=3")
+	local out=""; local -i rc=0
+	out="$(env "${probeEnv[@]}" git ls-remote "${url}" 2>/dev/null)" || rc=$?
+	if ((rc)); then echo "missing"
+	elif [[ -n "${out}" ]]; then echo "nonempty"
+	else echo "empty"
+	fi
 :;}
 
 fpFetchRemote(){
@@ -638,6 +786,26 @@ fpPreview(){
 			fEcho_Clean "${pad}git push origin --delete $(fCurrentBranch) *"
 			fEcho_Clean "${pad}git pull --ff-only *"
 			;;
+		clone)
+			fEcho_Clean "${pad}git clone $(fMaskUrl "${cloneUrl}") ${cloneDir}"
+			fEcho_Clean "${pad}git -C ${cloneDir} checkout dev *"
+			;;
+		connect)
+			((inRepo)) || fEcho_Clean "${pad}git init -b main"
+			fpPreview commit
+			case "${connectMode}" in
+				create)
+					fEcho_Clean "${pad}gh repo create ${ghTarget} --${repoVisibility} --source . --push --remote origin"
+					;;
+				add)
+					fEcho_Clean "${pad}git remote add origin $(fMaskUrl "${connectUrl}")"
+					fEcho_Clean "${pad}git push -u origin HEAD"
+					;;
+				push)
+					fEcho_Clean "${pad}git push -u origin HEAD *"
+					;;
+			esac
+			;;
 		pr)
 			fEcho_Clean "${pad}gh pr review ${prNum} --approve *"
 			fEcho_Clean "${pad}gh pr merge ${prNum} --merge --delete-branch"
@@ -720,6 +888,8 @@ fParseArgs(){
 			## ✶✶✶✶✶✶✶✶ CUSTOM UNARY SWITCHES
 				"q"|"quiet"|"y"|"yes")      doQuietly=1 ;;
 				"no-fetch"|"nofetch"|"offline")  doFetch=0 ;;
+				"public")                   repoVisibility="public" ;;
+				"private")                  repoVisibility="private" ;;
 				"m="*|"message="*|"msg="*)  commitMessage="${currentArg#*=}" ;;  ## -m=MSG / --message=MSG / --msg=MSG (joined)
 
 			## ✶✶✶✶✶✶✶✶ CUSTOM LONG-OPTIONS THAT EXPECT AN ARGUMENT TO FOLLOW
@@ -936,3 +1106,6 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##			- newbr/gobr branch arguments validate before the preview, so a bad name can't show a nonsense plan.
 ##			- Bare 'help'/'version' words work; -y/--yes aliases for -q; usage errors drop the call-stack line.
 ##			- fIsAhead stops at the first commit; tag lookup via mapfile instead of a head pipeline.
+##		- 20260724 JC:
+##			- Added clone (get an existing repo; checks out dev if it has one; re-run is a no-op) and connect (publish local work: init if needed, commit, then push to an empty remote - or create the GitHub repo via gh for owner/name targets; --public/--private pick visibility).
+##			- connect refuses remotes that already have history and won't change an existing origin; both new commands preview and confirm like everything else.
