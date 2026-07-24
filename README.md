@@ -205,6 +205,17 @@ Either way, the installer shows exactly what it will do and asks before doing it
 
 Release installs verify the download against the release's `SHA256SUMS` when one is published. Installing a branch or tag directly with `--ref`/`-Ref` pulls straight from the tree and skips verification.
 
+Both installers take the same options (Bash / PowerShell forms):
+
+| Bash | PowerShell | Effect |
+| --- | --- | --- |
+| `-s`, `--system` | `-System` | Install for all users instead of just you. `~/.local/bin` -> `/usr/local/bin` (*nix); needs `sudo` / an elevated shell. |
+| `-y`, `--yes` | `-Yes` | Skip the confirmation prompt (for scripted installs). |
+| `-r`, `--ref REF` | `-Ref REF` | Install a specific branch, tag, or commit instead of the latest release. Skips checksum verification. |
+| `-h`, `--help` | `-?` | Show usage and exit. |
+
+With no options, both do a per-user install of the latest release, after showing the plan and asking.
+
 ### Bash
 
 - User-only install (to `~/.local/bin`)
