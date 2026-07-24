@@ -82,7 +82,7 @@ Canonical coding style for this project's Bash and PowerShell. For contribution 
 
 - Quote deliberately: single quotes for literals, double quotes only when interpolating. Brace variables in strings when ambiguous: `"${name}"`.
 
-- Comment-based help (`.SYNOPSIS`/`.PARAMETER`/`.EXAMPLE`) on functions and scripts.
+- Comment-based help (`.SYNOPSIS`/`.PARAMETER`/`.EXAMPLE`) at script level, and on exported/public functions. Private helpers inside a script take a terse `##` comment instead - full help blocks on every internal function would bury the code.
 
 - Cross-platform: target PowerShell 7+ (`pwsh`). Don't assume Windows-only cmdlets or paths. Use `Join-Path` and `$PSScriptRoot`, not hardcoded separators.
 

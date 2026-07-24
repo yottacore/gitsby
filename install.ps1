@@ -33,22 +33,33 @@ $ErrorActionPreference = 'Stop'
 $repo = 'jim-collier/gitsby'
 $isRelease = -not $Ref
 
-# No -Ref: resolve the latest release tag.
+# No -Ref: resolve the latest release tag from the releases/latest redirect (no auth, no
+# API rate limit); unauthenticated API only as fallback (60 req/hr per IP).
+if (-not $Ref) {
+    $location = ''
+    try {
+        $resp = Invoke-WebRequest -Uri "https://github.com/${repo}/releases/latest" -MaximumRedirection 0 -ErrorAction Stop
+        $location = [string]$resp.Headers.Location
+    } catch {
+        if ($_.Exception.PSObject.Properties['Response'] -and $_.Exception.Response) { $location = [string]$_.Exception.Response.Headers.Location }
+    }
+    if ($location -match '/releases/tag/([^/\s]+)') { $Ref = $Matches[1] }
+}
 if (-not $Ref) {
     try {
         $Ref = (Invoke-RestMethod -Uri "https://api.github.com/repos/${repo}/releases/latest").tag_name
     } catch {
-        throw "Couldn't determine the latest release; pass e.g. -Ref main. ($($_.Exception.Message))"
+        throw "Couldn't determine the latest release; pass e.g. -Ref main. GitHub may be rate-limiting; try again later. ($($_.Exception.Message))"
     }
 }
 
 # Destination: per-user by default; -System needs elevation (sudo / admin shell).
 if ($IsWindows) {
-    $destDir = if ($System) { Join-Path $env:ProgramFiles 'gitsby' } else { Join-Path $env:LOCALAPPDATA 'Programs/gitsby' }
+    $destDir = if ($System) { Join-Path -Path $env:ProgramFiles -ChildPath 'gitsby' } else { Join-Path -Path $env:LOCALAPPDATA -ChildPath 'Programs/gitsby' }
 } else {
-    $destDir = if ($System) { '/usr/local/bin' } else { Join-Path $HOME '.local/bin' }
+    $destDir = if ($System) { '/usr/local/bin' } else { Join-Path -Path $HOME -ChildPath '.local/bin' }
 }
-$destPath = Join-Path $destDir 'gitsby.ps1'
+$destPath = Join-Path -Path $destDir -ChildPath 'gitsby.ps1'
 
 Write-Host ''
 Write-Host '[ gitsby installer (PowerShell) ]'
@@ -66,10 +77,11 @@ if (-not $Yes) {
 Write-Host ''
 Write-Host '[ Downloading ... ]'
 # Private random subdirectory, not a predictable name in shared temp.
-$tmpDir = Join-Path ([IO.Path]::GetTempPath()) ([IO.Path]::GetRandomFileName())
+$tmpDir = Join-Path -Path ([IO.Path]::GetTempPath()) -ChildPath ([IO.Path]::GetRandomFileName())
 New-Item -ItemType Directory -Path $tmpDir | Out-Null
 $tmpFile = Join-Path -Path $tmpDir -ChildPath 'gitsby.ps1'
 $downloaded = $false
+$fromReleaseAsset = $false
 foreach ($url in @(
         "https://github.com/${repo}/releases/download/${Ref}/gitsby.ps1",
         "https://raw.githubusercontent.com/${repo}/${Ref}/bin/gitsby.ps1")) {
@@ -78,6 +90,7 @@ foreach ($url in @(
     try {
         Invoke-WebRequest -Uri $url -OutFile $tmpFile
         $downloaded = $true
+        $fromReleaseAsset = ($url -like '*releases/download*')
     } catch {
         Write-Verbose "Fetch failed, trying next source: ${url}"
     }
@@ -88,10 +101,28 @@ if (-not $downloaded) {
 # Wrong-content 200s happen (captive portals, truncation); a script starts with a shebang.
 if ((Get-Content -LiteralPath $tmpFile -First 1) -notmatch '^#!') { throw "Downloaded file doesn't look like a script; aborting." }
 
+# Verify against the release's SHA256SUMS when there is one. Only the release-asset
+# path can be verified; -Ref installs pull straight from the tree, unverified.
+if ($fromReleaseAsset) {
+    $sums = ''
+    try { $sums = (Invoke-WebRequest -Uri "https://github.com/${repo}/releases/download/${Ref}/SHA256SUMS").Content } catch { $sums = '' }
+    $want = ''
+    foreach ($sumLine in ($sums -split "`r?`n")) {
+        if ($sumLine -match '^([0-9a-fA-F]{64})\s+\*?gitsby\.ps1$') { $want = $Matches[1]; break }
+    }
+    if ($want) {
+        $got = (Get-FileHash -Algorithm SHA256 -LiteralPath $tmpFile).Hash
+        if ($got -ne $want) { throw 'Checksum mismatch for the downloaded gitsby.ps1; aborting. (Corrupted download or tampering.)' }
+        Write-Host '[ Checksum verified. ]'
+    } else {
+        Write-Host "Note: no SHA256SUMS for ${Ref}; skipping verification."
+    }
+}
+
 try {
     Write-Host "[ Installing to ${destPath} ... ]"
     New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-    Move-Item -Force $tmpFile $destPath
+    Move-Item -Force -Path $tmpFile -Destination $destPath
     if (-not $IsWindows) { chmod +x $destPath }
 
     Write-Host '[ Verifying ... ]'
@@ -103,6 +134,7 @@ try {
     }
     Write-Host ''
     Write-Host '[ Done. ]'
+    Write-Host ''
 } finally {
     if (Test-Path -LiteralPath $tmpDir) { Remove-Item -Recurse -Force $tmpDir }
 }
@@ -111,3 +143,7 @@ try {
 # History:
 #   - 20260722 JC: Created. Until the PowerShell port ships in a release, the
 #     download step reports that and points at the Bash installer.
+#   - 20260724 JC: Latest-release lookup via the releases/latest redirect (API scrape
+#     is now the rate-limited fallback); random private temp dir; shebang sanity check;
+#     release-asset downloads verify against a SHA256SUMS asset when published; named
+#     parameters throughout; trailing blank line.

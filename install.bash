@@ -51,10 +51,16 @@ elif command -v wget >/dev/null 2>&1; then fFetch(){ wget -qO- "$1"; }
 else fErr "Need curl or wget."
 fi
 
-## No --ref: resolve the latest release tag (no jq dependency; scrape tag_name).
+## No --ref: resolve the latest release tag from the releases/latest redirect (no auth,
+## no API rate limit); unauthenticated API scrape only as fallback (60 req/hr per IP).
 if [[ -z "${ref}" ]]; then
-	ref="$(fFetch "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null | sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
-	[[ -n "${ref}" ]] || fErr "Couldn't determine the latest release; pass e.g. '--ref main'."
+	if command -v curl >/dev/null 2>&1; then
+		ref="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/${repo}/releases/latest" 2>/dev/null | sed -n 's|.*/releases/tag/||p')"
+	elif command -v wget >/dev/null 2>&1; then
+		ref="$(wget -q --max-redirect=0 -S -O /dev/null "https://github.com/${repo}/releases/latest" 2>&1 | sed -n 's|.*[Ll]ocation: .*/releases/tag/\([^[:space:]]*\).*|\1|p' | head -n 1)"
+	fi
+	[[ -n "${ref}" ]] || ref="$(fFetch "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null | sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+	[[ -n "${ref}" ]] || fErr "Couldn't determine the latest release; pass e.g. '--ref main'. (GitHub may be rate-limiting; try again later.)"
 else
 	isRelease=0
 fi
@@ -90,14 +96,33 @@ trap 'rm -f "${tmpFile}"' EXIT
 echo
 fEcho "Downloading ..."
 ## Prefer the release asset; fall back to the file in the tagged tree.
+fromReleaseAsset=0
 if [[ ${isRelease} -eq 1 ]] && fFetch "https://github.com/${repo}/releases/download/${ref}/gitsby" > "${tmpFile}" 2>/dev/null; then
-	:
+	fromReleaseAsset=1
 elif fFetch "https://raw.githubusercontent.com/${repo}/${ref}/bin/gitsby" > "${tmpFile}" 2>/dev/null; then
 	:
 else
 	fErr "Couldn't download gitsby at '${ref}'. (Releases before v2 predate the current layout; try '--ref main'.)"
 fi
 head -n 1 "${tmpFile}" | grep -q '^#!/' || fErr "Downloaded file doesn't look like a script; aborting."
+
+## Verify against the release's SHA256SUMS when there is one. Only the release-asset
+## path can be verified; --ref installs pull straight from the tree, unverified.
+if [[ ${fromReleaseAsset} -eq 1 ]]; then
+	if   command -v sha256sum >/dev/null 2>&1; then fSha256(){ sha256sum "$1" | cut -d' ' -f1; }
+	elif command -v shasum    >/dev/null 2>&1; then fSha256(){ shasum -a 256 "$1" | cut -d' ' -f1; }  ## macOS
+	else fSha256(){ :; }
+	fi
+	sums="$(fFetch "https://github.com/${repo}/releases/download/${ref}/SHA256SUMS" 2>/dev/null || true)"
+	want="$(printf '%s\n' "${sums}" | sed -n 's/^\([0-9a-f]\{64\}\)[[:space:]]*\*\{0,1\}gitsby$/\1/p' | head -n 1)"
+	got="$(fSha256 "${tmpFile}")"
+	if [[ -n "${want}" && -n "${got}" ]]; then
+		[[ "${got}" = "${want}" ]] || fErr "Checksum mismatch for the downloaded gitsby; aborting. (Corrupted download or tampering.)"
+		fEcho "Checksum verified."
+	else
+		echo "Note: no SHA256SUMS for ${ref} (or no sha256 tool here); skipping verification."
+	fi
+fi
 
 fEcho "Installing to ${destDir}/gitsby ..."
 if [[ ${needSudo} -eq 1 ]]; then
@@ -115,7 +140,9 @@ case ":${PATH}:" in
 esac
 echo
 fEcho "Done."
+echo
 
 
 ##	History:
 ##		- 20260722 JC: Created.
+##		- 20260724 JC: Latest-release lookup via the releases/latest redirect (API scrape is now the rate-limited fallback); release-asset downloads verify against a SHA256SUMS asset when published; trailing blank line.

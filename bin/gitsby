@@ -60,7 +60,7 @@ fSyntax(){ { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax=
 	fEcho_Clean "  release [ver] ..: Cut a release: merge dev into main, tag, push. No ver: bump patch."
 	fEcho_Clean "Options:"
 	fEcho_Clean "  -m, --message MSG ....: Commit or merge message (or give it positionally)."
-	fEcho_Clean "  -q, --quiet ..........: No prompts; if committing with no message, one is generated."
+	fEcho_Clean "  -q, --quiet, -y ......: Assume yes - no prompts; if committing with no message, one is generated."
 	fEcho_Clean "  --no-fetch ...........: Skip the pre-command fetch (offline, or a slow remote)."
 	fEcho_Clean "  -h, --help  /  -v, --version"
 	fEcho_Clean "" ;:;}
@@ -77,8 +77,8 @@ fMain(){
 	## argv would make a message like "add -v flag" silently short-circuit the command.
 	[[ -z "${1:-}" ]] && { fCopyright; fAbout; fSyntax; return 1; }
 	case "${1,,}" in
-		-h|--help)             fCopyright; fAbout; fSyntax; return 0; ;;
-		-v|--ver|--version)    fCopyright;                  return 0; ;;
+		-h|--help|help)                fCopyright; fAbout; fSyntax; return 0; ;;
+		-v|--ver|--version|version)    fCopyright;                  return 0; ;;
 	esac
 
 	## Breathing room after the shell prompt (the matching trailing blank is at each exit path).
@@ -118,16 +118,16 @@ fMain(){
 		pr)                      [[ "${cmdArg,,}" == "ok" ]] || isMutating=0 ;;
 		commit|update|sync|land)
 			[[ -z "${commitMessage}" ]] && commitMessage="${cmdArg}"
-			[[ -n "${cmdArg2}" ]] && fThrowError "Unexpected extra argument '${cmdArg2}'; quote your commit message."
+			[[ -n "${cmdArg2}" ]] && fThrowError_Usage "Unexpected extra argument '${cmdArg2}'; quote your commit message."
 			;;
 		pull|newbr|gobr|release) : ;;
-		*) fThrowError "Unknown command '${cmdName}'. Run '${meName}' with no arguments for a list." ;;
+		*) fThrowError_Usage "Unknown command '${cmdName}'. Run '${meName}' with no arguments for a list." ;;
 	esac
 
 	## No tty = nobody to answer a prompt. Read-only commands just go quiet; mutating
 	## ones fail closed (require an explicit -q) so piped/cron input can't silently auto-confirm.
 	if [[ ! -t 0 ]]; then
-		((isMutating)) && ((! doQuietly)) && fThrowError "No terminal to confirm on; re-run with -q to proceed without prompts."
+		((isMutating)) && ((! doQuietly)) && fThrowError_Usage "No terminal to confirm on; re-run with -q to proceed without prompts."
 		doQuietly=1
 	fi
 
@@ -137,15 +137,15 @@ fMain(){
 		fMustBeInPath gh
 		if [[ "${cmdArg,,}" == "ok" ]]; then
 			prNum="${cmdArg2}"
-			[[ "${prNum}" =~ ^[0-9]+$ ]] || fThrowError "Syntax: ${meName} pr ok <number>"
+			[[ "${prNum}" =~ ^[0-9]+$ ]] || fThrowError_Usage "Syntax: ${meName} pr ok <number>"
 		elif [[ -n "${cmdArg}" ]]; then
 			prNum="${cmdArg}"
-			[[ "${prNum}" =~ ^[0-9]+$ ]] || fThrowError "Syntax: ${meName} pr [<number> | ok <number>]"
+			[[ "${prNum}" =~ ^[0-9]+$ ]] || fThrowError_Usage "Syntax: ${meName} pr [<number> | ok <number>]"
 		fi
 	fi
 
 	## Every command needs a repo.
-	git rev-parse --is-inside-work-tree &>/dev/null || fThrowError "Not inside a git repository. Change to a git project directory first."
+	git rev-parse --is-inside-work-tree &>/dev/null || fThrowError_Usage "Not inside a git repository. Change to a git project directory first."
 
 	## Freshen remote refs so status/ahead-behind info is current. Never fatal - offline still works locally.
 	if ((doFetch)) && git remote get-url origin &>/dev/null; then
@@ -161,6 +161,16 @@ fMain(){
 	local releaseTag=""
 	[[ "${cmdName}" == "release" ]] && releaseTag="$(fReleaseVersion)"
 
+	## Branch arguments validate up front too, so a bad name can't survive to a nonsense preview.
+	if [[ "${cmdName}" == "newbr" ]]; then
+		[[ -n "${cmdArg}" ]] || fThrowError_Usage "No branch name given. Syntax: ${meName} newbr <new branch name>"
+		git check-ref-format --branch "${cmdArg}" >/dev/null 2>&1 || fThrowError_Usage "'${cmdArg}' is not a valid branch name."
+		fBranchExistsLocal  "${cmdArg}" && fThrowError_Usage "Branch '${cmdArg}' already exists; use: ${meName} gobr ${cmdArg}"
+		fBranchExistsRemote "${cmdArg}" && fThrowError_Usage "Branch '${cmdArg}' already exists on origin; use: ${meName} gobr ${cmdArg}"
+	elif [[ "${cmdName}" == "gobr" && -n "${cmdArg}" ]]; then
+		fBranchExistsLocal "${cmdArg}" || fBranchExistsRemote "${cmdArg}" || fThrowError_Usage "No branch '${cmdArg}' locally or on origin. To create it: ${meName} newbr ${cmdArg}"
+	fi
+
 	## Read-only commands
 	if ((! isMutating)); then
 		case "${cmdName}" in
@@ -173,7 +183,7 @@ fMain(){
 	fi
 
 	## Mutating commands: show state and plan, confirm, execute, show state again.
-	[[ -n "$(fCurrentBranch)" ]] || fThrowError "Detached HEAD (no current branch); resolve that manually first."
+	[[ -n "$(fCurrentBranch)" ]] || fThrowError_Usage "Detached HEAD (no current branch); resolve that manually first."
 	fpShowStatus 1
 	fEcho_Clean ""
 	fEcho_Clean "Going to do (steps marked * only if needed, based on repo state):"
@@ -248,11 +258,8 @@ fCmdPush(){
 :;}
 
 fCmdNewBranch(){
+	## Branch-name validation already happened up front in fMain.
 	local -r newBranch="${1:-}"
-	[[ -n "${newBranch}" ]] || fThrowError "No branch name given. Syntax: ${meName} newbr <new branch name>"
-	git check-ref-format --branch "${newBranch}" >/dev/null 2>&1 || fThrowError "'${newBranch}' is not a valid branch name."
-	fBranchExistsLocal  "${newBranch}" && fThrowError "Branch '${newBranch}' already exists; use: ${meName} gobr ${newBranch}"
-	fBranchExistsRemote "${newBranch}" && fThrowError "Branch '${newBranch}' already exists on origin; use: ${meName} gobr ${newBranch}"
 	local -r baseBranch="$(fMergeTarget)"
 	if fIsProtectedBranch; then
 		## Don't commit WIP to main/dev; a dirty tree survives checkout -b, so carry it to the new branch.
@@ -279,9 +286,8 @@ fCmdGoBranch(){
 		fHasUpstream && fRun git pull --ff-only
 		return 0
 	fi
-	fBranchExistsLocal "${targetBranch}" || fBranchExistsRemote "${targetBranch}" || fThrowError "No branch '${targetBranch}' locally or on origin. To create it: ${meName} newbr ${targetBranch}"
 	if fIsProtectedBranch && [[ -n "$(git status --porcelain 2>/dev/null || true)" ]]; then
-		fThrowError "Working tree has changes on '$(fCurrentBranch)'; won't auto-commit to a protected branch. Carry them to a new branch (${meName} newbr <name>), or commit deliberately (${meName} commit) first."
+		fThrowError_Usage "Working tree has changes on '$(fCurrentBranch)'; won't auto-commit to a protected branch. Carry them to a new branch (${meName} newbr <name>), or commit deliberately (${meName} commit) first."
 	fi
 	fCmdPush  ## park current work safely first
 	fRun git checkout "${targetBranch}"  ## auto-creates a tracking branch if it only exists on origin
@@ -292,8 +298,8 @@ fCmdLand(){
 	## Merges the current branch into dev (or main/master) - backwards from 'git merge', but saves a step.
 	local -r targetBranch="$(fMergeTarget)"
 	local -r workBranch="$(fCurrentBranch)"
-	[[ "${workBranch}" != "${targetBranch}" ]] || fThrowError "Already on '${targetBranch}'. Run this from the branch to merge in: ${meName} gobr <branch>, then ${meName} land"
-	[[ "${workBranch}" != "$(fDefaultBranch)" ]] || fThrowError "'${workBranch}' is the default branch; landing it on '${targetBranch}' is backwards. To cut a release: ${meName} release"
+	[[ "${workBranch}" != "${targetBranch}" ]] || fThrowError_Usage "Already on '${targetBranch}'. Run this from the branch to merge in: ${meName} gobr <branch>, then ${meName} land"
+	[[ "${workBranch}" != "$(fDefaultBranch)" ]] || fThrowError_Usage "'${workBranch}' is the default branch; landing it on '${targetBranch}' is backwards. To cut a release: ${meName} release"
 	local mergeMessage="${commitMessage}"
 	[[ -n "${mergeMessage}" ]] || mergeMessage="Merge ${workBranch}"
 	fCmdPush
@@ -343,7 +349,7 @@ fCmdRelease(){
 	local -r mainBranch="$(fDefaultBranch)"
 	local devBranch=""
 	{ fBranchExistsLocal dev || fBranchExistsRemote dev; } && devBranch="dev"
-	git rev-parse -q --verify "refs/tags/${releaseTag}" >/dev/null && fThrowError "Tag '${releaseTag}' already exists."
+	git rev-parse -q --verify "refs/tags/${releaseTag}" >/dev/null && fThrowError_Usage "Tag '${releaseTag}' already exists."
 	local -r startBranch="$(fCurrentBranch)"
 	fCmdPush  ## park current work safely first
 	if [[ -n "${devBranch}" && "$(fCurrentBranch)" != "${devBranch}" ]]; then
@@ -387,7 +393,7 @@ fCmdRelease(){
 
 fCurrentBranch(){      git branch --show-current 2>/dev/null || true ;:;}
 fHasUpstream(){        git rev-parse --abbrev-ref '@{u}' &>/dev/null ;}
-fIsAhead(){            [[ -n "$(git log '@{u}..' --oneline 2>/dev/null || true)" ]] ;}
+fIsAhead(){            [[ -n "$(git rev-list -n 1 '@{u}..' 2>/dev/null || true)" ]] ;}  ## -n 1: stop at the first commit; the count doesn't matter
 fBranchExistsLocal(){  git show-ref --verify --quiet "refs/heads/${1:-}" ;}
 fBranchExistsRemote(){ git show-ref --verify --quiet "refs/remotes/origin/${1:-}" ;}
 
@@ -474,10 +480,11 @@ fReleaseVersion(){
 	local ver="${cmdArg:-}"
 	ver="${ver#v}"
 	if [[ -n "${ver}" ]]; then
-		[[ "${ver}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]] || fThrowError "'${ver}' is not a version (want X.Y.Z, optional -suffix). Syntax: ${meName} release [version]"
+		[[ "${ver}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]] || fThrowError_Usage "'${ver}' is not a version (want X.Y.Z, optional -suffix). Syntax: ${meName} release [version]"
 	else
-		local latest=""
-		latest="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n1)"
+		local -a latestArr=()
+		mapfile -t -n 1 latestArr < <(git tag --list 'v[0-9]*' --sort=-v:refname 2>/dev/null || true)
+		local -r latest="${latestArr[0]:-}"
 		if [[ -n "${latest}" ]]; then
 			local -r base="${latest#v}"; local -r plain="${base%%-*}"
 			local maj="" min="" pat=""
@@ -590,16 +597,16 @@ fpShowStatus(){
 
 fpPreview(){
 	## Static per-command recipe; the command functions do the real state checks at run time.
-	local -r p="    "
+	local -r pad="    "
 	local msgDisp="git commit"
 	[[ -n "${commitMessage}" ]] && msgDisp="git commit -m \"${commitMessage}\""
 	case "${1:-}" in
 		commit)
-			fEcho_Clean "${p}git add --all"
-			fEcho_Clean "${p}${msgDisp} *"
+			fEcho_Clean "${pad}git add --all"
+			fEcho_Clean "${pad}${msgDisp} *"
 			;;
 		pull)
-			fEcho_Clean "${p}git pull --ff-only --autostash *"
+			fEcho_Clean "${pad}git pull --ff-only --autostash *"
 			;;
 		update)
 			fpPreview commit
@@ -607,53 +614,53 @@ fpPreview(){
 			;;
 		sync)
 			fpPreview update
-			fEcho_Clean "${p}git push (branch '$(fCurrentBranch)') *"
+			fEcho_Clean "${pad}git push (branch '$(fCurrentBranch)') *"
 			;;
 		newbr)
 			fpPreview sync
-			fEcho_Clean "${p}git checkout $(fMergeTarget) *"
-			fEcho_Clean "${p}git pull --ff-only *"
-			fEcho_Clean "${p}git checkout -b ${cmdArg}"
-			fEcho_Clean "${p}git push -u origin ${cmdArg} *"
+			fEcho_Clean "${pad}git checkout $(fMergeTarget) *"
+			fEcho_Clean "${pad}git pull --ff-only *"
+			fEcho_Clean "${pad}git checkout -b ${cmdArg}"
+			fEcho_Clean "${pad}git push -u origin ${cmdArg} *"
 			;;
 		gobr)
 			fpPreview sync
-			fEcho_Clean "${p}git checkout ${cmdArg:-$(fMergeTarget)}"
-			fEcho_Clean "${p}git pull --ff-only *"
+			fEcho_Clean "${pad}git checkout ${cmdArg:-$(fMergeTarget)}"
+			fEcho_Clean "${pad}git pull --ff-only *"
 			;;
 		land)
 			fpPreview sync
-			fEcho_Clean "${p}git checkout $(fMergeTarget)"
-			fEcho_Clean "${p}git pull --ff-only *"
-			fEcho_Clean "${p}git merge --no-ff $(fCurrentBranch)"
-			fEcho_Clean "${p}git push *"
-			fEcho_Clean "${p}git branch -d $(fCurrentBranch)"
-			fEcho_Clean "${p}git push origin --delete $(fCurrentBranch) *"
-			fEcho_Clean "${p}git pull --ff-only *"
+			fEcho_Clean "${pad}git checkout $(fMergeTarget)"
+			fEcho_Clean "${pad}git pull --ff-only *"
+			fEcho_Clean "${pad}git merge --no-ff $(fCurrentBranch)"
+			fEcho_Clean "${pad}git push *"
+			fEcho_Clean "${pad}git branch -d $(fCurrentBranch)"
+			fEcho_Clean "${pad}git push origin --delete $(fCurrentBranch) *"
+			fEcho_Clean "${pad}git pull --ff-only *"
 			;;
 		pr)
-			fEcho_Clean "${p}gh pr review ${prNum} --approve *"
-			fEcho_Clean "${p}gh pr merge ${prNum} --merge --delete-branch"
-			fEcho_Clean "${p}git pull --ff-only *"
+			fEcho_Clean "${pad}gh pr review ${prNum} --approve *"
+			fEcho_Clean "${pad}gh pr merge ${prNum} --merge --delete-branch"
+			fEcho_Clean "${pad}git pull --ff-only *"
 			;;
 		release)
 			fpPreview sync
 			if [[ "$(fMergeTarget)" == "dev" ]]; then
-				fEcho_Clean "${p}git checkout dev *"
-				fEcho_Clean "${p}git pull --ff-only *"
+				fEcho_Clean "${pad}git checkout dev *"
+				fEcho_Clean "${pad}git pull --ff-only *"
 			fi
-			fEcho_Clean "${p}git checkout $(fDefaultBranch) *"
-			fEcho_Clean "${p}git pull --ff-only *"
-			[[ "$(fMergeTarget)" == "dev" ]] && fEcho_Clean "${p}git merge --no-ff dev"
-			fEcho_Clean "${p}git tag -a ${releaseTag}"
-			fEcho_Clean "${p}git push *"
-			fEcho_Clean "${p}git push origin ${releaseTag} *"
+			fEcho_Clean "${pad}git checkout $(fDefaultBranch) *"
+			fEcho_Clean "${pad}git pull --ff-only *"
+			[[ "$(fMergeTarget)" == "dev" ]] && fEcho_Clean "${pad}git merge --no-ff dev"
+			fEcho_Clean "${pad}git tag -a ${releaseTag}"
+			fEcho_Clean "${pad}git push *"
+			fEcho_Clean "${pad}git push origin ${releaseTag} *"
 			if [[ "$(fMergeTarget)" == "dev" ]]; then
-				fEcho_Clean "${p}git checkout dev *"
-				fEcho_Clean "${p}git merge --ff-only $(fDefaultBranch) *"
-				fEcho_Clean "${p}git push *"
+				fEcho_Clean "${pad}git checkout dev *"
+				fEcho_Clean "${pad}git merge --ff-only $(fDefaultBranch) *"
+				fEcho_Clean "${pad}git push *"
 			fi
-			fEcho_Clean "${p}git checkout $(fCurrentBranch) *"
+			fEcho_Clean "${pad}git checkout $(fCurrentBranch) *"
 			;;
 	esac
 :;}
@@ -711,7 +718,7 @@ fParseArgs(){
 			case "${tmpStr}" in
 
 			## ✶✶✶✶✶✶✶✶ CUSTOM UNARY SWITCHES
-				"q"|"quiet")                doQuietly=1 ;;
+				"q"|"quiet"|"y"|"yes")      doQuietly=1 ;;
 				"no-fetch"|"nofetch"|"offline")  doFetch=0 ;;
 				"m="*|"message="*|"msg="*)  commitMessage="${currentArg#*=}" ;;  ## -m=MSG / --message=MSG / --msg=MSG (joined)
 
@@ -764,7 +771,7 @@ fMustBeInPath(){
 	if [[ -z "${programToCheckForInPath}" ]]; then
 		fThrowError "No program specified."; return 1
 	elif ! command -v "${programToCheckForInPath}" >/dev/null 2>&1; then  ## builtin; 'which' is absent on some minimal distros
-		fThrowError "Not found in path: ${programToCheckForInPath}"; return 1
+		fThrowError_Usage "Not found in path: ${programToCheckForInPath}"; return 1
 	fi ;:;}
 fPromptYN(){
 	((doQuietly)) && return 0
@@ -830,14 +837,22 @@ fThrowError(){
 	local errMsg="${1:-}"         ; [[ -z "${errMsg}"      ]] && errMsg="An error occurred."
 	local meNameLocal="${meName}" ; [[ -n "${meNameLocal}" ]] && errMsg="${meNameLocal}: ${errMsg}"
 	local callStack=""
-	for (( i = 1; i < ${#FUNCNAME[@]}; i++ )); do
-		[[ "${FUNCNAME[i]}" =~ main|source ]] && continue
-		[[ -n "${callStack}" ]] && callStack="${callStack}, "; callStack="${callStack}${FUNCNAME[i]}()"
-	done
-	[[ -n "${callStack}" ]] && callStack="Reverse call stack: ${callStack}"
-	fEcho_Clean; echo -e "${errMsg}\n${callStack}" >&2; fEcho_Clean_Force
+	if [[ -z "${_throwNoStack:-}" ]]; then  ## usage errors (fThrowError_Usage) skip the stack noise
+		for (( i = 1; i < ${#FUNCNAME[@]}; i++ )); do
+			[[ "${FUNCNAME[i]}" =~ main|source|fThrowError_Usage ]] && continue
+			[[ -n "${callStack}" ]] && callStack="${callStack}, "; callStack="${callStack}${FUNCNAME[i]}()"
+		done
+		[[ -n "${callStack}" ]] && callStack="Reverse call stack: ${callStack}"
+	fi
+	fEcho_Clean
+	{ printf '%s\n' "${errMsg}"; if [[ -n "${callStack}" ]]; then printf '%s\n' "${callStack}"; fi; } >&2
+	fEcho_Clean_Force
 	_ErrVal=1
 	{ ((_doExitOnThrow)) && exit 1; } || return 1; }
+fThrowError_Usage(){
+	## Same as fThrowError, minus the call-stack line - expected validation errors aren't crashes.
+	local -r _throwNoStack=1
+	fThrowError "${@}"; }
 fDefineTrap_Error_Fatal(){        :; _ErrVal=0; _doExitOnThrow=0; trap '_fTrap_Error         ERR    ${LINENO}  $?  $_' ERR; set -e; } ## Standard; exits script on any caught error; but 'set -e' has known inconsistencies catching or ignoring errors.
 fDefineTrap_Error_ExitOnThrow(){  :; _ErrVal=0; _doExitOnThrow=0; trap '_fTrap_Error         ERR    ${LINENO}  $?  $_' ERR; set +e; } ## Only exits script on fThrowError().
 fDefineTrap_Error_Soft(){         :; _ErrVal=0; _doExitOnThrow=0; trap '_fTrap_Error_Soft    ERR    ${LINENO}  $?  $_' ERR; set -e; } ## Returns error code of 1 on error.
@@ -917,3 +932,7 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##			- Fetch now prunes, heals origin/HEAD, and gets an ssh connect timeout; --no-fetch skips it entirely.
 ##			- Displayed remote URLs mask embedded credentials; ssh -G gets --; command -v instead of which; release tolerates short tags like v1.2.
 ##			- land's remote-branch delete is non-fatal if the branch is already gone; default branch and merge target resolve once per run.
+##		- 20260724 JC:
+##			- newbr/gobr branch arguments validate before the preview, so a bad name can't show a nonsense plan.
+##			- Bare 'help'/'version' words work; -y/--yes aliases for -q; usage errors drop the call-stack line.
+##			- fIsAhead stops at the first commit; tag lookup via mapfile instead of a head pipeline.

@@ -53,9 +53,11 @@ A simple, opinionated Git wrapper to speed and simplify everyday Git workflow. U
 - [Summary](#summary)
 - [General attributes](#general-attributes)
 - ["Opinionated workflow": What are the opinions?](#opinionated-workflow-what-are-the-opinions)
+- [Commands](#commands)
 - [Installation](#installation)
 	- [Bash](#bash)
 	- [PowerShell](#powershell)
+	- [Direct](#direct)
 - [How to develop](#how-to-develop)
 - [Git notes and one-liners](#git-notes-and-one-liners)
 - [Contributing](#contributing)
@@ -79,7 +81,7 @@ Gitsby shrinks Git's command set by:
 
 - Applying an "opinionated" workflow, and ignoring the myriad other ways of doing the same thing.
 
-- By acknowledging that (arguably) some ≈90% of Git's complexity is devoted to to covering about ≈10% of edge use-cases, and purposely ignoring most of them. (That is to say, not pretending they never happen - just not trying to be the tool to solve them if and when they arise.)
+- By acknowledging that (arguably) some ≈90% of Git's complexity is devoted to covering about ≈10% of edge use-cases, and purposely ignoring most of them. (That is to say, not pretending they never happen - just not trying to be the tool to solve them if and when they arise.)
 
 - Commands are oriented around *project goals* (e.g. "what do I want to happen with these changes?"), rather than *administrative tasks*.
 
@@ -97,7 +99,7 @@ Gitsby shrinks Git's command set by:
 
 ## General attributes
 
-- Encourages an opinionated workflow. (More on what that means below, because it has besome an overloaded word.)
+- Encourages an opinionated workflow. (More on what that means below, because it has become an overloaded word.)
 
 - It doesn't cover fringe use-cases, which Git itself can cover while still using this for the more common stuff.
 
@@ -145,7 +147,7 @@ There are many implicit opinions baked in. Here are the main ones:
 
 - Commit and pull frequently (`update`); push less often (`sync`).
 
-- Uncommitted work should never block anything. A pull auto-stashes around itself (untracked files included), and a branch switch parks current work first - commit, pull, push - so nothing is ever stranded or lost.
+- Uncommitted work should never block anything. A pull auto-stashes around itself, `newbr` carries uncommitted work onto the new branch, and a branch switch parks current work first (commit, pull, push - though never auto-committed onto `main`/`dev`), so nothing is ever stranded or lost.
 
 - Every branch tracks a same-named branch on `origin`, from the moment it's created.
 
@@ -154,6 +156,38 @@ There are many implicit opinions baked in. Here are the main ones:
 - Releases are annotated semver tags (`vX.Y.Z`). If no version is given, bump the patch.
 
 - Look before you leap: fetch first, show the current state and the exact commands about to run, and ask before doing anything that mutates.
+
+## Commands
+
+The same 11 commands, in both implementations:
+
+| Command | What it does
+| :-- | :--
+| `update [msg]` | Commit all local changes and pull updates. Do frequently!
+| `newbr <branch>` | Create a new branch off `dev`/`main` (carries current uncommitted work to it).
+| `gobr [branch]` | Switch to a branch (parks current work first). No arg: back to `dev`/`main`.
+| `status` | Fetch and show current status.
+| `listbr` | Fetch and list branches.
+| `sync [msg]` | Commit, pull, and push. Do infrequently.
+| `pull` | Pull only (auto-stashes around it if dirty).
+| `commit [msg]` | Commit all local changes (without pull).
+| `land [msg]` | Merge the current branch into `dev`/`main` (`--no-ff`), push, delete it local + remote.
+| `pr [n \| ok n]` | List, review, or accept a pull request (needs [gh](https://github.com/cli/cli)).
+| `release [ver]` | Cut a release: merge `dev` into `main`, tag, push. No version: bump the patch.
+
+Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--no-fetch` (skip the pre-command fetch), `-h`, `-v`.
+
+A typical day:
+
+~~~text
+gitsby newbr featx        # branch off dev (or main), publish it
+...hack hack hack...
+gitsby update "wip"       # commit + pull; do this all day long
+gitsby sync               # also push, when ready to share
+gitsby land "add featx"   # merge into dev (--no-ff), push, delete the branch
+~~~
+
+Every mutating command fetches first, shows the repo state (including who you'd act as on the remote) and the exact git commands it's about to run, and asks before touching anything. `pr` and `release` close the loop: review/accept the pull request, then cut a tagged release from `dev`.
 
 ## Installation
 
@@ -164,6 +198,8 @@ First, decide on the Bash or PowerShell version, mainly gating on *nix vs Window
 Then, decide to install for your user account only, or system-wide. (But to avoid future confusion, not both on the same machine.)
 
 Either way, the installer shows exactly what it will do and asks before doing it (add `-y`/`-Yes` to skip the prompt, e.g. for scripted installs).
+
+Release installs verify the download against the release's `SHA256SUMS` when one is published. Installing a branch or tag directly with `--ref`/`-Ref` pulls straight from the tree and skips verification.
 
 ### Bash
 
@@ -197,6 +233,20 @@ Either way, the installer shows exactly what it will do and asks before doing it
 	& ([scriptblock]::Create((irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1))) -System
 	~~~
 
+### Direct
+
+No installer: grab the script itself, make it executable, and put it on your PATH.
+
+~~~bash
+curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/bin/gitsby -o ~/.local/bin/gitsby && chmod +x ~/.local/bin/gitsby
+~~~
+
+~~~pwsh
+irm https://raw.githubusercontent.com/jim-collier/gitsby/main/bin/gitsby.ps1 -OutFile "$HOME/.local/bin/gitsby.ps1"
+~~~
+
+For reference, the installers use: `~/.local/bin` (user) or `/usr/local/bin` (system) on *nix; `%LOCALAPPDATA%\Programs\gitsby` (user) or `%ProgramFiles%\gitsby` (system) on Windows.
+
 ## How to develop
 
 One-liner dev setup: clones the repo into `./gitsby`, checks out the `dev` branch, and checks (optionally installs) the dev tooling. Details in [contributing.md](contributing.md).
@@ -215,7 +265,7 @@ One-liner dev setup: clones the repo into `./gitsby`, checks out the `dev` branc
 
 ## Git notes and one-liners
 
-The document in this repo, "[Git notes and one-liners](https://github.com/jim-collier/gitsby/blob/main/git_notes_and_oneliners.md)" covers some simplified versions of what Gitsby does. They differ slightly in some areas (mostly due to being limited to one-liners), but Gitsby is the cononical source of truth.
+The document in this repo, "[Git notes and one-liners](https://github.com/jim-collier/gitsby/blob/main/git_notes_and_oneliners.md)" covers some simplified versions of what Gitsby does. They differ slightly in some areas (mostly due to being limited to one-liners), but Gitsby is the canonical source of truth.
 
 ## Contributing
 

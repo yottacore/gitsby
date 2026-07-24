@@ -41,7 +41,7 @@ param(
     [Parameter(Position = 1)][string]$CommandArg = '',
     [Parameter(Position = 2)][string]$CommandArg2 = '',
     [Alias('m', 'msg')][string]$Message = '',
-    [Alias('q')][switch]$Quiet,
+    [Alias('q', 'y', 'yes')][switch]$Quiet,
     [Alias('offline')][switch]$NoFetch,
     [Alias('h')][switch]$Help,
     [Alias('v', 'ver')][switch]$Version
@@ -134,7 +134,7 @@ function Show-Syntax {
     Write-PlainLine '  release [ver] ..: Cut a release: merge dev into main, tag, push. No ver: bump patch.'
     Write-PlainLine 'Options:'
     Write-PlainLine '  -m, -Message MSG .....: Commit or merge message (or give it positionally).'
-    Write-PlainLine '  -q, -Quiet ...........: No prompts; if committing with no message, one is generated.'
+    Write-PlainLine '  -q, -Quiet, -y .......: Assume yes - no prompts; if committing with no message, one is generated.'
     Write-PlainLine '  -NoFetch .............: Skip the pre-command fetch (offline, or a slow remote).'
     Write-PlainLine '  -h, -Help  /  -v, -Version'
     Write-PlainLine ''
@@ -161,7 +161,8 @@ function Test-GitUpstream {
 }
 
 function Test-GitAhead {
-    $ahead = git log '@{u}..' --oneline 2>$null
+    ## -n 1: stop at the first commit; the count doesn't matter.
+    $ahead = git rev-list -n 1 '@{u}..' 2>$null
     return (($LASTEXITCODE -eq 0) -and ($null -ne $ahead) -and (@($ahead).Count -gt 0))
 }
 
@@ -320,7 +321,7 @@ function Show-Identity {
     ## than one account configured it is easy to push as the wrong person.
     param([string]$RemoteUrl)
     $sshHostAlias = Get-SshTarget -Url $RemoteUrl
-    if ($sshHostAlias -and (Get-Command ssh -ErrorAction SilentlyContinue)) {
+    if ($sshHostAlias -and (Get-Command -Name ssh -ErrorAction SilentlyContinue)) {
         $sshUser = ''; $sshHost = ''; $keyFile = ''
         foreach ($line in @(ssh -G -- $sshHostAlias 2>$null)) {  ## --: an option-shaped 'host' from .git/config must not parse as an ssh option
             $key, $value = ([string]$line) -split '\s+', 2
@@ -491,12 +492,8 @@ function Invoke-GitsbyPush {
 }
 
 function Invoke-GitsbyMakeBranch {
+    ## Branch-name validation already happened up front in the entry point.
     param([string]$NewBranch = '')
-    if (-not $NewBranch) { throw "No branch name given. Syntax: ${script:meName} newbr <new branch name>" }
-    git check-ref-format --branch $NewBranch *> $null
-    if ($LASTEXITCODE -ne 0) { throw "'${NewBranch}' is not a valid branch name." }
-    if (Test-GitBranchLocal -Branch $NewBranch) { throw "Branch '${NewBranch}' already exists; use: ${script:meName} gobr ${NewBranch}" }
-    if (Test-GitBranchRemote -Branch $NewBranch) { throw "Branch '${NewBranch}' already exists on origin; use: ${script:meName} gobr ${NewBranch}" }
     $baseBranch = Get-MergeTarget
     if (Test-ProtectedBranch) {
         ## Don't commit WIP to main/dev; a dirty tree survives checkout -b, so carry it to the new branch.
@@ -518,9 +515,6 @@ function Invoke-GitsbyChangeBranch {
         Write-StatusLine "Already on '${TargetBranch}'."
         if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
         return
-    }
-    if (-not ((Test-GitBranchLocal -Branch $TargetBranch) -or (Test-GitBranchRemote -Branch $TargetBranch))) {
-        throw "No branch '${TargetBranch}' locally or on origin. To create it: ${script:meName} newbr ${TargetBranch}"
     }
     if ((Test-ProtectedBranch) -and (Test-GitDirty)) {
         throw "Working tree has changes on '$(Get-CurrentBranch)'; won't auto-commit to a protected branch. Carry them to a new branch (${script:meName} newbr <name>), or commit deliberately (${script:meName} commit) first."
@@ -642,8 +636,9 @@ function Invoke-GitsbyRelease {
 
 try {
     ## pwsh doesn't bind '--help'-style tokens as parameters; they land positionally.
-    if ($Command -match '^-{1,2}(h|help)$') { $Help = $true; $Command = '' }
-    if ($Command -match '^-{1,2}(v|ver|version)$') { $Version = $true; $Command = '' }
+    ## The bare words 'help' and 'version' work too.
+    if ($Command -match '^(-{1,2}(h|help)|help)$') { $Help = $true; $Command = '' }
+    if ($Command -match '^(-{1,2}(v|ver|version)|version)$') { $Version = $true; $Command = '' }
 
     if ($Help) { Show-Copyright; Show-About; Show-Syntax; exit 0 }
     if ($Version) { Show-Copyright; exit 0 }
@@ -739,6 +734,19 @@ try {
     $script:releaseTag = ''
     if ($cmdName -eq 'release') { $script:releaseTag = Get-ReleaseVersion }
 
+    ## Branch arguments validate up front too, so a bad name can't survive to a nonsense preview.
+    if ($cmdName -eq 'newbr') {
+        if (-not $CommandArg) { throw "No branch name given. Syntax: ${script:meName} newbr <new branch name>" }
+        git check-ref-format --branch $CommandArg *> $null
+        if ($LASTEXITCODE -ne 0) { throw "'${CommandArg}' is not a valid branch name." }
+        if (Test-GitBranchLocal -Branch $CommandArg) { throw "Branch '${CommandArg}' already exists; use: ${script:meName} gobr ${CommandArg}" }
+        if (Test-GitBranchRemote -Branch $CommandArg) { throw "Branch '${CommandArg}' already exists on origin; use: ${script:meName} gobr ${CommandArg}" }
+    } elseif ($cmdName -eq 'gobr' -and $CommandArg) {
+        if (-not ((Test-GitBranchLocal -Branch $CommandArg) -or (Test-GitBranchRemote -Branch $CommandArg))) {
+            throw "No branch '${CommandArg}' locally or on origin. To create it: ${script:meName} newbr ${CommandArg}"
+        }
+    }
+
     ## Read-only commands
     if (-not $isMutating) {
         switch ($cmdName) {
@@ -801,3 +809,4 @@ try {
 ##      - 20260723 JC: Renamed saveup->update (old name aliased); release fast-forwards dev to main afterward; leading blank line on output - in step with bin/gitsby.
 ##      - 20260724 JC: pull uses --autostash (failed pull leaves the tree intact); land publishes an upstream-less target before the remote branch delete; newbr carries dirty work off main/dev, gobr refuses to auto-commit there - in step with bin/gitsby.
 ##      - 20260724 JC: Non-tty mutating runs fail closed without -q; extra positional after a message rejected; case-sensitive branch compares; release tolerates short tags like v1.2; masked credentials in the displayed remote URL; fetch with --prune + origin/HEAD heal + ssh connect timeout; -NoFetch; tolerant remote-branch delete in land; exit-code checks in pr view/listbr; drive-letter remotes not treated as ssh hosts; ssh -G gets --; per-run default-branch/merge-target caching; dropped the redundant GIT_MERGE_AUTOEDIT (it leaked into the calling session) - in step with bin/gitsby.
+##      - 20260724 JC: newbr/gobr branch arguments validate before the preview; bare 'help'/'version' words work; -y/-yes aliases for -Quiet; Test-GitAhead stops at the first commit - in step with bin/gitsby.

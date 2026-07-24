@@ -41,8 +41,9 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Misc to-do
 
-- 🔘 Code Review 20260723 item 39: README typos.
+- ✅ Code Review 20260723 item 39: README typos.
 	- Line 82 "devoted to to", line 100 "besome", line 218 "cononical".
+	- Done: all three fixed.
 
 ### Bugs
 
@@ -163,43 +164,43 @@ Items below came out of the 20260723 code review. Fix notes for every item: `des
 	- Done so far: failed-pull-with-dirty-tree, upstream-less land, dirty-protected-branch newbr/gobr fixtures.
 	- Done: all listed fixtures added (failed pull, no-remote sync/newbr/land, feat/x names, -m and -m= forms, option-like message words, release from a feature branch). Suite 140 -> 199 checks.
 
-- 🔘 Code Review 20260723 item 17: README has no Commands/Usage section.
+- ✅ Code Review 20260723 item 17: README has no Commands/Usage section.
 	- The pitch is "Gitsby has 11" commands, but they're never listed or demonstrated. Add the help table plus a worked newbr -> update -> land example.
-
-- 🔘 Code Review 20260723 item 19: installer checksum + version pinning - confirms the already-open installer item below.
+	- Done: Commands section added (table of all 11, options, a typical-day flow, gh note for pr/release).
+- ✅ Code Review 20260723 item 19: installer checksum + version pinning - confirms the already-open installer item below.
 	- Publish SHA256SUMS from cicd, verify in both installers, allow pinning an exact tag; document that `--ref` skips verification.
-
-- 🔘 Code Review 20260723 item 20: "latest release" lookup uses the unauthenticated GitHub API (60 req/hr).
+	- Done: installers verify release-asset downloads against a SHA256SUMS release asset when published (note-and-continue when absent); cicd/utility/gen-checksums.bash generates it for release cuts; --ref/-Ref pins a tag but skips verification (documented in README).
+- ✅ Code Review 20260723 item 20: "latest release" lookup uses the unauthenticated GitHub API (60 req/hr).
 	- Shared-NAT/CI installs will 403. Read the tag from the `releases/latest` redirect Location header instead; keep the API as fallback.
-
-- 🔘 Code Review 20260723 item 22: fIsAhead materializes the whole ahead-range log just to test emptiness (both implementations).
+	- Done: tag read from the releases/latest redirect (curl url_effective / wget Location / pwsh 302 handling); API scrape kept as fallback; rate-limit mentioned in the error.
+- ✅ Code Review 20260723 item 22: fIsAhead materializes the whole ahead-range log just to test emptiness (both implementations).
 	- Use `git rev-list -n 1 '@{u}..'` (or the cached ahead count from item 15).
-
-- 🔘 Code Review 20260723 item 30: needless external `head`/`wc` pipeline stages (bash).
+	- Done: git rev-list -n 1 in both implementations.
+- ✅ Code Review 20260723 item 30: needless external `head`/`wc` pipeline stages (bash).
 	- Use `mapfile -n 1` / array counts; watch the set -e empty-input gotcha noted in design.md.
-
-- 🔘 Code Review 20260723 item 31: positional parameter binding in the ps1 files (style guide requires named).
+	- Done: tag lookup via mapfile -n 1; the stash wc pipelines were already removed by item 1.
+- ✅ Code Review 20260723 item 31: positional parameter binding in the ps1 files (style guide requires named).
 	- gitsby.ps1 one spot (`Get-Command ssh`); install.ps1 and install-dev.ps1 throughout (Join-Path, Move-Item, Test-Path, Get-Command).
-
-- 🔘 Code Review 20260723 item 32: no comment-based help on any gitsby.ps1 function.
+	- Done: named parameters at the flagged sites in all three ps1 files.
+- ✅ Code Review 20260723 item 32: no comment-based help on any gitsby.ps1 function.
 	- Either add `.SYNOPSIS` to the non-trivial functions, or scope the style-guide rule to script-level + exported functions.
-
-- 🔘 Code Review 20260723 item 33: installer output ends without the trailing blank line the style guide requires (all four installers).
-
-- 🔘 Code Review 20260723 item 34: rename fpPreview's `p` padding variable to `pad` (matches the pwsh twin).
-
-- 🔘 Code Review 20260723 item 35: branch-argument validation runs after the status display and confirm prompt (both implementations).
+	- Done: style-guide rule scoped to script level + exported/public functions; private helpers take a terse ## comment.
+- ✅ Code Review 20260723 item 33: installer output ends without the trailing blank line the style guide requires (all four installers).
+	- Done: all four installers end with a blank line.
+- ✅ Code Review 20260723 item 34: rename fpPreview's `p` padding variable to `pad` (matches the pwsh twin).
+	- Done: renamed.
+- ✅ Code Review 20260723 item 35: branch-argument validation runs after the status display and confirm prompt (both implementations).
 	- `newbr` with a bad/missing name shows a nonsense plan ("git checkout -b ") and only errors after "y". Hoist checks next to the existing pr/release ones.
-
-- 🔘 Code Review 20260723 item 36: `gitsby help` / `gitsby version` are unknown-command errors (both implementations).
+	- Done: newbr/gobr arguments validate right after the release-version check, before status/preview/prompt; command functions no longer duplicate the checks. Test added.
+- ✅ Code Review 20260723 item 36: `gitsby help` / `gitsby version` are unknown-command errors (both implementations).
 	- Alias the bare words to the -h/-v paths; one case entry each.
-
-- 🔘 Code Review 20260723 item 37: usage errors carry "Reverse call stack: fMain()" noise (bash).
+	- Done: bare words route to the same paths as -h/-v (both implementations). Tests added.
+- ✅ Code Review 20260723 item 37: usage errors carry "Reverse call stack: fMain()" noise (bash).
 	- Suppress the stack line for expected validation errors; keep it for real internal failures.
-
-- 🔘 Code Review 20260723 item 38: accept `-y`/`--yes` as a prompt-skip alias (both implementations).
+	- Done: fThrowError_Usage variant skips the stack line; all user-facing validation errors use it. Real script errors keep the stack.
+- ✅ Code Review 20260723 item 38: accept `-y`/`--yes` as a prompt-skip alias (both implementations).
 	- Installers teach -y, gitsby only takes -q; and -q's real function is "assume yes", not quiet. Keep -q, add -y, fix the help wording.
-
+	- Done: -y/--yes (bash) and -y/-yes (pwsh) alias -q; help wording now says "assume yes". Test added.
 - 🛠️ CICD process (full spec in private notes):
 
 	- ✅ `cicd.bash`: `-q|--quiet`, `-m|--msg|--message`, prompt for commit message when neither given (CTRL+C aborts); silkterm output style; `fEcho`/`fParseArgs` conventions.
