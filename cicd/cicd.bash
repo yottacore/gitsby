@@ -317,7 +317,7 @@ fSection "5/6  Demo gif"
 if ((! DO_DEMOGIF)); then
 	fEcho_Clean "demo gif skipped$( ((quick)) && echo ' (--quick)')"
 elif [[ ! -f "${DEMOGIF_SCENARIO}" ]]; then
-	fEcho_Clean "no demo scenario yet (${DEMOGIF_SCENARIO} - lands after the bin/gitsby refactor)"
+	fEcho_Clean "no demo scenario (${DEMOGIF_SCENARIO})"
 else
 	demogif_out="${root}/${DEMOGIF_OUT}"
 	demogif_tmp="${demogif_out}.new"
