@@ -38,6 +38,8 @@ fAssertFail(){ local desc="$1"; shift; if ! "$@" >/dev/null 2>&1; then fOk "$des
 ## Capture rather than pipe: 'grep -q' would close the pipe early and pipefail would call that a failure.
 fAssertOut(){  local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
 	if grep -qE "$pat" <<< "${out}"; then fOk "$desc"; else fFail "$desc"; fi; }
+fAssertNotOut(){ local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
+	if ! grep -qE "$pat" <<< "${out}"; then fOk "$desc"; else fFail "$desc"; fi; }
 
 ## Fixture: bare origin with an initial commit on main, plus two clones.
 fMakeFixture(){
@@ -175,6 +177,14 @@ fRunSuite(){
 	( cd "${cloneA}" && echo more > more.txt )
 	fAssert "release with no version bumps patch"  bash -c "cd '${cloneA}' && '${gitsby}' -q release && git rev-parse -q --verify refs/tags/v1.2.4 >/dev/null"
 
+	## release started from a feature branch returns there; slash branch names work
+	fAssert "newbr relfeat"  bash -c "cd '${cloneA}' && '${gitsby}' -q newbr relfeat"
+	( cd "${cloneA}" && echo rel > rel.txt )
+	fAssert "release from a feature branch runs"  bash -c "cd '${cloneA}' && '${gitsby}' -q release"
+	fAssert "returns to the feature branch"       bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == relfeat ]]"
+	fAssert "newbr with a slash name"  bash -c "cd '${cloneA}' && '${gitsby}' -q newbr feat/x && [[ \"\$(git branch --show-current)\" == feat/x ]]"
+	fAssert "gobr back to dev"         bash -c "cd '${cloneA}' && '${gitsby}' -q gobr && [[ \"\$(git branch --show-current)\" == dev ]]"
+
 	## Detached HEAD guard
 	fAssertFail "mutating command on detached HEAD rejected"  bash -c "cd '${cloneA}' && git checkout --quiet HEAD~0 --detach && '${gitsby}' -q commit x"
 	( cd "${cloneA}" && git checkout --quiet dev )
@@ -182,6 +192,31 @@ fRunSuite(){
 	## Messages with quotes pass through unmangled (no eval, no curly-quote games)
 	( cd "${cloneA}" && echo q > q.txt )
 	fAssert "message with quotes survives"  bash -c "cd '${cloneA}' && '${gitsby}' -q commit \"don't \\\"quote\\\" me\" && git log -1 --format=%s | grep -qx \"don't \\\"quote\\\" me\""
+
+	## Message handling: -m and -m= forms; option-like words stay words; extra bare word rejected
+	( cd "${cloneA}" && echo m1 > m1.txt )
+	fAssert "commit -m flag form"     bash -c "cd '${cloneA}' && '${gitsby}' -q commit -m 'via -m flag' && git log -1 --format=%s | grep -qx 'via -m flag'"
+	if [[ "$1" == "bash" ]]; then  ## -m=MSG is bash-only; pwsh binding has no -param=value form
+		( cd "${cloneA}" && echo m2 > m2.txt )
+		fAssert "commit -m= joined form"  bash -c "cd '${cloneA}' && '${gitsby}' -q commit -m='via -m= flag' && git log -1 --format=%s | grep -qx 'via -m= flag'"
+	fi
+	( cd "${cloneA}" && echo m3 > m3.txt )
+	fAssert "message containing -v commits"           bash -c "cd '${cloneA}' && '${gitsby}' -q commit 'add -v flag' && git log -1 --format=%s | grep -qx 'add -v flag'"
+	fAssertFail "unquoted two-word message rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q commit Fixed bug"
+
+	## Non-tty: mutating commands fail closed without -q; read-only ones just go quiet
+	( cd "${cloneA}" && echo nt > nt.txt )
+	fAssertFail "mutating without -q and no tty refuses"  bash -c "cd '${cloneA}' && '${gitsby}' commit ntmsg < /dev/null"
+	fAssert "file left uncommitted"                       bash -c "cd '${cloneA}' && git status --porcelain | grep -q nt.txt"
+	fAssert "read-only without -q still runs non-tty"     bash -c "cd '${cloneA}' && '${gitsby}' status < /dev/null"
+	( cd "${cloneA}" && "${gitsby}" -q commit "nt cleanup" >/dev/null 2>&1 )
+
+	## Credentialed remote URLs display masked (-NoFetch keeps it off the network; also lowercases to bash --nofetch)
+	( cd "${cloneA}" && git remote set-url origin 'https://user:sekrit@127.0.0.1:1/x.git' )
+	fAssertNotOut "no-fetch skips the fetch"           '\[ git fetch' bash -c "cd '${cloneA}' && '${gitsby}' -q -NoFetch status"
+	fAssertOut    "remote URL masks credentials"       '\*\*\*@127\.0\.0\.1' bash -c "cd '${cloneA}' && '${gitsby}' -q -NoFetch status"
+	fAssertNotOut "credential itself never shown"      'sekrit' bash -c "cd '${cloneA}' && '${gitsby}' -q -NoFetch status"
+	( cd "${cloneA}" && git remote set-url origin "${origin}" )
 
 	## pr needs gh; syntax errors surface without it doing anything
 	fAssertFail "pr with bad number rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q pr bogus"
@@ -211,6 +246,18 @@ fRunSuite(){
 	fAssertFail "diverged pull fails"        bash -c "cd '${c2}' && '${gitsby}' -q pull"
 	fAssert "dirty edit still in the tree"   bash -c "cd '${c2}' && grep -q precious w.txt"
 	fAssert "nothing stranded in the stash"  bash -c "cd '${c2}' && [[ -z \"\$(git stash list)\" ]]"
+	fAssertOut    "pull failure reads plainly"   'failed \(exit' bash -c "cd '${c2}' && '${gitsby}' -q pull"
+	fAssertNotOut "no trap dump on git failure"  'Signal \.'     bash -c "cd '${c2}' && '${gitsby}' -q pull"
+
+	## no-remote repo: everything still works locally
+	local nr="${work}/$1-noremote"
+	git init --quiet -b main "${nr}"
+	( cd "${nr}" && echo a > a.txt && git add --all && git commit --quiet -m "initial" )
+	fAssert "sync with no remote"   bash -c "cd '${nr}' && '${gitsby}' -q sync 'msg'"
+	fAssert "newbr with no remote"  bash -c "cd '${nr}' && '${gitsby}' -q newbr nb && [[ \"\$(git branch --show-current)\" == nb ]]"
+	( cd "${nr}" && echo b > b.txt )
+	fAssert "land with no remote"   bash -c "cd '${nr}' && '${gitsby}' -q land 'merge nb'"
+	fAssert "landed on main"        bash -c "cd '${nr}' && [[ \"\$(git branch --show-current)\" == main ]] && [[ -f b.txt ]]"
 }
 
 echo "gitsby regression tests (fixture: ${work})"

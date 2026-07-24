@@ -31,6 +31,8 @@ $ErrorActionPreference = 'Stop'
 $repo = 'jim-collier/gitsby'
 
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw 'git is required; install it first.' }
+# Option-shaped paths would bind as real git clone options; same guard as install-dev.bash.
+if ($Directory -match '^-') { throw "'${Directory}' looks like an option, not a directory." }
 if (Test-Path $Directory) { throw "'${Directory}' already exists; pick another -Directory or remove it." }
 
 # The local cicd pipeline (cicd/cicd.bash) is bash-based; on Windows it runs

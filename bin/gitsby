@@ -61,6 +61,7 @@ fSyntax(){ { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax=
 	fEcho_Clean "Options:"
 	fEcho_Clean "  -m, --message MSG ....: Commit or merge message (or give it positionally)."
 	fEcho_Clean "  -q, --quiet ..........: No prompts; if committing with no message, one is generated."
+	fEcho_Clean "  --no-fetch ...........: Skip the pre-command fetch (offline, or a slow remote)."
 	fEcho_Clean "  -h, --help  /  -v, --version"
 	fEcho_Clean "" ;:;}
 
@@ -72,11 +73,12 @@ fMain(){
 	local -i wasShown_Copyright=0; local -i wasShown_About=0; local -i wasShown_Syntax=0
 	local -r mergeTargetLabel="dev/main"  ## for help text, before we know we're in a repo
 
-	## Check for need to show help
+	## Check for need to show help. Only the command slot counts - scanning the whole
+	## argv would make a message like "add -v flag" silently short-circuit the command.
 	[[ -z "${1:-}" ]] && { fCopyright; fAbout; fSyntax; return 1; }
-	case " ${*,,} " in
-		*" -h "*|*" --help "*)                 fCopyright; fAbout; fSyntax; return 0; ;;
-		*" -v "*|*" --ver "*|*" --version "*)  fCopyright;                  return 0; ;;
+	case "${1,,}" in
+		-h|--help)             fCopyright; fAbout; fSyntax; return 0; ;;
+		-v|--ver|--version)    fCopyright;                  return 0; ;;
 	esac
 
 	## Breathing room after the shell prompt (the matching trailing blank is at each exit path).
@@ -90,12 +92,11 @@ fMain(){
 	local cmdArg=""         ## positional 2: message, branch name, version, or PR number, depending on command
 	local cmdArg2=""        ## positional 3: PR number ('pr ok <n>')
 	local commitMessage=""  ## may be set by fParseArgs (-m/--message/--msg)
+	local -i doFetch=1      ## cleared by --no-fetch
+	local defaultBranchCache=""; local mergeTargetCache=""  ## per-run constants, filled post-fetch
 	local -ri parseArgs_maxPositionalArgCount=3
 	fParseArgs "${@}"
 	cmdName="${cmdName,,}"
-
-	## No tty = nobody to answer a prompt; behave as if -q.
-	[[ -t 0 ]] || doQuietly=1
 
 	## Old command names still work as hidden aliases (muscle memory), but stay out of the help.
 	case "${cmdName}" in
@@ -115,10 +116,20 @@ fMain(){
 	case "${cmdName}" in
 		status|listbr)           isMutating=0 ;;
 		pr)                      [[ "${cmdArg,,}" == "ok" ]] || isMutating=0 ;;
-		commit|update|sync|land) [[ -z "${commitMessage}" ]] && commitMessage="${cmdArg}" ;;
+		commit|update|sync|land)
+			[[ -z "${commitMessage}" ]] && commitMessage="${cmdArg}"
+			[[ -n "${cmdArg2}" ]] && fThrowError "Unexpected extra argument '${cmdArg2}'; quote your commit message."
+			;;
 		pull|newbr|gobr|release) : ;;
 		*) fThrowError "Unknown command '${cmdName}'. Run '${meName}' with no arguments for a list." ;;
 	esac
+
+	## No tty = nobody to answer a prompt. Read-only commands just go quiet; mutating
+	## ones fail closed (require an explicit -q) so piped/cron input can't silently auto-confirm.
+	if [[ ! -t 0 ]]; then
+		((isMutating)) && ((! doQuietly)) && fThrowError "No terminal to confirm on; re-run with -q to proceed without prompts."
+		doQuietly=1
+	fi
 
 	## pr needs gh and a valid number (except the bare list form).
 	local prNum=""
@@ -137,10 +148,14 @@ fMain(){
 	git rev-parse --is-inside-work-tree &>/dev/null || fThrowError "Not inside a git repository. Change to a git project directory first."
 
 	## Freshen remote refs so status/ahead-behind info is current. Never fatal - offline still works locally.
-	if git remote get-url origin &>/dev/null; then
+	if ((doFetch)) && git remote get-url origin &>/dev/null; then
 		fEcho "git fetch ..."
-		git fetch --quiet 2>/dev/null || fEcho "WARNING: git fetch failed (offline?); remote info may be stale."
+		fpFetchRemote
 	fi
+
+	## These can't change mid-command, so resolve them once (post-fetch, so origin/HEAD is fresh).
+	defaultBranchCache="$(fDefaultBranch)"
+	mergeTargetCache="$(fMergeTarget)"
 
 	## Release version resolves up front so preview and command agree (and bad input dies early).
 	local releaseTag=""
@@ -291,7 +306,13 @@ fCmdLand(){
 		if fHasUpstream; then fRun git push; else fRun git push -u origin HEAD; fi
 	fi
 	fRun git branch -d "${workBranch}"
-	fBranchExistsRemote "${workBranch}" && fRun git push origin --delete "${workBranch}"
+	if fBranchExistsRemote "${workBranch}"; then
+		## Non-fatal: someone (a PR merge, another clone) may have deleted it already.
+		fEcho_Clean ""
+		fEcho "git push origin --delete ${workBranch} ..."
+		git push origin --delete "${workBranch}" || fEcho "WARNING: couldn't delete the remote branch (already gone?); continuing."
+		fEcho_ResetBlankCounter
+	fi
 	fHasUpstream && fRun git pull --ff-only
 :;}
 
@@ -396,6 +417,16 @@ fCommitIdentity(){
 	echo "${ident:-(unset)}"
 :;}
 
+fMaskUrl(){
+	## Hide userinfo in displayed URLs (https://user:token@host -> https://***@host);
+	## a credentialed origin would otherwise echo the token on every run.
+	local url="${1:-}"
+	if [[ "${url}" =~ ^([A-Za-z][A-Za-z0-9+.-]*://)[^/@]+@(.*)$ ]]; then
+		url="${BASH_REMATCH[1]}***@${BASH_REMATCH[2]}"
+	fi
+	echo "${url}"
+:;}
+
 fSshTarget(){
 	## Host to ask ssh about, pulled out of a remote URL. Empty for https and local-path remotes.
 	local url="${1:-}"
@@ -407,8 +438,23 @@ fSshTarget(){
 	esac
 :;}
 
+fpFetchRemote(){
+	## Fetch with --prune (stale origin/* refs would fool the existence checks) and heal
+	## origin/HEAD (missing on git < 2.47, stale after an upstream default-branch rename).
+	## ssh gets a connect timeout so a dead remote can't hang every command for minutes;
+	## https relies on git's own timeouts. Never clobber a user-set GIT_SSH_COMMAND.
+	local -a fetchEnv=()
+	[[ -z "${GIT_SSH_COMMAND:-}" ]] && fetchEnv=(GIT_SSH_COMMAND="ssh -o ConnectTimeout=3")
+	if env "${fetchEnv[@]}" git fetch --quiet --prune 2>/dev/null; then
+		env "${fetchEnv[@]}" git remote set-head origin --auto >/dev/null 2>&1 || true
+	else
+		fEcho "WARNING: git fetch failed (offline?); remote info may be stale."
+	fi
+:;}
+
 fDefaultBranch(){
 	## Prefer origin's HEAD; fall back to whichever of main/master exists locally.
+	[[ -n "${defaultBranchCache:-}" ]] && { echo "${defaultBranchCache}"; return 0; }
 	local originHead=""
 	originHead="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
 	[[ -n "${originHead}" ]] && { echo "${originHead#origin/}"; return 0; }
@@ -419,6 +465,7 @@ fDefaultBranch(){
 
 fMergeTarget(){
 	## Feature branches come off of - and land on - dev when the repo has one; else the default branch.
+	[[ -n "${mergeTargetCache:-}" ]] && { echo "${mergeTargetCache}"; return 0; }
 	if fBranchExistsLocal dev || fBranchExistsRemote dev; then echo "dev"; else fDefaultBranch; fi
 :;}
 
@@ -435,7 +482,7 @@ fReleaseVersion(){
 			local -r base="${latest#v}"; local -r plain="${base%%-*}"
 			local maj="" min="" pat=""
 			IFS=. read -r maj min pat <<< "${plain}"
-			ver="${maj}.${min}.$((pat + 1))"
+			ver="${maj}.${min:-0}.$(( ${pat:-0} + 1 ))"  ## pad short tags like v1.2 or v2020
 		else
 			ver="0.1.0"  ## first release ever
 		fi
@@ -445,9 +492,18 @@ fReleaseVersion(){
 
 fRun(){
 	## Announce and run a command verbatim - argument array, no eval, no quote games.
+	## A failing command gets a plain one-line report; the trap dump stays reserved
+	## for unexpected script errors.
 	fEcho_Clean ""
 	fEcho "$* ..."
-	"${@}"
+	local -i rc=0
+	"${@}" || rc=$?
+	if ((rc)); then
+		fEcho_Clean ""
+		echo "${meName}: '$*' failed (exit ${rc})." >&2
+		fEcho_Clean_Force ""
+		exit 1
+	fi
 	fEcho_ResetBlankCounter
 :;}
 
@@ -504,7 +560,7 @@ fpShowIdentity(){
 				hostname)     [[ -n "${sshHost}" ]] || sshHost="${value}" ;;
 				identityfile) [[ -n "${keyFile}" ]] || { [[ -r "${value/#\~/${HOME}}" ]] && keyFile="${value}"; } ;;
 			esac
-		done < <(ssh -G "${sshHostAlias}" 2>/dev/null || true)
+		done < <(ssh -G -- "${sshHostAlias}" 2>/dev/null || true)  ## --: an option-shaped 'host' from .git/config must not parse as an ssh option
 		if [[ -n "${sshHost}" ]]; then
 			local sshLine="${sshUser:-?}@${sshHost}"
 			[[ "${sshHostAlias}" != "${sshHost}" ]] && sshLine="${sshLine} (alias '${sshHostAlias}')"
@@ -519,9 +575,10 @@ fpShowStatus(){
 	## Arg 1: also show who we'll be on the remote - pre-flight and 'status', but not the after-shot.
 	local -ri showIdentity="${1:-0}"
 	local -r remoteUrl="$(git remote get-url origin 2>/dev/null || echo "")"
+	local -r remoteDisp="$(fMaskUrl "${remoteUrl}")"
 	fEcho_Clean ""
 	fEcho_Clean "Directory ....: ${PWD}"
-	fEcho_Clean "Remote .......: ${remoteUrl:-(none)}"
+	fEcho_Clean "Remote .......: ${remoteDisp:-(none)}"
 	((showIdentity)) && fpShowIdentity "${remoteUrl}"
 	local -r branchLine="$(fCurrentBranch) (repo default: $(fDefaultBranch)) $(fBranchSync)"
 	fEcho_Clean "Branch .......: ${branchLine% }"
@@ -655,6 +712,7 @@ fParseArgs(){
 
 			## ✶✶✶✶✶✶✶✶ CUSTOM UNARY SWITCHES
 				"q"|"quiet")                doQuietly=1 ;;
+				"no-fetch"|"nofetch"|"offline")  doFetch=0 ;;
 				"m="*|"message="*|"msg="*)  commitMessage="${currentArg#*=}" ;;  ## -m=MSG / --message=MSG / --msg=MSG (joined)
 
 			## ✶✶✶✶✶✶✶✶ CUSTOM LONG-OPTIONS THAT EXPECT AN ARGUMENT TO FOLLOW
@@ -704,8 +762,8 @@ fParseArgs(){
 fMustBeInPath(){
 	local -r programToCheckForInPath="${1:-}"
 	if [[ -z "${programToCheckForInPath}" ]]; then
-		fThrowError "No program specified."  "${FUNCNAME[0]}"; return 1
-	elif [[ -z "$(which "${programToCheckForInPath}" 2>/dev/null || true)" ]]; then
+		fThrowError "No program specified."; return 1
+	elif ! command -v "${programToCheckForInPath}" >/dev/null 2>&1; then  ## builtin; 'which' is absent on some minimal distros
 		fThrowError "Not found in path: ${programToCheckForInPath}"; return 1
 	fi ;:;}
 fPromptYN(){
@@ -720,7 +778,7 @@ fPromptYN(){
 declare -i _lastListCount=0  ## set by fpCappedList()
 declare -i _wasLastEchoBlank=0
 fEcho_ResetBlankCounter() { _wasLastEchoBlank=0; }
-fEcho_Clean()             { if [[ -n "${1:-}" ]]; then echo -e "$*"; _wasLastEchoBlank=0; elif [[ $_wasLastEchoBlank -eq 0 ]] && echo; then _wasLastEchoBlank=1; fi; }
+fEcho_Clean()             { if [[ -n "${1:-}" ]]; then printf '%s\n' "$*"; _wasLastEchoBlank=0; elif [[ $_wasLastEchoBlank -eq 0 ]] && echo; then _wasLastEchoBlank=1; fi; }  ## printf, not echo -e: never re-animate escape bytes from user data
 fEcho()                   { if [[ -n "$*" ]]; then fEcho_Clean "[ $* ]"; else fEcho_Clean ""; fi; }
 fEcho_Force()             { fEcho_ResetBlankCounter; fEcho "$*";       }
 fEcho_Clean_Force()       { fEcho_ResetBlankCounter; fEcho_Clean "$*"; }
@@ -852,3 +910,10 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##			- pull now uses --autostash, so a failed pull leaves the working tree intact instead of leaving work in the stash.
 ##			- land publishes an upstream-less merge target before deleting the remote work branch.
 ##			- newbr carries dirty work from main/dev to the new branch instead of committing it there; gobr refuses to auto-commit on those branches.
+##		- 20260724 JC:
+##			- -h/-v only recognized in the command slot, so a message like "add -v flag" no longer short-circuits the run.
+##			- Non-tty mutating runs fail closed without -q; a stray extra word after a message is rejected instead of dropped.
+##			- git failures report as a plain one-liner (the trap dump stays for real script errors); printf instead of echo -e so escape bytes in filenames/messages stay inert.
+##			- Fetch now prunes, heals origin/HEAD, and gets an ssh connect timeout; --no-fetch skips it entirely.
+##			- Displayed remote URLs mask embedded credentials; ssh -G gets --; command -v instead of which; release tolerates short tags like v1.2.
+##			- land's remote-branch delete is non-fatal if the branch is already gone; default branch and merge target resolve once per run.
