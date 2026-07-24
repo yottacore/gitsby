@@ -253,6 +253,42 @@ fRunSuite(){
 	fAssertOut    "pull failure reads plainly"   'failed \(exit' bash -c "cd '${c2}' && '${gitsby}' -q pull"
 	fAssertNotOut "no trap dump on git failure"  'Signal \.'     bash -c "cd '${c2}' && '${gitsby}' -q pull"
 
+	## clone: derives the dir, checks out dev when the repo has one, no-op re-run, collision guards
+	local cl="${work}/$1-clone"
+	mkdir -p "${cl}"
+	fAssert "clone runs"                bash -c "cd '${cl}' && '${gitsby}' -q clone '${origin}' cl1"
+	fAssert "clone checked out dev"     bash -c "cd '${cl}/cl1' && [[ \"\$(git branch --show-current)\" == dev ]]"
+	fAssert "clone again (already cloned) ok"  bash -c "cd '${cl}' && '${gitsby}' -q clone '${origin}' cl1"
+	fAssert "clone derives dir from url"       bash -c "cd '${cl}' && '${gitsby}' -q clone '${origin}' && [[ -d origin/.git ]]"
+	fAssertFail "clone into non-empty dir rejected"  bash -c "cd '${cl}' && mkdir -p other && touch other/x && '${gitsby}' -q clone '${origin}' other"
+	fAssertFail "clone with no url rejected"         bash -c "cd '${cl}' && '${gitsby}' -q clone"
+
+	## connect: publish a local-only repo to a fresh empty remote; idempotent; guards
+	local cn="${work}/$1-connect"
+	mkdir -p "${cn}"
+	git init --quiet --bare -b main "${cn}/remote.git"
+	git init --quiet -b main "${cn}/proj"
+	( cd "${cn}/proj" && echo hi > hi.txt && git add --all && git commit --quiet -m "init" )
+	fAssert "connect pushes to an empty remote"  bash -c "cd '${cn}/proj' && '${gitsby}' -q connect '${cn}/remote.git'"
+	fAssert "remote got the commit"              bash -c "cd '${cn}/remote.git' && git ls-tree --name-only main | grep -qx hi.txt"
+	fAssert "connect set the upstream"           bash -c "cd '${cn}/proj' && git rev-parse --abbrev-ref '@{u}' >/dev/null"
+	fAssert "connect again (nothing to do) ok"   bash -c "cd '${cn}/proj' && '${gitsby}' -q connect"
+	fAssert "connect commits then pushes new work"  bash -c "cd '${cn}/proj' && echo more > more.txt && '${gitsby}' -q connect && cd '${cn}/remote.git' && git ls-tree --name-only main | grep -qx more.txt"
+	fAssertFail "connect different url rejected"    bash -c "cd '${cn}/proj' && '${gitsby}' -q connect '${cn}/other.git'"
+
+	## connect from a plain directory: init + commit + push in one
+	git init --quiet --bare -b main "${cn}/remote2.git"
+	mkdir -p "${cn}/plain"; echo data > "${cn}/plain/data.txt"
+	fAssert "connect from a non-repo dir"  bash -c "cd '${cn}/plain' && '${gitsby}' -q connect '${cn}/remote2.git'"
+	fAssert "plain dir now a pushed repo"  bash -c "cd '${cn}/plain' && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]]"
+
+	## connect refuses remotes with history, unreachable remotes, and empty dirs
+	git init --quiet -b main "${cn}/proj2"
+	( cd "${cn}/proj2" && echo x > x.txt && git add --all && git commit --quiet -m "x" )
+	fAssertFail "connect to nonempty remote rejected"  bash -c "cd '${cn}/proj2' && '${gitsby}' -q connect '${cn}/remote2.git'"
+	fAssertFail "connect to missing remote rejected"   bash -c "cd '${cn}/proj2' && '${gitsby}' -q connect '${cn}/nosuch.git'"
+	fAssertFail "connect in an empty dir rejected"     bash -c "mkdir -p '${cn}/empty' && cd '${cn}/empty' && '${gitsby}' -q connect '${cn}/remote.git'"
+
 	## no-remote repo: everything still works locally
 	local nr="${work}/$1-noremote"
 	git init --quiet -b main "${nr}"
@@ -290,3 +326,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260722 JC: Created, alongside the bin/gitsby refactor.
 ##		- 20260722 JC: Run the suite per implementation; added the pwsh leg.
 ##		- 20260723 JC: Checks for the update command (and its old name), and for dev fast-forwarding after a release.
+##		- 20260724 JC: clone and connect checks (dev checkout, no-op re-runs, plain-dir connect, nonempty/missing-remote and collision guards).

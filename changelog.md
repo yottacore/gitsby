@@ -22,6 +22,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `clone` command: get a repo you don't have yet. Derives the directory from the URL, checks out `dev` when the repo has one, and re-running it is a no-op.
+- `connect` command: publish work that only exists locally. Initializes the repo if needed, commits, and pushes - to an existing empty remote by URL, or creates the GitHub repo via `gh` for an `owner/name` target (`--public`/`--private`; private by default). Refuses remotes that already have history, and won't change an existing origin.
 - `pr` command: list open pull requests, view one with its diff, or accept one (approve + merge + branch delete), via `gh`.
 - `release` command: merge dev into main `--no-ff` (when the repo has a dev branch), tag, and push. With no version given, bumps the patch of the latest `v*` tag.
 - Pre-flight display, before the confirmation prompt on every mutating command (and on `status`): the SSH identity a push or fetch will present (host aliases resolved to the real host, user, and key), the author that will be stamped on commits, ahead/behind counts, and the files a pull would bring in.
