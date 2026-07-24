@@ -111,7 +111,9 @@ echo "Next steps:"
 echo "  - Read contributing.md and style-guide.md"
 echo "  - Run the local pipeline: cicd/cicd.bash --quick"
 echo "  - Work on a short-named feature branch off 'dev'; PRs merge back to 'dev'"
+echo
 
 
 ##	History:
 ##		- 20260722 JC: Created.
+##		- 20260724 JC: Trailing blank line.

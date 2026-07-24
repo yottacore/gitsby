@@ -30,18 +30,18 @@ $ErrorActionPreference = 'Stop'
 
 $repo = 'jim-collier/gitsby'
 
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw 'git is required; install it first.' }
+if (-not (Get-Command -Name git -ErrorAction SilentlyContinue)) { throw 'git is required; install it first.' }
 # Option-shaped paths would bind as real git clone options; same guard as install-dev.bash.
 if ($Directory -match '^-') { throw "'${Directory}' looks like an option, not a directory." }
-if (Test-Path $Directory) { throw "'${Directory}' already exists; pick another -Directory or remove it." }
+if (Test-Path -LiteralPath $Directory) { throw "'${Directory}' already exists; pick another -Directory or remove it." }
 
 # The local cicd pipeline (cicd/cicd.bash) is bash-based; on Windows it runs
 # under WSL or Git Bash. Only git + PowerShell 7 are needed to hack on the
 # (future) PowerShell port itself.
 $toolNotes = @()
-if (-not (Get-Command bash -ErrorAction SilentlyContinue)) { $toolNotes += 'bash 5+ (for the cicd pipeline and the Bash gitsby; WSL or Git Bash on Windows)' }
-if (-not (Get-Command shellcheck -ErrorAction SilentlyContinue)) { $toolNotes += 'shellcheck (lint stage)' }
-if (-not (Get-Command markdownlint -ErrorAction SilentlyContinue)) { $toolNotes += 'markdownlint (npm install -g markdownlint-cli)' }
+if (-not (Get-Command -Name bash -ErrorAction SilentlyContinue)) { $toolNotes += 'bash 5+ (for the cicd pipeline and the Bash gitsby; WSL or Git Bash on Windows)' }
+if (-not (Get-Command -Name shellcheck -ErrorAction SilentlyContinue)) { $toolNotes += 'shellcheck (lint stage)' }
+if (-not (Get-Command -Name markdownlint -ErrorAction SilentlyContinue)) { $toolNotes += 'markdownlint (npm install -g markdownlint-cli)' }
 
 Write-Host ''
 Write-Host '[ gitsby dev setup (PowerShell) ]'
@@ -60,7 +60,7 @@ Write-Host ''
 Write-Host '[ Cloning ... ]'
 git clone "https://github.com/${repo}.git" $Directory
 if ($LASTEXITCODE -ne 0) { throw 'git clone failed.' }
-Push-Location $Directory
+Push-Location -Path $Directory
 try {
     git checkout dev 2>$null
     if ($LASTEXITCODE -ne 0) { Write-Host "Note: no 'dev' branch on origin; staying on the default branch." }
@@ -71,6 +71,7 @@ try {
     Write-Host '  - Read contributing.md and style-guide.md'
     Write-Host '  - Run the local pipeline (bash): cicd/cicd.bash --quick'
     Write-Host "  - Work on a short-named feature branch off 'dev'; PRs merge back to 'dev'"
+    Write-Host ''
 } finally {
     Pop-Location
 }
@@ -78,3 +79,4 @@ try {
 
 # History:
 #   - 20260722 JC: Created.
+#   - 20260724 JC: Option-shaped -Directory rejected; named parameters throughout; trailing blank line.

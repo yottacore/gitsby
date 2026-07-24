@@ -64,6 +64,9 @@ fRunSuite(){
 	## Help + bad input surface
 	fAssert     "help exits 0"                 "${gitsby}" --help
 	fAssert     "version exits 0"              "${gitsby}" -v
+	fAssert     "bare 'help' word works"       "${gitsby}" help
+	fAssert     "bare 'version' word works"    "${gitsby}" version
+	fAssert     "-y alias accepted"            bash -c "cd '${cloneA}' && '${gitsby}' -y status"
 	fAssertFail "no args exits nonzero"        "${gitsby}"
 	fAssertFail "unknown command rejected"     bash -c "cd '${cloneA}' && '${gitsby}' -q frobnicate"
 	fAssertFail "unknown option rejected"      bash -c "cd '${cloneA}' && '${gitsby}' -q status --bogus"
@@ -129,6 +132,7 @@ fRunSuite(){
 	fAssertFail "newbr existing name rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q newbr feat"
 	fAssertFail "newbr bad name rejected"       bash -c "cd '${cloneA}' && '${gitsby}' -q newbr 'bad name'"
 	fAssertFail "newbr no name rejected"        bash -c "cd '${cloneA}' && '${gitsby}' -q newbr"
+	fAssertNotOut "bad branch arg dies before the preview"  'Going to do'  bash -c "cd '${cloneA}' && '${gitsby}' -q newbr 'bad name'"
 
 	## gobr: switch back and forth; bogus target rejected
 	fAssert "gobr (default: main)"  bash -c "cd '${cloneA}' && '${gitsby}' -q gobr"
