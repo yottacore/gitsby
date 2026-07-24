@@ -44,7 +44,7 @@
 <!-- TOC ignore:true -->
 # The Great Gitsby
 
-An opinionated Git wrapper to speed and simplify Git workflow.
+A simple, opinionated Git wrapper to speed and simplify everyday Git workflow. Unlimited project scaling.
 
 <!-- TOC ignore:true -->
 ## Table of contents
@@ -65,21 +65,35 @@ An opinionated Git wrapper to speed and simplify Git workflow.
 
 ## Summary
 
-If you're reading this, you probably know how to use Git. You probably also understand that it's complex, mostly because it's so flexible.
+If you're reading this, you probably know how to use Git.
 
-Git is so flexible because it supports a wide variety of workflows, team sizes, and very narrow/hard edge-cases of conflict resolution.
+You probably also understand that it's complex, mostly because it's so flexible. It's so flexible because it supports a wide variety of workflows, team sizes, and the necessary subcommands to do anything/everything - including very narrow/hard edge-cases of conflict resolution.
 
-Gitsby vastly simplifies Git, by:
+Git has about 82 porcelain commands.
+
+Gitsby has 11.
+
+- (*Granted, many developers don't interact with native bare `git` that much anymore - as it's integrated into IDEs, and AI coding agents. And it can be painful. Gitsby eases that pain.*)
+
+Gitsby shrinks Git's command set by:
 
 - Applying an "opinionated" workflow, and ignoring the myriad other ways of doing the same thing.
 
 - By acknowledging that (arguably) some ≈90% of Git's complexity is devoted to to covering about ≈10% of edge use-cases, and purposely ignoring most of them. (That is to say, not pretending they never happen - just not trying to be the tool to solve them if and when they arise.)
 
-Gitsby and Git are 100% compatible and interchangeable.
+- Commands are oriented around *project goals* (e.g. "what do I want to happen with these changes?"), rather than *administrative tasks*.
 
-- *In fact in large projects, you'll still need raw `git` to resolve some sticky situations that `gitsby` purposely doesn't try to tackle (in order to keep-it-simple and "do one thing well").*
+	- It's a subtle but important distinction.
 
-100% compatible with GitHub and GitLab.
+	- And it means that Gitsby commands don't map 1:1 with Git commands (but do line up with many common real-world "best practice" use cases of Git).
+
+👉 Gitsby, [Git](https://git-scm.com/), [gh](https://github.com/cli/cli), [Lazygit](https://github.com/jesseduffield/lazygit), and [Tig](https://github.com/jonas/tig) are all compatible and interchangeable.
+
+- *In fact in large projects, you may still need to use raw `git` to resolve some sticky situations that `gitsby` purposely doesn't try to tackle (in order to keep-it-simple and "do one thing well").*
+
+👉 Gitsby is 100% compatible with GitHub and GitLab.
+
+👉 Note that [GitButler](https://gitbutler.com/) is *not* fully interchangeable with Git, Gitsby, gh, LazyGit, and/or Tig. It manages its own metadata, that doesn't mix well with git-based tools that moves HEAD or rewrites history.
 
 ## General attributes
 
