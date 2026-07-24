@@ -262,6 +262,14 @@ fRunSuite(){
 	fAssert "clone derives dir from url"       bash -c "cd '${cl}' && '${gitsby}' -q clone '${origin}' && [[ -d origin/.git ]]"
 	fAssertFail "clone into non-empty dir rejected"  bash -c "cd '${cl}' && mkdir -p other && touch other/x && '${gitsby}' -q clone '${origin}' other"
 	fAssertFail "clone with no url rejected"         bash -c "cd '${cl}' && '${gitsby}' -q clone"
+	## a repo without dev stays on the default branch; a pre-existing empty dir is fine; a clone of a different url is refused
+	local o3="${cl}/nodev.git"
+	git init --quiet --bare -b main "${o3}"
+	git clone --quiet "${o3}" "${cl}/nodev-seed" 2>/dev/null
+	( cd "${cl}/nodev-seed" && echo n > n.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main )
+	fAssert "clone of a no-dev repo stays on default"  bash -c "cd '${cl}' && '${gitsby}' -q clone '${o3}' nd && [[ \"\$(cd nd && git branch --show-current)\" == main ]]"
+	fAssert "clone into a pre-existing empty dir"      bash -c "cd '${cl}' && mkdir -p pre && '${gitsby}' -q clone '${origin}' pre && [[ -d pre/.git ]]"
+	fAssertFail "clone over a different-url clone refused"  bash -c "cd '${cl}' && '${gitsby}' -q clone '${o3}' cl1"
 
 	## connect: publish a local-only repo to a fresh empty remote; idempotent; guards
 	local cn="${work}/$1-connect"
@@ -288,6 +296,60 @@ fRunSuite(){
 	fAssertFail "connect to nonempty remote rejected"  bash -c "cd '${cn}/proj2' && '${gitsby}' -q connect '${cn}/remote2.git'"
 	fAssertFail "connect to missing remote rejected"   bash -c "cd '${cn}/proj2' && '${gitsby}' -q connect '${cn}/nosuch.git'"
 	fAssertFail "connect in an empty dir rejected"     bash -c "mkdir -p '${cn}/empty' && cd '${cn}/empty' && '${gitsby}' -q connect '${cn}/remote.git'"
+	## an inited repo with no commit and no files is nothing to connect; a matching explicit url re-connects fine (push mode)
+	git init --quiet -b main "${cn}/bare-repo"
+	fAssertFail "connect an empty inited repo rejected"  bash -c "cd '${cn}/bare-repo' && '${gitsby}' -q connect '${cn}/remote.git'"
+	fAssert "connect accepts a matching explicit url"    bash -c "cd '${cn}/proj' && '${gitsby}' -q connect '${cn}/remote.git'"
+
+	## connect owner/name: the gh path, driven by a deterministic fake gh (no network). Covers repo
+	## create (repo absent), remote-add (repo present but empty, https + ssh protocols), and the
+	## refuse-nonempty guard. Add-mode github URLs are rewritten onto a local bare via insteadOf so
+	## the push lands offline; create-mode wiring is done inside the stub.
+	local gh="${work}/$1-gh"
+	mkdir -p "${gh}/bin"
+	cat > "${gh}/bin/gh" <<'GHEOF'
+#!/usr/bin/env bash
+## Test stub: deterministic gh, no network. Behavior driven by FAKE_GH_* env.
+[[ -n "${FAKE_GH_LOG:-}" ]] && echo "$*" >> "${FAKE_GH_LOG}"
+case "$1 $2" in
+	"repo view")   case "${FAKE_GH_VIEW:-}" in notfound) exit 1 ;; empty) echo true ;; nonempty) echo false ;; esac ;;
+	"config get")  echo "${FAKE_GH_PROTO:-https}" ;;
+	"repo create") git init --quiet --bare -b main "${FAKE_GH_REMOTE}"
+	               git remote add origin "${FAKE_GH_REMOTE}"
+	               git push --quiet -u origin HEAD ;;
+	*) echo "fake gh: unhandled: $*" >&2; exit 2 ;;
+esac
+GHEOF
+	chmod +x "${gh}/bin/gh"
+	local ghp="${gh}/bin:${PATH}"
+
+	## create: repo doesn't exist yet -> gitsby inits + commits, the stub creates and pushes
+	mkdir -p "${gh}/create"; echo c > "${gh}/create/c.txt"
+	fAssert "connect owner/name creates a missing repo"  bash -c "cd '${gh}/create' && PATH='${ghp}' FAKE_GH_VIEW=notfound FAKE_GH_REMOTE='${gh}/created.git' FAKE_GH_LOG='${gh}/create.log' '${gitsby}' -q connect me/proj"
+	fAssert "created repo got the commit"                bash -c "cd '${gh}/created.git' && git ls-tree --name-only main | grep -qx c.txt"
+	fAssert "create defaulted to a private repo"         bash -c "grep -q -- '--private' '${gh}/create.log'"
+	mkdir -p "${gh}/pub"; echo p > "${gh}/pub/p.txt"
+	if [[ "$1" == "bash" ]]; then  ## visibility flag spelled per implementation
+		fAssert "connect --public creates a public repo"  bash -c "cd '${gh}/pub' && PATH='${ghp}' FAKE_GH_VIEW=notfound FAKE_GH_REMOTE='${gh}/pub.git' FAKE_GH_LOG='${gh}/pub.log' '${gitsby}' -q --public connect me/proj && grep -q -- '--public' '${gh}/pub.log'"
+	else
+		fAssert "connect -Public creates a public repo"   bash -c "cd '${gh}/pub' && PATH='${ghp}' FAKE_GH_VIEW=notfound FAKE_GH_REMOTE='${gh}/pub.git' FAKE_GH_LOG='${gh}/pub.log' '${gitsby}' -q -Public connect me/proj && grep -q -- '--public' '${gh}/pub.log'"
+	fi
+
+	## add: repo exists but is empty -> gitsby builds the URL from git_protocol and pushes to it
+	git init --quiet --bare -b main "${gh}/backing-https.git"
+	printf '[url "%s"]\n\tinsteadOf = https://github.com/me/proj.git\n' "${gh}/backing-https.git" > "${gh}/gc-https"
+	mkdir -p "${gh}/add-https"; ( cd "${gh}/add-https" && git init --quiet -b main && echo h > h.txt && git add --all && git commit --quiet -m init )
+	fAssert "connect owner/name adds an https remote to an empty repo"  bash -c "cd '${gh}/add-https' && PATH='${ghp}' FAKE_GH_VIEW=empty FAKE_GH_PROTO=https GIT_CONFIG_GLOBAL='${gh}/gc-https' '${gitsby}' -q connect me/proj"
+	fAssert "https url recorded as origin"  bash -c "cd '${gh}/add-https' && [[ \"\$(git remote get-url origin)\" == 'https://github.com/me/proj.git' ]]"
+	fAssert "empty repo received the push"  bash -c "cd '${gh}/backing-https.git' && git ls-tree --name-only main | grep -qx h.txt"
+	git init --quiet --bare -b main "${gh}/backing-ssh.git"
+	printf '[url "%s"]\n\tinsteadOf = git@github.com:me/proj.git\n' "${gh}/backing-ssh.git" > "${gh}/gc-ssh"
+	mkdir -p "${gh}/add-ssh"; ( cd "${gh}/add-ssh" && git init --quiet -b main && echo s > s.txt && git add --all && git commit --quiet -m init )
+	fAssert "ssh protocol builds an scp-style origin url"  bash -c "cd '${gh}/add-ssh' && PATH='${ghp}' FAKE_GH_VIEW=empty FAKE_GH_PROTO=ssh GIT_CONFIG_GLOBAL='${gh}/gc-ssh' '${gitsby}' -q connect me/proj && [[ \"\$(git remote get-url origin)\" == 'git@github.com:me/proj.git' ]]"
+
+	## reject: repo already has commits
+	mkdir -p "${gh}/reject"; ( cd "${gh}/reject" && git init --quiet -b main && echo r > r.txt && git add --all && git commit --quiet -m init )
+	fAssertFail "connect owner/name refuses a nonempty repo"  bash -c "cd '${gh}/reject' && PATH='${ghp}' FAKE_GH_VIEW=nonempty '${gitsby}' -q connect me/proj"
 
 	## no-remote repo: everything still works locally
 	local nr="${work}/$1-noremote"
@@ -327,3 +389,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260722 JC: Run the suite per implementation; added the pwsh leg.
 ##		- 20260723 JC: Checks for the update command (and its old name), and for dev fast-forwarding after a release.
 ##		- 20260724 JC: clone and connect checks (dev checkout, no-op re-runs, plain-dir connect, nonempty/missing-remote and collision guards).
+##		- 20260724 JC: exhaustive clone/connect coverage - no-dev/empty-dir/different-url clone edges, empty-repo + matching-url connect, and the gh owner/name paths (create, add https/ssh, nonempty-refuse) via a hermetic fake gh.
