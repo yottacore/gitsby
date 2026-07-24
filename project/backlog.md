@@ -41,9 +41,138 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Misc to-do
 
+- 🔘 Code Review 20260723 item 39: README typos.
+	- Line 82 "devoted to to", line 100 "besome", line 218 "cononical".
+
 ### Bugs
 
+Items below came out of the 20260723 code review. Fix notes for every item: `design.md` -> "Code review 20260723".
+
+- 🔘 Code Review 20260723 item 1: `pull` failure strands the autostash (both implementations).
+	- Dirty tree gets stashed, then a failed `git pull --ff-only` (diverged or offline) aborts before `git stash pop`.
+	- Work vanishes from the tree into the stash with no message; re-runs see a clean tree and never pop it.
+	- Contradicts the "never risk losing work" promise; worst finding of the review.
+
+- 🔘 Code Review 20260723 item 2: `land` can delete the remote work branch before the merge ever reaches origin (both implementations).
+	- Push of the merge is gated on the target having an upstream; the remote branch delete is not.
+	- With a local-only `dev`, the merge stays local but `git push origin --delete <branch>` still removes origin's only ref to those commits.
+
+- 🔘 Code Review 20260723 item 3: `newbr`/`gobr` from a dirty `main`/`dev` commit and push WIP straight to the protected branch (both implementations).
+	- The "park current work" step is commit+push on whatever branch you're on - including main/dev, with an auto message in quiet mode.
+	- Contradicts the tool's own opinions ("don't push to dev, main, or master").
+
+- 🔘 Code Review 20260723 item 4: a commit message containing `-h`/`-v` as a word makes the bash version silently no-op with exit 0.
+	- The early help check scans the whole joined argv, so `gitsby commit "add -v flag"` prints the banner and skips the commit.
+	- Bash only; the pwsh port checks just the command slot.
+
+- 🔘 Code Review 20260723 item 5: non-tty stdin silently auto-confirms all mutating commands (both implementations).
+	- Piped/cron/redirected input behaves as implicit `-q`: release/land/sync run with zero confirmation, even `echo n |` is ignored.
+	- Should fail closed like the installers do (require explicit flag when no tty).
+
+- 🔘 Code Review 20260723 item 6: unquoted two-word positional message silently drops the second word (both implementations).
+	- `gitsby commit Fixed bug` commits as "Fixed"; three words error but two don't.
+
+- 🔘 Code Review 20260723 item 7: git failures print the raw trap dump instead of a plain error (bash).
+	- Diverged pull shows "Signal: ERR / Message: '--ff-only' / Command#: '"${@}"'" - reads as a gitsby crash.
+	- The pwsh port already prints a clean one-liner; match it.
+
+- 🔘 Code Review 20260723 item 8: `echo -e` in fEcho_Clean expands escapes in user data (bash).
+	- Mangles commit messages/filenames in the preview; a hostile repo's filenames (raw ESC bytes, C-quoted by git) can spoof the confirm display.
+	- Switch to `printf '%s\n'`.
+
+- 🔘 Code Review 20260723 item 9: pwsh branch-name comparisons are case-insensitive.
+	- `-eq` treats 'Main' = 'main'; newbr can branch off the wrong base. Use `-ceq`/`-cne` at the seven branch compares.
+
+- 🔘 Code Review 20260723 item 10: pwsh `release` crashes under strict mode when the newest v* tag isn't X.Y.Z.
+	- `v1.2` or `v2020` throws on array indexing; bash handles the same input gracefully.
+
+- 🔘 Code Review 20260723 item 11: install.ps1 downloads to a predictable temp filename.
+	- `gitsby-install-$PID.ps1` in shared temp; race window before install. install.bash already uses mktemp - mirror it.
+
+- 🔘 Code Review 20260723 item 12: remote URLs print verbatim, leaking embedded credentials (both implementations).
+	- An `https://user:token@host/...` origin echoes the token on every run, including CI logs. Mask the userinfo part.
+
+- 🔘 Code Review 20260723 item 13: default-branch detection trusts a possibly missing/stale local origin/HEAD (both implementations).
+	- Ref goes stale on upstream master->main renames and can be absent on git < 2.47; release then tags the wrong branch.
+	- Cheap fix: `git remote set-head origin --auto` alongside the existing fetch.
+
+- 🔘 Code Review 20260723 item 18: fMustBeInPath shells out to external `which` (bash).
+	- `which` is absent on some minimal distros, making every command abort with "Not found in path: git". Use builtin `command -v`.
+
+- 🔘 Code Review 20260723 item 21: `pull` stashes a dirty tree before checking for an upstream (both implementations).
+	- No-upstream + dirty = pointless stash push/pop that rewrites every file's mtime. Check upstream first. (Goes away if item 1 lands as `--autostash`.)
+
+- 🔘 Code Review 20260723 item 23: fetch without `--prune` leaves stale origin/* refs that existence checks trust (both implementations).
+	- Stale refs make gobr check out dead branches, land abort on the remote delete, newbr refuse reusable names.
+	- Fetch with `--prune`; make land's remote delete tolerant of "remote ref does not exist".
+
+- 🔘 Code Review 20260723 item 24: pwsh skips native exit-code checks in the pr/read-only paths.
+	- `gh pr view` failure isn't caught before `gh pr diff` runs; `listbr`/`status` exit 0 even if git fails.
+
+- 🔘 Code Review 20260723 item 25: pwsh parses Windows drive-letter remotes (`C:\...`) as ssh hosts.
+	- Pre-flight then shows a bogus SSH identity line. Treat a single-letter-colon prefix as a path, like git does.
+
+- 🔘 Code Review 20260723 item 26: `ssh -G` called without `--` on a host string derived from .git/config (both implementations).
+	- Option-shaped "hosts" from a hostile config parse as ssh options. Currently fails closed, but add `--`.
+
+- 🔘 Code Review 20260723 item 27: install-dev.ps1 passes an option-shaped `-Directory` straight to `git clone`.
+	- Binds as a real clone option (`--config=...`). install-dev.bash already rejects `-*`; mirror it (and/or pass `--` before the path).
+
+- 🔘 Code Review 20260723 item 28: install.ps1 lacks the downloaded-content sanity check install.bash has.
+	- No shebang check before install+execute; wrong-content 200s (captive portal, truncation) get installed. Mirror the `^#!` test.
+
+- 🔘 Code Review 20260723 item 29: gitsby.ps1 sets GIT_MERGE_AUTOEDIT process-wide, persisting in the caller's pwsh session.
+	- The var is redundant anyway (merges pass `-m`); just delete the line.
+
 ### Features and enhancements
+
+- 🔘 Code Review 20260723 item 14: bound the unconditional pre-command fetch and add an offline escape hatch (both implementations).
+	- A dead/black-holed remote blocks every command for the full TCP/ssh timeout before the "offline?" warning.
+	- Add a connect timeout on the fetch and a `--no-fetch`/offline flag.
+
+- 🔘 Code Review 20260723 item 15: cache per-run-constant git facts (both implementations).
+	- Measured: 12 git spawns for `status`, 45 for `land`, 55 for `release`; upstream/branch/ahead-behind re-queried repeatedly in one display block.
+	- Resolve once after the fetch, pass down; keep live re-checks only where state actually mutates. Matters most on Windows.
+
+- 🔘 Code Review 20260723 item 16: close the test-suite gaps that hid this review's bugs.
+	- Failed-pull-with-dirty-tree, no-remote fixtures, slash branch names, `-m`/`-m=` flag forms, option-like words in messages, release from a feature branch.
+
+- 🔘 Code Review 20260723 item 17: README has no Commands/Usage section.
+	- The pitch is "Gitsby has 11" commands, but they're never listed or demonstrated. Add the help table plus a worked newbr -> update -> land example.
+
+- 🔘 Code Review 20260723 item 19: installer checksum + version pinning - confirms the already-open installer item below.
+	- Publish SHA256SUMS from cicd, verify in both installers, allow pinning an exact tag; document that `--ref` skips verification.
+
+- 🔘 Code Review 20260723 item 20: "latest release" lookup uses the unauthenticated GitHub API (60 req/hr).
+	- Shared-NAT/CI installs will 403. Read the tag from the `releases/latest` redirect Location header instead; keep the API as fallback.
+
+- 🔘 Code Review 20260723 item 22: fIsAhead materializes the whole ahead-range log just to test emptiness (both implementations).
+	- Use `git rev-list -n 1 '@{u}..'` (or the cached ahead count from item 15).
+
+- 🔘 Code Review 20260723 item 30: needless external `head`/`wc` pipeline stages (bash).
+	- Use `mapfile -n 1` / array counts; watch the set -e empty-input gotcha noted in design.md.
+
+- 🔘 Code Review 20260723 item 31: positional parameter binding in the ps1 files (style guide requires named).
+	- gitsby.ps1 one spot (`Get-Command ssh`); install.ps1 and install-dev.ps1 throughout (Join-Path, Move-Item, Test-Path, Get-Command).
+
+- 🔘 Code Review 20260723 item 32: no comment-based help on any gitsby.ps1 function.
+	- Either add `.SYNOPSIS` to the non-trivial functions, or scope the style-guide rule to script-level + exported functions.
+
+- 🔘 Code Review 20260723 item 33: installer output ends without the trailing blank line the style guide requires (all four installers).
+
+- 🔘 Code Review 20260723 item 34: rename fpPreview's `p` padding variable to `pad` (matches the pwsh twin).
+
+- 🔘 Code Review 20260723 item 35: branch-argument validation runs after the status display and confirm prompt (both implementations).
+	- `newbr` with a bad/missing name shows a nonsense plan ("git checkout -b ") and only errors after "y". Hoist checks next to the existing pr/release ones.
+
+- 🔘 Code Review 20260723 item 36: `gitsby help` / `gitsby version` are unknown-command errors (both implementations).
+	- Alias the bare words to the -h/-v paths; one case entry each.
+
+- 🔘 Code Review 20260723 item 37: usage errors carry "Reverse call stack: fMain()" noise (bash).
+	- Suppress the stack line for expected validation errors; keep it for real internal failures.
+
+- 🔘 Code Review 20260723 item 38: accept `-y`/`--yes` as a prompt-skip alias (both implementations).
+	- Installers teach -y, gitsby only takes -q; and -q's real function is "assume yes", not quiet. Keep -q, add -y, fix the help wording.
 
 - 🛠️ CICD process (full spec in private notes):
 
