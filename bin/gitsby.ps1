@@ -174,6 +174,13 @@ function Test-GitBranchRemote {
     return ($LASTEXITCODE -eq 0)
 }
 
+function Test-ProtectedBranch {
+    ## main/master/dev: branches WIP should never be auto-committed to.
+    $cur = Get-CurrentBranch
+    if ($cur -ceq (Get-DefaultBranch)) { return $true }
+    return (($cur -ceq 'dev') -and ((Test-GitBranchLocal -Branch 'dev') -or (Test-GitBranchRemote -Branch 'dev')))
+}
+
 function Test-GitDirty {
     $dirty = git status --porcelain 2>$null
     return (($null -ne $dirty) -and (@($dirty).Count -gt 0))
@@ -355,9 +362,7 @@ function Show-CommandPreview {
             break
         }
         'pull' {
-            Write-PlainLine "${pad}git stash push --include-untracked *"
-            Write-PlainLine "${pad}git pull --ff-only *"
-            Write-PlainLine "${pad}git stash pop *"
+            Write-PlainLine "${pad}git pull --ff-only --autostash *"
             break
         }
         'update' {
@@ -367,7 +372,7 @@ function Show-CommandPreview {
         }
         'sync' {
             Show-CommandPreview -CommandName 'update'
-            Write-PlainLine "${pad}git push *"
+            Write-PlainLine "${pad}git push (branch '$(Get-CurrentBranch)') *"
             break
         }
         'newbr' {
@@ -444,19 +449,13 @@ function Invoke-GitsbyCommit {
 }
 
 function Invoke-GitsbyPull {
-    $didStash = $false
-    if (Test-GitDirty) {
-        $preCount = @(git stash list 2>$null).Count
-        Invoke-Git -GitArgs @('stash', 'push', '--include-untracked', '-m', "${script:meName} autostash")
-        $postCount = @(git stash list 2>$null).Count
-        $didStash = ($postCount -gt $preCount)  ## push can no-op; only pop what we pushed
-    }
+    ## --autostash instead of a manual stash push/pop: a failed pull (diverged, offline)
+    ## leaves the tree intact instead of stranding work in the stash.
     if (Test-GitUpstream) {
-        Invoke-Git -GitArgs @('pull', '--ff-only')
+        Invoke-Git -GitArgs @('pull', '--ff-only', '--autostash')
     } else {
         Write-StatusLine 'No upstream configured for this branch; nothing to pull.'
     }
-    if ($didStash) { Invoke-Git -GitArgs @('stash', 'pop') }
 }
 
 function Invoke-GitsbyCommitPull {
@@ -485,9 +484,15 @@ function Invoke-GitsbyMakeBranch {
     if (Test-GitBranchLocal -Branch $NewBranch) { throw "Branch '${NewBranch}' already exists; use: ${script:meName} gobr ${NewBranch}" }
     if (Test-GitBranchRemote -Branch $NewBranch) { throw "Branch '${NewBranch}' already exists on origin; use: ${script:meName} gobr ${NewBranch}" }
     $baseBranch = Get-MergeTarget
-    Invoke-GitsbyPush  ## park current work safely first
-    if ((Get-CurrentBranch) -ne $baseBranch) { Invoke-Git -GitArgs @('checkout', $baseBranch) }
-    if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
+    if (Test-ProtectedBranch) {
+        ## Don't commit WIP to main/dev; a dirty tree survives checkout -b, so carry it to the new branch.
+        if ((Get-CurrentBranch) -cne $baseBranch) { Invoke-Git -GitArgs @('checkout', $baseBranch) }
+        if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only', '--autostash') }
+    } else {
+        Invoke-GitsbyPush  ## park current work safely first
+        Invoke-Git -GitArgs @('checkout', $baseBranch)
+        if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
+    }
     Invoke-Git -GitArgs @('checkout', '-b', $NewBranch)
     if (Test-GitOrigin) { Invoke-Git -GitArgs @('push', '-u', 'origin', $NewBranch) }
 }
@@ -502,6 +507,9 @@ function Invoke-GitsbyChangeBranch {
     }
     if (-not ((Test-GitBranchLocal -Branch $TargetBranch) -or (Test-GitBranchRemote -Branch $TargetBranch))) {
         throw "No branch '${TargetBranch}' locally or on origin. To create it: ${script:meName} newbr ${TargetBranch}"
+    }
+    if ((Test-ProtectedBranch) -and (Test-GitDirty)) {
+        throw "Working tree has changes on '$(Get-CurrentBranch)'; won't auto-commit to a protected branch. Carry them to a new branch (${script:meName} newbr <name>), or commit deliberately (${script:meName} commit) first."
     }
     Invoke-GitsbyPush  ## park current work safely first
     Invoke-Git -GitArgs @('checkout', $TargetBranch)  ## auto-creates a tracking branch if it only exists on origin
@@ -520,7 +528,11 @@ function Invoke-GitsbyLand {
     Invoke-Git -GitArgs @('checkout', $targetBranch)
     if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
     Invoke-Git -GitArgs @('merge', '--no-ff', $workBranch, '-m', $mergeMessage)
-    if (Test-GitUpstream) { Invoke-Git -GitArgs @('push') }
+    ## The merge must reach origin before the remote work branch goes away, or origin
+    ## loses its only ref to those commits. Publish an upstream-less target first.
+    if (Test-GitOrigin) {
+        if (Test-GitUpstream) { Invoke-Git -GitArgs @('push') } else { Invoke-Git -GitArgs @('push', '-u', 'origin', 'HEAD') }
+    }
     Invoke-Git -GitArgs @('branch', '-d', $workBranch)
     if (Test-GitBranchRemote -Branch $workBranch) { Invoke-Git -GitArgs @('push', 'origin', '--delete', $workBranch) }
     if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
@@ -735,3 +747,4 @@ try {
 ##      - 20260722 JC: Command renames (old names stay as hidden aliases), dev-aware merge target, pr and release commands - in step with bin/gitsby.
 ##      - 20260723 JC: Pre-flight display (SSH identity, commit author, ahead/behind, incoming files) and the capped short-form change list - in step with bin/gitsby.
 ##      - 20260723 JC: Renamed saveup->update (old name aliased); release fast-forwards dev to main afterward; leading blank line on output - in step with bin/gitsby.
+##      - 20260724 JC: pull uses --autostash (failed pull leaves the tree intact); land publishes an upstream-less target before the remote branch delete; newbr carries dirty work off main/dev, gobr refuses to auto-commit there - in step with bin/gitsby.

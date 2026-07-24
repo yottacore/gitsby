@@ -205,20 +205,13 @@ fCmdCommit(){
 :;}
 
 fCmdPull(){
-	local -i didStash=0
-	if [[ -n "$(git status --porcelain 2>/dev/null || true)" ]]; then
-		local -i preCount=0; local -i postCount=0
-		preCount=$(git stash list | wc -l)
-		fRun git stash push --include-untracked -m "${meName} autostash"
-		postCount=$(git stash list | wc -l)
-		didStash=$((postCount > preCount ? 1 : 0))  ## push can no-op; only pop what we pushed
-	fi
+	## --autostash instead of a manual stash push/pop: a failed pull (diverged, offline)
+	## leaves the tree intact instead of stranding work in the stash.
 	if fHasUpstream; then
-		fRun git pull --ff-only
+		fRun git pull --ff-only --autostash
 	else
 		fEcho "No upstream configured for this branch; nothing to pull."
 	fi
-	((didStash)) && fRun git stash pop
 :;}
 
 fCmdCommitPull(){
@@ -246,11 +239,17 @@ fCmdNewBranch(){
 	fBranchExistsLocal  "${newBranch}" && fThrowError "Branch '${newBranch}' already exists; use: ${meName} gobr ${newBranch}"
 	fBranchExistsRemote "${newBranch}" && fThrowError "Branch '${newBranch}' already exists on origin; use: ${meName} gobr ${newBranch}"
 	local -r baseBranch="$(fMergeTarget)"
-	fCmdPush  ## park current work safely first
-	if [[ "$(fCurrentBranch)" != "${baseBranch}" ]]; then
+	if fIsProtectedBranch; then
+		## Don't commit WIP to main/dev; a dirty tree survives checkout -b, so carry it to the new branch.
+		if [[ "$(fCurrentBranch)" != "${baseBranch}" ]]; then
+			fRun git checkout "${baseBranch}"
+		fi
+		fHasUpstream && fRun git pull --ff-only --autostash
+	else
+		fCmdPush  ## park current work safely first
 		fRun git checkout "${baseBranch}"
+		fHasUpstream && fRun git pull --ff-only
 	fi
-	fHasUpstream && fRun git pull --ff-only
 	fRun git checkout -b "${newBranch}"
 	if git remote get-url origin &>/dev/null; then
 		fRun git push -u origin "${newBranch}"
@@ -266,6 +265,9 @@ fCmdGoBranch(){
 		return 0
 	fi
 	fBranchExistsLocal "${targetBranch}" || fBranchExistsRemote "${targetBranch}" || fThrowError "No branch '${targetBranch}' locally or on origin. To create it: ${meName} newbr ${targetBranch}"
+	if fIsProtectedBranch && [[ -n "$(git status --porcelain 2>/dev/null || true)" ]]; then
+		fThrowError "Working tree has changes on '$(fCurrentBranch)'; won't auto-commit to a protected branch. Carry them to a new branch (${meName} newbr <name>), or commit deliberately (${meName} commit) first."
+	fi
 	fCmdPush  ## park current work safely first
 	fRun git checkout "${targetBranch}"  ## auto-creates a tracking branch if it only exists on origin
 	fHasUpstream && fRun git pull --ff-only
@@ -283,7 +285,11 @@ fCmdLand(){
 	fRun git checkout "${targetBranch}"
 	fHasUpstream && fRun git pull --ff-only
 	fRun git merge --no-ff "${workBranch}" -m "${mergeMessage}"
-	fHasUpstream && fRun git push
+	## The merge must reach origin before the remote work branch goes away, or origin
+	## loses its only ref to those commits. Publish an upstream-less target first.
+	if git remote get-url origin &>/dev/null; then
+		if fHasUpstream; then fRun git push; else fRun git push -u origin HEAD; fi
+	fi
 	fRun git branch -d "${workBranch}"
 	fBranchExistsRemote "${workBranch}" && fRun git push origin --delete "${workBranch}"
 	fHasUpstream && fRun git pull --ff-only
@@ -363,6 +369,13 @@ fHasUpstream(){        git rev-parse --abbrev-ref '@{u}' &>/dev/null ;}
 fIsAhead(){            [[ -n "$(git log '@{u}..' --oneline 2>/dev/null || true)" ]] ;}
 fBranchExistsLocal(){  git show-ref --verify --quiet "refs/heads/${1:-}" ;}
 fBranchExistsRemote(){ git show-ref --verify --quiet "refs/remotes/origin/${1:-}" ;}
+
+fIsProtectedBranch(){
+	## main/master/dev: branches WIP should never be auto-committed to.
+	local -r cur="$(fCurrentBranch)"
+	[[ "${cur}" == "$(fDefaultBranch)" ]] && return 0
+	[[ "${cur}" == "dev" ]] && { fBranchExistsLocal dev || fBranchExistsRemote dev; }
+}
 
 fBranchSync(){
 	## Ahead/behind for the branch line; empty when in sync, so a quiet line means "nothing pending".
@@ -529,9 +542,7 @@ fpPreview(){
 			fEcho_Clean "${p}${msgDisp} *"
 			;;
 		pull)
-			fEcho_Clean "${p}git stash push --include-untracked *"
-			fEcho_Clean "${p}git pull --ff-only *"
-			fEcho_Clean "${p}git stash pop *"
+			fEcho_Clean "${p}git pull --ff-only --autostash *"
 			;;
 		update)
 			fpPreview commit
@@ -539,7 +550,7 @@ fpPreview(){
 			;;
 		sync)
 			fpPreview update
-			fEcho_Clean "${p}git push *"
+			fEcho_Clean "${p}git push (branch '$(fCurrentBranch)') *"
 			;;
 		newbr)
 			fpPreview sync
@@ -837,3 +848,7 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##			- Renamed saveup->update (saveup stays as a hidden alias).
 ##			- release now fast-forwards dev to main afterward so dev includes the release merge and tag; skipped (with a warning) if dev moved mid-release.
 ##			- Output starts with a blank line for breathing room after the shell prompt.
+##		- 20260724 JC:
+##			- pull now uses --autostash, so a failed pull leaves the working tree intact instead of leaving work in the stash.
+##			- land publishes an upstream-less merge target before deleting the remote work branch.
+##			- newbr carries dirty work from main/dev to the new branch instead of committing it there; gobr refuses to auto-commit on those branches.

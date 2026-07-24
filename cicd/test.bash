@@ -116,11 +116,14 @@ fRunSuite(){
 	fAssert "local dirty edit survived"            bash -c "cd '${cloneA}' && grep -q dirty file1.txt && ! git diff --quiet"
 	fAssert "autostash fully popped"               bash -c "cd '${cloneA}' && [[ -z \"\$(git stash list)\" ]]"
 
-	## newbr: parks work, branches off default, publishes with upstream
+	## newbr: branches off default, publishes with upstream; dirty work on the
+	## protected base is carried to the new branch, never committed to the base
 	fAssert "newbr feat"             bash -c "cd '${cloneA}' && '${gitsby}' -q newbr feat"
 	fAssert "now on feat"            bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == feat ]]"
 	fAssert "feat has upstream"      bash -c "cd '${cloneA}' && git rev-parse --abbrev-ref 'feat@{u}' >/dev/null"
-	fAssert "parked edit committed"  bash -c "cd '${cloneA}' && git diff --quiet && [[ -z \"\$(git status --porcelain)\" ]]"
+	fAssert "dirty edit carried uncommitted"  bash -c "cd '${cloneA}' && grep -q dirty file1.txt && ! git diff --quiet"
+	fAssert "no WIP commit on main"  bash -c "cd '${cloneA}' && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]] && ! git show main:file1.txt | grep -q dirty"
+	( cd "${cloneA}" && git add --all && git commit --quiet -m "carried" )
 	fAssertFail "newbr existing name rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q newbr feat"
 	fAssertFail "newbr bad name rejected"       bash -c "cd '${cloneA}' && '${gitsby}' -q newbr 'bad name'"
 	fAssertFail "newbr no name rejected"        bash -c "cd '${cloneA}' && '${gitsby}' -q newbr"
@@ -131,6 +134,12 @@ fRunSuite(){
 	fAssert "gobr feat"             bash -c "cd '${cloneA}' && '${gitsby}' -q gobr feat"
 	fAssert "back on feat"          bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == feat ]]"
 	fAssertFail "gobr nonexistent rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q gobr nosuch"
+
+	## gobr refuses to auto-commit WIP sitting on a protected branch
+	( cd "${cloneA}" && git checkout --quiet main && echo wip >> file2.txt )
+	fAssertFail "gobr from dirty main refuses"  bash -c "cd '${cloneA}' && '${gitsby}' -q gobr feat"
+	fAssert "wip left uncommitted on main"      bash -c "cd '${cloneA}' && ! git diff --quiet && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]]"
+	( cd "${cloneA}" && git checkout --quiet -- file2.txt && git checkout --quiet feat )
 
 	## land: merge feat into main --no-ff, then delete it local + remote
 	( cd "${cloneA}" && echo feat > feat.txt )
@@ -177,6 +186,31 @@ fRunSuite(){
 	## pr needs gh; syntax errors surface without it doing anything
 	fAssertFail "pr with bad number rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q pr bogus"
 	fAssertFail "pr ok with no number rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q pr ok"
+
+	## land with an upstream-less target: the merge must reach origin before the remote work branch dies
+	local fx2="${work}/$1-land2"
+	local o2="${fx2}/origin.git"; local c2="${fx2}/a"; local c3="${fx2}/b"
+	mkdir -p "${fx2}"
+	git init --quiet --bare -b main "${o2}"
+	git clone --quiet "${o2}" "${c2}" 2>/dev/null
+	(
+		cd "${c2}"
+		echo one > f.txt; git add --all; git commit --quiet -m "initial"; git push --quiet -u origin main
+		git checkout --quiet -b dev  ## local-only dev: no upstream
+		git checkout --quiet -b feat9; git push --quiet -u origin feat9
+		echo work > w.txt; git add --all; git commit --quiet -m "work"; git push --quiet
+	)
+	fAssert "land with upstream-less dev runs"      bash -c "cd '${c2}' && '${gitsby}' -q land 'merge feat9'"
+	fAssert "merge reached origin (dev published)"  bash -c "cd '${o2}' && git show-ref --verify --quiet refs/heads/dev && git ls-tree --name-only dev | grep -qx w.txt"
+	fAssert "feat9 deleted on origin after publish" bash -c "cd '${o2}' && ! git show-ref --verify --quiet refs/heads/feat9"
+
+	## diverged pull with a dirty tree: fails, but work stays in the tree and out of the stash
+	git clone --quiet "${o2}" "${c3}"
+	( cd "${c3}" && git checkout --quiet dev && echo remote >> f.txt && git add --all && git commit --quiet -m "remote side" && git push --quiet )
+	( cd "${c2}" && echo localc > localc.txt && git add --all && git commit --quiet -m "local side" && echo precious >> w.txt )
+	fAssertFail "diverged pull fails"        bash -c "cd '${c2}' && '${gitsby}' -q pull"
+	fAssert "dirty edit still in the tree"   bash -c "cd '${c2}' && grep -q precious w.txt"
+	fAssert "nothing stranded in the stash"  bash -c "cd '${c2}' && [[ -z \"\$(git stash list)\" ]]"
 }
 
 echo "gitsby regression tests (fixture: ${work})"

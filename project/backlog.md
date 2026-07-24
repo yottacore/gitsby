@@ -48,18 +48,21 @@ In each section, items are listed approximately from newest to oldest.
 
 Items below came out of the 20260723 code review. Fix notes for every item: `design.md` -> "Code review 20260723".
 
-- 🔘 Code Review 20260723 item 1: `pull` failure strands the autostash (both implementations).
+- ✅ Code Review 20260723 item 1: `pull` failure strands the autostash (both implementations).
 	- Dirty tree gets stashed, then a failed `git pull --ff-only` (diverged or offline) aborts before `git stash pop`.
 	- Work vanishes from the tree into the stash with no message; re-runs see a clean tree and never pop it.
 	- Contradicts the "never risk losing work" promise; worst finding of the review.
+	- Fixed: replaced the manual stash dance with `git pull --ff-only --autostash`; a failed pull now leaves the tree intact. Regression test added.
 
-- 🔘 Code Review 20260723 item 2: `land` can delete the remote work branch before the merge ever reaches origin (both implementations).
+- ✅ Code Review 20260723 item 2: `land` can delete the remote work branch before the merge ever reaches origin (both implementations).
 	- Push of the merge is gated on the target having an upstream; the remote branch delete is not.
 	- With a local-only `dev`, the merge stays local but `git push origin --delete <branch>` still removes origin's only ref to those commits.
+	- Fixed: an upstream-less target is published first (`git push -u origin HEAD`) before the remote delete. Regression test added.
 
-- 🔘 Code Review 20260723 item 3: `newbr`/`gobr` from a dirty `main`/`dev` commit and push WIP straight to the protected branch (both implementations).
+- ✅ Code Review 20260723 item 3: `newbr`/`gobr` from a dirty `main`/`dev` commit and push WIP straight to the protected branch (both implementations).
 	- The "park current work" step is commit+push on whatever branch you're on - including main/dev, with an auto message in quiet mode.
 	- Contradicts the tool's own opinions ("don't push to dev, main, or master").
+	- Fixed: `newbr` carries dirty work to the new branch (no commit on the base); `gobr` refuses with guidance instead of auto-committing; sync preview now names the branch being pushed. Regression tests added.
 
 - 🔘 Code Review 20260723 item 4: a commit message containing `-h`/`-v` as a word makes the bash version silently no-op with exit 0.
 	- The early help check scans the whole joined argv, so `gitsby commit "add -v flag"` prints the banner and skips the commit.
@@ -99,8 +102,9 @@ Items below came out of the 20260723 code review. Fix notes for every item: `des
 - 🔘 Code Review 20260723 item 18: fMustBeInPath shells out to external `which` (bash).
 	- `which` is absent on some minimal distros, making every command abort with "Not found in path: git". Use builtin `command -v`.
 
-- 🔘 Code Review 20260723 item 21: `pull` stashes a dirty tree before checking for an upstream (both implementations).
+- ✅ Code Review 20260723 item 21: `pull` stashes a dirty tree before checking for an upstream (both implementations).
 	- No-upstream + dirty = pointless stash push/pop that rewrites every file's mtime. Check upstream first. (Goes away if item 1 lands as `--autostash`.)
+	- Moot: item 1's `--autostash` fix removed the manual stash entirely; no upstream now means no stash is touched at all.
 
 - 🔘 Code Review 20260723 item 23: fetch without `--prune` leaves stale origin/* refs that existence checks trust (both implementations).
 	- Stale refs make gobr check out dead branches, land abort on the remote delete, newbr refuse reusable names.
@@ -134,8 +138,9 @@ Items below came out of the 20260723 code review. Fix notes for every item: `des
 	- Measured: 12 git spawns for `status`, 45 for `land`, 55 for `release`; upstream/branch/ahead-behind re-queried repeatedly in one display block.
 	- Resolve once after the fetch, pass down; keep live re-checks only where state actually mutates. Matters most on Windows.
 
-- 🔘 Code Review 20260723 item 16: close the test-suite gaps that hid this review's bugs.
+- 🛠️ Code Review 20260723 item 16: close the test-suite gaps that hid this review's bugs.
 	- Failed-pull-with-dirty-tree, no-remote fixtures, slash branch names, `-m`/`-m=` flag forms, option-like words in messages, release from a feature branch.
+	- Done so far: failed-pull-with-dirty-tree, upstream-less land, dirty-protected-branch newbr/gobr fixtures.
 
 - 🔘 Code Review 20260723 item 17: README has no Commands/Usage section.
 	- The pitch is "Gitsby has 11" commands, but they're never listed or demonstrated. Add the help table plus a worked newbr -> update -> land example.
