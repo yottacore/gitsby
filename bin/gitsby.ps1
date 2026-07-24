@@ -19,6 +19,8 @@
     Commit or merge message (-m/-msg also work; or give it positionally).
 .PARAMETER Quiet
     No prompts; if committing with no message, one is generated.
+.PARAMETER NoFetch
+    Skip the pre-command fetch (offline, or a slow remote).
 .EXAMPLE
     gitsby.ps1 update "fixed the frobnicator"
 .EXAMPLE
@@ -40,6 +42,7 @@ param(
     [Parameter(Position = 2)][string]$CommandArg2 = '',
     [Alias('m', 'msg')][string]$Message = '',
     [Alias('q')][switch]$Quiet,
+    [Alias('offline')][switch]$NoFetch,
     [Alias('h')][switch]$Help,
     [Alias('v', 'ver')][switch]$Version
 )
@@ -59,9 +62,8 @@ $script:wasShownCopyright = $false
 $script:wasShownAbout = $false
 $script:wasShownSyntax = $false
 $script:mergeTargetLabel = 'dev/main'  ## for help text, before we know we're in a repo
-
-## Never pop a merge-message editor mid-flow.
-$env:GIT_MERGE_AUTOEDIT = 'no'
+$script:defaultBranchCache = ''  ## per-run constants, filled post-fetch
+$script:mergeTargetCache = ''
 
 
 #•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
@@ -133,6 +135,7 @@ function Show-Syntax {
     Write-PlainLine 'Options:'
     Write-PlainLine '  -m, -Message MSG .....: Commit or merge message (or give it positionally).'
     Write-PlainLine '  -q, -Quiet ...........: No prompts; if committing with no message, one is generated.'
+    Write-PlainLine '  -NoFetch .............: Skip the pre-command fetch (offline, or a slow remote).'
     Write-PlainLine '  -h, -Help  /  -v, -Version'
     Write-PlainLine ''
 }
@@ -188,6 +191,7 @@ function Test-GitDirty {
 
 function Get-DefaultBranch {
     ## Prefer origin's HEAD; fall back to whichever of main/master exists locally.
+    if ($script:defaultBranchCache) { return $script:defaultBranchCache }
     $originHead = git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>$null
     if ($LASTEXITCODE -eq 0 -and $originHead) { return (([string]$originHead) -replace '^origin/', '') }
     if (Test-GitBranchLocal -Branch 'main') { return 'main' }
@@ -197,6 +201,7 @@ function Get-DefaultBranch {
 
 function Get-MergeTarget {
     ## Feature branches come off of - and land on - dev when the repo has one; else the default branch.
+    if ($script:mergeTargetCache) { return $script:mergeTargetCache }
     if ((Test-GitBranchLocal -Branch 'dev') -or (Test-GitBranchRemote -Branch 'dev')) { return 'dev' }
     return (Get-DefaultBranch)
 }
@@ -224,10 +229,18 @@ function Get-CommitIdentity {
     return (([string]$ident) -replace '\s+\S+\s+\S+$', '')
 }
 
+function Get-MaskedUrl {
+    ## Hide userinfo in displayed URLs (https://user:token@host -> https://***@host);
+    ## a credentialed origin would otherwise echo the token on every run.
+    param([string]$Url)
+    return ($Url -replace '^([A-Za-z][A-Za-z0-9+.-]*://)[^/@]+@', '$1***@')
+}
+
 function Get-SshTarget {
     ## Host to ask ssh about, pulled out of a remote URL. Empty for https and local-path remotes.
     param([string]$Url)
     if (-not $Url) { return '' }
+    if ($Url -match '^[A-Za-z]:[\\/]') { return '' }  ## Windows drive path, not an ssh host
     if ($Url -match '^ssh://(?:[^@/]+@)?([^:/]+)') { return $Matches[1] }
     if ($Url -match '^[a-z][a-z0-9+.-]*://') { return '' }   ## https/git/file: no ssh identity involved
     if ($Url -match '^(?:[^@/]+@)?([^/:]+):') { return $Matches[1] }  ## scp-like: [user@]host:path
@@ -245,7 +258,7 @@ function Get-ReleaseVersion {
         $latest = @(git tag --list 'v[0-9]*' --sort=-v:refname 2>$null) | Select-Object -First 1
         if ($latest) {
             $plain = (([string]$latest) -replace '^v', '') -replace '-.*$', ''
-            $parts = $plain -split '\.'
+            $parts = @($plain -split '\.') + @('0', '0')  ## pad short tags like v1.2 or v2020
             $ver = '{0}.{1}.{2}' -f $parts[0], $parts[1], ([int]$parts[2] + 1)
         } else {
             $ver = '0.1.0'  ## first release ever
@@ -309,7 +322,7 @@ function Show-Identity {
     $sshHostAlias = Get-SshTarget -Url $RemoteUrl
     if ($sshHostAlias -and (Get-Command ssh -ErrorAction SilentlyContinue)) {
         $sshUser = ''; $sshHost = ''; $keyFile = ''
-        foreach ($line in @(ssh -G $sshHostAlias 2>$null)) {
+        foreach ($line in @(ssh -G -- $sshHostAlias 2>$null)) {  ## --: an option-shaped 'host' from .git/config must not parse as an ssh option
             $key, $value = ([string]$line) -split '\s+', 2
             switch ($key) {
                 'user' { if (-not $sshUser) { $sshUser = $value } }
@@ -336,10 +349,11 @@ function Show-RepoStatus {
     ## -WithIdentity: also show who we'll be on the remote - pre-flight and 'status', but not the after-shot.
     param([switch]$WithIdentity)
     $remote = git remote get-url origin 2>$null
-    if ($LASTEXITCODE -ne 0 -or -not $remote) { $remote = '(none)' }
+    if ($LASTEXITCODE -ne 0 -or -not $remote) { $remote = '' }
+    $remoteDisp = if ($remote) { Get-MaskedUrl -Url ([string]$remote) } else { '(none)' }
     Write-PlainLine ''
     Write-PlainLine "Directory ....: $(Get-Location)"
-    Write-PlainLine "Remote .......: ${remote}"
+    Write-PlainLine "Remote .......: ${remoteDisp}"
     if ($WithIdentity) { Show-Identity -RemoteUrl ([string]$remote) }
     $branchLine = "$(Get-CurrentBranch) (repo default: $(Get-DefaultBranch)) $(Get-BranchSync)"
     Write-PlainLine "Branch .......: $($branchLine.TrimEnd())"
@@ -500,7 +514,7 @@ function Invoke-GitsbyMakeBranch {
 function Invoke-GitsbyChangeBranch {
     param([string]$TargetBranch = '')
     if (-not $TargetBranch) { $TargetBranch = Get-MergeTarget }
-    if ((Get-CurrentBranch) -eq $TargetBranch) {
+    if ((Get-CurrentBranch) -ceq $TargetBranch) {  ## -ceq: branch names are case-sensitive
         Write-StatusLine "Already on '${TargetBranch}'."
         if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
         return
@@ -520,8 +534,8 @@ function Invoke-GitsbyLand {
     ## Merges the current branch into dev (or main/master) - backwards from 'git merge', but saves a step.
     $targetBranch = Get-MergeTarget
     $workBranch = Get-CurrentBranch
-    if ($workBranch -eq $targetBranch) { throw "Already on '${targetBranch}'. Run this from the branch to merge in: ${script:meName} gobr <branch>, then ${script:meName} land" }
-    if ($workBranch -eq (Get-DefaultBranch)) { throw "'${workBranch}' is the default branch; landing it on '${targetBranch}' is backwards. To cut a release: ${script:meName} release" }
+    if ($workBranch -ceq $targetBranch) { throw "Already on '${targetBranch}'. Run this from the branch to merge in: ${script:meName} gobr <branch>, then ${script:meName} land" }
+    if ($workBranch -ceq (Get-DefaultBranch)) { throw "'${workBranch}' is the default branch; landing it on '${targetBranch}' is backwards. To cut a release: ${script:meName} release" }
     $mergeMessage = $script:commitMessage
     if (-not $mergeMessage) { $mergeMessage = "Merge ${workBranch}" }
     Invoke-GitsbyPush
@@ -534,7 +548,14 @@ function Invoke-GitsbyLand {
         if (Test-GitUpstream) { Invoke-Git -GitArgs @('push') } else { Invoke-Git -GitArgs @('push', '-u', 'origin', 'HEAD') }
     }
     Invoke-Git -GitArgs @('branch', '-d', $workBranch)
-    if (Test-GitBranchRemote -Branch $workBranch) { Invoke-Git -GitArgs @('push', 'origin', '--delete', $workBranch) }
+    if (Test-GitBranchRemote -Branch $workBranch) {
+        ## Non-fatal: someone (a PR merge, another clone) may have deleted it already.
+        Write-PlainLine ''
+        Write-StatusLine "git push origin --delete ${workBranch} ..."
+        git push origin --delete $workBranch
+        if ($LASTEXITCODE -ne 0) { Write-StatusLine "WARNING: couldn't delete the remote branch (already gone?); continuing." }
+        Clear-BlankCounter
+    }
     if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
 }
 
@@ -549,6 +570,7 @@ function Invoke-GitsbyPrView {
         Write-PlainLine ''
         Write-StatusLine "gh pr view ${PrNumber} ..."
         gh pr view $PrNumber
+        if ($LASTEXITCODE -ne 0) { throw "gh pr view failed (exit ${LASTEXITCODE})." }
         Write-PlainLine ''
         Write-StatusLine "gh pr diff ${PrNumber} ..."
         gh pr diff $PrNumber
@@ -582,11 +604,11 @@ function Invoke-GitsbyRelease {
     if ($LASTEXITCODE -eq 0) { throw "Tag '$($script:releaseTag)' already exists." }
     $startBranch = Get-CurrentBranch
     Invoke-GitsbyPush  ## park current work safely first
-    if ($devBranch -and ((Get-CurrentBranch) -ne $devBranch)) {
+    if ($devBranch -and ((Get-CurrentBranch) -cne $devBranch)) {
         Invoke-Git -GitArgs @('checkout', $devBranch)  ## freshen dev so the release has all of it
         if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
     }
-    if ((Get-CurrentBranch) -ne $mainBranch) { Invoke-Git -GitArgs @('checkout', $mainBranch) }
+    if ((Get-CurrentBranch) -cne $mainBranch) { Invoke-Git -GitArgs @('checkout', $mainBranch) }
     if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
     if ($devBranch) {
         $mergeMessage = $script:commitMessage
@@ -611,7 +633,7 @@ function Invoke-GitsbyRelease {
         }
     }
     ## Don't leave the user parked on main.
-    if ($startBranch -and ($startBranch -ne (Get-CurrentBranch)) -and ($startBranch -ne $mainBranch)) { Invoke-Git -GitArgs @('checkout', $startBranch) }
+    if ($startBranch -and ($startBranch -cne (Get-CurrentBranch)) -and ($startBranch -cne $mainBranch)) { Invoke-Git -GitArgs @('checkout', $startBranch) }
 }
 
 
@@ -637,9 +659,6 @@ try {
     if ($CommandArg -match '^--$|^--?[^ -]') { throw "Unexpected option in this context: '${CommandArg}'." }
     if ($CommandArg2 -match '^--$|^--?[^ -]') { throw "Unexpected option in this context: '${CommandArg2}'." }
 
-    ## No tty = nobody to answer a prompt; behave as if -Quiet.
-    if ([Console]::IsInputRedirected) { $script:doQuietly = $true }
-
     ## Old command names still work as hidden aliases (muscle memory), but stay out of the help.
     $cmdName = $Command.ToLowerInvariant()
     $cmdName = switch ($cmdName) {
@@ -660,9 +679,20 @@ try {
     switch ($cmdName) {
         { $_ -in 'status', 'listbr' } { $isMutating = $false; break }
         'pr' { if ($CommandArg.ToLowerInvariant() -ne 'ok') { $isMutating = $false }; break }
-        { $_ -in 'commit', 'update', 'sync', 'land' } { if (-not $script:commitMessage) { $script:commitMessage = $CommandArg }; break }
+        { $_ -in 'commit', 'update', 'sync', 'land' } {
+            if (-not $script:commitMessage) { $script:commitMessage = $CommandArg }
+            if ($CommandArg2) { throw "Unexpected extra argument '${CommandArg2}'; quote your commit message." }
+            break
+        }
         { $_ -in 'pull', 'newbr', 'gobr', 'release' } { break }
         default { throw "Unknown command '${cmdName}'. Run '${script:meName}' with no arguments for a list." }
+    }
+
+    ## No tty = nobody to answer a prompt. Read-only commands just go quiet; mutating
+    ## ones fail closed (require an explicit -Quiet) so piped/cron input can't silently auto-confirm.
+    if ([Console]::IsInputRedirected) {
+        if ($isMutating -and -not $script:doQuietly) { throw 'No terminal to confirm on; re-run with -q to proceed without prompts.' }
+        $script:doQuietly = $true
     }
 
     ## pr needs gh and a valid number (except the bare list form).
@@ -683,11 +713,27 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Not inside a git repository. Change to a git project directory first.' }
 
     ## Freshen remote refs so status/ahead-behind info is current. Never fatal - offline still works locally.
-    if (Test-GitOrigin) {
+    ## --prune: stale origin/* refs would fool the existence checks. set-head heals a missing/stale
+    ## origin/HEAD. ssh gets a connect timeout so a dead remote can't hang every command for minutes.
+    if (-not $NoFetch -and (Test-GitOrigin)) {
         Write-StatusLine 'git fetch ...'
-        git fetch --quiet 2>$null
-        if ($LASTEXITCODE -ne 0) { Write-StatusLine 'WARNING: git fetch failed (offline?); remote info may be stale.' }
+        $hadSshCommand = [bool]$env:GIT_SSH_COMMAND
+        if (-not $hadSshCommand) { $env:GIT_SSH_COMMAND = 'ssh -o ConnectTimeout=3' }
+        try {
+            git fetch --quiet --prune 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                Write-StatusLine 'WARNING: git fetch failed (offline?); remote info may be stale.'
+            } else {
+                git remote set-head origin --auto *> $null
+            }
+        } finally {
+            if (-not $hadSshCommand) { Remove-Item -Path Env:GIT_SSH_COMMAND -ErrorAction SilentlyContinue }
+        }
     }
+
+    ## These can't change mid-command, so resolve them once (post-fetch, so origin/HEAD is fresh).
+    $script:defaultBranchCache = Get-DefaultBranch
+    $script:mergeTargetCache = Get-MergeTarget
 
     ## Release version resolves up front so preview and command agree (and bad input dies early).
     $script:releaseTag = ''
@@ -697,7 +743,13 @@ try {
     if (-not $isMutating) {
         switch ($cmdName) {
             'status' { Show-RepoStatus -WithIdentity; break }
-            'listbr' { Write-StatusLine 'git branch -a -vv'; git branch -a -vv; Clear-BlankCounter; break }
+            'listbr' {
+                Write-StatusLine 'git branch -a -vv'
+                git branch -a -vv
+                if ($LASTEXITCODE -ne 0) { throw "'git branch -a -vv' failed (exit ${LASTEXITCODE})." }
+                Clear-BlankCounter
+                break
+            }
             'pr' { Invoke-GitsbyPrView -PrNumber $script:prNum; break }
         }
         Write-PlainLine ''
@@ -748,3 +800,4 @@ try {
 ##      - 20260723 JC: Pre-flight display (SSH identity, commit author, ahead/behind, incoming files) and the capped short-form change list - in step with bin/gitsby.
 ##      - 20260723 JC: Renamed saveup->update (old name aliased); release fast-forwards dev to main afterward; leading blank line on output - in step with bin/gitsby.
 ##      - 20260724 JC: pull uses --autostash (failed pull leaves the tree intact); land publishes an upstream-less target before the remote branch delete; newbr carries dirty work off main/dev, gobr refuses to auto-commit there - in step with bin/gitsby.
+##      - 20260724 JC: Non-tty mutating runs fail closed without -q; extra positional after a message rejected; case-sensitive branch compares; release tolerates short tags like v1.2; masked credentials in the displayed remote URL; fetch with --prune + origin/HEAD heal + ssh connect timeout; -NoFetch; tolerant remote-branch delete in land; exit-code checks in pr view/listbr; drive-letter remotes not treated as ssh hosts; ssh -G gets --; per-run default-branch/merge-target caching; dropped the redundant GIT_MERGE_AUTOEDIT (it leaked into the calling session) - in step with bin/gitsby.

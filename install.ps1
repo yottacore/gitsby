@@ -65,7 +65,10 @@ if (-not $Yes) {
 # Prefer the release asset; fall back to the file in the tagged tree.
 Write-Host ''
 Write-Host '[ Downloading ... ]'
-$tmpFile = Join-Path ([IO.Path]::GetTempPath()) "gitsby-install-$PID.ps1"
+# Private random subdirectory, not a predictable name in shared temp.
+$tmpDir = Join-Path ([IO.Path]::GetTempPath()) ([IO.Path]::GetRandomFileName())
+New-Item -ItemType Directory -Path $tmpDir | Out-Null
+$tmpFile = Join-Path -Path $tmpDir -ChildPath 'gitsby.ps1'
 $downloaded = $false
 foreach ($url in @(
         "https://github.com/${repo}/releases/download/${Ref}/gitsby.ps1",
@@ -82,6 +85,8 @@ foreach ($url in @(
 if (-not $downloaded) {
     throw "Couldn't download gitsby.ps1 at '${Ref}'. If that release has no PowerShell build yet, use the Bash installer (install.bash) or watch the repo for the PowerShell port."
 }
+# Wrong-content 200s happen (captive portals, truncation); a script starts with a shebang.
+if ((Get-Content -LiteralPath $tmpFile -First 1) -notmatch '^#!') { throw "Downloaded file doesn't look like a script; aborting." }
 
 try {
     Write-Host "[ Installing to ${destPath} ... ]"
@@ -99,7 +104,7 @@ try {
     Write-Host ''
     Write-Host '[ Done. ]'
 } finally {
-    if (Test-Path $tmpFile) { Remove-Item -Force $tmpFile }
+    if (Test-Path -LiteralPath $tmpDir) { Remove-Item -Recurse -Force $tmpDir }
 }
 
 
