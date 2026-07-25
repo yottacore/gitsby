@@ -278,7 +278,7 @@ elif [[ -f "${FUZZ_CMD[0]:-}" ]]; then
 	"${FUZZ_CMD[@]}"
 	fEcho "OK: fuzz + security passed"
 else
-	fEcho_Clean "no fuzz harness yet (${FUZZ_CMD[0]:-cicd/fuzz.bash} - lands with the bin/gitsby refactor)"
+	fEcho_Clean "no fuzz harness (${FUZZ_CMD[0]:-cicd/fuzz.bash})"
 fi
 
 ## Stage 4: dogfood. A script project's "release build" is the script itself;
