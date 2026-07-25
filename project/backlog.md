@@ -229,7 +229,8 @@ Items below came out of the 20260723 code review. Fix notes for every item: `des
 	- Done: both implementations, previewed + confirmed like the rest; tests 207 -> 241.
 	- Follow-up: logically validated (no bugs) and exhaustively tested. Closed the "gh paths untested offline" gap with a hermetic fake gh (create / add https+ssh / refuse-nonempty), plus clone edges (no-dev, pre-existing empty dir, different-url refuse) and connect edges (empty inited repo, matching-url re-connect). Tests 241 -> 269, both implementations.
 
-- 🔘 Add a PowerShell badge to README.md.
+- ✅ Add a PowerShell badge to README.md.
+	- Added next to the bash badge in the header block, linking to the PowerShell docs.
 
 - 🛠️ A Bash >=3.2 script, and/or cross-platform PowerShell v7 script, that users can run as a one-liner from their shell - to download the latest stable or dev release, verify checksum, and install the executable. Idempotent; states its plan and asks before touching anything. Uses nice output, blank line at the start and end of script, and one blank line between major sections of output. Add something like this to README.md, under an "Installation" header, "Direct" subheader. (The primary install should be an installer.) Include the commands, and the install locations.
 
