@@ -9,7 +9,7 @@
 ##		  The installers verify against it when present.
 ##	History: At bottom of script.
 
-##	Copyright © 2026 Jim Collier (ID: 1cv◂‡Vᛦ)
+##	Copyright © 2026 Bubbles (ID: XଌฅრX۳ᛟԃლፀƅꓩหδლც)
 ##	Licensed under The MIT License (MIT). Full text at:
 ##		https://mit-license.org/
 ##	SPDX-License-Identifier: MIT
@@ -34,4 +34,4 @@ fi
 
 
 ##	History:
-##		- 20260724 JC: Created.
+##		- 20260724: Created.

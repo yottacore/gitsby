@@ -13,7 +13,7 @@
 ##	Syntax: demo-repo.bash [ROOT]   (ROOT default: /tmp/gitsby-demo)
 ##	History: At bottom of script.
 
-##	Copyright © 2026 Jim Collier (ID: 1cv◂‡Vᛦ)
+##	Copyright © 2026 Bubbles (ID: XଌฅრX۳ᛟԃლፀƅꓩหδლც)
 ##	Licensed under The MIT License (MIT). Full text at:
 ##		https://mit-license.org/
 ##	SPDX-License-Identifier: MIT
@@ -82,4 +82,4 @@ printf 'retries: 3\n' >> config.yml
 
 
 ##	History:
-##		- 20260724 JC: v1.0. Anonymized offline repo builder for the demo gif.
+##		- 20260724: v1.0. Anonymized offline repo builder for the demo gif.
