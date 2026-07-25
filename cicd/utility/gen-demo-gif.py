@@ -77,8 +77,8 @@ WPM_NOTES     = (233, 263)   # "# comment" lines fly by
 FLAG_PAUSE_MS = (200, 380)   # a beat of thought before a -flag token
 TYPO_RATE     = 0.018        # per letter; capped at 2 fixes per command
 BLINK_MS      = 530
-SCROLL_MS     = 80           # frame interval while scrolling / cursor-gliding
-SCROLL_RATE   = 325          # px/s smooth scroll; per-step scrollrate overrides
+FRAME_MS      = 20           # 50 fps: frame interval while scrolling / gliding
+SCROLL_RATE   = 210          # px/s smooth scroll; per-step scrollrate overrides
 
 QWERTY_ROWS = ["1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm"]
 
@@ -158,6 +158,7 @@ def fLoadScenario(path):
 	##	  overflow = "truncate"         or "wrap" for real feature output
 	##	  scrollrate = 260              px/s smooth scroll during this step's output
 	##	  linems = 26                   ms per output line before scrolling kicks in
+	##	  clear = true                  wipe the scrollback first, as `clear` does
 	try:
 		with open(path, "rb") as f:
 			sc = tomllib.load(f)
@@ -551,7 +552,7 @@ def fMain():
 	def glideCursor(ms):
 		##	Slide the shown cursor toward its cell across the keystroke's time.
 		tx, ty = scr.fCursorTarget()
-		steps = max(1, min(3, int(ms // 45)))
+		steps = max(1, min(8, int(ms // FRAME_MS)))
 		x0, y0 = shown
 		for s in range(1, steps + 1):
 			shown[0] = x0 + (tx - x0) * s / steps
@@ -562,9 +563,9 @@ def fMain():
 		##	Smooth-scroll the view to rest; the cursor rides along on its line.
 		while abs(scr.fRestScroll() - scr.scroll) >= 0.5:
 			d = scr.fRestScroll() - scr.scroll
-			scr.scroll += (1 if d > 0 else -1) * min(abs(d), rate * SCROLL_MS / 1000.0)
+			scr.scroll += (1 if d > 0 else -1) * min(abs(d), rate * FRAME_MS / 1000.0)
 			shown[:] = scr.fCursorTarget()
-			snap(SCROLL_MS, cursor)
+			snap(FRAME_MS, cursor)
 		scr.scroll = scr.fRestScroll()
 		shown[:] = scr.fCursorTarget()
 
@@ -582,6 +583,12 @@ def fMain():
 	for stepIdx, step in enumerate(sc["step"]):
 		rate = float(step.get("scrollrate", SCROLL_RATE))
 		lineMs = float(step.get("linems", 26))
+		if step.get("clear"):
+			##	Start the step at the top of a fresh screen. Smooth scrolling
+			##	costs a near-full-frame delta per frame, so a demo that never
+			##	builds a long scrollback stays far smaller than one that does.
+			scr.lines, scr.scroll = [], 0.0
+			shown[:] = scr.fCursorTarget()
 		for noteOrCmd, key, wpm, typos in (
 				(("# " + step["note"]) if step.get("note") else None, "dim", WPM_NOTES, False),
 				(step["show"].replace("{prog}", prog).replace("{bin}", prog), "fg", WPM_LETTERS, True)):
@@ -653,6 +660,11 @@ if __name__ == "__main__":
 
 
 ##	History:
+##		- 20260725: 50 fps (20ms) frame interval for scrolling and cursor glide -
+##			at the old 80ms any scrollrate over ~275 px/s finished a line in one
+##			frame, so the scroll was a jump and the rate knob did nothing. New
+##			per-step clear= wipes the scrollback, which keeps a smooth scroll
+##			affordable (every scroll frame is a near-full-frame delta).
 ##		- 20260725: stderr shares the stdout pipe, so mixed-stream output keeps
 ##			its real order. Palette padded to the next power of two instead of
 ##			256, so the GIF's LZW code width matches the colors actually in use.

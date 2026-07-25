@@ -8,10 +8,14 @@
 # gitsby is stateful, so a helper builds a throwaway, anonymized repo (+ a local
 # bare "origin") the commands act on for real - see cicd/utility/demo-repo.bash.
 # The arc is one feature, start to finish: look around, branch, commit, push,
-# check the branches, merge it back. Step 1's run= builds the repo (output
-# hidden); every later step re-enters it and sources the env the builder wrote,
-# since each run= is its own shell. Mutating commands need -y with no tty, so the
-# typed line omits it and run= adds it.
+# merge it back. Step 1's run= builds the repo (output hidden); every later step
+# re-enters it and sources the env the builder wrote, since each run= is its own
+# shell. Mutating commands need -y with no tty, so the typed line omits it and
+# run= adds it.
+#
+# Every step clears first, which is what keeps the file affordable: a smooth
+# scroll redraws the whole text block each frame, so the cost tracks how far the
+# view has to travel, and a scrollback that never accumulates halves it.
 #
 # Keep every commit message and edit fixed: the builder pins the git dates, so a
 # fixed scenario means identical commit hashes, identical output, identical gif
@@ -27,49 +31,43 @@ end_hold  = 1.6
 end_black = 2.0
 
 [[step]]
+clear = true
 note  = "Fetch, then show exactly where you stand"
 show  = "{prog} status"
 run   = "bash cicd/utility/demo-repo.bash >/dev/null 2>&1 && cd /tmp/gitsby-demo/acme-api && source /tmp/gitsby-demo/demo.env && {bin} status"
 pause = 2.2
-scrollrate = 820
 
 [[step]]
+clear = true
 note  = "New branch - uncommitted work comes along"
 show  = "{prog} newbr add-retries"
 run   = "cd /tmp/gitsby-demo/acme-api && source /tmp/gitsby-demo/demo.env && {bin} newbr add-retries -y"
 pause = 2.0
-scrollrate = 820
 
 [[step]]
+clear = true
 note  = "Commit and pull, as often as you like"
 show  = "{prog} update \"Retry failed API calls\""
 run   = "cd /tmp/gitsby-demo/acme-api && source /tmp/gitsby-demo/demo.env && {bin} update \"Retry failed API calls\" -y"
 pause = 2.0
-scrollrate = 820
 
 [[step]]
+clear = true
 note  = "Keep working..."
 show  = "echo 'retry_backoff: 250ms' >> config.yml"
 run   = "cd /tmp/gitsby-demo/acme-api && echo 'retry_backoff: 250ms' >> config.yml"
 pause = 0.9
 
 [[step]]
+clear = true
 note  = "...then commit, pull and push in one go"
 show  = "{prog} sync \"Back off between retries\""
 run   = "cd /tmp/gitsby-demo/acme-api && source /tmp/gitsby-demo/demo.env && {bin} sync \"Back off between retries\" -y"
 pause = 2.0
-scrollrate = 820
 
 [[step]]
-note  = "What's out there?"
-show  = "{prog} listbr"
-run   = "cd /tmp/gitsby-demo/acme-api && source /tmp/gitsby-demo/demo.env && {bin} listbr"
-pause = 2.0
-scrollrate = 820
-
-[[step]]
+clear = true
 note  = "Ship it: merge back, push, delete the branch"
 show  = "{prog} land \"Add retries\""
 run   = "cd /tmp/gitsby-demo/acme-api && source /tmp/gitsby-demo/demo.env && {bin} land \"Add retries\" -y"
 pause = 3.0
-scrollrate = 820
