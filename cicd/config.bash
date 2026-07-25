@@ -84,12 +84,18 @@ DOGFOOD_PWSH_DESTS=(
 ## against the dogfooded script (in a throwaway anonymized repo the scenario
 ## builds), renders the 960x540 animated loop (hard-cut boundary). Seeded + pinned
 ## commit dates, so an unchanged script + scenario reproduces the same file byte
-## for byte. Skipped by --quick / --no-demogif; self-skips if the scenario is absent.
+## for byte (the optimizer below is deterministic too, though its version counts).
+## Skipped by --quick / --no-demogif; self-skips if the scenario is absent.
 DO_DEMOGIF=1
 DEMOGIF_SCENARIO="cicd/demo-scenario.toml"
 DEMOGIF_CMD=(cicd/utility/gen-demo-gif.py --scenario "${DEMOGIF_SCENARIO}")
 DEMOGIF_OUT="assets/demo.gif"                # in-repo copy the README embeds
 DEMOGIF_ARCHIVE_DIR="../private/demo/gif"    # out-of-tree originals, GFS-rotated
+## Lossless squeeze, when the tool is around; skipped silently if not. Worth
+## about 9% - the renderer already crops each frame to what changed, so most of
+## the win is banked. Stays before the compare, so the committed file is the
+## optimized one. Lossy modes buy almost nothing on a 35-colour text demo.
+DEMOGIF_OPT_CMD=(gifsicle -O3)
 
 ## Stage 6: backup + publish to git (runs from repo root). The engine always
 ## passes --quiet (it already gave the message prompt) and, when it has one,
