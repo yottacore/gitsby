@@ -299,12 +299,22 @@ function Get-ReleaseVersion {
 }
 
 function Invoke-Git {
-    ## Announce and run a git command verbatim - argument array, no string re-parsing.
+    ## Announce and run git with a literal argv. Splatting 'git @GitArgs' lets
+    ## PowerShell wildcard-expand any element that is a bare '*'/'?'/'[...]' against
+    ## the cwd (a commit message of '*' would glob to filenames), and splatted
+    ## elements can't be quoted to stop it. ProcessStartInfo.ArgumentList builds the
+    ## argv directly - each element is one literal arg, no globbing, no reshell.
+    ## UseShellExecute=$false with no redirection inherits the console, so git's
+    ## output still appears inline.
     param([Parameter(Mandatory)][string[]]$GitArgs)
     Write-PlainLine ''
     Write-StatusLine "git $($GitArgs -join ' ') ..."
-    git @GitArgs
-    if ($LASTEXITCODE -ne 0) { throw "'git $($GitArgs -join ' ')' failed (exit ${LASTEXITCODE})." }
+    $psi = [System.Diagnostics.ProcessStartInfo]::new('git')
+    $psi.UseShellExecute = $false
+    foreach ($arg in $GitArgs) { [void]$psi.ArgumentList.Add($arg) }
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $proc.WaitForExit()
+    if ($proc.ExitCode -ne 0) { throw "'git $($GitArgs -join ' ')' failed (exit $($proc.ExitCode))." }
     Clear-BlankCounter
 }
 
