@@ -169,16 +169,18 @@ def fLoadScenario(path):
 
 
 def fRunStep(step, prog, binpath):
-	##	Execute the step's command for real; merged stdout+stderr becomes the
-	##	demo output, so notes the program prints on stderr show up too.
+	##	Execute the step's command for real. stderr shares the stdout pipe rather
+	##	than being appended after it, so a program that mixes the two (git writes
+	##	most of its progress to stderr) reads in the order it actually printed.
 	cmd = step.get("run", step["show"])
 	cmd = cmd.replace("{bin}", shlex.quote(binpath)).replace("{prog}", shlex.quote(binpath))
 	try:
-		res = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True,
+		res = subprocess.run(["bash", "-c", cmd], stdout=subprocess.PIPE,
+		                     stderr=subprocess.STDOUT, text=True,
 		                     timeout=30, errors="replace")
 	except subprocess.TimeoutExpired:
 		fSkip(f"command timed out: {cmd}")
-	out = ANSI_RE.sub("", res.stdout + res.stderr)
+	out = ANSI_RE.sub("", res.stdout)
 	return [ln.expandtabs(8).rstrip() for ln in out.rstrip("\n").split("\n")]
 
 
@@ -259,7 +261,13 @@ def fBuildPalette(userTint, hostTint, emojiTiles):
 		qp = q.getpalette()
 		got = [tuple(qp[i:i + 3]) for i in range(0, room * 3, 3)]
 		colors = list(dict.fromkeys(colors + got))
-	colors = (colors + [(0, 0, 0)] * 256)[:256]
+	##	Pad to the next power of two rather than a flat 256: GIF's LZW code width
+	##	tracks the palette size, so a text-only demo (~35 colors) writes about 12%
+	##	smaller at 64 entries, pixel for pixel identical.
+	slots = 2
+	while slots < len(colors):
+		slots *= 2
+	colors = (colors + [(0, 0, 0)] * slots)[:slots]
 	pal = Image.new("P", (1, 1))
 	pal.putpalette([v for c in colors for v in c])
 	return pal
@@ -645,6 +653,9 @@ if __name__ == "__main__":
 
 
 ##	History:
+##		- 20260725: stderr shares the stdout pipe, so mixed-stream output keeps
+##			its real order. Palette padded to the next power of two instead of
+##			256, so the GIF's LZW code width matches the colors actually in use.
 ##		- 20260713: End of loop holds the final frame (end_hold, 3s) then hard-
 ##			cuts to black (end_black, 2s) before repeating.
 ##		- 20260711: v1.2. Antialiased text again (ramped 256 palette), color
