@@ -57,8 +57,8 @@ PS_LINT_GLOBS=(
 ## until the file exists the engine reports the stage absent (not passing).
 TEST_CMD=(cicd/test.bash)
 
-## Stage 3: fuzz + security (adversarial input against gitsby's option/arg
-## parsing and repo-state handling). Same lands-later policy; skipped by --quick.
+## Stage 3: fuzz + security (adversarial input against gitsby's own command/option/
+## arg surface, with an injection canary; per implementation). Skipped by --quick.
 FUZZ_CMD=(cicd/fuzz.bash)
 
 ## Full run output is tee'd here (gitignored) so warnings from any stage can be

@@ -611,7 +611,7 @@ function Invoke-GitsbyLand {
 function Invoke-GitsbyClone {
     Invoke-Git -GitArgs @('clone', $script:cloneUrl, $script:cloneDir)
     ## Opinionated: if the repo works dev-first, start there.
-    git -C $script:cloneDir show-ref --verify --quiet refs/remotes/origin/dev *> $null
+    git -C "$script:cloneDir" show-ref --verify --quiet refs/remotes/origin/dev *> $null
     if ($LASTEXITCODE -eq 0) { Invoke-Git -GitArgs @('-C', $script:cloneDir, 'checkout', 'dev') }
 }
 
@@ -622,7 +622,7 @@ function Invoke-GitsbyConnect {
         'create' {
             Write-PlainLine ''
             Write-StatusLine "gh repo create $($script:ghTarget) --$($script:repoVisibility) --source . --push --remote origin ..."
-            gh repo create $script:ghTarget "--$($script:repoVisibility)" --source . --push --remote origin
+            gh repo create "$script:ghTarget" "--$($script:repoVisibility)" --source . --push --remote origin
             if ($LASTEXITCODE -ne 0) { throw "'gh repo create' failed (exit ${LASTEXITCODE})." }
             Clear-BlankCounter
             break
@@ -830,7 +830,7 @@ try {
     ## Branch arguments validate up front too, so a bad name can't survive to a nonsense preview.
     if ($cmdName -eq 'newbr') {
         if (-not $CommandArg) { throw "No branch name given. Syntax: ${script:meName} newbr <new branch name>" }
-        git check-ref-format --branch $CommandArg *> $null
+        git check-ref-format --branch "$CommandArg" *> $null  ## quote: a bare $var lets PowerShell glob '*'/'?' to filenames, defeating the check
         if ($LASTEXITCODE -ne 0) { throw "'${CommandArg}' is not a valid branch name." }
         if (Test-GitBranchLocal -Branch $CommandArg) { throw "Branch '${CommandArg}' already exists; use: ${script:meName} gobr ${CommandArg}" }
         if (Test-GitBranchRemote -Branch $CommandArg) { throw "Branch '${CommandArg}' already exists on origin; use: ${script:meName} gobr ${CommandArg}" }
@@ -851,7 +851,7 @@ try {
             if (-not $script:cloneDir) { throw "Can't derive a directory name from '$($script:cloneUrl)'; give one explicitly." }
         }
         if (Test-Path -LiteralPath $script:cloneDir) {
-            $existingUrl = git -C $script:cloneDir remote get-url origin 2>$null
+            $existingUrl = git -C "$script:cloneDir" remote get-url origin 2>$null
             if ($LASTEXITCODE -ne 0 -or $null -eq $existingUrl) { $existingUrl = '' }
             if ((Test-Path -LiteralPath (Join-Path -Path $script:cloneDir -ChildPath '.git')) -and (([string]$existingUrl) -ceq $script:cloneUrl)) {
                 Write-StatusLine "'$($script:cloneDir)' is already a clone of that URL; nothing to do."
@@ -887,7 +887,7 @@ try {
                 ## owner/name shorthand: the gh path - create the repo if it doesn't exist yet.
                 if (-not (Get-Command -Name gh -ErrorAction SilentlyContinue)) { throw 'Not found in path: gh' }
                 $script:ghTarget = $CommandArg
-                $isEmpty = gh repo view $script:ghTarget --json isEmpty --jq .isEmpty 2>$null
+                $isEmpty = gh repo view "$script:ghTarget" --json isEmpty --jq .isEmpty 2>$null
                 if ($LASTEXITCODE -ne 0 -or -not $isEmpty) {
                     $script:connectMode = 'create'
                 } elseif (([string]$isEmpty).Trim() -eq 'true') {
