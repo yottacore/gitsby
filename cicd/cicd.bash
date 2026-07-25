@@ -323,6 +323,16 @@ else
 	demogif_tmp="${demogif_out}.new"
 	mkdir -p "$(dirname "${demogif_out}")"
 	if (cd "${root}" && python3 "${DEMOGIF_CMD[@]}" --out "${demogif_tmp}" --bin "${root}/${DOGFOOD_BASH_SRC}"); then
+		if [[ -n "${DEMOGIF_OPT_CMD[*]:-}" ]] && command -v "${DEMOGIF_OPT_CMD[0]}" >/dev/null 2>&1; then
+			demogif_was=$(stat -c%s "${demogif_tmp}")
+			if "${DEMOGIF_OPT_CMD[@]}" "${demogif_tmp}" -o "${demogif_tmp}.opt" 2>/dev/null; then
+				mv -f "${demogif_tmp}.opt" "${demogif_tmp}"
+				fEcho_Clean "optimized: $((demogif_was / 1024)) -> $(( $(stat -c%s "${demogif_tmp}") / 1024 )) KiB"
+			else
+				rm -f "${demogif_tmp}.opt"
+				fEcho_Clean "${DEMOGIF_OPT_CMD[0]}: failed, keeping the raw render"
+			fi
+		fi
 		if [[ -f "${demogif_out}" ]] && cmp -s "${demogif_tmp}" "${demogif_out}"; then
 			rm -f "${demogif_tmp}"
 			fEcho "OK: demo gif unchanged"
