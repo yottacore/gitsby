@@ -58,6 +58,15 @@ fRefuse(){ local -r desc="$1"; local -r dir="$2"; shift 2; fRun "${dir}" "$@"
 	if _isCrash; then fFail "${desc}: crashed (exit ${_code})"
 	elif ((_code == 0)); then fFail "${desc}: accepted, should refuse"
 	else fOk "${desc}"; fi; }
+## Commit a message and confirm it lands in the log verbatim - catches a shell
+## glob-expanding a bare '*'/'?' message into filenames before git sees it.
+fMsgLiteral(){ local -r desc="$1"; local -r dir="$2"; local -r msg="$3"
+	echo "chg ${RANDOM}" > "${dir}/seed.txt"
+	fRun "${dir}" -q commit "${msg}"
+	local rec; rec="$(cd "${dir}" && git log -1 --format=%s)"
+	if _isCrash;             then fFail "${desc}: crashed (exit ${_code})"
+	elif [[ "${rec}" == "${msg}" ]]; then fOk "${desc}"
+	else fFail "${desc}: recorded [${rec}], expected [${msg}]"; fi; }
 
 ## Fresh repo (bare origin + clone with one commit) under work/<name>.
 fMakeRepo(){
@@ -124,6 +133,10 @@ fRunFuzz(){
 		echo "change ${i}" > "${repo2}/seed.txt"; i=$((i + 1))
 		fSurvive "commit message inert: '${inject[m]}'" "${repo2}" -q commit "${inject[m]}"
 	done
+	## ...and a bare-glob message must land verbatim, not expand to filenames. The
+	## repo has files, so '*' and '*.txt' would glob if the message weren't literal.
+	local gm
+	for gm in '*' '*.txt' '?' 'v*'; do fMsgLiteral "commit message verbatim: '${gm}'" "${repo2}" "${gm}"; done
 
 	## Versions and PR numbers: malformed values refused (release fetches first,
 	## which is local here; pr rejects before any network).
