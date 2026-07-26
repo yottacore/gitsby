@@ -9,9 +9,10 @@ Design, requirements, and direction. The active bug and feature task list lives 
 
 ## Assumptions
 
-- The user already knows Git. Gitsby is a shorter path through it, not a replacement for understanding it.
-- Any repo gitsby touches may also be touched by raw `git`, `gh`, or an IDE, before and after. Nothing gitsby does can be allowed to confuse those tools.
+- Any repo gitsby touches may also be touched by raw `git`, `gh`, or an IDE - before, during, and after. Nothing gitsby does can be allowed to confuse those tools.
+
 - Repo state is never assumed. Every command re-checks what it needs at the moment it needs it, because the last command may have been interrupted, or someone else may have moved the remote.
+
 - The awkward cases (partial staging, multiple remotes, rebases, conflict surgery) belong to raw `git`. Gitsby covers the common path and stays out of the way for the rest.
 
 ## Project structure
@@ -19,9 +20,13 @@ Design, requirements, and direction. The active bug and feature task list lives 
 ### Folder structure
 
 - `bin/` - the two implementations, one file each.
+
 - `cicd/` - the local pipeline, its config, and the test and fuzz suites.
+
 - `project/` - this file and the backlog.
+
 - `assets/` - the demo shown at the top of the README.
+
 - Root - the four installers, the license, and the public docs.
 
 ### Logical code structure
@@ -29,10 +34,15 @@ Design, requirements, and direction. The active bug and feature task list lives 
 Both implementations follow the same shape, in the same order:
 
 1. Parse arguments, and resolve the command name through the old-name aliases.
+
 2. Refuse anything unworkable up front: unknown commands, bad branch names, a version that is already tagged, no terminal to confirm on.
+
 3. Fetch, so everything displayed afterward is current.
+
 4. Show the repo state, then the exact commands about to run, then ask.
+
 5. Run them, each one state-checked at the moment it runs.
+
 6. Show the state again.
 
 The two files are ports of each other. A change to one nearly always belongs in the other, and the suites run against both.
@@ -40,7 +50,9 @@ The two files are ports of each other. A change to one nearly always belongs in 
 ### Execution flow
 
 - Every mutating command is preview-then-confirm. `-q`/`-y` skips the prompt; nothing skips the state checks.
+
 - The preview is a static recipe per command, with `*` marking steps that only happen if the repo state calls for them. It has to match what the command actually does, including where the command branches on state.
+
 - No command shells out through `eval`. Arguments are passed as arrays, so a message or branch name is never re-parsed.
 
 ## Direction decisions
@@ -54,44 +66,25 @@ The two files are ports of each other. A change to one nearly always belongs in 
 
 ### Software stack
 
-- Bash 4.4+ and PowerShell 7+. Nothing else at run time except `git`, plus `gh` for the two commands that need it.
+- Bash 4.4+ (for *nix or WSL), and/or PowerShell 7+ (cross-platform). Nothing else at run time except `git`, plus `gh` for the two commands that need it.
+
 - No configuration file, and no state of its own. Everything gitsby knows, it asks `git` for. That is deliberate: there is nothing to get out of sync, and nothing to migrate.
 
 ### UI
 
 - Terminal text, one screen at a time. Output opens and closes with a blank line, and sections are separated by blank lines rather than rules.
+
 - Lists of files are one per line, truncated to the terminal width and capped, so a large working tree cannot scroll the prompt out of view.
+
 - Before anything touches a remote, the display names who you would be acting as: the SSH identity after host aliases are resolved, and the author that would be stamped on commits. Having more than one account configured is common, and pushing as the wrong one is easy and awkward to undo.
 
 ### Testing
 
 - A regression suite and a fuzz suite, both run once per implementation, both against throwaway repos built under a temp directory. Neither touches the network or a real repo.
+
 - The fuzz suite asserts three things: no internal crash, no shell or command injection, and that inputs which must be refused exit nonzero and leave the repo unchanged.
+
 - The `gh` paths are covered by a stub on `PATH`, so the GitHub-facing branches are exercised without a network or an account.
-
-## Code review 20260725
-
-Fix notes for the "Code Review 20260725" backlog items. Every issue applied to both implementations, which is itself the expected result: the ports have not drifted.
-
-- Item 1 - release pushes only the tag when the default branch has no upstream:
-	- Publish the branch first (`git push -u origin HEAD`), exactly as `land` was taught to do in the previous review.
-	- Origin otherwise receives the release commits as tag payload while its default branch still points at the previous release.
-- Item 2 - release refuses a duplicate tag too late:
-	- The check moved next to the version resolution, in the same up-front block as the branch-argument checks.
-	- Nothing about it needs the command to have started, and by the time the command ran it had already committed and pushed.
-- Item 3 - gobr refuses a dirty protected branch too late:
-	- Same move, same block. The condition has to repeat the "already on target" early-return, since switching to the branch you are on is not a switch.
-- Item 4 - newbr previews steps it does not run from main/dev:
-	- The preview now branches on protected state, matching the command.
-	- Worth stating plainly: the preview is the safety feature. A command special-casing a state without the preview following suit is a defect in the safety feature, not a cosmetic mismatch.
-- Item 5 - pr ok fails its trailing pull when run from the PR's own branch:
-	- The trap is that `gh` deletes the branch through the API, so nothing updates our `origin/*` copy. The upstream check passes, and the pull then asks for a ref the remote no longer has.
-	- Prune before deciding, then treat a vanished upstream as the signal to check out the merge target and pull there.
-	- Reproducing this in a test needs the fake `gh` to restore the stale tracking ref after its delete-push. Without that the local ref disappears too, the upstream check correctly says no, and the bug does not appear - a test that would have passed against the broken code.
-- Item 6 - a bare release after a candidate skips the candidate's own version:
-	- Semver puts `2.0.0-rc1` below `2.0.0`, so finishing a candidate means cutting the version it was a candidate for, not bumping past it.
-	- The suffix now decides: present means take the plain version, absent means bump the patch.
-	- Second half of the same fix: git's default `-v:refname` sort ranks `v2.0.0-rc1` above `v2.0.0`, so once the real release exists a bare run would propose an already-cut version and die on the duplicate-tag check. `versionsort.suffix=-` puts them in semver order.
 
 ### Release policy
 

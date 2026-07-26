@@ -86,7 +86,7 @@ Git has about 82 porcelain commands.
 
 Gitsby has 13.
 
-- (*Granted, many developers don't interact with native bare `git` that much anymore - as it's integrated into IDEs, and AI coding agents. And it can be painful. Gitsby eases that pain.*)
+> *Granted, this comparison doesn't hit super hard, when only about 1/5th of git users interact with bare `git` on a daily basis - as it's integrated into IDEs, CI/CD pipelines, AI coding agents, etc.*
 
 Gitsby shrinks Git's command set by:
 
@@ -94,35 +94,35 @@ Gitsby shrinks Git's command set by:
 
 - By acknowledging that (arguably) some 90% of Git's complexity is devoted to covering about 10% of edge use-cases, and purposely ignoring most of them. (That is to say, not pretending they never happen - just not trying to be the tool to solve them if and when they arise.)
 
-- Commands are oriented around *project goals* (e.g. "what do I want to happen with these changes?"), rather than *administrative tasks*.
+- Commands are oriented around *goals* (e.g. "what do I want to happen with these changes?"), rather than a series of *administrative tasks*.
 
 	- It's a subtle but important distinction.
 
-	- And it means that Gitsby commands don't map 1:1 with Git commands (but do line up with many common real-world "best practice" use cases of Git).
+	- And it means that Gitsby commands don't map 1:1 with Git commands - but do line up with many common real-world "best practice" use cases of Git (as series of multiple commands at a time with brief human decisions made in between them).
 
-👉 Gitsby, [Git](https://git-scm.com/), [gh](https://github.com/cli/cli), [Lazygit](https://github.com/jesseduffield/lazygit), and [Tig](https://github.com/jonas/tig) are all compatible and interchangeable.
+👉 Gitsby, [Git](https://git-scm.com/), [gh](https://github.com/cli/cli), [Lazygit](https://github.com/jesseduffield/lazygit), and [Tig](https://github.com/jonas/tig) are all compatible, interchangeable, and can be intermixed on the same project at any time without interference.
 
-- *In fact in large projects, you may still need to use raw `git` to resolve some sticky situations that `gitsby` purposely doesn't try to tackle (in order to keep-it-simple and "do one thing well").*
+- *In fact in large projects, you may still need to use bare Git (and/or some other wrapper) to resolve some sticky situations that Gitsby purposely doesn't try to tackle, in order to keep-it-simple and "do one thing well".*
 
 👉 Gitsby is 100% compatible with GitHub and GitLab.
 
-👉 Note that [GitButler](https://gitbutler.com/) is *not* fully interchangeable with Git, Gitsby, gh, LazyGit, and/or Tig. It manages its own metadata, that doesn't mix well with git-based tools that moves HEAD or rewrites history.
+> Note: [GitButler](https://gitbutler.com/) is *not* fully interchangeable with Git, Gitsby, gh, LazyGit, and/or Tig. While a great tool and a cool idea, it manages its own metadata - that inherently doesn't mix well with other git-based tools that moves `HEAD` or rewrites history.
 
 ## General attributes
 
-- Encourages an opinionated workflow. (More on what that means below, because it has become an overloaded word.)
+- Encourages and partially enforces an "opinionated" workflow. (More on what that means below, because it has become an overloaded word.)
 
 - It doesn't cover fringe use-cases, which Git itself can cover while still using this for the more common stuff.
 
-- It's goal-oriented, rather than task-driven. (Which sounds like hand-wavy doublespeak, but is accurate. The subcommands themselves illustrate how.)
+- It's goal-oriented, rather than task-driven. (The subcommands themselves illustrate what this means.)
 
-To be clear, gitsby is just shell script. (Two scripts actually, with the same syntax and results.) There's not much "logic", it's more about exposing a set of goal-oriented commands, sanity-checking arguments and underlying filesystem, and then chaining together the appropriate git commands to accomplish that goal.
+To be clear, gitsby is just shell script. (Two scripts actually, with the same syntax and results.) It exposes a set of goal-oriented commands, then sanity-checking arguments and underlying filesystem, and chains the appropriate git commands together to accomplish that goal.
 
-Gitsby does nothing that git can't do directly, with many more commands and guards.
+Gitsby does nothing that Git can't do directly by a skilled and experienced user - just with far fewer opportunities for common human mistakes.
 
 Sub-objectives in the workflow of each gitsby command:
 
-1. Don't make assumptions - about the underlying repo state.
+1. Don't make assumptions about the underlying repo state.
 
 1. Be safe - if occasionally redundant and/or unnecessary. Never risk losing work - yours locally, or others in the remote.
 
@@ -134,7 +134,7 @@ Sub-objectives in the workflow of each gitsby command:
 
 ## "Opinionated workflow": What are the opinions?
 
-The "opinions" are mostly informed by industry and conventional best-practices, learned over millions upon millions of programmer-hours. There is no reinvention of any wheels - it's just an exposed interface that places gentle guardrails and sanity checks around a way of working with Git that has proven to more easily scale and minimize trouble.
+The "opinions" are mostly informed by industry and conventional best-practices, learned over millions upon millions of collective human programmer-hours. There is no reinvention of any wheels - it's just an exposed interface that places gentle guardrails and sanity checks around a way of working with Git that has proven to more easily scale and minimize trouble.
 
 There are many implicit opinions baked in. Here are the main ones:
 
@@ -144,9 +144,9 @@ There are many implicit opinions baked in. Here are the main ones:
 
 - `git push` only to a feature branch you created.
 
-- Don't `push` to `dev`, `main`, or `master`; instead, create a Pull Request. Even if you otherwise have the rights to, and even for small personal projects.
+- Don't `push` to `dev`, `main`, or `master`; instead, create a Pull Request. Even if you otherwise have the rights to, and even for small personal "toy" projects.
 
-	While PRs are overkill for small personal projects, it is nevertheless good hygiene, does not add much extra effort, and reinforces good working habits.
+	While PRs are overkill for small personal projects, it is nevertheless good hygiene, does not add much extra effort, and reinforces good working habits at a reflexive level.
 
 - Pushed history is permanent. No rebase, no amend, no force-push, no rewriting.
 

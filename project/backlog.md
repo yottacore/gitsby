@@ -17,9 +17,9 @@ This is a product backlog for the run-up to v2.0.0. After that release, bugs, fe
 	- [Bugs](#bugs)
 	- [Features and enhancements](#features-and-enhancements)
 	- [Done](#done)
-		- [Done - Initial requirements](#done---initial-requirements)
 		- [Done - Bugs](#done---bugs)
 		- [Done - Features and enhancements](#done---features-and-enhancements)
+		- [Done - Code review 20260725](#done---code-review-20260725)
 	- [Future and/or deferred](#future-andor-deferred)
 	- [Canceled](#canceled)
 
@@ -47,210 +47,14 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Done
 
-#### Done - Initial requirements
-
 #### Done - Bugs
 
-- ✅ Code Review 20260725 item 1: `release` pushes only the tag when the default branch has no upstream (both implementations).
-	- The branch push is gated on an upstream; the tag push is not.
-	- Origin ends up holding the release commits as tag payload while its `main` still points at the previous release.
-	- Same shape as item 2 of the previous review, which was fixed in `land` but not here.
-	- Fixed: an upstream-less default branch is published with `git push -u origin HEAD` before the tag goes up. Regression test added.
-
-- ✅ Code Review 20260725 item 2: `release` refuses a duplicate tag only after it has already committed and pushed (both implementations).
-	- The check sat inside the command, past the plan, the confirmation, and the "park current work" step.
-	- Nothing is lost, but the run mutates the repo and then dies on something knowable up front.
-	- Fixed: the tag-exists check moved next to the version resolution, before anything is shown or run. Regression test added.
-
-- ✅ Code Review 20260725 item 3: `gobr` refuses a dirty protected branch only after the plan is confirmed (both implementations).
-	- Same class as item 2, and the same fix as code review 20260723 item 35 applied to the other branch arguments.
-	- Fixed: the refusal moved up front, alongside the other branch-argument checks. Regression test added.
-
-- ✅ Code Review 20260725 item 4: `newbr` shows a plan it does not follow when run from `main`/`dev` (both implementations).
-	- The preview always listed the commit-and-push steps, but on a protected branch the tree is carried to the new branch instead.
-	- The preview is the safety feature, so it misreporting in exactly the case that was special-cased is the wrong way round.
-	- Fixed: the plan now branches on protected state and shows the checkout-and-carry steps. Regression test added.
-
-- ✅ Code Review 20260725 item 5: `pr ok <n>` run from the branch that PR came from ends in a failed pull (both implementations).
-	- `gh` deletes the branch on the remote through the API, which leaves the local `origin/*` copy in place, so the upstream still looks alive.
-	- The trailing `git pull --ff-only` then asks for a branch the remote no longer has, and the whole command reports as failed.
-	- Fixed: prune first, and if the branch we are standing on is the one that just went away, check out the merge target and pull that instead. The plan shows the extra step. Regression test added, with the fake `gh` restoring the stale ref so the real condition is reproduced.
-
-- ✅ Code Review 20260723 item 1: `pull` failure strands the autostash (both implementations).
-	- Dirty tree gets stashed, then a failed `git pull --ff-only` (diverged or offline) aborts before `git stash pop`.
-	- Work vanishes from the tree into the stash with no message; re-runs see a clean tree and never pop it.
-	- Contradicts the "never risk losing work" promise; worst finding of the review.
-	- Fixed: replaced the manual stash dance with `git pull --ff-only --autostash`; a failed pull now leaves the tree intact. Regression test added.
-
-- ✅ Code Review 20260723 item 2: `land` can delete the remote work branch before the merge ever reaches origin (both implementations).
-	- Push of the merge is gated on the target having an upstream; the remote branch delete is not.
-	- With a local-only `dev`, the merge stays local but `git push origin --delete <branch>` still removes origin's only ref to those commits.
-	- Fixed: an upstream-less target is published first (`git push -u origin HEAD`) before the remote delete. Regression test added.
-
-- ✅ Code Review 20260723 item 3: `newbr`/`gobr` from a dirty `main`/`dev` commit and push WIP straight to the protected branch (both implementations).
-	- The "park current work" step is commit+push on whatever branch you're on - including main/dev, with an auto message in quiet mode.
-	- Contradicts the tool's own opinions ("don't push to dev, main, or master").
-	- Fixed: `newbr` carries dirty work to the new branch (no commit on the base); `gobr` refuses with guidance instead of auto-committing; sync preview now names the branch being pushed. Regression tests added.
-
-- ✅ Code Review 20260723 item 4: a commit message containing `-h`/`-v` as a word makes the bash version silently no-op with exit 0.
-	- The early help check scans the whole joined argv, so `gitsby commit "add -v flag"` prints the banner and skips the commit.
-	- Bash only; the pwsh port checks just the command slot.
-	- Fixed: -h/-v now only recognized in the command slot, matching the pwsh port. Test added.
-
-- ✅ Code Review 20260723 item 5: non-tty stdin silently auto-confirms all mutating commands (both implementations).
-	- Piped/cron/redirected input behaves as implicit `-q`: release/land/sync run with zero confirmation, even `echo n |` is ignored.
-	- Should fail closed like the installers do (require explicit flag when no tty).
-	- Fixed: mutating commands with no tty and no -q abort with guidance; read-only commands keep the implicit quiet. Tests added.
-
-- ✅ Code Review 20260723 item 6: unquoted two-word positional message silently drops the second word (both implementations).
-	- `gitsby commit Fixed bug` commits as "Fixed"; three words error but two don't.
-	- Fixed: a non-empty third positional is rejected with "quote your commit message" (both implementations). Test added.
-
-- ✅ Code Review 20260723 item 7: git failures print the raw trap dump instead of a plain error (bash).
-	- Diverged pull shows "Signal: ERR / Message: '--ff-only' / Command#: '"${@}"'" - reads as a gitsby crash.
-	- The pwsh port already prints a clean one-liner; match it.
-	- Fixed: fRun reports a plain one-liner ("'git ...' failed (exit N)") and exits; the trap dump stays for real script errors. Tests added.
-
-- ✅ Code Review 20260723 item 8: `echo -e` in fEcho_Clean expands escapes in user data (bash).
-	- Mangles commit messages/filenames in the preview; a hostile repo's filenames (raw ESC bytes, C-quoted by git) can spoof the confirm display.
-	- Switch to `printf '%s\n'`.
-	- Fixed: fEcho_Clean uses printf '%s\n'; escape bytes in user data stay inert.
-
-- ✅ Code Review 20260723 item 9: pwsh branch-name comparisons are case-insensitive.
-	- `-eq` treats 'Main' = 'main'; newbr can branch off the wrong base. Use `-ceq`/`-cne` at the seven branch compares.
-	- Fixed: -ceq/-cne at the branch compares; 'ok' and prompt answers stay case-insensitive.
-
-- ✅ Code Review 20260723 item 10: pwsh `release` crashes under strict mode when the newest v* tag isn't X.Y.Z.
-	- `v1.2` or `v2020` throws on array indexing; bash handles the same input gracefully.
-	- Fixed: split parts padded before arithmetic (v1.2 -> v1.2.1, v2020 -> v2020.0.1); bash pads the same way now too. Verified on both.
-
-- ✅ Code Review 20260723 item 11: install.ps1 downloads to a predictable temp filename.
-	- `gitsby-install-$PID.ps1` in shared temp; race window before install. install.bash already uses mktemp - mirror it.
-	- Fixed: downloads into a fresh random private subdirectory; recursive cleanup in finally.
-
-- ✅ Code Review 20260723 item 12: remote URLs print verbatim, leaking embedded credentials (both implementations).
-	- An `https://user:token@host/...` origin echoes the token on every run, including CI logs. Mask the userinfo part.
-	- Fixed: userinfo masked in the displayed URL (https://***@host) in both implementations. Tests added.
-
-- ✅ Code Review 20260723 item 13: default-branch detection trusts a possibly missing/stale local origin/HEAD (both implementations).
-	- Ref goes stale on upstream master->main renames and can be absent on git < 2.47; release then tags the wrong branch.
-	- Cheap fix: `git remote set-head origin --auto` alongside the existing fetch.
-	- Fixed: successful fetch now runs git remote set-head origin --auto, healing a missing or stale origin/HEAD; local read remains the offline fallback.
-
-- ✅ Code Review 20260723 item 18: fMustBeInPath shells out to external `which` (bash).
-	- `which` is absent on some minimal distros, making every command abort with "Not found in path: git". Use builtin `command -v`.
-	- Fixed: builtin command -v; dropped the stray second fThrowError argument.
-
-- ✅ Code Review 20260723 item 21: `pull` stashes a dirty tree before checking for an upstream (both implementations).
-	- No-upstream + dirty = pointless stash push/pop that rewrites every file's mtime. Check upstream first. (Goes away if item 1 lands as `--autostash`.)
-	- Moot: item 1's `--autostash` fix removed the manual stash entirely; no upstream now means no stash is touched at all.
-
-- ✅ Code Review 20260723 item 23: fetch without `--prune` leaves stale origin/* refs that existence checks trust (both implementations).
-	- Stale refs make gobr check out dead branches, land abort on the remote delete, newbr refuse reusable names.
-	- Fetch with `--prune`; make land's remote delete tolerant of "remote ref does not exist".
-	- Fixed: fetch uses --prune, and land's remote delete warns-and-continues instead of dying if the branch is already gone.
-
-- ✅ Code Review 20260723 item 24: pwsh skips native exit-code checks in the pr/read-only paths.
-	- `gh pr view` failure isn't caught before `gh pr diff` runs; `listbr`/`status` exit 0 even if git fails.
-	- Fixed: gh pr view checked before the diff; listbr throws on git failure.
-
-- ✅ Code Review 20260723 item 25: pwsh parses Windows drive-letter remotes (`C:\...`) as ssh hosts.
-	- Pre-flight then shows a bogus SSH identity line. Treat a single-letter-colon prefix as a path, like git does.
-	- Fixed: single-letter-colon prefixes are treated as drive paths, not ssh hosts.
-
-- ✅ Code Review 20260723 item 26: `ssh -G` called without `--` on a host string derived from .git/config (both implementations).
-	- Option-shaped "hosts" from a hostile config parse as ssh options. Currently fails closed, but add `--`.
-	- Fixed: -- added in both implementations.
-
-- ✅ Code Review 20260723 item 27: install-dev.ps1 passes an option-shaped `-Directory` straight to `git clone`.
-	- Binds as a real clone option (`--config=...`). install-dev.bash already rejects `-*`; mirror it (and/or pass `--` before the path).
-	- Fixed: option-shaped -Directory rejected, same wording as the bash guard.
-
-- ✅ Code Review 20260723 item 28: install.ps1 lacks the downloaded-content sanity check install.bash has.
-	- No shebang check before install+execute; wrong-content 200s (captive portal, truncation) get installed. Mirror the `^#!` test.
-	- Fixed: first line must match ^#! before install, mirroring install.bash.
-
-- ✅ Code Review 20260723 item 29: gitsby.ps1 sets GIT_MERGE_AUTOEDIT process-wide, persisting in the caller's pwsh session.
-	- The var is redundant anyway (merges pass `-m`); just delete the line.
-	- Fixed: line deleted (merges pass -m, so it was redundant).
-
 #### Done - Features and enhancements
-
-- ✅ Code Review 20260725 item 6: `release` with no version bumps the patch of a candidate tag's base, skipping that base version (both implementations).
-	- After `v2.0.0-rc1`, a bare `release` proposed `v2.0.1` rather than `v2.0.0`.
-	- Fixed: a candidate's own version is now what comes next, so `v2.0.0-rc1` leads to `v2.0.0`.
-	- The tag scan also needed `versionsort.suffix=-`, since git's default version sort ranks `v2.0.0-rc1` above `v2.0.0` and would otherwise propose an already-cut version once the real release exists.
-	- Regression tests cover both halves: the candidate's version is taken, and the release after it bumps normally.
 
 - ✅ The installers' default "latest release" lookup skips anything flagged as a pre-release on GitHub.
 	- GitHub's `releases/latest` returns the newest full release, so a pre-release-only repo resolves to the last full one - for this repo, the 2022 release.
 	- Decided: publish releases as full releases rather than adding a `--pre` flag. The semver suffix still marks a candidate for anyone reading the tag, and the one-liner installs keep working with no extra arguments.
 	- `--ref`/`-Ref` remains the way to install a specific tag or branch, and is already documented.
-
-- ✅ Code Review 20260723 item 14: bound the unconditional pre-command fetch and add an offline escape hatch (both implementations).
-	- A dead/black-holed remote blocks every command for the full TCP/ssh timeout before the "offline?" warning.
-	- Add a connect timeout on the fetch and a `--no-fetch`/offline flag.
-	- Done: ssh fetches get ConnectTimeout=3 (user GIT_SSH_COMMAND respected), and --no-fetch/-NoFetch skips the fetch entirely.
-
-- ✅ Code Review 20260723 item 15: cache per-run-constant git facts (both implementations).
-	- Measured: 12 git spawns for `status`, 45 for `land`, 55 for `release`; upstream/branch/ahead-behind re-queried repeatedly in one display block.
-	- Resolve once after the fetch, pass down; keep live re-checks only where state actually mutates. Matters most on Windows.
-	- Done: default branch and merge target now resolve once per run post-fetch; branch/upstream/ahead checks stay live since checkouts change them mid-command.
-
-- ✅ Code Review 20260723 item 16: close the test-suite gaps that hid this review's bugs.
-	- Failed-pull-with-dirty-tree, no-remote fixtures, slash branch names, `-m`/`-m=` flag forms, option-like words in messages, release from a feature branch.
-	- Done so far: failed-pull-with-dirty-tree, upstream-less land, dirty-protected-branch newbr/gobr fixtures.
-	- Done: all listed fixtures added (failed pull, no-remote sync/newbr/land, feat/x names, -m and -m= forms, option-like message words, release from a feature branch). Suite 140 -> 199 checks.
-
-- ✅ Code Review 20260723 item 17: README has no Commands/Usage section.
-	- The pitch is "Gitsby has 11" commands, but they're never listed or demonstrated. Add the help table plus a worked newbr -> update -> land example.
-	- Done: Commands section added (table of all 11, options, a typical-day flow, gh note for pr/release).
-
-- ✅ Code Review 20260723 item 19: installer checksum + version pinning - confirms the already-open installer item below.
-	- Publish SHA256SUMS from cicd, verify in both installers, allow pinning an exact tag; document that `--ref` skips verification.
-	- Done: installers verify release-asset downloads against a SHA256SUMS release asset when published (note-and-continue when absent); cicd/utility/gen-checksums.bash generates it for release cuts; --ref/-Ref pins a tag but skips verification (documented in README).
-
-- ✅ Code Review 20260723 item 20: "latest release" lookup uses the unauthenticated GitHub API (60 req/hr).
-	- Shared-NAT/CI installs will 403. Read the tag from the `releases/latest` redirect Location header instead; keep the API as fallback.
-	- Done: tag read from the releases/latest redirect (curl url_effective / wget Location / pwsh 302 handling); API scrape kept as fallback; rate-limit mentioned in the error.
-
-- ✅ Code Review 20260723 item 22: fIsAhead materializes the whole ahead-range log just to test emptiness (both implementations).
-	- Use `git rev-list -n 1 '@{u}..'` (or the cached ahead count from item 15).
-	- Done: git rev-list -n 1 in both implementations.
-
-- ✅ Code Review 20260723 item 30: needless external `head`/`wc` pipeline stages (bash).
-	- Use `mapfile -n 1` / array counts; watch the set -e empty-input gotcha noted in design.md.
-	- Done: tag lookup via mapfile -n 1; the stash wc pipelines were already removed by item 1.
-
-- ✅ Code Review 20260723 item 31: positional parameter binding in the ps1 files (style guide requires named).
-	- gitsby.ps1 one spot (`Get-Command ssh`); install.ps1 and install-dev.ps1 throughout (Join-Path, Move-Item, Test-Path, Get-Command).
-	- Done: named parameters at the flagged sites in all three ps1 files.
-
-- ✅ Code Review 20260723 item 32: no comment-based help on any gitsby.ps1 function.
-	- Either add `.SYNOPSIS` to the non-trivial functions, or scope the style-guide rule to script-level + exported functions.
-	- Done: style-guide rule scoped to script level + exported/public functions; private helpers take a terse ## comment.
-
-- ✅ Code Review 20260723 item 33: installer output ends without the trailing blank line the style guide requires (all four installers).
-	- Done: all four installers end with a blank line.
-
-- ✅ Code Review 20260723 item 34: rename fpPreview's `p` padding variable to `pad` (matches the pwsh twin).
-	- Done: renamed.
-
-- ✅ Code Review 20260723 item 35: branch-argument validation runs after the status display and confirm prompt (both implementations).
-	- `newbr` with a bad/missing name shows a nonsense plan ("git checkout -b ") and only errors after "y". Hoist checks next to the existing pr/release ones.
-	- Done: newbr/gobr arguments validate right after the release-version check, before status/preview/prompt; command functions no longer duplicate the checks. Test added.
-
-- ✅ Code Review 20260723 item 36: `gitsby help` / `gitsby version` are unknown-command errors (both implementations).
-	- Alias the bare words to the -h/-v paths; one case entry each.
-	- Done: bare words route to the same paths as -h/-v (both implementations). Tests added.
-
-- ✅ Code Review 20260723 item 37: usage errors carry "Reverse call stack: fMain()" noise (bash).
-	- Suppress the stack line for expected validation errors; keep it for real internal failures.
-	- Done: fThrowError_Usage variant skips the stack line; all user-facing validation errors use it. Real script errors keep the stack.
-
-- ✅ Code Review 20260723 item 38: accept `-y`/`--yes` as a prompt-skip alias (both implementations).
-	- Installers teach -y, gitsby only takes -q; and -q's real function is "assume yes", not quiet. Keep -q, add -y, fix the help wording.
-	- Done: -y/--yes (bash) and -y/-yes (pwsh) alias -q; help wording now says "assume yes". Test added.
 
 - ✅ CICD process (full spec in private notes):
 
@@ -388,6 +192,202 @@ In each section, items are listed approximately from newest to oldest.
 
 - ✅ Delete stale branch from 2020.
 	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
+
+#### Done - Code review 20260725
+
+- ✅ Code Review 20260725 item 1: `release` pushes only the tag when the default branch has no upstream (both implementations).
+	- The branch push is gated on an upstream; the tag push is not.
+	- Origin ends up holding the release commits as tag payload while its `main` still points at the previous release.
+	- Same shape as item 2 of the previous review, which was fixed in `land` but not here.
+	- Fixed: an upstream-less default branch is published with `git push -u origin HEAD` before the tag goes up. Regression test added.
+
+- ✅ Code Review 20260725 item 2: `release` refuses a duplicate tag only after it has already committed and pushed (both implementations).
+	- The check sat inside the command, past the plan, the confirmation, and the "park current work" step.
+	- Nothing is lost, but the run mutates the repo and then dies on something knowable up front.
+	- Fixed: the tag-exists check moved next to the version resolution, before anything is shown or run. Regression test added.
+
+- ✅ Code Review 20260725 item 3: `gobr` refuses a dirty protected branch only after the plan is confirmed (both implementations).
+	- Same class as item 2, and the same fix as code review 20260723 item 35 applied to the other branch arguments.
+	- Fixed: the refusal moved up front, alongside the other branch-argument checks. Regression test added.
+
+- ✅ Code Review 20260725 item 4: `newbr` shows a plan it does not follow when run from `main`/`dev` (both implementations).
+	- The preview always listed the commit-and-push steps, but on a protected branch the tree is carried to the new branch instead.
+	- The preview is the safety feature, so it misreporting in exactly the case that was special-cased is the wrong way round.
+	- Fixed: the plan now branches on protected state and shows the checkout-and-carry steps. Regression test added.
+
+- ✅ Code Review 20260725 item 5: `pr ok <n>` run from the branch that PR came from ends in a failed pull (both implementations).
+	- `gh` deletes the branch on the remote through the API, which leaves the local `origin/*` copy in place, so the upstream still looks alive.
+	- The trailing `git pull --ff-only` then asks for a branch the remote no longer has, and the whole command reports as failed.
+	- Fixed: prune first, and if the branch we are standing on is the one that just went away, check out the merge target and pull that instead. The plan shows the extra step. Regression test added, with the fake `gh` restoring the stale ref so the real condition is reproduced.
+
+- ✅ Code Review 20260723 item 1: `pull` failure strands the autostash (both implementations).
+	- Dirty tree gets stashed, then a failed `git pull --ff-only` (diverged or offline) aborts before `git stash pop`.
+	- Work vanishes from the tree into the stash with no message; re-runs see a clean tree and never pop it.
+	- Contradicts the "never risk losing work" promise; worst finding of the review.
+	- Fixed: replaced the manual stash dance with `git pull --ff-only --autostash`; a failed pull now leaves the tree intact. Regression test added.
+
+- ✅ Code Review 20260723 item 2: `land` can delete the remote work branch before the merge ever reaches origin (both implementations).
+	- Push of the merge is gated on the target having an upstream; the remote branch delete is not.
+	- With a local-only `dev`, the merge stays local but `git push origin --delete <branch>` still removes origin's only ref to those commits.
+	- Fixed: an upstream-less target is published first (`git push -u origin HEAD`) before the remote delete. Regression test added.
+
+- ✅ Code Review 20260723 item 3: `newbr`/`gobr` from a dirty `main`/`dev` commit and push WIP straight to the protected branch (both implementations).
+	- The "park current work" step is commit+push on whatever branch you're on - including main/dev, with an auto message in quiet mode.
+	- Contradicts the tool's own opinions ("don't push to dev, main, or master").
+	- Fixed: `newbr` carries dirty work to the new branch (no commit on the base); `gobr` refuses with guidance instead of auto-committing; sync preview now names the branch being pushed. Regression tests added.
+
+- ✅ Code Review 20260723 item 4: a commit message containing `-h`/`-v` as a word makes the bash version silently no-op with exit 0.
+	- The early help check scans the whole joined argv, so `gitsby commit "add -v flag"` prints the banner and skips the commit.
+	- Bash only; the pwsh port checks just the command slot.
+	- Fixed: -h/-v now only recognized in the command slot, matching the pwsh port. Test added.
+
+- ✅ Code Review 20260723 item 5: non-tty stdin silently auto-confirms all mutating commands (both implementations).
+	- Piped/cron/redirected input behaves as implicit `-q`: release/land/sync run with zero confirmation, even `echo n |` is ignored.
+	- Should fail closed like the installers do (require explicit flag when no tty).
+	- Fixed: mutating commands with no tty and no -q abort with guidance; read-only commands keep the implicit quiet. Tests added.
+
+- ✅ Code Review 20260723 item 6: unquoted two-word positional message silently drops the second word (both implementations).
+	- `gitsby commit Fixed bug` commits as "Fixed"; three words error but two don't.
+	- Fixed: a non-empty third positional is rejected with "quote your commit message" (both implementations). Test added.
+
+- ✅ Code Review 20260723 item 7: git failures print the raw trap dump instead of a plain error (bash).
+	- Diverged pull shows "Signal: ERR / Message: '--ff-only' / Command#: '"${@}"'" - reads as a gitsby crash.
+	- The pwsh port already prints a clean one-liner; match it.
+	- Fixed: fRun reports a plain one-liner ("'git ...' failed (exit N)") and exits; the trap dump stays for real script errors. Tests added.
+
+- ✅ Code Review 20260723 item 8: `echo -e` in fEcho_Clean expands escapes in user data (bash).
+	- Mangles commit messages/filenames in the preview; a hostile repo's filenames (raw ESC bytes, C-quoted by git) can spoof the confirm display.
+	- Switch to `printf '%s\n'`.
+	- Fixed: fEcho_Clean uses printf '%s\n'; escape bytes in user data stay inert.
+
+- ✅ Code Review 20260723 item 9: pwsh branch-name comparisons are case-insensitive.
+	- `-eq` treats 'Main' = 'main'; newbr can branch off the wrong base. Use `-ceq`/`-cne` at the seven branch compares.
+	- Fixed: -ceq/-cne at the branch compares; 'ok' and prompt answers stay case-insensitive.
+
+- ✅ Code Review 20260723 item 10: pwsh `release` crashes under strict mode when the newest v* tag isn't X.Y.Z.
+	- `v1.2` or `v2020` throws on array indexing; bash handles the same input gracefully.
+	- Fixed: split parts padded before arithmetic (v1.2 -> v1.2.1, v2020 -> v2020.0.1); bash pads the same way now too. Verified on both.
+
+- ✅ Code Review 20260723 item 11: install.ps1 downloads to a predictable temp filename.
+	- `gitsby-install-$PID.ps1` in shared temp; race window before install. install.bash already uses mktemp - mirror it.
+	- Fixed: downloads into a fresh random private subdirectory; recursive cleanup in finally.
+
+- ✅ Code Review 20260723 item 12: remote URLs print verbatim, leaking embedded credentials (both implementations).
+	- An `https://user:token@host/...` origin echoes the token on every run, including CI logs. Mask the userinfo part.
+	- Fixed: userinfo masked in the displayed URL (https://***@host) in both implementations. Tests added.
+
+- ✅ Code Review 20260723 item 13: default-branch detection trusts a possibly missing/stale local origin/HEAD (both implementations).
+	- Ref goes stale on upstream master->main renames and can be absent on git < 2.47; release then tags the wrong branch.
+	- Cheap fix: `git remote set-head origin --auto` alongside the existing fetch.
+	- Fixed: successful fetch now runs git remote set-head origin --auto, healing a missing or stale origin/HEAD; local read remains the offline fallback.
+
+- ✅ Code Review 20260723 item 18: fMustBeInPath shells out to external `which` (bash).
+	- `which` is absent on some minimal distros, making every command abort with "Not found in path: git". Use builtin `command -v`.
+	- Fixed: builtin command -v; dropped the stray second fThrowError argument.
+
+- ✅ Code Review 20260723 item 21: `pull` stashes a dirty tree before checking for an upstream (both implementations).
+	- No-upstream + dirty = pointless stash push/pop that rewrites every file's mtime. Check upstream first. (Goes away if item 1 lands as `--autostash`.)
+	- Moot: item 1's `--autostash` fix removed the manual stash entirely; no upstream now means no stash is touched at all.
+
+- ✅ Code Review 20260723 item 23: fetch without `--prune` leaves stale origin/* refs that existence checks trust (both implementations).
+	- Stale refs make gobr check out dead branches, land abort on the remote delete, newbr refuse reusable names.
+	- Fetch with `--prune`; make land's remote delete tolerant of "remote ref does not exist".
+	- Fixed: fetch uses --prune, and land's remote delete warns-and-continues instead of dying if the branch is already gone.
+
+- ✅ Code Review 20260723 item 24: pwsh skips native exit-code checks in the pr/read-only paths.
+	- `gh pr view` failure isn't caught before `gh pr diff` runs; `listbr`/`status` exit 0 even if git fails.
+	- Fixed: gh pr view checked before the diff; listbr throws on git failure.
+
+- ✅ Code Review 20260723 item 25: pwsh parses Windows drive-letter remotes (`C:\...`) as ssh hosts.
+	- Pre-flight then shows a bogus SSH identity line. Treat a single-letter-colon prefix as a path, like git does.
+	- Fixed: single-letter-colon prefixes are treated as drive paths, not ssh hosts.
+
+- ✅ Code Review 20260723 item 26: `ssh -G` called without `--` on a host string derived from .git/config (both implementations).
+	- Option-shaped "hosts" from a hostile config parse as ssh options. Currently fails closed, but add `--`.
+	- Fixed: -- added in both implementations.
+
+- ✅ Code Review 20260723 item 27: install-dev.ps1 passes an option-shaped `-Directory` straight to `git clone`.
+	- Binds as a real clone option (`--config=...`). install-dev.bash already rejects `-*`; mirror it (and/or pass `--` before the path).
+	- Fixed: option-shaped -Directory rejected, same wording as the bash guard.
+
+- ✅ Code Review 20260723 item 28: install.ps1 lacks the downloaded-content sanity check install.bash has.
+	- No shebang check before install+execute; wrong-content 200s (captive portal, truncation) get installed. Mirror the `^#!` test.
+	- Fixed: first line must match ^#! before install, mirroring install.bash.
+
+- ✅ Code Review 20260723 item 29: gitsby.ps1 sets GIT_MERGE_AUTOEDIT process-wide, persisting in the caller's pwsh session.
+	- The var is redundant anyway (merges pass `-m`); just delete the line.
+	- Fixed: line deleted (merges pass -m, so it was redundant).
+
+- ✅ Code Review 20260725 item 6: `release` with no version bumps the patch of a candidate tag's base, skipping that base version (both implementations).
+	- After `v2.0.0-rc1`, a bare `release` proposed `v2.0.1` rather than `v2.0.0`.
+	- Fixed: a candidate's own version is now what comes next, so `v2.0.0-rc1` leads to `v2.0.0`.
+	- The tag scan also needed `versionsort.suffix=-`, since git's default version sort ranks `v2.0.0-rc1` above `v2.0.0` and would otherwise propose an already-cut version once the real release exists.
+	- Regression tests cover both halves: the candidate's version is taken, and the release after it bumps normally.
+
+- ✅ Code Review 20260723 item 14: bound the unconditional pre-command fetch and add an offline escape hatch (both implementations).
+	- A dead/black-holed remote blocks every command for the full TCP/ssh timeout before the "offline?" warning.
+	- Add a connect timeout on the fetch and a `--no-fetch`/offline flag.
+	- Done: ssh fetches get ConnectTimeout=3 (user GIT_SSH_COMMAND respected), and --no-fetch/-NoFetch skips the fetch entirely.
+
+- ✅ Code Review 20260723 item 15: cache per-run-constant git facts (both implementations).
+	- Measured: 12 git spawns for `status`, 45 for `land`, 55 for `release`; upstream/branch/ahead-behind re-queried repeatedly in one display block.
+	- Resolve once after the fetch, pass down; keep live re-checks only where state actually mutates. Matters most on Windows.
+	- Done: default branch and merge target now resolve once per run post-fetch; branch/upstream/ahead checks stay live since checkouts change them mid-command.
+
+- ✅ Code Review 20260723 item 16: close the test-suite gaps that hid this review's bugs.
+	- Failed-pull-with-dirty-tree, no-remote fixtures, slash branch names, `-m`/`-m=` flag forms, option-like words in messages, release from a feature branch.
+	- Done so far: failed-pull-with-dirty-tree, upstream-less land, dirty-protected-branch newbr/gobr fixtures.
+	- Done: all listed fixtures added (failed pull, no-remote sync/newbr/land, feat/x names, -m and -m= forms, option-like message words, release from a feature branch). Suite 140 -> 199 checks.
+
+- ✅ Code Review 20260723 item 17: README has no Commands/Usage section.
+	- The pitch is "Gitsby has 11" commands, but they're never listed or demonstrated. Add the help table plus a worked newbr -> update -> land example.
+	- Done: Commands section added (table of all 11, options, a typical-day flow, gh note for pr/release).
+
+- ✅ Code Review 20260723 item 19: installer checksum + version pinning - confirms the already-open installer item below.
+	- Publish SHA256SUMS from cicd, verify in both installers, allow pinning an exact tag; document that `--ref` skips verification.
+	- Done: installers verify release-asset downloads against a SHA256SUMS release asset when published (note-and-continue when absent); cicd/utility/gen-checksums.bash generates it for release cuts; --ref/-Ref pins a tag but skips verification (documented in README).
+
+- ✅ Code Review 20260723 item 20: "latest release" lookup uses the unauthenticated GitHub API (60 req/hr).
+	- Shared-NAT/CI installs will 403. Read the tag from the `releases/latest` redirect Location header instead; keep the API as fallback.
+	- Done: tag read from the releases/latest redirect (curl url_effective / wget Location / pwsh 302 handling); API scrape kept as fallback; rate-limit mentioned in the error.
+
+- ✅ Code Review 20260723 item 22: fIsAhead materializes the whole ahead-range log just to test emptiness (both implementations).
+	- Use `git rev-list -n 1 '@{u}..'` (or the cached ahead count from item 15).
+	- Done: git rev-list -n 1 in both implementations.
+
+- ✅ Code Review 20260723 item 30: needless external `head`/`wc` pipeline stages (bash).
+	- Use `mapfile -n 1` / array counts; watch the set -e empty-input gotcha noted in design.md.
+	- Done: tag lookup via mapfile -n 1; the stash wc pipelines were already removed by item 1.
+
+- ✅ Code Review 20260723 item 31: positional parameter binding in the ps1 files (style guide requires named).
+	- gitsby.ps1 one spot (`Get-Command ssh`); install.ps1 and install-dev.ps1 throughout (Join-Path, Move-Item, Test-Path, Get-Command).
+	- Done: named parameters at the flagged sites in all three ps1 files.
+
+- ✅ Code Review 20260723 item 32: no comment-based help on any gitsby.ps1 function.
+	- Either add `.SYNOPSIS` to the non-trivial functions, or scope the style-guide rule to script-level + exported functions.
+	- Done: style-guide rule scoped to script level + exported/public functions; private helpers take a terse ## comment.
+
+- ✅ Code Review 20260723 item 33: installer output ends without the trailing blank line the style guide requires (all four installers).
+	- Done: all four installers end with a blank line.
+
+- ✅ Code Review 20260723 item 34: rename fpPreview's `p` padding variable to `pad` (matches the pwsh twin).
+	- Done: renamed.
+
+- ✅ Code Review 20260723 item 35: branch-argument validation runs after the status display and confirm prompt (both implementations).
+	- `newbr` with a bad/missing name shows a nonsense plan ("git checkout -b ") and only errors after "y". Hoist checks next to the existing pr/release ones.
+	- Done: newbr/gobr arguments validate right after the release-version check, before status/preview/prompt; command functions no longer duplicate the checks. Test added.
+
+- ✅ Code Review 20260723 item 36: `gitsby help` / `gitsby version` are unknown-command errors (both implementations).
+	- Alias the bare words to the -h/-v paths; one case entry each.
+	- Done: bare words route to the same paths as -h/-v (both implementations). Tests added.
+
+- ✅ Code Review 20260723 item 37: usage errors carry "Reverse call stack: fMain()" noise (bash).
+	- Suppress the stack line for expected validation errors; keep it for real internal failures.
+	- Done: fThrowError_Usage variant skips the stack line; all user-facing validation errors use it. Real script errors keep the stack.
+
+- ✅ Code Review 20260723 item 38: accept `-y`/`--yes` as a prompt-skip alias (both implementations).
+	- Installers teach -y, gitsby only takes -q; and -q's real function is "assume yes", not quiet. Keep -q, add -y, fix the help wording.
+	- Done: -y/--yes (bash) and -y/-yes (pwsh) alias -q; help wording now says "assume yes". Test added.
 
 ### Future and/or deferred
 
