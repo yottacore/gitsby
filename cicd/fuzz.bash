@@ -70,9 +70,18 @@ fMsgLiteral(){ local -r desc="$1"; local -r dir="$2"; local -r msg="$3"
 
 ## Confirm a PR title reaches gh verbatim - same class of bug as fMsgLiteral, on the
 ## other user-controlled value that gets handed to a native command.
+## Clone into a glob-shaped directory name: the name must land verbatim, not expand
+## against the cwd. Same bug class as fMsgLiteral, one slot deeper.
+fDirLiteral(){ local -r desc="$1"; local -r dir="$2"; local -r url="$3"; local -r name="$4"
+	rm -rf "${dir:?}/${name}"
+	fRun "${dir}" -q repo clone "${url}" "${name}"
+	if _isCrash;                         then fFail "${desc}: crashed (exit ${_code})"
+	elif [[ -d "${dir}/${name}/.git" ]]; then fOk "${desc}"
+	else fFail "${desc}: no clone at [${name}]"; fi; }
+
 fTitleLiteral(){ local -r desc="$1"; local -r dir="$2"; local -r title="$3"
 	rm -f "${ghLog}"
-	fRun "${dir}" -q pr new "${title}"
+	fRun "${dir}" -q pr create "${title}"
 	local rec; rec="$(awk '/^--title$/{getline; print; exit}' "${ghLog}" 2>/dev/null || true)"
 	if _isCrash;                   then fFail "${desc}: crashed (exit ${_code})"
 	elif [[ "${rec}" == "${title}" ]]; then fOk "${desc}"
@@ -97,6 +106,8 @@ fMakeRepo(){
 ## valid alias of 'status' and doesn't belong here.
 badCommands=( frobnicate status2 '..' './x' '123' 'a b' '-' '--' 'commit extra junk' )
 badOptions=( --bogus -x -qx '--no-fetch=1' '--=v' -Z )
+## The noun grammar put a second word in play; it gets the same treatment as the first.
+badSubcommands=( "${badCommands[@]}" 'creat' 'switchh' 'ok' 'list extra' )
 inject=( '$(touch CANARY_A)' '`touch CANARY_B`' ';touch CANARY_C' '&& touch CANARY_D'
          '| touch CANARY_E' '> CANARY_F' '$(touch CANARY_G)tail' '../CANARY_H' )
 badBranch=( "${inject[@]}" 'a..b' 'has space' '-leadingdash' 'tilde~x' 'caret^x'
@@ -134,6 +145,13 @@ GHEOF
 	local c
 	for c in "${badCommands[@]}"; do fRefuse "command refused: '${c}'" "${repo}" -q "${c}"; done
 
+	## Subcommand slot: garbage after a valid noun is refused the same way, and never reaches git.
+	local sub
+	for sub in "${badSubcommands[@]}"; do
+		fRefuse "br subcommand refused: '${sub}'"   "${repo}" -q br   "${sub}"
+		fRefuse "repo subcommand refused: '${sub}'" "${repo}" -q repo "${sub}"
+	done
+
 	## Options: unknown ones refused in either slot; valid combos accepted.
 	local o
 	for o in "${badOptions[@]}"; do
@@ -142,13 +160,13 @@ GHEOF
 	done
 	fSurvive "valid combo -q -y status"        "${repo}" -q -y status
 	fSurvive "valid combo -q --no-fetch status" "${repo}" -q --no-fetch status
-	fSurvive "valid combo -y -q listbr"        "${repo}" -y -q listbr
+	fSurvive "valid combo -y -q br list"       "${repo}" -y -q br list
 
 	## Branch names: injection + malformed refs are refused before any action.
 	local b
 	for b in "${badBranch[@]}"; do
-		fRefuse "newbr refuses: '${b}'" "${repo}" -q newbr "${b}"
-		fRefuse "gobr refuses: '${b}'"  "${repo}" -q gobr  "${b}"
+		fRefuse "br create refuses: '${b}'" "${repo}" -q br create "${b}"
+		fRefuse "br switch refuses: '${b}'" "${repo}" -q br switch "${b}"
 	done
 
 	## Commit messages: anything goes in a message, but it stays inert data. Each
@@ -172,21 +190,28 @@ GHEOF
 	for p in "${badPr[@]}";      do fRefuse "pr refuses: '${p}'"              "${repo3}" -q pr "${p}"; done
 
 	## PR titles: free text like a commit message, and it must reach gh as data, not code.
-	## Needs a branch that isn't the merge target, which is what 'pr new' proposes from.
+	## Needs a branch that isn't the merge target, which is what 'pr create' proposes from.
 	local repo4="${base}/prnew"; fMakeRepo "${repo4}"
 	( cd "${repo4}" && git checkout --quiet -b dev && git push --quiet -u origin dev \
 		&& git checkout --quiet -b feat && echo f > f.txt && git add --all && git commit --quiet -m feat )
 	local t
-	for t in "${inject[@]}"; do fSurvive "pr title inert: '${t}'" "${repo4}" -q pr new "${t}"; done
+	for t in "${inject[@]}"; do fSurvive "pr title inert: '${t}'" "${repo4}" -q pr create "${t}"; done
 	for t in '*' '*.txt' '?' 'v*'; do fTitleLiteral "pr title verbatim: '${t}'" "${repo4}" "${t}"; done
 	## Proposing from the merge target is nonsense whatever the title says.
 	( cd "${repo4}" && git checkout --quiet dev )
-	fRefuse "pr new refuses from the merge target" "${repo4}" -q pr new 'anything'
+	fRefuse "pr create refuses from the merge target" "${repo4}" -q pr create 'anything'
 	( cd "${repo4}" && git checkout --quiet feat )
+
+	## Clone url and directory are user values that reach native git. A junk url is refused
+	## (none of these is cloneable); a glob-shaped directory has to stay literal.
+	local u
+	for u in "${inject[@]}"; do fRefuse "clone url refused: '${u}'" "${repo3}" -q repo clone "${u}"; done
+	local cd_
+	for cd_ in '*' '?' 'v*' 'a b'; do fDirLiteral "clone dir verbatim: '${cd_}'" "${repo3}" "${repo3}.git" "${cd_}"; done
 
 	## Long and odd input: must not crash. Branch is refused, message accepted.
 	local long; long="$(printf 'x%.0s' {1..5000})"
-	fRefuse  "long branch refused"  "${repo3}" -q newbr "${long}"
+	fRefuse  "long branch refused"  "${repo3}" -q br create "${long}"
 	echo odd > "${repo2}/seed.txt"
 	fSurvive "long message survives" "${repo2}" -q commit "${long}"
 	echo odd2 > "${repo2}/seed.txt"
@@ -196,7 +221,7 @@ GHEOF
 	local before_head before_branch
 	before_head="$(cd "${repo}" && git rev-parse HEAD)"
 	before_branch="$(cd "${repo}" && git branch --show-current)"
-	fRun "${repo}" -q newbr 'bad:name'   ## refused
+	fRun "${repo}" -q br create 'bad:name'   ## refused
 	if [[ "$(cd "${repo}" && git rev-parse HEAD)" == "${before_head}" \
 		&& "$(cd "${repo}" && git branch --show-current)" == "${before_branch}" ]]; then
 		fOk "refused command left the repo unchanged"

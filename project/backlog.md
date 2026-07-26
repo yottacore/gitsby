@@ -51,6 +51,15 @@ In each section, items are listed approximately from newest to oldest.
 
 #### Done - Features and enhancements
 
+- ✅ Group the infrequent commands under nouns: `repo clone|create|connect`, `br list|create|switch|land`, `pr create|<n>|ok <n>`.
+	- Daily verbs stay one word. The extra word only lands where you type it rarely, and it buys a discoverable set instead of a flat list of abbreviations.
+	- One verb across all three nouns (`create`, never `new` in some places). `new` and `go` still work but aren't published.
+	- Landed before v2.0.0 on purpose: every name being changed was unreleased, so it cost nothing now and would have cost a permanent alias later.
+- ✅ Split the old `connect` into `repo create` and `repo connect`.
+	- Creating a remote is the one irreversible, outward-facing step, so it gets its own verb instead of happening as a side effect.
+	- Each refuses the other's case and names it, so a wrong guess costs one line of output.
+- ✅ Drop every pre-2.0 command alias (`scommit`, `spull`, `scompul`, `saveup`, `spush`, `mkbranch`, `chbranch`, `mtm`, `list`).
+	- v2 is a clean break under a new tool name, and not all of the old commands worked. The suite now asserts they're rejected, so none creeps back.
 - ✅ `pr new [title]` opens a pull request, so the whole PR round trip lives in gitsby instead of half in `gh`.
 	- Pushes the branch first - GitHub can only diff what the remote has.
 	- Targets `dev` when the repo has one, else the default branch. Refuses from that branch, since there is nothing to propose.

@@ -163,7 +163,7 @@ There are many implicit opinions baked in. Here are the main ones:
 
 - Commit and pull frequently (`update`); push less often (`sync`).
 
-- Uncommitted work should never block anything. A pull auto-stashes around itself, `newbr` carries uncommitted work onto the new branch, and a branch switch parks current work first (commit, pull, push - though never auto-committed onto `main`/`dev`), so nothing is ever stranded or lost.
+- Uncommitted work should never block anything. A pull auto-stashes around itself, `br create` carries uncommitted work onto the new branch, and a branch switch parks current work first (commit, pull, push - though never auto-committed onto `main`/`dev`), so nothing is ever stranded or lost.
 
 - Every branch tracks a same-named branch on `origin`, from the moment it's created.
 
@@ -175,39 +175,40 @@ There are many implicit opinions baked in. Here are the main ones:
 
 ## Commands
 
-The same 13 commands, in both implementations:
+What you reach for daily is one word. Everything else is grouped under a noun, so the whole set is discoverable from three starting points. `repository` and `branch` spell out if you prefer them.
 
 | Command              | Args          | What it does
 | :--                  | :--           | :--
-| `clone`              | `<url> [dir]` | Clone a repo you don't have yet (checks out `dev` if it has one). Re-run is a no-op.
-| `connect`            | `[target]`    | Connect local work to a remote and push it: `git init` if needed, commit, push. Takes a URL to an existing empty remote, or `owner/name` to create the GitHub repo via [gh](https://github.com/cli/cli) (`--public`/`--private`; private by default).
 | `update`             | `[msg]`       | Commit all local changes and pull updates. Do frequently!
-| `newbr`              | `<branch>`    | Create a new branch off `dev`/`main` (carries current uncommitted work to it).
-| `gobr`               | `[branch]`    | Switch to a branch (parks current work first). No arg: back to `dev`/`main`.
-| `status`             |               | Fetch and show current status.
-| `listbr`             |               | Fetch and list branches.
 | `sync`               | `[msg]`       | Commit, pull, and push. Do infrequently.
 | `pull`               |               | Pull only (auto-stashes around it if dirty).
 | `commit`             | `[msg]`       | Commit all local changes (without pull).
-| `land`               | `[msg]`       | Merge the current branch into `dev`/`main` (`--no-ff`), push, delete it local + remote.
-| `pr`                 |               | Lists PRs via [gh](https://github.com/cli/cli).
-| `pr`                 | `<#>`         | View a PR plus its diff.
-| `pr new`             | `[title]`     | Push the current branch and open a PR against `dev`/`main` (no title: the last commit subject).
-| `pr ok`              | `<#>`         | Approve and merge a PR.
+| `status`             |               | Fetch and show current status.
 | `release`            | `[ver]`       | Cut a release: merge `dev` into `main`, tag, push. No version: bump the patch.
+| `br`                 |               | Fetch and list branches (`br list` is the same thing).
+| `br create`          | `<branch>`    | Create a new branch off `dev`/`main` (carries current uncommitted work to it).
+| `br switch`          | `[branch]`    | Switch to a branch (parks current work first). No arg: back to `dev`/`main`.
+| `br land`            | `[msg]`       | Merge the current branch into `dev`/`main` (`--no-ff`), push, delete it local + remote.
+| `repo clone`         | `<url> [dir]` | Clone a repo you don't have yet (checks out `dev` if it has one). Re-run is a no-op.
+| `repo create`        | `<owner/name>`| Create the GitHub repo via [gh](https://github.com/cli/cli), then `git init` if needed, commit, and push (`--public`/`--private`; private by default).
+| `repo connect`       | `[target]`    | Publish local work to a remote that already exists and is empty: `git init` if needed, commit, push. Takes a URL or `owner/name`.
+| `pr`                 |               | Lists PRs via [gh](https://github.com/cli/cli).
+| `pr <#>`             |               | View a PR plus its diff.
+| `pr create`          | `[title]`     | Push the current branch and open a PR against `dev`/`main` (no title: the last commit subject).
+| `pr ok`              | `<#>`         | Approve and merge a PR.
 
 Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--no-fetch` (skip the pre-command fetch), `-h`, `-v`.
 
 A typical day:
 
 ~~~text
-gitsby clone git@github.com:you/proj.git   # day zero: get the repo
-                          # (or: gitsby connect you/proj - publish work that only exists locally)
-gitsby newbr featx        # branch off dev (or main), publish it
+gitsby repo clone git@github.com:you/proj.git   # day zero: get the repo
+                             # (or: gitsby repo create you/proj - publish work that only exists locally)
+gitsby br create featx       # branch off dev (or main), publish it
 ...hack hack hack...
-gitsby update "wip"       # commit + pull; do this all day long
-gitsby sync               # also push, when ready to share
-gitsby land "add featx"   # merge into dev (--no-ff), push, delete the branch
+gitsby update "wip"          # commit + pull; do this all day long
+gitsby sync                  # also push, when ready to share
+gitsby br land "add featx"   # merge into dev (--no-ff), push, delete the branch
 ~~~
 
 Every mutating command fetches first, shows the repo state (including who you'd act as on the remote) and the exact git commands it's about to run, and asks before touching anything. `pr` and `release` close the loop: review/accept the pull request, then cut a tagged release from `dev`.

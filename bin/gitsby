@@ -45,26 +45,27 @@ fAbout(){ { ((doQuietly)) || ((wasShown_About)); } && return; wasShown_About=1;
 fSyntax(){ { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax=1;
 	fEcho_Clean ""
 	fEcho_Clean "Common commands:"
-	fEcho_Clean "  update [msg] ...: Commit all local changes and pull updates. Do frequently!"
-	fEcho_Clean "  newbr <branch> .: Create a new branch off ${mergeTargetLabel} (parks current work first)."
-	fEcho_Clean "  gobr [branch] ..: Switch to a branch (parks current work first). No arg: back to ${mergeTargetLabel}."
-	fEcho_Clean "  status .........: Fetch and show current status."
-	fEcho_Clean "  listbr .........: Fetch and list branches."
+	fEcho_Clean "  update [msg] .......: Commit all local changes and pull updates. Do frequently!"
+	fEcho_Clean "  br create <branch> .: Create a new branch off ${mergeTargetLabel} (parks current work first)."
+	fEcho_Clean "  br switch [branch] .: Switch to a branch (parks current work first). No arg: back to ${mergeTargetLabel}."
+	fEcho_Clean "  br [list] ..........: Fetch and list branches."
+	fEcho_Clean "  status .............: Fetch and show current status."
 	fEcho_Clean "One-time setup commands:"
-	fEcho_Clean "  clone <url> ....: Clone a repo you don't have yet, into [dir] (checks out dev if it has one)."
-	fEcho_Clean "  connect [target]: Connect this directory to a remote and push. 'owner/name' creates the GitHub repo via gh if needed."
+	fEcho_Clean "  repo clone <url> ...: Clone a repo you don't have yet, into [dir] (checks out dev if it has one)."
+	fEcho_Clean "  repo create <o/n> ..: Create GitHub repo 'owner/name' via gh, then connect this directory and push."
+	fEcho_Clean "  repo connect [url] .: Connect this directory to an existing empty remote, and push."
 	fEcho_Clean "Less common commands:"
-	fEcho_Clean "  sync [msg] .....: Commit, pull, and push. Do infrequently."
-	fEcho_Clean "  pull ...........: Pull only (auto-stashes around it if dirty)."
-	fEcho_Clean "  commit [msg] ...: Commit all local changes (without pull)."
+	fEcho_Clean "  sync [msg] .........: Commit, pull, and push. Do infrequently."
+	fEcho_Clean "  pull ...............: Pull only (auto-stashes around it if dirty)."
+	fEcho_Clean "  commit [msg] .......: Commit all local changes (without pull)."
 	fEcho_Clean "Admin commands, e.g. for small solo projects:"
-	fEcho_Clean "  land [msg] .....: Merge current branch into ${mergeTargetLabel} (--no-ff), push, delete it local + remote."
-	fEcho_Clean "  pr [new|n|ok n].: Create, list, review, or accept a pull request (needs gh)."
-	fEcho_Clean "  release [ver] ..: Cut a release: merge dev into main, tag, push. No ver: bump patch."
+	fEcho_Clean "  br land [msg] ......: Merge current branch into ${mergeTargetLabel} (--no-ff), push, delete it local + remote."
+	fEcho_Clean "  pr [create|n|ok n] .: Create, list, review, or accept a pull request (needs gh)."
+	fEcho_Clean "  release [ver] ......: Cut a release: merge dev into main, tag, push. No ver: bump patch."
 	fEcho_Clean "Options:"
 	fEcho_Clean "  -m, --message MSG ....: Commit or merge message (or give it positionally)."
 	fEcho_Clean "  -q, --quiet, -y ......: Assume yes - no prompts; if committing with no message, one is generated."
-	fEcho_Clean "  --public / --private .: Visibility when connect creates a GitHub repo (default: private)."
+	fEcho_Clean "  --public / --private .: Visibility for the repo 'repo create' makes (default: private)."
 	fEcho_Clean "  --no-fetch ...........: Skip the pre-command fetch (offline, or a slow remote)."
 	fEcho_Clean "  -h, --help  /  -v, --version"
 	fEcho_Clean "" ;:;}
@@ -92,45 +93,64 @@ fMain(){
 	fMustBeInPath git
 
 	## Arguments
-	local cmdName=""        ## positional 1
-	local cmdArg=""         ## positional 2: message, branch name, version, or PR number, depending on command
-	local cmdArg2=""        ## positional 3: PR number ('pr ok <n>') or title ('pr new <title>')
+	local cmdName=""        ## positional 1: flat command, or the noun of a grouped one
+	local cmdArg=""         ## positional 2: subcommand for a grouped noun, else message/branch/version/PR number
+	local cmdArg2=""        ## positional 3
+	local cmdArg3=""        ## positional 4: only 'repo clone <url> [dir]' goes this deep
 	local commitMessage=""  ## may be set by fParseArgs (-m/--message/--msg)
 	local -i doFetch=1      ## cleared by --no-fetch
-	local repoVisibility="private"  ## --public/--private, for connect's gh-create path
+	local repoVisibility="private"  ## --public/--private, for 'repo create'
 	local defaultBranchCache=""; local mergeTargetCache=""  ## per-run constants, filled post-fetch
 	local -i inRepo=0
 	local cloneUrl=""; local cloneDir=""
-	local connectMode=""; local connectUrl=""; local ghTarget=""  ## resolved by the connect validation
-	local -ri parseArgs_maxPositionalArgCount=3
+	local connectMode=""; local connectUrl=""; local ghTarget=""  ## resolved by the repo create/connect validation
+	local -ri parseArgs_maxPositionalArgCount=4
 	fParseArgs "${@}"
 	cmdName="${cmdName,,}"
 
-	## Old command names still work as hidden aliases (muscle memory), but stay out of the help.
+	## Grouped commands are '<noun> <verb> [args]'. Collapse each pair to one internal token and
+	## shift the positionals down, so everything downstream still deals with a single flat name.
+	## No real command has a hyphen, so rejecting one keeps the internal tokens from being typeable.
+	[[ "${cmdName}" == *-* ]] && fThrowError_Usage "Unknown command '${cmdName}'. Run '${meName}' with no arguments for a list."
 	case "${cmdName}" in
-		scommit)  cmdName="commit" ;;
-		spull)    cmdName="pull"   ;;
-		scompul)  cmdName="update" ;;
-		saveup)   cmdName="update" ;;
-		spush)    cmdName="sync"   ;;
-		mkbranch) cmdName="newbr"  ;;
-		chbranch) cmdName="gobr"   ;;
-		mtm)      cmdName="land"   ;;
-		list)     cmdName="listbr" ;;
+		repo|repository)
+			case "${cmdArg,,}" in
+				clone)       cmdName="repo-clone"   ;;
+				create|new)  cmdName="repo-create"  ;;
+				connect)     cmdName="repo-connect" ;;
+				"")          fThrowError_Usage "Syntax: ${meName} repo <clone <url> [dir] | create <owner/name> | connect [url]>" ;;
+				*)           fThrowError_Usage "Unknown 'repo' subcommand '${cmdArg}'. One of: clone, create, connect." ;;
+			esac
+			cmdArg="${cmdArg2}"; cmdArg2="${cmdArg3}"; cmdArg3=""
+			;;
+		br|branch)
+			case "${cmdArg,,}" in
+				""|list)     cmdName="br-list"   ;;
+				create|new)  cmdName="br-create" ;;
+				switch|go)   cmdName="br-switch" ;;
+				land)        cmdName="br-land"   ;;
+				*)           fThrowError_Usage "Unknown 'br' subcommand '${cmdArg}'. One of: list, create, switch, land." ;;
+			esac
+			cmdArg="${cmdArg2}"; cmdArg2="${cmdArg3}"; cmdArg3=""
+			;;
 	esac
 
 	## Sort commands, and route positional arg 2 (message vs branch name; -m wins for messages).
 	local isMutating=1
 	case "${cmdName}" in
-		status|listbr)           isMutating=0 ;;
-		pr)                      [[ "${cmdArg,,}" =~ ^(ok|new)$ ]] || isMutating=0 ;;
-		commit|update|sync|land)
+		status|br-list)          isMutating=0 ;;
+		pr)                      [[ "${cmdArg,,}" =~ ^(ok|create|new)$ ]] || isMutating=0 ;;
+		commit|update|sync|br-land)
 			[[ -z "${commitMessage}" ]] && commitMessage="${cmdArg}"
 			[[ -n "${cmdArg2}" ]] && fThrowError_Usage "Unexpected extra argument '${cmdArg2}'; quote your commit message."
 			;;
-		pull|newbr|gobr|release|clone|connect) : ;;
+		repo-clone) : ;;  ## the only one with a second argument of its own (the target directory)
+		pull|br-create|br-switch|release|repo-create|repo-connect)
+			[[ -n "${cmdArg2}" ]] && fThrowError_Usage "Unexpected extra argument '${cmdArg2}'."
+			;;
 		*) fThrowError_Usage "Unknown command '${cmdName}'. Run '${meName}' with no arguments for a list." ;;
 	esac
+	[[ -n "${cmdArg3}" ]] && fThrowError_Usage "Unexpected extra argument '${cmdArg3}'."
 
 	## No tty = nobody to answer a prompt. Read-only commands just go quiet; mutating
 	## ones fail closed (require an explicit -q) so piped/cron input can't silently auto-confirm.
@@ -149,27 +169,28 @@ fMain(){
 				prNum="${cmdArg2}"
 				[[ "${prNum}" =~ ^[0-9]+$ ]] || fThrowError_Usage "Syntax: ${meName} pr ok <number>"
 				;;
-			new)
-				prSub="new"
+			create|new)
+				prSub="create"
 				prTitle="${commitMessage:-${cmdArg2}}"  ## -m wins, same as everywhere else
 				;;
 			"") : ;;
 			*)
 				prNum="${cmdArg}"
-				[[ "${prNum}" =~ ^[0-9]+$ ]] || fThrowError_Usage "Syntax: ${meName} pr [new [title] | <number> | ok <number>]"
+				[[ "${prNum}" =~ ^[0-9]+$ ]] || fThrowError_Usage "Syntax: ${meName} pr [create [title] | <number> | ok <number>]"
 				;;
 		esac
 	fi
 
-	## Every command needs a repo - except clone (works anywhere) and connect (a plain directory is the point).
+	## Every command needs a repo - except the repo ones: clone works anywhere, and create/connect
+	## exist precisely to turn a plain directory into one.
 	if git rev-parse --is-inside-work-tree &>/dev/null; then inRepo=1; fi
-	if ((! inRepo)) && [[ "${cmdName}" != "clone" && "${cmdName}" != "connect" ]]; then
+	if ((! inRepo)) && [[ "${cmdName}" != repo-* ]]; then
 		fThrowError_Usage "Not inside a git repository. Change to a git project directory first."
 	fi
 
 	## Freshen remote refs so status/ahead-behind info is current. Never fatal - offline still works locally.
 	## clone skips it: cwd may sit inside some unrelated repo, and the clone doesn't care about it.
-	if ((doFetch)) && [[ "${cmdName}" != "clone" ]] && git remote get-url origin &>/dev/null; then
+	if ((doFetch)) && [[ "${cmdName}" != "repo-clone" ]] && git remote get-url origin &>/dev/null; then
 		fEcho "git fetch ..."
 		fpFetchRemote
 	fi
@@ -199,35 +220,35 @@ fMain(){
 				fThrowError_Usage "'${prBranch}' has changes that aren't on origin, so PR #${prNum} can't include them. Run '${meName} sync' first."
 			fi
 		else
-			[[ "${prBranch}" != "$(fMergeTarget)" && "${prBranch}" != "$(fDefaultBranch)" ]] || fThrowError_Usage "'${prBranch}' is what pull requests merge into; there is nothing to propose. Start a branch first: ${meName} newbr <name>"
+			[[ "${prBranch}" != "$(fMergeTarget)" && "${prBranch}" != "$(fDefaultBranch)" ]] || fThrowError_Usage "'${prBranch}' is what pull requests merge into; there is nothing to propose. Start a branch first: ${meName} br create <name>"
 			## No title given: the last commit subject is what the work is called already.
 			[[ -n "${prTitle}" ]] || prTitle="$(git log -1 --pretty=%s 2>/dev/null || true)"
 			[[ -n "${prTitle}" ]] || fThrowError_Usage "No commits on '${prBranch}' yet; nothing to propose."
-			## An open PR for this branch already is the answer to 'pr new' - say so instead of letting gh error.
+			## An open PR for this branch already is the answer to 'pr create' - say so instead of letting gh error.
 			local existingPr=""; existingPr="$(gh pr list --head "${prBranch}" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)"
 			[[ -n "${existingPr}" ]] && fThrowError_Usage "PR #${existingPr} is already open for '${prBranch}'. View it: ${meName} pr ${existingPr}"
 		fi
 	fi
 
 	## Branch arguments validate up front too, so a bad name can't survive to a nonsense preview.
-	if [[ "${cmdName}" == "newbr" ]]; then
-		[[ -n "${cmdArg}" ]] || fThrowError_Usage "No branch name given. Syntax: ${meName} newbr <new branch name>"
+	if [[ "${cmdName}" == "br-create" ]]; then
+		[[ -n "${cmdArg}" ]] || fThrowError_Usage "No branch name given. Syntax: ${meName} br create <new branch name>"
 		git check-ref-format --branch "${cmdArg}" >/dev/null 2>&1 || fThrowError_Usage "'${cmdArg}' is not a valid branch name."
-		fBranchExistsLocal  "${cmdArg}" && fThrowError_Usage "Branch '${cmdArg}' already exists; use: ${meName} gobr ${cmdArg}"
-		fBranchExistsRemote "${cmdArg}" && fThrowError_Usage "Branch '${cmdArg}' already exists on origin; use: ${meName} gobr ${cmdArg}"
-	elif [[ "${cmdName}" == "gobr" ]]; then
-		[[ -z "${cmdArg}" ]] || fBranchExistsLocal "${cmdArg}" || fBranchExistsRemote "${cmdArg}" || fThrowError_Usage "No branch '${cmdArg}' locally or on origin. To create it: ${meName} newbr ${cmdArg}"
+		fBranchExistsLocal  "${cmdArg}" && fThrowError_Usage "Branch '${cmdArg}' already exists; use: ${meName} br switch ${cmdArg}"
+		fBranchExistsRemote "${cmdArg}" && fThrowError_Usage "Branch '${cmdArg}' already exists on origin; use: ${meName} br switch ${cmdArg}"
+	elif [[ "${cmdName}" == "br-switch" ]]; then
+		[[ -z "${cmdArg}" ]] || fBranchExistsLocal "${cmdArg}" || fBranchExistsRemote "${cmdArg}" || fThrowError_Usage "No branch '${cmdArg}' locally or on origin. To create it: ${meName} br create ${cmdArg}"
 		## Refusing a dirty protected branch belongs here too, before the plan is shown and confirmed.
-		local gobrTarget="${cmdArg}"
-		[[ -n "${gobrTarget}" ]] || gobrTarget="$(fMergeTarget)"
-		if [[ "$(fCurrentBranch)" != "${gobrTarget}" ]] && fIsProtectedBranch && [[ -n "$(git status --porcelain 2>/dev/null || true)" ]]; then
-			fThrowError_Usage "Working tree has changes on '$(fCurrentBranch)'; won't auto-commit to a protected branch. Carry them to a new branch (${meName} newbr <name>), or commit deliberately (${meName} commit) first."
+		local switchTarget="${cmdArg}"
+		[[ -n "${switchTarget}" ]] || switchTarget="$(fMergeTarget)"
+		if [[ "$(fCurrentBranch)" != "${switchTarget}" ]] && fIsProtectedBranch && [[ -n "$(git status --porcelain 2>/dev/null || true)" ]]; then
+			fThrowError_Usage "Working tree has changes on '$(fCurrentBranch)'; won't auto-commit to a protected branch. Carry them to a new branch (${meName} br create <name>), or commit deliberately (${meName} commit) first."
 		fi
 	fi
 
-	## clone: derive the target dir, and make re-runs a no-op instead of an error.
-	if [[ "${cmdName}" == "clone" ]]; then
-		[[ -n "${cmdArg}" ]] || fThrowError_Usage "No URL given. Syntax: ${meName} clone <url> [directory]"
+	## repo clone: derive the target dir, and make re-runs a no-op instead of an error.
+	if [[ "${cmdName}" == "repo-clone" ]]; then
+		[[ -n "${cmdArg}" ]] || fThrowError_Usage "No URL given. Syntax: ${meName} repo clone <url> [directory]"
 		cloneUrl="${cmdArg}"
 		cloneDir="${cmdArg2}"
 		if [[ -z "${cloneDir}" ]]; then
@@ -247,42 +268,55 @@ fMain(){
 		fi
 	fi
 
-	## connect: resolve what we're connecting to before the preview, so the plan is real.
-	if [[ "${cmdName}" == "connect" ]]; then
+	## repo create/connect: resolve what we're publishing to before the preview, so the plan is real.
+	## Same machinery, one difference - only 'create' will bring a remote into existence.
+	if [[ "${cmdName}" == "repo-create" || "${cmdName}" == "repo-connect" ]]; then
+		local -i wantCreate=0; [[ "${cmdName}" == "repo-create" ]] && wantCreate=1
 		local -i hasWork=0
 		if ((inRepo)); then
 			if git rev-parse -q --verify HEAD &>/dev/null || [[ -n "$(git status --porcelain 2>/dev/null || true)" ]]; then hasWork=1; fi
 		elif [[ -n "$(ls -A 2>/dev/null)" ]]; then
 			hasWork=1
 		fi
-		((hasWork)) || fThrowError_Usage "Nothing to connect here: no commits and no files."
+		((hasWork)) || fThrowError_Usage "Nothing to publish here: no commits and no files."
 		local originUrl=""
 		((inRepo)) && originUrl="$(git remote get-url origin 2>/dev/null || true)"
 		if [[ -n "${originUrl}" ]]; then
+			((wantCreate)) && fThrowError_Usage "origin is already set to '$(fMaskUrl "${originUrl}")', so there is no repo left to create. Push what you have with: ${meName} repo connect"
 			[[ -z "${cmdArg}" || "${cmdArg}" == "${originUrl}" ]] || fThrowError_Usage "origin is already set to '$(fMaskUrl "${originUrl}")'; changing remotes is raw-git territory."
 			connectMode="push"; connectUrl="${originUrl}"
+		elif ((wantCreate)); then
+			[[ -n "${cmdArg}" ]] || fThrowError_Usage "No target given. Syntax: ${meName} repo create <owner/name>"
+			[[ "${cmdArg}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ && ! -e "${cmdArg}" ]] || fThrowError_Usage "'${cmdArg}' isn't a GitHub 'owner/name'; only GitHub repos can be created from here. For a remote that already exists: ${meName} repo connect ${cmdArg}"
+			fMustBeInPath gh
+			ghTarget="${cmdArg}"
+			case "$(gh repo view "${ghTarget}" --json isEmpty --jq .isEmpty 2>/dev/null || true)" in
+				"")     connectMode="create" ;;
+				true)   fThrowError_Usage "github.com/${ghTarget} already exists and is empty; connect to it instead: ${meName} repo connect ${ghTarget}" ;;
+				*)      fThrowError_Usage "github.com/${ghTarget} already has commits; clone it instead (${meName} repo clone), or reconcile with raw git." ;;
+			esac
 		else
-			[[ -n "${cmdArg}" ]] || fThrowError_Usage "No remote configured and no target given. Syntax: ${meName} connect <url | owner/name>"
+			[[ -n "${cmdArg}" ]] || fThrowError_Usage "No remote configured and no target given. Syntax: ${meName} repo connect <url | owner/name>"
 			if [[ "${cmdArg}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ && ! -e "${cmdArg}" ]]; then
-				## owner/name shorthand: the gh path - create the repo if it doesn't exist yet.
+				## owner/name shorthand: gh can say whether it exists and whether it's empty.
 				fMustBeInPath gh
 				ghTarget="${cmdArg}"
 				local isEmpty=""
 				isEmpty="$(gh repo view "${ghTarget}" --json isEmpty --jq .isEmpty 2>/dev/null || true)"
 				if [[ -z "${isEmpty}" ]]; then
-					connectMode="create"
+					fThrowError_Usage "github.com/${ghTarget} doesn't exist, or you can't see it. To create it: ${meName} repo create ${ghTarget}"
 				elif [[ "${isEmpty}" == "true" ]]; then
 					local ghProto=""
 					ghProto="$(gh config get -h github.com git_protocol 2>/dev/null || true)"
 					if [[ "${ghProto}" == "ssh" ]]; then connectUrl="git@github.com:${ghTarget}.git"; else connectUrl="https://github.com/${ghTarget}.git"; fi
 					connectMode="add"
 				else
-					fThrowError_Usage "github.com/${ghTarget} already has commits; clone it instead (${meName} clone), or reconcile with raw git."
+					fThrowError_Usage "github.com/${ghTarget} already has commits; clone it instead (${meName} repo clone), or reconcile with raw git."
 				fi
 			else
 				case "$(fpProbeRemote "${cmdArg}")" in
-					missing)  fThrowError_Usage "Can't reach '${cmdArg}' (doesn't exist, or no access). Create it first, or use '${meName} connect owner/name' to create it on GitHub via gh." ;;
-					nonempty) fThrowError_Usage "'$(fMaskUrl "${cmdArg}")' already has history; clone it instead (${meName} clone ${cmdArg}), or reconcile with raw git." ;;
+					missing)  fThrowError_Usage "Can't reach '$(fMaskUrl "${cmdArg}")' (doesn't exist, or no access). Create it first, or on GitHub: ${meName} repo create <owner/name>" ;;
+					nonempty) fThrowError_Usage "'$(fMaskUrl "${cmdArg}")' already has history; clone it instead (${meName} repo clone ${cmdArg}), or reconcile with raw git." ;;
 					empty)    connectMode="add"; connectUrl="${cmdArg}" ;;
 				esac
 			fi
@@ -292,17 +326,17 @@ fMain(){
 	## Read-only commands
 	if ((! isMutating)); then
 		case "${cmdName}" in
-			status) fpShowStatus 1 ;;
-			listbr) fEcho "git branch -a -vv"; git branch -a -vv; fEcho_ResetBlankCounter ;;
-			pr)     fCmdPrView "${prNum}" ;;
+			status)  fpShowStatus 1 ;;
+			br-list) fEcho "git branch -a -vv"; git branch -a -vv; fEcho_ResetBlankCounter ;;
+			pr)      fCmdPrView "${prNum}" ;;
 		esac
 		fEcho_Clean ""
 		return 0
 	fi
 
 	## Mutating commands: show state and plan, confirm, execute, show state again.
-	## clone and connect-from-a-plain-dir have no repo state to show; a smaller header stands in.
-	if [[ "${cmdName}" == "clone" ]]; then
+	## clone, and create/connect from a plain dir, have no repo state to show; a smaller header stands in.
+	if [[ "${cmdName}" == "repo-clone" ]]; then
 		fEcho_Clean ""
 		fEcho_Clean "Directory ....: ${PWD}"
 		fEcho_Clean "Remote .......: $(fMaskUrl "${cloneUrl}")"
@@ -329,21 +363,21 @@ fMain(){
 	fi
 
 	case "${cmdName}" in
-		commit)  fCmdCommit ;;
-		pull)    fCmdPull ;;
-		update)  fCmdCommitPull ;;
-		sync)    fCmdPush ;;
-		newbr)   fCmdNewBranch "${cmdArg}" ;;
-		gobr)    fCmdGoBranch "${cmdArg}" ;;
-		land)    fCmdLand ;;
-		pr)      if [[ "${prSub}" == "new" ]]; then fCmdPrCreate "${prTitle}"; else fCmdPrAccept "${prNum}"; fi ;;
-		release) fCmdRelease ;;
-		clone)   fCmdClone ;;
-		connect) fCmdConnect ;;
+		commit)                   fCmdCommit ;;
+		pull)                     fCmdPull ;;
+		update)                   fCmdCommitPull ;;
+		sync)                     fCmdPush ;;
+		br-create)                fCmdNewBranch "${cmdArg}" ;;
+		br-switch)                fCmdGoBranch "${cmdArg}" ;;
+		br-land)                  fCmdLand ;;
+		pr)                       if [[ "${prSub}" == "create" ]]; then fCmdPrCreate "${prTitle}"; else fCmdPrAccept "${prNum}"; fi ;;
+		release)                  fCmdRelease ;;
+		repo-clone)               fCmdClone ;;
+		repo-create|repo-connect) fCmdConnect ;;
 	esac
 
 	fEcho_Clean ""
-	if [[ "${cmdName}" == "clone" ]]; then
+	if [[ "${cmdName}" == "repo-clone" ]]; then
 		fEcho "Cloned into '${cloneDir}'."  ## the after-status would show the wrong (current) directory
 	else
 		fpShowStatus
@@ -437,7 +471,7 @@ fCmdLand(){
 	## Merges the current branch into dev (or main/master) - backwards from 'git merge', but saves a step.
 	local -r targetBranch="$(fMergeTarget)"
 	local -r workBranch="$(fCurrentBranch)"
-	[[ "${workBranch}" != "${targetBranch}" ]] || fThrowError_Usage "Already on '${targetBranch}'. Run this from the branch to merge in: ${meName} gobr <branch>, then ${meName} land"
+	[[ "${workBranch}" != "${targetBranch}" ]] || fThrowError_Usage "Already on '${targetBranch}'. Run this from the branch to merge in: ${meName} br switch <branch>, then ${meName} br land"
 	[[ "${workBranch}" != "$(fDefaultBranch)" ]] || fThrowError_Usage "'${workBranch}' is the default branch; landing it on '${targetBranch}' is backwards. To cut a release: ${meName} release"
 	local mergeMessage="${commitMessage}"
 	[[ -n "${mergeMessage}" ]] || mergeMessage="Merge ${workBranch}"
@@ -469,6 +503,7 @@ fCmdClone(){
 	fi
 :;}
 
+## Serves both 'repo create' and 'repo connect'; connectMode is what they disagree about.
 fCmdConnect(){
 	((inRepo)) || fRun git init -b main
 	fCmdCommit  ## publish everything as-is; no-op when clean
@@ -505,7 +540,7 @@ fCmdPrView(){
 :;}
 
 fCmdPrCreate(){
-	## GitHub can only diff what origin has, so park the work first - same as land and release do.
+	## GitHub can only diff what origin has, so park the work first - same as br land and release do.
 	local -r title="${1:-}"
 	fCmdPush
 	fRun gh pr create --base "$(fMergeTarget)" --head "$(fCurrentBranch)" --title "${title}" --body ""
@@ -816,7 +851,7 @@ fpPreview(){
 			fpPreview update
 			fEcho_Clean "${pad}git push (branch '$(fCurrentBranch)') *"
 			;;
-		newbr)
+		br-create)
 			## From main/dev the dirty tree rides along to the new branch, so there's no commit here.
 			if fIsProtectedBranch; then
 				fEcho_Clean "${pad}git checkout $(fMergeTarget) *"
@@ -829,12 +864,12 @@ fpPreview(){
 			fEcho_Clean "${pad}git checkout -b ${cmdArg}"
 			fEcho_Clean "${pad}git push -u origin ${cmdArg} *"
 			;;
-		gobr)
+		br-switch)
 			fpPreview sync
 			fEcho_Clean "${pad}git checkout ${cmdArg:-$(fMergeTarget)}"
 			fEcho_Clean "${pad}git pull --ff-only *"
 			;;
-		land)
+		br-land)
 			fpPreview sync
 			fEcho_Clean "${pad}git checkout $(fMergeTarget)"
 			fEcho_Clean "${pad}git pull --ff-only *"
@@ -844,11 +879,11 @@ fpPreview(){
 			fEcho_Clean "${pad}git push origin --delete $(fCurrentBranch) *"
 			fEcho_Clean "${pad}git pull --ff-only *"
 			;;
-		clone)
+		repo-clone)
 			fEcho_Clean "${pad}git clone $(fMaskUrl "${cloneUrl}") ${cloneDir}"
 			fEcho_Clean "${pad}git -C ${cloneDir} checkout dev *"
 			;;
-		connect)
+		repo-create|repo-connect)
 			((inRepo)) || fEcho_Clean "${pad}git init -b main"
 			fpPreview commit
 			case "${connectMode}" in
@@ -865,7 +900,7 @@ fpPreview(){
 			esac
 			;;
 		pr)
-			if [[ "${prSub}" == "new" ]]; then
+			if [[ "${prSub}" == "create" ]]; then
 				fpPreview sync
 				fEcho_Clean "${pad}gh pr create --base $(fMergeTarget) --title \"${prTitle}\""
 			else
@@ -986,6 +1021,7 @@ fParseArgs(){
 					1) cmdName="${currentArg}" ;;
 					2) cmdArg="${currentArg}"  ;;
 					3) cmdArg2="${currentArg}" ;;
+					4) cmdArg3="${currentArg}" ;;
 					*) fThrowError "Unexpected positional argument # ${positionalArgCounter}: '${currentArg}'." ;;
 				esac
 
@@ -1182,3 +1218,7 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##		- 20260726 JC:
 ##			- Added 'pr new [title]': parks the work, then opens a PR against the merge target. No title given, the last commit subject is used; an already-open PR for the branch reports its number instead of erroring.
 ##			- pr ok refuses a dirty tree or unpushed commits. gh's --delete-branch drops the branch local and remote, so anything not on origin was outside both the PR and the merge.
+##		- 20260726 JC:
+##			- Regrouped the infrequent commands under nouns: newbr/gobr/listbr/land -> br create/switch/list/land, clone/connect -> repo clone/connect, pr new -> pr create. 'repository'/'branch' spell out; 'new'/'go' stay as hidden subcommand aliases.
+##			- Split the old connect in two: 'repo create <owner/name>' is the only thing that will bring a remote into existence, and 'repo connect' now refuses a target that doesn't exist yet.
+##			- Dropped every pre-v2 command alias (scommit, spull, scompul, saveup, spush, mkbranch, chbranch, mtm, list). v2 is a clean break, under a new name.

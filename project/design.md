@@ -57,19 +57,28 @@ The two files are ports of each other. A change to one nearly always belongs in 
 
 ## Direction decisions
 
-- Getting connected is two commands, not one overloaded one: `clone` (get an existing repo) and `connect` (publish local-only work). The mental models are opposite, and a single command inferring direction from directory state could silently do the wrong thing in the wrong directory.
-	- Both use the same preview-then-confirm flow as every other mutating command.
-	- `connect` refuses remotes that already have history rather than auto-merging: forgiving means not destroying either side. Reconciling unrelated histories stays raw-git territory.
-	- `owner/name` targets go through gh (create if missing, honoring gh's git_protocol setting); plain URLs never touch gh.
+- The command set is split by how often you type it. Daily verbs stay one word (`update`, `sync`, `commit`, `pull`, `status`, `release`); everything else is grouped under a noun (`repo`, `br`, `pr`).
+	- Among the options considered, we decided the extra word is worth it for infrequent commands. It buys discoverability - three nouns to explore instead of a flat list to memorize - and it retires mashed-together abbreviations like `newbr`/`gobr`/`listbr`.
+	- One verb per action across all three nouns: `create`, not `create` in one place and `new` in another. `new` and `go` still work as unpublished spellings, because they are what fingers reach for.
+	- `repository` and `branch` are accepted in full. Only the short forms are published, so the help stays scannable.
+	- Internally each noun/verb pair collapses to a single token, so the rest of the program still deals with one flat command name. Tokens carry a hyphen, which no typed command may, so they cannot be invoked directly.
 
-- Pull requests are one command with subcommands (`pr`, `pr new`, `pr <n>`, `pr ok <n>`) rather than separate top-level verbs.
-	- Among the options considered, this keeps the command count at 13 and puts everything about a PR in one place to look.
-	- `pr new` defaults its title to the last commit subject. The alternative, requiring a title, was rejected as inconsistent with `commit`/`update`/`sync`, which all generate a message when none is given. The preview shows the resolved title before the prompt, so a bad default is visible rather than surprising.
+- Getting connected is three commands, not one overloaded one: `repo clone` (get an existing repo), `repo create` (make the remote, then publish to it), and `repo connect` (publish to a remote that already exists). The mental models differ, and a single command inferring intent from directory and remote state could silently do the wrong thing in the wrong directory.
+	- All three use the same preview-then-confirm flow as every other mutating command.
+	- Creating a remote is the one irreversible, outward-facing thing here, so it was given its own verb rather than left as a side effect of connecting. `repo connect` now refuses a target that doesn't exist and names `repo create`; `repo create` refuses one that does and names `repo connect`.
+	- `repo connect` refuses remotes that already have history rather than auto-merging: forgiving means not destroying either side. Reconciling unrelated histories stays raw-git territory.
+	- `owner/name` targets go through gh (honoring gh's git_protocol setting); plain URLs never touch gh, and can only be connected to, never created.
+
+- Pull requests are subcommands of one noun (`pr`, `pr create`, `pr <n>`, `pr ok <n>`) rather than separate top-level verbs.
+	- This puts everything about a PR in one place to look, and matches how `repo` and `br` group.
+	- `pr create` defaults its title to the last commit subject. The alternative, requiring a title, was rejected as inconsistent with `commit`/`update`/`sync`, which all generate a message when none is given. The preview shows the resolved title before the prompt, so a bad default is visible rather than surprising.
+
+- The pre-2.0 command names were dropped outright rather than kept as hidden aliases. Version 2 is a deliberate break, the tool is invoked by a different name than it was, and not all of the old commands worked. Carrying dead spellings forward would have been the worst of both.
 
 - Commands that hand a branch to someone else's deletion must park work first.
 	- `gh pr merge --delete-branch` removes the branch local and remote. Anything not pushed is outside the pull request, so merging it would drop that work from the branch it lived on.
 	- We decided `pr ok` refuses rather than auto-pushing. Pushing and immediately merging would land commits nobody reviewed, which defeats the point of proposing a change for review.
-	- `pr new` is the opposite case and does park work automatically: publishing is the whole intent, and nothing is being deleted.
+	- `pr create` is the opposite case and does park work automatically: publishing is the whole intent, and nothing is being deleted.
 
 ## Architecture
 

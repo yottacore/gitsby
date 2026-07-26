@@ -40,8 +40,8 @@ pause = 2.2
 [[step]]
 clear = true
 note  = "New branch - uncommitted work comes along"
-show  = "{prog} newbr add-retries"
-run   = "cd /tmp/gitsby-demo/acme-api && source /tmp/gitsby-demo/demo.env && {bin} newbr add-retries -y"
+show  = "{prog} br create add-retries"
+run   = "cd /tmp/gitsby-demo/acme-api && source /tmp/gitsby-demo/demo.env && {bin} br create add-retries -y"
 pause = 2.0
 
 [[step]]
@@ -68,6 +68,6 @@ pause = 2.0
 [[step]]
 clear = true
 note  = "Ship it: merge back, push, delete the branch"
-show  = "{prog} land \"Add retries\""
-run   = "cd /tmp/gitsby-demo/acme-api && source /tmp/gitsby-demo/demo.env && {bin} land \"Add retries\" -y"
+show  = "{prog} br land \"Add retries\""
+run   = "cd /tmp/gitsby-demo/acme-api && source /tmp/gitsby-demo/demo.env && {bin} br land \"Add retries\" -y"
 pause = 3.0

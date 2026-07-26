@@ -21,7 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Notes
 
 - First release since 2022, and a rewrite rather than an update.
-- Most commands were renamed. The old names all still work, so existing habits and scripts keep running.
+- Commands were reorganized, and the pre-2.0 names are gone. The tool is also invoked by a new name, so nothing that worked before was silently changed underneath you.
 - Gitsby now ships in two languages, Bash and PowerShell, with the same commands and the same behavior in each.
 
 ### Added
@@ -29,9 +29,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - PowerShell version, `bin/gitsby.ps1`, for Windows and anywhere else PowerShell 7 runs.
 - Installers for both versions, `install.bash` and `install.ps1`, run straight from a shell one-liner. Each shows its plan and asks first, installs for you or system-wide, and checks the download against the release checksums.
 - Setup scripts for contributors, `install-dev.bash` and `install-dev.ps1`: clone the repo, switch to `dev`, and check the tooling.
-- `clone` command: get a repo you don't have yet. Derives the directory from the URL, checks out `dev` when the repo has one, and re-running it is a no-op.
-- `connect` command: publish work that only exists locally. Initializes the repo if needed, commits, and pushes - to an existing empty remote by URL, or creates the GitHub repo via `gh` for an `owner/name` target (`--public`/`--private`; private by default). Refuses remotes that already have history, and won't change an existing origin.
-- `pr` command: open a pull request (`pr new`), list open ones, view one with its diff, or accept one (approve + merge + branch delete), via `gh`. `pr new` pushes the current branch first, targets `dev` when the repo has one, and titles the PR from the last commit subject unless you give a title.
+- `repo clone` command: get a repo you don't have yet. Derives the directory from the URL, checks out `dev` when the repo has one, and re-running it is a no-op.
+- `repo create` command: make the GitHub repo and publish to it in one step. Takes an `owner/name` target, creates it via `gh` (`--public`/`--private`; private by default), then initializes, commits, and pushes.
+- `repo connect` command: publish local-only work to a remote that already exists and is empty, by URL or `owner/name`. Initializes the repo if needed, commits, and pushes. Refuses remotes that already have history, remotes that don't exist yet (that's `repo create`), and won't change an existing origin.
+- `pr` command: open a pull request (`pr create`), list open ones, view one with its diff, or accept one (approve + merge + branch delete), via `gh`. `pr create` pushes the current branch first, targets `dev` when the repo has one, and titles the PR from the last commit subject unless you give a title.
 - `release` command: merge dev into main `--no-ff` (when the repo has a dev branch), tag, and push. With no version given, bumps the patch of the latest `v*` tag.
 - Pre-flight display, before the confirmation prompt on every mutating command (and on `status`): the SSH identity a push or fetch will present (host aliases resolved to the real host, user, and key), the author that will be stamped on commits, ahead/behind counts, and the files a pull would bring in.
 - `--no-fetch` to skip the fetch that every command starts with, for working offline.
@@ -40,11 +41,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- Renamed commands: `scompul`->`update`, `spush`->`sync`, `scommit`->`commit`, `spull`->`pull`, `mkbranch`->`newbr`, `chbranch`->`gobr`, `list`->`listbr`, `mtm`->`land`. The old names still work (as does the interim name `saveup`).
-- `newbr`, `gobr`, and `land` now branch off / land on `dev` when the repo has one, else the default branch. `land` refuses to run from the default branch.
+- Commands you reach for daily stay one word: `update`, `sync`, `commit`, `pull`, `status`, `release`. The rest are grouped under a noun - `repo clone` / `repo create` / `repo connect`, `br` / `br create` / `br switch` / `br land`, and `pr` / `pr create` / `pr <n>` / `pr ok <n>`. `repository` and `branch` spell out if you prefer.
+- The pre-2.0 command names (`scompul`, `spush`, `scommit`, `spull`, `mkbranch`, `chbranch`, `list`, `mtm`) were removed rather than aliased. Not all of them worked, and 2.0 is a clean break under a new tool name.
+- `br create`, `br switch`, and `br land` branch off / land on `dev` when the repo has one, else the default branch. `br land` refuses to run from the default branch.
 - `pull` no longer risks stranding your work. A pull that can't fast-forward leaves the working tree exactly as it found it.
-- `newbr` carries uncommitted work onto the new branch instead of committing it to `main`/`dev` first. `gobr` refuses and says what to do instead.
-- `land` publishes an unpushed target branch before deleting the branch it merged, so the work always reaches the remote first.
+- `br create` carries uncommitted work onto the new branch instead of committing it to `main`/`dev` first. `br switch` refuses and says what to do instead.
+- `br land` publishes an unpushed target branch before deleting the branch it merged, so the work always reaches the remote first.
 - `release` now fast-forwards dev to main afterward, so dev includes the release merge and tag. If dev gained commits mid-release, the fast-forward is skipped with a warning instead of discarding anything.
 - `pr ok` refuses when the current branch has uncommitted changes or commits that never reached the remote. Merging deletes the branch, and anything only local would be outside both the pull request and the merge.
 - Mutating commands refuse to run without a terminal unless you pass `-q`/`-y`, so a piped or scheduled run can't silently confirm itself.
@@ -55,7 +57,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Removed
 
-- The old command names are no longer listed in help. They still work.
+- Every pre-2.0 command name. See the reorganization note above.
 
 ### Other work
 

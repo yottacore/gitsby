@@ -72,10 +72,21 @@ fRunSuite(){
 	fAssertFail "unknown option rejected"      bash -c "cd '${cloneA}' && '${gitsby}' -q status --bogus"
 	fAssertFail "outside a repo rejected"      bash -c "cd '${work}' && '${gitsby}' -q status"
 
+	## Grouped-noun grammar: spelled-out nouns, hidden verb aliases, and refusals
+	fAssert     "'branch' spells out 'br'"        bash -c "cd '${cloneA}' && '${gitsby}' -q branch list"
+	fAssert     "'br new' aliases 'br create'"    bash -c "cd '${cloneA}' && '${gitsby}' -q br new grammar1 && git -C '${cloneA}' branch --show-current | grep -qx grammar1"
+	fAssert     "'br go' aliases 'br switch'"     bash -c "cd '${cloneA}' && '${gitsby}' -q br go main && git -C '${cloneA}' branch --show-current | grep -qx main"
+	fAssertFail "unknown br subcommand rejected"   bash -c "cd '${cloneA}' && '${gitsby}' -q br frobnicate"
+	fAssertFail "unknown repo subcommand rejected" bash -c "cd '${cloneA}' && '${gitsby}' -q repo frobnicate"
+	fAssertFail "bare 'repo' rejected"             bash -c "cd '${cloneA}' && '${gitsby}' -q repo"
+	fAssertFail "internal token not typeable"      bash -c "cd '${cloneA}' && '${gitsby}' -q br-create nope"
+	fAssertFail "extra positional rejected"        bash -c "cd '${cloneA}' && '${gitsby}' -q br switch main extra"
+	( cd "${cloneA}" && git branch -D grammar1 >/dev/null 2>&1; git push --quiet origin --delete grammar1 2>/dev/null || true )
+
 	## Read-only commands
 	fAssert "status runs"  bash -c "cd '${cloneA}' && '${gitsby}' -q status"
-	fAssert "listbr runs"  bash -c "cd '${cloneA}' && '${gitsby}' -q listbr"
-	fAssert "old alias 'list' still works"  bash -c "cd '${cloneA}' && '${gitsby}' -q list"
+	fAssert "br list runs"  bash -c "cd '${cloneA}' && '${gitsby}' -q br list"
+	fAssertFail "dropped v1 alias 'list' rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q list"
 
 	## Pre-flight display: who we act as, and a compact list of what changes
 	fAssertOut "status names the commit author"  'Author \.+:'            bash -c "cd '${cloneA}' && '${gitsby}' -q status"
@@ -92,13 +103,13 @@ fRunSuite(){
 	fAssert "commit message recorded"          bash -c "cd '${cloneA}' && git log -1 --format=%s | grep -qx 'add file2'"
 	fAssert "commit again (nothing to do) ok"  bash -c "cd '${cloneA}' && '${gitsby}' -q commit 'noop'"
 	( cd "${cloneA}" && echo alias > alias.txt )
-	fAssert "old alias 'scommit' still works"  bash -c "cd '${cloneA}' && '${gitsby}' -q scommit 'via alias'"
+	fAssertFail "dropped v1 alias 'scommit' rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q scommit 'via alias'"
 
-	## update: commit + pull in one; old name still works
+	## update: commit + pull in one
 	( cd "${cloneA}" && echo upd > upd.txt )
 	fAssert "update commits and pulls"        bash -c "cd '${cloneA}' && '${gitsby}' -q update 'add upd'"
 	fAssert "worktree clean after update"     bash -c "cd '${cloneA}' && [[ -z \"\$(git status --porcelain)\" ]]"
-	fAssert "old alias 'saveup' still works"  bash -c "cd '${cloneA}' && '${gitsby}' -q saveup"
+	fAssertFail "dropped v1 alias 'saveup' rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q saveup"
 
 	## sync: publishes; remote matches local
 	fAssert "sync runs"            bash -c "cd '${cloneA}' && '${gitsby}' -q sync 'push file2'"
@@ -123,55 +134,55 @@ fRunSuite(){
 
 	## newbr: branches off default, publishes with upstream; dirty work on the
 	## protected base is carried to the new branch, never committed to the base
-	fAssert "newbr feat"             bash -c "cd '${cloneA}' && '${gitsby}' -q newbr feat"
+	fAssert "br create feat"             bash -c "cd '${cloneA}' && '${gitsby}' -q br create feat"
 	fAssert "now on feat"            bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == feat ]]"
 	fAssert "feat has upstream"      bash -c "cd '${cloneA}' && git rev-parse --abbrev-ref 'feat@{u}' >/dev/null"
 	fAssert "dirty edit carried uncommitted"  bash -c "cd '${cloneA}' && grep -q dirty file1.txt && ! git diff --quiet"
 	fAssert "no WIP commit on main"  bash -c "cd '${cloneA}' && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]] && ! git show main:file1.txt | grep -q dirty"
 	( cd "${cloneA}" && git add --all && git commit --quiet -m "carried" )
-	fAssertFail "newbr existing name rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q newbr feat"
-	fAssertFail "newbr bad name rejected"       bash -c "cd '${cloneA}' && '${gitsby}' -q newbr 'bad name'"
-	fAssertFail "newbr no name rejected"        bash -c "cd '${cloneA}' && '${gitsby}' -q newbr"
-	fAssertNotOut "bad branch arg dies before the preview"  'Going to do'  bash -c "cd '${cloneA}' && '${gitsby}' -q newbr 'bad name'"
+	fAssertFail "br create existing name rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q br create feat"
+	fAssertFail "br create bad name rejected"       bash -c "cd '${cloneA}' && '${gitsby}' -q br create 'bad name'"
+	fAssertFail "br create no name rejected"        bash -c "cd '${cloneA}' && '${gitsby}' -q br create"
+	fAssertNotOut "bad branch arg dies before the preview"  'Going to do'  bash -c "cd '${cloneA}' && '${gitsby}' -q br create 'bad name'"
 
 	## gobr: switch back and forth; bogus target rejected
-	fAssert "gobr (default: main)"  bash -c "cd '${cloneA}' && '${gitsby}' -q gobr"
+	fAssert "br switch (default: main)"  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch"
 	fAssert "now on main"           bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == main ]]"
-	fAssert "gobr feat"             bash -c "cd '${cloneA}' && '${gitsby}' -q gobr feat"
+	fAssert "br switch feat"             bash -c "cd '${cloneA}' && '${gitsby}' -q br switch feat"
 	fAssert "back on feat"          bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == feat ]]"
-	fAssertFail "gobr nonexistent rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q gobr nosuch"
+	fAssertFail "br switch nonexistent rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch nosuch"
 
 	## gobr refuses to auto-commit WIP sitting on a protected branch, before showing a plan
 	( cd "${cloneA}" && git checkout --quiet main && echo wip >> file2.txt )
-	fAssertFail   "gobr from dirty main refuses"           bash -c "cd '${cloneA}' && '${gitsby}' -q gobr feat"
-	fAssertNotOut "and dies before the preview"  'Going to do'  bash -c "cd '${cloneA}' && '${gitsby}' -q gobr feat"
+	fAssertFail   "br switch from dirty main refuses"           bash -c "cd '${cloneA}' && '${gitsby}' -q br switch feat"
+	fAssertNotOut "and dies before the preview"  'Going to do'  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch feat"
 	fAssert "wip left uncommitted on main"      bash -c "cd '${cloneA}' && ! git diff --quiet && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]]"
 	## newbr carries that same tree instead, so its plan must not promise a commit on main
-	fAssertNotOut "newbr from main previews no commit"  'git add --all'  bash -c "cd '${cloneA}' && '${gitsby}' -q newbr wipcarry"
+	fAssertNotOut "br create from main previews no commit"  'git add --all'  bash -c "cd '${cloneA}' && '${gitsby}' -q br create wipcarry"
 	fAssert "wip carried to the new branch"  bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == wipcarry ]] && ! git diff --quiet"
 	( cd "${cloneA}" && git checkout --quiet -- file2.txt && git checkout --quiet feat
 	  git branch --quiet -D wipcarry && git push --quiet origin --delete wipcarry )
 
 	## land: merge feat into main --no-ff, then delete it local + remote
 	( cd "${cloneA}" && echo feat > feat.txt )
-	fAssert "land merges feat into main"  bash -c "cd '${cloneA}' && '${gitsby}' -q land 'merge feat work'"
+	fAssert "br land merges feat into main"  bash -c "cd '${cloneA}' && '${gitsby}' -q br land 'merge feat work'"
 	fAssert "now on main after land"      bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == main ]]"
 	fAssert "merge commit is --no-ff"     bash -c "cd '${cloneA}' && git log -1 --merges --format=%s | grep -qx 'merge feat work'"
 	fAssert "feat deleted locally"        bash -c "cd '${cloneA}' && ! git show-ref --verify --quiet refs/heads/feat"
 	fAssert "feat deleted on origin"      bash -c "cd '${origin}' && ! git show-ref --verify --quiet refs/heads/feat"
 	fAssert "main pushed after land"      bash -c "cd '${cloneA}' && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]]"
-	fAssertFail "land from main rejected" bash -c "cd '${cloneA}' && '${gitsby}' -q land"
+	fAssertFail "br land from main rejected" bash -c "cd '${cloneA}' && '${gitsby}' -q br land"
 
 	## dev-aware targeting: with a dev branch, newbr bases off dev and land merges to dev
 	( cd "${cloneA}" && git checkout --quiet -b dev && git push --quiet -u origin dev )
-	fAssert "newbr feat2 bases off dev"   bash -c "cd '${cloneA}' && '${gitsby}' -q newbr feat2 && [[ \"\$(git merge-base feat2 dev)\" == \"\$(git rev-parse dev)\" ]]"
+	fAssert "br create feat2 bases off dev"   bash -c "cd '${cloneA}' && '${gitsby}' -q br create feat2 && [[ \"\$(git merge-base feat2 dev)\" == \"\$(git rev-parse dev)\" ]]"
 	( cd "${cloneA}" && echo feat2 > feat2.txt )
-	fAssert "land merges feat2 into dev"  bash -c "cd '${cloneA}' && '${gitsby}' -q land 'merge feat2 work'"
+	fAssert "br land merges feat2 into dev"  bash -c "cd '${cloneA}' && '${gitsby}' -q br land 'merge feat2 work'"
 	fAssert "now on dev after land"       bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == dev ]]"
 	fAssert "feat2 landed on dev not main"  bash -c "cd '${cloneA}' && [[ -f feat2.txt ]] && ! git ls-tree --name-only main | grep -qx feat2.txt"
-	fAssert "gobr with no arg goes to dev"  bash -c "cd '${cloneA}' && '${gitsby}' -q gobr main && '${gitsby}' -q gobr && [[ \"\$(git branch --show-current)\" == dev ]]"
-	fAssertFail "land from dev rejected"    bash -c "cd '${cloneA}' && '${gitsby}' -q land"
-	fAssertFail "land from main rejected (dev repo)"  bash -c "cd '${cloneA}' && '${gitsby}' -q gobr main && '${gitsby}' -q land; rc=\$?; git checkout --quiet dev; exit \$rc"
+	fAssert "br switch with no arg goes to dev"  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch main && '${gitsby}' -q br switch && [[ \"\$(git branch --show-current)\" == dev ]]"
+	fAssertFail "br land from dev rejected"    bash -c "cd '${cloneA}' && '${gitsby}' -q br land"
+	fAssertFail "br land from main rejected (dev repo)"  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch main && '${gitsby}' -q br land; rc=\$?; git checkout --quiet dev; exit \$rc"
 
 	## release: merge dev into main, tag, push; then auto-bump patch on the next one
 	fAssert "release 1.2.3 runs"        bash -c "cd '${cloneA}' && '${gitsby}' -q release 1.2.3"
@@ -195,12 +206,12 @@ fRunSuite(){
 	fAssert "the next release bumps off the full version, not the candidate"  bash -c "cd '${cloneA}' && '${gitsby}' -q release && git rev-parse -q --verify refs/tags/v1.3.1 >/dev/null"
 
 	## release started from a feature branch returns there; slash branch names work
-	fAssert "newbr relfeat"  bash -c "cd '${cloneA}' && '${gitsby}' -q newbr relfeat"
+	fAssert "br create relfeat"  bash -c "cd '${cloneA}' && '${gitsby}' -q br create relfeat"
 	( cd "${cloneA}" && echo rel > rel.txt )
 	fAssert "release from a feature branch runs"  bash -c "cd '${cloneA}' && '${gitsby}' -q release"
 	fAssert "returns to the feature branch"       bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == relfeat ]]"
-	fAssert "newbr with a slash name"  bash -c "cd '${cloneA}' && '${gitsby}' -q newbr feat/x && [[ \"\$(git branch --show-current)\" == feat/x ]]"
-	fAssert "gobr back to dev"         bash -c "cd '${cloneA}' && '${gitsby}' -q gobr && [[ \"\$(git branch --show-current)\" == dev ]]"
+	fAssert "br create with a slash name"  bash -c "cd '${cloneA}' && '${gitsby}' -q br create feat/x && [[ \"\$(git branch --show-current)\" == feat/x ]]"
+	fAssert "br switch back to dev"         bash -c "cd '${cloneA}' && '${gitsby}' -q br switch && [[ \"\$(git branch --show-current)\" == dev ]]"
 
 	## Detached HEAD guard
 	fAssertFail "mutating command on detached HEAD rejected"  bash -c "cd '${cloneA}' && git checkout --quiet HEAD~0 --detach && '${gitsby}' -q commit x"
@@ -252,7 +263,7 @@ fRunSuite(){
 		git checkout --quiet -b feat9; git push --quiet -u origin feat9
 		echo work > w.txt; git add --all; git commit --quiet -m "work"; git push --quiet
 	)
-	fAssert "land with upstream-less dev runs"      bash -c "cd '${c2}' && '${gitsby}' -q land 'merge feat9'"
+	fAssert "br land with upstream-less dev runs"      bash -c "cd '${c2}' && '${gitsby}' -q br land 'merge feat9'"
 	fAssert "merge reached origin (dev published)"  bash -c "cd '${o2}' && git show-ref --verify --quiet refs/heads/dev && git ls-tree --name-only dev | grep -qx w.txt"
 	fAssert "feat9 deleted on origin after publish" bash -c "cd '${o2}' && ! git show-ref --verify --quiet refs/heads/feat9"
 
@@ -286,20 +297,20 @@ fRunSuite(){
 	## clone: derives the dir, checks out dev when the repo has one, no-op re-run, collision guards
 	local cl="${work}/$1-clone"
 	mkdir -p "${cl}"
-	fAssert "clone runs"                bash -c "cd '${cl}' && '${gitsby}' -q clone '${origin}' cl1"
-	fAssert "clone checked out dev"     bash -c "cd '${cl}/cl1' && [[ \"\$(git branch --show-current)\" == dev ]]"
-	fAssert "clone again (already cloned) ok"  bash -c "cd '${cl}' && '${gitsby}' -q clone '${origin}' cl1"
-	fAssert "clone derives dir from url"       bash -c "cd '${cl}' && '${gitsby}' -q clone '${origin}' && [[ -d origin/.git ]]"
-	fAssertFail "clone into non-empty dir rejected"  bash -c "cd '${cl}' && mkdir -p other && touch other/x && '${gitsby}' -q clone '${origin}' other"
-	fAssertFail "clone with no url rejected"         bash -c "cd '${cl}' && '${gitsby}' -q clone"
+	fAssert "repo clone runs"                bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${origin}' cl1"
+	fAssert "repo clone checked out dev"     bash -c "cd '${cl}/cl1' && [[ \"\$(git branch --show-current)\" == dev ]]"
+	fAssert "repo clone again (already cloned) ok"  bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${origin}' cl1"
+	fAssert "repo clone derives dir from url"       bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${origin}' && [[ -d origin/.git ]]"
+	fAssertFail "repo clone into non-empty dir rejected"  bash -c "cd '${cl}' && mkdir -p other && touch other/x && '${gitsby}' -q repo clone '${origin}' other"
+	fAssertFail "repo clone with no url rejected"         bash -c "cd '${cl}' && '${gitsby}' -q repo clone"
 	## a repo without dev stays on the default branch; a pre-existing empty dir is fine; a clone of a different url is refused
 	local o3="${cl}/nodev.git"
 	git init --quiet --bare -b main "${o3}"
 	git clone --quiet "${o3}" "${cl}/nodev-seed" 2>/dev/null
 	( cd "${cl}/nodev-seed" && echo n > n.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main )
-	fAssert "clone of a no-dev repo stays on default"  bash -c "cd '${cl}' && '${gitsby}' -q clone '${o3}' nd && [[ \"\$(cd nd && git branch --show-current)\" == main ]]"
-	fAssert "clone into a pre-existing empty dir"      bash -c "cd '${cl}' && mkdir -p pre && '${gitsby}' -q clone '${origin}' pre && [[ -d pre/.git ]]"
-	fAssertFail "clone over a different-url clone refused"  bash -c "cd '${cl}' && '${gitsby}' -q clone '${o3}' cl1"
+	fAssert "repo clone of a no-dev repo stays on default"  bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${o3}' nd && [[ \"\$(cd nd && git branch --show-current)\" == main ]]"
+	fAssert "repo clone into a pre-existing empty dir"      bash -c "cd '${cl}' && mkdir -p pre && '${gitsby}' -q repo clone '${origin}' pre && [[ -d pre/.git ]]"
+	fAssertFail "repo clone over a different-url clone refused"  bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${o3}' cl1"
 
 	## connect: publish a local-only repo to a fresh empty remote; idempotent; guards
 	local cn="${work}/$1-connect"
@@ -307,33 +318,33 @@ fRunSuite(){
 	git init --quiet --bare -b main "${cn}/remote.git"
 	git init --quiet -b main "${cn}/proj"
 	( cd "${cn}/proj" && echo hi > hi.txt && git add --all && git commit --quiet -m "init" )
-	fAssert "connect pushes to an empty remote"  bash -c "cd '${cn}/proj' && '${gitsby}' -q connect '${cn}/remote.git'"
+	fAssert "repo connect pushes to an empty remote"  bash -c "cd '${cn}/proj' && '${gitsby}' -q repo connect '${cn}/remote.git'"
 	fAssert "remote got the commit"              bash -c "cd '${cn}/remote.git' && git ls-tree --name-only main | grep -qx hi.txt"
-	fAssert "connect set the upstream"           bash -c "cd '${cn}/proj' && git rev-parse --abbrev-ref '@{u}' >/dev/null"
-	fAssert "connect again (nothing to do) ok"   bash -c "cd '${cn}/proj' && '${gitsby}' -q connect"
-	fAssert "connect commits then pushes new work"  bash -c "cd '${cn}/proj' && echo more > more.txt && '${gitsby}' -q connect && cd '${cn}/remote.git' && git ls-tree --name-only main | grep -qx more.txt"
-	fAssertFail "connect different url rejected"    bash -c "cd '${cn}/proj' && '${gitsby}' -q connect '${cn}/other.git'"
+	fAssert "repo connect set the upstream"           bash -c "cd '${cn}/proj' && git rev-parse --abbrev-ref '@{u}' >/dev/null"
+	fAssert "repo connect again (nothing to do) ok"   bash -c "cd '${cn}/proj' && '${gitsby}' -q repo connect"
+	fAssert "repo connect commits then pushes new work"  bash -c "cd '${cn}/proj' && echo more > more.txt && '${gitsby}' -q repo connect && cd '${cn}/remote.git' && git ls-tree --name-only main | grep -qx more.txt"
+	fAssertFail "repo connect different url rejected"    bash -c "cd '${cn}/proj' && '${gitsby}' -q repo connect '${cn}/other.git'"
 
 	## connect from a plain directory: init + commit + push in one
 	git init --quiet --bare -b main "${cn}/remote2.git"
 	mkdir -p "${cn}/plain"; echo data > "${cn}/plain/data.txt"
-	fAssert "connect from a non-repo dir"  bash -c "cd '${cn}/plain' && '${gitsby}' -q connect '${cn}/remote2.git'"
+	fAssert "repo connect from a non-repo dir"  bash -c "cd '${cn}/plain' && '${gitsby}' -q repo connect '${cn}/remote2.git'"
 	fAssert "plain dir now a pushed repo"  bash -c "cd '${cn}/plain' && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]]"
 
 	## connect refuses remotes with history, unreachable remotes, and empty dirs
 	git init --quiet -b main "${cn}/proj2"
 	( cd "${cn}/proj2" && echo x > x.txt && git add --all && git commit --quiet -m "x" )
-	fAssertFail "connect to nonempty remote rejected"  bash -c "cd '${cn}/proj2' && '${gitsby}' -q connect '${cn}/remote2.git'"
-	fAssertFail "connect to missing remote rejected"   bash -c "cd '${cn}/proj2' && '${gitsby}' -q connect '${cn}/nosuch.git'"
-	fAssertFail "connect in an empty dir rejected"     bash -c "mkdir -p '${cn}/empty' && cd '${cn}/empty' && '${gitsby}' -q connect '${cn}/remote.git'"
+	fAssertFail "repo connect to nonempty remote rejected"  bash -c "cd '${cn}/proj2' && '${gitsby}' -q repo connect '${cn}/remote2.git'"
+	fAssertFail "repo connect to missing remote rejected"   bash -c "cd '${cn}/proj2' && '${gitsby}' -q repo connect '${cn}/nosuch.git'"
+	fAssertFail "repo connect in an empty dir rejected"     bash -c "mkdir -p '${cn}/empty' && cd '${cn}/empty' && '${gitsby}' -q repo connect '${cn}/remote.git'"
 	## an inited repo with no commit and no files is nothing to connect; a matching explicit url re-connects fine (push mode)
 	git init --quiet -b main "${cn}/bare-repo"
-	fAssertFail "connect an empty inited repo rejected"  bash -c "cd '${cn}/bare-repo' && '${gitsby}' -q connect '${cn}/remote.git'"
-	fAssert "connect accepts a matching explicit url"    bash -c "cd '${cn}/proj' && '${gitsby}' -q connect '${cn}/remote.git'"
+	fAssertFail "repo connect an empty inited repo rejected"  bash -c "cd '${cn}/bare-repo' && '${gitsby}' -q repo connect '${cn}/remote.git'"
+	fAssert "repo connect accepts a matching explicit url"    bash -c "cd '${cn}/proj' && '${gitsby}' -q repo connect '${cn}/remote.git'"
 
-	## connect owner/name: the gh path, driven by a deterministic fake gh (no network). Covers repo
-	## create (repo absent), remote-add (repo present but empty, https + ssh protocols), and the
-	## refuse-nonempty guard. Add-mode github URLs are rewritten onto a local bare via insteadOf so
+	## owner/name targets: the gh path, driven by a deterministic fake gh (no network). Covers
+	## 'repo create' (repo absent), 'repo connect' remote-add (present but empty, https + ssh),
+	## the refuse-nonempty guard, and the create/connect division of labour. Add-mode github URLs are rewritten onto a local bare via insteadOf so
 	## the push lands offline; create-mode wiring is done inside the stub.
 	local gh="${work}/$1-gh"
 	mkdir -p "${gh}/bin"
@@ -365,31 +376,42 @@ GHEOF
 
 	## create: repo doesn't exist yet -> gitsby inits + commits, the stub creates and pushes
 	mkdir -p "${gh}/create"; echo c > "${gh}/create/c.txt"
-	fAssert "connect owner/name creates a missing repo"  bash -c "cd '${gh}/create' && PATH='${ghp}' FAKE_GH_VIEW=notfound FAKE_GH_REMOTE='${gh}/created.git' FAKE_GH_LOG='${gh}/create.log' '${gitsby}' -q connect me/proj"
+	fAssert "repo create makes a missing repo"  bash -c "cd '${gh}/create' && PATH='${ghp}' FAKE_GH_VIEW=notfound FAKE_GH_REMOTE='${gh}/created.git' FAKE_GH_LOG='${gh}/create.log' '${gitsby}' -q repo create me/proj"
 	fAssert "created repo got the commit"                bash -c "cd '${gh}/created.git' && git ls-tree --name-only main | grep -qx c.txt"
 	fAssert "create defaulted to a private repo"         bash -c "grep -q -- '--private' '${gh}/create.log'"
 	mkdir -p "${gh}/pub"; echo p > "${gh}/pub/p.txt"
 	if [[ "$1" == "bash" ]]; then  ## visibility flag spelled per implementation
-		fAssert "connect --public creates a public repo"  bash -c "cd '${gh}/pub' && PATH='${ghp}' FAKE_GH_VIEW=notfound FAKE_GH_REMOTE='${gh}/pub.git' FAKE_GH_LOG='${gh}/pub.log' '${gitsby}' -q --public connect me/proj && grep -q -- '--public' '${gh}/pub.log'"
+		fAssert "repo create --public makes a public repo"  bash -c "cd '${gh}/pub' && PATH='${ghp}' FAKE_GH_VIEW=notfound FAKE_GH_REMOTE='${gh}/pub.git' FAKE_GH_LOG='${gh}/pub.log' '${gitsby}' -q --public repo create me/proj && grep -q -- '--public' '${gh}/pub.log'"
 	else
-		fAssert "connect -Public creates a public repo"   bash -c "cd '${gh}/pub' && PATH='${ghp}' FAKE_GH_VIEW=notfound FAKE_GH_REMOTE='${gh}/pub.git' FAKE_GH_LOG='${gh}/pub.log' '${gitsby}' -q -Public connect me/proj && grep -q -- '--public' '${gh}/pub.log'"
+		fAssert "repo create -Public makes a public repo"   bash -c "cd '${gh}/pub' && PATH='${ghp}' FAKE_GH_VIEW=notfound FAKE_GH_REMOTE='${gh}/pub.git' FAKE_GH_LOG='${gh}/pub.log' '${gitsby}' -q -Public repo create me/proj && grep -q -- '--public' '${gh}/pub.log'"
 	fi
 
 	## add: repo exists but is empty -> gitsby builds the URL from git_protocol and pushes to it
 	git init --quiet --bare -b main "${gh}/backing-https.git"
 	printf '[url "%s"]\n\tinsteadOf = https://github.com/me/proj.git\n' "${gh}/backing-https.git" > "${gh}/gc-https"
 	mkdir -p "${gh}/add-https"; ( cd "${gh}/add-https" && git init --quiet -b main && echo h > h.txt && git add --all && git commit --quiet -m init )
-	fAssert "connect owner/name adds an https remote to an empty repo"  bash -c "cd '${gh}/add-https' && PATH='${ghp}' FAKE_GH_VIEW=empty FAKE_GH_PROTO=https GIT_CONFIG_GLOBAL='${gh}/gc-https' '${gitsby}' -q connect me/proj"
+	fAssert "repo connect owner/name adds an https remote to an empty repo"  bash -c "cd '${gh}/add-https' && PATH='${ghp}' FAKE_GH_VIEW=empty FAKE_GH_PROTO=https GIT_CONFIG_GLOBAL='${gh}/gc-https' '${gitsby}' -q repo connect me/proj"
 	fAssert "https url recorded as origin"  bash -c "cd '${gh}/add-https' && [[ \"\$(git remote get-url origin)\" == 'https://github.com/me/proj.git' ]]"
 	fAssert "empty repo received the push"  bash -c "cd '${gh}/backing-https.git' && git ls-tree --name-only main | grep -qx h.txt"
 	git init --quiet --bare -b main "${gh}/backing-ssh.git"
 	printf '[url "%s"]\n\tinsteadOf = git@github.com:me/proj.git\n' "${gh}/backing-ssh.git" > "${gh}/gc-ssh"
 	mkdir -p "${gh}/add-ssh"; ( cd "${gh}/add-ssh" && git init --quiet -b main && echo s > s.txt && git add --all && git commit --quiet -m init )
-	fAssert "ssh protocol builds an scp-style origin url"  bash -c "cd '${gh}/add-ssh' && PATH='${ghp}' FAKE_GH_VIEW=empty FAKE_GH_PROTO=ssh GIT_CONFIG_GLOBAL='${gh}/gc-ssh' '${gitsby}' -q connect me/proj && [[ \"\$(git remote get-url origin)\" == 'git@github.com:me/proj.git' ]]"
+	fAssert "ssh protocol builds an scp-style origin url"  bash -c "cd '${gh}/add-ssh' && PATH='${ghp}' FAKE_GH_VIEW=empty FAKE_GH_PROTO=ssh GIT_CONFIG_GLOBAL='${gh}/gc-ssh' '${gitsby}' -q repo connect me/proj && [[ \"\$(git remote get-url origin)\" == 'git@github.com:me/proj.git' ]]"
 
 	## reject: repo already has commits
 	mkdir -p "${gh}/reject"; ( cd "${gh}/reject" && git init --quiet -b main && echo r > r.txt && git add --all && git commit --quiet -m init )
-	fAssertFail "connect owner/name refuses a nonempty repo"  bash -c "cd '${gh}/reject' && PATH='${ghp}' FAKE_GH_VIEW=nonempty '${gitsby}' -q connect me/proj"
+	fAssertFail "repo connect owner/name refuses a nonempty repo"  bash -c "cd '${gh}/reject' && PATH='${ghp}' FAKE_GH_VIEW=nonempty '${gitsby}' -q repo connect me/proj"
+	fAssertFail "repo create refuses a nonempty repo"              bash -c "cd '${gh}/reject' && PATH='${ghp}' FAKE_GH_VIEW=nonempty '${gitsby}' -q repo create me/proj"
+
+	## the division of labour: connect never creates, create never adopts something that already exists
+	mkdir -p "${gh}/split"; ( cd "${gh}/split" && git init --quiet -b main && echo x > x.txt && git add --all && git commit --quiet -m init )
+	fAssertFail "repo connect refuses a target that doesn't exist yet"  bash -c "cd '${gh}/split' && PATH='${ghp}' FAKE_GH_VIEW=notfound '${gitsby}' -q repo connect me/proj"
+	fAssertOut  "and points at repo create"  'repo create me/proj'      bash -c "cd '${gh}/split' && PATH='${ghp}' FAKE_GH_VIEW=notfound '${gitsby}' -q repo connect me/proj 2>&1 || true"
+	fAssertFail "repo create refuses an existing empty repo"            bash -c "cd '${gh}/split' && PATH='${ghp}' FAKE_GH_VIEW=empty '${gitsby}' -q repo create me/proj"
+	fAssertOut  "and points at repo connect"  'repo connect me/proj'    bash -c "cd '${gh}/split' && PATH='${ghp}' FAKE_GH_VIEW=empty '${gitsby}' -q repo create me/proj 2>&1 || true"
+	fAssertFail "repo create refuses a plain url"                       bash -c "cd '${gh}/split' && PATH='${ghp}' '${gitsby}' -q repo create '${gh}/backing-https.git'"
+	fAssertFail "repo create refuses when origin is already set"        bash -c "cd '${gh}/add-https' && PATH='${ghp}' '${gitsby}' -q repo create me/proj"
+	fAssertFail "repo create with no target rejected"                   bash -c "cd '${gh}/split' && PATH='${ghp}' '${gitsby}' -q repo create"
 
 	## pr ok run from the PR's own branch: gh deletes the branch on the remote but leaves our
 	## origin/* copy, so the upstream still looks alive and pulling it can only fail.
@@ -409,7 +431,7 @@ GHEOF
 	fAssert    "pr ok pulled the merged work"      bash -c "cd '${prc}' && git ls-tree --name-only dev | grep -qx work.txt"
 	fAssert    "the merged branch is gone from origin"  bash -c "cd '${prc}' && ! git ls-remote --heads origin prfeat | grep -q prfeat"
 
-	## pr new: parks the work, then opens the PR against the merge target. Same fake gh.
+	## pr create: parks the work, then opens the PR against the merge target. Same fake gh.
 	mkdir -p "${gh}/prnew"
 	git init --quiet --bare -b main "${gh}/prnew/origin.git"
 	local pnc="${gh}/prnew/c"
@@ -420,18 +442,18 @@ GHEOF
 		git checkout --quiet -b dev && git push --quiet -u origin dev
 		git checkout --quiet -b pnfeat && echo work > work.txt && git add --all && git commit --quiet -m "Teach it to retry"
 	)
-	fAssertFail "pr new refuses from the merge target"  bash -c "cd '${pnc}' && git checkout --quiet dev && PATH='${ghp}' '${gitsby}' -q pr new 'nope'"
-	fAssertFail "pr new refuses an already-open PR"     bash -c "cd '${pnc}' && git checkout --quiet pnfeat && PATH='${ghp}' FAKE_GH_EXISTING=99 '${gitsby}' -q pr new"
-	fAssert     "pr new opens the PR"                   bash -c "cd '${pnc}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prnew.log' '${gitsby}' -q pr new"
-	fAssert     "pr new pushed the branch first"        bash -c "cd '${pnc}' && git ls-remote --heads origin pnfeat | grep -q pnfeat"
-	fAssert     "pr new based the PR on the merge target"  bash -c "grep -q -- '--base dev' '${gh}/prnew.log'"
-	fAssert     "pr new titled it from the last commit" bash -c "grep -q -- '--title Teach it to retry' '${gh}/prnew.log'"
+	fAssertFail "pr create refuses from the merge target"  bash -c "cd '${pnc}' && git checkout --quiet dev && PATH='${ghp}' '${gitsby}' -q pr create 'nope'"
+	fAssertFail "pr create refuses an already-open PR"     bash -c "cd '${pnc}' && git checkout --quiet pnfeat && PATH='${ghp}' FAKE_GH_EXISTING=99 '${gitsby}' -q pr create"
+	fAssert     "pr create opens the PR"                   bash -c "cd '${pnc}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prnew.log' '${gitsby}' -q pr create"
+	fAssert     "pr create pushed the branch first"        bash -c "cd '${pnc}' && git ls-remote --heads origin pnfeat | grep -q pnfeat"
+	fAssert     "pr create based the PR on the merge target"  bash -c "grep -q -- '--base dev' '${gh}/prnew.log'"
+	fAssert     "pr create titled it from the last commit" bash -c "grep -q -- '--title Teach it to retry' '${gh}/prnew.log'"
 	## An explicit title wins over the commit subject.
 	(
 		cd "${pnc}" || exit 1
 		git checkout --quiet -b pnfeat2 && echo more > more.txt && git add --all && git commit --quiet -m "Commit subject"
 	)
-	fAssert "pr new takes an explicit title"  bash -c "cd '${pnc}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prnew2.log' '${gitsby}' -q pr new 'Explicit title' && grep -q -- '--title Explicit title' '${gh}/prnew2.log'"
+	fAssert "pr create takes an explicit title"  bash -c "cd '${pnc}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prnew2.log' '${gitsby}' -q pr create 'Explicit title' && grep -q -- '--title Explicit title' '${gh}/prnew2.log'"
 
 	## pr ok refuses to merge while work is still only local: gh merges what origin has, then
 	## deletes the branch, so anything unpushed would be outside both the PR and the merge.
@@ -457,9 +479,9 @@ GHEOF
 	git init --quiet -b main "${nr}"
 	( cd "${nr}" && echo a > a.txt && git add --all && git commit --quiet -m "initial" )
 	fAssert "sync with no remote"   bash -c "cd '${nr}' && '${gitsby}' -q sync 'msg'"
-	fAssert "newbr with no remote"  bash -c "cd '${nr}' && '${gitsby}' -q newbr nb && [[ \"\$(git branch --show-current)\" == nb ]]"
+	fAssert "br create with no remote"  bash -c "cd '${nr}' && '${gitsby}' -q br create nb && [[ \"\$(git branch --show-current)\" == nb ]]"
 	( cd "${nr}" && echo b > b.txt )
-	fAssert "land with no remote"   bash -c "cd '${nr}' && '${gitsby}' -q land 'merge nb'"
+	fAssert "br land with no remote"   bash -c "cd '${nr}' && '${gitsby}' -q br land 'merge nb'"
 	fAssert "landed on main"        bash -c "cd '${nr}' && [[ \"\$(git branch --show-current)\" == main ]] && [[ -f b.txt ]]"
 }
 
