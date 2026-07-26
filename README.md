@@ -177,22 +177,24 @@ There are many implicit opinions baked in. Here are the main ones:
 
 The same 13 commands, in both implementations:
 
-| Command | What it does
-| :-- | :--
-| `clone <url> [dir]` | Clone a repo you don't have yet (checks out `dev` if it has one). Re-run is a no-op.
-| `connect [target]` | Connect local work to a remote and push it: `git init` if needed, commit, push. Takes a URL to an existing empty remote, or `owner/name` to create the GitHub repo via [gh](https://github.com/cli/cli) (`--public`/`--private`; private by default).
-| `update [msg]`    | Commit all local changes and pull updates. Do frequently!
-| `newbr <branch>`  | Create a new branch off `dev`/`main` (carries current uncommitted work to it).
-| `gobr [branch]`   | Switch to a branch (parks current work first). No arg: back to `dev`/`main`.
-| `status`          | Fetch and show current status.
-| `listbr`          | Fetch and list branches.
-| `sync [msg]`      | Commit, pull, and push. Do infrequently.
-| `pull`            | Pull only (auto-stashes around it if dirty).
-| `commit [msg]`    | Commit all local changes (without pull).
-| `land [msg]`      | Merge the current branch into `dev`/`main` (`--no-ff`), push, delete it local + remote.
-| `pr`              | Lists PRs.
-| `pr [new [title] \| n \| ok n]` | Pull requests, via [gh](https://github.com/cli/cli). Bare: list them. `new`: push the current branch and open a PR against `dev`/`main` (no title: the last commit subject). `n`: view it plus its diff. `ok n`: approve and merge it.
-| `release [ver]` | Cut a release: merge `dev` into `main`, tag, push. No version: bump the patch.
+| Command              | Args          | What it does
+| :--                  | :--           | :--
+| `clone`              | `<url> [dir]` | Clone a repo you don't have yet (checks out `dev` if it has one). Re-run is a no-op.
+| `connect`            | `[target]`    | Connect local work to a remote and push it: `git init` if needed, commit, push. Takes a URL to an existing empty remote, or `owner/name` to create the GitHub repo via [gh](https://github.com/cli/cli) (`--public`/`--private`; private by default).
+| `update`             | `[msg]`       | Commit all local changes and pull updates. Do frequently!
+| `newbr`              | `<branch>`    | Create a new branch off `dev`/`main` (carries current uncommitted work to it).
+| `gobr`               | `[branch]`    | Switch to a branch (parks current work first). No arg: back to `dev`/`main`.
+| `status`             |               | Fetch and show current status.
+| `listbr`             |               | Fetch and list branches.
+| `sync`               | `[msg]`       | Commit, pull, and push. Do infrequently.
+| `pull`               |               | Pull only (auto-stashes around it if dirty).
+| `commit`             | `[msg]`       | Commit all local changes (without pull).
+| `land`               | `[msg]`       | Merge the current branch into `dev`/`main` (`--no-ff`), push, delete it local + remote.
+| `pr`                 |               | Lists PRs via [gh](https://github.com/cli/cli).
+| `pr`                 | `<#>`         | View a PR plus its diff.
+| `pr new`             | `[title]`     | Push the current branch and open a PR against `dev`/`main` (no title: the last commit subject).
+| `pr ok`              | `<#>`         | Approve and merge a PR.
+| `release`            | `[ver]`       | Cut a release: merge `dev` into `main`, tag, push. No version: bump the patch.
 
 Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--no-fetch` (skip the pre-command fetch), `-h`, `-v`.
 
