@@ -141,11 +141,16 @@ fRunSuite(){
 	fAssert "back on feat"          bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == feat ]]"
 	fAssertFail "gobr nonexistent rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q gobr nosuch"
 
-	## gobr refuses to auto-commit WIP sitting on a protected branch
+	## gobr refuses to auto-commit WIP sitting on a protected branch, before showing a plan
 	( cd "${cloneA}" && git checkout --quiet main && echo wip >> file2.txt )
-	fAssertFail "gobr from dirty main refuses"  bash -c "cd '${cloneA}' && '${gitsby}' -q gobr feat"
+	fAssertFail   "gobr from dirty main refuses"           bash -c "cd '${cloneA}' && '${gitsby}' -q gobr feat"
+	fAssertNotOut "and dies before the preview"  'Going to do'  bash -c "cd '${cloneA}' && '${gitsby}' -q gobr feat"
 	fAssert "wip left uncommitted on main"      bash -c "cd '${cloneA}' && ! git diff --quiet && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]]"
-	( cd "${cloneA}" && git checkout --quiet -- file2.txt && git checkout --quiet feat )
+	## newbr carries that same tree instead, so its plan must not promise a commit on main
+	fAssertNotOut "newbr from main previews no commit"  'git add --all'  bash -c "cd '${cloneA}' && '${gitsby}' -q newbr wipcarry"
+	fAssert "wip carried to the new branch"  bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == wipcarry ]] && ! git diff --quiet"
+	( cd "${cloneA}" && git checkout --quiet -- file2.txt && git checkout --quiet feat
+	  git branch --quiet -D wipcarry && git push --quiet origin --delete wipcarry )
 
 	## land: merge feat into main --no-ff, then delete it local + remote
 	( cd "${cloneA}" && echo feat > feat.txt )
@@ -176,7 +181,8 @@ fRunSuite(){
 	fAssert "back on dev after release"  bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == dev ]]"
 	fAssert "dev fast-forwarded to the release"  bash -c "cd '${cloneA}' && [[ \"\$(git rev-parse dev)\" == \"\$(git rev-parse main)\" ]]"
 	fAssert "dev pushed after release"           bash -c "cd '${cloneA}' && [[ \"\$(git rev-parse dev)\" == \"\$(git rev-parse origin/dev)\" ]]"
-	fAssertFail "release same version rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q release 1.2.3"
+	fAssertFail   "release same version rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q release 1.2.3"
+	fAssertNotOut "duplicate tag dies before the preview"  'Going to do'  bash -c "cd '${cloneA}' && '${gitsby}' -q release 1.2.3"
 	fAssertFail "release bad version rejected"   bash -c "cd '${cloneA}' && '${gitsby}' -q release bogus"
 	( cd "${cloneA}" && echo more > more.txt )
 	fAssert "release with no version bumps patch"  bash -c "cd '${cloneA}' && '${gitsby}' -q release && git rev-parse -q --verify refs/tags/v1.2.4 >/dev/null"
@@ -242,6 +248,23 @@ fRunSuite(){
 	fAssert "land with upstream-less dev runs"      bash -c "cd '${c2}' && '${gitsby}' -q land 'merge feat9'"
 	fAssert "merge reached origin (dev published)"  bash -c "cd '${o2}' && git show-ref --verify --quiet refs/heads/dev && git ls-tree --name-only dev | grep -qx w.txt"
 	fAssert "feat9 deleted on origin after publish" bash -c "cd '${o2}' && ! git show-ref --verify --quiet refs/heads/feat9"
+
+	## release with an upstream-less main: the branch must reach origin, not just the tag
+	local fx3="${work}/$1-rel2"
+	local o5="${fx3}/origin.git"; local c5="${fx3}/a"
+	mkdir -p "${fx3}"
+	git init --quiet --bare -b main "${o5}"
+	git clone --quiet "${o5}" "${c5}" 2>/dev/null
+	(
+		cd "${c5}"
+		echo one > f.txt; git add --all; git commit --quiet -m "initial"; git push --quiet -u origin main
+		git checkout --quiet -b dev; git push --quiet -u origin dev
+		echo d > d.txt; git add --all; git commit --quiet -m "dev work"; git push --quiet
+		git branch --unset-upstream main  ## however it got lost, main now tracks nothing
+	)
+	fAssert "release with an upstream-less main runs"  bash -c "cd '${c5}' && '${gitsby}' -q release 9.0.0"
+	fAssert "origin main advanced, not just the tag"   bash -c "cd '${o5}' && git ls-tree --name-only main | grep -qx d.txt"
+	fAssert "tag reached origin too"                   bash -c "cd '${c5}' && git ls-remote --tags origin | grep -q 'refs/tags/v9.0.0'"
 
 	## diverged pull with a dirty tree: fails, but work stays in the tree and out of the stash
 	git clone --quiet "${o2}" "${c3}"

@@ -5,7 +5,7 @@
 <!-- markdownlint-disable MD041 -- First line in a file should be a top-level heading -->
 # Requirements
 
-This is a product backlog just for pre-v1.0.0 release. After that, bugs, features, and enhancements will be managed in Github Issues.
+This is a product backlog for the run-up to v2.0.0. After that release, bugs, features, and enhancements move to GitHub Issues.
 
 <!-- TOC ignore:true -->
 ## Table of contents
@@ -41,13 +41,50 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Misc to-do
 
-- ✅ Code Review 20260723 item 39: README typos.
-	- Line 82 "devoted to to", line 100 "besome", line 218 "cononical".
-	- Done: all three fixed.
-
 ### Bugs
 
-Items below came out of the 20260723 code review. Fix notes for every item: `design.md` -> "Code review 20260723".
+- 🔘 Code Review 20260725 item 5: `pr ok <n>` run from the branch that PR came from ends in a failed pull.
+	- `gh pr merge --delete-branch` removes the remote branch, then the trailing `git pull --ff-only` has nothing to track.
+	- Harmless (the merge already happened) but it reports as a command failure.
+	- Probable fix: skip or soften the trailing pull when the current branch's upstream is gone.
+
+### Features and enhancements
+
+- 🔘 Code Review 20260725 item 6: `release` with no version bumps the patch of a pre-release tag's base, skipping that base version.
+	- After `v2.0.0-rc1`, a bare `release` proposes `v2.0.1` rather than `v2.0.0`.
+	- Matches the documented "bump the patch" rule, but it is not what someone finishing a release candidate expects.
+	- Options: drop the suffix and keep the base when the newest tag is a pre-release, or just say so in the help text.
+
+- 🔘 The installers' default "latest release" lookup skips anything flagged as a pre-release on GitHub.
+	- GitHub's `releases/latest` returns the newest full release, so a pre-release-only repo resolves to the last full one.
+	- Matters for v2.0.0-rc1: unless it is published as a full release, the one-liner installs still land on the 2022 release.
+	- Options: publish release candidates as full releases, add a `--pre`/`-Pre` flag, or document `--ref` for candidates.
+
+### Done
+
+#### Done - Initial requirements
+
+#### Done - Bugs
+
+- ✅ Code Review 20260725 item 1: `release` pushes only the tag when the default branch has no upstream (both implementations).
+	- The branch push is gated on an upstream; the tag push is not.
+	- Origin ends up holding the release commits as tag payload while its `main` still points at the previous release.
+	- Same shape as item 2 of the previous review, which was fixed in `land` but not here.
+	- Fixed: an upstream-less default branch is published with `git push -u origin HEAD` before the tag goes up. Regression test added.
+
+- ✅ Code Review 20260725 item 2: `release` refuses a duplicate tag only after it has already committed and pushed (both implementations).
+	- The check sat inside the command, past the plan, the confirmation, and the "park current work" step.
+	- Nothing is lost, but the run mutates the repo and then dies on something knowable up front.
+	- Fixed: the tag-exists check moved next to the version resolution, before anything is shown or run. Regression test added.
+
+- ✅ Code Review 20260725 item 3: `gobr` refuses a dirty protected branch only after the plan is confirmed (both implementations).
+	- Same class as item 2, and the same fix as code review 20260723 item 35 applied to the other branch arguments.
+	- Fixed: the refusal moved up front, alongside the other branch-argument checks. Regression test added.
+
+- ✅ Code Review 20260725 item 4: `newbr` shows a plan it does not follow when run from `main`/`dev` (both implementations).
+	- The preview always listed the commit-and-push steps, but on a protected branch the tree is carried to the new branch instead.
+	- The preview is the safety feature, so it misreporting in exactly the case that was special-cased is the wrong way round.
+	- Fixed: the plan now branches on protected state and shows the checkout-and-carry steps. Regression test added.
 
 - ✅ Code Review 20260723 item 1: `pull` failure strands the autostash (both implementations).
 	- Dirty tree gets stashed, then a failed `git pull --ff-only` (diverged or offline) aborts before `git stash pop`.
@@ -147,7 +184,7 @@ Items below came out of the 20260723 code review. Fix notes for every item: `des
 	- The var is redundant anyway (merges pass `-m`); just delete the line.
 	- Fixed: line deleted (merges pass -m, so it was redundant).
 
-### Features and enhancements
+#### Done - Features and enhancements
 
 - ✅ Code Review 20260723 item 14: bound the unconditional pre-command fetch and add an offline escape hatch (both implementations).
 	- A dead/black-holed remote blocks every command for the full TCP/ssh timeout before the "offline?" warning.
@@ -167,41 +204,56 @@ Items below came out of the 20260723 code review. Fix notes for every item: `des
 - ✅ Code Review 20260723 item 17: README has no Commands/Usage section.
 	- The pitch is "Gitsby has 11" commands, but they're never listed or demonstrated. Add the help table plus a worked newbr -> update -> land example.
 	- Done: Commands section added (table of all 11, options, a typical-day flow, gh note for pr/release).
+
 - ✅ Code Review 20260723 item 19: installer checksum + version pinning - confirms the already-open installer item below.
 	- Publish SHA256SUMS from cicd, verify in both installers, allow pinning an exact tag; document that `--ref` skips verification.
 	- Done: installers verify release-asset downloads against a SHA256SUMS release asset when published (note-and-continue when absent); cicd/utility/gen-checksums.bash generates it for release cuts; --ref/-Ref pins a tag but skips verification (documented in README).
+
 - ✅ Code Review 20260723 item 20: "latest release" lookup uses the unauthenticated GitHub API (60 req/hr).
 	- Shared-NAT/CI installs will 403. Read the tag from the `releases/latest` redirect Location header instead; keep the API as fallback.
 	- Done: tag read from the releases/latest redirect (curl url_effective / wget Location / pwsh 302 handling); API scrape kept as fallback; rate-limit mentioned in the error.
+
 - ✅ Code Review 20260723 item 22: fIsAhead materializes the whole ahead-range log just to test emptiness (both implementations).
 	- Use `git rev-list -n 1 '@{u}..'` (or the cached ahead count from item 15).
 	- Done: git rev-list -n 1 in both implementations.
+
 - ✅ Code Review 20260723 item 30: needless external `head`/`wc` pipeline stages (bash).
 	- Use `mapfile -n 1` / array counts; watch the set -e empty-input gotcha noted in design.md.
 	- Done: tag lookup via mapfile -n 1; the stash wc pipelines were already removed by item 1.
+
 - ✅ Code Review 20260723 item 31: positional parameter binding in the ps1 files (style guide requires named).
 	- gitsby.ps1 one spot (`Get-Command ssh`); install.ps1 and install-dev.ps1 throughout (Join-Path, Move-Item, Test-Path, Get-Command).
 	- Done: named parameters at the flagged sites in all three ps1 files.
+
 - ✅ Code Review 20260723 item 32: no comment-based help on any gitsby.ps1 function.
 	- Either add `.SYNOPSIS` to the non-trivial functions, or scope the style-guide rule to script-level + exported functions.
 	- Done: style-guide rule scoped to script level + exported/public functions; private helpers take a terse ## comment.
+
 - ✅ Code Review 20260723 item 33: installer output ends without the trailing blank line the style guide requires (all four installers).
 	- Done: all four installers end with a blank line.
+
 - ✅ Code Review 20260723 item 34: rename fpPreview's `p` padding variable to `pad` (matches the pwsh twin).
 	- Done: renamed.
+
 - ✅ Code Review 20260723 item 35: branch-argument validation runs after the status display and confirm prompt (both implementations).
 	- `newbr` with a bad/missing name shows a nonsense plan ("git checkout -b ") and only errors after "y". Hoist checks next to the existing pr/release ones.
 	- Done: newbr/gobr arguments validate right after the release-version check, before status/preview/prompt; command functions no longer duplicate the checks. Test added.
+
 - ✅ Code Review 20260723 item 36: `gitsby help` / `gitsby version` are unknown-command errors (both implementations).
 	- Alias the bare words to the -h/-v paths; one case entry each.
 	- Done: bare words route to the same paths as -h/-v (both implementations). Tests added.
+
 - ✅ Code Review 20260723 item 37: usage errors carry "Reverse call stack: fMain()" noise (bash).
 	- Suppress the stack line for expected validation errors; keep it for real internal failures.
 	- Done: fThrowError_Usage variant skips the stack line; all user-facing validation errors use it. Real script errors keep the stack.
+
 - ✅ Code Review 20260723 item 38: accept `-y`/`--yes` as a prompt-skip alias (both implementations).
 	- Installers teach -y, gitsby only takes -q; and -q's real function is "assume yes", not quiet. Keep -q, add -y, fix the help wording.
 	- Done: -y/--yes (bash) and -y/-yes (pwsh) alias -q; help wording now says "assume yes". Test added.
-- 🛠️ CICD process (full spec in private notes):
+
+- ✅ CICD process (full spec in private notes):
+
+	- Done: every stage below is live and runs on each publish. The pipeline is local by design - no cloud service, no account to pay for.
 
 	- ✅ `cicd.bash`: `-q|--quiet`, `-m|--msg|--message`, prompt for commit message when neither given (CTRL+C aborts); silkterm output style; `fEcho`/`fParseArgs` conventions.
 
@@ -236,49 +288,17 @@ Items below came out of the 20260723 code review. Fix notes for every item: `des
 - ✅ Add a PowerShell badge to README.md.
 	- Added next to the bash badge in the header block, linking to the PowerShell docs.
 
-- 🛠️ A Bash >=3.2 script, and/or cross-platform PowerShell v7 script, that users can run as a one-liner from their shell - to download the latest stable or dev release, verify checksum, and install the executable. Idempotent; states its plan and asks before touching anything. Uses nice output, blank line at the start and end of script, and one blank line between major sections of output. Add something like this to README.md, under an "Installation" header, "Direct" subheader. (The primary install should be an installer.) Include the commands, and the install locations.
+- ✅ One-liner installers for Bash and PowerShell: download the release, verify the checksum, install the script. Idempotent, and they state the plan and ask before touching anything. Documented in README under "Installation", including a "Direct" subsection with the commands and the install locations.
 
-	- Mostly covered by the shipped installers (see the release-install item under Done). Still open: checksum verification of the download, and a README "Installation" -> "Direct" subsection listing the commands next to the install locations below.
+	- Done: `install.bash` and `install.ps1` cover it. Checksum verification against a published `SHA256SUMS` landed with code review item 19, and the README "Direct" subsection lists both the commands and the paths each installer uses.
 
-	- `--arch` doesn't apply - gitsby is a script, not a compiled binary. `--release dev|stable` is spelled `--ref`, and `--target user|system` is spelled `--system` (default user).
+	- Note on the spec's option names: `--arch` doesn't apply, since gitsby is a script rather than a compiled binary. `--release dev|stable` is spelled `--ref`, and `--target user|system` is spelled `--system` (user is the default).
 
-	- Bash installer (Linux, BSD, macOS, WSL)
+	- Note on install paths: gitsby is a single file, so it goes straight to `~/.local/bin` or `/usr/local/bin` rather than into a program directory with a symlink.
 
-		~~~bash
-		bash <(curl -fsSL https://raw.githubusercontent.com/USER/PROJECT/main/install.bash)  [--release dev|stable]  [--target user|system]  [--arch x64|amd64|arm64]
-		~~~
-
-	- PowerShell installer (Windows, Linux, macOS)
-
-		~~~powershell
-		& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/USER/PROJECT/main/install.ps1')))  [-Release dev|stable]  [-Target user|system]  [-Arch x64|amd64|arm64]
-		~~~
-
-	- Installation locations for CLI programs (in this example, a program that has multiple files and a symlinked executable):
-
-		| OS      | System multi-file path  | ￩ Single exe or symlink        | (or) User install path              | ￩ Single exe or symlink
-		| :---    | :---                    | :---                           | :---                                | :---
-		| Linux   | /opt/PROG/              | /usr/local/bin/PROG            | ~/.local/share/PROG/                | ~/.local/bin/PROG
-		| BSD     | /usr/local/PROG/        | /usr/local/bin/PROG            | ~/.local/share/PROG/                | ~/.local/bin/PROG
-		| Windows | C:\Program Files\PROG\  | *Add install dir to `%PATH%`*  | %LOCALAPPDATA%\Programs\PROG\       | *Add install dir to `%PATH%`*
-		| macOS   | /opt/PROG/              | /usr/local/bin/PROG            | ~/Library/Application Support/PROG/ | ~/.local/bin/PROG
-
-	- Installation locations for GUI packages (in this example, a program that has multiple files and a symlinked executable):
-
-		| OS      | System multi-file path  | ￩ Launcher                                                    | (or) User install path        | ￩ Launcher
-		| :---    | :---                    | :---                                                          | :---                          | :---
-		| Linux   | /opt/PROG/              | /usr/local/share/applications/PROG.desktop                    | ~/.local/share/PROG/          | ~/.local/share/applications/PROG.desktop
-		| BSD     | /usr/local/PROG/        | /usr/local/share/applications/PROG.desktop                    | ~/.local/share/PROG/          | ~/.local/share/applications/PROG.desktop
-		| Windows | C:\Program Files\PROG\  | %ProgramData%\Microsoft\Windows\Start Menu\Programs\PROG.lnk  | %LOCALAPPDATA%\Programs\PROG\ | %APPDATA%\Microsoft\Windows\Start Menu\Programs\PROG.lnk
-		| macOS   | /Applications/PROG.app/ | *The .app bundle is the launcher*                             | ~/Applications/PROG.app/      | *.app bundle*
-
-### Done
-
-#### Done - Initial requirements
-
-#### Done - Bugs
-
-#### Done - Features and enhancements
+- ✅ Code Review 20260723 item 39: README typos.
+	- Line 82 "devoted to to", line 100 "besome", line 218 "cononical".
+	- Done: all three fixed.
 
 - ✅ Rename `saveup` to `update`.
 	- Done in both implementations; `saveup` stays as a hidden alias like the other old names. Docs and changelog swept.

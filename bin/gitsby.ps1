@@ -52,7 +52,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:thisVersion = '2.0.0-beta1'
+$script:thisVersion = '2.0.0-rc1'
 $script:thisCopyrightYear = '2026'
 $script:thisAuthor = 'Jim Collier'
 $script:meName = Split-Path -Leaf -Path $PSCommandPath
@@ -431,9 +431,15 @@ function Show-CommandPreview {
             break
         }
         'newbr' {
-            Show-CommandPreview -CommandName 'sync'
-            Write-PlainLine "${pad}git checkout $(Get-MergeTarget) *"
-            Write-PlainLine "${pad}git pull --ff-only *"
+            ## From main/dev the dirty tree rides along to the new branch, so there's no commit here.
+            if (Test-ProtectedBranch) {
+                Write-PlainLine "${pad}git checkout $(Get-MergeTarget) *"
+                Write-PlainLine "${pad}git pull --ff-only --autostash *"
+            } else {
+                Show-CommandPreview -CommandName 'sync'
+                Write-PlainLine "${pad}git checkout $(Get-MergeTarget) *"
+                Write-PlainLine "${pad}git pull --ff-only *"
+            }
             Write-PlainLine "${pad}git checkout -b $($script:cmdArg)"
             Write-PlainLine "${pad}git push -u origin $($script:cmdArg) *"
             break
@@ -581,9 +587,7 @@ function Invoke-GitsbyChangeBranch {
         if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
         return
     }
-    if ((Test-ProtectedBranch) -and (Test-GitDirty)) {
-        throw "Working tree has changes on '$(Get-CurrentBranch)'; won't auto-commit to a protected branch. Carry them to a new branch (${script:meName} newbr <name>), or commit deliberately (${script:meName} commit) first."
-    }
+    ## The dirty-protected-branch refusal happens up front in the entry point, before the plan is shown.
     Invoke-GitsbyPush  ## park current work safely first
     Invoke-Git -GitArgs @('checkout', $TargetBranch)  ## auto-creates a tracking branch if it only exists on origin
     if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
@@ -693,8 +697,6 @@ function Invoke-GitsbyRelease {
     $mainBranch = Get-DefaultBranch
     $devBranch = ''
     if ((Test-GitBranchLocal -Branch 'dev') -or (Test-GitBranchRemote -Branch 'dev')) { $devBranch = 'dev' }
-    git rev-parse -q --verify "refs/tags/$($script:releaseTag)" *> $null
-    if ($LASTEXITCODE -eq 0) { throw "Tag '$($script:releaseTag)' already exists." }
     $startBranch = Get-CurrentBranch
     Invoke-GitsbyPush  ## park current work safely first
     if ($devBranch -and ((Get-CurrentBranch) -cne $devBranch)) {
@@ -709,8 +711,10 @@ function Invoke-GitsbyRelease {
         Invoke-Git -GitArgs @('merge', '--no-ff', $devBranch, '-m', $mergeMessage)
     }
     Invoke-Git -GitArgs @('tag', '-a', $script:releaseTag, '-m', $script:releaseTag)
+    ## The branch has to reach origin, not just the tag - otherwise origin gets the commits
+    ## as tag payload while its main still points at the old release. Same trap as land's.
     if (Test-GitOrigin) {
-        if (Test-GitUpstream) { Invoke-Git -GitArgs @('push') }
+        if (Test-GitUpstream) { Invoke-Git -GitArgs @('push') } else { Invoke-Git -GitArgs @('push', '-u', 'origin', 'HEAD') }
         Invoke-Git -GitArgs @('push', 'origin', $script:releaseTag)
     }
     ## Fast-forward dev to include the release merge and tag, so dev isn't left a commit behind.
@@ -835,7 +839,12 @@ try {
 
     ## Release version resolves up front so preview and command agree (and bad input dies early).
     $script:releaseTag = ''
-    if ($cmdName -eq 'release') { $script:releaseTag = Get-ReleaseVersion }
+    if ($cmdName -eq 'release') {
+        $script:releaseTag = Get-ReleaseVersion
+        ## Up front, not mid-command: by the time Invoke-GitsbyRelease runs it has already committed and pushed.
+        git rev-parse -q --verify "refs/tags/$($script:releaseTag)" *> $null
+        if ($LASTEXITCODE -eq 0) { throw "Tag '$($script:releaseTag)' already exists." }
+    }
 
     ## Branch arguments validate up front too, so a bad name can't survive to a nonsense preview.
     if ($cmdName -eq 'newbr') {
@@ -844,9 +853,14 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "'${CommandArg}' is not a valid branch name." }
         if (Test-GitBranchLocal -Branch $CommandArg) { throw "Branch '${CommandArg}' already exists; use: ${script:meName} gobr ${CommandArg}" }
         if (Test-GitBranchRemote -Branch $CommandArg) { throw "Branch '${CommandArg}' already exists on origin; use: ${script:meName} gobr ${CommandArg}" }
-    } elseif ($cmdName -eq 'gobr' -and $CommandArg) {
-        if (-not ((Test-GitBranchLocal -Branch $CommandArg) -or (Test-GitBranchRemote -Branch $CommandArg))) {
+    } elseif ($cmdName -eq 'gobr') {
+        if ($CommandArg -and -not ((Test-GitBranchLocal -Branch $CommandArg) -or (Test-GitBranchRemote -Branch $CommandArg))) {
             throw "No branch '${CommandArg}' locally or on origin. To create it: ${script:meName} newbr ${CommandArg}"
+        }
+        ## Refusing a dirty protected branch belongs here too, before the plan is shown and confirmed.
+        $gobrTarget = if ($CommandArg) { $CommandArg } else { Get-MergeTarget }
+        if (((Get-CurrentBranch) -cne $gobrTarget) -and (Test-ProtectedBranch) -and (Test-GitDirty)) {
+            throw "Working tree has changes on '$(Get-CurrentBranch)'; won't auto-commit to a protected branch. Carry them to a new branch (${script:meName} newbr <name>), or commit deliberately (${script:meName} commit) first."
         }
     }
 
@@ -1003,3 +1017,4 @@ try {
 ##      - 20260724 JC: Non-tty mutating runs fail closed without -q; extra positional after a message rejected; case-sensitive branch compares; release tolerates short tags like v1.2; masked credentials in the displayed remote URL; fetch with --prune + origin/HEAD heal + ssh connect timeout; -NoFetch; tolerant remote-branch delete in land; exit-code checks in pr view/listbr; drive-letter remotes not treated as ssh hosts; ssh -G gets --; per-run default-branch/merge-target caching; dropped the redundant GIT_MERGE_AUTOEDIT (it leaked into the calling session) - in step with bin/gitsby.
 ##      - 20260724 JC: newbr/gobr branch arguments validate before the preview; bare 'help'/'version' words work; -y/-yes aliases for -Quiet; Test-GitAhead stops at the first commit - in step with bin/gitsby.
 ##      - 20260724 JC: Added clone (checks out dev if the repo has one; re-run is a no-op) and connect (init if needed, commit, push to an empty remote, or gh repo create for owner/name; -Public/-Private) - in step with bin/gitsby.
+##      - 20260725 JC: release publishes an upstream-less default branch instead of pushing only the tag; the duplicate-tag and dirty-protected-branch refusals moved up front, ahead of the confirmed plan; newbr's plan no longer promises a commit when run from main/dev - in step with bin/gitsby.

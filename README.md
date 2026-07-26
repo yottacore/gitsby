@@ -8,6 +8,8 @@
 [![!#/bin/bash](https://img.shields.io/badge/-%23!%2Fbin%2Fbash-1f425f.svg?logo=gnu-bash)](https://www.gnu.org/software/bash/)
 [![PowerShell](https://img.shields.io/badge/PowerShell-5391FE.svg?logo=powershell&logoColor=white)](https://learn.microsoft.com/powershell/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Latest release](https://img.shields.io/github/v/release/jim-collier/gitsby?include_prereleases&label=release)](https://github.com/jim-collier/gitsby/releases/latest)
+![Lifecycle: RC](https://img.shields.io/badge/Lifecycle-RC-blue)
 ![Support](https://img.shields.io/badge/Support-Maintained-brightgreen)
 ![Status: Passing](https://img.shields.io/badge/Status-Passing-brightgreen)
 
@@ -90,7 +92,7 @@ Gitsby shrinks Git's command set by:
 
 - Applying an "opinionated" workflow, and ignoring the myriad other ways of doing the same thing.
 
-- By acknowledging that (arguably) some ≈90% of Git's complexity is devoted to covering about ≈10% of edge use-cases, and purposely ignoring most of them. (That is to say, not pretending they never happen - just not trying to be the tool to solve them if and when they arise.)
+- By acknowledging that (arguably) some 90% of Git's complexity is devoted to covering about 10% of edge use-cases, and purposely ignoring most of them. (That is to say, not pretending they never happen - just not trying to be the tool to solve them if and when they arise.)
 
 - Commands are oriented around *project goals* (e.g. "what do I want to happen with these changes?"), rather than *administrative tasks*.
 
@@ -212,7 +214,7 @@ Then, decide to install for your user account only, or system-wide. (But to avoi
 
 Either way, the installer shows exactly what it will do and asks before doing it (add `-y`/`-Yes` to skip the prompt, e.g. for scripted installs).
 
-Release installs verify the download against the release's `SHA256SUMS` when one is published. Installing a branch or tag directly with `--ref`/`-Ref` pulls straight from the tree and skips verification.
+With no `--ref`/`-Ref`, the installers take the latest full release, and verify the download against that release's `SHA256SUMS` when one is published. Naming a branch, tag, or pre-release with `--ref`/`-Ref` pulls straight from the tree instead, and skips verification.
 
 Both installers take the same options (Bash / PowerShell forms):
 
@@ -243,7 +245,7 @@ With no options, both do a per-user install of the latest release, after showing
 
 ### PowerShell
 
-*The PowerShell port is new and not in a release yet. Until one is cut, install it from the dev branch by adding `-Ref dev` to the scriptblock form below.*
+*The PowerShell version arrived in v2.0.0. If the latest full release predates it, install from a branch instead by adding `-Ref dev` to the scriptblock form below.*
 
 - User-only install
 

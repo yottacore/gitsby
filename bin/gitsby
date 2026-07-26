@@ -17,7 +17,7 @@
 #•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Settings
 [[ -v doQuietly         ]] || declare -i doQuietly=0
-[[ -v thisVersion       ]] || declare -r thisVersion="2.0.0-beta1"
+[[ -v thisVersion       ]] || declare -r thisVersion="2.0.0-rc1"
 [[ -v thisCopyrightYear ]] || declare -r thisCopyrightYear="2026"
 [[ -v thisAuthor        ]] || declare -r thisAuthor="Jim Collier"
 
@@ -173,7 +173,11 @@ fMain(){
 
 	## Release version resolves up front so preview and command agree (and bad input dies early).
 	local releaseTag=""
-	[[ "${cmdName}" == "release" ]] && releaseTag="$(fReleaseVersion)"
+	if [[ "${cmdName}" == "release" ]]; then
+		releaseTag="$(fReleaseVersion)"
+		## Up front, not mid-command: by the time fCmdRelease runs it has already committed and pushed.
+		git rev-parse -q --verify "refs/tags/${releaseTag}" >/dev/null && fThrowError_Usage "Tag '${releaseTag}' already exists."
+	fi
 
 	## Branch arguments validate up front too, so a bad name can't survive to a nonsense preview.
 	if [[ "${cmdName}" == "newbr" ]]; then
@@ -181,8 +185,14 @@ fMain(){
 		git check-ref-format --branch "${cmdArg}" >/dev/null 2>&1 || fThrowError_Usage "'${cmdArg}' is not a valid branch name."
 		fBranchExistsLocal  "${cmdArg}" && fThrowError_Usage "Branch '${cmdArg}' already exists; use: ${meName} gobr ${cmdArg}"
 		fBranchExistsRemote "${cmdArg}" && fThrowError_Usage "Branch '${cmdArg}' already exists on origin; use: ${meName} gobr ${cmdArg}"
-	elif [[ "${cmdName}" == "gobr" && -n "${cmdArg}" ]]; then
-		fBranchExistsLocal "${cmdArg}" || fBranchExistsRemote "${cmdArg}" || fThrowError_Usage "No branch '${cmdArg}' locally or on origin. To create it: ${meName} newbr ${cmdArg}"
+	elif [[ "${cmdName}" == "gobr" ]]; then
+		[[ -z "${cmdArg}" ]] || fBranchExistsLocal "${cmdArg}" || fBranchExistsRemote "${cmdArg}" || fThrowError_Usage "No branch '${cmdArg}' locally or on origin. To create it: ${meName} newbr ${cmdArg}"
+		## Refusing a dirty protected branch belongs here too, before the plan is shown and confirmed.
+		local gobrTarget="${cmdArg}"
+		[[ -n "${gobrTarget}" ]] || gobrTarget="$(fMergeTarget)"
+		if [[ "$(fCurrentBranch)" != "${gobrTarget}" ]] && fIsProtectedBranch && [[ -n "$(git status --porcelain 2>/dev/null || true)" ]]; then
+			fThrowError_Usage "Working tree has changes on '$(fCurrentBranch)'; won't auto-commit to a protected branch. Carry them to a new branch (${meName} newbr <name>), or commit deliberately (${meName} commit) first."
+		fi
 	fi
 
 	## clone: derive the target dir, and make re-runs a no-op instead of an error.
@@ -387,9 +397,7 @@ fCmdGoBranch(){
 		fHasUpstream && fRun git pull --ff-only
 		return 0
 	fi
-	if fIsProtectedBranch && [[ -n "$(git status --porcelain 2>/dev/null || true)" ]]; then
-		fThrowError_Usage "Working tree has changes on '$(fCurrentBranch)'; won't auto-commit to a protected branch. Carry them to a new branch (${meName} newbr <name>), or commit deliberately (${meName} commit) first."
-	fi
+	## The dirty-protected-branch refusal happens up front in fMain, before the plan is shown.
 	fCmdPush  ## park current work safely first
 	fRun git checkout "${targetBranch}"  ## auto-creates a tracking branch if it only exists on origin
 	fHasUpstream && fRun git pull --ff-only
@@ -482,7 +490,6 @@ fCmdRelease(){
 	local -r mainBranch="$(fDefaultBranch)"
 	local devBranch=""
 	{ fBranchExistsLocal dev || fBranchExistsRemote dev; } && devBranch="dev"
-	git rev-parse -q --verify "refs/tags/${releaseTag}" >/dev/null && fThrowError_Usage "Tag '${releaseTag}' already exists."
 	local -r startBranch="$(fCurrentBranch)"
 	fCmdPush  ## park current work safely first
 	if [[ -n "${devBranch}" && "$(fCurrentBranch)" != "${devBranch}" ]]; then
@@ -499,8 +506,10 @@ fCmdRelease(){
 		fRun git merge --no-ff "${devBranch}" -m "${mergeMessage}"
 	fi
 	fRun git tag -a "${releaseTag}" -m "${releaseTag}"
+	## The branch has to reach origin, not just the tag - otherwise origin gets the commits
+	## as tag payload while its main still points at the old release. Same trap as land's.
 	if git remote get-url origin &>/dev/null; then
-		fHasUpstream && fRun git push
+		if fHasUpstream; then fRun git push; else fRun git push -u origin HEAD; fi
 		fRun git push origin "${releaseTag}"
 	fi
 	## Fast-forward dev to include the release merge and tag, so dev isn't left a commit behind.
@@ -765,9 +774,15 @@ fpPreview(){
 			fEcho_Clean "${pad}git push (branch '$(fCurrentBranch)') *"
 			;;
 		newbr)
-			fpPreview sync
-			fEcho_Clean "${pad}git checkout $(fMergeTarget) *"
-			fEcho_Clean "${pad}git pull --ff-only *"
+			## From main/dev the dirty tree rides along to the new branch, so there's no commit here.
+			if fIsProtectedBranch; then
+				fEcho_Clean "${pad}git checkout $(fMergeTarget) *"
+				fEcho_Clean "${pad}git pull --ff-only --autostash *"
+			else
+				fpPreview sync
+				fEcho_Clean "${pad}git checkout $(fMergeTarget) *"
+				fEcho_Clean "${pad}git pull --ff-only *"
+			fi
 			fEcho_Clean "${pad}git checkout -b ${cmdArg}"
 			fEcho_Clean "${pad}git push -u origin ${cmdArg} *"
 			;;
@@ -1109,3 +1124,7 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##		- 20260724 JC:
 ##			- Added clone (get an existing repo; checks out dev if it has one; re-run is a no-op) and connect (publish local work: init if needed, commit, then push to an empty remote - or create the GitHub repo via gh for owner/name targets; --public/--private pick visibility).
 ##			- connect refuses remotes that already have history and won't change an existing origin; both new commands preview and confirm like everything else.
+##		- 20260725 JC:
+##			- release publishes an upstream-less default branch instead of pushing only the tag.
+##			- The duplicate-tag and dirty-protected-branch refusals moved up front, so neither can fire after the plan was confirmed (and, for release, after it had already committed and pushed).
+##			- newbr's plan no longer promises a commit when run from main/dev, where the tree is carried over instead.
