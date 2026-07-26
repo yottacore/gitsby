@@ -344,6 +344,8 @@ fRunSuite(){
 case "$1 $2" in
 	"repo view")   case "${FAKE_GH_VIEW:-}" in notfound) exit 1 ;; empty) echo true ;; nonempty) echo false ;; esac ;;
 	"config get")  echo "${FAKE_GH_PROTO:-https}" ;;
+	"pr list")     echo "${FAKE_GH_EXISTING:-}" ;;  ## an already-open PR number for this branch, or nothing
+	"pr create")   echo "https://github.com/me/proj/pull/${FAKE_GH_NEWPR:-1}" ;;
 	"pr review")   : ;;  ## gitsby treats approval as best-effort; nothing to fake
 	"pr merge")    ## Land the branch on the base, then drop it from the remote. Real gh does the delete
 	               ## over the API, so the caller's origin/* copy survives it - restore the ref to match.
@@ -406,6 +408,49 @@ GHEOF
 	fAssert    "pr ok landed on the merge target"  bash -c "cd '${prc}' && [[ \"\$(git branch --show-current)\" == dev ]]"
 	fAssert    "pr ok pulled the merged work"      bash -c "cd '${prc}' && git ls-tree --name-only dev | grep -qx work.txt"
 	fAssert    "the merged branch is gone from origin"  bash -c "cd '${prc}' && ! git ls-remote --heads origin prfeat | grep -q prfeat"
+
+	## pr new: parks the work, then opens the PR against the merge target. Same fake gh.
+	mkdir -p "${gh}/prnew"
+	git init --quiet --bare -b main "${gh}/prnew/origin.git"
+	local pnc="${gh}/prnew/c"
+	git clone --quiet "${gh}/prnew/origin.git" "${pnc}" 2>/dev/null
+	(
+		cd "${pnc}" || exit 1
+		echo base > base.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet -b pnfeat && echo work > work.txt && git add --all && git commit --quiet -m "Teach it to retry"
+	)
+	fAssertFail "pr new refuses from the merge target"  bash -c "cd '${pnc}' && git checkout --quiet dev && PATH='${ghp}' '${gitsby}' -q pr new 'nope'"
+	fAssertFail "pr new refuses an already-open PR"     bash -c "cd '${pnc}' && git checkout --quiet pnfeat && PATH='${ghp}' FAKE_GH_EXISTING=99 '${gitsby}' -q pr new"
+	fAssert     "pr new opens the PR"                   bash -c "cd '${pnc}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prnew.log' '${gitsby}' -q pr new"
+	fAssert     "pr new pushed the branch first"        bash -c "cd '${pnc}' && git ls-remote --heads origin pnfeat | grep -q pnfeat"
+	fAssert     "pr new based the PR on the merge target"  bash -c "grep -q -- '--base dev' '${gh}/prnew.log'"
+	fAssert     "pr new titled it from the last commit" bash -c "grep -q -- '--title Teach it to retry' '${gh}/prnew.log'"
+	## An explicit title wins over the commit subject.
+	(
+		cd "${pnc}" || exit 1
+		git checkout --quiet -b pnfeat2 && echo more > more.txt && git add --all && git commit --quiet -m "Commit subject"
+	)
+	fAssert "pr new takes an explicit title"  bash -c "cd '${pnc}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prnew2.log' '${gitsby}' -q pr new 'Explicit title' && grep -q -- '--title Explicit title' '${gh}/prnew2.log'"
+
+	## pr ok refuses to merge while work is still only local: gh merges what origin has, then
+	## deletes the branch, so anything unpushed would be outside both the PR and the merge.
+	mkdir -p "${gh}/prguard"
+	git init --quiet --bare -b main "${gh}/prguard/origin.git"
+	local pgc="${gh}/prguard/c"
+	git clone --quiet "${gh}/prguard/origin.git" "${pgc}" 2>/dev/null
+	(
+		cd "${pgc}" || exit 1
+		echo base > base.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet -b pgfeat && echo w > w.txt && git add --all && git commit --quiet -m work
+		git push --quiet -u origin pgfeat
+	)
+	fAssertFail "pr ok refuses a dirty tree"  bash -c "cd '${pgc}' && echo dirt > dirt.txt && PATH='${ghp}' '${gitsby}' -q pr ok 7"
+	fAssert     "pr ok left the dirty work alone"  bash -c "cd '${pgc}' && [[ -f dirt.txt ]] && [[ \"\$(git branch --show-current)\" == pgfeat ]]"
+	fAssertFail "pr ok refuses unpushed commits"  bash -c "cd '${pgc}' && rm -f dirt.txt && echo u > u.txt && git add --all && git commit --quiet -m unpushed && PATH='${ghp}' '${gitsby}' -q pr ok 7"
+	fAssert     "pr ok kept the unpushed commit"  bash -c "cd '${pgc}' && git log -1 --pretty=%s | grep -qx unpushed"
+	fAssert     "pr ok proceeds once synced"  bash -c "cd '${pgc}' && git push --quiet && PATH='${ghp}' FAKE_GH_BASE=dev '${gitsby}' -q pr ok 7"
 
 	## no-remote repo: everything still works locally
 	local nr="${work}/$1-noremote"

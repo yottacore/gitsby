@@ -139,7 +139,7 @@ function Show-Syntax {
     Write-PlainLine '  commit [msg] ...: Commit all local changes (without pull).'
     Write-PlainLine 'Admin commands, e.g. for small solo projects:'
     Write-PlainLine "  land [msg] .....: Merge current branch into ${script:mergeTargetLabel} (--no-ff), push, delete it local + remote."
-    Write-PlainLine '  pr [n | ok n] ..: List, review, or accept a pull request (needs gh).'
+    Write-PlainLine '  pr [new|n|ok n].: Create, list, review, or accept a pull request (needs gh).'
     Write-PlainLine '  release [ver] ..: Cut a release: merge dev into main, tag, push. No ver: bump patch.'
     Write-PlainLine 'Options:'
     Write-PlainLine '  -m, -Message MSG .....: Commit or merge message (or give it positionally).'
@@ -491,10 +491,15 @@ function Show-CommandPreview {
             break
         }
         'pr' {
-            Write-PlainLine "${pad}gh pr review $($script:prNum) --approve *"
-            Write-PlainLine "${pad}gh pr merge $($script:prNum) --merge --delete-branch"
-            Write-PlainLine "${pad}git checkout $(Get-MergeTarget) *"
-            Write-PlainLine "${pad}git pull --ff-only *"
+            if ($script:prSub -eq 'new') {
+                Show-CommandPreview -CommandName 'sync'
+                Write-PlainLine "${pad}gh pr create --base $(Get-MergeTarget) --title `"$($script:prTitle)`""
+            } else {
+                Write-PlainLine "${pad}gh pr review $($script:prNum) --approve *"
+                Write-PlainLine "${pad}gh pr merge $($script:prNum) --merge --delete-branch"
+                Write-PlainLine "${pad}git checkout $(Get-MergeTarget) *"
+                Write-PlainLine "${pad}git pull --ff-only *"
+            }
             break
         }
         'release' {
@@ -680,6 +685,19 @@ function Invoke-GitsbyPrView {
     Clear-BlankCounter
 }
 
+function Invoke-GitsbyPrCreate {
+    ## GitHub can only diff what origin has, so park the work first - same as land and release do.
+    param([Parameter(Mandatory)][string]$Title)
+    Invoke-GitsbyPush
+    $base = Get-MergeTarget
+    $head = Get-CurrentBranch
+    Write-PlainLine ''
+    Write-StatusLine "gh pr create --base ${base} --title `"${Title}`" ..."
+    gh pr create --base "$base" --head "$head" --title "$Title" --body ''
+    if ($LASTEXITCODE -ne 0) { throw "gh pr create failed (exit ${LASTEXITCODE})." }
+    Clear-BlankCounter
+}
+
 function Invoke-GitsbyPrAccept {
     param([Parameter(Mandatory)][string]$PrNumber)
     Write-PlainLine ''
@@ -785,7 +803,7 @@ try {
     $isMutating = $true
     switch ($cmdName) {
         { $_ -in 'status', 'listbr' } { $isMutating = $false; break }
-        'pr' { if ($CommandArg.ToLowerInvariant() -ne 'ok') { $isMutating = $false }; break }
+        'pr' { if ($CommandArg.ToLowerInvariant() -notin 'ok', 'new') { $isMutating = $false }; break }
         { $_ -in 'commit', 'update', 'sync', 'land' } {
             if (-not $script:commitMessage) { $script:commitMessage = $CommandArg }
             if ($CommandArg2) { throw "Unexpected extra argument '${CommandArg2}'; quote your commit message." }
@@ -804,14 +822,29 @@ try {
 
     ## pr needs gh and a valid number (except the bare list form).
     $script:prNum = ''
+    $script:prSub = ''
+    $script:prTitle = ''
     if ($cmdName -eq 'pr') {
         if (-not (Get-Command -Name gh -ErrorAction SilentlyContinue)) { throw 'Not found in path: gh' }
-        if ($CommandArg.ToLowerInvariant() -eq 'ok') {
-            $script:prNum = $CommandArg2
-            if ($script:prNum -notmatch '^[0-9]+$') { throw "Syntax: ${script:meName} pr ok <number>" }
-        } elseif ($CommandArg) {
-            $script:prNum = $CommandArg
-            if ($script:prNum -notmatch '^[0-9]+$') { throw "Syntax: ${script:meName} pr [<number> | ok <number>]" }
+        switch ($CommandArg.ToLowerInvariant()) {
+            'ok' {
+                $script:prSub = 'ok'
+                $script:prNum = $CommandArg2
+                if ($script:prNum -notmatch '^[0-9]+$') { throw "Syntax: ${script:meName} pr ok <number>" }
+                break
+            }
+            'new' {
+                $script:prSub = 'new'
+                ## -m wins, same as everywhere else.
+                $script:prTitle = if ($script:commitMessage) { $script:commitMessage } else { $CommandArg2 }
+                break
+            }
+            '' { break }
+            default {
+                $script:prNum = $CommandArg
+                if ($script:prNum -notmatch '^[0-9]+$') { throw "Syntax: ${script:meName} pr [new [title] | <number> | ok <number>]" }
+                break
+            }
         }
     }
 
@@ -853,6 +886,29 @@ try {
         ## Up front, not mid-command: by the time Invoke-GitsbyRelease runs it has already committed and pushed.
         git rev-parse -q --verify "refs/tags/$($script:releaseTag)" *> $null
         if ($LASTEXITCODE -eq 0) { throw "Tag '$($script:releaseTag)' already exists." }
+    }
+
+    ## The mutating pr subcommands check here too, so nothing can fail after the plan was confirmed.
+    if ($script:prSub) {
+        $prBranch = Get-CurrentBranch
+        if (-not $prBranch) { throw 'Detached HEAD (no current branch); resolve that manually first.' }
+        if ($script:prSub -eq 'ok') {
+            ## gh merges what origin already has, then deletes the branch local and remote. Work
+            ## that never reached origin is outside the PR and outside the merge - refuse, don't lose it.
+            if ((Test-GitDirty) -or (Test-GitAhead)) {
+                throw "'${prBranch}' has changes that aren't on origin, so PR #$($script:prNum) can't include them. Run '${script:meName} sync' first."
+            }
+        } else {
+            if ($prBranch -cin @((Get-MergeTarget), (Get-DefaultBranch))) {
+                throw "'${prBranch}' is what pull requests merge into; there is nothing to propose. Start a branch first: ${script:meName} newbr <name>"
+            }
+            ## No title given: the last commit subject is what the work is called already.
+            if (-not $script:prTitle) { $script:prTitle = (git log -1 --pretty=%s 2>$null | Select-Object -First 1) }
+            if (-not $script:prTitle) { throw "No commits on '${prBranch}' yet; nothing to propose." }
+            ## An open PR for this branch already is the answer to 'pr new' - say so instead of letting gh error.
+            $existingPr = (gh pr list --head "$prBranch" --state open --json number --jq '.[0].number // empty' 2>$null | Select-Object -First 1)
+            if ($existingPr) { throw "PR #${existingPr} is already open for '${prBranch}'. View it: ${script:meName} pr ${existingPr}" }
+        }
     }
 
     ## Branch arguments validate up front too, so a bad name can't survive to a nonsense preview.
@@ -994,7 +1050,11 @@ try {
         'newbr' { Invoke-GitsbyMakeBranch -NewBranch $CommandArg; break }
         'gobr' { Invoke-GitsbyChangeBranch -TargetBranch $CommandArg; break }
         'land' { Invoke-GitsbyLand; break }
-        'pr' { Invoke-GitsbyPrAccept -PrNumber $script:prNum; break }
+        'pr' {
+            if ($script:prSub -eq 'new') { Invoke-GitsbyPrCreate -Title $script:prTitle }
+            else { Invoke-GitsbyPrAccept -PrNumber $script:prNum }
+            break
+        }
         'release' { Invoke-GitsbyRelease; break }
         'clone' { Invoke-GitsbyClone; break }
         'connect' { Invoke-GitsbyConnect; break }
@@ -1027,3 +1087,4 @@ try {
 ##      - 20260724 JC: newbr/gobr branch arguments validate before the preview; bare 'help'/'version' words work; -y/-yes aliases for -Quiet; Test-GitAhead stops at the first commit - in step with bin/gitsby.
 ##      - 20260724 JC: Added clone (checks out dev if the repo has one; re-run is a no-op) and connect (init if needed, commit, push to an empty remote, or gh repo create for owner/name; -Public/-Private) - in step with bin/gitsby.
 ##      - 20260725 JC: release publishes an upstream-less default branch instead of pushing only the tag; the duplicate-tag and dirty-protected-branch refusals moved up front, ahead of the confirmed plan; newbr's plan no longer promises a commit when run from main/dev; pr ok lands on the merge target when gh deleted the branch we were on; a bare release after a candidate proposes that candidate's own version - in step with bin/gitsby.
+##      - 20260726 JC: Added 'pr new [title]' (parks the work, opens a PR against the merge target, titles it from the last commit subject when none is given, reports an already-open PR instead of erroring); pr ok refuses a dirty tree or unpushed commits, since --delete-branch would drop work that never reached origin - in step with bin/gitsby.

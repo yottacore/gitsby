@@ -59,7 +59,7 @@ fSyntax(){ { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax=
 	fEcho_Clean "  commit [msg] ...: Commit all local changes (without pull)."
 	fEcho_Clean "Admin commands, e.g. for small solo projects:"
 	fEcho_Clean "  land [msg] .....: Merge current branch into ${mergeTargetLabel} (--no-ff), push, delete it local + remote."
-	fEcho_Clean "  pr [n | ok n] ..: List, review, or accept a pull request (needs gh)."
+	fEcho_Clean "  pr [new|n|ok n].: Create, list, review, or accept a pull request (needs gh)."
 	fEcho_Clean "  release [ver] ..: Cut a release: merge dev into main, tag, push. No ver: bump patch."
 	fEcho_Clean "Options:"
 	fEcho_Clean "  -m, --message MSG ....: Commit or merge message (or give it positionally)."
@@ -94,7 +94,7 @@ fMain(){
 	## Arguments
 	local cmdName=""        ## positional 1
 	local cmdArg=""         ## positional 2: message, branch name, version, or PR number, depending on command
-	local cmdArg2=""        ## positional 3: PR number ('pr ok <n>')
+	local cmdArg2=""        ## positional 3: PR number ('pr ok <n>') or title ('pr new <title>')
 	local commitMessage=""  ## may be set by fParseArgs (-m/--message/--msg)
 	local -i doFetch=1      ## cleared by --no-fetch
 	local repoVisibility="private"  ## --public/--private, for connect's gh-create path
@@ -123,7 +123,7 @@ fMain(){
 	local isMutating=1
 	case "${cmdName}" in
 		status|listbr)           isMutating=0 ;;
-		pr)                      [[ "${cmdArg,,}" == "ok" ]] || isMutating=0 ;;
+		pr)                      [[ "${cmdArg,,}" =~ ^(ok|new)$ ]] || isMutating=0 ;;
 		commit|update|sync|land)
 			[[ -z "${commitMessage}" ]] && commitMessage="${cmdArg}"
 			[[ -n "${cmdArg2}" ]] && fThrowError_Usage "Unexpected extra argument '${cmdArg2}'; quote your commit message."
@@ -140,16 +140,25 @@ fMain(){
 	fi
 
 	## pr needs gh and a valid number (except the bare list form).
-	local prNum=""
+	local prNum=""; local prSub=""; local prTitle=""
 	if [[ "${cmdName}" == "pr" ]]; then
 		fMustBeInPath gh
-		if [[ "${cmdArg,,}" == "ok" ]]; then
-			prNum="${cmdArg2}"
-			[[ "${prNum}" =~ ^[0-9]+$ ]] || fThrowError_Usage "Syntax: ${meName} pr ok <number>"
-		elif [[ -n "${cmdArg}" ]]; then
-			prNum="${cmdArg}"
-			[[ "${prNum}" =~ ^[0-9]+$ ]] || fThrowError_Usage "Syntax: ${meName} pr [<number> | ok <number>]"
-		fi
+		case "${cmdArg,,}" in
+			ok)
+				prSub="ok"
+				prNum="${cmdArg2}"
+				[[ "${prNum}" =~ ^[0-9]+$ ]] || fThrowError_Usage "Syntax: ${meName} pr ok <number>"
+				;;
+			new)
+				prSub="new"
+				prTitle="${commitMessage:-${cmdArg2}}"  ## -m wins, same as everywhere else
+				;;
+			"") : ;;
+			*)
+				prNum="${cmdArg}"
+				[[ "${prNum}" =~ ^[0-9]+$ ]] || fThrowError_Usage "Syntax: ${meName} pr [new [title] | <number> | ok <number>]"
+				;;
+		esac
 	fi
 
 	## Every command needs a repo - except clone (works anywhere) and connect (a plain directory is the point).
@@ -177,6 +186,27 @@ fMain(){
 		releaseTag="$(fReleaseVersion)"
 		## Up front, not mid-command: by the time fCmdRelease runs it has already committed and pushed.
 		git rev-parse -q --verify "refs/tags/${releaseTag}" >/dev/null && fThrowError_Usage "Tag '${releaseTag}' already exists."
+	fi
+
+	## The mutating pr subcommands check here too, so nothing can fail after the plan was confirmed.
+	if [[ -n "${prSub}" ]]; then
+		local prBranch=""; prBranch="$(fCurrentBranch)"
+		[[ -n "${prBranch}" ]] || fThrowError_Usage "Detached HEAD (no current branch); resolve that manually first."
+		if [[ "${prSub}" == "ok" ]]; then
+			## gh merges what origin already has, then deletes the branch local and remote. Work
+			## that never reached origin is outside the PR and outside the merge - refuse, don't lose it.
+			if [[ -n "$(git status --porcelain 2>/dev/null || true)" ]] || fIsAhead; then
+				fThrowError_Usage "'${prBranch}' has changes that aren't on origin, so PR #${prNum} can't include them. Run '${meName} sync' first."
+			fi
+		else
+			[[ "${prBranch}" != "$(fMergeTarget)" && "${prBranch}" != "$(fDefaultBranch)" ]] || fThrowError_Usage "'${prBranch}' is what pull requests merge into; there is nothing to propose. Start a branch first: ${meName} newbr <name>"
+			## No title given: the last commit subject is what the work is called already.
+			[[ -n "${prTitle}" ]] || prTitle="$(git log -1 --pretty=%s 2>/dev/null || true)"
+			[[ -n "${prTitle}" ]] || fThrowError_Usage "No commits on '${prBranch}' yet; nothing to propose."
+			## An open PR for this branch already is the answer to 'pr new' - say so instead of letting gh error.
+			local existingPr=""; existingPr="$(gh pr list --head "${prBranch}" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)"
+			[[ -n "${existingPr}" ]] && fThrowError_Usage "PR #${existingPr} is already open for '${prBranch}'. View it: ${meName} pr ${existingPr}"
+		fi
 	fi
 
 	## Branch arguments validate up front too, so a bad name can't survive to a nonsense preview.
@@ -306,7 +336,7 @@ fMain(){
 		newbr)   fCmdNewBranch "${cmdArg}" ;;
 		gobr)    fCmdGoBranch "${cmdArg}" ;;
 		land)    fCmdLand ;;
-		pr)      fCmdPrAccept "${prNum}" ;;
+		pr)      if [[ "${prSub}" == "new" ]]; then fCmdPrCreate "${prTitle}"; else fCmdPrAccept "${prNum}"; fi ;;
 		release) fCmdRelease ;;
 		clone)   fCmdClone ;;
 		connect) fCmdConnect ;;
@@ -472,6 +502,13 @@ fCmdPrView(){
 		fRun gh pr view "${prNum}"
 		fRun gh pr diff "${prNum}"
 	fi
+:;}
+
+fCmdPrCreate(){
+	## GitHub can only diff what origin has, so park the work first - same as land and release do.
+	local -r title="${1:-}"
+	fCmdPush
+	fRun gh pr create --base "$(fMergeTarget)" --head "$(fCurrentBranch)" --title "${title}" --body ""
 :;}
 
 fCmdPrAccept(){
@@ -828,10 +865,15 @@ fpPreview(){
 			esac
 			;;
 		pr)
-			fEcho_Clean "${pad}gh pr review ${prNum} --approve *"
-			fEcho_Clean "${pad}gh pr merge ${prNum} --merge --delete-branch"
-			fEcho_Clean "${pad}git checkout $(fMergeTarget) *"
-			fEcho_Clean "${pad}git pull --ff-only *"
+			if [[ "${prSub}" == "new" ]]; then
+				fpPreview sync
+				fEcho_Clean "${pad}gh pr create --base $(fMergeTarget) --title \"${prTitle}\""
+			else
+				fEcho_Clean "${pad}gh pr review ${prNum} --approve *"
+				fEcho_Clean "${pad}gh pr merge ${prNum} --merge --delete-branch"
+				fEcho_Clean "${pad}git checkout $(fMergeTarget) *"
+				fEcho_Clean "${pad}git pull --ff-only *"
+			fi
 			;;
 		release)
 			fpPreview sync
@@ -1137,3 +1179,6 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##			- newbr's plan no longer promises a commit when run from main/dev, where the tree is carried over instead.
 ##			- pr ok lands on the merge target when gh's --delete-branch removed the branch we were standing on, instead of pulling a branch the remote no longer has.
 ##			- A bare release after a candidate proposes that candidate's own version (v2.0.0-rc1 -> v2.0.0) rather than bumping past it.
+##		- 20260726 JC:
+##			- Added 'pr new [title]': parks the work, then opens a PR against the merge target. No title given, the last commit subject is used; an already-open PR for the branch reports its number instead of erroring.
+##			- pr ok refuses a dirty tree or unpushed commits. gh's --delete-branch drops the branch local and remote, so anything not on origin was outside both the PR and the merge.

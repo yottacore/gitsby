@@ -62,6 +62,15 @@ The two files are ports of each other. A change to one nearly always belongs in 
 	- `connect` refuses remotes that already have history rather than auto-merging: forgiving means not destroying either side. Reconciling unrelated histories stays raw-git territory.
 	- `owner/name` targets go through gh (create if missing, honoring gh's git_protocol setting); plain URLs never touch gh.
 
+- Pull requests are one command with subcommands (`pr`, `pr new`, `pr <n>`, `pr ok <n>`) rather than separate top-level verbs.
+	- Among the options considered, this keeps the command count at 13 and puts everything about a PR in one place to look.
+	- `pr new` defaults its title to the last commit subject. The alternative, requiring a title, was rejected as inconsistent with `commit`/`update`/`sync`, which all generate a message when none is given. The preview shows the resolved title before the prompt, so a bad default is visible rather than surprising.
+
+- Commands that hand a branch to someone else's deletion must park work first.
+	- `gh pr merge --delete-branch` removes the branch local and remote. Anything not pushed is outside the pull request, so merging it would drop that work from the branch it lived on.
+	- We decided `pr ok` refuses rather than auto-pushing. Pushing and immediately merging would land commits nobody reviewed, which defeats the point of proposing a change for review.
+	- `pr new` is the opposite case and does park work automatically: publishing is the whole intent, and nothing is being deleted.
+
 ## Architecture
 
 ### Software stack

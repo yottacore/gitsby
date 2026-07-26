@@ -31,7 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Setup scripts for contributors, `install-dev.bash` and `install-dev.ps1`: clone the repo, switch to `dev`, and check the tooling.
 - `clone` command: get a repo you don't have yet. Derives the directory from the URL, checks out `dev` when the repo has one, and re-running it is a no-op.
 - `connect` command: publish work that only exists locally. Initializes the repo if needed, commits, and pushes - to an existing empty remote by URL, or creates the GitHub repo via `gh` for an `owner/name` target (`--public`/`--private`; private by default). Refuses remotes that already have history, and won't change an existing origin.
-- `pr` command: list open pull requests, view one with its diff, or accept one (approve + merge + branch delete), via `gh`.
+- `pr` command: open a pull request (`pr new`), list open ones, view one with its diff, or accept one (approve + merge + branch delete), via `gh`. `pr new` pushes the current branch first, targets `dev` when the repo has one, and titles the PR from the last commit subject unless you give a title.
 - `release` command: merge dev into main `--no-ff` (when the repo has a dev branch), tag, and push. With no version given, bumps the patch of the latest `v*` tag.
 - Pre-flight display, before the confirmation prompt on every mutating command (and on `status`): the SSH identity a push or fetch will present (host aliases resolved to the real host, user, and key), the author that will be stamped on commits, ahead/behind counts, and the files a pull would bring in.
 - `--no-fetch` to skip the fetch that every command starts with, for working offline.
@@ -46,6 +46,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `newbr` carries uncommitted work onto the new branch instead of committing it to `main`/`dev` first. `gobr` refuses and says what to do instead.
 - `land` publishes an unpushed target branch before deleting the branch it merged, so the work always reaches the remote first.
 - `release` now fast-forwards dev to main afterward, so dev includes the release merge and tag. If dev gained commits mid-release, the fast-forward is skipped with a warning instead of discarding anything.
+- `pr ok` refuses when the current branch has uncommitted changes or commits that never reached the remote. Merging deletes the branch, and anything only local would be outside both the pull request and the merge.
 - Mutating commands refuse to run without a terminal unless you pass `-q`/`-y`, so a piped or scheduled run can't silently confirm itself.
 - Remote URLs with an embedded password or token print masked.
 - Status now shows a compact one-line-per-file change list instead of `git status`'s long form, truncated to the terminal width and capped so a large working tree can't scroll the prompt out of view.

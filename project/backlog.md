@@ -51,6 +51,16 @@ In each section, items are listed approximately from newest to oldest.
 
 #### Done - Features and enhancements
 
+- ✅ `pr new [title]` opens a pull request, so the whole PR round trip lives in gitsby instead of half in `gh`.
+	- Pushes the branch first - GitHub can only diff what the remote has.
+	- Targets `dev` when the repo has one, else the default branch. Refuses from that branch, since there is nothing to propose.
+	- No title given: the last commit subject, which is already a description of the work. The preview shows it before anything happens.
+	- An already-open PR for the branch reports its number instead of letting `gh` error.
+
+- ✅ `pr ok <n>` refuses while the current branch has uncommitted changes or unpushed commits.
+	- Merging deletes the branch local and remote, so work that never reached origin was outside both the PR and the merge.
+	- Every other mutating command already parked work first; this was the one that did not.
+
 - ✅ The installers' default "latest release" lookup skips anything flagged as a pre-release on GitHub.
 	- GitHub's `releases/latest` returns the newest full release, so a pre-release-only repo resolves to the last full one - for this repo, the 2022 release.
 	- Decided: publish releases as full releases rather than adding a `--pre` flag. The semver suffix still marks a candidate for anyone reading the tag, and the one-liner installs keep working with no extra arguments.

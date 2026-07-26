@@ -51,7 +51,7 @@
 <table style="border: none; border-collapse: collapse;">
 	<tr style="border: none; border-collapse: collapse;">
 		<td style="border: none; border-collapse: collapse;"><img src="assets/logo.png" alt="Logo" width="128"/></td>
-		<td style="border: none;">A simple, opinionated Git wrapper to speed and simplify everyday Git workflow. Unlimited project scaling.</td>
+		<td style="border: none;">A simple, safe, and opinionated Git wrapper to speed up everyday Git workflow. Unlimited safe project scaling.<br /><br />It's so simple and safe, because it does quite a bit of heavy-lifting for you.</td>
 	</tr>
 </table>
 
@@ -190,7 +190,8 @@ The same 13 commands, in both implementations:
 | `pull` | Pull only (auto-stashes around it if dirty).
 | `commit [msg]` | Commit all local changes (without pull).
 | `land [msg]` | Merge the current branch into `dev`/`main` (`--no-ff`), push, delete it local + remote.
-| `pr [n \| ok n]` | List, review, or accept a pull request (needs [gh](https://github.com/cli/cli)).
+| `pr`         | Lists PRs
+| `pr [new [title] \| n \| ok n]` | Pull requests, via [gh](https://github.com/cli/cli). Bare: list them. `new`: push the current branch and open a PR against `dev`/`main` (no title: the last commit subject). `n`: view it plus its diff. `ok n`: approve and merge it.
 | `release [ver]` | Cut a release: merge `dev` into `main`, tag, push. No version: bump the patch.
 
 Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--no-fetch` (skip the pre-command fetch), `-h`, `-v`.

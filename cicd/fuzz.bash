@@ -68,6 +68,16 @@ fMsgLiteral(){ local -r desc="$1"; local -r dir="$2"; local -r msg="$3"
 	elif [[ "${rec}" == "${msg}" ]]; then fOk "${desc}"
 	else fFail "${desc}: recorded [${rec}], expected [${msg}]"; fi; }
 
+## Confirm a PR title reaches gh verbatim - same class of bug as fMsgLiteral, on the
+## other user-controlled value that gets handed to a native command.
+fTitleLiteral(){ local -r desc="$1"; local -r dir="$2"; local -r title="$3"
+	rm -f "${ghLog}"
+	fRun "${dir}" -q pr new "${title}"
+	local rec; rec="$(awk '/^--title$/{getline; print; exit}' "${ghLog}" 2>/dev/null || true)"
+	if _isCrash;                   then fFail "${desc}: crashed (exit ${_code})"
+	elif [[ "${rec}" == "${title}" ]]; then fOk "${desc}"
+	else fFail "${desc}: gh got [${rec}], expected [${title}]"; fi; }
+
 ## Fresh repo (bare origin + clone with one commit) under work/<name>.
 fMakeRepo(){
 	local -r dir="$1"
@@ -102,6 +112,22 @@ fRunFuzz(){
 	echo "fuzz: $1 (${gitsby})"
 	local -r base="${work}/$1"
 	mkdir -p "${base}"
+
+	## Deterministic gh on PATH: the pr vectors below must not depend on a real gh being
+	## installed, and must never reach the network. Logs create-args one per line so the
+	## title can be compared byte for byte.
+	mkdir -p "${base}/bin"
+	cat > "${base}/bin/gh" <<'GHEOF'
+#!/usr/bin/env bash
+case "$1 $2" in
+	"pr list")   : ;;  ## no PR open for this branch
+	"pr create") printf '%s\n' "$@" > "${FUZZ_GH_LOG}"; echo "https://example.invalid/pull/1" ;;
+	*)           : ;;
+esac
+GHEOF
+	chmod +x "${base}/bin/gh"
+	PATH="${base}/bin:${PATH}"; export PATH
+	ghLog="${base}/gh.log"; export FUZZ_GH_LOG="${ghLog}"
 
 	## Command slot: garbage first tokens are refused, never crash.
 	local repo="${base}/cmd"; fMakeRepo "${repo}"
@@ -144,6 +170,19 @@ fRunFuzz(){
 	local v p
 	for v in "${badVersion[@]}"; do fRefuse "release refuses version: '${v}'" "${repo3}" -q release "${v}"; done
 	for p in "${badPr[@]}";      do fRefuse "pr refuses: '${p}'"              "${repo3}" -q pr "${p}"; done
+
+	## PR titles: free text like a commit message, and it must reach gh as data, not code.
+	## Needs a branch that isn't the merge target, which is what 'pr new' proposes from.
+	local repo4="${base}/prnew"; fMakeRepo "${repo4}"
+	( cd "${repo4}" && git checkout --quiet -b dev && git push --quiet -u origin dev \
+		&& git checkout --quiet -b feat && echo f > f.txt && git add --all && git commit --quiet -m feat )
+	local t
+	for t in "${inject[@]}"; do fSurvive "pr title inert: '${t}'" "${repo4}" -q pr new "${t}"; done
+	for t in '*' '*.txt' '?' 'v*'; do fTitleLiteral "pr title verbatim: '${t}'" "${repo4}" "${t}"; done
+	## Proposing from the merge target is nonsense whatever the title says.
+	( cd "${repo4}" && git checkout --quiet dev )
+	fRefuse "pr new refuses from the merge target" "${repo4}" -q pr new 'anything'
+	( cd "${repo4}" && git checkout --quiet feat )
 
 	## Long and odd input: must not crash. Branch is refused, message accepted.
 	local long; long="$(printf 'x%.0s' {1..5000})"
