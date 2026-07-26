@@ -58,6 +58,7 @@ fSyntax(){ { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax=
 	fEcho_Clean "  sync [msg] .........: Commit, pull, and push. Do infrequently."
 	fEcho_Clean "Admin commands, e.g. for small solo projects:"
 	fEcho_Clean "  br land [msg] ......: Merge current branch into ${mergeTargetLabel} (--no-ff), push, delete it local + remote."
+	fEcho_Clean "  br prune ...........: Delete branches already merged into ${mergeTargetLabel}, local + remote."
 	fEcho_Clean "  pr [create|n|ok n] .: Create, list, review, or accept a pull request (needs gh)."
 	fEcho_Clean "  release [ver] ......: Cut a release: merge dev into main, tag, push. No ver: bump patch."
 	fEcho_Clean "Options:"
@@ -103,6 +104,7 @@ fMain(){
 	local -i inRepo=0
 	local cloneUrl=""; local cloneDir=""
 	local connectMode=""; local connectUrl=""; local ghTarget=""  ## resolved by the repo create/connect validation
+	local -a pruneLocal=(); local -a pruneRemote=(); local -a pruneKeep=()  ## resolved by the br prune validation
 	local -ri parseArgs_maxPositionalArgCount=4
 	fParseArgs "${@}"
 	cmdName="${cmdName,,}"
@@ -128,7 +130,8 @@ fMain(){
 				create|new)  cmdName="br-create" ;;
 				switch|go)   cmdName="br-switch" ;;
 				land)        cmdName="br-land"   ;;
-				*)           fThrowError_Usage "Unknown 'br' subcommand '${cmdArg}'. One of: list, create, switch, land." ;;
+				prune|clean) cmdName="br-prune"  ;;
+				*)           fThrowError_Usage "Unknown 'br' subcommand '${cmdArg}'. One of: list, create, switch, land, prune." ;;
 			esac
 			cmdArg="${cmdArg2}"; cmdArg2="${cmdArg3}"; cmdArg3=""
 			;;
@@ -144,6 +147,10 @@ fMain(){
 			[[ -n "${cmdArg2}" ]] && fThrowError_Usage "Unexpected extra argument '${cmdArg2}'; quote your commit message."
 			;;
 		repo-clone) : ;;  ## the only one with a second argument of its own (the target directory)
+		br-prune)
+			## Takes nothing: what it deletes is decided by repo state, never by a name on the command line.
+			[[ -n "${cmdArg}" ]] && fThrowError_Usage "'${meName} br prune' takes no arguments (got '${cmdArg}'); it prunes every branch already merged."
+			;;
 		br-create|br-switch|release|repo-create|repo-connect)
 			[[ -n "${cmdArg2}" ]] && fThrowError_Usage "Unexpected extra argument '${cmdArg2}'."
 			;;
@@ -242,6 +249,18 @@ fMain(){
 		[[ -n "${switchTarget}" ]] || switchTarget="$(fMergeTarget)"
 		if [[ "$(fCurrentBranch)" != "${switchTarget}" ]] && fIsProtectedBranch && [[ -n "$(git status --porcelain 2>/dev/null || true)" ]]; then
 			fThrowError_Usage "Working tree has changes on '$(fCurrentBranch)'; won't auto-commit to a protected branch. Carry them to a new branch (${meName} br create <name>), or commit them here deliberately (${meName} update) first."
+		fi
+	fi
+
+	## br prune: work out what goes before anything is shown, so the plan names every branch by name.
+	if [[ "${cmdName}" == "br-prune" ]]; then
+		[[ -n "$(fCurrentBranch)" ]] || fThrowError_Usage "Detached HEAD (no current branch); resolve that manually first."
+		fpResolvePrune
+		if ((! ${#pruneLocal[@]})) && ((! ${#pruneRemote[@]})); then
+			fEcho "Nothing to prune; no branch is fully merged into '$(fMergeTarget)' yet."
+			((${#pruneKeep[@]})) && fEcho_Clean "  Keeping (not merged yet): $(fJoin "${pruneKeep[@]}")"
+			fEcho_Clean ""
+			return 0
 		fi
 	fi
 
@@ -367,6 +386,7 @@ fMain(){
 		br-create)                fCmdNewBranch "${cmdArg}" ;;
 		br-switch)                fCmdGoBranch "${cmdArg}" ;;
 		br-land)                  fCmdLand ;;
+		br-prune)                 fCmdPrune ;;
 		pr)                       if [[ "${prSub}" == "create" ]]; then fCmdPrCreate "${prTitle}"; else fCmdPrAccept "${prNum}"; fi ;;
 		release)                  fCmdRelease ;;
 		repo-clone)               fCmdClone ;;
@@ -509,6 +529,26 @@ fCmdLand(){
 	fPullIfOnline
 :;}
 
+fCmdPrune(){
+	## Deletes exactly what the plan listed - fpResolvePrune did all the deciding, up front.
+	local branch=""
+	for branch in "${pruneLocal[@]}"; do
+		## -d, never -D: the ancestry check already passed, so a refusal here means something
+		## moved underneath us. Leave that branch alone instead of overriding git.
+		fEcho_Clean ""
+		fEcho "git branch -d ${branch} ..."
+		git branch -d "${branch}" || fEcho "WARNING: git won't delete '${branch}'; leaving it alone."
+		fEcho_ResetBlankCounter
+	done
+	for branch in "${pruneRemote[@]}"; do
+		## Non-fatal, same as br land: someone else may have deleted it already.
+		fEcho_Clean ""
+		fEcho "git push origin --delete ${branch} ..."
+		git push origin --delete "${branch}" || fEcho "WARNING: couldn't delete origin/${branch} (already gone?); continuing."
+		fEcho_ResetBlankCounter
+	done
+:;}
+
 fCmdClone(){
 	fRun git clone "${cloneUrl}" "${cloneDir}"
 	## Opinionated: if the repo works dev-first, start there.
@@ -631,11 +671,60 @@ fBranchExistsLocal(){  git show-ref --verify --quiet "refs/heads/${1:-}" ;}
 fBranchExistsRemote(){ git show-ref --verify --quiet "refs/remotes/origin/${1:-}" ;}
 
 fIsProtectedBranch(){
-	## main/master/dev: branches WIP should never be auto-committed to.
-	local -r cur="$(fCurrentBranch)"
+	## main/master/dev: branches WIP should never be auto-committed to, or deleted.
+	## Takes a branch name; no argument means the current one.
+	local -r cur="${1:-$(fCurrentBranch)}"
 	[[ "${cur}" == "$(fDefaultBranch)" ]] && return 0
+	[[ "${cur}" == "main" || "${cur}" == "master" ]] && return 0  ## a leftover one isn't ours to touch either
 	[[ "${cur}" == "dev" ]] && { fBranchExistsLocal dev || fBranchExistsRemote dev; }
 }
+
+fIsMergedInto(){
+	## True when ref $1 is already contained in any of the refs after it.
+	local -r ref="${1}"; shift
+	local into=""
+	for into in "${@}"; do
+		git rev-parse -q --verify "${into}" >/dev/null || continue
+		git merge-base --is-ancestor "${ref}" "${into}" 2>/dev/null && return 0
+	done
+	return 1
+}
+
+fJoin(){
+	## Comma-separated list, for one-line reports.
+	local out=""; local item=""
+	for item in "${@}"; do out="${out:+${out}, }${item}"; done
+	echo "${out}"
+:;}
+
+fpResolvePrune(){
+	## Sorts local branches into what's already landed and what isn't. Ancestry is an exact
+	## test here only because gitsby always lands with a real merge commit - a squash- or
+	## rebase-landed branch never looks contained, and is kept rather than guessed at.
+	local -r target="$(fMergeTarget)"
+	local -r targetRemoteRef="refs/remotes/origin/${target}"
+	local -a targetRefs=()
+	fBranchExistsLocal  "${target}" && targetRefs+=("refs/heads/${target}")
+	fBranchExistsRemote "${target}" && targetRefs+=("${targetRemoteRef}")
+	local -r currentBranch="$(fCurrentBranch)"
+	local branch=""
+	while read -r branch; do
+		[[ -n "${branch}" ]] || continue
+		## The branch we're standing on can't be deleted, and protected ones never are.
+		[[ "${branch}" == "${currentBranch}" ]] && continue
+		fIsProtectedBranch "${branch}" && continue
+		if ((${#targetRefs[@]})) && fIsMergedInto "refs/heads/${branch}" "${targetRefs[@]}"; then
+			pruneLocal+=("${branch}")
+			## The remote copy goes only when origin has the merge too: a landing that hasn't
+			## been pushed yet leaves origin holding the only ref to that work.
+			if fBranchExistsRemote "${branch}" && fIsMergedInto "refs/remotes/origin/${branch}" "${targetRemoteRef}"; then
+				pruneRemote+=("${branch}")
+			fi
+		else
+			pruneKeep+=("${branch}")
+		fi
+	done < <(git for-each-ref --format='%(refname:short)' refs/heads/ 2>/dev/null || true)
+:;}
 
 fBranchSync(){
 	## Ahead/behind for the branch line; empty when in sync, so a quiet line means "nothing pending".
@@ -895,6 +984,12 @@ fpPreview(){
 			fEcho_Clean "${pad}git branch -d $(fCurrentBranch)"
 			fEcho_Clean "${pad}git push origin --delete $(fCurrentBranch) *"
 			fEcho_Clean "${pad}git pull --ff-only *"
+			;;
+		br-prune)
+			local pruneBranch=""
+			for pruneBranch in "${pruneLocal[@]}";  do fEcho_Clean "${pad}git branch -d ${pruneBranch}"; done
+			for pruneBranch in "${pruneRemote[@]}"; do fEcho_Clean "${pad}git push origin --delete ${pruneBranch}"; done
+			((${#pruneKeep[@]})) && fEcho_Clean "${pad}Keeping (not merged yet): $(fJoin "${pruneKeep[@]}")"
 			;;
 		repo-clone)
 			fEcho_Clean "${pad}git clone $(fMaskUrl "${cloneUrl}") ${cloneDir}"
@@ -1246,3 +1341,6 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##		- 20260726 JC:
 ##			- Every command's pull honors offline now, not just update/sync's - br create/switch/land, pr ok and release called git pull directly and ignored --no-fetch.
 ##			- The dirty-protected-branch refusal names 'update'; it still named the dropped 'commit'. Help text back in step with the command set.
+##		- 20260726 JC:
+##			- Added 'br prune': deletes every local branch already merged into the merge target, plus its remote copy. Nothing else cleaned up after a PR merged elsewhere, or after an abandoned branch.
+##			- Unmerged branches are kept and listed, never deleted, and there is no --force. Deletion uses -d so git gets the last word.

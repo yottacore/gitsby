@@ -88,6 +88,14 @@ The two files are ports of each other. A change to one nearly always belongs in 
 	- This puts everything about a PR in one place to look, and matches how `repo` and `br` group.
 	- `pr create` defaults its title to the last commit subject. The alternative, requiring a title, was rejected as inconsistent with `update`/`sync`, which generate a message when none is given. The preview shows the resolved title before the prompt, so a bad default is visible rather than surprising.
 
+- `br prune` deletes only what is provably already landed, and never takes a branch name.
+	- `br land` and `pr ok` delete the branch they merged, but nothing cleaned up after a PR merged from the web UI or another machine, after a superseded branch, or after one simply abandoned. Those accumulate, and a noisy `br list` works against the tool's own goal of staying easy to see.
+	- The test is `merge-base --is-ancestor` against the merge target. That is exact here only because gitsby always lands with a real merge commit: a squash- or rebase-landed branch never looks contained, so it is kept rather than guessed at. Other tools' prune commands are unreliable for exactly that reason; the opinions are what make this one safe.
+	- Unmerged branches are listed and left alone, and there is deliberately no `--force`. A bulk delete is the wrong place to offer an override, and the one branch the user cares about is the one an override would eat.
+	- The remote copy goes only when origin's own copy of the merge target contains it. A landing that hasn't been pushed yet leaves origin holding the only ref to that work.
+	- The current branch and `main`/`master`/`dev` are never candidates. Deletion runs through `git branch -d`, never `-D`, so git gets the last word even after our own check passed; a refusal warns and moves on.
+	- It takes no arguments at all. Choosing branches by name is what raw git is for, and an argument slot would invite exactly the "delete this one specific thing" use that the ancestry gate cannot vouch for.
+
 - The pre-2.0 command names were dropped outright rather than kept as hidden aliases. Version 2 is a deliberate break, the tool is invoked by a different name than it was, and not all of the old commands worked. Carrying dead spellings forward would have been the worst of both.
 
 - Commands that hand a branch to someone else's deletion must park work first.

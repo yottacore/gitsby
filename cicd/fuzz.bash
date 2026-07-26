@@ -169,6 +169,15 @@ GHEOF
 		fRefuse "br switch refuses: '${b}'" "${repo}" -q br switch "${b}"
 	done
 
+	## br prune takes no argument at all, so that slot is a refusal - and an injection
+	## vector parked there must die at the parser, well before anything is deleted.
+	local p
+	for p in "${inject[@]}"; do
+		fRefuse "br prune refuses an argument: '${p}'" "${repo}" -q br prune "${p}"
+	done
+	fRefuse "br prune refuses a branch name"     "${repo}" -q br prune main
+	fRefuse "internal br-prune token refused"    "${repo}" -q br-prune
+
 	## Commit messages: anything goes in a message, but it stays inert data. Each
 	## needs a real change to reach 'git commit'; unique content guarantees one.
 	## 'update' is the command that commits - there is no bare 'commit' any more.

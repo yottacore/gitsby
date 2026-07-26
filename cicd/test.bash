@@ -325,6 +325,53 @@ fRunSuite(){
 	fAssert "br switch -NoFetch skips its pull"    bash -c "cd '${nfWork}' && '${gitsby}' -q -NoFetch br switch main && [[ \"\$(git rev-parse main)\" == \"\$(cat '${work}/$1-nfsha')\" ]]"
 	fAssert "the same switch pulls when online"    bash -c "cd '${nfWork}' && '${gitsby}' -q br switch main && [[ \"\$(git rev-parse main)\" != \"\$(cat '${work}/$1-nfsha')\" ]]"
 
+	## br prune: drops what's already landed, keeps everything else. Own throwaway origin, since
+	## it deletes branches wholesale and the shared fixture still needs its history.
+	local prOrigin="${work}/$1-pro.git"; local prWork="${work}/$1-prw"
+	git init --quiet --bare -b main "${prOrigin}"
+	git clone --quiet "${prOrigin}" "${prWork}" 2>/dev/null
+	(
+		cd "${prWork}"
+		echo one > f.txt; git add --all; git commit --quiet -m "initial"; git push --quiet -u origin main
+		git checkout --quiet -b dev; git push --quiet -u origin dev
+		for b in landed abandoned; do
+			git checkout --quiet -b "${b}" dev; echo "${b}" > "${b}.txt"; git add --all
+			git commit --quiet -m "${b}"; git push --quiet -u origin "${b}"
+		done
+		git checkout --quiet -b wip dev; echo wip > wip.txt; git add --all
+		git commit --quiet -m wip; git push --quiet -u origin wip
+		git checkout --quiet dev
+		git merge --quiet --no-ff landed    -m "merge landed"
+		git merge --quiet --no-ff abandoned -m "merge abandoned"
+		git push --quiet
+	)
+	fAssertOut  "br prune plans the merged branches"  'git branch -d landed'  bash -c "cd '${prWork}' && '${gitsby}' -q br prune"
+	fAssert     "merged branch gone locally"       bash -c "cd '${prWork}' && ! git show-ref --verify --quiet refs/heads/landed"
+	fAssert     "the other merged one too"         bash -c "cd '${prWork}' && ! git show-ref --verify --quiet refs/heads/abandoned"
+	fAssert     "merged branch gone on origin"     bash -c "cd '${prOrigin}' && ! git show-ref --verify --quiet refs/heads/landed"
+	fAssert     "unmerged branch kept locally"     bash -c "cd '${prWork}' && git show-ref --verify --quiet refs/heads/wip"
+	fAssert     "unmerged branch kept on origin"   bash -c "cd '${prOrigin}' && git show-ref --verify --quiet refs/heads/wip"
+	fAssert     "protected branches kept"          bash -c "cd '${prWork}' && git show-ref --verify --quiet refs/heads/dev && git show-ref --verify --quiet refs/heads/main"
+	fAssertOut  "and it says what it kept"  'Keeping \(not merged yet\): wip'  bash -c "cd '${prWork}' && '${gitsby}' -q br prune"
+	fAssertOut  "nothing left to prune is a no-op"  'Nothing to prune'  bash -c "cd '${prWork}' && '${gitsby}' -q br prune"
+	fAssert     "br clean aliases br prune"        bash -c "cd '${prWork}' && '${gitsby}' -q br clean"
+	fAssertFail "br prune with an argument rejected"  bash -c "cd '${prWork}' && '${gitsby}' -q br prune wip"
+	fAssertFail "the internal br-prune token rejected"  bash -c "cd '${prWork}' && '${gitsby}' -q br-prune"
+	## The branch you're standing on can't be deleted out from under you, merged or not.
+	( cd "${prWork}" && git checkout --quiet -b standing dev && git push --quiet -u origin standing )
+	fAssert     "current branch survives its own prune"  bash -c "cd '${prWork}' && '${gitsby}' -q br prune; git -C '${prWork}' show-ref --verify --quiet refs/heads/standing"
+	## A merge that hasn't reached origin means origin still holds the only ref to that work:
+	## the local branch may go, the remote copy may not.
+	(
+		cd "${prWork}"
+		git checkout --quiet dev
+		git checkout --quiet -b unpushed dev; echo u > u.txt; git add --all
+		git commit --quiet -m unpushed; git push --quiet -u origin unpushed
+		git checkout --quiet dev; git merge --quiet --no-ff unpushed -m "merge unpushed"
+	)
+	fAssert "local branch pruned on an unpushed merge"  bash -c "cd '${prWork}' && '${gitsby}' -q -NoFetch br prune && ! git show-ref --verify --quiet refs/heads/unpushed"
+	fAssert "but origin keeps its copy"                bash -c "cd '${prOrigin}' && git show-ref --verify --quiet refs/heads/unpushed"
+
 	## clone: derives the dir, checks out dev when the repo has one, no-op re-run, collision guards
 	local cl="${work}/$1-clone"
 	mkdir -p "${cl}"

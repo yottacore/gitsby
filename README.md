@@ -90,7 +90,7 @@ You probably also understand that it's complex, mostly because it's so flexible.
 
 Git has about 82 porcelain commands.
 
-Gitsby has 7, or 15 counting subcommands.
+Gitsby has 7, or 16 counting subcommands.
 
 > *Granted, this comparison doesn't hit super hard, when only about 1/5th of git users interact with bare `git` on a daily basis - as it's integrated into IDEs, CI/CD pipelines, AI coding agents, etc.*
 
@@ -208,6 +208,7 @@ What you reach for daily is one word. Everything else is grouped under a noun, s
 | `br create`          | `<branch>`    | Create a new branch off `dev`/`main` (carries current uncommitted work to it).
 | `br switch`          | `[branch]`    | Switch to a branch (parks current work first). No arg: back to `dev`/`main`.
 | `br land`            | `[msg]`       | Merge the current branch into `dev`/`main` (`--no-ff`), push, delete it local + remote.
+| `br prune`           |               | Delete every branch already merged into `dev`/`main`, local + remote. Unmerged branches are kept.
 | `repo clone`         | `<url> [dir]` | Clone a repo you don't have yet (checks out `dev` if it has one). Re-run is a no-op.
 | `repo create`        | `<owner/name>`| Create the GitHub repo via [gh](https://github.com/cli/cli), then `git init` if needed, commit, and push (`--public`/`--private`; private by default).
 | `repo connect`       | `[target]`    | Publish local work to a remote that already exists and is empty: `git init` if needed, commit, push. Takes a URL or `owner/name`.
