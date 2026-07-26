@@ -67,6 +67,7 @@
 <!-- TOC -->
 
 - [Summary](#summary)
+- [Compatibility](#compatibility)
 - [General attributes](#general-attributes)
 - ["Opinionated workflow": What are the opinions?](#opinionated-workflow-what-are-the-opinions)
 - [Why](#why)
@@ -90,13 +91,11 @@ You probably also understand that it's complex, mostly because it's so flexible.
 
 Git has about 82 porcelain commands.
 
-Gitsby has 7, or 16 counting subcommands.
+Gitsby has 7. (Or 16 total when counting subcommands.)
 
-> *Granted, this comparison doesn't hit super hard, when only about 1/5th of git users interact with bare `git` on a daily basis - as it's integrated into IDEs, CI/CD pipelines, AI coding agents, etc.*
+How Gitsby shrinks Git's command set:
 
-Gitsby shrinks Git's command set by:
-
-- Applying an "opinionated" workflow, and ignoring the myriad other ways of doing the same thing.
+- By applying an "opinionated" workflow, and ignoring the myriad other ways of doing the same thing.
 
 - By acknowledging that (arguably) some 90% of Git's complexity is devoted to covering about 10% of edge use-cases, and purposely ignoring most of them. (That is to say, not pretending they never happen - just not trying to be the tool to solve them if and when they arise.)
 
@@ -106,15 +105,17 @@ Gitsby shrinks Git's command set by:
 
 	- And it means that Gitsby commands don't map 1:1 with Git commands - but do line up with many common real-world "best practice" use cases of Git (as series of multiple commands at a time with brief human decisions made in between them).
 
+## Compatibility
+
 👉 Gitsby, [Git](https://git-scm.com/), [gh](https://github.com/cli/cli), [Lazygit](https://github.com/jesseduffield/lazygit), and [Tig](https://github.com/jonas/tig) are all compatible, interchangeable, and can be intermixed on the same project at any time without interference.
 
-- This also makes giving Gitsby a "tryout" cheap and easy - you don't need to commit to anything. (No pun intended.)
+- This makes giving Gitsby a "tryout" cheap and easy - you don't need to commit to anything. (No pun intended.)
 
-- In fact in large projects, you may still need to use bare Git (and/or some other wrapper) to resolve some sticky situations that Gitsby purposely doesn't try to tackle, in order to keep-it-simple and "do one thing well".
+- For large projects, you may still need to use bare Git (and/or some other wrapper) to resolve some sticky situations that Gitsby purposely doesn't try to tackle (and almost certainly didn't create), in order to "keep-it-simple" and "do-one-thing-well".
 
 👉 Gitsby is 100% compatible with GitHub and GitLab.
 
-> Note: [GitButler](https://gitbutler.com/) is *not* fully interchangeable with Git, Gitsby, gh, LazyGit, and/or Tig. While a great tool and a cool idea, it manages its own metadata - that inherently doesn't mix well with other git-based tools that moves `HEAD` or rewrites history. It's worth a look and a try - but to be safe, give it a dedicated trial on a small personal repo, without mixing in other tools.
+> Note: [GitButler](https://gitbutler.com/) is *not* interchangeable with Git, Gitsby, gh, LazyGit, and/or Tig. While a great tool and a cool idea, it manages its own metadata - that inherently doesn't mix well with other git-based tools that moves `HEAD` or rewrites history. It's worth a look and a try - but to be safe, give it a dedicated trial on a small personal repo, without mixing in other tools.
 
 ## General attributes
 
