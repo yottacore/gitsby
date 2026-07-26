@@ -72,6 +72,7 @@
 - ["Opinionated workflow": What are the opinions?](#opinionated-workflow-what-are-the-opinions)
 - [Why](#why)
 - [Commands](#commands)
+	- [Which account are you acting as?](#which-account-are-you-acting-as)
 - [Installation](#installation)
 	- [Bash](#bash)
 	- [PowerShell](#powershell)
@@ -222,9 +223,9 @@ What you reach for daily is one word. Everything else is grouped under a noun, s
 
 There is deliberately no bare `commit` and no bare `pull`. Committing without sharing is how work quietly diverges, and pulling without committing is the one thing the rest of the tool never does - `br create`, `br switch`, `br land`, and `pr create` all deal with your work first. `update` is the one command for both, and it pulls *before* it commits so your work lands on top of everyone else's and history stays linear.
 
-Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--public`/`--private` (visibility for `repo create`; private by default), `--no-fetch` (work offline: skip the fetch and the pull), `-h`, `-v`.
+Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--public`/`--private` (visibility for `repo create`; private by default), `--no-fetch` (work offline: skip the fetch and the pull), `--any-identity` (see below), `-h`, `-v`.
 
-The PowerShell version takes the same options in PowerShell form: `-Message MSG`, `-Quiet`/`-y`, `-Public`/`-Private`, `-NoFetch`, `-Help`, `-Version`. Commands and arguments are spelled identically in both.
+The PowerShell version takes the same options in PowerShell form: `-Message MSG`, `-Quiet`/`-y`, `-Public`/`-Private`, `-NoFetch`, `-AnyIdentity`, `-Help`, `-Version`. Commands and arguments are spelled identically in both.
 
 A typical day:
 
@@ -251,6 +252,18 @@ gitsby br land "Add Feature1"
 ~~~
 
 Every mutating command in an existing repo fetches first (unless you pass `--no-fetch`), shows the repo state (including who you'd act as on the remote) and the exact git commands it's about to run, and asks before touching anything. `pr` and `release` close the loop: review/accept the pull request, then cut a tagged release from `dev`.
+
+### Which account are you acting as?
+
+`gh` talks to GitHub's API with its own token and never reads your SSH config, so the `pr` commands and `repo create` act as **gh's account** - not the account whose SSH key `git push` uses. With per-account host aliases in `~/.ssh/config` those can easily be different people, and a pull request opened as the wrong one is public and awkward to undo.
+
+So the pre-flight names both, and the commands that *write* through gh (`pr create`, `pr ok`) compare them:
+
+- Interactively, a confirmed difference prints a warning immediately above the confirmation prompt.
+- Unattended (`-q`/`-y`), a confirmed difference is an error and nothing runs.
+- `--any-identity`/`-AnyIdentity` says the difference is intended: no error, no warning, and the mismatch still shows on the identity line.
+
+If either side can't be determined - no SSH agent, an HTTPS remote, a deploy key, gh logged out - that is reported as unknown and never blocks anything. Only a difference *both* sides confirm counts.
 
 ## Installation
 
