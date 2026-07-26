@@ -71,7 +71,7 @@ The two files are ports of each other. A change to one nearly always belongs in 
 
 ## Code review 20260725
 
-Fix notes for the "Code Review 20260725" backlog items. All four found issues applied to both implementations, which is itself the expected result: the ports have not drifted.
+Fix notes for the "Code Review 20260725" backlog items. Every issue applied to both implementations, which is itself the expected result: the ports have not drifted.
 
 - Item 1 - release pushes only the tag when the default branch has no upstream:
 	- Publish the branch first (`git push -u origin HEAD`), exactly as `land` was taught to do in the previous review.
@@ -84,6 +84,18 @@ Fix notes for the "Code Review 20260725" backlog items. All four found issues ap
 - Item 4 - newbr previews steps it does not run from main/dev:
 	- The preview now branches on protected state, matching the command.
 	- Worth stating plainly: the preview is the safety feature. A command special-casing a state without the preview following suit is a defect in the safety feature, not a cosmetic mismatch.
+- Item 5 - pr ok fails its trailing pull when run from the PR's own branch:
+	- The trap is that `gh` deletes the branch through the API, so nothing updates our `origin/*` copy. The upstream check passes, and the pull then asks for a ref the remote no longer has.
+	- Prune before deciding, then treat a vanished upstream as the signal to check out the merge target and pull there.
+	- Reproducing this in a test needs the fake `gh` to restore the stale tracking ref after its delete-push. Without that the local ref disappears too, the upstream check correctly says no, and the bug does not appear - a test that would have passed against the broken code.
+- Item 6 - a bare release after a candidate skips the candidate's own version:
+	- Semver puts `2.0.0-rc1` below `2.0.0`, so finishing a candidate means cutting the version it was a candidate for, not bumping past it.
+	- The suffix now decides: present means take the plain version, absent means bump the patch.
+	- Second half of the same fix: git's default `-v:refname` sort ranks `v2.0.0-rc1` above `v2.0.0`, so once the real release exists a bare run would propose an already-cut version and die on the duplicate-tag check. `versionsort.suffix=-` puts them in semver order.
+
+### Release policy
+
+GitHub's `releases/latest` returns the newest release not flagged as a pre-release, and both installers resolve through that redirect. Among the options - flag candidates as pre-releases and teach the installers a `--pre` switch, or publish everything as a full release - we decided on the latter. The semver suffix in the tag already tells a reader that `v2.0.0-rc1` is a candidate, and it keeps the documented one-liner installs working with no extra arguments. `--ref`/`-Ref` covers anyone who wants a specific tag or branch.
 
 ## Code review 20260723
 

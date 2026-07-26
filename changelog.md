@@ -16,7 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Other work
 -->
 
-## v2.0.0-rc1 - 2026-07-25
+## v2.0.0 - 2026-07-25
 
 ### Notes
 

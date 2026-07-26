@@ -9,7 +9,7 @@
 [![PowerShell](https://img.shields.io/badge/PowerShell-5391FE.svg?logo=powershell&logoColor=white)](https://learn.microsoft.com/powershell/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Latest release](https://img.shields.io/github/v/release/jim-collier/gitsby?include_prereleases&label=release)](https://github.com/jim-collier/gitsby/releases/latest)
-![Lifecycle: RC](https://img.shields.io/badge/Lifecycle-RC-blue)
+![Lifecycle: Stable](https://img.shields.io/badge/Lifecycle-Stable-brightgreen)
 ![Support](https://img.shields.io/badge/Support-Maintained-brightgreen)
 ![Status: Passing](https://img.shields.io/badge/Status-Passing-brightgreen)
 
@@ -244,8 +244,6 @@ With no options, both do a per-user install of the latest release, after showing
 - No `curl`? Swap in `wget -qO-` for `curl -fsSL`. To install from a branch instead of the latest release, append `--ref dev` (or `--ref main`).
 
 ### PowerShell
-
-*The PowerShell version arrived in v2.0.0. If the latest full release predates it, install from a branch instead by adding `-Ref dev` to the scriptblock form below.*
 
 - User-only install
 

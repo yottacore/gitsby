@@ -17,7 +17,7 @@
 #•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Settings
 [[ -v doQuietly         ]] || declare -i doQuietly=0
-[[ -v thisVersion       ]] || declare -r thisVersion="2.0.0-rc1"
+[[ -v thisVersion       ]] || declare -r thisVersion="2.0.0"
 [[ -v thisCopyrightYear ]] || declare -r thisCopyrightYear="2026"
 [[ -v thisAuthor        ]] || declare -r thisAuthor="Jim Collier"
 
@@ -482,6 +482,11 @@ fCmdPrAccept(){
 	gh pr review "${prNum}" --approve || fEcho "Could not approve (own PR?); merging anyway."
 	fEcho_ResetBlankCounter
 	fRun gh pr merge "${prNum}" --merge --delete-branch
+	## gh deletes the PR's branch on the remote but leaves our origin/* copy behind, so an
+	## upstream still looks present. Prune first; if ours is the branch that just went away,
+	## pulling it can only fail - land on the merge target instead.
+	fpFetchRemote
+	fHasUpstream || fRun git checkout "$(fMergeTarget)"
 	fHasUpstream && fRun git pull --ff-only
 :;}
 
@@ -639,16 +644,17 @@ fReleaseVersion(){
 	if [[ -n "${ver}" ]]; then
 		[[ "${ver}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]] || fThrowError_Usage "'${ver}' is not a version (want X.Y.Z, optional -suffix). Syntax: ${meName} release [version]"
 	else
+		ver="0.1.0"  ## first release ever, or an unreadable tag
 		local -a latestArr=()
-		mapfile -t -n 1 latestArr < <(git tag --list 'v[0-9]*' --sort=-v:refname 2>/dev/null || true)
-		local -r latest="${latestArr[0]:-}"
-		if [[ -n "${latest}" ]]; then
-			local -r base="${latest#v}"; local -r plain="${base%%-*}"
-			local maj="" min="" pat=""
-			IFS=. read -r maj min pat <<< "${plain}"
-			ver="${maj}.${min:-0}.$(( ${pat:-0} + 1 ))"  ## pad short tags like v1.2 or v2020
-		else
-			ver="0.1.0"  ## first release ever
+		## versionsort.suffix=- ranks v2.0.0 above its own v2.0.0-rc1; the default sort inverts them.
+		mapfile -t -n 1 latestArr < <(git -c versionsort.suffix=- tag --list 'v[0-9]*' --sort=-v:refname 2>/dev/null || true)
+		if [[ "${latestArr[0]:-}" =~ ^v?([0-9]+)(\.([0-9]+))?(\.([0-9]+))?(.*)$ ]]; then
+			local -r maj="${BASH_REMATCH[1]}"
+			local -r min="${BASH_REMATCH[3]:-0}"  ## pad short tags like v1.2 or v2020
+			local pat="${BASH_REMATCH[5]:-0}"
+			## A candidate's own version is what comes next: v2.0.0-rc1 -> v2.0.0, not v2.0.1.
+			[[ -n "${BASH_REMATCH[6]}" ]] || pat=$(( pat + 1 ))
+			ver="${maj}.${min}.${pat}"
 		fi
 	fi
 	echo "v${ver}"
@@ -824,6 +830,7 @@ fpPreview(){
 		pr)
 			fEcho_Clean "${pad}gh pr review ${prNum} --approve *"
 			fEcho_Clean "${pad}gh pr merge ${prNum} --merge --delete-branch"
+			fEcho_Clean "${pad}git checkout $(fMergeTarget) *"
 			fEcho_Clean "${pad}git pull --ff-only *"
 			;;
 		release)
@@ -1128,3 +1135,5 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##			- release publishes an upstream-less default branch instead of pushing only the tag.
 ##			- The duplicate-tag and dirty-protected-branch refusals moved up front, so neither can fire after the plan was confirmed (and, for release, after it had already committed and pushed).
 ##			- newbr's plan no longer promises a commit when run from main/dev, where the tree is carried over instead.
+##			- pr ok lands on the merge target when gh's --delete-branch removed the branch we were standing on, instead of pulling a branch the remote no longer has.
+##			- A bare release after a candidate proposes that candidate's own version (v2.0.0-rc1 -> v2.0.0) rather than bumping past it.

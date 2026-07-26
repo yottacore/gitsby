@@ -43,22 +43,7 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Bugs
 
-- 🔘 Code Review 20260725 item 5: `pr ok <n>` run from the branch that PR came from ends in a failed pull.
-	- `gh pr merge --delete-branch` removes the remote branch, then the trailing `git pull --ff-only` has nothing to track.
-	- Harmless (the merge already happened) but it reports as a command failure.
-	- Probable fix: skip or soften the trailing pull when the current branch's upstream is gone.
-
 ### Features and enhancements
-
-- 🔘 Code Review 20260725 item 6: `release` with no version bumps the patch of a pre-release tag's base, skipping that base version.
-	- After `v2.0.0-rc1`, a bare `release` proposes `v2.0.1` rather than `v2.0.0`.
-	- Matches the documented "bump the patch" rule, but it is not what someone finishing a release candidate expects.
-	- Options: drop the suffix and keep the base when the newest tag is a pre-release, or just say so in the help text.
-
-- 🔘 The installers' default "latest release" lookup skips anything flagged as a pre-release on GitHub.
-	- GitHub's `releases/latest` returns the newest full release, so a pre-release-only repo resolves to the last full one.
-	- Matters for v2.0.0-rc1: unless it is published as a full release, the one-liner installs still land on the 2022 release.
-	- Options: publish release candidates as full releases, add a `--pre`/`-Pre` flag, or document `--ref` for candidates.
 
 ### Done
 
@@ -85,6 +70,11 @@ In each section, items are listed approximately from newest to oldest.
 	- The preview always listed the commit-and-push steps, but on a protected branch the tree is carried to the new branch instead.
 	- The preview is the safety feature, so it misreporting in exactly the case that was special-cased is the wrong way round.
 	- Fixed: the plan now branches on protected state and shows the checkout-and-carry steps. Regression test added.
+
+- ✅ Code Review 20260725 item 5: `pr ok <n>` run from the branch that PR came from ends in a failed pull (both implementations).
+	- `gh` deletes the branch on the remote through the API, which leaves the local `origin/*` copy in place, so the upstream still looks alive.
+	- The trailing `git pull --ff-only` then asks for a branch the remote no longer has, and the whole command reports as failed.
+	- Fixed: prune first, and if the branch we are standing on is the one that just went away, check out the merge target and pull that instead. The plan shows the extra step. Regression test added, with the fake `gh` restoring the stale ref so the real condition is reproduced.
 
 - ✅ Code Review 20260723 item 1: `pull` failure strands the autostash (both implementations).
 	- Dirty tree gets stashed, then a failed `git pull --ff-only` (diverged or offline) aborts before `git stash pop`.
@@ -185,6 +175,17 @@ In each section, items are listed approximately from newest to oldest.
 	- Fixed: line deleted (merges pass -m, so it was redundant).
 
 #### Done - Features and enhancements
+
+- ✅ Code Review 20260725 item 6: `release` with no version bumps the patch of a candidate tag's base, skipping that base version (both implementations).
+	- After `v2.0.0-rc1`, a bare `release` proposed `v2.0.1` rather than `v2.0.0`.
+	- Fixed: a candidate's own version is now what comes next, so `v2.0.0-rc1` leads to `v2.0.0`.
+	- The tag scan also needed `versionsort.suffix=-`, since git's default version sort ranks `v2.0.0-rc1` above `v2.0.0` and would otherwise propose an already-cut version once the real release exists.
+	- Regression tests cover both halves: the candidate's version is taken, and the release after it bumps normally.
+
+- ✅ The installers' default "latest release" lookup skips anything flagged as a pre-release on GitHub.
+	- GitHub's `releases/latest` returns the newest full release, so a pre-release-only repo resolves to the last full one - for this repo, the 2022 release.
+	- Decided: publish releases as full releases rather than adding a `--pre` flag. The semver suffix still marks a candidate for anyone reading the tag, and the one-liner installs keep working with no extra arguments.
+	- `--ref`/`-Ref` remains the way to install a specific tag or branch, and is already documented.
 
 - ✅ Code Review 20260723 item 14: bound the unconditional pre-command fetch and add an offline escape hatch (both implementations).
 	- A dead/black-holed remote blocks every command for the full TCP/ssh timeout before the "offline?" warning.

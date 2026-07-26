@@ -187,6 +187,13 @@ fRunSuite(){
 	( cd "${cloneA}" && echo more > more.txt )
 	fAssert "release with no version bumps patch"  bash -c "cd '${cloneA}' && '${gitsby}' -q release && git rev-parse -q --verify refs/tags/v1.2.4 >/dev/null"
 
+	## A candidate's own version is what comes next, and once it's cut the bump resumes from it
+	( cd "${cloneA}" && git tag -a v1.3.0-rc1 -m rc1 && echo cand > cand.txt )
+	fAssert "release after a candidate takes the candidate's version"  bash -c "cd '${cloneA}' && '${gitsby}' -q release && git rev-parse -q --verify refs/tags/v1.3.0 >/dev/null"
+	fAssert "it did not skip past to a later patch"                    bash -c "cd '${cloneA}' && ! git rev-parse -q --verify refs/tags/v1.3.1 >/dev/null"
+	( cd "${cloneA}" && echo post > post.txt )
+	fAssert "the next release bumps off the full version, not the candidate"  bash -c "cd '${cloneA}' && '${gitsby}' -q release && git rev-parse -q --verify refs/tags/v1.3.1 >/dev/null"
+
 	## release started from a feature branch returns there; slash branch names work
 	fAssert "newbr relfeat"  bash -c "cd '${cloneA}' && '${gitsby}' -q newbr relfeat"
 	( cd "${cloneA}" && echo rel > rel.txt )
@@ -337,6 +344,14 @@ fRunSuite(){
 case "$1 $2" in
 	"repo view")   case "${FAKE_GH_VIEW:-}" in notfound) exit 1 ;; empty) echo true ;; nonempty) echo false ;; esac ;;
 	"config get")  echo "${FAKE_GH_PROTO:-https}" ;;
+	"pr review")   : ;;  ## gitsby treats approval as best-effort; nothing to fake
+	"pr merge")    ## Land the branch on the base, then drop it from the remote. Real gh does the delete
+	               ## over the API, so the caller's origin/* copy survives it - restore the ref to match.
+	               prBranch="$(git branch --show-current)"
+	               prKeep="$(git rev-parse "refs/remotes/origin/${prBranch}")"
+	               git push --quiet origin "HEAD:${FAKE_GH_BASE:-dev}"
+	               git push --quiet origin --delete "${prBranch}"
+	               git update-ref "refs/remotes/origin/${prBranch}" "${prKeep}" ;;
 	"repo create") git init --quiet --bare -b main "${FAKE_GH_REMOTE}"
 	               git remote add origin "${FAKE_GH_REMOTE}"
 	               git push --quiet -u origin HEAD ;;
@@ -373,6 +388,24 @@ GHEOF
 	## reject: repo already has commits
 	mkdir -p "${gh}/reject"; ( cd "${gh}/reject" && git init --quiet -b main && echo r > r.txt && git add --all && git commit --quiet -m init )
 	fAssertFail "connect owner/name refuses a nonempty repo"  bash -c "cd '${gh}/reject' && PATH='${ghp}' FAKE_GH_VIEW=nonempty '${gitsby}' -q connect me/proj"
+
+	## pr ok run from the PR's own branch: gh deletes the branch on the remote but leaves our
+	## origin/* copy, so the upstream still looks alive and pulling it can only fail.
+	mkdir -p "${gh}/prok"
+	git init --quiet --bare -b main "${gh}/prok/origin.git"
+	local prc="${gh}/prok/c"
+	git clone --quiet "${gh}/prok/origin.git" "${prc}" 2>/dev/null
+	(
+		cd "${prc}" || exit 1
+		echo base > base.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet -b prfeat && echo work > work.txt && git add --all && git commit --quiet -m work
+		git push --quiet -u origin prfeat
+	)
+	fAssertOut "pr ok plans the branch switch"  'git checkout dev'  bash -c "cd '${prc}' && PATH='${ghp}' FAKE_GH_BASE=dev '${gitsby}' -q pr ok 7"
+	fAssert    "pr ok landed on the merge target"  bash -c "cd '${prc}' && [[ \"\$(git branch --show-current)\" == dev ]]"
+	fAssert    "pr ok pulled the merged work"      bash -c "cd '${prc}' && git ls-tree --name-only dev | grep -qx work.txt"
+	fAssert    "the merged branch is gone from origin"  bash -c "cd '${prc}' && ! git ls-remote --heads origin prfeat | grep -q prfeat"
 
 	## no-remote repo: everything still works locally
 	local nr="${work}/$1-noremote"
@@ -413,3 +446,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260723 JC: Checks for the update command (and its old name), and for dev fast-forwarding after a release.
 ##		- 20260724 JC: clone and connect checks (dev checkout, no-op re-runs, plain-dir connect, nonempty/missing-remote and collision guards).
 ##		- 20260724 JC: exhaustive clone/connect coverage - no-dev/empty-dir/different-url clone edges, empty-repo + matching-url connect, and the gh owner/name paths (create, add https/ssh, nonempty-refuse) via a hermetic fake gh.
+##		- 20260725 JC: Release-candidate version checks, and pr ok from the merged branch - the fake gh grew a pr merge that restores the stale origin ref, since that is what makes the real failure reproduce.

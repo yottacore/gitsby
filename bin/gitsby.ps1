@@ -52,7 +52,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:thisVersion = '2.0.0-rc1'
+$script:thisVersion = '2.0.0'
 $script:thisCopyrightYear = '2026'
 $script:thisAuthor = 'Jim Collier'
 $script:meName = Split-Path -Leaf -Path $PSCommandPath
@@ -286,13 +286,16 @@ function Get-ReleaseVersion {
             throw "'${ver}' is not a version (want X.Y.Z, optional -suffix). Syntax: ${script:meName} release [version]"
         }
     } else {
-        $latest = @(git tag --list 'v[0-9]*' --sort=-v:refname 2>$null) | Select-Object -First 1
-        if ($latest) {
-            $plain = (([string]$latest) -replace '^v', '') -replace '-.*$', ''
-            $parts = @($plain -split '\.') + @('0', '0')  ## pad short tags like v1.2 or v2020
-            $ver = '{0}.{1}.{2}' -f $parts[0], $parts[1], ([int]$parts[2] + 1)
-        } else {
-            $ver = '0.1.0'  ## first release ever
+        $ver = '0.1.0'  ## first release ever, or an unreadable tag
+        ## versionsort.suffix=- ranks v2.0.0 above its own v2.0.0-rc1; the default sort inverts them.
+        $latest = @(git -c versionsort.suffix=- tag --list 'v[0-9]*' --sort=-v:refname 2>$null) | Select-Object -First 1
+        if ([string]$latest -match '^v?([0-9]+)(\.([0-9]+))?(\.([0-9]+))?(.*)$') {
+            $maj = $Matches[1]
+            $min = if ($Matches[3]) { $Matches[3] } else { '0' }  ## pad short tags like v1.2 or v2020
+            $pat = if ($Matches[5]) { [int]$Matches[5] } else { 0 }
+            ## A candidate's own version is what comes next: v2.0.0-rc1 -> v2.0.0, not v2.0.1.
+            if (-not $Matches[6]) { $pat += 1 }
+            $ver = "${maj}.${min}.${pat}"
         }
     }
     return "v${ver}"
@@ -490,6 +493,7 @@ function Show-CommandPreview {
         'pr' {
             Write-PlainLine "${pad}gh pr review $($script:prNum) --approve *"
             Write-PlainLine "${pad}gh pr merge $($script:prNum) --merge --delete-branch"
+            Write-PlainLine "${pad}git checkout $(Get-MergeTarget) *"
             Write-PlainLine "${pad}git pull --ff-only *"
             break
         }
@@ -689,6 +693,11 @@ function Invoke-GitsbyPrAccept {
     gh pr merge $PrNumber --merge --delete-branch
     if ($LASTEXITCODE -ne 0) { throw "gh pr merge failed (exit ${LASTEXITCODE})." }
     Clear-BlankCounter
+    ## gh deletes the PR's branch on the remote but leaves our origin/* copy behind, so an
+    ## upstream still looks present. Prune first; if ours is the branch that just went away,
+    ## pulling it can only fail - land on the merge target instead.
+    git fetch --quiet --prune 2>$null
+    if (-not (Test-GitUpstream)) { Invoke-Git -GitArgs @('checkout', (Get-MergeTarget)) }
     if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
 }
 
@@ -1017,4 +1026,4 @@ try {
 ##      - 20260724 JC: Non-tty mutating runs fail closed without -q; extra positional after a message rejected; case-sensitive branch compares; release tolerates short tags like v1.2; masked credentials in the displayed remote URL; fetch with --prune + origin/HEAD heal + ssh connect timeout; -NoFetch; tolerant remote-branch delete in land; exit-code checks in pr view/listbr; drive-letter remotes not treated as ssh hosts; ssh -G gets --; per-run default-branch/merge-target caching; dropped the redundant GIT_MERGE_AUTOEDIT (it leaked into the calling session) - in step with bin/gitsby.
 ##      - 20260724 JC: newbr/gobr branch arguments validate before the preview; bare 'help'/'version' words work; -y/-yes aliases for -Quiet; Test-GitAhead stops at the first commit - in step with bin/gitsby.
 ##      - 20260724 JC: Added clone (checks out dev if the repo has one; re-run is a no-op) and connect (init if needed, commit, push to an empty remote, or gh repo create for owner/name; -Public/-Private) - in step with bin/gitsby.
-##      - 20260725 JC: release publishes an upstream-less default branch instead of pushing only the tag; the duplicate-tag and dirty-protected-branch refusals moved up front, ahead of the confirmed plan; newbr's plan no longer promises a commit when run from main/dev - in step with bin/gitsby.
+##      - 20260725 JC: release publishes an upstream-less default branch instead of pushing only the tag; the duplicate-tag and dirty-protected-branch refusals moved up front, ahead of the confirmed plan; newbr's plan no longer promises a commit when run from main/dev; pr ok lands on the merge target when gh deleted the branch we were on; a bare release after a candidate proposes that candidate's own version - in step with bin/gitsby.
