@@ -113,7 +113,7 @@ How Gitsby shrinks Git's command set:
 
 - For large projects, you may still need to use bare Git (and/or some other wrapper) to resolve some sticky situations that Gitsby purposely doesn't try to tackle (and almost certainly didn't create), in order to "keep-it-simple" and "do-one-thing-well".
 
-👉 Gitsby is 100% compatible with GitHub and GitLab.
+👉 Gitsby works against any Git remote, GitHub and GitLab included. The exceptions are the `pr` commands and `repo create`, which go through [gh](https://github.com/cli/cli) and are therefore GitHub-only. Everything else is remote-agnostic.
 
 > Note: [GitButler](https://gitbutler.com/) is *not* interchangeable with Git, Gitsby, gh, LazyGit, and/or Tig. While a great tool and a cool idea, it manages its own metadata - that inherently doesn't mix well with other git-based tools that moves `HEAD` or rewrites history. It's worth a look and a try - but to be safe, give it a dedicated trial on a small personal repo, without mixing in other tools.
 
@@ -155,9 +155,11 @@ There are many implicit opinions baked in. Here are the main ones:
 
 - `git push` only to a feature branch you created.
 
-- Don't `push` to `dev`, `main`, or `master`; instead, create a Pull Request. Even if you otherwise have the rights to, and even for small personal "toy" projects.
+- Don't `push` your own work to `dev`, `main`, or `master`; instead, create a Pull Request. Even if you otherwise have the rights to, and even for small personal "toy" projects.
 
-	While PRs are overkill for small personal projects, it is nevertheless good hygiene, does not add much extra effort, and reinforces good working habits at a reflexive level.
+	While PRs are overkill for small personal projects, they are nevertheless good hygiene, do not add much extra effort, and reinforce good working habits at a reflexive level.
+
+	(`br land` and `release` do push the target branch - but that push *is* the merge or the release, not a shortcut around one.)
 
 - Pushed history is permanent. No rebase, no amend, no force-push, no rewriting.
 
@@ -169,13 +171,13 @@ There are many implicit opinions baked in. Here are the main ones:
 
 - Commit and pull frequently (`update`); push less often (`sync`).
 
-- Uncommitted work should never block anything. A pull auto-stashes around itself, `br create` carries uncommitted work onto the new branch, and a branch switch parks current work first (pull, commit, push - though never auto-committed onto `main`/`dev`), so nothing is ever stranded or lost.
+- Uncommitted work should never block anything. The pull inside `update`/`sync` auto-stashes around itself, `br create` off `dev`/`main` carries uncommitted work onto the new branch, and everything else parks current work first (pull, commit, push - though never auto-committed onto `main`/`dev`), so nothing is ever stranded or lost.
 
 - Every branch tracks a same-named branch on `origin`, from the moment it's created.
 
 - One remote, and it's named `origin`. (Multi-remote setups are another fringe case left to raw `git`.)
 
-- Releases are annotated semver tags (`vX.Y.Z`). If no version is given, bump the patch.
+- Releases are annotated semver tags (`vX.Y.Z`). If no version is given, take the next one after the latest tag: usually a patch bump, except that a candidate like `v2.0.0-rc1` resolves to `v2.0.0`.
 
 - Look before you leap: fetch first, show the current state and the exact commands about to run, and ask before doing anything that mutates.
 
@@ -204,23 +206,25 @@ What you reach for daily is one word. Everything else is grouped under a noun, s
 | `update`             | `[msg]`       | Pull updates, then commit all local changes. Do frequently!
 | `sync`               | `[msg]`       | Pull, commit, and push. Do infrequently.
 | `status`             |               | Fetch and show current status.
-| `release`            | `[ver]`       | Cut a release: merge `dev` into `main`, tag, push. No version: bump the patch.
+| `release`            | `[ver]`       | Cut a release: merge `dev` into `main`, tag, push. No version: the next one after the latest tag.
 | `br`                 |               | Fetch and list branches (`br list` is the same thing).
-| `br create`          | `<branch>`    | Create a new branch off `dev`/`main` (carries current uncommitted work to it).
+| `br create`          | `<branch>`    | Create a new branch off `dev`/`main`. Uncommitted work on `dev`/`main` comes along; on another branch it is parked there first.
 | `br switch`          | `[branch]`    | Switch to a branch (parks current work first). No arg: back to `dev`/`main`.
 | `br land`            | `[msg]`       | Merge the current branch into `dev`/`main` (`--no-ff`), push, delete it local + remote.
-| `br prune`           |               | Delete every branch already merged into `dev`/`main`, local + remote. Unmerged branches are kept.
+| `br prune`           |               | Delete branches already merged into `dev`/`main`, local + remote. Unmerged ones, and the branch you're on, are kept.
 | `repo clone`         | `<url> [dir]` | Clone a repo you don't have yet (checks out `dev` if it has one). Re-run is a no-op.
-| `repo create`        | `<owner/name>`| Create the GitHub repo via [gh](https://github.com/cli/cli), then `git init` if needed, commit, and push (`--public`/`--private`; private by default).
+| `repo create`        | `<owner/name>`| `git init` if needed, commit, then create the GitHub repo via [gh](https://github.com/cli/cli) and push to it (`--public`/`--private`; private by default).
 | `repo connect`       | `[target]`    | Publish local work to a remote that already exists and is empty: `git init` if needed, commit, push. Takes a URL or `owner/name`.
 | `pr`                 |               | Lists PRs via [gh](https://github.com/cli/cli).
 | `pr <#>`             |               | View a PR plus its diff.
 | `pr create`          | `[title]`     | Push the current branch and open a PR against `dev`/`main` (no title: the last commit subject).
 | `pr ok`              | `<#>`         | Approve and merge a PR.
 
-There is deliberately no bare `commit` and no bare `pull`. Committing without sharing is how work quietly diverges, and pulling without committing is the one thing the rest of the tool never does - `br create`, `br switch`, `br land` and `pr create` all park your work first. `update` is the one command for both, and it pulls *before* it commits so your work lands on top of everyone else's and history stays linear.
+There is deliberately no bare `commit` and no bare `pull`. Committing without sharing is how work quietly diverges, and pulling without committing is the one thing the rest of the tool never does - `br create`, `br switch`, `br land`, and `pr create` all deal with your work first. `update` is the one command for both, and it pulls *before* it commits so your work lands on top of everyone else's and history stays linear.
 
-Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--no-fetch` (work offline: skip the fetch and the pull), `-h`, `-v`.
+Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--public`/`--private` (visibility for `repo create`; private by default), `--no-fetch` (work offline: skip the fetch and the pull), `-h`, `-v`.
+
+The PowerShell version takes the same options in PowerShell form: `-Message MSG`, `-Quiet`/`-y`, `-Public`/`-Private`, `-NoFetch`, `-Help`, `-Version`. Commands and arguments are spelled identically in both.
 
 A typical day:
 
@@ -246,7 +250,7 @@ gitsby sync
 gitsby br land "Add Feature1"
 ~~~
 
-Every mutating command fetches first, shows the repo state (including who you'd act as on the remote) and the exact git commands it's about to run, and asks before touching anything. `pr` and `release` close the loop: review/accept the pull request, then cut a tagged release from `dev`.
+Every mutating command in an existing repo fetches first (unless you pass `--no-fetch`), shows the repo state (including who you'd act as on the remote) and the exact git commands it's about to run, and asks before touching anything. `pr` and `release` close the loop: review/accept the pull request, then cut a tagged release from `dev`.
 
 ## Installation
 
@@ -306,11 +310,13 @@ With no options, both do a per-user install of the latest release, after showing
 No installer: grab the script itself, make it executable, and put it on your PATH.
 
 ~~~bash
-curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/bin/gitsby -o ~/.local/bin/gitsby && chmod +x ~/.local/bin/gitsby
+mkdir -p ~/.local/bin && curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/bin/gitsby -o ~/.local/bin/gitsby && chmod +x ~/.local/bin/gitsby
 ~~~
 
 ~~~pwsh
-irm https://raw.githubusercontent.com/jim-collier/gitsby/main/bin/gitsby.ps1 -OutFile "$HOME/.local/bin/gitsby.ps1"
+$dest = if ($IsWindows) { "$env:LOCALAPPDATA\Programs\gitsby" } else { "$HOME/.local/bin" }
+New-Item -ItemType Directory -Force -Path $dest | Out-Null
+irm https://raw.githubusercontent.com/jim-collier/gitsby/main/bin/gitsby.ps1 -OutFile "$dest/gitsby.ps1"
 ~~~
 
 For reference, the installers use: `~/.local/bin` (user) or `/usr/local/bin` (system) on *nix; `%LOCALAPPDATA%\Programs\gitsby` (user) or `%ProgramFiles%\gitsby` (system) on Windows.

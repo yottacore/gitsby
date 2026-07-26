@@ -131,7 +131,7 @@ function Show-Syntax {
     Write-PlainLine ''
     Write-PlainLine 'Common commands:'
     Write-PlainLine '  update [msg] .......: Pull updates, then commit all local changes. Do frequently!'
-    Write-PlainLine "  br create <branch> .: Create a new branch off ${script:mergeTargetLabel} (brings current work along)."
+    Write-PlainLine "  br create <branch> .: Create a new branch off ${script:mergeTargetLabel} (current work is carried or parked)."
     Write-PlainLine "  br switch [branch] .: Switch to a branch (parks current work first). No arg: back to ${script:mergeTargetLabel}."
     Write-PlainLine '  br [list] ..........: Fetch and list branches.'
     Write-PlainLine '  status .............: Fetch and show current status.'
@@ -145,7 +145,7 @@ function Show-Syntax {
     Write-PlainLine "  br land [msg] ......: Merge current branch into ${script:mergeTargetLabel} (--no-ff), push, delete it local + remote."
     Write-PlainLine "  br prune ...........: Delete branches already merged into ${script:mergeTargetLabel}, local + remote."
     Write-PlainLine '  pr [create|n|ok n] .: Create, list, review, or accept a pull request (needs gh).'
-    Write-PlainLine '  release [ver] ......: Cut a release: merge dev into main, tag, push. No ver: bump patch.'
+    Write-PlainLine '  release [ver] ......: Cut a release: merge dev into main, tag, push. No ver: next after latest tag.'
     Write-PlainLine 'Options:'
     Write-PlainLine '  -m, -Message MSG .....: Commit or merge message (or give it positionally).'
     Write-PlainLine '  -q, -Quiet, -y .......: Assume yes - no prompts; if committing with no message, one is generated.'

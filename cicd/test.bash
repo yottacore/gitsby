@@ -67,6 +67,8 @@ fRunSuite(){
 	fAssert     "bare 'help' word works"       "${gitsby}" help
 	fAssert     "bare 'version' word works"    "${gitsby}" version
 	fAssertOut  "help keeps the pull-then-commit order" 'sync .*: Pull, commit, and push' "${gitsby}" --help
+	fAssertOut  "help doesn't promise a bare patch bump" 'release .*: .*next after latest tag' "${gitsby}" --help
+	fAssertOut  "help doesn't overpromise br create"    'br create .*: .*carried or parked'   "${gitsby}" --help
 	fAssert     "-y alias accepted"            bash -c "cd '${cloneA}' && '${gitsby}' -y status"
 	fAssertFail "no args exits nonzero"        "${gitsby}"
 	fAssertFail "unknown command rejected"     bash -c "cd '${cloneA}' && '${gitsby}' -q frobnicate"

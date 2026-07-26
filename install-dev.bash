@@ -49,10 +49,11 @@ done
 
 command -v git >/dev/null 2>&1 || fErr "git is required; install it first."
 
-## Tooling used by the local cicd pipeline (cicd/cicd.bash). Only bash 5+ and git
+## Tooling used by the local cicd pipeline (cicd/cicd.bash). Only bash 4.4+ and git
 ## are required to run/hack on gitsby itself; the rest gate the pipeline stages.
 missingPkgs=""; notes=""
-[[ "${BASH_VERSINFO[0]}" -ge 5 ]]        || notes="${notes}  - bash 5+ (gitsby itself needs it; this installer doesn't)\n"
+## 4.4 is the floor: bin/gitsby sets inherit_errexit, which older bash rejects.
+[[ "${BASH_VERSINFO[0]}" -gt 4 || ( "${BASH_VERSINFO[0]}" -eq 4 && "${BASH_VERSINFO[1]}" -ge 4 ) ]] || notes="${notes}  - bash 4.4+ (gitsby itself needs it; this installer doesn't)\n"
 command -v shellcheck >/dev/null 2>&1    || missingPkgs="${missingPkgs} shellcheck"
 command -v python3    >/dev/null 2>&1    || missingPkgs="${missingPkgs} python3"
 command -v markdownlint >/dev/null 2>&1  || notes="${notes}  - markdownlint (npm install -g markdownlint-cli)\n"

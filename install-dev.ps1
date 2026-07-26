@@ -37,9 +37,9 @@ if (Test-Path -LiteralPath $Directory) { throw "'${Directory}' already exists; p
 
 # The local cicd pipeline (cicd/cicd.bash) is bash-based; on Windows it runs
 # under WSL or Git Bash. Only git + PowerShell 7 are needed to hack on the
-# (future) PowerShell port itself.
+# PowerShell port itself.
 $toolNotes = @()
-if (-not (Get-Command -Name bash -ErrorAction SilentlyContinue)) { $toolNotes += 'bash 5+ (for the cicd pipeline and the Bash gitsby; WSL or Git Bash on Windows)' }
+if (-not (Get-Command -Name bash -ErrorAction SilentlyContinue)) { $toolNotes += 'bash 4.4+ (for the cicd pipeline and the Bash gitsby; WSL or Git Bash on Windows)' }
 if (-not (Get-Command -Name shellcheck -ErrorAction SilentlyContinue)) { $toolNotes += 'shellcheck (lint stage)' }
 if (-not (Get-Command -Name markdownlint -ErrorAction SilentlyContinue)) { $toolNotes += 'markdownlint (npm install -g markdownlint-cli)' }
 

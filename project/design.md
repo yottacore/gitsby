@@ -25,7 +25,9 @@ Design, requirements, and direction. The active bug and feature task list lives 
 
 - `project/` - this file and the backlog.
 
-- `assets/` - the demo shown at the top of the README.
+- `assets/` - the logo and the demo shown at the top of the README.
+
+- `reference/` - notes kept for lookup, not published as project docs.
 
 - Root - the four installers, the license, and the public docs.
 
@@ -61,14 +63,14 @@ The two files are ports of each other. A change to one nearly always belongs in 
 
 - There is no bare `commit` and no bare `pull`. Both were escape hatches around the workflow the tool exists to enforce.
 	- `commit` alone produces exactly the state gitsby was written to prevent: work committed locally that never reaches the remote, diverging quietly until the merge is painful.
-	- `pull` alone was the only place gitsby let you take upstream changes without parking your own work, which contradicts what it does everywhere else - `br create`, `br switch`, `br land` and `pr create` all park first.
+	- `pull` alone was the only place gitsby let you take upstream changes without dealing with your own work first, which contradicts what it does everywhere else - `br switch`, `br land`, and `pr create` park it; `br create` off `dev`/`main` carries it onto the new branch.
 	- We decided the asymmetry settles it: dropping a command before release costs nothing, and adding one back later breaks nobody. Removing one after release would.
 	- Removing `pull` exposed a real bug it had been masking - see the ordering decision below.
 
 - `update` and `sync` pull *before* they commit.
 	- Committing first mints a local commit, so a remote that has merely moved ahead is now diverged and a fast-forward-only pull must refuse. That is the everyday case, not an edge one, and it was failing.
 	- Pulling first fast-forwards under `--autostash`, so the dirty tree rides over and the commit lands on top. History stays linear and fast-forward-only stays satisfiable, which is the whole reason the tool never merges behind your back.
-	- Nothing is risked by pulling first: `--autostash` leaves the tree exactly as it found it if the pull fails.
+	- Nothing is risked by pulling first: on a failed pull `--autostash` restores the tree as it found it, rather than stranding work in the stash. (A restore that conflicts is the one case git leaves the entry behind, and it says so.)
 
 - Being offline must never turn a good commit into a failed command, now that `update` is the only way to commit.
 	- A remote that can't be reached warns and skips the pull. A remote that *is* reachable but can't fast-forward is a real problem and still fails hard - the distinction is what the pre-command fetch already discovered.
@@ -111,7 +113,7 @@ The two files are ports of each other. A change to one nearly always belongs in 
 
 ### Software stack
 
-- Bash 4.4+ (for *nix or WSL), and/or PowerShell 7+ (cross-platform). Nothing else at run time except `git`, plus `gh` for the two commands that need it.
+- Bash 4.4+ (for *nix or WSL), and/or PowerShell 7+ (cross-platform). Nothing else at run time except `git`, plus `gh` for the commands that need it: every `pr` form, `repo create`, and `repo connect` when given an `owner/name` rather than a URL.
 
 - No configuration file, and no state of its own. Everything gitsby knows, it asks `git` for. That is deliberate: there is nothing to get out of sync, and nothing to migrate.
 
