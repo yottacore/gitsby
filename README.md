@@ -51,7 +51,7 @@
 <table style="border: none; border-collapse: collapse;">
 	<tr style="border: none; border-collapse: collapse;">
 		<td style="border: none; border-collapse: collapse;"><img src="assets/logo.png" alt="Logo" width="128"/></td>
-		<td style="border: none;">A simple, safe, and opinionated Git wrapper to speed up everyday Git workflow. Unlimited safe project scaling.<br /><br />It's so simple and safe, because it does quite a bit of heavy-lifting for you.</td>
+		<td style="border: none;">A simple, safe, and opinionated Git wrapper to speed up everyday Git workflow. Unlimited safe project scaling.<br /><br />It's so simple and safe because it does quite a bit of heavy-lifting for you.</td>
 	</tr>
 </table>
 
@@ -99,11 +99,11 @@ How Gitsby shrinks Git's command set:
 
 - By acknowledging that (arguably) some 90% of Git's complexity is devoted to covering about 10% of edge use-cases, and purposely ignoring most of them. (That is to say, not pretending they never happen - just not trying to be the tool to solve them if and when they arise.)
 
-- Commands are oriented around *goals* (e.g. "what do I want to happen with these changes?"), rather than a series of *administrative tasks*.
+- By orienting commands around *goals* (e.g. "what do I want to happen with these changes?"), rather than around a series of *administrative tasks*.
 
 	- It's a subtle but important distinction.
 
-	- And it means that Gitsby commands don't map 1:1 with Git commands - but do line up with many common real-world "best practice" use cases of Git (as series of multiple commands at a time with brief human decisions made in between them).
+	- And it means that Gitsby commands don't map 1:1 with Git commands - but do line up with many common real-world "best practice" use cases of Git (as a series of multiple commands at a time, with brief human decisions made in between them).
 
 ## Compatibility
 
@@ -111,11 +111,11 @@ How Gitsby shrinks Git's command set:
 
 - This makes giving Gitsby a "tryout" cheap and easy - you don't need to commit to anything. (No pun intended.)
 
-- For large projects, you may still need to use bare Git (and/or some other wrapper) to resolve some sticky situations that Gitsby purposely doesn't try to tackle (and almost certainly didn't create), in order to "keep-it-simple" and "do-one-thing-well".
+- For large projects, you may still need bare Git (and/or some other wrapper) to resolve sticky situations that Gitsby purposely doesn't try to tackle - and almost certainly didn't create. Leaving them alone is what "keep-it-simple" and "do-one-thing-well" cost.
 
 👉 Gitsby works against any Git remote, GitHub and GitLab included. The exceptions are the `pr` commands and `repo create`, which go through [gh](https://github.com/cli/cli) and are therefore GitHub-only. Everything else is remote-agnostic.
 
-> Note: [GitButler](https://gitbutler.com/) is *not* interchangeable with Git, Gitsby, gh, LazyGit, and/or Tig. While a great tool and a cool idea, it manages its own metadata - that inherently doesn't mix well with other git-based tools that moves `HEAD` or rewrites history. It's worth a look and a try - but to be safe, give it a dedicated trial on a small personal repo, without mixing in other tools.
+> Note: [GitButler](https://gitbutler.com/) is *not* interchangeable with Git, Gitsby, gh, Lazygit, and/or Tig. While a great tool and a cool idea, it manages its own metadata - that inherently doesn't mix well with other git-based tools that move `HEAD` or rewrite history. It's worth a look and a try - but to be safe, give it a dedicated trial on a small personal repo, without mixing in other tools.
 
 ## General attributes
 
@@ -123,15 +123,15 @@ Gitsby:
 
 - Encourages and partially enforces an "opinionated" workflow. (More on what that means below, because it has become an overloaded word.)
 
-- It doesn't cover fringe use-cases, which Git itself can cover while still using this for the more common stuff.
+- Doesn't cover fringe use-cases. Reach for bare Git when one comes up, and keep using this for the common stuff.
 
-- It's goal-oriented, rather than task-driven. (The subcommands themselves illustrate what this means.)
+- Is goal-oriented, rather than task-driven. (The subcommands themselves illustrate what this means.)
 
-To be clear, gitsby is just shell script. (Two scripts actually, with the same syntax and results.) It exposes a set of goal-oriented commands, then sanity-checking arguments and underlying filesystem, and chains the appropriate git commands together to accomplish that goal.
+To be clear, Gitsby is just shell script. (Two scripts actually, with the same syntax and results.) It exposes a set of goal-oriented commands, sanity-checks the arguments and the underlying filesystem, and chains the appropriate git commands together to accomplish that goal.
 
 Gitsby does nothing that Git can't do directly by a skilled and experienced user - just with far fewer opportunities for common human mistakes.
 
-Sub-objectives in the workflow of each gitsby command:
+Sub-objectives in the workflow of each Gitsby command:
 
 1. Don't make assumptions about the underlying repo state.
 
@@ -191,11 +191,11 @@ Many of those tough edge-cases arose in the first place, precisely because our g
 
 I surveyed the git tools and wrappers available at the time and concluded they were also "too flexible" - none enforced an opinionated (enough) workflow based on well-established industry best practices.
 
-So I wrote x9git, the v1 forerunner of gitsby.
+So I wrote x9git, the v1 forerunner of Gitsby.
 
 For years, it worked and was extremely useful. But it wasn't comprehensive enough - bare git was still needed on a regular basis. Also, the version that worked well, while open-sourced and committed to a company repo, never made it into this "permanent home" repo when I created it a couple of years later. That first commit had some broken features I punted on and commented out.
 
-Now, years later, this v2 release - renamed gitsby - finally fulfills the original vision: with a small but comprehensive end-to-end set of bulletproof commands.
+Now, years later, this v2 release - renamed Gitsby - finally fulfills the original vision: with a small but comprehensive end-to-end set of bulletproof commands.
 
 ## Commands
 
@@ -351,7 +351,7 @@ Given that you may be using this for mission-critical work (as I do), Gitsby mus
 
 - Useful
 
-It is currently simple enough, that the first two objectives are attainable. (And believed to be now, as verified through manual QA, exhaustive automated testing, and near-daily use.)
+It is currently simple enough that the first two objectives are attainable. (And believed to be met now, as verified through manual QA, exhaustive automated testing, and near-daily use.)
 
 Given how it's written, even if a feature fails its design, it should in theory still never compromise your work.
 
