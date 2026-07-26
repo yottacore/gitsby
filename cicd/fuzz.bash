@@ -62,7 +62,7 @@ fRefuse(){ local -r desc="$1"; local -r dir="$2"; shift 2; fRun "${dir}" "$@"
 ## glob-expanding a bare '*'/'?' message into filenames before git sees it.
 fMsgLiteral(){ local -r desc="$1"; local -r dir="$2"; local -r msg="$3"
 	echo "chg ${RANDOM}" > "${dir}/seed.txt"
-	fRun "${dir}" -q commit "${msg}"
+	fRun "${dir}" -q update "${msg}"
 	local rec; rec="$(cd "${dir}" && git log -1 --format=%s)"
 	if _isCrash;             then fFail "${desc}: crashed (exit ${_code})"
 	elif [[ "${rec}" == "${msg}" ]]; then fOk "${desc}"
@@ -171,11 +171,12 @@ GHEOF
 
 	## Commit messages: anything goes in a message, but it stays inert data. Each
 	## needs a real change to reach 'git commit'; unique content guarantees one.
+	## 'update' is the command that commits - there is no bare 'commit' any more.
 	local repo2="${base}/msg"; fMakeRepo "${repo2}"
 	local -i i=0 m
 	for m in "${!inject[@]}"; do
 		echo "change ${i}" > "${repo2}/seed.txt"; i=$((i + 1))
-		fSurvive "commit message inert: '${inject[m]}'" "${repo2}" -q commit "${inject[m]}"
+		fSurvive "commit message inert: '${inject[m]}'" "${repo2}" -q update "${inject[m]}"
 	done
 	## ...and a bare-glob message must land verbatim, not expand to filenames. The
 	## repo has files, so '*' and '*.txt' would glob if the message weren't literal.
@@ -213,9 +214,9 @@ GHEOF
 	local long; long="$(printf 'x%.0s' {1..5000})"
 	fRefuse  "long branch refused"  "${repo3}" -q br create "${long}"
 	echo odd > "${repo2}/seed.txt"
-	fSurvive "long message survives" "${repo2}" -q commit "${long}"
+	fSurvive "long message survives" "${repo2}" -q update "${long}"
 	echo odd2 > "${repo2}/seed.txt"
-	fSurvive "unicode/emoji message" "${repo2}" -q commit $'café \u{1F600} ‮ rtl'
+	fSurvive "unicode/emoji message" "${repo2}" -q update $'café \u{1F600} ‮ rtl'
 
 	## No-mutate: a refused command leaves HEAD and branch exactly as they were.
 	local before_head before_branch

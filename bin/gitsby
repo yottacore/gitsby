@@ -56,8 +56,6 @@ fSyntax(){ { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax=
 	fEcho_Clean "  repo connect [url] .: Connect this directory to an existing empty remote, and push."
 	fEcho_Clean "Less common commands:"
 	fEcho_Clean "  sync [msg] .........: Commit, pull, and push. Do infrequently."
-	fEcho_Clean "  pull ...............: Pull only (auto-stashes around it if dirty)."
-	fEcho_Clean "  commit [msg] .......: Commit all local changes (without pull)."
 	fEcho_Clean "Admin commands, e.g. for small solo projects:"
 	fEcho_Clean "  br land [msg] ......: Merge current branch into ${mergeTargetLabel} (--no-ff), push, delete it local + remote."
 	fEcho_Clean "  pr [create|n|ok n] .: Create, list, review, or accept a pull request (needs gh)."
@@ -99,6 +97,7 @@ fMain(){
 	local cmdArg3=""        ## positional 4: only 'repo clone <url> [dir]' goes this deep
 	local commitMessage=""  ## may be set by fParseArgs (-m/--message/--msg)
 	local -i doFetch=1      ## cleared by --no-fetch
+	local -i remoteReachable=1  ## cleared when the pre-command fetch can't reach origin
 	local repoVisibility="private"  ## --public/--private, for 'repo create'
 	local defaultBranchCache=""; local mergeTargetCache=""  ## per-run constants, filled post-fetch
 	local -i inRepo=0
@@ -140,12 +139,12 @@ fMain(){
 	case "${cmdName}" in
 		status|br-list)          isMutating=0 ;;
 		pr)                      [[ "${cmdArg,,}" =~ ^(ok|create|new)$ ]] || isMutating=0 ;;
-		commit|update|sync|br-land)
+		update|sync|br-land)
 			[[ -z "${commitMessage}" ]] && commitMessage="${cmdArg}"
 			[[ -n "${cmdArg2}" ]] && fThrowError_Usage "Unexpected extra argument '${cmdArg2}'; quote your commit message."
 			;;
 		repo-clone) : ;;  ## the only one with a second argument of its own (the target directory)
-		pull|br-create|br-switch|release|repo-create|repo-connect)
+		br-create|br-switch|release|repo-create|repo-connect)
 			[[ -n "${cmdArg2}" ]] && fThrowError_Usage "Unexpected extra argument '${cmdArg2}'."
 			;;
 		*) fThrowError_Usage "Unknown command '${cmdName}'. Run '${meName}' with no arguments for a list." ;;
@@ -363,8 +362,6 @@ fMain(){
 	fi
 
 	case "${cmdName}" in
-		commit)                   fCmdCommit ;;
-		pull)                     fCmdPull ;;
 		update)                   fCmdCommitPull ;;
 		sync)                     fCmdPush ;;
 		br-create)                fCmdNewBranch "${cmdArg}" ;;
@@ -407,7 +404,14 @@ fCmdCommit(){
 fCmdPull(){
 	## --autostash instead of a manual stash push/pop: a failed pull (diverged, offline)
 	## leaves the tree intact instead of stranding work in the stash.
-	if fHasUpstream; then
+	## Skipping beats failing when the remote is simply out of reach: update is the only
+	## way to commit, so being offline must not turn a good commit into a failed command.
+	## A reachable remote that can't fast-forward is a real problem and still fails hard.
+	if ((! doFetch)); then
+		fEcho "Skipping the pull (--no-fetch)."
+	elif ((! remoteReachable)); then
+		fEcho "WARNING: remote unreachable; skipped the pull. Your work is committed locally."
+	elif fHasUpstream; then
 		fRun git pull --ff-only --autostash
 	else
 		fEcho "No upstream configured for this branch; nothing to pull."
@@ -415,8 +419,12 @@ fCmdPull(){
 :;}
 
 fCmdCommitPull(){
-	fCmdCommit
+	## Pull BEFORE committing. Committing first mints a local commit, so a remote that merely
+	## moved ahead is now diverged and --ff-only refuses - which is the everyday case, not an
+	## edge one. Pulling first fast-forwards (the dirty tree rides over on --autostash) and the
+	## commit lands on top, so history stays linear and --ff-only stays satisfiable.
 	fCmdPull
+	fCmdCommit
 :;}
 
 fCmdPush(){
@@ -688,6 +696,7 @@ fpFetchRemote(){
 	if env "${fetchEnv[@]}" git fetch --quiet --prune 2>/dev/null; then
 		env "${fetchEnv[@]}" git remote set-head origin --auto >/dev/null 2>&1 || true
 	else
+		remoteReachable=0
 		fEcho "WARNING: git fetch failed (offline?); remote info may be stale."
 	fi
 :;}
@@ -832,6 +841,8 @@ fpShowStatus(){
 
 fpPreview(){
 	## Static per-command recipe; the command functions do the real state checks at run time.
+	## 'commit' and 'pull' are no longer commands of their own - they stay here as the
+	## fragments update/sync/br-* compose their own plans from.
 	local -r pad="    "
 	local msgDisp="git commit"
 	[[ -n "${commitMessage}" ]] && msgDisp="git commit -m \"${commitMessage}\""
@@ -844,8 +855,8 @@ fpPreview(){
 			fEcho_Clean "${pad}git pull --ff-only --autostash *"
 			;;
 		update)
-			fpPreview commit
 			fpPreview pull
+			fpPreview commit
 			;;
 		sync)
 			fpPreview update
@@ -1222,3 +1233,7 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##			- Regrouped the infrequent commands under nouns: newbr/gobr/listbr/land -> br create/switch/list/land, clone/connect -> repo clone/connect, pr new -> pr create. 'repository'/'branch' spell out; 'new'/'go' stay as hidden subcommand aliases.
 ##			- Split the old connect in two: 'repo create <owner/name>' is the only thing that will bring a remote into existence, and 'repo connect' now refuses a target that doesn't exist yet.
 ##			- Dropped every pre-v2 command alias (scommit, spull, scompul, saveup, spush, mkbranch, chbranch, mtm, list). v2 is a clean break, under a new name.
+##		- 20260726 JC:
+##			- Dropped the bare 'commit' and 'pull' commands; update is the one command that does both. Each was a way around the workflow the tool enforces.
+##			- update/sync now pull BEFORE committing. Committing first minted a local commit, so any remote that had moved ahead was diverged and the ff-only pull refused - the everyday case, and broken until now. 'pull' had been the accidental workaround.
+##			- An unreachable remote warns and skips the pull instead of failing (update is the only way to commit now); --no-fetch means offline and skips the pull too. A reachable remote that can't fast-forward still fails hard.

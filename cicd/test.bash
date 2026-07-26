@@ -93,29 +93,29 @@ fRunSuite(){
 	fAssertOut "clean worktree says so"          '\(working tree clean\)' bash -c "cd '${cloneA}' && '${gitsby}' -q status"
 	( cd "${cloneA}" && echo probe > probe.txt )
 	fAssertOut "changed file listed"             '\?\? probe\.txt'        bash -c "cd '${cloneA}' && '${gitsby}' -q status"
-	fAssertOut "mutating command previews first" 'Going to do'            bash -c "cd '${cloneA}' && '${gitsby}' -q commit 'probe'"
+	fAssertOut "mutating command previews first" 'Going to do'            bash -c "cd '${cloneA}' && '${gitsby}' -q update 'probe'"
 	( cd "${cloneA}" && git reset --quiet --hard HEAD~1 )
 
-	## commit: commits everything; idempotent when clean
+	## update: commits everything and pulls; idempotent when clean. There is no bare
+	## 'commit' or 'pull' any more - both would leave you in a state gitsby exists to avoid.
 	( cd "${cloneA}" && echo two > file2.txt )
-	fAssert "commit commits new file"  bash -c "cd '${cloneA}' && '${gitsby}' -q commit 'add file2'"
-	fAssert "worktree clean after commit"      bash -c "cd '${cloneA}' && [[ -z \"\$(git status --porcelain)\" ]]"
-	fAssert "commit message recorded"          bash -c "cd '${cloneA}' && git log -1 --format=%s | grep -qx 'add file2'"
-	fAssert "commit again (nothing to do) ok"  bash -c "cd '${cloneA}' && '${gitsby}' -q commit 'noop'"
+	fAssert "update commits new file"         bash -c "cd '${cloneA}' && '${gitsby}' -q update 'add file2'"
+	fAssert "worktree clean after update"     bash -c "cd '${cloneA}' && [[ -z \"\$(git status --porcelain)\" ]]"
+	fAssert "update message recorded"         bash -c "cd '${cloneA}' && git log -1 --format=%s | grep -qx 'add file2'"
+	fAssert "update again (nothing to do) ok" bash -c "cd '${cloneA}' && '${gitsby}' -q update 'noop'"
+	fAssertFail "dropped 'commit' command rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q commit 'no such command'"
+	fAssertFail "dropped 'pull' command rejected"    bash -c "cd '${cloneA}' && '${gitsby}' -q pull"
 	( cd "${cloneA}" && echo alias > alias.txt )
 	fAssertFail "dropped v1 alias 'scommit' rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q scommit 'via alias'"
-
-	## update: commit + pull in one
 	( cd "${cloneA}" && echo upd > upd.txt )
-	fAssert "update commits and pulls"        bash -c "cd '${cloneA}' && '${gitsby}' -q update 'add upd'"
-	fAssert "worktree clean after update"     bash -c "cd '${cloneA}' && [[ -z \"\$(git status --porcelain)\" ]]"
+	fAssert "update sweeps in leftover work"  bash -c "cd '${cloneA}' && '${gitsby}' -q update 'add upd'"
 	fAssertFail "dropped v1 alias 'saveup' rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q saveup"
 
 	## sync: publishes; remote matches local
 	fAssert "sync runs"            bash -c "cd '${cloneA}' && '${gitsby}' -q sync 'push file2'"
 	fAssert "remote main matches"  bash -c "cd '${cloneA}' && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]]"
 
-	## pull: remote moved ahead + local dirty -> stash, ff-only pull, pop
+	## remote moved ahead + local dirty -> update commits the local work, then fast-forwards
 	(
 		cd "${cloneB}"
 		git pull --quiet --ff-only
@@ -127,18 +127,22 @@ fRunSuite(){
 	fAssertOut "behind count on the branch line"  'behind 1'   bash -c "cd '${cloneA}' && '${gitsby}' -q status"
 	fAssertOut "incoming changes previewed"       'Incoming'   bash -c "cd '${cloneA}' && '${gitsby}' -q status"
 	fAssertOut "incoming file named"              'fileB\.txt' bash -c "cd '${cloneA}' && '${gitsby}' -q status"
-	fAssert "pull with dirty tree + remote ahead"  bash -c "cd '${cloneA}' && '${gitsby}' -q pull"
-	fAssert "remote commit arrived"                bash -c "cd '${cloneA}' && [[ -f fileB.txt ]]"
-	fAssert "local dirty edit survived"            bash -c "cd '${cloneA}' && grep -q dirty file1.txt && ! git diff --quiet"
-	fAssert "autostash fully popped"               bash -c "cd '${cloneA}' && [[ -z \"\$(git stash list)\" ]]"
+	fAssert "update with dirty tree + remote ahead"  bash -c "cd '${cloneA}' && '${gitsby}' -q update 'local edit'"
+	fAssert "remote commit arrived"                  bash -c "cd '${cloneA}' && [[ -f fileB.txt ]]"
+	fAssert "local edit survived, committed"         bash -c "cd '${cloneA}' && grep -q dirty file1.txt && [[ -z \"\$(git status --porcelain)\" ]]"
+	fAssert "and it sits on top of the remote work"  bash -c "cd '${cloneA}' && git merge-base --is-ancestor origin/main HEAD"
+	fAssert "nothing stranded in the stash"          bash -c "cd '${cloneA}' && [[ -z \"\$(git stash list)\" ]]"
 
-	## newbr: branches off default, publishes with upstream; dirty work on the
+	## br create: branches off default, publishes with upstream; dirty work on the
 	## protected base is carried to the new branch, never committed to the base
+	## update now commits, so main sits ahead of origin here; pin its sha instead of
+	## comparing to origin, and assert the WIP never landed on it.
+	( cd "${cloneA}" && echo dirty2 >> file1.txt && git rev-parse main > "${work}/$1-mainsha" )
 	fAssert "br create feat"             bash -c "cd '${cloneA}' && '${gitsby}' -q br create feat"
 	fAssert "now on feat"            bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == feat ]]"
 	fAssert "feat has upstream"      bash -c "cd '${cloneA}' && git rev-parse --abbrev-ref 'feat@{u}' >/dev/null"
-	fAssert "dirty edit carried uncommitted"  bash -c "cd '${cloneA}' && grep -q dirty file1.txt && ! git diff --quiet"
-	fAssert "no WIP commit on main"  bash -c "cd '${cloneA}' && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]] && ! git show main:file1.txt | grep -q dirty"
+	fAssert "dirty edit carried uncommitted"  bash -c "cd '${cloneA}' && grep -q dirty2 file1.txt && ! git diff --quiet"
+	fAssert "no WIP commit on main"  bash -c "cd '${cloneA}' && [[ \"\$(git rev-parse main)\" == \"\$(cat '${work}/$1-mainsha')\" ]] && ! git show main:file1.txt | grep -q dirty2"
 	( cd "${cloneA}" && git add --all && git commit --quiet -m "carried" )
 	fAssertFail "br create existing name rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q br create feat"
 	fAssertFail "br create bad name rejected"       bash -c "cd '${cloneA}' && '${gitsby}' -q br create 'bad name'"
@@ -214,30 +218,30 @@ fRunSuite(){
 	fAssert "br switch back to dev"         bash -c "cd '${cloneA}' && '${gitsby}' -q br switch && [[ \"\$(git branch --show-current)\" == dev ]]"
 
 	## Detached HEAD guard
-	fAssertFail "mutating command on detached HEAD rejected"  bash -c "cd '${cloneA}' && git checkout --quiet HEAD~0 --detach && '${gitsby}' -q commit x"
+	fAssertFail "mutating command on detached HEAD rejected"  bash -c "cd '${cloneA}' && git checkout --quiet HEAD~0 --detach && '${gitsby}' -q update x"
 	( cd "${cloneA}" && git checkout --quiet dev )
 
 	## Messages with quotes pass through unmangled (no eval, no curly-quote games)
 	( cd "${cloneA}" && echo q > q.txt )
-	fAssert "message with quotes survives"  bash -c "cd '${cloneA}' && '${gitsby}' -q commit \"don't \\\"quote\\\" me\" && git log -1 --format=%s | grep -qx \"don't \\\"quote\\\" me\""
+	fAssert "message with quotes survives"  bash -c "cd '${cloneA}' && '${gitsby}' -q update \"don't \\\"quote\\\" me\" && git log -1 --format=%s | grep -qx \"don't \\\"quote\\\" me\""
 
 	## Message handling: -m and -m= forms; option-like words stay words; extra bare word rejected
 	( cd "${cloneA}" && echo m1 > m1.txt )
-	fAssert "commit -m flag form"     bash -c "cd '${cloneA}' && '${gitsby}' -q commit -m 'via -m flag' && git log -1 --format=%s | grep -qx 'via -m flag'"
+	fAssert "update -m flag form"     bash -c "cd '${cloneA}' && '${gitsby}' -q update -m 'via -m flag' && git log -1 --format=%s | grep -qx 'via -m flag'"
 	if [[ "$1" == "bash" ]]; then  ## -m=MSG is bash-only; pwsh binding has no -param=value form
 		( cd "${cloneA}" && echo m2 > m2.txt )
-		fAssert "commit -m= joined form"  bash -c "cd '${cloneA}' && '${gitsby}' -q commit -m='via -m= flag' && git log -1 --format=%s | grep -qx 'via -m= flag'"
+		fAssert "update -m= joined form"  bash -c "cd '${cloneA}' && '${gitsby}' -q update -m='via -m= flag' && git log -1 --format=%s | grep -qx 'via -m= flag'"
 	fi
 	( cd "${cloneA}" && echo m3 > m3.txt )
-	fAssert "message containing -v commits"           bash -c "cd '${cloneA}' && '${gitsby}' -q commit 'add -v flag' && git log -1 --format=%s | grep -qx 'add -v flag'"
-	fAssertFail "unquoted two-word message rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q commit Fixed bug"
+	fAssert "message containing -v commits"           bash -c "cd '${cloneA}' && '${gitsby}' -q update 'add -v flag' && git log -1 --format=%s | grep -qx 'add -v flag'"
+	fAssertFail "unquoted two-word message rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q update Fixed bug"
 
 	## Non-tty: mutating commands fail closed without -q; read-only ones just go quiet
 	( cd "${cloneA}" && echo nt > nt.txt )
-	fAssertFail "mutating without -q and no tty refuses"  bash -c "cd '${cloneA}' && '${gitsby}' commit ntmsg < /dev/null"
+	fAssertFail "mutating without -q and no tty refuses"  bash -c "cd '${cloneA}' && '${gitsby}' update ntmsg < /dev/null"
 	fAssert "file left uncommitted"                       bash -c "cd '${cloneA}' && git status --porcelain | grep -q nt.txt"
 	fAssert "read-only without -q still runs non-tty"     bash -c "cd '${cloneA}' && '${gitsby}' status < /dev/null"
-	( cd "${cloneA}" && "${gitsby}" -q commit "nt cleanup" >/dev/null 2>&1 )
+	( cd "${cloneA}" && "${gitsby}" -q update "nt cleanup" >/dev/null 2>&1 )
 
 	## Credentialed remote URLs display masked (-NoFetch keeps it off the network; also lowercases to bash --nofetch)
 	( cd "${cloneA}" && git remote set-url origin 'https://user:sekrit@127.0.0.1:1/x.git' )
@@ -288,11 +292,22 @@ fRunSuite(){
 	git clone --quiet "${o2}" "${c3}"
 	( cd "${c3}" && git checkout --quiet dev && echo remote >> f.txt && git add --all && git commit --quiet -m "remote side" && git push --quiet )
 	( cd "${c2}" && echo localc > localc.txt && git add --all && git commit --quiet -m "local side" && echo precious >> w.txt )
-	fAssertFail "diverged pull fails"        bash -c "cd '${c2}' && '${gitsby}' -q pull"
-	fAssert "dirty edit still in the tree"   bash -c "cd '${c2}' && grep -q precious w.txt"
+	fAssertFail "diverged update fails"      bash -c "cd '${c2}' && '${gitsby}' -q update 'local work'"
+	fAssert "the work is still there"        bash -c "cd '${c2}' && grep -q precious w.txt"
 	fAssert "nothing stranded in the stash"  bash -c "cd '${c2}' && [[ -z \"\$(git stash list)\" ]]"
-	fAssertOut    "pull failure reads plainly"   'failed \(exit' bash -c "cd '${c2}' && '${gitsby}' -q pull"
-	fAssertNotOut "no trap dump on git failure"  'Signal \.'     bash -c "cd '${c2}' && '${gitsby}' -q pull"
+	fAssertOut    "pull failure reads plainly"   'failed \(exit' bash -c "cd '${c2}' && '${gitsby}' -q update"
+	fAssertNotOut "no trap dump on git failure"  'Signal \.'     bash -c "cd '${c2}' && '${gitsby}' -q update"
+
+	## An unreachable remote must not turn a good commit into a failed command - update is the
+	## only way to commit now. A bogus local path fails instantly, so this needs no network.
+	local off="${work}/$1-offline"
+	git clone --quiet "${origin}" "${off}" 2>/dev/null
+	( cd "${off}" && git remote set-url origin "${work}/nosuch-remote.git" && echo offline > off.txt )
+	fAssert    "update succeeds with an unreachable remote"  bash -c "cd '${off}' && '${gitsby}' -q update 'offline work'"
+	fAssert    "the work was committed anyway"               bash -c "cd '${off}' && git log -1 --format=%s | grep -qx 'offline work'"
+	fAssertOut "and it says why it skipped the pull"  'remote unreachable' bash -c "cd '${off}' && echo more > more.txt && '${gitsby}' -q update 'more offline work'"
+	## --no-fetch means offline on purpose: commit, and don't reach for the network at all
+	fAssertOut "no-fetch skips the pull too"  'Skipping the pull|-NoFetch|no-fetch' bash -c "cd '${off}' && echo nf > nf.txt && '${gitsby}' -q --no-fetch update 'no-fetch work'"
 
 	## clone: derives the dir, checks out dev when the repo has one, no-op re-run, collision guards
 	local cl="${work}/$1-clone"

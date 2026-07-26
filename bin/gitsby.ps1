@@ -59,6 +59,7 @@ $script:thisCopyrightYear = '2026'
 $script:thisAuthor = 'Jim Collier'
 $script:meName = Split-Path -Leaf -Path $PSCommandPath
 $script:doQuietly = [bool]$Quiet
+$script:noFetch = [bool]$NoFetch
 $script:commitMessage = $Message
 $script:cmdArg = $CommandArg
 $script:wasLastEchoBlank = $false
@@ -70,6 +71,7 @@ $script:defaultBranchCache = ''  ## per-run constants, filled post-fetch
 $script:mergeTargetCache = ''
 $script:repoVisibility = if ($Public -and -not $Private) { 'public' } else { 'private' }  ## for 'repo create'
 $script:inRepo = $false
+$script:remoteReachable = $true  ## cleared when the pre-command fetch can't reach origin
 $script:cloneUrl = ''; $script:cloneDir = ''
 $script:connectMode = ''; $script:connectUrl = ''; $script:ghTarget = ''  ## resolved by the repo create/connect validation
 
@@ -138,8 +140,6 @@ function Show-Syntax {
     Write-PlainLine '  repo connect [url] .: Connect this directory to an existing empty remote, and push.'
     Write-PlainLine 'Less common commands:'
     Write-PlainLine '  sync [msg] .........: Commit, pull, and push. Do infrequently.'
-    Write-PlainLine '  pull ...............: Pull only (auto-stashes around it if dirty).'
-    Write-PlainLine '  commit [msg] .......: Commit all local changes (without pull).'
     Write-PlainLine 'Admin commands, e.g. for small solo projects:'
     Write-PlainLine "  br land [msg] ......: Merge current branch into ${script:mergeTargetLabel} (--no-ff), push, delete it local + remote."
     Write-PlainLine '  pr [create|n|ok n] .: Create, list, review, or accept a pull request (needs gh).'
@@ -412,6 +412,8 @@ function Show-RepoStatus {
 
 function Show-CommandPreview {
     ## Static per-command recipe; the command functions do the real state checks at run time.
+    ## 'commit' and 'pull' are no longer commands of their own - they stay here as the
+    ## fragments update/sync/br-* compose their own plans from.
     param([Parameter(Mandatory)][string]$CommandName)
     $pad = '    '
     $msgDisp = 'git commit'
@@ -427,8 +429,8 @@ function Show-CommandPreview {
             break
         }
         'update' {
-            Show-CommandPreview -CommandName 'commit'
             Show-CommandPreview -CommandName 'pull'
+            Show-CommandPreview -CommandName 'commit'
             break
         }
         'sync' {
@@ -549,7 +551,14 @@ function Invoke-GitsbyCommit {
 function Invoke-GitsbyPull {
     ## --autostash instead of a manual stash push/pop: a failed pull (diverged, offline)
     ## leaves the tree intact instead of stranding work in the stash.
-    if (Test-GitUpstream) {
+    ## Skipping beats failing when the remote is simply out of reach: update is the only
+    ## way to commit, so being offline must not turn a good commit into a failed command.
+    ## A reachable remote that can't fast-forward is a real problem and still fails hard.
+    if ($script:noFetch) {
+        Write-StatusLine 'Skipping the pull (-NoFetch).'
+    } elseif (-not $script:remoteReachable) {
+        Write-StatusLine 'WARNING: remote unreachable; skipped the pull. Your work is committed locally.'
+    } elseif (Test-GitUpstream) {
         Invoke-Git -GitArgs @('pull', '--ff-only', '--autostash')
     } else {
         Write-StatusLine 'No upstream configured for this branch; nothing to pull.'
@@ -557,8 +566,12 @@ function Invoke-GitsbyPull {
 }
 
 function Invoke-GitsbyCommitPull {
-    Invoke-GitsbyCommit
+    ## Pull BEFORE committing. Committing first mints a local commit, so a remote that merely
+    ## moved ahead is now diverged and --ff-only refuses - which is the everyday case, not an
+    ## edge one. Pulling first fast-forwards (the dirty tree rides over on --autostash) and the
+    ## commit lands on top, so history stays linear and --ff-only stays satisfiable.
     Invoke-GitsbyPull
+    Invoke-GitsbyCommit
 }
 
 function Invoke-GitsbyPush {
@@ -820,13 +833,13 @@ try {
     switch ($cmdName) {
         { $_ -in 'status', 'br-list' } { $isMutating = $false; break }
         'pr' { if ($CommandArg.ToLowerInvariant() -notin 'ok', 'create', 'new') { $isMutating = $false }; break }
-        { $_ -in 'commit', 'update', 'sync', 'br-land' } {
+        { $_ -in 'update', 'sync', 'br-land' } {
             if (-not $script:commitMessage) { $script:commitMessage = $CommandArg }
             if ($CommandArg2) { throw "Unexpected extra argument '${CommandArg2}'; quote your commit message." }
             break
         }
         'repo-clone' { break }  ## the only one with a second argument of its own (the target directory)
-        { $_ -in 'pull', 'br-create', 'br-switch', 'release', 'repo-create', 'repo-connect' } {
+        { $_ -in 'br-create', 'br-switch', 'release', 'repo-create', 'repo-connect' } {
             if ($CommandArg2) { throw "Unexpected extra argument '${CommandArg2}'." }
             break
         }
@@ -886,6 +899,7 @@ try {
         try {
             git fetch --quiet --prune 2>$null
             if ($LASTEXITCODE -ne 0) {
+                $script:remoteReachable = $false
                 Write-StatusLine 'WARNING: git fetch failed (offline?); remote info may be stale.'
             } else {
                 git remote set-head origin --auto *> $null
@@ -1083,8 +1097,6 @@ try {
     }
 
     switch ($cmdName) {
-        'commit' { Invoke-GitsbyCommit; break }
-        'pull' { Invoke-GitsbyPull; break }
         'update' { Invoke-GitsbyCommitPull; break }
         'sync' { Invoke-GitsbyPush; break }
         'br-create' { Invoke-GitsbyMakeBranch -NewBranch $CommandArg; break }
@@ -1129,3 +1141,4 @@ try {
 ##      - 20260725 JC: release publishes an upstream-less default branch instead of pushing only the tag; the duplicate-tag and dirty-protected-branch refusals moved up front, ahead of the confirmed plan; newbr's plan no longer promises a commit when run from main/dev; pr ok lands on the merge target when gh deleted the branch we were on; a bare release after a candidate proposes that candidate's own version - in step with bin/gitsby.
 ##      - 20260726 JC: Added 'pr new [title]' (parks the work, opens a PR against the merge target, titles it from the last commit subject when none is given, reports an already-open PR instead of erroring); pr ok refuses a dirty tree or unpushed commits, since --delete-branch would drop work that never reached origin - in step with bin/gitsby.
 ##      - 20260726 JC: Commands regrouped under the repo/br/pr nouns, connect split into 'repo create' vs 'repo connect', all pre-v2 aliases dropped - in step with bin/gitsby.
+##      - 20260726 JC: Dropped the bare 'commit' and 'pull' commands; update/sync pull before committing (committing first guaranteed divergence against a moved remote); unreachable remote warns and skips the pull, -NoFetch skips it too - in step with bin/gitsby.

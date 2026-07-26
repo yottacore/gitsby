@@ -57,7 +57,22 @@ The two files are ports of each other. A change to one nearly always belongs in 
 
 ## Direction decisions
 
-- The command set is split by how often you type it. Daily verbs stay one word (`update`, `sync`, `commit`, `pull`, `status`, `release`); everything else is grouped under a noun (`repo`, `br`, `pr`).
+- There is no bare `commit` and no bare `pull`. Both were escape hatches around the workflow the tool exists to enforce.
+	- `commit` alone produces exactly the state gitsby was written to prevent: work committed locally that never reaches the remote, diverging quietly until the merge is painful.
+	- `pull` alone was the only place gitsby let you take upstream changes without parking your own work, which contradicts what it does everywhere else - `br create`, `br switch`, `br land` and `pr create` all park first.
+	- We decided the asymmetry settles it: dropping a command before release costs nothing, and adding one back later breaks nobody. Removing one after release would.
+	- Removing `pull` exposed a real bug it had been masking - see the ordering decision below.
+
+- `update` and `sync` pull *before* they commit.
+	- Committing first mints a local commit, so a remote that has merely moved ahead is now diverged and a fast-forward-only pull must refuse. That is the everyday case, not an edge one, and it was failing.
+	- Pulling first fast-forwards under `--autostash`, so the dirty tree rides over and the commit lands on top. History stays linear and fast-forward-only stays satisfiable, which is the whole reason the tool never merges behind your back.
+	- Nothing is risked by pulling first: `--autostash` leaves the tree exactly as it found it if the pull fails.
+
+- Being offline must never turn a good commit into a failed command, now that `update` is the only way to commit.
+	- A remote that can't be reached warns and skips the pull. A remote that *is* reachable but can't fast-forward is a real problem and still fails hard - the distinction is what the pre-command fetch already discovered.
+	- `--no-fetch` means offline, so it skips the pull too. Skipping only the fetch and then pulling anyway would have saved nothing.
+
+- The command set is split by how often you type it. Daily verbs stay one word (`update`, `sync`, `status`, `release`); everything else is grouped under a noun (`repo`, `br`, `pr`).
 	- Among the options considered, we decided the extra word is worth it for infrequent commands. It buys discoverability - three nouns to explore instead of a flat list to memorize - and it retires mashed-together abbreviations like `newbr`/`gobr`/`listbr`.
 	- One verb per action across all three nouns: `create`, not `create` in one place and `new` in another. `new` and `go` still work as unpublished spellings, because they are what fingers reach for.
 	- `repository` and `branch` are accepted in full. Only the short forms are published, so the help stays scannable.
@@ -71,7 +86,7 @@ The two files are ports of each other. A change to one nearly always belongs in 
 
 - Pull requests are subcommands of one noun (`pr`, `pr create`, `pr <n>`, `pr ok <n>`) rather than separate top-level verbs.
 	- This puts everything about a PR in one place to look, and matches how `repo` and `br` group.
-	- `pr create` defaults its title to the last commit subject. The alternative, requiring a title, was rejected as inconsistent with `commit`/`update`/`sync`, which all generate a message when none is given. The preview shows the resolved title before the prompt, so a bad default is visible rather than surprising.
+	- `pr create` defaults its title to the last commit subject. The alternative, requiring a title, was rejected as inconsistent with `update`/`sync`, which generate a message when none is given. The preview shows the resolved title before the prompt, so a bad default is visible rather than surprising.
 
 - The pre-2.0 command names were dropped outright rather than kept as hidden aliases. Version 2 is a deliberate break, the tool is invoked by a different name than it was, and not all of the old commands worked. Carrying dead spellings forward would have been the worst of both.
 

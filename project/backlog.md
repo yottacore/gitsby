@@ -51,6 +51,14 @@ In each section, items are listed approximately from newest to oldest.
 
 #### Done - Features and enhancements
 
+- ✅ Drop the bare `commit` and `pull` commands - both work around the opinionated workflow.
+	- `commit` alone leaves work committed but unshared. `pull` alone was the only place the tool took upstream changes without parking your own, unlike every other command.
+	- Reversible in one direction only: dropping now is free, adding back later breaks nobody, removing later would.
+- ✅ `update`/`sync` pull before they commit (bug this exposed, present on dev).
+	- Committing first guaranteed divergence whenever the remote had moved, so the ff-only pull refused - in the most ordinary case there is. `pull` had been the accidental workaround.
+	- Verified against the pre-fix build: it fails, the fixed one lands the work on top and keeps history linear.
+- ✅ An unreachable remote warns and skips the pull instead of failing; `--no-fetch` means offline and skips the pull too.
+	- Needed because `update` is now the only way to commit; a genuine non-fast-forward still fails hard.
 - ✅ Group the infrequent commands under nouns: `repo clone|create|connect`, `br list|create|switch|land`, `pr create|<n>|ok <n>`.
 	- Daily verbs stay one word. The extra word only lands where you type it rarely, and it buys a discoverable set instead of a flat list of abbreviations.
 	- One verb across all three nouns (`create`, never `new` in some places). `new` and `go` still work but aren't published.

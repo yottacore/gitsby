@@ -184,7 +184,7 @@ Many of those tough edge-cases arose in the first place, precisely because our g
 
 I surveyed the git tools and wrappers available at the time and concluded they were also "too flexible" - none enforced an opinionated (enough) workflow based on well-established industry best practices.
 
-So I wrote x9git, the v1 forerunner of gitsby (and still available in this repo though not advised).
+So I wrote x9git, the v1 forerunner of gitsby.
 
 For years, it worked and was extremely useful. But it wasn't comprehensive enough - bare git was still needed on a regular basis. Also, the version that worked well, while open-sourced and committed to a company repo, never made it into this "permanent home" repo when I created it a couple of years later. That first commit had some broken features I punted on and commented out.
 
@@ -196,10 +196,8 @@ What you reach for daily is one word. Everything else is grouped under a noun, s
 
 | Command              | Args          | What it does
 | :--                  | :--           | :--
-| `update`             | `[msg]`       | Commit all local changes and pull updates. Do frequently!
-| `sync`               | `[msg]`       | Commit, pull, and push. Do infrequently.
-| `pull`               |               | Pull only (auto-stashes around it if dirty).
-| `commit`             | `[msg]`       | Commit all local changes (without pull).
+| `update`             | `[msg]`       | Pull updates, then commit all local changes. Do frequently!
+| `sync`               | `[msg]`       | Pull, commit, and push. Do infrequently.
 | `status`             |               | Fetch and show current status.
 | `release`            | `[ver]`       | Cut a release: merge `dev` into `main`, tag, push. No version: bump the patch.
 | `br`                 |               | Fetch and list branches (`br list` is the same thing).
@@ -214,7 +212,9 @@ What you reach for daily is one word. Everything else is grouped under a noun, s
 | `pr create`          | `[title]`     | Push the current branch and open a PR against `dev`/`main` (no title: the last commit subject).
 | `pr ok`              | `<#>`         | Approve and merge a PR.
 
-Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--no-fetch` (skip the pre-command fetch), `-h`, `-v`.
+There is deliberately no bare `commit` and no bare `pull`. Committing without sharing is how work quietly diverges, and pulling without committing is the one thing the rest of the tool never does - `br create`, `br switch`, `br land` and `pr create` all park your work first. `update` is the one command for both, and it pulls *before* it commits so your work lands on top of everyone else's and history stays linear.
+
+Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--no-fetch` (work offline: skip the fetch and the pull), `-h`, `-v`.
 
 A typical day:
 
@@ -319,7 +319,21 @@ The document in this repo, "[Git notes and one-liners](https://github.com/jim-co
 
 ## Contributing
 
-Contributions are welcome. Start with [contributing.md](contributing.md) for process, and [style-guide.md](style-guide.md) for coding style.
+Given that you may be using this for mission-critical work (as I do), Gitsby must be absolutely, 100%:
+
+- Bulletproof and bug-free
+
+- Unsurprising
+
+- Useful
+
+It is currently simple enough, that the first two objectives are attainable. (And believed to be now, as verified through manual QA, exhaustive automated testing, and near-daily use.)
+
+Given how it's written, even if a feature fails its design, it should in theory still never compromise your work.
+
+But if you find something that doesn't work as advertised, and/or behaves in a way you find "surprising" (even if as-designed), please let us know! File an issue.
+
+Contributions are also welcome. Start with [contributing.md](contributing.md) for process, and [style-guide.md](style-guide.md) for coding style.
 
 ## Copyright and license
 
