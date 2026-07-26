@@ -104,7 +104,7 @@ fMain(){
 	local -i inRepo=0
 	local cloneUrl=""; local cloneDir=""
 	local connectMode=""; local connectUrl=""; local ghTarget=""  ## resolved by the repo create/connect validation
-	local -a pruneLocal=(); local -a pruneRemote=(); local -a pruneKeep=(); local -a pruneTargetRefs=()  ## resolved by the br prune validation
+	local -a pruneLocal=(); local -a pruneRemote=(); local -a pruneKeep=(); local -a pruneTargetRefs=(); local pruneCurrentMerged=""  ## resolved by the br prune validation
 	local -ri parseArgs_maxPositionalArgCount=4
 	fParseArgs "${@}"
 	cmdName="${cmdName,,}"
@@ -257,7 +257,13 @@ fMain(){
 		[[ -n "$(fCurrentBranch)" ]] || fThrowError_Usage "Detached HEAD (no current branch); resolve that manually first."
 		fpResolvePrune
 		if ((! ${#pruneLocal[@]})) && ((! ${#pruneRemote[@]})); then
-			fEcho "Nothing to prune; no branch is fully merged into '$(fMergeTarget)' yet."
+			## "no branch is merged" would be a lie when the merged one is the branch we're standing on.
+			if [[ -n "${pruneCurrentMerged}" ]]; then
+				fEcho "Nothing to prune from here."
+				fEcho_Clean "  Current branch '${pruneCurrentMerged}' is merged, but you're on it; switch off it to prune it."
+			else
+				fEcho "Nothing to prune; no branch is fully merged into '$(fMergeTarget)' yet."
+			fi
 			((${#pruneKeep[@]})) && fEcho_Clean "  Keeping (not merged yet): $(fJoin "${pruneKeep[@]}")"
 			fEcho_Clean ""
 			return 0
@@ -532,7 +538,7 @@ fCmdLand(){
 fCmdPrune(){
 	## Deletes exactly what the plan listed - fpResolvePrune did all the deciding, up front.
 	local -i doneLocal=0; local -i doneRemote=0
-	local branch=""
+	local branch=""; local reKept=" "
 	for branch in "${pruneLocal[@]}"; do
 		## -D with our own gate, not -d. 'git branch -d' asks whether the branch is contained in
 		## its upstream, or in HEAD when it has none - neither of which is the question here, and
@@ -540,12 +546,15 @@ fCmdPrune(){
 		## Re-checked right now rather than trusting the plan: the prompt may have sat a while.
 		if ! fIsMergedInto "refs/heads/${branch}" "${pruneTargetRefs[@]}"; then
 			fEcho "'${branch}' is no longer contained in $(fMergeTarget); leaving it alone."
+			reKept="${reKept}${branch} "
 			continue
 		fi
 		fRun git branch -D "${branch}"
 		doneLocal=$((doneLocal + 1))
 	done
 	for branch in "${pruneRemote[@]}"; do
+		## "Leaving it alone" has to mean the remote copy too, or the message is a lie.
+		[[ "${reKept}" == *" ${branch} "* ]] && continue
 		## Non-fatal, same as br land: someone else may have deleted it already.
 		fEcho_Clean ""
 		fEcho "git push origin --delete ${branch} ..."
@@ -559,6 +568,7 @@ fCmdPrune(){
 	## Close with the count, so a wall of git output still ends in a plain answer.
 	fEcho_Clean ""
 	fEcho "Pruned ${doneLocal} local, ${doneRemote} on origin."
+	[[ -n "${pruneCurrentMerged}" ]] && fEcho "Kept '${pruneCurrentMerged}' - merged, but it's the current branch."
 	((${#pruneKeep[@]})) && fEcho "Kept $(fJoin "${pruneKeep[@]}") - not merged into $(fMergeTarget) yet."
 :;}
 
@@ -723,7 +733,13 @@ fpResolvePrune(){
 	while read -r branch; do
 		[[ -n "${branch}" ]] || continue
 		## The branch we're standing on can't be deleted, and protected ones never are.
-		[[ "${branch}" == "${currentBranch}" ]] && continue
+		## But if it WOULD have qualified, say so - otherwise it just vanishes from every list.
+		if [[ "${branch}" == "${currentBranch}" ]]; then
+			if ! fIsProtectedBranch "${branch}" && ((${#pruneTargetRefs[@]})) && fIsMergedInto "refs/heads/${branch}" "${pruneTargetRefs[@]}"; then
+				pruneCurrentMerged="${branch}"
+			fi
+			continue
+		fi
 		fIsProtectedBranch "${branch}" && continue
 		if ((${#pruneTargetRefs[@]})) && fIsMergedInto "refs/heads/${branch}" "${pruneTargetRefs[@]}"; then
 			pruneLocal+=("${branch}")
@@ -1004,6 +1020,7 @@ fpPreview(){
 			fEcho_Clean "${pad}(each verified contained in $(fMergeTarget), and re-checked at delete time)"
 			for pruneBranch in "${pruneLocal[@]}";  do fEcho_Clean "${pad}git branch -D ${pruneBranch}"; done
 			for pruneBranch in "${pruneRemote[@]}"; do fEcho_Clean "${pad}git push origin --delete ${pruneBranch}"; done
+			[[ -n "${pruneCurrentMerged}" ]] && fEcho_Clean "${pad}Keeping '${pruneCurrentMerged}' - merged, but it's the current branch."
 			((${#pruneKeep[@]})) && fEcho_Clean "${pad}Keeping (not merged yet): $(fJoin "${pruneKeep[@]}")"
 			;;
 		repo-clone)
@@ -1360,3 +1377,4 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##			- Added 'br prune': deletes every local branch already merged into the merge target, plus its remote copy. Nothing else cleaned up after a PR merged elsewhere, or after an abandoned branch.
 ##			- Unmerged branches are kept and listed, never deleted, and there is no --force.
 ##			- Deletes with -D behind gitsby's own containment check: 'git branch -d' asks about the upstream, or HEAD when there is none, so it warned needlessly on one branch shape and silently refused another that was genuinely merged.
+##			- A branch kept by the delete-time re-check keeps its remote copy too, and a merged current branch is reported as kept rather than left off every list.

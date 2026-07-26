@@ -256,6 +256,15 @@ Release-prep pass over what changed since the last review: the noun grouping, `p
 	- So the check went green on a command that had failed outright, and no offline behavior was ever exercised there.
 	- Fixed: `-NoFetch`, which both implementations accept, and the pattern now matches only the skip message itself.
 
+- ✅ Code Review 20260726 item 6: `br prune` could say "leaving it alone" and still delete the branch's remote copy (both implementations).
+	- The delete-time re-check only guarded the local delete; the remote loop ran regardless.
+	- Fixed: a branch kept by the re-check keeps its remote copy too.
+
+- ✅ Code Review 20260726 item 7: a merged current branch vanished from `br prune`'s output (both implementations).
+	- It was rightly never deleted, but appeared in neither the plan nor the Keeping list.
+	- Worst case: it was the only merged branch, and the output claimed nothing was merged at all.
+	- Fixed: the plan, the no-op path, and the closing summary all say it is kept because you are standing on it.
+
 #### Done - Code review 20260725
 
 - ✅ Code Review 20260725 item 1: `release` pushes only the tag when the default branch has no upstream (both implementations).

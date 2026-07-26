@@ -135,7 +135,7 @@ GitHub's `releases/latest` returns the newest release not flagged as a pre-relea
 
 ## Code review 20260726
 
-Fix notes for the "Code Review 20260726" backlog items. Numbering matches the backlog. All five apply to both implementations.
+Fix notes for the "Code Review 20260726" backlog items. Numbering matches the backlog. Items 1-5 came from the release-prep pass; 6-7 from a follow-up pass over `br prune`. All apply to both implementations.
 
 - Item 1 - a refusal naming a dropped command:
 	- `br switch` off a dirty `main`/`dev` offered `gitsby commit` as the alternative. Dropping the bare `commit` left the message behind.
@@ -155,6 +155,16 @@ Fix notes for the "Code Review 20260726" backlog items. Numbering matches the ba
 - Item 5 - a test green for the wrong reason:
 	- Asserting on output means the assertion has to be specific enough that a failure cannot satisfy it. The pattern matched the flag name, and the error message about the flag contained the flag name.
 	- Both implementations take `-NoFetch`; only Bash takes `--no-fetch`. Shared checks use the spelling both accept.
+
+- Item 6 - prune's safety re-check only covered half the delete:
+	- If a branch gains commits while the confirm prompt sits, the delete-time re-check keeps it and says "leaving it alone" - but the remote loop still deleted `origin/<branch>`.
+	- No work was at risk (the remote copy only ever holds already-merged content), but a message and an action disagreeing is its own defect.
+	- Fixed: the remote loop skips any branch the re-check kept.
+	- Not covered by an automated test: the window only opens between the confirm prompt and execution, and `-q` closes it.
+
+- Item 7 - prune's report had a blind spot for the branch underfoot:
+	- The current branch is skipped up front (correct), but a merged one then appeared in no list at all, and the no-op message claimed no branch was merged.
+	- Fixed: the resolver notes a merged current branch separately; the plan, the no-op path, and the closing summary each print one line saying it is kept because it is the current branch.
 
 ## Code review 20260723
 

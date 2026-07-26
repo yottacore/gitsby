@@ -360,6 +360,8 @@ fRunSuite(){
 	## The branch you're standing on can't be deleted out from under you, merged or not.
 	( cd "${prWork}" && git checkout --quiet -b standing dev && git push --quiet -u origin standing )
 	fAssert     "current branch survives its own prune"  bash -c "cd '${prWork}' && '${gitsby}' -q br prune; git -C '${prWork}' show-ref --verify --quiet refs/heads/standing"
+	## And it must say WHY nothing happened - "no branch is merged" would be false here.
+	fAssertOut  "and the output says why"  "switch off it to prune it"  bash -c "cd '${prWork}' && '${gitsby}' -q br prune"
 	## A merge that hasn't reached origin means origin still holds the only ref to that work:
 	## the local branch may go, the remote copy may not.
 	(
