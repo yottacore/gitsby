@@ -277,6 +277,29 @@ Release-prep pass over what changed since the last review: the noun grouping, `p
 	- Worst case: it was the only merged branch, and the output claimed nothing was merged at all.
 	- Fixed: the plan, the no-op path, and the closing summary all say it is kept because you are standing on it.
 
+- ✅ Code Review 20260726 item 8: the README claimed 100% GitLab compatibility.
+	- Every `pr` form, `repo create`, and `repo connect` with an `owner/name` go through `gh`, so they are GitHub-only. That is up to six of the sixteen subcommands.
+	- Fixed: the claim now says any Git remote works and names the gh-backed exceptions.
+
+- ✅ Code Review 20260726 item 9: "no version: bump the patch" was only one of three release paths (docs and help, both implementations).
+	- A candidate tag resolves to its own release (`v2.0.0-rc1` -> `v2.0.0`), and a repo with no tag at all starts at `v0.1.0`. Neither is a patch bump.
+	- Fixed: docs and help now say the next version after the latest tag. A regression check pins the help line.
+
+- ✅ Code Review 20260726 item 10: `br create` still overpromised, in the opposite direction from item 3.
+	- Item 3 changed the help from "parks current work" to "brings current work along". Both are half right: work is carried only from `main`/`dev`, and committed and pushed to the current branch otherwise.
+	- Fixed: docs and help say carried or parked, and name which case is which. A regression check pins the help line.
+
+- ✅ Code Review 20260726 item 11: the dev installers required a bash version gitsby does not.
+	- Both told you gitsby itself needs bash 5+. The real floor is 4.4, set by `inherit_errexit`; design.md already said 4.4 and was the one that was right.
+	- Fixed: both installers now check and report 4.4.
+
+- ✅ Code Review 20260726 item 12: smaller doc corrections found in the same pass.
+	- design.md said `gh` was needed for "the two commands that need it" - it is three.
+	- The Direct-install one-liners never created the target directory, and the PowerShell one wrote to a *nix path inside the Windows section.
+	- The README options list omitted `--public`/`--private` and never mentioned that the PowerShell version takes PowerShell-style parameter names.
+	- "Every mutating command fetches first" ignored `repo clone` and `--no-fetch`. `br prune` was described as deleting every merged branch, which skips the current-branch and protected-branch exceptions. `repo create`'s steps were listed in the wrong order.
+	- design.md's folder list omitted `reference/` and described `assets/` as holding only the demo.
+
 #### Done - Code reviews 20260725 and 20260723
 
 - ✅ Code Review 20260725 item 1: `release` pushes only the tag when the default branch has no upstream (both implementations).
