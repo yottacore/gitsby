@@ -69,6 +69,7 @@
 - [Summary](#summary)
 - [General attributes](#general-attributes)
 - ["Opinionated workflow": What are the opinions?](#opinionated-workflow-what-are-the-opinions)
+- [Why](#why)
 - [Commands](#commands)
 - [Installation](#installation)
 	- [Bash](#bash)
@@ -172,6 +173,22 @@ There are many implicit opinions baked in. Here are the main ones:
 - Releases are annotated semver tags (`vX.Y.Z`). If no version is given, bump the patch.
 
 - Look before you leap: fetch first, show the current state and the exact commands about to run, and ask before doing anything that mutates.
+
+## Why
+
+Many years ago, I grew tired of my development team of expert git users (and myself) making repeated, costly mistakes with the tool. Not from incompetence, malice, recklessness, or carelessness - but because git is so powerful that the exact order of operations for tough edge-cases can be both hard to remember, and not inherently obvious.
+
+Many of those tough edge-cases arose in the first place, precisely because our git workflow wasn't enforced at an automation level.
+
+(I'm sure this is all sounding too familiar for veteran developers.)
+
+I surveyed the git tools and wrappers available at the time and concluded they were also "too flexible" - none enforced an opinionated (enough) workflow based on well-established industry best practices.
+
+So I wrote x9git, the v1 forerunner of gitsby (and still available in this repo though not advised).
+
+For years, it worked and was extremely useful. But it wasn't comprehensive enough - bare git was still needed on a regular basis. Also, the version that worked well, while open-sourced and committed to a company repo, never made it into this "permanent home" repo when I created it a couple of years later. That first commit had some broken features I punted on and commented out.
+
+Now, years later, this v2 release - renamed gitsby - finally fulfills the original vision: with a small but comprehensive end-to-end set of bulletproof commands.
 
 ## Commands
 
