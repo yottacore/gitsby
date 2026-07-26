@@ -44,7 +44,7 @@
 -->
 
 <!-- TOC ignore:true -->
-# The Great Gitsby
+# Gitsby
 
 </div>
 

@@ -814,8 +814,10 @@ fpFetchRemote(){
 	## origin/HEAD (missing on git < 2.47, stale after an upstream default-branch rename).
 	## ssh gets a connect timeout so a dead remote can't hang every command for minutes;
 	## https relies on git's own timeouts. Never clobber a user-set GIT_SSH_COMMAND.
-	local -a fetchEnv=()
-	[[ -z "${GIT_SSH_COMMAND:-}" ]] && fetchEnv=(GIT_SSH_COMMAND="ssh -o ConnectTimeout=3")
+	## No auth prompts, same as fpProbeRemote: this runs before any of our own checks, so an
+	## https remote we can't authenticate to would stop and ask for a username mid-command.
+	local -a fetchEnv=(GIT_TERMINAL_PROMPT=0)
+	[[ -z "${GIT_SSH_COMMAND:-}" ]] && fetchEnv+=(GIT_SSH_COMMAND="ssh -o ConnectTimeout=3")
 	if env "${fetchEnv[@]}" git fetch --quiet --prune 2>/dev/null; then
 		env "${fetchEnv[@]}" git remote set-head origin --auto >/dev/null 2>&1 || true
 	else

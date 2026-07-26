@@ -1013,6 +1013,10 @@ try {
         Write-StatusLine 'git fetch ...'
         $hadSshCommand = [bool]$env:GIT_SSH_COMMAND
         if (-not $hadSshCommand) { $env:GIT_SSH_COMMAND = 'ssh -o ConnectTimeout=3' }
+        ## No auth prompts, same as Get-RemoteProbe: this runs before any of our own checks, so an
+        ## https remote we can't authenticate to would stop and ask for a username mid-command.
+        $origTermPrompt = $env:GIT_TERMINAL_PROMPT
+        $env:GIT_TERMINAL_PROMPT = '0'
         try {
             git fetch --quiet --prune 2>$null
             if ($LASTEXITCODE -ne 0) {
@@ -1023,6 +1027,7 @@ try {
             }
         } finally {
             if (-not $hadSshCommand) { Remove-Item -Path Env:GIT_SSH_COMMAND -ErrorAction SilentlyContinue }
+            if ($null -eq $origTermPrompt) { Remove-Item -Path Env:GIT_TERMINAL_PROMPT -ErrorAction SilentlyContinue } else { $env:GIT_TERMINAL_PROMPT = $origTermPrompt }
         }
     }
 

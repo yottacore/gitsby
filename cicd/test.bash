@@ -437,6 +437,23 @@ fRunSuite(){
 	fAssertFail "repo connect an empty inited repo rejected"  bash -c "cd '${cn}/bare-repo' && '${gitsby}' -q repo connect '${cn}/remote.git'"
 	fAssert "repo connect accepts a matching explicit url"    bash -c "cd '${cn}/proj' && '${gitsby}' -q repo connect '${cn}/remote.git'"
 
+	## The pre-command fetch must never sit and ask for credentials: it runs before any of our
+	## own checks, so an https remote you can't authenticate to would block every command.
+	## A git shim records the env the fetch actually got - the only way to see this without a tty.
+	local tp="${work}/$1-tprompt"
+	mkdir -p "${tp}/bin"
+	cat > "${tp}/bin/git" <<-EOF
+		#!/usr/bin/env bash
+		[[ "\$1" == "fetch" ]] && echo "\${GIT_TERMINAL_PROMPT-UNSET}" >> "\${TPROMPT_LOG}"
+		exec "$(command -v git)" "\$@"
+	EOF
+	chmod +x "${tp}/bin/git"
+	git init --quiet -b main "${tp}/proj"
+	## Origin is a dead local path, not an https URL: the assert reads the env the fetch got,
+	## so it needs no real server, and the suite stays off the network.
+	( cd "${tp}/proj" && echo t > t.txt && git add --all && git commit --quiet -m init && git remote add origin "${tp}/nosuch.git" )
+	fAssert "the pre-command fetch disables credential prompts"  bash -c "cd '${tp}/proj' && TPROMPT_LOG='${tp}/log' PATH='${tp}/bin:${PATH}' '${gitsby}' -q status >/dev/null 2>&1; grep -qx 0 '${tp}/log'"
+
 	## owner/name targets: the gh path, driven by a deterministic fake gh (no network). Covers
 	## 'repo create' (repo absent), 'repo connect' remote-add (present but empty, https + ssh),
 	## the refuse-nonempty guard, and the create/connect division of labour. Add-mode github URLs are rewritten onto a local bare via insteadOf so
@@ -505,7 +522,9 @@ GHEOF
 	fAssertFail "repo create refuses an existing empty repo"            bash -c "cd '${gh}/split' && PATH='${ghp}' FAKE_GH_VIEW=empty '${gitsby}' -q repo create me/proj"
 	fAssertOut  "and points at repo connect"  'repo connect me/proj'    bash -c "cd '${gh}/split' && PATH='${ghp}' FAKE_GH_VIEW=empty '${gitsby}' -q repo create me/proj 2>&1 || true"
 	fAssertFail "repo create refuses a plain url"                       bash -c "cd '${gh}/split' && PATH='${ghp}' '${gitsby}' -q repo create '${gh}/backing-https.git'"
-	fAssertFail "repo create refuses when origin is already set"        bash -c "cd '${gh}/add-https' && PATH='${ghp}' '${gitsby}' -q repo create me/proj"
+	## Keep the insteadOf rewrite: this dir's origin is a real github.com URL, and the
+	## pre-command fetch runs before the refusal we're testing for.
+	fAssertFail "repo create refuses when origin is already set"        bash -c "cd '${gh}/add-https' && PATH='${ghp}' GIT_CONFIG_GLOBAL='${gh}/gc-https' '${gitsby}' -q repo create me/proj"
 	fAssertFail "repo create with no target rejected"                   bash -c "cd '${gh}/split' && PATH='${ghp}' '${gitsby}' -q repo create"
 
 	## pr ok run from the PR's own branch: gh deletes the branch on the remote but leaves our

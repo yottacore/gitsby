@@ -300,6 +300,16 @@ Release-prep pass over what changed since the last review: the noun grouping, `p
 	- "Every mutating command fetches first" ignored `repo clone` and `--no-fetch`. `br prune` was described as deleting every merged branch, which skips the current-branch and protected-branch exceptions. `repo create`'s steps were listed in the wrong order.
 	- design.md's folder list omitted `reference/` and described `assets/` as holding only the demo.
 
+- ✅ Code Review 20260726 item 13: the pre-command fetch could stop and ask for credentials (both implementations).
+	- `fpProbeRemote` sets `GIT_TERMINAL_PROMPT=0` for exactly this reason. The fetch that runs ahead of every command did not, so an https remote you can't authenticate to blocks the command at a username prompt - before any of gitsby's own checks get to run, including the ones that would have refused the command anyway.
+	- Only shows up with a terminal attached. Without one git fails instantly, which is why the suites were green and silent.
+	- Fixed: the fetch disables prompts too. A regression check records the environment the fetch actually receives, since the behavior is invisible without a tty.
+
+- ✅ Code Review 20260726 item 14: two suite checks reached the real github.com.
+	- The `repo create refuses when origin is already set` check reuses a fixture whose origin is a real `https://github.com/me/proj.git`, but dropped the `insteadOf` rewrite that every neighbouring check sets. Confirmed by the server's own "Repository not found" reply.
+	- design.md says neither suite touches the network, so this was also the thing that surfaced item 13 in the first place.
+	- Fixed: the rewrite is back on that check.
+
 #### Done - Code reviews 20260725 and 20260723
 
 - ✅ Code Review 20260725 item 1: `release` pushes only the tag when the default branch has no upstream (both implementations).
