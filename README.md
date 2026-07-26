@@ -46,11 +46,12 @@
 <!-- TOC ignore:true -->
 # The Great Gitsby
 
-<p align="center"><img src="assets/logo.png" alt="" width="128"></p>
-
-A simple, opinionated Git wrapper to speed and simplify everyday Git workflow. Unlimited project scaling.
-
-![gitsby demo](assets/demo.gif)
+<table style="border: none; border-collapse: collapse;">
+	<tr style="border: none; border-collapse: collapse;">
+		<td style="border: none; border-collapse: collapse;"><img src="assets/logo.png" alt="Logo" width="320"/></td>
+		<td style="border: none;">A simple, opinionated Git wrapper to speed and simplify everyday Git workflow. Unlimited project scaling.</td>
+	</tr>
+</table>
 
 <!-- Demo video: https://www.youtube.com/watch?v=REPLACE_WITH_VIDEO_ID -->
 
