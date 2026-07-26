@@ -64,23 +64,30 @@ In each section, items are listed approximately from newest to oldest.
 	- Verified the safety gates discriminate: a version with the ancestry check removed deletes an unmerged branch, and one without the origin-side check deletes origin's only ref to unpushed work.
 	- Deletes with `git branch -D` behind our own check. Deferring to `git branch -d` was tried first and was wrong both ways: it warns about HEAD on every branch when pruning from anywhere but the target, and it flatly refuses a merged branch that was never pushed, so the plan promised a deletion that silently didn't happen.
 	- Closes with a count (`Pruned 3 local, 3 on origin`) and names what it kept, so a wall of git output still ends in a plain answer.
+
 - ✅ Drop the bare `commit` and `pull` commands - both work around the opinionated workflow.
 	- `commit` alone leaves work committed but unshared. `pull` alone was the only place the tool took upstream changes without parking your own, unlike every other command.
 	- Reversible in one direction only: dropping now is free, adding back later breaks nobody, removing later would.
+
 - ✅ `update`/`sync` pull before they commit (bug this exposed, present on dev).
 	- Committing first guaranteed divergence whenever the remote had moved, so the ff-only pull refused - in the most ordinary case there is. `pull` had been the accidental workaround.
 	- Verified against the pre-fix build: it fails, the fixed one lands the work on top and keeps history linear.
+
 - ✅ An unreachable remote warns and skips the pull instead of failing; `--no-fetch` means offline and skips the pull too.
 	- Needed because `update` is now the only way to commit; a genuine non-fast-forward still fails hard.
+
 - ✅ Group the infrequent commands under nouns: `repo clone|create|connect`, `br list|create|switch|land`, `pr create|<n>|ok <n>`.
 	- Daily verbs stay one word. The extra word only lands where you type it rarely, and it buys a discoverable set instead of a flat list of abbreviations.
 	- One verb across all three nouns (`create`, never `new` in some places). `new` and `go` still work but aren't published.
 	- Landed before v2.0.0 on purpose: every name being changed was unreleased, so it cost nothing now and would have cost a permanent alias later.
+
 - ✅ Split the old `connect` into `repo create` and `repo connect`.
 	- Creating a remote is the one irreversible, outward-facing step, so it gets its own verb instead of happening as a side effect.
 	- Each refuses the other's case and names it, so a wrong guess costs one line of output.
+
 - ✅ Drop every pre-2.0 command alias (`scommit`, `spull`, `scompul`, `saveup`, `spush`, `mkbranch`, `chbranch`, `mtm`, `list`).
 	- v2 is a clean break under a new tool name, and not all of the old commands worked. The suite now asserts they're rejected, so none creeps back.
+
 - ✅ `pr new [title]` opens a pull request, so the whole PR round trip lives in gitsby instead of half in `gh`.
 	- Pushes the branch first - GitHub can only diff what the remote has.
 	- Targets `dev` when the repo has one, else the default branch. Refuses from that branch, since there is nothing to propose.
