@@ -13,7 +13,6 @@
 ![Support](https://img.shields.io/badge/Support-Maintained-brightgreen)
 ![Status: Passing](https://img.shields.io/badge/Status-Passing-brightgreen)
 
-</div>
 <!--
 [![!#/bin/bash](https://img.shields.io/badge/-%23!%2Fbin%2Fbash-1f425f.svg?logo=gnu-bash)](https://www.gnu.org/software/bash/)
 [![made-with-python](https://img.shields.io/badge/Made%20with-Python-1f425f.svg)](https://www.python.org/)
@@ -47,9 +46,9 @@
 <!-- TOC ignore:true -->
 # The Great Gitsby
 
-A simple, opinionated Git wrapper to speed and simplify everyday Git workflow. Unlimited project scaling.
+<p align="center"><img src="assets/logo.png" alt="" width="128"></p>
 
-<div align="center">
+A simple, opinionated Git wrapper to speed and simplify everyday Git workflow. Unlimited project scaling.
 
 ![gitsby demo](assets/demo.gif)
 
