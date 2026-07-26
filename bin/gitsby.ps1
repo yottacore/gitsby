@@ -47,6 +47,7 @@ param(
     [Alias('offline')][switch]$NoFetch,
     [switch]$Public,
     [switch]$Private,
+    [switch]$AnyIdentity,
     [Alias('h')][switch]$Help,
     [Alias('v', 'ver')][switch]$Version
 )
@@ -74,6 +75,9 @@ $script:inRepo = $false
 $script:remoteReachable = $true  ## cleared when the pre-command fetch can't reach origin
 $script:cloneUrl = ''; $script:cloneDir = ''
 $script:connectMode = ''; $script:connectUrl = ''; $script:ghTarget = ''  ## resolved by the repo create/connect validation
+$script:isGhCommand = $false   ## command goes through gh at all -> show whose account that is
+$script:isGhWrite = $false     ## command WRITES through gh -> also compare against the ssh key
+$script:ghLoginCache = ''; $script:sshLoginCache = ''  ## per-run, each costs a round trip
 $script:pruneLocal = @(); $script:pruneRemote = @(); $script:pruneKeep = @(); $script:pruneTargetRefs = @(); $script:pruneCurrentMerged = ''  ## resolved by the br prune validation
 
 
@@ -150,6 +154,7 @@ function Show-Syntax {
     Write-PlainLine '  -m, -Message MSG .....: Commit or merge message (or give it positionally).'
     Write-PlainLine '  -q, -Quiet, -y .......: Assume yes - no prompts; if committing with no message, one is generated.'
     Write-PlainLine '  -Public / -Private ...: Visibility for the repo ''repo create'' makes (default: private).'
+    Write-PlainLine '  -AnyIdentity .........: Proceed when gh''s account differs from the remote''s ssh key.'
     Write-PlainLine '  -NoFetch .............: Work offline: skip the pre-command fetch, and the pull.'
     Write-PlainLine '  -h, -Help  /  -v, -Version'
     Write-PlainLine ''
@@ -311,6 +316,59 @@ function Get-SshTarget {
     return ''
 }
 
+function Get-SshConnectTarget {
+    ## '[user@]host' to actually connect to, so an explicit user in the remote URL is honored.
+    ## Get-SshTarget deliberately returns the bare host - that's what 'ssh -G' wants for display.
+    param([string]$Url)
+    $sshHost = Get-SshTarget -Url $Url
+    if (-not $sshHost) { return '' }
+    if ($Url -match '^ssh://([^@/]+)@') { return '{0}@{1}' -f $Matches[1], $sshHost }
+    if ($Url -match '^([^@/]+)@[^/:]+:') { return '{0}@{1}' -f $Matches[1], $sshHost }
+    return $sshHost
+}
+
+function Get-GhLogin {
+    ## The account gh's token belongs to. gh talks to the API over https and never consults
+    ## ssh config, so this is who every gh-backed command acts as - regardless of which key
+    ## git pushes with. '?' when gh can't say (missing, logged out, offline).
+    if (-not $script:ghLoginCache) {
+        $script:ghLoginCache = '?'
+        if (Get-Command -Name gh -ErrorAction SilentlyContinue) {
+            $login = ''
+            try { $login = (gh api user --jq .login 2>$null | Select-Object -First 1) } catch { $login = '' }
+            if ($LASTEXITCODE -eq 0 -and $login) { $script:ghLoginCache = ([string]$login).Trim() }
+        }
+    }
+    return $script:ghLoginCache
+}
+
+function Get-SshLogin {
+    ## The account this remote's ssh key authenticates as. GitHub answers 'Hi <user>!' and always
+    ## exits 1, so parse the greeting, not the status. BatchMode + a connect timeout: never prompt,
+    ## never hang. '?' for https/local remotes, no agent, or anything else unresolvable - and a
+    ## deploy key answers with a repo name, which simply won't match any login. Unknown is not wrong.
+    param([string]$RemoteUrl)
+    if (-not $script:sshLoginCache) {
+        $script:sshLoginCache = '?'
+        $target = Get-SshConnectTarget -Url $RemoteUrl
+        if ($target -and (Get-Command -Name ssh -ErrorAction SilentlyContinue)) {
+            $greeting = ''
+            try { $greeting = (ssh -T -o BatchMode=yes -o ConnectTimeout=3 -- $target 2>&1 | Out-String) } catch { $greeting = '' }
+            if ($greeting -match 'Hi ([A-Za-z0-9_.:/-]+)!') { $script:sshLoginCache = $Matches[1] }
+        }
+    }
+    return $script:sshLoginCache
+}
+
+function Get-IdentityMismatch {
+    ## Returns why the two identities disagree, or ''. Only a mismatch both sides KNOW about
+    ## counts: '?' on either side means we couldn't tell, which is not the same as being wrong.
+    param([string]$GhLogin = '?', [string]$SshLogin = '?')
+    if ($GhLogin -eq '?' -or $SshLogin -eq '?') { return '' }
+    if ($GhLogin -eq $SshLogin) { return '' }
+    return "gh acts as '${GhLogin}', but this remote's key authenticates as '${SshLogin}'."
+}
+
 function Get-RemoteProbe {
     ## One network round-trip: does the remote exist, and does it have history?
     ## Returns missing | empty | nonempty. No auth prompts - a bad https URL would
@@ -440,6 +498,22 @@ function Show-Identity {
         }
     }
     Write-PlainLine "Author .......: $(Get-CommitIdentity)"
+    ## gh-backed commands act as gh's account, not the ssh key's - so name it where it applies.
+    if ($script:isGhCommand) {
+        $ghLogin = Get-GhLogin
+        $ghLine = $ghLogin
+        if ($ghLogin -eq '?') { $ghLine = '(unknown - gh not logged in, or offline)' }
+        ## The ssh comparison costs a round trip, so only the commands that write through gh pay it.
+        if ($script:isGhWrite) {
+            $sshLogin = Get-SshLogin -RemoteUrl $RemoteUrl
+            if (Get-IdentityMismatch -GhLogin $ghLogin -SshLogin $sshLogin) {
+                $ghLine += "  <-- NOT the ssh key's account ('${sshLogin}')"
+            } elseif ($sshLogin -eq '?') {
+                $ghLine += ' (no ssh identity to compare)'
+            }
+        }
+        Write-PlainLine "GitHub (gh) ..: ${ghLine}"
+    }
 }
 
 function Show-RepoStatus {
@@ -1190,6 +1264,27 @@ try {
         }
     }
 
+    ## Which commands go through gh, and which of those WRITE through it. Only the writers
+    ## compare against the ssh key: repo create/connect have no origin yet, so there is no
+    ## second identity to disagree with - gh is the only actor there.
+    switch ($cmdName) {
+        'pr' { $script:isGhCommand = $true; if ($script:prSub -in 'create', 'ok') { $script:isGhWrite = $true }; break }
+        'repo-create' { $script:isGhCommand = $true; break }
+        'repo-connect' { if ($script:ghTarget) { $script:isGhCommand = $true }; break }
+    }
+
+    ## A gh write acting as a different account than the key git pushes with is a wrong-account
+    ## mistake waiting to happen, and it is outward-facing. Refuse it unattended (nobody is there
+    ## to read a warning); warn interactively, right before the prompt. -AnyIdentity means
+    ## the difference is intended.
+    $identityMismatch = ''
+    if ($script:isGhWrite -and -not $AnyIdentity) {
+        $originUrlForId = (git remote get-url origin 2>$null | Select-Object -First 1)
+        $identityMismatch = Get-IdentityMismatch -GhLogin (Get-GhLogin) -SshLogin (Get-SshLogin -RemoteUrl ([string]$originUrlForId))
+        ## Up front, like every other refusal: don't show a plan we won't run.
+        if ($identityMismatch -and $script:doQuietly) { throw "${identityMismatch} Nothing was done. Re-run with -AnyIdentity if that is intended." }
+    }
+
     ## Read-only commands
     if (-not $isMutating) {
         switch ($cmdName) {
@@ -1229,6 +1324,14 @@ try {
     Write-PlainLine ''
     Write-PlainLine 'Going to do (steps marked * only if needed, based on repo state):'
     Show-CommandPreview -CommandName $cmdName
+    ## Last thing before the prompt, so it can't scroll away above the plan.
+    if ($identityMismatch) {
+        Write-PlainLine ''
+        Write-StatusLine '*** WRONG ACCOUNT? ***'
+        Write-PlainLine "  ${identityMismatch}"
+        Write-PlainLine "  gh does the pull request work, so it happens as '$(Get-GhLogin)'."
+        Write-PlainLine '  Continue only if that is what you mean. (-AnyIdentity silences this.)'
+    }
     if (-not $script:doQuietly) {
         Write-PlainLine ''
         $answer = Read-Host -Prompt 'Continue? (y|n)'

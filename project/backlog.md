@@ -310,6 +310,14 @@ Release-prep pass over what changed since the last review: the noun grouping, `p
 	- design.md says neither suite touches the network, so this was also the thing that surfaced item 13 in the first place.
 	- Fixed: the rewrite is back on that check.
 
+- ✅ Show gh's account in the pre-flight, and refuse a gh write that acts as someone else.
+	- gh authenticates with its own token and ignores ssh config, so `pr create`/`pr ok`/`repo create` act as gh's account while `git push` acts as the remote alias's key. With per-account aliases those differ, and the pre-flight was naming only the ssh one - the wrong identity for exactly those commands.
+	- Found live: from a `t00mietum` repo, gh reports `jim-collier` with READ permission, so a `pr create` there would act as an account that can't do it.
+	- Three outcomes, not two. Unknown (no agent, https remote, deploy key, gh logged out) is reported and never blocks - otherwise every CI runner breaks. Only a difference both sides confirm counts.
+	- Interactive: warning directly above the confirm prompt. Unattended: error, nothing runs. `--any-identity`/`-AnyIdentity` proceeds, and the mismatch still shows on the identity line.
+	- Decided against a general gh-config validator: policing another tool's setup isn't gitsby's job and would turn working commands into refusals.
+	- 26 new checks across both implementations, driven by a fake ssh that answers the greeting GitHub really sends and doubles as the git transport. Verified they fail against the pre-feature build.
+
 #### Done - Code reviews 20260725 and 20260723
 
 - ✅ Code Review 20260725 item 1: `release` pushes only the tag when the default branch has no upstream (both implementations).

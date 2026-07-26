@@ -65,6 +65,7 @@ fSyntax(){ { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax=
 	fEcho_Clean "  -m, --message MSG ....: Commit or merge message (or give it positionally)."
 	fEcho_Clean "  -q, --quiet, -y ......: Assume yes - no prompts; if committing with no message, one is generated."
 	fEcho_Clean "  --public / --private .: Visibility for the repo 'repo create' makes (default: private)."
+	fEcho_Clean "  --any-identity .......: Proceed when gh's account differs from the remote's ssh key."
 	fEcho_Clean "  --no-fetch ...........: Work offline: skip the pre-command fetch, and the pull."
 	fEcho_Clean "  -h, --help  /  -v, --version"
 	fEcho_Clean "" ;:;}
@@ -100,6 +101,10 @@ fMain(){
 	local -i doFetch=1      ## cleared by --no-fetch
 	local -i remoteReachable=1  ## cleared when the pre-command fetch can't reach origin
 	local repoVisibility="private"  ## --public/--private, for 'repo create'
+	local -i anyIdentity=0          ## --any-identity: a gh/ssh account mismatch here is intended
+	local -i isGhCommand=0          ## command goes through gh at all -> show whose account that is
+	local -i isGhWrite=0            ## command WRITES through gh -> also compare against the ssh key
+	local ghLoginCache=""; local sshLoginCache=""  ## per-run, each costs a round trip
 	local defaultBranchCache=""; local mergeTargetCache=""  ## per-run constants, filled post-fetch
 	local -i inRepo=0
 	local cloneUrl=""; local cloneDir=""
@@ -347,6 +352,26 @@ fMain(){
 		fi
 	fi
 
+	## Which commands go through gh, and which of those WRITE through it. Only the writers
+	## compare against the ssh key: repo create/connect have no origin yet, so there is no
+	## second identity to disagree with - gh is the only actor there.
+	case "${cmdName}" in
+		pr)                      isGhCommand=1; [[ "${prSub}" == "create" || "${prSub}" == "ok" ]] && isGhWrite=1 ;;
+		repo-create)             isGhCommand=1 ;;
+		repo-connect)            [[ -n "${ghTarget}" ]] && isGhCommand=1 ;;
+	esac
+
+	## A gh write acting as a different account than the key git pushes with is a wrong-account
+	## mistake waiting to happen, and it is outward-facing. Refuse it unattended (nobody is there
+	## to read a warning); warn interactively, right before the prompt. --any-identity means
+	## the difference is intended.
+	local identityMismatch=""
+	if ((isGhWrite)) && ((! anyIdentity)); then
+		identityMismatch="$(fpIdentityMismatch "$(fpGhLogin)" "$(fpSshLogin "$(git remote get-url origin 2>/dev/null || true)")")"
+		## Up front, like every other refusal: don't show a plan we won't run.
+		[[ -n "${identityMismatch}" ]] && ((doQuietly)) && fThrowError_Usage "${identityMismatch} Nothing was done. Re-run with --any-identity if that is intended."
+	fi
+
 	## Read-only commands
 	if ((! isMutating)); then
 		case "${cmdName}" in
@@ -381,6 +406,14 @@ fMain(){
 	fEcho_Clean ""
 	fEcho_Clean "Going to do (steps marked * only if needed, based on repo state):"
 	fpPreview "${cmdName}"
+	## Last thing before the prompt, so it can't scroll away above the plan.
+	if [[ -n "${identityMismatch}" ]]; then
+		fEcho_Clean ""
+		fEcho "*** WRONG ACCOUNT? ***"
+		fEcho_Clean "  ${identityMismatch}"
+		fEcho_Clean "  gh does the pull request work, so it happens as '$(fpGhLogin)'."
+		fEcho_Clean "  Continue only if that is what you mean. (--any-identity silences this.)"
+	fi
 	if ((! doQuietly)); then
 		fEcho_Clean ""
 		fPromptYN "Continue? (y|n): " || { fEcho "User aborted."; return 1; }
@@ -794,6 +827,61 @@ fSshTarget(){
 	esac
 :;}
 
+fSshConnectTarget(){
+	## '[user@]host' to actually connect to, so an explicit user in the remote URL is honored.
+	## fSshTarget deliberately returns the bare host - that's what 'ssh -G' wants for display.
+	local -r url="${1:-}"
+	local -r host="$(fSshTarget "${url}")"
+	[[ -n "${host}" ]] || return 0
+	local user=""
+	case "${url}" in
+		ssh://*@*) user="${url#ssh://}"; user="${user%%@*}" ;;
+		*://*)     : ;;
+		*@*:*)     user="${url%%@*}" ;;
+	esac
+	[[ -n "${user}" ]] && echo "${user}@${host}" || echo "${host}"
+:;}
+
+fpGhLogin(){
+	## The account gh's token belongs to. gh talks to the API over https and never consults
+	## ssh config, so this is who every gh-backed command acts as - regardless of which key
+	## git pushes with. '?' when gh can't say (missing, logged out, offline).
+	if [[ -z "${ghLoginCache:-}" ]]; then
+		ghLoginCache="?"
+		if command -v gh &>/dev/null; then
+			local login=""; login="$(GH_PROMPT_DISABLED=1 gh api user --jq .login 2>/dev/null || true)"
+			[[ -n "${login}" ]] && ghLoginCache="${login}"
+		fi
+	fi
+	echo "${ghLoginCache}"
+:;}
+
+fpSshLogin(){
+	## The account this remote's ssh key authenticates as. GitHub answers 'Hi <user>!' and always
+	## exits 1, so parse the greeting, not the status. BatchMode + a connect timeout: never prompt,
+	## never hang. '?' for https/local remotes, no agent, or anything else unresolvable - and a
+	## deploy key answers with a repo name, which simply won't match any login. Unknown is not wrong.
+	local -r target="$(fSshConnectTarget "${1:-}")"
+	if [[ -z "${sshLoginCache:-}" ]]; then
+		sshLoginCache="?"
+		if [[ -n "${target}" ]] && command -v ssh &>/dev/null; then
+			local greeting=""
+			greeting="$(ssh -T -o BatchMode=yes -o ConnectTimeout=3 -- "${target}" 2>&1 || true)"
+			[[ "${greeting}" =~ ^Hi\ ([A-Za-z0-9_.:/-]+)! ]] && sshLoginCache="${BASH_REMATCH[1]}"
+		fi
+	fi
+	echo "${sshLoginCache}"
+:;}
+
+fpIdentityMismatch(){
+	## Prints why the two identities disagree, or nothing. Only a mismatch both sides KNOW about
+	## counts: '?' on either side means we couldn't tell, which is not the same as being wrong.
+	local -r ghLogin="${1:-?}"; local -r sshLogin="${2:-?}"
+	[[ "${ghLogin}" == "?" || "${sshLogin}" == "?" ]] && return 0
+	[[ "${ghLogin}" == "${sshLogin}" ]] && return 0
+	echo "gh acts as '${ghLogin}', but this remote's key authenticates as '${sshLogin}'."
+:;}
+
 fpProbeRemote(){
 	## One network round-trip: does the remote exist, and does it have history?
 	## Prints missing | empty | nonempty. No auth prompts - a bad https URL would
@@ -945,6 +1033,22 @@ fpShowIdentity(){
 		fi
 	fi
 	fEcho_Clean "Author .......: $(fCommitIdentity)"
+	## gh-backed commands act as gh's account, not the ssh key's - so name it where it applies.
+	if ((isGhCommand)); then
+		local ghLogin=""; ghLogin="$(fpGhLogin)"
+		local ghLine="${ghLogin}"
+		[[ "${ghLogin}" == "?" ]] && ghLine="(unknown - gh not logged in, or offline)"
+		## The ssh comparison costs a round trip, so only the commands that write through gh pay it.
+		if ((isGhWrite)); then
+			local sshLogin=""; sshLogin="$(fpSshLogin "${remoteUrl}")"
+			if [[ -n "$(fpIdentityMismatch "${ghLogin}" "${sshLogin}")" ]]; then
+				ghLine="${ghLine}  <-- NOT the ssh key's account ('${sshLogin}')"
+			elif [[ "${sshLogin}" == "?" ]]; then
+				ghLine="${ghLine} (no ssh identity to compare)"
+			fi
+		fi
+		fEcho_Clean "GitHub (gh) ..: ${ghLine}"
+	fi
 :;}
 
 fpShowStatus(){
@@ -1135,6 +1239,7 @@ fParseArgs(){
 				"no-fetch"|"nofetch"|"offline")  doFetch=0 ;;
 				"public")                   repoVisibility="public" ;;
 				"private")                  repoVisibility="private" ;;
+				"any-identity"|"anyidentity")  anyIdentity=1 ;;
 				"m="*|"message="*|"msg="*)  commitMessage="${currentArg#*=}" ;;  ## -m=MSG / --message=MSG / --msg=MSG (joined)
 
 			## ✶✶✶✶✶✶✶✶ CUSTOM LONG-OPTIONS THAT EXPECT AN ARGUMENT TO FOLLOW

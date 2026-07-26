@@ -465,6 +465,7 @@ fRunSuite(){
 ## Test stub: deterministic gh, no network. Behavior driven by FAKE_GH_* env.
 [[ -n "${FAKE_GH_LOG:-}" ]] && echo "$*" >> "${FAKE_GH_LOG}"
 case "$1 $2" in
+	"api user")    echo "${FAKE_GH_LOGIN:-ghuser}" ;;  ## whose token gh is holding
 	"repo view")   case "${FAKE_GH_VIEW:-}" in notfound) exit 1 ;; empty) echo true ;; nonempty) echo false ;; esac ;;
 	"config get")  echo "${FAKE_GH_PROTO:-https}" ;;
 	"pr list")     echo "${FAKE_GH_EXISTING:-}" ;;  ## an already-open PR number for this branch, or nothing
@@ -568,6 +569,70 @@ GHEOF
 		git checkout --quiet -b pnfeat2 && echo more > more.txt && git add --all && git commit --quiet -m "Commit subject"
 	)
 	fAssert "pr create takes an explicit title"  bash -c "cd '${pnc}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prnew2.log' '${gitsby}' -q pr create 'Explicit title' && grep -q -- '--title Explicit title' '${gh}/prnew2.log'"
+
+	## gh writes act as gh's own account, not the ssh key git pushes with. A difference BOTH sides
+	## know about is refused unattended; unknown (no agent, https remote, deploy key) never blocks,
+	## or every CI runner breaks. A fake ssh answers the greeting GitHub really sends.
+	local id="${work}/$1-ident"
+	mkdir -p "${id}/bin"
+	cp "${gh}/bin/gh" "${id}/bin/gh"
+	## insteadOf is no good here: 'git remote get-url' returns the REWRITTEN url, so there would be
+	## no ssh url left to probe. Instead the stub doubles as the transport, so origin stays an
+	## scp-style url while every push and fetch lands in a local bare.
+	cat > "${id}/bin/ssh" <<-'EOF'
+		#!/usr/bin/env bash
+		[[ "$1" == "-G" ]] && { printf 'user git\nhostname github.com\n'; exit 0; }
+		if [[ "$1" == "-T" ]]; then
+			## No FAKE_SSH_LOGIN = no usable key, which is the 'unknown' case.
+			[[ -n "${FAKE_SSH_LOGIN:-}" ]] || { echo "git@github.com: Permission denied (publickey)." >&2; exit 255; }
+			echo "Hi ${FAKE_SSH_LOGIN}! You've successfully authenticated, but GitHub does not provide shell access."
+			exit 1   ## GitHub always exits 1 here; the greeting is the answer, not the status
+		fi
+		## Otherwise git is driving us as its transport: point the pack program at the local bare.
+		for arg in "$@"; do
+			case "${arg}" in
+				git-upload-pack*|git-receive-pack*|git-upload-archive*)
+					exec "${arg%% *}" "${FAKE_SSH_REPO}" ;;
+			esac
+		done
+		exit 0
+	EOF
+	chmod +x "${id}/bin/ssh"
+	local -r idp="${id}/bin:${PATH}"
+	git init --quiet --bare -b main "${id}/origin.git"
+	local idc="${id}/c"
+	git clone --quiet "${id}/origin.git" "${idc}" 2>/dev/null
+	(
+		cd "${idc}" || exit 1
+		echo base > base.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet -b idfeat && echo w > w.txt && git add --all && git commit --quiet -m "Work"
+		git remote set-url origin git@github_test:x/y.git
+	)
+	local idEnv="PATH='${idp}' FAKE_SSH_REPO='${id}/origin.git'"
+	fAssertFail "gh/ssh identity mismatch refused unattended" \
+		bash -c "cd '${idc}' && ${idEnv} FAKE_GH_LOGIN=alice FAKE_SSH_LOGIN=bob '${gitsby}' -q -NoFetch pr create 'T'"
+	fAssertOut  "and the refusal names both accounts"  "acts as 'alice'.*authenticates as 'bob'" \
+		bash -c "cd '${idc}' && ${idEnv} FAKE_GH_LOGIN=alice FAKE_SSH_LOGIN=bob '${gitsby}' -q -NoFetch pr create 'T' 2>&1 || true"
+	fAssertFail "the mismatch refusal happens before anything runs" \
+		bash -c "cd '${idc}' && ${idEnv} FAKE_GH_LOGIN=alice FAKE_SSH_LOGIN=bob '${gitsby}' -q -NoFetch pr create 'T'; git -C '${idc}' ls-remote --heads origin idfeat | grep -q idfeat"
+	fAssert     "unknown ssh identity does not block"  \
+		bash -c "cd '${idc}' && ${idEnv} FAKE_GH_LOGIN=alice '${gitsby}' -q -NoFetch pr create 'T'"
+	fAssertOut  "and says there was nothing to compare"  'no ssh identity to compare' \
+		bash -c "cd '${idc}' && ${idEnv} FAKE_GH_LOGIN=alice '${gitsby}' -q -NoFetch pr create 'T' 2>&1"
+	fAssert     "matching identities proceed"  \
+		bash -c "cd '${idc}' && ${idEnv} FAKE_GH_LOGIN=same FAKE_SSH_LOGIN=same '${gitsby}' -q -NoFetch pr create 'T'"
+	fAssertOut  "the identity block names the gh account"  'GitHub \(gh\) [.]*: same' \
+		bash -c "cd '${idc}' && ${idEnv} FAKE_GH_LOGIN=same FAKE_SSH_LOGIN=same '${gitsby}' -q -NoFetch pr create 'T' 2>&1"
+	## The override flag is spelled per implementation, like --public/-Public.
+	local anyIdFlag="--any-identity"; [[ "$1" == "bash" ]] || anyIdFlag="-AnyIdentity"
+	fAssert     "the override flag proceeds through a mismatch"  \
+		bash -c "cd '${idc}' && ${idEnv} FAKE_GH_LOGIN=alice FAKE_SSH_LOGIN=bob '${gitsby}' -q -NoFetch ${anyIdFlag} pr create 'T'"
+	fAssertOut  "and the mismatch is still on the identity line"  "NOT the ssh key's account" \
+		bash -c "cd '${idc}' && ${idEnv} FAKE_GH_LOGIN=alice FAKE_SSH_LOGIN=bob '${gitsby}' -q -NoFetch ${anyIdFlag} pr create 'T' 2>&1"
+	## Read-only pr never pays for the ssh probe, so a mismatch can't block looking.
+	fAssert     "a mismatch does not block read-only pr"  \
+		bash -c "cd '${idc}' && ${idEnv} FAKE_GH_LOGIN=alice FAKE_SSH_LOGIN=bob '${gitsby}' -q -NoFetch pr"
 
 	## pr ok refuses to merge while work is still only local: gh merges what origin has, then
 	## deletes the branch, so anything unpushed would be outside both the PR and the merge.
