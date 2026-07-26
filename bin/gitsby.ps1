@@ -140,7 +140,7 @@ function Show-Syntax {
     Write-PlainLine '  repo create <o/n> ..: Create GitHub repo ''owner/name'' via gh, then connect this directory and push.'
     Write-PlainLine '  repo connect [url] .: Connect this directory to an existing empty remote, and push.'
     Write-PlainLine 'Less common commands:'
-    Write-PlainLine '  sync [msg] .........: Commit, pull, and push. Do infrequently.'
+    Write-PlainLine '  sync [msg] .........: Pull, commit, and push. Do infrequently.'
     Write-PlainLine 'Admin commands, e.g. for small solo projects:'
     Write-PlainLine "  br land [msg] ......: Merge current branch into ${script:mergeTargetLabel} (--no-ff), push, delete it local + remote."
     Write-PlainLine "  br prune ...........: Delete branches already merged into ${script:mergeTargetLabel}, local + remote."

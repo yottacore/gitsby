@@ -20,7 +20,7 @@ This is a product backlog for the run-up to v2.0.0. After that release, bugs, fe
 		- [Done - Bugs](#done---bugs)
 		- [Done - Features and enhancements](#done---features-and-enhancements)
 		- [Done - Code review 20260726](#done---code-review-20260726)
-		- [Done - Code review 20260725](#done---code-review-20260725)
+		- [Done - Code reviews 20260725 and 20260723](#done---code-reviews-20260725-and-20260723)
 	- [Future and/or deferred](#future-andor-deferred)
 	- [Canceled](#canceled)
 
@@ -51,6 +51,11 @@ In each section, items are listed approximately from newest to oldest.
 #### Done - Bugs
 
 #### Done - Features and enhancements
+
+- ✅ Release-prep sweep over the docs and the built-in help.
+	- The help still described `sync` as commit-then-pull. That order changed when the bare `pull` command was dropped, and this line was missed. The README already had it right.
+	- A regression check pins the wording, so the same drift can't come back quietly.
+	- Also two stale references in the project notes: a command name that was renamed, and a description of argument parsing from before the noun grouping.
 
 - ✅ `br prune`: delete branches already merged into the merge target, local + remote.
 	- Nothing cleaned up after a PR merged from the web UI or another machine, or after an abandoned branch. `br land` and `pr ok` only ever delete the one branch they just merged.
@@ -153,7 +158,7 @@ In each section, items are listed approximately from newest to oldest.
 	- Two mirrored sections, same task headings in the same order, so the two are easy to compare side by side.
 	- The PowerShell section opens with the three gotchas that bite when translating from Bash: `&&`/`||` need pwsh 7, `@{u}` has to be quoted, and staged-change tests read `$LASTEXITCODE`.
 	- Every pwsh one-liner was run against throwaway repos, not just eyeballed. Two spots deviate on purpose: no `less` (git pages its own diff), and `Remove-Item` deletes outright since there is no cross-platform `trash`.
-	- Also swapped the stale sister-tool reference in the Bash "push local changes" one-liner for `gitsby saveup`.
+	- Also swapped the stale sister-tool reference in the Bash "push local changes" one-liner for `gitsby update`.
 
 - ✅ All potentially destructive or conflict-producing commands - or anything that will reveal a user identity on the remote - should:
 	- Show what's going to change (including a list of changed files, piped through an internal equivalent of `... | less -FX` if necessary)
@@ -265,7 +270,7 @@ Release-prep pass over what changed since the last review: the noun grouping, `p
 	- Worst case: it was the only merged branch, and the output claimed nothing was merged at all.
 	- Fixed: the plan, the no-op path, and the closing summary all say it is kept because you are standing on it.
 
-#### Done - Code review 20260725
+#### Done - Code reviews 20260725 and 20260723
 
 - ✅ Code Review 20260725 item 1: `release` pushes only the tag when the default branch has no upstream (both implementations).
 	- The branch push is gated on an upstream; the tag push is not.
@@ -428,7 +433,7 @@ Release-prep pass over what changed since the last review: the noun grouping, `p
 	- Done: git rev-list -n 1 in both implementations.
 
 - ✅ Code Review 20260723 item 30: needless external `head`/`wc` pipeline stages (bash).
-	- Use `mapfile -n 1` / array counts; watch the set -e empty-input gotcha noted in design.md.
+	- Use `mapfile -n 1` / array counts, minding that a bare `read` returns nonzero on empty input under strict mode.
 	- Done: tag lookup via mapfile -n 1; the stash wc pipelines were already removed by item 1.
 
 - ✅ Code Review 20260723 item 31: positional parameter binding in the ps1 files (style guide requires named).

@@ -55,7 +55,7 @@ fSyntax(){ { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax=
 	fEcho_Clean "  repo create <o/n> ..: Create GitHub repo 'owner/name' via gh, then connect this directory and push."
 	fEcho_Clean "  repo connect [url] .: Connect this directory to an existing empty remote, and push."
 	fEcho_Clean "Less common commands:"
-	fEcho_Clean "  sync [msg] .........: Commit, pull, and push. Do infrequently."
+	fEcho_Clean "  sync [msg] .........: Pull, commit, and push. Do infrequently."
 	fEcho_Clean "Admin commands, e.g. for small solo projects:"
 	fEcho_Clean "  br land [msg] ......: Merge current branch into ${mergeTargetLabel} (--no-ff), push, delete it local + remote."
 	fEcho_Clean "  br prune ...........: Delete branches already merged into ${mergeTargetLabel}, local + remote."
