@@ -19,6 +19,7 @@ This is a product backlog for the run-up to v2.0.0. After that release, bugs, fe
 	- [Done](#done)
 		- [Done - Bugs](#done---bugs)
 		- [Done - Features and enhancements](#done---features-and-enhancements)
+		- [Done - Code review 20260726](#done---code-review-20260726)
 		- [Done - Code review 20260725](#done---code-review-20260725)
 	- [Future and/or deferred](#future-andor-deferred)
 	- [Canceled](#canceled)
@@ -219,6 +220,34 @@ In each section, items are listed approximately from newest to oldest.
 
 - ✅ Delete stale branch from 2020.
 	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
+
+#### Done - Code review 20260726
+
+Release-prep pass over what changed since the last review: the noun grouping, `pr create`, and dropping bare `commit`/`pull`.
+
+- ✅ Code Review 20260726 item 1: `br switch` from a dirty protected branch tells you to run a command that no longer exists (both implementations).
+	- The refusal offered `gitsby commit` as the deliberate way to keep the work where it is. That command was dropped, so following the advice is a second error.
+	- Fixed: it now names `update`, which commits on the current branch. Regression test asserts the suggested command is a real one.
+
+- ✅ Code Review 20260726 item 2: offline only reached the pull in `update` and `sync` (both implementations).
+	- `br create`, `br switch`, `br land`, `pr ok`, and `release` each pull as one of their steps, and those pulls ignored `--no-fetch` and an unreachable remote.
+	- So the flag documented as "work offline" still went to the network in five of the seven commands that pull, which is exactly the thing the design note says it must not do.
+	- Fixed: every in-command pull goes through one helper that applies the same rule. Regression test compares a `--no-fetch` switch (must not advance) against the same switch online (must).
+
+- ✅ Code Review 20260726 item 3: built-in help drifted from the command set (both implementations).
+	- `update` was still described as commit-then-pull, `--no-fetch` as skipping only the fetch, and the PowerShell parameter help still listed `pull` and `commit` as commands.
+	- The `br create` line said it parks current work first, which is what it does from a feature branch but not from `main`/`dev`, where it carries the work along instead.
+	- Also "stash only if dirty" in the summary blurb, describing a manual stash that no longer exists.
+	- Fixed: all of the above, in both implementations.
+
+- ✅ Code Review 20260726 item 4: the README command count was stale.
+	- It said 13, from before the regroup and before `commit` and `pull` were dropped.
+	- Fixed: 7 commands, or 15 counting subcommands, which is what the table below it lists.
+
+- ✅ Code Review 20260726 item 5: the offline test passed on the PowerShell side for the wrong reason.
+	- It spelled the flag `--no-fetch`, which PowerShell has no parameter for, and then matched output against a pattern that the resulting complaint about the flag also matched.
+	- So the check went green on a command that had failed outright, and no offline behavior was ever exercised there.
+	- Fixed: `-NoFetch`, which both implementations accept, and the pattern now matches only the skip message itself.
 
 #### Done - Code review 20260725
 

@@ -90,7 +90,7 @@ You probably also understand that it's complex, mostly because it's so flexible.
 
 Git has about 82 porcelain commands.
 
-Gitsby has 13.
+Gitsby has 7, or 15 counting subcommands.
 
 > *Granted, this comparison doesn't hit super hard, when only about 1/5th of git users interact with bare `git` on a daily basis - as it's integrated into IDEs, CI/CD pipelines, AI coding agents, etc.*
 
@@ -108,13 +108,17 @@ Gitsby shrinks Git's command set by:
 
 👉 Gitsby, [Git](https://git-scm.com/), [gh](https://github.com/cli/cli), [Lazygit](https://github.com/jesseduffield/lazygit), and [Tig](https://github.com/jonas/tig) are all compatible, interchangeable, and can be intermixed on the same project at any time without interference.
 
-- *In fact in large projects, you may still need to use bare Git (and/or some other wrapper) to resolve some sticky situations that Gitsby purposely doesn't try to tackle, in order to keep-it-simple and "do one thing well".*
+- This also makes giving Gitsby a "tryout" cheap and easy - you don't need to commit to anything. (No pun intended.)
+
+- In fact in large projects, you may still need to use bare Git (and/or some other wrapper) to resolve some sticky situations that Gitsby purposely doesn't try to tackle, in order to keep-it-simple and "do one thing well".
 
 👉 Gitsby is 100% compatible with GitHub and GitLab.
 
-> Note: [GitButler](https://gitbutler.com/) is *not* fully interchangeable with Git, Gitsby, gh, LazyGit, and/or Tig. While a great tool and a cool idea, it manages its own metadata - that inherently doesn't mix well with other git-based tools that moves `HEAD` or rewrites history.
+> Note: [GitButler](https://gitbutler.com/) is *not* fully interchangeable with Git, Gitsby, gh, LazyGit, and/or Tig. While a great tool and a cool idea, it manages its own metadata - that inherently doesn't mix well with other git-based tools that moves `HEAD` or rewrites history. It's worth a look and a try - but to be safe, give it a dedicated trial on a small personal repo, without mixing in other tools.
 
 ## General attributes
+
+Gitsby:
 
 - Encourages and partially enforces an "opinionated" workflow. (More on what that means below, because it has become an overloaded word.)
 
@@ -164,7 +168,7 @@ There are many implicit opinions baked in. Here are the main ones:
 
 - Commit and pull frequently (`update`); push less often (`sync`).
 
-- Uncommitted work should never block anything. A pull auto-stashes around itself, `br create` carries uncommitted work onto the new branch, and a branch switch parks current work first (commit, pull, push - though never auto-committed onto `main`/`dev`), so nothing is ever stranded or lost.
+- Uncommitted work should never block anything. A pull auto-stashes around itself, `br create` carries uncommitted work onto the new branch, and a branch switch parks current work first (pull, commit, push - though never auto-committed onto `main`/`dev`), so nothing is ever stranded or lost.
 
 - Every branch tracks a same-named branch on `origin`, from the moment it's created.
 

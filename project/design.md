@@ -123,6 +123,29 @@ The two files are ports of each other. A change to one nearly always belongs in 
 
 GitHub's `releases/latest` returns the newest release not flagged as a pre-release, and both installers resolve through that redirect. Among the options - flag candidates as pre-releases and teach the installers a `--pre` switch, or publish everything as a full release - we decided on the latter. The semver suffix in the tag already tells a reader that `v2.0.0-rc1` is a candidate, and it keeps the documented one-liner installs working with no extra arguments. `--ref`/`-Ref` covers anyone who wants a specific tag or branch.
 
+## Code review 20260726
+
+Fix notes for the "Code Review 20260726" backlog items. Numbering matches the backlog. All five apply to both implementations.
+
+- Item 1 - a refusal naming a dropped command:
+	- `br switch` off a dirty `main`/`dev` offered `gitsby commit` as the alternative. Dropping the bare `commit` left the message behind.
+	- `update` is the replacement, since it commits on the branch you are standing on.
+	- Worth a standing check: every command named inside an error message should be one the parser still accepts.
+
+- Item 2 - one rule for offline, applied once:
+	- Seven commands pull. Only `update` and `sync` went through the helper that knows about `--no-fetch` and an unreachable remote; the other five called `git pull` directly.
+	- The pulls now share a helper, so the rule is stated in one place instead of five.
+	- It stays quiet where the old code was quiet: a skipped pull inside a multi-step command prints nothing, while `update`, whose whole job is the pull, still says why it skipped.
+	- The offline warning also claimed the work was already committed, which stopped being true when the pull moved ahead of the commit.
+
+- Item 3 - help text as documentation:
+	- The built-in help is the only documentation most people will read, so it drifting is a real defect, not a typo.
+	- Three separate drifts: the command order in `update`, the scope of `--no-fetch`, and a PowerShell parameter block still listing `pull` and `commit`.
+
+- Item 5 - a test green for the wrong reason:
+	- Asserting on output means the assertion has to be specific enough that a failure cannot satisfy it. The pattern matched the flag name, and the error message about the flag contained the flag name.
+	- Both implementations take `-NoFetch`; only Bash takes `--no-fetch`. Shared checks use the spelling both accept.
+
 ## Code review 20260723
 
 Fix notes for the "Code Review 20260723" backlog items. Numbering matches the backlog. Unless marked bash-only or pwsh-only, apply to both implementations.

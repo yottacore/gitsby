@@ -16,13 +16,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Other work
 -->
 
-## v2.0.0 - 2026-07-25
+## v2.0.0 - 2026-07-26
 
 ### Notes
 
 - First release since 2022, and a rewrite rather than an update.
 - Commands were reorganized, and the pre-2.0 names are gone. The tool is also invoked by a new name, so nothing that worked before was silently changed underneath you.
-- Gitsby now ships in two languages, Bash and PowerShell, with the same commands and the same behavior in each.
+
+- Gitsby now ships in two languages, Bash (for *nix, Darwin, and WSL) and PowerShell (for any platform that PowerShell v7 runs on including Linux, macOS, and Windows); with the same commands and the same behavior in each.
 
 ### Added
 
@@ -44,13 +45,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Commands you reach for daily stay one word: `update`, `sync`, `status`, `release`. The rest are grouped under a noun - `repo clone` / `repo create` / `repo connect`, `br` / `br create` / `br switch` / `br land`, and `pr` / `pr create` / `pr <n>` / `pr ok <n>`. `repository` and `branch` spell out if you prefer.
 - The pre-2.0 command names (`scompul`, `spush`, `scommit`, `spull`, `mkbranch`, `chbranch`, `list`, `mtm`) were removed rather than aliased. Not all of them worked, and 2.0 is a clean break under a new tool name.
 - `br create`, `br switch`, and `br land` branch off / land on `dev` when the repo has one, else the default branch. `br land` refuses to run from the default branch.
-- `pull` no longer risks stranding your work. A pull that can't fast-forward leaves the working tree exactly as it found it.
+- Pulling no longer risks stranding your work. A pull that can't fast-forward leaves the working tree exactly as it found it.
 - `br create` carries uncommitted work onto the new branch instead of committing it to `main`/`dev` first. `br switch` refuses and says what to do instead.
 - `br land` publishes an unpushed target branch before deleting the branch it merged, so the work always reaches the remote first.
 - `release` now fast-forwards dev to main afterward, so dev includes the release merge and tag. If dev gained commits mid-release, the fast-forward is skipped with a warning instead of discarding anything.
 - `pr ok` refuses when the current branch has uncommitted changes or commits that never reached the remote. Merging deletes the branch, and anything only local would be outside both the pull request and the merge.
 - `update` and `sync` now pull *before* they commit. Committing first created a local commit, so any remote that had moved ahead was diverged and the fast-forward-only pull refused - the everyday case. Pulling first fast-forwards and your work lands on top, keeping history linear.
-- `--no-fetch` now means offline: it skips the pull as well as the pre-command fetch. A remote that can't be reached warns and skips the pull instead of failing, so being offline never turns a good commit into a failed command.
+- `--no-fetch` now means offline: it skips the pull as well as the pre-command fetch, in every command that pulls. A remote that can't be reached warns and skips the pull instead of failing, so being offline never turns a good commit into a failed command.
 - Mutating commands refuse to run without a terminal unless you pass `-q`/`-y`, so a piped or scheduled run can't silently confirm itself.
 - Remote URLs with an embedded password or token print masked.
 - Status now shows a compact one-line-per-file change list instead of `git status`'s long form, truncated to the terminal width and capped so a large working tree can't scroll the prompt out of view.

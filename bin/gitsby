@@ -38,15 +38,15 @@ fCopyright(){ { ((doQuietly)) || ((wasShown_Copyright)); } && return; wasShown_C
 fAbout(){ { ((doQuietly)) || ((wasShown_About)); } && return; wasShown_About=1;
 	fEcho_Clean ""
 	fEcho_Clean "Safer, state-checked wrappers for everyday git. Every command verifies the"
-	fEcho_Clean "repo state before acting (stash only if dirty, pull only with an upstream,"
+	fEcho_Clean "repo state before acting (commit only if dirty, pull only with an upstream,"
 	fEcho_Clean "push only if ahead), so each is idempotent and safe to re-run."
 	fEcho_Clean "" ;:;}
 
 fSyntax(){ { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax=1;
 	fEcho_Clean ""
 	fEcho_Clean "Common commands:"
-	fEcho_Clean "  update [msg] .......: Commit all local changes and pull updates. Do frequently!"
-	fEcho_Clean "  br create <branch> .: Create a new branch off ${mergeTargetLabel} (parks current work first)."
+	fEcho_Clean "  update [msg] .......: Pull updates, then commit all local changes. Do frequently!"
+	fEcho_Clean "  br create <branch> .: Create a new branch off ${mergeTargetLabel} (brings current work along)."
 	fEcho_Clean "  br switch [branch] .: Switch to a branch (parks current work first). No arg: back to ${mergeTargetLabel}."
 	fEcho_Clean "  br [list] ..........: Fetch and list branches."
 	fEcho_Clean "  status .............: Fetch and show current status."
@@ -64,7 +64,7 @@ fSyntax(){ { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax=
 	fEcho_Clean "  -m, --message MSG ....: Commit or merge message (or give it positionally)."
 	fEcho_Clean "  -q, --quiet, -y ......: Assume yes - no prompts; if committing with no message, one is generated."
 	fEcho_Clean "  --public / --private .: Visibility for the repo 'repo create' makes (default: private)."
-	fEcho_Clean "  --no-fetch ...........: Skip the pre-command fetch (offline, or a slow remote)."
+	fEcho_Clean "  --no-fetch ...........: Work offline: skip the pre-command fetch, and the pull."
 	fEcho_Clean "  -h, --help  /  -v, --version"
 	fEcho_Clean "" ;:;}
 
@@ -241,7 +241,7 @@ fMain(){
 		local switchTarget="${cmdArg}"
 		[[ -n "${switchTarget}" ]] || switchTarget="$(fMergeTarget)"
 		if [[ "$(fCurrentBranch)" != "${switchTarget}" ]] && fIsProtectedBranch && [[ -n "$(git status --porcelain 2>/dev/null || true)" ]]; then
-			fThrowError_Usage "Working tree has changes on '$(fCurrentBranch)'; won't auto-commit to a protected branch. Carry them to a new branch (${meName} br create <name>), or commit deliberately (${meName} commit) first."
+			fThrowError_Usage "Working tree has changes on '$(fCurrentBranch)'; won't auto-commit to a protected branch. Carry them to a new branch (${meName} br create <name>), or commit them here deliberately (${meName} update) first."
 		fi
 	fi
 
@@ -410,12 +410,18 @@ fCmdPull(){
 	if ((! doFetch)); then
 		fEcho "Skipping the pull (--no-fetch)."
 	elif ((! remoteReachable)); then
-		fEcho "WARNING: remote unreachable; skipped the pull. Your work is committed locally."
+		fEcho "WARNING: remote unreachable; skipping the pull. Local changes still get committed."
 	elif fHasUpstream; then
 		fRun git pull --ff-only --autostash
 	else
 		fEcho "No upstream configured for this branch; nothing to pull."
 	fi
+:;}
+
+fPullIfOnline(){
+	## The pull inside a multi-step command. Same offline rule as fCmdPull, quietly: --no-fetch
+	## and an unreachable remote both mean skip. Extra arguments go through to git pull.
+	((doFetch)) && ((remoteReachable)) && fHasUpstream && fRun git pull --ff-only "${@}"
 :;}
 
 fCmdCommitPull(){
@@ -449,11 +455,11 @@ fCmdNewBranch(){
 		if [[ "$(fCurrentBranch)" != "${baseBranch}" ]]; then
 			fRun git checkout "${baseBranch}"
 		fi
-		fHasUpstream && fRun git pull --ff-only --autostash
+		fPullIfOnline --autostash
 	else
 		fCmdPush  ## park current work safely first
 		fRun git checkout "${baseBranch}"
-		fHasUpstream && fRun git pull --ff-only
+		fPullIfOnline
 	fi
 	fRun git checkout -b "${newBranch}"
 	if git remote get-url origin &>/dev/null; then
@@ -466,13 +472,13 @@ fCmdGoBranch(){
 	[[ -n "${targetBranch}" ]] || targetBranch="$(fMergeTarget)"
 	if [[ "$(fCurrentBranch)" == "${targetBranch}" ]]; then
 		fEcho "Already on '${targetBranch}'."
-		fHasUpstream && fRun git pull --ff-only
+		fPullIfOnline
 		return 0
 	fi
 	## The dirty-protected-branch refusal happens up front in fMain, before the plan is shown.
 	fCmdPush  ## park current work safely first
 	fRun git checkout "${targetBranch}"  ## auto-creates a tracking branch if it only exists on origin
-	fHasUpstream && fRun git pull --ff-only
+	fPullIfOnline
 :;}
 
 fCmdLand(){
@@ -485,7 +491,7 @@ fCmdLand(){
 	[[ -n "${mergeMessage}" ]] || mergeMessage="Merge ${workBranch}"
 	fCmdPush
 	fRun git checkout "${targetBranch}"
-	fHasUpstream && fRun git pull --ff-only
+	fPullIfOnline
 	fRun git merge --no-ff "${workBranch}" -m "${mergeMessage}"
 	## The merge must reach origin before the remote work branch goes away, or origin
 	## loses its only ref to those commits. Publish an upstream-less target first.
@@ -500,7 +506,7 @@ fCmdLand(){
 		git push origin --delete "${workBranch}" || fEcho "WARNING: couldn't delete the remote branch (already gone?); continuing."
 		fEcho_ResetBlankCounter
 	fi
-	fHasUpstream && fRun git pull --ff-only
+	fPullIfOnline
 :;}
 
 fCmdClone(){
@@ -567,7 +573,7 @@ fCmdPrAccept(){
 	## pulling it can only fail - land on the merge target instead.
 	fpFetchRemote
 	fHasUpstream || fRun git checkout "$(fMergeTarget)"
-	fHasUpstream && fRun git pull --ff-only
+	fPullIfOnline
 :;}
 
 fCmdRelease(){
@@ -579,12 +585,12 @@ fCmdRelease(){
 	fCmdPush  ## park current work safely first
 	if [[ -n "${devBranch}" && "$(fCurrentBranch)" != "${devBranch}" ]]; then
 		fRun git checkout "${devBranch}"  ## freshen dev so the release has all of it
-		fHasUpstream && fRun git pull --ff-only
+		fPullIfOnline
 	fi
 	if [[ "$(fCurrentBranch)" != "${mainBranch}" ]]; then
 		fRun git checkout "${mainBranch}"
 	fi
-	fHasUpstream && fRun git pull --ff-only
+	fPullIfOnline
 	if [[ -n "${devBranch}" ]]; then
 		local mergeMessage="${commitMessage}"
 		[[ -n "${mergeMessage}" ]] || mergeMessage="Release ${releaseTag}"
@@ -1237,3 +1243,6 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##			- Dropped the bare 'commit' and 'pull' commands; update is the one command that does both. Each was a way around the workflow the tool enforces.
 ##			- update/sync now pull BEFORE committing. Committing first minted a local commit, so any remote that had moved ahead was diverged and the ff-only pull refused - the everyday case, and broken until now. 'pull' had been the accidental workaround.
 ##			- An unreachable remote warns and skips the pull instead of failing (update is the only way to commit now); --no-fetch means offline and skips the pull too. A reachable remote that can't fast-forward still fails hard.
+##		- 20260726 JC:
+##			- Every command's pull honors offline now, not just update/sync's - br create/switch/land, pr ok and release called git pull directly and ignored --no-fetch.
+##			- The dirty-protected-branch refusal names 'update'; it still named the dropped 'commit'. Help text back in step with the command set.

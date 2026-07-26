@@ -5,13 +5,13 @@
     Safer, state-checked wrappers for everyday git.
 .DESCRIPTION
     PowerShell port of gitsby. Every command verifies the repo state before
-    acting (stash only if dirty, pull only with an upstream, push only if
+    acting (commit only if dirty, pull only with an upstream, push only if
     ahead), so each is idempotent and safe to re-run.
 .PARAMETER Command
-    update | status | sync | pull | commit | release, or a grouped noun:
+    update | sync | status | release, or a grouped noun:
     repo (clone | create | connect) | br (list | create | switch | land) | pr (create | n | ok n)
 .PARAMETER CommandArg
-    Subcommand of a grouped noun, else: message (commit/update/sync), version (release).
+    Subcommand of a grouped noun, else: message (update/sync), version (release).
 .PARAMETER CommandArg2
     First argument of a grouped subcommand: branch name, message, URL, PR number, title.
 .PARAMETER CommandArg3
@@ -21,7 +21,7 @@
 .PARAMETER Quiet
     No prompts; if committing with no message, one is generated.
 .PARAMETER NoFetch
-    Skip the pre-command fetch (offline, or a slow remote).
+    Work offline: skip the pre-command fetch, and the pull.
 .EXAMPLE
     gitsby.ps1 update "fixed the frobnicator"
 .EXAMPLE
@@ -119,7 +119,7 @@ function Show-About {
     $script:wasShownAbout = $true
     Write-PlainLine ''
     Write-PlainLine 'Safer, state-checked wrappers for everyday git. Every command verifies the'
-    Write-PlainLine 'repo state before acting (stash only if dirty, pull only with an upstream,'
+    Write-PlainLine 'repo state before acting (commit only if dirty, pull only with an upstream,'
     Write-PlainLine 'push only if ahead), so each is idempotent and safe to re-run.'
     Write-PlainLine ''
 }
@@ -129,8 +129,8 @@ function Show-Syntax {
     $script:wasShownSyntax = $true
     Write-PlainLine ''
     Write-PlainLine 'Common commands:'
-    Write-PlainLine '  update [msg] .......: Commit all local changes and pull updates. Do frequently!'
-    Write-PlainLine "  br create <branch> .: Create a new branch off ${script:mergeTargetLabel} (parks current work first)."
+    Write-PlainLine '  update [msg] .......: Pull updates, then commit all local changes. Do frequently!'
+    Write-PlainLine "  br create <branch> .: Create a new branch off ${script:mergeTargetLabel} (brings current work along)."
     Write-PlainLine "  br switch [branch] .: Switch to a branch (parks current work first). No arg: back to ${script:mergeTargetLabel}."
     Write-PlainLine '  br [list] ..........: Fetch and list branches.'
     Write-PlainLine '  status .............: Fetch and show current status.'
@@ -148,7 +148,7 @@ function Show-Syntax {
     Write-PlainLine '  -m, -Message MSG .....: Commit or merge message (or give it positionally).'
     Write-PlainLine '  -q, -Quiet, -y .......: Assume yes - no prompts; if committing with no message, one is generated.'
     Write-PlainLine '  -Public / -Private ...: Visibility for the repo ''repo create'' makes (default: private).'
-    Write-PlainLine '  -NoFetch .............: Skip the pre-command fetch (offline, or a slow remote).'
+    Write-PlainLine '  -NoFetch .............: Work offline: skip the pre-command fetch, and the pull.'
     Write-PlainLine '  -h, -Help  /  -v, -Version'
     Write-PlainLine ''
 }
@@ -557,12 +557,20 @@ function Invoke-GitsbyPull {
     if ($script:noFetch) {
         Write-StatusLine 'Skipping the pull (-NoFetch).'
     } elseif (-not $script:remoteReachable) {
-        Write-StatusLine 'WARNING: remote unreachable; skipped the pull. Your work is committed locally.'
+        Write-StatusLine 'WARNING: remote unreachable; skipping the pull. Local changes still get committed.'
     } elseif (Test-GitUpstream) {
         Invoke-Git -GitArgs @('pull', '--ff-only', '--autostash')
     } else {
         Write-StatusLine 'No upstream configured for this branch; nothing to pull.'
     }
+}
+
+function Invoke-GitsbyPullIfOnline {
+    ## The pull inside a multi-step command. Same offline rule as Invoke-GitsbyPull, quietly:
+    ## -NoFetch and an unreachable remote both mean skip. Extra arguments go through to git pull.
+    param([string[]]$ExtraArgs = @())
+    if ($script:noFetch -or -not $script:remoteReachable -or -not (Test-GitUpstream)) { return }
+    Invoke-Git -GitArgs (@('pull', '--ff-only') + $ExtraArgs)
 }
 
 function Invoke-GitsbyCommitPull {
@@ -594,11 +602,11 @@ function Invoke-GitsbyMakeBranch {
     if (Test-ProtectedBranch) {
         ## Don't commit WIP to main/dev; a dirty tree survives checkout -b, so carry it to the new branch.
         if ((Get-CurrentBranch) -cne $baseBranch) { Invoke-Git -GitArgs @('checkout', $baseBranch) }
-        if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only', '--autostash') }
+        Invoke-GitsbyPullIfOnline -ExtraArgs @('--autostash')
     } else {
         Invoke-GitsbyPush  ## park current work safely first
         Invoke-Git -GitArgs @('checkout', $baseBranch)
-        if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
+        Invoke-GitsbyPullIfOnline
     }
     Invoke-Git -GitArgs @('checkout', '-b', $NewBranch)
     if (Test-GitOrigin) { Invoke-Git -GitArgs @('push', '-u', 'origin', $NewBranch) }
@@ -609,13 +617,13 @@ function Invoke-GitsbyChangeBranch {
     if (-not $TargetBranch) { $TargetBranch = Get-MergeTarget }
     if ((Get-CurrentBranch) -ceq $TargetBranch) {  ## -ceq: branch names are case-sensitive
         Write-StatusLine "Already on '${TargetBranch}'."
-        if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
+        Invoke-GitsbyPullIfOnline
         return
     }
     ## The dirty-protected-branch refusal happens up front in the entry point, before the plan is shown.
     Invoke-GitsbyPush  ## park current work safely first
     Invoke-Git -GitArgs @('checkout', $TargetBranch)  ## auto-creates a tracking branch if it only exists on origin
-    if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
+    Invoke-GitsbyPullIfOnline
 }
 
 function Invoke-GitsbyLand {
@@ -628,7 +636,7 @@ function Invoke-GitsbyLand {
     if (-not $mergeMessage) { $mergeMessage = "Merge ${workBranch}" }
     Invoke-GitsbyPush
     Invoke-Git -GitArgs @('checkout', $targetBranch)
-    if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
+    Invoke-GitsbyPullIfOnline
     Invoke-Git -GitArgs @('merge', '--no-ff', $workBranch, '-m', $mergeMessage)
     ## The merge must reach origin before the remote work branch goes away, or origin
     ## loses its only ref to those commits. Publish an upstream-less target first.
@@ -644,7 +652,7 @@ function Invoke-GitsbyLand {
         if ($LASTEXITCODE -ne 0) { Write-StatusLine "WARNING: couldn't delete the remote branch (already gone?); continuing." }
         Clear-BlankCounter
     }
-    if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
+    Invoke-GitsbyPullIfOnline
 }
 
 function Invoke-GitsbyClone {
@@ -733,7 +741,7 @@ function Invoke-GitsbyPrAccept {
     ## pulling it can only fail - land on the merge target instead.
     git fetch --quiet --prune 2>$null
     if (-not (Test-GitUpstream)) { Invoke-Git -GitArgs @('checkout', (Get-MergeTarget)) }
-    if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
+    Invoke-GitsbyPullIfOnline
 }
 
 function Invoke-GitsbyRelease {
@@ -745,10 +753,10 @@ function Invoke-GitsbyRelease {
     Invoke-GitsbyPush  ## park current work safely first
     if ($devBranch -and ((Get-CurrentBranch) -cne $devBranch)) {
         Invoke-Git -GitArgs @('checkout', $devBranch)  ## freshen dev so the release has all of it
-        if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
+        Invoke-GitsbyPullIfOnline
     }
     if ((Get-CurrentBranch) -cne $mainBranch) { Invoke-Git -GitArgs @('checkout', $mainBranch) }
-    if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
+    Invoke-GitsbyPullIfOnline
     if ($devBranch) {
         $mergeMessage = $script:commitMessage
         if (-not $mergeMessage) { $mergeMessage = "Release $($script:releaseTag)" }
@@ -961,7 +969,7 @@ try {
         ## Refusing a dirty protected branch belongs here too, before the plan is shown and confirmed.
         $switchTarget = if ($CommandArg) { $CommandArg } else { Get-MergeTarget }
         if (((Get-CurrentBranch) -cne $switchTarget) -and (Test-ProtectedBranch) -and (Test-GitDirty)) {
-            throw "Working tree has changes on '$(Get-CurrentBranch)'; won't auto-commit to a protected branch. Carry them to a new branch (${script:meName} br create <name>), or commit deliberately (${script:meName} commit) first."
+            throw "Working tree has changes on '$(Get-CurrentBranch)'; won't auto-commit to a protected branch. Carry them to a new branch (${script:meName} br create <name>), or commit them here deliberately (${script:meName} update) first."
         }
     }
 
@@ -1142,3 +1150,4 @@ try {
 ##      - 20260726 JC: Added 'pr new [title]' (parks the work, opens a PR against the merge target, titles it from the last commit subject when none is given, reports an already-open PR instead of erroring); pr ok refuses a dirty tree or unpushed commits, since --delete-branch would drop work that never reached origin - in step with bin/gitsby.
 ##      - 20260726 JC: Commands regrouped under the repo/br/pr nouns, connect split into 'repo create' vs 'repo connect', all pre-v2 aliases dropped - in step with bin/gitsby.
 ##      - 20260726 JC: Dropped the bare 'commit' and 'pull' commands; update/sync pull before committing (committing first guaranteed divergence against a moved remote); unreachable remote warns and skips the pull, -NoFetch skips it too - in step with bin/gitsby.
+##      - 20260726 JC: Every command's pull honors offline, not just update/sync's; the dirty-protected-branch refusal names 'update' rather than the dropped 'commit'; help text back in step with the command set - in step with bin/gitsby.

@@ -160,6 +160,8 @@ fRunSuite(){
 	( cd "${cloneA}" && git checkout --quiet main && echo wip >> file2.txt )
 	fAssertFail   "br switch from dirty main refuses"           bash -c "cd '${cloneA}' && '${gitsby}' -q br switch feat"
 	fAssertNotOut "and dies before the preview"  'Going to do'  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch feat"
+	## The way out it offers has to be a command that still exists (it named the dropped 'commit')
+	fAssertOut    "and points at a real command"  'deliberately \(.*update\) first'  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch feat"
 	fAssert "wip left uncommitted on main"      bash -c "cd '${cloneA}' && ! git diff --quiet && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]]"
 	## newbr carries that same tree instead, so its plan must not promise a commit on main
 	fAssertNotOut "br create from main previews no commit"  'git add --all'  bash -c "cd '${cloneA}' && '${gitsby}' -q br create wipcarry"
@@ -307,7 +309,21 @@ fRunSuite(){
 	fAssert    "the work was committed anyway"               bash -c "cd '${off}' && git log -1 --format=%s | grep -qx 'offline work'"
 	fAssertOut "and it says why it skipped the pull"  'remote unreachable' bash -c "cd '${off}' && echo more > more.txt && '${gitsby}' -q update 'more offline work'"
 	## --no-fetch means offline on purpose: commit, and don't reach for the network at all
-	fAssertOut "no-fetch skips the pull too"  'Skipping the pull|-NoFetch|no-fetch' bash -c "cd '${off}' && echo nf > nf.txt && '${gitsby}' -q --no-fetch update 'no-fetch work'"
+	## -NoFetch, not --no-fetch: pwsh has no such parameter and would fail, and the old pattern
+	## matched its complaint about the flag - green for the wrong reason. Bash takes either.
+	fAssertOut "no-fetch skips the pull too"  'Skipping the pull' bash -c "cd '${off}' && echo nf > nf.txt && '${gitsby}' -q -NoFetch update 'no-fetch work'"
+
+	## ... and offline has to mean the same thing inside a compound command, or the flag saves
+	## nothing there. Own throwaway origin, so the shared one keeps its history for later checks.
+	local nfOrigin="${work}/$1-nfo.git"; local nfPeer="${work}/$1-nfa"; local nfWork="${work}/$1-nfb"
+	git init --quiet --bare -b main "${nfOrigin}"
+	git clone --quiet "${nfOrigin}" "${nfPeer}" 2>/dev/null
+	( cd "${nfPeer}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main )
+	git clone --quiet "${nfOrigin}" "${nfWork}" 2>/dev/null
+	( cd "${nfPeer}" && echo two >> f.txt && git commit --quiet -a -m "peer work" && git push --quiet )
+	( cd "${nfWork}" && git rev-parse main > "${work}/$1-nfsha" )
+	fAssert "br switch -NoFetch skips its pull"    bash -c "cd '${nfWork}' && '${gitsby}' -q -NoFetch br switch main && [[ \"\$(git rev-parse main)\" == \"\$(cat '${work}/$1-nfsha')\" ]]"
+	fAssert "the same switch pulls when online"    bash -c "cd '${nfWork}' && '${gitsby}' -q br switch main && [[ \"\$(git rev-parse main)\" != \"\$(cat '${work}/$1-nfsha')\" ]]"
 
 	## clone: derives the dir, checks out dev when the repo has one, no-op re-run, collision guards
 	local cl="${work}/$1-clone"
@@ -529,3 +545,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260724 JC: clone and connect checks (dev checkout, no-op re-runs, plain-dir connect, nonempty/missing-remote and collision guards).
 ##		- 20260724 JC: exhaustive clone/connect coverage - no-dev/empty-dir/different-url clone edges, empty-repo + matching-url connect, and the gh owner/name paths (create, add https/ssh, nonempty-refuse) via a hermetic fake gh.
 ##		- 20260725 JC: Release-candidate version checks, and pr ok from the merged branch - the fake gh grew a pr merge that restores the stale origin ref, since that is what makes the real failure reproduce.
+##		- 20260726 JC: Offline coverage inside a compound command, and the protected-branch refusal now has to name a command that still exists. The old offline check spelled the flag --no-fetch, which pwsh rejects, and matched the rejection - green for the wrong reason.
