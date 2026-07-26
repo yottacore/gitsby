@@ -50,7 +50,7 @@
 
 <table style="border: none; border-collapse: collapse;">
 	<tr style="border: none; border-collapse: collapse;">
-		<td style="border: none; border-collapse: collapse;"><img src="assets/logo.png" alt="Logo" width="256"/></td>
+		<td style="border: none; border-collapse: collapse;"><img src="assets/logo.png" alt="Logo" width="128"/></td>
 		<td style="border: none;">A simple, opinionated Git wrapper to speed and simplify everyday Git workflow. Unlimited project scaling.</td>
 	</tr>
 </table>
