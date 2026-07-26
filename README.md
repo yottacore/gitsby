@@ -218,14 +218,26 @@ Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (as
 
 A typical day:
 
-~~~text
-gitsby repo clone git@github.com:you/proj.git   # day zero: get the repo
-                             # (or: gitsby repo create you/proj - publish work that only exists locally)
-gitsby br create featx       # branch off dev (or main), publish it
-...hack hack hack...
-gitsby update "wip"          # commit + pull; do this all day long
-gitsby sync                  # also push, when ready to share
-gitsby br land "add featx"   # merge into dev (--no-ff), push, delete the branch
+~~~bash
+## Day zero: get the repo
+gitsby repo clone git@github.com:my-github-user/my-project.git
+
+## Or to publish work that only exists locally
+gitsby repo create my-github-user/my-project
+
+## Branch off dev (or main), publish it
+gitsby br create Feature1
+
+## ...Do work...
+
+## Commit + pull; do this all day long
+gitsby update "wip"
+
+## Also push, when ready to share to the upstream branch
+gitsby sync
+
+## Merge into dev (--no-ff), push, delete the branch
+gitsby br land "Add Feature1"
 ~~~
 
 Every mutating command fetches first, shows the repo state (including who you'd act as on the remote) and the exact git commands it's about to run, and asks before touching anything. `pr` and `release` close the loop: review/accept the pull request, then cut a tagged release from `dev`.
