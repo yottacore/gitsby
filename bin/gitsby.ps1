@@ -27,7 +27,7 @@
 .EXAMPLE
     gitsby.ps1 br create featx
 .NOTES
-    History at bottom of script. Copyright © 2026 Jim Collier (ID: 1cv◂‡Vᛦ).
+    History at bottom of script. Copyright © 2014-2026 Jim Collier (ID: 1cv◂‡Vᛦ).
     Licensed under The MIT License (MIT): https://mit-license.org/
     SPDX-License-Identifier: MIT
 #>
@@ -55,7 +55,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $script:thisVersion = '2.0.0'
-$script:thisCopyrightYear = '2026'
+$script:thisCopyrightYear = '2014-2026'
 $script:thisAuthor = 'Jim Collier'
 $script:meName = Split-Path -Leaf -Path $PSCommandPath
 $script:doQuietly = [bool]$Quiet

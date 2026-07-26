@@ -8,7 +8,7 @@
 ##	Purpose: See fAbout() below.
 ##	History: At bottom of script.
 
-##	Copyright © 2026 Jim Collier (ID: 1cv◂‡Vᛦ)
+##	Copyright © 2014-2026 Jim Collier (ID: 1cv◂‡Vᛦ)
 ##	Licensed under The MIT License (MIT). Full text at:
 ##		https://mit-license.org/
 ##	SPDX-License-Identifier: MIT
@@ -18,7 +18,7 @@
 ## Settings
 [[ -v doQuietly         ]] || declare -i doQuietly=0
 [[ -v thisVersion       ]] || declare -r thisVersion="2.0.0"
-[[ -v thisCopyrightYear ]] || declare -r thisCopyrightYear="2026"
+[[ -v thisCopyrightYear ]] || declare -r thisCopyrightYear="2014-2026"
 [[ -v thisAuthor        ]] || declare -r thisAuthor="Jim Collier"
 
 ## Never pop a merge-message editor mid-flow.
