@@ -345,7 +345,7 @@ fRunSuite(){
 		git merge --quiet --no-ff abandoned -m "merge abandoned"
 		git push --quiet
 	)
-	fAssertOut  "br prune plans the merged branches"  'git branch -d landed'  bash -c "cd '${prWork}' && '${gitsby}' -q br prune"
+	fAssertOut  "br prune plans the merged branches"  'git branch -D landed'  bash -c "cd '${prWork}' && '${gitsby}' -q br prune"
 	fAssert     "merged branch gone locally"       bash -c "cd '${prWork}' && ! git show-ref --verify --quiet refs/heads/landed"
 	fAssert     "the other merged one too"         bash -c "cd '${prWork}' && ! git show-ref --verify --quiet refs/heads/abandoned"
 	fAssert     "merged branch gone on origin"     bash -c "cd '${prOrigin}' && ! git show-ref --verify --quiet refs/heads/landed"
@@ -371,6 +371,18 @@ fRunSuite(){
 	)
 	fAssert "local branch pruned on an unpushed merge"  bash -c "cd '${prWork}' && '${gitsby}' -q -NoFetch br prune && ! git show-ref --verify --quiet refs/heads/unpushed"
 	fAssert "but origin keeps its copy"                bash -c "cd '${prOrigin}' && git show-ref --verify --quiet refs/heads/unpushed"
+	## A branch that was never pushed has no upstream, so 'git branch -d' checks it against HEAD
+	## and refuses from anywhere else, however merged it is. Standing off the target on purpose.
+	(
+		cd "${prWork}"
+		git checkout --quiet dev
+		git checkout --quiet -b localonly dev; echo lo > lo.txt; git add --all; git commit --quiet -m localonly
+		git checkout --quiet dev; git merge --quiet --no-ff localonly -m "merge localonly"; git push --quiet
+		git checkout --quiet wip
+	)
+	fAssertOut "merged local-only branch pruned, and counted"  'Pruned 1 local, 0 on origin'  bash -c "cd '${prWork}' && '${gitsby}' -q br prune"
+	fAssert    "the local-only branch is gone"          bash -c "cd '${prWork}' && ! git show-ref --verify --quiet refs/heads/localonly"
+	fAssert    "pruned from a branch that doesn't contain it"  bash -c "cd '${prWork}' && [[ \"\$(git branch --show-current)\" == wip ]]"
 
 	## clone: derives the dir, checks out dev when the repo has one, no-op re-run, collision guards
 	local cl="${work}/$1-clone"

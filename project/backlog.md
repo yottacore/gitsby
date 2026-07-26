@@ -54,9 +54,11 @@ In each section, items are listed approximately from newest to oldest.
 
 - ✅ `br prune`: delete branches already merged into the merge target, local + remote.
 	- Nothing cleaned up after a PR merged from the web UI or another machine, or after an abandoned branch. `br land` and `pr ok` only ever delete the one branch they just merged.
-	- Kept safe by what the tool already enforces: every landing is a real merge commit, so ancestry is an exact test. Unmerged branches are listed and left alone, there is no `--force`, and deletion goes through `git branch -d`.
+	- Kept safe by what the tool already enforces: every landing is a real merge commit, so ancestry is an exact test. Unmerged branches are listed and left alone, and there is no `--force`.
 	- The remote copy is only deleted once origin's own merge target contains it, so an unpushed landing can't strand work.
 	- Verified the safety gates discriminate: a version with the ancestry check removed deletes an unmerged branch, and one without the origin-side check deletes origin's only ref to unpushed work.
+	- Deletes with `git branch -D` behind our own check. Deferring to `git branch -d` was tried first and was wrong both ways: it warns about HEAD on every branch when pruning from anywhere but the target, and it flatly refuses a merged branch that was never pushed, so the plan promised a deletion that silently didn't happen.
+	- Closes with a count (`Pruned 3 local, 3 on origin`) and names what it kept, so a wall of git output still ends in a plain answer.
 - ✅ Drop the bare `commit` and `pull` commands - both work around the opinionated workflow.
 	- `commit` alone leaves work committed but unshared. `pull` alone was the only place the tool took upstream changes without parking your own, unlike every other command.
 	- Reversible in one direction only: dropping now is free, adding back later breaks nobody, removing later would.

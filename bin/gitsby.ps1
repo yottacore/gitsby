@@ -74,7 +74,7 @@ $script:inRepo = $false
 $script:remoteReachable = $true  ## cleared when the pre-command fetch can't reach origin
 $script:cloneUrl = ''; $script:cloneDir = ''
 $script:connectMode = ''; $script:connectUrl = ''; $script:ghTarget = ''  ## resolved by the repo create/connect validation
-$script:pruneLocal = @(); $script:pruneRemote = @(); $script:pruneKeep = @()  ## resolved by the br prune validation
+$script:pruneLocal = @(); $script:pruneRemote = @(); $script:pruneKeep = @(); $script:pruneTargetRefs = @()  ## resolved by the br prune validation
 
 
 #•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
@@ -221,16 +221,15 @@ function Resolve-PruneList {
     ## rebase-landed branch never looks contained, and is kept rather than guessed at.
     $target = Get-MergeTarget
     $targetRemoteRef = "refs/remotes/origin/${target}"
-    $targetRefs = @()
-    if (Test-GitBranchLocal  -Branch $target) { $targetRefs += "refs/heads/${target}" }
-    if (Test-GitBranchRemote -Branch $target) { $targetRefs += $targetRemoteRef }
+    if (Test-GitBranchLocal  -Branch $target) { $script:pruneTargetRefs += "refs/heads/${target}" }
+    if (Test-GitBranchRemote -Branch $target) { $script:pruneTargetRefs += $targetRemoteRef }
     $currentBranch = Get-CurrentBranch
     foreach ($branch in @(git for-each-ref --format='%(refname:short)' refs/heads/ 2>$null)) {
         if (-not $branch) { continue }
         ## The branch we're standing on can't be deleted, and protected ones never are.
         if ($branch -ceq $currentBranch) { continue }
         if (Test-ProtectedBranch -Branch $branch) { continue }
-        if (($targetRefs.Count -gt 0) -and (Test-MergedInto -Ref "refs/heads/${branch}" -IntoRefs $targetRefs)) {
+        if (($script:pruneTargetRefs.Count -gt 0) -and (Test-MergedInto -Ref "refs/heads/${branch}" -IntoRefs $script:pruneTargetRefs)) {
             $script:pruneLocal += $branch
             ## The remote copy goes only when origin has the merge too: a landing that hasn't
             ## been pushed yet leaves origin holding the only ref to that work.
@@ -516,7 +515,10 @@ function Show-CommandPreview {
             break
         }
         'br-prune' {
-            foreach ($branch in $script:pruneLocal)  { Write-PlainLine "${pad}git branch -d ${branch}" }
+            ## -D is what runs, so -D is what the plan says. The line above it is the reason
+            ## that's safe: gitsby checked containment itself, against the branch that matters.
+            Write-PlainLine "${pad}(each verified contained in $(Get-MergeTarget), and re-checked at delete time)"
+            foreach ($branch in $script:pruneLocal)  { Write-PlainLine "${pad}git branch -D ${branch}" }
             foreach ($branch in $script:pruneRemote) { Write-PlainLine "${pad}git push origin --delete ${branch}" }
             if ($script:pruneKeep.Count -gt 0) { Write-PlainLine "${pad}Keeping (not merged yet): $($script:pruneKeep -join ', ')" }
             break
@@ -708,22 +710,37 @@ function Invoke-GitsbyLand {
 
 function Invoke-GitsbyPrune {
     ## Deletes exactly what the plan listed - Resolve-PruneList did all the deciding, up front.
+    $doneLocal = 0
+    $doneRemote = 0
     foreach ($branch in $script:pruneLocal) {
-        ## -d, never -D: the ancestry check already passed, so a refusal here means something
-        ## moved underneath us. Leave that branch alone instead of overriding git.
-        Write-PlainLine ''
-        Write-StatusLine "git branch -d ${branch} ..."
-        git branch -d "$branch"
-        if ($LASTEXITCODE -ne 0) { Write-StatusLine "WARNING: git won't delete '${branch}'; leaving it alone." }
-        Clear-BlankCounter
+        ## -D with our own gate, not -d. 'git branch -d' asks whether the branch is contained in
+        ## its upstream, or in HEAD when it has none - neither of which is the question here, and
+        ## the second one refuses a genuinely-merged local-only branch from any other branch.
+        ## Re-checked right now rather than trusting the plan: the prompt may have sat a while.
+        if (-not (Test-MergedInto -Ref "refs/heads/${branch}" -IntoRefs $script:pruneTargetRefs)) {
+            Write-StatusLine "'${branch}' is no longer contained in $(Get-MergeTarget); leaving it alone."
+            continue
+        }
+        Invoke-Git -GitArgs @('branch', '-D', $branch)
+        $doneLocal++
     }
     foreach ($branch in $script:pruneRemote) {
         ## Non-fatal, same as br land: someone else may have deleted it already.
         Write-PlainLine ''
         Write-StatusLine "git push origin --delete ${branch} ..."
         git push origin --delete "$branch"
-        if ($LASTEXITCODE -ne 0) { Write-StatusLine "WARNING: couldn't delete origin/${branch} (already gone?); continuing." }
+        if ($LASTEXITCODE -ne 0) {
+            Write-StatusLine "WARNING: couldn't delete origin/${branch} (already gone?); continuing."
+        } else {
+            $doneRemote++
+        }
         Clear-BlankCounter
+    }
+    ## Close with the count, so a wall of git output still ends in a plain answer.
+    Write-PlainLine ''
+    Write-StatusLine "Pruned ${doneLocal} local, ${doneRemote} on origin."
+    if ($script:pruneKeep.Count -gt 0) {
+        Write-StatusLine "Kept $($script:pruneKeep -join ', ') - not merged into $(Get-MergeTarget) yet."
     }
 }
 
@@ -1242,4 +1259,4 @@ try {
 ##      - 20260726 JC: Commands regrouped under the repo/br/pr nouns, connect split into 'repo create' vs 'repo connect', all pre-v2 aliases dropped - in step with bin/gitsby.
 ##      - 20260726 JC: Dropped the bare 'commit' and 'pull' commands; update/sync pull before committing (committing first guaranteed divergence against a moved remote); unreachable remote warns and skips the pull, -NoFetch skips it too - in step with bin/gitsby.
 ##      - 20260726 JC: Every command's pull honors offline, not just update/sync's; the dirty-protected-branch refusal names 'update' rather than the dropped 'commit'; help text back in step with the command set - in step with bin/gitsby.
-##      - 20260726 JC: Added 'br prune': deletes every local branch already merged into the merge target, plus its remote copy; unmerged branches are kept and listed, never deleted, and deletion uses -d so git gets the last word - in step with bin/gitsby.
+##      - 20260726 JC: Added 'br prune': deletes every local branch already merged into the merge target, plus its remote copy; unmerged branches are kept and listed, never deleted; deletes with -D behind gitsby's own containment check, since 'git branch -d' asks about the upstream or HEAD rather than the merge target - in step with bin/gitsby.
