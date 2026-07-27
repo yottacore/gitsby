@@ -508,6 +508,17 @@ fMain(){
 ## Commands
 
 fCmdCommit(){
+	## Never stage a conflicted tree. 'git add --all' marks a conflicted file resolved, so the
+	## markers themselves would be committed, and then pushed by sync. Ordinary use reaches this:
+	## a pull whose autostash reapply conflicts still exits 0, so nothing upstream of here notices.
+	local -a conflicted=()
+	mapfile -t conflicted < <(git diff --name-only --diff-filter=U 2>/dev/null || true)
+	if ((${#conflicted[@]})); then
+		fEcho_Clean ""
+		fEcho "Unresolved conflicts; nothing was committed:"
+		fpCappedList printf '%s\n' "${conflicted[@]}"
+		fThrowError_Usage "Resolve those, then run '${meName} update' again. Git also kept your pre-pull tree - see 'git stash list'."
+	fi
 	fRun git add --all
 	if [[ -z "$(git status --porcelain 2>/dev/null || true)" ]]; then
 		fEcho "Nothing to commit."
@@ -1692,3 +1703,4 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##			- Unmerged branches are kept and listed, never deleted, and there is no --force.
 ##			- Deletes with -D behind gitsby's own containment check: 'git branch -d' asks about the upstream, or HEAD when there is none, so it warned needlessly on one branch shape and silently refused another that was genuinely merged.
 ##			- A branch kept by the delete-time re-check keeps its remote copy too, and a merged current branch is reported as kept rather than left off every list.
+##		- 20260727 JC: A conflicted tree is never committed. A pull whose autostash reapply conflicts exits 0, so 'git add --all' was marking the conflict resolved and committing the markers - then pushing them from sync.

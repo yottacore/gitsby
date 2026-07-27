@@ -794,6 +794,16 @@ function Show-CommandPreview {
 ## Commands
 
 function Invoke-GitsbyCommit {
+    ## Never stage a conflicted tree. 'git add --all' marks a conflicted file resolved, so the
+    ## markers themselves would be committed, and then pushed by sync. Ordinary use reaches this:
+    ## a pull whose autostash reapply conflicts still exits 0, so nothing upstream of here notices.
+    $conflicted = git diff --name-only --diff-filter=U 2>$null
+    if ($conflicted -and @($conflicted).Count -gt 0) {
+        Write-PlainLine ''
+        Write-StatusLine 'Unresolved conflicts; nothing was committed:'
+        [void](Show-CappedList -GitArgs @('diff', '--name-only', '--diff-filter=U'))
+        throw "Resolve those, then run '$($script:meName) update' again. Git also kept your pre-pull tree - see 'git stash list'."
+    }
     Invoke-Git -GitArgs @('add', '--all')
     if (-not (Test-GitDirty)) {
         Write-StatusLine 'Nothing to commit.'
@@ -1587,3 +1597,4 @@ try {
 ##      - 20260726 JC: Added 'br prune': deletes every local branch already merged into the merge target, plus its remote copy; unmerged branches are kept and listed, never deleted; deletes with -D behind gitsby's own containment check, since 'git branch -d' asks about the upstream or HEAD rather than the merge target - in step with bin/gitsby.
 ##      - 20260726 JC: br prune's delete-time re-check now covers the remote copy too, and a merged current branch is reported as kept rather than left off every list - in step with bin/gitsby.
 ##      - 20260727 JC: Git now runs in the location the user is actually in. Set-Location moves PowerShell's location but not the process cwd, and the launcher inherits the latter, so state was read from one repo while commits, merges and pushes went to another.
+##      - 20260727 JC: A conflicted tree is never committed - a pull whose autostash reapply conflicts exits 0, so the markers were being staged, committed and pushed - in step with bin/gitsby.

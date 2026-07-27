@@ -840,6 +840,22 @@ GHEOF
 		fAssert "and leaves the launch repo alone"        bash -c "cd '${cw}/launch' && [[ \"\$(git log -1 --pretty=%s)\" == 'init launch' ]] && [[ -n \"\$(git status --porcelain)\" ]]"
 	fi
 
+	## A pull whose autostash reapply conflicts still exits 0, so nothing downstream noticed and
+	## 'git add --all' marked the conflict resolved - committing the markers and pushing them.
+	## The everyday case: local edits to the same lines a teammate already pushed.
+	local cf="${work}/$1-conflict"
+	mkdir -p "${cf}"
+	git init --quiet --bare -b main "${cf}/origin.git"
+	git clone --quiet "${cf}/origin.git" "${cf}/mine" 2>/dev/null
+	( cd "${cf}/mine" && printf 'line1\nline2\nline3\n' > shared.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main )
+	git clone --quiet "${cf}/origin.git" "${cf}/theirs"
+	( cd "${cf}/theirs" && printf 'line1\nTHEIRS\nline3\n' > shared.txt && git add --all && git commit --quiet -m "their edit" && git push --quiet origin main )
+	( cd "${cf}/mine" && printf 'line1\nMINE\nline3\n' > shared.txt )
+	fAssertFail "update refuses a conflicted autostash reapply"  bash -c "cd '${cf}/mine' && '${gitsby}' -q update 'mine'"
+	fAssertOut  "and names the conflicted file"  'shared\.txt'  bash -c "cd '${cf}/mine' && '${gitsby}' -q update 'mine' 2>&1"
+	fAssert     "and commits no conflict markers"  bash -c "cd '${cf}/mine' && ! git log -p | grep -q '<<<<<<<'"
+	fAssert     "and leaves the merge unresolved for the user"  bash -c "cd '${cf}/mine' && [[ -n \"\$(git diff --name-only --diff-filter=U)\" ]]"
+
 	## no-remote repo: everything still works locally
 	local nr="${work}/$1-noremote"
 	git init --quiet -b main "${nr}"
