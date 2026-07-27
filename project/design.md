@@ -123,6 +123,72 @@ The two files are ports of each other. A change to one nearly always belongs in 
 	- We decided `pr ok` refuses rather than auto-pushing. Pushing and immediately merging would land commits nobody reviewed, which defeats the point of proposing a change for review.
 	- `pr create` is the opposite case and does park work automatically: publishing is the whole intent, and nothing is being deleted.
 
+## Branching model
+
+Gitsby's own repo runs the model gitsby enforces, so the tool is its own first user.
+
+### How the common models compare
+
+| Model | Long-lived branches | Feature branches | Release | Path to the published branch between releases
+| :-- | :-- | :-- | :-- | :--
+| GitFlow | `master` + `develop` | off `develop`, back to `develop` | `release/*` off `develop`, merged to `master`, tagged | `hotfix/*` off `master`, merged to `master` and `develop`
+| GitHub Flow | `main` | off `main`, back via pull request | tag on `main` | not needed - `main` is always current
+| Trunk-based | `main` | very short-lived, sometimes direct commits | `release-X.Y` cut from `main` | cherry-pick onto the release branch
+| GitLab Flow | `main` + environment or release branches | off `main` | promote downstream through one-way merges | fix on `main`, cherry-pick downstream
+| Gitsby | `dev` + `main` | off `dev`, back to `dev` | `dev` merged to `main`, tagged | `hotfix/*` off `main`, merged to `main` and `dev`
+
+### Which model this is
+
+Gitsby follows GitFlow, with the stabilization branches left out.
+
+- Two long-lived branches. Feature work lands on `dev`. `main` advances only through a release or a hotfix, so it always describes published state.
+
+- No `release/*` branches. Those hold a version steady while it stabilizes and `develop` keeps moving, which matters when several versions are supported at once. Gitsby supports one. Cutting the release straight from `dev` costs nothing here and removes a branch type.
+
+- `hotfix/*` branches come off `main`. `main` is what the world sees: GitHub renders the README from it, and the install one-liners are served from it. A correction to published material should not have to wait for a release, and should not have to cause one.
+
+- Feature branches are short-lived and land with a real merge commit. That is also what makes `br prune`'s ancestry test exact.
+
+### Why not GitHub Flow
+
+- GitHub Flow keeps one long-lived branch, so what is on `main` is both the published state and the in-progress state. For software distributed by version those are different things: the README should describe the release people can install, while unreleased work has to live somewhere.
+
+- Among the options considered, we decided the second branch earns its place. `dev` is where unreleased work accumulates, and `main` stays a truthful description of the current release.
+
+### The GitFlow author's caveat
+
+- Vincent Driessen added a note to the original 2010 post recommending simpler models, GitHub Flow among them, for teams doing continuous delivery of a single always-current version.
+
+- That caveat is aimed at applications deployed from trunk. Gitsby is versioned released software with downloadable artifacts and an installer that resolves the latest release, which is the case GitFlow was written for.
+
+- What does not apply is supporting several versions simultaneously. That is the part of GitFlow the stabilization branches serve, and the reason they are left out.
+
+### Hotfix branches
+
+- The `hotfix/` prefix marks a branch that targets `main` rather than `dev`. The prefix lives in the ref name, so it survives a clone and shows up in a branch listing. It is also the name the model already uses, so it reads correctly to anyone who knows GitFlow.
+
+- Landing one merges to `main`, then merges `main` back into `dev`. The back-merge is not optional. Without it the next release either conflicts on the same file or quietly reinstates the superseded text.
+
+- A hotfix that touches nothing under `bin/` needs no version bump, because nothing shipped changed. Documentation is not versioned with the binary - the README describes the release, and it is served from `main`, not from the tag.
+
+- A hotfix that does touch `bin/` leaves `main` carrying code that no tag contains, so the assets on the latest release stop matching it. That warrants a patch release, and landing says so rather than leaving it to be noticed later.
+
+### Enforcement
+
+- A GitHub ruleset covers `refs/heads/main` and `refs/heads/dev`: pull request required, deletion blocked, non-fast-forward blocked. A second ruleset blocks deletion of `v*` tags.
+
+- Repository admins bypass the pull-request rule, which is what lets `release` push the release merge and the tag directly.
+
+- Nothing in the model asks for that bypass to be widened. A hotfix reaches `main` through a pull request like every other change.
+
+### Repos that have no dev branch
+
+- Gitsby adapts to the repo it runs in. With no `dev`, the merge target falls back to the default branch, so feature branches come off `main` and land back on `main`.
+
+- That is GitHub Flow, and it is the better default for a project with no release cadence. The model above is what a repo opts into by creating a `dev` branch.
+
+See also the release policy under Architecture, which covers how releases are published once `main` has advanced.
+
 ## Architecture
 
 ### Software stack
