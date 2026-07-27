@@ -74,13 +74,14 @@ A good bug report shouldn't leave others needing to chase you up for more inform
 - Make sure that you are using the latest version.
 - Determine if your bug is really a bug and not an error on your side e.g. using incompatible environment components/versions (Make sure that you have read the [documentation](https://github.com/jim-collier/gitsby/blob/main/README.md). If you are looking for support, you might want to check [this section](#i-have-a-question)).
 - To see if other users have experienced (and potentially already solved) the same issue you are having, check if there is not already a bug report existing for your bug or error in the [bug tracker](https://github.com/jim-collier/gitsby/issues?q=label%3Abug).
-- Also make sure to search the internet (including Stack Overflow and - believe it or else - a good LLM) to see if users outside of the GitHub community have discussed the issue.
+- Also search the internet, including Stack Overflow, to see if users outside the GitHub community have discussed the issue.
 - Collect information about the bug:
-  - OS, Platform and Version (Windows, Linux, macOS, x86, ARM)
-  - Environment versions
-  - Possibly your input and the output
-  - Can you reliably reproduce the issue? And can you also reproduce it with older versions?
-  - Steps to cleanly reproduce from scratch.
+	- OS, platform, and version (Windows, Linux, macOS, x86_64, ARM64).
+	- Which implementation, Bash or PowerShell, and its version.
+	- Your `git` version, and `gitsby -v`.
+	- Your input and the output.
+	- Can you reliably reproduce it? Can you reproduce it with older versions?
+	- Steps to cleanly reproduce from scratch.
 
 <!-- omit in toc -->
 #### How Do I Submit a Good Bug Report?
@@ -129,7 +130,10 @@ Enhancement suggestions are tracked as [GitHub issues](https://github.com/jim-co
 
 ### Your First Code Contribution
 
-One-liner dev setup (clones the repo, checks out the `dev` branch, and checks/installs the dev tooling; it shows the plan and asks before doing anything):
+<!-- omit in toc -->
+#### Set up
+
+One-liner setup. It clones the repo, checks out the `dev` branch, and checks the tooling, offering to install what's missing. It shows the plan and asks before doing anything.
 
 - Linux / macOS:
 
@@ -143,7 +147,39 @@ One-liner dev setup (clones the repo, checks out the `dev` branch, and checks/in
 	irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install-dev.ps1 | iex
 	~~~
 
-Then: work on a short-named feature branch off `dev`, run the local pipeline (`cicd/cicd.bash --quick`) before pushing, and open a PR back to `dev`. Coding style is in [style-guide.md](style-guide.md).
+Or clone it yourself and install the tooling by hand.
+
+<!-- omit in toc -->
+#### What you need
+
+- `git`, and `bash` 4.4 or newer. (The two installers themselves also run on macOS stock bash 3.2.)
+- `shellcheck`, to lint the Bash side.
+- `pwsh` 7+ and its `PSScriptAnalyzer` module, if you touch the PowerShell side. Without them, those stages report themselves absent and skip.
+- `markdownlint` (`npm install -g markdownlint-cli`), to lint the docs.
+- `python3` with Pillow, and optionally `gifsicle`, to regenerate the demo. Only needed for a full pipeline run.
+- `gh`, if you want to exercise the `pr` command.
+
+<!-- omit in toc -->
+#### Where things are
+
+- `bin/gitsby` and `bin/gitsby.ps1` - the two implementations. They are ports of each other, so a change to one nearly always belongs in the other.
+- `cicd/` - the local pipeline and its config.
+- `project/` - design notes and the backlog.
+
+<!-- omit in toc -->
+#### Run the checks
+
+- `cicd/cicd.bash --quick` - the whole pipeline, minus the slow stages. Run this before you push.
+- `cicd/cicd.bash` - everything, including the fuzz suite and the demo.
+- `cicd/test.bash` - just the regression suite. It builds throwaway repos under a temp directory and never touches the network or your real repos.
+- `cicd/fuzz.bash` - just the fuzz suite.
+
+Both suites run once per implementation, so a Bash-only change still has to keep the PowerShell side green.
+
+<!-- omit in toc -->
+#### Then
+
+Work on a short-named feature branch off `dev`, and open a PR back to `dev`. `main` is release-only. Coding style is in [style-guide.md](style-guide.md).
 
 <!-- TODO
 ### Improving The Documentation

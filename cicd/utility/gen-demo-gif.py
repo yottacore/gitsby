@@ -76,9 +76,9 @@ WPM_DIGITS    = 63           # default; scenario wpm_digits overrides
 WPM_NOTES     = (233, 263)   # "# comment" lines fly by
 FLAG_PAUSE_MS = (200, 380)   # a beat of thought before a -flag token
 TYPO_RATE     = 0.018        # per letter; capped at 2 fixes per command
-BLINK_MS      = 530
-FRAME_MS      = 20           # 50 fps: frame interval while scrolling / gliding
-SCROLL_RATE   = 210          # px/s smooth scroll; per-step scrollrate overrides
+BLINK_MS      = 520          # a multiple of FRAME_MS, so blinks stay on the grid
+FRAME_MS      = 20           # 50 fps: every frame duration is a multiple of this
+SCROLL_RATE   = 150          # px/s smooth scroll; per-step scrollrate overrides
 
 QWERTY_ROWS = ["1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm"]
 
@@ -157,7 +157,7 @@ def fLoadScenario(path):
 	##	  pause = 2.6                   read time after the output, seconds
 	##	  overflow = "truncate"         or "wrap" for real feature output
 	##	  scrollrate = 260              px/s smooth scroll during this step's output
-	##	  linems = 26                   ms per output line before scrolling kicks in
+	##	  linems = 20                   ms per output line before scrolling kicks in
 	##	  clear = true                  wipe the scrollback first, as `clear` does
 	try:
 		with open(path, "rb") as f:
@@ -489,15 +489,17 @@ class Screen:
 
 class Movie:
 	##	Ordered (frame, duration) list. Identical consecutive frames merge into
-	##	one longer frame; GIF timing is centisecond-quantized, so bank the
-	##	remainder instead of rounding it away every keystroke.
+	##	one longer frame. Durations snap to the FRAME_MS grid rather than GIF's
+	##	own centisecond one, so the whole loop plays at an exact 50 fps instead
+	##	of drifting onto odd 30/50/90ms frames; bank the rounding remainder
+	##	instead of losing it every keystroke.
 	def __init__(self):
 		self.frames, self.durs, self._rem = [], [], 0.0
 
 	def add(self, img, ms):
 		ms += self._rem
-		dur = max(20, int(round(ms / 10.0)) * 10)
-		self._rem = ms - dur if ms > 20 else 0.0
+		dur = max(FRAME_MS, int(round(ms / FRAME_MS)) * FRAME_MS)
+		self._rem = ms - dur if ms > FRAME_MS else 0.0
 		if self.frames and img.tobytes() == self.frames[-1].tobytes():
 			self.durs[-1] += dur
 		else:
@@ -550,9 +552,11 @@ def fMain():
 		mov.add(scr.render(tuple(shown) if cursor else None, identColors), ms)
 
 	def glideCursor(ms):
-		##	Slide the shown cursor toward its cell across the keystroke's time.
+		##	Slide the shown cursor toward its cell across the keystroke's time,
+		##	one step per frame - a cap here would judder the long keystrokes
+		##	(flag beats, slowed digits) that most need the glide.
 		tx, ty = scr.fCursorTarget()
-		steps = max(1, min(8, int(ms // FRAME_MS)))
+		steps = max(1, int(ms // FRAME_MS))
 		x0, y0 = shown
 		for s in range(1, steps + 1):
 			shown[0] = x0 + (tx - x0) * s / steps
@@ -582,7 +586,7 @@ def fMain():
 	snap(700)                                        # opening frame = loop-in target
 	for stepIdx, step in enumerate(sc["step"]):
 		rate = float(step.get("scrollrate", SCROLL_RATE))
-		lineMs = float(step.get("linems", 26))
+		lineMs = float(step.get("linems", FRAME_MS))
 		if step.get("clear"):
 			##	Start the step at the top of a fresh screen. Smooth scrolling
 			##	costs a near-full-frame delta per frame, so a demo that never
@@ -660,6 +664,14 @@ if __name__ == "__main__":
 
 
 ##	History:
+##		- 20260727: Every frame duration now snaps to the FRAME_MS grid, so the
+##			loop really is 50 fps end to end (it had been drifting onto 30/50/
+##			90ms frames off GIF's own centisecond rounding). Cursor glide runs
+##			one step per frame, uncapped. Scroll slowed to 150 px/s - 7 frames
+##			per line instead of 5, which is where it stops reading as stepped -
+##			while non-scrolling output drops to one frame per line, so a screen
+##			fills instantly and only the scroll is deliberate. Scroll frames are
+##			~97% of the file, so that rate is the one real size dial.
 ##		- 20260725: 50 fps (20ms) frame interval for scrolling and cursor glide -
 ##			at the old 80ms any scrollrate over ~275 px/s finished a line in one
 ##			frame, so the scroll was a jump and the rate knob did nothing. New

@@ -5,7 +5,7 @@
 <!-- markdownlint-disable MD041 -- First line in a file should be a top-level heading -->
 # Requirements
 
-This is a product backlog just for pre-v1.0.0 release. After that, bugs, features, and enhancements will be managed in Github Issues.
+This is a product backlog for the run-up to v2.0.0. After that release, bugs, features, and enhancements move to GitHub Issues.
 
 <!-- TOC ignore:true -->
 ## Table of contents
@@ -17,9 +17,11 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- [Bugs](#bugs)
 	- [Features and enhancements](#features-and-enhancements)
 	- [Done](#done)
-		- [Done - Initial requirements](#done---initial-requirements)
 		- [Done - Bugs](#done---bugs)
 		- [Done - Features and enhancements](#done---features-and-enhancements)
+		- [Done - Code review 20260727](#done---code-review-20260727)
+		- [Done - Code review 20260726](#done---code-review-20260726)
+		- [Done - Code reviews 20260725 and 20260723](#done---code-reviews-20260725-and-20260723)
 	- [Future and/or deferred](#future-andor-deferred)
 	- [Canceled](#canceled)
 
@@ -41,13 +43,360 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Misc to-do
 
+### Bugs
+
+### Features and enhancements
+
+### Done
+
+#### Done - Bugs
+
+#### Done - Features and enhancements
+
+- ✅ `br hotfix <name>`: a branch that targets the default branch instead of `dev`, for corrections to published material.
+	- The branching model is written up in `design.md`; this is the command that carries it.
+	- Branches off the default branch, pushed as `hotfix/<name>`. The prefix is the marker, so it survives a clone and shows in a branch listing. A name given with the prefix already on it is accepted rather than doubled.
+	- `br land`, `pr create`, and `pr ok` recognise a `hotfix/` branch and target the default branch, then merge it back into `dev`. `br create` still comes off `dev`, so feature work is untouched.
+	- A back-merge that conflicts aborts and leaves `dev` alone, reporting that the hotfix landed and naming the two commands to finish by hand. Conflict surgery stays raw-git territory.
+	- Landing warns when the branch touched `bin/`: the default branch would then carry code no tag contains, so the latest release's downloads no longer match it.
+	- Implemented as `fBranchTarget` / `Get-BranchTarget` alongside the existing merge target, rather than by changing `fMergeTarget` - "where new branches come from" and "where this branch lands" are different questions, and only the second one varies.
+	- 30 new checks across both implementations. Verified the pre-feature build rejects `br hotfix` outright.
+
+- ✅ Release-prep sweep over the docs and the built-in help.
+	- The help still described `sync` as commit-then-pull. That order changed when the bare `pull` command was dropped, and this line was missed. The README already had it right.
+	- A regression check pins the wording, so the same drift can't come back quietly.
+	- Also two stale references in the project notes: a command name that was renamed, and a description of argument parsing from before the noun grouping.
+
+- ✅ `br prune`: delete branches already merged into the merge target, local + remote.
+	- Nothing cleaned up after a PR merged from the web UI or another machine, or after an abandoned branch. `br land` and `pr ok` only ever delete the one branch they just merged.
+	- Kept safe by what the tool already enforces: every landing is a real merge commit, so ancestry is an exact test. Unmerged branches are listed and left alone, and there is no `--force`.
+	- The remote copy is only deleted once origin's own merge target contains it, so an unpushed landing can't strand work.
+	- Verified the safety gates discriminate: a version with the ancestry check removed deletes an unmerged branch, and one without the origin-side check deletes origin's only ref to unpushed work.
+	- Deletes with `git branch -D` behind our own check. Deferring to `git branch -d` was tried first and was wrong both ways: it warns about HEAD on every branch when pruning from anywhere but the target, and it flatly refuses a merged branch that was never pushed, so the plan promised a deletion that silently didn't happen.
+	- Closes with a count (`Pruned 3 local, 3 on origin`) and names what it kept, so a wall of git output still ends in a plain answer.
+
+- ✅ Drop the bare `commit` and `pull` commands - both work around the opinionated workflow.
+	- `commit` alone leaves work committed but unshared. `pull` alone was the only place the tool took upstream changes without parking your own, unlike every other command.
+	- Reversible in one direction only: dropping now is free, adding back later breaks nobody, removing later would.
+
+- ✅ `update`/`sync` pull before they commit (bug this exposed, present on dev).
+	- Committing first guaranteed divergence whenever the remote had moved, so the ff-only pull refused - in the most ordinary case there is. `pull` had been the accidental workaround.
+	- Verified against the pre-fix build: it fails, the fixed one lands the work on top and keeps history linear.
+
+- ✅ An unreachable remote warns and skips the pull instead of failing; `--no-fetch` means offline and skips the pull too.
+	- Needed because `update` is now the only way to commit; a genuine non-fast-forward still fails hard.
+
+- ✅ Group the infrequent commands under nouns: `repo clone|create|connect`, `br list|create|switch|land`, `pr create|<n>|ok <n>`.
+	- Daily verbs stay one word. The extra word only lands where you type it rarely, and it buys a discoverable set instead of a flat list of abbreviations.
+	- One verb across all three nouns (`create`, never `new` in some places). `new` and `go` still work but aren't published.
+	- Landed before v2.0.0 on purpose: every name being changed was unreleased, so it cost nothing now and would have cost a permanent alias later.
+
+- ✅ Split the old `connect` into `repo create` and `repo connect`.
+	- Creating a remote is the one irreversible, outward-facing step, so it gets its own verb instead of happening as a side effect.
+	- Each refuses the other's case and names it, so a wrong guess costs one line of output.
+
+- ✅ Drop every pre-2.0 command alias (`scommit`, `spull`, `scompul`, `saveup`, `spush`, `mkbranch`, `chbranch`, `mtm`, `list`).
+	- v2 is a clean break under a new tool name, and not all of the old commands worked. The suite now asserts they're rejected, so none creeps back.
+
+- ✅ `pr new [title]` opens a pull request, so the whole PR round trip lives in gitsby instead of half in `gh`.
+	- Pushes the branch first - GitHub can only diff what the remote has.
+	- Targets `dev` when the repo has one, else the default branch. Refuses from that branch, since there is nothing to propose.
+	- No title given: the last commit subject, which is already a description of the work. The preview shows it before anything happens.
+	- An already-open PR for the branch reports its number instead of letting `gh` error.
+
+- ✅ `pr ok <n>` refuses while the current branch has uncommitted changes or unpushed commits.
+	- Merging deletes the branch local and remote, so work that never reached origin was outside both the PR and the merge.
+	- Every other mutating command already parked work first; this was the one that did not.
+
+- ✅ The installers' default "latest release" lookup skips anything flagged as a pre-release on GitHub.
+	- GitHub's `releases/latest` returns the newest full release, so a pre-release-only repo resolves to the last full one - for this repo, the 2022 release.
+	- Decided: publish releases as full releases rather than adding a `--pre` flag. The semver suffix still marks a candidate for anyone reading the tag, and the one-liner installs keep working with no extra arguments.
+	- `--ref`/`-Ref` remains the way to install a specific tag or branch, and is already documented.
+
+- ✅ CICD process (full spec in private notes):
+
+	- Done: every stage below is live and runs on each publish. The pipeline is local by design - no cloud service, no account to pay for.
+
+	- ✅ `cicd.bash`: `-q|--quiet`, `-m|--msg|--message`, prompt for commit message when neither given (CTRL+C aborts); silkterm output style; `fEcho`/`fParseArgs` conventions.
+
+	- ✅ Linting stage: shellcheck (+ markdownlint), no auto-format for Bash; output GFS-rotated to `cicd/artifacts/lint/`; zero-error goal.
+		- Everything gates clean now, including `bin/gitsby` (the refactor cleared its ~80 legacy findings; report-only list emptied). PSScriptAnalyzer gates the three `.ps1` files.
+
+	- ✅ Dogfood install stage: copy to first existing preferred dir (bash + pwsh lists).
+		- Both legs live since the pwsh port landed.
+
+	- ✅ Regression tests; keep updated as features/bugs land.
+		- `cicd/test.bash`: throwaway repos (bare origin + two clones), every command plus failure guards, run once per implementation - 140 checks.
+
+	- ✅ Adversarial fuzz/security testing (our input surface + what we depend on).
+		- Done: `cicd/fuzz.bash` - bombards the command slot, options, and branch/message/version/pr args with malformed + injection vectors, per implementation (bash + pwsh). Asserts three invariants: no internal crash (bash/pwsh error-dump signatures), no shell/command injection (a canary side-effect never fires), and inputs-that-must-refuse exit nonzero leaving the repo unchanged. 191 checks. Found + fixed two real pwsh-port bugs (see next items). Scope is gitsby's own input, not upstream git.
+		- Fuzz-found bug (fixed here): the pwsh port passed user-supplied values to native git UNquoted, so PowerShell wildcard-expanded `*`/`?` against the filesystem before git saw them - `newbr '*'` slipped past `check-ref-format` and created a branch named after a file. Quoted the user values in the direct git/gh calls (branch validation, clone-dir, gh target), mirroring the bash port. bash was never affected (always quoted).
+
+	- ✅ pwsh: `Invoke-Git` splatted an argument array (`git @GitArgs`), and PowerShell wildcard-expands any element that is a bare `*`/`?`/`[...]` matching files in the cwd - so a commit message of exactly `*` globbed to filenames.
+		- Done: `Invoke-Git` now runs git via `System.Diagnostics.ProcessStartInfo` + `ArgumentList` (a literal argv - no PowerShell reshell or globbing), `UseShellExecute=$false` with no redirection so git output still shows inline. Tried and rejected: quoting splat elements (splat drops quoting), `[WildcardPattern]::Escape` (git receives the backtick), `Start-Process -ArgumentList` (re-splits multi-word elements like a spaced message). Verified messages with `*`, spaces, `?`, `[ab]`, `;$(...)`, quotes, and emoji all land verbatim; exit codes propagate; no injection. Locked with `fMsgLiteral` verbatim-message vectors in `cicd/fuzz.bash` (both implementations). Fuzz 183 -> 191; test.bash still 269/0; PSSA clean.
+
+	- ✅ Automated demo GIF (fake terminal, `--quick` skips); copy `gen-demo-gif.py` from convert-base-v2; embed `assets/demo.gif` in README.
+		- Done: scenario `cicd/demo-scenario.toml` + repo builder `cicd/utility/demo-repo.bash`; embedded in README top with a commented YouTube placeholder. Single hero `land` command (state block + full plan + commit/push/merge/cleanup) in an anonymized throwaway repo built offline; runs real gitsby so it can't go stale. 960x540 (the tool's default, a blessed alternative in the private note; not 640x360, and the tool has no fixed-fps knob). Pinned commit dates make it byte-deterministic so cicd only regenerates on real change. 18.4s loop, 823 KiB.
+		- Follow-up: one command was too thin a story, so the scenario now runs a whole feature end to end - `status`, `newbr`, `update`, a real edit typed at the prompt, `sync`, `land` - with a short comment line introducing each. Two generator fixes came out of it: stderr now shares the stdout pipe (git writes its progress there, so it was all landing after the program's own output instead of under the step that produced it), and the palette pads to the next power of two rather than a flat 256 (same pixels, ~12% smaller file).
+		- Follow-up: the smooth scroll and the cursor glide were never actually running. Both stepped once per 80ms frame, and a line of scroll is 21px, so any scroll rate over ~275 px/s finished a line in a single frame - a hard jump, and the rate knob did nothing (325, 520 and 820 all rendered byte-identical). Frame interval is now 20ms (50 fps) and the cursor glide follows it, so both move as intended. A smooth scroll redraws the whole text block every frame, which is expensive, so a new per-step `clear = true` starts each command on a fresh screen and roughly halves how far the view ever travels. 60.0s loop, still byte-deterministic.
+		- Follow-up: cicd now runs the render through `gifsicle -O3` when it is installed, before the compare, so the committed file is the optimized one (`DEMOGIF_OPT_CMD` in config.bash; silently skipped when absent). Worth about 9% - 7.3 -> 6.6 MiB. Less than it sounds like it should be: the renderer already crops each frame to what changed, so most of the win was banked, and the lossy modes buy almost nothing on a 35-colour text demo.
+
+- ✅ New commands for getting connected: `clone` (get an existing repo) and `connect` (publish work that only exists locally to a new or empty remote).
+	- `clone <url> [dir]`: derives the dir from the URL, checks out `dev` when the repo has one, re-run is a no-op.
+	- `connect [target]`: init if needed, commit, push. URL to an existing empty remote, or `owner/name` creates the GitHub repo via gh (`--public`/`--private`). Refuses remotes with history and won't change an existing origin.
+	- Done: both implementations, previewed + confirmed like the rest; tests 207 -> 241.
+	- Follow-up: logically validated (no bugs) and exhaustively tested. Closed the "gh paths untested offline" gap with a hermetic fake gh (create / add https+ssh / refuse-nonempty), plus clone edges (no-dev, pre-existing empty dir, different-url refuse) and connect edges (empty inited repo, matching-url re-connect). Tests 241 -> 269, both implementations.
+
+- ✅ Add a PowerShell badge to README.md.
+	- Added next to the bash badge in the header block, linking to the PowerShell docs.
+
+- ✅ One-liner installers for Bash and PowerShell: download the release, verify the checksum, install the script. Idempotent, and they state the plan and ask before touching anything. Documented in README under "Installation", including a "Direct" subsection with the commands and the install locations.
+
+	- Done: `install.bash` and `install.ps1` cover it. Checksum verification against a published `SHA256SUMS` landed with code review item 19, and the README "Direct" subsection lists both the commands and the paths each installer uses.
+
+	- Note on the spec's option names: `--arch` doesn't apply, since gitsby is a script rather than a compiled binary. `--release dev|stable` is spelled `--ref`, and `--target user|system` is spelled `--system` (user is the default).
+
+	- Note on install paths: gitsby is a single file, so it goes straight to `~/.local/bin` or `/usr/local/bin` rather than into a program directory with a symlink.
+
 - ✅ Code Review 20260723 item 39: README typos.
 	- Line 82 "devoted to to", line 100 "besome", line 218 "cononical".
 	- Done: all three fixed.
 
-### Bugs
+- ✅ Rename `saveup` to `update`.
+	- Done in both implementations; `saveup` stays as a hidden alias like the other old names. Docs and changelog swept.
 
-Items below came out of the 20260723 code review. Fix notes for every item: `design.md` -> "Code review 20260723".
+- ✅ Script output starts and ends with a blank line (breathing room between prompt text).
+	- Trailing blanks already existed on every exit path; added the leading one (both implementations). Error paths were already blank-wrapped.
+
+- ✅ After `release` merges dev to main, bring dev up to include the release merge and tag.
+	- Done via `git merge --ff-only main` on dev (then push), not `git branch -f dev main`: same result normally, but if dev gained commits mid-release it skips with a warning instead of discarding work. Previews updated; tests cover it.
+
+- ✅ 'git_notes_and_oneliners.md': Move the current commands under a "Bash" section, and add a "PowerShell" section below it, with pwsh v7 parity versions of the same one-liners.
+	- Two mirrored sections, same task headings in the same order, so the two are easy to compare side by side.
+	- The PowerShell section opens with the three gotchas that bite when translating from Bash: `&&`/`||` need pwsh 7, `@{u}` has to be quoted, and staged-change tests read `$LASTEXITCODE`.
+	- Every pwsh one-liner was run against throwaway repos, not just eyeballed. Two spots deviate on purpose: no `less` (git pages its own diff), and `Remove-Item` deletes outright since there is no cross-platform `trash`.
+	- Also swapped the stale sister-tool reference in the Bash "push local changes" one-liner for `gitsby update`.
+
+- ✅ All potentially destructive or conflict-producing commands - or anything that will reveal a user identity on the remote - should:
+	- Show what's going to change (including a list of changed files, piped through an internal equivalent of `... | less -FX` if necessary)
+	- git status without line-breaks, and SSH connection info. And a prompt to continue. All with standard 1 blank line where appropriate.
+	- Every mutating command already previewed its plan and prompted; this added the identity and change detail. `status` shows the same block.
+	- SSH line resolves the remote URL through `ssh -G`, so a `~/.ssh/config` host alias shows the real host, user, and key it will use - the point being to catch acting as the wrong account before you push. Author line shows what git will actually stamp on the commit.
+	- Changes list one file per line (short form), truncated to the terminal width and capped at 25 with an "and N more" tail - the `less -FX` idea without depending on a pager. Incoming section lists what a pull would change, and the branch line carries ahead/behind.
+
+- ✅ Better command names; dev-aware merging; PR and release commands (both implementations).
+	- Renames: scompul->saveup, spush->sync, scommit->commit, spull->pull, mkbranch->newbr, chbranch->gobr, list->listbr, mtm->land. Old names still work as hidden aliases.
+	- newbr/gobr/land now branch off / land on dev when the repo has one, else main/master. land refuses to run from the default branch.
+	- New: pr (bare = list, n = view + diff, ok n = approve + merge, via gh), release (merge dev into main --no-ff, tag, push; no version = patch bump on the latest v* tag).
+
+- ✅ PowerShell port of gitsby (style guide already covers pwsh; dogfood pwsh leg activates when it lands).
+	- `bin/gitsby.ps1`: same commands, checks, and flow as the bash version. Regression suite now runs once per implementation (78 checks total); PSScriptAnalyzer joined the lint stage (gates all three .ps1 files); dogfood pwsh leg live. Not in a release yet - README says to use `-Ref dev` until one is cut.
+
+- ✅ Create a release-install script per platform (`bash` and \[`pwsh` or `cmd`\]), runnable via a single `curl`/`wget` (etc.) and documented under "how to install". Downloads, installs, and runs the latest release, with an option to abort. Update README.md with one-liner for both local and system-level installs.
+	- `install.bash` + `install.ps1` at repo root; plan-then-confirm, `--system`/`-y`/`--ref`; README Installation one-liners filled in (user + system, curl and wget). Resolves the latest release tag, prefers a release asset, falls back to the tagged tree. The 2022-era releases predate the `bin/` layout so the release path activates for real once a v2 release is cut (`--ref main`/`--ref dev` works today); the pwsh installer says the port hasn't shipped and points at the bash one until then.
+
+	- ✅ Do the same thing for a dev-branch install script (Linux bash, macOS sh, Windows PowerShell), runnable via a single `curl`/`wget` and documented under "how to develop". Clones main, installs dependencies, and states what it will do with an option to abort. Update README.md with one-liner for both local and system-level installs.
+		- `install-dev.bash` + `install-dev.ps1`: clone, check out `dev`, check tooling (offers package-manager install where one is found), verify, print next steps. Documented in README "How to develop" + contributing.md "Your First Code Contribution". Bash installers run on macOS stock bash 3.2.
+
+- ✅ Get original commands and options working. At some point some just kind of broke (pre-git), and were never fixed.
+	- All commands work and are regression-tested; the commit/save/sync/land family takes -m or a positional message, newbr/gobr validate their branch argument.
+
+- ✅ Integrate these rules and ideals: `reference/git.txt` (in this repo), including:
+	- Push hygiene (stash / pull --ff-only / stash apply / add / commit / push) is now the core of pull/saveup/sync; branch workflow lives in newbr/gobr/land.
+	- Work on feature branches
+	- PRs to merge to develop
+	- Commit frequently
+	- Pull frequently, push infrequently
+	- Push hygene:
+
+		~~~bash
+		git stash
+		git pull --ff-only
+		git stash apply
+		git add .
+		git commit -m ""
+		git push
+		~~~
+
+- ✅ Make sure everything done with git:
+	- Every command verifies state first and is idempotent: stash only if dirty (pop only what was pushed), pull only with an upstream, push only if ahead, commit only if changes; main/master detected from origin HEAD, not hardcoded. All covered by the regression tests.
+
+	- Is done safely. E.g. before stashing, verify safely in a robust way that makes no assumptions, that there is anything to pull. `n8git_backup-and-publish` has examples.
+
+	- Never make assumptions about the local and/or repo state. Verify first for every command, whatever is relevant for the command.
+
+	- Everything must be idempotent.
+
+- ✅ Refactor the bash script:
+	- Rewritten 2142 -> ~620 lines on the current template generation (same one as `n8git_backup-and-publish`): strict mode, trap suite, arg parser, minified header trio.
+
+	- ✅ Use newer, easier-to-maintain Bash template/boilerplate/common functions. (E.g. from sister project silkterm.) But even those examples need to be cleaner (don't change anything outside of repo.)
+
+	- ✅ Modernize function and variable naming convention. Be descriptive with names, but not too long. Use of one-letter variables in small loop structures is OK.
+
+	- ✅ Remove dead code.
+		- Dropped the unused ~1400-line generic library (ping, symlink, editor pickers, sudo plumbing, glob-permutation engine, platform detection).
+
+	- ✅ Refactor to maximize usefulness of idiomatic Bash 5 features.
+		- Argument arrays instead of eval (which also retired the curly-quote message mangling), `[[ -v ]]`, parameter transforms, arithmetic conditionals.
+
+- ✅ Work on dev branch. Push releases to main.
+
+	- ✅ `dev` branch created from `main` and pushed; feature branches now merge to `dev`, `main` is release-only.
+
+- ✅ Create PRs rather than pushing directly (for this project).
+	- Feature branches now go up as PRs to `dev` and land via merge commit; direct local merges retired.
+
+- ✅ Delete stale branch from 2020.
+	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
+
+#### Done - Code review 20260727
+
+Review of the hotfix branches, the gh/ssh identity check, and the docs pass that went with them.
+
+- ✅ Code Review 20260727 item 1: `pr ok <n>` decided where a PR lands from whatever branch you were standing on (both implementations).
+	- Nothing asked gh which branch the PR proposes, so accepting a hotfix PR from `dev` skipped the back-merge that keeps the fix from being undone by the next release.
+	- The reverse also happened: accepting an ordinary PR while sitting on a hotfix branch merged the default branch into `dev` for no reason.
+	- Fixed: the head branch is read from gh up front and drives both the landing target and the hotfix decision. Falls back to the current branch if gh can't say.
+
+- ✅ Code Review 20260727 item 2: the back-merge merged a stale local default branch (both implementations).
+	- Found while testing item 1. `pr ok` lands the hotfix on the server, so the local `main` never receives it and merging that branch did nothing at all - silently.
+	- `br land` was unaffected, because it checks `main` out and merges into it itself.
+	- Fixed: the back-merge uses the fetched `origin/<default>` when there is one, which is the same commit after `br land` and the correct one after `pr ok`. Previews show the ref that actually gets merged.
+
+- ✅ Code Review 20260727 item 3: the ssh identity was read only when the greeting was the first line (Bash).
+	- ssh writes host-key and missing-identity-file warnings ahead of it, and both streams are captured, so a match anchored to the whole output missed the greeting.
+	- It failed safe (unknown, proceed) but that meant the check quietly stopped working for the multi-account setups it exists to protect.
+	- Fixed: matched per line. PowerShell matched anywhere, which had the opposite risk, and is now anchored per line too, so both behave the same.
+
+- ✅ Code Review 20260727 item 4: nothing said gitsby needs bash 4.4, and on macOS it could never get it.
+	- `bin/gitsby` was the only file pinned to `#!/bin/bash`. macOS keeps that at 3.2 permanently, so installing a newer bash would not have helped.
+	- Too old a bash died on `inherit_errexit` with a raw shell error, and `install.bash` (deliberately 3.2-compatible, for macOS) installed it anyway and only failed at its own verify step.
+	- The README Compatibility section covered tool interop and remotes but never the runtime requirement.
+	- Fixed: shebang resolves bash through `PATH`; both `gitsby` and `install.bash` refuse early with advice per platform (Homebrew/MacPorts, `pkg`/`pkg_add`, or the package manager), and point at the PowerShell build as the no-bash option. README states the requirement per platform.
+
+- ✅ Code Review 20260727 item 5: the "hotfix changes shipped code" note missed the ordinary case (both implementations).
+	- It read the branch tip before `br land` committed the working tree, so a hotfix whose `bin/` edit was still uncommitted - the usual way of making one - got no warning.
+	- Fixed: checked after the push.
+
+- ✅ Code Review 20260727 item 6: PowerShell's gh login probe could prompt (PowerShell); `br land` carried a duplicate variable (Bash).
+	- Fixed: `GH_PROMPT_DISABLED` set around the call as the Bash side already did, and the duplicate dropped.
+
+#### Done - Code review 20260726
+
+Release-prep pass over what changed since the last review: the noun grouping, `pr create`, and dropping bare `commit`/`pull`.
+
+- ✅ Code Review 20260726 item 1: `br switch` from a dirty protected branch tells you to run a command that no longer exists (both implementations).
+	- The refusal offered `gitsby commit` as the deliberate way to keep the work where it is. That command was dropped, so following the advice is a second error.
+	- Fixed: it now names `update`, which commits on the current branch. Regression test asserts the suggested command is a real one.
+
+- ✅ Code Review 20260726 item 2: offline only reached the pull in `update` and `sync` (both implementations).
+	- `br create`, `br switch`, `br land`, `pr ok`, and `release` each pull as one of their steps, and those pulls ignored `--no-fetch` and an unreachable remote.
+	- So the flag documented as "work offline" still went to the network in five of the seven commands that pull, which is exactly the thing the design note says it must not do.
+	- Fixed: every in-command pull goes through one helper that applies the same rule. Regression test compares a `--no-fetch` switch (must not advance) against the same switch online (must).
+
+- ✅ Code Review 20260726 item 3: built-in help drifted from the command set (both implementations).
+	- `update` was still described as commit-then-pull, `--no-fetch` as skipping only the fetch, and the PowerShell parameter help still listed `pull` and `commit` as commands.
+	- The `br create` line said it parks current work first, which is what it does from a feature branch but not from `main`/`dev`, where it carries the work along instead.
+	- Also "stash only if dirty" in the summary blurb, describing a manual stash that no longer exists.
+	- Fixed: all of the above, in both implementations.
+
+- ✅ Code Review 20260726 item 4: the README command count was stale.
+	- It said 13, from before the regroup and before `commit` and `pull` were dropped.
+	- Fixed: 7 commands, or 15 counting subcommands, which is what the table below it lists.
+
+- ✅ Code Review 20260726 item 5: the offline test passed on the PowerShell side for the wrong reason.
+	- It spelled the flag `--no-fetch`, which PowerShell has no parameter for, and then matched output against a pattern that the resulting complaint about the flag also matched.
+	- So the check went green on a command that had failed outright, and no offline behavior was ever exercised there.
+	- Fixed: `-NoFetch`, which both implementations accept, and the pattern now matches only the skip message itself.
+
+- ✅ Code Review 20260726 item 6: `br prune` could say "leaving it alone" and still delete the branch's remote copy (both implementations).
+	- The delete-time re-check only guarded the local delete; the remote loop ran regardless.
+	- Fixed: a branch kept by the re-check keeps its remote copy too.
+
+- ✅ Code Review 20260726 item 7: a merged current branch vanished from `br prune`'s output (both implementations).
+	- It was rightly never deleted, but appeared in neither the plan nor the Keeping list.
+	- Worst case: it was the only merged branch, and the output claimed nothing was merged at all.
+	- Fixed: the plan, the no-op path, and the closing summary all say it is kept because you are standing on it.
+
+- ✅ Code Review 20260726 item 8: the README claimed 100% GitLab compatibility.
+	- Every `pr` form, `repo create`, and `repo connect` with an `owner/name` go through `gh`, so they are GitHub-only. That is up to six of the sixteen subcommands.
+	- Fixed: the claim now says any Git remote works and names the gh-backed exceptions.
+
+- ✅ Code Review 20260726 item 9: "no version: bump the patch" was only one of three release paths (docs and help, both implementations).
+	- A candidate tag resolves to its own release (`v2.0.0-rc1` -> `v2.0.0`), and a repo with no tag at all starts at `v0.1.0`. Neither is a patch bump.
+	- Fixed: docs and help now say the next version after the latest tag. A regression check pins the help line.
+
+- ✅ Code Review 20260726 item 10: `br create` still overpromised, in the opposite direction from item 3.
+	- Item 3 changed the help from "parks current work" to "brings current work along". Both are half right: work is carried only from `main`/`dev`, and committed and pushed to the current branch otherwise.
+	- Fixed: docs and help say carried or parked, and name which case is which. A regression check pins the help line.
+
+- ✅ Code Review 20260726 item 11: the dev installers required a bash version gitsby does not.
+	- Both told you gitsby itself needs bash 5+. The real floor is 4.4, set by `inherit_errexit`; design.md already said 4.4 and was the one that was right.
+	- Fixed: both installers now check and report 4.4.
+
+- ✅ Code Review 20260726 item 12: smaller doc corrections found in the same pass.
+	- design.md said `gh` was needed for "the two commands that need it" - it is three.
+	- The Direct-install one-liners never created the target directory, and the PowerShell one wrote to a *nix path inside the Windows section.
+	- The README options list omitted `--public`/`--private` and never mentioned that the PowerShell version takes PowerShell-style parameter names.
+	- "Every mutating command fetches first" ignored `repo clone` and `--no-fetch`. `br prune` was described as deleting every merged branch, which skips the current-branch and protected-branch exceptions. `repo create`'s steps were listed in the wrong order.
+	- design.md's folder list omitted `reference/` and described `assets/` as holding only the demo.
+
+- ✅ Code Review 20260726 item 13: the pre-command fetch could stop and ask for credentials (both implementations).
+	- `fpProbeRemote` sets `GIT_TERMINAL_PROMPT=0` for exactly this reason. The fetch that runs ahead of every command did not, so an https remote you can't authenticate to blocks the command at a username prompt - before any of gitsby's own checks get to run, including the ones that would have refused the command anyway.
+	- Only shows up with a terminal attached. Without one git fails instantly, which is why the suites were green and silent.
+	- Fixed: the fetch disables prompts too. A regression check records the environment the fetch actually receives, since the behavior is invisible without a tty.
+
+- ✅ Code Review 20260726 item 14: two suite checks reached the real github.com.
+	- The `repo create refuses when origin is already set` check reuses a fixture whose origin is a real `https://github.com/me/proj.git`, but dropped the `insteadOf` rewrite that every neighbouring check sets. Confirmed by the server's own "Repository not found" reply.
+	- design.md says neither suite touches the network, so this was also the thing that surfaced item 13 in the first place.
+	- Fixed: the rewrite is back on that check.
+
+- ✅ Show gh's account in the pre-flight, and refuse a gh write that acts as someone else.
+	- gh authenticates with its own token and ignores ssh config, so `pr create`/`pr ok`/`repo create` act as gh's account while `git push` acts as the remote alias's key. With per-account aliases those differ, and the pre-flight was naming only the ssh one - the wrong identity for exactly those commands.
+	- Found live: from a `t00mietum` repo, gh reports `jim-collier` with READ permission, so a `pr create` there would act as an account that can't do it.
+	- Three outcomes, not two. Unknown (no agent, https remote, deploy key, gh logged out) is reported and never blocks - otherwise every CI runner breaks. Only a difference both sides confirm counts.
+	- Interactive: warning directly above the confirm prompt. Unattended: error, nothing runs. `--any-identity`/`-AnyIdentity` proceeds, and the mismatch still shows on the identity line.
+	- Decided against a general gh-config validator: policing another tool's setup isn't gitsby's job and would turn working commands into refusals.
+	- 26 new checks across both implementations, driven by a fake ssh that answers the greeting GitHub really sends and doubles as the git transport. Verified they fail against the pre-feature build.
+
+- ✅ Extend the identity check to `repo create` and `repo connect owner/name`.
+	- The first pass skipped them for having no origin to compare. That was wrong: gh never uses a host alias, so the url it is about to set is always `git@github.com:owner/name.git` and the identity is knowable before anything is created. Design note revised rather than appended to.
+	- Refuses before `gh repo create` and before `git init`, so a mismatch leaves no remote and no repository behind. Verified against the pre-feature build, which created both.
+	- An https protocol means git will use a credential helper rather than a key, so there is no second identity and nothing to compare.
+	- Deliberately does NOT rewrite the remote to a matching host alias. Guessing which alias serves an account means inferring the user's ssh setup, and a wrong guess points the repo at the wrong key. `repo connect <full url>` already covers anyone who wants their alias.
+
+- ✅ PowerShell: gh's account was read from a stale exit status.
+	- `gh api user | Select-Object -First 1` stops the native command early, so `$LASTEXITCODE` is left over from whatever ran before - in a plain directory that is the failed repo probe, so the login was discarded and every identity came back unknown.
+	- Only showed up once `repo create` started needing the login, since that is the one command that runs outside a repository.
+	- Fixed by collecting the output with `@()` before selecting, in all three places that read a native command this way. A regression check runs `repo create` from a plain directory and asserts the account resolves.
+
+#### Done - Code reviews 20260725 and 20260723
+
+- ✅ Code Review 20260725 item 1: `release` pushes only the tag when the default branch has no upstream (both implementations).
+	- The branch push is gated on an upstream; the tag push is not.
+	- Origin ends up holding the release commits as tag payload while its `main` still points at the previous release.
+	- Same shape as item 2 of the previous review, which was fixed in `land` but not here.
+	- Fixed: an upstream-less default branch is published with `git push -u origin HEAD` before the tag goes up. Regression test added.
+
+- ✅ Code Review 20260725 item 2: `release` refuses a duplicate tag only after it has already committed and pushed (both implementations).
+	- The check sat inside the command, past the plan, the confirmation, and the "park current work" step.
+	- Nothing is lost, but the run mutates the repo and then dies on something knowable up front.
+	- Fixed: the tag-exists check moved next to the version resolution, before anything is shown or run. Regression test added.
+
+- ✅ Code Review 20260725 item 3: `gobr` refuses a dirty protected branch only after the plan is confirmed (both implementations).
+	- Same class as item 2, and the same fix as code review 20260723 item 35 applied to the other branch arguments.
+	- Fixed: the refusal moved up front, alongside the other branch-argument checks. Regression test added.
+
+- ✅ Code Review 20260725 item 4: `newbr` shows a plan it does not follow when run from `main`/`dev` (both implementations).
+	- The preview always listed the commit-and-push steps, but on a protected branch the tree is carried to the new branch instead.
+	- The preview is the safety feature, so it misreporting in exactly the case that was special-cased is the wrong way round.
+	- Fixed: the plan now branches on protected state and shows the checkout-and-carry steps. Regression test added.
+
+- ✅ Code Review 20260725 item 5: `pr ok <n>` run from the branch that PR came from ends in a failed pull (both implementations).
+	- `gh` deletes the branch on the remote through the API, which leaves the local `origin/*` copy in place, so the upstream still looks alive.
+	- The trailing `git pull --ff-only` then asks for a branch the remote no longer has, and the whole command reports as failed.
+	- Fixed: prune first, and if the branch we are standing on is the one that just went away, check out the merge target and pull that instead. The plan shows the extra step. Regression test added, with the fake `gh` restoring the stale ref so the real condition is reproduced.
 
 - ✅ Code Review 20260723 item 1: `pull` failure strands the autostash (both implementations).
 	- Dirty tree gets stashed, then a failed `git pull --ff-only` (diverged or offline) aborts before `git stash pop`.
@@ -147,7 +496,11 @@ Items below came out of the 20260723 code review. Fix notes for every item: `des
 	- The var is redundant anyway (merges pass `-m`); just delete the line.
 	- Fixed: line deleted (merges pass -m, so it was redundant).
 
-### Features and enhancements
+- ✅ Code Review 20260725 item 6: `release` with no version bumps the patch of a candidate tag's base, skipping that base version (both implementations).
+	- After `v2.0.0-rc1`, a bare `release` proposed `v2.0.1` rather than `v2.0.0`.
+	- Fixed: a candidate's own version is now what comes next, so `v2.0.0-rc1` leads to `v2.0.0`.
+	- The tag scan also needed `versionsort.suffix=-`, since git's default version sort ranks `v2.0.0-rc1` above `v2.0.0` and would otherwise propose an already-cut version once the real release exists.
+	- Regression tests cover both halves: the candidate's version is taken, and the release after it bumps normally.
 
 - ✅ Code Review 20260723 item 14: bound the unconditional pre-command fetch and add an offline escape hatch (both implementations).
 	- A dead/black-holed remote blocks every command for the full TCP/ssh timeout before the "offline?" warning.
@@ -167,206 +520,52 @@ Items below came out of the 20260723 code review. Fix notes for every item: `des
 - ✅ Code Review 20260723 item 17: README has no Commands/Usage section.
 	- The pitch is "Gitsby has 11" commands, but they're never listed or demonstrated. Add the help table plus a worked newbr -> update -> land example.
 	- Done: Commands section added (table of all 11, options, a typical-day flow, gh note for pr/release).
+
 - ✅ Code Review 20260723 item 19: installer checksum + version pinning - confirms the already-open installer item below.
 	- Publish SHA256SUMS from cicd, verify in both installers, allow pinning an exact tag; document that `--ref` skips verification.
 	- Done: installers verify release-asset downloads against a SHA256SUMS release asset when published (note-and-continue when absent); cicd/utility/gen-checksums.bash generates it for release cuts; --ref/-Ref pins a tag but skips verification (documented in README).
+
 - ✅ Code Review 20260723 item 20: "latest release" lookup uses the unauthenticated GitHub API (60 req/hr).
 	- Shared-NAT/CI installs will 403. Read the tag from the `releases/latest` redirect Location header instead; keep the API as fallback.
 	- Done: tag read from the releases/latest redirect (curl url_effective / wget Location / pwsh 302 handling); API scrape kept as fallback; rate-limit mentioned in the error.
+
 - ✅ Code Review 20260723 item 22: fIsAhead materializes the whole ahead-range log just to test emptiness (both implementations).
 	- Use `git rev-list -n 1 '@{u}..'` (or the cached ahead count from item 15).
 	- Done: git rev-list -n 1 in both implementations.
+
 - ✅ Code Review 20260723 item 30: needless external `head`/`wc` pipeline stages (bash).
-	- Use `mapfile -n 1` / array counts; watch the set -e empty-input gotcha noted in design.md.
+	- Use `mapfile -n 1` / array counts, minding that a bare `read` returns nonzero on empty input under strict mode.
 	- Done: tag lookup via mapfile -n 1; the stash wc pipelines were already removed by item 1.
+
 - ✅ Code Review 20260723 item 31: positional parameter binding in the ps1 files (style guide requires named).
 	- gitsby.ps1 one spot (`Get-Command ssh`); install.ps1 and install-dev.ps1 throughout (Join-Path, Move-Item, Test-Path, Get-Command).
 	- Done: named parameters at the flagged sites in all three ps1 files.
+
 - ✅ Code Review 20260723 item 32: no comment-based help on any gitsby.ps1 function.
 	- Either add `.SYNOPSIS` to the non-trivial functions, or scope the style-guide rule to script-level + exported functions.
 	- Done: style-guide rule scoped to script level + exported/public functions; private helpers take a terse ## comment.
+
 - ✅ Code Review 20260723 item 33: installer output ends without the trailing blank line the style guide requires (all four installers).
 	- Done: all four installers end with a blank line.
+
 - ✅ Code Review 20260723 item 34: rename fpPreview's `p` padding variable to `pad` (matches the pwsh twin).
 	- Done: renamed.
+
 - ✅ Code Review 20260723 item 35: branch-argument validation runs after the status display and confirm prompt (both implementations).
 	- `newbr` with a bad/missing name shows a nonsense plan ("git checkout -b ") and only errors after "y". Hoist checks next to the existing pr/release ones.
 	- Done: newbr/gobr arguments validate right after the release-version check, before status/preview/prompt; command functions no longer duplicate the checks. Test added.
+
 - ✅ Code Review 20260723 item 36: `gitsby help` / `gitsby version` are unknown-command errors (both implementations).
 	- Alias the bare words to the -h/-v paths; one case entry each.
 	- Done: bare words route to the same paths as -h/-v (both implementations). Tests added.
+
 - ✅ Code Review 20260723 item 37: usage errors carry "Reverse call stack: fMain()" noise (bash).
 	- Suppress the stack line for expected validation errors; keep it for real internal failures.
 	- Done: fThrowError_Usage variant skips the stack line; all user-facing validation errors use it. Real script errors keep the stack.
+
 - ✅ Code Review 20260723 item 38: accept `-y`/`--yes` as a prompt-skip alias (both implementations).
 	- Installers teach -y, gitsby only takes -q; and -q's real function is "assume yes", not quiet. Keep -q, add -y, fix the help wording.
 	- Done: -y/--yes (bash) and -y/-yes (pwsh) alias -q; help wording now says "assume yes". Test added.
-- 🛠️ CICD process (full spec in private notes):
-
-	- ✅ `cicd.bash`: `-q|--quiet`, `-m|--msg|--message`, prompt for commit message when neither given (CTRL+C aborts); silkterm output style; `fEcho`/`fParseArgs` conventions.
-
-	- ✅ Linting stage: shellcheck (+ markdownlint), no auto-format for Bash; output GFS-rotated to `cicd/artifacts/lint/`; zero-error goal.
-		- Everything gates clean now, including `bin/gitsby` (the refactor cleared its ~80 legacy findings; report-only list emptied). PSScriptAnalyzer gates the three `.ps1` files.
-
-	- ✅ Dogfood install stage: copy to first existing preferred dir (bash + pwsh lists).
-		- Both legs live since the pwsh port landed.
-
-	- ✅ Regression tests; keep updated as features/bugs land.
-		- `cicd/test.bash`: throwaway repos (bare origin + two clones), every command plus failure guards, run once per implementation - 140 checks.
-
-	- ✅ Adversarial fuzz/security testing (our input surface + what we depend on).
-		- Done: `cicd/fuzz.bash` - bombards the command slot, options, and branch/message/version/pr args with malformed + injection vectors, per implementation (bash + pwsh). Asserts three invariants: no internal crash (bash/pwsh error-dump signatures), no shell/command injection (a canary side-effect never fires), and inputs-that-must-refuse exit nonzero leaving the repo unchanged. 191 checks. Found + fixed two real pwsh-port bugs (see next items). Scope is gitsby's own input, not upstream git.
-		- Fuzz-found bug (fixed here): the pwsh port passed user-supplied values to native git UNquoted, so PowerShell wildcard-expanded `*`/`?` against the filesystem before git saw them - `newbr '*'` slipped past `check-ref-format` and created a branch named after a file. Quoted the user values in the direct git/gh calls (branch validation, clone-dir, gh target), mirroring the bash port. bash was never affected (always quoted).
-
-	- ✅ pwsh: `Invoke-Git` splatted an argument array (`git @GitArgs`), and PowerShell wildcard-expands any element that is a bare `*`/`?`/`[...]` matching files in the cwd - so a commit message of exactly `*` globbed to filenames.
-		- Done: `Invoke-Git` now runs git via `System.Diagnostics.ProcessStartInfo` + `ArgumentList` (a literal argv - no PowerShell reshell or globbing), `UseShellExecute=$false` with no redirection so git output still shows inline. Tried and rejected: quoting splat elements (splat drops quoting), `[WildcardPattern]::Escape` (git receives the backtick), `Start-Process -ArgumentList` (re-splits multi-word elements like a spaced message). Verified messages with `*`, spaces, `?`, `[ab]`, `;$(...)`, quotes, and emoji all land verbatim; exit codes propagate; no injection. Locked with `fMsgLiteral` verbatim-message vectors in `cicd/fuzz.bash` (both implementations). Fuzz 183 -> 191; test.bash still 269/0; PSSA clean.
-
-	- ✅ Automated demo GIF (fake terminal, `--quick` skips); copy `gen-demo-gif.py` from convert-base-v2; embed `assets/demo.gif` in README.
-		- Done: scenario `cicd/demo-scenario.toml` + repo builder `cicd/utility/demo-repo.bash`; embedded in README top with a commented YouTube placeholder. Single hero `land` command (state block + full plan + commit/push/merge/cleanup) in an anonymized throwaway repo built offline; runs real gitsby so it can't go stale. 960x540 (the tool's default, a blessed alternative in the private note; not 640x360, and the tool has no fixed-fps knob). Pinned commit dates make it byte-deterministic so cicd only regenerates on real change. 18.4s loop, 823 KiB.
-		- Follow-up: one command was too thin a story, so the scenario now runs a whole feature end to end - `status`, `newbr`, `update`, a real edit typed at the prompt, `sync`, `land` - with a short comment line introducing each. Two generator fixes came out of it: stderr now shares the stdout pipe (git writes its progress there, so it was all landing after the program's own output instead of under the step that produced it), and the palette pads to the next power of two rather than a flat 256 (same pixels, ~12% smaller file).
-		- Follow-up: the smooth scroll and the cursor glide were never actually running. Both stepped once per 80ms frame, and a line of scroll is 21px, so any scroll rate over ~275 px/s finished a line in a single frame - a hard jump, and the rate knob did nothing (325, 520 and 820 all rendered byte-identical). Frame interval is now 20ms (50 fps) and the cursor glide follows it, so both move as intended. A smooth scroll redraws the whole text block every frame, which is expensive, so a new per-step `clear = true` starts each command on a fresh screen and roughly halves how far the view ever travels. 60.0s loop, still byte-deterministic.
-		- Follow-up: cicd now runs the render through `gifsicle -O3` when it is installed, before the compare, so the committed file is the optimized one (`DEMOGIF_OPT_CMD` in config.bash; silently skipped when absent). Worth about 9% - 7.3 -> 6.6 MiB. Less than it sounds like it should be: the renderer already crops each frame to what changed, so most of the win was banked, and the lossy modes buy almost nothing on a 35-colour text demo.
-
-- ✅ New commands for getting connected: `clone` (get an existing repo) and `connect` (publish work that only exists locally to a new or empty remote).
-	- `clone <url> [dir]`: derives the dir from the URL, checks out `dev` when the repo has one, re-run is a no-op.
-	- `connect [target]`: init if needed, commit, push. URL to an existing empty remote, or `owner/name` creates the GitHub repo via gh (`--public`/`--private`). Refuses remotes with history and won't change an existing origin.
-	- Done: both implementations, previewed + confirmed like the rest; tests 207 -> 241.
-	- Follow-up: logically validated (no bugs) and exhaustively tested. Closed the "gh paths untested offline" gap with a hermetic fake gh (create / add https+ssh / refuse-nonempty), plus clone edges (no-dev, pre-existing empty dir, different-url refuse) and connect edges (empty inited repo, matching-url re-connect). Tests 241 -> 269, both implementations.
-
-- ✅ Add a PowerShell badge to README.md.
-	- Added next to the bash badge in the header block, linking to the PowerShell docs.
-
-- 🛠️ A Bash >=3.2 script, and/or cross-platform PowerShell v7 script, that users can run as a one-liner from their shell - to download the latest stable or dev release, verify checksum, and install the executable. Idempotent; states its plan and asks before touching anything. Uses nice output, blank line at the start and end of script, and one blank line between major sections of output. Add something like this to README.md, under an "Installation" header, "Direct" subheader. (The primary install should be an installer.) Include the commands, and the install locations.
-
-	- Mostly covered by the shipped installers (see the release-install item under Done). Still open: checksum verification of the download, and a README "Installation" -> "Direct" subsection listing the commands next to the install locations below.
-
-	- `--arch` doesn't apply - gitsby is a script, not a compiled binary. `--release dev|stable` is spelled `--ref`, and `--target user|system` is spelled `--system` (default user).
-
-	- Bash installer (Linux, BSD, macOS, WSL)
-
-		~~~bash
-		bash <(curl -fsSL https://raw.githubusercontent.com/USER/PROJECT/main/install.bash)  [--release dev|stable]  [--target user|system]  [--arch x64|amd64|arm64]
-		~~~
-
-	- PowerShell installer (Windows, Linux, macOS)
-
-		~~~powershell
-		& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/USER/PROJECT/main/install.ps1')))  [-Release dev|stable]  [-Target user|system]  [-Arch x64|amd64|arm64]
-		~~~
-
-	- Installation locations for CLI programs (in this example, a program that has multiple files and a symlinked executable):
-
-		| OS      | System multi-file path  | ￩ Single exe or symlink        | (or) User install path              | ￩ Single exe or symlink
-		| :---    | :---                    | :---                           | :---                                | :---
-		| Linux   | /opt/PROG/              | /usr/local/bin/PROG            | ~/.local/share/PROG/                | ~/.local/bin/PROG
-		| BSD     | /usr/local/PROG/        | /usr/local/bin/PROG            | ~/.local/share/PROG/                | ~/.local/bin/PROG
-		| Windows | C:\Program Files\PROG\  | *Add install dir to `%PATH%`*  | %LOCALAPPDATA%\Programs\PROG\       | *Add install dir to `%PATH%`*
-		| macOS   | /opt/PROG/              | /usr/local/bin/PROG            | ~/Library/Application Support/PROG/ | ~/.local/bin/PROG
-
-	- Installation locations for GUI packages (in this example, a program that has multiple files and a symlinked executable):
-
-		| OS      | System multi-file path  | ￩ Launcher                                                    | (or) User install path        | ￩ Launcher
-		| :---    | :---                    | :---                                                          | :---                          | :---
-		| Linux   | /opt/PROG/              | /usr/local/share/applications/PROG.desktop                    | ~/.local/share/PROG/          | ~/.local/share/applications/PROG.desktop
-		| BSD     | /usr/local/PROG/        | /usr/local/share/applications/PROG.desktop                    | ~/.local/share/PROG/          | ~/.local/share/applications/PROG.desktop
-		| Windows | C:\Program Files\PROG\  | %ProgramData%\Microsoft\Windows\Start Menu\Programs\PROG.lnk  | %LOCALAPPDATA%\Programs\PROG\ | %APPDATA%\Microsoft\Windows\Start Menu\Programs\PROG.lnk
-		| macOS   | /Applications/PROG.app/ | *The .app bundle is the launcher*                             | ~/Applications/PROG.app/      | *.app bundle*
-
-### Done
-
-#### Done - Initial requirements
-
-#### Done - Bugs
-
-#### Done - Features and enhancements
-
-- ✅ Rename `saveup` to `update`.
-	- Done in both implementations; `saveup` stays as a hidden alias like the other old names. Docs and changelog swept.
-
-- ✅ Script output starts and ends with a blank line (breathing room between prompt text).
-	- Trailing blanks already existed on every exit path; added the leading one (both implementations). Error paths were already blank-wrapped.
-
-- ✅ After `release` merges dev to main, bring dev up to include the release merge and tag.
-	- Done via `git merge --ff-only main` on dev (then push), not `git branch -f dev main`: same result normally, but if dev gained commits mid-release it skips with a warning instead of discarding work. Previews updated; tests cover it.
-
-- ✅ 'git_notes_and_oneliners.md': Move the current commands under a "Bash" section, and add a "PowerShell" section below it, with pwsh v7 parity versions of the same one-liners.
-	- Two mirrored sections, same task headings in the same order, so the two are easy to compare side by side.
-	- The PowerShell section opens with the three gotchas that bite when translating from Bash: `&&`/`||` need pwsh 7, `@{u}` has to be quoted, and staged-change tests read `$LASTEXITCODE`.
-	- Every pwsh one-liner was run against throwaway repos, not just eyeballed. Two spots deviate on purpose: no `less` (git pages its own diff), and `Remove-Item` deletes outright since there is no cross-platform `trash`.
-	- Also swapped the stale sister-tool reference in the Bash "push local changes" one-liner for `gitsby saveup`.
-
-- ✅ All potentially destructive or conflict-producing commands - or anything that will reveal a user identity on the remote - should:
-	- Show what's going to change (including a list of changed files, piped through an internal equivalent of `... | less -FX` if necessary)
-	- git status without line-breaks, and SSH connection info. And a prompt to continue. All with standard 1 blank line where appropriate.
-	- Every mutating command already previewed its plan and prompted; this added the identity and change detail. `status` shows the same block.
-	- SSH line resolves the remote URL through `ssh -G`, so a `~/.ssh/config` host alias shows the real host, user, and key it will use - the point being to catch acting as the wrong account before you push. Author line shows what git will actually stamp on the commit.
-	- Changes list one file per line (short form), truncated to the terminal width and capped at 25 with an "and N more" tail - the `less -FX` idea without depending on a pager. Incoming section lists what a pull would change, and the branch line carries ahead/behind.
-
-- ✅ Better command names; dev-aware merging; PR and release commands (both implementations).
-	- Renames: scompul->saveup, spush->sync, scommit->commit, spull->pull, mkbranch->newbr, chbranch->gobr, list->listbr, mtm->land. Old names still work as hidden aliases.
-	- newbr/gobr/land now branch off / land on dev when the repo has one, else main/master. land refuses to run from the default branch.
-	- New: pr (bare = list, n = view + diff, ok n = approve + merge, via gh), release (merge dev into main --no-ff, tag, push; no version = patch bump on the latest v* tag).
-
-- ✅ PowerShell port of gitsby (style guide already covers pwsh; dogfood pwsh leg activates when it lands).
-	- `bin/gitsby.ps1`: same commands, checks, and flow as the bash version. Regression suite now runs once per implementation (78 checks total); PSScriptAnalyzer joined the lint stage (gates all three .ps1 files); dogfood pwsh leg live. Not in a release yet - README says to use `-Ref dev` until one is cut.
-
-- ✅ Create a release-install script per platform (`bash` and \[`pwsh` or `cmd`\]), runnable via a single `curl`/`wget` (etc.) and documented under "how to install". Downloads, installs, and runs the latest release, with an option to abort. Update README.md with one-liner for both local and system-level installs.
-	- `install.bash` + `install.ps1` at repo root; plan-then-confirm, `--system`/`-y`/`--ref`; README Installation one-liners filled in (user + system, curl and wget). Resolves the latest release tag, prefers a release asset, falls back to the tagged tree. The 2022-era releases predate the `bin/` layout so the release path activates for real once a v2 release is cut (`--ref main`/`--ref dev` works today); the pwsh installer says the port hasn't shipped and points at the bash one until then.
-
-	- ✅ Do the same thing for a dev-branch install script (Linux bash, macOS sh, Windows PowerShell), runnable via a single `curl`/`wget` and documented under "how to develop". Clones main, installs dependencies, and states what it will do with an option to abort. Update README.md with one-liner for both local and system-level installs.
-		- `install-dev.bash` + `install-dev.ps1`: clone, check out `dev`, check tooling (offers package-manager install where one is found), verify, print next steps. Documented in README "How to develop" + contributing.md "Your First Code Contribution". Bash installers run on macOS stock bash 3.2.
-
-- ✅ Get original commands and options working. At some point some just kind of broke (pre-git), and were never fixed.
-	- All commands work and are regression-tested; the commit/save/sync/land family takes -m or a positional message, newbr/gobr validate their branch argument.
-
-- ✅ Integrate these rules and ideals: `reference/git.txt` (in this repo), including:
-	- Push hygiene (stash / pull --ff-only / stash apply / add / commit / push) is now the core of pull/saveup/sync; branch workflow lives in newbr/gobr/land.
-	- Work on feature branches
-	- PRs to merge to develop
-	- Commit frequently
-	- Pull frequently, push infrequently
-	- Push hygene:
-
-		~~~bash
-		git stash
-		git pull --ff-only
-		git stash apply
-		git add .
-		git commit -m ""
-		git push
-		~~~
-
-- ✅ Make sure everything done with git:
-	- Every command verifies state first and is idempotent: stash only if dirty (pop only what was pushed), pull only with an upstream, push only if ahead, commit only if changes; main/master detected from origin HEAD, not hardcoded. All covered by the regression tests.
-
-	- Is done safely. E.g. before stashing, verify safely in a robust way that makes no assumptions, that there is anything to pull. `n8git_backup-and-publish` has examples.
-
-	- Never make assumptions about the local and/or repo state. Verify first for every command, whatever is relevant for the command.
-
-	- Everything must be idempotent.
-
-- ✅ Refactor the bash script:
-	- Rewritten 2142 -> ~620 lines on the current template generation (same one as `n8git_backup-and-publish`): strict mode, trap suite, arg parser, minified header trio.
-
-	- ✅ Use newer, easier-to-maintain Bash template/boilerplate/common functions. (E.g. from sister project silkterm.) But even those examples need to be cleaner (don't change anything outside of repo.)
-
-	- ✅ Modernize function and variable naming convention. Be descriptive with names, but not too long. Use of one-letter variables in small loop structures is OK.
-
-	- ✅ Remove dead code.
-		- Dropped the unused ~1400-line generic library (ping, symlink, editor pickers, sudo plumbing, glob-permutation engine, platform detection).
-
-	- ✅ Refactor to maximize usefulness of idiomatic Bash 5 features.
-		- Argument arrays instead of eval (which also retired the curly-quote message mangling), `[[ -v ]]`, parameter transforms, arithmetic conditionals.
-
-- ✅ Work on dev branch. Push releases to main.
-
-	- ✅ `dev` branch created from `main` and pushed; feature branches now merge to `dev`, `main` is release-only.
-
-- ✅ Create PRs rather than pushing directly (for this project).
-	- Feature branches now go up as PRs to `dev` and land via merge commit; direct local merges retired.
-
-- ✅ Delete stale branch from 2020.
-	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
 
 ### Future and/or deferred
 

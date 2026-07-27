@@ -5,28 +5,29 @@
     Safer, state-checked wrappers for everyday git.
 .DESCRIPTION
     PowerShell port of gitsby. Every command verifies the repo state before
-    acting (stash only if dirty, pull only with an upstream, push only if
+    acting (commit only if dirty, pull only with an upstream, push only if
     ahead), so each is idempotent and safe to re-run.
 .PARAMETER Command
-    update | newbr | gobr | status | listbr | clone | connect | sync | pull | commit | land | pr | release
-    (old names saveup/scompul/mkbranch/chbranch/list/spush/spull/scommit/mtm still work)
+    update | sync | status | release, or a grouped noun:
+    repo (clone | create | connect) | br (list | create | switch | land | prune) | pr (create | n | ok n)
 .PARAMETER CommandArg
-    Message (commit/update/sync/land), branch name (newbr/gobr), version (release),
-    PR number / 'ok' (pr), URL (clone), or URL / owner/name (connect).
+    Subcommand of a grouped noun, else: message (update/sync), version (release).
 .PARAMETER CommandArg2
-    PR number ('pr ok <n>'), or target directory (clone).
+    First argument of a grouped subcommand: branch name, message, URL, PR number, title.
+.PARAMETER CommandArg3
+    Target directory for 'repo clone <url> [dir]'.
 .PARAMETER Message
     Commit or merge message (-m/-msg also work; or give it positionally).
 .PARAMETER Quiet
     No prompts; if committing with no message, one is generated.
 .PARAMETER NoFetch
-    Skip the pre-command fetch (offline, or a slow remote).
+    Work offline: skip the pre-command fetch, and the pull.
 .EXAMPLE
     gitsby.ps1 update "fixed the frobnicator"
 .EXAMPLE
-    gitsby.ps1 newbr featx
+    gitsby.ps1 br create featx
 .NOTES
-    History at bottom of script. Copyright © 2026 Jim Collier (ID: 1cv◂‡Vᛦ).
+    History at bottom of script. Copyright © 2014-2026 Jim Collier (ID: 1cv◂‡Vᛦ).
     Licensed under The MIT License (MIT): https://mit-license.org/
     SPDX-License-Identifier: MIT
 #>
@@ -40,11 +41,13 @@ param(
     [Parameter(Position = 0)][string]$Command = '',
     [Parameter(Position = 1)][string]$CommandArg = '',
     [Parameter(Position = 2)][string]$CommandArg2 = '',
+    [Parameter(Position = 3)][string]$CommandArg3 = '',
     [Alias('m', 'msg')][string]$Message = '',
     [Alias('q', 'y', 'yes')][switch]$Quiet,
     [Alias('offline')][switch]$NoFetch,
     [switch]$Public,
     [switch]$Private,
+    [switch]$AnyIdentity,
     [Alias('h')][switch]$Help,
     [Alias('v', 'ver')][switch]$Version
 )
@@ -52,11 +55,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:thisVersion = '2.0.0-beta1'
-$script:thisCopyrightYear = '2026'
+$script:thisVersion = '2.0.0'
+$script:thisCopyrightYear = '2014-2026'
 $script:thisAuthor = 'Jim Collier'
 $script:meName = Split-Path -Leaf -Path $PSCommandPath
 $script:doQuietly = [bool]$Quiet
+$script:noFetch = [bool]$NoFetch
 $script:commitMessage = $Message
 $script:cmdArg = $CommandArg
 $script:wasLastEchoBlank = $false
@@ -66,10 +70,16 @@ $script:wasShownSyntax = $false
 $script:mergeTargetLabel = 'dev/main'  ## for help text, before we know we're in a repo
 $script:defaultBranchCache = ''  ## per-run constants, filled post-fetch
 $script:mergeTargetCache = ''
-$script:repoVisibility = if ($Public -and -not $Private) { 'public' } else { 'private' }  ## for connect's gh-create path
+$script:repoVisibility = if ($Public -and -not $Private) { 'public' } else { 'private' }  ## for 'repo create'
 $script:inRepo = $false
+$script:remoteReachable = $true  ## cleared when the pre-command fetch can't reach origin
 $script:cloneUrl = ''; $script:cloneDir = ''
-$script:connectMode = ''; $script:connectUrl = ''; $script:ghTarget = ''  ## resolved by the connect validation
+$script:connectMode = ''; $script:connectUrl = ''; $script:ghTarget = ''  ## resolved by the repo create/connect validation
+$script:isGhCommand = $false   ## command goes through gh at all -> show whose account that is
+$script:isGhWrite = $false     ## command WRITES through gh -> also compare against the ssh key
+$script:ghLoginCache = ''; $script:sshLoginCache = ''; $script:ghProtocolCache = ''  ## per-run, each costs a round trip
+$script:identityProbeUrl = ''  ## url the ssh identity is read from (existing origin, or the one about to be set)
+$script:pruneLocal = @(); $script:pruneRemote = @(); $script:pruneKeep = @(); $script:pruneTargetRefs = @(); $script:pruneCurrentMerged = ''  ## resolved by the br prune validation
 
 
 #•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
@@ -115,7 +125,7 @@ function Show-About {
     $script:wasShownAbout = $true
     Write-PlainLine ''
     Write-PlainLine 'Safer, state-checked wrappers for everyday git. Every command verifies the'
-    Write-PlainLine 'repo state before acting (stash only if dirty, pull only with an upstream,'
+    Write-PlainLine 'repo state before acting (commit only if dirty, pull only with an upstream,'
     Write-PlainLine 'push only if ahead), so each is idempotent and safe to re-run.'
     Write-PlainLine ''
 }
@@ -125,27 +135,29 @@ function Show-Syntax {
     $script:wasShownSyntax = $true
     Write-PlainLine ''
     Write-PlainLine 'Common commands:'
-    Write-PlainLine '  update [msg] ...: Commit all local changes and pull updates. Do frequently!'
-    Write-PlainLine "  newbr <branch> .: Create a new branch off ${script:mergeTargetLabel} (parks current work first)."
-    Write-PlainLine "  gobr [branch] ..: Switch to a branch (parks current work first). No arg: back to ${script:mergeTargetLabel}."
-    Write-PlainLine '  status .........: Fetch and show current status.'
-    Write-PlainLine '  listbr .........: Fetch and list branches.'
+    Write-PlainLine '  update [msg] .......: Pull updates, then commit all local changes. Do frequently!'
+    Write-PlainLine "  br create <branch> .: Create a new branch off ${script:mergeTargetLabel} (current work is carried or parked)."
+    Write-PlainLine "  br switch [branch] .: Switch to a branch (parks current work first). No arg: back to ${script:mergeTargetLabel}."
+    Write-PlainLine '  br [list] ..........: Fetch and list branches.'
+    Write-PlainLine '  status .............: Fetch and show current status.'
     Write-PlainLine 'One-time setup commands:'
-    Write-PlainLine '  clone <url> ....: Clone a repo you don''t have yet, into [dir] (checks out dev if it has one).'
-    Write-PlainLine '  connect [target]: Connect this directory to a remote and push. ''owner/name'' creates the GitHub repo via gh if needed.'
+    Write-PlainLine '  repo clone <url> ...: Clone a repo you don''t have yet, into [dir] (checks out dev if it has one).'
+    Write-PlainLine '  repo create <o/n> ..: Create GitHub repo ''owner/name'' via gh, then connect this directory and push.'
+    Write-PlainLine '  repo connect [url] .: Connect this directory to an existing empty remote, and push.'
     Write-PlainLine 'Less common commands:'
-    Write-PlainLine '  sync [msg] .....: Commit, pull, and push. Do infrequently.'
-    Write-PlainLine '  pull ...........: Pull only (auto-stashes around it if dirty).'
-    Write-PlainLine '  commit [msg] ...: Commit all local changes (without pull).'
+    Write-PlainLine '  sync [msg] .........: Pull, commit, and push. Do infrequently.'
     Write-PlainLine 'Admin commands, e.g. for small solo projects:'
-    Write-PlainLine "  land [msg] .....: Merge current branch into ${script:mergeTargetLabel} (--no-ff), push, delete it local + remote."
-    Write-PlainLine '  pr [n | ok n] ..: List, review, or accept a pull request (needs gh).'
-    Write-PlainLine '  release [ver] ..: Cut a release: merge dev into main, tag, push. No ver: bump patch.'
+    Write-PlainLine "  br land [msg] ......: Merge current branch into ${script:mergeTargetLabel} (--no-ff), push, delete it local + remote."
+    Write-PlainLine "  br prune ...........: Delete branches already merged into ${script:mergeTargetLabel}, local + remote."
+    Write-PlainLine "  br hotfix <name> ...: Branch off the default branch, to correct what's already published."
+    Write-PlainLine '  pr [create|n|ok n] .: Create, list, review, or accept a pull request (needs gh).'
+    Write-PlainLine '  release [ver] ......: Cut a release: merge dev into main, tag, push. No ver: next after latest tag.'
     Write-PlainLine 'Options:'
     Write-PlainLine '  -m, -Message MSG .....: Commit or merge message (or give it positionally).'
     Write-PlainLine '  -q, -Quiet, -y .......: Assume yes - no prompts; if committing with no message, one is generated.'
-    Write-PlainLine '  -Public / -Private ...: Visibility when connect creates a GitHub repo (default: private).'
-    Write-PlainLine '  -NoFetch .............: Skip the pre-command fetch (offline, or a slow remote).'
+    Write-PlainLine '  -Public / -Private ...: Visibility for the repo ''repo create'' makes (default: private).'
+    Write-PlainLine '  -AnyIdentity .........: Proceed when gh''s account differs from the remote''s ssh key.'
+    Write-PlainLine '  -NoFetch .............: Work offline: skip the pre-command fetch, and the pull.'
     Write-PlainLine '  -h, -Help  /  -v, -Version'
     Write-PlainLine ''
 }
@@ -189,10 +201,58 @@ function Test-GitBranchRemote {
 }
 
 function Test-ProtectedBranch {
-    ## main/master/dev: branches WIP should never be auto-committed to.
-    $cur = Get-CurrentBranch
+    ## main/master/dev: branches WIP should never be auto-committed to, or deleted.
+    ## Takes a branch name; no argument means the current one.
+    param([string]$Branch = '')
+    $cur = if ($Branch) { $Branch } else { Get-CurrentBranch }
     if ($cur -ceq (Get-DefaultBranch)) { return $true }
+    if ($cur -cin 'main', 'master') { return $true }  ## a leftover one isn't ours to touch either
     return (($cur -ceq 'dev') -and ((Test-GitBranchLocal -Branch 'dev') -or (Test-GitBranchRemote -Branch 'dev')))
+}
+
+function Test-MergedInto {
+    ## True when $Ref is already contained in any of $IntoRefs.
+    param([Parameter(Mandatory)][string]$Ref, [Parameter(Mandatory)][string[]]$IntoRefs)
+    foreach ($into in $IntoRefs) {
+        git rev-parse -q --verify "$into" *> $null
+        if ($LASTEXITCODE -ne 0) { continue }
+        git merge-base --is-ancestor "$Ref" "$into" *> $null
+        if ($LASTEXITCODE -eq 0) { return $true }
+    }
+    return $false
+}
+
+function Resolve-PruneList {
+    ## Sorts local branches into what's already landed and what isn't. Ancestry is an exact
+    ## test here only because gitsby always lands with a real merge commit - a squash- or
+    ## rebase-landed branch never looks contained, and is kept rather than guessed at.
+    $target = Get-MergeTarget
+    $targetRemoteRef = "refs/remotes/origin/${target}"
+    if (Test-GitBranchLocal  -Branch $target) { $script:pruneTargetRefs += "refs/heads/${target}" }
+    if (Test-GitBranchRemote -Branch $target) { $script:pruneTargetRefs += $targetRemoteRef }
+    $currentBranch = Get-CurrentBranch
+    foreach ($branch in @(git for-each-ref --format='%(refname:short)' refs/heads/ 2>$null)) {
+        if (-not $branch) { continue }
+        ## The branch we're standing on can't be deleted, and protected ones never are.
+        ## But if it WOULD have qualified, say so - otherwise it just vanishes from every list.
+        if ($branch -ceq $currentBranch) {
+            if ((-not (Test-ProtectedBranch -Branch $branch)) -and ($script:pruneTargetRefs.Count -gt 0) -and (Test-MergedInto -Ref "refs/heads/${branch}" -IntoRefs $script:pruneTargetRefs)) {
+                $script:pruneCurrentMerged = $branch
+            }
+            continue
+        }
+        if (Test-ProtectedBranch -Branch $branch) { continue }
+        if (($script:pruneTargetRefs.Count -gt 0) -and (Test-MergedInto -Ref "refs/heads/${branch}" -IntoRefs $script:pruneTargetRefs)) {
+            $script:pruneLocal += $branch
+            ## The remote copy goes only when origin has the merge too: a landing that hasn't
+            ## been pushed yet leaves origin holding the only ref to that work.
+            if ((Test-GitBranchRemote -Branch $branch) -and (Test-MergedInto -Ref "refs/remotes/origin/${branch}" -IntoRefs @($targetRemoteRef))) {
+                $script:pruneRemote += $branch
+            }
+        } else {
+            $script:pruneKeep += $branch
+        }
+    }
 }
 
 function Test-GitDirty {
@@ -215,6 +275,76 @@ function Get-MergeTarget {
     if ($script:mergeTargetCache) { return $script:mergeTargetCache }
     if ((Test-GitBranchLocal -Branch 'dev') -or (Test-GitBranchRemote -Branch 'dev')) { return 'dev' }
     return (Get-DefaultBranch)
+}
+
+function Test-HotfixBranch {
+    ## A hotfix corrects what is already published, so it targets the default branch instead of dev.
+    ## The 'hotfix/' prefix is the marker: it lives in the ref name, so it survives a clone and is
+    ## visible in a branch listing - unlike branch-local config, which neither is.
+    param([string]$Branch = '')
+    if (-not $Branch) { $Branch = Get-CurrentBranch }
+    return $Branch.StartsWith('hotfix/')
+}
+
+function Get-BranchTarget {
+    ## Where THIS branch lands, which is not always where new feature branches come from.
+    ## Get-MergeTarget stays the answer for 'br create' (always dev when there is one); this is the
+    ## answer for landing, and for what a pull request should be based on.
+    param([string]$Branch = '')
+    if (-not $Branch) { $Branch = Get-CurrentBranch }
+    if (Test-HotfixBranch -Branch $Branch) { return (Get-DefaultBranch) }
+    return (Get-MergeTarget)
+}
+
+function Get-BackMergeRef {
+    ## What the back-merge actually merges. 'pr ok' lands the hotfix on the server, so the LOCAL
+    ## default branch never sees it and merging that is a silent no-op; the fetched remote-tracking
+    ## ref is the one holding it. After 'br land' the two are the same commit, so this is right
+    ## either way - and falls back to the local branch when there's no remote at all.
+    $mainBranch = Get-DefaultBranch
+    git rev-parse --verify --quiet "refs/remotes/origin/${mainBranch}" *> $null
+    if ($LASTEXITCODE -eq 0) { return "origin/${mainBranch}" }
+    return $mainBranch
+}
+
+function Invoke-BackMergeToDev {
+    ## After a hotfix lands on the default branch, dev has to receive it. Skipping this is how the
+    ## next release conflicts on the same file, or quietly reinstates the text the hotfix replaced.
+    ## A conflict here is raw-git territory: abort so the tree is left clean, and say so plainly.
+    $mainBranch = Get-DefaultBranch
+    $devBranch = Get-MergeTarget
+    if ($devBranch -ceq $mainBranch) { return }   ## no dev in this repo: nothing to carry back
+    if (-not ((Test-GitBranchLocal -Branch $devBranch) -or (Test-GitBranchRemote -Branch $devBranch))) { return }
+    $mergeRef = Get-BackMergeRef
+    Write-PlainLine ''
+    Invoke-Git -GitArgs @('checkout', $devBranch)
+    Invoke-GitsbyPullIfOnline
+    Write-StatusLine "git merge ${mergeRef} ..."
+    git merge $mergeRef -m "Merge ${mainBranch}"
+    if ($LASTEXITCODE -eq 0) {
+        Clear-BlankCounter
+        if (Test-GitOrigin) {
+            if (Test-GitUpstream) { Invoke-Git -GitArgs @('push') } else { Invoke-Git -GitArgs @('push', '-u', 'origin', 'HEAD') }
+        }
+    } else {
+        git merge --abort 2>$null
+        Clear-BlankCounter
+        Write-StatusLine "WARNING: '${mainBranch}' would not merge cleanly into '${devBranch}'; left '${devBranch}' untouched."
+        Write-PlainLine "  The hotfix landed on '${mainBranch}' - that part is done."
+        Write-PlainLine "  Carry it across by hand: git checkout ${devBranch} && git merge ${mergeRef}"
+    }
+}
+
+function Show-HotfixBinWarning {
+    ## A hotfix that changes shipped code leaves the default branch carrying something no tag
+    ## contains, so the latest release's assets stop matching it. Documentation does not.
+    param([Parameter(Mandatory)][string]$WorkBranch, [Parameter(Mandatory)][string]$TargetBranch)
+    $changed = @(git diff --name-only "${TargetBranch}...${WorkBranch}" -- bin/ 2>$null)
+    if ($changed.Count -eq 0) { return }
+    Write-PlainLine ''
+    Write-StatusLine 'NOTE: this hotfix changes shipped code, not just documentation.'
+    Write-PlainLine "  '${TargetBranch}' will carry code that no tag contains, so the latest release's"
+    Write-PlainLine "  downloads no longer match it. Cut a patch release when you're ready: ${script:meName} release"
 }
 
 function Get-BranchSync {
@@ -258,6 +388,83 @@ function Get-SshTarget {
     return ''
 }
 
+function Get-SshConnectTarget {
+    ## '[user@]host' to actually connect to, so an explicit user in the remote URL is honored.
+    ## Get-SshTarget deliberately returns the bare host - that's what 'ssh -G' wants for display.
+    param([string]$Url)
+    $sshHost = Get-SshTarget -Url $Url
+    if (-not $sshHost) { return '' }
+    if ($Url -match '^ssh://([^@/]+)@') { return '{0}@{1}' -f $Matches[1], $sshHost }
+    if ($Url -match '^([^@/]+)@[^/:]+:') { return '{0}@{1}' -f $Matches[1], $sshHost }
+    return $sshHost
+}
+
+function Get-GhLogin {
+    ## The account gh's token belongs to. gh talks to the API over https and never consults
+    ## ssh config, so this is who every gh-backed command acts as - regardless of which key
+    ## git pushes with. '?' when gh can't say (missing, logged out, offline).
+    if (-not $script:ghLoginCache) {
+        $script:ghLoginCache = '?'
+        if (Get-Command -Name gh -ErrorAction SilentlyContinue) {
+            ## @() first: piping a native command into Select-Object -First stops it early,
+            ## leaving $LASTEXITCODE stale (or unset), so success can't be read from it afterward.
+            $out = @()
+            ## Same as the Bash side: never let gh stop and prompt for anything mid-command.
+            $origGhPrompt = $env:GH_PROMPT_DISABLED
+            $env:GH_PROMPT_DISABLED = '1'
+            try { $out = @(gh api user --jq .login 2>$null) } catch { $out = @() } finally {
+                if ($null -eq $origGhPrompt) { Remove-Item -Path Env:GH_PROMPT_DISABLED -ErrorAction SilentlyContinue } else { $env:GH_PROMPT_DISABLED = $origGhPrompt }
+            }
+            if ($LASTEXITCODE -eq 0 -and $out.Count -gt 0) { $script:ghLoginCache = ([string]$out[0]).Trim() }
+        }
+    }
+    return $script:ghLoginCache
+}
+
+function Get-GhProtocol {
+    ## Which transport gh hands to git for github.com ('ssh' or 'https'). Host-specific, not the
+    ## global default - they can disagree, and the host one is what github.com operations use.
+    if (-not $script:ghProtocolCache) {
+        $script:ghProtocolCache = 'https'
+        if (Get-Command -Name gh -ErrorAction SilentlyContinue) {
+            $out = @()
+            try { $out = @(gh config get -h github.com git_protocol 2>$null) } catch { $out = @() }
+            if ($out.Count -gt 0 -and ([string]$out[0]).Trim() -eq 'ssh') { $script:ghProtocolCache = 'ssh' }
+        }
+    }
+    return $script:ghProtocolCache
+}
+
+function Get-SshLogin {
+    ## The account this remote's ssh key authenticates as. GitHub answers 'Hi <user>!' and always
+    ## exits 1, so parse the greeting, not the status. BatchMode + a connect timeout: never prompt,
+    ## never hang. '?' for https/local remotes, no agent, or anything else unresolvable - and a
+    ## deploy key answers with a repo name, which simply won't match any login. Unknown is not wrong.
+    param([string]$RemoteUrl)
+    if (-not $script:sshLoginCache) {
+        $script:sshLoginCache = '?'
+        $target = Get-SshConnectTarget -Url $RemoteUrl
+        if ($target -and (Get-Command -Name ssh -ErrorAction SilentlyContinue)) {
+            $greeting = ''
+            try { $greeting = (ssh -T -o BatchMode=yes -o ConnectTimeout=3 -- $target 2>&1 | Out-String) } catch { $greeting = '' }
+            ## Anchored per line ((?m)), because the greeting is not necessarily the first one: we
+            ## capture stderr too, and ssh puts 'Warning: Permanently added ...' or 'Warning:
+            ## Identity file ... not accessible' ahead of it. Unanchored would match mid-line text.
+            if ($greeting -match '(?m)^Hi ([A-Za-z0-9_.:/-]+)!') { $script:sshLoginCache = $Matches[1] }
+        }
+    }
+    return $script:sshLoginCache
+}
+
+function Get-IdentityMismatch {
+    ## Returns why the two identities disagree, or ''. Only a mismatch both sides KNOW about
+    ## counts: '?' on either side means we couldn't tell, which is not the same as being wrong.
+    param([string]$GhLogin = '?', [string]$SshLogin = '?')
+    if ($GhLogin -eq '?' -or $SshLogin -eq '?') { return '' }
+    if ($GhLogin -eq $SshLogin) { return '' }
+    return "gh acts as '${GhLogin}', but this remote's key authenticates as '${SshLogin}'."
+}
+
 function Get-RemoteProbe {
     ## One network round-trip: does the remote exist, and does it have history?
     ## Returns missing | empty | nonempty. No auth prompts - a bad https URL would
@@ -286,13 +493,16 @@ function Get-ReleaseVersion {
             throw "'${ver}' is not a version (want X.Y.Z, optional -suffix). Syntax: ${script:meName} release [version]"
         }
     } else {
-        $latest = @(git tag --list 'v[0-9]*' --sort=-v:refname 2>$null) | Select-Object -First 1
-        if ($latest) {
-            $plain = (([string]$latest) -replace '^v', '') -replace '-.*$', ''
-            $parts = @($plain -split '\.') + @('0', '0')  ## pad short tags like v1.2 or v2020
-            $ver = '{0}.{1}.{2}' -f $parts[0], $parts[1], ([int]$parts[2] + 1)
-        } else {
-            $ver = '0.1.0'  ## first release ever
+        $ver = '0.1.0'  ## first release ever, or an unreadable tag
+        ## versionsort.suffix=- ranks v2.0.0 above its own v2.0.0-rc1; the default sort inverts them.
+        $latest = @(git -c versionsort.suffix=- tag --list 'v[0-9]*' --sort=-v:refname 2>$null) | Select-Object -First 1
+        if ([string]$latest -match '^v?([0-9]+)(\.([0-9]+))?(\.([0-9]+))?(.*)$') {
+            $maj = $Matches[1]
+            $min = if ($Matches[3]) { $Matches[3] } else { '0' }  ## pad short tags like v1.2 or v2020
+            $pat = if ($Matches[5]) { [int]$Matches[5] } else { 0 }
+            ## A candidate's own version is what comes next: v2.0.0-rc1 -> v2.0.0, not v2.0.1.
+            if (-not $Matches[6]) { $pat += 1 }
+            $ver = "${maj}.${min}.${pat}"
         }
     }
     return "v${ver}"
@@ -384,6 +594,22 @@ function Show-Identity {
         }
     }
     Write-PlainLine "Author .......: $(Get-CommitIdentity)"
+    ## gh-backed commands act as gh's account, not the ssh key's - so name it where it applies.
+    if ($script:isGhCommand) {
+        $ghLogin = Get-GhLogin
+        $ghLine = $ghLogin
+        if ($ghLogin -eq '?') { $ghLine = '(unknown - gh not logged in, or offline)' }
+        ## The ssh comparison costs a round trip, so only the commands that write through gh pay it.
+        if ($script:isGhWrite) {
+            $sshLogin = Get-SshLogin -RemoteUrl $script:identityProbeUrl
+            if (Get-IdentityMismatch -GhLogin $ghLogin -SshLogin $sshLogin) {
+                $ghLine += "  <-- NOT the ssh key's account ('${sshLogin}')"
+            } elseif ($sshLogin -eq '?') {
+                $ghLine += ' (no ssh identity to compare)'
+            }
+        }
+        Write-PlainLine "GitHub (gh) ..: ${ghLine}"
+    }
 }
 
 function Show-RepoStatus {
@@ -406,6 +632,8 @@ function Show-RepoStatus {
 
 function Show-CommandPreview {
     ## Static per-command recipe; the command functions do the real state checks at run time.
+    ## 'commit' and 'pull' are no longer commands of their own - they stay here as the
+    ## fragments update/sync/br-* compose their own plans from.
     param([Parameter(Mandatory)][string]$CommandName)
     $pad = '    '
     $msgDisp = 'git commit'
@@ -421,8 +649,8 @@ function Show-CommandPreview {
             break
         }
         'update' {
-            Show-CommandPreview -CommandName 'commit'
             Show-CommandPreview -CommandName 'pull'
+            Show-CommandPreview -CommandName 'commit'
             break
         }
         'sync' {
@@ -430,38 +658,74 @@ function Show-CommandPreview {
             Write-PlainLine "${pad}git push (branch '$(Get-CurrentBranch)') *"
             break
         }
-        'newbr' {
-            Show-CommandPreview -CommandName 'sync'
-            Write-PlainLine "${pad}git checkout $(Get-MergeTarget) *"
-            Write-PlainLine "${pad}git pull --ff-only *"
+        'br-create' {
+            ## From main/dev the dirty tree rides along to the new branch, so there's no commit here.
+            if (Test-ProtectedBranch) {
+                Write-PlainLine "${pad}git checkout $(Get-MergeTarget) *"
+                Write-PlainLine "${pad}git pull --ff-only --autostash *"
+            } else {
+                Show-CommandPreview -CommandName 'sync'
+                Write-PlainLine "${pad}git checkout $(Get-MergeTarget) *"
+                Write-PlainLine "${pad}git pull --ff-only *"
+            }
             Write-PlainLine "${pad}git checkout -b $($script:cmdArg)"
             Write-PlainLine "${pad}git push -u origin $($script:cmdArg) *"
             break
         }
-        'gobr' {
+        'br-hotfix' {
+            ## Off the default branch, not dev: this corrects what is already published.
+            if (Test-ProtectedBranch) {
+                Write-PlainLine "${pad}git checkout $(Get-DefaultBranch) *"
+                Write-PlainLine "${pad}git pull --ff-only --autostash *"
+            } else {
+                Show-CommandPreview -CommandName 'sync'
+                Write-PlainLine "${pad}git checkout $(Get-DefaultBranch) *"
+                Write-PlainLine "${pad}git pull --ff-only *"
+            }
+            Write-PlainLine "${pad}git checkout -b $($script:cmdArg)"
+            Write-PlainLine "${pad}git push -u origin $($script:cmdArg) *"
+            break
+        }
+        'br-switch' {
             Show-CommandPreview -CommandName 'sync'
             $target = if ($script:cmdArg) { $script:cmdArg } else { Get-MergeTarget }
             Write-PlainLine "${pad}git checkout ${target}"
             Write-PlainLine "${pad}git pull --ff-only *"
             break
         }
-        'land' {
+        'br-land' {
             Show-CommandPreview -CommandName 'sync'
-            Write-PlainLine "${pad}git checkout $(Get-MergeTarget)"
+            Write-PlainLine "${pad}git checkout $(Get-BranchTarget)"
             Write-PlainLine "${pad}git pull --ff-only *"
             Write-PlainLine "${pad}git merge --no-ff $(Get-CurrentBranch)"
             Write-PlainLine "${pad}git push *"
             Write-PlainLine "${pad}git branch -d $(Get-CurrentBranch)"
             Write-PlainLine "${pad}git push origin --delete $(Get-CurrentBranch) *"
             Write-PlainLine "${pad}git pull --ff-only *"
+            ## A hotfix owes dev the same change, or the next release undoes it.
+            if (Test-HotfixBranch) {
+                Write-PlainLine "${pad}git checkout $(Get-MergeTarget)"
+                Write-PlainLine "${pad}git merge $(Get-BackMergeRef)"
+                Write-PlainLine "${pad}git push *"
+            }
             break
         }
-        'clone' {
+        'br-prune' {
+            ## -D is what runs, so -D is what the plan says. The line above it is the reason
+            ## that's safe: gitsby checked containment itself, against the branch that matters.
+            Write-PlainLine "${pad}(each verified contained in $(Get-MergeTarget), and re-checked at delete time)"
+            foreach ($branch in $script:pruneLocal)  { Write-PlainLine "${pad}git branch -D ${branch}" }
+            foreach ($branch in $script:pruneRemote) { Write-PlainLine "${pad}git push origin --delete ${branch}" }
+            if ($script:pruneCurrentMerged) { Write-PlainLine "${pad}Keeping '$($script:pruneCurrentMerged)' - merged, but it's the current branch." }
+            if ($script:pruneKeep.Count -gt 0) { Write-PlainLine "${pad}Keeping (not merged yet): $($script:pruneKeep -join ', ')" }
+            break
+        }
+        'repo-clone' {
             Write-PlainLine "${pad}git clone $(Get-MaskedUrl -Url $script:cloneUrl) $($script:cloneDir)"
             Write-PlainLine "${pad}git -C $($script:cloneDir) checkout dev *"
             break
         }
-        'connect' {
+        { $_ -in 'repo-create', 'repo-connect' } {
             if (-not $script:inRepo) { Write-PlainLine "${pad}git init -b main" }
             Show-CommandPreview -CommandName 'commit'
             switch ($script:connectMode) {
@@ -482,9 +746,20 @@ function Show-CommandPreview {
             break
         }
         'pr' {
-            Write-PlainLine "${pad}gh pr review $($script:prNum) --approve *"
-            Write-PlainLine "${pad}gh pr merge $($script:prNum) --merge --delete-branch"
-            Write-PlainLine "${pad}git pull --ff-only *"
+            if ($script:prSub -eq 'create') {
+                Show-CommandPreview -CommandName 'sync'
+                Write-PlainLine "${pad}gh pr create --base $(Get-BranchTarget) --title `"$($script:prTitle)`""
+            } else {
+                Write-PlainLine "${pad}gh pr review $($script:prNum) --approve *"
+                Write-PlainLine "${pad}gh pr merge $($script:prNum) --merge --delete-branch"
+                Write-PlainLine "${pad}git checkout $(Get-BranchTarget -Branch $script:prHeadBranch) *"
+                Write-PlainLine "${pad}git pull --ff-only *"
+                if (Test-HotfixBranch -Branch $script:prHeadBranch) {
+                    Write-PlainLine "${pad}git checkout $(Get-MergeTarget)"
+                    Write-PlainLine "${pad}git merge $(Get-BackMergeRef)"
+                    Write-PlainLine "${pad}git push *"
+                }
+            }
             break
         }
         'release' {
@@ -531,16 +806,35 @@ function Invoke-GitsbyCommit {
 function Invoke-GitsbyPull {
     ## --autostash instead of a manual stash push/pop: a failed pull (diverged, offline)
     ## leaves the tree intact instead of stranding work in the stash.
-    if (Test-GitUpstream) {
+    ## Skipping beats failing when the remote is simply out of reach: update is the only
+    ## way to commit, so being offline must not turn a good commit into a failed command.
+    ## A reachable remote that can't fast-forward is a real problem and still fails hard.
+    if ($script:noFetch) {
+        Write-StatusLine 'Skipping the pull (-NoFetch).'
+    } elseif (-not $script:remoteReachable) {
+        Write-StatusLine 'WARNING: remote unreachable; skipping the pull. Local changes still get committed.'
+    } elseif (Test-GitUpstream) {
         Invoke-Git -GitArgs @('pull', '--ff-only', '--autostash')
     } else {
         Write-StatusLine 'No upstream configured for this branch; nothing to pull.'
     }
 }
 
+function Invoke-GitsbyPullIfOnline {
+    ## The pull inside a multi-step command. Same offline rule as Invoke-GitsbyPull, quietly:
+    ## -NoFetch and an unreachable remote both mean skip. Extra arguments go through to git pull.
+    param([string[]]$ExtraArgs = @())
+    if ($script:noFetch -or -not $script:remoteReachable -or -not (Test-GitUpstream)) { return }
+    Invoke-Git -GitArgs (@('pull', '--ff-only') + $ExtraArgs)
+}
+
 function Invoke-GitsbyCommitPull {
-    Invoke-GitsbyCommit
+    ## Pull BEFORE committing. Committing first mints a local commit, so a remote that merely
+    ## moved ahead is now diverged and --ff-only refuses - which is the everyday case, not an
+    ## edge one. Pulling first fast-forwards (the dirty tree rides over on --autostash) and the
+    ## commit lands on top, so history stays linear and --ff-only stays satisfiable.
     Invoke-GitsbyPull
+    Invoke-GitsbyCommit
 }
 
 function Invoke-GitsbyPush {
@@ -563,11 +857,29 @@ function Invoke-GitsbyMakeBranch {
     if (Test-ProtectedBranch) {
         ## Don't commit WIP to main/dev; a dirty tree survives checkout -b, so carry it to the new branch.
         if ((Get-CurrentBranch) -cne $baseBranch) { Invoke-Git -GitArgs @('checkout', $baseBranch) }
-        if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only', '--autostash') }
+        Invoke-GitsbyPullIfOnline -ExtraArgs @('--autostash')
     } else {
         Invoke-GitsbyPush  ## park current work safely first
         Invoke-Git -GitArgs @('checkout', $baseBranch)
-        if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
+        Invoke-GitsbyPullIfOnline
+    }
+    Invoke-Git -GitArgs @('checkout', '-b', $NewBranch)
+    if (Test-GitOrigin) { Invoke-Git -GitArgs @('push', '-u', 'origin', $NewBranch) }
+}
+
+function Invoke-GitsbyHotfix {
+    ## A branch off the default branch, for correcting what is already published. Feature work
+    ## still goes through dev; this exists because the default branch is what the world reads.
+    param([string]$NewBranch = '')
+    $baseBranch = Get-DefaultBranch
+    if (Test-ProtectedBranch) {
+        ## Same rule as br create: don't commit work-in-progress to a protected branch, carry it.
+        if ((Get-CurrentBranch) -cne $baseBranch) { Invoke-Git -GitArgs @('checkout', $baseBranch) }
+        Invoke-GitsbyPullIfOnline -ExtraArgs @('--autostash')
+    } else {
+        Invoke-GitsbyPush  ## park current work safely first
+        Invoke-Git -GitArgs @('checkout', $baseBranch)
+        Invoke-GitsbyPullIfOnline
     }
     Invoke-Git -GitArgs @('checkout', '-b', $NewBranch)
     if (Test-GitOrigin) { Invoke-Git -GitArgs @('push', '-u', 'origin', $NewBranch) }
@@ -578,28 +890,31 @@ function Invoke-GitsbyChangeBranch {
     if (-not $TargetBranch) { $TargetBranch = Get-MergeTarget }
     if ((Get-CurrentBranch) -ceq $TargetBranch) {  ## -ceq: branch names are case-sensitive
         Write-StatusLine "Already on '${TargetBranch}'."
-        if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
+        Invoke-GitsbyPullIfOnline
         return
     }
-    if ((Test-ProtectedBranch) -and (Test-GitDirty)) {
-        throw "Working tree has changes on '$(Get-CurrentBranch)'; won't auto-commit to a protected branch. Carry them to a new branch (${script:meName} newbr <name>), or commit deliberately (${script:meName} commit) first."
-    }
+    ## The dirty-protected-branch refusal happens up front in the entry point, before the plan is shown.
     Invoke-GitsbyPush  ## park current work safely first
     Invoke-Git -GitArgs @('checkout', $TargetBranch)  ## auto-creates a tracking branch if it only exists on origin
-    if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
+    Invoke-GitsbyPullIfOnline
 }
 
 function Invoke-GitsbyLand {
     ## Merges the current branch into dev (or main/master) - backwards from 'git merge', but saves a step.
-    $targetBranch = Get-MergeTarget
     $workBranch = Get-CurrentBranch
-    if ($workBranch -ceq $targetBranch) { throw "Already on '${targetBranch}'. Run this from the branch to merge in: ${script:meName} gobr <branch>, then ${script:meName} land" }
+    $targetBranch = Get-BranchTarget -Branch $workBranch
+    if ($workBranch -ceq $targetBranch) { throw "Already on '${targetBranch}'. Run this from the branch to merge in: ${script:meName} br switch <branch>, then ${script:meName} br land" }
     if ($workBranch -ceq (Get-DefaultBranch)) { throw "'${workBranch}' is the default branch; landing it on '${targetBranch}' is backwards. To cut a release: ${script:meName} release" }
     $mergeMessage = $script:commitMessage
     if (-not $mergeMessage) { $mergeMessage = "Merge ${workBranch}" }
+    $wasHotfix = Test-HotfixBranch -Branch $workBranch
     Invoke-GitsbyPush
+    ## After the push, not before: the warning reads the branch tip, and uncommitted work
+    ## only becomes part of it here. Checking first missed a hotfix whose bin/ edit was
+    ## still in the working tree - the ordinary way of doing one.
+    if ($wasHotfix) { Show-HotfixBinWarning -WorkBranch $workBranch -TargetBranch $targetBranch }
     Invoke-Git -GitArgs @('checkout', $targetBranch)
-    if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
+    Invoke-GitsbyPullIfOnline
     Invoke-Git -GitArgs @('merge', '--no-ff', $workBranch, '-m', $mergeMessage)
     ## The merge must reach origin before the remote work branch goes away, or origin
     ## loses its only ref to those commits. Publish an upstream-less target first.
@@ -615,7 +930,52 @@ function Invoke-GitsbyLand {
         if ($LASTEXITCODE -ne 0) { Write-StatusLine "WARNING: couldn't delete the remote branch (already gone?); continuing." }
         Clear-BlankCounter
     }
-    if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
+    Invoke-GitsbyPullIfOnline
+    ## The hotfix now has to reach dev too, or the next release undoes it.
+    if ($wasHotfix) { Invoke-BackMergeToDev }
+}
+
+function Invoke-GitsbyPrune {
+    ## Deletes exactly what the plan listed - Resolve-PruneList did all the deciding, up front.
+    $doneLocal = 0
+    $doneRemote = 0
+    $reKept = @()
+    foreach ($branch in $script:pruneLocal) {
+        ## -D with our own gate, not -d. 'git branch -d' asks whether the branch is contained in
+        ## its upstream, or in HEAD when it has none - neither of which is the question here, and
+        ## the second one refuses a genuinely-merged local-only branch from any other branch.
+        ## Re-checked right now rather than trusting the plan: the prompt may have sat a while.
+        if (-not (Test-MergedInto -Ref "refs/heads/${branch}" -IntoRefs $script:pruneTargetRefs)) {
+            Write-StatusLine "'${branch}' is no longer contained in $(Get-MergeTarget); leaving it alone."
+            $reKept += $branch
+            continue
+        }
+        Invoke-Git -GitArgs @('branch', '-D', $branch)
+        $doneLocal++
+    }
+    foreach ($branch in $script:pruneRemote) {
+        ## "Leaving it alone" has to mean the remote copy too, or the message is a lie.
+        if ($branch -cin $reKept) { continue }
+        ## Non-fatal, same as br land: someone else may have deleted it already.
+        Write-PlainLine ''
+        Write-StatusLine "git push origin --delete ${branch} ..."
+        git push origin --delete "$branch"
+        if ($LASTEXITCODE -ne 0) {
+            Write-StatusLine "WARNING: couldn't delete origin/${branch} (already gone?); continuing."
+        } else {
+            $doneRemote++
+        }
+        Clear-BlankCounter
+    }
+    ## Close with the count, so a wall of git output still ends in a plain answer.
+    Write-PlainLine ''
+    Write-StatusLine "Pruned ${doneLocal} local, ${doneRemote} on origin."
+    if ($script:pruneCurrentMerged) {
+        Write-StatusLine "Kept '$($script:pruneCurrentMerged)' - merged, but it's the current branch."
+    }
+    if ($script:pruneKeep.Count -gt 0) {
+        Write-StatusLine "Kept $($script:pruneKeep -join ', ') - not merged into $(Get-MergeTarget) yet."
+    }
 }
 
 function Invoke-GitsbyClone {
@@ -625,6 +985,7 @@ function Invoke-GitsbyClone {
     if ($LASTEXITCODE -eq 0) { Invoke-Git -GitArgs @('-C', $script:cloneDir, 'checkout', 'dev') }
 }
 
+## Serves both 'repo create' and 'repo connect'; connectMode is what they disagree about.
 function Invoke-GitsbyConnect {
     if (-not $script:inRepo) { Invoke-Git -GitArgs @('init', '-b', 'main') }
     Invoke-GitsbyCommit  ## publish everything as-is; no-op when clean
@@ -672,8 +1033,25 @@ function Invoke-GitsbyPrView {
     Clear-BlankCounter
 }
 
+function Invoke-GitsbyPrCreate {
+    ## GitHub can only diff what origin has, so park the work first - same as br land and release do.
+    param([Parameter(Mandatory)][string]$Title)
+    Invoke-GitsbyPush
+    $base = Get-BranchTarget
+    $head = Get-CurrentBranch
+    Write-PlainLine ''
+    Write-StatusLine "gh pr create --base ${base} --title `"${Title}`" ..."
+    gh pr create --base "$base" --head "$head" --title "$Title" --body ''
+    if ($LASTEXITCODE -ne 0) { throw "gh pr create failed (exit ${LASTEXITCODE})." }
+    Clear-BlankCounter
+}
+
 function Invoke-GitsbyPrAccept {
     param([Parameter(Mandatory)][string]$PrNumber)
+    ## Resolve both before gh deletes the branch out from under us, and off the PR's own head
+    ## branch (resolved up front) rather than the current one - they need not be the same.
+    $prTargetBranch = Get-BranchTarget -Branch $script:prHeadBranch
+    $wasHotfixPr = Test-HotfixBranch -Branch $script:prHeadBranch
     Write-PlainLine ''
     Write-StatusLine "gh pr review ${PrNumber} --approve ..."
     ## Best-effort: gh refuses to approve your own PR; merging is the part that matters.
@@ -685,7 +1063,14 @@ function Invoke-GitsbyPrAccept {
     gh pr merge $PrNumber --merge --delete-branch
     if ($LASTEXITCODE -ne 0) { throw "gh pr merge failed (exit ${LASTEXITCODE})." }
     Clear-BlankCounter
-    if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
+    ## gh deletes the PR's branch on the remote but leaves our origin/* copy behind, so an
+    ## upstream still looks present. Prune first; if ours is the branch that just went away,
+    ## pulling it can only fail - land on the merge target instead.
+    git fetch --quiet --prune 2>$null
+    if (-not (Test-GitUpstream)) { Invoke-Git -GitArgs @('checkout', $prTargetBranch) }
+    Invoke-GitsbyPullIfOnline
+    ## Same rule as land: a hotfix that reached the default branch still owes dev a merge.
+    if ($wasHotfixPr) { Invoke-BackMergeToDev }
 }
 
 function Invoke-GitsbyRelease {
@@ -693,24 +1078,24 @@ function Invoke-GitsbyRelease {
     $mainBranch = Get-DefaultBranch
     $devBranch = ''
     if ((Test-GitBranchLocal -Branch 'dev') -or (Test-GitBranchRemote -Branch 'dev')) { $devBranch = 'dev' }
-    git rev-parse -q --verify "refs/tags/$($script:releaseTag)" *> $null
-    if ($LASTEXITCODE -eq 0) { throw "Tag '$($script:releaseTag)' already exists." }
     $startBranch = Get-CurrentBranch
     Invoke-GitsbyPush  ## park current work safely first
     if ($devBranch -and ((Get-CurrentBranch) -cne $devBranch)) {
         Invoke-Git -GitArgs @('checkout', $devBranch)  ## freshen dev so the release has all of it
-        if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
+        Invoke-GitsbyPullIfOnline
     }
     if ((Get-CurrentBranch) -cne $mainBranch) { Invoke-Git -GitArgs @('checkout', $mainBranch) }
-    if (Test-GitUpstream) { Invoke-Git -GitArgs @('pull', '--ff-only') }
+    Invoke-GitsbyPullIfOnline
     if ($devBranch) {
         $mergeMessage = $script:commitMessage
         if (-not $mergeMessage) { $mergeMessage = "Release $($script:releaseTag)" }
         Invoke-Git -GitArgs @('merge', '--no-ff', $devBranch, '-m', $mergeMessage)
     }
     Invoke-Git -GitArgs @('tag', '-a', $script:releaseTag, '-m', $script:releaseTag)
+    ## The branch has to reach origin, not just the tag - otherwise origin gets the commits
+    ## as tag payload while its main still points at the old release. Same trap as land's.
     if (Test-GitOrigin) {
-        if (Test-GitUpstream) { Invoke-Git -GitArgs @('push') }
+        if (Test-GitUpstream) { Invoke-Git -GitArgs @('push') } else { Invoke-Git -GitArgs @('push', '-u', 'origin', 'HEAD') }
         Invoke-Git -GitArgs @('push', 'origin', $script:releaseTag)
     }
     ## Fast-forward dev to include the release merge and tag, so dev isn't left a commit behind.
@@ -752,35 +1137,59 @@ try {
     if ($Command -match '^--?[^ -]') { throw "Unexpected option in this context: '${Command}'." }
     if ($CommandArg -match '^--$|^--?[^ -]') { throw "Unexpected option in this context: '${CommandArg}'." }
     if ($CommandArg2 -match '^--$|^--?[^ -]') { throw "Unexpected option in this context: '${CommandArg2}'." }
+    if ($CommandArg3 -match '^--$|^--?[^ -]') { throw "Unexpected option in this context: '${CommandArg3}'." }
 
-    ## Old command names still work as hidden aliases (muscle memory), but stay out of the help.
+    ## Grouped commands are '<noun> <verb> [args]'. Collapse each pair to one internal token and
+    ## shift the positionals down, so everything downstream still deals with a single flat name.
+    ## No real command has a hyphen, so rejecting one keeps the internal tokens from being typeable.
     $cmdName = $Command.ToLowerInvariant()
-    $cmdName = switch ($cmdName) {
-        'scommit' { 'commit'; break }
-        'spull' { 'pull'; break }
-        'scompul' { 'update'; break }
-        'saveup' { 'update'; break }
-        'spush' { 'sync'; break }
-        'mkbranch' { 'newbr'; break }
-        'chbranch' { 'gobr'; break }
-        'mtm' { 'land'; break }
-        'list' { 'listbr'; break }
-        default { $cmdName }
+    if ($cmdName -like '*-*') { throw "Unknown command '${cmdName}'. Run '$($script:meName)' with no arguments for a list." }
+    if ($cmdName -in 'repo', 'repository') {
+        $cmdName = switch ($CommandArg.ToLowerInvariant()) {
+            'clone' { 'repo-clone'; break }
+            { $_ -in 'create', 'new' } { 'repo-create'; break }
+            'connect' { 'repo-connect'; break }
+            '' { throw "Syntax: $($script:meName) repo <clone <url> [dir] | create <owner/name> | connect [url]>" }
+            default { throw "Unknown 'repo' subcommand '${CommandArg}'. One of: clone, create, connect." }
+        }
+        $CommandArg = $CommandArg2; $CommandArg2 = $CommandArg3; $CommandArg3 = ''
+    } elseif ($cmdName -in 'br', 'branch') {
+        $cmdName = switch ($CommandArg.ToLowerInvariant()) {
+            { $_ -in '', 'list' } { 'br-list'; break }
+            { $_ -in 'create', 'new' } { 'br-create'; break }
+            'hotfix' { 'br-hotfix'; break }
+            { $_ -in 'switch', 'go' } { 'br-switch'; break }
+            'land' { 'br-land'; break }
+            { $_ -in 'prune', 'clean' } { 'br-prune'; break }
+            default { throw "Unknown 'br' subcommand '${CommandArg}'. One of: list, create, hotfix, switch, land, prune." }
+        }
+        $CommandArg = $CommandArg2; $CommandArg2 = $CommandArg3; $CommandArg3 = ''
     }
+    $script:cmdArg = $CommandArg  ## the preview reads this; re-point it after the shift
 
     ## Sort commands, and route positional arg 2 (message vs branch name; -m wins for messages).
     $isMutating = $true
     switch ($cmdName) {
-        { $_ -in 'status', 'listbr' } { $isMutating = $false; break }
-        'pr' { if ($CommandArg.ToLowerInvariant() -ne 'ok') { $isMutating = $false }; break }
-        { $_ -in 'commit', 'update', 'sync', 'land' } {
+        { $_ -in 'status', 'br-list' } { $isMutating = $false; break }
+        'pr' { if ($CommandArg.ToLowerInvariant() -notin 'ok', 'create', 'new') { $isMutating = $false }; break }
+        { $_ -in 'update', 'sync', 'br-land' } {
             if (-not $script:commitMessage) { $script:commitMessage = $CommandArg }
             if ($CommandArg2) { throw "Unexpected extra argument '${CommandArg2}'; quote your commit message." }
             break
         }
-        { $_ -in 'pull', 'newbr', 'gobr', 'release', 'clone', 'connect' } { break }
+        'repo-clone' { break }  ## the only one with a second argument of its own (the target directory)
+        'br-prune' {
+            ## Takes nothing: what it deletes is decided by repo state, never by a name on the command line.
+            if ($CommandArg) { throw "'$($script:meName) br prune' takes no arguments (got '${CommandArg}'); it prunes every branch already merged." }
+            break
+        }
+        { $_ -in 'br-create', 'br-hotfix', 'br-switch', 'release', 'repo-create', 'repo-connect' } {
+            if ($CommandArg2) { throw "Unexpected extra argument '${CommandArg2}'." }
+            break
+        }
         default { throw "Unknown command '${cmdName}'. Run '${script:meName}' with no arguments for a list." }
     }
+    if ($CommandArg3) { throw "Unexpected extra argument '${CommandArg3}'." }
 
     ## No tty = nobody to answer a prompt. Read-only commands just go quiet; mutating
     ## ones fail closed (require an explicit -Quiet) so piped/cron input can't silently auto-confirm.
@@ -791,39 +1200,62 @@ try {
 
     ## pr needs gh and a valid number (except the bare list form).
     $script:prNum = ''
+    $script:prSub = ''
+    $script:prTitle = ''
+    $script:prHeadBranch = ''
     if ($cmdName -eq 'pr') {
         if (-not (Get-Command -Name gh -ErrorAction SilentlyContinue)) { throw 'Not found in path: gh' }
-        if ($CommandArg.ToLowerInvariant() -eq 'ok') {
-            $script:prNum = $CommandArg2
-            if ($script:prNum -notmatch '^[0-9]+$') { throw "Syntax: ${script:meName} pr ok <number>" }
-        } elseif ($CommandArg) {
-            $script:prNum = $CommandArg
-            if ($script:prNum -notmatch '^[0-9]+$') { throw "Syntax: ${script:meName} pr [<number> | ok <number>]" }
+        switch ($CommandArg.ToLowerInvariant()) {
+            'ok' {
+                $script:prSub = 'ok'
+                $script:prNum = $CommandArg2
+                if ($script:prNum -notmatch '^[0-9]+$') { throw "Syntax: ${script:meName} pr ok <number>" }
+                break
+            }
+            { $_ -in 'create', 'new' } {
+                $script:prSub = 'create'
+                ## -m wins, same as everywhere else.
+                $script:prTitle = if ($script:commitMessage) { $script:commitMessage } else { $CommandArg2 }
+                break
+            }
+            '' { break }
+            default {
+                $script:prNum = $CommandArg
+                if ($script:prNum -notmatch '^[0-9]+$') { throw "Syntax: ${script:meName} pr [create [title] | <number> | ok <number>]" }
+                break
+            }
         }
     }
 
-    ## Every command needs a repo - except clone (works anywhere) and connect (a plain directory is the point).
+    ## Every command needs a repo - except the repo ones: clone works anywhere, and create/connect
+    ## exist precisely to turn a plain directory into one.
     git rev-parse --is-inside-work-tree *> $null
     $script:inRepo = ($LASTEXITCODE -eq 0)
-    if (-not $script:inRepo -and $cmdName -notin 'clone', 'connect') { throw 'Not inside a git repository. Change to a git project directory first.' }
+    if (-not $script:inRepo -and $cmdName -notlike 'repo-*') { throw 'Not inside a git repository. Change to a git project directory first.' }
 
     ## Freshen remote refs so status/ahead-behind info is current. Never fatal - offline still works locally.
     ## --prune: stale origin/* refs would fool the existence checks. set-head heals a missing/stale
     ## origin/HEAD. ssh gets a connect timeout so a dead remote can't hang every command for minutes.
     ## clone skips it: cwd may sit inside some unrelated repo, and the clone doesn't care about it.
-    if (-not $NoFetch -and $cmdName -ne 'clone' -and (Test-GitOrigin)) {
+    if (-not $NoFetch -and $cmdName -ne 'repo-clone' -and (Test-GitOrigin)) {
         Write-StatusLine 'git fetch ...'
         $hadSshCommand = [bool]$env:GIT_SSH_COMMAND
         if (-not $hadSshCommand) { $env:GIT_SSH_COMMAND = 'ssh -o ConnectTimeout=3' }
+        ## No auth prompts, same as Get-RemoteProbe: this runs before any of our own checks, so an
+        ## https remote we can't authenticate to would stop and ask for a username mid-command.
+        $origTermPrompt = $env:GIT_TERMINAL_PROMPT
+        $env:GIT_TERMINAL_PROMPT = '0'
         try {
             git fetch --quiet --prune 2>$null
             if ($LASTEXITCODE -ne 0) {
+                $script:remoteReachable = $false
                 Write-StatusLine 'WARNING: git fetch failed (offline?); remote info may be stale.'
             } else {
                 git remote set-head origin --auto *> $null
             }
         } finally {
             if (-not $hadSshCommand) { Remove-Item -Path Env:GIT_SSH_COMMAND -ErrorAction SilentlyContinue }
+            if ($null -eq $origTermPrompt) { Remove-Item -Path Env:GIT_TERMINAL_PROMPT -ErrorAction SilentlyContinue } else { $env:GIT_TERMINAL_PROMPT = $origTermPrompt }
         }
     }
 
@@ -835,24 +1267,94 @@ try {
 
     ## Release version resolves up front so preview and command agree (and bad input dies early).
     $script:releaseTag = ''
-    if ($cmdName -eq 'release') { $script:releaseTag = Get-ReleaseVersion }
+    if ($cmdName -eq 'release') {
+        $script:releaseTag = Get-ReleaseVersion
+        ## Up front, not mid-command: by the time Invoke-GitsbyRelease runs it has already committed and pushed.
+        git rev-parse -q --verify "refs/tags/$($script:releaseTag)" *> $null
+        if ($LASTEXITCODE -eq 0) { throw "Tag '$($script:releaseTag)' already exists." }
+    }
 
-    ## Branch arguments validate up front too, so a bad name can't survive to a nonsense preview.
-    if ($cmdName -eq 'newbr') {
-        if (-not $CommandArg) { throw "No branch name given. Syntax: ${script:meName} newbr <new branch name>" }
-        git check-ref-format --branch "$CommandArg" *> $null  ## quote: a bare $var lets PowerShell glob '*'/'?' to filenames, defeating the check
-        if ($LASTEXITCODE -ne 0) { throw "'${CommandArg}' is not a valid branch name." }
-        if (Test-GitBranchLocal -Branch $CommandArg) { throw "Branch '${CommandArg}' already exists; use: ${script:meName} gobr ${CommandArg}" }
-        if (Test-GitBranchRemote -Branch $CommandArg) { throw "Branch '${CommandArg}' already exists on origin; use: ${script:meName} gobr ${CommandArg}" }
-    } elseif ($cmdName -eq 'gobr' -and $CommandArg) {
-        if (-not ((Test-GitBranchLocal -Branch $CommandArg) -or (Test-GitBranchRemote -Branch $CommandArg))) {
-            throw "No branch '${CommandArg}' locally or on origin. To create it: ${script:meName} newbr ${CommandArg}"
+    ## The mutating pr subcommands check here too, so nothing can fail after the plan was confirmed.
+    if ($script:prSub) {
+        $prBranch = Get-CurrentBranch
+        if (-not $prBranch) { throw 'Detached HEAD (no current branch); resolve that manually first.' }
+        if ($script:prSub -eq 'ok') {
+            ## Where a PR lands, and whether it is a hotfix, are properties of the PR - not of
+            ## whatever branch you happen to be standing on. 'pr ok <n>' can be run from anywhere,
+            ## so ask gh which branch it proposes. Fall back to the current one if gh can't say.
+            $headOut = @()
+            try { $headOut = @(gh pr view $script:prNum --json headRefName --jq .headRefName 2>$null) } catch { $headOut = @() }
+            $script:prHeadBranch = if ($headOut.Count -gt 0) { ([string]$headOut[0]).Trim() } else { '' }
+            if (-not $script:prHeadBranch) { $script:prHeadBranch = $prBranch }
+            ## gh merges what origin already has, then deletes the branch local and remote. Work
+            ## that never reached origin is outside the PR and outside the merge - refuse, don't lose it.
+            if ((Test-GitDirty) -or (Test-GitAhead)) {
+                if ($prBranch -ceq $script:prHeadBranch) {
+                    throw "'${prBranch}' has changes that aren't on origin, so PR #$($script:prNum) can't include them. Run '${script:meName} sync' first."
+                }
+                throw "'${prBranch}' has changes that aren't on origin. Park them first: ${script:meName} sync"
+            }
+        } else {
+            if ($prBranch -cin @((Get-MergeTarget), (Get-DefaultBranch))) {
+                throw "'${prBranch}' is what pull requests merge into; there is nothing to propose. Start a branch first: ${script:meName} br create <name>"
+            }
+            ## No title given: the last commit subject is what the work is called already.
+            if (-not $script:prTitle) { $script:prTitle = (git log -1 --pretty=%s 2>$null | Select-Object -First 1) }
+            if (-not $script:prTitle) { throw "No commits on '${prBranch}' yet; nothing to propose." }
+            ## An open PR for this branch already is the answer to 'pr create' - say so instead of letting gh error.
+            $existingPr = (gh pr list --head "$prBranch" --state open --json number --jq '.[0].number // empty' 2>$null | Select-Object -First 1)
+            if ($existingPr) { throw "PR #${existingPr} is already open for '${prBranch}'. View it: ${script:meName} pr ${existingPr}" }
         }
     }
 
-    ## clone: derive the target dir, and make re-runs a no-op instead of an error.
-    if ($cmdName -eq 'clone') {
-        if (-not $CommandArg) { throw "No URL given. Syntax: ${script:meName} clone <url> [directory]" }
+    ## Branch arguments validate up front too, so a bad name can't survive to a nonsense preview.
+    if ($cmdName -eq 'br-create') {
+        if (-not $CommandArg) { throw "No branch name given. Syntax: ${script:meName} br create <new branch name>" }
+        git check-ref-format --branch "$CommandArg" *> $null  ## quote: a bare $var lets PowerShell glob '*'/'?' to filenames, defeating the check
+        if ($LASTEXITCODE -ne 0) { throw "'${CommandArg}' is not a valid branch name." }
+        if (Test-GitBranchLocal -Branch $CommandArg) { throw "Branch '${CommandArg}' already exists; use: ${script:meName} br switch ${CommandArg}" }
+        if (Test-GitBranchRemote -Branch $CommandArg) { throw "Branch '${CommandArg}' already exists on origin; use: ${script:meName} br switch ${CommandArg}" }
+    } elseif ($cmdName -eq 'br-hotfix') {
+        if (-not $CommandArg) { throw "No name given. Syntax: ${script:meName} br hotfix <name>" }
+        ## The prefix is the marker, so put it on ourselves - and accept it if the user typed it.
+        $CommandArg = 'hotfix/' + ($CommandArg -replace '^hotfix/', '')
+        $script:cmdArg = $CommandArg
+        git check-ref-format --branch "$CommandArg" *> $null
+        if ($LASTEXITCODE -ne 0) { throw "'${CommandArg}' is not a valid branch name." }
+        if (Test-GitBranchLocal -Branch $CommandArg) { throw "Branch '${CommandArg}' already exists; use: ${script:meName} br switch ${CommandArg}" }
+        if (Test-GitBranchRemote -Branch $CommandArg) { throw "Branch '${CommandArg}' already exists on origin; use: ${script:meName} br switch ${CommandArg}" }
+    } elseif ($cmdName -eq 'br-switch') {
+        if ($CommandArg -and -not ((Test-GitBranchLocal -Branch $CommandArg) -or (Test-GitBranchRemote -Branch $CommandArg))) {
+            throw "No branch '${CommandArg}' locally or on origin. To create it: ${script:meName} br create ${CommandArg}"
+        }
+        ## Refusing a dirty protected branch belongs here too, before the plan is shown and confirmed.
+        $switchTarget = if ($CommandArg) { $CommandArg } else { Get-MergeTarget }
+        if (((Get-CurrentBranch) -cne $switchTarget) -and (Test-ProtectedBranch) -and (Test-GitDirty)) {
+            throw "Working tree has changes on '$(Get-CurrentBranch)'; won't auto-commit to a protected branch. Carry them to a new branch (${script:meName} br create <name>), or commit them here deliberately (${script:meName} update) first."
+        }
+    }
+
+    ## br prune: work out what goes before anything is shown, so the plan names every branch by name.
+    if ($cmdName -eq 'br-prune') {
+        if (-not (Get-CurrentBranch)) { throw 'Detached HEAD (no current branch); resolve that manually first.' }
+        Resolve-PruneList
+        if ($script:pruneLocal.Count -eq 0 -and $script:pruneRemote.Count -eq 0) {
+            ## "no branch is merged" would be a lie when the merged one is the branch we're standing on.
+            if ($script:pruneCurrentMerged) {
+                Write-StatusLine 'Nothing to prune from here.'
+                Write-PlainLine "  Current branch '$($script:pruneCurrentMerged)' is merged, but you're on it; switch off it to prune it."
+            } else {
+                Write-StatusLine "Nothing to prune; no branch is fully merged into '$(Get-MergeTarget)' yet."
+            }
+            if ($script:pruneKeep.Count -gt 0) { Write-PlainLine "  Keeping (not merged yet): $($script:pruneKeep -join ', ')" }
+            Write-PlainLine ''
+            exit 0
+        }
+    }
+
+    ## repo clone: derive the target dir, and make re-runs a no-op instead of an error.
+    if ($cmdName -eq 'repo-clone') {
+        if (-not $CommandArg) { throw "No URL given. Syntax: ${script:meName} repo clone <url> [directory]" }
         $script:cloneUrl = $CommandArg
         $script:cloneDir = $CommandArg2
         if (-not $script:cloneDir) {
@@ -876,8 +1378,10 @@ try {
         }
     }
 
-    ## connect: resolve what we're connecting to before the preview, so the plan is real.
-    if ($cmdName -eq 'connect') {
+    ## repo create/connect: resolve what we're publishing to before the preview, so the plan is real.
+    ## Same machinery, one difference - only 'create' will bring a remote into existence.
+    if ($cmdName -in 'repo-create', 'repo-connect') {
+        $wantCreate = ($cmdName -eq 'repo-create')
         $hasWork = $false
         if ($script:inRepo) {
             git rev-parse -q --verify HEAD *> $null
@@ -885,43 +1389,99 @@ try {
         } elseif (@(Get-ChildItem -Force -ErrorAction SilentlyContinue).Count -gt 0) {
             $hasWork = $true
         }
-        if (-not $hasWork) { throw 'Nothing to connect here: no commits and no files.' }
+        if (-not $hasWork) { throw 'Nothing to publish here: no commits and no files.' }
         $originUrl = ''
         if ($script:inRepo -and (Test-GitOrigin)) { $originUrl = [string](git remote get-url origin 2>$null) }
         if ($originUrl) {
+            if ($wantCreate) { throw "origin is already set to '$(Get-MaskedUrl -Url $originUrl)', so there is no repo left to create. Push what you have with: ${script:meName} repo connect" }
             if ($CommandArg -and ($CommandArg -cne $originUrl)) { throw "origin is already set to '$(Get-MaskedUrl -Url $originUrl)'; changing remotes is raw-git territory." }
             $script:connectMode = 'push'; $script:connectUrl = $originUrl
+        } elseif ($wantCreate) {
+            if (-not $CommandArg) { throw "No target given. Syntax: ${script:meName} repo create <owner/name>" }
+            if (-not ($CommandArg -match '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' -and -not (Test-Path -LiteralPath $CommandArg))) {
+                throw "'${CommandArg}' isn't a GitHub 'owner/name'; only GitHub repos can be created from here. For a remote that already exists: ${script:meName} repo connect ${CommandArg}"
+            }
+            if (-not (Get-Command -Name gh -ErrorAction SilentlyContinue)) { throw 'Not found in path: gh' }
+            $script:ghTarget = $CommandArg
+            $isEmpty = gh repo view "$script:ghTarget" --json isEmpty --jq .isEmpty 2>$null
+            if ($LASTEXITCODE -ne 0 -or -not $isEmpty) {
+                $script:connectMode = 'create'
+            } elseif (([string]$isEmpty).Trim() -eq 'true') {
+                throw "github.com/$($script:ghTarget) already exists and is empty; connect to it instead: ${script:meName} repo connect $($script:ghTarget)"
+            } else {
+                throw "github.com/$($script:ghTarget) already has commits; clone it instead (${script:meName} repo clone), or reconcile with raw git."
+            }
         } else {
-            if (-not $CommandArg) { throw "No remote configured and no target given. Syntax: ${script:meName} connect <url | owner/name>" }
+            if (-not $CommandArg) { throw "No remote configured and no target given. Syntax: ${script:meName} repo connect <url | owner/name>" }
             if ($CommandArg -match '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' -and -not (Test-Path -LiteralPath $CommandArg)) {
-                ## owner/name shorthand: the gh path - create the repo if it doesn't exist yet.
+                ## owner/name shorthand: gh can say whether it exists and whether it's empty.
                 if (-not (Get-Command -Name gh -ErrorAction SilentlyContinue)) { throw 'Not found in path: gh' }
                 $script:ghTarget = $CommandArg
                 $isEmpty = gh repo view "$script:ghTarget" --json isEmpty --jq .isEmpty 2>$null
                 if ($LASTEXITCODE -ne 0 -or -not $isEmpty) {
-                    $script:connectMode = 'create'
+                    throw "github.com/$($script:ghTarget) doesn't exist, or you can't see it. To create it: ${script:meName} repo create $($script:ghTarget)"
                 } elseif (([string]$isEmpty).Trim() -eq 'true') {
-                    $ghProto = gh config get -h github.com git_protocol 2>$null
-                    $script:connectUrl = if (([string]$ghProto).Trim() -eq 'ssh') { "git@github.com:$($script:ghTarget).git" } else { "https://github.com/$($script:ghTarget).git" }
+                    ## gh never uses a host alias, so this is the canonical url - same one gh itself would build.
+                    $script:connectUrl = if ((Get-GhProtocol) -eq 'ssh') { "git@github.com:$($script:ghTarget).git" } else { "https://github.com/$($script:ghTarget).git" }
                     $script:connectMode = 'add'
                 } else {
-                    throw "github.com/$($script:ghTarget) already has commits; clone it instead (${script:meName} clone), or reconcile with raw git."
+                    throw "github.com/$($script:ghTarget) already has commits; clone it instead (${script:meName} repo clone), or reconcile with raw git."
                 }
             } else {
                 switch (Get-RemoteProbe -Url $CommandArg) {
-                    'missing' { throw "Can't reach '${CommandArg}' (doesn't exist, or no access). Create it first, or use '${script:meName} connect owner/name' to create it on GitHub via gh." }
-                    'nonempty' { throw "'$(Get-MaskedUrl -Url $CommandArg)' already has history; clone it instead (${script:meName} clone ${CommandArg}), or reconcile with raw git." }
+                    'missing' { throw "Can't reach '$(Get-MaskedUrl -Url $CommandArg)' (doesn't exist, or no access). Create it first, or on GitHub: ${script:meName} repo create <owner/name>" }
+                    'nonempty' { throw "'$(Get-MaskedUrl -Url $CommandArg)' already has history; clone it instead (${script:meName} repo clone ${CommandArg}), or reconcile with raw git." }
                     'empty' { $script:connectMode = 'add'; $script:connectUrl = $CommandArg }
                 }
             }
         }
     }
 
+    ## Which commands go through gh, which of those WRITE through it, and which url the ssh
+    ## identity should be read from. For pr that's the origin we already have. repo create and
+    ## connect have no origin yet - but the one they are about to set is knowable, because gh
+    ## never uses a host alias: it builds 'git@github.com:owner/name.git' from its own protocol
+    ## setting. So the identity that repo will live with afterward can be checked before we start.
+    switch ($cmdName) {
+        'pr' {
+            $script:isGhCommand = $true
+            if ($script:prSub -in 'create', 'ok') {
+                $script:isGhWrite = $true
+                $script:identityProbeUrl = [string](@(git remote get-url origin 2>$null) | Select-Object -First 1)
+            }
+            break
+        }
+        'repo-create' {
+            $script:isGhCommand = $true; $script:isGhWrite = $true
+            if ((Get-GhProtocol) -eq 'ssh') { $script:identityProbeUrl = "git@github.com:$($script:ghTarget).git" }
+            break
+        }
+        'repo-connect' {
+            if ($script:ghTarget) {
+                $script:isGhCommand = $true; $script:isGhWrite = $true
+                ## connectUrl is the url we resolved ourselves, so probe that rather than guess.
+                if ($script:connectUrl -match '^[^@/]+@[^/:]+:') { $script:identityProbeUrl = $script:connectUrl }
+            }
+            break
+        }
+    }
+
+    ## A gh write acting as a different account than the key git pushes with is a wrong-account
+    ## mistake waiting to happen, and it is outward-facing. Refuse it unattended (nobody is there
+    ## to read a warning); warn interactively, right before the prompt. -AnyIdentity means
+    ## the difference is intended.
+    $identityMismatch = ''
+    if ($script:isGhWrite -and -not $AnyIdentity) {
+        $identityMismatch = Get-IdentityMismatch -GhLogin (Get-GhLogin) -SshLogin (Get-SshLogin -RemoteUrl $script:identityProbeUrl)
+        ## Up front, like every other refusal: don't show a plan we won't run.
+        if ($identityMismatch -and $script:doQuietly) { throw "${identityMismatch} Nothing was done. Re-run with -AnyIdentity if that is intended." }
+    }
+
     ## Read-only commands
     if (-not $isMutating) {
         switch ($cmdName) {
             'status' { Show-RepoStatus -WithIdentity; break }
-            'listbr' {
+            'br-list' {
                 Write-StatusLine 'git branch -a -vv'
                 git branch -a -vv
                 if ($LASTEXITCODE -ne 0) { throw "'git branch -a -vv' failed (exit ${LASTEXITCODE})." }
@@ -935,8 +1495,8 @@ try {
     }
 
     ## Mutating commands: show state and plan, confirm, execute, show state again.
-    ## clone and connect-from-a-plain-dir have no repo state to show; a smaller header stands in.
-    if ($cmdName -eq 'clone') {
+    ## clone, and create/connect from a plain dir, have no repo state to show; a smaller header stands in.
+    if ($cmdName -eq 'repo-clone') {
         Write-PlainLine ''
         Write-PlainLine "Directory ....: $(Get-Location)"
         Write-PlainLine "Remote .......: $(Get-MaskedUrl -Url $script:cloneUrl)"
@@ -956,6 +1516,14 @@ try {
     Write-PlainLine ''
     Write-PlainLine 'Going to do (steps marked * only if needed, based on repo state):'
     Show-CommandPreview -CommandName $cmdName
+    ## Last thing before the prompt, so it can't scroll away above the plan.
+    if ($identityMismatch) {
+        Write-PlainLine ''
+        Write-StatusLine '*** WRONG ACCOUNT? ***'
+        Write-PlainLine "  ${identityMismatch}"
+        Write-PlainLine "  gh does the pull request work, so it happens as '$(Get-GhLogin)'."
+        Write-PlainLine '  Continue only if that is what you mean. (-AnyIdentity silences this.)'
+    }
     if (-not $script:doQuietly) {
         Write-PlainLine ''
         $answer = Read-Host -Prompt 'Continue? (y|n)'
@@ -964,21 +1532,25 @@ try {
     }
 
     switch ($cmdName) {
-        'commit' { Invoke-GitsbyCommit; break }
-        'pull' { Invoke-GitsbyPull; break }
         'update' { Invoke-GitsbyCommitPull; break }
         'sync' { Invoke-GitsbyPush; break }
-        'newbr' { Invoke-GitsbyMakeBranch -NewBranch $CommandArg; break }
-        'gobr' { Invoke-GitsbyChangeBranch -TargetBranch $CommandArg; break }
-        'land' { Invoke-GitsbyLand; break }
-        'pr' { Invoke-GitsbyPrAccept -PrNumber $script:prNum; break }
+        'br-create' { Invoke-GitsbyMakeBranch -NewBranch $CommandArg; break }
+        'br-hotfix' { Invoke-GitsbyHotfix -NewBranch $CommandArg; break }
+        'br-switch' { Invoke-GitsbyChangeBranch -TargetBranch $CommandArg; break }
+        'br-land' { Invoke-GitsbyLand; break }
+        'br-prune' { Invoke-GitsbyPrune; break }
+        'pr' {
+            if ($script:prSub -eq 'create') { Invoke-GitsbyPrCreate -Title $script:prTitle }
+            else { Invoke-GitsbyPrAccept -PrNumber $script:prNum }
+            break
+        }
         'release' { Invoke-GitsbyRelease; break }
-        'clone' { Invoke-GitsbyClone; break }
-        'connect' { Invoke-GitsbyConnect; break }
+        'repo-clone' { Invoke-GitsbyClone; break }
+        { $_ -in 'repo-create', 'repo-connect' } { Invoke-GitsbyConnect; break }
     }
 
     Write-PlainLine ''
-    if ($cmdName -eq 'clone') {
+    if ($cmdName -eq 'repo-clone') {
         Write-StatusLine "Cloned into '$($script:cloneDir)'."  ## the after-status would show the wrong (current) directory
     } else {
         Show-RepoStatus
@@ -1003,3 +1575,10 @@ try {
 ##      - 20260724 JC: Non-tty mutating runs fail closed without -q; extra positional after a message rejected; case-sensitive branch compares; release tolerates short tags like v1.2; masked credentials in the displayed remote URL; fetch with --prune + origin/HEAD heal + ssh connect timeout; -NoFetch; tolerant remote-branch delete in land; exit-code checks in pr view/listbr; drive-letter remotes not treated as ssh hosts; ssh -G gets --; per-run default-branch/merge-target caching; dropped the redundant GIT_MERGE_AUTOEDIT (it leaked into the calling session) - in step with bin/gitsby.
 ##      - 20260724 JC: newbr/gobr branch arguments validate before the preview; bare 'help'/'version' words work; -y/-yes aliases for -Quiet; Test-GitAhead stops at the first commit - in step with bin/gitsby.
 ##      - 20260724 JC: Added clone (checks out dev if the repo has one; re-run is a no-op) and connect (init if needed, commit, push to an empty remote, or gh repo create for owner/name; -Public/-Private) - in step with bin/gitsby.
+##      - 20260725 JC: release publishes an upstream-less default branch instead of pushing only the tag; the duplicate-tag and dirty-protected-branch refusals moved up front, ahead of the confirmed plan; newbr's plan no longer promises a commit when run from main/dev; pr ok lands on the merge target when gh deleted the branch we were on; a bare release after a candidate proposes that candidate's own version - in step with bin/gitsby.
+##      - 20260726 JC: Added 'pr new [title]' (parks the work, opens a PR against the merge target, titles it from the last commit subject when none is given, reports an already-open PR instead of erroring); pr ok refuses a dirty tree or unpushed commits, since --delete-branch would drop work that never reached origin - in step with bin/gitsby.
+##      - 20260726 JC: Commands regrouped under the repo/br/pr nouns, connect split into 'repo create' vs 'repo connect', all pre-v2 aliases dropped - in step with bin/gitsby.
+##      - 20260726 JC: Dropped the bare 'commit' and 'pull' commands; update/sync pull before committing (committing first guaranteed divergence against a moved remote); unreachable remote warns and skips the pull, -NoFetch skips it too - in step with bin/gitsby.
+##      - 20260726 JC: Every command's pull honors offline, not just update/sync's; the dirty-protected-branch refusal names 'update' rather than the dropped 'commit'; help text back in step with the command set - in step with bin/gitsby.
+##      - 20260726 JC: Added 'br prune': deletes every local branch already merged into the merge target, plus its remote copy; unmerged branches are kept and listed, never deleted; deletes with -D behind gitsby's own containment check, since 'git branch -d' asks about the upstream or HEAD rather than the merge target - in step with bin/gitsby.
+##      - 20260726 JC: br prune's delete-time re-check now covers the remote copy too, and a merged current branch is reported as kept rather than left off every list - in step with bin/gitsby.
