@@ -55,11 +55,12 @@
 	</tr>
 </table>
 
-<img src="assets/demo.gif" alt="Demo."/>
+<!-- Pin to the gif's native 960px. GitHub's max-width:100% still shrinks it on narrow columns; a % width would blow it up past native on wide ones. -->
+<img src="assets/demo.gif" width="960" alt="Demo."/>
 
 <!--
 	Demo video: https://www.youtube.com/watch?v=REPLACE_WITH_VIDEO_ID
-	<img src="assets/demo.gif" width="90%" alt="Demo."/>
+	<img src="assets/demo.gif" width="960" alt="Demo."/>
 -->
 
 <!-- TOC ignore:true -->
