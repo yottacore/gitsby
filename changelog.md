@@ -70,5 +70,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Other work
 
-- Both versions carry a regression suite and a fuzz suite, run before anything is published.
-- The demo at the top of the README is generated from a scripted session against a throwaway repo, so it can't drift from what the tool actually does.
+- Both versions carry a regression suite and a fuzz suite.
+- The demo at the top of the README is a real session, so it shows what the tool actually does rather than an idealized version of it.
