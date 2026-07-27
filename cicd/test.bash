@@ -580,6 +580,45 @@ GHEOF
 	)
 	fAssert "pr create takes an explicit title"  bash -c "cd '${pnc}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prnew2.log' '${gitsby}' -q pr create 'Explicit title' && grep -q -- '--title Explicit title' '${gh}/prnew2.log'"
 
+	## Hotfix branches target the default branch instead of dev, because they correct what is
+	## already published. Landing one must also carry it back to dev, or the next release undoes it.
+	local hf="${work}/$1-hotfix"
+	git init --quiet --bare -b main "${hf}/origin.git"
+	git clone --quiet "${hf}/origin.git" "${hf}/c" 2>/dev/null
+	local hfc="${hf}/c"
+	(
+		cd "${hfc}" || exit 1
+		echo "readme v1" > README.md && mkdir -p bin && echo shipped > bin/tool
+		git add --all && git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+	)
+	fAssert    "br hotfix creates the branch"  bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix wording"
+	fAssert    "and prefixes it"               bash -c "cd '${hfc}' && [[ \"\$(git branch --show-current)\" == 'hotfix/wording' ]]"
+	fAssert    "off the default branch, not dev"  bash -c "cd '${hfc}' && git merge-base --is-ancestor origin/main HEAD"
+	## -q still prints the plan, it only skips the prompt - so one run proves both.
+	## (Non-quiet can't be used here: with no tty gitsby fails closed before printing anything.)
+	fAssertOut "br land plans and lands it on the default branch"  'git checkout main' \
+		bash -c "cd '${hfc}' && echo 'readme v2' > README.md && '${gitsby}' -q -NoFetch update wip >/dev/null 2>&1; '${gitsby}' -q -NoFetch br land 'Reword' 2>&1"
+	fAssert    "it reached the default branch" bash -c "cd '${hfc}' && [[ \"\$(git show origin/main:README.md)\" == 'readme v2' ]]"
+	fAssert    "and was carried back to dev"   bash -c "cd '${hfc}' && [[ \"\$(git show origin/dev:README.md)\" == 'readme v2' ]]"
+	fAssert    "the branch is gone both sides" bash -c "cd '${hfc}' && [[ -z \"\$(git branch --list 'hotfix/*')\" ]] && [[ -z \"\$(git ls-remote --heads origin 'hotfix/*')\" ]]"
+	## A hotfix that changes shipped code leaves main ahead of every tag - say so.
+	fAssertOut "a hotfix touching bin/ warns about the release"  'changes shipped code' \
+		bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix code >/dev/null 2>&1; echo v2 > '${hfc}/bin/tool'; '${gitsby}' -q -NoFetch update wip >/dev/null 2>&1; '${gitsby}' -q -NoFetch br land 'Fix' 2>&1"
+	fAssert    "a docs-only hotfix says nothing about releases"  \
+		bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix docs >/dev/null 2>&1; echo 'readme v3' > README.md; '${gitsby}' -q -NoFetch update wip >/dev/null 2>&1; out=\"\$('${gitsby}' -q -NoFetch br land 'Docs' 2>&1)\"; ! grep -q 'changes shipped code' <<< \"\${out}\""
+	## A back-merge conflict must leave dev untouched and the tree clean, not half-merged.
+	fAssert    "a conflicting back-merge leaves dev alone"  \
+		bash -c "cd '${hfc}' && git checkout --quiet dev && echo devtext > README.md && git commit --quiet -am devtext && git push --quiet && '${gitsby}' -q -NoFetch br hotfix clash >/dev/null 2>&1 && echo hftext > README.md && '${gitsby}' -q -NoFetch update wip >/dev/null 2>&1 && '${gitsby}' -q -NoFetch br land Clash >/dev/null 2>&1; [[ \"\$(git show origin/main:README.md)\" == hftext && \"\$(git show origin/dev:README.md)\" == devtext ]]"
+	fAssert    "and the tree is not left mid-merge"  bash -c "cd '${hfc}' && [[ ! -e .git/MERGE_HEAD ]] && [[ -z \"\$(git status --porcelain)\" ]]"
+	## Feature branches must be untouched by all of this.
+	fAssert    "br create still branches off dev"  \
+		bash -c "cd '${hfc}' && git checkout --quiet dev && git checkout --quiet -- . 2>/dev/null; '${gitsby}' -q -NoFetch br create feat1 && git merge-base --is-ancestor origin/dev HEAD"
+	fAssertOut "and br land still targets dev for them"  'git checkout dev' \
+		bash -c "cd '${hfc}' && echo feat > feat.txt && '${gitsby}' -q -NoFetch update wip >/dev/null 2>&1; '${gitsby}' -q -NoFetch br land 'Feat' 2>&1"
+	fAssertFail "br hotfix with no name rejected"  bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix"
+	fAssertFail "the internal token stays untypeable"  bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br-hotfix x"
+
 	## gh writes act as gh's own account, not the ssh key git pushes with. A difference BOTH sides
 	## know about is refused unattended; unknown (no agent, https remote, deploy key) never blocks,
 	## or every CI runner breaks. A fake ssh answers the greeting GitHub really sends.
