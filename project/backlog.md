@@ -46,6 +46,13 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Features and enhancements
 
+- 🔘 `br hotfix <name>`: a branch that targets `main` instead of `dev`, for corrections to published material.
+	- The branching model is written up in `design.md`; this is the command that carries it.
+	- Branches off `main`, pushed as `hotfix/<name>`. The prefix is the marker, so it survives a clone and is visible in a branch listing.
+	- `br land`, `pr create`, and `pr ok` recognise a `hotfix/` branch and target `main`, then merge `main` back into `dev`. The back-merge is the part a person forgets, which is the reason this is a command rather than a flag.
+	- Landing warns when the branch touched anything under `bin/`: `main` would then carry code no tag contains, so the latest release's assets no longer match it, and a patch release is wanted.
+	- Touches merge-target resolution, which every branching command depends on - needs care and coverage on both implementations.
+
 ### Done
 
 #### Done - Bugs
