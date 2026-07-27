@@ -485,6 +485,16 @@ case "$1 $2" in
 esac
 GHEOF
 	chmod +x "${gh}/bin/gh"
+	## An ssh-protocol connect now probes the identity of the url it is about to set, so this dir
+	## needs an ssh too - otherwise the suite would ask the real github.com who we are. Answers with
+	## the same login the fake gh reports, so these checks see a match and carry on.
+	cat > "${gh}/bin/ssh" <<-'EOF'
+		#!/usr/bin/env bash
+		[[ "$1" == "-G" ]] && { printf 'user git\nhostname github.com\n'; exit 0; }
+		[[ "$1" == "-T" ]] && { echo "Hi ${FAKE_SSH_LOGIN:-${FAKE_GH_LOGIN:-ghuser}}! You've successfully authenticated, but GitHub does not provide shell access."; exit 1; }
+		exit 0
+	EOF
+	chmod +x "${gh}/bin/ssh"
 	local ghp="${gh}/bin:${PATH}"
 
 	## create: repo doesn't exist yet -> gitsby inits + commits, the stub creates and pushes
@@ -633,6 +643,24 @@ GHEOF
 	## Read-only pr never pays for the ssh probe, so a mismatch can't block looking.
 	fAssert     "a mismatch does not block read-only pr"  \
 		bash -c "cd '${idc}' && ${idEnv} FAKE_GH_LOGIN=alice FAKE_SSH_LOGIN=bob '${gitsby}' -q -NoFetch pr"
+
+	## repo create has no origin yet, but the one gh is about to set IS knowable - gh never uses a
+	## host alias, so it is 'git@github.com:owner/name.git'. Check it before creating anything.
+	## Note this runs from a plain directory, where the preceding repo probe fails: the gh login
+	## must not be read from a stale exit status (the PowerShell port got this wrong once).
+	## ssh protocol, or gh would hand git an https url and there would be no ssh identity at all.
+	local rcEnv="PATH='${idp}' FAKE_GH_VIEW=notfound FAKE_GH_PROTO=ssh"
+	mkdir -p "${id}/rc-bad"; echo x > "${id}/rc-bad/x.txt"
+	fAssertFail "repo create refuses a mismatched identity before creating anything" \
+		bash -c "cd '${id}/rc-bad' && ${rcEnv} FAKE_GH_LOGIN=alice FAKE_SSH_LOGIN=bob FAKE_GH_REMOTE='${id}/rc-bad.git' '${gitsby}' -q repo create me/proj"
+	fAssert     "and it neither created the remote nor inited the directory" \
+		bash -c "[[ ! -e '${id}/rc-bad.git' && ! -e '${id}/rc-bad/.git' ]]"
+	mkdir -p "${id}/rc-ok"; echo x > "${id}/rc-ok/x.txt"
+	fAssertOut  "repo create resolves gh's account from a plain directory"  'GitHub \(gh\) [.]*: same' \
+		bash -c "cd '${id}/rc-ok' && ${rcEnv} FAKE_GH_LOGIN=same FAKE_SSH_LOGIN=same FAKE_GH_REMOTE='${id}/rc-ok.git' '${gitsby}' -q repo create me/proj 2>&1"
+	mkdir -p "${id}/rc-https"; echo x > "${id}/rc-https/x.txt"
+	fAssert     "an https protocol leaves nothing to compare, so it proceeds" \
+		bash -c "cd '${id}/rc-https' && ${rcEnv} FAKE_GH_PROTO=https FAKE_GH_LOGIN=alice FAKE_SSH_LOGIN=bob FAKE_GH_REMOTE='${id}/rc-https.git' '${gitsby}' -q repo create me/proj"
 
 	## pr ok refuses to merge while work is still only local: gh merges what origin has, then
 	## deletes the branch, so anything unpushed would be outside both the PR and the merge.

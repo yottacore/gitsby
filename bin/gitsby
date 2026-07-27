@@ -104,7 +104,8 @@ fMain(){
 	local -i anyIdentity=0          ## --any-identity: a gh/ssh account mismatch here is intended
 	local -i isGhCommand=0          ## command goes through gh at all -> show whose account that is
 	local -i isGhWrite=0            ## command WRITES through gh -> also compare against the ssh key
-	local ghLoginCache=""; local sshLoginCache=""  ## per-run, each costs a round trip
+	local identityProbeUrl=""       ## url the ssh identity is read from (existing origin, or the one about to be set)
+	local ghLoginCache=""; local sshLoginCache=""; local ghProtocolCache=""  ## per-run, each costs a round trip
 	local defaultBranchCache=""; local mergeTargetCache=""  ## per-run constants, filled post-fetch
 	local -i inRepo=0
 	local cloneUrl=""; local cloneDir=""
@@ -335,9 +336,8 @@ fMain(){
 				if [[ -z "${isEmpty}" ]]; then
 					fThrowError_Usage "github.com/${ghTarget} doesn't exist, or you can't see it. To create it: ${meName} repo create ${ghTarget}"
 				elif [[ "${isEmpty}" == "true" ]]; then
-					local ghProto=""
-					ghProto="$(gh config get -h github.com git_protocol 2>/dev/null || true)"
-					if [[ "${ghProto}" == "ssh" ]]; then connectUrl="git@github.com:${ghTarget}.git"; else connectUrl="https://github.com/${ghTarget}.git"; fi
+					## gh never uses a host alias, so this is the canonical url - same one gh itself would build.
+					if [[ "$(fpGhProtocol)" == "ssh" ]]; then connectUrl="git@github.com:${ghTarget}.git"; else connectUrl="https://github.com/${ghTarget}.git"; fi
 					connectMode="add"
 				else
 					fThrowError_Usage "github.com/${ghTarget} already has commits; clone it instead (${meName} repo clone), or reconcile with raw git."
@@ -352,13 +352,29 @@ fMain(){
 		fi
 	fi
 
-	## Which commands go through gh, and which of those WRITE through it. Only the writers
-	## compare against the ssh key: repo create/connect have no origin yet, so there is no
-	## second identity to disagree with - gh is the only actor there.
+	## Which commands go through gh, which of those WRITE through it, and which url the ssh
+	## identity should be read from. For pr that's the origin we already have. repo create and
+	## connect have no origin yet - but the one they are about to set is knowable, because gh
+	## never uses a host alias: it builds 'git@github.com:owner/name.git' from its own protocol
+	## setting. So the identity that repo will live with afterward can be checked before we start.
 	case "${cmdName}" in
-		pr)                      isGhCommand=1; [[ "${prSub}" == "create" || "${prSub}" == "ok" ]] && isGhWrite=1 ;;
-		repo-create)             isGhCommand=1 ;;
-		repo-connect)            [[ -n "${ghTarget}" ]] && isGhCommand=1 ;;
+		pr)
+			isGhCommand=1
+			if [[ "${prSub}" == "create" || "${prSub}" == "ok" ]]; then
+				isGhWrite=1; identityProbeUrl="$(git remote get-url origin 2>/dev/null || true)"
+			fi
+			;;
+		repo-create)
+			isGhCommand=1; isGhWrite=1
+			[[ "$(fpGhProtocol)" == "ssh" ]] && identityProbeUrl="git@github.com:${ghTarget}.git"
+			;;
+		repo-connect)
+			if [[ -n "${ghTarget}" ]]; then
+				isGhCommand=1; isGhWrite=1
+				## connectUrl is the url we resolved ourselves, so probe that rather than guess.
+				[[ "${connectUrl}" == *@*:* ]] && identityProbeUrl="${connectUrl}"
+			fi
+			;;
 	esac
 
 	## A gh write acting as a different account than the key git pushes with is a wrong-account
@@ -367,7 +383,7 @@ fMain(){
 	## the difference is intended.
 	local identityMismatch=""
 	if ((isGhWrite)) && ((! anyIdentity)); then
-		identityMismatch="$(fpIdentityMismatch "$(fpGhLogin)" "$(fpSshLogin "$(git remote get-url origin 2>/dev/null || true)")")"
+		identityMismatch="$(fpIdentityMismatch "$(fpGhLogin)" "$(fpSshLogin "${identityProbeUrl}")")"
 		## Up front, like every other refusal: don't show a plan we won't run.
 		[[ -n "${identityMismatch}" ]] && ((doQuietly)) && fThrowError_Usage "${identityMismatch} Nothing was done. Re-run with --any-identity if that is intended."
 	fi
@@ -856,6 +872,19 @@ fpGhLogin(){
 	echo "${ghLoginCache}"
 :;}
 
+fpGhProtocol(){
+	## Which transport gh hands to git for github.com ('ssh' or 'https'). Host-specific, not the
+	## global default - they can disagree, and the host one is what github.com operations use.
+	if [[ -z "${ghProtocolCache:-}" ]]; then
+		ghProtocolCache="https"
+		if command -v gh &>/dev/null; then
+			local proto=""; proto="$(gh config get -h github.com git_protocol 2>/dev/null || true)"
+			[[ "${proto}" == "ssh" ]] && ghProtocolCache="ssh"
+		fi
+	fi
+	echo "${ghProtocolCache}"
+:;}
+
 fpSshLogin(){
 	## The account this remote's ssh key authenticates as. GitHub answers 'Hi <user>!' and always
 	## exits 1, so parse the greeting, not the status. BatchMode + a connect timeout: never prompt,
@@ -1040,7 +1069,7 @@ fpShowIdentity(){
 		[[ "${ghLogin}" == "?" ]] && ghLine="(unknown - gh not logged in, or offline)"
 		## The ssh comparison costs a round trip, so only the commands that write through gh pay it.
 		if ((isGhWrite)); then
-			local sshLogin=""; sshLogin="$(fpSshLogin "${remoteUrl}")"
+			local sshLogin=""; sshLogin="$(fpSshLogin "${identityProbeUrl}")"
 			if [[ -n "$(fpIdentityMismatch "${ghLogin}" "${sshLogin}")" ]]; then
 				ghLine="${ghLine}  <-- NOT the ssh key's account ('${sshLogin}')"
 			elif [[ "${sshLogin}" == "?" ]]; then

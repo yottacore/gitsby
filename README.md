@@ -257,13 +257,15 @@ Every mutating command in an existing repo fetches first (unless you pass `--no-
 
 `gh` talks to GitHub's API with its own token and never reads your SSH config, so the `pr` commands and `repo create` act as **gh's account** - not the account whose SSH key `git push` uses. With per-account host aliases in `~/.ssh/config` those can easily be different people, and a pull request opened as the wrong one is public and awkward to undo.
 
-So the pre-flight names both, and the commands that *write* through gh (`pr create`, `pr ok`) compare them:
+So the pre-flight names both, and the commands that *write* through gh (`pr create`, `pr ok`, `repo create`, `repo connect owner/name`) compare them. The last two have no remote yet, but the one they are about to set is knowable - gh never uses a host alias, so it is always `git@github.com:owner/name.git` - which means the identity that repo will live with afterward is checked before anything is created.
 
 - Interactively, a confirmed difference prints a warning immediately above the confirmation prompt.
 - Unattended (`-q`/`-y`), a confirmed difference is an error and nothing runs.
 - `--any-identity`/`-AnyIdentity` says the difference is intended: no error, no warning, and the mismatch still shows on the identity line.
 
 If either side can't be determined - no SSH agent, an HTTPS remote, a deploy key, gh logged out - that is reported as unknown and never blocks anything. Only a difference *both* sides confirm counts.
+
+One consequence worth knowing if you use per-account host aliases: `repo create` and `repo connect owner/name` set `origin` to the canonical `git@github.com:...` URL, because that is what gh produces and gh does not read your SSH config. Gitsby does not try to guess which of your aliases belongs to that account - that would be a guess about your setup, and a wrong one is worse than none. If you want the alias, either point it there afterward with `git remote set-url origin git@your-alias:owner/name.git`, or skip gh entirely and give `repo connect` the full URL: `gitsby repo connect git@your-alias:owner/name.git`.
 
 ## Installation
 

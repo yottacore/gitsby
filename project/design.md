@@ -110,11 +110,13 @@ The two files are ports of each other. A change to one nearly always belongs in 
 	- We decided against validating gh's configuration more broadly. Policing another tool's setup is not gitsby's job, gh's config moves, and it would turn working commands into refusals. The failure that prompted this was a *hang*, and the fix for a hang is to never hang.
 
 - A gh write acting as a different account than the ssh key is refused unattended, warned about interactively.
-	- Only the two commands that write through gh compare identities. `repo create` and `repo connect` have no origin yet, so there is no second identity to disagree with, and the read-only `pr` forms never pay for the extra round trip.
+	- Every command that writes through gh compares identities: `pr create`, `pr ok`, `repo create`, and `repo connect` with an `owner/name`. The read-only `pr` forms never pay for the extra round trip.
+	- `repo create` and `repo connect` have no origin to read, but they do not need one. gh never uses a host alias - it builds the canonical `git@github.com:owner/name.git` from its own protocol setting - so the identity that repo will live with afterward is knowable before anything is created, and is checked then.
 	- There are three outcomes, not two: match, mismatch, and **unknown**. Unknown is common and harmless - no ssh agent (every CI runner), an https remote, a deploy key answering with a repo name instead of a login, gh logged out. It is reported and never blocks. Only a difference both sides confirm counts, or the check would break exactly the automated runs it cannot help.
 	- Erroring under `-q` rather than warning follows the rule already set for a missing tty: when nobody is there to read a warning, refuse instead of guessing. Opening a pull request as the wrong account is public and awkward to undo, which is the same reasoning that gave `repo create` its own verb.
 	- The warning prints immediately above the confirmation prompt, not with the rest of the state block, so it cannot scroll away behind the plan.
 	- `--any-identity` says the difference is intended. It suppresses the error and the warning but not the identity line, so an override still leaves the mismatch visible on screen.
+	- The remote these commands leave behind keeps gh's canonical URL. Gitsby will not guess which of your host aliases serves that account: it would have to infer your setup from `~/.ssh/config` and probe each candidate, and a wrong guess silently points a repo at the wrong key. Reporting the identity and leaving the URL alone is the honest version. Anyone who wants an alias can pass a full URL to `repo connect`, which never involves gh at all.
 
 - Commands that hand a branch to someone else's deletion must park work first.
 	- `gh pr merge --delete-branch` removes the branch local and remote. Anything not pushed is outside the pull request, so merging it would drop that work from the branch it lived on.

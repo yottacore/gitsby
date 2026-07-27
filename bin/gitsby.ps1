@@ -77,7 +77,8 @@ $script:cloneUrl = ''; $script:cloneDir = ''
 $script:connectMode = ''; $script:connectUrl = ''; $script:ghTarget = ''  ## resolved by the repo create/connect validation
 $script:isGhCommand = $false   ## command goes through gh at all -> show whose account that is
 $script:isGhWrite = $false     ## command WRITES through gh -> also compare against the ssh key
-$script:ghLoginCache = ''; $script:sshLoginCache = ''  ## per-run, each costs a round trip
+$script:ghLoginCache = ''; $script:sshLoginCache = ''; $script:ghProtocolCache = ''  ## per-run, each costs a round trip
+$script:identityProbeUrl = ''  ## url the ssh identity is read from (existing origin, or the one about to be set)
 $script:pruneLocal = @(); $script:pruneRemote = @(); $script:pruneKeep = @(); $script:pruneTargetRefs = @(); $script:pruneCurrentMerged = ''  ## resolved by the br prune validation
 
 
@@ -334,12 +335,28 @@ function Get-GhLogin {
     if (-not $script:ghLoginCache) {
         $script:ghLoginCache = '?'
         if (Get-Command -Name gh -ErrorAction SilentlyContinue) {
-            $login = ''
-            try { $login = (gh api user --jq .login 2>$null | Select-Object -First 1) } catch { $login = '' }
-            if ($LASTEXITCODE -eq 0 -and $login) { $script:ghLoginCache = ([string]$login).Trim() }
+            ## @() first: piping a native command into Select-Object -First stops it early,
+            ## leaving $LASTEXITCODE stale (or unset), so success can't be read from it afterward.
+            $out = @()
+            try { $out = @(gh api user --jq .login 2>$null) } catch { $out = @() }
+            if ($LASTEXITCODE -eq 0 -and $out.Count -gt 0) { $script:ghLoginCache = ([string]$out[0]).Trim() }
         }
     }
     return $script:ghLoginCache
+}
+
+function Get-GhProtocol {
+    ## Which transport gh hands to git for github.com ('ssh' or 'https'). Host-specific, not the
+    ## global default - they can disagree, and the host one is what github.com operations use.
+    if (-not $script:ghProtocolCache) {
+        $script:ghProtocolCache = 'https'
+        if (Get-Command -Name gh -ErrorAction SilentlyContinue) {
+            $out = @()
+            try { $out = @(gh config get -h github.com git_protocol 2>$null) } catch { $out = @() }
+            if ($out.Count -gt 0 -and ([string]$out[0]).Trim() -eq 'ssh') { $script:ghProtocolCache = 'ssh' }
+        }
+    }
+    return $script:ghProtocolCache
 }
 
 function Get-SshLogin {
@@ -505,7 +522,7 @@ function Show-Identity {
         if ($ghLogin -eq '?') { $ghLine = '(unknown - gh not logged in, or offline)' }
         ## The ssh comparison costs a round trip, so only the commands that write through gh pay it.
         if ($script:isGhWrite) {
-            $sshLogin = Get-SshLogin -RemoteUrl $RemoteUrl
+            $sshLogin = Get-SshLogin -RemoteUrl $script:identityProbeUrl
             if (Get-IdentityMismatch -GhLogin $ghLogin -SshLogin $sshLogin) {
                 $ghLine += "  <-- NOT the ssh key's account ('${sshLogin}')"
             } elseif ($sshLogin -eq '?') {
@@ -1248,8 +1265,8 @@ try {
                 if ($LASTEXITCODE -ne 0 -or -not $isEmpty) {
                     throw "github.com/$($script:ghTarget) doesn't exist, or you can't see it. To create it: ${script:meName} repo create $($script:ghTarget)"
                 } elseif (([string]$isEmpty).Trim() -eq 'true') {
-                    $ghProto = gh config get -h github.com git_protocol 2>$null
-                    $script:connectUrl = if (([string]$ghProto).Trim() -eq 'ssh') { "git@github.com:$($script:ghTarget).git" } else { "https://github.com/$($script:ghTarget).git" }
+                    ## gh never uses a host alias, so this is the canonical url - same one gh itself would build.
+                    $script:connectUrl = if ((Get-GhProtocol) -eq 'ssh') { "git@github.com:$($script:ghTarget).git" } else { "https://github.com/$($script:ghTarget).git" }
                     $script:connectMode = 'add'
                 } else {
                     throw "github.com/$($script:ghTarget) already has commits; clone it instead (${script:meName} repo clone), or reconcile with raw git."
@@ -1264,13 +1281,33 @@ try {
         }
     }
 
-    ## Which commands go through gh, and which of those WRITE through it. Only the writers
-    ## compare against the ssh key: repo create/connect have no origin yet, so there is no
-    ## second identity to disagree with - gh is the only actor there.
+    ## Which commands go through gh, which of those WRITE through it, and which url the ssh
+    ## identity should be read from. For pr that's the origin we already have. repo create and
+    ## connect have no origin yet - but the one they are about to set is knowable, because gh
+    ## never uses a host alias: it builds 'git@github.com:owner/name.git' from its own protocol
+    ## setting. So the identity that repo will live with afterward can be checked before we start.
     switch ($cmdName) {
-        'pr' { $script:isGhCommand = $true; if ($script:prSub -in 'create', 'ok') { $script:isGhWrite = $true }; break }
-        'repo-create' { $script:isGhCommand = $true; break }
-        'repo-connect' { if ($script:ghTarget) { $script:isGhCommand = $true }; break }
+        'pr' {
+            $script:isGhCommand = $true
+            if ($script:prSub -in 'create', 'ok') {
+                $script:isGhWrite = $true
+                $script:identityProbeUrl = [string](@(git remote get-url origin 2>$null) | Select-Object -First 1)
+            }
+            break
+        }
+        'repo-create' {
+            $script:isGhCommand = $true; $script:isGhWrite = $true
+            if ((Get-GhProtocol) -eq 'ssh') { $script:identityProbeUrl = "git@github.com:$($script:ghTarget).git" }
+            break
+        }
+        'repo-connect' {
+            if ($script:ghTarget) {
+                $script:isGhCommand = $true; $script:isGhWrite = $true
+                ## connectUrl is the url we resolved ourselves, so probe that rather than guess.
+                if ($script:connectUrl -match '^[^@/]+@[^/:]+:') { $script:identityProbeUrl = $script:connectUrl }
+            }
+            break
+        }
     }
 
     ## A gh write acting as a different account than the key git pushes with is a wrong-account
@@ -1279,8 +1316,7 @@ try {
     ## the difference is intended.
     $identityMismatch = ''
     if ($script:isGhWrite -and -not $AnyIdentity) {
-        $originUrlForId = (git remote get-url origin 2>$null | Select-Object -First 1)
-        $identityMismatch = Get-IdentityMismatch -GhLogin (Get-GhLogin) -SshLogin (Get-SshLogin -RemoteUrl ([string]$originUrlForId))
+        $identityMismatch = Get-IdentityMismatch -GhLogin (Get-GhLogin) -SshLogin (Get-SshLogin -RemoteUrl $script:identityProbeUrl)
         ## Up front, like every other refusal: don't show a plan we won't run.
         if ($identityMismatch -and $script:doQuietly) { throw "${identityMismatch} Nothing was done. Re-run with -AnyIdentity if that is intended." }
     }
