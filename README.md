@@ -290,16 +290,20 @@ Then, decide to install for your user account only, or system-wide. (But to avoi
 
 Either way, the installer shows exactly what it will do and asks before doing it (add `-y`/`-Yes` to skip the prompt, e.g. for scripted installs).
 
-With no `--ref`/`-Ref`, the installers take the latest full release, and verify the download against that release's `SHA256SUMS` when one is published. Naming a branch, tag, or pre-release with `--ref`/`-Ref` pulls straight from the tree instead, and skips verification.
+By default the installers take the latest full release, and verify the download against that release's `SHA256SUMS` when one is published. Asking for anything else - `--release dev`, or a branch or tag by name - pulls straight from the tree instead, and skips verification.
 
 Both installers take the same options (Bash / PowerShell forms):
 
 | Bash | PowerShell | Effect |
 | --- | --- | --- |
-| `-s`, `--system` | `-System` | Install for all users instead of just you. `~/.local/bin` -> `/usr/local/bin` (*nix); needs `sudo` / an elevated shell. |
+| `--release dev\|stable` | `-Release dev\|stable` | Which build: the latest release (the default), or the tip of `dev`. |
+| `--target user\|system` | `-Target user\|system` | Install for you (the default) or for everyone. `~/.local/bin` -> `/usr/local/bin` (*nix); system needs `sudo` or an elevated shell. |
+| `--arch x64\|amd64\|arm64` | `-Arch x64\|amd64\|arm64` | Accepted so the command line matches other installers. It has no effect here - gitsby is a script, so one file runs on every architecture. |
+| `-r`, `--ref REF` | `-Ref REF` | A specific branch, tag, or commit. Skips checksum verification. |
 | `-y`, `--yes` | `-Yes` | Skip the confirmation prompt (for scripted installs). |
-| `-r`, `--ref REF` | `-Ref REF` | Install a specific branch, tag, or commit instead of the latest release. Skips checksum verification. |
 | `-h`, `--help` | `-?` | Show usage and exit. |
+
+`-s`/`--system` and `-System` still work, and mean the same as `--target system`.
 
 With no options, both do a per-user install of the latest release, after showing the plan and asking.
 
@@ -314,10 +318,10 @@ With no options, both do a per-user install of the latest release, after showing
 - System-wide install (to `/usr/local/bin`, uses `sudo`)
 
 	~~~bash
-	curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install.bash | bash -s -- --system
+	curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install.bash | bash -s -- --target system
 	~~~
 
-- No `curl`? Swap in `wget -qO-` for `curl -fsSL`. To install from a branch instead of the latest release, append `--ref dev` (or `--ref main`).
+- No `curl`? Swap in `wget -qO-` for `curl -fsSL`. For the development build instead of the latest release, append `--release dev`.
 
 ### PowerShell
 
@@ -330,7 +334,7 @@ With no options, both do a per-user install of the latest release, after showing
 - System-wide install (run from an elevated / sudo PowerShell)
 
 	~~~pwsh
-	& ([scriptblock]::Create((irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1))) -System
+	& ([scriptblock]::Create((irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1))) -Target system
 	~~~
 
 ### Direct

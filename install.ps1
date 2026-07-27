@@ -7,12 +7,19 @@
         irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1 | iex
     With options:
         & ([scriptblock]::Create((irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1))) -System -Yes
+.PARAMETER Release
+    Which build: 'stable' (the latest release, default) or 'dev' (the tip of the dev branch).
+.PARAMETER Target
+    'user' for a per-user install (default), or 'system' for all users.
+.PARAMETER Arch
+    Accepted for consistency with other installers, and has no effect here: gitsby is a
+    script, so the same file runs on every architecture.
 .PARAMETER System
-    Install for all users (default: current user only).
+    Install for all users. The same thing as -Target system.
 .PARAMETER Yes
     Don't ask for confirmation.
 .PARAMETER Ref
-    Install from a branch/tag/commit instead of the latest release.
+    Install from a specific branch/tag/commit instead of the latest release.
 .NOTES
     Copyright © 2026 Jim Collier (ID: 1cv◂‡Vᛦ)
     Licensed under The MIT License (MIT). Full text at: https://mit-license.org/
@@ -22,6 +29,9 @@
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Interactive installer; console text is the point.')]
 [CmdletBinding()]
 param(
+    [ValidateSet('dev', 'stable')][string]$Release,
+    [ValidateSet('user', 'system')][string]$Target,
+    [ValidateSet('x64', 'x86_64', 'amd64', 'arm64', 'aarch64')][string]$Arch,
     [switch]$System,
     [switch]$Yes,
     [string]$Ref
@@ -31,7 +41,12 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $repo = 'jim-collier/gitsby'
+
+# -Release is the friendly spelling; -Ref is the escape hatch. Both at once is ambiguous.
+if ($Release -and $Ref) { throw 'Use -Release or -Ref, not both.' }
+if ($Release -eq 'dev') { $Ref = 'dev' }
 $isRelease = -not $Ref
+$installSystemWide = $System.IsPresent -or ($Target -eq 'system')
 
 # No -Ref: resolve the latest release tag from the releases/latest redirect (no auth, no
 # API rate limit); unauthenticated API only as fallback (60 req/hr per IP).
@@ -55,9 +70,9 @@ if (-not $Ref) {
 
 # Destination: per-user by default; -System needs elevation (sudo / admin shell).
 if ($IsWindows) {
-    $destDir = if ($System) { Join-Path -Path $env:ProgramFiles -ChildPath 'gitsby' } else { Join-Path -Path $env:LOCALAPPDATA -ChildPath 'Programs/gitsby' }
+    $destDir = if ($installSystemWide) { Join-Path -Path $env:ProgramFiles -ChildPath 'gitsby' } else { Join-Path -Path $env:LOCALAPPDATA -ChildPath 'Programs/gitsby' }
 } else {
-    $destDir = if ($System) { '/usr/local/bin' } else { Join-Path -Path $HOME -ChildPath '.local/bin' }
+    $destDir = if ($installSystemWide) { '/usr/local/bin' } else { Join-Path -Path $HOME -ChildPath '.local/bin' }
 }
 $destPath = Join-Path -Path $destDir -ChildPath 'gitsby.ps1'
 
@@ -65,8 +80,9 @@ Write-Host ''
 Write-Host '[ gitsby installer (PowerShell) ]'
 Write-Host 'This will:'
 Write-Host "  - Download gitsby.ps1 (${Ref}) from github.com/${repo}"
+if ($Arch) { Write-Host "  - Ignore -Arch ${Arch}: gitsby is a script, so the same file runs on every architecture" }
 Write-Host "  - Install it to ${destPath}"
-if ($System) { Write-Host '  - Need write access to that directory (run elevated / via sudo)' }
+if ($installSystemWide) { Write-Host '  - Need write access to that directory (run elevated / via sudo)' }
 Write-Host "  - Run 'gitsby.ps1 --version' to verify"
 if (-not $Yes) {
     $answer = Read-Host 'Continue? [y/N]'
@@ -147,3 +163,5 @@ try {
 #     is now the rate-limited fallback); random private temp dir; shebang sanity check;
 #     release-asset downloads verify against a SHA256SUMS asset when published; named
 #     parameters throughout; trailing blank line.
+#   - 20260727 JC: Options now spelled -Release, -Target and -Arch, to match the other
+#     installers. -System and -Ref still work.
