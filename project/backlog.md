@@ -19,6 +19,7 @@ This is a product backlog for the run-up to v2.0.0. After that release, bugs, fe
 	- [Done](#done)
 		- [Done - Bugs](#done---bugs)
 		- [Done - Features and enhancements](#done---features-and-enhancements)
+		- [Done - Code review 20260727](#done---code-review-20260727)
 		- [Done - Code review 20260726](#done---code-review-20260726)
 		- [Done - Code reviews 20260725 and 20260723](#done---code-reviews-20260725-and-20260723)
 	- [Future and/or deferred](#future-andor-deferred)
@@ -248,6 +249,38 @@ In each section, items are listed approximately from newest to oldest.
 
 - ✅ Delete stale branch from 2020.
 	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
+
+#### Done - Code review 20260727
+
+Review of the hotfix branches, the gh/ssh identity check, and the docs pass that went with them.
+
+- ✅ Code Review 20260727 item 1: `pr ok <n>` decided where a PR lands from whatever branch you were standing on (both implementations).
+	- Nothing asked gh which branch the PR proposes, so accepting a hotfix PR from `dev` skipped the back-merge that keeps the fix from being undone by the next release.
+	- The reverse also happened: accepting an ordinary PR while sitting on a hotfix branch merged the default branch into `dev` for no reason.
+	- Fixed: the head branch is read from gh up front and drives both the landing target and the hotfix decision. Falls back to the current branch if gh can't say.
+
+- ✅ Code Review 20260727 item 2: the back-merge merged a stale local default branch (both implementations).
+	- Found while testing item 1. `pr ok` lands the hotfix on the server, so the local `main` never receives it and merging that branch did nothing at all - silently.
+	- `br land` was unaffected, because it checks `main` out and merges into it itself.
+	- Fixed: the back-merge uses the fetched `origin/<default>` when there is one, which is the same commit after `br land` and the correct one after `pr ok`. Previews show the ref that actually gets merged.
+
+- ✅ Code Review 20260727 item 3: the ssh identity was read only when the greeting was the first line (Bash).
+	- ssh writes host-key and missing-identity-file warnings ahead of it, and both streams are captured, so a match anchored to the whole output missed the greeting.
+	- It failed safe (unknown, proceed) but that meant the check quietly stopped working for the multi-account setups it exists to protect.
+	- Fixed: matched per line. PowerShell matched anywhere, which had the opposite risk, and is now anchored per line too, so both behave the same.
+
+- ✅ Code Review 20260727 item 4: nothing said gitsby needs bash 4.4, and on macOS it could never get it.
+	- `bin/gitsby` was the only file pinned to `#!/bin/bash`. macOS keeps that at 3.2 permanently, so installing a newer bash would not have helped.
+	- Too old a bash died on `inherit_errexit` with a raw shell error, and `install.bash` (deliberately 3.2-compatible, for macOS) installed it anyway and only failed at its own verify step.
+	- The README Compatibility section covered tool interop and remotes but never the runtime requirement.
+	- Fixed: shebang resolves bash through `PATH`; both `gitsby` and `install.bash` refuse early with advice per platform (Homebrew/MacPorts, `pkg`/`pkg_add`, or the package manager), and point at the PowerShell build as the no-bash option. README states the requirement per platform.
+
+- ✅ Code Review 20260727 item 5: the "hotfix changes shipped code" note missed the ordinary case (both implementations).
+	- It read the branch tip before `br land` committed the working tree, so a hotfix whose `bin/` edit was still uncommitted - the usual way of making one - got no warning.
+	- Fixed: checked after the push.
+
+- ✅ Code Review 20260727 item 6: PowerShell's gh login probe could prompt (PowerShell); `br land` carried a duplicate variable (Bash).
+	- Fixed: `GH_PROMPT_DISABLED` set around the call as the Bash side already did, and the duplicate dropped.
 
 #### Done - Code review 20260726
 

@@ -296,6 +296,17 @@ function Get-BranchTarget {
     return (Get-MergeTarget)
 }
 
+function Get-BackMergeRef {
+    ## What the back-merge actually merges. 'pr ok' lands the hotfix on the server, so the LOCAL
+    ## default branch never sees it and merging that is a silent no-op; the fetched remote-tracking
+    ## ref is the one holding it. After 'br land' the two are the same commit, so this is right
+    ## either way - and falls back to the local branch when there's no remote at all.
+    $mainBranch = Get-DefaultBranch
+    git rev-parse --verify --quiet "refs/remotes/origin/${mainBranch}" *> $null
+    if ($LASTEXITCODE -eq 0) { return "origin/${mainBranch}" }
+    return $mainBranch
+}
+
 function Invoke-BackMergeToDev {
     ## After a hotfix lands on the default branch, dev has to receive it. Skipping this is how the
     ## next release conflicts on the same file, or quietly reinstates the text the hotfix replaced.
@@ -304,11 +315,12 @@ function Invoke-BackMergeToDev {
     $devBranch = Get-MergeTarget
     if ($devBranch -ceq $mainBranch) { return }   ## no dev in this repo: nothing to carry back
     if (-not ((Test-GitBranchLocal -Branch $devBranch) -or (Test-GitBranchRemote -Branch $devBranch))) { return }
+    $mergeRef = Get-BackMergeRef
     Write-PlainLine ''
     Invoke-Git -GitArgs @('checkout', $devBranch)
     Invoke-GitsbyPullIfOnline
-    Write-StatusLine "git merge ${mainBranch} ..."
-    git merge $mainBranch -m "Merge ${mainBranch}"
+    Write-StatusLine "git merge ${mergeRef} ..."
+    git merge $mergeRef -m "Merge ${mainBranch}"
     if ($LASTEXITCODE -eq 0) {
         Clear-BlankCounter
         if (Test-GitOrigin) {
@@ -319,7 +331,7 @@ function Invoke-BackMergeToDev {
         Clear-BlankCounter
         Write-StatusLine "WARNING: '${mainBranch}' would not merge cleanly into '${devBranch}'; left '${devBranch}' untouched."
         Write-PlainLine "  The hotfix landed on '${mainBranch}' - that part is done."
-        Write-PlainLine "  Carry it across by hand: git checkout ${devBranch} && git merge ${mainBranch}"
+        Write-PlainLine "  Carry it across by hand: git checkout ${devBranch} && git merge ${mergeRef}"
     }
 }
 
@@ -397,7 +409,12 @@ function Get-GhLogin {
             ## @() first: piping a native command into Select-Object -First stops it early,
             ## leaving $LASTEXITCODE stale (or unset), so success can't be read from it afterward.
             $out = @()
-            try { $out = @(gh api user --jq .login 2>$null) } catch { $out = @() }
+            ## Same as the Bash side: never let gh stop and prompt for anything mid-command.
+            $origGhPrompt = $env:GH_PROMPT_DISABLED
+            $env:GH_PROMPT_DISABLED = '1'
+            try { $out = @(gh api user --jq .login 2>$null) } catch { $out = @() } finally {
+                if ($null -eq $origGhPrompt) { Remove-Item -Path Env:GH_PROMPT_DISABLED -ErrorAction SilentlyContinue } else { $env:GH_PROMPT_DISABLED = $origGhPrompt }
+            }
             if ($LASTEXITCODE -eq 0 -and $out.Count -gt 0) { $script:ghLoginCache = ([string]$out[0]).Trim() }
         }
     }
@@ -430,7 +447,10 @@ function Get-SshLogin {
         if ($target -and (Get-Command -Name ssh -ErrorAction SilentlyContinue)) {
             $greeting = ''
             try { $greeting = (ssh -T -o BatchMode=yes -o ConnectTimeout=3 -- $target 2>&1 | Out-String) } catch { $greeting = '' }
-            if ($greeting -match 'Hi ([A-Za-z0-9_.:/-]+)!') { $script:sshLoginCache = $Matches[1] }
+            ## Anchored per line ((?m)), because the greeting is not necessarily the first one: we
+            ## capture stderr too, and ssh puts 'Warning: Permanently added ...' or 'Warning:
+            ## Identity file ... not accessible' ahead of it. Unanchored would match mid-line text.
+            if ($greeting -match '(?m)^Hi ([A-Za-z0-9_.:/-]+)!') { $script:sshLoginCache = $Matches[1] }
         }
     }
     return $script:sshLoginCache
@@ -685,7 +705,7 @@ function Show-CommandPreview {
             ## A hotfix owes dev the same change, or the next release undoes it.
             if (Test-HotfixBranch) {
                 Write-PlainLine "${pad}git checkout $(Get-MergeTarget)"
-                Write-PlainLine "${pad}git merge $(Get-DefaultBranch)"
+                Write-PlainLine "${pad}git merge $(Get-BackMergeRef)"
                 Write-PlainLine "${pad}git push *"
             }
             break
@@ -732,11 +752,11 @@ function Show-CommandPreview {
             } else {
                 Write-PlainLine "${pad}gh pr review $($script:prNum) --approve *"
                 Write-PlainLine "${pad}gh pr merge $($script:prNum) --merge --delete-branch"
-                Write-PlainLine "${pad}git checkout $(Get-BranchTarget) *"
+                Write-PlainLine "${pad}git checkout $(Get-BranchTarget -Branch $script:prHeadBranch) *"
                 Write-PlainLine "${pad}git pull --ff-only *"
-                if (Test-HotfixBranch) {
+                if (Test-HotfixBranch -Branch $script:prHeadBranch) {
                     Write-PlainLine "${pad}git checkout $(Get-MergeTarget)"
-                    Write-PlainLine "${pad}git merge $(Get-DefaultBranch)"
+                    Write-PlainLine "${pad}git merge $(Get-BackMergeRef)"
                     Write-PlainLine "${pad}git push *"
                 }
             }
@@ -888,8 +908,11 @@ function Invoke-GitsbyLand {
     $mergeMessage = $script:commitMessage
     if (-not $mergeMessage) { $mergeMessage = "Merge ${workBranch}" }
     $wasHotfix = Test-HotfixBranch -Branch $workBranch
-    if ($wasHotfix) { Show-HotfixBinWarning -WorkBranch $workBranch -TargetBranch $targetBranch }
     Invoke-GitsbyPush
+    ## After the push, not before: the warning reads the branch tip, and uncommitted work
+    ## only becomes part of it here. Checking first missed a hotfix whose bin/ edit was
+    ## still in the working tree - the ordinary way of doing one.
+    if ($wasHotfix) { Show-HotfixBinWarning -WorkBranch $workBranch -TargetBranch $targetBranch }
     Invoke-Git -GitArgs @('checkout', $targetBranch)
     Invoke-GitsbyPullIfOnline
     Invoke-Git -GitArgs @('merge', '--no-ff', $workBranch, '-m', $mergeMessage)
@@ -1025,9 +1048,10 @@ function Invoke-GitsbyPrCreate {
 
 function Invoke-GitsbyPrAccept {
     param([Parameter(Mandatory)][string]$PrNumber)
-    ## Resolve both before gh deletes the branch out from under us.
-    $prTargetBranch = Get-BranchTarget
-    $wasHotfixPr = Test-HotfixBranch
+    ## Resolve both before gh deletes the branch out from under us, and off the PR's own head
+    ## branch (resolved up front) rather than the current one - they need not be the same.
+    $prTargetBranch = Get-BranchTarget -Branch $script:prHeadBranch
+    $wasHotfixPr = Test-HotfixBranch -Branch $script:prHeadBranch
     Write-PlainLine ''
     Write-StatusLine "gh pr review ${PrNumber} --approve ..."
     ## Best-effort: gh refuses to approve your own PR; merging is the part that matters.
@@ -1178,6 +1202,7 @@ try {
     $script:prNum = ''
     $script:prSub = ''
     $script:prTitle = ''
+    $script:prHeadBranch = ''
     if ($cmdName -eq 'pr') {
         if (-not (Get-Command -Name gh -ErrorAction SilentlyContinue)) { throw 'Not found in path: gh' }
         switch ($CommandArg.ToLowerInvariant()) {
@@ -1254,10 +1279,20 @@ try {
         $prBranch = Get-CurrentBranch
         if (-not $prBranch) { throw 'Detached HEAD (no current branch); resolve that manually first.' }
         if ($script:prSub -eq 'ok') {
+            ## Where a PR lands, and whether it is a hotfix, are properties of the PR - not of
+            ## whatever branch you happen to be standing on. 'pr ok <n>' can be run from anywhere,
+            ## so ask gh which branch it proposes. Fall back to the current one if gh can't say.
+            $headOut = @()
+            try { $headOut = @(gh pr view $script:prNum --json headRefName --jq .headRefName 2>$null) } catch { $headOut = @() }
+            $script:prHeadBranch = if ($headOut.Count -gt 0) { ([string]$headOut[0]).Trim() } else { '' }
+            if (-not $script:prHeadBranch) { $script:prHeadBranch = $prBranch }
             ## gh merges what origin already has, then deletes the branch local and remote. Work
             ## that never reached origin is outside the PR and outside the merge - refuse, don't lose it.
             if ((Test-GitDirty) -or (Test-GitAhead)) {
-                throw "'${prBranch}' has changes that aren't on origin, so PR #$($script:prNum) can't include them. Run '${script:meName} sync' first."
+                if ($prBranch -ceq $script:prHeadBranch) {
+                    throw "'${prBranch}' has changes that aren't on origin, so PR #$($script:prNum) can't include them. Run '${script:meName} sync' first."
+                }
+                throw "'${prBranch}' has changes that aren't on origin. Park them first: ${script:meName} sync"
             }
         } else {
             if ($prBranch -cin @((Get-MergeTarget), (Get-DefaultBranch))) {

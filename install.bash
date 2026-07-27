@@ -45,6 +45,30 @@ while [[ $# -gt 0 ]]; do
 	shift
 done
 
+## gitsby itself needs bash 4.4+ (it sets inherit_errexit); this installer deliberately
+## doesn't. Check before downloading rather than after: both run through 'env bash', so
+## the bash running us is the one that would run gitsby. Stock macOS is 3.2 and stays 3.2
+## no matter what you install, so the fix there is a PATH change, not just a package.
+if [[ "${BASH_VERSINFO[0]}" -lt 4 ]] || { [[ "${BASH_VERSINFO[0]}" -eq 4 ]] && [[ "${BASH_VERSINFO[1]}" -lt 4 ]]; }; then
+	echo "Error: gitsby needs bash 4.4 or newer; this is bash ${BASH_VERSION}." >&2
+	case "$(uname -s 2>/dev/null)" in
+		Darwin)
+			echo "  macOS still ships bash 3.2, and never replaces it. Install a current one:" >&2
+			echo "    brew install bash        (Homebrew)" >&2
+			echo "    sudo port install bash   (MacPorts)" >&2
+			echo "  Both install alongside /bin/bash rather than over it, so make sure the new" >&2
+			echo "  one comes first on your PATH, then re-run this installer." >&2 ;;
+		*BSD|DragonFly)
+			echo "  Install bash from packages or ports, then re-run this installer:" >&2
+			echo "    pkg install bash         (FreeBSD)" >&2
+			echo "    pkg_add bash             (OpenBSD)" >&2 ;;
+		*)
+			echo "  Install bash 4.4 or newer with your package manager, then re-run this installer." >&2 ;;
+	esac
+	echo "  Or install the PowerShell build with install.ps1, which needs no bash at all." >&2
+	exit 1
+fi
+
 ## Downloader: curl or wget, whichever exists.
 if   command -v curl >/dev/null 2>&1; then fFetch(){ curl -fsSL "$1"; }
 elif command -v wget >/dev/null 2>&1; then fFetch(){ wget -qO- "$1"; }

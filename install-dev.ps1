@@ -39,7 +39,14 @@ if (Test-Path -LiteralPath $Directory) { throw "'${Directory}' already exists; p
 # under WSL or Git Bash. Only git + PowerShell 7 are needed to hack on the
 # PowerShell port itself.
 $toolNotes = @()
-if (-not (Get-Command -Name bash -ErrorAction SilentlyContinue)) { $toolNotes += 'bash 4.4+ (for the cicd pipeline and the Bash gitsby; WSL or Git Bash on Windows)' }
+if (-not (Get-Command -Name bash -ErrorAction SilentlyContinue)) {
+    # The BSDs ship no bash at all, so name the package rather than just the requirement.
+    $bashHint = if ($IsMacOS) { "; 'brew install bash'" }
+                elseif ($IsWindows) { '; WSL or Git Bash' }
+                elseif ($PSVersionTable.OS -match 'BSD|DragonFly') { "; 'pkg install bash' (FreeBSD) or 'pkg_add bash' (OpenBSD)" }
+                else { '' }
+    $toolNotes += "bash 4.4+ (for the cicd pipeline and the Bash gitsby${bashHint})"
+}
 if (-not (Get-Command -Name shellcheck -ErrorAction SilentlyContinue)) { $toolNotes += 'shellcheck (lint stage)' }
 if (-not (Get-Command -Name markdownlint -ErrorAction SilentlyContinue)) { $toolNotes += 'markdownlint (npm install -g markdownlint-cli)' }
 
