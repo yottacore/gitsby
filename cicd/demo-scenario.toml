@@ -35,39 +35,39 @@ clear = true
 note  = "Fetch, then show exactly where you stand"
 show  = "{prog} status"
 run   = "bash cicd/utility/demo-repo.bash >/dev/null 2>&1 && cd /tmp/gitsby-demo/acme-api && source /tmp/gitsby-demo/demo.env && {bin} status"
-pause = 3.8
+pause = 5.7
 
 [[step]]
 clear = true
 note  = "New branch - uncommitted work comes along"
 show  = "{prog} br create add-retries"
 run   = "cd /tmp/gitsby-demo/acme-api && source /tmp/gitsby-demo/demo.env && {bin} br create add-retries -y"
-pause = 3.5
+pause = 5.2
 
 [[step]]
 clear = true
 note  = "Commit and pull, as often as you like"
 show  = "{prog} update \"Retry failed API calls\""
 run   = "cd /tmp/gitsby-demo/acme-api && source /tmp/gitsby-demo/demo.env && {bin} update \"Retry failed API calls\" -y"
-pause = 3.5
+pause = 5.2
 
 [[step]]
 clear = true
 note  = "Make a change to a source file..."
 show  = "echo 'retry_backoff: 250ms' >> config.yml"
 run   = "cd /tmp/gitsby-demo/acme-api && echo 'retry_backoff: 250ms' >> config.yml"
-pause = 1.6
+pause = 2.4
 
 [[step]]
 clear = true
 note  = "...then commit, pull and push in one go"
 show  = "{prog} sync \"Back off between retries\""
 run   = "cd /tmp/gitsby-demo/acme-api && source /tmp/gitsby-demo/demo.env && {bin} sync \"Back off between retries\" -y"
-pause = 3.5
+pause = 5.2
 
 [[step]]
 clear = true
 note  = "Ship it: merge back, push, delete the branch"
 show  = "{prog} br land \"Add retries\""
 run   = "cd /tmp/gitsby-demo/acme-api && source /tmp/gitsby-demo/demo.env && {bin} br land \"Add retries\" -y"
-pause = 5.2
+pause = 7.8
