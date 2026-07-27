@@ -75,9 +75,11 @@
 - [Commands](#commands)
 	- [Which account are you acting as?](#which-account-are-you-acting-as)
 - [Installation](#installation)
-	- [Bash](#bash)
-	- [PowerShell](#powershell)
-	- [Direct](#direct)
+	- [Packages and installers](#packages-and-installers)
+	- [Direct install scripts](#direct-install-scripts)
+		- [Bash](#bash)
+		- [PowerShell](#powershell)
+	- [DIY](#diy)
 - [How to develop](#how-to-develop)
 - [Git notes and one-liners](#git-notes-and-one-liners)
 - [Contributing](#contributing)
@@ -115,7 +117,7 @@ How Gitsby shrinks Git's command set:
 
 - For large projects, you may still need bare Git (and/or some other wrapper) to resolve sticky situations that Gitsby purposely doesn't try to tackle - and almost certainly didn't create. Leaving them alone is what "keep-it-simple" and "do-one-thing-well" cost.
 
-👉 Gitsby works against any Git remote, GitHub and GitLab included. The exceptions are the `pr` commands and `repo create`, which go through [gh](https://github.com/cli/cli) and are therefore GitHub-only. Everything else is remote-agnostic.
+👉 Gitsby works against any Git remote, GitHub and GitLab included. The exceptions go through [gh](https://github.com/cli/cli) and are therefore GitHub-only: the `pr` commands, `repo create`, and `repo connect` when you give it an `owner/name` instead of a URL. Everything else is remote-agnostic, and `repo connect` with a full URL never touches gh at all.
 
 👉 What you need to run it: Git, plus **either** bash 4.4 or newer (for `gitsby`) **or** PowerShell 7 or newer (for `gitsby.ps1`). The two builds are interchangeable - same commands, same results - so on a machine without bash, the PowerShell one is a complete substitute.
 
@@ -288,7 +290,13 @@ First, decide on the Bash or PowerShell version, mainly gating on *nix vs Window
 
 Then, decide to install for your user account only, or system-wide. (But to avoid future confusion, not both on the same machine.)
 
-Either way, the installer shows exactly what it will do and asks before doing it (add `-y`/`-Yes` to skip the prompt, e.g. for scripted installs).
+### Packages and installers
+
+There are no distribution packages yet - nothing on apt, dnf, Homebrew, or winget. The install scripts below are the supported route.
+
+### Direct install scripts
+
+Either installer shows exactly what it will do and asks before doing it (add `-y`/`-Yes` to skip the prompt, e.g. for scripted installs).
 
 By default the installers take the latest full release, and verify the download against that release's `SHA256SUMS` when one is published. Asking for anything else - `--release dev`, or a branch or tag by name - pulls straight from the tree instead, and skips verification.
 
@@ -307,7 +315,7 @@ Both installers take the same options (Bash / PowerShell forms):
 
 With no options, both do a per-user install of the latest release, after showing the plan and asking.
 
-### Bash
+#### Bash
 
 - User-only install (to `~/.local/bin`)
 
@@ -323,7 +331,7 @@ With no options, both do a per-user install of the latest release, after showing
 
 - No `curl`? Swap in `wget -qO-` for `curl -fsSL`. For the development build instead of the latest release, append `--release dev`.
 
-### PowerShell
+#### PowerShell
 
 - User-only install
 
@@ -337,7 +345,7 @@ With no options, both do a per-user install of the latest release, after showing
 	& ([scriptblock]::Create((irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1))) -Target system
 	~~~
 
-### Direct
+### DIY
 
 No installer: grab the script itself, make it executable, and put it on your PATH.
 
@@ -355,7 +363,9 @@ For reference, the installers use: `~/.local/bin` (user) or `/usr/local/bin` (sy
 
 ## How to develop
 
-One-liner dev setup: clones the repo into `./gitsby`, checks out the `dev` branch, and checks (optionally installs) the dev tooling. Details in [contributing.md](contributing.md).
+One-liner dev setup: clones the repo into `./gitsby`, checks out the `dev` branch, and checks (optionally installs) the dev tooling.
+
+It assumes `git` and a shell that can run one of the two scripts below. What it looks for on top of that: `shellcheck` for the Bash side, `pwsh` 7+ with `PSScriptAnalyzer` for the PowerShell side, `markdownlint` for the docs, `gh` to exercise the `pr` commands, and `python3` with Pillow (plus `gifsicle`, optionally) to regenerate the demo. Anything missing makes its own pipeline stage report itself absent and skip, so you can work on one side without installing the other's tools. Full detail in [contributing.md](contributing.md).
 
 - Linux / macOS
 
