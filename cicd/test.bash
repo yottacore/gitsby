@@ -471,11 +471,13 @@ case "$1 $2" in
 	"pr list")     echo "${FAKE_GH_EXISTING:-}" ;;  ## an already-open PR number for this branch, or nothing
 	"pr create")   echo "https://github.com/me/proj/pull/${FAKE_GH_NEWPR:-1}" ;;
 	"pr review")   : ;;  ## gitsby treats approval as best-effort; nothing to fake
+	"pr view")     echo "${FAKE_GH_HEAD:-$(git branch --show-current)}" ;;  ## the PR's own head branch
 	"pr merge")    ## Land the branch on the base, then drop it from the remote. Real gh does the delete
 	               ## over the API, so the caller's origin/* copy survives it - restore the ref to match.
-	               prBranch="$(git branch --show-current)"
+	               ## FAKE_GH_HEAD lets a check merge a PR whose branch isn't the one we're standing on.
+	               prBranch="${FAKE_GH_HEAD:-$(git branch --show-current)}"
 	               prKeep="$(git rev-parse "refs/remotes/origin/${prBranch}")"
-	               git push --quiet origin "HEAD:${FAKE_GH_BASE:-dev}"
+	               git push --quiet origin "refs/heads/${prBranch}:${FAKE_GH_BASE:-dev}"
 	               git push --quiet origin --delete "${prBranch}"
 	               git update-ref "refs/remotes/origin/${prBranch}" "${prKeep}" ;;
 	"repo create") git init --quiet --bare -b main "${FAKE_GH_REMOTE}"
@@ -605,6 +607,10 @@ GHEOF
 	## A hotfix that changes shipped code leaves main ahead of every tag - say so.
 	fAssertOut "a hotfix touching bin/ warns about the release"  'changes shipped code' \
 		bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix code >/dev/null 2>&1; echo v2 > '${hfc}/bin/tool'; '${gitsby}' -q -NoFetch update wip >/dev/null 2>&1; '${gitsby}' -q -NoFetch br land 'Fix' 2>&1"
+	## The warning reads the branch tip, and 'br land' is what commits the working tree - so an
+	## uncommitted bin/ edit (the ordinary way of making one) has to be checked for after that.
+	fAssertOut "a hotfix warns about shipped code even when the edit is uncommitted"  'changes shipped code' \
+		bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix uncommitted >/dev/null 2>&1; echo v3 > '${hfc}/bin/tool'; '${gitsby}' -q -NoFetch br land 'Fix uncommitted' 2>&1"
 	fAssert    "a docs-only hotfix says nothing about releases"  \
 		bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix docs >/dev/null 2>&1; echo 'readme v3' > README.md; '${gitsby}' -q -NoFetch update wip >/dev/null 2>&1; out=\"\$('${gitsby}' -q -NoFetch br land 'Docs' 2>&1)\"; ! grep -q 'changes shipped code' <<< \"\${out}\""
 	## A back-merge conflict must leave dev untouched and the tree clean, not half-merged.
@@ -634,6 +640,8 @@ GHEOF
 		if [[ "$1" == "-T" ]]; then
 			## No FAKE_SSH_LOGIN = no usable key, which is the 'unknown' case.
 			[[ -n "${FAKE_SSH_LOGIN:-}" ]] || { echo "git@github.com: Permission denied (publickey)." >&2; exit 255; }
+			## Real ssh often writes a line or two of its own before the greeting; we capture stderr too.
+			[[ -n "${FAKE_SSH_NOISE:-}" ]] && echo "Warning: Permanently added 'github.com' (ED25519) to the list of known hosts." >&2
 			echo "Hi ${FAKE_SSH_LOGIN}! You've successfully authenticated, but GitHub does not provide shell access."
 			exit 1   ## GitHub always exits 1 here; the greeting is the answer, not the status
 		fi
@@ -682,6 +690,13 @@ GHEOF
 	## Read-only pr never pays for the ssh probe, so a mismatch can't block looking.
 	fAssert     "a mismatch does not block read-only pr"  \
 		bash -c "cd '${idc}' && ${idEnv} FAKE_GH_LOGIN=alice FAKE_SSH_LOGIN=bob '${gitsby}' -q -NoFetch pr"
+	## ssh writes host-key and missing-identity warnings ahead of the greeting, and we read both
+	## streams - so the greeting is not reliably the first line. Anchoring to the whole output
+	## answered 'unknown' for exactly the multi-key setups this check exists for.
+	fAssertFail "a warning line before the greeting still resolves the ssh identity" \
+		bash -c "cd '${idc}' && ${idEnv} FAKE_SSH_NOISE=1 FAKE_GH_LOGIN=alice FAKE_SSH_LOGIN=bob '${gitsby}' -q -NoFetch pr create 'T'"
+	fAssertOut  "and it still names both accounts"  "acts as 'alice'.*authenticates as 'bob'" \
+		bash -c "cd '${idc}' && ${idEnv} FAKE_SSH_NOISE=1 FAKE_GH_LOGIN=alice FAKE_SSH_LOGIN=bob '${gitsby}' -q -NoFetch pr create 'T' 2>&1 || true"
 
 	## repo create has no origin yet, but the one gh is about to set IS knowable - gh never uses a
 	## host alias, so it is 'git@github.com:owner/name.git'. Check it before creating anything.
@@ -719,6 +734,59 @@ GHEOF
 	fAssertFail "pr ok refuses unpushed commits"  bash -c "cd '${pgc}' && rm -f dirt.txt && echo u > u.txt && git add --all && git commit --quiet -m unpushed && PATH='${ghp}' '${gitsby}' -q pr ok 7"
 	fAssert     "pr ok kept the unpushed commit"  bash -c "cd '${pgc}' && git log -1 --pretty=%s | grep -qx unpushed"
 	fAssert     "pr ok proceeds once synced"  bash -c "cd '${pgc}' && git push --quiet && PATH='${ghp}' FAKE_GH_BASE=dev '${gitsby}' -q pr ok 7"
+
+	## Which branch a PR lands on, and whether it's a hotfix, belong to the PR - not to wherever
+	## you happen to be standing. 'pr ok <n>' is routinely run from dev, on someone else's branch.
+	local pk="${gh}/prhead"
+	git init --quiet --bare -b main "${pk}/origin.git"
+	local pkc="${pk}/c"
+	git clone --quiet "${pk}/origin.git" "${pkc}" 2>/dev/null
+	(
+		cd "${pkc}" || exit 1
+		echo base > base.txt && echo "readme v1" > README.md
+		git add --all && git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet main && git checkout --quiet -b hotfix/api
+		echo "readme v2" > README.md && git commit --quiet -am "Fix wording" && git push --quiet -u origin hotfix/api
+		git checkout --quiet dev
+	)
+	fAssertOut "pr ok plans the back-merge for a hotfix PR accepted from dev"  'git merge origin/main' \
+		bash -c "cd '${pkc}' && PATH='${ghp}' FAKE_GH_HEAD=hotfix/api FAKE_GH_BASE=main '${gitsby}' -q pr ok 7 2>&1"
+	fAssert    "and the hotfix reached the default branch"  bash -c "cd '${pkc}' && [[ \"\$(git show origin/main:README.md)\" == 'readme v2' ]]"
+	fAssert    "and was carried back to dev"               bash -c "cd '${pkc}' && [[ \"\$(git show origin/dev:README.md)\" == 'readme v2' ]]"
+	## The converse: standing on a hotfix branch must not make someone else's feature PR one.
+	(
+		cd "${pkc}" || exit 1
+		git checkout --quiet dev && git checkout --quiet -b pkfeat && echo f > f.txt
+		git add --all && git commit --quiet -m feat && git push --quiet -u origin pkfeat
+		git checkout --quiet -b hotfix/standing && git push --quiet -u origin hotfix/standing
+	)
+	fAssertNotOut "a feature PR accepted from a hotfix branch plans no back-merge"  'git merge origin/main' \
+		bash -c "cd '${pkc}' && PATH='${ghp}' FAKE_GH_HEAD=pkfeat FAKE_GH_BASE=dev '${gitsby}' -q pr ok 8 2>&1"
+
+	## The bash version gate. Bash build only - the PowerShell one needs no bash at all.
+	if [[ "$1" == "bash" ]]; then
+		local vg="${work}/vgate"
+		mkdir -p "${vg}/bin"
+		## Raise the floor past any real bash so the gate fires on this one. Everything below the
+		## gate is 4.x syntax, so a clean refusal also proves nothing below it was reached.
+		sed 's/-lt 4 \]\]/-lt 99 ]]/' "${root}/bin/gitsby" > "${vg}/gitsby"
+		chmod +x "${vg}/gitsby"
+		local vgRun="PATH='${vg}/bin:${PATH}' '${vg}/gitsby' status"
+		printf '#!/usr/bin/env bash\necho Linux\n' > "${vg}/bin/uname"; chmod +x "${vg}/bin/uname"
+		fAssertFail   "too old a bash is refused"                 bash -c "${vgRun}"
+		fAssertOut    "and the refusal names the requirement"     'needs bash 4.4 or newer'  bash -c "${vgRun}"
+		fAssertNotOut "and raises no shell error of its own"      'bad substitution|invalid shell option|syntax error'  bash -c "${vgRun}"
+		## A fake uname picks the platform arm, so all three can be checked from one box.
+		local spec="" plat="" pat=""
+		for spec in "Darwin:brew install bash" "FreeBSD:pkg install bash" "Linux:package manager"; do
+			plat="${spec%%:*}"; pat="${spec#*:}"
+			printf '#!/usr/bin/env bash\necho %s\n' "${plat}" > "${vg}/bin/uname"; chmod +x "${vg}/bin/uname"
+			fAssertOut "and tells ${plat} users what to install"  "${pat}"  bash -c "${vgRun}"
+		done
+		## macOS pins /bin/bash at 3.2 forever, so installing a newer one only helps via PATH.
+		fAssert "gitsby resolves bash through PATH, not /bin/bash"  bash -c "head -1 '${root}/bin/gitsby' | grep -qx '#!/usr/bin/env bash'"
+	fi
 
 	## no-remote repo: everything still works locally
 	local nr="${work}/$1-noremote"

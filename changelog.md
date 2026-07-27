@@ -25,6 +25,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Gitsby now ships in two languages, Bash (for *nix, Darwin, and WSL) and PowerShell (for any platform that PowerShell v7 runs on including Linux, macOS, and Windows); with the same commands and the same behavior in each.
 
+- Running it needs Git, plus either bash 4.4+ or PowerShell 7+. macOS ships bash 3.2 and never replaces it, and the BSDs ship none, so on those either install a current bash (ahead of `/bin/bash` on your `PATH`) or use the PowerShell build. Gitsby and its installer both say which applies rather than failing with a shell error.
+
 ### Added
 
 - PowerShell version, `bin/gitsby.ps1`, for Windows and anywhere else PowerShell 7 runs.

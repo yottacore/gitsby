@@ -53,7 +53,15 @@ command -v git >/dev/null 2>&1 || fErr "git is required; install it first."
 ## are required to run/hack on gitsby itself; the rest gate the pipeline stages.
 missingPkgs=""; notes=""
 ## 4.4 is the floor: bin/gitsby sets inherit_errexit, which older bash rejects.
-[[ "${BASH_VERSINFO[0]}" -gt 4 || ( "${BASH_VERSINFO[0]}" -eq 4 && "${BASH_VERSINFO[1]}" -ge 4 ) ]] || notes="${notes}  - bash 4.4+ (gitsby itself needs it; this installer doesn't)\n"
+if [[ "${BASH_VERSINFO[0]}" -gt 4 || ( "${BASH_VERSINFO[0]}" -eq 4 && "${BASH_VERSINFO[1]}" -ge 4 ) ]]; then :; else
+	## macOS never replaces its 3.2, so name the fix instead of just the requirement.
+	case "$(uname -s 2>/dev/null)" in
+		Darwin)        bashHint=" - 'brew install bash', and put it ahead of /bin/bash on your PATH" ;;
+		*BSD|DragonFly) bashHint=" - 'pkg install bash' (FreeBSD) or 'pkg_add bash' (OpenBSD)" ;;
+		*)             bashHint="" ;;
+	esac
+	notes="${notes}  - bash 4.4+ (gitsby itself needs it; this installer doesn't)${bashHint}\n"
+fi
 command -v shellcheck >/dev/null 2>&1    || missingPkgs="${missingPkgs} shellcheck"
 command -v python3    >/dev/null 2>&1    || missingPkgs="${missingPkgs} python3"
 command -v markdownlint >/dev/null 2>&1  || notes="${notes}  - markdownlint (npm install -g markdownlint-cli)\n"

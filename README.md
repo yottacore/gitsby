@@ -116,6 +116,15 @@ How Gitsby shrinks Git's command set:
 
 👉 Gitsby works against any Git remote, GitHub and GitLab included. The exceptions are the `pr` commands and `repo create`, which go through [gh](https://github.com/cli/cli) and are therefore GitHub-only. Everything else is remote-agnostic.
 
+👉 What you need to run it: Git, plus **either** bash 4.4 or newer (for `gitsby`) **or** PowerShell 7 or newer (for `gitsby.ps1`). The two builds are interchangeable - same commands, same results - so on a machine without bash, the PowerShell one is a complete substitute.
+
+- **Linux**: bash is already new enough on anything current.
+- **macOS**: the stock `/bin/bash` is 3.2 (from 2007) and Apple never replaces it. `brew install bash` or `sudo port install bash` installs a current one *alongside* it, so put that ahead of `/bin/bash` on your `PATH`.
+- **BSD**: bash isn't installed by default. `pkg install bash` on FreeBSD, `pkg_add bash` on OpenBSD.
+- **Windows**: use the PowerShell build, or bash under WSL or Git Bash.
+
+Gitsby tells you which of these applies if it can't run, rather than failing with a shell error.
+
 > Note: [GitButler](https://gitbutler.com/) is *not* interchangeable with Git, Gitsby, gh, Lazygit, and/or Tig. While a great tool and a cool idea, it manages its own metadata - that inherently doesn't mix well with other git-based tools that move `HEAD` or rewrite history. It's worth a look and a try - but to be safe, give it a dedicated trial on a small personal repo, without mixing in other tools.
 
 ## General attributes
