@@ -119,12 +119,12 @@ How Gitsby shrinks Git's command set:
 
 👉 Gitsby works against any Git remote, GitHub and GitLab included. The exceptions go through [gh](https://github.com/cli/cli) and are therefore GitHub-only: the `pr` commands, `repo create`, and `repo connect` when you give it an `owner/name` instead of a URL. Everything else is remote-agnostic, and `repo connect` with a full URL never touches gh at all.
 
-👉 What you need to run it: Git, plus **either** bash 4.4 or newer (for `gitsby`) **or** PowerShell 7 or newer (for `gitsby.ps1`). The two builds are interchangeable - same commands, same results - so on a machine without bash, the PowerShell one is a complete substitute.
+👉 What you need to run it: Git, plus either bash 4.4 or newer (for `gitsby`) or PowerShell 7 or newer (for `gitsby.ps1`). The two builds are interchangeable - same commands, same results - so on a machine without bash, the PowerShell one is a complete substitute.
 
-- **Linux**: bash is already new enough on anything current.
-- **macOS**: the stock `/bin/bash` is 3.2 (from 2007) and Apple never replaces it. `brew install bash` or `sudo port install bash` installs a current one *alongside* it, so put that ahead of `/bin/bash` on your `PATH`.
-- **BSD**: bash isn't installed by default. `pkg install bash` on FreeBSD, `pkg_add bash` on OpenBSD.
-- **Windows**: use the PowerShell build, or bash under WSL or Git Bash.
+- Linux: bash is already new enough on anything current.
+- macOS is the awkward one. Its stock `/bin/bash` is 3.2, from 2007, and Apple never replaces it. `brew install bash` or `sudo port install bash` puts a current one alongside it rather than over it, so the new one has to come first on your `PATH`.
+- BSD ships no bash at all. `pkg install bash` on FreeBSD, `pkg_add bash` on OpenBSD.
+- On Windows, use the PowerShell build, or bash under WSL or Git Bash.
 
 Gitsby tells you which of these applies if it can't run, rather than failing with a shell error.
 
