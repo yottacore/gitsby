@@ -786,6 +786,41 @@ GHEOF
 		done
 		## macOS pins /bin/bash at 3.2 forever, so installing a newer one only helps via PATH.
 		fAssert "gitsby resolves bash through PATH, not /bin/bash"  bash -c "head -1 '${root}/bin/gitsby' | grep -qx '#!/usr/bin/env bash'"
+
+		## Installer options. These run once, not per implementation, and never reach the network:
+		## every check either exits during argument parsing, or uses --release (which names the ref
+		## outright, so no latest-release lookup) and stops at the confirmation.
+		local inst="${root}/install.bash"
+		fAssert     "installer --help works"                    bash -c "bash '${inst}' --help"
+		fAssertOut  "and documents --release"                   '\-\-release dev\|stable'   bash -c "bash '${inst}' --help"
+		fAssertOut  "and documents --target"                    '\-\-target user\|system'   bash -c "bash '${inst}' --help"
+		fAssertOut  "and documents --arch"                      '\-\-arch x64\|amd64\|arm64' bash -c "bash '${inst}' --help"
+		## Assert the reason, not just the failure: an installer that never heard of --target also
+		## exits nonzero here, so a bare exit-code check would pass with the option missing entirely.
+		fAssertFail "installer exits nonzero on a bad --target"  bash -c "bash '${inst}' --target bogus"
+		fAssertOut  "installer refuses a bad --target"           "\-\-target takes"          bash -c "bash '${inst}' --target bogus"
+		fAssertOut  "installer refuses a bad --arch"             "\-\-arch takes"            bash -c "bash '${inst}' --arch sparc"
+		fAssertOut  "installer refuses a bad --release"          "\-\-release takes"         bash -c "bash '${inst}' --release beta"
+		fAssertOut  "installer refuses --release with --ref"     'Use --release or --ref'    bash -c "bash '${inst}' --release dev --ref main"
+		fAssertOut  "installer refuses a valueless --target"     "\-\-target needs a value"  bash -c "bash '${inst}' --target"
+		## Reading the printed plan needs the confirmation to refuse rather than block, which means
+		## no controlling terminal. Without setsid there is no safe way to ask, so skip rather than hang.
+		if command -v setsid >/dev/null 2>&1; then
+			local iHome="${work}/insthome"; mkdir -p "${iHome}"
+			local iRun="setsid env HOME='${iHome}' bash '${inst}' --release dev"
+			fAssertOut "--target user installs under HOME"      "insthome/\.local/bin/gitsby"  bash -c "${iRun} --target user </dev/null"
+			fAssertOut "--target system installs system-wide"   '/usr/local/bin/gitsby'        bash -c "${iRun} --target system </dev/null"
+			fAssertOut "-s still means --target system"         '/usr/local/bin/gitsby'        bash -c "${iRun} -s </dev/null"
+			fAssertOut "--arch is taken but reported inert"     'Ignore --arch arm64'          bash -c "${iRun} --arch arm64 </dev/null"
+		fi
+		## The PowerShell installer's ValidateSet does the same job as the case arms above.
+		if command -v pwsh >/dev/null 2>&1; then
+			local instPs="${root}/install.ps1"
+			fAssertFail "ps installer refuses a bad -Target"      pwsh -NoProfile -File "${instPs}" -Target bogus
+			fAssertFail "ps installer refuses a bad -Arch"        pwsh -NoProfile -File "${instPs}" -Arch sparc
+			fAssertFail "ps installer refuses a bad -Release"     pwsh -NoProfile -File "${instPs}" -Release beta
+			fAssertFail "ps installer refuses -Release with -Ref" pwsh -NoProfile -File "${instPs}" -Release dev -Ref main
+		fi
 	fi
 
 	## no-remote repo: everything still works locally
@@ -829,3 +864,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260724 JC: exhaustive clone/connect coverage - no-dev/empty-dir/different-url clone edges, empty-repo + matching-url connect, and the gh owner/name paths (create, add https/ssh, nonempty-refuse) via a hermetic fake gh.
 ##		- 20260725 JC: Release-candidate version checks, and pr ok from the merged branch - the fake gh grew a pr merge that restores the stale origin ref, since that is what makes the real failure reproduce.
 ##		- 20260726 JC: Offline coverage inside a compound command, and the protected-branch refusal now has to name a command that still exists. The old offline check spelled the flag --no-fetch, which pwsh rejects, and matched the rejection - green for the wrong reason.
+##		- 20260727 JC: Installer option coverage (--release/--target/--arch, both implementations). The refusal checks assert the reason rather than the exit code, since an installer that never heard of --target also exits nonzero. Plan checks need the confirmation to refuse instead of block, so they run under setsid and skip where it is absent.
