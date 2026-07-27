@@ -318,6 +318,17 @@ Release-prep pass over what changed since the last review: the noun grouping, `p
 	- Decided against a general gh-config validator: policing another tool's setup isn't gitsby's job and would turn working commands into refusals.
 	- 26 new checks across both implementations, driven by a fake ssh that answers the greeting GitHub really sends and doubles as the git transport. Verified they fail against the pre-feature build.
 
+- ✅ Extend the identity check to `repo create` and `repo connect owner/name`.
+	- The first pass skipped them for having no origin to compare. That was wrong: gh never uses a host alias, so the url it is about to set is always `git@github.com:owner/name.git` and the identity is knowable before anything is created. Design note revised rather than appended to.
+	- Refuses before `gh repo create` and before `git init`, so a mismatch leaves no remote and no repository behind. Verified against the pre-feature build, which created both.
+	- An https protocol means git will use a credential helper rather than a key, so there is no second identity and nothing to compare.
+	- Deliberately does NOT rewrite the remote to a matching host alias. Guessing which alias serves an account means inferring the user's ssh setup, and a wrong guess points the repo at the wrong key. `repo connect <full url>` already covers anyone who wants their alias.
+
+- ✅ PowerShell: gh's account was read from a stale exit status.
+	- `gh api user | Select-Object -First 1` stops the native command early, so `$LASTEXITCODE` is left over from whatever ran before - in a plain directory that is the failed repo probe, so the login was discarded and every identity came back unknown.
+	- Only showed up once `repo create` started needing the login, since that is the one command that runs outside a repository.
+	- Fixed by collecting the output with `@()` before selecting, in all three places that read a native command this way. A regression check runs `repo create` from a plain directory and asserts the account resolves.
+
 #### Done - Code reviews 20260725 and 20260723
 
 - ✅ Code Review 20260725 item 1: `release` pushes only the tag when the default branch has no upstream (both implementations).
