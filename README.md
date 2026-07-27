@@ -92,7 +92,7 @@ You probably also understand that it's complex, mostly because it's so flexible.
 
 Git has about 82 porcelain commands.
 
-Gitsby has 7. (Or 16 total when counting subcommands.)
+Gitsby has 7. (Or 17 total when counting subcommands.)
 
 How Gitsby shrinks Git's command set:
 
@@ -166,7 +166,9 @@ There are many implicit opinions baked in. Here are the main ones:
 
 - Feature branches are short-lived: branch off, do the work, land it, delete it (local and remote).
 
-- If the repo has a `dev` branch, feature branches come off of - and land back on - `dev`. `main` is then release-only: a `dev` -> `main` merge is a release cut, with a tag.
+- The branching model is something a repo opts into by creating a `dev` branch. With no `dev`, the merge target falls back to the default branch, so feature branches come off `main` and land back on `main` - that is GitHub Flow, and it is the better fit for a project with no release cadence. Create a `dev` and you get GitFlow instead: feature work lands on `dev`, `main` carries only what is published, and a `dev` -> `main` merge is a release cut with a tag. Gitsby picks by repo shape; there is nothing to configure.
+
+- Published material can be corrected without waiting for a release. `br hotfix <name>` branches off the default branch rather than `dev`, lands there, and then carries the change back into `dev` so the next release cannot undo it. That is GitFlow's hotfix branch, and it is why a README fix does not need a version bump.
 
 - Commit the whole working tree (`git add --all`), every time. The staging area is not a workspace; partial staging is one of those fringe cases left to raw `git`.
 
@@ -210,6 +212,7 @@ What you reach for daily is one word. Everything else is grouped under a noun, s
 | `release`            | `[ver]`       | Cut a release: merge `dev` into `main`, tag, push. No version: the next one after the latest tag.
 | `br`                 |               | Fetch and list branches (`br list` is the same thing).
 | `br create`          | `<branch>`    | Create a new branch off `dev`/`main`. Uncommitted work on `dev`/`main` comes along; on another branch it is parked there first.
+| `br hotfix`          | `<name>`      | Branch off the default branch as `hotfix/<name>`, to correct what's already published. Landing it carries the change back to `dev`.
 | `br switch`          | `[branch]`    | Switch to a branch (parks current work first). No arg: back to `dev`/`main`.
 | `br land`            | `[msg]`       | Merge the current branch into `dev`/`main` (`--no-ff`), push, delete it local + remote.
 | `br prune`           |               | Delete branches already merged into `dev`/`main`, local + remote. Unmerged ones, and the branch you're on, are kept.

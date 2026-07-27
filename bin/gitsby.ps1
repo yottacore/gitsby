@@ -149,6 +149,7 @@ function Show-Syntax {
     Write-PlainLine 'Admin commands, e.g. for small solo projects:'
     Write-PlainLine "  br land [msg] ......: Merge current branch into ${script:mergeTargetLabel} (--no-ff), push, delete it local + remote."
     Write-PlainLine "  br prune ...........: Delete branches already merged into ${script:mergeTargetLabel}, local + remote."
+    Write-PlainLine "  br hotfix <name> ...: Branch off the default branch, to correct what's already published."
     Write-PlainLine '  pr [create|n|ok n] .: Create, list, review, or accept a pull request (needs gh).'
     Write-PlainLine '  release [ver] ......: Cut a release: merge dev into main, tag, push. No ver: next after latest tag.'
     Write-PlainLine 'Options:'
@@ -274,6 +275,64 @@ function Get-MergeTarget {
     if ($script:mergeTargetCache) { return $script:mergeTargetCache }
     if ((Test-GitBranchLocal -Branch 'dev') -or (Test-GitBranchRemote -Branch 'dev')) { return 'dev' }
     return (Get-DefaultBranch)
+}
+
+function Test-HotfixBranch {
+    ## A hotfix corrects what is already published, so it targets the default branch instead of dev.
+    ## The 'hotfix/' prefix is the marker: it lives in the ref name, so it survives a clone and is
+    ## visible in a branch listing - unlike branch-local config, which neither is.
+    param([string]$Branch = '')
+    if (-not $Branch) { $Branch = Get-CurrentBranch }
+    return $Branch.StartsWith('hotfix/')
+}
+
+function Get-BranchTarget {
+    ## Where THIS branch lands, which is not always where new feature branches come from.
+    ## Get-MergeTarget stays the answer for 'br create' (always dev when there is one); this is the
+    ## answer for landing, and for what a pull request should be based on.
+    param([string]$Branch = '')
+    if (-not $Branch) { $Branch = Get-CurrentBranch }
+    if (Test-HotfixBranch -Branch $Branch) { return (Get-DefaultBranch) }
+    return (Get-MergeTarget)
+}
+
+function Invoke-BackMergeToDev {
+    ## After a hotfix lands on the default branch, dev has to receive it. Skipping this is how the
+    ## next release conflicts on the same file, or quietly reinstates the text the hotfix replaced.
+    ## A conflict here is raw-git territory: abort so the tree is left clean, and say so plainly.
+    $mainBranch = Get-DefaultBranch
+    $devBranch = Get-MergeTarget
+    if ($devBranch -ceq $mainBranch) { return }   ## no dev in this repo: nothing to carry back
+    if (-not ((Test-GitBranchLocal -Branch $devBranch) -or (Test-GitBranchRemote -Branch $devBranch))) { return }
+    Write-PlainLine ''
+    Invoke-Git -GitArgs @('checkout', $devBranch)
+    Invoke-GitsbyPullIfOnline
+    Write-StatusLine "git merge ${mainBranch} ..."
+    git merge $mainBranch -m "Merge ${mainBranch}"
+    if ($LASTEXITCODE -eq 0) {
+        Clear-BlankCounter
+        if (Test-GitOrigin) {
+            if (Test-GitUpstream) { Invoke-Git -GitArgs @('push') } else { Invoke-Git -GitArgs @('push', '-u', 'origin', 'HEAD') }
+        }
+    } else {
+        git merge --abort 2>$null
+        Clear-BlankCounter
+        Write-StatusLine "WARNING: '${mainBranch}' would not merge cleanly into '${devBranch}'; left '${devBranch}' untouched."
+        Write-PlainLine "  The hotfix landed on '${mainBranch}' - that part is done."
+        Write-PlainLine "  Carry it across by hand: git checkout ${devBranch} && git merge ${mainBranch}"
+    }
+}
+
+function Show-HotfixBinWarning {
+    ## A hotfix that changes shipped code leaves the default branch carrying something no tag
+    ## contains, so the latest release's assets stop matching it. Documentation does not.
+    param([Parameter(Mandatory)][string]$WorkBranch, [Parameter(Mandatory)][string]$TargetBranch)
+    $changed = @(git diff --name-only "${TargetBranch}...${WorkBranch}" -- bin/ 2>$null)
+    if ($changed.Count -eq 0) { return }
+    Write-PlainLine ''
+    Write-StatusLine 'NOTE: this hotfix changes shipped code, not just documentation.'
+    Write-PlainLine "  '${TargetBranch}' will carry code that no tag contains, so the latest release's"
+    Write-PlainLine "  downloads no longer match it. Cut a patch release when you're ready: ${script:meName} release"
 }
 
 function Get-BranchSync {
@@ -593,6 +652,20 @@ function Show-CommandPreview {
             Write-PlainLine "${pad}git push -u origin $($script:cmdArg) *"
             break
         }
+        'br-hotfix' {
+            ## Off the default branch, not dev: this corrects what is already published.
+            if (Test-ProtectedBranch) {
+                Write-PlainLine "${pad}git checkout $(Get-DefaultBranch) *"
+                Write-PlainLine "${pad}git pull --ff-only --autostash *"
+            } else {
+                Show-CommandPreview -CommandName 'sync'
+                Write-PlainLine "${pad}git checkout $(Get-DefaultBranch) *"
+                Write-PlainLine "${pad}git pull --ff-only *"
+            }
+            Write-PlainLine "${pad}git checkout -b $($script:cmdArg)"
+            Write-PlainLine "${pad}git push -u origin $($script:cmdArg) *"
+            break
+        }
         'br-switch' {
             Show-CommandPreview -CommandName 'sync'
             $target = if ($script:cmdArg) { $script:cmdArg } else { Get-MergeTarget }
@@ -602,13 +675,19 @@ function Show-CommandPreview {
         }
         'br-land' {
             Show-CommandPreview -CommandName 'sync'
-            Write-PlainLine "${pad}git checkout $(Get-MergeTarget)"
+            Write-PlainLine "${pad}git checkout $(Get-BranchTarget)"
             Write-PlainLine "${pad}git pull --ff-only *"
             Write-PlainLine "${pad}git merge --no-ff $(Get-CurrentBranch)"
             Write-PlainLine "${pad}git push *"
             Write-PlainLine "${pad}git branch -d $(Get-CurrentBranch)"
             Write-PlainLine "${pad}git push origin --delete $(Get-CurrentBranch) *"
             Write-PlainLine "${pad}git pull --ff-only *"
+            ## A hotfix owes dev the same change, or the next release undoes it.
+            if (Test-HotfixBranch) {
+                Write-PlainLine "${pad}git checkout $(Get-MergeTarget)"
+                Write-PlainLine "${pad}git merge $(Get-DefaultBranch)"
+                Write-PlainLine "${pad}git push *"
+            }
             break
         }
         'br-prune' {
@@ -649,12 +728,17 @@ function Show-CommandPreview {
         'pr' {
             if ($script:prSub -eq 'create') {
                 Show-CommandPreview -CommandName 'sync'
-                Write-PlainLine "${pad}gh pr create --base $(Get-MergeTarget) --title `"$($script:prTitle)`""
+                Write-PlainLine "${pad}gh pr create --base $(Get-BranchTarget) --title `"$($script:prTitle)`""
             } else {
                 Write-PlainLine "${pad}gh pr review $($script:prNum) --approve *"
                 Write-PlainLine "${pad}gh pr merge $($script:prNum) --merge --delete-branch"
-                Write-PlainLine "${pad}git checkout $(Get-MergeTarget) *"
+                Write-PlainLine "${pad}git checkout $(Get-BranchTarget) *"
                 Write-PlainLine "${pad}git pull --ff-only *"
+                if (Test-HotfixBranch) {
+                    Write-PlainLine "${pad}git checkout $(Get-MergeTarget)"
+                    Write-PlainLine "${pad}git merge $(Get-DefaultBranch)"
+                    Write-PlainLine "${pad}git push *"
+                }
             }
             break
         }
@@ -763,6 +847,24 @@ function Invoke-GitsbyMakeBranch {
     if (Test-GitOrigin) { Invoke-Git -GitArgs @('push', '-u', 'origin', $NewBranch) }
 }
 
+function Invoke-GitsbyHotfix {
+    ## A branch off the default branch, for correcting what is already published. Feature work
+    ## still goes through dev; this exists because the default branch is what the world reads.
+    param([string]$NewBranch = '')
+    $baseBranch = Get-DefaultBranch
+    if (Test-ProtectedBranch) {
+        ## Same rule as br create: don't commit work-in-progress to a protected branch, carry it.
+        if ((Get-CurrentBranch) -cne $baseBranch) { Invoke-Git -GitArgs @('checkout', $baseBranch) }
+        Invoke-GitsbyPullIfOnline -ExtraArgs @('--autostash')
+    } else {
+        Invoke-GitsbyPush  ## park current work safely first
+        Invoke-Git -GitArgs @('checkout', $baseBranch)
+        Invoke-GitsbyPullIfOnline
+    }
+    Invoke-Git -GitArgs @('checkout', '-b', $NewBranch)
+    if (Test-GitOrigin) { Invoke-Git -GitArgs @('push', '-u', 'origin', $NewBranch) }
+}
+
 function Invoke-GitsbyChangeBranch {
     param([string]$TargetBranch = '')
     if (-not $TargetBranch) { $TargetBranch = Get-MergeTarget }
@@ -779,12 +881,14 @@ function Invoke-GitsbyChangeBranch {
 
 function Invoke-GitsbyLand {
     ## Merges the current branch into dev (or main/master) - backwards from 'git merge', but saves a step.
-    $targetBranch = Get-MergeTarget
     $workBranch = Get-CurrentBranch
+    $targetBranch = Get-BranchTarget -Branch $workBranch
     if ($workBranch -ceq $targetBranch) { throw "Already on '${targetBranch}'. Run this from the branch to merge in: ${script:meName} br switch <branch>, then ${script:meName} br land" }
     if ($workBranch -ceq (Get-DefaultBranch)) { throw "'${workBranch}' is the default branch; landing it on '${targetBranch}' is backwards. To cut a release: ${script:meName} release" }
     $mergeMessage = $script:commitMessage
     if (-not $mergeMessage) { $mergeMessage = "Merge ${workBranch}" }
+    $wasHotfix = Test-HotfixBranch -Branch $workBranch
+    if ($wasHotfix) { Show-HotfixBinWarning -WorkBranch $workBranch -TargetBranch $targetBranch }
     Invoke-GitsbyPush
     Invoke-Git -GitArgs @('checkout', $targetBranch)
     Invoke-GitsbyPullIfOnline
@@ -804,6 +908,8 @@ function Invoke-GitsbyLand {
         Clear-BlankCounter
     }
     Invoke-GitsbyPullIfOnline
+    ## The hotfix now has to reach dev too, or the next release undoes it.
+    if ($wasHotfix) { Invoke-BackMergeToDev }
 }
 
 function Invoke-GitsbyPrune {
@@ -908,7 +1014,7 @@ function Invoke-GitsbyPrCreate {
     ## GitHub can only diff what origin has, so park the work first - same as br land and release do.
     param([Parameter(Mandatory)][string]$Title)
     Invoke-GitsbyPush
-    $base = Get-MergeTarget
+    $base = Get-BranchTarget
     $head = Get-CurrentBranch
     Write-PlainLine ''
     Write-StatusLine "gh pr create --base ${base} --title `"${Title}`" ..."
@@ -919,6 +1025,9 @@ function Invoke-GitsbyPrCreate {
 
 function Invoke-GitsbyPrAccept {
     param([Parameter(Mandatory)][string]$PrNumber)
+    ## Resolve both before gh deletes the branch out from under us.
+    $prTargetBranch = Get-BranchTarget
+    $wasHotfixPr = Test-HotfixBranch
     Write-PlainLine ''
     Write-StatusLine "gh pr review ${PrNumber} --approve ..."
     ## Best-effort: gh refuses to approve your own PR; merging is the part that matters.
@@ -934,8 +1043,10 @@ function Invoke-GitsbyPrAccept {
     ## upstream still looks present. Prune first; if ours is the branch that just went away,
     ## pulling it can only fail - land on the merge target instead.
     git fetch --quiet --prune 2>$null
-    if (-not (Test-GitUpstream)) { Invoke-Git -GitArgs @('checkout', (Get-MergeTarget)) }
+    if (-not (Test-GitUpstream)) { Invoke-Git -GitArgs @('checkout', $prTargetBranch) }
     Invoke-GitsbyPullIfOnline
+    ## Same rule as land: a hotfix that reached the default branch still owes dev a merge.
+    if ($wasHotfixPr) { Invoke-BackMergeToDev }
 }
 
 function Invoke-GitsbyRelease {
@@ -1022,10 +1133,11 @@ try {
         $cmdName = switch ($CommandArg.ToLowerInvariant()) {
             { $_ -in '', 'list' } { 'br-list'; break }
             { $_ -in 'create', 'new' } { 'br-create'; break }
+            'hotfix' { 'br-hotfix'; break }
             { $_ -in 'switch', 'go' } { 'br-switch'; break }
             'land' { 'br-land'; break }
             { $_ -in 'prune', 'clean' } { 'br-prune'; break }
-            default { throw "Unknown 'br' subcommand '${CommandArg}'. One of: list, create, switch, land, prune." }
+            default { throw "Unknown 'br' subcommand '${CommandArg}'. One of: list, create, hotfix, switch, land, prune." }
         }
         $CommandArg = $CommandArg2; $CommandArg2 = $CommandArg3; $CommandArg3 = ''
     }
@@ -1047,7 +1159,7 @@ try {
             if ($CommandArg) { throw "'$($script:meName) br prune' takes no arguments (got '${CommandArg}'); it prunes every branch already merged." }
             break
         }
-        { $_ -in 'br-create', 'br-switch', 'release', 'repo-create', 'repo-connect' } {
+        { $_ -in 'br-create', 'br-hotfix', 'br-switch', 'release', 'repo-create', 'repo-connect' } {
             if ($CommandArg2) { throw "Unexpected extra argument '${CommandArg2}'." }
             break
         }
@@ -1164,6 +1276,15 @@ try {
     if ($cmdName -eq 'br-create') {
         if (-not $CommandArg) { throw "No branch name given. Syntax: ${script:meName} br create <new branch name>" }
         git check-ref-format --branch "$CommandArg" *> $null  ## quote: a bare $var lets PowerShell glob '*'/'?' to filenames, defeating the check
+        if ($LASTEXITCODE -ne 0) { throw "'${CommandArg}' is not a valid branch name." }
+        if (Test-GitBranchLocal -Branch $CommandArg) { throw "Branch '${CommandArg}' already exists; use: ${script:meName} br switch ${CommandArg}" }
+        if (Test-GitBranchRemote -Branch $CommandArg) { throw "Branch '${CommandArg}' already exists on origin; use: ${script:meName} br switch ${CommandArg}" }
+    } elseif ($cmdName -eq 'br-hotfix') {
+        if (-not $CommandArg) { throw "No name given. Syntax: ${script:meName} br hotfix <name>" }
+        ## The prefix is the marker, so put it on ourselves - and accept it if the user typed it.
+        $CommandArg = 'hotfix/' + ($CommandArg -replace '^hotfix/', '')
+        $script:cmdArg = $CommandArg
+        git check-ref-format --branch "$CommandArg" *> $null
         if ($LASTEXITCODE -ne 0) { throw "'${CommandArg}' is not a valid branch name." }
         if (Test-GitBranchLocal -Branch $CommandArg) { throw "Branch '${CommandArg}' already exists; use: ${script:meName} br switch ${CommandArg}" }
         if (Test-GitBranchRemote -Branch $CommandArg) { throw "Branch '${CommandArg}' already exists on origin; use: ${script:meName} br switch ${CommandArg}" }
@@ -1379,6 +1500,7 @@ try {
         'update' { Invoke-GitsbyCommitPull; break }
         'sync' { Invoke-GitsbyPush; break }
         'br-create' { Invoke-GitsbyMakeBranch -NewBranch $CommandArg; break }
+        'br-hotfix' { Invoke-GitsbyHotfix -NewBranch $CommandArg; break }
         'br-switch' { Invoke-GitsbyChangeBranch -TargetBranch $CommandArg; break }
         'br-land' { Invoke-GitsbyLand; break }
         'br-prune' { Invoke-GitsbyPrune; break }

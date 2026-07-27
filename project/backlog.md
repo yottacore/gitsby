@@ -46,18 +46,20 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Features and enhancements
 
-- 🔘 `br hotfix <name>`: a branch that targets `main` instead of `dev`, for corrections to published material.
-	- The branching model is written up in `design.md`; this is the command that carries it.
-	- Branches off `main`, pushed as `hotfix/<name>`. The prefix is the marker, so it survives a clone and is visible in a branch listing.
-	- `br land`, `pr create`, and `pr ok` recognise a `hotfix/` branch and target `main`, then merge `main` back into `dev`. The back-merge is the part a person forgets, which is the reason this is a command rather than a flag.
-	- Landing warns when the branch touched anything under `bin/`: `main` would then carry code no tag contains, so the latest release's assets no longer match it, and a patch release is wanted.
-	- Touches merge-target resolution, which every branching command depends on - needs care and coverage on both implementations.
-
 ### Done
 
 #### Done - Bugs
 
 #### Done - Features and enhancements
+
+- ✅ `br hotfix <name>`: a branch that targets the default branch instead of `dev`, for corrections to published material.
+	- The branching model is written up in `design.md`; this is the command that carries it.
+	- Branches off the default branch, pushed as `hotfix/<name>`. The prefix is the marker, so it survives a clone and shows in a branch listing. A name given with the prefix already on it is accepted rather than doubled.
+	- `br land`, `pr create`, and `pr ok` recognise a `hotfix/` branch and target the default branch, then merge it back into `dev`. `br create` still comes off `dev`, so feature work is untouched.
+	- A back-merge that conflicts aborts and leaves `dev` alone, reporting that the hotfix landed and naming the two commands to finish by hand. Conflict surgery stays raw-git territory.
+	- Landing warns when the branch touched `bin/`: the default branch would then carry code no tag contains, so the latest release's downloads no longer match it.
+	- Implemented as `fBranchTarget` / `Get-BranchTarget` alongside the existing merge target, rather than by changing `fMergeTarget` - "where new branches come from" and "where this branch lands" are different questions, and only the second one varies.
+	- 30 new checks across both implementations. Verified the pre-feature build rejects `br hotfix` outright.
 
 - ✅ Release-prep sweep over the docs and the built-in help.
 	- The help still described `sync` as commit-then-pull. That order changed when the bare `pull` command was dropped, and this line was missed. The README already had it right.

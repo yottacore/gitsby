@@ -59,6 +59,7 @@ fSyntax(){ { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax=
 	fEcho_Clean "Admin commands, e.g. for small solo projects:"
 	fEcho_Clean "  br land [msg] ......: Merge current branch into ${mergeTargetLabel} (--no-ff), push, delete it local + remote."
 	fEcho_Clean "  br prune ...........: Delete branches already merged into ${mergeTargetLabel}, local + remote."
+	fEcho_Clean "  br hotfix <name> ...: Branch off the default branch, to correct what's already published."
 	fEcho_Clean "  pr [create|n|ok n] .: Create, list, review, or accept a pull request (needs gh)."
 	fEcho_Clean "  release [ver] ......: Cut a release: merge dev into main, tag, push. No ver: next after latest tag."
 	fEcho_Clean "Options:"
@@ -134,10 +135,11 @@ fMain(){
 			case "${cmdArg,,}" in
 				""|list)     cmdName="br-list"   ;;
 				create|new)  cmdName="br-create" ;;
+				hotfix)      cmdName="br-hotfix" ;;
 				switch|go)   cmdName="br-switch" ;;
 				land)        cmdName="br-land"   ;;
 				prune|clean) cmdName="br-prune"  ;;
-				*)           fThrowError_Usage "Unknown 'br' subcommand '${cmdArg}'. One of: list, create, switch, land, prune." ;;
+				*)           fThrowError_Usage "Unknown 'br' subcommand '${cmdArg}'. One of: list, create, hotfix, switch, land, prune." ;;
 			esac
 			cmdArg="${cmdArg2}"; cmdArg2="${cmdArg3}"; cmdArg3=""
 			;;
@@ -157,7 +159,7 @@ fMain(){
 			## Takes nothing: what it deletes is decided by repo state, never by a name on the command line.
 			[[ -n "${cmdArg}" ]] && fThrowError_Usage "'${meName} br prune' takes no arguments (got '${cmdArg}'); it prunes every branch already merged."
 			;;
-		br-create|br-switch|release|repo-create|repo-connect)
+		br-create|br-hotfix|br-switch|release|repo-create|repo-connect)
 			[[ -n "${cmdArg2}" ]] && fThrowError_Usage "Unexpected extra argument '${cmdArg2}'."
 			;;
 		*) fThrowError_Usage "Unknown command '${cmdName}'. Run '${meName}' with no arguments for a list." ;;
@@ -245,6 +247,13 @@ fMain(){
 	## Branch arguments validate up front too, so a bad name can't survive to a nonsense preview.
 	if [[ "${cmdName}" == "br-create" ]]; then
 		[[ -n "${cmdArg}" ]] || fThrowError_Usage "No branch name given. Syntax: ${meName} br create <new branch name>"
+		git check-ref-format --branch "${cmdArg}" >/dev/null 2>&1 || fThrowError_Usage "'${cmdArg}' is not a valid branch name."
+		fBranchExistsLocal  "${cmdArg}" && fThrowError_Usage "Branch '${cmdArg}' already exists; use: ${meName} br switch ${cmdArg}"
+		fBranchExistsRemote "${cmdArg}" && fThrowError_Usage "Branch '${cmdArg}' already exists on origin; use: ${meName} br switch ${cmdArg}"
+	elif [[ "${cmdName}" == "br-hotfix" ]]; then
+		[[ -n "${cmdArg}" ]] || fThrowError_Usage "No name given. Syntax: ${meName} br hotfix <name>"
+		## The prefix is the marker, so put it on ourselves - and accept it if the user typed it.
+		cmdArg="hotfix/${cmdArg#hotfix/}"
 		git check-ref-format --branch "${cmdArg}" >/dev/null 2>&1 || fThrowError_Usage "'${cmdArg}' is not a valid branch name."
 		fBranchExistsLocal  "${cmdArg}" && fThrowError_Usage "Branch '${cmdArg}' already exists; use: ${meName} br switch ${cmdArg}"
 		fBranchExistsRemote "${cmdArg}" && fThrowError_Usage "Branch '${cmdArg}' already exists on origin; use: ${meName} br switch ${cmdArg}"
@@ -439,6 +448,7 @@ fMain(){
 		update)                   fCmdCommitPull ;;
 		sync)                     fCmdPush ;;
 		br-create)                fCmdNewBranch "${cmdArg}" ;;
+		br-hotfix)                fCmdHotfix "${cmdArg}" ;;
 		br-switch)                fCmdGoBranch "${cmdArg}" ;;
 		br-land)                  fCmdLand ;;
 		br-prune)                 fCmdPrune ;;
@@ -556,14 +566,39 @@ fCmdGoBranch(){
 	fPullIfOnline
 :;}
 
+fCmdHotfix(){
+	## A branch off the default branch, for correcting what is already published. Feature work
+	## still goes through dev; this exists because the default branch is what the world reads.
+	local -r newBranch="${1:-}"
+	local -r baseBranch="$(fDefaultBranch)"
+	if fIsProtectedBranch; then
+		## Same rule as br create: don't commit work-in-progress to a protected branch, carry it.
+		if [[ "$(fCurrentBranch)" != "${baseBranch}" ]]; then
+			fRun git checkout "${baseBranch}"
+		fi
+		fPullIfOnline --autostash
+	else
+		fCmdPush  ## park current work safely first
+		fRun git checkout "${baseBranch}"
+		fPullIfOnline
+	fi
+	fRun git checkout -b "${newBranch}"
+	if git remote get-url origin &>/dev/null; then
+		fRun git push -u origin "${newBranch}"
+	fi
+:;}
+
 fCmdLand(){
 	## Merges the current branch into dev (or main/master) - backwards from 'git merge', but saves a step.
-	local -r targetBranch="$(fMergeTarget)"
-	local -r workBranch="$(fCurrentBranch)"
+	local -r workBranchForTarget="$(fCurrentBranch)"
+	local -r targetBranch="$(fBranchTarget "${workBranchForTarget}")"
+	local -r workBranch="${workBranchForTarget}"
 	[[ "${workBranch}" != "${targetBranch}" ]] || fThrowError_Usage "Already on '${targetBranch}'. Run this from the branch to merge in: ${meName} br switch <branch>, then ${meName} br land"
 	[[ "${workBranch}" != "$(fDefaultBranch)" ]] || fThrowError_Usage "'${workBranch}' is the default branch; landing it on '${targetBranch}' is backwards. To cut a release: ${meName} release"
 	local mergeMessage="${commitMessage}"
 	[[ -n "${mergeMessage}" ]] || mergeMessage="Merge ${workBranch}"
+	local -ri wasHotfix="$(fIsHotfixBranch "${workBranch}" && echo 1 || echo 0)"
+	((wasHotfix)) && fpWarnHotfixTouchedBin "${workBranch}" "${targetBranch}"
 	fCmdPush
 	fRun git checkout "${targetBranch}"
 	fPullIfOnline
@@ -582,6 +617,8 @@ fCmdLand(){
 		fEcho_ResetBlankCounter
 	fi
 	fPullIfOnline
+	## The hotfix now has to reach dev too, or the next release undoes it.
+	((wasHotfix)) && fpBackMergeToDev
 :;}
 
 fCmdPrune(){
@@ -669,11 +706,14 @@ fCmdPrCreate(){
 	## GitHub can only diff what origin has, so park the work first - same as br land and release do.
 	local -r title="${1:-}"
 	fCmdPush
-	fRun gh pr create --base "$(fMergeTarget)" --head "$(fCurrentBranch)" --title "${title}" --body ""
+	fRun gh pr create --base "$(fBranchTarget)" --head "$(fCurrentBranch)" --title "${title}" --body ""
 :;}
 
 fCmdPrAccept(){
 	local -r prNum="${1:-}"
+	## Resolve both before gh deletes the branch out from under us.
+	local -r prTargetBranch="$(fBranchTarget)"
+	local -ri wasHotfixPr="$(fIsHotfixBranch && echo 1 || echo 0)"
 	fEcho_Clean ""
 	fEcho "gh pr review ${prNum} --approve ..."
 	## Best-effort: gh refuses to approve your own PR; merging is the part that matters.
@@ -684,8 +724,10 @@ fCmdPrAccept(){
 	## upstream still looks present. Prune first; if ours is the branch that just went away,
 	## pulling it can only fail - land on the merge target instead.
 	fpFetchRemote
-	fHasUpstream || fRun git checkout "$(fMergeTarget)"
+	fHasUpstream || fRun git checkout "${prTargetBranch}"
 	fPullIfOnline
+	## Same rule as land: a hotfix that reached the default branch still owes dev a merge.
+	((wasHotfixPr)) && fpBackMergeToDev
 :;}
 
 fCmdRelease(){
@@ -960,6 +1002,61 @@ fMergeTarget(){
 	if fBranchExistsLocal dev || fBranchExistsRemote dev; then echo "dev"; else fDefaultBranch; fi
 :;}
 
+fIsHotfixBranch(){
+	## A hotfix corrects what is already published, so it targets the default branch instead of dev.
+	## The 'hotfix/' prefix is the marker: it lives in the ref name, so it survives a clone and is
+	## visible in a branch listing - unlike branch-local config, which neither is.
+	local -r branch="${1:-$(fCurrentBranch)}"
+	[[ "${branch}" == hotfix/* ]]
+}
+
+fBranchTarget(){
+	## Where THIS branch lands, which is not always where new feature branches come from.
+	## fMergeTarget stays the answer for 'br create' (always dev when there is one); this is the
+	## answer for landing, and for what a pull request should be based on.
+	local -r branch="${1:-$(fCurrentBranch)}"
+	if fIsHotfixBranch "${branch}"; then fDefaultBranch; else fMergeTarget; fi
+:;}
+
+fpBackMergeToDev(){
+	## After a hotfix lands on the default branch, dev has to receive it. Skipping this is how the
+	## next release conflicts on the same file, or quietly reinstates the text the hotfix replaced.
+	## A conflict here is raw-git territory: abort so the tree is left clean, and say so plainly.
+	local -r mainBranch="$(fDefaultBranch)"
+	local -r devBranch="$(fMergeTarget)"
+	[[ "${devBranch}" != "${mainBranch}" ]] || return 0   ## no dev in this repo: nothing to carry back
+	fBranchExistsLocal "${devBranch}" || fBranchExistsRemote "${devBranch}" || return 0
+	fEcho_Clean ""
+	fRun git checkout "${devBranch}"
+	fPullIfOnline
+	fEcho "git merge ${mainBranch} ..."
+	if git merge "${mainBranch}" -m "Merge ${mainBranch}"; then
+		fEcho_ResetBlankCounter
+		if git remote get-url origin &>/dev/null; then
+			if fHasUpstream; then fRun git push; else fRun git push -u origin HEAD; fi
+		fi
+	else
+		git merge --abort 2>/dev/null || true
+		fEcho_ResetBlankCounter
+		fEcho "WARNING: '${mainBranch}' would not merge cleanly into '${devBranch}'; left '${devBranch}' untouched."
+		fEcho_Clean "  The hotfix landed on '${mainBranch}' - that part is done."
+		fEcho_Clean "  Carry it across by hand: git checkout ${devBranch} && git merge ${mainBranch}"
+	fi
+:;}
+
+fpWarnHotfixTouchedBin(){
+	## A hotfix that changes shipped code leaves the default branch carrying something no tag
+	## contains, so the latest release's assets stop matching it. Documentation does not.
+	local -r workBranch="${1:-}"; local -r targetBranch="${2:-}"
+	local changed=""
+	changed="$(git diff --name-only "${targetBranch}...${workBranch}" -- bin/ 2>/dev/null || true)"
+	[[ -n "${changed}" ]] || return 0
+	fEcho_Clean ""
+	fEcho "NOTE: this hotfix changes shipped code, not just documentation."
+	fEcho_Clean "  '${targetBranch}' will carry code that no tag contains, so the latest release's"
+	fEcho_Clean "  downloads no longer match it. Cut a patch release when you're ready: ${meName} release"
+:;}
+
 fReleaseVersion(){
 	## Resolve the release tag: validate the given version, or bump patch on the latest v* tag.
 	local ver="${cmdArg:-}"
@@ -1133,6 +1230,19 @@ fpPreview(){
 			fEcho_Clean "${pad}git checkout -b ${cmdArg}"
 			fEcho_Clean "${pad}git push -u origin ${cmdArg} *"
 			;;
+		br-hotfix)
+			## Off the default branch, not dev: this corrects what is already published.
+			if fIsProtectedBranch; then
+				fEcho_Clean "${pad}git checkout $(fDefaultBranch) *"
+				fEcho_Clean "${pad}git pull --ff-only --autostash *"
+			else
+				fpPreview sync
+				fEcho_Clean "${pad}git checkout $(fDefaultBranch) *"
+				fEcho_Clean "${pad}git pull --ff-only *"
+			fi
+			fEcho_Clean "${pad}git checkout -b ${cmdArg}"
+			fEcho_Clean "${pad}git push -u origin ${cmdArg} *"
+			;;
 		br-switch)
 			fpPreview sync
 			fEcho_Clean "${pad}git checkout ${cmdArg:-$(fMergeTarget)}"
@@ -1140,13 +1250,19 @@ fpPreview(){
 			;;
 		br-land)
 			fpPreview sync
-			fEcho_Clean "${pad}git checkout $(fMergeTarget)"
+			fEcho_Clean "${pad}git checkout $(fBranchTarget)"
 			fEcho_Clean "${pad}git pull --ff-only *"
 			fEcho_Clean "${pad}git merge --no-ff $(fCurrentBranch)"
 			fEcho_Clean "${pad}git push *"
 			fEcho_Clean "${pad}git branch -d $(fCurrentBranch)"
 			fEcho_Clean "${pad}git push origin --delete $(fCurrentBranch) *"
 			fEcho_Clean "${pad}git pull --ff-only *"
+			## A hotfix owes dev the same change, or the next release undoes it.
+			if fIsHotfixBranch; then
+				fEcho_Clean "${pad}git checkout $(fMergeTarget)"
+				fEcho_Clean "${pad}git merge $(fDefaultBranch)"
+				fEcho_Clean "${pad}git push *"
+			fi
 			;;
 		br-prune)
 			local pruneBranch=""
@@ -1181,12 +1297,17 @@ fpPreview(){
 		pr)
 			if [[ "${prSub}" == "create" ]]; then
 				fpPreview sync
-				fEcho_Clean "${pad}gh pr create --base $(fMergeTarget) --title \"${prTitle}\""
+				fEcho_Clean "${pad}gh pr create --base $(fBranchTarget) --title \"${prTitle}\""
 			else
 				fEcho_Clean "${pad}gh pr review ${prNum} --approve *"
 				fEcho_Clean "${pad}gh pr merge ${prNum} --merge --delete-branch"
-				fEcho_Clean "${pad}git checkout $(fMergeTarget) *"
+				fEcho_Clean "${pad}git checkout $(fBranchTarget) *"
 				fEcho_Clean "${pad}git pull --ff-only *"
+				if fIsHotfixBranch; then
+					fEcho_Clean "${pad}git checkout $(fMergeTarget)"
+					fEcho_Clean "${pad}git merge $(fDefaultBranch)"
+					fEcho_Clean "${pad}git push *"
+				fi
 			fi
 			;;
 		release)
