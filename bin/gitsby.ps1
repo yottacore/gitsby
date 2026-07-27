@@ -516,11 +516,15 @@ function Invoke-Git {
     ## argv directly - each element is one literal arg, no globbing, no reshell.
     ## UseShellExecute=$false with no redirection inherits the console, so git's
     ## output still appears inline.
+    ## WorkingDirectory is not optional here: .NET starts the child in the PROCESS cwd, and
+    ## Set-Location moves only PowerShell's own location. Left unset, every read went to the
+    ## directory the user was in while every write went to wherever pwsh happened to launch.
     param([Parameter(Mandatory)][string[]]$GitArgs)
     Write-PlainLine ''
     Write-StatusLine "git $($GitArgs -join ' ') ..."
     $psi = [System.Diagnostics.ProcessStartInfo]::new('git')
     $psi.UseShellExecute = $false
+    $psi.WorkingDirectory = (Get-Location -PSProvider FileSystem).ProviderPath
     foreach ($arg in $GitArgs) { [void]$psi.ArgumentList.Add($arg) }
     $proc = [System.Diagnostics.Process]::Start($psi)
     $proc.WaitForExit()
@@ -1582,3 +1586,4 @@ try {
 ##      - 20260726 JC: Every command's pull honors offline, not just update/sync's; the dirty-protected-branch refusal names 'update' rather than the dropped 'commit'; help text back in step with the command set - in step with bin/gitsby.
 ##      - 20260726 JC: Added 'br prune': deletes every local branch already merged into the merge target, plus its remote copy; unmerged branches are kept and listed, never deleted; deletes with -D behind gitsby's own containment check, since 'git branch -d' asks about the upstream or HEAD rather than the merge target - in step with bin/gitsby.
 ##      - 20260726 JC: br prune's delete-time re-check now covers the remote copy too, and a merged current branch is reported as kept rather than left off every list - in step with bin/gitsby.
+##      - 20260727 JC: Git now runs in the location the user is actually in. Set-Location moves PowerShell's location but not the process cwd, and the launcher inherits the latter, so state was read from one repo while commits, merges and pushes went to another.

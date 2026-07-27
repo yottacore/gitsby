@@ -823,6 +823,23 @@ GHEOF
 		fi
 	fi
 
+	## PowerShell only. Set-Location moves PowerShell's own location, not the process cwd, so a
+	## script that starts git itself must pass the working directory or reads and writes land in
+	## different repos. Every other check cds in bash before starting pwsh, which hides it.
+	if [[ "$1" == "pwsh" ]]; then
+		local cw="${work}/cwdsplit"
+		mkdir -p "${cw}"
+		git init --quiet -b main "${cw}/launch"
+		( cd "${cw}/launch" && echo x > f.txt && git add --all && git commit --quiet -m "init launch" && echo a > only-in-launch.txt )
+		git init --quiet -b main "${cw}/target"
+		( cd "${cw}/target" && echo y > f.txt && git add --all && git commit --quiet -m "init target" && echo b > only-in-target.txt )
+		## Start pwsh in one repo, move to the other inside the session, then commit.
+		( cd "${cw}/launch" && pwsh -NoProfile -Command "Set-Location '${cw}/target'; & '${root}/bin/gitsby.ps1' -q update 'from target'" ) >/dev/null 2>&1 || true
+		fAssert "pwsh commits where Set-Location points"  bash -c "cd '${cw}/target' && [[ \"\$(git log -1 --pretty=%s)\" == 'from target' ]]"
+		fAssert "and commits that repo's own file"        bash -c "cd '${cw}/target' && git show --stat --pretty=format: HEAD | grep -q only-in-target"
+		fAssert "and leaves the launch repo alone"        bash -c "cd '${cw}/launch' && [[ \"\$(git log -1 --pretty=%s)\" == 'init launch' ]] && [[ -n \"\$(git status --porcelain)\" ]]"
+	fi
+
 	## no-remote repo: everything still works locally
 	local nr="${work}/$1-noremote"
 	git init --quiet -b main "${nr}"
