@@ -17,6 +17,9 @@ Canonical coding style for this project's Bash and PowerShell. For contribution 
 	- [Misc](#misc)
 - [Bash](#bash)
 - [PowerShell](#powershell)
+- [Performance](#performance)
+	- [Bash performance](#bash-performance)
+	- [PowerShell performance](#powershell-performance)
 
 <!-- /TOC -->
 
@@ -48,7 +51,7 @@ Canonical coding style for this project's Bash and PowerShell. For contribution 
 
 ## Bash
 
-- Target Bash 5. Prefer its idioms over portable-but-clunky POSIX-only workarounds.
+- Bash 4.4 is the floor, and the script refuses to run below it. Write to Bash 5 idioms otherwise, rather than portable-but-clunky POSIX-only workarounds. (The installers are the exception: they run on macOS stock bash 3.2, so that they can report what to do about it.)
 
 - Must pass shellcheck. Per-file disables go at the top, each with a short reason (see the top of `bin/gitsby`).
 
@@ -58,7 +61,7 @@ Canonical coding style for this project's Bash and PowerShell. For contribution 
 
 - Avoid shelling out unless necessary (e.g. for `git` commands).
 
-	- Borrow `fBgrep()` from `../bash5-marmot/github/bin/include/n8mod_string_v1`, if necessary for regex grep. Also `fBgrepQ()`, `fBhead()`, if needed.
+	- For regex matching, `[[ $string =~ $pattern ]]` with `BASH_REMATCH` does the job without forking `grep`.
 
 ## PowerShell
 
@@ -89,3 +92,33 @@ Canonical coding style for this project's Bash and PowerShell. For contribution 
 - Must pass PSScriptAnalyzer clean (settings, if any, live in `PSScriptAnalyzerSettings.psd1`).
 
 - 4 spaces per indent (PowerShell convention; unlike the Bash side of this repo).
+
+## Performance
+
+Correctness comes first. What follows costs nothing extra to write, so it is habit rather than optimization. Measuring and tuning a hot path is a separate exercise, and it needs a number to justify it.
+
+- In a shell script the cost is process spawns, not the interpreter. Every everyday gitsby command runs a fixed handful of `git` processes no matter how large the repo is, and that is what keeps them feeling instant.
+
+- Never fork per item in a loop. One call that answers the whole question beats one call per branch or per file. A single `git for-each-ref` with the right filter replaces a loop of `git merge-base` calls.
+
+- Hoist what cannot change during a run. The default branch, the merge target, and the account probes are resolved once and kept in a variable, not asked for again at each use.
+
+- Don't make every run pay for what few runs need. Probes that cost a round trip belong to the commands that actually use them.
+
+### Bash performance
+
+- Use parameter expansion, `[[ ]]`, and arithmetic for small string and number work. The thing to avoid is a `$(...)`, a pipe, or an external `grep`/`sed`/`cut` inside a loop.
+
+- One pass of `awk` or `sed` over the whole input beats a shell loop over its lines. Where a loop is unavoidable, feed it with `mapfile` or `read -r` and keep builtins inside it.
+
+- Pass large strings by nameref (`local -n`) rather than copying them through a subshell.
+
+### PowerShell performance
+
+- Never `+=` an array in a loop. It reallocates and recopies each time, which is O(n^2). Use a `List[T]`, or collect the pipeline's output.
+
+- In a hot loop, `foreach ($x in $y)` and direct .NET methods beat `ForEach-Object` and long cmdlet chains. Everywhere else, prefer whichever reads better.
+
+- Filter as early as possible, using the provider's own `-Filter`, so objects never enter the pipeline just to be thrown away.
+
+- Read files in bulk with `Get-Content -Raw` or .NET IO, not line by line through the pipeline.
