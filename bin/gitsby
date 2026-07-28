@@ -345,7 +345,7 @@ fMain(){
 		cloneDir="${cmdArg2}"
 		if [[ -z "${cloneDir}" ]]; then
 			cloneDir="${cloneUrl%/}"; cloneDir="${cloneDir%.git}"; cloneDir="${cloneDir##*/}"; cloneDir="${cloneDir##*:}"
-			[[ -n "${cloneDir}" ]] || fThrowError_Usage "Can't derive a directory name from '${cloneUrl}'; give one explicitly."
+			[[ -n "${cloneDir}" ]] || fThrowError_Usage "Can't derive a directory name from '$(fMaskUrl "${cloneUrl}")'; give one explicitly."
 		fi
 		if [[ -e "${cloneDir}" ]]; then
 			local existingUrl=""
@@ -407,7 +407,7 @@ fMain(){
 			else
 				case "$(fpProbeRemote "${cmdArg}")" in
 					missing)  fThrowError_Usage "Can't reach '$(fMaskUrl "${cmdArg}")' (doesn't exist, or no access). Create it first, or on GitHub: ${meName} repo create <owner/name>" ;;
-					nonempty) fThrowError_Usage "'$(fMaskUrl "${cmdArg}")' already has history; clone it instead (${meName} repo clone ${cmdArg}), or reconcile with raw git." ;;
+					nonempty) fThrowError_Usage "'$(fMaskUrl "${cmdArg}")' already has history; clone it instead (${meName} repo clone $(fMaskUrl "${cmdArg}")), or reconcile with raw git." ;;
 					empty)    connectMode="add"; connectUrl="${cmdArg}" ;;
 				esac
 			fi
@@ -1185,13 +1185,17 @@ fRun(){
 	## Announce and run a command verbatim - argument array, no eval, no quote games.
 	## A failing command gets a plain one-line report; the trap dump stays reserved
 	## for unexpected script errors.
+	## Display copy only: a credentialed URL reaching a clone/push argument would otherwise
+	## print the token here and again in the failure line, after the plan carefully masked it.
+	local -a disp=(); local arg=""
+	for arg in "$@"; do disp+=("$(fMaskUrl "${arg}")"); done
 	fEcho_Clean ""
-	fEcho "$* ..."
+	fEcho "${disp[*]} ..."
 	local -i rc=0
 	"${@}" || rc=$?
 	if ((rc)); then
 		fEcho_Clean ""
-		echo "${meName}: '$*' failed (exit ${rc})." >&2
+		echo "${meName}: '${disp[*]}' failed (exit ${rc})." >&2
 		fEcho_Clean_Force ""
 		exit 1
 	fi
@@ -1470,12 +1474,19 @@ fParseArgs(){
 	## Process arguments
 	for currentArg in "${allArgsArr[@]}"; do
 
+		## A value we are already waiting for wins over the option test: '-m -Wall added' is a
+		## commit message, not an option, and there is no other way to write one starting with '-'.
+		if ((expectingSwitchParamForNextArg)); then
+			case "${lastSwitch,,}" in
+				"m"|"message"|"msg") commitMessage="${currentArg}" ;;
+				*)                   fThrowError "Unknown option: '${lastSwitchAsPassed}', current parameter: '${currentArg}'." ;;
+			esac
+			expectingSwitchParamForNextArg=0
+
 		## Test if an option switch or not
-		if [[ "${currentArg}" =~ ${switchRegex} ]]; then
+		elif [[ "${currentArg}" =~ ${switchRegex} ]]; then
 			## It's an option (either unary or long-option, we don't know yet)
 
-			## Check if this was supposed to NOT be a unary switch (eg expecting a parameter after previous long-option)
-			((expectingSwitchParamForNextArg)) && fThrowError "Expecting a long-option argument for '${lastSwitch}', instead got another option '${currentArg}'."
 			switchCounter=$((switchCounter + 1))
 
 			## Validate switches, and act on unary switches
@@ -1489,6 +1500,10 @@ fParseArgs(){
 			case "${tmpStr}" in
 
 			## ✶✶✶✶✶✶✶✶ CUSTOM UNARY SWITCHES
+				## Help works from any position: '<noun> <verb> --help' is the reflex every git user
+				## has, and slot 1 always holds a real command, so nothing can be shadowed. -v is
+				## deliberately not here - it must not turn a mutating command into a silent no-op.
+				"h"|"help")                 fCopyright; fAbout; fSyntax; fEcho_Clean ""; exit 0 ;;
 				"q"|"quiet"|"y"|"yes")      doQuietly=1 ;;
 				"no-fetch"|"nofetch"|"offline")  doFetch=0 ;;
 				"public")                   repoVisibility="public" ;;
@@ -1504,33 +1519,17 @@ fParseArgs(){
 
 			esac
 		else
-			## It's not an option switch; could be a long-option argument, or a positional arg
+			## Not an option and nothing is waiting for a value, so it's a positional argument.
+			positionalArgCounter=$((positionalArgCounter + 1))
+			((positionalArgCounter > parseArgs_maxPositionalArgCount)) && fThrowError "Too many positional arguments: ${positionalArgCounter}, for max of ${parseArgs_maxPositionalArgCount}."
 
-			if ((expectingSwitchParamForNextArg)); then
-				## Now we know we're expecting a long-option argument
-
-			## ✶✶✶✶✶✶✶✶ CUSTOM LONG-OPTION ARGUMENT TESTS AND PARENT VARIABLE ASSIGNMENTS
-				case "${lastSwitch,,}" in
-					"m"|"message"|"msg") commitMessage="${currentArg}" ;;
-					*)                   fThrowError "Unknown option: '${lastSwitchAsPassed}', current parameter: '${currentArg}'." ;;
-				esac
-				expectingSwitchParamForNextArg=0
-
-			else
-				## Well it must be a positional arg then.
-				positionalArgCounter=$((positionalArgCounter + 1))
-				((positionalArgCounter > parseArgs_maxPositionalArgCount)) && fThrowError "Too many positional arguments: ${positionalArgCounter}, for max of ${parseArgs_maxPositionalArgCount}."
-
-				## ✶✶✶✶✶✶✶✶ CUSTOM POSITIONAL ARG LOGIC (assigns parent variables)
-				case $positionalArgCounter in
-					1) cmdName="${currentArg}" ;;
-					2) cmdArg="${currentArg}"  ;;
-					3) cmdArg2="${currentArg}" ;;
-					4) cmdArg3="${currentArg}" ;;
-					*) fThrowError "Unexpected positional argument # ${positionalArgCounter}: '${currentArg}'." ;;
-				esac
-
-			fi
+			case $positionalArgCounter in
+				1) cmdName="${currentArg}" ;;
+				2) cmdArg="${currentArg}"  ;;
+				3) cmdArg2="${currentArg}" ;;
+				4) cmdArg3="${currentArg}" ;;
+				*) fThrowError "Unexpected positional argument # ${positionalArgCounter}: '${currentArg}'." ;;
+			esac
 		fi
 	done
 	((expectingSwitchParamForNextArg)) && fThrowError "Never received a parameter for switch '--${lastSwitch}'."

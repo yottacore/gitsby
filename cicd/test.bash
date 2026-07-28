@@ -69,6 +69,14 @@ fRunSuite(){
 	fAssertOut  "help keeps the pull-then-commit order" 'sync .*: Pull, commit, and push' "${gitsby}" --help
 	fAssertOut  "help doesn't promise a bare patch bump" 'release .*: .*next after latest tag' "${gitsby}" --help
 	fAssertOut  "help doesn't overpromise br create"    'br create .*: .*carried or parked'   "${gitsby}" --help
+	## Asking for help after a command is the reflex every git user has, and both builds must
+	## answer it the same way. -v is the opposite case: alongside a command it used to make the
+	## PowerShell build print the version and exit 0, doing none of the work it was asked for.
+	fAssert     "--help works after a command"     "${gitsby}" update --help
+	fAssert     "--help works after noun and verb" "${gitsby}" br create --help
+	fAssert     "-h works after a command"         "${gitsby}" update -h
+	fAssertFail "-v after a command is refused"    bash -c "cd '${cloneA}' && '${gitsby}' -q update -v"
+	fAssertOut  "and says which option"            'Unexpected option'  bash -c "cd '${cloneA}' && '${gitsby}' -q update -v 2>&1"
 	fAssert     "-y alias accepted"            bash -c "cd '${cloneA}' && '${gitsby}' -y status"
 	fAssertFail "no args exits nonzero"        "${gitsby}"
 	fAssertFail "unknown command rejected"     bash -c "cd '${cloneA}' && '${gitsby}' -q frobnicate"
@@ -239,6 +247,10 @@ fRunSuite(){
 	fi
 	( cd "${cloneA}" && echo m3 > m3.txt )
 	fAssert "message containing -v commits"           bash -c "cd '${cloneA}' && '${gitsby}' -q update 'add -v flag' && git log -1 --format=%s | grep -qx 'add -v flag'"
+	## A message that STARTS with a dash: '-m' is waiting for a value, so the next token is that
+	## value whatever it looks like. There is no other way to write one, and the ports disagreed.
+	( cd "${cloneA}" && echo m4 > m4.txt )
+	fAssert "message starting with a dash commits"    bash -c "cd '${cloneA}' && '${gitsby}' -q update -m '-Wall added to CFLAGS' && git log -1 --format=%s | grep -qx -- '-Wall added to CFLAGS'"
 	fAssertFail "unquoted two-word message rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q update Fixed bug"
 
 	## Non-tty: mutating commands fail closed without -q; read-only ones just go quiet
@@ -837,6 +849,11 @@ GHEOF
 		fAssertOut  "installer refuses a bad --release"          "\-\-release takes"         bash -c "bash '${inst}' --release beta"
 		fAssertOut  "installer refuses --release with --ref"     'Use --release or --ref'    bash -c "bash '${inst}' --release dev --ref main"
 		fAssertOut  "installer refuses a valueless --target"     "\-\-target needs a value"  bash -c "bash '${inst}' --target"
+		## A ref is interpolated into a download URL, so a path-shaped one installs a script from
+		## some other repo while the printed plan still names this one.
+		fAssertOut  "installer refuses a path-shaped --ref"      'not a path'                bash -c "bash '${inst}' -y --ref '../../evil/repo/main'"
+		fAssertOut  "installer refuses an absolute --ref"        'not a path'                bash -c "bash '${inst}' -y --ref '/etc/passwd'"
+		fAssertOut  "installer refuses a shell-shaped --ref"     "aren't valid in a git ref" bash -c "bash '${inst}' -y --ref 'a b;id'"
 		## Reading the printed plan needs the confirmation to refuse rather than block, which means
 		## no controlling terminal. Without setsid there is no safe way to ask, so skip rather than hang.
 		if command -v setsid >/dev/null 2>&1; then
@@ -854,6 +871,22 @@ GHEOF
 			fAssertFail "ps installer refuses a bad -Arch"        pwsh -NoProfile -File "${instPs}" -Arch sparc
 			fAssertFail "ps installer refuses a bad -Release"     pwsh -NoProfile -File "${instPs}" -Release beta
 			fAssertFail "ps installer refuses -Release with -Ref" pwsh -NoProfile -File "${instPs}" -Release dev -Ref main
+			fAssertOut  "ps installer refuses a path-shaped -Ref"  'not a path'  pwsh -NoProfile -File "${instPs}" -Yes -Ref '../../evil/repo/main'
+			fAssertOut  "ps installer refuses an absolute -Ref"    'not a path'  pwsh -NoProfile -File "${instPs}" -Yes -Ref '/etc/passwd'
+			## The documented one-liners are 'iex' and a scriptblock, neither of which is a script
+			## file - so -File coverage alone says nothing about them. Both must bind their
+			## parameters, refuse without a tty, and leave the calling session alive and unaltered.
+			local instDev="${root}/install-dev.ps1"
+			local iexRun="\$t = Get-Content -Raw '${instPs}'; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+			local sbRun="\$t = Get-Content -Raw '${instPs}'; try { & ([scriptblock]::Create(\$t)) -Ref main -Target system } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+			fAssertOut "iex form reaches the plan"          'gitsby installer'  pwsh -NoProfile -Command "${iexRun}"
+			fAssertOut "and refuses without a tty"          'CAUGHT: Aborted'   pwsh -NoProfile -Command "${iexRun}"
+			fAssertOut "and leaves the session alive"       'HOST ALIVE'        pwsh -NoProfile -Command "${iexRun}"
+			fAssertOut "scriptblock form binds its options" '/usr/local/bin'    pwsh -NoProfile -Command "${sbRun}"
+			fAssertOut "and leaves the session alive too"   'HOST ALIVE'        pwsh -NoProfile -Command "${sbRun}"
+			fAssertOut "installer leaks no StrictMode"      'strict stayed off' pwsh -NoProfile -Command "\$t = Get-Content -Raw '${instPs}'; try { \$t | Invoke-Expression } catch { }; try { \$q = \$neverSet; 'strict stayed off' } catch { 'STRICT LEAKED' }"
+			fAssertOut "installer leaks no ErrorAction"     'EAP=Continue'      pwsh -NoProfile -Command "\$t = Get-Content -Raw '${instPs}'; try { \$t | Invoke-Expression } catch { }; \"EAP=\$ErrorActionPreference\""
+			fAssertOut "dev setup's iex form asks first"    'CAUGHT: Aborted'   pwsh -NoProfile -Command "\$t = Get-Content -Raw '${instDev}'; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }"
 		fi
 	fi
 

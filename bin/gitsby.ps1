@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 
 <#
 .SYNOPSIS
@@ -468,7 +468,7 @@ function Get-SshLogin {
         $target = Get-SshConnectTarget -Url $RemoteUrl
         if ($target -and (Get-Command -Name ssh -ErrorAction SilentlyContinue)) {
             $greeting = ''
-            try { $greeting = (ssh -T -o BatchMode=yes -o ConnectTimeout=3 -- $target 2>&1 | Out-String) } catch { $greeting = '' }
+            try { $greeting = (ssh -T -o BatchMode=yes -o ConnectTimeout=3 -- "$target" 2>&1 | Out-String) } catch { $greeting = '' }
             ## Anchored per line ((?m)), because the greeting is not necessarily the first one: we
             ## capture stderr too, and ssh puts 'Warning: Permanently added ...' or 'Warning:
             ## Identity file ... not accessible' ahead of it. Unanchored would match mid-line text.
@@ -487,6 +487,30 @@ function Get-IdentityMismatch {
     return "gh acts as '${GhLogin}', but this remote's key authenticates as '${SshLogin}'."
 }
 
+function Sync-Remote {
+    ## Mirror of bash's fpFetchRemote, and the only fetch in this file: --prune (stale origin/*
+    ## refs fool the existence checks) plus an origin/HEAD heal. ssh gets a connect timeout so a
+    ## dead remote can't hang the command for minutes; never clobber a user-set GIT_SSH_COMMAND.
+    ## No auth prompts, same as Get-RemoteProbe: an https remote we can't authenticate to would
+    ## otherwise stop and ask for a username mid-command.
+    $hadSshCommand = [bool]$env:GIT_SSH_COMMAND
+    if (-not $hadSshCommand) { $env:GIT_SSH_COMMAND = 'ssh -o ConnectTimeout=3' }
+    $origTermPrompt = $env:GIT_TERMINAL_PROMPT
+    $env:GIT_TERMINAL_PROMPT = '0'
+    try {
+        git fetch --quiet --prune 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            $script:remoteReachable = $false
+            Write-StatusLine 'WARNING: git fetch failed (offline?); remote info may be stale.'
+        } else {
+            git remote set-head origin --auto *> $null
+        }
+    } finally {
+        if (-not $hadSshCommand) { Remove-Item -Path Env:GIT_SSH_COMMAND -ErrorAction SilentlyContinue }
+        if ($null -eq $origTermPrompt) { Remove-Item -Path Env:GIT_TERMINAL_PROMPT -ErrorAction SilentlyContinue } else { $env:GIT_TERMINAL_PROMPT = $origTermPrompt }
+    }
+}
+
 function Get-RemoteProbe {
     ## One network round-trip: does the remote exist, and does it have history?
     ## Returns missing | empty | nonempty. No auth prompts - a bad https URL would
@@ -497,7 +521,9 @@ function Get-RemoteProbe {
     $env:GIT_TERMINAL_PROMPT = '0'
     if (-not $origSsh) { $env:GIT_SSH_COMMAND = 'ssh -o ConnectTimeout=3' }
     try {
-        $refs = git ls-remote $Url 2>$null
+        ## Quote: a bare $var lets PowerShell glob '*'/'?'/'[...]' against the cwd first, so the
+        ## probe would answer about a different target than the one git is later handed.
+        $refs = git ls-remote "$Url" 2>$null
         if ($LASTEXITCODE -ne 0) { return 'missing' }
         if ($refs -and @($refs).Count -gt 0) { return 'nonempty' }
         return 'empty'
@@ -542,15 +568,18 @@ function Invoke-Git {
     ## Set-Location moves only PowerShell's own location. Left unset, every read went to the
     ## directory the user was in while every write went to wherever pwsh happened to launch.
     param([Parameter(Mandatory)][string[]]$GitArgs)
+    ## Display copy only: a credentialed URL reaching a clone/push argument would otherwise
+    ## print the token here and again in the failure line, after the plan carefully masked it.
+    $disp = ($GitArgs | ForEach-Object { Get-MaskedUrl -Url $_ }) -join ' '
     Write-PlainLine ''
-    Write-StatusLine "git $($GitArgs -join ' ') ..."
+    Write-StatusLine "git ${disp} ..."
     $psi = [System.Diagnostics.ProcessStartInfo]::new('git')
     $psi.UseShellExecute = $false
     $psi.WorkingDirectory = (Get-Location -PSProvider FileSystem).ProviderPath
     foreach ($arg in $GitArgs) { [void]$psi.ArgumentList.Add($arg) }
     $proc = [System.Diagnostics.Process]::Start($psi)
     $proc.WaitForExit()
-    if ($proc.ExitCode -ne 0) { throw "'git $($GitArgs -join ' ')' failed (exit $($proc.ExitCode))." }
+    if ($proc.ExitCode -ne 0) { throw "'git ${disp}' failed (exit $($proc.ExitCode))." }
     Clear-BlankCounter
 }
 
@@ -599,7 +628,7 @@ function Show-Identity {
     $sshHostAlias = Get-SshTarget -Url $RemoteUrl
     if ($sshHostAlias -and (Get-Command -Name ssh -ErrorAction SilentlyContinue)) {
         $sshUser = ''; $sshHost = ''; $keyFile = ''
-        foreach ($line in @(ssh -G -- $sshHostAlias 2>$null)) {  ## --: an option-shaped 'host' from .git/config must not parse as an ssh option
+        foreach ($line in @(ssh -G -- "$sshHostAlias" 2>$null)) {  ## --: an option-shaped 'host' from .git/config must not parse as an ssh option
             $key, $value = ([string]$line) -split '\s+', 2
             switch ($key) {
                 'user' { if (-not $sshUser) { $sshUser = $value } }
@@ -1106,7 +1135,12 @@ function Invoke-GitsbyPrAccept {
     ## gh deletes the PR's branch on the remote but leaves our origin/* copy behind, so an
     ## upstream still looks present. Prune first; if ours is the branch that just went away,
     ## pulling it can only fail - land on the merge target instead.
-    git fetch --quiet --prune 2>$null
+    ## Through the same helper as the entry-point fetch: a bare fetch here would prompt for https
+    ## credentials mid-command, skip the ssh timeout, and turn a blip into a reported failure
+    ## after the merge already landed server-side. Not gated on -NoFetch, same as bash: gh has
+    ## just merged over the network, so we are demonstrably online, and pruning the branch gh
+    ## deleted is what keeps the pull below from asking for a ref that no longer exists.
+    Sync-Remote
     if (-not (Test-GitUpstream)) { Invoke-Git -GitArgs @('checkout', $prTargetBranch) }
     Invoke-GitsbyPullIfOnline
     ## Same rule as land: a hotfix that reached the default branch still owes dev a merge.
@@ -1164,7 +1198,11 @@ try {
     if ($Command -match '^(-{1,2}(h|help)|help)$') { $Help = $true; $Command = '' }
     if ($Command -match '^(-{1,2}(v|ver|version)|version)$') { $Version = $true; $Command = '' }
 
-    if ($Help) { Show-Copyright; Show-About; Show-Syntax; exit 0 }
+    ## -h and -v bind from any position under pwsh, unlike bash where they are option tokens.
+    ## Help is allowed anywhere on purpose ('br create --help' is the reflex every git user has),
+    ## but -v alongside a command must not silently turn it into a version print that does no work.
+    if ($Version -and $Command) { throw "Unexpected option in this context: '-v'." }
+    if ($Help) { Show-Copyright; Show-About; Show-Syntax; Write-PlainLine ''; exit 0 }
     if ($Version) { Show-Copyright; exit 0 }
     if (-not $Command) { Show-Copyright; Show-About; Show-Syntax; exit 1 }
 
@@ -1279,24 +1317,7 @@ try {
     ## clone skips it: cwd may sit inside some unrelated repo, and the clone doesn't care about it.
     if (-not $NoFetch -and $cmdName -ne 'repo-clone' -and (Test-GitOrigin)) {
         Write-StatusLine 'git fetch ...'
-        $hadSshCommand = [bool]$env:GIT_SSH_COMMAND
-        if (-not $hadSshCommand) { $env:GIT_SSH_COMMAND = 'ssh -o ConnectTimeout=3' }
-        ## No auth prompts, same as Get-RemoteProbe: this runs before any of our own checks, so an
-        ## https remote we can't authenticate to would stop and ask for a username mid-command.
-        $origTermPrompt = $env:GIT_TERMINAL_PROMPT
-        $env:GIT_TERMINAL_PROMPT = '0'
-        try {
-            git fetch --quiet --prune 2>$null
-            if ($LASTEXITCODE -ne 0) {
-                $script:remoteReachable = $false
-                Write-StatusLine 'WARNING: git fetch failed (offline?); remote info may be stale.'
-            } else {
-                git remote set-head origin --auto *> $null
-            }
-        } finally {
-            if (-not $hadSshCommand) { Remove-Item -Path Env:GIT_SSH_COMMAND -ErrorAction SilentlyContinue }
-            if ($null -eq $origTermPrompt) { Remove-Item -Path Env:GIT_TERMINAL_PROMPT -ErrorAction SilentlyContinue } else { $env:GIT_TERMINAL_PROMPT = $origTermPrompt }
-        }
+        Sync-Remote
     }
 
     ## These can't change mid-command, so resolve them once (post-fetch, so origin/HEAD is fresh).
@@ -1424,7 +1445,7 @@ try {
         if (-not $script:cloneDir) {
             $trimmed = $script:cloneUrl.TrimEnd('/') -replace '\.git$', ''
             $script:cloneDir = @($trimmed -split '[/:]')[-1]
-            if (-not $script:cloneDir) { throw "Can't derive a directory name from '$($script:cloneUrl)'; give one explicitly." }
+            if (-not $script:cloneDir) { throw "Can't derive a directory name from '$(Get-MaskedUrl -Url $script:cloneUrl)'; give one explicitly." }
         }
         if (Test-Path -LiteralPath $script:cloneDir) {
             $existingUrl = git -C "$script:cloneDir" remote get-url origin 2>$null
@@ -1494,7 +1515,7 @@ try {
             } else {
                 switch (Get-RemoteProbe -Url $CommandArg) {
                     'missing' { throw "Can't reach '$(Get-MaskedUrl -Url $CommandArg)' (doesn't exist, or no access). Create it first, or on GitHub: ${script:meName} repo create <owner/name>" }
-                    'nonempty' { throw "'$(Get-MaskedUrl -Url $CommandArg)' already has history; clone it instead (${script:meName} repo clone ${CommandArg}), or reconcile with raw git." }
+                    'nonempty' { throw "'$(Get-MaskedUrl -Url $CommandArg)' already has history; clone it instead (${script:meName} repo clone $(Get-MaskedUrl -Url $CommandArg)), or reconcile with raw git." }
                     'empty' { $script:connectMode = 'add'; $script:connectUrl = $CommandArg }
                 }
             }

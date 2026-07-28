@@ -74,6 +74,14 @@ case "${releaseChannel}" in
 	*)         fErr "--release takes 'dev' or 'stable' (got '${releaseChannel}')." ;;
 esac
 
+## The ref lands in a download URL, so a path-shaped one walks out of this repo and installs
+## somebody else's script while the plan on screen still names ours. Reads as a harmless
+## branch selector, which is exactly why the confirm prompt is no protection here.
+case "${ref}" in
+	""|*/../*|../*|*/..|..|/*|*//*) [[ -z "${ref}" ]] || fErr "--ref names a branch, tag or commit, not a path (got '${ref}')." ;;
+esac
+[[ -z "${ref}" || "${ref}" =~ ^[A-Za-z0-9._/-]+$ ]] || fErr "--ref has characters that aren't valid in a git ref (got '${ref}')."
+
 ## gitsby itself needs bash 4.4+ (it sets inherit_errexit); this installer deliberately
 ## doesn't. Check before downloading rather than after: both run through 'env bash', so
 ## the bash running us is the one that would run gitsby. Stock macOS is 3.2 and stays 3.2
@@ -114,6 +122,8 @@ if [[ -z "${ref}" ]]; then
 	fi
 	[[ -n "${ref}" ]] || ref="$(fFetch "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null | sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
 	[[ -n "${ref}" ]] || fErr "Couldn't determine the latest release; try '--release dev'. (GitHub may be rate-limiting; try again later.)"
+	## Scraped from a redirect header, so check it the same way as a typed one before it reaches a URL.
+	[[ "${ref}" =~ ^[A-Za-z0-9._/-]+$ ]] || fErr "The resolved release tag ('${ref}') isn't a plain git ref; aborting."
 else
 	isRelease=0
 fi

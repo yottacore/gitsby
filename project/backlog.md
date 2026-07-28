@@ -19,6 +19,7 @@ This is a product backlog for the run-up to v2.0.0. After that release, bugs, fe
 	- [Done](#done)
 		- [Done - Bugs](#done---bugs)
 		- [Done - Features and enhancements](#done---features-and-enhancements)
+		- [Done - Code review 20260727b](#done---code-review-20260727b)
 		- [Done - Code review 20260727](#done---code-review-20260727)
 		- [Done - Code review 20260726](#done---code-review-20260726)
 		- [Done - Code reviews 20260725 and 20260723](#done---code-reviews-20260725-and-20260723)
@@ -249,6 +250,60 @@ In each section, items are listed approximately from newest to oldest.
 
 - ✅ Delete stale branch from 2020.
 	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
+
+#### Done - Code review 20260727b
+
+Full pre-release review, run across nine lenses with every finding independently checked before it was accepted. Fifty-three held up; the ones that changed behavior are below. Deep evidence is kept out of the repo.
+
+- ✅ Code Review 20260727b item 1: a conflicted tree was committed, and pushed (both implementations).
+	- `git pull --ff-only --autostash` exits 0 even when reapplying the stashed work conflicts - it only warns - and `git add --all` then marks the conflict resolved.
+	- So the most ordinary case there is, your edit plus a teammate's push to the same lines, committed the `<<<<<<<` markers, reported "(working tree clean)" and "Done.", and `sync` sent them to origin.
+	- Fixed: nothing is staged while any path is unmerged. The conflicted files are listed, and the message points at the stash git kept.
+
+- ✅ Code Review 20260727b item 2: PowerShell read one repository and wrote to another.
+	- Git was started without a working directory, so it ran in the directory pwsh was launched from, while `Set-Location` had moved only PowerShell's own idea of where it was.
+	- Reading state therefore used the repo you were in and committing used the other one: it reported the right directory and the right changes, then committed an unrelated file from elsewhere and exited 0.
+	- The suite could not see it, because every check moves directory in bash before starting pwsh, which makes the two agree.
+	- Fixed: git is given the current location explicitly. New checks move location inside the pwsh session instead.
+
+- ✅ Code Review 20260727b item 3: `pr ok <n>` destroyed unpushed commits on the PR's branch (both implementations).
+	- The guard asked whether the branch you were standing on had unpushed work. Accepting a PR from `dev` - the way it is normally used - asked about the wrong branch entirely.
+	- gh merges what origin holds and then deletes the branch with a force delete, so commits that never reached origin went with it and were reachable from no ref afterwards.
+	- Fixed: the PR's own branch is checked, whichever branch you are on, and the advice names it and how to push it from where you are.
+
+- ✅ Code Review 20260727b item 4: a default branch that is neither `main` nor `master` was invented rather than resolved (both implementations).
+	- With no `origin/HEAD` to read, the answer fell back to the literal `main`. On a `trunk` repo that named a branch which does not exist, so the branch was judged unprotected, work was auto-committed to it (and pushed, when it had an upstream), and the command then died on a checkout of the invented name.
+	- Worse when a stale local `main` existed alongside the real default: `br land` exited 0 having merged into the wrong branch, with no diagnostic at all.
+	- Fixed: `trunk` joins the conventional names, a repo with a single local branch resolves to it, and an unborn repo still answers with the name it will get. When it genuinely cannot be told, commands refuse before anything is committed - `status` alone continues, and says "unknown" rather than a name it does not have.
+
+- ✅ Code Review 20260727b item 5: the documented PowerShell install one-liner never worked, and declining it closed your shell.
+	- `iex` evaluates a top-level `param()` block in the caller's scope, where the allowed-values attribute is checked against its own empty default and fails immediately - so the install path the README leads with died before printing anything.
+	- The other documented form did run, and `exit` inside it ended the calling session; strict mode and the error preference leaked into it on success.
+	- A non-tty stdin also proceeded unasked, because the prompt's empty answer at end-of-input is not the empty string.
+	- Fixed: both installers are a function that is called, they refuse rather than exit, they check for PowerShell 7 before anything reads a variable that 5.1 lacks, and end-of-input counts as no. Both documented shapes now bind their options.
+
+- ✅ Code Review 20260727b item 6: `--ref` was interpolated into a download URL unchecked (both installers).
+	- A path-shaped value walked out of this repository, so a posted one-liner could install somebody else's script - and run it - while the printed plan still named this project. It reads as a harmless branch selector, which is why the confirm prompt was no protection.
+	- Fixed: refs must look like refs, in both installers, and the tag resolved from GitHub's redirect is checked the same way before it reaches a URL.
+
+- ✅ Code Review 20260727b item 7: credentialed remote URLs were masked in the plan and printed in full when the command ran.
+	- A token in a clone or connect URL reached the terminal, and any log or CI capture of it, on the execution line and again in the failure line.
+	- Fixed: the display copy of every argument goes through the existing masking helper; what git receives is untouched. Three messages that echoed the URL raw alongside a masked copy of the same URL were fixed too.
+
+- ✅ Code Review 20260727b item 8: `-v` alongside a command silently did nothing (PowerShell).
+	- The switches bind from any position under pwsh, so `update -v` printed the version and exited 0 - a caller or CI step saw success with the work not done.
+	- Fixed: `-v` is refused when a command is present, matching Bash. `--help` went the other way on purpose: it now works after a command in both builds, since asking a subcommand for help is the reflex every git user has.
+
+- ✅ Code Review 20260727b item 9: a commit message starting with a dash was impossible in Bash and accepted in PowerShell.
+	- Fixed in Bash: a value the parser is already waiting for is that value, whatever it looks like. `-m '-Wall added to CFLAGS'` now commits.
+
+- ✅ Code Review 20260727b item 10: PowerShell handed a remote URL to git unquoted in the pre-flight probe.
+	- PowerShell expanded `*` and `?` against the current directory first, so the probe answered about a different target than the one git was later given - a URL that should have been refused was classified as an empty remote, and the working tree was committed and a bogus remote configured before the push failed. Bash refused before touching anything.
+	- Third recurrence of that class, so the two display-only ssh probes were quoted at the same time.
+
+- ✅ Code Review 20260727b item 11: PowerShell's `pr ok` used a bare fetch where Bash used the guarded one.
+	- No credential-prompt suppression (so it could stop and ask mid-command), no ssh connect timeout, and no `origin/HEAD` heal - and a blip there reported the whole command as failed after the merge had already landed on the server.
+	- Fixed: one helper mirrors the Bash version and both fetch sites use it.
 
 #### Done - Code review 20260727
 
