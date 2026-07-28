@@ -475,11 +475,15 @@ case "$1 $2" in
 	"pr merge")    ## Land the branch on the base, then drop it from the remote. Real gh does the delete
 	               ## over the API, so the caller's origin/* copy survives it - restore the ref to match.
 	               ## FAKE_GH_HEAD lets a check merge a PR whose branch isn't the one we're standing on.
+	               ## It merges what ORIGIN holds, not the local branch - the whole point of the
+	               ## unpushed-commit guard - and deletes the local copy too, with -D, like gh does.
 	               prBranch="${FAKE_GH_HEAD:-$(git branch --show-current)}"
 	               prKeep="$(git rev-parse "refs/remotes/origin/${prBranch}")"
-	               git push --quiet origin "refs/heads/${prBranch}:${FAKE_GH_BASE:-dev}"
+	               git push --quiet origin "${prKeep}:refs/heads/${FAKE_GH_BASE:-dev}"
 	               git push --quiet origin --delete "${prBranch}"
-	               git update-ref "refs/remotes/origin/${prBranch}" "${prKeep}" ;;
+	               git update-ref "refs/remotes/origin/${prBranch}" "${prKeep}"
+	               [[ "${prBranch}" != "$(git branch --show-current)" ]] && git branch -D "${prBranch}" >/dev/null
+	               : ;;
 	"repo create") git init --quiet --bare -b main "${FAKE_GH_REMOTE}"
 	               git remote add origin "${FAKE_GH_REMOTE}"
 	               git push --quiet -u origin HEAD ;;
@@ -557,6 +561,36 @@ GHEOF
 	fAssert    "pr ok landed on the merge target"  bash -c "cd '${prc}' && [[ \"\$(git branch --show-current)\" == dev ]]"
 	fAssert    "pr ok pulled the merged work"      bash -c "cd '${prc}' && git ls-tree --name-only dev | grep -qx work.txt"
 	fAssert    "the merged branch is gone from origin"  bash -c "cd '${prc}' && ! git ls-remote --heads origin prfeat | grep -q prfeat"
+
+	## 'pr ok <n>' from dev is the routine case, and gh deletes the PR's branch with 'branch -D'
+	## either way - so unpushed commits on it have to be caught even when we aren't standing there.
+	mkdir -p "${gh}/prx"
+	git init --quiet --bare -b main "${gh}/prx/origin.git"
+	local prx="${gh}/prx/c"
+	git clone --quiet "${gh}/prx/origin.git" "${prx}" 2>/dev/null
+	(
+		cd "${prx}" || exit 1
+		echo base > base.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet -b xfeat && echo work > work.txt && git add --all && git commit --quiet -m work
+		git push --quiet -u origin xfeat
+		echo more >> work.txt && git add --all && git commit --quiet -m "never pushed"
+		git checkout --quiet dev
+		## Local-only branch, no origin copy at all: the PR can hold none of it.
+		git checkout --quiet -b xlocal && echo solo > solo.txt && git add --all && git commit --quiet -m solo
+		git checkout --quiet dev
+	)
+	local prxEnv="PATH='${ghp}' FAKE_GH_BASE=dev FAKE_GH_HEAD=xfeat"
+	fAssertFail "pr ok refuses unpushed commits on the PR's branch"  bash -c "cd '${prx}' && ${prxEnv} '${gitsby}' -q pr ok 7"
+	## Assert the reason: the plan prints the branch name either way, so matching 'xfeat' alone
+	## would pass against a build with no guard at all.
+	fAssertOut  "and names that branch, not the current one"  "'xfeat' has commits that never reached origin"  bash -c "cd '${prx}' && ${prxEnv} '${gitsby}' -q pr ok 7 2>&1 || true"
+	fAssert     "and leaves the branch alone"  bash -c "cd '${prx}' && git show-ref --verify --quiet refs/heads/xfeat"
+	fAssert     "and keeps the unpushed commit reachable"  bash -c "cd '${prx}' && git log -1 --pretty=%s xfeat | grep -qx 'never pushed'"
+	fAssertFail "pr ok refuses a branch origin has never seen"  bash -c "cd '${prx}' && PATH='${ghp}' FAKE_GH_BASE=dev FAKE_GH_HEAD=xlocal '${gitsby}' -q pr ok 8"
+	## Same fixture, once the work is pushed: the guard must not stand in the way of the real thing.
+	fAssert "pr ok accepts a fully pushed branch from dev"  bash -c "cd '${prx}' && git push --quiet origin xfeat && ${prxEnv} '${gitsby}' -q pr ok 7"
+	fAssert "and merged what origin held"  bash -c "cd '${prx}' && git ls-tree --name-only dev | grep -qx work.txt"
 
 	## pr create: parks the work, then opens the PR against the merge target. Same fake gh.
 	mkdir -p "${gh}/prnew"
@@ -865,6 +899,31 @@ GHEOF
 	( cd "${nr}" && echo b > b.txt )
 	fAssert "br land with no remote"   bash -c "cd '${nr}' && '${gitsby}' -q br land 'merge nb'"
 	fAssert "landed on main"        bash -c "cd '${nr}' && [[ \"\$(git branch --show-current)\" == main ]] && [[ -f b.txt ]]"
+
+	## A default branch that is neither main nor master. Nothing may fall back to the literal
+	## 'main' here: that branch doesn't exist, so it would be checked out, protected and merged
+	## into as a name - after the WIP commit the wrong protected-branch answer already made.
+	local tk="${work}/$1-trunk"
+	git init --quiet -b trunk "${tk}"
+	( cd "${tk}" && echo a > a.txt && git add --all && git commit --quiet -m init && echo wip >> a.txt )
+	fAssertOut "status names the real default branch"  'repo default: trunk'  bash -c "cd '${tk}' && '${gitsby}' -q status"
+	fAssert    "br create works on a trunk-default repo"  bash -c "cd '${tk}' && '${gitsby}' -q br create tfeat && [[ \"\$(git branch --show-current)\" == tfeat ]]"
+	fAssert    "and left no WIP commit on trunk"  bash -c "cd '${tk}' && [[ \"\$(git rev-list --count trunk)\" == 1 ]]"
+	fAssert    "and carried the dirty work over"  bash -c "cd '${tk}' && grep -qx wip a.txt"
+	fAssert    "update works there too"  bash -c "cd '${tk}' && '${gitsby}' -q update 'tw'"
+	fAssert    "br land targets trunk, not a fabricated main"  bash -c "cd '${tk}' && '${gitsby}' -q br land 'landed' && [[ \"\$(git branch --show-current)\" == trunk ]] && ! git show-ref --verify --quiet refs/heads/main"
+
+	## Same shape, but nothing conventional to go on and no origin/HEAD to ask: refuse rather
+	## than guess, and refuse before anything is committed.
+	local tu="${work}/$1-trunkambig"
+	git init --quiet -b mainline "${tu}"
+	( cd "${tu}" && echo a > a.txt && git add --all && git commit --quiet -m init && git branch other && echo wip >> a.txt )
+	fAssertFail "br create refuses when the default branch can't be told"  bash -c "cd '${tu}' && '${gitsby}' -q br create x"
+	fAssertOut  "and says so"  "Can't tell this repo's default branch"     bash -c "cd '${tu}' && '${gitsby}' -q br create x 2>&1"
+	fAssert     "and committed nothing"  bash -c "cd '${tu}' && [[ \"\$(git rev-list --count mainline)\" == 1 ]]"
+	## status is the command you run to find out what is wrong, so it must still work - and must
+	## not print a name it couldn't resolve.
+	fAssertOut  "status still runs and admits it doesn't know"  'repo default: unknown'  bash -c "cd '${tu}' && '${gitsby}' -q status"
 }
 
 echo "gitsby regression tests (fixture: ${work})"

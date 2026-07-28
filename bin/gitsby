@@ -241,6 +241,17 @@ fMain(){
 	if ((inRepo)); then
 		defaultBranchCache="$(fDefaultBranch)"
 		mergeTargetCache="$(fMergeTarget)"
+		## Every branch command checks this out, protects it, or merges into it, so a name we
+		## can't confirm has to stop things here - before a preview promises it and fCmdPush
+		## commits WIP to a branch we wrongly judged unprotected. 'repo *' predates having one.
+		## 'status' is exempt on purpose: it is the command you run to see what is wrong, so it
+		## reports "unknown" instead of refusing.
+		if [[ "${cmdName}" != repo-* && "${cmdName}" != "status" ]] && git rev-parse -q --verify HEAD >/dev/null 2>&1; then
+			[[ -n "${defaultBranchCache}" ]] \
+				|| fThrowError_Usage "Can't tell this repo's default branch. Set it with 'git remote set-head origin --auto', or create a main/master."
+			fBranchExistsLocal "${defaultBranchCache}" || fBranchExistsRemote "${defaultBranchCache}" \
+				|| fThrowError_Usage "This repo's default branch resolves to '${defaultBranchCache}', which exists neither here nor on origin. Fix it with 'git remote set-head origin --auto'."
+		fi
 	fi
 
 	## Release version resolves up front so preview and command agree (and bad input dies early).
@@ -266,6 +277,14 @@ fMain(){
 			if [[ -n "$(git status --porcelain 2>/dev/null || true)" ]] || fIsAhead; then
 				[[ "${prBranch}" == "${prHeadBranch}" ]] && fThrowError_Usage "'${prBranch}' has changes that aren't on origin, so PR #${prNum} can't include them. Run '${meName} sync' first."
 				fThrowError_Usage "'${prBranch}' has changes that aren't on origin. Park them first: ${meName} sync"
+			fi
+			## Standing somewhere else doesn't make the PR's own branch safe: gh deletes it with
+			## 'branch -D', so unpushed commits on it go too, and 'sync' can't reach it from here.
+			if [[ "${prBranch}" != "${prHeadBranch}" ]] && fBranchExistsLocal "${prHeadBranch}"; then
+				fBranchExistsRemote "${prHeadBranch}" \
+					|| fThrowError_Usage "'${prHeadBranch}' is here but not on origin, so PR #${prNum} holds none of it - and it would be deleted. Push it first: git push -u origin ${prHeadBranch}"
+				fBranchHasUnpushed "${prHeadBranch}" \
+					&& fThrowError_Usage "'${prHeadBranch}' has commits that never reached origin, so PR #${prNum} can't include them - and it would be deleted. Push them first: git push origin ${prHeadBranch}"
 			fi
 		else
 			[[ "${prBranch}" != "$(fMergeTarget)" && "${prBranch}" != "$(fDefaultBranch)" ]] || fThrowError_Usage "'${prBranch}' is what pull requests merge into; there is nothing to propose. Start a branch first: ${meName} br create <name>"
@@ -831,6 +850,8 @@ fHasUpstream(){        git rev-parse --abbrev-ref '@{u}' &>/dev/null ;}
 fIsAhead(){            [[ -n "$(git rev-list -n 1 '@{u}..' 2>/dev/null || true)" ]] ;}  ## -n 1: stop at the first commit; the count doesn't matter
 fBranchExistsLocal(){  git show-ref --verify --quiet "refs/heads/${1:-}" ;}
 fBranchExistsRemote(){ git show-ref --verify --quiet "refs/remotes/origin/${1:-}" ;}
+## Named branch, not HEAD: ahead-ness of a branch you aren't standing on can't be asked with '@{u}'.
+fBranchHasUnpushed(){  [[ -n "$(git rev-list -n 1 "refs/remotes/origin/${1:-}..refs/heads/${1:-}" 2>/dev/null || true)" ]] ;}
 
 fIsProtectedBranch(){
 	## main/master/dev: branches WIP should never be auto-committed to, or deleted.
@@ -1042,14 +1063,26 @@ fpFetchRemote(){
 :;}
 
 fDefaultBranch(){
-	## Prefer origin's HEAD; fall back to whichever of main/master exists locally.
+	## Prefer origin's HEAD; fall back to whichever of main/master exists locally. A repo whose
+	## default is neither (git init -b trunk, init.defaultBranch) and that was never cloned has
+	## no origin/HEAD to read, so a sole local branch is the honest answer there. Guessing "main"
+	## at the end would name a branch that doesn't exist - fMain refuses instead.
 	[[ -n "${defaultBranchCache:-}" ]] && { echo "${defaultBranchCache}"; return 0; }
 	local originHead=""
 	originHead="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
 	[[ -n "${originHead}" ]] && { echo "${originHead#origin/}"; return 0; }
 	git show-ref --verify --quiet refs/heads/main   && { echo "main"; return 0; }
 	git show-ref --verify --quiet refs/heads/master && { echo "master"; return 0; }
-	echo "main"
+	git show-ref --verify --quiet refs/heads/trunk  && { echo "trunk";  return 0; }
+	## Nothing conventional to go on: a lone branch is the default by elimination. A named one has
+	## to stay stable as feature branches come and go, which is why the list above is checked first.
+	local -a locals=()
+	mapfile -t locals < <(git for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null || true)
+	((${#locals[@]} == 1)) && { echo "${locals[0]}"; return 0; }
+	## Unborn HEAD: nothing exists yet, so the name it will get is the honest answer. 'repo connect'
+	## and 'repo create' both legitimately run here, and nothing is checked out to get wrong.
+	((${#locals[@]})) || { git symbolic-ref --quiet --short HEAD 2>/dev/null || echo "main"; return 0; }
+	echo ""
 :;}
 
 fMergeTarget(){
@@ -1254,7 +1287,10 @@ fpShowStatus(){
 	fEcho_Clean "Directory ....: ${PWD}"
 	fEcho_Clean "Remote .......: ${remoteDisp:-(none)}"
 	((showIdentity)) && fpShowIdentity "${remoteUrl}"
-	local -r branchLine="$(fCurrentBranch) (repo default: $(fDefaultBranch)) $(fBranchSync)"
+	## Say "unknown" rather than assert a name we couldn't resolve - this is the one command that
+	## still runs when the default branch can't be told, so it must not fabricate one.
+	local dfltDisp="$(fDefaultBranch)"; dfltDisp="${dfltDisp:-unknown}"
+	local -r branchLine="$(fCurrentBranch) (repo default: ${dfltDisp}) $(fBranchSync)"
 	fEcho_Clean "Branch .......: ${branchLine% }"
 	fEcho_Clean ""
 	fpShowChanges

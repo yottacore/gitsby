@@ -200,6 +200,13 @@ function Test-GitBranchRemote {
     return ($LASTEXITCODE -eq 0)
 }
 
+function Test-GitBranchUnpushed {
+    ## Named branch, not HEAD: ahead-ness of a branch you aren't standing on can't be asked with '@{u}'.
+    param([Parameter(Mandatory)][string]$Branch)
+    $unpushed = git rev-list -n 1 "refs/remotes/origin/${Branch}..refs/heads/${Branch}" 2>$null
+    return (($null -ne $unpushed) -and (@($unpushed).Count -gt 0))
+}
+
 function Test-ProtectedBranch {
     ## main/master/dev: branches WIP should never be auto-committed to, or deleted.
     ## Takes a branch name; no argument means the current one.
@@ -261,13 +268,28 @@ function Test-GitDirty {
 }
 
 function Get-DefaultBranch {
-    ## Prefer origin's HEAD; fall back to whichever of main/master exists locally.
+    ## Prefer origin's HEAD; fall back to whichever of main/master exists locally. A repo whose
+    ## default is neither (git init -b trunk, init.defaultBranch) and that was never cloned has
+    ## no origin/HEAD to read, so a sole local branch is the honest answer there. Guessing 'main'
+    ## at the end would name a branch that doesn't exist - Invoke-GitsbyMain refuses instead.
     if ($script:defaultBranchCache) { return $script:defaultBranchCache }
     $originHead = git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>$null
     if ($LASTEXITCODE -eq 0 -and $originHead) { return (([string]$originHead) -replace '^origin/', '') }
     if (Test-GitBranchLocal -Branch 'main') { return 'main' }
     if (Test-GitBranchLocal -Branch 'master') { return 'master' }
-    return 'main'
+    if (Test-GitBranchLocal -Branch 'trunk') { return 'trunk' }
+    ## Nothing conventional to go on: a lone branch is the default by elimination. A named one has
+    ## to stay stable as feature branches come and go, which is why the list above is checked first.
+    $locals = @(git for-each-ref --format='%(refname:short)' refs/heads 2>$null)
+    if ($locals.Count -eq 1) { return ([string]$locals[0]).Trim() }
+    ## Unborn HEAD: nothing exists yet, so the name it will get is the honest answer. 'repo connect'
+    ## and 'repo create' both legitimately run here, and nothing is checked out to get wrong.
+    if ($locals.Count -eq 0) {
+        $unborn = git symbolic-ref --quiet --short HEAD 2>$null
+        if ($LASTEXITCODE -eq 0 -and $unborn) { return ([string]$unborn).Trim() }
+        return 'main'
+    }
+    return ''
 }
 
 function Get-MergeTarget {
@@ -626,7 +648,11 @@ function Show-RepoStatus {
     Write-PlainLine "Directory ....: $(Get-Location)"
     Write-PlainLine "Remote .......: ${remoteDisp}"
     if ($WithIdentity) { Show-Identity -RemoteUrl ([string]$remote) }
-    $branchLine = "$(Get-CurrentBranch) (repo default: $(Get-DefaultBranch)) $(Get-BranchSync)"
+    ## Say "unknown" rather than assert a name we couldn't resolve - this is the one command that
+    ## still runs when the default branch can't be told, so it must not fabricate one.
+    $dfltDisp = Get-DefaultBranch
+    if (-not $dfltDisp) { $dfltDisp = 'unknown' }
+    $branchLine = "$(Get-CurrentBranch) (repo default: ${dfltDisp}) $(Get-BranchSync)"
     Write-PlainLine "Branch .......: $($branchLine.TrimEnd())"
     Write-PlainLine ''
     Show-LocalChangeList
@@ -1277,6 +1303,20 @@ try {
     if ($script:inRepo) {
         $script:defaultBranchCache = Get-DefaultBranch
         $script:mergeTargetCache = Get-MergeTarget
+        ## Every branch command checks this out, protects it, or merges into it, so a name we
+        ## can't confirm has to stop things here - before a preview promises it and the park step
+        ## commits WIP to a branch we wrongly judged unprotected. 'repo *' predates having one.
+        ## 'status' is exempt on purpose: it is the command you run to see what is wrong, so it
+        ## reports "unknown" instead of refusing.
+        git rev-parse -q --verify HEAD *> $null
+        if ($LASTEXITCODE -eq 0 -and $cmdName -cne 'status' -and $cmdName -notlike 'repo-*') {
+            if (-not $script:defaultBranchCache) {
+                throw "Can't tell this repo's default branch. Set it with 'git remote set-head origin --auto', or create a main/master."
+            }
+            if (-not ((Test-GitBranchLocal -Branch $script:defaultBranchCache) -or (Test-GitBranchRemote -Branch $script:defaultBranchCache))) {
+                throw "This repo's default branch resolves to '$($script:defaultBranchCache)', which exists neither here nor on origin. Fix it with 'git remote set-head origin --auto'."
+            }
+        }
     }
 
     ## Release version resolves up front so preview and command agree (and bad input dies early).
@@ -1307,6 +1347,16 @@ try {
                     throw "'${prBranch}' has changes that aren't on origin, so PR #$($script:prNum) can't include them. Run '${script:meName} sync' first."
                 }
                 throw "'${prBranch}' has changes that aren't on origin. Park them first: ${script:meName} sync"
+            }
+            ## Standing somewhere else doesn't make the PR's own branch safe: gh deletes it with
+            ## 'branch -D', so unpushed commits on it go too, and 'sync' can't reach it from here.
+            if (($prBranch -cne $script:prHeadBranch) -and (Test-GitBranchLocal -Branch $script:prHeadBranch)) {
+                if (-not (Test-GitBranchRemote -Branch $script:prHeadBranch)) {
+                    throw "'$($script:prHeadBranch)' is here but not on origin, so PR #$($script:prNum) holds none of it - and it would be deleted. Push it first: git push -u origin $($script:prHeadBranch)"
+                }
+                if (Test-GitBranchUnpushed -Branch $script:prHeadBranch) {
+                    throw "'$($script:prHeadBranch)' has commits that never reached origin, so PR #$($script:prNum) can't include them - and it would be deleted. Push them first: git push origin $($script:prHeadBranch)"
+                }
             }
         } else {
             if ($prBranch -cin @((Get-MergeTarget), (Get-DefaultBranch))) {
