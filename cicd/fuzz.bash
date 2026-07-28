@@ -53,6 +53,12 @@ _isCrash(){ grep -qE "${_crashRe}" <<< "${_out}" || ((_code >= 2)); }
 ## Must survive (accept or refuse - either is fine) without an internal crash.
 fSurvive(){ local -r desc="$1"; local -r dir="$2"; shift 2; fRun "${dir}" "$@"
 	if _isCrash; then fFail "${desc} (exit ${_code})"; else fOk "${desc}"; fi; }
+## Must be ACCEPTED: exit 0, no crash. fSurvive can't say this - it passes on a flat refusal,
+## so a valid option spelling that stopped being recognized would look fine.
+fAccept(){ local -r desc="$1"; local -r dir="$2"; shift 2; fRun "${dir}" "$@"
+	if _isCrash; then fFail "${desc}: crashed (exit ${_code})"
+	elif ((_code != 0)); then fFail "${desc}: refused (exit ${_code}), should accept"
+	else fOk "${desc}"; fi; }
 ## Must refuse: nonzero exit, no crash.
 fRefuse(){ local -r desc="$1"; local -r dir="$2"; shift 2; fRun "${dir}" "$@"
 	if _isCrash; then fFail "${desc}: crashed (exit ${_code})"
@@ -158,9 +164,11 @@ GHEOF
 		fRefuse "option refused (slot 1): '${o}'" "${repo}" -q "${o}" status
 		fRefuse "option refused (slot 2): '${o}'" "${repo}" -q status "${o}"
 	done
-	fSurvive "valid combo -q -y status"        "${repo}" -q -y status
-	fSurvive "valid combo -q --no-fetch status" "${repo}" -q --no-fetch status
-	fSurvive "valid combo -y -q br list"       "${repo}" -y -q br list
+	## -NoFetch is the spelling both ports take; bash also lowercases '--no-fetch', pwsh rejects it.
+	fAccept "valid combo -q -y status"          "${repo}" -q -y status
+	fAccept "valid combo -q -NoFetch status"    "${repo}" -q -NoFetch status
+	fAccept "valid combo -y -q br list"         "${repo}" -y -q br list
+	[[ "$1" == "bash" ]] && fAccept "valid combo -q --no-fetch status"  "${repo}" -q --no-fetch status
 
 	## Branch names: injection + malformed refs are refused before any action.
 	local b

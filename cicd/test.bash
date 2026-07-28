@@ -40,6 +40,15 @@ fAssertOut(){  local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$
 	if grep -qE "$pat" <<< "${out}"; then fOk "$desc"; else fFail "$desc"; fi; }
 fAssertNotOut(){ local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
 	if ! grep -qE "$pat" <<< "${out}"; then fOk "$desc"; else fFail "$desc"; fi; }
+## Matches against the PLAN only, not the whole run. Every "plans X" assertion against full
+## output is also satisfied by the execution echo of the same command, so it cannot tell a
+## preview that lists a step from one that silently stopped listing it. Plan lines are indented
+## under "Going to do"; the first execution line starts at column 0 with '[', in both ports.
+fPlanOf(){ awk '/Going to do/{p=1;next} p&&/^\[/{exit} p' ;}
+fAssertPlan(){    local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
+	if     grep -qE "$pat" <<< "$(fPlanOf <<< "${out}")"; then fOk "$desc"; else fFail "$desc"; fi; }
+fAssertNotPlan(){ local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
+	if ! grep -qE "$pat" <<< "$(fPlanOf <<< "${out}")"; then fOk "$desc"; else fFail "$desc"; fi; }
 
 ## Fixture: bare origin with an initial commit on main, plus two clones.
 fMakeFixture(){
@@ -115,6 +124,10 @@ fRunSuite(){
 	fAssert "worktree clean after update"     bash -c "cd '${cloneA}' && [[ -z \"\$(git status --porcelain)\" ]]"
 	fAssert "update message recorded"         bash -c "cd '${cloneA}' && git log -1 --format=%s | grep -qx 'add file2'"
 	fAssert "update again (nothing to do) ok" bash -c "cd '${cloneA}' && '${gitsby}' -q update 'noop'"
+	## sync takes its message positionally like update, and nothing checked that it lands - the
+	## message could quietly be replaced by the auto-generated timestamp with the suite still green.
+	( cd "${cloneA}" && echo s > s.txt )
+	fAssert "sync records the message it was given"  bash -c "cd '${cloneA}' && '${gitsby}' -q sync 'synced by name' && git log -1 --format=%s | grep -qx 'synced by name'"
 	fAssertFail "dropped 'commit' command rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q commit 'no such command'"
 	fAssertFail "dropped 'pull' command rejected"    bash -c "cd '${cloneA}' && '${gitsby}' -q pull"
 	( cd "${cloneA}" && echo alias > alias.txt )
@@ -176,7 +189,7 @@ fRunSuite(){
 	fAssertOut    "and points at a real command"  'deliberately \(.*update\) first'  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch feat"
 	fAssert "wip left uncommitted on main"      bash -c "cd '${cloneA}' && ! git diff --quiet && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]]"
 	## newbr carries that same tree instead, so its plan must not promise a commit on main
-	fAssertNotOut "br create from main previews no commit"  'git add --all'  bash -c "cd '${cloneA}' && '${gitsby}' -q br create wipcarry"
+	fAssertNotPlan "br create from main previews no commit"  'git add --all'  bash -c "cd '${cloneA}' && '${gitsby}' -q br create wipcarry"
 	fAssert "wip carried to the new branch"  bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == wipcarry ]] && ! git diff --quiet"
 	( cd "${cloneA}" && git checkout --quiet -- file2.txt && git checkout --quiet feat
 	  git branch --quiet -D wipcarry && git push --quiet origin --delete wipcarry )
@@ -243,8 +256,8 @@ fRunSuite(){
 	fAssert "br switch back to dev"         bash -c "cd '${cloneA}' && '${gitsby}' -q br switch && [[ \"\$(git branch --show-current)\" == dev ]]"
 	## Already on the target: no checkout and no park happen, so the plan must not list them.
 	( cd "${cloneA}" && echo swp > swp.txt )
-	fAssertNotOut "br switch onto the current branch plans no commit"  'git commit'  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch dev"
-	fAssertOut    "and still plans the pull"  'git pull --ff-only'                   bash -c "cd '${cloneA}' && '${gitsby}' -q br switch dev"
+	fAssertNotPlan "br switch onto the current branch plans no commit"  'git commit'  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch dev"
+	fAssertPlan   "and still plans the pull"  'git pull --ff-only'                   bash -c "cd '${cloneA}' && '${gitsby}' -q br switch dev"
 
 	## Detached HEAD guard
 	fAssertFail "mutating command on detached HEAD rejected"  bash -c "cd '${cloneA}' && git checkout --quiet HEAD~0 --detach && '${gitsby}' -q update x"
@@ -376,7 +389,7 @@ fRunSuite(){
 		git merge --quiet --no-ff abandoned -m "merge abandoned"
 		git push --quiet
 	)
-	fAssertOut  "br prune plans the merged branches"  'git branch -D landed'  bash -c "cd '${prWork}' && '${gitsby}' -q br prune"
+	fAssertPlan "br prune plans the merged branches"  'git branch -D landed'  bash -c "cd '${prWork}' && '${gitsby}' -q br prune"
 	fAssert     "merged branch gone locally"       bash -c "cd '${prWork}' && ! git show-ref --verify --quiet refs/heads/landed"
 	fAssert     "the other merged one too"         bash -c "cd '${prWork}' && ! git show-ref --verify --quiet refs/heads/abandoned"
 	fAssert     "merged branch gone on origin"     bash -c "cd '${prOrigin}' && ! git show-ref --verify --quiet refs/heads/landed"
@@ -585,7 +598,7 @@ GHEOF
 		git checkout --quiet -b prfeat && echo work > work.txt && git add --all && git commit --quiet -m work
 		git push --quiet -u origin prfeat
 	)
-	fAssertOut "pr ok plans the branch switch"  'git checkout dev'  bash -c "cd '${prc}' && PATH='${ghp}' FAKE_GH_BASE=dev '${gitsby}' -q pr ok 7"
+	fAssertPlan "pr ok plans the branch switch"  'git checkout dev'  bash -c "cd '${prc}' && PATH='${ghp}' FAKE_GH_BASE=dev '${gitsby}' -q pr ok 7"
 	fAssert    "pr ok landed on the merge target"  bash -c "cd '${prc}' && [[ \"\$(git branch --show-current)\" == dev ]]"
 	fAssert    "pr ok pulled the merged work"      bash -c "cd '${prc}' && git ls-tree --name-only dev | grep -qx work.txt"
 	fAssert    "the merged branch is gone from origin"  bash -c "cd '${prc}' && ! git ls-remote --heads origin prfeat | grep -q prfeat"
@@ -661,7 +674,7 @@ GHEOF
 	fAssert    "off the default branch, not dev"  bash -c "cd '${hfc}' && git merge-base --is-ancestor origin/main HEAD"
 	## -q still prints the plan, it only skips the prompt - so one run proves both.
 	## (Non-quiet can't be used here: with no tty gitsby fails closed before printing anything.)
-	fAssertOut "br land plans and lands it on the default branch"  'git checkout main' \
+	fAssertPlan "br land plans and lands it on the default branch"  'git checkout main' \
 		bash -c "cd '${hfc}' && echo 'readme v2' > README.md && '${gitsby}' -q -NoFetch update wip >/dev/null 2>&1; '${gitsby}' -q -NoFetch br land 'Reword' 2>&1"
 	fAssert    "it reached the default branch" bash -c "cd '${hfc}' && [[ \"\$(git show origin/main:README.md)\" == 'readme v2' ]]"
 	fAssert    "and was carried back to dev"   bash -c "cd '${hfc}' && [[ \"\$(git show origin/dev:README.md)\" == 'readme v2' ]]"
@@ -812,7 +825,7 @@ GHEOF
 		echo "readme v2" > README.md && git commit --quiet -am "Fix wording" && git push --quiet -u origin hotfix/api
 		git checkout --quiet dev
 	)
-	fAssertOut "pr ok plans the back-merge for a hotfix PR accepted from dev"  'git merge origin/main' \
+	fAssertPlan "pr ok plans the back-merge for a hotfix PR accepted from dev"  'git merge origin/main' \
 		bash -c "cd '${pkc}' && PATH='${ghp}' FAKE_GH_HEAD=hotfix/api FAKE_GH_BASE=main '${gitsby}' -q pr ok 7 2>&1"
 	fAssert    "and the hotfix reached the default branch"  bash -c "cd '${pkc}' && [[ \"\$(git show origin/main:README.md)\" == 'readme v2' ]]"
 	fAssert    "and was carried back to dev"               bash -c "cd '${pkc}' && [[ \"\$(git show origin/dev:README.md)\" == 'readme v2' ]]"
@@ -823,7 +836,7 @@ GHEOF
 		git add --all && git commit --quiet -m feat && git push --quiet -u origin pkfeat
 		git checkout --quiet -b hotfix/standing && git push --quiet -u origin hotfix/standing
 	)
-	fAssertNotOut "a feature PR accepted from a hotfix branch plans no back-merge"  'git merge origin/main' \
+	fAssertNotPlan "a feature PR accepted from a hotfix branch plans no back-merge"  'git merge origin/main' \
 		bash -c "cd '${pkc}' && PATH='${ghp}' FAKE_GH_HEAD=pkfeat FAKE_GH_BASE=dev '${gitsby}' -q pr ok 8 2>&1"
 
 	## The bash version gate. Bash build only - the PowerShell one needs no bash at all.

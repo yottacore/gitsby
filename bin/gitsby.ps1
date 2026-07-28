@@ -20,6 +20,8 @@
     Commit or merge message (-m/-msg also work; or give it positionally).
 .PARAMETER Quiet
     No prompts; if committing with no message, one is generated.
+.PARAMETER Yes
+    The same thing as -Quiet.
 .PARAMETER NoFetch
     Work offline: skip the pre-command fetch, and the pull.
 .EXAMPLE
@@ -43,7 +45,10 @@ param(
     [Parameter(Position = 2)][string]$CommandArg2 = '',
     [Parameter(Position = 3)][string]$CommandArg3 = '',
     [Alias('m', 'msg')][string]$Message = '',
-    [Alias('q', 'y', 'yes')][switch]$Quiet,
+    [Alias('q')][switch]$Quiet,
+    ## Separate switch, not another alias of -Quiet: aliases of one parameter can't both be
+    ## given, so '-q -y' was rejected as "specified more than once" where bash accepts it.
+    [Alias('y')][switch]$Yes,
     [Alias('offline')][switch]$NoFetch,
     [switch]$Public,
     [switch]$Private,
@@ -59,7 +64,7 @@ $script:thisVersion = '2.0.0'
 $script:thisCopyrightYear = '2014-2026'
 $script:thisAuthor = 'Jim Collier'
 $script:meName = Split-Path -Leaf -Path $PSCommandPath
-$script:doQuietly = [bool]$Quiet
+$script:doQuietly = ([bool]$Quiet -or [bool]$Yes)
 $script:noFetch = [bool]$NoFetch
 $script:commitMessage = $Message
 $script:cmdArg = $CommandArg

@@ -46,7 +46,16 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Bugs
 
+- 🔘 `--no-fetch` does not make the parking push offline-safe.
+	- `update` and `sync` degrade properly offline, but `br switch`, `br create`, `br hotfix`, `pr create` and `release` still fail on `git push`, with raw git text rather than gitsby-level guidance.
+	- Not a one-line fix, and worth a decision first: skipping the push wholesale would make `sync` and `release` report success having published nothing, which is worse than the current hard failure. `br create` and `br hotfix` also carry a second publish push outside the shared park step.
+	- Suggested shape: keep `sync`, `release` and `pr create` failing (they exist to publish), and let the branch commands succeed locally with a clear "not pushed - you are offline" note.
+
 ### Features and enhancements
+
+- 🔘 Show the file list before first publication (`repo create`, `repo connect` from a plain directory).
+	- Every in-repo command shows what it is about to touch; the one command that publishes a directory for the first time, possibly to a public repo, does not. A stray `.env` or key goes up with the user having read only `git add --all`.
+	- Has to ask git the same question `git add --all` will answer, so `.gitignore` and `core.excludesFile` are honored - listing files git would skip is its own kind of wrong. A throwaway git dir outside the work tree does that without writing anything into the user's directory, which matters because answering "n" must leave it untouched.
 
 ### Done
 
@@ -328,6 +337,21 @@ Full pre-release review, run across nine lenses with every finding independently
 - ✅ Code Review 20260727b item 17: `br switch <the branch you are on>` previewed an add, commit and push it then did not do.
 	- Nothing is lost, but the confirmed plan said otherwise, which is the one thing the preview exists to prevent.
 	- Fixed: that case previews only the pull. Parking was deliberately not added instead - on a protected branch it would auto-commit, which the design forbids.
+
+- ✅ Code Review 20260727b item 18: every check named "plans X" was satisfied by the execution echo instead of the plan.
+	- The preview is the product's central promise - it is what you read before answering the prompt - and it could have stopped listing the checkout, the back-merge or the push with the suite still fully green.
+	- Fixed: assertions about the plan now match against the plan only, sliced out of the run. Eight checks were pointed at it.
+
+- ✅ Code Review 20260727b item 19: the three fuzz checks whose job is "these option combinations are accepted" passed if the options were refused.
+	- They used the survive-any-outcome helper, so a valid spelling that stopped being recognized looked fine.
+	- Fixed: a helper that requires exit 0, and the combinations respelled so the shared ones are valid in both ports.
+
+- ✅ Code Review 20260727b item 20a: the stronger fuzz assertion immediately found port drift that had been hidden: `-q -y` together was refused in PowerShell.
+	- Both spellings were aliases of one parameter, and PowerShell rejects a parameter given twice. Bash takes either or both.
+	- Fixed: `-y` is its own switch that means the same thing, so every combination the Bash build accepts is accepted.
+
+- ✅ Code Review 20260727b item 20: `sync`'s commit message had no coverage.
+	- It takes a message positionally like `update`, and could have silently fallen back to the auto-generated timestamp with both suites green.
 
 #### Done - Code review 20260727
 
