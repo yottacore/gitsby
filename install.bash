@@ -165,7 +165,9 @@ fromReleaseAsset=0
 if [[ ${isRelease} -eq 1 ]] && fFetch "https://github.com/${repo}/releases/download/${ref}/gitsby" > "${tmpFile}" 2>/dev/null; then
 	fromReleaseAsset=1
 elif fFetch "https://raw.githubusercontent.com/${repo}/${ref}/bin/gitsby" > "${tmpFile}" 2>/dev/null; then
-	:
+	## Say so: only the release asset can be checked against SHA256SUMS, and asking for a
+	## release and quietly getting an unverified copy of the tree is not what was agreed.
+	[[ ${isRelease} -eq 1 ]] && echo "Note: no release asset for ${ref}; installing bin/gitsby from the tagged tree, unverified."
 else
 	fErr "Couldn't download gitsby at '${ref}'. (Releases before v2 predate the current layout; try '--release dev'.)"
 fi

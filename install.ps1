@@ -134,6 +134,11 @@ function Install-Gitsby {
     if (-not $downloaded) {
         throw "Couldn't download gitsby.ps1 at '${Ref}'. If that release has no PowerShell build yet, use the Bash installer (install.bash) or watch the repo for the PowerShell port."
     }
+    # Say so: only the release asset can be checked against SHA256SUMS, and asking for a
+    # release and quietly getting an unverified copy of the tree is not what was agreed.
+    if ($isRelease -and -not $fromReleaseAsset) {
+        Write-Host "Note: no release asset for ${Ref}; installing bin/gitsby.ps1 from the tagged tree, unverified."
+    }
     # Wrong-content 200s happen (captive portals, truncation); a script starts with a shebang.
     if ((Get-Content -LiteralPath $tmpFile -First 1) -notmatch '^#!') { throw "Downloaded file doesn't look like a script; aborting." }
 

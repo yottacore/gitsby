@@ -57,6 +57,16 @@ param(
     [Alias('v', 'ver')][switch]$Version
 )
 
+## Windows PowerShell 5.1 is still 'powershell' on Windows, and it has no $IsWindows - under
+## StrictMode that surfaces as an undefined variable partway through a command rather than as
+## something a reader can act on. Bash has the same gate for the same reason.
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    Write-Host "Error: $(Split-Path -Leaf -Path $PSCommandPath) needs PowerShell 7 or newer; this is $($PSVersionTable.PSVersion)."
+    Write-Host "  Install it: 'winget install --id Microsoft.PowerShell' on Windows, or see https://aka.ms/powershell."
+    Write-Host '  Or use the Bash build (gitsby), which does the same thing.'
+    exit 1
+}
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
@@ -1103,16 +1113,17 @@ function Invoke-GitsbyPrView {
         Write-PlainLine ''
         Write-StatusLine 'gh pr list ...'
         gh pr list
+        if ($LASTEXITCODE -ne 0) { throw "'gh pr list' failed (exit ${LASTEXITCODE})." }
     } else {
         Write-PlainLine ''
         Write-StatusLine "gh pr view ${PrNumber} ..."
         gh pr view $PrNumber
-        if ($LASTEXITCODE -ne 0) { throw "gh pr view failed (exit ${LASTEXITCODE})." }
+        if ($LASTEXITCODE -ne 0) { throw "'gh pr view ${PrNumber}' failed (exit ${LASTEXITCODE})." }
         Write-PlainLine ''
         Write-StatusLine "gh pr diff ${PrNumber} ..."
         gh pr diff $PrNumber
+        if ($LASTEXITCODE -ne 0) { throw "'gh pr diff ${PrNumber}' failed (exit ${LASTEXITCODE})." }
     }
-    if ($LASTEXITCODE -ne 0) { throw "gh failed (exit ${LASTEXITCODE})." }
     Clear-BlankCounter
 }
 
@@ -1266,7 +1277,13 @@ try {
     ## Sort commands, and route positional arg 2 (message vs branch name; -m wins for messages).
     $isMutating = $true
     switch ($cmdName) {
-        { $_ -in 'status', 'br-list' } { $isMutating = $false; break }
+        ## Trailing arguments are rejected everywhere else, so silently ignoring them here would
+        ## make a typo look like it did what you meant. 'br list' extra lands in cmdArg too.
+        { $_ -in 'status', 'br-list' } {
+            $isMutating = $false
+            if ($script:cmdArg) { throw "'$($script:meName) $($cmdName -replace 'br-list', 'br list')' takes no arguments (got '$($script:cmdArg)')." }
+            break
+        }
         'pr' { if ($CommandArg.ToLowerInvariant() -notin 'ok', 'create', 'new') { $isMutating = $false }; break }
         { $_ -in 'update', 'sync', 'br-land' } {
             if (-not $script:commitMessage) { $script:commitMessage = $CommandArg }
@@ -1668,7 +1685,8 @@ try {
         Write-PlainLine ''
         $answer = Read-Host -Prompt 'Continue? (y|n)'
         Clear-BlankCounter
-        if ($answer -ne 'y') { Write-StatusLine 'User aborted.'; exit 1 }
+        ## Trailing blank on this exit too, like every other one, and like bash's.
+        if ($answer -ne 'y') { Write-StatusLine 'User aborted.'; Write-PlainLine ''; exit 1 }
     }
 
     switch ($cmdName) {
@@ -1701,6 +1719,9 @@ try {
 } catch {
     Write-PlainLine ''
     [Console]::Error.WriteLine("${script:meName}: $($_.Exception.Message)")
+    ## Forced: the message went to stderr, so the blank-line counter didn't see it and would
+    ## swallow this one. Bash closes every exit path with a blank the same way.
+    Clear-BlankCounter
     Write-PlainLine ''
     exit 1
 }
@@ -1725,3 +1746,4 @@ try {
 ##      - 20260727 JC: Git now runs in the location the user is actually in. Set-Location moves PowerShell's location but not the process cwd, and the launcher inherits the latter, so state was read from one repo while commits, merges and pushes went to another.
 ##      - 20260727 JC: A conflicted tree is never committed - a pull whose autostash reapply conflicts exits 0, so the markers were being staged, committed and pushed - in step with bin/gitsby.
 ##      - 20260727 JC: Review round: 'pr ok <n>' checks the PR's own branch for unpushed commits; the default branch is resolved rather than assumed; 'release' refuses an invented version with nothing to release; 'br land' won't delete a leftover main/master; '-v' alongside a command is refused instead of silently printing the version and doing nothing; '--help' works after a command; '-Public' with '-Private' is refused; credentialed URLs are masked on the execution line too; the remote URL and ssh probes are quoted (PowerShell was globbing them); one guarded fetch helper serves both fetch sites - in step with bin/gitsby.
+##      - 20260727 JC: Review round, smaller items: a PowerShell 7 gate up front (5.1 has no $IsWindows, so StrictMode used to surface it partway through a command); status and br list reject trailing arguments; pr view blames the command that actually failed; error and abort exits close with a blank line like bash's - in step with bin/gitsby.

@@ -353,6 +353,22 @@ Full pre-release review, run across nine lenses with every finding independently
 - ✅ Code Review 20260727b item 20: `sync`'s commit message had no coverage.
 	- It takes a message positionally like `update`, and could have silently fallen back to the auto-generated timestamp with both suites green.
 
+- ✅ Code Review 20260727b items 21-27: the smaller ones, gathered.
+	- PowerShell had no version gate where Bash has one, so a Windows PowerShell 5.1 run failed partway through a command on an undefined variable. It now says what to install, up front.
+	- `status`, `br list` and `pr <n>` silently ignored trailing arguments while every other command rejected them - a typo looked like it did what you meant.
+	- An option or positional typo printed an internal call stack. That is reserved for real crashes; these are usage errors.
+	- `gh pr create` was announced with one command line and run with another. It is now announced by hand, matching both its own preview and the way `gh pr review` is already announced.
+	- PowerShell's `pr view` blamed the wrong command on failure, and could not see `gh pr list` fail at all. Each call reports itself now.
+	- PowerShell dropped the trailing blank line on error and abort exits that Bash prints on every path.
+	- The installers say when they fell back to an unverified copy from the tree, rather than quietly downgrading from a checksum-verified release asset.
+	- Two first-party shell files were outside the shellcheck gate and one glob in the list matched nothing; the gate now covers all 13, and shellcheck is clean across them.
+	- `cicd.bash` printed with `echo -e`, which would animate backslash escapes and ANSI sequences out of a commit message the user typed. It uses `printf` now, like `bin/gitsby` already did - as does the crash dump, which can carry a filename or message.
+	- Template leftovers in the argument parser: an instruction addressed to whoever instantiates the template, non-ASCII markers, a kaomoji, an over-long section rule, and a typo.
+
+- ✅ Code Review 20260727b: perf findings reviewed and deliberately not acted on.
+	- Measured rather than assumed, with a counting `git` shim: `br list` is 6 git processes and `status` 13, both constant at 41 branches. Only `br prune` scales - about 5.5 per branch, 264 at 41 branches, and still 0.57s. The second containment check per branch is the deliberate re-check at delete time.
+	- Nothing on the everyday path forks per item, so there is no problem to fix here. Noted so the next reader doesn't re-derive it.
+
 #### Done - Code review 20260727
 
 Review of the hotfix branches, the gh/ssh identity check, and the docs pass that went with them.

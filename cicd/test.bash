@@ -45,6 +45,9 @@ fAssertNotOut(){ local desc="$1"; local pat="$2"; shift 2; local out=""; out="$(
 ## preview that lists a step from one that silently stopped listing it. Plan lines are indented
 ## under "Going to do"; the first execution line starts at column 0 with '[', in both ports.
 fPlanOf(){ awk '/Going to do/{p=1;next} p&&/^\[/{exit} p' ;}
+## Runs PowerShell source TEXT the way the documented one-liners do (iex / scriptblock), with no
+## controlling terminal and stdin at EOF so a confirmation prompt refuses instead of blocking.
+fPwshText(){ setsid pwsh -NoProfile -Command "$1" </dev/null 2>&1 ;}
 fAssertPlan(){    local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
 	if     grep -qE "$pat" <<< "$(fPlanOf <<< "${out}")"; then fOk "$desc"; else fFail "$desc"; fi; }
 fAssertNotPlan(){ local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
@@ -92,6 +95,13 @@ fRunSuite(){
 	fAssertFail "unknown option rejected"      bash -c "cd '${cloneA}' && '${gitsby}' -q status --bogus"
 	fAssertOut  "--public with --private refused"  'mutually exclusive'  bash -c "cd '${cloneA}' && '${gitsby}' -q --public --private repo create me/x 2>&1"
 	fAssertFail "outside a repo rejected"      bash -c "cd '${work}' && '${gitsby}' -q status"
+	## Read-only commands used to ignore trailing arguments while everything else rejected them,
+	## which makes a typo look like it did what you meant.
+	fAssertFail "status with a trailing argument rejected"   bash -c "cd '${cloneA}' && '${gitsby}' -q status extra"
+	fAssertFail "br list with a trailing argument rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q br list extra"
+	fAssertOut  "and says what takes no arguments"  'takes no arguments'  bash -c "cd '${cloneA}' && '${gitsby}' -q status extra 2>&1"
+	## An option or positional typo is a usage error, not a crash - no internal stack dump.
+	fAssertNotOut "option typo prints no call stack"  'Reverse call stack'  bash -c "cd '${cloneA}' && '${gitsby}' -q status --bogus 2>&1"
 
 	## Grouped-noun grammar: spelled-out nouns, hidden verb aliases, and refusals
 	fAssert     "'branch' spells out 'br'"        bash -c "cd '${cloneA}' && '${gitsby}' -q branch list"
@@ -905,17 +915,21 @@ GHEOF
 			## The documented one-liners are 'iex' and a scriptblock, neither of which is a script
 			## file - so -File coverage alone says nothing about them. Both must bind their
 			## parameters, refuse without a tty, and leave the calling session alive and unaltered.
-			local instDev="${root}/install-dev.ps1"
-			local iexRun="\$t = Get-Content -Raw '${instPs}'; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
-			local sbRun="\$t = Get-Content -Raw '${instPs}'; try { & ([scriptblock]::Create(\$t)) -Ref main -Target system } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
-			fAssertOut "iex form reaches the plan"          'gitsby installer'  pwsh -NoProfile -Command "${iexRun}"
-			fAssertOut "and refuses without a tty"          'CAUGHT: Aborted'   pwsh -NoProfile -Command "${iexRun}"
-			fAssertOut "and leaves the session alive"       'HOST ALIVE'        pwsh -NoProfile -Command "${iexRun}"
-			fAssertOut "scriptblock form binds its options" '/usr/local/bin'    pwsh -NoProfile -Command "${sbRun}"
-			fAssertOut "and leaves the session alive too"   'HOST ALIVE'        pwsh -NoProfile -Command "${sbRun}"
-			fAssertOut "installer leaks no StrictMode"      'strict stayed off' pwsh -NoProfile -Command "\$t = Get-Content -Raw '${instPs}'; try { \$t | Invoke-Expression } catch { }; try { \$q = \$neverSet; 'strict stayed off' } catch { 'STRICT LEAKED' }"
-			fAssertOut "installer leaks no ErrorAction"     'EAP=Continue'      pwsh -NoProfile -Command "\$t = Get-Content -Raw '${instPs}'; try { \$t | Invoke-Expression } catch { }; \"EAP=\$ErrorActionPreference\""
-			fAssertOut "dev setup's iex form asks first"    'CAUGHT: Aborted'   pwsh -NoProfile -Command "\$t = Get-Content -Raw '${instDev}'; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }"
+			## These reach the confirmation prompt, so it has to REFUSE rather than wait: no
+			## controlling terminal (setsid) and stdin at EOF, the same way the bash plan checks
+			## above do it. Without that, Read-Host blocks and the whole suite hangs.
+			if command -v setsid >/dev/null 2>&1; then
+				local instDev="${root}/install-dev.ps1"
+				local readInst="\$t = Get-Content -Raw '${instPs}'"
+				fAssertOut "iex form reaches the plan"          'gitsby installer'  fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+				fAssertOut "and refuses without a tty"          'CAUGHT: Aborted'   fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+				fAssertOut "and leaves the session alive"       'HOST ALIVE'        fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+				fAssertOut "scriptblock form binds its options" '/usr/local/bin'    fPwshText "${readInst}; try { & ([scriptblock]::Create(\$t)) -Ref main -Target system } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+				fAssertOut "and leaves the session alive too"   'HOST ALIVE'        fPwshText "${readInst}; try { & ([scriptblock]::Create(\$t)) -Ref main -Target system } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+				fAssertOut "installer leaks no StrictMode"      'strict stayed off' fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { }; try { \$q = \$neverSet; 'strict stayed off' } catch { 'STRICT LEAKED' }"
+				fAssertOut "installer leaks no ErrorAction"     'EAP=Continue'      fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { }; \"EAP=\$ErrorActionPreference\""
+				fAssertOut "dev setup's iex form asks first"    'CAUGHT: Aborted'   fPwshText "\$t = Get-Content -Raw '${instDev}'; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }"
+			fi
 		fi
 	fi
 
