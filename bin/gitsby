@@ -130,6 +130,7 @@ fMain(){
 	local -i doFetch=1      ## cleared by --no-fetch
 	local -i remoteReachable=1  ## cleared when the pre-command fetch can't reach origin
 	local repoVisibility="private"  ## --public/--private, for 'repo create'
+	local -i sawPublic=0; local -i sawPrivate=0  ## to catch both being given
 	local -i anyIdentity=0          ## --any-identity: a gh/ssh account mismatch here is intended
 	local -i isGhCommand=0          ## command goes through gh at all -> show whose account that is
 	local -i isGhWrite=0            ## command WRITES through gh -> also compare against the ssh key
@@ -143,6 +144,10 @@ fMain(){
 	local -ri parseArgs_maxPositionalArgCount=4
 	fParseArgs "${@}"
 	cmdName="${cmdName,,}"
+
+	## Both visibilities given is a contradiction, not a precedence question - and silently
+	## picking one would publish a repo the caller believes is the other.
+	((sawPublic && sawPrivate)) && fThrowError_Usage "--public and --private are mutually exclusive; pick one."
 
 	## Grouped commands are '<noun> <verb> [args]'. Collapse each pair to one internal token and
 	## shift the positionals down, so everything downstream still deals with a single flat name.
@@ -256,10 +261,36 @@ fMain(){
 
 	## Release version resolves up front so preview and command agree (and bad input dies early).
 	local releaseTag=""
+	local -i releaseBumped=0  ## set by fpResolveRelease when it invented the version
 	if [[ "${cmdName}" == "release" ]]; then
-		releaseTag="$(fReleaseVersion)"
+		## Sets releaseTag and releaseBumped in this shell - a subshell would discard the flag.
+		fpResolveRelease
 		## Up front, not mid-command: by the time fCmdRelease runs it has already committed and pushed.
 		git rev-parse -q --verify "refs/tags/${releaseTag}" >/dev/null && fThrowError_Usage "Tag '${releaseTag}' already exists."
+		## An invented version on a target that would gain nothing cuts a tag for no release, and
+		## the natural re-run after a failed push cuts a second one on the same commit - so the
+		## first is stranded forever. A version you typed, and promoting a candidate, are
+		## deliberate and stay allowed. Fails open: if we can't tell, the release goes ahead.
+		## 'release' parks first, so uncommitted work or unpushed commits ARE something to release
+		## even when the branches currently look level - the guard only speaks for a settled repo.
+		if ((releaseBumped)) && [[ -z "$(git status --porcelain 2>/dev/null || true)" ]] && ! fIsAhead; then
+			local relMain="$(fDefaultBranch)"
+			local relTarget="${relMain}"
+			fBranchExistsLocal "${relMain}" || relTarget="origin/${relMain}"
+			## The local branch is what gets tagged and pushed, so it is what "nothing new" is
+			## about. Stand down if origin holds commits we don't: the pull would bring them in.
+			local -i relKnown=1
+			if [[ "${relTarget}" == "${relMain}" ]] && fBranchExistsRemote "${relMain}"; then
+				git merge-base --is-ancestor "origin/${relMain}" "${relMain}" 2>/dev/null || relKnown=0
+			fi
+			local relSource=""
+			if fBranchExistsRemote dev; then relSource="origin/dev"; elif fBranchExistsLocal dev; then relSource="dev"; fi
+			if ((relKnown)) && { [[ -z "${relSource}" ]] || git merge-base --is-ancestor "${relSource}" "${relTarget}" 2>/dev/null; }; then
+				local relExisting=""
+				relExisting="$(git describe --exact-match --tags "${relTarget}" 2>/dev/null || true)"
+				[[ -n "${relExisting}" ]] && fThrowError_Usage "Nothing new to release since ${relExisting}. If that tag never reached origin, push it: git push origin ${relExisting}"
+			fi
+		fi
 	fi
 
 	## The mutating pr subcommands check here too, so nothing can fail after the plan was confirmed.
@@ -310,6 +341,10 @@ fMain(){
 		git check-ref-format --branch "${cmdArg}" >/dev/null 2>&1 || fThrowError_Usage "'${cmdArg}' is not a valid branch name."
 		fBranchExistsLocal  "${cmdArg}" && fThrowError_Usage "Branch '${cmdArg}' already exists; use: ${meName} br switch ${cmdArg}"
 		fBranchExistsRemote "${cmdArg}" && fThrowError_Usage "Branch '${cmdArg}' already exists on origin; use: ${meName} br switch ${cmdArg}"
+	elif [[ "${cmdName}" == "br-land" ]]; then
+		## Landing ends in 'git branch -d', so a leftover main/master must be refused here for the
+		## same reason br prune never lists one - and up front, not after a destructive plan was shown.
+		fIsProtectedBranch && fThrowError_Usage "'$(fCurrentBranch)' is a protected branch; landing it would delete it. Run this from a work branch instead."
 	elif [[ "${cmdName}" == "br-switch" ]]; then
 		[[ -z "${cmdArg}" ]] || fBranchExistsLocal "${cmdArg}" || fBranchExistsRemote "${cmdArg}" || fThrowError_Usage "No branch '${cmdArg}' locally or on origin. To create it: ${meName} br create ${cmdArg}"
 		## Refusing a dirty protected branch belongs here too, before the plan is shown and confirmed.
@@ -443,6 +478,12 @@ fMain(){
 	## mistake waiting to happen, and it is outward-facing. Refuse it unattended (nobody is there
 	## to read a warning); warn interactively, right before the prompt. --any-identity means
 	## the difference is intended.
+	## Prime the probe caches here, in this shell: every use below sits inside a command
+	## substitution, so a cache filled in one of those is discarded and the next call re-probes.
+	## That was two 'gh api user' calls and two 'ssh -T' round trips per command, not one each.
+	if ((isGhCommand)); then fpGhLogin >/dev/null; fi
+	if ((isGhWrite));   then fpSshLogin "${identityProbeUrl}" >/dev/null; fi
+
 	local identityMismatch=""
 	if ((isGhWrite)) && ((! anyIdentity)); then
 		identityMismatch="$(fpIdentityMismatch "$(fpGhLogin)" "$(fpSshLogin "${identityProbeUrl}")")"
@@ -1158,14 +1199,16 @@ fpWarnHotfixTouchedBin(){
 	fEcho_Clean "  downloads no longer match it. Cut a patch release when you're ready: ${meName} release"
 :;}
 
-fReleaseVersion(){
-	## Resolve the release tag: validate the given version, or bump patch on the latest v* tag.
+fpResolveRelease(){
+	## Resolve the release tag into releaseTag, and record in releaseBumped whether we invented
+	## the version rather than being told it. Assigns rather than echoes, so both survive.
 	local ver="${cmdArg:-}"
 	ver="${ver#v}"
 	if [[ -n "${ver}" ]]; then
 		[[ "${ver}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]] || fThrowError_Usage "'${ver}' is not a version (want X.Y.Z, optional -suffix). Syntax: ${meName} release [version]"
 	else
 		ver="0.1.0"  ## first release ever, or an unreadable tag
+		releaseBumped=1
 		local -a latestArr=()
 		## versionsort.suffix=- ranks v2.0.0 above its own v2.0.0-rc1; the default sort inverts them.
 		mapfile -t -n 1 latestArr < <(git -c versionsort.suffix=- tag --list 'v[0-9]*' --sort=-v:refname 2>/dev/null || true)
@@ -1174,11 +1217,12 @@ fReleaseVersion(){
 			local -r min="${BASH_REMATCH[3]:-0}"  ## pad short tags like v1.2 or v2020
 			local pat="${BASH_REMATCH[5]:-0}"
 			## A candidate's own version is what comes next: v2.0.0-rc1 -> v2.0.0, not v2.0.1.
-			[[ -n "${BASH_REMATCH[6]}" ]] || pat=$(( pat + 1 ))
+			## A candidate promotion is a deliberate version, not an invented one.
+			if [[ -n "${BASH_REMATCH[6]}" ]]; then releaseBumped=0; else pat=$(( pat + 1 )); fi
 			ver="${maj}.${min}.${pat}"
 		fi
 	fi
-	echo "v${ver}"
+	releaseTag="v${ver}"
 :;}
 
 fRun(){
@@ -1352,9 +1396,15 @@ fpPreview(){
 			fEcho_Clean "${pad}git push -u origin ${cmdArg} *"
 			;;
 		br-switch)
-			fpPreview sync
-			fEcho_Clean "${pad}git checkout ${cmdArg:-$(fMergeTarget)}"
-			fEcho_Clean "${pad}git pull --ff-only *"
+			## Already on the target: nothing is parked and no checkout happens, so the plan must
+			## not promise an add/commit/push it will not do.
+			if [[ "$(fCurrentBranch)" == "${cmdArg:-$(fMergeTarget)}" ]]; then
+				fEcho_Clean "${pad}git pull --ff-only *"
+			else
+				fpPreview sync
+				fEcho_Clean "${pad}git checkout ${cmdArg:-$(fMergeTarget)}"
+				fEcho_Clean "${pad}git pull --ff-only *"
+			fi
 			;;
 		br-land)
 			fpPreview sync
@@ -1506,8 +1556,8 @@ fParseArgs(){
 				"h"|"help")                 fCopyright; fAbout; fSyntax; fEcho_Clean ""; exit 0 ;;
 				"q"|"quiet"|"y"|"yes")      doQuietly=1 ;;
 				"no-fetch"|"nofetch"|"offline")  doFetch=0 ;;
-				"public")                   repoVisibility="public" ;;
-				"private")                  repoVisibility="private" ;;
+				"public")                   repoVisibility="public";  sawPublic=1  ;;
+				"private")                  repoVisibility="private"; sawPrivate=1 ;;
 				"any-identity"|"anyidentity")  anyIdentity=1 ;;
 				"m="*|"message="*|"msg="*)  commitMessage="${currentArg#*=}" ;;  ## -m=MSG / --message=MSG / --msg=MSG (joined)
 
@@ -1739,3 +1789,4 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##			- Deletes with -D behind gitsby's own containment check: 'git branch -d' asks about the upstream, or HEAD when there is none, so it warned needlessly on one branch shape and silently refused another that was genuinely merged.
 ##			- A branch kept by the delete-time re-check keeps its remote copy too, and a merged current branch is reported as kept rather than left off every list.
 ##		- 20260727 JC: A conflicted tree is never committed. A pull whose autostash reapply conflicts exits 0, so 'git add --all' was marking the conflict resolved and committing the markers - then pushing them from sync.
+##		- 20260727 JC: Review round: 'pr ok <n>' checks the PR's own branch for unpushed commits, not whichever branch you're standing on (gh force-deletes it either way); the default branch is resolved rather than assumed to be 'main', and commands refuse when it can't be told; 'release' refuses an invented version with nothing to release; 'br land' won't delete a leftover main/master; '--help' works after a command; a message may start with a dash; '--public' with '--private' is refused; credentialed URLs are masked on the execution line too; the identity probes actually cache now; 'br switch' onto the current branch stops previewing a park it doesn't do.

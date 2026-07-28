@@ -70,7 +70,7 @@ $script:wasShownSyntax = $false
 $script:mergeTargetLabel = 'dev/main'  ## for help text, before we know we're in a repo
 $script:defaultBranchCache = ''  ## per-run constants, filled post-fetch
 $script:mergeTargetCache = ''
-$script:repoVisibility = if ($Public -and -not $Private) { 'public' } else { 'private' }  ## for 'repo create'
+$script:repoVisibility = if ($Public) { 'public' } else { 'private' }  ## for 'repo create'
 $script:inRepo = $false
 $script:remoteReachable = $true  ## cleared when the pre-command fetch can't reach origin
 $script:cloneUrl = ''; $script:cloneDir = ''
@@ -535,6 +535,9 @@ function Get-RemoteProbe {
 
 function Get-ReleaseVersion {
     ## Resolve the release tag: validate the given version, or bump patch on the latest v* tag.
+    ## Also records in $script:releaseBumped whether we invented the version rather than being
+    ## told it - a version you typed is never a no-op, an invented one can be.
+    $script:releaseBumped = $false
     $ver = $script:cmdArg -replace '^v', ''
     if ($ver) {
         if ($ver -notmatch '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$') {
@@ -542,14 +545,16 @@ function Get-ReleaseVersion {
         }
     } else {
         $ver = '0.1.0'  ## first release ever, or an unreadable tag
+        $script:releaseBumped = $true
         ## versionsort.suffix=- ranks v2.0.0 above its own v2.0.0-rc1; the default sort inverts them.
         $latest = @(git -c versionsort.suffix=- tag --list 'v[0-9]*' --sort=-v:refname 2>$null) | Select-Object -First 1
         if ([string]$latest -match '^v?([0-9]+)(\.([0-9]+))?(\.([0-9]+))?(.*)$') {
             $maj = $Matches[1]
             $min = if ($Matches[3]) { $Matches[3] } else { '0' }  ## pad short tags like v1.2 or v2020
             $pat = if ($Matches[5]) { [int]$Matches[5] } else { 0 }
-            ## A candidate's own version is what comes next: v2.0.0-rc1 -> v2.0.0, not v2.0.1.
-            if (-not $Matches[6]) { $pat += 1 }
+            ## A candidate's own version is what comes next: v2.0.0-rc1 -> v2.0.0, not v2.0.1,
+            ## and promoting one is a deliberate version rather than an invented one.
+            if ($Matches[6]) { $script:releaseBumped = $false } else { $pat += 1 }
             $ver = "${maj}.${min}.${pat}"
         }
     }
@@ -746,9 +751,13 @@ function Show-CommandPreview {
             break
         }
         'br-switch' {
-            Show-CommandPreview -CommandName 'sync'
             $target = if ($script:cmdArg) { $script:cmdArg } else { Get-MergeTarget }
-            Write-PlainLine "${pad}git checkout ${target}"
+            ## Already on the target: nothing is parked and no checkout happens, so the plan must
+            ## not promise an add/commit/push it will not do.
+            if ((Get-CurrentBranch) -cne $target) {
+                Show-CommandPreview -CommandName 'sync'
+                Write-PlainLine "${pad}git checkout ${target}"
+            }
             Write-PlainLine "${pad}git pull --ff-only *"
             break
         }
@@ -1202,6 +1211,10 @@ try {
     ## Help is allowed anywhere on purpose ('br create --help' is the reflex every git user has),
     ## but -v alongside a command must not silently turn it into a version print that does no work.
     if ($Version -and $Command) { throw "Unexpected option in this context: '-v'." }
+    ## Both visibilities given is a contradiction, not a precedence question - and silently
+    ## picking one would publish a repo the caller believes is the other. The two ports used to
+    ## resolve it in opposite directions.
+    if ($Public -and $Private) { throw '--public and --private are mutually exclusive; pick one.' }
     if ($Help) { Show-Copyright; Show-About; Show-Syntax; Write-PlainLine ''; exit 0 }
     if ($Version) { Show-Copyright; exit 0 }
     if (-not $Command) { Show-Copyright; Show-About; Show-Syntax; exit 1 }
@@ -1347,6 +1360,37 @@ try {
         ## Up front, not mid-command: by the time Invoke-GitsbyRelease runs it has already committed and pushed.
         git rev-parse -q --verify "refs/tags/$($script:releaseTag)" *> $null
         if ($LASTEXITCODE -eq 0) { throw "Tag '$($script:releaseTag)' already exists." }
+        ## An invented version on a target that would gain nothing cuts a tag for no release, and
+        ## the natural re-run after a failed push cuts a second one on the same commit - so the
+        ## first is stranded forever. A version you typed, and promoting a candidate, are
+        ## deliberate and stay allowed. Fails open: if we can't tell, the release goes ahead.
+        ## 'release' parks first, so uncommitted work or unpushed commits ARE something to release
+        ## even when the branches currently look level - the guard only speaks for a settled repo.
+        if ($script:releaseBumped -and -not (Test-GitDirty) -and -not (Test-GitAhead)) {
+            $relMain = Get-DefaultBranch
+            $relTarget = if (Test-GitBranchLocal -Branch $relMain) { $relMain } else { "origin/${relMain}" }
+            ## The local branch is what gets tagged and pushed, so it is what 'nothing new' is
+            ## about. Stand down if origin holds commits we don't: the pull would bring them in.
+            $relKnown = $true
+            if ($relTarget -ceq $relMain -and (Test-GitBranchRemote -Branch $relMain)) {
+                git merge-base --is-ancestor "origin/${relMain}" $relMain 2>$null
+                if ($LASTEXITCODE -ne 0) { $relKnown = $false }
+            }
+            $relSource = ''
+            if (Test-GitBranchRemote -Branch 'dev') { $relSource = 'origin/dev' }
+            elseif (Test-GitBranchLocal -Branch 'dev') { $relSource = 'dev' }
+            $relMerged = $true
+            if ($relSource) {
+                git merge-base --is-ancestor $relSource $relTarget 2>$null
+                $relMerged = ($LASTEXITCODE -eq 0)
+            }
+            if ($relKnown -and $relMerged) {
+                $relExisting = git describe --exact-match --tags $relTarget 2>$null
+                if ($LASTEXITCODE -eq 0 -and $relExisting) {
+                    throw "Nothing new to release since ${relExisting}. If that tag never reached origin, push it: git push origin ${relExisting}"
+                }
+            }
+        }
     }
 
     ## The mutating pr subcommands check here too, so nothing can fail after the plan was confirmed.
@@ -1408,6 +1452,12 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "'${CommandArg}' is not a valid branch name." }
         if (Test-GitBranchLocal -Branch $CommandArg) { throw "Branch '${CommandArg}' already exists; use: ${script:meName} br switch ${CommandArg}" }
         if (Test-GitBranchRemote -Branch $CommandArg) { throw "Branch '${CommandArg}' already exists on origin; use: ${script:meName} br switch ${CommandArg}" }
+    } elseif ($cmdName -eq 'br-land') {
+        ## Landing ends in 'git branch -d', so a leftover main/master must be refused here for the
+        ## same reason br prune never lists one - and up front, not after a destructive plan was shown.
+        if (Test-ProtectedBranch) {
+            throw "'$(Get-CurrentBranch)' is a protected branch; landing it would delete it. Run this from a work branch instead."
+        }
     } elseif ($cmdName -eq 'br-switch') {
         if ($CommandArg -and -not ((Test-GitBranchLocal -Branch $CommandArg) -or (Test-GitBranchRemote -Branch $CommandArg))) {
             throw "No branch '${CommandArg}' locally or on origin. To create it: ${script:meName} br create ${CommandArg}"
@@ -1669,3 +1719,4 @@ try {
 ##      - 20260726 JC: br prune's delete-time re-check now covers the remote copy too, and a merged current branch is reported as kept rather than left off every list - in step with bin/gitsby.
 ##      - 20260727 JC: Git now runs in the location the user is actually in. Set-Location moves PowerShell's location but not the process cwd, and the launcher inherits the latter, so state was read from one repo while commits, merges and pushes went to another.
 ##      - 20260727 JC: A conflicted tree is never committed - a pull whose autostash reapply conflicts exits 0, so the markers were being staged, committed and pushed - in step with bin/gitsby.
+##      - 20260727 JC: Review round: 'pr ok <n>' checks the PR's own branch for unpushed commits; the default branch is resolved rather than assumed; 'release' refuses an invented version with nothing to release; 'br land' won't delete a leftover main/master; '-v' alongside a command is refused instead of silently printing the version and doing nothing; '--help' works after a command; '-Public' with '-Private' is refused; credentialed URLs are masked on the execution line too; the remote URL and ssh probes are quoted (PowerShell was globbing them); one guarded fetch helper serves both fetch sites - in step with bin/gitsby.

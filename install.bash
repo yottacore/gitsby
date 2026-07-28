@@ -140,6 +140,7 @@ echo "This will:"
 echo "  - Download gitsby (${ref}) from github.com/${repo}"
 [[ -n "${arch}" ]] && echo "  - Ignore --arch ${arch}: gitsby is a shell script, so the same file runs on every architecture"
 echo "  - Install it to ${destDir}/gitsby"
+[[ -d "${destDir}" ]] || echo "  - Create ${destDir} (it doesn't exist yet)"
 [[ ${needSudo} -eq 1 ]] && echo "  - Use sudo for the install step (you may be prompted for your password)"
 echo "  - Run 'gitsby --version' to verify"
 if [[ ${doYes} -eq 0 ]]; then
@@ -190,6 +191,9 @@ fi
 
 fEcho "Installing to ${destDir}/gitsby ..."
 if [[ ${needSudo} -eq 1 ]]; then
+	## mkdir -p, not 'install -d': on a directory that already exists, install resets its mode,
+	## and this branch is reached whenever /usr/local/bin exists but isn't writable by us.
+	sudo mkdir -p "${destDir}"
 	sudo install -m 755 "${tmpFile}" "${destDir}/gitsby"
 else
 	mkdir -p "${destDir}"

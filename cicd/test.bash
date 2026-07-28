@@ -81,6 +81,7 @@ fRunSuite(){
 	fAssertFail "no args exits nonzero"        "${gitsby}"
 	fAssertFail "unknown command rejected"     bash -c "cd '${cloneA}' && '${gitsby}' -q frobnicate"
 	fAssertFail "unknown option rejected"      bash -c "cd '${cloneA}' && '${gitsby}' -q status --bogus"
+	fAssertOut  "--public with --private refused"  'mutually exclusive'  bash -c "cd '${cloneA}' && '${gitsby}' -q --public --private repo create me/x 2>&1"
 	fAssertFail "outside a repo rejected"      bash -c "cd '${work}' && '${gitsby}' -q status"
 
 	## Grouped-noun grammar: spelled-out nouns, hidden verb aliases, and refusals
@@ -200,6 +201,9 @@ fRunSuite(){
 	fAssert "br switch with no arg goes to dev"  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch main && '${gitsby}' -q br switch && [[ \"\$(git branch --show-current)\" == dev ]]"
 	fAssertFail "br land from dev rejected"    bash -c "cd '${cloneA}' && '${gitsby}' -q br land"
 	fAssertFail "br land from main rejected (dev repo)"  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch main && '${gitsby}' -q br land; rc=\$?; git checkout --quiet dev; exit \$rc"
+	## Landing ends in a branch delete, so a protected branch must be refused before the plan is
+	## shown - not after the user has confirmed 'git branch -d main'.
+	fAssertNotOut "and refuses before showing a plan that deletes it"  'Going to do'  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch main >/dev/null && '${gitsby}' -q br land 2>&1; git checkout --quiet dev"
 
 	## release: merge dev into main, tag, push; then auto-bump patch on the next one
 	fAssert "release 1.2.3 runs"        bash -c "cd '${cloneA}' && '${gitsby}' -q release 1.2.3"
@@ -222,6 +226,14 @@ fRunSuite(){
 	( cd "${cloneA}" && echo post > post.txt )
 	fAssert "the next release bumps off the full version, not the candidate"  bash -c "cd '${cloneA}' && '${gitsby}' -q release && git rev-parse -q --verify refs/tags/v1.3.1 >/dev/null"
 
+	## An invented version with nothing to release is a tag for no release, and re-running after
+	## a failed push would cut a second one on the same commit, stranding the first forever.
+	fAssertFail "bare release refuses when there is nothing new"  bash -c "cd '${cloneA}' && '${gitsby}' -q release"
+	fAssertOut  "and names the tag to push if it never landed"  'Nothing new to release since v1\.3\.1'  bash -c "cd '${cloneA}' && '${gitsby}' -q release 2>&1"
+	fAssert     "and cut no tag doing so"  bash -c "cd '${cloneA}' && ! git rev-parse -q --verify refs/tags/v1.3.2 >/dev/null"
+	## A version you typed is deliberate, so it still works on an already-released commit.
+	fAssert     "an explicit version still releases the same commit"  bash -c "cd '${cloneA}' && '${gitsby}' -q release 1.4.0 && git rev-parse -q --verify refs/tags/v1.4.0 >/dev/null"
+
 	## release started from a feature branch returns there; slash branch names work
 	fAssert "br create relfeat"  bash -c "cd '${cloneA}' && '${gitsby}' -q br create relfeat"
 	( cd "${cloneA}" && echo rel > rel.txt )
@@ -229,6 +241,10 @@ fRunSuite(){
 	fAssert "returns to the feature branch"       bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == relfeat ]]"
 	fAssert "br create with a slash name"  bash -c "cd '${cloneA}' && '${gitsby}' -q br create feat/x && [[ \"\$(git branch --show-current)\" == feat/x ]]"
 	fAssert "br switch back to dev"         bash -c "cd '${cloneA}' && '${gitsby}' -q br switch && [[ \"\$(git branch --show-current)\" == dev ]]"
+	## Already on the target: no checkout and no park happen, so the plan must not list them.
+	( cd "${cloneA}" && echo swp > swp.txt )
+	fAssertNotOut "br switch onto the current branch plans no commit"  'git commit'  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch dev"
+	fAssertOut    "and still plans the pull"  'git pull --ff-only'                   bash -c "cd '${cloneA}' && '${gitsby}' -q br switch dev"
 
 	## Detached HEAD guard
 	fAssertFail "mutating command on detached HEAD rejected"  bash -c "cd '${cloneA}' && git checkout --quiet HEAD~0 --detach && '${gitsby}' -q update x"

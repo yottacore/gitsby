@@ -30,7 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - PowerShell version, `bin/gitsby.ps1`, for Windows and anywhere else PowerShell 7 runs.
-- Installers for both versions, `install.bash` and `install.ps1`, run straight from a shell one-liner. Each shows its plan and asks first, installs for you or system-wide, and checks the download against the release checksums.
+- Installers for both versions, `install.bash` and `install.ps1`, run straight from a shell one-liner. Each shows its plan and asks first, installs for you or system-wide, and checks the download against the release checksums. A branch or tag given by name has to look like one, so it can't redirect the install somewhere else; and with no terminal to ask on, they stop rather than assume yes.
 - Setup scripts for contributors, `install-dev.bash` and `install-dev.ps1`: clone the repo, switch to `dev`, and check the tooling.
 - `repo clone` command: get a repo you don't have yet. Derives the directory from the URL, checks out `dev` when the repo has one, and re-running it is a no-op.
 - `repo create` command: make the GitHub repo and publish to it in one step. Takes an `owner/name` target, creates it via `gh` (`--public`/`--private`; private by default), then initializes, commits, and pushes.
@@ -54,10 +54,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `br create` carries uncommitted work onto the new branch instead of committing it to `main`/`dev` first. `br switch` refuses and says what to do instead.
 - `br land` publishes an unpushed target branch before deleting the branch it merged, so the work always reaches the remote first.
 - `release` now fast-forwards dev to main afterward, so dev includes the release merge and tag. If dev gained commits mid-release, the fast-forward is skipped with a warning instead of discarding anything.
-- `pr ok` refuses when the current branch has uncommitted changes or commits that never reached the remote. Merging deletes the branch, and anything only local would be outside both the pull request and the merge.
+- `pr ok` refuses when there are uncommitted changes, or commits that never reached the remote - on the current branch or on the pull request's own branch, whichever you are standing on. Merging deletes that branch, and anything only local would be outside both the pull request and the merge.
 - `update` and `sync` now pull *before* they commit. Committing first created a local commit, so any remote that had moved ahead was diverged and the fast-forward-only pull refused - the everyday case. Pulling first fast-forwards and your work lands on top, keeping history linear.
 - `--no-fetch` now means offline: it skips the pull as well as the pre-command fetch, in every command that pulls. A remote that can't be reached warns and skips the pull instead of failing, so being offline never turns a good commit into a failed command.
 - Mutating commands refuse to run without a terminal unless you pass `-q`/`-y`, so a piped or scheduled run can't silently confirm itself.
+- A conflicted working tree is never committed. A pull whose stashed work conflicts on the way back in still reports success, so the conflict markers used to be staged, committed, and pushed. The conflicted files are named instead, and your original work is left where git kept it.
+- The default branch can be called anything. It is read from the remote, then `main`, `master`, `trunk`, or your only branch. When it genuinely can't be told, commands stop and say so rather than assuming `main` - which used to mean work committed to a branch that was never checked, and a merge into the wrong one.
+- `release` refuses a version it invented when there is nothing new to release, and names the tag to push if a previous run's tag never left the machine. A version you give it, and promoting a candidate, still work on an already-released commit.
+- `--help` works after a command in both builds (`gitsby br create --help`). `-v` after a command is refused rather than quietly printing the version and doing nothing.
+- A commit message can start with a dash: `-m '-Wall added to CFLAGS'`.
+- `--public` and `--private` together are refused instead of resolving differently in each build.
+- Credentialed remote URLs are masked wherever they are printed, not only in the plan.
 - Remote URLs with an embedded password or token print masked.
 - Status now shows a compact one-line-per-file change list instead of `git status`'s long form, truncated to the terminal width and capped so a large working tree can't scroll the prompt out of view.
 - Output starts and ends with a blank line, for breathing room between shell prompts.

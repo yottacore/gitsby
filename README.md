@@ -128,6 +128,8 @@ How Gitsby shrinks Git's command set:
 
 Gitsby tells you which of these applies if it can't run, rather than failing with a shell error.
 
+👉 Your default branch can be called anything. Gitsby asks the remote what it is, and falls back to `main`, `master`, or `trunk` locally - or to your only branch, in a repo that has just one. If it genuinely can't tell (no remote, and nothing conventional to go on), it says so and stops instead of guessing, and `git remote set-head origin --auto` is usually the one-line fix.
+
 > Note: [GitButler](https://gitbutler.com/) is *not* interchangeable with Git, Gitsby, gh, Lazygit, and/or Tig. While a great tool and a cool idea, it manages its own metadata - that inherently doesn't mix well with other git-based tools that move `HEAD` or rewrite history. It's worth a look and a try - but to be safe, give it a dedicated trial on a small personal repo, without mixing in other tools.
 
 ## General attributes

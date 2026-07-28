@@ -305,6 +305,30 @@ Full pre-release review, run across nine lenses with every finding independently
 	- No credential-prompt suppression (so it could stop and ask mid-command), no ssh connect timeout, and no `origin/HEAD` heal - and a blip there reported the whole command as failed after the merge had already landed on the server.
 	- Fixed: one helper mirrors the Bash version and both fetch sites use it.
 
+- ✅ Code Review 20260727b item 12: `release` was the one command with no undo and no idempotency (both implementations).
+	- A version it invented was cut even when the target would gain nothing, so a repeated run quietly added tags all pointing at the same commit.
+	- Worse after a failed push: the tag existed locally, and the natural re-run bumped again, so the first version was stranded forever.
+	- Fixed: an invented version with nothing new to release refuses, and names the tag to push if a previous one never left the machine. A version you type, and promoting a candidate, are deliberate and still work on an already-released commit. Uncommitted or unpushed work counts as something to release, since `release` parks first.
+
+- ✅ Code Review 20260727b item 13: `br land` would delete a leftover `main` or `master` (both implementations).
+	- Landing ends in a branch delete, and the protected-branch rule that `br prune` honors was not applied here.
+	- Fixed: refused up front, before a plan containing that delete is shown and confirmed.
+
+- ✅ Code Review 20260727b item 14: `--public` and `--private` together meant opposite things in the two builds.
+	- Fixed: refused as a contradiction. Silently picking one would publish a repo the caller believes is the other.
+
+- ✅ Code Review 20260727b item 15: the identity probe caches never took effect in Bash.
+	- Every use sits inside a command substitution, so the cache filled there was thrown away and the next call probed again - two `gh api user` calls and two `ssh -T` round trips per command, on a link that may be slow or dead. PowerShell was already correct.
+	- Fixed: primed once in the shell that owns the variables.
+
+- ✅ Code Review 20260727b item 16: `install.bash --target system` failed with a raw `install` error when `/usr/local/bin` did not exist.
+	- The user branch created the directory and the sudo branch did not.
+	- Fixed: both create it, with `mkdir -p` rather than `install -d`, which would reset the mode of a directory that already exists. The plan says when a directory will be created.
+
+- ✅ Code Review 20260727b item 17: `br switch <the branch you are on>` previewed an add, commit and push it then did not do.
+	- Nothing is lost, but the confirmed plan said otherwise, which is the one thing the preview exists to prevent.
+	- Fixed: that case previews only the pull. Parking was deliberately not added instead - on a protected branch it would auto-commit, which the design forbids.
+
 #### Done - Code review 20260727
 
 Review of the hotfix branches, the gh/ssh identity check, and the docs pass that went with them.
