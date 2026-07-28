@@ -46,22 +46,23 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Bugs
 
-- 🔘 `--no-fetch` does not make the parking push offline-safe.
-	- `update` and `sync` degrade properly offline, but `br switch`, `br create`, `br hotfix`, `pr create` and `release` still fail on `git push`, with raw git text rather than gitsby-level guidance.
-	- Not a one-line fix, and worth a decision first: skipping the push wholesale would make `sync` and `release` report success having published nothing, which is worse than the current hard failure. `br create` and `br hotfix` also carry a second publish push outside the shared park step.
-	- Suggested shape: keep `sync`, `release` and `pr create` failing (they exist to publish), and let the branch commands succeed locally with a clear "not pushed - you are offline" note.
-
 ### Features and enhancements
-
-- 🔘 Show the file list before first publication (`repo create`, `repo connect` from a plain directory).
-	- Every in-repo command shows what it is about to touch; the one command that publishes a directory for the first time, possibly to a public repo, does not. A stray `.env` or key goes up with the user having read only `git add --all`.
-	- Has to ask git the same question `git add --all` will answer, so `.gitignore` and `core.excludesFile` are honored - listing files git would skip is its own kind of wrong. A throwaway git dir outside the work tree does that without writing anything into the user's directory, which matters because answering "n" must leave it untouched.
 
 ### Done
 
 #### Done - Bugs
 
+- ✅ An unreachable remote did not make the parking push safe.
+	- `update` and `sync` degraded properly, but `br create`, `br switch`, `br hotfix`, `pr create` and `release` all failed on `git push` with raw git text.
+	- Split by what each command is for. The ones that mean something locally now skip the push and say so, naming `sync` as the way to publish later. The ones that exist to publish - `sync`, `pr create`, `pr ok`, `release` - refuse up front, before the plan promises a push, and name what to do instead.
+	- `br land` needed more than a skipped push: with the merge unpublished, origin's copy of the work branch is its only ref to those commits, so the remote delete is held back too. The hotfix back-merge has the same shape - it merges `origin/main` normally, which unpublished is the stale one, so it falls back to the local branch.
+	- Decided against making `--no-fetch` mean this. The flag declines the incoming round trip, which is a perfectly good thing to want against a reachable remote, and the suite itself uses it that way throughout. Offline is a state the pre-command fetch discovers, not a flag.
+
 #### Done - Features and enhancements
+
+- ✅ Show the file list before first publication (`repo create`, `repo connect` from a plain directory).
+	- Every other command shows what it is about to touch; the one that hands a whole directory over for the first time did not.
+	- The list is what `git add --all` will really add, asked through a throwaway git dir outside the work tree - so `.gitignore` and `core.excludesFile` are honored, and answering "n" leaves the directory exactly as it was found.
 
 - ✅ `br hotfix <name>`: a branch that targets the default branch instead of `dev`, for corrections to published material.
 	- The branching model is written up in `design.md`; this is the command that carries it.

@@ -95,7 +95,7 @@ fSyntax(){ { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax=
 	fEcho_Clean "  -q, --quiet, -y ......: Assume yes - no prompts; if committing with no message, one is generated."
 	fEcho_Clean "  --public / --private .: Visibility for the repo 'repo create' makes (default: private)."
 	fEcho_Clean "  --any-identity .......: Proceed when gh's account differs from the remote's ssh key."
-	fEcho_Clean "  --no-fetch ...........: Work offline: skip the pre-command fetch, and the pull."
+	fEcho_Clean "  --no-fetch ...........: Skip the pre-command fetch, and the pull. (Pushes still go out.)"
 	fEcho_Clean "  -h, --help  /  -v, --version"
 	fEcho_Clean "" ;:;}
 
@@ -261,6 +261,17 @@ fMain(){
 				|| fThrowError_Usage "This repo's default branch resolves to '${defaultBranchCache}', which exists neither here nor on origin. Fix it with 'git remote set-head origin --auto'."
 		fi
 	fi
+
+	## Commands that exist to publish, refused here rather than halfway through on raw git text -
+	## and far better than "succeeding" having sent nothing. The rest degrade instead: they mean
+	## something locally, so they run and say what they skipped.
+	case "${cmdName}" in
+		sync)    fpRequireOnline "sync"    "Commit locally with '${meName} update', then '${meName} sync' when you are back online." ;;
+		release) fpRequireOnline "release" "A release nobody can fetch isn't one." ;;
+		pr)      if [[ "${prSub}" == "create" || "${prSub}" == "ok" ]]; then
+				fpRequireOnline "pr ${prSub}" "The pull request lives on GitHub; there is no local half to do first."
+			fi ;;
+	esac
 
 	## Release version resolves up front so preview and command agree (and bad input dies early).
 	local releaseTag=""
@@ -521,6 +532,7 @@ fMain(){
 		fEcho_Clean "Remote .......: ${remoteDisp}"
 		fpShowIdentity "${connectUrl}"
 		fEcho_Clean "Branch .......: (not a git repository yet)"
+		fpShowFilesToPublish
 	else
 		[[ -n "$(fCurrentBranch)" ]] || fThrowError_Usage "Detached HEAD (no current branch); resolve that manually first."
 		fpShowStatus 1
@@ -528,6 +540,12 @@ fMain(){
 	fEcho_Clean ""
 	fEcho_Clean "Going to do (steps marked * only if needed, based on repo state):"
 	fpPreview "${cmdName}"
+	## Said once here, where you can still say no, and again by each step as it skips. repo-*
+	## has no park push to skip - it probes its own remote and fails on its own terms.
+	if [[ "${cmdName}" != repo-* ]] && fIsOffline; then
+		fEcho_Clean ""
+		fEcho_Clean "WARNING: remote unreachable - nothing will be pushed; the work stays local."
+	fi
 	## Last thing before the prompt, so it can't scroll away above the plan.
 	if [[ -n "${identityMismatch}" ]]; then
 		fEcho_Clean ""
@@ -617,6 +635,47 @@ fPullIfOnline(){
 	((doFetch)) && ((remoteReachable)) && fHasUpstream && fRun git pull --ff-only "${@}"
 :;}
 
+fIsOffline(){
+	## Set by the pre-command fetch, which is the only thing that actually asks origin. --no-fetch
+	## is NOT offline: it declines the incoming round trip, and pushes still go out (a local or
+	## fast remote with nothing to pull is the ordinary reason to pass it). Skipping the fetch does
+	## mean gitsby was never told you are offline, so a push then fails with git's own message.
+	((! remoteReachable))
+}
+
+fPushIfOnline(){
+	## The park push, for a command that still means something without it. The commands that
+	## exist to publish never get here - they are refused up front - so nothing reports success
+	## having sent nothing. Silence would read as published, hence the note.
+	git remote get-url origin &>/dev/null || { fEcho "No 'origin' remote; nothing to push."; return 0; }
+	if fIsOffline; then
+		fEcho "WARNING: remote unreachable; skipping the push. Your work is committed locally - '${meName} sync' publishes it."
+	elif ! fHasUpstream; then
+		fRun git push -u origin HEAD  ## first publish of this branch
+	elif fIsAhead; then
+		fRun git push
+	else
+		fEcho "Nothing to push."
+	fi
+:;}
+
+fpRequireOnline(){
+	## Arg 1: the command as typed. Arg 2: what to do instead.
+	fIsOffline || return 0
+	fThrowError_Usage "Can't reach origin, and '${1}' has nothing left to do without it. ${2}"
+:;}
+
+fpPublishBranch(){
+	## A new branch's own first push, which is separate from the park push above it.
+	local -r branch="${1}"
+	git remote get-url origin &>/dev/null || return 0
+	if fIsOffline; then
+		fEcho "WARNING: remote unreachable; '${branch}' is local only for now - '${meName} sync' publishes it."
+	else
+		fRun git push -u origin "${branch}"
+	fi
+:;}
+
 fCmdCommitPull(){
 	## Pull BEFORE committing. Committing first mints a local commit, so a remote that merely
 	## moved ahead is now diverged and --ff-only refuses - which is the everyday case, not an
@@ -628,15 +687,7 @@ fCmdCommitPull(){
 
 fCmdPush(){
 	fCmdCommitPull
-	if ! git remote get-url origin &>/dev/null; then
-		fEcho "No 'origin' remote; nothing to push."
-	elif ! fHasUpstream; then
-		fRun git push -u origin HEAD  ## first publish of this branch
-	elif fIsAhead; then
-		fRun git push
-	else
-		fEcho "Nothing to push."
-	fi
+	fPushIfOnline
 :;}
 
 fCmdNewBranch(){
@@ -655,9 +706,7 @@ fCmdNewBranch(){
 		fPullIfOnline
 	fi
 	fRun git checkout -b "${newBranch}"
-	if git remote get-url origin &>/dev/null; then
-		fRun git push -u origin "${newBranch}"
-	fi
+	fpPublishBranch "${newBranch}"
 :;}
 
 fCmdGoBranch(){
@@ -691,9 +740,7 @@ fCmdHotfix(){
 		fPullIfOnline
 	fi
 	fRun git checkout -b "${newBranch}"
-	if git remote get-url origin &>/dev/null; then
-		fRun git push -u origin "${newBranch}"
-	fi
+	fpPublishBranch "${newBranch}"
 :;}
 
 fCmdLand(){
@@ -715,11 +762,21 @@ fCmdLand(){
 	fRun git merge --no-ff "${workBranch}" -m "${mergeMessage}"
 	## The merge must reach origin before the remote work branch goes away, or origin
 	## loses its only ref to those commits. Publish an upstream-less target first.
-	if git remote get-url origin &>/dev/null; then
+	local -i mergePublished=0
+	if ! git remote get-url origin &>/dev/null; then
+		:
+	elif fIsOffline; then
+		fEcho "WARNING: remote unreachable; the merge is local only - '${meName} sync' publishes it."
+	else
 		if fHasUpstream; then fRun git push; else fRun git push -u origin HEAD; fi
+		mergePublished=1
 	fi
 	fRun git branch -d "${workBranch}"
-	if fBranchExistsRemote "${workBranch}"; then
+	if ((! mergePublished)) && fBranchExistsRemote "${workBranch}"; then
+		## The same rule as above, from the other side: with the merge still unpublished,
+		## origin's copy of the branch is its only ref to those commits.
+		fEcho "Leaving origin's '${workBranch}' alone until the merge is pushed; '${meName} br prune' clears it later."
+	elif fBranchExistsRemote "${workBranch}"; then
 		## Non-fatal: someone (a PR merge, another clone) may have deleted it already.
 		fEcho_Clean ""
 		fEcho "git push origin --delete ${workBranch} ..."
@@ -1169,8 +1226,10 @@ fBackMergeRef(){
 	## default branch never sees it and merging that is a silent no-op; the fetched remote-tracking
 	## ref is the one holding it. After 'br land' the two are the same commit, so this is right
 	## either way - and falls back to the local branch when there's no remote at all.
+	## Offline flips it back: land's push was skipped, so origin's copy is the stale one, and
+	## merging it would carry the hotfix nowhere. ('pr ok' can't run offline at all.)
 	local -r mainBranch="$(fDefaultBranch)"
-	if git rev-parse --verify --quiet "refs/remotes/origin/${mainBranch}" >/dev/null 2>&1
+	if ! fIsOffline && git rev-parse --verify --quiet "refs/remotes/origin/${mainBranch}" >/dev/null 2>&1
 	then echo "origin/${mainBranch}"
 	else echo "${mainBranch}"; fi
 :;}
@@ -1190,9 +1249,7 @@ fpBackMergeToDev(){
 	fEcho "git merge ${mergeRef} ..."
 	if git merge "${mergeRef}" -m "Merge ${mainBranch}"; then
 		fEcho_ResetBlankCounter
-		if git remote get-url origin &>/dev/null; then
-			if fHasUpstream; then fRun git push; else fRun git push -u origin HEAD; fi
-		fi
+		fPushIfOnline
 	else
 		git merge --abort 2>/dev/null || true
 		fEcho_ResetBlankCounter
@@ -1290,6 +1347,22 @@ fpShowChanges(){
 	fEcho_Clean "Local changes:"
 	fpCappedList git status --short
 	((_lastListCount)) || fEcho_Clean "    (working tree clean)"
+:;}
+
+fpShowFilesToPublish(){
+	## Every in-repo command shows what it is about to touch; this is the one that publishes a
+	## whole directory for the first time, possibly to a public repo, so it owes the same. Asked
+	## through a throwaway git dir OUTSIDE the work tree: that way .gitignore and core.excludesFile
+	## are honored exactly as the real 'git add --all' will honor them (listing files git would
+	## skip is its own kind of wrong), and answering 'n' leaves the directory as it was found.
+	local -r probeDir="$(mktemp -d 2>/dev/null || true)"
+	[[ -n "${probeDir}" && -d "${probeDir}" ]] || return 0
+	env GIT_DIR="${probeDir}" GIT_WORK_TREE="${PWD}" git init --quiet >/dev/null 2>&1 || true
+	fEcho_Clean ""
+	fEcho_Clean "Files to publish:"
+	fpCappedList env GIT_DIR="${probeDir}" GIT_WORK_TREE="${PWD}" git ls-files --others --exclude-standard
+	((_lastListCount)) || fEcho_Clean "    (nothing - the directory is empty, or everything in it is ignored)"
+	rm -rf -- "${probeDir}"
 :;}
 
 fpShowIncoming(){
@@ -1805,3 +1878,5 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##		- 20260727 JC: A conflicted tree is never committed. A pull whose autostash reapply conflicts exits 0, so 'git add --all' was marking the conflict resolved and committing the markers - then pushing them from sync.
 ##		- 20260727 JC: Review round: 'pr ok <n>' checks the PR's own branch for unpushed commits, not whichever branch you're standing on (gh force-deletes it either way); the default branch is resolved rather than assumed to be 'main', and commands refuse when it can't be told; 'release' refuses an invented version with nothing to release; 'br land' won't delete a leftover main/master; '--help' works after a command; a message may start with a dash; '--public' with '--private' is refused; credentialed URLs are masked on the execution line too; the identity probes actually cache now; 'br switch' onto the current branch stops previewing a park it doesn't do.
 ##		- 20260727 JC: Review round, smaller items: option and positional typos are usage errors, not crashes (no call-stack line); status and br list reject trailing arguments; 'gh pr create' is announced as it's actually run; the crash dump uses printf, so escape bytes from a filename or message stay inert; template leftovers out of the argument parser.
+##		- 20260728 JC: An unreachable remote no longer fails the push. Commands that mean something locally (br create/hotfix/switch/land) skip it and say so; the ones that exist to publish (sync, pr create, pr ok, release) refuse up front instead. br land holds back the remote branch delete until the merge is published, and the hotfix back-merge falls back to the local default branch when origin's copy is the stale one.
+##		- 20260728 JC: 'repo create' and 'repo connect' from a plain directory list the files they are about to publish, asked through a throwaway git dir outside the work tree so .gitignore is honored and nothing is written into the user's directory.

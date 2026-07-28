@@ -23,7 +23,7 @@
 .PARAMETER Yes
     The same thing as -Quiet.
 .PARAMETER NoFetch
-    Work offline: skip the pre-command fetch, and the pull.
+    Skip the pre-command fetch, and the pull. Pushes still go out.
 .EXAMPLE
     gitsby.ps1 update "fixed the frobnicator"
 .EXAMPLE
@@ -172,7 +172,7 @@ function Show-Syntax {
     Write-PlainLine '  -q, -Quiet, -y .......: Assume yes - no prompts; if committing with no message, one is generated.'
     Write-PlainLine '  -Public / -Private ...: Visibility for the repo ''repo create'' makes (default: private).'
     Write-PlainLine '  -AnyIdentity .........: Proceed when gh''s account differs from the remote''s ssh key.'
-    Write-PlainLine '  -NoFetch .............: Work offline: skip the pre-command fetch, and the pull.'
+    Write-PlainLine '  -NoFetch .............: Skip the pre-command fetch, and the pull. (Pushes still go out.)'
     Write-PlainLine '  -h, -Help  /  -v, -Version'
     Write-PlainLine ''
 }
@@ -338,9 +338,13 @@ function Get-BackMergeRef {
     ## default branch never sees it and merging that is a silent no-op; the fetched remote-tracking
     ## ref is the one holding it. After 'br land' the two are the same commit, so this is right
     ## either way - and falls back to the local branch when there's no remote at all.
+    ## Offline flips it back: land's push was skipped, so origin's copy is the stale one, and
+    ## merging it would carry the hotfix nowhere. ('pr ok' can't run offline at all.)
     $mainBranch = Get-DefaultBranch
-    git rev-parse --verify --quiet "refs/remotes/origin/${mainBranch}" *> $null
-    if ($LASTEXITCODE -eq 0) { return "origin/${mainBranch}" }
+    if (-not (Test-Offline)) {
+        git rev-parse --verify --quiet "refs/remotes/origin/${mainBranch}" *> $null
+        if ($LASTEXITCODE -eq 0) { return "origin/${mainBranch}" }
+    }
     return $mainBranch
 }
 
@@ -360,9 +364,7 @@ function Invoke-BackMergeToDev {
     git merge $mergeRef -m "Merge ${mainBranch}"
     if ($LASTEXITCODE -eq 0) {
         Clear-BlankCounter
-        if (Test-GitOrigin) {
-            if (Test-GitUpstream) { Invoke-Git -GitArgs @('push') } else { Invoke-Git -GitArgs @('push', '-u', 'origin', 'HEAD') }
-        }
+        Invoke-GitsbyPushIfOnline
     } else {
         git merge --abort 2>$null
         Clear-BlankCounter
@@ -629,6 +631,35 @@ function Show-LocalChangeList {
     Write-PlainLine 'Local changes:'
     $count = Show-CappedList -GitArgs @('status', '--short')
     if (-not $count) { Write-PlainLine '    (working tree clean)' }
+}
+
+function Show-FilesToPublish {
+    ## Every in-repo command shows what it is about to touch; this is the one that publishes a
+    ## whole directory for the first time, possibly to a public repo, so it owes the same. Asked
+    ## through a throwaway git dir OUTSIDE the work tree: that way .gitignore and core.excludesFile
+    ## are honored exactly as the real 'git add --all' will honor them (listing files git would
+    ## skip is its own kind of wrong), and answering 'n' leaves the directory as it was found.
+    $probeDir = Join-Path ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName())
+    $savedGitDir = $env:GIT_DIR
+    $savedWorkTree = $env:GIT_WORK_TREE
+    try {
+        [void](New-Item -ItemType Directory -Path $probeDir -Force -ErrorAction Stop)
+        $env:GIT_DIR = $probeDir
+        $env:GIT_WORK_TREE = (Get-Location -PSProvider FileSystem).ProviderPath
+        git init --quiet *> $null
+        Write-PlainLine ''
+        Write-PlainLine 'Files to publish:'
+        $count = Show-CappedList -GitArgs @('ls-files', '--others', '--exclude-standard')
+        if (-not $count) { Write-PlainLine '    (nothing - the directory is empty, or everything in it is ignored)' }
+    } catch {
+        ## A probe we can't set up is not a reason to refuse the command; it just goes unlisted.
+        return
+    } finally {
+        ## Restore, not blank: an empty GIT_DIR is not the same as an unset one.
+        if ($null -eq $savedGitDir) { Remove-Item Env:GIT_DIR -ErrorAction SilentlyContinue } else { $env:GIT_DIR = $savedGitDir }
+        if ($null -eq $savedWorkTree) { Remove-Item Env:GIT_WORK_TREE -ErrorAction SilentlyContinue } else { $env:GIT_WORK_TREE = $savedWorkTree }
+        Remove-Item -LiteralPath $probeDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Show-Incoming {
@@ -921,6 +952,49 @@ function Invoke-GitsbyPullIfOnline {
     Invoke-Git -GitArgs (@('pull', '--ff-only') + $ExtraArgs)
 }
 
+function Test-Offline {
+    ## Set by the pre-command fetch, which is the only thing that actually asks origin. -NoFetch
+    ## is NOT offline: it declines the incoming round trip, and pushes still go out (a local or
+    ## fast remote with nothing to pull is the ordinary reason to pass it). Skipping the fetch does
+    ## mean gitsby was never told you are offline, so a push then fails with git's own message.
+    return (-not $script:remoteReachable)
+}
+
+function Assert-Online {
+    ## Commands that exist to publish, refused before the preview promises a push rather than
+    ## halfway through on raw git text - and far better than "succeeding" having sent nothing.
+    param([Parameter(Mandatory)][string]$CommandName, [Parameter(Mandatory)][string]$Instead)
+    if (-not (Test-Offline)) { return }
+    throw "Can't reach origin, and '${CommandName}' has nothing left to do without it. ${Instead}"
+}
+
+function Invoke-GitsbyPushIfOnline {
+    ## The park push, for a command that still means something without it. The commands that
+    ## exist to publish never get here - they are refused up front - so nothing reports success
+    ## having sent nothing. Silence would read as published, hence the note.
+    if (-not (Test-GitOrigin)) { Write-StatusLine "No 'origin' remote; nothing to push."; return }
+    if (Test-Offline) {
+        Write-StatusLine "WARNING: remote unreachable; skipping the push. Your work is committed locally - '$($script:meName) sync' publishes it."
+    } elseif (-not (Test-GitUpstream)) {
+        Invoke-Git -GitArgs @('push', '-u', 'origin', 'HEAD')  ## first publish of this branch
+    } elseif (Test-GitAhead) {
+        Invoke-Git -GitArgs @('push')
+    } else {
+        Write-StatusLine 'Nothing to push.'
+    }
+}
+
+function Publish-NewBranch {
+    ## A new branch's own first push, which is separate from the park push above it.
+    param([Parameter(Mandatory)][string]$Branch)
+    if (-not (Test-GitOrigin)) { return }
+    if (Test-Offline) {
+        Write-StatusLine "WARNING: remote unreachable; '${Branch}' is local only for now - '$($script:meName) sync' publishes it."
+    } else {
+        Invoke-Git -GitArgs @('push', '-u', 'origin', $Branch)
+    }
+}
+
 function Invoke-GitsbyCommitPull {
     ## Pull BEFORE committing. Committing first mints a local commit, so a remote that merely
     ## moved ahead is now diverged and --ff-only refuses - which is the everyday case, not an
@@ -932,15 +1006,7 @@ function Invoke-GitsbyCommitPull {
 
 function Invoke-GitsbyPush {
     Invoke-GitsbyCommitPull
-    if (-not (Test-GitOrigin)) {
-        Write-StatusLine "No 'origin' remote; nothing to push."
-    } elseif (-not (Test-GitUpstream)) {
-        Invoke-Git -GitArgs @('push', '-u', 'origin', 'HEAD')  ## first publish of this branch
-    } elseif (Test-GitAhead) {
-        Invoke-Git -GitArgs @('push')
-    } else {
-        Write-StatusLine 'Nothing to push.'
-    }
+    Invoke-GitsbyPushIfOnline
 }
 
 function Invoke-GitsbyMakeBranch {
@@ -957,7 +1023,7 @@ function Invoke-GitsbyMakeBranch {
         Invoke-GitsbyPullIfOnline
     }
     Invoke-Git -GitArgs @('checkout', '-b', $NewBranch)
-    if (Test-GitOrigin) { Invoke-Git -GitArgs @('push', '-u', 'origin', $NewBranch) }
+    Publish-NewBranch -Branch $NewBranch
 }
 
 function Invoke-GitsbyHotfix {
@@ -975,7 +1041,7 @@ function Invoke-GitsbyHotfix {
         Invoke-GitsbyPullIfOnline
     }
     Invoke-Git -GitArgs @('checkout', '-b', $NewBranch)
-    if (Test-GitOrigin) { Invoke-Git -GitArgs @('push', '-u', 'origin', $NewBranch) }
+    Publish-NewBranch -Branch $NewBranch
 }
 
 function Invoke-GitsbyChangeBranch {
@@ -1011,11 +1077,21 @@ function Invoke-GitsbyLand {
     Invoke-Git -GitArgs @('merge', '--no-ff', $workBranch, '-m', $mergeMessage)
     ## The merge must reach origin before the remote work branch goes away, or origin
     ## loses its only ref to those commits. Publish an upstream-less target first.
+    $mergePublished = $false
     if (Test-GitOrigin) {
-        if (Test-GitUpstream) { Invoke-Git -GitArgs @('push') } else { Invoke-Git -GitArgs @('push', '-u', 'origin', 'HEAD') }
+        if (Test-Offline) {
+            Write-StatusLine "WARNING: remote unreachable; the merge is local only - '$($script:meName) sync' publishes it."
+        } else {
+            if (Test-GitUpstream) { Invoke-Git -GitArgs @('push') } else { Invoke-Git -GitArgs @('push', '-u', 'origin', 'HEAD') }
+            $mergePublished = $true
+        }
     }
     Invoke-Git -GitArgs @('branch', '-d', $workBranch)
-    if (Test-GitBranchRemote -Branch $workBranch) {
+    if (-not $mergePublished -and (Test-GitBranchRemote -Branch $workBranch)) {
+        ## The same rule as above, from the other side: with the merge still unpublished,
+        ## origin's copy of the branch is its only ref to those commits.
+        Write-StatusLine "Leaving origin's '${workBranch}' alone until the merge is pushed; '$($script:meName) br prune' clears it later."
+    } elseif (Test-GitBranchRemote -Branch $workBranch) {
         ## Non-fatal: someone (a PR merge, another clone) may have deleted it already.
         Write-PlainLine ''
         Write-StatusLine "git push origin --delete ${workBranch} ..."
@@ -1375,6 +1451,20 @@ try {
         }
     }
 
+    ## Commands that exist to publish, refused here rather than halfway through on raw git text -
+    ## and far better than "succeeding" having sent nothing. The rest degrade instead: they mean
+    ## something locally, so they run and say what they skipped.
+    switch ($cmdName) {
+        'sync'    { Assert-Online -CommandName 'sync' -Instead "Commit locally with '$($script:meName) update', then '$($script:meName) sync' when you are back online."; break }
+        'release' { Assert-Online -CommandName 'release' -Instead "A release nobody can fetch isn't one."; break }
+        'pr' {
+            if ($script:prSub -ceq 'create' -or $script:prSub -ceq 'ok') {
+                Assert-Online -CommandName "pr $($script:prSub)" -Instead 'The pull request lives on GitHub; there is no local half to do first.'
+            }
+            break
+        }
+    }
+
     ## Release version resolves up front so preview and command agree (and bad input dies early).
     $script:releaseTag = ''
     if ($cmdName -eq 'release') {
@@ -1666,6 +1756,7 @@ try {
         Write-PlainLine "Remote .......: ${remoteDisp}"
         Show-Identity -RemoteUrl $script:connectUrl
         Write-PlainLine 'Branch .......: (not a git repository yet)'
+        Show-FilesToPublish
     } else {
         if (-not (Get-CurrentBranch)) { throw 'Detached HEAD (no current branch); resolve that manually first.' }
         Show-RepoStatus -WithIdentity
@@ -1673,6 +1764,12 @@ try {
     Write-PlainLine ''
     Write-PlainLine 'Going to do (steps marked * only if needed, based on repo state):'
     Show-CommandPreview -CommandName $cmdName
+    ## Said once here, where you can still say no, and again by each step as it skips. repo-*
+    ## has no park push to skip - it probes its own remote and fails on its own terms.
+    if ($cmdName -notlike 'repo-*' -and (Test-Offline)) {
+        Write-PlainLine ''
+        Write-PlainLine 'WARNING: remote unreachable - nothing will be pushed; the work stays local.'
+    }
     ## Last thing before the prompt, so it can't scroll away above the plan.
     if ($identityMismatch) {
         Write-PlainLine ''
@@ -1747,3 +1844,5 @@ try {
 ##      - 20260727 JC: A conflicted tree is never committed - a pull whose autostash reapply conflicts exits 0, so the markers were being staged, committed and pushed - in step with bin/gitsby.
 ##      - 20260727 JC: Review round: 'pr ok <n>' checks the PR's own branch for unpushed commits; the default branch is resolved rather than assumed; 'release' refuses an invented version with nothing to release; 'br land' won't delete a leftover main/master; '-v' alongside a command is refused instead of silently printing the version and doing nothing; '--help' works after a command; '-Public' with '-Private' is refused; credentialed URLs are masked on the execution line too; the remote URL and ssh probes are quoted (PowerShell was globbing them); one guarded fetch helper serves both fetch sites - in step with bin/gitsby.
 ##      - 20260727 JC: Review round, smaller items: a PowerShell 7 gate up front (5.1 has no $IsWindows, so StrictMode used to surface it partway through a command); status and br list reject trailing arguments; pr view blames the command that actually failed; error and abort exits close with a blank line like bash's - in step with bin/gitsby.
+##      - 20260728 JC: An unreachable remote no longer fails the push - local-meaning commands skip it and say so, publishing commands refuse up front; br land holds the remote branch delete until the merge is published - in step with bin/gitsby.
+##      - 20260728 JC: 'repo create'/'repo connect' from a plain directory list the files they will publish, via a throwaway git dir outside the work tree - in step with bin/gitsby.

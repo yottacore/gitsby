@@ -123,6 +123,16 @@ The two files are ports of each other. A change to one nearly always belongs in 
 	- We decided `pr ok` refuses rather than auto-pushing. Pushing and immediately merging would land commits nobody reviewed, which defeats the point of proposing a change for review.
 	- `pr create` is the opposite case and does park work automatically: publishing is the whole intent, and nothing is being deleted.
 
+- Offline is split by what a command is for, not handled once for all of them.
+	- A command that means something locally runs and reports what it skipped: `update` commits, `br create` and `br hotfix` make the branch, `br switch` switches, `br land` merges. Each one names `sync` as the way to publish afterward.
+	- A command that exists to publish refuses before the plan is shown: `sync`, `pr create`, `pr ok`, `release`. Reporting success having sent nothing is worse than a hard failure, and failing halfway through on raw git output is worse than refusing up front.
+	- Offline is the state the pre-command fetch discovers, not a flag you pass. `--no-fetch` declines the incoming round trip - a reasonable thing to want against a reachable remote - so it does not stop a push. The cost is that it also declines the check, so a push while genuinely offline fails with git's own message.
+	- Two places need more than a skipped push. `br land` holds back the remote branch delete until the merge is published, because until then origin's copy is its only ref to that work. The hotfix back-merge normally merges `origin/<default>` (correct after `pr ok`, which lands server-side); offline that ref is the stale one, so it falls back to the local branch.
+
+- The one command that publishes a directory shows what is in it first.
+	- `repo create` and `repo connect` from a plain directory list the files before asking. Everything else in the tool previews what it touches; this is the step where a stray `.env` or private key becomes public.
+	- The list has to be git's own answer, not a directory walk, or it would name files `git add --all` will skip and miss the exclusions that matter. A throwaway git dir outside the work tree asks git the real question and writes nothing into the user's directory - which is the point, since answering "n" must leave it untouched.
+
 ## Branching model
 
 Gitsby's own repo runs the model gitsby enforces, so the tool is its own first user.

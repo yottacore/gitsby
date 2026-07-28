@@ -240,7 +240,7 @@ What you reach for daily is one word. Everything else is grouped under a noun, s
 
 There is deliberately no bare `commit` and no bare `pull`. Committing without sharing is how work quietly diverges, and pulling without committing is the one thing the rest of the tool never does - `br create`, `br switch`, `br land`, and `pr create` all deal with your work first. `update` is the one command for both, and it pulls *before* it commits so your work lands on top of everyone else's and history stays linear.
 
-Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--public`/`--private` (visibility for `repo create`; private by default), `--no-fetch` (work offline: skip the fetch and the pull), `--any-identity` (see below), `-h`, `-v`.
+Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--public`/`--private` (visibility for `repo create`; private by default), `--no-fetch` (skip the fetch and the pull), `--any-identity` (see below), `-h`, `-v`.
 
 The PowerShell version takes the same options in PowerShell form: `-Message MSG`, `-Quiet`/`-y`, `-Public`/`-Private`, `-NoFetch`, `-AnyIdentity`, `-Help`, `-Version`. Commands and arguments are spelled identically in both.
 
@@ -269,6 +269,10 @@ gitsby br land "Add Feature1"
 ~~~
 
 Every mutating command in an existing repo fetches first (unless you pass `--no-fetch`), shows the repo state (including who you'd act as on the remote) and the exact git commands it's about to run, and asks before touching anything. `pr` and `release` close the loop: review/accept the pull request, then cut a tagged release from `dev`.
+
+When that fetch finds the remote out of reach, the commands that mean something locally still work. `update` commits, `br create` and `br switch` and `br land` do their branch work, and each says what it skipped and that `sync` will publish it later. The commands that exist to publish - `sync`, `pr create`, `pr ok`, `release` - refuse up front and tell you what to do instead, rather than failing halfway through or reporting success having sent nothing. (`--no-fetch` declines that check, so with it gitsby is never told you are offline and a push fails with git's own message.)
+
+`repo create` and `repo connect` list the files they are about to publish before asking, since that is the one command that hands a whole directory over for the first time. The list is what `git add --all` will actually add, `.gitignore` and all - so a stray `.env` is visible while you can still say no.
 
 ### Which account are you acting as?
 

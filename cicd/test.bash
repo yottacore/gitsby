@@ -367,6 +367,42 @@ fRunSuite(){
 	## matched its complaint about the flag - green for the wrong reason. Bash takes either.
 	fAssertOut "no-fetch skips the pull too"  'Skipping the pull' bash -c "cd '${off}' && echo nf > nf.txt && '${gitsby}' -q -NoFetch update 'no-fetch work'"
 
+	## A command that still means something locally runs offline and says what it skipped; a
+	## command that exists to publish refuses up front, before the plan promises a push.
+	## Same bogus-path trick, on its own clone so the shared fixture keeps its history.
+	## Own throwaway origin: by this point the shared one has a dev branch and release history, so
+	## the merge target would not be main and these checks would be reading a different repo shape.
+	## 'offland' is made and published while the remote still works, so the land below has a real
+	## origin copy to leave alone; everything after the set-url is offline.
+	local offOrigin="${work}/$1-offo.git"; local offb="${work}/$1-offlinebr"
+	git init --quiet --bare -b main "${offOrigin}"
+	git clone --quiet "${offOrigin}" "${offb}" 2>/dev/null
+	(
+		cd "${offb}"
+		echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main
+		git checkout --quiet -b offland && echo ol > ol.txt && git add --all && git commit --quiet -m "off work" && git push --quiet -u origin offland
+		git checkout --quiet main && git remote set-url origin "${work}/nosuch-remote.git"
+	)
+	fAssert    "br create succeeds with an unreachable remote"  bash -c "cd '${offb}' && '${gitsby}' -q br create offfeat && [[ \"\$(git branch --show-current)\" == offfeat ]]"
+	fAssertOut "and says the branch is local only"  "'offfeat2' is local only"  bash -c "cd '${offb}' && '${gitsby}' -q br create offfeat2 2>&1"
+	fAssertOut "and warns once, above the prompt"   'nothing will be pushed'   bash -c "cd '${offb}' && '${gitsby}' -q br switch offfeat 2>&1"
+	fAssert    "br switch succeeds with an unreachable remote"  bash -c "cd '${offb}' && '${gitsby}' -q br switch main && [[ \"\$(git branch --show-current)\" == main ]]"
+	## The publishing commands refuse instead, and name what to do about it. Checked before the
+	## land below, since that one leaves the tree clean and 'sync' needs something to refuse over.
+	fAssertFail "sync refuses with an unreachable remote"   bash -c "cd '${offb}' && echo s > s.txt && '${gitsby}' -q sync 'nope'"
+	fAssertOut  "and points at update"  "Commit locally with '[^']*update'"   bash -c "cd '${offb}' && '${gitsby}' -q sync 'nope' 2>&1"
+	fAssert     "and it refused before committing anything"  bash -c "cd '${offb}' && git status --porcelain | grep -q 's.txt' && rm -f '${offb}/s.txt'"
+	fAssertFail "release refuses with an unreachable remote"  bash -c "cd '${offb}' && '${gitsby}' -q release v9.9.9"
+	fAssertOut  "and says so before cutting a tag"  "'release' has nothing left to do"  bash -c "cd '${offb}' && '${gitsby}' -q release v9.9.9 2>&1"
+	fAssert     "and no tag was cut"  bash -c "cd '${offb}' && ! git rev-parse -q --verify refs/tags/v9.9.9 >/dev/null"
+	fAssertFail "pr create refuses with an unreachable remote"  bash -c "cd '${offb}' && '${gitsby}' -q br switch offfeat >/dev/null 2>&1; '${gitsby}' -q pr create 'T'"
+	fAssertOut  "and says which command needs origin"  "'pr create' has nothing left to do"  bash -c "cd '${offb}' && '${gitsby}' -q pr create 'T' 2>&1"
+	## land offline: the merge lands locally, and origin's copy of the branch has to survive -
+	## with the merge unpushed it is the only ref origin holds to that work.
+	fAssertOut "br land leaves origin's copy of the branch alone"  "Leaving origin's 'offland' alone"  bash -c "cd '${offb}' && '${gitsby}' -q br switch offland >/dev/null 2>&1; '${gitsby}' -q br land 'Off land' 2>&1"
+	fAssert    "and the merge landed locally"     bash -c "cd '${offb}' && git log -1 --format=%s main | grep -q 'Off land'"
+	fAssert    "and the remote-tracking ref survived"  bash -c "cd '${offb}' && git show-ref --verify --quiet refs/remotes/origin/offland"
+
 	## ... and offline has to mean the same thing inside a compound command, or the flag saves
 	## nothing there. Own throwaway origin, so the shared one keeps its history for later checks.
 	local nfOrigin="${work}/$1-nfo.git"; local nfPeer="${work}/$1-nfa"; local nfWork="${work}/$1-nfb"
@@ -476,6 +512,34 @@ fRunSuite(){
 	mkdir -p "${cn}/plain"; echo data > "${cn}/plain/data.txt"
 	fAssert "repo connect from a non-repo dir"  bash -c "cd '${cn}/plain' && '${gitsby}' -q repo connect '${cn}/remote2.git'"
 	fAssert "plain dir now a pushed repo"  bash -c "cd '${cn}/plain' && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]]"
+
+	## The one command that hands a whole directory over has to say what is in it first, and the
+	## list has to be git's answer, not a directory walk - anything else names files 'git add --all'
+	## will skip. Own TMPDIR so the throwaway git dir it asks through can be shown to be cleaned up
+	## (both builds honor TMPDIR for their temp path).
+	git init --quiet --bare -b main "${cn}/remote3.git"
+	local pubDir="${cn}/publish"; local pubTmp="${cn}/publish-tmp"
+	mkdir -p "${pubDir}/sub" "${pubDir}/skipdir" "${pubTmp}"
+	echo keep    > "${pubDir}/keep.txt"
+	echo TOKEN=x > "${pubDir}/.env"
+	echo nested  > "${pubDir}/sub/nested.txt"
+	echo noise   > "${pubDir}/skipme.log"
+	echo noise   > "${pubDir}/skipdir/thing.js"
+	printf '*.log\nskipdir/\n' > "${pubDir}/.gitignore"
+	fAssertOut    "repo connect lists the files it will publish"  'Files to publish:'  bash -c "cd '${pubDir}' && TMPDIR='${pubTmp}' '${gitsby}' -q repo connect '${cn}/remote3.git' 2>&1"
+	fAssert       "the listing probe cleaned up after itself"     bash -c "[[ -z \"\$(ls -A '${pubTmp}')\" ]]"
+	fAssert       "and the dotfile went up, as the listing said"  bash -c "cd '${cn}/remote3.git' && git ls-tree -r --name-only main | grep -qx '\.env'"
+	fAssert       "and the ignored file did not"                  bash -c "cd '${cn}/remote3.git' && ! git ls-tree -r --name-only main | grep -q 'skipme.log'"
+	## The list itself, line by line, on a fresh copy of the same tree: the stray dotfile is the
+	## point of the feature, and an ignored file appearing would make the whole list untrustworthy.
+	local pub2="${cn}/publish2"
+	mkdir -p "${pub2}"; cp -r "${pubDir}/." "${pub2}/"; rm -rf "${pub2}/.git"
+	git init --quiet --bare -b main "${cn}/remote4.git"
+	fAssertOut    "the listing names a stray dotfile"  '^    \.env$'  bash -c "cd '${pub2}' && '${gitsby}' -q repo connect '${cn}/remote4.git' 2>&1"
+	local pub3="${cn}/publish3"
+	mkdir -p "${pub3}"; cp -r "${pubDir}/." "${pub3}/"; rm -rf "${pub3}/.git"
+	git init --quiet --bare -b main "${cn}/remote5.git"
+	fAssertNotOut "the listing honors .gitignore"  'skipme\.log|skipdir'  bash -c "cd '${pub3}' && '${gitsby}' -q repo connect '${cn}/remote5.git' 2>&1"
 
 	## connect refuses remotes with history, unreachable remotes, and empty dirs
 	git init --quiet -b main "${cn}/proj2"
@@ -1033,3 +1097,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260725 JC: Release-candidate version checks, and pr ok from the merged branch - the fake gh grew a pr merge that restores the stale origin ref, since that is what makes the real failure reproduce.
 ##		- 20260726 JC: Offline coverage inside a compound command, and the protected-branch refusal now has to name a command that still exists. The old offline check spelled the flag --no-fetch, which pwsh rejects, and matched the rejection - green for the wrong reason.
 ##		- 20260727 JC: Installer option coverage (--release/--target/--arch, both implementations). The refusal checks assert the reason rather than the exit code, since an installer that never heard of --target also exits nonzero. Plan checks need the confirmation to refuse instead of block, so they run under setsid and skip where it is absent.
+##		- 20260728 JC: Offline push coverage (branch commands degrade and say so, publishing commands refuse, br land keeps origin's copy of the branch until the merge is pushed), and the file list 'repo connect' shows before a first publication. The offline block gets its own origin: by that point in the suite the shared one has a dev branch, so the merge target was not what the checks assumed.
