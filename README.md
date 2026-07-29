@@ -176,9 +176,7 @@ There are many implicit opinions baked in. Here are the main ones:
 
 	(`br land` and `release` do push the target branch - but that push *is* the merge or the release, not a shortcut around one.)
 
-- Never "git push to friends" (i.e. `git push -f`).
-
-- Pushed history is permanent. No rebase, no amend, no force-push, no rewriting.
+- Pushed history is permanent. No rebase, no amend, no rewriting, and never "git push to friends" (`git push -f`).
 
 - Feature branches are short-lived: branch off, do the work, land it, delete it (local and remote).
 
