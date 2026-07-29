@@ -99,9 +99,11 @@ fi
 ## fEcho "msg" -> "[ msg ]" status line; fEcho_Clean "msg" -> plain line, and a
 ## bare call collapses repeated blanks. fSection draws the leading-blank + rule
 ## letterbox before a major stage header; fDie prints a fatal line and exits.
+## printf, not 'echo -e': a commit message the user typed passes through here, and echo -e
+## would animate any backslash escape or ANSI sequence in it. bin/gitsby does the same.
 declare -i _wasLastEchoBlank=0
 fEcho_ResetBlankCounter(){ _wasLastEchoBlank=0; }
-fEcho_Clean(){ if [[ -n "${1:-}" ]]; then echo -e "$*"; _wasLastEchoBlank=0; elif [[ $_wasLastEchoBlank -eq 0 ]] && echo; then _wasLastEchoBlank=1; fi; }
+fEcho_Clean(){ if [[ -n "${1:-}" ]]; then printf '%s\n' "$*"; _wasLastEchoBlank=0; elif [[ $_wasLastEchoBlank -eq 0 ]] && echo; then _wasLastEchoBlank=1; fi; }
 fEcho(){       if [[ -n "$*"     ]]; then fEcho_Clean "[ $* ]"; else fEcho_Clean ""; fi; }
 fEcho_Force(){ fEcho_ResetBlankCounter; fEcho "$*"; }
 _letterbox="••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••"

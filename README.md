@@ -75,9 +75,11 @@
 - [Commands](#commands)
 	- [Which account are you acting as?](#which-account-are-you-acting-as)
 - [Installation](#installation)
-	- [Bash](#bash)
-	- [PowerShell](#powershell)
-	- [Direct](#direct)
+	- [Packages and installers](#packages-and-installers)
+	- [Direct install scripts](#direct-install-scripts)
+		- [Bash](#bash)
+		- [PowerShell](#powershell)
+	- [DIY](#diy)
 - [How to develop](#how-to-develop)
 - [Git notes and one-liners](#git-notes-and-one-liners)
 - [Contributing](#contributing)
@@ -115,16 +117,18 @@ How Gitsby shrinks Git's command set:
 
 - For large projects, you may still need bare Git (and/or some other wrapper) to resolve sticky situations that Gitsby purposely doesn't try to tackle - and almost certainly didn't create. Leaving them alone is what "keep-it-simple" and "do-one-thing-well" cost.
 
-👉 Gitsby works against any Git remote, GitHub and GitLab included. The exceptions are the `pr` commands and `repo create`, which go through [gh](https://github.com/cli/cli) and are therefore GitHub-only. Everything else is remote-agnostic.
+👉 Gitsby works against any Git remote, GitHub and GitLab included. The exceptions go through [gh](https://github.com/cli/cli) and are therefore GitHub-only: the `pr` commands, `repo create`, and `repo connect` when you give it an `owner/name` instead of a URL. Everything else is remote-agnostic, and `repo connect` with a full URL never touches gh at all.
 
-👉 What you need to run it: Git, plus **either** bash 4.4 or newer (for `gitsby`) **or** PowerShell 7 or newer (for `gitsby.ps1`). The two builds are interchangeable - same commands, same results - so on a machine without bash, the PowerShell one is a complete substitute.
+👉 What you need to run it: Git, plus either bash 4.4 or newer (for `gitsby`) or PowerShell 7 or newer (for `gitsby.ps1`). The two builds are interchangeable - same commands, same results - so on a machine without bash, the PowerShell one is a complete substitute.
 
-- **Linux**: bash is already new enough on anything current.
-- **macOS**: the stock `/bin/bash` is 3.2 (from 2007) and Apple never replaces it. `brew install bash` or `sudo port install bash` installs a current one *alongside* it, so put that ahead of `/bin/bash` on your `PATH`.
-- **BSD**: bash isn't installed by default. `pkg install bash` on FreeBSD, `pkg_add bash` on OpenBSD.
-- **Windows**: use the PowerShell build, or bash under WSL or Git Bash.
+- Linux: bash is already new enough on anything current.
+- macOS is the awkward one. Its stock `/bin/bash` is 3.2, from 2007, and Apple never replaces it. `brew install bash` or `sudo port install bash` puts a current one alongside it rather than over it, so the new one has to come first on your `PATH`.
+- BSD ships no bash at all. `pkg install bash` on FreeBSD, `pkg_add bash` on OpenBSD.
+- On Windows, use the PowerShell build, or bash under WSL or Git Bash.
 
 Gitsby tells you which of these applies if it can't run, rather than failing with a shell error.
+
+👉 Your default branch can be called anything. Gitsby asks the remote what it is, and falls back to `main`, `master`, or `trunk` locally - or to your only branch, in a repo that has just one. If it genuinely can't tell (no remote, and nothing conventional to go on), it says so and stops instead of guessing, and `git remote set-head origin --auto` is usually the one-line fix.
 
 > Note: [GitButler](https://gitbutler.com/) is *not* interchangeable with Git, Gitsby, gh, Lazygit, and/or Tig. While a great tool and a cool idea, it manages its own metadata - that inherently doesn't mix well with other git-based tools that move `HEAD` or rewrite history. It's worth a look and a try - but to be safe, give it a dedicated trial on a small personal repo, without mixing in other tools.
 
@@ -236,7 +240,7 @@ What you reach for daily is one word. Everything else is grouped under a noun, s
 
 There is deliberately no bare `commit` and no bare `pull`. Committing without sharing is how work quietly diverges, and pulling without committing is the one thing the rest of the tool never does - `br create`, `br switch`, `br land`, and `pr create` all deal with your work first. `update` is the one command for both, and it pulls *before* it commits so your work lands on top of everyone else's and history stays linear.
 
-Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--public`/`--private` (visibility for `repo create`; private by default), `--no-fetch` (work offline: skip the fetch and the pull), `--any-identity` (see below), `-h`, `-v`.
+Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--public`/`--private` (visibility for `repo create`; private by default), `--no-fetch` (skip the fetch and the pull), `--any-identity` (see below), `-h`, `-v`.
 
 The PowerShell version takes the same options in PowerShell form: `-Message MSG`, `-Quiet`/`-y`, `-Public`/`-Private`, `-NoFetch`, `-AnyIdentity`, `-Help`, `-Version`. Commands and arguments are spelled identically in both.
 
@@ -266,6 +270,10 @@ gitsby br land "Add Feature1"
 
 Every mutating command in an existing repo fetches first (unless you pass `--no-fetch`), shows the repo state (including who you'd act as on the remote) and the exact git commands it's about to run, and asks before touching anything. `pr` and `release` close the loop: review/accept the pull request, then cut a tagged release from `dev`.
 
+When that fetch finds the remote out of reach, the commands that mean something locally still work. `update` commits, `br create` and `br switch` and `br land` do their branch work, and each says what it skipped and that `sync` will publish it later. The commands that exist to publish - `sync`, `pr create`, `pr ok`, `release` - refuse up front and tell you what to do instead, rather than failing halfway through or reporting success having sent nothing. (`--no-fetch` declines that check, so with it gitsby is never told you are offline and a push fails with git's own message.)
+
+`repo create` and `repo connect` list the files they are about to publish before asking, since that is the one command that hands a whole directory over for the first time. The list is what `git add --all` will actually add, `.gitignore` and all - so a stray `.env` is visible while you can still say no.
+
 ### Which account are you acting as?
 
 `gh` talks to GitHub's API with its own token and never reads your SSH config, so the `pr` commands and `repo create` act as **gh's account** - not the account whose SSH key `git push` uses. With per-account host aliases in `~/.ssh/config` those can easily be different people, and a pull request opened as the wrong one is public and awkward to undo.
@@ -288,22 +296,32 @@ First, decide on the Bash or PowerShell version, mainly gating on *nix vs Window
 
 Then, decide to install for your user account only, or system-wide. (But to avoid future confusion, not both on the same machine.)
 
-Either way, the installer shows exactly what it will do and asks before doing it (add `-y`/`-Yes` to skip the prompt, e.g. for scripted installs).
+### Packages and installers
 
-With no `--ref`/`-Ref`, the installers take the latest full release, and verify the download against that release's `SHA256SUMS` when one is published. Naming a branch, tag, or pre-release with `--ref`/`-Ref` pulls straight from the tree instead, and skips verification.
+There are no distribution packages yet - nothing on apt, dnf, Homebrew, or winget. The install scripts below are the supported route.
+
+### Direct install scripts
+
+Either installer shows exactly what it will do and asks before doing it (add `-y`/`-Yes` to skip the prompt, e.g. for scripted installs).
+
+By default the installers take the latest full release, and verify the download against that release's `SHA256SUMS` when one is published. Asking for anything else - `--release dev`, or a branch or tag by name - pulls straight from the tree instead, and skips verification.
 
 Both installers take the same options (Bash / PowerShell forms):
 
 | Bash | PowerShell | Effect |
 | --- | --- | --- |
-| `-s`, `--system` | `-System` | Install for all users instead of just you. `~/.local/bin` -> `/usr/local/bin` (*nix); needs `sudo` / an elevated shell. |
+| `--release dev\|stable` | `-Release dev\|stable` | Which build: the latest release (the default), or the tip of `dev`. |
+| `--target user\|system` | `-Target user\|system` | Install for you (the default) or for everyone. `~/.local/bin` -> `/usr/local/bin` (*nix); system needs `sudo` or an elevated shell. |
+| `--arch x64\|amd64\|arm64` | `-Arch x64\|amd64\|arm64` | Accepted so the command line matches other installers. It has no effect here - gitsby is a script, so one file runs on every architecture. |
+| `-r`, `--ref REF` | `-Ref REF` | A specific branch, tag, or commit. Skips checksum verification. |
 | `-y`, `--yes` | `-Yes` | Skip the confirmation prompt (for scripted installs). |
-| `-r`, `--ref REF` | `-Ref REF` | Install a specific branch, tag, or commit instead of the latest release. Skips checksum verification. |
 | `-h`, `--help` | `-?` | Show usage and exit. |
+
+`-s`/`--system` and `-System` still work, and mean the same as `--target system`.
 
 With no options, both do a per-user install of the latest release, after showing the plan and asking.
 
-### Bash
+#### Bash
 
 - User-only install (to `~/.local/bin`)
 
@@ -314,12 +332,12 @@ With no options, both do a per-user install of the latest release, after showing
 - System-wide install (to `/usr/local/bin`, uses `sudo`)
 
 	~~~bash
-	curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install.bash | bash -s -- --system
+	curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install.bash | bash -s -- --target system
 	~~~
 
-- No `curl`? Swap in `wget -qO-` for `curl -fsSL`. To install from a branch instead of the latest release, append `--ref dev` (or `--ref main`).
+- No `curl`? Swap in `wget -qO-` for `curl -fsSL`. For the development build instead of the latest release, append `--release dev`.
 
-### PowerShell
+#### PowerShell
 
 - User-only install
 
@@ -330,10 +348,10 @@ With no options, both do a per-user install of the latest release, after showing
 - System-wide install (run from an elevated / sudo PowerShell)
 
 	~~~pwsh
-	& ([scriptblock]::Create((irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1))) -System
+	& ([scriptblock]::Create((irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1))) -Target system
 	~~~
 
-### Direct
+### DIY
 
 No installer: grab the script itself, make it executable, and put it on your PATH.
 
@@ -351,7 +369,9 @@ For reference, the installers use: `~/.local/bin` (user) or `/usr/local/bin` (sy
 
 ## How to develop
 
-One-liner dev setup: clones the repo into `./gitsby`, checks out the `dev` branch, and checks (optionally installs) the dev tooling. Details in [contributing.md](contributing.md).
+One-liner dev setup: clones the repo into `./gitsby`, checks out the `dev` branch, and checks (optionally installs) the dev tooling.
+
+It assumes `git` and a shell that can run one of the two scripts below. What it looks for on top of that: `shellcheck` for the Bash side, `pwsh` 7+ with `PSScriptAnalyzer` for the PowerShell side, `markdownlint` for the docs, `gh` to exercise the `pr` commands, and `python3` with Pillow (plus `gifsicle`, optionally) to regenerate the demo. Anything missing makes its own pipeline stage report itself absent and skip, so you can work on one side without installing the other's tools. Full detail in [contributing.md](contributing.md).
 
 - Linux / macOS
 

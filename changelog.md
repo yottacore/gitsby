@@ -30,7 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - PowerShell version, `bin/gitsby.ps1`, for Windows and anywhere else PowerShell 7 runs.
-- Installers for both versions, `install.bash` and `install.ps1`, run straight from a shell one-liner. Each shows its plan and asks first, installs for you or system-wide, and checks the download against the release checksums.
+- Installers for both versions, `install.bash` and `install.ps1`, run straight from a shell one-liner. Each shows its plan and asks first, installs for you or system-wide, and checks the download against the release checksums. A branch or tag given by name has to look like one, so it can't redirect the install somewhere else; and with no terminal to ask on, they stop rather than assume yes.
 - Setup scripts for contributors, `install-dev.bash` and `install-dev.ps1`: clone the repo, switch to `dev`, and check the tooling.
 - `repo clone` command: get a repo you don't have yet. Derives the directory from the URL, checks out `dev` when the repo has one, and re-running it is a no-op.
 - `repo create` command: make the GitHub repo and publish to it in one step. Takes an `owner/name` target, creates it via `gh` (`--public`/`--private`; private by default), then initializes, commits, and pushes.
@@ -40,6 +40,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `br hotfix` command: branch off the default branch as `hotfix/<name>`, to correct what is already published without waiting for a release. Landing it merges to the default branch and then carries the change back into `dev`, so the next release can't undo it. Warns if the branch touched `bin/`, since shipped code on the default branch no longer matches the latest release.
 - `br prune` command: delete every branch already merged into `dev`/`main`, local copy and remote copy both. Branches that aren't merged yet are listed and left alone, and there is no flag to override that. `br land` and `pr ok` clean up after themselves, but nothing cleaned up after a PR merged from the web UI, or after a branch you walked away from.
 - GitHub account shown in the pre-flight for every `gh`-backed command, since `gh` acts as its own token's account rather than the one your SSH key authenticates as. Commands that write through `gh` compare the two: a confirmed mismatch warns interactively and is refused unattended, and `--any-identity`/`-AnyIdentity` proceeds anyway.
+- `repo create` and `repo connect` list the files they are about to publish, before asking. It is the one command that hands a whole directory over for the first time, possibly publicly, and the list is what `git add --all` will really add - `.gitignore` and `core.excludesFile` honored - so a stray `.env` or key is visible while you can still say no.
 - Pre-flight display, before the confirmation prompt on every mutating command (and on `status`): the SSH identity a push or fetch will present (host aliases resolved to the real host, user, and key), the author that will be stamped on commits, ahead/behind counts, and the files a pull would bring in.
 - `--no-fetch` to skip the fetch that every command starts with, for working offline.
 - `-y`/`--yes` as an alias for `-q`, and `help`/`version` as bare words.
@@ -54,10 +55,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `br create` carries uncommitted work onto the new branch instead of committing it to `main`/`dev` first. `br switch` refuses and says what to do instead.
 - `br land` publishes an unpushed target branch before deleting the branch it merged, so the work always reaches the remote first.
 - `release` now fast-forwards dev to main afterward, so dev includes the release merge and tag. If dev gained commits mid-release, the fast-forward is skipped with a warning instead of discarding anything.
-- `pr ok` refuses when the current branch has uncommitted changes or commits that never reached the remote. Merging deletes the branch, and anything only local would be outside both the pull request and the merge.
+- `pr ok` refuses when there are uncommitted changes, or commits that never reached the remote - on the current branch or on the pull request's own branch, whichever you are standing on. Merging deletes that branch, and anything only local would be outside both the pull request and the merge.
 - `update` and `sync` now pull *before* they commit. Committing first created a local commit, so any remote that had moved ahead was diverged and the fast-forward-only pull refused - the everyday case. Pulling first fast-forwards and your work lands on top, keeping history linear.
-- `--no-fetch` now means offline: it skips the pull as well as the pre-command fetch, in every command that pulls. A remote that can't be reached warns and skips the pull instead of failing, so being offline never turns a good commit into a failed command.
+- An unreachable remote now degrades pushes as well as pulls. The commands that mean something locally still run and say what they skipped - `br create` and `br hotfix` make the branch, `br switch` switches, `br land` merges, all of it publishable later with `sync`. `br land` leaves the remote copy of the branch alone until the merge has been pushed, since until then that copy is the remote's only ref to the work.
+- `sync`, `pr create`, `pr ok` and `release` refuse up front when the remote is out of reach, and name what to do instead. They exist to publish, so failing halfway through on raw git output - or worse, reporting success having sent nothing - was the wrong answer.
+- `--no-fetch` skips the pull as well as the pre-command fetch, in every command that pulls. It does not stop a push: it declines the incoming round trip, which is the ordinary reason to pass it.
 - Mutating commands refuse to run without a terminal unless you pass `-q`/`-y`, so a piped or scheduled run can't silently confirm itself.
+- A conflicted working tree is never committed. A pull whose stashed work conflicts on the way back in still reports success, so the conflict markers used to be staged, committed, and pushed. The conflicted files are named instead, and your original work is left where git kept it.
+- The default branch can be called anything. It is read from the remote, then `main`, `master`, `trunk`, or your only branch. When it genuinely can't be told, commands stop and say so rather than assuming `main` - which used to mean work committed to a branch that was never checked, and a merge into the wrong one.
+- `release` refuses a version it invented when there is nothing new to release, and names the tag to push if a previous run's tag never left the machine. A version you give it, and promoting a candidate, still work on an already-released commit.
+- `--help` works after a command in both builds (`gitsby br create --help`). `-v` after a command is refused rather than quietly printing the version and doing nothing.
+- A commit message can start with a dash: `-m '-Wall added to CFLAGS'`.
+- `--public` and `--private` together are refused instead of resolving differently in each build.
+- Credentialed remote URLs are masked wherever they are printed, not only in the plan.
 - Remote URLs with an embedded password or token print masked.
 - Status now shows a compact one-line-per-file change list instead of `git status`'s long form, truncated to the terminal width and capped so a large working tree can't scroll the prompt out of view.
 - Output starts and ends with a blank line, for breathing room between shell prompts.
@@ -70,5 +80,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Other work
 
-- Both versions carry a regression suite and a fuzz suite, run before anything is published.
-- The demo at the top of the README is generated from a scripted session against a throwaway repo, so it can't drift from what the tool actually does.
+- Both versions carry a regression suite and a fuzz suite.
+- The demo at the top of the README is a real session, so it shows what the tool actually does rather than an idealized version of it.

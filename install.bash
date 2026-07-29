@@ -19,24 +19,32 @@ set -eu; set -o pipefail
 
 repo="jim-collier/gitsby"
 doSystem=0; doYes=0; ref=""; isRelease=1
+releaseChannel=""; targetScope=""; arch=""
 
-fEcho(){ echo "[ $* ]"; }
-fErr(){  echo "Error: $*" >&2; exit 1; }
+fEcho(){  echo "[ $* ]"; }
+fErr(){   echo "Error: $*" >&2; exit 1; }
+fLower(){ printf '%s' "${1}" | tr '[:upper:]' '[:lower:]'; }
 fSyntax(){
 	cat <<-EOF
 	Usage: install.bash [OPTIONS]
-	Downloads and installs the latest gitsby release (with confirmation).
+	Downloads and installs gitsby (with confirmation).
 	Options:
-	  -s, --system     Install to /usr/local/bin for all users (default: ~/.local/bin).
-	  -y, --yes        Don't ask for confirmation.
-	  -r, --ref REF    Install from a branch/tag/commit instead of the latest release.
-	  -h, --help       This.
+	  --release dev|stable   Latest release (default), or the tip of the dev branch.
+	  --target user|system   Install for you (~/.local/bin, default) or everyone (/usr/local/bin).
+	  --arch x64|amd64|arm64 Accepted for consistency with other installers, and has no effect
+	                         here: gitsby is a shell script, so one file runs everywhere.
+	  -r, --ref REF          A specific branch, tag, or commit. Skips checksum verification.
+	  -y, --yes              Don't ask for confirmation.
+	  -h, --help             This.
 	EOF
 }
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
-		-s|--system) doSystem=1 ;;
+		--release)   [[ $# -ge 2 ]] || fErr "--release needs a value (dev or stable)."; releaseChannel="$(fLower "$2")"; shift ;;
+		--target)    [[ $# -ge 2 ]] || fErr "--target needs a value (user or system)."; targetScope="$(fLower "$2")"; shift ;;
+		--arch)      [[ $# -ge 2 ]] || fErr "--arch needs a value (x64, amd64 or arm64)."; arch="$(fLower "$2")"; shift ;;
+		-s|--system) targetScope="system" ;;
 		-y|--yes)    doYes=1 ;;
 		-r|--ref)    [[ $# -ge 2 ]] || fErr "--ref needs a value."; ref="$2"; shift ;;
 		-h|--help)   fSyntax; exit 0 ;;
@@ -44,6 +52,35 @@ while [[ $# -gt 0 ]]; do
 	esac
 	shift
 done
+
+case "${targetScope}" in
+	""|user) doSystem=0 ;;
+	system)  doSystem=1 ;;
+	*)       fErr "--target takes 'user' or 'system' (got '${targetScope}')." ;;
+esac
+
+## Named for parity with installers that fetch a per-architecture binary. Validate it
+## anyway - a typo here means the caller believes something about the install that isn't true.
+case "${arch}" in
+	""|x64|x86_64|amd64|arm64|aarch64) : ;;
+	*) fErr "--arch takes 'x64', 'amd64' or 'arm64' (got '${arch}')." ;;
+esac
+
+## --release is the friendly spelling; --ref is the escape hatch. Both at once is ambiguous.
+[[ -n "${releaseChannel}" && -n "${ref}" ]] && fErr "Use --release or --ref, not both."
+case "${releaseChannel}" in
+	""|stable) : ;;
+	dev)       ref="dev" ;;
+	*)         fErr "--release takes 'dev' or 'stable' (got '${releaseChannel}')." ;;
+esac
+
+## The ref lands in a download URL, so a path-shaped one walks out of this repo and installs
+## somebody else's script while the plan on screen still names ours. Reads as a harmless
+## branch selector, which is exactly why the confirm prompt is no protection here.
+case "${ref}" in
+	""|*/../*|../*|*/..|..|/*|*//*) [[ -z "${ref}" ]] || fErr "--ref names a branch, tag or commit, not a path (got '${ref}')." ;;
+esac
+[[ -z "${ref}" || "${ref}" =~ ^[A-Za-z0-9._/-]+$ ]] || fErr "--ref has characters that aren't valid in a git ref (got '${ref}')."
 
 ## gitsby itself needs bash 4.4+ (it sets inherit_errexit); this installer deliberately
 ## doesn't. Check before downloading rather than after: both run through 'env bash', so
@@ -84,7 +121,9 @@ if [[ -z "${ref}" ]]; then
 		ref="$(wget -q --max-redirect=0 -S -O /dev/null "https://github.com/${repo}/releases/latest" 2>&1 | sed -n 's|.*[Ll]ocation: .*/releases/tag/\([^[:space:]]*\).*|\1|p' | head -n 1)"
 	fi
 	[[ -n "${ref}" ]] || ref="$(fFetch "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null | sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
-	[[ -n "${ref}" ]] || fErr "Couldn't determine the latest release; pass e.g. '--ref main'. (GitHub may be rate-limiting; try again later.)"
+	[[ -n "${ref}" ]] || fErr "Couldn't determine the latest release; try '--release dev'. (GitHub may be rate-limiting; try again later.)"
+	## Scraped from a redirect header, so check it the same way as a typed one before it reaches a URL.
+	[[ "${ref}" =~ ^[A-Za-z0-9._/-]+$ ]] || fErr "The resolved release tag ('${ref}') isn't a plain git ref; aborting."
 else
 	isRelease=0
 fi
@@ -99,7 +138,9 @@ echo
 fEcho "gitsby installer"
 echo "This will:"
 echo "  - Download gitsby (${ref}) from github.com/${repo}"
+[[ -n "${arch}" ]] && echo "  - Ignore --arch ${arch}: gitsby is a shell script, so the same file runs on every architecture"
 echo "  - Install it to ${destDir}/gitsby"
+[[ -d "${destDir}" ]] || echo "  - Create ${destDir} (it doesn't exist yet)"
 [[ ${needSudo} -eq 1 ]] && echo "  - Use sudo for the install step (you may be prompted for your password)"
 echo "  - Run 'gitsby --version' to verify"
 if [[ ${doYes} -eq 0 ]]; then
@@ -124,9 +165,11 @@ fromReleaseAsset=0
 if [[ ${isRelease} -eq 1 ]] && fFetch "https://github.com/${repo}/releases/download/${ref}/gitsby" > "${tmpFile}" 2>/dev/null; then
 	fromReleaseAsset=1
 elif fFetch "https://raw.githubusercontent.com/${repo}/${ref}/bin/gitsby" > "${tmpFile}" 2>/dev/null; then
-	:
+	## Say so: only the release asset can be checked against SHA256SUMS, and asking for a
+	## release and quietly getting an unverified copy of the tree is not what was agreed.
+	[[ ${isRelease} -eq 1 ]] && echo "Note: no release asset for ${ref}; installing bin/gitsby from the tagged tree, unverified."
 else
-	fErr "Couldn't download gitsby at '${ref}'. (Releases before v2 predate the current layout; try '--ref main'.)"
+	fErr "Couldn't download gitsby at '${ref}'. (Releases before v2 predate the current layout; try '--release dev'.)"
 fi
 head -n 1 "${tmpFile}" | grep -q '^#!/' || fErr "Downloaded file doesn't look like a script; aborting."
 
@@ -150,6 +193,9 @@ fi
 
 fEcho "Installing to ${destDir}/gitsby ..."
 if [[ ${needSudo} -eq 1 ]]; then
+	## mkdir -p, not 'install -d': on a directory that already exists, install resets its mode,
+	## and this branch is reached whenever /usr/local/bin exists but isn't writable by us.
+	sudo mkdir -p "${destDir}"
 	sudo install -m 755 "${tmpFile}" "${destDir}/gitsby"
 else
 	mkdir -p "${destDir}"
@@ -170,3 +216,4 @@ echo
 ##	History:
 ##		- 20260722 JC: Created.
 ##		- 20260724 JC: Latest-release lookup via the releases/latest redirect (API scrape is now the rate-limited fallback); release-asset downloads verify against a SHA256SUMS asset when published; trailing blank line.
+##		- 20260727 JC: Options now spelled --release, --target and --arch, to match the other installers. -s/--system and --ref still work.

@@ -40,6 +40,18 @@ fAssertOut(){  local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$
 	if grep -qE "$pat" <<< "${out}"; then fOk "$desc"; else fFail "$desc"; fi; }
 fAssertNotOut(){ local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
 	if ! grep -qE "$pat" <<< "${out}"; then fOk "$desc"; else fFail "$desc"; fi; }
+## Matches against the PLAN only, not the whole run. Every "plans X" assertion against full
+## output is also satisfied by the execution echo of the same command, so it cannot tell a
+## preview that lists a step from one that silently stopped listing it. Plan lines are indented
+## under "Going to do"; the first execution line starts at column 0 with '[', in both ports.
+fPlanOf(){ awk '/Going to do/{p=1;next} p&&/^\[/{exit} p' ;}
+## Runs PowerShell source TEXT the way the documented one-liners do (iex / scriptblock), with no
+## controlling terminal and stdin at EOF so a confirmation prompt refuses instead of blocking.
+fPwshText(){ setsid pwsh -NoProfile -Command "$1" </dev/null 2>&1 ;}
+fAssertPlan(){    local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
+	if     grep -qE "$pat" <<< "$(fPlanOf <<< "${out}")"; then fOk "$desc"; else fFail "$desc"; fi; }
+fAssertNotPlan(){ local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
+	if ! grep -qE "$pat" <<< "$(fPlanOf <<< "${out}")"; then fOk "$desc"; else fFail "$desc"; fi; }
 
 ## Fixture: bare origin with an initial commit on main, plus two clones.
 fMakeFixture(){
@@ -69,11 +81,27 @@ fRunSuite(){
 	fAssertOut  "help keeps the pull-then-commit order" 'sync .*: Pull, commit, and push' "${gitsby}" --help
 	fAssertOut  "help doesn't promise a bare patch bump" 'release .*: .*next after latest tag' "${gitsby}" --help
 	fAssertOut  "help doesn't overpromise br create"    'br create .*: .*carried or parked'   "${gitsby}" --help
+	## Asking for help after a command is the reflex every git user has, and both builds must
+	## answer it the same way. -v is the opposite case: alongside a command it used to make the
+	## PowerShell build print the version and exit 0, doing none of the work it was asked for.
+	fAssert     "--help works after a command"     "${gitsby}" update --help
+	fAssert     "--help works after noun and verb" "${gitsby}" br create --help
+	fAssert     "-h works after a command"         "${gitsby}" update -h
+	fAssertFail "-v after a command is refused"    bash -c "cd '${cloneA}' && '${gitsby}' -q update -v"
+	fAssertOut  "and says which option"            'Unexpected option'  bash -c "cd '${cloneA}' && '${gitsby}' -q update -v 2>&1"
 	fAssert     "-y alias accepted"            bash -c "cd '${cloneA}' && '${gitsby}' -y status"
 	fAssertFail "no args exits nonzero"        "${gitsby}"
 	fAssertFail "unknown command rejected"     bash -c "cd '${cloneA}' && '${gitsby}' -q frobnicate"
 	fAssertFail "unknown option rejected"      bash -c "cd '${cloneA}' && '${gitsby}' -q status --bogus"
+	fAssertOut  "--public with --private refused"  'mutually exclusive'  bash -c "cd '${cloneA}' && '${gitsby}' -q --public --private repo create me/x 2>&1"
 	fAssertFail "outside a repo rejected"      bash -c "cd '${work}' && '${gitsby}' -q status"
+	## Read-only commands used to ignore trailing arguments while everything else rejected them,
+	## which makes a typo look like it did what you meant.
+	fAssertFail "status with a trailing argument rejected"   bash -c "cd '${cloneA}' && '${gitsby}' -q status extra"
+	fAssertFail "br list with a trailing argument rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q br list extra"
+	fAssertOut  "and says what takes no arguments"  'takes no arguments'  bash -c "cd '${cloneA}' && '${gitsby}' -q status extra 2>&1"
+	## An option or positional typo is a usage error, not a crash - no internal stack dump.
+	fAssertNotOut "option typo prints no call stack"  'Reverse call stack'  bash -c "cd '${cloneA}' && '${gitsby}' -q status --bogus 2>&1"
 
 	## Grouped-noun grammar: spelled-out nouns, hidden verb aliases, and refusals
 	fAssert     "'branch' spells out 'br'"        bash -c "cd '${cloneA}' && '${gitsby}' -q branch list"
@@ -106,6 +134,10 @@ fRunSuite(){
 	fAssert "worktree clean after update"     bash -c "cd '${cloneA}' && [[ -z \"\$(git status --porcelain)\" ]]"
 	fAssert "update message recorded"         bash -c "cd '${cloneA}' && git log -1 --format=%s | grep -qx 'add file2'"
 	fAssert "update again (nothing to do) ok" bash -c "cd '${cloneA}' && '${gitsby}' -q update 'noop'"
+	## sync takes its message positionally like update, and nothing checked that it lands - the
+	## message could quietly be replaced by the auto-generated timestamp with the suite still green.
+	( cd "${cloneA}" && echo s > s.txt )
+	fAssert "sync records the message it was given"  bash -c "cd '${cloneA}' && '${gitsby}' -q sync 'synced by name' && git log -1 --format=%s | grep -qx 'synced by name'"
 	fAssertFail "dropped 'commit' command rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q commit 'no such command'"
 	fAssertFail "dropped 'pull' command rejected"    bash -c "cd '${cloneA}' && '${gitsby}' -q pull"
 	( cd "${cloneA}" && echo alias > alias.txt )
@@ -167,7 +199,7 @@ fRunSuite(){
 	fAssertOut    "and points at a real command"  'deliberately \(.*update\) first'  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch feat"
 	fAssert "wip left uncommitted on main"      bash -c "cd '${cloneA}' && ! git diff --quiet && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]]"
 	## newbr carries that same tree instead, so its plan must not promise a commit on main
-	fAssertNotOut "br create from main previews no commit"  'git add --all'  bash -c "cd '${cloneA}' && '${gitsby}' -q br create wipcarry"
+	fAssertNotPlan "br create from main previews no commit"  'git add --all'  bash -c "cd '${cloneA}' && '${gitsby}' -q br create wipcarry"
 	fAssert "wip carried to the new branch"  bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == wipcarry ]] && ! git diff --quiet"
 	( cd "${cloneA}" && git checkout --quiet -- file2.txt && git checkout --quiet feat
 	  git branch --quiet -D wipcarry && git push --quiet origin --delete wipcarry )
@@ -192,6 +224,9 @@ fRunSuite(){
 	fAssert "br switch with no arg goes to dev"  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch main && '${gitsby}' -q br switch && [[ \"\$(git branch --show-current)\" == dev ]]"
 	fAssertFail "br land from dev rejected"    bash -c "cd '${cloneA}' && '${gitsby}' -q br land"
 	fAssertFail "br land from main rejected (dev repo)"  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch main && '${gitsby}' -q br land; rc=\$?; git checkout --quiet dev; exit \$rc"
+	## Landing ends in a branch delete, so a protected branch must be refused before the plan is
+	## shown - not after the user has confirmed 'git branch -d main'.
+	fAssertNotOut "and refuses before showing a plan that deletes it"  'Going to do'  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch main >/dev/null && '${gitsby}' -q br land 2>&1; git checkout --quiet dev"
 
 	## release: merge dev into main, tag, push; then auto-bump patch on the next one
 	fAssert "release 1.2.3 runs"        bash -c "cd '${cloneA}' && '${gitsby}' -q release 1.2.3"
@@ -214,6 +249,14 @@ fRunSuite(){
 	( cd "${cloneA}" && echo post > post.txt )
 	fAssert "the next release bumps off the full version, not the candidate"  bash -c "cd '${cloneA}' && '${gitsby}' -q release && git rev-parse -q --verify refs/tags/v1.3.1 >/dev/null"
 
+	## An invented version with nothing to release is a tag for no release, and re-running after
+	## a failed push would cut a second one on the same commit, stranding the first forever.
+	fAssertFail "bare release refuses when there is nothing new"  bash -c "cd '${cloneA}' && '${gitsby}' -q release"
+	fAssertOut  "and names the tag to push if it never landed"  'Nothing new to release since v1\.3\.1'  bash -c "cd '${cloneA}' && '${gitsby}' -q release 2>&1"
+	fAssert     "and cut no tag doing so"  bash -c "cd '${cloneA}' && ! git rev-parse -q --verify refs/tags/v1.3.2 >/dev/null"
+	## A version you typed is deliberate, so it still works on an already-released commit.
+	fAssert     "an explicit version still releases the same commit"  bash -c "cd '${cloneA}' && '${gitsby}' -q release 1.4.0 && git rev-parse -q --verify refs/tags/v1.4.0 >/dev/null"
+
 	## release started from a feature branch returns there; slash branch names work
 	fAssert "br create relfeat"  bash -c "cd '${cloneA}' && '${gitsby}' -q br create relfeat"
 	( cd "${cloneA}" && echo rel > rel.txt )
@@ -221,6 +264,10 @@ fRunSuite(){
 	fAssert "returns to the feature branch"       bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == relfeat ]]"
 	fAssert "br create with a slash name"  bash -c "cd '${cloneA}' && '${gitsby}' -q br create feat/x && [[ \"\$(git branch --show-current)\" == feat/x ]]"
 	fAssert "br switch back to dev"         bash -c "cd '${cloneA}' && '${gitsby}' -q br switch && [[ \"\$(git branch --show-current)\" == dev ]]"
+	## Already on the target: no checkout and no park happen, so the plan must not list them.
+	( cd "${cloneA}" && echo swp > swp.txt )
+	fAssertNotPlan "br switch onto the current branch plans no commit"  'git commit'  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch dev"
+	fAssertPlan   "and still plans the pull"  'git pull --ff-only'                   bash -c "cd '${cloneA}' && '${gitsby}' -q br switch dev"
 
 	## Detached HEAD guard
 	fAssertFail "mutating command on detached HEAD rejected"  bash -c "cd '${cloneA}' && git checkout --quiet HEAD~0 --detach && '${gitsby}' -q update x"
@@ -239,6 +286,10 @@ fRunSuite(){
 	fi
 	( cd "${cloneA}" && echo m3 > m3.txt )
 	fAssert "message containing -v commits"           bash -c "cd '${cloneA}' && '${gitsby}' -q update 'add -v flag' && git log -1 --format=%s | grep -qx 'add -v flag'"
+	## A message that STARTS with a dash: '-m' is waiting for a value, so the next token is that
+	## value whatever it looks like. There is no other way to write one, and the ports disagreed.
+	( cd "${cloneA}" && echo m4 > m4.txt )
+	fAssert "message starting with a dash commits"    bash -c "cd '${cloneA}' && '${gitsby}' -q update -m '-Wall added to CFLAGS' && git log -1 --format=%s | grep -qx -- '-Wall added to CFLAGS'"
 	fAssertFail "unquoted two-word message rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q update Fixed bug"
 
 	## Non-tty: mutating commands fail closed without -q; read-only ones just go quiet
@@ -316,6 +367,42 @@ fRunSuite(){
 	## matched its complaint about the flag - green for the wrong reason. Bash takes either.
 	fAssertOut "no-fetch skips the pull too"  'Skipping the pull' bash -c "cd '${off}' && echo nf > nf.txt && '${gitsby}' -q -NoFetch update 'no-fetch work'"
 
+	## A command that still means something locally runs offline and says what it skipped; a
+	## command that exists to publish refuses up front, before the plan promises a push.
+	## Same bogus-path trick, on its own clone so the shared fixture keeps its history.
+	## Own throwaway origin: by this point the shared one has a dev branch and release history, so
+	## the merge target would not be main and these checks would be reading a different repo shape.
+	## 'offland' is made and published while the remote still works, so the land below has a real
+	## origin copy to leave alone; everything after the set-url is offline.
+	local offOrigin="${work}/$1-offo.git"; local offb="${work}/$1-offlinebr"
+	git init --quiet --bare -b main "${offOrigin}"
+	git clone --quiet "${offOrigin}" "${offb}" 2>/dev/null
+	(
+		cd "${offb}"
+		echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main
+		git checkout --quiet -b offland && echo ol > ol.txt && git add --all && git commit --quiet -m "off work" && git push --quiet -u origin offland
+		git checkout --quiet main && git remote set-url origin "${work}/nosuch-remote.git"
+	)
+	fAssert    "br create succeeds with an unreachable remote"  bash -c "cd '${offb}' && '${gitsby}' -q br create offfeat && [[ \"\$(git branch --show-current)\" == offfeat ]]"
+	fAssertOut "and says the branch is local only"  "'offfeat2' is local only"  bash -c "cd '${offb}' && '${gitsby}' -q br create offfeat2 2>&1"
+	fAssertOut "and warns once, above the prompt"   'nothing will be pushed'   bash -c "cd '${offb}' && '${gitsby}' -q br switch offfeat 2>&1"
+	fAssert    "br switch succeeds with an unreachable remote"  bash -c "cd '${offb}' && '${gitsby}' -q br switch main && [[ \"\$(git branch --show-current)\" == main ]]"
+	## The publishing commands refuse instead, and name what to do about it. Checked before the
+	## land below, since that one leaves the tree clean and 'sync' needs something to refuse over.
+	fAssertFail "sync refuses with an unreachable remote"   bash -c "cd '${offb}' && echo s > s.txt && '${gitsby}' -q sync 'nope'"
+	fAssertOut  "and points at update"  "Commit locally with '[^']*update'"   bash -c "cd '${offb}' && '${gitsby}' -q sync 'nope' 2>&1"
+	fAssert     "and it refused before committing anything"  bash -c "cd '${offb}' && git status --porcelain | grep -q 's.txt' && rm -f '${offb}/s.txt'"
+	fAssertFail "release refuses with an unreachable remote"  bash -c "cd '${offb}' && '${gitsby}' -q release v9.9.9"
+	fAssertOut  "and says so before cutting a tag"  "'release' has nothing left to do"  bash -c "cd '${offb}' && '${gitsby}' -q release v9.9.9 2>&1"
+	fAssert     "and no tag was cut"  bash -c "cd '${offb}' && ! git rev-parse -q --verify refs/tags/v9.9.9 >/dev/null"
+	fAssertFail "pr create refuses with an unreachable remote"  bash -c "cd '${offb}' && '${gitsby}' -q br switch offfeat >/dev/null 2>&1; '${gitsby}' -q pr create 'T'"
+	fAssertOut  "and says which command needs origin"  "'pr create' has nothing left to do"  bash -c "cd '${offb}' && '${gitsby}' -q pr create 'T' 2>&1"
+	## land offline: the merge lands locally, and origin's copy of the branch has to survive -
+	## with the merge unpushed it is the only ref origin holds to that work.
+	fAssertOut "br land leaves origin's copy of the branch alone"  "Leaving origin's 'offland' alone"  bash -c "cd '${offb}' && '${gitsby}' -q br switch offland >/dev/null 2>&1; '${gitsby}' -q br land 'Off land' 2>&1"
+	fAssert    "and the merge landed locally"     bash -c "cd '${offb}' && git log -1 --format=%s main | grep -q 'Off land'"
+	fAssert    "and the remote-tracking ref survived"  bash -c "cd '${offb}' && git show-ref --verify --quiet refs/remotes/origin/offland"
+
 	## ... and offline has to mean the same thing inside a compound command, or the flag saves
 	## nothing there. Own throwaway origin, so the shared one keeps its history for later checks.
 	local nfOrigin="${work}/$1-nfo.git"; local nfPeer="${work}/$1-nfa"; local nfWork="${work}/$1-nfb"
@@ -348,7 +435,7 @@ fRunSuite(){
 		git merge --quiet --no-ff abandoned -m "merge abandoned"
 		git push --quiet
 	)
-	fAssertOut  "br prune plans the merged branches"  'git branch -D landed'  bash -c "cd '${prWork}' && '${gitsby}' -q br prune"
+	fAssertPlan "br prune plans the merged branches"  'git branch -D landed'  bash -c "cd '${prWork}' && '${gitsby}' -q br prune"
 	fAssert     "merged branch gone locally"       bash -c "cd '${prWork}' && ! git show-ref --verify --quiet refs/heads/landed"
 	fAssert     "the other merged one too"         bash -c "cd '${prWork}' && ! git show-ref --verify --quiet refs/heads/abandoned"
 	fAssert     "merged branch gone on origin"     bash -c "cd '${prOrigin}' && ! git show-ref --verify --quiet refs/heads/landed"
@@ -426,6 +513,34 @@ fRunSuite(){
 	fAssert "repo connect from a non-repo dir"  bash -c "cd '${cn}/plain' && '${gitsby}' -q repo connect '${cn}/remote2.git'"
 	fAssert "plain dir now a pushed repo"  bash -c "cd '${cn}/plain' && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]]"
 
+	## The one command that hands a whole directory over has to say what is in it first, and the
+	## list has to be git's answer, not a directory walk - anything else names files 'git add --all'
+	## will skip. Own TMPDIR so the throwaway git dir it asks through can be shown to be cleaned up
+	## (both builds honor TMPDIR for their temp path).
+	git init --quiet --bare -b main "${cn}/remote3.git"
+	local pubDir="${cn}/publish"; local pubTmp="${cn}/publish-tmp"
+	mkdir -p "${pubDir}/sub" "${pubDir}/skipdir" "${pubTmp}"
+	echo keep    > "${pubDir}/keep.txt"
+	echo TOKEN=x > "${pubDir}/.env"
+	echo nested  > "${pubDir}/sub/nested.txt"
+	echo noise   > "${pubDir}/skipme.log"
+	echo noise   > "${pubDir}/skipdir/thing.js"
+	printf '*.log\nskipdir/\n' > "${pubDir}/.gitignore"
+	fAssertOut    "repo connect lists the files it will publish"  'Files to publish:'  bash -c "cd '${pubDir}' && TMPDIR='${pubTmp}' '${gitsby}' -q repo connect '${cn}/remote3.git' 2>&1"
+	fAssert       "the listing probe cleaned up after itself"     bash -c "[[ -z \"\$(ls -A '${pubTmp}')\" ]]"
+	fAssert       "and the dotfile went up, as the listing said"  bash -c "cd '${cn}/remote3.git' && git ls-tree -r --name-only main | grep -qx '\.env'"
+	fAssert       "and the ignored file did not"                  bash -c "cd '${cn}/remote3.git' && ! git ls-tree -r --name-only main | grep -q 'skipme.log'"
+	## The list itself, line by line, on a fresh copy of the same tree: the stray dotfile is the
+	## point of the feature, and an ignored file appearing would make the whole list untrustworthy.
+	local pub2="${cn}/publish2"
+	mkdir -p "${pub2}"; cp -r "${pubDir}/." "${pub2}/"; rm -rf "${pub2}/.git"
+	git init --quiet --bare -b main "${cn}/remote4.git"
+	fAssertOut    "the listing names a stray dotfile"  '^    \.env$'  bash -c "cd '${pub2}' && '${gitsby}' -q repo connect '${cn}/remote4.git' 2>&1"
+	local pub3="${cn}/publish3"
+	mkdir -p "${pub3}"; cp -r "${pubDir}/." "${pub3}/"; rm -rf "${pub3}/.git"
+	git init --quiet --bare -b main "${cn}/remote5.git"
+	fAssertNotOut "the listing honors .gitignore"  'skipme\.log|skipdir'  bash -c "cd '${pub3}' && '${gitsby}' -q repo connect '${cn}/remote5.git' 2>&1"
+
 	## connect refuses remotes with history, unreachable remotes, and empty dirs
 	git init --quiet -b main "${cn}/proj2"
 	( cd "${cn}/proj2" && echo x > x.txt && git add --all && git commit --quiet -m "x" )
@@ -475,11 +590,15 @@ case "$1 $2" in
 	"pr merge")    ## Land the branch on the base, then drop it from the remote. Real gh does the delete
 	               ## over the API, so the caller's origin/* copy survives it - restore the ref to match.
 	               ## FAKE_GH_HEAD lets a check merge a PR whose branch isn't the one we're standing on.
+	               ## It merges what ORIGIN holds, not the local branch - the whole point of the
+	               ## unpushed-commit guard - and deletes the local copy too, with -D, like gh does.
 	               prBranch="${FAKE_GH_HEAD:-$(git branch --show-current)}"
 	               prKeep="$(git rev-parse "refs/remotes/origin/${prBranch}")"
-	               git push --quiet origin "refs/heads/${prBranch}:${FAKE_GH_BASE:-dev}"
+	               git push --quiet origin "${prKeep}:refs/heads/${FAKE_GH_BASE:-dev}"
 	               git push --quiet origin --delete "${prBranch}"
-	               git update-ref "refs/remotes/origin/${prBranch}" "${prKeep}" ;;
+	               git update-ref "refs/remotes/origin/${prBranch}" "${prKeep}"
+	               [[ "${prBranch}" != "$(git branch --show-current)" ]] && git branch -D "${prBranch}" >/dev/null
+	               : ;;
 	"repo create") git init --quiet --bare -b main "${FAKE_GH_REMOTE}"
 	               git remote add origin "${FAKE_GH_REMOTE}"
 	               git push --quiet -u origin HEAD ;;
@@ -553,10 +672,40 @@ GHEOF
 		git checkout --quiet -b prfeat && echo work > work.txt && git add --all && git commit --quiet -m work
 		git push --quiet -u origin prfeat
 	)
-	fAssertOut "pr ok plans the branch switch"  'git checkout dev'  bash -c "cd '${prc}' && PATH='${ghp}' FAKE_GH_BASE=dev '${gitsby}' -q pr ok 7"
+	fAssertPlan "pr ok plans the branch switch"  'git checkout dev'  bash -c "cd '${prc}' && PATH='${ghp}' FAKE_GH_BASE=dev '${gitsby}' -q pr ok 7"
 	fAssert    "pr ok landed on the merge target"  bash -c "cd '${prc}' && [[ \"\$(git branch --show-current)\" == dev ]]"
 	fAssert    "pr ok pulled the merged work"      bash -c "cd '${prc}' && git ls-tree --name-only dev | grep -qx work.txt"
 	fAssert    "the merged branch is gone from origin"  bash -c "cd '${prc}' && ! git ls-remote --heads origin prfeat | grep -q prfeat"
+
+	## 'pr ok <n>' from dev is the routine case, and gh deletes the PR's branch with 'branch -D'
+	## either way - so unpushed commits on it have to be caught even when we aren't standing there.
+	mkdir -p "${gh}/prx"
+	git init --quiet --bare -b main "${gh}/prx/origin.git"
+	local prx="${gh}/prx/c"
+	git clone --quiet "${gh}/prx/origin.git" "${prx}" 2>/dev/null
+	(
+		cd "${prx}" || exit 1
+		echo base > base.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet -b xfeat && echo work > work.txt && git add --all && git commit --quiet -m work
+		git push --quiet -u origin xfeat
+		echo more >> work.txt && git add --all && git commit --quiet -m "never pushed"
+		git checkout --quiet dev
+		## Local-only branch, no origin copy at all: the PR can hold none of it.
+		git checkout --quiet -b xlocal && echo solo > solo.txt && git add --all && git commit --quiet -m solo
+		git checkout --quiet dev
+	)
+	local prxEnv="PATH='${ghp}' FAKE_GH_BASE=dev FAKE_GH_HEAD=xfeat"
+	fAssertFail "pr ok refuses unpushed commits on the PR's branch"  bash -c "cd '${prx}' && ${prxEnv} '${gitsby}' -q pr ok 7"
+	## Assert the reason: the plan prints the branch name either way, so matching 'xfeat' alone
+	## would pass against a build with no guard at all.
+	fAssertOut  "and names that branch, not the current one"  "'xfeat' has commits that never reached origin"  bash -c "cd '${prx}' && ${prxEnv} '${gitsby}' -q pr ok 7 2>&1 || true"
+	fAssert     "and leaves the branch alone"  bash -c "cd '${prx}' && git show-ref --verify --quiet refs/heads/xfeat"
+	fAssert     "and keeps the unpushed commit reachable"  bash -c "cd '${prx}' && git log -1 --pretty=%s xfeat | grep -qx 'never pushed'"
+	fAssertFail "pr ok refuses a branch origin has never seen"  bash -c "cd '${prx}' && PATH='${ghp}' FAKE_GH_BASE=dev FAKE_GH_HEAD=xlocal '${gitsby}' -q pr ok 8"
+	## Same fixture, once the work is pushed: the guard must not stand in the way of the real thing.
+	fAssert "pr ok accepts a fully pushed branch from dev"  bash -c "cd '${prx}' && git push --quiet origin xfeat && ${prxEnv} '${gitsby}' -q pr ok 7"
+	fAssert "and merged what origin held"  bash -c "cd '${prx}' && git ls-tree --name-only dev | grep -qx work.txt"
 
 	## pr create: parks the work, then opens the PR against the merge target. Same fake gh.
 	mkdir -p "${gh}/prnew"
@@ -599,7 +748,7 @@ GHEOF
 	fAssert    "off the default branch, not dev"  bash -c "cd '${hfc}' && git merge-base --is-ancestor origin/main HEAD"
 	## -q still prints the plan, it only skips the prompt - so one run proves both.
 	## (Non-quiet can't be used here: with no tty gitsby fails closed before printing anything.)
-	fAssertOut "br land plans and lands it on the default branch"  'git checkout main' \
+	fAssertPlan "br land plans and lands it on the default branch"  'git checkout main' \
 		bash -c "cd '${hfc}' && echo 'readme v2' > README.md && '${gitsby}' -q -NoFetch update wip >/dev/null 2>&1; '${gitsby}' -q -NoFetch br land 'Reword' 2>&1"
 	fAssert    "it reached the default branch" bash -c "cd '${hfc}' && [[ \"\$(git show origin/main:README.md)\" == 'readme v2' ]]"
 	fAssert    "and was carried back to dev"   bash -c "cd '${hfc}' && [[ \"\$(git show origin/dev:README.md)\" == 'readme v2' ]]"
@@ -750,7 +899,7 @@ GHEOF
 		echo "readme v2" > README.md && git commit --quiet -am "Fix wording" && git push --quiet -u origin hotfix/api
 		git checkout --quiet dev
 	)
-	fAssertOut "pr ok plans the back-merge for a hotfix PR accepted from dev"  'git merge origin/main' \
+	fAssertPlan "pr ok plans the back-merge for a hotfix PR accepted from dev"  'git merge origin/main' \
 		bash -c "cd '${pkc}' && PATH='${ghp}' FAKE_GH_HEAD=hotfix/api FAKE_GH_BASE=main '${gitsby}' -q pr ok 7 2>&1"
 	fAssert    "and the hotfix reached the default branch"  bash -c "cd '${pkc}' && [[ \"\$(git show origin/main:README.md)\" == 'readme v2' ]]"
 	fAssert    "and was carried back to dev"               bash -c "cd '${pkc}' && [[ \"\$(git show origin/dev:README.md)\" == 'readme v2' ]]"
@@ -761,7 +910,7 @@ GHEOF
 		git add --all && git commit --quiet -m feat && git push --quiet -u origin pkfeat
 		git checkout --quiet -b hotfix/standing && git push --quiet -u origin hotfix/standing
 	)
-	fAssertNotOut "a feature PR accepted from a hotfix branch plans no back-merge"  'git merge origin/main' \
+	fAssertNotPlan "a feature PR accepted from a hotfix branch plans no back-merge"  'git merge origin/main' \
 		bash -c "cd '${pkc}' && PATH='${ghp}' FAKE_GH_HEAD=pkfeat FAKE_GH_BASE=dev '${gitsby}' -q pr ok 8 2>&1"
 
 	## The bash version gate. Bash build only - the PowerShell one needs no bash at all.
@@ -786,7 +935,100 @@ GHEOF
 		done
 		## macOS pins /bin/bash at 3.2 forever, so installing a newer one only helps via PATH.
 		fAssert "gitsby resolves bash through PATH, not /bin/bash"  bash -c "head -1 '${root}/bin/gitsby' | grep -qx '#!/usr/bin/env bash'"
+
+		## Installer options. These run once, not per implementation, and never reach the network:
+		## every check either exits during argument parsing, or uses --release (which names the ref
+		## outright, so no latest-release lookup) and stops at the confirmation.
+		local inst="${root}/install.bash"
+		fAssert     "installer --help works"                    bash -c "bash '${inst}' --help"
+		fAssertOut  "and documents --release"                   '\-\-release dev\|stable'   bash -c "bash '${inst}' --help"
+		fAssertOut  "and documents --target"                    '\-\-target user\|system'   bash -c "bash '${inst}' --help"
+		fAssertOut  "and documents --arch"                      '\-\-arch x64\|amd64\|arm64' bash -c "bash '${inst}' --help"
+		## Assert the reason, not just the failure: an installer that never heard of --target also
+		## exits nonzero here, so a bare exit-code check would pass with the option missing entirely.
+		fAssertFail "installer exits nonzero on a bad --target"  bash -c "bash '${inst}' --target bogus"
+		fAssertOut  "installer refuses a bad --target"           "\-\-target takes"          bash -c "bash '${inst}' --target bogus"
+		fAssertOut  "installer refuses a bad --arch"             "\-\-arch takes"            bash -c "bash '${inst}' --arch sparc"
+		fAssertOut  "installer refuses a bad --release"          "\-\-release takes"         bash -c "bash '${inst}' --release beta"
+		fAssertOut  "installer refuses --release with --ref"     'Use --release or --ref'    bash -c "bash '${inst}' --release dev --ref main"
+		fAssertOut  "installer refuses a valueless --target"     "\-\-target needs a value"  bash -c "bash '${inst}' --target"
+		## A ref is interpolated into a download URL, so a path-shaped one installs a script from
+		## some other repo while the printed plan still names this one.
+		fAssertOut  "installer refuses a path-shaped --ref"      'not a path'                bash -c "bash '${inst}' -y --ref '../../evil/repo/main'"
+		fAssertOut  "installer refuses an absolute --ref"        'not a path'                bash -c "bash '${inst}' -y --ref '/etc/passwd'"
+		fAssertOut  "installer refuses a shell-shaped --ref"     "aren't valid in a git ref" bash -c "bash '${inst}' -y --ref 'a b;id'"
+		## Reading the printed plan needs the confirmation to refuse rather than block, which means
+		## no controlling terminal. Without setsid there is no safe way to ask, so skip rather than hang.
+		if command -v setsid >/dev/null 2>&1; then
+			local iHome="${work}/insthome"; mkdir -p "${iHome}"
+			local iRun="setsid env HOME='${iHome}' bash '${inst}' --release dev"
+			fAssertOut "--target user installs under HOME"      "insthome/\.local/bin/gitsby"  bash -c "${iRun} --target user </dev/null"
+			fAssertOut "--target system installs system-wide"   '/usr/local/bin/gitsby'        bash -c "${iRun} --target system </dev/null"
+			fAssertOut "-s still means --target system"         '/usr/local/bin/gitsby'        bash -c "${iRun} -s </dev/null"
+			fAssertOut "--arch is taken but reported inert"     'Ignore --arch arm64'          bash -c "${iRun} --arch arm64 </dev/null"
+		fi
+		## The PowerShell installer's ValidateSet does the same job as the case arms above.
+		if command -v pwsh >/dev/null 2>&1; then
+			local instPs="${root}/install.ps1"
+			fAssertFail "ps installer refuses a bad -Target"      pwsh -NoProfile -File "${instPs}" -Target bogus
+			fAssertFail "ps installer refuses a bad -Arch"        pwsh -NoProfile -File "${instPs}" -Arch sparc
+			fAssertFail "ps installer refuses a bad -Release"     pwsh -NoProfile -File "${instPs}" -Release beta
+			fAssertFail "ps installer refuses -Release with -Ref" pwsh -NoProfile -File "${instPs}" -Release dev -Ref main
+			fAssertOut  "ps installer refuses a path-shaped -Ref"  'not a path'  pwsh -NoProfile -File "${instPs}" -Yes -Ref '../../evil/repo/main'
+			fAssertOut  "ps installer refuses an absolute -Ref"    'not a path'  pwsh -NoProfile -File "${instPs}" -Yes -Ref '/etc/passwd'
+			## The documented one-liners are 'iex' and a scriptblock, neither of which is a script
+			## file - so -File coverage alone says nothing about them. Both must bind their
+			## parameters, refuse without a tty, and leave the calling session alive and unaltered.
+			## These reach the confirmation prompt, so it has to REFUSE rather than wait: no
+			## controlling terminal (setsid) and stdin at EOF, the same way the bash plan checks
+			## above do it. Without that, Read-Host blocks and the whole suite hangs.
+			if command -v setsid >/dev/null 2>&1; then
+				local instDev="${root}/install-dev.ps1"
+				local readInst="\$t = Get-Content -Raw '${instPs}'"
+				fAssertOut "iex form reaches the plan"          'gitsby installer'  fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+				fAssertOut "and refuses without a tty"          'CAUGHT: Aborted'   fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+				fAssertOut "and leaves the session alive"       'HOST ALIVE'        fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+				fAssertOut "scriptblock form binds its options" '/usr/local/bin'    fPwshText "${readInst}; try { & ([scriptblock]::Create(\$t)) -Ref main -Target system } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+				fAssertOut "and leaves the session alive too"   'HOST ALIVE'        fPwshText "${readInst}; try { & ([scriptblock]::Create(\$t)) -Ref main -Target system } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+				fAssertOut "installer leaks no StrictMode"      'strict stayed off' fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { }; try { \$q = \$neverSet; 'strict stayed off' } catch { 'STRICT LEAKED' }"
+				fAssertOut "installer leaks no ErrorAction"     'EAP=Continue'      fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { }; \"EAP=\$ErrorActionPreference\""
+				fAssertOut "dev setup's iex form asks first"    'CAUGHT: Aborted'   fPwshText "\$t = Get-Content -Raw '${instDev}'; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }"
+			fi
+		fi
 	fi
+
+	## PowerShell only. Set-Location moves PowerShell's own location, not the process cwd, so a
+	## script that starts git itself must pass the working directory or reads and writes land in
+	## different repos. Every other check cds in bash before starting pwsh, which hides it.
+	if [[ "$1" == "pwsh" ]]; then
+		local cw="${work}/cwdsplit"
+		mkdir -p "${cw}"
+		git init --quiet -b main "${cw}/launch"
+		( cd "${cw}/launch" && echo x > f.txt && git add --all && git commit --quiet -m "init launch" && echo a > only-in-launch.txt )
+		git init --quiet -b main "${cw}/target"
+		( cd "${cw}/target" && echo y > f.txt && git add --all && git commit --quiet -m "init target" && echo b > only-in-target.txt )
+		## Start pwsh in one repo, move to the other inside the session, then commit.
+		( cd "${cw}/launch" && pwsh -NoProfile -Command "Set-Location '${cw}/target'; & '${root}/bin/gitsby.ps1' -q update 'from target'" ) >/dev/null 2>&1 || true
+		fAssert "pwsh commits where Set-Location points"  bash -c "cd '${cw}/target' && [[ \"\$(git log -1 --pretty=%s)\" == 'from target' ]]"
+		fAssert "and commits that repo's own file"        bash -c "cd '${cw}/target' && git show --stat --pretty=format: HEAD | grep -q only-in-target"
+		fAssert "and leaves the launch repo alone"        bash -c "cd '${cw}/launch' && [[ \"\$(git log -1 --pretty=%s)\" == 'init launch' ]] && [[ -n \"\$(git status --porcelain)\" ]]"
+	fi
+
+	## A pull whose autostash reapply conflicts still exits 0, so nothing downstream noticed and
+	## 'git add --all' marked the conflict resolved - committing the markers and pushing them.
+	## The everyday case: local edits to the same lines a teammate already pushed.
+	local cf="${work}/$1-conflict"
+	mkdir -p "${cf}"
+	git init --quiet --bare -b main "${cf}/origin.git"
+	git clone --quiet "${cf}/origin.git" "${cf}/mine" 2>/dev/null
+	( cd "${cf}/mine" && printf 'line1\nline2\nline3\n' > shared.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main )
+	git clone --quiet "${cf}/origin.git" "${cf}/theirs"
+	( cd "${cf}/theirs" && printf 'line1\nTHEIRS\nline3\n' > shared.txt && git add --all && git commit --quiet -m "their edit" && git push --quiet origin main )
+	( cd "${cf}/mine" && printf 'line1\nMINE\nline3\n' > shared.txt )
+	fAssertFail "update refuses a conflicted autostash reapply"  bash -c "cd '${cf}/mine' && '${gitsby}' -q update 'mine'"
+	fAssertOut  "and names the conflicted file"  'shared\.txt'  bash -c "cd '${cf}/mine' && '${gitsby}' -q update 'mine' 2>&1"
+	fAssert     "and commits no conflict markers"  bash -c "cd '${cf}/mine' && ! git log -p | grep -q '<<<<<<<'"
+	fAssert     "and leaves the merge unresolved for the user"  bash -c "cd '${cf}/mine' && [[ -n \"\$(git diff --name-only --diff-filter=U)\" ]]"
 
 	## no-remote repo: everything still works locally
 	local nr="${work}/$1-noremote"
@@ -797,6 +1039,31 @@ GHEOF
 	( cd "${nr}" && echo b > b.txt )
 	fAssert "br land with no remote"   bash -c "cd '${nr}' && '${gitsby}' -q br land 'merge nb'"
 	fAssert "landed on main"        bash -c "cd '${nr}' && [[ \"\$(git branch --show-current)\" == main ]] && [[ -f b.txt ]]"
+
+	## A default branch that is neither main nor master. Nothing may fall back to the literal
+	## 'main' here: that branch doesn't exist, so it would be checked out, protected and merged
+	## into as a name - after the WIP commit the wrong protected-branch answer already made.
+	local tk="${work}/$1-trunk"
+	git init --quiet -b trunk "${tk}"
+	( cd "${tk}" && echo a > a.txt && git add --all && git commit --quiet -m init && echo wip >> a.txt )
+	fAssertOut "status names the real default branch"  'repo default: trunk'  bash -c "cd '${tk}' && '${gitsby}' -q status"
+	fAssert    "br create works on a trunk-default repo"  bash -c "cd '${tk}' && '${gitsby}' -q br create tfeat && [[ \"\$(git branch --show-current)\" == tfeat ]]"
+	fAssert    "and left no WIP commit on trunk"  bash -c "cd '${tk}' && [[ \"\$(git rev-list --count trunk)\" == 1 ]]"
+	fAssert    "and carried the dirty work over"  bash -c "cd '${tk}' && grep -qx wip a.txt"
+	fAssert    "update works there too"  bash -c "cd '${tk}' && '${gitsby}' -q update 'tw'"
+	fAssert    "br land targets trunk, not a fabricated main"  bash -c "cd '${tk}' && '${gitsby}' -q br land 'landed' && [[ \"\$(git branch --show-current)\" == trunk ]] && ! git show-ref --verify --quiet refs/heads/main"
+
+	## Same shape, but nothing conventional to go on and no origin/HEAD to ask: refuse rather
+	## than guess, and refuse before anything is committed.
+	local tu="${work}/$1-trunkambig"
+	git init --quiet -b mainline "${tu}"
+	( cd "${tu}" && echo a > a.txt && git add --all && git commit --quiet -m init && git branch other && echo wip >> a.txt )
+	fAssertFail "br create refuses when the default branch can't be told"  bash -c "cd '${tu}' && '${gitsby}' -q br create x"
+	fAssertOut  "and says so"  "Can't tell this repo's default branch"     bash -c "cd '${tu}' && '${gitsby}' -q br create x 2>&1"
+	fAssert     "and committed nothing"  bash -c "cd '${tu}' && [[ \"\$(git rev-list --count mainline)\" == 1 ]]"
+	## status is the command you run to find out what is wrong, so it must still work - and must
+	## not print a name it couldn't resolve.
+	fAssertOut  "status still runs and admits it doesn't know"  'repo default: unknown'  bash -c "cd '${tu}' && '${gitsby}' -q status"
 }
 
 echo "gitsby regression tests (fixture: ${work})"
@@ -829,3 +1096,5 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260724 JC: exhaustive clone/connect coverage - no-dev/empty-dir/different-url clone edges, empty-repo + matching-url connect, and the gh owner/name paths (create, add https/ssh, nonempty-refuse) via a hermetic fake gh.
 ##		- 20260725 JC: Release-candidate version checks, and pr ok from the merged branch - the fake gh grew a pr merge that restores the stale origin ref, since that is what makes the real failure reproduce.
 ##		- 20260726 JC: Offline coverage inside a compound command, and the protected-branch refusal now has to name a command that still exists. The old offline check spelled the flag --no-fetch, which pwsh rejects, and matched the rejection - green for the wrong reason.
+##		- 20260727 JC: Installer option coverage (--release/--target/--arch, both implementations). The refusal checks assert the reason rather than the exit code, since an installer that never heard of --target also exits nonzero. Plan checks need the confirmation to refuse instead of block, so they run under setsid and skip where it is absent.
+##		- 20260728 JC: Offline push coverage (branch commands degrade and say so, publishing commands refuse, br land keeps origin's copy of the branch until the merge is pushed), and the file list 'repo connect' shows before a first publication. The offline block gets its own origin: by that point in the suite the shared one has a dev branch, so the merge target was not what the checks assumed.

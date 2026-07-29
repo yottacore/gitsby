@@ -95,7 +95,7 @@ fSyntax(){ { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax=
 	fEcho_Clean "  -q, --quiet, -y ......: Assume yes - no prompts; if committing with no message, one is generated."
 	fEcho_Clean "  --public / --private .: Visibility for the repo 'repo create' makes (default: private)."
 	fEcho_Clean "  --any-identity .......: Proceed when gh's account differs from the remote's ssh key."
-	fEcho_Clean "  --no-fetch ...........: Work offline: skip the pre-command fetch, and the pull."
+	fEcho_Clean "  --no-fetch ...........: Skip the pre-command fetch, and the pull. (Pushes still go out.)"
 	fEcho_Clean "  -h, --help  /  -v, --version"
 	fEcho_Clean "" ;:;}
 
@@ -130,6 +130,7 @@ fMain(){
 	local -i doFetch=1      ## cleared by --no-fetch
 	local -i remoteReachable=1  ## cleared when the pre-command fetch can't reach origin
 	local repoVisibility="private"  ## --public/--private, for 'repo create'
+	local -i sawPublic=0; local -i sawPrivate=0  ## to catch both being given
 	local -i anyIdentity=0          ## --any-identity: a gh/ssh account mismatch here is intended
 	local -i isGhCommand=0          ## command goes through gh at all -> show whose account that is
 	local -i isGhWrite=0            ## command WRITES through gh -> also compare against the ssh key
@@ -143,6 +144,10 @@ fMain(){
 	local -ri parseArgs_maxPositionalArgCount=4
 	fParseArgs "${@}"
 	cmdName="${cmdName,,}"
+
+	## Both visibilities given is a contradiction, not a precedence question - and silently
+	## picking one would publish a repo the caller believes is the other.
+	((sawPublic && sawPrivate)) && fThrowError_Usage "--public and --private are mutually exclusive; pick one."
 
 	## Grouped commands are '<noun> <verb> [args]'. Collapse each pair to one internal token and
 	## shift the positionals down, so everything downstream still deals with a single flat name.
@@ -176,7 +181,10 @@ fMain(){
 	## Sort commands, and route positional arg 2 (message vs branch name; -m wins for messages).
 	local isMutating=1
 	case "${cmdName}" in
-		status|br-list)          isMutating=0 ;;
+		## Trailing arguments are rejected everywhere else, so silently ignoring them here would
+		## make a typo look like it did what you meant. br list's extra lands in cmdArg too, after
+		## the noun shift, so one test covers both.
+		status|br-list)          isMutating=0; [[ -z "${cmdArg}" ]] || fThrowError_Usage "'${meName} ${cmdName/br-list/br list}' takes no arguments (got '${cmdArg}')." ;;
 		pr)                      [[ "${cmdArg,,}" =~ ^(ok|create|new)$ ]] || isMutating=0 ;;
 		update|sync|br-land)
 			[[ -z "${commitMessage}" ]] && commitMessage="${cmdArg}"
@@ -241,14 +249,62 @@ fMain(){
 	if ((inRepo)); then
 		defaultBranchCache="$(fDefaultBranch)"
 		mergeTargetCache="$(fMergeTarget)"
+		## Every branch command checks this out, protects it, or merges into it, so a name we
+		## can't confirm has to stop things here - before a preview promises it and fCmdPush
+		## commits WIP to a branch we wrongly judged unprotected. 'repo *' predates having one.
+		## 'status' is exempt on purpose: it is the command you run to see what is wrong, so it
+		## reports "unknown" instead of refusing.
+		if [[ "${cmdName}" != repo-* && "${cmdName}" != "status" ]] && git rev-parse -q --verify HEAD >/dev/null 2>&1; then
+			[[ -n "${defaultBranchCache}" ]] \
+				|| fThrowError_Usage "Can't tell this repo's default branch. Set it with 'git remote set-head origin --auto', or create a main/master."
+			fBranchExistsLocal "${defaultBranchCache}" || fBranchExistsRemote "${defaultBranchCache}" \
+				|| fThrowError_Usage "This repo's default branch resolves to '${defaultBranchCache}', which exists neither here nor on origin. Fix it with 'git remote set-head origin --auto'."
+		fi
 	fi
+
+	## Commands that exist to publish, refused here rather than halfway through on raw git text -
+	## and far better than "succeeding" having sent nothing. The rest degrade instead: they mean
+	## something locally, so they run and say what they skipped.
+	case "${cmdName}" in
+		sync)    fpRequireOnline "sync"    "Commit locally with '${meName} update', then '${meName} sync' when you are back online." ;;
+		release) fpRequireOnline "release" "A release nobody can fetch isn't one." ;;
+		pr)      if [[ "${prSub}" == "create" || "${prSub}" == "ok" ]]; then
+				fpRequireOnline "pr ${prSub}" "The pull request lives on GitHub; there is no local half to do first."
+			fi ;;
+	esac
 
 	## Release version resolves up front so preview and command agree (and bad input dies early).
 	local releaseTag=""
+	local -i releaseBumped=0  ## set by fpResolveRelease when it invented the version
 	if [[ "${cmdName}" == "release" ]]; then
-		releaseTag="$(fReleaseVersion)"
+		## Sets releaseTag and releaseBumped in this shell - a subshell would discard the flag.
+		fpResolveRelease
 		## Up front, not mid-command: by the time fCmdRelease runs it has already committed and pushed.
 		git rev-parse -q --verify "refs/tags/${releaseTag}" >/dev/null && fThrowError_Usage "Tag '${releaseTag}' already exists."
+		## An invented version on a target that would gain nothing cuts a tag for no release, and
+		## the natural re-run after a failed push cuts a second one on the same commit - so the
+		## first is stranded forever. A version you typed, and promoting a candidate, are
+		## deliberate and stay allowed. Fails open: if we can't tell, the release goes ahead.
+		## 'release' parks first, so uncommitted work or unpushed commits ARE something to release
+		## even when the branches currently look level - the guard only speaks for a settled repo.
+		if ((releaseBumped)) && [[ -z "$(git status --porcelain 2>/dev/null || true)" ]] && ! fIsAhead; then
+			local relMain="$(fDefaultBranch)"
+			local relTarget="${relMain}"
+			fBranchExistsLocal "${relMain}" || relTarget="origin/${relMain}"
+			## The local branch is what gets tagged and pushed, so it is what "nothing new" is
+			## about. Stand down if origin holds commits we don't: the pull would bring them in.
+			local -i relKnown=1
+			if [[ "${relTarget}" == "${relMain}" ]] && fBranchExistsRemote "${relMain}"; then
+				git merge-base --is-ancestor "origin/${relMain}" "${relMain}" 2>/dev/null || relKnown=0
+			fi
+			local relSource=""
+			if fBranchExistsRemote dev; then relSource="origin/dev"; elif fBranchExistsLocal dev; then relSource="dev"; fi
+			if ((relKnown)) && { [[ -z "${relSource}" ]] || git merge-base --is-ancestor "${relSource}" "${relTarget}" 2>/dev/null; }; then
+				local relExisting=""
+				relExisting="$(git describe --exact-match --tags "${relTarget}" 2>/dev/null || true)"
+				[[ -n "${relExisting}" ]] && fThrowError_Usage "Nothing new to release since ${relExisting}. If that tag never reached origin, push it: git push origin ${relExisting}"
+			fi
+		fi
 	fi
 
 	## The mutating pr subcommands check here too, so nothing can fail after the plan was confirmed.
@@ -266,6 +322,14 @@ fMain(){
 			if [[ -n "$(git status --porcelain 2>/dev/null || true)" ]] || fIsAhead; then
 				[[ "${prBranch}" == "${prHeadBranch}" ]] && fThrowError_Usage "'${prBranch}' has changes that aren't on origin, so PR #${prNum} can't include them. Run '${meName} sync' first."
 				fThrowError_Usage "'${prBranch}' has changes that aren't on origin. Park them first: ${meName} sync"
+			fi
+			## Standing somewhere else doesn't make the PR's own branch safe: gh deletes it with
+			## 'branch -D', so unpushed commits on it go too, and 'sync' can't reach it from here.
+			if [[ "${prBranch}" != "${prHeadBranch}" ]] && fBranchExistsLocal "${prHeadBranch}"; then
+				fBranchExistsRemote "${prHeadBranch}" \
+					|| fThrowError_Usage "'${prHeadBranch}' is here but not on origin, so PR #${prNum} holds none of it - and it would be deleted. Push it first: git push -u origin ${prHeadBranch}"
+				fBranchHasUnpushed "${prHeadBranch}" \
+					&& fThrowError_Usage "'${prHeadBranch}' has commits that never reached origin, so PR #${prNum} can't include them - and it would be deleted. Push them first: git push origin ${prHeadBranch}"
 			fi
 		else
 			[[ "${prBranch}" != "$(fMergeTarget)" && "${prBranch}" != "$(fDefaultBranch)" ]] || fThrowError_Usage "'${prBranch}' is what pull requests merge into; there is nothing to propose. Start a branch first: ${meName} br create <name>"
@@ -291,6 +355,10 @@ fMain(){
 		git check-ref-format --branch "${cmdArg}" >/dev/null 2>&1 || fThrowError_Usage "'${cmdArg}' is not a valid branch name."
 		fBranchExistsLocal  "${cmdArg}" && fThrowError_Usage "Branch '${cmdArg}' already exists; use: ${meName} br switch ${cmdArg}"
 		fBranchExistsRemote "${cmdArg}" && fThrowError_Usage "Branch '${cmdArg}' already exists on origin; use: ${meName} br switch ${cmdArg}"
+	elif [[ "${cmdName}" == "br-land" ]]; then
+		## Landing ends in 'git branch -d', so a leftover main/master must be refused here for the
+		## same reason br prune never lists one - and up front, not after a destructive plan was shown.
+		fIsProtectedBranch && fThrowError_Usage "'$(fCurrentBranch)' is a protected branch; landing it would delete it. Run this from a work branch instead."
 	elif [[ "${cmdName}" == "br-switch" ]]; then
 		[[ -z "${cmdArg}" ]] || fBranchExistsLocal "${cmdArg}" || fBranchExistsRemote "${cmdArg}" || fThrowError_Usage "No branch '${cmdArg}' locally or on origin. To create it: ${meName} br create ${cmdArg}"
 		## Refusing a dirty protected branch belongs here too, before the plan is shown and confirmed.
@@ -326,7 +394,7 @@ fMain(){
 		cloneDir="${cmdArg2}"
 		if [[ -z "${cloneDir}" ]]; then
 			cloneDir="${cloneUrl%/}"; cloneDir="${cloneDir%.git}"; cloneDir="${cloneDir##*/}"; cloneDir="${cloneDir##*:}"
-			[[ -n "${cloneDir}" ]] || fThrowError_Usage "Can't derive a directory name from '${cloneUrl}'; give one explicitly."
+			[[ -n "${cloneDir}" ]] || fThrowError_Usage "Can't derive a directory name from '$(fMaskUrl "${cloneUrl}")'; give one explicitly."
 		fi
 		if [[ -e "${cloneDir}" ]]; then
 			local existingUrl=""
@@ -388,7 +456,7 @@ fMain(){
 			else
 				case "$(fpProbeRemote "${cmdArg}")" in
 					missing)  fThrowError_Usage "Can't reach '$(fMaskUrl "${cmdArg}")' (doesn't exist, or no access). Create it first, or on GitHub: ${meName} repo create <owner/name>" ;;
-					nonempty) fThrowError_Usage "'$(fMaskUrl "${cmdArg}")' already has history; clone it instead (${meName} repo clone ${cmdArg}), or reconcile with raw git." ;;
+					nonempty) fThrowError_Usage "'$(fMaskUrl "${cmdArg}")' already has history; clone it instead (${meName} repo clone $(fMaskUrl "${cmdArg}")), or reconcile with raw git." ;;
 					empty)    connectMode="add"; connectUrl="${cmdArg}" ;;
 				esac
 			fi
@@ -424,6 +492,12 @@ fMain(){
 	## mistake waiting to happen, and it is outward-facing. Refuse it unattended (nobody is there
 	## to read a warning); warn interactively, right before the prompt. --any-identity means
 	## the difference is intended.
+	## Prime the probe caches here, in this shell: every use below sits inside a command
+	## substitution, so a cache filled in one of those is discarded and the next call re-probes.
+	## That was two 'gh api user' calls and two 'ssh -T' round trips per command, not one each.
+	if ((isGhCommand)); then fpGhLogin >/dev/null; fi
+	if ((isGhWrite));   then fpSshLogin "${identityProbeUrl}" >/dev/null; fi
+
 	local identityMismatch=""
 	if ((isGhWrite)) && ((! anyIdentity)); then
 		identityMismatch="$(fpIdentityMismatch "$(fpGhLogin)" "$(fpSshLogin "${identityProbeUrl}")")"
@@ -458,6 +532,7 @@ fMain(){
 		fEcho_Clean "Remote .......: ${remoteDisp}"
 		fpShowIdentity "${connectUrl}"
 		fEcho_Clean "Branch .......: (not a git repository yet)"
+		fpShowFilesToPublish
 	else
 		[[ -n "$(fCurrentBranch)" ]] || fThrowError_Usage "Detached HEAD (no current branch); resolve that manually first."
 		fpShowStatus 1
@@ -465,6 +540,12 @@ fMain(){
 	fEcho_Clean ""
 	fEcho_Clean "Going to do (steps marked * only if needed, based on repo state):"
 	fpPreview "${cmdName}"
+	## Said once here, where you can still say no, and again by each step as it skips. repo-*
+	## has no park push to skip - it probes its own remote and fails on its own terms.
+	if [[ "${cmdName}" != repo-* ]] && fIsOffline; then
+		fEcho_Clean ""
+		fEcho_Clean "WARNING: remote unreachable - nothing will be pushed; the work stays local."
+	fi
 	## Last thing before the prompt, so it can't scroll away above the plan.
 	if [[ -n "${identityMismatch}" ]]; then
 		fEcho_Clean ""
@@ -508,6 +589,17 @@ fMain(){
 ## Commands
 
 fCmdCommit(){
+	## Never stage a conflicted tree. 'git add --all' marks a conflicted file resolved, so the
+	## markers themselves would be committed, and then pushed by sync. Ordinary use reaches this:
+	## a pull whose autostash reapply conflicts still exits 0, so nothing upstream of here notices.
+	local -a conflicted=()
+	mapfile -t conflicted < <(git diff --name-only --diff-filter=U 2>/dev/null || true)
+	if ((${#conflicted[@]})); then
+		fEcho_Clean ""
+		fEcho "Unresolved conflicts; nothing was committed:"
+		fpCappedList printf '%s\n' "${conflicted[@]}"
+		fThrowError_Usage "Resolve those, then run '${meName} update' again. Git also kept your pre-pull tree - see 'git stash list'."
+	fi
 	fRun git add --all
 	if [[ -z "$(git status --porcelain 2>/dev/null || true)" ]]; then
 		fEcho "Nothing to commit."
@@ -543,6 +635,47 @@ fPullIfOnline(){
 	((doFetch)) && ((remoteReachable)) && fHasUpstream && fRun git pull --ff-only "${@}"
 :;}
 
+fIsOffline(){
+	## Set by the pre-command fetch, which is the only thing that actually asks origin. --no-fetch
+	## is NOT offline: it declines the incoming round trip, and pushes still go out (a local or
+	## fast remote with nothing to pull is the ordinary reason to pass it). Skipping the fetch does
+	## mean gitsby was never told you are offline, so a push then fails with git's own message.
+	((! remoteReachable))
+}
+
+fPushIfOnline(){
+	## The park push, for a command that still means something without it. The commands that
+	## exist to publish never get here - they are refused up front - so nothing reports success
+	## having sent nothing. Silence would read as published, hence the note.
+	git remote get-url origin &>/dev/null || { fEcho "No 'origin' remote; nothing to push."; return 0; }
+	if fIsOffline; then
+		fEcho "WARNING: remote unreachable; skipping the push. Your work is committed locally - '${meName} sync' publishes it."
+	elif ! fHasUpstream; then
+		fRun git push -u origin HEAD  ## first publish of this branch
+	elif fIsAhead; then
+		fRun git push
+	else
+		fEcho "Nothing to push."
+	fi
+:;}
+
+fpRequireOnline(){
+	## Arg 1: the command as typed. Arg 2: what to do instead.
+	fIsOffline || return 0
+	fThrowError_Usage "Can't reach origin, and '${1}' has nothing left to do without it. ${2}"
+:;}
+
+fpPublishBranch(){
+	## A new branch's own first push, which is separate from the park push above it.
+	local -r branch="${1}"
+	git remote get-url origin &>/dev/null || return 0
+	if fIsOffline; then
+		fEcho "WARNING: remote unreachable; '${branch}' is local only for now - '${meName} sync' publishes it."
+	else
+		fRun git push -u origin "${branch}"
+	fi
+:;}
+
 fCmdCommitPull(){
 	## Pull BEFORE committing. Committing first mints a local commit, so a remote that merely
 	## moved ahead is now diverged and --ff-only refuses - which is the everyday case, not an
@@ -554,15 +687,7 @@ fCmdCommitPull(){
 
 fCmdPush(){
 	fCmdCommitPull
-	if ! git remote get-url origin &>/dev/null; then
-		fEcho "No 'origin' remote; nothing to push."
-	elif ! fHasUpstream; then
-		fRun git push -u origin HEAD  ## first publish of this branch
-	elif fIsAhead; then
-		fRun git push
-	else
-		fEcho "Nothing to push."
-	fi
+	fPushIfOnline
 :;}
 
 fCmdNewBranch(){
@@ -581,9 +706,7 @@ fCmdNewBranch(){
 		fPullIfOnline
 	fi
 	fRun git checkout -b "${newBranch}"
-	if git remote get-url origin &>/dev/null; then
-		fRun git push -u origin "${newBranch}"
-	fi
+	fpPublishBranch "${newBranch}"
 :;}
 
 fCmdGoBranch(){
@@ -617,9 +740,7 @@ fCmdHotfix(){
 		fPullIfOnline
 	fi
 	fRun git checkout -b "${newBranch}"
-	if git remote get-url origin &>/dev/null; then
-		fRun git push -u origin "${newBranch}"
-	fi
+	fpPublishBranch "${newBranch}"
 :;}
 
 fCmdLand(){
@@ -641,11 +762,21 @@ fCmdLand(){
 	fRun git merge --no-ff "${workBranch}" -m "${mergeMessage}"
 	## The merge must reach origin before the remote work branch goes away, or origin
 	## loses its only ref to those commits. Publish an upstream-less target first.
-	if git remote get-url origin &>/dev/null; then
+	local -i mergePublished=0
+	if ! git remote get-url origin &>/dev/null; then
+		:
+	elif fIsOffline; then
+		fEcho "WARNING: remote unreachable; the merge is local only - '${meName} sync' publishes it."
+	else
 		if fHasUpstream; then fRun git push; else fRun git push -u origin HEAD; fi
+		mergePublished=1
 	fi
 	fRun git branch -d "${workBranch}"
-	if fBranchExistsRemote "${workBranch}"; then
+	if ((! mergePublished)) && fBranchExistsRemote "${workBranch}"; then
+		## The same rule as above, from the other side: with the merge still unpublished,
+		## origin's copy of the branch is its only ref to those commits.
+		fEcho "Leaving origin's '${workBranch}' alone until the merge is pushed; '${meName} br prune' clears it later."
+	elif fBranchExistsRemote "${workBranch}"; then
 		## Non-fatal: someone (a PR merge, another clone) may have deleted it already.
 		fEcho_Clean ""
 		fEcho "git push origin --delete ${workBranch} ..."
@@ -742,7 +873,20 @@ fCmdPrCreate(){
 	## GitHub can only diff what origin has, so park the work first - same as br land and release do.
 	local -r title="${1:-}"
 	fCmdPush
-	fRun gh pr create --base "$(fBranchTarget)" --head "$(fCurrentBranch)" --title "${title}" --body ""
+	## Announced by hand rather than through fRun, like 'gh pr review' below: fRun would print
+	## --head and --body too, which the preview doesn't, so the two lines would disagree.
+	local -r prBase="$(fBranchTarget)"
+	fEcho_Clean ""
+	fEcho "gh pr create --base ${prBase} --title \"${title}\" ..."
+	local -i prRc=0
+	gh pr create --base "${prBase}" --head "$(fCurrentBranch)" --title "${title}" --body "" || prRc=$?
+	if ((prRc)); then
+		fEcho_Clean ""
+		echo "${meName}: 'gh pr create' failed (exit ${prRc})." >&2
+		fEcho_Clean_Force ""
+		exit 1
+	fi
+	fEcho_ResetBlankCounter
 :;}
 
 fCmdPrAccept(){
@@ -820,6 +964,8 @@ fHasUpstream(){        git rev-parse --abbrev-ref '@{u}' &>/dev/null ;}
 fIsAhead(){            [[ -n "$(git rev-list -n 1 '@{u}..' 2>/dev/null || true)" ]] ;}  ## -n 1: stop at the first commit; the count doesn't matter
 fBranchExistsLocal(){  git show-ref --verify --quiet "refs/heads/${1:-}" ;}
 fBranchExistsRemote(){ git show-ref --verify --quiet "refs/remotes/origin/${1:-}" ;}
+## Named branch, not HEAD: ahead-ness of a branch you aren't standing on can't be asked with '@{u}'.
+fBranchHasUnpushed(){  [[ -n "$(git rev-list -n 1 "refs/remotes/origin/${1:-}..refs/heads/${1:-}" 2>/dev/null || true)" ]] ;}
 
 fIsProtectedBranch(){
 	## main/master/dev: branches WIP should never be auto-committed to, or deleted.
@@ -1031,14 +1177,26 @@ fpFetchRemote(){
 :;}
 
 fDefaultBranch(){
-	## Prefer origin's HEAD; fall back to whichever of main/master exists locally.
+	## Prefer origin's HEAD; fall back to whichever of main/master exists locally. A repo whose
+	## default is neither (git init -b trunk, init.defaultBranch) and that was never cloned has
+	## no origin/HEAD to read, so a sole local branch is the honest answer there. Guessing "main"
+	## at the end would name a branch that doesn't exist - fMain refuses instead.
 	[[ -n "${defaultBranchCache:-}" ]] && { echo "${defaultBranchCache}"; return 0; }
 	local originHead=""
 	originHead="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
 	[[ -n "${originHead}" ]] && { echo "${originHead#origin/}"; return 0; }
 	git show-ref --verify --quiet refs/heads/main   && { echo "main"; return 0; }
 	git show-ref --verify --quiet refs/heads/master && { echo "master"; return 0; }
-	echo "main"
+	git show-ref --verify --quiet refs/heads/trunk  && { echo "trunk";  return 0; }
+	## Nothing conventional to go on: a lone branch is the default by elimination. A named one has
+	## to stay stable as feature branches come and go, which is why the list above is checked first.
+	local -a locals=()
+	mapfile -t locals < <(git for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null || true)
+	((${#locals[@]} == 1)) && { echo "${locals[0]}"; return 0; }
+	## Unborn HEAD: nothing exists yet, so the name it will get is the honest answer. 'repo connect'
+	## and 'repo create' both legitimately run here, and nothing is checked out to get wrong.
+	((${#locals[@]})) || { git symbolic-ref --quiet --short HEAD 2>/dev/null || echo "main"; return 0; }
+	echo ""
 :;}
 
 fMergeTarget(){
@@ -1068,8 +1226,10 @@ fBackMergeRef(){
 	## default branch never sees it and merging that is a silent no-op; the fetched remote-tracking
 	## ref is the one holding it. After 'br land' the two are the same commit, so this is right
 	## either way - and falls back to the local branch when there's no remote at all.
+	## Offline flips it back: land's push was skipped, so origin's copy is the stale one, and
+	## merging it would carry the hotfix nowhere. ('pr ok' can't run offline at all.)
 	local -r mainBranch="$(fDefaultBranch)"
-	if git rev-parse --verify --quiet "refs/remotes/origin/${mainBranch}" >/dev/null 2>&1
+	if ! fIsOffline && git rev-parse --verify --quiet "refs/remotes/origin/${mainBranch}" >/dev/null 2>&1
 	then echo "origin/${mainBranch}"
 	else echo "${mainBranch}"; fi
 :;}
@@ -1089,9 +1249,7 @@ fpBackMergeToDev(){
 	fEcho "git merge ${mergeRef} ..."
 	if git merge "${mergeRef}" -m "Merge ${mainBranch}"; then
 		fEcho_ResetBlankCounter
-		if git remote get-url origin &>/dev/null; then
-			if fHasUpstream; then fRun git push; else fRun git push -u origin HEAD; fi
-		fi
+		fPushIfOnline
 	else
 		git merge --abort 2>/dev/null || true
 		fEcho_ResetBlankCounter
@@ -1114,14 +1272,16 @@ fpWarnHotfixTouchedBin(){
 	fEcho_Clean "  downloads no longer match it. Cut a patch release when you're ready: ${meName} release"
 :;}
 
-fReleaseVersion(){
-	## Resolve the release tag: validate the given version, or bump patch on the latest v* tag.
+fpResolveRelease(){
+	## Resolve the release tag into releaseTag, and record in releaseBumped whether we invented
+	## the version rather than being told it. Assigns rather than echoes, so both survive.
 	local ver="${cmdArg:-}"
 	ver="${ver#v}"
 	if [[ -n "${ver}" ]]; then
 		[[ "${ver}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]] || fThrowError_Usage "'${ver}' is not a version (want X.Y.Z, optional -suffix). Syntax: ${meName} release [version]"
 	else
 		ver="0.1.0"  ## first release ever, or an unreadable tag
+		releaseBumped=1
 		local -a latestArr=()
 		## versionsort.suffix=- ranks v2.0.0 above its own v2.0.0-rc1; the default sort inverts them.
 		mapfile -t -n 1 latestArr < <(git -c versionsort.suffix=- tag --list 'v[0-9]*' --sort=-v:refname 2>/dev/null || true)
@@ -1130,24 +1290,29 @@ fReleaseVersion(){
 			local -r min="${BASH_REMATCH[3]:-0}"  ## pad short tags like v1.2 or v2020
 			local pat="${BASH_REMATCH[5]:-0}"
 			## A candidate's own version is what comes next: v2.0.0-rc1 -> v2.0.0, not v2.0.1.
-			[[ -n "${BASH_REMATCH[6]}" ]] || pat=$(( pat + 1 ))
+			## A candidate promotion is a deliberate version, not an invented one.
+			if [[ -n "${BASH_REMATCH[6]}" ]]; then releaseBumped=0; else pat=$(( pat + 1 )); fi
 			ver="${maj}.${min}.${pat}"
 		fi
 	fi
-	echo "v${ver}"
+	releaseTag="v${ver}"
 :;}
 
 fRun(){
 	## Announce and run a command verbatim - argument array, no eval, no quote games.
 	## A failing command gets a plain one-line report; the trap dump stays reserved
 	## for unexpected script errors.
+	## Display copy only: a credentialed URL reaching a clone/push argument would otherwise
+	## print the token here and again in the failure line, after the plan carefully masked it.
+	local -a disp=(); local arg=""
+	for arg in "$@"; do disp+=("$(fMaskUrl "${arg}")"); done
 	fEcho_Clean ""
-	fEcho "$* ..."
+	fEcho "${disp[*]} ..."
 	local -i rc=0
 	"${@}" || rc=$?
 	if ((rc)); then
 		fEcho_Clean ""
-		echo "${meName}: '$*' failed (exit ${rc})." >&2
+		echo "${meName}: '${disp[*]}' failed (exit ${rc})." >&2
 		fEcho_Clean_Force ""
 		exit 1
 	fi
@@ -1182,6 +1347,22 @@ fpShowChanges(){
 	fEcho_Clean "Local changes:"
 	fpCappedList git status --short
 	((_lastListCount)) || fEcho_Clean "    (working tree clean)"
+:;}
+
+fpShowFilesToPublish(){
+	## Every in-repo command shows what it is about to touch; this is the one that publishes a
+	## whole directory for the first time, possibly to a public repo, so it owes the same. Asked
+	## through a throwaway git dir OUTSIDE the work tree: that way .gitignore and core.excludesFile
+	## are honored exactly as the real 'git add --all' will honor them (listing files git would
+	## skip is its own kind of wrong), and answering 'n' leaves the directory as it was found.
+	local -r probeDir="$(mktemp -d 2>/dev/null || true)"
+	[[ -n "${probeDir}" && -d "${probeDir}" ]] || return 0
+	env GIT_DIR="${probeDir}" GIT_WORK_TREE="${PWD}" git init --quiet >/dev/null 2>&1 || true
+	fEcho_Clean ""
+	fEcho_Clean "Files to publish:"
+	fpCappedList env GIT_DIR="${probeDir}" GIT_WORK_TREE="${PWD}" git ls-files --others --exclude-standard
+	((_lastListCount)) || fEcho_Clean "    (nothing - the directory is empty, or everything in it is ignored)"
+	rm -rf -- "${probeDir}"
 :;}
 
 fpShowIncoming(){
@@ -1243,7 +1424,10 @@ fpShowStatus(){
 	fEcho_Clean "Directory ....: ${PWD}"
 	fEcho_Clean "Remote .......: ${remoteDisp:-(none)}"
 	((showIdentity)) && fpShowIdentity "${remoteUrl}"
-	local -r branchLine="$(fCurrentBranch) (repo default: $(fDefaultBranch)) $(fBranchSync)"
+	## Say "unknown" rather than assert a name we couldn't resolve - this is the one command that
+	## still runs when the default branch can't be told, so it must not fabricate one.
+	local dfltDisp="$(fDefaultBranch)"; dfltDisp="${dfltDisp:-unknown}"
+	local -r branchLine="$(fCurrentBranch) (repo default: ${dfltDisp}) $(fBranchSync)"
 	fEcho_Clean "Branch .......: ${branchLine% }"
 	fEcho_Clean ""
 	fpShowChanges
@@ -1301,9 +1485,15 @@ fpPreview(){
 			fEcho_Clean "${pad}git push -u origin ${cmdArg} *"
 			;;
 		br-switch)
-			fpPreview sync
-			fEcho_Clean "${pad}git checkout ${cmdArg:-$(fMergeTarget)}"
-			fEcho_Clean "${pad}git pull --ff-only *"
+			## Already on the target: nothing is parked and no checkout happens, so the plan must
+			## not promise an add/commit/push it will not do.
+			if [[ "$(fCurrentBranch)" == "${cmdArg:-$(fMergeTarget)}" ]]; then
+				fEcho_Clean "${pad}git pull --ff-only *"
+			else
+				fpPreview sync
+				fEcho_Clean "${pad}git checkout ${cmdArg:-$(fMergeTarget)}"
+				fEcho_Clean "${pad}git pull --ff-only *"
+			fi
 			;;
 		br-land)
 			fpPreview sync
@@ -1390,14 +1580,12 @@ fpPreview(){
 :;}
 
 
-#•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+#•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 fParseArgs(){
 
-	## Look for stars "✶✶✶✶✶✶✶✶" for places to custom-modify unique instances of this function.
 
-	## GENERIC (don't modify): Populate args array and string.
-	## Note: Args are 1-based index, but the resulting array of args at the end is a normal 0-based index.
-	local -r -i maxPracticalArgCount=50  ## In Bash we have 2MB of args, or somewhere around 10k by count. For readabality and performance, keep it MUCH lower, say ~20-99.
+	## Populate the args array. Args are 1-based here; the resulting array is 0-based.
+	local -r -i maxPracticalArgCount=50  ## In Bash we have 2MB of args, or somewhere around 10k by count. For readability and performance, keep it MUCH lower, say ~20-99.
 	local    -i totalArgCount=0
 	local    -i switchCounter=0
 	local -a    allArgsArr=()
@@ -1411,7 +1599,7 @@ fParseArgs(){
 		allArgsArr+=("${!i}")
 	done
 
-	## GENERIC: Variables for loop
+	## Loop state
 	local    currentArg=""
 	local    lastSwitch=""
 	local    lastSwitchAsPassed=""
@@ -1423,12 +1611,19 @@ fParseArgs(){
 	## Process arguments
 	for currentArg in "${allArgsArr[@]}"; do
 
+		## A value we are already waiting for wins over the option test: '-m -Wall added' is a
+		## commit message, not an option, and there is no other way to write one starting with '-'.
+		if ((expectingSwitchParamForNextArg)); then
+			case "${lastSwitch,,}" in
+				"m"|"message"|"msg") commitMessage="${currentArg}" ;;
+				*)                   fThrowError_Usage "Unknown option: '${lastSwitchAsPassed}', current parameter: '${currentArg}'." ;;
+			esac
+			expectingSwitchParamForNextArg=0
+
 		## Test if an option switch or not
-		if [[ "${currentArg}" =~ ${switchRegex} ]]; then
+		elif [[ "${currentArg}" =~ ${switchRegex} ]]; then
 			## It's an option (either unary or long-option, we don't know yet)
 
-			## Check if this was supposed to NOT be a unary switch (eg expecting a parameter after previous long-option)
-			((expectingSwitchParamForNextArg)) && fThrowError "Expecting a long-option argument for '${lastSwitch}', instead got another option '${currentArg}'."
 			switchCounter=$((switchCounter + 1))
 
 			## Validate switches, and act on unary switches
@@ -1441,52 +1636,39 @@ fParseArgs(){
 
 			case "${tmpStr}" in
 
-			## ✶✶✶✶✶✶✶✶ CUSTOM UNARY SWITCHES
+			## Unary switches
+				## Help works from any position: '<noun> <verb> --help' is the reflex every git user
+				## has, and slot 1 always holds a real command, so nothing can be shadowed. -v is
+				## deliberately not here - it must not turn a mutating command into a silent no-op.
+				"h"|"help")                 fCopyright; fAbout; fSyntax; fEcho_Clean ""; exit 0 ;;
 				"q"|"quiet"|"y"|"yes")      doQuietly=1 ;;
 				"no-fetch"|"nofetch"|"offline")  doFetch=0 ;;
-				"public")                   repoVisibility="public" ;;
-				"private")                  repoVisibility="private" ;;
+				"public")                   repoVisibility="public";  sawPublic=1  ;;
+				"private")                  repoVisibility="private"; sawPrivate=1 ;;
 				"any-identity"|"anyidentity")  anyIdentity=1 ;;
 				"m="*|"message="*|"msg="*)  commitMessage="${currentArg#*=}" ;;  ## -m=MSG / --message=MSG / --msg=MSG (joined)
 
-			## ✶✶✶✶✶✶✶✶ CUSTOM LONG-OPTIONS THAT EXPECT AN ARGUMENT TO FOLLOW
+			## Long-options that expect an argument to follow
 				"m"|"message"|"msg")        expectingSwitchParamForNextArg=1 ;;  ## -m MSG (spaced; value captured below)
 
-				## ¯\_(ツ)_/¯
-				*) fThrowError "Unexpected option in this context: '${currentArg}'." ;;
+				*) fThrowError_Usage "Unexpected option in this context: '${currentArg}'." ;;
 
 			esac
 		else
-			## It's not an option switch; could be a long-option argument, or a positional arg
+			## Not an option and nothing is waiting for a value, so it's a positional argument.
+			positionalArgCounter=$((positionalArgCounter + 1))
+			((positionalArgCounter > parseArgs_maxPositionalArgCount)) && fThrowError_Usage "Too many positional arguments: ${positionalArgCounter}, for max of ${parseArgs_maxPositionalArgCount}."
 
-			if ((expectingSwitchParamForNextArg)); then
-				## Now we know we're expecting a long-option argument
-
-			## ✶✶✶✶✶✶✶✶ CUSTOM LONG-OPTION ARGUMENT TESTS AND PARENT VARIABLE ASSIGNMENTS
-				case "${lastSwitch,,}" in
-					"m"|"message"|"msg") commitMessage="${currentArg}" ;;
-					*)                   fThrowError "Unknown option: '${lastSwitchAsPassed}', current parameter: '${currentArg}'." ;;
-				esac
-				expectingSwitchParamForNextArg=0
-
-			else
-				## Well it must be a positional arg then.
-				positionalArgCounter=$((positionalArgCounter + 1))
-				((positionalArgCounter > parseArgs_maxPositionalArgCount)) && fThrowError "Too many positional arguments: ${positionalArgCounter}, for max of ${parseArgs_maxPositionalArgCount}."
-
-				## ✶✶✶✶✶✶✶✶ CUSTOM POSITIONAL ARG LOGIC (assigns parent variables)
-				case $positionalArgCounter in
-					1) cmdName="${currentArg}" ;;
-					2) cmdArg="${currentArg}"  ;;
-					3) cmdArg2="${currentArg}" ;;
-					4) cmdArg3="${currentArg}" ;;
-					*) fThrowError "Unexpected positional argument # ${positionalArgCounter}: '${currentArg}'." ;;
-				esac
-
-			fi
+			case $positionalArgCounter in
+				1) cmdName="${currentArg}" ;;
+				2) cmdArg="${currentArg}"  ;;
+				3) cmdArg2="${currentArg}" ;;
+				4) cmdArg3="${currentArg}" ;;
+				*) fThrowError_Usage "Unexpected positional argument # ${positionalArgCounter}: '${currentArg}'." ;;
+			esac
 		fi
 	done
-	((expectingSwitchParamForNextArg)) && fThrowError "Never received a parameter for switch '--${lastSwitch}'."
+	((expectingSwitchParamForNextArg)) && fThrowError_Usage "Never received a parameter for switch '--${lastSwitch}'."
 
 :;}  ## 'true' has to be the last thing or this function errors [the joys of the mysterious 'set -e'].
 
@@ -1538,11 +1720,12 @@ _fSingleExitPoint(){
 		exit 1
 	elif [[ "${exitCode}" != "0" ]] && [[ "${exitCode}" != "1" ]]; then  ## Clunky string compare is less likely to fail than integer
 		fEcho_Clean
-		echo -e "Signal .....: '${signal}'"      >&2
-		echo -e "Err# .......: '${exitCode}'"    >&2
-		echo -e "Message ....: '${errMsg}'"      >&2
-		echo -e "At line# ...: '${lineNum}'"     >&2
-		echo -e "Command# ...: '${errCommand}'"  >&2
+		## printf here too: errMsg and errCommand can carry a filename or message the user typed.
+		printf "Signal .....: '%s'\n" "${signal}"      >&2
+		printf "Err# .......: '%s'\n" "${exitCode}"    >&2
+		printf "Message ....: '%s'\n" "${errMsg}"      >&2
+		printf "At line# ...: '%s'\n" "${lineNum}"     >&2
+		printf "Command# ...: '%s'\n" "${errCommand}"  >&2
 		fEcho_Clean_Force
 		fCleanup  ## User cleanup
 	else
@@ -1692,3 +1875,8 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##			- Unmerged branches are kept and listed, never deleted, and there is no --force.
 ##			- Deletes with -D behind gitsby's own containment check: 'git branch -d' asks about the upstream, or HEAD when there is none, so it warned needlessly on one branch shape and silently refused another that was genuinely merged.
 ##			- A branch kept by the delete-time re-check keeps its remote copy too, and a merged current branch is reported as kept rather than left off every list.
+##		- 20260727 JC: A conflicted tree is never committed. A pull whose autostash reapply conflicts exits 0, so 'git add --all' was marking the conflict resolved and committing the markers - then pushing them from sync.
+##		- 20260727 JC: Review round: 'pr ok <n>' checks the PR's own branch for unpushed commits, not whichever branch you're standing on (gh force-deletes it either way); the default branch is resolved rather than assumed to be 'main', and commands refuse when it can't be told; 'release' refuses an invented version with nothing to release; 'br land' won't delete a leftover main/master; '--help' works after a command; a message may start with a dash; '--public' with '--private' is refused; credentialed URLs are masked on the execution line too; the identity probes actually cache now; 'br switch' onto the current branch stops previewing a park it doesn't do.
+##		- 20260727 JC: Review round, smaller items: option and positional typos are usage errors, not crashes (no call-stack line); status and br list reject trailing arguments; 'gh pr create' is announced as it's actually run; the crash dump uses printf, so escape bytes from a filename or message stay inert; template leftovers out of the argument parser.
+##		- 20260728 JC: An unreachable remote no longer fails the push. Commands that mean something locally (br create/hotfix/switch/land) skip it and say so; the ones that exist to publish (sync, pr create, pr ok, release) refuse up front instead. br land holds back the remote branch delete until the merge is published, and the hotfix back-merge falls back to the local default branch when origin's copy is the stale one.
+##		- 20260728 JC: 'repo create' and 'repo connect' from a plain directory list the files they are about to publish, asked through a throwaway git dir outside the work tree so .gitignore is honored and nothing is written into the user's directory.

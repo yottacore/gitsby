@@ -19,6 +19,7 @@ This is a product backlog for the run-up to v2.0.0. After that release, bugs, fe
 	- [Done](#done)
 		- [Done - Bugs](#done---bugs)
 		- [Done - Features and enhancements](#done---features-and-enhancements)
+		- [Done - Code review 20260727b](#done---code-review-20260727b)
 		- [Done - Code review 20260727](#done---code-review-20260727)
 		- [Done - Code review 20260726](#done---code-review-20260726)
 		- [Done - Code reviews 20260725 and 20260723](#done---code-reviews-20260725-and-20260723)
@@ -45,13 +46,31 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Bugs
 
+- 🔘 Every install command in the README 404s, because `main` is still the 2022 tree.
+	- `main` holds no `install.bash`, `install.ps1`, `install-dev.*` or `bin/gitsby.ps1`, so all six documented one-liners fail at the download. Reported from the field.
+	- Cutting v2.0.0 fixes it outright: the merge to `main` puts the files there, and `releases/latest` stops resolving to the 2022 `v1.0.1`, which is a dead end for the default install path (that tag predates the `bin/` layout).
+	- Until then the working incantation is the `dev` URL plus `--release dev` / `-Release dev`. Left undocumented on purpose rather than pointing strangers at `dev`.
+
 ### Features and enhancements
 
 ### Done
 
 #### Done - Bugs
 
+- ✅ `install.ps1` sent a failed download to the Bash installer, which fails the same way.
+	- Both resolve the same stale `releases/latest`, so the advice was a loop. It names `-Release dev` now, matching what `install.bash` already said.
+
+- ✅ An unreachable remote did not make the parking push safe.
+	- `update` and `sync` degraded properly, but `br create`, `br switch`, `br hotfix`, `pr create` and `release` all failed on `git push` with raw git text.
+	- Split by what each command is for. The ones that mean something locally now skip the push and say so, naming `sync` as the way to publish later. The ones that exist to publish - `sync`, `pr create`, `pr ok`, `release` - refuse up front, before the plan promises a push, and name what to do instead.
+	- `br land` needed more than a skipped push: with the merge unpublished, origin's copy of the work branch is its only ref to those commits, so the remote delete is held back too. The hotfix back-merge has the same shape - it merges `origin/main` normally, which unpublished is the stale one, so it falls back to the local branch.
+	- Decided against making `--no-fetch` mean this. The flag declines the incoming round trip, which is a perfectly good thing to want against a reachable remote, and the suite itself uses it that way throughout. Offline is a state the pre-command fetch discovers, not a flag.
+
 #### Done - Features and enhancements
+
+- ✅ Show the file list before first publication (`repo create`, `repo connect` from a plain directory).
+	- Every other command shows what it is about to touch; the one that hands a whole directory over for the first time did not.
+	- The list is what `git add --all` will really add, asked through a throwaway git dir outside the work tree - so `.gitignore` and `core.excludesFile` are honored, and answering "n" leaves the directory exactly as it was found.
 
 - ✅ `br hotfix <name>`: a branch that targets the default branch instead of `dev`, for corrections to published material.
 	- The branching model is written up in `design.md`; this is the command that carries it.
@@ -249,6 +268,115 @@ In each section, items are listed approximately from newest to oldest.
 
 - ✅ Delete stale branch from 2020.
 	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
+
+#### Done - Code review 20260727b
+
+Full pre-release review, run across nine lenses with every finding independently checked before it was accepted. Fifty-three held up; the ones that changed behavior are below. Deep evidence is kept out of the repo.
+
+- ✅ Code Review 20260727b item 1: a conflicted tree was committed, and pushed (both implementations).
+	- `git pull --ff-only --autostash` exits 0 even when reapplying the stashed work conflicts - it only warns - and `git add --all` then marks the conflict resolved.
+	- So the most ordinary case there is, your edit plus a teammate's push to the same lines, committed the `<<<<<<<` markers, reported "(working tree clean)" and "Done.", and `sync` sent them to origin.
+	- Fixed: nothing is staged while any path is unmerged. The conflicted files are listed, and the message points at the stash git kept.
+
+- ✅ Code Review 20260727b item 2: PowerShell read one repository and wrote to another.
+	- Git was started without a working directory, so it ran in the directory pwsh was launched from, while `Set-Location` had moved only PowerShell's own idea of where it was.
+	- Reading state therefore used the repo you were in and committing used the other one: it reported the right directory and the right changes, then committed an unrelated file from elsewhere and exited 0.
+	- The suite could not see it, because every check moves directory in bash before starting pwsh, which makes the two agree.
+	- Fixed: git is given the current location explicitly. New checks move location inside the pwsh session instead.
+
+- ✅ Code Review 20260727b item 3: `pr ok <n>` destroyed unpushed commits on the PR's branch (both implementations).
+	- The guard asked whether the branch you were standing on had unpushed work. Accepting a PR from `dev` - the way it is normally used - asked about the wrong branch entirely.
+	- gh merges what origin holds and then deletes the branch with a force delete, so commits that never reached origin went with it and were reachable from no ref afterwards.
+	- Fixed: the PR's own branch is checked, whichever branch you are on, and the advice names it and how to push it from where you are.
+
+- ✅ Code Review 20260727b item 4: a default branch that is neither `main` nor `master` was invented rather than resolved (both implementations).
+	- With no `origin/HEAD` to read, the answer fell back to the literal `main`. On a `trunk` repo that named a branch which does not exist, so the branch was judged unprotected, work was auto-committed to it (and pushed, when it had an upstream), and the command then died on a checkout of the invented name.
+	- Worse when a stale local `main` existed alongside the real default: `br land` exited 0 having merged into the wrong branch, with no diagnostic at all.
+	- Fixed: `trunk` joins the conventional names, a repo with a single local branch resolves to it, and an unborn repo still answers with the name it will get. When it genuinely cannot be told, commands refuse before anything is committed - `status` alone continues, and says "unknown" rather than a name it does not have.
+
+- ✅ Code Review 20260727b item 5: the documented PowerShell install one-liner never worked, and declining it closed your shell.
+	- `iex` evaluates a top-level `param()` block in the caller's scope, where the allowed-values attribute is checked against its own empty default and fails immediately - so the install path the README leads with died before printing anything.
+	- The other documented form did run, and `exit` inside it ended the calling session; strict mode and the error preference leaked into it on success.
+	- A non-tty stdin also proceeded unasked, because the prompt's empty answer at end-of-input is not the empty string.
+	- Fixed: both installers are a function that is called, they refuse rather than exit, they check for PowerShell 7 before anything reads a variable that 5.1 lacks, and end-of-input counts as no. Both documented shapes now bind their options.
+
+- ✅ Code Review 20260727b item 6: `--ref` was interpolated into a download URL unchecked (both installers).
+	- A path-shaped value walked out of this repository, so a posted one-liner could install somebody else's script - and run it - while the printed plan still named this project. It reads as a harmless branch selector, which is why the confirm prompt was no protection.
+	- Fixed: refs must look like refs, in both installers, and the tag resolved from GitHub's redirect is checked the same way before it reaches a URL.
+
+- ✅ Code Review 20260727b item 7: credentialed remote URLs were masked in the plan and printed in full when the command ran.
+	- A token in a clone or connect URL reached the terminal, and any log or CI capture of it, on the execution line and again in the failure line.
+	- Fixed: the display copy of every argument goes through the existing masking helper; what git receives is untouched. Three messages that echoed the URL raw alongside a masked copy of the same URL were fixed too.
+
+- ✅ Code Review 20260727b item 8: `-v` alongside a command silently did nothing (PowerShell).
+	- The switches bind from any position under pwsh, so `update -v` printed the version and exited 0 - a caller or CI step saw success with the work not done.
+	- Fixed: `-v` is refused when a command is present, matching Bash. `--help` went the other way on purpose: it now works after a command in both builds, since asking a subcommand for help is the reflex every git user has.
+
+- ✅ Code Review 20260727b item 9: a commit message starting with a dash was impossible in Bash and accepted in PowerShell.
+	- Fixed in Bash: a value the parser is already waiting for is that value, whatever it looks like. `-m '-Wall added to CFLAGS'` now commits.
+
+- ✅ Code Review 20260727b item 10: PowerShell handed a remote URL to git unquoted in the pre-flight probe.
+	- PowerShell expanded `*` and `?` against the current directory first, so the probe answered about a different target than the one git was later given - a URL that should have been refused was classified as an empty remote, and the working tree was committed and a bogus remote configured before the push failed. Bash refused before touching anything.
+	- Third recurrence of that class, so the two display-only ssh probes were quoted at the same time.
+
+- ✅ Code Review 20260727b item 11: PowerShell's `pr ok` used a bare fetch where Bash used the guarded one.
+	- No credential-prompt suppression (so it could stop and ask mid-command), no ssh connect timeout, and no `origin/HEAD` heal - and a blip there reported the whole command as failed after the merge had already landed on the server.
+	- Fixed: one helper mirrors the Bash version and both fetch sites use it.
+
+- ✅ Code Review 20260727b item 12: `release` was the one command with no undo and no idempotency (both implementations).
+	- A version it invented was cut even when the target would gain nothing, so a repeated run quietly added tags all pointing at the same commit.
+	- Worse after a failed push: the tag existed locally, and the natural re-run bumped again, so the first version was stranded forever.
+	- Fixed: an invented version with nothing new to release refuses, and names the tag to push if a previous one never left the machine. A version you type, and promoting a candidate, are deliberate and still work on an already-released commit. Uncommitted or unpushed work counts as something to release, since `release` parks first.
+
+- ✅ Code Review 20260727b item 13: `br land` would delete a leftover `main` or `master` (both implementations).
+	- Landing ends in a branch delete, and the protected-branch rule that `br prune` honors was not applied here.
+	- Fixed: refused up front, before a plan containing that delete is shown and confirmed.
+
+- ✅ Code Review 20260727b item 14: `--public` and `--private` together meant opposite things in the two builds.
+	- Fixed: refused as a contradiction. Silently picking one would publish a repo the caller believes is the other.
+
+- ✅ Code Review 20260727b item 15: the identity probe caches never took effect in Bash.
+	- Every use sits inside a command substitution, so the cache filled there was thrown away and the next call probed again - two `gh api user` calls and two `ssh -T` round trips per command, on a link that may be slow or dead. PowerShell was already correct.
+	- Fixed: primed once in the shell that owns the variables.
+
+- ✅ Code Review 20260727b item 16: `install.bash --target system` failed with a raw `install` error when `/usr/local/bin` did not exist.
+	- The user branch created the directory and the sudo branch did not.
+	- Fixed: both create it, with `mkdir -p` rather than `install -d`, which would reset the mode of a directory that already exists. The plan says when a directory will be created.
+
+- ✅ Code Review 20260727b item 17: `br switch <the branch you are on>` previewed an add, commit and push it then did not do.
+	- Nothing is lost, but the confirmed plan said otherwise, which is the one thing the preview exists to prevent.
+	- Fixed: that case previews only the pull. Parking was deliberately not added instead - on a protected branch it would auto-commit, which the design forbids.
+
+- ✅ Code Review 20260727b item 18: every check named "plans X" was satisfied by the execution echo instead of the plan.
+	- The preview is the product's central promise - it is what you read before answering the prompt - and it could have stopped listing the checkout, the back-merge or the push with the suite still fully green.
+	- Fixed: assertions about the plan now match against the plan only, sliced out of the run. Eight checks were pointed at it.
+
+- ✅ Code Review 20260727b item 19: the three fuzz checks whose job is "these option combinations are accepted" passed if the options were refused.
+	- They used the survive-any-outcome helper, so a valid spelling that stopped being recognized looked fine.
+	- Fixed: a helper that requires exit 0, and the combinations respelled so the shared ones are valid in both ports.
+
+- ✅ Code Review 20260727b item 20a: the stronger fuzz assertion immediately found port drift that had been hidden: `-q -y` together was refused in PowerShell.
+	- Both spellings were aliases of one parameter, and PowerShell rejects a parameter given twice. Bash takes either or both.
+	- Fixed: `-y` is its own switch that means the same thing, so every combination the Bash build accepts is accepted.
+
+- ✅ Code Review 20260727b item 20: `sync`'s commit message had no coverage.
+	- It takes a message positionally like `update`, and could have silently fallen back to the auto-generated timestamp with both suites green.
+
+- ✅ Code Review 20260727b items 21-27: the smaller ones, gathered.
+	- PowerShell had no version gate where Bash has one, so a Windows PowerShell 5.1 run failed partway through a command on an undefined variable. It now says what to install, up front.
+	- `status`, `br list` and `pr <n>` silently ignored trailing arguments while every other command rejected them - a typo looked like it did what you meant.
+	- An option or positional typo printed an internal call stack. That is reserved for real crashes; these are usage errors.
+	- `gh pr create` was announced with one command line and run with another. It is now announced by hand, matching both its own preview and the way `gh pr review` is already announced.
+	- PowerShell's `pr view` blamed the wrong command on failure, and could not see `gh pr list` fail at all. Each call reports itself now.
+	- PowerShell dropped the trailing blank line on error and abort exits that Bash prints on every path.
+	- The installers say when they fell back to an unverified copy from the tree, rather than quietly downgrading from a checksum-verified release asset.
+	- Two first-party shell files were outside the shellcheck gate and one glob in the list matched nothing; the gate now covers all 13, and shellcheck is clean across them.
+	- `cicd.bash` printed with `echo -e`, which would animate backslash escapes and ANSI sequences out of a commit message the user typed. It uses `printf` now, like `bin/gitsby` already did - as does the crash dump, which can carry a filename or message.
+	- Template leftovers in the argument parser: an instruction addressed to whoever instantiates the template, non-ASCII markers, a kaomoji, an over-long section rule, and a typo.
+
+- ✅ Code Review 20260727b: perf findings reviewed and deliberately not acted on.
+	- Measured rather than assumed, with a counting `git` shim: `br list` is 6 git processes and `status` 13, both constant at 41 branches. Only `br prune` scales - about 5.5 per branch, 264 at 41 branches, and still 0.57s. The second containment check per branch is the deliberate re-check at delete time.
+	- Nothing on the everyday path forks per item, so there is no problem to fix here. Noted so the next reader doesn't re-derive it.
 
 #### Done - Code review 20260727
 

@@ -32,11 +32,9 @@ SHELL_LINT_GLOBS=(
 	"bin/gitsby"
 	"install*.bash"
 	"cicd/*.bash"
-	"cicd/utility/lint-report.bash"
-	"cicd/utility/git-auto-msg.bash"
+	"cicd/utility/*.bash"
 	"cicd/utility/n8git_backup-and-publish"
 	"cicd/utility/include/*.bash"
-	"utility/*.bash"
 )
 ## Report-only (findings warn, never gate). Empty since the bin/gitsby refactor.
 SHELL_LINT_WARN_GLOBS=()
