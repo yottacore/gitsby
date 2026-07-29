@@ -29,7 +29,7 @@
 .EXAMPLE
     gitsby.ps1 br create featx
 .NOTES
-    History at bottom of script. Copyright © 2014-2026 Jim Collier (ID: 1cv◂‡Vᛦ).
+    History at bottom of script. Copyright © 2014-2026 Jim Collier (CryptogID: ѳ6ᴚ℈𐀘𐇦ɛ𐊁¥Mﾏb϶Δ𐌞).
     Licensed under The MIT License (MIT): https://mit-license.org/
     SPDX-License-Identifier: MIT
 #>

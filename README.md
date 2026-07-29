@@ -13,36 +13,6 @@
 ![Support](https://img.shields.io/badge/Support-Maintained-brightgreen)
 ![Status: Passing](https://img.shields.io/badge/Status-Passing-brightgreen)
 
-<!--
-[![!#/bin/bash](https://img.shields.io/badge/-%23!%2Fbin%2Fbash-1f425f.svg?logo=gnu-bash)](https://www.gnu.org/software/bash/)
-[![made-with-python](https://img.shields.io/badge/Made%20with-Python-1f425f.svg)](https://www.python.org/)
-[![made-with-rust](https://img.shields.io/badge/Made%20with-Rust-1f425f.svg)](https://www.rust-lang.org/)
-![Go](https://img.shields.io/badge/Go-00ADD8?logo=go&logoColor=white)
-![Made with](https://img.shields.io/badge/Made%20with-C%2B%2B-brightgreen?style=plastic)
-![Made with](https://img.shields.io/badge/Made%20with-Unreal%20Engine-critical?style=plastic)
-[![made-with-javascript](https://img.shields.io/badge/Made%20with-JavaScript-1f425f.svg)](https://www.javascript.com)
-![License: GPL v2](https://img.shields.io/badge/License-GPLv2-blue.svg)
-[![License: GPL v2+](https://img.shields.io/badge/License-GPLv2%2B-blue.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html)
-![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
-![Lifecycle: Alpha](https://img.shields.io/badge/Lifecycle-Alpha-orange)
-![Lifecycle: Beta](https://img.shields.io/badge/Lifecycle-Beta-yellow)
-![Lifecycle: RC](https://img.shields.io/badge/Lifecycle-RC-blue)
-![Lifecycle: Stable](https://img.shields.io/badge/Lifecycle-Stable-brightgreen)
-![Lifecycle: Deprecated](https://img.shields.io/badge/Lifecycle-Deprecated-red)
-![Status: Deprecated](https://img.shields.io/badge/Status-Deprecated-orange)
-![Status: Archived](https://img.shields.io/badge/Status-Archived-lightgrey)
-![Lifecycle: EOL](https://img.shields.io/badge/Lifecycle-EOL-lightgrey)
-![Coverage](https://img.shields.io/badge/Coverage-25%25-red)
-![Coverage](https://img.shields.io/badge/Coverage-50%25-orange)
-![Coverage](https://img.shields.io/badge/Coverage-75%25-yellow)
-![Coverage](https://img.shields.io/badge/Coverage-90%25-brightgreen)
-![Status: Passing](https://img.shields.io/badge/Status-Passing-brightgreen)
-![Status: Failing](https://img.shields.io/badge/Status-Failing-red)
-[![GitHub Sponsors](https://img.shields.io/github/sponsors/jim-collier?logo=GitHub%20Sponsors&style=social)](https://github.com/sponsors/jim-collier)
--->
-
 <!-- TOC ignore:true -->
 # Gitsby
 
@@ -71,7 +41,7 @@
 - [Summary](#summary)
 - [Compatibility](#compatibility)
 - [General attributes](#general-attributes)
-- ["Opinionated workflow": What are the opinions?](#opinionated-workflow-what-are-the-opinions)
+- ["Opinionated" workflow: What are these opinions?](#opinionated-workflow-what-are-these-opinions)
 - [How it compares to named industry-standard workflows](#how-it-compares-to-named-industry-standard-workflows)
 - [Why](#why)
 - [Commands](#commands)
@@ -85,7 +55,7 @@
 - [How to develop](#how-to-develop)
 - [Git notes and one-liners](#git-notes-and-one-liners)
 - [Contributing](#contributing)
-- [Copyright and license](#copyright-and-license)
+- [Legal stuff](#legal-stuff)
 
 <!-- /TOC -->
 
@@ -97,7 +67,7 @@ You probably also understand that it's complex, mostly because it's so flexible.
 
 Git has about 82 porcelain commands.
 
-Gitsby has 7. (Or more accurately, 17 total when counting subcommands.)
+Gitsby™ has 7. (Or more accurately, 17 total when counting subcommands.)
 
 How Gitsby shrinks Git's command set:
 
@@ -158,7 +128,7 @@ Sub-objectives in the workflow of each Gitsby command:
 
 1. Be forgiving - any sub-command can be run at any time, and if it doesn't make sense, it won't screw anything up.
 
-## "Opinionated workflow": What are the opinions?
+## "Opinionated" workflow: What are these opinions?
 
 The "opinions" are mostly informed by industry and conventional best-practices, learned over millions upon millions of collective human programmer-hours. There is no reinvention of any wheels - it's just an exposed interface that places gentle guardrails and sanity checks around a way of working with Git that has proven to more easily scale and minimize trouble.
 
@@ -240,27 +210,29 @@ Gitsby doesn't invent a branching model. It implements two of the well-known one
 
 	- Gitsby never rebases, amends, squashes, or force-pushes, and its merges leave the branch visible in the history. If your team requires "squash and merge" or "rebase and merge", this isn't the tool.
 
-One difference matters more than which of these you pick. They're all conventions - a document the team agrees to, and then drifts away from as a deadline gets close. With Gitsby the workflow is the tool. There's no command for "push to `main` anyway", so there's nothing to remember and nothing to quietly skip.
+One difference matters more than which of these you pick: They're all conventions - a document the team agrees to, and then drifts away from as a deadline gets close. With Gitsby, *the workflow is the tool*. There's no command for "push to `main` anyway", so there's nothing to remember and nothing to quietly erode over time.
 
 ## Why
 
-Many years ago, I grew tired of my talented development team of expert git users (and also myself) making repeated, costly mistakes with the tool. Not from incompetence, malice, recklessness, or carelessness - but because git is so powerful that the exact order of operations for tough edge-cases can be both hard to remember, and not inherently obvious.
+Many years ago, I grew tired of my talented development team of expert git users making repeated, costly mistakes with the tool. (It's also possible I'm projecting...)
+
+Not from incompetence, malice, recklessness, or carelessness - but because git is so powerful that the exact order of operations for tough edge-cases can be both hard to remember, and not inherently obvious.
 
 Many of those tough edge-cases arose in the first place, precisely because our git workflow wasn't enforced at an automation level.
 
-(I'm sure this is all sounding too familiar for veteran developers.)
+(I'm sure this is all sounding too familiar for veteran developers, managers, and CTOs.)
 
-I surveyed the git tools and wrappers available at the time and concluded they were also "too flexible" - none enforced an opinionated (enough) workflow based on well-established industry best practices.
+I surveyed the git tools, wrappers, and standards available at the time and concluded they were also "too flexible" - none enforced an opinionated (enough) workflow.
 
 So I wrote x9git, the v1 forerunner of Gitsby.
 
-For years, it worked and was useful. But it wasn't comprehensive enough - bare git was still needed on a regular basis. Also, the version that worked well, while open-sourced and committed to a company repo, never made it into this "permanent home" repo when I created it a couple of years later. That first commit had some broken features I punted on and commented out.
+For years, it worked and was useful. But it wasn't comprehensive enough - bare git was still needed.
 
 Now, years later, this v2 release - renamed Gitsby - finally fulfills the original vision: with a small but comprehensive end-to-end set of bulletproof commands.
 
 ## Commands
 
-What you reach for daily is one word. Everything else is grouped under a noun, so the whole set is discoverable from three starting points. `repository` and `branch` spell out if you prefer them.
+What you reach for daily is a one-word command. Everything else is grouped under a noun, so the whole set is discoverable from three starting points. `repository` and `branch` spell out if you prefer them.
 
 | Command              | Args          | What it does
 | :--                  | :--           | :--
@@ -282,7 +254,9 @@ What you reach for daily is one word. Everything else is grouped under a noun, s
 | `pr create`          | `[title]`     | Push the current branch and open a PR against `dev`/`main` (no title: the last commit subject).
 | `pr ok`              | `<#>`         | Approve and merge a PR.
 
-There is deliberately no bare `commit` and no bare `pull`. Committing without sharing is how work quietly diverges, and pulling without committing is the one thing the rest of the tool never does - `br create`, `br switch`, `br land`, and `pr create` all deal with your work first. `update` is the one command for both, and it pulls *before* it commits so your work lands on top of everyone else's and history stays linear.
+There is deliberately no bare `commit` and no bare `pull`. Committing without sharing is how work quietly diverges, and pulling without committing is the one thing the rest of the tool never does.
+
+`br create`, `br switch`, `br land`, and `pr create` all deal with your work first. `update` is the one command for both, and it pulls *before* it commits so your work lands on top of everyone else's and history stays linear.
 
 Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--public`/`--private` (visibility for `repo create`; private by default), `--no-fetch` (skip the fetch and the pull), `--any-identity` (see below), `-h`, `-v`.
 
@@ -461,7 +435,10 @@ But if you find something that doesn't work as advertised, and/or behaves in a w
 
 Contributions are also welcome. Start with [contributing.md](contributing.md) for process, and [style-guide.md](style-guide.md) for coding style.
 
-## Copyright and license
+## Legal stuff
 
-> Copyright © 2014-2026 Jim Collier (ID: 1cv◂‡Vᛦ)<br />
-> Licensed under the [MIT License](https://mit-license.org/). No warranty.
+> Copyright © 2014-2026 Jim Collier (CryptogID: ѳ6ᴚ℈𐀘𐇦ɛ𐊁¥Mﾏb϶Δ𐌞)<br />
+> Licensed under the [MIT License](https://mit-license.org/)<br />
+> SPDX-License-Identifier: `MIT`.<br />
+> No warranty.<br />
+> Gitsby™ is a [trademark](trademark.md) of Jim Collier.
