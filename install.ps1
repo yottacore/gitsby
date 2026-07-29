@@ -132,7 +132,7 @@ function Install-Gitsby {
         }
     }
     if (-not $downloaded) {
-        throw "Couldn't download gitsby.ps1 at '${Ref}'. If that release has no PowerShell build yet, use the Bash installer (install.bash) or watch the repo for the PowerShell port."
+        throw "Couldn't download gitsby.ps1 at '${Ref}'. (Releases before v2 predate the current layout; try '-Release dev'.)"
     }
     # Say so: only the release asset can be checked against SHA256SUMS, and asking for a
     # release and quietly getting an unverified copy of the tree is not what was agreed.
@@ -200,8 +200,7 @@ try {
 
 
 # History:
-#   - 20260722 JC: Created. Until the PowerShell port ships in a release, the
-#     download step reports that and points at the Bash installer.
+#   - 20260722 JC: Created.
 #   - 20260724 JC: Latest-release lookup via the releases/latest redirect (API scrape
 #     is now the rate-limited fallback); random private temp dir; shebang sanity check;
 #     release-asset downloads verify against a SHA256SUMS asset when published; named
@@ -212,3 +211,4 @@ try {
 #     bound (its ValidateSet validated its own empty default and died), a decline ended the
 #     caller's session, and StrictMode leaked into it. Refuses at EOF instead of proceeding.
 #     PowerShell 7 is now checked before anything reads $IsWindows.
+#   - 20260728 JC: The failed-download message names '-Release dev', like install.bash's does. It used to send you to the Bash installer, which resolves the same stale release and fails the same way.
