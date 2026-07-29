@@ -984,7 +984,10 @@ GHEOF
 			## above do it. Without that, Read-Host blocks and the whole suite hangs.
 			if command -v setsid >/dev/null 2>&1; then
 				local instDev="${root}/install-dev.ps1"
-				local readInst="\$t = Get-Content -Raw '${instPs}'"
+				## Decode the bytes ourselves rather than Get-Content, which quietly drops a BOM.
+				## irm doesn't, so a BOM'd file reaches iex with U+FEFF glued to the shebang and
+				## the first line stops being a comment - which is how a BOM sat here undetected.
+				local readInst="\$t = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes('${instPs}'))"
 				fAssertOut "iex form reaches the plan"          'gitsby installer'  fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
 				fAssertOut "and refuses without a tty"          'CAUGHT: Aborted'   fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
 				fAssertOut "and leaves the session alive"       'HOST ALIVE'        fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
@@ -992,8 +995,15 @@ GHEOF
 				fAssertOut "and leaves the session alive too"   'HOST ALIVE'        fPwshText "${readInst}; try { & ([scriptblock]::Create(\$t)) -Ref main -Target system } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
 				fAssertOut "installer leaks no StrictMode"      'strict stayed off' fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { }; try { \$q = \$neverSet; 'strict stayed off' } catch { 'STRICT LEAKED' }"
 				fAssertOut "installer leaks no ErrorAction"     'EAP=Continue'      fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { }; \"EAP=\$ErrorActionPreference\""
-				fAssertOut "dev setup's iex form asks first"    'CAUGHT: Aborted'   fPwshText "\$t = Get-Content -Raw '${instDev}'; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }"
+				fAssertOut "dev setup's iex form asks first"    'CAUGHT: Aborted'   fPwshText "\$t = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes('${instDev}')); try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }"
 			fi
+			## Byte 0 must be the shebang: a BOM ahead of it means the kernel won't run the
+			## file directly either, which the one-liner checks above can't see.
+			local psFile=""
+			for psFile in "${root}/bin/gitsby.ps1" "${root}/install.ps1" "${root}/install-dev.ps1"; do
+				fAssert "$(basename "${psFile}") starts with a shebang, no BOM" \
+					bash -c "[[ \"\$(head -c2 '${psFile}')\" == '#!' ]]"
+			done
 		fi
 	fi
 
