@@ -57,6 +57,11 @@ In each section, items are listed approximately from newest to oldest.
 
 #### Done - Bugs
 
+- ✅ A byte-order mark on the three PowerShell files broke both installer one-liners and direct execution.
+	- `irm` keeps the BOM, so `iex` and `[scriptblock]::Create` saw it glued to the shebang and the first line stopped being a comment. Both documented one-liners failed for every user, on every platform. Reported from the field.
+	- The same BOM sat ahead of `#!` in `bin/gitsby.ps1`, so `./gitsby.ps1` fell through to the shell instead of running.
+	- `bin/gitsby.ps1` already carried a suppression saying a BOM would break the shebang, so it had been there against the file's own stated intent since the files were written.
+	- The tests couldn't see it: they read the source with `Get-Content`, which drops a BOM silently. They now decode the bytes, and each file's first two bytes are checked.
 - ✅ `install.ps1` sent a failed download to the Bash installer, which fails the same way.
 	- Both resolve the same stale `releases/latest`, so the advice was a loop. It names `-Release dev` now, matching what `install.bash` already said.
 

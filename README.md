@@ -72,6 +72,7 @@
 - [Compatibility](#compatibility)
 - [General attributes](#general-attributes)
 - ["Opinionated workflow": What are the opinions?](#opinionated-workflow-what-are-the-opinions)
+- [How it compares to the named workflows](#how-it-compares-to-the-named-workflows)
 - [Why](#why)
 - [Commands](#commands)
 	- [Which account are you acting as?](#which-account-are-you-acting-as)
@@ -198,6 +199,24 @@ There are many implicit opinions baked in. Here are the main ones:
 - Releases are annotated semver tags (`vX.Y.Z`). If no version is given, take the next one after the latest tag: usually a patch bump, except that a candidate like `v2.0.0-rc1` resolves to `v2.0.0`.
 
 - Look before you leap: fetch first, show the current state and the exact commands about to run, and ask before doing anything that mutates.
+
+## How it compares to the named workflows
+
+Gitsby doesn't invent a branching model. Two of the well-known ones are already in it, and which one you get depends on whether the repo has a `dev` branch. There's nothing to configure.
+
+- [GitHub Flow](https://docs.github.com/en/get-started/using-github/github-flow), in a repo with no `dev`. Branch off the default branch, open a PR, land it back, delete the branch. Whatever is on the default branch is releasable. That suits a project with no release cadence, which is most personal projects and plenty of professional ones.
+
+- [GitFlow](https://nvie.com/posts/a-successful-git-branching-model/), in a repo that has a `dev`. Feature work lands on `dev`. `main` holds only what has been published. A `dev` -> `main` merge is a release, and it carries a tag. `br hotfix` is GitFlow's hotfix branch, back-merge included, so the next release can't quietly undo a published fix.
+
+	- Not all of GitFlow, though. Release branches are left out, along with the `develop` and `feature/` naming. Those earn their keep on a scheduled product with several versions in flight, and cost more than they return everywhere else.
+
+- [GitLab Flow](https://about.gitlab.com/topics/version-control/what-is-gitlab-flow/) has no direct equivalent here. Its idea is downstream branches that mirror environments, or a long-lived branch per release. Gitsby has no concept of an environment, and a release is a tag on `main` rather than a branch. You can keep such branches by hand; Gitsby just won't manage them for you.
+
+- [Trunk-based development](https://trunkbaseddevelopment.com/) is a half-match. Short-lived branches are exactly what Gitsby enforces - create, land, delete, and it will clear up the leftovers for you. Committing straight to trunk behind a feature flag is the other half, and that is the one thing Gitsby refuses to do, even where you have the rights.
+
+- Anything built on rewritten history is out of scope. No rebase, no amend, no squash, no force-push. So a "squash and merge" or "rebase and merge" house style isn't something Gitsby can express, and a team that insists on linear history won't want it.
+
+There's a difference underneath all of these that matters more than which one you pick. They're conventions - a document a team agrees to, then drifts away from under deadline pressure, usually starting with the person in the biggest hurry. Here the workflow is the tool. There's no command for "push to `main` anyway", so the agreement can't erode quietly.
 
 ## Why
 
@@ -385,6 +404,16 @@ It assumes `git` and a shell that can run one of the two scripts below. What it 
 	~~~pwsh
 	irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install-dev.ps1 | iex
 	~~~
+
+Once it's cloned, `cicd/cicd.bash` is the local pipeline, and it's the one command to know. It runs the lint stage, the regression tests, the fuzz vectors, a dogfood install, a demo gif rebuild, and a commit and push at the end. Run it before opening a PR.
+
+~~~bash
+cicd/cicd.bash --quick          # skips fuzz and the demo gif; what you want while iterating
+cicd/cicd.bash                  # everything, and it prompts once for a commit message
+cicd/cicd.bash -y -m "message"  # unattended
+~~~
+
+Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `pwsh` or `gifsicle` won't stop the rest. It's bash-only; on Windows run it under WSL or Git Bash.
 
 ## Git notes and one-liners
 

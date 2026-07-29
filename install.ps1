@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env pwsh
+#!/usr/bin/env pwsh
 <#
 .SYNOPSIS
     Downloads and installs the latest gitsby release (PowerShell edition).
@@ -29,6 +29,7 @@
 function Install-Gitsby {
     # Attribute lives inside the function, not at file scope: the file is also read as text
     # and evaluated (iex / scriptblock), where a top-level attribute is a parse error.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseBOMForUnicodeEncodedFile', '', Justification = 'A BOM breaks the shebang, and survives irm into iex; file is UTF-8 without BOM.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Interactive installer; console text is the point.')]
     [CmdletBinding()]
     param(

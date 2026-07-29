@@ -16,14 +16,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Other work
 -->
 
-## v2.0.0 - 2026-07-26
+## v2.0.0 - 2026-07-28
 
 ### Notes
 
 - First release since 2022, and a rewrite rather than an update.
 - Commands were reorganized, and the pre-2.0 names are gone. The tool is also invoked by a new name, so nothing that worked before was silently changed underneath you.
 
-- Gitsby now ships in two languages, Bash (for *nix, Darwin, and WSL) and PowerShell (for any platform that PowerShell v7 runs on including Linux, macOS, and Windows); with the same commands and the same behavior in each.
+- Gitsby now comes in two languages, Bash (for *nix, Darwin, and WSL) and PowerShell (for any platform that PowerShell v7 runs on including Linux, macOS, and Windows); with the same commands and the same behavior in each.
 
 - Running it needs Git, plus either bash 4.4+ or PowerShell 7+. macOS ships bash 3.2 and never replaces it, and the BSDs ship none, so on those either install a current bash (ahead of `/bin/bash` on your `PATH`) or use the PowerShell build. Gitsby and its installer both say which applies rather than failing with a shell error.
 
@@ -48,6 +48,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- The PowerShell files no longer carry a byte-order mark. It stopped both installer one-liners from running at all, and stopped `gitsby.ps1` from being executable directly on Linux and macOS.
 - Commands you reach for daily stay one word: `update`, `sync`, `status`, `release`. The rest are grouped under a noun - `repo clone` / `repo create` / `repo connect`, `br` / `br create` / `br switch` / `br land`, and `pr` / `pr create` / `pr <n>` / `pr ok <n>`. `repository` and `branch` spell out if you prefer.
 - The pre-2.0 command names (`scompul`, `spush`, `scommit`, `spull`, `mkbranch`, `chbranch`, `list`, `mtm`) were removed rather than aliased. Not all of them worked, and 2.0 is a clean break under a new tool name.
 - `br create`, `br switch`, and `br land` branch off / land on `dev` when the repo has one, else the default branch. `br land` refuses to run from the default branch.
