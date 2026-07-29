@@ -46,11 +46,19 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Bugs
 
+- 🔘 Every install command in the README 404s, because `main` is still the 2022 tree.
+	- `main` holds no `install.bash`, `install.ps1`, `install-dev.*` or `bin/gitsby.ps1`, so all six documented one-liners fail at the download. Reported from the field.
+	- Cutting v2.0.0 fixes it outright: the merge to `main` puts the files there, and `releases/latest` stops resolving to the 2022 `v1.0.1`, which is a dead end for the default install path (that tag predates the `bin/` layout).
+	- Until then the working incantation is the `dev` URL plus `--release dev` / `-Release dev`. Left undocumented on purpose rather than pointing strangers at `dev`.
+
 ### Features and enhancements
 
 ### Done
 
 #### Done - Bugs
+
+- ✅ `install.ps1` sent a failed download to the Bash installer, which fails the same way.
+	- Both resolve the same stale `releases/latest`, so the advice was a loop. It names `-Release dev` now, matching what `install.bash` already said.
 
 - ✅ An unreachable remote did not make the parking push safe.
 	- `update` and `sync` degraded properly, but `br create`, `br switch`, `br hotfix`, `pr create` and `release` all failed on `git push` with raw git text.
