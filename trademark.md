@@ -4,17 +4,6 @@
 <!-- markdownlint-disable MD055 -- Table pipe style [Expected: leading_and_trailing; Actual: leading_only; Missing trailing pipe] -->
 <!-- markdownlint-disable MD041 -- First line in a file should be a top-level heading -->
 
-<!--
-Search and replace:
-
-PRODUCT_NAME
-OWNER_NAME
-OWNER_CRYPOG_ID
-LICENSE_TYPE
-https://github.com///
-productⒶdomain.tld
--->
-
 # Trademark Policy
 
 **Short version:** the code is free; the name is not. You may fork and redistribute the software under its license, but you may not use our name or logo to identify your version, without written permission.
@@ -23,11 +12,11 @@ That said, asking is free - and we'd prefer to say yes. Forks that credibly carr
 
 ## 1. Marks covered
 
-"PRODUCT_NAME", the PRODUCT_NAME logo, and any stylized variants (the "Marks") are trademarks of Jim Collier (CryptogID: OWNER_CRYPOG_ID). We claim these Marks under common law and use them in commerce as PRODUCT_NAME™.
+"Gitsby", the Gitsby logo, and any stylized variants (the "Marks") are trademarks of Jim Collier (CryptogID: ѳ6ᴚ℈𐀘𐇦ɛ𐊁¥Mﾏb϶Δ𐌞). We claim these Marks under common law and use them in commerce as Gitsby™.
 
 ## 2. Relationship to the software license
 
-PRODUCT_NAME is distributed under LICENSE_TYPE. That license grants rights in **copyright** only. It does not grant, and must not be read as granting, any
+Gitsby is distributed under MIT. That license grants rights in **copyright** only. It does not grant, and must not be read as granting, any
 license or right to use the Marks. Trademark rights are expressly reserved.
 
 ## 3. Uses that are always permitted
@@ -36,7 +25,7 @@ No permission from us is needed to:
 
 - Use the Marks in plain text to refer accurately to this project - in documentation, articles, reviews, talks, comparisons, or academic work.
 
-- State factually that your product works with, is built on, is compatible with, or is derived from PRODUCT_NAME (e.g. "Foo, a PRODUCT_NAME fork", "powered by PRODUCT_NAME"), provided the statement is true and your own name is the prominent one.
+- State factually that your product works with, is built on, is compatible with, or is derived from Gitsby (e.g. "Foo, a Gitsby fork", "powered by Gitsby"), provided the statement is true and your own name is the prominent one.
 
 - Redistribute unmodified official builds under the project name.
 
@@ -46,7 +35,7 @@ No permission from us is needed to:
 
 ## 4. Uses that require written permission
 
-- Naming your product, service, company, or app the same as, or confusingly similar to, the Marks - including as a prefix, suffix, or misspelling (e.g. "PRODUCT_NAME Pro", "PRODUCT_NAME Cloud", "PRODUCT_NAMEify").
+- Naming your product, service, company, or app the same as, or confusingly similar to, the Marks - including as a prefix, suffix, or misspelling (e.g. "Gitsby Pro", "Gitsby Cloud", "Gitsbyify").
 
 - Using the Marks in a domain name, social media handle, or app store listing title.
 
@@ -58,7 +47,7 @@ No permission from us is needed to:
 
 ## 5. Modified versions
 
-If you distribute a modified version, you must remove or replace the Marks in the name, logo, and user-facing branding. You may - and we encourage you to - state plainly that your version is derived from PRODUCT_NAME. Do not use the Marks in a way that could lead users to attribute your changes to us.
+If you distribute a modified version, you must remove or replace the Marks in the name, logo, and user-facing branding. You may - and we encourage you to - state plainly that your version is derived from Gitsby. Do not use the Marks in a way that could lead users to attribute your changes to us.
 
 ## 6. Usage requirements
 
@@ -68,11 +57,11 @@ When using the Marks under Section 3:
 
 - Do not alter the logo's colors, proportions, or elements.
 
-- Include an attribution such as: "PRODUCT_NAME is a trademark of OWNER_NAME."
+- Include an attribution such as: "Gitsby is a trademark of Jim Collier."
 
 ## 7. Enforcement and changes
 
-**We may revoke permission for any use that damages the Marks or misleads users**. We may revise this policy at any time; the current version lives at <REPO_URL>. Requests for permission, and reports of misuse, go to productⒶubx9.com.
+**We may revoke permission for any use that damages the Marks or misleads users**. We may revise this policy at any time; the current version lives at <https://github.com/jim-collier/gitsby/>. Requests for permission, and reports of misuse, go to gitsbyⒶubx9.com.
 
 ---
 
