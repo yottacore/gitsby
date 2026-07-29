@@ -72,7 +72,7 @@
 - [Compatibility](#compatibility)
 - [General attributes](#general-attributes)
 - ["Opinionated workflow": What are the opinions?](#opinionated-workflow-what-are-the-opinions)
-- [How it compares to the named workflows](#how-it-compares-to-the-named-workflows)
+- [How it compares industry-standard named workflows](#how-it-compares-industry-standard-named-workflows)
 - [Why](#why)
 - [Commands](#commands)
 	- [Which account are you acting as?](#which-account-are-you-acting-as)
@@ -200,15 +200,15 @@ There are many implicit opinions baked in. Here are the main ones:
 
 - Look before you leap: fetch first, show the current state and the exact commands about to run, and ask before doing anything that mutates.
 
-## How it compares to the named workflows
+## How it compares industry-standard named workflows
 
 Gitsby doesn't invent a branching model. Two of the well-known ones are already in it, and which one you get depends on whether the repo has a `dev` branch. There's nothing to configure.
-
-- [GitHub Flow](https://docs.github.com/en/get-started/using-github/github-flow), in a repo with no `dev`. Branch off the default branch, open a PR, land it back, delete the branch. Whatever is on the default branch is releasable. That suits a project with no release cadence, which is most personal projects and plenty of professional ones.
 
 - [GitFlow](https://nvie.com/posts/a-successful-git-branching-model/), in a repo that has a `dev`. Feature work lands on `dev`. `main` holds only what has been published. A `dev` -> `main` merge is a release, and it carries a tag. `br hotfix` is GitFlow's hotfix branch, back-merge included, so the next release can't quietly undo a published fix.
 
 	- Not all of GitFlow, though. Release branches are left out, along with the `develop` and `feature/` naming. Those earn their keep on a scheduled product with several versions in flight, and cost more than they return everywhere else.
+
+- [GitHub Flow](https://docs.github.com/en/get-started/using-github/github-flow), in a repo with no `dev`. Branch off the default branch, open a PR, land it back, delete the branch. Whatever is on the default branch is releasable. That suits a project with no release cadence, which is most personal projects and plenty of professional ones.
 
 - [GitLab Flow](https://about.gitlab.com/topics/version-control/what-is-gitlab-flow/) has no direct equivalent here. Its idea is downstream branches that mirror environments, or a long-lived branch per release. Gitsby has no concept of an environment, and a release is a tag on `main` rather than a branch. You can keep such branches by hand; Gitsby just won't manage them for you.
 
@@ -220,7 +220,7 @@ There's a difference underneath all of these that matters more than which one yo
 
 ## Why
 
-Many years ago, I grew tired of my development team of expert git users (and myself) making repeated, costly mistakes with the tool. Not from incompetence, malice, recklessness, or carelessness - but because git is so powerful that the exact order of operations for tough edge-cases can be both hard to remember, and not inherently obvious.
+Many years ago, I grew tired of my talented development team of expert git users (and also myself) making repeated, costly mistakes with the tool. Not from incompetence, malice, recklessness, or carelessness - but because git is so powerful that the exact order of operations for tough edge-cases can be both hard to remember, and not inherently obvious.
 
 Many of those tough edge-cases arose in the first place, precisely because our git workflow wasn't enforced at an automation level.
 
@@ -230,7 +230,7 @@ I surveyed the git tools and wrappers available at the time and concluded they w
 
 So I wrote x9git, the v1 forerunner of Gitsby.
 
-For years, it worked and was extremely useful. But it wasn't comprehensive enough - bare git was still needed on a regular basis. Also, the version that worked well, while open-sourced and committed to a company repo, never made it into this "permanent home" repo when I created it a couple of years later. That first commit had some broken features I punted on and commented out.
+For years, it worked and was useful. But it wasn't comprehensive enough - bare git was still needed on a regular basis. Also, the version that worked well, while open-sourced and committed to a company repo, never made it into this "permanent home" repo when I created it a couple of years later. That first commit had some broken features I punted on and commented out.
 
 Now, years later, this v2 release - renamed Gitsby - finally fulfills the original vision: with a small but comprehensive end-to-end set of bulletproof commands.
 
