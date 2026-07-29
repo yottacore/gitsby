@@ -72,7 +72,7 @@
 - [Compatibility](#compatibility)
 - [General attributes](#general-attributes)
 - ["Opinionated workflow": What are the opinions?](#opinionated-workflow-what-are-the-opinions)
-- [How it compares industry-standard named workflows](#how-it-compares-industry-standard-named-workflows)
+- [How it compares to named industry-standard workflows](#how-it-compares-to-named-industry-standard-workflows)
 - [Why](#why)
 - [Commands](#commands)
 	- [Which account are you acting as?](#which-account-are-you-acting-as)
@@ -97,7 +97,7 @@ You probably also understand that it's complex, mostly because it's so flexible.
 
 Git has about 82 porcelain commands.
 
-Gitsby has 7. (Or 17 total when counting subcommands.)
+Gitsby has 7. (Or more accurately, 17 total when counting subcommands.)
 
 How Gitsby shrinks Git's command set:
 
@@ -138,13 +138,11 @@ Gitsby tells you which of these applies if it can't run, rather than failing wit
 
 Gitsby:
 
-- Encourages and partially enforces an "opinionated" workflow. (More on what that means below, because it has become an overloaded word.)
+- Encourages (and enforces where it matters) an "opinionated" workflow. (More on what that means below, because it has become an overloaded word.)
 
 - Doesn't cover fringe use-cases. Reach for bare Git when one comes up, and keep using this for the common stuff.
 
 - Is goal-oriented, rather than task-driven. (The subcommands themselves illustrate what this means.)
-
-To be clear, Gitsby is just shell script. (Two scripts actually, with the same syntax and results.) It exposes a set of goal-oriented commands, sanity-checks the arguments and the underlying filesystem, and chains the appropriate git commands together to accomplish that goal.
 
 Gitsby does nothing that Git can't do directly by a skilled and experienced user - just with far fewer opportunities for common human mistakes.
 
@@ -178,6 +176,8 @@ There are many implicit opinions baked in. Here are the main ones:
 
 	(`br land` and `release` do push the target branch - but that push *is* the merge or the release, not a shortcut around one.)
 
+- Never "git push to friends" (i.e. `git push -f`).
+
 - Pushed history is permanent. No rebase, no amend, no force-push, no rewriting.
 
 - Feature branches are short-lived: branch off, do the work, land it, delete it (local and remote).
@@ -200,23 +200,49 @@ There are many implicit opinions baked in. Here are the main ones:
 
 - Look before you leap: fetch first, show the current state and the exact commands about to run, and ask before doing anything that mutates.
 
-## How it compares industry-standard named workflows
+## How it compares to named industry-standard workflows
 
-Gitsby doesn't invent a branching model. Two of the well-known ones are already in it, and which one you get depends on whether the repo has a `dev` branch. There's nothing to configure.
+Gitsby doesn't invent a branching model. It implements two of the well-known ones, and chooses between them by looking at your repo: if there's a `dev` branch you get one, if there isn't you get the other. Nothing to configure.
 
-- [GitFlow](https://nvie.com/posts/a-successful-git-branching-model/), in a repo that has a `dev`. Feature work lands on `dev`. `main` holds only what has been published. A `dev` -> `main` merge is a release, and it carries a tag. `br hotfix` is GitFlow's hotfix branch, back-merge included, so the next release can't quietly undo a published fix.
+- [GitFlow](https://nvie.com/posts/a-successful-git-branching-model/) - what you get when your repo has a `dev` branch.
 
-	- Not all of GitFlow, though. Release branches are left out, along with the `develop` and `feature/` naming. Those earn their keep on a scheduled product with several versions in flight, and cost more than they return everywhere else.
+	- The idea: everyday work is merged into `dev`. `main` holds only versions that have actually been released. When you're ready to release, `dev` is merged into `main` and given a version tag.
 
-- [GitHub Flow](https://docs.github.com/en/get-started/using-github/github-flow), in a repo with no `dev`. Branch off the default branch, open a PR, land it back, delete the branch. Whatever is on the default branch is releasable. That suits a project with no release cadence, which is most personal projects and plenty of professional ones.
+	- Gitsby does exactly that. `br create` starts a branch from `dev`, `br land` merges it back into `dev`, and `release` merges `dev` into `main` and tags it.
 
-- [GitLab Flow](https://about.gitlab.com/topics/version-control/what-is-gitlab-flow/) has no direct equivalent here. Its idea is downstream branches that mirror environments, or a long-lived branch per release. Gitsby has no concept of an environment, and a release is a tag on `main` rather than a branch. You can keep such branches by hand; Gitsby just won't manage them for you.
+	- GitFlow also has a "hotfix" branch, for fixing something already released without waiting for the next release. `br hotfix` is that branch. It starts from `main`, merges back into `main`, and then copies the fix into `dev` too, so the next release can't undo it.
 
-- [Trunk-based development](https://trunkbaseddevelopment.com/) is a half-match. Short-lived branches are exactly what Gitsby enforces - create, land, delete, and it will clear up the leftovers for you. Committing straight to trunk behind a feature flag is the other half, and that is the one thing Gitsby refuses to do, even where you have the rights.
+	- Two parts of GitFlow are left out on purpose: release branches, and the `develop` / `feature/` branch naming. Both pay off on a product with a release schedule and several versions being maintained at once. Most projects aren't that, so they'd be extra steps for nothing.
 
-- Anything built on rewritten history is out of scope. No rebase, no amend, no squash, no force-push. So a "squash and merge" or "rebase and merge" house style isn't something Gitsby can express, and a team that insists on linear history won't want it.
+- [GitHub Flow](https://docs.github.com/en/get-started/using-github/github-flow) - what you get when your repo has no `dev` branch.
 
-There's a difference underneath all of these that matters more than which one you pick. They're conventions - a document a team agrees to, then drifts away from under deadline pressure, usually starting with the person in the biggest hurry. Here the workflow is the tool. There's no command for "push to `main` anyway", so the agreement can't erode quietly.
+	- The idea: one permanent branch. You branch from it, open a pull request, merge back, delete the branch. Anything on that branch is considered ready to release.
+
+	- Gitsby does this with the same commands as above. They simply start from, and merge back into, `main` (or whatever your default branch is named) instead of `dev`.
+
+	- It's the simpler of the two, and the better fit if you don't do numbered releases.
+
+- [GitLab Flow](https://about.gitlab.com/topics/version-control/what-is-gitlab-flow/) - not supported, on purpose.
+
+	- The idea: extra permanent branches that mirror where the code is running, such as `staging` and `production`. Or one branch per released version, kept alive to receive bug fixes.
+
+	- Gitsby has no notion of a deployment environment, and it records a release as a tag rather than a branch. You can still create and merge such branches with plain `git`; Gitsby just won't manage them for you.
+
+- [Trunk-based development](https://trunkbaseddevelopment.com/) - half supported.
+
+	- The idea: everyone works on one shared branch, the "trunk". Branches, where used at all, last a day or two. Unfinished features are hidden behind feature flags instead of being parked on a branch.
+
+	- The short-lived branch half is what Gitsby already encourages. Branches get created, merged, and deleted, and `br prune` removes the ones you forgot about.
+
+	- The commit-straight-to-trunk half is the one thing Gitsby won't do. It won't push your own work to `main` or `dev`, even when you have permission. A team that works that way should use plain `git`.
+
+- Any workflow that rewrites history - not supported, on purpose.
+
+	- The idea: keep the history tidy and linear. A branch's commits get squashed into one, or replayed on top of the target branch, so it reads as though the branch never existed.
+
+	- Gitsby never rebases, amends, squashes, or force-pushes, and its merges leave the branch visible in the history. If your team requires "squash and merge" or "rebase and merge", this isn't the tool.
+
+One difference matters more than which of these you pick. They're all conventions - a document the team agrees to, and then drifts away from as a deadline gets close. With Gitsby the workflow is the tool. There's no command for "push to `main` anyway", so there's nothing to remember and nothing to quietly skip.
 
 ## Why
 
