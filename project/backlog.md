@@ -53,6 +53,8 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Features and enhancements
 
+- 🔘 Design a way to *fully* automate new releases, end-to-end.
+
 ### Done
 
 #### Done - Bugs
