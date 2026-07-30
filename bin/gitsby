@@ -646,16 +646,18 @@ fIsOffline(){
 fPushIfOnline(){
 	## The park push, for a command that still means something without it. The commands that
 	## exist to publish never get here - they are refused up front - so nothing reports success
-	## having sent nothing. Silence would read as published, hence the note.
+	## having sent nothing. Silence would read as published, hence the note - which names the
+	## branch, because the command may move off it next (br switch, land), and a 'sync' from
+	## wherever you end up would publish that branch, not this one.
 	git remote get-url origin &>/dev/null || { fEcho "No 'origin' remote; nothing to push."; return 0; }
-	if fIsOffline; then
-		fEcho "WARNING: remote unreachable; skipping the push. Your work is committed locally - '${meName} sync' publishes it."
+	if fHasUpstream && ! fIsAhead; then
+		fEcho "Nothing to push."  ## true offline too: nothing local is ahead of the last-known origin
+	elif fIsOffline; then
+		fEcho "WARNING: remote unreachable; skipping the push. The work stays local on '$(fCurrentBranch)' - '${meName} sync' from it publishes it."
 	elif ! fHasUpstream; then
 		fRun git push -u origin HEAD  ## first publish of this branch
-	elif fIsAhead; then
-		fRun git push
 	else
-		fEcho "Nothing to push."
+		fRun git push
 	fi
 :;}
 
@@ -766,7 +768,14 @@ fCmdLand(){
 	if ! git remote get-url origin &>/dev/null; then
 		:
 	elif fIsOffline; then
-		fEcho "WARNING: remote unreachable; the merge is local only - '${meName} sync' publishes it."
+		## A hotfix ends on dev after the back-merge, so a bare 'sync' from there would publish
+		## dev and leave the default branch - the branch the hotfix exists to fix - stale on
+		## origin. The switch's park push publishes dev on the way, so two commands cover both.
+		if ((wasHotfix)); then
+			fEcho "WARNING: remote unreachable; the merge to '${targetBranch}' is local only - once online, '${meName} br switch ${targetBranch}' then '${meName} sync' publishes it."
+		else
+			fEcho "WARNING: remote unreachable; the merge to '${targetBranch}' is local only - '${meName} sync' publishes it."
+		fi
 	else
 		if fHasUpstream; then fRun git push; else fRun git push -u origin HEAD; fi
 		mergePublished=1
@@ -1896,3 +1905,4 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##		- 20260728 JC: An unreachable remote no longer fails the push. Commands that mean something locally (br create/hotfix/switch/land) skip it and say so; the ones that exist to publish (sync, pr create, pr ok, release) refuse up front instead. br land holds back the remote branch delete until the merge is published, and the hotfix back-merge falls back to the local default branch when origin's copy is the stale one.
 ##		- 20260728 JC: 'repo create' and 'repo connect' from a plain directory list the files they are about to publish, asked through a throwaway git dir outside the work tree so .gitignore is honored and nothing is written into the user's directory.
 ##		- 20260730 JC: The SSH identity line asked 'ssh -G' about the bare host, which answers with the OS login name when the target carries no user - so it named neither the connect user nor the account. It probes the connect target now, and leads with the account the key authenticates as, asked of the host rather than inferred from the key filename.
+##		- 20260730 JC: Offline messages tell the truth: a park with nothing to push says so, the skipped-push warning names the branch it means (the command may move off it next), and an offline hotfix land names 'br switch <default>' then 'sync' - a bare 'sync' runs from dev after the back-merge and would have left the default branch stale on origin.

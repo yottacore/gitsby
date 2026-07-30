@@ -22,6 +22,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The SSH line in the status and pre-flight display named the local login rather than the account being acted as. It asked `ssh -G` about the bare host, and with no user in the target ssh answers with the OS login name, so a push as one GitHub account displayed as another name entirely.
 
+- The offline messages now tell the truth. A parking push with nothing to send says "Nothing to push." instead of claiming committed work awaits; the skipped-push warning names the branch it means, since the command may move off it next; and an offline hotfix land names the two commands that actually publish the default branch - a bare `sync` runs from `dev` after the back-merge and would have left the hotfix unshipped.
+
 ### Changed
 
 - The SSH line now leads with the account the key authenticates as, resolved by asking the host, with the connection and key after it. The connect user is the same for every GitHub account and the key shown is only the first candidate ssh would offer, so neither one answered the question the line exists for. Offline it says `unknown` instead of guessing.

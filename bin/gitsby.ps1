@@ -986,16 +986,18 @@ function Assert-Online {
 function Invoke-GitsbyPushIfOnline {
     ## The park push, for a command that still means something without it. The commands that
     ## exist to publish never get here - they are refused up front - so nothing reports success
-    ## having sent nothing. Silence would read as published, hence the note.
+    ## having sent nothing. Silence would read as published, hence the note - which names the
+    ## branch, because the command may move off it next (br switch, land), and a 'sync' from
+    ## wherever you end up would publish that branch, not this one.
     if (-not (Test-GitOrigin)) { Write-StatusLine "No 'origin' remote; nothing to push."; return }
-    if (Test-Offline) {
-        Write-StatusLine "WARNING: remote unreachable; skipping the push. Your work is committed locally - '$($script:meName) sync' publishes it."
+    if ((Test-GitUpstream) -and -not (Test-GitAhead)) {
+        Write-StatusLine 'Nothing to push.'  ## true offline too: nothing local is ahead of the last-known origin
+    } elseif (Test-Offline) {
+        Write-StatusLine "WARNING: remote unreachable; skipping the push. The work stays local on '$(Get-CurrentBranch)' - '$($script:meName) sync' from it publishes it."
     } elseif (-not (Test-GitUpstream)) {
         Invoke-Git -GitArgs @('push', '-u', 'origin', 'HEAD')  ## first publish of this branch
-    } elseif (Test-GitAhead) {
-        Invoke-Git -GitArgs @('push')
     } else {
-        Write-StatusLine 'Nothing to push.'
+        Invoke-Git -GitArgs @('push')
     }
 }
 
@@ -1095,7 +1097,14 @@ function Invoke-GitsbyLand {
     $mergePublished = $false
     if (Test-GitOrigin) {
         if (Test-Offline) {
-            Write-StatusLine "WARNING: remote unreachable; the merge is local only - '$($script:meName) sync' publishes it."
+            ## A hotfix ends on dev after the back-merge, so a bare 'sync' from there would publish
+            ## dev and leave the default branch - the branch the hotfix exists to fix - stale on
+            ## origin. The switch's park push publishes dev on the way, so two commands cover both.
+            if ($wasHotfix) {
+                Write-StatusLine "WARNING: remote unreachable; the merge to '${targetBranch}' is local only - once online, '$($script:meName) br switch ${targetBranch}' then '$($script:meName) sync' publishes it."
+            } else {
+                Write-StatusLine "WARNING: remote unreachable; the merge to '${targetBranch}' is local only - '$($script:meName) sync' publishes it."
+            }
         } else {
             if (Test-GitUpstream) { Invoke-Git -GitArgs @('push') } else { Invoke-Git -GitArgs @('push', '-u', 'origin', 'HEAD') }
             $mergePublished = $true
@@ -1862,3 +1871,4 @@ try {
 ##      - 20260728 JC: An unreachable remote no longer fails the push - local-meaning commands skip it and say so, publishing commands refuse up front; br land holds the remote branch delete until the merge is published - in step with bin/gitsby.
 ##      - 20260728 JC: 'repo create'/'repo connect' from a plain directory list the files they will publish, via a throwaway git dir outside the work tree - in step with bin/gitsby.
 ##      - 20260730 JC: The SSH identity line probes the connect target instead of the bare host (which answered with the OS login name), and leads with the account the key authenticates as - in step with bin/gitsby.
+##      - 20260730 JC: Offline messages tell the truth: a park with nothing to push says so, the skipped-push warning names its branch, and an offline hotfix land names the two commands that publish the default branch - in step with bin/gitsby.
