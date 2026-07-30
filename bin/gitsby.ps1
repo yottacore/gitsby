@@ -429,7 +429,7 @@ function Get-SshTarget {
 
 function Get-SshConnectTarget {
     ## '[user@]host' to actually connect to, so an explicit user in the remote URL is honored.
-    ## Get-SshTarget deliberately returns the bare host - that's what 'ssh -G' wants for display.
+    ## Get-SshTarget returns the bare host, which is the alias to name in the display.
     param([string]$Url)
     $sshHost = Get-SshTarget -Url $Url
     if (-not $sshHost) { return '' }
@@ -678,8 +678,13 @@ function Show-Identity {
     param([string]$RemoteUrl)
     $sshHostAlias = Get-SshTarget -Url $RemoteUrl
     if ($sshHostAlias -and (Get-Command -Name ssh -ErrorAction SilentlyContinue)) {
+        ## Probe the connect target, not the bare host. Without a user, 'ssh -G' answers with the
+        ## local login name - neither who we connect as nor the account we act as, and on a personal
+        ## box it looks plausible enough to be believed. The user part only overrides ssh_config's
+        ## User, exactly as git does, so alias resolution is unaffected.
+        $sshProbeTarget = Get-SshConnectTarget -Url $RemoteUrl
         $sshUser = ''; $sshHost = ''; $keyFile = ''
-        foreach ($line in @(ssh -G -- "$sshHostAlias" 2>$null)) {  ## --: an option-shaped 'host' from .git/config must not parse as an ssh option
+        foreach ($line in @(ssh -G -- "$sshProbeTarget" 2>$null)) {  ## --: an option-shaped 'host' from .git/config must not parse as an ssh option
             $key, $value = ([string]$line) -split '\s+', 2
             switch ($key) {
                 'user' { if (-not $sshUser) { $sshUser = $value } }
@@ -694,9 +699,18 @@ function Show-Identity {
         }
         if ($sshHost) {
             $sshLine = '{0}@{1}' -f $(if ($sshUser) { $sshUser } else { '?' }), $sshHost
-            if ($sshHostAlias -ne $sshHost) { $sshLine += " (alias '${sshHostAlias}')" }
+            if ($sshHostAlias -ne $sshHost) { $sshLine += " via alias '${sshHostAlias}'" }
             if ($keyFile) { $sshLine += ", key ${keyFile}" }
-            Write-PlainLine "SSH ..........: ${sshLine}"
+            ## Neither half above answers the question this line exists for: the connect user is
+            ## 'git' for every GitHub account, and the key is only ssh's first readable candidate,
+            ## not necessarily the one that authenticates. So ask the host who we actually are.
+            ## Offline it stays unknown - the fetch already said why, no need to repeat it.
+            $sshAccount = 'unknown'
+            if (-not (Test-Offline)) {
+                $resolved = Get-SshLogin -RemoteUrl $RemoteUrl
+                if ($resolved -ne '?') { $sshAccount = $resolved }
+            }
+            Write-PlainLine "SSH ..........: ${sshAccount} (${sshLine})"
         }
     }
     Write-PlainLine "Author .......: $(Get-CommitIdentity)"
@@ -705,7 +719,8 @@ function Show-Identity {
         $ghLogin = Get-GhLogin
         $ghLine = $ghLogin
         if ($ghLogin -eq '?') { $ghLine = '(unknown - gh not logged in, or offline)' }
-        ## The ssh comparison costs a round trip, so only the commands that write through gh pay it.
+        ## Only a write can act as the wrong account, so only a write gets the comparison. The
+        ## round trip behind it is the same one the SSH line above already made.
         if ($script:isGhWrite) {
             $sshLogin = Get-SshLogin -RemoteUrl $script:identityProbeUrl
             if (Get-IdentityMismatch -GhLogin $ghLogin -SshLogin $sshLogin) {
@@ -1846,3 +1861,4 @@ try {
 ##      - 20260727 JC: Review round, smaller items: a PowerShell 7 gate up front (5.1 has no $IsWindows, so StrictMode used to surface it partway through a command); status and br list reject trailing arguments; pr view blames the command that actually failed; error and abort exits close with a blank line like bash's - in step with bin/gitsby.
 ##      - 20260728 JC: An unreachable remote no longer fails the push - local-meaning commands skip it and say so, publishing commands refuse up front; br land holds the remote branch delete until the merge is published - in step with bin/gitsby.
 ##      - 20260728 JC: 'repo create'/'repo connect' from a plain directory list the files they will publish, via a throwaway git dir outside the work tree - in step with bin/gitsby.
+##      - 20260730 JC: The SSH identity line probes the connect target instead of the bare host (which answered with the OS login name), and leads with the account the key authenticates as - in step with bin/gitsby.

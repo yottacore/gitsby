@@ -16,6 +16,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Other work
 -->
 
+## vNEXT - unreleased
+
+### Fixed
+
+- The SSH line in the status and pre-flight display named the local login rather than the account being acted as. It asked `ssh -G` about the bare host, and with no user in the target ssh answers with the OS login name, so a push as one GitHub account displayed as another name entirely.
+
+### Changed
+
+- The SSH line now leads with the account the key authenticates as, resolved by asking the host, with the connection and key after it. The connect user is the same for every GitHub account and the key shown is only the first candidate ssh would offer, so neither one answered the question the line exists for. Offline it says `unknown` instead of guessing.
+
 ## v2.0.0 - 2026-07-28
 
 ### Notes
