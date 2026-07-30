@@ -552,6 +552,49 @@ fRunSuite(){
 	fAssertFail "repo connect an empty inited repo rejected"  bash -c "cd '${cn}/bare-repo' && '${gitsby}' -q repo connect '${cn}/remote.git'"
 	fAssert "repo connect accepts a matching explicit url"    bash -c "cd '${cn}/proj' && '${gitsby}' -q repo connect '${cn}/remote.git'"
 
+	## The SSH identity line. Every other check here uses a local-path origin, which has no ssh
+	## identity at all - so this whole line went out untested and shipped naming the OS login.
+	## A fake ssh gives it an scp-like origin to read without leaving the box: -G defaults 'user'
+	## to the OS login when the target carries none (the real behaviour, and the whole bug),
+	## -T greets as the key's account, and anything else fails so git's own fetch reports offline.
+	local sid="${work}/$1-sshid"
+	mkdir -p "${sid}/bin"
+	cat > "${sid}/bin/ssh" <<-'EOF'
+		#!/usr/bin/env bash
+		[[ -n "${FAKE_SSH_LOG:-}" ]] && echo "$*" >> "${FAKE_SSH_LOG}"
+		target="${*: -1}"
+		case "$1" in
+			-G) if [[ "${target}" == *@* ]]; then printf 'user %s\n' "${target%%@*}"; else printf 'user %s\n' "osuser"; fi
+			    printf 'hostname %s\n' "${FAKE_SSH_HOSTNAME:-github.com}"
+			    printf 'identityfile %s\n' "${FAKE_SSH_KEY:-/etc/hostname}"
+			    exit 0 ;;
+			-T) echo "Hi ${FAKE_SSH_LOGIN:-acmedev}! You've successfully authenticated, but GitHub does not provide shell access." >&2; exit 1 ;;
+		esac
+		exit 255
+	EOF
+	chmod +x "${sid}/bin/ssh"
+	local sidp="${sid}/bin:${PATH}"
+	git init --quiet -b main "${sid}/proj"
+	( cd "${sid}/proj" && echo s > s.txt && git add --all && git commit --quiet -m init && git remote add origin git@github.com:acme/api.git )
+	local sidRun="cd '${sid}/proj' && PATH='${sidp}'"
+	## The account the key authenticates as is the question this line exists to answer, so it
+	## leads. The old line answered with the OS login, which is neither that nor the connect user.
+	fAssertOut    "ssh line names the account the key authenticates as"  "SSH \.+: acmedev \("  bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
+	## Anchored to the SSH line: a bare 'git@github.com' also matches the Remote line right above
+	## it, so the loose form was satisfied by the broken output too.
+	fAssertOut    "ssh line names the user git actually connects as"     "SSH \.+: .*\(git@github\.com,"  bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
+	fAssertNotOut "ssh line never reports the OS login"                  'osuser'               bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
+	fAssertOut    "the key is still reported"                            'key /etc/hostname'    bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
+	fAssertOut    "a mutating pre-flight names the account too"          "SSH \.+: acmedev \("  bash -c "${sidRun} '${gitsby}' -q -NoFetch update 'ssh id probe' 2>&1"
+	## A host alias is the case the line was added for: ~/.ssh/config hides the real host and key.
+	git -C "${sid}/proj" remote set-url origin git@gh-acme:acme/api.git
+	fAssertOut "an ssh config alias is named alongside the real host"  "via alias 'gh-acme'"  bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
+	git -C "${sid}/proj" remote set-url origin git@github.com:acme/api.git
+	## Offline (the fetch failed): say we don't know rather than guess, and don't spend the
+	## round trip finding out. Asserting the log is what proves the probe was actually skipped.
+	fAssertOut "an unreachable remote leaves the account unknown"  "SSH \.+: unknown \(git@github\.com"  bash -c "${sidRun} '${gitsby}' -q status"
+	fAssert    "and no identity round trip was attempted"  bash -c "${sidRun} FAKE_SSH_LOG='${sid}/log' '${gitsby}' -q status >/dev/null 2>&1; ! grep -q -- '-T' '${sid}/log'"
+
 	## The pre-command fetch must never sit and ask for credentials: it runs before any of our
 	## own checks, so an https remote you can't authenticate to would block every command.
 	## A git shim records the env the fetch actually got - the only way to see this without a tty.
@@ -1108,3 +1151,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260726 JC: Offline coverage inside a compound command, and the protected-branch refusal now has to name a command that still exists. The old offline check spelled the flag --no-fetch, which pwsh rejects, and matched the rejection - green for the wrong reason.
 ##		- 20260727 JC: Installer option coverage (--release/--target/--arch, both implementations). The refusal checks assert the reason rather than the exit code, since an installer that never heard of --target also exits nonzero. Plan checks need the confirmation to refuse instead of block, so they run under setsid and skip where it is absent.
 ##		- 20260728 JC: Offline push coverage (branch commands degrade and say so, publishing commands refuse, br land keeps origin's copy of the branch until the merge is pushed), and the file list 'repo connect' shows before a first publication. The offline block gets its own origin: by that point in the suite the shared one has a dev branch, so the merge target was not what the checks assumed.
+##		- 20260730 JC: SSH identity coverage. Every other check uses a local-path origin, which has no ssh identity, so the whole line had shipped untested; a fake ssh reproduces the -G user defaulting that caused the bug.

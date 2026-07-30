@@ -213,7 +213,9 @@ See also the release policy under Architecture, which covers how releases are pu
 
 - Lists of files are one per line, truncated to the terminal width and capped, so a large working tree cannot scroll the prompt out of view.
 
-- Before anything touches a remote, the display names who you would be acting as: the SSH identity after host aliases are resolved, and the author that would be stamped on commits. Having more than one account configured is common, and pushing as the wrong one is easy and awkward to undo.
+- Before anything touches a remote, the display names who you would be acting as: the account the SSH key authenticates as, the connection behind it once host aliases are resolved, and the author that would be stamped on commits. Having more than one account configured is common, and pushing as the wrong one is easy and awkward to undo.
+
+- The account is resolved by asking the host, not inferred from the key filename or the connection. A name that is merely likely is worse than none here, because it gets believed. When it cannot be resolved the display says so.
 
 ### Testing
 

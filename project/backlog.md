@@ -59,6 +59,13 @@ In each section, items are listed approximately from newest to oldest.
 
 #### Done - Bugs
 
+- ✅ The SSH identity line named the local login instead of the account being acted as.
+	- It asked `ssh -G` about the bare host. With no user in the target, ssh answers with the OS login name, so a push as `t00mietum` displayed as `collierjr@github.com`. Reported from the field.
+	- That value is neither of the two real ones: the connect user is `git`, and the account is whatever the key authenticates as. On a personal machine it looks plausible enough to be believed, which is worse than showing nothing.
+	- The probe now uses the connect target, so an explicit user in the remote URL is honored the way git honors it. Host alias resolution is unaffected - the user part only overrides `User` in `~/.ssh/config`.
+	- The line also leads with the account now, resolved by asking the host. That is what it existed to answer; the connect user is identical for every GitHub account, and the key shown is only ssh's first readable candidate, not necessarily the one that authenticates. Offline it says `unknown` rather than guessing, and skips the round trip.
+	- Every other test uses a local-path origin, which has no ssh identity, so the whole line had shipped untested. It now has a fake ssh that reproduces the real defaulting behavior.
+
 - ✅ A byte-order mark on the three PowerShell files broke both installer one-liners and direct execution.
 	- `irm` keeps the BOM, so `iex` and `[scriptblock]::Create` saw it glued to the shebang and the first line stopped being a comment. Both documented one-liners failed for every user, on every platform. Reported from the field.
 	- The same BOM sat ahead of `#!` in `bin/gitsby.ps1`, so `./gitsby.ps1` fell through to the shell instead of running.
@@ -207,7 +214,7 @@ In each section, items are listed approximately from newest to oldest.
 	- Show what's going to change (including a list of changed files, piped through an internal equivalent of `... | less -FX` if necessary)
 	- git status without line-breaks, and SSH connection info. And a prompt to continue. All with standard 1 blank line where appropriate.
 	- Every mutating command already previewed its plan and prompted; this added the identity and change detail. `status` shows the same block.
-	- SSH line resolves the remote URL through `ssh -G`, so a `~/.ssh/config` host alias shows the real host, user, and key it will use - the point being to catch acting as the wrong account before you push. Author line shows what git will actually stamp on the commit.
+	- SSH line resolves the remote URL through `ssh -G`, so a `~/.ssh/config` host alias shows the real host and key behind it - the point being to catch acting as the wrong account before you push. (It later grew the account itself, which is the part that actually answers that; see the bug above.) Author line shows what git will actually stamp on the commit.
 	- Changes list one file per line (short form), truncated to the terminal width and capped at 25 with an "and N more" tail - the `less -FX` idea without depending on a pager. Incoming section lists what a pull would change, and the branch line carries ahead/behind.
 
 - ✅ Better command names; dev-aware merging; PR and release commands (both implementations).
