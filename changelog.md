@@ -20,7 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- The pre-flight display for `br create` and `br hotfix` now names the branch it is about to make, and the branch it will come off: `New branch ...: main :: hotfix/readme`. The Branch line reports where you are standing, which for a hotfix started from `dev` is not where the new branch begins - so nothing on screen connected the two.
+- The pre-flight display for `br create` and `br hotfix` now names the branch it is about to make, and the branch it will come off: `New branch ...: main :: hotfix/readme`. The current-branch line reports where you are standing, which for a hotfix started from `dev` is not where the new branch begins - so nothing on screen connected the two.
 
 - `br list` now says what the repo's default branch is before listing.
 
@@ -28,7 +28,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Branch names in the status and pre-flight display are shown against the branch they land on, as `dev :: feature/retries`. `main`, `master` and `dev` are shown bare, since they are not branched off anything you would work from.
 
-- The repo's default branch has its own line rather than being appended to the Branch line in parentheses.
+- The repo's default branch has its own line rather than being appended to the current-branch line in parentheses.
+
+- The status block labels the branch you are on `Current branch:` rather than `Branch:`, so it reads against the `Default branch:` and `New branch:` lines beside it.
 
 ## v2.0.1 - 2026-07-30
 

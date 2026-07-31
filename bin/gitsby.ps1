@@ -764,8 +764,8 @@ function Show-RepoStatus {
     if (-not $dfltDisp) { $dfltDisp = 'unknown' }
     Write-PlainLine "Default branch: ${dfltDisp}"
     $branchLine = "$(Get-BranchDisplay) $(Get-BranchSync)"
-    Write-PlainLine "Branch .......: $($branchLine.TrimEnd())"
-    ## The Branch line above is where you ARE, which is exactly what misled here - it says 'dev'
+    Write-PlainLine "Current branch: $($branchLine.TrimEnd())"
+    ## The line above is where you ARE, which is exactly what misled here - it says 'dev'
     ## while the plan checks out main. This says where you'll end up, and off what.
     switch ($CommandName) {
         'br-create' { Write-PlainLine "New branch ...: $(Get-MergeTarget) :: $($script:cmdArg)"; break }
@@ -1805,7 +1805,7 @@ try {
         Write-PlainLine "Directory ....: $(Get-Location)"
         Write-PlainLine "Remote .......: ${remoteDisp}"
         Show-Identity -RemoteUrl $script:connectUrl
-        Write-PlainLine 'Branch .......: (not a git repository yet)'
+        Write-PlainLine 'Current branch: (not a git repository yet)'
         Show-FilesToPublish
     } else {
         if (-not (Get-CurrentBranch)) { throw 'Detached HEAD (no current branch); resolve that manually first.' }

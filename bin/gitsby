@@ -534,7 +534,7 @@ fMain(){
 		fEcho_Clean "Directory ....: ${PWD}"
 		fEcho_Clean "Remote .......: ${remoteDisp}"
 		fpShowIdentity "${connectUrl}"
-		fEcho_Clean "Branch .......: (not a git repository yet)"
+		fEcho_Clean "Current branch: (not a git repository yet)"
 		fpShowFilesToPublish
 	else
 		[[ -n "$(fCurrentBranch)" ]] || fThrowError_Usage "Detached HEAD (no current branch); resolve that manually first."
@@ -1467,9 +1467,9 @@ fpShowStatus(){
 	local dfltDisp="$(fDefaultBranch)"; dfltDisp="${dfltDisp:-unknown}"
 	fEcho_Clean "Default branch: ${dfltDisp}"
 	local -r branchLine="$(fBranchDisp) $(fBranchSync)"
-	fEcho_Clean "Branch .......: ${branchLine% }"
-	## Pre-flight only, and only for the two commands that make a branch: the Branch line above is
-	## where you ARE, which is exactly what misled here - it says 'dev' while the plan checks out main.
+	fEcho_Clean "Current branch: ${branchLine% }"
+	## Pre-flight only, and only for the two commands that make a branch: the line above is where
+	## you ARE, which is exactly what misled here - it says 'dev' while the plan checks out main.
 	## Defaulted: these are fMain's locals, reached by scope. A display line must never be the
 	## thing that trips 'set -u' if this is ever called from somewhere else.
 	if ((showIdentity)); then

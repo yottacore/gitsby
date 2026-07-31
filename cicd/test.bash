@@ -839,12 +839,12 @@ GHEOF
 	fAssertFail "br hotfix with no name rejected"  bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix"
 	fAssertFail "the internal token stays untypeable"  bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br-hotfix x"
 
-	## The Branch line says where you ARE, and nothing used to connect that to where the new
+	## The current-branch line says where you ARE, and nothing used to connect that to where the new
 	## branch comes off: it read 'dev' while the plan below it checked out main.
 	## -q still prints the whole block; it only skips the prompt.
 	fAssertOut "br hotfix names the branch it will make, and its base"  '^New branch \.+: main :: hotfix/base1$' \
 		bash -c "cd '${hfc}' && git checkout --quiet dev && '${gitsby}' -q -NoFetch br hotfix base1 2>&1"
-	fAssertOut "and still reports the branch you're standing on"  '^Branch \.+: dev' \
+	fAssertOut "and still reports the branch you're standing on"  '^Current branch: dev' \
 		bash -c "cd '${hfc}' && git checkout --quiet dev && '${gitsby}' -q -NoFetch br hotfix base2 2>&1"
 	fAssertOut "br create names dev as the base"  '^New branch \.+: dev :: base3$' \
 		bash -c "cd '${hfc}' && git checkout --quiet dev && '${gitsby}' -q -NoFetch br create base3 2>&1"
@@ -856,17 +856,17 @@ GHEOF
 
 	## A work branch is shown against what it lands on; main/master/dev are off nothing, so they
 	## stay bare - "dev :: dev" would be noise, and "main :: dev" is only true at release time.
-	fAssertOut "a feature branch shows the base it lands on"  '^Branch \.+: dev :: base3' \
+	fAssertOut "a feature branch shows the base it lands on"  '^Current branch: dev :: base3' \
 		bash -c "cd '${hfc}' && git checkout --quiet base3 && '${gitsby}' -q status 2>&1"
-	fAssertOut "a hotfix branch shows the default branch instead"  '^Branch \.+: main :: hotfix/base1' \
+	fAssertOut "a hotfix branch shows the default branch instead"  '^Current branch: main :: hotfix/base1' \
 		bash -c "cd '${hfc}' && git checkout --quiet hotfix/base1 && '${gitsby}' -q status 2>&1"
-	fAssertNotOut "dev is shown bare"  '^Branch \.+: [^ ]+ :: dev' \
+	fAssertNotOut "dev is shown bare"  '^Current branch: [^ ]+ :: dev' \
 		bash -c "cd '${hfc}' && git checkout --quiet dev && '${gitsby}' -q status 2>&1"
 
-	## The default branch is its own line now, not a parenthetical tacked onto Branch.
+	## The default branch is its own line now, not a parenthetical tacked onto the branch line.
 	fAssertOut "the default branch gets its own line"  '^Default branch: main$' \
 		bash -c "cd '${hfc}' && '${gitsby}' -q status 2>&1"
-	fAssertNotOut "and is no longer tacked onto the Branch line"  'repo default:' \
+	fAssertNotOut "and is no longer tacked onto the branch line"  'repo default:' \
 		bash -c "cd '${hfc}' && '${gitsby}' -q status 2>&1"
 	## br list never said what the default was, which is half of what a listing is for.
 	fAssertOut "br list says what the default branch is"  '^Default branch: main$' \
