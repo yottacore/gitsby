@@ -34,6 +34,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- The PowerShell installer verifies the download again. It read the release's `SHA256SUMS` as text, but GitHub serves that file as binary and PowerShell returns the body as raw bytes for anything it doesn't consider text - so no checksum was ever found, the default install went unverified, and it said the release had no `SHA256SUMS` when it did. The Bash installer was never affected.
+
 - `br list` no longer refuses to run in a repo whose default branch can't be told. It is a read-only command - like `status`, it now reports `Default branch: unknown` and lists the branches, which is exactly what you need to see to fix the situation.
 
 ## v2.0.1 - 2026-07-30

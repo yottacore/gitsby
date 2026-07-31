@@ -56,6 +56,12 @@ In each section, items are listed approximately from newest to oldest.
 
 #### Done - Bugs
 
+- ✅ The PowerShell installer never verified the checksum, and said the release had none.
+	- Found by running both documented one-liners against the current release: the Bash one reported the checksum verified, the PowerShell one reported no `SHA256SUMS` for the same release, which does publish one.
+	- Cause: GitHub serves that file as binary, and PowerShell returns a response body as raw bytes for anything it doesn't treat as text. Read as lines, bytes match nothing, so no checksum was found and the download was installed unverified.
+	- The message made it look settled rather than broken, so the default install had gone unverified since the check was added. The Bash installer was never affected.
+	- Fixed: the body is decoded before it is read. Verified against the published release - the checksum is found, compared, and matches the installed file.
+
 - ✅ Every install command in the README 404s, because `main` is still the 2022 tree.
 	- `main` holds no `install.bash`, `install.ps1`, `install-dev.*` or `bin/gitsby.ps1`, so all six documented one-liners fail at the download. Reported from the field.
 	- Cutting v2.0.0 fixes it outright: the merge to `main` puts the files there, and `releases/latest` stops resolving to the 2022 `v1.0.1`, which is a dead end for the default install path (that tag predates the `bin/` layout).

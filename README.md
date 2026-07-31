@@ -172,15 +172,15 @@ There are many implicit opinions baked in. Here are the main ones:
 
 Gitsby doesn't invent a branching model. It implements two of the well-known ones, and chooses between them by looking at your repo: if there's a `dev` branch you get one, if there isn't you get the other. Nothing to configure.
 
-- [GitFlow](https://nvie.com/posts/a-successful-git-branching-model/): You get most of this Gitsby when your repo has a `dev` branch.
+- [GitFlow](https://nvie.com/posts/a-successful-git-branching-model/): You get most of this with Gitsby when your repo has a `dev` branch.
 
 	- The idea: everyday work is merged into `dev`. `main` holds only versions that have actually been released. When you're ready to release, `dev` is merged into `main` and given a version tag.
 
 	- Gitsby does exactly that. `br create` starts a branch from `dev`, `br land` merges it back into `dev`, and `release` merges `dev` into `main` and tags it.
 
-	- The GitFlow was also later modified with the idea of a "hotfix" branch, for fixing something already released without waiting for the next release. `br hotfix` is that branch. It starts from `main`, merges back into `main`, and then copies the fix into `dev` too, so the next release can't undo it.
+	- GitFlow was also later modified with the idea of a "hotfix" branch, for fixing something already released without waiting for the next release. `br hotfix` is that branch. It starts from `main`, merges back into `main`, and then copies the fix into `dev` too, so the next release can't undo it.
 
-	- Two parts of GitFlow are left out on purpose: *release* branches, and the `develop` / `feature/` branch naming. Both pay off on a product with when several versions being maintained at once. Most projects aren't that, so they'd be extra steps for nothing.
+	- Two parts of GitFlow are left out on purpose: *release* branches, and the `develop` / `feature/` branch naming. Both pay off on a product with several versions being maintained at once. Most projects aren't that, so they'd be extra steps for nothing.
 
 - [GitHub Flow](https://docs.github.com/en/get-started/using-github/github-flow): You get this with Gitsby when your repo has no `dev` branch.
 
