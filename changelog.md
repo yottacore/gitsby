@@ -16,6 +16,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Other work
 -->
 
+## v2.0.2 - 2026-07-31
+
+### Added
+
+- The pre-flight display for `br create` and `br hotfix` now names the branch it is about to make, and the branch it will come off: `New branch ...: main :: hotfix/readme`. The current-branch line reports where you are standing, which for a hotfix started from `dev` is not where the new branch begins - so nothing on screen connected the two.
+
+- `br list` now says what the repo's default branch is before listing.
+
+### Changed
+
+- Branch names in the status and pre-flight display are shown against the branch they land on, as `dev :: feature/retries`. `main`, `master` and `dev` are shown bare, since they are not branched off anything you would work from.
+
+- The repo's default branch has its own line rather than being appended to the current-branch line in parentheses.
+
+- The status block labels the branch you are on `Current branch:` rather than `Branch:`, so it reads against the `Default branch:` and `New branch:` lines beside it.
+
+### Fixed
+
+- The PowerShell installer verifies the download again. It read the release's `SHA256SUMS` as text, but GitHub serves that file as binary and PowerShell returns the body as raw bytes for anything it doesn't consider text - so no checksum was ever found, the default install went unverified, and it said the release had no `SHA256SUMS` when it did. The Bash installer was never affected.
+
+- `br list` no longer refuses to run in a repo whose default branch can't be told. It is a read-only command - like `status`, it now reports `Default branch: unknown` and lists the branches, which is exactly what you need to see to fix the situation.
+
 ## v2.0.1 - 2026-07-30
 
 ### Fixed

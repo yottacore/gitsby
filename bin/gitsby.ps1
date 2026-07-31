@@ -70,7 +70,7 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:thisVersion = '2.0.1'
+$script:thisVersion = '2.0.2'
 $script:thisCopyrightYear = '2014-2026'
 $script:thisAuthor = 'Jim Collier'
 $script:meName = Split-Path -Leaf -Path $PSCommandPath
@@ -331,6 +331,19 @@ function Get-BranchTarget {
     if (-not $Branch) { $Branch = Get-CurrentBranch }
     if (Test-HotfixBranch -Branch $Branch) { return (Get-DefaultBranch) }
     return (Get-MergeTarget)
+}
+
+function Get-BranchDisplay {
+    ## "base :: branch" for work branches; a bare name for main/master/dev, which are off nothing.
+    ## The base is where the branch LANDS - for anything gitsby made that's also where it came from,
+    ## and git records no fork point to read, so the land target is the honest answer either way.
+    param([string]$Branch = '')
+    if (-not $Branch) { $Branch = Get-CurrentBranch }
+    if (-not $Branch) { return '' }
+    if (Test-ProtectedBranch -Branch $Branch) { return $Branch }
+    $base = Get-BranchTarget -Branch $Branch
+    if (-not $base) { return $Branch }
+    return "${base} :: ${Branch}"
 }
 
 function Get-BackMergeRef {
@@ -735,7 +748,9 @@ function Show-Identity {
 
 function Show-RepoStatus {
     ## -WithIdentity: also show who we'll be on the remote - pre-flight and 'status', but not the after-shot.
-    param([switch]$WithIdentity)
+    ## -CommandName: pre-flight for a mutating command. Only the branch-creating ones use it, and only
+    ## the pre-flight caller passes it, so the after-shot can't claim a branch it already made.
+    param([switch]$WithIdentity, [string]$CommandName = '')
     $remote = git remote get-url origin 2>$null
     if ($LASTEXITCODE -ne 0 -or -not $remote) { $remote = '' }
     $remoteDisp = if ($remote) { Get-MaskedUrl -Url ([string]$remote) } else { '(none)' }
@@ -747,8 +762,15 @@ function Show-RepoStatus {
     ## still runs when the default branch can't be told, so it must not fabricate one.
     $dfltDisp = Get-DefaultBranch
     if (-not $dfltDisp) { $dfltDisp = 'unknown' }
-    $branchLine = "$(Get-CurrentBranch) (repo default: ${dfltDisp}) $(Get-BranchSync)"
-    Write-PlainLine "Branch .......: $($branchLine.TrimEnd())"
+    Write-PlainLine "Default branch: ${dfltDisp}"
+    $branchLine = "$(Get-BranchDisplay) $(Get-BranchSync)"
+    Write-PlainLine "Current branch: $($branchLine.TrimEnd())"
+    ## The line above is where you ARE, which is exactly what misled here - it says 'dev'
+    ## while the plan checks out main. This says where you'll end up, and off what.
+    switch ($CommandName) {
+        'br-create' { Write-PlainLine "New branch ...: $(Get-MergeTarget) :: $($script:cmdArg)"; break }
+        'br-hotfix' { Write-PlainLine "New branch ...: $(Get-DefaultBranch) :: $($script:cmdArg)"; break }
+    }
     Write-PlainLine ''
     Show-LocalChangeList
     if ($WithIdentity) { Show-Incoming }
@@ -1462,10 +1484,10 @@ try {
         ## Every branch command checks this out, protects it, or merges into it, so a name we
         ## can't confirm has to stop things here - before a preview promises it and the park step
         ## commits WIP to a branch we wrongly judged unprotected. 'repo *' predates having one.
-        ## 'status' is exempt on purpose: it is the command you run to see what is wrong, so it
-        ## reports "unknown" instead of refusing.
+        ## 'status' and 'br list' are exempt on purpose: they mutate nothing and are the commands
+        ## you run to see what is wrong, so they report "unknown" instead of refusing.
         git rev-parse -q --verify HEAD *> $null
-        if ($LASTEXITCODE -eq 0 -and $cmdName -cne 'status' -and $cmdName -notlike 'repo-*') {
+        if ($LASTEXITCODE -eq 0 -and $cmdName -cne 'status' -and $cmdName -cne 'br-list' -and $cmdName -notlike 'repo-*') {
             if (-not $script:defaultBranchCache) {
                 throw "Can't tell this repo's default branch. Set it with 'git remote set-head origin --auto', or create a main/master."
             }
@@ -1753,6 +1775,10 @@ try {
         switch ($cmdName) {
             'status' { Show-RepoStatus -WithIdentity; break }
             'br-list' {
+                $dfltDisp = Get-DefaultBranch
+                if (-not $dfltDisp) { $dfltDisp = 'unknown' }
+                Write-PlainLine ''
+                Write-PlainLine "Default branch: ${dfltDisp}"
                 Write-StatusLine 'git branch -a -vv'
                 git branch -a -vv
                 if ($LASTEXITCODE -ne 0) { throw "'git branch -a -vv' failed (exit ${LASTEXITCODE})." }
@@ -1779,11 +1805,11 @@ try {
         Write-PlainLine "Directory ....: $(Get-Location)"
         Write-PlainLine "Remote .......: ${remoteDisp}"
         Show-Identity -RemoteUrl $script:connectUrl
-        Write-PlainLine 'Branch .......: (not a git repository yet)'
+        Write-PlainLine 'Current branch: (not a git repository yet)'
         Show-FilesToPublish
     } else {
         if (-not (Get-CurrentBranch)) { throw 'Detached HEAD (no current branch); resolve that manually first.' }
-        Show-RepoStatus -WithIdentity
+        Show-RepoStatus -WithIdentity -CommandName $cmdName
     }
     Write-PlainLine ''
     Write-PlainLine 'Going to do (steps marked * only if needed, based on repo state):'
@@ -1872,3 +1898,6 @@ try {
 ##      - 20260728 JC: 'repo create'/'repo connect' from a plain directory list the files they will publish, via a throwaway git dir outside the work tree - in step with bin/gitsby.
 ##      - 20260730 JC: The SSH identity line probes the connect target instead of the bare host (which answered with the OS login name), and leads with the account the key authenticates as - in step with bin/gitsby.
 ##      - 20260730 JC: Offline messages tell the truth: a park with nothing to push says so, the skipped-push warning names its branch, and an offline hotfix land names the two commands that publish the default branch - in step with bin/gitsby.
+##      - 20260731 JC: Branch names display against the branch they land on; br create/hotfix name the branch they are about to make and where it comes from; the repo default gets its own line, and br list states it before listing - in step with bin/gitsby.
+##      - 20260731 JC: The status block labels the branch you are on 'Current branch' - in step with bin/gitsby.
+##      - 20260731 JC: br list runs in a repo whose default branch can't be told, reporting it unknown rather than refusing - in step with bin/gitsby.

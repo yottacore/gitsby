@@ -104,6 +104,13 @@ The two files are ports of each other. A change to one nearly always belongs in 
 
 - The pre-2.0 command names were dropped outright rather than kept as hidden aliases. Version 2 is a deliberate break, the tool is invoked by a different name than it was, and not all of the old commands worked. Carrying dead spellings forward would have been the worst of both.
 
+- A branch is displayed against the branch it is off of, as `base :: branch`.
+	- Every line in the state block answered "where am I", and none answered "off what". Running `br hotfix` from `dev` showed `dev` on the current-branch line and `git checkout main` in the plan under it. Both true, and read together they look like a mistake.
+	- The base shown is where the branch *lands*. Git records no fork point to read back, and for a branch gitsby made the two are the same by construction, so the land target is the honest answer and the only available one.
+	- `main`, `master` and `dev` are shown bare. They are not off anything you would branch from, and `dev :: dev` is noise. `dev` does land on `main`, but only at release, and saying so on every line would imply otherwise.
+	- Commands that create a branch state it outright, before the plan. That is pre-flight only: afterward the branch exists and the current-branch line already answers it.
+	- The repo's default branch is its own line. It applies to the whole repo, not to the branch you are on, and parenthetical asides on one line do not scale to two facts.
+
 - The pre-flight names gh's account, because it is not necessarily the one git pushes as.
 	- gh authenticates to the API with its own token and never reads ssh config. So `pr create`, `pr ok`, and `repo create` act as gh's account, while `git push` in the same repo acts as whatever key the remote's host alias selects. With per-account aliases those are different people.
 	- Showing it is not new policy - the identity block already exists to answer "who am I about to be on the remote", and for the gh-backed commands it was answering with the wrong identity.

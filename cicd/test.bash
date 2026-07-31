@@ -839,6 +839,39 @@ GHEOF
 	fAssertFail "br hotfix with no name rejected"  bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix"
 	fAssertFail "the internal token stays untypeable"  bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br-hotfix x"
 
+	## The current-branch line says where you ARE, and nothing used to connect that to where the new
+	## branch comes off: it read 'dev' while the plan below it checked out main.
+	## -q still prints the whole block; it only skips the prompt.
+	fAssertOut "br hotfix names the branch it will make, and its base"  '^New branch \.+: main :: hotfix/base1$' \
+		bash -c "cd '${hfc}' && git checkout --quiet dev && '${gitsby}' -q -NoFetch br hotfix base1 2>&1"
+	fAssertOut "and still reports the branch you're standing on"  '^Current branch: dev' \
+		bash -c "cd '${hfc}' && git checkout --quiet dev && '${gitsby}' -q -NoFetch br hotfix base2 2>&1"
+	fAssertOut "br create names dev as the base"  '^New branch \.+: dev :: base3$' \
+		bash -c "cd '${hfc}' && git checkout --quiet dev && '${gitsby}' -q -NoFetch br create base3 2>&1"
+	## Said once, in the pre-flight. The after-shot would be claiming a branch that already exists.
+	fAssert "and says it once, not again after the run"  \
+		bash -c "cd '${hfc}' && git checkout --quiet dev && [[ \"\$('${gitsby}' -q -NoFetch br create base4 2>&1 | grep -c 'New branch')\" == 1 ]]"
+	fAssertNotOut "status claims no new branch at all"  'New branch' \
+		bash -c "cd '${hfc}' && '${gitsby}' -q status 2>&1"
+
+	## A work branch is shown against what it lands on; main/master/dev are off nothing, so they
+	## stay bare - "dev :: dev" would be noise, and "main :: dev" is only true at release time.
+	fAssertOut "a feature branch shows the base it lands on"  '^Current branch: dev :: base3' \
+		bash -c "cd '${hfc}' && git checkout --quiet base3 && '${gitsby}' -q status 2>&1"
+	fAssertOut "a hotfix branch shows the default branch instead"  '^Current branch: main :: hotfix/base1' \
+		bash -c "cd '${hfc}' && git checkout --quiet hotfix/base1 && '${gitsby}' -q status 2>&1"
+	fAssertNotOut "dev is shown bare"  '^Current branch: [^ ]+ :: dev' \
+		bash -c "cd '${hfc}' && git checkout --quiet dev && '${gitsby}' -q status 2>&1"
+
+	## The default branch is its own line now, not a parenthetical tacked onto the branch line.
+	fAssertOut "the default branch gets its own line"  '^Default branch: main$' \
+		bash -c "cd '${hfc}' && '${gitsby}' -q status 2>&1"
+	fAssertNotOut "and is no longer tacked onto the branch line"  'repo default:' \
+		bash -c "cd '${hfc}' && '${gitsby}' -q status 2>&1"
+	## br list never said what the default was, which is half of what a listing is for.
+	fAssertOut "br list says what the default branch is"  '^Default branch: main$' \
+		bash -c "cd '${hfc}' && '${gitsby}' -q br list 2>&1"
+
 	## gh writes act as gh's own account, not the ssh key git pushes with. A difference BOTH sides
 	## know about is refused unattended; unknown (no agent, https remote, deploy key) never blocks,
 	## or every CI runner breaks. A fake ssh answers the greeting GitHub really sends.
@@ -1069,6 +1102,12 @@ GHEOF
 				fAssert "$(basename "${psFile}") starts with a shebang, no BOM" \
 					bash -c "[[ \"\$(head -c2 '${psFile}')\" == '#!' ]]"
 			done
+			## GitHub serves SHA256SUMS as octet-stream, and Invoke-WebRequest hands back bytes
+			## for that, so reading the body as text found no checksum and skipped verification
+			## while reporting there was none. Reaching the real asset needs the network, so this
+			## pins the decode in the source rather than exercising it.
+			fAssert "install.ps1 decodes the SHA256SUMS body from bytes" \
+				bash -c "grep -q 'byte\[\]' '${instPs}'"
 		fi
 	fi
 
@@ -1121,7 +1160,7 @@ GHEOF
 	local tk="${work}/$1-trunk"
 	git init --quiet -b trunk "${tk}"
 	( cd "${tk}" && echo a > a.txt && git add --all && git commit --quiet -m init && echo wip >> a.txt )
-	fAssertOut "status names the real default branch"  'repo default: trunk'  bash -c "cd '${tk}' && '${gitsby}' -q status"
+	fAssertOut "status names the real default branch"  'Default branch: trunk'  bash -c "cd '${tk}' && '${gitsby}' -q status"
 	fAssert    "br create works on a trunk-default repo"  bash -c "cd '${tk}' && '${gitsby}' -q br create tfeat && [[ \"\$(git branch --show-current)\" == tfeat ]]"
 	fAssert    "and left no WIP commit on trunk"  bash -c "cd '${tk}' && [[ \"\$(git rev-list --count trunk)\" == 1 ]]"
 	fAssert    "and carried the dirty work over"  bash -c "cd '${tk}' && grep -qx wip a.txt"
@@ -1138,7 +1177,10 @@ GHEOF
 	fAssert     "and committed nothing"  bash -c "cd '${tu}' && [[ \"\$(git rev-list --count mainline)\" == 1 ]]"
 	## status is the command you run to find out what is wrong, so it must still work - and must
 	## not print a name it couldn't resolve.
-	fAssertOut  "status still runs and admits it doesn't know"  'repo default: unknown'  bash -c "cd '${tu}' && '${gitsby}' -q status"
+	fAssertOut  "status still runs and admits it doesn't know"  'Default branch: unknown'  bash -c "cd '${tu}' && '${gitsby}' -q status"
+	fAssert     "br list still runs there too"  bash -c "cd '${tu}' && '${gitsby}' -q br list >/dev/null 2>&1"
+	fAssertOut  "and lists the branches with the same admission"  'Default branch: unknown'  bash -c "cd '${tu}' && '${gitsby}' -q br list"
+	fAssertOut  "including the ambiguous ones"  '(^|[ /])other'  bash -c "cd '${tu}' && '${gitsby}' -q br list"
 }
 
 echo "gitsby regression tests (fixture: ${work})"

@@ -19,6 +19,7 @@ This is a product backlog for the run-up to v2.0.0. After that release, bugs, fe
 	- [Done](#done)
 		- [Done - Bugs](#done---bugs)
 		- [Done - Features and enhancements](#done---features-and-enhancements)
+		- [Done - Code review 20260731](#done---code-review-20260731)
 		- [Done - Code review 20260730](#done---code-review-20260730)
 		- [Done - Code review 20260727b](#done---code-review-20260727b)
 		- [Done - Code review 20260727](#done---code-review-20260727)
@@ -55,6 +56,12 @@ In each section, items are listed approximately from newest to oldest.
 
 #### Done - Bugs
 
+- ✅ The PowerShell installer never verified the checksum, and said the release had none.
+	- Found by running both documented one-liners against the current release: the Bash one reported the checksum verified, the PowerShell one reported no `SHA256SUMS` for the same release, which does publish one.
+	- Cause: GitHub serves that file as binary, and PowerShell returns a response body as raw bytes for anything it doesn't treat as text. Read as lines, bytes match nothing, so no checksum was found and the download was installed unverified.
+	- The message made it look settled rather than broken, so the default install had gone unverified since the check was added. The Bash installer was never affected.
+	- Fixed: the body is decoded before it is read. Verified against the published release - the checksum is found, compared, and matches the installed file.
+
 - ✅ Every install command in the README 404s, because `main` is still the 2022 tree.
 	- `main` holds no `install.bash`, `install.ps1`, `install-dev.*` or `bin/gitsby.ps1`, so all six documented one-liners fail at the download. Reported from the field.
 	- Cutting v2.0.0 fixes it outright: the merge to `main` puts the files there, and `releases/latest` stops resolving to the 2022 `v1.0.1`, which is a dead end for the default install path (that tag predates the `bin/` layout).
@@ -82,6 +89,13 @@ In each section, items are listed approximately from newest to oldest.
 	- Decided against making `--no-fetch` mean this. The flag declines the incoming round trip, which is a perfectly good thing to want against a reachable remote, and the suite itself uses it that way throughout. Offline is a state the pre-command fetch discovers, not a flag.
 
 #### Done - Features and enhancements
+
+- ✅ Say what a branch is branched from, wherever a branch is named.
+	- Reported against `br hotfix` run from `dev`: the current-branch line read `dev` while the plan directly under it checked out `main`. Both were correct and nothing connected them.
+	- Branch names now render as `base :: branch` - `dev :: feature/retries`, `main :: hotfix/readme`. `main`, `master` and `dev` stay bare; they are not off anything you would work from.
+	- `br create` and `br hotfix` gained a `New branch` line naming what they will make and its base, so the answer is on screen before the plan is read. Pre-flight only - after the run the branch exists and the question is gone.
+	- The repo's default branch moved to its own line instead of riding along in parentheses, and `br list` now states it too.
+	- The base shown is where the branch lands. Git records no fork point, and for anything gitsby made the two are the same by construction.
 
 - ✅ Show the file list before first publication (`repo create`, `repo connect` from a plain directory).
 	- Every other command shows what it is about to touch; the one that hands a whole directory over for the first time did not.
@@ -283,6 +297,14 @@ In each section, items are listed approximately from newest to oldest.
 
 - ✅ Delete stale branch from 2020.
 	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
+
+#### Done - Code review 20260731
+
+Delta review of the branch-display and status-label rounds. One finding, both implementations.
+
+- ✅ Code Review 20260731 item 1: `br list` refused to run in a repo whose default branch can't be told.
+	- The default-branch gate exempted only `status` and the `repo` commands, so `br list` - read-only, and the other command you'd run to look around - errored out. The `Default branch: unknown` fallback it had just gained could never print.
+	- Fixed: `br list` joins the gate exemption. Mutating commands still refuse up front.
 
 #### Done - Code review 20260730
 

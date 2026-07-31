@@ -147,7 +147,14 @@ function Install-Gitsby {
     # path can be verified; -Ref installs pull straight from the tree, unverified.
     if ($fromReleaseAsset) {
         $sums = ''
-        try { $sums = (Invoke-WebRequest -Uri "https://github.com/${repo}/releases/download/${Ref}/SHA256SUMS").Content } catch { $sums = '' }
+        # GitHub serves SHA256SUMS as application/octet-stream, and Invoke-WebRequest returns
+        # .Content as bytes for anything it doesn't consider text. Splitting those into lines
+        # matched nothing, so every default install skipped verification and said there was no
+        # SHA256SUMS - which wasn't true.
+        try {
+            $body = (Invoke-WebRequest -Uri "https://github.com/${repo}/releases/download/${Ref}/SHA256SUMS").Content
+            $sums = if ($body -is [byte[]]) { [Text.Encoding]::UTF8.GetString($body) } else { [string]$body }
+        } catch { $sums = '' }
         $want = ''
         foreach ($sumLine in ($sums -split "`r?`n")) {
             if ($sumLine -match '^([0-9a-fA-F]{64})\s+\*?gitsby\.ps1$') { $want = $Matches[1]; break }
@@ -213,3 +220,6 @@ try {
 #     caller's session, and StrictMode leaked into it. Refuses at EOF instead of proceeding.
 #     PowerShell 7 is now checked before anything reads $IsWindows.
 #   - 20260728 JC: The failed-download message names '-Release dev', like install.bash's does. It used to send you to the Bash installer, which resolves the same stale release and fails the same way.
+#   - 20260731 JC: SHA256SUMS is decoded from bytes before it's read. GitHub serves it as
+#     octet-stream, so the response body arrived as a byte array and no checksum was ever
+#     found - the default install path had been unverified since the check was added.
