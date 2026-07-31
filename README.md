@@ -27,7 +27,7 @@
 
 <!-- Pin to the gif's native 960px. GitHub's max-width:100% still shrinks it on narrow columns; a % width would blow it up past native on wide ones. -->
 <img src="assets/demo.gif" width="960" alt="Demo."/><br />
-<sub><i>Like the smooth-scrolling terminal output and cursor? You should see <a href="https://github.com/jim-collier/silkterm">SilkTerm</a>!</i></sub>
+<sub><i>Like the smooth-scrolling terminal output and cursor? Take a look at <a href="https://github.com/jim-collier/silkterm">SilkTerm</a>!</i></sub>
 
 <!--
 	Demo video: https://www.youtube.com/watch?v=REPLACE_WITH_VIDEO_ID
