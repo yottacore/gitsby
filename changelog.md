@@ -32,6 +32,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The status block labels the branch you are on `Current branch:` rather than `Branch:`, so it reads against the `Default branch:` and `New branch:` lines beside it.
 
+### Fixed
+
+- `br list` no longer refuses to run in a repo whose default branch can't be told. It is a read-only command - like `status`, it now reports `Default branch: unknown` and lists the branches, which is exactly what you need to see to fix the situation.
+
 ## v2.0.1 - 2026-07-30
 
 ### Fixed

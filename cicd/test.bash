@@ -1172,6 +1172,9 @@ GHEOF
 	## status is the command you run to find out what is wrong, so it must still work - and must
 	## not print a name it couldn't resolve.
 	fAssertOut  "status still runs and admits it doesn't know"  'Default branch: unknown'  bash -c "cd '${tu}' && '${gitsby}' -q status"
+	fAssert     "br list still runs there too"  bash -c "cd '${tu}' && '${gitsby}' -q br list >/dev/null 2>&1"
+	fAssertOut  "and lists the branches with the same admission"  'Default branch: unknown'  bash -c "cd '${tu}' && '${gitsby}' -q br list"
+	fAssertOut  "including the ambiguous ones"  '(^|[ /])other'  bash -c "cd '${tu}' && '${gitsby}' -q br list"
 }
 
 echo "gitsby regression tests (fixture: ${work})"

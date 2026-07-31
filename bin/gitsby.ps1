@@ -1484,10 +1484,10 @@ try {
         ## Every branch command checks this out, protects it, or merges into it, so a name we
         ## can't confirm has to stop things here - before a preview promises it and the park step
         ## commits WIP to a branch we wrongly judged unprotected. 'repo *' predates having one.
-        ## 'status' is exempt on purpose: it is the command you run to see what is wrong, so it
-        ## reports "unknown" instead of refusing.
+        ## 'status' and 'br list' are exempt on purpose: they mutate nothing and are the commands
+        ## you run to see what is wrong, so they report "unknown" instead of refusing.
         git rev-parse -q --verify HEAD *> $null
-        if ($LASTEXITCODE -eq 0 -and $cmdName -cne 'status' -and $cmdName -notlike 'repo-*') {
+        if ($LASTEXITCODE -eq 0 -and $cmdName -cne 'status' -and $cmdName -cne 'br-list' -and $cmdName -notlike 'repo-*') {
             if (-not $script:defaultBranchCache) {
                 throw "Can't tell this repo's default branch. Set it with 'git remote set-head origin --auto', or create a main/master."
             }

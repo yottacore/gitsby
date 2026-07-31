@@ -19,6 +19,7 @@ This is a product backlog for the run-up to v2.0.0. After that release, bugs, fe
 	- [Done](#done)
 		- [Done - Bugs](#done---bugs)
 		- [Done - Features and enhancements](#done---features-and-enhancements)
+		- [Done - Code review 20260731](#done---code-review-20260731)
 		- [Done - Code review 20260730](#done---code-review-20260730)
 		- [Done - Code review 20260727b](#done---code-review-20260727b)
 		- [Done - Code review 20260727](#done---code-review-20260727)
@@ -290,6 +291,14 @@ In each section, items are listed approximately from newest to oldest.
 
 - ✅ Delete stale branch from 2020.
 	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
+
+#### Done - Code review 20260731
+
+Delta review of the branch-display and status-label rounds. One finding, both implementations.
+
+- ✅ Code Review 20260731 item 1: `br list` refused to run in a repo whose default branch can't be told.
+	- The default-branch gate exempted only `status` and the `repo` commands, so `br list` - read-only, and the other command you'd run to look around - errored out. The `Default branch: unknown` fallback it had just gained could never print.
+	- Fixed: `br list` joins the gate exemption. Mutating commands still refuse up front.
 
 #### Done - Code review 20260730
 
