@@ -172,17 +172,17 @@ There are many implicit opinions baked in. Here are the main ones:
 
 Gitsby doesn't invent a branching model. It implements two of the well-known ones, and chooses between them by looking at your repo: if there's a `dev` branch you get one, if there isn't you get the other. Nothing to configure.
 
-- [GitFlow](https://nvie.com/posts/a-successful-git-branching-model/) - what you get when your repo has a `dev` branch.
+- [GitFlow](https://nvie.com/posts/a-successful-git-branching-model/): You get most of this Gitsby when your repo has a `dev` branch.
 
 	- The idea: everyday work is merged into `dev`. `main` holds only versions that have actually been released. When you're ready to release, `dev` is merged into `main` and given a version tag.
 
 	- Gitsby does exactly that. `br create` starts a branch from `dev`, `br land` merges it back into `dev`, and `release` merges `dev` into `main` and tags it.
 
-	- GitFlow also has a "hotfix" branch, for fixing something already released without waiting for the next release. `br hotfix` is that branch. It starts from `main`, merges back into `main`, and then copies the fix into `dev` too, so the next release can't undo it.
+	- The GitFlow was also later modified with the idea of a "hotfix" branch, for fixing something already released without waiting for the next release. `br hotfix` is that branch. It starts from `main`, merges back into `main`, and then copies the fix into `dev` too, so the next release can't undo it.
 
-	- Two parts of GitFlow are left out on purpose: release branches, and the `develop` / `feature/` branch naming. Both pay off on a product with a release schedule and several versions being maintained at once. Most projects aren't that, so they'd be extra steps for nothing.
+	- Two parts of GitFlow are left out on purpose: *release* branches, and the `develop` / `feature/` branch naming. Both pay off on a product with when several versions being maintained at once. Most projects aren't that, so they'd be extra steps for nothing.
 
-- [GitHub Flow](https://docs.github.com/en/get-started/using-github/github-flow) - what you get when your repo has no `dev` branch.
+- [GitHub Flow](https://docs.github.com/en/get-started/using-github/github-flow): You get this with Gitsby when your repo has no `dev` branch.
 
 	- The idea: one permanent branch. You branch from it, open a pull request, merge back, delete the branch. Anything on that branch is considered ready to release.
 
@@ -190,13 +190,13 @@ Gitsby doesn't invent a branching model. It implements two of the well-known one
 
 	- It's the simpler of the two, and the better fit if you don't do numbered releases.
 
-- [GitLab Flow](https://about.gitlab.com/topics/version-control/what-is-gitlab-flow/) - not supported, on purpose.
+- [GitLab Flow](https://about.gitlab.com/topics/version-control/what-is-gitlab-flow/): Purposely not supported.
 
 	- The idea: extra permanent branches that mirror where the code is running, such as `staging` and `production`. Or one branch per released version, kept alive to receive bug fixes.
 
 	- Gitsby has no notion of a deployment environment, and it records a release as a tag rather than a branch. You can still create and merge such branches with plain `git`; Gitsby just won't manage them for you.
 
-- [Trunk-based development](https://trunkbaseddevelopment.com/) - half supported.
+- [Trunk-based development](https://trunkbaseddevelopment.com/): Half supported.
 
 	- The idea: everyone works on one shared branch, the "trunk". Branches, where used at all, last a day or two. Unfinished features are hidden behind feature flags instead of being parked on a branch.
 
@@ -204,21 +204,23 @@ Gitsby doesn't invent a branching model. It implements two of the well-known one
 
 	- The commit-straight-to-trunk half is the one thing Gitsby won't do. It won't push your own work to `main` or `dev`, even when you have permission. A team that works that way should use plain `git`.
 
-- Any workflow that rewrites history - not supported, on purpose.
+- **Any workflow that rewrites history**: Purposely not supported.
 
 	- The idea: keep the history tidy and linear. A branch's commits get squashed into one, or replayed on top of the target branch, so it reads as though the branch never existed.
 
 	- Gitsby never rebases, amends, squashes, or force-pushes, and its merges leave the branch visible in the history. If your team requires "squash and merge" or "rebase and merge", this isn't the tool.
 
-One difference matters more than which of these you pick: They're all conventions - a document the team agrees to, and then drifts away from as a deadline gets close. With Gitsby, *the workflow is the tool*. There's no command for "push to `main` anyway", so there's nothing to remember and nothing to quietly erode over time.
+One difference matters more than which of these you pick: They're all conventions - a document the team agrees to, and then drifts away from as a deadline gets close.
+
+With Gitsby, *the workflow is the tool*. There's no command for "push to `main` anyway", so there's nothing to remember and nothing to quietly erode over time.
 
 ## Why
 
-Many years ago, I grew tired of my talented development team of expert git users making repeated, costly mistakes with the tool. (It's also possible I'm projecting...)
+Many years ago, I grew tired of my talented development team of expert git users making repeated, costly mistakes with the tool. (It's also possible I'm projecting and everything was my fault...)
 
-Not from incompetence, malice, recklessness, or carelessness - but because git is so powerful that the exact order of operations for tough edge-cases can be both hard to remember, and not inherently obvious.
+Mistakes that arose not from incompetence, malice, recklessness, or carelessness - but because git is so powerful that the exact order of operations for tough edge-cases can be both hard to remember, and not inherently obvious.
 
-Many of those tough edge-cases arose in the first place, precisely because our git workflow wasn't enforced at an automation level.
+Many of those tough edge-cases arose in the first place, precisely because our git workflow wasn't enforced at an automation or tooling level.
 
 (I'm sure this is all sounding too familiar for veteran developers, managers, and CTOs.)
 
@@ -226,7 +228,7 @@ I surveyed the git tools, wrappers, and standards available at the time and conc
 
 So I wrote x9git, the v1 forerunner of Gitsby.
 
-For years, it worked and was useful. But it wasn't comprehensive enough - bare git was still needed.
+For years, it worked and was useful. But it wasn't comprehensive enough - bare git was still needed, and remembering *two* commonly-used tools was too burdensome.
 
 Now, years later, this v2 release - renamed Gitsby - finally fulfills the original vision: with a small but comprehensive end-to-end set of bulletproof commands.
 
