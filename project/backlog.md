@@ -83,6 +83,13 @@ In each section, items are listed approximately from newest to oldest.
 
 #### Done - Features and enhancements
 
+- ✅ Say what a branch is branched from, wherever a branch is named.
+	- Reported against `br hotfix` run from `dev`: the Branch line read `dev` while the plan directly under it checked out `main`. Both were correct and nothing connected them.
+	- Branch names now render as `base :: branch` - `dev :: feature/retries`, `main :: hotfix/readme`. `main`, `master` and `dev` stay bare; they are not off anything you would work from.
+	- `br create` and `br hotfix` gained a `New branch` line naming what they will make and its base, so the answer is on screen before the plan is read. Pre-flight only - after the run the branch exists and the question is gone.
+	- The repo's default branch moved to its own line instead of riding along in parentheses, and `br list` now states it too.
+	- The base shown is where the branch lands. Git records no fork point, and for anything gitsby made the two are the same by construction.
+
 - ✅ Show the file list before first publication (`repo create`, `repo connect` from a plain directory).
 	- Every other command shows what it is about to touch; the one that hands a whole directory over for the first time did not.
 	- The list is what `git add --all` will really add, asked through a throwaway git dir outside the work tree - so `.gitignore` and `core.excludesFile` are honored, and answering "n" leaves the directory exactly as it was found.

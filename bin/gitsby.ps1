@@ -333,6 +333,19 @@ function Get-BranchTarget {
     return (Get-MergeTarget)
 }
 
+function Get-BranchDisplay {
+    ## "base :: branch" for work branches; a bare name for main/master/dev, which are off nothing.
+    ## The base is where the branch LANDS - for anything gitsby made that's also where it came from,
+    ## and git records no fork point to read, so the land target is the honest answer either way.
+    param([string]$Branch = '')
+    if (-not $Branch) { $Branch = Get-CurrentBranch }
+    if (-not $Branch) { return '' }
+    if (Test-ProtectedBranch -Branch $Branch) { return $Branch }
+    $base = Get-BranchTarget -Branch $Branch
+    if (-not $base) { return $Branch }
+    return "${base} :: ${Branch}"
+}
+
 function Get-BackMergeRef {
     ## What the back-merge actually merges. 'pr ok' lands the hotfix on the server, so the LOCAL
     ## default branch never sees it and merging that is a silent no-op; the fetched remote-tracking
@@ -735,7 +748,9 @@ function Show-Identity {
 
 function Show-RepoStatus {
     ## -WithIdentity: also show who we'll be on the remote - pre-flight and 'status', but not the after-shot.
-    param([switch]$WithIdentity)
+    ## -CommandName: pre-flight for a mutating command. Only the branch-creating ones use it, and only
+    ## the pre-flight caller passes it, so the after-shot can't claim a branch it already made.
+    param([switch]$WithIdentity, [string]$CommandName = '')
     $remote = git remote get-url origin 2>$null
     if ($LASTEXITCODE -ne 0 -or -not $remote) { $remote = '' }
     $remoteDisp = if ($remote) { Get-MaskedUrl -Url ([string]$remote) } else { '(none)' }
@@ -747,8 +762,15 @@ function Show-RepoStatus {
     ## still runs when the default branch can't be told, so it must not fabricate one.
     $dfltDisp = Get-DefaultBranch
     if (-not $dfltDisp) { $dfltDisp = 'unknown' }
-    $branchLine = "$(Get-CurrentBranch) (repo default: ${dfltDisp}) $(Get-BranchSync)"
+    Write-PlainLine "Default branch: ${dfltDisp}"
+    $branchLine = "$(Get-BranchDisplay) $(Get-BranchSync)"
     Write-PlainLine "Branch .......: $($branchLine.TrimEnd())"
+    ## The Branch line above is where you ARE, which is exactly what misled here - it says 'dev'
+    ## while the plan checks out main. This says where you'll end up, and off what.
+    switch ($CommandName) {
+        'br-create' { Write-PlainLine "New branch ...: $(Get-MergeTarget) :: $($script:cmdArg)"; break }
+        'br-hotfix' { Write-PlainLine "New branch ...: $(Get-DefaultBranch) :: $($script:cmdArg)"; break }
+    }
     Write-PlainLine ''
     Show-LocalChangeList
     if ($WithIdentity) { Show-Incoming }
@@ -1753,6 +1775,10 @@ try {
         switch ($cmdName) {
             'status' { Show-RepoStatus -WithIdentity; break }
             'br-list' {
+                $dfltDisp = Get-DefaultBranch
+                if (-not $dfltDisp) { $dfltDisp = 'unknown' }
+                Write-PlainLine ''
+                Write-PlainLine "Default branch: ${dfltDisp}"
                 Write-StatusLine 'git branch -a -vv'
                 git branch -a -vv
                 if ($LASTEXITCODE -ne 0) { throw "'git branch -a -vv' failed (exit ${LASTEXITCODE})." }
@@ -1783,7 +1809,7 @@ try {
         Show-FilesToPublish
     } else {
         if (-not (Get-CurrentBranch)) { throw 'Detached HEAD (no current branch); resolve that manually first.' }
-        Show-RepoStatus -WithIdentity
+        Show-RepoStatus -WithIdentity -CommandName $cmdName
     }
     Write-PlainLine ''
     Write-PlainLine 'Going to do (steps marked * only if needed, based on repo state):'
