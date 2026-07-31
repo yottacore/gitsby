@@ -83,26 +83,32 @@ How Gitsby shrinks Git's command set:
 
 ## Compatibility
 
-👉 Gitsby, [Git](https://git-scm.com/), [gh](https://github.com/cli/cli), [Lazygit](https://github.com/jesseduffield/lazygit), and [Tig](https://github.com/jonas/tig) are all compatible, interchangeable, and can be intermixed on the same project at any time without interference.
+- Gitsby, [Git](https://git-scm.com/), [gh](https://github.com/cli/cli), [Lazygit](https://github.com/jesseduffield/lazygit), and [Tig](https://github.com/jonas/tig) are all compatible, interchangeable, and can be intermixed on the same project at any time without interference.
 
-- This makes giving Gitsby a "tryout" cheap and easy - you don't need to commit to anything. (No pun intended.)
+	- This makes giving Gitsby a "tryout" cheap and easy - you don't need to commit to anything. (No pun intended.)
 
-- For large projects, you may still need bare Git (and/or some other wrapper) to resolve sticky situations that Gitsby purposely doesn't try to tackle - and almost certainly didn't create. Leaving them alone is what "keep-it-simple" and "do-one-thing-well" cost.
+	- For large projects, you may still need bare Git (and/or some other wrapper) to resolve sticky situations that Gitsby purposely doesn't try to tackle - and almost certainly didn't create. Leaving them alone is what "keep-it-simple" and "do-one-thing-well" cost.
 
-👉 Gitsby works against any Git remote, GitHub and GitLab included. The exceptions go through [gh](https://github.com/cli/cli) and are therefore GitHub-only: the `pr` commands, `repo create`, and `repo connect` when you give it an `owner/name` instead of a URL. Everything else is remote-agnostic, and `repo connect` with a full URL never touches gh at all.
+	> Note: [GitButler](https://gitbutler.com/) is *not* interchangeable with Git, Gitsby, gh, Lazygit, and/or Tig. While a great tool and a cool idea, it manages its own metadata - that inherently doesn't mix well with other git-based tools that move `HEAD` or rewrite history. It's worth a look and a try - but to be safe, give it a dedicated trial on a small personal repo, without mixing in other tools.
 
-👉 What you need to run it: Git, plus either bash 4.4 or newer (for `gitsby`) or PowerShell 7 or newer (for `gitsby.ps1`). The two builds are interchangeable - same commands, same results - so on a machine without bash, the PowerShell one is a complete substitute.
+- Gitsby works with any Git remote, GitHub and GitLab included.
+	- The exceptions go through [gh](https://github.com/cli/cli) and are therefore GitHub-only: the `pr` commands, `repo create`, and `repo connect` when you give it an `owner/name` instead of a URL. Everything else is remote-agnostic, and `repo connect` with a full URL never touches gh at all.
+
+- What you need to run it: Git, plus either bash 4.4 or newer (for `gitsby`) or PowerShell 7 or newer (for `gitsby.ps1`). The two builds are interchangeable - same commands, same results - so on a machine without bash, the PowerShell one is a complete substitute.
 
 - Linux: bash is already new enough on anything current.
-- macOS is the awkward one. Its stock `/bin/bash` is 3.2, from 2007, and Apple never replaces it. `brew install bash` or `sudo port install bash` puts a current one alongside it rather than over it, so the new one has to come first on your `PATH`.
-- BSD ships no bash at all. `pkg install bash` on FreeBSD, `pkg_add bash` on OpenBSD.
-- On Windows, use the PowerShell build, or bash under WSL or Git Bash.
+
+- macOS is the one that might take a couple of lines of one-liners in the Terminal app. Its stock `/bin/bash` is 3.2 from 2007. `brew install bash` or `sudo port install bash` puts a current one alongside it rather than over it, so the new one has to come first on your `PATH`.
+
+- BSD ships no bash at all, but is trivially easy to remedy: `pkg install bash` on FreeBSD, `pkg_add bash` on OpenBSD.
+
+- On Windows, use the PowerShell build
+
+	- Or under WSL you can use the Bash version.
 
 Gitsby tells you which of these applies if it can't run, rather than failing with a shell error.
 
-👉 Your default branch can be called anything. Gitsby asks the remote what it is, and falls back to `main`, `master`, or `trunk` locally - or to your only branch, in a repo that has just one. If it genuinely can't tell (no remote, and nothing conventional to go on), it says so and stops instead of guessing, and `git remote set-head origin --auto` is usually the one-line fix.
-
-> Note: [GitButler](https://gitbutler.com/) is *not* interchangeable with Git, Gitsby, gh, Lazygit, and/or Tig. While a great tool and a cool idea, it manages its own metadata - that inherently doesn't mix well with other git-based tools that move `HEAD` or rewrite history. It's worth a look and a try - but to be safe, give it a dedicated trial on a small personal repo, without mixing in other tools.
+Your default branch can be called anything. Gitsby asks the remote what it is, and falls back to `main`, `master`, or `trunk` locally - or to your only branch, in a repo that has just one. If it genuinely can't tell (no remote, and nothing conventional to go on), it says so and stops instead of guessing, and `git remote set-head origin --auto` is usually the one-line fix.
 
 ## General attributes
 
@@ -180,7 +186,7 @@ Gitsby doesn't invent a branching model. It implements two of the well-known one
 
 	- GitFlow was also later modified with the idea of a "hotfix" branch, for fixing something already released without waiting for the next release. `br hotfix` is that branch. It starts from `main`, merges back into `main`, and then copies the fix into `dev` too, so the next release can't undo it.
 
-	- Two parts of GitFlow are left out on purpose: *release* branches, and the `develop` / `feature/` branch naming. Both pay off on a product with several versions being maintained at once. Most projects aren't that, so they'd be extra steps for nothing.
+	- Two parts of GitFlow are left out on purpose: *release* branches, and the `develop` / `feature/` branch naming. Both work when several versions being maintained at once. Most projects don't do that, so they wouldd be extra steps for nothing.
 
 - [GitHub Flow](https://docs.github.com/en/get-started/using-github/github-flow): You get this with Gitsby when your repo has no `dev` branch.
 
