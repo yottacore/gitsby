@@ -84,7 +84,7 @@ In each section, items are listed approximately from newest to oldest.
 #### Done - Features and enhancements
 
 - ✅ Say what a branch is branched from, wherever a branch is named.
-	- Reported against `br hotfix` run from `dev`: the Branch line read `dev` while the plan directly under it checked out `main`. Both were correct and nothing connected them.
+	- Reported against `br hotfix` run from `dev`: the current-branch line read `dev` while the plan directly under it checked out `main`. Both were correct and nothing connected them.
 	- Branch names now render as `base :: branch` - `dev :: feature/retries`, `main :: hotfix/readme`. `main`, `master` and `dev` stay bare; they are not off anything you would work from.
 	- `br create` and `br hotfix` gained a `New branch` line naming what they will make and its base, so the answer is on screen before the plan is read. Pre-flight only - after the run the branch exists and the question is gone.
 	- The repo's default branch moved to its own line instead of riding along in parentheses, and `br list` now states it too.
