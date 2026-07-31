@@ -19,6 +19,7 @@ This is a product backlog for the run-up to v2.0.0. After that release, bugs, fe
 	- [Done](#done)
 		- [Done - Bugs](#done---bugs)
 		- [Done - Features and enhancements](#done---features-and-enhancements)
+		- [Done - Code review 20260730](#done---code-review-20260730)
 		- [Done - Code review 20260727b](#done---code-review-20260727b)
 		- [Done - Code review 20260727](#done---code-review-20260727)
 		- [Done - Code review 20260726](#done---code-review-20260726)
@@ -46,16 +47,25 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Bugs
 
-- 🔘 Every install command in the README 404s, because `main` is still the 2022 tree.
-	- `main` holds no `install.bash`, `install.ps1`, `install-dev.*` or `bin/gitsby.ps1`, so all six documented one-liners fail at the download. Reported from the field.
-	- Cutting v2.0.0 fixes it outright: the merge to `main` puts the files there, and `releases/latest` stops resolving to the 2022 `v1.0.1`, which is a dead end for the default install path (that tag predates the `bin/` layout).
-	- Until then the working incantation is the `dev` URL plus `--release dev` / `-Release dev`. Left undocumented on purpose rather than pointing strangers at `dev`.
-
 ### Features and enhancements
+
+- 🔘 Design a way to *fully* automate new releases, end-to-end.
 
 ### Done
 
 #### Done - Bugs
+
+- ✅ Every install command in the README 404s, because `main` is still the 2022 tree.
+	- `main` holds no `install.bash`, `install.ps1`, `install-dev.*` or `bin/gitsby.ps1`, so all six documented one-liners fail at the download. Reported from the field.
+	- Cutting v2.0.0 fixes it outright: the merge to `main` puts the files there, and `releases/latest` stops resolving to the 2022 `v1.0.1`, which is a dead end for the default install path (that tag predates the `bin/` layout).
+	- Until then the working incantation is the `dev` URL plus `--release dev` / `-Release dev`. Left undocumented on purpose rather than pointing strangers at `dev`.
+
+- ✅ The SSH identity line named the local login instead of the account being acted as.
+	- It asked `ssh -G` about the bare host. With no user in the target, ssh answers with the OS login name, so a push as `t00mietum` displayed as `collierjr@github.com`. Reported from the field.
+	- That value is neither of the two real ones: the connect user is `git`, and the account is whatever the key authenticates as. On a personal machine it looks plausible enough to be believed, which is worse than showing nothing.
+	- The probe now uses the connect target, so an explicit user in the remote URL is honored the way git honors it. Host alias resolution is unaffected - the user part only overrides `User` in `~/.ssh/config`.
+	- The line also leads with the account now, resolved by asking the host. That is what it existed to answer; the connect user is identical for every GitHub account, and the key shown is only ssh's first readable candidate, not necessarily the one that authenticates. Offline it says `unknown` rather than guessing, and skips the round trip.
+	- Every other test uses a local-path origin, which has no ssh identity, so the whole line had shipped untested. It now has a fake ssh that reproduces the real defaulting behavior.
 
 - ✅ A byte-order mark on the three PowerShell files broke both installer one-liners and direct execution.
 	- `irm` keeps the BOM, so `iex` and `[scriptblock]::Create` saw it glued to the shebang and the first line stopped being a comment. Both documented one-liners failed for every user, on every platform. Reported from the field.
@@ -67,7 +77,7 @@ In each section, items are listed approximately from newest to oldest.
 
 - ✅ An unreachable remote did not make the parking push safe.
 	- `update` and `sync` degraded properly, but `br create`, `br switch`, `br hotfix`, `pr create` and `release` all failed on `git push` with raw git text.
-	- Split by what each command is for. The ones that mean something locally now skip the push and say so, naming `sync` as the way to publish later. The ones that exist to publish - `sync`, `pr create`, `pr ok`, `release` - refuse up front, before the plan promises a push, and name what to do instead.
+	- Split by what each command is for. The ones that mean something locally now skip the push and say so, naming the branch and `sync` from it as the way to publish later. The ones that exist to publish - `sync`, `pr create`, `pr ok`, `release` - refuse up front, before the plan promises a push, and name what to do instead.
 	- `br land` needed more than a skipped push: with the merge unpublished, origin's copy of the work branch is its only ref to those commits, so the remote delete is held back too. The hotfix back-merge has the same shape - it merges `origin/main` normally, which unpublished is the stale one, so it falls back to the local branch.
 	- Decided against making `--no-fetch` mean this. The flag declines the incoming round trip, which is a perfectly good thing to want against a reachable remote, and the suite itself uses it that way throughout. Offline is a state the pre-command fetch discovers, not a flag.
 
@@ -205,7 +215,7 @@ In each section, items are listed approximately from newest to oldest.
 	- Show what's going to change (including a list of changed files, piped through an internal equivalent of `... | less -FX` if necessary)
 	- git status without line-breaks, and SSH connection info. And a prompt to continue. All with standard 1 blank line where appropriate.
 	- Every mutating command already previewed its plan and prompted; this added the identity and change detail. `status` shows the same block.
-	- SSH line resolves the remote URL through `ssh -G`, so a `~/.ssh/config` host alias shows the real host, user, and key it will use - the point being to catch acting as the wrong account before you push. Author line shows what git will actually stamp on the commit.
+	- SSH line resolves the remote URL through `ssh -G`, so a `~/.ssh/config` host alias shows the real host and key behind it - the point being to catch acting as the wrong account before you push. (It later grew the account itself, which is the part that actually answers that; see the bug above.) Author line shows what git will actually stamp on the commit.
 	- Changes list one file per line (short form), truncated to the terminal width and capped at 25 with an "and N more" tail - the `less -FX` idea without depending on a pager. Incoming section lists what a pull would change, and the branch line carries ahead/behind.
 
 - ✅ Better command names; dev-aware merging; PR and release commands (both implementations).
@@ -273,6 +283,22 @@ In each section, items are listed approximately from newest to oldest.
 
 - ✅ Delete stale branch from 2020.
 	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
+
+#### Done - Code review 20260730
+
+Delta review of what landed since the 20260727b round: the offline handling, the BOM fix, the installer message, and the SSH identity line. Three findings, all in the offline messages, all in both implementations.
+
+- ✅ Code Review 20260730 item 1: an offline hotfix land pointed at a recovery that leaves the hotfix unshipped.
+	- The warning said `sync` publishes the merge, but a hotfix land ends on `dev` after the back-merge - `sync` from there publishes `dev` and leaves origin's default branch stale. That is the one branch a hotfix exists to fix, and following the advice would read as success.
+	- Fixed: the hotfix warning names both steps, `br switch <default>` then `sync` - the switch's parking push publishes `dev` on the way, so the pair covers both branches. A normal land still just names `sync`, which is right there because the command ends on the target.
+
+- ✅ Code Review 20260730 item 2: parking offline claimed committed work awaits even when there was nothing to push.
+	- A clean, in-sync branch got "Your work is committed locally" with no work at all; online, the same state correctly said "Nothing to push."
+	- Fixed: nothing ahead of the last-known origin means "Nothing to push.", offline or not.
+
+- ✅ Code Review 20260730 item 3: the skipped-push warning said `sync` publishes it, during commands that then leave that branch.
+	- `br switch` and `br land` park the current branch and move off it, so a `sync` from where you end up publishes a different branch.
+	- Fixed: the warning names the branch it means, and says `sync` from it.
 
 #### Done - Code review 20260727b
 
