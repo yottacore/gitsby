@@ -1102,6 +1102,12 @@ GHEOF
 				fAssert "$(basename "${psFile}") starts with a shebang, no BOM" \
 					bash -c "[[ \"\$(head -c2 '${psFile}')\" == '#!' ]]"
 			done
+			## GitHub serves SHA256SUMS as octet-stream, and Invoke-WebRequest hands back bytes
+			## for that, so reading the body as text found no checksum and skipped verification
+			## while reporting there was none. Reaching the real asset needs the network, so this
+			## pins the decode in the source rather than exercising it.
+			fAssert "install.ps1 decodes the SHA256SUMS body from bytes" \
+				bash -c "grep -q 'byte\[\]' '${instPs}'"
 		fi
 	fi
 
