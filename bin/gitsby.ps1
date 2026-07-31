@@ -70,7 +70,7 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:thisVersion = '2.0.1'
+$script:thisVersion = '2.0.2'
 $script:thisCopyrightYear = '2014-2026'
 $script:thisAuthor = 'Jim Collier'
 $script:meName = Split-Path -Leaf -Path $PSCommandPath
@@ -1898,3 +1898,6 @@ try {
 ##      - 20260728 JC: 'repo create'/'repo connect' from a plain directory list the files they will publish, via a throwaway git dir outside the work tree - in step with bin/gitsby.
 ##      - 20260730 JC: The SSH identity line probes the connect target instead of the bare host (which answered with the OS login name), and leads with the account the key authenticates as - in step with bin/gitsby.
 ##      - 20260730 JC: Offline messages tell the truth: a park with nothing to push says so, the skipped-push warning names its branch, and an offline hotfix land names the two commands that publish the default branch - in step with bin/gitsby.
+##      - 20260731 JC: Branch names display against the branch they land on; br create/hotfix name the branch they are about to make and where it comes from; the repo default gets its own line, and br list states it before listing - in step with bin/gitsby.
+##      - 20260731 JC: The status block labels the branch you are on 'Current branch' - in step with bin/gitsby.
+##      - 20260731 JC: br list runs in a repo whose default branch can't be told, reporting it unknown rather than refusing - in step with bin/gitsby.
