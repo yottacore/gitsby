@@ -45,7 +45,7 @@ fi
 #•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Settings
 [[ -v doQuietly         ]] || declare -i doQuietly=0
-[[ -v thisVersion       ]] || declare -r thisVersion="2.0.1"
+[[ -v thisVersion       ]] || declare -r thisVersion="2.0.2"
 [[ -v thisCopyrightYear ]] || declare -r thisCopyrightYear="2014-2026"
 [[ -v thisAuthor        ]] || declare -r thisAuthor="Jim Collier"
 
@@ -1931,3 +1931,6 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##		- 20260728 JC: 'repo create' and 'repo connect' from a plain directory list the files they are about to publish, asked through a throwaway git dir outside the work tree so .gitignore is honored and nothing is written into the user's directory.
 ##		- 20260730 JC: The SSH identity line asked 'ssh -G' about the bare host, which answers with the OS login name when the target carries no user - so it named neither the connect user nor the account. It probes the connect target now, and leads with the account the key authenticates as, asked of the host rather than inferred from the key filename.
 ##		- 20260730 JC: Offline messages tell the truth: a park with nothing to push says so, the skipped-push warning names the branch it means (the command may move off it next), and an offline hotfix land names 'br switch <default>' then 'sync' - a bare 'sync' runs from dev after the back-merge and would have left the default branch stale on origin.
+##		- 20260731 JC: Branch names display against the branch they land on ('dev :: feature/retries'); br create/hotfix name the branch they are about to make and where it comes from; the repo default gets its own line instead of a parenthetical, and br list states it before listing.
+##		- 20260731 JC: The status block labels the branch you are on 'Current branch', so it reads against the 'Default branch' and 'New branch' lines beside it.
+##		- 20260731 JC: br list runs in a repo whose default branch can't be told - like status it reports it unknown and lists anyway, which is what you need to see to fix it.
