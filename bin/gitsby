@@ -1150,24 +1150,47 @@ fpGhTokenFor(){
 	gh auth token --user "${who}" 2>/dev/null || true
 :;}
 
+fpConfiguredGhAccount(){
+	## The account configured for wherever we are. Read through git, so an includeIf on the repo
+	## path - the same mechanism that already selects the ssh key - answers it, and gitsby needs no
+	## config file of its own. Empty when unset, which is the ordinary case.
+	git config --get gitsby.ghAccount 2>/dev/null || true
+:;}
+
+fpGhTokenFromFile(){
+	## Token for an account gh was never logged in as, from the file named by gitsby.ghTokenFile.
+	## Unset, missing, unreadable and empty are all simply "no token": a machine that has not been
+	## set up this way has to fall back to gh's own account, never fail because a path is absent.
+	local file=""; file="$(git config --get gitsby.ghTokenFile 2>/dev/null || true)"
+	[[ -n "${file}" && -r "${file}" ]] || return 0
+	tr -d '[:space:]' < "${file}" 2>/dev/null || true
+:;}
+
 fpSelectGhAccount(){
-	## gh keeps ONE active account per host, so against a remote owned by somebody else it will act
+	## gh keeps ONE active account per host, so against a repo belonging to somebody else it will act
 	## as whoever you last switched to - and 'gh auth switch' is global state you have to remember to
-	## set and to put back. When the remote's owner is an account gh already holds, point just this
-	## run at it via GH_TOKEN, which outranks the stored credentials and leaves nothing behind.
-	## Only when we can name the owner AND hold their token: an org or a fork we have no account for
-	## is ordinary, and stays untouched. Never silent - fpShowIdentity names the switch in the preview.
+	## set and to put back. Point just this run at the right account via GH_TOKEN, which outranks the
+	## stored credentials and leaves nothing behind. Never silent - fpShowIdentity names it in the preview.
 	local -r url="${1:-}"
-	local -r owner="$(fpRemoteOwner "${url}")"
-	[[ -n "${owner}" ]] || return 0
+	## Configured account first: it says who to be here whatever the remote says, and it is the only
+	## one of the two that answers before a remote exists. The remote's owner is the zero-config
+	## fallback, so this works with nothing set up at all.
+	local who=""; who="$(fpConfiguredGhAccount)"
+	[[ -n "${who}" ]] || who="$(fpRemoteOwner "${url}")"
+	[[ -n "${who}" ]] || return 0
 	local -r active="$(fpGhLogin)"
-	[[ "${active}" != "?" && "${active}" != "${owner}" ]] || return 0
-	local token=""; token="$(fpGhTokenFor "${owner}")"
+	[[ "${active}" != "${who}" ]] || return 0
+	## gh's own store first - it is the one that stays current. The file is for a box where this
+	## account was never logged in, which is the whole point of being able to name one.
+	local token=""; token="$(fpGhTokenFor "${who}")"
+	[[ -n "${token}" ]] || token="$(fpGhTokenFromFile)"
 	[[ -n "${token}" ]] || return 0
 	export GH_TOKEN="${token}"
-	## The token came out of gh's store keyed by that login, so it is that account - no round trip
-	## needed to confirm it, and this stays correct offline.
-	ghSwitchedFrom="${active}"; ghLoginCache="${owner}"
+	## The token is keyed by that login in gh's store, or named for it in config, so it is that
+	## account - no round trip needed to confirm it, and this stays correct offline.
+	## '?' means gh had no account at all, so there is nothing to report having switched away from.
+	[[ "${active}" != "?" ]] && ghSwitchedFrom="${active}"
+	ghLoginCache="${who}"
 :;}
 
 fpGhLogin(){
@@ -1545,7 +1568,7 @@ fpShowIdentity(){
 		[[ "${ghLogin}" == "?" ]] && ghLine="(unknown - gh not logged in, or offline)"
 		## An account we picked for this remote is still a change of who you act as. Say it here,
 		## in the block you read before confirming, rather than let it look like it was already active.
-		[[ -n "${ghSwitchedFrom:-}" ]] && ghLine="${ghLine} (selected for this remote; active account is '${ghSwitchedFrom}')"
+		[[ -n "${ghSwitchedFrom:-}" ]] && ghLine="${ghLine} (selected here; gh's active account is '${ghSwitchedFrom}')"
 		## Only a write can act as the wrong account, so only a write gets the comparison. The
 		## round trip behind it is the same one the SSH line above already made.
 		if ((isGhWrite)); then

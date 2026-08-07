@@ -845,6 +845,41 @@ GHEOF
 		fAssert "-AnyIdentity leaves gh's active account alone" \
 			bash -c "cd '${idn}/c' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse acme' FAKE_GH_LOG='${idn}/any.log' '${gitsby}' -q -NoFetch -AnyIdentity pr && grep -q 'GH_TOKEN=\]' '${idn}/any.log'"
 	fi
+	## An account configured for the path wins over the remote's owner, and is the only one of the
+	## two that can answer before a remote exists. Set locally here; in practice an includeIf on the
+	## repo path supplies it, the same way the ssh key and commit identity already arrive.
+	git clone --quiet "${idn}/backing.git" "${idn}/cfg" 2>/dev/null
+	(
+		cd "${idn}/cfg" || exit 1
+		git remote set-url origin git@github.com:acme/proj.git
+		git config gitsby.ghAccount configured
+	)
+	fAssert "a configured account wins over the remote's owner" \
+		bash -c "cd '${idn}/cfg' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse acme configured' FAKE_GH_LOG='${idn}/cfg.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=tok_configured' '${idn}/cfg.log'"
+	## No origin at all: nothing to parse an owner from, so only the configured account can answer.
+	mkdir -p "${idn}/noremote"
+	(
+		cd "${idn}/noremote" || exit 1
+		git init --quiet -b main . && git commit --quiet --allow-empty -m init
+		git config gitsby.ghAccount configured
+	)
+	fAssert "a configured account applies with no remote at all" \
+		bash -c "cd '${idn}/noremote' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse configured' FAKE_GH_LOG='${idn}/nore.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=tok_configured' '${idn}/nore.log'"
+	## The token file covers a box where that account was never logged in to gh. Absent, unreadable
+	## and empty must all fall back to gh's own account rather than fail - a checkout that was never
+	## set up this way still has to work.
+	printf 'tok_fromfile\n' > "${idn}/token.txt"
+	fAssert "the token file is used when gh has no such account" \
+		bash -c "cd '${idn}/cfg' && git config gitsby.ghTokenFile '${idn}/token.txt' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse' FAKE_GH_LOG='${idn}/file.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=tok_fromfile' '${idn}/file.log'"
+	fAssert "a missing token file falls back instead of failing" \
+		bash -c "cd '${idn}/cfg' && git config gitsby.ghTokenFile '${idn}/absent.txt' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse' FAKE_GH_LOG='${idn}/miss.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=\]' '${idn}/miss.log'"
+	: > "${idn}/blank.txt"
+	fAssert "an empty token file falls back instead of failing" \
+		bash -c "cd '${idn}/cfg' && git config gitsby.ghTokenFile '${idn}/blank.txt' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse' FAKE_GH_LOG='${idn}/blank.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=\]' '${idn}/blank.log'"
+	## gh's own store outranks the file, so a rotated login is not shadowed by a stale token on disk.
+	fAssert "gh's own account outranks the token file" \
+		bash -c "cd '${idn}/cfg' && git config gitsby.ghTokenFile '${idn}/token.txt' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse configured' FAKE_GH_LOG='${idn}/pref.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=tok_configured' '${idn}/pref.log'"
+
 	## A remote we can't name an owner for gets no opinion at all.
 	git clone --quiet "${idn}/backing.git" "${idn}/local" 2>/dev/null
 	fAssert "a non-GitHub remote picks no account" \

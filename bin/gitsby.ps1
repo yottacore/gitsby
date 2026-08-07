@@ -514,25 +514,53 @@ function Get-GhTokenFor {
     return ''
 }
 
+function Get-ConfiguredGhAccount {
+    ## The account configured for wherever we are. Read through git, so an includeIf on the repo
+    ## path - the same mechanism that already selects the ssh key - answers it, and gitsby needs no
+    ## config file of its own. Empty when unset, which is the ordinary case.
+    $out = @()
+    try { $out = @(git config --get gitsby.ghAccount 2>$null) } catch { $out = @() }
+    if ($out.Count -gt 0) { return ([string]$out[0]).Trim() }
+    return ''
+}
+
+function Get-GhTokenFromFile {
+    ## Token for an account gh was never logged in as, from the file named by gitsby.ghTokenFile.
+    ## Unset, missing, unreadable and empty are all simply "no token": a machine that has not been
+    ## set up this way has to fall back to gh's own account, never fail because a path is absent.
+    $out = @()
+    try { $out = @(git config --get gitsby.ghTokenFile 2>$null) } catch { $out = @() }
+    if ($out.Count -eq 0) { return '' }
+    $file = ([string]$out[0]).Trim()
+    if (-not $file -or -not (Test-Path -LiteralPath $file)) { return '' }
+    try { return ((Get-Content -LiteralPath $file -Raw -ErrorAction Stop) -replace '\s', '') } catch { return '' }
+}
+
 function Select-GhAccount {
-    ## gh keeps ONE active account per host, so against a remote owned by somebody else it will act
+    ## gh keeps ONE active account per host, so against a repo belonging to somebody else it will act
     ## as whoever you last switched to - and 'gh auth switch' is global state you have to remember to
-    ## set and to put back. When the remote's owner is an account gh already holds, point just this
-    ## run at it via GH_TOKEN, which outranks the stored credentials and leaves nothing behind.
-    ## Only when we can name the owner AND hold their token: an org or a fork we have no account for
-    ## is ordinary, and stays untouched. Never silent - Show-Identity names the switch in the preview.
+    ## set and to put back. Point just this run at the right account via GH_TOKEN, which outranks the
+    ## stored credentials and leaves nothing behind. Never silent - Show-Identity names it in the preview.
     param([string]$Url)
-    $owner = Get-RemoteOwner -Url $Url
-    if (-not $owner) { return }
+    ## Configured account first: it says who to be here whatever the remote says, and it is the only
+    ## one of the two that answers before a remote exists. The remote's owner is the zero-config
+    ## fallback, so this works with nothing set up at all.
+    $who = Get-ConfiguredGhAccount
+    if (-not $who) { $who = Get-RemoteOwner -Url $Url }
+    if (-not $who) { return }
     $active = Get-GhLogin
-    if ($active -eq '?' -or $active -eq $owner) { return }
-    $token = Get-GhTokenFor -Who $owner
+    if ($active -eq $who) { return }
+    ## gh's own store first - it is the one that stays current. The file is for a box where this
+    ## account was never logged in, which is the whole point of being able to name one.
+    $token = Get-GhTokenFor -Who $who
+    if (-not $token) { $token = Get-GhTokenFromFile }
     if (-not $token) { return }
     $env:GH_TOKEN = $token
-    ## The token came out of gh's store keyed by that login, so it is that account - no round trip
-    ## needed to confirm it, and this stays correct offline.
-    $script:ghSwitchedFrom = $active
-    $script:ghLoginCache = $owner
+    ## The token is keyed by that login in gh's store, or named for it in config, so it is that
+    ## account - no round trip needed to confirm it, and this stays correct offline.
+    ## '?' means gh had no account at all, so there is nothing to report having switched away from.
+    if ($active -ne '?') { $script:ghSwitchedFrom = $active }
+    $script:ghLoginCache = $who
 }
 
 function Get-GhLogin {
@@ -843,7 +871,7 @@ function Show-Identity {
         if ($ghLogin -eq '?') { $ghLine = '(unknown - gh not logged in, or offline)' }
         ## An account we picked for this remote is still a change of who you act as. Say it here,
         ## in the block you read before confirming, rather than let it look like it was already active.
-        if ($script:ghSwitchedFrom) { $ghLine += " (selected for this remote; active account is '$($script:ghSwitchedFrom)')" }
+        if ($script:ghSwitchedFrom) { $ghLine += " (selected here; gh's active account is '$($script:ghSwitchedFrom)')" }
         ## Only a write can act as the wrong account, so only a write gets the comparison. The
         ## round trip behind it is the same one the SSH line above already made.
         if ($script:isGhWrite) {

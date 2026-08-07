@@ -20,7 +20,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- Commands that go through gh now act as the remote's own account when gh already holds it, chosen per run rather than by switching gh's active account. The account is named in the identity block, and `--any-identity` (`-AnyIdentity`) turns it off. A remote whose owner gh has no account for - an org, or anyone else's repo - is left alone.
+- Commands that go through gh now act as the account that belongs to where you are, chosen per run rather than by switching gh's active account. The account is named in the identity block, and `--any-identity` (`-AnyIdentity`) turns it off. A remote whose owner gh has no account for - an org, or anyone else's repo - is left alone.
+
+- Two optional git config keys, for holding more than one GitHub account on a machine. `gitsby.ghAccount` names the account to act as, and takes precedence over the remote's owner; `gitsby.ghTokenFile` names a file holding its token, for a machine where gh has never been logged in as that account. Both are read through `git config`, so an `includeIf` on the repo path selects them the same way it already selects the ssh key and the commit identity. Unset keys, a missing or empty token file, or no gh at all all fall back to gh's own account rather than failing.
+
+- `cicd/utility/include/gh-account.bash`, a sourceable version of the same selection for pipelines that call `gh` directly rather than through gitsby.
 
 ### Fixed
 
