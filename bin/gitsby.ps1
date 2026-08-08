@@ -180,6 +180,8 @@ function Show-Syntax {
     Write-PlainLine '  repo create <o/n> ..: Create GitHub repo ''owner/name'' via gh, then connect this directory and push.'
     Write-PlainLine '  repo connect [url] .: Connect this directory to an existing empty remote, and push.'
     Write-PlainLine '  repo url [https|ssh]: Show how origin authenticates, or switch it between the two.'
+    Write-PlainLine '  account [list] .....: Show your configured GitHub accounts, and which one this folder uses.'
+    Write-PlainLine '  account apply ......: Teach plain git the same folder rules, so ''git'' outside gitsby matches.'
     Write-PlainLine 'Less common commands:'
     Write-PlainLine '  sync [msg] .........: Pull, commit, and push. Do infrequently.'
     Write-PlainLine 'Admin commands, e.g. for small solo projects:'
@@ -189,8 +191,8 @@ function Show-Syntax {
     Write-PlainLine '  pr [create|n|ok n] .: Create, list, review, or accept a pull request (needs gh).'
     Write-PlainLine '  release [ver] ......: Cut a release: merge dev into main, tag, push. No ver: next after latest tag.'
     Write-PlainLine 'For scripts:'
-    Write-PlainLine '  git <args> .........: Run git as the account this folder belongs to. Everything after ''git'' is git''s.'
-    Write-PlainLine '  gh <args> ..........: The same, for gh.'
+    Write-PlainLine '  raw git <args> .....: Run git as the account this folder belongs to. Everything after ''git'' is git''s.'
+    Write-PlainLine '  raw gh <args> ......: The same, for gh.'
     Write-PlainLine 'Options:'
     Write-PlainLine '  -m, -Message MSG .....: Commit or merge message (or give it positionally).'
     Write-PlainLine '  -q, -Quiet, -y .......: Assume yes - no prompts; if committing with no message, one is generated.'
@@ -922,32 +924,39 @@ function Get-RawScriptArgList {
 }
 
 function Invoke-PassthroughIfAsked {
-    ## 'gitsby git ...' and 'gitsby gh ...' run the real tool as the account this folder belongs to,
-    ## then get out of its way entirely: no preview, no confirmation, no fetch. This is not one of
-    ## our commands, it is somebody else's command run under the right identity, and a script that
-    ## pipes its output must get that output and nothing else.
+    ## 'gitsby raw git ...' and 'gitsby raw gh ...' run the real tool as the account this folder
+    ## belongs to, then get out of its way entirely: no preview, no confirmation, no fetch. This is
+    ## not one of our commands, it is somebody else's command run under the right identity, and a
+    ## script that pipes its output must get that output and nothing else. Under a 'raw' noun so the
+    ## tools stay out of the command namespace, and so anything else that has to pass through
+    ## untouched has somewhere to live.
     ##
     ## Only the handful of our own options that mean anything here are read, and only before the
-    ## verb - past it a '-q' is git's own flag, not ours.
+    ## tool name - past it a '-q' is git's own flag, not ours.
     $raw = Get-RawScriptArgList
     if ($null -eq $raw) {
         ## Nothing to do unless a passthrough was actually asked for; a normal command is unaffected.
-        if ($Command -in 'git', 'gh') {
-            throw "'$($script:meName) $Command' needs its arguments exactly as typed, and this way of starting it doesn't preserve them. Run the script by path: pwsh -File $PSCommandPath $Command ..."
+        if ($Command -eq 'raw') {
+            throw "'$($script:meName) raw' needs its arguments exactly as typed, and this way of starting it doesn't preserve them. Run the script by path: pwsh -File $PSCommandPath raw ..."
         }
         return
     }
-    $tool = ''; $toolArgs = @(); $wantConfig = $false; $quiet = $false; $configPath = ''
+    $tool = ''; $toolArgs = @(); $wantConfig = $false; $wantTool = $false; $quiet = $false; $configPath = ''
     foreach ($arg in $raw) {
         $token = [string]$arg
         if     ($tool)        { $toolArgs += $token; continue }
         elseif ($wantConfig)  { $configPath = $token; $wantConfig = $false; continue }
-        if     ($token -in 'git', 'gh')                              { $tool = $token }
+        elseif ($wantTool)    {
+            if ($token -notin 'git', 'gh') { throw "Unknown 'raw' subcommand '${token}'. One of: git, gh." }
+            $tool = $token; $wantTool = $false; continue
+        }
+        if     ($token -eq 'raw')                                    { $wantTool = $true }
         elseif ($token -in '-q', '-Quiet', '-y', '-Yes')             { $quiet = $true }
         elseif ($token -eq '-Config' -or $token -eq '--config')      { $wantConfig = $true }
         elseif ($token -like '-Config=*' -or $token -like '--config=*') { $configPath = $token.Substring($token.IndexOf('=') + 1) }
         else   { break }
     }
+    if ($wantTool) { throw "Syntax: $($script:meName) raw <git|gh> <arguments ...>" }
     if (-not $tool) { return }
     if (-not (Get-Command -Name $tool -ErrorAction SilentlyContinue)) { throw "Not found in path: ${tool}" }
     if ($configPath) { $script:configFileArg = $configPath }
@@ -1452,6 +1461,21 @@ function Show-CommandPreview {
             Write-PlainLine "${pad}git remote set-url origin $(Get-GithubUrl -Target (Get-RemoteTarget -Url $urlNow) -Protocol $script:repoUrlProtocol)"
             break
         }
+        'account-apply' {
+            ## Names every file and every condition, because this is the one command that writes
+            ## outside the repo you are standing in - into your own global git config.
+            $applyDir = Get-AccountIncludeDir
+            foreach ($applyName in (Get-AccountNameList)) {
+                Write-PlainLine "${pad}write ${applyDir}/${applyName}.gitconfig"
+            }
+            foreach ($applyKey in (Get-ManagedIncludeList)) {
+                Write-PlainLine "${pad}git config --global --unset-all ${applyKey}"
+            }
+            foreach ($applyEntry in (Get-AccountApplyPlan)) {
+                Write-PlainLine "${pad}git config --global --add $($applyEntry.Condition) $($applyEntry.File)"
+            }
+            break
+        }
         { $_ -in 'repo-create', 'repo-connect' } {
             if (-not $script:inRepo) { Write-PlainLine "${pad}git init -b main" }
             Show-CommandPreview -CommandName 'commit'
@@ -1769,6 +1793,155 @@ function Invoke-GitsbyPrune {
     }
 }
 
+function Get-AccountNameList {
+    ## Every account the config file defines, in the order it defines them.
+    $seen = [System.Collections.Generic.List[string]]::new()
+    foreach ($rule in $script:configPaths) {
+        if (-not $seen.Contains($rule.Name)) { $seen.Add($rule.Name) }
+    }
+    ## An account can be declared by its keys alone, with no folder rule - it is then only
+    ## reachable by name, through GITSBY_ACCOUNT, which is a legitimate way to use one.
+    foreach ($key in $script:configValues.Keys) {
+        if ($key -notmatch '^account\.(.+)\.[^.]+$') { continue }
+        if (-not $seen.Contains($Matches[1])) { $seen.Add($Matches[1]) }
+    }
+    return @($seen)
+}
+
+function Get-AccountFolderList {
+    ## The folder rules belonging to one account, as canonical paths.
+    param([string]$Name)
+    return @($script:configPaths | Where-Object { $_.Name -eq $Name } | ForEach-Object { $_.Path })
+}
+
+function Get-AccountIncludeDir {
+    ## Where the per-account git config fragments live: beside the config file that describes them,
+    ## so the two travel together and 'account apply' has an unambiguous set of files it owns.
+    if (-not $script:configFileUsed) { return '' }
+    return ((Split-Path -Parent -Path $script:configFileUsed) -replace '\\', '/') + '/accounts'
+}
+
+function Show-AccountList {
+    ## What is configured, and what this folder resolves to. The command you run when a push went
+    ## out as the wrong person and you want to know why.
+    Write-PlainLine ''
+    Write-PlainLine "Config file ..: $(if ($script:configFileUsed) { $script:configFileUsed } else { '(none found)' })"
+    Write-PlainLine "Here .........: $(Get-ContextDir)"
+    $hereAccount = Get-AccountForDir -Directory (Get-ContextDir)
+    $resolvedLine = if ($script:acctGhWho) { $script:acctGhWho } else { "(nothing configured - gh's own account)" }
+    if ($script:acctSource) { $resolvedLine = "${resolvedLine} (from $($script:acctSource))" }
+    Write-PlainLine "Resolves to ..: ${resolvedLine}"
+    if ($script:configUnknown.Count -gt 0) { Write-PlainLine "Ignored keys .: $($script:configUnknown -join ', ')" }
+    $names = @(Get-AccountNameList)
+    if ($names.Count -eq 0) {
+        Write-PlainLine ''
+        Write-PlainLine 'No accounts defined. See the Multiple accounts section of the README for the file format.'
+        return
+    }
+    Write-PlainLine ''
+    Write-PlainLine 'Accounts:'
+    foreach ($name in $names) {
+        $marker = if ($name -eq $hereAccount) { '->' } else { '  ' }
+        Write-PlainLine "${marker} ${name}"
+        $ghWho = Get-AccountValue -Name $name -Key 'ghAccount'
+        Write-PlainLine "     github ..: $(if ($ghWho) { $ghWho } else { '(none)' })"
+        ## Say where a token would come from, never what it is.
+        $tokenFile = Get-AccountValue -Name $name -Key 'tokenFile'
+        $tokenFrom = 'none'
+        if ($ghWho -and (Get-GhTokenFor -Who $ghWho)) { $tokenFrom = "gh's own store" }
+        elseif (Get-TokenFromFile -File $tokenFile)   { $tokenFrom = $tokenFile }
+        Write-PlainLine "     token ...: ${tokenFrom}"
+        $sshKey = Get-AccountValue -Name $name -Key 'sshKey'
+        if ($sshKey) { Write-PlainLine "     ssh key .: ${sshKey}" }
+        $acctUser = Get-AccountValue -Name $name -Key 'name'
+        $acctEmail = Get-AccountValue -Name $name -Key 'email'
+        if ($acctUser -or $acctEmail) {
+            Write-PlainLine "     commits .: $(if ($acctUser) { $acctUser } else { '?' }) <$(if ($acctEmail) { $acctEmail } else { '?' })>"
+        }
+        $proto = Get-AccountValue -Name $name -Key 'protocol'
+        if ($proto) { Write-PlainLine "     protocol : ${proto}" }
+        foreach ($folder in (Get-AccountFolderList -Name $name)) {
+            Write-PlainLine "     folder ..: ${folder}"
+        }
+    }
+}
+
+function Get-AccountApplyPlan {
+    ## The includeIf conditions 'account apply' would write, as @{ Condition; File }.
+    ## gitdir/i, not gitdir: a path compares case-insensitively on Windows and macOS, and a rule
+    ## that silently misses because of a capital letter is worse than no rule.
+    $dir = Get-AccountIncludeDir
+    if (-not $dir) { return @() }
+    $plan = @()
+    foreach ($name in (Get-AccountNameList)) {
+        foreach ($folder in (Get-AccountFolderList -Name $name)) {
+            ## The trailing slash is what makes git apply it to everything below the folder too.
+            $plan += [pscustomobject]@{ Condition = "includeIf.gitdir/i:${folder}/.path"; File = "${dir}/${name}.gitconfig" }
+        }
+    }
+    return @($plan)
+}
+
+function Get-ManagedIncludeList {
+    ## Every includeIf already in the global config that points into the directory we own. Those are
+    ## ours to replace; anything else in there was written by hand and is left alone.
+    $dir = Get-AccountIncludeDir
+    if (-not $dir) { return @() }
+    $canonDir = Get-CanonPath -Path $dir
+    $lines = @()
+    try { $lines = @(git config --global --get-regexp '^includeIf\..*\.path$' 2>$null) } catch { $lines = @() }
+    $keys = @()
+    foreach ($line in $lines) {
+        $text = [string]$line
+        if (-not $text.Contains(' ')) { continue }
+        $key = $text.Substring(0, $text.IndexOf(' '))
+        $value = $text.Substring($text.IndexOf(' ') + 1)
+        ## git prints the section and variable lower-cased and the subsection verbatim, so match
+        ## the key that way and hand it straight back to --unset-all.
+        if ($key.ToLowerInvariant() -notlike 'includeif.*.path') { continue }
+        ## Canonical, not textual: git stores a path in the platform's own spelling, so ours comes
+        ## back as 'C:/...' where we wrote '/c/...' - and a prefix test on the raw text never fires,
+        ## which quietly turns every re-run into a duplicate rather than a refresh.
+        if ((Get-CanonPath -Path $value) -notlike ($canonDir + '/*')) { continue }
+        $keys += $key
+    }
+    return @($keys)
+}
+
+function Invoke-GitsbyAccountApply {
+    ## Teach plain git what the config file already tells gitsby, so a bare 'git commit' or 'git push'
+    ## in one of these folders behaves the same as it does through us. One fragment per account, and
+    ## an includeIf per folder rule pointing at it - written with 'git config', never by editing the
+    ## file ourselves, so git's own parser decides what a valid entry looks like.
+    $dir = Get-AccountIncludeDir
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    foreach ($name in (Get-AccountNameList)) {
+        $fragment = "${dir}/${name}.gitconfig"
+        ## Rewritten whole each time: these files are ours, and a leftover key from a removed
+        ## account setting would be invisible and wrong.
+        Set-Content -LiteralPath $fragment -Value '' -NoNewline
+        $acctUser = Get-AccountValue -Name $name -Key 'name'
+        if ($acctUser) { git config --file $fragment user.name $acctUser }
+        $acctEmail = Get-AccountValue -Name $name -Key 'email'
+        if ($acctEmail) { git config --file $fragment user.email $acctEmail }
+        $ghWho = Get-AccountValue -Name $name -Key 'ghAccount'
+        if ($ghWho) { git config --file $fragment gitsby.ghAccount $ghWho }
+        $tokenFile = Get-AccountValue -Name $name -Key 'tokenFile'
+        if ($tokenFile) { git config --file $fragment gitsby.ghTokenFile $tokenFile }
+        $sshKey = Get-AccountValue -Name $name -Key 'sshKey'
+        if ($sshKey) { git config --file $fragment core.sshCommand "ssh -i $sshKey -o IdentitiesOnly=yes" }
+        Write-StatusLine "Wrote ${fragment}"
+    }
+    ## Drop ours before adding, so a folder rule that was removed from the config file stops applying.
+    foreach ($key in (Get-ManagedIncludeList)) {
+        git config --global --unset-all $key 2>$null
+    }
+    foreach ($entry in (Get-AccountApplyPlan)) {
+        git config --global --add $entry.Condition $entry.File
+        Write-StatusLine "git config --global --add $($entry.Condition)"
+    }
+}
+
 function Invoke-GitsbyRepoUrl {
     ## Re-spell origin in the other transport. Nothing else about the repo changes: same remote,
     ## same history, same name - only how git authenticates to it.
@@ -1975,6 +2148,13 @@ try {
             default { throw "Unknown 'repo' subcommand '${CommandArg}'. One of: clone, create, connect, url." }
         }
         $CommandArg = $CommandArg2; $CommandArg2 = $CommandArg3; $CommandArg3 = ''
+    } elseif ($cmdName -in 'account', 'acct') {
+        $cmdName = switch ($CommandArg.ToLowerInvariant()) {
+            { $_ -in '', 'list', 'show' } { 'account-list'; break }
+            'apply' { 'account-apply'; break }
+            default { throw "Unknown 'account' subcommand '${CommandArg}'. One of: list, apply." }
+        }
+        $CommandArg = $CommandArg2; $CommandArg2 = $CommandArg3; $CommandArg3 = ''
     } elseif ($cmdName -in 'br', 'branch') {
         $cmdName = switch ($CommandArg.ToLowerInvariant()) {
             { $_ -in '', 'list' } { 'br-list'; break }
@@ -1997,6 +2177,15 @@ try {
         { $_ -in 'status', 'br-list' } {
             $isMutating = $false
             if ($script:cmdArg) { throw "'$($script:meName) $($cmdName -replace 'br-list', 'br list')' takes no arguments (got '$($script:cmdArg)')." }
+            break
+        }
+        'account-list' {
+            $isMutating = $false
+            if ($CommandArg) { throw "'$($script:meName) account list' takes no arguments (got '${CommandArg}')." }
+            break
+        }
+        'account-apply' {
+            if ($CommandArg) { throw "'$($script:meName) account apply' takes no arguments (got '${CommandArg}')." }
             break
         }
         'pr' { if ($CommandArg.ToLowerInvariant() -notin 'ok', 'create', 'new') { $isMutating = $false }; break }
@@ -2065,7 +2254,7 @@ try {
     ## exist precisely to turn a plain directory into one.
     git rev-parse --is-inside-work-tree *> $null
     $script:inRepo = ($LASTEXITCODE -eq 0)
-    if (-not $script:inRepo -and $cmdName -notlike 'repo-*') { throw 'Not inside a git repository. Change to a git project directory first.' }
+    if (-not $script:inRepo -and $cmdName -notlike 'repo-*' -and $cmdName -notlike 'account-*') { throw 'Not inside a git repository. Change to a git project directory first.' }
 
     ## Point this run at the account whose folder this is, before anything reaches the network: the
     ## fetch below authenticates, so getting this wrong here gets it wrong for the whole command.
@@ -2076,7 +2265,7 @@ try {
     ## --prune: stale origin/* refs would fool the existence checks. set-head heals a missing/stale
     ## origin/HEAD. ssh gets a connect timeout so a dead remote can't hang every command for minutes.
     ## clone skips it: cwd may sit inside some unrelated repo, and the clone doesn't care about it.
-    if (-not $NoFetch -and $cmdName -ne 'repo-clone' -and (Test-GitOrigin)) {
+    if (-not $NoFetch -and $cmdName -ne 'repo-clone' -and $cmdName -notlike 'account-*' -and (Test-GitOrigin)) {
         Write-StatusLine 'git fetch ...'
         Sync-Remote
     }
@@ -2091,7 +2280,7 @@ try {
         ## 'status' and 'br list' are exempt on purpose: they mutate nothing and are the commands
         ## you run to see what is wrong, so they report "unknown" instead of refusing.
         git rev-parse -q --verify HEAD *> $null
-        if ($LASTEXITCODE -eq 0 -and $cmdName -cne 'status' -and $cmdName -cne 'br-list' -and $cmdName -notlike 'repo-*') {
+        if ($LASTEXITCODE -eq 0 -and $cmdName -cne 'status' -and $cmdName -cne 'br-list' -and $cmdName -notlike 'repo-*' -and $cmdName -notlike 'account-*') {
             if (-not $script:defaultBranchCache) {
                 throw "Can't tell this repo's default branch. Set it with 'git remote set-head origin --auto', or create a main/master."
             }
@@ -2425,6 +2614,7 @@ try {
                 break
             }
             'pr' { Invoke-GitsbyPrView -PrNumber $script:prNum; break }
+            'account-list' { Show-AccountList; break }
             'repo-url' {
                 $urlNow = [string](@(git remote get-url origin 2>$null) | Select-Object -First 1)
                 $urlTarget = Get-RemoteTarget -Url $urlNow
@@ -2446,7 +2636,11 @@ try {
 
     ## Mutating commands: show state and plan, confirm, execute, show state again.
     ## clone, and create/connect from a plain dir, have no repo state to show; a smaller header stands in.
-    if ($cmdName -eq 'repo-clone') {
+    if ($cmdName -eq 'account-apply') {
+        ## Nothing about a repo is involved: this writes machine-level git config, and showing branch
+        ## state here would suggest it does something to the repo you happen to be standing in.
+        Show-AccountList
+    } elseif ($cmdName -eq 'repo-clone') {
         Write-PlainLine ''
         Write-PlainLine "Directory ....: $(Get-Location)"
         Write-PlainLine "Remote .......: $(Get-MaskedUrl -Url $script:cloneUrl)"
@@ -2506,10 +2700,13 @@ try {
         'repo-clone' { Invoke-GitsbyClone; break }
         { $_ -in 'repo-create', 'repo-connect' } { Invoke-GitsbyConnect; break }
         'repo-url' { Invoke-GitsbyRepoUrl -Protocol $script:repoUrlProtocol; break }
+        'account-apply' { Invoke-GitsbyAccountApply; break }
     }
 
     Write-PlainLine ''
-    if ($cmdName -eq 'repo-clone') {
+    if ($cmdName -eq 'account-apply') {
+        ## every file it wrote was named as it was written; a repo status would add nothing
+    } elseif ($cmdName -eq 'repo-clone') {
         Write-StatusLine "Cloned into '$($script:cloneDir)'."  ## the after-status would show the wrong (current) directory
     } else {
         Show-RepoStatus

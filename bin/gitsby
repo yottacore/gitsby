@@ -94,8 +94,8 @@ fSyntax(){ { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax=
 	fEcho_Clean "  pr [create|n|ok n] .: Create, list, review, or accept a pull request (needs gh)."
 	fEcho_Clean "  release [ver] ......: Cut a release: merge dev into main, tag, push. No ver: next after latest tag."
 	fEcho_Clean "For scripts:"
-	fEcho_Clean "  git <args> .........: Run git as the account this folder belongs to. Everything after 'git' is git's."
-	fEcho_Clean "  gh <args> ..........: The same, for gh."
+	fEcho_Clean "  raw git <args> .....: Run git as the account this folder belongs to. Everything after 'git' is git's."
+	fEcho_Clean "  raw gh <args> ......: The same, for gh."
 	fEcho_Clean "Options:"
 	fEcho_Clean "  -m, --message MSG ....: Commit or merge message (or give it positionally)."
 	fEcho_Clean "  -q, --quiet, -y ......: Assume yes - no prompts; if committing with no message, one is generated."
@@ -158,24 +158,29 @@ fMain(){
 	local -a pruneLocal=(); local -a pruneRemote=(); local -a pruneKeep=(); local -a pruneTargetRefs=(); local pruneCurrentMerged=""  ## resolved by the br prune validation
 	local -ri parseArgs_maxPositionalArgCount=4
 
-	## 'gitsby git ...' and 'gitsby gh ...' hand everything after the verb to the real tool, verbatim,
-	## as the account this folder belongs to - so a script is made account-correct by prefixing its
-	## commands rather than by being rewritten. Scanned here rather than by the option parser, because
-	## past that verb the arguments belong to git: a '-q' there is git's own flag, not ours. Ours
-	## therefore have to come first, and only the handful that mean anything to a passthrough do.
-	local ptTool=""; local -a ptArgs=(); local -i ptWantConfig=0; local scanArg=""
+	## 'gitsby raw git ...' and 'gitsby raw gh ...' hand everything after the tool to the real thing,
+	## verbatim, as the account this folder belongs to - so a script is made account-correct by
+	## prefixing its commands rather than by being rewritten. Under a 'raw' noun so the tools stay
+	## out of the command namespace, and so anything else that has to pass through untouched has
+	## somewhere to live. Scanned here rather than by the option parser, because past the tool name
+	## the arguments belong to git: a '-q' there is git's own flag, not ours. Ours come first.
+	local ptTool=""; local -a ptArgs=(); local -i ptWantConfig=0; local -i ptWantTool=0; local scanArg=""
 	for scanArg in "${@}"; do
 		if   [[ -n "${ptTool}" ]];  then ptArgs+=("${scanArg}"); continue
 		elif ((ptWantConfig));      then configFileArg="${scanArg}"; ptWantConfig=0; continue
+		elif ((ptWantTool));        then
+			[[ "${scanArg}" == "git" || "${scanArg}" == "gh" ]] || fThrowError_Usage "Unknown 'raw' subcommand '${scanArg}'. One of: git, gh."
+			ptTool="${scanArg}"; ptWantTool=0; continue
 		fi
 		case "${scanArg}" in
-			git|gh)               ptTool="${scanArg}" ;;
+			raw)                  ptWantTool=1 ;;
 			-q|--quiet|-y|--yes)  doQuietly=1 ;;
 			--config)             ptWantConfig=1 ;;
 			--config=*)           configFileArg="${scanArg#*=}" ;;
 			*)                    break ;;
 		esac
 	done
+	((ptWantTool)) && fThrowError_Usage "Syntax: ${meName} raw <git|gh> <arguments ...>"
 	if [[ -n "${ptTool}" ]]; then fCmdPassthrough "${ptTool}" "${ptArgs[@]}"; return $?; fi
 
 	## Breathing room after the shell prompt (the matching trailing blank is at each exit path).
