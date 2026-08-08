@@ -45,9 +45,28 @@ fAssertNotOut(){ local desc="$1"; local pat="$2"; shift 2; local out=""; out="$(
 ## preview that lists a step from one that silently stopped listing it. Plan lines are indented
 ## under "Going to do"; the first execution line starts at column 0 with '[', in both ports.
 fPlanOf(){ awk '/Going to do/{p=1;next} p&&/^\[/{exit} p' ;}
-## Runs PowerShell source TEXT the way the documented one-liners do (iex / scriptblock), with no
-## controlling terminal and stdin at EOF so a confirmation prompt refuses instead of blocking.
-fPwshText(){ setsid pwsh -NoProfile -Command "$1" </dev/null 2>&1 ;}
+## Windows can't start a shebang script by name, and the PowerShell build looks its commands up
+## the Windows way - so every stub gets a .cmd sibling that hands the body straight back to bash.
+## Without it the pwsh leg finds the stub, runs nothing, and reads the silence as empty output.
+isWindows=0
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) isWindows=1 ;; esac
+fStubShim(){ ((isWindows)) && printf '@echo off\r\nbash "%s" %%*\r\n' "$1" > "$1.cmd"; return 0 ;}
+## Write a stub from stdin, runnable by both builds.
+fStub(){ cat > "$1"; chmod +x "$1"; fStubShim "$1" ;}
+
+## Checks that reach a confirmation need it to refuse rather than wait: stdin at EOF, and nothing
+## for the prompt to fall back to. setsid guarantees that. Windows has no setsid, but PowerShell
+## only ever reads redirected stdin, so </dev/null alone is enough there - which is why the pwsh
+## one-liners below run either way. install.bash does fall back to /dev/tty, so its plan checks
+## additionally need that open to fail.
+declare -a noTty=()
+canNoTty=0 shNoTty=0
+if command -v setsid >/dev/null 2>&1; then noTty=(setsid); canNoTty=1; shNoTty=1
+elif ((isWindows));                     then canNoTty=1; { : </dev/tty; } 2>/dev/null || shNoTty=1
+fi
+## Runs PowerShell source TEXT the way the documented one-liners do (iex / scriptblock), with
+## stdin at EOF so a confirmation prompt refuses instead of blocking.
+fPwshText(){ "${noTty[@]}" pwsh -NoProfile -Command "$1" </dev/null 2>&1 ;}
 fAssertPlan(){    local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
 	if     grep -qE "$pat" <<< "$(fPlanOf <<< "${out}")"; then fOk "$desc"; else fFail "$desc"; fi; }
 fAssertNotPlan(){ local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
@@ -581,7 +600,7 @@ fRunSuite(){
 	## -T greets as the key's account, and anything else fails so git's own fetch reports offline.
 	local sid="${work}/$1-sshid"
 	mkdir -p "${sid}/bin"
-	cat > "${sid}/bin/ssh" <<-'EOF'
+	fStub "${sid}/bin/ssh" <<-'EOF'
 		#!/usr/bin/env bash
 		[[ -n "${FAKE_SSH_LOG:-}" ]] && echo "$*" >> "${FAKE_SSH_LOG}"
 		target="${*: -1}"
@@ -594,11 +613,15 @@ fRunSuite(){
 		esac
 		exit 255
 	EOF
-	chmod +x "${sid}/bin/ssh"
 	local sidp="${sid}/bin:${PATH}"
+	## Only a key file that exists gets named, so the stub has to nominate a real one - in a form
+	## both builds can stat, which on Windows means a drive path, not a POSIX one.
+	: > "${sid}/keyfile"
+	local sidKey="${sid}/keyfile"
+	((isWindows)) && sidKey="$(cygpath -m "${sid}/keyfile")"
 	git init --quiet -b main "${sid}/proj"
 	( cd "${sid}/proj" && echo s > s.txt && git add --all && git commit --quiet -m init && git remote add origin git@github.com:acme/api.git )
-	local sidRun="cd '${sid}/proj' && PATH='${sidp}'"
+	local sidRun="cd '${sid}/proj' && PATH='${sidp}' FAKE_SSH_KEY='${sidKey}'"
 	## The account the key authenticates as is the question this line exists to answer, so it
 	## leads. The old line answered with the OS login, which is neither that nor the connect user.
 	fAssertOut    "ssh line names the account the key authenticates as"  "SSH \.+: acmedev \("  bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
@@ -606,7 +629,7 @@ fRunSuite(){
 	## it, so the loose form was satisfied by the broken output too.
 	fAssertOut    "ssh line names the user git actually connects as"     "SSH \.+: .*\(git@github\.com,"  bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
 	fAssertNotOut "ssh line never reports the OS login"                  'osuser'               bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
-	fAssertOut    "the key is still reported"                            'key /etc/hostname'    bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
+	fAssertOut    "the key is still reported"                            "key ${sidKey}"        bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
 	fAssertOut    "a mutating pre-flight names the account too"          "SSH \.+: acmedev \("  bash -c "${sidRun} '${gitsby}' -q -NoFetch update 'ssh id probe' 2>&1"
 	## A host alias is the case the line was added for: ~/.ssh/config hides the real host and key.
 	git -C "${sid}/proj" remote set-url origin git@gh-acme:acme/api.git
@@ -622,12 +645,11 @@ fRunSuite(){
 	## A git shim records the env the fetch actually got - the only way to see this without a tty.
 	local tp="${work}/$1-tprompt"
 	mkdir -p "${tp}/bin"
-	cat > "${tp}/bin/git" <<-EOF
+	fStub "${tp}/bin/git" <<-EOF
 		#!/usr/bin/env bash
 		[[ "\$1" == "fetch" ]] && echo "\${GIT_TERMINAL_PROMPT-UNSET}" >> "\${TPROMPT_LOG}"
 		exec "$(command -v git)" "\$@"
 	EOF
-	chmod +x "${tp}/bin/git"
 	git init --quiet -b main "${tp}/proj"
 	## Origin is a dead local path, not an https URL: the assert reads the env the fetch got,
 	## so it needs no real server, and the suite stays off the network.
@@ -640,7 +662,7 @@ fRunSuite(){
 	## the push lands offline; create-mode wiring is done inside the stub.
 	local gh="${work}/$1-gh"
 	mkdir -p "${gh}/bin"
-	cat > "${gh}/bin/gh" <<'GHEOF'
+	fStub "${gh}/bin/gh" <<'GHEOF'
 #!/usr/bin/env bash
 ## Test stub: deterministic gh, no network. Behavior driven by FAKE_GH_* env.
 ## GH_TOKEN is logged too: that is how a check sees which account the run picked for the remote.
@@ -673,11 +695,10 @@ case "$1 $2" in
 	*) echo "fake gh: unhandled: $*" >&2; exit 2 ;;
 esac
 GHEOF
-	chmod +x "${gh}/bin/gh"
 	## An ssh-protocol connect now probes the identity of the url it is about to set, so this dir
 	## needs an ssh too - otherwise the suite would ask the real github.com who we are. Answers with
 	## the same login the fake gh reports, so these checks see a match and carry on.
-	cat > "${gh}/bin/ssh" <<-'EOF'
+	fStub "${gh}/bin/ssh" <<-'EOF'
 		#!/usr/bin/env bash
 		## Scan rather than index $1: the probe now prefixes git's own core.sshCommand arguments,
 		## so -T is not necessarily first. A keyed probe answers as that key's owner, which is how
@@ -700,7 +721,6 @@ GHEOF
 		fi
 		exit 0
 	EOF
-	chmod +x "${gh}/bin/ssh"
 	local ghp="${gh}/bin:${PATH}"
 
 	## create: repo doesn't exist yet -> gitsby inits + commits, the stub creates and pushes
@@ -979,11 +999,11 @@ GHEOF
 	## or every CI runner breaks. A fake ssh answers the greeting GitHub really sends.
 	local id="${work}/$1-ident"
 	mkdir -p "${id}/bin"
-	cp "${gh}/bin/gh" "${id}/bin/gh"
+	cp "${gh}/bin/gh" "${id}/bin/gh"; fStubShim "${id}/bin/gh"
 	## insteadOf is no good here: 'git remote get-url' returns the REWRITTEN url, so there would be
 	## no ssh url left to probe. Instead the stub doubles as the transport, so origin stays an
 	## scp-style url while every push and fetch lands in a local bare.
-	cat > "${id}/bin/ssh" <<-'EOF'
+	fStub "${id}/bin/ssh" <<-'EOF'
 		#!/usr/bin/env bash
 		[[ "$1" == "-G" ]] && { printf 'user git\nhostname github.com\n'; exit 0; }
 		if [[ "$1" == "-T" ]]; then
@@ -1003,7 +1023,6 @@ GHEOF
 		done
 		exit 0
 	EOF
-	chmod +x "${id}/bin/ssh"
 	local -r idp="${id}/bin:${PATH}"
 	git init --quiet --bare -b main "${id}/origin.git"
 	local idc="${id}/c"
@@ -1157,11 +1176,12 @@ GHEOF
 		fAssertOut  "installer refuses a path-shaped --ref"      'not a path'                bash -c "bash '${inst}' -y --ref '../../evil/repo/main'"
 		fAssertOut  "installer refuses an absolute --ref"        'not a path'                bash -c "bash '${inst}' -y --ref '/etc/passwd'"
 		fAssertOut  "installer refuses a shell-shaped --ref"     "aren't valid in a git ref" bash -c "bash '${inst}' -y --ref 'a b;id'"
-		## Reading the printed plan needs the confirmation to refuse rather than block, which means
-		## no controlling terminal. Without setsid there is no safe way to ask, so skip rather than hang.
-		if command -v setsid >/dev/null 2>&1; then
+		## Reading the printed plan needs the confirmation to refuse rather than block. install.bash
+		## falls back to /dev/tty when stdin is not one, so this needs setsid - or, failing that, a
+		## shell that has no /dev/tty to fall back to. Neither, and there is no safe way to ask.
+		if ((shNoTty)); then
 			local iHome="${work}/insthome"; mkdir -p "${iHome}"
-			local iRun="setsid env HOME='${iHome}' bash '${inst}' --release dev"
+			local iRun="${noTty[*]} env HOME='${iHome}' bash '${inst}' --release dev"
 			fAssertOut "--target user installs under HOME"      "insthome/\.local/bin/gitsby"  bash -c "${iRun} --target user </dev/null"
 			fAssertOut "--target system installs system-wide"   '/usr/local/bin/gitsby'        bash -c "${iRun} --target system </dev/null"
 			fAssertOut "-s still means --target system"         '/usr/local/bin/gitsby'        bash -c "${iRun} -s </dev/null"
@@ -1179,10 +1199,10 @@ GHEOF
 			## The documented one-liners are 'iex' and a scriptblock, neither of which is a script
 			## file - so -File coverage alone says nothing about them. Both must bind their
 			## parameters, refuse without a tty, and leave the calling session alive and unaltered.
-			## These reach the confirmation prompt, so it has to REFUSE rather than wait: no
-			## controlling terminal (setsid) and stdin at EOF, the same way the bash plan checks
-			## above do it. Without that, Read-Host blocks and the whole suite hangs.
-			if command -v setsid >/dev/null 2>&1; then
+			## These reach the confirmation prompt, so it has to REFUSE rather than wait: stdin at
+			## EOF, and nothing to fall back to - setsid where there is one, and on Windows just the
+			## redirect, since Read-Host reads that and never reaches for a terminal.
+			if ((canNoTty)); then
 				local instDev="${root}/install-dev.ps1"
 				## Decode the bytes ourselves rather than Get-Content, which quietly drops a BOM.
 				## irm doesn't, so a BOM'd file reaches iex with U+FEFF glued to the shebang and

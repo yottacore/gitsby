@@ -35,6 +35,9 @@ declare -i pass=0 fail=0
 fOk(){   pass=$((pass+1)); echo "  ok: $*"; }
 fFail(){ fail=$((fail+1)); echo "  FAIL: $*"; }
 
+declare -i isWindows=0
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) isWindows=1 ;; esac
+
 ## An internal-error dump from either implementation. A clean validation refusal
 ## ("gitsby: <msg>", exit 1) matches none of these; an uncaught bash error, a
 ## non-0/1 exit dump, or a pwsh StrictMode/runtime fault does. The arg parser's
@@ -134,6 +137,10 @@ fRunFuzz(){
 	## installed, and must never reach the network. Logs create-args one per line so the
 	## title can be compared byte for byte.
 	mkdir -p "${base}/bin"
+	## No .cmd sibling here, unlike test.bash: on Windows that would route the stub through cmd.exe,
+	## which splits an unquoted '&' or '>' in an argument - turning a vector this suite hands gitsby
+	## into a real command, and reporting an injection that gitsby never had. The pwsh leg's gh
+	## coverage is skipped on Windows instead (see below), which is the honest answer.
 	cat > "${base}/bin/gh" <<'GHEOF'
 #!/usr/bin/env bash
 case "$1 $2" in
@@ -214,7 +221,14 @@ GHEOF
 		&& git checkout --quiet -b feat && echo f > f.txt && git add --all && git commit --quiet -m feat )
 	local t
 	for t in "${inject[@]}"; do fSurvive "pr title inert: '${t}'" "${repo4}" -q pr create "${t}"; done
-	for t in '*' '*.txt' '?' 'v*'; do fTitleLiteral "pr title verbatim: '${t}'" "${repo4}" "${t}"; done
+	## Reading what gh received needs the stub to actually run, which on Windows the PowerShell
+	## build can't do - a shebang file is not something it can start, and the .cmd sibling that
+	## would fix it re-parses these very arguments. Say so rather than pass on a stub that no-oped.
+	if [[ "$1" == "bash" ]] || ((! isWindows)); then
+		for t in '*' '*.txt' '?' 'v*'; do fTitleLiteral "pr title verbatim: '${t}'" "${repo4}" "${t}"; done
+	else
+		echo "  skipped: pr title verbatim (pwsh on Windows can't run the gh stub)"
+	fi
 	## Proposing from the merge target is nonsense whatever the title says.
 	( cd "${repo4}" && git checkout --quiet dev )
 	fRefuse "pr create refuses from the merge target" "${repo4}" -q pr create 'anything'

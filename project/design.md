@@ -252,6 +252,11 @@ See also the release policy under Architecture, which covers how releases are pu
 
 - The `gh` paths are covered by a stub on `PATH`, so the GitHub-facing branches are exercised without a network or an account.
 
+- Both suites run on Windows as well as Linux, and the PowerShell leg matters most there - it is the only place that build is what people actually use.
+	- Stubs are shebang scripts, which PowerShell locates on `PATH` but cannot start. It reports no error, so the stub silently produces nothing and the check passes or fails for the wrong reason. The regression suite gives each stub a `.cmd` sibling that hands the body back to bash.
+	- The fuzz suite deliberately does not, and skips the affected checks with a printed reason. A `.cmd` goes through `cmd.exe`, which re-parses an unquoted `&` or `>` in an argument - so a vector this suite hands gitsby would partly run for real, and be reported as an injection that gitsby never had. Its glob vectors break the same way. A named skip is worth more than a green that means nothing.
+	- Checks that reach a confirmation need it to refuse rather than wait. `setsid` does that on Linux; Windows has no equivalent and needs none for the PowerShell build, which reads redirected stdin and never falls back to a terminal. The Bash installer does fall back to `/dev/tty`, so its checks additionally require that open to fail.
+
 ### Release policy
 
 GitHub's `releases/latest` returns the newest release not flagged as a pre-release, and both installers resolve through that redirect. Among the options - flag candidates as pre-releases and teach the installers a `--pre` switch, or publish everything as a full release - we decided on the latter. The semver suffix in the tag already tells a reader that `v2.0.0-rc1` is a candidate, and it keeps the documented one-liner installs working with no extra arguments. `--ref`/`-Ref` covers anyone who wants a specific tag or branch.

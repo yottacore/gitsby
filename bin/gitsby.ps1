@@ -470,6 +470,16 @@ function Get-GitSshCommand {
     return @($cmd -split '\s+' | Where-Object { $_ })
 }
 
+function Resolve-CommandPath {
+    ## ProcessStartInfo searches PATH itself, the Windows way, and only ever settles on a .exe -
+    ## so a bare name can start a different program than the one PowerShell resolves everywhere
+    ## else in this script. Hand it the path PowerShell picked, so both agree.
+    param([string]$Name)
+    $found = Get-Command -Name $Name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($found) { return $found.Source }
+    return $Name
+}
+
 function Resolve-SshHost {
     ## Real hostname behind an ssh_config alias ('github_work' -> 'github.com'), so an aliased
     ## remote can still be recognised as GitHub. The alias itself when ssh can't say.
@@ -613,12 +623,14 @@ function Get-SshLogin {
             ## ArgumentList, not a splat: git's ssh command is user config, and a splatted element
             ## can't be quoted against wildcard expansion. ssh tilde-expands its own -i argument,
             ## so an unexpanded '~/.ssh/key' out of config still resolves.
-            $sshCmd = Get-GitSshCommand
+            ## @(): a one-element return unwraps to a bare string, and under StrictMode reading
+            ## .Count off that throws - which is the ordinary case, since 'ssh' with no config is one word.
+            $sshCmd = @(Get-GitSshCommand)
             $sshArgs = @()
             if ($sshCmd.Count -gt 1) { $sshArgs += $sshCmd[1..($sshCmd.Count - 1)] }
             $sshArgs += @('-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=3', '--', $target)
             try {
-                $psi = [System.Diagnostics.ProcessStartInfo]::new($sshCmd[0])
+                $psi = [System.Diagnostics.ProcessStartInfo]::new((Resolve-CommandPath -Name $sshCmd[0]))
                 $psi.UseShellExecute = $false
                 $psi.RedirectStandardOutput = $true
                 $psi.RedirectStandardError = $true
@@ -843,7 +855,7 @@ function Show-Identity {
         ## hands ssh, and with IdentitiesOnly set ssh_config's candidates never get a look in. Without
         ## this the line can name the right account beside the wrong key file, which is worse than
         ## either alone - it invites you to trust the half that happens to be wrong.
-        $gitSshCmd = Get-GitSshCommand
+        $gitSshCmd = @(Get-GitSshCommand)   ## @(): see Get-SshLogin - a bare 'ssh' unwraps to a string
         for ($i = 0; $i -lt $gitSshCmd.Count - 1; $i++) {
             if ($gitSshCmd[$i] -eq '-i') { $keyFile = $gitSshCmd[$i + 1]; break }
         }

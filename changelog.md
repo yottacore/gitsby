@@ -34,6 +34,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `fetch` and the remote probe no longer override a repo's configured ssh key. Both set `GIT_SSH_COMMAND` for the connect timeout, which outranks `core.sshCommand`, so a private repo reachable only through the repo's own key reported as offline.
 
+### Other work
+
+- Both suites now run their PowerShell leg on Windows rather than only on Linux. Test stubs get a `.cmd` sibling, since PowerShell finds a shebang script on PATH but starts nothing and reads the silence as no output; and the checks that need a confirmation to refuse no longer depend on `setsid`, which Windows has no equivalent of.
+
+- The fuzz suite deliberately does not get that `.cmd` sibling, and skips four checks on the Windows PowerShell leg instead. Its arguments are hostile by design, and `cmd.exe` re-parses an unquoted `&` or `>` - which would run part of a vector for real and report an injection gitsby never had.
+
 ## v2.0.2 - 2026-07-31
 
 ### Added

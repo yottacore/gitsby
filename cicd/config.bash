@@ -49,6 +49,7 @@ PY_LINT_FILES=(
 PS_LINT_GLOBS=(
 	"bin/gitsby.ps1"
 	"install*.ps1"
+	"cicd/*.ps1"
 )
 
 ## Stage 2: regression tests. The harness lands with the bin/gitsby refactor;
