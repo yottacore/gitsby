@@ -1336,7 +1336,11 @@ GHEOF
 	done
 	## Every check runs with the fake HOME and the stub gh in front. GIT_CONFIG_GLOBAL is pointed at
 	## a real file rather than /dev/null, because 'account apply' writes to exactly that.
-	local acEnv="HOME='${ac}/home' GIT_CONFIG_GLOBAL='${ac}/home/.gitconfig' PATH='${ac}/bin:\${PATH}'"
+	## PATH is expanded HERE, not left for the inner shell: single quotes are what stop a path with
+	## a space in it from splitting when 'bash -c' re-parses the line, and they would equally stop
+	## a '${PATH}' left in place from ever expanding - which silently empties PATH and fails every
+	## check in this block for want of git.
+	local acEnv="HOME='${ac}/home' GIT_CONFIG_GLOBAL='${ac}/home/.gitconfig' PATH='${ac}/bin:${PATH}'"
 	: > "${ac}/home/.gitconfig"
 	fAssertOut "the account comes from the folder"        "Account \.+: workacct"       bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	fAssertOut "and says which rule chose it"             "from config 'work'"          bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
@@ -1392,8 +1396,34 @@ GHEOF
 	fAssertOut "re-running says there is nothing to do"  'already uses https'  bash -c "cd '${ru}' && '${gitsby}' -q -NoFetch repo url https"
 	fAssert "and back again"  bash -c "cd '${ru}' && '${gitsby}' -q -NoFetch repo url ssh >/dev/null && git -C '${ru}' remote get-url origin | grep -qx 'git@github.com:someone/thing.git'"
 	fAssertFail "a transport that isn't one is refused"  bash -c "cd '${ru}' && '${gitsby}' -q -NoFetch repo url ftp"
-	## A remote with no second spelling must say so rather than invent one.
-	fAssertOut "a non-github origin has no other spelling"  'no other spelling'  bash -c "cd '${acWork}' && '${gitsby}' -q -NoFetch repo url"
+	## A remote with no second spelling must say so rather than invent one, and a repo with no
+	## remote at all must say that instead of showing an empty one.
+	git init --quiet --bare -b main "${ru}-local.git"
+	( cd "${acAway}" && git remote add origin "${ru}-local.git" )
+	fAssertOut  "a non-github origin has no other spelling"  'no other spelling'  bash -c "cd '${acAway}' && '${gitsby}' -q -NoFetch repo url"
+	fAssertFail "and converting it is refused"                                    bash -c "cd '${acAway}' && '${gitsby}' -q -NoFetch repo url https"
+
+	## The nudge to convert. It exists to be seen exactly once per situation that warrants it, so
+	## what matters as much as showing it is the two cases where it must stay quiet. Needs a
+	## github.com remote inside a matched folder - and a stub ssh, or the identity probe would go
+	## to the real github.com. Nothing here contacts anything: every check reads or previews.
+	fStub "${ac}/bin/ssh" <<-'EOF'
+		#!/usr/bin/env bash
+		[[ "$1" == "-G" ]] && { printf 'user git\nhostname github.com\n'; exit 0; }
+		exit 255
+	EOF
+	local acSsh="${ac}/trees/work/sshproj"
+	git init --quiet -b main "${acSsh}"
+	( cd "${acSsh}" && echo a > a.txt && git add --all && git commit --quiet -m init \
+		&& git remote add origin git@github.com:workacct/thing.git )
+	fAssertOut "an ssh remote whose account holds a token is offered the conversion"  "repo url https' switches it"  bash -c "cd '${acSsh}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	fAssert    "converting it silences the offer"  bash -c "cd '${acSsh}' && git remote set-url origin https://github.com/workacct/thing.git"
+	fAssertNotOut "as there is nothing left to convert"  "repo url https' switches it"  bash -c "cd '${acSsh}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	## Saying you want ssh is an answer, and answered advice must stop.
+	( cd "${acSsh}" && git remote set-url origin git@github.com:workacct/thing.git )
+	echo "account.work.protocol = ssh" >> "${ac}/home/.config/gitsby/config.shcl"
+	fAssertNotOut "and 'protocol = ssh' silences it too"  "repo url https' switches it"  bash -c "cd '${acSsh}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	sed -i '/^account\.work\.protocol/d' "${ac}/home/.config/gitsby/config.shcl"
 
 	## raw passthrough. The promise is that everything after the tool name reaches it untouched,
 	## that stdout is the tool's alone, and that the exit code is the tool's too.
