@@ -99,6 +99,7 @@ $script:isGhWrite = $false     ## command WRITES through gh -> also compare agai
 $script:ghLoginCache = ''; $script:sshLoginCache = ''; $script:ghProtocolCache = ''  ## per-run, each costs a round trip
 $script:ghSwitchedFrom = ''    ## gh's active account, when this run picked a different one for the remote
 $script:identityProbeUrl = ''  ## url the ssh identity is read from (existing origin, or the one about to be set)
+$script:repoUrlProtocol = ''   ## 'https' or 'ssh' for 'repo url', set during its validation
 $script:pruneLocal = @(); $script:pruneRemote = @(); $script:pruneKeep = @(); $script:pruneTargetRefs = @(); $script:pruneCurrentMerged = ''  ## resolved by the br prune validation
 $script:anyIdentity = [bool]$AnyIdentity
 $script:configFileArg = $Config
@@ -178,6 +179,7 @@ function Show-Syntax {
     Write-PlainLine '  repo clone <url> ...: Clone a repo you don''t have yet, into [dir] (checks out dev if it has one).'
     Write-PlainLine '  repo create <o/n> ..: Create GitHub repo ''owner/name'' via gh, then connect this directory and push.'
     Write-PlainLine '  repo connect [url] .: Connect this directory to an existing empty remote, and push.'
+    Write-PlainLine '  repo url [https|ssh]: Show how origin authenticates, or switch it between the two.'
     Write-PlainLine 'Less common commands:'
     Write-PlainLine '  sync [msg] .........: Pull, commit, and push. Do infrequently.'
     Write-PlainLine 'Admin commands, e.g. for small solo projects:'
@@ -595,6 +597,73 @@ function Get-CanonPath {
     }
     while ($p.EndsWith('/') -and $p -ne '/' -and $p -notmatch '^[A-Za-z]:/$') { $p = $p.Substring(0, $p.Length - 1) }
     return $p
+}
+
+function Test-LocalPath {
+    ## A remote that is a directory on this machine, rather than something to connect to.
+    param([string]$Url)
+    if (-not $Url) { return $false }
+    if ($Url -match '^[A-Za-z]:[\\/]') { return $true }   ## a Windows drive path
+    if ($Url -match '^[a-z][a-z0-9+.-]*://') { return $false }
+    if ($Url -match '^(?:[^@/]+@)?[^/:]+:') { return $false }  ## scp-like host:path
+    return $true
+}
+
+function Test-SameRemote {
+    ## Whether two remote URLs name the same place. Text settles it for a real URL, but git rewrites
+    ## a local path into the platform's own spelling when it stores one - hand it '/c/tmp/x' on
+    ## Windows and it gives back 'C:/tmp/x' - so comparing our own argument against git's copy of it
+    ## said "different" for the same directory, and a re-run of 'repo clone' refused itself.
+    param([string]$UrlA, [string]$UrlB)
+    if (-not $UrlA -or -not $UrlB) { return $false }
+    if ($UrlA -eq $UrlB) { return $true }
+    if (-not (Test-LocalPath -Url $UrlA) -or -not (Test-LocalPath -Url $UrlB)) { return $false }
+    return ((Get-CanonPath -Path $UrlA) -eq (Get-CanonPath -Path $UrlB))
+}
+
+function Get-PreferredProtocol {
+    ## Which transport a remote we set should use. The config file wins because that is where the
+    ## accounts live, and choosing https there is what makes a second account work with no ssh key
+    ## at all; gh's own setting is the answer when nothing says otherwise, so an unconfigured
+    ## machine behaves exactly as it did before any of this existed.
+    $proto = Get-AccountValue -Name $script:acctName -Key 'protocol'
+    if (-not $proto -and $script:configValues.ContainsKey('protocol')) { $proto = [string]$script:configValues['protocol'] }
+    switch ($proto.ToLowerInvariant()) {
+        'https' { return 'https' }
+        'ssh'   { return 'ssh' }
+        default { return (Get-GhProtocol) }
+    }
+}
+
+function Get-GithubUrl {
+    ## The canonical github.com URL for 'owner/name' in one of the two transports.
+    param([string]$Target, [string]$Protocol = 'https')
+    if (-not $Target) { return '' }
+    if ($Protocol -eq 'ssh') { return "git@github.com:${Target}.git" }
+    return "https://github.com/${Target}.git"
+}
+
+function Get-RemoteTarget {
+    ## 'owner/name' out of any github.com remote URL, or ''. Used to re-spell a remote in the other
+    ## transport without asking the network what it is called.
+    param([string]$Url)
+    $owner = Get-RemoteOwner -Url $Url
+    if (-not $owner) { return '' }
+    $name = $Url -replace '\.git$', '' -replace '/$', ''
+    $name = ($name -split '/')[-1]
+    if (-not $name -or $name -eq $owner) { return '' }
+    return "$owner/$name"
+}
+
+function Test-HttpsConversion {
+    ## True when this repo is on ssh but the account it belongs to could authenticate with a token
+    ## instead - the one case where saying so is worth a line. Someone who set 'protocol = ssh'
+    ## has answered the question already, and hears nothing.
+    if (-not $script:acctName) { return $false }
+    if ((Get-PreferredProtocol) -ne 'https') { return $false }
+    $url = [string](@(git remote get-url origin 2>$null) | Select-Object -First 1)
+    if (-not (Get-SshTarget -Url $url) -or -not (Get-RemoteTarget -Url $url)) { return $false }
+    return [bool](Get-AccountToken)
 }
 
 function Get-ConfigFile {
@@ -1168,6 +1237,12 @@ function Show-Identity {
         ## rather than with a key, which is what makes a second account work with no ssh setup.
         if ($script:accountUsedHttpsAuth) { $acctLine = "${acctLine}, git over https" }
         Write-PlainLine "Account ......: ${acctLine}"
+        ## This repo could authenticate with the account's token instead of a key, and doesn't.
+        ## Worth one line, because it is the whole point of configuring accounts this way - and
+        ## setting 'protocol = ssh' answers the question, so nobody hears it twice.
+        if (Test-HttpsConversion) {
+            Write-PlainLine "              : origin still uses ssh; '$($script:meName) repo url https' switches it to this account's token."
+        }
     }
     ## A key nothing reads is how you end up acting as the wrong account while believing you
     ## configured it, so say so - once, here, rather than failing or staying quiet.
@@ -1370,6 +1445,11 @@ function Show-CommandPreview {
         'repo-clone' {
             Write-PlainLine "${pad}git clone $(Get-MaskedUrl -Url $script:cloneUrl) $($script:cloneDir)"
             Write-PlainLine "${pad}git -C $($script:cloneDir) checkout dev *"
+            break
+        }
+        'repo-url' {
+            $urlNow = [string](@(git remote get-url origin 2>$null) | Select-Object -First 1)
+            Write-PlainLine "${pad}git remote set-url origin $(Get-GithubUrl -Target (Get-RemoteTarget -Url $urlNow) -Protocol $script:repoUrlProtocol)"
             break
         }
         { $_ -in 'repo-create', 'repo-connect' } {
@@ -1689,6 +1769,14 @@ function Invoke-GitsbyPrune {
     }
 }
 
+function Invoke-GitsbyRepoUrl {
+    ## Re-spell origin in the other transport. Nothing else about the repo changes: same remote,
+    ## same history, same name - only how git authenticates to it.
+    param([string]$Protocol)
+    $url = [string](@(git remote get-url origin 2>$null) | Select-Object -First 1)
+    Invoke-Git @('remote', 'set-url', 'origin', (Get-GithubUrl -Target (Get-RemoteTarget -Url $url) -Protocol $Protocol))
+}
+
 function Invoke-GitsbyClone {
     Invoke-Git -GitArgs @('clone', $script:cloneUrl, $script:cloneDir)
     ## Opinionated: if the repo works dev-first, start there.
@@ -1882,8 +1970,9 @@ try {
             'clone' { 'repo-clone'; break }
             { $_ -in 'create', 'new' } { 'repo-create'; break }
             'connect' { 'repo-connect'; break }
-            '' { throw "Syntax: $($script:meName) repo <clone <url> [dir] | create <owner/name> | connect [url]>" }
-            default { throw "Unknown 'repo' subcommand '${CommandArg}'. One of: clone, create, connect." }
+            'url' { 'repo-url'; break }
+            '' { throw "Syntax: $($script:meName) repo <clone <url> [dir] | create <owner/name> | connect [url] | url [https|ssh]>" }
+            default { throw "Unknown 'repo' subcommand '${CommandArg}'. One of: clone, create, connect, url." }
         }
         $CommandArg = $CommandArg2; $CommandArg2 = $CommandArg3; $CommandArg3 = ''
     } elseif ($cmdName -in 'br', 'branch') {
@@ -1924,6 +2013,12 @@ try {
         }
         { $_ -in 'br-create', 'br-hotfix', 'br-switch', 'release', 'repo-create', 'repo-connect' } {
             if ($CommandArg2) { throw "Unexpected extra argument '${CommandArg2}'." }
+            break
+        }
+        'repo-url' {
+            ## Bare is the read-only "what is it now"; naming a transport is what makes it mutate.
+            if ($CommandArg2) { throw "Unexpected extra argument '${CommandArg2}'." }
+            if (-not $CommandArg) { $isMutating = $false }
             break
         }
         default { throw "Unknown command '${cmdName}'. Run '${script:meName}' with no arguments for a list." }
@@ -2136,6 +2231,28 @@ try {
         }
     }
 
+    ## repo url: everything it needs to know settles here, so a bad argument or an unconvertible
+    ## remote is refused before a plan promises anything.
+    if ($cmdName -eq 'repo-url') {
+        if ($CommandArg -and $CommandArg.ToLowerInvariant() -notin 'https', 'ssh') { throw "Syntax: $($script:meName) repo url [https|ssh]" }
+        $CommandArg = $CommandArg.ToLowerInvariant()
+        $script:repoUrlProtocol = $CommandArg
+        ## Exempt from the repo gate with its 'repo-' siblings, but unlike them it has nothing to
+        ## say outside one - it re-spells a remote that a repo has to already have.
+        if (-not $script:inRepo) { throw 'Not inside a git repository. Change to a git project directory first.' }
+        $repoUrlCurrent = [string](@(git remote get-url origin 2>$null) | Select-Object -First 1)
+        if (-not $repoUrlCurrent) { throw "No origin to re-spell. Connect one first: $($script:meName) repo connect <url | owner/name>" }
+        if ($CommandArg) {
+            $repoUrlTarget = Get-RemoteTarget -Url $repoUrlCurrent
+            if (-not $repoUrlTarget) { throw 'origin isn''t a github.com remote, so there is no other spelling of it to switch to.' }
+            if ((Get-GithubUrl -Target $repoUrlTarget -Protocol $CommandArg) -eq $repoUrlCurrent) {
+                Write-StatusLine "origin already uses ${CommandArg}; nothing to do."
+                Write-PlainLine ''
+                exit 0
+            }
+        }
+    }
+
     ## br prune: work out what goes before anything is shown, so the plan names every branch by name.
     if ($cmdName -eq 'br-prune') {
         if (-not (Get-CurrentBranch)) { throw 'Detached HEAD (no current branch); resolve that manually first.' }
@@ -2167,7 +2284,7 @@ try {
         if (Test-Path -LiteralPath $script:cloneDir) {
             $existingUrl = git -C "$script:cloneDir" remote get-url origin 2>$null
             if ($LASTEXITCODE -ne 0 -or $null -eq $existingUrl) { $existingUrl = '' }
-            if ((Test-Path -LiteralPath (Join-Path -Path $script:cloneDir -ChildPath '.git')) -and (([string]$existingUrl) -ceq $script:cloneUrl)) {
+            if ((Test-Path -LiteralPath (Join-Path -Path $script:cloneDir -ChildPath '.git')) -and (Test-SameRemote -UrlA ([string]$existingUrl) -UrlB $script:cloneUrl)) {
                 Write-StatusLine "'$($script:cloneDir)' is already a clone of that URL; nothing to do."
                 Write-PlainLine ''
                 exit 0
@@ -2196,7 +2313,7 @@ try {
         if ($script:inRepo -and (Test-GitOrigin)) { $originUrl = [string](git remote get-url origin 2>$null) }
         if ($originUrl) {
             if ($wantCreate) { throw "origin is already set to '$(Get-MaskedUrl -Url $originUrl)', so there is no repo left to create. Push what you have with: ${script:meName} repo connect" }
-            if ($CommandArg -and ($CommandArg -cne $originUrl)) { throw "origin is already set to '$(Get-MaskedUrl -Url $originUrl)'; changing remotes is raw-git territory." }
+            if ($CommandArg -and -not (Test-SameRemote -UrlA $CommandArg -UrlB $originUrl)) { throw "origin is already set to '$(Get-MaskedUrl -Url $originUrl)'; changing remotes is raw-git territory." }
             $script:connectMode = 'push'; $script:connectUrl = $originUrl
         } elseif ($wantCreate) {
             if (-not $CommandArg) { throw "No target given. Syntax: ${script:meName} repo create <owner/name>" }
@@ -2224,7 +2341,9 @@ try {
                     throw "github.com/$($script:ghTarget) doesn't exist, or you can't see it. To create it: ${script:meName} repo create $($script:ghTarget)"
                 } elseif (([string]$isEmpty).Trim() -eq 'true') {
                     ## gh never uses a host alias, so this is the canonical url - same one gh itself would build.
-                    $script:connectUrl = if ((Get-GhProtocol) -eq 'ssh') { "git@github.com:$($script:ghTarget).git" } else { "https://github.com/$($script:ghTarget).git" }
+                    ## We build this one ourselves, so the config's transport applies - unlike
+                    ## 'repo create', where gh adds the remote and only gh's git_protocol decides.
+                    $script:connectUrl = Get-GithubUrl -Target $script:ghTarget -Protocol (Get-PreferredProtocol)
                     $script:connectMode = 'add'
                 } else {
                     throw "github.com/$($script:ghTarget) already has commits; clone it instead (${script:meName} repo clone), or reconcile with raw git."
@@ -2306,6 +2425,20 @@ try {
                 break
             }
             'pr' { Invoke-GitsbyPrView -PrNumber $script:prNum; break }
+            'repo-url' {
+                $urlNow = [string](@(git remote get-url origin 2>$null) | Select-Object -First 1)
+                $urlTarget = Get-RemoteTarget -Url $urlNow
+                Write-PlainLine ''
+                Write-PlainLine "origin .......: $(Get-MaskedUrl -Url $urlNow)"
+                if ($urlTarget) {
+                    Write-PlainLine "as https .....: $(Get-GithubUrl -Target $urlTarget -Protocol 'https')"
+                    Write-PlainLine "as ssh .......: $(Get-GithubUrl -Target $urlTarget -Protocol 'ssh')"
+                    Write-PlainLine "Switch with '$($script:meName) repo url <https|ssh>'."
+                } else {
+                    Write-PlainLine 'Not a github.com remote, so there is no other spelling of it.'
+                }
+                break
+            }
         }
         Write-PlainLine ''
         exit 0
@@ -2372,6 +2505,7 @@ try {
         'release' { Invoke-GitsbyRelease; break }
         'repo-clone' { Invoke-GitsbyClone; break }
         { $_ -in 'repo-create', 'repo-connect' } { Invoke-GitsbyConnect; break }
+        'repo-url' { Invoke-GitsbyRepoUrl -Protocol $script:repoUrlProtocol; break }
     }
 
     Write-PlainLine ''
