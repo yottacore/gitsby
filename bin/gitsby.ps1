@@ -53,8 +53,12 @@ param(
     [switch]$Public,
     [switch]$Private,
     [switch]$AnyIdentity,
+    [string]$Config = '',
     [Alias('h')][switch]$Help,
-    [Alias('v', 'ver')][switch]$Version
+    [Alias('v', 'ver')][switch]$Version,
+    ## Only so a fifth positional reaches our own "too many arguments" message instead of the
+    ## binder's. The passthrough does NOT read this - see Get-RawScriptArgList for why it cannot.
+    [Parameter(ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
 ## Windows PowerShell 5.1 is still 'powershell' on Windows, and it has no $IsWindows - under
@@ -96,6 +100,20 @@ $script:ghLoginCache = ''; $script:sshLoginCache = ''; $script:ghProtocolCache =
 $script:ghSwitchedFrom = ''    ## gh's active account, when this run picked a different one for the remote
 $script:identityProbeUrl = ''  ## url the ssh identity is read from (existing origin, or the one about to be set)
 $script:pruneLocal = @(); $script:pruneRemote = @(); $script:pruneKeep = @(); $script:pruneTargetRefs = @(); $script:pruneCurrentMerged = ''  ## resolved by the br prune validation
+$script:anyIdentity = [bool]$AnyIdentity
+$script:configFileArg = $Config
+$script:configFileUsed = ''    ## the config file actually read, if any
+$script:configLoaded = $false
+$script:configValues = @{}     ## flat key -> value from the config file
+$script:configPaths = @()      ## folder rules: @{ Path; Name }
+$script:configUnknown = @()    ## keys we didn't recognise, reported rather than ignored
+$script:acctName = ''          ## configured account claiming this folder, if any
+$script:acctGhWho = ''         ## the GitHub account this run acts as
+$script:acctSource = ''        ## how we decided that, for the identity line
+$script:accountApplied = $false
+$script:accountUsedHttpsAuth = $false  ## git authenticates over https with the account's token
+$script:accountUsedSshKey = ''         ## ...or with the key the account names
+$script:accountUsedIdentity = $false   ## commit author/email came from the account
 
 
 #•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
@@ -168,12 +186,16 @@ function Show-Syntax {
     Write-PlainLine "  br hotfix <name> ...: Branch off the default branch, to correct what's already published."
     Write-PlainLine '  pr [create|n|ok n] .: Create, list, review, or accept a pull request (needs gh).'
     Write-PlainLine '  release [ver] ......: Cut a release: merge dev into main, tag, push. No ver: next after latest tag.'
+    Write-PlainLine 'For scripts:'
+    Write-PlainLine '  git <args> .........: Run git as the account this folder belongs to. Everything after ''git'' is git''s.'
+    Write-PlainLine '  gh <args> ..........: The same, for gh.'
     Write-PlainLine 'Options:'
     Write-PlainLine '  -m, -Message MSG .....: Commit or merge message (or give it positionally).'
     Write-PlainLine '  -q, -Quiet, -y .......: Assume yes - no prompts; if committing with no message, one is generated.'
     Write-PlainLine '  -Public / -Private ...: Visibility for the repo ''repo create'' makes (default: private).'
     Write-PlainLine '  -AnyIdentity .........: Act as gh''s active account, and proceed when it differs from the remote''s ssh key.'
     Write-PlainLine '  -NoFetch .............: Skip the pre-command fetch, and the pull. (Pushes still go out.)'
+    Write-PlainLine '  -Config FILE .........: Read accounts from FILE instead of the usual config location.'
     Write-PlainLine '  -h, -Help  /  -v, -Version'
     Write-PlainLine ''
 }
@@ -524,53 +546,359 @@ function Get-GhTokenFor {
     return ''
 }
 
-function Get-ConfiguredGhAccount {
-    ## The account configured for wherever we are. Read through git, so an includeIf on the repo
-    ## path - the same mechanism that already selects the ssh key - answers it, and gitsby needs no
-    ## config file of its own. Empty when unset, which is the ordinary case.
+function Get-GitConfigValue {
+    ## One git config value, or '' - the shape every read here wants, and a read that fails is
+    ## simply "unset" rather than an error.
+    param([string]$Key)
     $out = @()
-    try { $out = @(git config --get gitsby.ghAccount 2>$null) } catch { $out = @() }
+    try { $out = @(git config --get $Key 2>$null) } catch { $out = @() }
     if ($out.Count -gt 0) { return ([string]$out[0]).Trim() }
     return ''
 }
 
-function Get-GhTokenFromFile {
-    ## Token for an account gh was never logged in as, from the file named by gitsby.ghTokenFile.
-    ## Unset, missing, unreadable and empty are all simply "no token": a machine that has not been
-    ## set up this way has to fall back to gh's own account, never fail because a path is absent.
-    $out = @()
-    try { $out = @(git config --get gitsby.ghTokenFile 2>$null) } catch { $out = @() }
-    if ($out.Count -eq 0) { return '' }
-    $file = ([string]$out[0]).Trim()
-    if (-not $file -or -not (Test-Path -LiteralPath $file)) { return '' }
-    try { return ((Get-Content -LiteralPath $file -Raw -ErrorAction Stop) -replace '\s', '') } catch { return '' }
+function Get-HomeDir {
+    ## Home the way the Bash build sees it. PowerShell's own $HOME comes from USERPROFILE on Windows
+    ## and ignores an overridden HOME, so the two builds would look for the config in different
+    ## places on any box where HOME is set deliberately - and every check that fakes one would be
+    ## testing something no user has. The env var wins where it exists; $HOME is the fallback.
+    if ($env:HOME) { return $env:HOME }
+    return $HOME
 }
 
-function Select-GhAccount {
-    ## gh keeps ONE active account per host, so against a repo belonging to somebody else it will act
-    ## as whoever you last switched to - and 'gh auth switch' is global state you have to remember to
-    ## set and to put back. Point just this run at the right account via GH_TOKEN, which outranks the
-    ## stored credentials and leaves nothing behind. Never silent - Show-Identity names it in the preview.
+function Get-CanonPath {
+    ## One spelling for a directory, so a config file written on one machine matches the same tree
+    ## on the other. '~' expanded, backslashes forwards, no trailing slash, and on Windows a drive
+    ## folded to 'c:/...' in lower case. Text only where it can be - the folder does not have to
+    ## exist, which 'repo clone' needs - but resolved through the filesystem where it does, because
+    ## that is the only thing that makes the Bash build's '/c/x' and this one's 'C:\x' compare equal.
+    param([string]$Path)
+    if (-not $Path) { return '' }
+    $p = $Path -replace '\\', '/'
+    if ($p -eq '~' -or $p.StartsWith('~/')) { $p = ((Get-HomeDir) -replace '\\', '/') + $p.Substring(1) }
+    ## Nearest ancestor that exists, with the rest put back on.
+    $head = $p; $tail = ''
+    while ($head -and -not (Test-Path -LiteralPath $head -PathType Container) -and $head.Contains('/')) {
+        $leaf = $head.Substring($head.LastIndexOf('/') + 1)
+        $tail = if ($tail) { "$leaf/$tail" } else { $leaf }
+        $head = $head.Substring(0, $head.LastIndexOf('/'))
+    }
+    if ($head -and (Test-Path -LiteralPath $head -PathType Container)) {
+        $item = Get-Item -LiteralPath $head -Force -ErrorAction SilentlyContinue
+        if ($item) {
+            $full = ($item.FullName -replace '\\', '/')
+            $p = if ($tail) { ($full.TrimEnd('/')) + '/' + $tail } else { $full }
+        }
+    }
+    if ($IsWindows) {
+        if ($p -match '^/([A-Za-z])(/.*)?$') { $p = $Matches[1] + ':' + $(if ($Matches[2]) { $Matches[2] } else { '/' }) }
+        $p = $p.ToLowerInvariant()
+    }
+    while ($p.EndsWith('/') -and $p -ne '/' -and $p -notmatch '^[A-Za-z]:/$') { $p = $p.Substring(0, $p.Length - 1) }
+    return $p
+}
+
+function Get-ConfigFile {
+    ## The config file to read: the first candidate that exists, or '' at all. The order is identical
+    ## in both builds, so the same box answers the same whichever one you run. A file named explicitly
+    ## must exist - naming one that isn't there is a typo, not a fallback - while finding none of the
+    ## defaults is the ordinary unconfigured case and says nothing.
+    if ($script:configFileArg) {
+        if (-not (Test-Path -LiteralPath $script:configFileArg -PathType Leaf)) {
+            throw "No readable config file at '$($script:configFileArg)'."
+        }
+        return $script:configFileArg
+    }
+    if ($env:GITSBY_CONFIG) {
+        if (-not (Test-Path -LiteralPath $env:GITSBY_CONFIG -PathType Leaf)) {
+            throw "GITSBY_CONFIG names '$($env:GITSBY_CONFIG)', which can't be read."
+        }
+        return $env:GITSBY_CONFIG
+    }
+    $candidates = @()
+    if ($env:XDG_CONFIG_HOME) { $candidates += (Join-Path $env:XDG_CONFIG_HOME 'gitsby/config.shcl') }
+    if (Get-HomeDir)          { $candidates += (Join-Path (Get-HomeDir)  '.config/gitsby/config.shcl') }
+    if ($env:APPDATA)         { $candidates += (Join-Path $env:APPDATA      'gitsby/config.shcl') }
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+    }
+    return ''
+}
+
+function Import-GitsbyConfig {
+    ## Read the config once. Flat 'key = value' lines, '#' comments, blank lines ignored - hand
+    ## parsed on purpose, so neither build needs anything installed to read it and neither can
+    ## parse it differently from the other.
+    if ($script:configLoaded) { return }
+    $script:configLoaded = $true
+    $file = Get-ConfigFile
+    if (-not $file) { return }
+    $script:configFileUsed = $file
+    $lines = @()
+    try { $lines = @(Get-Content -LiteralPath $file -ErrorAction Stop) } catch { return }
+    foreach ($raw in $lines) {
+        $line = ([string]$raw).TrimStart()
+        if (-not $line -or $line.StartsWith('#')) { continue }
+        if (-not $line.Contains('=')) { $script:configUnknown += $line; continue }
+        $key = $line.Substring(0, $line.IndexOf('=')).Trim().ToLowerInvariant()
+        $value = $line.Substring($line.IndexOf('=') + 1).Trim()
+        ## One optional layer of quotes, so a value with meaningful trailing space can be written.
+        if ($value.Length -ge 2 -and (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'")))) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+        if (-not $key) { continue }
+        if ($key -match '^account\.(.+)\.path$') {
+            if ($value) { $script:configPaths += [pscustomobject]@{ Path = (Get-CanonPath -Path $value); Name = $Matches[1] } }
+        } elseif ($key -eq 'protocol' -or $key -match '^account\.(.+)\.(ghaccount|tokenfile|sshkey|name|email|protocol)$') {
+            $script:configValues[$key] = $value
+        } else {
+            ## Named but not understood. Not fatal - a config from a newer gitsby still has to work -
+            ## but never silent either: a mistyped key that nothing reads is how you end up acting as
+            ## the wrong account while believing you configured it.
+            $script:configUnknown += $key
+        }
+    }
+}
+
+function Get-AccountForDir {
+    ## The configured account whose folder contains this one. Longest match wins, so a tree nested
+    ## inside another account's tree belongs to the inner one; first defined breaks an exact tie.
+    param([string]$Directory)
+    $target = Get-CanonPath -Path $Directory
+    if (-not $target) { return '' }
+    $best = ''; $bestLen = 0
+    foreach ($rule in $script:configPaths) {
+        if (-not $rule.Path) { continue }
+        if ($target -ne $rule.Path -and -not $target.StartsWith($rule.Path + '/')) { continue }
+        if ($rule.Path.Length -gt $bestLen) { $best = $rule.Name; $bestLen = $rule.Path.Length }
+    }
+    return $best
+}
+
+function Get-AccountValue {
+    ## One key of one configured account, or ''.
+    param([string]$Name, [string]$Key)
+    if (-not $Name -or -not $Key) { return '' }
+    $lookup = "account.$($Name.ToLowerInvariant()).$($Key.ToLowerInvariant())"
+    if ($script:configValues.ContainsKey($lookup)) { return [string]$script:configValues[$lookup] }
+    return ''
+}
+
+function Get-ContextDir {
+    ## What "here" means for folder matching: the repo's top level when we are in one, so every
+    ## subdirectory of a repo resolves to the same account, and the working directory when we are
+    ## not - which is what a fresh checkout and 'repo clone' have to go on.
+    $top = ''
+    try { $top = ([string](git rev-parse --show-toplevel 2>$null)).Trim() } catch { $top = '' }
+    if ($top) { return $top }
+    return (Get-Location -PSProvider FileSystem).ProviderPath
+}
+
+function Get-TokenFromFile {
+    ## A token out of a file. Unset, missing, unreadable and empty are all simply "no token": a
+    ## machine that was never set up this way has to fall back to gh's own account, never fail
+    ## because a path is absent.
+    param([string]$File)
+    if (-not $File) { return '' }
+    if ($File.StartsWith('~/') -or $File -eq '~') { $File = (Get-HomeDir) + $File.Substring(1) }
+    if (-not (Test-Path -LiteralPath $File -PathType Leaf)) { return '' }
+    try { return ((Get-Content -LiteralPath $File -Raw -ErrorAction Stop) -replace '\s', '') } catch { return '' }
+}
+
+function Resolve-GitsbyAccount {
+    ## Who this folder says to act as, worked out once and used by the identity block, the gh
+    ## selection and the passthrough alike. Most specific first:
+    ##   GITSBY_ACCOUNT - an explicit override, for one run or for a whole script's environment
+    ##   git config     - 'gitsby.ghAccount', which an includeIf already selects by repo path
+    ##   config file    - the folder this repo lives in
+    ##   the remote     - whoever owns origin, which needs no configuration whatsoever
+    ## Finding none of them is the ordinary single-account case: gh's own account is left alone.
     param([string]$Url)
-    ## Configured account first: it says who to be here whatever the remote says, and it is the only
-    ## one of the two that answers before a remote exists. The remote's owner is the zero-config
-    ## fallback, so this works with nothing set up at all.
-    $who = Get-ConfiguredGhAccount
-    if (-not $who) { $who = Get-RemoteOwner -Url $Url }
-    if (-not $who) { return }
-    $active = Get-GhLogin
-    if ($active -eq $who) { return }
-    ## gh's own store first - it is the one that stays current. The file is for a box where this
-    ## account was never logged in, which is the whole point of being able to name one.
-    $token = Get-GhTokenFor -Who $who
-    if (-not $token) { $token = Get-GhTokenFromFile }
-    if (-not $token) { return }
-    $env:GH_TOKEN = $token
-    ## The token is keyed by that login in gh's store, or named for it in config, so it is that
-    ## account - no round trip needed to confirm it, and this stays correct offline.
-    ## '?' means gh had no account at all, so there is nothing to report having switched away from.
-    if ($active -ne '?') { $script:ghSwitchedFrom = $active }
-    $script:ghLoginCache = $who
+    Import-GitsbyConfig
+    $script:acctName = ''; $script:acctGhWho = ''; $script:acctSource = ''
+    if ($env:GITSBY_ACCOUNT) {
+        ## Either the name of a configured account or a bare login - accept both, because a script
+        ## setting this knows one of the two and shouldn't have to know which we wanted.
+        if (Get-AccountValue -Name $env:GITSBY_ACCOUNT -Key 'ghAccount') {
+            $script:acctName = $env:GITSBY_ACCOUNT
+            $script:acctGhWho = Get-AccountValue -Name $script:acctName -Key 'ghAccount'
+        } else {
+            $script:acctGhWho = $env:GITSBY_ACCOUNT
+        }
+        $script:acctSource = 'GITSBY_ACCOUNT'; return
+    }
+    $fromGit = Get-GitConfigValue -Key 'gitsby.ghAccount'
+    if ($fromGit) {
+        $script:acctGhWho = $fromGit; $script:acctSource = 'git config'
+        ## Name the config account too when one claims this folder, so its key and commit identity
+        ## still apply - the git key says who, not that the rest of the account is off.
+        $script:acctName = Get-AccountForDir -Directory (Get-ContextDir)
+        if ((Get-AccountValue -Name $script:acctName -Key 'ghAccount') -ne $script:acctGhWho) { $script:acctName = '' }
+        return
+    }
+    $script:acctName = Get-AccountForDir -Directory (Get-ContextDir)
+    if ($script:acctName) {
+        ## A folder rule with no account named still carries a key and a commit identity, and those
+        ## are worth applying on their own - it just has nothing to say about gh.
+        $script:acctGhWho = Get-AccountValue -Name $script:acctName -Key 'ghAccount'
+        $script:acctSource = "config '$($script:acctName)'"
+        return
+    }
+    $fromRemote = Get-RemoteOwner -Url $Url
+    if (-not $fromRemote) { return }
+    $script:acctGhWho = $fromRemote; $script:acctSource = 'the remote'
+}
+
+function Get-AccountToken {
+    ## A token for the account we resolved. gh's own store first - it is the one that stays current,
+    ## so a rotated login is never shadowed by a stale copy on disk - then the file the config names,
+    ## then the older git-config key. Nothing found is not an error anywhere.
+    if (-not $script:acctGhWho) { return '' }
+    $token = Get-GhTokenFor -Who $script:acctGhWho
+    if (-not $token) { $token = Get-TokenFromFile -File (Get-AccountValue -Name $script:acctName -Key 'tokenFile') }
+    if (-not $token) { $token = Get-TokenFromFile -File (Get-GitConfigValue -Key 'gitsby.ghTokenFile') }
+    return $token
+}
+
+function Add-GitConfigEnv {
+    ## Add one config key to the environment git reads, without disturbing any the caller already
+    ## set: GIT_CONFIG_COUNT is a count, so entries have to be numbered on from where it stands.
+    ## Environment only - nothing is written to a file, so a killed run leaves no trace.
+    param([string]$Key, [string]$Value)
+    $n = 0
+    if ($env:GIT_CONFIG_COUNT) { $n = [int]$env:GIT_CONFIG_COUNT }
+    Set-Item -Path "env:GIT_CONFIG_KEY_$n"   -Value $Key
+    Set-Item -Path "env:GIT_CONFIG_VALUE_$n" -Value $Value
+    $env:GIT_CONFIG_COUNT = [string]($n + 1)
+}
+
+function Select-GitsbyAccount {
+    ## Point this run at the account this folder belongs to - gh, git's credentials, its ssh key and
+    ## its commit identity - for this process and its children only.
+    ##
+    ## gh keeps ONE active account per host, so against a repo belonging to somebody else it acts as
+    ## whoever you last switched to; 'gh auth switch' is the wrong fix because it is global state you
+    ## have to remember to set and to put back, and a run killed half way leaves the machine on it.
+    ## GH_TOKEN outranks the stored credentials for this process alone, which is exactly the scope
+    ## wanted. Never silent - Show-Identity names the account in the block you read before confirming.
+    if ($script:anyIdentity) { return }
+    ## Applying twice would number a second set of GIT_CONFIG_* entries on top of the first.
+    if ($script:accountApplied) { return }
+    $script:accountApplied = $true
+    $token = Get-AccountToken
+    if ($token) {
+        $active = Get-GhLogin
+        if ($active -ne $script:acctGhWho) {
+            $env:GH_TOKEN = $token
+            ## The token is keyed by that login in gh's store, or named for it in config, so it is
+            ## that account - no round trip to confirm it, and it stays correct offline.
+            ## '?' means gh held no account at all, so there is nothing to report switching away from.
+            if ($active -ne '?') { $script:ghSwitchedFrom = $active }
+            $script:ghLoginCache = $script:acctGhWho
+        }
+        ## The same token is what lets git itself push as this account over https, with no ssh key
+        ## anywhere. An empty value first resets the helper list, so a credential manager already
+        ## configured for another account cannot answer ahead of us. The token is read from the
+        ## environment when the helper runs, not baked into the value.
+        Add-GitConfigEnv -Key 'credential.https://github.com.helper' -Value ''
+        Add-GitConfigEnv -Key 'credential.https://github.com.helper' -Value '!f(){ test "$1" = get && { echo username=x; echo "password=${GH_TOKEN}"; }; }; f'
+        $script:accountUsedHttpsAuth = $true
+    }
+    ## The ssh key stays supported as the way that needs no token at all. Only when nothing already
+    ## says which key to use: an explicit GIT_SSH_COMMAND, or one set on the repo, was chosen more
+    ## deliberately than a folder rule was.
+    $sshKey = Get-AccountValue -Name $script:acctName -Key 'sshKey'
+    if ($sshKey -and -not $env:GIT_SSH_COMMAND -and -not (Get-GitConfigValue -Key 'core.sshCommand')) {
+        ## IdentitiesOnly, or ssh offers every key the agent holds and the server picks the first
+        ## that authenticates - which on a two-account machine is a coin toss.
+        $env:GIT_SSH_COMMAND = "ssh -i $sshKey -o IdentitiesOnly=yes"
+        $script:accountUsedSshKey = $sshKey
+    }
+    ## Commit identity, unless the repo sets its own - a local value was typed for this repo
+    ## specifically, and a folder rule should not quietly outrank it.
+    $acctEmail = Get-AccountValue -Name $script:acctName -Key 'email'
+    $acctUser  = Get-AccountValue -Name $script:acctName -Key 'name'
+    if ($acctEmail -or $acctUser) {
+        $localEmail = ''
+        try { $localEmail = @(git config --local --get user.email 2>$null) -join '' } catch { $localEmail = '' }
+        if (-not $localEmail) {
+            if ($acctUser)  { Add-GitConfigEnv -Key 'user.name'  -Value $acctUser }
+            if ($acctEmail) { Add-GitConfigEnv -Key 'user.email' -Value $acctEmail }
+            $script:accountUsedIdentity = $true
+        }
+    }
+}
+
+function Get-RawScriptArgList {
+    ## This script's arguments exactly as typed, which the bound parameters cannot give us.
+    ##
+    ## PowerShell's binder claims any token matching one of our own parameter names wherever it
+    ## appears, so 'gitsby git commit -m "msg" -q' arrives with -m bound to $Message and -q to
+    ## $Quiet, and the order gone. That is fine for our own commands and fatal for a passthrough,
+    ## whose whole promise is that everything after the verb reaches the tool untouched. So read
+    ## the process command line instead and take everything after this script's own path - which
+    ## covers both 'pwsh -File gitsby.ps1 ...' and the shebang's 'pwsh gitsby.ps1 ...'.
+    ##
+    ## $null, not an empty list, when the script's path isn't in there ('pwsh -c "& ./gitsby.ps1 ..."'
+    ## builds the arguments inside a string). The caller refuses rather than running a command whose
+    ## arguments it knows it may have rearranged.
+    $raw = @([Environment]::GetCommandLineArgs())
+    $selfLeaf = Split-Path -Leaf -Path $PSCommandPath
+    for ($i = 1; $i -lt $raw.Count; $i++) {
+        $candidate = [string]$raw[$i]
+        if ((Split-Path -Leaf -Path $candidate) -ne $selfLeaf) { continue }
+        if ($i + 1 -ge $raw.Count) { return @() }
+        return @($raw[($i + 1)..($raw.Count - 1)])
+    }
+    return $null
+}
+
+function Invoke-PassthroughIfAsked {
+    ## 'gitsby git ...' and 'gitsby gh ...' run the real tool as the account this folder belongs to,
+    ## then get out of its way entirely: no preview, no confirmation, no fetch. This is not one of
+    ## our commands, it is somebody else's command run under the right identity, and a script that
+    ## pipes its output must get that output and nothing else.
+    ##
+    ## Only the handful of our own options that mean anything here are read, and only before the
+    ## verb - past it a '-q' is git's own flag, not ours.
+    $raw = Get-RawScriptArgList
+    if ($null -eq $raw) {
+        ## Nothing to do unless a passthrough was actually asked for; a normal command is unaffected.
+        if ($Command -in 'git', 'gh') {
+            throw "'$($script:meName) $Command' needs its arguments exactly as typed, and this way of starting it doesn't preserve them. Run the script by path: pwsh -File $PSCommandPath $Command ..."
+        }
+        return
+    }
+    $tool = ''; $toolArgs = @(); $wantConfig = $false; $quiet = $false; $configPath = ''
+    foreach ($arg in $raw) {
+        $token = [string]$arg
+        if     ($tool)        { $toolArgs += $token; continue }
+        elseif ($wantConfig)  { $configPath = $token; $wantConfig = $false; continue }
+        if     ($token -in 'git', 'gh')                              { $tool = $token }
+        elseif ($token -in '-q', '-Quiet', '-y', '-Yes')             { $quiet = $true }
+        elseif ($token -eq '-Config' -or $token -eq '--config')      { $wantConfig = $true }
+        elseif ($token -like '-Config=*' -or $token -like '--config=*') { $configPath = $token.Substring($token.IndexOf('=') + 1) }
+        else   { break }
+    }
+    if (-not $tool) { return }
+    if (-not (Get-Command -Name $tool -ErrorAction SilentlyContinue)) { throw "Not found in path: ${tool}" }
+    if ($configPath) { $script:configFileArg = $configPath }
+    Resolve-GitsbyAccount -Url ([string](@(git remote get-url origin 2>$null) | Select-Object -First 1))
+    Select-GitsbyAccount
+    ## One line, on stderr, so a pipeline reading stdout sees only the tool. Silence is what '-q'
+    ## is for - a script that has already reported who it acts as does not need us to repeat it.
+    if (-not $quiet -and $script:acctGhWho -and $script:acctSource) {
+        [Console]::Error.WriteLine("$($script:meName): acting as $($script:acctGhWho) (from $($script:acctSource))")
+    }
+    ## ArgumentList, not a splat: a splatted element cannot be quoted against wildcard expansion,
+    ## and these arguments are the caller's, verbatim. PowerShell has no exec, so the child's exit
+    ## code is handed back as ours.
+    $psi = [System.Diagnostics.ProcessStartInfo]::new((Resolve-CommandPath -Name $tool))
+    $psi.UseShellExecute = $false
+    $psi.WorkingDirectory = (Get-Location -PSProvider FileSystem).ProviderPath
+    foreach ($toolArg in $toolArgs) { $psi.ArgumentList.Add([string]$toolArg) }
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $proc.WaitForExit()
+    exit $proc.ExitCode
 }
 
 function Get-GhLogin {
@@ -830,6 +1158,22 @@ function Show-Identity {
     ## Who a remote-touching command will act as. Host aliases in ~/.ssh/config hide this, and with more
     ## than one account configured it is easy to push as the wrong person.
     param([string]$RemoteUrl)
+    ## Leads the block, because it explains the three lines under it: the key on the SSH line and
+    ## the name on the Author line can both be this account's doing. Shown only when something was
+    ## actually decided by it - a single-account machine never learns the feature exists.
+    if ($script:acctName -or $script:ghSwitchedFrom -or $script:accountUsedHttpsAuth -or $script:accountUsedSshKey -or $script:accountUsedIdentity) {
+        $acctLine = if ($script:acctGhWho) { $script:acctGhWho } else { '(no GitHub account named)' }
+        if ($script:acctSource) { $acctLine = "${acctLine} (from $($script:acctSource))" }
+        ## The one thing the lines below can't show: an https push authenticating with the token
+        ## rather than with a key, which is what makes a second account work with no ssh setup.
+        if ($script:accountUsedHttpsAuth) { $acctLine = "${acctLine}, git over https" }
+        Write-PlainLine "Account ......: ${acctLine}"
+    }
+    ## A key nothing reads is how you end up acting as the wrong account while believing you
+    ## configured it, so say so - once, here, rather than failing or staying quiet.
+    if ($script:configUnknown.Count -gt 0) {
+        Write-PlainLine "Config .......: $($script:configFileUsed) - ignored: $($script:configUnknown -join ', ')"
+    }
     $sshHostAlias = Get-SshTarget -Url $RemoteUrl
     if ($sshHostAlias -and (Get-Command -Name ssh -ErrorAction SilentlyContinue)) {
         ## Probe the connect target, not the bare host. Without a user, 'ssh -G' answers with the
@@ -845,7 +1189,7 @@ function Show-Identity {
                 'hostname' { if (-not $sshHost) { $sshHost = $value } }
                 'identityfile' {
                     if (-not $keyFile) {
-                        $expanded = $value -replace '^~', $HOME
+                        $expanded = $value -replace '^~', (Get-HomeDir)
                         if (Test-Path -LiteralPath $expanded) { $keyFile = $value }
                     }
                 }
@@ -1509,10 +1853,18 @@ try {
     if ($Version) { Show-Copyright; exit 0 }
     if (-not $Command) { Show-Copyright; Show-About; Show-Syntax; exit 1 }
 
+    ## 'gitsby git ...' and 'gitsby gh ...' hand everything after the verb to the real tool.
+    Invoke-PassthroughIfAsked
+
     ## Breathing room after the shell prompt (the matching trailing blank is at each exit path).
+    ## After the passthrough, which owns its own output and must not have ours mixed into it.
     Write-PlainLine ''
 
     if (-not (Get-Command -Name git -ErrorAction SilentlyContinue)) { throw 'Not found in path: git' }
+
+    ## A fifth positional reaches $Rest. Bash counts them and says so; without this the binder's own
+    ## message would be the only sign, and the two builds would refuse the same typo differently.
+    if ($Rest.Count -gt 0) { throw "Too many positional arguments: $(4 + $Rest.Count), for max of 4." }
 
     ## Anything else option-shaped in the positional slots is a mistake, not data.
     if ($Command -match '^--?[^ -]') { throw "Unexpected option in this context: '${Command}'." }
@@ -1619,6 +1971,11 @@ try {
     git rev-parse --is-inside-work-tree *> $null
     $script:inRepo = ($LASTEXITCODE -eq 0)
     if (-not $script:inRepo -and $cmdName -notlike 'repo-*') { throw 'Not inside a git repository. Change to a git project directory first.' }
+
+    ## Point this run at the account whose folder this is, before anything reaches the network: the
+    ## fetch below authenticates, so getting this wrong here gets it wrong for the whole command.
+    Resolve-GitsbyAccount -Url ([string](@(git remote get-url origin 2>$null) | Select-Object -First 1))
+    Select-GitsbyAccount
 
     ## Freshen remote refs so status/ahead-behind info is current. Never fatal - offline still works locally.
     ## --prune: stale origin/* refs would fool the existence checks. set-head heals a missing/stale
@@ -1915,13 +2272,15 @@ try {
     ## mistake waiting to happen, and it is outward-facing. Refuse it unattended (nobody is there
     ## to read a warning); warn interactively, right before the prompt. -AnyIdentity means
     ## the difference is intended.
-    ## Before anything reads gh's identity, point the run at the remote's own account when we hold
-    ## it. Reads need this as much as writes: 'pr' against a private repo the active account cannot
-    ## see fails the same way a write does. -AnyIdentity means hands off.
-    if ($script:isGhCommand -and -not $AnyIdentity) {
-        $ghOwnerUrl = $script:identityProbeUrl
-        if (-not $ghOwnerUrl) { $ghOwnerUrl = [string](@(git remote get-url origin 2>$null) | Select-Object -First 1) }
-        Select-GhAccount -Url $ghOwnerUrl
+    ## The account was already chosen and applied before the fetch. repo create/connect are the one
+    ## case that learns something new here: with no origin yet there was no owner to read, and the
+    ## target they are about to publish to is only settled during their own validation above.
+    if ($script:isGhCommand) {
+        if (-not $script:acctSource -and $script:ghTarget) {
+            Resolve-GitsbyAccount -Url "https://github.com/$($script:ghTarget).git"
+            Select-GitsbyAccount
+        }
+        Get-GhLogin | Out-Null
     }
 
     $identityMismatch = ''
