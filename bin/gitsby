@@ -83,6 +83,8 @@ fSyntax(){ { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax=
 	fEcho_Clean "  repo create <o/n> ..: Create GitHub repo 'owner/name' via gh, then connect this directory and push."
 	fEcho_Clean "  repo connect [url] .: Connect this directory to an existing empty remote, and push."
 	fEcho_Clean "  repo url [https|ssh]: Show how origin authenticates, or switch it between the two."
+	fEcho_Clean "  account [list] .....: Show your configured GitHub accounts, and which one this folder uses."
+	fEcho_Clean "  account apply ......: Teach plain git the same folder rules, so 'git' outside gitsby matches."
 	fEcho_Clean "Less common commands:"
 	fEcho_Clean "  sync [msg] .........: Pull, commit, and push. Do infrequently."
 	fEcho_Clean "Admin commands, e.g. for small solo projects:"
@@ -206,6 +208,14 @@ fMain(){
 			esac
 			cmdArg="${cmdArg2}"; cmdArg2="${cmdArg3}"; cmdArg3=""
 			;;
+		account|acct)
+			case "${cmdArg,,}" in
+				""|list|show) cmdName="account-list"  ;;
+				apply)        cmdName="account-apply" ;;
+				*)            fThrowError_Usage "Unknown 'account' subcommand '${cmdArg}'. One of: list, apply." ;;
+			esac
+			cmdArg="${cmdArg2}"; cmdArg2="${cmdArg3}"; cmdArg3=""
+			;;
 		br|branch)
 			case "${cmdArg,,}" in
 				""|list)     cmdName="br-list"   ;;
@@ -227,6 +237,8 @@ fMain(){
 		## make a typo look like it did what you meant. br list's extra lands in cmdArg too, after
 		## the noun shift, so one test covers both.
 		status|br-list)          isMutating=0; [[ -z "${cmdArg}" ]] || fThrowError_Usage "'${meName} ${cmdName/br-list/br list}' takes no arguments (got '${cmdArg}')." ;;
+		account-list)            isMutating=0; [[ -z "${cmdArg}" ]] || fThrowError_Usage "'${meName} account list' takes no arguments (got '${cmdArg}')." ;;
+		account-apply)           [[ -z "${cmdArg}" ]] || fThrowError_Usage "'${meName} account apply' takes no arguments (got '${cmdArg}')." ;;
 		pr)                      [[ "${cmdArg,,}" =~ ^(ok|create|new)$ ]] || isMutating=0 ;;
 		update|sync|br-land)
 			[[ -z "${commitMessage}" ]] && commitMessage="${cmdArg}"
@@ -281,7 +293,7 @@ fMain(){
 	## Every command needs a repo - except the repo ones: clone works anywhere, and create/connect
 	## exist precisely to turn a plain directory into one.
 	if git rev-parse --is-inside-work-tree &>/dev/null; then inRepo=1; fi
-	if ((! inRepo)) && [[ "${cmdName}" != repo-* ]]; then
+	if ((! inRepo)) && [[ "${cmdName}" != repo-* && "${cmdName}" != account-* ]]; then
 		fThrowError_Usage "Not inside a git repository. Change to a git project directory first."
 	fi
 
@@ -292,7 +304,7 @@ fMain(){
 
 	## Freshen remote refs so status/ahead-behind info is current. Never fatal - offline still works locally.
 	## clone skips it: cwd may sit inside some unrelated repo, and the clone doesn't care about it.
-	if ((doFetch)) && [[ "${cmdName}" != "repo-clone" ]] && git remote get-url origin &>/dev/null; then
+	if ((doFetch)) && [[ "${cmdName}" != "repo-clone" && "${cmdName}" != account-* ]] && git remote get-url origin &>/dev/null; then
 		fEcho "git fetch ..."
 		fpFetchRemote
 	fi
@@ -306,7 +318,7 @@ fMain(){
 		## commits WIP to a branch we wrongly judged unprotected. 'repo *' predates having one.
 		## 'status' and 'br list' are exempt on purpose: they mutate nothing and are the commands
 		## you run to see what is wrong, so they report "unknown" instead of refusing.
-		if [[ "${cmdName}" != repo-* && "${cmdName}" != "status" && "${cmdName}" != "br-list" ]] && git rev-parse -q --verify HEAD >/dev/null 2>&1; then
+		if [[ "${cmdName}" != repo-* && "${cmdName}" != account-* && "${cmdName}" != "status" && "${cmdName}" != "br-list" ]] && git rev-parse -q --verify HEAD >/dev/null 2>&1; then
 			[[ -n "${defaultBranchCache}" ]] \
 				|| fThrowError_Usage "Can't tell this repo's default branch. Set it with 'git remote set-head origin --auto', or create a main/master."
 			fBranchExistsLocal "${defaultBranchCache}" || fBranchExistsRemote "${defaultBranchCache}" \
@@ -594,6 +606,7 @@ fMain(){
 	if ((! isMutating)); then
 		case "${cmdName}" in
 			status)  fpShowStatus 1 ;;
+			account-list) fCmdAccountList ;;
 			repo-url)
 				local urlNow="$(git remote get-url origin 2>/dev/null || true)"
 				local urlTarget="$(fpRemoteTarget "${urlNow}")"
@@ -619,7 +632,11 @@ fMain(){
 
 	## Mutating commands: show state and plan, confirm, execute, show state again.
 	## clone, and create/connect from a plain dir, have no repo state to show; a smaller header stands in.
-	if [[ "${cmdName}" == "repo-clone" ]]; then
+	if [[ "${cmdName}" == "account-apply" ]]; then
+		## Nothing about a repo is involved: this writes machine-level git config, and showing branch
+		## state here would suggest it does something to the repo you happen to be standing in.
+		fCmdAccountList
+	elif [[ "${cmdName}" == "repo-clone" ]]; then
 		fEcho_Clean ""
 		fEcho_Clean "Directory ....: ${PWD}"
 		fEcho_Clean "Remote .......: $(fMaskUrl "${cloneUrl}")"
@@ -673,10 +690,13 @@ fMain(){
 		repo-clone)               fCmdClone ;;
 		repo-create|repo-connect) fCmdConnect ;;
 		repo-url)                 fCmdRepoUrl "${cmdArg}" ;;
+		account-apply)            fCmdAccountApply ;;
 	esac
 
 	fEcho_Clean ""
-	if [[ "${cmdName}" == "repo-clone" ]]; then
+	if [[ "${cmdName}" == "account-apply" ]]; then
+		:  ## every file it wrote was named as it was written; a repo status would add nothing
+	elif [[ "${cmdName}" == "repo-clone" ]]; then
 		fEcho "Cloned into '${cloneDir}'."  ## the after-status would show the wrong (current) directory
 	else
 		fpShowStatus
@@ -1630,6 +1650,163 @@ fCmdRepoUrl(){
 	fRun git remote set-url origin "$(fpGithubUrl "${target}" "${want}")"
 :;}
 
+fpAccountNames(){
+	## Every account the config file defines, in the order it defines them.
+	local -a seen=(); local entry="" name=""
+	for entry in "${gitsbyConfigPaths[@]:-}"; do
+		[[ -n "${entry}" ]] || continue
+		name="${entry#*$'\t'}"
+		[[ " ${seen[*]:-} " == *" ${name} "* ]] || seen+=("${name}")
+	done
+	## An account can be declared by its keys alone, with no folder rule - it is then only
+	## reachable by name, through GITSBY_ACCOUNT, which is a legitimate way to use one.
+	local key=""
+	for key in "${!gitsbyConfig[@]}"; do
+		[[ "${key}" == account.*.* ]] || continue
+		name="${key#account.}"; name="${name%.*}"
+		[[ " ${seen[*]:-} " == *" ${name} "* ]] || seen+=("${name}")
+	done
+	((${#seen[@]})) && printf '%s\n' "${seen[@]}"
+:;}
+
+fpAccountFoldersOf(){
+	## The folder rules belonging to one account, as canonical paths.
+	local -r name="${1:-}"; local entry=""
+	for entry in "${gitsbyConfigPaths[@]:-}"; do
+		[[ -n "${entry}" && "${entry#*$'\t'}" == "${name}" ]] || continue
+		echo "${entry%%$'\t'*}"
+	done
+:;}
+
+fpAccountIncludeDir(){
+	## Where the per-account git config fragments live: beside the config file that describes them,
+	## so the two travel together and 'account apply' has an unambiguous set of files it owns.
+	local -r file="${configFileUsed}"
+	[[ -n "${file}" ]] || return 0
+	echo "${file%/*}/accounts"
+:;}
+
+fCmdAccountList(){
+	## What is configured, and what this folder resolves to. The command you run when a push went
+	## out as the wrong person and you want to know why.
+	fEcho_Clean ""
+	fEcho_Clean "Config file ..: ${configFileUsed:-(none found)}"
+	fEcho_Clean "Here .........: $(fpContextDir)"
+	local -r hereAccount="$(fpAccountForDir "$(fpContextDir)")"
+	## Built up rather than written as one string: an apostrophe inside a ${x:-default} ends the
+	## enclosing quote even within double quotes, so "gh's" there is a parse error, not a word.
+	local resolvedLine="${acctGhWho}"
+	[[ -n "${resolvedLine}" ]] || resolvedLine="(nothing configured - gh's own account)"
+	[[ -n "${acctSource}" ]] && resolvedLine="${resolvedLine} (from ${acctSource})"
+	fEcho_Clean "Resolves to ..: ${resolvedLine}"
+	((${#gitsbyConfigUnknown[@]})) && fEcho_Clean "Ignored keys .: $(fJoin "${gitsbyConfigUnknown[@]}")"
+	local -a names=(); mapfile -t names < <(fpAccountNames)
+	if ((! ${#names[@]})); then
+		fEcho_Clean ""
+		fEcho_Clean "No accounts defined. See the Multiple accounts section of the README for the file format."
+		return 0
+	fi
+	local name="" folder=""
+	fEcho_Clean ""
+	fEcho_Clean "Accounts:"
+	for name in "${names[@]}"; do
+		local marker="  "; [[ "${name}" == "${hereAccount}" ]] && marker="->"
+		fEcho_Clean "${marker} ${name}"
+		local ghWho="$(fpAccountValue "${name}" ghAccount)"
+		fEcho_Clean "     github ..: ${ghWho:-(none)}"
+		## Say where a token would come from, never what it is.
+		local tokenFrom="none"
+		if [[ -n "${ghWho}" ]] && [[ -n "$(fpGhTokenFor "${ghWho}")" ]]; then tokenFrom="gh's own store"
+		elif [[ -n "$(fpReadTokenFile "$(fpAccountValue "${name}" tokenFile)")" ]]; then tokenFrom="$(fpAccountValue "${name}" tokenFile)"
+		fi
+		fEcho_Clean "     token ...: ${tokenFrom}"
+		local sshKey="$(fpAccountValue "${name}" sshKey)"
+		[[ -n "${sshKey}" ]] && fEcho_Clean "     ssh key .: ${sshKey}"
+		local acctUser="$(fpAccountValue "${name}" name)"; local acctEmail="$(fpAccountValue "${name}" email)"
+		[[ -n "${acctUser}${acctEmail}" ]] && fEcho_Clean "     commits .: ${acctUser:-?} <${acctEmail:-?}>"
+		local proto="$(fpAccountValue "${name}" protocol)"
+		[[ -n "${proto}" ]] && fEcho_Clean "     protocol : ${proto}"
+		while read -r folder; do
+			[[ -n "${folder}" ]] && fEcho_Clean "     folder ..: ${folder}"
+		done < <(fpAccountFoldersOf "${name}")
+	done
+:;}
+
+fpAccountApplyPlan(){
+	## The includeIf conditions 'account apply' would write, one per line as '<condition>\t<file>'.
+	## gitdir/i, not gitdir: a path compares case-insensitively on Windows and macOS, and a rule
+	## that silently misses because of a capital letter is worse than no rule.
+	local -r dir="$(fpAccountIncludeDir)"
+	[[ -n "${dir}" ]] || return 0
+	local -a names=(); mapfile -t names < <(fpAccountNames)
+	local name="" folder=""
+	for name in "${names[@]:-}"; do
+		[[ -n "${name}" ]] || continue
+		while read -r folder; do
+			## The trailing slash is what makes git apply it to everything below the folder too.
+			[[ -n "${folder}" ]] && printf '%s\t%s\n' "includeIf.gitdir/i:${folder}/.path" "${dir}/${name}.gitconfig"
+		done < <(fpAccountFoldersOf "${name}")
+	done
+:;}
+
+fpAccountManagedIncludes(){
+	## Every includeIf already in the global config that points into the directory we own. Those are
+	## ours to replace; anything else in there was written by hand and is left alone.
+	local -r dir="$(fpAccountIncludeDir)"
+	[[ -n "${dir}" ]] || return 0
+	local -r canonDir="$(fpCanonPath "${dir}")"
+	local line="" key="" value=""
+	while IFS= read -r line; do
+		key="${line%% *}"; value="${line#* }"
+		## git prints the section and variable lower-cased and the subsection verbatim, so match
+		## the key that way and hand it straight back to --unset-all.
+		[[ "${key,,}" == includeif.*.path ]] || continue
+		## Canonical, not textual: git stores a path in the platform's own spelling, so ours comes
+		## back as 'C:/...' where we wrote '/c/...' - and a prefix test on the raw text never fires,
+		## which quietly turns every re-run into a duplicate rather than a refresh.
+		[[ "$(fpCanonPath "${value}")" == "${canonDir}/"* ]] || continue
+		echo "${key}"
+	done < <(git config --global --get-regexp '^includeIf\..*\.path$' 2>/dev/null || true)
+:;}
+
+fCmdAccountApply(){
+	## Teach plain git what the config file already tells gitsby, so a bare 'git commit' or 'git push'
+	## in one of these folders behaves the same as it does through us. One fragment per account, and
+	## an includeIf per folder rule pointing at it - written with 'git config', never by editing the
+	## file ourselves, so git's own parser decides what a valid entry looks like.
+	local -r dir="$(fpAccountIncludeDir)"
+	mkdir -p "${dir}"
+	local -a names=(); mapfile -t names < <(fpAccountNames)
+	local name=""
+	for name in "${names[@]:-}"; do
+		[[ -n "${name}" ]] || continue
+		local fragment="${dir}/${name}.gitconfig"
+		## Rewritten whole each time: these files are ours, and a leftover key from a removed
+		## account setting would be invisible and wrong.
+		: > "${fragment}"
+		local acctUser="$(fpAccountValue "${name}" name)";  [[ -n "${acctUser}"  ]] && git config --file "${fragment}" user.name  "${acctUser}"
+		local acctEmail="$(fpAccountValue "${name}" email)"; [[ -n "${acctEmail}" ]] && git config --file "${fragment}" user.email "${acctEmail}"
+		local ghWho="$(fpAccountValue "${name}" ghAccount)"; [[ -n "${ghWho}"     ]] && git config --file "${fragment}" gitsby.ghAccount "${ghWho}"
+		local tokenFile="$(fpAccountValue "${name}" tokenFile)"; [[ -n "${tokenFile}" ]] && git config --file "${fragment}" gitsby.ghTokenFile "${tokenFile}"
+		local sshKey="$(fpAccountValue "${name}" sshKey)"
+		[[ -n "${sshKey}" ]] && git config --file "${fragment}" core.sshCommand "ssh -i ${sshKey} -o IdentitiesOnly=yes"
+		fEcho "Wrote ${fragment}"
+	done
+	## Drop ours before adding, so a folder rule that was removed from the config file stops applying.
+	local key=""
+	while read -r key; do
+		[[ -n "${key}" ]] || continue
+		git config --global --unset-all "${key}" 2>/dev/null || true
+	done < <(fpAccountManagedIncludes)
+	local plan="" cond="" target=""
+	while IFS= read -r plan; do
+		[[ -n "${plan}" ]] || continue
+		cond="${plan%%$'\t'*}"; target="${plan#*$'\t'}"
+		git config --global --add "${cond}" "${target}"
+		fEcho "git config --global --add ${cond}"
+	done < <(fpAccountApplyPlan)
+:;}
+
 fpGitSshCommand(){
 	## The ssh command git itself would run, so the probe below asks as the key git actually pushes
 	## with. Without this a per-repo 'core.sshCommand' (the usual way to hold two GitHub accounts on
@@ -2136,6 +2313,23 @@ fpPreview(){
 			;;
 		repo-url)
 			fEcho_Clean "${pad}git remote set-url origin $(fpGithubUrl "$(fpRemoteTarget "$(git remote get-url origin 2>/dev/null || true)")" "${cmdArg}")"
+			;;
+		account-apply)
+			## Names every file and every condition, because this is the one command that writes
+			## outside the repo you are standing in - into your own global git config.
+			local applyDir="$(fpAccountIncludeDir)"
+			local applyName="" applyLine="" applyCond=""
+			while IFS= read -r applyName; do
+				[[ -n "${applyName}" ]] && fEcho_Clean "${pad}write ${applyDir}/${applyName}.gitconfig"
+			done < <(fpAccountNames)
+			while IFS= read -r applyLine; do
+				[[ -n "${applyLine}" ]] && fEcho_Clean "${pad}git config --global --unset-all ${applyLine}"
+			done < <(fpAccountManagedIncludes)
+			while IFS= read -r applyLine; do
+				[[ -n "${applyLine}" ]] || continue
+				applyCond="${applyLine%%$'\t'*}"
+				fEcho_Clean "${pad}git config --global --add ${applyCond} ${applyLine#*$'\t'}"
+			done < <(fpAccountApplyPlan)
 			;;
 		repo-create|repo-connect)
 			((inRepo)) || fEcho_Clean "${pad}git init -b main"
