@@ -22,7 +22,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Commands that go through gh now act as the account that belongs to where you are, chosen per run rather than by switching gh's active account. The account is named in the identity block, and `--any-identity` (`-AnyIdentity`) turns it off. A remote whose owner gh has no account for - an org, or anyone else's repo - is left alone.
 
-- Two optional git config keys, for holding more than one GitHub account on a machine. `gitsby.ghAccount` names the account to act as, and takes precedence over the remote's owner; `gitsby.ghTokenFile` names a file holding its token, for a machine where gh has never been logged in as that account. Both are read through `git config`, so an `includeIf` on the repo path selects them the same way it already selects the ssh key and the commit identity. Unset keys, a missing or empty token file, or no gh at all all fall back to gh's own account rather than failing.
+- Multiple GitHub accounts, chosen by which folder you are in. A config file maps a folder tree to an account, and every command run anywhere under it acts as that account - gh, git's credentials, the ssh key, and the commit identity. Read from `~/.config/gitsby/config.shcl` (or `$XDG_CONFIG_HOME`, or `%APPDATA%` on Windows), overridable with `--config FILE` (`-Config FILE`) or `GITSBY_CONFIG`. With no config file at all nothing changes.
+
+- Git itself can now authenticate as the folder's account over https, using the token gh already holds or one named by `tokenFile` - so a second account needs no ssh key, no host alias, and no rewritten remote URLs. The token is supplied through the environment for the length of one command and written nowhere.
+
+- `repo url [https|ssh]` shows how `origin` authenticates, or switches it between the two. Only the remote URL changes. The identity line suggests it where a repo is still on ssh but its account holds a token; `protocol = ssh` in the config says you meant it and stops the suggestion.
+
+- `account` lists the configured accounts and says which one the current folder resolves to, and from where. `account apply` writes the same folder rules into your global git config as `includeIf` blocks, so plain `git` outside gitsby behaves identically. Re-running it refreshes only the entries it wrote, leaves hand-written ones alone, and drops rules for accounts you removed.
+
+- `raw git <args>` and `raw gh <args>` run the real tool as the folder's account and pass everything after the tool name through verbatim, with the tool's own stdout and exit code. An existing script becomes account-correct by prefixing its commands rather than being rewritten. `GITSBY_ACCOUNT` overrides the folder for one run.
+
+- Two optional git config keys remain, for a repo that wants to answer for itself. `gitsby.ghAccount` names the account to act as, and `gitsby.ghTokenFile` names a file holding its token. Both are read through `git config`, so an `includeIf` on the repo path selects them, and both outrank the config file's folder rules.
 
 - `cicd/utility/include/gh-account.bash`, a sourceable version of the same selection for pipelines that call `gh` directly rather than through gitsby.
 
@@ -33,6 +43,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The identity line names the key from the same source, so it can no longer report the right account beside the wrong key file.
 
 - `fetch` and the remote probe no longer override a repo's configured ssh key. Both set `GIT_SSH_COMMAND` for the connect timeout, which outranks `core.sshCommand`, so a private repo reachable only through the repo's own key reported as offline.
+
+- On Windows, a local-path remote on a drive letter was read as an ssh host named after the drive, so every command probed a machine called `C` for an account. `repo clone` re-run against a directory it had already cloned refused itself, and `repo connect` refused a URL matching the origin it already had - git stores a local path in the platform's own spelling, and both compared it as text against the spelling you typed.
 
 ### Other work
 

@@ -69,6 +69,13 @@ In each section, items are listed approximately from newest to oldest.
 - ✅ gh acted as whatever account was last switched to, regardless of who owns the remote.
 	- Now picks the owner's account for the run when gh already holds it, via `GH_TOKEN`, leaving gh's active account alone. Only when the owner can be named and the token is held - an org or someone else's repo is left untouched rather than refused.
 
+- ✅ On Windows, a local-path remote was read as an ssh host named after the drive letter.
+	- `C:/path/to/repo.git` matched the `host:path` shape, so every command ran an ssh identity probe against a machine called `C` and reported an account for it.
+
+- ✅ `repo clone` refused to re-run, and `repo connect` refused a matching URL, on Windows.
+	- Git stores a local-path remote in the platform's own spelling: hand it `/c/tmp/x` and it gives back `C:/tmp/x`. Both commands compared their own argument against git's copy as plain text, so the same directory read as a different one.
+	- Both now compare local paths as paths. These were the two long-standing Windows-only failures in the suite.
+
 - ✅ The PowerShell installer never verified the checksum, and said the release had none.
 	- Found by running both documented one-liners against the current release: the Bash one reported the checksum verified, the PowerShell one reported no `SHA256SUMS` for the same release, which does publish one.
 	- Cause: GitHub serves that file as binary, and PowerShell returns a response body as raw bytes for anything it doesn't treat as text. Read as lines, bytes match nothing, so no checksum was found and the download was installed unverified.
@@ -102,6 +109,14 @@ In each section, items are listed approximately from newest to oldest.
 	- Decided against making `--no-fetch` mean this. The flag declines the incoming round trip, which is a perfectly good thing to want against a reachable remote, and the suite itself uses it that way throughout. Offline is a state the pre-command fetch discovers, not a flag.
 
 #### Done - Features and enhancements
+
+- ✅ Multiple GitHub accounts, chosen by which folder you are in, for both git and gh.
+	- People with two accounts already keep a folder per account. A config file maps a folder tree to an account, and everything under it acts as that account - gh, git's credentials, the ssh key, the commit identity.
+	- `~/.config/gitsby/config.shcl` (or `$XDG_CONFIG_HOME`, or `%APPDATA%`), flat `key = value` lines, overridable with `--config FILE` or `GITSBY_CONFIG`. With no config file at all, nothing changes.
+	- The ssh-key-and-host-alias trick is no longer needed: over https, git authenticates with the account's own token. Keys stay fully supported for anyone who wants them.
+	- `repo url [https|ssh]` converts an existing remote, which is the only thing between an ssh repo and a token.
+	- `account` explains what is configured and which account applies here. `account apply` writes the same rules into the global git config, so plain `git` matches.
+	- `raw git` and `raw gh` run either tool as the folder's account, verbatim, so scripts can use gitsby as a drop-in prefix.
 
 - ✅ A Windows-native CI/CD pipeline, so the whole thing can be run from Windows and not only from Linux.
 	- `cicd/cicd-win.ps1` runs the same six stages as `cicd/cicd.bash`, with the same options under PowerShell spelling and the same output shape, so the two read side by side.

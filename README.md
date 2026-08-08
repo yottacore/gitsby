@@ -45,6 +45,10 @@
 - [How it compares to named industry-standard workflows](#how-it-compares-to-named-industry-standard-workflows)
 - [Why](#why)
 - [Commands](#commands)
+- [Multiple GitHub accounts](#multiple-github-accounts)
+	- [Setting it up](#setting-it-up)
+	- [No SSH keys needed](#no-ssh-keys-needed)
+	- [Plain git, and scripts](#plain-git-and-scripts)
 	- [Which account are you acting as?](#which-account-are-you-acting-as)
 - [Installation](#installation)
 	- [Packages and installers](#packages-and-installers)
@@ -67,7 +71,7 @@ You probably also understand that it's complex, mostly because it's so flexible.
 
 Git has about 82 porcelain commands.
 
-Gitsby™ has 7. (Or more accurately, 17 total when counting subcommands.)
+Gitsby™ has 9. (Or more accurately, 22 total when counting subcommands.)
 
 How Gitsby shrinks Git's command set:
 
@@ -240,7 +244,7 @@ Now, years later, this v2 release - renamed Gitsby - finally fulfills the origin
 
 ## Commands
 
-What you reach for daily is a one-word command. Everything else is grouped under a noun, so the whole set is discoverable from three starting points. `repository` and `branch` spell out if you prefer them.
+What you reach for daily is a one-word command. Everything else is grouped under a noun, so the whole set is discoverable from a handful of starting points. `repository` and `branch` spell out if you prefer them.
 
 | Command              | Args          | What it does
 | :--                  | :--           | :--
@@ -261,14 +265,19 @@ What you reach for daily is a one-word command. Everything else is grouped under
 | `pr <#>`             |               | View a PR plus its diff.
 | `pr create`          | `[title]`     | Push the current branch and open a PR against `dev`/`main` (no title: the last commit subject).
 | `pr ok`              | `<#>`         | Approve and merge a PR.
+| `repo url`           | `[https\|ssh]` | Show how `origin` authenticates, or switch it between the two. Nothing else about the repo changes.
+| `account`            |               | Show your configured GitHub accounts, and which one this folder uses (`account list` is the same thing).
+| `account apply`      |               | Teach plain `git` the same folder rules, so `git` outside Gitsby behaves identically.
+| `raw git`            | `<args ...>`  | Run `git` as the account this folder belongs to. Everything after `git` is git's, verbatim.
+| `raw gh`             | `<args ...>`  | The same, for `gh`.
 
 There is deliberately no bare `commit` and no bare `pull`. Committing without sharing is how work quietly diverges, and pulling without committing is the one thing the rest of the tool never does.
 
 `br create`, `br switch`, `br land`, and `pr create` all deal with your work first. `update` is the one command for both, and it pulls *before* it commits so your work lands on top of everyone else's and history stays linear.
 
-Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--public`/`--private` (visibility for `repo create`; private by default), `--no-fetch` (skip the fetch and the pull), `--any-identity` (see below), `-h`, `-v`.
+Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--public`/`--private` (visibility for `repo create`; private by default), `--no-fetch` (skip the fetch and the pull), `--any-identity` (see below), `--config FILE` (read accounts from somewhere other than the usual place), `-h`, `-v`.
 
-The PowerShell version takes the same options in PowerShell form: `-Message MSG`, `-Quiet`/`-y`, `-Public`/`-Private`, `-NoFetch`, `-AnyIdentity`, `-Help`, `-Version`. Commands and arguments are spelled identically in both.
+The PowerShell version takes the same options in PowerShell form: `-Message MSG`, `-Quiet`/`-y`, `-Public`/`-Private`, `-NoFetch`, `-AnyIdentity`, `-Config FILE`, `-Help`, `-Version`. Commands and arguments are spelled identically in both.
 
 A typical day:
 
@@ -299,6 +308,80 @@ Every mutating command in an existing repo fetches first (unless you pass `--no-
 When that fetch finds the remote out of reach, the commands that mean something locally still work. `update` commits, `br create` and `br switch` and `br land` do their branch work, and each says what it skipped and that `sync` will publish it later. The commands that exist to publish - `sync`, `pr create`, `pr ok`, `release` - refuse up front and tell you what to do instead, rather than failing halfway through or reporting success having sent nothing. (`--no-fetch` declines that check, so with it gitsby is never told you are offline and a push fails with git's own message.)
 
 `repo create` and `repo connect` list the files they are about to publish before asking, since that is the one command that hands a whole directory over for the first time. The list is what `git add --all` will actually add, `.gitignore` and all - so a stray `.env` is visible while you can still say no.
+
+## Multiple GitHub accounts
+
+Most people who have two GitHub accounts also have a folder for each: one tree for work, one for everything else. Gitsby takes that literally. Tell it which account owns which folder, once, and every command run anywhere under that folder acts as that account - `git` and `gh` alike.
+
+Nothing here is required. With no configuration at all Gitsby behaves exactly as it always did, using whichever account `gh` is currently logged in as. A single-account machine never notices the feature exists.
+
+### Setting it up
+
+One file, flat `key = value` lines, `#` for comments:
+
+~~~ini
+# ~/.config/gitsby/config.shcl
+
+protocol = https                            # how new remotes are set up; https needs no ssh key
+
+account.work.path       = ~/dev/work        # the folder tree this account owns
+account.work.ghAccount  = my-work-login
+account.work.name       = Ada Lovelace
+account.work.email      = ada@work.example
+
+account.personal.path       = ~/dev/personal
+account.personal.ghAccount  = my-personal-login
+account.personal.email      = ada@home.example
+~~~
+
+Gitsby reads the first of these that exists. `--config FILE` (`-Config FILE`) overrides all of them, and so does the `GITSBY_CONFIG` environment variable.
+
+1. `$XDG_CONFIG_HOME/gitsby/config.shcl`
+2. `~/.config/gitsby/config.shcl` - the usual place on Linux and macOS, and it works on Windows too
+3. `%APPDATA%\gitsby\config.shcl` - Windows
+
+Per-account keys, all optional except a `path` to match on:
+
+| Key          | What it does
+| :--          | :--
+| `path`       | A folder tree this account owns. Repeat the key for more than one. The longest match wins, so a tree nested inside another account's tree belongs to the inner one.
+| `ghAccount`  | The GitHub login to act as.
+| `tokenFile`  | A file holding that account's token, for a machine where `gh` was never logged in as it.
+| `sshKey`     | A key to use instead of a token. See below.
+| `name`       | Commit author name.
+| `email`      | Commit author email.
+| `protocol`   | `https` or `ssh`, for this account only.
+
+Run `gitsby account` to see what it made of all that, and which account the folder you're standing in resolves to. It is the command to reach for when something went out as the wrong person.
+
+### No SSH keys needed
+
+The usual way to hold two GitHub accounts on one machine is a pair of SSH keys and a `~/.ssh/config` full of host aliases, which then have to be baked into every remote URL. Gitsby does not need any of that.
+
+Over HTTPS, `git` authenticates with the account's own token - the one `gh` already stores, or the one `tokenFile` names. Gitsby supplies it for the length of a single command, through the environment, and nothing is written anywhere. So a second account costs one `gh auth login` and three lines of config.
+
+- New remotes follow `protocol`, so `repo connect owner/name` sets up an HTTPS remote by default.
+- An existing repo still on SSH is converted with `gitsby repo url https`. Only the remote URL changes - same repo, same history. Gitsby points this out on the identity line when it applies, and setting `protocol = ssh` says you meant it and stops the suggestion.
+
+SSH keys keep working, and stay the answer when you can't use a token. Give an account an `sshKey` and Gitsby uses it (with `IdentitiesOnly`, so the agent can't offer the wrong one first). Anything you have already set yourself - `GIT_SSH_COMMAND`, or `core.sshCommand` on the repo - was chosen more deliberately than a folder rule, and wins.
+
+### Plain git, and scripts
+
+Two commands make the rest of your tooling agree with Gitsby.
+
+`gitsby account apply` writes the same folder rules into your global git config, as ordinary `includeIf` blocks pointing at one small file per account. After that a bare `git commit` or `git push` in one of those folders uses the right identity and the right key, with Gitsby nowhere in the picture. It is safe to re-run: it replaces only the entries it wrote before, leaves any you wrote by hand alone, and drops rules for accounts you have since removed.
+
+`gitsby raw git ...` and `gitsby raw gh ...` run the real tool as the folder's account and then get out of the way. Everything after `git` or `gh` is passed through exactly as typed, stdout is the tool's alone, and the exit code is the tool's too - so an existing script becomes account-correct by prefixing its commands rather than being rewritten.
+
+~~~bash
+gitsby raw git push origin HEAD
+gitsby raw gh pr list --json number
+
+## One line on stderr says who you are acting as. -q silences it.
+gitsby -q raw git rev-parse HEAD
+~~~
+
+`GITSBY_ACCOUNT` overrides the folder for one run, or for a whole script's environment. It takes either an account name from the config file or a bare GitHub login.
 
 ### Which account are you acting as?
 

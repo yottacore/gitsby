@@ -132,18 +132,38 @@ The two files are ports of each other. A change to one nearly always belongs in 
 	- The same command backs the fetch and the remote probe. Both used to force a bare `ssh` for the connect timeout, and because `GIT_SSH_COMMAND` outranks `core.sshCommand` that silently overrode the repo's key - a private repo only that key can read looked like being offline.
 	- The key named in the identity line comes from the same place, so the line cannot report the right account beside the wrong key file. Half-right is worse than either half alone: it invites you to trust whichever half happens to be wrong.
 
-- gh acts as the remote's own account when we already hold it, chosen per run.
-	- gh keeps one active account per host. Against a remote owned by somebody else it acts as whoever you last switched to, and `gh auth switch` is global state you have to remember to set and to put back.
-	- The owner is read off the remote URL and the token comes from `gh auth token --user`, which reads gh's own store. `GH_TOKEN` outranks the stored credentials for that run only, so nothing is left behind and no global state moves.
-	- Zero configuration is the default case, and it is the reason the remote's owner is consulted at all: both facts are already knowable, so a single-account setup never notices the feature exists.
-	- An explicit `gitsby.ghAccount` overrides the owner where one is set. Read through `git config`, which means an `includeIf` on the repo path selects it - the same mechanism that already picks the ssh key and the commit identity, so accounts are configured in one place rather than two.
-	- We decided against gitsby growing a config file of its own. It deliberately has no state beyond the repo you are standing in, and git already has a path-conditional config system that this fits inside. A second one would be a second thing to keep in step with reality.
-	- The configured account is also the only one of the two that can answer before a remote exists - `clone`, `repo create`, and a pipeline running in a fresh checkout.
-	- `gitsby.ghTokenFile` names a token for an account gh has never been logged in as, for a machine that was set up by copying files rather than by authenticating. gh's own store is consulted first, so a rotated login is never shadowed by a stale token on disk.
-	- Every part of this degrades to silence. Unset keys, a missing or unreadable or empty token file, no gh at all: each falls back to gh's own account rather than failing. A checkout that was never set up this way still has to work, and a pipeline must not break on a box that has not been prepared.
-	- Only when the owner can be named *and* their token is held. An org or a fork we have no account for is ordinary, and is left alone rather than refused: `owner != your login` is the normal case for contributing to anyone else's repo, so asserting on it would fire constantly and wrongly.
+- Which GitHub account you act as is decided by the folder you are in.
+	- People who have two accounts almost always have a folder per account already. That existing habit is the configuration; asking them to restate it per repo would be asking twice.
+	- One account is resolved per run and applied to everything at once - gh, git's credentials, the ssh key, and the commit identity - because a run that pushes as one person and commits as another is the failure this exists to prevent.
+	- Resolution order, most specific first: `GITSBY_ACCOUNT`, then `gitsby.ghAccount` in git config, then the config file's folder rules, then the owner of the remote. Finding none of them is the ordinary single-account case and changes nothing.
+	- Zero configuration stays the default case, and it is why the remote's owner is consulted at all: that fact is already knowable, so a single-account setup never notices the feature exists.
+	- Everything degrades to silence. Unset keys, a missing or unreadable or empty token file, no config file, no gh at all: each falls back to gh's own account rather than failing. A checkout that was never set up this way still has to work, and a pipeline must not break on a box that has not been prepared.
+	- Only when the account can be named *and* its token is held. An org or a fork we have no account for is ordinary, and is left alone rather than refused: `owner != your login` is the normal case for contributing to anyone else's repo, so asserting on it would fire constantly and wrongly.
 	- Reads get this as well as writes. A `pr` listing against a private repo the active account cannot see fails the same way a write does.
-	- The switch is named in the identity block, not silent. Picking an account is still a change of who you act as, and this is a tool that shows its plan before acting. `--any-identity` turns it off along with the mismatch check.
+	- The choice is named in the identity block, not silent. Picking an account is still a change of who you act as, and this is a tool that shows its plan before acting. `--any-identity` turns it off along with the mismatch check.
+
+- Gitsby does have a config file, and it is deliberately not a git config file.
+	- The earlier decision was the opposite - `includeIf` on the repo path already selects the ssh key and the commit identity, so a second config system looked like a second thing to keep in step with reality.
+	- What changed the answer is that folder rules are the point. `includeIf` can only say "when you are here, read this"; it cannot be listed, checked, or explained back to you, and writing one block per account per machine by hand is the chore the feature exists to remove.
+	- So the file owns the mapping and `account apply` generates the `includeIf` blocks from it. There is still one source of truth, and plain `git` outside gitsby follows it.
+	- Flat `key = value` lines, hand parsed. Neither build needs anything installed to read it, and neither can parse it differently from the other - which a real format with a real parser per language could not promise.
+	- `gitsby.ghAccount` and `gitsby.ghTokenFile` in git config still work and still win, for a single repo that wants to answer for itself.
+	- `gitsby.ghTokenFile` and the per-account `tokenFile` name a token for an account gh has never been logged in as, for a machine set up by copying files rather than by authenticating. gh's own store is consulted first, so a rotated login is never shadowed by a stale token on disk.
+	- Paths are compared canonically, never as text. The Bash build sees `/c/x` where the PowerShell build sees `C:\x`, and a rule that matched in one build and not the other would be worse than no rule at all.
+
+- A token, not a key, is the way to hold two accounts - and gitsby says so without taking the choice away.
+	- The conventional answer is a key per account plus `~/.ssh/config` host aliases, which then have to be baked into every remote URL. It works, and it spreads the account across three places that can disagree.
+	- Over https, git can authenticate with the same token gh already stores. Gitsby supplies it through the environment for one command, so nothing is written and a killed run leaves nothing behind.
+	- `repo url` converts an existing remote, because that is the only thing standing between an ssh repo and a token. Only the URL changes.
+	- Keys remain fully supported, and `IdentitiesOnly` is set with them: without it ssh offers every key the agent holds and the server takes the first that authenticates, which on a two-account machine is a coin toss.
+	- Anything the user set themselves - `GIT_SSH_COMMAND`, `core.sshCommand` on the repo, a repo-local `user.email` - outranks a folder rule. A folder rule is a default, not an override.
+	- The suggestion to convert is one line, shown only when it would actually help, and `protocol = ssh` retires it. Advice you cannot turn off is noise.
+
+- `raw` is a noun, so the tools it fronts stay out of the command namespace.
+	- `gitsby git ...` would have read better and cost more: `git` and `gh` would become reserved words in the command slot forever, and anything else needing verbatim passthrough later would have no home.
+	- Everything after the tool name is the tool's, verbatim. Our own options have to come first, because past that point a `-q` is git's flag and not ours.
+	- The PowerShell build cannot get those arguments from its own parameters: the binder claims `-m`, `-q` and friends wherever they appear, so `raw git commit -m "msg"` would arrive rearranged. It reads the process command line instead, and refuses rather than guessing when that is unavailable.
+	- stdout belongs to the tool alone and the exit code is passed straight back, so a script can pipe it. The one line naming the account goes to stderr, and `-q` silences it.
 
 - Commands that hand a branch to someone else's deletion must park work first.
 	- `gh pr merge --delete-branch` removes the branch local and remote. Anything not pushed is outside the pull request, so merging it would drop that work from the branch it lived on.
