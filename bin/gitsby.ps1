@@ -579,21 +579,30 @@ function Get-CanonPath {
     if (-not $Path) { return '' }
     $p = $Path -replace '\\', '/'
     if ($p -eq '~' -or $p.StartsWith('~/')) { $p = ((Get-HomeDir) -replace '\\', '/') + $p.Substring(1) }
-    ## Nearest ancestor that exists, with the rest put back on.
-    $head = $p; $tail = ''
-    while ($head -and -not (Test-Path -LiteralPath $head -PathType Container) -and $head.Contains('/')) {
-        $leaf = $head.Substring($head.LastIndexOf('/') + 1)
-        $tail = if ($tail) { "$leaf/$tail" } else { $leaf }
-        $head = $head.Substring(0, $head.LastIndexOf('/'))
-    }
-    if ($head -and (Test-Path -LiteralPath $head -PathType Container)) {
-        $item = Get-Item -LiteralPath $head -Force -ErrorAction SilentlyContinue
-        if ($item) {
-            $full = ($item.FullName -replace '\\', '/')
-            $p = if ($tail) { ($full.TrimEnd('/')) + '/' + $tail } else { $full }
-        }
-    }
+    ## Windows only, and only because this shell and git disagree about how to spell a path there:
+    ## the Bash build's '/tmp' and '/c/x' come from its own mount table, while git and this build
+    ## report 'C:/x'. The two have to compare equal or the same folder rule matches in one build and
+    ## not the other. Resolving through the filesystem settles that, and short-name spellings too;
+    ## for a directory that doesn't exist yet (a clone target) the nearest ancestor that does is
+    ## resolved and the rest put back on.
+    ##
+    ## Everywhere else this is deliberately skipped, exactly as the Bash build skips it: a path is
+    ## already spelled one way, and resolving here but not there would reintroduce the divergence
+    ## this exists to remove - a symlinked folder would match in one build and not the other.
     if ($IsWindows) {
+        $head = $p; $tail = ''
+        while ($head -and -not (Test-Path -LiteralPath $head -PathType Container) -and $head.Contains('/')) {
+            $leaf = $head.Substring($head.LastIndexOf('/') + 1)
+            $tail = if ($tail) { "$leaf/$tail" } else { $leaf }
+            $head = $head.Substring(0, $head.LastIndexOf('/'))
+        }
+        if ($head -and (Test-Path -LiteralPath $head -PathType Container)) {
+            $item = Get-Item -LiteralPath $head -Force -ErrorAction SilentlyContinue
+            if ($item) {
+                $full = ($item.FullName -replace '\\', '/')
+                $p = if ($tail) { ($full.TrimEnd('/')) + '/' + $tail } else { $full }
+            }
+        }
         if ($p -match '^/([A-Za-z])(/.*)?$') { $p = $Matches[1] + ':' + $(if ($Matches[2]) { $Matches[2] } else { '/' }) }
         $p = $p.ToLowerInvariant()
     }

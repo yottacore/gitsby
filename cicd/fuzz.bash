@@ -249,6 +249,45 @@ GHEOF
 	echo odd2 > "${repo2}/seed.txt"
 	fSurvive "unicode/emoji message" "${repo2}" -q update $'café \u{1F600} ‮ rtl'
 
+	## The new argument slots. 'raw' fronts exactly two tools, so anything else in that position is
+	## refused rather than run - the one place a wrong answer would execute an arbitrary program.
+	local rawTool
+	for rawTool in "${badCommands[@]}" "${inject[@]}" 'rm' 'sh' 'GIT'; do
+		fRefuse "raw tool refused: '${rawTool}'" "${repo3}" -q raw "${rawTool}" --version
+	done
+	fRefuse "raw with no tool refused" "${repo3}" -q raw
+	## Deliberately NOT fuzzed: the arguments after 'git' or 'gh'. Reaching the tool verbatim is
+	## the whole contract, so an injection vector there is gitsby doing its job, and the canary
+	## would fire on a pass. What is checked above is that nothing but git and gh can be reached.
+
+	## repo url takes one of two words and nothing else.
+	local urlArg
+	for urlArg in "${badSubcommands[@]}" "${inject[@]}" 'HTTPS ' 'https extra'; do
+		fRefuse "repo url arg refused: '${urlArg}'" "${repo3}" -q repo url "${urlArg}"
+	done
+
+	## account has two subcommands, and neither takes an argument.
+	local acctSub
+	for acctSub in "${badSubcommands[@]}" "${inject[@]}"; do
+		fRefuse "account subcommand refused: '${acctSub}'" "${repo3}" -q account "${acctSub}"
+	done
+	fRefuse "account list takes no argument"  "${repo3}" -q account list junk
+	fRefuse "account apply takes no argument" "${repo3}" -q account apply junk
+
+	## --config names a file. One that isn't there is refused; the value never reaches a shell.
+	local cfg
+	for cfg in "${inject[@]}" '/nonexistent/gitsby.shcl' ''; do
+		fRefuse "bad --config refused: '${cfg}'" "${repo3}" -q --config "${cfg}" status
+	done
+
+	## GITSBY_ACCOUNT reaches 'gh auth token --user' as a value. It must stay inert there, and an
+	## account nobody holds a token for is simply not selected - never an error, never a canary.
+	local acct
+	for acct in "${inject[@]}" '-x' '--user root'; do
+		GITSBY_ACCOUNT="${acct}" fSurvive "GITSBY_ACCOUNT inert: '${acct}'" "${repo2}" -q --no-fetch status
+	done
+	unset GITSBY_ACCOUNT
+
 	## No-mutate: a refused command leaves HEAD and branch exactly as they were.
 	local before_head before_branch
 	before_head="$(cd "${repo}" && git rev-parse HEAD)"
