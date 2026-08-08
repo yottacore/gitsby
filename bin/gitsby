@@ -90,12 +90,16 @@ fSyntax(){ { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax=
 	fEcho_Clean "  br hotfix <name> ...: Branch off the default branch, to correct what's already published."
 	fEcho_Clean "  pr [create|n|ok n] .: Create, list, review, or accept a pull request (needs gh)."
 	fEcho_Clean "  release [ver] ......: Cut a release: merge dev into main, tag, push. No ver: next after latest tag."
+	fEcho_Clean "For scripts:"
+	fEcho_Clean "  git <args> .........: Run git as the account this folder belongs to. Everything after 'git' is git's."
+	fEcho_Clean "  gh <args> ..........: The same, for gh."
 	fEcho_Clean "Options:"
 	fEcho_Clean "  -m, --message MSG ....: Commit or merge message (or give it positionally)."
 	fEcho_Clean "  -q, --quiet, -y ......: Assume yes - no prompts; if committing with no message, one is generated."
 	fEcho_Clean "  --public / --private .: Visibility for the repo 'repo create' makes (default: private)."
 	fEcho_Clean "  --any-identity .......: Act as gh's active account, and proceed when it differs from the remote's ssh key."
 	fEcho_Clean "  --no-fetch ...........: Skip the pre-command fetch, and the pull. (Pushes still go out.)"
+	fEcho_Clean "  --config FILE ........: Read accounts from FILE instead of the usual config location."
 	fEcho_Clean "  -h, --help  /  -v, --version"
 	fEcho_Clean "" ;:;}
 
@@ -115,12 +119,6 @@ fMain(){
 		-v|--ver|--version|version)    fCopyright;                  return 0; ;;
 	esac
 
-	## Breathing room after the shell prompt (the matching trailing blank is at each exit path).
-	fEcho_Clean ""
-
-	## Validate dependencies
-	fMustBeInPath git
-
 	## Arguments
 	local cmdName=""        ## positional 1: flat command, or the noun of a grouped one
 	local cmdArg=""         ## positional 2: subcommand for a grouped noun, else message/branch/version/PR number
@@ -135,6 +133,20 @@ fMain(){
 	local -i isGhCommand=0          ## command goes through gh at all -> show whose account that is
 	local -i isGhWrite=0            ## command WRITES through gh -> also compare against the ssh key
 	local identityProbeUrl=""       ## url the ssh identity is read from (existing origin, or the one about to be set)
+	local ghSwitchedFrom=""         ## gh's own active account, when we pointed this run at another
+	local configFileArg=""          ## --config FILE
+	local configFileUsed=""         ## the config file actually read, if any
+	local -A gitsbyConfig=()        ## flat key -> value from the config file
+	local -a gitsbyConfigPaths=()   ## "<canonical folder>\t<account name>", one per path rule
+	local -a gitsbyConfigUnknown=() ## keys we didn't recognise, reported rather than ignored
+	local -i gitsbyConfigLoaded=0
+	local acctName=""               ## configured account claiming this folder, if any
+	local acctGhWho=""              ## the GitHub account this run acts as
+	local acctSource=""             ## how we decided that, for the identity line
+	local -i accountApplied=0
+	local -i accountUsedHttpsAuth=0 ## git authenticates over https with the account's token
+	local accountUsedSshKey=""      ## ...or with the key the account names
+	local -i accountUsedIdentity=0  ## commit author/email came from the account
 	local ghLoginCache=""; local sshLoginCache=""; local ghProtocolCache=""  ## per-run, each costs a round trip
 	local defaultBranchCache=""; local mergeTargetCache=""  ## per-run constants, filled post-fetch
 	local -i inRepo=0
@@ -142,6 +154,34 @@ fMain(){
 	local connectMode=""; local connectUrl=""; local ghTarget=""  ## resolved by the repo create/connect validation
 	local -a pruneLocal=(); local -a pruneRemote=(); local -a pruneKeep=(); local -a pruneTargetRefs=(); local pruneCurrentMerged=""  ## resolved by the br prune validation
 	local -ri parseArgs_maxPositionalArgCount=4
+
+	## 'gitsby git ...' and 'gitsby gh ...' hand everything after the verb to the real tool, verbatim,
+	## as the account this folder belongs to - so a script is made account-correct by prefixing its
+	## commands rather than by being rewritten. Scanned here rather than by the option parser, because
+	## past that verb the arguments belong to git: a '-q' there is git's own flag, not ours. Ours
+	## therefore have to come first, and only the handful that mean anything to a passthrough do.
+	local ptTool=""; local -a ptArgs=(); local -i ptWantConfig=0; local scanArg=""
+	for scanArg in "${@}"; do
+		if   [[ -n "${ptTool}" ]];  then ptArgs+=("${scanArg}"); continue
+		elif ((ptWantConfig));      then configFileArg="${scanArg}"; ptWantConfig=0; continue
+		fi
+		case "${scanArg}" in
+			git|gh)               ptTool="${scanArg}" ;;
+			-q|--quiet|-y|--yes)  doQuietly=1 ;;
+			--config)             ptWantConfig=1 ;;
+			--config=*)           configFileArg="${scanArg#*=}" ;;
+			*)                    break ;;
+		esac
+	done
+	if [[ -n "${ptTool}" ]]; then fCmdPassthrough "${ptTool}" "${ptArgs[@]}"; return $?; fi
+
+	## Breathing room after the shell prompt (the matching trailing blank is at each exit path).
+	## After the passthrough, which owns its own output and must not have ours mixed into it.
+	fEcho_Clean ""
+
+	## Validate dependencies
+	fMustBeInPath git
+
 	fParseArgs "${@}"
 	cmdName="${cmdName,,}"
 
@@ -237,6 +277,11 @@ fMain(){
 	if ((! inRepo)) && [[ "${cmdName}" != repo-* ]]; then
 		fThrowError_Usage "Not inside a git repository. Change to a git project directory first."
 	fi
+
+	## Point this run at the account whose folder this is, before anything reaches the network: the
+	## fetch below authenticates, so getting this wrong here gets it wrong for the whole command.
+	fpResolveAccount "$(git remote get-url origin 2>/dev/null || true)"
+	fpSelectAccount
 
 	## Freshen remote refs so status/ahead-behind info is current. Never fatal - offline still works locally.
 	## clone skips it: cwd may sit inside some unrelated repo, and the clone doesn't care about it.
@@ -495,16 +540,18 @@ fMain(){
 	## Prime the probe caches here, in this shell: every use below sits inside a command
 	## substitution, so a cache filled in one of those is discarded and the next call re-probes.
 	## That was two 'gh api user' calls and two 'ssh -T' round trips per command, not one each.
+	## The account was already chosen and applied above, before the fetch. repo create/connect are
+	## the one case that learns something new here: they have no origin to read an owner off, and
+	## the target they are about to publish to only becomes known during their own validation.
 	if ((isGhCommand)); then
-		fpGhLogin >/dev/null
-		## Before anything reads gh's identity, point the run at the remote's own account when we
-		## hold it. Reads need this as much as writes: 'pr' against a private repo the active
-		## account can't see fails the same way a write does. --any-identity means hands off.
-		if ((! anyIdentity)); then
-			local ghOwnerUrl="${identityProbeUrl}"
-			[[ -n "${ghOwnerUrl}" ]] || ghOwnerUrl="$(git remote get-url origin 2>/dev/null || true)"
-			fpSelectGhAccount "${ghOwnerUrl}"
+		## repo create/connect are the one case that learns something new here: with no origin yet
+		## there was no owner to read, and the target they are about to publish to is only settled
+		## during their own validation above. Everything else was resolved before the fetch.
+		if [[ -z "${acctSource}" && -n "${ghTarget}" ]]; then
+			fpResolveAccount "https://github.com/${ghTarget}.git"
+			fpSelectAccount
 		fi
+		fpGhLogin >/dev/null
 	fi
 	if ((isGhWrite));   then fpSshLogin "${identityProbeUrl}" >/dev/null; fi
 
@@ -977,6 +1024,23 @@ fCmdRelease(){
 	fi
 :;}
 
+fCmdPassthrough(){
+	## Run the real tool as the account this folder belongs to, then get out of its way entirely.
+	## No preview, no confirmation, no fetch: this is not one of our commands, it is somebody else's
+	## command run under the right identity, and a script that pipes its output must get that output
+	## and nothing else. 'exec' hands over the process, so the exit code is the tool's own too.
+	local -r tool="${1:-}"; shift
+	fMustBeInPath "${tool}"
+	fpResolveAccount "$(git remote get-url origin 2>/dev/null || true)"
+	fpSelectAccount
+	## One line, on stderr, so a pipeline reading stdout sees only the tool. Silence is what '-q'
+	## is for - a script that has already reported who it acts as does not need us to repeat it.
+	if ((! doQuietly)) && [[ -n "${acctGhWho}" && -n "${acctSource}" ]]; then
+		printf '%s\n' "${meName}: acting as ${acctGhWho} (from ${acctSource})" >&2
+	fi
+	exec "${tool}" "${@}"
+:;}
+
 
 #•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Git-state helpers (each verifies, assumes nothing)
@@ -1083,10 +1147,13 @@ fSshTarget(){
 	## Host to ask ssh about, pulled out of a remote URL. Empty for https and local-path remotes.
 	local url="${1:-}"
 	case "${url}" in
-		ssh://*) url="${url#ssh://}"; url="${url%%/*}"; url="${url##*@}"; echo "${url%%:*}" ;;
-		*://*)   : ;;                                    ## https/git/file: no ssh identity involved
-		*@*:*)   url="${url%%:*}"; echo "${url##*@}" ;;   ## scp-like: user@host:path
-		?*:*)    echo "${url%%:*}" ;;                    ## scp-like without a user
+		ssh://*)          url="${url#ssh://}"; url="${url%%/*}"; url="${url##*@}"; echo "${url%%:*}" ;;
+		*://*)            : ;;                            ## https/git/file: no ssh identity involved
+		## A Windows drive path is not 'host:path'. Without this, a local remote on C: is read as a
+		## host named 'C', and every command probes ssh for an account on a machine that isn't there.
+		[A-Za-z]:[/\\]*)  : ;;
+		*@*:*)            url="${url%%:*}"; echo "${url##*@}" ;;   ## scp-like: user@host:path
+		?*:*)             echo "${url%%:*}" ;;                     ## scp-like without a user
 	esac
 :;}
 
@@ -1127,6 +1194,7 @@ fpRemoteOwner(){
 	local host="" path=""
 	case "${url}" in
 		ssh://*)             path="${url#ssh://}" ;;
+		[A-Za-z]:[/\\]*)     return 0 ;;   ## a Windows drive path, not 'host:path'
 		[A-Za-z]*://*)       path="${url#*://}" ;;
 		*@*:*|?*:*)          host="${url%%:*}"; host="${host##*@}"; path="${url#*:}" ;;
 		*)                   return 0 ;;
@@ -1141,6 +1209,141 @@ fpRemoteOwner(){
 	echo "${path%%/*}"
 :;}
 
+fIsWindows(){
+	## Windows, for the two places a path has to be spelled its way. Checked through the
+	## environment rather than 'uname', so it answers the same under Git Bash, MSYS and WSL-less
+	## shells that have no uname at all.
+	[[ -n "${WINDIR:-}${SystemRoot:-}" ]]
+:;}
+
+fpCanonPath(){
+	## One spelling for a directory, so a config file written on one machine matches the same tree
+	## on the other. '~' expanded, backslashes forwards, no trailing slash, and on Windows the three
+	## spellings of a drive ('/c/x', 'C:\x', 'c:/x') all land on 'c:/x', case folded.
+	## Text only - the folder does not have to exist, which 'repo clone' needs, and a resolver that
+	## touched the disk would answer differently for a path that isn't there yet.
+	local p="${1:-}"
+	[[ -n "${p}" ]] || return 0
+	p="${p//\\//}"
+	# shellcheck disable=SC2088  ## The tilde is a literal being matched, not one to expand.
+	[[ "${p}" == "~" || "${p}" == "~/"* ]] && p="${HOME:-}${p#\~}"
+	## Windows only, and only because this shell and git disagree about how to spell a path: '/tmp'
+	## and '/c/x' come from the shell's own mount table, while git and the PowerShell build report
+	## 'C:/x'. The two have to compare equal or the same folder rule matches in one build and not
+	## the other. So ask the filesystem instead of guessing - 'pwd -W' gives the Windows spelling of
+	## a directory that exists, which also settles short-name spellings on the way. For a directory
+	## that doesn't exist yet (a clone target), resolve the nearest ancestor that does and put the
+	## rest back on. Everywhere else a path is already the one true spelling and none of this runs.
+	if fIsWindows; then
+		local head="${p}" tail=""
+		while [[ -n "${head}" && ! -d "${head}" && "${head}" == */* ]]; do
+			tail="${head##*/}${tail:+/}${tail}"; head="${head%/*}"
+		done
+		if [[ -n "${head}" && -d "${head}" ]]; then
+			local resolved=""; resolved="$( { cd "${head}" && pwd -W; } 2>/dev/null || true)"
+			[[ -n "${resolved}" ]] && p="${resolved%/}${tail:+/}${tail}"
+		fi
+		p="${p//\\//}"
+		[[ "${p}" =~ ^/([A-Za-z])(/.*)?$ ]] && p="${BASH_REMATCH[1]}:${BASH_REMATCH[2]:-/}"
+		p="${p,,}"
+	fi
+	## Trailing slashes go, but a root ('/' or 'c:/') has to keep its one or it stops being a path.
+	while [[ "${p}" == */ && "${p}" != "/" && ! "${p}" =~ ^[A-Za-z]:/$ ]]; do p="${p%/}"; done
+	echo "${p}"
+:;}
+
+fpConfigFile(){
+	## The config file to read: the first candidate that exists, or nothing at all. The order is
+	## identical in both builds, so the same box answers the same whichever one you run.
+	## A file named explicitly must exist - naming one that isn't there is a typo, not a fallback -
+	## while finding none of the defaults is the ordinary unconfigured case and says nothing.
+	if [[ -n "${configFileArg:-}" ]]; then
+		[[ -r "${configFileArg}" ]] || fThrowError_Usage "No readable config file at '${configFileArg}'."
+		echo "${configFileArg}"; return 0
+	fi
+	if [[ -n "${GITSBY_CONFIG:-}" ]]; then
+		[[ -r "${GITSBY_CONFIG}" ]] || fThrowError_Usage "GITSBY_CONFIG names '${GITSBY_CONFIG}', which can't be read."
+		echo "${GITSBY_CONFIG}"; return 0
+	fi
+	local -a candidates=()
+	[[ -n "${XDG_CONFIG_HOME:-}" ]] && candidates+=("${XDG_CONFIG_HOME}/gitsby/config.shcl")
+	[[ -n "${HOME:-}"            ]] && candidates+=("${HOME}/.config/gitsby/config.shcl")
+	[[ -n "${APPDATA:-}"         ]] && candidates+=("${APPDATA}/gitsby/config.shcl")
+	local candidate=""
+	for candidate in "${candidates[@]}"; do
+		[[ -r "${candidate}" ]] && { echo "${candidate}"; return 0; }
+	done
+:;}
+
+fpLoadConfig(){
+	## Read the config once. Flat 'key = value' lines, '#' comments, blank lines ignored - hand
+	## parsed on purpose, so neither build needs anything installed to read it and neither can
+	## parse it differently from the other.
+	((gitsbyConfigLoaded)) && return 0
+	gitsbyConfigLoaded=1
+	local file=""; file="$(fpConfigFile)"
+	[[ -n "${file}" ]] || return 0
+	configFileUsed="${file}"
+	local line="" key="" value="" acct=""
+	while IFS= read -r line || [[ -n "${line}" ]]; do
+		line="${line%$'\r'}"                            ## written on Windows, read on Linux
+		line="${line#"${line%%[![:space:]]*}"}"
+		[[ -z "${line}" || "${line}" == "#"* ]] && continue
+		[[ "${line}" == *"="* ]] || { gitsbyConfigUnknown+=("${line}"); continue; }
+		key="${line%%=*}"; value="${line#*=}"
+		key="${key%"${key##*[![:space:]]}"}"; key="${key,,}"
+		value="${value#"${value%%[![:space:]]*}"}"; value="${value%"${value##*[![:space:]]}"}"
+		## One optional layer of quotes, so a value with meaningful trailing space can be written.
+		if [[ ${#value} -ge 2 ]] && { [[ "${value}" == \"*\" ]] || [[ "${value}" == \'*\' ]]; }; then
+			value="${value:1:${#value}-2}"
+		fi
+		[[ -n "${key}" ]] || continue
+		case "${key}" in
+			protocol)                        gitsbyConfig["${key}"]="${value}" ;;
+			account.*.path)                  acct="${key#account.}"; acct="${acct%.path}"
+			                                 [[ -n "${value}" ]] && gitsbyConfigPaths+=("$(fpCanonPath "${value}")"$'\t'"${acct}") ;;
+			account.*.ghaccount|account.*.tokenfile|account.*.sshkey| \
+			account.*.name|account.*.email|account.*.protocol)
+			                                 gitsbyConfig["${key}"]="${value}" ;;
+			## Named but not understood. Not fatal - a config from a newer gitsby still has to work -
+			## but never silent either: a mistyped key that nothing reads is how you end up acting as
+			## the wrong account while believing you configured it.
+			*)                               gitsbyConfigUnknown+=("${key}") ;;
+		esac
+	done < "${file}"
+:;}
+
+fpAccountForDir(){
+	## The configured account whose folder contains this one. Longest match wins, so a tree nested
+	## inside another account's tree belongs to the inner one; first defined breaks an exact tie.
+	local -r target="$(fpCanonPath "${1:-}")"
+	[[ -n "${target}" ]] || return 0
+	local best="" entry="" path="" name=""; local -i bestLen=0
+	for entry in "${gitsbyConfigPaths[@]:-}"; do
+		[[ -n "${entry}" ]] || continue
+		path="${entry%%$'\t'*}"; name="${entry#*$'\t'}"
+		[[ -n "${path}" ]] || continue
+		[[ "${target}" == "${path}" || "${target}" == "${path}/"* ]] || continue
+		((${#path} > bestLen)) && { best="${name}"; bestLen=${#path}; }
+	done
+	echo "${best}"
+:;}
+
+fpAccountValue(){
+	## One key of one configured account, or nothing.
+	local -r name="${1:-}"; local -r key="${2:-}"
+	[[ -n "${name}" && -n "${key}" ]] || return 0
+	echo "${gitsbyConfig[account.${name}.${key,,}]:-}"
+:;}
+
+fpContextDir(){
+	## What "here" means for folder matching: the repo's top level when we are in one, so every
+	## subdirectory of a repo resolves to the same account, and the working directory when we are
+	## not - which is what a fresh checkout and 'repo clone' have to go on.
+	local top=""; top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+	echo "${top:-${PWD}}"
+:;}
+
 fpGhTokenFor(){
 	## The stored token for an account gh already holds, or nothing. Reads gh's own credential
 	## store - no network, no prompt - so it doubles as the "does gh have this account" test.
@@ -1150,47 +1353,137 @@ fpGhTokenFor(){
 	gh auth token --user "${who}" 2>/dev/null || true
 :;}
 
-fpConfiguredGhAccount(){
-	## The account configured for wherever we are. Read through git, so an includeIf on the repo
-	## path - the same mechanism that already selects the ssh key - answers it, and gitsby needs no
-	## config file of its own. Empty when unset, which is the ordinary case.
-	git config --get gitsby.ghAccount 2>/dev/null || true
-:;}
-
-fpGhTokenFromFile(){
-	## Token for an account gh was never logged in as, from the file named by gitsby.ghTokenFile.
-	## Unset, missing, unreadable and empty are all simply "no token": a machine that has not been
-	## set up this way has to fall back to gh's own account, never fail because a path is absent.
-	local file=""; file="$(git config --get gitsby.ghTokenFile 2>/dev/null || true)"
-	[[ -n "${file}" && -r "${file}" ]] || return 0
+fpReadTokenFile(){
+	## A token out of a file. Unset, missing, unreadable and empty are all simply "no token":
+	## a machine that was never set up this way has to fall back to gh's own account, never fail
+	## because a path is absent.
+	local file="${1:-}"
+	[[ -n "${file}" ]] || return 0
+	file="${file/#\~/${HOME:-}}"
+	[[ -r "${file}" ]] || return 0
 	tr -d '[:space:]' < "${file}" 2>/dev/null || true
 :;}
 
-fpSelectGhAccount(){
-	## gh keeps ONE active account per host, so against a repo belonging to somebody else it will act
-	## as whoever you last switched to - and 'gh auth switch' is global state you have to remember to
-	## set and to put back. Point just this run at the right account via GH_TOKEN, which outranks the
-	## stored credentials and leaves nothing behind. Never silent - fpShowIdentity names it in the preview.
+fpResolveAccount(){
+	## Who this folder says to act as, worked out once and used by the identity block, the gh
+	## selection and the passthrough alike. Most specific first:
+	##   GITSBY_ACCOUNT - an explicit override, for one run or for a whole script's environment
+	##   git config     - 'gitsby.ghAccount', which an includeIf already selects by repo path
+	##   config file    - the folder this repo lives in
+	##   the remote     - whoever owns origin, which needs no configuration whatsoever
+	## Finding none of them is the ordinary single-account case: gh's own account is left alone.
 	local -r url="${1:-}"
-	## Configured account first: it says who to be here whatever the remote says, and it is the only
-	## one of the two that answers before a remote exists. The remote's owner is the zero-config
-	## fallback, so this works with nothing set up at all.
-	local who=""; who="$(fpConfiguredGhAccount)"
-	[[ -n "${who}" ]] || who="$(fpRemoteOwner "${url}")"
-	[[ -n "${who}" ]] || return 0
-	local -r active="$(fpGhLogin)"
-	[[ "${active}" != "${who}" ]] || return 0
-	## gh's own store first - it is the one that stays current. The file is for a box where this
-	## account was never logged in, which is the whole point of being able to name one.
-	local token=""; token="$(fpGhTokenFor "${who}")"
-	[[ -n "${token}" ]] || token="$(fpGhTokenFromFile)"
-	[[ -n "${token}" ]] || return 0
-	export GH_TOKEN="${token}"
-	## The token is keyed by that login in gh's store, or named for it in config, so it is that
-	## account - no round trip needed to confirm it, and this stays correct offline.
-	## '?' means gh had no account at all, so there is nothing to report having switched away from.
-	[[ "${active}" != "?" ]] && ghSwitchedFrom="${active}"
-	ghLoginCache="${who}"
+	fpLoadConfig
+	acctName=""; acctGhWho=""; acctSource=""
+	if [[ -n "${GITSBY_ACCOUNT:-}" ]]; then
+		## Either the name of a configured account or a bare login - accept both, because a script
+		## setting this knows one of the two and shouldn't have to know which we wanted.
+		if [[ -n "$(fpAccountValue "${GITSBY_ACCOUNT}" ghAccount)" ]]; then
+			acctName="${GITSBY_ACCOUNT}"; acctGhWho="$(fpAccountValue "${acctName}" ghAccount)"
+		else
+			acctGhWho="${GITSBY_ACCOUNT}"
+		fi
+		acctSource="GITSBY_ACCOUNT"; return 0
+	fi
+	local fromGit=""; fromGit="$(git config --get gitsby.ghAccount 2>/dev/null || true)"
+	if [[ -n "${fromGit}" ]]; then
+		acctGhWho="${fromGit}"; acctSource="git config"
+		## Name the config account too when one claims this folder, so its key and commit identity
+		## still apply - the git key says who, not that the rest of the account is off.
+		acctName="$(fpAccountForDir "$(fpContextDir)")"
+		[[ "$(fpAccountValue "${acctName}" ghAccount)" == "${acctGhWho}" ]] || acctName=""
+		return 0
+	fi
+	acctName="$(fpAccountForDir "$(fpContextDir)")"
+	if [[ -n "${acctName}" ]]; then
+		acctGhWho="$(fpAccountValue "${acctName}" ghAccount)"
+		acctSource="config '${acctName}'"
+		[[ -n "${acctGhWho}" ]] && return 0
+		## A folder rule with no account named still carries a key and a commit identity, and those
+		## are worth applying on their own - it just has nothing to say about gh.
+		acctSource="config '${acctName}'"; return 0
+	fi
+	local fromRemote=""; fromRemote="$(fpRemoteOwner "${url}")"
+	[[ -n "${fromRemote}" ]] || return 0
+	acctGhWho="${fromRemote}"; acctSource="the remote"
+:;}
+
+fpAccountToken(){
+	## A token for the account we resolved. gh's own store first - it is the one that stays current,
+	## so a rotated login is never shadowed by a stale copy on disk - then the file the config names,
+	## then the older git-config key. Nothing found is not an error anywhere.
+	[[ -n "${acctGhWho}" ]] || return 0
+	local token=""; token="$(fpGhTokenFor "${acctGhWho}")"
+	[[ -n "${token}" ]] || token="$(fpReadTokenFile "$(fpAccountValue "${acctName}" tokenFile)")"
+	[[ -n "${token}" ]] || token="$(fpReadTokenFile "$(git config --get gitsby.ghTokenFile 2>/dev/null || true)")"
+	echo "${token}"
+:;}
+
+fpGitConfigEnv(){
+	## Add one config key to the environment git reads, without disturbing any the caller already
+	## set: GIT_CONFIG_COUNT is a count, so entries have to be numbered on from where it stands.
+	## Environment only - nothing is written to a file, so a killed run leaves no trace.
+	local -r key="${1:-}"; local -r value="${2:-}"
+	local -i n="${GIT_CONFIG_COUNT:-0}"
+	export "GIT_CONFIG_KEY_${n}=${key}"
+	export "GIT_CONFIG_VALUE_${n}=${value}"
+	export GIT_CONFIG_COUNT=$((n + 1))
+:;}
+
+fpSelectAccount(){
+	## Point this run at the account this folder belongs to - gh, git's credentials, its ssh key and
+	## its commit identity - for this process and its children only.
+	##
+	## gh keeps ONE active account per host, so against a repo belonging to somebody else it acts as
+	## whoever you last switched to; 'gh auth switch' is the wrong fix because it is global state you
+	## have to remember to set and to put back, and a run killed half way leaves the machine on it.
+	## GH_TOKEN outranks the stored credentials for this process alone, which is exactly the scope
+	## wanted. Never silent - fpShowIdentity names the account in the block you read before confirming.
+	((anyIdentity)) && return 0
+	## Applying twice would number a second set of GIT_CONFIG_* entries on top of the first.
+	((accountApplied)) && return 0
+	accountApplied=1
+	local -r token="$(fpAccountToken)"
+	if [[ -n "${token}" ]]; then
+		local -r active="$(fpGhLogin)"
+		if [[ "${active}" != "${acctGhWho}" ]]; then
+			export GH_TOKEN="${token}"
+			## The token is keyed by that login in gh's store, or named for it in config, so it is
+			## that account - no round trip to confirm it, and it stays correct offline.
+			## '?' means gh held no account at all, so there is nothing to report switching away from.
+			[[ "${active}" != "?" ]] && ghSwitchedFrom="${active}"
+			ghLoginCache="${acctGhWho}"
+		fi
+		## The same token is what lets git itself push as this account over https, with no ssh key
+		## anywhere. An empty value first resets the helper list, so a credential manager already
+		## configured for another account cannot answer ahead of us. The token is read from the
+		## environment when the helper runs, not baked into the value.
+		fpGitConfigEnv "credential.https://github.com.helper" ""
+		## Single quotes on purpose: git expands this when it runs the helper, so the token is read
+		## from the environment at that moment and never stored in the config value itself.
+		# shellcheck disable=SC2016
+		fpGitConfigEnv "credential.https://github.com.helper" '!f(){ test "$1" = get && { echo username=x; echo "password=${GH_TOKEN}"; }; }; f'
+		accountUsedHttpsAuth=1
+	fi
+	## The ssh key stays supported as the way that needs no token at all. Only when nothing already
+	## says which key to use: an explicit GIT_SSH_COMMAND, or one set on the repo, was chosen more
+	## deliberately than a folder rule was.
+	local -r sshKey="$(fpAccountValue "${acctName}" sshKey)"
+	if [[ -n "${sshKey}" && -z "${GIT_SSH_COMMAND:-}" && -z "$(git config --get core.sshCommand 2>/dev/null || true)" ]]; then
+		## IdentitiesOnly, or ssh offers every key the agent holds and the server picks the first
+		## that authenticates - which on a two-account machine is a coin toss.
+		export GIT_SSH_COMMAND="ssh -i ${sshKey} -o IdentitiesOnly=yes"
+		accountUsedSshKey="${sshKey}"
+	fi
+	## Commit identity, unless the repo sets its own - a local value was typed for this repo
+	## specifically, and a folder rule should not quietly outrank it.
+	local -r acctEmail="$(fpAccountValue "${acctName}" email)"
+	local -r acctUser="$(fpAccountValue "${acctName}" name)"
+	if [[ -n "${acctEmail}" || -n "${acctUser}" ]] && [[ -z "$(git config --local --get user.email 2>/dev/null || true)" ]]; then
+		[[ -n "${acctUser}"  ]] && fpGitConfigEnv "user.name"  "${acctUser}"
+		[[ -n "${acctEmail}" ]] && fpGitConfigEnv "user.email" "${acctEmail}"
+		accountUsedIdentity=1
+	fi
 :;}
 
 fpGhLogin(){
@@ -1519,6 +1812,22 @@ fpShowIdentity(){
 	## Who a remote-touching command will act as. Host aliases in ~/.ssh/config hide this, and with more
 	## than one account configured it is easy to push as the wrong person.
 	local -r remoteUrl="${1:-}"
+	## Leads the block, because it explains the three lines under it: the key on the SSH line and
+	## the name on the Author line can both be this account's doing. Shown only when something was
+	## actually decided by it - a single-account machine never learns the feature exists.
+	if [[ -n "${acctName}" ]] || [[ -n "${ghSwitchedFrom:-}" ]] || ((accountUsedHttpsAuth)) || [[ -n "${accountUsedSshKey}" ]] || ((accountUsedIdentity)); then
+		local acctLine="${acctGhWho:-(no GitHub account named)}"
+		[[ -n "${acctSource}" ]] && acctLine="${acctLine} (from ${acctSource})"
+		## The one thing the lines below can't show: an https push authenticating with the token
+		## rather than with a key, which is what makes a second account work with no ssh setup.
+		((accountUsedHttpsAuth)) && acctLine="${acctLine}, git over https"
+		fEcho_Clean "Account ......: ${acctLine}"
+	fi
+	## A key nothing reads is how you end up acting as the wrong account while believing you
+	## configured it, so say so - once, here, rather than failing or staying quiet.
+	if ((${#gitsbyConfigUnknown[@]})); then
+		fEcho_Clean "Config .......: ${configFileUsed} - ignored: $(fJoin "${gitsbyConfigUnknown[@]}")"
+	fi
 	local -r sshHostAlias="$(fSshTarget "${remoteUrl}")"
 	if [[ -n "${sshHostAlias}" ]] && command -v ssh &>/dev/null; then
 		## Probe the connect target, not the bare host. Without a user, 'ssh -G' answers with the
@@ -1795,6 +2104,7 @@ fParseArgs(){
 		if ((expectingSwitchParamForNextArg)); then
 			case "${lastSwitch,,}" in
 				"m"|"message"|"msg") commitMessage="${currentArg}" ;;
+				"config")            configFileArg="${currentArg}" ;;
 				*)                   fThrowError_Usage "Unknown option: '${lastSwitchAsPassed}', current parameter: '${currentArg}'." ;;
 			esac
 			expectingSwitchParamForNextArg=0
@@ -1826,9 +2136,11 @@ fParseArgs(){
 				"private")                  repoVisibility="private"; sawPrivate=1 ;;
 				"any-identity"|"anyidentity")  anyIdentity=1 ;;
 				"m="*|"message="*|"msg="*)  commitMessage="${currentArg#*=}" ;;  ## -m=MSG / --message=MSG / --msg=MSG (joined)
+				"config="*)                 configFileArg="${currentArg#*=}" ;;  ## --config=FILE (joined)
 
 			## Long-options that expect an argument to follow
 				"m"|"message"|"msg")        expectingSwitchParamForNextArg=1 ;;  ## -m MSG (spaced; value captured below)
+				"config")                   expectingSwitchParamForNextArg=1 ;;  ## --config FILE (spaced)
 
 				*) fThrowError_Usage "Unexpected option in this context: '${currentArg}'." ;;
 
