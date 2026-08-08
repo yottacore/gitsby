@@ -82,6 +82,7 @@ fSyntax(){ { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax=
 	fEcho_Clean "  repo clone <url> ...: Clone a repo you don't have yet, into [dir] (checks out dev if it has one)."
 	fEcho_Clean "  repo create <o/n> ..: Create GitHub repo 'owner/name' via gh, then connect this directory and push."
 	fEcho_Clean "  repo connect [url] .: Connect this directory to an existing empty remote, and push."
+	fEcho_Clean "  repo url [https|ssh]: Show how origin authenticates, or switch it between the two."
 	fEcho_Clean "Less common commands:"
 	fEcho_Clean "  sync [msg] .........: Pull, commit, and push. Do infrequently."
 	fEcho_Clean "Admin commands, e.g. for small solo projects:"
@@ -199,8 +200,9 @@ fMain(){
 				clone)       cmdName="repo-clone"   ;;
 				create|new)  cmdName="repo-create"  ;;
 				connect)     cmdName="repo-connect" ;;
-				"")          fThrowError_Usage "Syntax: ${meName} repo <clone <url> [dir] | create <owner/name> | connect [url]>" ;;
-				*)           fThrowError_Usage "Unknown 'repo' subcommand '${cmdArg}'. One of: clone, create, connect." ;;
+				url)         cmdName="repo-url"     ;;
+				"")          fThrowError_Usage "Syntax: ${meName} repo <clone <url> [dir] | create <owner/name> | connect [url] | url [https|ssh]>" ;;
+				*)           fThrowError_Usage "Unknown 'repo' subcommand '${cmdArg}'. One of: clone, create, connect, url." ;;
 			esac
 			cmdArg="${cmdArg2}"; cmdArg2="${cmdArg3}"; cmdArg3=""
 			;;
@@ -237,6 +239,11 @@ fMain(){
 			;;
 		br-create|br-hotfix|br-switch|release|repo-create|repo-connect)
 			[[ -n "${cmdArg2}" ]] && fThrowError_Usage "Unexpected extra argument '${cmdArg2}'."
+			;;
+		repo-url)
+			## Bare is the read-only "what is it now"; naming a transport is what makes it mutate.
+			[[ -n "${cmdArg2}" ]] && fThrowError_Usage "Unexpected extra argument '${cmdArg2}'."
+			[[ -z "${cmdArg}" ]] && isMutating=0
 			;;
 		*) fThrowError_Usage "Unknown command '${cmdName}'. Run '${meName}' with no arguments for a list." ;;
 	esac
@@ -387,6 +394,25 @@ fMain(){
 		fi
 	fi
 
+	## repo url: everything it needs to know settles here, so a bad argument or an unconvertible
+	## remote is refused before a plan promises anything.
+	if [[ "${cmdName}" == "repo-url" ]]; then
+		[[ -z "${cmdArg}" || "${cmdArg,,}" =~ ^(https|ssh)$ ]] || fThrowError_Usage "Syntax: ${meName} repo url [https|ssh]"
+		cmdArg="${cmdArg,,}"
+		## Exempt from the repo gate with its 'repo-' siblings, but unlike them it has nothing to
+		## say outside one - it re-spells a remote that a repo has to already have.
+		((inRepo)) || fThrowError_Usage "Not inside a git repository. Change to a git project directory first."
+		local repoUrlCurrent=""; repoUrlCurrent="$(git remote get-url origin 2>/dev/null || true)"
+		[[ -n "${repoUrlCurrent}" ]] || fThrowError_Usage "No origin to re-spell. Connect one first: ${meName} repo connect <url | owner/name>"
+		if [[ -n "${cmdArg}" ]]; then
+			[[ -n "$(fpRemoteTarget "${repoUrlCurrent}")" ]] \
+				|| fThrowError_Usage "origin isn't a github.com remote, so there is no other spelling of it to switch to."
+			local repoUrlWanted=""; repoUrlWanted="$(fpGithubUrl "$(fpRemoteTarget "${repoUrlCurrent}")" "${cmdArg}")"
+			[[ "${repoUrlWanted}" != "${repoUrlCurrent}" ]] \
+				|| { fEcho "origin already uses ${cmdArg}; nothing to do."; fEcho_Clean ""; return 0; }
+		fi
+	fi
+
 	## Branch arguments validate up front too, so a bad name can't survive to a nonsense preview.
 	if [[ "${cmdName}" == "br-create" ]]; then
 		[[ -n "${cmdArg}" ]] || fThrowError_Usage "No branch name given. Syntax: ${meName} br create <new branch name>"
@@ -444,7 +470,7 @@ fMain(){
 		if [[ -e "${cloneDir}" ]]; then
 			local existingUrl=""
 			existingUrl="$(git -C "${cloneDir}" remote get-url origin 2>/dev/null || true)"
-			if [[ -e "${cloneDir}/.git" && "${existingUrl}" == "${cloneUrl}" ]]; then
+			if [[ -e "${cloneDir}/.git" ]] && fpSameRemote "${existingUrl}" "${cloneUrl}"; then
 				fEcho "'${cloneDir}' is already a clone of that URL; nothing to do."
 				fEcho_Clean ""
 				return 0
@@ -469,7 +495,7 @@ fMain(){
 		((inRepo)) && originUrl="$(git remote get-url origin 2>/dev/null || true)"
 		if [[ -n "${originUrl}" ]]; then
 			((wantCreate)) && fThrowError_Usage "origin is already set to '$(fMaskUrl "${originUrl}")', so there is no repo left to create. Push what you have with: ${meName} repo connect"
-			[[ -z "${cmdArg}" || "${cmdArg}" == "${originUrl}" ]] || fThrowError_Usage "origin is already set to '$(fMaskUrl "${originUrl}")'; changing remotes is raw-git territory."
+			[[ -z "${cmdArg}" ]] || fpSameRemote "${cmdArg}" "${originUrl}" || fThrowError_Usage "origin is already set to '$(fMaskUrl "${originUrl}")'; changing remotes is raw-git territory."
 			connectMode="push"; connectUrl="${originUrl}"
 		elif ((wantCreate)); then
 			[[ -n "${cmdArg}" ]] || fThrowError_Usage "No target given. Syntax: ${meName} repo create <owner/name>"
@@ -492,8 +518,10 @@ fMain(){
 				if [[ -z "${isEmpty}" ]]; then
 					fThrowError_Usage "github.com/${ghTarget} doesn't exist, or you can't see it. To create it: ${meName} repo create ${ghTarget}"
 				elif [[ "${isEmpty}" == "true" ]]; then
-					## gh never uses a host alias, so this is the canonical url - same one gh itself would build.
-					if [[ "$(fpGhProtocol)" == "ssh" ]]; then connectUrl="git@github.com:${ghTarget}.git"; else connectUrl="https://github.com/${ghTarget}.git"; fi
+					## gh never uses a host alias, so this is the canonical url. We build this one
+					## ourselves, so the config's transport applies - unlike 'repo create', where
+					## gh adds the remote and only gh's own git_protocol decides.
+					connectUrl="$(fpGithubUrl "${ghTarget}" "$(fpPreferredProtocol)")"
 					connectMode="add"
 				else
 					fThrowError_Usage "github.com/${ghTarget} already has commits; clone it instead (${meName} repo clone), or reconcile with raw git."
@@ -566,6 +594,19 @@ fMain(){
 	if ((! isMutating)); then
 		case "${cmdName}" in
 			status)  fpShowStatus 1 ;;
+			repo-url)
+				local urlNow="$(git remote get-url origin 2>/dev/null || true)"
+				local urlTarget="$(fpRemoteTarget "${urlNow}")"
+				fEcho_Clean ""
+				fEcho_Clean "origin .......: $(fMaskUrl "${urlNow}")"
+				if [[ -n "${urlTarget}" ]]; then
+					fEcho_Clean "as https .....: $(fpGithubUrl "${urlTarget}" https)"
+					fEcho_Clean "as ssh .......: $(fpGithubUrl "${urlTarget}" ssh)"
+					fEcho_Clean "Switch with '${meName} repo url <https|ssh>'."
+				else
+					fEcho_Clean "Not a github.com remote, so there is no other spelling of it."
+				fi
+				;;
 			br-list) local dfltDisp="$(fDefaultBranch)"
 			         fEcho_Clean ""
 			         fEcho_Clean "Default branch: ${dfltDisp:-unknown}"
@@ -631,6 +672,7 @@ fMain(){
 		release)                  fCmdRelease ;;
 		repo-clone)               fCmdClone ;;
 		repo-create|repo-connect) fCmdConnect ;;
+		repo-url)                 fCmdRepoUrl "${cmdArg}" ;;
 	esac
 
 	fEcho_Clean ""
@@ -1252,6 +1294,30 @@ fpCanonPath(){
 	echo "${p}"
 :;}
 
+fpIsLocalPath(){
+	## A remote that is a directory on this machine, rather than something to connect to.
+	local -r url="${1:-}"
+	[[ -n "${url}" ]] || return 1
+	case "${url}" in
+		[A-Za-z]:[/\\]*) return 0 ;;  ## a Windows drive path
+		*://*)           return 1 ;;
+		*@*:*|?*:*)      return 1 ;;  ## scp-like host:path
+	esac                              ## anything else is an ordinary path
+:;}
+
+fpSameRemote(){
+	## Whether two remote URLs name the same place. Text settles it for a real URL, but git rewrites
+	## a local path into the platform's own spelling when it stores one - hand it '/c/tmp/x' on
+	## Windows and it gives back 'C:/tmp/x' - so comparing our own argument against git's copy of it
+	## said "different" for the same directory, and a re-run of 'repo clone' refused itself.
+	local -r a="${1:-}"; local -r b="${2:-}"
+	[[ -n "${a}" && -n "${b}" ]] || return 1
+	[[ "${a}" == "${b}" ]] && return 0
+	fpIsLocalPath "${a}" && fpIsLocalPath "${b}" || return 1
+	## No ':;}' here, unlike most of this file - ':' would return 0 and this comparison is the
+	## answer, not a side effect. A predicate that ends the house way always says yes.
+	[[ "$(fpCanonPath "${a}")" == "$(fpCanonPath "${b}")" ]] ;}
+
 fpConfigFile(){
 	## The config file to read: the first candidate that exists, or nothing at all. The order is
 	## identical in both builds, so the same box answers the same whichever one you run.
@@ -1511,6 +1577,57 @@ fpGhProtocol(){
 		fi
 	fi
 	echo "${ghProtocolCache}"
+:;}
+
+fpPreferredProtocol(){
+	## Which transport a remote we set should use. The config file wins because that is where the
+	## accounts live, and choosing https there is what makes a second account work with no ssh key
+	## at all; gh's own setting is the answer when nothing says otherwise, so an unconfigured
+	## machine behaves exactly as it did before any of this existed.
+	local proto=""; proto="$(fpAccountValue "${acctName}" protocol)"
+	[[ -n "${proto}" ]] || proto="${gitsbyConfig[protocol]:-}"
+	case "${proto,,}" in
+		https|ssh) echo "${proto,,}" ;;
+		*)         fpGhProtocol ;;
+	esac
+:;}
+
+fpGithubUrl(){
+	## The canonical github.com URL for 'owner/name' in one of the two transports.
+	local -r target="${1:-}"; local -r proto="${2:-https}"
+	[[ -n "${target}" ]] || return 0
+	if [[ "${proto}" == "ssh" ]]; then echo "git@github.com:${target}.git"; else echo "https://github.com/${target}.git"; fi
+:;}
+
+fpRemoteTarget(){
+	## 'owner/name' out of any github.com remote URL, or nothing. Used to re-spell a remote in the
+	## other transport without asking the network what it is called.
+	local -r url="${1:-}"
+	local owner=""; owner="$(fpRemoteOwner "${url}")"
+	[[ -n "${owner}" ]] || return 0
+	local name="${url%.git}"; name="${name%/}"; name="${name##*/}"
+	[[ -n "${name}" && "${name}" != "${owner}" ]] || return 0
+	echo "${owner}/${name}"
+:;}
+
+fpConvertibleToHttps(){
+	## True when this repo is on ssh but the account it belongs to could authenticate with a token
+	## instead - the one case where saying so is worth a line. Someone who set 'protocol = ssh'
+	## has answered the question already, and hears nothing.
+	[[ -n "${acctName}" ]] || return 1
+	[[ "$(fpPreferredProtocol)" == "https" ]] || return 1
+	local -r url="$(git remote get-url origin 2>/dev/null || true)"
+	[[ -n "$(fSshTarget "${url}")" && -n "$(fpRemoteTarget "${url}")" ]] || return 1
+	[[ -n "$(fpAccountToken)" ]] || return 1
+:;}
+
+fCmdRepoUrl(){
+	## Re-spell origin in the other transport. Nothing else about the repo changes: same remote,
+	## same history, same name - only how git authenticates to it.
+	local -r want="${1:-}"
+	local -r url="$(git remote get-url origin 2>/dev/null || true)"
+	local -r target="$(fpRemoteTarget "${url}")"
+	fRun git remote set-url origin "$(fpGithubUrl "${target}" "${want}")"
 :;}
 
 fpGitSshCommand(){
@@ -1822,6 +1939,10 @@ fpShowIdentity(){
 		## rather than with a key, which is what makes a second account work with no ssh setup.
 		((accountUsedHttpsAuth)) && acctLine="${acctLine}, git over https"
 		fEcho_Clean "Account ......: ${acctLine}"
+		## This repo could authenticate with the account's token instead of a key, and doesn't.
+		## Worth one line, because it is the whole point of configuring accounts this way - and
+		## setting 'protocol = ssh' answers the question, so nobody hears it twice.
+		fpConvertibleToHttps && fEcho_Clean "              : origin still uses ssh; '${meName} repo url https' switches it to this account's token."
 	fi
 	## A key nothing reads is how you end up acting as the wrong account while believing you
 	## configured it, so say so - once, here, rather than failing or staying quiet.
@@ -2012,6 +2133,9 @@ fpPreview(){
 		repo-clone)
 			fEcho_Clean "${pad}git clone $(fMaskUrl "${cloneUrl}") ${cloneDir}"
 			fEcho_Clean "${pad}git -C ${cloneDir} checkout dev *"
+			;;
+		repo-url)
+			fEcho_Clean "${pad}git remote set-url origin $(fpGithubUrl "$(fpRemoteTarget "$(git remote get-url origin 2>/dev/null || true)")" "${cmdArg}")"
 			;;
 		repo-create|repo-connect)
 			((inRepo)) || fEcho_Clean "${pad}git init -b main"
