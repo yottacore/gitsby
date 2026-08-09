@@ -1317,13 +1317,21 @@ GHEOF
 		esac
 		exit 1
 	EOF
+	## The rules go in written the way a user on this platform would write them. That matters on
+	## Windows: '/tmp' is an entry in THIS shell's mount table, so the Bash build resolves it and
+	## the PowerShell build - which has no such table - cannot, and never could. A rule spelled
+	## that way would match on one leg only, and the block would look like a port bug instead of
+	## a fixture that named a path half of it can't see. The drive forms a user would actually
+	## type ('C:/x', '/c/x') already resolve the same in both.
+	local acCanon="${ac}"
+	((isWindows)) && acCanon="$( cd "${ac}" && pwd -W )"
 	cat > "${ac}/home/.config/gitsby/config.shcl" <<-EOF
 		# folder accounts
-		account.work.path      = ${ac}/trees/work
+		account.work.path      = ${acCanon}/trees/work
 		account.work.ghAccount = workacct
 		account.work.name      = Work Person
 		account.work.email     = work@example.com
-		account.home.path      = ${ac}/trees/home
+		account.home.path      = ${acCanon}/trees/home
 		account.home.ghAccount = homeacct
 		account.work.notAKey   = ignored
 	EOF
@@ -1341,26 +1349,33 @@ GHEOF
 	## a '${PATH}' left in place from ever expanding - which silently empties PATH and fails every
 	## check in this block for want of git.
 	local acEnv="HOME='${ac}/home' GIT_CONFIG_GLOBAL='${ac}/home/.gitconfig' PATH='${ac}/bin:${PATH}'"
+	## The two identity checks below need one more thing: this file exports GIT_AUTHOR_NAME/EMAIL
+	## for hermeticity, and 'git var GIT_AUTHOR_IDENT' - what the Author line reads - takes those
+	## over any config, whether it came from the account or from the repo. Left in place they pin
+	## the answer to test <test@test> and neither check can ever see what it is asking about.
+	local acEnvIdent="-u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL ${acEnv}"
 	: > "${ac}/home/.gitconfig"
 	fAssertOut "the account comes from the folder"        "Account \.+: workacct"       bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	fAssertOut "and says which rule chose it"             "from config 'work'"          bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	fAssertOut "a sibling tree resolves to the other one" "Account \.+: homeacct"       bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	fAssertNotOut "and not to the first"                  "workacct"                    bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	fAssertNotOut "a folder no rule covers gets no account line"  "Account \.+:"        bash -c "cd '${acAway}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
-	fAssertOut "the commit identity comes from the account too"  'Work Person <work@example\.com>'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	fAssertOut "the commit identity comes from the account too"  'Work Person <work@example\.com>'  bash -c "cd '${acWork}' && env ${acEnvIdent} '${gitsby}' -q -NoFetch status"
 	fAssertOut "a key nothing reads is reported, not ignored"    'account\.work\.notakey'           bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	## Holding the token is what lets git authenticate over https with no ssh key at all. Only the
 	## work account has one in the stub, so only it says so.
 	fAssertOut    "the held token is what enables https auth"  'git over https'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	fAssertNotOut "and an account with no token claims nothing" 'git over https' bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
-	## A value typed for one repo specifically outranks a rule about a whole tree.
+	## A value typed for one repo specifically outranks a rule about a whole tree. A regression
+	## guard, not a discriminating check: code with no accounts at all reads the same repo-local
+	## value and passes it too. What it is here to catch is a future account that overrides one.
 	( cd "${acWork}" && git config user.email repo@example.com && git config user.name 'Repo Local' )
-	fAssertOut "a repo-local identity still wins"  'Repo Local <repo@example\.com>'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	fAssertOut "a repo-local identity still wins"  'Repo Local <repo@example\.com>'  bash -c "cd '${acWork}' && env ${acEnvIdent} '${gitsby}' -q -NoFetch status"
 	( cd "${acWork}" && git config --unset user.email && git config --unset user.name )
 	## Overrides, both directions.
 	fAssertOut "GITSBY_ACCOUNT overrides the folder"  'homeacct \(from GITSBY_ACCOUNT\)'  bash -c "cd '${acWork}' && env ${acEnv} GITSBY_ACCOUNT=home '${gitsby}' -q -NoFetch status"
 	cat > "${ac}/alt.shcl" <<-EOF
-		account.alt.path      = ${ac}/trees/work
+		account.alt.path      = ${acCanon}/trees/work
 		account.alt.ghAccount = altacct
 	EOF
 	fAssertOut "--config reads somewhere else"  'altacct'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/alt.shcl' status"
