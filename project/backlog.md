@@ -72,6 +72,17 @@ In each section, items are listed approximately from newest to oldest.
 - ✅ On Windows, a local-path remote was read as an ssh host named after the drive letter.
 	- `C:/path/to/repo.git` matched the `host:path` shape, so every command ran an ssh identity probe against a machine called `C` and reported an account for it.
 
+- ✅ PowerShell: a joined `-Config=FILE` failed silently.
+	- PowerShell can't bind a joined option through `-File`. Ahead of a command it ate the next word as the value, so `br list` arrived as `list`; after one it overflowed the positional slots.
+	- The first case printed the help and exited 1, which `-q` silenced entirely - the reported symptom was a command that appeared to do nothing.
+	- Now refused by name from any position, naming `-Config FILE` and `-Config:FILE`. Bash keeps taking the joined form, and so does `raw`, which reads the real command line.
+
+- ✅ `--config ""` silently used the default config instead of refusing.
+	- The check asked whether the value was non-empty, not whether the option was typed, so an empty one was indistinguishable from never passing it.
+	- That fell back to the default file, which decides the account - a script whose variable came out empty would push as the wrong identity and say nothing. Both builds.
+	- An empty `GITSBY_CONFIG` still falls through on purpose: an unset environment variable and an empty one are the same thing, unlike a typed option.
+	- Found by the new fuzz vectors on their first run.
+
 - ✅ `repo clone` refused to re-run, and `repo connect` refused a matching URL, on Windows.
 	- Git stores a local-path remote in the platform's own spelling: hand it `/c/tmp/x` and it gives back `C:/tmp/x`. Both commands compared their own argument against git's copy as plain text, so the same directory read as a different one.
 	- Both now compare local paths as paths. These were the two long-standing Windows-only failures in the suite.

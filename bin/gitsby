@@ -138,6 +138,7 @@ fMain(){
 	local identityProbeUrl=""       ## url the ssh identity is read from (existing origin, or the one about to be set)
 	local ghSwitchedFrom=""         ## gh's own active account, when we pointed this run at another
 	local configFileArg=""          ## --config FILE
+	local -i configFileGiven=0      ## ...and whether it was typed at all: '--config ""' is a mistake, not a fallback
 	local configFileUsed=""         ## the config file actually read, if any
 	local -A gitsbyConfig=()        ## flat key -> value from the config file
 	local -a gitsbyConfigPaths=()   ## "<canonical folder>\t<account name>", one per path rule
@@ -167,7 +168,7 @@ fMain(){
 	local ptTool=""; local -a ptArgs=(); local -i ptWantConfig=0; local -i ptWantTool=0; local scanArg=""
 	for scanArg in "${@}"; do
 		if   [[ -n "${ptTool}" ]];  then ptArgs+=("${scanArg}"); continue
-		elif ((ptWantConfig));      then configFileArg="${scanArg}"; ptWantConfig=0; continue
+		elif ((ptWantConfig));      then configFileArg="${scanArg}"; configFileGiven=1; ptWantConfig=0; continue
 		elif ((ptWantTool));        then
 			[[ "${scanArg}" == "git" || "${scanArg}" == "gh" ]] || fThrowError_Usage "Unknown 'raw' subcommand '${scanArg}'. One of: git, gh."
 			ptTool="${scanArg}"; ptWantTool=0; continue
@@ -176,7 +177,7 @@ fMain(){
 			raw)                  ptWantTool=1 ;;
 			-q|--quiet|-y|--yes)  doQuietly=1 ;;
 			--config)             ptWantConfig=1 ;;
-			--config=*)           configFileArg="${scanArg#*=}" ;;
+			--config=*)           configFileArg="${scanArg#*=}"; configFileGiven=1 ;;
 			*)                    break ;;
 		esac
 	done
@@ -1348,7 +1349,14 @@ fpConfigFile(){
 	## identical in both builds, so the same box answers the same whichever one you run.
 	## A file named explicitly must exist - naming one that isn't there is a typo, not a fallback -
 	## while finding none of the defaults is the ordinary unconfigured case and says nothing.
-	if [[ -n "${configFileArg:-}" ]]; then
+	## Asked whether the option was TYPED, not whether it has a value: '--config ""' - a script
+	## expanding a variable that turned out to be empty - would otherwise be indistinguishable from
+	## not passing it, and fall back to the default file. That is the worst possible answer here,
+	## because the file it fell back to decides which account the run acts as: the push would go out
+	## as the wrong identity, quietly. An empty GITSBY_CONFIG below is left alone deliberately - an
+	## unset variable and an empty one are the same thing in the environment, unlike a typed option.
+	if ((${configFileGiven:-0})); then
+		[[ -n "${configFileArg:-}" ]] || fThrowError_Usage "--config was given an empty file name."
 		[[ -r "${configFileArg}" ]] || fThrowError_Usage "No readable config file at '${configFileArg}'."
 		echo "${configFileArg}"; return 0
 	fi
@@ -2427,7 +2435,7 @@ fParseArgs(){
 		if ((expectingSwitchParamForNextArg)); then
 			case "${lastSwitch,,}" in
 				"m"|"message"|"msg") commitMessage="${currentArg}" ;;
-				"config")            configFileArg="${currentArg}" ;;
+				"config")            configFileArg="${currentArg}"; configFileGiven=1 ;;
 				*)                   fThrowError_Usage "Unknown option: '${lastSwitchAsPassed}', current parameter: '${currentArg}'." ;;
 			esac
 			expectingSwitchParamForNextArg=0
@@ -2459,7 +2467,7 @@ fParseArgs(){
 				"private")                  repoVisibility="private"; sawPrivate=1 ;;
 				"any-identity"|"anyidentity")  anyIdentity=1 ;;
 				"m="*|"message="*|"msg="*)  commitMessage="${currentArg#*=}" ;;  ## -m=MSG / --message=MSG / --msg=MSG (joined)
-				"config="*)                 configFileArg="${currentArg#*=}" ;;  ## --config=FILE (joined)
+				"config="*)                 configFileArg="${currentArg#*=}"; configFileGiven=1 ;;  ## --config=FILE (joined)
 
 			## Long-options that expect an argument to follow
 				"m"|"message"|"msg")        expectingSwitchParamForNextArg=1 ;;  ## -m MSG (spaced; value captured below)

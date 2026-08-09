@@ -46,6 +46,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - On Windows, a local-path remote on a drive letter was read as an ssh host named after the drive, so every command probed a machine called `C` for an account. `repo clone` re-run against a directory it had already cloned refused itself, and `repo connect` refused a URL matching the origin it already had - git stores a local path in the platform's own spelling, and both compared it as text against the spelling you typed.
 
+- PowerShell: `-Config=FILE` written as one word is refused by name, instead of failing in a way that looked like nothing had happened. PowerShell can't bind a joined option through `-File`: ahead of a command it took the next word as the option's value, so `br list` arrived as `list`; after one it overflowed the positional slots. The first of those printed the whole help and exited, which `-q` then silenced completely. Use `-Config FILE` or `-Config:FILE`. The Bash build takes the joined form as it always has, and `raw` still takes it too, since it reads the real command line.
+
+- `--config` with an empty file name is refused instead of falling back to the default config. A script expanding a variable that turned out to be empty was indistinguishable from never passing the option, so the run silently acted as whichever account the default file named - the wrong identity, on a push, with nothing said. An empty `GITSBY_CONFIG` still falls through, as an unset environment variable and an empty one are the same thing.
+
 ### Other work
 
 - Both suites now run their PowerShell leg on Windows rather than only on Linux. Test stubs get a `.cmd` sibling, since PowerShell finds a shebang script on PATH but starts nothing and reads the silence as no output; and the checks that need a confirmation to refuse no longer depend on `setsid`, which Windows has no equivalent of.

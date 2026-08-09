@@ -103,6 +103,7 @@ $script:repoUrlProtocol = ''   ## 'https' or 'ssh' for 'repo url', set during it
 $script:pruneLocal = @(); $script:pruneRemote = @(); $script:pruneKeep = @(); $script:pruneTargetRefs = @(); $script:pruneCurrentMerged = ''  ## resolved by the br prune validation
 $script:anyIdentity = [bool]$AnyIdentity
 $script:configFileArg = $Config
+$script:configFileGiven = $PSBoundParameters.ContainsKey('Config')  ## typed at all - '' is a mistake, not a fallback
 $script:configFileUsed = ''    ## the config file actually read, if any
 $script:configLoaded = $false
 $script:configValues = @{}     ## flat key -> value from the config file
@@ -682,7 +683,14 @@ function Get-ConfigFile {
     ## in both builds, so the same box answers the same whichever one you run. A file named explicitly
     ## must exist - naming one that isn't there is a typo, not a fallback - while finding none of the
     ## defaults is the ordinary unconfigured case and says nothing.
-    if ($script:configFileArg) {
+    ## Asked whether the option was TYPED, not whether it has a value: '--config ""' - a script
+    ## expanding a variable that turned out to be empty - would otherwise be indistinguishable from
+    ## not passing it, and fall back to the default file. That is the worst possible answer here,
+    ## because the file it fell back to decides which account the run acts as: the push would go out
+    ## as the wrong identity, quietly. An empty GITSBY_CONFIG below is left alone deliberately - an
+    ## unset variable and an empty one are the same thing in the environment, unlike a typed option.
+    if ($script:configFileGiven) {
+        if (-not $script:configFileArg) { throw "--config was given an empty file name." }
         if (-not (Test-Path -LiteralPath $script:configFileArg -PathType Leaf)) {
             throw "No readable config file at '$($script:configFileArg)'."
         }
@@ -950,11 +958,11 @@ function Invoke-PassthroughIfAsked {
         }
         return
     }
-    $tool = ''; $toolArgs = @(); $wantConfig = $false; $wantTool = $false; $quiet = $false; $configPath = ''
+    $tool = ''; $toolArgs = @(); $wantConfig = $false; $wantTool = $false; $quiet = $false; $configPath = ''; $configGiven = $false
     foreach ($arg in $raw) {
         $token = [string]$arg
         if     ($tool)        { $toolArgs += $token; continue }
-        elseif ($wantConfig)  { $configPath = $token; $wantConfig = $false; continue }
+        elseif ($wantConfig)  { $configPath = $token; $configGiven = $true; $wantConfig = $false; continue }
         elseif ($wantTool)    {
             if ($token -notin 'git', 'gh') { throw "Unknown 'raw' subcommand '${token}'. One of: git, gh." }
             $tool = $token; $wantTool = $false; continue
@@ -962,13 +970,13 @@ function Invoke-PassthroughIfAsked {
         if     ($token -eq 'raw')                                    { $wantTool = $true }
         elseif ($token -in '-q', '-Quiet', '-y', '-Yes')             { $quiet = $true }
         elseif ($token -eq '-Config' -or $token -eq '--config')      { $wantConfig = $true }
-        elseif ($token -like '-Config=*' -or $token -like '--config=*') { $configPath = $token.Substring($token.IndexOf('=') + 1) }
+        elseif ($token -like '-Config=*' -or $token -like '--config=*') { $configPath = $token.Substring($token.IndexOf('=') + 1); $configGiven = $true }
         else   { break }
     }
     if ($wantTool) { throw "Syntax: $($script:meName) raw <git|gh> <arguments ...>" }
     if (-not $tool) { return }
     if (-not (Get-Command -Name $tool -ErrorAction SilentlyContinue)) { throw "Not found in path: ${tool}" }
-    if ($configPath) { $script:configFileArg = $configPath }
+    if ($configGiven) { $script:configFileArg = $configPath; $script:configFileGiven = $true }
     Resolve-GitsbyAccount -Url ([string](@(git remote get-url origin 2>$null) | Select-Object -First 1))
     Select-GitsbyAccount
     ## One line, on stderr, so a pipeline reading stdout sees only the tool. Silence is what '-q'
@@ -2106,6 +2114,25 @@ function Invoke-GitsbyRelease {
 ## Script entry point
 
 try {
+    ## PowerShell's -File binder can't take a joined '-Config=FILE', and it doesn't fail cleanly -
+    ## where the token sits decides which way it goes wrong. Ahead of a command it eats the next
+    ## word as the option's value, so 'br list' arrives as 'list'; after the command it is dropped
+    ## outright and the run carries on against the DEFAULT config, which is to say as the wrong
+    ## account, silently. Both are worse than refusing, so the form is named and refused. The Bash
+    ## build takes it - this is a platform limit, not a decision.
+    ##
+    ## 'raw' is exempt, and has to be: it re-reads the real command line, so the option binds
+    ## correctly there, and past the tool name a joined option belongs to git rather than to us.
+    $rawArgv = Get-RawScriptArgList
+    if ($null -ne $rawArgv) {
+        $joinedConfig = ''
+        foreach ($rawArg in $rawArgv) {
+            if ($rawArg -eq 'raw') { $joinedConfig = ''; break }
+            if ((-not $joinedConfig) -and ($rawArg -like '-Config=*' -or $rawArg -like '--config=*')) { $joinedConfig = $rawArg }
+        }
+        if ($joinedConfig) { throw "'${joinedConfig}': PowerShell can't bind a joined option. Use '-Config FILE' or '-Config:FILE'." }
+    }
+
     ## pwsh doesn't bind '--help'-style tokens as parameters; they land positionally.
     ## The bare words 'help' and 'version' work too.
     if ($Command -match '^(-{1,2}(h|help)|help)$') { $Help = $true; $Command = '' }

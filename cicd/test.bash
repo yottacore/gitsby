@@ -1382,6 +1382,28 @@ GHEOF
 	## A named file that isn't there is a typo, not a reason to fall back silently.
 	fAssertFail "a named config that isn't there is refused"        bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/nope.shcl' status"
 	fAssertOut  "and says which file"  'No readable config file'    bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/nope.shcl' status 2>&1"
+	## An empty value is a mistake too - a script expanding a variable that turned out empty. Falling
+	## back to the default file would pick an account nobody asked for, so it is refused by name.
+	fAssertFail "--config with an empty value is refused"     bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '' status"
+	fAssertOut  "and says the name was empty"  'empty file name' bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '' status 2>&1"
+	## The joined spelling splits the two builds, so each is pinned to what it actually does.
+	if [[ "$1" == "bash" ]]; then
+		fAssertOut "--config=FILE (joined) works here"  'altacct'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config='${ac}/alt.shcl' status"
+	else
+		## pwsh's -File binder can't take a joined option: ahead of a command it eats the next word,
+		## after one it overflows the positional slots. Either way the old failure read as nothing
+		## happening at all under -q, so the form is refused by name from any position.
+		## The bare exit-code assert below can't discriminate - the old build exited nonzero too,
+		## just incoherently - so the two message checks after it are what actually pin the fix.
+		fAssertFail "a joined --config= is refused"                    bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config='${ac}/alt.shcl' status"
+		fAssertOut  "and says why, even under -q"  'joined option'     bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config='${ac}/alt.shcl' status 2>&1"
+		fAssertOut  "and after the command too"   'joined option'     bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch br list --config='${ac}/alt.shcl' 2>&1"
+		## 'raw' re-reads the real command line, so the joined form binds correctly there and must
+		## keep working - and past the tool name a joined option is git's, not ours. Both are
+		## regression guards for the refusal above, and pass against the old build by design.
+		fAssertOut  "raw still takes a joined --config"  'altacct'    bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' --config='${ac}/alt.shcl' raw git rev-parse --abbrev-ref HEAD 2>&1"
+		fAssert     "and a joined option after the tool is git's"     bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git log --format=%s -1 >/dev/null 2>&1"
+	fi
 
 	## account list / apply.
 	fAssertOut "account list names the accounts"      'workacct'                 bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account"
