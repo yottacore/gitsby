@@ -239,7 +239,16 @@ GHEOF
 	local u
 	for u in "${inject[@]}"; do fRefuse "clone url refused: '${u}'" "${repo3}" -q repo clone "${u}"; done
 	local cd_
-	for cd_ in '*' '?' 'v*' 'a b'; do fDirLiteral "clone dir verbatim: '${cd_}'" "${repo3}" "${repo3}.git" "${cd_}"; done
+	local -a cloneDirs=( '*' '?' 'v*' 'a b' )
+	## Win32 forbids '*' and '?' in a path, so native git can't create such a work tree at all
+	## ("could not create work tree dir '*': Invalid argument") - the invariant is unprovable
+	## there rather than violated. MSYS mkdir happily makes one, which is what makes the first
+	## guess wrong. A space is legal, so 'a b' stays.
+	if ((isWindows)); then
+		cloneDirs=( 'a b' )
+		echo "  skipped: clone dir verbatim '*' '?' 'v*' (Win32 forbids those characters in a path)"
+	fi
+	for cd_ in "${cloneDirs[@]}"; do fDirLiteral "clone dir verbatim: '${cd_}'" "${repo3}" "${repo3}.git" "${cd_}"; done
 
 	## Long and odd input: must not crash. Branch is refused, message accepted.
 	local long; long="$(printf 'x%.0s' {1..5000})"
@@ -331,3 +340,6 @@ echo "passed: ${pass}, failed: ${fail}"
 ##	History:
 ##		- 20260724 JC: Created. Adversarial fuzz of the command/option/arg surface
 ##			with an injection canary, run per implementation like the test harness.
+##		- 20260726 JC: Vectors for the noun+verb subcommand slot, and for the clone url and directory.
+##		- 20260808 JC: Vectors for the 'raw' tool slot, the 'repo url' argument, the 'account' subcommand, '--config' and GITSBY_ACCOUNT. What follows 'raw git' or 'raw gh' is deliberately not fuzzed - reaching the tool verbatim is the contract, so a vector there would fire the canary on a pass.
+##		- 20260810 JC: The glob-shaped clone directories are skipped on Windows. Win32 forbids those characters in a path, so native git cannot create such a work tree at all and the invariant is unprovable there rather than violated - MSYS mkdir happily makes one, which is what makes the first guess wrong.

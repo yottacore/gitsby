@@ -414,8 +414,17 @@ fRunSuite(){
 	fAssertFail "release refuses with an unreachable remote"  bash -c "cd '${offb}' && '${gitsby}' -q release v9.9.9"
 	fAssertOut  "and says so before cutting a tag"  "'release' has nothing left to do"  bash -c "cd '${offb}' && '${gitsby}' -q release v9.9.9 2>&1"
 	fAssert     "and no tag was cut"  bash -c "cd '${offb}' && ! git rev-parse -q --verify refs/tags/v9.9.9 >/dev/null"
-	fAssertFail "pr create refuses with an unreachable remote"  bash -c "cd '${offb}' && '${gitsby}' -q br switch offfeat >/dev/null 2>&1; '${gitsby}' -q pr create 'T'"
-	fAssertOut  "and says which command needs origin"  "'pr create' has nothing left to do"  bash -c "cd '${offb}' && '${gitsby}' -q pr create 'T' 2>&1"
+	## A stub gh, because these two are about the offline refusal and nothing else. Without one they
+	## depend on the box having gh installed: where it is missing, 'Not found in path: gh' comes
+	## first, so the exit-code check passed for a reason that had nothing to do with being offline
+	## and the message check failed. The stub never runs - the refusal is reached before it.
+	local offBin="${work}/$1-offbin"; mkdir -p "${offBin}"
+	fStub "${offBin}/gh" <<-'EOF'
+		#!/usr/bin/env bash
+		exit 0
+	EOF
+	fAssertFail "pr create refuses with an unreachable remote"  bash -c "cd '${offb}' && PATH='${offBin}:${PATH}' '${gitsby}' -q br switch offfeat >/dev/null 2>&1; PATH='${offBin}:${PATH}' '${gitsby}' -q pr create 'T'"
+	fAssertOut  "and says which command needs origin"  "'pr create' has nothing left to do"  bash -c "cd '${offb}' && PATH='${offBin}:${PATH}' '${gitsby}' -q pr create 'T' 2>&1"
 	## land offline: the merge lands locally, and origin's copy of the branch has to survive -
 	## with the merge unpushed it is the only ref origin holds to that work.
 	fAssertOut "br land leaves origin's copy of the branch alone"  "Leaving origin's 'offland' alone"  bash -c "cd '${offb}' && '${gitsby}' -q br switch offland >/dev/null 2>&1; '${gitsby}' -q br land 'Off land' 2>&1"
@@ -1307,6 +1316,10 @@ GHEOF
 	## Folder accounts. Which GitHub account a command acts as is decided by where the repo lives,
 	## so the whole block turns on one config file and two directory trees. HOME is faked, and a
 	## stub gh holds a token for exactly one of the two accounts - no network, no real credentials.
+	## Note on what the checks below can and cannot prove: every "must NOT say X" check passes
+	## trivially against a build predating accounts, since that build says nothing at all. Same for
+	## a bare exit-code refusal - that build refuses the whole command as unknown. Those are kept as
+	## regression guards and each is paired with a check on the message, which is what discriminates.
 	local ac="${work}/$1-acct"
 	mkdir -p "${ac}/home/.config/gitsby" "${ac}/bin" "${ac}/trees/work" "${ac}/trees/home"
 	fStub "${ac}/bin/gh" <<-'EOF'
@@ -1432,13 +1445,18 @@ GHEOF
 	fAssert "and does it"  bash -c "cd '${ru}' && '${gitsby}' -q -NoFetch repo url https >/dev/null && git -C '${ru}' remote get-url origin | grep -qx 'https://github.com/someone/thing.git'"
 	fAssertOut "re-running says there is nothing to do"  'already uses https'  bash -c "cd '${ru}' && '${gitsby}' -q -NoFetch repo url https"
 	fAssert "and back again"  bash -c "cd '${ru}' && '${gitsby}' -q -NoFetch repo url ssh >/dev/null && git -C '${ru}' remote get-url origin | grep -qx 'git@github.com:someone/thing.git'"
+	## The bare exit code can't tell a refused transport from a build that never heard of 'repo url'
+	## - both exit 1 - so the reason is what pins it.
 	fAssertFail "a transport that isn't one is refused"  bash -c "cd '${ru}' && '${gitsby}' -q -NoFetch repo url ftp"
+	## Each build names itself in its own syntax lines, so the pattern has to allow both spellings.
+	fAssertOut  "and names the two that are"  'Syntax: gitsby(\.ps1)? repo url'  bash -c "cd '${ru}' && '${gitsby}' -q -NoFetch repo url ftp 2>&1"
 	## A remote with no second spelling must say so rather than invent one, and a repo with no
 	## remote at all must say that instead of showing an empty one.
 	git init --quiet --bare -b main "${ru}-local.git"
 	( cd "${acAway}" && git remote add origin "${ru}-local.git" )
 	fAssertOut  "a non-github origin has no other spelling"  'no other spelling'  bash -c "cd '${acAway}' && '${gitsby}' -q -NoFetch repo url"
 	fAssertFail "and converting it is refused"                                    bash -c "cd '${acAway}' && '${gitsby}' -q -NoFetch repo url https"
+	fAssertOut  "for that reason and not another"  'no other spelling'            bash -c "cd '${acAway}' && '${gitsby}' -q -NoFetch repo url https 2>&1"
 
 	## The nudge to convert. It exists to be seen exactly once per situation that warrants it, so
 	## what matters as much as showing it is the two cases where it must stay quiet. Needs a
@@ -1454,8 +1472,9 @@ GHEOF
 	( cd "${acSsh}" && echo a > a.txt && git add --all && git commit --quiet -m init \
 		&& git remote add origin git@github.com:workacct/thing.git )
 	fAssertOut "an ssh remote whose account holds a token is offered the conversion"  "repo url https' switches it"  bash -c "cd '${acSsh}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
-	fAssert    "converting it silences the offer"  bash -c "cd '${acSsh}' && git remote set-url origin https://github.com/workacct/thing.git"
-	fAssertNotOut "as there is nothing left to convert"  "repo url https' switches it"  bash -c "cd '${acSsh}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	## Was written as a check, but it only ran git - it could not fail and said nothing about gitsby.
+	( cd "${acSsh}" && git remote set-url origin https://github.com/workacct/thing.git )
+	fAssertNotOut "converting it silences the offer"  "repo url https' switches it"  bash -c "cd '${acSsh}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	## Saying you want ssh is an answer, and answered advice must stop.
 	( cd "${acSsh}" && git remote set-url origin git@github.com:workacct/thing.git )
 	echo "account.work.protocol = ssh" >> "${ac}/home/.config/gitsby/config.shcl"
@@ -1470,10 +1489,14 @@ GHEOF
 	fAssertNotOut "-q silences it"  'acting as'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git rev-parse HEAD 2>&1 >/dev/null"
 	## The flag most likely to be stolen by our own parser, and the one git uses constantly.
 	fAssertOut "an option after the tool belongs to the tool"  'acting as'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' raw git log -q --oneline -1 2>&1"
+	## Nonzero alone proves nothing here - a build with no 'raw' at all also exits 1 - so what makes
+	## these two mean anything is that the failure is git's own and the refusal is ours.
 	fAssertFail "the tool's own failure is our exit code"  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git rev-parse --verify nosuchref"
+	fAssertOut  "and the message is git's, not ours"  'Needed a single revision'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git rev-parse --verify nosuchref 2>&1"
 	fAssert     "and its success is too"                   bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git rev-parse --verify HEAD >/dev/null"
 	fAssertOut  "raw gh reaches gh"  'gho_faketoken'       bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw gh auth token --user workacct"
 	fAssertFail "raw with no tool is refused"              bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw"
+	fAssertOut  "and says what it wanted"  'Syntax: gitsby(\.ps1)? raw'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw 2>&1"
 	fAssertFail "raw with a tool we don't front is refused" bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw rm -rf /"
 	fAssertOut  "and names the two it does"  'One of: git, gh'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw curl x 2>&1"
 }
@@ -1512,3 +1535,7 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260728 JC: Offline push coverage (branch commands degrade and say so, publishing commands refuse, br land keeps origin's copy of the branch until the merge is pushed), and the file list 'repo connect' shows before a first publication. The offline block gets its own origin: by that point in the suite the shared one has a dev branch, so the merge target was not what the checks assumed.
 ##		- 20260730 JC: SSH identity coverage. Every other check uses a local-path origin, which has no ssh identity, so the whole line had shipped untested; a fake ssh reproduces the -G user defaulting that caused the bug.
 ##		- 20260730 JC: Offline message coverage: an in-sync park says "Nothing to push.", the skip warning names its branch, and an offline hotfix land names the recovery that publishes the default branch. Four of the six checks fail against the prior code; the hotfix-runs and back-merge checks are regression guards.
+##		- 20260808 JC: Folder-account coverage: a faked HOME, a stub gh holding a token for one of two accounts, and two directory trees. The rules are written in the spelling a user of the running platform would type - '/tmp' is an entry in the Bash build's own mount table and means nothing to the PowerShell one, so a rule spelled that way matches on one leg only and reads as a port bug.
+##		- 20260808 JC: The two identity checks run with GIT_AUTHOR_NAME/EMAIL unset. This file exports them for hermeticity, and they outrank every config, so with them in place neither check could see the thing it asks about.
+##		- 20260808 JC: Coverage for 'repo url', 'account list|apply', the 'raw' passthrough, and the config-file argument in both builds. The joined '--config=FILE' spelling splits the two, so each leg is pinned to what it actually does.
+##		- 20260810 JC: Refusals that only checked the exit code now check the reason too: a build predating these commands also exits 1, so nonzero alone proved nothing. One "check" turned out to run only git and could not fail; it asserts something now.

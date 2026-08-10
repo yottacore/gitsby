@@ -121,6 +121,15 @@ In each section, items are listed approximately from newest to oldest.
 
 #### Done - Features and enhancements
 
+- ✅ The fuzz suite can pass on Windows.
+	- Three vectors clone into a directory named `*`, `?` or `v*`. Win32 forbids those characters in a path, so native git cannot create such a work tree at all and the check could never pass there.
+	- They are skipped on Windows now, with a line saying why. The suite already skipped four PowerShell vectors there for the same kind of reason.
+	- Not a gitsby bug: MSYS `mkdir` will happily make one of those directories, which is what makes the first guess wrong.
+
+- ✅ The PowerShell build verified on Linux.
+	- It had shipped without ever being executed there, which was one of the stated requirements. Run against the full suite on Debian, both legs.
+	- One check failed, for an environment reason rather than a real one: with `gh` absent, `pr create` refuses over the missing tool before it gets to the offline refusal the check is about. It uses a stub now, so it tests the same thing everywhere.
+
 - ✅ Multiple GitHub accounts, chosen by which folder you are in, for both git and gh.
 	- People with two accounts already keep a folder per account. A config file maps a folder tree to an account, and everything under it acts as that account - gh, git's credentials, the ssh key, the commit identity.
 	- `~/.config/gitsby/config.shcl` (or `$XDG_CONFIG_HOME`, or `%APPDATA%`), flat `key = value` lines, overridable with `--config FILE` or `GITSBY_CONFIG`. With no config file at all, nothing changes.

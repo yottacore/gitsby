@@ -2788,3 +2788,8 @@ try {
 ##      - 20260731 JC: Branch names display against the branch they land on; br create/hotfix name the branch they are about to make and where it comes from; the repo default gets its own line, and br list states it before listing - in step with bin/gitsby.
 ##      - 20260731 JC: The status block labels the branch you are on 'Current branch' - in step with bin/gitsby.
 ##      - 20260731 JC: br list runs in a repo whose default branch can't be told, reporting it unknown rather than refusing - in step with bin/gitsby.
+##      - 20260808 JC: Folder-based accounts, 'repo url', 'account list|apply' and the 'raw git|gh' passthrough - in step with bin/gitsby.
+##      - 20260808 JC: The passthrough reads the real command line rather than its own parameters: the binder claims -m, -q and -v wherever they appear, so arguments meant for git arrived rebound and reordered. Where the script path isn't on that command line it refuses instead of running something it may have rearranged.
+##      - 20260808 JC: A local-path remote is compared as a path, not as text - in step with bin/gitsby. The same comparison stopped a 'C:/path/repo.git' remote from matching the host:path shape and sending an ssh identity probe to a host named 'C'.
+##      - 20260808 JC: The config file is looked for under $env:HOME when it is set, since $HOME follows USERPROFILE on Windows and the two builds would otherwise disagree about where a user's config lives.
+##      - 20260809 JC: '--config' with an empty value is refused - in step with bin/gitsby. A joined '-Config=FILE' is refused by name too: the -File binder can't bind that form and silently swallowed the next word instead, which under -q read as nothing having happened.

@@ -56,6 +56,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The fuzz suite deliberately does not get that `.cmd` sibling, and skips four checks on the Windows PowerShell leg instead. Its arguments are hostile by design, and `cmd.exe` re-parses an unquoted `&` or `>` - which would run part of a vector for real and report an injection gitsby never had.
 
+- The fuzz suite also skips its glob-shaped clone directories on Windows, so it can pass there at all. Win32 forbids `*` and `?` in a path, so native git cannot create such a work tree in the first place and the check could never be satisfied. The same vectors still run everywhere else, where they pass.
+
+- The PowerShell build is verified on Linux, not just assumed to work there. Both suites run green on Debian, the same as on Windows.
+
+- Refusals that only checked an exit code now check the reason as well. A build predating a command also exits nonzero when handed it, so the exit code alone could not tell a working refusal from an unknown command.
+
 ## v2.0.2 - 2026-07-31
 
 ### Added
