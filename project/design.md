@@ -282,3 +282,20 @@ See also the release policy under Architecture, which covers how releases are pu
 ### Release policy
 
 GitHub's `releases/latest` returns the newest release not flagged as a pre-release, and both installers resolve through that redirect. Among the options - flag candidates as pre-releases and teach the installers a `--pre` switch, or publish everything as a full release - we decided on the latter. The semver suffix in the tag already tells a reader that `v2.0.0-rc1` is a candidate, and it keeps the documented one-liner installs working with no extra arguments. `--ref`/`-Ref` covers anyone who wants a specific tag or branch.
+
+### Automating a release
+
+The `release` command already does the git half well: merge `dev` into `main`, tag, push, fast-forward `dev`. What stays manual is everything around it, and each manual step has been forgotten at least once.
+
+- What is missing, in order: bump the version in both builds, rename the changelog's `vNEXT` heading to the version and today's date, update the in-script history footers, publish the GitHub release with a title and a body, attach `gitsby`, `gitsby.ps1` and `SHA256SUMS`, and verify the result end to end.
+
+- Where it belongs: `cicd/release.bash`, not the product. Cutting a release is a maintainer's pipeline task that wants `gh`, the checksum generator, and the working tree - none of which the shipped tool should grow a dependency on. `gitsby release` stays the git half and is called by the script.
+
+- The shape, as three phases so a failure never leaves a half-cut release:
+	1. Prepare and verify, changing nothing outside the working tree. Resolve the version (argument, else the same bump `release` would choose), refuse if the changelog has no `vNEXT` section, refuse if either build's version string already matches, then run the full pipeline. Nothing here needs undoing.
+	2. Land. Write the version into both builds and the changelog heading, commit, PR, merge, then `gitsby release`. This is the only phase that pushes.
+	3. Publish and prove. Create the GitHub release with the changelog section as the body, upload the three assets, then verify: `releases/latest` resolves to the new tag, and both documented installer one-liners install it into a throwaway `HOME` and report the new version. A failure here is recoverable by hand and does not corrupt anything.
+
+- Two guards worth building in, because both have already bitten: the history footers in `bin/gitsby` and `bin/gitsby.ps1` are checked for an entry newer than the last release tag, and the two builds' version strings are compared to each other before anything is pushed.
+
+- The verification in phase 3 is the part that pays for itself. Running both installer one-liners side by side is what caught the PowerShell checksum bug, which had silently skipped verification since the day it was added.

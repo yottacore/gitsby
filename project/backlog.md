@@ -83,7 +83,9 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Features and enhancements
 
-- 🔘 Design a way to *fully* automate new releases, end-to-end.
+- 🛠️ Fully automate new releases, end-to-end.
+	- Design done: `design.md` -> "Automating a release". `cicd/release.bash` in three phases (prepare and verify, land, publish and prove), so a failure never leaves a half-cut release.
+	- Left to do: write it. The design names the two guards worth having - the history footers, and the two builds agreeing on the version - because both have been missed by hand.
 
 - 🔘 `account apply` writes identity and key but nothing about credentials, so plain `git` over https still picks its own account.
 	- Note: `credential.<url>.username` plus `credential.useHttpPath` is the documented way, and would close the gap the ssh half already covers.
