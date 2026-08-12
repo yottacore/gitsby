@@ -246,7 +246,7 @@ curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install-dev
 irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install-dev.ps1 | iex
 ~~~
 
-Once it's cloned, `cicd/cicd.bash` is the local pipeline and the one command to know. It runs the lint stage, the regression tests, the fuzz vectors, a dogfood install, a demo gif rebuild, and a commit and push at the end. Run it before opening a PR. Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `pwsh` or `gifsicle` won't stop the rest.
+Once it's cloned, `cicd/cicd.bash` is the local pipeline and the one command to know. It fast-forwards from origin first, so everything after it tests the tree that is actually going out, then runs the lint stage, the regression tests, the fuzz vectors, a dogfood install, a demo gif rebuild, and a commit and push at the end. Run it before opening a PR. Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `pwsh` or `gifsicle` won't stop the rest.
 
 ~~~bash
 cicd/cicd.bash --quick          # skips fuzz and the demo gif; what you want while iterating

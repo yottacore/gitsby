@@ -20,6 +20,7 @@
 ##	- Purpose: Local CI/CD pipeline. Generic engine for a Bash-script project;
 ##	  per-project settings live in config.bash.
 ##	- Stages (fail-fast, any error aborts before the next stage):
+##	   0. remote sync (fast-forward from origin before anything is built or tested)
 ##	   1. lint (bash -n + shellcheck gating; markdownlint + py_compile + PSScriptAnalyzer if available)
 ##	   2. regression tests (cicd/test.bash, once it exists)
 ##	   3. fuzz + security (cicd/fuzz.bash, once it exists; skipped under --quick)
@@ -33,6 +34,7 @@
 ##	   -y, --yes           unattended (no prompt) but not quiet
 ##	   -m, --message MSG   publish hands-off with this commit message (no editor)
 ##	       --msg MSG       alias for --message
+##	   --no-sync           skip the remote sync stage
 ##	   --no-lint           skip the lint stage
 ##	   --no-test           skip the regression test stage
 ##	   --no-fuzz           skip the fuzz + security stage
@@ -65,10 +67,11 @@ cd "${root}"
 stamp="$(date +%Y%m%d-%H%M%S)"
 
 ## Parse options.
-assume_yes=0; quiet=0; quick=0; do_lint=1; do_test=1; do_fuzz=1; cli_message=""
+assume_yes=0; quiet=0; quick=0; do_sync=1; do_lint=1; do_test=1; do_fuzz=1; cli_message=""
 while (($#)); do case "$1" in
 	-q|--quiet)               quiet=1; assume_yes=1; shift ;;   ## quiet + unattended; publish runs quiet too
 	-y|--yes)                 assume_yes=1; shift ;;
+	--no-sync)                do_sync=0; shift ;;
 	--no-lint)                do_lint=0; shift ;;
 	--no-test)                do_test=0; shift ;;
 	--no-fuzz)                do_fuzz=0; shift ;;
@@ -195,6 +198,33 @@ if [[ -n "${LINT_LOG_DIR:-}" ]] && mkdir -p "${root}/${LINT_LOG_DIR}" 2>/dev/nul
 	## the last output lands after it (looks like the prompt "came back").
 	tee_pid=$!
 	trap 'exec 1>&- 2>&-; wait "${tee_pid}" 2>/dev/null' EXIT
+fi
+
+## Stage 0: remote sync. The publish stage pulls too, but that is after everything
+## has been built and tested - so a change merged upstream meanwhile would be pushed
+## having been validated by nothing. Refreshing first means the rest of the run tests
+## the tree that is actually going out. Publish keeps its own pull as the late guard.
+fSection "0/6  Remote sync"
+if ((! do_sync)); then
+	fEcho_Clean "remote sync skipped"
+elif ! git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+	## No upstream is an ordinary state for a brand-new branch, not a reason to stop.
+	fEcho_Clean "no upstream for this branch - nothing to sync"
+elif ! git fetch --quiet 2>/dev/null; then
+	## Offline is the other ordinary state. Warn and build what is here.
+	fEcho_Clean "WARNING: can't reach origin - building without refreshing"
+else
+	## Left is behind, right is ahead: what origin has that we don't, and the reverse.
+	counts="$(git rev-list --left-right --count '@{u}...HEAD' 2>/dev/null || echo "0	0")"
+	behind="${counts%%[[:space:]]*}"; ahead="${counts##*[[:space:]]}"
+	if   ((behind == 0)); then fEcho_Clean "up to date with origin (${ahead} to publish)"
+	elif ((ahead > 0));   then fDie "diverged from origin: ${ahead} local, ${behind} remote. Reconcile before building."
+	else
+		## Only behind, so this can only be a fast-forward. --autostash carries a dirty
+		## tree over it rather than refusing, and puts it back afterward.
+		fEcho_Clean "fast-forwarding ${behind} commit(s) from origin"
+		git merge --ff-only --autostash '@{u}' || fDie "fast-forward from origin failed"
+	fi
 fi
 
 ## Stage 1: lint. bash -n then shellcheck over every first-party shell file

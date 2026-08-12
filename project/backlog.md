@@ -19,6 +19,7 @@ This is a product backlog for the run-up to v2.0.0. After that release, bugs, fe
 	- [Done](#done)
 		- [Done - Bugs](#done---bugs)
 		- [Done - Features and enhancements](#done---features-and-enhancements)
+		- [Done - Pipeline 20260812](#done---pipeline-20260812)
 		- [Done - Documentation 20260812](#done---documentation-20260812)
 		- [Done - Code review 20260812](#done---code-review-20260812)
 		- [Done - Code review 20260731](#done---code-review-20260731)
@@ -79,8 +80,6 @@ In each section, items are listed approximately from newest to oldest.
 - 🔘 A Windows install finishes with the program not on `PATH`, and `.ps1` is not in `PATHEXT`.
 
 - 🔘 Both installers install anyway when `SHA256SUMS` is absent, and say nothing at all on the `--release dev` path.
-
-- 🔘 The pipeline has no remote-sync stage, so the pull at publish time can carry in changes nothing tested.
 
 ### Features and enhancements
 
@@ -408,6 +407,13 @@ In each section, items are listed approximately from newest to oldest.
 
 - ✅ Delete stale branch from 2020.
 	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
+
+#### Done - Pipeline 20260812
+
+- ✅ The pipeline had no remote-sync stage, so the pull at publish time could carry in changes nothing had tested.
+	- Cause: the only pull was in the publish stage, which runs last - after lint, tests and fuzz have all passed against the older tree.
+	- Fixed: stage 0 in both engines. Fetch, fast-forward when only behind, and stop when diverged. No upstream or an unreachable origin warns and carries on; `--no-sync` (`-NoSync`) skips it. Publish keeps its own pull as the late guard.
+	- Note: the fast-forward is `--autostash`, so a dirty tree rides over it. Verified against throwaway repos in all five states, both engines.
 
 #### Done - Documentation 20260812
 
