@@ -1492,6 +1492,58 @@ GHEOF
 	## native build, and none it could be given without depending on Git Bash existing. That is a
 	## documented limit, not a defect, and 'account' marks such a rule rather than letting it look
 	## like no rule at all. cicd/parity.bash covers the drive-letter spellings across both builds.
+	## 'pathContains' names a run of folder names rather than a tree on this machine, so one config
+	## file can be synced between machines whose roots differ. Two fake "machines" here, same
+	## trailing structure under different roots, and one decoy: whole folder names only, so
+	## 'jim-collier' must never match a directory called 'jim-collier-old'.
+	local acRoot=""
+	for acRoot in mA mB; do
+		mkdir -p "${ac}/${acRoot}/github.com/alice/proj"
+		git init --quiet -b main "${ac}/${acRoot}/github.com/alice/proj"
+	done
+	mkdir -p "${ac}/mA/github.com/alice-old/proj"
+	git init --quiet -b main "${ac}/mA/github.com/alice-old/proj"
+	cat > "${ac}/seg.shcl" <<-EOF
+		account.seg.pathContains = github.com/alice
+		account.seg.ghAccount    = segacct
+	EOF
+	for acRoot in mA mB; do
+		fAssertOut "pathContains matches under root ${acRoot}"  'segacct' \
+			bash -c "cd '${ac}/${acRoot}/github.com/alice/proj' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/seg.shcl' status"
+	done
+	fAssertNotOut "and matches whole folder names only"  'segacct' \
+		bash -c "cd '${ac}/mA/github.com/alice-old/proj' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/seg.shcl' status"
+	## Precedence: naming this machine's own tree is the more specific claim, so an absolute 'path'
+	## beats a 'pathContains'; among pathContains rules, more folder names beats fewer.
+	cat > "${ac}/segprec.shcl" <<-EOF
+		account.broad.pathContains  = alice
+		account.broad.ghAccount     = broadacct
+		account.narrow.pathContains = github.com/alice
+		account.narrow.ghAccount    = narrowacct
+	EOF
+	fAssertOut "more folder names is the more specific rule"  'narrowacct' \
+		bash -c "cd '${ac}/mA/github.com/alice/proj' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/segprec.shcl' status"
+	cat >> "${ac}/segprec.shcl" <<-EOF
+		account.exact.path      = ${acCanon}/mA/github.com/alice
+		account.exact.ghAccount = exactacct
+	EOF
+	fAssertOut "an absolute path beats a pathContains"  'exactacct' \
+		bash -c "cd '${ac}/mA/github.com/alice/proj' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/segprec.shcl' status"
+	## 'account apply' hands the same rule to git, which globs gitdir natively - so plain git agrees
+	## under either root, which is the whole point of a config file you can sync.
+	mkdir -p "${ac}/seghome"
+	local acSegEnv="GITSBY_CONFIG= HOME='${ac}/seghome' GIT_CONFIG_GLOBAL='${ac}/seghome/.gitconfig' PATH='${ac}/bin:${PATH}'"
+	cat > "${ac}/segapply.shcl" <<-EOF
+		account.seg.pathContains = github.com/alice
+		account.seg.ghAccount    = segacct
+		account.seg.email        = alice@example.com
+	EOF
+	fAssert "account apply writes a gitdir glob for pathContains" \
+		bash -c "cd '${ac}/mA/github.com/alice/proj' && env ${acSegEnv} '${gitsby}' -q -NoFetch --config '${ac}/segapply.shcl' account apply >/dev/null"
+	for acRoot in mA mB; do
+		fAssertOut "and plain git agrees under root ${acRoot}"  'alice@example\.com' \
+			bash -c "cd '${ac}/${acRoot}/github.com/alice/proj' && env ${acSegEnv} git config user.email"
+	done
 	cat > "${ac}/spell.shcl" <<-EOF
 		account.s.path      = ${acCanon}/trees/work/proj
 		account.s.ghAccount = spellacct

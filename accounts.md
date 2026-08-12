@@ -9,6 +9,7 @@ Most people with two GitHub accounts also have a folder for each: one tree for w
 Nothing here is required. With no configuration Gitsby uses whichever account `gh` is logged in as, exactly as it always did. A single-account machine never notices the feature exists.
 
 - [Setting it up](#setting-it-up)
+	- [One config file, several machines](#one-config-file-several-machines)
 - [No SSH keys needed](#no-ssh-keys-needed)
 - [Teaching plain git the same rules](#teaching-plain-git-the-same-rules)
 - [Scripts](#scripts)
@@ -43,9 +44,10 @@ Gitsby reads the first of these that exists:
 
 Per-account keys, all optional except a `path` to match on:
 
-| Key          | What it does
-| :--          | :--
-| `path`       | A folder tree this account owns. Repeat the key for more than one. The longest match wins, so a tree nested inside another account's tree belongs to the inner one.
+| Key             | What it does
+| :--             | :--
+| `path`          | A folder tree this account owns. Repeat the key for more than one. The longest match wins, so a tree nested inside another account's tree belongs to the inner one.
+| `pathContains`  | A run of folder names that appears anywhere in the path, so the same rule works on machines whose roots differ. Whole names only - `alice` never matches `alice-old`. Repeatable.
 | `ghAccount`  | The GitHub login to act as.
 | `tokenFile`  | A file holding that account's token, for a machine where `gh` was never logged in as it.
 | `sshKey`     | A key to use instead of a token. See below.
@@ -53,7 +55,26 @@ Per-account keys, all optional except a `path` to match on:
 | `email`      | Commit author email.
 | `protocol`   | `https` or `ssh`, for this account only.
 
-Run `gitsby account` to see what it made of all that, and which account the folder you're standing in resolves to. It is the command to reach for when something went out as the wrong person.
+Run `gitsby account` to see what it made of all that, and which account the folder you're standing in resolves to. It is the command to reach for when something went out as the wrong person. A `path` rule pointing at a directory that isn't there is marked as one that can never match, which is usually a typo.
+
+### One config file, several machines
+
+`path` names a tree on the machine you're on, so a config using it can't be synced as-is: the roots differ. `pathContains` names folder names instead, and matches wherever they appear:
+
+~~~ini
+account.work.pathContains = github.com/my-work-login
+account.work.ghAccount    = my-work-login
+
+account.personal.pathContains = github.com/my-personal-login
+account.personal.ghAccount    = my-personal-login
+~~~
+
+That resolves under `C:/src/github.com/my-work-login/...` and `~/dev/github.com/my-work-login/...` alike, so the file syncs unchanged.
+
+- Whole folder names only. `alice` never matches a directory called `alice-old`.
+- More folder names is the more specific rule, so `github.com/alice` beats a bare `alice`.
+- An absolute `path` beats a `pathContains` when both match - naming this machine's own tree is the more specific claim. Mix them freely.
+- `gitsby account apply` hands these to git as `includeIf.gitdir:**/github.com/alice/**`, which git globs natively - so plain `git` follows the same rule on every machine too.
 
 ## No SSH keys needed
 

@@ -108,6 +108,7 @@ $script:configFileUsed = ''    ## the config file actually read, if any
 $script:configLoaded = $false
 $script:configValues = @{}     ## flat key -> value from the config file
 $script:configPaths = @()      ## folder rules: @{ Path; Name }
+$script:configSegments = @()   ## pathContains rules: @{ Segment; Name }
 $script:configUnknown = @()    ## keys we didn't recognise, reported rather than ignored
 $script:acctName = ''          ## configured account claiming this folder, if any
 $script:acctGhWho = ''         ## the GitHub account this run acts as
@@ -788,6 +789,8 @@ function Import-GitsbyConfig {
         }
         if ($key -match '^account\.(.+)\.path$') {
             if ($value) { $script:configPaths += [pscustomobject]@{ Path = (Get-CanonPath -Path $value); Name = $Matches[1] } }
+        } elseif ($key -match '^account\.(.+)\.pathcontains$') {
+            if ($value) { $script:configSegments += [pscustomobject]@{ Segment = (Get-CanonSegment -Segment $value); Name = $Matches[1] } }
         } elseif ($key -eq 'protocol' -or $key -match '^account\.(.+)\.(ghaccount|tokenfile|sshkey|name|email|protocol)$') {
             $script:configValues[$key] = $value
         } else {
@@ -799,9 +802,24 @@ function Import-GitsbyConfig {
     }
 }
 
+function Get-CanonSegment {
+    ## One spelling for a 'pathContains' run of folder names. Backslashes forwards, no slashes on
+    ## either end, and case folded exactly where Get-CanonPath folds it - so the two are compared on
+    ## the same terms. No filesystem involved: the whole point is that this rule names no machine.
+    param([string]$Segment)
+    if (-not $Segment) { return '' }
+    $s = ($Segment -replace '\\', '/').Trim('/')
+    if ($IsWindows) { $s = $s.ToLowerInvariant() }
+    return $s
+}
+
 function Get-AccountForDir {
-    ## The configured account whose folder contains this one. Longest match wins, so a tree nested
-    ## inside another account's tree belongs to the inner one; first defined breaks an exact tie.
+    ## The configured account whose folder contains this one.
+    ##
+    ## Two kinds of rule, and an absolute 'path' wins over a 'pathContains' when both match: naming
+    ## the machine's own tree is the more specific claim. Within each kind the more specific rule
+    ## wins - the longest path, or the most folder names - so a tree nested inside another account's
+    ## tree belongs to the inner one. First defined breaks an exact tie.
     param([string]$Directory)
     $target = Get-CanonPath -Path $Directory
     if (-not $target) { return '' }
@@ -810,6 +828,18 @@ function Get-AccountForDir {
         if (-not $rule.Path) { continue }
         if ($target -ne $rule.Path -and -not $target.StartsWith($rule.Path + '/')) { continue }
         if ($rule.Path.Length -gt $bestLen) { $best = $rule.Name; $bestLen = $rule.Path.Length }
+    }
+    if ($best) { return $best }
+    ## Whole folder names only, which is what the slashes on both sides buy: 'jim-collier' must not
+    ## match a directory called 'jim-collier-old'. Wrapping the target in slashes is what lets the
+    ## run match at the start or the end of the path as well as in the middle.
+    $bestSegs = 0
+    foreach ($rule in $script:configSegments) {
+        if (-not $rule.Segment) { continue }
+        if (-not "/${target}/".Contains("/$($rule.Segment)/")) { continue }
+        ## More folder names is the more specific rule: 'github.com/me' beats a bare 'me'.
+        $segCount = ($rule.Segment -split '/').Count
+        if ($segCount -gt $bestSegs) { $best = $rule.Name; $bestSegs = $segCount }
     }
     return $best
 }
@@ -1922,6 +1952,9 @@ function Get-AccountNameList {
     foreach ($rule in $script:configPaths) {
         if (-not $seen.Contains($rule.Name)) { $seen.Add($rule.Name) }
     }
+    foreach ($rule in $script:configSegments) {
+        if (-not $seen.Contains($rule.Name)) { $seen.Add($rule.Name) }
+    }
     ## An account can be declared by its keys alone, with no folder rule - it is then only
     ## reachable by name, through GITSBY_ACCOUNT, which is a legitimate way to use one.
     foreach ($key in $script:configValues.Keys) {
@@ -1935,6 +1968,14 @@ function Get-AccountFolderList {
     ## The folder rules belonging to one account, as canonical paths.
     param([string]$Name)
     return @($script:configPaths | Where-Object { $_.Name -eq $Name } | ForEach-Object { $_.Path })
+}
+
+function Get-AccountSegmentList {
+    ## The 'pathContains' rules belonging to one account. Kept apart from the folder rules above
+    ## because they are a different claim: those name a tree on this machine, these name a run of
+    ## folder names on any machine, which is what lets one config file be synced between them.
+    param([string]$Name)
+    return @($script:configSegments | Where-Object { $_.Name -eq $Name } | ForEach-Object { $_.Segment })
 }
 
 function Get-AccountIncludeDir {
@@ -1991,6 +2032,10 @@ function Show-AccountList {
             if (Test-Path -LiteralPath $folder -PathType Container) { Write-PlainLine "     folder ..: ${folder}" }
             else { Write-PlainLine "     folder ..: ${folder}  (no such directory - this rule can never match)" }
         }
+        ## No existence check on these: naming no machine in particular is the point of them.
+        foreach ($seg in (Get-AccountSegmentList -Name $name)) {
+            Write-PlainLine "     anywhere : .../${seg}/..."
+        }
     }
 }
 
@@ -2001,9 +2046,17 @@ function Get-AccountApplyPlan {
     $dir = Get-AccountIncludeDir
     if (-not $dir) { return @() }
     $rules = @()
+    $segRules = @()
     foreach ($name in (Get-AccountNameList)) {
         foreach ($folder in (Get-AccountFolderList -Name $name)) {
             $rules += [pscustomobject]@{ Folder = $folder; Name = $name }
+        }
+        ## 'pathContains' maps straight onto git's own gitdir globbing, so plain git gets the same
+        ## rule rather than an approximation of it. Emitted ahead of the absolute rules below, and
+        ## fewest folder names first - git takes the LAST match and gitsby takes the most specific,
+        ## so the two only agree if the order runs least specific to most.
+        foreach ($seg in (Get-AccountSegmentList -Name $name)) {
+            $segRules += [pscustomobject]@{ Segment = $seg; Count = ($seg -split '/').Count; Name = $name }
         }
     }
     ## Shortest path first. git applies includes in file order and the LAST match wins, while
@@ -2012,6 +2065,9 @@ function Get-AccountApplyPlan {
     ## makes plain git and gitsby disagree about the same directory, which is the one thing
     ## 'account apply' exists to prevent. Folder is the tie-break so the order is deterministic.
     $plan = @()
+    foreach ($rule in ($segRules | Sort-Object -Property Count, Segment)) {
+        $plan += [pscustomobject]@{ Condition = "includeIf.gitdir/i:**/$($rule.Segment)/**.path"; File = "${dir}/$($rule.Name).gitconfig" }
+    }
     foreach ($rule in ($rules | Sort-Object -Property @{ Expression = { $_.Folder.Length } }, Folder)) {
         ## The trailing slash is what makes git apply it to everything below the folder too.
         $plan += [pscustomobject]@{ Condition = "includeIf.gitdir/i:$($rule.Folder)/.path"; File = "${dir}/$($rule.Name).gitconfig" }
@@ -2973,3 +3029,4 @@ try {
 ##        same folder rule then matched in the Bash build and not this one, silently.
 ##      - 20260812 JC: An unknown option is named. It lands in $Rest and leaves $Command empty, so it
 ##        was answered with the whole help text, and under -q with nothing but an exit code.
+##      - 20260812 JC: 'account.<name>.pathContains' - in step with bin/gitsby.

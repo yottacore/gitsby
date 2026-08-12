@@ -142,6 +142,7 @@ fMain(){
 	local configFileUsed=""         ## the config file actually read, if any
 	local -A gitsbyConfig=()        ## flat key -> value from the config file
 	local -a gitsbyConfigPaths=()   ## "<canonical folder>\t<account name>", one per path rule
+	local -a gitsbyConfigSegments=()  ## "<segment run>\t<account name>", one per pathContains rule
 	local -a gitsbyConfigUnknown=() ## keys we didn't recognise, reported rather than ignored
 	local -i gitsbyConfigLoaded=0
 	local acctName=""               ## configured account claiming this folder, if any
@@ -1482,6 +1483,8 @@ fpLoadConfig(){
 			protocol)                        gitsbyConfig["${key}"]="${value}" ;;
 			account.*.path)                  acct="${key#account.}"; acct="${acct%.path}"
 			                                 [[ -n "${value}" ]] && gitsbyConfigPaths+=("$(fpCanonPath "${value}")"$'\t'"${acct}") ;;
+			account.*.pathcontains)          acct="${key#account.}"; acct="${acct%.pathcontains}"
+			                                 [[ -n "${value}" ]] && gitsbyConfigSegments+=("$(fpCanonSegment "${value}")"$'\t'"${acct}") ;;
 			account.*.ghaccount|account.*.tokenfile|account.*.sshkey| \
 			account.*.name|account.*.email|account.*.protocol)
 			                                 gitsbyConfig["${key}"]="${value}" ;;
@@ -1493,9 +1496,26 @@ fpLoadConfig(){
 	done < "${file}"
 :;}
 
+fpCanonSegment(){
+	## One spelling for a 'pathContains' run of folder names. Backslashes forwards, no slashes on
+	## either end, and case folded exactly where fpCanonPath folds it - so the two are compared on
+	## the same terms. No filesystem involved: the whole point is that this rule names no machine.
+	local s="${1:-}"
+	[[ -n "${s}" ]] || return 0
+	s="${s//\\//}"
+	while [[ "${s}" == /* ]]; do s="${s#/}"; done
+	while [[ "${s}" == */ ]]; do s="${s%/}"; done
+	fIsWindows && s="${s,,}"
+	echo "${s}"
+:;}
+
 fpAccountForDir(){
-	## The configured account whose folder contains this one. Longest match wins, so a tree nested
-	## inside another account's tree belongs to the inner one; first defined breaks an exact tie.
+	## The configured account whose folder contains this one.
+	##
+	## Two kinds of rule, and an absolute 'path' wins over a 'pathContains' when both match: naming
+	## the machine's own tree is the more specific claim. Within each kind the more specific rule
+	## wins - the longest path, or the most folder names - so a tree nested inside another account's
+	## tree belongs to the inner one. First defined breaks an exact tie.
 	local -r target="$(fpCanonPath "${1:-}")"
 	[[ -n "${target}" ]] || return 0
 	local best="" entry="" path="" name=""; local -i bestLen=0
@@ -1505,6 +1525,21 @@ fpAccountForDir(){
 		[[ -n "${path}" ]] || continue
 		[[ "${target}" == "${path}" || "${target}" == "${path}/"* ]] || continue
 		((${#path} > bestLen)) && { best="${name}"; bestLen=${#path}; }
+	done
+	[[ -n "${best}" ]] && { echo "${best}"; return 0; }
+	## Whole folder names only, which is what the slashes on both sides buy: 'jim-collier' must not
+	## match a directory called 'jim-collier-old'. Wrapping the target in slashes is what lets the
+	## run match at the start or the end of the path as well as in the middle.
+	local seg=""; local -i bestSegs=0 segCount=0
+	for entry in "${gitsbyConfigSegments[@]:-}"; do
+		[[ -n "${entry}" ]] || continue
+		seg="${entry%%$'\t'*}"; name="${entry#*$'\t'}"
+		[[ -n "${seg}" ]] || continue
+		[[ "/${target}/" == *"/${seg}/"* ]] || continue
+		## More folder names is the more specific rule: 'github.com/me' beats a bare 'me'. Counted
+		## by stripping everything that isn't a slash, rather than by spawning anything.
+		local slashes="${seg//[^\/]/}"; segCount=$((${#slashes} + 1))
+		((segCount > bestSegs)) && { best="${name}"; bestSegs=${segCount}; }
 	done
 	echo "${best}"
 :;}
@@ -1773,6 +1808,11 @@ fpAccountNames(){
 		name="${entry#*$'\t'}"
 		[[ " ${seen[*]:-} " == *" ${name} "* ]] || seen+=("${name}")
 	done
+	for entry in "${gitsbyConfigSegments[@]:-}"; do
+		[[ -n "${entry}" ]] || continue
+		name="${entry#*$'\t'}"
+		[[ " ${seen[*]:-} " == *" ${name} "* ]] || seen+=("${name}")
+	done
 	## An account can be declared by its keys alone, with no folder rule - it is then only
 	## reachable by name, through GITSBY_ACCOUNT, which is a legitimate way to use one.
 	local key=""
@@ -1788,6 +1828,17 @@ fpAccountFoldersOf(){
 	## The folder rules belonging to one account, as canonical paths.
 	local -r name="${1:-}"; local entry=""
 	for entry in "${gitsbyConfigPaths[@]:-}"; do
+		[[ -n "${entry}" && "${entry#*$'\t'}" == "${name}" ]] || continue
+		echo "${entry%%$'\t'*}"
+	done
+:;}
+
+fpAccountSegmentsOf(){
+	## The 'pathContains' rules belonging to one account. Kept apart from the folder rules above
+	## because they are a different claim: those name a tree on this machine, these name a run of
+	## folder names on any machine, which is what lets one config file be synced between them.
+	local -r name="${1:-}"; local entry=""
+	for entry in "${gitsbyConfigSegments[@]:-}"; do
 		[[ -n "${entry}" && "${entry#*$'\t'}" == "${name}" ]] || continue
 		echo "${entry%%$'\t'*}"
 	done
@@ -1851,6 +1902,10 @@ fCmdAccountList(){
 			else                          fEcho_Clean "     folder ..: ${folder}  (no such directory - this rule can never match)"
 			fi
 		done < <(fpAccountFoldersOf "${name}")
+		## No existence check on these: naming no machine in particular is the point of them.
+		while read -r folder; do
+			[[ -n "${folder}" ]] && fEcho_Clean "     anywhere : .../${folder}/..."
+		done < <(fpAccountSegmentsOf "${name}")
 	done
 :;}
 
@@ -1861,13 +1916,27 @@ fpAccountApplyPlan(){
 	local -r dir="$(fpAccountIncludeDir)"
 	[[ -n "${dir}" ]] || return 0
 	local -a names=(); mapfile -t names < <(fpAccountNames)
-	local name="" folder=""; local -a rules=()
+	local name="" folder=""; local -a rules=(); local -a segRules=()
 	for name in "${names[@]:-}"; do
 		[[ -n "${name}" ]] || continue
 		while read -r folder; do
 			[[ -n "${folder}" ]] && rules+=("${#folder}"$'\t'"${folder}"$'\t'"${name}")
 		done < <(fpAccountFoldersOf "${name}")
+		## 'pathContains' maps straight onto git's own gitdir globbing, so plain git gets the same
+		## rule rather than an approximation of it. Fewest folder names first, and all of them ahead
+		## of the absolute rules below - git takes the LAST match, and gitsby takes the most
+		## specific, so the two only agree if the order runs least specific to most.
+		while read -r folder; do
+			[[ -n "${folder}" ]] || continue
+			local slashes="${folder//[^\/]/}"
+			segRules+=("$((${#slashes} + 1))"$'\t'"**/${folder}/**"$'\t'"${name}")
+		done < <(fpAccountSegmentsOf "${name}")
 	done
+	((${#rules[@]} + ${#segRules[@]})) || return 0
+	local segLen=""
+	while IFS=$'\t' read -r segLen folder name; do
+		printf '%s\t%s\n' "includeIf.gitdir/i:${folder}.path" "${dir}/${name}.gitconfig"
+	done < <(((${#segRules[@]})) && printf '%s\n' "${segRules[@]}" | sort -t$'\t' -k1,1n -k2,2)
 	((${#rules[@]})) || return 0
 	## Shortest path first. git applies includes in file order and the LAST match wins, while
 	## gitsby takes the LONGEST matching folder - so written in declaration order, a tree nested
@@ -2865,3 +2934,4 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##		- 20260812 JC: The identity line names an account asked for by name, including the bare login GITSBY_ACCOUNT accepts. It had asked whether some configured value was used, so a bare login selected the token and printed no line. An account only inferred from the remote owner is still not shown.
 ##		- 20260812 JC: Account rules are applied shortest path first, so git (last match wins) and gitsby (longest match wins) agree about a nested tree. Account names match whatever case you type. Every gitsby option works before "raw", which used to report an unknown command and name the wrong token. A --config naming a directory is refused, and an unusable include directory is reported rather than dumped as a shell error.
 ##		- 20260812 JC: The identity line says when an account was resolved but not applied, and the commands that push with git compare it against the key origin authenticates as - "sync" compared nothing at all. "account apply" also writes the https credential username. "br prune" asks git once per target ref rather than twice per branch, and a folder rule pointing at no directory is marked as one that can never match.
+##		- 20260812 JC: "account.<name>.pathContains" matches a run of folder names anywhere in a path, so one config file can be synced between machines whose roots differ. Whole names only; more names is the more specific rule; an absolute "path" still wins. "account apply" emits it as a gitdir glob, which git handles natively.
