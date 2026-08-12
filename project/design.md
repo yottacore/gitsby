@@ -74,7 +74,7 @@ The two files are ports of each other. A change to one nearly always belongs in 
 
 - Being offline must never turn a good commit into a failed command, now that `update` is the only way to commit.
 	- A remote that can't be reached warns and skips the pull. A remote that *is* reachable but can't fast-forward is a real problem and still fails hard - the distinction is what the pre-command fetch already discovered.
-	- `--no-fetch` means offline, so it skips the pull too. Skipping only the fetch and then pulling anyway would have saved nothing.
+	- `--no-fetch` declines the incoming round trip, so it skips the pull as well as the fetch. Skipping only the fetch and then pulling anyway would have saved nothing. It is not a way to say "I am offline" - see the offline rule below for why that distinction is deliberate.
 
 - The command set is split by how often you type it. Daily verbs stay one word (`update`, `sync`, `status`, `release`); everything else is grouped under a noun (`repo`, `br`, `pr`).
 	- Among the options considered, we decided the extra word is worth it for infrequent commands. It buys discoverability - three nouns to explore instead of a flat list to memorize - and it retires mashed-together abbreviations like `newbr`/`gobr`/`listbr`.
@@ -252,7 +252,9 @@ See also the release policy under Architecture, which covers how releases are pu
 
 - Bash 4.4+ (for *nix or WSL), and/or PowerShell 7+ (cross-platform). Nothing else at run time except `git`, plus `gh` for the commands that need it: every `pr` form, `repo create`, and `repo connect` when given an `owner/name` rather than a URL.
 
-- No configuration file, and no state of its own. Everything gitsby knows, it asks `git` for. That is deliberate: there is nothing to get out of sync, and nothing to migrate.
+- No state of its own. Everything gitsby knows about a repo, it asks `git` for, so there is nothing to get out of sync and nothing to migrate.
+
+	- The one file it does read is the accounts config, and it is read-only from gitsby's side: it maps folders to accounts and nothing else. Every value it yields is applied through the environment for the length of one command. See "Gitsby does have a config file" above for why that exception was made.
 
 ### UI
 

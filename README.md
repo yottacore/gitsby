@@ -11,7 +11,6 @@
 [![Latest release](https://img.shields.io/github/v/release/jim-collier/gitsby?include_prereleases&label=release)](https://github.com/jim-collier/gitsby/releases/latest)
 ![Lifecycle: Stable](https://img.shields.io/badge/Lifecycle-Stable-brightgreen)
 ![Support](https://img.shields.io/badge/Support-Maintained-brightgreen)
-![Status: Passing](https://img.shields.io/badge/Status-Passing-brightgreen)
 
 <!-- TOC ignore:true -->
 # Gitsby
@@ -21,7 +20,7 @@
 <table style="border: none; border-collapse: collapse;">
 	<tr style="border: none; border-collapse: collapse;">
 		<td style="border: none; border-collapse: collapse;"><img src="assets/logo.png" alt="Logo" width="128"/></td>
-		<td style="border: none;">A simple, safe, and opinionated Git wrapper to speed up everyday Git workflow. Unlimited safe project scaling.<br /><br />It's so simple and safe because it does quite a bit of heavy-lifting for you.</td>
+		<td style="border: none;">A simple, safe, opinionated Git wrapper for everyday work: nine commands instead of eighty-odd, and a workflow the tool enforces rather than a convention you're asked to remember.<br /><br />It also knows which of your GitHub accounts owns which folder, so work and personal repos stop needing SSH host aliases.</td>
 	</tr>
 </table>
 
@@ -34,252 +33,19 @@
 	<img src="assets/demo.gif" width="960" alt="Demo."/>
 -->
 
-<!-- TOC ignore:true -->
-## Table of contents
-<!-- TOC -->
+## Install
 
-- [Summary](#summary)
-- [Compatibility](#compatibility)
-- [General attributes](#general-attributes)
-- ["Opinionated" workflow: What are these opinions?](#opinionated-workflow-what-are-these-opinions)
-- [How it compares to named industry-standard workflows](#how-it-compares-to-named-industry-standard-workflows)
-- [Why](#why)
-- [Commands](#commands)
-- [Multiple GitHub accounts](#multiple-github-accounts)
-	- [Setting it up](#setting-it-up)
-	- [No SSH keys needed](#no-ssh-keys-needed)
-	- [Plain git, and scripts](#plain-git-and-scripts)
-	- [Which account are you acting as?](#which-account-are-you-acting-as)
-- [Installation](#installation)
-	- [Packages and installers](#packages-and-installers)
-	- [Direct install scripts](#direct-install-scripts)
-		- [Bash](#bash)
-		- [PowerShell](#powershell)
-	- [DIY](#diy)
-- [How to develop](#how-to-develop)
-- [Git notes and one-liners](#git-notes-and-one-liners)
-- [Contributing](#contributing)
-- [Legal stuff](#legal-stuff)
+~~~bash
+curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install.bash | bash
+~~~
 
-<!-- /TOC -->
+~~~pwsh
+irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1 | iex
+~~~
 
-## Summary
+Per-user by default, and it shows you the plan before it does anything. You need Git, plus either bash 4.4+ or PowerShell 7+. [More installation options](#installation-options).
 
-If you're reading this, you probably know how to use Git.
-
-You probably also understand that it's complex, mostly because it's so flexible. It's so flexible because it supports a wide variety of workflows, team sizes, and the necessary subcommands to do anything/everything - including very narrow/hard edge-cases of conflict resolution.
-
-Git has about 82 porcelain commands.
-
-Gitsby™ has 9. (Or more accurately, 22 total when counting subcommands.)
-
-How Gitsby shrinks Git's command set:
-
-- By applying an "opinionated" workflow, and ignoring the myriad other ways of doing the same thing.
-
-- By acknowledging that (arguably) some 90% of Git's complexity is devoted to covering about 10% of edge use-cases, and purposely ignoring most of them. (That is to say, not pretending they never happen - just not trying to be the tool to solve them if and when they arise.)
-
-- By orienting commands around *goals* (e.g. "what do I want to happen with these changes?"), rather than around a series of *administrative tasks*.
-
-	- It's a subtle but important distinction.
-
-	- And it means that Gitsby commands don't map 1:1 with Git commands - but do line up with many common real-world "best practice" use cases of Git (as a series of multiple commands at a time, with brief human decisions made in between them).
-
-## Compatibility
-
-- Gitsby, [Git](https://git-scm.com/), [gh](https://github.com/cli/cli), [Lazygit](https://github.com/jesseduffield/lazygit), and [Tig](https://github.com/jonas/tig) are all compatible, interchangeable, and can be intermixed on the same project at any time without interference.
-
-	- This makes giving Gitsby a "tryout" cheap and easy - you don't need to commit to anything. (No pun intended.)
-
-	- For large projects, you may still need bare Git (and/or some other wrapper) to resolve sticky situations that Gitsby purposely doesn't try to tackle - and almost certainly didn't create. Leaving them alone is what "keep-it-simple" and "do-one-thing-well" cost.
-
-	> Note: [GitButler](https://gitbutler.com/) is *not* interchangeable with Git, Gitsby, gh, Lazygit, and/or Tig. While a great tool and a cool idea, it manages its own metadata - that inherently doesn't mix well with other git-based tools that move `HEAD` or rewrite history. It's worth a look and a try - but to be safe, give it a dedicated trial on a small personal repo, without mixing in other tools.
-
-- Gitsby works with any Git remote, GitHub and GitLab included.
-	- The exceptions go through [gh](https://github.com/cli/cli) and are therefore GitHub-only: the `pr` commands, `repo create`, and `repo connect` when you give it an `owner/name` instead of a URL. Everything else is remote-agnostic, and `repo connect` with a full URL never touches gh at all.
-
-- What you need to run it: Git, plus either bash 4.4 or newer (for `gitsby`) or PowerShell 7 or newer (for `gitsby.ps1`). The two builds are interchangeable - same commands, same results - so on a machine without bash, the PowerShell one is a complete substitute.
-
-- Linux: bash is already new enough on anything current.
-
-- macOS is the one that might take a couple of lines of one-liners in the Terminal app. Its stock `/bin/bash` is 3.2 from 2007. `brew install bash` or `sudo port install bash` puts a current one alongside it rather than over it, so the new one has to come first on your `PATH`.
-
-- BSD ships no bash at all, but is trivially easy to remedy: `pkg install bash` on FreeBSD, `pkg_add bash` on OpenBSD.
-
-- On Windows, use the PowerShell build
-
-	- Or under WSL you can use the Bash version.
-
-Gitsby tells you which of these applies if it can't run, rather than failing with a shell error.
-
-Your default branch can be called anything. Gitsby asks the remote what it is, and falls back to `main`, `master`, or `trunk` locally - or to your only branch, in a repo that has just one. If it genuinely can't tell (no remote, and nothing conventional to go on), it says so and stops instead of guessing, and `git remote set-head origin --auto` is usually the one-line fix.
-
-## General attributes
-
-Gitsby:
-
-- Encourages (and enforces where it matters) an "opinionated" workflow. (More on what that means below, because it has become an overloaded word.)
-
-- Doesn't cover fringe use-cases. Reach for bare Git when one comes up, and keep using this for the common stuff.
-
-- Is goal-oriented, rather than task-driven. (The subcommands themselves illustrate what this means.)
-
-Gitsby does nothing that Git can't do directly by a skilled and experienced user - just with far fewer opportunities for common human mistakes.
-
-Sub-objectives in the workflow of each Gitsby command:
-
-1. Don't make assumptions about the underlying repo state.
-
-1. Be safe - if occasionally redundant and/or unnecessary. Never risk losing work - yours locally, or others in the remote.
-
-1. Be idempotent.
-
-1. Be tolerant - of previous commands having been only half-finished, and other potential weirdness.
-
-1. Be forgiving - any sub-command can be run at any time, and if it doesn't make sense, it won't screw anything up.
-
-## "Opinionated" workflow: What are these opinions?
-
-The "opinions" are mostly informed by industry and conventional best-practices, learned over millions upon millions of collective human programmer-hours. There is no reinvention of any wheels - it's just an exposed interface that places gentle guardrails and sanity checks around a way of working with Git that has proven to more easily scale and minimize trouble.
-
-There are many implicit opinions baked in. Here are the main ones:
-
-- `git pull --ff-only` is safer than and preferable to `git pull --rebase`.
-
-- Merges are always `--no-ff`, so the fact that a branch existed stays visible in history.
-
-- `git push` only to a feature branch you created.
-
-- Don't `push` your own work to `dev`, `main`, or `master`; instead, create a Pull Request. Even if you otherwise have the rights to, and even for small personal "toy" projects.
-
-	While PRs are overkill for small personal projects, they are nevertheless good hygiene, do not add much extra effort, and reinforce good working habits at a reflexive level.
-
-	(`br land` and `release` do push the target branch - but that push *is* the merge or the release, not a shortcut around one.)
-
-- Pushed history is permanent. No rebase, no amend, no rewriting, and never "git push to friends" (`git push -f`).
-
-- Feature branches are short-lived: branch off, do the work, land it, delete it (local and remote).
-
-- The branching model is something a repo opts into by creating a `dev` branch. With no `dev`, the merge target falls back to the default branch, so feature branches come off `main` and land back on `main` - that is GitHub Flow, and it is the better fit for a project with no release cadence. Create a `dev` and you get GitFlow instead: feature work lands on `dev`, `main` carries only what is published, and a `dev` -> `main` merge is a release cut with a tag. Gitsby picks by repo shape; there is nothing to configure.
-
-- Published material can be corrected without waiting for a release. `br hotfix <name>` branches off the default branch rather than `dev`, lands there, and then carries the change back into `dev` so the next release cannot undo it. That is GitFlow's hotfix branch, and it is why a README fix does not need a version bump.
-
-- Commit the whole working tree (`git add --all`), every time. The staging area is not a workspace; partial staging is one of those fringe cases left to raw `git`.
-
-- Commit and pull frequently (`update`); push less often (`sync`).
-
-- Uncommitted work should never block anything. The pull inside `update`/`sync` auto-stashes around itself, `br create` off `dev`/`main` carries uncommitted work onto the new branch, and everything else parks current work first (pull, commit, push - though never auto-committed onto `main`/`dev`), so nothing is ever stranded or lost.
-
-- Every branch tracks a same-named branch on `origin`, from the moment it's created.
-
-- One remote, and it's named `origin`. (Multi-remote setups are another fringe case left to raw `git`.)
-
-- Releases are annotated semver tags (`vX.Y.Z`). If no version is given, take the next one after the latest tag: usually a patch bump, except that a candidate like `v2.0.0-rc1` resolves to `v2.0.0`.
-
-- Look before you leap: fetch first, show the current state and the exact commands about to run, and ask before doing anything that mutates.
-
-## How it compares to named industry-standard workflows
-
-Gitsby doesn't invent a branching model. It implements two of the well-known ones, and chooses between them by looking at your repo: if there's a `dev` branch you get one, if there isn't you get the other. Nothing to configure.
-
-- [GitFlow](https://nvie.com/posts/a-successful-git-branching-model/): You get most of this with Gitsby when your repo has a `dev` branch.
-
-	- The idea: everyday work is merged into `dev`. `main` holds only versions that have actually been released. When you're ready to release, `dev` is merged into `main` and given a version tag.
-
-	- Gitsby does exactly that. `br create` starts a branch from `dev`, `br land` merges it back into `dev`, and `release` merges `dev` into `main` and tags it.
-
-	- GitFlow was also later modified with the idea of a "hotfix" branch, for fixing something already released without waiting for the next release. `br hotfix` is that branch. It starts from `main`, merges back into `main`, and then copies the fix into `dev` too, so the next release can't undo it.
-
-	- Two parts of GitFlow are left out on purpose: *release* branches, and the `develop` / `feature/` branch naming. Both work when several versions being maintained at once. Most projects don't do that, so they wouldd be extra steps for nothing.
-
-- [GitHub Flow](https://docs.github.com/en/get-started/using-github/github-flow): You get this with Gitsby when your repo has no `dev` branch.
-
-	- The idea: one permanent branch. You branch from it, open a pull request, merge back, delete the branch. Anything on that branch is considered ready to release.
-
-	- Gitsby does this with the same commands as above. They simply start from, and merge back into, `main` (or whatever your default branch is named) instead of `dev`.
-
-	- It's the simpler of the two, and the better fit if you don't do numbered releases.
-
-- [GitLab Flow](https://about.gitlab.com/topics/version-control/what-is-gitlab-flow/): Purposely not supported.
-
-	- The idea: extra permanent branches that mirror where the code is running, such as `staging` and `production`. Or one branch per released version, kept alive to receive bug fixes.
-
-	- Gitsby has no notion of a deployment environment, and it records a release as a tag rather than a branch. You can still create and merge such branches with plain `git`; Gitsby just won't manage them for you.
-
-- [Trunk-based development](https://trunkbaseddevelopment.com/): Half supported.
-
-	- The idea: everyone works on one shared branch, the "trunk". Branches, where used at all, last a day or two. Unfinished features are hidden behind feature flags instead of being parked on a branch.
-
-	- The short-lived branch half is what Gitsby already encourages. Branches get created, merged, and deleted, and `br prune` removes the ones you forgot about.
-
-	- The commit-straight-to-trunk half is the one thing Gitsby won't do. It won't push your own work to `main` or `dev`, even when you have permission. A team that works that way should use plain `git`.
-
-- **Any workflow that rewrites history**: Purposely not supported.
-
-	- The idea: keep the history tidy and linear. A branch's commits get squashed into one, or replayed on top of the target branch, so it reads as though the branch never existed.
-
-	- Gitsby never rebases, amends, squashes, or force-pushes, and its merges leave the branch visible in the history. If your team requires "squash and merge" or "rebase and merge", this isn't the tool.
-
-One difference matters more than which of these you pick: They're all conventions - a document the team agrees to, and then drifts away from as a deadline gets close.
-
-With Gitsby, *the workflow is the tool*. There's no command for "push to `main` anyway", so there's nothing to remember and nothing to quietly erode over time.
-
-## Why
-
-Many years ago, I grew tired of my talented development team of expert git users making repeated, costly mistakes with the tool. (It's also possible I'm projecting and everything was my fault...)
-
-Mistakes that arose not from incompetence, malice, recklessness, or carelessness - but because git is so powerful that the exact order of operations for tough edge-cases can be both hard to remember, and not inherently obvious.
-
-Many of those tough edge-cases arose in the first place, precisely because our git workflow wasn't enforced at an automation or tooling level.
-
-(I'm sure this is all sounding too familiar for veteran developers, managers, and CTOs.)
-
-I surveyed the git tools, wrappers, and standards available at the time and concluded they were also "too flexible" - none enforced an opinionated (enough) workflow.
-
-So I wrote x9git, the v1 forerunner of Gitsby.
-
-For years, it worked and was useful. But it wasn't comprehensive enough - bare git was still needed, and remembering *two* commonly-used tools was too burdensome.
-
-Now, years later, this v2 release - renamed Gitsby - finally fulfills the original vision: with a small but comprehensive end-to-end set of bulletproof commands.
-
-## Commands
-
-What you reach for daily is a one-word command. Everything else is grouped under a noun, so the whole set is discoverable from a handful of starting points. `repository` and `branch` spell out if you prefer them.
-
-| Command              | Args          | What it does
-| :--                  | :--           | :--
-| `update`             | `[msg]`       | Pull updates, then commit all local changes. Do frequently!
-| `sync`               | `[msg]`       | Pull, commit, and push. Do infrequently.
-| `status`             |               | Fetch and show current status.
-| `release`            | `[ver]`       | Cut a release: merge `dev` into `main`, tag, push. No version: the next one after the latest tag.
-| `br`                 |               | Fetch and list branches (`br list` is the same thing).
-| `br create`          | `<branch>`    | Create a new branch off `dev`/`main`. Uncommitted work on `dev`/`main` comes along; on another branch it is parked there first.
-| `br hotfix`          | `<name>`      | Branch off the default branch as `hotfix/<name>`, to correct what's already published. Landing it carries the change back to `dev`.
-| `br switch`          | `[branch]`    | Switch to a branch (parks current work first). No arg: back to `dev`/`main`.
-| `br land`            | `[msg]`       | Merge the current branch into `dev`/`main` (`--no-ff`), push, delete it local + remote.
-| `br prune`           |               | Delete branches already merged into `dev`/`main`, local + remote. Unmerged ones, and the branch you're on, are kept.
-| `repo clone`         | `<url> [dir]` | Clone a repo you don't have yet (checks out `dev` if it has one). Re-run is a no-op.
-| `repo create`        | `<owner/name>`| `git init` if needed, commit, then create the GitHub repo via [gh](https://github.com/cli/cli) and push to it (`--public`/`--private`; private by default).
-| `repo connect`       | `[target]`    | Publish local work to a remote that already exists and is empty: `git init` if needed, commit, push. Takes a URL or `owner/name`.
-| `pr`                 |               | Lists PRs via [gh](https://github.com/cli/cli).
-| `pr <#>`             |               | View a PR plus its diff.
-| `pr create`          | `[title]`     | Push the current branch and open a PR against `dev`/`main` (no title: the last commit subject).
-| `pr ok`              | `<#>`         | Approve and merge a PR.
-| `repo url`           | `[https\|ssh]` | Show how `origin` authenticates, or switch it between the two. Nothing else about the repo changes.
-| `account`            |               | Show your configured GitHub accounts, and which one this folder uses (`account list` is the same thing).
-| `account apply`      |               | Teach plain `git` the same folder rules, so `git` outside Gitsby behaves identically.
-| `raw git`            | `<args ...>`  | Run `git` as the account this folder belongs to. Everything after `git` is git's, verbatim.
-| `raw gh`             | `<args ...>`  | The same, for `gh`.
-
-There is deliberately no bare `commit` and no bare `pull`. Committing without sharing is how work quietly diverges, and pulling without committing is the one thing the rest of the tool never does.
-
-`br create`, `br switch`, `br land`, and `pr create` all deal with your work first. `update` is the one command for both, and it pulls *before* it commits so your work lands on top of everyone else's and history stays linear.
-
-Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--public`/`--private` (visibility for `repo create`; private by default), `--no-fetch` (skip the fetch and the pull), `--any-identity` (see below), `--config FILE` (read accounts from somewhere other than the usual place), `-h`, `-v`.
-
-The PowerShell version takes the same options in PowerShell form: `-Message MSG`, `-Quiet`/`-y`, `-Public`/`-Private`, `-NoFetch`, `-AnyIdentity`, `-Config FILE`, `-Help`, `-Version`. Commands and arguments are spelled identically in both.
-
-A typical day:
+## A typical day
 
 ~~~bash
 ## Day zero: get the repo
@@ -303,30 +69,93 @@ gitsby sync
 gitsby br land "Add Feature1"
 ~~~
 
-Every mutating command in an existing repo fetches first (unless you pass `--no-fetch`), shows the repo state (including who you'd act as on the remote) and the exact git commands it's about to run, and asks before touching anything. `pr` and `release` close the loop: review/accept the pull request, then cut a tagged release from `dev`.
+Every mutating command fetches first, shows you the repo state and the exact git commands it is about to run, and asks before touching anything.
 
-When that fetch finds the remote out of reach, the commands that mean something locally still work. `update` commits, `br create` and `br switch` and `br land` do their branch work, and each says what it skipped and that `sync` will publish it later. The commands that exist to publish - `sync`, `pr create`, `pr ok`, `release` - refuse up front and tell you what to do instead, rather than failing halfway through or reporting success having sent nothing. (`--no-fetch` declines that check, so with it gitsby is never told you are offline and a push fails with git's own message.)
+<!-- TOC ignore:true -->
+## Table of contents
+<!-- TOC -->
+
+- [Install](#install)
+- [A typical day](#a-typical-day)
+- [What it is](#what-it-is)
+- [Commands](#commands)
+- [Multiple GitHub accounts](#multiple-github-accounts)
+- [Compatibility](#compatibility)
+- [Installation options](#installation-options)
+- [How to develop](#how-to-develop)
+- [Contributing](#contributing)
+- [Legal stuff](#legal-stuff)
+
+<!-- /TOC -->
+
+## What it is
+
+Git has more than eighty porcelain commands, because it supports every workflow, every team size, and every hard edge-case of conflict resolution. That flexibility is the whole reason it's complex.
+
+Gitsby has 9 - or 22 counting subcommands. It gets there three ways:
+
+- By applying one opinionated workflow and ignoring the myriad other ways of doing the same thing.
+
+- By accepting that arguably 90% of Git's complexity covers about 10% of use-cases, and purposely leaving those alone. Not pretending they never happen - just not trying to be the tool that solves them when they do.
+
+- By orienting commands around *goals* ("what do I want to happen with these changes?") rather than around administrative tasks. So Gitsby commands don't map 1:1 onto Git commands; they line up with what you were actually trying to do, which is usually several Git commands and a decision or two in between.
+
+Gitsby does nothing a skilled Git user can't do directly - just with far fewer chances to make one of the expensive mistakes.
+
+Every command aims to be safe (never risk losing work, yours or anyone's), idempotent, tolerant of a previous command having been half-finished, and forgiving - run any of them at any time, and if it doesn't make sense it won't damage anything.
+
+The full list of opinions, and how the workflow lines up against GitFlow, GitHub Flow, GitLab Flow, and trunk-based development, is in [workflows.md](workflows.md).
+
+## Commands
+
+What you reach for daily is a one-word command. Everything else is grouped under a noun, so the whole set is discoverable from a handful of starting points. `repository` and `branch` spell out if you prefer them.
+
+| Command              | Args          | What it does
+| :--                  | :--           | :--
+| `update`             | `[msg]`       | Pull updates, then commit all local changes. Do frequently!
+| `sync`               | `[msg]`       | Pull, commit, and push. Do infrequently.
+| `status`             |               | Fetch and show current status.
+| `release`            | `[ver]`       | Cut a release: merge `dev` into `main`, tag, push. No version: the next one after the latest tag.
+| `br`                 |               | Fetch and list branches (`br list` is the same thing).
+| `br create`          | `<branch>`    | Create a new branch off `dev`/`main`. Uncommitted work on `dev`/`main` comes along; on another branch it is parked there first.
+| `br hotfix`          | `<name>`      | Branch off the default branch as `hotfix/<name>`, to correct what's already published. Landing it carries the change back to `dev`.
+| `br switch`          | `[branch]`    | Switch to a branch (parks current work first). No arg: back to `dev`/`main`.
+| `br land`            | `[msg]`       | Merge the current branch into `dev`/`main` (`--no-ff`), push, delete it local + remote.
+| `br prune`           |               | Delete branches already merged into `dev`/`main`, local + remote. Unmerged ones, and the branch you're on, are kept.
+| `repo clone`         | `<url> [dir]` | Clone a repo you don't have yet (checks out `dev` if it has one). Re-run is a no-op.
+| `repo create`        | `<owner/name>`| `git init` if needed, commit, then create the GitHub repo via [gh](https://github.com/cli/cli) and push to it (`--public`/`--private`; private by default).
+| `repo connect`       | `[target]`    | Publish local work to a remote that already exists and is empty: `git init` if needed, commit, push. Takes a URL or `owner/name`.
+| `repo url`           | `[https\|ssh]` | Show how `origin` authenticates, or switch it between the two. Nothing else about the repo changes.
+| `pr`                 |               | Lists PRs via [gh](https://github.com/cli/cli).
+| `pr <#>`             |               | View a PR plus its diff.
+| `pr create`          | `[title]`     | Push the current branch and open a PR against `dev`/`main` (no title: the last commit subject).
+| `pr ok`              | `<#>`         | Approve and merge a PR.
+| `account`            |               | Show your configured GitHub accounts, and which one this folder uses (`account list` is the same thing).
+| `account apply`      |               | Teach plain `git` the same folder rules, so `git` outside Gitsby behaves identically.
+| `raw git`            | `<args ...>`  | Run `git` as the account this folder belongs to. Everything after `git` is git's, verbatim.
+| `raw gh`             | `<args ...>`  | The same, for `gh`.
+
+There is deliberately no bare `commit` and no bare `pull`. Committing without sharing is how work quietly diverges, and pulling without committing is the one thing the rest of the tool never does.
+
+`br create`, `br switch`, `br land`, and `pr create` all deal with your work first. `update` is the one command for both, and it pulls *before* it commits so your work lands on top of everyone else's and history stays linear.
+
+Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--public`/`--private` (visibility for `repo create`; private by default), `--no-fetch` (skip the fetch and the pull), `--any-identity`, `--config FILE` (read accounts from somewhere other than the usual place), `-h`, `-v`.
+
+The PowerShell version takes the same options in PowerShell form: `-Message MSG`, `-Quiet`/`-y`, `-Public`/`-Private`, `-NoFetch`, `-AnyIdentity`, `-Config FILE`, `-Help`, `-Version`. Commands and arguments are spelled identically in both.
+
+When the fetch finds the remote out of reach, the commands that mean something locally still work. `update` commits, `br create` and `br switch` and `br land` do their branch work, and each says what it skipped and that `sync` will publish it later. The commands that exist to publish - `sync`, `pr create`, `pr ok`, `release` - refuse up front and say what to do instead, rather than failing halfway through or reporting success having sent nothing.
 
 `repo create` and `repo connect` list the files they are about to publish before asking, since that is the one command that hands a whole directory over for the first time. The list is what `git add --all` will actually add, `.gitignore` and all - so a stray `.env` is visible while you can still say no.
 
 ## Multiple GitHub accounts
 
-Most people who have two GitHub accounts also have a folder for each: one tree for work, one for everything else. Gitsby takes that literally. Tell it which account owns which folder, once, and every command run anywhere under that folder acts as that account - `git` and `gh` alike.
-
-Nothing here is required. With no configuration at all Gitsby behaves exactly as it always did, using whichever account `gh` is currently logged in as. A single-account machine never notices the feature exists.
-
-### Setting it up
-
-One file, flat `key = value` lines, `#` for comments:
+Most people with two GitHub accounts also have a folder for each: one tree for work, one for everything else. Gitsby takes that literally. Say which account owns which folder, once, and every command run anywhere under that folder acts as that account - `git` and `gh` alike.
 
 ~~~ini
 # ~/.config/gitsby/config.shcl
 
-protocol = https                            # how new remotes are set up; https needs no ssh key
-
-account.work.path       = ~/dev/work        # the folder tree this account owns
+account.work.path       = ~/dev/work
 account.work.ghAccount  = my-work-login
-account.work.name       = Ada Lovelace
 account.work.email      = ada@work.example
 
 account.personal.path       = ~/dev/personal
@@ -334,88 +163,39 @@ account.personal.ghAccount  = my-personal-login
 account.personal.email      = ada@home.example
 ~~~
 
-Gitsby reads the first of these that exists. `--config FILE` (`-Config FILE`) overrides all of them, and so does the `GITSBY_CONFIG` environment variable.
+Over HTTPS each account authenticates with its own token - the one `gh` already stores - so a second account costs one `gh auth login` and three lines of config, with no SSH keys and no `~/.ssh/config` host aliases baked into remote URLs. `gitsby account apply` writes the same rules into your global git config as ordinary `includeIf` blocks, so plain `git` agrees with Gitsby even when Gitsby isn't involved. `gitsby raw git ...` runs any git command as the folder's account, so existing scripts become account-correct by prefixing rather than rewriting.
 
-1. `$XDG_CONFIG_HOME/gitsby/config.shcl`
-2. `~/.config/gitsby/config.shcl` - the usual place on Linux and macOS, and it works on Windows too
-3. `%APPDATA%\gitsby\config.shcl` - Windows
+Nothing here is required. With no configuration Gitsby uses whichever account `gh` is logged in as, exactly as it always did. A single-account machine never notices the feature exists.
 
-Per-account keys, all optional except a `path` to match on:
+Full detail, including SSH keys, token files, and how Gitsby checks that `gh` and `git` agree about who you are: [accounts.md](accounts.md).
 
-| Key          | What it does
-| :--          | :--
-| `path`       | A folder tree this account owns. Repeat the key for more than one. The longest match wins, so a tree nested inside another account's tree belongs to the inner one.
-| `ghAccount`  | The GitHub login to act as.
-| `tokenFile`  | A file holding that account's token, for a machine where `gh` was never logged in as it.
-| `sshKey`     | A key to use instead of a token. See below.
-| `name`       | Commit author name.
-| `email`      | Commit author email.
-| `protocol`   | `https` or `ssh`, for this account only.
+## Compatibility
 
-Run `gitsby account` to see what it made of all that, and which account the folder you're standing in resolves to. It is the command to reach for when something went out as the wrong person.
+- Gitsby, [Git](https://git-scm.com/), [gh](https://github.com/cli/cli), [Lazygit](https://github.com/jesseduffield/lazygit), and [Tig](https://github.com/jonas/tig) are all compatible, interchangeable, and can be intermixed on the same project at any time without interference. That makes trying Gitsby cheap - you don't need to commit to anything. (No pun intended.)
 
-### No SSH keys needed
+	> Note: [GitButler](https://gitbutler.com/) is *not* interchangeable with these. While a great tool and a cool idea, it manages its own metadata - that inherently doesn't mix well with other git-based tools that move `HEAD` or rewrite history. It's worth a look, but give it a dedicated trial on a small personal repo rather than mixing it in.
 
-The usual way to hold two GitHub accounts on one machine is a pair of SSH keys and a `~/.ssh/config` full of host aliases, which then have to be baked into every remote URL. Gitsby does not need any of that.
+- Gitsby works with any Git remote, GitHub and GitLab included. The exceptions go through [gh](https://github.com/cli/cli) and are therefore GitHub-only: the `pr` commands, `repo create`, and `repo connect` when you give it an `owner/name` instead of a URL.
 
-Over HTTPS, `git` authenticates with the account's own token - the one `gh` already stores, or the one `tokenFile` names. Gitsby supplies it for the length of a single command, through the environment, and nothing is written anywhere. So a second account costs one `gh auth login` and three lines of config.
+- What you need: Git, plus either bash 4.4 or newer (for `gitsby`) or PowerShell 7 or newer (for `gitsby.ps1`). The two builds are interchangeable - same commands, same results - so on a machine without bash, the PowerShell one is a complete substitute.
 
-- New remotes follow `protocol`, so `repo connect owner/name` sets up an HTTPS remote by default.
-- An existing repo still on SSH is converted with `gitsby repo url https`. Only the remote URL changes - same repo, same history. Gitsby points this out on the identity line when it applies, and setting `protocol = ssh` says you meant it and stops the suggestion.
+	- Linux: bash is already new enough on anything current.
 
-SSH keys keep working, and stay the answer when you can't use a token. Give an account an `sshKey` and Gitsby uses it (with `IdentitiesOnly`, so the agent can't offer the wrong one first). Anything you have already set yourself - `GIT_SSH_COMMAND`, or `core.sshCommand` on the repo - was chosen more deliberately than a folder rule, and wins.
+	- macOS: stock `/bin/bash` is 3.2 from 2007. `brew install bash` or `sudo port install bash` puts a current one alongside it rather than over it, so the new one has to come first on your `PATH`.
 
-### Plain git, and scripts
+	- BSD ships no bash at all, but it's trivially easy to remedy: `pkg install bash` on FreeBSD, `pkg_add bash` on OpenBSD.
 
-Two commands make the rest of your tooling agree with Gitsby.
+	- Windows: use the PowerShell build, or the Bash one under WSL.
 
-`gitsby account apply` writes the same folder rules into your global git config, as ordinary `includeIf` blocks pointing at one small file per account. After that a bare `git commit` or `git push` in one of those folders uses the right identity and the right key, with Gitsby nowhere in the picture. It is safe to re-run: it replaces only the entries it wrote before, leaves any you wrote by hand alone, and drops rules for accounts you have since removed.
+	Gitsby tells you which of these applies if it can't run, rather than failing with a shell error.
 
-`gitsby raw git ...` and `gitsby raw gh ...` run the real tool as the folder's account and then get out of the way. Everything after `git` or `gh` is passed through exactly as typed, stdout is the tool's alone, and the exit code is the tool's too - so an existing script becomes account-correct by prefixing its commands rather than being rewritten.
+- Your default branch can be called anything. Gitsby asks the remote what it is, and falls back to `main`, `master`, or `trunk` locally - or to your only branch, in a repo that has just one. If it genuinely can't tell, it says so and stops instead of guessing, and `git remote set-head origin --auto` is usually the one-line fix.
 
-~~~bash
-gitsby raw git push origin HEAD
-gitsby raw gh pr list --json number
+## Installation options
 
-## One line on stderr says who you are acting as. -q silences it.
-gitsby -q raw git rev-parse HEAD
-~~~
+There are no distribution packages yet - nothing on apt, dnf, Homebrew, or winget. The install scripts are the supported route, and either one shows exactly what it will do and asks before doing it.
 
-`GITSBY_ACCOUNT` overrides the folder for one run, or for a whole script's environment. It takes either an account name from the config file or a bare GitHub login.
-
-### Which account are you acting as?
-
-`gh` talks to GitHub's API with its own token and never reads your SSH config, so the `pr` commands and `repo create` act as **gh's account** - not the account whose SSH key `git push` uses. With per-account host aliases in `~/.ssh/config` those can easily be different people, and a pull request opened as the wrong one is public and awkward to undo.
-
-So the pre-flight names both, and the commands that *write* through gh (`pr create`, `pr ok`, `repo create`, `repo connect owner/name`) compare them. The last two have no remote yet, but the one they are about to set is knowable - gh never uses a host alias, so it is always `git@github.com:owner/name.git` - which means the identity that repo will live with afterward is checked before anything is created.
-
-- Interactively, a confirmed difference prints a warning immediately above the confirmation prompt.
-- Unattended (`-q`/`-y`), a confirmed difference is an error and nothing runs.
-- `--any-identity`/`-AnyIdentity` says the difference is intended: no error, no warning, and the mismatch still shows on the identity line.
-
-If either side can't be determined - no SSH agent, an HTTPS remote, a deploy key, gh logged out - that is reported as unknown and never blocks anything. Only a difference *both* sides confirm counts.
-
-One consequence worth knowing if you use per-account host aliases: `repo create` and `repo connect owner/name` set `origin` to the canonical `git@github.com:...` URL, because that is what gh produces and gh does not read your SSH config. Gitsby does not try to guess which of your aliases belongs to that account - that would be a guess about your setup, and a wrong one is worse than none. If you want the alias, either point it there afterward with `git remote set-url origin git@your-alias:owner/name.git`, or skip gh entirely and give `repo connect` the full URL: `gitsby repo connect git@your-alias:owner/name.git`.
-
-## Installation
-
-First, decide on the Bash or PowerShell version, mainly gating on *nix vs Windows.
-
-- *But both at the same time is OK too. The PowerShell version will work on Linux too. Either way, the open-source PowerShell v7 or greater must be installed. (Not the old PowerShell v5 that comes preinstalled with Windows.)*
-
-Then, decide to install for your user account only, or system-wide. (But to avoid future confusion, not both on the same machine.)
-
-### Packages and installers
-
-There are no distribution packages yet - nothing on apt, dnf, Homebrew, or winget. The install scripts below are the supported route.
-
-### Direct install scripts
-
-Either installer shows exactly what it will do and asks before doing it (add `-y`/`-Yes` to skip the prompt, e.g. for scripted installs).
-
-By default the installers take the latest full release, and verify the download against that release's `SHA256SUMS` when one is published. Asking for anything else - `--release dev`, or a branch or tag by name - pulls straight from the tree instead, and skips verification.
-
-Both installers take the same options (Bash / PowerShell forms):
+By default they take the latest full release and verify the download against that release's `SHA256SUMS`. Asking for anything else - `--release dev`, or a branch or tag by name - pulls straight from the tree instead, and skips verification.
 
 | Bash | PowerShell | Effect |
 | --- | --- | --- |
@@ -428,41 +208,19 @@ Both installers take the same options (Bash / PowerShell forms):
 
 `-s`/`--system` and `-System` still work, and mean the same as `--target system`.
 
-With no options, both do a per-user install of the latest release, after showing the plan and asking.
+System-wide, and the no-`curl` case:
 
-#### Bash
+~~~bash
+curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install.bash | bash -s -- --target system
+~~~
 
-- User-only install (to `~/.local/bin`)
+~~~pwsh
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1))) -Target system
+~~~
 
-	~~~bash
-	curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install.bash | bash
-	~~~
+No `curl`? Swap in `wget -qO-` for `curl -fsSL`.
 
-- System-wide install (to `/usr/local/bin`, uses `sudo`)
-
-	~~~bash
-	curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install.bash | bash -s -- --target system
-	~~~
-
-- No `curl`? Swap in `wget -qO-` for `curl -fsSL`. For the development build instead of the latest release, append `--release dev`.
-
-#### PowerShell
-
-- User-only install
-
-	~~~pwsh
-	irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1 | iex
-	~~~
-
-- System-wide install (run from an elevated / sudo PowerShell)
-
-	~~~pwsh
-	& ([scriptblock]::Create((irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1))) -Target system
-	~~~
-
-### DIY
-
-No installer: grab the script itself, make it executable, and put it on your PATH.
+Or skip the installer entirely - grab the script, make it executable, put it on your PATH:
 
 ~~~bash
 mkdir -p ~/.local/bin && curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/bin/gitsby -o ~/.local/bin/gitsby && chmod +x ~/.local/bin/gitsby
@@ -480,21 +238,15 @@ For reference, the installers use: `~/.local/bin` (user) or `/usr/local/bin` (sy
 
 One-liner dev setup: clones the repo into `./gitsby`, checks out the `dev` branch, and checks (optionally installs) the dev tooling.
 
-It assumes `git` and a shell that can run one of the two scripts below. What it looks for on top of that: `shellcheck` for the Bash side, `pwsh` 7+ with `PSScriptAnalyzer` for the PowerShell side, `markdownlint` for the docs, `gh` to exercise the `pr` commands, and `python3` with Pillow (plus `gifsicle`, optionally) to regenerate the demo. Anything missing makes its own pipeline stage report itself absent and skip, so you can work on one side without installing the other's tools. Full detail in [contributing.md](contributing.md).
+~~~bash
+curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install-dev.bash | bash
+~~~
 
-- Linux / macOS
+~~~pwsh
+irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install-dev.ps1 | iex
+~~~
 
-	~~~bash
-	curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install-dev.bash | bash
-	~~~
-
-- Windows (PowerShell 7+)
-
-	~~~pwsh
-	irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install-dev.ps1 | iex
-	~~~
-
-Once it's cloned, `cicd/cicd.bash` is the local pipeline, and it's the one command to know. It runs the lint stage, the regression tests, the fuzz vectors, a dogfood install, a demo gif rebuild, and a commit and push at the end. Run it before opening a PR.
+Once it's cloned, `cicd/cicd.bash` is the local pipeline and the one command to know. It runs the lint stage, the regression tests, the fuzz vectors, a dogfood install, a demo gif rebuild, and a commit and push at the end. Run it before opening a PR. Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `pwsh` or `gifsicle` won't stop the rest.
 
 ~~~bash
 cicd/cicd.bash --quick          # skips fuzz and the demo gif; what you want while iterating
@@ -502,29 +254,15 @@ cicd/cicd.bash                  # everything, and it prompts once for a commit m
 cicd/cicd.bash -y -m "message"  # unattended
 ~~~
 
-Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `pwsh` or `gifsicle` won't stop the rest. It's bash-only; on Windows run it under WSL or Git Bash.
-
-## Git notes and one-liners
-
-The document in this repo, "[Git notes and one-liners](https://github.com/jim-collier/gitsby/blob/main/git_notes_and_oneliners.md)" covers some simplified versions of what Gitsby does. They differ slightly in some areas (mostly due to being limited to one-liners), but Gitsby is the canonical source of truth.
+Full prerequisites and process: [contributing.md](contributing.md). Coding style: [style-guide.md](style-guide.md). There's also "[Git notes and one-liners](git_notes_and_oneliners.md)", covering simplified versions of what Gitsby does - useful when you want the raw commands.
 
 ## Contributing
 
-Given that you may be using this for mission-critical work (as I do), Gitsby must be absolutely, 100%:
-
-- Bulletproof and bug-free
-
-- Unsurprising
-
-- Useful
-
-It is currently simple enough that the first two objectives are attainable. (And believed to be met now, as verified through manual QA, exhaustive automated testing, and near-daily use.)
+Given that you may be using this for mission-critical work (as I do), Gitsby aims to be bulletproof, unsurprising, and useful, in that order. It is currently simple enough that the first two are attainable, and they're believed met now - through manual QA, an automated suite that runs every check against both implementations, and near-daily use.
 
 Given how it's written, even if a feature fails its design, it should in theory still never compromise your work.
 
-But if you find something that doesn't work as advertised, and/or behaves in a way you find "surprising" (even if as-designed), please let us know! File an issue.
-
-Contributions are also welcome. Start with [contributing.md](contributing.md) for process, and [style-guide.md](style-guide.md) for coding style.
+But if you find something that doesn't work as advertised, or behaves in a way you find surprising even if as-designed, please file an issue. Contributions are welcome too - start with [contributing.md](contributing.md).
 
 ## Legal stuff
 

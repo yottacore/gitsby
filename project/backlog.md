@@ -19,6 +19,7 @@ This is a product backlog for the run-up to v2.0.0. After that release, bugs, fe
 	- [Done](#done)
 		- [Done - Bugs](#done---bugs)
 		- [Done - Features and enhancements](#done---features-and-enhancements)
+		- [Done - Documentation 20260812](#done---documentation-20260812)
 		- [Done - Code review 20260812](#done---code-review-20260812)
 		- [Done - Code review 20260731](#done---code-review-20260731)
 		- [Done - Code review 20260730](#done---code-review-20260730)
@@ -46,18 +47,6 @@ In each section, items are listed approximately from newest to oldest.
 ## Backlog
 
 ### Misc to-do
-
-- 🔘 `design.md` states the opposite of itself in two places, in each case because a later decision was added without revising the earlier one.
-	- The Architecture section still says there is no configuration file.
-	- One bullet says `--no-fetch` means offline; another says offline is what the fetch discovers. The second is what the code does.
-
-- 🔘 The `Status: Passing` badge is a fixed image wired to nothing, so it reads the same on a broken branch.
-
-- 🔘 README is about four times the length it should be, and the first runnable example is well over half way down.
-	- Note: the account material duplicates `design.md` at length and could point at it instead.
-	- Note: the headline never mentions folder-based accounts, which is the strongest thing in the release.
-
-- 🔘 README wording: a sentence with a missing verb and a doubled letter in the workflow comparison, and a bullet with no full stop in Compatibility.
 
 ### Bugs
 
@@ -419,6 +408,22 @@ In each section, items are listed approximately from newest to oldest.
 
 - ✅ Delete stale branch from 2020.
 	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
+
+#### Done - Documentation 20260812
+
+- ✅ `design.md` stated the opposite of itself in two places, each time because a later decision was added without revising the earlier one.
+	- Fixed: the Architecture bullet now says no *state* of its own, and names the accounts config as the one read-only exception. The `--no-fetch` bullet no longer calls itself offline, which is what the code and the offline rule below it already said.
+
+- ✅ The `Status: Passing` badge was a fixed image wired to nothing, so it read the same on a broken branch.
+	- Fixed: removed. The pipeline is local, so there is no build to report; the remaining badges all resolve to something real.
+
+- ✅ README was about four times the length it should be, and the first runnable example was well over half way down.
+	- Fixed: 535 lines to 273. Install and a worked example are now the first two sections, above the fold.
+	- Fixed: the headline names folder-based accounts, which is the strongest thing in the release and went unmentioned.
+	- Fixed: the long material moved to `accounts.md` and `workflows.md` rather than being deleted, so the README reads as a landing page and the depth is one click away.
+
+- ✅ README wording: a missing verb and a doubled letter in the workflow comparison, and a bullet with no full stop in Compatibility.
+	- Fixed: all three, in the moved text.
 
 #### Done - Code review 20260812
 
