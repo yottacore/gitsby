@@ -53,6 +53,10 @@ case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) isWindows=1 ;; esac
 fStubShim(){ ((isWindows)) && printf '@echo off\r\nbash "%s" %%*\r\n' "$1" > "$1.cmd"; return 0 ;}
 ## Write a stub from stdin, runnable by both builds.
 fStub(){ cat > "$1"; chmod +x "$1"; fStubShim "$1" ;}
+## PowerShell and .NET have no MSYS mount table, so '/tmp/x' and '/c/x' resolve against the root
+## of the current drive - 'C:\tmp\x', 'C:\c\x'. Any path interpolated into a pwsh command line
+## needs the platform's own spelling, or the statement fails and the check reports on nothing.
+fWinPath(){ if ((isWindows)); then cygpath -m "$1"; else printf '%s' "$1"; fi ;}
 
 ## Checks that reach a confirmation need it to refuse rather than wait: stdin at EOF, and nothing
 ## for the prompt to fall back to. setsid guarantees that. Windows has no setsid, but PowerShell
@@ -1204,7 +1208,12 @@ GHEOF
 			fAssertFail "ps installer refuses a bad -Release"     pwsh -NoProfile -File "${instPs}" -Release beta
 			fAssertFail "ps installer refuses -Release with -Ref" pwsh -NoProfile -File "${instPs}" -Release dev -Ref main
 			fAssertOut  "ps installer refuses a path-shaped -Ref"  'not a path'  pwsh -NoProfile -File "${instPs}" -Yes -Ref '../../evil/repo/main'
-			fAssertOut  "ps installer refuses an absolute -Ref"    'not a path'  pwsh -NoProfile -File "${instPs}" -Yes -Ref '/etc/passwd'
+			## Git Bash rewrites a unix-absolute argument into a Windows path before the native
+			## pwsh sees it, so '/etc/passwd' would arrive as 'C:/Program Files/Git/etc/passwd'
+			## and be refused for the space rather than for being a path. Excluding that one
+			## prefix keeps the -File path converting as normal. Ignored off Windows.
+			fAssertOut  "ps installer refuses an absolute -Ref"    'not a path' \
+				env MSYS2_ARG_CONV_EXCL='/etc' pwsh -NoProfile -File "${instPs}" -Yes -Ref '/etc/passwd'
 			## The documented one-liners are 'iex' and a scriptblock, neither of which is a script
 			## file - so -File coverage alone says nothing about them. Both must bind their
 			## parameters, refuse without a tty, and leave the calling session alive and unaltered.
@@ -1213,18 +1222,27 @@ GHEOF
 			## redirect, since Read-Host reads that and never reaches for a terminal.
 			if ((canNoTty)); then
 				local instDev="${root}/install-dev.ps1"
+				## These paths are read by .NET, not by the shell, so they need native spelling.
+				local instPsNative="" instDevNative=""
+				instPsNative="$(  fWinPath "${instPs}"  )"
+				instDevNative="$( fWinPath "${instDev}" )"
+				## The system install location is the platform's own, so the plan line that proves
+				## -Target bound differs: /usr/local/bin, or Program Files on Windows. Verified it
+				## still discriminates - a user-target plan names AppData\Local\Programs instead.
+				local sysBinPat='/usr/local/bin'
+				((isWindows)) && sysBinPat='Program Files'
 				## Decode the bytes ourselves rather than Get-Content, which quietly drops a BOM.
 				## irm doesn't, so a BOM'd file reaches iex with U+FEFF glued to the shebang and
 				## the first line stops being a comment - which is how a BOM sat here undetected.
-				local readInst="\$t = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes('${instPs}'))"
+				local readInst="\$t = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes('${instPsNative}'))"
 				fAssertOut "iex form reaches the plan"          'gitsby installer'  fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
 				fAssertOut "and refuses without a tty"          'CAUGHT: Aborted'   fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
 				fAssertOut "and leaves the session alive"       'HOST ALIVE'        fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
-				fAssertOut "scriptblock form binds its options" '/usr/local/bin'    fPwshText "${readInst}; try { & ([scriptblock]::Create(\$t)) -Ref main -Target system } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+				fAssertOut "scriptblock form binds its options" "${sysBinPat}"      fPwshText "${readInst}; try { & ([scriptblock]::Create(\$t)) -Ref main -Target system } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
 				fAssertOut "and leaves the session alive too"   'HOST ALIVE'        fPwshText "${readInst}; try { & ([scriptblock]::Create(\$t)) -Ref main -Target system } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
 				fAssertOut "installer leaks no StrictMode"      'strict stayed off' fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { }; try { \$q = \$neverSet; 'strict stayed off' } catch { 'STRICT LEAKED' }"
 				fAssertOut "installer leaks no ErrorAction"     'EAP=Continue'      fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { }; \"EAP=\$ErrorActionPreference\""
-				fAssertOut "dev setup's iex form asks first"    'CAUGHT: Aborted'   fPwshText "\$t = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes('${instDev}')); try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }"
+				fAssertOut "dev setup's iex form asks first"    'CAUGHT: Aborted'   fPwshText "\$t = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes('${instDevNative}')); try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }"
 			fi
 			## Byte 0 must be the shebang: a BOM ahead of it means the kernel won't run the
 			## file directly either, which the one-liner checks above can't see.
@@ -1252,8 +1270,13 @@ GHEOF
 		( cd "${cw}/launch" && echo x > f.txt && git add --all && git commit --quiet -m "init launch" && echo a > only-in-launch.txt )
 		git init --quiet -b main "${cw}/target"
 		( cd "${cw}/target" && echo y > f.txt && git add --all && git commit --quiet -m "init target" && echo b > only-in-target.txt )
-		## Start pwsh in one repo, move to the other inside the session, then commit.
-		( cd "${cw}/launch" && pwsh -NoProfile -Command "Set-Location '${cw}/target'; & '${root}/bin/gitsby.ps1' -q update 'from target'" ) >/dev/null 2>&1 || true
+		## Start pwsh in one repo, move to the other inside the session, then commit. Both paths
+		## go in native spelling: an MSYS one leaves Set-Location and the script lookup both
+		## failing, so nothing runs and all three checks below report on an untouched fixture.
+		local cwNative="" gitsbyPsNative=""
+		cwNative="$(       fWinPath "${cw}" )"
+		gitsbyPsNative="$( fWinPath "${root}/bin/gitsby.ps1" )"
+		( cd "${cw}/launch" && pwsh -NoProfile -Command "Set-Location '${cwNative}/target'; & '${gitsbyPsNative}' -q update 'from target'" ) >/dev/null 2>&1 || true
 		fAssert "pwsh commits where Set-Location points"  bash -c "cd '${cw}/target' && [[ \"\$(git log -1 --pretty=%s)\" == 'from target' ]]"
 		fAssert "and commits that repo's own file"        bash -c "cd '${cw}/target' && git show --stat --pretty=format: HEAD | grep -q only-in-target"
 		fAssert "and leaves the launch repo alone"        bash -c "cd '${cw}/launch' && [[ \"\$(git log -1 --pretty=%s)\" == 'init launch' ]] && [[ -n \"\$(git status --porcelain)\" ]]"
@@ -1539,3 +1562,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260808 JC: The two identity checks run with GIT_AUTHOR_NAME/EMAIL unset. This file exports them for hermeticity, and they outrank every config, so with them in place neither check could see the thing it asks about.
 ##		- 20260808 JC: Coverage for 'repo url', 'account list|apply', the 'raw' passthrough, and the config-file argument in both builds. The joined '--config=FILE' spelling splits the two, so each leg is pinned to what it actually does.
 ##		- 20260810 JC: Refusals that only checked the exit code now check the reason too: a build predating these commands also exits 1, so nonzero alone proved nothing. One "check" turned out to run only git and could not fail; it asserts something now.
+##		- 20260812 JC: Paths handed to PowerShell go in the platform's spelling, via fWinPath. An MSYS path means nothing to .NET, which reads it against the current drive root, so Set-Location, the script lookup and ReadAllBytes all failed and twelve checks on Windows reported on a fixture nothing had touched - seven red, five green because the thing they forbid also never happened. Also: a unix-absolute argument is rewritten by Git Bash before the native pwsh sees it, and the system install location is the platform's own.
