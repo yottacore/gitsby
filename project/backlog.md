@@ -19,6 +19,7 @@ This is a product backlog for the run-up to v2.0.0. After that release, bugs, fe
 	- [Done](#done)
 		- [Done - Bugs](#done---bugs)
 		- [Done - Features and enhancements](#done---features-and-enhancements)
+		- [Done - Code review 20260812](#done---code-review-20260812)
 		- [Done - Code review 20260731](#done---code-review-20260731)
 		- [Done - Code review 20260730](#done---code-review-20260730)
 		- [Done - Code review 20260727b](#done---code-review-20260727b)
@@ -46,11 +47,65 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Misc to-do
 
+- 🔘 `design.md` states the opposite of itself in two places, in each case because a later decision was added without revising the earlier one.
+	- The Architecture section still says there is no configuration file.
+	- One bullet says `--no-fetch` means offline; another says offline is what the fetch discovers. The second is what the code does.
+
+- 🔘 The `Status: Passing` badge is a fixed image wired to nothing, so it reads the same on a broken branch.
+
+- 🔘 README is about four times the length it should be, and the first runnable example is well over half way down.
+	- Note: the account material duplicates `design.md` at length and could point at it instead.
+	- Note: the headline never mentions folder-based accounts, which is the strongest thing in the release.
+
+- 🔘 README wording: a sentence with a missing verb and a doubled letter in the workflow comparison, and a bullet with no full stop in Compatibility.
+
 ### Bugs
+
+- 🔘 `account apply` orders its rules the opposite way from the way gitsby matches them.
+	- Cause: gitsby takes the longest matching folder; git applies includes in file order and the last one wins.
+	- Note: the fragment also sets `gitsby.ghAccount`, which outranks the folder rule, so applying changes what gitsby itself does in a nested folder.
+	- Probable fix: write the rules shortest path first, and refuse two accounts claiming one folder.
+
+- 🔘 On Windows a folder rule written the way this shell spells paths resolves in one build and not the other.
+	- Cause: the PowerShell build rewrites the drive letter after trying the filesystem, so `/c/...` never resolves and short names and junctions are left alone.
+	- Probable fix: rewrite the drive letter first.
+
+- 🔘 The identity lines report the account that was resolved, not the one that was applied.
+	- Note: naming an account that holds no token still prints that name, in the command meant to answer who a thing went out as.
+
+- 🔘 `sync` compares no identities before it pushes, and the comparison cannot fire on an https remote at all.
+
+- 🔘 Bash accepts `--config` naming a directory, prints a shell error, loads no accounts and exits 0.
+	- Note: the PowerShell build refuses it. The reverse hole is an unreadable file, which PowerShell passes over silently.
+
+- 🔘 `GITSBY_ACCOUNT` matches an account name case-sensitively in Bash and case-insensitively in PowerShell.
+
+- 🔘 Only `-q`, `-y` and `--config` may precede `raw`; anything else fails, and the message blames the tool's own arguments.
+
+- 🔘 PowerShell `raw` takes `--`, `-v` and `-h` for itself before the tool sees them.
+	- Note: `--` is the common git disambiguator, so `raw git log -- path` cannot be run.
+
+- 🔘 `account apply` with no config file ends in a raw operating-system error, differently in each build.
+
+- 🔘 A Windows install finishes with the program not on `PATH`, and `.ps1` is not in `PATHEXT`.
+
+- 🔘 Both installers install anyway when `SHA256SUMS` is absent, and say nothing at all on the `--release dev` path.
+
+- 🔘 The pipeline has no remote-sync stage, so the pull at publish time can carry in changes nothing tested.
 
 ### Features and enhancements
 
 - 🔘 Design a way to *fully* automate new releases, end-to-end.
+
+- 🔘 `account apply` writes identity and key but nothing about credentials, so plain `git` over https still picks its own account.
+	- Note: `credential.<url>.username` plus `credential.useHttpPath` is the documented way, and would close the gap the ssh half already covers.
+
+- 🔘 Add a parity suite that compares language mechanisms rather than behaviour.
+	- Note: every port defect that reached users was of that kind - file encoding, parameter binding, return types, path resolution. The behavioural suite is blind to them by construction.
+	- Note: a table of ugly path spellings fed to both builds, asserting one answer, would have caught the folder-rule bug above.
+
+- 🔘 `br prune` asks about one branch at a time where `git for-each-ref --merged` answers for all of them at once.
+	- Note: the delete-time re-check can stay - it is the same question asked again, and can be asked the same way.
 
 ### Done
 
@@ -364,6 +419,46 @@ In each section, items are listed approximately from newest to oldest.
 
 - ✅ Delete stale branch from 2020.
 	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
+
+#### Done - Code review 20260812
+
+Full review against the coding, performance, pipeline, housecleaning, marketing and installer standards. What is fixed here is listed below; the rest is filed above as open items.
+
+- ✅ Code Review 20260812 item 1: git over https authenticated with an empty password.
+	- Cause: the token was supplied only when it replaced a different active account, while the helper that reads it was installed either way. The helper sets aside any credential manager configured ahead of it, so nothing was left to answer.
+	- Note: worst on the setup needing no configuration - one account, logged in to gh, pushing over https.
+	- Fixed: supply the token whenever one is found.
+
+- ✅ Code Review 20260812 item 2: a trailing comment in the config file became part of the value.
+	- Cause: `#` started a comment only at the start of a line, and the documented example writes them at the end of one.
+	- Note: a folder rule carrying a comment could never match, and a rule that never matches reads exactly like no rule at all.
+	- Fixed: a `#` after whitespace ends the value. Quote the value to keep a literal one.
+
+- ✅ Code Review 20260812 item 3: an account name could name a file outside the include directory.
+	- Cause: the name went into a path with nothing checking it, so a name containing a path sent `account apply` elsewhere - as far as the global git config.
+	- Fixed: hold the name to letters, digits, dot, dash and underscore, and report anything else as an unread key.
+
+- ✅ Code Review 20260812 item 4: PowerShell read a repo with its own ssh key configured using the default key instead.
+	- Cause: the fetch and the probe replaced git's ssh command to add a connect timeout, rather than adding to it.
+	- Note: a private repo only the account's key can reach reported as unreachable, and the publishing commands then refused.
+	- Fixed: add the timeout to git's own command, as the Bash build already did.
+
+- ✅ Code Review 20260812 item 5: `origin/HEAD` was healed after every fetch, at the cost of a second query to the remote.
+	- Fixed: only when there is nothing to read locally. git 2.47 and newer write one at clone.
+
+- ✅ Code Review 20260812 item 6: the passthrough asked gh which account was active, over the network, on every call.
+	- Note: the answer only named the account being replaced, on a line the passthrough does not print.
+	- Fixed: skip it where no identity block is shown.
+
+- ✅ Code Review 20260812 item 7: a bare GitHub login got no identity line, in the command that exists to answer who a push goes out as.
+	- Cause: the line asked whether some configured value had been used. A bare login names no account and sets no key, so it satisfied none of those tests - though it does select the token git authenticates with.
+	- Note: `GITSBY_ACCOUNT` documents the bare-login spelling, and `raw` already reported it on stderr, so the two disagreed.
+	- Fixed: an account asked for by name is enough on its own. One merely inferred from the remote's owner still prints nothing, so a single-account machine sees no change.
+
+- ✅ Code Review 20260812 item 8: the test suite read whatever accounts the person running it had configured.
+	- Cause: it isolates git config and the commit identity, but not gitsby's own config file, which decides the account a command acts as.
+	- Note: found by running it - a single `protocol = ssh` line in a real config failed three checks per implementation, because the repo commands then built a different remote URL than the check expected.
+	- Fixed: point `GITSBY_CONFIG` at an empty file for the whole run. The account block, where discovery through `HOME` is the thing being tested, opts back out.
 
 #### Done - Code review 20260731
 

@@ -28,6 +28,12 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@test
 export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@test
 
+## Same reasoning, for gitsby's own config: whoever runs this may have accounts configured, and
+## that file decides which account a command acts as. A single 'protocol = ssh' line in it is
+## enough to make the repo commands build a different remote URL than the check expects. The
+## account block below sets its own HOME and opts back out of this with an empty value.
+export GITSBY_CONFIG="${work}/no-accounts.shcl"; : > "${GITSBY_CONFIG}"
+
 declare -i pass=0 fail=0
 fOk(){   pass=$((pass+1)); echo "  ok: $*"; }
 fFail(){ fail=$((fail+1)); echo "  FAIL: $*"; }
@@ -1349,7 +1355,7 @@ GHEOF
 		#!/usr/bin/env bash
 		case "$1 $2" in
 			"auth token") [[ "${3:-}" == "--user" && "${4:-}" == "workacct" ]] && { echo "gho_faketoken"; exit 0; }; exit 1 ;;
-			"api user")   echo "otheracct"; exit 0 ;;
+			"api user")   echo "${FAKE_GH_ACTIVE:-otheracct}"; exit 0 ;;
 		esac
 		exit 1
 	EOF
@@ -1384,7 +1390,9 @@ GHEOF
 	## a space in it from splitting when 'bash -c' re-parses the line, and they would equally stop
 	## a '${PATH}' left in place from ever expanding - which silently empties PATH and fails every
 	## check in this block for want of git.
-	local acEnv="HOME='${ac}/home' GIT_CONFIG_GLOBAL='${ac}/home/.gitconfig' PATH='${ac}/bin:${PATH}'"
+	## GITSBY_CONFIG is emptied rather than pointed somewhere: this block is where config discovery
+	## through HOME is the thing under test, and the file-scope export above would outrank it.
+	local acEnv="GITSBY_CONFIG= HOME='${ac}/home' GIT_CONFIG_GLOBAL='${ac}/home/.gitconfig' PATH='${ac}/bin:${PATH}'"
 	## The two identity checks below need one more thing: this file exports GIT_AUTHOR_NAME/EMAIL
 	## for hermeticity, and 'git var GIT_AUTHOR_IDENT' - what the Author line reads - takes those
 	## over any config, whether it came from the account or from the repo. Left in place they pin
@@ -1410,11 +1418,41 @@ GHEOF
 	( cd "${acWork}" && git config --unset user.email && git config --unset user.name )
 	## Overrides, both directions.
 	fAssertOut "GITSBY_ACCOUNT overrides the folder"  'homeacct \(from GITSBY_ACCOUNT\)'  bash -c "cd '${acWork}' && env ${acEnv} GITSBY_ACCOUNT=home '${gitsby}' -q -NoFetch status"
+	## A bare login is a documented spelling of GITSBY_ACCOUNT, and 'raw' already reports one on
+	## stderr. The identity line asked instead whether some CONFIGURED value had been used, so a
+	## bare login named no account, set no key, and printed nothing at all - silence from the one
+	## command whose job is to say who a push will go out as.
+	fAssertOut "a bare login still gets an identity line"  'barelogin \(from GITSBY_ACCOUNT\)' \
+		bash -c "cd '${acAway}' && env ${acEnv} GITSBY_ACCOUNT=barelogin '${gitsby}' -q -NoFetch status"
+	## ...but only for an account ASKED for. The owner of the remote is a guess about a repo, and a
+	## single-account machine must never learn the feature exists.
+	( cd "${acAway}" && git remote add origin https://github.com/someone/repo.git )
+	fAssertNotOut "the remote's owner alone prints no identity line"  'Account \.'  \
+		bash -c "cd '${acAway}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	( cd "${acAway}" && git remote remove origin )
 	cat > "${ac}/alt.shcl" <<-EOF
 		account.alt.path      = ${acCanon}/trees/work
 		account.alt.ghAccount = altacct
 	EOF
 	fAssertOut "--config reads somewhere else"  'altacct'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/alt.shcl' status"
+	## A trailing '# ...' is a comment, not part of the value - the documented example config writes
+	## them. Folded in, a path became a rule that could never match any directory, and a rule that
+	## never matches reads exactly like no rule at all: the command went out as gh's own account.
+	## Ahead of 'account apply' on purpose - that writes gitsby.ghAccount into the repo, which
+	## outranks any folder rule, so after it this check can no longer see what it is asking about.
+	cat > "${ac}/trailing.shcl" <<-EOF
+		account.cmt.path      = ${acCanon}/trees/work   # the tree this one owns
+		account.cmt.ghAccount = cmtacct                 # who to act as
+	EOF
+	fAssertOut "a trailing comment is not part of the value"  "Account \.+: cmtacct" \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/trailing.shcl' status"
+	## A '#' that was quoted is a literal, and trailing space inside the quotes is kept.
+	cat > "${ac}/quoted.shcl" <<-EOF
+		account.q.path      = ${acCanon}/trees/work
+		account.q.ghAccount = "a#b"                     # quoted, so the hash is part of it
+	EOF
+	fAssertOut "a quoted hash stays in the value"  "Account \.+: a#b" \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/quoted.shcl' status"
 	## A named file that isn't there is a typo, not a reason to fall back silently.
 	fAssertFail "a named config that isn't there is refused"        bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/nope.shcl' status"
 	fAssertOut  "and says which file"  'No readable config file'    bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/nope.shcl' status 2>&1"
@@ -1456,6 +1494,28 @@ GHEOF
 	fAssert "and leaves a hand-written includeIf alone"  bash -c "grep -q 'hand/written' '${ac}/home/.gitconfig'"
 	## Removing an account from the config has to remove its rule, or it silently keeps applying.
 	fAssert "dropping an account drops its rule"  bash -c "cd '${acWork}' && sed -i '/^account\.home\./d' '${ac}/home/.config/gitsby/config.shcl' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(grep -c 'gitsby/accounts' '${ac}/home/.gitconfig')\" == 1 ]]"
+
+	## The helper git is handed has to carry the token even when gh is ALREADY that account. The
+	## export used to sit inside the "this replaces a different account" branch while the helper
+	## install sat outside it, so git got an empty password - and the reset ahead of the helper had
+	## already evicted whatever credential manager would otherwise have answered. Every https push
+	## by a single-account user went out that way, which is the case needing no configuration.
+	fAssertOut "the credential helper carries a token when gh is already that account"  'password=gho_faketoken' \
+		bash -c "cd '${acWork}' && printf 'protocol=https\nhost=github.com\n\n' | env FAKE_GH_ACTIVE=workacct ${acEnv} '${gitsby}' -q raw git credential fill"
+
+	## An account name becomes a file name under the include directory, so it must not be able to
+	## climb out of it. 'account apply' wrote the fragment wherever the name pointed - a name with
+	## a couple of '../' in it reached the real '~/.gitconfig' and truncated it.
+	cat > "${ac}/traversal.shcl" <<-EOF
+		account.ok.path              = ${acCanon}/trees/work
+		account.ok.ghAccount         = okacct
+		account.../../evil.path      = ${acCanon}/trees/work
+		account.../../evil.ghAccount = evilacct
+	EOF
+	fAssertOut "an account name that climbs out of the include dir is refused"  'Ignored keys \.+:.*evil' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/traversal.shcl' account"
+	fAssertNotOut "and never becomes an account"  'evilacct' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/traversal.shcl' account"
 
 	## repo url. A local-path origin has no other spelling, so this needs a github.com one - which
 	## is never contacted: every check reads or rewrites the URL and nothing else.

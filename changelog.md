@@ -36,7 +36,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `cicd/utility/include/gh-account.bash`, a sourceable version of the same selection for pipelines that call `gh` directly rather than through gitsby.
 
+### Changed
+
+- Healing `origin/HEAD` after a fetch only runs when there is nothing to read locally, instead of on every command. It queries the remote a second time, and git 2.47 and newer write one at clone.
+
+- The passthrough no longer asks gh which account is active. That answer named only the account being replaced, on the identity line that `raw` does not print.
+
 ### Fixed
+
+- Git over https was handed an empty password whenever the folder's account was the one gh was already active as. The token is now supplied whenever one is found, rather than only when it replaces a different account. Because the helper sets aside any credential manager configured ahead of it, the effect was worst on the setup that needs no configuration at all: a single account, logged in to gh, pushing over https.
+
+- A `#` after whitespace starts a comment anywhere in the config file, not just at the start of a line. A trailing comment used to become part of the value, so a folder rule could never match any directory - and a rule that never matches reads exactly like no rule at all, leaving the run to act as gh's own account with nothing said. Quote a value to keep a literal `#` in it.
+
+- An account name is held to letters, digits, dot, dash and underscore, and anything else is reported as an unread key. The name becomes a file under the include directory, so a name with a path in it sent `account apply` to write its fragment somewhere else entirely.
+
+- The identity line now names an account that was asked for by name, including the bare GitHub login `GITSBY_ACCOUNT` accepts. It used to appear only when some configured value had been used, so a bare login - which `raw` reports on stderr, and which selects the token a push authenticates with - printed no line at all in `status`, the command that exists to answer who a push goes out as. An account merely inferred from the remote's owner is still not shown, so a single-account machine sees nothing new.
+
+- PowerShell: the fetch and the remote probe add their connect timeout to git's own ssh command instead of replacing it. A repo carrying `core.sshCommand` - the usual way to hold two accounts on one machine - was read with the default key, so a private repo only the account's key can reach reported as unreachable and the publishing commands refused to run.
 
 - The identity probe asks as the key git would actually push with, following `GIT_SSH_COMMAND` and then `core.sshCommand`. It used to run a bare `ssh`, so a repo that selects its key through config - the usual way to hold two accounts on one machine - was reported as the default key's account while git pushed as somebody else. Where gh's account happened to match the default key, the mismatch check passed while both halves were wrong.
 
