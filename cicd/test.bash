@@ -1487,15 +1487,17 @@ GHEOF
 	## the filesystem - and .NET reads this shell's '/c/...' against the current drive, so nothing
 	## resolved, short names and junctions were left as written, and the same rule matched in one
 	## build and not the other. Silently: a rule that does not match reads exactly like no rule.
-	local acSpell=""
-	for acSpell in "${ac}/trees/work/proj" "${acCanon}/trees/work/proj"; do
-		cat > "${ac}/spell.shcl" <<-EOF
-			account.s.path      = ${acSpell}
-			account.s.ghAccount = spellacct
-		EOF
-		fAssertOut "a folder rule resolves however the path is spelled"  'spellacct' \
-			bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/spell.shcl' status"
-	done
+	## Only spellings BOTH builds can express. The harness works under a temp directory, which this
+	## shell reaches through its own mount table as '/tmp/...' - a spelling with no meaning to the
+	## native build, and none it could be given without depending on Git Bash existing. That is a
+	## documented limit, not a defect, and 'account' marks such a rule rather than letting it look
+	## like no rule at all. cicd/parity.bash covers the drive-letter spellings across both builds.
+	cat > "${ac}/spell.shcl" <<-EOF
+		account.s.path      = ${acCanon}/trees/work/proj
+		account.s.ghAccount = spellacct
+	EOF
+	fAssertOut "a folder rule resolves in the canonical spelling"  'spellacct' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/spell.shcl' status"
 	## The identity block used to name the account it RESOLVED, whether or not anything could act as
 	## it. With no token found, gh goes on using its own account - so the one command whose job is
 	## answering "who does this go out as" gave the wrong name. The stub gh holds no token for this

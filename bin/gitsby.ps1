@@ -710,8 +710,14 @@ function Get-ConfigFile {
     ## unreadable one got past this and then failed silently in the loader - no accounts, exit 0,
     ## and the run acting as gh's own identity. Opening it is the only honest test on Windows,
     ## which has no readable bit to check.
+    ## Absent first, then not-a-file, then unreadable - the same order as the Bash build. A typo'd
+    ## name is the ordinary mistake and deserves the plain "not there" answer; "isn't a file" is
+    ## reserved for something that really is there and is the wrong kind of thing.
     if ($script:configFileGiven) {
         if (-not $script:configFileArg) { throw "--config was given an empty file name." }
+        if (-not (Test-Path -LiteralPath $script:configFileArg)) {
+            throw "No readable config file at '$($script:configFileArg)'."
+        }
         if (-not (Test-Path -LiteralPath $script:configFileArg -PathType Leaf)) {
             throw "-Config names '$($script:configFileArg)', which isn't a file."
         }
@@ -721,6 +727,9 @@ function Get-ConfigFile {
         return $script:configFileArg
     }
     if ($env:GITSBY_CONFIG) {
+        if (-not (Test-Path -LiteralPath $env:GITSBY_CONFIG)) {
+            throw "GITSBY_CONFIG names '$($env:GITSBY_CONFIG)', which can't be read."
+        }
         if (-not (Test-Path -LiteralPath $env:GITSBY_CONFIG -PathType Leaf)) {
             throw "GITSBY_CONFIG names '$($env:GITSBY_CONFIG)', which isn't a file."
         }
@@ -2273,6 +2282,11 @@ try {
     if ($Public -and $Private) { throw '--public and --private are mutually exclusive; pick one.' }
     if ($Help) { Show-Copyright; Show-About; Show-Syntax; Write-PlainLine ''; exit 0 }
     if ($Version) { Show-Copyright; exit 0 }
+    ## 'gitsby git ...' and 'gitsby gh ...' hand everything after the verb to the real tool.
+    ## Ahead of the two checks below, both of which would otherwise judge git's own arguments: past
+    ## the tool name a '--format=%s' is git's option, not an unknown one of ours.
+    Invoke-PassthroughIfAsked
+
     ## Before the empty-command fallback below, not after it. An option this script does not declare
     ## is not rejected by the binder - it lands in $Rest and leaves $Command empty, so the fallback
     ## answered a typo with the entire help text, and under -q with nothing at all but an exit code.
@@ -2281,9 +2295,6 @@ try {
         if ([string]$extra -match '^--?[^ -]') { throw "Unexpected option in this context: '${extra}'." }
     }
     if (-not $Command) { Show-Copyright; Show-About; Show-Syntax; exit 1 }
-
-    ## 'gitsby git ...' and 'gitsby gh ...' hand everything after the verb to the real tool.
-    Invoke-PassthroughIfAsked
 
     ## Breathing room after the shell prompt (the matching trailing blank is at each exit path).
     ## After the passthrough, which owns its own output and must not have ours mixed into it.
