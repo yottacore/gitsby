@@ -56,6 +56,37 @@ In each section, items are listed approximately from newest to oldest.
 
 #### Done - Bugs
 
+- ✅ The identity probe ignored the ssh key git was configured to push with.
+	- It ran a bare `ssh`, so a repo selecting its key through `core.sshCommand` was reported as the default key's account. Where that matched gh's account the mismatch check passed with both halves wrong - green in exactly the setup it exists for.
+	- Fixed to follow git's own precedence, `GIT_SSH_COMMAND` then `core.sshCommand`. The identity line takes the key file from the same source, so it can't name the right account beside the wrong key.
+	- Same override was overriding the key on `fetch` and the remote probe, which made a private repo reachable only via that key look like being offline.
+
+- ✅ The PowerShell build died on the identity line whenever no ssh command was configured.
+	- `Get-GitSshCommand` returns a list, but PowerShell unwraps a one-element return to a bare string - and under StrictMode, reading `.Count` off a string throws. One element is the ordinary case: a plain `ssh` with nothing configured.
+	- So any repo with an ssh remote and no `core.sshCommand` failed with "The property 'Count' cannot be found", which is most of them. The Bash build was never affected; bash arrays don't unwrap.
+	- Found by running the suite's PowerShell leg on Windows, which until now had only ever run on Linux. It would have failed there too - it had simply never been run since the identity work landed.
+
+- ✅ gh acted as whatever account was last switched to, regardless of who owns the remote.
+	- Now picks the owner's account for the run when gh already holds it, via `GH_TOKEN`, leaving gh's active account alone. Only when the owner can be named and the token is held - an org or someone else's repo is left untouched rather than refused.
+
+- ✅ On Windows, a local-path remote was read as an ssh host named after the drive letter.
+	- `C:/path/to/repo.git` matched the `host:path` shape, so every command ran an ssh identity probe against a machine called `C` and reported an account for it.
+
+- ✅ PowerShell: a joined `-Config=FILE` failed silently.
+	- PowerShell can't bind a joined option through `-File`. Ahead of a command it ate the next word as the value, so `br list` arrived as `list`; after one it overflowed the positional slots.
+	- The first case printed the help and exited 1, which `-q` silenced entirely - the reported symptom was a command that appeared to do nothing.
+	- Now refused by name from any position, naming `-Config FILE` and `-Config:FILE`. Bash keeps taking the joined form, and so does `raw`, which reads the real command line.
+
+- ✅ `--config ""` silently used the default config instead of refusing.
+	- The check asked whether the value was non-empty, not whether the option was typed, so an empty one was indistinguishable from never passing it.
+	- That fell back to the default file, which decides the account - a script whose variable came out empty would push as the wrong identity and say nothing. Both builds.
+	- An empty `GITSBY_CONFIG` still falls through on purpose: an unset environment variable and an empty one are the same thing, unlike a typed option.
+	- Found by the new fuzz vectors on their first run.
+
+- ✅ `repo clone` refused to re-run, and `repo connect` refused a matching URL, on Windows.
+	- Git stores a local-path remote in the platform's own spelling: hand it `/c/tmp/x` and it gives back `C:/tmp/x`. Both commands compared their own argument against git's copy as plain text, so the same directory read as a different one.
+	- Both now compare local paths as paths. These were the two long-standing Windows-only failures in the suite.
+
 - ✅ The PowerShell installer never verified the checksum, and said the release had none.
 	- Found by running both documented one-liners against the current release: the Bash one reported the checksum verified, the PowerShell one reported no `SHA256SUMS` for the same release, which does publish one.
 	- Cause: GitHub serves that file as binary, and PowerShell returns a response body as raw bytes for anything it doesn't treat as text. Read as lines, bytes match nothing, so no checksum was found and the download was installed unverified.
@@ -89,6 +120,36 @@ In each section, items are listed approximately from newest to oldest.
 	- Decided against making `--no-fetch` mean this. The flag declines the incoming round trip, which is a perfectly good thing to want against a reachable remote, and the suite itself uses it that way throughout. Offline is a state the pre-command fetch discovers, not a flag.
 
 #### Done - Features and enhancements
+
+- ✅ The fuzz suite can pass on Windows.
+	- Three vectors clone into a directory named `*`, `?` or `v*`. Win32 forbids those characters in a path, so native git cannot create such a work tree at all and the check could never pass there.
+	- They are skipped on Windows now, with a line saying why. The suite already skipped four PowerShell vectors there for the same kind of reason.
+	- Not a gitsby bug: MSYS `mkdir` will happily make one of those directories, which is what makes the first guess wrong.
+
+- ✅ The PowerShell build verified on Linux.
+	- It had shipped without ever being executed there, which was one of the stated requirements. Run against the full suite on Debian, both legs.
+	- One check failed, for an environment reason rather than a real one: with `gh` absent, `pr create` refuses over the missing tool before it gets to the offline refusal the check is about. It uses a stub now, so it tests the same thing everywhere.
+
+- ✅ Multiple GitHub accounts, chosen by which folder you are in, for both git and gh.
+	- People with two accounts already keep a folder per account. A config file maps a folder tree to an account, and everything under it acts as that account - gh, git's credentials, the ssh key, the commit identity.
+	- `~/.config/gitsby/config.shcl` (or `$XDG_CONFIG_HOME`, or `%APPDATA%`), flat `key = value` lines, overridable with `--config FILE` or `GITSBY_CONFIG`. With no config file at all, nothing changes.
+	- The ssh-key-and-host-alias trick is no longer needed: over https, git authenticates with the account's own token. Keys stay fully supported for anyone who wants them.
+	- `repo url [https|ssh]` converts an existing remote, which is the only thing between an ssh repo and a token.
+	- `account` explains what is configured and which account applies here. `account apply` writes the same rules into the global git config, so plain `git` matches.
+	- `raw git` and `raw gh` run either tool as the folder's account, verbatim, so scripts can use gitsby as a drop-in prefix.
+
+- ✅ A Windows-native CI/CD pipeline, so the whole thing can be run from Windows and not only from Linux.
+	- `cicd/cicd-win.ps1` runs the same six stages as `cicd/cicd.bash`, with the same options under PowerShell spelling and the same output shape, so the two read side by side.
+	- The publish stage is a native port of `n8git_backup-and-publish`, minus the rar version archive - skipped by request, since git carries the history.
+	- The demo gif is compared, never regenerated. Reproducing it byte for byte depends on fontconfig, the installed fonts and the pinned optimizer, none of which Windows matches - a render here would land a file the next Linux run flips straight back.
+	- Stages whose tool is missing warn and skip, as they already do on Linux. On a stock Windows box that is markdownlint and the demo gif.
+	- Settings are carried in the script rather than read from `config.bash`; only the dogfood destinations genuinely differ.
+
+- ✅ Run the PowerShell leg of both suites on Windows, not just on Linux.
+	- It had never run there, and it found a real defect the Linux-only habit had been hiding for as long as the identity work existed.
+	- Two things blocked it. PowerShell finds a shebang stub on PATH but starts nothing and reads the silence as empty output, so every stub gained a `.cmd` sibling that hands the body back to bash. And the confirmation checks needed `setsid`, which Windows has none of - unnecessary there, since PowerShell reads redirected stdin and never reaches for a terminal.
+	- Fuzz keeps a plain stub and skips four checks on that leg instead. Its arguments are hostile on purpose, and `cmd.exe` re-parses an unquoted `&` or `>`: a vector would partly run for real, and be reported as an injection gitsby never had. A skip that says so beats a pass that isn't one.
+	- The ssh probe now starts the ssh PowerShell itself resolves rather than letting `ProcessStartInfo` search PATH its own way - which on Windows reached the real `ssh.exe` and would have gone to github.com, against the suite's promise never to touch the network.
 
 - ✅ Say what a branch is branched from, wherever a branch is named.
 	- Reported against `br hotfix` run from `dev`: the current-branch line read `dev` while the plan directly under it checked out `main`. Both were correct and nothing connected them.

@@ -16,6 +16,52 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Other work
 -->
 
+## vNEXT
+
+### Added
+
+- Commands that go through gh now act as the account that belongs to where you are, chosen per run rather than by switching gh's active account. The account is named in the identity block, and `--any-identity` (`-AnyIdentity`) turns it off. A remote whose owner gh has no account for - an org, or anyone else's repo - is left alone.
+
+- Multiple GitHub accounts, chosen by which folder you are in. A config file maps a folder tree to an account, and every command run anywhere under it acts as that account - gh, git's credentials, the ssh key, and the commit identity. Read from `~/.config/gitsby/config.shcl` (or `$XDG_CONFIG_HOME`, or `%APPDATA%` on Windows), overridable with `--config FILE` (`-Config FILE`) or `GITSBY_CONFIG`. With no config file at all nothing changes.
+
+- Git itself can now authenticate as the folder's account over https, using the token gh already holds or one named by `tokenFile` - so a second account needs no ssh key, no host alias, and no rewritten remote URLs. The token is supplied through the environment for the length of one command and written nowhere.
+
+- `repo url [https|ssh]` shows how `origin` authenticates, or switches it between the two. Only the remote URL changes. The identity line suggests it where a repo is still on ssh but its account holds a token; `protocol = ssh` in the config says you meant it and stops the suggestion.
+
+- `account` lists the configured accounts and says which one the current folder resolves to, and from where. `account apply` writes the same folder rules into your global git config as `includeIf` blocks, so plain `git` outside gitsby behaves identically. Re-running it refreshes only the entries it wrote, leaves hand-written ones alone, and drops rules for accounts you removed.
+
+- `raw git <args>` and `raw gh <args>` run the real tool as the folder's account and pass everything after the tool name through verbatim, with the tool's own stdout and exit code. An existing script becomes account-correct by prefixing its commands rather than being rewritten. `GITSBY_ACCOUNT` overrides the folder for one run.
+
+- Two optional git config keys remain, for a repo that wants to answer for itself. `gitsby.ghAccount` names the account to act as, and `gitsby.ghTokenFile` names a file holding its token. Both are read through `git config`, so an `includeIf` on the repo path selects them, and both outrank the config file's folder rules.
+
+- `cicd/utility/include/gh-account.bash`, a sourceable version of the same selection for pipelines that call `gh` directly rather than through gitsby.
+
+### Fixed
+
+- The identity probe asks as the key git would actually push with, following `GIT_SSH_COMMAND` and then `core.sshCommand`. It used to run a bare `ssh`, so a repo that selects its key through config - the usual way to hold two accounts on one machine - was reported as the default key's account while git pushed as somebody else. Where gh's account happened to match the default key, the mismatch check passed while both halves were wrong.
+
+- The identity line names the key from the same source, so it can no longer report the right account beside the wrong key file.
+
+- `fetch` and the remote probe no longer override a repo's configured ssh key. Both set `GIT_SSH_COMMAND` for the connect timeout, which outranks `core.sshCommand`, so a private repo reachable only through the repo's own key reported as offline.
+
+- On Windows, a local-path remote on a drive letter was read as an ssh host named after the drive, so every command probed a machine called `C` for an account. `repo clone` re-run against a directory it had already cloned refused itself, and `repo connect` refused a URL matching the origin it already had - git stores a local path in the platform's own spelling, and both compared it as text against the spelling you typed.
+
+- PowerShell: `-Config=FILE` written as one word is refused by name, instead of failing in a way that looked like nothing had happened. PowerShell can't bind a joined option through `-File`: ahead of a command it took the next word as the option's value, so `br list` arrived as `list`; after one it overflowed the positional slots. The first of those printed the whole help and exited, which `-q` then silenced completely. Use `-Config FILE` or `-Config:FILE`. The Bash build takes the joined form as it always has, and `raw` still takes it too, since it reads the real command line.
+
+- `--config` with an empty file name is refused instead of falling back to the default config. A script expanding a variable that turned out to be empty was indistinguishable from never passing the option, so the run silently acted as whichever account the default file named - the wrong identity, on a push, with nothing said. An empty `GITSBY_CONFIG` still falls through, as an unset environment variable and an empty one are the same thing.
+
+### Other work
+
+- Both suites now run their PowerShell leg on Windows rather than only on Linux. Test stubs get a `.cmd` sibling, since PowerShell finds a shebang script on PATH but starts nothing and reads the silence as no output; and the checks that need a confirmation to refuse no longer depend on `setsid`, which Windows has no equivalent of.
+
+- The fuzz suite deliberately does not get that `.cmd` sibling, and skips four checks on the Windows PowerShell leg instead. Its arguments are hostile by design, and `cmd.exe` re-parses an unquoted `&` or `>` - which would run part of a vector for real and report an injection gitsby never had.
+
+- The fuzz suite also skips its glob-shaped clone directories on Windows, so it can pass there at all. Win32 forbids `*` and `?` in a path, so native git cannot create such a work tree in the first place and the check could never be satisfied. The same vectors still run everywhere else, where they pass.
+
+- The PowerShell build is verified on Linux, not just assumed to work there. Both suites run green on Debian, the same as on Windows.
+
+- Refusals that only checked an exit code now check the reason as well. A build predating a command also exits nonzero when handed it, so the exit code alone could not tell a working refusal from an unknown command.
+
 ## v2.0.2 - 2026-07-31
 
 ### Added
