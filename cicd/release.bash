@@ -121,7 +121,7 @@ if ! fWould "run cicd/cicd.bash --no-publish"; then
 	fNote "running the full pipeline before touching anything ..."
 	"${here}/cicd.bash" --no-publish -y -m "pre-release check" || fDie "the pipeline did not pass; nothing was changed."
 fi
-fEcho "Phase 1 OK: ${verBash} -> ${version}"
+fEcho "Phase 1 OK: v${verBash} -> ${version}"
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Phase 2: land. The only phase that pushes.
