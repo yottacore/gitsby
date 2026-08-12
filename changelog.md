@@ -78,6 +78,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Refusals that only checked an exit code now check the reason as well. A build predating a command also exits nonzero when handed it, so the exit code alone could not tell a working refusal from an unknown command.
 
+- Both installers say in the plan, before you agree to it, whether the download will be checked against the release's `SHA256SUMS`. That was reported only afterwards, and on the `--release dev` path not at all - so the one route that installs an unverified file was also the quiet one. Where the plan promises verification and it then can't happen, the install stops rather than noting it in passing; `--ref TAG` (`-Ref TAG`) takes it unverified as an explicit choice.
+
+- The PowerShell installer adds the install directory to your PATH on Windows, and says so in the plan. Nothing else on Windows does, so an install used to finish with a program that couldn't be run by name.
+
 - The pipeline fast-forwards from origin before it builds anything, in both engines. Its only pull used to be in the publish stage, which runs after lint, tests and fuzz have all passed - so a change merged upstream meanwhile was pushed having been validated against the older tree. It stops on a real divergence, warns and carries on when offline or with no upstream, and `--no-sync` (`-NoSync`) skips it.
 
 - The test suite no longer reads whatever accounts the person running it has configured. It already isolated git config and the commit identity; the accounts config decides which account a command acts as, and a single line in a real one failed three checks per implementation.

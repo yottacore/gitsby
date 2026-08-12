@@ -1205,6 +1205,10 @@ GHEOF
 			fAssertOut "--target system installs system-wide"   '/usr/local/bin/gitsby'        bash -c "${iRun} --target system </dev/null"
 			fAssertOut "-s still means --target system"         '/usr/local/bin/gitsby'        bash -c "${iRun} -s </dev/null"
 			fAssertOut "--arch is taken but reported inert"     'Ignore --arch arm64'          bash -c "${iRun} --arch arm64 </dev/null"
+			## Whether the download will be checked belongs in the plan, where it can still be
+			## declined. It used to be reported only afterwards, and on the dev path not at all -
+			## so the one route that installs an unverified file was the quiet one.
+			fAssertOut "the dev plan says it will not verify"   'NOT verify the download'      bash -c "${iRun} --target user </dev/null"
 		fi
 		## The PowerShell installer's ValidateSet does the same job as the case arms above.
 		if command -v pwsh >/dev/null 2>&1; then
@@ -1214,6 +1218,15 @@ GHEOF
 			fAssertFail "ps installer refuses a bad -Release"     pwsh -NoProfile -File "${instPs}" -Release beta
 			fAssertFail "ps installer refuses -Release with -Ref" pwsh -NoProfile -File "${instPs}" -Release dev -Ref main
 			fAssertOut  "ps installer refuses a path-shaped -Ref"  'not a path'  pwsh -NoProfile -File "${instPs}" -Yes -Ref '../../evil/repo/main'
+			## Same as the Bash plan above: state up front whether the download gets checked, and
+			## - on Windows - that PATH is about to be changed, since nothing else there puts the
+			## install directory on it and the install would otherwise finish uncallable by name.
+			fAssertOut  "ps dev plan says it will not verify"  'NOT verify the download' \
+				bash -c "pwsh -NoProfile -File '${instPs}' -Release dev </dev/null 2>&1"
+			if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]]; then
+				fAssertOut "ps plan announces the PATH change"  'to your account PATH' \
+					bash -c "pwsh -NoProfile -File '${instPs}' -Release dev </dev/null 2>&1"
+			fi
 			## Git Bash rewrites a unix-absolute argument into a Windows path before the native
 			## pwsh sees it, so '/etc/passwd' would arrive as 'C:/Program Files/Git/etc/passwd'
 			## and be refused for the space rather than for being a path. Excluding that one

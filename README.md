@@ -195,7 +195,9 @@ Full detail, including SSH keys, token files, and how Gitsby checks that `gh` an
 
 There are no distribution packages yet - nothing on apt, dnf, Homebrew, or winget. The install scripts are the supported route, and either one shows exactly what it will do and asks before doing it.
 
-By default they take the latest full release and verify the download against that release's `SHA256SUMS`. Asking for anything else - `--release dev`, or a branch or tag by name - pulls straight from the tree instead, and skips verification.
+By default they take the latest full release and verify the download against that release's `SHA256SUMS`. Asking for anything else - `--release dev`, or a branch or tag by name - pulls straight from the tree instead, and skips verification. Either way the plan says which of the two you are about to get, before you agree to it.
+
+On Windows the PowerShell installer also adds the install directory to your PATH, since nothing else there will, and says so in the plan. Open a new shell afterwards to pick it up.
 
 | Bash | PowerShell | Effect |
 | --- | --- | --- |

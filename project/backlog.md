@@ -19,6 +19,7 @@ This is a product backlog for the run-up to v2.0.0. After that release, bugs, fe
 	- [Done](#done)
 		- [Done - Bugs](#done---bugs)
 		- [Done - Features and enhancements](#done---features-and-enhancements)
+		- [Done - Installers 20260812](#done---installers-20260812)
 		- [Done - Pipeline 20260812](#done---pipeline-20260812)
 		- [Done - Documentation 20260812](#done---documentation-20260812)
 		- [Done - Code review 20260812](#done---code-review-20260812)
@@ -76,10 +77,6 @@ In each section, items are listed approximately from newest to oldest.
 	- Note: `--` is the common git disambiguator, so `raw git log -- path` cannot be run.
 
 - 🔘 `account apply` with no config file ends in a raw operating-system error, differently in each build.
-
-- 🔘 A Windows install finishes with the program not on `PATH`, and `.ps1` is not in `PATHEXT`.
-
-- 🔘 Both installers install anyway when `SHA256SUMS` is absent, and say nothing at all on the `--release dev` path.
 
 ### Features and enhancements
 
@@ -409,6 +406,18 @@ In each section, items are listed approximately from newest to oldest.
 
 - ✅ Delete stale branch from 2020.
 	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
+
+#### Done - Installers 20260812
+
+- ✅ A Windows install finished with the program not on `PATH`.
+	- Fixed: the PowerShell installer adds the install directory to the account (or system) PATH, and says so in the plan before you agree. Idempotent, and it leaves the current shell alone.
+	- `PATHEXT` deliberately NOT changed, and the original reasoning for it was wrong. PowerShell already resolves a bare `gitsby` to `gitsby.ps1` on `PATH` without it - verified with `PATHEXT` cut back to `.COM;.EXE;.BAT;.CMD`. It would only affect `cmd.exe`, which still cannot run a `.ps1` even with the entry, because that needs a file association - and the default association opens the script in an editor rather than running it. Adding it buys nothing and risks that.
+
+- ✅ Both installers installed anyway when `SHA256SUMS` was absent, and said nothing at all on the `--release dev` path.
+	- Fixed: the plan states which of the two you are about to get, before the confirmation.
+	- Fixed: where the plan promised verification and it can't happen, the install now stops instead of noting it in passing - separately naming the two causes, no published checksum and no sha256 tool here. `--ref TAG` takes it unverified, as an explicit choice.
+	- Note: the release-asset fallback to the tagged tree was the same broken promise and stops the same way.
+	- Verified against the real v2.0.2 release, both installers: plan promises verification, checksum verifies, correct version installed.
 
 #### Done - Pipeline 20260812
 
