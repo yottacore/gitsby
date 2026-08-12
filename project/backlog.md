@@ -56,6 +56,12 @@ In each section, items are listed approximately from newest to oldest.
 
 #### Done - Bugs
 
+- ✅ Twelve regression checks were testing nothing on Windows.
+	- The suite handed PowerShell its own MSYS paths. .NET has no mount table, so `/tmp/x` and `/c/x` were read against the current drive root - `Set-Location`, the script lookup and `ReadAllBytes` all failed and the commands under test never ran.
+	- Seven reported red. The other five passed because they forbid something that also never happened, which is the worse half. Among them the guard for the working-directory bug, which had been guarding nothing.
+	- Fixed with an `fWinPath` helper, the same conversion the folder-account block already needed. Two smaller ones alongside: Git Bash rewrites a unix-absolute argument before the native pwsh sees it, so the `-Ref` refusal was being triggered by the wrong rule; and the system install location is the platform's own, not `/usr/local/bin`.
+	- Windows now runs 850/0, matching Linux. Checked the repaired guard fails against the code that predates the working-directory fix, so it discriminates rather than merely passing.
+
 - ✅ The identity probe ignored the ssh key git was configured to push with.
 	- It ran a bare `ssh`, so a repo selecting its key through `core.sshCommand` was reported as the default key's account. Where that matched gh's account the mismatch check passed with both halves wrong - green in exactly the setup it exists for.
 	- Fixed to follow git's own precedence, `GIT_SSH_COMMAND` then `core.sshCommand`. The identity line takes the key file from the same source, so it can't name the right account beside the wrong key.
