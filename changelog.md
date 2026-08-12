@@ -66,6 +66,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `--config` with an empty file name is refused instead of falling back to the default config. A script expanding a variable that turned out to be empty was indistinguishable from never passing the option, so the run silently acted as whichever account the default file named - the wrong identity, on a push, with nothing said. An empty `GITSBY_CONFIG` still falls through, as an unset environment variable and an empty one are the same thing.
 
+- Windows: a folder rule spelled the way Git Bash spells paths now resolves in both builds. The PowerShell build folded the drive letter only after asking the filesystem, and .NET reads `/c/...` against the current drive - so nothing resolved, short names were left as written, and the same rule matched in one build and not the other. An MSYS mount path such as `/tmp/...` still cannot work in the native build, and `account` now marks any folder rule that resolves to no directory rather than letting it look like no rule at all.
+
+- The identity line says when an account was resolved but could not be applied. With no token available gh goes on using its own account, and the block that exists to answer who a push goes out as was naming the other one.
+
+- `sync` compares identities before it pushes. The commands that push with git rather than writing through gh now ask whether the folder's account is the one origin will authenticate as: a warning interactively, a refusal unattended, and `--any-identity` (`-AnyIdentity`) says it was intended.
+
+- `account apply` also writes `credential.https://github.com.username`, so plain `git` over https asks for the folder's account instead of whichever credential the helper happened to hold first. It wrote the ssh half and left that gap open.
+
+- PowerShell: an unknown option is named. It landed in the remaining-arguments slot, left the command empty, and got answered with the whole help text - or under `-q` with nothing at all but an exit code.
+
+- `br prune` asks git once per target ref instead of twice per branch. The re-check immediately before each delete stays: that one is the safety net, not the survey.
+
+- `account apply` writes its `includeIf` rules shortest path first. git applies includes in file order and the last match wins, while gitsby takes the longest matching folder - so a tree nested inside another account's tree got whichever account was declared later, and plain `git` then disagreed with gitsby about that one directory, which is the single thing `apply` exists to prevent.
+
+- `--config` (`-Config`) requires a readable regular file in both builds. Bash took a directory, loaded no accounts and exited 0; PowerShell passed silently over an unreadable file. Either way the run went on to act as an account nobody chose. A config found in one of the default locations is still skipped rather than refused - nobody asserted that one was there.
+
+- An account name is matched whatever case you type it in. Bash's loader lowercases the key on the way in but its lookup did not, so it could miss the entry it had just stored.
+
+- Gitsby's own options all work before `raw` now. Only a handful were taken, and anything else produced "Unknown command 'raw'" - naming the one token that was not the problem. The ones with nothing to act on in a passthrough are accepted and inert; `-h` and `-v` still mean help and version.
+
+- PowerShell: `raw` can pass git's `--` pathspec separator, spelled `` `-- ``. A bare `--` is taken by PowerShell's parameter binder before the script starts, so it can never reach the tool at all. The Bash build takes a plain `--`.
+
+- `account apply` reports an unusable include directory in gitsby's own words, instead of a raw shell or .NET error that differed between the two builds.
+
+- Both installers say in the plan, before you agree to it, whether the download will be checked against the release's `SHA256SUMS`. That was reported only afterwards, and on the `--release dev` path not at all - so the one route that installs an unverified file was also the quiet one. Where the plan promises verification and it then can't happen, the install stops rather than noting it in passing; `--ref TAG` (`-Ref TAG`) takes it unverified as an explicit choice.
+
+- The PowerShell installer adds the install directory to your PATH on Windows, and says so in the plan. Nothing else on Windows does, so an install used to finish with a program that couldn't be run by name.
+
 ### Other work
 
 - Both suites now run their PowerShell leg on Windows rather than only on Linux. Test stubs get a `.cmd` sibling, since PowerShell finds a shebang script on PATH but starts nothing and reads the silence as no output; and the checks that need a confirmation to refuse no longer depend on `setsid`, which Windows has no equivalent of.
@@ -78,9 +106,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Refusals that only checked an exit code now check the reason as well. A build predating a command also exits nonzero when handed it, so the exit code alone could not tell a working refusal from an unknown command.
 
-- Both installers say in the plan, before you agree to it, whether the download will be checked against the release's `SHA256SUMS`. That was reported only afterwards, and on the `--release dev` path not at all - so the one route that installs an unverified file was also the quiet one. Where the plan promises verification and it then can't happen, the install stops rather than noting it in passing; `--ref TAG` (`-Ref TAG`) takes it unverified as an explicit choice.
+- A parity suite, `cicd/parity.bash`, runs in the test stage of both engines. It asks whether the two builds *answer the same* for one input, where the regression suite asks whether each behaves correctly - a check written per implementation passes on both while they quietly disagree, which is what every port defect that reached users actually was. It found two real divergences while being written.
 
-- The PowerShell installer adds the install directory to your PATH on Windows, and says so in the plan. Nothing else on Windows does, so an install used to finish with a program that couldn't be run by name.
+- `cicd/release.bash` cuts a release end to end, in three phases so a failure never leaves a half-cut one: verify and change nothing, land, then publish and prove by running the documented installer against the published release. `--dry-run` says what it would do. It guards the two things that have been forgotten by hand - the two builds agreeing on the version, and the history footers carrying an entry since the last tag.
 
 - The pipeline fast-forwards from origin before it builds anything, in both engines. Its only pull used to be in the publish stage, which runs after lint, tests and fuzz have all passed - so a change merged upstream meanwhile was pushed having been validated against the older tree. It stops on a real divergence, warns and carries on when offline or with no upstream, and `--no-sync` (`-NoSync`) skips it.
 

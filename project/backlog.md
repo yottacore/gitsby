@@ -19,6 +19,8 @@ This is a product backlog for the run-up to v2.0.0. After that release, bugs, fe
 	- [Done](#done)
 		- [Done - Bugs](#done---bugs)
 		- [Done - Features and enhancements](#done---features-and-enhancements)
+		- [Done - Accounts, parity and release automation 20260812](#done---accounts-parity-and-release-automation-20260812)
+		- [Done - Accounts and arguments 20260812](#done---accounts-and-arguments-20260812)
 		- [Done - Installers 20260812](#done---installers-20260812)
 		- [Done - Pipeline 20260812](#done---pipeline-20260812)
 		- [Done - Documentation 20260812](#done---documentation-20260812)
@@ -52,47 +54,7 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Bugs
 
-- 🔘 `account apply` orders its rules the opposite way from the way gitsby matches them.
-	- Cause: gitsby takes the longest matching folder; git applies includes in file order and the last one wins.
-	- Note: the fragment also sets `gitsby.ghAccount`, which outranks the folder rule, so applying changes what gitsby itself does in a nested folder.
-	- Probable fix: write the rules shortest path first, and refuse two accounts claiming one folder.
-
-- 🔘 On Windows a folder rule written the way this shell spells paths resolves in one build and not the other.
-	- Cause: the PowerShell build rewrites the drive letter after trying the filesystem, so `/c/...` never resolves and short names and junctions are left alone.
-	- Probable fix: rewrite the drive letter first.
-
-- 🔘 The identity lines report the account that was resolved, not the one that was applied.
-	- Note: naming an account that holds no token still prints that name, in the command meant to answer who a thing went out as.
-
-- 🔘 `sync` compares no identities before it pushes, and the comparison cannot fire on an https remote at all.
-
-- 🔘 Bash accepts `--config` naming a directory, prints a shell error, loads no accounts and exits 0.
-	- Note: the PowerShell build refuses it. The reverse hole is an unreadable file, which PowerShell passes over silently.
-
-- 🔘 `GITSBY_ACCOUNT` matches an account name case-sensitively in Bash and case-insensitively in PowerShell.
-
-- 🔘 Only `-q`, `-y` and `--config` may precede `raw`; anything else fails, and the message blames the tool's own arguments.
-
-- 🔘 PowerShell `raw` takes `--`, `-v` and `-h` for itself before the tool sees them.
-	- Note: `--` is the common git disambiguator, so `raw git log -- path` cannot be run.
-
-- 🔘 `account apply` with no config file ends in a raw operating-system error, differently in each build.
-
 ### Features and enhancements
-
-- 🛠️ Fully automate new releases, end-to-end.
-	- Design done: `design.md` -> "Automating a release". `cicd/release.bash` in three phases (prepare and verify, land, publish and prove), so a failure never leaves a half-cut release.
-	- Left to do: write it. The design names the two guards worth having - the history footers, and the two builds agreeing on the version - because both have been missed by hand.
-
-- 🔘 `account apply` writes identity and key but nothing about credentials, so plain `git` over https still picks its own account.
-	- Note: `credential.<url>.username` plus `credential.useHttpPath` is the documented way, and would close the gap the ssh half already covers.
-
-- 🔘 Add a parity suite that compares language mechanisms rather than behaviour.
-	- Note: every port defect that reached users was of that kind - file encoding, parameter binding, return types, path resolution. The behavioural suite is blind to them by construction.
-	- Note: a table of ugly path spellings fed to both builds, asserting one answer, would have caught the folder-rule bug above.
-
-- 🔘 `br prune` asks about one branch at a time where `git for-each-ref --merged` answers for all of them at once.
-	- Note: the delete-time re-check can stay - it is the same question asked again, and can be asked the same way.
 
 ### Done
 
@@ -406,6 +368,67 @@ In each section, items are listed approximately from newest to oldest.
 
 - ✅ Delete stale branch from 2020.
 	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
+
+#### Done - Accounts, parity and release automation 20260812
+
+- ✅ On Windows a folder rule spelled the way this shell spells paths resolved in one build and not the other.
+	- Cause: the PowerShell build folded the drive letter *after* asking the filesystem, and .NET reads a `/c/...` path against the current drive - which never exists. So nothing resolved, and short names and junctions were left as written.
+	- Fixed: fold the drive letter first. All four spellings now resolve identically in both builds, short names included.
+	- Known limit, and now visible rather than silent: an MSYS *mount* path such as `/tmp/...` has no meaning to the native build and never can, since only the shell knows its own mount table. `account` marks any folder rule that resolves to no directory, which shows that up along with ordinary typos.
+
+- ✅ The identity lines reported the account that was resolved, not the one that was applied.
+	- Fixed: an account with no token available now says so on the line. It is still resolved, but gh goes on using its own account - and the block whose whole job is answering "who does this go out as" was naming the wrong one.
+	- Only for a configured or explicitly asked-for account; one inferred from the remote's owner is not a claim that we can act as it.
+
+- ✅ `sync` compared no identities before it pushed.
+	- Fixed: the commands that push with git, rather than writing through gh, now ask whether the folder's account is the one origin will actually authenticate as. A warning interactively, a refusal unattended, and `--any-identity` says it was intended.
+	- The https half is covered by the item above: gitsby supplies the token itself, so the push goes out as the resolved account or says it could not.
+
+- ✅ `account apply` wrote identity and key but nothing about credentials.
+	- Fixed: the fragment now sets `credential.https://github.com.username`, so a credential manager looks up that account's entry rather than any entry for the host.
+
+- ✅ Added a parity suite: `cicd/parity.bash`, wired into the test stage of both engines.
+	- It asks whether the two builds *answer the same* for one input, where `test.bash` asks whether each behaves correctly. A behavioural check written per implementation passes on both while they quietly disagree - which is what every port defect that reached users actually was.
+	- Covers path spellings, option forms, string case and file encoding: 23 comparisons.
+	- It earned its place while being written, finding two real divergences: the `/tmp` mount limitation above, and PowerShell answering an unknown option with the entire help text - and under `-q` with nothing at all but an exit code - where Bash named the option.
+
+- ✅ `br prune` asked about one branch at a time.
+	- Fixed: `git for-each-ref --merged` answers for every branch in one call per target ref, instead of two ancestry questions per branch. The delete-time re-check stays per branch, deliberately: that one is the safety net, not the survey.
+	- Verified on a 33-branch repo - the same 30 merged branches pruned, the same 3 unmerged kept.
+
+- ✅ Fully automated releases, end to end: `cicd/release.bash`, to the three-phase shape in `design.md`.
+	- Phase 1 verifies and changes nothing, phase 2 is the only one that pushes, and phase 3 publishes and then proves the result the way a user meets it - by running the documented installer against the published release.
+	- Both guards exist because the thing they check has already gone wrong: the two builds' version strings drifting apart, and the history footers going a whole release with no entry.
+	- `--dry-run` says what each phase would do and changes nothing. Writing it that way immediately caught a bug in the script itself: a loose version match picked a version-shaped string out of a comment, which phase 2 would then have rewritten instead of the real declaration.
+
+#### Done - Accounts and arguments 20260812
+
+- ✅ `account apply` ordered its rules the opposite way from the way gitsby matches them.
+	- Cause: gitsby takes the longest matching folder; git applies includes in file order and the last match wins. The rules were written grouped by account, in declaration order.
+	- Note: so a tree nested inside another account's tree got whichever account happened to be declared later, and plain git and gitsby then disagreed about one directory - the single thing `apply` exists to prevent.
+	- Fixed: shortest path first, so the longest match is written last and wins in git too. Folder is the tie-break, so the order is deterministic.
+	- Verified both ways: with the old build, plain git in the nested folder used the outer account's email while gitsby resolved the inner account. Both now say inner.
+
+- ✅ Bash accepted `--config` naming a directory: shell error, no accounts, exit 0. PowerShell's matching hole was an unreadable file, passed over silently.
+	- Fixed: both now require a readable regular file, and refuse by name. A *discovered* config is still skipped rather than refused - nobody asserted that one was there.
+	- Note: PowerShell has no readable bit, so the test is opening the file.
+
+- ✅ `GITSBY_ACCOUNT` matched an account name case-sensitively in Bash, case-insensitively in PowerShell.
+	- Cause: Bash's loader lowercases the whole key on the way in, but the lookup lowercased only the key half and left the account name as typed - so it could miss what it had just stored.
+	- Fixed: lowercase both halves, which makes Bash self-consistent and matches PowerShell.
+
+- ✅ Only `-q`, `-y` and `--config` could precede `raw`, and the error blamed the wrong thing.
+	- Note: worse than recorded - the message was "Unknown command 'raw'", which is false. Only the passthrough's own scan runs before `raw`, so an option it didn't take left the main parser looking at a command by that name.
+	- Fixed: the scan takes gitsby's whole option vocabulary, spelled and normalized the same way the main parser does it. The ones with nothing to act on in a passthrough are inert. `-h` and `-v` still fall through to the main parser, and a genuinely unknown option is refused by its own name.
+
+- ✅ PowerShell `raw` could not pass `--`, git's pathspec separator.
+	- Cause is NOT what was recorded, and matters: PowerShell's binder reads a bare `--` as an empty parameter name and fails *before the script runs at all*. Nothing in the passthrough can intercept it. Five param-block shapes were tested; a script with no `param()` block receives `--` fine.
+	- Fixed as far as it can be: `` `-- `` survives binding, and is handed to the tool as `--`. Documented in `accounts.md`.
+	- Note: dropping the `param()` block would fix this and the joined-option binding together. Not taken - it is a large change to a documented option surface.
+
+- ✅ `account apply` ended in a raw operating-system error, a different one in each build.
+	- Note: not the no-config case, which already reports itself properly. The trigger is the include directory being unusable - something else already at that path.
+	- Fixed: check the directory before writing anything, and fail in gitsby's own voice. Nothing partial was ever written, and still isn't.
 
 #### Done - Installers 20260812
 

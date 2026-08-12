@@ -113,6 +113,7 @@ $script:acctName = ''          ## configured account claiming this folder, if an
 $script:acctGhWho = ''         ## the GitHub account this run acts as
 $script:acctSource = ''        ## how we decided that, for the identity line
 $script:acctExplicit = $false  ## asked for by name, rather than inferred from the remote
+$script:accountNoToken = $false ## resolved an account, but found no token to actually act as it
 $script:accountApplied = $false
 $script:accountUsedHttpsAuth = $false  ## git authenticates over https with the account's token
 $script:accountUsedSshKey = ''         ## ...or with the key the account names
@@ -592,6 +593,13 @@ function Get-CanonPath {
     ## already spelled one way, and resolving here but not there would reintroduce the divergence
     ## this exists to remove - a symlinked folder would match in one build and not the other.
     if ($IsWindows) {
+        ## The drive letter is folded FIRST, because everything below asks the filesystem and .NET
+        ## does not understand this shell's '/c/...' spelling - it resolves that against the current
+        ## drive as 'C:\c\...', which never exists. So the loop below used to strip the whole path
+        ## down, resolve nothing, and leave short names ('COLLIE~1') and junctions as written, while
+        ## the Bash build's 'cd' does understand '/c/...' and normalized them. The same folder rule
+        ## then matched in one build and not the other, silently.
+        if ($p -match '^/([A-Za-z])(/.*)?$') { $p = $Matches[1] + ':' + $(if ($Matches[2]) { $Matches[2] } else { '/' }) }
         $head = $p; $tail = ''
         while ($head -and -not (Test-Path -LiteralPath $head -PathType Container) -and $head.Contains('/')) {
             $leaf = $head.Substring($head.LastIndexOf('/') + 1)
@@ -679,6 +687,14 @@ function Test-HttpsConversion {
     return [bool](Get-AccountToken)
 }
 
+function Test-FileReadable {
+    ## Can this file actually be opened for reading? Windows has no readable bit to test, and
+    ## 'Test-Path' only answers whether something is there, so the open is the test.
+    param([Parameter(Mandatory)][string]$Path)
+    try { $stream = [IO.File]::OpenRead($Path); $stream.Dispose(); return $true }
+    catch { return $false }
+}
+
 function Get-ConfigFile {
     ## The config file to read: the first candidate that exists, or '' at all. The order is identical
     ## in both builds, so the same box answers the same whichever one you run. A file named explicitly
@@ -690,15 +706,34 @@ function Get-ConfigFile {
     ## because the file it fell back to decides which account the run acts as: the push would go out
     ## as the wrong identity, quietly. An empty GITSBY_CONFIG below is left alone deliberately - an
     ## unset variable and an empty one are the same thing in the environment, unlike a typed option.
+    ## 'Test-Path -PathType Leaf' answers "is there a file there", not "can it be read", so an
+    ## unreadable one got past this and then failed silently in the loader - no accounts, exit 0,
+    ## and the run acting as gh's own identity. Opening it is the only honest test on Windows,
+    ## which has no readable bit to check.
+    ## Absent first, then not-a-file, then unreadable - the same order as the Bash build. A typo'd
+    ## name is the ordinary mistake and deserves the plain "not there" answer; "isn't a file" is
+    ## reserved for something that really is there and is the wrong kind of thing.
     if ($script:configFileGiven) {
         if (-not $script:configFileArg) { throw "--config was given an empty file name." }
+        if (-not (Test-Path -LiteralPath $script:configFileArg)) {
+            throw "No readable config file at '$($script:configFileArg)'."
+        }
         if (-not (Test-Path -LiteralPath $script:configFileArg -PathType Leaf)) {
+            throw "-Config names '$($script:configFileArg)', which isn't a file."
+        }
+        if (-not (Test-FileReadable -Path $script:configFileArg)) {
             throw "No readable config file at '$($script:configFileArg)'."
         }
         return $script:configFileArg
     }
     if ($env:GITSBY_CONFIG) {
+        if (-not (Test-Path -LiteralPath $env:GITSBY_CONFIG)) {
+            throw "GITSBY_CONFIG names '$($env:GITSBY_CONFIG)', which can't be read."
+        }
         if (-not (Test-Path -LiteralPath $env:GITSBY_CONFIG -PathType Leaf)) {
+            throw "GITSBY_CONFIG names '$($env:GITSBY_CONFIG)', which isn't a file."
+        }
+        if (-not (Test-FileReadable -Path $env:GITSBY_CONFIG)) {
             throw "GITSBY_CONFIG names '$($env:GITSBY_CONFIG)', which can't be read."
         }
         return $env:GITSBY_CONFIG
@@ -708,7 +743,9 @@ function Get-ConfigFile {
     if (Get-HomeDir)          { $candidates += (Join-Path (Get-HomeDir)  '.config/gitsby/config.shcl') }
     if ($env:APPDATA)         { $candidates += (Join-Path $env:APPDATA      'gitsby/config.shcl') }
     foreach ($candidate in $candidates) {
-        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+        ## A discovered candidate is skipped rather than refused - unlike one named explicitly,
+        ## nobody asserted it was there. Same rule in both builds.
+        if ((Test-Path -LiteralPath $candidate -PathType Leaf) -and (Test-FileReadable -Path $candidate)) { return $candidate }
     }
     return ''
 }
@@ -916,6 +953,15 @@ function Select-GitsbyAccount {
         Add-GitConfigEnv -Key 'credential.https://github.com.helper' -Value '!f(){ test "$1" = get && { echo username=x; echo "password=${GH_TOKEN}"; }; }; f'
         $script:accountUsedHttpsAuth = $true
     }
+    elseif ($script:acctGhWho -and ($script:acctExplicit -or $script:acctName)) {
+        ## An account we resolved but cannot act as. Everything else about the run is unchanged, so
+        ## gh goes on using whichever account it is logged in as - and the identity block would have
+        ## named this one anyway, reporting what was RESOLVED rather than what was APPLIED. That is
+        ## the wrong answer in the one place whose whole job is saying who a thing goes out as.
+        ## Only for an account that was configured or asked for: one merely guessed from the remote
+        ## owner is not a claim that we can act as it.
+        $script:accountNoToken = $true
+    }
     ## The ssh key stays supported as the way that needs no token at all. Only when nothing already
     ## says which key to use: an explicit GIT_SSH_COMMAND, or one set on the repo, was chosen more
     ## deliberately than a folder rule was.
@@ -984,9 +1030,16 @@ function Invoke-PassthroughIfAsked {
         return
     }
     $tool = ''; $toolArgs = @(); $wantConfig = $false; $wantTool = $false; $quiet = $false; $configPath = ''; $configGiven = $false
+    $wantValue = $false
     foreach ($arg in $raw) {
         $token = [string]$arg
+        ## A bare '--' can never reach here: PowerShell's binder reads it as an empty parameter
+        ## name and fails before this script runs at all, so there is nothing to intercept. An
+        ## escaped '`--' does survive, and is handed to the tool as the '--' that was meant.
+        ## Bash needs none of this and takes '--' directly.
+        if ($tool -and $token -eq '`--') { $toolArgs += '--'; continue }
         if     ($tool)        { $toolArgs += $token; continue }
+        elseif ($wantValue)   { $wantValue = $false; continue }
         elseif ($wantConfig)  { $configPath = $token; $configGiven = $true; $wantConfig = $false; continue }
         elseif ($wantTool)    {
             if ($token -notin 'git', 'gh') { throw "Unknown 'raw' subcommand '${token}'. One of: git, gh." }
@@ -996,6 +1049,15 @@ function Invoke-PassthroughIfAsked {
         elseif ($token -in '-q', '-Quiet', '-y', '-Yes')             { $quiet = $true }
         elseif ($token -eq '-Config' -or $token -eq '--config')      { $wantConfig = $true }
         elseif ($token -like '-Config=*' -or $token -like '--config=*') { $configPath = $token.Substring($token.IndexOf('=') + 1); $configGiven = $true }
+        ## Taken and inert: the passthrough never fetches, previews an identity, sets a visibility
+        ## or writes a commit. Refusing them made the main parser see a command called 'raw' and
+        ## report 'Unknown command', naming the one token that was not the problem.
+        elseif ($token -in '-NoFetch', '--no-fetch', '-AnyIdentity', '--any-identity',
+                           '-Public', '--public', '-Private', '--private')     { }
+        elseif ($token -in '-m', '-Message', '--message', '--msg')   { $wantValue = $true }
+        elseif ($token -like '-Message=*' -or $token -like '-m=*')   { }
+        ## -Help and -Version fall through on purpose: they are the main parser's job, not
+        ## something to swallow on the way to a passthrough.
         else   { break }
     }
     if ($wantTool) { throw "Syntax: $($script:meName) raw <git|gh> <arguments ...>" }
@@ -1303,6 +1365,9 @@ function Show-Identity {
         ## The one thing the lines below can't show: an https push authenticating with the token
         ## rather than with a key, which is what makes a second account work with no ssh setup.
         if ($script:accountUsedHttpsAuth) { $acctLine = "${acctLine}, git over https" }
+        ## Say plainly when the name above is only what we resolved. Without this the block named an
+        ## account nothing was actually acting as.
+        if ($script:accountNoToken) { $acctLine = "${acctLine} - NOT applied: no token for it here, so gh acts as its own account" }
         Write-PlainLine "Account ......: ${acctLine}"
         ## This repo could authenticate with the account's token instead of a key, and doesn't.
         ## Worth one line, because it is the whole point of configuring accounts this way - and
@@ -1919,7 +1984,12 @@ function Show-AccountList {
         $proto = Get-AccountValue -Name $name -Key 'protocol'
         if ($proto) { Write-PlainLine "     protocol : ${proto}" }
         foreach ($folder in (Get-AccountFolderList -Name $name)) {
-            Write-PlainLine "     folder ..: ${folder}"
+            ## A rule pointing at nothing matches nothing, and reads exactly like no rule at all -
+            ## which is how you end up acting as the wrong account while believing you configured
+            ## it. Usually a typo; on Windows it is also how a shell-only path spelling such as
+            ## '/tmp/...' looks, since only the Bash build can resolve one and this cannot.
+            if (Test-Path -LiteralPath $folder -PathType Container) { Write-PlainLine "     folder ..: ${folder}" }
+            else { Write-PlainLine "     folder ..: ${folder}  (no such directory - this rule can never match)" }
         }
     }
 }
@@ -1930,12 +2000,21 @@ function Get-AccountApplyPlan {
     ## that silently misses because of a capital letter is worse than no rule.
     $dir = Get-AccountIncludeDir
     if (-not $dir) { return @() }
-    $plan = @()
+    $rules = @()
     foreach ($name in (Get-AccountNameList)) {
         foreach ($folder in (Get-AccountFolderList -Name $name)) {
-            ## The trailing slash is what makes git apply it to everything below the folder too.
-            $plan += [pscustomobject]@{ Condition = "includeIf.gitdir/i:${folder}/.path"; File = "${dir}/${name}.gitconfig" }
+            $rules += [pscustomobject]@{ Folder = $folder; Name = $name }
         }
+    }
+    ## Shortest path first. git applies includes in file order and the LAST match wins, while
+    ## gitsby takes the LONGEST matching folder - so written in declaration order, a tree nested
+    ## inside another account's tree got whichever account happened to be declared later. That
+    ## makes plain git and gitsby disagree about the same directory, which is the one thing
+    ## 'account apply' exists to prevent. Folder is the tie-break so the order is deterministic.
+    $plan = @()
+    foreach ($rule in ($rules | Sort-Object -Property @{ Expression = { $_.Folder.Length } }, Folder)) {
+        ## The trailing slash is what makes git apply it to everything below the folder too.
+        $plan += [pscustomobject]@{ Condition = "includeIf.gitdir/i:$($rule.Folder)/.path"; File = "${dir}/$($rule.Name).gitconfig" }
     }
     return @($plan)
 }
@@ -1971,8 +2050,16 @@ function Invoke-GitsbyAccountApply {
     ## in one of these folders behaves the same as it does through us. One fragment per account, and
     ## an includeIf per folder rule pointing at it - written with 'git config', never by editing the
     ## file ourselves, so git's own parser decides what a valid entry looks like.
+    ## Check the directory is usable BEFORE writing anything. Left to the file writes, a blocked
+    ## path surfaced as a raw .NET error - a different one from the Bash build's - part way through
+    ## the run, which reads as a crash rather than as something you can act on.
     $dir = Get-AccountIncludeDir
-    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    if (-not $dir) { throw "No config file, so there is nowhere to write the account fragments." }
+    if ((Test-Path -LiteralPath $dir) -and -not (Test-Path -LiteralPath $dir -PathType Container)) {
+        throw "'${dir}' is where the account fragments go, and it isn't a directory. Move or remove it, then re-run."
+    }
+    try { New-Item -ItemType Directory -Force -Path $dir -ErrorAction Stop | Out-Null }
+    catch { throw "Couldn't create '${dir}' for the account fragments. Check permissions on '$(Split-Path -Parent $dir)'." }
     foreach ($name in (Get-AccountNameList)) {
         $fragment = "${dir}/${name}.gitconfig"
         ## Rewritten whole each time: these files are ours, and a leftover key from a removed
@@ -1984,6 +2071,12 @@ function Invoke-GitsbyAccountApply {
         if ($acctEmail) { git config --file $fragment user.email $acctEmail }
         $ghWho = Get-AccountValue -Name $name -Key 'ghAccount'
         if ($ghWho) { git config --file $fragment gitsby.ghAccount $ghWho }
+        ## Which account plain git should ASK for over https. Without it the fragment covered the
+        ## ssh half and left the https half to whichever credential the helper happened to hold
+        ## first - so a bare 'git push' in a configured folder could still go out as someone else,
+        ## which is the gap 'apply' exists to close. Naming the user is what makes a credential
+        ## manager look up that account's entry rather than any entry for the host.
+        if ($ghWho) { git config --file $fragment 'credential.https://github.com.username' $ghWho }
         $tokenFile = Get-AccountValue -Name $name -Key 'tokenFile'
         if ($tokenFile) { git config --file $fragment gitsby.ghTokenFile $tokenFile }
         $sshKey = Get-AccountValue -Name $name -Key 'sshKey'
@@ -2189,10 +2282,19 @@ try {
     if ($Public -and $Private) { throw '--public and --private are mutually exclusive; pick one.' }
     if ($Help) { Show-Copyright; Show-About; Show-Syntax; Write-PlainLine ''; exit 0 }
     if ($Version) { Show-Copyright; exit 0 }
-    if (-not $Command) { Show-Copyright; Show-About; Show-Syntax; exit 1 }
-
     ## 'gitsby git ...' and 'gitsby gh ...' hand everything after the verb to the real tool.
+    ## Ahead of the two checks below, both of which would otherwise judge git's own arguments: past
+    ## the tool name a '--format=%s' is git's option, not an unknown one of ours.
     Invoke-PassthroughIfAsked
+
+    ## Before the empty-command fallback below, not after it. An option this script does not declare
+    ## is not rejected by the binder - it lands in $Rest and leaves $Command empty, so the fallback
+    ## answered a typo with the entire help text, and under -q with nothing at all but an exit code.
+    ## Bash names the option, so the two builds refused the same typo with different information.
+    foreach ($extra in $Rest) {
+        if ([string]$extra -match '^--?[^ -]') { throw "Unexpected option in this context: '${extra}'." }
+    }
+    if (-not $Command) { Show-Copyright; Show-About; Show-Syntax; exit 1 }
 
     ## Breathing room after the shell prompt (the matching trailing blank is at each exit path).
     ## After the passthrough, which owns its own output and must not have ours mixed into it.
@@ -2200,15 +2302,21 @@ try {
 
     if (-not (Get-Command -Name git -ErrorAction SilentlyContinue)) { throw 'Not found in path: git' }
 
-    ## A fifth positional reaches $Rest. Bash counts them and says so; without this the binder's own
-    ## message would be the only sign, and the two builds would refuse the same typo differently.
-    if ($Rest.Count -gt 0) { throw "Too many positional arguments: $(4 + $Rest.Count), for max of 4." }
-
-    ## Anything else option-shaped in the positional slots is a mistake, not data.
+    ## Anything option-shaped in the positional slots is a mistake, not data - and it is checked
+    ## BEFORE the count below, because an unknown option is usually also what pushed the count over
+    ## the limit. Counted first, the answer was "too many positional arguments" where Bash named the
+    ## option, so the two builds refused the same typo with different information.
     if ($Command -match '^--?[^ -]') { throw "Unexpected option in this context: '${Command}'." }
     if ($CommandArg -match '^--$|^--?[^ -]') { throw "Unexpected option in this context: '${CommandArg}'." }
     if ($CommandArg2 -match '^--$|^--?[^ -]') { throw "Unexpected option in this context: '${CommandArg2}'." }
     if ($CommandArg3 -match '^--$|^--?[^ -]') { throw "Unexpected option in this context: '${CommandArg3}'." }
+    foreach ($extra in $Rest) {
+        if ([string]$extra -match '^--?[^ -]') { throw "Unexpected option in this context: '${extra}'." }
+    }
+
+    ## A fifth positional reaches $Rest. Bash counts them and says so; without this the binder's own
+    ## message would be the only sign, and the two builds would refuse the same typo differently.
+    if ($Rest.Count -gt 0) { throw "Too many positional arguments: $(4 + $Rest.Count), for max of 4." }
 
     ## Grouped commands are '<noun> <verb> [args]'. Collapse each pair to one internal token and
     ## shift the positionals down, so everything downstream still deals with a single flat name.
@@ -2674,6 +2782,23 @@ try {
         ## Up front, like every other refusal: don't show a plan we won't run.
         if ($identityMismatch -and $script:doQuietly) { throw "${identityMismatch} Nothing was done. Re-run with -AnyIdentity if that is intended." }
     }
+    ## The same question for the commands that push with git rather than write through gh - 'sync'
+    ## above all, which sends your work to a remote and compared nothing at all. Is the account this
+    ## folder resolved to the one origin will actually authenticate as?
+    ##
+    ## Only for an account that was CONFIGURED or asked for. One inferred from the remote's owner
+    ## says nothing about who you are, and comparing that would fire for every single-account user
+    ## cloning somebody else's repo. The ssh answer is already cached by the identity block, so this
+    ## costs no extra round trip, and an https remote answers '?' - where gitsby supplies the token
+    ## itself, so the push already goes out as the resolved account, or says it could not.
+    if ($isMutating -and -not $AnyIdentity -and -not $identityMismatch -and $script:acctGhWho -and
+        ($script:acctExplicit -or $script:acctName)) {
+        $pushLogin = Get-SshLogin -RemoteUrl ([string](@(git remote get-url origin 2>$null) | Select-Object -First 1))
+        if ($pushLogin -and $pushLogin -ne '?' -and $pushLogin -ne $script:acctGhWho) {
+            $identityMismatch = "This folder's account is '$($script:acctGhWho)', but origin's key authenticates as '${pushLogin}'."
+            if ($script:doQuietly) { throw "${identityMismatch} Nothing was done. Re-run with -AnyIdentity if that is intended." }
+        }
+    }
 
     ## Read-only commands
     if (-not $isMutating) {
@@ -2838,3 +2963,13 @@ try {
 ##      - 20260812 JC: The fetch and the remote probe add their connect timeout to git's own ssh command rather than replacing it. A repo carrying core.sshCommand - the usual way to hold two accounts on one machine - was read with the default key, so a private repo only the account's key can reach reported as unreachable and the publishing commands then refused.
 ##      - 20260812 JC: 'origin/HEAD' healing and the passthrough's gh probe - in step with bin/gitsby.
 ##      - 20260812 JC: The identity line names an account asked for by name - in step with bin/gitsby.
+##      - 20260812 JC: Apply ordering, the config-file checks and the 'raw' option scan - in step with bin/gitsby.
+##      - 20260812 JC: 'raw' takes '`--' and hands git the '--' it means. PowerShell's binder reads a bare '--'
+##        as an empty parameter name and fails before this script runs, so it can never be intercepted here.
+##      - 20260812 JC: Identity reporting, the push-side identity comparison, the credential username
+##        and the folder-rule marker - in step with bin/gitsby.
+##      - 20260812 JC: The drive letter is folded BEFORE the filesystem is asked. .NET reads '/c/...'
+##        against the current drive, so nothing resolved and short names were left as written - the
+##        same folder rule then matched in the Bash build and not this one, silently.
+##      - 20260812 JC: An unknown option is named. It lands in $Rest and leaves $Command empty, so it
+##        was answered with the whole help text, and under -q with nothing but an exit code.
