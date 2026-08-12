@@ -296,6 +296,15 @@ if ((! do_test)); then
 elif [[ -f "${TEST_CMD[0]:-}" ]]; then
 	"${TEST_CMD[@]}"
 	fEcho "OK: tests passed"
+	## The behavioural suite runs the same checks once per build, so it passes on both while the two
+	## quietly disagree about the same input - which is what every port defect that reached users
+	## actually was. This asks the other question: do they ANSWER the same? Skips itself with a
+	## reason where pwsh is absent, since there is then nothing to compare against.
+	if [[ -f "${root}/cicd/parity.bash" ]]; then
+		fEcho_Clean ""
+		bash "${root}/cicd/parity.bash"
+		fEcho "OK: builds agree"
+	fi
 else
 	fEcho_Clean "no test harness yet (${TEST_CMD[0]:-cicd/test.bash} - lands with the bin/gitsby refactor)"
 fi

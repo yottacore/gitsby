@@ -699,6 +699,14 @@ function Invoke-Main {
     elseif (Test-Path -LiteralPath (Join-Path $Root $TestScript)) {
         if ((Invoke-BashHarness -Script $TestScript) -ne 0) { fDie "regression tests" }
         fEcho "OK: tests passed"
+        ## The behavioural suite runs the same checks once per build, so it passes on both while the
+        ## two quietly disagree about the same input - which is what every port defect that reached
+        ## users actually was. This asks the other question: do they ANSWER the same?
+        if (Test-Path -LiteralPath (Join-Path $Root 'cicd/parity.bash')) {
+            fEcho_Clean
+            if ((Invoke-BashHarness -Script 'cicd/parity.bash') -ne 0) { fDie "builds disagree" }
+            fEcho "OK: builds agree"
+        }
     }
     else { fNote "no test harness ($TestScript)" }
 

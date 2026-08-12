@@ -19,6 +19,7 @@ This is a product backlog for the run-up to v2.0.0. After that release, bugs, fe
 	- [Done](#done)
 		- [Done - Bugs](#done---bugs)
 		- [Done - Features and enhancements](#done---features-and-enhancements)
+		- [Done - Accounts, parity and release automation 20260812](#done---accounts-parity-and-release-automation-20260812)
 		- [Done - Accounts and arguments 20260812](#done---accounts-and-arguments-20260812)
 		- [Done - Installers 20260812](#done---installers-20260812)
 		- [Done - Pipeline 20260812](#done---pipeline-20260812)
@@ -53,30 +54,7 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Bugs
 
-- 🔘 On Windows a folder rule written the way this shell spells paths resolves in one build and not the other.
-	- Cause: the PowerShell build rewrites the drive letter after trying the filesystem, so `/c/...` never resolves and short names and junctions are left alone.
-	- Probable fix: rewrite the drive letter first.
-
-- 🔘 The identity lines report the account that was resolved, not the one that was applied.
-	- Note: naming an account that holds no token still prints that name, in the command meant to answer who a thing went out as.
-
-- 🔘 `sync` compares no identities before it pushes, and the comparison cannot fire on an https remote at all.
-
 ### Features and enhancements
-
-- 🛠️ Fully automate new releases, end-to-end.
-	- Design done: `design.md` -> "Automating a release". `cicd/release.bash` in three phases (prepare and verify, land, publish and prove), so a failure never leaves a half-cut release.
-	- Left to do: write it. The design names the two guards worth having - the history footers, and the two builds agreeing on the version - because both have been missed by hand.
-
-- 🔘 `account apply` writes identity and key but nothing about credentials, so plain `git` over https still picks its own account.
-	- Note: `credential.<url>.username` plus `credential.useHttpPath` is the documented way, and would close the gap the ssh half already covers.
-
-- 🔘 Add a parity suite that compares language mechanisms rather than behaviour.
-	- Note: every port defect that reached users was of that kind - file encoding, parameter binding, return types, path resolution. The behavioural suite is blind to them by construction.
-	- Note: a table of ugly path spellings fed to both builds, asserting one answer, would have caught the folder-rule bug above.
-
-- 🔘 `br prune` asks about one branch at a time where `git for-each-ref --merged` answers for all of them at once.
-	- Note: the delete-time re-check can stay - it is the same question asked again, and can be asked the same way.
 
 ### Done
 
@@ -390,6 +368,38 @@ In each section, items are listed approximately from newest to oldest.
 
 - ✅ Delete stale branch from 2020.
 	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
+
+#### Done - Accounts, parity and release automation 20260812
+
+- ✅ On Windows a folder rule spelled the way this shell spells paths resolved in one build and not the other.
+	- Cause: the PowerShell build folded the drive letter *after* asking the filesystem, and .NET reads a `/c/...` path against the current drive - which never exists. So nothing resolved, and short names and junctions were left as written.
+	- Fixed: fold the drive letter first. All four spellings now resolve identically in both builds, short names included.
+	- Known limit, and now visible rather than silent: an MSYS *mount* path such as `/tmp/...` has no meaning to the native build and never can, since only the shell knows its own mount table. `account` marks any folder rule that resolves to no directory, which shows that up along with ordinary typos.
+
+- ✅ The identity lines reported the account that was resolved, not the one that was applied.
+	- Fixed: an account with no token available now says so on the line. It is still resolved, but gh goes on using its own account - and the block whose whole job is answering "who does this go out as" was naming the wrong one.
+	- Only for a configured or explicitly asked-for account; one inferred from the remote's owner is not a claim that we can act as it.
+
+- ✅ `sync` compared no identities before it pushed.
+	- Fixed: the commands that push with git, rather than writing through gh, now ask whether the folder's account is the one origin will actually authenticate as. A warning interactively, a refusal unattended, and `--any-identity` says it was intended.
+	- The https half is covered by the item above: gitsby supplies the token itself, so the push goes out as the resolved account or says it could not.
+
+- ✅ `account apply` wrote identity and key but nothing about credentials.
+	- Fixed: the fragment now sets `credential.https://github.com.username`, so a credential manager looks up that account's entry rather than any entry for the host.
+
+- ✅ Added a parity suite: `cicd/parity.bash`, wired into the test stage of both engines.
+	- It asks whether the two builds *answer the same* for one input, where `test.bash` asks whether each behaves correctly. A behavioural check written per implementation passes on both while they quietly disagree - which is what every port defect that reached users actually was.
+	- Covers path spellings, option forms, string case and file encoding: 23 comparisons.
+	- It earned its place while being written, finding two real divergences: the `/tmp` mount limitation above, and PowerShell answering an unknown option with the entire help text - and under `-q` with nothing at all but an exit code - where Bash named the option.
+
+- ✅ `br prune` asked about one branch at a time.
+	- Fixed: `git for-each-ref --merged` answers for every branch in one call per target ref, instead of two ancestry questions per branch. The delete-time re-check stays per branch, deliberately: that one is the safety net, not the survey.
+	- Verified on a 33-branch repo - the same 30 merged branches pruned, the same 3 unmerged kept.
+
+- ✅ Fully automated releases, end to end: `cicd/release.bash`, to the three-phase shape in `design.md`.
+	- Phase 1 verifies and changes nothing, phase 2 is the only one that pushes, and phase 3 publishes and then proves the result the way a user meets it - by running the documented installer against the published release.
+	- Both guards exist because the thing they check has already gone wrong: the two builds' version strings drifting apart, and the history footers going a whole release with no entry.
+	- `--dry-run` says what each phase would do and changes nothing. Writing it that way immediately caught a bug in the script itself: a loose version match picked a version-shaped string out of a comment, which phase 2 would then have rewritten instead of the real declaration.
 
 #### Done - Accounts and arguments 20260812
 

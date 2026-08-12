@@ -1103,6 +1103,35 @@ GHEOF
 	fAssert     "an https protocol leaves nothing to compare, so it proceeds" \
 		bash -c "cd '${id}/rc-https' && ${rcEnv} FAKE_GH_PROTO=https FAKE_GH_LOGIN=alice FAKE_SSH_LOGIN=bob FAKE_GH_REMOTE='${id}/rc-https.git' '${gitsby}' -q repo create me/proj"
 
+	## 'sync' pushes with git rather than writing through gh, so the comparison above never covered
+	## it: the command that sends your work to a remote compared nothing at all. This asks the other
+	## half of the same question - is the account this folder resolved to the one origin will
+	## actually authenticate as? Last in this block because a passing sync really does push.
+	local idCanon="${idc}"; ((isWindows)) && idCanon="$( cd "${idc}" && pwd -W )"
+	cat > "${id}/mine.shcl" <<-EOF
+		account.mine.path      = ${idCanon}
+		account.mine.ghAccount = alice
+	EOF
+	cat > "${id}/theirs.shcl" <<-EOF
+		account.mine.path      = ${idCanon}
+		account.mine.ghAccount = bob
+	EOF
+	local idSync="cd '${idc}' && ${idEnv} GITSBY_CONFIG= FAKE_SSH_LOGIN=bob"
+	fAssertFail   "sync refuses when the folder's account is not the key's" \
+		bash -c "${idSync} '${gitsby}' -q -NoFetch --config '${id}/mine.shcl' sync 'W'"
+	fAssertOut    "and the refusal names both"  "account is 'alice'.*authenticates as 'bob'" \
+		bash -c "${idSync} '${gitsby}' -q -NoFetch --config '${id}/mine.shcl' sync 'W' 2>&1 || true"
+	fAssert       "the refusal happens before the push" \
+		bash -c "${idSync} '${gitsby}' -q -NoFetch --config '${id}/mine.shcl' sync 'W'; ! git -C '${idc}' ls-remote --heads origin idfeat 2>/dev/null | grep -q idfeat"
+	fAssertNotOut "--any-identity says the difference is intended"  "authenticates as 'bob'" \
+		bash -c "${idSync} '${gitsby}' -q -NoFetch --any-identity --config '${id}/mine.shcl' sync 'W' 2>&1 || true"
+	## No configured account at all: the owner of the remote is a guess about a repo, not a claim
+	## about who you are, so comparing it would fire for every single-account user.
+	fAssertNotOut "an unconfigured account is never compared"  'authenticates as' \
+		bash -c "${idSync} '${gitsby}' -q -NoFetch --config /dev/null sync 'W' 2>&1 || true"
+	fAssertNotOut "and a matching account does not fire"  'authenticates as' \
+		bash -c "${idSync} '${gitsby}' -q -NoFetch --config '${id}/theirs.shcl' sync 'W' 2>&1 || true"
+
 	## pr ok refuses to merge while work is still only local: gh merges what origin has, then
 	## deletes the branch, so anything unpushed would be outside both the PR and the merge.
 	mkdir -p "${gh}/prguard"
@@ -1453,6 +1482,32 @@ GHEOF
 	## case simply missed, silently, and the run went out as gh's own identity.
 	fAssertOut "an account name matches whatever case you type"  'altacct' \
 		bash -c "cd '${acWork}' && env ${acEnv} GITSBY_ACCOUNT=ALT '${gitsby}' -q -NoFetch --config '${ac}/alt.shcl' status"
+	## A folder rule has to resolve to the same tree whichever build reads it, and whichever way the
+	## path was spelled. On Windows the PowerShell build resolved the drive letter only AFTER asking
+	## the filesystem - and .NET reads this shell's '/c/...' against the current drive, so nothing
+	## resolved, short names and junctions were left as written, and the same rule matched in one
+	## build and not the other. Silently: a rule that does not match reads exactly like no rule.
+	local acSpell=""
+	for acSpell in "${ac}/trees/work/proj" "${acCanon}/trees/work/proj"; do
+		cat > "${ac}/spell.shcl" <<-EOF
+			account.s.path      = ${acSpell}
+			account.s.ghAccount = spellacct
+		EOF
+		fAssertOut "a folder rule resolves however the path is spelled"  'spellacct' \
+			bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/spell.shcl' status"
+	done
+	## The identity block used to name the account it RESOLVED, whether or not anything could act as
+	## it. With no token found, gh goes on using its own account - so the one command whose job is
+	## answering "who does this go out as" gave the wrong name. The stub gh holds no token for this
+	## one, so it is the not-applied case.
+	cat > "${ac}/notoken.shcl" <<-EOF
+		account.nt.path      = ${acCanon}/trees/work
+		account.nt.ghAccount = notokenacct
+	EOF
+	fAssertOut "an account with no token says it was not applied"  'NOT applied' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/notoken.shcl' status"
+	fAssertNotOut "and an account that WAS applied says no such thing"  'NOT applied' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	## A directory is readable, so it got past the check, loaded nothing, and exited 0 - after the
 	## shell had printed its own complaint about reading a directory. Silently no accounts is the
 	## answer that acts as the wrong identity.
@@ -1471,7 +1526,11 @@ GHEOF
 	## folder. Written in declaration order, a tree nested inside another account's tree got
 	## whichever account was declared later - so plain git and gitsby disagreed about one directory,
 	## which is the whole thing 'apply' exists to prevent. 'outer' is declared second on purpose.
-	mkdir -p "${ac}/trees/work/nested" "${ac}/nesthome"
+	## A real repo, not just a directory: 'includeIf.gitdir' matches on where the .git is, so in a
+	## plain folder no include fires at all and 'git config user.email' answers nothing - which
+	## would fail this check for a reason that has nothing to do with rule ordering.
+	mkdir -p "${ac}/nesthome"
+	git init --quiet -b main "${ac}/trees/work/nested"
 	cat > "${ac}/nested.shcl" <<-EOF
 		account.inner.path      = ${acCanon}/trees/work/nested
 		account.inner.ghAccount = inneracct
@@ -1652,11 +1711,14 @@ GHEOF
 	## the script runs at all, so there it is spelled '`--' and unescaped on the way to git.
 	## Asserted against a path that does NOT exist: a separator that was dropped would still list
 	## the commit, so only the empty result proves git actually received one.
+	## Single-quoted where it is pasted in: the PowerShell spelling starts with a backtick, and this
+	## string is re-parsed by the inner 'bash -c', which would otherwise read it as a command
+	## substitution and run whatever followed.
 	local sep="--"; [[ "$1" == "bash" ]] || sep='`--'
 	fAssertOut    "raw passes a pathspec separator through"  '^init$' \
-		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git log --format=%s ${sep} a.txt 2>/dev/null"
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git log --format=%s '${sep}' a.txt 2>/dev/null"
 	fAssertNotOut "and it really separates - an absent path lists nothing"  'init' \
-		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git log --format=%s ${sep} nosuchfile.txt 2>/dev/null"
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git log --format=%s '${sep}' nosuchfile.txt 2>/dev/null"
 }
 
 echo "gitsby regression tests (fixture: ${work})"

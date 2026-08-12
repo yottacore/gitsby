@@ -173,6 +173,8 @@ Or clone it yourself and install the tooling by hand.
 - `cicd/cicd.bash --quick` - the whole pipeline, minus the slow stages. Run this before you push.
 - `cicd/cicd.bash` - everything, including the fuzz suite and the demo.
 
+- `cicd/parity.bash` - just the parity suite: whether the two builds *answer the same* for one input, rather than whether each behaves correctly. Runs inside the test stage too.
+- `cicd/release.bash --dry-run` - what cutting a release would do, changing nothing.
 - `cicd/test.bash` - just the regression suite. It builds throwaway repos under a temp directory and never touches the network or your real repos.
 - `cicd/fuzz.bash` - just the fuzz suite.
 
