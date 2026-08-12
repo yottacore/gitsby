@@ -112,6 +112,7 @@ $script:configUnknown = @()    ## keys we didn't recognise, reported rather than
 $script:acctName = ''          ## configured account claiming this folder, if any
 $script:acctGhWho = ''         ## the GitHub account this run acts as
 $script:acctSource = ''        ## how we decided that, for the identity line
+$script:acctExplicit = $false  ## asked for by name, rather than inferred from the remote
 $script:accountApplied = $false
 $script:accountUsedHttpsAuth = $false  ## git authenticates over https with the account's token
 $script:accountUsedSshKey = ''         ## ...or with the key the account names
@@ -728,12 +729,26 @@ function Import-GitsbyConfig {
         if (-not $line -or $line.StartsWith('#')) { continue }
         if (-not $line.Contains('=')) { $script:configUnknown += $line; continue }
         $key = $line.Substring(0, $line.IndexOf('=')).Trim().ToLowerInvariant()
-        $value = $line.Substring($line.IndexOf('=') + 1).Trim()
-        ## One optional layer of quotes, so a value with meaningful trailing space can be written.
-        if ($value.Length -ge 2 -and (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'")))) {
-            $value = $value.Substring(1, $value.Length - 2)
+        $value = $line.Substring($line.IndexOf('=') + 1).TrimStart()
+        ## A '#' after whitespace starts a comment, here as well as at the start of a line. Folding
+        ## one into the value made a folder rule that could never match any directory, which reads
+        ## exactly like no rule at all - and the documented example config writes them.
+        ## One optional layer of quotes keeps a literal '#', or meaningful trailing space.
+        if ($value -match '^(["''])(.*?)\1') {
+            $value = $Matches[2]
+        } else {
+            $value = ($value -split '\s#', 2)[0]
+            if ($value.StartsWith('#')) { $value = '' }
+            $value = $value.TrimEnd()
         }
         if (-not $key) { continue }
+        ## An account name becomes a file name under the include directory, so hold it to characters
+        ## that cannot climb out of there. A stray slash is an ordinary typo, and 'account apply'
+        ## wrote the fragment wherever the name pointed - '~/.gitconfig' included.
+        if ($key -match '^account\.(.+)\.[^.]+$' -and $Matches[1] -notmatch '^[A-Za-z0-9._-]+$') {
+            $script:configUnknown += $key
+            continue
+        }
         if ($key -match '^account\.(.+)\.path$') {
             if ($value) { $script:configPaths += [pscustomobject]@{ Path = (Get-CanonPath -Path $value); Name = $Matches[1] } }
         } elseif ($key -eq 'protocol' -or $key -match '^account\.(.+)\.(ghaccount|tokenfile|sshkey|name|email|protocol)$') {
@@ -802,7 +817,7 @@ function Resolve-GitsbyAccount {
     ## Finding none of them is the ordinary single-account case: gh's own account is left alone.
     param([string]$Url)
     Import-GitsbyConfig
-    $script:acctName = ''; $script:acctGhWho = ''; $script:acctSource = ''
+    $script:acctName = ''; $script:acctGhWho = ''; $script:acctSource = ''; $script:acctExplicit = $false
     if ($env:GITSBY_ACCOUNT) {
         ## Either the name of a configured account or a bare login - accept both, because a script
         ## setting this knows one of the two and shouldn't have to know which we wanted.
@@ -812,11 +827,11 @@ function Resolve-GitsbyAccount {
         } else {
             $script:acctGhWho = $env:GITSBY_ACCOUNT
         }
-        $script:acctSource = 'GITSBY_ACCOUNT'; return
+        $script:acctSource = 'GITSBY_ACCOUNT'; $script:acctExplicit = $true; return
     }
     $fromGit = Get-GitConfigValue -Key 'gitsby.ghAccount'
     if ($fromGit) {
-        $script:acctGhWho = $fromGit; $script:acctSource = 'git config'
+        $script:acctGhWho = $fromGit; $script:acctSource = 'git config'; $script:acctExplicit = $true
         ## Name the config account too when one claims this folder, so its key and commit identity
         ## still apply - the git key says who, not that the rest of the account is off.
         $script:acctName = Get-AccountForDir -Directory (Get-ContextDir)
@@ -868,21 +883,31 @@ function Select-GitsbyAccount {
     ## have to remember to set and to put back, and a run killed half way leaves the machine on it.
     ## GH_TOKEN outranks the stored credentials for this process alone, which is exactly the scope
     ## wanted. Never silent - Show-Identity names the account in the block you read before confirming.
+    ##
+    ## -SkipGhProbe: this run prints no identity block, so skip the probe that only feeds one.
+    param([switch]$SkipGhProbe)
     if ($script:anyIdentity) { return }
     ## Applying twice would number a second set of GIT_CONFIG_* entries on top of the first.
     if ($script:accountApplied) { return }
     $script:accountApplied = $true
     $token = Get-AccountToken
     if ($token) {
-        $active = Get-GhLogin
-        if ($active -ne $script:acctGhWho) {
-            $env:GH_TOKEN = $token
+        ## Export whenever a token was found, not only when it replaces a different active account.
+        ## The helper installed below reads GH_TOKEN at the moment git runs it, so leaving it unset
+        ## when the two already matched handed git an empty password - and the reset that precedes
+        ## the helper had already evicted whatever credential manager would otherwise have answered.
+        $env:GH_TOKEN = $token
+        ## Naming the account this one replaced is display only, and asking is a live API round trip.
+        ## Skip it where no identity block will be printed: the passthrough is the scripting path,
+        ## and a loop of those calls paid for a name nothing ever read.
+        if (-not $SkipGhProbe) {
+            $active = Get-GhLogin
             ## The token is keyed by that login in gh's store, or named for it in config, so it is
             ## that account - no round trip to confirm it, and it stays correct offline.
             ## '?' means gh held no account at all, so there is nothing to report switching away from.
-            if ($active -ne '?') { $script:ghSwitchedFrom = $active }
-            $script:ghLoginCache = $script:acctGhWho
+            if ($active -ne $script:acctGhWho -and $active -ne '?') { $script:ghSwitchedFrom = $active }
         }
+        $script:ghLoginCache = $script:acctGhWho
         ## The same token is what lets git itself push as this account over https, with no ssh key
         ## anywhere. An empty value first resets the helper list, so a credential manager already
         ## configured for another account cannot answer ahead of us. The token is read from the
@@ -978,7 +1003,7 @@ function Invoke-PassthroughIfAsked {
     if (-not (Get-Command -Name $tool -ErrorAction SilentlyContinue)) { throw "Not found in path: ${tool}" }
     if ($configGiven) { $script:configFileArg = $configPath; $script:configFileGiven = $true }
     Resolve-GitsbyAccount -Url ([string](@(git remote get-url origin 2>$null) | Select-Object -First 1))
-    Select-GitsbyAccount
+    Select-GitsbyAccount -SkipGhProbe
     ## One line, on stderr, so a pipeline reading stdout sees only the tool. Silence is what '-q'
     ## is for - a script that has already reported who it acts as does not need us to repeat it.
     if (-not $quiet -and $script:acctGhWho -and $script:acctSource) {
@@ -1088,7 +1113,10 @@ function Sync-Remote {
     ## No auth prompts, same as Get-RemoteProbe: an https remote we can't authenticate to would
     ## otherwise stop and ask for a username mid-command.
     $hadSshCommand = [bool]$env:GIT_SSH_COMMAND
-    if (-not $hadSshCommand) { $env:GIT_SSH_COMMAND = 'ssh -o ConnectTimeout=3' }
+    ## Compose the timeout onto git's own ssh command, don't replace it: GIT_SSH_COMMAND outranks
+    ## core.sshCommand, so a bare 'ssh' here would silently fetch as the default key on the very
+    ## setups that configure a per-repo one - and a private repo only that key can read reads as offline.
+    if (-not $hadSshCommand) { $env:GIT_SSH_COMMAND = ((Get-GitSshCommand) -join ' ') + ' -o ConnectTimeout=3' }
     $origTermPrompt = $env:GIT_TERMINAL_PROMPT
     $env:GIT_TERMINAL_PROMPT = '0'
     try {
@@ -1097,7 +1125,12 @@ function Sync-Remote {
             $script:remoteReachable = $false
             Write-StatusLine 'WARNING: git fetch failed (offline?); remote info may be stale.'
         } else {
-            git remote set-head origin --auto *> $null
+            ## Healing origin/HEAD queries the remote again, so only do it when there is nothing to
+            ## read: git < 2.47 never wrote one. A local ref read answers that for the cost of a
+            ## process. A ref left stale by an upstream rename survives, and the gate already
+            ## refuses naming the fix.
+            git symbolic-ref --quiet refs/remotes/origin/HEAD *> $null
+            if ($LASTEXITCODE -ne 0) { git remote set-head origin --auto *> $null }
         }
     } finally {
         if (-not $hadSshCommand) { Remove-Item -Path Env:GIT_SSH_COMMAND -ErrorAction SilentlyContinue }
@@ -1113,7 +1146,9 @@ function Get-RemoteProbe {
     $origPrompt = $env:GIT_TERMINAL_PROMPT
     $origSsh = $env:GIT_SSH_COMMAND
     $env:GIT_TERMINAL_PROMPT = '0'
-    if (-not $origSsh) { $env:GIT_SSH_COMMAND = 'ssh -o ConnectTimeout=3' }
+    ## Compose, don't replace - see Sync-Remote. A bare 'ssh' probes as the default key, so a repo
+    ## only the account's own key can read answers 'missing' and 'repo connect' refuses a live URL.
+    if (-not $origSsh) { $env:GIT_SSH_COMMAND = ((Get-GitSshCommand) -join ' ') + ' -o ConnectTimeout=3' }
     try {
         ## Quote: a bare $var lets PowerShell glob '*'/'?'/'[...]' against the cwd first, so the
         ## probe would answer about a different target than the one git is later handed.
@@ -1256,7 +1291,13 @@ function Show-Identity {
     ## Leads the block, because it explains the three lines under it: the key on the SSH line and
     ## the name on the Author line can both be this account's doing. Shown only when something was
     ## actually decided by it - a single-account machine never learns the feature exists.
-    if ($script:acctName -or $script:ghSwitchedFrom -or $script:accountUsedHttpsAuth -or $script:accountUsedSshKey -or $script:accountUsedIdentity) {
+    ## An account ASKED for counts on its own. The other tests all ask whether some configured value
+    ## was used, so a bare GitHub login - which 'GITSBY_ACCOUNT' takes and 'raw' reports on stderr -
+    ## named nothing, set nothing, and printed no line: the one command that exists to answer "who
+    ## did that go out as" stayed silent in the case where the answer was not the usual one. Asked
+    ## for, not merely inferred: the owner of the remote is a guess about a repo, and showing that
+    ## would put the line in front of every single-account user, which is what the block avoids.
+    if ($script:acctExplicit -or $script:acctName -or $script:ghSwitchedFrom -or $script:accountUsedHttpsAuth -or $script:accountUsedSshKey -or $script:accountUsedIdentity) {
         $acctLine = if ($script:acctGhWho) { $script:acctGhWho } else { '(no GitHub account named)' }
         if ($script:acctSource) { $acctLine = "${acctLine} (from $($script:acctSource))" }
         ## The one thing the lines below can't show: an https push authenticating with the token
@@ -2793,3 +2834,7 @@ try {
 ##      - 20260808 JC: A local-path remote is compared as a path, not as text - in step with bin/gitsby. The same comparison stopped a 'C:/path/repo.git' remote from matching the host:path shape and sending an ssh identity probe to a host named 'C'.
 ##      - 20260808 JC: The config file is looked for under $env:HOME when it is set, since $HOME follows USERPROFILE on Windows and the two builds would otherwise disagree about where a user's config lives.
 ##      - 20260809 JC: '--config' with an empty value is refused - in step with bin/gitsby. A joined '-Config=FILE' is refused by name too: the -File binder can't bind that form and silently swallowed the next word instead, which under -q read as nothing having happened.
+##      - 20260812 JC: The credential token, the trailing-comment rule and the account-name restriction - in step with bin/gitsby.
+##      - 20260812 JC: The fetch and the remote probe add their connect timeout to git's own ssh command rather than replacing it. A repo carrying core.sshCommand - the usual way to hold two accounts on one machine - was read with the default key, so a private repo only the account's key can reach reported as unreachable and the publishing commands then refused.
+##      - 20260812 JC: 'origin/HEAD' healing and the passthrough's gh probe - in step with bin/gitsby.
+##      - 20260812 JC: The identity line names an account asked for by name - in step with bin/gitsby.

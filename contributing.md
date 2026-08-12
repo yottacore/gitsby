@@ -172,8 +172,11 @@ Or clone it yourself and install the tooling by hand.
 
 - `cicd/cicd.bash --quick` - the whole pipeline, minus the slow stages. Run this before you push.
 - `cicd/cicd.bash` - everything, including the fuzz suite and the demo.
+
 - `cicd/test.bash` - just the regression suite. It builds throwaway repos under a temp directory and never touches the network or your real repos.
 - `cicd/fuzz.bash` - just the fuzz suite.
+
+The pipeline fast-forwards from `origin` before it builds anything, so the checks run against the tree that will actually be pushed. It stops if your branch has diverged, warns and carries on if you're offline or the branch has no upstream, and `--no-sync` (`-NoSync`) skips it.
 
 Both suites run once per implementation, so a Bash-only change still has to keep the PowerShell side green.
 

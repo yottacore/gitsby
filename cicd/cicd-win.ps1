@@ -6,6 +6,7 @@
     Windows. Does not touch cicd.bash - that stays the Linux pipeline.
 
     Stages (fail-fast; any error aborts before the next stage):
+      0. sync       fast-forward from origin before anything is built or tested
       1. lint       bash -n + shellcheck, gating; markdownlint, py_compile and
                     PSScriptAnalyzer when their tools are installed
       2. tests      cicd/test.bash
@@ -71,6 +72,7 @@ param(
     [switch]$Yes,
     [string]$Message = "",
     [switch]$Quick,
+    [switch]$NoSync,
     [switch]$NoLint,
     [switch]$NoTest,
     [switch]$NoFuzz,
@@ -112,6 +114,7 @@ $Stamp      = Get-Date -Format "yyyyMMdd-HHmmss"
 
 ## -Quick and the -No* switches, folded into the same booleans the bash engine
 ## keeps, so the two read the same way.
+$DoSync    = -not $NoSync
 $DoLint    = -not $NoLint
 $DoTest    = -not $NoTest
 $DoFuzz    = (-not $NoFuzz) -and (-not $Quick)
@@ -323,6 +326,33 @@ function Resolve-MarkdownLintCommand {
         }
     }
     return $null
+}
+
+## Stage 0. Refuses only on a real divergence; every other answer is ordinary.
+function Invoke-SyncStage {
+    git rev-parse --abbrev-ref '@{u}' *> $null
+    if ($LASTEXITCODE -ne 0) {
+        ## No upstream is an ordinary state for a brand-new branch, not a reason to stop.
+        fNote "no upstream for this branch - nothing to sync"; return
+    }
+    git fetch --quiet *> $null
+    if ($LASTEXITCODE -ne 0) {
+        ## Offline is the other ordinary state. Warn and build what is here.
+        fWarn "can't reach origin - building without refreshing"; return
+    }
+    ## Left is behind, right is ahead: what origin has that we don't, and the reverse.
+    $counts = (git rev-list --left-right --count '@{u}...HEAD' 2>$null) -split '\s+'
+    if ($LASTEXITCODE -ne 0 -or $counts.Count -lt 2) { fWarn "can't compare against origin - building as-is"; return }
+    $behind = [int]$counts[0]; $ahead = [int]$counts[1]
+    if     ($behind -eq 0) { fNote "up to date with origin (${ahead} to publish)" }
+    elseif ($ahead -gt 0)  { fDie "diverged from origin: ${ahead} local, ${behind} remote. Reconcile before building." }
+    else {
+        ## Only behind, so this can only be a fast-forward. --autostash carries a dirty
+        ## tree over it rather than refusing, and puts it back afterward.
+        fNote "fast-forwarding ${behind} commit(s) from origin"
+        git merge --ff-only --autostash '@{u}' | Out-Host
+        if ($LASTEXITCODE -ne 0) { fDie "fast-forward from origin failed" }
+    }
 }
 
 ## Stage 1. shellcheck gates; the extras gate only when their tool is present.
@@ -648,6 +678,14 @@ function Invoke-Main {
     } catch {
         fWarn "no run log this time ($($_.Exception.Message))"
     }
+
+    ## Stage 0: remote sync. The publish stage pulls too, but that is after everything
+    ## has been built and tested - so a change merged upstream meanwhile would be pushed
+    ## having been validated by nothing. Refreshing first means the rest of the run tests
+    ## the tree that is actually going out. Publish keeps its own pull as the late guard.
+    fSection "0/6  Remote sync"
+    if (-not $DoSync) { fNote "remote sync skipped" }
+    else { Invoke-SyncStage }
 
     ## Stage 1: lint. bash -n then shellcheck over every first-party shell file
     ## (gating - never an auto-formatter: bash is hand-formatted on purpose).

@@ -36,7 +36,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `cicd/utility/include/gh-account.bash`, a sourceable version of the same selection for pipelines that call `gh` directly rather than through gitsby.
 
+### Changed
+
+- Healing `origin/HEAD` after a fetch only runs when there is nothing to read locally, instead of on every command. It queries the remote a second time, and git 2.47 and newer write one at clone.
+
+- The passthrough no longer asks gh which account is active. That answer named only the account being replaced, on the identity line that `raw` does not print.
+
 ### Fixed
+
+- Git over https was handed an empty password whenever the folder's account was the one gh was already active as. The token is now supplied whenever one is found, rather than only when it replaces a different account. Because the helper sets aside any credential manager configured ahead of it, the effect was worst on the setup that needs no configuration at all: a single account, logged in to gh, pushing over https.
+
+- A `#` after whitespace starts a comment anywhere in the config file, not just at the start of a line. A trailing comment used to become part of the value, so a folder rule could never match any directory - and a rule that never matches reads exactly like no rule at all, leaving the run to act as gh's own account with nothing said. Quote a value to keep a literal `#` in it.
+
+- An account name is held to letters, digits, dot, dash and underscore, and anything else is reported as an unread key. The name becomes a file under the include directory, so a name with a path in it sent `account apply` to write its fragment somewhere else entirely.
+
+- The identity line now names an account that was asked for by name, including the bare GitHub login `GITSBY_ACCOUNT` accepts. It used to appear only when some configured value had been used, so a bare login - which `raw` reports on stderr, and which selects the token a push authenticates with - printed no line at all in `status`, the command that exists to answer who a push goes out as. An account merely inferred from the remote's owner is still not shown, so a single-account machine sees nothing new.
+
+- PowerShell: the fetch and the remote probe add their connect timeout to git's own ssh command instead of replacing it. A repo carrying `core.sshCommand` - the usual way to hold two accounts on one machine - was read with the default key, so a private repo only the account's key can reach reported as unreachable and the publishing commands refused to run.
 
 - The identity probe asks as the key git would actually push with, following `GIT_SSH_COMMAND` and then `core.sshCommand`. It used to run a bare `ssh`, so a repo that selects its key through config - the usual way to hold two accounts on one machine - was reported as the default key's account while git pushed as somebody else. Where gh's account happened to match the default key, the mismatch check passed while both halves were wrong.
 
@@ -61,6 +77,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The PowerShell build is verified on Linux, not just assumed to work there. Both suites run green on Debian, the same as on Windows.
 
 - Refusals that only checked an exit code now check the reason as well. A build predating a command also exits nonzero when handed it, so the exit code alone could not tell a working refusal from an unknown command.
+
+- Both installers say in the plan, before you agree to it, whether the download will be checked against the release's `SHA256SUMS`. That was reported only afterwards, and on the `--release dev` path not at all - so the one route that installs an unverified file was also the quiet one. Where the plan promises verification and it then can't happen, the install stops rather than noting it in passing; `--ref TAG` (`-Ref TAG`) takes it unverified as an explicit choice.
+
+- The PowerShell installer adds the install directory to your PATH on Windows, and says so in the plan. Nothing else on Windows does, so an install used to finish with a program that couldn't be run by name.
+
+- The pipeline fast-forwards from origin before it builds anything, in both engines. Its only pull used to be in the publish stage, which runs after lint, tests and fuzz have all passed - so a change merged upstream meanwhile was pushed having been validated against the older tree. It stops on a real divergence, warns and carries on when offline or with no upstream, and `--no-sync` (`-NoSync`) skips it.
+
+- The test suite no longer reads whatever accounts the person running it has configured. It already isolated git config and the commit identity; the accounts config decides which account a command acts as, and a single line in a real one failed three checks per implementation.
+
+- The README is a landing page again: install and a worked example are the first two sections, and the depth moved to `accounts.md` and `workflows.md`. It also now says up front that gitsby picks a GitHub account by folder, which was the one thing in this release it never mentioned.
 
 ## v2.0.2 - 2026-07-31
 
