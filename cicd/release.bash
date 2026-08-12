@@ -134,16 +134,28 @@ if ((! dryRun)) && ((! assumeYes)); then
 fi
 
 today="$(date +%Y-%m-%d)"
-if ! fWould "bump both builds to ${version} and retitle the changelog's vNEXT as '${version} - ${today}'"; then
+relBranch="rel-${version#v}"
+## The version bump goes in through a branch and a pull request, like everything else. Committing
+## it straight to the merge target would be the one place this project pushes its own work there -
+## exactly what the tool refuses to do for you, so the thing that cuts the release must not do it
+## either. 'gitsby release' below is the only push to the default branch, and that push IS the
+## release rather than a shortcut around one.
+if ! fWould "branch ${relBranch}, bump both builds to ${version}, retitle the changelog's vNEXT as '${version} - ${today}', and land it through a PR"; then
+	"${gitsbyBash}" -q br create "${relBranch}" || fDie "couldn't create ${relBranch}."
 	## Only the declaration line in each build. A global replace of the old version string would
 	## also rewrite every mention of it in the comments and the history footer, which are a record
 	## of what happened and must keep saying what they said.
 	sed -i "s/\(thisVersion=\"\)[0-9][^\"]*\(\"\)/\1${version#v}\2/" "${gitsbyBash}"
 	sed -i "s/\(thisVersion *= *'\)[0-9][^']*\('\)/\1${version#v}\2/" "${gitsbyPwsh}"
 	sed -i "0,/^## vNEXT.*$/s//## ${version} - ${today}/" "${changelog}"
-	git add --all
-	git commit --quiet -m "${version}"
-	git push --quiet
+	## gitsby's own 'pr create' rather than gh directly: it already knows this repo's merge target,
+	## which is the one thing a hand-written --base can get wrong.
+	prOut="$("${gitsbyBash}" -q pr create "${version}" 2>&1)" || { echo "${prOut}" >&2; fDie "couldn't open the version-bump PR."; }
+	prNum="$(printf '%s\n' "${prOut}" | grep -oE 'https://github\.com/[^ ]+/pull/[0-9]+' | tail -n 1)"
+	prNum="${prNum##*/}"
+	[[ "${prNum}" =~ ^[0-9]+$ ]] || { echo "${prOut}" >&2; fDie "couldn't read a PR number out of 'pr create' output."; }
+	fNote "opened PR #${prNum} for the version bump"
+	"${gitsbyBash}" -q pr ok "${prNum}" || fDie "couldn't merge PR #${prNum}; the bump is pushed but nothing is tagged."
 fi
 if ! fWould "gitsby release ${version}"; then
 	"${gitsbyBash}" -q release "${version}" || fDie "'gitsby release' failed; the version commit is pushed but no tag was cut."
