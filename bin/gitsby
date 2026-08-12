@@ -166,20 +166,37 @@ fMain(){
 	## out of the command namespace, and so anything else that has to pass through untouched has
 	## somewhere to live. Scanned here rather than by the option parser, because past the tool name
 	## the arguments belong to git: a '-q' there is git's own flag, not ours. Ours come first.
-	local ptTool=""; local -a ptArgs=(); local -i ptWantConfig=0; local -i ptWantTool=0; local scanArg=""
+	local ptTool=""; local -a ptArgs=(); local -i ptWantConfig=0; local -i ptWantTool=0; local -i ptWantValue=0
+	local scanArg="" ptOpt=""
 	for scanArg in "${@}"; do
 		if   [[ -n "${ptTool}" ]];  then ptArgs+=("${scanArg}"); continue
 		elif ((ptWantConfig));      then configFileArg="${scanArg}"; configFileGiven=1; ptWantConfig=0; continue
+		elif ((ptWantValue));       then ptWantValue=0; continue
 		elif ((ptWantTool));        then
 			[[ "${scanArg}" == "git" || "${scanArg}" == "gh" ]] || fThrowError_Usage "Unknown 'raw' subcommand '${scanArg}'. One of: git, gh."
 			ptTool="${scanArg}"; ptWantTool=0; continue
 		fi
-		case "${scanArg}" in
-			raw)                  ptWantTool=1 ;;
-			-q|--quiet|-y|--yes)  doQuietly=1 ;;
-			--config)             ptWantConfig=1 ;;
-			--config=*)           configFileArg="${scanArg#*=}"; configFileGiven=1 ;;
-			*)                    break ;;
+		[[ "${scanArg}" == "raw" ]] && { ptWantTool=1; continue; }
+		[[ "${scanArg}" == -* ]] || break
+		## Normalized the same way the main parser does it, so the two can't accept different
+		## spellings of the same option.
+		ptOpt="${scanArg}"; while [[ "${ptOpt}" == -* ]]; do ptOpt="${ptOpt#-}"; done
+		case "${ptOpt}" in
+			"q"|"quiet"|"y"|"yes")           doQuietly=1 ;;
+			"config")                        ptWantConfig=1 ;;
+			"config="*)                      configFileArg="${ptOpt#*=}"; configFileGiven=1 ;;
+			## Taken and inert: the passthrough never fetches, previews an identity, sets a
+			## visibility or writes a commit. Only this scan runs before 'raw', so anything it
+			## rejects looked to the main parser like a command called 'raw' - which reported
+			## 'Unknown command', naming the one token that was not the problem.
+			"no-fetch"|"nofetch"|"offline")  : ;;
+			"any-identity"|"anyidentity")    : ;;
+			"public"|"private")              : ;;
+			"m"|"message"|"msg")             ptWantValue=1 ;;
+			"m="*|"message="*|"msg="*)       : ;;
+			## -h and -v fall through on purpose: they mean show help or the version, which is
+			## the main parser's job, not something to swallow on the way to a passthrough.
+			*)                               break ;;
 		esac
 	done
 	((ptWantTool)) && fThrowError_Usage "Syntax: ${meName} raw <git|gh> <arguments ...>"
@@ -1356,12 +1373,17 @@ fpConfigFile(){
 	## because the file it fell back to decides which account the run acts as: the push would go out
 	## as the wrong identity, quietly. An empty GITSBY_CONFIG below is left alone deliberately - an
 	## unset variable and an empty one are the same thing in the environment, unlike a typed option.
+	## '-f' as well as '-r': a directory is readable, so naming one got past this, read nothing,
+	## and exited 0 having loaded no accounts - after the shell had printed its own error about
+	## reading a directory. Silently no accounts is the answer that acts as the wrong identity.
 	if ((${configFileGiven:-0})); then
 		[[ -n "${configFileArg:-}" ]] || fThrowError_Usage "--config was given an empty file name."
+		[[ -f "${configFileArg}" ]] || fThrowError_Usage "--config names '${configFileArg}', which isn't a file."
 		[[ -r "${configFileArg}" ]] || fThrowError_Usage "No readable config file at '${configFileArg}'."
 		echo "${configFileArg}"; return 0
 	fi
 	if [[ -n "${GITSBY_CONFIG:-}" ]]; then
+		[[ -f "${GITSBY_CONFIG}" ]] || fThrowError_Usage "GITSBY_CONFIG names '${GITSBY_CONFIG}', which isn't a file."
 		[[ -r "${GITSBY_CONFIG}" ]] || fThrowError_Usage "GITSBY_CONFIG names '${GITSBY_CONFIG}', which can't be read."
 		echo "${GITSBY_CONFIG}"; return 0
 	fi
@@ -1371,7 +1393,9 @@ fpConfigFile(){
 	[[ -n "${APPDATA:-}"         ]] && candidates+=("${APPDATA}/gitsby/config.shcl")
 	local candidate=""
 	for candidate in "${candidates[@]}"; do
-		[[ -r "${candidate}" ]] && { echo "${candidate}"; return 0; }
+		## A discovered candidate is skipped rather than refused - unlike one named explicitly,
+		## nobody asserted it was there. Same rule in both builds.
+		[[ -f "${candidate}" && -r "${candidate}" ]] && { echo "${candidate}"; return 0; }
 	done
 :;}
 
@@ -1447,7 +1471,10 @@ fpAccountValue(){
 	## One key of one configured account, or nothing.
 	local -r name="${1:-}"; local -r key="${2:-}"
 	[[ -n "${name}" && -n "${key}" ]] || return 0
-	echo "${gitsbyConfig[account.${name}.${key,,}]:-}"
+	## Both halves lowercased, because the loader lowercases the whole key on the way in. Leaving
+	## the name as typed made 'GITSBY_ACCOUNT=Work' miss an account the same file had just stored
+	## as 'work' - and a miss here is silent, so the run went out as gh's own account instead.
+	echo "${gitsbyConfig[account.${name,,}.${key,,}]:-}"
 :;}
 
 fpContextDir(){
@@ -1777,14 +1804,24 @@ fpAccountApplyPlan(){
 	local -r dir="$(fpAccountIncludeDir)"
 	[[ -n "${dir}" ]] || return 0
 	local -a names=(); mapfile -t names < <(fpAccountNames)
-	local name="" folder=""
+	local name="" folder=""; local -a rules=()
 	for name in "${names[@]:-}"; do
 		[[ -n "${name}" ]] || continue
 		while read -r folder; do
-			## The trailing slash is what makes git apply it to everything below the folder too.
-			[[ -n "${folder}" ]] && printf '%s\t%s\n' "includeIf.gitdir/i:${folder}/.path" "${dir}/${name}.gitconfig"
+			[[ -n "${folder}" ]] && rules+=("${#folder}"$'\t'"${folder}"$'\t'"${name}")
 		done < <(fpAccountFoldersOf "${name}")
 	done
+	((${#rules[@]})) || return 0
+	## Shortest path first. git applies includes in file order and the LAST match wins, while
+	## gitsby takes the LONGEST matching folder - so written in declaration order, a tree nested
+	## inside another account's tree got whichever account happened to be declared later. That
+	## makes plain git and gitsby disagree about the same directory, which is the one thing
+	## 'account apply' exists to prevent.
+	local folderLen=""
+	while IFS=$'\t' read -r folderLen folder name; do
+		## The trailing slash is what makes git apply it to everything below the folder too.
+		printf '%s\t%s\n' "includeIf.gitdir/i:${folder}/.path" "${dir}/${name}.gitconfig"
+	done < <(printf '%s\n' "${rules[@]}" | sort -t$'\t' -k1,1n -k2,2)
 :;}
 
 fpAccountManagedIncludes(){
@@ -1812,8 +1849,15 @@ fCmdAccountApply(){
 	## in one of these folders behaves the same as it does through us. One fragment per account, and
 	## an includeIf per folder rule pointing at it - written with 'git config', never by editing the
 	## file ourselves, so git's own parser decides what a valid entry looks like.
+	## Check the directory is usable BEFORE writing anything. Left to mkdir and the redirect, a
+	## blocked path surfaced as a raw shell or .NET error - a different one in each build - part
+	## way through the run, which reads as a crash rather than as something you can act on.
 	local -r dir="$(fpAccountIncludeDir)"
-	mkdir -p "${dir}"
+	[[ -n "${dir}" ]] || fThrowError_Usage "No config file, so there is nowhere to write the account fragments."
+	if [[ -e "${dir}" && ! -d "${dir}" ]]; then
+		fThrowError_Usage "'${dir}' is where the account fragments go, and it isn't a directory. Move or remove it, then re-run."
+	fi
+	mkdir -p "${dir}" 2>/dev/null || fThrowError_Usage "Couldn't create '${dir}' for the account fragments. Check permissions on '${dir%/*}'."
 	local -a names=(); mapfile -t names < <(fpAccountNames)
 	local name=""
 	for name in "${names[@]:-}"; do
@@ -2753,3 +2797,4 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##		- 20260812 JC: An account name is held to letters, digits, dot, dash and underscore. The name becomes a file under the include directory, so one carrying a path of its own sent 'account apply' to write somewhere else entirely.
 ##		- 20260812 JC: 'origin/HEAD' is healed only when there is nothing to read locally, and the passthrough no longer asks gh which account is active. Each was a round trip on every command - for something git 2.47 writes at clone, and for a name only the identity block prints.
 ##		- 20260812 JC: The identity line names an account asked for by name, including the bare login GITSBY_ACCOUNT accepts. It had asked whether some configured value was used, so a bare login selected the token and printed no line. An account only inferred from the remote owner is still not shown.
+##		- 20260812 JC: Account rules are applied shortest path first, so git (last match wins) and gitsby (longest match wins) agree about a nested tree. Account names match whatever case you type. Every gitsby option works before "raw", which used to report an unknown command and name the wrong token. A --config naming a directory is refused, and an unusable include directory is reported rather than dumped as a shell error.

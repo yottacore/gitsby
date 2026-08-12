@@ -19,6 +19,7 @@ This is a product backlog for the run-up to v2.0.0. After that release, bugs, fe
 	- [Done](#done)
 		- [Done - Bugs](#done---bugs)
 		- [Done - Features and enhancements](#done---features-and-enhancements)
+		- [Done - Accounts and arguments 20260812](#done---accounts-and-arguments-20260812)
 		- [Done - Installers 20260812](#done---installers-20260812)
 		- [Done - Pipeline 20260812](#done---pipeline-20260812)
 		- [Done - Documentation 20260812](#done---documentation-20260812)
@@ -52,11 +53,6 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Bugs
 
-- 🔘 `account apply` orders its rules the opposite way from the way gitsby matches them.
-	- Cause: gitsby takes the longest matching folder; git applies includes in file order and the last one wins.
-	- Note: the fragment also sets `gitsby.ghAccount`, which outranks the folder rule, so applying changes what gitsby itself does in a nested folder.
-	- Probable fix: write the rules shortest path first, and refuse two accounts claiming one folder.
-
 - 🔘 On Windows a folder rule written the way this shell spells paths resolves in one build and not the other.
 	- Cause: the PowerShell build rewrites the drive letter after trying the filesystem, so `/c/...` never resolves and short names and junctions are left alone.
 	- Probable fix: rewrite the drive letter first.
@@ -65,18 +61,6 @@ In each section, items are listed approximately from newest to oldest.
 	- Note: naming an account that holds no token still prints that name, in the command meant to answer who a thing went out as.
 
 - 🔘 `sync` compares no identities before it pushes, and the comparison cannot fire on an https remote at all.
-
-- 🔘 Bash accepts `--config` naming a directory, prints a shell error, loads no accounts and exits 0.
-	- Note: the PowerShell build refuses it. The reverse hole is an unreadable file, which PowerShell passes over silently.
-
-- 🔘 `GITSBY_ACCOUNT` matches an account name case-sensitively in Bash and case-insensitively in PowerShell.
-
-- 🔘 Only `-q`, `-y` and `--config` may precede `raw`; anything else fails, and the message blames the tool's own arguments.
-
-- 🔘 PowerShell `raw` takes `--`, `-v` and `-h` for itself before the tool sees them.
-	- Note: `--` is the common git disambiguator, so `raw git log -- path` cannot be run.
-
-- 🔘 `account apply` with no config file ends in a raw operating-system error, differently in each build.
 
 ### Features and enhancements
 
@@ -406,6 +390,35 @@ In each section, items are listed approximately from newest to oldest.
 
 - ✅ Delete stale branch from 2020.
 	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
+
+#### Done - Accounts and arguments 20260812
+
+- ✅ `account apply` ordered its rules the opposite way from the way gitsby matches them.
+	- Cause: gitsby takes the longest matching folder; git applies includes in file order and the last match wins. The rules were written grouped by account, in declaration order.
+	- Note: so a tree nested inside another account's tree got whichever account happened to be declared later, and plain git and gitsby then disagreed about one directory - the single thing `apply` exists to prevent.
+	- Fixed: shortest path first, so the longest match is written last and wins in git too. Folder is the tie-break, so the order is deterministic.
+	- Verified both ways: with the old build, plain git in the nested folder used the outer account's email while gitsby resolved the inner account. Both now say inner.
+
+- ✅ Bash accepted `--config` naming a directory: shell error, no accounts, exit 0. PowerShell's matching hole was an unreadable file, passed over silently.
+	- Fixed: both now require a readable regular file, and refuse by name. A *discovered* config is still skipped rather than refused - nobody asserted that one was there.
+	- Note: PowerShell has no readable bit, so the test is opening the file.
+
+- ✅ `GITSBY_ACCOUNT` matched an account name case-sensitively in Bash, case-insensitively in PowerShell.
+	- Cause: Bash's loader lowercases the whole key on the way in, but the lookup lowercased only the key half and left the account name as typed - so it could miss what it had just stored.
+	- Fixed: lowercase both halves, which makes Bash self-consistent and matches PowerShell.
+
+- ✅ Only `-q`, `-y` and `--config` could precede `raw`, and the error blamed the wrong thing.
+	- Note: worse than recorded - the message was "Unknown command 'raw'", which is false. Only the passthrough's own scan runs before `raw`, so an option it didn't take left the main parser looking at a command by that name.
+	- Fixed: the scan takes gitsby's whole option vocabulary, spelled and normalized the same way the main parser does it. The ones with nothing to act on in a passthrough are inert. `-h` and `-v` still fall through to the main parser, and a genuinely unknown option is refused by its own name.
+
+- ✅ PowerShell `raw` could not pass `--`, git's pathspec separator.
+	- Cause is NOT what was recorded, and matters: PowerShell's binder reads a bare `--` as an empty parameter name and fails *before the script runs at all*. Nothing in the passthrough can intercept it. Five param-block shapes were tested; a script with no `param()` block receives `--` fine.
+	- Fixed as far as it can be: `` `-- `` survives binding, and is handed to the tool as `--`. Documented in `accounts.md`.
+	- Note: dropping the `param()` block would fix this and the joined-option binding together. Not taken - it is a large change to a documented option surface.
+
+- ✅ `account apply` ended in a raw operating-system error, a different one in each build.
+	- Note: not the no-config case, which already reports itself properly. The trigger is the include directory being unusable - something else already at that path.
+	- Fixed: check the directory before writing anything, and fail in gitsby's own voice. Nothing partial was ever written, and still isn't.
 
 #### Done - Installers 20260812
 

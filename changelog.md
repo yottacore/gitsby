@@ -66,6 +66,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `--config` with an empty file name is refused instead of falling back to the default config. A script expanding a variable that turned out to be empty was indistinguishable from never passing the option, so the run silently acted as whichever account the default file named - the wrong identity, on a push, with nothing said. An empty `GITSBY_CONFIG` still falls through, as an unset environment variable and an empty one are the same thing.
 
+- `account apply` writes its `includeIf` rules shortest path first. git applies includes in file order and the last match wins, while gitsby takes the longest matching folder - so a tree nested inside another account's tree got whichever account was declared later, and plain `git` then disagreed with gitsby about that one directory, which is the single thing `apply` exists to prevent.
+
+- `--config` (`-Config`) requires a readable regular file in both builds. Bash took a directory, loaded no accounts and exited 0; PowerShell passed silently over an unreadable file. Either way the run went on to act as an account nobody chose. A config found in one of the default locations is still skipped rather than refused - nobody asserted that one was there.
+
+- An account name is matched whatever case you type it in. Bash's loader lowercases the key on the way in but its lookup did not, so it could miss the entry it had just stored.
+
+- Gitsby's own options all work before `raw` now. Only a handful were taken, and anything else produced "Unknown command 'raw'" - naming the one token that was not the problem. The ones with nothing to act on in a passthrough are accepted and inert; `-h` and `-v` still mean help and version.
+
+- PowerShell: `raw` can pass git's `--` pathspec separator, spelled `` `-- ``. A bare `--` is taken by PowerShell's parameter binder before the script starts, so it can never reach the tool at all. The Bash build takes a plain `--`.
+
+- `account apply` reports an unusable include directory in gitsby's own words, instead of a raw shell or .NET error that differed between the two builds.
+
+- Both installers say in the plan, before you agree to it, whether the download will be checked against the release's `SHA256SUMS`. That was reported only afterwards, and on the `--release dev` path not at all - so the one route that installs an unverified file was also the quiet one. Where the plan promises verification and it then can't happen, the install stops rather than noting it in passing; `--ref TAG` (`-Ref TAG`) takes it unverified as an explicit choice.
+
+- The PowerShell installer adds the install directory to your PATH on Windows, and says so in the plan. Nothing else on Windows does, so an install used to finish with a program that couldn't be run by name.
+
 ### Other work
 
 - Both suites now run their PowerShell leg on Windows rather than only on Linux. Test stubs get a `.cmd` sibling, since PowerShell finds a shebang script on PATH but starts nothing and reads the silence as no output; and the checks that need a confirmation to refuse no longer depend on `setsid`, which Windows has no equivalent of.
@@ -77,10 +93,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The PowerShell build is verified on Linux, not just assumed to work there. Both suites run green on Debian, the same as on Windows.
 
 - Refusals that only checked an exit code now check the reason as well. A build predating a command also exits nonzero when handed it, so the exit code alone could not tell a working refusal from an unknown command.
-
-- Both installers say in the plan, before you agree to it, whether the download will be checked against the release's `SHA256SUMS`. That was reported only afterwards, and on the `--release dev` path not at all - so the one route that installs an unverified file was also the quiet one. Where the plan promises verification and it then can't happen, the install stops rather than noting it in passing; `--ref TAG` (`-Ref TAG`) takes it unverified as an explicit choice.
-
-- The PowerShell installer adds the install directory to your PATH on Windows, and says so in the plan. Nothing else on Windows does, so an install used to finish with a program that couldn't be run by name.
 
 - The pipeline fast-forwards from origin before it builds anything, in both engines. Its only pull used to be in the publish stage, which runs after lint, tests and fuzz have all passed - so a change merged upstream meanwhile was pushed having been validated against the older tree. It stops on a real divergence, warns and carries on when offline or with no upstream, and `--no-sync` (`-NoSync`) skips it.
 

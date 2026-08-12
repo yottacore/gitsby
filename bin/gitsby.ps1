@@ -679,6 +679,14 @@ function Test-HttpsConversion {
     return [bool](Get-AccountToken)
 }
 
+function Test-FileReadable {
+    ## Can this file actually be opened for reading? Windows has no readable bit to test, and
+    ## 'Test-Path' only answers whether something is there, so the open is the test.
+    param([Parameter(Mandatory)][string]$Path)
+    try { $stream = [IO.File]::OpenRead($Path); $stream.Dispose(); return $true }
+    catch { return $false }
+}
+
 function Get-ConfigFile {
     ## The config file to read: the first candidate that exists, or '' at all. The order is identical
     ## in both builds, so the same box answers the same whichever one you run. A file named explicitly
@@ -690,15 +698,25 @@ function Get-ConfigFile {
     ## because the file it fell back to decides which account the run acts as: the push would go out
     ## as the wrong identity, quietly. An empty GITSBY_CONFIG below is left alone deliberately - an
     ## unset variable and an empty one are the same thing in the environment, unlike a typed option.
+    ## 'Test-Path -PathType Leaf' answers "is there a file there", not "can it be read", so an
+    ## unreadable one got past this and then failed silently in the loader - no accounts, exit 0,
+    ## and the run acting as gh's own identity. Opening it is the only honest test on Windows,
+    ## which has no readable bit to check.
     if ($script:configFileGiven) {
         if (-not $script:configFileArg) { throw "--config was given an empty file name." }
         if (-not (Test-Path -LiteralPath $script:configFileArg -PathType Leaf)) {
+            throw "-Config names '$($script:configFileArg)', which isn't a file."
+        }
+        if (-not (Test-FileReadable -Path $script:configFileArg)) {
             throw "No readable config file at '$($script:configFileArg)'."
         }
         return $script:configFileArg
     }
     if ($env:GITSBY_CONFIG) {
         if (-not (Test-Path -LiteralPath $env:GITSBY_CONFIG -PathType Leaf)) {
+            throw "GITSBY_CONFIG names '$($env:GITSBY_CONFIG)', which isn't a file."
+        }
+        if (-not (Test-FileReadable -Path $env:GITSBY_CONFIG)) {
             throw "GITSBY_CONFIG names '$($env:GITSBY_CONFIG)', which can't be read."
         }
         return $env:GITSBY_CONFIG
@@ -708,7 +726,9 @@ function Get-ConfigFile {
     if (Get-HomeDir)          { $candidates += (Join-Path (Get-HomeDir)  '.config/gitsby/config.shcl') }
     if ($env:APPDATA)         { $candidates += (Join-Path $env:APPDATA      'gitsby/config.shcl') }
     foreach ($candidate in $candidates) {
-        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+        ## A discovered candidate is skipped rather than refused - unlike one named explicitly,
+        ## nobody asserted it was there. Same rule in both builds.
+        if ((Test-Path -LiteralPath $candidate -PathType Leaf) -and (Test-FileReadable -Path $candidate)) { return $candidate }
     }
     return ''
 }
@@ -984,9 +1004,16 @@ function Invoke-PassthroughIfAsked {
         return
     }
     $tool = ''; $toolArgs = @(); $wantConfig = $false; $wantTool = $false; $quiet = $false; $configPath = ''; $configGiven = $false
+    $wantValue = $false
     foreach ($arg in $raw) {
         $token = [string]$arg
+        ## A bare '--' can never reach here: PowerShell's binder reads it as an empty parameter
+        ## name and fails before this script runs at all, so there is nothing to intercept. An
+        ## escaped '`--' does survive, and is handed to the tool as the '--' that was meant.
+        ## Bash needs none of this and takes '--' directly.
+        if ($tool -and $token -eq '`--') { $toolArgs += '--'; continue }
         if     ($tool)        { $toolArgs += $token; continue }
+        elseif ($wantValue)   { $wantValue = $false; continue }
         elseif ($wantConfig)  { $configPath = $token; $configGiven = $true; $wantConfig = $false; continue }
         elseif ($wantTool)    {
             if ($token -notin 'git', 'gh') { throw "Unknown 'raw' subcommand '${token}'. One of: git, gh." }
@@ -996,6 +1023,15 @@ function Invoke-PassthroughIfAsked {
         elseif ($token -in '-q', '-Quiet', '-y', '-Yes')             { $quiet = $true }
         elseif ($token -eq '-Config' -or $token -eq '--config')      { $wantConfig = $true }
         elseif ($token -like '-Config=*' -or $token -like '--config=*') { $configPath = $token.Substring($token.IndexOf('=') + 1); $configGiven = $true }
+        ## Taken and inert: the passthrough never fetches, previews an identity, sets a visibility
+        ## or writes a commit. Refusing them made the main parser see a command called 'raw' and
+        ## report 'Unknown command', naming the one token that was not the problem.
+        elseif ($token -in '-NoFetch', '--no-fetch', '-AnyIdentity', '--any-identity',
+                           '-Public', '--public', '-Private', '--private')     { }
+        elseif ($token -in '-m', '-Message', '--message', '--msg')   { $wantValue = $true }
+        elseif ($token -like '-Message=*' -or $token -like '-m=*')   { }
+        ## -Help and -Version fall through on purpose: they are the main parser's job, not
+        ## something to swallow on the way to a passthrough.
         else   { break }
     }
     if ($wantTool) { throw "Syntax: $($script:meName) raw <git|gh> <arguments ...>" }
@@ -1930,12 +1966,21 @@ function Get-AccountApplyPlan {
     ## that silently misses because of a capital letter is worse than no rule.
     $dir = Get-AccountIncludeDir
     if (-not $dir) { return @() }
-    $plan = @()
+    $rules = @()
     foreach ($name in (Get-AccountNameList)) {
         foreach ($folder in (Get-AccountFolderList -Name $name)) {
-            ## The trailing slash is what makes git apply it to everything below the folder too.
-            $plan += [pscustomobject]@{ Condition = "includeIf.gitdir/i:${folder}/.path"; File = "${dir}/${name}.gitconfig" }
+            $rules += [pscustomobject]@{ Folder = $folder; Name = $name }
         }
+    }
+    ## Shortest path first. git applies includes in file order and the LAST match wins, while
+    ## gitsby takes the LONGEST matching folder - so written in declaration order, a tree nested
+    ## inside another account's tree got whichever account happened to be declared later. That
+    ## makes plain git and gitsby disagree about the same directory, which is the one thing
+    ## 'account apply' exists to prevent. Folder is the tie-break so the order is deterministic.
+    $plan = @()
+    foreach ($rule in ($rules | Sort-Object -Property @{ Expression = { $_.Folder.Length } }, Folder)) {
+        ## The trailing slash is what makes git apply it to everything below the folder too.
+        $plan += [pscustomobject]@{ Condition = "includeIf.gitdir/i:$($rule.Folder)/.path"; File = "${dir}/$($rule.Name).gitconfig" }
     }
     return @($plan)
 }
@@ -1971,8 +2016,16 @@ function Invoke-GitsbyAccountApply {
     ## in one of these folders behaves the same as it does through us. One fragment per account, and
     ## an includeIf per folder rule pointing at it - written with 'git config', never by editing the
     ## file ourselves, so git's own parser decides what a valid entry looks like.
+    ## Check the directory is usable BEFORE writing anything. Left to the file writes, a blocked
+    ## path surfaced as a raw .NET error - a different one from the Bash build's - part way through
+    ## the run, which reads as a crash rather than as something you can act on.
     $dir = Get-AccountIncludeDir
-    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    if (-not $dir) { throw "No config file, so there is nowhere to write the account fragments." }
+    if ((Test-Path -LiteralPath $dir) -and -not (Test-Path -LiteralPath $dir -PathType Container)) {
+        throw "'${dir}' is where the account fragments go, and it isn't a directory. Move or remove it, then re-run."
+    }
+    try { New-Item -ItemType Directory -Force -Path $dir -ErrorAction Stop | Out-Null }
+    catch { throw "Couldn't create '${dir}' for the account fragments. Check permissions on '$(Split-Path -Parent $dir)'." }
     foreach ($name in (Get-AccountNameList)) {
         $fragment = "${dir}/${name}.gitconfig"
         ## Rewritten whole each time: these files are ours, and a leftover key from a removed
@@ -2838,3 +2891,6 @@ try {
 ##      - 20260812 JC: The fetch and the remote probe add their connect timeout to git's own ssh command rather than replacing it. A repo carrying core.sshCommand - the usual way to hold two accounts on one machine - was read with the default key, so a private repo only the account's key can reach reported as unreachable and the publishing commands then refused.
 ##      - 20260812 JC: 'origin/HEAD' healing and the passthrough's gh probe - in step with bin/gitsby.
 ##      - 20260812 JC: The identity line names an account asked for by name - in step with bin/gitsby.
+##      - 20260812 JC: Apply ordering, the config-file checks and the 'raw' option scan - in step with bin/gitsby.
+##      - 20260812 JC: 'raw' takes '`--' and hands git the '--' it means. PowerShell's binder reads a bare '--'
+##        as an empty parameter name and fails before this script runs, so it can never be intercepted here.
