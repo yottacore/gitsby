@@ -30,6 +30,19 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 export GIT_AUTHOR_NAME=fuzz GIT_AUTHOR_EMAIL=fuzz@fuzz
 export GIT_COMMITTER_NAME=fuzz GIT_COMMITTER_EMAIL=fuzz@fuzz
 export GIT_TERMINAL_PROMPT=0
+## gitsby's own config decides which account a command acts as, so pin it the way test.bash does.
+export GITSBY_CONFIG="${work}/no-accounts.shcl"; : > "${GITSBY_CONFIG}"
+
+## Pinning the config FILES is not isolation on its own: GIT_CONFIG_COUNT/KEY_n/VALUE_n outrank
+## every one of them, and an inherited GH_TOKEN is what the fake gh reports back. Both arrive
+## from an ordinary working terminal, and neither shows up as a failure you can act on.
+fUnsetInheritedGitConfig(){
+	local -i i=0
+	for (( i = 0; i < ${GIT_CONFIG_COUNT:-0}; i++ )); do unset "GIT_CONFIG_KEY_${i}" "GIT_CONFIG_VALUE_${i}"; done
+	unset GIT_CONFIG_COUNT
+}
+fUnsetInheritedGitConfig
+unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT
 
 declare -i pass=0 fail=0
 fOk(){   pass=$((pass+1)); echo "  ok: $*"; }
@@ -355,3 +368,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260808 JC: Vectors for the 'raw' tool slot, the 'repo url' argument, the 'account' subcommand, '--config' and GITSBY_ACCOUNT. What follows 'raw git' or 'raw gh' is deliberately not fuzzed - reaching the tool verbatim is the contract, so a vector there would fire the canary on a pass.
 ##		- 20260810 JC: The glob-shaped clone directories are skipped on Windows. Win32 forbids those characters in a path, so native git cannot create such a work tree at all and the invariant is unprovable there rather than violated - MSYS mkdir happily makes one, which is what makes the first guess wrong.
 ##		- 20260812 JC: Vectors for the "pathContains" config value. It is compared against the current path and becomes a git config key in "account apply", so it reaches a native command twice; junk there must stay inert rather than be refused, since a rule matching nothing is the ordinary answer.
+##		- 20260813 JC: Same environment isolation the behavioural suite grew, plus the gitsby config file this one had never pinned at all.

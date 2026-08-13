@@ -48,6 +48,17 @@ export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@test
 export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@test
 export GITSBY_CONFIG="${work}/no-accounts.shcl"; : > "${GITSBY_CONFIG}"
 
+## Pinning the config FILES is not isolation on its own: GIT_CONFIG_COUNT/KEY_n/VALUE_n outrank
+## every one of them, and an inherited GH_TOKEN is what a gh call reports back. Both arrive from
+## an ordinary working terminal, and neither shows up as a failure you can act on.
+fUnsetInheritedGitConfig(){
+	local -i i=0
+	for (( i = 0; i < ${GIT_CONFIG_COUNT:-0}; i++ )); do unset "GIT_CONFIG_KEY_${i}" "GIT_CONFIG_VALUE_${i}"; done
+	unset GIT_CONFIG_COUNT
+}
+fUnsetInheritedGitConfig
+unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT
+
 declare -i pass=0 fail=0
 fOk(){   pass=$((pass+1)); echo "  ok: $*"; }
 fBad(){  fail=$((fail+1)); echo "  DIFFER: $*"; }
@@ -220,3 +231,4 @@ echo "parity passed: ${pass}, differed: ${fail}"
 ##		- 20260812 JC: Created. Compares the two builds against each other rather than each against
 ##		  a spec, for the defect class the behavioural suite cannot see: every port bug that reached
 ##		  users was a language mechanism differing, not a rule either build got wrong.
+##		- 20260813 JC: Same environment isolation the behavioural suite grew: env-injected git config and an inherited gh token.
