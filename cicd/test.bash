@@ -1773,6 +1773,25 @@ GHEOF
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git log --format=%s '${sep}' a.txt 2>/dev/null"
 	fAssertNotOut "and it really separates - an absent path lists nothing"  'init' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git log --format=%s '${sep}' nosuchfile.txt 2>/dev/null"
+
+	## How release.bash reads the changelog, which nothing else here reaches. changelog.md opens
+	## with a commented-out template whose headings are shaped exactly like real ones, and a
+	## first-match search has landed on that decoy three times now. The last one would have
+	## retitled the template, left the real section saying vNEXT, published the empty template as
+	## the release body, and warned about none of it. Two independent guards, either enough on its
+	## own. Pinned in the source because exercising it for real means cutting a release; bash leg
+	## only, since neither file belongs to an implementation.
+	if [[ "$1" == "bash" ]]; then
+		local relBash="${root}/cicd/release.bash" clMd="${root}/changelog.md"
+		fAssertFail "the changelog's template heading can't pass for a real one" \
+			grep -qE '^## vNEXT - DATE' "${clMd}"
+		fAssert "and the real vNEXT section is still findable below the template" \
+			awk '/^-->/{p=1; next} p && /^## vNEXT$/{n=1} END{exit !n}' "${clMd}"
+		fAssert "release.bash reads the changelog from past the template" \
+			grep -q 'fpChangelogStart' "${relBash}"
+		fAssertFail "and retitles by line number, not by first match" \
+			grep -qE '0,/\^## vNEXT' "${relBash}"
+	fi
 }
 
 echo "gitsby regression tests (fixture: ${work})"
@@ -1813,4 +1832,5 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260808 JC: The two identity checks run with GIT_AUTHOR_NAME/EMAIL unset. This file exports them for hermeticity, and they outrank every config, so with them in place neither check could see the thing it asks about.
 ##		- 20260808 JC: Coverage for 'repo url', 'account list|apply', the 'raw' passthrough, and the config-file argument in both builds. The joined '--config=FILE' spelling splits the two, so each leg is pinned to what it actually does.
 ##		- 20260810 JC: Refusals that only checked the exit code now check the reason too: a build predating these commands also exits 1, so nonzero alone proved nothing. One "check" turned out to run only git and could not fail; it asserts something now.
+##		- 20260813 JC: How release.bash reads changelog.md, pinned in the source - proving it for real would mean cutting a release. Three of the four discriminate against the prior code; "the real vNEXT section is still findable" is a regression guard, since that section was always there. Bash leg only: neither file belongs to an implementation.
 ##		- 20260812 JC: Paths handed to PowerShell go in the platform's spelling, via fWinPath. An MSYS path means nothing to .NET, which reads it against the current drive root, so Set-Location, the script lookup and ReadAllBytes all failed and twelve checks on Windows reported on a fixture nothing had touched - seven red, five green because the thing they forbid also never happened. Also: a unix-absolute argument is rewritten by Git Bash before the native pwsh sees it, and the system install location is the platform's own.

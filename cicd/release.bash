@@ -56,6 +56,25 @@ gitsbyBash="${root}/bin/gitsby"
 gitsbyPwsh="${root}/bin/gitsby.ps1"
 changelog="${root}/changelog.md"
 
+## changelog.md opens with a commented-out template whose headings are shaped exactly like real
+## ones, so a first-match search finds the decoy and not the section it meant. That has caused
+## three separate bugs here, the last of which would have retitled the template, published an
+## empty release body and warned about none of it. Two independent guards now: the template's
+## heading is spelled TEMPLATE_vNEXT, and everything below starts reading past the '-->'.
+fpChangelogStart(){
+	## First line of the real changelog, just past the commented-out template.
+	## awk rather than grep piped into head - a pipe would leave pipefail at the mercy of SIGPIPE.
+	local -i end=0
+	end="$(awk '/^-->/{print NR; exit}' "${changelog}")"
+	echo $((end + 1))
+:;}
+
+fpChangelogVnext(){
+	## Line the real '## vNEXT' heading sits on, or nothing at all.
+	local -i start; start="$(fpChangelogStart)"
+	awk -v start="${start}" 'NR>=start && /^## vNEXT/{print NR; exit}' "${changelog}"
+:;}
+
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Phase 1: prepare and verify. Nothing here changes anything outside the working tree, so a
 ## failure costs nothing and needs no undoing.
@@ -79,7 +98,7 @@ fNote "current version in both builds: v${verBash}"
 
 ## The changelog has to have something to release. 'vNEXT' is this project's convention for
 ## "landed but not cut", and releasing with no such section means the notes would be empty.
-grep -qE '^## vNEXT' "${changelog}" || fDie "changelog has no '## vNEXT' section, so there is nothing to release."
+[[ -n "$(fpChangelogVnext)" ]] || fDie "changelog has no '## vNEXT' section, so there is nothing to release."
 
 ## Where the version comes from: the argument, else the same bump 'gitsby release' would choose.
 if [[ -z "${version}" ]]; then
@@ -147,7 +166,10 @@ if ! fWould "branch ${relBranch}, bump both builds to ${version}, retitle the ch
 	## of what happened and must keep saying what they said.
 	sed -i "s/\(thisVersion=\"\)[0-9][^\"]*\(\"\)/\1${version#v}\2/" "${gitsbyBash}"
 	sed -i "s/\(thisVersion *= *'\)[0-9][^']*\('\)/\1${version#v}\2/" "${gitsbyPwsh}"
-	sed -i "0,/^## vNEXT.*$/s//## ${version} - ${today}/" "${changelog}"
+	## By line number, so the substitution cannot wander to a heading somewhere else in the file.
+	clLine="$(fpChangelogVnext)"
+	[[ -n "${clLine}" ]] || fDie "the changelog's '## vNEXT' heading went missing after phase 1."
+	sed -i "${clLine}s/^## vNEXT.*$/## ${version} - ${today}/" "${changelog}"
 	## gitsby's own 'pr create' rather than gh directly: it already knows this repo's merge target,
 	## which is the one thing a hand-written --base can get wrong.
 	prOut="$("${gitsbyBash}" -q pr create "${version}" 2>&1)" || { echo "${prOut}" >&2; fDie "couldn't open the version-bump PR."; }
@@ -170,7 +192,8 @@ fEcho "Phase 3: publish and prove"
 
 ## The release body is the changelog section, verbatim - the same words the repo already carries.
 notes="$(mktemp)"; trap 'rm -f "${notes}"' EXIT
-awk -v ver="## ${version} " 'index($0, ver)==1 {f=1; next} f && /^## /{exit} f' "${changelog}" > "${notes}" || true
+awk -v ver="## ${version} " -v start="$(fpChangelogStart)" \
+	'NR>=start && index($0, ver)==1 {f=1; next} f && /^## /{exit} f' "${changelog}" > "${notes}" || true
 [[ -s "${notes}" ]] || fNote "WARNING: no changelog section found for ${version}; the release body will be empty."
 
 assets="$(mktemp -d)"
@@ -214,3 +237,9 @@ echo
 ##		  all by hand, and each has been missed at least once. Both guards here exist because the
 ##		  thing they check has already gone wrong: the two builds' version strings drifting, and the
 ##		  in-script history footers going a whole release without an entry.
+##		- 20260813 JC: All three readings of the changelog start below the commented-out template.
+##		  Each took the first match, so each found the template's decoy heading instead: the guard
+##		  passed with nothing to release, the retitle rewrote the template and left the real section
+##		  saying vNEXT, and the release body came out as the empty template plus a stray '-->' -
+##		  non-empty, so the warning that exists for this never fired. The retitle is line-addressed
+##		  now, and the template's heading is spelled TEMPLATE_vNEXT so either guard would do alone.
