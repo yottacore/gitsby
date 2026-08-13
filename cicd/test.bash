@@ -34,6 +34,22 @@ export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@test
 ## account block below sets its own HOME and opts back out of this with an empty value.
 export GITSBY_CONFIG="${work}/no-accounts.shcl"; : > "${GITSBY_CONFIG}"
 
+## Two more inputs the lines above do NOT cover, both of which reach us from an ordinary
+## working terminal rather than from a config file:
+##   - GIT_CONFIG_COUNT/KEY_n/VALUE_n outrank every config FILE, including a repo-local one
+##     and the GIT_CONFIG_GLOBAL set above - so pinning the files is not isolation on its own.
+##   - GH_TOKEN and friends are what the fake gh reports back, so an inherited one makes every
+##     "gh was left alone" check read as "gh was handed a token".
+## Neither shows up as a failure you can act on: the suite just reports checks that were never
+## about the thing they name.
+fUnsetInheritedGitConfig(){
+	local -i i=0
+	for (( i = 0; i < ${GIT_CONFIG_COUNT:-0}; i++ )); do unset "GIT_CONFIG_KEY_${i}" "GIT_CONFIG_VALUE_${i}"; done
+	unset GIT_CONFIG_COUNT
+}
+fUnsetInheritedGitConfig
+unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT
+
 declare -i pass=0 fail=0
 fOk(){   pass=$((pass+1)); echo "  ok: $*"; }
 fFail(){ fail=$((fail+1)); echo "  FAIL: $*"; }
@@ -1830,6 +1846,24 @@ GHEOF
 			fAssertFail "${rmScript} never removes an unguarded variable path" \
 				grep -qE 'rm -[rf]+ +(-- )?"\$\{[a-zA-Z_][a-zA-Z_0-9]*\}' "${root}/${rmScript}"
 		done
+		## Hermeticity, the half that pinning the config FILES does not cover. Two inputs reach a
+		## harness from an ordinary working terminal and outrank everything it does set:
+		## GIT_CONFIG_COUNT/KEY_n beat every config file including a repo-local one, and an
+		## inherited GH_TOKEN is what the fake gh reports back. A run carrying either still reports
+		## a count and a list of names - the checks are simply no longer about what they say.
+		## The bracketed last letter keeps the pattern from matching this line when the file being
+		## searched is this one, which would pass against a harness that dropped the isolation.
+		local hermScript
+		for hermScript in cicd/test.bash cicd/fuzz.bash cicd/parity.bash; do
+			fAssert "${hermScript} drops env-injected git config" \
+				grep -qE 'unset GIT_CONFIG_COUN[T]' "${root}/${hermScript}"
+			fAssert "${hermScript} drops an inherited gh token" \
+				grep -qE 'unset GH_TOKE[N]' "${root}/${hermScript}"
+		done
+		## Runtime companions to the pins above. Regression guards, not discriminating checks: on a
+		## clean machine they pass just as well against a harness that isolates nothing.
+		fAssert "this run carries no env-injected git config"  bash -c '[[ -z "${GIT_CONFIG_COUNT:-}" ]]'
+		fAssert "and no inherited gh token"                    bash -c '[[ -z "${GH_TOKEN:-}" ]]'
 	fi
 }
 
@@ -1874,3 +1908,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260813 JC: How release.bash reads changelog.md, pinned in the source - proving it for real would mean cutting a release. Three of the four discriminate against the prior code; "the real vNEXT section is still findable" is a regression guard, since that section was always there. Bash leg only: neither file belongs to an implementation.
 ##		- 20260812 JC: Paths handed to PowerShell go in the platform's spelling, via fWinPath. An MSYS path means nothing to .NET, which reads it against the current drive root, so Set-Location, the script lookup and ReadAllBytes all failed and twelve checks on Windows reported on a fixture nothing had touched - seven red, five green because the thing they forbid also never happened. Also: a unix-absolute argument is rewritten by Git Bash before the native pwsh sees it, and the system install location is the platform's own.
 ##		- 20260813 JC: Recursive removal. demo-repo.bash is the only script here that removes a path someone else named, so it gets real checks; the rest are pinned to removing only what mktemp handed them. Sixteen of the seventeen discriminate against the prior code; the last is a regression guard on a file that never removed anything. The filesystem-root case is pinned rather than run, because running it against a build without the guard is 'rm -rf /'.
+##		- 20260813 JC: Drop the two settings a working terminal carries that outrank everything pinned here - GIT_CONFIG_COUNT with its numbered keys, which beats every config file including a repo-local one, and an inherited GH_TOKEN, which is what the fake gh reports back. Twenty checks had been reporting on the terminal rather than the code. Pinned in all three harnesses; the runtime pair is a regression guard, since a clean machine passes either way.

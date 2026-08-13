@@ -116,6 +116,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The publish preview's throwaway git directory is removed even if the run is interrupted while the preview is still on screen. The Bash build removed it only on the way out of the function, so a Ctrl-C mid-preview left an empty directory in temp; the PowerShell build already covered this.
 
+- All three harnesses now drop the two settings that reach them from an ordinary working terminal and outrank everything they pin: `GIT_CONFIG_COUNT` and its numbered keys, which beat every config file including a repo-local one, and an inherited `GH_TOKEN`. A run carrying either still reported a count and a list of names - the checks were simply no longer about what they said.
+
 - `cicd/release.bash` cuts a release end to end, in three phases so a failure never leaves a half-cut one: verify and change nothing, land, then publish and prove by running the documented installer against the published release. `--dry-run` says what it would do. It guards the two things that have been forgotten by hand - the two builds agreeing on the version, and the history footers carrying an entry since the last tag.
 
 - The pipeline fast-forwards from origin before it builds anything, in both engines. Its only pull used to be in the publish stage, which runs after lint, tests and fuzz have all passed - so a change merged upstream meanwhile was pushed having been validated against the older tree. It stops on a real divergence, warns and carries on when offline or with no upstream, and `--no-sync` (`-NoSync`) skips it.

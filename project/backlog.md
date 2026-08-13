@@ -61,6 +61,13 @@ In each section, items are listed approximately from newest to oldest.
 
 #### Done - Bugs
 
+- ✅ Twenty regression checks reported on the terminal they were run from, not on the code.
+	- The harnesses pinned git's config files and gitsby's own config file. Two inputs outrank all of those and arrive from any ordinary working terminal: `GIT_CONFIG_COUNT` with its numbered keys beats every config file, a repo-local one included, and an inherited `GH_TOKEN` is what a gh call reports back.
+	- Ten checks per implementation, the same ten on both, which is what showed it was not a port difference. Five gh checks that can only pass when no token is held, and five identity checks that read a commit address back through a config file.
+	- Nothing was wrong with the product. The same suite and the same builds pass standalone, and pass under the pipeline once the environment is clean.
+	- Fixed in all three harnesses. `fuzz.bash` was also the only one never pinning gitsby's config file.
+	- Pinned in the source of each harness. The two runtime companions are labelled as regression guards: on a clean machine they pass against a harness that isolates nothing.
+
 - ✅ `demo-repo.bash` removed whatever directory it was pointed at, without checking whose it was.
 	- It took a root path as its first argument and `rm -rf`'d it before doing anything else. A mistyped or inherited argument took whatever lived there, and the script then reported success.
 	- Reproduced against the previous version: a directory holding an unrelated file was passed as the root, and came back empty with an exit code of 0.
