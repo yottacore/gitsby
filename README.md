@@ -20,7 +20,7 @@
 <table style="border: none; border-collapse: collapse;">
 	<tr style="border: none; border-collapse: collapse;">
 		<td style="border: none; border-collapse: collapse;"><img src="assets/logo.png" alt="Logo" width="128"/></td>
-		<td style="border: none;">A simple, safe, opinionated Git wrapper for everyday work: nine commands instead of eighty-odd, and a workflow the tool enforces rather than a convention you're asked to remember.<br /><br />It also knows which of your GitHub accounts owns which folder, so work and personal repos stop needing SSH host aliases.</td>
+		<td style="border: none;">A simple, safe, opinionated Git wrapper for everyday work: nine commands instead of eighty-odd, and a workflow the tool enforces rather than a convention you're asked to remember.<br /><br />It also knows which of your GitHub accounts owns which folder, so for example work and personal repos stay separate.</td>
 	</tr>
 </table>
 
@@ -33,55 +33,16 @@
 	<img src="assets/demo.gif" width="960" alt="Demo."/>
 -->
 
-## Install
-
-~~~bash
-curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install.bash | bash
-~~~
-
-~~~pwsh
-irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1 | iex
-~~~
-
-Per-user by default, and it shows you the plan before it does anything. You need Git, plus either bash 4.4+ or PowerShell 7+. [More installation options](#installation-options).
-
-## A typical day
-
-~~~bash
-## Day zero: get the repo
-gitsby repo clone git@github.com:my-github-user/my-project.git
-
-## Or to publish work that only exists locally
-gitsby repo create my-github-user/my-project
-
-## Branch off dev (or main), publish it
-gitsby br create Feature1
-
-## ...Do work...
-
-## Commit + pull; do this all day long
-gitsby update "wip"
-
-## Also push, when ready to share to the upstream branch
-gitsby sync
-
-## Merge into dev (--no-ff), push, delete the branch
-gitsby br land "Add Feature1"
-~~~
-
-Every mutating command fetches first, shows you the repo state and the exact git commands it is about to run, and asks before touching anything.
-
 <!-- TOC ignore:true -->
 ## Table of contents
 <!-- TOC -->
 
-- [Install](#install)
-- [A typical day](#a-typical-day)
 - [What it is](#what-it-is)
 - [Commands](#commands)
 - [Multiple GitHub accounts](#multiple-github-accounts)
 - [Compatibility](#compatibility)
-- [Installation options](#installation-options)
+- [A typical day](#a-typical-day)
+- [Install](#install)
 - [How to develop](#how-to-develop)
 - [Contributing](#contributing)
 - [Legal stuff](#legal-stuff)
@@ -158,9 +119,10 @@ account.work.path       = ~/dev/work
 account.work.ghAccount  = my-work-login
 account.work.email      = ada@work.example
 
-account.personal.path       = ~/dev/personal
-account.personal.ghAccount  = my-personal-login
-account.personal.email      = ada@home.example
+# Or name folders instead of a root, and the same file works on every machine
+account.personal.pathContains = github.com/my-personal-login
+account.personal.ghAccount    = my-personal-login
+account.personal.email        = ada@home.example
 ~~~
 
 Over HTTPS each account authenticates with its own token - the one `gh` already stores - so a second account costs one `gh auth login` and three lines of config, with no SSH keys and no `~/.ssh/config` host aliases baked into remote URLs. `gitsby account apply` writes the same rules into your global git config as ordinary `includeIf` blocks, so plain `git` agrees with Gitsby even when Gitsby isn't involved. `gitsby raw git ...` runs any git command as the folder's account, so existing scripts become account-correct by prefixing rather than rewriting.
@@ -191,50 +153,45 @@ Full detail, including SSH keys, token files, and how Gitsby checks that `gh` an
 
 - Your default branch can be called anything. Gitsby asks the remote what it is, and falls back to `main`, `master`, or `trunk` locally - or to your only branch, in a repo that has just one. If it genuinely can't tell, it says so and stops instead of guessing, and `git remote set-head origin --auto` is usually the one-line fix.
 
-## Installation options
-
-There are no distribution packages yet - nothing on apt, dnf, Homebrew, or winget. The install scripts are the supported route, and either one shows exactly what it will do and asks before doing it.
-
-By default they take the latest full release and verify the download against that release's `SHA256SUMS`. Asking for anything else - `--release dev`, or a branch or tag by name - pulls straight from the tree instead, and skips verification. Either way the plan says which of the two you are about to get, before you agree to it.
-
-On Windows the PowerShell installer also adds the install directory to your PATH, since nothing else there will, and says so in the plan. Open a new shell afterwards to pick it up.
-
-| Bash | PowerShell | Effect |
-| --- | --- | --- |
-| `--release dev\|stable` | `-Release dev\|stable` | Which build: the latest release (the default), or the tip of `dev`. |
-| `--target user\|system` | `-Target user\|system` | Install for you (the default) or for everyone. `~/.local/bin` -> `/usr/local/bin` (*nix); system needs `sudo` or an elevated shell. |
-| `--arch x64\|amd64\|arm64` | `-Arch x64\|amd64\|arm64` | Accepted so the command line matches other installers. It has no effect here - gitsby is a script, so one file runs on every architecture. |
-| `-r`, `--ref REF` | `-Ref REF` | A specific branch, tag, or commit. Skips checksum verification. |
-| `-y`, `--yes` | `-Yes` | Skip the confirmation prompt (for scripted installs). |
-| `-h`, `--help` | `-?` | Show usage and exit. |
-
-`-s`/`--system` and `-System` still work, and mean the same as `--target system`.
-
-System-wide, and the no-`curl` case:
+## A typical day
 
 ~~~bash
-curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install.bash | bash -s -- --target system
+## Day zero: get the repo
+gitsby repo clone git@github.com:my-github-user/my-project.git
+
+## Or to publish work that only exists locally
+gitsby repo create my-github-user/my-project
+
+## Branch off dev (or main), publish it
+gitsby br create Feature1
+
+## ...Do work...
+
+## Commit + pull; do this all day long
+gitsby update "wip"
+
+## Also push, when ready to share to the upstream branch
+gitsby sync
+
+## Merge into dev (--no-ff), push, delete the branch
+gitsby br land "Add Feature1"
+~~~
+
+Every mutating command fetches first, shows you the repo state and the exact git commands it is about to run, and asks before touching anything.
+
+## Install
+
+~~~bash
+curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install.bash | bash
 ~~~
 
 ~~~pwsh
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1))) -Target system
+irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1 | iex
 ~~~
 
-No `curl`? Swap in `wget -qO-` for `curl -fsSL`.
+Per-user by default, and it shows you the plan before it does anything. You need Git, plus either bash 4.4+ or PowerShell 7+.
 
-Or skip the installer entirely - grab the script, make it executable, put it on your PATH:
-
-~~~bash
-mkdir -p ~/.local/bin && curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/bin/gitsby -o ~/.local/bin/gitsby && chmod +x ~/.local/bin/gitsby
-~~~
-
-~~~pwsh
-$dest = if ($IsWindows) { "$env:LOCALAPPDATA\Programs\gitsby" } else { "$HOME/.local/bin" }
-New-Item -ItemType Directory -Force -Path $dest | Out-Null
-irm https://raw.githubusercontent.com/jim-collier/gitsby/main/bin/gitsby.ps1 -OutFile "$dest/gitsby.ps1"
-~~~
-
-For reference, the installers use: `~/.local/bin` (user) or `/usr/local/bin` (system) on *nix; `%LOCALAPPDATA%\Programs\gitsby` (user) or `%ProgramFiles%\gitsby` (system) on Windows.
+For more installation options (e.g. stable vs dev), download the installations script directly, and run with `--help` for full options.
 
 ## How to develop
 

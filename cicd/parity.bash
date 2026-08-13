@@ -144,6 +144,22 @@ for spelling in "${spellings[@]}"; do
 	fSameField "path spelled '${spelling}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${work}/spell.shcl" status
 done
 
+## 'pathContains' names folder names rather than a machine's tree, so it is the one rule meant to
+## be identical everywhere - which makes any divergence between the builds worth more here, not less.
+echo
+echo "-- pathContains rules"
+mkdir -p "${work}/mA/github.com/alice/proj" "${work}/mB/github.com/alice/proj" "${work}/mA/github.com/alice-old/proj"
+for d in "${work}/mA/github.com/alice/proj" "${work}/mB/github.com/alice/proj" "${work}/mA/github.com/alice-old/proj"; do
+	git init --quiet -b main "${d}"
+done
+cat > "${work}/seg.shcl" <<-EOF
+	account.seg.pathContains = github.com/alice
+	account.seg.ghAccount    = segacct
+EOF
+fSameField "pathContains resolves the same under root A" '^Account' "${work}/mA/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
+fSameField "pathContains resolves the same under root B" '^Account' "${work}/mB/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
+fSameField "and both agree it is whole folder names"     '^Account' "${work}/mA/github.com/alice-old/proj" -q -NoFetch --config "${work}/seg.shcl" status
+
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Option binding. PowerShell's parameter binder is a whole mechanism the Bash build does not have,
 ## and it has produced three separate defects: options claimed out of a passthrough, a joined

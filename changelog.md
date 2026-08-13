@@ -36,6 +36,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `cicd/utility/include/gh-account.bash`, a sourceable version of the same selection for pipelines that call `gh` directly rather than through gitsby.
 
+- `account.<name>.pathContains` matches a run of folder names appearing anywhere in a path, rather than a tree on this machine - so one config file can be synced between machines whose roots differ. Whole folder names only, so `alice` never matches `alice-old`. More folder names is the more specific rule, and an absolute `path` still wins when both match. `account apply` hands it to git as `includeIf.gitdir:**/github.com/alice/**`, which git globs natively, so plain `git` follows the same rule on every machine too.
+
 ### Changed
 
 - Healing `origin/HEAD` after a fetch only runs when there is nothing to read locally, instead of on every command. It queries the remote a second time, and git 2.47 and newer write one at clone.
