@@ -2300,14 +2300,18 @@ fpShowFilesToPublish(){
 	## through a throwaway git dir OUTSIDE the work tree: that way .gitignore and core.excludesFile
 	## are honored exactly as the real 'git add --all' will honor them (listing files git would
 	## skip is its own kind of wrong), and answering 'n' leaves the directory as it was found.
-	local -r probeDir="$(mktemp -d 2>/dev/null || true)"
-	[[ -n "${probeDir}" && -d "${probeDir}" ]] || return 0
-	env GIT_DIR="${probeDir}" GIT_WORK_TREE="${PWD}" git init --quiet >/dev/null 2>&1 || true
+	## Script-scope, not local: a Ctrl-C mid-probe unwinds straight to fCleanup, which can only
+	## remove what it can still see. Nothing else ever assigns it, so the rm below cannot be
+	## pointed at anything but the directory mktemp just made.
+	_probeDir="$(mktemp -d 2>/dev/null || true)"
+	[[ -n "${_probeDir}" && -d "${_probeDir}" ]] || { _probeDir=""; return 0; }
+	env GIT_DIR="${_probeDir}" GIT_WORK_TREE="${PWD}" git init --quiet >/dev/null 2>&1 || true
 	fEcho_Clean ""
 	fEcho_Clean "Files to publish:"
-	fpCappedList env GIT_DIR="${probeDir}" GIT_WORK_TREE="${PWD}" git ls-files --others --exclude-standard
+	fpCappedList env GIT_DIR="${_probeDir}" GIT_WORK_TREE="${PWD}" git ls-files --others --exclude-standard
 	((_lastListCount)) || fEcho_Clean "    (nothing - the directory is empty, or everything in it is ignored)"
-	rm -rf -- "${probeDir}"
+	rm -rf -- "${_probeDir:?}"
+	_probeDir=""
 :;}
 
 fpShowIncoming(){
@@ -2740,7 +2744,12 @@ fEcho_Clean_Force()       { fEcho_ResetBlankCounter; fEcho_Clean "$*"; }
 declare -i _wasCleanupRun=0  ## Managed internally by this suite.
 declare -i _doExitOnThrow=0  ## Managed internally by this suite.
 declare -i _ErrVal=0         ## Set by this suite, but managed by calling functions. Think of it as an extended '$?' that doesn't immediately clear.
-fCleanup(){ fEcho_Clean; }
+declare    _probeDir=""      ## fpShowFilesToPublish()'s throwaway git dir, so fCleanup can still find it after a Ctrl-C
+fCleanup(){
+	## Ctrl-C between the probe's mktemp and its own rm would otherwise strand an empty
+	## directory in temp. Only ever the path mktemp handed us, and only while it is set.
+	if [[ -n "${_probeDir}" && -d "${_probeDir}" ]]; then rm -rf -- "${_probeDir:?}"; _probeDir=""; fi
+	fEcho_Clean; }
 _fSingleExitPoint(){
 	local -r signal="${1:-}"
 	local -r lineNum="${2:-}"
@@ -2935,3 +2944,4 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##		- 20260812 JC: Account rules are applied shortest path first, so git (last match wins) and gitsby (longest match wins) agree about a nested tree. Account names match whatever case you type. Every gitsby option works before "raw", which used to report an unknown command and name the wrong token. A --config naming a directory is refused, and an unusable include directory is reported rather than dumped as a shell error.
 ##		- 20260812 JC: The identity line says when an account was resolved but not applied, and the commands that push with git compare it against the key origin authenticates as - "sync" compared nothing at all. "account apply" also writes the https credential username. "br prune" asks git once per target ref rather than twice per branch, and a folder rule pointing at no directory is marked as one that can never match.
 ##		- 20260812 JC: "account.<name>.pathContains" matches a run of folder names anywhere in a path, so one config file can be synced between machines whose roots differ. Whole names only; more names is the more specific rule; an absolute "path" still wins. "account apply" emits it as a gitdir glob, which git handles natively.
+##		- 20260813 JC: The publish preview's throwaway git dir survives an interrupt no longer - it is removed on the way out of the run, not only on the way out of the function that made it.

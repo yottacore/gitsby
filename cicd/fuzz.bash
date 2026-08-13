@@ -23,7 +23,7 @@ set -Eeuo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/.." && pwd)"
 work="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-fuzz.XXXXXX")"
-trap 'rm -rf "${work}"' EXIT
+trap 'rm -rf -- "${work:?}"' EXIT
 
 ## Hermetic: no reliance on (or writes to) the user's git config, no prompts.
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
@@ -89,7 +89,7 @@ fDirLiteral(){ local -r desc="$1"; local -r dir="$2"; local -r url="$3"; local -
 	else fFail "${desc}: no clone at [${name}]"; fi; }
 
 fTitleLiteral(){ local -r desc="$1"; local -r dir="$2"; local -r title="$3"
-	rm -f "${ghLog}"
+	rm -f -- "${ghLog:?}"
 	fRun "${dir}" -q pr create "${title}"
 	local rec; rec="$(awk '/^--title$/{getline; print; exit}' "${ghLog}" 2>/dev/null || true)"
 	if _isCrash;                   then fFail "${desc}: crashed (exit ${_code})"

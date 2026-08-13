@@ -1362,7 +1362,10 @@ function Show-FilesToPublish {
         ## Restore, not blank: an empty GIT_DIR is not the same as an unset one.
         if ($null -eq $savedGitDir) { Remove-Item Env:GIT_DIR -ErrorAction SilentlyContinue } else { $env:GIT_DIR = $savedGitDir }
         if ($null -eq $savedWorkTree) { Remove-Item Env:GIT_WORK_TREE -ErrorAction SilentlyContinue } else { $env:GIT_WORK_TREE = $savedWorkTree }
-        Remove-Item -LiteralPath $probeDir -Recurse -Force -ErrorAction SilentlyContinue
+        ## finally covers a Ctrl-C as well as an error, so this is the counterpart of the bash
+        ## build's fCleanup hook. Nothing else assigns $probeDir, so it can only be the directory
+        ## built above; the emptiness test is there so a recursive delete never runs on nothing.
+        if ($probeDir) { Remove-Item -LiteralPath $probeDir -Recurse -Force -ErrorAction SilentlyContinue }
     }
 }
 
@@ -3030,3 +3033,5 @@ try {
 ##      - 20260812 JC: An unknown option is named. It lands in $Rest and leaves $Command empty, so it
 ##        was answered with the whole help text, and under -q with nothing but an exit code.
 ##      - 20260812 JC: 'account.<name>.pathContains' - in step with bin/gitsby.
+##      - 20260813 JC: The publish preview's throwaway git dir is tested before it is removed - in step
+##        with bin/gitsby, whose cleanup moved to the exit path.
