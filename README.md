@@ -189,11 +189,20 @@ curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install.bas
 irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1 | iex
 ~~~
 
-Per-user by default, and it shows you the plan before it does anything. You need Git, plus either bash 4.4+ or PowerShell 7+.
+You need Git, plus either bash 4.4+ or PowerShell 7+. There are no distribution packages yet - nothing on apt, dnf, Homebrew or winget - so these two scripts are the supported route.
 
-It installs to `~/.local/bin` on *nix, or `%LOCALAPPDATA%\Programs\gitsby` on Windows, and checks the download against the release's `SHA256SUMS` first.
+Either one shows you its plan and asks before touching anything. By default it takes the latest full release and checks the download against that release's published `SHA256SUMS`. Asking for a branch or tag instead pulls straight from the tree, which has no published checksum, and the plan says which of the two you are about to get.
 
-For more options - a system-wide install, or the tip of `dev` rather than the latest release - download the installer and run it with `--help`.
+It installs for you alone unless told otherwise:
+
+| Platform            | You (the default)                | Everyone
+| :--                 | :--                              | :--
+| Linux, macOS, BSD   | `~/.local/bin`                   | `/usr/local/bin`
+| Windows             | `%LOCALAPPDATA%\Programs\gitsby` | `%ProgramFiles%\gitsby`
+
+On Windows the PowerShell installer also puts that directory on your PATH, since nothing else there will, and says so in the plan. Open a new shell afterwards to pick it up.
+
+For anything else - installing for everyone, or taking the tip of `dev` rather than the latest release - download the installer and run it with `--help`.
 
 ## How to develop
 

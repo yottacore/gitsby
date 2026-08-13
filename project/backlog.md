@@ -485,9 +485,9 @@ In each section, items are listed approximately from newest to oldest.
 Light pass over the folder-name rules, the release script, the changelog template guard and the removal audit, plus what they knocked loose elsewhere. Nothing wrong with the changes themselves; all four findings are things around them that went stale or were missed.
 
 - ✅ Code Review 20260813 item 1: the README stopped saying where it installs to, or that the download is checked.
-	- Cause: the installation-options section was folded down to two one-liners, and those two facts went with it. The sentence left behind also had a stray plural and said "options" twice.
+	- Cause: the section was folded down to two one-liners so they could be pasted and run as-is. Dropping the flag table was the point; the locations and the checksum went with it by accident. The sentence left behind also had a stray plural and said "options" twice.
 	- Note: both are reasons to trust the installer, and neither is visible until you have already run it.
-	- Fixed: one line for the two install locations and the checksum, one for where to find the rest.
+	- Fixed: restored in the same place, without the flags - what you need Git and a shell for, what gets checked, a small table of the four install locations, the PATH note on Windows, and a pointer to `--help` for the rest.
 
 - ✅ Code Review 20260813 item 2: the changelog described a README that no longer exists.
 	- Cause: it claimed install and the worked example are the first two sections. Both have since moved down, below the commands and the accounts material.
