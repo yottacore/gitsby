@@ -59,6 +59,12 @@ The two files are ports of each other. A change to one nearly always belongs in 
 
 - Any command named inside an error message, or in the built-in help, has to be one the parser still accepts. The help is the only documentation most people read, so it drifting is a defect, not a typo.
 
+- A recursive or forced removal may only target a path the running script itself created, and has to be able to prove it.
+	- In practice that means the path came straight from `mktemp` and nothing else ever assigns it.
+	- Where a path arrives from outside - an argument, an environment variable - proof means a marker the script wrote when it built the directory. Absent marker, absent removal.
+	- Every such removal is written so an unset variable stops it rather than widening it, because the failure mode of getting this wrong is not recoverable.
+	- The one product-side temp path is the throwaway git dir the publish preview uses. It is removed on the exit path, so an interrupt cannot strand it.
+
 ## Direction decisions
 
 - There is no bare `commit` and no bare `pull`. Both were escape hatches around the workflow the tool exists to enforce.

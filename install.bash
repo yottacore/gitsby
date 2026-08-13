@@ -163,7 +163,7 @@ if [[ ${doYes} -eq 0 ]]; then
 fi
 
 tmpFile="$(mktemp "${TMPDIR:-/tmp}/gitsby-install.XXXXXX")"
-trap 'rm -f "${tmpFile}"' EXIT
+trap 'rm -f -- "${tmpFile:?}"' EXIT
 
 echo
 fEcho "Downloading ..."

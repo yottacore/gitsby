@@ -21,7 +21,7 @@ set -Eeuo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/.." && pwd)"
 work="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-test.XXXXXX")"
-trap 'rm -rf "${work}"' EXIT
+trap 'rm -rf -- "${work:?}"' EXIT
 
 ## Keep test commits hermetic (no reliance on the user's git config).
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
@@ -593,11 +593,11 @@ fRunSuite(){
 	## The list itself, line by line, on a fresh copy of the same tree: the stray dotfile is the
 	## point of the feature, and an ignored file appearing would make the whole list untrustworthy.
 	local pub2="${cn}/publish2"
-	mkdir -p "${pub2}"; cp -r "${pubDir}/." "${pub2}/"; rm -rf "${pub2}/.git"
+	mkdir -p "${pub2}"; cp -r "${pubDir}/." "${pub2}/"; rm -rf -- "${pub2:?}/.git"
 	git init --quiet --bare -b main "${cn}/remote4.git"
 	fAssertOut    "the listing names a stray dotfile"  '^    \.env$'  bash -c "cd '${pub2}' && '${gitsby}' -q repo connect '${cn}/remote4.git' 2>&1"
 	local pub3="${cn}/publish3"
-	mkdir -p "${pub3}"; cp -r "${pubDir}/." "${pub3}/"; rm -rf "${pub3}/.git"
+	mkdir -p "${pub3}"; cp -r "${pubDir}/." "${pub3}/"; rm -rf -- "${pub3:?}/.git"
 	git init --quiet --bare -b main "${cn}/remote5.git"
 	fAssertNotOut "the listing honors .gitignore"  'skipme\.log|skipdir'  bash -c "cd '${pub3}' && '${gitsby}' -q repo connect '${cn}/remote5.git' 2>&1"
 
@@ -1792,6 +1792,45 @@ GHEOF
 		fAssertFail "and retitles by line number, not by first match" \
 			grep -qE '0,/\^## vNEXT' "${relBash}"
 	fi
+
+	## Recursive removal. demo-repo.bash is the only script here that removes a path someone else
+	## named, so it gets real checks; the rest only ever remove what mktemp just handed them, and
+	## that is pinned in the source. Bash leg only - none of these files belong to an
+	## implementation. A Ctrl-C mid-probe can't be staged on every platform (a native child defers
+	## the signal), so the probe's own cleanup is asserted where it lives instead.
+	## The single quotes below are the point - these are searches for literal source text.
+	# shellcheck disable=SC2016
+	if [[ "$1" == "bash" ]]; then
+		local demoRepo="${root}/cicd/utility/demo-repo.bash" rmWork="${work}/rmsafe"
+		mkdir -p "${rmWork}/notmine/keep"; echo keepme > "${rmWork}/notmine/keep/file.txt"
+		## On the message, not just the exit code: a build that refuses for some unrelated reason
+		## later on exits nonzero too, and two of these passed against the unguarded script on
+		## that alone.
+		fAssertFail "demo-repo refuses a root it did not build" \
+			bash "${demoRepo}" "${rmWork}/notmine"
+		fAssertOut  "and says whose directory it is" 'did not build it' \
+			bash "${demoRepo}" "${rmWork}/notmine"
+		fAssertOut  "and leaves that directory untouched" '^keepme$' \
+			cat "${rmWork}/notmine/keep/file.txt"
+		fAssertOut  "demo-repo refuses a relative root"      'plain absolute path' \
+			bash "${demoRepo}" relative/path
+		fAssertOut  "demo-repo refuses a root containing .." 'plain absolute path' \
+			bash "${demoRepo}" "${rmWork}/a/../b"
+		## Deliberately NOT run: passing '/' to a build that lacks the guard is 'rm -rf /'. It is
+		## one clause of the same test the two checks above exercise for real, so it is pinned.
+		fAssert "and the same test rejects the filesystem root" \
+			grep -qF '"${root}" != "/"' "${demoRepo}"
+		fAssert "the publish probe's dir is removed on the way out, not only in the happy path" \
+			grep -q '_probeDir' "${root}/bin/gitsby"
+		fAssert "and its pwsh counterpart tests the path before removing it" \
+			grep -q 'if ($probeDir) { Remove-Item' "${root}/bin/gitsby.ps1"
+		local rmScript
+		for rmScript in bin/gitsby cicd/cicd.bash cicd/test.bash cicd/fuzz.bash cicd/parity.bash \
+		                cicd/release.bash cicd/utility/demo-repo.bash install.bash install-dev.bash; do
+			fAssertFail "${rmScript} never removes an unguarded variable path" \
+				grep -qE 'rm -[rf]+ +(-- )?"\$\{[a-zA-Z_][a-zA-Z_0-9]*\}' "${root}/${rmScript}"
+		done
+	fi
 }
 
 echo "gitsby regression tests (fixture: ${work})"
@@ -1834,3 +1873,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260810 JC: Refusals that only checked the exit code now check the reason too: a build predating these commands also exits 1, so nonzero alone proved nothing. One "check" turned out to run only git and could not fail; it asserts something now.
 ##		- 20260813 JC: How release.bash reads changelog.md, pinned in the source - proving it for real would mean cutting a release. Three of the four discriminate against the prior code; "the real vNEXT section is still findable" is a regression guard, since that section was always there. Bash leg only: neither file belongs to an implementation.
 ##		- 20260812 JC: Paths handed to PowerShell go in the platform's spelling, via fWinPath. An MSYS path means nothing to .NET, which reads it against the current drive root, so Set-Location, the script lookup and ReadAllBytes all failed and twelve checks on Windows reported on a fixture nothing had touched - seven red, five green because the thing they forbid also never happened. Also: a unix-absolute argument is rewritten by Git Bash before the native pwsh sees it, and the system install location is the platform's own.
+##		- 20260813 JC: Recursive removal. demo-repo.bash is the only script here that removes a path someone else named, so it gets real checks; the rest are pinned to removing only what mktemp handed them. Sixteen of the seventeen discriminate against the prior code; the last is a regression guard on a file that never removed anything. The filesystem-root case is pinned rather than run, because running it against a build without the guard is 'rm -rf /'.

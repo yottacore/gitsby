@@ -39,8 +39,31 @@ export GIT_COMMITTER_EMAIL="mika@example.com"
 export GIT_AUTHOR_DATE="2026-01-15T10:00:00 +0000"
 export GIT_COMMITTER_DATE="2026-01-15T10:00:00 +0000"
 
-rm -rf "${root}"
+##	ROOT is the only caller-supplied path in the tree that gets removed recursively, so it has to
+##	prove it is ours first. The stamp is written below, right after the directory is made, so any
+##	run that got far enough to create anything is recognized on the next one. A mistyped or
+##	inherited ROOT costs an error message instead of whatever was living there.
+stamp="${root}/.gitsby-demo-root"
+[[ -n "${root}" && "${root}" == /* && "${root}" != "/" && "${root}" != */.. && "${root}" != *..* ]] \
+	|| { echo "demo-repo: ROOT must be a plain absolute path below the filesystem root; got '${root}'." >&2; exit 1; }
+if [[ -e "${root}" ]]; then
+	##	A root built before the stamp existed is still recognizably ours - nothing else puts a
+	##	demo.env beside an acme-api-origin.git. Without that second reading, the first run after
+	##	this guard landed would refuse the directory the previous run had made itself.
+	ours=0
+	if [[ -d "${root}" && ! -L "${root}" ]]; then
+		if   [[ -f "${stamp}" ]]; then                             ours=1
+		elif [[ -f "${root}/demo.env" && -d "${bare}" ]]; then      ours=1
+		fi
+	fi
+	if ((ours == 0)); then
+		echo "demo-repo: '${root}' exists and this script did not build it; remove it by hand if that is what you meant." >&2
+		exit 1
+	fi
+	rm -rf -- "${root:?}"
+fi
 mkdir -p "${HOME}" "${work}"
+: > "${stamp}"
 
 cat > "${GIT_CONFIG_GLOBAL}" <<-EOF
 	[user]
@@ -83,3 +106,4 @@ printf 'retries: 3\n' >> config.yml
 
 ##	History:
 ##		- 20260724: v1.0. Anonymized offline repo builder for the demo gif.
+##		- 20260813: ROOT is checked before it is removed. It was taken on trust and wiped first thing, so a mistyped or inherited argument cost whatever was there. Directories this script builds are stamped, and only a stamped one is removed.

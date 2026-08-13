@@ -110,6 +110,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - A parity suite, `cicd/parity.bash`, runs in the test stage of both engines. It asks whether the two builds *answer the same* for one input, where the regression suite asks whether each behaves correctly - a check written per implementation passes on both while they quietly disagree, which is what every port defect that reached users actually was. It found two real divergences while being written.
 
+- `cicd/utility/demo-repo.bash` no longer removes the directory it is pointed at without checking whose it is. It took a path as its first argument and wiped it before doing anything else, so a mistyped or inherited argument took whatever lived there and still reported success. It now stamps the directories it builds and refuses to remove one it did not, along with a relative path, the filesystem root, and anything containing `..`.
+
+- Every other recursive or forced removal in the tree names a path the script itself just created, and each one is now written so that an unset variable stops it instead of widening it. The suite checks this, and checks that no new one slips in.
+
+- The publish preview's throwaway git directory is removed even if the run is interrupted while the preview is still on screen. The Bash build removed it only on the way out of the function, so a Ctrl-C mid-preview left an empty directory in temp; the PowerShell build already covered this.
+
 - `cicd/release.bash` cuts a release end to end, in three phases so a failure never leaves a half-cut one: verify and change nothing, land, then publish and prove by running the documented installer against the published release. `--dry-run` says what it would do. It guards the two things that have been forgotten by hand - the two builds agreeing on the version, and the history footers carrying an entry since the last tag.
 
 - The pipeline fast-forwards from origin before it builds anything, in both engines. Its only pull used to be in the publish stage, which runs after lint, tests and fuzz have all passed - so a change merged upstream meanwhile was pushed having been validated against the older tree. It stops on a real divergence, warns and carries on when offline or with no upstream, and `--no-sync` (`-NoSync`) skips it.

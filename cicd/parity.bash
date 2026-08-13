@@ -32,7 +32,7 @@ set -Eeuo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/.." && pwd)"
 work="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-parity.XXXXXX")"
-trap 'rm -rf "${work}"' EXIT
+trap 'rm -rf -- "${work:?}"' EXIT
 ## The same directory in the spelling native Windows understands. A folder rule has to be written
 ## in a spelling BOTH builds can resolve, and an MSYS mount path such as '/tmp/...' is not one:
 ## only this shell knows its own mount table, and the PowerShell build must not need Git Bash to

@@ -267,7 +267,7 @@ else
 		fi
 	fi
 	if [[ -n "${PY_LINT_FILES+x}" ]] && ((${#PY_LINT_FILES[@]})); then
-		python3 -m py_compile "${PY_LINT_FILES[@]}" && rm -rf "${root}/cicd/utility/__pycache__"
+		python3 -m py_compile "${PY_LINT_FILES[@]}" && rm -rf -- "${root:?}/cicd/utility/__pycache__"
 		fEcho "OK: py_compile (${#PY_LINT_FILES[@]} file(s))"
 	fi
 	if [[ -n "${PS_LINT_GLOBS+x}" ]] && ((${#PS_LINT_GLOBS[@]})); then
@@ -370,12 +370,12 @@ else
 				mv -f "${demogif_tmp}.opt" "${demogif_tmp}"
 				fEcho_Clean "optimized: $((demogif_was / 1024)) -> $(( $(stat -c%s "${demogif_tmp}") / 1024 )) KiB"
 			else
-				rm -f "${demogif_tmp}.opt"
+				rm -f -- "${demogif_tmp:?}.opt"
 				fEcho_Clean "${DEMOGIF_OPT_CMD[0]}: failed, keeping the raw render"
 			fi
 		fi
 		if [[ -f "${demogif_out}" ]] && cmp -s "${demogif_tmp}" "${demogif_out}"; then
-			rm -f "${demogif_tmp}"
+			rm -f -- "${demogif_tmp:?}"
 			fEcho "OK: demo gif unchanged"
 		else
 			## Keep the new original out of tree (GFS-pruned), then land it in the repo.
@@ -386,7 +386,7 @@ else
 			fEcho "OK: demo gif regenerated"
 		fi
 	else
-		rm -f "${demogif_tmp}"
+		rm -f -- "${demogif_tmp:?}"
 		fEcho "WARNING: demo gif generation failed (continuing)"
 	fi
 fi

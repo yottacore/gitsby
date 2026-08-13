@@ -191,7 +191,7 @@ echo
 fEcho "Phase 3: publish and prove"
 
 ## The release body is the changelog section, verbatim - the same words the repo already carries.
-notes="$(mktemp)"; trap 'rm -f "${notes}"' EXIT
+notes="$(mktemp)"; trap 'rm -f -- "${notes:?}"' EXIT
 awk -v ver="## ${version} " -v start="$(fpChangelogStart)" \
 	'NR>=start && index($0, ver)==1 {f=1; next} f && /^## /{exit} f' "${changelog}" > "${notes}" || true
 [[ -s "${notes}" ]] || fNote "WARNING: no changelog section found for ${version}; the release body will be empty."
@@ -223,9 +223,9 @@ if ! fWould "verify releases/latest and run both documented installers into a th
 	else
 		fNote "WARNING: the bash installer did not produce ${version} from the published release."
 	fi
-	rm -rf "${fakeHome}"
+	rm -rf -- "${fakeHome:?}"
 fi
-rm -rf "${assets}"
+rm -rf -- "${assets:?}"
 
 echo
 fEcho "Released ${version}"

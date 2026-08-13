@@ -60,6 +60,20 @@ In each section, items are listed approximately from newest to oldest.
 
 #### Done - Bugs
 
+- ✅ `demo-repo.bash` removed whatever directory it was pointed at, without checking whose it was.
+	- It took a root path as its first argument and `rm -rf`'d it before doing anything else. A mistyped or inherited argument took whatever lived there, and the script then reported success.
+	- Reproduced against the previous version: a directory holding an unrelated file was passed as the root, and came back empty with an exit code of 0.
+	- Fixed by stamping the directories it builds. Only a stamped one is removed; a relative path, the filesystem root, a symlink and anything containing `..` are all refused up front.
+	- Checked against the previous version. The filesystem-root case is pinned in the source rather than run, since running it against a build without the guard is `rm -rf /`.
+
+- ✅ Every other recursive or forced removal now fails closed on an unset variable.
+	- All of them name a path the script itself created, but they were spelled so that an unset variable would have widened the target rather than stopped it.
+	- Ten sites across both installers, the pipeline engine and all four harnesses. The suite checks the whole set, so a new unguarded one is caught.
+
+- ✅ The publish preview leaked its throwaway git directory when a run was interrupted.
+	- The Bash build removed it on the way out of the function that made it, so a Ctrl-C while the preview was still on screen stranded an empty directory in temp. The PowerShell build already covered this.
+	- Moved to the exit path, which already runs on interrupt. Checked by driving the cleanup hook directly - a real Ctrl-C could not be staged, since Git Bash defers the signal until the native child returns.
+
 - ✅ Twelve regression checks were testing nothing on Windows.
 	- The suite handed PowerShell its own MSYS paths. .NET has no mount table, so `/tmp/x` and `/c/x` were read against the current drive root - `Set-Location`, the script lookup and `ReadAllBytes` all failed and the commands under test never ran.
 	- Seven reported red. The other five passed because they forbid something that also never happened, which is the worse half. Among them the guard for the working-directory bug, which had been guarding nothing.
