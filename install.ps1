@@ -218,7 +218,9 @@ function Install-Gitsby {
         Write-Host '[ Done. ]'
         Write-Host ''
     } finally {
-        if (Test-Path -LiteralPath $tmpDir) { Remove-Item -Recurse -Force $tmpDir }
+        ## LiteralPath, like every other removal in the tree: the temp path is ours, but a bracket
+        ## anywhere in it would otherwise be read as a wildcard rather than as a character.
+        if ($tmpDir -and (Test-Path -LiteralPath $tmpDir)) { Remove-Item -LiteralPath $tmpDir -Recurse -Force }
     }
 }
 

@@ -143,7 +143,7 @@ $ShellLintGlob = @(
 )
 ## Report-only (findings warn, never gate). Empty since the bin/gitsby refactor.
 $ShellLintWarnGlob = @()
-$MdLintGlob        = @("*.md", "project/*.md")
+$MdLintGlob        = @("*.md", "project/*.md", "project/design_docs/*.md")
 $PyLintFile        = @("cicd/utility/gen-demo-gif.py")
 $PsLintGlob        = @("bin/gitsby.ps1", "install*.ps1", "cicd/*.ps1")
 

@@ -122,7 +122,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The test suite no longer reads whatever accounts the person running it has configured. It already isolated git config and the commit identity; the accounts config decides which account a command acts as, and a single line in a real one failed three checks per implementation.
 
-- The README is a landing page again: install and a worked example are the first two sections, and the depth moved to `accounts.md` and `workflows.md`. It also now says up front that gitsby picks a GitHub account by folder, which was the one thing in this release it never mentioned.
+- The README is a landing page again: what it is, the commands, a worked example, and the install, with the depth moved to `accounts.md` and `workflows.md`. It also now says up front that gitsby picks a GitHub account by folder, which was the one thing in this release it never mentioned.
 
 - `cicd/release.bash` reads the changelog from below the commented-out template at the top of the file. All three of its readings took the first heading that matched and so found the template's, which would have retitled the template instead of the section being released, left that section saying vNEXT, and published the empty template as the release notes - non-empty text, so the warning that exists for exactly this never fired. The template's heading is spelled `TEMPLATE_vNEXT` as well, so either guard is enough alone.
 

@@ -41,6 +41,7 @@ SHELL_LINT_WARN_GLOBS=()
 MD_LINT_GLOBS=(
 	"*.md"
 	"project/*.md"
+	"project/design_docs/*.md"
 )
 PY_LINT_FILES=(
 	"cicd/utility/gen-demo-gif.py"

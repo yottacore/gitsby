@@ -24,6 +24,7 @@ This is a product backlog for the run-up to v2.0.0. After that release, bugs, fe
 		- [Done - Installers 20260812](#done---installers-20260812)
 		- [Done - Pipeline 20260812](#done---pipeline-20260812)
 		- [Done - Documentation 20260812](#done---documentation-20260812)
+		- [Done - Code review 20260813](#done---code-review-20260813)
 		- [Done - Code review 20260812](#done---code-review-20260812)
 		- [Done - Code review 20260731](#done---code-review-20260731)
 		- [Done - Code review 20260730](#done---code-review-20260730)
@@ -478,6 +479,28 @@ In each section, items are listed approximately from newest to oldest.
 
 - ✅ README wording: a missing verb and a doubled letter in the workflow comparison, and a bullet with no full stop in Compatibility.
 	- Fixed: all three, in the moved text.
+
+#### Done - Code review 20260813
+
+Light pass over the folder-name rules, the release script, the changelog template guard and the removal audit, plus what they knocked loose elsewhere. Nothing wrong with the changes themselves; all four findings are things around them that went stale or were missed.
+
+- ✅ Code Review 20260813 item 1: the README stopped saying where it installs to, or that the download is checked.
+	- Cause: the installation-options section was folded down to two one-liners, and those two facts went with it. The sentence left behind also had a stray plural and said "options" twice.
+	- Note: both are reasons to trust the installer, and neither is visible until you have already run it.
+	- Fixed: one line for the two install locations and the checksum, one for where to find the rest.
+
+- ✅ Code Review 20260813 item 2: the changelog described a README that no longer exists.
+	- Cause: it claimed install and the worked example are the first two sections. Both have since moved down, below the commands and the accounts material.
+	- Fixed: the entry names the order the page actually has.
+
+- ✅ Code Review 20260813 item 3: markdown under `project/design_docs/` was not linted.
+	- Cause: both engines list `*.md` and `project/*.md`, and the directory is a level below that. It arrived after the globs were last set.
+	- Fixed: the directory added to both engines. The file in it was already clean.
+
+- ✅ Code Review 20260813 item 4: the PowerShell installer read its own temp path as a wildcard when cleaning up.
+	- Cause: the removal took the path positionally. Every other removal in the tree names it literally, and this one was missed when they were hardened.
+	- Note: only bites on a temp path containing a bracket, so nothing to reproduce in ordinary use.
+	- Fixed: named literally, and skipped outright when the path was never set.
 
 #### Done - Code review 20260812
 

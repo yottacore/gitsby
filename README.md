@@ -191,7 +191,9 @@ irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1 | iex
 
 Per-user by default, and it shows you the plan before it does anything. You need Git, plus either bash 4.4+ or PowerShell 7+.
 
-For more installation options (e.g. stable vs dev), download the installations script directly, and run with `--help` for full options.
+It installs to `~/.local/bin` on *nix, or `%LOCALAPPDATA%\Programs\gitsby` on Windows, and checks the download against the release's `SHA256SUMS` first.
+
+For more options - a system-wide install, or the tip of `dev` rather than the latest release - download the installer and run it with `--help`.
 
 ## How to develop
 
