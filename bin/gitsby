@@ -45,7 +45,7 @@ fi
 #•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Settings
 [[ -v doQuietly         ]] || declare -i doQuietly=0
-[[ -v thisVersion       ]] || declare -r thisVersion="2.0.2"
+[[ -v thisVersion       ]] || declare -r thisVersion="2.1.0"
 [[ -v thisCopyrightYear ]] || declare -r thisCopyrightYear="2014-2026"
 [[ -v thisAuthor        ]] || declare -r thisAuthor="Jim Collier"
 
