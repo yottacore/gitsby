@@ -165,6 +165,7 @@ Or clone it yourself and install the tooling by hand.
 
 - `bin/gitsby` and `bin/gitsby.ps1` - the two implementations. They are ports of each other, so a change to one nearly always belongs in the other.
 - `cicd/` - the local pipeline and its config.
+- `cicd/utility/demo/` - everything the demo gif is built from. Start at `script.txt`, which describes scene by scene what the demo shows; the scenario file beside it is the same thing in the form the renderer reads.
 - `project/` - design notes and the backlog.
 
 <!-- omit in toc -->
@@ -172,8 +173,13 @@ Or clone it yourself and install the tooling by hand.
 
 - `cicd/cicd.bash --quick` - the whole pipeline, minus the slow stages. Run this before you push.
 - `cicd/cicd.bash` - everything, including the fuzz suite and the demo.
+
+- `cicd/parity.bash` - just the parity suite: whether the two builds *answer the same* for one input, rather than whether each behaves correctly. Runs inside the test stage too.
+- `cicd/release.bash --dry-run` - what cutting a release would do, changing nothing.
 - `cicd/test.bash` - just the regression suite. It builds throwaway repos under a temp directory and never touches the network or your real repos.
 - `cicd/fuzz.bash` - just the fuzz suite.
+
+The pipeline fast-forwards from `origin` before it builds anything, so the checks run against the tree that will actually be pushed. It stops if your branch has diverged, warns and carries on if you're offline or the branch has no upstream, and `--no-sync` (`-NoSync`) skips it.
 
 Both suites run once per implementation, so a Bash-only change still has to keep the PowerShell side green.
 

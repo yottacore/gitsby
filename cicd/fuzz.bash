@@ -23,17 +23,33 @@ set -Eeuo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/.." && pwd)"
 work="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-fuzz.XXXXXX")"
-trap 'rm -rf "${work}"' EXIT
+trap 'rm -rf -- "${work:?}"' EXIT
 
 ## Hermetic: no reliance on (or writes to) the user's git config, no prompts.
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 export GIT_AUTHOR_NAME=fuzz GIT_AUTHOR_EMAIL=fuzz@fuzz
 export GIT_COMMITTER_NAME=fuzz GIT_COMMITTER_EMAIL=fuzz@fuzz
 export GIT_TERMINAL_PROMPT=0
+## gitsby's own config decides which account a command acts as, so pin it the way test.bash does.
+export GITSBY_CONFIG="${work}/no-accounts.shcl"; : > "${GITSBY_CONFIG}"
+
+## Pinning the config FILES is not isolation on its own: GIT_CONFIG_COUNT/KEY_n/VALUE_n outrank
+## every one of them, and an inherited GH_TOKEN is what the fake gh reports back. Both arrive
+## from an ordinary working terminal, and neither shows up as a failure you can act on.
+fUnsetInheritedGitConfig(){
+	local -i i=0
+	for (( i = 0; i < ${GIT_CONFIG_COUNT:-0}; i++ )); do unset "GIT_CONFIG_KEY_${i}" "GIT_CONFIG_VALUE_${i}"; done
+	unset GIT_CONFIG_COUNT
+}
+fUnsetInheritedGitConfig
+unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT
 
 declare -i pass=0 fail=0
 fOk(){   pass=$((pass+1)); echo "  ok: $*"; }
 fFail(){ fail=$((fail+1)); echo "  FAIL: $*"; }
+
+declare -i isWindows=0
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) isWindows=1 ;; esac
 
 ## An internal-error dump from either implementation. A clean validation refusal
 ## ("gitsby: <msg>", exit 1) matches none of these; an uncaught bash error, a
@@ -86,7 +102,7 @@ fDirLiteral(){ local -r desc="$1"; local -r dir="$2"; local -r url="$3"; local -
 	else fFail "${desc}: no clone at [${name}]"; fi; }
 
 fTitleLiteral(){ local -r desc="$1"; local -r dir="$2"; local -r title="$3"
-	rm -f "${ghLog}"
+	rm -f -- "${ghLog:?}"
 	fRun "${dir}" -q pr create "${title}"
 	local rec; rec="$(awk '/^--title$/{getline; print; exit}' "${ghLog}" 2>/dev/null || true)"
 	if _isCrash;                   then fFail "${desc}: crashed (exit ${_code})"
@@ -134,6 +150,10 @@ fRunFuzz(){
 	## installed, and must never reach the network. Logs create-args one per line so the
 	## title can be compared byte for byte.
 	mkdir -p "${base}/bin"
+	## No .cmd sibling here, unlike test.bash: on Windows that would route the stub through cmd.exe,
+	## which splits an unquoted '&' or '>' in an argument - turning a vector this suite hands gitsby
+	## into a real command, and reporting an injection that gitsby never had. The pwsh leg's gh
+	## coverage is skipped on Windows instead (see below), which is the honest answer.
 	cat > "${base}/bin/gh" <<'GHEOF'
 #!/usr/bin/env bash
 case "$1 $2" in
@@ -214,7 +234,14 @@ GHEOF
 		&& git checkout --quiet -b feat && echo f > f.txt && git add --all && git commit --quiet -m feat )
 	local t
 	for t in "${inject[@]}"; do fSurvive "pr title inert: '${t}'" "${repo4}" -q pr create "${t}"; done
-	for t in '*' '*.txt' '?' 'v*'; do fTitleLiteral "pr title verbatim: '${t}'" "${repo4}" "${t}"; done
+	## Reading what gh received needs the stub to actually run, which on Windows the PowerShell
+	## build can't do - a shebang file is not something it can start, and the .cmd sibling that
+	## would fix it re-parses these very arguments. Say so rather than pass on a stub that no-oped.
+	if [[ "$1" == "bash" ]] || ((! isWindows)); then
+		for t in '*' '*.txt' '?' 'v*'; do fTitleLiteral "pr title verbatim: '${t}'" "${repo4}" "${t}"; done
+	else
+		echo "  skipped: pr title verbatim (pwsh on Windows can't run the gh stub)"
+	fi
 	## Proposing from the merge target is nonsense whatever the title says.
 	( cd "${repo4}" && git checkout --quiet dev )
 	fRefuse "pr create refuses from the merge target" "${repo4}" -q pr create 'anything'
@@ -225,7 +252,16 @@ GHEOF
 	local u
 	for u in "${inject[@]}"; do fRefuse "clone url refused: '${u}'" "${repo3}" -q repo clone "${u}"; done
 	local cd_
-	for cd_ in '*' '?' 'v*' 'a b'; do fDirLiteral "clone dir verbatim: '${cd_}'" "${repo3}" "${repo3}.git" "${cd_}"; done
+	local -a cloneDirs=( '*' '?' 'v*' 'a b' )
+	## Win32 forbids '*' and '?' in a path, so native git can't create such a work tree at all
+	## ("could not create work tree dir '*': Invalid argument") - the invariant is unprovable
+	## there rather than violated. MSYS mkdir happily makes one, which is what makes the first
+	## guess wrong. A space is legal, so 'a b' stays.
+	if ((isWindows)); then
+		cloneDirs=( 'a b' )
+		echo "  skipped: clone dir verbatim '*' '?' 'v*' (Win32 forbids those characters in a path)"
+	fi
+	for cd_ in "${cloneDirs[@]}"; do fDirLiteral "clone dir verbatim: '${cd_}'" "${repo3}" "${repo3}.git" "${cd_}"; done
 
 	## Long and odd input: must not crash. Branch is refused, message accepted.
 	local long; long="$(printf 'x%.0s' {1..5000})"
@@ -234,6 +270,56 @@ GHEOF
 	fSurvive "long message survives" "${repo2}" -q update "${long}"
 	echo odd2 > "${repo2}/seed.txt"
 	fSurvive "unicode/emoji message" "${repo2}" -q update $'café \u{1F600} ‮ rtl'
+
+	## The new argument slots. 'raw' fronts exactly two tools, so anything else in that position is
+	## refused rather than run - the one place a wrong answer would execute an arbitrary program.
+	local rawTool
+	for rawTool in "${badCommands[@]}" "${inject[@]}" 'rm' 'sh' 'GIT'; do
+		fRefuse "raw tool refused: '${rawTool}'" "${repo3}" -q raw "${rawTool}" --version
+	done
+	fRefuse "raw with no tool refused" "${repo3}" -q raw
+	## Deliberately NOT fuzzed: the arguments after 'git' or 'gh'. Reaching the tool verbatim is
+	## the whole contract, so an injection vector there is gitsby doing its job, and the canary
+	## would fire on a pass. What is checked above is that nothing but git and gh can be reached.
+
+	## repo url takes one of two words and nothing else.
+	local urlArg
+	for urlArg in "${badSubcommands[@]}" "${inject[@]}" 'HTTPS ' 'https extra'; do
+		fRefuse "repo url arg refused: '${urlArg}'" "${repo3}" -q repo url "${urlArg}"
+	done
+
+	## account has two subcommands, and neither takes an argument.
+	local acctSub
+	for acctSub in "${badSubcommands[@]}" "${inject[@]}"; do
+		fRefuse "account subcommand refused: '${acctSub}'" "${repo3}" -q account "${acctSub}"
+	done
+	fRefuse "account list takes no argument"  "${repo3}" -q account list junk
+	fRefuse "account apply takes no argument" "${repo3}" -q account apply junk
+
+	## --config names a file. One that isn't there is refused; the value never reaches a shell.
+	local cfg
+	for cfg in "${inject[@]}" '/nonexistent/gitsby.shcl' ''; do
+		fRefuse "bad --config refused: '${cfg}'" "${repo3}" -q --config "${cfg}" status
+	done
+
+	## GITSBY_ACCOUNT reaches 'gh auth token --user' as a value. It must stay inert there, and an
+	## account nobody holds a token for is simply not selected - never an error, never a canary.
+	local acct
+	for acct in "${inject[@]}" '-x' '--user root'; do
+		GITSBY_ACCOUNT="${acct}" fSurvive "GITSBY_ACCOUNT inert: '${acct}'" "${repo2}" -q --no-fetch status
+	done
+	unset GITSBY_ACCOUNT
+
+	## 'pathContains' is a config VALUE that reaches a native command twice over: it is compared
+	## against the current path, and 'account apply' builds a git config key out of it. A rule that
+	## matches nothing is the ordinary answer for junk, so what is asserted here is that nothing
+	## fires and nothing crashes - never that it is refused.
+	local segCfg="${work}/seg-fuzz.shcl" seg
+	for seg in "${inject[@]}" '../..' '/' '**' '.'; do
+		{ printf 'account.f.pathContains = %s\n' "${seg}"; printf 'account.f.ghAccount = fuzzacct\n'; } > "${segCfg}"
+		fSurvive "pathContains inert: '${seg}'" "${repo2}" -q --no-fetch --config "${segCfg}" status
+		fSurvive "pathContains inert in account: '${seg}'" "${repo2}" -q --no-fetch --config "${segCfg}" account
+	done
 
 	## No-mutate: a refused command leaves HEAD and branch exactly as they were.
 	local before_head before_branch
@@ -278,3 +364,8 @@ echo "passed: ${pass}, failed: ${fail}"
 ##	History:
 ##		- 20260724 JC: Created. Adversarial fuzz of the command/option/arg surface
 ##			with an injection canary, run per implementation like the test harness.
+##		- 20260726 JC: Vectors for the noun+verb subcommand slot, and for the clone url and directory.
+##		- 20260808 JC: Vectors for the 'raw' tool slot, the 'repo url' argument, the 'account' subcommand, '--config' and GITSBY_ACCOUNT. What follows 'raw git' or 'raw gh' is deliberately not fuzzed - reaching the tool verbatim is the contract, so a vector there would fire the canary on a pass.
+##		- 20260810 JC: The glob-shaped clone directories are skipped on Windows. Win32 forbids those characters in a path, so native git cannot create such a work tree at all and the invariant is unprovable there rather than violated - MSYS mkdir happily makes one, which is what makes the first guess wrong.
+##		- 20260812 JC: Vectors for the "pathContains" config value. It is compared against the current path and becomes a git config key in "account apply", so it reaches a native command twice; junk there must stay inert rather than be refused, since a rule matching nothing is the ordinary answer.
+##		- 20260813 JC: Same environment isolation the behavioural suite grew, plus the gitsby config file this one had never pinned at all.

@@ -20,6 +20,7 @@
 ##	- Purpose: Local CI/CD pipeline. Generic engine for a Bash-script project;
 ##	  per-project settings live in config.bash.
 ##	- Stages (fail-fast, any error aborts before the next stage):
+##	   0. remote sync (fast-forward from origin before anything is built or tested)
 ##	   1. lint (bash -n + shellcheck gating; markdownlint + py_compile + PSScriptAnalyzer if available)
 ##	   2. regression tests (cicd/test.bash, once it exists)
 ##	   3. fuzz + security (cicd/fuzz.bash, once it exists; skipped under --quick)
@@ -33,6 +34,7 @@
 ##	   -y, --yes           unattended (no prompt) but not quiet
 ##	   -m, --message MSG   publish hands-off with this commit message (no editor)
 ##	       --msg MSG       alias for --message
+##	   --no-sync           skip the remote sync stage
 ##	   --no-lint           skip the lint stage
 ##	   --no-test           skip the regression test stage
 ##	   --no-fuzz           skip the fuzz + security stage
@@ -65,10 +67,11 @@ cd "${root}"
 stamp="$(date +%Y%m%d-%H%M%S)"
 
 ## Parse options.
-assume_yes=0; quiet=0; quick=0; do_lint=1; do_test=1; do_fuzz=1; cli_message=""
+assume_yes=0; quiet=0; quick=0; do_sync=1; do_lint=1; do_test=1; do_fuzz=1; cli_message=""
 while (($#)); do case "$1" in
 	-q|--quiet)               quiet=1; assume_yes=1; shift ;;   ## quiet + unattended; publish runs quiet too
 	-y|--yes)                 assume_yes=1; shift ;;
+	--no-sync)                do_sync=0; shift ;;
 	--no-lint)                do_lint=0; shift ;;
 	--no-test)                do_test=0; shift ;;
 	--no-fuzz)                do_fuzz=0; shift ;;
@@ -197,6 +200,33 @@ if [[ -n "${LINT_LOG_DIR:-}" ]] && mkdir -p "${root}/${LINT_LOG_DIR}" 2>/dev/nul
 	trap 'exec 1>&- 2>&-; wait "${tee_pid}" 2>/dev/null' EXIT
 fi
 
+## Stage 0: remote sync. The publish stage pulls too, but that is after everything
+## has been built and tested - so a change merged upstream meanwhile would be pushed
+## having been validated by nothing. Refreshing first means the rest of the run tests
+## the tree that is actually going out. Publish keeps its own pull as the late guard.
+fSection "0/6  Remote sync"
+if ((! do_sync)); then
+	fEcho_Clean "remote sync skipped"
+elif ! git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+	## No upstream is an ordinary state for a brand-new branch, not a reason to stop.
+	fEcho_Clean "no upstream for this branch - nothing to sync"
+elif ! git fetch --quiet 2>/dev/null; then
+	## Offline is the other ordinary state. Warn and build what is here.
+	fEcho_Clean "WARNING: can't reach origin - building without refreshing"
+else
+	## Left is behind, right is ahead: what origin has that we don't, and the reverse.
+	counts="$(git rev-list --left-right --count '@{u}...HEAD' 2>/dev/null || echo "0	0")"
+	behind="${counts%%[[:space:]]*}"; ahead="${counts##*[[:space:]]}"
+	if   ((behind == 0)); then fEcho_Clean "up to date with origin (${ahead} to publish)"
+	elif ((ahead > 0));   then fDie "diverged from origin: ${ahead} local, ${behind} remote. Reconcile before building."
+	else
+		## Only behind, so this can only be a fast-forward. --autostash carries a dirty
+		## tree over it rather than refusing, and puts it back afterward.
+		fEcho_Clean "fast-forwarding ${behind} commit(s) from origin"
+		git merge --ff-only --autostash '@{u}' || fDie "fast-forward from origin failed"
+	fi
+fi
+
 ## Stage 1: lint. bash -n then shellcheck over every first-party shell file
 ## (gating - never an auto-formatter: bash is hand-formatted on purpose).
 ## markdownlint and py_compile are probe-gated extras.
@@ -237,7 +267,7 @@ else
 		fi
 	fi
 	if [[ -n "${PY_LINT_FILES+x}" ]] && ((${#PY_LINT_FILES[@]})); then
-		python3 -m py_compile "${PY_LINT_FILES[@]}" && rm -rf "${root}/cicd/utility/__pycache__"
+		python3 -m py_compile "${PY_LINT_FILES[@]}" && rm -rf -- "${root:?}/cicd/utility/__pycache__"
 		fEcho "OK: py_compile (${#PY_LINT_FILES[@]} file(s))"
 	fi
 	if [[ -n "${PS_LINT_GLOBS+x}" ]] && ((${#PS_LINT_GLOBS[@]})); then
@@ -266,6 +296,15 @@ if ((! do_test)); then
 elif [[ -f "${TEST_CMD[0]:-}" ]]; then
 	"${TEST_CMD[@]}"
 	fEcho "OK: tests passed"
+	## The behavioural suite runs the same checks once per build, so it passes on both while the two
+	## quietly disagree about the same input - which is what every port defect that reached users
+	## actually was. This asks the other question: do they ANSWER the same? Skips itself with a
+	## reason where pwsh is absent, since there is then nothing to compare against.
+	if [[ -f "${root}/cicd/parity.bash" ]]; then
+		fEcho_Clean ""
+		bash "${root}/cicd/parity.bash"
+		fEcho "OK: builds agree"
+	fi
 else
 	fEcho_Clean "no test harness yet (${TEST_CMD[0]:-cicd/test.bash} - lands with the bin/gitsby refactor)"
 fi
@@ -331,12 +370,12 @@ else
 				mv -f "${demogif_tmp}.opt" "${demogif_tmp}"
 				fEcho_Clean "optimized: $((demogif_was / 1024)) -> $(( $(stat -c%s "${demogif_tmp}") / 1024 )) KiB"
 			else
-				rm -f "${demogif_tmp}.opt"
+				rm -f -- "${demogif_tmp:?}.opt"
 				fEcho_Clean "${DEMOGIF_OPT_CMD[0]}: failed, keeping the raw render"
 			fi
 		fi
 		if [[ -f "${demogif_out}" ]] && cmp -s "${demogif_tmp}" "${demogif_out}"; then
-			rm -f "${demogif_tmp}"
+			rm -f -- "${demogif_tmp:?}"
 			fEcho "OK: demo gif unchanged"
 		else
 			## Keep the new original out of tree (GFS-pruned), then land it in the repo.
@@ -347,7 +386,7 @@ else
 			fEcho "OK: demo gif regenerated"
 		fi
 	else
-		rm -f "${demogif_tmp}"
+		rm -f -- "${demogif_tmp:?}"
 		fEcho "WARNING: demo gif generation failed (continuing)"
 	fi
 fi

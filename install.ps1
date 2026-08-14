@@ -101,6 +101,16 @@ function Install-Gitsby {
     if ($Arch) { Write-Host "  - Ignore -Arch ${Arch}: gitsby is a script, so the same file runs on every architecture" }
     Write-Host "  - Install it to ${destPath}"
     if ($installSystemWide) { Write-Host '  - Need write access to that directory (run elevated / via sudo)' }
+    # Whether the download gets checked is the one thing worth knowing BEFORE agreeing to it.
+    # It used to be reported afterwards, and on the dev path not at all.
+    if ($isRelease) { Write-Host '  - Verify the download against the release''s published SHA256SUMS' }
+    else            { Write-Host "  - NOT verify the download: ${Ref} is a branch or tag, which has no published checksum" }
+    # Windows puts nothing on PATH for you, so without this the install finishes with a program
+    # that cannot be run by name. On *nix the destination is a conventional bin dir already.
+    if ($IsWindows -and (($env:PATH -split [IO.Path]::PathSeparator) -notcontains $destDir)) {
+        $pathScopeLabel = if ($installSystemWide) { 'system' } else { 'account' }
+        Write-Host "  - Add ${destDir} to your ${pathScopeLabel} PATH (new shells only; this one is unchanged)"
+    }
     Write-Host "  - Run 'gitsby.ps1 --version' to verify"
     if (-not $Yes) {
         $answer = Read-Host 'Continue? [y/N]'
@@ -135,10 +145,11 @@ function Install-Gitsby {
     if (-not $downloaded) {
         throw "Couldn't download gitsby.ps1 at '${Ref}'. (Releases before v2 predate the current layout; try '-Release dev'.)"
     }
-    # Say so: only the release asset can be checked against SHA256SUMS, and asking for a
-    # release and quietly getting an unverified copy of the tree is not what was agreed.
+    # Only the release asset can be checked against SHA256SUMS, so falling back to the tree here
+    # would quietly deliver the unverified copy the plan promised to check. Asking for a release
+    # and getting that is not what was agreed, so it stops instead.
     if ($isRelease -and -not $fromReleaseAsset) {
-        Write-Host "Note: no release asset for ${Ref}; installing bin/gitsby.ps1 from the tagged tree, unverified."
+        throw "Release ${Ref} publishes no gitsby.ps1 asset, so only an unverified copy of the tagged tree is available. Re-run with -Ref ${Ref} to take it."
     }
     # Wrong-content 200s happen (captive portals, truncation); a script starts with a shebang.
     if ((Get-Content -LiteralPath $tmpFile -First 1) -notmatch '^#!') { throw "Downloaded file doesn't look like a script; aborting." }
@@ -164,7 +175,10 @@ function Install-Gitsby {
             if ($got -ne $want) { throw 'Checksum mismatch for the downloaded gitsby.ps1; aborting. (Corrupted download or tampering.)' }
             Write-Host '[ Checksum verified. ]'
         } else {
-            Write-Host "Note: no SHA256SUMS for ${Ref}; skipping verification."
+            # The plan said this download would be checked, so not checking it is a broken
+            # promise rather than a note in passing. Taking it unverified stays available, but
+            # as an explicit choice rather than the quiet default.
+            throw "Release ${Ref} publishes no SHA256SUMS entry for gitsby.ps1, so the download can't be verified. Re-run with -Ref ${Ref} to take it unverified."
         }
     }
 
@@ -179,13 +193,34 @@ function Install-Gitsby {
 
         $pathSep = [IO.Path]::PathSeparator
         if (($env:PATH -split $pathSep) -notcontains $destDir) {
-            Write-Host "Note: ${destDir} isn't on your PATH; add it to make 'gitsby.ps1' callable by name."
+            if ($IsWindows) {
+                # Persist it, as promised in the plan. Only PATHEXT is left alone: PowerShell already
+                # resolves a bare 'gitsby' to gitsby.ps1 from PATH without it, and adding .PS1 there
+                # would only affect cmd.exe - which still cannot run one, because it needs a file
+                # association, and the default association opens .ps1 in an editor rather than running it.
+                $pathScope = if ($installSystemWide) { 'Machine' } else { 'User' }
+                try {
+                    $stored = [Environment]::GetEnvironmentVariable('PATH', $pathScope)
+                    if (($stored -split $pathSep) -notcontains $destDir) {
+                        $joined = if ([string]::IsNullOrEmpty($stored)) { $destDir } else { $stored.TrimEnd($pathSep) + $pathSep + $destDir }
+                        [Environment]::SetEnvironmentVariable('PATH', $joined, $pathScope)
+                    }
+                    $env:PATH = $env:PATH.TrimEnd($pathSep) + $pathSep + $destDir
+                    Write-Host "[ Added ${destDir} to your ${pathScope} PATH. Open a new shell to pick it up. ]"
+                } catch {
+                    Write-Host "Note: couldn't update PATH ($($_.Exception.Message)). Add ${destDir} to it to run 'gitsby' by name."
+                }
+            } else {
+                Write-Host "Note: ${destDir} isn't on your PATH; add it in your shell profile."
+            }
         }
         Write-Host ''
         Write-Host '[ Done. ]'
         Write-Host ''
     } finally {
-        if (Test-Path -LiteralPath $tmpDir) { Remove-Item -Recurse -Force $tmpDir }
+        ## LiteralPath, like every other removal in the tree: the temp path is ours, but a bracket
+        ## anywhere in it would otherwise be read as a wildcard rather than as a character.
+        if ($tmpDir -and (Test-Path -LiteralPath $tmpDir)) { Remove-Item -LiteralPath $tmpDir -Recurse -Force }
     }
 }
 
@@ -223,3 +258,8 @@ try {
 #   - 20260731 JC: SHA256SUMS is decoded from bytes before it's read. GitHub serves it as
 #     octet-stream, so the response body arrived as a byte array and no checksum was ever
 #     found - the default install path had been unverified since the check was added.
+#   - 20260812 JC: The plan says whether the download will be checked, and on Windows that the
+#     install directory is about to be added to PATH - which it now is. Nothing else on Windows
+#     puts it there, so the install used to finish with a program that could not be run by name.
+#     PATHEXT is deliberately left alone: PowerShell resolves a bare name to a .ps1 on PATH
+#     without it, and it would only affect cmd.exe, which cannot run one regardless.

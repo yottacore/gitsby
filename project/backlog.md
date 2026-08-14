@@ -19,6 +19,13 @@ This is a product backlog for the run-up to v2.0.0. After that release, bugs, fe
 	- [Done](#done)
 		- [Done - Bugs](#done---bugs)
 		- [Done - Features and enhancements](#done---features-and-enhancements)
+		- [Done - Accounts, parity and release automation 20260812](#done---accounts-parity-and-release-automation-20260812)
+		- [Done - Accounts and arguments 20260812](#done---accounts-and-arguments-20260812)
+		- [Done - Installers 20260812](#done---installers-20260812)
+		- [Done - Pipeline 20260812](#done---pipeline-20260812)
+		- [Done - Documentation 20260812](#done---documentation-20260812)
+		- [Done - Code review 20260813](#done---code-review-20260813)
+		- [Done - Code review 20260812](#done---code-review-20260812)
 		- [Done - Code review 20260731](#done---code-review-20260731)
 		- [Done - Code review 20260730](#done---code-review-20260730)
 		- [Done - Code review 20260727b](#done---code-review-20260727b)
@@ -33,6 +40,8 @@ This is a product backlog for the run-up to v2.0.0. After that release, bugs, fe
 ## Conventions
 
 In each section, items are listed approximately from newest to oldest.
+
+To make using these icons easier, add them to a clipboard or key macro manager. (These are temporary anyway until we switch over to nano-git-db for the minor stuff, and GitHub Issues for the bigger stuff.)
 
 | Icon | Status
 | :--: | :--
@@ -50,11 +59,67 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Features and enhancements
 
-- 🔘 Design a way to *fully* automate new releases, end-to-end.
-
 ### Done
 
 #### Done - Bugs
+
+- ✅ Twenty regression checks reported on the terminal they were run from, not on the code.
+	- The harnesses pinned git's config files and gitsby's own config file. Two inputs outrank all of those and arrive from any ordinary working terminal: `GIT_CONFIG_COUNT` with its numbered keys beats every config file, a repo-local one included, and an inherited `GH_TOKEN` is what a gh call reports back.
+	- Ten checks per implementation, the same ten on both, which is what showed it was not a port difference. Five gh checks that can only pass when no token is held, and five identity checks that read a commit address back through a config file.
+	- Nothing was wrong with the product. The same suite and the same builds pass standalone, and pass under the pipeline once the environment is clean.
+	- Fixed in all three harnesses. `fuzz.bash` was also the only one never pinning gitsby's config file.
+	- Pinned in the source of each harness. The two runtime companions are labelled as regression guards: on a clean machine they pass against a harness that isolates nothing.
+
+- ✅ `demo-repo.bash` removed whatever directory it was pointed at, without checking whose it was.
+	- It took a root path as its first argument and `rm -rf`'d it before doing anything else. A mistyped or inherited argument took whatever lived there, and the script then reported success.
+	- Reproduced against the previous version: a directory holding an unrelated file was passed as the root, and came back empty with an exit code of 0.
+	- Fixed by stamping the directories it builds. Only a stamped one is removed; a relative path, the filesystem root, a symlink and anything containing `..` are all refused up front.
+	- Checked against the previous version. The filesystem-root case is pinned in the source rather than run, since running it against a build without the guard is `rm -rf /`.
+
+- ✅ Every other recursive or forced removal now fails closed on an unset variable.
+	- All of them name a path the script itself created, but they were spelled so that an unset variable would have widened the target rather than stopped it.
+	- Ten sites across both installers, the pipeline engine and all four harnesses. The suite checks the whole set, so a new unguarded one is caught.
+
+- ✅ The publish preview leaked its throwaway git directory when a run was interrupted.
+	- The Bash build removed it on the way out of the function that made it, so a Ctrl-C while the preview was still on screen stranded an empty directory in temp. The PowerShell build already covered this.
+	- Moved to the exit path, which already runs on interrupt. Checked by driving the cleanup hook directly - a real Ctrl-C could not be staged, since Git Bash defers the signal until the native child returns.
+
+- ✅ Twelve regression checks were testing nothing on Windows.
+	- The suite handed PowerShell its own MSYS paths. .NET has no mount table, so `/tmp/x` and `/c/x` were read against the current drive root - `Set-Location`, the script lookup and `ReadAllBytes` all failed and the commands under test never ran.
+	- Seven reported red. The other five passed because they forbid something that also never happened, which is the worse half. Among them the guard for the working-directory bug, which had been guarding nothing.
+	- Fixed with an `fWinPath` helper, the same conversion the folder-account block already needed. Two smaller ones alongside: Git Bash rewrites a unix-absolute argument before the native pwsh sees it, so the `-Ref` refusal was being triggered by the wrong rule; and the system install location is the platform's own, not `/usr/local/bin`.
+	- Windows now runs 850/0, matching Linux. Checked the repaired guard fails against the code that predates the working-directory fix, so it discriminates rather than merely passing.
+
+- ✅ The identity probe ignored the ssh key git was configured to push with.
+	- It ran a bare `ssh`, so a repo selecting its key through `core.sshCommand` was reported as the default key's account. Where that matched gh's account the mismatch check passed with both halves wrong - green in exactly the setup it exists for.
+	- Fixed to follow git's own precedence, `GIT_SSH_COMMAND` then `core.sshCommand`. The identity line takes the key file from the same source, so it can't name the right account beside the wrong key.
+	- Same override was overriding the key on `fetch` and the remote probe, which made a private repo reachable only via that key look like being offline.
+
+- ✅ The PowerShell build died on the identity line whenever no ssh command was configured.
+	- `Get-GitSshCommand` returns a list, but PowerShell unwraps a one-element return to a bare string - and under StrictMode, reading `.Count` off a string throws. One element is the ordinary case: a plain `ssh` with nothing configured.
+	- So any repo with an ssh remote and no `core.sshCommand` failed with "The property 'Count' cannot be found", which is most of them. The Bash build was never affected; bash arrays don't unwrap.
+	- Found by running the suite's PowerShell leg on Windows, which until now had only ever run on Linux. It would have failed there too - it had simply never been run since the identity work landed.
+
+- ✅ gh acted as whatever account was last switched to, regardless of who owns the remote.
+	- Now picks the owner's account for the run when gh already holds it, via `GH_TOKEN`, leaving gh's active account alone. Only when the owner can be named and the token is held - an org or someone else's repo is left untouched rather than refused.
+
+- ✅ On Windows, a local-path remote was read as an ssh host named after the drive letter.
+	- `C:/path/to/repo.git` matched the `host:path` shape, so every command ran an ssh identity probe against a machine called `C` and reported an account for it.
+
+- ✅ PowerShell: a joined `-Config=FILE` failed silently.
+	- PowerShell can't bind a joined option through `-File`. Ahead of a command it ate the next word as the value, so `br list` arrived as `list`; after one it overflowed the positional slots.
+	- The first case printed the help and exited 1, which `-q` silenced entirely - the reported symptom was a command that appeared to do nothing.
+	- Now refused by name from any position, naming `-Config FILE` and `-Config:FILE`. Bash keeps taking the joined form, and so does `raw`, which reads the real command line.
+
+- ✅ `--config ""` silently used the default config instead of refusing.
+	- The check asked whether the value was non-empty, not whether the option was typed, so an empty one was indistinguishable from never passing it.
+	- That fell back to the default file, which decides the account - a script whose variable came out empty would push as the wrong identity and say nothing. Both builds.
+	- An empty `GITSBY_CONFIG` still falls through on purpose: an unset environment variable and an empty one are the same thing, unlike a typed option.
+	- Found by the new fuzz vectors on their first run.
+
+- ✅ `repo clone` refused to re-run, and `repo connect` refused a matching URL, on Windows.
+	- Git stores a local-path remote in the platform's own spelling: hand it `/c/tmp/x` and it gives back `C:/tmp/x`. Both commands compared their own argument against git's copy as plain text, so the same directory read as a different one.
+	- Both now compare local paths as paths. These were the two long-standing Windows-only failures in the suite.
 
 - ✅ The PowerShell installer never verified the checksum, and said the release had none.
 	- Found by running both documented one-liners against the current release: the Bash one reported the checksum verified, the PowerShell one reported no `SHA256SUMS` for the same release, which does publish one.
@@ -89,6 +154,50 @@ In each section, items are listed approximately from newest to oldest.
 	- Decided against making `--no-fetch` mean this. The flag declines the incoming round trip, which is a perfectly good thing to want against a reachable remote, and the suite itself uses it that way throughout. Offline is a state the pre-command fetch discovers, not a flag.
 
 #### Done - Features and enhancements
+
+- ✅ The demo gif demonstrates an account changing on a partial folder match higher in the path.
+	- Folder-based accounts are the headline feature and the demo never showed them. Three scenes were added to the end of the existing demo rather than made into a second gif, so the one loop tells the whole story.
+	- The throwaway world now has two repos in trees that differ from their first folder down, and a gitsby config matching on `github.com/acme-corp` and `github.com/mika-rivers`. Different roots are the point: a shared root would not show that the match is a run of folder names rather than a prefix.
+	- The closing scene runs the same command in the second tree, with no flags and nothing configured per repo, and the account has changed. The six scenes before it were already acting as the work account and now say so on their identity line.
+	- The prompt shows the folder the command runs in. A demo about folders that hides the folder proves nothing.
+	- The identity the accounts set is deliberately not exported into the demo's environment. It had been, and an exported `GIT_AUTHOR_EMAIL` supplies exactly what the folder rules are meant to supply - the demo would have been showing something it had not proved.
+	- 2632 frames, 122.5 seconds, 11.06 MB, up from 2007 / 84.9 s / 9.97 MB. Read time is free; the growth is the three scenes' own output and typing.
+
+- ✅ The demo gif has a readable script, and its tooling lives in one place.
+	- What the demo shows was only ever recorded as a scenario table of captions, commands and timing numbers, next to a renderer full of constants. Changing it meant reading both.
+	- `cicd/utility/demo/script.txt` now describes it in plain language: the format, the set, the throwaway repo, and one section per scene with its caption, its typed line and how long it holds. That file is the one to edit.
+	- The scenario file stays as the machine version and points at it. Nothing parses the script - keeping the two in step is deliberate habit, not a mechanism.
+	- The renderer, the repo builder and the scenario moved from `cicd/` and `cicd/utility/` into `cicd/utility/demo/` alongside it. Both pipeline engines needed their paths and lint globs updated by hand, since neither discovers files.
+
+- ✅ The fuzz suite can pass on Windows.
+	- Three vectors clone into a directory named `*`, `?` or `v*`. Win32 forbids those characters in a path, so native git cannot create such a work tree at all and the check could never pass there.
+	- They are skipped on Windows now, with a line saying why. The suite already skipped four PowerShell vectors there for the same kind of reason.
+	- Not a gitsby bug: MSYS `mkdir` will happily make one of those directories, which is what makes the first guess wrong.
+
+- ✅ The PowerShell build verified on Linux.
+	- It had shipped without ever being executed there, which was one of the stated requirements. Run against the full suite on Debian, both legs.
+	- One check failed, for an environment reason rather than a real one: with `gh` absent, `pr create` refuses over the missing tool before it gets to the offline refusal the check is about. It uses a stub now, so it tests the same thing everywhere.
+
+- ✅ Multiple GitHub accounts, chosen by which folder you are in, for both git and gh.
+	- People with two accounts already keep a folder per account. A config file maps a folder tree to an account, and everything under it acts as that account - gh, git's credentials, the ssh key, the commit identity.
+	- `~/.config/gitsby/config.shcl` (or `$XDG_CONFIG_HOME`, or `%APPDATA%`), flat `key = value` lines, overridable with `--config FILE` or `GITSBY_CONFIG`. With no config file at all, nothing changes.
+	- The ssh-key-and-host-alias trick is no longer needed: over https, git authenticates with the account's own token. Keys stay fully supported for anyone who wants them.
+	- `repo url [https|ssh]` converts an existing remote, which is the only thing between an ssh repo and a token.
+	- `account` explains what is configured and which account applies here. `account apply` writes the same rules into the global git config, so plain `git` matches.
+	- `raw git` and `raw gh` run either tool as the folder's account, verbatim, so scripts can use gitsby as a drop-in prefix.
+
+- ✅ A Windows-native CI/CD pipeline, so the whole thing can be run from Windows and not only from Linux.
+	- `cicd/cicd-win.ps1` runs the same six stages as `cicd/cicd.bash`, with the same options under PowerShell spelling and the same output shape, so the two read side by side.
+	- The publish stage is a native port of `n8git_backup-and-publish`, minus the rar version archive - skipped by request, since git carries the history.
+	- The demo gif is compared, never regenerated. Reproducing it byte for byte depends on fontconfig, the installed fonts and the pinned optimizer, none of which Windows matches - a render here would land a file the next Linux run flips straight back.
+	- Stages whose tool is missing warn and skip, as they already do on Linux. On a stock Windows box that is markdownlint and the demo gif.
+	- Settings are carried in the script rather than read from `config.bash`; only the dogfood destinations genuinely differ.
+
+- ✅ Run the PowerShell leg of both suites on Windows, not just on Linux.
+	- It had never run there, and it found a real defect the Linux-only habit had been hiding for as long as the identity work existed.
+	- Two things blocked it. PowerShell finds a shebang stub on PATH but starts nothing and reads the silence as empty output, so every stub gained a `.cmd` sibling that hands the body back to bash. And the confirmation checks needed `setsid`, which Windows has none of - unnecessary there, since PowerShell reads redirected stdin and never reaches for a terminal.
+	- Fuzz keeps a plain stub and skips four checks on that leg instead. Its arguments are hostile on purpose, and `cmd.exe` re-parses an unquoted `&` or `>`: a vector would partly run for real, and be reported as an injection gitsby never had. A skip that says so beats a pass that isn't one.
+	- The ssh probe now starts the ssh PowerShell itself resolves rather than letting `ProcessStartInfo` search PATH its own way - which on Windows reached the real `ssh.exe` and would have gone to github.com, against the suite's promise never to touch the network.
 
 - ✅ Say what a branch is branched from, wherever a branch is named.
 	- Reported against `br hotfix` run from `dev`: the current-branch line read `dev` while the plan directly under it checked out `main`. Both were correct and nothing connected them.
@@ -297,6 +406,164 @@ In each section, items are listed approximately from newest to oldest.
 
 - ✅ Delete stale branch from 2020.
 	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
+
+#### Done - Accounts, parity and release automation 20260812
+
+- ✅ On Windows a folder rule spelled the way this shell spells paths resolved in one build and not the other.
+	- Cause: the PowerShell build folded the drive letter *after* asking the filesystem, and .NET reads a `/c/...` path against the current drive - which never exists. So nothing resolved, and short names and junctions were left as written.
+	- Fixed: fold the drive letter first. All four spellings now resolve identically in both builds, short names included.
+	- Known limit, and now visible rather than silent: an MSYS *mount* path such as `/tmp/...` has no meaning to the native build and never can, since only the shell knows its own mount table. `account` marks any folder rule that resolves to no directory, which shows that up along with ordinary typos.
+
+- ✅ The identity lines reported the account that was resolved, not the one that was applied.
+	- Fixed: an account with no token available now says so on the line. It is still resolved, but gh goes on using its own account - and the block whose whole job is answering "who does this go out as" was naming the wrong one.
+	- Only for a configured or explicitly asked-for account; one inferred from the remote's owner is not a claim that we can act as it.
+
+- ✅ `sync` compared no identities before it pushed.
+	- Fixed: the commands that push with git, rather than writing through gh, now ask whether the folder's account is the one origin will actually authenticate as. A warning interactively, a refusal unattended, and `--any-identity` says it was intended.
+	- The https half is covered by the item above: gitsby supplies the token itself, so the push goes out as the resolved account or says it could not.
+
+- ✅ `account apply` wrote identity and key but nothing about credentials.
+	- Fixed: the fragment now sets `credential.https://github.com.username`, so a credential manager looks up that account's entry rather than any entry for the host.
+
+- ✅ Added a parity suite: `cicd/parity.bash`, wired into the test stage of both engines.
+	- It asks whether the two builds *answer the same* for one input, where `test.bash` asks whether each behaves correctly. A behavioural check written per implementation passes on both while they quietly disagree - which is what every port defect that reached users actually was.
+	- Covers path spellings, option forms, string case and file encoding: 23 comparisons.
+	- It earned its place while being written, finding two real divergences: the `/tmp` mount limitation above, and PowerShell answering an unknown option with the entire help text - and under `-q` with nothing at all but an exit code - where Bash named the option.
+
+- ✅ `br prune` asked about one branch at a time.
+	- Fixed: `git for-each-ref --merged` answers for every branch in one call per target ref, instead of two ancestry questions per branch. The delete-time re-check stays per branch, deliberately: that one is the safety net, not the survey.
+	- Verified on a 33-branch repo - the same 30 merged branches pruned, the same 3 unmerged kept.
+
+- ✅ Fully automated releases, end to end: `cicd/release.bash`, to the three-phase shape in `design.md`.
+	- Phase 1 verifies and changes nothing, phase 2 is the only one that pushes, and phase 3 publishes and then proves the result the way a user meets it - by running the documented installer against the published release.
+	- Both guards exist because the thing they check has already gone wrong: the two builds' version strings drifting apart, and the history footers going a whole release with no entry.
+	- `--dry-run` says what each phase would do and changes nothing. Writing it that way immediately caught a bug in the script itself: a loose version match picked a version-shaped string out of a comment, which phase 2 would then have rewritten instead of the real declaration.
+
+#### Done - Accounts and arguments 20260812
+
+- ✅ `account apply` ordered its rules the opposite way from the way gitsby matches them.
+	- Cause: gitsby takes the longest matching folder; git applies includes in file order and the last match wins. The rules were written grouped by account, in declaration order.
+	- Note: so a tree nested inside another account's tree got whichever account happened to be declared later, and plain git and gitsby then disagreed about one directory - the single thing `apply` exists to prevent.
+	- Fixed: shortest path first, so the longest match is written last and wins in git too. Folder is the tie-break, so the order is deterministic.
+	- Verified both ways: with the old build, plain git in the nested folder used the outer account's email while gitsby resolved the inner account. Both now say inner.
+
+- ✅ Bash accepted `--config` naming a directory: shell error, no accounts, exit 0. PowerShell's matching hole was an unreadable file, passed over silently.
+	- Fixed: both now require a readable regular file, and refuse by name. A *discovered* config is still skipped rather than refused - nobody asserted that one was there.
+	- Note: PowerShell has no readable bit, so the test is opening the file.
+
+- ✅ `GITSBY_ACCOUNT` matched an account name case-sensitively in Bash, case-insensitively in PowerShell.
+	- Cause: Bash's loader lowercases the whole key on the way in, but the lookup lowercased only the key half and left the account name as typed - so it could miss what it had just stored.
+	- Fixed: lowercase both halves, which makes Bash self-consistent and matches PowerShell.
+
+- ✅ Only `-q`, `-y` and `--config` could precede `raw`, and the error blamed the wrong thing.
+	- Note: worse than recorded - the message was "Unknown command 'raw'", which is false. Only the passthrough's own scan runs before `raw`, so an option it didn't take left the main parser looking at a command by that name.
+	- Fixed: the scan takes gitsby's whole option vocabulary, spelled and normalized the same way the main parser does it. The ones with nothing to act on in a passthrough are inert. `-h` and `-v` still fall through to the main parser, and a genuinely unknown option is refused by its own name.
+
+- ✅ PowerShell `raw` could not pass `--`, git's pathspec separator.
+	- Cause is NOT what was recorded, and matters: PowerShell's binder reads a bare `--` as an empty parameter name and fails *before the script runs at all*. Nothing in the passthrough can intercept it. Five param-block shapes were tested; a script with no `param()` block receives `--` fine.
+	- Fixed as far as it can be: `` `-- `` survives binding, and is handed to the tool as `--`. Documented in `accounts.md`.
+	- Note: dropping the `param()` block would fix this and the joined-option binding together. Not taken - it is a large change to a documented option surface.
+
+- ✅ `account apply` ended in a raw operating-system error, a different one in each build.
+	- Note: not the no-config case, which already reports itself properly. The trigger is the include directory being unusable - something else already at that path.
+	- Fixed: check the directory before writing anything, and fail in gitsby's own voice. Nothing partial was ever written, and still isn't.
+
+#### Done - Installers 20260812
+
+- ✅ A Windows install finished with the program not on `PATH`.
+	- Fixed: the PowerShell installer adds the install directory to the account (or system) PATH, and says so in the plan before you agree. Idempotent, and it leaves the current shell alone.
+	- `PATHEXT` deliberately NOT changed, and the original reasoning for it was wrong. PowerShell already resolves a bare `gitsby` to `gitsby.ps1` on `PATH` without it - verified with `PATHEXT` cut back to `.COM;.EXE;.BAT;.CMD`. It would only affect `cmd.exe`, which still cannot run a `.ps1` even with the entry, because that needs a file association - and the default association opens the script in an editor rather than running it. Adding it buys nothing and risks that.
+
+- ✅ Both installers installed anyway when `SHA256SUMS` was absent, and said nothing at all on the `--release dev` path.
+	- Fixed: the plan states which of the two you are about to get, before the confirmation.
+	- Fixed: where the plan promised verification and it can't happen, the install now stops instead of noting it in passing - separately naming the two causes, no published checksum and no sha256 tool here. `--ref TAG` takes it unverified, as an explicit choice.
+	- Note: the release-asset fallback to the tagged tree was the same broken promise and stops the same way.
+	- Verified against the real v2.0.2 release, both installers: plan promises verification, checksum verifies, correct version installed.
+
+#### Done - Pipeline 20260812
+
+- ✅ The pipeline had no remote-sync stage, so the pull at publish time could carry in changes nothing had tested.
+	- Cause: the only pull was in the publish stage, which runs last - after lint, tests and fuzz have all passed against the older tree.
+	- Fixed: stage 0 in both engines. Fetch, fast-forward when only behind, and stop when diverged. No upstream or an unreachable origin warns and carries on; `--no-sync` (`-NoSync`) skips it. Publish keeps its own pull as the late guard.
+	- Note: the fast-forward is `--autostash`, so a dirty tree rides over it. Verified against throwaway repos in all five states, both engines.
+
+#### Done - Documentation 20260812
+
+- ✅ `design.md` stated the opposite of itself in two places, each time because a later decision was added without revising the earlier one.
+	- Fixed: the Architecture bullet now says no *state* of its own, and names the accounts config as the one read-only exception. The `--no-fetch` bullet no longer calls itself offline, which is what the code and the offline rule below it already said.
+
+- ✅ The `Status: Passing` badge was a fixed image wired to nothing, so it read the same on a broken branch.
+	- Fixed: removed. The pipeline is local, so there is no build to report; the remaining badges all resolve to something real.
+
+- ✅ README was about four times the length it should be, and the first runnable example was well over half way down.
+	- Fixed: 535 lines to 273. Install and a worked example are now the first two sections, above the fold.
+	- Fixed: the headline names folder-based accounts, which is the strongest thing in the release and went unmentioned.
+	- Fixed: the long material moved to `accounts.md` and `workflows.md` rather than being deleted, so the README reads as a landing page and the depth is one click away.
+
+- ✅ README wording: a missing verb and a doubled letter in the workflow comparison, and a bullet with no full stop in Compatibility.
+	- Fixed: all three, in the moved text.
+
+#### Done - Code review 20260813
+
+Light pass over the folder-name rules, the release script, the changelog template guard and the removal audit, plus what they knocked loose elsewhere. Nothing wrong with the changes themselves; all four findings are things around them that went stale or were missed.
+
+- ✅ Code Review 20260813 item 1: the README stopped saying where it installs to, or that the download is checked.
+	- Cause: the section was folded down to two one-liners so they could be pasted and run as-is. Dropping the flag table was the point; the locations and the checksum went with it by accident. The sentence left behind also had a stray plural and said "options" twice.
+	- Note: both are reasons to trust the installer, and neither is visible until you have already run it.
+	- Fixed: restored in the same place, without the flags - what you need Git and a shell for, what gets checked, a small table of the four install locations, the PATH note on Windows, and a pointer to `--help` for the rest.
+
+- ✅ Code Review 20260813 item 2: the changelog described a README that no longer exists.
+	- Cause: it claimed install and the worked example are the first two sections. Both have since moved down, below the commands and the accounts material.
+	- Fixed: the entry names the order the page actually has.
+
+- ✅ Code Review 20260813 item 3: markdown under `project/design_docs/` was not linted.
+	- Cause: both engines list `*.md` and `project/*.md`, and the directory is a level below that. It arrived after the globs were last set.
+	- Fixed: the directory added to both engines. The file in it was already clean.
+
+- ✅ Code Review 20260813 item 4: the PowerShell installer read its own temp path as a wildcard when cleaning up.
+	- Cause: the removal took the path positionally. Every other removal in the tree names it literally, and this one was missed when they were hardened.
+	- Note: only bites on a temp path containing a bracket, so nothing to reproduce in ordinary use.
+	- Fixed: named literally, and skipped outright when the path was never set.
+
+#### Done - Code review 20260812
+
+Full review against the coding, performance, pipeline, housecleaning, marketing and installer standards. What is fixed here is listed below; the rest is filed above as open items.
+
+- ✅ Code Review 20260812 item 1: git over https authenticated with an empty password.
+	- Cause: the token was supplied only when it replaced a different active account, while the helper that reads it was installed either way. The helper sets aside any credential manager configured ahead of it, so nothing was left to answer.
+	- Note: worst on the setup needing no configuration - one account, logged in to gh, pushing over https.
+	- Fixed: supply the token whenever one is found.
+
+- ✅ Code Review 20260812 item 2: a trailing comment in the config file became part of the value.
+	- Cause: `#` started a comment only at the start of a line, and the documented example writes them at the end of one.
+	- Note: a folder rule carrying a comment could never match, and a rule that never matches reads exactly like no rule at all.
+	- Fixed: a `#` after whitespace ends the value. Quote the value to keep a literal one.
+
+- ✅ Code Review 20260812 item 3: an account name could name a file outside the include directory.
+	- Cause: the name went into a path with nothing checking it, so a name containing a path sent `account apply` elsewhere - as far as the global git config.
+	- Fixed: hold the name to letters, digits, dot, dash and underscore, and report anything else as an unread key.
+
+- ✅ Code Review 20260812 item 4: PowerShell read a repo with its own ssh key configured using the default key instead.
+	- Cause: the fetch and the probe replaced git's ssh command to add a connect timeout, rather than adding to it.
+	- Note: a private repo only the account's key can reach reported as unreachable, and the publishing commands then refused.
+	- Fixed: add the timeout to git's own command, as the Bash build already did.
+
+- ✅ Code Review 20260812 item 5: `origin/HEAD` was healed after every fetch, at the cost of a second query to the remote.
+	- Fixed: only when there is nothing to read locally. git 2.47 and newer write one at clone.
+
+- ✅ Code Review 20260812 item 6: the passthrough asked gh which account was active, over the network, on every call.
+	- Note: the answer only named the account being replaced, on a line the passthrough does not print.
+	- Fixed: skip it where no identity block is shown.
+
+- ✅ Code Review 20260812 item 7: a bare GitHub login got no identity line, in the command that exists to answer who a push goes out as.
+	- Cause: the line asked whether some configured value had been used. A bare login names no account and sets no key, so it satisfied none of those tests - though it does select the token git authenticates with.
+	- Note: `GITSBY_ACCOUNT` documents the bare-login spelling, and `raw` already reported it on stderr, so the two disagreed.
+	- Fixed: an account asked for by name is enough on its own. One merely inferred from the remote's owner still prints nothing, so a single-account machine sees no change.
+
+- ✅ Code Review 20260812 item 8: the test suite read whatever accounts the person running it had configured.
+	- Cause: it isolates git config and the commit identity, but not gitsby's own config file, which decides the account a command acts as.
+	- Note: found by running it - a single `protocol = ssh` line in a real config failed three checks per implementation, because the repo commands then built a different remote URL than the check expected.
+	- Fixed: point `GITSBY_CONFIG` at an empty file for the whole run. The account block, where discovery through `HOME` is the thing being tested, opts back out.
 
 #### Done - Code review 20260731
 

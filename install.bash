@@ -142,6 +142,13 @@ echo "  - Download gitsby (${ref}) from github.com/${repo}"
 echo "  - Install it to ${destDir}/gitsby"
 [[ -d "${destDir}" ]] || echo "  - Create ${destDir} (it doesn't exist yet)"
 [[ ${needSudo} -eq 1 ]] && echo "  - Use sudo for the install step (you may be prompted for your password)"
+## Whether the download gets checked is the one thing worth knowing BEFORE agreeing to it.
+## It used to be reported afterwards, and on the dev path not at all.
+if [[ ${isRelease} -eq 1 ]]; then
+	echo "  - Verify the download against the release's published SHA256SUMS"
+else
+	echo "  - NOT verify the download: ${ref} is a branch or tag, which has no published checksum"
+fi
 echo "  - Run 'gitsby --version' to verify"
 if [[ ${doYes} -eq 0 ]]; then
 	answer=""
@@ -156,7 +163,7 @@ if [[ ${doYes} -eq 0 ]]; then
 fi
 
 tmpFile="$(mktemp "${TMPDIR:-/tmp}/gitsby-install.XXXXXX")"
-trap 'rm -f "${tmpFile}"' EXIT
+trap 'rm -f -- "${tmpFile:?}"' EXIT
 
 echo
 fEcho "Downloading ..."
@@ -165,9 +172,10 @@ fromReleaseAsset=0
 if [[ ${isRelease} -eq 1 ]] && fFetch "https://github.com/${repo}/releases/download/${ref}/gitsby" > "${tmpFile}" 2>/dev/null; then
 	fromReleaseAsset=1
 elif fFetch "https://raw.githubusercontent.com/${repo}/${ref}/bin/gitsby" > "${tmpFile}" 2>/dev/null; then
-	## Say so: only the release asset can be checked against SHA256SUMS, and asking for a
-	## release and quietly getting an unverified copy of the tree is not what was agreed.
-	[[ ${isRelease} -eq 1 ]] && echo "Note: no release asset for ${ref}; installing bin/gitsby from the tagged tree, unverified."
+	## Only the release asset can be checked against SHA256SUMS, so falling back to the tree
+	## here would quietly deliver the unverified copy the plan promised to check. Asking for a
+	## release and getting that is not what was agreed, so it stops instead.
+	[[ ${isRelease} -eq 1 ]] && fErr "Release ${ref} publishes no gitsby asset, so only an unverified copy of the tagged tree is available. Re-run with '--ref ${ref}' to take it."
 else
 	fErr "Couldn't download gitsby at '${ref}'. (Releases before v2 predate the current layout; try '--release dev'.)"
 fi
@@ -186,8 +194,13 @@ if [[ ${fromReleaseAsset} -eq 1 ]]; then
 	if [[ -n "${want}" && -n "${got}" ]]; then
 		[[ "${got}" = "${want}" ]] || fErr "Checksum mismatch for the downloaded gitsby; aborting. (Corrupted download or tampering.)"
 		fEcho "Checksum verified."
+	## The plan said this download would be checked, so not checking it is a broken promise
+	## rather than a note in passing. Stop, name which half is missing, and leave the way to
+	## take it unverified an explicit choice rather than the quiet default.
+	elif [[ -z "${got}" ]]; then
+		fErr "No sha256 tool here (need sha256sum or shasum), so the download can't be verified. Install one, or re-run with '--ref ${ref}' to take it unverified."
 	else
-		echo "Note: no SHA256SUMS for ${ref} (or no sha256 tool here); skipping verification."
+		fErr "Release ${ref} publishes no SHA256SUMS entry for gitsby, so the download can't be verified. Re-run with '--ref ${ref}' to take it unverified."
 	fi
 fi
 
@@ -217,3 +230,4 @@ echo
 ##		- 20260722 JC: Created.
 ##		- 20260724 JC: Latest-release lookup via the releases/latest redirect (API scrape is now the rate-limited fallback); release-asset downloads verify against a SHA256SUMS asset when published; trailing blank line.
 ##		- 20260727 JC: Options now spelled --release, --target and --arch, to match the other installers. -s/--system and --ref still work.
+##		- 20260812 JC: The plan says whether the download will be checked, before it is agreed to. It was reported only afterwards, and on the --release dev path not at all - so the one route that installs an unverified file was the quiet one.

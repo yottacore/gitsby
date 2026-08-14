@@ -35,20 +35,23 @@ SHELL_LINT_GLOBS=(
 	"cicd/utility/*.bash"
 	"cicd/utility/n8git_backup-and-publish"
 	"cicd/utility/include/*.bash"
+	"cicd/utility/demo/*.bash"
 )
 ## Report-only (findings warn, never gate). Empty since the bin/gitsby refactor.
 SHELL_LINT_WARN_GLOBS=()
 MD_LINT_GLOBS=(
 	"*.md"
 	"project/*.md"
+	"project/design_docs/*.md"
 )
 PY_LINT_FILES=(
-	"cicd/utility/gen-demo-gif.py"
+	"cicd/utility/demo/gen-demo-gif.py"
 )
 ## PowerShell (probe-gated: needs pwsh + the PSScriptAnalyzer module).
 PS_LINT_GLOBS=(
 	"bin/gitsby.ps1"
 	"install*.ps1"
+	"cicd/*.ps1"
 )
 
 ## Stage 2: regression tests. The harness lands with the bin/gitsby refactor;
@@ -85,8 +88,8 @@ DOGFOOD_PWSH_DESTS=(
 ## for byte (the optimizer below is deterministic too, though its version counts).
 ## Skipped by --quick / --no-demogif; self-skips if the scenario is absent.
 DO_DEMOGIF=1
-DEMOGIF_SCENARIO="cicd/demo-scenario.toml"
-DEMOGIF_CMD=(cicd/utility/gen-demo-gif.py --scenario "${DEMOGIF_SCENARIO}")
+DEMOGIF_SCENARIO="cicd/utility/demo/demo-scenario.toml"
+DEMOGIF_CMD=(cicd/utility/demo/gen-demo-gif.py --scenario "${DEMOGIF_SCENARIO}")
 DEMOGIF_OUT="assets/demo.gif"                # in-repo copy the README embeds
 DEMOGIF_ARCHIVE_DIR="../private/demo/gif"    # out-of-tree originals, GFS-rotated
 ## Lossless squeeze, when the tool is around; skipped silently if not. Worth
