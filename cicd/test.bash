@@ -1807,6 +1807,13 @@ GHEOF
 			grep -q 'fpChangelogStart' "${relBash}"
 		fAssertFail "and retitles by line number, not by first match" \
 			grep -qE '0,/\^## vNEXT' "${relBash}"
+		## The gate is the one thing a release most depends on, and the two engines are separate
+		## ports rather than one wrapping the other, so the Bash one on Windows would pass or fail
+		## on the wrong pipeline entirely.
+		fAssert "release.bash knows the pipeline is two engines" \
+			grep -q 'cicd-win.ps1' "${relBash}"
+		fAssert "and gates on whichever one it picked" \
+			grep -q 'pipeline\[@\]' "${relBash}"
 	fi
 
 	## Recursive removal. demo-repo.bash is the only script here that removes a path someone else
@@ -1909,3 +1916,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260812 JC: Paths handed to PowerShell go in the platform's spelling, via fWinPath. An MSYS path means nothing to .NET, which reads it against the current drive root, so Set-Location, the script lookup and ReadAllBytes all failed and twelve checks on Windows reported on a fixture nothing had touched - seven red, five green because the thing they forbid also never happened. Also: a unix-absolute argument is rewritten by Git Bash before the native pwsh sees it, and the system install location is the platform's own.
 ##		- 20260813 JC: Recursive removal. demo-repo.bash is the only script here that removes a path someone else named, so it gets real checks; the rest are pinned to removing only what mktemp handed them. Sixteen of the seventeen discriminate against the prior code; the last is a regression guard on a file that never removed anything. The filesystem-root case is pinned rather than run, because running it against a build without the guard is 'rm -rf /'.
 ##		- 20260813 JC: Drop the two settings a working terminal carries that outrank everything pinned here - GIT_CONFIG_COUNT with its numbered keys, which beats every config file including a repo-local one, and an inherited GH_TOKEN, which is what the fake gh reports back. Twenty checks had been reporting on the terminal rather than the code. Pinned in all three harnesses; the runtime pair is a regression guard, since a clean machine passes either way.
+##		- 20260814 JC: release.bash gates on the pipeline engine belonging to the platform. It always ran the Bash one, which knows nothing about Windows, so the check a release most depends on would have been the wrong pipeline there. Source pins, same reason as the changelog ones above; both discriminate against the prior file.
