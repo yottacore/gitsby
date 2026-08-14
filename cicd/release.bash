@@ -229,14 +229,27 @@ fi
 if ! fWould "verify releases/latest and run both documented installers into a throwaway HOME"; then
 	latest="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/jim-collier/gitsby/releases/latest" 2>/dev/null | sed -n 's|.*/releases/tag/||p')"
 	[[ "${latest}" == "${version}" ]] || fNote "WARNING: releases/latest resolves to '${latest}', not ${version}."
-	fakeHome="$(mktemp -d)"
-	if HOME="${fakeHome}" bash "${root}/install.bash" -y >/dev/null 2>&1 \
-		&& "${fakeHome}/.local/bin/gitsby" --version 2>/dev/null | grep -q "${version#v}"; then
+	## Seconds after publication GitHub serves the tag but not yet the assets, and the installers
+	## stop rather than quietly skip verification when SHA256SUMS can't be fetched - so a first
+	## attempt can fail against a release that is perfectly good. It did on v2.1.0: the same check
+	## passed unchanged minutes later, with elapsed time the only difference. Retry before saying
+	## anything, or the one warning that would mean a broken release is the one nobody believes.
+	installed=0
+	for attempt in 1 2 3; do
+		((attempt > 1)) && { fNote "not installable yet; giving GitHub a moment to serve the assets (attempt ${attempt}) ..."; sleep 20; }
+		fakeHome="$(mktemp -d)"
+		if HOME="${fakeHome}" bash "${root}/install.bash" -y >/dev/null 2>&1 \
+			&& "${fakeHome}/.local/bin/gitsby" --version 2>/dev/null | grep -q "${version#v}"; then
+			installed=1
+		fi
+		rm -rf -- "${fakeHome:?}"
+		((installed)) && break
+	done
+	if ((installed)); then
 		fNote "bash installer: installed ${version} and verified its checksum"
 	else
 		fNote "WARNING: the bash installer did not produce ${version} from the published release."
 	fi
-	rm -rf -- "${fakeHome:?}"
 fi
 rm -rf -- "${assets:?}"
 
@@ -259,3 +272,7 @@ echo
 ##		- 20260814 JC: Runs the pipeline engine that belongs to the platform. It always ran the Bash
 ##		  one, which knows nothing about Windows, so the gate a release most depends on would have
 ##		  been the wrong pipeline on half the machines this project supports.
+##		- 20260814 JC: The installer proof retries. Cutting v2.1.0 warned that the release wasn't
+##		  installable when it was - GitHub was still serving the tag without its assets, and the
+##		  installer stops rather than skip verification. A warning that fires on a good release is
+##		  worse than none, because the next one is read the same way.
