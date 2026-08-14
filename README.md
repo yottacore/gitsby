@@ -25,12 +25,12 @@
 </table>
 
 <!-- Pin to the gif's native 960px. GitHub's max-width:100% still shrinks it on narrow columns; a % width would blow it up past native on wide ones. -->
-<img src="assets/demo.gif" width="960" alt="Demo: shipping a feature, then the same command in two folders acting as two different GitHub accounts."/><br />
+<img src="assets/demo.gif" width="960" alt="Demo: a feature taken from branch to merge, then the same command in two folders acting as two different GitHub accounts."/><br />
 <sub><i>Like the smooth-scrolling terminal output and cursor? Take a look at <a href="https://github.com/jim-collier/silkterm">SilkTerm</a>!</i></sub>
 
 <!--
 	Demo video: https://www.youtube.com/watch?v=REPLACE_WITH_VIDEO_ID
-	<img src="assets/demo.gif" width="960" alt="Demo: shipping a feature, then the same command in two folders acting as two different GitHub accounts."/>
+	<img src="assets/demo.gif" width="960" alt="Demo: a feature taken from branch to merge, then the same command in two folders acting as two different GitHub accounts."/>
 -->
 
 <!-- TOC ignore:true -->
