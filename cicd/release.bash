@@ -135,10 +135,23 @@ target="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || 
 [[ -n "${target}" ]] || fDie "branch '${branch}' has no upstream."
 [[ -z "$(git log '@{u}..HEAD' --oneline)" ]] || fDie "branch '${branch}' has unpushed commits."
 
+## The pipeline is two engines, one per platform, and this is the only thing here that cares which
+## OS it is on. cicd.bash has no Windows awareness whatsoever - the Windows engine is a port, not a
+## wrapper - so running it there would gate the release on the wrong thing entirely.
+if [[ "$(uname -s)" == MINGW* || "$(uname -s)" == MSYS* || "$(uname -s)" == CYGWIN* ]]; then
+	command -v pwsh >/dev/null 2>&1 || fDie "the Windows pipeline needs pwsh, which isn't on PATH."
+	## cygpath because .NET resolves an MSYS path against the current drive root, and says nothing.
+	pipeline=(pwsh -NoProfile -File "$(cygpath -m "${here}/cicd-win.ps1")" -NoPublish -Yes -Message "pre-release check")
+	pipelineName="cicd/cicd-win.ps1 -NoPublish"
+else
+	pipeline=("${here}/cicd.bash" --no-publish -y -m "pre-release check")
+	pipelineName="cicd/cicd.bash --no-publish"
+fi
+
 ## The whole pipeline, against the tree as it stands. This is the gate.
-if ! fWould "run cicd/cicd.bash --no-publish"; then
+if ! fWould "run ${pipelineName}"; then
 	fNote "running the full pipeline before touching anything ..."
-	"${here}/cicd.bash" --no-publish -y -m "pre-release check" || fDie "the pipeline did not pass; nothing was changed."
+	"${pipeline[@]}" || fDie "the pipeline did not pass; nothing was changed."
 fi
 fEcho "Phase 1 OK: v${verBash} -> ${version}"
 
@@ -243,3 +256,6 @@ echo
 ##		  saying vNEXT, and the release body came out as the empty template plus a stray '-->' -
 ##		  non-empty, so the warning that exists for this never fired. The retitle is line-addressed
 ##		  now, and the template's heading is spelled TEMPLATE_vNEXT so either guard would do alone.
+##		- 20260814 JC: Runs the pipeline engine that belongs to the platform. It always ran the Bash
+##		  one, which knows nothing about Windows, so the gate a release most depends on would have
+##		  been the wrong pipeline on half the machines this project supports.
