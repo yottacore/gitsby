@@ -165,6 +165,7 @@ Or clone it yourself and install the tooling by hand.
 
 - `bin/gitsby` and `bin/gitsby.ps1` - the two implementations. They are ports of each other, so a change to one nearly always belongs in the other.
 - `cicd/` - the local pipeline and its config.
+- `cicd/utility/demo/` - everything the demo gif is built from. Start at `script.txt`, which describes scene by scene what the demo shows; the scenario file beside it is the same thing in the form the renderer reads.
 - `project/` - design notes and the backlog.
 
 <!-- omit in toc -->

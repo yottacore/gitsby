@@ -1817,7 +1817,7 @@ GHEOF
 	## The single quotes below are the point - these are searches for literal source text.
 	# shellcheck disable=SC2016
 	if [[ "$1" == "bash" ]]; then
-		local demoRepo="${root}/cicd/utility/demo-repo.bash" rmWork="${work}/rmsafe"
+		local demoRepo="${root}/cicd/utility/demo/demo-repo.bash" rmWork="${work}/rmsafe"
 		mkdir -p "${rmWork}/notmine/keep"; echo keepme > "${rmWork}/notmine/keep/file.txt"
 		## On the message, not just the exit code: a build that refuses for some unrelated reason
 		## later on exits nonzero too, and two of these passed against the unguarded script on
@@ -1842,7 +1842,7 @@ GHEOF
 			grep -q 'if ($probeDir) { Remove-Item' "${root}/bin/gitsby.ps1"
 		local rmScript
 		for rmScript in bin/gitsby cicd/cicd.bash cicd/test.bash cicd/fuzz.bash cicd/parity.bash \
-		                cicd/release.bash cicd/utility/demo-repo.bash install.bash install-dev.bash; do
+		                cicd/release.bash cicd/utility/demo/demo-repo.bash install.bash install-dev.bash; do
 			fAssertFail "${rmScript} never removes an unguarded variable path" \
 				grep -qE 'rm -[rf]+ +(-- )?"\$\{[a-zA-Z_][a-zA-Z_0-9]*\}' "${root}/${rmScript}"
 		done

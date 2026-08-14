@@ -140,11 +140,12 @@ $ShellLintGlob = @(
     "cicd/utility/*.bash"
     "cicd/utility/n8git_backup-and-publish"
     "cicd/utility/include/*.bash"
+    "cicd/utility/demo/*.bash"
 )
 ## Report-only (findings warn, never gate). Empty since the bin/gitsby refactor.
 $ShellLintWarnGlob = @()
 $MdLintGlob        = @("*.md", "project/*.md", "project/design_docs/*.md")
-$PyLintFile        = @("cicd/utility/gen-demo-gif.py")
+$PyLintFile        = @("cicd/utility/demo/gen-demo-gif.py")
 $PsLintGlob        = @("bin/gitsby.ps1", "install*.ps1", "cicd/*.ps1")
 
 ## Stages 2 and 3: the bash harnesses, run under Git Bash.
@@ -172,8 +173,8 @@ $DogfoodPwshDest = @(
 
 ## Stage 5: demo gif. Compare only - see the header for why Windows never lands
 ## a render.
-$DemoGifScenario = "cicd/demo-scenario.toml"
-$DemoGifScript   = "cicd/utility/gen-demo-gif.py"
+$DemoGifScenario = "cicd/utility/demo/demo-scenario.toml"
+$DemoGifScript   = "cicd/utility/demo/gen-demo-gif.py"
 $DemoGifOut      = "assets/demo.gif"
 
 ## Sourced through bash to rotate the run logs, the same helper cicd.bash uses.

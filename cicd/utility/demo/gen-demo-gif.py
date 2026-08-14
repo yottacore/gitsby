@@ -159,6 +159,7 @@ def fLoadScenario(path):
 	##	  scrollrate = 260              px/s smooth scroll during this step's output
 	##	  linems = 20                   ms per output line before scrolling kicks in
 	##	  clear = true                  wipe the scrollback first, as `clear` does
+	##	  cwd = "~/dev/thing"           shown in the prompt (default: "~")
 	try:
 		with open(path, "rb") as f:
 			sc = tomllib.load(f)
@@ -530,11 +531,31 @@ def fMain():
 	userTint, hostTint = rng.sample(IDENT_TINTS, 2)
 	user = rng.choice(IDENT_USERS)
 	host = rng.choice(IDENT_HOSTS)
-	prompt = [(user, "user"), ("@", "gray"), (host, "host"), (":", "gray"),
-	          ("~", "gray"), ("$ ", "gray")]
+
+	def fPromptFor(cwd):
+		##	Per step, because a demo about folders has to show the folder. Steps
+		##	that say nothing get "~", so a scenario written before this reads the same.
+		return [(user, "user"), ("@", "gray"), (host, "host"), (":", "gray"),
+		        (cwd, "gray"), ("$ ", "gray")]
+
 	identColors = {"user": userTint, "host": hostTint}
 
-	scr = Screen(font, fontName, sc.get("title", prog), prompt, None, sc.get("fontsize", 15))
+	scr = Screen(font, fontName, sc.get("title", prog),
+	             fPromptFor(sc["step"][0].get("cwd", "~")), None, sc.get("fontsize", 15))
+
+	##	A typed line past the right edge is cut off with nothing said, which reads back as a
+	##	typo in the caption rather than as a caption that needs shortening - and the budget
+	##	moves whenever a step's cwd does. Output lines are left alone: overflow= already says
+	##	what should happen to those, and they are the program's to decide, not the author's.
+	for stepNo, step in enumerate(sc["step"], 1):
+		promptW = len("".join(t for t, _ in fPromptFor(step.get("cwd", "~"))))
+		typed = [("note", "# " + step["note"]) if step.get("note") else None,
+		         ("show", step["show"].replace("{prog}", prog).replace("{bin}", prog))]
+		for what, text in (t for t in typed if t):
+			if promptW + len(text) > scr.cols:
+				sys.stderr.write(
+					f"gen-demo-gif: step {stepNo} {what} is {promptW + len(text) - scr.cols}"
+					f" characters wider than the {scr.cols}-column screen, and will be cut off\n")
 
 	##	Run every command up front: the outputs feed the demo AND tell the
 	##	palette which emoji it must carry before the first frame renders.
@@ -587,6 +608,8 @@ def fMain():
 	for stepIdx, step in enumerate(sc["step"]):
 		rate = float(step.get("scrollrate", SCROLL_RATE))
 		lineMs = float(step.get("linems", FRAME_MS))
+		##	Before the clear below, which re-places the cursor against this prompt's width.
+		scr.prompt = fPromptFor(step.get("cwd", "~"))
 		if step.get("clear"):
 			##	Start the step at the top of a fresh screen. Smooth scrolling
 			##	costs a near-full-frame delta per frame, so a demo that never
