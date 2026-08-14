@@ -41,6 +41,8 @@ This is a product backlog for the run-up to v2.0.0. After that release, bugs, fe
 
 In each section, items are listed approximately from newest to oldest.
 
+To make using these icons easier, add them to a clipboard or key macro manager. (These are temporary anyway until we switch over to nano-git-db for the minor stuff, and GitHub Issues for the bigger stuff.)
+
 | Icon | Status
 | :--: | :--
 | 🔘   | Not started
