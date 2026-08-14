@@ -21,7 +21,7 @@ Design, requirements, and direction. The active bug and feature task list lives 
 
 - `bin/` - the two implementations, one file each.
 
-- `cicd/` - the local pipeline, its config, and the test and fuzz suites.
+- `cicd/` - the local pipeline, its config, and the test and fuzz suites. Everything the demo gif is built from lives together under `cicd/utility/demo/`.
 
 - `project/` - this file and the backlog.
 
@@ -284,6 +284,20 @@ See also the release policy under Architecture, which covers how releases are pu
 	- Stubs are shebang scripts, which PowerShell locates on `PATH` but cannot start. It reports no error, so the stub silently produces nothing and the check passes or fails for the wrong reason. The regression suite gives each stub a `.cmd` sibling that hands the body back to bash.
 	- The fuzz suite deliberately does not, and skips the affected checks with a printed reason. A `.cmd` goes through `cmd.exe`, which re-parses an unquoted `&` or `>` in an argument - so a vector this suite hands gitsby would partly run for real, and be reported as an injection that gitsby never had. Its glob vectors break the same way. A named skip is worth more than a green that means nothing.
 	- Checks that reach a confirmation need it to refuse rather than wait. `setsid` does that on Linux; Windows has no equivalent and needs none for the PowerShell build, which reads redirected stdin and never falls back to a terminal. The Bash installer does fall back to `/dev/tty`, so its checks additionally require that open to fail.
+
+### Demo
+
+- The demo in the README is drawn, not screen-recorded, and the commands in it really run. They act on a throwaway repo built offline for each render, so the output cannot drift from what the tool actually prints.
+
+- Commit dates in that repo are pinned. An unchanged demo therefore renders byte for byte identical, which is what lets the pipeline replace the committed file only when the demo really changed.
+
+- The demo is described twice on purpose. `script.txt` is the readable version - scenes, captions, typed lines, hold times - and is the one to edit; the scenario file beside it is the machine version. We decided the readable one is the source of truth, because the parameters that shape a demo are aesthetic judgements, and they are far easier to argue about in prose than in a table of numbers.
+
+- Nothing parses `script.txt`. Keeping the two in step is a habit, not a mechanism - a parser would have to be maintained, and the file's value is that a person can change it without learning a format.
+
+- The demo must not be handed the answer it is demonstrating. Its throwaway world deliberately withholds the environment variables that would supply an identity, so the commit author on screen is the one the folder rules chose and not one exported ahead of them. A demo that cannot fail to look right is showing nothing.
+
+- Where a feature is about context - which folder, which account - the demo has to show that context. That is why the prompt carries the working directory: a scene proving the folder decides who you act as, above a prompt that never names a folder, asks to be taken on trust.
 
 ### Release policy
 

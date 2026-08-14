@@ -153,6 +153,20 @@ In each section, items are listed approximately from newest to oldest.
 
 #### Done - Features and enhancements
 
+- ✅ The demo gif demonstrates an account changing on a partial folder match higher in the path.
+	- Folder-based accounts are the headline feature and the demo never showed them. Three scenes were added to the end of the existing demo rather than made into a second gif, so the one loop tells the whole story.
+	- The throwaway world now has two repos in trees that differ from their first folder down, and a gitsby config matching on `github.com/acme-corp` and `github.com/mika-rivers`. Different roots are the point: a shared root would not show that the match is a run of folder names rather than a prefix.
+	- The closing scene runs the same command in the second tree, with no flags and nothing configured per repo, and the account has changed. The six scenes before it were already acting as the work account and now say so on their identity line.
+	- The prompt shows the folder the command runs in. A demo about folders that hides the folder proves nothing.
+	- The identity the accounts set is deliberately not exported into the demo's environment. It had been, and an exported `GIT_AUTHOR_EMAIL` supplies exactly what the folder rules are meant to supply - the demo would have been showing something it had not proved.
+	- 2632 frames, 122.5 seconds, 11.06 MB, up from 2007 / 84.9 s / 9.97 MB. Read time is free; the growth is the three scenes' own output and typing.
+
+- ✅ The demo gif has a readable script, and its tooling lives in one place.
+	- What the demo shows was only ever recorded as a scenario table of captions, commands and timing numbers, next to a renderer full of constants. Changing it meant reading both.
+	- `cicd/utility/demo/script.txt` now describes it in plain language: the format, the set, the throwaway repo, and one section per scene with its caption, its typed line and how long it holds. That file is the one to edit.
+	- The scenario file stays as the machine version and points at it. Nothing parses the script - keeping the two in step is deliberate habit, not a mechanism.
+	- The renderer, the repo builder and the scenario moved from `cicd/` and `cicd/utility/` into `cicd/utility/demo/` alongside it. Both pipeline engines needed their paths and lint globs updated by hand, since neither discovers files.
+
 - ✅ The fuzz suite can pass on Windows.
 	- Three vectors clone into a directory named `*`, `?` or `v*`. Win32 forbids those characters in a path, so native git cannot create such a work tree at all and the check could never pass there.
 	- They are skipped on Windows now, with a line saying why. The suite already skipped four PowerShell vectors there for the same kind of reason.

@@ -98,6 +98,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Other work
 
+- The demo now shows folder-based accounts. It ends with the same command run in two repos under different roots, resolving to a different account each time with nothing configured per repo and no flags given - and the six scenes before it, which were already acting as the work account, now say so on their identity line. The throwaway world it is built from grew a second tree and a gitsby config file to match.
+
+- The demo's prompt shows the folder the command runs in, rather than always `~`. A demo whose point is which folder you are standing in cannot hide it. Steps that do not say get `~`, and the renderer now warns by name when a caption or command would run off the edge of the screen instead of silently cutting it off.
+
+- Everything the demo gif is built from now sits together in `cicd/utility/demo/`, alongside a plain-language `script.txt` describing what the demo shows, scene by scene, in a form meant to be edited by hand. The renderer's own scenario file stays as the machine version of the same thing.
+
 - Both suites now run their PowerShell leg on Windows rather than only on Linux. Test stubs get a `.cmd` sibling, since PowerShell finds a shebang script on PATH but starts nothing and reads the silence as no output; and the checks that need a confirmation to refuse no longer depend on `setsid`, which Windows has no equivalent of.
 
 - The fuzz suite deliberately does not get that `.cmd` sibling, and skips four checks on the Windows PowerShell leg instead. Its arguments are hostile by design, and `cmd.exe` re-parses an unquoted `&` or `>` - which would run part of a vector for real and report an injection gitsby never had.

@@ -1,0 +1,242 @@
+@ Gitsby demo script. This is the readable/editable source for what the demo gif
+@ shows. It gets turned into demo-scenario.toml, which gen-demo-gif.py renders.
+@
+@ How to read it:
+@   A bare line is typed on camera, exactly as written.
+@   A line starting with # is also typed on camera, as a shell comment - that is
+@   the caption that introduces each command.
+@   A line whose first non-blank character is @ is an editing note and never
+@   appears on screen.
+@   Indentation is for reading only - it means nothing.
+@   Scenes run top to bottom in the order they appear here.
+@
+@ How to change it:
+@   Edit this file. Every change here is carried into demo-scenario.toml in the
+@   same pass, so the two never drift.
+@   Nothing reads this file automatically - it is not a program. The map at the
+@   bottom says which knob each thing here corresponds to.
+@
+@ Everything the demo runs is real. The commands execute against a throwaway repo
+@ built fresh for each render, so the output cannot go stale - but that also means
+@ a change here has to keep the repo's state consistent from one scene to the next.
+
+
+@ •••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+@ Format
+@
+@ Gif only, no video: 960x540, 50 fps, silent.   -> assets/demo.gif (README)
+@
+@ Currently 2632 frames, 122.5 seconds, 11.06 MB. There is no size cliff to stay
+@ under - the file is committed and served from raw, where the limits are 50 MB
+@ (warning) and 100 MB (blocked). GitHub's 10 MB figure is for attachments and
+@ Camo's 5 MB is for external images; neither applies. So size is a judgement
+@ about load time on a slow connection, not a budget.
+@
+@ What actually costs bytes: about 97% of the file is smooth-scroll frames, and
+@ they run ~1.27 MB per extra frame-per-line. Pauses, cursor blink and the held
+@ end frames are free - an identical frame stores as no change. So the levers, in
+@ order, are the number of output lines, the scroll rate, and the per-scene clear.
+@ Read time can be increased freely; it costs nothing.
+
+
+@ •••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+@ The set
+@
+@ A drawn terminal window on black - title bar, three muted traffic lights, square
+@ corners, no shadow. Nothing is screen-recorded; the frames are drawn.
+@ Dark warm-gray background, pale green text, gray prompt punctuation, dimmer gray
+@ for the typed comments.
+@ The prompt's user@host is picked from a generic list and tinted, seeded so it is
+@ the same every run - no real username, hostname or path is ever on screen.
+@ The prompt also shows the folder the command runs in. The back half of the demo
+@ is about which folder you are standing in, so a prompt that said only "~" would
+@ be hiding the thing being demonstrated.
+@ The screen is 99 columns wide and a typed line is cut off at the edge, so a
+@ caption's budget is 99 minus the prompt - which moves when the folder does. The
+@ renderer warns by name when a caption or command would overflow.
+@ Font: Monaspace Argon SemiBold, falling back through JetBrains Mono, Cascadia
+@ Mono and DejaVu Sans Mono to whatever monospace the system offers. The font is
+@ resolved through fontconfig, which is the reason a render is a Linux job.
+@ Typing is at a human pace - roughly 135-183 wpm, slower on digits, a beat of
+@ thought before a -flag, and the occasional typo typed and corrected.
+@ The cursor glides between cells rather than jumping, and blinks every 520ms.
+@
+@ Every scene clears the screen before it starts, as though `clear` had been
+@ typed. That is deliberate and is what keeps the file affordable: a scrollback
+@ that never accumulates halves how far the view has to travel.
+
+
+@ •••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+@ The world the commands act on
+@
+@ Built offline before the first scene and thrown away after, and nothing in it
+@ touches the network. Everything is generic: a made-up author (Mika Rivers), a
+@ throwaway HOME and gitconfig, no real paths.
+@
+@ Two repos, in two folder trees that differ from their first folder down:
+@   ~/dev/github.com/acme-corp/acme-api        the service the first six scenes work on
+@   ~/code/github.com/mika-rivers/dotfiles     somewhere else entirely
+@ acme-api has a local bare "origin" beside it, one commit, a clean push, and one
+@ uncommitted edit waiting in config.yml - so the very first scene has something
+@ to show. dotfiles only ever has `account` run in it; what matters is that it is
+@ a real repo under a different root.
+@
+@ A gitsby config file gives each tree its own GitHub account, matched on the
+@ folder names "github.com/acme-corp" and "github.com/mika-rivers". The roots
+@ differ on purpose: the rule is a run of folder names found anywhere in the path,
+@ and two trees sharing a root would not show that.
+@ Each account carries a fake token. Nothing reads it - a local-path remote needs
+@ no credentials - but its presence is what makes gitsby report the account as
+@ applied rather than merely resolved, which is the state a real user is in.
+@
+@ HOME is the demo root, so "~/dev/..." in the prompt and "/tmp/gitsby-demo/dev/..."
+@ in the output are the same place. The identity the accounts set is deliberately
+@ not exported into the scenario's environment: an exported GIT_AUTHOR_EMAIL would
+@ supply the very thing the folder rules are supposed to be supplying, and the
+@ demo would be showing something it had not proved.
+@
+@ Commit dates are pinned to a fixed value. That makes the commit hashes, and
+@ therefore every line of output, and therefore the gif bytes, identical run to
+@ run - which is what lets the pipeline rewrite assets/demo.gif only when the
+@ demo really changed.
+@ So: keep every commit message and every edit in this file fixed. In particular
+@ never demo a bare `update` or `sync` with no message - the auto-generated
+@ message is a timestamp, and the gif would differ on every render.
+@
+@ The demo types each command without -y; the confirmation is answered off camera,
+@ because there is no terminal attached to answer it on.
+
+
+@ •••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+@ Scene 1: where you stand
+@ The opening. Leads with the state block, which is the thing that most needs
+@ explaining and the thing every other command prints too.
+
+# Fetch, then show exactly where you stand
+gitsby status
+
+@ hold 5.7 seconds
+
+
+@ •••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+@ Scene 2: start the feature
+@ The uncommitted edit from the fixture is still sitting there, which is the
+@ point - it comes along to the new branch instead of being left behind or
+@ committed to the default branch.
+
+# New branch - uncommitted work comes along
+gitsby br create add-retries
+
+@ hold 5.2 seconds
+
+
+@ •••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+@ Scene 3: park the work
+
+# Commit and pull, as often as you like
+gitsby update "Retry failed API calls"
+
+@ hold 5.2 seconds
+
+
+@ •••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+@ Scene 4: do some work
+@ An ordinary shell line, not a gitsby command. It is here so the next scene has
+@ something real to commit, and so the demo shows gitsby sitting alongside the
+@ shell rather than replacing it.
+
+# Make a change to a source file...
+echo 'retry_backoff: 250ms' >> config.yml
+
+@ hold 2.4 seconds - much shorter, there is only one line of output to read
+@ The caption runs on into the next scene's, so the two have to move together.
+
+
+@ •••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+@ Scene 5: share it
+
+# ...then commit, pull and push in one go
+gitsby sync "Back off between retries"
+
+@ hold 5.2 seconds
+
+
+@ •••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+@ Scene 6: ship it
+@ The closer, and the densest scene - it merges, pushes, and cleans up both
+@ copies of the branch, so it holds the longest.
+
+# Ship it: merge back, push, delete the branch
+gitsby br land "Add retries"
+
+@ hold 7.8 seconds
+
+
+@ •••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+@ Scene 7: who was that?
+@ The turn. Every scene so far carried "Account ...: mika-at-acme" and an
+@ acme.example author line without saying where they came from; this answers it.
+@ Still in the work repo - the prompt does not move until scene 9, so that the
+@ folder is visibly the only thing that changes.
+
+# That all went out as mika-at-acme. Here is why
+cat ~/.config/gitsby/config.shcl
+
+@ hold 7.0 seconds - thirteen lines of config to read
+
+
+@ •••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+@ Scene 8: the rule, applied here
+@ Reads back what gitsby made of the file, and marks which account this folder
+@ resolves to. The "anywhere" line is the rule itself: a run of folder names,
+@ not a path on this machine.
+
+# Two folder names, matched anywhere in the path
+gitsby account
+
+@ hold 6.5 seconds
+
+
+@ •••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+@ Scene 9: the same command, somewhere else
+@ The payoff, and the closing scene. Same command, no flags, nothing configured
+@ per repo - only the folder in the prompt differs, and the arrow has moved to
+@ the other account. The two roots are different ("code" against "dev"), which is
+@ what shows the match is on folder names rather than on a prefix.
+
+# Another tree, another root - another account
+gitsby account
+
+@ hold 7.8 seconds
+
+
+@ •••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+@ Closing
+@
+@ The last frame holds for 1.6 seconds, then the gif hard-cuts to black for 2.0
+@ seconds before looping. The cut is deliberate - a fade would cost real frames,
+@ and a held black frame costs nothing.
+
+
+@ •••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+@ Where each knob lives
+@
+@ Everything in this directory:
+@   script.txt            this file - the readable version, edited by hand
+@   demo-scenario.toml    the machine version: one [[step]] per scene above
+@   demo-repo.bash        builds the throwaway world described under "The world"
+@   gen-demo-gif.py       the renderer - the set, typing model and frame rate
+@
+@ Scene captions, typed lines and hold times are per-step in demo-scenario.toml
+@ (note=, show=, pause=). The folder shown in the prompt is cwd=, defaulting to
+@ "~". The command that really runs is run=, which is where the -y and the repo
+@ setup hide - and which has to enter the same folder cwd= claims.
+@ Canvas size, colors, fonts, typing speed, blink and the 50 fps grid are
+@ constants near the top of gen-demo-gif.py. Scroll rate is one of those too
+@ (150 px/s), overridable per scene.
+@ Which file the pipeline renders, and where the result lands, is set in
+@ cicd/config.bash and mirrored in cicd/cicd-win.ps1 - both, by hand.
+@
+@ To re-render: cicd/cicd.bash on Linux, without --quick. It regenerates only if
+@ the bytes actually changed. Windows compares but never lands a render - the
+@ byte-for-byte contract depends on Linux fontconfig and the pinned optimizer.
