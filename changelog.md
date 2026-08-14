@@ -16,6 +16,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Other work
 -->
 
+## vNEXT
+
+### Other work
+
+- `cicd/release.bash` retries the installer it runs against the freshly published release before reporting that the release isn't installable. Cutting v2.1.0 warned that it wasn't when it was: GitHub serves the tag a little ahead of its assets, and the installer stops rather than quietly skip checksum verification. A warning that fires on a good release is worse than no warning at all.
+
 ## v2.1.0 - 2026-08-14
 
 ### Added
