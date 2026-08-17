@@ -1892,6 +1892,29 @@ else
 	echo "suite: pwsh skipped (pwsh not installed)"
 fi
 
+## Same suite against the compiled port, when a build exists (cicd stage 2 builds it, or
+## 'go build' by hand in src-go/). Not gating yet: the port is written against this suite,
+## so its failures are the distance left, not a broken tree - counts print, the totals and
+## the exit code below exclude them. Flips fatal in the round that retires the scripts.
+goBin="${root}/src-go/gitsby"; [[ -x "${goBin}" ]] || goBin="${goBin}.exe"
+if [[ -x "${goBin}" ]]; then
+	gitsby="${work}/gitsby-go"
+	printf '#!/usr/bin/env bash\nexec "%s" "$@"\n' "${goBin}" > "${gitsby}"
+	chmod +x "${gitsby}"
+	fMakeFixture "${work}/go"
+	declare -i passWas=${pass} failWas=${fail}
+	## The scripted legs fail fast when a bare prep command dies - there that is a harness
+	## bug. Here prep legitimately dies wherever it leans on a command not ported yet, so
+	## this leg runs without -e and the assertions do all the judging.
+	set +e
+	fRunSuite "go"
+	set -e
+	echo "go leg (not gating yet): passed $((pass - passWas)), failed $((fail - failWas))"
+	pass=${passWas}; fail=${failWas}
+else
+	echo "suite: go skipped (no build at src-go/gitsby)"
+fi
+
 echo "passed: ${pass}, failed: ${fail}"
 ((fail == 0)) || exit 1
 
@@ -1917,3 +1940,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260813 JC: Recursive removal. demo-repo.bash is the only script here that removes a path someone else named, so it gets real checks; the rest are pinned to removing only what mktemp handed them. Sixteen of the seventeen discriminate against the prior code; the last is a regression guard on a file that never removed anything. The filesystem-root case is pinned rather than run, because running it against a build without the guard is 'rm -rf /'.
 ##		- 20260813 JC: Drop the two settings a working terminal carries that outrank everything pinned here - GIT_CONFIG_COUNT with its numbered keys, which beats every config file including a repo-local one, and an inherited GH_TOKEN, which is what the fake gh reports back. Twenty checks had been reporting on the terminal rather than the code. Pinned in all three harnesses; the runtime pair is a regression guard, since a clean machine passes either way.
 ##		- 20260814 JC: release.bash gates on the pipeline engine belonging to the platform. It always ran the Bash one, which knows nothing about Windows, so the check a release most depends on would have been the wrong pipeline there. Source pins, same reason as the changelog ones above; both discriminate against the prior file.
+##		- 20260817 JC: Go leg. Same shim treatment, non-gating: the port is written against this suite, so its failures are the distance left, printed as counts and kept out of the totals. The leg runs without -e - prep commands legitimately die where a command is not ported yet, and the assertions do the judging.

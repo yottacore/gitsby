@@ -61,13 +61,15 @@ To make using these icons easier, add them to a clipboard or key macro manager. 
 
 Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. Work top to bottom; everything happens on branches off `gover`, nothing touches the scripted implementations yet.
 
-- 🔘 Go scaffolding.
+- ✅ Go scaffolding.
 	- Module, `src-go/` tree, builds from the Linux cicd engine.
 	- Version is a build-time value, not a line in the source.
+	- Done: stub binary that owns only `version`; test stage builds it fresh each run, dev builds carry the git-describe version.
 
-- 🔘 Third suite leg in test.bash for the Go binary.
+- ✅ Third suite leg in test.bash for the Go binary.
 	- Mirrors the pwsh leg: a shim path, same fixture, same checks.
 	- Skipped when no binary exists; failures don't fail cicd until the leg is expected to pass everything. Pass counts print either way so progress is visible per run.
+	- Done: leg prints its own counts and stays out of the totals and the exit code. First run 162/279 - the passing side is mostly refusals a stub satisfies, so the failed count is the real distance.
 
 - 🔘 Go tooling in the lint stage.
 	- gofmt, go vet, staticcheck. Shellcheck and PSScriptAnalyzer keep covering the pipeline and installers.
