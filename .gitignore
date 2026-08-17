@@ -2,3 +2,7 @@
 cicd/artifacts/
 *.gif.new
 __pycache__/
+
+## Go build output (built by cicd stage 2, or by hand)
+src-go/gitsby
+src-go/gitsby.exe

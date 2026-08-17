@@ -141,6 +141,9 @@ elif ((do_test)); then
 else
 	fEcho_Clean "Tests ...............: (skipped)"
 fi
+if ((do_test)) && [[ -d "src-go" ]]; then
+	fEcho_Clean "Go build ............: src-go -> src-go/gitsby (suite leg, not gating yet)"
+fi
 if ((do_fuzz)) && [[ -f "${FUZZ_CMD[0]:-}" ]]; then
 	fEcho_Clean "Fuzz + security .....: ${FUZZ_CMD[*]}"
 elif ((do_fuzz)); then
@@ -294,6 +297,18 @@ fSection "2/6  Regression tests"
 if ((! do_test)); then
 	fEcho_Clean "tests skipped"
 elif [[ -f "${TEST_CMD[0]:-}" ]]; then
+	## Build the compiled port first so its suite leg tests this tree. A missing
+	## toolchain degrades to the leg's own skip message, never a stage failure.
+	## Dev builds carry the describe version; release builds will inject the clean one.
+	if [[ -d "${root}/src-go" ]]; then
+		if command -v go >/dev/null 2>&1; then
+			go_version="$(git describe --tags --always --match 'v*' 2>/dev/null || echo 0.0.0)"
+			(cd "${root}/src-go" && go build -trimpath -ldflags "-s -w -X main.version=${go_version#v}" -o gitsby .) || fDie "go build failed"
+			fEcho "OK: go build (v${go_version#v})"
+		else
+			fEcho "WARNING: go toolchain not installed - the suite's go leg will skip"
+		fi
+	fi
 	"${TEST_CMD[@]}"
 	fEcho "OK: tests passed"
 	## The behavioural suite runs the same checks once per build, so it passes on both while the two
@@ -415,3 +430,4 @@ fEcho_Clean
 
 ##	History:
 ##		- 2026-07-22 JC: Created. Generic engine + config.bash for a Bash-script project, adapted from the sister pipeline; lint/tests/fuzz/dogfood/demo-gif/publish stages, -q/-m/--quick flags, tee'd run log.
+##		- 2026-08-17 JC: Stage 2 builds the go port before the tests, so the suite's go leg runs against this tree; dev builds carry the git-describe version via -ldflags. A missing toolchain warns and lets the leg skip itself.
