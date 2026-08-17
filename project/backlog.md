@@ -59,6 +59,29 @@ To make using these icons easier, add them to a clipboard or key macro manager. 
 
 ### Features and enhancements
 
+Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. Work top to bottom; everything happens on branches off `gover`, nothing touches the scripted implementations yet.
+
+- 🔘 Go scaffolding.
+	- Module, `src-go/` tree, builds from the Linux cicd engine.
+	- Version is a build-time value, not a line in the source.
+
+- 🔘 Third suite leg in test.bash for the Go binary.
+	- Mirrors the pwsh leg: a shim path, same fixture, same checks.
+	- Skipped when no binary exists; failures don't fail cicd until the leg is expected to pass everything. Pass counts print either way so progress is visible per run.
+
+- 🔘 Go tooling in the lint stage.
+	- gofmt, go vet, staticcheck. Shellcheck and PSScriptAnalyzer keep covering the pipeline and installers.
+
+- 🔘 Port the shared layer first.
+	- Argument parsing, output helpers, and the process runner. Commands run from an argument list, no shell between.
+	- Config read (`.shcl` stays flat and hand-parsed for now) and account resolution, same order and same env-only application.
+
+- 🔘 Port a first command slice: `version`, `help`, `status`, `br list`.
+	- Read-only commands, so the suite leg starts passing real checks with no mutation risk.
+	- Note: any command named in an error message or help must be one the parser accepts.
+
+- 🔘 Port the remaining read paths: `br prune` preview, `pr list`, default-branch resolution.
+
 ### Done
 
 #### Done - Bugs
@@ -1016,5 +1039,25 @@ Release-prep pass over what changed since the last review: the noun grouping, `p
 	- Done: -y/--yes (bash) and -y/-yes (pwsh) alias -q; help wording now says "assume yes". Test added.
 
 ### Future and/or deferred
+
+Go port, later rounds. These wait until the round-one items above hold up.
+
+- ✋ Port the mutating commands (`update`/`sync`, `br create`/`land`/`prune`, `pr`, `repo`, `account apply`).
+
+- ✋ Per-platform release artifacts with a checksum each; `--arch` becomes real.
+
+- ✋ Rework the fuzz suite. Much of what it proves becomes structurally impossible with no shell in the path; figure out what remains meaningful.
+
+- ✋ Retire the scripted implementations and parity.bash together, once the Go leg passes everything. Probably a `legacy/` folder rather than deletion.
+
+- ✋ macOS build check on real ARM hardware, including whether signing/quarantine matters for a terminal download.
+
+- ✋ `.shcl` goes hierarchical via a real module, replacing the hand parse.
+
+- ✋ Dogfood location change.
+
+- ✋ Release ordering: the build matrix runs before the release is cut, so a failed build never leaves a half-published release.
+
+- ✋ GitHub Actions and platform packaging (.deb/.rpm/.exe installer), deferred to the port by decision.
 
 ### Canceled
