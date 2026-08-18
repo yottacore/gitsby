@@ -22,7 +22,7 @@ const mergeTargetLabel = "dev/main"
 // Ported pieces whose only callers land with a later slice. The unused check has
 // no ignore directive, and turning the whole check off would hide real rot, so
 // this anchor marks them used until then.
-var _ = []any{commitMessage, repoVisibility, pullIfOnline, publishBranch}
+var _ = []any{repoVisibility}
 
 // Set at build time: -ldflags "-X main.version=x.y.z". The bare default marks a
 // hand-run 'go build' apart from a pipeline build.
@@ -217,7 +217,8 @@ func main() {
 	selectAccount(false)
 
 	switch cmdName {
-	case "status", "br-list", "br-prune", "update", "sync":
+	case "status", "br-list", "br-prune", "update", "sync",
+		"br-create", "br-hotfix", "br-switch", "br-land":
 	case "pr":
 		if prSub != "" { // create and ok mutate; only the list and view halves are built
 			notYet()
@@ -260,6 +261,44 @@ func main() {
 	// skipped. (release and the pr writers join this list with their own slices.)
 	if cmdName == "sync" {
 		requireOnline("sync", "Commit locally with '"+meName+" update', then '"+meName+" sync' when you are back online.")
+	}
+
+	// Branch arguments validate up front too, so a bad name can't survive to a
+	// nonsense preview.
+	switch cmdName {
+	case "br-create":
+		if cmdArg == "" {
+			throwUsage("No branch name given. Syntax: " + meName + " br create <new branch name>")
+		}
+		checkNewBranchName()
+	case "br-hotfix":
+		if cmdArg == "" {
+			throwUsage("No name given. Syntax: " + meName + " br hotfix <name>")
+		}
+		// The prefix is the marker, so put it on ourselves - and accept it if the user
+		// typed it.
+		cmdArg = "hotfix/" + strings.TrimPrefix(cmdArg, "hotfix/")
+		checkNewBranchName()
+	case "br-land":
+		// Landing ends in 'git branch -d', so a leftover main/master must be refused
+		// here for the same reason br prune never lists one - and up front, not after a
+		// destructive plan was shown.
+		if isProtectedBranch("") {
+			throwUsage("'" + currentBranch() + "' is a protected branch; landing it would delete it. Run this from a work branch instead.")
+		}
+	case "br-switch":
+		if cmdArg != "" && !branchExistsLocal(cmdArg) && !branchExistsRemote(cmdArg) {
+			throwUsage("No branch '" + cmdArg + "' locally or on origin. To create it: " + meName + " br create " + cmdArg)
+		}
+		// Refusing a dirty protected branch belongs here too, before the plan is shown
+		// and confirmed.
+		switchTarget := cmdArg
+		if switchTarget == "" {
+			switchTarget = mergeTarget()
+		}
+		if currentBranch() != switchTarget && isProtectedBranch("") && runOut("git", "status", "--porcelain") != "" {
+			throwUsage("Working tree has changes on '" + currentBranch() + "'; won't auto-commit to a protected branch. Carry them to a new branch (" + meName + " br create <name>), or commit them here deliberately (" + meName + " update) first.")
+		}
 	}
 
 	// br prune: work out what goes before anything is shown, so the plan names
@@ -350,6 +389,14 @@ func main() {
 		cmdCommitPull()
 	case "sync":
 		cmdPush()
+	case "br-create":
+		cmdNewBranch(cmdArg, mergeTarget())
+	case "br-hotfix":
+		cmdNewBranch(cmdArg, defaultBranch())
+	case "br-switch":
+		cmdGoBranch(cmdArg)
+	case "br-land":
+		cmdLand()
 	case "br-prune":
 		cmdPrune()
 	}
