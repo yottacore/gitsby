@@ -26,9 +26,7 @@ var (
 	ghLoginCache   = ""
 )
 
-// What the selection actually applied, for the identity block. Written here so
-// the selection logic ports whole; nothing reads them until the commands that
-// print the block land (the anchor in main.go keeps the unused check quiet).
+// What the selection actually applied, read back by the identity block.
 var (
 	accountNoToken       = false
 	accountUsedHttpsAuth = false

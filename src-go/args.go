@@ -182,6 +182,73 @@ func collapseCommand() {
 	}
 }
 
+// isMutating: whether the command changes anything - it decides the no-tty rule
+// (read-only goes quiet, mutating fails closed) and, once the mutating commands
+// land, the preview/confirm flow.
+var isMutating = true
+
+// sortCommand validates each command's argument shape and settles isMutating.
+// Trailing arguments are rejected everywhere, so silently ignoring one anywhere
+// would make a typo look like it did what you meant.
+func sortCommand() {
+	switch cmdName {
+	case "status", "br-list":
+		// br list's extra lands in cmdArg too, after the noun shift, so one test
+		// covers both.
+		isMutating = false
+		if cmdArg != "" {
+			throwUsage("'" + meName + " " + strings.Replace(cmdName, "br-list", "br list", 1) + "' takes no arguments (got '" + cmdArg + "').")
+		}
+	case "account-list":
+		isMutating = false
+		if cmdArg != "" {
+			throwUsage("'" + meName + " account list' takes no arguments (got '" + cmdArg + "').")
+		}
+	case "account-apply":
+		if cmdArg != "" {
+			throwUsage("'" + meName + " account apply' takes no arguments (got '" + cmdArg + "').")
+		}
+	case "pr":
+		switch strings.ToLower(cmdArg) {
+		case "ok", "create", "new":
+		default:
+			isMutating = false
+		}
+	case "update", "sync", "br-land":
+		if commitMessage == "" {
+			commitMessage = cmdArg
+		}
+		if cmdArg2 != "" {
+			throwUsage("Unexpected extra argument '" + cmdArg2 + "'; quote your commit message.")
+		}
+	case "repo-clone": // the only one with a second argument of its own (the target directory)
+	case "br-prune":
+		// Takes nothing: what it deletes is decided by repo state, never by a name
+		// on the command line.
+		if cmdArg != "" {
+			throwUsage("'" + meName + " br prune' takes no arguments (got '" + cmdArg + "'); it prunes every branch already merged.")
+		}
+	case "br-create", "br-hotfix", "br-switch", "release", "repo-create", "repo-connect":
+		if cmdArg2 != "" {
+			throwUsage("Unexpected extra argument '" + cmdArg2 + "'.")
+		}
+	case "repo-url":
+		// Bare is the read-only "what is it now"; naming a transport is what makes
+		// it mutate.
+		if cmdArg2 != "" {
+			throwUsage("Unexpected extra argument '" + cmdArg2 + "'.")
+		}
+		if cmdArg == "" {
+			isMutating = false
+		}
+	default:
+		throwUsage("Unknown command '" + cmdName + "'. Run '" + meName + "' with no arguments for a list.")
+	}
+	if cmdArg3 != "" {
+		throwUsage("Unexpected extra argument '" + cmdArg3 + "'.")
+	}
+}
+
 // scanPassthrough spots 'raw <git|gh>' ahead of the main parser, because past the
 // tool name the arguments belong to the tool: a '-q' there is its own flag, not
 // ours. Ours come first. The whole option vocabulary is taken here, spelled and

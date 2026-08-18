@@ -24,6 +24,30 @@ func runOut(name string, args ...string) string {
 	return strings.TrimRight(string(out), "\r\n")
 }
 
+// runOK is the exit-code question: did it succeed at all.
+func runOK(name string, args ...string) bool {
+	return exec.Command(name, args...).Run() == nil
+}
+
+// runLines is runOut split into lines, empties dropped.
+func runLines(name string, args ...string) []string {
+	var lines []string
+	for _, line := range strings.Split(runOut(name, args...), "\n") {
+		if line = strings.TrimRight(line, "\r"); line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+// runInherit streams a command straight to our stdio and carries on regardless -
+// for listings whose output IS the point and whose failure has nothing to add.
+func runInherit(name string, args ...string) {
+	cmd := exec.Command(name, args...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	_ = cmd.Run()
+}
+
 func mustBeInPath(name string) {
 	if _, err := exec.LookPath(name); err != nil {
 		throwUsage("Not found in path: " + name)

@@ -36,6 +36,15 @@ func echoCleanForce(s string) {
 	echoClean(s)
 }
 
+// echoStatus prints a bracketed status line - the scripts' fEcho.
+func echoStatus(s string) {
+	if s != "" {
+		echoClean("[ " + s + " ]")
+	} else {
+		echoClean("")
+	}
+}
+
 // throwUsage reports an expected validation error and exits. Blank lines wrap the
 // message on stdout while the message itself goes to stderr, matching the scripts.
 func throwUsage(msg string) {
@@ -44,6 +53,9 @@ func throwUsage(msg string) {
 	}
 	echoClean("")
 	fmt.Fprintln(os.Stderr, meName+": "+msg)
+	echoCleanForce("")
+	// The scripts' exit trap resets the blank counter and prints once more on the
+	// way out, so an error ends with two blanks where success ends with one.
 	echoCleanForce("")
 	os.Exit(1)
 }
