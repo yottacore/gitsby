@@ -50,13 +50,27 @@ func runInherit(name string, args ...string) {
 	_ = cmd.Run()
 }
 
+// runInheritRC is runInherit that reports the exit code, for the callers that
+// print it. A tool that never started counts as a plain failure - the PATH check
+// upstream is what catches a missing one.
+func runInheritRC(name string, args ...string) int {
+	cmd := exec.Command(name, args...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	err := cmd.Run()
+	if err == nil {
+		return 0
+	}
+	if ee, ok := err.(*exec.ExitError); ok {
+		return ee.ExitCode()
+	}
+	return 1
+}
+
 // runInheritOK is runInherit that still answers whether it worked - for the steps
 // whose failure is survivable but worth a word (a remote branch somebody else
 // already deleted).
 func runInheritOK(name string, args ...string) bool {
-	cmd := exec.Command(name, args...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	return cmd.Run() == nil
+	return runInheritRC(name, args...) == 0
 }
 
 // runStep announces and runs a command verbatim, with our stdio - the scripts'
@@ -79,6 +93,21 @@ func runStep(name string, args ...string) {
 		}
 		echoClean("")
 		fmt.Fprintln(os.Stderr, meName+": '"+disp+"' failed (exit "+strconv.Itoa(rc)+").")
+		echoCleanForce("")
+		os.Exit(1)
+	}
+	echoResetBlank()
+}
+
+// runStepAs announces one thing and runs another, for the gh calls whose real
+// argument list carries flags the plan never showed - echoing it verbatim would
+// contradict the preview. The failure line names the command, not the arguments.
+func runStepAs(announce, label, name string, args ...string) {
+	echoClean("")
+	echoStatus(announce + " ...")
+	if rc := runInheritRC(name, args...); rc != 0 {
+		echoClean("")
+		fmt.Fprintln(os.Stderr, meName+": '"+label+"' failed (exit "+strconv.Itoa(rc)+").")
 		echoCleanForce("")
 		os.Exit(1)
 	}

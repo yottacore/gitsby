@@ -33,6 +33,12 @@ func branchExistsRemote(branch string) bool {
 	return runOK("git", "show-ref", "--verify", "--quiet", "refs/remotes/origin/"+branch)
 }
 
+// branchHasUnpushed asks about a NAMED branch, not HEAD: ahead-ness of a branch
+// you aren't standing on can't be asked with '@{u}'.
+func branchHasUnpushed(branch string) bool {
+	return runOut("git", "rev-list", "-n", "1", "refs/remotes/origin/"+branch+"..refs/heads/"+branch) != ""
+}
+
 // isProtectedBranch: main/master/dev - branches WIP should never be
 // auto-committed to, or deleted. Empty means the current one.
 func isProtectedBranch(branch string) bool {

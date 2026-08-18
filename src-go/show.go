@@ -198,8 +198,33 @@ func showIdentity(remoteUrl string) {
 		}
 	}
 	echoClean("Author .......: " + commitIdentity())
-	// The 'GitHub (gh)' line belongs to the gh-backed commands; none are in this
-	// build yet, so it lands with them.
+	// gh-backed commands act as gh's account, not the ssh key's - so name it where
+	// it applies.
+	if isGhCommand {
+		ghWho := ghLogin()
+		ghLine := ghWho
+		if ghWho == "?" {
+			ghLine = "(unknown - gh not logged in, or offline)"
+		}
+		// An account we picked for this remote is still a change of who you act as.
+		// Say it here, in the block you read before confirming, rather than let it
+		// look like it was already active.
+		if ghSwitchedFrom != "" {
+			ghLine += " (selected here; gh's active account is '" + ghSwitchedFrom + "')"
+		}
+		// Only a write can act as the wrong account, so only a write gets the
+		// comparison. The round trip behind it is the one the SSH line above already
+		// made.
+		if isGhWrite {
+			keyWho := sshLogin(identityProbeUrl)
+			if identityMismatchText(ghWho, keyWho) != "" {
+				ghLine += "  <-- NOT the ssh key's account ('" + keyWho + "')"
+			} else if keyWho == "?" {
+				ghLine += " (no ssh identity to compare)"
+			}
+		}
+		echoClean("GitHub (gh) ..: " + ghLine)
+	}
 }
 
 // showStatus prints the state block. withIdentity: also show who we'll be on the

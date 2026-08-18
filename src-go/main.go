@@ -218,11 +218,7 @@ func main() {
 
 	switch cmdName {
 	case "status", "br-list", "br-prune", "update", "sync",
-		"br-create", "br-hotfix", "br-switch", "br-land":
-	case "pr":
-		if prSub != "" { // create and ok mutate; only the list and view halves are built
-			notYet()
-		}
+		"br-create", "br-hotfix", "br-switch", "br-land", "pr", "release":
 	default:
 		notYet()
 	}
@@ -258,9 +254,28 @@ func main() {
 	// Commands that exist to publish, refused here rather than halfway through on
 	// raw git text - and far better than "succeeding" having sent nothing. The rest
 	// degrade instead: they mean something locally, so they run and say what they
-	// skipped. (release and the pr writers join this list with their own slices.)
-	if cmdName == "sync" {
+	// skipped.
+	switch cmdName {
+	case "sync":
 		requireOnline("sync", "Commit locally with '"+meName+" update', then '"+meName+" sync' when you are back online.")
+	case "release":
+		requireOnline("release", "A release nobody can fetch isn't one.")
+	case "pr":
+		if prSub != "" {
+			requireOnline("pr "+prSub, "The pull request lives on GitHub; there is no local half to do first.")
+		}
+	}
+
+	// The release version resolves up front so the preview and the command agree,
+	// and so bad input dies early.
+	if cmdName == "release" {
+		resolveRelease()
+		releasePreflight()
+	}
+	// The mutating pr subcommands check here too, so nothing can fail after the plan
+	// was confirmed.
+	if prSub != "" {
+		prPreflight()
 	}
 
 	// Branch arguments validate up front too, so a bad name can't survive to a
@@ -315,18 +330,43 @@ func main() {
 		}
 	}
 
-	// The gh probe is primed here, cached, like the scripts prime it in-shell -
-	// every later use would otherwise re-probe.
+	// Which commands go through gh, and where the ssh identity should be read from.
+	// For pr that's the origin we already have; repo create/connect have no origin
+	// yet and settle their own probe url, so they join this with their slice.
 	if cmdName == "pr" {
+		isGhCommand = true
+		if prSub != "" {
+			isGhWrite = true
+			identityProbeUrl = runOut("git", "remote", "get-url", "origin")
+		}
+	}
+	// Prime the probe caches here, like the scripts prime them in-shell: every later
+	// use would otherwise repeat the round trip.
+	if isGhCommand {
 		_ = ghLogin()
 	}
-	// A mutating command acting as an account origin's key won't authenticate as is
-	// a wrong-account mistake waiting to happen. Only for an account that was
-	// CONFIGURED or asked for: one inferred from the remote's owner says nothing
-	// about who you are, and would fire for every single-account user cloning
-	// somebody else's repo.
+	if isGhWrite {
+		_ = sshLogin(identityProbeUrl)
+	}
+
+	// A gh write acting as a different account than the key git pushes with is a
+	// wrong-account mistake waiting to happen, and it is outward-facing. Refuse it
+	// unattended (nobody is there to read a warning); warn interactively, right
+	// before the prompt. --any-identity means the difference is intended.
 	identityMismatch := ""
-	if isMutating && !anyIdentity && acctGhWho != "" && (acctExplicit || acctName != "") {
+	if isGhWrite && !anyIdentity {
+		identityMismatch = identityMismatchText(ghLogin(), sshLogin(identityProbeUrl))
+		// Up front, like every other refusal: don't show a plan we won't run.
+		if identityMismatch != "" && quiet {
+			throwUsage(identityMismatch + " Nothing was done. Re-run with --any-identity if that is intended.")
+		}
+	}
+	// The same question for the commands that push with git rather than write
+	// through gh - 'sync' above all, which sends your work to a remote and compared
+	// nothing at all. Only for an account that was CONFIGURED or asked for: one
+	// inferred from the remote's owner says nothing about who you are, and would
+	// fire for every single-account user cloning somebody else's repo.
+	if isMutating && !anyIdentity && identityMismatch == "" && acctGhWho != "" && (acctExplicit || acctName != "") {
 		pushLogin := sshLogin(runOut("git", "remote", "get-url", "origin"))
 		if pushLogin != "" && pushLogin != "?" && pushLogin != acctGhWho {
 			identityMismatch = "This folder's account is '" + acctGhWho + "', but origin's key authenticates as '" + pushLogin + "'."
@@ -399,6 +439,14 @@ func main() {
 		cmdLand()
 	case "br-prune":
 		cmdPrune()
+	case "pr":
+		if prSub == "create" {
+			cmdPrCreate()
+		} else {
+			cmdPrAccept()
+		}
+	case "release":
+		cmdRelease()
 	}
 
 	echoClean("")
