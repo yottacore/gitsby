@@ -9,8 +9,10 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -46,6 +48,32 @@ func runInherit(name string, args ...string) {
 	cmd := exec.Command(name, args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	_ = cmd.Run()
+}
+
+// runStep announces and runs a command verbatim, with our stdio - the scripts'
+// fRun. A failing command gets a plain one-line report; the trap dump stays
+// reserved for unexpected errors. Display copy is masked per argument, so a
+// credentialed URL never prints its token in the announcement or the failure.
+func runStep(name string, args ...string) {
+	disp := maskUrl(name)
+	for _, arg := range args {
+		disp += " " + maskUrl(arg)
+	}
+	echoClean("")
+	echoStatus(disp + " ...")
+	cmd := exec.Command(name, args...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		rc := 1
+		if ee, ok := err.(*exec.ExitError); ok {
+			rc = ee.ExitCode()
+		}
+		echoClean("")
+		fmt.Fprintln(os.Stderr, meName+": '"+disp+"' failed (exit "+strconv.Itoa(rc)+").")
+		echoCleanForce("")
+		os.Exit(1)
+	}
+	echoResetBlank()
 }
 
 func mustBeInPath(name string) {

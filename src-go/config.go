@@ -117,24 +117,24 @@ func configFile() string {
 	if configFileGiven {
 		switch {
 		case configFileArg == "":
-			throwUsage("--config was given an empty file name.")
+			throwUsageSub("--config was given an empty file name.")
 		case !pathExists(configFileArg):
-			throwUsage("No readable config file at '" + configFileArg + "'.")
+			throwUsageSub("No readable config file at '" + configFileArg + "'.")
 		case !isRegularFile(configFileArg):
-			throwUsage("--config names '" + configFileArg + "', which isn't a file.")
+			throwUsageSub("--config names '" + configFileArg + "', which isn't a file.")
 		case !isReadableFile(configFileArg):
-			throwUsage("No readable config file at '" + configFileArg + "'.")
+			throwUsageSub("No readable config file at '" + configFileArg + "'.")
 		}
 		return configFileArg
 	}
 	if env := os.Getenv("GITSBY_CONFIG"); env != "" {
 		switch {
 		case !pathExists(env):
-			throwUsage("GITSBY_CONFIG names '" + env + "', which can't be read.")
+			throwUsageSub("GITSBY_CONFIG names '" + env + "', which can't be read.")
 		case !isRegularFile(env):
-			throwUsage("GITSBY_CONFIG names '" + env + "', which isn't a file.")
+			throwUsageSub("GITSBY_CONFIG names '" + env + "', which isn't a file.")
 		case !isReadableFile(env):
-			throwUsage("GITSBY_CONFIG names '" + env + "', which can't be read.")
+			throwUsageSub("GITSBY_CONFIG names '" + env + "', which can't be read.")
 		}
 		return env
 	}

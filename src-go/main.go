@@ -196,6 +196,12 @@ func main() {
 		quiet = true
 	}
 
+	// pr's own shape, ahead of the repo gate like the scripts: a malformed pr call
+	// is wrong anywhere, in a repo or not.
+	if cmdName == "pr" {
+		sortPr()
+	}
+
 	// Every command needs a repo - except the repo ones: clone works anywhere, and
 	// create/connect exist precisely to turn a plain directory into one.
 	inRepo := runOK("git", "rev-parse", "--is-inside-work-tree")
@@ -210,7 +216,13 @@ func main() {
 	resolveAccount(runOut("git", "remote", "get-url", "origin"))
 	selectAccount(false)
 
-	if cmdName != "status" && cmdName != "br-list" {
+	switch cmdName {
+	case "status", "br-list", "br-prune":
+	case "pr":
+		if prSub != "" { // create and ok mutate; only the list and view halves are built
+			notYet()
+		}
+	default:
 		notYet()
 	}
 
@@ -227,6 +239,76 @@ func main() {
 	if inRepo {
 		defaultBranchCache = defaultBranch()
 		mergeTargetCache = mergeTarget()
+		// Every branch command checks this out, protects it, or merges into it, so a
+		// name we can't confirm has to stop things here - before a preview promises
+		// it. 'status' and 'br list' are exempt on purpose: they mutate nothing and
+		// are the commands you run to see what is wrong, so they report "unknown"
+		// instead of refusing.
+		if cmdName != "status" && cmdName != "br-list" && !strings.HasPrefix(cmdName, "repo-") && !strings.HasPrefix(cmdName, "account-") && runOK("git", "rev-parse", "-q", "--verify", "HEAD") {
+			if defaultBranchCache == "" {
+				throwUsage("Can't tell this repo's default branch. Set it with 'git remote set-head origin --auto', or create a main/master.")
+			}
+			if !branchExistsLocal(defaultBranchCache) && !branchExistsRemote(defaultBranchCache) {
+				throwUsage("This repo's default branch resolves to '" + defaultBranchCache + "', which exists neither here nor on origin. Fix it with 'git remote set-head origin --auto'.")
+			}
+		}
+	}
+
+	// br prune: work out what goes before anything is shown, so the plan names
+	// every branch by name. An empty plan is a plain read-only answer.
+	if cmdName == "br-prune" {
+		if currentBranch() == "" {
+			throwUsage("Detached HEAD (no current branch); resolve that manually first.")
+		}
+		resolvePrune()
+		if len(pruneLocal) == 0 && len(pruneRemote) == 0 {
+			pruneNothingToDo()
+			echoClean("")
+			return
+		}
+	}
+
+	// The gh probe is primed here, cached, like the scripts prime it in-shell -
+	// every later use would otherwise re-probe.
+	if cmdName == "pr" {
+		_ = ghLogin()
+	}
+	// A mutating command acting as an account origin's key won't authenticate as is
+	// a wrong-account mistake waiting to happen. Only for an account that was
+	// CONFIGURED or asked for: one inferred from the remote's owner says nothing
+	// about who you are, and would fire for every single-account user cloning
+	// somebody else's repo.
+	identityMismatch := ""
+	if isMutating && !anyIdentity && acctGhWho != "" && (acctExplicit || acctName != "") {
+		pushLogin := sshLogin(runOut("git", "remote", "get-url", "origin"))
+		if pushLogin != "" && pushLogin != "?" && pushLogin != acctGhWho {
+			identityMismatch = "This folder's account is '" + acctGhWho + "', but origin's key authenticates as '" + pushLogin + "'."
+			if quiet {
+				throwUsage(identityMismatch + " Nothing was done. Re-run with --any-identity if that is intended.")
+			}
+		}
+	}
+
+	// br prune, the mutating flow's shape: state, then the plan. The executing half
+	// lands with the other writers - the plan is real, the run is not yet.
+	if cmdName == "br-prune" {
+		showStatus(true)
+		echoClean("")
+		echoClean("Going to do (steps marked * only if needed, based on repo state):")
+		prunePreview()
+		if isOffline() {
+			echoClean("")
+			echoClean("WARNING: remote unreachable - nothing will be pushed; the work stays local.")
+		}
+		// Last thing before the prompt would be, so it can't scroll away above the plan.
+		if identityMismatch != "" {
+			echoClean("")
+			echoStatus("*** WRONG ACCOUNT? ***")
+			echoClean("  " + identityMismatch)
+			echoClean("  gh does the pull request work, so it happens as '" + ghLogin() + "'.")
+			echoClean("  Continue only if that is what you mean. (--any-identity silences this.)")
+		}
+		notYet()
 	}
 
 	switch cmdName {
@@ -234,6 +316,8 @@ func main() {
 		showStatus(true)
 	case "br-list":
 		cmdBrList()
+	case "pr":
+		cmdPrView()
 	}
 	echoClean("")
 }

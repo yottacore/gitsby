@@ -59,3 +59,13 @@ func throwUsage(msg string) {
 	echoCleanForce("")
 	os.Exit(1)
 }
+
+// throwUsageSub is for errors the scripts raise inside a command substitution:
+// the subshell captures the wrapping stdout blanks, so only the message escapes
+// (on stderr) and the parent's exit adds the single blank that lands. One
+// trailing blank, where throwUsage ends with two.
+func throwUsageSub(msg string) {
+	fmt.Fprintln(os.Stderr, meName+": "+msg)
+	echoCleanForce("")
+	os.Exit(1)
+}
