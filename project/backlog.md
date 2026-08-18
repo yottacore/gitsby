@@ -75,9 +75,10 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- gofmt, go vet, staticcheck. Shellcheck and PSScriptAnalyzer keep covering the pipeline and installers.
 	- Done: stage 1 runs gofmt (list mode) and go vet as gates, staticcheck when installed. Keyed off `src-go/` existing, no globs, so nothing to mirror in the Windows settings yet. Verified the gate fails a misformatted file by name.
 
-- 🔘 Port the shared layer first.
+- ✅ Port the shared layer first.
 	- Argument parsing, output helpers, and the process runner. Commands run from an argument list, no shell between.
 	- Config read (`.shcl` stays flat and hand-parsed for now) and account resolution, same order and same env-only application.
+	- Done: one file per concern in `src-go/`. `raw git`/`raw gh` shipped with it as the layer's first consumer, proving the whole chain - prescan, config, resolution, env-only application, hand-over - against the real suite. Verified side by side with the bash build: same messages, same credential helper, same commit identity. Leg moved 162/279 -> 182/259; the one new-code failure is the `--` check handing the go leg the PowerShell spelling, which is the known leg-name sweep in the command-slice item.
 
 - 🔘 Port a first command slice: `version`, `help`, `status`, `br list`.
 	- Read-only commands, so the suite leg starts passing real checks with no mutation risk.
