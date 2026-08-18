@@ -22,6 +22,30 @@ var (
 	ghProtocolCache = ""
 )
 
+// Which commands go through gh, and where the ssh identity should be read from.
+// Settled once in main, read again by the identity block.
+var (
+	isGhCommand      = false // goes through gh at all -> show whose account that is
+	isGhWrite        = false // WRITES through gh -> also compare against the ssh key
+	identityProbeUrl = ""    // the url the ssh identity is read from
+)
+
+// identityMismatchText says why the two identities disagree, or nothing. Only a
+// mismatch both sides KNOW about counts: '?' on either side means we couldn't
+// tell, which is not the same as being wrong.
+func identityMismatchText(ghWho, sshWho string) string {
+	if ghWho == "" {
+		ghWho = "?"
+	}
+	if sshWho == "" {
+		sshWho = "?"
+	}
+	if ghWho == "?" || sshWho == "?" || ghWho == sshWho {
+		return ""
+	}
+	return "gh acts as '" + ghWho + "', but this remote's key authenticates as '" + sshWho + "'."
+}
+
 // sshTarget is the host to ask ssh about, pulled out of a remote URL. Empty for
 // https and local-path remotes - and for a Windows drive path, which is not
 // 'host:path' however much it looks like one.

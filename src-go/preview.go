@@ -65,9 +65,44 @@ func preview(what string) {
 		}
 	case "br-prune":
 		prunePreview()
+	case "pr":
+		if prSub == "create" {
+			preview("sync")
+			echoClean(pad + "gh pr create --base " + branchTarget("") + " --title \"" + prTitle + "\"")
+		} else {
+			echoClean(pad + "gh pr review " + prNum + " --approve *")
+			echoClean(pad + "gh pr merge " + prNum + " --merge --delete-branch")
+			echoClean(pad + "git checkout " + branchTarget(prHeadBranch) + " *")
+			echoClean(pad + "git pull --ff-only *")
+			if isHotfixBranch(prHeadBranch) {
+				echoClean(pad + "git checkout " + mergeTarget())
+				echoClean(pad + "git merge " + backMergeRef())
+				echoClean(pad + "git push *")
+			}
+		}
+	case "release":
+		preview("sync")
+		hasDev := mergeTarget() == "dev"
+		if hasDev {
+			echoClean(pad + "git checkout dev *")
+			echoClean(pad + "git pull --ff-only *")
+		}
+		echoClean(pad + "git checkout " + defaultBranch() + " *")
+		echoClean(pad + "git pull --ff-only *")
+		if hasDev {
+			echoClean(pad + "git merge --no-ff dev")
+		}
+		echoClean(pad + "git tag -a " + releaseTag)
+		echoClean(pad + "git push *")
+		echoClean(pad + "git push origin " + releaseTag + " *")
+		if hasDev {
+			echoClean(pad + "git checkout dev *")
+			echoClean(pad + "git merge --ff-only " + defaultBranch() + " *")
+			echoClean(pad + "git push *")
+		}
+		echoClean(pad + "git checkout " + currentBranch() + " *")
 	}
-	// The recipes for the pr, release, repo and account writers land with those
-	// commands.
+	// The recipes for the repo and account writers land with those commands.
 }
 
 // previewNewBranch is br create and br hotfix - the same recipe off a different
