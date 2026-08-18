@@ -85,7 +85,8 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- Note: any command named in an error message or help must be one the parser accepts.
 	- Done: help/version/status/br list, plus the full command-sort validation so every known command refuses bad arguments with the script's own message before saying it isn't built yet. Status carries the whole identity block (account, config-ignored, SSH probe, author) and the capped change/incoming lists. Verified byte-identical against the bash build across status, br list, help, and every refusal path. test.bash leg-name branches now split pwsh from everyone else; the leg moved 182/259 -> 236/202, and every remaining failure in this area is prep leaning on a command from the next slice.
 
-- 🔘 Port the remaining read paths: `br prune` preview, `pr list`, default-branch resolution.
+- ✅ Port the remaining read paths: `br prune` preview, `pr list`, default-branch resolution.
+	- Done: `br prune` runs its whole survey and shows the real plan (including the empty-plan answers and the keep reasons); only the deleting half still says it isn't built. Bare `pr` lists and `pr <n>` views with diff; create/ok wait for the writers, and pr's argument shapes refuse with the script's messages. Default-branch resolution itself landed with the previous slice - what this adds is the refusal gate for commands that need a confirmable branch. Config-file errors now match the scripts' one-trailing-blank shape (they throw inside a command substitution there). All verified byte-identical against the bash build; the leg moved 236/202 -> 249/189, and every remaining failure in these areas needs the mutating half.
 
 ### Done
 
