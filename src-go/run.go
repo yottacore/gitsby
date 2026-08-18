@@ -50,6 +50,15 @@ func runInherit(name string, args ...string) {
 	_ = cmd.Run()
 }
 
+// runInheritOK is runInherit that still answers whether it worked - for the steps
+// whose failure is survivable but worth a word (a remote branch somebody else
+// already deleted).
+func runInheritOK(name string, args ...string) bool {
+	cmd := exec.Command(name, args...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	return cmd.Run() == nil
+}
+
 // runStep announces and runs a command verbatim, with our stdio - the scripts'
 // fRun. A failing command gets a plain one-line report; the trap dump stays
 // reserved for unexpected errors. Display copy is masked per argument, so a

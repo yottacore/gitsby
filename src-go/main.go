@@ -19,10 +19,10 @@ const meName = "gitsby"
 // For help text, before we know we're in a repo.
 const mergeTargetLabel = "dev/main"
 
-// State written by the ported shared layer whose readers land with a later
-// slice. The unused check has no ignore directive, and turning the whole check
-// off would hide real rot, so this anchor marks them used until then.
-var _ = []any{commitMessage, repoVisibility}
+// Ported pieces whose only callers land with a later slice. The unused check has
+// no ignore directive, and turning the whole check off would hide real rot, so
+// this anchor marks them used until then.
+var _ = []any{commitMessage, repoVisibility, pullIfOnline, publishBranch}
 
 // Set at build time: -ldflags "-X main.version=x.y.z". The bare default marks a
 // hand-run 'go build' apart from a pipeline build.
@@ -217,7 +217,7 @@ func main() {
 	selectAccount(false)
 
 	switch cmdName {
-	case "status", "br-list", "br-prune":
+	case "status", "br-list", "br-prune", "update", "sync":
 	case "pr":
 		if prSub != "" { // create and ok mutate; only the list and view halves are built
 			notYet()
@@ -252,6 +252,14 @@ func main() {
 				throwUsage("This repo's default branch resolves to '" + defaultBranchCache + "', which exists neither here nor on origin. Fix it with 'git remote set-head origin --auto'.")
 			}
 		}
+	}
+
+	// Commands that exist to publish, refused here rather than halfway through on
+	// raw git text - and far better than "succeeding" having sent nothing. The rest
+	// degrade instead: they mean something locally, so they run and say what they
+	// skipped. (release and the pr writers join this list with their own slices.)
+	if cmdName == "sync" {
+		requireOnline("sync", "Commit locally with '"+meName+" update', then '"+meName+" sync' when you are back online.")
 	}
 
 	// br prune: work out what goes before anything is shown, so the plan names
@@ -289,35 +297,66 @@ func main() {
 		}
 	}
 
-	// br prune, the mutating flow's shape: state, then the plan. The executing half
-	// lands with the other writers - the plan is real, the run is not yet.
-	if cmdName == "br-prune" {
-		showStatus(true)
+	// Read-only commands
+	if !isMutating {
+		switch cmdName {
+		case "status":
+			showStatus(true)
+		case "br-list":
+			cmdBrList()
+		case "pr":
+			cmdPrView()
+		}
 		echoClean("")
-		echoClean("Going to do (steps marked * only if needed, based on repo state):")
-		prunePreview()
-		if isOffline() {
+		return
+	}
+
+	// Mutating commands: show state and plan, confirm, execute, show state again.
+	// The smaller headers - clone, and create/connect from a plain directory, which
+	// have no repo state to show - land with those commands.
+	if currentBranch() == "" {
+		throwUsage("Detached HEAD (no current branch); resolve that manually first.")
+	}
+	showStatus(true)
+	echoClean("")
+	echoClean("Going to do (steps marked * only if needed, based on repo state):")
+	preview(cmdName)
+	// Said once here, where you can still say no, and again by each step as it
+	// skips. repo-* has no park push to skip - it probes its own remote and fails
+	// on its own terms.
+	if !strings.HasPrefix(cmdName, "repo-") && isOffline() {
+		echoClean("")
+		echoClean("WARNING: remote unreachable - nothing will be pushed; the work stays local.")
+	}
+	// Last thing before the prompt, so it can't scroll away above the plan.
+	if identityMismatch != "" {
+		echoClean("")
+		echoStatus("*** WRONG ACCOUNT? ***")
+		echoClean("  " + identityMismatch)
+		echoClean("  gh does the pull request work, so it happens as '" + ghLogin() + "'.")
+		echoClean("  Continue only if that is what you mean. (--any-identity silences this.)")
+	}
+	if !quiet {
+		echoClean("")
+		if !promptYN("Continue? (y|n): ") {
+			echoStatus("User aborted.")
 			echoClean("")
-			echoClean("WARNING: remote unreachable - nothing will be pushed; the work stays local.")
+			os.Exit(1)
 		}
-		// Last thing before the prompt would be, so it can't scroll away above the plan.
-		if identityMismatch != "" {
-			echoClean("")
-			echoStatus("*** WRONG ACCOUNT? ***")
-			echoClean("  " + identityMismatch)
-			echoClean("  gh does the pull request work, so it happens as '" + ghLogin() + "'.")
-			echoClean("  Continue only if that is what you mean. (--any-identity silences this.)")
-		}
-		notYet()
 	}
 
 	switch cmdName {
-	case "status":
-		showStatus(true)
-	case "br-list":
-		cmdBrList()
-	case "pr":
-		cmdPrView()
+	case "update":
+		cmdCommitPull()
+	case "sync":
+		cmdPush()
+	case "br-prune":
+		cmdPrune()
 	}
+
+	echoClean("")
+	showStatus(false)
+	echoStatus("")
+	echoStatus("Done.")
 	echoClean("")
 }

@@ -22,6 +22,10 @@ var (
 
 func currentBranch() string { return runOut("git", "branch", "--show-current") }
 func hasUpstream() bool     { return runOK("git", "rev-parse", "--abbrev-ref", "@{u}") }
+
+// isAhead: -n 1 stops at the first commit - the count doesn't matter here.
+func isAhead() bool { return runOut("git", "rev-list", "-n", "1", "@{u}..") != "" }
+
 func branchExistsLocal(branch string) bool {
 	return runOK("git", "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
 }
@@ -42,6 +46,19 @@ func isProtectedBranch(branch string) bool {
 		return true
 	}
 	return branch == "dev" && (branchExistsLocal("dev") || branchExistsRemote("dev"))
+}
+
+// isMergedInto: true when ref is already contained in any of the refs given.
+func isMergedInto(ref string, into []string) bool {
+	for _, target := range into {
+		if !runOK("git", "rev-parse", "-q", "--verify", target) {
+			continue
+		}
+		if runOK("git", "merge-base", "--is-ancestor", ref, target) {
+			return true
+		}
+	}
+	return false
 }
 
 // defaultBranch prefers origin's HEAD; falls back to whichever of main/master
