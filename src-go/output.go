@@ -9,8 +9,10 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"strings"
 )
 
 var quiet = false // -q/--quiet/-y: no prompts, no banner
@@ -43,6 +45,21 @@ func echoStatus(s string) {
 	} else {
 		echoClean("")
 	}
+}
+
+// promptYN gates every mutation. Only a literal 'y' is yes: a typo, a stray
+// newline, or an EOF is a no, because the fallback has to be the harmless answer.
+func promptYN(prompt string) bool {
+	if quiet {
+		return true
+	}
+	if prompt == "" {
+		prompt = "Continue? (y|n): "
+	}
+	fmt.Print(prompt)
+	answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	echoResetBlank()
+	return strings.ToLower(strings.TrimSpace(answer)) == "y"
 }
 
 // throwUsage reports an expected validation error and exits. Blank lines wrap the

@@ -92,7 +92,6 @@ func pruneNothingToDo() {
 
 // prunePreview is br prune's slice of the plan display.
 func prunePreview() {
-	const pad = "    "
 	// -D is what runs, so -D is what the plan says. The line above it is the reason
 	// that's safe: gitsby checks containment itself, against the branch that matters.
 	echoClean(pad + "(each verified contained in " + mergeTarget() + ", and re-checked at delete time)")

@@ -22,6 +22,15 @@ var lastListCount = 0 // set by cappedList; callers that need "was it empty?" re
 // nothing wraps and capped so a huge working tree can't scroll the prompt
 // off-screen - the 'less -FX' idea without a pager.
 func cappedList(name string, args ...string) {
+	var outLines []string
+	if out, _ := exec.Command(name, args...).Output(); len(out) > 0 {
+		outLines = strings.Split(strings.TrimRight(string(out), "\n"), "\n")
+	}
+	cappedLines(outLines)
+}
+
+// cappedLines is the same treatment for lines we already hold.
+func cappedLines(outLines []string) {
 	const maxLines = 25
 	termWidth := 100
 	if isTTY(os.Stdout) {
@@ -30,10 +39,6 @@ func cappedList(name string, args ...string) {
 				termWidth = w
 			}
 		}
-	}
-	var outLines []string
-	if out, _ := exec.Command(name, args...).Output(); len(out) > 0 {
-		outLines = strings.Split(strings.TrimRight(string(out), "\n"), "\n")
 	}
 	shown := 0
 	for _, line := range outLines {
