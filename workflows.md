@@ -35,7 +35,7 @@ The opinions are mostly informed by industry and conventional best-practices, le
 
 	While PRs are overkill for small personal projects, they are good hygiene, add little effort, and reinforce good habits at a reflexive level.
 
-	(`br land` and `release` do push the target branch - but that push *is* the merge or the release, not a shortcut around one.)
+	(`br merge` and `release` do push the target branch - but that push *is* the merge or the release, not a shortcut around one.)
 
 - Pushed history is permanent. No rebase, no amend, no rewriting, and never `git push -f`.
 
@@ -47,9 +47,9 @@ The opinions are mostly informed by industry and conventional best-practices, le
 
 - Commit the whole working tree (`git add --all`), every time. The staging area is not a workspace; partial staging is one of those fringe cases left to raw `git`.
 
-- Commit and pull frequently (`update`); push less often (`sync`).
+- Commit and pull frequently (`pullcom`); push less often (`sync`).
 
-- Uncommitted work should never block anything. The pull inside `update`/`sync` auto-stashes around itself, `br create` off `dev`/`main` carries uncommitted work onto the new branch, and everything else parks current work first - though never auto-committed onto `main`/`dev` - so nothing is ever stranded or lost.
+- Uncommitted work should never block anything. The pull inside `pullcom`/`sync` auto-stashes around itself, `br create` off `dev`/`main` carries uncommitted work onto the new branch, and everything else parks current work first - though never auto-committed onto `main`/`dev` - so nothing is ever stranded or lost.
 
 - Every branch tracks a same-named branch on `origin`, from the moment it's created.
 
@@ -65,7 +65,7 @@ The opinions are mostly informed by industry and conventional best-practices, le
 
 	- The idea: everyday work is merged into `dev`. `main` holds only versions that have actually been released. When you're ready to release, `dev` is merged into `main` and given a version tag.
 
-	- Gitsby does exactly that. `br create` starts a branch from `dev`, `br land` merges it back into `dev`, and `release` merges `dev` into `main` and tags it.
+	- Gitsby does exactly that. `br create` starts a branch from `dev`, `br merge` merges it back into `dev`, and `release` merges `dev` into `main` and tags it.
 
 	- GitFlow was later modified with the idea of a hotfix branch, for fixing something already released without waiting for the next release. `br hotfix` is that branch. It starts from `main`, merges back into `main`, and then copies the fix into `dev` too, so the next release can't undo it.
 

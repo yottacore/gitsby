@@ -104,7 +104,7 @@ preCount=$(git stash list | wc -l); git stash push --include-untracked -m "auto-
 #### Push local changes to upstream
 
 ~~~bash
-gitsby update
+gitsby pullcom
 ~~~
 
 or
