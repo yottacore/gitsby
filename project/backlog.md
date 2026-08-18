@@ -71,8 +71,9 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- Skipped when no binary exists; failures don't fail cicd until the leg is expected to pass everything. Pass counts print either way so progress is visible per run.
 	- Done: leg prints its own counts and stays out of the totals and the exit code. First run 162/279 - the passing side is mostly refusals a stub satisfies, so the failed count is the real distance.
 
-- 🔘 Go tooling in the lint stage.
+- ✅ Go tooling in the lint stage.
 	- gofmt, go vet, staticcheck. Shellcheck and PSScriptAnalyzer keep covering the pipeline and installers.
+	- Done: stage 1 runs gofmt (list mode) and go vet as gates, staticcheck when installed. Keyed off `src-go/` existing, no globs, so nothing to mirror in the Windows settings yet. Verified the gate fails a misformatted file by name.
 
 - 🔘 Port the shared layer first.
 	- Argument parsing, output helpers, and the process runner. Commands run from an argument list, no shell between.
