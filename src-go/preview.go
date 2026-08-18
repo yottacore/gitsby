@@ -23,11 +23,11 @@ func preview(what string) {
 		echoClean(pad + msgDisp + " *")
 	case "pull":
 		echoClean(pad + "git pull --ff-only --autostash *")
-	case "update":
+	case "pullcom":
 		preview("pull")
 		preview("commit")
 	case "sync":
-		preview("update")
+		preview("pullcom")
 		echoClean(pad + "git push (branch '" + currentBranch() + "') *")
 	case "br-create":
 		// From main/dev the dirty tree rides along to the new branch, so there's no
@@ -48,7 +48,7 @@ func preview(what string) {
 			echoClean(pad + "git checkout " + target)
 		}
 		echoClean(pad + "git pull --ff-only *")
-	case "br-land":
+	case "br-merge":
 		preview("sync")
 		echoClean(pad + "git checkout " + branchTarget(""))
 		echoClean(pad + "git pull --ff-only *")

@@ -227,6 +227,24 @@ func showIdentity(remoteUrl string) {
 	}
 }
 
+// cmdIdentity is the identity block on its own - the same lines 'status' prints,
+// without the branch and working-tree state, for when the only question is who
+// the next command acts as. Directory and remote lead it because they are what
+// decides the answer.
+func cmdIdentity() {
+	remoteUrl := runOut("git", "remote", "get-url", "origin")
+	remoteDisp := maskUrl(remoteUrl)
+	if remoteDisp == "" {
+		remoteDisp = "(none)"
+	}
+	wd, _ := os.Getwd()
+	echoClean("")
+	echoClean("Directory ....: " + wd)
+	echoClean("Remote .......: " + remoteDisp)
+	showIdentity(remoteUrl)
+	echoResetBlank()
+}
+
 // showStatus prints the state block. withIdentity: also show who we'll be on the
 // remote - pre-flight and 'status', but not the after-shot.
 func showStatus(withIdentity bool) {

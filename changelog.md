@@ -22,6 +22,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The Bash and PowerShell builds are frozen at v2.1.0 and will not gain features. Development continues in a single Go build, which keeps every command that works today - where a command is renamed, the old name keeps working. The two scripts stay in the repository as a reference, and would be reopened only for a production fix.
 
+### Added
+
+- `identity` shows who commands in this folder act as - the account, the ssh key and who it authenticates as, the commit author, and gh's login - without the branch and working-tree state `status` prints around it. It answers outside a repository too, which is where the question comes up before a `repo clone` or `repo create`.
+
+### Changed
+
+- `update` is now `pullcom`, which names both halves in the order they run rather than reading like it updates gitsby itself. It also answers to `update`, `pull`, `pullc`, `pullco`, `pullcomm` and `pullcommit`. `sync` is unchanged; the pair was the unclear part, not either word alone.
+
+- `br land` is now `br merge`, the word most people reach for first. `br land` still works.
+
+- The old spellings are permanent, not a deprecation period. Nothing that works today stops working, and no script needs editing.
+
 ### Other work
 
 - `cicd/release.bash` retries the installer it runs against the freshly published release before reporting that the release isn't installable. Cutting v2.1.0 warned that it wasn't when it was: GitHub serves the tag a little ahead of its assets, and the installer stops rather than quietly skip checksum verification. A warning that fires on a good release is worse than no warning at all.
