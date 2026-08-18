@@ -1048,7 +1048,11 @@ Release-prep pass over what changed since the last review: the noun grouping, `p
 
 Go port, later rounds. These wait until the round-one items above hold up.
 
-- ✋ Port the mutating commands (`update`/`sync`, `br create`/`land`/`prune`, `pr`, `repo`, `account apply`).
+- 🛠️ Port the mutating commands (`update`/`sync`, `br create`/`land`/`prune`, `pr`, `repo`, `account apply`). Four slices, one branch each.
+	- ✅ The mutating frame plus `update`, `sync`, `br prune`. The frame is the shared part: state, plan, confirm, run, state again, "Done." - and the commit/pull/push core the rest compose from. `br prune` now deletes rather than stopping at its plan. Go leg 249/189 -> 285/153.
+	- 🔘 `br create` / `hotfix` / `switch` / `land`, with the hotfix back-merge and the shipped-code warning.
+	- 🔘 `pr create` / `pr ok`, and `release` with its version resolution and the nothing-new guard.
+	- 🔘 `repo clone` / `create` / `connect` / `url`, and `account list` / `apply`. (`account list` and the read form of `repo url` are still unported too - they sit with their writing halves.)
 
 - ✋ Per-platform release artifacts with a checksum each; `--arch` becomes real.
 
