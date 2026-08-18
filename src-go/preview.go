@@ -101,8 +101,40 @@ func preview(what string) {
 			echoClean(pad + "git push *")
 		}
 		echoClean(pad + "git checkout " + currentBranch() + " *")
+	case "repo-clone":
+		echoClean(pad + "git clone " + maskUrl(cloneUrl) + " " + cloneDir)
+		echoClean(pad + "git -C " + cloneDir + " checkout dev *")
+	case "repo-url":
+		echoClean(pad + "git remote set-url origin " + githubUrl(remoteTarget(runOut("git", "remote", "get-url", "origin")), cmdArg))
+	case "account-apply":
+		// Names every file and every condition, because this is the one command
+		// that writes outside the repo you are standing in - into your own global
+		// git config.
+		applyDir := accountIncludeDir()
+		for _, name := range accountNames() {
+			echoClean(pad + "write " + applyDir + "/" + name + ".gitconfig")
+		}
+		for _, key := range accountManagedIncludes() {
+			echoClean(pad + "git config --global --unset-all " + key)
+		}
+		for _, rule := range accountApplyPlan() {
+			echoClean(pad + "git config --global --add " + rule.cond + " " + rule.target)
+		}
+	case "repo-create", "repo-connect":
+		if !inRepo {
+			echoClean(pad + "git init -b main")
+		}
+		preview("commit")
+		switch connectMode {
+		case "create":
+			echoClean(pad + "gh repo create " + ghTarget + " --" + repoVisibility + " --source . --push --remote origin")
+		case "add":
+			echoClean(pad + "git remote add origin " + maskUrl(connectUrl))
+			echoClean(pad + "git push -u origin HEAD")
+		case "push":
+			echoClean(pad + "git push -u origin HEAD *")
+		}
 	}
-	// The recipes for the repo and account writers land with those commands.
 }
 
 // previewNewBranch is br create and br hotfix - the same recipe off a different

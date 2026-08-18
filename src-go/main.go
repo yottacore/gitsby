@@ -19,11 +19,6 @@ const meName = "gitsby"
 // For help text, before we know we're in a repo.
 const mergeTargetLabel = "dev/main"
 
-// Ported pieces whose only callers land with a later slice. The unused check has
-// no ignore directive, and turning the whole check off would hide real rot, so
-// this anchor marks them used until then.
-var _ = []any{repoVisibility}
-
 // Set at build time: -ldflags "-X main.version=x.y.z". The bare default marks a
 // hand-run 'go build' apart from a pipeline build.
 var version = "0.0.0-dev"
@@ -102,14 +97,6 @@ func printHelp() {
 	printSyntax()
 }
 
-// notYet is the whole answer for anything this build has not grown into. It names
-// no command on purpose: anything an error message names must be one the parser
-// accepts.
-func notYet() {
-	fmt.Fprintln(os.Stderr, meName+": this build does not do that yet")
-	os.Exit(2)
-}
-
 // cmdPassthrough runs the real tool as the account this folder belongs to, then
 // gets out of its way entirely. No preview, no confirmation, no fetch: this is
 // somebody else's command run under the right identity, and a script piping its
@@ -125,6 +112,11 @@ func cmdPassthrough(tool string, args []string) {
 	}
 	runHandover(tool, args)
 }
+
+// Whether the working directory sits inside a git work tree, settled once in
+// main. Package-level because the connect commands and their preview both hang
+// behavior off it.
+var inRepo = false
 
 func cmdBrList() {
 	dflt := defaultBranch()
@@ -204,7 +196,7 @@ func main() {
 
 	// Every command needs a repo - except the repo ones: clone works anywhere, and
 	// create/connect exist precisely to turn a plain directory into one.
-	inRepo := runOK("git", "rev-parse", "--is-inside-work-tree")
+	inRepo = runOK("git", "rev-parse", "--is-inside-work-tree")
 	if !inRepo && !strings.HasPrefix(cmdName, "repo-") && !strings.HasPrefix(cmdName, "account-") {
 		throwUsage("Not inside a git repository. Change to a git project directory first.")
 	}
@@ -216,16 +208,10 @@ func main() {
 	resolveAccount(runOut("git", "remote", "get-url", "origin"))
 	selectAccount(false)
 
-	switch cmdName {
-	case "status", "br-list", "br-prune", "update", "sync",
-		"br-create", "br-hotfix", "br-switch", "br-land", "pr", "release":
-	default:
-		notYet()
-	}
-
 	// Freshen remote refs so status/ahead-behind info is current. Never fatal -
-	// offline still works locally.
-	if doFetch && runOK("git", "remote", "get-url", "origin") {
+	// offline still works locally. clone skips it: cwd may sit inside some
+	// unrelated repo, and the clone doesn't care about it.
+	if doFetch && cmdName != "repo-clone" && !strings.HasPrefix(cmdName, "account-") && runOK("git", "remote", "get-url", "origin") {
 		echoStatus("git fetch ...")
 		fetchRemote()
 	}
@@ -276,6 +262,12 @@ func main() {
 	// was confirmed.
 	if prSub != "" {
 		prPreflight()
+	}
+
+	// repo url: everything it needs to know settles here, so a bad argument or an
+	// unconvertible remote is refused before a plan promises anything.
+	if cmdName == "repo-url" && settleRepoUrl() {
+		return
 	}
 
 	// Branch arguments validate up front too, so a bad name can't survive to a
@@ -330,19 +322,55 @@ func main() {
 		}
 	}
 
-	// Which commands go through gh, and where the ssh identity should be read from.
-	// For pr that's the origin we already have; repo create/connect have no origin
-	// yet and settle their own probe url, so they join this with their slice.
-	if cmdName == "pr" {
+	// repo clone: derive the target dir, and make re-runs a no-op instead of an
+	// error. repo create/connect: resolve what we're publishing to before the
+	// preview, so the plan is real.
+	if cmdName == "repo-clone" && settleRepoClone() {
+		return
+	}
+	if cmdName == "repo-create" || cmdName == "repo-connect" {
+		settleRepoConnect()
+	}
+
+	// Which commands go through gh, which of those WRITE through it, and which url
+	// the ssh identity should be read from. For pr that's the origin we already
+	// have. repo create and connect have no origin yet - but the one they are
+	// about to set is knowable, because gh never uses a host alias: it builds
+	// 'git@github.com:owner/name.git' from its own protocol setting. So the
+	// identity that repo will live with afterward can be checked before we start.
+	switch cmdName {
+	case "pr":
 		isGhCommand = true
 		if prSub != "" {
 			isGhWrite = true
 			identityProbeUrl = runOut("git", "remote", "get-url", "origin")
 		}
+	case "repo-create":
+		isGhCommand, isGhWrite = true, true
+		if ghProtocol() == "ssh" {
+			identityProbeUrl = "git@github.com:" + ghTarget + ".git"
+		}
+	case "repo-connect":
+		if ghTarget != "" {
+			isGhCommand, isGhWrite = true, true
+			// connectUrl is the url we resolved ourselves, so probe that rather than
+			// guess.
+			if at := strings.Index(connectUrl, "@"); at >= 0 && strings.Contains(connectUrl[at:], ":") {
+				identityProbeUrl = connectUrl
+			}
+		}
 	}
 	// Prime the probe caches here, like the scripts prime them in-shell: every later
 	// use would otherwise repeat the round trip.
 	if isGhCommand {
+		// repo create/connect are the one case that learns something new here: with
+		// no origin yet there was no owner to read, and the target they are about to
+		// publish to is only settled during their own validation above. Everything
+		// else was resolved before the fetch.
+		if acctSource == "" && ghTarget != "" {
+			resolveAccount("https://github.com/" + ghTarget + ".git")
+			selectAccount(false)
+		}
 		_ = ghLogin()
 	}
 	if isGhWrite {
@@ -381,6 +409,10 @@ func main() {
 		switch cmdName {
 		case "status":
 			showStatus(true)
+		case "account-list":
+			cmdAccountList()
+		case "repo-url":
+			cmdRepoUrlShow()
 		case "br-list":
 			cmdBrList()
 		case "pr":
@@ -391,12 +423,40 @@ func main() {
 	}
 
 	// Mutating commands: show state and plan, confirm, execute, show state again.
-	// The smaller headers - clone, and create/connect from a plain directory, which
-	// have no repo state to show - land with those commands.
-	if currentBranch() == "" {
-		throwUsage("Detached HEAD (no current branch); resolve that manually first.")
+	// clone, and create/connect from a plain dir, have no repo state to show; a
+	// smaller header stands in.
+	if cmdName == "account-apply" {
+		// Nothing about a repo is involved: this writes machine-level git config,
+		// and showing branch state here would suggest it does something to the repo
+		// you happen to be standing in.
+		cmdAccountList()
+	} else if cmdName == "repo-clone" {
+		wd, _ := os.Getwd()
+		echoClean("")
+		echoClean("Directory ....: " + wd)
+		echoClean("Remote .......: " + maskUrl(cloneUrl))
+		showIdentity(cloneUrl)
+		echoClean("Clone into ...: " + cloneDir)
+	} else if !inRepo {
+		remoteDisp := connectUrl
+		if remoteDisp != "" {
+			remoteDisp = maskUrl(remoteDisp)
+		} else {
+			remoteDisp = "github.com/" + ghTarget + " (to be created)"
+		}
+		wd, _ := os.Getwd()
+		echoClean("")
+		echoClean("Directory ....: " + wd)
+		echoClean("Remote .......: " + remoteDisp)
+		showIdentity(connectUrl)
+		echoClean("Current branch: (not a git repository yet)")
+		showFilesToPublish()
+	} else {
+		if currentBranch() == "" {
+			throwUsage("Detached HEAD (no current branch); resolve that manually first.")
+		}
+		showStatus(true)
 	}
-	showStatus(true)
 	echoClean("")
 	echoClean("Going to do (steps marked * only if needed, based on repo state):")
 	preview(cmdName)
@@ -447,10 +507,27 @@ func main() {
 		}
 	case "release":
 		cmdRelease()
+	case "repo-clone":
+		cmdClone()
+	case "repo-create", "repo-connect":
+		cmdConnect()
+	case "repo-url":
+		cmdRepoUrl()
+	case "account-apply":
+		cmdAccountApply()
 	}
 
 	echoClean("")
-	showStatus(false)
+	switch cmdName {
+	case "account-apply":
+		// every file it wrote was named as it was written; a repo status would add
+		// nothing
+	case "repo-clone":
+		// the after-status would show the wrong (current) directory
+		echoStatus("Cloned into '" + cloneDir + "'.")
+	default:
+		showStatus(false)
+	}
 	echoStatus("")
 	echoStatus("Done.")
 	echoClean("")
