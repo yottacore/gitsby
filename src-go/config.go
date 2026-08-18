@@ -30,7 +30,7 @@ var (
 	cfgUnknown   []string   // named but not understood - reported, never silent
 )
 
-// Read by 'account list' once it lands; anchored in main.go until then.
+// Named by the identity block when the file held keys nothing reads.
 var configFileUsed = ""
 
 func isWindows() bool { return runtime.GOOS == "windows" }

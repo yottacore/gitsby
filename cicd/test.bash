@@ -325,7 +325,7 @@ fRunSuite(){
 	## Message handling: -m and -m= forms; option-like words stay words; extra bare word rejected
 	( cd "${cloneA}" && echo m1 > m1.txt )
 	fAssert "update -m flag form"     bash -c "cd '${cloneA}' && '${gitsby}' -q update -m 'via -m flag' && git log -1 --format=%s | grep -qx 'via -m flag'"
-	if [[ "$1" == "bash" ]]; then  ## -m=MSG is bash-only; pwsh binding has no -param=value form
+	if [[ "$1" != "pwsh" ]]; then  ## -m=MSG works everywhere but pwsh, whose binding has no -param=value form
 		( cd "${cloneA}" && echo m2 > m2.txt )
 		fAssert "update -m= joined form"  bash -c "cd '${cloneA}' && '${gitsby}' -q update -m='via -m= flag' && git log -1 --format=%s | grep -qx 'via -m= flag'"
 	fi
@@ -764,7 +764,7 @@ GHEOF
 	fAssert "created repo got the commit"                bash -c "cd '${gh}/created.git' && git ls-tree --name-only main | grep -qx c.txt"
 	fAssert "create defaulted to a private repo"         bash -c "grep -q -- '--private' '${gh}/create.log'"
 	mkdir -p "${gh}/pub"; echo p > "${gh}/pub/p.txt"
-	if [[ "$1" == "bash" ]]; then  ## visibility flag spelled per implementation
+	if [[ "$1" != "pwsh" ]]; then  ## visibility flag spelled per implementation; the compiled build takes the script spelling
 		fAssert "repo create --public makes a public repo"  bash -c "cd '${gh}/pub' && PATH='${ghp}' FAKE_GH_VIEW=notfound FAKE_GH_REMOTE='${gh}/pub.git' FAKE_GH_LOG='${gh}/pub.log' '${gitsby}' -q --public repo create me/proj && grep -q -- '--public' '${gh}/pub.log'"
 	else
 		fAssert "repo create -Public makes a public repo"   bash -c "cd '${gh}/pub' && PATH='${ghp}' FAKE_GH_VIEW=notfound FAKE_GH_REMOTE='${gh}/pub.git' FAKE_GH_LOG='${gh}/pub.log' '${gitsby}' -q -Public repo create me/proj && grep -q -- '--public' '${gh}/pub.log'"
@@ -893,7 +893,7 @@ GHEOF
 	fAssert "gh is left alone when it has no account for the owner" \
 		bash -c "cd '${idn}/c' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse' FAKE_GH_LOG='${idn}/unheld.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=\]' '${idn}/unheld.log'"
 	## -NoFetch is spelled the same to both ports (bash normalises it), so these need no branch.
-	if [[ "$1" == "bash" ]]; then  ## the identity flag IS spelled per implementation
+	if [[ "$1" != "pwsh" ]]; then  ## the identity flag IS spelled per implementation; only pwsh renames it
 		fAssert "--any-identity leaves gh's active account alone" \
 			bash -c "cd '${idn}/c' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse acme' FAKE_GH_LOG='${idn}/any.log' '${gitsby}' -q -NoFetch --any-identity pr && grep -q 'GH_TOKEN=\]' '${idn}/any.log'"
 	else
@@ -1085,7 +1085,7 @@ GHEOF
 	fAssertOut  "the identity block names the gh account"  'GitHub \(gh\) [.]*: same' \
 		bash -c "cd '${idc}' && ${idEnv} FAKE_GH_LOGIN=same FAKE_SSH_LOGIN=same '${gitsby}' -q -NoFetch pr create 'T' 2>&1"
 	## The override flag is spelled per implementation, like --public/-Public.
-	local anyIdFlag="--any-identity"; [[ "$1" == "bash" ]] || anyIdFlag="-AnyIdentity"
+	local anyIdFlag="--any-identity"; [[ "$1" != "pwsh" ]] || anyIdFlag="-AnyIdentity"
 	fAssert     "the override flag proceeds through a mismatch"  \
 		bash -c "cd '${idc}' && ${idEnv} FAKE_GH_LOGIN=alice FAKE_SSH_LOGIN=bob '${gitsby}' -q -NoFetch ${anyIdFlag} pr create 'T'"
 	fAssertOut  "and the mismatch is still on the identity line"  "NOT the ssh key's account" \
@@ -1644,7 +1644,7 @@ GHEOF
 	fAssertFail "--config with an empty value is refused"     bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '' status"
 	fAssertOut  "and says the name was empty"  'empty file name' bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '' status 2>&1"
 	## The joined spelling splits the two builds, so each is pinned to what it actually does.
-	if [[ "$1" == "bash" ]]; then
+	if [[ "$1" != "pwsh" ]]; then
 		fAssertOut "--config=FILE (joined) works here"  'altacct'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config='${ac}/alt.shcl' status"
 	else
 		## pwsh's -File binder can't take a joined option: ahead of a command it eats the next word,
@@ -1784,7 +1784,7 @@ GHEOF
 	## Single-quoted where it is pasted in: the PowerShell spelling starts with a backtick, and this
 	## string is re-parsed by the inner 'bash -c', which would otherwise read it as a command
 	## substitution and run whatever followed.
-	local sep="--"; [[ "$1" == "bash" ]] || sep='`--'
+	local sep="--"; [[ "$1" != "pwsh" ]] || sep='`--'
 	fAssertOut    "raw passes a pathspec separator through"  '^init$' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git log --format=%s '${sep}' a.txt 2>/dev/null"
 	fAssertNotOut "and it really separates - an absent path lists nothing"  'init' \

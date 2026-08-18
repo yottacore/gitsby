@@ -80,9 +80,10 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- Config read (`.shcl` stays flat and hand-parsed for now) and account resolution, same order and same env-only application.
 	- Done: one file per concern in `src-go/`. `raw git`/`raw gh` shipped with it as the layer's first consumer, proving the whole chain - prescan, config, resolution, env-only application, hand-over - against the real suite. Verified side by side with the bash build: same messages, same credential helper, same commit identity. Leg moved 162/279 -> 182/259; the one new-code failure is the `--` check handing the go leg the PowerShell spelling, which is the known leg-name sweep in the command-slice item.
 
-- 🔘 Port a first command slice: `version`, `help`, `status`, `br list`.
+- ✅ Port a first command slice: `version`, `help`, `status`, `br list`.
 	- Read-only commands, so the suite leg starts passing real checks with no mutation risk.
 	- Note: any command named in an error message or help must be one the parser accepts.
+	- Done: help/version/status/br list, plus the full command-sort validation so every known command refuses bad arguments with the script's own message before saying it isn't built yet. Status carries the whole identity block (account, config-ignored, SSH probe, author) and the capped change/incoming lists. Verified byte-identical against the bash build across status, br list, help, and every refusal path. test.bash leg-name branches now split pwsh from everyone else; the leg moved 182/259 -> 236/202, and every remaining failure in this area is prep leaning on a command from the next slice.
 
 - 🔘 Port the remaining read paths: `br prune` preview, `pr list`, default-branch resolution.
 
