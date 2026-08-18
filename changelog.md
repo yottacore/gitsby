@@ -18,6 +18,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## vNEXT
 
+### Notes
+
+- The Bash and PowerShell builds are frozen at v2.1.0 and will not gain features. Development continues in a single Go build, which keeps every command that works today - where a command is renamed, the old name keeps working. The two scripts stay in the repository as a reference, and would be reopened only for a production fix.
+
 ### Other work
 
 - `cicd/release.bash` retries the installer it runs against the freshly published release before reporting that the release isn't installable. Cutting v2.1.0 warned that it wasn't when it was: GitHub serves the tag a little ahead of its assets, and the installer stops rather than quietly skip checksum verification. A warning that fires on a good release is worse than no warning at all.

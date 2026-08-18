@@ -33,7 +33,7 @@ Design, requirements, and direction. The active bug and feature task list lives 
 
 ### Logical code structure
 
-Both implementations follow the same shape, in the same order:
+All three implementations follow the same shape, in the same order:
 
 1. Parse arguments, and collapse a noun and its verb (including the unpublished spellings) into one command name.
 
@@ -47,7 +47,7 @@ Both implementations follow the same shape, in the same order:
 
 6. Show the state again.
 
-The two files are ports of each other. A change to one nearly always belongs in the other, and the suites run against both.
+The Bash and PowerShell files are ports of each other, and were kept in step for as long as they were the implementation. Both are frozen now, and the Go build is the one that moves - see "Direction decisions" below. The suites run against all three.
 
 ### Execution flow
 
@@ -186,6 +186,12 @@ The two files are ports of each other. A change to one nearly always belongs in 
 	- `repo create` and `repo connect` from a plain directory list the files before asking. Everything else in the tool previews what it touches; this is the step where a stray `.env` or private key becomes public.
 	- The list has to be git's own answer, not a directory walk, or it would name files `git add --all` will skip and miss the exclusions that matter. A throwaway git dir outside the work tree asks git the real question and writes nothing into the user's directory - which is the point, since answering "n" must leave it untouched.
 
+- The Bash and PowerShell scripts are frozen. The Go build in `src-go/` is the implementation that moves.
+	- Both scripts stay in the tree, read-only, as the behavioral reference the port is measured against. Only a production hotfix reopens them.
+	- Among the options considered, we decided that keeping three implementations in step triples the cost of every change and leaves the newest one nothing to be checked against - a reference that moves is not a reference. Pinned at 2.1.0 behavior, the scripts give the port something byte-for-byte to compare against.
+	- The Go build keeps the whole 2.1.0 command surface. Where a command is renamed the old name stays as an unpublished spelling, so nothing that works today stops working. It may add a command or two of its own.
+	- Byte-identical output stays the test for everything that has not deliberately changed. A rename moves help and error text on purpose, and those cases are carved out explicitly rather than left to read as regressions.
+
 ## Branching model
 
 Gitsby's own repo runs the model gitsby enforces, so the tool is its own first user.
@@ -256,7 +262,11 @@ See also the release policy under Architecture, which covers how releases are pu
 
 ### Software stack
 
-- Bash 4.4+ (for *nix or WSL), and/or PowerShell 7+ (cross-platform). Nothing else at run time except `git`, plus `gh` for the commands that need it: every `pr` form, `repo create`, and `repo connect` when given an `owner/name` rather than a URL.
+- Go for the live build: one binary per platform, nothing to install alongside it.
+
+- The frozen scripts need Bash 4.4+ (for *nix or WSL), and/or PowerShell 7+ (cross-platform).
+
+- Nothing else at run time except `git`, plus `gh` for the commands that need it: every `pr` form, `repo create`, and `repo connect` when given an `owner/name` rather than a URL.
 
 - No state of its own. Everything gitsby knows about a repo, it asks `git` for, so there is nothing to get out of sync and nothing to migrate.
 

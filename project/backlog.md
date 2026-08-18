@@ -1054,11 +1054,19 @@ Go port, later rounds. These wait until the round-one items above hold up.
 	- 🔘 `pr create` / `pr ok`, and `release` with its version resolution and the nothing-new guard.
 	- 🔘 `repo clone` / `create` / `connect` / `url`, and `account list` / `apply`. (`account list` and the read form of `repo url` are still unported too - they sit with their writing halves.)
 
+- 🔘 Rename `update` -> `pullcom` and `br land` -> `br merge`, keeping the old spellings as aliases. After slice four.
+	- `sync` keeps its name; only its help line changes, to say it goes both ways.
+	- Aliases are permanent - the Go build stays compatible with the 2.1.0 surface. `pullcom` also answers to `update`, `pull`, `pullc`, `pullco`, `pullcomm`, `pullcommit`; `br merge` also answers to `br land`.
+	- Why: `update` reads like it updates gitsby itself, and says nothing about direction, where `pullcom` names both halves in the order they run. `merge` is what people reach for before `land`.
+	- Go build only. The scripts keep their current spelling and stand as the reference.
+	- The old spellings still work, so the demo gif stays correct - regenerate it once the Go build is release quality, not for this.
+
 - ✋ Per-platform release artifacts with a checksum each; `--arch` becomes real.
 
 - ✋ Rework the fuzz suite. Much of what it proves becomes structurally impossible with no shell in the path; figure out what remains meaningful.
 
 - ✋ Retire the scripted implementations and parity.bash together, once the Go leg passes everything. Probably a `legacy/` folder rather than deletion.
+	- Half done already: both scripts are frozen read-only as of 2026-08-18, so what's left is the move to `legacy/` and dropping parity.bash. See design.md, "Direction decisions".
 
 - ✋ macOS build check on real ARM hardware, including whether signing/quarantine matters for a terminal download.
 
