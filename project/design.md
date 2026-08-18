@@ -67,22 +67,23 @@ The Bash and PowerShell files are ports of each other, and were kept in step for
 
 ## Direction decisions
 
-- There is no bare `commit` and no bare `pull`. Both were escape hatches around the workflow the tool exists to enforce.
+- There is no bare `commit`, and no bare `pull` that skips the commit. Both were escape hatches around the workflow the tool exists to enforce.
 	- `commit` alone produces exactly the state gitsby was written to prevent: work committed locally that never reaches the remote, diverging quietly until the merge is painful.
-	- `pull` alone was the only place gitsby let you take upstream changes without dealing with your own work first, which contradicts what it does everywhere else - `br switch`, `br land`, and `pr create` park it; `br create` off `dev`/`main` carries it onto the new branch.
+	- `pull` alone was the only place gitsby let you take upstream changes without dealing with your own work first, which contradicts what it does everywhere else - `br switch`, `br merge`, and `pr create` park it; `br create` off `dev`/`main` carries it onto the new branch.
 	- We decided the asymmetry settles it: dropping a command before release costs nothing, and adding one back later breaks nobody. Removing one after release would.
 	- Removing `pull` exposed a real bug it had been masking - see the ordering decision below.
+	- The word came back later as one of the spellings of `pullcom`, which does not reopen this: an alias onto the command that pulls *and* commits structurally cannot skip the commit.
 
-- `update` and `sync` pull *before* they commit.
+- `pullcom` and `sync` pull *before* they commit.
 	- Committing first mints a local commit, so a remote that has merely moved ahead is now diverged and a fast-forward-only pull must refuse. That is the everyday case, not an edge one, and it was failing.
 	- Pulling first fast-forwards under `--autostash`, so the dirty tree rides over and the commit lands on top. History stays linear and fast-forward-only stays satisfiable, which is the whole reason the tool never merges behind your back.
 	- Nothing is risked by pulling first: on a failed pull `--autostash` restores the tree as it found it, rather than stranding work in the stash. (A restore that conflicts is the one case git leaves the entry behind, and it says so.)
 
-- Being offline must never turn a good commit into a failed command, now that `update` is the only way to commit.
+- Being offline must never turn a good commit into a failed command, now that `pullcom` is the only way to commit.
 	- A remote that can't be reached warns and skips the pull. A remote that *is* reachable but can't fast-forward is a real problem and still fails hard - the distinction is what the pre-command fetch already discovered.
 	- `--no-fetch` declines the incoming round trip, so it skips the pull as well as the fetch. Skipping only the fetch and then pulling anyway would have saved nothing. It is not a way to say "I am offline" - see the offline rule below for why that distinction is deliberate.
 
-- The command set is split by how often you type it. Daily verbs stay one word (`update`, `sync`, `status`, `release`); everything else is grouped under a noun (`repo`, `br`, `pr`).
+- The command set is split by how often you type it. Daily verbs stay one word (`pullcom`, `sync`, `status`, `identity`, `release`); everything else is grouped under a noun (`repo`, `br`, `pr`).
 	- Among the options considered, we decided the extra word is worth it for infrequent commands. It buys discoverability - three nouns to explore instead of a flat list to memorize - and it retires mashed-together abbreviations like `newbr`/`gobr`/`listbr`.
 	- One verb per action across all three nouns: `create`, not `create` in one place and `new` in another. `new` and `go` still work as unpublished spellings, because they are what fingers reach for.
 	- `repository` and `branch` are accepted in full. Only the short forms are published, so the help stays scannable.
@@ -96,10 +97,10 @@ The Bash and PowerShell files are ports of each other, and were kept in step for
 
 - Pull requests are subcommands of one noun (`pr`, `pr create`, `pr <n>`, `pr ok <n>`) rather than separate top-level verbs.
 	- This puts everything about a PR in one place to look, and matches how `repo` and `br` group.
-	- `pr create` defaults its title to the last commit subject. The alternative, requiring a title, was rejected as inconsistent with `update`/`sync`, which generate a message when none is given. The preview shows the resolved title before the prompt, so a bad default is visible rather than surprising.
+	- `pr create` defaults its title to the last commit subject. The alternative, requiring a title, was rejected as inconsistent with `pullcom`/`sync`, which generate a message when none is given. The preview shows the resolved title before the prompt, so a bad default is visible rather than surprising.
 
 - `br prune` deletes only what is provably already landed, and never takes a branch name.
-	- `br land` and `pr ok` delete the branch they merged, but nothing cleaned up after a PR merged from the web UI or another machine, after a superseded branch, or after one simply abandoned. Those accumulate, and a noisy `br list` works against the tool's own goal of keeping the repo easy to see at a glance.
+	- `br merge` and `pr ok` delete the branch they merged, but nothing cleaned up after a PR merged from the web UI or another machine, after a superseded branch, or after one simply abandoned. Those accumulate, and a noisy `br list` works against the tool's own goal of keeping the repo easy to see at a glance.
 	- The test is `merge-base --is-ancestor` against the merge target. That is exact here only because gitsby always lands with a real merge commit: a squash- or rebase-landed branch never looks contained, so it is kept rather than guessed at. Other tools' prune commands are unreliable for exactly that reason; the opinions are what make this one safe.
 	- Unmerged branches are listed and left alone, and there is deliberately no `--force`. A bulk delete is the wrong place to offer an override, and the one branch the user cares about is the one an override would eat.
 	- The remote copy goes only when origin's own copy of the merge target contains it. A landing that hasn't been pushed yet leaves origin holding the only ref to that work.
@@ -177,10 +178,10 @@ The Bash and PowerShell files are ports of each other, and were kept in step for
 	- `pr create` is the opposite case and does park work automatically: publishing is the whole intent, and nothing is being deleted.
 
 - Offline is split by what a command is for, not handled once for all of them.
-	- A command that means something locally runs and reports what it skipped: `update` commits, `br create` and `br hotfix` make the branch, `br switch` switches, `br land` merges. Each one names `sync` as the way to publish afterward.
+	- A command that means something locally runs and reports what it skipped: `pullcom` commits, `br create` and `br hotfix` make the branch, `br switch` switches, `br merge` merges. Each one names `sync` as the way to publish afterward.
 	- A command that exists to publish refuses before the plan is shown: `sync`, `pr create`, `pr ok`, `release`. Reporting success having sent nothing is worse than a hard failure, and failing halfway through on raw git output is worse than refusing up front.
 	- Offline is the state the pre-command fetch discovers, not a flag you pass. `--no-fetch` declines the incoming round trip - a reasonable thing to want against a reachable remote - so it does not stop a push. The cost is that it also declines the check, so a push while genuinely offline fails with git's own message.
-	- Two places need more than a skipped push. `br land` holds back the remote branch delete until the merge is published, because until then origin's copy is its only ref to that work. The hotfix back-merge normally merges `origin/<default>` (correct after `pr ok`, which lands server-side); offline that ref is the stale one, so it falls back to the local branch.
+	- Two places need more than a skipped push. `br merge` holds back the remote branch delete until the merge is published, because until then origin's copy is its only ref to that work. The hotfix back-merge normally merges `origin/<default>` (correct after `pr ok`, which lands server-side); offline that ref is the stale one, so it falls back to the local branch.
 
 - The one command that publishes a directory shows what is in it first.
 	- `repo create` and `repo connect` from a plain directory list the files before asking. Everything else in the tool previews what it touches; this is the step where a stray `.env` or private key becomes public.
@@ -191,6 +192,19 @@ The Bash and PowerShell files are ports of each other, and were kept in step for
 	- Among the options considered, we decided that keeping three implementations in step triples the cost of every change and leaves the newest one nothing to be checked against - a reference that moves is not a reference. Pinned at 2.1.0 behavior, the scripts give the port something byte-for-byte to compare against.
 	- The Go build keeps the whole 2.1.0 command surface. Where a command is renamed the old name stays as an unpublished spelling, so nothing that works today stops working. It may add a command or two of its own.
 	- Byte-identical output stays the test for everything that has not deliberately changed. A rename moves help and error text on purpose, and those cases are carved out explicitly rather than left to read as regressions.
+
+- `update` became `pullcom`, and `br land` became `br merge`. The old spellings keep working, permanently.
+	- `update` said nothing about direction, and read like it updated gitsby itself. `pullcom` names both halves in the order they run - the ordering decision above, made visible in the name.
+	- `sync` kept its name. It was never unclear on its own; the pair was. Two words that read as synonyms, with no hint which one publishes, and renaming one end settles it.
+	- `merge` is the word people reach for before they learn `land`. `land` stays as a spelling, and stays the vocabulary the rest of the tool uses for the act itself.
+	- `pullcom` also answers to `update`, `pull`, `pullc`, `pullco`, `pullcomm` and `pullcommit`. This is the only prefix ladder in the tool, and it earns the inconsistency: the command you type all day, with a tail nobody recalls exactly. Nothing else is prefix-tolerant, and the fix for that is not to spread it.
+	- `finish` was considered as a second name for `br merge` and rejected. It overclaims - merging to `dev` still owes a release - and under a permanent-alias promise every spelling is forever.
+	- Go build only. The scripts keep the names they shipped with and stay the reference for everything the rename does not touch.
+
+- `identity` shows the identity block on its own.
+	- `status` already answers "who does this act as", but buried under branch and working-tree state you did not ask about. `account list` answers a different question - what is configured, everywhere, rather than what applies here.
+	- The same lines `status` prints, from the same code, so the two cannot drift apart. That includes the rule that the Account line appears only for an account asked for or configured, never one merely inferred from the remote's owner.
+	- It answers outside a repository too. Which account a folder belongs to is worth knowing before there is anything in it, which is exactly when you are about to clone or create.
 
 ## Branching model
 

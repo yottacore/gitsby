@@ -7,6 +7,8 @@
 
 This is a product backlog for the run-up to v2.0.0. After that release, bugs, features, and enhancements move to GitHub Issues.
 
+## Table of contents
+
 <!-- TOC -->
 
 - [Table of contents](#table-of-contents)
@@ -1053,12 +1055,22 @@ Go port, later rounds. These wait until the round-one items above hold up.
 	- ✅ `pr create` / `pr ok`, and `release` with its version resolution and the nothing-new guard. Also the `GitHub (gh)` identity line, which only gh-backed commands print, and the gh-write account comparison behind it. Go leg 345/93 -> 385/53.
 	- ✅ `repo clone` / `create` / `connect` / `url`, and `account list` / `apply` - the includeIf writer, the fragment files, and the smaller no-repo headers (clone, connect-from-plain-dir, files-to-publish). With this the whole command surface is ported. Go leg 385/53 -> 438/0.
 
-- 🔘 Rename `update` -> `pullcom` and `br land` -> `br merge`, keeping the old spellings as aliases. After slice four.
+- ✅ Rename `update` -> `pullcom` and `br land` -> `br merge`, keeping the old spellings as aliases. After slice four.
 	- `sync` keeps its name; only its help line changes, to say it goes both ways.
 	- Aliases are permanent - the Go build stays compatible with the 2.1.0 surface. `pullcom` also answers to `update`, `pull`, `pullc`, `pullco`, `pullcomm`, `pullcommit`; `br merge` also answers to `br land`.
 	- Why: `update` reads like it updates gitsby itself, and says nothing about direction, where `pullcom` names both halves in the order they run. `merge` is what people reach for before `land`.
 	- Go build only. The scripts keep their current spelling and stand as the reference.
 	- The old spellings still work, so the demo gif stays correct - regenerate it once the Go build is release quality, not for this.
+	- Done: renamed in the parser, the help, the four messages that named a command, and the internal tokens. The offline `sync` refusal now says the pull is the half that gets skipped. Run output is byte-identical to the frozen build under either spelling. The suite's go leg carries the checks for the new names and the aliases; two shared checks that pinned the old wording now take either. Go leg 438/0 -> 455/0.
+
+- ✅ New command: `identity`.
+	- The identity half of `status` on its own - account, ssh key and who it authenticates as, commit author, gh login - without the branch and working-tree state.
+	- Same lines, same code as `status`, so the two can't drift. Answers outside a repository too, which is where you ask it before cloning or creating.
+	- Read-only, so no confirmation and no plan. No alias; `whoami` and `who` were left alone rather than spent, since every alias is permanent.
+
+- 🔘 Sweep the published docs for the renamed commands, at the Go release.
+	- README.md, workflows.md and the command tables elsewhere still describe the 2.1.0 surface, which is what the installed build actually accepts. Changing them ahead of the release would document commands nobody has yet.
+	- Also the demo gif and `demo-scenario.toml`, which still run the old spellings. They stay correct either way, so this rides along rather than forcing anything.
 
 - ✋ Per-platform release artifacts with a checksum each; `--arch` becomes real.
 
