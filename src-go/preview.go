@@ -29,9 +29,58 @@ func preview(what string) {
 	case "sync":
 		preview("update")
 		echoClean(pad + "git push (branch '" + currentBranch() + "') *")
+	case "br-create":
+		// From main/dev the dirty tree rides along to the new branch, so there's no
+		// commit here.
+		previewNewBranch(mergeTarget())
+	case "br-hotfix":
+		// Off the default branch, not dev: this corrects what is already published.
+		previewNewBranch(defaultBranch())
+	case "br-switch":
+		// Already on the target: nothing is parked and no checkout happens, so the plan
+		// must not promise an add/commit/push it will not do.
+		target := cmdArg
+		if target == "" {
+			target = mergeTarget()
+		}
+		if currentBranch() != target {
+			preview("sync")
+			echoClean(pad + "git checkout " + target)
+		}
+		echoClean(pad + "git pull --ff-only *")
+	case "br-land":
+		preview("sync")
+		echoClean(pad + "git checkout " + branchTarget(""))
+		echoClean(pad + "git pull --ff-only *")
+		echoClean(pad + "git merge --no-ff " + currentBranch())
+		echoClean(pad + "git push *")
+		echoClean(pad + "git branch -d " + currentBranch())
+		echoClean(pad + "git push origin --delete " + currentBranch() + " *")
+		echoClean(pad + "git pull --ff-only *")
+		// A hotfix owes dev the same change, or the next release undoes it.
+		if isHotfixBranch("") {
+			echoClean(pad + "git checkout " + mergeTarget())
+			echoClean(pad + "git merge " + backMergeRef())
+			echoClean(pad + "git push *")
+		}
 	case "br-prune":
 		prunePreview()
 	}
-	// The recipes for the branch, pr, release, repo and account writers land with
-	// those commands.
+	// The recipes for the pr, release, repo and account writers land with those
+	// commands.
+}
+
+// previewNewBranch is br create and br hotfix - the same recipe off a different
+// base.
+func previewNewBranch(baseBranch string) {
+	if isProtectedBranch("") {
+		echoClean(pad + "git checkout " + baseBranch + " *")
+		echoClean(pad + "git pull --ff-only --autostash *")
+	} else {
+		preview("sync")
+		echoClean(pad + "git checkout " + baseBranch + " *")
+		echoClean(pad + "git pull --ff-only *")
+	}
+	echoClean(pad + "git checkout -b " + cmdArg)
+	echoClean(pad + "git push -u origin " + cmdArg + " *")
 }

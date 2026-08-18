@@ -226,7 +226,17 @@ func showStatus(withIdentity bool) {
 	}
 	echoClean("Default branch: " + dflt)
 	echoClean("Current branch: " + strings.TrimRight(branchDisp("")+" "+branchSync(), " "))
-	// The 'New branch ...:' line waits for br create/hotfix.
+	// Pre-flight only, and only for the two commands that make a branch: the line
+	// above is where you ARE, which is exactly what misled here - it says 'dev'
+	// while the plan checks out main.
+	if withIdentity {
+		switch cmdName {
+		case "br-create":
+			echoClean("New branch ...: " + mergeTarget() + " :: " + cmdArg)
+		case "br-hotfix":
+			echoClean("New branch ...: " + defaultBranch() + " :: " + cmdArg)
+		}
+	}
 	echoClean("")
 	showChanges()
 	if withIdentity {
