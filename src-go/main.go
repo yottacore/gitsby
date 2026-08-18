@@ -1,5 +1,6 @@
-// gitsby, compiled. Built out against cicd/test.bash from the first commit; commands land
-// slice by slice, so anything not here yet says so and exits nonzero rather than guessing.
+// gitsby, compiled. Built out against cicd/test.bash from the first commit, and now
+// carrying the whole command surface. Argument parsing, the gates every command passes
+// through, and the state -> plan -> confirm -> run -> state frame the mutating ones share.
 
 // Copyright © 2026 Jim Collier (CryptogID: ѳ6ᴚ℈𐀘𐇦ɛ𐊁¥Mﾏb϶Δ𐌞)
 // Licensed under The MIT License (MIT). Full text at:
@@ -57,7 +58,7 @@ func printSyntax() {
 	}
 	echoClean("")
 	echoClean("Common commands:")
-	echoClean("  update [msg] .......: Pull updates, then commit all local changes. Do frequently!")
+	echoClean("  pullcom [msg] ......: Pull updates, then commit all local changes. Do frequently!")
 	echoClean("  br create <branch> .: Create a new branch off " + mergeTargetLabel + " (current work is carried or parked).")
 	echoClean("  br switch [branch] .: Switch to a branch (parks current work first). No arg: back to " + mergeTargetLabel + ".")
 	echoClean("  br [list] ..........: Fetch and list branches.")
@@ -70,9 +71,10 @@ func printSyntax() {
 	echoClean("  account [list] .....: Show your configured GitHub accounts, and which one this folder uses.")
 	echoClean("  account apply ......: Teach plain git the same folder rules, so 'git' outside gitsby matches.")
 	echoClean("Less common commands:")
-	echoClean("  sync [msg] .........: Pull, commit, and push. Do infrequently.")
+	echoClean("  sync [msg] .........: Pull, commit, and push (pullcom, plus the push). Do infrequently.")
+	echoClean("  identity ...........: Who commands here act as: account, ssh key, commit author, gh login.")
 	echoClean("Admin commands, e.g. for small solo projects:")
-	echoClean("  br land [msg] ......: Merge current branch into " + mergeTargetLabel + " (--no-ff), push, delete it local + remote.")
+	echoClean("  br merge [msg] .....: Merge current branch into " + mergeTargetLabel + " (--no-ff), push, delete it local + remote.")
 	echoClean("  br prune ...........: Delete branches already merged into " + mergeTargetLabel + ", local + remote.")
 	echoClean("  br hotfix <name> ...: Branch off the default branch, to correct what's already published.")
 	echoClean("  pr [create|n|ok n] .: Create, list, review, or accept a pull request (needs gh).")
@@ -195,9 +197,11 @@ func main() {
 	}
 
 	// Every command needs a repo - except the repo ones: clone works anywhere, and
-	// create/connect exist precisely to turn a plain directory into one.
+	// create/connect exist precisely to turn a plain directory into one. 'identity'
+	// too: which account a folder belongs to is worth asking before there is a repo
+	// in it.
 	inRepo = runOK("git", "rev-parse", "--is-inside-work-tree")
-	if !inRepo && !strings.HasPrefix(cmdName, "repo-") && !strings.HasPrefix(cmdName, "account-") {
+	if !inRepo && cmdName != "identity" && !strings.HasPrefix(cmdName, "repo-") && !strings.HasPrefix(cmdName, "account-") {
 		throwUsage("Not inside a git repository. Change to a git project directory first.")
 	}
 
@@ -216,18 +220,18 @@ func main() {
 		fetchRemote()
 	}
 	// These can't change mid-command, so resolve them once (post-fetch, so
-	// origin/HEAD is fresh). status and br list run without a resolvable default
-	// branch on purpose: they mutate nothing and are the commands you run to see
-	// what is wrong, so they report "unknown" instead of refusing.
+	// origin/HEAD is fresh). status, identity and br list run without a resolvable
+	// default branch on purpose: they mutate nothing and are the commands you run to
+	// see what is wrong, so they report "unknown" instead of refusing.
 	if inRepo {
 		defaultBranchCache = defaultBranch()
 		mergeTargetCache = mergeTarget()
 		// Every branch command checks this out, protects it, or merges into it, so a
 		// name we can't confirm has to stop things here - before a preview promises
-		// it. 'status' and 'br list' are exempt on purpose: they mutate nothing and
-		// are the commands you run to see what is wrong, so they report "unknown"
-		// instead of refusing.
-		if cmdName != "status" && cmdName != "br-list" && !strings.HasPrefix(cmdName, "repo-") && !strings.HasPrefix(cmdName, "account-") && runOK("git", "rev-parse", "-q", "--verify", "HEAD") {
+		// it. 'status', 'identity' and 'br list' are exempt on purpose: they mutate
+		// nothing and are the commands you run to see what is wrong, so they report
+		// "unknown" instead of refusing.
+		if cmdName != "status" && cmdName != "identity" && cmdName != "br-list" && !strings.HasPrefix(cmdName, "repo-") && !strings.HasPrefix(cmdName, "account-") && runOK("git", "rev-parse", "-q", "--verify", "HEAD") {
 			if defaultBranchCache == "" {
 				throwUsage("Can't tell this repo's default branch. Set it with 'git remote set-head origin --auto', or create a main/master.")
 			}
@@ -243,7 +247,7 @@ func main() {
 	// skipped.
 	switch cmdName {
 	case "sync":
-		requireOnline("sync", "Commit locally with '"+meName+" update', then '"+meName+" sync' when you are back online.")
+		requireOnline("sync", "Offline, '"+meName+" pullcom' skips the pull and just commits; run '"+meName+" sync' when you are back online.")
 	case "release":
 		requireOnline("release", "A release nobody can fetch isn't one.")
 	case "pr":
@@ -286,7 +290,7 @@ func main() {
 		// typed it.
 		cmdArg = "hotfix/" + strings.TrimPrefix(cmdArg, "hotfix/")
 		checkNewBranchName()
-	case "br-land":
+	case "br-merge":
 		// Landing ends in 'git branch -d', so a leftover main/master must be refused
 		// here for the same reason br prune never lists one - and up front, not after a
 		// destructive plan was shown.
@@ -304,7 +308,7 @@ func main() {
 			switchTarget = mergeTarget()
 		}
 		if currentBranch() != switchTarget && isProtectedBranch("") && runOut("git", "status", "--porcelain") != "" {
-			throwUsage("Working tree has changes on '" + currentBranch() + "'; won't auto-commit to a protected branch. Carry them to a new branch (" + meName + " br create <name>), or commit them here deliberately (" + meName + " update) first.")
+			throwUsage("Working tree has changes on '" + currentBranch() + "'; won't auto-commit to a protected branch. Carry them to a new branch (" + meName + " br create <name>), or commit them here deliberately (" + meName + " pullcom) first.")
 		}
 	}
 
@@ -339,6 +343,10 @@ func main() {
 	// 'git@github.com:owner/name.git' from its own protocol setting. So the
 	// identity that repo will live with afterward can be checked before we start.
 	switch cmdName {
+	case "identity":
+		// Reads gh, writes nothing: the whole point of the command is to name every
+		// account involved, and gh's is one of them.
+		isGhCommand = true
 	case "pr":
 		isGhCommand = true
 		if prSub != "" {
@@ -409,6 +417,8 @@ func main() {
 		switch cmdName {
 		case "status":
 			showStatus(true)
+		case "identity":
+			cmdIdentity()
 		case "account-list":
 			cmdAccountList()
 		case "repo-url":
@@ -485,7 +495,7 @@ func main() {
 	}
 
 	switch cmdName {
-	case "update":
+	case "pullcom":
 		cmdCommitPull()
 	case "sync":
 		cmdPush()
@@ -495,8 +505,8 @@ func main() {
 		cmdNewBranch(cmdArg, defaultBranch())
 	case "br-switch":
 		cmdGoBranch(cmdArg)
-	case "br-land":
-		cmdLand()
+	case "br-merge":
+		cmdMerge()
 	case "br-prune":
 		cmdPrune()
 	case "pr":

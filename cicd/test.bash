@@ -184,7 +184,11 @@ fRunSuite(){
 	( cd "${cloneA}" && echo s > s.txt )
 	fAssert "sync records the message it was given"  bash -c "cd '${cloneA}' && '${gitsby}' -q sync 'synced by name' && git log -1 --format=%s | grep -qx 'synced by name'"
 	fAssertFail "dropped 'commit' command rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q commit 'no such command'"
-	fAssertFail "dropped 'pull' command rejected"    bash -c "cd '${cloneA}' && '${gitsby}' -q pull"
+	## 'pull' went away in v2 because it let you skip the commit. The compiled build takes the
+	## word again as a spelling of the command that pulls AND commits, which structurally can't.
+	if [[ "$1" != "go" ]]; then
+		fAssertFail "dropped 'pull' command rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q pull"
+	fi
 	( cd "${cloneA}" && echo alias > alias.txt )
 	fAssertFail "dropped v1 alias 'scommit' rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q scommit 'via alias'"
 	( cd "${cloneA}" && echo upd > upd.txt )
@@ -241,7 +245,7 @@ fRunSuite(){
 	fAssertFail   "br switch from dirty main refuses"           bash -c "cd '${cloneA}' && '${gitsby}' -q br switch feat"
 	fAssertNotOut "and dies before the preview"  'Going to do'  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch feat"
 	## The way out it offers has to be a command that still exists (it named the dropped 'commit')
-	fAssertOut    "and points at a real command"  'deliberately \(.*update\) first'  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch feat"
+	fAssertOut    "and points at a real command"  'deliberately \(.*(update|pullcom)\) first'  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch feat"
 	fAssert "wip left uncommitted on main"      bash -c "cd '${cloneA}' && ! git diff --quiet && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]]"
 	## newbr carries that same tree instead, so its plan must not promise a commit on main
 	fAssertNotPlan "br create from main previews no commit"  'git add --all'  bash -c "cd '${cloneA}' && '${gitsby}' -q br create wipcarry"
@@ -435,7 +439,9 @@ fRunSuite(){
 	## The publishing commands refuse instead, and name what to do about it. Checked before the
 	## land below, since that one leaves the tree clean and 'sync' needs something to refuse over.
 	fAssertFail "sync refuses with an unreachable remote"   bash -c "cd '${offb}' && echo s > s.txt && '${gitsby}' -q sync 'nope'"
-	fAssertOut  "and points at update"  "Commit locally with '[^']*update'"   bash -c "cd '${offb}' && '${gitsby}' -q sync 'nope' 2>&1"
+	## Named per implementation: the scripts say 'update', the compiled build says 'pullcom' and
+	## adds what offline changes about it - the pull is skipped, so only the commit half runs.
+	fAssertOut  "and points at the command that commits"  "'[^']*(update|pullcom)'"   bash -c "cd '${offb}' && '${gitsby}' -q sync 'nope' 2>&1"
 	fAssert     "and it refused before committing anything"  bash -c "cd '${offb}' && git status --porcelain | grep -q 's.txt' && rm -f '${offb}/s.txt'"
 	fAssertFail "release refuses with an unreachable remote"  bash -c "cd '${offb}' && '${gitsby}' -q release v9.9.9"
 	fAssertOut  "and says so before cutting a tag"  "'release' has nothing left to do"  bash -c "cd '${offb}' && '${gitsby}' -q release v9.9.9 2>&1"
@@ -1872,6 +1878,39 @@ GHEOF
 		fAssert "this run carries no env-injected git config"  bash -c '[[ -z "${GIT_CONFIG_COUNT:-}" ]]'
 		fAssert "and no inherited gh token"                    bash -c '[[ -z "${GH_TOKEN:-}" ]]'
 	fi
+
+	## Go-only: the renamed commands, the aliases that keep every 2.1.0 spelling working, and
+	## 'identity'. The scripts are frozen at the old surface, so asserting the new names on their
+	## legs would only prove that a frozen file is frozen.
+	if [[ "$1" == "go" ]]; then
+		local renDir="${work}/rename"
+		git clone --quiet "${origin}" "${renDir}"
+		fAssertOut "help leads with the new name" 'pullcom \[msg\] \.+: Pull updates'        "${gitsby}" --help
+		fAssertOut "and offers br merge"          'br merge \[msg\] \.+: Merge current'      "${gitsby}" --help
+		fAssertOut "and lists identity"           'identity \.+: Who commands here act as'   "${gitsby}" --help
+		## Every accepted spelling, because a ladder is only worth having if the whole ladder is
+		## there - a missing rung reads as a typo the tool refused for no reason.
+		local spelling
+		for spelling in pullcom update pull pullc pullco pullcomm pullcommit; do
+			fAssert "'${spelling}' commits" bash -c "cd '${renDir}' && echo x >> '${spelling}.txt' && '${gitsby}' -q ${spelling} 'via ${spelling}' && git -C '${renDir}' log -1 --pretty=%s | grep -qx 'via ${spelling}'"
+		done
+		fAssertPlan "'br merge' merges the current branch" 'git merge --no-ff renmerge' \
+			bash -c "cd '${renDir}' && '${gitsby}' -q br create renmerge >/dev/null && '${gitsby}' -q br merge 'merged' 2>&1"
+		fAssertPlan "'br land' still does the same"        'git merge --no-ff renland' \
+			bash -c "cd '${renDir}' && '${gitsby}' -q br create renland >/dev/null && '${gitsby}' -q br land 'landed' 2>&1"
+		fAssertOut  "an unknown br subcommand names merge, not land" 'switch, merge, prune' \
+			bash -c "cd '${renDir}' && '${gitsby}' -q br frobnicate 2>&1"
+		## identity is the status block's identity half on its own, and the one read-only command
+		## that answers outside a repo - which is where you ask it, before cloning anything.
+		fAssert     "identity exits 0"            bash -c "cd '${renDir}' && '${gitsby}' identity"
+		fAssertOut  "and names the commit author" '^Author \.+: test <test@test>' \
+			bash -c "cd '${renDir}' && '${gitsby}' identity 2>&1"
+		fAssertNotOut "and leaves out the working-tree state" 'Local changes:' \
+			bash -c "cd '${renDir}' && '${gitsby}' identity 2>&1"
+		fAssert     "identity answers outside a repo" bash -c "cd '${work}' && '${gitsby}' identity"
+		fAssertFail "identity with a trailing argument rejected" \
+			bash -c "cd '${renDir}' && '${gitsby}' identity extra"
+	fi
 }
 
 echo "gitsby regression tests (fixture: ${work})"
@@ -1941,3 +1980,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260813 JC: Drop the two settings a working terminal carries that outrank everything pinned here - GIT_CONFIG_COUNT with its numbered keys, which beats every config file including a repo-local one, and an inherited GH_TOKEN, which is what the fake gh reports back. Twenty checks had been reporting on the terminal rather than the code. Pinned in all three harnesses; the runtime pair is a regression guard, since a clean machine passes either way.
 ##		- 20260814 JC: release.bash gates on the pipeline engine belonging to the platform. It always ran the Bash one, which knows nothing about Windows, so the check a release most depends on would have been the wrong pipeline there. Source pins, same reason as the changelog ones above; both discriminate against the prior file.
 ##		- 20260817 JC: Go leg. Same shim treatment, non-gating: the port is written against this suite, so its failures are the distance left, printed as counts and kept out of the totals. The leg runs without -e - prep commands legitimately die where a command is not ported yet, and the assertions do the judging.
+##		- 20260818 JC: The renamed commands, their aliases, and identity - checked on the compiled leg only, since the scripts are frozen at the spelling they shipped with. The offline-sync check now takes either name; it is the one message that had pinned the old one.

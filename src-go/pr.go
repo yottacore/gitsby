@@ -113,7 +113,7 @@ func cmdPrView() {
 }
 
 func cmdPrCreate() {
-	// GitHub can only diff what origin has, so park the work first - same as br land
+	// GitHub can only diff what origin has, so park the work first - same as br merge
 	// and release do.
 	cmdPush()
 	// Announced by hand rather than through runStep, like 'gh pr review' below:

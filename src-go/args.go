@@ -131,6 +131,15 @@ func collapseCommand() {
 	if strings.Contains(cmdName, "-") {
 		throwUsage("Unknown command '" + cmdName + "'. Run '" + meName + "' with no arguments for a list.")
 	}
+	// The one prefix ladder in the tool, and deliberately so: this is the command
+	// you type all day, and its tail is the half nobody recalls exactly. Nothing
+	// else here is prefix-tolerant - don't spread it for consistency. 'update' is
+	// the 2.1.0 name; 'pull' is safe because the bare pull command is gone, and an
+	// alias onto this one cannot skip the commit the way that one could.
+	switch cmdName {
+	case "update", "pull", "pullc", "pullco", "pullcom", "pullcomm", "pullcommit":
+		cmdName = "pullcom"
+	}
 	shift := true
 	switch cmdName {
 	case "repo", "repository":
@@ -167,12 +176,12 @@ func collapseCommand() {
 			cmdName = "br-hotfix"
 		case "switch", "go":
 			cmdName = "br-switch"
-		case "land":
-			cmdName = "br-land"
+		case "merge", "land":
+			cmdName = "br-merge"
 		case "prune", "clean":
 			cmdName = "br-prune"
 		default:
-			throwUsage("Unknown 'br' subcommand '" + cmdArg + "'. One of: list, create, hotfix, switch, land, prune.")
+			throwUsage("Unknown 'br' subcommand '" + cmdArg + "'. One of: list, create, hotfix, switch, merge, prune.")
 		}
 	default:
 		shift = false
@@ -192,7 +201,7 @@ var isMutating = true
 // would make a typo look like it did what you meant.
 func sortCommand() {
 	switch cmdName {
-	case "status", "br-list":
+	case "status", "identity", "br-list":
 		// br list's extra lands in cmdArg too, after the noun shift, so one test
 		// covers both.
 		isMutating = false
@@ -214,7 +223,7 @@ func sortCommand() {
 		default:
 			isMutating = false
 		}
-	case "update", "sync", "br-land":
+	case "pullcom", "sync", "br-merge":
 		if commitMessage == "" {
 			commitMessage = cmdArg
 		}

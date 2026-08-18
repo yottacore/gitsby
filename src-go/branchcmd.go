@@ -1,4 +1,4 @@
-// The branch writers: create, hotfix, switch and land. Every one of them parks
+// The branch writers: create, hotfix, switch and merge. Every one of them parks
 // whatever is in the tree before it moves, so changing where you stand can't
 // strand work - and land carries a hotfix on to dev, because the next release
 // would otherwise undo it.
@@ -61,13 +61,13 @@ func cmdGoBranch(targetBranch string) {
 	pullIfOnline()
 }
 
-// cmdLand merges the current branch into dev (or main/master) - backwards from
+// cmdMerge merges the current branch into dev (or main/master) - backwards from
 // 'git merge', but it saves a step.
-func cmdLand() {
+func cmdMerge() {
 	workBranch := currentBranch()
 	targetBranch := branchTarget(workBranch)
 	if workBranch == targetBranch {
-		throwUsage("Already on '" + targetBranch + "'. Run this from the branch to merge in: " + meName + " br switch <branch>, then " + meName + " br land")
+		throwUsage("Already on '" + targetBranch + "'. Run this from the branch to merge in: " + meName + " br switch <branch>, then " + meName + " br merge")
 	}
 	if workBranch == defaultBranch() {
 		throwUsage("'" + workBranch + "' is the default branch; landing it on '" + targetBranch + "' is backwards. To cut a release: " + meName + " release")

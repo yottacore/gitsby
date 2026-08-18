@@ -28,7 +28,7 @@ func cmdCommit() {
 		echoClean("")
 		echoStatus("Unresolved conflicts; nothing was committed:")
 		cappedLines(conflicted)
-		throwUsage("Resolve those, then run '" + meName + " update' again. Git also kept your pre-pull tree - see 'git stash list'.")
+		throwUsage("Resolve those, then run '" + meName + " pullcom' again. Git also kept your pre-pull tree - see 'git stash list'.")
 	}
 	runStep("git", "add", "--all")
 	switch {
@@ -154,7 +154,7 @@ func cmdPrune() {
 		if reKept[branch] {
 			continue
 		}
-		// Non-fatal, same as br land: someone else may have deleted it already.
+		// Non-fatal, same as br merge: someone else may have deleted it already.
 		echoClean("")
 		echoStatus("git push origin --delete " + branch + " ...")
 		if runInheritOK("git", "push", "origin", "--delete", branch) {
