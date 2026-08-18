@@ -21,7 +21,7 @@
 ##	  per-project settings live in config.bash.
 ##	- Stages (fail-fast, any error aborts before the next stage):
 ##	   0. remote sync (fast-forward from origin before anything is built or tested)
-##	   1. lint (bash -n + shellcheck gating; markdownlint + py_compile + PSScriptAnalyzer if available)
+##	   1. lint (bash -n + shellcheck gating; markdownlint + py_compile + PSScriptAnalyzer + go tooling if available)
 ##	   2. regression tests (cicd/test.bash, once it exists)
 ##	   3. fuzz + security (cicd/fuzz.bash, once it exists; skipped under --quick)
 ##	   4. dogfood (install the script(s) to the first existing preferred dir)
@@ -130,7 +130,8 @@ fEcho_Clean "${APP_NAME} local CI/CD"
 fEcho_Clean
 fEcho_Clean "Repo root ...........: ${root}"
 if ((do_lint)); then
-	fEcho_Clean "Lint ................: shellcheck on ${#shell_files[@]} shell file(s) + ${#shell_warn_files[@]} legacy report-only  (+ markdownlint, py_compile, PSScriptAnalyzer if available)"
+	go_lint_note=""; [[ -d "src-go" ]] && go_lint_note=", gofmt/vet/staticcheck"
+	fEcho_Clean "Lint ................: shellcheck on ${#shell_files[@]} shell file(s) + ${#shell_warn_files[@]} legacy report-only  (+ markdownlint, py_compile, PSScriptAnalyzer${go_lint_note} if available)"
 else
 	fEcho_Clean "Lint ................: (skipped)"
 fi
@@ -232,7 +233,7 @@ fi
 
 ## Stage 1: lint. bash -n then shellcheck over every first-party shell file
 ## (gating - never an auto-formatter: bash is hand-formatted on purpose).
-## markdownlint and py_compile are probe-gated extras.
+## markdownlint and py_compile are probe-gated extras, as is the go tooling.
 fSection "1/6  Lint"
 if ((! do_lint)); then
 	fEcho_Clean "lint skipped"
@@ -287,6 +288,24 @@ else
 			else
 				fEcho "WARNING: PSScriptAnalyzer skipped (pwsh + PSScriptAnalyzer module not both installed)"
 			fi
+		fi
+	fi
+	## Go port: gofmt is the arbiter of format, vet gates, staticcheck gates when
+	## installed. Keyed off the source tree, not a glob - the tools walk the module.
+	if [[ -d "${root}/src-go" ]]; then
+		if command -v go >/dev/null 2>&1; then
+			unformatted="$(cd "${root}/src-go" && gofmt -l .)"
+			[[ -z "${unformatted}" ]] || fDie "gofmt wants to reformat: ${unformatted}"
+			(cd "${root}/src-go" && go vet ./...) || fDie "go vet findings"
+			fEcho "OK: gofmt + go vet clean"
+			if command -v staticcheck >/dev/null 2>&1; then
+				(cd "${root}/src-go" && staticcheck ./...) || fDie "staticcheck findings"
+				fEcho "OK: staticcheck clean"
+			else
+				fEcho "WARNING: staticcheck skipped (not installed: go install honnef.co/go/tools/cmd/staticcheck@latest)"
+			fi
+		else
+			fEcho "WARNING: go lint skipped (go toolchain not installed)"
 		fi
 	fi
 fi
@@ -431,3 +450,4 @@ fEcho_Clean
 ##	History:
 ##		- 2026-07-22 JC: Created. Generic engine + config.bash for a Bash-script project, adapted from the sister pipeline; lint/tests/fuzz/dogfood/demo-gif/publish stages, -q/-m/--quick flags, tee'd run log.
 ##		- 2026-08-17 JC: Stage 2 builds the go port before the tests, so the suite's go leg runs against this tree; dev builds carry the git-describe version via -ldflags. A missing toolchain warns and lets the leg skip itself.
+##		- 2026-08-17 JC: Stage 1 lints the go tree: gofmt (list mode, gating) and go vet, plus staticcheck when installed. Keyed off src-go existing rather than globs, so there is nothing to mirror in the Windows settings yet.
