@@ -1068,9 +1068,11 @@ Go port, later rounds. These wait until the round-one items above hold up.
 	- Same lines, same code as `status`, so the two can't drift. Answers outside a repository too, which is where you ask it before cloning or creating.
 	- Read-only, so no confirmation and no plan. No alias; `whoami` and `who` were left alone rather than spent, since every alias is permanent.
 
-- 🔘 Sweep the published docs for the renamed commands, at the Go release.
-	- README.md, workflows.md and the command tables elsewhere still describe the 2.1.0 surface, which is what the installed build actually accepts. Changing them ahead of the release would document commands nobody has yet.
-	- Also the demo gif and `demo-scenario.toml`, which still run the old spellings. They stay correct either way, so this rides along rather than forcing anything.
+- ✅ Sweep the published docs for the renamed commands, and add `identity` to them.
+	- Done: README.md command table (`pullcom`, `br merge`, new `identity` row) plus the prose around it, workflows.md, git_notes_and_oneliners.md. A short paragraph says the old spellings are permanent, and the PowerShell paragraph now names the one place the builds differ - the scripts predate both new names.
+	- Safe to do now: this all sits on `gover`, which nothing ships from until the Go build releases. The published README is whatever `main` holds.
+	- Historical changelog entries keep the names they shipped with; only vNEXT gets the new ones.
+	- `demo-scenario.toml` deliberately left on the old spellings. The aliases keep it correct, and changing text the scenario prints makes the committed gif stale, which the pipeline compares byte for byte. It rides along with the gif regeneration at release.
 
 - ✋ Per-platform release artifacts with a checksum each; `--arch` becomes real.
 

@@ -73,15 +73,16 @@ What you reach for daily is a one-word command. Everything else is grouped under
 
 | Command              | Args          | What it does
 | :--                  | :--           | :--
-| `update`             | `[msg]`       | Pull updates, then commit all local changes. Do frequently!
+| `pullcom`            | `[msg]`       | Pull updates, then commit all local changes. Do frequently!
 | `sync`               | `[msg]`       | Pull, commit, and push. Do infrequently.
 | `status`             |               | Fetch and show current status.
+| `identity`           |               | Show who commands in this folder act as: account, ssh key, commit author, `gh` login.
 | `release`            | `[ver]`       | Cut a release: merge `dev` into `main`, tag, push. No version: the next one after the latest tag.
 | `br`                 |               | Fetch and list branches (`br list` is the same thing).
 | `br create`          | `<branch>`    | Create a new branch off `dev`/`main`. Uncommitted work on `dev`/`main` comes along; on another branch it is parked there first.
 | `br hotfix`          | `<name>`      | Branch off the default branch as `hotfix/<name>`, to correct what's already published. Landing it carries the change back to `dev`.
 | `br switch`          | `[branch]`    | Switch to a branch (parks current work first). No arg: back to `dev`/`main`.
-| `br land`            | `[msg]`       | Merge the current branch into `dev`/`main` (`--no-ff`), push, delete it local + remote.
+| `br merge`           | `[msg]`       | Merge the current branch into `dev`/`main` (`--no-ff`), push, delete it local + remote.
 | `br prune`           |               | Delete branches already merged into `dev`/`main`, local + remote. Unmerged ones, and the branch you're on, are kept.
 | `repo clone`         | `<url> [dir]` | Clone a repo you don't have yet (checks out `dev` if it has one). Re-run is a no-op.
 | `repo create`        | `<owner/name>`| `git init` if needed, commit, then create the GitHub repo via [gh](https://github.com/cli/cli) and push to it (`--public`/`--private`; private by default).
@@ -96,15 +97,17 @@ What you reach for daily is a one-word command. Everything else is grouped under
 | `raw git`            | `<args ...>`  | Run `git` as the account this folder belongs to. Everything after `git` is git's, verbatim.
 | `raw gh`             | `<args ...>`  | The same, for `gh`.
 
-There is deliberately no bare `commit` and no bare `pull`. Committing without sharing is how work quietly diverges, and pulling without committing is the one thing the rest of the tool never does.
+`pullcom` was once called `update`, and `br merge` was `br land`. The old spellings still work and always will, so nothing you have typed or scripted stops working. `pullcom` also answers to `pull`, and to anything between it and the full word.
 
-`br create`, `br switch`, `br land`, and `pr create` all deal with your work first. `update` is the one command for both, and it pulls *before* it commits so your work lands on top of everyone else's and history stays linear.
+There is deliberately no bare `commit`, and no bare `pull` that skips the commit. Committing without sharing is how work quietly diverges, and pulling without committing is the one thing the rest of the tool never does - which is why `pull` is a spelling of `pullcom` rather than a command of its own.
+
+`br create`, `br switch`, `br merge`, and `pr create` all deal with your work first. `pullcom` is the one command for both, and it pulls *before* it commits so your work lands on top of everyone else's and history stays linear.
 
 Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--public`/`--private` (visibility for `repo create`; private by default), `--no-fetch` (skip the fetch and the pull), `--any-identity`, `--config FILE` (read accounts from somewhere other than the usual place), `-h`, `-v`.
 
-The PowerShell version takes the same options in PowerShell form: `-Message MSG`, `-Quiet`/`-y`, `-Public`/`-Private`, `-NoFetch`, `-AnyIdentity`, `-Config FILE`, `-Help`, `-Version`. Commands and arguments are spelled identically in both.
+The PowerShell version takes the same options in PowerShell form: `-Message MSG`, `-Quiet`/`-y`, `-Public`/`-Private`, `-NoFetch`, `-AnyIdentity`, `-Config FILE`, `-Help`, `-Version`. Commands and arguments are spelled identically in both, with one exception: the PowerShell and Bash builds predate the `pullcom` and `br merge` names and take only the older `update` and `br land`.
 
-When the fetch finds the remote out of reach, the commands that mean something locally still work. `update` commits, `br create` and `br switch` and `br land` do their branch work, and each says what it skipped and that `sync` will publish it later. The commands that exist to publish - `sync`, `pr create`, `pr ok`, `release` - refuse up front and say what to do instead, rather than failing halfway through or reporting success having sent nothing.
+When the fetch finds the remote out of reach, the commands that mean something locally still work. `pullcom` commits, `br create` and `br switch` and `br merge` do their branch work, and each says what it skipped and that `sync` will publish it later. The commands that exist to publish - `sync`, `pr create`, `pr ok`, `release` - refuse up front and say what to do instead, rather than failing halfway through or reporting success having sent nothing.
 
 `repo create` and `repo connect` list the files they are about to publish before asking, since that is the one command that hands a whole directory over for the first time. The list is what `git add --all` will actually add, `.gitignore` and all - so a stray `.env` is visible while you can still say no.
 
@@ -168,13 +171,13 @@ gitsby br create Feature1
 ## ...Do work...
 
 ## Commit + pull; do this all day long
-gitsby update "wip"
+gitsby pullcom "wip"
 
 ## Also push, when ready to share to the upstream branch
 gitsby sync
 
 ## Merge into dev (--no-ff), push, delete the branch
-gitsby br land "Add Feature1"
+gitsby br merge "Add Feature1"
 ~~~
 
 Every mutating command fetches first, shows you the repo state and the exact git commands it is about to run, and asks before touching anything.
