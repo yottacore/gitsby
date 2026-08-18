@@ -1080,6 +1080,13 @@ Go port, later rounds. These wait until the round-one items above hold up.
 
 - ✋ Retire the scripted implementations and parity.bash together, once the Go leg passes everything. Probably a `legacy/` folder rather than deletion.
 	- Half done already: both scripts are frozen read-only as of 2026-08-18, so what's left is the move to `legacy/` and dropping parity.bash. See design.md, "Direction decisions".
+	- The CI/CD stack moves with them. Everything that still works keeps working from `legacy/cicd/`; what breaks gets ported to Go or dropped, decided file by file rather than up front.
+	- Sizing, so the decision is not re-derived later: `test.bash` 1983 lines and 524 assertions, `cicd.bash` 453, `fuzz.bash` 371, `release.bash` 278, `parity.bash` 234, `config.bash` 113, `cicd-win.ps1` 757, plus about 1,100 lines under `cicd/utility/`.
+	- Free wins, no porting: drop `parity.bash` (nothing left to compare once both scripts go) and `cicd-win.ps1` (it mirrors an engine that is leaving), which also ends the hand-synced lint globs.
+	- `test.bash` is the bulk of the work and the piece worth doing properly. It already tests the Go binary, and moving it gains per-case filtering, real failure diffs, and an explicitly built child environment instead of unsetting inherited state.
+	- Leave the demo gif generator alone - already portable, and its output is pinned byte for byte.
+	- Rework the fuzz suite at the same time; that is the deferred item just above.
+	- PowerShell was considered for the whole stack and rejected. Reasoning in design.md, "Direction decisions".
 
 - ✋ macOS build check on real ARM hardware, including whether signing/quarantine matters for a terminal download.
 

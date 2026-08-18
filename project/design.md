@@ -206,6 +206,15 @@ The Bash and PowerShell files are ports of each other, and were kept in step for
 	- The same lines `status` prints, from the same code, so the two cannot drift apart. That includes the rule that the Account line appears only for an account asked for or configured, never one merely inferred from the remote's owner.
 	- It answers outside a repository too. Which account a folder belongs to is worth knowing before there is anything in it, which is exactly when you are about to clone or create.
 
+- The CI/CD stack follows the implementation into Go, rather than becoming cross-platform PowerShell. Deferred until the Go build reaches parity.
+	- The stack is the last thing in the tree still written in the languages the product left behind: roughly 3,400 lines of Bash across `cicd/`, a 757-line PowerShell twin of the engine, and about 1,100 more lines of Bash under `cicd/utility/`.
+	- Among the options considered, PowerShell was rejected. A single pwsh engine would retire the hand-synced Windows copy, but only the interpreter is portable - the stack still shells out to git, gh, shellcheck, markdownlint and the rest, so the glue changes syntax without changing what it depends on. It also adds an interpreter that has to be installed, where Bash is already present everywhere the project builds and Go needs nothing at all.
+	- The test suite is the specific reason. It fakes `gh`, `git` and `uname` by writing shebang scripts onto PATH, which a process launched from .NET cannot execute on Windows - so a PowerShell port trades one platform trap for a new one. A compiled shim built into the temp directory has no such split.
+	- Hermetic setup gets stronger, not just shorter. The suite currently inherits the caller's environment and unsets its way back to clean, which is what let the config-injection bug through. Building the child environment explicitly makes that class of defect unreachable rather than guarded against.
+	- Two files are retired instead of ported: `parity.bash`, which exists only to compare the two frozen builds against each other, and `cicd-win.ps1`, whose reason to exist is the Bash engine it mirrors. The fuzz suite becomes a seed corpus for the toolchain's own fuzzer.
+	- What stays as it is: the demo gif generator, which is already portable and whose output is pinned byte for byte to a font stack and an optimizer, and the lint stage, which is genuinely better expressed as a shell pipeline than as compiled code.
+	- Timing is deliberate. Changing the harness and the thing it measures in the same window costs the port its reference point.
+
 ## Branching model
 
 Gitsby's own repo runs the model gitsby enforces, so the tool is its own first user.
