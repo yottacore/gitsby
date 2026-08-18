@@ -3,14 +3,13 @@
 <!-- markdownlint-disable MD033 -- No inline html -->
 <!-- markdownlint-disable MD055 -- Table pipe style [Expected: leading_and_trailing; Actual: leading_only; Missing trailing pipe] -->
 <!-- markdownlint-disable MD041 -- First line in a file should be a top-level heading -->
-# Requirements
+# Gitsby backlog
 
 This is a product backlog for the run-up to v2.0.0. After that release, bugs, features, and enhancements move to GitHub Issues.
 
-<!-- TOC ignore:true -->
-## Table of contents
 <!-- TOC -->
 
+- [Table of contents](#table-of-contents)
 - [Conventions](#conventions)
 - [Backlog](#backlog)
 	- [Misc to-do](#misc-to-do)
@@ -1048,11 +1047,11 @@ Release-prep pass over what changed since the last review: the noun grouping, `p
 
 Go port, later rounds. These wait until the round-one items above hold up.
 
-- 🛠️ Port the mutating commands (`update`/`sync`, `br create`/`land`/`prune`, `pr`, `repo`, `account apply`). Four slices, one branch each.
+- ✅ Port the mutating commands (`update`/`sync`, `br create`/`land`/`prune`, `pr`, `repo`, `account apply`). Four slices, one branch each.
 	- ✅ The mutating frame plus `update`, `sync`, `br prune`. The frame is the shared part: state, plan, confirm, run, state again, "Done." - and the commit/pull/push core the rest compose from. `br prune` now deletes rather than stopping at its plan. Go leg 249/189 -> 285/153.
 	- ✅ `br create` / `hotfix` / `switch` / `land`, with the hotfix back-merge and the shipped-code warning. Also the up-front branch-name and dirty-protected-branch refusals, and the `New branch ...:` state line. Go leg 285/153 -> 345/93.
 	- ✅ `pr create` / `pr ok`, and `release` with its version resolution and the nothing-new guard. Also the `GitHub (gh)` identity line, which only gh-backed commands print, and the gh-write account comparison behind it. Go leg 345/93 -> 385/53.
-	- 🔘 `repo clone` / `create` / `connect` / `url`, and `account list` / `apply`. (`account list` and the read form of `repo url` are still unported too - they sit with their writing halves.)
+	- ✅ `repo clone` / `create` / `connect` / `url`, and `account list` / `apply` - the includeIf writer, the fragment files, and the smaller no-repo headers (clone, connect-from-plain-dir, files-to-publish). With this the whole command surface is ported. Go leg 385/53 -> 438/0.
 
 - 🔘 Rename `update` -> `pullcom` and `br land` -> `br merge`, keeping the old spellings as aliases. After slice four.
 	- `sync` keeps its name; only its help line changes, to say it goes both ways.

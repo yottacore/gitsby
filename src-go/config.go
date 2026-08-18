@@ -28,6 +28,7 @@ var (
 	cfgPaths     []acctRule // 'path' rules: absolute folder claims
 	cfgSegments  []acctRule // 'pathContains' rules: machine-free folder-name runs
 	cfgUnknown   []string   // named but not understood - reported, never silent
+	cfgAcctOrder []string   // accounts in declaration order, for ones with keys but no folder rule
 )
 
 // Named by the identity block when the file held keys nothing reads.
@@ -160,6 +161,18 @@ func configFile() string {
 
 func pathExists(p string) bool { _, err := os.Stat(p); return err == nil }
 
+func isDir(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.IsDir()
+}
+
+// dirEmpty errs toward "empty": an unreadable directory lists nothing, same as
+// the scripts' 'ls -A', and whatever comes next fails on its own terms.
+func dirEmpty(p string) bool {
+	entries, err := os.ReadDir(p)
+	return err != nil || len(entries) == 0
+}
+
 func isRegularFile(p string) bool {
 	fi, err := os.Stat(p)
 	return err == nil && fi.Mode().IsRegular()
@@ -223,6 +236,16 @@ func loadConfig() {
 				}
 			case "ghaccount", "tokenfile", "sshkey", "name", "email", "protocol":
 				cfg[key] = value
+				known := false
+				for _, a := range cfgAcctOrder {
+					if a == acct {
+						known = true
+						break
+					}
+				}
+				if !known {
+					cfgAcctOrder = append(cfgAcctOrder, acct)
+				}
 			default:
 				// Named but not understood. Not fatal - a config from a newer gitsby
 				// still has to work - but never silent either: a mistyped key nothing
