@@ -189,6 +189,11 @@ func isReadableFile(p string) bool {
 
 var acctNameOK = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
+// Characters a shell would act on rather than pass through as part of a path.
+// '~' is deliberately absent: the shell expands it, and '~/.ssh/id_ed25519' is
+// how everyone writes a key path.
+const sshKeyShellChars = " \t\n\r\"'\\$;&|<>()*?![]{}" + "`"
+
 // loadConfig reads the config once. Flat 'key = value' lines, '#' comments,
 // blank lines ignored.
 func loadConfig() {
@@ -235,6 +240,15 @@ func loadConfig() {
 					cfgSegments = append(cfgSegments, acctRule{canonSegment(value), acct})
 				}
 			case "ghaccount", "tokenfile", "sshkey", "name", "email", "protocol":
+				// git hands GIT_SSH_COMMAND and core.sshCommand to a shell, so a key
+				// path carrying whitespace or a shell character is re-parsed there
+				// rather than used - and this file is redirectable by flag and by
+				// environment variable. Drop it and say so: quietly falling back to
+				// whatever key ssh picks is how you push as the wrong person.
+				if rest == "sshkey" && strings.ContainsAny(value, sshKeyShellChars) {
+					cfgUnknown = append(cfgUnknown, key+" (shell characters in the path)")
+					value = ""
+				}
 				cfg[key] = value
 				known := false
 				for _, a := range cfgAcctOrder {

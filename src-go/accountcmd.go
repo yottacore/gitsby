@@ -162,8 +162,13 @@ func accountManagedIncludes() []string {
 	}
 	canonDir := canonPath(dir)
 	var keys []string
-	for _, line := range runLines("git", "config", "--global", "--get-regexp", `^includeIf\..*\.path$`) {
-		key, value, found := strings.Cut(line, " ")
+	// --null, not the plain form: that one separates the key from the value with a
+	// space, and the key holds a folder path which can contain one. Every such rule
+	// came back truncated, so it was never recognised as ours - which made each
+	// re-run append a duplicate, and left a rule dropped from the config file
+	// applying forever. -z ends each record with a NUL and the key with a newline.
+	for _, record := range strings.Split(runOut("git", "config", "--global", "--get-regexp", "--null", `^includeIf\..*\.path$`), "\x00") {
+		key, value, found := strings.Cut(record, "\n")
 		if !found {
 			continue
 		}
@@ -293,41 +298,56 @@ func cmdAccountApply() {
 	}
 	for _, name := range accountNames() {
 		fragment := dir + "/" + name + ".gitconfig"
-		// Rewritten whole each time: these files are ours, and a leftover key from a
-		// removed account setting would be invisible and wrong.
-		_ = os.WriteFile(fragment, nil, 0o666)
+		// Every write is checked and every failure stops the run. This is the one
+		// command that writes outside the repo you are standing in, so it is the one
+		// place where a discarded exit code turns into a silent no-op: it said "Wrote"
+		// and exited 0 whatever happened.
+		if err := os.WriteFile(fragment, nil, 0o644); err != nil {
+			throwUsage("Couldn't write '" + fragment + "'. Check permissions on '" + dir + "'.")
+		}
+		write := func(key, value string) {
+			if !runInheritOK("git", "config", "--file", fragment, key, value) {
+				throwUsage("Couldn't write " + key + " into '" + fragment + "'; it is incomplete, and nothing further was applied.")
+			}
+		}
 		if acctUser := accountValue(name, "name"); acctUser != "" {
-			runInherit("git", "config", "--file", fragment, "user.name", acctUser)
+			write("user.name", acctUser)
 		}
 		if acctEmail := accountValue(name, "email"); acctEmail != "" {
-			runInherit("git", "config", "--file", fragment, "user.email", acctEmail)
+			write("user.email", acctEmail)
 		}
 		ghWho := accountValue(name, "ghAccount")
 		if ghWho != "" {
-			runInherit("git", "config", "--file", fragment, "gitsby.ghAccount", ghWho)
+			write("gitsby.ghAccount", ghWho)
 			// Which account plain git should ASK for over https. Without it the
 			// fragment covered the ssh half and left the https half to whichever
 			// credential the helper happened to hold first - so a bare 'git push' in a
 			// configured folder could still go out as someone else, which is the gap
 			// 'apply' exists to close. Naming the user is what makes a credential
 			// manager look up that account's entry rather than any entry for the host.
-			runInherit("git", "config", "--file", fragment, "credential.https://github.com.username", ghWho)
+			write("credential.https://github.com.username", ghWho)
 		}
 		if tokenFile := accountValue(name, "tokenFile"); tokenFile != "" {
-			runInherit("git", "config", "--file", fragment, "gitsby.ghTokenFile", tokenFile)
+			write("gitsby.ghTokenFile", tokenFile)
 		}
 		if sshKey := accountValue(name, "sshKey"); sshKey != "" {
-			runInherit("git", "config", "--file", fragment, "core.sshCommand", "ssh -i "+sshKey+" -o IdentitiesOnly=yes")
+			write("core.sshCommand", "ssh -i "+sshKey+" -o IdentitiesOnly=yes")
 		}
 		echoStatus("Wrote " + fragment)
 	}
 	// Drop ours before adding, so a folder rule that was removed from the config
-	// file stops applying.
+	// file stops applying. Each key was just listed out of the config, so a failure
+	// to remove one is real - and leaving it means the old rule keeps applying
+	// beside the new one.
 	for _, key := range accountManagedIncludes() {
-		_ = runOK("git", "config", "--global", "--unset-all", key)
+		if !runInheritOK("git", "config", "--global", "--unset-all", key) {
+			throwUsage("Couldn't remove the old rule '" + key + "' from your global git config; nothing further was applied.")
+		}
 	}
 	for _, rule := range accountApplyPlan() {
-		runInherit("git", "config", "--global", "--add", rule.cond, rule.target)
+		if !runInheritOK("git", "config", "--global", "--add", rule.cond, rule.target) {
+			throwUsage("Couldn't add '" + rule.cond + "' to your global git config.")
+		}
 		echoStatus("git config --global --add " + rule.cond)
 	}
 }

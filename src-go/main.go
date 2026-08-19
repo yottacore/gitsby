@@ -209,7 +209,19 @@ func main() {
 	// the network: the fetch below authenticates, so getting this wrong here gets
 	// it wrong for the whole command. This also validates --config/GITSBY_CONFIG,
 	// so it stays ahead of the not-yet refusal - same contract the scripts keep.
-	resolveAccount(originUrl())
+	acctUrl := originUrl()
+	// repo create/connect have no origin to read an owner from, but the repo they
+	// are about to publish to is on the command line - and it is that repo's owner
+	// whose account should do the publishing. Resolved here rather than after their
+	// own validation, because the validation itself talks to gh.
+	if acctUrl == "" && (cmdName == "repo-create" || cmdName == "repo-connect") && cmdArg != "" {
+		if ownerNameRE.MatchString(cmdArg) && !pathExists(cmdArg) {
+			acctUrl = githubUrl(cmdArg, "https")
+		} else {
+			acctUrl = cmdArg
+		}
+	}
+	resolveAccount(acctUrl)
 	// The probe inside it only feeds the identity block, so a run that prints none
 	// skips a live round trip.
 	selectAccount(!identityWillPrint())
@@ -234,6 +246,9 @@ func main() {
 		// nothing and are the commands you run to see what is wrong, so they report
 		// "unknown" instead of refusing.
 		if cmdName != "status" && cmdName != "identity" && cmdName != "br-list" && !strings.HasPrefix(cmdName, "repo-") && !strings.HasPrefix(cmdName, "account-") && runOK("git", "rev-parse", "-q", "--verify", "HEAD") {
+			// Same three exemptions, for the same reason: these are the names every
+			// command downstream hands git in a leading argument position.
+			refuseOptionShapedRefs(currentBranch(), defaultBranchCache, mergeTargetCache)
 			if defaultBranchCache == "" {
 				throwUsage("Can't tell this repo's default branch. Set it with 'git remote set-head origin --auto', or create a main/master.")
 			}
@@ -373,14 +388,6 @@ func main() {
 	// Prime the probe caches here, like the scripts prime them in-shell: every later
 	// use would otherwise repeat the round trip.
 	if isGhCommand {
-		// repo create/connect are the one case that learns something new here: with
-		// no origin yet there was no owner to read, and the target they are about to
-		// publish to is only settled during their own validation above. Everything
-		// else was resolved before the fetch.
-		if acctSource == "" && ghTarget != "" {
-			resolveAccount("https://github.com/" + ghTarget + ".git")
-			selectAccount(false)
-		}
 		// Only where the answer is read: the identity block names gh's account, and
 		// a write compares against it. A bare 'pr' or 'pr <n>' prints neither.
 		if isGhWrite || identityWillPrint() {
@@ -395,9 +402,10 @@ func main() {
 	// wrong-account mistake waiting to happen, and it is outward-facing. Refuse it
 	// unattended (nobody is there to read a warning); warn interactively, right
 	// before the prompt. --any-identity means the difference is intended.
-	identityMismatch := ""
+	identityMismatch, mismatchViaGh := "", false
 	if isGhWrite && !anyIdentity {
 		identityMismatch = identityMismatchText(ghLogin(), sshLogin(identityProbeUrl))
+		mismatchViaGh = identityMismatch != ""
 		// Up front, like every other refusal: don't show a plan we won't run.
 		if identityMismatch != "" && quiet {
 			throwUsage(identityMismatch + " Nothing was done. Re-run with --any-identity if that is intended.")
@@ -408,7 +416,7 @@ func main() {
 	// nothing at all. Only for an account that was CONFIGURED or asked for: one
 	// inferred from the remote's owner says nothing about who you are, and would
 	// fire for every single-account user cloning somebody else's repo.
-	if isMutating && !anyIdentity && identityMismatch == "" && acctGhWho != "" && (acctExplicit || acctName != "") {
+	if pushesToRemote() && !anyIdentity && identityMismatch == "" && acctGhWho != "" && (acctExplicit || acctName != "") {
 		pushLogin := sshLogin(originUrl())
 		if pushLogin != "" && pushLogin != "?" && pushLogin != acctGhWho {
 			identityMismatch = "This folder's account is '" + acctGhWho + "', but origin's key authenticates as '" + pushLogin + "'."
@@ -488,7 +496,12 @@ func main() {
 		echoClean("")
 		echoStatus("*** WRONG ACCOUNT? ***")
 		echoClean("  " + identityMismatch)
-		echoClean("  gh does the pull request work, so it happens as '" + ghLogin() + "'.")
+		// Only where gh is the one acting: the other gate is about the key git pushes
+		// with, on commands gh has nothing to do with - and it can reach here with no
+		// gh at all to name.
+		if mismatchViaGh {
+			echoClean("  gh does the GitHub side of this, so it happens as '" + ghLogin() + "'.")
+		}
 		echoClean("  Continue only if that is what you mean. (--any-identity silences this.)")
 	}
 	if !quiet {

@@ -57,12 +57,21 @@ func prPreflight() {
 		throwUsage("Detached HEAD (no current branch); resolve that manually first.")
 	}
 	if prSub == "ok" {
-		// 'pr ok <n>' can be run from anywhere, so ask gh which branch the PR
-		// proposes. Fall back to the current one if gh can't say.
-		prHeadBranch = runOut("gh", "pr", "view", prNum, "--json", "headRefName", "--jq", ".headRefName")
-		if prHeadBranch == "" {
-			prHeadBranch = prBranch
+		// 'pr ok <n>' can be run from anywhere, so ask gh which branch the PR proposes
+		// and whether it is still open. A gh that cannot answer used to fall back to
+		// the current branch, which made the plan confidently about the wrong thing and
+		// killed the run after it was confirmed - the exact shape preflight exists to
+		// prevent.
+		info, ok := runOutOK("gh", "pr", "view", prNum, "--json", "headRefName,state", "--jq", ".headRefName, .state")
+		fields := strings.Split(info, "\n")
+		if !ok || len(fields) != 2 || fields[0] == "" {
+			throwUsage("Can't read PR #" + prNum + "; check the number, and that gh can see this repo.")
 		}
+		prHeadBranch = fields[0]
+		if fields[1] != "OPEN" {
+			throwUsage("PR #" + prNum + " is " + strings.ToLower(fields[1]) + ", not open; there is nothing to accept.")
+		}
+		refuseOptionShapedRefs(prHeadBranch)
 		// gh merges what origin already has, then deletes the branch local and remote.
 		// Work that never reached origin is outside the PR and outside the merge -
 		// refuse, don't lose it.
@@ -72,10 +81,11 @@ func prPreflight() {
 			}
 			throwUsage("'" + prBranch + "' has changes that aren't on origin. Park them first: " + meName + " sync")
 		}
-		// Standing somewhere else doesn't make the PR's own branch safe: gh deletes it
-		// with 'branch -D', so unpushed commits on it go too, and 'sync' can't reach it
-		// from here.
-		if prBranch != prHeadBranch && branchExistsLocal(prHeadBranch) {
+		// Asked of the PR's own branch by name, wherever we are standing: gh deletes it
+		// with 'branch -D' either way, and '@{u}' above answers nothing at all for a
+		// branch that was pushed without -u - so standing on that one, the guard passed
+		// and the commits went with the branch.
+		if branchExistsLocal(prHeadBranch) {
 			if !branchExistsRemote(prHeadBranch) {
 				throwUsage("'" + prHeadBranch + "' is here but not on origin, so PR #" + prNum + " holds none of it - and it would be deleted. Push it first: git push -u origin " + prHeadBranch)
 			}
