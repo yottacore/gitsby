@@ -270,7 +270,7 @@ func selectAccount(skipGhProbe bool) {
 	// nothing already says which key to use: an explicit GIT_SSH_COMMAND, or one
 	// set on the repo, was chosen more deliberately than a folder rule was.
 	if sshKey := accountValue(acctName, "sshKey"); sshKey != "" &&
-		os.Getenv("GIT_SSH_COMMAND") == "" && runOut("git", "config", "--get", "core.sshCommand") == "" {
+		os.Getenv("GIT_SSH_COMMAND") == "" && coreSshCommand() == "" {
 		// IdentitiesOnly, or ssh offers every key the agent holds and the server
 		// picks the first that authenticates - on a two-account machine a coin toss.
 		os.Setenv("GIT_SSH_COMMAND", "ssh -i "+sshKey+" -o IdentitiesOnly=yes")

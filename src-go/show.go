@@ -29,17 +29,29 @@ func cappedList(name string, args ...string) {
 	cappedLines(outLines)
 }
 
-// cappedLines is the same treatment for lines we already hold.
-func cappedLines(outLines []string) {
-	const maxLines = 25
-	termWidth := 100
-	if isTTY(os.Stdout) {
-		if _, err := exec.LookPath("tput"); err == nil {
-			if w, err := strconv.Atoi(runOut("tput", "cols")); err == nil && w >= 40 {
-				termWidth = w
+// terminalWidth: asked once. Every capped list was spawning its own tput, and
+// measuring twice in one run would only let the plan and the after-shot wrap
+// differently.
+var terminalWidthCache = 0
+
+func terminalWidth() int {
+	if terminalWidthCache == 0 {
+		terminalWidthCache = 100
+		if isTTY(os.Stdout) {
+			if _, err := exec.LookPath("tput"); err == nil {
+				if w, err := strconv.Atoi(runOut("tput", "cols")); err == nil && w >= 40 {
+					terminalWidthCache = w
+				}
 			}
 		}
 	}
+	return terminalWidthCache
+}
+
+// cappedLines is the same treatment for lines we already hold.
+func cappedLines(outLines []string) {
+	const maxLines = 25
+	termWidth := terminalWidth()
 	shown := 0
 	for _, line := range outLines {
 		if shown >= maxLines {
@@ -73,13 +85,28 @@ func showIncoming() {
 	if !hasUpstream() {
 		return
 	}
-	behind, _ := strconv.Atoi(runOut("git", "rev-list", "--count", "HEAD..@{u}"))
+	_, behind := aheadBehind()
 	if behind == 0 {
 		return
 	}
 	echoClean("")
 	echoClean("Incoming (" + strconv.Itoa(behind) + " commit(s) to pull):")
 	cappedList("git", "diff", "--name-status", "HEAD..@{u}")
+}
+
+// identityWillPrint: whether this run reaches showIdentity at all. Every
+// mutating command previews the block, bar 'account apply', which shows the
+// account list instead; among the read-only ones only status and identity do.
+// It gates the live probes that feed the block and nothing else, so being
+// over-broad costs a round trip and never an answer.
+func identityWillPrint() bool {
+	if cmdName == "account-apply" {
+		return false
+	}
+	if isMutating {
+		return true
+	}
+	return cmdName == "status" || cmdName == "identity"
 }
 
 // showIdentity: who a remote-touching command will act as. Host aliases in
@@ -232,7 +259,7 @@ func showIdentity(remoteUrl string) {
 // the next command acts as. Directory and remote lead it because they are what
 // decides the answer.
 func cmdIdentity() {
-	remoteUrl := runOut("git", "remote", "get-url", "origin")
+	remoteUrl := originUrl()
 	remoteDisp := maskUrl(remoteUrl)
 	if remoteDisp == "" {
 		remoteDisp = "(none)"
@@ -248,7 +275,7 @@ func cmdIdentity() {
 // showStatus prints the state block. withIdentity: also show who we'll be on the
 // remote - pre-flight and 'status', but not the after-shot.
 func showStatus(withIdentity bool) {
-	remoteUrl := runOut("git", "remote", "get-url", "origin")
+	remoteUrl := originUrl()
 	remoteDisp := maskUrl(remoteUrl)
 	if remoteDisp == "" {
 		remoteDisp = "(none)"

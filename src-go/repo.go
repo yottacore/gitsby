@@ -108,7 +108,7 @@ func settleRepoUrl() bool {
 	if !inRepo {
 		throwUsage("Not inside a git repository. Change to a git project directory first.")
 	}
-	current := runOut("git", "remote", "get-url", "origin")
+	current := originUrl()
 	if current == "" {
 		throwUsage("No origin to re-spell. Connect one first: " + meName + " repo connect <url | owner/name>")
 	}
@@ -173,18 +173,18 @@ func settleRepoConnect() {
 	if !hasWork {
 		throwUsage("Nothing to publish here: no commits and no files.")
 	}
-	originUrl := ""
+	existingOrigin := ""
 	if inRepo {
-		originUrl = runOut("git", "remote", "get-url", "origin")
+		existingOrigin = originUrl()
 	}
-	if originUrl != "" {
+	if existingOrigin != "" {
 		if wantCreate {
-			throwUsage("origin is already set to '" + maskUrl(originUrl) + "', so there is no repo left to create. Push what you have with: " + meName + " repo connect")
+			throwUsage("origin is already set to '" + maskUrl(existingOrigin) + "', so there is no repo left to create. Push what you have with: " + meName + " repo connect")
 		}
-		if cmdArg != "" && !sameRemote(cmdArg, originUrl) {
-			throwUsage("origin is already set to '" + maskUrl(originUrl) + "'; changing remotes is raw-git territory.")
+		if cmdArg != "" && !sameRemote(cmdArg, existingOrigin) {
+			throwUsage("origin is already set to '" + maskUrl(existingOrigin) + "'; changing remotes is raw-git territory.")
 		}
-		connectMode, connectUrl = "push", originUrl
+		connectMode, connectUrl = "push", existingOrigin
 	} else if wantCreate {
 		if cmdArg == "" {
 			throwUsage("No target given. Syntax: " + meName + " repo create <owner/name>")
@@ -273,14 +273,14 @@ func cmdConnect() {
 // repo changes: same remote, same history, same name - only how git
 // authenticates to it.
 func cmdRepoUrl() {
-	url := runOut("git", "remote", "get-url", "origin")
+	url := originUrl()
 	runStep("git", "remote", "set-url", "origin", githubUrl(remoteTarget(url), cmdArg))
 }
 
 // cmdRepoUrlShow is the bare, read-only form: what origin is now, and its other
 // spelling if it has one.
 func cmdRepoUrlShow() {
-	urlNow := runOut("git", "remote", "get-url", "origin")
+	urlNow := originUrl()
 	urlTarget := remoteTarget(urlNow)
 	echoClean("")
 	echoClean("origin .......: " + maskUrl(urlNow))

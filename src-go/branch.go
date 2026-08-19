@@ -20,8 +20,47 @@ var (
 	mergeTargetCache   = ""
 )
 
-func currentBranch() string { return runOut("git", "branch", "--show-current") }
-func hasUpstream() bool     { return runOK("git", "rev-parse", "--abbrev-ref", "@{u}") }
+// The three questions asked over and over in one run: which branch, does it
+// track anything, and how far from it. Each is asked once and remembered; a step
+// that could move any of them forgets all three on its way out.
+var (
+	currentBranchCache = ""
+	currentBranchKnown = false
+	hasUpstreamCache   = false
+	hasUpstreamKnown   = false
+	aheadCache         = 0
+	behindCache        = 0
+	aheadBehindKnown   = false
+)
+
+func currentBranch() string {
+	if !currentBranchKnown {
+		currentBranchCache, currentBranchKnown = runOut("git", "branch", "--show-current"), true
+	}
+	return currentBranchCache
+}
+
+func hasUpstream() bool {
+	if !hasUpstreamKnown {
+		hasUpstreamCache, hasUpstreamKnown = runOK("git", "rev-parse", "--abbrev-ref", "@{u}"), true
+	}
+	return hasUpstreamCache
+}
+
+// aheadBehind: both directions against the upstream, in the one call that
+// answers for both - the branch line and the incoming list were each asking git
+// separately for the same number.
+func aheadBehind() (ahead, behind int) {
+	if !aheadBehindKnown {
+		aheadBehindKnown = true
+		aheadCache, behindCache = 0, 0
+		if counts := strings.Fields(runOut("git", "rev-list", "--left-right", "--count", "@{u}...HEAD")); len(counts) == 2 {
+			behindCache, _ = strconv.Atoi(counts[0])
+			aheadCache, _ = strconv.Atoi(counts[1])
+		}
+	}
+	return aheadCache, behindCache
+}
 
 // isAhead: -n 1 stops at the first commit - the count doesn't matter here.
 func isAhead() bool { return runOut("git", "rev-list", "-n", "1", "@{u}..") != "" }
@@ -54,12 +93,12 @@ func isProtectedBranch(branch string) bool {
 	return branch == "dev" && (branchExistsLocal("dev") || branchExistsRemote("dev"))
 }
 
-// isMergedInto: true when ref is already contained in any of the refs given.
+// isMergedInto: true when ref is already contained in any of the refs given. No
+// existence check first - merge-base fails on a ref that has since gone, which is
+// the same answer as skipping it, and asking separately meant one extra call per
+// branch per target every time through.
 func isMergedInto(ref string, into []string) bool {
 	for _, target := range into {
-		if !runOK("git", "rev-parse", "-q", "--verify", target) {
-			continue
-		}
 		if runOK("git", "merge-base", "--is-ancestor", ref, target) {
 			return true
 		}
@@ -161,11 +200,7 @@ func branchSync() string {
 	if !hasUpstream() {
 		return "(no upstream)"
 	}
-	behind, ahead := 0, 0
-	if counts := strings.Fields(runOut("git", "rev-list", "--left-right", "--count", "@{u}...HEAD")); len(counts) == 2 {
-		behind, _ = strconv.Atoi(counts[0])
-		ahead, _ = strconv.Atoi(counts[1])
-	}
+	ahead, behind := aheadBehind()
 	out := ""
 	if ahead > 0 {
 		out = "ahead " + strconv.Itoa(ahead)

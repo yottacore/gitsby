@@ -30,6 +30,40 @@ var (
 	identityProbeUrl = ""    // the url the ssh identity is read from
 )
 
+// origin's url, asked once. A preview alone wanted it half a dozen times, and it
+// can only change through a step, which forgets it - so the after-shot still
+// reads what the step left behind. Not for another repo: '-C <dir>' asks about a
+// different origin and must go direct.
+var (
+	originUrlCache = ""
+	originUrlKnown = false
+)
+
+func originUrl() string {
+	if !originUrlKnown {
+		originUrlCache, originUrlKnown = runOut("git", "remote", "get-url", "origin"), true
+	}
+	return originUrlCache
+}
+
+// hasOrigin: there is a remote called origin. get-url printing nothing and
+// get-url failing are the same answer.
+func hasOrigin() bool { return originUrl() != "" }
+
+// coreSshCommand: git's configured ssh command, read once - the account selector
+// and every ssh probe ask for the same value.
+var (
+	coreSshCommandCache = ""
+	coreSshCommandKnown = false
+)
+
+func coreSshCommand() string {
+	if !coreSshCommandKnown {
+		coreSshCommandCache, coreSshCommandKnown = runOut("git", "config", "--get", "core.sshCommand"), true
+	}
+	return coreSshCommandCache
+}
+
 // identityMismatchText says why the two identities disagree, or nothing. Only a
 // mismatch both sides KNOW about counts: '?' on either side means we couldn't
 // tell, which is not the same as being wrong.
@@ -117,7 +151,7 @@ func sshConnectTarget(url string) string {
 func gitSshCommand() string {
 	cmd := os.Getenv("GIT_SSH_COMMAND")
 	if cmd == "" {
-		cmd = runOut("git", "config", "--get", "core.sshCommand")
+		cmd = coreSshCommand()
 	}
 	if cmd == "" || strings.ContainsAny(cmd, `"'`) {
 		return "ssh"
@@ -245,7 +279,7 @@ func convertibleToHttps() bool {
 	if acctName == "" || preferredProtocol() != "https" {
 		return false
 	}
-	url := runOut("git", "remote", "get-url", "origin")
+	url := originUrl()
 	if sshTarget(url) == "" || remoteTarget(url) == "" {
 		return false
 	}
