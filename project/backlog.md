@@ -63,7 +63,10 @@ None open.
 
 ### Features and enhancements
 
-None open.
+- ✋ The repo's blurb, homepage and topics still describe the Bash and PowerShell product.
+	- They name both scripts and give the old command count, and the topics say `bash` rather than `go`.
+	- Deferred until the Go build is released on `main`. Until then the description would be ahead of what a visitor can actually download, which is worse than being behind.
+	- One command when the time comes: `gh repo edit --description ... --homepage ... --add-topic go --remove-topic bash`.
 
 ### Done
 
