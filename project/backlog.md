@@ -128,47 +128,6 @@ From a full review of the Go code, 20260818. gofmt, vet, staticcheck and the sui
 
 From a review against the standing directives, 20260819. Everything below was checked against the code, not inferred. gofmt, vet, staticcheck and the suite (617/0) are all clean, so none of this is tool-visible.
 
-- 🔘 Directive review 20260819 item 1: a second `account apply` deletes the rules and then gives up.
-	- Two accounts claiming the same folder produce the same rule key twice. The first removal takes both, the second finds nothing, and git's "nothing to remove" is read as a failure.
-	- End state is worse than before it ran: no rules at all, and an error.
-	- Nothing warns that two accounts claim one folder in the first place.
-
-- 🔘 Directive review 20260819 item 2: gitsby and plain git can resolve the same folder to different accounts.
-	- The two tie-breaks disagree when two accounts declare the same path. Gitsby goes by declaration order, git goes by what sorts last.
-	- That disagreement is the exact thing `apply` exists to prevent.
-
-- 🔘 Directive review 20260819 item 3: a bare repo, or a `.git` directory, passes the in-a-repo check.
-	- The question is asked of a command that answers in text and exits zero either way.
-	- `status` there prints a full state block ending in "working tree clean", which it has no business claiming. `pullcom` prints its whole plan, gets confirmed, then dies in git.
-
-- 🔘 Directive review 20260819 item 4: a token read from a file is never checked against the account it claims.
-	- The name comes from the config key, so a stale token file reports the right name and pushes as the wrong one.
-	- That is precisely the mistake the identity block exists to catch. With no `gh` installed at all it still names an account.
-
-- 🔘 Directive review 20260819 item 5: `--any-identity` quietly drops the commit identity and key.
-	- Account selection is skipped entirely, but the Account line still names the account as if it had been applied.
-	- Commits get authored by whatever git falls back to. The help only mentions the key mismatch, not the authorship.
-
-- 🔘 Directive review 20260819 item 6: `raw` names an account for a repo you only cloned.
-	- The gate accepts the remote-owner guess, so cloning someone else's repo prints "acting as <them>" - untrue, nothing was applied, and it tells a single-account user the feature exists.
-
-- 🔘 Directive review 20260819 item 7: `br prune` tries to delete remote branches while offline.
-	- `br merge` holds its remote delete back; prune has no such check.
-	- Each failed push is reported as "already gone", blaming the branch for a network problem, and the summary reads as if it finished.
-
-- 🔘 Directive review 20260819 item 8: `release` in a repo with no origin cuts a tag nobody can fetch, silently.
-	- The offline check never trips, because with no remote there is nothing to find unreachable.
-	- `sync` gets this right and says so; release just ends on "Done."
-
-- 🔘 Directive review 20260819 item 9: the pre-command fetch may refresh a remote nothing else reads.
-	- With no remote named, git follows the branch's own tracking remote. Every existence check afterwards reads origin.
-
-- 🔘 Directive review 20260819 item 10: the ssh-login cache ignores which remote it was asked about.
-	- One slot, no key, three different callers. Reachable through `repo connect` from outside a repo, where it produces a mismatch warning about an origin that does not exist.
-
-- 🔘 Directive review 20260819 item 11: `br switch` assumes a single remote.
-	- With two remotes carrying the same branch name git refuses to guess, and the up-front check does not notice because it only ever looks at origin.
-
 - 🔘 Directive review 20260819 item 12: the installers cannot find a release that is only a prerelease.
 	- Both the main route and the fallback ask the same endpoint, and that endpoint skips prereleases. So there is no fallback.
 	- The failure message blames rate limiting, which sends anyone debugging it the wrong way.
@@ -184,24 +143,12 @@ From a review against the standing directives, 20260819. Everything below was ch
 	- Re-installing over a copy that is currently running fails on both platforms.
 	- Staging in the destination directory and renaming over the target fixes both at once.
 
-- 🔘 Directive review 20260819 item 16: an unresolvable default branch is re-derived on every ask.
-	- The two branch lookups are the only cached values in the codebase with no "we already asked" flag, so a repo where the answer is empty repeats the whole five-command ladder each time.
-	- Measured: 38 processes for one `status`, 25 of them the same five commands over and over.
-
 - 🔘 Directive review 20260819 item 17: the lint summary reports warnings on a perfectly clean run.
 	- Its filter matches the test harness's own check labels, so a green pipeline reports seven warnings that do not exist.
 	- A warning that fires when nothing is wrong is worse than no warning.
 
 - 🔘 Directive review 20260819 item 18: `--quick` still cross-builds three platforms.
 	- It skips fuzz and the gif, which are not the slow part.
-
-- 🔘 Directive review 20260819 item 19: the hotfix warning watches a folder that no longer exists.
-	- It was written when the deliverable was `bin/gitsby`. A hotfix to the code that actually ships gets nothing.
-
-- 🔘 Directive review 20260819 item 20: file permissions are never checked, and one directory is created wide open.
-	- A token file readable by everyone loads without comment. ssh and gh both refuse or warn on that.
-	- The folder holding the per-account identity fragments is created 0777 and relies entirely on umask.
-	- A malformed inherited `GIT_CONFIG_COUNT` is read as zero, which half-overwrites whatever the caller set up. That variable is injected by the terminal here, so it is not hypothetical.
 
 ### Features and enhancements
 
@@ -780,6 +727,75 @@ Same review, 20260819. These are shape and process rather than defects.
 	- Fixed: all three, in the moved text.
 
 #### Done - Directive review 20260819
+
+The defects, 1-20. Eighteen new suite checks, each verified against the build that preceded the fix; the suite went 617 -> 636.
+
+- ✅ Directive review 20260819 item 1: a second `account apply` deletes the rules and then gives up.
+	- Two accounts claiming the same folder produce the same rule key twice. The first removal takes both, the second finds nothing, and git's "nothing to remove" is read as a failure.
+	- End state is worse than before it ran: no rules at all, and an error.
+	- Nothing warns that two accounts claim one folder in the first place.
+	- Fixed: the key list is deduped, and git's exit 5 ("nothing to remove") is read as the end state it is rather than as a failure. `account list` now names any folder more than one account claims.
+
+- ✅ Directive review 20260819 item 2: gitsby and plain git can resolve the same folder to different accounts.
+	- The two tie-breaks disagree when two accounts declare the same path. Gitsby goes by declaration order, git goes by what sorts last.
+	- That disagreement is the exact thing `apply` exists to prevent.
+	- Fixed: the plan is ordered by declaration index, reversed, so the rule gitsby keeps is the last one git sees. Checked both ways in the suite.
+
+- ✅ Directive review 20260819 item 3: a bare repo, or a `.git` directory, passes the in-a-repo check.
+	- The question is asked of a command that answers in text and exits zero either way.
+	- `status` there prints a full state block ending in "working tree clean", which it has no business claiming. `pullcom` prints its whole plan, gets confirmed, then dies in git.
+	- Fixed: one `rev-parse` call answers all three questions in text; a bare repo and the `.git` directory are each refused by name, whatever the command.
+
+- ✅ Directive review 20260819 item 4: a token read from a file is never checked against the account it claims.
+	- The name comes from the config key, so a stale token file reports the right name and pushes as the wrong one.
+	- That is precisely the mistake the identity block exists to catch. With no `gh` installed at all it still names an account.
+	- Fixed: a token from gh's own store still short-circuits; one from a file is probed with the token exported, and the block says either who it really belongs to or that it couldn't be checked.
+
+- ✅ Directive review 20260819 item 5: `--any-identity` quietly drops the commit identity and key.
+	- Account selection is skipped entirely, but the Account line still names the account as if it had been applied.
+	- Commits get authored by whatever git falls back to. The help only mentions the key mismatch, not the authorship.
+	- Fixed: the Account line says the selection was skipped and what that leaves in place. Behavior is unchanged - what it did was never the problem.
+
+- ✅ Directive review 20260819 item 6: `raw` names an account for a repo you only cloned.
+	- The gate accepts the remote-owner guess, so cloning someone else's repo prints "acting as <them>" - untrue, nothing was applied, and it tells a single-account user the feature exists.
+	- Fixed: the same test the identity block uses, so nothing is claimed for a name merely inferred from the remote's owner.
+
+- ✅ Directive review 20260819 item 7: `br prune` tries to delete remote branches while offline.
+	- `br merge` holds its remote delete back; prune has no such check.
+	- Each failed push is reported as "already gone", blaming the branch for a network problem, and the summary reads as if it finished.
+	- Fixed: the remote half is skipped while origin is unreachable and says so by name; the local deletes still happen.
+
+- ✅ Directive review 20260819 item 8: `release` in a repo with no origin cuts a tag nobody can fetch, silently.
+	- The offline check never trips, because with no remote there is nothing to find unreachable.
+	- `sync` gets this right and says so; release just ends on "Done."
+	- Fixed: refused up front, naming `repo connect`. No tag is cut.
+
+- ✅ Directive review 20260819 item 9: the pre-command fetch may refresh a remote nothing else reads.
+	- With no remote named, git follows the branch's own tracking remote. Every existence check afterwards reads origin.
+	- Fixed: the fetch names origin. Caught by a repo whose branch tracks a second remote.
+
+- ✅ Directive review 20260819 item 10: the ssh-login cache ignores which remote it was asked about.
+	- One slot, no key, three different callers. Reachable through `repo connect` from outside a repo, where it produces a mismatch warning about an origin that does not exist.
+	- Fixed: keyed by remote URL. No dedicated check - reaching it needs three remotes and a stubbed ssh in one run, and the shape is the same one the other caches already use.
+
+- ✅ Directive review 20260819 item 11: `br switch` assumes a single remote.
+	- With two remotes carrying the same branch name git refuses to guess, and the up-front check does not notice because it only ever looks at origin.
+	- Fixed: one helper decides how a branch gets checked out, and the plan prints what the command will run. Applies everywhere a remote-only branch can be checked out, not just `br switch`.
+
+- ✅ Directive review 20260819 item 16: an unresolvable default branch is re-derived on every ask.
+	- The two branch lookups are the only cached values in the codebase with no "we already asked" flag, so a repo where the answer is empty repeats the whole five-command ladder each time.
+	- Measured: 38 processes for one `status`, 25 of them the same five commands over and over.
+	- Fixed: every cached answer now pairs a value with a "we already asked" flag, so an empty answer is remembered like any other. Came free with the shape work in item 21.
+
+- ✅ Directive review 20260819 item 19: the hotfix warning watches a folder that no longer exists.
+	- It was written when the deliverable was `bin/gitsby`. A hotfix to the code that actually ships gets nothing.
+	- Fixed: it watches `src-go/`, named once beside the reason. The two suite checks were pointed at the same place.
+
+- ✅ Directive review 20260819 item 20: file permissions are never checked, and one directory is created wide open.
+	- A token file readable by everyone loads without comment. ssh and gh both refuse or warn on that.
+	- The folder holding the per-account identity fragments is created 0777 and relies entirely on umask.
+	- A malformed inherited `GIT_CONFIG_COUNT` is read as zero, which half-overwrites whatever the caller set up. That variable is injected by the terminal here, so it is not hypothetical.
+	- Fixed: the fragment directory is 0700 and the fragments 0600; a token file other users can read is called out by name; a GIT_CONFIG_COUNT that isn't a count stops the run instead of half-overwriting the caller's block.
 
 The Go shape items, 21-25. One problem wearing four hats: gathering the run's state into a struct is the change the other three followed from.
 

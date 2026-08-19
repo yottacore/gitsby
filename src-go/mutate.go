@@ -171,7 +171,15 @@ func (a *app) cmdPrune() error {
 		}
 		doneLocal++
 	}
-	for _, branch := range a.prune.remote {
+	remote := a.prune.remote
+	if len(remote) > 0 && a.isOffline() {
+		// Same rule br merge keeps: nothing goes out while origin is unreachable. Each
+		// push would fail and be reported as "already gone", blaming the branch for a
+		// network problem, and the count at the end would read as if it had finished.
+		a.out.status("WARNING: remote unreachable; left origin's copies of " + strings.Join(remote, ", ") + " alone - '" + meName + " br prune' again once online.")
+		remote = nil
+	}
+	for _, branch := range remote {
 		// "Leaving it alone" has to mean the remote copy too, or the message is a lie.
 		if reKept[branch] {
 			continue

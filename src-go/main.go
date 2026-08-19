@@ -180,7 +180,21 @@ func (a *app) settleCommand(argv []string) error {
 // 'identity' too: which account a folder belongs to is worth asking before there
 // is a repo in it.
 func (a *app) enterRepo() error {
-	a.inRepo = runOK("git", "rev-parse", "--is-inside-work-tree")
+	// One call, three answers. The exit code is no use here: rev-parse answers all
+	// of these in text and exits zero either way, so success says only that we are
+	// somewhere git understands - which a bare repo and the .git directory itself
+	// both are, and neither is a place where any of this means anything. A bare one
+	// answers true to --is-inside-git-dir as well, so it has to be named first.
+	answers := runLines("git", "rev-parse", "--is-inside-work-tree", "--is-inside-git-dir", "--is-bare-repository")
+	if len(answers) == 3 {
+		if answers[2] == "true" {
+			return usagef("This is a bare repository: no working tree, so there is nothing here to commit, switch or push. Work in a clone of it instead.")
+		}
+		if answers[1] == "true" {
+			return usagef("This is the '.git' directory itself, not the work tree. Change up out of it first.")
+		}
+	}
+	a.inRepo = len(answers) == 3 && answers[0] == "true"
 	if a.inRepo || a.cmd.name == "identity" ||
 		strings.HasPrefix(a.cmd.name, "repo-") || strings.HasPrefix(a.cmd.name, "account-") {
 		return nil
@@ -286,6 +300,11 @@ func (a *app) preflight() error {
 			return err
 		}
 	case "release":
+		// With no remote at all the check below never trips - there is nothing to find
+		// unreachable - and the tag would be cut, pushed nowhere, and reported as done.
+		if !a.hasOrigin() {
+			return usagef("No 'origin' remote, and a release nobody can fetch isn't one. Connect one first: %s repo connect <url | owner/name>", meName)
+		}
 		if err := a.requireOnline("release", "A release nobody can fetch isn't one."); err != nil {
 			return err
 		}
@@ -647,7 +666,10 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 	}
 	// One line, on stderr, so a pipeline reading stdout sees only the tool.
 	// Silence is what '-q' is for.
-	if !a.opt.quiet && a.acct.ghWho != "" && a.acct.source != "" {
+	// The same test the identity block uses: a name inferred from the remote's owner
+	// is not a claim that we act as them, and saying so tells a single-account user
+	// about a feature they never asked for.
+	if !a.opt.quiet && a.acct.ghWho != "" && a.accountDecidedSomething() {
 		a.out.errorf("acting as %s (from %s)", a.acct.ghWho, a.acct.source)
 	}
 	return a.handover(tool, args)

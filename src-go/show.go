@@ -149,10 +149,20 @@ func (a *app) showAccountLine() {
 	}
 	// Say plainly when the name above is only what we resolved. Without this the
 	// block named an account nothing was actually acting as.
-	if a.acct.noToken {
+	switch {
+	case a.acct.bypassed:
+		line += " - NOT applied: --any-identity, so the token, the key and the commit author all stay as they already were"
+	case a.acct.noToken:
 		line += " - NOT applied: no token for it here, so gh acts as its own account"
+	case a.acct.tokenWho == "?":
+		line += " - couldn't check that the token is theirs (gh unreachable, or not installed)"
+	case a.acct.tokenWho != "" && a.acct.tokenWho != a.acct.ghWho:
+		line += " - but the token file authenticates as '" + a.acct.tokenWho + "'"
 	}
 	a.out.clean("Account ......: " + line)
+	if a.acct.looseTokenFile != "" {
+		a.out.clean("              : WARNING: " + a.acct.looseTokenFile + " is readable by other users on this machine; chmod 600 it.")
+	}
 	// This repo could authenticate with the account's token instead of a key, and
 	// doesn't. Worth one line, because it is the whole point of configuring accounts
 	// this way - and setting 'protocol = ssh' answers the question, so nobody hears

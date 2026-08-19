@@ -130,7 +130,7 @@ func (a *app) cmdRelease() error {
 	}
 	if devBranch != "" && a.currentBranch() != devBranch {
 		// Freshen dev so the release has all of it.
-		if err := a.step("git", "checkout", devBranch); err != nil {
+		if err := a.checkout(devBranch); err != nil {
 			return err
 		}
 		if err := a.pullIfOnline(); err != nil {
@@ -138,7 +138,7 @@ func (a *app) cmdRelease() error {
 		}
 	}
 	if a.currentBranch() != mainBranch {
-		if err := a.step("git", "checkout", mainBranch); err != nil {
+		if err := a.checkout(mainBranch); err != nil {
 			return err
 		}
 	}
@@ -179,7 +179,7 @@ func (a *app) cmdRelease() error {
 		if !runOK("git", "merge-base", "--is-ancestor", devBranch, mainBranch) {
 			a.out.status("WARNING: '" + devBranch + "' gained commits during the release; leaving it as-is.")
 		} else {
-			if err := a.step("git", "checkout", devBranch); err != nil {
+			if err := a.checkout(devBranch); err != nil {
 				return err
 			}
 			if err := a.step("git", "merge", "--ff-only", mainBranch); err != nil {
@@ -194,7 +194,7 @@ func (a *app) cmdRelease() error {
 	}
 	// Don't leave the user parked on main.
 	if startBranch != "" && startBranch != a.currentBranch() && startBranch != mainBranch {
-		return a.step("git", "checkout", startBranch)
+		return a.checkout(startBranch)
 	}
 	return nil
 }
