@@ -135,7 +135,7 @@ func cmdRelease() {
 	// The branch has to reach origin, not just the tag - otherwise origin gets the
 	// commits as tag payload while its main still points at the old release. Same
 	// trap as land's.
-	if runOK("git", "remote", "get-url", "origin") {
+	if hasOrigin() {
 		if hasUpstream() {
 			runStep("git", "push")
 		} else {

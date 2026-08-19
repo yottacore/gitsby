@@ -105,7 +105,7 @@ func preview(what string) {
 		echoClean(pad + "git clone " + maskUrl(cloneUrl) + " " + cloneDir)
 		echoClean(pad + "git -C " + cloneDir + " checkout dev *")
 	case "repo-url":
-		echoClean(pad + "git remote set-url origin " + githubUrl(remoteTarget(runOut("git", "remote", "get-url", "origin")), cmdArg))
+		echoClean(pad + "git remote set-url origin " + githubUrl(remoteTarget(originUrl()), cmdArg))
 	case "account-apply":
 		// Names every file and every condition, because this is the one command
 		// that writes outside the repo you are standing in - into your own global

@@ -78,7 +78,7 @@ func pullIfOnline(extra ...string) {
 // next (br switch, land), and a 'sync' from wherever you end up would publish
 // that branch, not this one.
 func pushIfOnline() {
-	if !runOK("git", "remote", "get-url", "origin") {
+	if !hasOrigin() {
 		echoStatus("No 'origin' remote; nothing to push.")
 		return
 	}
@@ -105,7 +105,7 @@ func requireOnline(cmd, instead string) {
 // publishBranch is a new branch's own first push, which is separate from the park
 // push above it.
 func publishBranch(branch string) {
-	if !runOK("git", "remote", "get-url", "origin") {
+	if !hasOrigin() {
 		return
 	}
 	if isOffline() {

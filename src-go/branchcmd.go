@@ -91,7 +91,7 @@ func cmdMerge() {
 	// loses its only ref to those commits. Publish an upstream-less target first.
 	mergePublished := false
 	switch {
-	case !runOK("git", "remote", "get-url", "origin"):
+	case !hasOrigin():
 	case isOffline():
 		// A hotfix ends on dev after the back-merge, so a bare 'sync' from there would
 		// publish dev and leave the default branch - the branch the hotfix exists to fix

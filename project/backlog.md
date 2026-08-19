@@ -108,14 +108,21 @@ From a full review of the Go code, 20260818. gofmt, vet, staticcheck and the sui
 
 ### Features and enhancements
 
-- 🔘 Code Review 20260818 item 14: skip the identity network probe when no identity block will print.
-	- Every token-configured run pays a live `gh api user` round trip; `br list`, `account list` and bare `pr` never show what it feeds. The skip parameter already exists and is never used - wire it per command. The single largest everyday saving.
+- ✅ Code Review 20260818 item 14: skip the identity network probe when no identity block will print.
+	- Every token-configured run paid a live `gh api user` round trip; `br list`, `account list` and bare `pr` never show what it feeds.
+	- One predicate now answers "does this run reach the identity block", and both the probe and the later prime read it.
+	- Measured with an account configured: `br list` 12 -> 11 spawns, `account list` 14 -> 11, `repo url` 13 -> 10. The one dropped from each is the network call.
 
-- 🔘 Code Review 20260818 item 15: cache the handful of git answers asked repeatedly per run.
-	- `remote get-url origin` up to six times in one `sync`; the current branch up to ten times in one `br merge`; upstream state and behind-count each derived twice in `status`. One cache each, invalidated by the few writers, makes previews spawn-free.
+- ✅ Code Review 20260818 item 15: cache the handful of git answers asked repeatedly per run.
+	- Origin's url, the current branch, upstream state, ahead/behind, git's ssh command, the context directory and the terminal width are each asked once now.
+	- Ahead and behind came from two separate calls asking git the same thing; one call answers both.
+	- Invalidated centrally by the runners that execute a step, not by each writer by hand - a step is exactly what can make an answer stale, and a future one gets it for free.
+	- Measured: `status` 20 -> 17 spawns, `sync` 32 -> 25, `pullcom` 28 -> 24.
 
-- 🔘 Code Review 20260818 item 16: two per-branch spawn loops left in `br prune`.
-	- The survey's remote-existence check is already answered by the merged map it consults next; the delete loop re-verifies the same target refs for every branch. Both hoist or drop cleanly.
+- ✅ Code Review 20260818 item 16: two per-branch spawn loops left in `br prune`.
+	- The survey's remote-existence check was already answered by the merged map beside it, and the delete loop re-verified the same target refs once per branch.
+	- Dropping the verify costs nothing: merge-base against a ref that has gone fails, which is the same answer.
+	- Measured on five merged branches: 69 -> 52 spawns, and the gap widens with the branch count.
 
 - 🔘 Code Review 20260818 item 17: least-surprise paper cuts, one sweep.
 	- `release` with nothing new exits 1 where every sibling's nothing-to-do exits 0 - and the About text promises idempotent re-runs.
@@ -127,7 +134,7 @@ From a full review of the Go code, 20260818. gofmt, vet, staticcheck and the sui
 	- An option typed between `raw` and the tool is called an unknown subcommand.
 
 - 🔘 Code Review 20260818 item 18: dead code and stale comments, one sweep.
-	- Unreachable option-value arm plus its dead variable in the parser; two dead branches in the prompt helper; an empty-message fallback nobody passes; a handover error message a preceding check makes unreachable; a comment describing a superseded key-splitting contract; a redundant existence re-check in the prune survey; a near-verbatim duplicated comment in main.
+	- Unreachable option-value arm plus its dead variable in the parser; two dead branches in the prompt helper; an empty-message fallback nobody passes; a handover error message a preceding check makes unreachable; a comment describing a superseded key-splitting contract; a near-verbatim duplicated comment in main. (The prune survey's redundant re-check went with item 16.)
 
 Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. Work top to bottom; everything happens on branches off `gover`, nothing touches the scripted implementations yet.
 

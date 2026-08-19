@@ -28,7 +28,8 @@ func resolvePrune() {
 	if branchExistsLocal(target) {
 		pruneTargetRefs = append(pruneTargetRefs, "refs/heads/"+target)
 	}
-	if branchExistsRemote(target) {
+	haveTargetRemote := branchExistsRemote(target)
+	if haveTargetRemote {
 		pruneTargetRefs = append(pruneTargetRefs, targetRemoteRef)
 	}
 	current := currentBranch()
@@ -44,7 +45,7 @@ func resolvePrune() {
 		}
 	}
 	mergedRemote := map[string]bool{}
-	if runOK("git", "rev-parse", "-q", "--verify", targetRemoteRef) {
+	if haveTargetRemote {
 		for _, branch := range runLines("git", "for-each-ref", "--format=%(refname:short)", "--merged", targetRemoteRef, "refs/remotes/origin/") {
 			mergedRemote[branch] = true
 		}
@@ -66,7 +67,9 @@ func resolvePrune() {
 			pruneLocal = append(pruneLocal, branch)
 			// The remote copy goes only when origin has the merge too: a landing that
 			// hasn't been pushed yet leaves origin holding the only ref to that work.
-			if branchExistsRemote(branch) && mergedRemote["origin/"+branch] {
+			// The map was built by listing refs/remotes/origin, so being in it already
+			// says the remote branch is there - no second ref lookup per branch.
+			if mergedRemote["origin/"+branch] {
 				pruneRemote = append(pruneRemote, branch)
 			}
 		} else {

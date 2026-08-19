@@ -105,7 +105,7 @@ func printHelp() {
 // output must get that output and nothing else.
 func cmdPassthrough(tool string, args []string) {
 	mustBeInPath(tool)
-	resolveAccount(runOut("git", "remote", "get-url", "origin"))
+	resolveAccount(originUrl())
 	selectAccount(true)
 	// One line, on stderr, so a pipeline reading stdout sees only the tool.
 	// Silence is what '-q' is for.
@@ -209,13 +209,15 @@ func main() {
 	// the network: the fetch below authenticates, so getting this wrong here gets
 	// it wrong for the whole command. This also validates --config/GITSBY_CONFIG,
 	// so it stays ahead of the not-yet refusal - same contract the scripts keep.
-	resolveAccount(runOut("git", "remote", "get-url", "origin"))
-	selectAccount(false)
+	resolveAccount(originUrl())
+	// The probe inside it only feeds the identity block, so a run that prints none
+	// skips a live round trip.
+	selectAccount(!identityWillPrint())
 
 	// Freshen remote refs so status/ahead-behind info is current. Never fatal -
 	// offline still works locally. clone skips it: cwd may sit inside some
 	// unrelated repo, and the clone doesn't care about it.
-	if doFetch && cmdName != "repo-clone" && !strings.HasPrefix(cmdName, "account-") && runOK("git", "remote", "get-url", "origin") {
+	if doFetch && cmdName != "repo-clone" && !strings.HasPrefix(cmdName, "account-") && hasOrigin() {
 		echoStatus("git fetch ...")
 		fetchRemote()
 	}
@@ -351,7 +353,7 @@ func main() {
 		isGhCommand = true
 		if prSub != "" {
 			isGhWrite = true
-			identityProbeUrl = runOut("git", "remote", "get-url", "origin")
+			identityProbeUrl = originUrl()
 		}
 	case "repo-create":
 		isGhCommand, isGhWrite = true, true
@@ -379,7 +381,11 @@ func main() {
 			resolveAccount("https://github.com/" + ghTarget + ".git")
 			selectAccount(false)
 		}
-		_ = ghLogin()
+		// Only where the answer is read: the identity block names gh's account, and
+		// a write compares against it. A bare 'pr' or 'pr <n>' prints neither.
+		if isGhWrite || identityWillPrint() {
+			_ = ghLogin()
+		}
 	}
 	if isGhWrite {
 		_ = sshLogin(identityProbeUrl)
@@ -403,7 +409,7 @@ func main() {
 	// inferred from the remote's owner says nothing about who you are, and would
 	// fire for every single-account user cloning somebody else's repo.
 	if isMutating && !anyIdentity && identityMismatch == "" && acctGhWho != "" && (acctExplicit || acctName != "") {
-		pushLogin := sshLogin(runOut("git", "remote", "get-url", "origin"))
+		pushLogin := sshLogin(originUrl())
 		if pushLogin != "" && pushLogin != "?" && pushLogin != acctGhWho {
 			identityMismatch = "This folder's account is '" + acctGhWho + "', but origin's key authenticates as '" + pushLogin + "'."
 			if quiet {

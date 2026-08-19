@@ -361,10 +361,17 @@ func accountValue(name, key string) string {
 // contextDir is what "here" means for folder matching: the repo's top level when
 // in one, so every subdirectory resolves to the same account, and the working
 // directory when not - which is what a fresh 'repo clone' has to go on.
+var (
+	contextDirCache = ""
+	contextDirKnown = false
+)
+
 func contextDir() string {
-	if top := runOut("git", "rev-parse", "--show-toplevel"); top != "" {
-		return top
+	if !contextDirKnown {
+		contextDirKnown = true
+		if contextDirCache = runOut("git", "rev-parse", "--show-toplevel"); contextDirCache == "" {
+			contextDirCache, _ = os.Getwd()
+		}
 	}
-	wd, _ := os.Getwd()
-	return wd
+	return contextDirCache
 }

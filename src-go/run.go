@@ -16,6 +16,20 @@ import (
 	"strings"
 )
 
+// forgetRepoState drops every answer read once and remembered. Called by each of
+// the runners below that actually runs something at the user's behest, rather
+// than by each writer by hand: a step we announce is exactly the thing that can
+// invalidate them, and a future one gets this for free instead of having to
+// remember. The plain readers don't call it - they are what fills the caches.
+func forgetRepoState() {
+	originUrlKnown = false
+	coreSshCommandKnown = false
+	currentBranchKnown = false
+	hasUpstreamKnown = false
+	aheadBehindKnown = false
+	contextDirKnown = false
+}
+
 // runOut captures a command's stdout, trimmed. Any failure is simply no output -
 // the callers all treat empty as "no answer", never as an error to report.
 func runOut(name string, args ...string) string {
@@ -45,6 +59,7 @@ func runLines(name string, args ...string) []string {
 // runInherit streams a command straight to our stdio and carries on regardless -
 // for listings whose output IS the point and whose failure has nothing to add.
 func runInherit(name string, args ...string) {
+	forgetRepoState()
 	cmd := exec.Command(name, args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	_ = cmd.Run()
@@ -54,6 +69,7 @@ func runInherit(name string, args ...string) {
 // print it. A tool that never started counts as a plain failure - the PATH check
 // upstream is what catches a missing one.
 func runInheritRC(name string, args ...string) int {
+	forgetRepoState()
 	cmd := exec.Command(name, args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	err := cmd.Run()
@@ -78,6 +94,7 @@ func runInheritOK(name string, args ...string) bool {
 // reserved for unexpected errors. Display copy is masked per argument, so a
 // credentialed URL never prints its token in the announcement or the failure.
 func runStep(name string, args ...string) {
+	forgetRepoState()
 	disp := maskUrl(name)
 	for _, arg := range args {
 		disp += " " + maskUrl(arg)
