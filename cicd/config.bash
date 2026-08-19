@@ -35,6 +35,7 @@ GO_MODULE_DIR="src-go"
 ## just gets a compile check. legacy/ is deliberately absent from every glob: it is frozen,
 ## so a newer shellcheck finding there is noise nobody is allowed to fix.
 SHELL_LINT_GLOBS=(
+	"install.bash"
 	"cicd/*.bash"
 	"cicd/utility/*.bash"
 	"cicd/utility/n8git_backup-and-publish"
@@ -51,6 +52,12 @@ MD_LINT_GLOBS=(
 )
 PY_LINT_FILES=(
 	"cicd/utility/demo/gen-demo-gif.py"
+)
+## PowerShell (probe-gated: needs pwsh + the PSScriptAnalyzer module). Back after the
+## scripted build was frozen: the installer is the one piece of PowerShell that still
+## ships, because it is the only shell every Windows box already has.
+PS_LINT_GLOBS=(
+	"install.ps1"
 )
 
 ## Stage 2: build + regression tests. The suite runs against the compiled binary and gates.
@@ -107,6 +114,8 @@ RELEASE_TARGETS=(
 	"windows/arm64"
 	"darwin/amd64"
 	"darwin/arm64"
+	"freebsd/amd64"
+	"freebsd/arm64"
 )
 
 ## Stage 5: demo gif. Types the scenario's command into a fake terminal, runs it
@@ -140,3 +149,4 @@ PUBLISH_AUTO_MESSAGE=""
 ##	History:
 ##		- 2026-07-22 JC: Created.
 ##		- 2026-08-18 JC: Go-specific. The scripts moved to legacy/ and left the lint globs with them; dogfood builds three targets instead of copying one script; parity became a stage, comparing the Go build against the frozen one.
+##		- 2026-08-19 JC: The installer is back at the repo root, so its two files are linted again - the root install.bash under shellcheck, install.ps1 under a restored PSScriptAnalyzer glob. FreeBSD joins the release matrix, since it cross-builds for free and the installer would otherwise have nothing to offer a BSD.

@@ -1438,6 +1438,85 @@ GHEOF
 			bash -c "grep -q 'byte\[\]' '${instPs}'"
 	fi
 
+	## The shipping installers, at the repo root. What they fetch is a per-platform binary, so
+	## everything below the argument parse - the release lookup, SHA256SUMS, the plan - needs the
+	## network. These checks stop short of it: parsing, the refusals, and the pins on the parts a
+	## live run would have to reach. The download-checksum-run contract itself is proved by
+	## release.bash phase 3, against a real published release.
+	local goInst="${root}/install.bash"
+	fAssert     "go installer --help works"                   bash -c "bash '${goInst}' --help"
+	fAssertOut  "and documents --target"                      '\-\-target user\|system'  bash -c "bash '${goInst}' --help"
+	fAssertOut  "and documents --arch"                        '\-\-arch amd64\|arm64'    bash -c "bash '${goInst}' --help"
+	fAssertOut  "and documents --tag"                         '\-\-tag TAG'               bash -c "bash '${goInst}' --help"
+	fAssertOut  "go installer refuses a bad --target"         "\-\-target takes"          bash -c "bash '${goInst}' --target bogus"
+	fAssertOut  "go installer refuses a valueless --target"   "\-\-target needs a value"  bash -c "bash '${goInst}' --target"
+	## --arch names the asset now rather than being accepted and ignored, so the two spellings
+	## the release publishes are the two it takes.
+	fAssertOut  "go installer refuses a bad --arch"           "\-\-arch takes"            bash -c "bash '${goInst}' --arch sparc"
+	## '--release dev' installed the tip of a branch while the product was a script. A branch has
+	## no build behind it now, so the flag is answered by name rather than left to fail as an
+	## unknown option - the same treatment --offline got.
+	fAssertOut  "go installer names the dropped --release dev" 'no .--release dev. any more' bash -c "bash '${goInst}' --release dev"
+	fAssertOut  "and says so before touching the network"      'build the tip yourself'      bash -c "bash '${goInst}' --release dev"
+	fAssertOut  "go installer refuses any other --release"     'now takes neither'           bash -c "bash '${goInst}' --release beta"
+	## A tag is interpolated into a download URL, so a path-shaped one installs a binary from
+	## some other repo while the printed plan still names this one.
+	fAssertOut  "go installer refuses a path-shaped --tag"     'not a path'                  bash -c "bash '${goInst}' -y --tag '../../evil/repo/main'"
+	fAssertOut  "go installer refuses an absolute --tag"       'not a path'                  bash -c "bash '${goInst}' -y --tag '/etc/passwd'"
+	fAssertOut  "go installer refuses a shell-shaped --tag"    "aren't valid in a git tag"   bash -c "bash '${goInst}' -y --tag 'a b;id'"
+	## --ref was this option's name for two releases. Every published spelling is permanent.
+	fAssertOut  "--ref still binds as --tag"                   'not a path'                  bash -c "bash '${goInst}' -y --ref '../x'"
+	## Under Git Bash the destination is a Windows one and nothing there puts it on PATH, so the
+	## Bash installer hands Windows to the one that finishes the job. A fake uname reaches the
+	## arm from any box; it fires during detection, so no network either.
+	local wg="${work}/wininst"; mkdir -p "${wg}/bin"
+	printf '#!/usr/bin/env bash\necho MINGW64_NT-10.0-22631\n' > "${wg}/bin/uname"; chmod +x "${wg}/bin/uname"
+	fAssertOut  "go installer sends Windows to install.ps1"    'use the PowerShell installer' \
+		bash -c "PATH='${wg}/bin:${PATH}' bash '${goInst}' -y"
+	## Pins on what a live run reaches. Every route is a release asset now, so every route is
+	## verified - there is no unverified branch of the plan left to promise around.
+	fAssert     "go installer installs to the documented dirs" \
+		bash -c "grep -q 'HOME}/.local/bin' '${goInst}' && grep -q '/usr/local/bin' '${goInst}'"
+	fAssert     "go installer fetches the per-platform asset"  \
+		bash -c "grep -q 'asset=\"gitsby-' '${goInst}'"
+	fAssert     "go installer promises no unverified route"   bash -c "! grep -q 'NOT verify' '${goInst}'"
+	if command -v pwsh >/dev/null 2>&1; then
+		local goInstPs="${root}/install.ps1"
+		fAssertFail "go ps installer refuses a bad -Target"    pwsh -NoProfile -File "${goInstPs}" -Target bogus
+		fAssertFail "go ps installer refuses a bad -Arch"      pwsh -NoProfile -File "${goInstPs}" -Arch sparc
+		fAssertOut  "go ps installer names the dropped -Release dev" 'no .-Release dev. any more' \
+			bash -c "pwsh -NoProfile -File '${goInstPs}' -Release dev 2>&1"
+		fAssertOut  "go ps installer refuses a path-shaped -Tag" 'not a path' \
+			pwsh -NoProfile -File "${goInstPs}" -Yes -Tag '../../evil/repo/main'
+		## -Ref named this parameter for two releases, so it stays bound as an alias.
+		fAssertOut  "-Ref still binds as -Tag"                  'not a path' \
+			pwsh -NoProfile -File "${goInstPs}" -Yes -Ref '../../evil/repo/main'
+		## Byte 0 must be the shebang: a BOM ahead of it means the kernel won't run the file
+		## directly either, and irm carries it into iex where it stops the first line being a comment.
+		fAssert "install.ps1 starts with a shebang, no BOM" \
+			bash -c "[[ \"\$(head -c2 '${goInstPs}')\" == '#!' ]]"
+		## GitHub serves SHA256SUMS as octet-stream and Invoke-WebRequest hands back bytes for
+		## that, so reading the body as text finds no checksum. Reaching the real asset needs the
+		## network, so this pins the decode in the source rather than exercising it.
+		fAssert "go install.ps1 decodes the SHA256SUMS body from bytes" \
+			bash -c "grep -q 'byte\[\]' '${goInstPs}'"
+		## The documented one-liners are 'iex' and a scriptblock, neither of which is a script
+		## file - so -File coverage alone says nothing about them. Both must bind their
+		## parameters, refuse by throwing rather than exiting, and leave the calling session
+		## alive and unaltered. -Release dev is the refusal that lands before any network does.
+		if ((canNoTty)); then
+			local goInstPsNative=""; goInstPsNative="$( fWinPath "${goInstPs}" )"
+			## Decode the bytes ourselves rather than Get-Content, which quietly drops a BOM.
+			local goReadInst="\$t = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes('${goInstPsNative}'))"
+			fAssertOut "go iex form binds and refuses"     'CAUGHT:'           fPwshText "${goReadInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+			fAssertOut "and leaves the session alive"      'HOST ALIVE'        fPwshText "${goReadInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+			fAssertOut "go scriptblock form binds options" 'no .-Release dev. any more' fPwshText "${goReadInst}; try { & ([scriptblock]::Create(\$t)) -Release dev -Target system } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+			fAssertOut "and leaves the session alive too"  'HOST ALIVE'        fPwshText "${goReadInst}; try { & ([scriptblock]::Create(\$t)) -Release dev -Target system } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+			fAssertOut "go installer leaks no StrictMode"  'strict stayed off' fPwshText "${goReadInst}; try { \$t | Invoke-Expression } catch { }; try { \$q = \$neverSet; 'strict stayed off' } catch { 'STRICT LEAKED' }"
+			fAssertOut "go installer leaks no ErrorAction" 'EAP=Continue'      fPwshText "${goReadInst}; try { \$t | Invoke-Expression } catch { }; \"EAP=\$ErrorActionPreference\""
+		fi
+	fi
+
 	## PowerShell only. Set-Location moves PowerShell's own location, not the process cwd, so a
 	## script that starts git itself must pass the working directory or reads and writes land in
 	## different repos. Every other check cds in bash before starting pwsh, which hides it.
@@ -2138,3 +2217,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260818 JC: One leg. The scripted builds moved to legacy/ and their legs went with them, so the compiled build is the subject and it gates. The checks that were never about an implementation - installers, the frozen platform gates, the source pins - stayed, repointed at legacy/; dropping them with the leg they happened to ride would have lost 58 of them silently. The PowerShell-only block went with pwsh, and the per-implementation option spellings collapsed to one.
 ##		- 20260819 JC: The paper-cut sweep, and a pty for the two checks that have to answer the prompt rather than have it refuse - the plan is only printed to someone who could say yes, and one of them is about the word accepted there. Fourteen checks, all of which discriminate against the prior build; skipped where there is no 'script'.
 ##		- 20260819 JC: Which folder a clone resolves its account from. The account block grew a bare origin to clone between its two trees, and the identity block one check that the surrounding repo's owner is never asked about - the step that leaves no trace in the output, only in which token the fetch went out with.
+##		- 20260819 JC: The shipping installers, at the repo root. Their whole plan is behind the network now - the release lookup and SHA256SUMS both land before it prints - so these checks stop at the argument parse, the refusals, the Windows hand-off, and pins on what a live run reaches. The legacy block stays beside them, still aimed at frozen files. 582 -> 613.

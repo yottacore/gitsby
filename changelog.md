@@ -24,6 +24,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- The installers install the binary this machine needs, chosen by platform and architecture, and check it against the release's published `SHA256SUMS` before it lands. There is no unverified route left: where the checksum can't be fetched or can't be computed, the install stops instead of carrying on. Where a release publishes nothing for a platform, it says which ones it did publish and how to build the rest.
+
+- FreeBSD joins the published platforms, amd64 and arm64 both, alongside Linux, Windows and macOS.
+
 - `identity` shows who commands in this folder act as - the account, the ssh key and who it authenticates as, the commit author, and gh's login - without the branch and working-tree state `status` prints around it. It answers outside a repository too, which is where the question comes up before a `repo clone` or `repo create`.
 
 ### Changed
@@ -46,21 +50,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - An option typed between `raw` and the tool says where gitsby's own options go, instead of calling it a subcommand nobody has heard of.
 
+- The installers' `--arch` (`-Arch`) picks the binary now. It was accepted and ignored while the product was one script that ran everywhere. `--ref` became `--tag` (`-Ref` became `-Tag`), because what it names is a published release rather than any git ref; both old spellings still bind.
+
+- Installing on Windows through the Bash installer now points at the PowerShell one, which is the one that also puts the install directory on PATH.
+
 ### Fixed
 
 - `repo clone` picks its account from the folder the clone lands in, not the folder you launched it from. Cloning into your personal tree while standing in a work repository used the work account - the one case where the folder that decides is not the one you are in. A `gitsby.ghAccount` set on the surrounding repository no longer follows the clone out of it either, and the owner of a repository being cloned is not taken as evidence that it is yours: with no rule for the destination, gh stays on its own account.
 
 ### Removed
 
+- The installers no longer take `--release dev` (`-Release dev`). It installed the tip of a branch, which was possible while the product was a script in the tree; a branch has no published build behind it now. Typing it says so and names the two routes that exist - a release by tag, or a one-command build from source. The contributor setup scripts went with it: a Go checkout needs only Go, and the three commands are in the README.
+
 - `--offline` is no longer accepted as a spelling of `--no-fetch`. It was undocumented, and it never did what the word says - pushes went out regardless. Typing it now says so and names `--no-fetch`, which skips the pre-command fetch. Being offline is still handled on its own: gitsby finds out by trying, and each command degrades or refuses accordingly.
 
 ### Other work
+
+- PSScriptAnalyzer is back in the lint stage. The Windows installer is the one piece of PowerShell that still ships, and it had been going out unlinted since the scripted build was frozen.
 
 - `cicd/release.bash` retries the installer it runs against the freshly published release before reporting that the release isn't installable. Cutting v2.1.0 warned that it wasn't when it was: GitHub serves the tag a little ahead of its assets, and the installer stops rather than quietly skip checksum verification. A warning that fires on a good release is worse than no warning at all.
 
 - The Bash and PowerShell builds and their installers moved to `legacy/`, and the pipeline became Go-specific: one engine instead of two, seven stages, and the Go toolchain required rather than probed. `cicd/parity.bash` was kept and repointed - it compares this build against the frozen v2.1.0 one, which is the backwards-compatibility question, and checks that `update` and `br land` still route where they always did.
 
-- A release is now one binary per platform - linux, windows and macOS, amd64 and arm64 each - with a single `SHA256SUMS` over the set. They are built before the tag is cut, so a target that stops compiling fails while nothing has been changed. The version comes from the tag alone; no file in the tree records it.
+- A release is now one binary per platform - linux, windows, macOS and FreeBSD, amd64 and arm64 each - with a single `SHA256SUMS` over the set. They are built before the tag is cut, so a target that stops compiling fails while nothing has been changed. The version comes from the tag alone; no file in the tree records it.
 
 ## v2.1.0 - 2026-08-14
 

@@ -1188,11 +1188,18 @@ Go port, later rounds. These wait until the round-one items above hold up.
 	- The suite runs one leg. The 58 checks that were never about an implementation - the installers, the frozen builds' own platform gates, the source pins on this pipeline's files - stayed, repointed at `legacy/`; they had only ever ridden the Bash leg because that was the leg that always ran. Counted before and after so none went missing: 530 pass, against 513 + 455 across the old three legs.
 	- Pipeline is seven stages now: lint, build + test, fuzz, backwards compatibility, dogfood, demo gif, publish. The Go toolchain is required rather than probed.
 
-- 🔘 Installer for the Go build, and the README install section that documents it. **Blocks `dev` -> `main`.**
-	- `install.bash` and `install.ps1` moved to `legacy/`, so once this branch reaches `main` the four documented one-liners at `raw.githubusercontent.com/jim-collier/gitsby/main/install*.bash` stop resolving. Nothing is broken today - `main` is still v2.1.0 and nothing ships from an integration branch - but the replacements have to land at those exact root paths before the cut.
-	- What it installs is now a binary per platform, so it picks by `<goos>-<goarch>`, which is what makes `--arch` real.
-	- Open with it: whether a PowerShell installer is still wanted at all, when the thing it installs needs no PowerShell.
-	- README "Installation", "Compatibility" and the badges still describe the two-script era. They come with this.
+- ✅ Installer for the Go build, and the README install section that documents it.
+	- `install.bash` and `install.ps1` are back at the repo root, so the two documented one-liners resolve again once this reaches `main`. The `install-dev.*` pair was dropped rather than ported - a Go checkout needs only Go.
+	- Both pick the binary by `<goos>-<goarch>`, which is what makes `--arch` real. `--ref` became `--tag`, since it names a published release rather than any git ref; both old spellings still bind.
+	- The PowerShell one was kept. It is the only shell every Windows machine already has, and the only thing that puts the install directory on PATH. PSScriptAnalyzer came back into the lint stage with it, having been dropped when the scripted build was frozen.
+	- `--release dev` is gone. It installed the tip of a branch, which a compiled product has nothing to offer; typing it says so and names the two routes that exist.
+	- Every route is a release asset now, so every route is verified - the unverified branch of the plan no longer exists. `SHA256SUMS` is fetched before the plan is printed, because it is what says whether this platform has a binary at all, and it names the ones that do when this one doesn't.
+	- FreeBSD joined the release matrix rather than being documented as an exception; it cross-builds for free. OpenBSD and NetBSD still fall through to the build-from-source message.
+	- README: badges, "Compatibility" and "Install" rewritten for one binary and no runtime. The stale paragraph about the PowerShell build's option spellings is gone, replaced by a short note for anyone coming from 2.x.
+	- Suite 582 -> 613. The new checks stop at the network: parsing, every refusal, the Windows hand-off, and pins on what a live run would reach. Verified end to end by hand against a fake release served locally - both installers, plus the tampered, intercepted, missing-release and wrong-architecture paths.
+	- Left stale on purpose: design.md "Automating a release" still describes writing a version into two builds. That predates the Go round, not this one - filed below.
+
+- 🔘 design.md "Automating a release" still describes the two-script era: a version written into both builds, footers in `bin/gitsby` and `bin/gitsby.ps1`, and phase 1 comparing two version strings. None of that exists - the version lives in the tag alone.
 
 - 🔘 Regenerate the demo gif. Stale twice over: the renamed commands moved text the scenario prints, and the pipeline now renders it from the Go build rather than the dogfooded script.
 
