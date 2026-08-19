@@ -94,6 +94,13 @@ fEcho "Phase 1: prepare and verify"
 [[ -x "${gitsby}" ]] || fDie "no build at ${GO_MODULE_DIR}/${EXE_NAME} - run cicd/cicd.bash, or 'go build' there."
 command -v go >/dev/null 2>&1 || fDie "the go toolchain is needed to build the release assets."
 command -v gh >/dev/null 2>&1 || fDie "gh is needed to publish the release."
+## The Windows resource is regenerated for the version being cut, so the tool is required here
+## rather than probe-gated the way the pipeline has it. Refusing now costs nothing; discovering
+## it in phase 2 would leave a pushed bump behind a .exe still claiming the old version.
+winres=("${here}/utility/gen-winres.bash"); winresStatus=0
+"${winres[@]}" --check -q >/dev/null 2>&1 || winresStatus=$?
+## 3 is "no goversioninfo". A stale resource is 1, which is fine here - phase 2 regenerates it.
+((winresStatus != 3)) || fDie "goversioninfo is needed to stamp the Windows binaries (see ${winres[0]##*/} --help)."
 
 ## The last release, for the guards below. The version itself comes from the tag this cuts, not
 ## from anything in the tree - there is no longer a string in a source file that can disagree.
@@ -156,12 +163,21 @@ fi
 assets="$(mktemp -d)"
 if ! fWould "cross-build ${#RELEASE_TARGETS[@]} targets at ${version}"; then
 	fNote "cross-building ${#RELEASE_TARGETS[@]} targets with ${GO_RELEASE_TOOLCHAIN} ..."
+	## The .exe files have to carry ${version}, and the committed resource still says the last
+	## one. Stamp it, build, then restore - phase 1 is the phase that changes nothing, and phase
+	## 2 regenerates it for real, on the release branch, next to the changelog edit.
+	"${winres[@]}" -q "${version}" || fDie "couldn't stamp the Windows resource; nothing has been changed."
+	failed=""
 	for t in "${RELEASE_TARGETS[@]}"; do
 		asset="${EXE_NAME}-${t%%/*}-${t##*/}"; [[ "${t}" == windows/* ]] && asset="${asset}.exe"
 		( cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOTOOLCHAIN="${GO_RELEASE_TOOLCHAIN}" GOOS="${t%%/*}" GOARCH="${t##*/}" \
 			go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${version#v}" -o "${assets}/${asset}" . ) \
-			|| fDie "cross-build failed for ${t}; nothing has been changed."
+			|| { failed="${t}"; break; }
 	done
+	## Put the stamp back whether that worked or not, so 'nothing has been changed' stays true
+	## of the failure path as well.
+	git -C "${root}" checkout -q -- "${GO_MODULE_DIR}"/*.syso || fDie "couldn't restore the Windows resource; check 'git status'."
+	[[ -z "${failed}" ]] || fDie "cross-build failed for ${failed}; nothing has been changed."
 	( cd "${assets}" && "${here}/utility/gen-checksums.bash" > SHA256SUMS ) || fDie "couldn't checksum the release assets."
 	fNote "built: $(cd "${assets}" && echo *)"
 fi
@@ -193,6 +209,9 @@ if ! fWould "branch ${relBranch}, retitle the changelog's vNEXT as '${version} -
 	clLine="$(fpChangelogVnext)"
 	[[ -n "${clLine}" ]] || fDie "the changelog's '## vNEXT' heading went missing after phase 1."
 	sed -i "${clLine}s/^## vNEXT.*$/## ${version} - ${today}/" "${changelog}"
+	## And the Windows resource, which is the other thing in the tree that names a version. It
+	## goes in the same commit, so the tag it is reachable from is the one it claims.
+	"${winres[@]}" -q "${version}" || fDie "couldn't stamp the Windows resource; the branch is created but nothing is pushed."
 	## gitsby's own 'pr create' rather than gh directly: it already knows this repo's merge target,
 	## which is the one thing a hand-written --base can get wrong.
 	prOut="$("${gitsby}" -q pr create "${version}" 2>&1)" || { echo "${prOut}" >&2; fDie "couldn't open the version-bump PR."; }
@@ -271,6 +290,7 @@ echo
 ##		  thing they check has already gone wrong: the two builds' version strings drifting, and the
 ##		  in-script history footers going a whole release without an entry.
 ##		- 20260818 JC: The release binaries are built in phase 1, with the pipeline, rather than after the tag is pushed. A target that stops compiling now fails where nothing has been changed; found in phase 3 it would have left a pushed tag with no release behind it.
+##		- 20260819 JC: The Windows resource is stamped with the version being cut - for the phase 1 build, then restored, and again in phase 2 where it lands in the bump commit. It is the only file left in the tree that names a version.
 ##		- 20260818 JC: Go. The version lives in the tag alone now - the build injects it - so phase 2 no longer bumps a string in two source files and phase 1 no longer has two of them to disagree. Phase 3 cross-builds the whole target matrix and publishes one binary per platform. The proof stopped being 'run both installers': there is one implementation, and what a user actually meets is a download, its checksum, and whether the thing runs.
 ##		- 20260813 JC: All three readings of the changelog start below the commented-out template.
 ##		  Each took the first match, so each found the template's decoy heading instead: the guard

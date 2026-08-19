@@ -94,6 +94,32 @@ EOF
 ##	APPLIED rather than merely resolved, which is the state a real user would be in.
 printf 'gho_demo000000000000000000000000000000000\n' > "${XDG_CONFIG_HOME}/gitsby/acme.token"
 printf 'gho_demo111111111111111111111111111111111\n' > "${XDG_CONFIG_HOME}/gitsby/personal.token"
+##	0600, because gitsby warns about a token anyone else can read and the demo would otherwise
+##	spend a line of every scene saying so about its own fixture.
+chmod 600 "${XDG_CONFIG_HOME}/gitsby"/*.token
+
+##	A stub gh, first on PATH. Two reasons, and the second is the important one:
+##	  - gitsby asks GitHub whose token a tokenFile holds. A made-up token gets no answer, so
+##	    every scene carried a line saying the token could not be checked.
+##	  - the real gh would have answered as whoever is logged in on the rendering machine, which
+##	    is a real name in a deliberately anonymized demo.
+##	It answers only the two calls the scenario reaches and fails everything else, so a command
+##	that grew a new gh call shows up as a visible failure rather than a plausible fake answer.
+mkdir -p "${root}/bin"
+cat > "${root}/bin/gh" <<-'EOF'
+	#!/usr/bin/env bash
+	case "$*" in
+		"api user --jq .login")
+			case "${GH_TOKEN:-}" in
+				gho_demo000*) echo "mika-at-acme" ;;
+				gho_demo111*) echo "mika-rivers"  ;;
+				*)            exit 1 ;;
+			esac ;;
+		"config get -h github.com git_protocol") echo https ;;
+		*) echo "demo gh stub: no answer for 'gh $*'" >&2; exit 1 ;;
+	esac
+EOF
+chmod 755 "${root}/bin/gh"
 
 ##	The file the demo cats on camera. Kept short enough to read in one screen, and using
 ##	'pathContains' rather than 'path' because a run of folder names is the thing being shown.
@@ -147,6 +173,7 @@ GIT_COMMITTER_NAME="${sideName}" GIT_COMMITTER_EMAIL="${sideEmail}" \
 ##	expanded when the scenario sources it, not here.
 # shellcheck disable=SC2016
 {
+	echo "export PATH='${root}/bin':\"\${PATH}\""
 	echo "export HOME='${HOME}'"
 	echo "export XDG_CONFIG_HOME='${XDG_CONFIG_HOME}'"
 	echo "export GIT_CONFIG_GLOBAL='${GIT_CONFIG_GLOBAL}'"
@@ -164,4 +191,5 @@ GIT_COMMITTER_NAME="${sideName}" GIT_COMMITTER_EMAIL="${sideEmail}" \
 ##		- 20260724: v1.0. Anonymized offline repo builder for the demo gif.
 ##		- 20260814: Moved into cicd/utility/demo/, beside the scenario, the renderer and script.txt.
 ##		- 20260814: Builds two trees and a gitsby config, so the demo can show a folder deciding which account acts. HOME is the root, the trees differ from their first folder down, and demo.env now unsets the identity and config variables that would otherwise supply what the folder rules are meant to be supplying.
+##		- 20260819: The fake tokens are 0600 and a stub gh goes first on PATH. Both were showing on camera: the permission warning on every scene, and the real gh answering as whoever is logged in on the machine doing the rendering.
 ##		- 20260813: ROOT is checked before it is removed. It was taken on trust and wiped first thing, so a mistyped or inherited argument cost whatever was there. Directories this script builds are stamped, and only a stamped one is removed.

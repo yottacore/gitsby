@@ -162,7 +162,7 @@ fEcho_Clean "${APP_NAME} local CI/CD"
 fEcho_Clean
 fEcho_Clean "Repo root ...........: ${root}"
 if ((do_lint)); then
-	fEcho_Clean "Lint ................: gofmt + go vet + staticcheck, shellcheck on ${#shell_files[@]} shell file(s)  (+ golangci-lint, markdownlint, py_compile, PSScriptAnalyzer if available)"
+	fEcho_Clean "Lint ................: gofmt + go vet + staticcheck, shellcheck on ${#shell_files[@]} shell file(s)  (+ golangci-lint, markdownlint, py_compile, PSScriptAnalyzer, windows resource if available)"
 else
 	fEcho_Clean "Lint ................: (skipped)"
 fi
@@ -352,6 +352,16 @@ else
 	else
 		fEcho "WARNING: golangci-lint skipped (not installed: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest)"
 	fi
+	## The committed Windows resource, against what the newest tag would generate. It is linked
+	## into published bytes, so an edited icon or description that nobody regenerated would ship
+	## silently. Probe-gated like the two above.
+	winres_status=0
+	"${WINRES_CMD[@]}" --check -q || winres_status=$?
+	case "${winres_status}" in
+		0) fEcho "OK: windows resource current" ;;
+		3) fEcho "WARNING: windows resource check skipped (not installed: go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.5.0)" ;;
+		*) fDie "windows resource is stale" ;;
+	esac
 fi
 
 ## Stage 2: build, then the regression suite against what was just built. The build is
@@ -521,4 +531,5 @@ fEcho_Clean
 ##		- 2026-08-19 JC: PSScriptAnalyzer is back in stage 1, probe-gated as before. The installer for Windows is the one piece of PowerShell that still ships, and it was going out unlinted.
 ##		- 2026-08-19 JC: golangci-lint joins stage 1 and go test joins stage 2, both alongside what was already there. The unit tests cover the parsing and matching that previously needed a built binary and a throwaway repo to reach.
 ##		- 2026-08-19 JC: PSScriptAnalyzer also checks the installer against Windows PowerShell 5.1 syntax. The installer supports 5.1 now, and nothing gated that.
+##		- 2026-08-19 JC: Stage 1 checks the committed Windows resource against the newest tag. The .exe carries an icon and version details now, and the resource that gives it them is a checked-in file that nothing else would notice going stale.
 ##		- 2026-08-19 JC: --quick narrows dogfood to the native target, which is the slow part it was supposed to be skipping. Every build site shares one set of flags (-buildvcs=false above all, without which the published assets can never be rebuilt to their published checksums) and half the cores. Stage 3 gained govulncheck and the spawn counts; the three harnesses take -q from the engine.

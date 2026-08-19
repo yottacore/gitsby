@@ -265,7 +265,13 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 
 - The version lives in the tag and nowhere else.
 	- The scripted builds each carried a `thisVersion` string by hand, and a release rewrote both. They had drifted before, which is why phase 1 compared them.
-	- A Go build takes its version from `-ldflags` at build time, so there is nothing in the tree that can disagree with the tag. Cutting a release now edits exactly one file: the changelog heading.
+	- A Go build takes its version from `-ldflags` at build time, so there is nothing in the source that can disagree with the tag. Cutting a release edits two files, neither of them source: the changelog heading, and the Windows resource below.
+
+- Windows binaries carry an icon and version details.
+	- A pure Go build links no resource, so Explorer showed the default blank icon and an empty Properties tab. Among the options - `goversioninfo` from a generated spec, or writing the COFF resource by hand to keep the zero-dependency character - we decided on the former: a malformed hand-written resource links cleanly and fails only on the machine that runs it, which is not something a Linux box can disprove.
+	- The `.syso` files are committed rather than generated during the build. They are linked into binaries whose checksums we publish, so rebuilding a release from its tag must not depend on a tool being installed - the same reasoning that put `-buildvcs=false` in the build flags.
+	- Which means they carry the last released version rather than the working tree's: a file that changed with every commit could not be a committed file. A release stamps them with the version being cut, in the same commit as the changelog heading, and the pipeline checks the committed ones against the newest tag.
+	- The `.ico` is a committed asset too, not a build product. Image encoders differ between versions, so regenerating it is a hand step (`gen-winres.bash --icon`) run when the logo changes, and nothing gates on reproducing it byte for byte.
 
 ## Branching model
 
@@ -407,4 +413,4 @@ Decisions inside that shape:
 
 - **History footers are warned about, not gated.** The suites' own footers are checked for an entry newer than the last release tag. It is a warning because a release with a stale footer is untidy, not wrong, and a hard gate on a habit is a gate people learn to work around.
 
-- **Assets are built before the tag is cut.** With version-control stamps switched off at build time, a phase-1 binary and one built from the tagged commit are byte-identical - the only thing phase 2 changes is a changelog heading, which no binary contains. So the ordering costs nothing, and the reproducibility it used to cost is what `-buildvcs=false` bought back.
+- **Assets are built before the tag is cut.** With version-control stamps switched off at build time, a phase-1 binary and one built from the tagged commit are byte-identical. Phase 2 changes two files: a changelog heading, which no binary contains, and the Windows resource - which phase 1 stamps with the same version before building and puts back afterwards, so both phases link identical bytes. The ordering therefore costs nothing, and the reproducibility it used to cost is what `-buildvcs=false` bought back.
