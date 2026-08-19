@@ -1,5 +1,7 @@
-// Output helpers. The blank-line counter is what keeps the section rhythm: repeated
-// blanks collapse to one, so callers can ask for breathing room without coordinating.
+// Output. The blank-line counter is what keeps the section rhythm: repeated blanks
+// collapse to one, so callers can ask for breathing room without coordinating with
+// each other. Held on a value rather than in package state, so a test can read back
+// what a command printed.
 
 // Copyright © 2026 Jim Collier (CryptogID: ѳ6ᴚ℈𐀘𐇦ɛ𐊁¥Mﾏb϶Δ𐌞)
 // Licensed under The MIT License (MIT). Full text at:
@@ -11,80 +13,72 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 )
 
-var quiet = false // -q/--quiet/-y: no prompts, no banner
+// A write to the terminal that fails has nowhere left to report it, and the next
+// one would fail the same way - so every write here discards its error on purpose.
+type printer struct {
+	out       io.Writer
+	err       io.Writer
+	in        io.Reader
+	lastBlank bool
+}
 
-var wasLastEchoBlank = false
+func newPrinter() *printer {
+	return &printer{out: os.Stdout, err: os.Stderr, in: os.Stdin}
+}
 
-func echoResetBlank() { wasLastEchoBlank = false }
+func (p *printer) resetBlank() { p.lastBlank = false }
 
-// echoClean prints a plain line; an empty one only lands when the previous line
-// was not already blank.
-func echoClean(s string) {
+// clean prints a plain line; an empty one only lands when the previous line was
+// not already blank.
+func (p *printer) clean(s string) {
 	if s != "" {
-		fmt.Println(s)
-		wasLastEchoBlank = false
-	} else if !wasLastEchoBlank {
-		fmt.Println()
-		wasLastEchoBlank = true
+		_, _ = fmt.Fprintln(p.out, s)
+		p.lastBlank = false
+		return
+	}
+	if !p.lastBlank {
+		_, _ = fmt.Fprintln(p.out)
+		p.lastBlank = true
 	}
 }
 
-func echoCleanForce(s string) {
-	echoResetBlank()
-	echoClean(s)
+func (p *printer) cleanf(format string, a ...any) { p.clean(fmt.Sprintf(format, a...)) }
+
+// forceClean lands a blank even directly after another one, for the framing that
+// has to be a fixed number of lines rather than a rhythm.
+func (p *printer) forceClean(s string) {
+	p.resetBlank()
+	p.clean(s)
 }
 
-// echoStatus prints a bracketed status line - the scripts' fEcho.
-func echoStatus(s string) {
-	if s != "" {
-		echoClean("[ " + s + " ]")
-	} else {
-		echoClean("")
+// status prints a bracketed status line - the scripts' fEcho.
+func (p *printer) status(s string) {
+	if s == "" {
+		p.clean("")
+		return
 	}
+	p.clean("[ " + s + " ]")
 }
 
-// promptYN gates every mutation. Only 'y' or 'yes' is yes: a typo, a stray
+// errorf writes to stderr, prefixed the way every message from here is.
+func (p *printer) errorf(format string, a ...any) {
+	_, _ = fmt.Fprintln(p.err, meName+": "+fmt.Sprintf(format, a...))
+}
+
+// confirm gates every mutation. Only 'y' or 'yes' is yes: a typo, a stray
 // newline, or an EOF is a no, because the fallback has to be the harmless answer.
-func promptYN(prompt string) bool {
-	fmt.Print(prompt)
-	answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-	echoResetBlank()
+func (p *printer) confirm(prompt string) bool {
+	_, _ = fmt.Fprint(p.out, prompt)
+	answer, _ := bufio.NewReader(p.in).ReadString('\n')
+	p.resetBlank()
 	switch strings.ToLower(strings.TrimSpace(answer)) {
 	case "y", "yes":
 		return true
 	}
 	return false
-}
-
-// exitOK ends a run early with nothing left to do. Nothing to do is a success
-// everywhere else here, and a nonzero exit tells a calling script the opposite.
-func exitOK() {
-	echoClean("")
-	os.Exit(0)
-}
-
-// throwUsage reports an expected validation error and exits. Blank lines wrap the
-// message on stdout while the message itself goes to stderr, matching the scripts.
-func throwUsage(msg string) {
-	echoClean("")
-	fmt.Fprintln(os.Stderr, meName+": "+msg)
-	echoCleanForce("")
-	// The scripts' exit trap resets the blank counter and prints once more on the
-	// way out, so an error ends with two blanks where success ends with one.
-	echoCleanForce("")
-	os.Exit(1)
-}
-
-// throwUsageSub is for errors the scripts raise inside a command substitution:
-// the subshell captures the wrapping stdout blanks, so only the message escapes
-// (on stderr) and the parent's exit adds the single blank that lands. One
-// trailing blank, where throwUsage ends with two.
-func throwUsageSub(msg string) {
-	fmt.Fprintln(os.Stderr, meName+": "+msg)
-	echoCleanForce("")
-	os.Exit(1)
 }

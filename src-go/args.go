@@ -1,7 +1,8 @@
 // Argument parsing: the option vocabulary, the positional slots, the grouped-noun
 // collapse, and the 'raw' passthrough prescan. Options are lowercased FIRST, then
 // the dashes stripped, so no two entry points can accept different spellings of
-// the same option.
+// the same option. Nothing here touches the repo, so all of it can be exercised
+// on its own.
 
 // Copyright © 2026 Jim Collier (CryptogID: ѳ6ᴚ℈𐀘𐇦ɛ𐊁¥Mﾏb϶Δ𐌞)
 // Licensed under The MIT License (MIT). Full text at:
@@ -12,28 +13,12 @@ package main
 
 import (
 	"regexp"
-	"strconv"
 	"strings"
 )
 
-var (
-	cmdName               = "" // positional 1: flat command, or the noun of a grouped one
-	cmdArg                = "" // positional 2: subcommand for a grouped noun, else message/branch/version/PR number
-	cmdArg2               = "" // positional 3
-	cmdArg3               = "" // positional 4: only 'repo clone <url> [dir]' goes this deep
-	sawPublic, sawPrivate bool // to catch both being given
-	anyIdentity           bool // --any-identity: a gh/ssh account mismatch here is intended
-	configFileArg         = ""
-	configFileGiven       bool // whether it was typed at all: '--config ""' is a mistake, not a fallback
-)
-
-// Option state the commands read once they land; the parser has to take the whole
-// vocabulary from day one so no spelling is refused now and accepted later.
-var (
-	commitMessage  = ""
-	doFetch        = true // cleared by --no-fetch
-	repoVisibility = "private"
-)
+func defaultOptions() options {
+	return options{fetch: true, visibility: "private"}
+}
 
 var switchRegex = regexp.MustCompile(`^--?[^ -]`)
 
@@ -48,222 +33,222 @@ func stripDashes(s string) string {
 // normalized copy is for matching only, a file name or message keeps its case.
 func afterEq(arg string) string { return arg[strings.Index(arg, "=")+1:] }
 
-// parseArgs fills the option and positional state. Returns true when help was
+// parseArgs fills the option and positional state. The bool reports that help was
 // asked for - from any position: '<noun> <verb> --help' is the reflex every git
 // user has, and slot 1 always holds a real command, so nothing can be shadowed.
 // -v is deliberately not an option here - it must not turn a mutating command
 // into a silent no-op.
-func parseArgs(args []string) bool {
+func parseArgs(argv []string) (options, command, bool, error) {
 	const maxPositional = 4
+	opt := defaultOptions()
+	cmd := command{mutating: true}
 	lastSwitch := ""
 	expectingValue := false
 	positional := 0
-	for _, arg := range args {
-		if expectingValue {
+	for _, arg := range argv {
+		switch {
+		case expectingValue:
 			// A value we are already waiting for wins over the option test:
 			// '-m -Wall added' is a commit message, and there is no other way to
 			// write one starting with '-'.
 			switch lastSwitch {
 			case "m", "message", "msg":
-				commitMessage = arg
+				opt.message = arg
 			case "config":
-				configFileArg, configFileGiven = arg, true
+				opt.configFile, opt.configGiven = arg, true
 			}
 			expectingValue = false
-		} else if switchRegex.MatchString(arg) {
+		case switchRegex.MatchString(arg):
 			t := stripDashes(strings.ToLower(arg))
 			lastSwitch = t
 			switch {
 			case t == "h" || t == "help":
-				return true
+				return opt, cmd, true, nil
 			case t == "q" || t == "quiet" || t == "y" || t == "yes":
-				quiet = true
+				opt.quiet = true
 			case t == "no-fetch" || t == "nofetch":
-				doFetch = false
+				opt.fetch = false
 			case t == "offline":
 				// Old spelling of --no-fetch, and a lie: it never stopped a push.
-				throwUsage("There is no --offline option. Offline is a state gitsby finds by trying, not one you declare; use --no-fetch to skip the pre-command fetch (pushes still go out).")
+				return opt, cmd, false, usagef("There is no --offline option. Offline is a state gitsby finds by trying, not one you declare; use --no-fetch to skip the pre-command fetch (pushes still go out).")
 			case t == "public":
-				repoVisibility, sawPublic = "public", true
+				opt.visibility, opt.sawPublic = "public", true
 			case t == "private":
-				repoVisibility, sawPrivate = "private", true
+				opt.visibility, opt.sawPrivate = "private", true
 			case t == "any-identity" || t == "anyidentity":
-				anyIdentity = true
+				opt.anyIdentity = true
 			case strings.HasPrefix(t, "m=") || strings.HasPrefix(t, "message=") || strings.HasPrefix(t, "msg="):
-				commitMessage = afterEq(arg)
+				opt.message = afterEq(arg)
 			case strings.HasPrefix(t, "config="):
-				configFileArg, configFileGiven = afterEq(arg), true
+				opt.configFile, opt.configGiven = afterEq(arg), true
 			case t == "m" || t == "message" || t == "msg":
 				expectingValue = true
 			case t == "config":
 				expectingValue = true
 			default:
-				throwUsage("Unexpected option in this context: '" + arg + "'.")
+				return opt, cmd, false, usagef("Unexpected option in this context: '%s'.", arg)
 			}
-		} else {
+		default:
 			positional++
 			if positional > maxPositional {
-				throwUsage("Too many positional arguments: " + strconv.Itoa(positional) + ", for max of " + strconv.Itoa(maxPositional) + ". If that was a message or title, quote it.")
+				return opt, cmd, false, usagef("Too many positional arguments: %d, for max of %d. If that was a message or title, quote it.", positional, maxPositional)
 			}
 			switch positional {
 			case 1:
-				cmdName = arg
+				cmd.name = arg
 			case 2:
-				cmdArg = arg
+				cmd.arg = arg
 			case 3:
-				cmdArg2 = arg
+				cmd.arg2 = arg
 			case 4:
-				cmdArg3 = arg
+				cmd.arg3 = arg
 			}
 		}
 	}
 	if expectingValue {
-		throwUsage("Never received a parameter for switch '--" + lastSwitch + "'.")
+		return opt, cmd, false, usagef("Never received a parameter for switch '--%s'.", lastSwitch)
 	}
-	return false
+	return opt, cmd, false, nil
 }
 
 // collapseCommand folds '<noun> <verb>' to one internal token and shifts the
 // positionals down, so everything downstream deals with a single flat name. No
 // real command has a hyphen, so rejecting one keeps the tokens untypeable.
-func collapseCommand() {
-	cmdName = strings.ToLower(cmdName)
-	if strings.Contains(cmdName, "-") {
-		throwUsage("Unknown command '" + cmdName + "'. Run '" + meName + "' with no arguments for a list.")
+func collapseCommand(cmd command) (command, error) {
+	cmd.name = strings.ToLower(cmd.name)
+	if strings.Contains(cmd.name, "-") {
+		return cmd, usagef("Unknown command '%s'. Run '%s' with no arguments for a list.", cmd.name, meName)
 	}
 	// The one prefix ladder in the tool, and deliberately so: this is the command
 	// you type all day, and its tail is the half nobody recalls exactly. Nothing
 	// else here is prefix-tolerant - don't spread it for consistency. 'update' is
 	// the 2.1.0 name; 'pull' is safe because the bare pull command is gone, and an
 	// alias onto this one cannot skip the commit the way that one could.
-	switch cmdName {
+	switch cmd.name {
 	case "update", "pull", "pullc", "pullco", "pullcom", "pullcomm", "pullcommit":
-		cmdName = "pullcom"
+		cmd.name = "pullcom"
 	}
 	shift := true
-	switch cmdName {
+	switch cmd.name {
 	case "repo", "repository":
-		switch strings.ToLower(cmdArg) {
+		switch strings.ToLower(cmd.arg) {
 		case "clone":
-			cmdName = "repo-clone"
+			cmd.name = "repo-clone"
 		case "create", "new":
-			cmdName = "repo-create"
+			cmd.name = "repo-create"
 		case "connect":
-			cmdName = "repo-connect"
+			cmd.name = "repo-connect"
 		case "url":
-			cmdName = "repo-url"
+			cmd.name = "repo-url"
 		case "":
-			throwUsage("Syntax: " + meName + " repo <clone <url> [dir] | create <owner/name> | connect [url] | url [https|ssh]>")
+			return cmd, usagef("Syntax: %s repo <clone <url> [dir] | create <owner/name> | connect [url] | url [https|ssh]>", meName)
 		default:
-			throwUsage("Unknown 'repo' subcommand '" + cmdArg + "'. One of: clone, create, connect, url.")
+			return cmd, usagef("Unknown 'repo' subcommand '%s'. One of: clone, create, connect, url.", cmd.arg)
 		}
 	case "account", "acct":
-		switch strings.ToLower(cmdArg) {
+		switch strings.ToLower(cmd.arg) {
 		case "", "list", "show":
-			cmdName = "account-list"
+			cmd.name = "account-list"
 		case "apply":
-			cmdName = "account-apply"
+			cmd.name = "account-apply"
 		default:
-			throwUsage("Unknown 'account' subcommand '" + cmdArg + "'. One of: list, apply.")
+			return cmd, usagef("Unknown 'account' subcommand '%s'. One of: list, apply.", cmd.arg)
 		}
 	case "br", "branch":
-		switch strings.ToLower(cmdArg) {
+		switch strings.ToLower(cmd.arg) {
 		case "", "list":
-			cmdName = "br-list"
+			cmd.name = "br-list"
 		case "create", "new":
-			cmdName = "br-create"
+			cmd.name = "br-create"
 		case "hotfix":
-			cmdName = "br-hotfix"
+			cmd.name = "br-hotfix"
 		case "switch", "go":
-			cmdName = "br-switch"
+			cmd.name = "br-switch"
 		case "merge", "land":
-			cmdName = "br-merge"
+			cmd.name = "br-merge"
 		case "prune", "clean":
-			cmdName = "br-prune"
+			cmd.name = "br-prune"
 		default:
-			throwUsage("Unknown 'br' subcommand '" + cmdArg + "'. One of: list, create, hotfix, switch, merge, prune.")
+			return cmd, usagef("Unknown 'br' subcommand '%s'. One of: list, create, hotfix, switch, merge, prune.", cmd.arg)
 		}
 	default:
 		shift = false
 	}
 	if shift {
-		cmdArg, cmdArg2, cmdArg3 = cmdArg2, cmdArg3, ""
+		cmd.arg, cmd.arg2, cmd.arg3 = cmd.arg2, cmd.arg3, ""
 	}
+	return cmd, nil
 }
 
-// isMutating: whether the command changes anything - it decides the no-tty rule
-// (read-only goes quiet, mutating fails closed) and, once the mutating commands
-// land, the preview/confirm flow.
-var isMutating = true
-
-// sortCommand validates each command's argument shape and settles isMutating.
-// Trailing arguments are rejected everywhere, so silently ignoring one anywhere
-// would make a typo look like it did what you meant.
-func sortCommand() {
-	switch cmdName {
+// sortCommand validates each command's argument shape and settles whether it
+// mutates. Trailing arguments are rejected everywhere, so silently ignoring one
+// anywhere would make a typo look like it did what you meant.
+func sortCommand(cmd command, opt *options) (command, error) {
+	switch cmd.name {
 	case "status", "identity", "br-list":
-		// br list's extra lands in cmdArg too, after the noun shift, so one test
+		// br list's extra lands in cmd.arg too, after the noun shift, so one test
 		// covers both.
-		isMutating = false
-		if cmdArg != "" {
-			throwUsage("'" + meName + " " + strings.Replace(cmdName, "br-list", "br list", 1) + "' takes no arguments (got '" + cmdArg + "').")
+		cmd.mutating = false
+		if cmd.arg != "" {
+			return cmd, usagef("'%s %s' takes no arguments (got '%s').", meName, strings.Replace(cmd.name, "br-list", "br list", 1), cmd.arg)
 		}
 	case "account-list":
-		isMutating = false
-		if cmdArg != "" {
-			throwUsage("'" + meName + " account list' takes no arguments (got '" + cmdArg + "').")
+		cmd.mutating = false
+		if cmd.arg != "" {
+			return cmd, usagef("'%s account list' takes no arguments (got '%s').", meName, cmd.arg)
 		}
 	case "account-apply":
-		if cmdArg != "" {
-			throwUsage("'" + meName + " account apply' takes no arguments (got '" + cmdArg + "').")
+		if cmd.arg != "" {
+			return cmd, usagef("'%s account apply' takes no arguments (got '%s').", meName, cmd.arg)
 		}
 	case "pr":
-		switch strings.ToLower(cmdArg) {
+		switch strings.ToLower(cmd.arg) {
 		case "create", "new":
-			if cmdArg3 != "" {
-				throwUsage("Unexpected extra argument '" + cmdArg3 + "'; quote your title.")
+			if cmd.arg3 != "" {
+				return cmd, usagef("Unexpected extra argument '%s'; quote your title.", cmd.arg3)
 			}
 		case "ok":
 		default:
 			// A number, or nothing. Either way there is no third word.
-			isMutating = false
-			if cmdArg2 != "" {
-				throwUsage("Unexpected extra argument '" + cmdArg2 + "'.")
+			cmd.mutating = false
+			if cmd.arg2 != "" {
+				return cmd, usagef("Unexpected extra argument '%s'.", cmd.arg2)
 			}
 		}
 	case "pullcom", "sync", "br-merge":
-		if commitMessage == "" {
-			commitMessage = cmdArg
+		if opt.message == "" {
+			opt.message = cmd.arg
 		}
-		if cmdArg2 != "" {
-			throwUsage("Unexpected extra argument '" + cmdArg2 + "'; quote your commit message.")
+		if cmd.arg2 != "" {
+			return cmd, usagef("Unexpected extra argument '%s'; quote your commit message.", cmd.arg2)
 		}
 	case "repo-clone": // the only one with a second argument of its own (the target directory)
 	case "br-prune":
 		// Takes nothing: what it deletes is decided by repo state, never by a name
 		// on the command line.
-		if cmdArg != "" {
-			throwUsage("'" + meName + " br prune' takes no arguments (got '" + cmdArg + "'); it prunes every branch already merged.")
+		if cmd.arg != "" {
+			return cmd, usagef("'%s br prune' takes no arguments (got '%s'); it prunes every branch already merged.", meName, cmd.arg)
 		}
 	case "br-create", "br-hotfix", "br-switch", "release", "repo-create", "repo-connect":
-		if cmdArg2 != "" {
-			throwUsage("Unexpected extra argument '" + cmdArg2 + "'.")
+		if cmd.arg2 != "" {
+			return cmd, usagef("Unexpected extra argument '%s'.", cmd.arg2)
 		}
 	case "repo-url":
 		// Bare is the read-only "what is it now"; naming a transport is what makes
 		// it mutate.
-		if cmdArg2 != "" {
-			throwUsage("Unexpected extra argument '" + cmdArg2 + "'.")
+		if cmd.arg2 != "" {
+			return cmd, usagef("Unexpected extra argument '%s'.", cmd.arg2)
 		}
-		if cmdArg == "" {
-			isMutating = false
+		if cmd.arg == "" {
+			cmd.mutating = false
 		}
 	default:
-		throwUsage("Unknown command '" + cmdName + "'. Run '" + meName + "' with no arguments for a list.")
+		return cmd, usagef("Unknown command '%s'. Run '%s' with no arguments for a list.", cmd.name, meName)
 	}
-	if cmdArg3 != "" {
-		throwUsage("Unexpected extra argument '" + cmdArg3 + "'.")
+	if cmd.arg3 != "" {
+		return cmd, usagef("Unexpected extra argument '%s'.", cmd.arg3)
 	}
+	return cmd, nil
 }
 
 // scanPassthrough spots 'raw <git|gh>' ahead of the main parser, because past the
@@ -272,7 +257,7 @@ func sortCommand() {
 // normalized the same way as the main parser; the ones with nothing to act on in
 // a passthrough are inert. -h and -v fall through on purpose - they mean show
 // help or the version, which is the main parser's job.
-func scanPassthrough(argv []string) (string, []string) {
+func scanPassthrough(argv []string, opt *options) (string, []string, error) {
 	tool := ""
 	var ptArgs []string
 	wantConfig, wantTool, wantValue := false, false, false
@@ -282,7 +267,7 @@ scan:
 		case tool != "":
 			ptArgs = append(ptArgs, arg)
 		case wantConfig:
-			configFileArg, configFileGiven = arg, true
+			opt.configFile, opt.configGiven = arg, true
 			wantConfig = false
 		case wantValue:
 			wantValue = false
@@ -290,10 +275,10 @@ scan:
 			// Past the tool name every option is the tool's, so one typed here is
 			// ours arriving too late - not a subcommand nobody has heard of.
 			if strings.HasPrefix(arg, "-") {
-				throwUsage("'" + arg + "' is an option, and " + meName + "'s own options come before 'raw'. Syntax: " + meName + " raw <git|gh> <arguments ...>")
+				return "", nil, usagef("'%s' is an option, and %s's own options come before 'raw'. Syntax: %s raw <git|gh> <arguments ...>", arg, meName, meName)
 			}
 			if arg != "git" && arg != "gh" {
-				throwUsage("Unknown 'raw' subcommand '" + arg + "'. One of: git, gh.")
+				return "", nil, usagef("Unknown 'raw' subcommand '%s'. One of: git, gh.", arg)
 			}
 			tool, wantTool = arg, false
 		case arg == "raw":
@@ -301,27 +286,27 @@ scan:
 		case !strings.HasPrefix(arg, "-"):
 			break scan
 		default:
-			opt := stripDashes(strings.ToLower(arg))
+			o := stripDashes(strings.ToLower(arg))
 			switch {
-			case opt == "q" || opt == "quiet" || opt == "y" || opt == "yes":
-				quiet = true
-			case opt == "config":
+			case o == "q" || o == "quiet" || o == "y" || o == "yes":
+				opt.quiet = true
+			case o == "config":
 				wantConfig = true
-			case strings.HasPrefix(opt, "config="):
-				configFileArg, configFileGiven = afterEq(arg), true
-			case opt == "no-fetch" || opt == "nofetch":
-			case opt == "any-identity" || opt == "anyidentity":
-			case opt == "public" || opt == "private":
-			case opt == "m" || opt == "message" || opt == "msg":
+			case strings.HasPrefix(o, "config="):
+				opt.configFile, opt.configGiven = afterEq(arg), true
+			case o == "no-fetch" || o == "nofetch":
+			case o == "any-identity" || o == "anyidentity":
+			case o == "public" || o == "private":
+			case o == "m" || o == "message" || o == "msg":
 				wantValue = true
-			case strings.HasPrefix(opt, "m=") || strings.HasPrefix(opt, "message=") || strings.HasPrefix(opt, "msg="):
+			case strings.HasPrefix(o, "m=") || strings.HasPrefix(o, "message=") || strings.HasPrefix(o, "msg="):
 			default:
 				break scan
 			}
 		}
 	}
 	if wantTool {
-		throwUsage("Syntax: " + meName + " raw <git|gh> <arguments ...>")
+		return "", nil, usagef("Syntax: %s raw <git|gh> <arguments ...>", meName)
 	}
-	return tool, ptArgs
+	return tool, ptArgs, nil
 }

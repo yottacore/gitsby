@@ -268,25 +268,6 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 
 Same review, 20260819. These are shape and process rather than defects.
 
-- 🔘 Directive review 20260819 item 21: the Go reads as a shell script transcribed into Go syntax.
-	- State is passed through about 120 package-level variables. Several functions take nothing and return nothing, and work only by mutating them.
-	- Not one function returns an error. Failure is a hard exit called from inside leaf helpers, which is also why nothing can be unit tested.
-	- Records are packed into tab-delimited strings and re-parsed to sort them.
-	- All of that is one problem wearing four hats. Gathering the run's state into a struct passed to the command functions is the change the other three follow from.
-	- Note against the old builds: only input and output parity matters now, so mirroring their structure is not a reason to keep any of this.
-
-- 🔘 Directive review 20260819 item 22: there are no Go tests at all.
-	- The whole suite is external. The pure string functions - remote parsing, config values, path canonicalization, tag matching - have a lot of edge cases and nothing exercises them directly.
-
-- 🔘 Directive review 20260819 item 23: add a linter config so the review findings become gates.
-	- gofmt, vet and staticcheck are clean and gated already. A config file would add the checks that caught the rest: unchecked errors, shadowed builtins, and the naming convention below.
-
-- 🔘 Directive review 20260819 item 24: internal names do not follow Go's convention for initialisms.
-	- Twenty-six of them, all unexported, all internal. No effect on output or arguments.
-
-- 🔘 Directive review 20260819 item 25: five discarded errors want either handling or a reason.
-	- Three of them set environment variables that decide the whole account selection.
-
 - 🔘 Directive review 20260819 item 26: the published binaries cannot be rebuilt to the same checksum.
 	- Version control stamps go into the binary, and the release builds its assets before it cuts the tag - so the published binaries carry the previous revision and nobody can reproduce the checksums we publish.
 	- Also wants the build id cleared, the native build built the same way as the cross-builds, and the toolchain pinned. Once it holds, say so in the README.
@@ -797,6 +778,34 @@ Same review, 20260819. These are shape and process rather than defects.
 
 - ✅ README wording: a missing verb and a doubled letter in the workflow comparison, and a bullet with no full stop in Compatibility.
 	- Fixed: all three, in the moved text.
+
+#### Done - Directive review 20260819
+
+The Go shape items, 21-25. One problem wearing four hats: gathering the run's state into a struct is the change the other three followed from.
+
+- ✅ Directive review 20260819 item 21: the Go reads as a shell script transcribed into Go syntax.
+	- State is passed through about 120 package-level variables. Several functions take nothing and return nothing, and work only by mutating them.
+	- Not one function returns an error. Failure is a hard exit called from inside leaf helpers, which is also why nothing can be unit tested.
+	- Records are packed into tab-delimited strings and re-parsed to sort them.
+	- All of that is one problem wearing four hats. Gathering the run's state into a struct passed to the command functions is the change the other three follow from.
+	- Note against the old builds: only input and output parity matters now, so mirroring their structure is not a reason to keep any of this.
+	- Done: the run's state is a struct passed to the command functions; every failure returns an error and main is the only place that exits; the tab-delimited sort became typed records. 4529 lines rewritten, output byte-identical (617/268/27 all green, parity unchanged).
+
+- ✅ Directive review 20260819 item 22: there are no Go tests at all.
+	- The whole suite is external. The pure string functions - remote parsing, config values, path canonicalization, tag matching - have a lot of edge cases and nothing exercises them directly.
+	- Done: unit tests for the parsing, the config and folder matching, the URL shapes, the version bump, the includeIf ordering and the output framing. `go test ./...` gates in stage 2.
+
+- ✅ Directive review 20260819 item 23: add a linter config so the review findings become gates.
+	- gofmt, vet and staticcheck are clean and gated already. A config file would add the checks that caught the rest: unchecked errors, shadowed builtins, and the naming convention below.
+	- Done: `src-go/.golangci.yml` - errcheck, ineffassign, predeclared, unconvert, revive (var-naming, redefines-builtin-id, and three flow rules). Probe-gated in stage 1 like staticcheck.
+
+- ✅ Directive review 20260819 item 24: internal names do not follow Go's convention for initialisms.
+	- Twenty-six of them, all unexported, all internal. No effect on output or arguments.
+	- Done: URL, SSH and HTTPS spelled the Go way throughout. No effect on output or arguments.
+
+- ✅ Directive review 20260819 item 25: five discarded errors want either handling or a reason.
+	- Three of them set environment variables that decide the whole account selection.
+	- Done: the three that decide account selection now stop the run; the temp-dir removal and the readability probe say in one line why they discard theirs.
 
 #### Done - Code review 20260819
 

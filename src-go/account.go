@@ -17,24 +17,6 @@ import (
 	"unicode"
 )
 
-var (
-	acctName       = "" // configured account claiming this folder, if any
-	acctGhWho      = "" // the GitHub account this run acts as
-	acctSource     = "" // how we decided that, for the identity line
-	acctExplicit   = false
-	accountApplied = false
-	ghLoginCache   = ""
-)
-
-// What the selection actually applied, read back by the identity block.
-var (
-	accountNoToken       = false
-	accountUsedHttpsAuth = false
-	accountUsedSSHKey    = ""
-	accountUsedIdentity  = false
-	ghSwitchedFrom       = ""
-)
-
 // resolveAccount works out who 'dir' says to act as. Most specific first:
 // GITSBY_ACCOUNT, then 'gitsby.ghAccount' in git config (an includeIf already
 // selects that by repo path), then the config file's folder rules, then whoever
@@ -43,19 +25,21 @@ var (
 //
 // 'dir' is where we are standing for every command but clone, which resolves for
 // the folder its new repo lands in instead. An empty 'url' declines the last step.
-func resolveAccount(dir, url string) {
-	loadConfig()
-	acctName, acctGhWho, acctSource, acctExplicit = "", "", "", false
+func (a *app) resolveAccount(dir, url string) error {
+	if err := a.cfg.load(a.opt); err != nil {
+		return err
+	}
+	a.acct.name, a.acct.ghWho, a.acct.source, a.acct.explicit = "", "", "", false
 	if who := os.Getenv("GITSBY_ACCOUNT"); who != "" {
 		// Either the name of a configured account or a bare login - accept both; a
 		// script setting this knows one of the two and shouldn't have to know which.
-		if v := accountValue(who, "ghAccount"); v != "" {
-			acctName, acctGhWho = who, v
+		if v := a.cfg.value(who, "ghAccount"); v != "" {
+			a.acct.name, a.acct.ghWho = who, v
 		} else {
-			acctGhWho = who
+			a.acct.ghWho = who
 		}
-		acctSource, acctExplicit = "GITSBY_ACCOUNT", true
-		return
+		a.acct.source, a.acct.explicit = "GITSBY_ACCOUNT", true
+		return nil
 	}
 	// git config answers for the repo we are standing in, which is the repo in
 	// question only when that is the folder being asked about. A clone's destination
@@ -63,30 +47,31 @@ func resolveAccount(dir, url string) {
 	// about a repo that does not exist - so asking here would answer for a different
 	// repo entirely. The config file's folder rules below have no such limit: gitsby
 	// matches those itself, against any path.
-	if dir == contextDir() {
+	if dir == a.contextDir() {
 		if fromGit := runOut("git", "config", "--get", "gitsby.ghAccount"); fromGit != "" {
-			acctGhWho, acctSource, acctExplicit = fromGit, "git config", true
+			a.acct.ghWho, a.acct.source, a.acct.explicit = fromGit, "git config", true
 			// Name the config account too when one claims this folder, so its key and
 			// commit identity still apply - the git key says who, not that the rest of
 			// the account is off.
-			acctName = accountForDir(dir)
-			if accountValue(acctName, "ghAccount") != acctGhWho {
-				acctName = ""
+			a.acct.name = a.cfg.accountForDir(dir)
+			if a.cfg.value(a.acct.name, "ghAccount") != a.acct.ghWho {
+				a.acct.name = ""
 			}
-			return
+			return nil
 		}
 	}
-	acctName = accountForDir(dir)
-	if acctName != "" {
+	a.acct.name = a.cfg.accountForDir(dir)
+	if a.acct.name != "" {
 		// A folder rule with no account named still carries a key and a commit
 		// identity, worth applying on their own - it just says nothing about gh.
-		acctGhWho = accountValue(acctName, "ghAccount")
-		acctSource = "config '" + acctName + "'"
-		return
+		a.acct.ghWho = a.cfg.value(a.acct.name, "ghAccount")
+		a.acct.source = "config '" + a.acct.name + "'"
+		return nil
 	}
 	if fromRemote := remoteOwner(url); fromRemote != "" {
-		acctGhWho, acctSource = fromRemote, "the remote"
+		a.acct.ghWho, a.acct.source = fromRemote, "the remote"
 	}
+	return nil
 }
 
 // remoteOwner names the GitHub account a remote belongs to, or nothing when that
@@ -147,18 +132,14 @@ func isDrivePath(p string) bool {
 }
 
 // resolveSSHHost finds the real hostname behind an ssh_config alias
-// ('github_work' -> 'github.com'), so an aliased remote can still be recognised
+// ('github_work' -> 'github.com'), so an aliased remote can still be recognized
 // as GitHub. The alias itself when ssh can't say.
 func resolveSSHHost(alias string) string {
-	if alias == "" {
-		return alias
-	}
-	if _, err := exec.LookPath("ssh"); err != nil {
+	if alias == "" || !inPath("ssh") {
 		return alias
 	}
 	// '--': an option-shaped host must not parse as an ssh option.
-	out := runOut("ssh", "-G", "--", alias)
-	for _, line := range strings.Split(out, "\n") {
+	for _, line := range strings.Split(runOut("ssh", "-G", "--", alias), "\n") {
 		key, value, found := strings.Cut(line, " ")
 		if found && key == "hostname" && value != "" {
 			return value
@@ -171,10 +152,7 @@ func resolveSSHHost(alias string) string {
 // gh's own credential store - no network, no prompt - so it doubles as the
 // "does gh have this account" test.
 func ghTokenFor(who string) string {
-	if who == "" {
-		return ""
-	}
-	if _, err := exec.LookPath("gh"); err != nil {
+	if who == "" || !inPath("gh") {
 		return ""
 	}
 	return runOut("gh", "auth", "token", "--user", who)
@@ -206,14 +184,14 @@ func readTokenFile(file string) string {
 // it is the one that stays current, so a rotated login is never shadowed by a
 // stale copy on disk - then the file the config names, then the older git-config
 // key. Nothing found is not an error anywhere.
-func accountToken() string {
-	if acctGhWho == "" {
+func (a *app) accountToken() string {
+	if a.acct.ghWho == "" {
 		return ""
 	}
-	if token := ghTokenFor(acctGhWho); token != "" {
+	if token := ghTokenFor(a.acct.ghWho); token != "" {
 		return token
 	}
-	if token := readTokenFile(accountValue(acctName, "tokenFile")); token != "" {
+	if token := readTokenFile(a.cfg.value(a.acct.name, "tokenFile")); token != "" {
 		return token
 	}
 	return readTokenFile(configOwnScope("gitsby.ghTokenFile"))
@@ -241,14 +219,29 @@ func configOwnScope(key string) string {
 	return value
 }
 
+// setEnv fails only on a name no process can hold, so a failure here means
+// something is wrong in this program rather than out there. It still has to stop
+// the run: every variable set through here decides which account the commands
+// after it act as, and half an account applied is how you push as the wrong one.
+func setEnv(key, value string) error {
+	if err := os.Setenv(key, value); err != nil {
+		return usagef("Couldn't set %s for this run: %s", key, err)
+	}
+	return nil
+}
+
 // gitConfigEnv adds one config key to the environment git reads, without
 // disturbing any the caller already set: GIT_CONFIG_COUNT is a count, so entries
 // have to be numbered on from where it stands.
-func gitConfigEnv(key, value string) {
+func gitConfigEnv(key, value string) error {
 	n, _ := strconv.Atoi(os.Getenv("GIT_CONFIG_COUNT"))
-	os.Setenv("GIT_CONFIG_KEY_"+strconv.Itoa(n), key)
-	os.Setenv("GIT_CONFIG_VALUE_"+strconv.Itoa(n), value)
-	os.Setenv("GIT_CONFIG_COUNT", strconv.Itoa(n+1))
+	if err := setEnv("GIT_CONFIG_KEY_"+strconv.Itoa(n), key); err != nil {
+		return err
+	}
+	if err := setEnv("GIT_CONFIG_VALUE_"+strconv.Itoa(n), value); err != nil {
+		return err
+	}
+	return setEnv("GIT_CONFIG_COUNT", strconv.Itoa(n+1))
 }
 
 // selectAccount points this run at the account this folder belongs to - gh, git's
@@ -258,89 +251,104 @@ func gitConfigEnv(key, value string) {
 // killed run leaves the machine on.
 // skipGhProbe: this run prints no identity block, so skip the probe that only
 // feeds one.
-func selectAccount(skipGhProbe bool) {
-	if anyIdentity {
-		return
+func (a *app) selectAccount(skipGhProbe bool) error {
+	if a.opt.anyIdentity {
+		return nil
 	}
 	// Applying twice would number a second set of GIT_CONFIG_* entries on top of
 	// the first.
-	if accountApplied {
-		return
+	if a.acct.applied {
+		return nil
 	}
-	accountApplied = true
-	token := accountToken()
-	if token != "" {
+	a.acct.applied = true
+	switch token := a.accountToken(); {
+	case token != "":
 		// Asked BEFORE the token lands, or the probe answers as the token we are about
 		// to export and the line can only ever say what it already knows. Naming the
 		// account this one replaces is display only, and asking is a live API round
 		// trip. '?' means gh held no account at all.
 		if !skipGhProbe {
-			if active := ghLogin(); active != acctGhWho && active != "?" {
-				ghSwitchedFrom = active
+			if active := a.ghLogin(); active != a.acct.ghWho && active != "?" {
+				a.acct.switchedFrom = active
 			}
 		}
 		// Export whenever a token was found, not only when it replaces a different
 		// active account: the helper below reads GH_TOKEN when git runs it, and the
 		// reset that precedes it has already evicted any credential manager.
-		os.Setenv("GH_TOKEN", token)
-		ghLoginCache = acctGhWho
+		if err := setEnv("GH_TOKEN", token); err != nil {
+			return err
+		}
+		a.gh.login.set(a.acct.ghWho)
 		// The same token is what lets git itself push as this account over https,
 		// with no ssh key anywhere. An empty value first resets the helper list, so
 		// a credential manager configured for another account cannot answer ahead of
 		// us. The token is read from the environment when the helper runs, never
 		// stored in the config value itself.
-		gitConfigEnv("credential.https://github.com.helper", "")
-		gitConfigEnv("credential.https://github.com.helper",
-			`!f(){ test "$1" = get && { echo username=x; echo "password=${GH_TOKEN}"; }; }; f`)
-		accountUsedHttpsAuth = true
-	} else if acctGhWho != "" && (acctExplicit || acctName != "") {
+		if err := gitConfigEnv("credential.https://github.com.helper", ""); err != nil {
+			return err
+		}
+		if err := gitConfigEnv("credential.https://github.com.helper",
+			`!f(){ test "$1" = get && { echo username=x; echo "password=${GH_TOKEN}"; }; }; f`); err != nil {
+			return err
+		}
+		a.acct.usedHTTPSAuth = true
+	case a.acct.ghWho != "" && (a.acct.explicit || a.acct.name != ""):
 		// An account we resolved but cannot act as. gh goes on using whichever
 		// account it is logged in as, and the identity block must say so rather than
 		// name what was RESOLVED as if it were APPLIED. Only for an account that was
 		// configured or asked for: one guessed from the remote owner is not a claim
 		// that we can act as it.
-		accountNoToken = true
+		a.acct.noToken = true
 	}
 	// The ssh key stays supported as the way that needs no token at all. Only when
 	// nothing already says which key to use: an explicit GIT_SSH_COMMAND, or one
 	// set on the repo, was chosen more deliberately than a folder rule was.
-	if sshKey := accountValue(acctName, "sshKey"); sshKey != "" &&
-		os.Getenv("GIT_SSH_COMMAND") == "" && coreSshCommand() == "" {
+	if sshKey := a.cfg.value(a.acct.name, "sshKey"); sshKey != "" &&
+		os.Getenv("GIT_SSH_COMMAND") == "" && a.coreSSHCommand() == "" {
 		// IdentitiesOnly, or ssh offers every key the agent holds and the server
 		// picks the first that authenticates - on a two-account machine a coin toss.
-		os.Setenv("GIT_SSH_COMMAND", "ssh -i "+sshKey+" -o IdentitiesOnly=yes")
-		accountUsedSSHKey = sshKey
+		if err := setEnv("GIT_SSH_COMMAND", "ssh -i "+sshKey+" -o IdentitiesOnly=yes"); err != nil {
+			return err
+		}
+		a.acct.usedSSHKey = sshKey
 	}
 	// Commit identity, unless the repo sets its own - a local value was typed for
 	// this repo specifically, and a folder rule should not quietly outrank it.
-	acctEmail := accountValue(acctName, "email")
-	acctUser := accountValue(acctName, "name")
+	acctEmail := a.cfg.value(a.acct.name, "email")
+	acctUser := a.cfg.value(a.acct.name, "name")
 	if (acctEmail != "" || acctUser != "") && runOut("git", "config", "--local", "--get", "user.email") == "" {
 		if acctUser != "" {
-			gitConfigEnv("user.name", acctUser)
+			if err := gitConfigEnv("user.name", acctUser); err != nil {
+				return err
+			}
 		}
 		if acctEmail != "" {
-			gitConfigEnv("user.email", acctEmail)
+			if err := gitConfigEnv("user.email", acctEmail); err != nil {
+				return err
+			}
 		}
-		accountUsedIdentity = true
+		a.acct.usedIdentity = true
 	}
+	return nil
 }
 
 // ghLogin names the account gh's token belongs to. gh talks to the API over https
 // and never consults ssh config, so this is who every gh-backed command acts as -
 // regardless of which key git pushes with. '?' when gh can't say.
-func ghLogin() string {
-	if ghLoginCache == "" {
-		ghLoginCache = "?"
-		if _, err := exec.LookPath("gh"); err == nil {
-			cmd := exec.Command("gh", "api", "user", "--jq", ".login")
-			cmd.Env = append(os.Environ(), "GH_PROMPT_DISABLED=1")
-			if out, err := cmd.Output(); err == nil {
-				if login := strings.TrimRight(string(out), "\r\n"); login != "" {
-					ghLoginCache = login
-				}
-			}
+func (a *app) ghLogin() string {
+	return a.gh.login.get(func() string {
+		if !inPath("gh") {
+			return "?"
 		}
-	}
-	return ghLoginCache
+		cmd := exec.Command("gh", "api", "user", "--jq", ".login")
+		cmd.Env = append(os.Environ(), "GH_PROMPT_DISABLED=1")
+		out, err := cmd.Output()
+		if err != nil {
+			return "?"
+		}
+		if login := strings.TrimRight(string(out), "\r\n"); login != "" {
+			return login
+		}
+		return "?"
+	})
 }

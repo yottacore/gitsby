@@ -10,36 +10,40 @@ package main
 
 import "strings"
 
-var (
-	pruneTargetRefs    []string
-	pruneLocal         []string
-	pruneRemote        []string
-	pruneKeep          []string
-	pruneCurrentMerged = ""
-)
+// prunePlan is what the survey decided, settled before anything is shown so the
+// plan can name every branch.
+type prunePlan struct {
+	targetRefs    []string
+	local         []string
+	remote        []string
+	keep          []string
+	currentMerged string
+}
+
+func (p prunePlan) empty() bool { return len(p.local) == 0 && len(p.remote) == 0 }
 
 // resolvePrune sorts local branches into what's already landed and what isn't.
 // Ancestry is an exact test here only because gitsby always lands with a real
 // merge commit - a squash- or rebase-landed branch never looks contained, and is
 // kept rather than guessed at.
-func resolvePrune() {
-	target := mergeTarget()
+func (a *app) resolvePrune() error {
+	target := a.mergeTarget()
 	targetRemoteRef := "refs/remotes/origin/" + target
 	if branchExistsLocal(target) {
-		pruneTargetRefs = append(pruneTargetRefs, "refs/heads/"+target)
+		a.prune.targetRefs = append(a.prune.targetRefs, "refs/heads/"+target)
 	}
 	haveTargetRemote := branchExistsRemote(target)
 	if haveTargetRemote {
-		pruneTargetRefs = append(pruneTargetRefs, targetRemoteRef)
+		a.prune.targetRefs = append(a.prune.targetRefs, targetRemoteRef)
 	}
-	current := currentBranch()
+	current := a.currentBranch()
 	// Ask once per target ref, not once per branch: 'for-each-ref --merged' answers
 	// "which branches are contained in this ref" for all of them in a single call.
 	// The delete-time per-branch re-check stays with the deleting half, deliberately:
 	// the confirmation prompt can sit a while, and that one is the safety net rather
 	// than the survey.
 	mergedLocal := map[string]bool{}
-	for _, ref := range pruneTargetRefs {
+	for _, ref := range a.prune.targetRefs {
 		for _, branch := range runLines("git", "for-each-ref", "--format=%(refname:short)", "--merged", ref, "refs/heads/") {
 			mergedLocal[branch] = true
 		}
@@ -55,62 +59,65 @@ func resolvePrune() {
 		// But if it WOULD have qualified, say so - otherwise it just vanishes from
 		// every list.
 		if branch == current {
-			if !isProtectedBranch(branch) && mergedLocal[branch] {
-				pruneCurrentMerged = branch
+			if !a.isProtectedBranch(branch) && mergedLocal[branch] {
+				a.prune.currentMerged = branch
 			}
 			continue
 		}
-		if isProtectedBranch(branch) {
+		if a.isProtectedBranch(branch) {
 			continue
 		}
-		if mergedLocal[branch] {
-			// 'git branch -D' would read a dash-led name as options. Only the ones we
-			// are about to hand git: a kept branch is printed and nothing more.
-			refuseOptionShapedRefs(branch)
-			pruneLocal = append(pruneLocal, branch)
-			// The remote copy goes only when origin has the merge too: a landing that
-			// hasn't been pushed yet leaves origin holding the only ref to that work.
-			// The map was built by listing refs/remotes/origin, so being in it already
-			// says the remote branch is there - no second ref lookup per branch.
-			if mergedRemote["origin/"+branch] {
-				pruneRemote = append(pruneRemote, branch)
-			}
-		} else {
-			pruneKeep = append(pruneKeep, branch)
+		if !mergedLocal[branch] {
+			a.prune.keep = append(a.prune.keep, branch)
+			continue
+		}
+		// 'git branch -D' would read a dash-led name as options. Only the ones we are
+		// about to hand git: a kept branch is printed and nothing more.
+		if err := refuseOptionShapedRefs(branch); err != nil {
+			return err
+		}
+		a.prune.local = append(a.prune.local, branch)
+		// The remote copy goes only when origin has the merge too: a landing that
+		// hasn't been pushed yet leaves origin holding the only ref to that work.
+		// The map was built by listing refs/remotes/origin, so being in it already
+		// says the remote branch is there - no second ref lookup per branch.
+		if mergedRemote["origin/"+branch] {
+			a.prune.remote = append(a.prune.remote, branch)
 		}
 	}
+	return nil
 }
 
 // pruneNothingToDo says WHY the plan is empty - "no branch is merged" would be a
 // lie when the merged one is the branch we're standing on.
-func pruneNothingToDo() {
-	if pruneCurrentMerged != "" {
-		echoStatus("Nothing to prune from here.")
-		echoClean("  Current branch '" + pruneCurrentMerged + "' is merged, but you're on it; switch off it to prune it.")
+func (a *app) pruneNothingToDo() {
+	if a.prune.currentMerged != "" {
+		a.out.status("Nothing to prune from here.")
+		a.out.clean("  Current branch '" + a.prune.currentMerged + "' is merged, but you're on it; switch off it to prune it.")
 	} else {
-		echoStatus("Nothing to prune; no branch is fully merged into '" + mergeTarget() + "' yet.")
+		a.out.status("Nothing to prune; no branch is fully merged into '" + a.mergeTarget() + "' yet.")
 	}
-	if len(pruneKeep) > 0 {
-		echoClean("  Keeping (not merged yet): " + strings.Join(pruneKeep, ", "))
+	if len(a.prune.keep) > 0 {
+		a.out.clean("  Keeping (not merged yet): " + strings.Join(a.prune.keep, ", "))
 	}
-	echoClean("")
+	a.out.clean("")
 }
 
 // prunePreview is br prune's slice of the plan display.
-func prunePreview() {
+func (a *app) prunePreview() {
 	// -D is what runs, so -D is what the plan says. The line above it is the reason
 	// that's safe: gitsby checks containment itself, against the branch that matters.
-	echoClean(pad + "(each verified contained in " + mergeTarget() + ", and re-checked at delete time)")
-	for _, branch := range pruneLocal {
-		echoClean(pad + "git branch -D " + branch)
+	a.out.clean(pad + "(each verified contained in " + a.mergeTarget() + ", and re-checked at delete time)")
+	for _, branch := range a.prune.local {
+		a.out.clean(pad + "git branch -D " + branch)
 	}
-	for _, branch := range pruneRemote {
-		echoClean(pad + "git push origin --delete " + branch)
+	for _, branch := range a.prune.remote {
+		a.out.clean(pad + "git push origin --delete " + branch)
 	}
-	if pruneCurrentMerged != "" {
-		echoClean(pad + "Keeping '" + pruneCurrentMerged + "' - merged, but it's the current branch.")
+	if a.prune.currentMerged != "" {
+		a.out.clean(pad + "Keeping '" + a.prune.currentMerged + "' - merged, but it's the current branch.")
 	}
-	if len(pruneKeep) > 0 {
-		echoClean(pad + "Keeping (not merged yet): " + strings.Join(pruneKeep, ", "))
+	if len(a.prune.keep) > 0 {
+		a.out.clean(pad + "Keeping (not merged yet): " + strings.Join(a.prune.keep, ", "))
 	}
 }

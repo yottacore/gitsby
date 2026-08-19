@@ -12,142 +12,154 @@ package main
 
 const pad = "    "
 
-func preview(what string) {
-	msgDisp := "git commit"
-	if commitMessage != "" {
-		msgDisp = `git commit -m "` + commitMessage + `"`
-	}
+func (a *app) preview(what string) {
 	switch what {
 	case "commit":
-		echoClean(pad + "git add --all")
-		echoClean(pad + msgDisp + " *")
+		msgDisp := "git commit"
+		if a.opt.message != "" {
+			msgDisp = `git commit -m "` + a.opt.message + `"`
+		}
+		a.out.clean(pad + "git add --all")
+		a.out.clean(pad + msgDisp + " *")
 	case "pull":
-		echoClean(pad + "git pull --ff-only --autostash *")
+		a.out.clean(pad + "git pull --ff-only --autostash *")
 	case "pullcom":
-		preview("pull")
-		preview("commit")
+		a.preview("pull")
+		a.preview("commit")
 	case "sync":
-		preview("pullcom")
-		echoClean(pad + "git push (branch '" + currentBranch() + "') *")
+		a.preview("pullcom")
+		a.out.clean(pad + "git push (branch '" + a.currentBranch() + "') *")
 	case "br-create":
 		// From main/dev the dirty tree rides along to the new branch, so there's no
 		// commit here.
-		previewNewBranch(mergeTarget())
+		a.previewNewBranch(a.mergeTarget())
 	case "br-hotfix":
 		// Off the default branch, not dev: this corrects what is already published.
-		previewNewBranch(defaultBranch())
+		a.previewNewBranch(a.defaultBranch())
 	case "br-switch":
 		// Already on the target: nothing is parked and no checkout happens, so the plan
 		// must not promise an add/commit/push it will not do.
-		target := cmdArg
+		target := a.cmd.arg
 		if target == "" {
-			target = mergeTarget()
+			target = a.mergeTarget()
 		}
-		if currentBranch() != target {
-			preview("sync")
-			echoClean(pad + "git checkout " + target)
+		if a.currentBranch() != target {
+			a.preview("sync")
+			a.out.clean(pad + "git checkout " + target)
 		}
-		echoClean(pad + "git pull --ff-only *")
+		a.out.clean(pad + "git pull --ff-only *")
 	case "br-merge":
-		preview("sync")
-		echoClean(pad + "git checkout " + branchTarget(""))
-		echoClean(pad + "git pull --ff-only *")
-		echoClean(pad + "git merge --no-ff " + currentBranch())
-		echoClean(pad + "git push *")
-		echoClean(pad + "git branch -d " + currentBranch())
-		echoClean(pad + "git push origin --delete " + currentBranch() + " *")
-		echoClean(pad + "git pull --ff-only *")
+		a.preview("sync")
+		a.out.clean(pad + "git checkout " + a.branchTarget(""))
+		a.out.clean(pad + "git pull --ff-only *")
+		a.out.clean(pad + "git merge --no-ff " + a.currentBranch())
+		a.out.clean(pad + "git push *")
+		a.out.clean(pad + "git branch -d " + a.currentBranch())
+		a.out.clean(pad + "git push origin --delete " + a.currentBranch() + " *")
+		a.out.clean(pad + "git pull --ff-only *")
 		// A hotfix owes dev the same change, or the next release undoes it.
-		if isHotfixBranch("") {
-			echoClean(pad + "git checkout " + mergeTarget())
-			echoClean(pad + "git merge " + backMergeRef())
-			echoClean(pad + "git push *")
+		if a.isHotfixBranch("") {
+			a.previewBackMerge()
 		}
 	case "br-prune":
-		prunePreview()
+		a.prunePreview()
 	case "pr":
-		if prSub == "create" {
-			preview("sync")
-			echoClean(pad + "gh pr create --base " + branchTarget("") + " --title \"" + prTitle + "\"")
-		} else {
-			echoClean(pad + "gh pr review " + prNum + " --approve *")
-			echoClean(pad + "gh pr merge " + prNum + " --merge --delete-branch")
-			echoClean(pad + "git checkout " + branchTarget(prHeadBranch) + " *")
-			echoClean(pad + "git pull --ff-only *")
-			if isHotfixBranch(prHeadBranch) {
-				echoClean(pad + "git checkout " + mergeTarget())
-				echoClean(pad + "git merge " + backMergeRef())
-				echoClean(pad + "git push *")
-			}
-		}
+		a.previewPr()
 	case "release":
-		preview("sync")
-		hasDev := mergeTarget() == "dev"
-		if hasDev {
-			echoClean(pad + "git checkout dev *")
-			echoClean(pad + "git pull --ff-only *")
-		}
-		echoClean(pad + "git checkout " + defaultBranch() + " *")
-		echoClean(pad + "git pull --ff-only *")
-		if hasDev {
-			echoClean(pad + "git merge --no-ff dev")
-		}
-		echoClean(pad + "git tag -a " + releaseTag)
-		echoClean(pad + "git push *")
-		echoClean(pad + "git push origin " + releaseTag + " *")
-		if hasDev {
-			echoClean(pad + "git checkout dev *")
-			echoClean(pad + "git merge --ff-only " + defaultBranch() + " *")
-			echoClean(pad + "git push *")
-		}
-		echoClean(pad + "git checkout " + currentBranch() + " *")
+		a.previewRelease()
 	case "repo-clone":
-		echoClean(pad + "git clone " + maskUrl(cloneUrl) + " " + cloneDir)
-		echoClean(pad + "git -C " + cloneDir + " checkout dev *")
+		a.out.clean(pad + "git clone " + maskURL(a.tgt.cloneURL) + " " + a.tgt.cloneDir)
+		a.out.clean(pad + "git -C " + a.tgt.cloneDir + " checkout dev *")
 	case "repo-url":
-		echoClean(pad + "git remote set-url origin " + githubUrl(remoteTarget(originUrl()), cmdArg))
+		a.out.clean(pad + "git remote set-url origin " + githubURL(remoteTarget(a.originURL()), a.cmd.arg))
 	case "account-apply":
 		// Names every file and every condition, because this is the one command
 		// that writes outside the repo you are standing in - into your own global
 		// git config.
-		applyDir := accountIncludeDir()
-		for _, name := range accountNames() {
-			echoClean(pad + "write " + applyDir + "/" + name + ".gitconfig")
+		applyDir := a.cfg.includeDir()
+		for _, name := range a.cfg.accountNames() {
+			a.out.clean(pad + "write " + applyDir + "/" + name + ".gitconfig")
 		}
-		for _, key := range accountManagedIncludes() {
-			echoClean(pad + "git config --global --unset-all " + key)
+		for _, key := range a.cfg.accountManagedIncludes() {
+			a.out.clean(pad + "git config --global --unset-all " + key)
 		}
-		for _, rule := range accountApplyPlan() {
-			echoClean(pad + "git config --global --add " + rule.cond + " " + rule.target)
+		for _, rule := range a.cfg.accountApplyPlan() {
+			a.out.clean(pad + "git config --global --add " + rule.cond + " " + rule.target)
 		}
 	case "repo-create", "repo-connect":
-		if !inRepo {
-			echoClean(pad + "git init -b main")
+		if !a.inRepo {
+			a.out.clean(pad + "git init -b main")
 		}
-		preview("commit")
-		switch connectMode {
+		a.preview("commit")
+		switch a.tgt.connectMode {
 		case "create":
-			echoClean(pad + "gh repo create " + ghTarget + " --" + repoVisibility + " --source . --push --remote origin")
+			a.out.clean(pad + "gh repo create " + a.tgt.ghTarget + " --" + a.opt.visibility + " --source . --push --remote origin")
 		case "add":
-			echoClean(pad + "git remote add origin " + maskUrl(connectUrl))
-			echoClean(pad + "git push -u origin HEAD")
+			a.out.clean(pad + "git remote add origin " + maskURL(a.tgt.connectURL))
+			a.out.clean(pad + "git push -u origin HEAD")
 		case "push":
-			echoClean(pad + "git push -u origin HEAD *")
+			a.out.clean(pad + "git push -u origin HEAD *")
 		}
 	}
 }
 
 // previewNewBranch is br create and br hotfix - the same recipe off a different
 // base.
-func previewNewBranch(baseBranch string) {
-	if isProtectedBranch("") {
-		echoClean(pad + "git checkout " + baseBranch + " *")
-		echoClean(pad + "git pull --ff-only --autostash *")
+func (a *app) previewNewBranch(baseBranch string) {
+	if a.isProtectedBranch("") {
+		a.out.clean(pad + "git checkout " + baseBranch + " *")
+		a.out.clean(pad + "git pull --ff-only --autostash *")
 	} else {
-		preview("sync")
-		echoClean(pad + "git checkout " + baseBranch + " *")
-		echoClean(pad + "git pull --ff-only *")
+		a.preview("sync")
+		a.out.clean(pad + "git checkout " + baseBranch + " *")
+		a.out.clean(pad + "git pull --ff-only *")
 	}
-	echoClean(pad + "git checkout -b " + cmdArg)
-	echoClean(pad + "git push -u origin " + cmdArg + " *")
+	a.out.clean(pad + "git checkout -b " + a.cmd.arg)
+	a.out.clean(pad + "git push -u origin " + a.cmd.arg + " *")
+}
+
+// previewBackMerge is the tail every hotfix path shares: dev has to receive what
+// landed on the default branch.
+func (a *app) previewBackMerge() {
+	a.out.clean(pad + "git checkout " + a.mergeTarget())
+	a.out.clean(pad + "git merge " + a.backMergeRef())
+	a.out.clean(pad + "git push *")
+}
+
+func (a *app) previewPr() {
+	if a.pr.sub == "create" {
+		a.preview("sync")
+		a.out.clean(pad + "gh pr create --base " + a.branchTarget("") + " --title \"" + a.pr.title + "\"")
+		return
+	}
+	a.out.clean(pad + "gh pr review " + a.pr.num + " --approve *")
+	a.out.clean(pad + "gh pr merge " + a.pr.num + " --merge --delete-branch")
+	a.out.clean(pad + "git checkout " + a.branchTarget(a.pr.headBranch) + " *")
+	a.out.clean(pad + "git pull --ff-only *")
+	if a.isHotfixBranch(a.pr.headBranch) {
+		a.previewBackMerge()
+	}
+}
+
+func (a *app) previewRelease() {
+	a.preview("sync")
+	hasDev := a.mergeTarget() == "dev"
+	if hasDev {
+		a.out.clean(pad + "git checkout dev *")
+		a.out.clean(pad + "git pull --ff-only *")
+	}
+	a.out.clean(pad + "git checkout " + a.defaultBranch() + " *")
+	a.out.clean(pad + "git pull --ff-only *")
+	if hasDev {
+		a.out.clean(pad + "git merge --no-ff dev")
+	}
+	a.out.clean(pad + "git tag -a " + a.rel.tag)
+	a.out.clean(pad + "git push *")
+	a.out.clean(pad + "git push origin " + a.rel.tag + " *")
+	if hasDev {
+		a.out.clean(pad + "git checkout dev *")
+		a.out.clean(pad + "git merge --ff-only " + a.defaultBranch() + " *")
+		a.out.clean(pad + "git push *")
+	}
+	a.out.clean(pad + "git checkout " + a.currentBranch() + " *")
 }

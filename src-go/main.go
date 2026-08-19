@@ -10,9 +10,10 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"strings"
+	"time"
 )
 
 const meName = "gitsby"
@@ -29,388 +30,430 @@ const (
 	author        = "Jim Collier"
 )
 
-func printCopyright() {
-	echoClean("")
-	echoClean(fmt.Sprintf("%s v%s, Copyright © %s %s.", meName, version, copyrightYear, author))
-	echoClean("Licensed under The MIT License (MIT). Full text at:")
-	echoClean("  https://mit-license.org/")
-	echoClean("No Warranty.")
-	echoClean("")
-}
-
-func printAbout() {
-	echoClean("")
-	echoClean("Safer, state-checked wrappers for everyday git. Every command verifies the")
-	echoClean("repo state before acting (commit only if dirty, pull only with an upstream,")
-	echoClean("push only if ahead), so each is idempotent and safe to re-run.")
-	echoClean("")
-}
-
-func printSyntax() {
-	echoClean("")
-	echoClean("Common commands:")
-	echoClean("  pullcom [msg] ......: Pull updates, then commit all local changes. Do frequently!")
-	echoClean("  br create <branch> .: Create a new branch off " + mergeTargetLabel + " (current work is carried or parked).")
-	echoClean("  br switch [branch] .: Switch to a branch (parks current work first). No arg: back to " + mergeTargetLabel + ".")
-	echoClean("  br [list] ..........: Fetch and list branches.")
-	echoClean("  status .............: Fetch and show current status.")
-	echoClean("One-time setup commands:")
-	echoClean("  repo clone <url> ...: Clone a repo you don't have yet, into [dir] (checks out dev if it has one).")
-	echoClean("  repo create <o/n> ..: Create GitHub repo 'owner/name' via gh, then connect this directory and push.")
-	echoClean("  repo connect [url] .: Connect this directory to an existing empty remote, and push.")
-	echoClean("  repo url [https|ssh]: Show how origin authenticates, or switch it between the two.")
-	echoClean("  account [list] .....: Show your configured GitHub accounts, and which one this folder uses.")
-	echoClean("  account apply ......: Teach plain git the same folder rules, so 'git' outside gitsby matches.")
-	echoClean("Less common commands:")
-	echoClean("  sync [msg] .........: Pull, commit, and push (pullcom, plus the push). Do infrequently.")
-	echoClean("  identity ...........: Who commands here act as: account, ssh key, commit author, gh login.")
-	echoClean("Admin commands, e.g. for small solo projects:")
-	echoClean("  br merge [msg] .....: Merge current branch into " + mergeTargetLabel + " (--no-ff), push, delete it local + remote.")
-	echoClean("  br prune ...........: Delete branches already merged into " + mergeTargetLabel + ", local + remote.")
-	echoClean("  br hotfix <name> ...: Branch off the default branch, to correct what's already published.")
-	echoClean("  pr [create|n|ok n] .: Create, list, review, or accept a pull request (needs gh).")
-	echoClean("  release [ver] ......: Cut a release: merge dev into main, tag, push. No ver: next after latest tag.")
-	echoClean("For scripts:")
-	echoClean("  raw git <args> .....: Run git as the account this folder belongs to. Everything after 'git' is git's.")
-	echoClean("  raw gh <args> ......: The same, for gh.")
-	echoClean("Options:")
-	echoClean("  -m, --message MSG ....: Commit or merge message (or give it positionally).")
-	echoClean("  -q, --quiet, -y ......: Assume yes - no prompts; if committing with no message, one is generated.")
-	echoClean("  --public / --private .: Visibility for the repo 'repo create' makes (default: private).")
-	echoClean("  --any-identity .......: Act as gh's active account, and proceed when it differs from the remote's ssh key.")
-	echoClean("  --no-fetch ...........: Skip the pre-command fetch, and the pull. (Pushes still go out.)")
-	echoClean("  --config FILE ........: Read accounts from FILE instead of the usual config location.")
-	echoClean("  -h, --help  /  -v, --version")
-	echoClean("")
-}
-
-func printHelp() {
-	printCopyright()
-	printAbout()
-	printSyntax()
-}
-
-// cmdPassthrough runs the real tool as the account this folder belongs to, then
-// gets out of its way entirely. No preview, no confirmation, no fetch: this is
-// somebody else's command run under the right identity, and a script piping its
-// output must get that output and nothing else.
-func cmdPassthrough(tool string, args []string) {
-	mustBeInPath(tool)
-	resolveAccount(contextDir(), originUrl())
-	selectAccount(true)
-	// One line, on stderr, so a pipeline reading stdout sees only the tool.
-	// Silence is what '-q' is for.
-	if !quiet && acctGhWho != "" && acctSource != "" {
-		fmt.Fprintln(os.Stderr, meName+": acting as "+acctGhWho+" (from "+acctSource+")")
-	}
-	runHandover(tool, args)
-}
-
-// Whether the working directory sits inside a git work tree, settled once in
-// main. Package-level because the connect commands and their preview both hang
-// behavior off it.
-var inRepo = false
-
-func cmdBrList() {
-	dflt := defaultBranch()
-	if dflt == "" {
-		dflt = "unknown"
-	}
-	echoClean("")
-	echoClean("Default branch: " + dflt)
-	echoStatus("git branch -a -vv")
-	runInherit("git", "branch", "-a", "-vv")
-	echoResetBlank()
-}
-
 func main() {
-	args := os.Args[1:]
+	out := newPrinter()
+	if err := run(out, os.Args[1:]); err != nil {
+		os.Exit(reportExit(out, err))
+	}
+}
+
+// reportExit turns whatever came back into the framing and the status that go
+// with it. Anything that does not know how it ends is a fault in here rather than
+// a mistake out there, and reads as a plain refusal.
+func reportExit(out *printer, err error) int {
+	if errors.Is(err, errDone) {
+		return 0
+	}
+	var reporter exitReporter
+	if errors.As(err, &reporter) {
+		return reporter.report(out)
+	}
+	return (&usageError{msg: err.Error()}).report(out)
+}
+
+func run(out *printer, argv []string) error {
+	a := newApp(out)
 
 	// Only the command slot counts for help and the version - scanning the whole
 	// argv would make a message like "add -v flag" silently short-circuit.
-	if len(args) == 0 {
-		printHelp()
+	if len(argv) == 0 {
+		a.printHelp()
 		// The scripts' exit trap adds one more blank on any nonzero path.
-		echoCleanForce("")
-		os.Exit(1)
+		out.forceClean("")
+		return silentExit(1)
 	}
-	switch strings.ToLower(args[0]) {
+	switch strings.ToLower(argv[0]) {
 	case "-h", "--help", "help":
-		printHelp()
-		return
+		a.printHelp()
+		return nil
 	case "-v", "--ver", "--version", "version":
-		printCopyright()
-		return
+		a.printCopyright()
+		return nil
 	}
 
 	// 'raw git|gh' hands everything after the tool to the real thing, verbatim, as
 	// the account this folder belongs to. Scanned ahead of the main parser and of
 	// the git PATH check - 'raw gh' must work without git installed.
-	if tool, ptArgs := scanPassthrough(args); tool != "" {
-		cmdPassthrough(tool, ptArgs)
+	tool, ptArgs, err := scanPassthrough(argv, &a.opt)
+	if err != nil {
+		return err
+	}
+	if tool != "" {
+		return a.cmdPassthrough(tool, ptArgs)
 	}
 
 	// Breathing room after the shell prompt (the matching trailing blank is at each
 	// exit path). After the passthrough, which owns its own output.
-	echoClean("")
+	out.clean("")
 
-	mustBeInPath("git")
-	if parseArgs(args) {
-		printHelp()
-		echoClean("")
-		return
+	if err := mustBeInPath("git"); err != nil {
+		return err
+	}
+	if err := a.settleCommand(argv); err != nil {
+		return err
+	}
+	if a.cmd.name == "" { // help was asked for, and printed
+		return nil
+	}
+	if err := a.enterRepo(); err != nil {
+		return err
+	}
+	if err := a.settleAccount(); err != nil {
+		return err
+	}
+	a.freshenRemote()
+	if err := a.settleBranchNames(); err != nil {
+		return err
+	}
+	if err := a.preflight(); err != nil {
+		return err
+	}
+	done, err := a.settleTarget()
+	if err != nil || done {
+		return err
+	}
+	if err := a.settleGh(); err != nil {
+		return err
+	}
+	mismatch, err := a.identityGate()
+	if err != nil {
+		return err
+	}
+	if !a.cmd.mutating {
+		return a.runReadOnly()
+	}
+	return a.runMutating(mismatch)
+}
+
+// settleCommand parses the argument list and settles which command this is: the
+// flat name, its arguments, and whether it mutates anything. An empty command
+// name on return means help was asked for and has already printed.
+func (a *app) settleCommand(argv []string) error {
+	opt, cmd, help, err := parseArgs(argv)
+	if err != nil {
+		return err
+	}
+	a.opt, a.cmd = opt, cmd
+	if help {
+		a.printHelp()
+		a.out.clean("")
+		a.cmd.name = ""
+		return nil
 	}
 	// Both visibilities given is a contradiction, not a precedence question - and
 	// silently picking one would publish a repo the caller believes is the other.
-	if sawPublic && sawPrivate {
-		throwUsage("--public and --private are mutually exclusive; pick one.")
+	if a.opt.sawPublic && a.opt.sawPrivate {
+		return usagef("--public and --private are mutually exclusive; pick one.")
 	}
 	// Options and no command asks the same thing no arguments at all asks.
-	if cmdName == "" {
-		printHelp()
-		echoCleanForce("")
-		os.Exit(1)
+	if a.cmd.name == "" {
+		a.printHelp()
+		a.out.forceClean("")
+		return silentExit(1)
 	}
-	collapseCommand()
-	sortCommand()
-
+	if a.cmd, err = collapseCommand(a.cmd); err != nil {
+		return err
+	}
+	if a.cmd, err = sortCommand(a.cmd, &a.opt); err != nil {
+		return err
+	}
 	// No tty = nobody to answer a prompt. Read-only commands just go quiet;
 	// mutating ones fail closed (require an explicit -q) so piped/cron input can't
 	// silently auto-confirm.
 	if !isTTY(os.Stdin) {
-		if isMutating && !quiet {
-			throwUsage("No terminal to confirm on; re-run with -q to proceed without prompts.")
+		if a.cmd.mutating && !a.opt.quiet {
+			return usagef("No terminal to confirm on; re-run with -q to proceed without prompts.")
 		}
-		quiet = true
+		a.opt.quiet = true
 	}
-
 	// pr's own shape, ahead of the repo gate like the scripts: a malformed pr call
 	// is wrong anywhere, in a repo or not.
-	if cmdName == "pr" {
-		sortPr()
+	if a.cmd.name == "pr" {
+		return a.sortPr()
 	}
+	return nil
+}
 
-	// Every command needs a repo - except the repo ones: clone works anywhere, and
-	// create/connect exist precisely to turn a plain directory into one. 'identity'
-	// too: which account a folder belongs to is worth asking before there is a repo
-	// in it.
-	inRepo = runOK("git", "rev-parse", "--is-inside-work-tree")
-	if !inRepo && cmdName != "identity" && !strings.HasPrefix(cmdName, "repo-") && !strings.HasPrefix(cmdName, "account-") {
-		throwUsage("Not inside a git repository. Change to a git project directory first.")
+// enterRepo settles whether we are inside a work tree, and refuses the commands
+// that need one. Every command does - except the repo ones: clone works anywhere,
+// and create/connect exist precisely to turn a plain directory into one.
+// 'identity' too: which account a folder belongs to is worth asking before there
+// is a repo in it.
+func (a *app) enterRepo() error {
+	a.inRepo = runOK("git", "rev-parse", "--is-inside-work-tree")
+	if a.inRepo || a.cmd.name == "identity" ||
+		strings.HasPrefix(a.cmd.name, "repo-") || strings.HasPrefix(a.cmd.name, "account-") {
+		return nil
 	}
+	return usagef("Not inside a git repository. Change to a git project directory first.")
+}
 
-	// Point this run at the account whose folder this is, before anything reaches
-	// the network: the fetch below authenticates, so getting this wrong here gets
-	// it wrong for the whole command. This also validates --config/GITSBY_CONFIG,
-	// so it stays ahead of the not-yet refusal - same contract the scripts keep.
-	acctDir, acctUrl := contextDir(), originUrl()
+// settleAccount points this run at the account whose folder this is, before
+// anything reaches the network: the fetch afterwards authenticates, so getting
+// this wrong here gets it wrong for the whole command. It also validates
+// --config/GITSBY_CONFIG, so it stays ahead of every other refusal - the same
+// contract the scripts keep.
+func (a *app) settleAccount() error {
+	acctDir, acctURL := a.contextDir(), a.originURL()
 	switch {
-	case cmdName == "repo-clone":
+	case a.cmd.name == "repo-clone":
 		// The clone lands somewhere else, and it is that folder's rules that pick the
 		// account - not the rules for whatever repo the cwd happens to sit inside.
 		// Nothing stands in for them here: the owner of the repo being cloned is no
 		// evidence it is ours, which is the whole difference between fetching a copy
 		// of something and owning it. Unresolved leaves gh on its own account.
-		acctDir, acctUrl = absDir(cloneDestDir()), ""
-	case acctUrl == "" && (cmdName == "repo-create" || cmdName == "repo-connect") && cmdArg != "":
+		acctDir, acctURL = absDir(a.cloneDestDir()), ""
+	case acctURL == "" && (a.cmd.name == "repo-create" || a.cmd.name == "repo-connect") && a.cmd.arg != "":
 		// These have no origin to read an owner from, but the repo they are about to
 		// publish to is on the command line - and it is that repo's owner whose account
 		// should do the publishing. Resolved here rather than after their own
 		// validation, because the validation itself talks to gh.
-		if ownerNameRE.MatchString(cmdArg) && !pathExists(cmdArg) {
-			acctUrl = githubUrl(cmdArg, "https")
+		if ownerNameRE.MatchString(a.cmd.arg) && !pathExists(a.cmd.arg) {
+			acctURL = githubURL(a.cmd.arg, "https")
 		} else {
-			acctUrl = cmdArg
+			acctURL = a.cmd.arg
 		}
 	}
-	resolveAccount(acctDir, acctUrl)
+	if err := a.resolveAccount(acctDir, acctURL); err != nil {
+		return err
+	}
 	// The probe inside it only feeds the identity block, so a run that prints none
 	// skips a live round trip.
-	selectAccount(!identityWillPrint())
+	return a.selectAccount(!a.identityWillPrint())
+}
 
-	// Freshen remote refs so status/ahead-behind info is current. Never fatal -
-	// offline still works locally. clone skips it: cwd may sit inside some
-	// unrelated repo, and the clone doesn't care about it.
-	if doFetch && cmdName != "repo-clone" && !strings.HasPrefix(cmdName, "account-") && hasOrigin() {
-		echoStatus("git fetch ...")
-		fetchRemote()
+// freshenRemote updates remote refs so status/ahead-behind info is current. Never
+// fatal - offline still works locally. clone skips it: cwd may sit inside some
+// unrelated repo, and the clone doesn't care about it.
+func (a *app) freshenRemote() {
+	if !a.opt.fetch || a.cmd.name == "repo-clone" || strings.HasPrefix(a.cmd.name, "account-") || !a.hasOrigin() {
+		return
 	}
-	// These can't change mid-command, so resolve them once (post-fetch, so
-	// origin/HEAD is fresh). status, identity and br list run without a resolvable
-	// default branch on purpose: they mutate nothing and are the commands you run to
-	// see what is wrong, so they report "unknown" instead of refusing.
-	if inRepo {
-		defaultBranchCache = defaultBranch()
-		mergeTargetCache = mergeTarget()
-		// Every branch command checks this out, protects it, or merges into it, so a
-		// name we can't confirm has to stop things here - before a preview promises
-		// it. 'status', 'identity' and 'br list' are exempt on purpose: they mutate
-		// nothing and are the commands you run to see what is wrong, so they report
-		// "unknown" instead of refusing.
-		if cmdName != "status" && cmdName != "identity" && cmdName != "br-list" && !strings.HasPrefix(cmdName, "repo-") && !strings.HasPrefix(cmdName, "account-") && runOK("git", "rev-parse", "-q", "--verify", "HEAD") {
-			// Same three exemptions, for the same reason: these are the names every
-			// command downstream hands git in a leading argument position.
-			refuseOptionShapedRefs(currentBranch(), defaultBranchCache, mergeTargetCache)
-			if defaultBranchCache == "" {
-				throwUsage("Can't tell this repo's default branch. Set it with 'git remote set-head origin --auto', or create a main/master.")
-			}
-			if !branchExistsLocal(defaultBranchCache) && !branchExistsRemote(defaultBranchCache) {
-				throwUsage("This repo's default branch resolves to '" + defaultBranchCache + "', which exists neither here nor on origin. Fix it with 'git remote set-head origin --auto'.")
-			}
-		}
-	}
+	a.out.status("git fetch ...")
+	a.fetchRemote()
+}
 
+// settleBranchNames resolves the two branch names every command downstream hands
+// git. They can't change mid-command, so they settle once, post-fetch so
+// origin/HEAD is fresh. status, identity and br list run without a resolvable
+// default branch on purpose: they mutate nothing and are the commands you run to
+// see what is wrong, so they report "unknown" instead of refusing.
+func (a *app) settleBranchNames() error {
+	if !a.inRepo {
+		return nil
+	}
+	dflt, target := a.defaultBranch(), a.mergeTarget()
+	if !a.needsConfirmableBranch() || !runOK("git", "rev-parse", "-q", "--verify", "HEAD") {
+		return nil
+	}
+	// These are the names every command downstream hands git in a leading argument
+	// position.
+	if err := refuseOptionShapedRefs(a.currentBranch(), dflt, target); err != nil {
+		return err
+	}
+	if dflt == "" {
+		return usagef("Can't tell this repo's default branch. Set it with 'git remote set-head origin --auto', or create a main/master.")
+	}
+	if !branchExistsLocal(dflt) && !branchExistsRemote(dflt) {
+		return usagef("This repo's default branch resolves to '%s', which exists neither here nor on origin. Fix it with 'git remote set-head origin --auto'.", dflt)
+	}
+	return nil
+}
+
+// needsConfirmableBranch: every branch command checks the default branch out,
+// protects it, or merges into it, so a name we can't confirm has to stop things
+// before a preview promises it. The three read-only state commands are exempt for
+// the reason above.
+func (a *app) needsConfirmableBranch() bool {
+	switch a.cmd.name {
+	case "status", "identity", "br-list":
+		return false
+	}
+	return !strings.HasPrefix(a.cmd.name, "repo-") && !strings.HasPrefix(a.cmd.name, "account-")
+}
+
+// preflight is every refusal that has to land before a plan is shown: the
+// commands that exist to publish and can't, the ones whose argument is wrong, and
+// the ones whose work is decided up front.
+func (a *app) preflight() error {
 	// Commands that exist to publish, refused here rather than halfway through on
 	// raw git text - and far better than "succeeding" having sent nothing. The rest
 	// degrade instead: they mean something locally, so they run and say what they
 	// skipped.
-	switch cmdName {
+	switch a.cmd.name {
 	case "sync":
-		requireOnline("sync", "Offline, '"+meName+" pullcom' skips the pull and just commits; run '"+meName+" sync' when you are back online.")
+		if err := a.requireOnline("sync", "Offline, '"+meName+" pullcom' skips the pull and just commits; run '"+meName+" sync' when you are back online."); err != nil {
+			return err
+		}
 	case "release":
-		requireOnline("release", "A release nobody can fetch isn't one.")
+		if err := a.requireOnline("release", "A release nobody can fetch isn't one."); err != nil {
+			return err
+		}
 	case "pr":
-		if prSub != "" {
-			requireOnline("pr "+prSub, "The pull request lives on GitHub; there is no local half to do first.")
+		if a.pr.sub != "" {
+			if err := a.requireOnline("pr "+a.pr.sub, "The pull request lives on GitHub; there is no local half to do first."); err != nil {
+				return err
+			}
 		}
 	}
-
 	// The release version resolves up front so the preview and the command agree,
 	// and so bad input dies early.
-	if cmdName == "release" {
-		resolveRelease()
-		releasePreflight()
+	if a.cmd.name == "release" {
+		if err := a.resolveRelease(); err != nil {
+			return err
+		}
+		if err := a.releasePreflight(); err != nil {
+			return err
+		}
 	}
 	// The mutating pr subcommands check here too, so nothing can fail after the plan
 	// was confirmed.
-	if prSub != "" {
-		prPreflight()
-	}
-
-	// repo url: everything it needs to know settles here, so a bad argument or an
-	// unconvertible remote is refused before a plan promises anything.
-	if cmdName == "repo-url" && settleRepoUrl() {
-		return
-	}
-
-	// Branch arguments validate up front too, so a bad name can't survive to a
-	// nonsense preview.
-	switch cmdName {
-	case "br-create":
-		if cmdArg == "" {
-			throwUsage("No branch name given. Syntax: " + meName + " br create <new branch name>")
+	if a.pr.sub != "" {
+		if err := a.prPreflight(); err != nil {
+			return err
 		}
-		checkNewBranchName()
+	}
+	return a.preflightBranch()
+}
+
+// preflightBranch validates branch arguments up front, so a bad name can't
+// survive to a nonsense preview.
+func (a *app) preflightBranch() error {
+	switch a.cmd.name {
+	case "br-create":
+		if a.cmd.arg == "" {
+			return usagef("No branch name given. Syntax: %s br create <new branch name>", meName)
+		}
+		return checkNewBranchName(a.cmd.arg)
 	case "br-hotfix":
-		if cmdArg == "" {
-			throwUsage("No name given. Syntax: " + meName + " br hotfix <name>")
+		if a.cmd.arg == "" {
+			return usagef("No name given. Syntax: %s br hotfix <name>", meName)
 		}
 		// The prefix is the marker, so put it on ourselves - and accept it if the user
 		// typed it.
-		cmdArg = "hotfix/" + strings.TrimPrefix(cmdArg, "hotfix/")
-		checkNewBranchName()
+		a.cmd.arg = "hotfix/" + strings.TrimPrefix(a.cmd.arg, "hotfix/")
+		return checkNewBranchName(a.cmd.arg)
 	case "br-merge":
-		// Landing ends in 'git branch -d', so a leftover main/master must be refused
+		// Merging ends in 'git branch -d', so a leftover main/master must be refused
 		// here for the same reason br prune never lists one - and up front, not after a
 		// destructive plan was shown.
-		if isProtectedBranch("") {
-			throwUsage("'" + currentBranch() + "' is a protected branch; landing it would delete it. Run this from a work branch instead.")
+		if a.isProtectedBranch("") {
+			return usagef("'%s' is a protected branch; landing it would delete it. Run this from a work branch instead.", a.currentBranch())
 		}
 	case "br-switch":
-		if cmdArg != "" && !branchExistsLocal(cmdArg) && !branchExistsRemote(cmdArg) {
-			throwUsage("No branch '" + cmdArg + "' locally or on origin. To create it: " + meName + " br create " + cmdArg)
+		if a.cmd.arg != "" && !branchExistsLocal(a.cmd.arg) && !branchExistsRemote(a.cmd.arg) {
+			return usagef("No branch '%s' locally or on origin. To create it: %s br create %s", a.cmd.arg, meName, a.cmd.arg)
 		}
 		// Refusing a dirty protected branch belongs here too, before the plan is shown
 		// and confirmed.
-		switchTarget := cmdArg
+		switchTarget := a.cmd.arg
 		if switchTarget == "" {
-			switchTarget = mergeTarget()
+			switchTarget = a.mergeTarget()
 		}
-		if currentBranch() != switchTarget && isProtectedBranch("") && runOut("git", "status", "--porcelain") != "" {
-			throwUsage("Working tree has changes on '" + currentBranch() + "'; won't auto-commit to a protected branch. Carry them to a new branch (" + meName + " br create <name>), or commit them here deliberately (" + meName + " pullcom) first.")
+		if a.currentBranch() != switchTarget && a.isProtectedBranch("") && runOut("git", "status", "--porcelain") != "" {
+			return usagef("Working tree has changes on '%s'; won't auto-commit to a protected branch. Carry them to a new branch (%s br create <name>), or commit them here deliberately (%s pullcom) first.", a.currentBranch(), meName, meName)
 		}
 	}
+	return nil
+}
 
-	// br prune: work out what goes before anything is shown, so the plan names
-	// every branch by name. An empty plan is a plain read-only answer.
-	if cmdName == "br-prune" {
-		if currentBranch() == "" {
-			throwUsage("Detached HEAD (no current branch); resolve that manually first.")
+// settleTarget resolves what each remaining command is about to act on, before
+// anything is shown. True means the answer was "nothing to do" and the run is over.
+func (a *app) settleTarget() (bool, error) {
+	switch a.cmd.name {
+	case "repo-url":
+		// Everything it needs to know settles here, so a bad argument or an
+		// unconvertible remote is refused before a plan promises anything.
+		return a.settleRepoURL()
+	case "br-prune":
+		// Work out what goes before anything is shown, so the plan names every branch
+		// by name. An empty plan is a plain read-only answer.
+		if a.currentBranch() == "" {
+			return false, usagef("Detached HEAD (no current branch); resolve that manually first.")
 		}
-		resolvePrune()
-		if len(pruneLocal) == 0 && len(pruneRemote) == 0 {
-			pruneNothingToDo()
-			echoClean("")
-			return
+		if err := a.resolvePrune(); err != nil {
+			return false, err
 		}
+		if a.prune.empty() {
+			a.pruneNothingToDo()
+			a.out.clean("")
+			return true, nil
+		}
+	case "repo-clone":
+		// Derive the target dir, and make re-runs a no-op instead of an error.
+		return a.settleRepoClone()
+	case "repo-create", "repo-connect":
+		// Resolve what we're publishing to before the preview, so the plan is real.
+		return false, a.settleRepoConnect()
 	}
+	return false, nil
+}
 
-	// repo clone: derive the target dir, and make re-runs a no-op instead of an
-	// error. repo create/connect: resolve what we're publishing to before the
-	// preview, so the plan is real.
-	if cmdName == "repo-clone" && settleRepoClone() {
-		return
-	}
-	if cmdName == "repo-create" || cmdName == "repo-connect" {
-		settleRepoConnect()
-	}
-
-	// Which commands go through gh, which of those WRITE through it, and which url
-	// the ssh identity should be read from. For pr that's the origin we already
-	// have. repo create and connect have no origin yet - but the one they are
-	// about to set is knowable, because gh never uses a host alias: it builds
-	// 'git@github.com:owner/name.git' from its own protocol setting. So the
-	// identity that repo will live with afterward can be checked before we start.
-	switch cmdName {
+// settleGh works out which commands go through gh, which of those WRITE through
+// it, and which url the ssh identity should be read from. For pr that's the origin
+// we already have. repo create and connect have no origin yet - but the one they
+// are about to set is knowable, because gh never uses a host alias: it builds
+// 'git@github.com:owner/name.git' from its own protocol setting. So the identity
+// that repo will live with afterward can be checked before we start.
+func (a *app) settleGh() error {
+	switch a.cmd.name {
 	case "identity":
 		// Reads gh, writes nothing: the whole point of the command is to name every
 		// account involved, and gh's is one of them.
-		isGhCommand = true
+		a.gh.isCommand = true
 	case "pr":
-		isGhCommand = true
-		if prSub != "" {
-			isGhWrite = true
-			identityProbeUrl = originUrl()
+		a.gh.isCommand = true
+		if a.pr.sub != "" {
+			a.gh.isWrite = true
+			a.gh.probeURL = a.originURL()
 		}
 	case "repo-create":
-		isGhCommand, isGhWrite = true, true
-		if ghProtocol() == "ssh" {
-			identityProbeUrl = "git@github.com:" + ghTarget + ".git"
+		a.gh.isCommand, a.gh.isWrite = true, true
+		if a.ghProtocol() == "ssh" {
+			a.gh.probeURL = "git@github.com:" + a.tgt.ghTarget + ".git"
 		}
 	case "repo-connect":
-		if ghTarget != "" {
-			isGhCommand, isGhWrite = true, true
-			// connectUrl is the url we resolved ourselves, so probe that rather than
+		if a.tgt.ghTarget != "" {
+			a.gh.isCommand, a.gh.isWrite = true, true
+			// connectURL is the url we resolved ourselves, so probe that rather than
 			// guess.
-			if at := strings.Index(connectUrl, "@"); at >= 0 && strings.Contains(connectUrl[at:], ":") {
-				identityProbeUrl = connectUrl
+			if at := strings.Index(a.tgt.connectURL, "@"); at >= 0 && strings.Contains(a.tgt.connectURL[at:], ":") {
+				a.gh.probeURL = a.tgt.connectURL
 			}
 		}
 	}
 	// Prime the probe caches here, like the scripts prime them in-shell: every later
-	// use would otherwise repeat the round trip.
-	if isGhCommand {
-		// Only where the answer is read: the identity block names gh's account, and
-		// a write compares against it. A bare 'pr' or 'pr <n>' prints neither.
-		if isGhWrite || identityWillPrint() {
-			_ = ghLogin()
-		}
+	// use would otherwise repeat the round trip. Only where the answer is read: the
+	// identity block names gh's account, and a write compares against it. A bare
+	// 'pr' or 'pr <n>' prints neither.
+	if a.gh.isCommand && (a.gh.isWrite || a.identityWillPrint()) {
+		_ = a.ghLogin()
 	}
-	if isGhWrite {
-		_ = sshLogin(identityProbeUrl)
+	if a.gh.isWrite {
+		_ = a.sshLogin(a.gh.probeURL)
 	}
+	return nil
+}
 
-	// A gh write acting as a different account than the key git pushes with is a
-	// wrong-account mistake waiting to happen, and it is outward-facing. Refuse it
-	// unattended (nobody is there to read a warning); warn interactively, right
-	// before the prompt. --any-identity means the difference is intended.
-	identityMismatch, mismatchViaGh := "", false
-	if isGhWrite && !anyIdentity {
-		identityMismatch = identityMismatchText(ghLogin(), sshLogin(identityProbeUrl))
-		mismatchViaGh = identityMismatch != ""
+// identityMismatch is what the two identity gates found, and which of them found
+// it. Empty text means they agree, or that one side couldn't say.
+type identityMismatch struct {
+	text  string
+	viaGh bool
+}
+
+// identityGate: a gh write acting as a different account than the key git pushes
+// with is a wrong-account mistake waiting to happen, and it is outward-facing.
+// Refuse it unattended (nobody is there to read a warning); warn interactively,
+// right before the prompt. --any-identity means the difference is intended.
+func (a *app) identityGate() (identityMismatch, error) {
+	var found identityMismatch
+	if a.gh.isWrite && !a.opt.anyIdentity {
+		found.text = identityMismatchText(a.ghLogin(), a.sshLogin(a.gh.probeURL))
+		found.viaGh = found.text != ""
 		// Up front, like every other refusal: don't show a plan we won't run.
-		if identityMismatch != "" && quiet {
-			throwUsage(identityMismatch + " Nothing was done. Re-run with --any-identity if that is intended.")
+		if found.text != "" && a.opt.quiet {
+			return found, usagef("%s Nothing was done. Re-run with --any-identity if that is intended.", found.text)
 		}
 	}
 	// The same question for the commands that push with git rather than write
@@ -418,148 +461,210 @@ func main() {
 	// nothing at all. Only for an account that was CONFIGURED or asked for: one
 	// inferred from the remote's owner says nothing about who you are, and would
 	// fire for every single-account user cloning somebody else's repo.
-	if pushesToRemote() && !anyIdentity && identityMismatch == "" && acctGhWho != "" && (acctExplicit || acctName != "") {
-		pushLogin := sshLogin(originUrl())
-		if pushLogin != "" && pushLogin != "?" && pushLogin != acctGhWho {
-			identityMismatch = "This folder's account is '" + acctGhWho + "', but origin's key authenticates as '" + pushLogin + "'."
-			if quiet {
-				throwUsage(identityMismatch + " Nothing was done. Re-run with --any-identity if that is intended.")
-			}
-		}
+	if !a.pushesToRemote() || a.opt.anyIdentity || found.text != "" ||
+		a.acct.ghWho == "" || (!a.acct.explicit && a.acct.name == "") {
+		return found, nil
 	}
+	pushLogin := a.sshLogin(a.originURL())
+	if pushLogin == "" || pushLogin == "?" || pushLogin == a.acct.ghWho {
+		return found, nil
+	}
+	found.text = "This folder's account is '" + a.acct.ghWho + "', but origin's key authenticates as '" + pushLogin + "'."
+	if a.opt.quiet {
+		return found, usagef("%s Nothing was done. Re-run with --any-identity if that is intended.", found.text)
+	}
+	return found, nil
+}
 
-	// Read-only commands
-	if !isMutating {
-		switch cmdName {
-		case "status":
-			showStatus(true)
-		case "identity":
-			cmdIdentity()
-		case "account-list":
-			cmdAccountList()
-		case "repo-url":
-			cmdRepoUrlShow()
-		case "br-list":
-			cmdBrList()
-		case "pr":
-			cmdPrView()
-		}
-		echoClean("")
-		return
+func (a *app) runReadOnly() error {
+	var err error
+	switch a.cmd.name {
+	case "status":
+		a.showStatus(true)
+	case "identity":
+		a.cmdIdentity()
+	case "account-list":
+		a.cmdAccountList()
+	case "repo-url":
+		a.cmdRepoURLShow()
+	case "br-list":
+		a.cmdBrList()
+	case "pr":
+		err = a.cmdPrView()
 	}
+	if err != nil {
+		return err
+	}
+	a.out.clean("")
+	return nil
+}
 
-	// Mutating commands: show state and plan, confirm, execute, show state again.
-	// clone, and create/connect from a plain dir, have no repo state to show; a
-	// smaller header stands in.
-	if cmdName == "account-apply" {
-		// Nothing about a repo is involved: this writes machine-level git config,
-		// and showing branch state here would suggest it does something to the repo
-		// you happen to be standing in.
-		cmdAccountList()
-	} else if cmdName == "repo-clone" {
-		wd, _ := os.Getwd()
-		echoClean("")
-		echoClean("Directory ....: " + wd)
-		echoClean("Remote .......: " + maskUrl(cloneUrl))
-		showIdentity(cloneUrl)
-		echoClean("Clone into ...: " + cloneDir)
-	} else if !inRepo {
-		remoteDisp := connectUrl
-		if remoteDisp != "" {
-			remoteDisp = maskUrl(remoteDisp)
-		} else {
-			remoteDisp = "github.com/" + ghTarget + " (to be created)"
-		}
-		wd, _ := os.Getwd()
-		echoClean("")
-		echoClean("Directory ....: " + wd)
-		echoClean("Remote .......: " + remoteDisp)
-		showIdentity(connectUrl)
-		echoClean("Current branch: (not a git repository yet)")
-		showFilesToPublish()
-	} else {
-		if currentBranch() == "" {
-			throwUsage("Detached HEAD (no current branch); resolve that manually first.")
-		}
-		showStatus(true)
+// runMutating is the frame every mutating command shares: show state and plan,
+// confirm, execute, show state again.
+func (a *app) runMutating(mismatch identityMismatch) error {
+	if err := a.showBeforeState(); err != nil {
+		return err
 	}
-	echoClean("")
-	echoClean("Going to do (steps marked * only if needed, based on repo state):")
-	preview(cmdName)
+	a.out.clean("")
+	a.out.clean("Going to do (steps marked * only if needed, based on repo state):")
+	a.preview(a.cmd.name)
 	// Said once here, where you can still say no, and again by each step as it
 	// skips. repo-* has no park push to skip - it probes its own remote and fails
 	// on its own terms.
-	if !strings.HasPrefix(cmdName, "repo-") && isOffline() {
-		echoClean("")
-		echoClean("WARNING: remote unreachable - nothing will be pushed; the work stays local.")
+	if !strings.HasPrefix(a.cmd.name, "repo-") && a.isOffline() {
+		a.out.clean("")
+		a.out.clean("WARNING: remote unreachable - nothing will be pushed; the work stays local.")
 	}
 	// Last thing before the prompt, so it can't scroll away above the plan.
-	if identityMismatch != "" {
-		echoClean("")
-		echoStatus("*** WRONG ACCOUNT? ***")
-		echoClean("  " + identityMismatch)
+	if mismatch.text != "" {
+		a.out.clean("")
+		a.out.status("*** WRONG ACCOUNT? ***")
+		a.out.clean("  " + mismatch.text)
 		// Only where gh is the one acting: the other gate is about the key git pushes
 		// with, on commands gh has nothing to do with - and it can reach here with no
 		// gh at all to name.
-		if mismatchViaGh {
-			echoClean("  gh does the GitHub side of this, so it happens as '" + ghLogin() + "'.")
+		if mismatch.viaGh {
+			a.out.clean("  gh does the GitHub side of this, so it happens as '" + a.ghLogin() + "'.")
 		}
-		echoClean("  Continue only if that is what you mean. (--any-identity silences this.)")
+		a.out.clean("  Continue only if that is what you mean. (--any-identity silences this.)")
 	}
-	if !quiet {
-		echoClean("")
-		if !promptYN("Continue? (y|n): ") {
-			echoStatus("User aborted.")
-			echoClean("")
-			os.Exit(1)
+	if !a.opt.quiet {
+		a.out.clean("")
+		if !a.out.confirm("Continue? (y|n): ") {
+			a.out.status("User aborted.")
+			a.out.clean("")
+			return silentExit(1)
 		}
 	}
-
-	switch cmdName {
-	case "pullcom":
-		cmdCommitPull()
-	case "sync":
-		cmdPush()
-	case "br-create":
-		cmdNewBranch(cmdArg, mergeTarget())
-	case "br-hotfix":
-		cmdNewBranch(cmdArg, defaultBranch())
-	case "br-switch":
-		cmdGoBranch(cmdArg)
-	case "br-merge":
-		cmdMerge()
-	case "br-prune":
-		cmdPrune()
-	case "pr":
-		if prSub == "create" {
-			cmdPrCreate()
-		} else {
-			cmdPrAccept()
-		}
-	case "release":
-		cmdRelease()
-	case "repo-clone":
-		cmdClone()
-	case "repo-create", "repo-connect":
-		cmdConnect()
-	case "repo-url":
-		cmdRepoUrl()
-	case "account-apply":
-		cmdAccountApply()
+	if err := a.dispatch(); err != nil {
+		return err
 	}
-
-	echoClean("")
-	switch cmdName {
+	a.out.clean("")
+	switch a.cmd.name {
 	case "account-apply":
 		// every file it wrote was named as it was written; a repo status would add
 		// nothing
 	case "repo-clone":
 		// the after-status would show the wrong (current) directory
-		echoStatus("Cloned into '" + cloneDir + "'.")
+		a.out.status("Cloned into '" + a.tgt.cloneDir + "'.")
 	default:
-		showStatus(false)
+		a.showStatus(false)
 	}
-	echoStatus("")
-	echoStatus("Done.")
-	echoClean("")
+	a.out.status("")
+	a.out.status("Done.")
+	a.out.clean("")
+	return nil
 }
+
+// showBeforeState leads the plan with what the repo looks like now. clone, and
+// create/connect from a plain dir, have no repo state to show; a smaller header
+// stands in.
+func (a *app) showBeforeState() error {
+	switch {
+	case a.cmd.name == "account-apply":
+		// Nothing about a repo is involved: this writes machine-level git config,
+		// and showing branch state here would suggest it does something to the repo
+		// you happen to be standing in.
+		a.cmdAccountList()
+	case a.cmd.name == "repo-clone":
+		wd, _ := os.Getwd()
+		a.out.clean("")
+		a.out.clean("Directory ....: " + wd)
+		a.out.clean("Remote .......: " + maskURL(a.tgt.cloneURL))
+		a.showIdentity(a.tgt.cloneURL)
+		a.out.clean("Clone into ...: " + a.tgt.cloneDir)
+	case !a.inRepo:
+		remoteDisp := a.tgt.connectURL
+		if remoteDisp != "" {
+			remoteDisp = maskURL(remoteDisp)
+		} else {
+			remoteDisp = "github.com/" + a.tgt.ghTarget + " (to be created)"
+		}
+		wd, _ := os.Getwd()
+		a.out.clean("")
+		a.out.clean("Directory ....: " + wd)
+		a.out.clean("Remote .......: " + remoteDisp)
+		a.showIdentity(a.tgt.connectURL)
+		a.out.clean("Current branch: (not a git repository yet)")
+		a.showFilesToPublish()
+	default:
+		if a.currentBranch() == "" {
+			return usagef("Detached HEAD (no current branch); resolve that manually first.")
+		}
+		a.showStatus(true)
+	}
+	return nil
+}
+
+func (a *app) dispatch() error {
+	switch a.cmd.name {
+	case "pullcom":
+		return a.cmdCommitPull()
+	case "sync":
+		return a.cmdPush()
+	case "br-create":
+		return a.cmdNewBranch(a.cmd.arg, a.mergeTarget())
+	case "br-hotfix":
+		return a.cmdNewBranch(a.cmd.arg, a.defaultBranch())
+	case "br-switch":
+		return a.cmdGoBranch(a.cmd.arg)
+	case "br-merge":
+		return a.cmdMerge()
+	case "br-prune":
+		return a.cmdPrune()
+	case "pr":
+		if a.pr.sub == "create" {
+			return a.cmdPrCreate()
+		}
+		return a.cmdPrAccept()
+	case "release":
+		return a.cmdRelease()
+	case "repo-clone":
+		return a.cmdClone()
+	case "repo-create", "repo-connect":
+		return a.cmdConnect()
+	case "repo-url":
+		return a.cmdRepoURL()
+	case "account-apply":
+		return a.cmdAccountApply()
+	}
+	return nil
+}
+
+// cmdPassthrough runs the real tool as the account this folder belongs to, then
+// gets out of its way entirely. No preview, no confirmation, no fetch: this is
+// somebody else's command run under the right identity, and a script piping its
+// output must get that output and nothing else.
+func (a *app) cmdPassthrough(tool string, args []string) error {
+	if err := mustBeInPath(tool); err != nil {
+		return err
+	}
+	if err := a.resolveAccount(a.contextDir(), a.originURL()); err != nil {
+		return err
+	}
+	if err := a.selectAccount(true); err != nil {
+		return err
+	}
+	// One line, on stderr, so a pipeline reading stdout sees only the tool.
+	// Silence is what '-q' is for.
+	if !a.opt.quiet && a.acct.ghWho != "" && a.acct.source != "" {
+		a.out.errorf("acting as %s (from %s)", a.acct.ghWho, a.acct.source)
+	}
+	return a.handover(tool, args)
+}
+
+func (a *app) cmdBrList() {
+	dflt := a.defaultBranch()
+	if dflt == "" {
+		dflt = "unknown"
+	}
+	a.out.clean("")
+	a.out.clean("Default branch: " + dflt)
+	a.out.status("git branch -a -vv")
+	a.inherit("git", "branch", "-a", "-vv")
+	a.out.resetBlank()
+}
+
+// stampNow is the serial a quiet commit falls back to when it has no message and
+// no editor.
+func stampNow() string { return time.Now().Format("20060102-150405") }
