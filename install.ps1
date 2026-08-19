@@ -3,8 +3,9 @@
 .SYNOPSIS
     Downloads and installs the gitsby binary for this platform.
 .DESCRIPTION
-    Shows the plan and asks first. Requires PowerShell 7+ to run; what it installs is a
-    static binary and needs no PowerShell at all. Meant for one-liner use:
+    Shows the plan and asks first. Runs on Windows PowerShell 5.1 as well as PowerShell 7+,
+    since 5.1 is what a fresh Windows install has; what it installs is a static binary and
+    needs no PowerShell at all. Meant for one-liner use:
         irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1 | iex
     With options:
         & ([scriptblock]::Create((irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1))) -System -Yes
@@ -18,6 +19,8 @@
     Don't ask for confirmation.
 .PARAMETER Tag
     Install a specific published release tag instead of the latest.
+.PARAMETER Help
+    Show the options and exit. '--help' is accepted too.
 .NOTES
     Copyright © 2026 Jim Collier (CryptogID: ѳ6ᴚ℈𐀘𐇦ɛ𐊁¥Mﾏb϶Δ𐌞)
     Licensed under The MIT License (MIT). Full text at: https://mit-license.org/
@@ -40,16 +43,40 @@ function Install-Gitsby {
         [Alias('Ref')][ValidatePattern('^[A-Za-z0-9._/-]+$')][string]$Tag,
         # Took 'dev' or 'stable' when a branch could be installed from its tree. Bound rather
         # than dropped, so a familiar flag gets an explanation instead of a binder error.
-        [string]$Release
+        [string]$Release,
+        [switch]$Help
     )
 
-    # Windows PowerShell 5.1 is still 'powershell' on Windows and has no $IsWindows, which
-    # StrictMode turns into an undefined-variable error further down - so say it plainly here.
-    if ($PSVersionTable.PSVersion.Major -lt 7) {
-        throw "This installer needs PowerShell 7+; this is $($PSVersionTable.PSVersion). Install it: 'winget install --id Microsoft.PowerShell' on Windows, or see https://aka.ms/powershell."
-    }
     Set-StrictMode -Version Latest
     $ErrorActionPreference = 'Stop'
+
+    # Windows PowerShell 5.1 is what a fresh Windows install actually has, and that is the
+    # machine most likely to be running this for the first time - so the documented one-liner
+    # has to work there. The syntax in here is 5.1-clean already; what 5.1 lacks is these
+    # three variables (7 defines them; 5.1 only ever runs on Windows), TLS 1.2 switched on,
+    # and the response parser -UseBasicParsing selects. Nothing else below is conditional.
+    $isPS7 = $PSVersionTable.PSVersion.Major -ge 6
+    $onWindows = if ($isPS7) { [bool]$IsWindows } else { $true }
+    $onMac = if ($isPS7) { [bool]$IsMacOS } else { $false }
+    if (-not $isPS7) {
+        # 5.1 offers SSL3 and TLS 1.0 by default, and github.com accepts neither.
+        try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 }
+        catch { Write-Verbose 'Could not raise the TLS version; the download may fail.' }
+    }
+
+    if ($Help) {
+        Write-Host 'Usage: install.ps1 [OPTIONS]'
+        Write-Host 'Downloads and installs gitsby (with confirmation).'
+        Write-Host 'Options:'
+        Write-Host '  -Target user|system   Install for you (default) or for all users.'
+        Write-Host '  -System               The same thing as -Target system.'
+        Write-Host '  -Arch amd64|arm64     Which binary to fetch. Detected from this machine by default.'
+        Write-Host '  -Tag TAG              A published release tag (default: the latest release).'
+        Write-Host '  -Yes                  Do not ask for confirmation.'
+        Write-Host '  -Help                 This.'
+        Write-Host "  -Release              Took 'dev' or 'stable' when gitsby was a script; takes neither now."
+        return
+    }
 
     $repo = 'jim-collier/gitsby'
 
@@ -73,12 +100,16 @@ function Install-Gitsby {
     # Which asset belongs to this machine. Go's own spelling, since that is what the release
     # is named by. Anything else falls through to the SHA256SUMS lookup below, which is the
     # authority on what this release actually published.
-    $goOs = if ($IsWindows) { 'windows' } elseif ($IsMacOS) { 'darwin' } elseif ($IsLinux) { 'linux' } else { 'unknown' }
+    $goOs = if ($onWindows) { 'windows' } elseif ($onMac) { 'darwin' } else { 'linux' }
     # Detection lands in its own variable rather than back in $Arch: assigning to a parameter
     # re-runs its ValidateSet, so an x86 or 32-bit ARM box would die with a binder error
     # instead of being told what this release does publish.
     $archName = if ($Arch) { $Arch } else {
-        switch ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture) {
+        # RuntimeInformation arrived in .NET Framework 4.7.1, so an older 5.1 box falls back to
+        # the environment. Both spellings land on the same two names below.
+        $osArch = try { [string][Runtime.InteropServices.RuntimeInformation]::OSArchitecture }
+                  catch { [string]$env:PROCESSOR_ARCHITECTURE }
+        switch ($osArch) {
             'X64'   { 'amd64' }
             'Arm64' { 'arm64' }
             default { "$_".ToLowerInvariant() }
@@ -92,7 +123,7 @@ function Install-Gitsby {
         default                             { $archName }
     }
     $asset = "gitsby-${goOs}-${goArch}"
-    if ($IsWindows) { $asset += '.exe' }
+    if ($onWindows) { $asset += '.exe' }
 
     # No -Tag: resolve the latest release from the releases/latest redirect (no auth, no
     # API rate limit); unauthenticated API only as fallback (60 req/hr per IP).
@@ -103,7 +134,7 @@ function Install-Gitsby {
     if (-not $tagName) {
         $location = ''
         try {
-            $resp = Invoke-WebRequest -Uri "https://github.com/${repo}/releases/latest" -MaximumRedirection 0 -ErrorAction Stop
+            $resp = Invoke-WebRequest -Uri "https://github.com/${repo}/releases/latest" -MaximumRedirection 0 -UseBasicParsing -ErrorAction Stop
             $location = [string]$resp.Headers.Location
         } catch {
             if ($_.Exception.PSObject.Properties['Response'] -and $_.Exception.Response) { $location = [string]$_.Exception.Response.Headers.Location }
@@ -111,10 +142,23 @@ function Install-Gitsby {
         if ($location -match '/releases/tag/([^/\s]+)') { $tagName = $Matches[1] }
     }
     if (-not $tagName) {
+        # 'releases/latest' is defined as the newest release that is NOT a pre-release, so a
+        # repo whose newest publication is one has nothing there for the redirect above to
+        # find. That is the case this exists for - and it used to ask the same endpoint again,
+        # which fails identically. The list endpoint comes back newest-first.
         try {
-            $tagName = (Invoke-RestMethod -Uri "https://api.github.com/repos/${repo}/releases/latest").tag_name
+            $releases = @(Invoke-RestMethod -Uri "https://api.github.com/repos/${repo}/releases" -UseBasicParsing)
         } catch {
-            throw "Couldn't determine the latest release. GitHub may be rate-limiting; try again later. ($($_.Exception.Message))"
+            throw "Couldn't work out the latest release of ${repo}. GitHub may be unreachable, or rate-limiting this address (60 requests an hour, unauthenticated). A specific release always works: -Tag TAG. ($($_.Exception.Message))"
+        }
+        $newestFull = $releases | Where-Object { -not $_.prerelease } | Select-Object -First 1
+        if ($newestFull) {
+            $tagName = [string]$newestFull.tag_name
+        } elseif ($releases.Count -gt 0) {
+            $tagName = [string]$releases[0].tag_name
+            Write-Host "[ No full release yet; taking the newest pre-release, ${tagName}. ]"
+        } else {
+            throw "${repo} has published no releases, so there is nothing to install. Build the tip yourself: git clone https://github.com/${repo}.git; cd gitsby/src-go; go build -o gitsby ."
         }
     }
     # Scraped from a redirect header, so check it the same way as a typed one before it reaches a URL.
@@ -132,7 +176,7 @@ function Install-Gitsby {
         # .Content as bytes for anything it doesn't consider text. Splitting those into lines
         # matched nothing, so every default install skipped verification and said there was no
         # SHA256SUMS - which wasn't true.
-        $body = (Invoke-WebRequest -Uri "${base}/SHA256SUMS").Content
+        $body = (Invoke-WebRequest -Uri "${base}/SHA256SUMS" -UseBasicParsing).Content
         $sums = if ($body -is [byte[]]) { [Text.Encoding]::UTF8.GetString($body) } else { [string]$body }
     } catch { $sums = '' }
     if (-not $sums) {
@@ -152,7 +196,7 @@ function Install-Gitsby {
     }
 
     # Destination: per-user by default; -System needs elevation (sudo / admin shell).
-    if ($IsWindows) {
+    if ($onWindows) {
         $destDir = if ($installSystemWide) { Join-Path -Path $env:ProgramFiles -ChildPath 'gitsby' } else { Join-Path -Path $env:LOCALAPPDATA -ChildPath 'Programs/gitsby' }
         $destPath = Join-Path -Path $destDir -ChildPath 'gitsby.exe'
     } else {
@@ -169,7 +213,7 @@ function Install-Gitsby {
     if ($installSystemWide) { Write-Host '  - Need write access to that directory (run elevated / via sudo)' }
     # Windows puts nothing on PATH for you, so without this the install finishes with a program
     # that cannot be run by name. On *nix the destination is a conventional bin dir already.
-    if ($IsWindows -and (($env:PATH -split [IO.Path]::PathSeparator) -notcontains $destDir)) {
+    if ($onWindows -and (($env:PATH -split [IO.Path]::PathSeparator) -notcontains $destDir)) {
         $pathScopeLabel = if ($installSystemWide) { 'system' } else { 'account' }
         Write-Host "  - Add ${destDir} to your ${pathScopeLabel} PATH (new shells only; this one is unchanged)"
     }
@@ -190,14 +234,17 @@ function Install-Gitsby {
     try {
         $tmpFile = Join-Path -Path $tmpDir -ChildPath $asset
         try {
-            Invoke-WebRequest -Uri "${base}/${asset}" -OutFile $tmpFile
+            Invoke-WebRequest -Uri "${base}/${asset}" -OutFile $tmpFile -UseBasicParsing
         } catch {
             throw "Couldn't download ${asset} from release ${tagName}. ($($_.Exception.Message))"
         }
         if ((Get-Item -LiteralPath $tmpFile).Length -eq 0) { throw "Downloaded ${asset} is empty; aborting." }
         # A captive portal or a proxy answers with a page, not a binary. It would fail the
         # checksum anyway, but as tampering rather than as the network problem it is.
-        $firstByte = Get-Content -LiteralPath $tmpFile -AsByteStream -TotalCount 1
+        # -AsByteStream is 7's spelling of what 5.1 calls -Encoding Byte; each is an error on
+        # the other's parser, so the branch is on the version rather than on a try/catch.
+        $firstByte = if ($isPS7) { Get-Content -LiteralPath $tmpFile -AsByteStream -TotalCount 1 }
+                     else { Get-Content -LiteralPath $tmpFile -Encoding Byte -TotalCount 1 }
         if ($firstByte -eq [byte][char]'<') {
             throw 'The download came back as a web page, not a binary - something between here and GitHub is intercepting it.'
         }
@@ -208,15 +255,42 @@ function Install-Gitsby {
 
         Write-Host "[ Installing to ${destPath} ... ]"
         New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-        Move-Item -Force -LiteralPath $tmpFile -Destination $destPath
-        if (-not $IsWindows) { chmod +x $destPath }
+        # Staged in the destination directory and renamed over the target, never written in
+        # place. Move-Item from the system temp is only atomic within one filesystem, and the
+        # temp dir and the install dir usually are not the same one - so an interrupt mid-copy
+        # left a truncated executable where the real one should be, one that had passed its
+        # checksum under another name.
+        $staged = Join-Path -Path $destDir -ChildPath ('.gitsby.install.' + [IO.Path]::GetRandomFileName())
+        try {
+            Copy-Item -LiteralPath $tmpFile -Destination $staged -Force
+            if (-not $onWindows) { chmod +x $staged }
+            # Windows will not delete or overwrite a running executable, but it will rename one:
+            # move the incumbent aside, then put the new one in its place. What it leaves behind
+            # goes at the next install, once nothing is holding it open.
+            if ($onWindows -and (Test-Path -LiteralPath $destPath)) {
+                Get-ChildItem -LiteralPath $destDir -Filter 'gitsby.exe.replaced-*' -ErrorAction SilentlyContinue |
+                    ForEach-Object { Remove-Item -Force -LiteralPath $_.FullName -ErrorAction SilentlyContinue }
+                $retired = "${destPath}.replaced-" + [IO.Path]::GetRandomFileName()
+                Move-Item -Force -LiteralPath $destPath -Destination $retired
+                Remove-Item -Force -LiteralPath $retired -ErrorAction SilentlyContinue
+            }
+            Move-Item -Force -LiteralPath $staged -Destination $destPath
+        } catch {
+            if (Test-Path -LiteralPath $staged) { Remove-Item -Force -LiteralPath $staged }
+            throw
+        }
 
         Write-Host '[ Verifying ... ]'
         & $destPath --version
+        # A native command's nonzero exit does not trip $ErrorActionPreference, and nothing here
+        # read $LASTEXITCODE - so a binary that could not run at all was reported as installed.
+        if ($LASTEXITCODE -ne 0) {
+            throw "Installed ${destPath}, but it would not run (exit ${LASTEXITCODE}). The download verified against the release checksum, so this is the binary not being runnable on this machine rather than a bad download."
+        }
 
         $pathSep = [IO.Path]::PathSeparator
         if (($env:PATH -split $pathSep) -notcontains $destDir) {
-            if ($IsWindows) {
+            if ($onWindows) {
                 # Persist it, as promised in the plan.
                 $pathScope = if ($installSystemWide) { 'Machine' } else { 'User' }
                 # Straight at the registry rather than [Environment]::GetEnvironmentVariable,
@@ -259,7 +333,10 @@ function Install-Gitsby {
 # anything runs - so the documented one-liner never worked. Splatting $args keeps every
 # documented shape binding: -Tag after the scriptblock form, and pwsh -File install.ps1 -Yes.
 try {
-    Install-Gitsby @args
+    # '--help' is what the README documents for both installers, and what anyone types out of
+    # habit. PowerShell's binder would only ever report it as a parameter nobody has heard of.
+    if (@($args) | Where-Object { $_ -in '--help', '-h', '/?', '-?' }) { Install-Gitsby -Help }
+    else { Install-Gitsby @args }
 } catch {
     # Run from a file: report plainly and exit nonzero, so callers and CI see the failure -
     # a parameter-binding error against @args would otherwise leave the exit code at 0.
@@ -299,3 +376,16 @@ try {
 #     binder instead of reaching the message written for them. PATH is now read raw from the
 #     registry before it is rewritten - the expanded copy would have baked %USERPROFILE%-style
 #     entries in as literals, for good, on a PATH we only meant to append to.
+#   - 20260819 JC: Runs on Windows PowerShell 5.1: the three platform variables get a fallback,
+#     TLS 1.2 is switched on, every web request asks for basic parsing, and the byte read is
+#     spelled the way each version spells it. A fresh Windows box has 5.1 and nothing else, so
+#     the documented one-liner could not work on the machine most likely to be running it.
+#   - 20260819 JC: -Help, and '--help' with it - the README documented an option that did not
+#     exist. The verification step reads $LASTEXITCODE, which nothing did: a native command's
+#     nonzero exit does not trip $ErrorActionPreference, so a binary that would not run at all
+#     was reported as installed. The binary is staged in the destination directory and renamed
+#     over the target, since a move from the system temp is only atomic within one filesystem.
+#   - 20260819 JC: The release fallback is one. Both routes asked releases/latest, which is
+#     defined as the newest release that is NOT a pre-release - so on a repo whose newest
+#     publication is one, the fallback failed exactly as the primary had, and blamed rate
+#     limiting for it.
