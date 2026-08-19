@@ -205,3 +205,23 @@ func TestAbsDirResolvesDotDot(t *testing.T) {
 		t.Errorf("absDir = %q, want %q", got, want)
 	}
 }
+
+// '~' resolved through HOME alone, which nothing sets on native Windows - so every
+// tilde path there expanded to nothing and quietly matched no folder and read no
+// token. One helper answers it now, and leaves anything it cannot resolve as typed.
+func TestExpandTilde(t *testing.T) {
+	t.Setenv("HOME", "/home/ada")
+	tests := []struct{ in, want string }{
+		{"~", "/home/ada"},
+		{"~/dev/work", "/home/ada/dev/work"},
+		{`~\dev\work`, `/home/ada\dev\work`},
+		{"~work/dev", "~work/dev"}, // not a home reference; a shell wouldn't expand it either
+		{"/dev/~/work", "/dev/~/work"},
+		{"", ""},
+	}
+	for _, tc := range tests {
+		if got := expandTilde(tc.in); got != tc.want {
+			t.Errorf("expandTilde(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}

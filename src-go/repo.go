@@ -96,12 +96,8 @@ func githubURL(target, proto string) string {
 // credentials mid-run - and the timeout composes onto git's own ssh command, so
 // a per-repo core.sshCommand still probes as the key git actually pushes with.
 func (a *app) probeRemote(url string) repoExistence {
-	env := append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	if os.Getenv("GIT_SSH_COMMAND") == "" {
-		env = append(env, "GIT_SSH_COMMAND="+a.gitSSHCommand()+" -o ConnectTimeout=3")
-	}
 	probe := exec.Command("git", "ls-remote", url)
-	probe.Env = env
+	probe.Env = a.remoteEnv()
 	out, err := probe.Output()
 	if err != nil {
 		return repoMissing

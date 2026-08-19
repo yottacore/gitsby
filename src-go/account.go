@@ -165,9 +165,7 @@ func readTokenFile(file string) string {
 	if file == "" {
 		return ""
 	}
-	if file == "~" || strings.HasPrefix(file, "~/") {
-		file = os.Getenv("HOME") + file[1:]
-	}
+	file = expandTilde(file)
 	data, err := os.ReadFile(file)
 	if err != nil {
 		return ""
@@ -217,9 +215,7 @@ func worldReadable(file string) string {
 	if file == "" || isWindows() {
 		return ""
 	}
-	if file == "~" || strings.HasPrefix(file, "~/") {
-		file = os.Getenv("HOME") + file[1:]
-	}
+	file = expandTilde(file)
 	fi, err := os.Stat(file)
 	if err != nil || fi.Mode().Perm()&0o077 == 0 {
 		return ""

@@ -201,11 +201,7 @@ func readSSHConfig(target string) sshConfig {
 			}
 		case "identityfile":
 			if cfg.keyFile == "" {
-				expanded := value
-				if expanded == "~" || strings.HasPrefix(expanded, "~/") {
-					expanded = os.Getenv("HOME") + expanded[1:]
-				}
-				if isReadableFile(expanded) {
+				if isReadableFile(expandTilde(value)) {
 					cfg.keyFile = value
 				}
 			}

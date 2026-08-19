@@ -129,6 +129,22 @@ func (a *app) gitSSHCommand() string {
 	return cmd
 }
 
+// remoteEnv is the environment every command that reaches origin runs under: no
+// auth prompts (this happens before our own checks, so an https remote we can't
+// authenticate to would stop and ask for a username mid-command), and a connect
+// timeout on the ssh side so a dead remote can't hang for minutes. The timeout
+// composes onto whatever ssh command git would use, INCLUDING the one the account
+// selector set from a config sshKey - gating on the variable merely being present
+// dropped the timeout for exactly the multi-account setups it was written for.
+// A GIT_SSH_COMMAND the caller chose is left alone.
+func (a *app) remoteEnv() []string {
+	env := append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	if !a.userSSHCommand {
+		env = append(env, "GIT_SSH_COMMAND="+a.gitSSHCommand()+" -o ConnectTimeout=3")
+	}
+	return env
+}
+
 var sshGreetingRE = regexp.MustCompile(`^Hi ([A-Za-z0-9_.:/-]+)!`)
 
 // sshLogin names the account this remote's ssh key authenticates as. GitHub
@@ -175,10 +191,7 @@ func probeSSHLogin(url, sshCommand string) string {
 // our own checks, so an https remote we can't authenticate to would stop and ask
 // for a username mid-command.
 func (a *app) fetchRemote() {
-	env := append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	if os.Getenv("GIT_SSH_COMMAND") == "" {
-		env = append(env, "GIT_SSH_COMMAND="+a.gitSSHCommand()+" -o ConnectTimeout=3")
-	}
+	env := a.remoteEnv()
 	// Named, not implied: a bare 'git fetch' follows the current branch's own
 	// tracking remote, and every existence check afterwards reads origin.
 	fetch := exec.Command("git", "fetch", "--quiet", "--prune", "origin")

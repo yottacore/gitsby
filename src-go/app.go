@@ -9,6 +9,8 @@
 
 package main
 
+import "os"
+
 // cached remembers one answer that costs a process to ask for, and keeps "not
 // asked yet" apart from "asked, and the answer is nothing" - which is the
 // difference between one lookup and the same five over and over.
@@ -137,6 +139,12 @@ type app struct {
 
 	inRepo bool
 
+	// Whether GIT_SSH_COMMAND was already set when the run started. Ours goes into
+	// the same variable a moment later, and the probes have to be able to tell the
+	// two apart: a value the caller chose is left exactly as typed, where our own
+	// still wants the connect timeout that stops a dead remote hanging every command.
+	userSSHCommand bool
+
 	// The stamp a quiet commit falls back to with no message and no editor.
 	stamp string
 
@@ -161,5 +169,7 @@ func newApp(out *printer) *app {
 		opt:   defaultOptions(),
 		cmd:   command{mutating: true},
 		stamp: stampNow(),
+
+		userSSHCommand: os.Getenv("GIT_SSH_COMMAND") != "",
 	}
 }

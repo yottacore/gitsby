@@ -154,7 +154,7 @@ func (a *app) cmdPush() error {
 // deciding, up front.
 func (a *app) cmdPrune() error {
 	doneLocal, doneRemote := 0, 0
-	reKept := map[string]bool{}
+	heldBack := map[string]bool{}
 	// -D with our own gate, not -d. 'git branch -d' asks whether the branch is contained in
 	// its upstream, or in HEAD when it has none - neither of which is the question here, and
 	// the second one refuses a genuinely-merged local-only branch from any other branch.
@@ -163,7 +163,7 @@ func (a *app) cmdPrune() error {
 	for _, branch := range a.prune.local {
 		if !isMergedInto("refs/heads/"+branch, a.prune.targetRefs) {
 			a.out.status("'" + branch + "' is no longer contained in " + a.mergeTarget() + "; leaving it alone.")
-			reKept[branch] = true
+			heldBack[branch] = true
 			continue
 		}
 		deleteLocal = append(deleteLocal, branch)
@@ -172,15 +172,36 @@ func (a *app) cmdPrune() error {
 	// helpers with it, and this is the command most likely to be handed eight branches at
 	// once - which was two thirds of everything it spawned.
 	if len(deleteLocal) > 0 {
-		if err := a.step("git", append([]string{"branch", "-D"}, deleteLocal...)...); err != nil {
-			return err
+		a.out.clean("")
+		a.out.status("git branch -D " + strings.Join(deleteLocal, " ") + " ...")
+		// Non-fatal, the same way the remote half below is. git deletes the branches it
+		// can and exits nonzero for the rest - one checked out in another worktree, most
+		// often - and returning that ended the run with those deletions already done,
+		// origin untouched, and no count printed at all.
+		if a.inheritOK("git", append([]string{"branch", "-D"}, deleteLocal...)...) {
+			doneLocal = len(deleteLocal)
+		} else {
+			var stillHere []string
+			for _, branch := range deleteLocal {
+				if branchExistsLocal(branch) {
+					stillHere = append(stillHere, branch)
+					// Its remote copy stays too: deleting that would leave a branch here
+					// with nothing on origin behind it.
+					heldBack[branch] = true
+				} else {
+					doneLocal++
+				}
+			}
+			if len(stillHere) > 0 {
+				a.out.status("WARNING: couldn't delete " + strings.Join(stillHere, ", ") + " here (checked out in another worktree?); continuing.")
+			}
 		}
-		doneLocal = len(deleteLocal)
+		a.out.resetBlank()
 	}
 	var deleteRemote []string
 	for _, branch := range a.prune.remote {
 		// "Leaving it alone" has to mean the remote copy too, or the message is a lie.
-		if !reKept[branch] {
+		if !heldBack[branch] {
 			deleteRemote = append(deleteRemote, branch)
 		}
 	}
