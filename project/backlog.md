@@ -59,6 +59,18 @@ To make using these icons easier, add them to a clipboard or key macro manager. 
 
 ### Bugs
 
+None open.
+
+### Features and enhancements
+
+- 🛠️ Directive review 20260819 item 30: Windows binaries carry no icon and no version details.
+	- Needs a Windows resource (.syso) beside the source. Two ways in: `goversioninfo` from a checked-in JSON template plus an .ico, which is the standard route and is well tested; or writing the COFF resource ourselves, which keeps the zero-dependency character but cannot be proved right from here - a malformed one links cleanly and fails on the machine that runs it.
+	- Leaning toward `goversioninfo`, probe-gated in the pipeline and required by `release.bash` phase 1 (which changes nothing, so failing there costs nothing). That needs the tool installed outside this tree, so it is the owner's call.
+
+### Done
+
+#### Done - Bugs
+
 - ✅ `repo clone` resolves its account from the folder you are standing in, not the one it is cloning into.
 	- Every other command is about the folder you are in. A clone's repo lands somewhere else, so a clone launched from a work repo used the work account whatever tree it was cloning into.
 	- Three ways in, all now closed: the folder rules read the current directory, `gitsby.ghAccount` was read off the surrounding repo, and the owner of that repo's origin stood in when nothing else answered.
@@ -128,121 +140,12 @@ From a full review of the Go code, 20260818. gofmt, vet, staticcheck and the sui
 
 From a review against the standing directives, 20260819. Everything below was checked against the code, not inferred. gofmt, vet, staticcheck and the suite (617/0) are all clean, so none of this is tool-visible.
 
-### Features and enhancements
-
-- ✅ Code Review 20260818 item 14: skip the identity network probe when no identity block will print.
-	- Every token-configured run paid a live `gh api user` round trip; `br list`, `account list` and bare `pr` never show what it feeds.
-	- One predicate now answers "does this run reach the identity block", and both the probe and the later prime read it.
-	- Measured with an account configured: `br list` 12 -> 11 spawns, `account list` 14 -> 11, `repo url` 13 -> 10. The one dropped from each is the network call.
-
-- ✅ Code Review 20260818 item 15: cache the handful of git answers asked repeatedly per run.
-	- Origin's url, the current branch, upstream state, ahead/behind, git's ssh command, the context directory and the terminal width are each asked once now.
-	- Ahead and behind came from two separate calls asking git the same thing; one call answers both.
-	- Invalidated centrally by the runners that execute a step, not by each writer by hand - a step is exactly what can make an answer stale, and a future one gets it for free.
-	- Measured: `status` 20 -> 17 spawns, `sync` 32 -> 25, `pullcom` 28 -> 24.
-
-- ✅ Code Review 20260818 item 16: two per-branch spawn loops left in `br prune`.
-	- The survey's remote-existence check was already answered by the merged map beside it, and the delete loop re-verified the same target refs once per branch.
-	- Dropping the verify costs nothing: merge-base against a ref that has gone fails, which is the same answer.
-	- Measured on five merged branches: 69 -> 52 spawns, and the gap widens with the branch count.
-
-- ✅ Code Review 20260818 item 17: least-surprise paper cuts, one sweep.
-	- `release` with nothing new exits 1 where every sibling's nothing-to-do exits 0 - and the About text promises idempotent re-runs.
-	- `gitsby -q` alone: "Unknown command ''" instead of help.
-	- `pr <n> extra` is the one place a trailing argument is silently ignored.
-	- `pr create` with an unquoted title doesn't give the quote-your-message hint `pullcom` gives.
-	- `repo clone owner/name` fails only after confirmation; `create`/`connect` both accept the shorthand.
-	- "yes" at the y/n prompt aborts.
-	- An option typed between `raw` and the tool is called an unknown subcommand.
-	- All seven fixed. Nothing-to-do is a success for `release` too; a command list answers a bare option; `pr` refuses its trailing argument and hints at quoting; `repo clone` takes `owner/name` before the plan, not after; `yes` is a yes; an option before the tool says where ours go.
-	- The overflow message picked up the quote-it hint as well - the ceiling is four slots, so an unquoted message of three words or more never reached the per-command hint.
-
-- ✅ Code Review 20260818 item 18: dead code and stale comments, one sweep.
-	- Unreachable option-value arm plus its dead variable in the parser; two dead branches in the prompt helper; an empty-message fallback nobody passes; a handover error message a preceding check makes unreachable; a comment describing a superseded key-splitting contract; a near-verbatim duplicated comment in main. (The prune survey's redundant re-check went with item 16.)
-	- All six gone. The handover kept its branch but not its claim: it named a cause the preceding check had already ruled out, so it reports what actually failed.
-	- Also found: the three help printers each returned early under `-q`, which is why `-q --help` printed nothing. Removed with item 17's bare-option fix.
-
-Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. Work top to bottom; everything happens on branches off `gover`, nothing touches the scripted implementations yet.
-
-- ✅ Go scaffolding.
-	- Module, `src-go/` tree, builds from the Linux cicd engine.
-	- Version is a build-time value, not a line in the source.
-	- Done: stub binary that owns only `version`; test stage builds it fresh each run, dev builds carry the git-describe version.
-
-- ✅ Third suite leg in test.bash for the Go binary.
-	- Mirrors the pwsh leg: a shim path, same fixture, same checks.
-	- Skipped when no binary exists; failures don't fail cicd until the leg is expected to pass everything. Pass counts print either way so progress is visible per run.
-	- Done: leg prints its own counts and stays out of the totals and the exit code. First run 162/279 - the passing side is mostly refusals a stub satisfies, so the failed count is the real distance.
-
-- ✅ Go tooling in the lint stage.
-	- gofmt, go vet, staticcheck. Shellcheck and PSScriptAnalyzer keep covering the pipeline and installers.
-	- Done: stage 1 runs gofmt (list mode) and go vet as gates, staticcheck when installed. Keyed off `src-go/` existing, no globs, so nothing to mirror in the Windows settings yet. Verified the gate fails a misformatted file by name.
-
-- ✅ Port the shared layer first.
-	- Argument parsing, output helpers, and the process runner. Commands run from an argument list, no shell between.
-	- Config read (`.shcl` stays flat and hand-parsed for now) and account resolution, same order and same env-only application.
-	- Done: one file per concern in `src-go/`. `raw git`/`raw gh` shipped with it as the layer's first consumer, proving the whole chain - prescan, config, resolution, env-only application, hand-over - against the real suite. Verified side by side with the bash build: same messages, same credential helper, same commit identity. Leg moved 162/279 -> 182/259; the one new-code failure is the `--` check handing the go leg the PowerShell spelling, which is the known leg-name sweep in the command-slice item.
-
-- ✅ Port a first command slice: `version`, `help`, `status`, `br list`.
-	- Read-only commands, so the suite leg starts passing real checks with no mutation risk.
-	- Note: any command named in an error message or help must be one the parser accepts.
-	- Done: help/version/status/br list, plus the full command-sort validation so every known command refuses bad arguments with the script's own message before saying it isn't built yet. Status carries the whole identity block (account, config-ignored, SSH probe, author) and the capped change/incoming lists. Verified byte-identical against the bash build across status, br list, help, and every refusal path. test.bash leg-name branches now split pwsh from everyone else; the leg moved 182/259 -> 236/202, and every remaining failure in this area is prep leaning on a command from the next slice.
-
-- ✅ Port the remaining read paths: `br prune` preview, `pr list`, default-branch resolution.
-	- Done: `br prune` runs its whole survey and shows the real plan (including the empty-plan answers and the keep reasons); only the deleting half still says it isn't built. Bare `pr` lists and `pr <n>` views with diff; create/ok wait for the writers, and pr's argument shapes refuse with the script's messages. Default-branch resolution itself landed with the previous slice - what this adds is the refusal gate for commands that need a confirmable branch. Config-file errors now match the scripts' one-trailing-blank shape (they throw inside a command substitution there). All verified byte-identical against the bash build; the leg moved 236/202 -> 249/189, and every remaining failure in these areas needs the mutating half.
-
-Same review, 20260819. These are shape and process rather than defects.
-
-- 🛠️ Directive review 20260819 item 30: Windows binaries carry no icon and no version details.
-	- Needs a Windows resource (.syso) beside the source. Two ways in: `goversioninfo` from a checked-in JSON template plus an .ico, which is the standard route and is well tested; or writing the COFF resource ourselves, which keeps the zero-dependency character but cannot be proved right from here - a malformed one links cleanly and fails on the machine that runs it.
-	- Leaning toward `goversioninfo`, probe-gated in the pipeline and required by `release.bash` phase 1 (which changes nothing, so failing there costs nothing). That needs the tool installed outside this tree, so it is the owner's call.
-
-- 🔘 Directive review 20260819 item 34: batching the branch deletes in `br prune` is the largest speed win available, and it changes the output.
-	- One push per branch, each forking three processes. Eight branches cost 24 of the command's 81.
-	- Deleting them in one call collapses the per-branch status and warning lines into one, so it needs a decision and a suite carve-out before it can be done.
-
-- 🔘 Directive review 20260819 item 35: ten statements in the public docs are no longer true.
-	- The command count is one short in three places, including the repo blurb.
-	- The README and contributing both send a new contributor to a branch that has no Go code on it.
-	- The README still describes a suite that runs against two implementations.
-	- design.md documents a folder, a test leg and a pipeline engine that were all removed, and its release section describes work that shipped, wrongly.
-	- Two smaller ones: a flag that only ever existed on the deleted engine, and a command spelled the old way.
-
-- 🔘 Directive review 20260819 item 36: the Install section has no sub-headings.
-	- Nothing in the contents leads a reader to "is this in my package manager", though the answer is written a few lines down.
-	- The development section does not say the pipeline commits and pushes at the end, which will surprise someone running it on a fork.
-
-- 🔘 Directive review 20260819 item 37: several of the strongest features are buried.
-	- One static binary with nothing alongside it is the third bullet of a compatibility list.
-	- That every mutating command shows the exact git commands and asks first is the main safety argument and appears once, near the bottom.
-	- `repo create` listing what it is about to publish, the offline behavior, and `account apply` teaching plain git the same rules are each a clause inside a longer paragraph.
-	- Nothing anywhere says gitsby keeps no state of its own.
-	- The repo blurb needs the same count fix, a homepage, and its topics refreshed - it still says bash and powershell.
-
-- 🔘 Directive review 20260819 item 38: design.md has no goals and non-goals section, and no header.
-	- The non-goals are the most interesting thing about the project and they are scattered across three sections and another document.
-	- Everything else about the file is right. It is a decision log with rejection rationale recorded inline, which is the correct form here - do not restructure it.
-
-- 🔘 Directive review 20260819 item 39: twenty-five finished items are still sitting in the open sections.
-	- The Bugs section reads as fourteen open bugs, all of which are done.
-	- The review items also want their outcome bullet labeled, so the finding and the fix can be told apart at a glance.
-
-- 🔘 Directive review 20260819 item 40: about twenty British spellings across the docs, scripts and code comments.
-	- Not in the code of conduct or contributing - those reproduce upstream text and should stay as published.
-
-- 🔘 Directive review 20260819 item 41: five paragraphs run long enough to be hard to scan.
-	- The worst is 620 characters. All five are ideas that want to be bullets.
-
-### Done
-
-#### Done - Bugs
-
 - ✅ Twenty regression checks reported on the terminal they were run from, not on the code.
 	- The harnesses pinned git's config files and gitsby's own config file. Two inputs outrank all of those and arrive from any ordinary working terminal: `GIT_CONFIG_COUNT` with its numbered keys beats every config file, a repo-local one included, and an inherited `GH_TOKEN` is what a gh call reports back.
 	- Ten checks per implementation, the same ten on both, which is what showed it was not a port difference. Five gh checks that can only pass when no token is held, and five identity checks that read a commit address back through a config file.
 	- Nothing was wrong with the product. The same suite and the same builds pass standalone, and pass under the pipeline once the environment is clean.
 	- Fixed in all three harnesses. `fuzz.bash` was also the only one never pinning gitsby's config file.
-	- Pinned in the source of each harness. The two runtime companions are labelled as regression guards: on a clean machine they pass against a harness that isolates nothing.
+	- Pinned in the source of each harness. The two runtime companions are labeled as regression guards: on a clean machine they pass against a harness that isolates nothing.
 
 - ✅ `demo-repo.bash` removed whatever directory it was pointed at, without checking whose it was.
 	- It took a root path as its first argument and `rm -rf`'d it before doing anything else. A mistyped or inherited argument took whatever lived there, and the script then reported success.
@@ -329,6 +232,69 @@ Same review, 20260819. These are shape and process rather than defects.
 
 #### Done - Features and enhancements
 
+- ✅ Code Review 20260818 item 14: skip the identity network probe when no identity block will print.
+	- Every token-configured run paid a live `gh api user` round trip; `br list`, `account list` and bare `pr` never show what it feeds.
+	- One predicate now answers "does this run reach the identity block", and both the probe and the later prime read it.
+	- Measured with an account configured: `br list` 12 -> 11 spawns, `account list` 14 -> 11, `repo url` 13 -> 10. The one dropped from each is the network call.
+
+- ✅ Code Review 20260818 item 15: cache the handful of git answers asked repeatedly per run.
+	- Origin's url, the current branch, upstream state, ahead/behind, git's ssh command, the context directory and the terminal width are each asked once now.
+	- Ahead and behind came from two separate calls asking git the same thing; one call answers both.
+	- Invalidated centrally by the runners that execute a step, not by each writer by hand - a step is exactly what can make an answer stale, and a future one gets it for free.
+	- Measured: `status` 20 -> 17 spawns, `sync` 32 -> 25, `pullcom` 28 -> 24.
+
+- ✅ Code Review 20260818 item 16: two per-branch spawn loops left in `br prune`.
+	- The survey's remote-existence check was already answered by the merged map beside it, and the delete loop re-verified the same target refs once per branch.
+	- Dropping the verify costs nothing: merge-base against a ref that has gone fails, which is the same answer.
+	- Measured on five merged branches: 69 -> 52 spawns, and the gap widens with the branch count.
+
+- ✅ Code Review 20260818 item 17: least-surprise paper cuts, one sweep.
+	- `release` with nothing new exits 1 where every sibling's nothing-to-do exits 0 - and the About text promises idempotent re-runs.
+	- `gitsby -q` alone: "Unknown command ''" instead of help.
+	- `pr <n> extra` is the one place a trailing argument is silently ignored.
+	- `pr create` with an unquoted title doesn't give the quote-your-message hint `pullcom` gives.
+	- `repo clone owner/name` fails only after confirmation; `create`/`connect` both accept the shorthand.
+	- "yes" at the y/n prompt aborts.
+	- An option typed between `raw` and the tool is called an unknown subcommand.
+	- All seven fixed. Nothing-to-do is a success for `release` too; a command list answers a bare option; `pr` refuses its trailing argument and hints at quoting; `repo clone` takes `owner/name` before the plan, not after; `yes` is a yes; an option before the tool says where ours go.
+	- The overflow message picked up the quote-it hint as well - the ceiling is four slots, so an unquoted message of three words or more never reached the per-command hint.
+
+- ✅ Code Review 20260818 item 18: dead code and stale comments, one sweep.
+	- Unreachable option-value arm plus its dead variable in the parser; two dead branches in the prompt helper; an empty-message fallback nobody passes; a handover error message a preceding check makes unreachable; a comment describing a superseded key-splitting contract; a near-verbatim duplicated comment in main. (The prune survey's redundant re-check went with item 16.)
+	- All six gone. The handover kept its branch but not its claim: it named a cause the preceding check had already ruled out, so it reports what actually failed.
+	- Also found: the three help printers each returned early under `-q`, which is why `-q --help` printed nothing. Removed with item 17's bare-option fix.
+
+Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. Work top to bottom; everything happens on branches off `gover`, nothing touches the scripted implementations yet.
+
+- ✅ Go scaffolding.
+	- Module, `src-go/` tree, builds from the Linux cicd engine.
+	- Version is a build-time value, not a line in the source.
+	- Done: stub binary that owns only `version`; test stage builds it fresh each run, dev builds carry the git-describe version.
+
+- ✅ Third suite leg in test.bash for the Go binary.
+	- Mirrors the pwsh leg: a shim path, same fixture, same checks.
+	- Skipped when no binary exists; failures don't fail cicd until the leg is expected to pass everything. Pass counts print either way so progress is visible per run.
+	- Done: leg prints its own counts and stays out of the totals and the exit code. First run 162/279 - the passing side is mostly refusals a stub satisfies, so the failed count is the real distance.
+
+- ✅ Go tooling in the lint stage.
+	- gofmt, go vet, staticcheck. Shellcheck and PSScriptAnalyzer keep covering the pipeline and installers.
+	- Done: stage 1 runs gofmt (list mode) and go vet as gates, staticcheck when installed. Keyed off `src-go/` existing, no globs, so nothing to mirror in the Windows settings yet. Verified the gate fails a misformatted file by name.
+
+- ✅ Port the shared layer first.
+	- Argument parsing, output helpers, and the process runner. Commands run from an argument list, no shell between.
+	- Config read (`.shcl` stays flat and hand-parsed for now) and account resolution, same order and same env-only application.
+	- Done: one file per concern in `src-go/`. `raw git`/`raw gh` shipped with it as the layer's first consumer, proving the whole chain - prescan, config, resolution, env-only application, hand-over - against the real suite. Verified side by side with the bash build: same messages, same credential helper, same commit identity. Leg moved 162/279 -> 182/259; the one new-code failure is the `--` check handing the go leg the PowerShell spelling, which is the known leg-name sweep in the command-slice item.
+
+- ✅ Port a first command slice: `version`, `help`, `status`, `br list`.
+	- Read-only commands, so the suite leg starts passing real checks with no mutation risk.
+	- Note: any command named in an error message or help must be one the parser accepts.
+	- Done: help/version/status/br list, plus the full command-sort validation so every known command refuses bad arguments with the script's own message before saying it isn't built yet. Status carries the whole identity block (account, config-ignored, SSH probe, author) and the capped change/incoming lists. Verified byte-identical against the bash build across status, br list, help, and every refusal path. test.bash leg-name branches now split pwsh from everyone else; the leg moved 182/259 -> 236/202, and every remaining failure in this area is prep leaning on a command from the next slice.
+
+- ✅ Port the remaining read paths: `br prune` preview, `pr list`, default-branch resolution.
+	- Done: `br prune` runs its whole survey and shows the real plan (including the empty-plan answers and the keep reasons); only the deleting half still says it isn't built. Bare `pr` lists and `pr <n>` views with diff; create/ok wait for the writers, and pr's argument shapes refuse with the script's messages. Default-branch resolution itself landed with the previous slice - what this adds is the refusal gate for commands that need a confirmable branch. Config-file errors now match the scripts' one-trailing-blank shape (they throw inside a command substitution there). All verified byte-identical against the bash build; the leg moved 236/202 -> 249/189, and every remaining failure in these areas needs the mutating half.
+
+Same review, 20260819. These are shape and process rather than defects.
+
 - ✅ The demo gif demonstrates an account changing on a partial folder match higher in the path.
 	- Folder-based accounts are the headline feature and the demo never showed them. Three scenes were added to the end of the existing demo rather than made into a second gif, so the one loop tells the whole story.
 	- The throwaway world now has two repos in trees that differ from their first folder down, and a gitsby config matching on `github.com/acme-corp` and `github.com/mika-rivers`. Different roots are the point: a shared root would not show that the match is a run of folder names rather than a prefix.
@@ -387,7 +353,7 @@ Same review, 20260819. These are shape and process rather than defects.
 - ✅ `br hotfix <name>`: a branch that targets the default branch instead of `dev`, for corrections to published material.
 	- The branching model is written up in `design.md`; this is the command that carries it.
 	- Branches off the default branch, pushed as `hotfix/<name>`. The prefix is the marker, so it survives a clone and shows in a branch listing. A name given with the prefix already on it is accepted rather than doubled.
-	- `br land`, `pr create`, and `pr ok` recognise a `hotfix/` branch and target the default branch, then merge it back into `dev`. `br create` still comes off `dev`, so feature work is untouched.
+	- `br land`, `pr create`, and `pr ok` recognize a `hotfix/` branch and target the default branch, then merge it back into `dev`. `br create` still comes off `dev`, so feature work is untouched.
 	- A back-merge that conflicts aborts and leaves `dev` alone, reporting that the hotfix landed and naming the two commands to finish by hand. Conflict surgery stays raw-git territory.
 	- Landing warns when the branch touched `bin/`: the default branch would then carry code no tag contains, so the latest release's downloads no longer match it.
 	- Implemented as `fBranchTarget` / `Get-BranchTarget` alongside the existing merge target, rather than by changing `fMergeTarget` - "where new branches come from" and "where this branch lands" are different questions, and only the second one varies.
@@ -470,7 +436,7 @@ Same review, 20260819. These are shape and process rather than defects.
 		- Done: scenario `cicd/demo-scenario.toml` + repo builder `cicd/utility/demo-repo.bash`; embedded in README top with a commented YouTube placeholder. Single hero `land` command (state block + full plan + commit/push/merge/cleanup) in an anonymized throwaway repo built offline; runs real gitsby so it can't go stale. 960x540 (the tool's default, a blessed alternative in the private note; not 640x360, and the tool has no fixed-fps knob). Pinned commit dates make it byte-deterministic so cicd only regenerates on real change. 18.4s loop, 823 KiB.
 		- Follow-up: one command was too thin a story, so the scenario now runs a whole feature end to end - `status`, `newbr`, `update`, a real edit typed at the prompt, `sync`, `land` - with a short comment line introducing each. Two generator fixes came out of it: stderr now shares the stdout pipe (git writes its progress there, so it was all landing after the program's own output instead of under the step that produced it), and the palette pads to the next power of two rather than a flat 256 (same pixels, ~12% smaller file).
 		- Follow-up: the smooth scroll and the cursor glide were never actually running. Both stepped once per 80ms frame, and a line of scroll is 21px, so any scroll rate over ~275 px/s finished a line in a single frame - a hard jump, and the rate knob did nothing (325, 520 and 820 all rendered byte-identical). Frame interval is now 20ms (50 fps) and the cursor glide follows it, so both move as intended. A smooth scroll redraws the whole text block every frame, which is expensive, so a new per-step `clear = true` starts each command on a fresh screen and roughly halves how far the view ever travels. 60.0s loop, still byte-deterministic.
-		- Follow-up: cicd now runs the render through `gifsicle -O3` when it is installed, before the compare, so the committed file is the optimized one (`DEMOGIF_OPT_CMD` in config.bash; silently skipped when absent). Worth about 9% - 7.3 -> 6.6 MiB. Less than it sounds like it should be: the renderer already crops each frame to what changed, so most of the win was banked, and the lossy modes buy almost nothing on a 35-colour text demo.
+		- Follow-up: cicd now runs the render through `gifsicle -O3` when it is installed, before the compare, so the committed file is the optimized one (`DEMOGIF_OPT_CMD` in config.bash; silently skipped when absent). Worth about 9% - 7.3 -> 6.6 MiB. Less than it sounds like it should be: the renderer already crops each frame to what changed, so most of the win was banked, and the lossy modes buy almost nothing on a 35-color text demo.
 
 - ✅ New commands for getting connected: `clone` (get an existing repo) and `connect` (publish work that only exists locally to a new or empty remote).
 	- `clone <url> [dir]`: derives the dir from the URL, checks out `dev` when the repo has one, re-run is a no-op.
@@ -600,7 +566,7 @@ Same review, 20260819. These are shape and process rather than defects.
 	- Fixed: the fragment now sets `credential.https://github.com.username`, so a credential manager looks up that account's entry rather than any entry for the host.
 
 - ✅ Added a parity suite: `cicd/parity.bash`, wired into the test stage of both engines.
-	- It asks whether the two builds *answer the same* for one input, where `test.bash` asks whether each behaves correctly. A behavioural check written per implementation passes on both while they quietly disagree - which is what every port defect that reached users actually was.
+	- It asks whether the two builds *answer the same* for one input, where `test.bash` asks whether each behaves correctly. A behavioral check written per implementation passes on both while they quietly disagree - which is what every port defect that reached users actually was.
 	- Covers path spellings, option forms, string case and file encoding: 23 comparisons.
 	- It earned its place while being written, finding two real divergences: the `/tmp` mount limitation above, and PowerShell answering an unknown option with the entire help text - and under `-q` with nothing at all but an exit code - where Bash named the option.
 
@@ -678,6 +644,53 @@ Same review, 20260819. These are shape and process rather than defects.
 	- Fixed: all three, in the moved text.
 
 #### Done - Directive review 20260819
+
+The documentation, 34-41. The suite went 666 -> 668.
+
+- ✅ Directive review 20260819 item 34: batching the branch deletes in `br prune` is the largest speed win available, and it changes the output.
+	- One push per branch, each forking three processes. Eight branches cost 24 of the command's 81.
+	- Deleting them in one call collapses the per-branch status and warning lines into one, so it needs a decision and a suite carve-out before it can be done.
+	- Done, and the call was made here rather than deferred: the win is large and the output change is smaller than the finding suggested - one plan line and one status line instead of eight of each, which reads better. Measured on eight branches: 77 spawns down to 42, with the cached branch lookups from item 16 in the same figure. The local re-check still runs per branch before anything is handed to git, and a partly-failed remote delete counts what actually went rather than writing the batch off. Parity needed no carve-out.
+
+- ✅ Directive review 20260819 item 35: ten statements in the public docs are no longer true.
+	- The command count is one short in three places, including the repo blurb.
+	- The README and contributing both send a new contributor to a branch that has no Go code on it.
+	- The README still describes a suite that runs against two implementations.
+	- design.md documents a folder, a test leg and a pipeline engine that were all removed, and its release section describes work that shipped, wrongly.
+	- Two smaller ones: a flag that only ever existed on the deleted engine, and a command spelled the old way.
+	- Fixed, all ten: the counts (ten, and 23 with subcommands), the branch a contributor is sent to (named nowhere now - `git clone` then `cd src-go` is the whole of it), the suite that ran against two implementations, design.md's folder list, testing section and release section, `bin/gitsby` in the style guide, `-NoSync` in contributing, and the old command spelling in the one-liners. The dogfood caveat is in the README too - those destinations are one machine's paths.
+
+- ✅ Directive review 20260819 item 36: the Install section has no sub-headings.
+	- Nothing in the contents leads a reader to "is this in my package manager", though the answer is written a few lines down.
+	- The development section does not say the pipeline commits and pushes at the end, which will surprise someone running it on a fork.
+	- Fixed: Install now has "Is it in my package manager?" (the answer was already there, four paragraphs down), "The one-liners", "Where it goes", "Without the installer" and "Coming from 2.x". The pipeline is described as eight numbered steps, and step 8 says in bold that it commits and pushes.
+
+- ✅ Directive review 20260819 item 37: several of the strongest features are buried.
+	- One static binary with nothing alongside it is the third bullet of a compatibility list.
+	- That every mutating command shows the exact git commands and asks first is the main safety argument and appears once, near the bottom.
+	- `repo create` listing what it is about to publish, the offline behavior, and `account apply` teaching plain git the same rules are each a clause inside a longer paragraph.
+	- Nothing anywhere says gitsby keeps no state of its own.
+	- The repo blurb needs the same count fix, a homepage, and its topics refreshed - it still says bash and powershell.
+	- Fixed in the docs: the three arguments - it shows its work, it keeps no state of its own, it is one file - are their own short list in "What it is", where nothing else competes with them. The offline behavior, the publish list and `account apply` each became a point of their own instead of a clause. The tagline names the show-and-ask promise.
+	- Left for the owner: the repo blurb, homepage and topics are GitHub settings rather than files here, and changing them edits the public repo page. `gh repo edit --description ... --homepage ... --add-topic go --remove-topic bash` is the one command.
+
+- ✅ Directive review 20260819 item 38: design.md has no goals and non-goals section, and no header.
+	- The non-goals are the most interesting thing about the project and they are scattered across three sections and another document.
+	- Everything else about the file is right. It is a decision log with rejection rationale recorded inline, which is the correct form here - do not restructure it.
+	- Fixed: a "Goals and non-goals" section, with the seven non-goals gathered from the three places they were scattered across, plus a short note on what kind of document this is. Nothing else was restructured - it is a decision log and that is the right form for it.
+
+- ✅ Directive review 20260819 item 39: twenty-five finished items are still sitting in the open sections.
+	- The Bugs section reads as fourteen open bugs, all of which are done.
+	- The review items also want their outcome bullet labeled, so the finding and the fix can be told apart at a glance.
+	- Fixed: 25 finished items moved into the matching Done subsections, and Bugs now says "None open" rather than reading as fourteen open bugs. Every review item's outcome bullet is labeled - "Fixed:", "Done:", "Decided:" - so the finding and what happened to it can be told apart at a glance.
+
+- ✅ Directive review 20260819 item 40: about twenty British spellings across the docs, scripts and code comments.
+	- Not in the code of conduct or contributing - those reproduce upstream text and should stay as published.
+	- Fixed: 23 of them across the docs, the pipeline scripts and the demo notes. `code_of_conduct.md` and contributing.md's DCO notice are untouched - both reproduce published text. Two of the 23 are in the shared `cicd/utility/include/` files, so a future re-sync from their source could bring them back.
+
+- ✅ Directive review 20260819 item 41: five paragraphs run long enough to be hard to scan.
+	- The worst is 620 characters. All five are ideas that want to be bullets.
+	- Fixed, all five plus the tagline: each became two or three short paragraphs, or a lead-in and bullets. The longest line left in the published docs is the tagline, and that one is an HTML cell rendering as three separate lines.
 
 The pipeline, 17-18 and 26-32 (bar 30), plus 42 and 43. Eleven new checks, each verified against the pipeline that preceded them; the suite went 649 -> 666.
 

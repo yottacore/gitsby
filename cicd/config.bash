@@ -165,7 +165,7 @@ DEMOGIF_ARCHIVE_DIR="../private/demo/gif"    # out-of-tree originals, GFS-rotate
 ## Lossless squeeze, when the tool is around; skipped silently if not. Worth
 ## about 9% - the renderer already crops each frame to what changed, so most of
 ## the win is banked. Stays before the compare, so the committed file is the
-## optimized one. Lossy modes buy almost nothing on a 35-colour text demo.
+## optimized one. Lossy modes buy almost nothing on a 35-color text demo.
 DEMOGIF_OPT_CMD=(gifsicle -O3)
 
 ## Stage 6: backup + publish to git (runs from repo root). The engine always

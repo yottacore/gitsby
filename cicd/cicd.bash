@@ -406,7 +406,7 @@ if ((do_fuzz)) && [[ -f "${SPAWN_COUNT_CMD[0]:-}" ]]; then
 	fEcho "OK: spawn counts"
 fi
 
-## Stage 4: backwards compatibility. The behavioural suite asks "is this correct?" of one
+## Stage 4: backwards compatibility. The behavioral suite asks "is this correct?" of one
 ## build at a time, so it passes while this build and the frozen one quietly disagree about
 ## the same input - which is what every port defect that reached users actually was. This
 ## asks the other question: do they ANSWER the same? Self-skips once legacy/ is gone.

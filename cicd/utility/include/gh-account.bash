@@ -36,7 +36,7 @@ fGhAccount_TokenFromFile(){
 :;}
 
 fGhAccount_Active(){
-	## Who gh is currently acting as, honouring anything fGhAccount_Select already exported.
+	## Who gh is currently acting as, honoring anything fGhAccount_Select already exported.
 	## '?' when gh is missing, logged out, or offline.
 	command -v gh &>/dev/null || { echo "?"; return 0; }
 	local login=""; login="$(GH_PROMPT_DISABLED=1 gh api user --jq .login 2>/dev/null || true)"

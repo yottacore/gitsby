@@ -535,7 +535,10 @@ fRunSuite(){
 		git merge --quiet --no-ff abandoned -m "merge abandoned"
 		git push --quiet
 	)
-	fAssertPlan "br prune plans the merged branches"  'git branch -D landed'  bash -c "cd '${prWork}' && '${gitsby}' -q br prune"
+	## One call, not one per branch: eight branches were two thirds of everything this command
+	## spawned. The plan has to say what the command runs, so both are one line - which is what
+	## this asserts, since a per-branch plan would put 'landed' on a line of its own.
+	fAssertPlan "br prune plans the merged branches, batched"  'git branch -D abandoned landed'  bash -c "cd '${prWork}' && '${gitsby}' -q br prune"
 	fAssert     "merged branch gone locally"       bash -c "cd '${prWork}' && ! git show-ref --verify --quiet refs/heads/landed"
 	fAssert     "the other merged one too"         bash -c "cd '${prWork}' && ! git show-ref --verify --quiet refs/heads/abandoned"
 	fAssert     "merged branch gone on origin"     bash -c "cd '${prOrigin}' && ! git show-ref --verify --quiet refs/heads/landed"
@@ -544,6 +547,26 @@ fRunSuite(){
 	fAssert     "protected branches kept"          bash -c "cd '${prWork}' && git show-ref --verify --quiet refs/heads/dev && git show-ref --verify --quiet refs/heads/main"
 	fAssertOut  "and it says what it kept"  'Keeping \(not merged yet\): wip'  bash -c "cd '${prWork}' && '${gitsby}' -q br prune"
 	fAssertOut  "nothing left to prune is a no-op"  'Nothing to prune'  bash -c "cd '${prWork}' && '${gitsby}' -q br prune"
+	## The remote delete is batched too, and its own fixture: the run above pruned the one
+	## before it, and a plan check has to actually run the command to see a plan.
+	local prOrigin2="${work}/$1-pro2.git"; local prWork2="${work}/$1-prw2"
+	git init --quiet --bare -b main "${prOrigin2}"
+	git clone --quiet "${prOrigin2}" "${prWork2}" 2>/dev/null
+	(
+		cd "${prWork2}"
+		echo one > f.txt; git add --all; git commit --quiet -m "initial"; git push --quiet -u origin main
+		git checkout --quiet -b dev; git push --quiet -u origin dev
+		for b in alpha beta; do
+			git checkout --quiet -b "${b}" dev; echo "${b}" > "${b}.txt"; git add --all
+			git commit --quiet -m "${b}"; git push --quiet -u origin "${b}"
+		done
+		git checkout --quiet dev
+		git merge --quiet --no-ff alpha -m "merge alpha"
+		git merge --quiet --no-ff beta  -m "merge beta"
+		git push --quiet
+	)
+	fAssertPlan "and the remote delete is one call too"  'git push origin --delete alpha beta'  bash -c "cd '${prWork2}' && '${gitsby}' -q br prune"
+	fAssert     "both went from origin"  bash -c "cd '${prOrigin2}' && ! git show-ref --verify --quiet refs/heads/alpha && ! git show-ref --verify --quiet refs/heads/beta"
 	fAssert     "br clean aliases br prune"        bash -c "cd '${prWork}' && '${gitsby}' -q br clean"
 	fAssertFail "br prune with an argument rejected"  bash -c "cd '${prWork}' && '${gitsby}' -q br prune wip"
 	fAssertFail "the internal br-prune token rejected"  bash -c "cd '${prWork}' && '${gitsby}' -q br-prune"
@@ -655,7 +678,7 @@ fRunSuite(){
 	## The SSH identity line. Every other check here uses a local-path origin, which has no ssh
 	## identity at all - so this whole line went out untested and shipped naming the OS login.
 	## A fake ssh gives it an scp-like origin to read without leaving the box: -G defaults 'user'
-	## to the OS login when the target carries none (the real behaviour, and the whole bug),
+	## to the OS login when the target carries none (the real behavior, and the whole bug),
 	## -T greets as the key's account, and anything else fails so git's own fetch reports offline.
 	local sid="${work}/$1-sshid"
 	mkdir -p "${sid}/bin"
@@ -998,7 +1021,7 @@ GHEOF
 	## A fork or an org we have no account for is ordinary - it must not be touched, and must not refuse.
 	fAssert "gh is left alone when it has no account for the owner" \
 		bash -c "cd '${idn}/c' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse' FAKE_GH_LOG='${idn}/unheld.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=\]' '${idn}/unheld.log'"
-	## -NoFetch is spelled the same to both ports (bash normalises it), so these need no branch.
+	## -NoFetch is spelled the same to both ports (bash normalizes it), so these need no branch.
 	fAssert "--any-identity leaves gh's active account alone" \
 		bash -c "cd '${idn}/c' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse acme' FAKE_GH_LOG='${idn}/any.log' '${gitsby}' -q -NoFetch --any-identity pr && grep -q 'GH_TOKEN=\]' '${idn}/any.log'"
 	## An account configured for the path wins over the remote's owner, and is the only one of the
@@ -1984,7 +2007,7 @@ GHEOF
 		bash -c "cd '${acWork}' && printf 'protocol=https\nhost=github.com\n\n' | env FAKE_GH_ACTIVE=workacct ${acEnv} '${gitsby}' -q raw git credential fill"
 
 	## A folder path with a space in it. The managed-includes scan split each config line at the
-	## first space, so such a key came back truncated and was never recognised as ours - every
+	## first space, so such a key came back truncated and was never recognized as ours - every
 	## re-run appended a duplicate, and a rule dropped from the config file kept applying forever.
 	mkdir -p "${ac}/spacehome" "${ac}/my trees/work"
 	: > "${ac}/spacehome/.gitconfig"
@@ -2547,3 +2570,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260819 JC: A block for the directive-review defects: the bare-repo and .git-directory gates, the fetch naming origin, prune's offline hold-back, br switch with two remotes carrying the branch, the contested-folder tie-break both ways, --any-identity's own line, a file-sourced token checked against the account it claims, and the mode bits. Eighteen of them fail against the build that preceded the fixes; the two mode-bit ones are Linux/macOS only.
 ##		- 20260819 JC: Installer coverage for the directive-review fixes: the pre-release fallback (a stub curl answering only the list endpoint), a whole install end to end with the network stood in for, and pins on the staging, the verification exit code and the Windows PowerShell 5.1 support. Ten of them fail against the installers that preceded the fixes.
 ##		- 20260819 JC: Pipeline coverage for the directive review: the reproducible-build flags and a binary built with them, the core cap, --quick's cross-builds, govulncheck, the spawn-count and kept-build scripts, -q reaching the harnesses, the lint summary on a clean log, and the demo scenario's command names. Eleven fail against the pipeline that preceded them.
+##		- 20260819 JC: br prune's plan checks follow the batched deletes - one line for the locals and one for the remotes, which is what the command runs. The remote half needed a fixture of its own: a plan check has to run the command to see a plan, and the check before it had already pruned the world it shared.

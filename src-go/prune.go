@@ -108,11 +108,12 @@ func (a *app) prunePreview() {
 	// -D is what runs, so -D is what the plan says. The line above it is the reason
 	// that's safe: gitsby checks containment itself, against the branch that matters.
 	a.out.clean(pad + "(each verified contained in " + a.mergeTarget() + ", and re-checked at delete time)")
-	for _, branch := range a.prune.local {
-		a.out.clean(pad + "git branch -D " + branch)
+	// One line per call, and there is one call - which is what the command runs.
+	if len(a.prune.local) > 0 {
+		a.out.clean(pad + "git branch -D " + strings.Join(a.prune.local, " "))
 	}
-	for _, branch := range a.prune.remote {
-		a.out.clean(pad + "git push origin --delete " + branch)
+	if len(a.prune.remote) > 0 {
+		a.out.clean(pad + "git push origin --delete " + strings.Join(a.prune.remote, " "))
 	}
 	if a.prune.currentMerged != "" {
 		a.out.clean(pad + "Keeping '" + a.prune.currentMerged + "' - merged, but it's the current branch.")

@@ -55,7 +55,7 @@ Scope, as of v2.1.0: the product itself is Go now, and Go's style is `gofmt` - t
 
 - Bash 4.4 is the floor, and the script refuses to run below it. Write to Bash 5 idioms otherwise, rather than portable-but-clunky POSIX-only workarounds. (The installers are the exception: they run on macOS stock bash 3.2, so that they can report what to do about it.)
 
-- Must pass shellcheck. Per-file disables go at the top, each with a short reason (see the top of `bin/gitsby`).
+- Must pass shellcheck. Per-file disables go at the top, each with a short reason (see the top of `cicd/test.bash`).
 
 - Tabs for indentation, spaces for alignment.
 

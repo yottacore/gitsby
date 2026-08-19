@@ -155,42 +155,63 @@ func (a *app) cmdPush() error {
 func (a *app) cmdPrune() error {
 	doneLocal, doneRemote := 0, 0
 	reKept := map[string]bool{}
+	// -D with our own gate, not -d. 'git branch -d' asks whether the branch is contained in
+	// its upstream, or in HEAD when it has none - neither of which is the question here, and
+	// the second one refuses a genuinely-merged local-only branch from any other branch.
+	// Re-checked right now rather than trusting the plan: the prompt may have sat a while.
+	var deleteLocal []string
 	for _, branch := range a.prune.local {
-		// -D with our own gate, not -d. 'git branch -d' asks whether the branch is
-		// contained in its upstream, or in HEAD when it has none - neither of which is
-		// the question here, and the second one refuses a genuinely-merged local-only
-		// branch from any other branch. Re-checked right now rather than trusting the
-		// plan: the prompt may have sat a while.
 		if !isMergedInto("refs/heads/"+branch, a.prune.targetRefs) {
 			a.out.status("'" + branch + "' is no longer contained in " + a.mergeTarget() + "; leaving it alone.")
 			reKept[branch] = true
 			continue
 		}
-		if err := a.step("git", "branch", "-D", branch); err != nil {
+		deleteLocal = append(deleteLocal, branch)
+	}
+	// One call, not one per branch. Each fork of git costs a process and takes its own
+	// helpers with it, and this is the command most likely to be handed eight branches at
+	// once - which was two thirds of everything it spawned.
+	if len(deleteLocal) > 0 {
+		if err := a.step("git", append([]string{"branch", "-D"}, deleteLocal...)...); err != nil {
 			return err
 		}
-		doneLocal++
+		doneLocal = len(deleteLocal)
 	}
-	remote := a.prune.remote
-	if len(remote) > 0 && a.isOffline() {
-		// Same rule br merge keeps: nothing goes out while origin is unreachable. Each
-		// push would fail and be reported as "already gone", blaming the branch for a
-		// network problem, and the count at the end would read as if it had finished.
-		a.out.status("WARNING: remote unreachable; left origin's copies of " + strings.Join(remote, ", ") + " alone - '" + meName + " br prune' again once online.")
-		remote = nil
-	}
-	for _, branch := range remote {
+	var deleteRemote []string
+	for _, branch := range a.prune.remote {
 		// "Leaving it alone" has to mean the remote copy too, or the message is a lie.
-		if reKept[branch] {
-			continue
+		if !reKept[branch] {
+			deleteRemote = append(deleteRemote, branch)
 		}
-		// Non-fatal, same as br merge: someone else may have deleted it already.
+	}
+	if len(deleteRemote) > 0 && a.isOffline() {
+		// Same rule br merge keeps: nothing goes out while origin is unreachable. The push
+		// would fail and be reported as "already gone", blaming the branch for a network
+		// problem, and the count at the end would read as if it had finished.
+		a.out.status("WARNING: remote unreachable; left origin's copies of " + strings.Join(deleteRemote, ", ") + " alone - '" + meName + " br prune' again once online.")
+		deleteRemote = nil
+	}
+	if len(deleteRemote) > 0 {
+		// Non-fatal, same as br merge: someone else may have deleted one already.
 		a.out.clean("")
-		a.out.status("git push origin --delete " + branch + " ...")
-		if a.inheritOK("git", "push", "origin", "--delete", branch) {
-			doneRemote++
+		a.out.status("git push origin --delete " + strings.Join(deleteRemote, " ") + " ...")
+		if a.inheritOK("git", append([]string{"push", "origin", "--delete"}, deleteRemote...)...) {
+			doneRemote = len(deleteRemote)
 		} else {
-			a.out.status("WARNING: couldn't delete origin/" + branch + " (already gone?); continuing.")
+			// One refspec failing does not stop the others, so count what actually went
+			// rather than writing the whole batch off. A delete that succeeded takes the
+			// remote-tracking ref with it, which is a local lookup.
+			var stillThere []string
+			for _, branch := range deleteRemote {
+				if branchExistsRemote(branch) {
+					stillThere = append(stillThere, branch)
+				} else {
+					doneRemote++
+				}
+			}
+			if len(stillThere) > 0 {
+				a.out.status("WARNING: couldn't delete " + strings.Join(stillThere, ", ") + " on origin (already gone?); continuing.")
+			}
 		}
 		a.out.resetBlank()
 	}

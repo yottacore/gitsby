@@ -138,8 +138,7 @@ Clone it and build it. There is no setup script any more, because there is nothi
 
 ~~~bash
 git clone https://github.com/jim-collier/gitsby.git
-cd gitsby && git switch dev
-cd src-go && go build -o gitsby .
+cd gitsby/src-go && go build -o gitsby .
 ~~~
 
 That binary is the whole product. The rest of the tooling below is for running the checks, and every piece of it is optional except Go.
@@ -150,6 +149,9 @@ That binary is the whole product. The rest of the tooling below is for running t
 - `git`, and the Go toolchain. Nothing else is required to build.
 - `bash` 4.4 or newer, to run the pipeline. The product does not need it; the pipeline is written in it.
 - `staticcheck` (`go install honnef.co/go/tools/cmd/staticcheck@latest`), for the lint stage. Without it that check warns and skips; `gofmt` and `go vet` ship with Go and always gate.
+- `golangci-lint` (`go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`), for the rest of the Go lint set. Configured in `src-go/.golangci.yml`; warns and skips when absent.
+- `govulncheck` (`go install golang.org/x/vuln/cmd/govulncheck@latest`), to check the standard library for known problems. Same treatment.
+- `strace`, for the spawn counts. Linux only; the step skips itself elsewhere.
 - `shellcheck`, to lint the pipeline's own scripts.
 - `markdownlint` (`npm install -g markdownlint-cli`), to lint the docs.
 - `python3` with Pillow, and optionally `gifsicle`, to regenerate the demo. Only needed for a full pipeline run.
@@ -174,15 +176,21 @@ That binary is the whole product. The rest of the tooling below is for running t
 - `cicd/release.bash --dry-run` - what cutting a release would do, changing nothing.
 - `cicd/test.bash` - just the regression suite. It builds throwaway repos under a temp directory and never touches the network or your real repos.
 - `cicd/fuzz.bash` - just the fuzz suite.
+- `cicd/utility/spawn-count.bash` - how many processes each command starts, against the newest previous run. This is the profiling step: the program is blocked on git for effectively all of its wall clock, so a sampling profile has no leaders in it.
+- `cicd/utility/keep-build.bash` - archive the current binary, list what is kept, run one, or diff one against the current build on the same arguments. For bisecting a behavior change.
 
-The pipeline fast-forwards from `origin` before it builds anything, so the checks run against the tree that will actually be pushed. It stops if your branch has diverged, warns and carries on if you're offline or the branch has no upstream, and `--no-sync` (`-NoSync`) skips it.
+All three suites take `-q`, which drops the per-check line and keeps the failures and the total. The pipeline passes it on an unattended run.
+
+The pipeline fast-forwards from `origin` before it builds anything, so the checks run against the tree that will actually be pushed. It stops if your branch has diverged, warns and carries on if you're offline or the branch has no upstream, and `--no-sync` skips it.
 
 The regression and fuzz suites both run against the compiled binary, so build before you run them - or let the pipeline do it, which is what its second stage is for.
 
 <!-- omit in toc -->
 #### Then
 
-Work on a short-named feature branch off `dev`, and open a PR back to `dev`. `main` is release-only. Coding style is in [style-guide.md](style-guide.md).
+Work on a short-named feature branch, open a PR back to `dev`, and leave `main` release-only. Coding style is in [style-guide.md](style-guide.md).
+
+> While the Go port is in flight, all of it lives on the `gover` integration branch, and day-to-day branches come off that rather than off `dev`. `git switch gover` is the only difference; everything else is the same. This note goes when the port lands.
 
 <!-- TODO
 ### Improving The Documentation
