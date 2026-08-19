@@ -20,20 +20,7 @@ This is a product backlog for the run-up to v2.0.0. After that release, bugs, fe
 	- [Done](#done)
 		- [Done - Bugs](#done---bugs)
 		- [Done - Features and enhancements](#done---features-and-enhancements)
-		- [Done - Accounts, parity and release automation 20260812](#done---accounts-parity-and-release-automation-20260812)
-		- [Done - Accounts and arguments 20260812](#done---accounts-and-arguments-20260812)
-		- [Done - Installers 20260812](#done---installers-20260812)
-		- [Done - Pipeline 20260812](#done---pipeline-20260812)
-		- [Done - Documentation 20260812](#done---documentation-20260812)
-		- [Done - Code review 20260819](#done---code-review-20260819)
-		- [Done - Code review 20260813](#done---code-review-20260813)
-		- [Done - Code review 20260812](#done---code-review-20260812)
-		- [Done - Code review 20260731](#done---code-review-20260731)
-		- [Done - Code review 20260730](#done---code-review-20260730)
-		- [Done - Code review 20260727b](#done---code-review-20260727b)
-		- [Done - Code review 20260727](#done---code-review-20260727)
-		- [Done - Code review 20260726](#done---code-review-20260726)
-		- [Done - Code reviews 20260725 and 20260723](#done---code-reviews-20260725-and-20260723)
+		- [Done - Code reviews](#done---code-reviews)
 	- [Future and/or deferred](#future-andor-deferred)
 	- [Canceled](#canceled)
 
@@ -42,6 +29,8 @@ This is a product backlog for the run-up to v2.0.0. After that release, bugs, fe
 ## Conventions
 
 In each section, items are listed approximately from newest to oldest.
+
+"Done" has three sections and no others. Defects go under "Done - Bugs", everything else under "Done - Features and enhancements", and anything belonging to a review round under "Done - Code reviews" - one bullet per round, dated, with its findings beneath it. A round of work that wants to stay together is one bullet with its items nested under it, rather than a heading of its own.
 
 To make using these icons easier, add them to a clipboard or key macro manager. (These are temporary anyway until we switch over to nano-git-db for the minor stuff, and GitHub Issues for the bigger stuff.)
 
@@ -78,192 +67,71 @@ None open.
 	- Fixed: the destination folder decides. The surrounding repo's git config is not asked (a destination has no config yet, and an includeIf on gitdir cannot answer for a repo that does not exist), and no owner is guessed - with no rule for the destination, gh stays on its own account.
 	- Noticed while making clone accept the `owner/name` shorthand; left alone there because it changes which credentials a clone uses, not just what it accepts.
 
-From a full review of the Go code, 20260818. gofmt, vet, staticcheck and the suite (530/0) are clean; these are what the tools don't see. Several are inherited from the frozen bash build - latent there, but live in the shipping binary.
+- ✅ Accounts and arguments, 20260812.
 
-- ✅ Code Review 20260818 item 1: `pr ok` can destroy never-pushed commits.
-	- Standing on the PR's own branch with no upstream configured, the lost-work guard asks `@{u}` and gets silence, so it passes. gh then merges what origin has and deletes the branch with `-D`.
-	- The stronger per-branch check only runs when standing somewhere else.
-	- Inherited from the bash build.
-	- Asked of the PR's own branch by name wherever you are standing. `@{u}` answers nothing at all for a branch pushed without `-u`, which is the one arrangement that lost the commits.
+	- ✅ `account apply` ordered its rules the opposite way from the way gitsby matches them.
+		- Cause: gitsby takes the longest matching folder; git applies includes in file order and the last match wins. The rules were written grouped by account, in declaration order.
+		- Note: so a tree nested inside another account's tree got whichever account happened to be declared later, and plain git and gitsby then disagreed about one directory - the single thing `apply` exists to prevent.
+		- Fixed: shortest path first, so the longest match is written last and wins in git too. Folder is the tie-break, so the order is deterministic.
+		- Verified both ways: with the old build, plain git in the nested folder used the outer account's email while gitsby resolved the inner account. Both now say inner.
 
-- ✅ Code Review 20260818 item 2: `repo create`/`repo connect` never actually select the target account.
-	- The late re-selection is a no-op behind the already-applied guard, so publishing happens as gh's active account, silently. The comment at the call site says the opposite.
-	- Inherited from the bash build.
-	- The target named on the command line resolves the account, ahead of the validation that itself talks to gh. The late re-selection behind the already-applied guard is gone.
+	- ✅ Bash accepted `--config` naming a directory: shell error, no accounts, exit 0. PowerShell's matching hole was an unreadable file, passed over silently.
+		- Fixed: both now require a readable regular file, and refuse by name. A *discovered* config is still skipped rather than refused - nobody asserted that one was there.
+		- Note: PowerShell has no readable bit, so the test is opening the file.
 
-- ✅ Code Review 20260818 item 3: the "gh's active account is 'X'" identity line can never print truthfully.
-	- The token is exported before the probe that asks who was active, so the probe answers as the new account and the line stays dark. With a tokenFile whose token belongs to a different login, it prints a wrong name instead.
-	- Inherited from the bash build.
-	- The probe runs before the token is exported, so it can still answer with the account being replaced.
+	- ✅ `GITSBY_ACCOUNT` matched an account name case-sensitively in Bash, case-insensitively in PowerShell.
+		- Cause: Bash's loader lowercases the whole key on the way in, but the lookup lowercased only the key half and left the account name as typed - so it could miss what it had just stored.
+		- Fixed: lowercase both halves, which makes Bash self-consistent and matches PowerShell.
 
-- ✅ Code Review 20260818 item 4: `account apply` can't clean up rules under folder paths with a space.
-	- The managed-includes scan splits each config line at the first space, so such keys are never recognized as ours. Re-runs append duplicates, and a rule removed from the config file keeps applying forever.
-	- Inherited from the bash build.
-	- Reads the rules with `--null`, so a key holding a folder path with a space comes back whole.
+	- ✅ Only `-q`, `-y` and `--config` could precede `raw`, and the error blamed the wrong thing.
+		- Note: worse than recorded - the message was "Unknown command 'raw'", which is false. Only the passthrough's own scan runs before `raw`, so an option it didn't take left the main parser looking at a command by that name.
+		- Fixed: the scan takes gitsby's whole option vocabulary, spelled and normalized the same way the main parser does it. The ones with nothing to act on in a passthrough are inert. `-h` and `-v` still fall through to the main parser, and a genuinely unknown option is refused by its own name.
 
-- ✅ Code Review 20260818 item 5: `account apply` reports success no matter what.
-	- The fragment truncate error is discarded and every `git config` exit code is ignored; "Wrote ..." and "Done." print regardless, exit 0.
-	- The one command that writes outside the repo is the one that can silently no-op.
-	- Every write is checked; the first failure stops the run and names what was left incomplete.
+	- ✅ PowerShell `raw` could not pass `--`, git's pathspec separator.
+		- Cause is NOT what was recorded, and matters: PowerShell's binder reads a bare `--` as an empty parameter name and fails *before the script runs at all*. Nothing in the passthrough can intercept it. Five param-block shapes were tested; a script with no `param()` block receives `--` fine.
+		- Fixed as far as it can be: `` `-- `` survives binding, and is handed to the tool as `--`. Documented in `accounts.md`.
+		- Note: dropping the `param()` block would fix this and the joined-option binding together. Not taken - it is a large change to a documented option surface.
 
-- ✅ Code Review 20260818 item 6: `pr ok` with a dead PR number sails through preflight.
-	- A failed `gh pr view` silently falls back to the current branch, so the plan is confidently about the wrong thing and the run dies after confirmation - the shape preflight exists to prevent.
-	- Head branch and state come back in one call. A number gh can't resolve is refused, and so is a PR that is no longer open.
+	- ✅ `account apply` ended in a raw operating-system error, a different one in each build.
+		- Note: not the no-config case, which already reports itself properly. The trigger is the include directory being unusable - something else already at that path.
+		- Fixed: check the directory before writing anything, and fail in gitsby's own voice. Nothing partial was ever written, and still isn't.
 
-- ✅ Code Review 20260818 item 7: offline reads as "repo doesn't exist" in `repo connect`/`repo create`.
-	- Any `gh repo view` failure is taken as absence and stated as fact, with advice that derails further. These two skip the pre-command fetch (no origin yet), so offline is never discovered for them.
-	- gh's stderr tells a name that resolves to nothing apart from an API it couldn't reach; the second is repeated back rather than stated as absence.
+- ✅ Installers, 20260812.
 
-- ✅ Code Review 20260818 item 8: `--offline` is a hidden third spelling of `--no-fetch` - and pushes still go out.
-	- Contradicts the design rule that offline is a discovered state, never a flag. `sync --offline` publishes work.
-	- Call to make: drop the alias, or make that one spelling refuse outgoing traffic too. Inherited from the bash build, undocumented in help.
-	- Dropped, and refused by name with a pointer to `--no-fetch`. A flag that also stopped the pushes would only simulate a state the fetch already discovers, and nothing outside the source ever documented the spelling. Reasoning in design.md.
+	- ✅ A Windows install finished with the program not on `PATH`.
+		- Fixed: the PowerShell installer adds the install directory to the account (or system) PATH, and says so in the plan before you agree. Idempotent, and it leaves the current shell alone.
+		- `PATHEXT` deliberately NOT changed, and the original reasoning for it was wrong. PowerShell already resolves a bare `gitsby` to `gitsby.ps1` on `PATH` without it - verified with `PATHEXT` cut back to `.COM;.EXE;.BAT;.CMD`. It would only affect `cmd.exe`, which still cannot run a `.ps1` even with the entry, because that needs a file association - and the default association opens the script in an editor rather than running it. Adding it buys nothing and risks that.
 
-- ✅ Code Review 20260818 item 9: the `sshkey` config value reaches shell-executed strings unquoted.
-	- Concatenated into `GIT_SSH_COMMAND` and written into `core.sshCommand`; git hands both to a shell. The config is trusted input, but the file is redirectable by flag/env, and the repo-local sshCommand path already refuses quoting tricks - this path should match it.
-	- A key path carrying whitespace or a shell character is dropped and listed as unusable, rather than quietly falling back to whatever key ssh picks.
+	- ✅ Both installers installed anyway when `SHA256SUMS` was absent, and said nothing at all on the `--release dev` path.
+		- Fixed: the plan states which of the two you are about to get, before the confirmation.
+		- Fixed: where the plan promised verification and it can't happen, the install now stops instead of noting it in passing - separately naming the two causes, no published checksum and no sha256 tool here. `--ref TAG` takes it unverified, as an explicit choice.
+		- Note: the release-asset fallback to the tagged tree was the same broken promise and stops the same way.
+		- Verified against the real v2.0.2 release, both installers: plan promises verification, checksum verifies, correct version installed.
 
-- ✅ Code Review 20260818 item 10: branch names from a cloned repo can reach git as leading options.
-	- A repo whose default branch is named `-something` makes checkout/merge/branch/push parse it as flags. Bounded to breakage, not code execution. `--` separators fix it; the ssh probe paths already have them.
-	- A dash-led name is refused before it reaches git in a leading argument position - checkout, merge, branch delete.
+- ✅ Pipeline, 20260812.
 
-- ✅ Code Review 20260818 item 11: a handed-over repo's own `.git/config` can pick gitsby's identity and token file.
-	- `gitsby.ghAccount`/`gitsby.ghTokenFile` are honored from local config, so a foreign repo can have an arbitrary readable file loaded into the token env for child processes. No exfiltration channel exists - the credential helper is host-scoped - so this is identity confusion plus file read, not theft. Consider honoring tokenFile from global/folder config only.
-	- `gitsby.ghTokenFile` is honored from global/system scope only. `gitsby.ghAccount` still reads repo-local: naming a login there is an ordinary thing to do, and the account still has to be one you hold.
+	- ✅ The pipeline had no remote-sync stage, so the pull at publish time could carry in changes nothing had tested.
+		- Cause: the only pull was in the publish stage, which runs last - after lint, tests and fuzz have all passed against the older tree.
+		- Fixed: stage 0 in both engines. Fetch, fast-forward when only behind, and stop when diverged. No upstream or an unreachable origin warns and carries on; `--no-sync` (`-NoSync`) skips it. Publish keeps its own pull as the late guard.
+		- Note: the fast-forward is `--autostash`, so a dirty tree rides over it. Verified against throwaway repos in all five states, both engines.
 
-- ✅ Code Review 20260818 item 12: the wrong-account warning talks about pull requests on commands with no gh involvement.
-	- The ssh-key-mismatch case appends the "gh does the pull request work..." sentence to plain push commands, and can name '?' when gh is absent - right at the y/n moment.
-	- The gh sentence prints only where gh is the one acting.
+- ✅ Documentation, 20260812.
 
-- ✅ Code Review 20260818 item 13: the push-identity gate fires for commands that push nothing.
-	- Keyed on mutating, not pushing, so `pullcom -q` under a mismatched key is refused outright and pays a live ssh probe, for a local-only commit.
-	- Keyed on whether the command pushes, named by exception so a mutating command added later stays covered until it says otherwise.
+	- ✅ `design.md` stated the opposite of itself in two places, each time because a later decision was added without revising the earlier one.
+		- Fixed: the Architecture bullet now says no *state* of its own, and names the accounts config as the one read-only exception. The `--no-fetch` bullet no longer calls itself offline, which is what the code and the offline rule below it already said.
 
-From a review against the standing directives, 20260819. Everything below was checked against the code, not inferred. gofmt, vet, staticcheck and the suite (617/0) are all clean, so none of this is tool-visible.
+	- ✅ The `Status: Passing` badge was a fixed image wired to nothing, so it read the same on a broken branch.
+		- Fixed: removed. The pipeline is local, so there is no build to report; the remaining badges all resolve to something real.
 
-- ✅ Twenty regression checks reported on the terminal they were run from, not on the code.
-	- The harnesses pinned git's config files and gitsby's own config file. Two inputs outrank all of those and arrive from any ordinary working terminal: `GIT_CONFIG_COUNT` with its numbered keys beats every config file, a repo-local one included, and an inherited `GH_TOKEN` is what a gh call reports back.
-	- Ten checks per implementation, the same ten on both, which is what showed it was not a port difference. Five gh checks that can only pass when no token is held, and five identity checks that read a commit address back through a config file.
-	- Nothing was wrong with the product. The same suite and the same builds pass standalone, and pass under the pipeline once the environment is clean.
-	- Fixed in all three harnesses. `fuzz.bash` was also the only one never pinning gitsby's config file.
-	- Pinned in the source of each harness. The two runtime companions are labeled as regression guards: on a clean machine they pass against a harness that isolates nothing.
+	- ✅ README was about four times the length it should be, and the first runnable example was well over half way down.
+		- Fixed: 535 lines to 273. Install and a worked example are now the first two sections, above the fold.
+		- Fixed: the headline names folder-based accounts, which is the strongest thing in the release and went unmentioned.
+		- Fixed: the long material moved to `accounts.md` and `workflows.md` rather than being deleted, so the README reads as a landing page and the depth is one click away.
 
-- ✅ `demo-repo.bash` removed whatever directory it was pointed at, without checking whose it was.
-	- It took a root path as its first argument and `rm -rf`'d it before doing anything else. A mistyped or inherited argument took whatever lived there, and the script then reported success.
-	- Reproduced against the previous version: a directory holding an unrelated file was passed as the root, and came back empty with an exit code of 0.
-	- Fixed by stamping the directories it builds. Only a stamped one is removed; a relative path, the filesystem root, a symlink and anything containing `..` are all refused up front.
-	- Checked against the previous version. The filesystem-root case is pinned in the source rather than run, since running it against a build without the guard is `rm -rf /`.
-
-- ✅ Every other recursive or forced removal now fails closed on an unset variable.
-	- All of them name a path the script itself created, but they were spelled so that an unset variable would have widened the target rather than stopped it.
-	- Ten sites across both installers, the pipeline engine and all four harnesses. The suite checks the whole set, so a new unguarded one is caught.
-
-- ✅ The publish preview leaked its throwaway git directory when a run was interrupted.
-	- The Bash build removed it on the way out of the function that made it, so a Ctrl-C while the preview was still on screen stranded an empty directory in temp. The PowerShell build already covered this.
-	- Moved to the exit path, which already runs on interrupt. Checked by driving the cleanup hook directly - a real Ctrl-C could not be staged, since Git Bash defers the signal until the native child returns.
-
-- ✅ Twelve regression checks were testing nothing on Windows.
-	- The suite handed PowerShell its own MSYS paths. .NET has no mount table, so `/tmp/x` and `/c/x` were read against the current drive root - `Set-Location`, the script lookup and `ReadAllBytes` all failed and the commands under test never ran.
-	- Seven reported red. The other five passed because they forbid something that also never happened, which is the worse half. Among them the guard for the working-directory bug, which had been guarding nothing.
-	- Fixed with an `fWinPath` helper, the same conversion the folder-account block already needed. Two smaller ones alongside: Git Bash rewrites a unix-absolute argument before the native pwsh sees it, so the `-Ref` refusal was being triggered by the wrong rule; and the system install location is the platform's own, not `/usr/local/bin`.
-	- Windows now runs 850/0, matching Linux. Checked the repaired guard fails against the code that predates the working-directory fix, so it discriminates rather than merely passing.
-
-- ✅ The identity probe ignored the ssh key git was configured to push with.
-	- It ran a bare `ssh`, so a repo selecting its key through `core.sshCommand` was reported as the default key's account. Where that matched gh's account the mismatch check passed with both halves wrong - green in exactly the setup it exists for.
-	- Fixed to follow git's own precedence, `GIT_SSH_COMMAND` then `core.sshCommand`. The identity line takes the key file from the same source, so it can't name the right account beside the wrong key.
-	- Same override was overriding the key on `fetch` and the remote probe, which made a private repo reachable only via that key look like being offline.
-
-- ✅ The PowerShell build died on the identity line whenever no ssh command was configured.
-	- `Get-GitSshCommand` returns a list, but PowerShell unwraps a one-element return to a bare string - and under StrictMode, reading `.Count` off a string throws. One element is the ordinary case: a plain `ssh` with nothing configured.
-	- So any repo with an ssh remote and no `core.sshCommand` failed with "The property 'Count' cannot be found", which is most of them. The Bash build was never affected; bash arrays don't unwrap.
-	- Found by running the suite's PowerShell leg on Windows, which until now had only ever run on Linux. It would have failed there too - it had simply never been run since the identity work landed.
-
-- ✅ gh acted as whatever account was last switched to, regardless of who owns the remote.
-	- Now picks the owner's account for the run when gh already holds it, via `GH_TOKEN`, leaving gh's active account alone. Only when the owner can be named and the token is held - an org or someone else's repo is left untouched rather than refused.
-
-- ✅ On Windows, a local-path remote was read as an ssh host named after the drive letter.
-	- `C:/path/to/repo.git` matched the `host:path` shape, so every command ran an ssh identity probe against a machine called `C` and reported an account for it.
-
-- ✅ PowerShell: a joined `-Config=FILE` failed silently.
-	- PowerShell can't bind a joined option through `-File`. Ahead of a command it ate the next word as the value, so `br list` arrived as `list`; after one it overflowed the positional slots.
-	- The first case printed the help and exited 1, which `-q` silenced entirely - the reported symptom was a command that appeared to do nothing.
-	- Now refused by name from any position, naming `-Config FILE` and `-Config:FILE`. Bash keeps taking the joined form, and so does `raw`, which reads the real command line.
-
-- ✅ `--config ""` silently used the default config instead of refusing.
-	- The check asked whether the value was non-empty, not whether the option was typed, so an empty one was indistinguishable from never passing it.
-	- That fell back to the default file, which decides the account - a script whose variable came out empty would push as the wrong identity and say nothing. Both builds.
-	- An empty `GITSBY_CONFIG` still falls through on purpose: an unset environment variable and an empty one are the same thing, unlike a typed option.
-	- Found by the new fuzz vectors on their first run.
-
-- ✅ `repo clone` refused to re-run, and `repo connect` refused a matching URL, on Windows.
-	- Git stores a local-path remote in the platform's own spelling: hand it `/c/tmp/x` and it gives back `C:/tmp/x`. Both commands compared their own argument against git's copy as plain text, so the same directory read as a different one.
-	- Both now compare local paths as paths. These were the two long-standing Windows-only failures in the suite.
-
-- ✅ The PowerShell installer never verified the checksum, and said the release had none.
-	- Found by running both documented one-liners against the current release: the Bash one reported the checksum verified, the PowerShell one reported no `SHA256SUMS` for the same release, which does publish one.
-	- Cause: GitHub serves that file as binary, and PowerShell returns a response body as raw bytes for anything it doesn't treat as text. Read as lines, bytes match nothing, so no checksum was found and the download was installed unverified.
-	- The message made it look settled rather than broken, so the default install had gone unverified since the check was added. The Bash installer was never affected.
-	- Fixed: the body is decoded before it is read. Verified against the published release - the checksum is found, compared, and matches the installed file.
-
-- ✅ Every install command in the README 404s, because `main` is still the 2022 tree.
-	- `main` holds no `install.bash`, `install.ps1`, `install-dev.*` or `bin/gitsby.ps1`, so all six documented one-liners fail at the download. Reported from the field.
-	- Cutting v2.0.0 fixes it outright: the merge to `main` puts the files there, and `releases/latest` stops resolving to the 2022 `v1.0.1`, which is a dead end for the default install path (that tag predates the `bin/` layout).
-	- Until then the working incantation is the `dev` URL plus `--release dev` / `-Release dev`. Left undocumented on purpose rather than pointing strangers at `dev`.
-
-- ✅ The SSH identity line named the local login instead of the account being acted as.
-	- It asked `ssh -G` about the bare host. With no user in the target, ssh answers with the OS login name, so a push as `t00mietum` displayed as `collierjr@github.com`. Reported from the field.
-	- That value is neither of the two real ones: the connect user is `git`, and the account is whatever the key authenticates as. On a personal machine it looks plausible enough to be believed, which is worse than showing nothing.
-	- The probe now uses the connect target, so an explicit user in the remote URL is honored the way git honors it. Host alias resolution is unaffected - the user part only overrides `User` in `~/.ssh/config`.
-	- The line also leads with the account now, resolved by asking the host. That is what it existed to answer; the connect user is identical for every GitHub account, and the key shown is only ssh's first readable candidate, not necessarily the one that authenticates. Offline it says `unknown` rather than guessing, and skips the round trip.
-	- Every other test uses a local-path origin, which has no ssh identity, so the whole line had shipped untested. It now has a fake ssh that reproduces the real defaulting behavior.
-
-- ✅ A byte-order mark on the three PowerShell files broke both installer one-liners and direct execution.
-	- `irm` keeps the BOM, so `iex` and `[scriptblock]::Create` saw it glued to the shebang and the first line stopped being a comment. Both documented one-liners failed for every user, on every platform. Reported from the field.
-	- The same BOM sat ahead of `#!` in `bin/gitsby.ps1`, so `./gitsby.ps1` fell through to the shell instead of running.
-	- `bin/gitsby.ps1` already carried a suppression saying a BOM would break the shebang, so it had been there against the file's own stated intent since the files were written.
-	- The tests couldn't see it: they read the source with `Get-Content`, which drops a BOM silently. They now decode the bytes, and each file's first two bytes are checked.
-- ✅ `install.ps1` sent a failed download to the Bash installer, which fails the same way.
-	- Both resolve the same stale `releases/latest`, so the advice was a loop. It names `-Release dev` now, matching what `install.bash` already said.
-
-- ✅ An unreachable remote did not make the parking push safe.
-	- `update` and `sync` degraded properly, but `br create`, `br switch`, `br hotfix`, `pr create` and `release` all failed on `git push` with raw git text.
-	- Split by what each command is for. The ones that mean something locally now skip the push and say so, naming the branch and `sync` from it as the way to publish later. The ones that exist to publish - `sync`, `pr create`, `pr ok`, `release` - refuse up front, before the plan promises a push, and name what to do instead.
-	- `br land` needed more than a skipped push: with the merge unpublished, origin's copy of the work branch is its only ref to those commits, so the remote delete is held back too. The hotfix back-merge has the same shape - it merges `origin/main` normally, which unpublished is the stale one, so it falls back to the local branch.
-	- Decided against making `--no-fetch` mean this. The flag declines the incoming round trip, which is a perfectly good thing to want against a reachable remote, and the suite itself uses it that way throughout. Offline is a state the pre-command fetch discovers, not a flag.
+	- ✅ README wording: a missing verb and a doubled letter in the workflow comparison, and a bullet with no full stop in Compatibility.
+		- Fixed: all three, in the moved text.
 
 #### Done - Features and enhancements
-
-- ✅ Code Review 20260818 item 14: skip the identity network probe when no identity block will print.
-	- Every token-configured run paid a live `gh api user` round trip; `br list`, `account list` and bare `pr` never show what it feeds.
-	- One predicate now answers "does this run reach the identity block", and both the probe and the later prime read it.
-	- Measured with an account configured: `br list` 12 -> 11 spawns, `account list` 14 -> 11, `repo url` 13 -> 10. The one dropped from each is the network call.
-
-- ✅ Code Review 20260818 item 15: cache the handful of git answers asked repeatedly per run.
-	- Origin's url, the current branch, upstream state, ahead/behind, git's ssh command, the context directory and the terminal width are each asked once now.
-	- Ahead and behind came from two separate calls asking git the same thing; one call answers both.
-	- Invalidated centrally by the runners that execute a step, not by each writer by hand - a step is exactly what can make an answer stale, and a future one gets it for free.
-	- Measured: `status` 20 -> 17 spawns, `sync` 32 -> 25, `pullcom` 28 -> 24.
-
-- ✅ Code Review 20260818 item 16: two per-branch spawn loops left in `br prune`.
-	- The survey's remote-existence check was already answered by the merged map beside it, and the delete loop re-verified the same target refs once per branch.
-	- Dropping the verify costs nothing: merge-base against a ref that has gone fails, which is the same answer.
-	- Measured on five merged branches: 69 -> 52 spawns, and the gap widens with the branch count.
-
-- ✅ Code Review 20260818 item 17: least-surprise paper cuts, one sweep.
-	- `release` with nothing new exits 1 where every sibling's nothing-to-do exits 0 - and the About text promises idempotent re-runs.
-	- `gitsby -q` alone: "Unknown command ''" instead of help.
-	- `pr <n> extra` is the one place a trailing argument is silently ignored.
-	- `pr create` with an unquoted title doesn't give the quote-your-message hint `pullcom` gives.
-	- `repo clone owner/name` fails only after confirmation; `create`/`connect` both accept the shorthand.
-	- "yes" at the y/n prompt aborts.
-	- An option typed between `raw` and the tool is called an unknown subcommand.
-	- All seven fixed. Nothing-to-do is a success for `release` too; a command list answers a bare option; `pr` refuses its trailing argument and hints at quoting; `repo clone` takes `owner/name` before the plan, not after; `yes` is a yes; an option before the tool says where ours go.
-	- The overflow message picked up the quote-it hint as well - the ceiling is four slots, so an unquoted message of three words or more never reached the per-command hint.
-
-- ✅ Code Review 20260818 item 18: dead code and stale comments, one sweep.
-	- Unreachable option-value arm plus its dead variable in the parser; two dead branches in the prompt helper; an empty-message fallback nobody passes; a handover error message a preceding check makes unreachable; a comment describing a superseded key-splitting contract; a near-verbatim duplicated comment in main. (The prune survey's redundant re-check went with item 16.)
-	- All six gone. The handover kept its branch but not its claim: it named a cause the preceding check had already ruled out, so it reports what actually failed.
-	- Also found: the three help printers each returned early under `-q`, which is why `-q --help` printed nothing. Removed with item 17's bare-option fix.
 
 Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. Work top to bottom; everything happens on branches off `gover`, nothing touches the scripted implementations yet.
 
@@ -294,30 +162,37 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 - ✅ Port the remaining read paths: `br prune` preview, `pr list`, default-branch resolution.
 	- Done: `br prune` runs its whole survey and shows the real plan (including the empty-plan answers and the keep reasons); only the deleting half still says it isn't built. Bare `pr` lists and `pr <n>` views with diff; create/ok wait for the writers, and pr's argument shapes refuse with the script's messages. Default-branch resolution itself landed with the previous slice - what this adds is the refusal gate for commands that need a confirmable branch. Config-file errors now match the scripts' one-trailing-blank shape (they throw inside a command substitution there). All verified byte-identical against the bash build; the leg moved 236/202 -> 249/189, and every remaining failure in these areas needs the mutating half.
 
-Same review, 20260819. These are shape and process rather than defects.
+- ✅ Accounts, parity and release automation, 20260812.
 
-- ✅ The demo gif demonstrates an account changing on a partial folder match higher in the path.
-	- Folder-based accounts are the headline feature and the demo never showed them. Three scenes were added to the end of the existing demo rather than made into a second gif, so the one loop tells the whole story.
-	- The throwaway world now has two repos in trees that differ from their first folder down, and a gitsby config matching on `github.com/acme-corp` and `github.com/mika-rivers`. Different roots are the point: a shared root would not show that the match is a run of folder names rather than a prefix.
-	- The closing scene runs the same command in the second tree, with no flags and nothing configured per repo, and the account has changed. The six scenes before it were already acting as the work account and now say so on their identity line.
-	- The prompt shows the folder the command runs in. A demo about folders that hides the folder proves nothing.
-	- The identity the accounts set is deliberately not exported into the demo's environment. It had been, and an exported `GIT_AUTHOR_EMAIL` supplies exactly what the folder rules are meant to supply - the demo would have been showing something it had not proved.
-	- 2632 frames, 122.5 seconds, 11.06 MB, up from 2007 / 84.9 s / 9.97 MB. Read time is free; the growth is the three scenes' own output and typing.
+	- ✅ On Windows a folder rule spelled the way this shell spells paths resolved in one build and not the other.
+		- Cause: the PowerShell build folded the drive letter *after* asking the filesystem, and .NET reads a `/c/...` path against the current drive - which never exists. So nothing resolved, and short names and junctions were left as written.
+		- Fixed: fold the drive letter first. All four spellings now resolve identically in both builds, short names included.
+		- Known limit, and now visible rather than silent: an MSYS *mount* path such as `/tmp/...` has no meaning to the native build and never can, since only the shell knows its own mount table. `account` marks any folder rule that resolves to no directory, which shows that up along with ordinary typos.
 
-- ✅ The demo gif has a readable script, and its tooling lives in one place.
-	- What the demo shows was only ever recorded as a scenario table of captions, commands and timing numbers, next to a renderer full of constants. Changing it meant reading both.
-	- `cicd/utility/demo/script.txt` now describes it in plain language: the format, the set, the throwaway repo, and one section per scene with its caption, its typed line and how long it holds. That file is the one to edit.
-	- The scenario file stays as the machine version and points at it. Nothing parses the script - keeping the two in step is deliberate habit, not a mechanism.
-	- The renderer, the repo builder and the scenario moved from `cicd/` and `cicd/utility/` into `cicd/utility/demo/` alongside it. Both pipeline engines needed their paths and lint globs updated by hand, since neither discovers files.
+	- ✅ The identity lines reported the account that was resolved, not the one that was applied.
+		- Fixed: an account with no token available now says so on the line. It is still resolved, but gh goes on using its own account - and the block whose whole job is answering "who does this go out as" was naming the wrong one.
+		- Only for a configured or explicitly asked-for account; one inferred from the remote's owner is not a claim that we can act as it.
 
-- ✅ The fuzz suite can pass on Windows.
-	- Three vectors clone into a directory named `*`, `?` or `v*`. Win32 forbids those characters in a path, so native git cannot create such a work tree at all and the check could never pass there.
-	- They are skipped on Windows now, with a line saying why. The suite already skipped four PowerShell vectors there for the same kind of reason.
-	- Not a gitsby bug: MSYS `mkdir` will happily make one of those directories, which is what makes the first guess wrong.
+	- ✅ `sync` compared no identities before it pushed.
+		- Fixed: the commands that push with git, rather than writing through gh, now ask whether the folder's account is the one origin will actually authenticate as. A warning interactively, a refusal unattended, and `--any-identity` says it was intended.
+		- The https half is covered by the item above: gitsby supplies the token itself, so the push goes out as the resolved account or says it could not.
 
-- ✅ The PowerShell build verified on Linux.
-	- It had shipped without ever being executed there, which was one of the stated requirements. Run against the full suite on Debian, both legs.
-	- One check failed, for an environment reason rather than a real one: with `gh` absent, `pr create` refuses over the missing tool before it gets to the offline refusal the check is about. It uses a stub now, so it tests the same thing everywhere.
+	- ✅ `account apply` wrote identity and key but nothing about credentials.
+		- Fixed: the fragment now sets `credential.https://github.com.username`, so a credential manager looks up that account's entry rather than any entry for the host.
+
+	- ✅ Added a parity suite: `cicd/parity.bash`, wired into the test stage of both engines.
+		- It asks whether the two builds *answer the same* for one input, where `test.bash` asks whether each behaves correctly. A behavioral check written per implementation passes on both while they quietly disagree - which is what every port defect that reached users actually was.
+		- Covers path spellings, option forms, string case and file encoding: 23 comparisons.
+		- It earned its place while being written, finding two real divergences: the `/tmp` mount limitation above, and PowerShell answering an unknown option with the entire help text - and under `-q` with nothing at all but an exit code - where Bash named the option.
+
+	- ✅ `br prune` asked about one branch at a time.
+		- Fixed: `git for-each-ref --merged` answers for every branch in one call per target ref, instead of two ancestry questions per branch. The delete-time re-check stays per branch, deliberately: that one is the safety net, not the survey.
+		- Verified on a 33-branch repo - the same 30 merged branches pruned, the same 3 unmerged kept.
+
+	- ✅ Fully automated releases, end to end: `cicd/release.bash`, to the three-phase shape in `design.md`.
+		- Phase 1 verifies and changes nothing, phase 2 is the only one that pushes, and phase 3 publishes and then proves the result the way a user meets it - by running the documented installer against the published release.
+		- Both guards exist because the thing they check has already gone wrong: the two builds' version strings drifting apart, and the history footers going a whole release with no entry.
+		- `--dry-run` says what each phase would do and changes nothing. Writing it that way immediately caught a bug in the script itself: a loose version match picked a version-shaped string out of a comment, which phase 2 would then have rewritten instead of the real declaration.
 
 - ✅ Multiple GitHub accounts, chosen by which folder you are in, for both git and gh.
 	- People with two accounts already keep a folder per account. A config file maps a folder tree to an account, and everything under it acts as that account - gh, git's credentials, the ssh key, the commit identity.
@@ -445,9 +320,6 @@ Same review, 20260819. These are shape and process rather than defects.
 	- Done: both implementations, previewed + confirmed like the rest; tests 207 -> 241.
 	- Follow-up: logically validated (no bugs) and exhaustively tested. Closed the "gh paths untested offline" gap with a hermetic fake gh (create / add https+ssh / refuse-nonempty), plus clone edges (no-dev, pre-existing empty dir, different-url refuse) and connect edges (empty inited repo, matching-url re-connect). Tests 241 -> 269, both implementations.
 
-- ✅ Add a PowerShell badge to README.md.
-	- Added next to the bash badge in the header block, linking to the PowerShell docs.
-
 - ✅ One-liner installers for Bash and PowerShell: download the release, verify the checksum, install the script. Idempotent, and they state the plan and ask before touching anything. Documented in README under "Installation", including a "Direct" subsection with the commands and the install locations.
 
 	- Done: `install.bash` and `install.ps1` cover it. Checksum verification against a published `SHA256SUMS` landed with code review item 19, and the README "Direct" subsection lists both the commands and the paths each installer uses.
@@ -548,868 +420,1031 @@ Same review, 20260819. These are shape and process rather than defects.
 - ✅ Delete stale branch from 2020.
 	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
 
-#### Done - Accounts, parity and release automation 20260812
+#### Done - Code reviews
 
-- ✅ On Windows a folder rule spelled the way this shell spells paths resolved in one build and not the other.
-	- Cause: the PowerShell build folded the drive letter *after* asking the filesystem, and .NET reads a `/c/...` path against the current drive - which never exists. So nothing resolved, and short names and junctions were left as written.
-	- Fixed: fold the drive letter first. All four spellings now resolve identically in both builds, short names included.
-	- Known limit, and now visible rather than silent: an MSYS *mount* path such as `/tmp/...` has no meaning to the native build and never can, since only the shell knows its own mount table. `account` marks any folder rule that resolves to no directory, which shows that up along with ordinary typos.
+- ✅ 20260819b - a full adversarial pass over the rewritten Go, plus the standing directives re-checked against it.
 
-- ✅ The identity lines reported the account that was resolved, not the one that was applied.
-	- Fixed: an account with no token available now says so on the line. It is still resolved, but gh goes on using its own account - and the block whose whole job is answering "who does this go out as" was naming the wrong one.
-	- Only for a configured or explicitly asked-for account; one inferred from the remote's owner is not a claim that we can act as it.
+	- The rewrite of 20260818 moved every command onto one run struct and gave every failure an error to return, so this went looking for what that shifted rather than for what it left behind. gofmt, vet, staticcheck, golangci-lint and govulncheck are clean and the suite was 684/0 going in, so none of the five defects below is tool-visible. Ten new suite checks (684 -> 694) and two Go tests; seven of the twelve fail against the build or the tree that preceded them.
 
-- ✅ `sync` compared no identities before it pushed.
-	- Fixed: the commands that push with git, rather than writing through gh, now ask whether the folder's account is the one origin will actually authenticate as. A warning interactively, a refusal unattended, and `--any-identity` says it was intended.
-	- The https half is covered by the item above: gitsby supplies the token itself, so the push goes out as the resolved account or says it could not.
+	- Most of the directive sections needed nothing this round - naming, comments, the linter set, the optimization levels, the seven pipeline stages, the demo, the housecleaning sweeps and both installers were all gone over in the two rounds before this one. Items 6 and 7 are what did come out of them.
 
-- ✅ `account apply` wrote identity and key but nothing about credentials.
-	- Fixed: the fragment now sets `credential.https://github.com.username`, so a credential manager looks up that account's entry rather than any entry for the host.
-
-- ✅ Added a parity suite: `cicd/parity.bash`, wired into the test stage of both engines.
-	- It asks whether the two builds *answer the same* for one input, where `test.bash` asks whether each behaves correctly. A behavioral check written per implementation passes on both while they quietly disagree - which is what every port defect that reached users actually was.
-	- Covers path spellings, option forms, string case and file encoding: 23 comparisons.
-	- It earned its place while being written, finding two real divergences: the `/tmp` mount limitation above, and PowerShell answering an unknown option with the entire help text - and under `-q` with nothing at all but an exit code - where Bash named the option.
-
-- ✅ `br prune` asked about one branch at a time.
-	- Fixed: `git for-each-ref --merged` answers for every branch in one call per target ref, instead of two ancestry questions per branch. The delete-time re-check stays per branch, deliberately: that one is the safety net, not the survey.
-	- Verified on a 33-branch repo - the same 30 merged branches pruned, the same 3 unmerged kept.
-
-- ✅ Fully automated releases, end to end: `cicd/release.bash`, to the three-phase shape in `design.md`.
-	- Phase 1 verifies and changes nothing, phase 2 is the only one that pushes, and phase 3 publishes and then proves the result the way a user meets it - by running the documented installer against the published release.
-	- Both guards exist because the thing they check has already gone wrong: the two builds' version strings drifting apart, and the history footers going a whole release with no entry.
-	- `--dry-run` says what each phase would do and changes nothing. Writing it that way immediately caught a bug in the script itself: a loose version match picked a version-shaped string out of a comment, which phase 2 would then have rewritten instead of the real declaration.
-
-#### Done - Accounts and arguments 20260812
-
-- ✅ `account apply` ordered its rules the opposite way from the way gitsby matches them.
-	- Cause: gitsby takes the longest matching folder; git applies includes in file order and the last match wins. The rules were written grouped by account, in declaration order.
-	- Note: so a tree nested inside another account's tree got whichever account happened to be declared later, and plain git and gitsby then disagreed about one directory - the single thing `apply` exists to prevent.
-	- Fixed: shortest path first, so the longest match is written last and wins in git too. Folder is the tie-break, so the order is deterministic.
-	- Verified both ways: with the old build, plain git in the nested folder used the outer account's email while gitsby resolved the inner account. Both now say inner.
-
-- ✅ Bash accepted `--config` naming a directory: shell error, no accounts, exit 0. PowerShell's matching hole was an unreadable file, passed over silently.
-	- Fixed: both now require a readable regular file, and refuse by name. A *discovered* config is still skipped rather than refused - nobody asserted that one was there.
-	- Note: PowerShell has no readable bit, so the test is opening the file.
-
-- ✅ `GITSBY_ACCOUNT` matched an account name case-sensitively in Bash, case-insensitively in PowerShell.
-	- Cause: Bash's loader lowercases the whole key on the way in, but the lookup lowercased only the key half and left the account name as typed - so it could miss what it had just stored.
-	- Fixed: lowercase both halves, which makes Bash self-consistent and matches PowerShell.
-
-- ✅ Only `-q`, `-y` and `--config` could precede `raw`, and the error blamed the wrong thing.
-	- Note: worse than recorded - the message was "Unknown command 'raw'", which is false. Only the passthrough's own scan runs before `raw`, so an option it didn't take left the main parser looking at a command by that name.
-	- Fixed: the scan takes gitsby's whole option vocabulary, spelled and normalized the same way the main parser does it. The ones with nothing to act on in a passthrough are inert. `-h` and `-v` still fall through to the main parser, and a genuinely unknown option is refused by its own name.
-
-- ✅ PowerShell `raw` could not pass `--`, git's pathspec separator.
-	- Cause is NOT what was recorded, and matters: PowerShell's binder reads a bare `--` as an empty parameter name and fails *before the script runs at all*. Nothing in the passthrough can intercept it. Five param-block shapes were tested; a script with no `param()` block receives `--` fine.
-	- Fixed as far as it can be: `` `-- `` survives binding, and is handed to the tool as `--`. Documented in `accounts.md`.
-	- Note: dropping the `param()` block would fix this and the joined-option binding together. Not taken - it is a large change to a documented option surface.
-
-- ✅ `account apply` ended in a raw operating-system error, a different one in each build.
-	- Note: not the no-config case, which already reports itself properly. The trigger is the include directory being unusable - something else already at that path.
-	- Fixed: check the directory before writing anything, and fail in gitsby's own voice. Nothing partial was ever written, and still isn't.
-
-#### Done - Installers 20260812
-
-- ✅ A Windows install finished with the program not on `PATH`.
-	- Fixed: the PowerShell installer adds the install directory to the account (or system) PATH, and says so in the plan before you agree. Idempotent, and it leaves the current shell alone.
-	- `PATHEXT` deliberately NOT changed, and the original reasoning for it was wrong. PowerShell already resolves a bare `gitsby` to `gitsby.ps1` on `PATH` without it - verified with `PATHEXT` cut back to `.COM;.EXE;.BAT;.CMD`. It would only affect `cmd.exe`, which still cannot run a `.ps1` even with the entry, because that needs a file association - and the default association opens the script in an editor rather than running it. Adding it buys nothing and risks that.
-
-- ✅ Both installers installed anyway when `SHA256SUMS` was absent, and said nothing at all on the `--release dev` path.
-	- Fixed: the plan states which of the two you are about to get, before the confirmation.
-	- Fixed: where the plan promised verification and it can't happen, the install now stops instead of noting it in passing - separately naming the two causes, no published checksum and no sha256 tool here. `--ref TAG` takes it unverified, as an explicit choice.
-	- Note: the release-asset fallback to the tagged tree was the same broken promise and stops the same way.
-	- Verified against the real v2.0.2 release, both installers: plan promises verification, checksum verifies, correct version installed.
-
-#### Done - Pipeline 20260812
-
-- ✅ The pipeline had no remote-sync stage, so the pull at publish time could carry in changes nothing had tested.
-	- Cause: the only pull was in the publish stage, which runs last - after lint, tests and fuzz have all passed against the older tree.
-	- Fixed: stage 0 in both engines. Fetch, fast-forward when only behind, and stop when diverged. No upstream or an unreachable origin warns and carries on; `--no-sync` (`-NoSync`) skips it. Publish keeps its own pull as the late guard.
-	- Note: the fast-forward is `--autostash`, so a dirty tree rides over it. Verified against throwaway repos in all five states, both engines.
-
-#### Done - Documentation 20260812
-
-- ✅ `design.md` stated the opposite of itself in two places, each time because a later decision was added without revising the earlier one.
-	- Fixed: the Architecture bullet now says no *state* of its own, and names the accounts config as the one read-only exception. The `--no-fetch` bullet no longer calls itself offline, which is what the code and the offline rule below it already said.
-
-- ✅ The `Status: Passing` badge was a fixed image wired to nothing, so it read the same on a broken branch.
-	- Fixed: removed. The pipeline is local, so there is no build to report; the remaining badges all resolve to something real.
-
-- ✅ README was about four times the length it should be, and the first runnable example was well over half way down.
-	- Fixed: 535 lines to 273. Install and a worked example are now the first two sections, above the fold.
-	- Fixed: the headline names folder-based accounts, which is the strongest thing in the release and went unmentioned.
-	- Fixed: the long material moved to `accounts.md` and `workflows.md` rather than being deleted, so the README reads as a landing page and the depth is one click away.
-
-- ✅ README wording: a missing verb and a doubled letter in the workflow comparison, and a bullet with no full stop in Compatibility.
-	- Fixed: all three, in the moved text.
-
-#### Done - Directive review 20260819
-
-Item 30, the last one open and the only one that needed a decision first. Fourteen new checks, nine of which fail against the tree that preceded them; the suite went 668 -> 682. That closes the round at 43 of 43.
-
-- ✅ Directive review 20260819 item 30: Windows binaries carry no icon and no version details.
-	- Needs a Windows resource (.syso) beside the source. Two ways in: `goversioninfo` from a checked-in JSON template plus an .ico, which is the standard route and is well tested; or writing the COFF resource ourselves, which keeps the zero-dependency character but cannot be proved right from here - a malformed one links cleanly and fails on the machine that runs it.
-	- Decided: `goversioninfo`, installed outside the tree, probe-gated in the pipeline and required by `release.bash`.
-	- Done. `cicd/utility/gen-winres.bash` writes one `.syso` per published Windows target from a spec it generates, and the two are committed - they are linked into binaries whose checksums we publish, so rebuilding a release from its tag must not need a tool installed.
-	- Which is why they carry the last released version rather than the working tree's describe output: a file that changed every commit could not be committed. A release stamps them with the version it is cutting - in phase 1 for the assets, then restored, and again in phase 2 where it lands in the bump commit beside the changelog heading.
-	- `assets/gitsby.ico` is a committed asset too, regenerated by hand from `logo.png` (`gen-winres.bash --icon`) when the logo changes. Six sizes: 16/32/48 stay BMP so pre-10 Explorer draws them, 64/128/256 are PNG quantized to 256 colours - 134 KB down to 48 KB for a difference the eye cannot find at icon size.
-	- Verified rather than assumed: both Windows targets link the resource and no other platform does, two cold-cache Windows builds are byte-identical with it in place, and the string and numeric version fields both read 2.1.0 out of the built `.exe`.
-
-The documentation, 34-41. The suite went 666 -> 668.
-
-- ✅ Directive review 20260819 item 34: batching the branch deletes in `br prune` is the largest speed win available, and it changes the output.
-	- One push per branch, each forking three processes. Eight branches cost 24 of the command's 81.
-	- Deleting them in one call collapses the per-branch status and warning lines into one, so it needs a decision and a suite carve-out before it can be done.
-	- Done, and the call was made here rather than deferred: the win is large and the output change is smaller than the finding suggested - one plan line and one status line instead of eight of each, which reads better. Measured on eight branches: 77 spawns down to 42, with the cached branch lookups from item 16 in the same figure. The local re-check still runs per branch before anything is handed to git, and a partly-failed remote delete counts what actually went rather than writing the batch off. Parity needed no carve-out.
-
-- ✅ Directive review 20260819 item 35: ten statements in the public docs are no longer true.
-	- The command count is one short in three places, including the repo blurb.
-	- The README and contributing both send a new contributor to a branch that has no Go code on it.
-	- The README still describes a suite that runs against two implementations.
-	- design.md documents a folder, a test leg and a pipeline engine that were all removed, and its release section describes work that shipped, wrongly.
-	- Two smaller ones: a flag that only ever existed on the deleted engine, and a command spelled the old way.
-	- Fixed, all ten: the counts (ten, and 23 with subcommands), the branch a contributor is sent to (named nowhere now - `git clone` then `cd src-go` is the whole of it), the suite that ran against two implementations, design.md's folder list, testing section and release section, `bin/gitsby` in the style guide, `-NoSync` in contributing, and the old command spelling in the one-liners. The dogfood caveat is in the README too - those destinations are one machine's paths.
-
-- ✅ Directive review 20260819 item 36: the Install section has no sub-headings.
-	- Nothing in the contents leads a reader to "is this in my package manager", though the answer is written a few lines down.
-	- The development section does not say the pipeline commits and pushes at the end, which will surprise someone running it on a fork.
-	- Fixed: Install now has "Is it in my package manager?" (the answer was already there, four paragraphs down), "The one-liners", "Where it goes", "Without the installer" and "Coming from 2.x". The pipeline is described as eight numbered steps, and step 8 says in bold that it commits and pushes.
-
-- ✅ Directive review 20260819 item 37: several of the strongest features are buried.
-	- One static binary with nothing alongside it is the third bullet of a compatibility list.
-	- That every mutating command shows the exact git commands and asks first is the main safety argument and appears once, near the bottom.
-	- `repo create` listing what it is about to publish, the offline behavior, and `account apply` teaching plain git the same rules are each a clause inside a longer paragraph.
-	- Nothing anywhere says gitsby keeps no state of its own.
-	- The repo blurb needs the same count fix, a homepage, and its topics refreshed - it still says bash and powershell.
-	- Fixed in the docs: the three arguments - it shows its work, it keeps no state of its own, it is one file - are their own short list in "What it is", where nothing else competes with them. The offline behavior, the publish list and `account apply` each became a point of their own instead of a clause. The tagline names the show-and-ask promise.
-	- Left for the owner: the repo blurb, homepage and topics are GitHub settings rather than files here, and changing them edits the public repo page. `gh repo edit --description ... --homepage ... --add-topic go --remove-topic bash` is the one command.
-
-- ✅ Directive review 20260819 item 38: design.md has no goals and non-goals section, and no header.
-	- The non-goals are the most interesting thing about the project and they are scattered across three sections and another document.
-	- Everything else about the file is right. It is a decision log with rejection rationale recorded inline, which is the correct form here - do not restructure it.
-	- Fixed: a "Goals and non-goals" section, with the seven non-goals gathered from the three places they were scattered across, plus a short note on what kind of document this is. Nothing else was restructured - it is a decision log and that is the right form for it.
-
-- ✅ Directive review 20260819 item 39: twenty-five finished items are still sitting in the open sections.
-	- The Bugs section reads as fourteen open bugs, all of which are done.
-	- The review items also want their outcome bullet labeled, so the finding and the fix can be told apart at a glance.
-	- Fixed: 25 finished items moved into the matching Done subsections, and Bugs now says "None open" rather than reading as fourteen open bugs. Every review item's outcome bullet is labeled - "Fixed:", "Done:", "Decided:" - so the finding and what happened to it can be told apart at a glance.
-
-- ✅ Directive review 20260819 item 40: about twenty British spellings across the docs, scripts and code comments.
-	- Not in the code of conduct or contributing - those reproduce upstream text and should stay as published.
-	- Fixed: 23 of them across the docs, the pipeline scripts and the demo notes. `code_of_conduct.md` and contributing.md's DCO notice are untouched - both reproduce published text. Two of the 23 are in the shared `cicd/utility/include/` files, so a future re-sync from their source could bring them back.
-
-- ✅ Directive review 20260819 item 41: five paragraphs run long enough to be hard to scan.
-	- The worst is 620 characters. All five are ideas that want to be bullets.
-	- Fixed, all five plus the tagline: each became two or three short paragraphs, or a lead-in and bullets. The longest line left in the published docs is the tagline, and that one is an HTML cell rendering as three separate lines.
-
-The pipeline, 17-18 and 26-32 (bar 30), plus 42 and 43. Eleven new checks, each verified against the pipeline that preceded them; the suite went 649 -> 666.
-
-- ✅ Directive review 20260819 item 17: the lint summary reports warnings on a perfectly clean run.
-	- Its filter matches the test harness's own check labels, so a green pipeline reports seven warnings that do not exist.
-	- A warning that fires when nothing is wrong is worse than no warning.
-	- Fixed: the harness lines are excluded by SHAPE (`ok:` / `FAIL:`) rather than by wording, so a check label about warnings stops reading as one. A clean log now reports CLEAN, and a real finding still reports.
-
-- ✅ Directive review 20260819 item 18: `--quick` still cross-builds three platforms.
-	- It skips fuzz and the gif, which are not the slow part.
-	- Fixed: `--quick` narrows the dogfood list to the native target. The other two cross-builds were the slow part it was meant to be skipping.
-
-- ✅ Directive review 20260819 item 26: the published binaries cannot be rebuilt to the same checksum.
-	- Version control stamps go into the binary, and the release builds its assets before it cuts the tag - so the published binaries carry the previous revision and nobody can reproduce the checksums we publish.
-	- Also wants the build id cleared, the native build built the same way as the cross-builds, and the toolchain pinned. Once it holds, say so in the README.
-	- Fixed: `-buildvcs=false`, `-buildid=` and `CGO_ENABLED=0` on every build site, from one place in config.bash. Verified: two builds from a cold cache are byte-identical, and `go version -m` shows no revision. The ordering worry dissolves with the stamps gone - the changelog bump does not touch the source, so a phase-1 asset is the tagged commit's asset. The release toolchain is named in config.bash, since go.mod's line is a minimum rather than a pin.
-
-- ✅ Directive review 20260819 item 27: no build step limits itself to half the cores.
-	- The compiler defaults to all of them, in every build and in the eight-target release loop.
-	- Fixed: `BUILD_JOBS` is half the cores rounded up, and `-p` is on all four build calls.
-
-- ✅ Directive review 20260819 item 28: nothing in the pipeline looks at the standard library for known problems.
-	- With no third-party dependencies, that is the only library code there is to check.
-	- Fixed: `govulncheck` in stage 3, probe-gated like staticcheck. It runs even under `--quick` - it is a lookup, not a workload.
-
-- ✅ Directive review 20260819 item 29: no profiling step exists.
-	- A flamegraph would be the wrong instrument here - the program spends its life blocked waiting on git, so a sampling profile is a flat wall with no leaders.
-	- What carries signal is counting spawns per command against a fixture repo, and failing on a regression. The rotation and the seen-marker patterns already exist and can be reused as they are.
-	- Done as spawn counting, per the recommendation: `cicd/utility/spawn-count.bash` measures eight commands against a restored fixture (origin included), compares with the newest previous run, and fails on a rise beyond a small tolerance. GFS-rotated like the lint logs.
-
-- ✅ Directive review 20260819 item 31: `-q` reaches the publisher but not the three test harnesses.
-	- None of them accepts an option at all, so a quiet run still prints every one of 617 check lines.
-	- Fixed: all three take `-q`, and the engine hands it on for an unattended run. Header, failures and totals stay.
-
-- ✅ Directive review 20260819 item 32: `--target=` and `--release=` are not accepted with an equals sign.
-	- Fixed: both spellings of every option that takes a value.
-
-- ✅ Directive review 20260819 item 42: no script exists to run an older build alongside the current one.
-	- Worth less here than in the projects it comes from: gitsby exits immediately, so nothing is ever held open. The real use is keeping timestamped builds around to bisect a behavior change.
-	- Done: `cicd/utility/keep-build.bash` archives the current binary with a timestamp, lists what is kept, runs one by number, and diffs one against the current build on the same arguments. GFS-rotated.
-
-- ✅ Directive review 20260819 item 43: the demo script file is stale in two ways beyond the renamed commands.
-	- It points a future editor at the deleted Windows engine, twice. Fix it in the same pass as the regeneration.
-	- Fixed: the notes no longer point at the deleted Windows engine, and the scenario uses the current command names, so the next render publishes those rather than the old ones. The regeneration itself is still pending - it needs a full pipeline run.
-
-The installers, 12-15 and 33. Ten new checks, each verified against the installers that preceded them.
-
-- ✅ Directive review 20260819 item 12: the installers cannot find a release that is only a prerelease.
-	- Both the main route and the fallback ask the same endpoint, and that endpoint skips prereleases. So there is no fallback.
-	- The failure message blames rate limiting, which sends anyone debugging it the wrong way.
-	- Latent today, live the first time a version ships as a prerelease.
-	- Fixed: the fallback lists the releases instead, newest first, taking the newest full one and saying so when only a candidate exists. The failure message names rate limiting as one possibility among several, and points at `--tag`.
-
-- ✅ Directive review 20260819 item 13: `install.ps1` has no `--help`, and the README tells people to use it.
-	- Fixed: `-Help`, plus `--help` recognized before the binder sees it - which is what the README documents and what anyone types.
-
-- ✅ Directive review 20260819 item 14: `install.ps1` can report success over a binary that failed to run.
-	- The verification step's exit code is never read, and a native command's failure does not stop the script on its own.
-	- Fixed: `$LASTEXITCODE` is read, and a binary that will not run is reported as that rather than as a finished install.
-
-- ✅ Directive review 20260819 item 15: both installers write straight to the final path.
-	- An interrupt mid-copy leaves a truncated executable in place that passed its checksum under a different name.
-	- Re-installing over a copy that is currently running fails on both platforms.
-	- Staging in the destination directory and renaming over the target fixes both at once.
-	- Fixed: both stage in the destination directory and rename over the target. On Windows the incumbent is renamed aside first, since Windows will not overwrite a running executable but will rename one.
-
-- ✅ Directive review 20260819 item 33: decide whether `install.ps1` should run on Windows PowerShell 5.1.
-	- It refuses below 7 on purpose, and the reason is sound. But 5.1 is what a fresh Windows install actually has, so the documented one-liner fails there.
-	- The syntax is already 5.1-clean. Lifting it needs a fallback for three variables that do not exist in 5.1, one parameter spelled differently, plus forcing TLS and basic parsing.
-	- Decided: yes. 5.1 is the machine most likely to be installing this for the first time. The three variables get a fallback, TLS 1.2 is switched on, every request asks for basic parsing, and the byte read is spelled each version's way. `PSUseCompatibleSyntax` against 5.1 now gates in the pipeline.
-
-The defects, 1-20. Eighteen new suite checks, each verified against the build that preceded the fix; the suite went 617 -> 636.
-
-- ✅ Directive review 20260819 item 1: a second `account apply` deletes the rules and then gives up.
-	- Two accounts claiming the same folder produce the same rule key twice. The first removal takes both, the second finds nothing, and git's "nothing to remove" is read as a failure.
-	- End state is worse than before it ran: no rules at all, and an error.
-	- Nothing warns that two accounts claim one folder in the first place.
-	- Fixed: the key list is deduped, and git's exit 5 ("nothing to remove") is read as the end state it is rather than as a failure. `account list` now names any folder more than one account claims.
-
-- ✅ Directive review 20260819 item 2: gitsby and plain git can resolve the same folder to different accounts.
-	- The two tie-breaks disagree when two accounts declare the same path. Gitsby goes by declaration order, git goes by what sorts last.
-	- That disagreement is the exact thing `apply` exists to prevent.
-	- Fixed: the plan is ordered by declaration index, reversed, so the rule gitsby keeps is the last one git sees. Checked both ways in the suite.
-
-- ✅ Directive review 20260819 item 3: a bare repo, or a `.git` directory, passes the in-a-repo check.
-	- The question is asked of a command that answers in text and exits zero either way.
-	- `status` there prints a full state block ending in "working tree clean", which it has no business claiming. `pullcom` prints its whole plan, gets confirmed, then dies in git.
-	- Fixed: one `rev-parse` call answers all three questions in text; a bare repo and the `.git` directory are each refused by name, whatever the command.
-
-- ✅ Directive review 20260819 item 4: a token read from a file is never checked against the account it claims.
-	- The name comes from the config key, so a stale token file reports the right name and pushes as the wrong one.
-	- That is precisely the mistake the identity block exists to catch. With no `gh` installed at all it still names an account.
-	- Fixed: a token from gh's own store still short-circuits; one from a file is probed with the token exported, and the block says either who it really belongs to or that it couldn't be checked.
-
-- ✅ Directive review 20260819 item 5: `--any-identity` quietly drops the commit identity and key.
-	- Account selection is skipped entirely, but the Account line still names the account as if it had been applied.
-	- Commits get authored by whatever git falls back to. The help only mentions the key mismatch, not the authorship.
-	- Fixed: the Account line says the selection was skipped and what that leaves in place. Behavior is unchanged - what it did was never the problem.
-
-- ✅ Directive review 20260819 item 6: `raw` names an account for a repo you only cloned.
-	- The gate accepts the remote-owner guess, so cloning someone else's repo prints "acting as <them>" - untrue, nothing was applied, and it tells a single-account user the feature exists.
-	- Fixed: the same test the identity block uses, so nothing is claimed for a name merely inferred from the remote's owner.
-
-- ✅ Directive review 20260819 item 7: `br prune` tries to delete remote branches while offline.
-	- `br merge` holds its remote delete back; prune has no such check.
-	- Each failed push is reported as "already gone", blaming the branch for a network problem, and the summary reads as if it finished.
-	- Fixed: the remote half is skipped while origin is unreachable and says so by name; the local deletes still happen.
-
-- ✅ Directive review 20260819 item 8: `release` in a repo with no origin cuts a tag nobody can fetch, silently.
-	- The offline check never trips, because with no remote there is nothing to find unreachable.
-	- `sync` gets this right and says so; release just ends on "Done."
-	- Fixed: refused up front, naming `repo connect`. No tag is cut.
-
-- ✅ Directive review 20260819 item 9: the pre-command fetch may refresh a remote nothing else reads.
-	- With no remote named, git follows the branch's own tracking remote. Every existence check afterwards reads origin.
-	- Fixed: the fetch names origin. Caught by a repo whose branch tracks a second remote.
-
-- ✅ Directive review 20260819 item 10: the ssh-login cache ignores which remote it was asked about.
-	- One slot, no key, three different callers. Reachable through `repo connect` from outside a repo, where it produces a mismatch warning about an origin that does not exist.
-	- Fixed: keyed by remote URL. No dedicated check - reaching it needs three remotes and a stubbed ssh in one run, and the shape is the same one the other caches already use.
-
-- ✅ Directive review 20260819 item 11: `br switch` assumes a single remote.
-	- With two remotes carrying the same branch name git refuses to guess, and the up-front check does not notice because it only ever looks at origin.
-	- Fixed: one helper decides how a branch gets checked out, and the plan prints what the command will run. Applies everywhere a remote-only branch can be checked out, not just `br switch`.
-
-- ✅ Directive review 20260819 item 16: an unresolvable default branch is re-derived on every ask.
-	- The two branch lookups are the only cached values in the codebase with no "we already asked" flag, so a repo where the answer is empty repeats the whole five-command ladder each time.
-	- Measured: 38 processes for one `status`, 25 of them the same five commands over and over.
-	- Fixed: every cached answer now pairs a value with a "we already asked" flag, so an empty answer is remembered like any other. Came free with the shape work in item 21.
-
-- ✅ Directive review 20260819 item 19: the hotfix warning watches a folder that no longer exists.
-	- It was written when the deliverable was `bin/gitsby`. A hotfix to the code that actually ships gets nothing.
-	- Fixed: it watches `src-go/`, named once beside the reason. The two suite checks were pointed at the same place.
-
-- ✅ Directive review 20260819 item 20: file permissions are never checked, and one directory is created wide open.
-	- A token file readable by everyone loads without comment. ssh and gh both refuse or warn on that.
-	- The folder holding the per-account identity fragments is created 0777 and relies entirely on umask.
-	- A malformed inherited `GIT_CONFIG_COUNT` is read as zero, which half-overwrites whatever the caller set up. That variable is injected by the terminal here, so it is not hypothetical.
-	- Fixed: the fragment directory is 0700 and the fragments 0600; a token file other users can read is called out by name; a GIT_CONFIG_COUNT that isn't a count stops the run instead of half-overwriting the caller's block.
-
-The Go shape items, 21-25. One problem wearing four hats: gathering the run's state into a struct is the change the other three followed from.
-
-- ✅ Directive review 20260819 item 21: the Go reads as a shell script transcribed into Go syntax.
-	- State is passed through about 120 package-level variables. Several functions take nothing and return nothing, and work only by mutating them.
-	- Not one function returns an error. Failure is a hard exit called from inside leaf helpers, which is also why nothing can be unit tested.
-	- Records are packed into tab-delimited strings and re-parsed to sort them.
-	- All of that is one problem wearing four hats. Gathering the run's state into a struct passed to the command functions is the change the other three follow from.
-	- Note against the old builds: only input and output parity matters now, so mirroring their structure is not a reason to keep any of this.
-	- Done: the run's state is a struct passed to the command functions; every failure returns an error and main is the only place that exits; the tab-delimited sort became typed records. 4529 lines rewritten, output byte-identical (617/268/27 all green, parity unchanged).
-
-- ✅ Directive review 20260819 item 22: there are no Go tests at all.
-	- The whole suite is external. The pure string functions - remote parsing, config values, path canonicalization, tag matching - have a lot of edge cases and nothing exercises them directly.
-	- Done: unit tests for the parsing, the config and folder matching, the URL shapes, the version bump, the includeIf ordering and the output framing. `go test ./...` gates in stage 2.
-
-- ✅ Directive review 20260819 item 23: add a linter config so the review findings become gates.
-	- gofmt, vet and staticcheck are clean and gated already. A config file would add the checks that caught the rest: unchecked errors, shadowed builtins, and the naming convention below.
-	- Done: `src-go/.golangci.yml` - errcheck, ineffassign, predeclared, unconvert, revive (var-naming, redefines-builtin-id, and three flow rules). Probe-gated in stage 1 like staticcheck.
-
-- ✅ Directive review 20260819 item 24: internal names do not follow Go's convention for initialisms.
-	- Twenty-six of them, all unexported, all internal. No effect on output or arguments.
-	- Done: URL, SSH and HTTPS spelled the Go way throughout. No effect on output or arguments.
-
-- ✅ Directive review 20260819 item 25: five discarded errors want either handling or a reason.
-	- Three of them set environment variables that decide the whole account selection.
-	- Done: the three that decide account selection now stop the run; the temp-dir removal and the readability probe say in one line why they discard theirs.
-
-#### Done - Code review 20260819
-
-Pass over the installers that came back to the repo root. All six findings are in the two new files; none of them reach the binary. The first two are the serious ones - they end a default install with no output at all.
-
-- ✅ Code Review 20260819 item 1: a wget-only box could never install.
-	- Cause: the latest-release lookup declines the redirect and reads the tag out of the header, and wget answers a declined redirect with exit 8 whether or not it printed what was asked for. Under `set -e` an assignment carries its command's status, so the run ended there - after the lookup had already succeeded.
-	- Note: the one-liner printed nothing and exited 8. No message, no fallback, nothing to go on.
-	- Fixed: `|| true` on the lookup, which is the only thing that ever wanted the status.
-
-- ✅ Code Review 20260819 item 2: any curl failure did the same thing, and hid the fallback.
-	- Cause: same assignment rule. DNS, a proxy, a rate limit - anything that made curl exit nonzero ended the run, so neither the API fallback nor the message that names rate-limiting could be reached.
-	- Fixed: `|| true` on both, and on the API fallback beside them.
-
-- ✅ Code Review 20260819 item 3: `-Arch` refused the machines it was written to explain itself to.
-	- Cause: detection assigned back to the parameter, and assigning to a parameter re-runs its own `ValidateSet`. On x86 or 32-bit ARM the detected value isn't in the set, so the binder error arrived instead of the message naming what the release does publish.
-	- Fixed: detection lands in its own variable.
-
-- ✅ Code Review 20260819 item 4: `-Tag` had the same shape, one layer deeper.
-	- Cause: the scraped tag assigned back to `$Tag` re-ran its `ValidatePattern`, which made the explicit check below it dead code. Through the API fallback the throw was caught and reported as rate-limiting, which it wasn't.
-	- Fixed: resolved into its own variable, so the check that was written for it is the one that runs.
-
-- ✅ Code Review 20260819 item 5: persisting PATH on Windows flattened it.
-	- Cause: `[Environment]::GetEnvironmentVariable` hands back the expanded PATH. Reading that and writing it back turned entries like `%USERPROFILE%\bin` into literals - permanently, on a PATH we only meant to append one directory to. Worse under `-System`, where the whole machine's PATH goes through it.
-	- Fixed: read raw from the registry with `DoNotExpandEnvironmentNames`, written back with the kind it already had.
-
-- ✅ Code Review 20260819 item 6: the captive-portal check read the whole binary to look at one byte.
-	- Fixed: one byte off the stream.
-
-- ✅ Code Review 20260819, coverage: nothing exercised the release lookup, which is why items 1 and 2 got through green.
-	- Fixed: two checks stand the network up as stubs - a curl that always fails, and a wget-only PATH where the stub prints the header and exits 8. Both fail against the build before the fix. The two PowerShell findings need the hardware or the network to reproduce, so they are pinned in the source the way the SHA256SUMS decode already is. Suite 613 -> 617.
-
-#### Done - Code review 20260813
-
-Light pass over the folder-name rules, the release script, the changelog template guard and the removal audit, plus what they knocked loose elsewhere. Nothing wrong with the changes themselves; all four findings are things around them that went stale or were missed.
-
-- ✅ Code Review 20260813 item 1: the README stopped saying where it installs to, or that the download is checked.
-	- Cause: the section was folded down to two one-liners so they could be pasted and run as-is. Dropping the flag table was the point; the locations and the checksum went with it by accident. The sentence left behind also had a stray plural and said "options" twice.
-	- Note: both are reasons to trust the installer, and neither is visible until you have already run it.
-	- Fixed: restored in the same place, without the flags - what you need Git and a shell for, what gets checked, a small table of the four install locations, the PATH note on Windows, and a pointer to `--help` for the rest.
-
-- ✅ Code Review 20260813 item 2: the changelog described a README that no longer exists.
-	- Cause: it claimed install and the worked example are the first two sections. Both have since moved down, below the commands and the accounts material.
-	- Fixed: the entry names the order the page actually has.
-
-- ✅ Code Review 20260813 item 3: markdown under `project/design_docs/` was not linted.
-	- Cause: both engines list `*.md` and `project/*.md`, and the directory is a level below that. It arrived after the globs were last set.
-	- Fixed: the directory added to both engines. The file in it was already clean.
-
-- ✅ Code Review 20260813 item 4: the PowerShell installer read its own temp path as a wildcard when cleaning up.
-	- Cause: the removal took the path positionally. Every other removal in the tree names it literally, and this one was missed when they were hardened.
-	- Note: only bites on a temp path containing a bracket, so nothing to reproduce in ordinary use.
-	- Fixed: named literally, and skipped outright when the path was never set.
-
-#### Done - Code review 20260812
-
-Full review against the coding, performance, pipeline, housecleaning, marketing and installer standards. What is fixed here is listed below; the rest is filed above as open items.
-
-- ✅ Code Review 20260812 item 1: git over https authenticated with an empty password.
-	- Cause: the token was supplied only when it replaced a different active account, while the helper that reads it was installed either way. The helper sets aside any credential manager configured ahead of it, so nothing was left to answer.
-	- Note: worst on the setup needing no configuration - one account, logged in to gh, pushing over https.
-	- Fixed: supply the token whenever one is found.
-
-- ✅ Code Review 20260812 item 2: a trailing comment in the config file became part of the value.
-	- Cause: `#` started a comment only at the start of a line, and the documented example writes them at the end of one.
-	- Note: a folder rule carrying a comment could never match, and a rule that never matches reads exactly like no rule at all.
-	- Fixed: a `#` after whitespace ends the value. Quote the value to keep a literal one.
-
-- ✅ Code Review 20260812 item 3: an account name could name a file outside the include directory.
-	- Cause: the name went into a path with nothing checking it, so a name containing a path sent `account apply` elsewhere - as far as the global git config.
-	- Fixed: hold the name to letters, digits, dot, dash and underscore, and report anything else as an unread key.
-
-- ✅ Code Review 20260812 item 4: PowerShell read a repo with its own ssh key configured using the default key instead.
-	- Cause: the fetch and the probe replaced git's ssh command to add a connect timeout, rather than adding to it.
-	- Note: a private repo only the account's key can reach reported as unreachable, and the publishing commands then refused.
-	- Fixed: add the timeout to git's own command, as the Bash build already did.
-
-- ✅ Code Review 20260812 item 5: `origin/HEAD` was healed after every fetch, at the cost of a second query to the remote.
-	- Fixed: only when there is nothing to read locally. git 2.47 and newer write one at clone.
-
-- ✅ Code Review 20260812 item 6: the passthrough asked gh which account was active, over the network, on every call.
-	- Note: the answer only named the account being replaced, on a line the passthrough does not print.
-	- Fixed: skip it where no identity block is shown.
-
-- ✅ Code Review 20260812 item 7: a bare GitHub login got no identity line, in the command that exists to answer who a push goes out as.
-	- Cause: the line asked whether some configured value had been used. A bare login names no account and sets no key, so it satisfied none of those tests - though it does select the token git authenticates with.
-	- Note: `GITSBY_ACCOUNT` documents the bare-login spelling, and `raw` already reported it on stderr, so the two disagreed.
-	- Fixed: an account asked for by name is enough on its own. One merely inferred from the remote's owner still prints nothing, so a single-account machine sees no change.
-
-- ✅ Code Review 20260812 item 8: the test suite read whatever accounts the person running it had configured.
-	- Cause: it isolates git config and the commit identity, but not gitsby's own config file, which decides the account a command acts as.
-	- Note: found by running it - a single `protocol = ssh` line in a real config failed three checks per implementation, because the repo commands then built a different remote URL than the check expected.
-	- Fixed: point `GITSBY_CONFIG` at an empty file for the whole run. The account block, where discovery through `HOME` is the thing being tested, opts back out.
-
-#### Done - Code review 20260731
-
-Delta review of the branch-display and status-label rounds. One finding, both implementations.
-
-- ✅ Code Review 20260731 item 1: `br list` refused to run in a repo whose default branch can't be told.
-	- The default-branch gate exempted only `status` and the `repo` commands, so `br list` - read-only, and the other command you'd run to look around - errored out. The `Default branch: unknown` fallback it had just gained could never print.
-	- Fixed: `br list` joins the gate exemption. Mutating commands still refuse up front.
-
-#### Done - Code review 20260730
-
-Delta review of what landed since the 20260727b round: the offline handling, the BOM fix, the installer message, and the SSH identity line. Three findings, all in the offline messages, all in both implementations.
-
-- ✅ Code Review 20260730 item 1: an offline hotfix land pointed at a recovery that leaves the hotfix unshipped.
-	- The warning said `sync` publishes the merge, but a hotfix land ends on `dev` after the back-merge - `sync` from there publishes `dev` and leaves origin's default branch stale. That is the one branch a hotfix exists to fix, and following the advice would read as success.
-	- Fixed: the hotfix warning names both steps, `br switch <default>` then `sync` - the switch's parking push publishes `dev` on the way, so the pair covers both branches. A normal land still just names `sync`, which is right there because the command ends on the target.
-
-- ✅ Code Review 20260730 item 2: parking offline claimed committed work awaits even when there was nothing to push.
-	- A clean, in-sync branch got "Your work is committed locally" with no work at all; online, the same state correctly said "Nothing to push."
-	- Fixed: nothing ahead of the last-known origin means "Nothing to push.", offline or not.
-
-- ✅ Code Review 20260730 item 3: the skipped-push warning said `sync` publishes it, during commands that then leave that branch.
-	- `br switch` and `br land` park the current branch and move off it, so a `sync` from where you end up publishes a different branch.
-	- Fixed: the warning names the branch it means, and says `sync` from it.
-
-#### Done - Code review 20260727b
-
-Full pre-release review, run across nine lenses with every finding independently checked before it was accepted. Fifty-three held up; the ones that changed behavior are below. Deep evidence is kept out of the repo.
-
-- ✅ Code Review 20260727b item 1: a conflicted tree was committed, and pushed (both implementations).
-	- `git pull --ff-only --autostash` exits 0 even when reapplying the stashed work conflicts - it only warns - and `git add --all` then marks the conflict resolved.
-	- So the most ordinary case there is, your edit plus a teammate's push to the same lines, committed the `<<<<<<<` markers, reported "(working tree clean)" and "Done.", and `sync` sent them to origin.
-	- Fixed: nothing is staged while any path is unmerged. The conflicted files are listed, and the message points at the stash git kept.
-
-- ✅ Code Review 20260727b item 2: PowerShell read one repository and wrote to another.
-	- Git was started without a working directory, so it ran in the directory pwsh was launched from, while `Set-Location` had moved only PowerShell's own idea of where it was.
-	- Reading state therefore used the repo you were in and committing used the other one: it reported the right directory and the right changes, then committed an unrelated file from elsewhere and exited 0.
-	- The suite could not see it, because every check moves directory in bash before starting pwsh, which makes the two agree.
-	- Fixed: git is given the current location explicitly. New checks move location inside the pwsh session instead.
-
-- ✅ Code Review 20260727b item 3: `pr ok <n>` destroyed unpushed commits on the PR's branch (both implementations).
-	- The guard asked whether the branch you were standing on had unpushed work. Accepting a PR from `dev` - the way it is normally used - asked about the wrong branch entirely.
-	- gh merges what origin holds and then deletes the branch with a force delete, so commits that never reached origin went with it and were reachable from no ref afterwards.
-	- Fixed: the PR's own branch is checked, whichever branch you are on, and the advice names it and how to push it from where you are.
-
-- ✅ Code Review 20260727b item 4: a default branch that is neither `main` nor `master` was invented rather than resolved (both implementations).
-	- With no `origin/HEAD` to read, the answer fell back to the literal `main`. On a `trunk` repo that named a branch which does not exist, so the branch was judged unprotected, work was auto-committed to it (and pushed, when it had an upstream), and the command then died on a checkout of the invented name.
-	- Worse when a stale local `main` existed alongside the real default: `br land` exited 0 having merged into the wrong branch, with no diagnostic at all.
-	- Fixed: `trunk` joins the conventional names, a repo with a single local branch resolves to it, and an unborn repo still answers with the name it will get. When it genuinely cannot be told, commands refuse before anything is committed - `status` alone continues, and says "unknown" rather than a name it does not have.
-
-- ✅ Code Review 20260727b item 5: the documented PowerShell install one-liner never worked, and declining it closed your shell.
-	- `iex` evaluates a top-level `param()` block in the caller's scope, where the allowed-values attribute is checked against its own empty default and fails immediately - so the install path the README leads with died before printing anything.
-	- The other documented form did run, and `exit` inside it ended the calling session; strict mode and the error preference leaked into it on success.
-	- A non-tty stdin also proceeded unasked, because the prompt's empty answer at end-of-input is not the empty string.
-	- Fixed: both installers are a function that is called, they refuse rather than exit, they check for PowerShell 7 before anything reads a variable that 5.1 lacks, and end-of-input counts as no. Both documented shapes now bind their options.
-
-- ✅ Code Review 20260727b item 6: `--ref` was interpolated into a download URL unchecked (both installers).
-	- A path-shaped value walked out of this repository, so a posted one-liner could install somebody else's script - and run it - while the printed plan still named this project. It reads as a harmless branch selector, which is why the confirm prompt was no protection.
-	- Fixed: refs must look like refs, in both installers, and the tag resolved from GitHub's redirect is checked the same way before it reaches a URL.
-
-- ✅ Code Review 20260727b item 7: credentialed remote URLs were masked in the plan and printed in full when the command ran.
-	- A token in a clone or connect URL reached the terminal, and any log or CI capture of it, on the execution line and again in the failure line.
-	- Fixed: the display copy of every argument goes through the existing masking helper; what git receives is untouched. Three messages that echoed the URL raw alongside a masked copy of the same URL were fixed too.
-
-- ✅ Code Review 20260727b item 8: `-v` alongside a command silently did nothing (PowerShell).
-	- The switches bind from any position under pwsh, so `update -v` printed the version and exited 0 - a caller or CI step saw success with the work not done.
-	- Fixed: `-v` is refused when a command is present, matching Bash. `--help` went the other way on purpose: it now works after a command in both builds, since asking a subcommand for help is the reflex every git user has.
-
-- ✅ Code Review 20260727b item 9: a commit message starting with a dash was impossible in Bash and accepted in PowerShell.
-	- Fixed in Bash: a value the parser is already waiting for is that value, whatever it looks like. `-m '-Wall added to CFLAGS'` now commits.
-
-- ✅ Code Review 20260727b item 10: PowerShell handed a remote URL to git unquoted in the pre-flight probe.
-	- PowerShell expanded `*` and `?` against the current directory first, so the probe answered about a different target than the one git was later given - a URL that should have been refused was classified as an empty remote, and the working tree was committed and a bogus remote configured before the push failed. Bash refused before touching anything.
-	- Third recurrence of that class, so the two display-only ssh probes were quoted at the same time.
-
-- ✅ Code Review 20260727b item 11: PowerShell's `pr ok` used a bare fetch where Bash used the guarded one.
-	- No credential-prompt suppression (so it could stop and ask mid-command), no ssh connect timeout, and no `origin/HEAD` heal - and a blip there reported the whole command as failed after the merge had already landed on the server.
-	- Fixed: one helper mirrors the Bash version and both fetch sites use it.
-
-- ✅ Code Review 20260727b item 12: `release` was the one command with no undo and no idempotency (both implementations).
-	- A version it invented was cut even when the target would gain nothing, so a repeated run quietly added tags all pointing at the same commit.
-	- Worse after a failed push: the tag existed locally, and the natural re-run bumped again, so the first version was stranded forever.
-	- Fixed: an invented version with nothing new to release refuses, and names the tag to push if a previous one never left the machine. A version you type, and promoting a candidate, are deliberate and still work on an already-released commit. Uncommitted or unpushed work counts as something to release, since `release` parks first.
-
-- ✅ Code Review 20260727b item 13: `br land` would delete a leftover `main` or `master` (both implementations).
-	- Landing ends in a branch delete, and the protected-branch rule that `br prune` honors was not applied here.
-	- Fixed: refused up front, before a plan containing that delete is shown and confirmed.
-
-- ✅ Code Review 20260727b item 14: `--public` and `--private` together meant opposite things in the two builds.
-	- Fixed: refused as a contradiction. Silently picking one would publish a repo the caller believes is the other.
-
-- ✅ Code Review 20260727b item 15: the identity probe caches never took effect in Bash.
-	- Every use sits inside a command substitution, so the cache filled there was thrown away and the next call probed again - two `gh api user` calls and two `ssh -T` round trips per command, on a link that may be slow or dead. PowerShell was already correct.
-	- Fixed: primed once in the shell that owns the variables.
-
-- ✅ Code Review 20260727b item 16: `install.bash --target system` failed with a raw `install` error when `/usr/local/bin` did not exist.
-	- The user branch created the directory and the sudo branch did not.
-	- Fixed: both create it, with `mkdir -p` rather than `install -d`, which would reset the mode of a directory that already exists. The plan says when a directory will be created.
-
-- ✅ Code Review 20260727b item 17: `br switch <the branch you are on>` previewed an add, commit and push it then did not do.
-	- Nothing is lost, but the confirmed plan said otherwise, which is the one thing the preview exists to prevent.
-	- Fixed: that case previews only the pull. Parking was deliberately not added instead - on a protected branch it would auto-commit, which the design forbids.
-
-- ✅ Code Review 20260727b item 18: every check named "plans X" was satisfied by the execution echo instead of the plan.
-	- The preview is the product's central promise - it is what you read before answering the prompt - and it could have stopped listing the checkout, the back-merge or the push with the suite still fully green.
-	- Fixed: assertions about the plan now match against the plan only, sliced out of the run. Eight checks were pointed at it.
-
-- ✅ Code Review 20260727b item 19: the three fuzz checks whose job is "these option combinations are accepted" passed if the options were refused.
-	- They used the survive-any-outcome helper, so a valid spelling that stopped being recognized looked fine.
-	- Fixed: a helper that requires exit 0, and the combinations respelled so the shared ones are valid in both ports.
-
-- ✅ Code Review 20260727b item 20a: the stronger fuzz assertion immediately found port drift that had been hidden: `-q -y` together was refused in PowerShell.
-	- Both spellings were aliases of one parameter, and PowerShell rejects a parameter given twice. Bash takes either or both.
-	- Fixed: `-y` is its own switch that means the same thing, so every combination the Bash build accepts is accepted.
-
-- ✅ Code Review 20260727b item 20: `sync`'s commit message had no coverage.
-	- It takes a message positionally like `update`, and could have silently fallen back to the auto-generated timestamp with both suites green.
-
-- ✅ Code Review 20260727b items 21-27: the smaller ones, gathered.
-	- PowerShell had no version gate where Bash has one, so a Windows PowerShell 5.1 run failed partway through a command on an undefined variable. It now says what to install, up front.
-	- `status`, `br list` and `pr <n>` silently ignored trailing arguments while every other command rejected them - a typo looked like it did what you meant.
-	- An option or positional typo printed an internal call stack. That is reserved for real crashes; these are usage errors.
-	- `gh pr create` was announced with one command line and run with another. It is now announced by hand, matching both its own preview and the way `gh pr review` is already announced.
-	- PowerShell's `pr view` blamed the wrong command on failure, and could not see `gh pr list` fail at all. Each call reports itself now.
-	- PowerShell dropped the trailing blank line on error and abort exits that Bash prints on every path.
-	- The installers say when they fell back to an unverified copy from the tree, rather than quietly downgrading from a checksum-verified release asset.
-	- Two first-party shell files were outside the shellcheck gate and one glob in the list matched nothing; the gate now covers all 13, and shellcheck is clean across them.
-	- `cicd.bash` printed with `echo -e`, which would animate backslash escapes and ANSI sequences out of a commit message the user typed. It uses `printf` now, like `bin/gitsby` already did - as does the crash dump, which can carry a filename or message.
-	- Template leftovers in the argument parser: an instruction addressed to whoever instantiates the template, non-ASCII markers, a kaomoji, an over-long section rule, and a typo.
-
-- ✅ Code Review 20260727b: perf findings reviewed and deliberately not acted on.
-	- Measured rather than assumed, with a counting `git` shim: `br list` is 6 git processes and `status` 13, both constant at 41 branches. Only `br prune` scales - about 5.5 per branch, 264 at 41 branches, and still 0.57s. The second containment check per branch is the deliberate re-check at delete time.
-	- Nothing on the everyday path forks per item, so there is no problem to fix here. Noted so the next reader doesn't re-derive it.
-
-#### Done - Code review 20260727
-
-Review of the hotfix branches, the gh/ssh identity check, and the docs pass that went with them.
-
-- ✅ Code Review 20260727 item 1: `pr ok <n>` decided where a PR lands from whatever branch you were standing on (both implementations).
-	- Nothing asked gh which branch the PR proposes, so accepting a hotfix PR from `dev` skipped the back-merge that keeps the fix from being undone by the next release.
-	- The reverse also happened: accepting an ordinary PR while sitting on a hotfix branch merged the default branch into `dev` for no reason.
-	- Fixed: the head branch is read from gh up front and drives both the landing target and the hotfix decision. Falls back to the current branch if gh can't say.
-
-- ✅ Code Review 20260727 item 2: the back-merge merged a stale local default branch (both implementations).
-	- Found while testing item 1. `pr ok` lands the hotfix on the server, so the local `main` never receives it and merging that branch did nothing at all - silently.
-	- `br land` was unaffected, because it checks `main` out and merges into it itself.
-	- Fixed: the back-merge uses the fetched `origin/<default>` when there is one, which is the same commit after `br land` and the correct one after `pr ok`. Previews show the ref that actually gets merged.
-
-- ✅ Code Review 20260727 item 3: the ssh identity was read only when the greeting was the first line (Bash).
-	- ssh writes host-key and missing-identity-file warnings ahead of it, and both streams are captured, so a match anchored to the whole output missed the greeting.
-	- It failed safe (unknown, proceed) but that meant the check quietly stopped working for the multi-account setups it exists to protect.
-	- Fixed: matched per line. PowerShell matched anywhere, which had the opposite risk, and is now anchored per line too, so both behave the same.
-
-- ✅ Code Review 20260727 item 4: nothing said gitsby needs bash 4.4, and on macOS it could never get it.
-	- `bin/gitsby` was the only file pinned to `#!/bin/bash`. macOS keeps that at 3.2 permanently, so installing a newer bash would not have helped.
-	- Too old a bash died on `inherit_errexit` with a raw shell error, and `install.bash` (deliberately 3.2-compatible, for macOS) installed it anyway and only failed at its own verify step.
-	- The README Compatibility section covered tool interop and remotes but never the runtime requirement.
-	- Fixed: shebang resolves bash through `PATH`; both `gitsby` and `install.bash` refuse early with advice per platform (Homebrew/MacPorts, `pkg`/`pkg_add`, or the package manager), and point at the PowerShell build as the no-bash option. README states the requirement per platform.
-
-- ✅ Code Review 20260727 item 5: the "hotfix changes shipped code" note missed the ordinary case (both implementations).
-	- It read the branch tip before `br land` committed the working tree, so a hotfix whose `bin/` edit was still uncommitted - the usual way of making one - got no warning.
-	- Fixed: checked after the push.
-
-- ✅ Code Review 20260727 item 6: PowerShell's gh login probe could prompt (PowerShell); `br land` carried a duplicate variable (Bash).
-	- Fixed: `GH_PROMPT_DISABLED` set around the call as the Bash side already did, and the duplicate dropped.
-
-#### Done - Code review 20260726
-
-Release-prep pass over what changed since the last review: the noun grouping, `pr create`, and dropping bare `commit`/`pull`.
-
-- ✅ Code Review 20260726 item 1: `br switch` from a dirty protected branch tells you to run a command that no longer exists (both implementations).
-	- The refusal offered `gitsby commit` as the deliberate way to keep the work where it is. That command was dropped, so following the advice is a second error.
-	- Fixed: it now names `update`, which commits on the current branch. Regression test asserts the suggested command is a real one.
-
-- ✅ Code Review 20260726 item 2: offline only reached the pull in `update` and `sync` (both implementations).
-	- `br create`, `br switch`, `br land`, `pr ok`, and `release` each pull as one of their steps, and those pulls ignored `--no-fetch` and an unreachable remote.
-	- So the flag documented as "work offline" still went to the network in five of the seven commands that pull, which is exactly the thing the design note says it must not do.
-	- Fixed: every in-command pull goes through one helper that applies the same rule. Regression test compares a `--no-fetch` switch (must not advance) against the same switch online (must).
-
-- ✅ Code Review 20260726 item 3: built-in help drifted from the command set (both implementations).
-	- `update` was still described as commit-then-pull, `--no-fetch` as skipping only the fetch, and the PowerShell parameter help still listed `pull` and `commit` as commands.
-	- The `br create` line said it parks current work first, which is what it does from a feature branch but not from `main`/`dev`, where it carries the work along instead.
-	- Also "stash only if dirty" in the summary blurb, describing a manual stash that no longer exists.
-	- Fixed: all of the above, in both implementations.
-
-- ✅ Code Review 20260726 item 4: the README command count was stale.
-	- It said 13, from before the regroup and before `commit` and `pull` were dropped.
-	- Fixed: 7 commands, or 15 counting subcommands, which is what the table below it lists.
-
-- ✅ Code Review 20260726 item 5: the offline test passed on the PowerShell side for the wrong reason.
-	- It spelled the flag `--no-fetch`, which PowerShell has no parameter for, and then matched output against a pattern that the resulting complaint about the flag also matched.
-	- So the check went green on a command that had failed outright, and no offline behavior was ever exercised there.
-	- Fixed: `-NoFetch`, which both implementations accept, and the pattern now matches only the skip message itself.
-
-- ✅ Code Review 20260726 item 6: `br prune` could say "leaving it alone" and still delete the branch's remote copy (both implementations).
-	- The delete-time re-check only guarded the local delete; the remote loop ran regardless.
-	- Fixed: a branch kept by the re-check keeps its remote copy too.
-
-- ✅ Code Review 20260726 item 7: a merged current branch vanished from `br prune`'s output (both implementations).
-	- It was rightly never deleted, but appeared in neither the plan nor the Keeping list.
-	- Worst case: it was the only merged branch, and the output claimed nothing was merged at all.
-	- Fixed: the plan, the no-op path, and the closing summary all say it is kept because you are standing on it.
-
-- ✅ Code Review 20260726 item 8: the README claimed 100% GitLab compatibility.
-	- Every `pr` form, `repo create`, and `repo connect` with an `owner/name` go through `gh`, so they are GitHub-only. That is up to six of the sixteen subcommands.
-	- Fixed: the claim now says any Git remote works and names the gh-backed exceptions.
-
-- ✅ Code Review 20260726 item 9: "no version: bump the patch" was only one of three release paths (docs and help, both implementations).
-	- A candidate tag resolves to its own release (`v2.0.0-rc1` -> `v2.0.0`), and a repo with no tag at all starts at `v0.1.0`. Neither is a patch bump.
-	- Fixed: docs and help now say the next version after the latest tag. A regression check pins the help line.
-
-- ✅ Code Review 20260726 item 10: `br create` still overpromised, in the opposite direction from item 3.
-	- Item 3 changed the help from "parks current work" to "brings current work along". Both are half right: work is carried only from `main`/`dev`, and committed and pushed to the current branch otherwise.
-	- Fixed: docs and help say carried or parked, and name which case is which. A regression check pins the help line.
-
-- ✅ Code Review 20260726 item 11: the dev installers required a bash version gitsby does not.
-	- Both told you gitsby itself needs bash 5+. The real floor is 4.4, set by `inherit_errexit`; design.md already said 4.4 and was the one that was right.
-	- Fixed: both installers now check and report 4.4.
-
-- ✅ Code Review 20260726 item 12: smaller doc corrections found in the same pass.
-	- design.md said `gh` was needed for "the two commands that need it" - it is three.
-	- The Direct-install one-liners never created the target directory, and the PowerShell one wrote to a *nix path inside the Windows section.
-	- The README options list omitted `--public`/`--private` and never mentioned that the PowerShell version takes PowerShell-style parameter names.
-	- "Every mutating command fetches first" ignored `repo clone` and `--no-fetch`. `br prune` was described as deleting every merged branch, which skips the current-branch and protected-branch exceptions. `repo create`'s steps were listed in the wrong order.
-	- design.md's folder list omitted `reference/` and described `assets/` as holding only the demo.
-
-- ✅ Code Review 20260726 item 13: the pre-command fetch could stop and ask for credentials (both implementations).
-	- `fpProbeRemote` sets `GIT_TERMINAL_PROMPT=0` for exactly this reason. The fetch that runs ahead of every command did not, so an https remote you can't authenticate to blocks the command at a username prompt - before any of gitsby's own checks get to run, including the ones that would have refused the command anyway.
-	- Only shows up with a terminal attached. Without one git fails instantly, which is why the suites were green and silent.
-	- Fixed: the fetch disables prompts too. A regression check records the environment the fetch actually receives, since the behavior is invisible without a tty.
-
-- ✅ Code Review 20260726 item 14: two suite checks reached the real github.com.
-	- The `repo create refuses when origin is already set` check reuses a fixture whose origin is a real `https://github.com/me/proj.git`, but dropped the `insteadOf` rewrite that every neighbouring check sets. Confirmed by the server's own "Repository not found" reply.
-	- design.md says neither suite touches the network, so this was also the thing that surfaced item 13 in the first place.
-	- Fixed: the rewrite is back on that check.
-
-- ✅ Show gh's account in the pre-flight, and refuse a gh write that acts as someone else.
-	- gh authenticates with its own token and ignores ssh config, so `pr create`/`pr ok`/`repo create` act as gh's account while `git push` acts as the remote alias's key. With per-account aliases those differ, and the pre-flight was naming only the ssh one - the wrong identity for exactly those commands.
-	- Found live: from a `t00mietum` repo, gh reports `jim-collier` with READ permission, so a `pr create` there would act as an account that can't do it.
-	- Three outcomes, not two. Unknown (no agent, https remote, deploy key, gh logged out) is reported and never blocks - otherwise every CI runner breaks. Only a difference both sides confirm counts.
-	- Interactive: warning directly above the confirm prompt. Unattended: error, nothing runs. `--any-identity`/`-AnyIdentity` proceeds, and the mismatch still shows on the identity line.
-	- Decided against a general gh-config validator: policing another tool's setup isn't gitsby's job and would turn working commands into refusals.
-	- 26 new checks across both implementations, driven by a fake ssh that answers the greeting GitHub really sends and doubles as the git transport. Verified they fail against the pre-feature build.
-
-- ✅ Extend the identity check to `repo create` and `repo connect owner/name`.
-	- The first pass skipped them for having no origin to compare. That was wrong: gh never uses a host alias, so the url it is about to set is always `git@github.com:owner/name.git` and the identity is knowable before anything is created. Design note revised rather than appended to.
-	- Refuses before `gh repo create` and before `git init`, so a mismatch leaves no remote and no repository behind. Verified against the pre-feature build, which created both.
-	- An https protocol means git will use a credential helper rather than a key, so there is no second identity and nothing to compare.
-	- Deliberately does NOT rewrite the remote to a matching host alias. Guessing which alias serves an account means inferring the user's ssh setup, and a wrong guess points the repo at the wrong key. `repo connect <full url>` already covers anyone who wants their alias.
-
-- ✅ PowerShell: gh's account was read from a stale exit status.
-	- `gh api user | Select-Object -First 1` stops the native command early, so `$LASTEXITCODE` is left over from whatever ran before - in a plain directory that is the failed repo probe, so the login was discarded and every identity came back unknown.
-	- Only showed up once `repo create` started needing the login, since that is the one command that runs outside a repository.
-	- Fixed by collecting the output with `@()` before selecting, in all three places that read a native command this way. A regression check runs `repo create` from a plain directory and asserts the account resolves.
-
-#### Done - Code reviews 20260725 and 20260723
-
-- ✅ Code Review 20260725 item 1: `release` pushes only the tag when the default branch has no upstream (both implementations).
-	- The branch push is gated on an upstream; the tag push is not.
-	- Origin ends up holding the release commits as tag payload while its `main` still points at the previous release.
-	- Same shape as item 2 of the previous review, which was fixed in `land` but not here.
-	- Fixed: an upstream-less default branch is published with `git push -u origin HEAD` before the tag goes up. Regression test added.
-
-- ✅ Code Review 20260725 item 2: `release` refuses a duplicate tag only after it has already committed and pushed (both implementations).
-	- The check sat inside the command, past the plan, the confirmation, and the "park current work" step.
-	- Nothing is lost, but the run mutates the repo and then dies on something knowable up front.
-	- Fixed: the tag-exists check moved next to the version resolution, before anything is shown or run. Regression test added.
-
-- ✅ Code Review 20260725 item 3: `gobr` refuses a dirty protected branch only after the plan is confirmed (both implementations).
-	- Same class as item 2, and the same fix as code review 20260723 item 35 applied to the other branch arguments.
-	- Fixed: the refusal moved up front, alongside the other branch-argument checks. Regression test added.
-
-- ✅ Code Review 20260725 item 4: `newbr` shows a plan it does not follow when run from `main`/`dev` (both implementations).
-	- The preview always listed the commit-and-push steps, but on a protected branch the tree is carried to the new branch instead.
-	- The preview is the safety feature, so it misreporting in exactly the case that was special-cased is the wrong way round.
-	- Fixed: the plan now branches on protected state and shows the checkout-and-carry steps. Regression test added.
-
-- ✅ Code Review 20260725 item 5: `pr ok <n>` run from the branch that PR came from ends in a failed pull (both implementations).
-	- `gh` deletes the branch on the remote through the API, which leaves the local `origin/*` copy in place, so the upstream still looks alive.
-	- The trailing `git pull --ff-only` then asks for a branch the remote no longer has, and the whole command reports as failed.
-	- Fixed: prune first, and if the branch we are standing on is the one that just went away, check out the merge target and pull that instead. The plan shows the extra step. Regression test added, with the fake `gh` restoring the stale ref so the real condition is reproduced.
-
-- ✅ Code Review 20260723 item 1: `pull` failure strands the autostash (both implementations).
-	- Dirty tree gets stashed, then a failed `git pull --ff-only` (diverged or offline) aborts before `git stash pop`.
-	- Work vanishes from the tree into the stash with no message; re-runs see a clean tree and never pop it.
-	- Contradicts the "never risk losing work" promise; worst finding of the review.
-	- Fixed: replaced the manual stash dance with `git pull --ff-only --autostash`; a failed pull now leaves the tree intact. Regression test added.
-
-- ✅ Code Review 20260723 item 2: `land` can delete the remote work branch before the merge ever reaches origin (both implementations).
-	- Push of the merge is gated on the target having an upstream; the remote branch delete is not.
-	- With a local-only `dev`, the merge stays local but `git push origin --delete <branch>` still removes origin's only ref to those commits.
-	- Fixed: an upstream-less target is published first (`git push -u origin HEAD`) before the remote delete. Regression test added.
-
-- ✅ Code Review 20260723 item 3: `newbr`/`gobr` from a dirty `main`/`dev` commit and push WIP straight to the protected branch (both implementations).
-	- The "park current work" step is commit+push on whatever branch you're on - including main/dev, with an auto message in quiet mode.
-	- Contradicts the tool's own opinions ("don't push to dev, main, or master").
-	- Fixed: `newbr` carries dirty work to the new branch (no commit on the base); `gobr` refuses with guidance instead of auto-committing; sync preview now names the branch being pushed. Regression tests added.
-
-- ✅ Code Review 20260723 item 4: a commit message containing `-h`/`-v` as a word makes the bash version silently no-op with exit 0.
-	- The early help check scans the whole joined argv, so `gitsby commit "add -v flag"` prints the banner and skips the commit.
-	- Bash only; the pwsh port checks just the command slot.
-	- Fixed: -h/-v now only recognized in the command slot, matching the pwsh port. Test added.
-
-- ✅ Code Review 20260723 item 5: non-tty stdin silently auto-confirms all mutating commands (both implementations).
-	- Piped/cron/redirected input behaves as implicit `-q`: release/land/sync run with zero confirmation, even `echo n |` is ignored.
-	- Should fail closed like the installers do (require explicit flag when no tty).
-	- Fixed: mutating commands with no tty and no -q abort with guidance; read-only commands keep the implicit quiet. Tests added.
-
-- ✅ Code Review 20260723 item 6: unquoted two-word positional message silently drops the second word (both implementations).
-	- `gitsby commit Fixed bug` commits as "Fixed"; three words error but two don't.
-	- Fixed: a non-empty third positional is rejected with "quote your commit message" (both implementations). Test added.
-
-- ✅ Code Review 20260723 item 7: git failures print the raw trap dump instead of a plain error (bash).
-	- Diverged pull shows "Signal: ERR / Message: '--ff-only' / Command#: '"${@}"'" - reads as a gitsby crash.
-	- The pwsh port already prints a clean one-liner; match it.
-	- Fixed: fRun reports a plain one-liner ("'git ...' failed (exit N)") and exits; the trap dump stays for real script errors. Tests added.
-
-- ✅ Code Review 20260723 item 8: `echo -e` in fEcho_Clean expands escapes in user data (bash).
-	- Mangles commit messages/filenames in the preview; a hostile repo's filenames (raw ESC bytes, C-quoted by git) can spoof the confirm display.
-	- Switch to `printf '%s\n'`.
-	- Fixed: fEcho_Clean uses printf '%s\n'; escape bytes in user data stay inert.
-
-- ✅ Code Review 20260723 item 9: pwsh branch-name comparisons are case-insensitive.
-	- `-eq` treats 'Main' = 'main'; newbr can branch off the wrong base. Use `-ceq`/`-cne` at the seven branch compares.
-	- Fixed: -ceq/-cne at the branch compares; 'ok' and prompt answers stay case-insensitive.
-
-- ✅ Code Review 20260723 item 10: pwsh `release` crashes under strict mode when the newest v* tag isn't X.Y.Z.
-	- `v1.2` or `v2020` throws on array indexing; bash handles the same input gracefully.
-	- Fixed: split parts padded before arithmetic (v1.2 -> v1.2.1, v2020 -> v2020.0.1); bash pads the same way now too. Verified on both.
-
-- ✅ Code Review 20260723 item 11: install.ps1 downloads to a predictable temp filename.
-	- `gitsby-install-$PID.ps1` in shared temp; race window before install. install.bash already uses mktemp - mirror it.
-	- Fixed: downloads into a fresh random private subdirectory; recursive cleanup in finally.
-
-- ✅ Code Review 20260723 item 12: remote URLs print verbatim, leaking embedded credentials (both implementations).
-	- An `https://user:token@host/...` origin echoes the token on every run, including CI logs. Mask the userinfo part.
-	- Fixed: userinfo masked in the displayed URL (https://***@host) in both implementations. Tests added.
-
-- ✅ Code Review 20260723 item 13: default-branch detection trusts a possibly missing/stale local origin/HEAD (both implementations).
-	- Ref goes stale on upstream master->main renames and can be absent on git < 2.47; release then tags the wrong branch.
-	- Cheap fix: `git remote set-head origin --auto` alongside the existing fetch.
-	- Fixed: successful fetch now runs git remote set-head origin --auto, healing a missing or stale origin/HEAD; local read remains the offline fallback.
-
-- ✅ Code Review 20260723 item 18: fMustBeInPath shells out to external `which` (bash).
-	- `which` is absent on some minimal distros, making every command abort with "Not found in path: git". Use builtin `command -v`.
-	- Fixed: builtin command -v; dropped the stray second fThrowError argument.
-
-- ✅ Code Review 20260723 item 21: `pull` stashes a dirty tree before checking for an upstream (both implementations).
-	- No-upstream + dirty = pointless stash push/pop that rewrites every file's mtime. Check upstream first. (Goes away if item 1 lands as `--autostash`.)
-	- Moot: item 1's `--autostash` fix removed the manual stash entirely; no upstream now means no stash is touched at all.
-
-- ✅ Code Review 20260723 item 23: fetch without `--prune` leaves stale origin/* refs that existence checks trust (both implementations).
-	- Stale refs make gobr check out dead branches, land abort on the remote delete, newbr refuse reusable names.
-	- Fetch with `--prune`; make land's remote delete tolerant of "remote ref does not exist".
-	- Fixed: fetch uses --prune, and land's remote delete warns-and-continues instead of dying if the branch is already gone.
-
-- ✅ Code Review 20260723 item 24: pwsh skips native exit-code checks in the pr/read-only paths.
-	- `gh pr view` failure isn't caught before `gh pr diff` runs; `listbr`/`status` exit 0 even if git fails.
-	- Fixed: gh pr view checked before the diff; listbr throws on git failure.
-
-- ✅ Code Review 20260723 item 25: pwsh parses Windows drive-letter remotes (`C:\...`) as ssh hosts.
-	- Pre-flight then shows a bogus SSH identity line. Treat a single-letter-colon prefix as a path, like git does.
-	- Fixed: single-letter-colon prefixes are treated as drive paths, not ssh hosts.
-
-- ✅ Code Review 20260723 item 26: `ssh -G` called without `--` on a host string derived from .git/config (both implementations).
-	- Option-shaped "hosts" from a hostile config parse as ssh options. Currently fails closed, but add `--`.
-	- Fixed: -- added in both implementations.
-
-- ✅ Code Review 20260723 item 27: install-dev.ps1 passes an option-shaped `-Directory` straight to `git clone`.
-	- Binds as a real clone option (`--config=...`). install-dev.bash already rejects `-*`; mirror it (and/or pass `--` before the path).
-	- Fixed: option-shaped -Directory rejected, same wording as the bash guard.
-
-- ✅ Code Review 20260723 item 28: install.ps1 lacks the downloaded-content sanity check install.bash has.
-	- No shebang check before install+execute; wrong-content 200s (captive portal, truncation) get installed. Mirror the `^#!` test.
-	- Fixed: first line must match ^#! before install, mirroring install.bash.
-
-- ✅ Code Review 20260723 item 29: gitsby.ps1 sets GIT_MERGE_AUTOEDIT process-wide, persisting in the caller's pwsh session.
-	- The var is redundant anyway (merges pass `-m`); just delete the line.
-	- Fixed: line deleted (merges pass -m, so it was redundant).
-
-- ✅ Code Review 20260725 item 6: `release` with no version bumps the patch of a candidate tag's base, skipping that base version (both implementations).
-	- After `v2.0.0-rc1`, a bare `release` proposed `v2.0.1` rather than `v2.0.0`.
-	- Fixed: a candidate's own version is now what comes next, so `v2.0.0-rc1` leads to `v2.0.0`.
-	- The tag scan also needed `versionsort.suffix=-`, since git's default version sort ranks `v2.0.0-rc1` above `v2.0.0` and would otherwise propose an already-cut version once the real release exists.
-	- Regression tests cover both halves: the candidate's version is taken, and the release after it bumps normally.
-
-- ✅ Code Review 20260723 item 14: bound the unconditional pre-command fetch and add an offline escape hatch (both implementations).
-	- A dead/black-holed remote blocks every command for the full TCP/ssh timeout before the "offline?" warning.
-	- Add a connect timeout on the fetch and a `--no-fetch`/offline flag.
-	- Done: ssh fetches get ConnectTimeout=3 (user GIT_SSH_COMMAND respected), and --no-fetch/-NoFetch skips the fetch entirely.
-
-- ✅ Code Review 20260723 item 15: cache per-run-constant git facts (both implementations).
-	- Measured: 12 git spawns for `status`, 45 for `land`, 55 for `release`; upstream/branch/ahead-behind re-queried repeatedly in one display block.
-	- Resolve once after the fetch, pass down; keep live re-checks only where state actually mutates. Matters most on Windows.
-	- Done: default branch and merge target now resolve once per run post-fetch; branch/upstream/ahead checks stay live since checkouts change them mid-command.
-
-- ✅ Code Review 20260723 item 16: close the test-suite gaps that hid this review's bugs.
-	- Failed-pull-with-dirty-tree, no-remote fixtures, slash branch names, `-m`/`-m=` flag forms, option-like words in messages, release from a feature branch.
-	- Done so far: failed-pull-with-dirty-tree, upstream-less land, dirty-protected-branch newbr/gobr fixtures.
-	- Done: all listed fixtures added (failed pull, no-remote sync/newbr/land, feat/x names, -m and -m= forms, option-like message words, release from a feature branch). Suite 140 -> 199 checks.
-
-- ✅ Code Review 20260723 item 17: README has no Commands/Usage section.
-	- The pitch is "Gitsby has 11" commands, but they're never listed or demonstrated. Add the help table plus a worked newbr -> update -> land example.
-	- Done: Commands section added (table of all 11, options, a typical-day flow, gh note for pr/release).
-
-- ✅ Code Review 20260723 item 19: installer checksum + version pinning - confirms the already-open installer item below.
-	- Publish SHA256SUMS from cicd, verify in both installers, allow pinning an exact tag; document that `--ref` skips verification.
-	- Done: installers verify release-asset downloads against a SHA256SUMS release asset when published (note-and-continue when absent); cicd/utility/gen-checksums.bash generates it for release cuts; --ref/-Ref pins a tag but skips verification (documented in README).
-
-- ✅ Code Review 20260723 item 20: "latest release" lookup uses the unauthenticated GitHub API (60 req/hr).
-	- Shared-NAT/CI installs will 403. Read the tag from the `releases/latest` redirect Location header instead; keep the API as fallback.
-	- Done: tag read from the releases/latest redirect (curl url_effective / wget Location / pwsh 302 handling); API scrape kept as fallback; rate-limit mentioned in the error.
-
-- ✅ Code Review 20260723 item 22: fIsAhead materializes the whole ahead-range log just to test emptiness (both implementations).
-	- Use `git rev-list -n 1 '@{u}..'` (or the cached ahead count from item 15).
-	- Done: git rev-list -n 1 in both implementations.
-
-- ✅ Code Review 20260723 item 30: needless external `head`/`wc` pipeline stages (bash).
-	- Use `mapfile -n 1` / array counts, minding that a bare `read` returns nonzero on empty input under strict mode.
-	- Done: tag lookup via mapfile -n 1; the stash wc pipelines were already removed by item 1.
-
-- ✅ Code Review 20260723 item 31: positional parameter binding in the ps1 files (style guide requires named).
-	- gitsby.ps1 one spot (`Get-Command ssh`); install.ps1 and install-dev.ps1 throughout (Join-Path, Move-Item, Test-Path, Get-Command).
-	- Done: named parameters at the flagged sites in all three ps1 files.
-
-- ✅ Code Review 20260723 item 32: no comment-based help on any gitsby.ps1 function.
-	- Either add `.SYNOPSIS` to the non-trivial functions, or scope the style-guide rule to script-level + exported functions.
-	- Done: style-guide rule scoped to script level + exported/public functions; private helpers take a terse ## comment.
-
-- ✅ Code Review 20260723 item 33: installer output ends without the trailing blank line the style guide requires (all four installers).
-	- Done: all four installers end with a blank line.
-
-- ✅ Code Review 20260723 item 34: rename fpPreview's `p` padding variable to `pad` (matches the pwsh twin).
-	- Done: renamed.
-
-- ✅ Code Review 20260723 item 35: branch-argument validation runs after the status display and confirm prompt (both implementations).
-	- `newbr` with a bad/missing name shows a nonsense plan ("git checkout -b ") and only errors after "y". Hoist checks next to the existing pr/release ones.
-	- Done: newbr/gobr arguments validate right after the release-version check, before status/preview/prompt; command functions no longer duplicate the checks. Test added.
-
-- ✅ Code Review 20260723 item 36: `gitsby help` / `gitsby version` are unknown-command errors (both implementations).
-	- Alias the bare words to the -h/-v paths; one case entry each.
-	- Done: bare words route to the same paths as -h/-v (both implementations). Tests added.
-
-- ✅ Code Review 20260723 item 37: usage errors carry "Reverse call stack: fMain()" noise (bash).
-	- Suppress the stack line for expected validation errors; keep it for real internal failures.
-	- Done: fThrowError_Usage variant skips the stack line; all user-facing validation errors use it. Real script errors keep the stack.
-
-- ✅ Code Review 20260723 item 38: accept `-y`/`--yes` as a prompt-skip alias (both implementations).
-	- Installers teach -y, gitsby only takes -q; and -q's real function is "assume yes", not quiet. Keep -q, add -y, fix the help wording.
-	- Done: -y/--yes (bash) and -y/-yes (pwsh) alias -q; help wording now says "assume yes". Test added.
+	- ✅ Code Review 20260819b item 1: the pre-command fetch drops its connect timeout for the accounts that configure an ssh key.
+		- Cause: the timeout was added only when `GIT_SSH_COMMAND` was unset, so a caller's own choice would be left alone. The account selector sets that same variable a moment earlier, from the config file's `sshKey` - so the test saw a value and stood down.
+		- Note: it goes missing for exactly the setups it exists for. An unreachable host then hangs for the full TCP wait rather than three seconds, on every command that starts with a fetch, which is nearly all of them.
+		- Fixed: the run records whether the variable was already set when it started, and one helper builds the environment for both places that reach origin - the fetch, and `repo connect`'s probe. A value the caller chose is still left exactly as typed.
+
+	- ✅ Code Review 20260819b item 2: on macOS and the BSDs, `/dev/null` passes for a terminal.
+		- Cause: only Linux and Windows asked the real question. Everything else fell back to "is this a character device", which `/dev/null` is.
+		- Note: that test decides the fail-closed rule - with no terminal to confirm on, a mutating command refuses rather than prompt into the void. The end state stays safe, since the prompt reads end-of-file and aborts, but the message is the wrong one. macOS and FreeBSD are published targets now rather than someday ones.
+		- Fixed: `tty_bsd.go` asks the same ioctl the Linux file asks, under this family's name for it. Still nothing installed. The character-device fallback now covers only platforms nothing here is built for.
+
+	- ✅ Code Review 20260819b item 3: `~` in a config value expands to nothing on native Windows.
+		- Cause: four places resolved it through `HOME`, which a shell sets and Windows does not.
+		- Note: a `tokenFile = ~/...` then reads no token and falls back to gh's own account, and a `path = ~/...` folder rule matches nothing - which reads exactly like no rule at all. `accounts.md` says the `~/.config` location works on Windows too, and it did not.
+		- Fixed: one helper, `HOME` first so a shell that sets one still wins. What it cannot resolve is left as typed, rather than turned into a path that names somewhere real.
+
+	- ✅ Code Review 20260819b item 4: one branch git won't delete stops the whole of `br prune`.
+		- Cause: the deletes go out in a single call, which is what made prune cheap. Git deletes the branches it can and still exits nonzero for the rest - one checked out in another worktree, most often - and that status was returned.
+		- Note: the run then ended with some branches already deleted, origin untouched and no count printed, on the one command whose whole answer is a count.
+		- Fixed: non-fatal, the way the remote half beside it already was. It counts what actually went, names what it could not delete, and holds that branch's remote copy back so nothing is left here with nothing behind it on origin.
+
+	- ✅ Code Review 20260819b item 5: an account fragment left readable stays readable through every re-apply.
+		- Cause: the file is written 0600, but a mode only applies where the write creates the file.
+		- Note: the fragment names the account and points at the token file, and `account apply` is the command someone re-runs after tightening permissions.
+		- Fixed: the mode is set explicitly.
+
+	- ✅ Code Review 20260819b item 6: the lint and audit tools gate at whatever version this machine happens to have.
+		- Note: from the CI/CD addenda. A finding that appears - or stops appearing - on a tree nobody touched is usually a tool that moved rather than code that did.
+		- Fixed: `GO_TOOL_VERSIONS` in `config.bash` records the four, read back with `go version -m` since they spell `--version` four different ways and one has no such flag at all. Stage 1 warns on drift. Not a gate and not an installer - this pipeline installs nothing.
+
+	- ✅ Code Review 20260819b item 7: nothing published says the builds are reproducible.
+		- Note: a checksum is worth having because anyone can rebuild the bytes it covers, and that was recorded in a comment in `config.bash` and nowhere a reader would look.
+		- Fixed: a short Install subsection with the command, verified to produce the same bytes as the pipeline's own build.
+
+- ✅ 20260819 - the installers, back at the repo root. Six findings, none of which reach the binary.
+
+	- Pass over the installers that came back to the repo root. All six findings are in the two new files; none of them reach the binary. The first two are the serious ones - they end a default install with no output at all.
+
+	- ✅ Code Review 20260819 item 1: a wget-only box could never install.
+		- Cause: the latest-release lookup declines the redirect and reads the tag out of the header, and wget answers a declined redirect with exit 8 whether or not it printed what was asked for. Under `set -e` an assignment carries its command's status, so the run ended there - after the lookup had already succeeded.
+		- Note: the one-liner printed nothing and exited 8. No message, no fallback, nothing to go on.
+		- Fixed: `|| true` on the lookup, which is the only thing that ever wanted the status.
+
+	- ✅ Code Review 20260819 item 2: any curl failure did the same thing, and hid the fallback.
+		- Cause: same assignment rule. DNS, a proxy, a rate limit - anything that made curl exit nonzero ended the run, so neither the API fallback nor the message that names rate-limiting could be reached.
+		- Fixed: `|| true` on both, and on the API fallback beside them.
+
+	- ✅ Code Review 20260819 item 3: `-Arch` refused the machines it was written to explain itself to.
+		- Cause: detection assigned back to the parameter, and assigning to a parameter re-runs its own `ValidateSet`. On x86 or 32-bit ARM the detected value isn't in the set, so the binder error arrived instead of the message naming what the release does publish.
+		- Fixed: detection lands in its own variable.
+
+	- ✅ Code Review 20260819 item 4: `-Tag` had the same shape, one layer deeper.
+		- Cause: the scraped tag assigned back to `$Tag` re-ran its `ValidatePattern`, which made the explicit check below it dead code. Through the API fallback the throw was caught and reported as rate-limiting, which it wasn't.
+		- Fixed: resolved into its own variable, so the check that was written for it is the one that runs.
+
+	- ✅ Code Review 20260819 item 5: persisting PATH on Windows flattened it.
+		- Cause: `[Environment]::GetEnvironmentVariable` hands back the expanded PATH. Reading that and writing it back turned entries like `%USERPROFILE%\bin` into literals - permanently, on a PATH we only meant to append one directory to. Worse under `-System`, where the whole machine's PATH goes through it.
+		- Fixed: read raw from the registry with `DoNotExpandEnvironmentNames`, written back with the kind it already had.
+
+	- ✅ Code Review 20260819 item 6: the captive-portal check read the whole binary to look at one byte.
+		- Fixed: one byte off the stream.
+
+	- ✅ Code Review 20260819, coverage: nothing exercised the release lookup, which is why items 1 and 2 got through green.
+		- Fixed: two checks stand the network up as stubs - a curl that always fails, and a wget-only PATH where the stub prints the header and exits 8. Both fail against the build before the fix. The two PowerShell findings need the hardware or the network to reproduce, so they are pinned in the source the way the SHA256SUMS decode already is. Suite 613 -> 617.
+
+- ✅ 20260819 - against the standing directives. Forty-three numbered items, plus the pass that preceded them.
+
+	- Item 30, the last one open and the only one that needed a decision first. Fourteen new checks, nine of which fail against the tree that preceded them; the suite went 668 -> 682. That closes the round at 43 of 43.
+
+	- ✅ Directive review 20260819 item 30: Windows binaries carry no icon and no version details.
+		- Needs a Windows resource (.syso) beside the source. Two ways in: `goversioninfo` from a checked-in JSON template plus an .ico, which is the standard route and is well tested; or writing the COFF resource ourselves, which keeps the zero-dependency character but cannot be proved right from here - a malformed one links cleanly and fails on the machine that runs it.
+		- Decided: `goversioninfo`, installed outside the tree, probe-gated in the pipeline and required by `release.bash`.
+		- Done. `cicd/utility/gen-winres.bash` writes one `.syso` per published Windows target from a spec it generates, and the two are committed - they are linked into binaries whose checksums we publish, so rebuilding a release from its tag must not need a tool installed.
+		- Which is why they carry the last released version rather than the working tree's describe output: a file that changed every commit could not be committed. A release stamps them with the version it is cutting - in phase 1 for the assets, then restored, and again in phase 2 where it lands in the bump commit beside the changelog heading.
+		- `assets/gitsby.ico` is a committed asset too, regenerated by hand from `logo.png` (`gen-winres.bash --icon`) when the logo changes. Six sizes: 16/32/48 stay BMP so pre-10 Explorer draws them, 64/128/256 are PNG quantized to 256 colours - 134 KB down to 48 KB for a difference the eye cannot find at icon size.
+		- Verified rather than assumed: both Windows targets link the resource and no other platform does, two cold-cache Windows builds are byte-identical with it in place, and the string and numeric version fields both read 2.1.0 out of the built `.exe`.
+
+	- The documentation, 34-41. The suite went 666 -> 668.
+
+	- ✅ Directive review 20260819 item 34: batching the branch deletes in `br prune` is the largest speed win available, and it changes the output.
+		- One push per branch, each forking three processes. Eight branches cost 24 of the command's 81.
+		- Deleting them in one call collapses the per-branch status and warning lines into one, so it needs a decision and a suite carve-out before it can be done.
+		- Done, and the call was made here rather than deferred: the win is large and the output change is smaller than the finding suggested - one plan line and one status line instead of eight of each, which reads better. Measured on eight branches: 77 spawns down to 42, with the cached branch lookups from item 16 in the same figure. The local re-check still runs per branch before anything is handed to git, and a partly-failed remote delete counts what actually went rather than writing the batch off. Parity needed no carve-out.
+
+	- ✅ Directive review 20260819 item 35: ten statements in the public docs are no longer true.
+		- The command count is one short in three places, including the repo blurb.
+		- The README and contributing both send a new contributor to a branch that has no Go code on it.
+		- The README still describes a suite that runs against two implementations.
+		- design.md documents a folder, a test leg and a pipeline engine that were all removed, and its release section describes work that shipped, wrongly.
+		- Two smaller ones: a flag that only ever existed on the deleted engine, and a command spelled the old way.
+		- Fixed, all ten: the counts (ten, and 23 with subcommands), the branch a contributor is sent to (named nowhere now - `git clone` then `cd src-go` is the whole of it), the suite that ran against two implementations, design.md's folder list, testing section and release section, `bin/gitsby` in the style guide, `-NoSync` in contributing, and the old command spelling in the one-liners. The dogfood caveat is in the README too - those destinations are one machine's paths.
+
+	- ✅ Directive review 20260819 item 36: the Install section has no sub-headings.
+		- Nothing in the contents leads a reader to "is this in my package manager", though the answer is written a few lines down.
+		- The development section does not say the pipeline commits and pushes at the end, which will surprise someone running it on a fork.
+		- Fixed: Install now has "Is it in my package manager?" (the answer was already there, four paragraphs down), "The one-liners", "Where it goes", "Without the installer" and "Coming from 2.x". The pipeline is described as eight numbered steps, and step 8 says in bold that it commits and pushes.
+
+	- ✅ Directive review 20260819 item 37: several of the strongest features are buried.
+		- One static binary with nothing alongside it is the third bullet of a compatibility list.
+		- That every mutating command shows the exact git commands and asks first is the main safety argument and appears once, near the bottom.
+		- `repo create` listing what it is about to publish, the offline behavior, and `account apply` teaching plain git the same rules are each a clause inside a longer paragraph.
+		- Nothing anywhere says gitsby keeps no state of its own.
+		- The repo blurb needs the same count fix, a homepage, and its topics refreshed - it still says bash and powershell.
+		- Fixed in the docs: the three arguments - it shows its work, it keeps no state of its own, it is one file - are their own short list in "What it is", where nothing else competes with them. The offline behavior, the publish list and `account apply` each became a point of their own instead of a clause. The tagline names the show-and-ask promise.
+		- Left for the owner: the repo blurb, homepage and topics are GitHub settings rather than files here, and changing them edits the public repo page. `gh repo edit --description ... --homepage ... --add-topic go --remove-topic bash` is the one command.
+
+	- ✅ Directive review 20260819 item 38: design.md has no goals and non-goals section, and no header.
+		- The non-goals are the most interesting thing about the project and they are scattered across three sections and another document.
+		- Everything else about the file is right. It is a decision log with rejection rationale recorded inline, which is the correct form here - do not restructure it.
+		- Fixed: a "Goals and non-goals" section, with the seven non-goals gathered from the three places they were scattered across, plus a short note on what kind of document this is. Nothing else was restructured - it is a decision log and that is the right form for it.
+
+	- ✅ Directive review 20260819 item 39: twenty-five finished items are still sitting in the open sections.
+		- The Bugs section reads as fourteen open bugs, all of which are done.
+		- The review items also want their outcome bullet labeled, so the finding and the fix can be told apart at a glance.
+		- Fixed: 25 finished items moved into the matching Done subsections, and Bugs now says "None open" rather than reading as fourteen open bugs. Every review item's outcome bullet is labeled - "Fixed:", "Done:", "Decided:" - so the finding and what happened to it can be told apart at a glance.
+
+	- ✅ Directive review 20260819 item 40: about twenty British spellings across the docs, scripts and code comments.
+		- Not in the code of conduct or contributing - those reproduce upstream text and should stay as published.
+		- Fixed: 23 of them across the docs, the pipeline scripts and the demo notes. `code_of_conduct.md` and contributing.md's DCO notice are untouched - both reproduce published text. Two of the 23 are in the shared `cicd/utility/include/` files, so a future re-sync from their source could bring them back.
+
+	- ✅ Directive review 20260819 item 41: five paragraphs run long enough to be hard to scan.
+		- The worst is 620 characters. All five are ideas that want to be bullets.
+		- Fixed, all five plus the tagline: each became two or three short paragraphs, or a lead-in and bullets. The longest line left in the published docs is the tagline, and that one is an HTML cell rendering as three separate lines.
+
+	- The pipeline, 17-18 and 26-32 (bar 30), plus 42 and 43. Eleven new checks, each verified against the pipeline that preceded them; the suite went 649 -> 666.
+
+	- ✅ Directive review 20260819 item 17: the lint summary reports warnings on a perfectly clean run.
+		- Its filter matches the test harness's own check labels, so a green pipeline reports seven warnings that do not exist.
+		- A warning that fires when nothing is wrong is worse than no warning.
+		- Fixed: the harness lines are excluded by SHAPE (`ok:` / `FAIL:`) rather than by wording, so a check label about warnings stops reading as one. A clean log now reports CLEAN, and a real finding still reports.
+
+	- ✅ Directive review 20260819 item 18: `--quick` still cross-builds three platforms.
+		- It skips fuzz and the gif, which are not the slow part.
+		- Fixed: `--quick` narrows the dogfood list to the native target. The other two cross-builds were the slow part it was meant to be skipping.
+
+	- ✅ Directive review 20260819 item 26: the published binaries cannot be rebuilt to the same checksum.
+		- Version control stamps go into the binary, and the release builds its assets before it cuts the tag - so the published binaries carry the previous revision and nobody can reproduce the checksums we publish.
+		- Also wants the build id cleared, the native build built the same way as the cross-builds, and the toolchain pinned. Once it holds, say so in the README.
+		- Fixed: `-buildvcs=false`, `-buildid=` and `CGO_ENABLED=0` on every build site, from one place in config.bash. Verified: two builds from a cold cache are byte-identical, and `go version -m` shows no revision. The ordering worry dissolves with the stamps gone - the changelog bump does not touch the source, so a phase-1 asset is the tagged commit's asset. The release toolchain is named in config.bash, since go.mod's line is a minimum rather than a pin.
+
+	- ✅ Directive review 20260819 item 27: no build step limits itself to half the cores.
+		- The compiler defaults to all of them, in every build and in the eight-target release loop.
+		- Fixed: `BUILD_JOBS` is half the cores rounded up, and `-p` is on all four build calls.
+
+	- ✅ Directive review 20260819 item 28: nothing in the pipeline looks at the standard library for known problems.
+		- With no third-party dependencies, that is the only library code there is to check.
+		- Fixed: `govulncheck` in stage 3, probe-gated like staticcheck. It runs even under `--quick` - it is a lookup, not a workload.
+
+	- ✅ Directive review 20260819 item 29: no profiling step exists.
+		- A flamegraph would be the wrong instrument here - the program spends its life blocked waiting on git, so a sampling profile is a flat wall with no leaders.
+		- What carries signal is counting spawns per command against a fixture repo, and failing on a regression. The rotation and the seen-marker patterns already exist and can be reused as they are.
+		- Done as spawn counting, per the recommendation: `cicd/utility/spawn-count.bash` measures eight commands against a restored fixture (origin included), compares with the newest previous run, and fails on a rise beyond a small tolerance. GFS-rotated like the lint logs.
+
+	- ✅ Directive review 20260819 item 31: `-q` reaches the publisher but not the three test harnesses.
+		- None of them accepts an option at all, so a quiet run still prints every one of 617 check lines.
+		- Fixed: all three take `-q`, and the engine hands it on for an unattended run. Header, failures and totals stay.
+
+	- ✅ Directive review 20260819 item 32: `--target=` and `--release=` are not accepted with an equals sign.
+		- Fixed: both spellings of every option that takes a value.
+
+	- ✅ Directive review 20260819 item 42: no script exists to run an older build alongside the current one.
+		- Worth less here than in the projects it comes from: gitsby exits immediately, so nothing is ever held open. The real use is keeping timestamped builds around to bisect a behavior change.
+		- Done: `cicd/utility/keep-build.bash` archives the current binary with a timestamp, lists what is kept, runs one by number, and diffs one against the current build on the same arguments. GFS-rotated.
+
+	- ✅ Directive review 20260819 item 43: the demo script file is stale in two ways beyond the renamed commands.
+		- It points a future editor at the deleted Windows engine, twice. Fix it in the same pass as the regeneration.
+		- Fixed: the notes no longer point at the deleted Windows engine, and the scenario uses the current command names, so the next render publishes those rather than the old ones. The regeneration itself is still pending - it needs a full pipeline run.
+
+	- The installers, 12-15 and 33. Ten new checks, each verified against the installers that preceded them.
+
+	- ✅ Directive review 20260819 item 12: the installers cannot find a release that is only a prerelease.
+		- Both the main route and the fallback ask the same endpoint, and that endpoint skips prereleases. So there is no fallback.
+		- The failure message blames rate limiting, which sends anyone debugging it the wrong way.
+		- Latent today, live the first time a version ships as a prerelease.
+		- Fixed: the fallback lists the releases instead, newest first, taking the newest full one and saying so when only a candidate exists. The failure message names rate limiting as one possibility among several, and points at `--tag`.
+
+	- ✅ Directive review 20260819 item 13: `install.ps1` has no `--help`, and the README tells people to use it.
+		- Fixed: `-Help`, plus `--help` recognized before the binder sees it - which is what the README documents and what anyone types.
+
+	- ✅ Directive review 20260819 item 14: `install.ps1` can report success over a binary that failed to run.
+		- The verification step's exit code is never read, and a native command's failure does not stop the script on its own.
+		- Fixed: `$LASTEXITCODE` is read, and a binary that will not run is reported as that rather than as a finished install.
+
+	- ✅ Directive review 20260819 item 15: both installers write straight to the final path.
+		- An interrupt mid-copy leaves a truncated executable in place that passed its checksum under a different name.
+		- Re-installing over a copy that is currently running fails on both platforms.
+		- Staging in the destination directory and renaming over the target fixes both at once.
+		- Fixed: both stage in the destination directory and rename over the target. On Windows the incumbent is renamed aside first, since Windows will not overwrite a running executable but will rename one.
+
+	- ✅ Directive review 20260819 item 33: decide whether `install.ps1` should run on Windows PowerShell 5.1.
+		- It refuses below 7 on purpose, and the reason is sound. But 5.1 is what a fresh Windows install actually has, so the documented one-liner fails there.
+		- The syntax is already 5.1-clean. Lifting it needs a fallback for three variables that do not exist in 5.1, one parameter spelled differently, plus forcing TLS and basic parsing.
+		- Decided: yes. 5.1 is the machine most likely to be installing this for the first time. The three variables get a fallback, TLS 1.2 is switched on, every request asks for basic parsing, and the byte read is spelled each version's way. `PSUseCompatibleSyntax` against 5.1 now gates in the pipeline.
+
+	- The defects, 1-20. Eighteen new suite checks, each verified against the build that preceded the fix; the suite went 617 -> 636.
+
+	- ✅ Directive review 20260819 item 1: a second `account apply` deletes the rules and then gives up.
+		- Two accounts claiming the same folder produce the same rule key twice. The first removal takes both, the second finds nothing, and git's "nothing to remove" is read as a failure.
+		- End state is worse than before it ran: no rules at all, and an error.
+		- Nothing warns that two accounts claim one folder in the first place.
+		- Fixed: the key list is deduped, and git's exit 5 ("nothing to remove") is read as the end state it is rather than as a failure. `account list` now names any folder more than one account claims.
+
+	- ✅ Directive review 20260819 item 2: gitsby and plain git can resolve the same folder to different accounts.
+		- The two tie-breaks disagree when two accounts declare the same path. Gitsby goes by declaration order, git goes by what sorts last.
+		- That disagreement is the exact thing `apply` exists to prevent.
+		- Fixed: the plan is ordered by declaration index, reversed, so the rule gitsby keeps is the last one git sees. Checked both ways in the suite.
+
+	- ✅ Directive review 20260819 item 3: a bare repo, or a `.git` directory, passes the in-a-repo check.
+		- The question is asked of a command that answers in text and exits zero either way.
+		- `status` there prints a full state block ending in "working tree clean", which it has no business claiming. `pullcom` prints its whole plan, gets confirmed, then dies in git.
+		- Fixed: one `rev-parse` call answers all three questions in text; a bare repo and the `.git` directory are each refused by name, whatever the command.
+
+	- ✅ Directive review 20260819 item 4: a token read from a file is never checked against the account it claims.
+		- The name comes from the config key, so a stale token file reports the right name and pushes as the wrong one.
+		- That is precisely the mistake the identity block exists to catch. With no `gh` installed at all it still names an account.
+		- Fixed: a token from gh's own store still short-circuits; one from a file is probed with the token exported, and the block says either who it really belongs to or that it couldn't be checked.
+
+	- ✅ Directive review 20260819 item 5: `--any-identity` quietly drops the commit identity and key.
+		- Account selection is skipped entirely, but the Account line still names the account as if it had been applied.
+		- Commits get authored by whatever git falls back to. The help only mentions the key mismatch, not the authorship.
+		- Fixed: the Account line says the selection was skipped and what that leaves in place. Behavior is unchanged - what it did was never the problem.
+
+	- ✅ Directive review 20260819 item 6: `raw` names an account for a repo you only cloned.
+		- The gate accepts the remote-owner guess, so cloning someone else's repo prints "acting as <them>" - untrue, nothing was applied, and it tells a single-account user the feature exists.
+		- Fixed: the same test the identity block uses, so nothing is claimed for a name merely inferred from the remote's owner.
+
+	- ✅ Directive review 20260819 item 7: `br prune` tries to delete remote branches while offline.
+		- `br merge` holds its remote delete back; prune has no such check.
+		- Each failed push is reported as "already gone", blaming the branch for a network problem, and the summary reads as if it finished.
+		- Fixed: the remote half is skipped while origin is unreachable and says so by name; the local deletes still happen.
+
+	- ✅ Directive review 20260819 item 8: `release` in a repo with no origin cuts a tag nobody can fetch, silently.
+		- The offline check never trips, because with no remote there is nothing to find unreachable.
+		- `sync` gets this right and says so; release just ends on "Done."
+		- Fixed: refused up front, naming `repo connect`. No tag is cut.
+
+	- ✅ Directive review 20260819 item 9: the pre-command fetch may refresh a remote nothing else reads.
+		- With no remote named, git follows the branch's own tracking remote. Every existence check afterwards reads origin.
+		- Fixed: the fetch names origin. Caught by a repo whose branch tracks a second remote.
+
+	- ✅ Directive review 20260819 item 10: the ssh-login cache ignores which remote it was asked about.
+		- One slot, no key, three different callers. Reachable through `repo connect` from outside a repo, where it produces a mismatch warning about an origin that does not exist.
+		- Fixed: keyed by remote URL. No dedicated check - reaching it needs three remotes and a stubbed ssh in one run, and the shape is the same one the other caches already use.
+
+	- ✅ Directive review 20260819 item 11: `br switch` assumes a single remote.
+		- With two remotes carrying the same branch name git refuses to guess, and the up-front check does not notice because it only ever looks at origin.
+		- Fixed: one helper decides how a branch gets checked out, and the plan prints what the command will run. Applies everywhere a remote-only branch can be checked out, not just `br switch`.
+
+	- ✅ Directive review 20260819 item 16: an unresolvable default branch is re-derived on every ask.
+		- The two branch lookups are the only cached values in the codebase with no "we already asked" flag, so a repo where the answer is empty repeats the whole five-command ladder each time.
+		- Measured: 38 processes for one `status`, 25 of them the same five commands over and over.
+		- Fixed: every cached answer now pairs a value with a "we already asked" flag, so an empty answer is remembered like any other. Came free with the shape work in item 21.
+
+	- ✅ Directive review 20260819 item 19: the hotfix warning watches a folder that no longer exists.
+		- It was written when the deliverable was `bin/gitsby`. A hotfix to the code that actually ships gets nothing.
+		- Fixed: it watches `src-go/`, named once beside the reason. The two suite checks were pointed at the same place.
+
+	- ✅ Directive review 20260819 item 20: file permissions are never checked, and one directory is created wide open.
+		- A token file readable by everyone loads without comment. ssh and gh both refuse or warn on that.
+		- The folder holding the per-account identity fragments is created 0777 and relies entirely on umask.
+		- A malformed inherited `GIT_CONFIG_COUNT` is read as zero, which half-overwrites whatever the caller set up. That variable is injected by the terminal here, so it is not hypothetical.
+		- Fixed: the fragment directory is 0700 and the fragments 0600; a token file other users can read is called out by name; a GIT_CONFIG_COUNT that isn't a count stops the run instead of half-overwriting the caller's block.
+
+	- The Go shape items, 21-25. One problem wearing four hats: gathering the run's state into a struct is the change the other three followed from.
+
+	- ✅ Directive review 20260819 item 21: the Go reads as a shell script transcribed into Go syntax.
+		- State is passed through about 120 package-level variables. Several functions take nothing and return nothing, and work only by mutating them.
+		- Not one function returns an error. Failure is a hard exit called from inside leaf helpers, which is also why nothing can be unit tested.
+		- Records are packed into tab-delimited strings and re-parsed to sort them.
+		- All of that is one problem wearing four hats. Gathering the run's state into a struct passed to the command functions is the change the other three follow from.
+		- Note against the old builds: only input and output parity matters now, so mirroring their structure is not a reason to keep any of this.
+		- Done: the run's state is a struct passed to the command functions; every failure returns an error and main is the only place that exits; the tab-delimited sort became typed records. 4529 lines rewritten, output byte-identical (617/268/27 all green, parity unchanged).
+
+	- ✅ Directive review 20260819 item 22: there are no Go tests at all.
+		- The whole suite is external. The pure string functions - remote parsing, config values, path canonicalization, tag matching - have a lot of edge cases and nothing exercises them directly.
+		- Done: unit tests for the parsing, the config and folder matching, the URL shapes, the version bump, the includeIf ordering and the output framing. `go test ./...` gates in stage 2.
+
+	- ✅ Directive review 20260819 item 23: add a linter config so the review findings become gates.
+		- gofmt, vet and staticcheck are clean and gated already. A config file would add the checks that caught the rest: unchecked errors, shadowed builtins, and the naming convention below.
+		- Done: `src-go/.golangci.yml` - errcheck, ineffassign, predeclared, unconvert, revive (var-naming, redefines-builtin-id, and three flow rules). Probe-gated in stage 1 like staticcheck.
+
+	- ✅ Directive review 20260819 item 24: internal names do not follow Go's convention for initialisms.
+		- Twenty-six of them, all unexported, all internal. No effect on output or arguments.
+		- Done: URL, SSH and HTTPS spelled the Go way throughout. No effect on output or arguments.
+
+	- ✅ Directive review 20260819 item 25: five discarded errors want either handling or a reason.
+		- Three of them set environment variables that decide the whole account selection.
+		- Done: the three that decide account selection now stop the run; the temp-dir removal and the readability probe say in one line why they discard theirs.
+
+	- Also in the same round, and unnumbered: the defects a first pass turned up.
+
+	- From a review against the standing directives, 20260819. Everything below was checked against the code, not inferred. gofmt, vet, staticcheck and the suite (617/0) are all clean, so none of this is tool-visible.
+
+	- ✅ Twenty regression checks reported on the terminal they were run from, not on the code.
+		- The harnesses pinned git's config files and gitsby's own config file. Two inputs outrank all of those and arrive from any ordinary working terminal: `GIT_CONFIG_COUNT` with its numbered keys beats every config file, a repo-local one included, and an inherited `GH_TOKEN` is what a gh call reports back.
+		- Ten checks per implementation, the same ten on both, which is what showed it was not a port difference. Five gh checks that can only pass when no token is held, and five identity checks that read a commit address back through a config file.
+		- Nothing was wrong with the product. The same suite and the same builds pass standalone, and pass under the pipeline once the environment is clean.
+		- Fixed in all three harnesses. `fuzz.bash` was also the only one never pinning gitsby's config file.
+		- Pinned in the source of each harness. The two runtime companions are labeled as regression guards: on a clean machine they pass against a harness that isolates nothing.
+
+	- ✅ `demo-repo.bash` removed whatever directory it was pointed at, without checking whose it was.
+		- It took a root path as its first argument and `rm -rf`'d it before doing anything else. A mistyped or inherited argument took whatever lived there, and the script then reported success.
+		- Reproduced against the previous version: a directory holding an unrelated file was passed as the root, and came back empty with an exit code of 0.
+		- Fixed by stamping the directories it builds. Only a stamped one is removed; a relative path, the filesystem root, a symlink and anything containing `..` are all refused up front.
+		- Checked against the previous version. The filesystem-root case is pinned in the source rather than run, since running it against a build without the guard is `rm -rf /`.
+
+	- ✅ Every other recursive or forced removal now fails closed on an unset variable.
+		- All of them name a path the script itself created, but they were spelled so that an unset variable would have widened the target rather than stopped it.
+		- Ten sites across both installers, the pipeline engine and all four harnesses. The suite checks the whole set, so a new unguarded one is caught.
+
+	- ✅ The publish preview leaked its throwaway git directory when a run was interrupted.
+		- The Bash build removed it on the way out of the function that made it, so a Ctrl-C while the preview was still on screen stranded an empty directory in temp. The PowerShell build already covered this.
+		- Moved to the exit path, which already runs on interrupt. Checked by driving the cleanup hook directly - a real Ctrl-C could not be staged, since Git Bash defers the signal until the native child returns.
+
+	- ✅ Twelve regression checks were testing nothing on Windows.
+		- The suite handed PowerShell its own MSYS paths. .NET has no mount table, so `/tmp/x` and `/c/x` were read against the current drive root - `Set-Location`, the script lookup and `ReadAllBytes` all failed and the commands under test never ran.
+		- Seven reported red. The other five passed because they forbid something that also never happened, which is the worse half. Among them the guard for the working-directory bug, which had been guarding nothing.
+		- Fixed with an `fWinPath` helper, the same conversion the folder-account block already needed. Two smaller ones alongside: Git Bash rewrites a unix-absolute argument before the native pwsh sees it, so the `-Ref` refusal was being triggered by the wrong rule; and the system install location is the platform's own, not `/usr/local/bin`.
+		- Windows now runs 850/0, matching Linux. Checked the repaired guard fails against the code that predates the working-directory fix, so it discriminates rather than merely passing.
+
+	- ✅ The identity probe ignored the ssh key git was configured to push with.
+		- It ran a bare `ssh`, so a repo selecting its key through `core.sshCommand` was reported as the default key's account. Where that matched gh's account the mismatch check passed with both halves wrong - green in exactly the setup it exists for.
+		- Fixed to follow git's own precedence, `GIT_SSH_COMMAND` then `core.sshCommand`. The identity line takes the key file from the same source, so it can't name the right account beside the wrong key.
+		- Same override was overriding the key on `fetch` and the remote probe, which made a private repo reachable only via that key look like being offline.
+
+	- ✅ The PowerShell build died on the identity line whenever no ssh command was configured.
+		- `Get-GitSshCommand` returns a list, but PowerShell unwraps a one-element return to a bare string - and under StrictMode, reading `.Count` off a string throws. One element is the ordinary case: a plain `ssh` with nothing configured.
+		- So any repo with an ssh remote and no `core.sshCommand` failed with "The property 'Count' cannot be found", which is most of them. The Bash build was never affected; bash arrays don't unwrap.
+		- Found by running the suite's PowerShell leg on Windows, which until now had only ever run on Linux. It would have failed there too - it had simply never been run since the identity work landed.
+
+	- ✅ gh acted as whatever account was last switched to, regardless of who owns the remote.
+		- Now picks the owner's account for the run when gh already holds it, via `GH_TOKEN`, leaving gh's active account alone. Only when the owner can be named and the token is held - an org or someone else's repo is left untouched rather than refused.
+
+	- ✅ On Windows, a local-path remote was read as an ssh host named after the drive letter.
+		- `C:/path/to/repo.git` matched the `host:path` shape, so every command ran an ssh identity probe against a machine called `C` and reported an account for it.
+
+	- ✅ PowerShell: a joined `-Config=FILE` failed silently.
+		- PowerShell can't bind a joined option through `-File`. Ahead of a command it ate the next word as the value, so `br list` arrived as `list`; after one it overflowed the positional slots.
+		- The first case printed the help and exited 1, which `-q` silenced entirely - the reported symptom was a command that appeared to do nothing.
+		- Now refused by name from any position, naming `-Config FILE` and `-Config:FILE`. Bash keeps taking the joined form, and so does `raw`, which reads the real command line.
+
+	- ✅ `--config ""` silently used the default config instead of refusing.
+		- The check asked whether the value was non-empty, not whether the option was typed, so an empty one was indistinguishable from never passing it.
+		- That fell back to the default file, which decides the account - a script whose variable came out empty would push as the wrong identity and say nothing. Both builds.
+		- An empty `GITSBY_CONFIG` still falls through on purpose: an unset environment variable and an empty one are the same thing, unlike a typed option.
+		- Found by the new fuzz vectors on their first run.
+
+	- ✅ `repo clone` refused to re-run, and `repo connect` refused a matching URL, on Windows.
+		- Git stores a local-path remote in the platform's own spelling: hand it `/c/tmp/x` and it gives back `C:/tmp/x`. Both commands compared their own argument against git's copy as plain text, so the same directory read as a different one.
+		- Both now compare local paths as paths. These were the two long-standing Windows-only failures in the suite.
+
+	- ✅ The PowerShell installer never verified the checksum, and said the release had none.
+		- Found by running both documented one-liners against the current release: the Bash one reported the checksum verified, the PowerShell one reported no `SHA256SUMS` for the same release, which does publish one.
+		- Cause: GitHub serves that file as binary, and PowerShell returns a response body as raw bytes for anything it doesn't treat as text. Read as lines, bytes match nothing, so no checksum was found and the download was installed unverified.
+		- The message made it look settled rather than broken, so the default install had gone unverified since the check was added. The Bash installer was never affected.
+		- Fixed: the body is decoded before it is read. Verified against the published release - the checksum is found, compared, and matches the installed file.
+
+	- ✅ Every install command in the README 404s, because `main` is still the 2022 tree.
+		- `main` holds no `install.bash`, `install.ps1`, `install-dev.*` or `bin/gitsby.ps1`, so all six documented one-liners fail at the download. Reported from the field.
+		- Cutting v2.0.0 fixes it outright: the merge to `main` puts the files there, and `releases/latest` stops resolving to the 2022 `v1.0.1`, which is a dead end for the default install path (that tag predates the `bin/` layout).
+		- Until then the working incantation is the `dev` URL plus `--release dev` / `-Release dev`. Left undocumented on purpose rather than pointing strangers at `dev`.
+
+	- ✅ The SSH identity line named the local login instead of the account being acted as.
+		- It asked `ssh -G` about the bare host. With no user in the target, ssh answers with the OS login name, so a push as `t00mietum` displayed as `collierjr@github.com`. Reported from the field.
+		- That value is neither of the two real ones: the connect user is `git`, and the account is whatever the key authenticates as. On a personal machine it looks plausible enough to be believed, which is worse than showing nothing.
+		- The probe now uses the connect target, so an explicit user in the remote URL is honored the way git honors it. Host alias resolution is unaffected - the user part only overrides `User` in `~/.ssh/config`.
+		- The line also leads with the account now, resolved by asking the host. That is what it existed to answer; the connect user is identical for every GitHub account, and the key shown is only ssh's first readable candidate, not necessarily the one that authenticates. Offline it says `unknown` rather than guessing, and skips the round trip.
+		- Every other test uses a local-path origin, which has no ssh identity, so the whole line had shipped untested. It now has a fake ssh that reproduces the real defaulting behavior.
+
+	- ✅ A byte-order mark on the three PowerShell files broke both installer one-liners and direct execution.
+		- `irm` keeps the BOM, so `iex` and `[scriptblock]::Create` saw it glued to the shebang and the first line stopped being a comment. Both documented one-liners failed for every user, on every platform. Reported from the field.
+		- The same BOM sat ahead of `#!` in `bin/gitsby.ps1`, so `./gitsby.ps1` fell through to the shell instead of running.
+		- `bin/gitsby.ps1` already carried a suppression saying a BOM would break the shebang, so it had been there against the file's own stated intent since the files were written.
+		- The tests couldn't see it: they read the source with `Get-Content`, which drops a BOM silently. They now decode the bytes, and each file's first two bytes are checked.
+
+	- ✅ `install.ps1` sent a failed download to the Bash installer, which fails the same way.
+		- Both resolve the same stale `releases/latest`, so the advice was a loop. It names `-Release dev` now, matching what `install.bash` already said.
+
+	- ✅ An unreachable remote did not make the parking push safe.
+		- `update` and `sync` degraded properly, but `br create`, `br switch`, `br hotfix`, `pr create` and `release` all failed on `git push` with raw git text.
+		- Split by what each command is for. The ones that mean something locally now skip the push and say so, naming the branch and `sync` from it as the way to publish later. The ones that exist to publish - `sync`, `pr create`, `pr ok`, `release` - refuse up front, before the plan promises a push, and name what to do instead.
+		- `br land` needed more than a skipped push: with the merge unpublished, origin's copy of the work branch is its only ref to those commits, so the remote delete is held back too. The hotfix back-merge has the same shape - it merges `origin/main` normally, which unpublished is the stale one, so it falls back to the local branch.
+		- Decided against making `--no-fetch` mean this. The flag declines the incoming round trip, which is a perfectly good thing to want against a reachable remote, and the suite itself uses it that way throughout. Offline is a state the pre-command fetch discovers, not a flag.
+
+	- And the shape-and-process half of it.
+
+	- ✅ The demo gif demonstrates an account changing on a partial folder match higher in the path.
+		- Folder-based accounts are the headline feature and the demo never showed them. Three scenes were added to the end of the existing demo rather than made into a second gif, so the one loop tells the whole story.
+		- The throwaway world now has two repos in trees that differ from their first folder down, and a gitsby config matching on `github.com/acme-corp` and `github.com/mika-rivers`. Different roots are the point: a shared root would not show that the match is a run of folder names rather than a prefix.
+		- The closing scene runs the same command in the second tree, with no flags and nothing configured per repo, and the account has changed. The six scenes before it were already acting as the work account and now say so on their identity line.
+		- The prompt shows the folder the command runs in. A demo about folders that hides the folder proves nothing.
+		- The identity the accounts set is deliberately not exported into the demo's environment. It had been, and an exported `GIT_AUTHOR_EMAIL` supplies exactly what the folder rules are meant to supply - the demo would have been showing something it had not proved.
+		- 2632 frames, 122.5 seconds, 11.06 MB, up from 2007 / 84.9 s / 9.97 MB. Read time is free; the growth is the three scenes' own output and typing.
+
+	- ✅ The demo gif has a readable script, and its tooling lives in one place.
+		- What the demo shows was only ever recorded as a scenario table of captions, commands and timing numbers, next to a renderer full of constants. Changing it meant reading both.
+		- `cicd/utility/demo/script.txt` now describes it in plain language: the format, the set, the throwaway repo, and one section per scene with its caption, its typed line and how long it holds. That file is the one to edit.
+		- The scenario file stays as the machine version and points at it. Nothing parses the script - keeping the two in step is deliberate habit, not a mechanism.
+		- The renderer, the repo builder and the scenario moved from `cicd/` and `cicd/utility/` into `cicd/utility/demo/` alongside it. Both pipeline engines needed their paths and lint globs updated by hand, since neither discovers files.
+
+	- ✅ The fuzz suite can pass on Windows.
+		- Three vectors clone into a directory named `*`, `?` or `v*`. Win32 forbids those characters in a path, so native git cannot create such a work tree at all and the check could never pass there.
+		- They are skipped on Windows now, with a line saying why. The suite already skipped four PowerShell vectors there for the same kind of reason.
+		- Not a gitsby bug: MSYS `mkdir` will happily make one of those directories, which is what makes the first guess wrong.
+
+	- ✅ The PowerShell build verified on Linux.
+		- It had shipped without ever being executed there, which was one of the stated requirements. Run against the full suite on Debian, both legs.
+		- One check failed, for an environment reason rather than a real one: with `gh` absent, `pr create` refuses over the missing tool before it gets to the offline refusal the check is about. It uses a stub now, so it tests the same thing everywhere.
+
+- ✅ 20260818 - the first full review of the Go code. Eighteen items: thirteen defects, five of shape and speed.
+
+	- From a full review of the Go code, 20260818. gofmt, vet, staticcheck and the suite (530/0) are clean; these are what the tools don't see. Several are inherited from the frozen bash build - latent there, but live in the shipping binary.
+
+	- ✅ Code Review 20260818 item 1: `pr ok` can destroy never-pushed commits.
+		- Standing on the PR's own branch with no upstream configured, the lost-work guard asks `@{u}` and gets silence, so it passes. gh then merges what origin has and deletes the branch with `-D`.
+		- The stronger per-branch check only runs when standing somewhere else.
+		- Inherited from the bash build.
+		- Asked of the PR's own branch by name wherever you are standing. `@{u}` answers nothing at all for a branch pushed without `-u`, which is the one arrangement that lost the commits.
+
+	- ✅ Code Review 20260818 item 2: `repo create`/`repo connect` never actually select the target account.
+		- The late re-selection is a no-op behind the already-applied guard, so publishing happens as gh's active account, silently. The comment at the call site says the opposite.
+		- Inherited from the bash build.
+		- The target named on the command line resolves the account, ahead of the validation that itself talks to gh. The late re-selection behind the already-applied guard is gone.
+
+	- ✅ Code Review 20260818 item 3: the "gh's active account is 'X'" identity line can never print truthfully.
+		- The token is exported before the probe that asks who was active, so the probe answers as the new account and the line stays dark. With a tokenFile whose token belongs to a different login, it prints a wrong name instead.
+		- Inherited from the bash build.
+		- The probe runs before the token is exported, so it can still answer with the account being replaced.
+
+	- ✅ Code Review 20260818 item 4: `account apply` can't clean up rules under folder paths with a space.
+		- The managed-includes scan splits each config line at the first space, so such keys are never recognized as ours. Re-runs append duplicates, and a rule removed from the config file keeps applying forever.
+		- Inherited from the bash build.
+		- Reads the rules with `--null`, so a key holding a folder path with a space comes back whole.
+
+	- ✅ Code Review 20260818 item 5: `account apply` reports success no matter what.
+		- The fragment truncate error is discarded and every `git config` exit code is ignored; "Wrote ..." and "Done." print regardless, exit 0.
+		- The one command that writes outside the repo is the one that can silently no-op.
+		- Every write is checked; the first failure stops the run and names what was left incomplete.
+
+	- ✅ Code Review 20260818 item 6: `pr ok` with a dead PR number sails through preflight.
+		- A failed `gh pr view` silently falls back to the current branch, so the plan is confidently about the wrong thing and the run dies after confirmation - the shape preflight exists to prevent.
+		- Head branch and state come back in one call. A number gh can't resolve is refused, and so is a PR that is no longer open.
+
+	- ✅ Code Review 20260818 item 7: offline reads as "repo doesn't exist" in `repo connect`/`repo create`.
+		- Any `gh repo view` failure is taken as absence and stated as fact, with advice that derails further. These two skip the pre-command fetch (no origin yet), so offline is never discovered for them.
+		- gh's stderr tells a name that resolves to nothing apart from an API it couldn't reach; the second is repeated back rather than stated as absence.
+
+	- ✅ Code Review 20260818 item 8: `--offline` is a hidden third spelling of `--no-fetch` - and pushes still go out.
+		- Contradicts the design rule that offline is a discovered state, never a flag. `sync --offline` publishes work.
+		- Call to make: drop the alias, or make that one spelling refuse outgoing traffic too. Inherited from the bash build, undocumented in help.
+		- Dropped, and refused by name with a pointer to `--no-fetch`. A flag that also stopped the pushes would only simulate a state the fetch already discovers, and nothing outside the source ever documented the spelling. Reasoning in design.md.
+
+	- ✅ Code Review 20260818 item 9: the `sshkey` config value reaches shell-executed strings unquoted.
+		- Concatenated into `GIT_SSH_COMMAND` and written into `core.sshCommand`; git hands both to a shell. The config is trusted input, but the file is redirectable by flag/env, and the repo-local sshCommand path already refuses quoting tricks - this path should match it.
+		- A key path carrying whitespace or a shell character is dropped and listed as unusable, rather than quietly falling back to whatever key ssh picks.
+
+	- ✅ Code Review 20260818 item 10: branch names from a cloned repo can reach git as leading options.
+		- A repo whose default branch is named `-something` makes checkout/merge/branch/push parse it as flags. Bounded to breakage, not code execution. `--` separators fix it; the ssh probe paths already have them.
+		- A dash-led name is refused before it reaches git in a leading argument position - checkout, merge, branch delete.
+
+	- ✅ Code Review 20260818 item 11: a handed-over repo's own `.git/config` can pick gitsby's identity and token file.
+		- `gitsby.ghAccount`/`gitsby.ghTokenFile` are honored from local config, so a foreign repo can have an arbitrary readable file loaded into the token env for child processes. No exfiltration channel exists - the credential helper is host-scoped - so this is identity confusion plus file read, not theft. Consider honoring tokenFile from global/folder config only.
+		- `gitsby.ghTokenFile` is honored from global/system scope only. `gitsby.ghAccount` still reads repo-local: naming a login there is an ordinary thing to do, and the account still has to be one you hold.
+
+	- ✅ Code Review 20260818 item 12: the wrong-account warning talks about pull requests on commands with no gh involvement.
+		- The ssh-key-mismatch case appends the "gh does the pull request work..." sentence to plain push commands, and can name '?' when gh is absent - right at the y/n moment.
+		- The gh sentence prints only where gh is the one acting.
+
+	- ✅ Code Review 20260818 item 13: the push-identity gate fires for commands that push nothing.
+		- Keyed on mutating, not pushing, so `pullcom -q` under a mismatched key is refused outright and pays a live ssh probe, for a local-only commit.
+		- Keyed on whether the command pushes, named by exception so a mutating command added later stays covered until it says otherwise.
+
+	- ✅ Code Review 20260818 item 14: skip the identity network probe when no identity block will print.
+		- Every token-configured run paid a live `gh api user` round trip; `br list`, `account list` and bare `pr` never show what it feeds.
+		- One predicate now answers "does this run reach the identity block", and both the probe and the later prime read it.
+		- Measured with an account configured: `br list` 12 -> 11 spawns, `account list` 14 -> 11, `repo url` 13 -> 10. The one dropped from each is the network call.
+
+	- ✅ Code Review 20260818 item 15: cache the handful of git answers asked repeatedly per run.
+		- Origin's url, the current branch, upstream state, ahead/behind, git's ssh command, the context directory and the terminal width are each asked once now.
+		- Ahead and behind came from two separate calls asking git the same thing; one call answers both.
+		- Invalidated centrally by the runners that execute a step, not by each writer by hand - a step is exactly what can make an answer stale, and a future one gets it for free.
+		- Measured: `status` 20 -> 17 spawns, `sync` 32 -> 25, `pullcom` 28 -> 24.
+
+	- ✅ Code Review 20260818 item 16: two per-branch spawn loops left in `br prune`.
+		- The survey's remote-existence check was already answered by the merged map beside it, and the delete loop re-verified the same target refs once per branch.
+		- Dropping the verify costs nothing: merge-base against a ref that has gone fails, which is the same answer.
+		- Measured on five merged branches: 69 -> 52 spawns, and the gap widens with the branch count.
+
+	- ✅ Code Review 20260818 item 17: least-surprise paper cuts, one sweep.
+		- `release` with nothing new exits 1 where every sibling's nothing-to-do exits 0 - and the About text promises idempotent re-runs.
+		- `gitsby -q` alone: "Unknown command ''" instead of help.
+		- `pr <n> extra` is the one place a trailing argument is silently ignored.
+		- `pr create` with an unquoted title doesn't give the quote-your-message hint `pullcom` gives.
+		- `repo clone owner/name` fails only after confirmation; `create`/`connect` both accept the shorthand.
+		- "yes" at the y/n prompt aborts.
+		- An option typed between `raw` and the tool is called an unknown subcommand.
+		- All seven fixed. Nothing-to-do is a success for `release` too; a command list answers a bare option; `pr` refuses its trailing argument and hints at quoting; `repo clone` takes `owner/name` before the plan, not after; `yes` is a yes; an option before the tool says where ours go.
+		- The overflow message picked up the quote-it hint as well - the ceiling is four slots, so an unquoted message of three words or more never reached the per-command hint.
+
+	- ✅ Code Review 20260818 item 18: dead code and stale comments, one sweep.
+		- Unreachable option-value arm plus its dead variable in the parser; two dead branches in the prompt helper; an empty-message fallback nobody passes; a handover error message a preceding check makes unreachable; a comment describing a superseded key-splitting contract; a near-verbatim duplicated comment in main. (The prune survey's redundant re-check went with item 16.)
+		- All six gone. The handover kept its branch but not its claim: it named a cause the preceding check had already ruled out, so it reports what actually failed.
+		- Also found: the three help printers each returned early under `-q`, which is why `-q --help` printed nothing. Removed with item 17's bare-option fix.
+
+- ✅ 20260813 - the folder-name rules, the release script and the removal audit.
+
+	- Light pass over the folder-name rules, the release script, the changelog template guard and the removal audit, plus what they knocked loose elsewhere. Nothing wrong with the changes themselves; all four findings are things around them that went stale or were missed.
+
+	- ✅ Code Review 20260813 item 1: the README stopped saying where it installs to, or that the download is checked.
+		- Cause: the section was folded down to two one-liners so they could be pasted and run as-is. Dropping the flag table was the point; the locations and the checksum went with it by accident. The sentence left behind also had a stray plural and said "options" twice.
+		- Note: both are reasons to trust the installer, and neither is visible until you have already run it.
+		- Fixed: restored in the same place, without the flags - what you need Git and a shell for, what gets checked, a small table of the four install locations, the PATH note on Windows, and a pointer to `--help` for the rest.
+
+	- ✅ Code Review 20260813 item 2: the changelog described a README that no longer exists.
+		- Cause: it claimed install and the worked example are the first two sections. Both have since moved down, below the commands and the accounts material.
+		- Fixed: the entry names the order the page actually has.
+
+	- ✅ Code Review 20260813 item 3: markdown under `project/design_docs/` was not linted.
+		- Cause: both engines list `*.md` and `project/*.md`, and the directory is a level below that. It arrived after the globs were last set.
+		- Fixed: the directory added to both engines. The file in it was already clean.
+
+	- ✅ Code Review 20260813 item 4: the PowerShell installer read its own temp path as a wildcard when cleaning up.
+		- Cause: the removal took the path positionally. Every other removal in the tree names it literally, and this one was missed when they were hardened.
+		- Note: only bites on a temp path containing a bracket, so nothing to reproduce in ordinary use.
+		- Fixed: named literally, and skipped outright when the path was never set.
+
+- ✅ 20260812 - against the coding, performance, pipeline, housecleaning, marketing and installer standards.
+
+	- Full review against the coding, performance, pipeline, housecleaning, marketing and installer standards. What is fixed here is listed below; the rest is filed above as open items.
+
+	- ✅ Code Review 20260812 item 1: git over https authenticated with an empty password.
+		- Cause: the token was supplied only when it replaced a different active account, while the helper that reads it was installed either way. The helper sets aside any credential manager configured ahead of it, so nothing was left to answer.
+		- Note: worst on the setup needing no configuration - one account, logged in to gh, pushing over https.
+		- Fixed: supply the token whenever one is found.
+
+	- ✅ Code Review 20260812 item 2: a trailing comment in the config file became part of the value.
+		- Cause: `#` started a comment only at the start of a line, and the documented example writes them at the end of one.
+		- Note: a folder rule carrying a comment could never match, and a rule that never matches reads exactly like no rule at all.
+		- Fixed: a `#` after whitespace ends the value. Quote the value to keep a literal one.
+
+	- ✅ Code Review 20260812 item 3: an account name could name a file outside the include directory.
+		- Cause: the name went into a path with nothing checking it, so a name containing a path sent `account apply` elsewhere - as far as the global git config.
+		- Fixed: hold the name to letters, digits, dot, dash and underscore, and report anything else as an unread key.
+
+	- ✅ Code Review 20260812 item 4: PowerShell read a repo with its own ssh key configured using the default key instead.
+		- Cause: the fetch and the probe replaced git's ssh command to add a connect timeout, rather than adding to it.
+		- Note: a private repo only the account's key can reach reported as unreachable, and the publishing commands then refused.
+		- Fixed: add the timeout to git's own command, as the Bash build already did.
+
+	- ✅ Code Review 20260812 item 5: `origin/HEAD` was healed after every fetch, at the cost of a second query to the remote.
+		- Fixed: only when there is nothing to read locally. git 2.47 and newer write one at clone.
+
+	- ✅ Code Review 20260812 item 6: the passthrough asked gh which account was active, over the network, on every call.
+		- Note: the answer only named the account being replaced, on a line the passthrough does not print.
+		- Fixed: skip it where no identity block is shown.
+
+	- ✅ Code Review 20260812 item 7: a bare GitHub login got no identity line, in the command that exists to answer who a push goes out as.
+		- Cause: the line asked whether some configured value had been used. A bare login names no account and sets no key, so it satisfied none of those tests - though it does select the token git authenticates with.
+		- Note: `GITSBY_ACCOUNT` documents the bare-login spelling, and `raw` already reported it on stderr, so the two disagreed.
+		- Fixed: an account asked for by name is enough on its own. One merely inferred from the remote's owner still prints nothing, so a single-account machine sees no change.
+
+	- ✅ Code Review 20260812 item 8: the test suite read whatever accounts the person running it had configured.
+		- Cause: it isolates git config and the commit identity, but not gitsby's own config file, which decides the account a command acts as.
+		- Note: found by running it - a single `protocol = ssh` line in a real config failed three checks per implementation, because the repo commands then built a different remote URL than the check expected.
+		- Fixed: point `GITSBY_CONFIG` at an empty file for the whole run. The account block, where discovery through `HOME` is the thing being tested, opts back out.
+
+- ✅ 20260731.
+
+	- Delta review of the branch-display and status-label rounds. One finding, both implementations.
+
+	- ✅ Code Review 20260731 item 1: `br list` refused to run in a repo whose default branch can't be told.
+		- The default-branch gate exempted only `status` and the `repo` commands, so `br list` - read-only, and the other command you'd run to look around - errored out. The `Default branch: unknown` fallback it had just gained could never print.
+		- Fixed: `br list` joins the gate exemption. Mutating commands still refuse up front.
+
+- ✅ 20260730.
+
+	- Delta review of what landed since the 20260727b round: the offline handling, the BOM fix, the installer message, and the SSH identity line. Three findings, all in the offline messages, all in both implementations.
+
+	- ✅ Code Review 20260730 item 1: an offline hotfix land pointed at a recovery that leaves the hotfix unshipped.
+		- The warning said `sync` publishes the merge, but a hotfix land ends on `dev` after the back-merge - `sync` from there publishes `dev` and leaves origin's default branch stale. That is the one branch a hotfix exists to fix, and following the advice would read as success.
+		- Fixed: the hotfix warning names both steps, `br switch <default>` then `sync` - the switch's parking push publishes `dev` on the way, so the pair covers both branches. A normal land still just names `sync`, which is right there because the command ends on the target.
+
+	- ✅ Code Review 20260730 item 2: parking offline claimed committed work awaits even when there was nothing to push.
+		- A clean, in-sync branch got "Your work is committed locally" with no work at all; online, the same state correctly said "Nothing to push."
+		- Fixed: nothing ahead of the last-known origin means "Nothing to push.", offline or not.
+
+	- ✅ Code Review 20260730 item 3: the skipped-push warning said `sync` publishes it, during commands that then leave that branch.
+		- `br switch` and `br land` park the current branch and move off it, so a `sync` from where you end up publishes a different branch.
+		- Fixed: the warning names the branch it means, and says `sync` from it.
+
+- ✅ 20260727b.
+
+	- Full pre-release review, run across nine lenses with every finding independently checked before it was accepted. Fifty-three held up; the ones that changed behavior are below. Deep evidence is kept out of the repo.
+
+	- ✅ Code Review 20260727b item 1: a conflicted tree was committed, and pushed (both implementations).
+		- `git pull --ff-only --autostash` exits 0 even when reapplying the stashed work conflicts - it only warns - and `git add --all` then marks the conflict resolved.
+		- So the most ordinary case there is, your edit plus a teammate's push to the same lines, committed the `<<<<<<<` markers, reported "(working tree clean)" and "Done.", and `sync` sent them to origin.
+		- Fixed: nothing is staged while any path is unmerged. The conflicted files are listed, and the message points at the stash git kept.
+
+	- ✅ Code Review 20260727b item 2: PowerShell read one repository and wrote to another.
+		- Git was started without a working directory, so it ran in the directory pwsh was launched from, while `Set-Location` had moved only PowerShell's own idea of where it was.
+		- Reading state therefore used the repo you were in and committing used the other one: it reported the right directory and the right changes, then committed an unrelated file from elsewhere and exited 0.
+		- The suite could not see it, because every check moves directory in bash before starting pwsh, which makes the two agree.
+		- Fixed: git is given the current location explicitly. New checks move location inside the pwsh session instead.
+
+	- ✅ Code Review 20260727b item 3: `pr ok <n>` destroyed unpushed commits on the PR's branch (both implementations).
+		- The guard asked whether the branch you were standing on had unpushed work. Accepting a PR from `dev` - the way it is normally used - asked about the wrong branch entirely.
+		- gh merges what origin holds and then deletes the branch with a force delete, so commits that never reached origin went with it and were reachable from no ref afterwards.
+		- Fixed: the PR's own branch is checked, whichever branch you are on, and the advice names it and how to push it from where you are.
+
+	- ✅ Code Review 20260727b item 4: a default branch that is neither `main` nor `master` was invented rather than resolved (both implementations).
+		- With no `origin/HEAD` to read, the answer fell back to the literal `main`. On a `trunk` repo that named a branch which does not exist, so the branch was judged unprotected, work was auto-committed to it (and pushed, when it had an upstream), and the command then died on a checkout of the invented name.
+		- Worse when a stale local `main` existed alongside the real default: `br land` exited 0 having merged into the wrong branch, with no diagnostic at all.
+		- Fixed: `trunk` joins the conventional names, a repo with a single local branch resolves to it, and an unborn repo still answers with the name it will get. When it genuinely cannot be told, commands refuse before anything is committed - `status` alone continues, and says "unknown" rather than a name it does not have.
+
+	- ✅ Code Review 20260727b item 5: the documented PowerShell install one-liner never worked, and declining it closed your shell.
+		- `iex` evaluates a top-level `param()` block in the caller's scope, where the allowed-values attribute is checked against its own empty default and fails immediately - so the install path the README leads with died before printing anything.
+		- The other documented form did run, and `exit` inside it ended the calling session; strict mode and the error preference leaked into it on success.
+		- A non-tty stdin also proceeded unasked, because the prompt's empty answer at end-of-input is not the empty string.
+		- Fixed: both installers are a function that is called, they refuse rather than exit, they check for PowerShell 7 before anything reads a variable that 5.1 lacks, and end-of-input counts as no. Both documented shapes now bind their options.
+
+	- ✅ Code Review 20260727b item 6: `--ref` was interpolated into a download URL unchecked (both installers).
+		- A path-shaped value walked out of this repository, so a posted one-liner could install somebody else's script - and run it - while the printed plan still named this project. It reads as a harmless branch selector, which is why the confirm prompt was no protection.
+		- Fixed: refs must look like refs, in both installers, and the tag resolved from GitHub's redirect is checked the same way before it reaches a URL.
+
+	- ✅ Code Review 20260727b item 7: credentialed remote URLs were masked in the plan and printed in full when the command ran.
+		- A token in a clone or connect URL reached the terminal, and any log or CI capture of it, on the execution line and again in the failure line.
+		- Fixed: the display copy of every argument goes through the existing masking helper; what git receives is untouched. Three messages that echoed the URL raw alongside a masked copy of the same URL were fixed too.
+
+	- ✅ Code Review 20260727b item 8: `-v` alongside a command silently did nothing (PowerShell).
+		- The switches bind from any position under pwsh, so `update -v` printed the version and exited 0 - a caller or CI step saw success with the work not done.
+		- Fixed: `-v` is refused when a command is present, matching Bash. `--help` went the other way on purpose: it now works after a command in both builds, since asking a subcommand for help is the reflex every git user has.
+
+	- ✅ Code Review 20260727b item 9: a commit message starting with a dash was impossible in Bash and accepted in PowerShell.
+		- Fixed in Bash: a value the parser is already waiting for is that value, whatever it looks like. `-m '-Wall added to CFLAGS'` now commits.
+
+	- ✅ Code Review 20260727b item 10: PowerShell handed a remote URL to git unquoted in the pre-flight probe.
+		- PowerShell expanded `*` and `?` against the current directory first, so the probe answered about a different target than the one git was later given - a URL that should have been refused was classified as an empty remote, and the working tree was committed and a bogus remote configured before the push failed. Bash refused before touching anything.
+		- Third recurrence of that class, so the two display-only ssh probes were quoted at the same time.
+
+	- ✅ Code Review 20260727b item 11: PowerShell's `pr ok` used a bare fetch where Bash used the guarded one.
+		- No credential-prompt suppression (so it could stop and ask mid-command), no ssh connect timeout, and no `origin/HEAD` heal - and a blip there reported the whole command as failed after the merge had already landed on the server.
+		- Fixed: one helper mirrors the Bash version and both fetch sites use it.
+
+	- ✅ Code Review 20260727b item 12: `release` was the one command with no undo and no idempotency (both implementations).
+		- A version it invented was cut even when the target would gain nothing, so a repeated run quietly added tags all pointing at the same commit.
+		- Worse after a failed push: the tag existed locally, and the natural re-run bumped again, so the first version was stranded forever.
+		- Fixed: an invented version with nothing new to release refuses, and names the tag to push if a previous one never left the machine. A version you type, and promoting a candidate, are deliberate and still work on an already-released commit. Uncommitted or unpushed work counts as something to release, since `release` parks first.
+
+	- ✅ Code Review 20260727b item 13: `br land` would delete a leftover `main` or `master` (both implementations).
+		- Landing ends in a branch delete, and the protected-branch rule that `br prune` honors was not applied here.
+		- Fixed: refused up front, before a plan containing that delete is shown and confirmed.
+
+	- ✅ Code Review 20260727b item 14: `--public` and `--private` together meant opposite things in the two builds.
+		- Fixed: refused as a contradiction. Silently picking one would publish a repo the caller believes is the other.
+
+	- ✅ Code Review 20260727b item 15: the identity probe caches never took effect in Bash.
+		- Every use sits inside a command substitution, so the cache filled there was thrown away and the next call probed again - two `gh api user` calls and two `ssh -T` round trips per command, on a link that may be slow or dead. PowerShell was already correct.
+		- Fixed: primed once in the shell that owns the variables.
+
+	- ✅ Code Review 20260727b item 16: `install.bash --target system` failed with a raw `install` error when `/usr/local/bin` did not exist.
+		- The user branch created the directory and the sudo branch did not.
+		- Fixed: both create it, with `mkdir -p` rather than `install -d`, which would reset the mode of a directory that already exists. The plan says when a directory will be created.
+
+	- ✅ Code Review 20260727b item 17: `br switch <the branch you are on>` previewed an add, commit and push it then did not do.
+		- Nothing is lost, but the confirmed plan said otherwise, which is the one thing the preview exists to prevent.
+		- Fixed: that case previews only the pull. Parking was deliberately not added instead - on a protected branch it would auto-commit, which the design forbids.
+
+	- ✅ Code Review 20260727b item 18: every check named "plans X" was satisfied by the execution echo instead of the plan.
+		- The preview is the product's central promise - it is what you read before answering the prompt - and it could have stopped listing the checkout, the back-merge or the push with the suite still fully green.
+		- Fixed: assertions about the plan now match against the plan only, sliced out of the run. Eight checks were pointed at it.
+
+	- ✅ Code Review 20260727b item 19: the three fuzz checks whose job is "these option combinations are accepted" passed if the options were refused.
+		- They used the survive-any-outcome helper, so a valid spelling that stopped being recognized looked fine.
+		- Fixed: a helper that requires exit 0, and the combinations respelled so the shared ones are valid in both ports.
+
+	- ✅ Code Review 20260727b item 20a: the stronger fuzz assertion immediately found port drift that had been hidden: `-q -y` together was refused in PowerShell.
+		- Both spellings were aliases of one parameter, and PowerShell rejects a parameter given twice. Bash takes either or both.
+		- Fixed: `-y` is its own switch that means the same thing, so every combination the Bash build accepts is accepted.
+
+	- ✅ Code Review 20260727b item 20: `sync`'s commit message had no coverage.
+		- It takes a message positionally like `update`, and could have silently fallen back to the auto-generated timestamp with both suites green.
+
+	- ✅ Code Review 20260727b items 21-27: the smaller ones, gathered.
+		- PowerShell had no version gate where Bash has one, so a Windows PowerShell 5.1 run failed partway through a command on an undefined variable. It now says what to install, up front.
+		- `status`, `br list` and `pr <n>` silently ignored trailing arguments while every other command rejected them - a typo looked like it did what you meant.
+		- An option or positional typo printed an internal call stack. That is reserved for real crashes; these are usage errors.
+		- `gh pr create` was announced with one command line and run with another. It is now announced by hand, matching both its own preview and the way `gh pr review` is already announced.
+		- PowerShell's `pr view` blamed the wrong command on failure, and could not see `gh pr list` fail at all. Each call reports itself now.
+		- PowerShell dropped the trailing blank line on error and abort exits that Bash prints on every path.
+		- The installers say when they fell back to an unverified copy from the tree, rather than quietly downgrading from a checksum-verified release asset.
+		- Two first-party shell files were outside the shellcheck gate and one glob in the list matched nothing; the gate now covers all 13, and shellcheck is clean across them.
+		- `cicd.bash` printed with `echo -e`, which would animate backslash escapes and ANSI sequences out of a commit message the user typed. It uses `printf` now, like `bin/gitsby` already did - as does the crash dump, which can carry a filename or message.
+		- Template leftovers in the argument parser: an instruction addressed to whoever instantiates the template, non-ASCII markers, a kaomoji, an over-long section rule, and a typo.
+
+	- ✅ Code Review 20260727b: perf findings reviewed and deliberately not acted on.
+		- Measured rather than assumed, with a counting `git` shim: `br list` is 6 git processes and `status` 13, both constant at 41 branches. Only `br prune` scales - about 5.5 per branch, 264 at 41 branches, and still 0.57s. The second containment check per branch is the deliberate re-check at delete time.
+		- Nothing on the everyday path forks per item, so there is no problem to fix here. Noted so the next reader doesn't re-derive it.
+
+- ✅ 20260727.
+
+	- Review of the hotfix branches, the gh/ssh identity check, and the docs pass that went with them.
+
+	- ✅ Code Review 20260727 item 1: `pr ok <n>` decided where a PR lands from whatever branch you were standing on (both implementations).
+		- Nothing asked gh which branch the PR proposes, so accepting a hotfix PR from `dev` skipped the back-merge that keeps the fix from being undone by the next release.
+		- The reverse also happened: accepting an ordinary PR while sitting on a hotfix branch merged the default branch into `dev` for no reason.
+		- Fixed: the head branch is read from gh up front and drives both the landing target and the hotfix decision. Falls back to the current branch if gh can't say.
+
+	- ✅ Code Review 20260727 item 2: the back-merge merged a stale local default branch (both implementations).
+		- Found while testing item 1. `pr ok` lands the hotfix on the server, so the local `main` never receives it and merging that branch did nothing at all - silently.
+		- `br land` was unaffected, because it checks `main` out and merges into it itself.
+		- Fixed: the back-merge uses the fetched `origin/<default>` when there is one, which is the same commit after `br land` and the correct one after `pr ok`. Previews show the ref that actually gets merged.
+
+	- ✅ Code Review 20260727 item 3: the ssh identity was read only when the greeting was the first line (Bash).
+		- ssh writes host-key and missing-identity-file warnings ahead of it, and both streams are captured, so a match anchored to the whole output missed the greeting.
+		- It failed safe (unknown, proceed) but that meant the check quietly stopped working for the multi-account setups it exists to protect.
+		- Fixed: matched per line. PowerShell matched anywhere, which had the opposite risk, and is now anchored per line too, so both behave the same.
+
+	- ✅ Code Review 20260727 item 4: nothing said gitsby needs bash 4.4, and on macOS it could never get it.
+		- `bin/gitsby` was the only file pinned to `#!/bin/bash`. macOS keeps that at 3.2 permanently, so installing a newer bash would not have helped.
+		- Too old a bash died on `inherit_errexit` with a raw shell error, and `install.bash` (deliberately 3.2-compatible, for macOS) installed it anyway and only failed at its own verify step.
+		- The README Compatibility section covered tool interop and remotes but never the runtime requirement.
+		- Fixed: shebang resolves bash through `PATH`; both `gitsby` and `install.bash` refuse early with advice per platform (Homebrew/MacPorts, `pkg`/`pkg_add`, or the package manager), and point at the PowerShell build as the no-bash option. README states the requirement per platform.
+
+	- ✅ Code Review 20260727 item 5: the "hotfix changes shipped code" note missed the ordinary case (both implementations).
+		- It read the branch tip before `br land` committed the working tree, so a hotfix whose `bin/` edit was still uncommitted - the usual way of making one - got no warning.
+		- Fixed: checked after the push.
+
+	- ✅ Code Review 20260727 item 6: PowerShell's gh login probe could prompt (PowerShell); `br land` carried a duplicate variable (Bash).
+		- Fixed: `GH_PROMPT_DISABLED` set around the call as the Bash side already did, and the duplicate dropped.
+
+- ✅ 20260726.
+
+	- Release-prep pass over what changed since the last review: the noun grouping, `pr create`, and dropping bare `commit`/`pull`.
+
+	- ✅ Code Review 20260726 item 1: `br switch` from a dirty protected branch tells you to run a command that no longer exists (both implementations).
+		- The refusal offered `gitsby commit` as the deliberate way to keep the work where it is. That command was dropped, so following the advice is a second error.
+		- Fixed: it now names `update`, which commits on the current branch. Regression test asserts the suggested command is a real one.
+
+	- ✅ Code Review 20260726 item 2: offline only reached the pull in `update` and `sync` (both implementations).
+		- `br create`, `br switch`, `br land`, `pr ok`, and `release` each pull as one of their steps, and those pulls ignored `--no-fetch` and an unreachable remote.
+		- So the flag documented as "work offline" still went to the network in five of the seven commands that pull, which is exactly the thing the design note says it must not do.
+		- Fixed: every in-command pull goes through one helper that applies the same rule. Regression test compares a `--no-fetch` switch (must not advance) against the same switch online (must).
+
+	- ✅ Code Review 20260726 item 3: built-in help drifted from the command set (both implementations).
+		- `update` was still described as commit-then-pull, `--no-fetch` as skipping only the fetch, and the PowerShell parameter help still listed `pull` and `commit` as commands.
+		- The `br create` line said it parks current work first, which is what it does from a feature branch but not from `main`/`dev`, where it carries the work along instead.
+		- Also "stash only if dirty" in the summary blurb, describing a manual stash that no longer exists.
+		- Fixed: all of the above, in both implementations.
+
+	- ✅ Code Review 20260726 item 4: the README command count was stale.
+		- It said 13, from before the regroup and before `commit` and `pull` were dropped.
+		- Fixed: 7 commands, or 15 counting subcommands, which is what the table below it lists.
+
+	- ✅ Code Review 20260726 item 5: the offline test passed on the PowerShell side for the wrong reason.
+		- It spelled the flag `--no-fetch`, which PowerShell has no parameter for, and then matched output against a pattern that the resulting complaint about the flag also matched.
+		- So the check went green on a command that had failed outright, and no offline behavior was ever exercised there.
+		- Fixed: `-NoFetch`, which both implementations accept, and the pattern now matches only the skip message itself.
+
+	- ✅ Code Review 20260726 item 6: `br prune` could say "leaving it alone" and still delete the branch's remote copy (both implementations).
+		- The delete-time re-check only guarded the local delete; the remote loop ran regardless.
+		- Fixed: a branch kept by the re-check keeps its remote copy too.
+
+	- ✅ Code Review 20260726 item 7: a merged current branch vanished from `br prune`'s output (both implementations).
+		- It was rightly never deleted, but appeared in neither the plan nor the Keeping list.
+		- Worst case: it was the only merged branch, and the output claimed nothing was merged at all.
+		- Fixed: the plan, the no-op path, and the closing summary all say it is kept because you are standing on it.
+
+	- ✅ Code Review 20260726 item 8: the README claimed 100% GitLab compatibility.
+		- Every `pr` form, `repo create`, and `repo connect` with an `owner/name` go through `gh`, so they are GitHub-only. That is up to six of the sixteen subcommands.
+		- Fixed: the claim now says any Git remote works and names the gh-backed exceptions.
+
+	- ✅ Code Review 20260726 item 9: "no version: bump the patch" was only one of three release paths (docs and help, both implementations).
+		- A candidate tag resolves to its own release (`v2.0.0-rc1` -> `v2.0.0`), and a repo with no tag at all starts at `v0.1.0`. Neither is a patch bump.
+		- Fixed: docs and help now say the next version after the latest tag. A regression check pins the help line.
+
+	- ✅ Code Review 20260726 item 10: `br create` still overpromised, in the opposite direction from item 3.
+		- Item 3 changed the help from "parks current work" to "brings current work along". Both are half right: work is carried only from `main`/`dev`, and committed and pushed to the current branch otherwise.
+		- Fixed: docs and help say carried or parked, and name which case is which. A regression check pins the help line.
+
+	- ✅ Code Review 20260726 item 11: the dev installers required a bash version gitsby does not.
+		- Both told you gitsby itself needs bash 5+. The real floor is 4.4, set by `inherit_errexit`; design.md already said 4.4 and was the one that was right.
+		- Fixed: both installers now check and report 4.4.
+
+	- ✅ Code Review 20260726 item 12: smaller doc corrections found in the same pass.
+		- design.md said `gh` was needed for "the two commands that need it" - it is three.
+		- The Direct-install one-liners never created the target directory, and the PowerShell one wrote to a *nix path inside the Windows section.
+		- The README options list omitted `--public`/`--private` and never mentioned that the PowerShell version takes PowerShell-style parameter names.
+		- "Every mutating command fetches first" ignored `repo clone` and `--no-fetch`. `br prune` was described as deleting every merged branch, which skips the current-branch and protected-branch exceptions. `repo create`'s steps were listed in the wrong order.
+		- design.md's folder list omitted `reference/` and described `assets/` as holding only the demo.
+
+	- ✅ Code Review 20260726 item 13: the pre-command fetch could stop and ask for credentials (both implementations).
+		- `fpProbeRemote` sets `GIT_TERMINAL_PROMPT=0` for exactly this reason. The fetch that runs ahead of every command did not, so an https remote you can't authenticate to blocks the command at a username prompt - before any of gitsby's own checks get to run, including the ones that would have refused the command anyway.
+		- Only shows up with a terminal attached. Without one git fails instantly, which is why the suites were green and silent.
+		- Fixed: the fetch disables prompts too. A regression check records the environment the fetch actually receives, since the behavior is invisible without a tty.
+
+	- ✅ Code Review 20260726 item 14: two suite checks reached the real github.com.
+		- The `repo create refuses when origin is already set` check reuses a fixture whose origin is a real `https://github.com/me/proj.git`, but dropped the `insteadOf` rewrite that every neighbouring check sets. Confirmed by the server's own "Repository not found" reply.
+		- design.md says neither suite touches the network, so this was also the thing that surfaced item 13 in the first place.
+		- Fixed: the rewrite is back on that check.
+
+	- ✅ Show gh's account in the pre-flight, and refuse a gh write that acts as someone else.
+		- gh authenticates with its own token and ignores ssh config, so `pr create`/`pr ok`/`repo create` act as gh's account while `git push` acts as the remote alias's key. With per-account aliases those differ, and the pre-flight was naming only the ssh one - the wrong identity for exactly those commands.
+		- Found live: from a `t00mietum` repo, gh reports `jim-collier` with READ permission, so a `pr create` there would act as an account that can't do it.
+		- Three outcomes, not two. Unknown (no agent, https remote, deploy key, gh logged out) is reported and never blocks - otherwise every CI runner breaks. Only a difference both sides confirm counts.
+		- Interactive: warning directly above the confirm prompt. Unattended: error, nothing runs. `--any-identity`/`-AnyIdentity` proceeds, and the mismatch still shows on the identity line.
+		- Decided against a general gh-config validator: policing another tool's setup isn't gitsby's job and would turn working commands into refusals.
+		- 26 new checks across both implementations, driven by a fake ssh that answers the greeting GitHub really sends and doubles as the git transport. Verified they fail against the pre-feature build.
+
+	- ✅ Extend the identity check to `repo create` and `repo connect owner/name`.
+		- The first pass skipped them for having no origin to compare. That was wrong: gh never uses a host alias, so the url it is about to set is always `git@github.com:owner/name.git` and the identity is knowable before anything is created. Design note revised rather than appended to.
+		- Refuses before `gh repo create` and before `git init`, so a mismatch leaves no remote and no repository behind. Verified against the pre-feature build, which created both.
+		- An https protocol means git will use a credential helper rather than a key, so there is no second identity and nothing to compare.
+		- Deliberately does NOT rewrite the remote to a matching host alias. Guessing which alias serves an account means inferring the user's ssh setup, and a wrong guess points the repo at the wrong key. `repo connect <full url>` already covers anyone who wants their alias.
+
+	- ✅ PowerShell: gh's account was read from a stale exit status.
+		- `gh api user | Select-Object -First 1` stops the native command early, so `$LASTEXITCODE` is left over from whatever ran before - in a plain directory that is the failed repo probe, so the login was discarded and every identity came back unknown.
+		- Only showed up once `repo create` started needing the login, since that is the one command that runs outside a repository.
+		- Fixed by collecting the output with `@()` before selecting, in all three places that read a native command this way. A regression check runs `repo create` from a plain directory and asserts the account resolves.
+
+- ✅ 20260725 and 20260723.
+
+	- ✅ Code Review 20260725 item 1: `release` pushes only the tag when the default branch has no upstream (both implementations).
+		- The branch push is gated on an upstream; the tag push is not.
+		- Origin ends up holding the release commits as tag payload while its `main` still points at the previous release.
+		- Same shape as item 2 of the previous review, which was fixed in `land` but not here.
+		- Fixed: an upstream-less default branch is published with `git push -u origin HEAD` before the tag goes up. Regression test added.
+
+	- ✅ Code Review 20260725 item 2: `release` refuses a duplicate tag only after it has already committed and pushed (both implementations).
+		- The check sat inside the command, past the plan, the confirmation, and the "park current work" step.
+		- Nothing is lost, but the run mutates the repo and then dies on something knowable up front.
+		- Fixed: the tag-exists check moved next to the version resolution, before anything is shown or run. Regression test added.
+
+	- ✅ Code Review 20260725 item 3: `gobr` refuses a dirty protected branch only after the plan is confirmed (both implementations).
+		- Same class as item 2, and the same fix as code review 20260723 item 35 applied to the other branch arguments.
+		- Fixed: the refusal moved up front, alongside the other branch-argument checks. Regression test added.
+
+	- ✅ Code Review 20260725 item 4: `newbr` shows a plan it does not follow when run from `main`/`dev` (both implementations).
+		- The preview always listed the commit-and-push steps, but on a protected branch the tree is carried to the new branch instead.
+		- The preview is the safety feature, so it misreporting in exactly the case that was special-cased is the wrong way round.
+		- Fixed: the plan now branches on protected state and shows the checkout-and-carry steps. Regression test added.
+
+	- ✅ Code Review 20260725 item 5: `pr ok <n>` run from the branch that PR came from ends in a failed pull (both implementations).
+		- `gh` deletes the branch on the remote through the API, which leaves the local `origin/*` copy in place, so the upstream still looks alive.
+		- The trailing `git pull --ff-only` then asks for a branch the remote no longer has, and the whole command reports as failed.
+		- Fixed: prune first, and if the branch we are standing on is the one that just went away, check out the merge target and pull that instead. The plan shows the extra step. Regression test added, with the fake `gh` restoring the stale ref so the real condition is reproduced.
+
+	- ✅ Code Review 20260723 item 1: `pull` failure strands the autostash (both implementations).
+		- Dirty tree gets stashed, then a failed `git pull --ff-only` (diverged or offline) aborts before `git stash pop`.
+		- Work vanishes from the tree into the stash with no message; re-runs see a clean tree and never pop it.
+		- Contradicts the "never risk losing work" promise; worst finding of the review.
+		- Fixed: replaced the manual stash dance with `git pull --ff-only --autostash`; a failed pull now leaves the tree intact. Regression test added.
+
+	- ✅ Code Review 20260723 item 2: `land` can delete the remote work branch before the merge ever reaches origin (both implementations).
+		- Push of the merge is gated on the target having an upstream; the remote branch delete is not.
+		- With a local-only `dev`, the merge stays local but `git push origin --delete <branch>` still removes origin's only ref to those commits.
+		- Fixed: an upstream-less target is published first (`git push -u origin HEAD`) before the remote delete. Regression test added.
+
+	- ✅ Code Review 20260723 item 3: `newbr`/`gobr` from a dirty `main`/`dev` commit and push WIP straight to the protected branch (both implementations).
+		- The "park current work" step is commit+push on whatever branch you're on - including main/dev, with an auto message in quiet mode.
+		- Contradicts the tool's own opinions ("don't push to dev, main, or master").
+		- Fixed: `newbr` carries dirty work to the new branch (no commit on the base); `gobr` refuses with guidance instead of auto-committing; sync preview now names the branch being pushed. Regression tests added.
+
+	- ✅ Code Review 20260723 item 4: a commit message containing `-h`/`-v` as a word makes the bash version silently no-op with exit 0.
+		- The early help check scans the whole joined argv, so `gitsby commit "add -v flag"` prints the banner and skips the commit.
+		- Bash only; the pwsh port checks just the command slot.
+		- Fixed: -h/-v now only recognized in the command slot, matching the pwsh port. Test added.
+
+	- ✅ Code Review 20260723 item 5: non-tty stdin silently auto-confirms all mutating commands (both implementations).
+		- Piped/cron/redirected input behaves as implicit `-q`: release/land/sync run with zero confirmation, even `echo n |` is ignored.
+		- Should fail closed like the installers do (require explicit flag when no tty).
+		- Fixed: mutating commands with no tty and no -q abort with guidance; read-only commands keep the implicit quiet. Tests added.
+
+	- ✅ Code Review 20260723 item 6: unquoted two-word positional message silently drops the second word (both implementations).
+		- `gitsby commit Fixed bug` commits as "Fixed"; three words error but two don't.
+		- Fixed: a non-empty third positional is rejected with "quote your commit message" (both implementations). Test added.
+
+	- ✅ Code Review 20260723 item 7: git failures print the raw trap dump instead of a plain error (bash).
+		- Diverged pull shows "Signal: ERR / Message: '--ff-only' / Command#: '"${@}"'" - reads as a gitsby crash.
+		- The pwsh port already prints a clean one-liner; match it.
+		- Fixed: fRun reports a plain one-liner ("'git ...' failed (exit N)") and exits; the trap dump stays for real script errors. Tests added.
+
+	- ✅ Code Review 20260723 item 8: `echo -e` in fEcho_Clean expands escapes in user data (bash).
+		- Mangles commit messages/filenames in the preview; a hostile repo's filenames (raw ESC bytes, C-quoted by git) can spoof the confirm display.
+		- Switch to `printf '%s\n'`.
+		- Fixed: fEcho_Clean uses printf '%s\n'; escape bytes in user data stay inert.
+
+	- ✅ Code Review 20260723 item 9: pwsh branch-name comparisons are case-insensitive.
+		- `-eq` treats 'Main' = 'main'; newbr can branch off the wrong base. Use `-ceq`/`-cne` at the seven branch compares.
+		- Fixed: -ceq/-cne at the branch compares; 'ok' and prompt answers stay case-insensitive.
+
+	- ✅ Code Review 20260723 item 10: pwsh `release` crashes under strict mode when the newest v* tag isn't X.Y.Z.
+		- `v1.2` or `v2020` throws on array indexing; bash handles the same input gracefully.
+		- Fixed: split parts padded before arithmetic (v1.2 -> v1.2.1, v2020 -> v2020.0.1); bash pads the same way now too. Verified on both.
+
+	- ✅ Code Review 20260723 item 11: install.ps1 downloads to a predictable temp filename.
+		- `gitsby-install-$PID.ps1` in shared temp; race window before install. install.bash already uses mktemp - mirror it.
+		- Fixed: downloads into a fresh random private subdirectory; recursive cleanup in finally.
+
+	- ✅ Code Review 20260723 item 12: remote URLs print verbatim, leaking embedded credentials (both implementations).
+		- An `https://user:token@host/...` origin echoes the token on every run, including CI logs. Mask the userinfo part.
+		- Fixed: userinfo masked in the displayed URL (https://***@host) in both implementations. Tests added.
+
+	- ✅ Code Review 20260723 item 13: default-branch detection trusts a possibly missing/stale local origin/HEAD (both implementations).
+		- Ref goes stale on upstream master->main renames and can be absent on git < 2.47; release then tags the wrong branch.
+		- Cheap fix: `git remote set-head origin --auto` alongside the existing fetch.
+		- Fixed: successful fetch now runs git remote set-head origin --auto, healing a missing or stale origin/HEAD; local read remains the offline fallback.
+
+	- ✅ Code Review 20260723 item 18: fMustBeInPath shells out to external `which` (bash).
+		- `which` is absent on some minimal distros, making every command abort with "Not found in path: git". Use builtin `command -v`.
+		- Fixed: builtin command -v; dropped the stray second fThrowError argument.
+
+	- ✅ Code Review 20260723 item 21: `pull` stashes a dirty tree before checking for an upstream (both implementations).
+		- No-upstream + dirty = pointless stash push/pop that rewrites every file's mtime. Check upstream first. (Goes away if item 1 lands as `--autostash`.)
+		- Moot: item 1's `--autostash` fix removed the manual stash entirely; no upstream now means no stash is touched at all.
+
+	- ✅ Code Review 20260723 item 23: fetch without `--prune` leaves stale origin/* refs that existence checks trust (both implementations).
+		- Stale refs make gobr check out dead branches, land abort on the remote delete, newbr refuse reusable names.
+		- Fetch with `--prune`; make land's remote delete tolerant of "remote ref does not exist".
+		- Fixed: fetch uses --prune, and land's remote delete warns-and-continues instead of dying if the branch is already gone.
+
+	- ✅ Code Review 20260723 item 24: pwsh skips native exit-code checks in the pr/read-only paths.
+		- `gh pr view` failure isn't caught before `gh pr diff` runs; `listbr`/`status` exit 0 even if git fails.
+		- Fixed: gh pr view checked before the diff; listbr throws on git failure.
+
+	- ✅ Code Review 20260723 item 25: pwsh parses Windows drive-letter remotes (`C:\...`) as ssh hosts.
+		- Pre-flight then shows a bogus SSH identity line. Treat a single-letter-colon prefix as a path, like git does.
+		- Fixed: single-letter-colon prefixes are treated as drive paths, not ssh hosts.
+
+	- ✅ Code Review 20260723 item 26: `ssh -G` called without `--` on a host string derived from .git/config (both implementations).
+		- Option-shaped "hosts" from a hostile config parse as ssh options. Currently fails closed, but add `--`.
+		- Fixed: -- added in both implementations.
+
+	- ✅ Code Review 20260723 item 27: install-dev.ps1 passes an option-shaped `-Directory` straight to `git clone`.
+		- Binds as a real clone option (`--config=...`). install-dev.bash already rejects `-*`; mirror it (and/or pass `--` before the path).
+		- Fixed: option-shaped -Directory rejected, same wording as the bash guard.
+
+	- ✅ Code Review 20260723 item 28: install.ps1 lacks the downloaded-content sanity check install.bash has.
+		- No shebang check before install+execute; wrong-content 200s (captive portal, truncation) get installed. Mirror the `^#!` test.
+		- Fixed: first line must match ^#! before install, mirroring install.bash.
+
+	- ✅ Code Review 20260723 item 29: gitsby.ps1 sets GIT_MERGE_AUTOEDIT process-wide, persisting in the caller's pwsh session.
+		- The var is redundant anyway (merges pass `-m`); just delete the line.
+		- Fixed: line deleted (merges pass -m, so it was redundant).
+
+	- ✅ Code Review 20260725 item 6: `release` with no version bumps the patch of a candidate tag's base, skipping that base version (both implementations).
+		- After `v2.0.0-rc1`, a bare `release` proposed `v2.0.1` rather than `v2.0.0`.
+		- Fixed: a candidate's own version is now what comes next, so `v2.0.0-rc1` leads to `v2.0.0`.
+		- The tag scan also needed `versionsort.suffix=-`, since git's default version sort ranks `v2.0.0-rc1` above `v2.0.0` and would otherwise propose an already-cut version once the real release exists.
+		- Regression tests cover both halves: the candidate's version is taken, and the release after it bumps normally.
+
+	- ✅ Code Review 20260723 item 14: bound the unconditional pre-command fetch and add an offline escape hatch (both implementations).
+		- A dead/black-holed remote blocks every command for the full TCP/ssh timeout before the "offline?" warning.
+		- Add a connect timeout on the fetch and a `--no-fetch`/offline flag.
+		- Done: ssh fetches get ConnectTimeout=3 (user GIT_SSH_COMMAND respected), and --no-fetch/-NoFetch skips the fetch entirely.
+
+	- ✅ Code Review 20260723 item 15: cache per-run-constant git facts (both implementations).
+		- Measured: 12 git spawns for `status`, 45 for `land`, 55 for `release`; upstream/branch/ahead-behind re-queried repeatedly in one display block.
+		- Resolve once after the fetch, pass down; keep live re-checks only where state actually mutates. Matters most on Windows.
+		- Done: default branch and merge target now resolve once per run post-fetch; branch/upstream/ahead checks stay live since checkouts change them mid-command.
+
+	- ✅ Code Review 20260723 item 16: close the test-suite gaps that hid this review's bugs.
+		- Failed-pull-with-dirty-tree, no-remote fixtures, slash branch names, `-m`/`-m=` flag forms, option-like words in messages, release from a feature branch.
+		- Done so far: failed-pull-with-dirty-tree, upstream-less land, dirty-protected-branch newbr/gobr fixtures.
+		- Done: all listed fixtures added (failed pull, no-remote sync/newbr/land, feat/x names, -m and -m= forms, option-like message words, release from a feature branch). Suite 140 -> 199 checks.
+
+	- ✅ Code Review 20260723 item 17: README has no Commands/Usage section.
+		- The pitch is "Gitsby has 11" commands, but they're never listed or demonstrated. Add the help table plus a worked newbr -> update -> land example.
+		- Done: Commands section added (table of all 11, options, a typical-day flow, gh note for pr/release).
+
+	- ✅ Code Review 20260723 item 19: installer checksum + version pinning - confirms the already-open installer item below.
+		- Publish SHA256SUMS from cicd, verify in both installers, allow pinning an exact tag; document that `--ref` skips verification.
+		- Done: installers verify release-asset downloads against a SHA256SUMS release asset when published (note-and-continue when absent); cicd/utility/gen-checksums.bash generates it for release cuts; --ref/-Ref pins a tag but skips verification (documented in README).
+
+	- ✅ Code Review 20260723 item 20: "latest release" lookup uses the unauthenticated GitHub API (60 req/hr).
+		- Shared-NAT/CI installs will 403. Read the tag from the `releases/latest` redirect Location header instead; keep the API as fallback.
+		- Done: tag read from the releases/latest redirect (curl url_effective / wget Location / pwsh 302 handling); API scrape kept as fallback; rate-limit mentioned in the error.
+
+	- ✅ Code Review 20260723 item 22: fIsAhead materializes the whole ahead-range log just to test emptiness (both implementations).
+		- Use `git rev-list -n 1 '@{u}..'` (or the cached ahead count from item 15).
+		- Done: git rev-list -n 1 in both implementations.
+
+	- ✅ Code Review 20260723 item 30: needless external `head`/`wc` pipeline stages (bash).
+		- Use `mapfile -n 1` / array counts, minding that a bare `read` returns nonzero on empty input under strict mode.
+		- Done: tag lookup via mapfile -n 1; the stash wc pipelines were already removed by item 1.
+
+	- ✅ Code Review 20260723 item 31: positional parameter binding in the ps1 files (style guide requires named).
+		- gitsby.ps1 one spot (`Get-Command ssh`); install.ps1 and install-dev.ps1 throughout (Join-Path, Move-Item, Test-Path, Get-Command).
+		- Done: named parameters at the flagged sites in all three ps1 files.
+
+	- ✅ Code Review 20260723 item 32: no comment-based help on any gitsby.ps1 function.
+		- Either add `.SYNOPSIS` to the non-trivial functions, or scope the style-guide rule to script-level + exported functions.
+		- Done: style-guide rule scoped to script level + exported/public functions; private helpers take a terse ## comment.
+
+	- ✅ Code Review 20260723 item 33: installer output ends without the trailing blank line the style guide requires (all four installers).
+		- Done: all four installers end with a blank line.
+
+	- ✅ Code Review 20260723 item 34: rename fpPreview's `p` padding variable to `pad` (matches the pwsh twin).
+		- Done: renamed.
+
+	- ✅ Code Review 20260723 item 35: branch-argument validation runs after the status display and confirm prompt (both implementations).
+		- `newbr` with a bad/missing name shows a nonsense plan ("git checkout -b ") and only errors after "y". Hoist checks next to the existing pr/release ones.
+		- Done: newbr/gobr arguments validate right after the release-version check, before status/preview/prompt; command functions no longer duplicate the checks. Test added.
+
+	- ✅ Code Review 20260723 item 36: `gitsby help` / `gitsby version` are unknown-command errors (both implementations).
+		- Alias the bare words to the -h/-v paths; one case entry each.
+		- Done: bare words route to the same paths as -h/-v (both implementations). Tests added.
+
+	- ✅ Code Review 20260723 item 37: usage errors carry "Reverse call stack: fMain()" noise (bash).
+		- Suppress the stack line for expected validation errors; keep it for real internal failures.
+		- Done: fThrowError_Usage variant skips the stack line; all user-facing validation errors use it. Real script errors keep the stack.
+
+	- ✅ Code Review 20260723 item 38: accept `-y`/`--yes` as a prompt-skip alias (both implementations).
+		- Installers teach -y, gitsby only takes -q; and -q's real function is "assume yes", not quiet. Keep -q, add -y, fix the help wording.
+		- Done: -y/--yes (bash) and -y/-yes (pwsh) alias -q; help wording now says "assume yes". Test added.
+
+	- ✅ Add a PowerShell badge to README.md.
+		- Added next to the bash badge in the header block, linking to the PowerShell docs.
 
 ### Future and/or deferred
 
@@ -1466,9 +1501,11 @@ Go port, later rounds. These wait until the round-one items above hold up.
 	- Suite 582 -> 613. The new checks stop at the network: parsing, every refusal, the Windows hand-off, and pins on what a live run would reach. Verified end to end by hand against a fake release served locally - both installers, plus the tampered, intercepted, missing-release and wrong-architecture paths.
 	- Left stale on purpose: design.md "Automating a release" still describes writing a version into two builds. That predates the Go round, not this one - filed below.
 
-- 🔘 design.md "Automating a release" still describes the two-script era: a version written into both builds, footers in `bin/gitsby` and `bin/gitsby.ps1`, and phase 1 comparing two version strings. None of that exists - the version lives in the tag alone.
+- ✅ design.md "Automating a release" still described the two-script era: a version written into both builds, footers in `bin/gitsby` and `bin/gitsby.ps1`, and phase 1 comparing two version strings.
+	- Already current when this was checked. The section describes the three phases as they run, and says outright that the version lives in the tag and nowhere else - naming the two-build design as what it replaced, and why.
 
-- 🔘 Regenerate the demo gif. Stale twice over: the renamed commands moved text the scenario prints, and the pipeline now renders it from the Go build rather than the dogfooded script.
+- ✅ Regenerate the demo gif. Stale twice over: the renamed commands moved text the scenario prints, and the pipeline now renders it from the Go build rather than the dogfooded script.
+	- Done, and it needed the fixture fixed first: the real `gh` was answering as the rendering machine's own login, and the fake tokens' permissions put a warning on every scene. Both were on camera.
 
 - ✋ macOS build check on real ARM hardware, including whether signing/quarantine matters for a terminal download.
 	- Narrower than it was: the build itself is no longer in question, since `darwin/arm64` cross-compiles from this box with no SDK. What is left is signing and quarantine on a real machine.

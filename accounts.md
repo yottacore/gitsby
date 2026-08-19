@@ -73,8 +73,11 @@ account.personal.ghAccount    = my-personal-login
 That resolves under `C:/src/github.com/my-work-login/...` and `~/dev/github.com/my-work-login/...` alike, so the file syncs unchanged.
 
 - Whole folder names only. `alice` never matches a directory called `alice-old`.
+
 - More folder names is the more specific rule, so `github.com/alice` beats a bare `alice`.
+
 - An absolute `path` beats a `pathContains` when both match - naming this machine's own tree is the more specific claim. Mix them freely.
+
 - `gitsby account apply` hands these to git as `includeIf.gitdir:**/github.com/alice/**`, which git globs natively - so plain `git` follows the same rule on every machine too.
 
 ## No SSH keys needed
@@ -84,6 +87,7 @@ The usual way to hold two GitHub accounts on one machine is a pair of SSH keys a
 Over HTTPS, `git` authenticates with the account's own token - the one `gh` already stores, or the one `tokenFile` names. Gitsby supplies it for the length of a single command, through the environment, and nothing is written anywhere. So a second account costs one `gh auth login` and three lines of config.
 
 - New remotes follow `protocol`, so `repo connect owner/name` sets up an HTTPS remote by default.
+
 - An existing repo still on SSH is converted with `gitsby repo url https`. Only the remote URL changes - same repo, same history. Gitsby points this out on the identity line when it applies, and setting `protocol = ssh` says you meant it and stops the suggestion.
 
 SSH keys keep working, and stay the answer when you can't use a token. Give an account an `sshKey` and Gitsby uses it (with `IdentitiesOnly`, so the agent can't offer the wrong one first). Anything you have already set yourself - `GIT_SSH_COMMAND`, or `core.sshCommand` on the repo - was chosen more deliberately than a folder rule, and wins.
@@ -130,7 +134,9 @@ So the pre-flight names both, and the commands that *write* through gh compare t
 The last two have no remote yet. The one they are about to set is knowable anyway - gh never uses a host alias, so it is always `git@github.com:owner/name.git` - so the identity that repo will live with afterward gets checked before anything is created.
 
 - Interactively, a confirmed difference prints a warning immediately above the confirmation prompt.
+
 - Unattended (`-q`/`-y`), a confirmed difference is an error and nothing runs.
+
 - `--any-identity` says the difference is intended. No error and no warning; the identity block says plainly that no account was selected, and the mismatch still shows on it.
 
 If either side can't be determined - no SSH agent, an HTTPS remote, a deploy key, gh logged out - that is reported as unknown and never blocks anything. Only a difference *both* sides confirm counts.
@@ -140,4 +146,5 @@ One consequence worth knowing if you use per-account host aliases. `repo create`
 Gitsby does not try to work out which of your aliases belongs to that account. That would be a guess about your setup, and a wrong guess is worse than none. Two ways to get the alias instead:
 
 - Point `origin` at it afterward: `git remote set-url origin git@your-alias:owner/name.git`.
+
 - Or skip gh and give `repo connect` the full URL: `gitsby repo connect git@your-alias:owner/name.git`.

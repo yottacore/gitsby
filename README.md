@@ -34,6 +34,7 @@
 
 <!-- TOC ignore:true -->
 ## Table of contents
+
 <!-- TOC -->
 
 - [What it is](#what-it-is)
@@ -227,6 +228,19 @@ For anything else - installing for everyone, taking an older release, or naming 
 ### Without the installer
 
 Every release publishes one binary per platform alongside a `SHA256SUMS`. Download the one you want, check it, and drop it somewhere on your PATH - that is the whole of what the installers do. Uninstalling either way is deleting the file.
+
+### Or check it yourself
+
+The published binaries are reproducible. Build a release tag with the Go toolchain that cut it - named as `GO_RELEASE_TOOLCHAIN` in `cicd/config.bash` - and you get the same bytes, and so the same checksum, on any machine:
+
+~~~bash
+git clone --branch v2.2.0 https://github.com/jim-collier/gitsby
+cd gitsby/src-go
+CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags "-s -w -buildid= -X main.version=2.2.0" -o gitsby .
+sha256sum gitsby
+~~~
+
+Substitute the release you are checking - the tag carries the leading `v` and the version stamped into the binary does not. Set `GOOS` and `GOARCH` for a platform other than this one. Nobody has to take our word for what is in a download, including us.
 
 ### Coming from 2.x
 

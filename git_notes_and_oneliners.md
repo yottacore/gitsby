@@ -179,7 +179,9 @@ fileToDelete="FILE_TO_DELETE"
 Same tasks as the Bash section, for PowerShell 7+ (`pwsh`) on any platform. Three things differ from Bash and are easy to trip over:
 
 - The `&&` and `||` chain operators need pwsh 7 or newer. Windows PowerShell 5.1 will not run these.
+
 - `@{u}` (upstream shorthand) has to be quoted as `'@{u}'`, otherwise pwsh reads `@{` as the start of a hashtable.
+
 - Native commands set `$LASTEXITCODE`, not `$?`-style status, so tests like "are there staged changes" check that instead.
 
 ### Basics using main or master

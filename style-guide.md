@@ -11,6 +11,7 @@ Scope, as of v2.1.0: the product itself is Go now, and Go's style is `gofmt` - t
 
 <!-- TOC ignore:true -->
 ## Table of contents
+
 <!-- TOC -->
 
 - [Both languages](#both-languages)
