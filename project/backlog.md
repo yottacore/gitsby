@@ -25,6 +25,7 @@ This is a product backlog for the run-up to v2.0.0. After that release, bugs, fe
 		- [Done - Installers 20260812](#done---installers-20260812)
 		- [Done - Pipeline 20260812](#done---pipeline-20260812)
 		- [Done - Documentation 20260812](#done---documentation-20260812)
+		- [Done - Code review 20260819](#done---code-review-20260819)
 		- [Done - Code review 20260813](#done---code-review-20260813)
 		- [Done - Code review 20260812](#done---code-review-20260812)
 		- [Done - Code review 20260731](#done---code-review-20260731)
@@ -631,6 +632,37 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 
 - ✅ README wording: a missing verb and a doubled letter in the workflow comparison, and a bullet with no full stop in Compatibility.
 	- Fixed: all three, in the moved text.
+
+#### Done - Code review 20260819
+
+Pass over the installers that came back to the repo root. All six findings are in the two new files; none of them reach the binary. The first two are the serious ones - they end a default install with no output at all.
+
+- ✅ Code Review 20260819 item 1: a wget-only box could never install.
+	- Cause: the latest-release lookup declines the redirect and reads the tag out of the header, and wget answers a declined redirect with exit 8 whether or not it printed what was asked for. Under `set -e` an assignment carries its command's status, so the run ended there - after the lookup had already succeeded.
+	- Note: the one-liner printed nothing and exited 8. No message, no fallback, nothing to go on.
+	- Fixed: `|| true` on the lookup, which is the only thing that ever wanted the status.
+
+- ✅ Code Review 20260819 item 2: any curl failure did the same thing, and hid the fallback.
+	- Cause: same assignment rule. DNS, a proxy, a rate limit - anything that made curl exit nonzero ended the run, so neither the API fallback nor the message that names rate-limiting could be reached.
+	- Fixed: `|| true` on both, and on the API fallback beside them.
+
+- ✅ Code Review 20260819 item 3: `-Arch` refused the machines it was written to explain itself to.
+	- Cause: detection assigned back to the parameter, and assigning to a parameter re-runs its own `ValidateSet`. On x86 or 32-bit ARM the detected value isn't in the set, so the binder error arrived instead of the message naming what the release does publish.
+	- Fixed: detection lands in its own variable.
+
+- ✅ Code Review 20260819 item 4: `-Tag` had the same shape, one layer deeper.
+	- Cause: the scraped tag assigned back to `$Tag` re-ran its `ValidatePattern`, which made the explicit check below it dead code. Through the API fallback the throw was caught and reported as rate-limiting, which it wasn't.
+	- Fixed: resolved into its own variable, so the check that was written for it is the one that runs.
+
+- ✅ Code Review 20260819 item 5: persisting PATH on Windows flattened it.
+	- Cause: `[Environment]::GetEnvironmentVariable` hands back the expanded PATH. Reading that and writing it back turned entries like `%USERPROFILE%\bin` into literals - permanently, on a PATH we only meant to append one directory to. Worse under `-System`, where the whole machine's PATH goes through it.
+	- Fixed: read raw from the registry with `DoNotExpandEnvironmentNames`, written back with the kind it already had.
+
+- ✅ Code Review 20260819 item 6: the captive-portal check read the whole binary to look at one byte.
+	- Fixed: one byte off the stream.
+
+- ✅ Code Review 20260819, coverage: nothing exercised the release lookup, which is why items 1 and 2 got through green.
+	- Fixed: two checks stand the network up as stubs - a curl that always fails, and a wget-only PATH where the stub prints the header and exits 8. Both fail against the build before the fix. The two PowerShell findings need the hardware or the network to reproduce, so they are pinned in the source the way the SHA256SUMS decode already is. Suite 613 -> 617.
 
 #### Done - Code review 20260813
 
