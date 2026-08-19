@@ -454,7 +454,7 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 		- Fixed: the mode is set explicitly.
 
 	- ✅ Code Review 20260819b item 6: the lint and audit tools gate at whatever version this machine happens to have.
-		- Note: from the CI/CD addenda. A finding that appears - or stops appearing - on a tree nobody touched is usually a tool that moved rather than code that did.
+		- Note: a finding that appears - or stops appearing - on a tree nobody touched is usually a tool that moved rather than code that did.
 		- Fixed: `GO_TOOL_VERSIONS` in `config.bash` records the four, read back with `go version -m` since they spell `--version` four different ways and one has no such flag at all. Stage 1 warns on drift. Not a gate and not an installer - this pipeline installs nothing.
 
 	- ✅ Code Review 20260819b item 7: nothing published says the builds are reproducible.
