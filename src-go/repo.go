@@ -127,8 +127,8 @@ func ghRepoState(target string) (repoExistence, string) {
 	if strings.Contains(said, "Could not resolve to a Repository") || strings.Contains(said, "404") {
 		return repoMissing, ""
 	}
-	for _, line := range strings.Split(said, "\n") {
-		if line = strings.TrimRight(line, "\r"); line != "" {
+	for _, line := range splitLines(said) {
+		if line != "" {
 			return repoUnknown, line
 		}
 	}

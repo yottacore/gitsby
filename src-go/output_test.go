@@ -11,6 +11,7 @@ package main
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -164,5 +165,27 @@ func TestCachedRemembersAnEmptyAnswer(t *testing.T) {
 	c.get(ask)
 	if asked != 2 {
 		t.Errorf("forget did not take: asked %d times", asked)
+	}
+}
+
+// A capture read as a whole and then split kept the interior carriage returns:
+// only the very end of the string had been trimmed. 'pr ok' read the PR's head
+// branch out of a two-line answer that way, so on a host that writes CRLF the
+// branch name carried one and matched no ref anywhere.
+func TestSplitLines(t *testing.T) {
+	tests := []struct {
+		in   string
+		want []string
+	}{
+		{"one\r\ntwo", []string{"one", "two"}},
+		{"one\ntwo", []string{"one", "two"}},
+		{"", []string{""}},
+		{"only\r", []string{"only"}},
+	}
+	for _, tc := range tests {
+		got := splitLines(tc.in)
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("splitLines(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }

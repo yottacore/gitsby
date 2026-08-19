@@ -185,7 +185,7 @@ type sshConfig struct {
 func readSSHConfig(target string) sshConfig {
 	var cfg sshConfig
 	out, _ := exec.Command("ssh", "-G", "--", target).Output()
-	for _, line := range strings.Split(string(out), "\n") {
+	for _, line := range splitLines(string(out)) {
 		key, value, found := strings.Cut(line, " ")
 		if !found || value == "" {
 			continue

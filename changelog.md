@@ -61,6 +61,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `repo clone` picks its account from the folder the clone lands in, not the folder you launched it from. Cloning into your personal tree while standing in a work repository used the work account - the one case where the folder that decides is not the one you are in. A `gitsby.ghAccount` set on the surrounding repository no longer follows the clone out of it either, and the owner of a repository being cloned is not taken as evidence that it is yours: with no rule for the destination, gh stays on its own account.
 
+- A folder rule written through a symlink now claims the folder. A path that goes through a link - a synced folder, a stable name pointing at a dated one, a home directory that is itself a link - was compared against the folder's real name and matched nothing, so the account silently never applied. `account list` looked right while this was happening; it now marks the account in force either way.
+
+- A repository that sets its own commit name or email keeps it. An account naming both used to replace whichever one the repository had set, if the repository had left the other alone. The account still fills in the half that isn't set.
+
+- The note that a hotfix changes shipped code appears wherever you run `br merge` from. It only appeared from the top of the repository, and was silently missing from any subdirectory.
+
 ### Removed
 
 - The installers no longer take `--release dev` (`-Release dev`). It installed the tip of a branch, which was possible while the product was a script in the tree; a branch has no published build behind it now. Typing it says so and names the two routes that exist - a release by tag, or a one-command build from source. The contributor setup scripts went with it: a Go checkout needs only Go, and the three commands are in the README.

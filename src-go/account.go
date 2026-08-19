@@ -139,7 +139,7 @@ func resolveSSHHost(alias string) string {
 		return alias
 	}
 	// '--': an option-shaped host must not parse as an ssh option.
-	for _, line := range strings.Split(runOut("ssh", "-G", "--", alias), "\n") {
+	for _, line := range splitLines(runOut("ssh", "-G", "--", alias)) {
 		key, value, found := strings.Cut(line, " ")
 		if found && key == "hostname" && value != "" {
 			return value
@@ -370,22 +370,40 @@ func (a *app) selectAccount(skipGhProbe bool) error {
 	}
 	// Commit identity, unless the repo sets its own - a local value was typed for
 	// this repo specifically, and a folder rule should not quietly outrank it.
+	// Asked per key, not once for the pair: these entries reach git the same way
+	// '-c' does, which outranks the local config, so gating both on 'user.email'
+	// alone replaced a name the repo had deliberately pinned whenever it had left
+	// the email to the global config.
 	acctEmail := a.cfg.value(a.acct.name, "email")
 	acctUser := a.cfg.value(a.acct.name, "name")
-	if (acctEmail != "" || acctUser != "") && runOut("git", "config", "--local", "--get", "user.email") == "" {
-		if acctUser != "" {
+	if acctEmail != "" || acctUser != "" {
+		pinned := localIdentityKeys()
+		if acctUser != "" && !pinned["user.name"] {
 			if err := gitConfigEnv("user.name", acctUser); err != nil {
 				return err
 			}
+			a.acct.usedIdentity = true
 		}
-		if acctEmail != "" {
+		if acctEmail != "" && !pinned["user.email"] {
 			if err := gitConfigEnv("user.email", acctEmail); err != nil {
 				return err
 			}
+			a.acct.usedIdentity = true
 		}
-		a.acct.usedIdentity = true
 	}
 	return nil
+}
+
+// localIdentityKeys names which of the two identity keys THIS repo sets for
+// itself, ignoring the global and system files an account rule is entitled to
+// fill in. Both in one call: asking twice would cost a second git for an answer
+// that arrives in the same listing.
+func localIdentityKeys() map[string]bool {
+	pinned := map[string]bool{}
+	for _, line := range runLines("git", "config", "--local", "--name-only", "--get-regexp", `^user\.(name|email)$`) {
+		pinned[strings.ToLower(strings.TrimSpace(line))] = true
+	}
+	return pinned
 }
 
 // ghLogin names the account gh's token belongs to. gh talks to the API over https

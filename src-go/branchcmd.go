@@ -14,7 +14,11 @@ package main
 // binary from here, so a hotfix that touches it is the kind the warning below is
 // about; documentation is not. It was 'bin/' when the deliverable was a script,
 // and went on watching a folder that no longer existed.
-const shippedCodeDir = "src-go/"
+//
+// ':(top)' anchors it at the repo root. A bare path is read relative to the
+// current directory, so run from anywhere but the top the pathspec matched
+// nothing, git exited 0 with no output, and the warning silently never fired.
+const shippedCodeDir = ":(top)src-go/"
 
 // checkNewBranchName vets the name given to br create/hotfix. Git owns the rules
 // for what a ref may be called, so ask git rather than keep a second copy of them.

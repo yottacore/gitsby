@@ -175,7 +175,7 @@ func probeSSHLogin(url, sshCommand string) string {
 	// greeting, so it is not reliably the first line - anchoring to the whole output
 	// answered '?' for exactly the multi-key setups this exists for.
 	out, _ := exec.Command(sshCmd[0], args...).CombinedOutput()
-	for _, line := range strings.Split(string(out), "\n") {
+	for _, line := range splitLines(string(out)) {
 		if m := sshGreetingRE.FindStringSubmatch(line); m != nil {
 			return m[1]
 		}
@@ -191,6 +191,11 @@ func probeSSHLogin(url, sshCommand string) string {
 // our own checks, so an https remote we can't authenticate to would stop and ask
 // for a username mid-command.
 func (a *app) fetchRemote() {
+	// The one thing that moves a ref without being a step, so the runners' own
+	// invalidation never covers it. Only the counted answer: a fetch moves
+	// origin/*, which is half of ahead-behind, and leaves everything else the run
+	// has settled exactly where it was.
+	a.git.aheadBehind.forget()
 	env := a.remoteEnv()
 	// Named, not implied: a bare 'git fetch' follows the current branch's own
 	// tracking remote, and every existence check afterwards reads origin.
