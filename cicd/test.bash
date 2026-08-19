@@ -708,15 +708,29 @@ fRunSuite(){
 ## GH_TOKEN is logged too: that is how a check sees which account the run picked for the remote.
 [[ -n "${FAKE_GH_LOG:-}" ]] && echo "$* [GH_TOKEN=${GH_TOKEN:-}]" >> "${FAKE_GH_LOG}"
 case "$1 $2" in
-	"api user")    echo "${FAKE_GH_LOGIN:-ghuser}" ;;  ## whose token gh is holding
+	"api user")    ## Whose token gh is holding - the exported one when there is one, like the real
+	               ## thing. A probe run after the switch can then only ever answer with the account
+	               ## it just switched to, which is what the pre-switch probe exists to avoid.
+	               if [[ -n "${GH_TOKEN:-}" ]]; then echo "${GH_TOKEN#tok_}"; else echo "${FAKE_GH_LOGIN:-ghuser}"; fi ;;
 	"auth token")  ## accounts gh holds, space separated; exit 1 for anyone else, like the real thing
 	               case " ${FAKE_GH_ACCOUNTS:-} " in *" $4 "*) echo "tok_$4" ;; *) exit 1 ;; esac ;;
-	"repo view")   case "${FAKE_GH_VIEW:-}" in notfound) exit 1 ;; empty) echo true ;; nonempty) echo false ;; esac ;;
+	"repo view")   ## Real gh distinguishes these on stderr, and gitsby now reads it: a name that
+	               ## resolves to nothing is not the same answer as an API it couldn't reach.
+	               case "${FAKE_GH_VIEW:-}" in
+	                 notfound) echo "GraphQL: Could not resolve to a Repository with the name '$3'. (repository)" >&2; exit 1 ;;
+	                 offline)  echo "error connecting to api.github.com" >&2; exit 1 ;;
+	                 empty)    echo true ;;
+	                 nonempty) echo false ;;
+	               esac ;;
 	"config get")  echo "${FAKE_GH_PROTO:-https}" ;;
 	"pr list")     echo "${FAKE_GH_EXISTING:-}" ;;  ## an already-open PR number for this branch, or nothing
 	"pr create")   echo "https://github.com/me/proj/pull/${FAKE_GH_NEWPR:-1}" ;;
 	"pr review")   : ;;  ## gitsby treats approval as best-effort; nothing to fake
-	"pr view")     echo "${FAKE_GH_HEAD:-$(git branch --show-current)}" ;;  ## the PR's own head branch
+	"pr view")     ## A number gh can't resolve fails, like the real thing - it does not answer with
+	               ## nothing and exit 0.
+	               [[ "${FAKE_GH_PRVIEW:-}" == fail ]] && { echo "GraphQL: Could not resolve to a PullRequest" >&2; exit 1 ;}
+	               echo "${FAKE_GH_HEAD:-$(git branch --show-current)}"     ## the PR's own head branch
+	               echo "${FAKE_GH_STATE:-OPEN}" ;;                          ## ... and whether it is still open
 	"pr merge")    ## Land the branch on the base, then drop it from the remote. Real gh does the delete
 	               ## over the API, so the caller's origin/* copy survives it - restore the ref to match.
 	               ## FAKE_GH_HEAD lets a check merge a PR whose branch isn't the one we're standing on.
@@ -794,9 +808,30 @@ GHEOF
 	fAssertOut  "and points at repo create"  'repo create me/proj'      bash -c "cd '${gh}/split' && PATH='${ghp}' FAKE_GH_VIEW=notfound '${gitsby}' -q repo connect me/proj 2>&1 || true"
 	fAssertFail "repo create refuses an existing empty repo"            bash -c "cd '${gh}/split' && PATH='${ghp}' FAKE_GH_VIEW=empty '${gitsby}' -q repo create me/proj"
 	fAssertOut  "and points at repo connect"  'repo connect me/proj'    bash -c "cd '${gh}/split' && PATH='${ghp}' FAKE_GH_VIEW=empty '${gitsby}' -q repo create me/proj 2>&1 || true"
+	## gh exits nonzero for a name that resolves to nothing and for an API it can't reach alike.
+	## Taking the second as the first sent you off to create a repo you already have - and these two
+	## commands skip the pre-command fetch (no origin yet), so this is where offline surfaces.
+	## Its own directory: a build that does NOT refuse here would create a remote and set an origin,
+	## and every check after it would then be about a connected repo instead.
+	mkdir -p "${gh}/offl"; echo x > "${gh}/offl/x.txt"
+	fAssertFail "repo create refuses when it can't reach GitHub"   bash -c "cd '${gh}/offl' && PATH='${ghp}' FAKE_GH_VIEW=offline '${gitsby}' -q repo create me/proj"
+	fAssertOut  "and says that, not that the repo is missing"  'no telling whether it exists' \
+		bash -c "cd '${gh}/offl' && PATH='${ghp}' FAKE_GH_VIEW=offline '${gitsby}' -q repo create me/proj 2>&1"
+	fAssertOut  "and repeats what gh said"  'error connecting to api.github.com' \
+		bash -c "cd '${gh}/offl' && PATH='${ghp}' FAKE_GH_VIEW=offline '${gitsby}' -q repo create me/proj 2>&1"
+	fAssertFail "repo connect refuses when it can't reach GitHub"  bash -c "cd '${gh}/offl' && PATH='${ghp}' FAKE_GH_VIEW=offline '${gitsby}' -q repo connect me/proj"
+	fAssertNotOut "and does not point at repo create"  'repo create me/proj' \
+		bash -c "cd '${gh}/offl' && PATH='${ghp}' FAKE_GH_VIEW=offline '${gitsby}' -q repo connect me/proj 2>&1"
 	fAssertFail "repo create refuses a plain url"                       bash -c "cd '${gh}/split' && PATH='${ghp}' '${gitsby}' -q repo create '${gh}/backing-https.git'"
 	## Keep the insteadOf rewrite: this dir's origin is a real github.com URL, and the
 	## pre-command fetch runs before the refusal we're testing for.
+	## The account is resolved from origin, and these two have none yet - but the repo they are
+	## about to publish to is on the command line, and it is that owner's account that should do the
+	## publishing. The late re-selection was a no-op behind the already-applied guard, so it went
+	## out as gh's own account instead, silently.
+	mkdir -p "${gh}/rc-acct"; echo x > "${gh}/rc-acct/x.txt"
+	fAssert "repo create publishes as the account that owns the target" \
+		bash -c "cd '${gh}/rc-acct' && PATH='${ghp}' FAKE_GH_VIEW=notfound FAKE_GH_PROTO=https FAKE_GH_LOGIN=other FAKE_GH_ACCOUNTS='other acme' FAKE_GH_LOG='${gh}/rc-acct.log' FAKE_GH_REMOTE='${gh}/rc-acct.git' '${gitsby}' -q repo create acme/proj && grep -q 'repo create.*GH_TOKEN=tok_acme' '${gh}/rc-acct.log'"
 	fAssertFail "repo create refuses when origin is already set"        bash -c "cd '${gh}/add-https' && PATH='${ghp}' GIT_CONFIG_GLOBAL='${gh}/gc-https' '${gitsby}' -q repo create me/proj"
 	fAssertFail "repo create with no target rejected"                   bash -c "cd '${gh}/split' && PATH='${ghp}' '${gitsby}' -q repo create"
 
@@ -847,6 +882,37 @@ GHEOF
 	## Same fixture, once the work is pushed: the guard must not stand in the way of the real thing.
 	fAssert "pr ok accepts a fully pushed branch from dev"  bash -c "cd '${prx}' && git push --quiet origin xfeat && ${prxEnv} '${gitsby}' -q pr ok 7"
 	fAssert "and merged what origin held"  bash -c "cd '${prx}' && git ls-tree --name-only dev | grep -qx work.txt"
+	## A number gh can't resolve used to fall back to the current branch, so the plan was
+	## confidently about the wrong thing and the run died after it had been confirmed - the exact
+	## shape preflight exists to prevent.
+	fAssertFail "pr ok refuses a PR gh can't read"  bash -c "cd '${prx}' && PATH='${ghp}' FAKE_GH_PRVIEW=fail '${gitsby}' -q pr ok 99"
+	fAssertOut  "and names the number rather than acting on the current branch"  "Can't read PR #99" \
+		bash -c "cd '${prx}' && PATH='${ghp}' FAKE_GH_PRVIEW=fail '${gitsby}' -q pr ok 99 2>&1"
+	fAssertFail "pr ok refuses a PR that is no longer open"  bash -c "cd '${prx}' && ${prxEnv} FAKE_GH_STATE=MERGED '${gitsby}' -q pr ok 7"
+	fAssertOut  "and says which state it is in"  'is merged, not open' \
+		bash -c "cd '${prx}' && ${prxEnv} FAKE_GH_STATE=MERGED '${gitsby}' -q pr ok 7 2>&1"
+
+	## Standing on the PR's own branch, pushed once WITHOUT -u: '@{u}' answers nothing at all, so
+	## the ahead check passed and gh's '--delete-branch' took the unpushed commits with it. That is
+	## the one arrangement where the guard has to ask about origin's copy by name.
+	mkdir -p "${gh}/prnou"
+	git init --quiet --bare -b main "${gh}/prnou/origin.git"
+	local pnu="${gh}/prnou/c"
+	git clone --quiet "${gh}/prnou/origin.git" "${pnu}" 2>/dev/null
+	(
+		cd "${pnu}" || exit 1
+		echo base > base.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet -b nofeat && echo work > work.txt && git add --all && git commit --quiet -m work
+		git push --quiet origin nofeat   ## no -u: on origin, but nothing here tracks it
+		echo more >> work.txt && git add --all && git commit --quiet -m "never pushed"
+	)
+	local pnuEnv="PATH='${ghp}' FAKE_GH_BASE=dev FAKE_GH_HEAD=nofeat"
+	fAssert     "the fixture branch really has no upstream"  bash -c "cd '${pnu}' && ! git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1"
+	fAssertFail "pr ok refuses unpushed commits with no upstream to notice them"  bash -c "cd '${pnu}' && ${pnuEnv} '${gitsby}' -q pr ok 7"
+	fAssertOut  "and names the branch"  "'nofeat' has commits that never reached origin" \
+		bash -c "cd '${pnu}' && ${pnuEnv} '${gitsby}' -q pr ok 7 2>&1"
+	fAssert     "and the commit is still reachable"  bash -c "cd '${pnu}' && git log -1 --pretty=%s nofeat | grep -qx 'never pushed'"
 
 	## pr create: parks the work, then opens the PR against the merge target. Same fake gh.
 	mkdir -p "${gh}/prnew"
@@ -871,6 +937,26 @@ GHEOF
 		git checkout --quiet -b pnfeat2 && echo more > more.txt && git add --all && git commit --quiet -m "Commit subject"
 	)
 	fAssert "pr create takes an explicit title"  bash -c "cd '${pnc}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prnew2.log' '${gitsby}' -q pr create 'Explicit title' && grep -q -- '--title Explicit title' '${gh}/prnew2.log'"
+
+	## A branch whose name starts with a dash can't be typed here - the parser reads a leading dash
+	## as an option of ours - but a clone brings whatever the remote has, and then git reads it as
+	## options too: 'git checkout -evil' answers "unknown switch". There is no separator that
+	## rescues it in that position, so it is refused once, up front.
+	local dsh="${work}/$1-dash"
+	mkdir -p "${dsh}"
+	git init --quiet --bare -b main "${dsh}/origin.git"
+	git init --quiet -b main "${dsh}/seed"
+	(
+		cd "${dsh}/seed" || exit 1
+		echo d > d.txt && git add --all && git commit --quiet -m init
+		git push --quiet "${dsh}/origin.git" 'HEAD:refs/heads/-evil'
+	)
+	( cd "${dsh}/origin.git" && git symbolic-ref HEAD refs/heads/-evil )
+	git clone --quiet "${dsh}/origin.git" "${dsh}/c" 2>/dev/null
+	fAssert     "the fixture really checked out a dash-led branch"  bash -c "[[ \"\$(git -C '${dsh}/c' branch --show-current)\" == -evil ]]"
+	fAssertFail "a dash-led branch name is refused before it reaches git"  bash -c "cd '${dsh}/c' && '${gitsby}' -q pullcom 'x'"
+	fAssertOut  "and says why"  'reads it as an option'  bash -c "cd '${dsh}/c' && '${gitsby}' -q pullcom 'x' 2>&1"
+	fAssert     "but status still reports the repo it is wrong about"  bash -c "cd '${dsh}/c' && '${gitsby}' -q status >/dev/null"
 
 	## Identity: which account a remote-touching command acts as. gh keeps one active account for the
 	## whole host, so against a remote owned by somebody else it acts as the wrong one.
@@ -919,17 +1005,31 @@ GHEOF
 	## The token file covers a box where that account was never logged in to gh. Absent, unreadable
 	## and empty must all fall back to gh's own account rather than fail - a checkout that was never
 	## set up this way still has to work.
+	## Written into the GLOBAL config, which is where 'account apply' puts it and the only scope
+	## gitsby reads it from: the value names any readable file, and its contents go into GH_TOKEN
+	## for every child - so a repo you cloned from a stranger does not get to choose it.
+	local idnGlobal="${idn}/gcfg"; : > "${idnGlobal}"
+	local idTok="GIT_CONFIG_GLOBAL='${idnGlobal}'"
 	printf 'tok_fromfile\n' > "${idn}/token.txt"
 	fAssert "the token file is used when gh has no such account" \
-		bash -c "cd '${idn}/cfg' && git config gitsby.ghTokenFile '${idn}/token.txt' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse' FAKE_GH_LOG='${idn}/file.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=tok_fromfile' '${idn}/file.log'"
+		bash -c "cd '${idn}/cfg' && ${idTok} git config --global gitsby.ghTokenFile '${idn}/token.txt' && ${idTok} ${idEnv} FAKE_GH_ACCOUNTS='someoneelse' FAKE_GH_LOG='${idn}/file.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=tok_fromfile' '${idn}/file.log'"
+	## The same key set by the repo itself is ignored: it is the one config value that turns into a
+	## file read plus an environment variable handed to gh and git.
+	fAssert "a repo-local token file is not honored" \
+		bash -c "cd '${idn}/cfg' && git config gitsby.ghTokenFile '${idn}/token.txt' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse' FAKE_GH_LOG='${idn}/localtok.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=\]' '${idn}/localtok.log'"
 	fAssert "a missing token file falls back instead of failing" \
-		bash -c "cd '${idn}/cfg' && git config gitsby.ghTokenFile '${idn}/absent.txt' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse' FAKE_GH_LOG='${idn}/miss.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=\]' '${idn}/miss.log'"
+		bash -c "cd '${idn}/cfg' && ${idTok} git config --global gitsby.ghTokenFile '${idn}/absent.txt' && ${idTok} ${idEnv} FAKE_GH_ACCOUNTS='someoneelse' FAKE_GH_LOG='${idn}/miss.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=\]' '${idn}/miss.log'"
 	: > "${idn}/blank.txt"
 	fAssert "an empty token file falls back instead of failing" \
-		bash -c "cd '${idn}/cfg' && git config gitsby.ghTokenFile '${idn}/blank.txt' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse' FAKE_GH_LOG='${idn}/blank.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=\]' '${idn}/blank.log'"
+		bash -c "cd '${idn}/cfg' && ${idTok} git config --global gitsby.ghTokenFile '${idn}/blank.txt' && ${idTok} ${idEnv} FAKE_GH_ACCOUNTS='someoneelse' FAKE_GH_LOG='${idn}/blank.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=\]' '${idn}/blank.log'"
 	## gh's own store outranks the file, so a rotated login is not shadowed by a stale token on disk.
 	fAssert "gh's own account outranks the token file" \
-		bash -c "cd '${idn}/cfg' && git config gitsby.ghTokenFile '${idn}/token.txt' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse configured' FAKE_GH_LOG='${idn}/pref.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=tok_configured' '${idn}/pref.log'"
+		bash -c "cd '${idn}/cfg' && ${idTok} git config --global gitsby.ghTokenFile '${idn}/token.txt' && ${idTok} ${idEnv} FAKE_GH_ACCOUNTS='someoneelse configured' FAKE_GH_LOG='${idn}/pref.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=tok_configured' '${idn}/pref.log'"
+	( cd "${idn}/cfg" && git config --unset gitsby.ghTokenFile )
+	## Naming the account this run replaced has to be asked BEFORE the token lands, or the probe
+	## answers as the token just exported and the line can only ever say what it already knows.
+	fAssertOut "the identity block names the account gh was on before the switch"  "gh's active account is 'someoneelse'" \
+		bash -c "cd '${idn}/cfg' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse configured' '${gitsby}' -q -NoFetch identity 2>&1"
 
 	## A remote we can't name an owner for gets no opinion at all.
 	git clone --quiet "${idn}/backing.git" "${idn}/local" 2>/dev/null
@@ -1142,6 +1242,11 @@ GHEOF
 		bash -c "${idSync} '${gitsby}' -q -NoFetch --config /dev/null sync 'W' 2>&1 || true"
 	fAssertNotOut "and a matching account does not fire"  'authenticates as' \
 		bash -c "${idSync} '${gitsby}' -q -NoFetch --config '${id}/theirs.shcl' sync 'W' 2>&1 || true"
+	## Keyed on pushing, not on mutating: 'pullcom' commits locally and sends nothing, so the key
+	## origin would push with is nothing to refuse over - and the refusal paid a live ssh probe for
+	## a command that never reaches the network.
+	fAssert       "pullcom is not refused over the key origin would push with" \
+		bash -c "${idSync} '${gitsby}' -q -NoFetch --config '${id}/mine.shcl' pullcom 'Local only'"
 
 	## pr ok refuses to merge while work is still only local: gh merges what origin has, then
 	## deletes the branch, so anything unpushed would be outside both the PR and the merge.
@@ -1644,6 +1749,55 @@ GHEOF
 	## by a single-account user went out that way, which is the case needing no configuration.
 	fAssertOut "the credential helper carries a token when gh is already that account"  'password=gho_faketoken' \
 		bash -c "cd '${acWork}' && printf 'protocol=https\nhost=github.com\n\n' | env FAKE_GH_ACTIVE=workacct ${acEnv} '${gitsby}' -q raw git credential fill"
+
+	## A folder path with a space in it. The managed-includes scan split each config line at the
+	## first space, so such a key came back truncated and was never recognised as ours - every
+	## re-run appended a duplicate, and a rule dropped from the config file kept applying forever.
+	mkdir -p "${ac}/spacehome" "${ac}/my trees/work"
+	: > "${ac}/spacehome/.gitconfig"
+	local acSpaceCanon="${ac}/my trees/work"; ((isWindows)) && acSpaceCanon="$( cd "${ac}/my trees/work" && pwd -W )"
+	cat > "${ac}/spaced.shcl" <<-EOF
+		account.sp.path      = ${acSpaceCanon}
+		account.sp.ghAccount = spacct
+	EOF
+	local acSpaceEnv="GITSBY_CONFIG= HOME='${ac}/spacehome' GIT_CONFIG_GLOBAL='${ac}/spacehome/.gitconfig' PATH='${ac}/bin:${PATH}'"
+	fAssert "account apply writes a rule for a folder whose path has a space" \
+		bash -c "cd '${ac}/my trees/work' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && [[ \"\$(grep -c 'sp\.gitconfig' '${ac}/spacehome/.gitconfig')\" == 1 ]]"
+	fAssert "and re-applying refreshes it instead of duplicating it" \
+		bash -c "cd '${ac}/my trees/work' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && [[ \"\$(grep -c 'sp\.gitconfig' '${ac}/spacehome/.gitconfig')\" == 1 ]]"
+	fAssert "and dropping that account drops its rule" \
+		bash -c "cd '${ac}/my trees/work' && sed -i '/^account\.sp\./d' '${ac}/spaced.shcl' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && ! grep -q 'sp\.gitconfig' '${ac}/spacehome/.gitconfig'"
+
+	## 'apply' is the one command that writes outside the repo you are standing in, and it reported
+	## success whatever happened: the truncate error was discarded and every 'git config' exit code
+	## ignored. A directory where the fragment file belongs is the cheapest way to fail one write.
+	mkdir -p "${ac}/frag/accounts/b.gitconfig" "${ac}/fraghome"
+	: > "${ac}/fraghome/.gitconfig"
+	cat > "${ac}/frag/config.shcl" <<-EOF
+		account.b.path      = ${acCanon}/trees/work
+		account.b.ghAccount = bacct
+	EOF
+	local acFragEnv="GITSBY_CONFIG= HOME='${ac}/fraghome' GIT_CONFIG_GLOBAL='${ac}/fraghome/.gitconfig' PATH='${ac}/bin:${PATH}'"
+	fAssertFail   "account apply fails when a fragment can't be written" \
+		bash -c "cd '${acWork}' && env ${acFragEnv} '${gitsby}' -q -NoFetch --config '${ac}/frag/config.shcl' account apply"
+	fAssertNotOut "and never says it wrote one"  'Wrote ' \
+		bash -c "cd '${acWork}' && env ${acFragEnv} '${gitsby}' -q -NoFetch --config '${ac}/frag/config.shcl' account apply 2>&1"
+	fAssert       "and wrote no includeIf rule either"  bash -c "! grep -q 'b\.gitconfig' '${ac}/fraghome/.gitconfig'"
+
+	## The sshKey value is concatenated into GIT_SSH_COMMAND and into core.sshCommand, and git hands
+	## both to a shell - while the config file itself is redirectable by flag and by environment
+	## variable. Dropped and reported, because quietly falling back to whatever key ssh picks is how
+	## a push goes out as the wrong person.
+	cat > "${ac}/badkey.shcl" <<-EOF
+		account.bk.path      = ${acCanon}/trees/work
+		account.bk.ghAccount = bkacct
+		account.bk.sshKey    = /keys/k; touch ${ac}/pwned
+	EOF
+	fAssertOut    "an sshKey carrying shell characters is refused"  'Ignored keys \.+:.*sshkey' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/badkey.shcl' account"
+	fAssertNotOut "and never becomes this folder's key"  '/keys/k' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/badkey.shcl' account"
+	fAssert       "and nothing it named ever ran"  bash -c "[[ ! -e '${ac}/pwned' ]]"
 
 	## An account name becomes a file name under the include directory, so it must not be able to
 	## climb out of it. 'account apply' wrote the fragment wherever the name pointed - a name with

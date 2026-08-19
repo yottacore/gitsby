@@ -95,6 +95,19 @@ func pushIfOnline() {
 	}
 }
 
+// pushesToRemote: whether this command sends anything to origin. The identity
+// comparison keyed off it costs a live ssh probe and refuses the run outright, so
+// it must not fire for a command whose whole job is local - a mismatched key has
+// nothing to do with a commit that never leaves the machine. Named by exception,
+// so a mutating command added later is covered until it says otherwise.
+func pushesToRemote() bool {
+	switch cmdName {
+	case "pullcom", "repo-clone", "repo-url", "account-apply":
+		return false
+	}
+	return isMutating
+}
+
 // requireOnline: cmd as typed, and what to do instead.
 func requireOnline(cmd, instead string) {
 	if isOffline() {

@@ -31,13 +31,23 @@ func forgetRepoState() {
 }
 
 // runOut captures a command's stdout, trimmed. Any failure is simply no output -
-// the callers all treat empty as "no answer", never as an error to report.
+// most callers treat empty as "no answer", never as an error to report.
 func runOut(name string, args ...string) string {
+	out, _ := runOutOK(name, args...)
+	return out
+}
+
+// runOutOK is runOut that also says whether the command worked, for the few
+// callers that must tell "the tool failed" apart from "the answer is nothing".
+// gh in particular exits nonzero for a repo that isn't there and for a network
+// that is down, and stating the first when it was the second sends you off to
+// create something that already exists.
+func runOutOK(name string, args ...string) (string, bool) {
 	out, err := exec.Command(name, args...).Output()
 	if err != nil {
-		return ""
+		return "", false
 	}
-	return strings.TrimRight(string(out), "\r\n")
+	return strings.TrimRight(string(out), "\r\n"), true
 }
 
 // runOK is the exit-code question: did it succeed at all.

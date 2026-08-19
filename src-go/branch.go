@@ -78,6 +78,19 @@ func branchHasUnpushed(branch string) bool {
 	return runOut("git", "rev-list", "-n", "1", "refs/remotes/origin/"+branch+"..refs/heads/"+branch) != ""
 }
 
+// refuseOptionShapedRefs stops a branch whose name starts with a dash before it
+// reaches git in the leading argument position of a checkout, a merge or a branch
+// delete, where git reads it as flags instead. Not typeable here - the parser
+// takes a leading dash as an option of ours - so it can only have arrived from a
+// repo we cloned, and 'git checkout' has no separator that would rescue it.
+func refuseOptionShapedRefs(names ...string) {
+	for _, name := range names {
+		if strings.HasPrefix(name, "-") {
+			throwUsage("Branch '" + name + "' starts with a dash, so git reads it as an option rather than a name. Rename it with raw git first.")
+		}
+	}
+}
+
 // isProtectedBranch: main/master/dev - branches WIP should never be
 // auto-committed to, or deleted. Empty means the current one.
 func isProtectedBranch(branch string) bool {

@@ -11,6 +11,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"regexp"
@@ -94,6 +95,37 @@ func probeRemote(url string) string {
 		return "nonempty"
 	}
 	return "empty"
+}
+
+// ghRepoState asks gh what exists at 'owner/name': "empty", "nonempty",
+// "missing", or "" plus the reason gh gave. A failed call is NOT absence - gh
+// exits nonzero for a name that resolves to nothing and for a network that is
+// down alike, and these two commands skip the pre-command fetch (they have no
+// origin yet), so this is the only place either can be discovered. Stating
+// "doesn't exist" for an unreachable API sent you off to create a repo you
+// already have.
+func ghRepoState(target string) (state, reason string) {
+	cmd := exec.Command("gh", "repo", "view", target, "--json", "isEmpty", "--jq", ".isEmpty")
+	var errText bytes.Buffer
+	cmd.Stderr = &errText
+	out, err := cmd.Output()
+	if err == nil {
+		if strings.TrimRight(string(out), "\r\n") == "true" {
+			return "empty", ""
+		}
+		return "nonempty", ""
+	}
+	said := errText.String()
+	// What gh says, and only what gh says, when the name resolves to nothing.
+	if strings.Contains(said, "Could not resolve to a Repository") || strings.Contains(said, "404") {
+		return "missing", ""
+	}
+	for _, line := range strings.Split(said, "\n") {
+		if line = strings.TrimRight(line, "\r"); line != "" {
+			return "", line
+		}
+	}
+	return "", "gh gave no reason"
 }
 
 // settleRepoUrl refuses a bad argument or an unconvertible remote before a plan
@@ -194,10 +226,12 @@ func settleRepoConnect() {
 		}
 		mustBeInPath("gh")
 		ghTarget = cmdArg
-		switch runOut("gh", "repo", "view", ghTarget, "--json", "isEmpty", "--jq", ".isEmpty") {
+		switch state, reason := ghRepoState(ghTarget); state {
 		case "":
+			throwUsage("Couldn't ask GitHub about " + ghTarget + ", so there is no telling whether it exists: " + reason)
+		case "missing":
 			connectMode = "create"
-		case "true":
+		case "empty":
 			throwUsage("github.com/" + ghTarget + " already exists and is empty; connect to it instead: " + meName + " repo connect " + ghTarget)
 		default:
 			throwUsage("github.com/" + ghTarget + " already has commits; clone it instead (" + meName + " repo clone), or reconcile with raw git.")
@@ -210,10 +244,12 @@ func settleRepoConnect() {
 			// owner/name shorthand: gh can say whether it exists and whether it's empty.
 			mustBeInPath("gh")
 			ghTarget = cmdArg
-			switch runOut("gh", "repo", "view", ghTarget, "--json", "isEmpty", "--jq", ".isEmpty") {
+			switch state, reason := ghRepoState(ghTarget); state {
 			case "":
+				throwUsage("Couldn't ask GitHub about " + ghTarget + ", so there is no telling whether it exists: " + reason)
+			case "missing":
 				throwUsage("github.com/" + ghTarget + " doesn't exist, or you can't see it. To create it: " + meName + " repo create " + ghTarget)
-			case "true":
+			case "empty":
 				// gh never uses a host alias, so this is the canonical url. We build
 				// this one ourselves, so the config's transport applies - unlike 'repo
 				// create', where gh adds the remote and only gh's own git_protocol

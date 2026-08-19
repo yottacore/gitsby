@@ -64,6 +64,9 @@ func resolvePrune() {
 			continue
 		}
 		if mergedLocal[branch] {
+			// 'git branch -D' would read a dash-led name as options. Only the ones we
+			// are about to hand git: a kept branch is printed and nothing more.
+			refuseOptionShapedRefs(branch)
 			pruneLocal = append(pruneLocal, branch)
 			// The remote copy goes only when origin has the merge too: a landing that
 			// hasn't been pushed yet leaves origin holding the only ref to that work.

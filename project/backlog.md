@@ -60,51 +60,63 @@ To make using these icons easier, add them to a clipboard or key macro manager. 
 
 From a full review of the Go code, 20260818. gofmt, vet, staticcheck and the suite (530/0) are clean; these are what the tools don't see. Several are inherited from the frozen bash build - latent there, but live in the shipping binary.
 
-- 🔘 Code Review 20260818 item 1: `pr ok` can destroy never-pushed commits.
+- ✅ Code Review 20260818 item 1: `pr ok` can destroy never-pushed commits.
 	- Standing on the PR's own branch with no upstream configured, the lost-work guard asks `@{u}` and gets silence, so it passes. gh then merges what origin has and deletes the branch with `-D`.
 	- The stronger per-branch check only runs when standing somewhere else.
 	- Inherited from the bash build.
+	- Asked of the PR's own branch by name wherever you are standing. `@{u}` answers nothing at all for a branch pushed without `-u`, which is the one arrangement that lost the commits.
 
-- 🔘 Code Review 20260818 item 2: `repo create`/`repo connect` never actually select the target account.
+- ✅ Code Review 20260818 item 2: `repo create`/`repo connect` never actually select the target account.
 	- The late re-selection is a no-op behind the already-applied guard, so publishing happens as gh's active account, silently. The comment at the call site says the opposite.
 	- Inherited from the bash build.
+	- The target named on the command line resolves the account, ahead of the validation that itself talks to gh. The late re-selection behind the already-applied guard is gone.
 
-- 🔘 Code Review 20260818 item 3: the "gh's active account is 'X'" identity line can never print truthfully.
+- ✅ Code Review 20260818 item 3: the "gh's active account is 'X'" identity line can never print truthfully.
 	- The token is exported before the probe that asks who was active, so the probe answers as the new account and the line stays dark. With a tokenFile whose token belongs to a different login, it prints a wrong name instead.
 	- Inherited from the bash build.
+	- The probe runs before the token is exported, so it can still answer with the account being replaced.
 
-- 🔘 Code Review 20260818 item 4: `account apply` can't clean up rules under folder paths with a space.
+- ✅ Code Review 20260818 item 4: `account apply` can't clean up rules under folder paths with a space.
 	- The managed-includes scan splits each config line at the first space, so such keys are never recognized as ours. Re-runs append duplicates, and a rule removed from the config file keeps applying forever.
 	- Inherited from the bash build.
+	- Reads the rules with `--null`, so a key holding a folder path with a space comes back whole.
 
-- 🔘 Code Review 20260818 item 5: `account apply` reports success no matter what.
+- ✅ Code Review 20260818 item 5: `account apply` reports success no matter what.
 	- The fragment truncate error is discarded and every `git config` exit code is ignored; "Wrote ..." and "Done." print regardless, exit 0.
 	- The one command that writes outside the repo is the one that can silently no-op.
+	- Every write is checked; the first failure stops the run and names what was left incomplete.
 
-- 🔘 Code Review 20260818 item 6: `pr ok` with a dead PR number sails through preflight.
+- ✅ Code Review 20260818 item 6: `pr ok` with a dead PR number sails through preflight.
 	- A failed `gh pr view` silently falls back to the current branch, so the plan is confidently about the wrong thing and the run dies after confirmation - the shape preflight exists to prevent.
+	- Head branch and state come back in one call. A number gh can't resolve is refused, and so is a PR that is no longer open.
 
-- 🔘 Code Review 20260818 item 7: offline reads as "repo doesn't exist" in `repo connect`/`repo create`.
+- ✅ Code Review 20260818 item 7: offline reads as "repo doesn't exist" in `repo connect`/`repo create`.
 	- Any `gh repo view` failure is taken as absence and stated as fact, with advice that derails further. These two skip the pre-command fetch (no origin yet), so offline is never discovered for them.
+	- gh's stderr tells a name that resolves to nothing apart from an API it couldn't reach; the second is repeated back rather than stated as absence.
 
 - 🔘 Code Review 20260818 item 8: `--offline` is a hidden third spelling of `--no-fetch` - and pushes still go out.
 	- Contradicts the design rule that offline is a discovered state, never a flag. `sync --offline` publishes work.
 	- Call to make: drop the alias, or make that one spelling refuse outgoing traffic too. Inherited from the bash build, undocumented in help.
 
-- 🔘 Code Review 20260818 item 9: the `sshkey` config value reaches shell-executed strings unquoted.
+- ✅ Code Review 20260818 item 9: the `sshkey` config value reaches shell-executed strings unquoted.
 	- Concatenated into `GIT_SSH_COMMAND` and written into `core.sshCommand`; git hands both to a shell. The config is trusted input, but the file is redirectable by flag/env, and the repo-local sshCommand path already refuses quoting tricks - this path should match it.
+	- A key path carrying whitespace or a shell character is dropped and listed as unusable, rather than quietly falling back to whatever key ssh picks.
 
-- 🔘 Code Review 20260818 item 10: branch names from a cloned repo can reach git as leading options.
+- ✅ Code Review 20260818 item 10: branch names from a cloned repo can reach git as leading options.
 	- A repo whose default branch is named `-something` makes checkout/merge/branch/push parse it as flags. Bounded to breakage, not code execution. `--` separators fix it; the ssh probe paths already have them.
+	- A dash-led name is refused before it reaches git in a leading argument position - checkout, merge, branch delete.
 
-- 🔘 Code Review 20260818 item 11: a handed-over repo's own `.git/config` can pick gitsby's identity and token file.
+- ✅ Code Review 20260818 item 11: a handed-over repo's own `.git/config` can pick gitsby's identity and token file.
 	- `gitsby.ghAccount`/`gitsby.ghTokenFile` are honored from local config, so a foreign repo can have an arbitrary readable file loaded into the token env for child processes. No exfiltration channel exists - the credential helper is host-scoped - so this is identity confusion plus file read, not theft. Consider honoring tokenFile from global/folder config only.
+	- `gitsby.ghTokenFile` is honored from global/system scope only. `gitsby.ghAccount` still reads repo-local: naming a login there is an ordinary thing to do, and the account still has to be one you hold.
 
-- 🔘 Code Review 20260818 item 12: the wrong-account warning talks about pull requests on commands with no gh involvement.
+- ✅ Code Review 20260818 item 12: the wrong-account warning talks about pull requests on commands with no gh involvement.
 	- The ssh-key-mismatch case appends the "gh does the pull request work..." sentence to plain push commands, and can name '?' when gh is absent - right at the y/n moment.
+	- The gh sentence prints only where gh is the one acting.
 
-- 🔘 Code Review 20260818 item 13: the push-identity gate fires for commands that push nothing.
+- ✅ Code Review 20260818 item 13: the push-identity gate fires for commands that push nothing.
 	- Keyed on mutating, not pushing, so `pullcom -q` under a mismatched key is refused outright and pays a live ssh probe, for a local-only commit.
+	- Keyed on whether the command pushes, named by exception so a mutating command added later stays covered until it says otherwise.
 
 ### Features and enhancements
 

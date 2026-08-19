@@ -205,7 +205,29 @@ func accountToken() string {
 	if token := readTokenFile(accountValue(acctName, "tokenFile")); token != "" {
 		return token
 	}
-	return readTokenFile(runOut("git", "config", "--get", "gitsby.ghTokenFile"))
+	return readTokenFile(configOwnScope("gitsby.ghTokenFile"))
+}
+
+// configOwnScope reads a git config key from your own configuration only, leaving
+// out anything the repo itself set. 'gitsby.ghAccount' is deliberately not read
+// this way - naming a login repo-locally is an ordinary thing to do, and the
+// account still has to be one you hold. A token FILE is different: it names any
+// readable file on the machine, whose contents then go into the environment of
+// every child process - and a repo is a thing you clone from a stranger. 'global'
+// covers the includeIf fragments 'account apply' writes, which is where this key
+// legitimately comes from.
+func configOwnScope(key string) string {
+	value := ""
+	for _, line := range runLines("git", "config", "--show-scope", "--get-all", key) {
+		scope, rest, found := strings.Cut(line, "\t")
+		if !found {
+			continue
+		}
+		if scope == "global" || scope == "system" {
+			value = rest // last one wins, the same way git settles a scalar
+		}
+	}
+	return value
 }
 
 // gitConfigEnv adds one config key to the environment git reads, without
@@ -237,17 +259,19 @@ func selectAccount(skipGhProbe bool) {
 	accountApplied = true
 	token := accountToken()
 	if token != "" {
-		// Export whenever a token was found, not only when it replaces a different
-		// active account: the helper below reads GH_TOKEN when git runs it, and the
-		// reset that precedes it has already evicted any credential manager.
-		os.Setenv("GH_TOKEN", token)
+		// Asked BEFORE the token lands, or the probe answers as the token we are about
+		// to export and the line can only ever say what it already knows. Naming the
+		// account this one replaces is display only, and asking is a live API round
+		// trip. '?' means gh held no account at all.
 		if !skipGhProbe {
-			// Naming the account this one replaced is display only, and asking is a
-			// live API round trip. '?' means gh held no account at all.
 			if active := ghLogin(); active != acctGhWho && active != "?" {
 				ghSwitchedFrom = active
 			}
 		}
+		// Export whenever a token was found, not only when it replaces a different
+		// active account: the helper below reads GH_TOKEN when git runs it, and the
+		// reset that precedes it has already evicted any credential manager.
+		os.Setenv("GH_TOKEN", token)
 		ghLoginCache = acctGhWho
 		// The same token is what lets git itself push as this account over https,
 		// with no ssh key anywhere. An empty value first resets the helper list, so
