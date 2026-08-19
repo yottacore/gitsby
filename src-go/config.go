@@ -71,9 +71,8 @@ var (
 )
 
 // canonPath gives a directory one spelling, so a config written on one machine
-// matches the same tree on another. Text only - the folder does not have to exist,
-// which 'repo clone' needs, and a resolver that touched the disk would answer
-// differently for a path that isn't there yet.
+// matches the same tree on another, and so a rule and the folder it claims are
+// compared on the same terms.
 func canonPath(p string) string {
 	if p == "" {
 		return ""
@@ -90,34 +89,52 @@ func canonPath(p string) string {
 			}
 			p = m[1] + ":" + tail
 		}
-		// Settle junctions and link spellings through the nearest ancestor that
-		// exists, then put the rest back on (a clone target may not exist yet).
-		head, tail := p, ""
-		for head != "" && strings.Contains(head, "/") {
-			if fi, err := os.Stat(head); err == nil && fi.IsDir() {
-				break
-			}
-			if tail == "" {
-				tail = head[strings.LastIndex(head, "/")+1:]
-			} else {
-				tail = head[strings.LastIndex(head, "/")+1:] + "/" + tail
-			}
-			head = head[:strings.LastIndex(head, "/")]
-		}
-		if fi, err := os.Stat(head); err == nil && fi.IsDir() {
-			if resolved, err := filepath.EvalSymlinks(head); err == nil && resolved != "" {
-				p = strings.ReplaceAll(resolved, "\\", "/")
-				if tail != "" {
-					p = strings.TrimRight(p, "/") + "/" + tail
-				}
-			}
-		}
+	}
+	p = resolveLinks(p)
+	if isWindows() {
 		p = strings.ToLower(p)
 	}
 	for strings.HasSuffix(p, "/") && p != "/" && !driveRootRE.MatchString(p) {
 		p = strings.TrimSuffix(p, "/")
 	}
 	return p
+}
+
+// resolveLinks settles symlink and junction spellings through the nearest
+// ancestor that exists, then puts the rest of the path back on - a clone target
+// need not exist yet, which is why it can't just resolve the whole thing.
+//
+// Every platform, not just Windows. 'git rev-parse --show-toplevel' answers with
+// the tree's real path, so a rule written the way you type it - through a
+// symlinked home, a synced folder, a stable name pointing at a dated one - was
+// compared against the resolved spelling and never matched. Nothing said so
+// either: the folder is real, so the "this rule can never match" note stayed
+// quiet, and a run acted as the wrong account while the listing looked right.
+func resolveLinks(p string) string {
+	head, tail := p, ""
+	for head != "" && strings.Contains(head, "/") {
+		if fi, err := os.Stat(head); err == nil && fi.IsDir() {
+			break
+		}
+		if tail == "" {
+			tail = head[strings.LastIndex(head, "/")+1:]
+		} else {
+			tail = head[strings.LastIndex(head, "/")+1:] + "/" + tail
+		}
+		head = head[:strings.LastIndex(head, "/")]
+	}
+	if fi, err := os.Stat(head); err != nil || !fi.IsDir() {
+		return p
+	}
+	resolved, err := filepath.EvalSymlinks(head)
+	if err != nil || resolved == "" {
+		return p
+	}
+	resolved = strings.ReplaceAll(resolved, "\\", "/")
+	if tail == "" {
+		return resolved
+	}
+	return strings.TrimRight(resolved, "/") + "/" + tail
 }
 
 // absDir puts a relative path on the current directory, so a folder rule sees the
@@ -260,8 +277,7 @@ func (c *config) load(o options) error {
 	if err != nil {
 		return nil
 	}
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSuffix(line, "\r") // written on Windows, read on Linux
+	for _, line := range splitLines(string(data)) { // a file written on Windows, read on Linux
 		line = strings.TrimLeft(line, " \t")
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue

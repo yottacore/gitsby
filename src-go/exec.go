@@ -43,11 +43,23 @@ func runOK(name string, args ...string) bool {
 	return exec.Command(name, args...).Run() == nil
 }
 
+// splitLines cuts captured output into lines. The trailing '\r' comes off every
+// one of them: trimming only the end of the whole capture leaves the interior
+// ones in place, so the first line of a two-line answer carried a stray carriage
+// return that no later comparison could match.
+func splitLines(out string) []string {
+	lines := strings.Split(out, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimRight(line, "\r")
+	}
+	return lines
+}
+
 // runLines is runOut split into lines, empties dropped.
 func runLines(name string, args ...string) []string {
 	var lines []string
-	for _, line := range strings.Split(runOut(name, args...), "\n") {
-		if line = strings.TrimRight(line, "\r"); line != "" {
+	for _, line := range splitLines(runOut(name, args...)) {
+		if line != "" {
 			lines = append(lines, line)
 		}
 	}

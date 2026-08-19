@@ -1150,6 +1150,12 @@ GHEOF
 	## uncommitted edit to it (the ordinary way of making one) has to be checked for after that.
 	fAssertOut "a hotfix warns about shipped code even when the edit is uncommitted"  'changes shipped code' \
 		bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix uncommitted >/dev/null 2>&1; echo v3 > '${hfc}/src-go/main.go'; '${gitsby}' -q -NoFetch br land 'Fix uncommitted' 2>&1"
+	## Every other check here runs from the top of the tree. A pathspec is read relative to the
+	## current directory, so from anywhere else it matched nothing, git exited 0 with no output,
+	## and the warning went missing on exactly the commands you run from wherever you are working.
+	mkdir -p "${hfc}/docs"
+	fAssertOut "the shipped-code warning survives being run from a subdirectory"  'changes shipped code' \
+		bash -c "cd '${hfc}/docs' && '${gitsby}' -q -NoFetch br hotfix subdir >/dev/null 2>&1; echo v4 > '${hfc}/src-go/main.go'; '${gitsby}' -q -NoFetch br land 'Fix from below' 2>&1"
 	fAssert    "a docs-only hotfix says nothing about releases"  \
 		bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix docs >/dev/null 2>&1; echo 'readme v3' > README.md; '${gitsby}' -q -NoFetch update wip >/dev/null 2>&1; out=\"\$('${gitsby}' -q -NoFetch br land 'Docs' 2>&1)\"; ! grep -q 'changes shipped code' <<< \"\${out}\""
 	## A back-merge conflict must leave dev untouched and the tree clean, not half-merged.
@@ -1809,6 +1815,32 @@ GHEOF
 	( cd "${acWork}" && git config user.email repo@example.com && git config user.name 'Repo Local' )
 	fAssertOut "a repo-local identity still wins"  'Repo Local <repo@example\.com>'  bash -c "cd '${acWork}' && env ${acEnvIdent} '${gitsby}' -q -NoFetch status"
 	( cd "${acWork}" && git config --unset user.email && git config --unset user.name )
+	## Half of one is still a value typed for this repo. These entries reach git the way '-c' does,
+	## which outranks the local config, so asking about user.email alone let the account's name
+	## replace one the repo had pinned - the exact override the check above exists to forbid.
+	( cd "${acWork}" && git config user.name 'Repo Local' )
+	fAssertOut "a repo-local name survives an account that names both"  'Repo Local <work@example\.com>' \
+		bash -c "cd '${acWork}' && env ${acEnvIdent} '${gitsby}' -q -NoFetch status"
+	( cd "${acWork}" && git config --unset user.name && git config user.email repo@example.com )
+	fAssertOut "and a repo-local email does the same"  'Work Person <repo@example\.com>' \
+		bash -c "cd '${acWork}' && env ${acEnvIdent} '${gitsby}' -q -NoFetch status"
+	( cd "${acWork}" && git config --unset user.email )
+	## A rule written through a symlink - a synced folder, a stable name pointing at a dated one,
+	## a home that is itself a link. git answers with the tree's real path, so a rule spelled the
+	## way it was typed was compared against the resolved one and matched nothing. Nor did anything
+	## say so: the folder exists, so 'account list' printed it without its "can never match" note.
+	if ln -s "${ac}/trees/work" "${ac}/linked" 2>/dev/null; then
+		local acLinkCanon="${ac}/linked"
+		((isWindows)) && acLinkCanon="$( cd "${ac}/linked" && pwd -W )"
+		cat > "${ac}/home/.config/gitsby/linked.shcl" <<-EOF
+			account.linked.path      = ${acLinkCanon}/proj
+			account.linked.ghAccount = linkedacct
+		EOF
+		fAssertOut "a folder rule spelled through a symlink still claims the folder"  'Account \.+: linkedacct' \
+			bash -c "cd '${acWork}' && env ${acEnv} GITSBY_CONFIG='${ac}/home/.config/gitsby/linked.shcl' '${gitsby}' -q -NoFetch status"
+		fAssertOut "and 'account list' marks it as the one in force"  '^-> linked' \
+			bash -c "cd '${acWork}' && env ${acEnv} GITSBY_CONFIG='${ac}/home/.config/gitsby/linked.shcl' '${gitsby}' account list"
+	fi
 	## Overrides, both directions.
 	fAssertOut "GITSBY_ACCOUNT overrides the folder"  'homeacct \(from GITSBY_ACCOUNT\)'  bash -c "cd '${acWork}' && env ${acEnv} GITSBY_ACCOUNT=home '${gitsby}' -q -NoFetch status"
 	## A bare login is a documented spelling of GITSBY_ACCOUNT, and 'raw' already reports one on
@@ -2665,3 +2697,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260819 JC: Installer coverage for the directive-review fixes: the pre-release fallback (a stub curl answering only the list endpoint), a whole install end to end with the network stood in for, and pins on the staging, the verification exit code and the Windows PowerShell 5.1 support. Ten of them fail against the installers that preceded the fixes.
 ##		- 20260819 JC: Pipeline coverage for the directive review: the reproducible-build flags and a binary built with them, the core cap, --quick's cross-builds, govulncheck, the spawn-count and kept-build scripts, -q reaching the harnesses, the lint summary on a clean log, and the demo scenario's command names. Eleven fail against the pipeline that preceded them.
 ##		- 20260819 JC: br prune's plan checks follow the batched deletes - one line for the locals and one for the remotes, which is what the command runs. The remote half needed a fixture of its own: a plan check has to run the command to see a plan, and the check before it had already pruned the world it shared.
+##		- 20260819 JC: The second adversarial pass. A folder rule spelled through a symlink, checked both by the account line and by which entry 'account list' marks; the shipped-code warning run from a subdirectory, where the pathspec had been reading from the wrong place; and a repo-local commit name or email on its own, each of which the account had been overriding. Five checks, all five failing against the build before them.

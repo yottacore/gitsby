@@ -328,10 +328,6 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 
 	- Note on install paths: gitsby is a single file, so it goes straight to `~/.local/bin` or `/usr/local/bin` rather than into a program directory with a symlink.
 
-- ✅ Code Review 20260723 item 39: README typos.
-	- Line 82 "devoted to to", line 100 "besome", line 218 "cononical".
-	- Done: all three fixed.
-
 - ✅ Rename `saveup` to `update`.
 	- Done in both implementations; `saveup` stays as a hidden alias like the other old names. Docs and changelog swept.
 
@@ -421,6 +417,36 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
 
 #### Done - Code reviews
+
+- ✅ 20260819c - a fresh adversarial pass over the rewritten Go, after the refactor settled.
+
+	- Went in against the same directive sections as the round before it, looking for what a whole-file rewrite could have carried across unchanged rather than for anything the linters would see. gofmt, vet, staticcheck, golangci-lint and govulncheck were clean and the suite was 694/0 going in, so none of the four defects below is tool-visible. Five new suite checks (694 -> 699) and three Go tests, every one of them run against the build that preceded its fix.
+
+	- Item 1 is the one that matters. The other three are narrower, and two of them were transcribed faithfully from the frozen 2.1.0 script rather than introduced here.
+
+	- ✅ Code Review 20260819c item 1: a folder rule written through a symlink claims nothing, and nothing says so.
+		- Cause: only the Windows build resolved link spellings. `git rev-parse --show-toplevel` answers with the tree's real path, so on Linux and macOS a rule spelled the way it was typed was compared against the resolved one.
+		- Note: this is the failure the whole feature exists to prevent - the run acts as the wrong account while the listing looks right. `account list` made it worse: the folder is real, so its "this rule can never match" note stayed quiet and gave a false all-clear.
+		- Note: a synced folder, a stable name pointing at a dated one, a home that is itself a link - all ordinary ways to write a rule.
+		- Fixed: resolution through the nearest ancestor that exists now runs on every platform, not just Windows. A destination that does not exist yet still canonicalizes, which is what `repo clone` needs. Two Go tests and two suite checks.
+
+	- ✅ Code Review 20260819c item 2: the hotfix "changes shipped code" warning goes missing unless you run it from the top of the tree.
+		- Cause: the pathspec naming the shipped source was written bare, and git reads one relative to the current directory.
+		- Note: from anywhere else it matched nothing, git exited 0 with no output, and the warning simply did not appear. Every existing check ran from the repo root, so all of them passed.
+		- Fixed: anchored at the repo root with `:(top)`. Suite check added that runs the whole thing from a subdirectory.
+
+	- ✅ Code Review 20260819c item 3: an account's commit name replaces one the repo had pinned for itself.
+		- Cause: both identity keys were gated on a single question about `user.email`, so a repo that set only `user.name` locally passed the gate and had that name overridden.
+		- Note: these entries reach git the way `-c` does, which outranks the local config - so the override was silent, and it contradicted the rule the same code states.
+		- Note: transcribed from the 2.1.0 script, which has it too. Not a hotfix: the name is display, the email is what attributes a commit, and that half was already right.
+		- Fixed: asked per key, in one call rather than two. A repo-local value is honored and the account fills in only what the repo left unset. Two suite checks.
+
+	- ✅ Code Review 20260819c item 4: a two-line answer read as one string kept the interior carriage return.
+		- Cause: `runOut` trims the end of the whole capture; only `runLines` trimmed each line. Four places split a capture themselves and skipped it - `pr ok` reading the PR's head branch among them, where the branch name would then match no ref anywhere.
+		- Note: hardening rather than a reproduced failure - the tools involved write LF today. It was already the reason `runLines` exists, applied in some places and not others.
+		- Fixed: one `splitLines` helper, used by `runLines` and by all four. Go test added.
+
+	- Nothing came out of the other sections. Naming, comments, the linter set, the optimization levels, the pipeline stages, the demo and both installers were gone over in the three rounds before this one and needed no change. Two housecleaning items did: a code-review bullet still filed under features, and a block of generator boilerplate left in `contributing.md`.
 
 - ✅ 20260819b - a full adversarial pass over the rewritten Go, plus the standing directives re-checked against it.
 
@@ -1442,6 +1468,10 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- ✅ Code Review 20260723 item 38: accept `-y`/`--yes` as a prompt-skip alias (both implementations).
 		- Installers teach -y, gitsby only takes -q; and -q's real function is "assume yes", not quiet. Keep -q, add -y, fix the help wording.
 		- Done: -y/--yes (bash) and -y/-yes (pwsh) alias -q; help wording now says "assume yes". Test added.
+
+	- ✅ Code Review 20260723 item 39: README typos.
+		- Line 82 "devoted to to", line 100 "besome", line 218 "cononical".
+		- Done: all three fixed.
 
 	- ✅ Add a PowerShell badge to README.md.
 		- Added next to the bash badge in the header block, linking to the PowerShell docs.

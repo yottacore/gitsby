@@ -88,7 +88,7 @@ func (a *app) prPreflight() error {
 // preflight exists to prevent.
 func (a *app) prAcceptPreflight(prBranch string) error {
 	info, ok := runOutOK("gh", "pr", "view", a.pr.num, "--json", "headRefName,state", "--jq", ".headRefName, .state")
-	fields := strings.Split(info, "\n")
+	fields := splitLines(info)
 	if !ok || len(fields) != 2 || fields[0] == "" {
 		return usagef("Can't read PR #%s; check the number, and that gh can see this repo.", a.pr.num)
 	}

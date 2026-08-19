@@ -225,3 +225,44 @@ func TestExpandTilde(t *testing.T) {
 		}
 	}
 }
+
+// A rule written through a symlink - a synced folder, a stable name pointing at a
+// dated one, a home that is itself a link - matched nothing, because git answers
+// with the tree's real path and only the Windows build resolved the other side.
+// Nothing said so either: the folder exists, so the "can never match" note in
+// 'account list' stayed quiet while runs acted as the wrong account.
+func TestAccountForDirThroughSymlink(t *testing.T) {
+	root := t.TempDir()
+	realDir := filepath.Join(root, "real", "proj")
+	if err := os.MkdirAll(realDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(filepath.Join(root, "real"), link); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	cfg := writeConfig(t, "account.work.ghAccount = octocat\naccount.work.path = "+filepath.ToSlash(link)+"/proj\n")
+	// The rule is spelled through the link; the folder is asked about by its real
+	// path, which is the only spelling git ever hands back.
+	if got := cfg.accountForDir(filepath.ToSlash(realDir)); got != "work" {
+		t.Errorf("accountForDir(real path) = %q, want %q", got, "work")
+	}
+	// And still by the spelling it was written with.
+	if got := cfg.accountForDir(filepath.ToSlash(filepath.Join(link, "proj"))); got != "work" {
+		t.Errorf("accountForDir(link path) = %q, want %q", got, "work")
+	}
+}
+
+// A destination that does not exist yet still has to canonicalize - 'repo clone'
+// resolves its account against a folder git has never seen - so resolution stops
+// at the nearest ancestor that is really there and puts the rest back on.
+func TestCanonPathKeepsMissingTail(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Symlink(root, filepath.Join(root, "self")); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	got := canonPath(filepath.ToSlash(filepath.Join(root, "self", "not", "there", "yet")))
+	if want := canonPath(filepath.ToSlash(root)) + "/not/there/yet"; got != want {
+		t.Errorf("canonPath = %q, want %q", got, want)
+	}
+}
