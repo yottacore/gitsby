@@ -4,12 +4,12 @@
 ##		- Adversarial fuzz + injection-safety for gitsby's OWN input surface: the
 ##		  command slot, options, and branch/message/version/pr arguments. Not
 ##		  upstream git - just what a hostile or fat-fingered user can hand gitsby.
-##		- Three invariants, checked per vector, per implementation (bash always,
-##		  pwsh when installed):
-##		    1. No internal crash - no bash/pwsh error dump, exit stays a controlled 0/1.
+##		- Three invariants, checked per vector:
+##		    1. No internal crash - no runtime error dump, exit stays a controlled 0/1.
 ##		    2. No shell/command injection - a canary side-effect never fires.
 ##		    3. Inputs that must be refused exit nonzero and leave the repo untouched.
-##		- Run by cicd.bash stage 3, or standalone. Hermetic: throwaway repos, no net.
+##		- Run by cicd.bash stage 3 against the build from stage 2, or standalone after
+##		  a 'go build' in src-go/. Hermetic: throwaway repos, no net.
 ##	History: At bottom of script.
 
 ##	Copyright © 2026 Jim Collier (CryptogID: ѳ6ᴚ℈𐀘𐇦ɛ𐊁¥Mﾏb϶Δ𐌞)
@@ -336,19 +336,14 @@ GHEOF
 
 echo "gitsby fuzz + security (fixtures: ${work})"
 
-gitsby="${root}/bin/gitsby"
-fRunFuzz "bash"
-
-## Same suite against the PowerShell port when pwsh is present. The shim keeps
-## ${gitsby} a single path, so the argument passing above is unchanged.
-if command -v pwsh >/dev/null 2>&1; then
-	gitsby="${work}/gitsby-pwsh"
-	printf '#!/usr/bin/env bash\nexec pwsh -NoProfile -File "%s" "$@"\n' "${root}/bin/gitsby.ps1" > "${gitsby}"
-	chmod +x "${gitsby}"
-	fRunFuzz "pwsh"
-else
-	echo "fuzz: pwsh skipped (pwsh not installed)"
-fi
+## One implementation. The shim keeps ${gitsby} a single path, so the argument passing
+## above is unchanged.
+goBin="${root}/src-go/gitsby"; [[ -x "${goBin}" ]] || goBin="${goBin}.exe"
+[[ -x "${goBin}" ]] || { echo "no build at src-go/gitsby - run 'go build' there, or cicd.bash stage 2" >&2; exit 1; }
+gitsby="${work}/gitsby-go"
+printf '#!/usr/bin/env bash\nexec "%s" "$@"\n' "${goBin}" > "${gitsby}"
+chmod +x "${gitsby}"
+fRunFuzz "go"
 
 ## The security assertion: no vector ever caused a side-effect to run.
 if [[ -z "$(find "${work}" -name 'CANARY*' -print -quit)" ]]; then
@@ -369,3 +364,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260810 JC: The glob-shaped clone directories are skipped on Windows. Win32 forbids those characters in a path, so native git cannot create such a work tree at all and the invariant is unprovable there rather than violated - MSYS mkdir happily makes one, which is what makes the first guess wrong.
 ##		- 20260812 JC: Vectors for the "pathContains" config value. It is compared against the current path and becomes a git config key in "account apply", so it reaches a native command twice; junk there must stay inert rather than be refused, since a rule matching nothing is the ordinary answer.
 ##		- 20260813 JC: Same environment isolation the behavioural suite grew, plus the gitsby config file this one had never pinned at all.
+##		- 20260818 JC: One leg, the compiled build. The scripted ones moved to legacy/ and are no longer a fuzz target - nothing new can reach them.

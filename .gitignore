@@ -3,6 +3,8 @@ cicd/artifacts/
 *.gif.new
 __pycache__/
 
-## Go build output (built by cicd stage 2, or by hand)
+## Go build output: the native build (cicd stage 2, or by hand), and the per-target
+## cross-builds the dogfood stage makes on its way to a destination.
 src-go/gitsby
 src-go/gitsby.exe
+src-go/gitsby-*
