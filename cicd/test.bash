@@ -598,6 +598,28 @@ fRunSuite(){
 	fAssertOut "merged local-only branch pruned, and counted"  'Pruned 1 local, 0 on origin'  bash -c "cd '${prWork}' && '${gitsby}' -q br prune"
 	fAssert    "the local-only branch is gone"          bash -c "cd '${prWork}' && ! git show-ref --verify --quiet refs/heads/localonly"
 	fAssert    "pruned from a branch that doesn't contain it"  bash -c "cd '${prWork}' && [[ \"\$(git branch --show-current)\" == wip ]]"
+	## The deletes go in one call, and git deletes what it can and still exits nonzero for the rest -
+	## a branch checked out in another worktree, most often. Returning that ended the run with some
+	## branches already deleted, origin untouched, and no count printed at all.
+	(
+		cd "${prWork}"
+		git checkout --quiet dev
+		for prHeld in held goes; do
+			git checkout --quiet -b "${prHeld}" dev; echo "${prHeld}" > "${prHeld}.txt"
+			git add --all; git commit --quiet -m "${prHeld}"; git push --quiet -u origin "${prHeld}"
+		done
+		git checkout --quiet dev
+		git merge --quiet --no-ff held -m "merge held"; git merge --quiet --no-ff goes -m "merge goes"
+		git push --quiet
+		git checkout --quiet wip
+		git worktree add --quiet "${work}/$1-prune-held" held
+	)
+	fAssertOut "a branch git can't delete doesn't stop the prune"  'Pruned 1 local, 1 on origin' \
+		bash -c "cd '${prWork}' && '${gitsby}' -q br prune 2>&1"
+	fAssertOut "and it names the one it couldn't"  "couldn't delete held here"  bash -c "cd '${prWork}' && '${gitsby}' -q br prune 2>&1"
+	fAssert    "the deletable one still went"      bash -c "cd '${prWork}' && ! git show-ref --verify --quiet refs/heads/goes"
+	fAssert    "and origin keeps the held branch"  bash -c "cd '${prOrigin}' && git show-ref --verify --quiet refs/heads/held"
+	( cd "${prWork}" && git worktree remove --force "${work}/$1-prune-held" >/dev/null 2>&1 || true )
 
 	## clone: derives the dir, checks out dev when the repo has one, no-op re-run, collision guards
 	local cl="${work}/$1-clone"
@@ -2040,6 +2062,14 @@ GHEOF
 		bash -c "cd '${acWork}' && env ${acFragEnv} '${gitsby}' -q -NoFetch --config '${ac}/frag/config.shcl' account apply 2>&1"
 	fAssert       "and wrote no includeIf rule either"  bash -c "! grep -q 'b\.gitconfig' '${ac}/fraghome/.gitconfig'"
 
+	## The fragment names the account and points at the token file, so it is written 0600 - but
+	## os.WriteFile only applies a mode when it CREATES the file, so one left readable by an
+	## earlier run stayed that way through every re-apply.
+	if ((! isWindows)); then
+		fAssert "account apply tightens a fragment left readable by an earlier run" \
+			bash -c "chmod 644 '${ac}/home/.config/gitsby/accounts/work.gitconfig' && cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(stat -c '%a' '${ac}/home/.config/gitsby/accounts/work.gitconfig')\" == 600 ]]"
+	fi
+
 	## The sshKey value is concatenated into GIT_SSH_COMMAND and into core.sshCommand, and git hands
 	## both to a shell - while the config file itself is redirectable by flag and by environment
 	## variable. Dropped and reported, because quietly falling back to whatever key ssh picks is how
@@ -2296,6 +2326,25 @@ GHEOF
 		fAssert "and an icon" \
 			bash -c "LC_ALL=C grep -aq \$'\x89PNG' '${work}/winres-${winExe}.exe'"
 	done
+	## The terminal test is per-platform, and the fallback that answered for everything but Linux
+	## and Windows was a character-device test - which passes for /dev/null, the one case the
+	## no-terminal rule exists for. macOS and FreeBSD are published targets, so they get the real
+	## query. Built rather than pinned: a build constraint that excludes the wrong set compiles
+	## two isTTY into one package, or none.
+	local bsdTarget=""
+	for bsdTarget in darwin/arm64 darwin/amd64 freebsd/amd64; do
+		fAssert "${bsdTarget} builds with its own terminal test" \
+			bash -c "cd '${root}/src-go' && CGO_ENABLED=0 GOOS='${bsdTarget%%/*}' GOARCH='${bsdTarget##*/}' go build -trimpath -buildvcs=false -o '${work}/tty-${bsdTarget//\//-}' ."
+	done
+	fAssert "and the character-device fallback covers neither" \
+		bash -c "grep -q '^//go:build !linux && !windows && !darwin' '${root}/src-go/tty_other.go'"
+
+	## '~' in a config value used to expand through HOME alone, which nothing sets on native
+	## Windows - so every tilde path there resolved to nothing at all, silently. One helper
+	## answers it now; a bare lookup anywhere else is the bug coming back.
+	fAssert "only one place resolves the home directory" \
+		bash -c "[[ \"\$(cat \"${root}\"/src-go/*.go | grep -c 'os.Getenv(\"HOME\")')\" == 1 ]]"
+
 	## vcsprobe above is this same tree built for the host. A resource named without the
 	## GOOS_GOARCH suffix would link into every platform, which is a bigger mistake than
 	## shipping none at all.

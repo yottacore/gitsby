@@ -9,7 +9,10 @@
 
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestRemoteOwner(t *testing.T) {
 	tests := []struct{ url, want string }{
@@ -163,4 +166,34 @@ func TestCloneDestDir(t *testing.T) {
 			t.Errorf("cloneDestDir(%q, %q) = %q, want %q", tc.url, tc.dir, got, tc.want)
 		}
 	}
+}
+
+// The connect timeout used to be skipped whenever GIT_SSH_COMMAND was set at all -
+// including when the account selector had just set it from a config sshKey. So the
+// multi-account setups the timeout was written for were the ones that lost it, and
+// an unreachable host hung every command for the full TCP wait.
+func TestRemoteEnvKeepsTheConnectTimeoutOnOurOwnSSHCommand(t *testing.T) {
+	t.Setenv("GIT_SSH_COMMAND", "ssh -i /keys/work -o IdentitiesOnly=yes")
+
+	ours := &app{}
+	want := "GIT_SSH_COMMAND=ssh -i /keys/work -o IdentitiesOnly=yes -o ConnectTimeout=3"
+	if !hasEnv(ours.remoteEnv(), want) {
+		t.Errorf("remoteEnv() dropped the connect timeout from our own ssh command")
+	}
+
+	theirs := &app{userSSHCommand: true}
+	for _, entry := range theirs.remoteEnv() {
+		if strings.HasPrefix(entry, "GIT_SSH_COMMAND=") && strings.Contains(entry, "ConnectTimeout") {
+			t.Errorf("remoteEnv() rewrote a caller's own GIT_SSH_COMMAND: %q", entry)
+		}
+	}
+}
+
+func hasEnv(env []string, want string) bool {
+	for _, entry := range env {
+		if entry == want {
+			return true
+		}
+	}
+	return false
 }

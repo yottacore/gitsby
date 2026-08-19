@@ -36,6 +36,35 @@ type config struct {
 
 func isWindows() bool { return runtime.GOOS == "windows" }
 
+// homeDir is where '~' points. HOME first, so a shell that sets one wins - on
+// Windows that is the MSYS spelling, and the drive-letter fold below only knows
+// what to do with the path it is handed. Nothing sets HOME on native Windows,
+// where every '~' in a config file was expanding to nothing at all.
+func homeDir() string {
+	if home := os.Getenv("HOME"); home != "" {
+		return home
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return home
+}
+
+// expandTilde resolves a leading '~' in a path from the config file. Unresolvable
+// is left as typed: a path starting with a literal '~' matches nothing and reads
+// as the typo it is, where one starting with '/' would name somewhere real.
+func expandTilde(p string) string {
+	if p != "~" && !strings.HasPrefix(p, "~/") && !strings.HasPrefix(p, `~\`) {
+		return p
+	}
+	home := homeDir()
+	if home == "" {
+		return p
+	}
+	return home + p[1:]
+}
+
 var (
 	msysDriveRE = regexp.MustCompile(`^/([A-Za-z])(/.*)?$`)
 	driveRootRE = regexp.MustCompile(`^[A-Za-z]:/$`)
@@ -50,9 +79,7 @@ func canonPath(p string) string {
 		return ""
 	}
 	p = strings.ReplaceAll(p, "\\", "/")
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		p = os.Getenv("HOME") + p[1:]
-	}
+	p = expandTilde(p)
 	if isWindows() {
 		// Fold the drive letter BEFORE asking the filesystem: '/c/x' means nothing
 		// to a native build, and asking first is the bug the PowerShell port had.
@@ -162,7 +189,7 @@ func (o options) resolveConfigFile() (string, error) {
 	if d := os.Getenv("XDG_CONFIG_HOME"); d != "" {
 		candidates = append(candidates, d+"/gitsby/config.shcl")
 	}
-	if d := os.Getenv("HOME"); d != "" {
+	if d := homeDir(); d != "" {
 		candidates = append(candidates, d+"/.config/gitsby/config.shcl")
 	}
 	if d := os.Getenv("APPDATA"); d != "" {

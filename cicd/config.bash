@@ -46,6 +46,20 @@ GO_LDFLAGS_COMMON="-s -w -buildid="
 ## follow whatever is installed.
 GO_RELEASE_TOOLCHAIN="go1.26.2"
 
+## The versions the Go tools were at when this pipeline last gated a green run. Recorded,
+## compared and warned about - never installed and never enforced. Which version passed
+## something is worth knowing: a finding that appears out of nowhere on an unchanged tree
+## is usually a tool that moved rather than code that did, and a machine two years behind
+## reports clean for the opposite reason. Read with 'go version -m', which answers for any
+## Go-built binary - the four of them spell '--version' four different ways, and one has no
+## such flag at all. The toolchain itself is GO_RELEASE_TOOLCHAIN above.
+GO_TOOL_VERSIONS=(
+	"staticcheck=v0.7.0"
+	"golangci-lint=v2.12.2"
+	"govulncheck=v1.5.0"
+	"goversioninfo=v1.5.0"
+)
+
 ## Half the cores, rounded up. The compiler takes all of them by default, in every build and
 ## in the eight-target release loop, which makes the machine unusable for the duration.
 BUILD_JOBS=$(( ( $( nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2 ) + 1 ) / 2 ))
@@ -189,4 +203,5 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-07-22 JC: Created.
 ##		- 2026-08-18 JC: Go-specific. The scripts moved to legacy/ and left the lint globs with them; dogfood builds three targets instead of copying one script; parity became a stage, comparing the Go build against the frozen one.
 ##		- 2026-08-19 JC: WINRES_CMD: the Windows resource check joins stage 1, and release.bash regenerates the resource with the version bump.
+##		- 2026-08-19 JC: GO_TOOL_VERSIONS: the lint and audit tools ran at whatever version the box had, so a finding could appear or vanish with no change to the tree. Recorded and compared in stage 1, as a warning.
 ##		- 2026-08-19 JC: The installer is back at the repo root, so its two files are linted again - the root install.bash under shellcheck, install.ps1 under a restored PSScriptAnalyzer glob. FreeBSD joins the release matrix, since it cross-builds for free and the installer would otherwise have nothing to offer a BSD.

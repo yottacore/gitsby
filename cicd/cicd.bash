@@ -334,6 +334,19 @@ else
 	## Keyed off the module, not a glob - the tools walk it themselves. A missing
 	## toolchain is fatal now rather than a warning: it is what builds the product.
 	command -v go >/dev/null 2>&1 || fDie "go toolchain not installed - nothing in this pipeline can run without it"
+	## Which version of each tool is about to gate this run. A tool that moved on its own is
+	## the usual reason a finding appears - or stops appearing - on a tree nobody touched.
+	## Warned about only: this pipeline installs nothing, and a version skew is a thing to
+	## know rather than a reason to refuse to build.
+	toolDrift=()
+	for toolSpec in "${GO_TOOL_VERSIONS[@]}"; do
+		toolName="${toolSpec%%=*}"; toolWant="${toolSpec#*=}"
+		toolPath="$( command -v "${toolName}" 2>/dev/null || true )"
+		[[ -n "${toolPath}" ]] || continue
+		toolHave="$( go version -m "${toolPath}" 2>/dev/null | awk '$1=="mod"{print $3; exit}' )"
+		[[ "${toolHave}" == "${toolWant}" ]] || toolDrift+=( "${toolName} ${toolHave:-unknown} (recorded ${toolWant})" )
+	done
+	((${#toolDrift[@]} == 0)) || fEcho "WARNING: lint tool versions differ from the recorded set: ${toolDrift[*]}"
 	unformatted="$(cd "${root}/${GO_MODULE_DIR}" && gofmt -l .)"
 	[[ -z "${unformatted}" ]] || fDie "gofmt wants to reformat: ${unformatted}"
 	(cd "${root}/${GO_MODULE_DIR}" && go vet ./...) || fDie "go vet findings"

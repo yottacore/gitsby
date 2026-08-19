@@ -22,11 +22,17 @@ Goals, in priority order:
 Non-goals, each one deliberate:
 
 - **Covering all of git.** Roughly 90% of git's complexity serves about 10% of the cases. Partial staging, rebase surgery, conflict resolution, multiple remotes: those belong to raw `git`, and gitsby stays out of the way for them rather than growing a worse version of each.
+
 - **Being a git replacement.** Gitsby, `git`, `gh`, Lazygit and Tig are meant to be intermixed on the same repo, in any order. Anything that would make gitsby the only safe tool for a repo is off the table.
+
 - **Keeping state.** No database, no metadata, no dotfile in the repo. Everything is asked of git and `gh` at the moment it is needed, so stopping mid-project leaves nothing to undo, and no state of ours can disagree with the repo.
+
 - **Policing another tool's configuration.** Gitsby names who you are about to act as; it does not validate `gh`'s setup, rewrite your `~/.ssh/config`, or refuse a command because another tool is configured unusually.
+
 - **Guessing.** Where an answer cannot be established, the display says "unknown" and the command either proceeds or refuses by name. A name that is merely likely is worse than none, because it gets believed.
+
 - **Requiring configuration.** A machine with nothing set up must behave exactly as it did before any of this existed. Every account feature degrades to silence.
+
 - **Running anywhere but where the binary runs.** One static binary, no runtime, no interpreter, nothing installed alongside it - which is also why there is no plugin system and no scripting surface beyond `raw`.
 
 ## Assumptions

@@ -369,6 +369,12 @@ func (a *app) writeAccountFragment(dir, name string) error {
 	if err := os.WriteFile(fragment, nil, 0o600); err != nil {
 		return usagef("Couldn't write '%s'. Check permissions on '%s'.", fragment, dir)
 	}
+	// WriteFile only applies its mode when it creates the file, so a fragment left
+	// world-readable by an earlier run - or by a umask - stays that way through
+	// every re-apply. It names the account and points at the token file.
+	if err := os.Chmod(fragment, 0o600); err != nil && !isWindows() {
+		return usagef("Couldn't set permissions on '%s'; it names your account and points at your token file.", fragment)
+	}
 	write := func(key, value string) error {
 		if !a.inheritOK("git", "config", "--file", fragment, key, value) {
 			return usagef("Couldn't write %s into '%s'; it is incomplete, and nothing further was applied.", key, fragment)
