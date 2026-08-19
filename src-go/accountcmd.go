@@ -12,9 +12,9 @@
 package main
 
 import (
+	"cmp"
 	"os"
-	"sort"
-	"strconv"
+	"slices"
 	"strings"
 )
 
@@ -22,38 +22,41 @@ import (
 // them. An account can be declared by its keys alone, with no folder rule - it is
 // then only reachable by name, through GITSBY_ACCOUNT, which is a legitimate way
 // to use one.
-func accountNames() []string {
+func (c *config) accountNames() []string {
 	var seen []string
-	have := func(name string) bool {
-		for _, s := range seen {
-			if s == name {
-				return true
-			}
-		}
-		return false
-	}
-	for _, r := range cfgPaths {
-		if !have(r.acct) {
-			seen = append(seen, r.acct)
-		}
-	}
-	for _, r := range cfgSegments {
-		if !have(r.acct) {
-			seen = append(seen, r.acct)
-		}
-	}
-	for _, name := range cfgAcctOrder {
-		if !have(name) {
+	add := func(name string) {
+		if !slices.Contains(seen, name) {
 			seen = append(seen, name)
 		}
+	}
+	for _, r := range c.paths {
+		add(r.acct)
+	}
+	for _, r := range c.segments {
+		add(r.acct)
+	}
+	for _, name := range c.order {
+		add(name)
 	}
 	return seen
 }
 
-// accountFoldersOf: the folder rules belonging to one account, as canonical paths.
-func accountFoldersOf(name string) []string {
+// foldersOf: the folder rules belonging to one account, as canonical paths.
+func (c *config) foldersOf(name string) []string {
+	return matchesOf(c.paths, name)
+}
+
+// segmentsOf: the 'pathContains' rules belonging to one account. Kept apart from
+// the folder rules because they are a different claim: those name a tree on this
+// machine, these name a run of folder names on any machine, which is what lets one
+// config file be synced between them.
+func (c *config) segmentsOf(name string) []string {
+	return matchesOf(c.segments, name)
+}
+
+func matchesOf(rules []acctRule, name string) []string {
 	var out []string
-	for _, r := range cfgPaths {
+	for _, r := range rules {
 		if r.acct == name && r.match != "" {
 			out = append(out, r.match)
 		}
@@ -61,28 +64,14 @@ func accountFoldersOf(name string) []string {
 	return out
 }
 
-// accountSegmentsOf: the 'pathContains' rules belonging to one account. Kept
-// apart from the folder rules because they are a different claim: those name a
-// tree on this machine, these name a run of folder names on any machine, which
-// is what lets one config file be synced between them.
-func accountSegmentsOf(name string) []string {
-	var out []string
-	for _, r := range cfgSegments {
-		if r.acct == name && r.match != "" {
-			out = append(out, r.match)
-		}
-	}
-	return out
-}
-
-// accountIncludeDir: where the per-account git config fragments live - beside
-// the config file that describes them, so the two travel together and 'account
-// apply' has an unambiguous set of files it owns.
-func accountIncludeDir() string {
-	if configFileUsed == "" {
+// includeDir: where the per-account git config fragments live - beside the config
+// file that describes them, so the two travel together and 'account apply' has an
+// unambiguous set of files it owns.
+func (c *config) includeDir() string {
+	if c.file == "" {
 		return ""
 	}
-	dir := configFileUsed
+	dir := c.file
 	if i := strings.LastIndex(dir, "/"); i >= 0 {
 		dir = dir[:i]
 	}
@@ -91,21 +80,25 @@ func accountIncludeDir() string {
 
 type includeRule struct{ cond, target string }
 
-// sortRuleLines orders "<n>\t<match>\t<name>" lines the way the scripts' sort
-// does: numeric on the first field, text on the second, whole line settling an
-// exact tie.
-func sortRuleLines(lines []string) {
-	sort.Slice(lines, func(i, j int) bool {
-		fi, fj := strings.SplitN(lines[i], "\t", 3), strings.SplitN(lines[j], "\t", 3)
-		ni, _ := strconv.Atoi(fi[0])
-		nj, _ := strconv.Atoi(fj[0])
-		if ni != nj {
-			return ni < nj
-		}
-		if fi[1] != fj[1] {
-			return fi[1] < fj[1]
-		}
-		return lines[i] < lines[j]
+// includeCandidate is one folder rule on its way to becoming an includeIf: how
+// specific it is, the pattern git will match on, and the account it selects.
+type includeCandidate struct {
+	weight  int // path length, or folder-name count
+	pattern string
+	account string
+}
+
+// sortIncludes orders candidates the way the two matchers have to agree: git
+// takes the LAST match and gitsby the most specific, so least specific comes
+// first. The pattern breaks a tie in weight, and the account name settles an
+// exact one.
+func sortIncludes(list []includeCandidate) {
+	slices.SortFunc(list, func(x, y includeCandidate) int {
+		return cmp.Or(
+			cmp.Compare(x.weight, y.weight),
+			cmp.Compare(x.pattern, y.pattern),
+			cmp.Compare(x.account, y.account),
+		)
 	})
 }
 
@@ -114,40 +107,32 @@ func sortRuleLines(lines []string) {
 // and a rule that silently misses because of a capital letter is worse than no
 // rule. 'pathContains' maps straight onto git's own gitdir globbing, so plain
 // git gets the same rule rather than an approximation of it. Fewest folder names
-// first, and all of them ahead of the absolute rules - git takes the LAST match,
-// and gitsby takes the most specific, so the two only agree if the order runs
-// least specific to most; within the absolute rules, shortest path first for the
-// same reason (a tree nested inside another account's tree must land last).
-func accountApplyPlan() []includeRule {
-	dir := accountIncludeDir()
+// first, and all of them ahead of the absolute rules; within the absolute rules,
+// shortest path first, so a tree nested inside another account's tree lands last.
+func (c *config) accountApplyPlan() []includeRule {
+	dir := c.includeDir()
 	if dir == "" {
 		return nil
 	}
-	var rules, segRules []string
-	for _, name := range accountNames() {
-		for _, folder := range accountFoldersOf(name) {
-			rules = append(rules, strconv.Itoa(len(folder))+"\t"+folder+"\t"+name)
+	var paths, segments []includeCandidate
+	for _, name := range c.accountNames() {
+		for _, folder := range c.foldersOf(name) {
+			// The trailing slash is what makes git apply it to everything below the
+			// folder too.
+			paths = append(paths, includeCandidate{len(folder), folder + "/", name})
 		}
-		for _, folder := range accountSegmentsOf(name) {
-			segs := strings.Count(folder, "/") + 1
-			segRules = append(segRules, strconv.Itoa(segs)+"\t**/"+folder+"/**\t"+name)
+		for _, folder := range c.segmentsOf(name) {
+			segments = append(segments, includeCandidate{strings.Count(folder, "/") + 1, "**/" + folder + "/**", name})
 		}
 	}
-	if len(rules)+len(segRules) == 0 {
+	if len(paths)+len(segments) == 0 {
 		return nil
 	}
-	sortRuleLines(segRules)
-	sortRuleLines(rules)
-	var plan []includeRule
-	for _, line := range segRules {
-		f := strings.SplitN(line, "\t", 3)
-		plan = append(plan, includeRule{"includeIf.gitdir/i:" + f[1] + ".path", dir + "/" + f[2] + ".gitconfig"})
-	}
-	for _, line := range rules {
-		f := strings.SplitN(line, "\t", 3)
-		// The trailing slash is what makes git apply it to everything below the
-		// folder too.
-		plan = append(plan, includeRule{"includeIf.gitdir/i:" + f[1] + "/.path", dir + "/" + f[2] + ".gitconfig"})
+	sortIncludes(segments)
+	sortIncludes(paths)
+	plan := make([]includeRule, 0, len(segments)+len(paths))
+	for _, cand := range slices.Concat(segments, paths) {
+		plan = append(plan, includeRule{"includeIf.gitdir/i:" + cand.pattern + ".path", dir + "/" + cand.account + ".gitconfig"})
 	}
 	return plan
 }
@@ -155,8 +140,8 @@ func accountApplyPlan() []includeRule {
 // accountManagedIncludes: every includeIf already in the global config that
 // points into the directory we own. Those are ours to replace; anything else in
 // there was written by hand and is left alone.
-func accountManagedIncludes() []string {
-	dir := accountIncludeDir()
+func (c *config) accountManagedIncludes() []string {
+	dir := c.includeDir()
 	if dir == "" {
 		return nil
 	}
@@ -164,7 +149,7 @@ func accountManagedIncludes() []string {
 	var keys []string
 	// --null, not the plain form: that one separates the key from the value with a
 	// space, and the key holds a folder path which can contain one. Every such rule
-	// came back truncated, so it was never recognised as ours - which made each
+	// came back truncated, so it was never recognized as ours - which made each
 	// re-run append a duplicate, and left a rule dropped from the config file
 	// applying forever. -z ends each record with a NUL and the key with a newline.
 	for _, record := range strings.Split(runOut("git", "config", "--global", "--get-regexp", "--null", `^includeIf\..*\.path$`), "\x00") {
@@ -191,87 +176,91 @@ func accountManagedIncludes() []string {
 	return keys
 }
 
-func cmdAccountList() {
-	echoClean("")
-	configDisp := configFileUsed
+func (a *app) cmdAccountList() {
+	a.out.clean("")
+	configDisp := a.cfg.file
 	if configDisp == "" {
 		configDisp = "(none found)"
 	}
-	echoClean("Config file ..: " + configDisp)
-	echoClean("Here .........: " + contextDir())
-	hereAccount := accountForDir(contextDir())
-	resolvedLine := acctGhWho
+	a.out.clean("Config file ..: " + configDisp)
+	a.out.clean("Here .........: " + a.contextDir())
+	hereAccount := a.cfg.accountForDir(a.contextDir())
+	resolvedLine := a.acct.ghWho
 	if resolvedLine == "" {
 		resolvedLine = "(nothing configured - gh's own account)"
 	}
-	if acctSource != "" {
-		resolvedLine += " (from " + acctSource + ")"
+	if a.acct.source != "" {
+		resolvedLine += " (from " + a.acct.source + ")"
 	}
-	echoClean("Resolves to ..: " + resolvedLine)
-	if len(cfgUnknown) > 0 {
-		echoClean("Ignored keys .: " + strings.Join(cfgUnknown, ", "))
+	a.out.clean("Resolves to ..: " + resolvedLine)
+	if len(a.cfg.unknown) > 0 {
+		a.out.clean("Ignored keys .: " + strings.Join(a.cfg.unknown, ", "))
 	}
-	names := accountNames()
+	names := a.cfg.accountNames()
 	if len(names) == 0 {
-		echoClean("")
-		echoClean("No accounts defined. See the Multiple accounts section of the README for the file format.")
+		a.out.clean("")
+		a.out.clean("No accounts defined. See the Multiple accounts section of the README for the file format.")
 		return
 	}
-	echoClean("")
-	echoClean("Accounts:")
+	a.out.clean("")
+	a.out.clean("Accounts:")
 	for _, name := range names {
-		marker := "  "
-		if name == hereAccount {
-			marker = "->"
+		a.showAccount(name, name == hereAccount)
+	}
+}
+
+func (a *app) showAccount(name string, isHere bool) {
+	marker := "  "
+	if isHere {
+		marker = "->"
+	}
+	a.out.clean(marker + " " + name)
+	ghWho := a.cfg.value(name, "ghAccount")
+	ghDisp := ghWho
+	if ghDisp == "" {
+		ghDisp = "(none)"
+	}
+	a.out.clean("     github ..: " + ghDisp)
+	// Say where a token would come from, never what it is.
+	tokenFrom := "none"
+	if ghWho != "" && ghTokenFor(ghWho) != "" {
+		tokenFrom = "gh's own store"
+	} else if readTokenFile(a.cfg.value(name, "tokenFile")) != "" {
+		tokenFrom = a.cfg.value(name, "tokenFile")
+	}
+	a.out.clean("     token ...: " + tokenFrom)
+	if sshKey := a.cfg.value(name, "sshKey"); sshKey != "" {
+		a.out.clean("     ssh key .: " + sshKey)
+	}
+	acctUser := a.cfg.value(name, "name")
+	acctEmail := a.cfg.value(name, "email")
+	if acctUser+acctEmail != "" {
+		if acctUser == "" {
+			acctUser = "?"
 		}
-		echoClean(marker + " " + name)
-		ghWho := accountValue(name, "ghAccount")
-		ghDisp := ghWho
-		if ghDisp == "" {
-			ghDisp = "(none)"
+		if acctEmail == "" {
+			acctEmail = "?"
 		}
-		echoClean("     github ..: " + ghDisp)
-		// Say where a token would come from, never what it is.
-		tokenFrom := "none"
-		if ghWho != "" && ghTokenFor(ghWho) != "" {
-			tokenFrom = "gh's own store"
-		} else if readTokenFile(accountValue(name, "tokenFile")) != "" {
-			tokenFrom = accountValue(name, "tokenFile")
+		a.out.clean("     commits .: " + acctUser + " <" + acctEmail + ">")
+	}
+	if proto := a.cfg.value(name, "protocol"); proto != "" {
+		a.out.clean("     protocol : " + proto)
+	}
+	for _, folder := range a.cfg.foldersOf(name) {
+		// A rule pointing at nothing matches nothing, and reads exactly like no rule
+		// at all - which is how you end up acting as the wrong account while believing
+		// you configured it. Usually a typo; on Windows it is also how a shell-only
+		// path spelling such as '/tmp/...' looks, since only the shell build can
+		// resolve one.
+		if isDir(folder) {
+			a.out.clean("     folder ..: " + folder)
+		} else {
+			a.out.clean("     folder ..: " + folder + "  (no such directory - this rule can never match)")
 		}
-		echoClean("     token ...: " + tokenFrom)
-		if sshKey := accountValue(name, "sshKey"); sshKey != "" {
-			echoClean("     ssh key .: " + sshKey)
-		}
-		acctUser := accountValue(name, "name")
-		acctEmail := accountValue(name, "email")
-		if acctUser+acctEmail != "" {
-			if acctUser == "" {
-				acctUser = "?"
-			}
-			if acctEmail == "" {
-				acctEmail = "?"
-			}
-			echoClean("     commits .: " + acctUser + " <" + acctEmail + ">")
-		}
-		if proto := accountValue(name, "protocol"); proto != "" {
-			echoClean("     protocol : " + proto)
-		}
-		for _, folder := range accountFoldersOf(name) {
-			// A rule pointing at nothing matches nothing, and reads exactly like no
-			// rule at all - which is how you end up acting as the wrong account while
-			// believing you configured it. Usually a typo; on Windows it is also how
-			// a shell-only path spelling such as '/tmp/...' looks, since only the
-			// shell build can resolve one.
-			if isDir(folder) {
-				echoClean("     folder ..: " + folder)
-			} else {
-				echoClean("     folder ..: " + folder + "  (no such directory - this rule can never match)")
-			}
-		}
-		// No existence check on these: naming no machine in particular is the point.
-		for _, seg := range accountSegmentsOf(name) {
-			echoClean("     anywhere : .../" + seg + "/...")
-		}
+	}
+	// No existence check on these: naming no machine in particular is the point.
+	for _, seg := range a.cfg.segmentsOf(name) {
+		a.out.clean("     anywhere : .../" + seg + "/...")
 	}
 }
 
@@ -281,73 +270,86 @@ func cmdAccountList() {
 // checked BEFORE writing anything: left to mkdir and the redirect, a blocked
 // path surfaced as a raw tooling error part way through the run, which reads as
 // a crash rather than as something you can act on.
-func cmdAccountApply() {
-	dir := accountIncludeDir()
+func (a *app) cmdAccountApply() error {
+	dir := a.cfg.includeDir()
 	if dir == "" {
-		throwUsage("No config file, so there is nowhere to write the account fragments.")
+		return usagef("No config file, so there is nowhere to write the account fragments.")
 	}
 	if pathExists(dir) && !isDir(dir) {
-		throwUsage("'" + dir + "' is where the account fragments go, and it isn't a directory. Move or remove it, then re-run.")
+		return usagef("'%s' is where the account fragments go, and it isn't a directory. Move or remove it, then re-run.", dir)
 	}
 	if err := os.MkdirAll(dir, 0o777); err != nil {
 		parent := dir
 		if i := strings.LastIndex(parent, "/"); i >= 0 {
 			parent = parent[:i]
 		}
-		throwUsage("Couldn't create '" + dir + "' for the account fragments. Check permissions on '" + parent + "'.")
+		return usagef("Couldn't create '%s' for the account fragments. Check permissions on '%s'.", dir, parent)
 	}
-	for _, name := range accountNames() {
-		fragment := dir + "/" + name + ".gitconfig"
-		// Every write is checked and every failure stops the run. This is the one
-		// command that writes outside the repo you are standing in, so it is the one
-		// place where a discarded exit code turns into a silent no-op: it said "Wrote"
-		// and exited 0 whatever happened.
-		if err := os.WriteFile(fragment, nil, 0o644); err != nil {
-			throwUsage("Couldn't write '" + fragment + "'. Check permissions on '" + dir + "'.")
+	for _, name := range a.cfg.accountNames() {
+		if err := a.writeAccountFragment(dir, name); err != nil {
+			return err
 		}
-		write := func(key, value string) {
-			if !runInheritOK("git", "config", "--file", fragment, key, value) {
-				throwUsage("Couldn't write " + key + " into '" + fragment + "'; it is incomplete, and nothing further was applied.")
-			}
-		}
-		if acctUser := accountValue(name, "name"); acctUser != "" {
-			write("user.name", acctUser)
-		}
-		if acctEmail := accountValue(name, "email"); acctEmail != "" {
-			write("user.email", acctEmail)
-		}
-		ghWho := accountValue(name, "ghAccount")
-		if ghWho != "" {
-			write("gitsby.ghAccount", ghWho)
-			// Which account plain git should ASK for over https. Without it the
-			// fragment covered the ssh half and left the https half to whichever
-			// credential the helper happened to hold first - so a bare 'git push' in a
-			// configured folder could still go out as someone else, which is the gap
-			// 'apply' exists to close. Naming the user is what makes a credential
-			// manager look up that account's entry rather than any entry for the host.
-			write("credential.https://github.com.username", ghWho)
-		}
-		if tokenFile := accountValue(name, "tokenFile"); tokenFile != "" {
-			write("gitsby.ghTokenFile", tokenFile)
-		}
-		if sshKey := accountValue(name, "sshKey"); sshKey != "" {
-			write("core.sshCommand", "ssh -i "+sshKey+" -o IdentitiesOnly=yes")
-		}
-		echoStatus("Wrote " + fragment)
 	}
 	// Drop ours before adding, so a folder rule that was removed from the config
 	// file stops applying. Each key was just listed out of the config, so a failure
 	// to remove one is real - and leaving it means the old rule keeps applying
 	// beside the new one.
-	for _, key := range accountManagedIncludes() {
-		if !runInheritOK("git", "config", "--global", "--unset-all", key) {
-			throwUsage("Couldn't remove the old rule '" + key + "' from your global git config; nothing further was applied.")
+	for _, key := range a.cfg.accountManagedIncludes() {
+		if !a.inheritOK("git", "config", "--global", "--unset-all", key) {
+			return usagef("Couldn't remove the old rule '%s' from your global git config; nothing further was applied.", key)
 		}
 	}
-	for _, rule := range accountApplyPlan() {
-		if !runInheritOK("git", "config", "--global", "--add", rule.cond, rule.target) {
-			throwUsage("Couldn't add '" + rule.cond + "' to your global git config.")
+	for _, rule := range a.cfg.accountApplyPlan() {
+		if !a.inheritOK("git", "config", "--global", "--add", rule.cond, rule.target) {
+			return usagef("Couldn't add '%s' to your global git config.", rule.cond)
 		}
-		echoStatus("git config --global --add " + rule.cond)
+		a.out.status("git config --global --add " + rule.cond)
 	}
+	return nil
+}
+
+// writeAccountFragment writes one account's git config fragment. Every write is
+// checked and every failure stops the run: this is the one command that writes
+// outside the repo you are standing in, so it is the one place where a discarded
+// exit code turns into a silent no-op - it said "Wrote" and exited 0 whatever
+// happened.
+func (a *app) writeAccountFragment(dir, name string) error {
+	fragment := dir + "/" + name + ".gitconfig"
+	if err := os.WriteFile(fragment, nil, 0o644); err != nil {
+		return usagef("Couldn't write '%s'. Check permissions on '%s'.", fragment, dir)
+	}
+	write := func(key, value string) error {
+		if !a.inheritOK("git", "config", "--file", fragment, key, value) {
+			return usagef("Couldn't write %s into '%s'; it is incomplete, and nothing further was applied.", key, fragment)
+		}
+		return nil
+	}
+	entries := []struct{ key, value string }{
+		{"user.name", a.cfg.value(name, "name")},
+		{"user.email", a.cfg.value(name, "email")},
+		{"gitsby.ghAccount", a.cfg.value(name, "ghAccount")},
+		// Which account plain git should ASK for over https. Without it the fragment
+		// covered the ssh half and left the https half to whichever credential the
+		// helper happened to hold first - so a bare 'git push' in a configured folder
+		// could still go out as someone else, which is the gap 'apply' exists to close.
+		// Naming the user is what makes a credential manager look up that account's
+		// entry rather than any entry for the host.
+		{"credential.https://github.com.username", a.cfg.value(name, "ghAccount")},
+		{"gitsby.ghTokenFile", a.cfg.value(name, "tokenFile")},
+	}
+	for _, e := range entries {
+		if e.value == "" {
+			continue
+		}
+		if err := write(e.key, e.value); err != nil {
+			return err
+		}
+	}
+	if sshKey := a.cfg.value(name, "sshKey"); sshKey != "" {
+		if err := write("core.sshCommand", "ssh -i "+sshKey+" -o IdentitiesOnly=yes"); err != nil {
+			return err
+		}
+	}
+	a.out.status("Wrote " + fragment)
+	return nil
 }

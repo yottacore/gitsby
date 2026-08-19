@@ -14,52 +14,28 @@ import (
 	"strings"
 )
 
-// Per-run constants, filled by main post-fetch so origin/HEAD is fresh.
-var (
-	defaultBranchCache = ""
-	mergeTargetCache   = ""
-)
-
-// The three questions asked over and over in one run: which branch, does it
-// track anything, and how far from it. Each is asked once and remembered; a step
-// that could move any of them forgets all three on its way out.
-var (
-	currentBranchCache = ""
-	currentBranchKnown = false
-	hasUpstreamCache   = false
-	hasUpstreamKnown   = false
-	aheadCache         = 0
-	behindCache        = 0
-	aheadBehindKnown   = false
-)
-
-func currentBranch() string {
-	if !currentBranchKnown {
-		currentBranchCache, currentBranchKnown = runOut("git", "branch", "--show-current"), true
-	}
-	return currentBranchCache
+func (a *app) currentBranch() string {
+	return a.git.currentBranch.get(func() string { return runOut("git", "branch", "--show-current") })
 }
 
-func hasUpstream() bool {
-	if !hasUpstreamKnown {
-		hasUpstreamCache, hasUpstreamKnown = runOK("git", "rev-parse", "--abbrev-ref", "@{u}"), true
-	}
-	return hasUpstreamCache
+func (a *app) hasUpstream() bool {
+	return a.git.hasUpstream.get(func() bool { return runOK("git", "rev-parse", "--abbrev-ref", "@{u}") })
 }
 
-// aheadBehind: both directions against the upstream, in the one call that
-// answers for both - the branch line and the incoming list were each asking git
-// separately for the same number.
-func aheadBehind() (ahead, behind int) {
-	if !aheadBehindKnown {
-		aheadBehindKnown = true
-		aheadCache, behindCache = 0, 0
-		if counts := strings.Fields(runOut("git", "rev-list", "--left-right", "--count", "@{u}...HEAD")); len(counts) == 2 {
-			behindCache, _ = strconv.Atoi(counts[0])
-			aheadCache, _ = strconv.Atoi(counts[1])
+// aheadBehind: both directions against the upstream, in the one call that answers
+// for both - the branch line and the incoming list were each asking git separately
+// for the same number.
+func (a *app) aheadBehind() (ahead, behind int) {
+	counts := a.git.aheadBehind.get(func() [2]int {
+		fields := strings.Fields(runOut("git", "rev-list", "--left-right", "--count", "@{u}...HEAD"))
+		if len(fields) != 2 {
+			return [2]int{}
 		}
-	}
-	return aheadCache, behindCache
+		behind, _ := strconv.Atoi(fields[0])
+		ahead, _ := strconv.Atoi(fields[1])
+		return [2]int{ahead, behind}
+	})
+	return counts[0], counts[1]
 }
 
 // isAhead: -n 1 stops at the first commit - the count doesn't matter here.
@@ -68,6 +44,7 @@ func isAhead() bool { return runOut("git", "rev-list", "-n", "1", "@{u}..") != "
 func branchExistsLocal(branch string) bool {
 	return runOK("git", "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
 }
+
 func branchExistsRemote(branch string) bool {
 	return runOK("git", "show-ref", "--verify", "--quiet", "refs/remotes/origin/"+branch)
 }
@@ -83,21 +60,22 @@ func branchHasUnpushed(branch string) bool {
 // delete, where git reads it as flags instead. Not typeable here - the parser
 // takes a leading dash as an option of ours - so it can only have arrived from a
 // repo we cloned, and 'git checkout' has no separator that would rescue it.
-func refuseOptionShapedRefs(names ...string) {
+func refuseOptionShapedRefs(names ...string) error {
 	for _, name := range names {
 		if strings.HasPrefix(name, "-") {
-			throwUsage("Branch '" + name + "' starts with a dash, so git reads it as an option rather than a name. Rename it with raw git first.")
+			return usagef("Branch '%s' starts with a dash, so git reads it as an option rather than a name. Rename it with raw git first.", name)
 		}
 	}
+	return nil
 }
 
 // isProtectedBranch: main/master/dev - branches WIP should never be
 // auto-committed to, or deleted. Empty means the current one.
-func isProtectedBranch(branch string) bool {
+func (a *app) isProtectedBranch(branch string) bool {
 	if branch == "" {
-		branch = currentBranch()
+		branch = a.currentBranch()
 	}
-	if branch == defaultBranch() {
+	if branch == a.defaultBranch() {
 		return true
 	}
 	if branch == "main" || branch == "master" { // a leftover one isn't ours to touch either
@@ -124,10 +102,11 @@ func isMergedInto(ref string, into []string) bool {
 // init.defaultBranch) and that was never cloned has no origin/HEAD to read, so a
 // sole local branch is the honest answer there. Guessing "main" at the end would
 // name a branch that doesn't exist - the caller refuses instead.
-func defaultBranch() string {
-	if defaultBranchCache != "" {
-		return defaultBranchCache
-	}
+func (a *app) defaultBranch() string {
+	return a.git.defaultBranch.get(resolveDefaultBranch)
+}
+
+func resolveDefaultBranch() string {
 	if originHead := runOut("git", "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"); originHead != "" {
 		return strings.TrimPrefix(originHead, "origin/")
 	}
@@ -155,53 +134,52 @@ func defaultBranch() string {
 
 // mergeTarget: feature branches come off of - and land on - dev when the repo
 // has one; else the default branch.
-func mergeTarget() string {
-	if mergeTargetCache != "" {
-		return mergeTargetCache
-	}
-	if branchExistsLocal("dev") || branchExistsRemote("dev") {
-		return "dev"
-	}
-	return defaultBranch()
+func (a *app) mergeTarget() string {
+	return a.git.mergeTarget.get(func() string {
+		if branchExistsLocal("dev") || branchExistsRemote("dev") {
+			return "dev"
+		}
+		return a.defaultBranch()
+	})
 }
 
 // isHotfixBranch: a hotfix corrects what is already published, so it targets the
 // default branch instead of dev. The 'hotfix/' prefix is the marker: it lives in
 // the ref name, so it survives a clone and is visible in a branch listing.
-func isHotfixBranch(branch string) bool {
+func (a *app) isHotfixBranch(branch string) bool {
 	if branch == "" {
-		branch = currentBranch()
+		branch = a.currentBranch()
 	}
 	return strings.HasPrefix(branch, "hotfix/")
 }
 
 // branchTarget is where THIS branch lands, which is not always where new feature
 // branches come from - a hotfix lands on the default branch.
-func branchTarget(branch string) string {
+func (a *app) branchTarget(branch string) string {
 	if branch == "" {
-		branch = currentBranch()
+		branch = a.currentBranch()
 	}
-	if isHotfixBranch(branch) {
-		return defaultBranch()
+	if a.isHotfixBranch(branch) {
+		return a.defaultBranch()
 	}
-	return mergeTarget()
+	return a.mergeTarget()
 }
 
 // branchDisp: "base :: branch" for work branches; a bare name for main/master/dev,
 // which are off nothing. The base is where the branch LANDS - for anything gitsby
 // made that's also where it came from, and git records no fork point to read, so
 // the land target is the honest answer either way.
-func branchDisp(branch string) string {
+func (a *app) branchDisp(branch string) string {
 	if branch == "" {
-		branch = currentBranch()
+		branch = a.currentBranch()
 	}
 	if branch == "" {
 		return ""
 	}
-	if isProtectedBranch(branch) {
+	if a.isProtectedBranch(branch) {
 		return branch
 	}
-	if base := branchTarget(branch); base != "" {
+	if base := a.branchTarget(branch); base != "" {
 		return base + " :: " + branch
 	}
 	return branch
@@ -209,11 +187,11 @@ func branchDisp(branch string) string {
 
 // branchSync gives ahead/behind for the branch line; empty when in sync, so a
 // quiet line means "nothing pending".
-func branchSync() string {
-	if !hasUpstream() {
+func (a *app) branchSync() string {
+	if !a.hasUpstream() {
 		return "(no upstream)"
 	}
-	ahead, behind := aheadBehind()
+	ahead, behind := a.aheadBehind()
 	out := ""
 	if ahead > 0 {
 		out = "ahead " + strconv.Itoa(ahead)
@@ -246,13 +224,13 @@ func commitIdentity() string {
 	return ident
 }
 
-var maskUrlRE = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9+.-]*://)[^/@]+@(.*)$`)
+var maskURLRE = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9+.-]*://)[^/@]+@(.*)$`)
 
-// maskUrl hides userinfo in displayed URLs (https://user:token@host ->
+// maskURL hides userinfo in displayed URLs (https://user:token@host ->
 // https://***@host); a credentialed origin would otherwise echo the token on
 // every run.
-func maskUrl(url string) string {
-	if m := maskUrlRE.FindStringSubmatch(url); m != nil {
+func maskURL(url string) string {
+	if m := maskURLRE.FindStringSubmatch(url); m != nil {
 		return m[1] + "***@" + m[2]
 	}
 	return url

@@ -1,0 +1,155 @@
+// One run of gitsby, and the answers it accumulates. Everything a command needs
+// arrives through here rather than through package state: what was asked for, what
+// has been settled about the repo and the account, and where the output goes.
+
+// Copyright © 2026 Jim Collier (CryptogID: ѳ6ᴚ℈𐀘𐇦ɛ𐊁¥Mﾏb϶Δ𐌞)
+// Licensed under The MIT License (MIT). Full text at:
+//	https://mit-license.org/
+// SPDX-License-Identifier: MIT
+
+package main
+
+// cached remembers one answer that costs a process to ask for, and keeps "not
+// asked yet" apart from "asked, and the answer is nothing" - which is the
+// difference between one lookup and the same five over and over.
+type cached[T any] struct {
+	value T
+	known bool
+}
+
+func (c *cached[T]) get(ask func() T) T {
+	if !c.known {
+		c.value, c.known = ask(), true
+	}
+	return c.value
+}
+
+func (c *cached[T]) set(value T) {
+	c.value, c.known = value, true
+}
+
+func (c *cached[T]) forget() {
+	var zero T
+	c.value, c.known = zero, false
+}
+
+// options is everything the parser can be told. The whole vocabulary is taken
+// from day one so no spelling is refused now and accepted later.
+type options struct {
+	message     string
+	quiet       bool // -q/--quiet/-y: no prompts, no banner
+	fetch       bool // cleared by --no-fetch
+	visibility  string
+	anyIdentity bool // a gh/ssh account mismatch here is intended
+	configFile  string
+	configGiven bool // whether it was typed at all: '--config ""' is a mistake, not a fallback
+	sawPublic   bool
+	sawPrivate  bool
+}
+
+// command is the resolved command and its positional arguments, after the
+// grouped-noun collapse has folded '<noun> <verb>' into one flat name.
+type command struct {
+	name     string
+	arg      string // subcommand for a grouped noun, else message/branch/version/PR number
+	arg2     string
+	arg3     string // only 'repo clone <url> [dir]' goes this deep
+	mutating bool
+}
+
+// repoState holds the answers a run asks git for more than once. Each is asked
+// once and remembered; a step that could move any of them forgets them on its
+// way out, so the after-shot reads what the step left behind rather than what
+// preceded it.
+type repoState struct {
+	originURL      cached[string]
+	coreSSHCommand cached[string]
+	currentBranch  cached[string]
+	hasUpstream    cached[bool]
+	aheadBehind    cached[[2]int]
+	contextDir     cached[string]
+	defaultBranch  cached[string]
+	mergeTarget    cached[string]
+}
+
+// forget drops every answer a step could have invalidated. The two branch names
+// are deliberately not among them: main settles both once, post-fetch, and no
+// step of ours renames a default branch or invents a dev.
+func (r *repoState) forget() {
+	r.originURL.forget()
+	r.coreSSHCommand.forget()
+	r.currentBranch.forget()
+	r.hasUpstream.forget()
+	r.aheadBehind.forget()
+	r.contextDir.forget()
+}
+
+// ghState is what this run knows about the two accounts a remote command can act
+// as: gh's own, and whoever a remote's ssh key authenticates as. Both cost a live
+// round trip, so both are asked at most once.
+type ghState struct {
+	isCommand bool   // goes through gh at all -> show whose account that is
+	isWrite   bool   // WRITES through gh -> also compare against the ssh key
+	probeURL  string // the url the ssh identity is read from
+	reachable bool   // cleared when the pre-command fetch can't reach origin
+	login     cached[string]
+	sshLogin  cached[string]
+	protocol  cached[string]
+}
+
+// account is who this run acts as, and what selecting them actually changed.
+type account struct {
+	name     string // configured account claiming this folder, if any
+	ghWho    string // the GitHub account this run acts as
+	source   string // how we decided that, for the identity line
+	explicit bool
+	applied  bool
+
+	// What the selection applied, read back by the identity block.
+	noToken       bool
+	usedHTTPSAuth bool
+	usedSSHKey    string
+	usedIdentity  bool
+	switchedFrom  string
+}
+
+// app is one run. The command functions take it rather than reach for package
+// state, so any of them can be called twice - or from a test - without the second
+// call inheriting the first one's answers.
+type app struct {
+	opt  options
+	cmd  command
+	out  *printer
+	cfg  *config
+	acct account
+	git  repoState
+	gh   ghState
+
+	inRepo bool
+
+	// The stamp a quiet commit falls back to with no message and no editor.
+	stamp string
+
+	// What each command settled before its plan was shown.
+	prune prunePlan
+	rel   releasePlan
+	tgt   repoTarget
+	pr    prRequest
+
+	// Set by showList; callers that need "was it empty?" read it back.
+	lastListCount int
+	// Measured once: measuring twice in one run would only let the plan and the
+	// after-shot wrap differently.
+	termWidth cached[int]
+}
+
+func newApp(out *printer) *app {
+	return &app{
+		out:   out,
+		cfg:   &config{values: map[string]string{}},
+		gh:    ghState{reachable: true},
+		opt:   defaultOptions(),
+		cmd:   command{mutating: true},
+		stamp: stampNow(),
+	}
+}

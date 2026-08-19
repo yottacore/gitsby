@@ -21,8 +21,8 @@
 ##	  per-project settings live in config.bash.
 ##	- Stages (fail-fast, any error aborts before the next stage):
 ##	   0. remote sync (fast-forward from origin before anything is built or tested)
-##	   1. lint (gofmt + go vet + staticcheck, and shellcheck over the pipeline's own scripts)
-##	   2. build + regression tests (cicd/test.bash against the compiled binary)
+##	   1. lint (gofmt + go vet + staticcheck + golangci-lint, and shellcheck over the pipeline's own scripts)
+##	   2. build + unit tests (go test) + regression tests (cicd/test.bash against the compiled binary)
 ##	   3. fuzz + security (cicd/fuzz.bash; skipped under --quick)
 ##	   4. backwards compatibility (cicd/parity.bash: this build vs the frozen v2.1.0 one)
 ##	   5. dogfood (cross-build every target and install each to its first existing dir)
@@ -155,7 +155,7 @@ fEcho_Clean "${APP_NAME} local CI/CD"
 fEcho_Clean
 fEcho_Clean "Repo root ...........: ${root}"
 if ((do_lint)); then
-	fEcho_Clean "Lint ................: gofmt + go vet + staticcheck, shellcheck on ${#shell_files[@]} shell file(s)  (+ markdownlint, py_compile, PSScriptAnalyzer if available)"
+	fEcho_Clean "Lint ................: gofmt + go vet + staticcheck, shellcheck on ${#shell_files[@]} shell file(s)  (+ golangci-lint, markdownlint, py_compile, PSScriptAnalyzer if available)"
 else
 	fEcho_Clean "Lint ................: (skipped)"
 fi
@@ -333,6 +333,14 @@ else
 	else
 		fEcho "WARNING: staticcheck skipped (not installed: go install honnef.co/go/tools/cmd/staticcheck@latest)"
 	fi
+	## The rest of the set - dropped errors, shadowed builtins, naming - configured in
+	## src-go/.golangci.yml. Gates when installed, like staticcheck above.
+	if command -v golangci-lint >/dev/null 2>&1; then
+		(cd "${root}/${GO_MODULE_DIR}" && golangci-lint run ./...) || fDie "golangci-lint findings"
+		fEcho "OK: golangci-lint clean"
+	else
+		fEcho "WARNING: golangci-lint skipped (not installed: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest)"
+	fi
 fi
 
 ## Stage 2: build, then the regression suite against what was just built. The build is
@@ -344,6 +352,10 @@ if ((! do_test)); then
 else
 	(cd "${root}/${GO_MODULE_DIR}" && go build -trimpath -ldflags "-s -w -X main.version=${go_version#v}" -o "${EXE_NAME}" .) || fDie "go build failed"
 	fEcho "OK: go build (v${go_version#v})"
+	## The unit tests come before the suite below: they answer in milliseconds and
+	## cover the parsing and matching the suite can only reach through a built binary.
+	(cd "${root}/${GO_MODULE_DIR}" && go test ./...) || fDie "go test failures"
+	fEcho "OK: go test"
 	if [[ -f "${TEST_CMD[0]:-}" ]]; then
 		"${TEST_CMD[@]}"
 		fEcho "OK: tests passed"
@@ -478,3 +490,4 @@ fEcho_Clean
 ##		- 2026-08-17 JC: Stage 1 lints the go tree: gofmt (list mode, gating) and go vet, plus staticcheck when installed. Keyed off src-go existing rather than globs, so there is nothing to mirror in the Windows settings yet.
 ##		- 2026-08-18 JC: Go-specific, seven stages. The go toolchain is required rather than probed, the build gates, and the PowerShell lint block is gone with the scripts. Backwards compatibility became its own stage instead of a tail on the tests, and dogfood cross-builds every configured target rather than copying one script.
 ##		- 2026-08-19 JC: PSScriptAnalyzer is back in stage 1, probe-gated as before. The installer for Windows is the one piece of PowerShell that still ships, and it was going out unlinted.
+##		- 2026-08-19 JC: golangci-lint joins stage 1 and go test joins stage 2, both alongside what was already there. The unit tests cover the parsing and matching that previously needed a built binary and a throwaway repo to reach.

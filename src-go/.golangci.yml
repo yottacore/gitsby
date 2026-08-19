@@ -1,0 +1,43 @@
+##	Purpose:
+##		- The checks that caught what gofmt, vet and staticcheck do not: dropped
+##		  errors, shadowed builtins, and Go's own naming convention. Every finding
+##		  below was a real one before it became a gate.
+##		- Run by cicd.bash stage 1 when installed; the three tools above gate
+##		  unconditionally, so a machine without this still cannot land a mess.
+##	Notes:
+##		- 'default: none' is deliberate. The set is small and argued for; a linter
+##		  arriving with a future release should be adopted on purpose, not inherited.
+##		- package-comments is off: the file-top prose sits above the copyright block
+##		  in every file, which is where it belongs and reads better than a docstring
+##		  repeating the package name.
+##	Copyright © 2026 Jim Collier (CryptogID: ѳ6ᴚ℈𐀘𐇦ɛ𐊁¥Mﾏb϶Δ𐌞)
+##	Licensed under The MIT License (MIT). Full text at:
+##		https://mit-license.org/
+##	SPDX-License-Identifier: MIT
+
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck      ## a dropped error is how a write becomes a silent no-op
+    - govet
+    - ineffassign   ## a value assigned and never read is a line that means nothing
+    - predeclared   ## 'min', 'max', 'len' as names read as the builtin at a glance
+    - revive
+    - staticcheck
+    - unconvert     ## a conversion that converts nothing hides one that does
+    - unused
+  settings:
+    revive:
+      rules:
+        - name: var-naming        ## URL, ID, SSH - not Url, Id, Ssh
+        - name: redefines-builtin-id
+        - name: indent-error-flow
+        - name: errorf
+        - name: error-return
+        - name: unreachable-code
+
+formatters:
+  enable:
+    - gofmt

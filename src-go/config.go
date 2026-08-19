@@ -22,17 +22,17 @@ type acctRule struct {
 	acct  string
 }
 
-var (
-	configLoaded = false
-	cfg          = map[string]string{}
-	cfgPaths     []acctRule // 'path' rules: absolute folder claims
-	cfgSegments  []acctRule // 'pathContains' rules: machine-free folder-name runs
-	cfgUnknown   []string   // named but not understood - reported, never silent
-	cfgAcctOrder []string   // accounts in declaration order, for ones with keys but no folder rule
-)
-
-// Named by the identity block when the file held keys nothing reads.
-var configFileUsed = ""
+// config is one parsed accounts file. Zero accounts and no file are the ordinary
+// single-account case, not an error.
+type config struct {
+	loaded   bool
+	values   map[string]string
+	paths    []acctRule // 'path' rules: absolute folder claims
+	segments []acctRule // 'pathContains' rules: machine-free folder-name runs
+	unknown  []string   // named but not understood - reported, never silent
+	order    []string   // accounts in declaration order, for ones with keys but no folder rule
+	file     string     // named by the identity block when the file held keys nothing reads
+}
 
 func isWindows() bool { return runtime.GOOS == "windows" }
 
@@ -133,30 +133,30 @@ func canonSegment(s string) string {
 // value: '--config ""' falling back to the default file would act as the wrong
 // identity, quietly. An empty GITSBY_CONFIG is left alone deliberately - an unset
 // environment variable and an empty one are the same thing, unlike a typed option.
-func configFile() string {
-	if configFileGiven {
+func (o options) resolveConfigFile() (string, error) {
+	if o.configGiven {
 		switch {
-		case configFileArg == "":
-			throwUsageSub("--config was given an empty file name.")
-		case !pathExists(configFileArg):
-			throwUsageSub("No readable config file at '" + configFileArg + "'.")
-		case !isRegularFile(configFileArg):
-			throwUsageSub("--config names '" + configFileArg + "', which isn't a file.")
-		case !isReadableFile(configFileArg):
-			throwUsageSub("No readable config file at '" + configFileArg + "'.")
+		case o.configFile == "":
+			return "", usageSubf("--config was given an empty file name.")
+		case !pathExists(o.configFile):
+			return "", usageSubf("No readable config file at '%s'.", o.configFile)
+		case !isRegularFile(o.configFile):
+			return "", usageSubf("--config names '%s', which isn't a file.", o.configFile)
+		case !isReadableFile(o.configFile):
+			return "", usageSubf("No readable config file at '%s'.", o.configFile)
 		}
-		return configFileArg
+		return o.configFile, nil
 	}
 	if env := os.Getenv("GITSBY_CONFIG"); env != "" {
 		switch {
 		case !pathExists(env):
-			throwUsageSub("GITSBY_CONFIG names '" + env + "', which can't be read.")
+			return "", usageSubf("GITSBY_CONFIG names '%s', which can't be read.", env)
 		case !isRegularFile(env):
-			throwUsageSub("GITSBY_CONFIG names '" + env + "', which isn't a file.")
+			return "", usageSubf("GITSBY_CONFIG names '%s', which isn't a file.", env)
 		case !isReadableFile(env):
-			throwUsageSub("GITSBY_CONFIG names '" + env + "', which can't be read.")
+			return "", usageSubf("GITSBY_CONFIG names '%s', which can't be read.", env)
 		}
-		return env
+		return env, nil
 	}
 	var candidates []string
 	if d := os.Getenv("XDG_CONFIG_HOME"); d != "" {
@@ -172,10 +172,10 @@ func configFile() string {
 		// A discovered candidate is skipped rather than refused - unlike one named
 		// explicitly, nobody asserted it was there.
 		if isRegularFile(c) && isReadableFile(c) {
-			return c
+			return c, nil
 		}
 	}
-	return ""
+	return "", nil
 }
 
 func pathExists(p string) bool { _, err := os.Stat(p); return err == nil }
@@ -202,7 +202,7 @@ func isReadableFile(p string) bool {
 	if err != nil {
 		return false
 	}
-	f.Close()
+	_ = f.Close()
 	return true
 }
 
@@ -213,21 +213,25 @@ var acctNameOK = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 // how everyone writes a key path.
 const sshKeyShellChars = " \t\n\r\"'\\$;&|<>()*?![]{}" + "`"
 
-// loadConfig reads the config once. Flat 'key = value' lines, '#' comments,
-// blank lines ignored.
-func loadConfig() {
-	if configLoaded {
-		return
+// load reads the config once. Flat 'key = value' lines, '#' comments, blank lines
+// ignored. A file that cannot be read at all is the same as no file: the caller
+// asserted nothing about it, and every account path degrades to gh's own.
+func (c *config) load(o options) error {
+	if c.loaded {
+		return nil
 	}
-	configLoaded = true
-	file := configFile()
+	c.loaded = true
+	file, err := o.resolveConfigFile()
+	if err != nil {
+		return err
+	}
 	if file == "" {
-		return
+		return nil
 	}
-	configFileUsed = file
+	c.file = file
 	data, err := os.ReadFile(file)
 	if err != nil {
-		return
+		return nil
 	}
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSuffix(line, "\r") // written on Windows, read on Linux
@@ -235,73 +239,77 @@ func loadConfig() {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		eq := strings.Index(line, "=")
-		if eq < 0 {
-			cfgUnknown = append(cfgUnknown, line)
+		key, rawValue, found := strings.Cut(line, "=")
+		if !found {
+			c.unknown = append(c.unknown, line)
 			continue
 		}
-		key := strings.ToLower(strings.TrimRight(line[:eq], " \t"))
-		value := parseConfigValue(strings.TrimLeft(line[eq+1:], " \t"))
+		key = strings.ToLower(strings.TrimRight(key, " \t"))
+		value := parseConfigValue(strings.TrimLeft(rawValue, " \t"))
 		if key == "" {
 			continue
 		}
 		// An account name becomes a file name under the include directory, so hold
 		// it to characters that cannot climb out of there. A stray slash is an
 		// ordinary typo, and 'account apply' wrote the fragment wherever it pointed.
-		if acct, rest, ok := splitAccountKey(key); ok {
-			switch rest {
-			case "path":
-				if value != "" {
-					cfgPaths = append(cfgPaths, acctRule{canonPath(value), acct})
-				}
-			case "pathcontains":
-				if value != "" {
-					cfgSegments = append(cfgSegments, acctRule{canonSegment(value), acct})
-				}
-			case "ghaccount", "tokenfile", "sshkey", "name", "email", "protocol":
-				// git hands GIT_SSH_COMMAND and core.sshCommand to a shell, so a key
-				// path carrying whitespace or a shell character is re-parsed there
-				// rather than used - and this file is redirectable by flag and by
-				// environment variable. Drop it and say so: quietly falling back to
-				// whatever key ssh picks is how you push as the wrong person.
-				if rest == "sshkey" && strings.ContainsAny(value, sshKeyShellChars) {
-					cfgUnknown = append(cfgUnknown, key+" (shell characters in the path)")
-					value = ""
-				}
-				cfg[key] = value
-				known := false
-				for _, a := range cfgAcctOrder {
-					if a == acct {
-						known = true
-						break
-					}
-				}
-				if !known {
-					cfgAcctOrder = append(cfgAcctOrder, acct)
-				}
-			default:
-				// Named but not understood. Not fatal - a config from a newer gitsby
-				// still has to work - but never silent either: a mistyped key nothing
-				// reads is how you act as the wrong account believing you configured it.
-				cfgUnknown = append(cfgUnknown, key)
+		acct, field, ok := splitAccountKey(key)
+		if !ok {
+			if key == "protocol" {
+				c.values[key] = value
+				continue
 			}
+			c.unknown = append(c.unknown, key)
 			continue
 		}
-		if key == "protocol" {
-			cfg[key] = value
-			continue
+		switch field {
+		case "path":
+			if value != "" {
+				c.paths = append(c.paths, acctRule{canonPath(value), acct})
+			}
+		case "pathcontains":
+			if value != "" {
+				c.segments = append(c.segments, acctRule{canonSegment(value), acct})
+			}
+		case "ghaccount", "tokenfile", "sshkey", "name", "email", "protocol":
+			// git hands GIT_SSH_COMMAND and core.sshCommand to a shell, so a key
+			// path carrying whitespace or a shell character is re-parsed there
+			// rather than used - and this file is redirectable by flag and by
+			// environment variable. Drop it and say so: quietly falling back to
+			// whatever key ssh picks is how you push as the wrong person.
+			if field == "sshkey" && strings.ContainsAny(value, sshKeyShellChars) {
+				c.unknown = append(c.unknown, key+" (shell characters in the path)")
+				value = ""
+			}
+			c.values[key] = value
+			if !contains(c.order, acct) {
+				c.order = append(c.order, acct)
+			}
+		default:
+			// Named but not understood. Not fatal - a config from a newer gitsby
+			// still has to work - but never silent either: a mistyped key nothing
+			// reads is how you act as the wrong account believing you configured it.
+			c.unknown = append(c.unknown, key)
 		}
-		cfgUnknown = append(cfgUnknown, key)
 	}
+	return nil
+}
+
+func contains(list []string, want string) bool {
+	for _, s := range list {
+		if s == want {
+			return true
+		}
+	}
+	return false
 }
 
 // splitAccountKey takes 'account.<name>.<field>' apart, validating the name.
 // Anything malformed comes back not-ok, and the caller lists the key as unknown.
 func splitAccountKey(key string) (acct, field string, ok bool) {
-	if !strings.HasPrefix(key, "account.") {
+	rest, found := strings.CutPrefix(key, "account.")
+	if !found {
 		return "", "", false
 	}
-	rest := key[len("account."):]
 	dot := strings.LastIndex(rest, ".")
 	if dot < 0 {
 		return "", "", false
@@ -341,13 +349,13 @@ func parseConfigValue(value string) string {
 // specific rule wins - the longest path, or the most folder names - so a tree
 // nested inside another account's tree belongs to the inner one. First defined
 // breaks an exact tie.
-func accountForDir(dir string) string {
+func (c *config) accountForDir(dir string) string {
 	target := canonPath(dir)
 	if target == "" {
 		return ""
 	}
 	best, bestLen := "", 0
-	for _, r := range cfgPaths {
+	for _, r := range c.paths {
 		if r.match == "" {
 			continue
 		}
@@ -365,7 +373,7 @@ func accountForDir(dir string) string {
 	// 'jim-collier' must not match a directory called 'jim-collier-old'. Wrapping
 	// the target in slashes lets the run match at either end as well as the middle.
 	bestSegs := 0
-	for _, r := range cfgSegments {
+	for _, r := range c.segments {
 		if r.match == "" {
 			continue
 		}
@@ -380,30 +388,25 @@ func accountForDir(dir string) string {
 	return best
 }
 
-// accountValue reads one key of one configured account. Both halves lowercased,
-// because the loader lowercases the whole key on the way in - leaving the name as
-// typed made 'GITSBY_ACCOUNT=Work' miss an account stored as 'work', silently.
-func accountValue(name, key string) string {
+// value reads one key of one configured account. Both halves lowercased, because
+// the loader lowercases the whole key on the way in - leaving the name as typed
+// made 'GITSBY_ACCOUNT=Work' miss an account stored as 'work', silently.
+func (c *config) value(name, key string) string {
 	if name == "" || key == "" {
 		return ""
 	}
-	return cfg["account."+strings.ToLower(name)+"."+strings.ToLower(key)]
+	return c.values["account."+strings.ToLower(name)+"."+strings.ToLower(key)]
 }
 
 // contextDir is what "here" means for folder matching: the repo's top level when
 // in one, so every subdirectory resolves to the same account, and the working
 // directory when not - which is what a fresh 'repo clone' has to go on.
-var (
-	contextDirCache = ""
-	contextDirKnown = false
-)
-
-func contextDir() string {
-	if !contextDirKnown {
-		contextDirKnown = true
-		if contextDirCache = runOut("git", "rev-parse", "--show-toplevel"); contextDirCache == "" {
-			contextDirCache, _ = os.Getwd()
+func (a *app) contextDir() string {
+	return a.git.contextDir.get(func() string {
+		if top := runOut("git", "rev-parse", "--show-toplevel"); top != "" {
+			return top
 		}
-	}
-	return contextDirCache
+		wd, _ := os.Getwd()
+		return wd
+	})
 }
