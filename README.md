@@ -209,17 +209,15 @@ For anything else - installing for everyone, or taking the tip of `dev` rather t
 
 ## How to develop
 
-One-liner dev setup: clones the repo into `./gitsby`, checks out the `dev` branch, and checks (optionally installs) the dev tooling.
+Clone it and build it. Go is the only requirement, and the binary it produces is the whole product.
 
 ~~~bash
-curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install-dev.bash | bash
+git clone https://github.com/jim-collier/gitsby.git
+cd gitsby && git switch dev
+cd src-go && go build -o gitsby .
 ~~~
 
-~~~pwsh
-irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install-dev.ps1 | iex
-~~~
-
-Once it's cloned, `cicd/cicd.bash` is the local pipeline and the one command to know. It fast-forwards from origin first, so everything after it tests the tree that is actually going out, then runs the lint stage, the regression tests, the fuzz vectors, a dogfood install, a demo gif rebuild, and a commit and push at the end. Run it before opening a PR. Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `pwsh` or `gifsicle` won't stop the rest.
+`cicd/cicd.bash` is the local pipeline and the one command to know. It fast-forwards from origin first, so everything after it tests the tree that is actually going out, then lints, builds and runs the regression suite, runs the fuzz vectors, compares the build against the frozen v2.1.0 one for backwards compatibility, installs to your own tool directories, rebuilds the demo gif, and commits and pushes at the end. Run it before opening a PR. Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `gifsicle` won't stop the rest.
 
 ~~~bash
 cicd/cicd.bash --quick          # skips fuzz and the demo gif; what you want while iterating

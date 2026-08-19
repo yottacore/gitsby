@@ -7,6 +7,8 @@
 
 Canonical coding style for this project's Bash and PowerShell. For contribution process, see [contributing.md](contributing.md).
 
+Scope, as of v2.1.0: the product itself is Go now, and Go's style is `gofmt` - the lint stage runs it in list mode and gates on any file it would reformat, so there is nothing to write down here. What this guide still governs is the Bash and PowerShell in `legacy/`, which is frozen and read-only, and the pipeline's own scripts under `cicd/`, which are not.
+
 <!-- TOC ignore:true -->
 ## Table of contents
 <!-- TOC -->

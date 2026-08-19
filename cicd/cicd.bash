@@ -17,16 +17,17 @@
 #  shellcheck disable=2181  ## 'Check exit code directly, not indirectly with $?.'
 #  shellcheck disable=2317  ## 'Can't reach.' (I.e. an 'exit' is used for debugging - and makes an unusable visual mess.)
 
-##	- Purpose: Local CI/CD pipeline. Generic engine for a Bash-script project;
+##	- Purpose: Local CI/CD pipeline. Generic engine for a Go project;
 ##	  per-project settings live in config.bash.
 ##	- Stages (fail-fast, any error aborts before the next stage):
 ##	   0. remote sync (fast-forward from origin before anything is built or tested)
-##	   1. lint (bash -n + shellcheck gating; markdownlint + py_compile + PSScriptAnalyzer + go tooling if available)
-##	   2. regression tests (cicd/test.bash, once it exists)
-##	   3. fuzz + security (cicd/fuzz.bash, once it exists; skipped under --quick)
-##	   4. dogfood (install the script(s) to the first existing preferred dir)
-##	   5. demo gif (fake-terminal render; skipped under --quick)
-##	   6. backup + publish to git (runs from repo root)
+##	   1. lint (gofmt + go vet + staticcheck, and shellcheck over the pipeline's own scripts)
+##	   2. build + regression tests (cicd/test.bash against the compiled binary)
+##	   3. fuzz + security (cicd/fuzz.bash; skipped under --quick)
+##	   4. backwards compatibility (cicd/parity.bash: this build vs the frozen v2.1.0 one)
+##	   5. dogfood (cross-build every target and install each to its first existing dir)
+##	   6. demo gif (fake-terminal render; skipped under --quick)
+##	   7. backup + publish to git (runs from repo root)
 ##	- Syntax:
 ##	  cicd/cicd.bash [options]
 ##	  Options:
@@ -38,7 +39,8 @@
 ##	   --no-lint           skip the lint stage
 ##	   --no-test           skip the regression test stage
 ##	   --no-fuzz           skip the fuzz + security stage
-##	   --no-dogfood        skip installing the script(s) locally
+##	   --no-parity         skip the backwards-compatibility comparison
+##	   --no-dogfood        skip installing the build(s) locally
 ##	   --no-demogif        skip regenerating the demo gif
 ##	   --no-publish        skip the git backup + publish stage
 ##	   --quick             skip the slow stages (fuzz, demo gif)
@@ -65,9 +67,13 @@ source "${here}/config.bash"
 source "${here}/utility/include/gfs-rotate.bash"       ## gfs_rotate() for the artifact dirs
 cd "${root}"
 stamp="$(date +%Y%m%d-%H%M%S)"
+## Version stamped into every build this run. Dev builds carry what describe says; a
+## release injects the clean one. Resolved here because two stages need it and either
+## can be skipped independently.
+go_version="$(git describe --tags --always --match 'v*' 2>/dev/null || echo 0.0.0)"
 
 ## Parse options.
-assume_yes=0; quiet=0; quick=0; do_sync=1; do_lint=1; do_test=1; do_fuzz=1; cli_message=""
+assume_yes=0; quiet=0; quick=0; do_sync=1; do_lint=1; do_test=1; do_fuzz=1; do_parity=1; cli_message=""
 while (($#)); do case "$1" in
 	-q|--quiet)               quiet=1; assume_yes=1; shift ;;   ## quiet + unattended; publish runs quiet too
 	-y|--yes)                 assume_yes=1; shift ;;
@@ -75,7 +81,8 @@ while (($#)); do case "$1" in
 	--no-lint)                do_lint=0; shift ;;
 	--no-test)                do_test=0; shift ;;
 	--no-fuzz)                do_fuzz=0; shift ;;
-	--no-dogfood)             DOGFOOD_BASH_DESTS=(); DOGFOOD_PWSH_DESTS=(); shift ;;
+	--no-parity)              do_parity=0; shift ;;
+	--no-dogfood)             DOGFOOD_TARGETS=(); shift ;;
 	--no-demogif)             DO_DEMOGIF=0; shift ;;
 	--no-publish)             GIT_PUBLISH=(); shift ;;
 	--quick)                  quick=1; do_fuzz=0; DO_DEMOGIF=0; shift ;;
@@ -121,17 +128,34 @@ for g in "${SHELL_LINT_GLOBS[@]}"; do for f in $g; do [[ -f "$f" ]] && shell_fil
 for g in "${SHELL_LINT_WARN_GLOBS[@]:-}"; do for f in $g; do [[ -f "$f" ]] && shell_warn_files+=("$f"); done; done
 ((_ng)) || shopt -u nullglob
 
+## Dogfood destinations, resolved once. Per target, the first configured dir that exists and
+## is writable; empty means the stage will skip that target with a warning. The dest array is
+## found by name (DOGFOOD_DESTS_<GOOS>_<GOARCH>, upper-cased), so adding a target is a config
+## edit and nothing here.
+declare -A dogfood_dest=() dogfood_all=()
+for t in "${DOGFOOD_TARGETS[@]:-}"; do
+	[[ -n "${t}" ]] || continue
+	_destVar="DOGFOOD_DESTS_${t^^}"; _destVar="${_destVar//\//_}"
+	declare -n _dests="${_destVar}"
+	d=""; for cand in "${_dests[@]:-}"; do [[ -d "${cand}" && -w "${cand}" ]] && { d="${cand}"; break; }; done
+	dogfood_dest["${t}"]="${d}"
+	dogfood_all["${t}"]="${_dests[*]:-}"
+	unset -n _dests
+done
+
+## Display helpers for the plan block: 'linux/amd64' -> 'linux', and the dotted leader that
+## lines every value up on the same column as the fixed labels below.
+fPlanOS(){ case "${1%%/*}" in darwin) echo macos ;; *) echo "${1%%/*}" ;; esac ;}
+fPlanLine(){ local -r _dots="........................"; local -i n=$(( 20 - ${#1} )); ((n < 0)) && n=0; fEcho_Clean "${1} ${_dots:0:n}: ${2}" ;}
+
 ## Preflight: show the plan with resolved paths, then confirm.
-bash_dest=""; for d in "${DOGFOOD_BASH_DESTS[@]:-}"; do [[ -d "$d" && -w "$d" ]] && { bash_dest="$d"; break; }; done
-pwsh_dest=""; for d in "${DOGFOOD_PWSH_DESTS[@]:-}"; do [[ -d "$d" && -w "$d" ]] && { pwsh_dest="$d"; break; }; done
 
 fEcho_Clean
 fEcho_Clean "${APP_NAME} local CI/CD"
 fEcho_Clean
 fEcho_Clean "Repo root ...........: ${root}"
 if ((do_lint)); then
-	go_lint_note=""; [[ -d "src-go" ]] && go_lint_note=", gofmt/vet/staticcheck"
-	fEcho_Clean "Lint ................: shellcheck on ${#shell_files[@]} shell file(s) + ${#shell_warn_files[@]} legacy report-only  (+ markdownlint, py_compile, PSScriptAnalyzer${go_lint_note} if available)"
+	fEcho_Clean "Lint ................: gofmt + go vet + staticcheck, shellcheck on ${#shell_files[@]} pipeline script(s)  (+ markdownlint, py_compile if available)"
 else
 	fEcho_Clean "Lint ................: (skipped)"
 fi
@@ -142,8 +166,8 @@ elif ((do_test)); then
 else
 	fEcho_Clean "Tests ...............: (skipped)"
 fi
-if ((do_test)) && [[ -d "src-go" ]]; then
-	fEcho_Clean "Go build ............: src-go -> src-go/gitsby (suite leg, not gating yet)"
+if ((do_test)); then
+	fEcho_Clean "Go build ............: ${GO_MODULE_DIR} -> ${GO_MODULE_DIR}/${EXE_NAME} (the suite's subject)"
 fi
 if ((do_fuzz)) && [[ -f "${FUZZ_CMD[0]:-}" ]]; then
 	fEcho_Clean "Fuzz + security .....: ${FUZZ_CMD[*]}"
@@ -152,17 +176,21 @@ elif ((do_fuzz)); then
 else
 	fEcho_Clean "Fuzz + security .....: $( ((quick)) && echo '(skipped --quick)' || echo '(skipped)')"
 fi
-if ((${#DOGFOOD_BASH_DESTS[@]})); then
-	if [[ -n "$bash_dest" ]]; then fEcho_Clean "Dogfood (bash) ......: overwrite ${bash_dest}/${EXE_NAME}"
-	else fEcho_Clean "Dogfood (bash) ......: <none of: ${DOGFOOD_BASH_DESTS[*]} exists - will skip>"; fi
+if ((! do_parity)); then
+	fEcho_Clean "Compatibility .......: (skipped)"
+elif [[ -f "${PARITY_CMD[0]:-}" ]]; then
+	fEcho_Clean "Compatibility .......: ${PARITY_CMD[*]} (this build vs legacy/bin)"
 else
-	fEcho_Clean "Dogfood (bash) ......: (disabled)"
+	fEcho_Clean "Compatibility .......: (no comparison harness: ${PARITY_CMD[0]:-cicd/parity.bash})"
 fi
-if [[ -n "${DOGFOOD_PWSH_SRC:-}" ]]; then
-	if [[ -n "$pwsh_dest" ]]; then fEcho_Clean "Dogfood (pwsh) ......: overwrite ${pwsh_dest}/$(basename "${DOGFOOD_PWSH_SRC}")"
-	else fEcho_Clean "Dogfood (pwsh) ......: <none of: ${DOGFOOD_PWSH_DESTS[*]} exists - will skip>"; fi
+if ((${#DOGFOOD_TARGETS[@]})); then
+	for t in "${DOGFOOD_TARGETS[@]}"; do
+		exe="${EXE_NAME}"; [[ "${t}" == windows/* ]] && exe="${EXE_NAME}.exe"
+		if [[ -n "${dogfood_dest[${t}]}" ]]; then fPlanLine "Dogfood ($(fPlanOS "${t}"))" "build ${t} -> ${dogfood_dest[${t}]}/${exe}"
+		else fPlanLine "Dogfood ($(fPlanOS "${t}"))" "<none of: ${dogfood_all[${t}]} exists - will skip>"; fi
+	done
 else
-	fEcho_Clean "Dogfood (pwsh) ......: (no pwsh port yet)"
+	fEcho_Clean "Dogfood .............: (disabled)"
 fi
 if ((DO_DEMOGIF)) && [[ -f "${DEMOGIF_SCENARIO}" ]]; then
 	fEcho_Clean "Demo gif ............: ${DEMOGIF_CMD[*]} -> ${DEMOGIF_OUT}"
@@ -231,10 +259,10 @@ else
 	fi
 fi
 
-## Stage 1: lint. bash -n then shellcheck over every first-party shell file
-## (gating - never an auto-formatter: bash is hand-formatted on purpose).
-## markdownlint and py_compile are probe-gated extras, as is the go tooling.
-fSection "1/6  Lint"
+## Stage 1: lint. gofmt/vet/staticcheck over the module, then bash -n and shellcheck
+## over the pipeline's own scripts (gating - never an auto-formatter: those are
+## hand-formatted on purpose). markdownlint and py_compile are probe-gated extras.
+fSection "1/7  Lint"
 if ((! do_lint)); then
 	fEcho_Clean "lint skipped"
 else
@@ -274,79 +302,43 @@ else
 		python3 -m py_compile "${PY_LINT_FILES[@]}" && rm -rf -- "${root:?}/cicd/utility/__pycache__"
 		fEcho "OK: py_compile (${#PY_LINT_FILES[@]} file(s))"
 	fi
-	if [[ -n "${PS_LINT_GLOBS+x}" ]] && ((${#PS_LINT_GLOBS[@]})); then
-		ps_files=()
-		_ng=0; shopt -q nullglob && _ng=1; shopt -s nullglob
-		for g in "${PS_LINT_GLOBS[@]}"; do for f in $g; do [[ -f "$f" ]] && ps_files+=("$f"); done; done
-		((_ng)) || shopt -u nullglob
-		if ((${#ps_files[@]})); then
-			if pwsh -NoProfile -Command "Get-Command Invoke-ScriptAnalyzer" >/dev/null 2>&1; then
-				for f in "${ps_files[@]}"; do
-					pwsh -NoProfile -Command "\$r = Invoke-ScriptAnalyzer -Path '${f}' -Severity Error,Warning,Information; \$r | Format-Table -AutoSize | Out-String -Width 200 | Write-Host; exit @(\$r).Count" || fDie "PSScriptAnalyzer findings in ${f}"
-				done
-				fEcho "OK: PSScriptAnalyzer clean (${#ps_files[@]} file(s))"
-			else
-				fEcho "WARNING: PSScriptAnalyzer skipped (pwsh + PSScriptAnalyzer module not both installed)"
-			fi
-		fi
-	fi
-	## Go port: gofmt is the arbiter of format, vet gates, staticcheck gates when
-	## installed. Keyed off the source tree, not a glob - the tools walk the module.
-	if [[ -d "${root}/src-go" ]]; then
-		if command -v go >/dev/null 2>&1; then
-			unformatted="$(cd "${root}/src-go" && gofmt -l .)"
-			[[ -z "${unformatted}" ]] || fDie "gofmt wants to reformat: ${unformatted}"
-			(cd "${root}/src-go" && go vet ./...) || fDie "go vet findings"
-			fEcho "OK: gofmt + go vet clean"
-			if command -v staticcheck >/dev/null 2>&1; then
-				(cd "${root}/src-go" && staticcheck ./...) || fDie "staticcheck findings"
-				fEcho "OK: staticcheck clean"
-			else
-				fEcho "WARNING: staticcheck skipped (not installed: go install honnef.co/go/tools/cmd/staticcheck@latest)"
-			fi
-		else
-			fEcho "WARNING: go lint skipped (go toolchain not installed)"
-		fi
+	## gofmt is the arbiter of format, vet gates, staticcheck gates when installed.
+	## Keyed off the module, not a glob - the tools walk it themselves. A missing
+	## toolchain is fatal now rather than a warning: it is what builds the product.
+	command -v go >/dev/null 2>&1 || fDie "go toolchain not installed - nothing in this pipeline can run without it"
+	unformatted="$(cd "${root}/${GO_MODULE_DIR}" && gofmt -l .)"
+	[[ -z "${unformatted}" ]] || fDie "gofmt wants to reformat: ${unformatted}"
+	(cd "${root}/${GO_MODULE_DIR}" && go vet ./...) || fDie "go vet findings"
+	fEcho "OK: gofmt + go vet clean"
+	if command -v staticcheck >/dev/null 2>&1; then
+		(cd "${root}/${GO_MODULE_DIR}" && staticcheck ./...) || fDie "staticcheck findings"
+		fEcho "OK: staticcheck clean"
+	else
+		fEcho "WARNING: staticcheck skipped (not installed: go install honnef.co/go/tools/cmd/staticcheck@latest)"
 	fi
 fi
 
-## Stage 2: regression tests. The harness lands with the bin/gitsby refactor;
-## until then this stage reports itself absent rather than pretending to pass.
-fSection "2/6  Regression tests"
+## Stage 2: build, then the regression suite against what was just built. The build is
+## the native one; the cross-builds happen at dogfood, where they have somewhere to go.
+## Dev builds carry the describe version; release builds inject the clean one.
+fSection "2/7  Build + regression tests"
 if ((! do_test)); then
-	fEcho_Clean "tests skipped"
-elif [[ -f "${TEST_CMD[0]:-}" ]]; then
-	## Build the compiled port first so its suite leg tests this tree. A missing
-	## toolchain degrades to the leg's own skip message, never a stage failure.
-	## Dev builds carry the describe version; release builds will inject the clean one.
-	if [[ -d "${root}/src-go" ]]; then
-		if command -v go >/dev/null 2>&1; then
-			go_version="$(git describe --tags --always --match 'v*' 2>/dev/null || echo 0.0.0)"
-			(cd "${root}/src-go" && go build -trimpath -ldflags "-s -w -X main.version=${go_version#v}" -o gitsby .) || fDie "go build failed"
-			fEcho "OK: go build (v${go_version#v})"
-		else
-			fEcho "WARNING: go toolchain not installed - the suite's go leg will skip"
-		fi
-	fi
-	"${TEST_CMD[@]}"
-	fEcho "OK: tests passed"
-	## The behavioural suite runs the same checks once per build, so it passes on both while the two
-	## quietly disagree about the same input - which is what every port defect that reached users
-	## actually was. This asks the other question: do they ANSWER the same? Skips itself with a
-	## reason where pwsh is absent, since there is then nothing to compare against.
-	if [[ -f "${root}/cicd/parity.bash" ]]; then
-		fEcho_Clean ""
-		bash "${root}/cicd/parity.bash"
-		fEcho "OK: builds agree"
-	fi
+	fEcho_Clean "build + tests skipped"
 else
-	fEcho_Clean "no test harness yet (${TEST_CMD[0]:-cicd/test.bash} - lands with the bin/gitsby refactor)"
+	(cd "${root}/${GO_MODULE_DIR}" && go build -trimpath -ldflags "-s -w -X main.version=${go_version#v}" -o "${EXE_NAME}" .) || fDie "go build failed"
+	fEcho "OK: go build (v${go_version#v})"
+	if [[ -f "${TEST_CMD[0]:-}" ]]; then
+		"${TEST_CMD[@]}"
+		fEcho "OK: tests passed"
+	else
+		fEcho_Clean "no test harness (${TEST_CMD[0]:-cicd/test.bash})"
+	fi
 fi
 
 ## Stage 3: fuzz + security (adversarial input against our parsing, plus checks
 ## of what we shell out to). Slow, so skipped under --quick. Same lands-later
 ## policy as the tests.
-fSection "3/6  Fuzz + security"
+fSection "3/7  Fuzz + security"
 if ((! do_fuzz)); then
 	fEcho_Clean "fuzz + security skipped$( ((quick)) && echo ' (--quick)')"
 elif [[ -f "${FUZZ_CMD[0]:-}" ]]; then
@@ -356,39 +348,55 @@ else
 	fEcho_Clean "no fuzz harness (${FUZZ_CMD[0]:-cicd/fuzz.bash})"
 fi
 
-## Stage 4: dogfood. A script project's "release build" is the script itself;
-## copy it over the first existing preferred dir. No sudo fallback on purpose -
-## an unwritable dest is a warning, not an unattended privilege escalation.
-fSection "4/6  Dogfood"
-df_did=0
-if ((${#DOGFOOD_BASH_DESTS[@]})); then
-	if [[ -n "$bash_dest" ]]; then
-		cp -f "${DOGFOOD_BASH_SRC}" "${bash_dest}/${EXE_NAME}"
-		chmod +x "${bash_dest}/${EXE_NAME}"
-		fEcho "OK: installed (bash) -> ${bash_dest}/${EXE_NAME}"
-		df_did=1
-	else
-		fEcho "WARNING: no bash dogfood dest exists/writable (${DOGFOOD_BASH_DESTS[*]}); skipping"
-	fi
-fi
-if [[ -n "${DOGFOOD_PWSH_SRC:-}" ]]; then
-	if [[ -n "$pwsh_dest" ]]; then
-		cp -f "${DOGFOOD_PWSH_SRC}" "${pwsh_dest}/"
-		fEcho "OK: installed (pwsh) -> ${pwsh_dest}/$(basename "${DOGFOOD_PWSH_SRC}")"
-		df_did=1
-	else
-		fEcho "WARNING: no pwsh dogfood dest exists/writable (${DOGFOOD_PWSH_DESTS[*]}); skipping"
-	fi
+## Stage 4: backwards compatibility. The behavioural suite asks "is this correct?" of one
+## build at a time, so it passes while this build and the frozen one quietly disagree about
+## the same input - which is what every port defect that reached users actually was. This
+## asks the other question: do they ANSWER the same? Self-skips once legacy/ is gone.
+fSection "4/7  Backwards compatibility"
+if ((! do_parity)); then
+	fEcho_Clean "compatibility comparison skipped"
+elif [[ -f "${PARITY_CMD[0]:-}" ]]; then
+	"${PARITY_CMD[@]}"
+	fEcho "OK: this build answers as the frozen one does"
 else
-	fEcho_Clean "pwsh: no port yet"
+	fEcho_Clean "no comparison harness (${PARITY_CMD[0]:-cicd/parity.bash})"
+fi
+
+## Stage 5: dogfood. Cross-build each configured target and copy it to the first existing,
+## writable dir in that target's list. No sudo fallback on purpose - an unwritable dest is a
+## warning, not an unattended privilege escalation. A cross-build failure is fatal: it means
+## the tree stopped being portable, which is worth finding here rather than at a release.
+fSection "5/7  Dogfood"
+df_did=0
+if ((! ${#DOGFOOD_TARGETS[@]})); then
+	fEcho_Clean "dogfood disabled"
+else
+	for t in "${DOGFOOD_TARGETS[@]}"; do
+		exe="${EXE_NAME}"; [[ "${t}" == windows/* ]] && exe="${EXE_NAME}.exe"
+		if [[ -z "${dogfood_dest[${t}]}" ]]; then
+			fEcho "WARNING: no ${t} dogfood dest exists/writable (${dogfood_all[${t}]}); skipping"
+			continue
+		fi
+		## Built into the module dir under the target's own name, so the native binary the
+		## suite just ran against is not overwritten by a build that cannot run here.
+		out="${root}/${GO_MODULE_DIR}/${EXE_NAME}-${t//\//-}"
+		(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOOS="${t%%/*}" GOARCH="${t##*/}" \
+			go build -trimpath -ldflags "-s -w -X main.version=${go_version#v}" -o "${out}" .) \
+			|| fDie "go build failed for ${t}"
+		cp -f "${out}" "${dogfood_dest[${t}]}/${exe}"
+		chmod +x "${dogfood_dest[${t}]}/${exe}"
+		rm -f -- "${out:?}"
+		fEcho "OK: installed (${t}) -> ${dogfood_dest[${t}]}/${exe}"
+		df_did=1
+	done
 fi
 ((df_did)) || fEcho_Clean "dogfood: nothing installed"
 
-## Stage 5: demo gif. Types the scenario into a fake terminal, runs each command
-## against the dogfooded script, renders the animated loop. A failure is a
+## Stage 6: demo gif. Types the scenario into a fake terminal, runs each command
+## against the build from stage 2, renders the animated loop. A failure is a
 ## warning, never a stop. When the render differs from the committed copy, a
 ## timestamped original is kept (GFS-pruned) out of tree, then landed in-repo.
-fSection "5/6  Demo gif"
+fSection "6/7  Demo gif"
 if ((! DO_DEMOGIF)); then
 	fEcho_Clean "demo gif skipped$( ((quick)) && echo ' (--quick)')"
 elif [[ ! -f "${DEMOGIF_SCENARIO}" ]]; then
@@ -397,7 +405,7 @@ else
 	demogif_out="${root}/${DEMOGIF_OUT}"
 	demogif_tmp="${demogif_out}.new"
 	mkdir -p "$(dirname "${demogif_out}")"
-	if (cd "${root}" && python3 "${DEMOGIF_CMD[@]}" --out "${demogif_tmp}" --bin "${root}/${DOGFOOD_BASH_SRC}"); then
+	if (cd "${root}" && python3 "${DEMOGIF_CMD[@]}" --out "${demogif_tmp}" --bin "${root}/${GO_MODULE_DIR}/${EXE_NAME}"); then
 		if [[ -n "${DEMOGIF_OPT_CMD[*]:-}" ]] && command -v "${DEMOGIF_OPT_CMD[0]}" >/dev/null 2>&1; then
 			demogif_was=$(stat -c%s "${demogif_tmp}")
 			if "${DEMOGIF_OPT_CMD[@]}" "${demogif_tmp}" -o "${demogif_tmp}.opt" 2>/dev/null; then
@@ -425,8 +433,8 @@ else
 	fi
 fi
 
-## Stage 6: backup + publish.
-fSection "6/6  Backup + publish"
+## Stage 7: backup + publish.
+fSection "7/7  Backup + publish"
 ## Always run the publisher quiet: cicd already gave the initial prompt, so skip
 ## its redundant continue-prompt. With no message it still lets git open the editor.
 pub_flags=(--quiet)
@@ -451,3 +459,4 @@ fEcho_Clean
 ##		- 2026-07-22 JC: Created. Generic engine + config.bash for a Bash-script project, adapted from the sister pipeline; lint/tests/fuzz/dogfood/demo-gif/publish stages, -q/-m/--quick flags, tee'd run log.
 ##		- 2026-08-17 JC: Stage 2 builds the go port before the tests, so the suite's go leg runs against this tree; dev builds carry the git-describe version via -ldflags. A missing toolchain warns and lets the leg skip itself.
 ##		- 2026-08-17 JC: Stage 1 lints the go tree: gofmt (list mode, gating) and go vet, plus staticcheck when installed. Keyed off src-go existing rather than globs, so there is nothing to mirror in the Windows settings yet.
+##		- 2026-08-18 JC: Go-specific, seven stages. The go toolchain is required rather than probed, the build gates, and the PowerShell lint block is gone with the scripts. Backwards compatibility became its own stage instead of a tail on the tests, and dogfood cross-builds every configured target rather than copying one script.

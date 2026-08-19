@@ -3,9 +3,13 @@
 #  shellcheck disable=2317  ## 'Can't reach.' False hits on functions invoked indirectly.
 
 ##	Purpose:
-##		- Regression tests for bin/gitsby (and bin/gitsby.ps1 when pwsh is
-##		  installed - same suite, run once per implementation).
-##		- Run by cicd.bash stage 2, or standalone.
+##		- Regression tests for the compiled build in src-go/.
+##		- Run by cicd.bash stage 2, which builds the binary first, or standalone
+##		  after a 'go build' by hand.
+##		- Carries a second set of checks that are not about the implementation at
+##		  all: the installers, the frozen v2.1.0 scripts' own platform gates, and
+##		  source pins on this pipeline's files. They used to ride the Bash leg
+##		  because that was the leg that always ran; they were never about Bash.
 ##		- Builds throwaway repos (a bare 'origin' + two clones) under mktemp;
 ##		  never touches the real repo or network.
 ##	History: At bottom of script.
@@ -186,9 +190,6 @@ fRunSuite(){
 	fAssertFail "dropped 'commit' command rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q commit 'no such command'"
 	## 'pull' went away in v2 because it let you skip the commit. The compiled build takes the
 	## word again as a spelling of the command that pulls AND commits, which structurally can't.
-	if [[ "$1" != "go" ]]; then
-		fAssertFail "dropped 'pull' command rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q pull"
-	fi
 	( cd "${cloneA}" && echo alias > alias.txt )
 	fAssertFail "dropped v1 alias 'scommit' rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q scommit 'via alias'"
 	( cd "${cloneA}" && echo upd > upd.txt )
@@ -329,10 +330,8 @@ fRunSuite(){
 	## Message handling: -m and -m= forms; option-like words stay words; extra bare word rejected
 	( cd "${cloneA}" && echo m1 > m1.txt )
 	fAssert "update -m flag form"     bash -c "cd '${cloneA}' && '${gitsby}' -q update -m 'via -m flag' && git log -1 --format=%s | grep -qx 'via -m flag'"
-	if [[ "$1" != "pwsh" ]]; then  ## -m=MSG works everywhere but pwsh, whose binding has no -param=value form
-		( cd "${cloneA}" && echo m2 > m2.txt )
-		fAssert "update -m= joined form"  bash -c "cd '${cloneA}' && '${gitsby}' -q update -m='via -m= flag' && git log -1 --format=%s | grep -qx 'via -m= flag'"
-	fi
+	( cd "${cloneA}" && echo m2 > m2.txt )
+	fAssert "update -m= joined form"  bash -c "cd '${cloneA}' && '${gitsby}' -q update -m='via -m= flag' && git log -1 --format=%s | grep -qx 'via -m= flag'"
 	( cd "${cloneA}" && echo m3 > m3.txt )
 	fAssert "message containing -v commits"           bash -c "cd '${cloneA}' && '${gitsby}' -q update 'add -v flag' && git log -1 --format=%s | grep -qx 'add -v flag'"
 	## A message that STARTS with a dash: '-m' is waiting for a value, so the next token is that
@@ -770,11 +769,7 @@ GHEOF
 	fAssert "created repo got the commit"                bash -c "cd '${gh}/created.git' && git ls-tree --name-only main | grep -qx c.txt"
 	fAssert "create defaulted to a private repo"         bash -c "grep -q -- '--private' '${gh}/create.log'"
 	mkdir -p "${gh}/pub"; echo p > "${gh}/pub/p.txt"
-	if [[ "$1" != "pwsh" ]]; then  ## visibility flag spelled per implementation; the compiled build takes the script spelling
-		fAssert "repo create --public makes a public repo"  bash -c "cd '${gh}/pub' && PATH='${ghp}' FAKE_GH_VIEW=notfound FAKE_GH_REMOTE='${gh}/pub.git' FAKE_GH_LOG='${gh}/pub.log' '${gitsby}' -q --public repo create me/proj && grep -q -- '--public' '${gh}/pub.log'"
-	else
-		fAssert "repo create -Public makes a public repo"   bash -c "cd '${gh}/pub' && PATH='${ghp}' FAKE_GH_VIEW=notfound FAKE_GH_REMOTE='${gh}/pub.git' FAKE_GH_LOG='${gh}/pub.log' '${gitsby}' -q -Public repo create me/proj && grep -q -- '--public' '${gh}/pub.log'"
-	fi
+	fAssert "repo create --public makes a public repo"  bash -c "cd '${gh}/pub' && PATH='${ghp}' FAKE_GH_VIEW=notfound FAKE_GH_REMOTE='${gh}/pub.git' FAKE_GH_LOG='${gh}/pub.log' '${gitsby}' -q --public repo create me/proj && grep -q -- '--public' '${gh}/pub.log'"
 
 	## add: repo exists but is empty -> gitsby builds the URL from git_protocol and pushes to it
 	git init --quiet --bare -b main "${gh}/backing-https.git"
@@ -899,13 +894,8 @@ GHEOF
 	fAssert "gh is left alone when it has no account for the owner" \
 		bash -c "cd '${idn}/c' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse' FAKE_GH_LOG='${idn}/unheld.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=\]' '${idn}/unheld.log'"
 	## -NoFetch is spelled the same to both ports (bash normalises it), so these need no branch.
-	if [[ "$1" != "pwsh" ]]; then  ## the identity flag IS spelled per implementation; only pwsh renames it
-		fAssert "--any-identity leaves gh's active account alone" \
-			bash -c "cd '${idn}/c' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse acme' FAKE_GH_LOG='${idn}/any.log' '${gitsby}' -q -NoFetch --any-identity pr && grep -q 'GH_TOKEN=\]' '${idn}/any.log'"
-	else
-		fAssert "-AnyIdentity leaves gh's active account alone" \
-			bash -c "cd '${idn}/c' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse acme' FAKE_GH_LOG='${idn}/any.log' '${gitsby}' -q -NoFetch -AnyIdentity pr && grep -q 'GH_TOKEN=\]' '${idn}/any.log'"
-	fi
+	fAssert "--any-identity leaves gh's active account alone" \
+		bash -c "cd '${idn}/c' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse acme' FAKE_GH_LOG='${idn}/any.log' '${gitsby}' -q -NoFetch --any-identity pr && grep -q 'GH_TOKEN=\]' '${idn}/any.log'"
 	## An account configured for the path wins over the remote's owner, and is the only one of the
 	## two that can answer before a remote exists. Set locally here; in practice an includeIf on the
 	## repo path supplies it, the same way the ssh key and commit identity already arrive.
@@ -1090,8 +1080,7 @@ GHEOF
 		bash -c "cd '${idc}' && ${idEnv} FAKE_GH_LOGIN=same FAKE_SSH_LOGIN=same '${gitsby}' -q -NoFetch pr create 'T'"
 	fAssertOut  "the identity block names the gh account"  'GitHub \(gh\) [.]*: same' \
 		bash -c "cd '${idc}' && ${idEnv} FAKE_GH_LOGIN=same FAKE_SSH_LOGIN=same '${gitsby}' -q -NoFetch pr create 'T' 2>&1"
-	## The override flag is spelled per implementation, like --public/-Public.
-	local anyIdFlag="--any-identity"; [[ "$1" != "pwsh" ]] || anyIdFlag="-AnyIdentity"
+	local anyIdFlag="--any-identity"
 	fAssert     "the override flag proceeds through a mismatch"  \
 		bash -c "cd '${idc}' && ${idEnv} FAKE_GH_LOGIN=alice FAKE_SSH_LOGIN=bob '${gitsby}' -q -NoFetch ${anyIdFlag} pr create 'T'"
 	fAssertOut  "and the mismatch is still on the identity line"  "NOT the ssh key's account" \
@@ -1203,154 +1192,134 @@ GHEOF
 		bash -c "cd '${pkc}' && PATH='${ghp}' FAKE_GH_HEAD=pkfeat FAKE_GH_BASE=dev '${gitsby}' -q pr ok 8 2>&1"
 
 	## The bash version gate. Bash build only - the PowerShell one needs no bash at all.
-	if [[ "$1" == "bash" ]]; then
-		local vg="${work}/vgate"
-		mkdir -p "${vg}/bin"
-		## Raise the floor past any real bash so the gate fires on this one. Everything below the
-		## gate is 4.x syntax, so a clean refusal also proves nothing below it was reached.
-		sed 's/-lt 4 \]\]/-lt 99 ]]/' "${root}/bin/gitsby" > "${vg}/gitsby"
-		chmod +x "${vg}/gitsby"
-		local vgRun="PATH='${vg}/bin:${PATH}' '${vg}/gitsby' status"
-		printf '#!/usr/bin/env bash\necho Linux\n' > "${vg}/bin/uname"; chmod +x "${vg}/bin/uname"
-		fAssertFail   "too old a bash is refused"                 bash -c "${vgRun}"
-		fAssertOut    "and the refusal names the requirement"     'needs bash 4.4 or newer'  bash -c "${vgRun}"
-		fAssertNotOut "and raises no shell error of its own"      'bad substitution|invalid shell option|syntax error'  bash -c "${vgRun}"
-		## A fake uname picks the platform arm, so all three can be checked from one box.
-		local spec="" plat="" pat=""
-		for spec in "Darwin:brew install bash" "FreeBSD:pkg install bash" "Linux:package manager"; do
-			plat="${spec%%:*}"; pat="${spec#*:}"
-			printf '#!/usr/bin/env bash\necho %s\n' "${plat}" > "${vg}/bin/uname"; chmod +x "${vg}/bin/uname"
-			fAssertOut "and tells ${plat} users what to install"  "${pat}"  bash -c "${vgRun}"
-		done
-		## macOS pins /bin/bash at 3.2 forever, so installing a newer one only helps via PATH.
-		fAssert "gitsby resolves bash through PATH, not /bin/bash"  bash -c "head -1 '${root}/bin/gitsby' | grep -qx '#!/usr/bin/env bash'"
+	local vg="${work}/vgate"
+	mkdir -p "${vg}/bin"
+	## Raise the floor past any real bash so the gate fires on this one. Everything below the
+	## gate is 4.x syntax, so a clean refusal also proves nothing below it was reached.
+	sed 's/-lt 4 \]\]/-lt 99 ]]/' "${root}/legacy/bin/gitsby" > "${vg}/gitsby"
+	chmod +x "${vg}/gitsby"
+	local vgRun="PATH='${vg}/bin:${PATH}' '${vg}/gitsby' status"
+	printf '#!/usr/bin/env bash\necho Linux\n' > "${vg}/bin/uname"; chmod +x "${vg}/bin/uname"
+	fAssertFail   "too old a bash is refused"                 bash -c "${vgRun}"
+	fAssertOut    "and the refusal names the requirement"     'needs bash 4.4 or newer'  bash -c "${vgRun}"
+	fAssertNotOut "and raises no shell error of its own"      'bad substitution|invalid shell option|syntax error'  bash -c "${vgRun}"
+	## A fake uname picks the platform arm, so all three can be checked from one box.
+	local spec="" plat="" pat=""
+	for spec in "Darwin:brew install bash" "FreeBSD:pkg install bash" "Linux:package manager"; do
+		plat="${spec%%:*}"; pat="${spec#*:}"
+		printf '#!/usr/bin/env bash\necho %s\n' "${plat}" > "${vg}/bin/uname"; chmod +x "${vg}/bin/uname"
+		fAssertOut "and tells ${plat} users what to install"  "${pat}"  bash -c "${vgRun}"
+	done
+	## macOS pins /bin/bash at 3.2 forever, so installing a newer one only helps via PATH.
+	fAssert "gitsby resolves bash through PATH, not /bin/bash"  bash -c "head -1 '${root}/legacy/bin/gitsby' | grep -qx '#!/usr/bin/env bash'"
 
-		## Installer options. These run once, not per implementation, and never reach the network:
-		## every check either exits during argument parsing, or uses --release (which names the ref
-		## outright, so no latest-release lookup) and stops at the confirmation.
-		local inst="${root}/install.bash"
-		fAssert     "installer --help works"                    bash -c "bash '${inst}' --help"
-		fAssertOut  "and documents --release"                   '\-\-release dev\|stable'   bash -c "bash '${inst}' --help"
-		fAssertOut  "and documents --target"                    '\-\-target user\|system'   bash -c "bash '${inst}' --help"
-		fAssertOut  "and documents --arch"                      '\-\-arch x64\|amd64\|arm64' bash -c "bash '${inst}' --help"
-		## Assert the reason, not just the failure: an installer that never heard of --target also
-		## exits nonzero here, so a bare exit-code check would pass with the option missing entirely.
-		fAssertFail "installer exits nonzero on a bad --target"  bash -c "bash '${inst}' --target bogus"
-		fAssertOut  "installer refuses a bad --target"           "\-\-target takes"          bash -c "bash '${inst}' --target bogus"
-		fAssertOut  "installer refuses a bad --arch"             "\-\-arch takes"            bash -c "bash '${inst}' --arch sparc"
-		fAssertOut  "installer refuses a bad --release"          "\-\-release takes"         bash -c "bash '${inst}' --release beta"
-		fAssertOut  "installer refuses --release with --ref"     'Use --release or --ref'    bash -c "bash '${inst}' --release dev --ref main"
-		fAssertOut  "installer refuses a valueless --target"     "\-\-target needs a value"  bash -c "bash '${inst}' --target"
-		## A ref is interpolated into a download URL, so a path-shaped one installs a script from
-		## some other repo while the printed plan still names this one.
-		fAssertOut  "installer refuses a path-shaped --ref"      'not a path'                bash -c "bash '${inst}' -y --ref '../../evil/repo/main'"
-		fAssertOut  "installer refuses an absolute --ref"        'not a path'                bash -c "bash '${inst}' -y --ref '/etc/passwd'"
-		fAssertOut  "installer refuses a shell-shaped --ref"     "aren't valid in a git ref" bash -c "bash '${inst}' -y --ref 'a b;id'"
-		## Reading the printed plan needs the confirmation to refuse rather than block. install.bash
-		## falls back to /dev/tty when stdin is not one, so this needs setsid - or, failing that, a
-		## shell that has no /dev/tty to fall back to. Neither, and there is no safe way to ask.
-		if ((shNoTty)); then
-			local iHome="${work}/insthome"; mkdir -p "${iHome}"
-			local iRun="${noTty[*]} env HOME='${iHome}' bash '${inst}' --release dev"
-			fAssertOut "--target user installs under HOME"      "insthome/\.local/bin/gitsby"  bash -c "${iRun} --target user </dev/null"
-			fAssertOut "--target system installs system-wide"   '/usr/local/bin/gitsby'        bash -c "${iRun} --target system </dev/null"
-			fAssertOut "-s still means --target system"         '/usr/local/bin/gitsby'        bash -c "${iRun} -s </dev/null"
-			fAssertOut "--arch is taken but reported inert"     'Ignore --arch arm64'          bash -c "${iRun} --arch arm64 </dev/null"
-			## Whether the download will be checked belongs in the plan, where it can still be
-			## declined. It used to be reported only afterwards, and on the dev path not at all -
-			## so the one route that installs an unverified file was the quiet one.
-			fAssertOut "the dev plan says it will not verify"   'NOT verify the download'      bash -c "${iRun} --target user </dev/null"
-		fi
-		## The PowerShell installer's ValidateSet does the same job as the case arms above.
-		if command -v pwsh >/dev/null 2>&1; then
-			local instPs="${root}/install.ps1"
-			fAssertFail "ps installer refuses a bad -Target"      pwsh -NoProfile -File "${instPs}" -Target bogus
-			fAssertFail "ps installer refuses a bad -Arch"        pwsh -NoProfile -File "${instPs}" -Arch sparc
-			fAssertFail "ps installer refuses a bad -Release"     pwsh -NoProfile -File "${instPs}" -Release beta
-			fAssertFail "ps installer refuses -Release with -Ref" pwsh -NoProfile -File "${instPs}" -Release dev -Ref main
-			fAssertOut  "ps installer refuses a path-shaped -Ref"  'not a path'  pwsh -NoProfile -File "${instPs}" -Yes -Ref '../../evil/repo/main'
-			## Same as the Bash plan above: state up front whether the download gets checked, and
-			## - on Windows - that PATH is about to be changed, since nothing else there puts the
-			## install directory on it and the install would otherwise finish uncallable by name.
-			fAssertOut  "ps dev plan says it will not verify"  'NOT verify the download' \
+	## Installer options. These run once, not per implementation, and never reach the network:
+	## every check either exits during argument parsing, or uses --release (which names the ref
+	## outright, so no latest-release lookup) and stops at the confirmation.
+	local inst="${root}/legacy/install.bash"
+	fAssert     "installer --help works"                    bash -c "bash '${inst}' --help"
+	fAssertOut  "and documents --release"                   '\-\-release dev\|stable'   bash -c "bash '${inst}' --help"
+	fAssertOut  "and documents --target"                    '\-\-target user\|system'   bash -c "bash '${inst}' --help"
+	fAssertOut  "and documents --arch"                      '\-\-arch x64\|amd64\|arm64' bash -c "bash '${inst}' --help"
+	## Assert the reason, not just the failure: an installer that never heard of --target also
+	## exits nonzero here, so a bare exit-code check would pass with the option missing entirely.
+	fAssertFail "installer exits nonzero on a bad --target"  bash -c "bash '${inst}' --target bogus"
+	fAssertOut  "installer refuses a bad --target"           "\-\-target takes"          bash -c "bash '${inst}' --target bogus"
+	fAssertOut  "installer refuses a bad --arch"             "\-\-arch takes"            bash -c "bash '${inst}' --arch sparc"
+	fAssertOut  "installer refuses a bad --release"          "\-\-release takes"         bash -c "bash '${inst}' --release beta"
+	fAssertOut  "installer refuses --release with --ref"     'Use --release or --ref'    bash -c "bash '${inst}' --release dev --ref main"
+	fAssertOut  "installer refuses a valueless --target"     "\-\-target needs a value"  bash -c "bash '${inst}' --target"
+	## A ref is interpolated into a download URL, so a path-shaped one installs a script from
+	## some other repo while the printed plan still names this one.
+	fAssertOut  "installer refuses a path-shaped --ref"      'not a path'                bash -c "bash '${inst}' -y --ref '../../evil/repo/main'"
+	fAssertOut  "installer refuses an absolute --ref"        'not a path'                bash -c "bash '${inst}' -y --ref '/etc/passwd'"
+	fAssertOut  "installer refuses a shell-shaped --ref"     "aren't valid in a git ref" bash -c "bash '${inst}' -y --ref 'a b;id'"
+	## Reading the printed plan needs the confirmation to refuse rather than block. install.bash
+	## falls back to /dev/tty when stdin is not one, so this needs setsid - or, failing that, a
+	## shell that has no /dev/tty to fall back to. Neither, and there is no safe way to ask.
+	if ((shNoTty)); then
+		local iHome="${work}/insthome"; mkdir -p "${iHome}"
+		local iRun="${noTty[*]} env HOME='${iHome}' bash '${inst}' --release dev"
+		fAssertOut "--target user installs under HOME"      "insthome/\.local/bin/gitsby"  bash -c "${iRun} --target user </dev/null"
+		fAssertOut "--target system installs system-wide"   '/usr/local/bin/gitsby'        bash -c "${iRun} --target system </dev/null"
+		fAssertOut "-s still means --target system"         '/usr/local/bin/gitsby'        bash -c "${iRun} -s </dev/null"
+		fAssertOut "--arch is taken but reported inert"     'Ignore --arch arm64'          bash -c "${iRun} --arch arm64 </dev/null"
+		## Whether the download will be checked belongs in the plan, where it can still be
+		## declined. It used to be reported only afterwards, and on the dev path not at all -
+		## so the one route that installs an unverified file was the quiet one.
+		fAssertOut "the dev plan says it will not verify"   'NOT verify the download'      bash -c "${iRun} --target user </dev/null"
+	fi
+	## The PowerShell installer's ValidateSet does the same job as the case arms above.
+	if command -v pwsh >/dev/null 2>&1; then
+		local instPs="${root}/legacy/install.ps1"
+		fAssertFail "ps installer refuses a bad -Target"      pwsh -NoProfile -File "${instPs}" -Target bogus
+		fAssertFail "ps installer refuses a bad -Arch"        pwsh -NoProfile -File "${instPs}" -Arch sparc
+		fAssertFail "ps installer refuses a bad -Release"     pwsh -NoProfile -File "${instPs}" -Release beta
+		fAssertFail "ps installer refuses -Release with -Ref" pwsh -NoProfile -File "${instPs}" -Release dev -Ref main
+		fAssertOut  "ps installer refuses a path-shaped -Ref"  'not a path'  pwsh -NoProfile -File "${instPs}" -Yes -Ref '../../evil/repo/main'
+		## Same as the Bash plan above: state up front whether the download gets checked, and
+		## - on Windows - that PATH is about to be changed, since nothing else there puts the
+		## install directory on it and the install would otherwise finish uncallable by name.
+		fAssertOut  "ps dev plan says it will not verify"  'NOT verify the download' \
+			bash -c "pwsh -NoProfile -File '${instPs}' -Release dev </dev/null 2>&1"
+		if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]]; then
+			fAssertOut "ps plan announces the PATH change"  'to your account PATH' \
 				bash -c "pwsh -NoProfile -File '${instPs}' -Release dev </dev/null 2>&1"
-			if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]]; then
-				fAssertOut "ps plan announces the PATH change"  'to your account PATH' \
-					bash -c "pwsh -NoProfile -File '${instPs}' -Release dev </dev/null 2>&1"
-			fi
-			## Git Bash rewrites a unix-absolute argument into a Windows path before the native
-			## pwsh sees it, so '/etc/passwd' would arrive as 'C:/Program Files/Git/etc/passwd'
-			## and be refused for the space rather than for being a path. Excluding that one
-			## prefix keeps the -File path converting as normal. Ignored off Windows.
-			fAssertOut  "ps installer refuses an absolute -Ref"    'not a path' \
-				env MSYS2_ARG_CONV_EXCL='/etc' pwsh -NoProfile -File "${instPs}" -Yes -Ref '/etc/passwd'
-			## The documented one-liners are 'iex' and a scriptblock, neither of which is a script
-			## file - so -File coverage alone says nothing about them. Both must bind their
-			## parameters, refuse without a tty, and leave the calling session alive and unaltered.
-			## These reach the confirmation prompt, so it has to REFUSE rather than wait: stdin at
-			## EOF, and nothing to fall back to - setsid where there is one, and on Windows just the
-			## redirect, since Read-Host reads that and never reaches for a terminal.
-			if ((canNoTty)); then
-				local instDev="${root}/install-dev.ps1"
-				## These paths are read by .NET, not by the shell, so they need native spelling.
-				local instPsNative="" instDevNative=""
-				instPsNative="$(  fWinPath "${instPs}"  )"
-				instDevNative="$( fWinPath "${instDev}" )"
-				## The system install location is the platform's own, so the plan line that proves
-				## -Target bound differs: /usr/local/bin, or Program Files on Windows. Verified it
-				## still discriminates - a user-target plan names AppData\Local\Programs instead.
-				local sysBinPat='/usr/local/bin'
-				((isWindows)) && sysBinPat='Program Files'
-				## Decode the bytes ourselves rather than Get-Content, which quietly drops a BOM.
-				## irm doesn't, so a BOM'd file reaches iex with U+FEFF glued to the shebang and
-				## the first line stops being a comment - which is how a BOM sat here undetected.
-				local readInst="\$t = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes('${instPsNative}'))"
-				fAssertOut "iex form reaches the plan"          'gitsby installer'  fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
-				fAssertOut "and refuses without a tty"          'CAUGHT: Aborted'   fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
-				fAssertOut "and leaves the session alive"       'HOST ALIVE'        fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
-				fAssertOut "scriptblock form binds its options" "${sysBinPat}"      fPwshText "${readInst}; try { & ([scriptblock]::Create(\$t)) -Ref main -Target system } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
-				fAssertOut "and leaves the session alive too"   'HOST ALIVE'        fPwshText "${readInst}; try { & ([scriptblock]::Create(\$t)) -Ref main -Target system } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
-				fAssertOut "installer leaks no StrictMode"      'strict stayed off' fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { }; try { \$q = \$neverSet; 'strict stayed off' } catch { 'STRICT LEAKED' }"
-				fAssertOut "installer leaks no ErrorAction"     'EAP=Continue'      fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { }; \"EAP=\$ErrorActionPreference\""
-				fAssertOut "dev setup's iex form asks first"    'CAUGHT: Aborted'   fPwshText "\$t = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes('${instDevNative}')); try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }"
-			fi
-			## Byte 0 must be the shebang: a BOM ahead of it means the kernel won't run the
-			## file directly either, which the one-liner checks above can't see.
-			local psFile=""
-			for psFile in "${root}/bin/gitsby.ps1" "${root}/install.ps1" "${root}/install-dev.ps1"; do
-				fAssert "$(basename "${psFile}") starts with a shebang, no BOM" \
-					bash -c "[[ \"\$(head -c2 '${psFile}')\" == '#!' ]]"
-			done
-			## GitHub serves SHA256SUMS as octet-stream, and Invoke-WebRequest hands back bytes
-			## for that, so reading the body as text found no checksum and skipped verification
-			## while reporting there was none. Reaching the real asset needs the network, so this
-			## pins the decode in the source rather than exercising it.
-			fAssert "install.ps1 decodes the SHA256SUMS body from bytes" \
-				bash -c "grep -q 'byte\[\]' '${instPs}'"
 		fi
+		## Git Bash rewrites a unix-absolute argument into a Windows path before the native
+		## pwsh sees it, so '/etc/passwd' would arrive as 'C:/Program Files/Git/etc/passwd'
+		## and be refused for the space rather than for being a path. Excluding that one
+		## prefix keeps the -File path converting as normal. Ignored off Windows.
+		fAssertOut  "ps installer refuses an absolute -Ref"    'not a path' \
+			env MSYS2_ARG_CONV_EXCL='/etc' pwsh -NoProfile -File "${instPs}" -Yes -Ref '/etc/passwd'
+		## The documented one-liners are 'iex' and a scriptblock, neither of which is a script
+		## file - so -File coverage alone says nothing about them. Both must bind their
+		## parameters, refuse without a tty, and leave the calling session alive and unaltered.
+		## These reach the confirmation prompt, so it has to REFUSE rather than wait: stdin at
+		## EOF, and nothing to fall back to - setsid where there is one, and on Windows just the
+		## redirect, since Read-Host reads that and never reaches for a terminal.
+		if ((canNoTty)); then
+			local instDev="${root}/legacy/install-dev.ps1"
+			## These paths are read by .NET, not by the shell, so they need native spelling.
+			local instPsNative="" instDevNative=""
+			instPsNative="$(  fWinPath "${instPs}"  )"
+			instDevNative="$( fWinPath "${instDev}" )"
+			## The system install location is the platform's own, so the plan line that proves
+			## -Target bound differs: /usr/local/bin, or Program Files on Windows. Verified it
+			## still discriminates - a user-target plan names AppData\Local\Programs instead.
+			local sysBinPat='/usr/local/bin'
+			((isWindows)) && sysBinPat='Program Files'
+			## Decode the bytes ourselves rather than Get-Content, which quietly drops a BOM.
+			## irm doesn't, so a BOM'd file reaches iex with U+FEFF glued to the shebang and
+			## the first line stops being a comment - which is how a BOM sat here undetected.
+			local readInst="\$t = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes('${instPsNative}'))"
+			fAssertOut "iex form reaches the plan"          'gitsby installer'  fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+			fAssertOut "and refuses without a tty"          'CAUGHT: Aborted'   fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+			fAssertOut "and leaves the session alive"       'HOST ALIVE'        fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+			fAssertOut "scriptblock form binds its options" "${sysBinPat}"      fPwshText "${readInst}; try { & ([scriptblock]::Create(\$t)) -Ref main -Target system } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+			fAssertOut "and leaves the session alive too"   'HOST ALIVE'        fPwshText "${readInst}; try { & ([scriptblock]::Create(\$t)) -Ref main -Target system } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+			fAssertOut "installer leaks no StrictMode"      'strict stayed off' fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { }; try { \$q = \$neverSet; 'strict stayed off' } catch { 'STRICT LEAKED' }"
+			fAssertOut "installer leaks no ErrorAction"     'EAP=Continue'      fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { }; \"EAP=\$ErrorActionPreference\""
+			fAssertOut "dev setup's iex form asks first"    'CAUGHT: Aborted'   fPwshText "\$t = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes('${instDevNative}')); try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }"
+		fi
+		## Byte 0 must be the shebang: a BOM ahead of it means the kernel won't run the
+		## file directly either, which the one-liner checks above can't see.
+		local psFile=""
+		for psFile in "${root}"/legacy/bin/gitsby.ps1 "${root}"/legacy/install.ps1 "${root}"/legacy/install-dev.ps1; do
+			fAssert "$(basename "${psFile}") starts with a shebang, no BOM" \
+				bash -c "[[ \"\$(head -c2 '${psFile}')\" == '#!' ]]"
+		done
+		## GitHub serves SHA256SUMS as octet-stream, and Invoke-WebRequest hands back bytes
+		## for that, so reading the body as text found no checksum and skipped verification
+		## while reporting there was none. Reaching the real asset needs the network, so this
+		## pins the decode in the source rather than exercising it.
+		fAssert "install.ps1 decodes the SHA256SUMS body from bytes" \
+			bash -c "grep -q 'byte\[\]' '${instPs}'"
 	fi
 
 	## PowerShell only. Set-Location moves PowerShell's own location, not the process cwd, so a
 	## script that starts git itself must pass the working directory or reads and writes land in
 	## different repos. Every other check cds in bash before starting pwsh, which hides it.
-	if [[ "$1" == "pwsh" ]]; then
-		local cw="${work}/cwdsplit"
-		mkdir -p "${cw}"
-		git init --quiet -b main "${cw}/launch"
-		( cd "${cw}/launch" && echo x > f.txt && git add --all && git commit --quiet -m "init launch" && echo a > only-in-launch.txt )
-		git init --quiet -b main "${cw}/target"
-		( cd "${cw}/target" && echo y > f.txt && git add --all && git commit --quiet -m "init target" && echo b > only-in-target.txt )
-		## Start pwsh in one repo, move to the other inside the session, then commit. Both paths
-		## go in native spelling: an MSYS one leaves Set-Location and the script lookup both
-		## failing, so nothing runs and all three checks below report on an untouched fixture.
-		local cwNative="" gitsbyPsNative=""
-		cwNative="$(       fWinPath "${cw}" )"
-		gitsbyPsNative="$( fWinPath "${root}/bin/gitsby.ps1" )"
-		( cd "${cw}/launch" && pwsh -NoProfile -Command "Set-Location '${cwNative}/target'; & '${gitsbyPsNative}' -q update 'from target'" ) >/dev/null 2>&1 || true
-		fAssert "pwsh commits where Set-Location points"  bash -c "cd '${cw}/target' && [[ \"\$(git log -1 --pretty=%s)\" == 'from target' ]]"
-		fAssert "and commits that repo's own file"        bash -c "cd '${cw}/target' && git show --stat --pretty=format: HEAD | grep -q only-in-target"
-		fAssert "and leaves the launch repo alone"        bash -c "cd '${cw}/launch' && [[ \"\$(git log -1 --pretty=%s)\" == 'init launch' ]] && [[ -n \"\$(git status --porcelain)\" ]]"
-	fi
 
 	## A pull whose autostash reapply conflicts still exits 0, so nothing downstream noticed and
 	## 'git add --all' marked the conflict resolved - committing the markers and pushing them.
@@ -1650,23 +1619,7 @@ GHEOF
 	fAssertFail "--config with an empty value is refused"     bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '' status"
 	fAssertOut  "and says the name was empty"  'empty file name' bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '' status 2>&1"
 	## The joined spelling splits the two builds, so each is pinned to what it actually does.
-	if [[ "$1" != "pwsh" ]]; then
-		fAssertOut "--config=FILE (joined) works here"  'altacct'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config='${ac}/alt.shcl' status"
-	else
-		## pwsh's -File binder can't take a joined option: ahead of a command it eats the next word,
-		## after one it overflows the positional slots. Either way the old failure read as nothing
-		## happening at all under -q, so the form is refused by name from any position.
-		## The bare exit-code assert below can't discriminate - the old build exited nonzero too,
-		## just incoherently - so the two message checks after it are what actually pin the fix.
-		fAssertFail "a joined --config= is refused"                    bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config='${ac}/alt.shcl' status"
-		fAssertOut  "and says why, even under -q"  'joined option'     bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config='${ac}/alt.shcl' status 2>&1"
-		fAssertOut  "and after the command too"   'joined option'     bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch br list --config='${ac}/alt.shcl' 2>&1"
-		## 'raw' re-reads the real command line, so the joined form binds correctly there and must
-		## keep working - and past the tool name a joined option is git's, not ours. Both are
-		## regression guards for the refusal above, and pass against the old build by design.
-		fAssertOut  "raw still takes a joined --config"  'altacct'    bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' --config='${ac}/alt.shcl' raw git rev-parse --abbrev-ref HEAD 2>&1"
-		fAssert     "and a joined option after the tool is git's"     bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git log --format=%s -1 >/dev/null 2>&1"
-	fi
+	fAssertOut "--config=FILE (joined) works here"  'altacct'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config='${ac}/alt.shcl' status"
 
 	## account list / apply.
 	fAssertOut "account list names the accounts"      'workacct'                 bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account"
@@ -1787,10 +1740,7 @@ GHEOF
 	## the script runs at all, so there it is spelled '`--' and unescaped on the way to git.
 	## Asserted against a path that does NOT exist: a separator that was dropped would still list
 	## the commit, so only the empty result proves git actually received one.
-	## Single-quoted where it is pasted in: the PowerShell spelling starts with a backtick, and this
-	## string is re-parsed by the inner 'bash -c', which would otherwise read it as a command
-	## substitution and run whatever followed.
-	local sep="--"; [[ "$1" != "pwsh" ]] || sep='`--'
+	local sep="--"
 	fAssertOut    "raw passes a pathspec separator through"  '^init$' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git log --format=%s '${sep}' a.txt 2>/dev/null"
 	fAssertNotOut "and it really separates - an absent path lists nothing"  'init' \
@@ -1803,156 +1753,125 @@ GHEOF
 	## the release body, and warned about none of it. Two independent guards, either enough on its
 	## own. Pinned in the source because exercising it for real means cutting a release; bash leg
 	## only, since neither file belongs to an implementation.
-	if [[ "$1" == "bash" ]]; then
-		local relBash="${root}/cicd/release.bash" clMd="${root}/changelog.md"
-		fAssertFail "the changelog's template heading can't pass for a real one" \
-			grep -qE '^## vNEXT - DATE' "${clMd}"
-		fAssert "and the real vNEXT section is still findable below the template" \
-			awk '/^-->/{p=1; next} p && /^## vNEXT$/{n=1} END{exit !n}' "${clMd}"
-		fAssert "release.bash reads the changelog from past the template" \
-			grep -q 'fpChangelogStart' "${relBash}"
-		fAssertFail "and retitles by line number, not by first match" \
-			grep -qE '0,/\^## vNEXT' "${relBash}"
-		## The gate is the one thing a release most depends on, and the two engines are separate
-		## ports rather than one wrapping the other, so the Bash one on Windows would pass or fail
-		## on the wrong pipeline entirely.
-		fAssert "release.bash knows the pipeline is two engines" \
-			grep -q 'cicd-win.ps1' "${relBash}"
-		fAssert "and gates on whichever one it picked" \
-			grep -q 'pipeline\[@\]' "${relBash}"
-	fi
+	local relBash="${root}/cicd/release.bash" clMd="${root}/changelog.md"
+	fAssertFail "the changelog's template heading can't pass for a real one" \
+		grep -qE '^## vNEXT - DATE' "${clMd}"
+	fAssert "and the real vNEXT section is still findable below the template" \
+		awk '/^-->/{p=1; next} p && /^## vNEXT$/{n=1} END{exit !n}' "${clMd}"
+	fAssert "release.bash reads the changelog from past the template" \
+		grep -q 'fpChangelogStart' "${relBash}"
+	fAssertFail "and retitles by line number, not by first match" \
+		grep -qE '0,/\^## vNEXT' "${relBash}"
+	## The gate is the one thing a release most depends on. There is one engine now, so what
+	## has to hold is simply that the release runs it and stops on a failure.
+	fAssert "release.bash runs the pipeline before touching anything" \
+		grep -q 'cicd.bash --no-publish' "${relBash}"
+	fAssert "and treats a failing pipeline as fatal" \
+		grep -q 'the pipeline did not pass' "${relBash}"
 
 	## Recursive removal. demo-repo.bash is the only script here that removes a path someone else
 	## named, so it gets real checks; the rest only ever remove what mktemp just handed them, and
-	## that is pinned in the source. Bash leg only - none of these files belong to an
-	## implementation. A Ctrl-C mid-probe can't be staged on every platform (a native child defers
-	## the signal), so the probe's own cleanup is asserted where it lives instead.
-	## The single quotes below are the point - these are searches for literal source text.
+	## that is pinned in the source. None of these files belong to an implementation, which is why
+	## they outlived the leg they used to ride. A Ctrl-C mid-probe can't be staged on every platform
+	## (a native child defers the signal), so the probe's own cleanup is asserted where it lives.
+	## The single quotes in the searches below are the point - they look for literal source text,
+	## so each one turns off the expansion warning for itself.
+	local demoRepo="${root}/cicd/utility/demo/demo-repo.bash" rmWork="${work}/rmsafe"
+	mkdir -p "${rmWork}/notmine/keep"; echo keepme > "${rmWork}/notmine/keep/file.txt"
+	## On the message, not just the exit code: a build that refuses for some unrelated reason
+	## later on exits nonzero too, and two of these passed against the unguarded script on
+	## that alone.
+	fAssertFail "demo-repo refuses a root it did not build" \
+		bash "${demoRepo}" "${rmWork}/notmine"
+	fAssertOut  "and says whose directory it is" 'did not build it' \
+		bash "${demoRepo}" "${rmWork}/notmine"
+	fAssertOut  "and leaves that directory untouched" '^keepme$' \
+		cat "${rmWork}/notmine/keep/file.txt"
+	fAssertOut  "demo-repo refuses a relative root"      'plain absolute path' \
+		bash "${demoRepo}" relative/path
+	fAssertOut  "demo-repo refuses a root containing .." 'plain absolute path' \
+		bash "${demoRepo}" "${rmWork}/a/../b"
+	## Deliberately NOT run: passing '/' to a build that lacks the guard is 'rm -rf /'. It is
+	## one clause of the same test the two checks above exercise for real, so it is pinned.
 	# shellcheck disable=SC2016
-	if [[ "$1" == "bash" ]]; then
-		local demoRepo="${root}/cicd/utility/demo/demo-repo.bash" rmWork="${work}/rmsafe"
-		mkdir -p "${rmWork}/notmine/keep"; echo keepme > "${rmWork}/notmine/keep/file.txt"
-		## On the message, not just the exit code: a build that refuses for some unrelated reason
-		## later on exits nonzero too, and two of these passed against the unguarded script on
-		## that alone.
-		fAssertFail "demo-repo refuses a root it did not build" \
-			bash "${demoRepo}" "${rmWork}/notmine"
-		fAssertOut  "and says whose directory it is" 'did not build it' \
-			bash "${demoRepo}" "${rmWork}/notmine"
-		fAssertOut  "and leaves that directory untouched" '^keepme$' \
-			cat "${rmWork}/notmine/keep/file.txt"
-		fAssertOut  "demo-repo refuses a relative root"      'plain absolute path' \
-			bash "${demoRepo}" relative/path
-		fAssertOut  "demo-repo refuses a root containing .." 'plain absolute path' \
-			bash "${demoRepo}" "${rmWork}/a/../b"
-		## Deliberately NOT run: passing '/' to a build that lacks the guard is 'rm -rf /'. It is
-		## one clause of the same test the two checks above exercise for real, so it is pinned.
-		fAssert "and the same test rejects the filesystem root" \
-			grep -qF '"${root}" != "/"' "${demoRepo}"
-		fAssert "the publish probe's dir is removed on the way out, not only in the happy path" \
-			grep -q '_probeDir' "${root}/bin/gitsby"
-		fAssert "and its pwsh counterpart tests the path before removing it" \
-			grep -q 'if ($probeDir) { Remove-Item' "${root}/bin/gitsby.ps1"
-		local rmScript
-		for rmScript in bin/gitsby cicd/cicd.bash cicd/test.bash cicd/fuzz.bash cicd/parity.bash \
-		                cicd/release.bash cicd/utility/demo/demo-repo.bash install.bash install-dev.bash; do
-			fAssertFail "${rmScript} never removes an unguarded variable path" \
-				grep -qE 'rm -[rf]+ +(-- )?"\$\{[a-zA-Z_][a-zA-Z_0-9]*\}' "${root}/${rmScript}"
-		done
-		## Hermeticity, the half that pinning the config FILES does not cover. Two inputs reach a
-		## harness from an ordinary working terminal and outrank everything it does set:
-		## GIT_CONFIG_COUNT/KEY_n beat every config file including a repo-local one, and an
-		## inherited GH_TOKEN is what the fake gh reports back. A run carrying either still reports
-		## a count and a list of names - the checks are simply no longer about what they say.
-		## The bracketed last letter keeps the pattern from matching this line when the file being
-		## searched is this one, which would pass against a harness that dropped the isolation.
-		local hermScript
-		for hermScript in cicd/test.bash cicd/fuzz.bash cicd/parity.bash; do
-			fAssert "${hermScript} drops env-injected git config" \
-				grep -qE 'unset GIT_CONFIG_COUN[T]' "${root}/${hermScript}"
-			fAssert "${hermScript} drops an inherited gh token" \
-				grep -qE 'unset GH_TOKE[N]' "${root}/${hermScript}"
-		done
-		## Runtime companions to the pins above. Regression guards, not discriminating checks: on a
-		## clean machine they pass just as well against a harness that isolates nothing.
-		fAssert "this run carries no env-injected git config"  bash -c '[[ -z "${GIT_CONFIG_COUNT:-}" ]]'
-		fAssert "and no inherited gh token"                    bash -c '[[ -z "${GH_TOKEN:-}" ]]'
-	fi
+	fAssert "and the same test rejects the filesystem root" \
+		grep -qF '"${root}" != "/"' "${demoRepo}"
+	fAssert "the publish probe's dir is removed on the way out, not only in the happy path" \
+		grep -q '_probeDir' "${root}/legacy/bin/gitsby"
+	# shellcheck disable=SC2016
+	fAssert "and its pwsh counterpart tests the path before removing it" \
+		grep -q 'if ($probeDir) { Remove-Item' "${root}/legacy/bin/gitsby.ps1"
+	local rmScript
+	for rmScript in cicd/cicd.bash cicd/test.bash cicd/fuzz.bash cicd/parity.bash \
+	                cicd/release.bash cicd/utility/demo/demo-repo.bash \
+	                legacy/bin/gitsby legacy/install.bash legacy/install-dev.bash; do
+		fAssertFail "${rmScript} never removes an unguarded variable path" \
+			grep -qE 'rm -[rf]+ +(-- )?"\$\{[a-zA-Z_][a-zA-Z_0-9]*\}' "${root}/${rmScript}"
+	done
+	## Hermeticity, the half that pinning the config FILES does not cover. Two inputs reach a
+	## harness from an ordinary working terminal and outrank everything it does set:
+	## GIT_CONFIG_COUNT/KEY_n beat every config file including a repo-local one, and an
+	## inherited GH_TOKEN is what the fake gh reports back. A run carrying either still reports
+	## a count and a list of names - the checks are simply no longer about what they say.
+	## The bracketed last letter keeps the pattern from matching this line when the file being
+	## searched is this one, which would pass against a harness that dropped the isolation.
+	local hermScript
+	for hermScript in cicd/test.bash cicd/fuzz.bash cicd/parity.bash; do
+		fAssert "${hermScript} drops env-injected git config" \
+			grep -qE 'unset GIT_CONFIG_COUN[T]' "${root}/${hermScript}"
+		fAssert "${hermScript} drops an inherited gh token" \
+			grep -qE 'unset GH_TOKE[N]' "${root}/${hermScript}"
+	done
+	## Runtime companions to the pins above. Regression guards, not discriminating checks: on a
+	## clean machine they pass just as well against a harness that isolates nothing.
+	# shellcheck disable=SC2016  ## the inner shell has to do the expanding, not this one.
+	fAssert "this run carries no env-injected git config"  bash -c '[[ -z "${GIT_CONFIG_COUNT:-}" ]]'
+	# shellcheck disable=SC2016
+	fAssert "and no inherited gh token"                    bash -c '[[ -z "${GH_TOKEN:-}" ]]'
 
 	## Go-only: the renamed commands, the aliases that keep every 2.1.0 spelling working, and
 	## 'identity'. The scripts are frozen at the old surface, so asserting the new names on their
 	## legs would only prove that a frozen file is frozen.
-	if [[ "$1" == "go" ]]; then
-		local renDir="${work}/rename"
-		git clone --quiet "${origin}" "${renDir}"
-		fAssertOut "help leads with the new name" 'pullcom \[msg\] \.+: Pull updates'        "${gitsby}" --help
-		fAssertOut "and offers br merge"          'br merge \[msg\] \.+: Merge current'      "${gitsby}" --help
-		fAssertOut "and lists identity"           'identity \.+: Who commands here act as'   "${gitsby}" --help
-		## Every accepted spelling, because a ladder is only worth having if the whole ladder is
-		## there - a missing rung reads as a typo the tool refused for no reason.
-		local spelling
-		for spelling in pullcom update pull pullc pullco pullcomm pullcommit; do
-			fAssert "'${spelling}' commits" bash -c "cd '${renDir}' && echo x >> '${spelling}.txt' && '${gitsby}' -q ${spelling} 'via ${spelling}' && git -C '${renDir}' log -1 --pretty=%s | grep -qx 'via ${spelling}'"
-		done
-		fAssertPlan "'br merge' merges the current branch" 'git merge --no-ff renmerge' \
-			bash -c "cd '${renDir}' && '${gitsby}' -q br create renmerge >/dev/null && '${gitsby}' -q br merge 'merged' 2>&1"
-		fAssertPlan "'br land' still does the same"        'git merge --no-ff renland' \
-			bash -c "cd '${renDir}' && '${gitsby}' -q br create renland >/dev/null && '${gitsby}' -q br land 'landed' 2>&1"
-		fAssertOut  "an unknown br subcommand names merge, not land" 'switch, merge, prune' \
-			bash -c "cd '${renDir}' && '${gitsby}' -q br frobnicate 2>&1"
-		## identity is the status block's identity half on its own, and the one read-only command
-		## that answers outside a repo - which is where you ask it, before cloning anything.
-		fAssert     "identity exits 0"            bash -c "cd '${renDir}' && '${gitsby}' identity"
-		fAssertOut  "and names the commit author" '^Author \.+: test <test@test>' \
-			bash -c "cd '${renDir}' && '${gitsby}' identity 2>&1"
-		fAssertNotOut "and leaves out the working-tree state" 'Local changes:' \
-			bash -c "cd '${renDir}' && '${gitsby}' identity 2>&1"
-		fAssert     "identity answers outside a repo" bash -c "cd '${work}' && '${gitsby}' identity"
-		fAssertFail "identity with a trailing argument rejected" \
-			bash -c "cd '${renDir}' && '${gitsby}' identity extra"
-	fi
+	local renDir="${work}/rename"
+	git clone --quiet "${origin}" "${renDir}"
+	fAssertOut "help leads with the new name" 'pullcom \[msg\] \.+: Pull updates'        "${gitsby}" --help
+	fAssertOut "and offers br merge"          'br merge \[msg\] \.+: Merge current'      "${gitsby}" --help
+	fAssertOut "and lists identity"           'identity \.+: Who commands here act as'   "${gitsby}" --help
+	## Every accepted spelling, because a ladder is only worth having if the whole ladder is
+	## there - a missing rung reads as a typo the tool refused for no reason.
+	local spelling
+	for spelling in pullcom update pull pullc pullco pullcomm pullcommit; do
+		fAssert "'${spelling}' commits" bash -c "cd '${renDir}' && echo x >> '${spelling}.txt' && '${gitsby}' -q ${spelling} 'via ${spelling}' && git -C '${renDir}' log -1 --pretty=%s | grep -qx 'via ${spelling}'"
+	done
+	fAssertPlan "'br merge' merges the current branch" 'git merge --no-ff renmerge' \
+		bash -c "cd '${renDir}' && '${gitsby}' -q br create renmerge >/dev/null && '${gitsby}' -q br merge 'merged' 2>&1"
+	fAssertPlan "'br land' still does the same"        'git merge --no-ff renland' \
+		bash -c "cd '${renDir}' && '${gitsby}' -q br create renland >/dev/null && '${gitsby}' -q br land 'landed' 2>&1"
+	fAssertOut  "an unknown br subcommand names merge, not land" 'switch, merge, prune' \
+		bash -c "cd '${renDir}' && '${gitsby}' -q br frobnicate 2>&1"
+	## identity is the status block's identity half on its own, and the one read-only command
+	## that answers outside a repo - which is where you ask it, before cloning anything.
+	fAssert     "identity exits 0"            bash -c "cd '${renDir}' && '${gitsby}' identity"
+	fAssertOut  "and names the commit author" '^Author \.+: test <test@test>' \
+		bash -c "cd '${renDir}' && '${gitsby}' identity 2>&1"
+	fAssertNotOut "and leaves out the working-tree state" 'Local changes:' \
+		bash -c "cd '${renDir}' && '${gitsby}' identity 2>&1"
+	fAssert     "identity answers outside a repo" bash -c "cd '${work}' && '${gitsby}' identity"
+	fAssertFail "identity with a trailing argument rejected" \
+		bash -c "cd '${renDir}' && '${gitsby}' identity extra"
 }
 
 echo "gitsby regression tests (fixture: ${work})"
 
-gitsby="${root}/bin/gitsby"
-fMakeFixture "${work}/bash"
-fRunSuite "bash"
-
-## Same suite against the PowerShell port, when pwsh is available. The shim keeps
-## ${gitsby} a plain single path so the bash -c interpolation above stays as-is.
-if command -v pwsh >/dev/null 2>&1; then
-	gitsby="${work}/gitsby-pwsh"
-	printf '#!/usr/bin/env bash\nexec pwsh -NoProfile -File "%s" "$@"\n' "${root}/bin/gitsby.ps1" > "${gitsby}"
-	chmod +x "${gitsby}"
-	fMakeFixture "${work}/pwsh"
-	fRunSuite "pwsh"
-else
-	echo "suite: pwsh skipped (pwsh not installed)"
-fi
-
-## Same suite against the compiled port, when a build exists (cicd stage 2 builds it, or
-## 'go build' by hand in src-go/). Not gating yet: the port is written against this suite,
-## so its failures are the distance left, not a broken tree - counts print, the totals and
-## the exit code below exclude them. Flips fatal in the round that retires the scripts.
+## One implementation, and it gates. The shim keeps ${gitsby} a plain single path so the
+## 'bash -c' interpolation throughout the suite stays as it is.
 goBin="${root}/src-go/gitsby"; [[ -x "${goBin}" ]] || goBin="${goBin}.exe"
-if [[ -x "${goBin}" ]]; then
-	gitsby="${work}/gitsby-go"
-	printf '#!/usr/bin/env bash\nexec "%s" "$@"\n' "${goBin}" > "${gitsby}"
-	chmod +x "${gitsby}"
-	fMakeFixture "${work}/go"
-	declare -i passWas=${pass} failWas=${fail}
-	## The scripted legs fail fast when a bare prep command dies - there that is a harness
-	## bug. Here prep legitimately dies wherever it leans on a command not ported yet, so
-	## this leg runs without -e and the assertions do all the judging.
-	set +e
-	fRunSuite "go"
-	set -e
-	echo "go leg (not gating yet): passed $((pass - passWas)), failed $((fail - failWas))"
-	pass=${passWas}; fail=${failWas}
-else
-	echo "suite: go skipped (no build at src-go/gitsby)"
-fi
+[[ -x "${goBin}" ]] || { echo "no build at src-go/gitsby - run 'go build' there, or cicd.bash stage 2" >&2; exit 1; }
+gitsby="${work}/gitsby-go"
+printf '#!/usr/bin/env bash\nexec "%s" "$@"\n' "${goBin}" > "${gitsby}"
+chmod +x "${gitsby}"
+fMakeFixture "${work}/go"
+fRunSuite "go"
 
 echo "passed: ${pass}, failed: ${fail}"
 ((fail == 0)) || exit 1
@@ -1981,3 +1900,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260814 JC: release.bash gates on the pipeline engine belonging to the platform. It always ran the Bash one, which knows nothing about Windows, so the check a release most depends on would have been the wrong pipeline there. Source pins, same reason as the changelog ones above; both discriminate against the prior file.
 ##		- 20260817 JC: Go leg. Same shim treatment, non-gating: the port is written against this suite, so its failures are the distance left, printed as counts and kept out of the totals. The leg runs without -e - prep commands legitimately die where a command is not ported yet, and the assertions do the judging.
 ##		- 20260818 JC: The renamed commands, their aliases, and identity - checked on the compiled leg only, since the scripts are frozen at the spelling they shipped with. The offline-sync check now takes either name; it is the one message that had pinned the old one.
+##		- 20260818 JC: One leg. The scripted builds moved to legacy/ and their legs went with them, so the compiled build is the subject and it gates. The checks that were never about an implementation - installers, the frozen platform gates, the source pins - stayed, repointed at legacy/; dropping them with the leg they happened to ride would have lost 58 of them silently. The PowerShell-only block went with pwsh, and the per-implementation option spellings collapsed to one.

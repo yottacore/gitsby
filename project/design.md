@@ -206,14 +206,26 @@ The Bash and PowerShell files are ports of each other, and were kept in step for
 	- The same lines `status` prints, from the same code, so the two cannot drift apart. That includes the rule that the Account line appears only for an account asked for or configured, never one merely inferred from the remote's owner.
 	- It answers outside a repository too. Which account a folder belongs to is worth knowing before there is anything in it, which is exactly when you are about to clone or create.
 
-- The CI/CD stack follows the implementation into Go, rather than becoming cross-platform PowerShell. Deferred until the Go build reaches parity.
-	- The stack is the last thing in the tree still written in the languages the product left behind: roughly 3,400 lines of Bash across `cicd/`, a 757-line PowerShell twin of the engine, and about 1,100 more lines of Bash under `cicd/utility/`.
-	- Among the options considered, PowerShell was rejected. A single pwsh engine would retire the hand-synced Windows copy, but only the interpreter is portable - the stack still shells out to git, gh, shellcheck, markdownlint and the rest, so the glue changes syntax without changing what it depends on. It also adds an interpreter that has to be installed, where Bash is already present everywhere the project builds and Go needs nothing at all.
-	- The test suite is the specific reason. It fakes `gh`, `git` and `uname` by writing shebang scripts onto PATH, which a process launched from .NET cannot execute on Windows - so a PowerShell port trades one platform trap for a new one. A compiled shim built into the temp directory has no such split.
-	- Hermetic setup gets stronger, not just shorter. The suite currently inherits the caller's environment and unsets its way back to clean, which is what let the config-injection bug through. Building the child environment explicitly makes that class of defect unreachable rather than guarded against.
-	- Two files are retired instead of ported: `parity.bash`, which exists only to compare the two frozen builds against each other, and `cicd-win.ps1`, whose reason to exist is the Bash engine it mirrors. The fuzz suite becomes a seed corpus for the toolchain's own fuzzer.
-	- What stays as it is: the demo gif generator, which is already portable and whose output is pinned byte for byte to a font stack and an optimizer, and the lint stage, which is genuinely better expressed as a shell pipeline than as compiled code.
-	- Timing is deliberate. Changing the harness and the thing it measures in the same window costs the port its reference point.
+- The CI/CD stack follows the implementation into Go, rather than becoming cross-platform PowerShell.
+	- Among the options considered, PowerShell was rejected for the stack. A single pwsh engine would have retired the hand-synced Windows copy, but only the interpreter is portable - the stack still shells out to git, gh, shellcheck, markdownlint and the rest, so the glue changes syntax without changing what it depends on. It also adds an interpreter that has to be installed, where Bash is already present everywhere the project builds and Go needs nothing at all.
+	- The test suite was the specific reason. It fakes `gh`, `git` and `uname` by writing shebang scripts onto PATH, which a process launched from .NET cannot execute on Windows - so a PowerShell port would have traded one platform trap for a new one.
+	- What stays as it is: the demo gif generator, already portable and pinned byte for byte to a font stack and an optimizer, and the lint stage, genuinely better expressed as a shell pipeline than as compiled code.
+	- Done as of 2026-08-18. `cicd-win.ps1` is deleted, the engine runs seven stages, and the Go toolchain is required rather than probed. The remaining Bash is the pipeline's own, not the product's.
+
+- The frozen builds live in `legacy/`, holding the deliverables alone - both scripts and the four installers of that era. No copy of the pipeline went with them.
+	- Among the options considered, copying `cicd/` into `legacy/cicd/` was rejected. The v2.1.0 tag is a better hotfix tree than any copy: it holds the scripts, the pipeline that built them and the installers all in their original places, wired to each other and unmodified. A copy would have needed its config edited - no dogfood, no publish, no demo, different lint globs - so the thing reached for during a hotfix would no longer have matched what shipped.
+	- Rot argues the same way. In a few years the old suite may not run from either location, and a rotted copy at a tag is inert where a rotted copy in the working tree keeps surfacing in greps, lint globs and reviews.
+	- So a hotfix starts at the tag, ships from its own branch with its own tag, and is never merged back to `main` - those paths do not exist there.
+	- What keeps the six files in the tree at all is the port, not hotfixes: they are the reference this build is compared against. When that comparison retires, they can go, and the tag still holds them.
+
+- `parity.bash` was kept and repointed rather than dropped. It used to compare the two scripts against each other; it now compares this build against the frozen v2.1.0 one.
+	- That is the backwards-compatibility question, and it is the one still worth asking. The behavioural suite asks "is this correct?" of one build at a time, so it passes while two builds quietly disagree about the same input - which is what every port defect that reached users actually was.
+	- The PowerShell build is not a third leg. The two scripts were proven identical to each other at v2.1.0, so agreeing with one is agreeing with both, and a third leg would only add an interpreter to find.
+	- It also checks that `update` and `br land` still route where they always did, under both spellings. A permanent alias is a promise, and promises get checks.
+
+- The version lives in the tag and nowhere else.
+	- The scripted builds each carried a `thisVersion` string by hand, and a release rewrote both. They had drifted before, which is why phase 1 compared them.
+	- A Go build takes its version from `-ldflags` at build time, so there is nothing in the tree that can disagree with the tag. Cutting a release now edits exactly one file: the changelog heading.
 
 ## Branching model
 

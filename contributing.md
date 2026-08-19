@@ -78,7 +78,7 @@ A good bug report shouldn't leave others needing to chase you up for more inform
 - Also search the internet, including Stack Overflow, to see if users outside the GitHub community have discussed the issue.
 - Collect information about the bug:
 	- OS, platform, and version (Windows, Linux, macOS, x86_64, ARM64).
-	- Which implementation, Bash or PowerShell, and its version.
+	- Which version, from `gitsby --version`, and which platform.
 	- Your `git` version, and `gitsby -v`.
 	- Your input and the output.
 	- Can you reliably reproduce it? Can you reproduce it with older versions?
@@ -134,28 +134,23 @@ Enhancement suggestions are tracked as [GitHub issues](https://github.com/jim-co
 <!-- omit in toc -->
 #### Set up
 
-One-liner setup. It clones the repo, checks out the `dev` branch, and checks the tooling, offering to install what's missing. It shows the plan and asks before doing anything.
+Clone it and build it. There is no setup script any more, because there is nothing to set up beyond Go itself.
 
-- Linux / macOS:
+~~~bash
+git clone https://github.com/jim-collier/gitsby.git
+cd gitsby && git switch dev
+cd src-go && go build -o gitsby .
+~~~
 
-	~~~bash
-	curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install-dev.bash | bash
-	~~~
-
-- Windows (PowerShell 7+):
-
-	~~~pwsh
-	irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install-dev.ps1 | iex
-	~~~
-
-Or clone it yourself and install the tooling by hand.
+That binary is the whole product. The rest of the tooling below is for running the checks, and every piece of it is optional except Go.
 
 <!-- omit in toc -->
 #### What you need
 
-- `git`, and `bash` 4.4 or newer. (The two installers themselves also run on macOS stock bash 3.2.)
-- `shellcheck`, to lint the Bash side.
-- `pwsh` 7+ and its `PSScriptAnalyzer` module, if you touch the PowerShell side. Without them, those stages report themselves absent and skip.
+- `git`, and the Go toolchain. Nothing else is required to build.
+- `bash` 4.4 or newer, to run the pipeline. The product does not need it; the pipeline is written in it.
+- `staticcheck` (`go install honnef.co/go/tools/cmd/staticcheck@latest`), for the lint stage. Without it that check warns and skips; `gofmt` and `go vet` ship with Go and always gate.
+- `shellcheck`, to lint the pipeline's own scripts.
 - `markdownlint` (`npm install -g markdownlint-cli`), to lint the docs.
 - `python3` with Pillow, and optionally `gifsicle`, to regenerate the demo. Only needed for a full pipeline run.
 - `gh`, if you want to exercise the `pr` command.
@@ -163,7 +158,8 @@ Or clone it yourself and install the tooling by hand.
 <!-- omit in toc -->
 #### Where things are
 
-- `bin/gitsby` and `bin/gitsby.ps1` - the two implementations. They are ports of each other, so a change to one nearly always belongs in the other.
+- `src-go/` - the implementation. One file per concern, package `main`.
+- `legacy/` - the Bash and PowerShell builds, frozen at v2.1.0, plus the installers of that era. Read them, compare against them, never edit them.
 - `cicd/` - the local pipeline and its config.
 - `cicd/utility/demo/` - everything the demo gif is built from. Start at `script.txt`, which describes scene by scene what the demo shows; the scenario file beside it is the same thing in the form the renderer reads.
 - `project/` - design notes and the backlog.
@@ -174,14 +170,14 @@ Or clone it yourself and install the tooling by hand.
 - `cicd/cicd.bash --quick` - the whole pipeline, minus the slow stages. Run this before you push.
 - `cicd/cicd.bash` - everything, including the fuzz suite and the demo.
 
-- `cicd/parity.bash` - just the parity suite: whether the two builds *answer the same* for one input, rather than whether each behaves correctly. Runs inside the test stage too.
+- `cicd/parity.bash` - just the compatibility comparison: whether this build *answers the same* as the frozen v2.1.0 one for a given input, rather than whether either behaves correctly on its own. It has its own pipeline stage.
 - `cicd/release.bash --dry-run` - what cutting a release would do, changing nothing.
 - `cicd/test.bash` - just the regression suite. It builds throwaway repos under a temp directory and never touches the network or your real repos.
 - `cicd/fuzz.bash` - just the fuzz suite.
 
 The pipeline fast-forwards from `origin` before it builds anything, so the checks run against the tree that will actually be pushed. It stops if your branch has diverged, warns and carries on if you're offline or the branch has no upstream, and `--no-sync` (`-NoSync`) skips it.
 
-Both suites run once per implementation, so a Bash-only change still has to keep the PowerShell side green.
+The regression and fuzz suites both run against the compiled binary, so build before you run them - or let the pipeline do it, which is what its second stage is for.
 
 <!-- omit in toc -->
 #### Then
@@ -196,7 +192,7 @@ Updating, improving and correcting the documentation
 
 ## Styleguides
 
-Code (Bash and PowerShell) follows the project [style guide](style-guide.md).
+Go code follows `gofmt`, which the lint stage enforces. The [style guide](style-guide.md) covers the Bash and PowerShell in `legacy/` and the pipeline's own scripts.
 
 ### Commit Messages
 

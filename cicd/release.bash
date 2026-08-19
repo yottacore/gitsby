@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 
+#  shellcheck disable=1091  ## 'source is valid here, but shellcheck doesn't know the path to it.'
+
 ##	Purpose:
 ##		- Cuts a release end to end, so the steps that have been forgotten by hand
 ##		  cannot be. 'gitsby release' already does the git half well; this is
 ##		  everything around it.
 ##		- Three phases, so a failure never leaves a half-cut release:
-##		   1. Prepare and verify. Changes nothing outside the working tree, and
-##		      nothing here needs undoing if it stops.
+##		   1. Prepare and verify. Runs the pipeline and cross-builds every release
+##		      binary. Changes nothing outside the working tree, and nothing here
+##		      needs undoing if it stops.
 ##		   2. Land. Writes the version, lands it through a PR, and calls
 ##		      'gitsby release'. The only phase that pushes.
-##		   3. Publish and prove. Creates the GitHub release, uploads the assets,
-##		      then verifies the result the way a user would meet it.
+##		   3. Publish and prove. Creates the GitHub release, uploads the binaries
+##		      built in phase 1 and their checksums, then fetches one back and runs
+##		      it - the result as a user would meet it.
 ##	Syntax:
 ##		cicd/release.bash [VERSION] [options]
 ##		  VERSION          e.g. v2.1.0. Omitted, the changelog's vNEXT heading and
@@ -20,9 +24,12 @@
 ##		  -h, --help       This.
 ##	Notes:
 ##		- Refuses unless the tree is clean and you are on the merge target.
-##		- Guards that have caught real mistakes: both builds must agree on the
-##		  version string, and both must carry a history-footer entry newer than
-##		  the last release tag.
+##		- The version lives in the tag and nowhere else. The binary carries it
+##		  because the release build injects it, so there is no in-source version
+##		  to bump and nothing that can disagree with the tag.
+##		- Guards that have caught real mistakes: the harnesses must carry a
+##		  history-footer entry newer than the last release tag, and the changelog
+##		  must have a real vNEXT section rather than the decoy template heading.
 
 ##	History: At bottom of script.
 
@@ -36,6 +43,7 @@ set -Eeuo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/.." && pwd)"
+source "${here}/config.bash"      ## RELEASE_TARGETS, GO_MODULE_DIR, EXE_NAME
 cd "${root}"
 
 version=""; dryRun=0; assumeYes=0
@@ -52,8 +60,9 @@ fNote(){       echo "$*"; }
 fDie(){        echo "FAILED: $*" >&2; exit 1; }
 fWould(){      ((dryRun)) && { echo "   would: $*"; return 0; }; return 1; }
 
-gitsbyBash="${root}/bin/gitsby"
-gitsbyPwsh="${root}/bin/gitsby.ps1"
+## The build this release publishes, and the tool this script drives git and gh with. The
+## pipeline in phase 1 rebuilds it; it has to exist before that, since phase 1 uses it too.
+gitsby="${root}/${GO_MODULE_DIR}/${EXE_NAME}"; [[ -x "${gitsby}" ]] || gitsby="${gitsby}.exe"
 changelog="${root}/changelog.md"
 
 ## changelog.md opens with a commented-out template whose headings are shaped exactly like real
@@ -82,19 +91,13 @@ fpChangelogVnext(){
 echo
 fEcho "Phase 1: prepare and verify"
 
-[[ -x "${gitsbyBash}" ]] || fDie "no ${gitsbyBash}"
+[[ -x "${gitsby}" ]] || fDie "no build at ${GO_MODULE_DIR}/${EXE_NAME} - run cicd/cicd.bash, or 'go build' there."
+command -v go >/dev/null 2>&1 || fDie "the go toolchain is needed to build the release assets."
 command -v gh >/dev/null 2>&1 || fDie "gh is needed to publish the release."
 
-## Both builds carry their own version string, by hand. They have drifted before.
-## Read the DECLARATION, not the first version-shaped string in the file: both scripts discuss
-## versions in their comments, and a loose match picked one of those - which phase 2 would then
-## have rewritten instead of the real one. Stored without the leading 'v'.
-verBash="$(sed -n 's/.*thisVersion="\([0-9][^"]*\)".*/\1/p' "${gitsbyBash}" | head -n 1)"
-verPwsh="$(sed -n "s/.*thisVersion *= *'\([0-9][^']*\)'.*/\1/p" "${gitsbyPwsh}" | head -n 1)"
-[[ -n "${verBash}" ]] || fDie "couldn't read 'thisVersion' out of ${gitsbyBash}."
-[[ -n "${verPwsh}" ]] || fDie "couldn't read 'thisVersion' out of ${gitsbyPwsh}."
-[[ "${verBash}" == "${verPwsh}" ]] || fDie "the two builds disagree about the version: bash says '${verBash}', pwsh says '${verPwsh}'."
-fNote "current version in both builds: v${verBash}"
+## The last release, for the guards below. The version itself comes from the tag this cuts, not
+## from anything in the tree - there is no longer a string in a source file that can disagree.
+lastTag="$(git -c versionsort.suffix=- tag --sort=-v:refname --list 'v*' | head -n 1)"
 
 ## The changelog has to have something to release. 'vNEXT' is this project's convention for
 ## "landed but not cut", and releasing with no such section means the notes would be empty.
@@ -102,7 +105,6 @@ fNote "current version in both builds: v${verBash}"
 
 ## Where the version comes from: the argument, else the same bump 'gitsby release' would choose.
 if [[ -z "${version}" ]]; then
-	lastTag="$(git -c versionsort.suffix=- tag --sort=-v:refname --list 'v*' | head -n 1)"
 	[[ -n "${lastTag}" ]] || fDie "no v* tag to bump from; pass a version explicitly."
 	if [[ "${lastTag}" == *-* ]]; then
 		## A candidate promotes to its own plain version rather than bumping past it.
@@ -115,12 +117,12 @@ if [[ -z "${version}" ]]; then
 fi
 [[ "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([A-Za-z0-9.-]+)?$ ]] || fDie "'${version}' is not a vX.Y.Z version."
 git rev-parse -q --verify "refs/tags/${version}" >/dev/null && fDie "tag ${version} already exists."
-[[ "${version}" != "v${verBash}" ]] || fDie "both builds already say ${version}; nothing to bump."
 
-## The history footers are maintained by hand and are missed most rounds, so check rather than trust.
-lastTagForFooter="$(git -c versionsort.suffix=- tag --sort=-v:refname --list 'v*' | head -n 1)"
+## The history footers are maintained by hand and are missed most rounds, so check rather than
+## trust. The two builds that used to carry one are frozen; what is left is the harnesses.
+lastTagForFooter="${lastTag}"
 if [[ -n "${lastTagForFooter}" ]]; then
-	for f in "${gitsbyBash}" "${gitsbyPwsh}"; do
+	for f in "${here}/test.bash" "${here}/fuzz.bash"; do
 		newest="$(grep -oE '^##[[:space:]]+- 20[0-9]{6}' "${f}" | grep -oE '20[0-9]{6}' | sort | tail -n 1)"
 		tagDate="$(git log -1 --format=%cd --date=format:%Y%m%d "${lastTagForFooter}" 2>/dev/null || echo 0)"
 		[[ -n "${newest}" && "${newest}" -ge "${tagDate}" ]] \
@@ -135,25 +137,36 @@ target="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || 
 [[ -n "${target}" ]] || fDie "branch '${branch}' has no upstream."
 [[ -z "$(git log '@{u}..HEAD' --oneline)" ]] || fDie "branch '${branch}' has unpushed commits."
 
-## The pipeline is two engines, one per platform, and this is the only thing here that cares which
-## OS it is on. cicd.bash has no Windows awareness whatsoever - the Windows engine is a port, not a
-## wrapper - so running it there would gate the release on the wrong thing entirely.
-if [[ "$(uname -s)" == MINGW* || "$(uname -s)" == MSYS* || "$(uname -s)" == CYGWIN* ]]; then
-	command -v pwsh >/dev/null 2>&1 || fDie "the Windows pipeline needs pwsh, which isn't on PATH."
-	## cygpath because .NET resolves an MSYS path against the current drive root, and says nothing.
-	pipeline=(pwsh -NoProfile -File "$(cygpath -m "${here}/cicd-win.ps1")" -NoPublish -Yes -Message "pre-release check")
-	pipelineName="cicd/cicd-win.ps1 -NoPublish"
-else
-	pipeline=("${here}/cicd.bash" --no-publish -y -m "pre-release check")
-	pipelineName="cicd/cicd.bash --no-publish"
-fi
+## One pipeline, everywhere. It used to be two engines picked by platform; the Windows one was a
+## port of this file rather than a wrapper around it, and it retired with the scripts it mirrored.
+pipeline=("${here}/cicd.bash" --no-publish -y -m "pre-release check")
+pipelineName="cicd/cicd.bash --no-publish"
 
 ## The whole pipeline, against the tree as it stands. This is the gate.
 if ! fWould "run ${pipelineName}"; then
 	fNote "running the full pipeline before touching anything ..."
 	"${pipeline[@]}" || fDie "the pipeline did not pass; nothing was changed."
 fi
-fEcho "Phase 1 OK: v${verBash} -> ${version}"
+
+## Every release binary, built here rather than after the tag is pushed. A target that stopped
+## compiling is a phase 1 failure, which costs nothing; discovered in phase 3 it would leave a
+## pushed tag with no release behind it. Built from the version being cut, not from the working
+## tree's describe output - these are the bytes people download, and their --version has to say
+## the released version and nothing else.
+assets="$(mktemp -d)"
+if ! fWould "cross-build ${#RELEASE_TARGETS[@]} targets at ${version}"; then
+	fNote "cross-building ${#RELEASE_TARGETS[@]} targets ..."
+	for t in "${RELEASE_TARGETS[@]}"; do
+		asset="${EXE_NAME}-${t%%/*}-${t##*/}"; [[ "${t}" == windows/* ]] && asset="${asset}.exe"
+		( cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOOS="${t%%/*}" GOARCH="${t##*/}" \
+			go build -trimpath -ldflags "-s -w -X main.version=${version#v}" -o "${assets}/${asset}" . ) \
+			|| fDie "cross-build failed for ${t}; nothing has been changed."
+	done
+	( cd "${assets}" && "${here}/utility/gen-checksums.bash" > SHA256SUMS ) || fDie "couldn't checksum the release assets."
+	fNote "built: $(cd "${assets}" && echo *)"
+fi
+
+fEcho "Phase 1 OK: ${lastTag:-(no previous tag)} -> ${version}"
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Phase 2: land. The only phase that pushes.
@@ -172,28 +185,25 @@ relBranch="rel-${version#v}"
 ## exactly what the tool refuses to do for you, so the thing that cuts the release must not do it
 ## either. 'gitsby release' below is the only push to the default branch, and that push IS the
 ## release rather than a shortcut around one.
-if ! fWould "branch ${relBranch}, bump both builds to ${version}, retitle the changelog's vNEXT as '${version} - ${today}', and land it through a PR"; then
-	"${gitsbyBash}" -q br create "${relBranch}" || fDie "couldn't create ${relBranch}."
-	## Only the declaration line in each build. A global replace of the old version string would
-	## also rewrite every mention of it in the comments and the history footer, which are a record
-	## of what happened and must keep saying what they said.
-	sed -i "s/\(thisVersion=\"\)[0-9][^\"]*\(\"\)/\1${version#v}\2/" "${gitsbyBash}"
-	sed -i "s/\(thisVersion *= *'\)[0-9][^']*\('\)/\1${version#v}\2/" "${gitsbyPwsh}"
+if ! fWould "branch ${relBranch}, retitle the changelog's vNEXT as '${version} - ${today}', and land it through a PR"; then
+	"${gitsby}" -q br create "${relBranch}" || fDie "couldn't create ${relBranch}."
+	## The changelog heading is the whole of it. Nothing in the tree records the version any more -
+	## the build injects it from the tag - so this is the only file a release edits.
 	## By line number, so the substitution cannot wander to a heading somewhere else in the file.
 	clLine="$(fpChangelogVnext)"
 	[[ -n "${clLine}" ]] || fDie "the changelog's '## vNEXT' heading went missing after phase 1."
 	sed -i "${clLine}s/^## vNEXT.*$/## ${version} - ${today}/" "${changelog}"
 	## gitsby's own 'pr create' rather than gh directly: it already knows this repo's merge target,
 	## which is the one thing a hand-written --base can get wrong.
-	prOut="$("${gitsbyBash}" -q pr create "${version}" 2>&1)" || { echo "${prOut}" >&2; fDie "couldn't open the version-bump PR."; }
+	prOut="$("${gitsby}" -q pr create "${version}" 2>&1)" || { echo "${prOut}" >&2; fDie "couldn't open the version-bump PR."; }
 	prNum="$(printf '%s\n' "${prOut}" | grep -oE 'https://github\.com/[^ ]+/pull/[0-9]+' | tail -n 1)"
 	prNum="${prNum##*/}"
 	[[ "${prNum}" =~ ^[0-9]+$ ]] || { echo "${prOut}" >&2; fDie "couldn't read a PR number out of 'pr create' output."; }
 	fNote "opened PR #${prNum} for the version bump"
-	"${gitsbyBash}" -q pr ok "${prNum}" || fDie "couldn't merge PR #${prNum}; the bump is pushed but nothing is tagged."
+	"${gitsby}" -q pr ok "${prNum}" || fDie "couldn't merge PR #${prNum}; the bump is pushed but nothing is tagged."
 fi
 if ! fWould "gitsby release ${version}"; then
-	"${gitsbyBash}" -q release "${version}" || fDie "'gitsby release' failed; the version commit is pushed but no tag was cut."
+	"${gitsby}" -q release "${version}" || fDie "'gitsby release' failed; the version commit is pushed but no tag was cut."
 fi
 fEcho "Phase 2 OK: ${version} tagged and pushed"
 
@@ -204,29 +214,20 @@ echo
 fEcho "Phase 3: publish and prove"
 
 ## The release body is the changelog section, verbatim - the same words the repo already carries.
-notes="$(mktemp)"; trap 'rm -f -- "${notes:?}"' EXIT
+notes="$(mktemp)"; trap 'rm -f -- "${notes:?}"; rm -rf -- "${assets:?}"' EXIT
 awk -v ver="## ${version} " -v start="$(fpChangelogStart)" \
 	'NR>=start && index($0, ver)==1 {f=1; next} f && /^## /{exit} f' "${changelog}" > "${notes}" || true
 [[ -s "${notes}" ]] || fNote "WARNING: no changelog section found for ${version}; the release body will be empty."
 
-assets="$(mktemp -d)"
-cp "${gitsbyBash}" "${gitsbyPwsh}" "${assets}/"
-if [[ -x "${here}/utility/gen-checksums.bash" ]]; then
-	( cd "${assets}" && "${here}/utility/gen-checksums.bash" > SHA256SUMS 2>/dev/null ) || \
-		( cd "${assets}" && sha256sum gitsby gitsby.ps1 > SHA256SUMS )
-else
-	( cd "${assets}" && sha256sum gitsby gitsby.ps1 > SHA256SUMS )
+if ! fWould "gh release create ${version} with ${#RELEASE_TARGETS[@]} binaries and SHA256SUMS"; then
+	"${gitsby}" -q raw gh release create "${version}" --title "${version}" --notes-file "${notes}" \
+		"${assets}"/* || fDie "publishing the release failed; the tag is pushed, so re-run 'gh release create ${version}' by hand."
 fi
 
-if ! fWould "gh release create ${version} with gitsby, gitsby.ps1 and SHA256SUMS"; then
-	"${gitsbyBash}" -q raw gh release create "${version}" --title "${version}" --notes-file "${notes}" \
-		"${assets}/gitsby" "${assets}/gitsby.ps1" "${assets}/SHA256SUMS" || fDie "publishing the release failed; the tag is pushed, so re-run 'gh release create ${version}' by hand."
-fi
-
-## Prove it the way a user meets it, not by trusting the steps above. Running BOTH installers side
-## by side is what caught the PowerShell checksum bug, which had silently skipped verification since
-## the day it was added.
-if ! fWould "verify releases/latest and run both documented installers into a throwaway HOME"; then
+## Prove it the way a user meets it, not by trusting the steps above: fetch the asset for THIS
+## platform back off the published release, check it against the published SHA256SUMS, and run it.
+## That is the whole contract - a download whose checksum matches and whose --version is right.
+if ! fWould "verify releases/latest, then download and run this platform's published binary"; then
 	latest="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/jim-collier/gitsby/releases/latest" 2>/dev/null | sed -n 's|.*/releases/tag/||p')"
 	[[ "${latest}" == "${version}" ]] || fNote "WARNING: releases/latest resolves to '${latest}', not ${version}."
 	## Seconds after publication GitHub serves the tag but not yet the assets, and the installers
@@ -234,24 +235,30 @@ if ! fWould "verify releases/latest and run both documented installers into a th
 	## attempt can fail against a release that is perfectly good. It did on v2.1.0: the same check
 	## passed unchanged minutes later, with elapsed time the only difference. Retry before saying
 	## anything, or the one warning that would mean a broken release is the one nobody believes.
-	installed=0
+	## Whichever asset belongs to the machine running this.
+	proveOs="$(go env GOOS)"; proveArch="$(go env GOARCH)"
+	proveAsset="${EXE_NAME}-${proveOs}-${proveArch}"; [[ "${proveOs}" == windows ]] && proveAsset="${proveAsset}.exe"
+	base="https://github.com/jim-collier/gitsby/releases/download/${version}"
+	proved=0
 	for attempt in 1 2 3; do
-		((attempt > 1)) && { fNote "not installable yet; giving GitHub a moment to serve the assets (attempt ${attempt}) ..."; sleep 20; }
-		fakeHome="$(mktemp -d)"
-		if HOME="${fakeHome}" bash "${root}/install.bash" -y >/dev/null 2>&1 \
-			&& "${fakeHome}/.local/bin/gitsby" --version 2>/dev/null | grep -q "${version#v}"; then
-			installed=1
+		((attempt > 1)) && { fNote "not downloadable yet; giving GitHub a moment to serve the assets (attempt ${attempt}) ..."; sleep 20; }
+		proveDir="$(mktemp -d)"
+		if curl -fsSL -o "${proveDir}/${proveAsset}" "${base}/${proveAsset}" \
+			&& curl -fsSL -o "${proveDir}/SHA256SUMS" "${base}/SHA256SUMS" \
+			&& ( cd "${proveDir}" && grep -F " ${proveAsset}" SHA256SUMS | sha256sum --check --status ) \
+			&& chmod +x "${proveDir}/${proveAsset}" \
+			&& "${proveDir}/${proveAsset}" --version 2>/dev/null | grep -q "v${version#v}"; then
+			proved=1
 		fi
-		rm -rf -- "${fakeHome:?}"
-		((installed)) && break
+		rm -rf -- "${proveDir:?}"
+		((proved)) && break
 	done
-	if ((installed)); then
-		fNote "bash installer: installed ${version} and verified its checksum"
+	if ((proved)); then
+		fNote "${proveAsset}: downloaded, checksum verified, and reports ${version}"
 	else
-		fNote "WARNING: the bash installer did not produce ${version} from the published release."
+		fNote "WARNING: ${proveAsset} did not download-verify-run as ${version} from the published release."
 	fi
 fi
-rm -rf -- "${assets:?}"
 
 echo
 fEcho "Released ${version}"
@@ -263,6 +270,8 @@ echo
 ##		  all by hand, and each has been missed at least once. Both guards here exist because the
 ##		  thing they check has already gone wrong: the two builds' version strings drifting, and the
 ##		  in-script history footers going a whole release without an entry.
+##		- 20260818 JC: The release binaries are built in phase 1, with the pipeline, rather than after the tag is pushed. A target that stops compiling now fails where nothing has been changed; found in phase 3 it would have left a pushed tag with no release behind it.
+##		- 20260818 JC: Go. The version lives in the tag alone now - the build injects it - so phase 2 no longer bumps a string in two source files and phase 1 no longer has two of them to disagree. Phase 3 cross-builds the whole target matrix and publishes one binary per platform. The proof stopped being 'run both installers': there is one implementation, and what a user actually meets is a download, its checksum, and whether the thing runs.
 ##		- 20260813 JC: All three readings of the changelog start below the commented-out template.
 ##		  Each took the first match, so each found the template's decoy heading instead: the guard
 ##		  passed with nothing to release, the retitle rewrote the template and left the real section
