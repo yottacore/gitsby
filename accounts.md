@@ -11,6 +11,7 @@ Nothing here is required. With no configuration Gitsby uses whichever account `g
 - [Setting it up](#setting-it-up)
 	- [One config file, several machines](#one-config-file-several-machines)
 - [No SSH keys needed](#no-ssh-keys-needed)
+- [Cloning](#cloning)
 - [Teaching plain git the same rules](#teaching-plain-git-the-same-rules)
 - [Scripts](#scripts)
 - [Which account are you acting as?](#which-account-are-you-acting-as)
@@ -86,6 +87,19 @@ Over HTTPS, `git` authenticates with the account's own token - the one `gh` alre
 - An existing repo still on SSH is converted with `gitsby repo url https`. Only the remote URL changes - same repo, same history. Gitsby points this out on the identity line when it applies, and setting `protocol = ssh` says you meant it and stops the suggestion.
 
 SSH keys keep working, and stay the answer when you can't use a token. Give an account an `sshKey` and Gitsby uses it (with `IdentitiesOnly`, so the agent can't offer the wrong one first). Anything you have already set yourself - `GIT_SSH_COMMAND`, or `core.sshCommand` on the repo - was chosen more deliberately than a folder rule, and wins.
+
+## Cloning
+
+`repo clone` is the one command whose folder is not the one you are standing in, so it uses the folder the clone lands in:
+
+~~~bash
+cd ~/dev/github.com/my-work-login/some-work-repo
+gitsby repo clone my-personal-login/side-project ~/dev/github.com/my-personal-login/side-project
+~~~
+
+That clones as `my-personal-login`, because that is whose tree it lands in - not as the work account you happened to be standing in. Put the clone where it belongs and the right account fetches it.
+
+With no rule covering the destination, gh stays on its own account. The owner of the repository you are cloning is not taken as a hint: cloning someone else's repository is ordinary, and it says nothing about who you are.
 
 ## Teaching plain git the same rules
 
