@@ -107,7 +107,23 @@ fSame(){
 		fOk "${label}"
 	else
 		fBad "${label}"
-		diff <(printf '%s\n' "${a}") <(printf '%s\n' "${b}") | sed 's/^/      /' | head -12
+		diff <(printf '%s\n' "${a}") <(printf '%s\n' "${b}") | sed 's/^/      /' | head -12 || true
+	fi
+}
+
+## Same as fSame, with one deliberate difference removed from both sides first. Used where this
+## build says something the frozen one never did and the rest of the line still has to match; the
+## removal is spelled out at the call site so it cannot quietly widen.
+fSameStripped(){
+	local -r label="${1}"; local -r drop="${2}"; local -r dir="${3}"; shift 3
+	local a="" b=""
+	a="$(fRunNew "${dir}" "${@}" | sed -E "${drop}")"
+	b="$(fRunRef "${dir}" "${@}" | sed -E "${drop}")"
+	if [[ "${a}" == "${b}" ]]; then
+		fOk "${label}"
+	else
+		fBad "${label}"
+		diff <(printf '%s\n' "${a}") <(printf '%s\n' "${b}") | sed 's/^/      /' | head -12 || true
 	fi
 }
 
@@ -195,7 +211,11 @@ echo
 echo "-- option forms"
 fSame     "an unknown option is refused the same way"     "${tree}" -q --bogus status
 fSame     "an option after the command is refused alike"  "${tree}" -q status --bogus
-fSame     "too many positionals are counted alike"        "${tree}" -q br switch a b c
+## The count is under parity, the sentence after it is not: this build adds the quote-your-message
+## hint that the frozen one gave only when the overflow was one argument smaller. test.bash owns
+## the wording.
+fSameStripped "too many positionals are counted alike"    's/ If that was a message or title, quote it\.$//' \
+	"${tree}" -q br switch a b c
 fSameExit "a spaced --config is accepted by both"         "${tree}" -q -NoFetch --config "${work}/no-accounts.shcl" status
 fSameExit "an empty --config is refused by both"          "${tree}" -q -NoFetch --config "" status
 fSameExit "a --config naming a directory is refused"      "${tree}" -q -NoFetch --config "${work}" status
@@ -231,7 +251,7 @@ fSameSpelling(){
 		fOk "${label}"
 	else
 		fBad "${label}"
-		diff <(printf '%s\n' "${a}") <(printf '%s\n' "${b}") | sed 's/^/      /' | head -12
+		diff <(printf '%s\n' "${a}") <(printf '%s\n' "${b}") | sed 's/^/      /' | head -12 || true
 	fi
 }
 fSameSpelling "'pullcom' and 'update' are one command"   "${notRepo}" "update"   "pullcom"
@@ -281,3 +301,4 @@ echo "parity passed: ${pass}, differed: ${fail}"
 ##		  users was a language mechanism differing, not a rule either build got wrong.
 ##		- 20260813 JC: Same environment isolation the behavioural suite grew: env-injected git config and an inherited gh token.
 ##		- 20260818 JC: Repointed. The pair used to be the two scripts; it is now this build against the frozen v2.1.0 one under legacy/, which is the question that still has an answer worth having. No pwsh leg: the two scripts were proven identical at v2.1.0, so agreeing with one is agreeing with both. The renamed commands are checked under both spellings, since the old name has to keep working.
+##		- 20260819 JC: A difference used to end the run. diff exits 1, and under pipefail with -e that killed the script at the FIRST finding, so every later one went unreported - the totals line never printed either. Also a helper for comparing a line with one deliberate difference removed, spelled out per call so it cannot quietly widen.

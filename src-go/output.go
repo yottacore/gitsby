@@ -47,27 +47,29 @@ func echoStatus(s string) {
 	}
 }
 
-// promptYN gates every mutation. Only a literal 'y' is yes: a typo, a stray
+// promptYN gates every mutation. Only 'y' or 'yes' is yes: a typo, a stray
 // newline, or an EOF is a no, because the fallback has to be the harmless answer.
 func promptYN(prompt string) bool {
-	if quiet {
-		return true
-	}
-	if prompt == "" {
-		prompt = "Continue? (y|n): "
-	}
 	fmt.Print(prompt)
 	answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 	echoResetBlank()
-	return strings.ToLower(strings.TrimSpace(answer)) == "y"
+	switch strings.ToLower(strings.TrimSpace(answer)) {
+	case "y", "yes":
+		return true
+	}
+	return false
+}
+
+// exitOK ends a run early with nothing left to do. Nothing to do is a success
+// everywhere else here, and a nonzero exit tells a calling script the opposite.
+func exitOK() {
+	echoClean("")
+	os.Exit(0)
 }
 
 // throwUsage reports an expected validation error and exits. Blank lines wrap the
 // message on stdout while the message itself goes to stderr, matching the scripts.
 func throwUsage(msg string) {
-	if msg == "" {
-		msg = "An error occurred."
-	}
 	echoClean("")
 	fmt.Fprintln(os.Stderr, meName+": "+msg)
 	echoCleanForce("")

@@ -58,6 +58,10 @@ To make using these icons easier, add them to a clipboard or key macro manager. 
 
 ### Bugs
 
+- 🔘 `repo clone` never resolves an account from what it is cloning.
+	- Every other command reads the owner off origin, and create/connect read it off the command line. Clone reads origin too - which, run from inside an unrelated repo, is that repo's owner rather than the one being cloned.
+	- Noticed while making clone accept the `owner/name` shorthand; left alone there because it changes which credentials a clone uses, not just what it accepts.
+
 From a full review of the Go code, 20260818. gofmt, vet, staticcheck and the suite (530/0) are clean; these are what the tools don't see. Several are inherited from the frozen bash build - latent there, but live in the shipping binary.
 
 - ✅ Code Review 20260818 item 1: `pr ok` can destroy never-pushed commits.
@@ -94,9 +98,10 @@ From a full review of the Go code, 20260818. gofmt, vet, staticcheck and the sui
 	- Any `gh repo view` failure is taken as absence and stated as fact, with advice that derails further. These two skip the pre-command fetch (no origin yet), so offline is never discovered for them.
 	- gh's stderr tells a name that resolves to nothing apart from an API it couldn't reach; the second is repeated back rather than stated as absence.
 
-- 🔘 Code Review 20260818 item 8: `--offline` is a hidden third spelling of `--no-fetch` - and pushes still go out.
+- ✅ Code Review 20260818 item 8: `--offline` is a hidden third spelling of `--no-fetch` - and pushes still go out.
 	- Contradicts the design rule that offline is a discovered state, never a flag. `sync --offline` publishes work.
 	- Call to make: drop the alias, or make that one spelling refuse outgoing traffic too. Inherited from the bash build, undocumented in help.
+	- Dropped, and refused by name with a pointer to `--no-fetch`. A flag that also stopped the pushes would only simulate a state the fetch already discovers, and nothing outside the source ever documented the spelling. Reasoning in design.md.
 
 - ✅ Code Review 20260818 item 9: the `sshkey` config value reaches shell-executed strings unquoted.
 	- Concatenated into `GIT_SSH_COMMAND` and written into `core.sshCommand`; git hands both to a shell. The config is trusted input, but the file is redirectable by flag/env, and the repo-local sshCommand path already refuses quoting tricks - this path should match it.
@@ -136,7 +141,7 @@ From a full review of the Go code, 20260818. gofmt, vet, staticcheck and the sui
 	- Dropping the verify costs nothing: merge-base against a ref that has gone fails, which is the same answer.
 	- Measured on five merged branches: 69 -> 52 spawns, and the gap widens with the branch count.
 
-- 🔘 Code Review 20260818 item 17: least-surprise paper cuts, one sweep.
+- ✅ Code Review 20260818 item 17: least-surprise paper cuts, one sweep.
 	- `release` with nothing new exits 1 where every sibling's nothing-to-do exits 0 - and the About text promises idempotent re-runs.
 	- `gitsby -q` alone: "Unknown command ''" instead of help.
 	- `pr <n> extra` is the one place a trailing argument is silently ignored.
@@ -144,9 +149,13 @@ From a full review of the Go code, 20260818. gofmt, vet, staticcheck and the sui
 	- `repo clone owner/name` fails only after confirmation; `create`/`connect` both accept the shorthand.
 	- "yes" at the y/n prompt aborts.
 	- An option typed between `raw` and the tool is called an unknown subcommand.
+	- All seven fixed. Nothing-to-do is a success for `release` too; a command list answers a bare option; `pr` refuses its trailing argument and hints at quoting; `repo clone` takes `owner/name` before the plan, not after; `yes` is a yes; an option before the tool says where ours go.
+	- The overflow message picked up the quote-it hint as well - the ceiling is four slots, so an unquoted message of three words or more never reached the per-command hint.
 
-- 🔘 Code Review 20260818 item 18: dead code and stale comments, one sweep.
+- ✅ Code Review 20260818 item 18: dead code and stale comments, one sweep.
 	- Unreachable option-value arm plus its dead variable in the parser; two dead branches in the prompt helper; an empty-message fallback nobody passes; a handover error message a preceding check makes unreachable; a comment describing a superseded key-splitting contract; a near-verbatim duplicated comment in main. (The prune survey's redundant re-check went with item 16.)
+	- All six gone. The handover kept its branch but not its claim: it named a cause the preceding check had already ruled out, so it reports what actually failed.
+	- Also found: the three help printers each returned early under `-q`, which is why `-q --help` printed nothing. Removed with item 17's bare-option fix.
 
 Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. Work top to bottom; everything happens on branches off `gover`, nothing touches the scripted implementations yet.
 

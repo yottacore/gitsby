@@ -94,6 +94,13 @@ canNoTty=0 shNoTty=0
 if command -v setsid >/dev/null 2>&1; then noTty=(setsid); canNoTty=1; shNoTty=1
 elif ((isWindows));                     then canNoTty=1; { : </dev/tty; } 2>/dev/null || shNoTty=1
 fi
+## A pty for the two checks that have to ANSWER the prompt rather than have it refuse: the plan
+## is only printed to someone who could say yes, and the word accepted there is the point of one
+## of them. No 'script' (Windows) means those two are skipped; the no-tty gate covers the rest.
+hasPty=0
+if command -v script >/dev/null 2>&1 && script -qec true /dev/null >/dev/null 2>&1; then hasPty=1; fi
+fAnswerPrompt(){ local answer="$1"; shift; printf '%s\n' "${answer}" | script -qec "$*" /dev/null 2>&1 || true ;}
+
 ## Runs PowerShell source TEXT the way the documented one-liners do (iex / scriptblock), with
 ## stdin at EOF so a confirmation prompt refuses instead of blocking.
 fPwshText(){ "${noTty[@]}" pwsh -NoProfile -Command "$1" </dev/null 2>&1 ;}
@@ -301,8 +308,9 @@ fRunSuite(){
 
 	## An invented version with nothing to release is a tag for no release, and re-running after
 	## a failed push would cut a second one on the same commit, stranding the first forever.
-	fAssertFail "bare release refuses when there is nothing new"  bash -c "cd '${cloneA}' && '${gitsby}' -q release"
-	fAssertOut  "and names the tag to push if it never landed"  'Nothing new to release since v1\.3\.1'  bash -c "cd '${cloneA}' && '${gitsby}' -q release 2>&1"
+	fAssert     "bare release stands down when there is nothing new"  bash -c "cd '${cloneA}' && '${gitsby}' -q release"
+	fAssertOut  "and says so"  'Nothing new to release since v1\.3\.1'  bash -c "cd '${cloneA}' && '${gitsby}' -q release 2>&1"
+	fAssertOut  "and names the tag to push if it never landed"  'push it: git push origin v1\.3\.1'  bash -c "cd '${cloneA}' && '${gitsby}' -q release 2>&1"
 	fAssert     "and cut no tag doing so"  bash -c "cd '${cloneA}' && ! git rev-parse -q --verify refs/tags/v1.3.2 >/dev/null"
 	## A version you typed is deliberate, so it still works on an already-released commit.
 	fAssert     "an explicit version still releases the same commit"  bash -c "cd '${cloneA}' && '${gitsby}' -q release 1.4.0 && git rev-parse -q --verify refs/tags/v1.4.0 >/dev/null"
@@ -2013,6 +2021,48 @@ GHEOF
 	fAssert     "identity answers outside a repo" bash -c "cd '${work}' && '${gitsby}' identity"
 	fAssertFail "identity with a trailing argument rejected" \
 		bash -c "cd '${renDir}' && '${gitsby}' identity extra"
+
+	## --offline was a silent spelling of --no-fetch that never stopped a push. It is refused by
+	## name now, so the one thing it promised can't be believed on the strength of the word.
+	fAssertOut  "--offline is refused by name"              'no --offline option' \
+		bash -c "cd '${renDir}' && '${gitsby}' --offline status 2>&1"
+	fAssertOut  "and points at the option that does exist"  'use --no-fetch' \
+		bash -c "cd '${renDir}' && '${gitsby}' --offline status 2>&1"
+	fAssertFail "--offline ahead of raw is refused, not handed to the tool" \
+		bash -c "cd '${renDir}' && '${gitsby}' --offline raw git status"
+	fAssert     "--no-fetch still parses"  bash -c "cd '${renDir}' && '${gitsby}' --no-fetch status"
+	fAssert     "and so does --nofetch"    bash -c "cd '${renDir}' && '${gitsby}' --nofetch status"
+
+	## Options and no command ask what no arguments ask. -q means no prompts, never no output.
+	fAssertOut  "'-q' alone prints the command list"  'Common commands:' \
+		bash -c "cd '${renDir}' && '${gitsby}' -q 2>&1"
+	fAssertFail "and still exits nonzero"            bash -c "cd '${renDir}' && '${gitsby}' -q"
+	fAssertOut  "'-q --help' prints it too"          'Common commands:' \
+		bash -c "cd '${renDir}' && '${gitsby}' -q --help 2>&1"
+
+	## pr was the one command that dropped a trailing argument in silence.
+	fAssertOut  "'pr <n> extra' names the extra argument"  "Unexpected extra argument 'extra'" \
+		bash -c "cd '${renDir}' && '${gitsby}' -q pr 5 extra 2>&1"
+	fAssertOut  "'pr create' with an unquoted title says to quote it"  'quote your title' \
+		bash -c "cd '${renDir}' && '${gitsby}' -q pr create My title 2>&1"
+	fAssertOut  "and a longer unquoted one says so too"  'quote it' \
+		bash -c "cd '${renDir}' && '${gitsby}' -q pr create My much longer title 2>&1"
+
+	## Ours come before 'raw', the tool's after it - which is not the same as never having heard
+	## of what was typed.
+	fAssertOut  "an option between raw and the tool says where ours go"  "options come before 'raw'" \
+		bash -c "cd '${renDir}' && '${gitsby}' raw -q git status 2>&1"
+
+	if ((hasPty)); then
+		## Only 'y' was a yes, so the word people actually type aborted.
+		( cd "${renDir}" && echo yes >> yesword.txt )
+		fAnswerPrompt yes "cd '${renDir}' && '${gitsby}' pullcom 'typed yes'" >/dev/null
+		fAssert    "'yes' at the prompt is taken as a yes" \
+			bash -c "cd '${renDir}' && git log -1 --pretty=%s | grep -qx 'typed yes'"
+		## clone took only a full URL, and said so after the plan was confirmed rather than before.
+		fAssertOut "'repo clone owner/name' plans a github URL"  'git clone .*github\.com[:/]octo/demo' \
+			fAnswerPrompt n "cd '${work}' && '${gitsby}' repo clone octo/demo"
+	fi
 }
 
 echo "gitsby regression tests (fixture: ${work})"
@@ -2055,3 +2105,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260817 JC: Go leg. Same shim treatment, non-gating: the port is written against this suite, so its failures are the distance left, printed as counts and kept out of the totals. The leg runs without -e - prep commands legitimately die where a command is not ported yet, and the assertions do the judging.
 ##		- 20260818 JC: The renamed commands, their aliases, and identity - checked on the compiled leg only, since the scripts are frozen at the spelling they shipped with. The offline-sync check now takes either name; it is the one message that had pinned the old one.
 ##		- 20260818 JC: One leg. The scripted builds moved to legacy/ and their legs went with them, so the compiled build is the subject and it gates. The checks that were never about an implementation - installers, the frozen platform gates, the source pins - stayed, repointed at legacy/; dropping them with the leg they happened to ride would have lost 58 of them silently. The PowerShell-only block went with pwsh, and the per-implementation option spellings collapsed to one.
+##		- 20260819 JC: The paper-cut sweep, and a pty for the two checks that have to answer the prompt rather than have it refuse - the plan is only printed to someone who could say yes, and one of them is about the word accepted there. Fourteen checks, all of which discriminate against the prior build; skipped where there is no 'script'.
