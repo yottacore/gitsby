@@ -58,8 +58,10 @@ To make using these icons easier, add them to a clipboard or key macro manager. 
 
 ### Bugs
 
-- 🔘 `repo clone` never resolves an account from what it is cloning.
-	- Every other command reads the owner off origin, and create/connect read it off the command line. Clone reads origin too - which, run from inside an unrelated repo, is that repo's owner rather than the one being cloned.
+- ✅ `repo clone` resolves its account from the folder you are standing in, not the one it is cloning into.
+	- Every other command is about the folder you are in. A clone's repo lands somewhere else, so a clone launched from a work repo used the work account whatever tree it was cloning into.
+	- Three ways in, all now closed: the folder rules read the current directory, `gitsby.ghAccount` was read off the surrounding repo, and the owner of that repo's origin stood in when nothing else answered.
+	- Fixed: the destination folder decides. The surrounding repo's git config is not asked (a destination has no config yet, and an includeIf on gitdir cannot answer for a repo that does not exist), and no owner is guessed - with no rule for the destination, gh stays on its own account.
 	- Noticed while making clone accept the `owner/name` shorthand; left alone there because it changes which credentials a clone uses, not just what it accepts.
 
 From a full review of the Go code, 20260818. gofmt, vet, staticcheck and the suite (530/0) are clean; these are what the tools don't see. Several are inherited from the frozen bash build - latent there, but live in the shipping binary.

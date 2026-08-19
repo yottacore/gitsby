@@ -96,7 +96,7 @@ func printHelp() {
 // output must get that output and nothing else.
 func cmdPassthrough(tool string, args []string) {
 	mustBeInPath(tool)
-	resolveAccount(originUrl())
+	resolveAccount(contextDir(), originUrl())
 	selectAccount(true)
 	// One line, on stderr, so a pipeline reading stdout sees only the tool.
 	// Silence is what '-q' is for.
@@ -203,19 +203,27 @@ func main() {
 	// the network: the fetch below authenticates, so getting this wrong here gets
 	// it wrong for the whole command. This also validates --config/GITSBY_CONFIG,
 	// so it stays ahead of the not-yet refusal - same contract the scripts keep.
-	acctUrl := originUrl()
-	// repo create/connect have no origin to read an owner from, but the repo they
-	// are about to publish to is on the command line - and it is that repo's owner
-	// whose account should do the publishing. Resolved here rather than after their
-	// own validation, because the validation itself talks to gh.
-	if acctUrl == "" && (cmdName == "repo-create" || cmdName == "repo-connect") && cmdArg != "" {
+	acctDir, acctUrl := contextDir(), originUrl()
+	switch {
+	case cmdName == "repo-clone":
+		// The clone lands somewhere else, and it is that folder's rules that pick the
+		// account - not the rules for whatever repo the cwd happens to sit inside.
+		// Nothing stands in for them here: the owner of the repo being cloned is no
+		// evidence it is ours, which is the whole difference between fetching a copy
+		// of something and owning it. Unresolved leaves gh on its own account.
+		acctDir, acctUrl = absDir(cloneDestDir()), ""
+	case acctUrl == "" && (cmdName == "repo-create" || cmdName == "repo-connect") && cmdArg != "":
+		// These have no origin to read an owner from, but the repo they are about to
+		// publish to is on the command line - and it is that repo's owner whose account
+		// should do the publishing. Resolved here rather than after their own
+		// validation, because the validation itself talks to gh.
 		if ownerNameRE.MatchString(cmdArg) && !pathExists(cmdArg) {
 			acctUrl = githubUrl(cmdArg, "https")
 		} else {
 			acctUrl = cmdArg
 		}
 	}
-	resolveAccount(acctUrl)
+	resolveAccount(acctDir, acctUrl)
 	// The probe inside it only feeds the identity block, so a run that prints none
 	// skips a live round trip.
 	selectAccount(!identityWillPrint())

@@ -157,6 +157,20 @@ func settleRepoUrl() bool {
 	return false
 }
 
+// cloneDestDir names where a clone will land, from the arguments alone. Asked
+// before the account is resolved as well as when the clone is settled: the folder
+// rules that pick the account are the destination's, and nothing has touched the
+// disk by then. Empty means the URL carried no name to derive one from.
+func cloneDestDir() string {
+	if cmdArg2 != "" {
+		return cmdArg2
+	}
+	d := strings.TrimSuffix(cmdArg, "/")
+	d = strings.TrimSuffix(d, ".git")
+	d = d[strings.LastIndex(d, "/")+1:]
+	return d[strings.LastIndex(d, ":")+1:]
+}
+
 // settleRepoClone derives the target dir, and makes re-runs a no-op instead of
 // an error. True means main is done.
 func settleRepoClone() bool {
@@ -168,16 +182,9 @@ func settleRepoClone() bool {
 	if ownerNameRE.MatchString(cmdArg) && !pathExists(cmdArg) {
 		cmdArg = githubUrl(cmdArg, preferredProtocol())
 	}
-	cloneUrl, cloneDir = cmdArg, cmdArg2
+	cloneUrl, cloneDir = cmdArg, cloneDestDir()
 	if cloneDir == "" {
-		d := strings.TrimSuffix(cloneUrl, "/")
-		d = strings.TrimSuffix(d, ".git")
-		d = d[strings.LastIndex(d, "/")+1:]
-		d = d[strings.LastIndex(d, ":")+1:]
-		if d == "" {
-			throwUsage("Can't derive a directory name from '" + maskUrl(cloneUrl) + "'; give one explicitly.")
-		}
-		cloneDir = d
+		throwUsage("Can't derive a directory name from '" + maskUrl(cloneUrl) + "'; give one explicitly.")
 	}
 	if pathExists(cloneDir) {
 		existingUrl := runOut("git", "-C", cloneDir, "remote", "get-url", "origin")

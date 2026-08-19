@@ -93,6 +93,25 @@ func canonPath(p string) string {
 	return p
 }
 
+// absDir puts a relative path on the current directory, so a folder rule sees the
+// same spelling it would for a folder we were standing in. Folded first, because
+// '/c/x' is already absolute on Windows and joining it to the cwd would bury it.
+func absDir(p string) string {
+	if p = canonPath(p); p == "" {
+		return ""
+	}
+	if !filepath.IsAbs(p) {
+		wd, err := os.Getwd()
+		if err != nil {
+			return p
+		}
+		p = wd + "/" + p
+	}
+	// '..' has to go before a rule sees it, or a destination reached by climbing out
+	// of one tree still reads as a folder inside it.
+	return canonPath(filepath.ToSlash(filepath.Clean(p)))
+}
+
 // canonSegment folds a 'pathContains' run of folder names the same way canonPath
 // folds a path, so the two are compared on the same terms. No filesystem involved:
 // the whole point is that this rule names no machine.

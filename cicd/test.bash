@@ -1039,6 +1039,14 @@ GHEOF
 	fAssertOut "the identity block names the account gh was on before the switch"  "gh's active account is 'someoneelse'" \
 		bash -c "cd '${idn}/cfg' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse configured' '${gitsby}' -q -NoFetch identity 2>&1"
 
+	## The remote's owner is the step that needs no configuration at all, and it is the one step a
+	## clone cannot use. The repo being cloned is as likely a stranger's as ours, and the repo we are
+	## standing in is not the one being cloned - so asked either way it names an account that has
+	## nothing to do with the clone, and quietly authenticates as it.
+	: > "${idn}/clone.log"
+	fAssert "a clone asks for no token on the strength of the surrounding repo's owner" \
+		bash -c "cd '${idn}/c' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse acme' FAKE_GH_LOG='${idn}/clone.log' '${gitsby}' -q repo clone '${idn}/backing.git' '${idn}/cloned' >/dev/null && ! grep -q -- '--user acme' '${idn}/clone.log'"
+
 	## A remote we can't name an owner for gets no opinion at all.
 	git clone --quiet "${idn}/backing.git" "${idn}/local" 2>/dev/null
 	fAssert "a non-GitHub remote picks no account" \
@@ -1576,6 +1584,29 @@ GHEOF
 	fAssertNotOut "the remote's owner alone prints no identity line"  'Account \.'  \
 		bash -c "cd '${acAway}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	( cd "${acAway}" && git remote remove origin )
+	## Which folder decides, for the one command whose folder is not the one you are standing in. A
+	## clone lands somewhere else, and it is the rules for THERE that pick the account; reading the
+	## current directory's answered for whatever repo you happened to be sitting inside.
+	git init --quiet --bare -b main "${ac}/src.git"
+	( cd "${acWork}" && git push --quiet "${ac}/src.git" HEAD:refs/heads/main )
+	fAssertOut    "a clone takes the account of the folder it lands in"  "Account \.+: workacct" \
+		bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q repo clone '${ac}/src.git' '${ac}/trees/work/c1'"
+	fAssertNotOut "and not the one it was launched from"  'homeacct' \
+		bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q repo clone '${ac}/src.git' '${ac}/trees/work/c2'"
+	fAssertOut    "the other direction the same way"  "Account \.+: homeacct" \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q repo clone '${ac}/src.git' '${ac}/trees/home/c3'"
+	## Climbing out of one tree into another is the case a rule sees wrong if the '..' survives.
+	fAssertOut    "a relative destination is resolved before the rules see it"  "Account \.+: homeacct" \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q repo clone '${ac}/src.git' ../../home/c4"
+	## 'gitsby.ghAccount' answers for the repo it is set in. A clone's destination has no config of
+	## its own yet, and an includeIf keyed on gitdir cannot be asked about a repo that does not exist
+	## - so the value belonging to whatever repo we are standing in must not follow the clone out of it.
+	( cd "${acAway}" && git config gitsby.ghAccount awayacct )
+	fAssertNotOut "a repo-local account does not follow a clone out of its folder"  'Account \.' \
+		bash -c "cd '${acAway}' && env ${acEnv} '${gitsby}' -q repo clone '${ac}/src.git' '${ac}/trees/away/c5'"
+	fAssertOut    "and the destination's rule answers in its place"  "Account \.+: workacct" \
+		bash -c "cd '${acAway}' && env ${acEnv} '${gitsby}' -q repo clone '${ac}/src.git' '${ac}/trees/work/c6'"
+	( cd "${acAway}" && git config --unset gitsby.ghAccount )
 	cat > "${ac}/alt.shcl" <<-EOF
 		account.alt.path      = ${acCanon}/trees/work
 		account.alt.ghAccount = altacct
@@ -2106,3 +2137,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260818 JC: The renamed commands, their aliases, and identity - checked on the compiled leg only, since the scripts are frozen at the spelling they shipped with. The offline-sync check now takes either name; it is the one message that had pinned the old one.
 ##		- 20260818 JC: One leg. The scripted builds moved to legacy/ and their legs went with them, so the compiled build is the subject and it gates. The checks that were never about an implementation - installers, the frozen platform gates, the source pins - stayed, repointed at legacy/; dropping them with the leg they happened to ride would have lost 58 of them silently. The PowerShell-only block went with pwsh, and the per-implementation option spellings collapsed to one.
 ##		- 20260819 JC: The paper-cut sweep, and a pty for the two checks that have to answer the prompt rather than have it refuse - the plan is only printed to someone who could say yes, and one of them is about the word accepted there. Fourteen checks, all of which discriminate against the prior build; skipped where there is no 'script'.
+##		- 20260819 JC: Which folder a clone resolves its account from. The account block grew a bare origin to clone between its two trees, and the identity block one check that the surrounding repo's owner is never asked about - the step that leaves no trace in the output, only in which token the fetch went out with.

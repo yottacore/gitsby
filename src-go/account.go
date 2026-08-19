@@ -35,12 +35,15 @@ var (
 	ghSwitchedFrom       = ""
 )
 
-// resolveAccount works out who this folder says to act as. Most specific first:
+// resolveAccount works out who 'dir' says to act as. Most specific first:
 // GITSBY_ACCOUNT, then 'gitsby.ghAccount' in git config (an includeIf already
 // selects that by repo path), then the config file's folder rules, then whoever
-// owns origin - which needs no configuration whatsoever. Finding none of them is
+// owns 'url' - which needs no configuration whatsoever. Finding none of them is
 // the ordinary single-account case: gh's own account is left alone.
-func resolveAccount(url string) {
+//
+// 'dir' is where we are standing for every command but clone, which resolves for
+// the folder its new repo lands in instead. An empty 'url' declines the last step.
+func resolveAccount(dir, url string) {
 	loadConfig()
 	acctName, acctGhWho, acctSource, acctExplicit = "", "", "", false
 	if who := os.Getenv("GITSBY_ACCOUNT"); who != "" {
@@ -54,18 +57,26 @@ func resolveAccount(url string) {
 		acctSource, acctExplicit = "GITSBY_ACCOUNT", true
 		return
 	}
-	if fromGit := runOut("git", "config", "--get", "gitsby.ghAccount"); fromGit != "" {
-		acctGhWho, acctSource, acctExplicit = fromGit, "git config", true
-		// Name the config account too when one claims this folder, so its key and
-		// commit identity still apply - the git key says who, not that the rest of
-		// the account is off.
-		acctName = accountForDir(contextDir())
-		if accountValue(acctName, "ghAccount") != acctGhWho {
-			acctName = ""
+	// git config answers for the repo we are standing in, which is the repo in
+	// question only when that is the folder being asked about. A clone's destination
+	// has no config of its own yet, and an includeIf keyed on gitdir cannot be asked
+	// about a repo that does not exist - so asking here would answer for a different
+	// repo entirely. The config file's folder rules below have no such limit: gitsby
+	// matches those itself, against any path.
+	if dir == contextDir() {
+		if fromGit := runOut("git", "config", "--get", "gitsby.ghAccount"); fromGit != "" {
+			acctGhWho, acctSource, acctExplicit = fromGit, "git config", true
+			// Name the config account too when one claims this folder, so its key and
+			// commit identity still apply - the git key says who, not that the rest of
+			// the account is off.
+			acctName = accountForDir(dir)
+			if accountValue(acctName, "ghAccount") != acctGhWho {
+				acctName = ""
+			}
+			return
 		}
-		return
 	}
-	acctName = accountForDir(contextDir())
+	acctName = accountForDir(dir)
 	if acctName != "" {
 		// A folder rule with no account named still carries a key and a commit
 		// identity, worth applying on their own - it just says nothing about gh.
