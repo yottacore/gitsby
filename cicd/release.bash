@@ -155,11 +155,11 @@ fi
 ## the released version and nothing else.
 assets="$(mktemp -d)"
 if ! fWould "cross-build ${#RELEASE_TARGETS[@]} targets at ${version}"; then
-	fNote "cross-building ${#RELEASE_TARGETS[@]} targets ..."
+	fNote "cross-building ${#RELEASE_TARGETS[@]} targets with ${GO_RELEASE_TOOLCHAIN} ..."
 	for t in "${RELEASE_TARGETS[@]}"; do
 		asset="${EXE_NAME}-${t%%/*}-${t##*/}"; [[ "${t}" == windows/* ]] && asset="${asset}.exe"
-		( cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOOS="${t%%/*}" GOARCH="${t##*/}" \
-			go build -trimpath -ldflags "-s -w -X main.version=${version#v}" -o "${assets}/${asset}" . ) \
+		( cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOTOOLCHAIN="${GO_RELEASE_TOOLCHAIN}" GOOS="${t%%/*}" GOARCH="${t##*/}" \
+			go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${version#v}" -o "${assets}/${asset}" . ) \
 			|| fDie "cross-build failed for ${t}; nothing has been changed."
 	done
 	( cd "${assets}" && "${here}/utility/gen-checksums.bash" > SHA256SUMS ) || fDie "couldn't checksum the release assets."

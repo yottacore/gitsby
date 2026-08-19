@@ -28,6 +28,28 @@ EXE_NAME="gitsby"
 ## script builds under legacy/ are reference only and no stage touches them except parity.
 GO_MODULE_DIR="src-go"
 
+## Build flags, in one place because four build sites have to agree on them.
+##   -trimpath      keeps the build machine's directory names out of the binary.
+##   -buildvcs=false keeps the repository's revision and dirty flag out of it. Without this
+##                  the published assets carry whatever commit preceded the tag they claim -
+##                  so nobody, including us, can rebuild them to the checksums we publish.
+##   -buildid=      drops the last input-derived stamp, so identical source gives identical
+##                  bytes on any machine with the same toolchain (pinned in go.mod).
+##   -s -w          no symbol table, no DWARF: smaller is one of the two things that matter.
+## CGO_ENABLED=0 goes with them, on the native build as well as the cross-builds, so every
+## artifact the pipeline produces is the same kind of thing.
+GO_BUILD_FLAGS=(-trimpath -buildvcs=false)
+GO_LDFLAGS_COMMON="-s -w -buildid="
+## The toolchain that builds the published assets. Two compiler versions produce different
+## bytes from the same source, so reproducing a release means naming the one that cut it -
+## and go.mod's 'go' line is a minimum, not a pin. Release builds only: a dev build should
+## follow whatever is installed.
+GO_RELEASE_TOOLCHAIN="go1.26.2"
+
+## Half the cores, rounded up. The compiler takes all of them by default, in every build and
+## in the eight-target release loop, which makes the machine unusable for the duration.
+BUILD_JOBS=$(( ( $( nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2 ) + 1 ) / 2 ))
+
 ## Stage 1: lint. Go first (gofmt is the arbiter of format, vet and staticcheck gate),
 ## then every first-party shell file (globs, expanded by the engine). shellcheck is
 ## gating; there is deliberately NO bash formatter stage - the pipeline's own scripts are
@@ -77,6 +99,14 @@ PARITY_CMD=(cicd/parity.bash)
 ## first + newest-per-hour/day/week/month/year + last 10 (GFS_KEEP_* to tune).
 LINT_LOG_DIR="cicd/artifacts/lint"          # relative to repo root; created if missing (gitignored)
 
+## Stage 3b: spawn counts. One row per command, GFS-rotated the same way; the newest previous
+## run is the baseline the next one is compared against.
+SPAWN_COUNT_DIR="cicd/artifacts/spawn"      # relative to repo root; created if missing (gitignored)
+SPAWN_COUNT_CMD=(cicd/utility/spawn-count.bash)
+
+## Where a kept build is archived, for bisecting a behavior change against an older one.
+KEEP_BUILD_DIR="cicd/artifacts/builds"      # relative to repo root; created if missing (gitignored)
+
 ## Stage 4: dogfood. Build each target and copy it to the first existing, writable dir in
 ## that target's list. Cross-building is free here - the module is pure stdlib with no cgo -
 ## so every target is built every run rather than on a cadence. Destination arrays are found
@@ -86,6 +116,9 @@ DOGFOOD_TARGETS=(
 	"windows/amd64"
 	"darwin/arm64"
 )
+## What --quick narrows the list above to. Cross-building the other two is the slow part of
+## a run; this one is the binary the next hand-run picks up, so it stays.
+DOGFOOD_NATIVE_TARGET="linux/amd64"
 DOGFOOD_DESTS_LINUX_AMD64=(
 	"${HOME}/synced/0-0/common/exec/util/linux/bin"
 	"/usr/local/sbin"

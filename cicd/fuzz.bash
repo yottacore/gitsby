@@ -44,8 +44,19 @@ fUnsetInheritedGitConfig(){
 fUnsetInheritedGitConfig
 unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT
 
+## -q silences the per-check line and leaves the header, the failures and the total. A run
+## of 600-odd checks buries every stage header in a pipeline log nobody watches live.
+declare -i quiet=0
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		-q|--quiet) quiet=1; shift ;;
+		-h|--help)  echo "Usage: $(basename "${BASH_SOURCE[0]}") [-q|--quiet]"; exit 0 ;;
+		*)          echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
+	esac
+done
+
 declare -i pass=0 fail=0
-fOk(){   pass=$((pass+1)); echo "  ok: $*"; }
+fOk(){   pass=$((pass+1)); ((quiet)) || echo "  ok: $*"; }
 fFail(){ fail=$((fail+1)); echo "  FAIL: $*"; }
 
 declare -i isWindows=0

@@ -87,8 +87,14 @@ fi
 ##	lines for probe-gated skips. A hard error only shows in a failed run's log
 ##	(a passing run aborts on the first error). The excludes drop the clean-run
 ##	noise: the "[ OK: ... ]" status lines and 0-warning summaries.
+##	The harness lines are excluded by SHAPE, not by wording: the suites print one
+##	"  ok: <check label>" per check, and several labels contain the words "warning"
+##	and "error" because that is what they are about. Matching those made a green run
+##	report seven findings that did not exist, which is worse than reporting none -
+##	it trains you to ignore the channel, and this one sat unread for three weeks.
 warns="$(grep -inE 'warning|SC[0-9]{4}|MD[0-9]{3}|error' "$log" 2>/dev/null \
-	| grep -viE '0 issues|no problems|0 warnings|found no|\[ OK:' || true)"
+	| grep -viE '0 issues|no problems|0 warnings|found no|\[ OK:' \
+	| grep -viE '^[0-9]+:[[:space:]]*(ok|FAIL|parity ok|parity FAIL):' || true)"
 if [[ -n "$warns" ]]; then n=$(printf '%s\n' "$warns" | grep -c .); else n=0; fi
 
 tag="FLAG"; ((check)) && tag="NEW"

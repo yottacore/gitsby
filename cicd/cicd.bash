@@ -23,7 +23,7 @@
 ##	   0. remote sync (fast-forward from origin before anything is built or tested)
 ##	   1. lint (gofmt + go vet + staticcheck + golangci-lint, and shellcheck over the pipeline's own scripts)
 ##	   2. build + unit tests (go test) + regression tests (cicd/test.bash against the compiled binary)
-##	   3. fuzz + security (cicd/fuzz.bash; skipped under --quick)
+##	   3. fuzz + security (cicd/fuzz.bash) + govulncheck + spawn counts; skipped under --quick
 ##	   4. backwards compatibility (cicd/parity.bash: this build vs the frozen v2.1.0 one)
 ##	   5. dogfood (cross-build every target and install each to its first existing dir)
 ##	   6. demo gif (fake-terminal render; skipped under --quick)
@@ -85,7 +85,10 @@ while (($#)); do case "$1" in
 	--no-dogfood)             DOGFOOD_TARGETS=(); shift ;;
 	--no-demogif)             DO_DEMOGIF=0; shift ;;
 	--no-publish)             GIT_PUBLISH=(); shift ;;
-	--quick)                  quick=1; do_fuzz=0; DO_DEMOGIF=0; shift ;;
+	## Cross-building three platforms is the slow part of a run, not the fuzz and the gif -
+	## so the flag whose job is skipping the slow parts has to skip that too. The native
+	## target stays, since the dogfooded binary is what the next hand-run uses.
+	--quick)                  quick=1; do_fuzz=0; DO_DEMOGIF=0; DOGFOOD_TARGETS=("${DOGFOOD_NATIVE_TARGET}"); shift ;;
 	--message=*|--msg=*|-m=*) cli_message="${1#*=}"; shift ;;
 	-m|--message|--msg)       cli_message="${2-}"; shift; (($#)) && shift ;;
 	-h|--help)                sed -n '/^##	- Purpose:/,/^##	History:/p' "${BASH_SOURCE[0]}" | sed '$d; s/^##	\{0,1\}//'; exit 0 ;;
@@ -95,6 +98,10 @@ esac; done
 ## Brief beat after each stage header so the cheap fast stages stay readable.
 ## Off for unattended runs (-q/-y) where nobody is watching.
 stage_pause=0.4; ((assume_yes)) && stage_pause=0
+
+## The same reasoning, passed on: the three harnesses print one line per check, and 900-odd
+## of them bury every stage header in a log nobody is reading live. Failures and totals stay.
+declare -a harness_quiet=(); ((assume_yes)) && harness_quiet=("-q")
 
 ## Publish commit message: -m wins, then config, then a default when unattended.
 ## Empty -> publish interactively (git commit opens an editor); when interactive
@@ -354,14 +361,16 @@ fSection "2/7  Build + regression tests"
 if ((! do_test)); then
 	fEcho_Clean "build + tests skipped"
 else
-	(cd "${root}/${GO_MODULE_DIR}" && go build -trimpath -ldflags "-s -w -X main.version=${go_version#v}" -o "${EXE_NAME}" .) || fDie "go build failed"
+	(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 \
+		go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${go_version#v}" -o "${EXE_NAME}" .) \
+		|| fDie "go build failed"
 	fEcho "OK: go build (v${go_version#v})"
 	## The unit tests come before the suite below: they answer in milliseconds and
 	## cover the parsing and matching the suite can only reach through a built binary.
 	(cd "${root}/${GO_MODULE_DIR}" && go test ./...) || fDie "go test failures"
 	fEcho "OK: go test"
 	if [[ -f "${TEST_CMD[0]:-}" ]]; then
-		"${TEST_CMD[@]}"
+		"${TEST_CMD[@]}" ${harness_quiet[@]+"${harness_quiet[@]}"}
 		fEcho "OK: tests passed"
 	else
 		fEcho_Clean "no test harness (${TEST_CMD[0]:-cicd/test.bash})"
@@ -375,10 +384,26 @@ fSection "3/7  Fuzz + security"
 if ((! do_fuzz)); then
 	fEcho_Clean "fuzz + security skipped$( ((quick)) && echo ' (--quick)')"
 elif [[ -f "${FUZZ_CMD[0]:-}" ]]; then
-	"${FUZZ_CMD[@]}"
+	"${FUZZ_CMD[@]}" ${harness_quiet[@]+"${harness_quiet[@]}"}
 	fEcho "OK: fuzz + security passed"
 else
 	fEcho_Clean "no fuzz harness (${FUZZ_CMD[0]:-cicd/fuzz.bash})"
+fi
+## With no third-party dependencies the standard library is the only library code there is
+## to check - and it is linked into every binary we publish. Probe-gated like staticcheck;
+## it runs even under --quick, because it is a lookup rather than a workload.
+if command -v govulncheck >/dev/null 2>&1; then
+	(cd "${root}/${GO_MODULE_DIR}" && govulncheck ./...) || fDie "govulncheck findings"
+	fEcho "OK: govulncheck clean"
+else
+	fEcho "WARNING: govulncheck skipped (not installed: go install golang.org/x/vuln/cmd/govulncheck@latest)"
+fi
+## The profiling half, and deliberately not a sampling profile: this program is blocked on
+## git for effectively all of its wall clock, so a flamegraph has no leaders in it. What
+## costs anything is how often we fork git, and that is what regresses silently.
+if ((do_fuzz)) && [[ -f "${SPAWN_COUNT_CMD[0]:-}" ]]; then
+	"${SPAWN_COUNT_CMD[@]}" ${harness_quiet[@]+"${harness_quiet[@]}"} || fDie "spawn counts regressed"
+	fEcho "OK: spawn counts"
 fi
 
 ## Stage 4: backwards compatibility. The behavioural suite asks "is this correct?" of one
@@ -389,7 +414,7 @@ fSection "4/7  Backwards compatibility"
 if ((! do_parity)); then
 	fEcho_Clean "compatibility comparison skipped"
 elif [[ -f "${PARITY_CMD[0]:-}" ]]; then
-	"${PARITY_CMD[@]}"
+	"${PARITY_CMD[@]}" ${harness_quiet[@]+"${harness_quiet[@]}"}
 	fEcho "OK: this build answers as the frozen one does"
 else
 	fEcho_Clean "no comparison harness (${PARITY_CMD[0]:-cicd/parity.bash})"
@@ -414,7 +439,7 @@ else
 		## suite just ran against is not overwritten by a build that cannot run here.
 		out="${root}/${GO_MODULE_DIR}/${EXE_NAME}-${t//\//-}"
 		(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOOS="${t%%/*}" GOARCH="${t##*/}" \
-			go build -trimpath -ldflags "-s -w -X main.version=${go_version#v}" -o "${out}" .) \
+			go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${go_version#v}" -o "${out}" .) \
 			|| fDie "go build failed for ${t}"
 		cp -f "${out}" "${dogfood_dest[${t}]}/${exe}"
 		chmod +x "${dogfood_dest[${t}]}/${exe}"
@@ -496,3 +521,4 @@ fEcho_Clean
 ##		- 2026-08-19 JC: PSScriptAnalyzer is back in stage 1, probe-gated as before. The installer for Windows is the one piece of PowerShell that still ships, and it was going out unlinted.
 ##		- 2026-08-19 JC: golangci-lint joins stage 1 and go test joins stage 2, both alongside what was already there. The unit tests cover the parsing and matching that previously needed a built binary and a throwaway repo to reach.
 ##		- 2026-08-19 JC: PSScriptAnalyzer also checks the installer against Windows PowerShell 5.1 syntax. The installer supports 5.1 now, and nothing gated that.
+##		- 2026-08-19 JC: --quick narrows dogfood to the native target, which is the slow part it was supposed to be skipping. Every build site shares one set of flags (-buildvcs=false above all, without which the published assets can never be rebuilt to their published checksums) and half the cores. Stage 3 gained govulncheck and the spawn counts; the three harnesses take -q from the engine.

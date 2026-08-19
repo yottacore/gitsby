@@ -100,7 +100,7 @@
 @ run - which is what lets the pipeline rewrite assets/demo.gif only when the
 @ demo really changed.
 @ So: keep every commit message and every edit in this file fixed. In particular
-@ never demo a bare `update` or `sync` with no message - the auto-generated
+@ never demo a bare `pullcom` or `sync` with no message - the auto-generated
 @ message is a timestamp, and the gif would differ on every render.
 @
 @ The demo types each command without -y; the confirmation is answered off camera,
@@ -134,7 +134,7 @@ gitsby br create add-retries
 @ Scene 3: park the work
 
 # Commit and pull, as often as you like
-gitsby update "Retry failed API calls"
+gitsby pullcom "Retry failed API calls"
 
 @ hold 5.2 seconds
 
@@ -167,7 +167,7 @@ gitsby sync "Back off between retries"
 @ copies of the branch, so it holds the longest.
 
 # Ship it: merge back, push, delete the branch
-gitsby br land "Add retries"
+gitsby br merge "Add retries"
 
 @ hold 7.8 seconds
 
@@ -235,8 +235,8 @@ gitsby account
 @ constants near the top of gen-demo-gif.py. Scroll rate is one of those too
 @ (150 px/s), overridable per scene.
 @ Which file the pipeline renders, and where the result lands, is set in
-@ cicd/config.bash and mirrored in cicd/cicd-win.ps1 - both, by hand.
+@ cicd/config.bash. One engine, one place.
 @
 @ To re-render: cicd/cicd.bash on Linux, without --quick. It regenerates only if
-@ the bytes actually changed. Windows compares but never lands a render - the
-@ byte-for-byte contract depends on Linux fontconfig and the pinned optimizer.
+@ the bytes actually changed - the byte-for-byte contract depends on Linux
+@ fontconfig and the pinned optimizer, so nothing else renders one.

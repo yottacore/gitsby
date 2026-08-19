@@ -128,13 +128,6 @@ From a full review of the Go code, 20260818. gofmt, vet, staticcheck and the sui
 
 From a review against the standing directives, 20260819. Everything below was checked against the code, not inferred. gofmt, vet, staticcheck and the suite (617/0) are all clean, so none of this is tool-visible.
 
-- 🔘 Directive review 20260819 item 17: the lint summary reports warnings on a perfectly clean run.
-	- Its filter matches the test harness's own check labels, so a green pipeline reports seven warnings that do not exist.
-	- A warning that fires when nothing is wrong is worse than no warning.
-
-- 🔘 Directive review 20260819 item 18: `--quick` still cross-builds three platforms.
-	- It skips fuzz and the gif, which are not the slow part.
-
 ### Features and enhancements
 
 - ✅ Code Review 20260818 item 14: skip the identity network probe when no identity block will print.
@@ -200,26 +193,9 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 
 Same review, 20260819. These are shape and process rather than defects.
 
-- 🔘 Directive review 20260819 item 26: the published binaries cannot be rebuilt to the same checksum.
-	- Version control stamps go into the binary, and the release builds its assets before it cuts the tag - so the published binaries carry the previous revision and nobody can reproduce the checksums we publish.
-	- Also wants the build id cleared, the native build built the same way as the cross-builds, and the toolchain pinned. Once it holds, say so in the README.
-
-- 🔘 Directive review 20260819 item 27: no build step limits itself to half the cores.
-	- The compiler defaults to all of them, in every build and in the eight-target release loop.
-
-- 🔘 Directive review 20260819 item 28: nothing in the pipeline looks at the standard library for known problems.
-	- With no third-party dependencies, that is the only library code there is to check.
-
-- 🔘 Directive review 20260819 item 29: no profiling step exists.
-	- A flamegraph would be the wrong instrument here - the program spends its life blocked waiting on git, so a sampling profile is a flat wall with no leaders.
-	- What carries signal is counting spawns per command against a fixture repo, and failing on a regression. The rotation and the seen-marker patterns already exist and can be reused as they are.
-
-- 🔘 Directive review 20260819 item 30: Windows binaries carry no icon and no version details.
-
-- 🔘 Directive review 20260819 item 31: `-q` reaches the publisher but not the three test harnesses.
-	- None of them accepts an option at all, so a quiet run still prints every one of 617 check lines.
-
-- 🔘 Directive review 20260819 item 32: `--target=` and `--release=` are not accepted with an equals sign.
+- 🛠️ Directive review 20260819 item 30: Windows binaries carry no icon and no version details.
+	- Needs a Windows resource (.syso) beside the source. Two ways in: `goversioninfo` from a checked-in JSON template plus an .ico, which is the standard route and is well tested; or writing the COFF resource ourselves, which keeps the zero-dependency character but cannot be proved right from here - a malformed one links cleanly and fails on the machine that runs it.
+	- Leaning toward `goversioninfo`, probe-gated in the pipeline and required by `release.bash` phase 1 (which changes nothing, so failing there costs nothing). That needs the tool installed outside this tree, so it is the owner's call.
 
 - 🔘 Directive review 20260819 item 34: batching the branch deletes in `br prune` is the largest speed win available, and it changes the output.
 	- One push per branch, each forking three processes. Eight branches cost 24 of the command's 81.
@@ -256,12 +232,6 @@ Same review, 20260819. These are shape and process rather than defects.
 
 - 🔘 Directive review 20260819 item 41: five paragraphs run long enough to be hard to scan.
 	- The worst is 620 characters. All five are ideas that want to be bullets.
-
-- 🔘 Directive review 20260819 item 42: no script exists to run an older build alongside the current one.
-	- Worth less here than in the projects it comes from: gitsby exits immediately, so nothing is ever held open. The real use is keeping timestamped builds around to bisect a behavior change.
-
-- 🔘 Directive review 20260819 item 43: the demo script file is stale in two ways beyond the renamed commands.
-	- It points a future editor at the deleted Windows engine, twice. Fix it in the same pass as the regeneration.
 
 ### Done
 
@@ -708,6 +678,50 @@ Same review, 20260819. These are shape and process rather than defects.
 	- Fixed: all three, in the moved text.
 
 #### Done - Directive review 20260819
+
+The pipeline, 17-18 and 26-32 (bar 30), plus 42 and 43. Eleven new checks, each verified against the pipeline that preceded them; the suite went 649 -> 666.
+
+- ✅ Directive review 20260819 item 17: the lint summary reports warnings on a perfectly clean run.
+	- Its filter matches the test harness's own check labels, so a green pipeline reports seven warnings that do not exist.
+	- A warning that fires when nothing is wrong is worse than no warning.
+	- Fixed: the harness lines are excluded by SHAPE (`ok:` / `FAIL:`) rather than by wording, so a check label about warnings stops reading as one. A clean log now reports CLEAN, and a real finding still reports.
+
+- ✅ Directive review 20260819 item 18: `--quick` still cross-builds three platforms.
+	- It skips fuzz and the gif, which are not the slow part.
+	- Fixed: `--quick` narrows the dogfood list to the native target. The other two cross-builds were the slow part it was meant to be skipping.
+
+- ✅ Directive review 20260819 item 26: the published binaries cannot be rebuilt to the same checksum.
+	- Version control stamps go into the binary, and the release builds its assets before it cuts the tag - so the published binaries carry the previous revision and nobody can reproduce the checksums we publish.
+	- Also wants the build id cleared, the native build built the same way as the cross-builds, and the toolchain pinned. Once it holds, say so in the README.
+	- Fixed: `-buildvcs=false`, `-buildid=` and `CGO_ENABLED=0` on every build site, from one place in config.bash. Verified: two builds from a cold cache are byte-identical, and `go version -m` shows no revision. The ordering worry dissolves with the stamps gone - the changelog bump does not touch the source, so a phase-1 asset is the tagged commit's asset. The release toolchain is named in config.bash, since go.mod's line is a minimum rather than a pin.
+
+- ✅ Directive review 20260819 item 27: no build step limits itself to half the cores.
+	- The compiler defaults to all of them, in every build and in the eight-target release loop.
+	- Fixed: `BUILD_JOBS` is half the cores rounded up, and `-p` is on all four build calls.
+
+- ✅ Directive review 20260819 item 28: nothing in the pipeline looks at the standard library for known problems.
+	- With no third-party dependencies, that is the only library code there is to check.
+	- Fixed: `govulncheck` in stage 3, probe-gated like staticcheck. It runs even under `--quick` - it is a lookup, not a workload.
+
+- ✅ Directive review 20260819 item 29: no profiling step exists.
+	- A flamegraph would be the wrong instrument here - the program spends its life blocked waiting on git, so a sampling profile is a flat wall with no leaders.
+	- What carries signal is counting spawns per command against a fixture repo, and failing on a regression. The rotation and the seen-marker patterns already exist and can be reused as they are.
+	- Done as spawn counting, per the recommendation: `cicd/utility/spawn-count.bash` measures eight commands against a restored fixture (origin included), compares with the newest previous run, and fails on a rise beyond a small tolerance. GFS-rotated like the lint logs.
+
+- ✅ Directive review 20260819 item 31: `-q` reaches the publisher but not the three test harnesses.
+	- None of them accepts an option at all, so a quiet run still prints every one of 617 check lines.
+	- Fixed: all three take `-q`, and the engine hands it on for an unattended run. Header, failures and totals stay.
+
+- ✅ Directive review 20260819 item 32: `--target=` and `--release=` are not accepted with an equals sign.
+	- Fixed: both spellings of every option that takes a value.
+
+- ✅ Directive review 20260819 item 42: no script exists to run an older build alongside the current one.
+	- Worth less here than in the projects it comes from: gitsby exits immediately, so nothing is ever held open. The real use is keeping timestamped builds around to bisect a behavior change.
+	- Done: `cicd/utility/keep-build.bash` archives the current binary with a timestamp, lists what is kept, runs one by number, and diffs one against the current build on the same arguments. GFS-rotated.
+
+- ✅ Directive review 20260819 item 43: the demo script file is stale in two ways beyond the renamed commands.
+	- It points a future editor at the deleted Windows engine, twice. Fix it in the same pass as the regeneration.
+	- Fixed: the notes no longer point at the deleted Windows engine, and the scenario uses the current command names, so the next render publishes those rather than the old ones. The regeneration itself is still pending - it needs a full pipeline run.
 
 The installers, 12-15 and 33. Ten new checks, each verified against the installers that preceded them.
 
