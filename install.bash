@@ -116,12 +116,16 @@ asset="gitsby-${goOs}-${arch}"
 ## No --tag: resolve the latest release from the releases/latest redirect (no auth, no API
 ## rate limit); unauthenticated API scrape only as fallback (60 req/hr per IP).
 if [[ -z "${tag}" ]]; then
+	## Every lookup here needs '|| true': under 'set -e' an assignment carries its command's
+	## status, so a failed one takes the whole run out silently - past the fallback below and
+	## past the message that explains it. wget is the surprising one: it answers a declined
+	## redirect with exit 8 even though the header it was sent for is right there in the output.
 	if command -v curl >/dev/null 2>&1; then
-		tag="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/${repo}/releases/latest" 2>/dev/null | sed -n 's|.*/releases/tag/||p')"
+		tag="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/${repo}/releases/latest" 2>/dev/null | sed -n 's|.*/releases/tag/||p' || true)"
 	elif command -v wget >/dev/null 2>&1; then
-		tag="$(wget -q --max-redirect=0 -S -O /dev/null "https://github.com/${repo}/releases/latest" 2>&1 | sed -n 's|.*[Ll]ocation: .*/releases/tag/\([^[:space:]]*\).*|\1|p' | head -n 1)"
+		tag="$(wget -q --max-redirect=0 -S -O /dev/null "https://github.com/${repo}/releases/latest" 2>&1 | sed -n 's|.*[Ll]ocation: .*/releases/tag/\([^[:space:]]*\).*|\1|p' | head -n 1 || true)"
 	fi
-	[[ -n "${tag}" ]] || tag="$(fFetch "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null | sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+	[[ -n "${tag}" ]] || tag="$(fFetch "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null | sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1 || true)"
 	[[ -n "${tag}" ]] || fErr "Couldn't determine the latest release. (GitHub may be rate-limiting; try again later.)"
 	## Scraped from a redirect header, so check it the same way as a typed one before it reaches a URL.
 	[[ "${tag}" =~ ^[A-Za-z0-9._/-]+$ ]] || fErr "The resolved release tag ('${tag}') isn't a plain git tag; aborting."
@@ -224,3 +228,4 @@ echo
 ##		- 20260727 JC: Options now spelled --release, --target and --arch, to match the other installers. -s/--system and --ref still work.
 ##		- 20260812 JC: The plan says whether the download will be checked, before it is agreed to. It was reported only afterwards, and on the --release dev path not at all - so the one route that installs an unverified file was the quiet one.
 ##		- 20260819 JC: Installs the binary for this platform. --arch is real (it picks the asset) and --target is unchanged; --release is gone, since a branch has no build behind it. Every route is a release asset now, so every route is verified and the unverified branch of the plan no longer exists. SHA256SUMS is fetched before the plan is printed, because it is what says whether this platform has a binary at all. Windows is sent to install.ps1, which is the one that also handles PATH.
+##		- 20260819 JC: The release lookup no longer takes the run out with it. Under 'set -e' an assignment carries its command's status, so a curl that failed - or a wget that answered a declined redirect with exit 8, having already printed the very header it was sent for - ended the install silently, past the fallback and past the message that explains it.

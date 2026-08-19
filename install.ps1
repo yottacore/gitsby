@@ -74,8 +74,11 @@ function Install-Gitsby {
     # is named by. Anything else falls through to the SHA256SUMS lookup below, which is the
     # authority on what this release actually published.
     $goOs = if ($IsWindows) { 'windows' } elseif ($IsMacOS) { 'darwin' } elseif ($IsLinux) { 'linux' } else { 'unknown' }
-    if (-not $Arch) {
-        $Arch = switch ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture) {
+    # Detection lands in its own variable rather than back in $Arch: assigning to a parameter
+    # re-runs its ValidateSet, so an x86 or 32-bit ARM box would die with a binder error
+    # instead of being told what this release does publish.
+    $archName = if ($Arch) { $Arch } else {
+        switch ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture) {
             'X64'   { 'amd64' }
             'Arm64' { 'arm64' }
             default { "$_".ToLowerInvariant() }
@@ -83,17 +86,21 @@ function Install-Gitsby {
     }
     # -Arch used to be accepted and ignored, back when the product was one script that ran
     # everywhere. It picks the binary now, so spell the two the release actually publishes.
-    $goArch = switch ($Arch) {
+    $goArch = switch ($archName) {
         { $_ -in 'x64', 'x86_64', 'amd64' } { 'amd64'; break }
         { $_ -in 'arm64', 'aarch64' }       { 'arm64'; break }
-        default                             { $Arch }
+        default                             { $archName }
     }
     $asset = "gitsby-${goOs}-${goArch}"
     if ($IsWindows) { $asset += '.exe' }
 
     # No -Tag: resolve the latest release from the releases/latest redirect (no auth, no
     # API rate limit); unauthenticated API only as fallback (60 req/hr per IP).
-    if (-not $Tag) {
+    # Resolved into its own variable for the same reason as $archName: a scraped tag assigned
+    # back to $Tag re-runs its ValidatePattern, which turns the check below into dead code and
+    # reports a malformed tag as whatever the surrounding catch happens to say.
+    $tagName = $Tag
+    if (-not $tagName) {
         $location = ''
         try {
             $resp = Invoke-WebRequest -Uri "https://github.com/${repo}/releases/latest" -MaximumRedirection 0 -ErrorAction Stop
@@ -101,24 +108,24 @@ function Install-Gitsby {
         } catch {
             if ($_.Exception.PSObject.Properties['Response'] -and $_.Exception.Response) { $location = [string]$_.Exception.Response.Headers.Location }
         }
-        if ($location -match '/releases/tag/([^/\s]+)') { $Tag = $Matches[1] }
+        if ($location -match '/releases/tag/([^/\s]+)') { $tagName = $Matches[1] }
     }
-    if (-not $Tag) {
+    if (-not $tagName) {
         try {
-            $Tag = (Invoke-RestMethod -Uri "https://api.github.com/repos/${repo}/releases/latest").tag_name
+            $tagName = (Invoke-RestMethod -Uri "https://api.github.com/repos/${repo}/releases/latest").tag_name
         } catch {
             throw "Couldn't determine the latest release. GitHub may be rate-limiting; try again later. ($($_.Exception.Message))"
         }
     }
     # Scraped from a redirect header, so check it the same way as a typed one before it reaches a URL.
-    if ($Tag -notmatch '^[A-Za-z0-9._/-]+$') { throw "The resolved release tag ('${Tag}') isn't a plain git tag; aborting." }
+    if ($tagName -notmatch '^[A-Za-z0-9._/-]+$') { throw "The resolved release tag ('${tagName}') isn't a plain git tag; aborting." }
 
     # SHA256SUMS decides two things at once, and it is a few hundred bytes: whether this
     # release publishes a binary for this platform, and what that binary should hash to.
     # Fetching it up front means the plan can promise a specific file, before anything large
     # is downloaded. Every install path here is a release asset, so every one is verified -
     # there is no unverified route left to fall back to.
-    $base = "https://github.com/${repo}/releases/download/${Tag}"
+    $base = "https://github.com/${repo}/releases/download/${tagName}"
     $sums = ''
     try {
         # GitHub serves SHA256SUMS as application/octet-stream, and Invoke-WebRequest returns
@@ -129,7 +136,7 @@ function Install-Gitsby {
         $sums = if ($body -is [byte[]]) { [Text.Encoding]::UTF8.GetString($body) } else { [string]$body }
     } catch { $sums = '' }
     if (-not $sums) {
-        throw "Release ${Tag} publishes no SHA256SUMS, so nothing here can be verified. (A release published seconds ago may not be servable yet; try again shortly.)"
+        throw "Release ${tagName} publishes no SHA256SUMS, so nothing here can be verified. (A release published seconds ago may not be servable yet; try again shortly.)"
     }
     $want = ''
     $published = @()
@@ -141,7 +148,7 @@ function Install-Gitsby {
     }
     if (-not $want) {
         $alsoRan = if ($published) { " It publishes: $($published -join ', ')." } else { '' }
-        throw "Release ${Tag} publishes no gitsby binary for ${goOs}/${goArch}.${alsoRan} Build it for yours instead - the module is pure Go with no dependencies: git clone https://github.com/${repo}.git; cd gitsby/src-go; go build -o gitsby ."
+        throw "Release ${tagName} publishes no gitsby binary for ${goOs}/${goArch}.${alsoRan} Build it for yours instead - the module is pure Go with no dependencies: git clone https://github.com/${repo}.git; cd gitsby/src-go; go build -o gitsby ."
     }
 
     # Destination: per-user by default; -System needs elevation (sudo / admin shell).
@@ -156,7 +163,7 @@ function Install-Gitsby {
     Write-Host ''
     Write-Host '[ gitsby installer (PowerShell) ]'
     Write-Host 'This will:'
-    Write-Host "  - Download ${asset} (${Tag}) from github.com/${repo}"
+    Write-Host "  - Download ${asset} (${tagName}) from github.com/${repo}"
     Write-Host '  - Verify it against the release''s published SHA256SUMS'
     Write-Host "  - Install it to ${destPath}"
     if ($installSystemWide) { Write-Host '  - Need write access to that directory (run elevated / via sudo)' }
@@ -185,12 +192,12 @@ function Install-Gitsby {
         try {
             Invoke-WebRequest -Uri "${base}/${asset}" -OutFile $tmpFile
         } catch {
-            throw "Couldn't download ${asset} from release ${Tag}. ($($_.Exception.Message))"
+            throw "Couldn't download ${asset} from release ${tagName}. ($($_.Exception.Message))"
         }
         if ((Get-Item -LiteralPath $tmpFile).Length -eq 0) { throw "Downloaded ${asset} is empty; aborting." }
         # A captive portal or a proxy answers with a page, not a binary. It would fail the
         # checksum anyway, but as tampering rather than as the network problem it is.
-        $firstByte = [IO.File]::ReadAllBytes($tmpFile)[0]
+        $firstByte = Get-Content -LiteralPath $tmpFile -AsByteStream -TotalCount 1
         if ($firstByte -eq [byte][char]'<') {
             throw 'The download came back as a web page, not a binary - something between here and GitHub is intercepting it.'
         }
@@ -212,11 +219,21 @@ function Install-Gitsby {
             if ($IsWindows) {
                 # Persist it, as promised in the plan.
                 $pathScope = if ($installSystemWide) { 'Machine' } else { 'User' }
+                # Straight at the registry rather than [Environment]::GetEnvironmentVariable,
+                # which hands back the EXPANDED PATH: writing that back would bake entries like
+                # %USERPROFILE%\bin in as literals, permanently, for a PATH we only meant to
+                # append to. Reading it raw and putting back the kind it already had leaves
+                # every other entry exactly as it was.
+                $pathKeyPath = if ($installSystemWide) { 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment' } else { 'HKCU:\Environment' }
                 try {
-                    $stored = [Environment]::GetEnvironmentVariable('PATH', $pathScope)
+                    $pathKey = Get-Item -LiteralPath $pathKeyPath
+                    $stored = [string]$pathKey.GetValue('PATH', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
                     if (($stored -split $pathSep) -notcontains $destDir) {
                         $joined = if ([string]::IsNullOrEmpty($stored)) { $destDir } else { $stored.TrimEnd($pathSep) + $pathSep + $destDir }
-                        [Environment]::SetEnvironmentVariable('PATH', $joined, $pathScope)
+                        $storedKind = if ($stored) { $pathKey.GetValueKind('PATH') }
+                            elseif ($joined -match '%') { [Microsoft.Win32.RegistryValueKind]::ExpandString }
+                            else { [Microsoft.Win32.RegistryValueKind]::String }
+                        Set-ItemProperty -LiteralPath $pathKeyPath -Name 'PATH' -Value $joined -Type $storedKind
                     }
                     $env:PATH = $env:PATH.TrimEnd($pathSep) + $pathSep + $destDir
                     Write-Host "[ Added ${destDir} to your ${pathScope} PATH. Open a new shell to pick it up. ]"
@@ -277,3 +294,8 @@ try {
 #     every route is verified and the unverified branch of the plan no longer exists.
 #     SHA256SUMS is fetched before the plan is printed, because it is what says whether this
 #     platform has a binary at all - and it names the ones that do when this one doesn't.
+#   - 20260819 JC: Detection no longer lands back in -Arch and -Tag. Assigning to a parameter
+#     re-runs its own validation, so an x86 box and a malformed scraped tag each died in the
+#     binder instead of reaching the message written for them. PATH is now read raw from the
+#     registry before it is rewritten - the expanded copy would have baked %USERPROFILE%-style
+#     entries in as literals, for good, on a PATH we only meant to append to.

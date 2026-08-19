@@ -1473,6 +1473,27 @@ GHEOF
 	printf '#!/usr/bin/env bash\necho MINGW64_NT-10.0-22631\n' > "${wg}/bin/uname"; chmod +x "${wg}/bin/uname"
 	fAssertOut  "go installer sends Windows to install.ps1"    'use the PowerShell installer' \
 		bash -c "PATH='${wg}/bin:${PATH}' bash '${goInst}' -y"
+	## The release lookup, with the network stood in for. Under 'set -e' an assignment carries
+	## its command's status, so both of these used to end the run silently at the lookup - no
+	## message, no fallback, and an exit code straight from curl or wget.
+	local lk="${work}/lookup"; mkdir -p "${lk}/bin"
+	printf '#!/usr/bin/env bash\nexit 6\n' > "${lk}/bin/curl"; chmod +x "${lk}/bin/curl"
+	fAssertOut  "go installer survives a failing curl"        'determine the latest release' \
+		bash -c "PATH='${lk}/bin:${PATH}' bash '${goInst}' -y"
+	## wget-only box: wget answers a declined redirect with exit 8 even though the header it was
+	## sent for is right there, so success looked like failure. curl has to be genuinely absent
+	## to reach that arm, hence a PATH of just the tools the installer gets that far on.
+	local farm="${work}/nocurl"; mkdir -p "${farm}"
+	local farmTool="" farmPath=""
+	for farmTool in bash uname tr sed head cut cat mktemp rm paste sha256sum shasum openssl; do
+		farmPath="$( command -v "${farmTool}" 2>/dev/null || true )"
+		if [[ -n "${farmPath}" ]]; then ln -sf "${farmPath}" "${farm}/${farmTool}"; fi
+	done
+	# shellcheck disable=SC2016  ## the stub's own text; the inner shell does the expanding.
+	printf '#!/usr/bin/env bash\nfor a in "$@"; do case "$a" in */releases/latest) echo "  Location: https://github.com/jim-collier/gitsby/releases/tag/v9.9.9" >&2; exit 8 ;; esac; done\nexit 1\n' > "${farm}/wget"
+	chmod +x "${farm}/wget"
+	fAssertOut  "go installer reads a tag out of wget's exit 8" 'v9\.9\.9' \
+		bash -c "PATH='${farm}' '${farm}/bash' '${goInst}' -y"
 	## Pins on what a live run reaches. Every route is a release asset now, so every route is
 	## verified - there is no unverified branch of the plan left to promise around.
 	fAssert     "go installer installs to the documented dirs" \
@@ -1500,6 +1521,16 @@ GHEOF
 		## network, so this pins the decode in the source rather than exercising it.
 		fAssert "go install.ps1 decodes the SHA256SUMS body from bytes" \
 			bash -c "grep -q 'byte\[\]' '${goInstPs}'"
+		## Assigning to a parameter re-runs its own ValidateSet/ValidatePattern, so detected
+		## values that the set doesn't list - x86, a scraped tag - died in the binder instead of
+		## reaching the message written for them. Reproducing that needs the hardware or the
+		## network, so it is pinned in the source.
+		fAssert "go install.ps1 keeps detection out of its validated parameters" \
+			bash -c "! grep -qE '^[[:space:]]*\\\$(Arch|Tag)[[:space:]]*=' '${goInstPs}'"
+		## [Environment]::GetEnvironmentVariable hands back an EXPANDED PATH; writing that back
+		## bakes %USERPROFILE%-style entries in as literals for good.
+		fAssert "go install.ps1 reads PATH raw before rewriting it" \
+			bash -c "grep -q 'DoNotExpandEnvironmentNames' '${goInstPs}'"
 		## The documented one-liners are 'iex' and a scriptblock, neither of which is a script
 		## file - so -File coverage alone says nothing about them. Both must bind their
 		## parameters, refuse by throwing rather than exiting, and leave the calling session
