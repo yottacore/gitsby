@@ -59,8 +59,8 @@ pause = 5.2
 clear = true
 cwd   = "~/dev/github.com/acme-corp/acme-api"
 note  = "Commit and pull, as often as you like"
-show  = "{prog} update \"Retry failed API calls\""
-run   = "cd /tmp/gitsby-demo/dev/github.com/acme-corp/acme-api && source /tmp/gitsby-demo/demo.env && {bin} update \"Retry failed API calls\" -y"
+show  = "{prog} pullcom \"Retry failed API calls\""
+run   = "cd /tmp/gitsby-demo/dev/github.com/acme-corp/acme-api && source /tmp/gitsby-demo/demo.env && {bin} pullcom \"Retry failed API calls\" -y"
 pause = 5.2
 
 [[step]]
@@ -83,8 +83,8 @@ pause = 5.2
 clear = true
 cwd   = "~/dev/github.com/acme-corp/acme-api"
 note  = "Ship it: merge back, push, delete the branch"
-show  = "{prog} br land \"Add retries\""
-run   = "cd /tmp/gitsby-demo/dev/github.com/acme-corp/acme-api && source /tmp/gitsby-demo/demo.env && {bin} br land \"Add retries\" -y"
+show  = "{prog} br merge \"Add retries\""
+run   = "cd /tmp/gitsby-demo/dev/github.com/acme-corp/acme-api && source /tmp/gitsby-demo/demo.env && {bin} br merge \"Add retries\" -y"
 pause = 7.8
 
 [[step]]

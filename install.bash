@@ -42,12 +42,19 @@ fSyntax(){
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
+		## Both spellings of every option that takes a value. The joined form is what anyone
+		## used to long options types, and refusing it as unknown reads as the option itself
+		## not existing.
 		--release)   [[ $# -ge 2 ]] || fErr "--release needs a value."; releaseChannel="$(fLower "$2")"; shift ;;
+		--release=*) releaseChannel="$(fLower "${1#*=}")" ;;
 		--target)    [[ $# -ge 2 ]] || fErr "--target needs a value (user or system)."; targetScope="$(fLower "$2")"; shift ;;
+		--target=*)  targetScope="$(fLower "${1#*=}")" ;;
 		--arch)      [[ $# -ge 2 ]] || fErr "--arch needs a value (amd64 or arm64)."; arch="$(fLower "$2")"; shift ;;
+		--arch=*)    arch="$(fLower "${1#*=}")" ;;
 		-s|--system) targetScope="system" ;;
 		-y|--yes)    doYes=1 ;;
 		-t|--tag|-r|--ref) [[ $# -ge 2 ]] || fErr "--tag needs a value."; tag="$2"; shift ;;
+		--tag=*|--ref=*)   tag="${1#*=}" ;;
 		-h|--help)   fSyntax; exit 0 ;;
 		*)           fErr "Unknown option: '$1' (try --help)." ;;
 	esac

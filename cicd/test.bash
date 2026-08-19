@@ -54,8 +54,19 @@ fUnsetInheritedGitConfig(){
 fUnsetInheritedGitConfig
 unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT
 
+## -q silences the per-check line and leaves the header, the failures and the total. A run
+## of 600-odd checks buries every stage header in a pipeline log nobody watches live.
+declare -i quiet=0
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		-q|--quiet) quiet=1; shift ;;
+		-h|--help)  echo "Usage: $(basename "${BASH_SOURCE[0]}") [-q|--quiet]"; exit 0 ;;
+		*)          echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
+	esac
+done
+
 declare -i pass=0 fail=0
-fOk(){   pass=$((pass+1)); echo "  ok: $*"; }
+fOk(){   pass=$((pass+1)); ((quiet)) || echo "  ok: $*"; }
 fFail(){ fail=$((fail+1)); echo "  FAIL: $*"; }
 ## Assert the command succeeds / fails (output discarded; -q keeps gitsby promptless).
 fAssert(){     local desc="$1"; shift; if   "$@" >/dev/null 2>&1; then fOk "$desc"; else fFail "$desc"; fi; }
@@ -2184,6 +2195,65 @@ GHEOF
 		fAssertFail "${rmScript} never removes an unguarded variable path" \
 			grep -qE 'rm -[rf]+ +(-- )?"\$\{[a-zA-Z_][a-zA-Z_0-9]*\}' "${root}/${rmScript}"
 	done
+	## ------------------------------------------------------------------------------------
+	## The pipeline itself, after the directive review. Where a check would need a whole run
+	## to exercise, it pins the thing in the source and says so.
+
+	## Version-control stamps go into a Go binary by default, and the release builds its assets
+	## before it cuts the tag - so the published binaries carried the previous revision and
+	## nobody, us included, could rebuild them to the checksums we publish.
+	fAssert "the build flags keep version control out of the binary" \
+		bash -c "grep -q 'buildvcs=false' '${root}/cicd/config.bash'"
+	## Built here rather than read off the suite's own binary: that one may have come from a
+	## hand-run 'go build', which legitimately carries the stamps.
+	fAssert "and a build with them carries no revision stamp" \
+		bash -c "cd '${root}/src-go' && go build -trimpath -buildvcs=false -o '${work}/vcsprobe' . && ! go version -m '${work}/vcsprobe' | grep -q 'vcs\.revision'"
+	fAssert "every build site shares one set of flags" \
+		bash -c "[[ \"\$(grep -c 'GO_BUILD_FLAGS\[@\]' '${root}/cicd/cicd.bash' '${root}/cicd/release.bash' | awk -F: '{t+=\$2} END{print t}')\" == 3 ]]"
+	## The compiler takes every core by default, in every build and in the eight-target
+	## release loop, which makes the machine unusable for the duration.
+	fAssert "no build step takes every core"  bash -c "grep -q 'BUILD_JOBS=' '${root}/cicd/config.bash'"
+	fAssertFail "no go build call is missing -p" \
+		bash -c "grep -hE '^[[:space:]]*(go build|.*&& *go build)' '${root}/cicd/cicd.bash' '${root}/cicd/release.bash' | grep -qv 'BUILD_JOBS'"
+	## --quick skips the fuzz and the gif, which are not the slow part; three cross-builds are.
+	fAssert "--quick narrows the cross-builds too" \
+		bash -c "grep -q 'quick).*DOGFOOD_TARGETS=' '${root}/cicd/cicd.bash'"
+	## With no third-party dependencies the standard library is the only library code there is.
+	fAssert "the pipeline checks the standard library for known problems" \
+		bash -c "grep -q 'govulncheck' '${root}/cicd/cicd.bash'"
+	## The profiling step. A sampling profile would be a flat wall here - this program is
+	## blocked on git for all of its wall clock - so what gets measured is how often it forks.
+	fAssert "a spawn-count step exists and gates" \
+		bash -c "[[ -x '${root}/cicd/utility/spawn-count.bash' ]] && grep -q 'SPAWN_COUNT_CMD' '${root}/cicd/cicd.bash'"
+	fAssert "and a kept-build script exists for bisecting against an older one" \
+		bash -c "[[ -x '${root}/cicd/utility/keep-build.bash' ]]"
+	## -q reached the publisher and nothing else, so an unattended run still printed every one
+	## of 900-odd check lines and buried every stage header.
+	local qHarness=""
+	for qHarness in test fuzz parity; do
+		fAssert "cicd/${qHarness}.bash accepts -q"  bash -c "grep -q -- '-q|--quiet) quiet=1' '${root}/cicd/${qHarness}.bash'"
+	done
+	fAssert "and the engine hands it on"  bash -c "grep -q 'harness_quiet' '${root}/cicd/cicd.bash'"
+	## The lint summary matched the suites' own check labels - several of which contain the
+	## words "warning" and "error", because that is what those checks are about.
+	local lrLog="${work}/lint-report"; mkdir -p "${lrLog}"
+	{
+		echo "  ok: and raises no shell error of its own"
+		echo "  ok: the offline warning names its branch"
+		echo "[ OK: gofmt + go vet clean ]"
+		echo "passed: 649, failed: 0"
+	} > "${lrLog}/run_20260819-000000.log"
+	fAssertOut "the lint summary calls a clean run clean"  'CLEAN' \
+		bash -c "'${root}/cicd/utility/lint-report.bash' --file '${lrLog}/run_20260819-000000.log'"
+	fAssertOut "and still reports a real finding"  'warning line' \
+		bash -c "printf 'file.sh:3:1: SC2086 warning: quote this\n' > '${lrLog}/run_20260819-000001.log'; '${root}/cicd/utility/lint-report.bash' --file '${lrLog}/run_20260819-000001.log'"
+	## The demo scenario is what the gif is rendered from, so a command renamed in the product
+	## and not there means the next render publishes the old name.
+	fAssertFail "the demo scenario names no renamed command" \
+		grep -qE '\{(prog|bin)\} (update|br land)' "${root}/cicd/utility/demo/demo-scenario.toml"
+	fAssertFail "and the demo notes point at no deleted engine" \
+		grep -q 'cicd-win' "${root}/cicd/utility/demo/script.txt"
+
 	## Hermeticity, the half that pinning the config FILES does not cover. Two inputs reach a
 	## harness from an ordinary working terminal and outrank everything it does set:
 	## GIT_CONFIG_COUNT/KEY_n beat every config file including a repo-local one, and an
@@ -2476,3 +2546,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260819 JC: The shipping installers, at the repo root. Their whole plan is behind the network now - the release lookup and SHA256SUMS both land before it prints - so these checks stop at the argument parse, the refusals, the Windows hand-off, and pins on what a live run reaches. The legacy block stays beside them, still aimed at frozen files. 582 -> 613.
 ##		- 20260819 JC: A block for the directive-review defects: the bare-repo and .git-directory gates, the fetch naming origin, prune's offline hold-back, br switch with two remotes carrying the branch, the contested-folder tie-break both ways, --any-identity's own line, a file-sourced token checked against the account it claims, and the mode bits. Eighteen of them fail against the build that preceded the fixes; the two mode-bit ones are Linux/macOS only.
 ##		- 20260819 JC: Installer coverage for the directive-review fixes: the pre-release fallback (a stub curl answering only the list endpoint), a whole install end to end with the network stood in for, and pins on the staging, the verification exit code and the Windows PowerShell 5.1 support. Ten of them fail against the installers that preceded the fixes.
+##		- 20260819 JC: Pipeline coverage for the directive review: the reproducible-build flags and a binary built with them, the core cap, --quick's cross-builds, govulncheck, the spawn-count and kept-build scripts, -q reaching the harnesses, the lint summary on a clean log, and the demo scenario's command names. Eleven fail against the pipeline that preceded them.
