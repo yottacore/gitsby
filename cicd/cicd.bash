@@ -155,7 +155,7 @@ fEcho_Clean "${APP_NAME} local CI/CD"
 fEcho_Clean
 fEcho_Clean "Repo root ...........: ${root}"
 if ((do_lint)); then
-	fEcho_Clean "Lint ................: gofmt + go vet + staticcheck, shellcheck on ${#shell_files[@]} pipeline script(s)  (+ markdownlint, py_compile if available)"
+	fEcho_Clean "Lint ................: gofmt + go vet + staticcheck, shellcheck on ${#shell_files[@]} shell file(s)  (+ markdownlint, py_compile, PSScriptAnalyzer if available)"
 else
 	fEcho_Clean "Lint ................: (skipped)"
 fi
@@ -260,8 +260,9 @@ else
 fi
 
 ## Stage 1: lint. gofmt/vet/staticcheck over the module, then bash -n and shellcheck
-## over the pipeline's own scripts (gating - never an auto-formatter: those are
-## hand-formatted on purpose). markdownlint and py_compile are probe-gated extras.
+## over the pipeline's own scripts and the installer (gating - never an auto-formatter:
+## those are hand-formatted on purpose). markdownlint, py_compile and PSScriptAnalyzer
+## are probe-gated extras.
 fSection "1/7  Lint"
 if ((! do_lint)); then
 	fEcho_Clean "lint skipped"
@@ -301,6 +302,22 @@ else
 	if [[ -n "${PY_LINT_FILES+x}" ]] && ((${#PY_LINT_FILES[@]})); then
 		python3 -m py_compile "${PY_LINT_FILES[@]}" && rm -rf -- "${root:?}/cicd/utility/__pycache__"
 		fEcho "OK: py_compile (${#PY_LINT_FILES[@]} file(s))"
+	fi
+	if [[ -n "${PS_LINT_GLOBS+x}" ]] && ((${#PS_LINT_GLOBS[@]})); then
+		ps_files=()
+		_ng=0; shopt -q nullglob && _ng=1; shopt -s nullglob
+		for g in "${PS_LINT_GLOBS[@]}"; do for f in $g; do [[ -f "$f" ]] && ps_files+=("$f"); done; done
+		((_ng)) || shopt -u nullglob
+		if ((${#ps_files[@]})); then
+			if pwsh -NoProfile -Command "Get-Command Invoke-ScriptAnalyzer" >/dev/null 2>&1; then
+				for f in "${ps_files[@]}"; do
+					pwsh -NoProfile -Command "\$r = Invoke-ScriptAnalyzer -Path '${f}' -Severity Error,Warning,Information; \$r | Format-Table -AutoSize | Out-String -Width 200 | Write-Host; exit @(\$r).Count" || fDie "PSScriptAnalyzer findings in ${f}"
+				done
+				fEcho "OK: PSScriptAnalyzer clean (${#ps_files[@]} file(s))"
+			else
+				fEcho "WARNING: PSScriptAnalyzer skipped (pwsh + PSScriptAnalyzer module not both installed)"
+			fi
+		fi
 	fi
 	## gofmt is the arbiter of format, vet gates, staticcheck gates when installed.
 	## Keyed off the module, not a glob - the tools walk it themselves. A missing
@@ -460,3 +477,4 @@ fEcho_Clean
 ##		- 2026-08-17 JC: Stage 2 builds the go port before the tests, so the suite's go leg runs against this tree; dev builds carry the git-describe version via -ldflags. A missing toolchain warns and lets the leg skip itself.
 ##		- 2026-08-17 JC: Stage 1 lints the go tree: gofmt (list mode, gating) and go vet, plus staticcheck when installed. Keyed off src-go existing rather than globs, so there is nothing to mirror in the Windows settings yet.
 ##		- 2026-08-18 JC: Go-specific, seven stages. The go toolchain is required rather than probed, the build gates, and the PowerShell lint block is gone with the scripts. Backwards compatibility became its own stage instead of a tail on the tests, and dogfood cross-builds every configured target rather than copying one script.
+##		- 2026-08-19 JC: PSScriptAnalyzer is back in stage 1, probe-gated as before. The installer for Windows is the one piece of PowerShell that still ships, and it was going out unlinted.

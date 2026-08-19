@@ -29,7 +29,7 @@ Design, requirements, and direction. The active bug and feature task list lives 
 
 - `reference/` - notes kept for lookup, not published as project docs.
 
-- Root - the four installers, the license, and the public docs.
+- Root - the two installers, the license, and the public docs.
 
 ### Logical code structure
 
@@ -227,6 +227,18 @@ The Bash and PowerShell files are ports of each other, and were kept in step for
 	- The PowerShell build is not a third leg. The two scripts were proven identical to each other at v2.1.0, so agreeing with one is agreeing with both, and a third leg would only add an interpreter to find.
 	- It also checks that `update` and `br land` still route where they always did, under both spellings. A permanent alias is a promise, and promises get checks.
 
+- The installers stayed - one Bash, one PowerShell - and now install a binary rather than a script.
+	- The PowerShell one was reconsidered, since what it installs needs no PowerShell. It was kept because PowerShell is the only shell every Windows machine already has: without it, installing on Windows would need Git Bash or WSL first, and nothing would put the install directory on PATH. It is the only piece of PowerShell that still ships, and PSScriptAnalyzer came back into the lint stage with it.
+	- `--arch` became real. It was accepted and ignored while one script ran everywhere; it now picks which published binary to fetch.
+	- `--ref` became `--tag`, because what it names is a published release rather than any git ref. Both old spellings still bind, like every other retired name.
+	- `--release dev` is gone rather than reinterpreted. It installed the tip of a branch, which a script in the tree allowed and a compiled product does not. Typing it says so and names the two routes that exist. A flag that quietly changed meaning would be worse than one that explains itself.
+	- Every route is a release asset, so every route is verified. The unverified branch of the plan no longer exists, and where the checksum can't be fetched or can't be computed the install stops. `SHA256SUMS` is fetched before the plan is printed, because it is what says whether this platform has a binary at all - and it names the ones that do when this one doesn't.
+	- The contributor setup scripts were dropped rather than ported. A Go checkout needs only Go, and the three commands that do it are in the README.
+
+- FreeBSD is a published platform.
+	- The installer had to answer for a platform with no asset either way. Adding one costs a line in the target list - the module is pure stdlib with no cgo, so every target cross-builds from one box - which is cheaper than documenting an exception.
+	- OpenBSD and NetBSD are still that exception. They fall through to the build-from-source message, which names the platforms the release did publish.
+
 - The version lives in the tag and nowhere else.
 	- The scripted builds each carried a `thisVersion` string by hand, and a release rewrote both. They had drifted before, which is why phase 1 compared them.
 	- A Go build takes its version from `-ldflags` at build time, so there is nothing in the tree that can disagree with the tag. Cutting a release now edits exactly one file: the changelog heading.
@@ -350,7 +362,7 @@ See also the release policy under Architecture, which covers how releases are pu
 
 ### Release policy
 
-GitHub's `releases/latest` returns the newest release not flagged as a pre-release, and both installers resolve through that redirect. Among the options - flag candidates as pre-releases and teach the installers a `--pre` switch, or publish everything as a full release - we decided on the latter. The semver suffix in the tag already tells a reader that `v2.0.0-rc1` is a candidate, and it keeps the documented one-liner installs working with no extra arguments. `--ref`/`-Ref` covers anyone who wants a specific tag or branch.
+GitHub's `releases/latest` returns the newest release not flagged as a pre-release, and both installers resolve through that redirect. Among the options - flag candidates as pre-releases and teach the installers a `--pre` switch, or publish everything as a full release - we decided on the latter. The semver suffix in the tag already tells a reader that `v2.0.0-rc1` is a candidate, and it keeps the documented one-liner installs working with no extra arguments. `--tag`/`-Tag` covers anyone who wants a specific release.
 
 ### Automating a release
 
@@ -363,8 +375,9 @@ The `release` command already does the git half well: merge `dev` into `main`, t
 - The shape, as three phases so a failure never leaves a half-cut release:
 	1. Prepare and verify, changing nothing outside the working tree. Resolve the version (argument, else the same bump `release` would choose), refuse if the changelog has no `vNEXT` section, refuse if either build's version string already matches, then run the full pipeline. Nothing here needs undoing.
 	2. Land. Write the version into both builds and the changelog heading, commit, PR, merge, then `gitsby release`. This is the only phase that pushes.
-	3. Publish and prove. Create the GitHub release with the changelog section as the body, upload the three assets, then verify: `releases/latest` resolves to the new tag, and both documented installer one-liners install it into a throwaway `HOME` and report the new version. A failure here is recoverable by hand and does not corrupt anything.
+	3. Publish and prove. Create the GitHub release with the changelog section as the body, upload the per-platform binaries and their `SHA256SUMS`, then verify: `releases/latest` resolves to the new tag, and this platform's published binary downloads, checksums and reports the new version. A failure here is recoverable by hand and does not corrupt anything.
 
 - Two guards worth building in, because both have already bitten: the history footers in `bin/gitsby` and `bin/gitsby.ps1` are checked for an entry newer than the last release tag, and the two builds' version strings are compared to each other before anything is pushed.
 
 - The verification in phase 3 is the part that pays for itself. Running both installer one-liners side by side is what caught the PowerShell checksum bug, which had silently skipped verification since the day it was added.
+	- It proves the contract rather than the installer: download, checksum, run. That is what an installer does at the end of its plan, and it is also what someone who skipped the installer does by hand - so the narrower check covers both. The installers' own behaviour is covered by the suite, which reaches everything up to the network.

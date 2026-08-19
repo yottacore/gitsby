@@ -5,8 +5,7 @@
 <!-- markdownlint-disable MD041 -- First line in a file should be a top-level heading -->
 <div align="center">
 
-[![!#/bin/bash](https://img.shields.io/badge/-%23!%2Fbin%2Fbash-1f425f.svg?logo=gnu-bash)](https://www.gnu.org/software/bash/)
-[![PowerShell](https://img.shields.io/badge/PowerShell-5391FE.svg?logo=powershell&logoColor=white)](https://learn.microsoft.com/powershell/)
+[![Go](https://img.shields.io/badge/Go-00ADD8.svg?logo=go&logoColor=white)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Latest release](https://img.shields.io/github/v/release/jim-collier/gitsby?include_prereleases&label=release)](https://github.com/jim-collier/gitsby/releases/latest)
 ![Lifecycle: Stable](https://img.shields.io/badge/Lifecycle-Stable-brightgreen)
@@ -105,8 +104,6 @@ There is deliberately no bare `commit`, and no bare `pull` that skips the commit
 
 Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--public`/`--private` (visibility for `repo create`; private by default), `--no-fetch` (skip the fetch and the pull), `--any-identity`, `--config FILE` (read accounts from somewhere other than the usual place), `-h`, `-v`.
 
-The PowerShell version takes the same options in PowerShell form: `-Message MSG`, `-Quiet`/`-y`, `-Public`/`-Private`, `-NoFetch`, `-AnyIdentity`, `-Config FILE`, `-Help`, `-Version`. Commands and arguments are spelled identically in both, with one exception: the PowerShell and Bash builds predate the `pullcom` and `br merge` names and take only the older `update` and `br land`.
-
 When the fetch finds the remote out of reach, the commands that mean something locally still work. `pullcom` commits, `br create` and `br switch` and `br merge` do their branch work, and each says what it skipped and that `sync` will publish it later. The commands that exist to publish - `sync`, `pr create`, `pr ok`, `release` - refuse up front and say what to do instead, rather than failing halfway through or reporting success having sent nothing.
 
 `repo create` and `repo connect` list the files they are about to publish before asking, since that is the one command that hands a whole directory over for the first time. The list is what `git add --all` will actually add, `.gitignore` and all - so a stray `.env` is visible while you can still say no.
@@ -142,17 +139,11 @@ Full detail, including SSH keys, token files, and how Gitsby checks that `gh` an
 
 - Gitsby works with any Git remote, GitHub and GitLab included. The exceptions go through [gh](https://github.com/cli/cli) and are therefore GitHub-only: the `pr` commands, `repo create`, and `repo connect` when you give it an `owner/name` instead of a URL.
 
-- What you need: Git, plus either bash 4.4 or newer (for `gitsby`) or PowerShell 7 or newer (for `gitsby.ps1`). The two builds are interchangeable - same commands, same results - so on a machine without bash, the PowerShell one is a complete substitute.
+- What you need: Git. Gitsby is one static binary with no runtime, no interpreter and nothing to install alongside it.
 
-	- Linux: bash is already new enough on anything current.
+	- Published for Linux, macOS, Windows and FreeBSD, on x86-64 and ARM64. Every one of those is a plain download - there is no build step and no dependency to satisfy first.
 
-	- macOS: stock `/bin/bash` is 3.2 from 2007. `brew install bash` or `sudo port install bash` puts a current one alongside it rather than over it, so the new one has to come first on your `PATH`.
-
-	- BSD ships no bash at all, but it's trivially easy to remedy: `pkg install bash` on FreeBSD, `pkg_add bash` on OpenBSD.
-
-	- Windows: use the PowerShell build, or the Bash one under WSL.
-
-	Gitsby tells you which of these applies if it can't run, rather than failing with a shell error.
+	- Anything else Go targets builds from source in one command; see [How to develop](#how-to-develop). The installer says so, and names the platforms that release did publish, rather than just failing to find one.
 
 - Your default branch can be called anything. Gitsby asks the remote what it is, and falls back to `main`, `master`, or `trunk` locally - or to your only branch, in a repo that has just one. If it genuinely can't tell, it says so and stops instead of guessing, and `git remote set-head origin --auto` is usually the one-line fix.
 
@@ -192,20 +183,24 @@ curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install.bas
 irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1 | iex
 ~~~
 
-You need Git, plus either bash 4.4+ or PowerShell 7+. There are no distribution packages yet - nothing on apt, dnf, Homebrew or winget - so these two scripts are the supported route.
+The first on Linux, macOS or FreeBSD; the second on Windows. Both need only Git on the machine afterwards, and PowerShell 7+ is what runs the second one, not what runs Gitsby. There are no distribution packages yet - nothing on apt, dnf, Homebrew or winget - so these two are the supported route.
 
-Either one shows you its plan and asks before touching anything. By default it takes the latest full release and checks the download against that release's published `SHA256SUMS`. Asking for a branch or tag instead pulls straight from the tree, which has no published checksum, and the plan says which of the two you are about to get.
+Either one works out which binary this machine needs, takes it from the latest release, and checks it against that release's published `SHA256SUMS` before installing it. There is no unverified route: where the checksum can't be fetched or can't be computed, the install stops instead of carrying on. And either one shows you its plan and asks before touching anything.
 
 It installs for you alone unless told otherwise:
 
-| Platform            | You (the default)                | Everyone
-| :--                 | :--                              | :--
-| Linux, macOS, BSD   | `~/.local/bin`                   | `/usr/local/bin`
-| Windows             | `%LOCALAPPDATA%\Programs\gitsby` | `%ProgramFiles%\gitsby`
+| Platform              | You (the default)                | Everyone
+| :--                   | :--                              | :--
+| Linux, macOS, FreeBSD | `~/.local/bin`                   | `/usr/local/bin`
+| Windows               | `%LOCALAPPDATA%\Programs\gitsby` | `%ProgramFiles%\gitsby`
 
 On Windows the PowerShell installer also puts that directory on your PATH, since nothing else there will, and says so in the plan. Open a new shell afterwards to pick it up.
 
-For anything else - installing for everyone, or taking the tip of `dev` rather than the latest release - download the installer and run it with `--help`.
+For anything else - installing for everyone, taking an older release, or naming the architecture yourself - download the installer and run it with `--help`.
+
+Or skip the installer entirely. Every release publishes one binary per platform alongside a `SHA256SUMS`, so downloading the one you want, checking it, and dropping it somewhere on your PATH does the same job. Uninstalling either way is deleting the file.
+
+Coming from 2.x, where Gitsby was a Bash script and a PowerShell one: install over the top and delete the old `gitsby` or `gitsby.ps1` by hand. Every 2.x command still works, and `update` and `br land` are still accepted alongside their current names, `pullcom` and `br merge`. The scripts themselves are retired - the v2.1.0 tag is where they live.
 
 ## How to develop
 

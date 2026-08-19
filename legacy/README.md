@@ -7,7 +7,7 @@ The Bash and PowerShell implementations of gitsby, frozen at **v2.1.0** (2026-08
 
 - `bin/gitsby` - the Bash build.
 - `bin/gitsby.ps1` - the PowerShell build.
-- `install.bash`, `install.ps1` - the v2.1.0 installers. They resolve a published release, so they still work as written; what they install is the frozen build, not the current one.
+- `install.bash`, `install.ps1` - the v2.1.0 installers. They look for a `gitsby` / `gitsby.ps1` release asset, which only releases up to v2.1.0 publish, so `--ref v2.1.0` is the way to reach the frozen build once a later release exists.
 - `install-dev.bash`, `install-dev.ps1` - contributor setup for the script era. Superseded; a Go checkout needs only Go.
 
 ## Why these are still here
