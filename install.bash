@@ -31,10 +31,12 @@ fSyntax(){
 	Downloads and installs gitsby (with confirmation).
 	Options:
 	  --target user|system   Install for you (~/.local/bin, default) or everyone (/usr/local/bin).
+	  -s, --system           The same thing as --target system.
 	  --arch amd64|arm64     Which binary to fetch. Detected from this machine by default.
 	  -t, --tag TAG          A published release tag (default: the latest release).
 	  -y, --yes              Don't ask for confirmation.
 	  -h, --help             This.
+	  --release              Took 'dev' or 'stable' when gitsby was a script; takes neither now.
 	EOF
 }
 
@@ -125,8 +127,25 @@ if [[ -z "${tag}" ]]; then
 	elif command -v wget >/dev/null 2>&1; then
 		tag="$(wget -q --max-redirect=0 -S -O /dev/null "https://github.com/${repo}/releases/latest" 2>&1 | sed -n 's|.*[Ll]ocation: .*/releases/tag/\([^[:space:]]*\).*|\1|p' | head -n 1 || true)"
 	fi
-	[[ -n "${tag}" ]] || tag="$(fFetch "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null | sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1 || true)"
-	[[ -n "${tag}" ]] || fErr "Couldn't determine the latest release. (GitHub may be rate-limiting; try again later.)"
+	## 'releases/latest' is defined as the newest release that is NOT a pre-release, so a repo
+	## whose newest publication is one has nothing there to redirect to. That is the case this
+	## fallback exists for - and it used to ask the same endpoint again over the API, which
+	## fails identically. The list endpoint comes back newest-first, so the first entry marked
+	## 'prerelease: false' is what the redirect would have found.
+	if [[ -z "${tag}" ]]; then
+		releaseList="$(fFetch "https://api.github.com/repos/${repo}/releases" 2>/dev/null || true)"
+		## Two BRE substitutions rather than one alternation: '\|' is a GNU extension and this
+		## has to run under the sed macOS ships.
+		releaseFacts="$(printf '%s\n' "${releaseList}" \
+			| sed -n -e 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/T \1/p' \
+			         -e 's/^[[:space:]]*"prerelease":[[:space:]]*\([a-z]*\).*/P \1/p' || true)"
+		tag="$(printf '%s\n' "${releaseFacts}" | awk '$1=="T"{t=$2} $1=="P"&&$2=="false"&&t!=""{print t; exit}' || true)"
+		if [[ -z "${tag}" ]]; then
+			tag="$(printf '%s\n' "${releaseFacts}" | awk '$1=="T"{print $2; exit}' || true)"
+			[[ -z "${tag}" ]] || fEcho "No full release yet; taking the newest pre-release, ${tag}."
+		fi
+	fi
+	[[ -n "${tag}" ]] || fErr "Couldn't work out the latest release of ${repo}. GitHub may be unreachable, or rate-limiting this address (60 requests an hour, unauthenticated). A specific release always works: --tag TAG."
 	## Scraped from a redirect header, so check it the same way as a typed one before it reaches a URL.
 	[[ "${tag}" =~ ^[A-Za-z0-9._/-]+$ ]] || fErr "The resolved release tag ('${tag}') isn't a plain git tag; aborting."
 fi
@@ -184,7 +203,8 @@ if [[ ${doYes} -eq 0 ]]; then
 fi
 
 tmpFile="$(mktemp "${TMPDIR:-/tmp}/gitsby-install.XXXXXX")"
-trap 'rm -f -- "${tmpFile:?}"' EXIT
+staged=""
+trap 'rm -f -- "${tmpFile:?}"; [[ -z "${staged}" ]] || rm -f -- "${staged:?}" 2>/dev/null || true' EXIT
 
 echo
 fEcho "Downloading ..."
@@ -201,15 +221,24 @@ got="$(fSha256 "${tmpFile}")"
 fEcho "Checksum verified."
 
 fEcho "Installing to ${destDir}/gitsby ..."
+## Staged beside the target and renamed over it, never written in place. Two things that
+## buys: an interrupt mid-copy leaves the staged file half-written rather than the real one,
+## and a rename replaces a copy that is currently running, where a write to it fails. The
+## staging file has to be in the destination directory - a rename is only atomic within one
+## filesystem, and the temp dir is usually on another.
+staged="${destDir}/.gitsby.install.$$"
 if [[ ${needSudo} -eq 1 ]]; then
 	## mkdir -p, not 'install -d': on a directory that already exists, install resets its mode,
 	## and this branch is reached whenever /usr/local/bin exists but isn't writable by us.
 	sudo mkdir -p "${destDir}"
-	sudo install -m 755 "${tmpFile}" "${destDir}/gitsby"
+	sudo install -m 755 "${tmpFile}" "${staged}"
+	sudo mv -f "${staged}" "${destDir}/gitsby"
 else
 	mkdir -p "${destDir}"
-	install -m 755 "${tmpFile}" "${destDir}/gitsby"
+	install -m 755 "${tmpFile}" "${staged}"
+	mv -f "${staged}" "${destDir}/gitsby"
 fi
+staged=""
 
 fEcho "Verifying ..."
 "${destDir}/gitsby" --version
@@ -229,3 +258,5 @@ echo
 ##		- 20260812 JC: The plan says whether the download will be checked, before it is agreed to. It was reported only afterwards, and on the --release dev path not at all - so the one route that installs an unverified file was the quiet one.
 ##		- 20260819 JC: Installs the binary for this platform. --arch is real (it picks the asset) and --target is unchanged; --release is gone, since a branch has no build behind it. Every route is a release asset now, so every route is verified and the unverified branch of the plan no longer exists. SHA256SUMS is fetched before the plan is printed, because it is what says whether this platform has a binary at all. Windows is sent to install.ps1, which is the one that also handles PATH.
 ##		- 20260819 JC: The release lookup no longer takes the run out with it. Under 'set -e' an assignment carries its command's status, so a curl that failed - or a wget that answered a declined redirect with exit 8, having already printed the very header it was sent for - ended the install silently, past the fallback and past the message that explains it.
+##		- 20260819 JC: The release fallback is one. Both routes asked releases/latest, which GitHub defines as the newest release that is NOT a pre-release - so on a repo whose newest publication is one, the fallback failed in exactly the way the primary had, and blamed rate limiting for it. The list endpoint answers instead, newest first, preferring a full release and saying so when only a candidate exists.
+##		- 20260819 JC: The binary is staged in the destination directory and renamed over the target. Written in place, an interrupt mid-copy left a truncated executable that had passed its checksum under another name, and re-installing over a copy that was running failed outright. --help lists every option the parser accepts.

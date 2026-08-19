@@ -1478,7 +1478,7 @@ GHEOF
 	## message, no fallback, and an exit code straight from curl or wget.
 	local lk="${work}/lookup"; mkdir -p "${lk}/bin"
 	printf '#!/usr/bin/env bash\nexit 6\n' > "${lk}/bin/curl"; chmod +x "${lk}/bin/curl"
-	fAssertOut  "go installer survives a failing curl"        'determine the latest release' \
+	fAssertOut  "go installer survives a failing curl"        'work out the latest release' \
 		bash -c "PATH='${lk}/bin:${PATH}' bash '${goInst}' -y"
 	## wget-only box: wget answers a declined redirect with exit 8 even though the header it was
 	## sent for is right there, so success looked like failure. curl has to be genuinely absent
@@ -1501,6 +1501,59 @@ GHEOF
 	fAssert     "go installer fetches the per-platform asset"  \
 		bash -c "grep -q 'asset=\"gitsby-' '${goInst}'"
 	fAssert     "go installer promises no unverified route"   bash -c "! grep -q 'NOT verify' '${goInst}'"
+
+	## 'releases/latest' is the newest release that is NOT a pre-release, so a repo whose newest
+	## publication is one has nothing there - and the fallback asked the same endpoint again.
+	## A stub curl answers the list endpoint and nothing else, which is exactly that repo.
+	local prl="${work}/prerel"; mkdir -p "${prl}/bin"
+	fStub "${prl}/bin/curl" <<-'CURLEOF'
+		#!/usr/bin/env bash
+		url=""
+		for a in "$@"; do case "$a" in https://*) url="$a" ;; esac; done
+		case "${url}" in
+			*/repos/*/releases) printf '[\n  {\n    "tag_name": "v9.9.9-rc1",\n    "prerelease": true\n  }\n]\n'; exit 0 ;;
+		esac
+		exit 22
+	CURLEOF
+	fAssertOut "go installer falls back to a pre-release when that is all there is"  'v9\.9\.9-rc1' \
+		bash -c "PATH='${prl}/bin:${PATH}' bash '${goInst}' -y 2>&1"
+	fAssertOut "and says that is what it did"  'No full release yet' \
+		bash -c "PATH='${prl}/bin:${PATH}' bash '${goInst}' -y 2>&1"
+
+	## A whole install, with the network stood in for: resolve, verify, place, run. What this
+	## proves is that the staged-and-renamed path works end to end; the pin below it is what
+	## discriminates, since writing in place would pass this too.
+	local ei="${work}/instend"; mkdir -p "${ei}/bin" "${ei}/home"
+	printf '#!/usr/bin/env bash\necho "gitsby v1.2.3 (stand-in)"\n' > "${ei}/asset"
+	local eiHash=""; eiHash="$( sha256sum "${ei}/asset" | cut -d' ' -f1 )"
+	: > "${ei}/SHA256SUMS"
+	local eiOs="" eiArch=""
+	for eiOs in linux darwin freebsd; do
+		for eiArch in amd64 arm64; do echo "${eiHash}  gitsby-${eiOs}-${eiArch}" >> "${ei}/SHA256SUMS"; done
+	done
+	fStub "${ei}/bin/curl" <<-'CURLEOF'
+		#!/usr/bin/env bash
+		url=""
+		for a in "$@"; do case "$a" in https://*) url="$a" ;; esac; done
+		case "${url}" in
+			*/releases/latest)            printf 'https://github.com/jim-collier/gitsby/releases/tag/v1.2.3'; exit 0 ;;
+			*/download/v1.2.3/SHA256SUMS) cat "${FAKE_SUMS}"; exit 0 ;;
+			*/download/v1.2.3/gitsby-*)   cat "${FAKE_ASSET}"; exit 0 ;;
+		esac
+		exit 22
+	CURLEOF
+	local eiEnv="HOME='${ei}/home' PATH='${ei}/bin:${PATH}' FAKE_SUMS='${ei}/SHA256SUMS' FAKE_ASSET='${ei}/asset'"
+	fAssertOut "go installer installs, verifies and runs the binary"  'gitsby v1\.2\.3 \(stand-in\)' \
+		bash -c "env ${eiEnv} bash '${goInst}' -y 2>&1"
+	fAssert    "and a re-install replaces it cleanly" \
+		bash -c "env ${eiEnv} bash '${goInst}' -y >/dev/null 2>&1 && '${ei}/home/.local/bin/gitsby' --version | grep -q 'stand-in'"
+	fAssert    "and leaves no staging file behind" \
+		bash -c "! compgen -G '${ei}/home/.local/bin/.gitsby.install.*' >/dev/null"
+	## Written straight to the final path, an interrupt mid-copy leaves a truncated executable
+	## where the real one should be, and a write over a copy that is running fails outright.
+	## Reproducing either needs a signal or a live process, so the staging is pinned here.
+	fAssert    "go installer stages beside the target rather than writing in place" \
+		bash -c "grep -q 'staged=\"\${destDir}/' '${goInst}' && grep -qE 'mv -f \"\\\$\{staged\}\"' '${goInst}'"
 	if command -v pwsh >/dev/null 2>&1; then
 		local goInstPs="${root}/install.ps1"
 		fAssertFail "go ps installer refuses a bad -Target"    pwsh -NoProfile -File "${goInstPs}" -Target bogus
@@ -1531,6 +1584,26 @@ GHEOF
 		## bakes %USERPROFILE%-style entries in as literals for good.
 		fAssert "go install.ps1 reads PATH raw before rewriting it" \
 			bash -c "grep -q 'DoNotExpandEnvironmentNames' '${goInstPs}'"
+		## The README documents --help for both installers, and this one had no such parameter -
+		## PowerShell's binder could only report it as one nobody had heard of.
+		fAssertOut "go ps installer answers --help"  'Usage: install\.ps1' \
+			bash -c "pwsh -NoProfile -File '${goInstPs}' --help 2>&1"
+		fAssertOut "and -Help too"                   'Usage: install\.ps1' \
+			bash -c "pwsh -NoProfile -File '${goInstPs}' -Help 2>&1"
+		## A native command's nonzero exit does not trip $ErrorActionPreference, and nothing read
+		## $LASTEXITCODE - so a binary that would not run at all was reported as installed.
+		## Reaching it needs a real install, so it is pinned in the source.
+		fAssert "go install.ps1 reads the verification's exit code" \
+			bash -c "grep -q 'LASTEXITCODE' '${goInstPs}'"
+		## Move-Item from the system temp is only atomic within one filesystem, and the temp dir
+		## and the install dir usually are not the same one.
+		fAssert "go install.ps1 stages in the destination directory" \
+			bash -c "grep -qF '.gitsby.install.' '${goInstPs}' && grep -q 'ChildPath (.\.gitsby' '${goInstPs}'"
+		## 5.1 is what a fresh Windows install has, and the documented one-liner has to work on it.
+		fAssert "go install.ps1 does not turn Windows PowerShell 5.1 away" \
+			bash -c "! grep -q 'needs PowerShell 7' '${goInstPs}'"
+		fAssert "and switches TLS 1.2 on for it"  bash -c "grep -q 'Tls12' '${goInstPs}'"
+		fAssert "and asks for basic parsing"      bash -c "grep -q 'UseBasicParsing' '${goInstPs}'"
 		## The documented one-liners are 'iex' and a scriptblock, neither of which is a script
 		## file - so -File coverage alone says nothing about them. Both must bind their
 		## parameters, refuse by throwing rather than exiting, and leave the calling session
@@ -2402,3 +2475,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260819 JC: Which folder a clone resolves its account from. The account block grew a bare origin to clone between its two trees, and the identity block one check that the surrounding repo's owner is never asked about - the step that leaves no trace in the output, only in which token the fetch went out with.
 ##		- 20260819 JC: The shipping installers, at the repo root. Their whole plan is behind the network now - the release lookup and SHA256SUMS both land before it prints - so these checks stop at the argument parse, the refusals, the Windows hand-off, and pins on what a live run reaches. The legacy block stays beside them, still aimed at frozen files. 582 -> 613.
 ##		- 20260819 JC: A block for the directive-review defects: the bare-repo and .git-directory gates, the fetch naming origin, prune's offline hold-back, br switch with two remotes carrying the branch, the contested-folder tie-break both ways, --any-identity's own line, a file-sourced token checked against the account it claims, and the mode bits. Eighteen of them fail against the build that preceded the fixes; the two mode-bit ones are Linux/macOS only.
+##		- 20260819 JC: Installer coverage for the directive-review fixes: the pre-release fallback (a stub curl answering only the list endpoint), a whole install end to end with the network stood in for, and pins on the staging, the verification exit code and the Windows PowerShell 5.1 support. Ten of them fail against the installers that preceded the fixes.

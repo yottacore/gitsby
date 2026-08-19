@@ -312,8 +312,12 @@ else
 			if pwsh -NoProfile -Command "Get-Command Invoke-ScriptAnalyzer" >/dev/null 2>&1; then
 				for f in "${ps_files[@]}"; do
 					pwsh -NoProfile -Command "\$r = Invoke-ScriptAnalyzer -Path '${f}' -Severity Error,Warning,Information; \$r | Format-Table -AutoSize | Out-String -Width 200 | Write-Host; exit @(\$r).Count" || fDie "PSScriptAnalyzer findings in ${f}"
+					## The installer has to run on Windows PowerShell 5.1 - that is what a fresh
+					## Windows box has, and the box most likely to be installing this for the first
+					## time. Nothing else here checks the syntax against it.
+					pwsh -NoProfile -Command "\$s = @{Rules=@{PSUseCompatibleSyntax=@{Enable=\$true;TargetVersions=@('5.1','7.0')}}}; \$r = Invoke-ScriptAnalyzer -Path '${f}' -IncludeRule PSUseCompatibleSyntax -Settings \$s; \$r | Format-Table -AutoSize | Out-String -Width 200 | Write-Host; exit @(\$r).Count" || fDie "PowerShell 5.1 syntax findings in ${f}"
 				done
-				fEcho "OK: PSScriptAnalyzer clean (${#ps_files[@]} file(s))"
+				fEcho "OK: PSScriptAnalyzer clean, 5.1-compatible (${#ps_files[@]} file(s))"
 			else
 				fEcho "WARNING: PSScriptAnalyzer skipped (pwsh + PSScriptAnalyzer module not both installed)"
 			fi
@@ -491,3 +495,4 @@ fEcho_Clean
 ##		- 2026-08-18 JC: Go-specific, seven stages. The go toolchain is required rather than probed, the build gates, and the PowerShell lint block is gone with the scripts. Backwards compatibility became its own stage instead of a tail on the tests, and dogfood cross-builds every configured target rather than copying one script.
 ##		- 2026-08-19 JC: PSScriptAnalyzer is back in stage 1, probe-gated as before. The installer for Windows is the one piece of PowerShell that still ships, and it was going out unlinted.
 ##		- 2026-08-19 JC: golangci-lint joins stage 1 and go test joins stage 2, both alongside what was already there. The unit tests cover the parsing and matching that previously needed a built binary and a throwaway repo to reach.
+##		- 2026-08-19 JC: PSScriptAnalyzer also checks the installer against Windows PowerShell 5.1 syntax. The installer supports 5.1 now, and nothing gated that.

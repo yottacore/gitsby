@@ -128,21 +128,6 @@ From a full review of the Go code, 20260818. gofmt, vet, staticcheck and the sui
 
 From a review against the standing directives, 20260819. Everything below was checked against the code, not inferred. gofmt, vet, staticcheck and the suite (617/0) are all clean, so none of this is tool-visible.
 
-- 🔘 Directive review 20260819 item 12: the installers cannot find a release that is only a prerelease.
-	- Both the main route and the fallback ask the same endpoint, and that endpoint skips prereleases. So there is no fallback.
-	- The failure message blames rate limiting, which sends anyone debugging it the wrong way.
-	- Latent today, live the first time a version ships as a prerelease.
-
-- 🔘 Directive review 20260819 item 13: `install.ps1` has no `--help`, and the README tells people to use it.
-
-- 🔘 Directive review 20260819 item 14: `install.ps1` can report success over a binary that failed to run.
-	- The verification step's exit code is never read, and a native command's failure does not stop the script on its own.
-
-- 🔘 Directive review 20260819 item 15: both installers write straight to the final path.
-	- An interrupt mid-copy leaves a truncated executable in place that passed its checksum under a different name.
-	- Re-installing over a copy that is currently running fails on both platforms.
-	- Staging in the destination directory and renaming over the target fixes both at once.
-
 - 🔘 Directive review 20260819 item 17: the lint summary reports warnings on a perfectly clean run.
 	- Its filter matches the test harness's own check labels, so a green pipeline reports seven warnings that do not exist.
 	- A warning that fires when nothing is wrong is worse than no warning.
@@ -235,10 +220,6 @@ Same review, 20260819. These are shape and process rather than defects.
 	- None of them accepts an option at all, so a quiet run still prints every one of 617 check lines.
 
 - 🔘 Directive review 20260819 item 32: `--target=` and `--release=` are not accepted with an equals sign.
-
-- 🔘 Directive review 20260819 item 33: decide whether `install.ps1` should run on Windows PowerShell 5.1.
-	- It refuses below 7 on purpose, and the reason is sound. But 5.1 is what a fresh Windows install actually has, so the documented one-liner fails there.
-	- The syntax is already 5.1-clean. Lifting it needs a fallback for three variables that do not exist in 5.1, one parameter spelled differently, plus forcing TLS and basic parsing.
 
 - 🔘 Directive review 20260819 item 34: batching the branch deletes in `br prune` is the largest speed win available, and it changes the output.
 	- One push per branch, each forking three processes. Eight branches cost 24 of the command's 81.
@@ -727,6 +708,32 @@ Same review, 20260819. These are shape and process rather than defects.
 	- Fixed: all three, in the moved text.
 
 #### Done - Directive review 20260819
+
+The installers, 12-15 and 33. Ten new checks, each verified against the installers that preceded them.
+
+- ✅ Directive review 20260819 item 12: the installers cannot find a release that is only a prerelease.
+	- Both the main route and the fallback ask the same endpoint, and that endpoint skips prereleases. So there is no fallback.
+	- The failure message blames rate limiting, which sends anyone debugging it the wrong way.
+	- Latent today, live the first time a version ships as a prerelease.
+	- Fixed: the fallback lists the releases instead, newest first, taking the newest full one and saying so when only a candidate exists. The failure message names rate limiting as one possibility among several, and points at `--tag`.
+
+- ✅ Directive review 20260819 item 13: `install.ps1` has no `--help`, and the README tells people to use it.
+	- Fixed: `-Help`, plus `--help` recognized before the binder sees it - which is what the README documents and what anyone types.
+
+- ✅ Directive review 20260819 item 14: `install.ps1` can report success over a binary that failed to run.
+	- The verification step's exit code is never read, and a native command's failure does not stop the script on its own.
+	- Fixed: `$LASTEXITCODE` is read, and a binary that will not run is reported as that rather than as a finished install.
+
+- ✅ Directive review 20260819 item 15: both installers write straight to the final path.
+	- An interrupt mid-copy leaves a truncated executable in place that passed its checksum under a different name.
+	- Re-installing over a copy that is currently running fails on both platforms.
+	- Staging in the destination directory and renaming over the target fixes both at once.
+	- Fixed: both stage in the destination directory and rename over the target. On Windows the incumbent is renamed aside first, since Windows will not overwrite a running executable but will rename one.
+
+- ✅ Directive review 20260819 item 33: decide whether `install.ps1` should run on Windows PowerShell 5.1.
+	- It refuses below 7 on purpose, and the reason is sound. But 5.1 is what a fresh Windows install actually has, so the documented one-liner fails there.
+	- The syntax is already 5.1-clean. Lifting it needs a fallback for three variables that do not exist in 5.1, one parameter spelled differently, plus forcing TLS and basic parsing.
+	- Decided: yes. 5.1 is the machine most likely to be installing this for the first time. The three variables get a fallback, TLS 1.2 is switched on, every request asks for basic parsing, and the byte read is spelled each version's way. `PSUseCompatibleSyntax` against 5.1 now gates in the pipeline.
 
 The defects, 1-20. Eighteen new suite checks, each verified against the build that preceded the fix; the suite went 617 -> 636.
 
