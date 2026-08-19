@@ -2276,6 +2276,51 @@ GHEOF
 		grep -qE '\{(prog|bin)\} (update|br land)' "${root}/cicd/utility/demo/demo-scenario.toml"
 	fAssertFail "and the demo notes point at no deleted engine" \
 		grep -q 'cicd-win' "${root}/cicd/utility/demo/script.txt"
+	## Two things the demo started putting on camera once the binary grew the checks that
+	## noticed them: a warning about its own fixture's file permissions, and - by way of the
+	## real gh - the name of whoever is logged in on the machine doing the rendering.
+	fAssert "the demo's fake tokens are not left world-readable" \
+		grep -q 'chmod 600' "${root}/cicd/utility/demo/demo-repo.bash"
+	fAssert "and the demo answers gh itself, so no real login reaches the frame" \
+		bash -c "grep -q 'bin/gh' '${root}/cicd/utility/demo/demo-repo.bash' && grep -q \"export PATH='\\\${root}/bin'\" '${root}/cicd/utility/demo/demo-repo.bash'"
+
+	## The Windows resource. Built here rather than pinned in the source, because the failure
+	## mode is the linker quietly ignoring a .syso whose name does not match the target: the
+	## file is present, the build succeeds, and the .exe comes out bare.
+	local winExe=""
+	for winExe in amd64 arm64; do
+		fAssert "windows/${winExe} builds with the resource beside it" \
+			bash -c "cd '${root}/src-go' && CGO_ENABLED=0 GOOS=windows GOARCH=${winExe} go build -trimpath -buildvcs=false -o '${work}/winres-${winExe}.exe' ."
+		fAssert "and the .exe carries version details" \
+			bash -c "grep -aqP 'V\x00S\x00_\x00V\x00E\x00R\x00S\x00I\x00O\x00N\x00_\x00I\x00N\x00F\x00O\x00' '${work}/winres-${winExe}.exe'"
+		fAssert "and an icon" \
+			bash -c "LC_ALL=C grep -aq \$'\x89PNG' '${work}/winres-${winExe}.exe'"
+	done
+	## vcsprobe above is this same tree built for the host. A resource named without the
+	## GOOS_GOARCH suffix would link into every platform, which is a bigger mistake than
+	## shipping none at all.
+	fAssertFail "nothing but windows picks the resource up" \
+		bash -c "grep -aqP 'V\x00S\x00_\x00V\x00E\x00R\x00S\x00I\x00O\x00N\x00_\x00I\x00N\x00F\x00O\x00' '${work}/vcsprobe'"
+	## Committed rather than generated at build time: it is linked into bytes we publish
+	## checksums for, so rebuilding a release from its tag must not need a tool installed.
+	local winArch=""
+	for winArch in amd64 arm64; do
+		fAssert "the ${winArch} resource is a file in the tree" \
+			bash -c "[[ -s '${root}/src-go/resource_windows_${winArch}.syso' ]]"
+	done
+	fAssertFail "and the two are not one file copied twice" \
+		cmp -s "${root}/src-go/resource_windows_amd64.syso" "${root}/src-go/resource_windows_arm64.syso"
+	## Six sizes, 16 through 256. Windows synthesizes the rest, badly.
+	fAssert "the icon holds the six sizes it is generated with" \
+		bash -c "[[ \"\$(head -c 6 '${root}/assets/gitsby.ico' | od -An -tu1 | tr -s ' ')\" == ' 0 0 1 0 6 0' ]]"
+	fAssert "the pipeline checks the resource against the newest tag" \
+		bash -c "grep -q 'WINRES_CMD' '${root}/cicd/cicd.bash' && grep -q 'WINRES_CMD' '${root}/cicd/config.bash'"
+	## Phase 1 builds the assets, phase 2 commits the bump - so the stamp has to happen twice,
+	## and phase 1 has to undo its half or it stops being the phase that changes nothing.
+	fAssert "a release stamps the resource with the version it cuts" \
+		bash -c "[[ \"\$(grep -c 'winres\[@\]' '${root}/cicd/release.bash')\" == 3 ]]"
+	fAssert "and phase 1 puts it back afterwards" \
+		bash -c "grep -q 'checkout -q -- \"\${GO_MODULE_DIR}\"/\*.syso' '${root}/cicd/release.bash'"
 
 	## Hermeticity, the half that pinning the config FILES does not cover. Two inputs reach a
 	## harness from an ordinary working terminal and outrank everything it does set:

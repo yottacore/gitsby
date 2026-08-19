@@ -82,6 +82,12 @@ PS_LINT_GLOBS=(
 	"install.ps1"
 )
 
+## Stage 1: the committed Windows resource (icon + version details), checked rather than built.
+## It is linked into the .exe files we publish checksums for, so it lives in the tree the same
+## way the source does - see the script's header for why it can't be generated at build time.
+## Probe-gated on goversioninfo; release.bash regenerates it with the version bump.
+WINRES_CMD=(cicd/utility/gen-winres.bash)
+
 ## Stage 2: build + regression tests. The suite runs against the compiled binary and gates.
 TEST_CMD=(cicd/test.bash)
 
@@ -182,4 +188,5 @@ PUBLISH_AUTO_MESSAGE=""
 ##	History:
 ##		- 2026-07-22 JC: Created.
 ##		- 2026-08-18 JC: Go-specific. The scripts moved to legacy/ and left the lint globs with them; dogfood builds three targets instead of copying one script; parity became a stage, comparing the Go build against the frozen one.
+##		- 2026-08-19 JC: WINRES_CMD: the Windows resource check joins stage 1, and release.bash regenerates the resource with the version bump.
 ##		- 2026-08-19 JC: The installer is back at the repo root, so its two files are linted again - the root install.bash under shellcheck, install.ps1 under a restored PSScriptAnalyzer glob. FreeBSD joins the release matrix, since it cross-builds for free and the installer would otherwise have nothing to offer a BSD.

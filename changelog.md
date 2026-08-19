@@ -30,6 +30,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `identity` shows who commands in this folder act as - the account, the ssh key and who it authenticates as, the commit author, and gh's login - without the branch and working-tree state `status` prints around it. It answers outside a repository too, which is where the question comes up before a `repo clone` or `repo create`.
 
+- The Windows binaries carry an icon and version details. Explorer shows the gitsby logo instead of the blank default, and Properties reads a version, description, copyright and file name off the file itself.
+
 ### Changed
 
 - `update` is now `pullcom`, which names both halves in the order they run rather than reading like it updates gitsby itself. It also answers to `update`, `pull`, `pullc`, `pullco`, `pullcomm` and `pullcommit`. `sync` is unchanged; the pair was the unclear part, not either word alone.
