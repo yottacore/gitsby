@@ -10,6 +10,12 @@
 
 package main
 
+// Where the code that becomes a release asset lives. The release builds every
+// binary from here, so a hotfix that touches it is the kind the warning below is
+// about; documentation is not. It was 'bin/' when the deliverable was a script,
+// and went on watching a folder that no longer existed.
+const shippedCodeDir = "src-go/"
+
 // checkNewBranchName vets the name given to br create/hotfix. Git owns the rules
 // for what a ref may be called, so ask git rather than keep a second copy of them.
 func checkNewBranchName(name string) error {
@@ -34,7 +40,7 @@ func (a *app) cmdNewBranch(newBranch, baseBranch string) error {
 		// Don't commit WIP to main/dev; a dirty tree survives checkout -b, so carry it
 		// to the new branch.
 		if a.currentBranch() != baseBranch {
-			if err := a.step("git", "checkout", baseBranch); err != nil {
+			if err := a.checkout(baseBranch); err != nil {
 				return err
 			}
 		}
@@ -45,7 +51,7 @@ func (a *app) cmdNewBranch(newBranch, baseBranch string) error {
 		if err := a.cmdPush(); err != nil { // park current work safely first
 			return err
 		}
-		if err := a.step("git", "checkout", baseBranch); err != nil {
+		if err := a.checkout(baseBranch); err != nil {
 			return err
 		}
 		if err := a.pullIfOnline(); err != nil {
@@ -71,8 +77,7 @@ func (a *app) cmdGoBranch(targetBranch string) error {
 	if err := a.cmdPush(); err != nil { // park current work safely first
 		return err
 	}
-	// checkout auto-creates a tracking branch if it only exists on origin.
-	if err := a.step("git", "checkout", targetBranch); err != nil {
+	if err := a.checkout(targetBranch); err != nil {
 		return err
 	}
 	return a.pullIfOnline()
@@ -103,7 +108,7 @@ func (a *app) cmdMerge() error {
 	if wasHotfix {
 		a.warnHotfixTouchedCode(workBranch, targetBranch)
 	}
-	if err := a.step("git", "checkout", targetBranch); err != nil {
+	if err := a.checkout(targetBranch); err != nil {
 		return err
 	}
 	if err := a.pullIfOnline(); err != nil {
@@ -195,7 +200,7 @@ func (a *app) backMergeToDev() error {
 	}
 	mergeRef := a.backMergeRef()
 	a.out.clean("")
-	if err := a.step("git", "checkout", devBranch); err != nil {
+	if err := a.checkout(devBranch); err != nil {
 		return err
 	}
 	if err := a.pullIfOnline(); err != nil {
@@ -218,7 +223,7 @@ func (a *app) backMergeToDev() error {
 // branch carrying something no tag contains, so the latest release's assets stop
 // matching it. Documentation does not.
 func (a *app) warnHotfixTouchedCode(workBranch, targetBranch string) {
-	if runOut("git", "diff", "--name-only", targetBranch+"..."+workBranch, "--", "bin/") == "" {
+	if runOut("git", "diff", "--name-only", targetBranch+"..."+workBranch, "--", shippedCodeDir) == "" {
 		return
 	}
 	a.out.clean("")

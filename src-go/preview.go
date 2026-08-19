@@ -45,12 +45,12 @@ func (a *app) preview(what string) {
 		}
 		if a.currentBranch() != target {
 			a.preview("sync")
-			a.out.clean(pad + "git checkout " + target)
+			a.out.clean(pad + a.checkoutDisp(target))
 		}
 		a.out.clean(pad + "git pull --ff-only *")
 	case "br-merge":
 		a.preview("sync")
-		a.out.clean(pad + "git checkout " + a.branchTarget(""))
+		a.out.clean(pad + a.checkoutDisp(a.branchTarget("")))
 		a.out.clean(pad + "git pull --ff-only *")
 		a.out.clean(pad + "git merge --no-ff " + a.currentBranch())
 		a.out.clean(pad + "git push *")
@@ -107,11 +107,11 @@ func (a *app) preview(what string) {
 // base.
 func (a *app) previewNewBranch(baseBranch string) {
 	if a.isProtectedBranch("") {
-		a.out.clean(pad + "git checkout " + baseBranch + " *")
+		a.out.clean(pad + a.checkoutDisp(baseBranch) + " *")
 		a.out.clean(pad + "git pull --ff-only --autostash *")
 	} else {
 		a.preview("sync")
-		a.out.clean(pad + "git checkout " + baseBranch + " *")
+		a.out.clean(pad + a.checkoutDisp(baseBranch) + " *")
 		a.out.clean(pad + "git pull --ff-only *")
 	}
 	a.out.clean(pad + "git checkout -b " + a.cmd.arg)
@@ -121,7 +121,7 @@ func (a *app) previewNewBranch(baseBranch string) {
 // previewBackMerge is the tail every hotfix path shares: dev has to receive what
 // landed on the default branch.
 func (a *app) previewBackMerge() {
-	a.out.clean(pad + "git checkout " + a.mergeTarget())
+	a.out.clean(pad + a.checkoutDisp(a.mergeTarget()))
 	a.out.clean(pad + "git merge " + a.backMergeRef())
 	a.out.clean(pad + "git push *")
 }
@@ -134,7 +134,7 @@ func (a *app) previewPr() {
 	}
 	a.out.clean(pad + "gh pr review " + a.pr.num + " --approve *")
 	a.out.clean(pad + "gh pr merge " + a.pr.num + " --merge --delete-branch")
-	a.out.clean(pad + "git checkout " + a.branchTarget(a.pr.headBranch) + " *")
+	a.out.clean(pad + a.checkoutDisp(a.branchTarget(a.pr.headBranch)) + " *")
 	a.out.clean(pad + "git pull --ff-only *")
 	if a.isHotfixBranch(a.pr.headBranch) {
 		a.previewBackMerge()
@@ -145,10 +145,10 @@ func (a *app) previewRelease() {
 	a.preview("sync")
 	hasDev := a.mergeTarget() == "dev"
 	if hasDev {
-		a.out.clean(pad + "git checkout dev *")
+		a.out.clean(pad + a.checkoutDisp("dev") + " *")
 		a.out.clean(pad + "git pull --ff-only *")
 	}
-	a.out.clean(pad + "git checkout " + a.defaultBranch() + " *")
+	a.out.clean(pad + a.checkoutDisp(a.defaultBranch()) + " *")
 	a.out.clean(pad + "git pull --ff-only *")
 	if hasDev {
 		a.out.clean(pad + "git merge --no-ff dev")
@@ -157,9 +157,9 @@ func (a *app) previewRelease() {
 	a.out.clean(pad + "git push *")
 	a.out.clean(pad + "git push origin " + a.rel.tag + " *")
 	if hasDev {
-		a.out.clean(pad + "git checkout dev *")
+		a.out.clean(pad + a.checkoutDisp("dev") + " *")
 		a.out.clean(pad + "git merge --ff-only " + a.defaultBranch() + " *")
 		a.out.clean(pad + "git push *")
 	}
-	a.out.clean(pad + "git checkout " + a.currentBranch() + " *")
+	a.out.clean(pad + a.checkoutDisp(a.currentBranch()) + " *")
 }

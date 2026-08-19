@@ -69,6 +69,24 @@ func refuseOptionShapedRefs(names ...string) error {
 	return nil
 }
 
+// checkoutArgs is how a branch actually gets checked out. git's DWIM creates a
+// tracking branch from a remote copy only when exactly one remote has it; with two
+// it refuses to guess, and the up-front existence check never notices because it
+// only ever looks at origin. So name origin, and let the plan say the same thing
+// the command will run.
+func (a *app) checkoutArgs(branch string) []string {
+	if branch != "" && !branchExistsLocal(branch) && branchExistsRemote(branch) {
+		return []string{"checkout", "-b", branch, "--track", "origin/" + branch}
+	}
+	return []string{"checkout", branch}
+}
+
+func (a *app) checkoutDisp(branch string) string {
+	return "git " + strings.Join(a.checkoutArgs(branch), " ")
+}
+
+func (a *app) checkout(branch string) error { return a.step("git", a.checkoutArgs(branch)...) }
+
 // isProtectedBranch: main/master/dev - branches WIP should never be
 // auto-committed to, or deleted. Empty means the current one.
 func (a *app) isProtectedBranch(branch string) bool {

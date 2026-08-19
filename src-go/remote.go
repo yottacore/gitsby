@@ -137,24 +137,34 @@ var sshGreetingRE = regexp.MustCompile(`^Hi ([A-Za-z0-9_.:/-]+)!`)
 // remotes, no agent, or anything else unresolvable - and a deploy key answers
 // with a repo name, which simply won't match any login. Unknown is not wrong.
 func (a *app) sshLogin(url string) string {
-	return a.gh.sshLogin.get(func() string {
-		target := sshConnectTarget(url)
-		if target == "" || !inPath("ssh") {
-			return "?"
-		}
-		sshCmd := strings.Fields(a.gitSSHCommand())
-		args := append(sshCmd[1:], "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", "--", target)
-		// Both streams: ssh writes host-key and missing-identity warnings ahead of
-		// the greeting, so it is not reliably the first line - anchoring to the
-		// whole output answered '?' for exactly the multi-key setups this exists for.
-		out, _ := exec.Command(sshCmd[0], args...).CombinedOutput()
-		for _, line := range strings.Split(string(out), "\n") {
-			if m := sshGreetingRE.FindStringSubmatch(line); m != nil {
-				return m[1]
-			}
-		}
+	if who, asked := a.gh.sshLogins[url]; asked {
+		return who
+	}
+	who := probeSSHLogin(url, a.gitSSHCommand())
+	if a.gh.sshLogins == nil {
+		a.gh.sshLogins = map[string]string{}
+	}
+	a.gh.sshLogins[url] = who
+	return who
+}
+
+func probeSSHLogin(url, sshCommand string) string {
+	target := sshConnectTarget(url)
+	if target == "" || !inPath("ssh") {
 		return "?"
-	})
+	}
+	sshCmd := strings.Fields(sshCommand)
+	args := append(sshCmd[1:], "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", "--", target)
+	// Both streams: ssh writes host-key and missing-identity warnings ahead of the
+	// greeting, so it is not reliably the first line - anchoring to the whole output
+	// answered '?' for exactly the multi-key setups this exists for.
+	out, _ := exec.Command(sshCmd[0], args...).CombinedOutput()
+	for _, line := range strings.Split(string(out), "\n") {
+		if m := sshGreetingRE.FindStringSubmatch(line); m != nil {
+			return m[1]
+		}
+	}
+	return "?"
 }
 
 // fetchRemote fetches with --prune (stale origin/* refs would fool the existence
@@ -169,7 +179,9 @@ func (a *app) fetchRemote() {
 	if os.Getenv("GIT_SSH_COMMAND") == "" {
 		env = append(env, "GIT_SSH_COMMAND="+a.gitSSHCommand()+" -o ConnectTimeout=3")
 	}
-	fetch := exec.Command("git", "fetch", "--quiet", "--prune")
+	// Named, not implied: a bare 'git fetch' follows the current branch's own
+	// tracking remote, and every existence check afterwards reads origin.
+	fetch := exec.Command("git", "fetch", "--quiet", "--prune", "origin")
 	fetch.Env = env
 	if fetch.Run() != nil {
 		a.gh.reachable = false
@@ -248,5 +260,6 @@ func (a *app) convertibleToHTTPS() bool {
 	if sshTarget(url) == "" || remoteTarget(url) == "" {
 		return false
 	}
-	return a.accountToken() != ""
+	token, _, _ := a.accountToken()
+	return token != ""
 }

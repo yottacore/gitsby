@@ -169,7 +169,7 @@ func (a *app) cmdPrAccept() error {
 	// just went away, pulling it can only fail - land on the merge target instead.
 	a.fetchRemote()
 	if !a.hasUpstream() {
-		if err := a.step("git", "checkout", targetBranch); err != nil {
+		if err := a.checkout(targetBranch); err != nil {
 			return err
 		}
 	}

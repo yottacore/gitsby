@@ -78,26 +78,31 @@ func (c *config) includeDir() string {
 	return dir + "/accounts"
 }
 
+// git's exit status for "the key you asked me to unset isn't there".
+const gitConfigNothingToUnset = 5
+
 type includeRule struct{ cond, target string }
 
 // includeCandidate is one folder rule on its way to becoming an includeIf: how
-// specific it is, the pattern git will match on, and the account it selects.
+// specific it is, where it was declared, the pattern git will match on, and the
+// account it selects.
 type includeCandidate struct {
 	weight  int // path length, or folder-name count
+	order   int // position in the config file, which is how gitsby breaks a tie
 	pattern string
 	account string
 }
 
-// sortIncludes orders candidates the way the two matchers have to agree: git
-// takes the LAST match and gitsby the most specific, so least specific comes
-// first. The pattern breaks a tie in weight, and the account name settles an
-// exact one.
+// sortIncludes orders candidates the way the two matchers have to agree: git takes
+// the LAST rule that matches and gitsby the most specific, so least specific comes
+// first. Equal specificity is the case that used to disagree - gitsby keeps the
+// FIRST rule declared, so that one has to be written LAST for git to keep it too,
+// which is why the order runs backwards here.
 func sortIncludes(list []includeCandidate) {
 	slices.SortFunc(list, func(x, y includeCandidate) int {
 		return cmp.Or(
 			cmp.Compare(x.weight, y.weight),
-			cmp.Compare(x.pattern, y.pattern),
-			cmp.Compare(x.account, y.account),
+			cmp.Compare(y.order, x.order),
 		)
 	})
 }
@@ -114,16 +119,22 @@ func (c *config) accountApplyPlan() []includeRule {
 	if dir == "" {
 		return nil
 	}
+	// Straight off the rule lists, so the index IS the declaration order that
+	// accountForDir breaks its own ties by.
 	var paths, segments []includeCandidate
-	for _, name := range c.accountNames() {
-		for _, folder := range c.foldersOf(name) {
-			// The trailing slash is what makes git apply it to everything below the
-			// folder too.
-			paths = append(paths, includeCandidate{len(folder), folder + "/", name})
+	for i, r := range c.paths {
+		if r.match == "" {
+			continue
 		}
-		for _, folder := range c.segmentsOf(name) {
-			segments = append(segments, includeCandidate{strings.Count(folder, "/") + 1, "**/" + folder + "/**", name})
+		// The trailing slash is what makes git apply it to everything below the
+		// folder too.
+		paths = append(paths, includeCandidate{len(r.match), i, r.match + "/", r.acct})
+	}
+	for i, r := range c.segments {
+		if r.match == "" {
+			continue
 		}
+		segments = append(segments, includeCandidate{strings.Count(r.match, "/") + 1, i, "**/" + r.match + "/**", r.acct})
 	}
 	if len(paths)+len(segments) == 0 {
 		return nil
@@ -171,7 +182,12 @@ func (c *config) accountManagedIncludes() []string {
 		if !strings.HasPrefix(canonPath(value), canonDir+"/") {
 			continue
 		}
-		keys = append(keys, key)
+		// --unset-all takes every entry under a key at once, so a key listed twice
+		// (two accounts claiming one folder produce the same one) is removed by the
+		// first pass and absent for the second.
+		if !slices.Contains(keys, key) {
+			keys = append(keys, key)
+		}
 	}
 	return keys
 }
@@ -207,6 +223,36 @@ func (a *app) cmdAccountList() {
 	for _, name := range names {
 		a.showAccount(name, name == hereAccount)
 	}
+	for _, contested := range a.cfg.contestedRules() {
+		a.out.clean("")
+		a.out.clean("WARNING: more than one account claims " + contested + " - only the first is used.")
+	}
+}
+
+// contestedRules names the folder rules more than one account claims. There is no
+// right answer to one: gitsby keeps the first declared, git keeps the last written,
+// and 'account apply' can only make them agree about which mistake to make.
+func (c *config) contestedRules() []string {
+	var out []string
+	for _, rules := range [][]acctRule{c.paths, c.segments} {
+		byMatch := map[string][]string{}
+		var order []string
+		for _, r := range rules {
+			if r.match == "" || slices.Contains(byMatch[r.match], r.acct) {
+				continue
+			}
+			if len(byMatch[r.match]) == 0 {
+				order = append(order, r.match)
+			}
+			byMatch[r.match] = append(byMatch[r.match], r.acct)
+		}
+		for _, match := range order {
+			if len(byMatch[match]) > 1 {
+				out = append(out, match+": "+strings.Join(byMatch[match], ", "))
+			}
+		}
+	}
+	return out
 }
 
 func (a *app) showAccount(name string, isHere bool) {
@@ -278,7 +324,9 @@ func (a *app) cmdAccountApply() error {
 	if pathExists(dir) && !isDir(dir) {
 		return usagef("'%s' is where the account fragments go, and it isn't a directory. Move or remove it, then re-run.", dir)
 	}
-	if err := os.MkdirAll(dir, 0o777); err != nil {
+	// 0700, not 0777-and-hope-for-umask: these fragments name your accounts and
+	// point at your token file, and they sit under your own config directory.
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		parent := dir
 		if i := strings.LastIndex(parent, "/"); i >= 0 {
 			parent = parent[:i]
@@ -295,7 +343,10 @@ func (a *app) cmdAccountApply() error {
 	// to remove one is real - and leaving it means the old rule keeps applying
 	// beside the new one.
 	for _, key := range a.cfg.accountManagedIncludes() {
-		if !a.inheritOK("git", "config", "--global", "--unset-all", key) {
+		// git exits 5 for "there was nothing to remove", which is the end state this
+		// loop is asking for. Only a real failure is one - reading 5 as one left the
+		// config with no rules at all and the command reporting an error.
+		if rc := a.inheritRC("git", "config", "--global", "--unset-all", key); rc != 0 && rc != gitConfigNothingToUnset {
 			return usagef("Couldn't remove the old rule '%s' from your global git config; nothing further was applied.", key)
 		}
 	}
@@ -315,7 +366,7 @@ func (a *app) cmdAccountApply() error {
 // happened.
 func (a *app) writeAccountFragment(dir, name string) error {
 	fragment := dir + "/" + name + ".gitconfig"
-	if err := os.WriteFile(fragment, nil, 0o644); err != nil {
+	if err := os.WriteFile(fragment, nil, 0o600); err != nil {
 		return usagef("Couldn't write '%s'. Check permissions on '%s'.", fragment, dir)
 	}
 	write := func(key, value string) error {

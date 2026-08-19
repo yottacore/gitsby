@@ -180,21 +180,51 @@ func readTokenFile(file string) string {
 	}, string(data))
 }
 
-// accountToken finds a token for the account we resolved. gh's own store first -
-// it is the one that stays current, so a rotated login is never shadowed by a
-// stale copy on disk - then the file the config names, then the older git-config
-// key. Nothing found is not an error anywhere.
-func (a *app) accountToken() string {
+// tokenSource is where a token came from, which decides whether we already know
+// whose it is. gh's own store answered for an account by name; a file did not.
+type tokenSource int
+
+const (
+	tokenNone tokenSource = iota
+	tokenFromGh
+	tokenFromFile
+)
+
+// accountToken finds a token for the account we resolved, and says where it came
+// from. gh's own store first - it is the one that stays current, so a rotated
+// login is never shadowed by a stale copy on disk - then the file the config
+// names, then the older git-config key. Nothing found is not an error anywhere.
+func (a *app) accountToken() (string, tokenSource, string) {
 	if a.acct.ghWho == "" {
-		return ""
+		return "", tokenNone, ""
 	}
 	if token := ghTokenFor(a.acct.ghWho); token != "" {
-		return token
+		return token, tokenFromGh, ""
 	}
-	if token := readTokenFile(a.cfg.value(a.acct.name, "tokenFile")); token != "" {
-		return token
+	for _, file := range []string{a.cfg.value(a.acct.name, "tokenFile"), configOwnScope("gitsby.ghTokenFile")} {
+		if token := readTokenFile(file); token != "" {
+			return token, tokenFromFile, file
+		}
 	}
-	return readTokenFile(configOwnScope("gitsby.ghTokenFile"))
+	return "", tokenNone, ""
+}
+
+// worldReadable names a token file other users on this machine can read, or
+// nothing. ssh and gh both refuse or complain about one; loading it without a word
+// is how a token ends up shared with everyone who has an account here. Windows
+// carries no mode bits worth reading, so it is left out of this.
+func worldReadable(file string) string {
+	if file == "" || isWindows() {
+		return ""
+	}
+	if file == "~" || strings.HasPrefix(file, "~/") {
+		file = os.Getenv("HOME") + file[1:]
+	}
+	fi, err := os.Stat(file)
+	if err != nil || fi.Mode().Perm()&0o077 == 0 {
+		return ""
+	}
+	return file
 }
 
 // configOwnScope reads a git config key from your own configuration only, leaving
@@ -232,9 +262,18 @@ func setEnv(key, value string) error {
 
 // gitConfigEnv adds one config key to the environment git reads, without
 // disturbing any the caller already set: GIT_CONFIG_COUNT is a count, so entries
-// have to be numbered on from where it stands.
+// have to be numbered on from where it stands. A count that isn't one stops the
+// run: treating it as zero numbers our entries over the caller's first few and
+// leaves the rest applying, which is half a config each and nobody's intent.
 func gitConfigEnv(key, value string) error {
-	n, _ := strconv.Atoi(os.Getenv("GIT_CONFIG_COUNT"))
+	n := 0
+	if raw := os.Getenv("GIT_CONFIG_COUNT"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 0 {
+			return usagef("GIT_CONFIG_COUNT is '%s', which isn't a count - unset it, or set it to the number of GIT_CONFIG_KEY_n entries you meant.", raw)
+		}
+		n = parsed
+	}
 	if err := setEnv("GIT_CONFIG_KEY_"+strconv.Itoa(n), key); err != nil {
 		return err
 	}
@@ -253,6 +292,10 @@ func gitConfigEnv(key, value string) error {
 // feeds one.
 func (a *app) selectAccount(skipGhProbe bool) error {
 	if a.opt.anyIdentity {
+		// Nothing is selected at all - not the token, not the key, not the commit
+		// identity. Recorded so the block below says that, rather than naming the
+		// account we resolved as though it had been applied.
+		a.acct.bypassed = true
 		return nil
 	}
 	// Applying twice would number a second set of GIT_CONFIG_* entries on top of
@@ -261,7 +304,9 @@ func (a *app) selectAccount(skipGhProbe bool) error {
 		return nil
 	}
 	a.acct.applied = true
-	switch token := a.accountToken(); {
+	token, source, tokenFile := a.accountToken()
+	a.acct.looseTokenFile = worldReadable(tokenFile)
+	switch {
 	case token != "":
 		// Asked BEFORE the token lands, or the probe answers as the token we are about
 		// to export and the line can only ever say what it already knows. Naming the
@@ -278,7 +323,22 @@ func (a *app) selectAccount(skipGhProbe bool) error {
 		if err := setEnv("GH_TOKEN", token); err != nil {
 			return err
 		}
-		a.gh.login.set(a.acct.ghWho)
+		switch source {
+		case tokenFromGh:
+			// gh's own store was asked for this account by name, so there is nothing
+			// left to ask.
+			a.gh.login.set(a.acct.ghWho)
+		default:
+			// A file says nothing about whose token is in it - the name came from a
+			// config key beside it, and a stale file reports that name and pushes as
+			// somebody else. Drop the pre-token answer so the probe below runs with the
+			// token, and ask GitHub who it really belongs to. Only when a block will
+			// print it: this is a live round trip.
+			a.gh.login.forget()
+			if !skipGhProbe {
+				a.acct.tokenWho = a.ghLogin()
+			}
+		}
 		// The same token is what lets git itself push as this account over https,
 		// with no ssh key anywhere. An empty value first resets the helper list, so
 		// a credential manager configured for another account cannot answer ahead of

@@ -68,23 +68,59 @@ func TestAccountApplyPlanEmptyWithoutFolderRules(t *testing.T) {
 	}
 }
 
+// Least specific first, and equal specificity backwards: gitsby keeps the FIRST
+// rule declared, so that one has to be written LAST for git to keep it too.
 func TestSortIncludesTieBreaks(t *testing.T) {
 	list := []includeCandidate{
-		{2, "zz", "b"},
-		{1, "y", "a"},
-		{2, "aa", "c"},
-		{2, "aa", "a"},
+		{weight: 2, order: 0, pattern: "/same/", account: "first"},
+		{weight: 1, order: 1, pattern: "/short/", account: "second"},
+		{weight: 2, order: 2, pattern: "/same/", account: "third"},
 	}
 	sortIncludes(list)
-	want := []includeCandidate{
-		{1, "y", "a"},
-		{2, "aa", "a"},
-		{2, "aa", "c"},
-		{2, "zz", "b"},
+	want := []string{"second", "third", "first"}
+	for i, name := range want {
+		if list[i].account != name {
+			t.Fatalf("sorted = %v, want accounts %v", list, want)
+		}
+	}
+}
+
+// The tie-break that matters: whichever account gitsby resolves a folder to has to
+// be the one git resolves it to, and git takes the last rule written.
+func TestAccountApplyPlanAgreesWithAccountForDir(t *testing.T) {
+	cfg := planFor(t, `
+account.abe.path = /srv/shared
+account.zed.path = /srv/shared
+`)
+	plan := cfg.accountApplyPlan()
+	if len(plan) != 2 {
+		t.Fatalf("plan = %v", plan)
+	}
+	lastWins := plan[len(plan)-1].target
+	want := cfg.includeDir() + "/" + cfg.accountForDir("/srv/shared/x") + ".gitconfig"
+	if lastWins != want {
+		t.Errorf("git would keep %q, gitsby resolves to %q", lastWins, want)
+	}
+}
+
+// Two accounts on one folder is a mistake with no right answer, so it gets said
+// out loud rather than settled silently.
+func TestContestedRules(t *testing.T) {
+	cfg := planFor(t, `
+account.abe.path = /srv/shared
+account.zed.path = /srv/shared
+account.abe.pathContains = w/x
+account.zed.pathContains = w/x
+account.solo.path = /srv/mine
+`)
+	got := cfg.contestedRules()
+	want := []string{"/srv/shared: abe, zed", "w/x: abe, zed"}
+	if len(got) != len(want) {
+		t.Fatalf("contestedRules = %v, want %v", got, want)
 	}
 	for i := range want {
-		if list[i] != want[i] {
-			t.Fatalf("sorted = %v, want %v", list, want)
+		if got[i] != want[i] {
+			t.Fatalf("contestedRules = %v, want %v", got, want)
 		}
 	}
 }

@@ -93,8 +93,10 @@ type ghState struct {
 	probeURL  string // the url the ssh identity is read from
 	reachable bool   // cleared when the pre-command fetch can't reach origin
 	login     cached[string]
-	sshLogin  cached[string]
 	protocol  cached[string]
+	// Keyed by remote: one slot answered for whichever url asked first, and three
+	// callers ask about three different ones in the same run.
+	sshLogins map[string]string
 }
 
 // account is who this run acts as, and what selecting them actually changed.
@@ -111,6 +113,14 @@ type account struct {
 	usedSSHKey    string
 	usedIdentity  bool
 	switchedFrom  string
+	// --any-identity: nothing was selected at all, and the block must not read as
+	// though it had been.
+	bypassed bool
+	// Who a file-sourced token actually authenticates as. The name above came from
+	// a config key, which a stale file will happily agree with.
+	tokenWho string
+	// A token file other users on this machine can read, named so it can be fixed.
+	looseTokenFile string
 }
 
 // app is one run. The command functions take it rather than reach for package

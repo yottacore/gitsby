@@ -1073,7 +1073,7 @@ GHEOF
 	local hfc="${hf}/c"
 	(
 		cd "${hfc}" || exit 1
-		echo "readme v1" > README.md && mkdir -p bin && echo shipped > bin/tool
+		echo "readme v1" > README.md && mkdir -p src-go && echo shipped > src-go/main.go
 		git add --all && git commit --quiet -m init && git push --quiet -u origin main
 		git checkout --quiet -b dev && git push --quiet -u origin dev
 	)
@@ -1088,12 +1088,12 @@ GHEOF
 	fAssert    "and was carried back to dev"   bash -c "cd '${hfc}' && [[ \"\$(git show origin/dev:README.md)\" == 'readme v2' ]]"
 	fAssert    "the branch is gone both sides" bash -c "cd '${hfc}' && [[ -z \"\$(git branch --list 'hotfix/*')\" ]] && [[ -z \"\$(git ls-remote --heads origin 'hotfix/*')\" ]]"
 	## A hotfix that changes shipped code leaves main ahead of every tag - say so.
-	fAssertOut "a hotfix touching bin/ warns about the release"  'changes shipped code' \
-		bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix code >/dev/null 2>&1; echo v2 > '${hfc}/bin/tool'; '${gitsby}' -q -NoFetch update wip >/dev/null 2>&1; '${gitsby}' -q -NoFetch br land 'Fix' 2>&1"
+	fAssertOut "a hotfix touching the shipped source warns about the release"  'changes shipped code' \
+		bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix code >/dev/null 2>&1; echo v2 > '${hfc}/src-go/main.go'; '${gitsby}' -q -NoFetch update wip >/dev/null 2>&1; '${gitsby}' -q -NoFetch br land 'Fix' 2>&1"
 	## The warning reads the branch tip, and 'br land' is what commits the working tree - so an
-	## uncommitted bin/ edit (the ordinary way of making one) has to be checked for after that.
+	## uncommitted edit to it (the ordinary way of making one) has to be checked for after that.
 	fAssertOut "a hotfix warns about shipped code even when the edit is uncommitted"  'changes shipped code' \
-		bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix uncommitted >/dev/null 2>&1; echo v3 > '${hfc}/bin/tool'; '${gitsby}' -q -NoFetch br land 'Fix uncommitted' 2>&1"
+		bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix uncommitted >/dev/null 2>&1; echo v3 > '${hfc}/src-go/main.go'; '${gitsby}' -q -NoFetch br land 'Fix uncommitted' 2>&1"
 	fAssert    "a docs-only hotfix says nothing about releases"  \
 		bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix docs >/dev/null 2>&1; echo 'readme v3' > README.md; '${gitsby}' -q -NoFetch update wip >/dev/null 2>&1; out=\"\$('${gitsby}' -q -NoFetch br land 'Docs' 2>&1)\"; ! grep -q 'changes shipped code' <<< \"\${out}\""
 	## A back-merge conflict must leave dev untouched and the tree clean, not half-merged.
@@ -2194,6 +2194,158 @@ GHEOF
 	fAssertOut  "an option between raw and the tool says where ours go"  "options come before 'raw'" \
 		bash -c "cd '${renDir}' && '${gitsby}' raw -q git status 2>&1"
 
+	## ------------------------------------------------------------------------------------
+	## Directive review 20260819. Every check below fails against the build that preceded it,
+	## bar the two marked as follow-up state checks on the run above them.
+	local dr="${work}/$1-dirrev"
+	mkdir -p "${dr}/bin" "${dr}/home/.config/gitsby" "${dr}/tree"
+	local drCanon="${dr}"
+	((isWindows)) && drCanon="$( cd "${dr}" && pwd -W )"
+
+	## rev-parse --is-inside-work-tree answers in text and exits zero either way, so the exit
+	## code says only that we are somewhere git understands. A bare repo and the .git directory
+	## are both that, and neither is a place any of this means anything.
+	git init --quiet --bare -b main "${dr}/bare.git"
+	git init --quiet -b main "${dr}/wt"
+	( cd "${dr}/wt" && echo a > a.txt && git add --all && git commit --quiet -m init )
+	fAssertOut "a bare repo is refused by name"       'bare repository' \
+		bash -c "cd '${dr}/bare.git' && '${gitsby}' -q -NoFetch status 2>&1"
+	fAssertOut "and the .git directory itself too"    "'\.git' directory" \
+		bash -c "cd '${dr}/wt/.git' && '${gitsby}' -q -NoFetch status 2>&1"
+
+	## With no remote at all the offline check never trips - there is nothing to find
+	## unreachable - so the tag was cut, pushed nowhere, and the run ended on "Done."
+	fAssertOut "release with no origin refuses"       "No 'origin' remote, and a release" \
+		bash -c "cd '${dr}/wt' && '${gitsby}' -q -NoFetch release 2>&1"
+	fAssert    "and cut no tag"                       bash -c "cd '${dr}/wt' && [[ -z \"\$(git tag --list)\" ]]"
+
+	## A bare 'git fetch' follows the current branch's own tracking remote, and every existence
+	## check afterwards reads origin. Only a fetch that names origin sees a branch pushed there.
+	git init --quiet --bare -b main "${dr}/f-origin.git"
+	git init --quiet --bare -b main "${dr}/f-other.git"
+	git clone --quiet "${dr}/f-origin.git" "${dr}/fetchr" 2>/dev/null
+	(
+		cd "${dr}/fetchr" && echo a > a.txt && git add --all && git commit --quiet -m init
+		git push --quiet -u origin main
+		git remote add other "${dr}/f-other.git" && git push --quiet other main
+		git branch --quiet --set-upstream-to=other/main main
+	)
+	git clone --quiet "${dr}/f-origin.git" "${dr}/pusher" 2>/dev/null
+	( cd "${dr}/pusher" && git checkout --quiet -b brandnew && git push --quiet -u origin brandnew )
+	fAssert "the pre-command fetch names origin, not the branch's own remote" \
+		bash -c "cd '${dr}/fetchr' && '${gitsby}' -q status >/dev/null 2>&1; git -C '${dr}/fetchr' show-ref --verify --quiet refs/remotes/origin/brandnew"
+
+	## br merge holds its remote delete back while origin is unreachable; prune had no such
+	## check, so each push failed and was reported as "already gone" - blaming the branch for a
+	## network problem, with a summary that read as if it had finished.
+	git init --quiet --bare -b main "${dr}/p-origin.git"
+	git clone --quiet "${dr}/p-origin.git" "${dr}/prune" 2>/dev/null
+	(
+		cd "${dr}/prune" && echo a > a.txt && git add --all && git commit --quiet -m init
+		git push --quiet -u origin main
+		git checkout --quiet -b landed && git push --quiet -u origin landed
+		git checkout --quiet main && git merge --quiet --no-ff landed -m merge && git push --quiet
+	)
+	rm -rf -- "${dr:?}/p-origin.git"
+	fAssertOut "br prune offline leaves origin's copies alone"  "left origin's copies" \
+		bash -c "cd '${dr}/prune' && '${gitsby}' -q br prune 2>&1"
+	fAssert    "but still deletes the local branch"    bash -c "cd '${dr}/prune' && [[ -z \"\$(git branch --list landed)\" ]]"
+
+	## git's DWIM creates a tracking branch from a remote copy only when exactly one remote has
+	## it; with two it refuses to guess, and the up-front check never noticed because it only
+	## ever looks at origin.
+	git init --quiet --bare -b main "${dr}/t-origin.git"
+	git init --quiet --bare -b main "${dr}/t-other.git"
+	git clone --quiet "${dr}/t-origin.git" "${dr}/two" 2>/dev/null
+	(
+		cd "${dr}/two" && echo a > a.txt && git add --all && git commit --quiet -m init
+		git push --quiet -u origin main
+		git checkout --quiet -b feature && git push --quiet -u origin feature
+		git checkout --quiet main
+		git remote add other "${dr}/t-other.git"
+		git push --quiet other main && git push --quiet other feature
+		git branch --quiet -D feature && git fetch --quiet --all
+	)
+	fAssert "br switch works with two remotes carrying the branch" \
+		bash -c "cd '${dr}/two' && '${gitsby}' -q -NoFetch br switch feature && [[ \"\$(git branch --show-current)\" == feature ]]"
+
+	## Two accounts claiming one folder produce the same includeIf key twice. --unset-all takes
+	## every entry at once, so the second pass found nothing and git's exit 5 was read as a
+	## failure: the config was left with no rules at all, and the command reported an error.
+	fStub "${dr}/bin/gh" <<-'GHEOF'
+		#!/usr/bin/env bash
+		case "$1 $2" in
+			"auth token") exit 1 ;;
+			"api user")   echo "${FAKE_GH_ACTIVE:-someoneelse}"; exit 0 ;;
+		esac
+		exit 1
+	GHEOF
+	cat > "${dr}/home/.config/gitsby/config.shcl" <<-CFGEOF
+		account.abe.path      = ${drCanon}/tree
+		account.abe.ghAccount = abe
+		account.abe.name      = Abe Person
+		account.abe.email     = abe@example.com
+		account.zed.path      = ${drCanon}/tree
+		account.zed.ghAccount = zed
+	CFGEOF
+	: > "${dr}/home/.gitconfig"
+	git init --quiet -b main "${dr}/tree/proj"
+	( cd "${dr}/tree/proj" && echo a > a.txt && git add --all && git commit --quiet -m init )
+	local drEnv="GITSBY_CONFIG= HOME='${dr}/home' GIT_CONFIG_GLOBAL='${dr}/home/.gitconfig' PATH='${dr}/bin:${PATH}'"
+	fAssert "account apply runs with two accounts on one folder" \
+		bash -c "cd '${dr}/tree/proj' && env ${drEnv} '${gitsby}' -q account apply >/dev/null"
+	fAssert "and a second run leaves the rules in place" \
+		bash -c "cd '${dr}/tree/proj' && env ${drEnv} '${gitsby}' -q account apply >/dev/null && grep -q 'gitsby/accounts' '${dr}/home/.gitconfig'"
+	fAssertOut "and the contested folder is called out" 'more than one account claims' \
+		bash -c "cd '${dr}/tree/proj' && env ${drEnv} '${gitsby}' -q account 2>&1"
+	## The two tie-breaks used to disagree: gitsby keeps the first rule declared, git keeps the
+	## last written, and sorting the plan by text put them in opposite orders.
+	fAssertOut "gitsby keeps the first rule declared"  'Resolves to \.+: abe' \
+		bash -c "cd '${dr}/tree/proj' && env ${drEnv} '${gitsby}' -q account 2>&1"
+	fAssert "and plain git now resolves it the same way" \
+		bash -c "cd '${dr}/tree/proj' && env ${drEnv} git config gitsby.ghAccount | grep -qx abe"
+
+	## Account selection is skipped entirely under --any-identity - the token, the key and the
+	## commit author all stay as they were - and the block used to name the account anyway.
+	fAssertOut "--any-identity says the account was not applied"  'NOT applied: --any-identity' \
+		bash -c "cd '${dr}/tree/proj' && env ${drEnv} '${gitsby}' -q -NoFetch --any-identity status 2>&1"
+
+	## Treating a malformed count as zero numbers our entries over the caller's first few and
+	## leaves the rest applying - half a config each, and nobody's intent.
+	fAssertOut "a GIT_CONFIG_COUNT that isn't a count stops the run"  "isn't a count" \
+		bash -c "cd '${dr}/tree/proj' && env ${drEnv} GIT_CONFIG_COUNT=notanumber '${gitsby}' -q -NoFetch identity 2>&1"
+
+	## A token read from a file says nothing about whose it is: the name came from a config key
+	## beside it, so a stale file reports the right name and pushes as the wrong person.
+	printf 'gho_stale\n' > "${dr}/token"
+	cat > "${dr}/token.shcl" <<-TOKEOF
+		account.abe.path      = ${drCanon}/tree
+		account.abe.ghAccount = abe
+		account.abe.tokenFile = ${drCanon}/token
+	TOKEOF
+	fAssertOut "a file-sourced token is checked against the account it claims"  "authenticates as 'someoneelse'" \
+		bash -c "cd '${dr}/tree/proj' && env ${drEnv} '${gitsby}' -q -NoFetch --config '${dr}/token.shcl' identity 2>&1"
+
+	## Naming an account for a repo you only cloned tells a single-account user about a feature
+	## they never configured, and claims something was applied when nothing was.
+	git init --quiet -b main "${dr}/stranger"
+	(
+		cd "${dr}/stranger" && echo a > a.txt && git add --all && git commit --quiet -m init
+		git remote add origin https://github.com/stranger/repo.git
+	)
+	fAssertNotOut "raw names no account for a repo you only cloned"  'acting as' \
+		bash -c "cd '${dr}/stranger' && env ${drEnv} '${gitsby}' raw git status 2>&1"
+
+	## Mode bits, where the platform has any worth reading. A token file everyone can read loads
+	## without a word, and the fragment directory was created 0777 and left to umask.
+	if ((! isWindows)); then
+		chmod 644 "${dr}/token"
+		fAssertOut "a token file other users can read is called out"  'readable by other users' \
+			bash -c "cd '${dr}/tree/proj' && env ${drEnv} '${gitsby}' -q -NoFetch --config '${dr}/token.shcl' identity 2>&1"
+		fAssert "the account fragments are yours alone" \
+			bash -c "[[ \"\$(stat -c %a '${dr}/home/.config/gitsby/accounts')\" == 700 ]] && [[ \"\$(stat -c %a '${dr}/home/.config/gitsby/accounts/abe.gitconfig')\" == 600 ]]"
+	fi
+
 	if ((hasPty)); then
 		## Only 'y' was a yes, so the word people actually type aborted.
 		( cd "${renDir}" && echo yes >> yesword.txt )
@@ -2249,3 +2401,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260819 JC: The paper-cut sweep, and a pty for the two checks that have to answer the prompt rather than have it refuse - the plan is only printed to someone who could say yes, and one of them is about the word accepted there. Fourteen checks, all of which discriminate against the prior build; skipped where there is no 'script'.
 ##		- 20260819 JC: Which folder a clone resolves its account from. The account block grew a bare origin to clone between its two trees, and the identity block one check that the surrounding repo's owner is never asked about - the step that leaves no trace in the output, only in which token the fetch went out with.
 ##		- 20260819 JC: The shipping installers, at the repo root. Their whole plan is behind the network now - the release lookup and SHA256SUMS both land before it prints - so these checks stop at the argument parse, the refusals, the Windows hand-off, and pins on what a live run reaches. The legacy block stays beside them, still aimed at frozen files. 582 -> 613.
+##		- 20260819 JC: A block for the directive-review defects: the bare-repo and .git-directory gates, the fetch naming origin, prune's offline hold-back, br switch with two remotes carrying the branch, the contested-folder tie-break both ways, --any-identity's own line, a file-sourced token checked against the account it claims, and the mode bits. Eighteen of them fail against the build that preceded the fixes; the two mode-bit ones are Linux/macOS only.
