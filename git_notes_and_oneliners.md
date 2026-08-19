@@ -219,7 +219,7 @@ $preCount = @(git stash list).Count; git stash push --include-untracked -m 'auto
 #### Push local changes to upstream
 
 ~~~pwsh
-gitsby.ps1 update
+gitsby pullcom
 ~~~
 
 or

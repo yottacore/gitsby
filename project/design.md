@@ -7,6 +7,28 @@
 
 Design, requirements, and direction. The active bug and feature task list lives in `backlog.md`.
 
+This is a decision log, not a specification. Each entry says what was decided and - where it matters - what was rejected and why, so a later reader can tell a considered choice from an accident. Entries are revised in place when the thinking changes rather than appended to, so what is here is what is currently true.
+
+## Goals and non-goals
+
+The non-goals do more work than the goals. Most of what makes gitsby small is a decision not to do something, and those decisions were previously scattered across three sections and another document.
+
+Goals, in priority order:
+
+1. **Bulletproof.** No command may risk losing work - yours or anyone else's. Every one is idempotent, tolerant of a previous run having been interrupted, and safe to run at any time.
+2. **Unsurprising.** Every mutating command shows the repo state, then the exact git it will run, then asks. Nothing happens that was not read first.
+3. **Useful.** In that order: a useful command that can surprise you is not worth having.
+
+Non-goals, each one deliberate:
+
+- **Covering all of git.** Roughly 90% of git's complexity serves about 10% of the cases. Partial staging, rebase surgery, conflict resolution, multiple remotes: those belong to raw `git`, and gitsby stays out of the way for them rather than growing a worse version of each.
+- **Being a git replacement.** Gitsby, `git`, `gh`, Lazygit and Tig are meant to be intermixed on the same repo, in any order. Anything that would make gitsby the only safe tool for a repo is off the table.
+- **Keeping state.** No database, no metadata, no dotfile in the repo. Everything is asked of git and `gh` at the moment it is needed, so stopping mid-project leaves nothing to undo, and no state of ours can disagree with the repo.
+- **Policing another tool's configuration.** Gitsby names who you are about to act as; it does not validate `gh`'s setup, rewrite your `~/.ssh/config`, or refuse a command because another tool is configured unusually.
+- **Guessing.** Where an answer cannot be established, the display says "unknown" and the command either proceeds or refuses by name. A name that is merely likely is worse than none, because it gets believed.
+- **Requiring configuration.** A machine with nothing set up must behave exactly as it did before any of this existed. Every account feature degrades to silence.
+- **Running anywhere but where the binary runs.** One static binary, no runtime, no interpreter, nothing installed alongside it - which is also why there is no plugin system and no scripting surface beyond `raw`.
+
 ## Assumptions
 
 - Any repo gitsby touches may also be touched by raw `git`, `gh`, or an IDE - before, during, and after. Nothing gitsby does can be allowed to confuse those tools.
@@ -19,9 +41,11 @@ Design, requirements, and direction. The active bug and feature task list lives 
 
 ### Folder structure
 
-- `bin/` - the two implementations, one file each.
+- `src-go/` - the implementation. Package `main`, one file per concern.
 
-- `cicd/` - the local pipeline, its config, and the test and fuzz suites. Everything the demo gif is built from lives together under `cicd/utility/demo/`.
+- `legacy/` - the Bash and PowerShell builds, frozen at v2.1.0, and the installers of that era. Reference only; a hotfix to 2.x branches from the tag, not from here.
+
+- `cicd/` - the local pipeline, its config, and the test, fuzz and comparison suites. Everything the demo gif is built from lives together under `cicd/utility/demo/`.
 
 - `project/` - this file and the backlog.
 
@@ -33,7 +57,7 @@ Design, requirements, and direction. The active bug and feature task list lives 
 
 ### Logical code structure
 
-All three implementations follow the same shape, in the same order:
+The command flow, in order:
 
 1. Parse arguments, and collapse a noun and its verb (including the unpublished spellings) into one command name.
 
@@ -47,7 +71,7 @@ All three implementations follow the same shape, in the same order:
 
 6. Show the state again.
 
-The Bash and PowerShell files are ports of each other, and were kept in step for as long as they were the implementation. Both are frozen now, and the Go build is the one that moves - see "Direction decisions" below. The suites run against all three.
+The Bash and PowerShell files were ports of each other, and were kept in step for as long as they were the implementation. Both are frozen at v2.1.0; the Go build is the only one that moves - see "Direction decisions" below. The suites run against it alone, and the comparison suite is what keeps its answers matching the frozen ones.
 
 ### Execution flow
 
@@ -143,7 +167,7 @@ The Bash and PowerShell files are ports of each other, and were kept in step for
 	- People who have two accounts almost always have a folder per account already. That existing habit is the configuration; asking them to restate it per repo would be asking twice.
 	- One account is resolved per run and applied to everything at once - gh, git's credentials, the ssh key, and the commit identity - because a run that pushes as one person and commits as another is the failure this exists to prevent.
 	- Resolution order, most specific first: `GITSBY_ACCOUNT`, then `gitsby.ghAccount` in git config, then the config file's folder rules, then the owner of the remote. Finding none of them is the ordinary single-account case and changes nothing.
-	- The folder that decides is the one the command is about, which for every command but `repo clone` is the one you are standing in. A clone's repo lands somewhere else, so it resolves against its destination instead. Decided 2026-08-19, after the earlier behaviour turned out to read the current directory for it as well.
+	- The folder that decides is the one the command is about, which for every command but `repo clone` is the one you are standing in. A clone's repo lands somewhere else, so it resolves against its destination instead. Decided 2026-08-19, after the earlier behavior turned out to read the current directory for it as well.
 		- Only the config file's folder rules can answer for a destination. `gitsby.ghAccount` answers for the repo it is set in, and an `includeIf` keyed on gitdir cannot be asked about a repo that does not exist yet - so the surrounding repo's value is skipped rather than allowed to follow the clone out of its own tree.
 		- The remote's owner is skipped too. That step reads "this repo is mine, so act as its owner", which holds for a repo you already have and for one you are about to create, and does not hold for a copy you are fetching of someone else's. Among the options - guess from the cloned URL, guess from the surrounding repo, or decline - we decided to decline: with nothing configured for the destination, gh stays on its own account, which is the no-configuration promise.
 	- Zero configuration stays the default case, and it is why the remote's owner is consulted at all: that fact is already knowable, so a single-account setup never notices the feature exists.
@@ -223,7 +247,7 @@ The Bash and PowerShell files are ports of each other, and were kept in step for
 	- What keeps the six files in the tree at all is the port, not hotfixes: they are the reference this build is compared against. When that comparison retires, they can go, and the tag still holds them.
 
 - `parity.bash` was kept and repointed rather than dropped. It used to compare the two scripts against each other; it now compares this build against the frozen v2.1.0 one.
-	- That is the backwards-compatibility question, and it is the one still worth asking. The behavioural suite asks "is this correct?" of one build at a time, so it passes while two builds quietly disagree about the same input - which is what every port defect that reached users actually was.
+	- That is the backwards-compatibility question, and it is the one still worth asking. The behavioral suite asks "is this correct?" of one build at a time, so it passes while two builds quietly disagree about the same input - which is what every port defect that reached users actually was.
 	- The PowerShell build is not a third leg. The two scripts were proven identical to each other at v2.1.0, so agreeing with one is agreeing with both, and a third leg would only add an interpreter to find.
 	- It also checks that `update` and `br land` still route where they always did, under both spellings. A permanent alias is a promise, and promises get checks.
 
@@ -289,9 +313,9 @@ Gitsby follows GitFlow, with the stabilization branches left out.
 
 - Landing one merges to `main`, then merges `main` back into `dev`. The back-merge is not optional. Without it the next release either conflicts on the same file or quietly reinstates the superseded text.
 
-- A hotfix that touches nothing under `bin/` needs no version bump, because nothing shipped changed. Documentation is not versioned with the binary - the README describes the release, and it is served from `main`, not from the tag.
+- A hotfix that touches nothing under `src-go/` needs no version bump, because nothing shipped changed. Documentation is not versioned with the binary - the README describes the release, and it is served from `main`, not from the tag.
 
-- A hotfix that does touch `bin/` leaves `main` carrying code that no tag contains, so the assets on the latest release stop matching it. That warrants a patch release, and landing says so rather than leaving it to be noticed later.
+- A hotfix that does touch `src-go/` leaves `main` carrying code that no tag contains, so the assets on the latest release stop matching it. That warrants a patch release, and landing says so rather than leaving it to be noticed later.
 
 ### Enforcement
 
@@ -335,16 +359,17 @@ See also the release policy under Architecture, which covers how releases are pu
 
 ### Testing
 
-- A regression suite and a fuzz suite, both run once per implementation, both against throwaway repos built under a temp directory. Neither touches the network or a real repo.
+- A regression suite, a fuzz suite and a comparison suite, all against throwaway repos built under a temp directory. None touches the network or a real repo. Alongside them, unit tests inside the module cover the parsing, the folder matching and the string handling, which need no repo at all and answer in milliseconds.
 
 - The fuzz suite asserts three things: no internal crash, no shell or command injection, and that inputs which must be refused exit nonzero and leave the repo unchanged.
 
 - The `gh` paths are covered by a stub on `PATH`, so the GitHub-facing branches are exercised without a network or an account.
 
-- Both suites run on Windows as well as Linux, and the PowerShell leg matters most there - it is the only place that build is what people actually use.
-	- Stubs are shebang scripts, which PowerShell locates on `PATH` but cannot start. It reports no error, so the stub silently produces nothing and the check passes or fails for the wrong reason. The regression suite gives each stub a `.cmd` sibling that hands the body back to bash.
+- The suites run on Windows as well as Linux, under Git Bash. Path spelling is the recurring trap there, and a handful of checks are gated on the platform for that reason rather than skipped.
+	- Stubs are shebang scripts, which some Windows tooling locates on `PATH` but cannot start - silently, so a check passes or fails for the wrong reason. The regression suite gives each stub a `.cmd` sibling that hands the body back to bash.
 	- The fuzz suite deliberately does not, and skips the affected checks with a printed reason. A `.cmd` goes through `cmd.exe`, which re-parses an unquoted `&` or `>` in an argument - so a vector this suite hands gitsby would partly run for real, and be reported as an injection that gitsby never had. Its glob vectors break the same way. A named skip is worth more than a green that means nothing.
-	- Checks that reach a confirmation need it to refuse rather than wait. `setsid` does that on Linux; Windows has no equivalent and needs none for the PowerShell build, which reads redirected stdin and never falls back to a terminal. The Bash installer does fall back to `/dev/tty`, so its checks additionally require that open to fail.
+	- Checks that reach a confirmation need it to refuse rather than wait, which `setsid` does where it exists. The Bash installer falls back to `/dev/tty`, so its checks additionally require that open to fail.
+	- Every check that measures the *fix* for a defect is run against the build that preceded it before it is kept. A check that passes both ways is a regression guard, and is labeled as one rather than counted as coverage.
 
 ### Demo
 
@@ -352,7 +377,7 @@ See also the release policy under Architecture, which covers how releases are pu
 
 - Commit dates in that repo are pinned. An unchanged demo therefore renders byte for byte identical, which is what lets the pipeline replace the committed file only when the demo really changed.
 
-- The demo is described twice on purpose. `script.txt` is the readable version - scenes, captions, typed lines, hold times - and is the one to edit; the scenario file beside it is the machine version. We decided the readable one is the source of truth, because the parameters that shape a demo are aesthetic judgements, and they are far easier to argue about in prose than in a table of numbers.
+- The demo is described twice on purpose. `script.txt` is the readable version - scenes, captions, typed lines, hold times - and is the one to edit; the scenario file beside it is the machine version. We decided the readable one is the source of truth, because the parameters that shape a demo are aesthetic judgments, and they are far easier to argue about in prose than in a table of numbers.
 
 - Nothing parses `script.txt`. Keeping the two in step is a habit, not a mechanism - a parser would have to be maintained, and the file's value is that a person can change it without learning a format.
 
@@ -366,18 +391,20 @@ GitHub's `releases/latest` returns the newest release not flagged as a pre-relea
 
 ### Automating a release
 
-The `release` command already does the git half well: merge `dev` into `main`, tag, push, fast-forward `dev`. What stays manual is everything around it, and each manual step has been forgotten at least once.
+`cicd/release.bash` does everything around `gitsby release`, which stays the git half: merge `dev` into `main`, tag, push, fast-forward `dev`. The script is a maintainer's pipeline task and wants `gh`, the checksum generator and the working tree - none of which the shipped tool should grow a dependency on.
 
-- What is missing, in order: bump the version in both builds, rename the changelog's `vNEXT` heading to the version and today's date, update the in-script history footers, publish the GitHub release with a title and a body, attach `gitsby`, `gitsby.ps1` and `SHA256SUMS`, and verify the result end to end.
+Three phases, so a failure never leaves a half-cut release:
 
-- Where it belongs: `cicd/release.bash`, not the product. Cutting a release is a maintainer's pipeline task that wants `gh`, the checksum generator, and the working tree - none of which the shipped tool should grow a dependency on. `gitsby release` stays the git half and is called by the script.
+1. **Prepare and verify**, changing nothing outside the working tree. Resolve the version (argument, else the bump `release` would choose), refuse if the tag exists or the changelog has no `vNEXT` section, run the full pipeline, and cross-build every release target. Nothing here needs undoing, so a target that stopped compiling costs nothing to discover.
+2. **Land.** Retitle the changelog's `vNEXT` heading, open a PR for it, merge it, then `gitsby release`. The only phase that pushes. The bump goes through a branch and a PR like everything else: committing it straight to the merge target would be the one place this project does to itself what the tool refuses to do for you.
+3. **Publish and prove.** Create the GitHub release with that changelog section as the body, upload the per-platform binaries and their `SHA256SUMS`, then verify - download this platform's published binary, check it, run it, and confirm it reports the released version.
 
-- The shape, as three phases so a failure never leaves a half-cut release:
-	1. Prepare and verify, changing nothing outside the working tree. Resolve the version (argument, else the same bump `release` would choose), refuse if the changelog has no `vNEXT` section, refuse if either build's version string already matches, then run the full pipeline. Nothing here needs undoing.
-	2. Land. Write the version into both builds and the changelog heading, commit, PR, merge, then `gitsby release`. This is the only phase that pushes.
-	3. Publish and prove. Create the GitHub release with the changelog section as the body, upload the per-platform binaries and their `SHA256SUMS`, then verify: `releases/latest` resolves to the new tag, and this platform's published binary downloads, checksums and reports the new version. A failure here is recoverable by hand and does not corrupt anything.
+Decisions inside that shape:
 
-- Two guards worth building in, because both have already bitten: the history footers in `bin/gitsby` and `bin/gitsby.ps1` are checked for an entry newer than the last release tag, and the two builds' version strings are compared to each other before anything is pushed.
+- **The version lives in the tag and nowhere else.** The build injects it with `-ldflags`, so there is no source string to bump and nothing that can disagree with the tag. That replaced an earlier design in which two builds each carried their own version and were compared to each other before pushing - a guard that only existed because the duplication did.
 
-- The verification in phase 3 is the part that pays for itself. Running both installer one-liners side by side is what caught the PowerShell checksum bug, which had silently skipped verification since the day it was added.
-	- It proves the contract rather than the installer: download, checksum, run. That is what an installer does at the end of its plan, and it is also what someone who skipped the installer does by hand - so the narrower check covers both. The installers' own behaviour is covered by the suite, which reaches everything up to the network.
+- **The proof is the contract, not the installer.** Download, checksum, run. That is what an installer does at the end of its plan, and it is also what someone who skipped the installer does by hand, so the narrower check covers both. The installers' own behavior is covered by the suite, which reaches everything up to the network. The earlier version of this ran both installer one-liners side by side, which is what caught the PowerShell checksum bug that had silently skipped verification since the day it was added.
+
+- **History footers are warned about, not gated.** The suites' own footers are checked for an entry newer than the last release tag. It is a warning because a release with a stale footer is untidy, not wrong, and a hard gate on a habit is a gate people learn to work around.
+
+- **Assets are built before the tag is cut.** With version-control stamps switched off at build time, a phase-1 binary and one built from the tagged commit are byte-identical - the only thing phase 2 changes is a changelog heading, which no binary contains. So the ordering costs nothing, and the reproducibility it used to cost is what `-buildvcs=false` bought back.

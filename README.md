@@ -19,7 +19,7 @@
 <table style="border: none; border-collapse: collapse;">
 	<tr style="border: none; border-collapse: collapse;">
 		<td style="border: none; border-collapse: collapse;"><img src="assets/logo.png" alt="Logo" width="128"/></td>
-		<td style="border: none;">A simple, safe, opinionated Git wrapper for everyday work: nine commands instead of eighty-odd, and a workflow the tool enforces rather than a convention you're asked to remember.<br /><br />It also knows which of your GitHub accounts owns which folder, so for example work and personal repos stay separate.</td>
+		<td style="border: none;">A simple, safe, opinionated Git wrapper for everyday work: ten commands instead of eighty-odd, and a workflow the tool enforces rather than a convention you're asked to remember.<br /><br />Every command that changes anything shows you the exact Git it will run, and asks first.<br /><br />It also knows which of your GitHub accounts owns which folder, so work and personal repos stay separate.</td>
 	</tr>
 </table>
 
@@ -52,7 +52,7 @@
 
 Git has more than eighty porcelain commands, because it supports every workflow, every team size, and every hard edge-case of conflict resolution. That flexibility is the whole reason it's complex.
 
-Gitsby has 9 - or 22 counting subcommands. It gets there three ways:
+Gitsby has ten - or 23 counting subcommands. It gets there three ways:
 
 - By applying one opinionated workflow and ignoring the myriad other ways of doing the same thing.
 
@@ -63,6 +63,14 @@ Gitsby has 9 - or 22 counting subcommands. It gets there three ways:
 Gitsby does nothing a skilled Git user can't do directly - just with far fewer chances to make one of the expensive mistakes.
 
 Every command aims to be safe (never risk losing work, yours or anyone's), idempotent, tolerant of a previous command having been half-finished, and forgiving - run any of them at any time, and if it doesn't make sense it won't damage anything.
+
+Three things it holds to everywhere:
+
+- **It shows its work.** Every command that changes anything prints the repo state, then the exact Git commands it is about to run, then asks. Nothing happens that you didn't read first.
+
+- **It keeps no state of its own.** No database, no metadata, no dotfile in your repo. Everything it knows, it asks Git and `gh` for, every run. Stop using it mid-project and there is nothing to undo.
+
+- **It is one file.** A static binary: no runtime, no interpreter, nothing installed alongside it. Uninstalling is deleting it.
 
 The full list of opinions, and how the workflow lines up against GitFlow, GitHub Flow, GitLab Flow, and trunk-based development, is in [workflows.md](workflows.md).
 
@@ -104,9 +112,13 @@ There is deliberately no bare `commit`, and no bare `pull` that skips the commit
 
 Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--public`/`--private` (visibility for `repo create`; private by default), `--no-fetch` (skip the fetch and the pull), `--any-identity`, `--config FILE` (read accounts from somewhere other than the usual place), `-h`, `-v`.
 
-When the fetch finds the remote out of reach, the commands that mean something locally still work. `pullcom` commits, `br create` and `br switch` and `br merge` do their branch work, and each says what it skipped and that `sync` will publish it later. The commands that exist to publish - `sync`, `pr create`, `pr ok`, `release` - refuse up front and say what to do instead, rather than failing halfway through or reporting success having sent nothing.
+**Offline is a state, not a flag.** Every command finds out by trying, and then behaves:
 
-`repo create` and `repo connect` list the files they are about to publish before asking, since that is the one command that hands a whole directory over for the first time. The list is what `git add --all` will actually add, `.gitignore` and all - so a stray `.env` is visible while you can still say no.
+- The ones that mean something locally still work. `pullcom` commits; `br create`, `br switch` and `br merge` do their branch work. Each says what it skipped, and that `sync` will publish it later.
+
+- The ones that exist to publish - `sync`, `pr create`, `pr ok`, `release` - refuse up front and say what to do instead. None of them fails halfway through, and none reports success having sent nothing.
+
+**Publishing a directory shows you the directory first.** `repo create` and `repo connect` list every file they are about to publish, before asking. The list is what `git add --all` will actually add, `.gitignore` and all - so a stray `.env` is visible while you can still say no.
 
 ## Multiple GitHub accounts
 
@@ -125,7 +137,13 @@ account.personal.ghAccount    = my-personal-login
 account.personal.email        = ada@home.example
 ~~~
 
-Over HTTPS each account authenticates with its own token - the one `gh` already stores - so a second account costs one `gh auth login` and three lines of config, with no SSH keys and no `~/.ssh/config` host aliases baked into remote URLs. `gitsby account apply` writes the same rules into your global git config as ordinary `includeIf` blocks, so plain `git` agrees with Gitsby even when Gitsby isn't involved. `gitsby raw git ...` runs any git command as the folder's account, so existing scripts become account-correct by prefixing rather than rewriting.
+Over HTTPS each account authenticates with its own token - the one `gh` already stores. A second account costs one `gh auth login` and three lines of config: no SSH keys, no `~/.ssh/config` host aliases baked into remote URLs.
+
+Two things follow from that, and they are the reason to bother:
+
+- `gitsby account apply` writes the same folder rules into your global Git config, as ordinary `includeIf` blocks. Plain `git` then agrees with Gitsby even when Gitsby isn't involved.
+
+- `gitsby raw git ...` runs any Git command as the folder's account. Existing scripts become account-correct by prefixing them, not by rewriting them.
 
 Nothing here is required. With no configuration Gitsby uses whichever account `gh` is logged in as, exactly as it always did. A single-account machine never notices the feature exists.
 
@@ -139,7 +157,7 @@ Full detail, including SSH keys, token files, and how Gitsby checks that `gh` an
 
 - Gitsby works with any Git remote, GitHub and GitLab included. The exceptions go through [gh](https://github.com/cli/cli) and are therefore GitHub-only: the `pr` commands, `repo create`, and `repo connect` when you give it an `owner/name` instead of a URL.
 
-- What you need: Git. Gitsby is one static binary with no runtime, no interpreter and nothing to install alongside it.
+- What you need: Git, and nothing else.
 
 	- Published for Linux, macOS, Windows and FreeBSD, on x86-64 and ARM64. Every one of those is a plain download - there is no build step and no dependency to satisfy first.
 
@@ -175,6 +193,12 @@ Every mutating command fetches first, shows you the repo state and the exact git
 
 ## Install
 
+### Is it in my package manager?
+
+Not yet - nothing on apt, dnf, Homebrew or winget. The two one-liners below are the supported route, and a plain download is the other one.
+
+### The one-liners
+
 ~~~bash
 curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install.bash | bash
 ~~~
@@ -183,9 +207,11 @@ curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install.bas
 irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1 | iex
 ~~~
 
-The first on Linux, macOS or FreeBSD; the second on Windows. Both need only Git on the machine afterwards, and PowerShell 7+ is what runs the second one, not what runs Gitsby. There are no distribution packages yet - nothing on apt, dnf, Homebrew or winget - so these two are the supported route.
+The first on Linux, macOS or FreeBSD; the second on Windows. PowerShell is what runs the second one, not what runs Gitsby - Windows PowerShell 5.1, which every Windows box already has, is enough.
 
 Either one works out which binary this machine needs, takes it from the latest release, and checks it against that release's published `SHA256SUMS` before installing it. There is no unverified route: where the checksum can't be fetched or can't be computed, the install stops instead of carrying on. And either one shows you its plan and asks before touching anything.
+
+### Where it goes
 
 It installs for you alone unless told otherwise:
 
@@ -198,7 +224,11 @@ On Windows the PowerShell installer also puts that directory on your PATH, since
 
 For anything else - installing for everyone, taking an older release, or naming the architecture yourself - download the installer and run it with `--help`.
 
-Or skip the installer entirely. Every release publishes one binary per platform alongside a `SHA256SUMS`, so downloading the one you want, checking it, and dropping it somewhere on your PATH does the same job. Uninstalling either way is deleting the file.
+### Without the installer
+
+Every release publishes one binary per platform alongside a `SHA256SUMS`. Download the one you want, check it, and drop it somewhere on your PATH - that is the whole of what the installers do. Uninstalling either way is deleting the file.
+
+### Coming from 2.x
 
 Coming from 2.x, where Gitsby was a Bash script and a PowerShell one: install over the top and delete the old `gitsby` or `gitsby.ps1` by hand. Every 2.x command still works, and `update` and `br land` are still accepted alongside their current names, `pullcom` and `br merge`. The scripts themselves are retired - the v2.1.0 tag is where they live.
 
@@ -208,11 +238,21 @@ Clone it and build it. Go is the only requirement, and the binary it produces is
 
 ~~~bash
 git clone https://github.com/jim-collier/gitsby.git
-cd gitsby && git switch dev
-cd src-go && go build -o gitsby .
+cd gitsby/src-go && go build -o gitsby .
 ~~~
 
-`cicd/cicd.bash` is the local pipeline and the one command to know. It fast-forwards from origin first, so everything after it tests the tree that is actually going out, then lints, builds and runs the regression suite, runs the fuzz vectors, compares the build against the frozen v2.1.0 one for backwards compatibility, installs to your own tool directories, rebuilds the demo gif, and commits and pushes at the end. Run it before opening a PR. Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `gifsicle` won't stop the rest.
+`cicd/cicd.bash` is the local pipeline and the one command to know. Run it before opening a PR. In order, it:
+
+1. Fast-forwards from origin, so everything after it tests the tree that is actually going out.
+2. Lints (gofmt, vet, staticcheck, golangci-lint, shellcheck).
+3. Builds, runs the unit tests, and runs the regression suite against the binary it just built.
+4. Runs the fuzz vectors, checks the standard library for known problems, and counts the processes each command spawns.
+5. Compares the build against the frozen v2.1.0 one, for backwards compatibility.
+6. Cross-builds every target and installs each to its own tool directory.
+7. Rebuilds the demo gif, if it changed.
+8. **Commits and pushes.** It ends by publishing - worth knowing before you run it on a fork.
+
+Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `gifsicle` won't stop the rest. Step 6's destinations are one machine's paths, set in `cicd/config.bash`; on anyone else's box that stage finds nothing writable and says so, which is harmless.
 
 ~~~bash
 cicd/cicd.bash --quick          # skips fuzz and the demo gif; what you want while iterating
@@ -224,7 +264,7 @@ Full prerequisites and process: [contributing.md](contributing.md). Coding style
 
 ## Contributing
 
-Given that you may be using this for mission-critical work (as I do), Gitsby aims to be bulletproof, unsurprising, and useful, in that order. It is currently simple enough that the first two are attainable, and they're believed met now - through manual QA, an automated suite that runs every check against both implementations, and near-daily use.
+Given that you may be using this for mission-critical work (as I do), Gitsby aims to be bulletproof, unsurprising, and useful, in that order. It is currently simple enough that the first two are attainable, and they're believed met now - through manual QA, an automated suite of several hundred checks against every build, and near-daily use.
 
 Given how it's written, even if a feature fails its design, it should in theory still never compromise your work.
 

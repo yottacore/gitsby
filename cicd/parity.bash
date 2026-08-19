@@ -5,7 +5,7 @@
 ##		  script under legacy/, rather than each against a spec. cicd/test.bash
 ##		  asks "does this behave correctly?" of one build; this asks "does the new
 ##		  one ANSWER as the shipped one did?" for the same input.
-##		- Aimed at the defect class the behavioural suite is blind to by
+##		- Aimed at the defect class the behavioral suite is blind to by
 ##		  construction: every port bug that has reached users here was a language
 ##		  mechanism differing - file encoding, argument parsing, return types,
 ##		  path resolution, string case - not a rule either build got wrong on
@@ -49,7 +49,7 @@ workNative="${work}"
 command -v cygpath >/dev/null 2>&1 && workNative="$(cygpath -m "${work}")"
 workBack="${workNative//\//\\}"
 
-## Same hermeticity as the behavioural suite, and for the same reasons.
+## Same hermeticity as the behavioral suite, and for the same reasons.
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@test
 export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@test
@@ -139,7 +139,7 @@ fSameStripped(){
 }
 
 fSameField(){
-	## One labelled line out of each build's output, compared. Used where the surrounding block
+	## One labeled line out of each build's output, compared. Used where the surrounding block
 	## legitimately differs: each runtime echoes a path the way it spells one, and 'C:\x' against
 	## '/c/x' is not a finding - what the two must agree on is what they RESOLVED from it.
 	local -r label="${1}"; local -r pattern="${2}"; local -r dir="${3}"; shift 3
@@ -308,8 +308,8 @@ echo "parity passed: ${pass}, differed: ${fail}"
 
 ##	History:
 ##		- 20260812 JC: Created. Compares the two builds against each other rather than each against
-##		  a spec, for the defect class the behavioural suite cannot see: every port bug that reached
+##		  a spec, for the defect class the behavioral suite cannot see: every port bug that reached
 ##		  users was a language mechanism differing, not a rule either build got wrong.
-##		- 20260813 JC: Same environment isolation the behavioural suite grew: env-injected git config and an inherited gh token.
+##		- 20260813 JC: Same environment isolation the behavioral suite grew: env-injected git config and an inherited gh token.
 ##		- 20260818 JC: Repointed. The pair used to be the two scripts; it is now this build against the frozen v2.1.0 one under legacy/, which is the question that still has an answer worth having. No pwsh leg: the two scripts were proven identical at v2.1.0, so agreeing with one is agreeing with both. The renamed commands are checked under both spellings, since the old name has to keep working.
 ##		- 20260819 JC: A difference used to end the run. diff exits 1, and under pipefail with -e that killed the script at the FIRST finding, so every later one went unreported - the totals line never printed either. Also a helper for comparing a line with one deliberate difference removed, spelled out per call so it cannot quietly widen.
