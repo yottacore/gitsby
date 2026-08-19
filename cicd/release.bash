@@ -7,13 +7,14 @@
 ##		  cannot be. 'gitsby release' already does the git half well; this is
 ##		  everything around it.
 ##		- Three phases, so a failure never leaves a half-cut release:
-##		   1. Prepare and verify. Changes nothing outside the working tree, and
-##		      nothing here needs undoing if it stops.
+##		   1. Prepare and verify. Runs the pipeline and cross-builds every release
+##		      binary. Changes nothing outside the working tree, and nothing here
+##		      needs undoing if it stops.
 ##		   2. Land. Writes the version, lands it through a PR, and calls
 ##		      'gitsby release'. The only phase that pushes.
-##		   3. Publish and prove. Cross-builds every target, creates the GitHub
-##		      release, uploads the binaries and their checksums, then fetches one
-##		      back and runs it - the result as a user would meet it.
+##		   3. Publish and prove. Creates the GitHub release, uploads the binaries
+##		      built in phase 1 and their checksums, then fetches one back and runs
+##		      it - the result as a user would meet it.
 ##	Syntax:
 ##		cicd/release.bash [VERSION] [options]
 ##		  VERSION          e.g. v2.1.0. Omitted, the changelog's vNEXT heading and
@@ -146,6 +147,25 @@ if ! fWould "run ${pipelineName}"; then
 	fNote "running the full pipeline before touching anything ..."
 	"${pipeline[@]}" || fDie "the pipeline did not pass; nothing was changed."
 fi
+
+## Every release binary, built here rather than after the tag is pushed. A target that stopped
+## compiling is a phase 1 failure, which costs nothing; discovered in phase 3 it would leave a
+## pushed tag with no release behind it. Built from the version being cut, not from the working
+## tree's describe output - these are the bytes people download, and their --version has to say
+## the released version and nothing else.
+assets="$(mktemp -d)"
+if ! fWould "cross-build ${#RELEASE_TARGETS[@]} targets at ${version}"; then
+	fNote "cross-building ${#RELEASE_TARGETS[@]} targets ..."
+	for t in "${RELEASE_TARGETS[@]}"; do
+		asset="${EXE_NAME}-${t%%/*}-${t##*/}"; [[ "${t}" == windows/* ]] && asset="${asset}.exe"
+		( cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOOS="${t%%/*}" GOARCH="${t##*/}" \
+			go build -trimpath -ldflags "-s -w -X main.version=${version#v}" -o "${assets}/${asset}" . ) \
+			|| fDie "cross-build failed for ${t}; nothing has been changed."
+	done
+	( cd "${assets}" && "${here}/utility/gen-checksums.bash" > SHA256SUMS ) || fDie "couldn't checksum the release assets."
+	fNote "built: $(cd "${assets}" && echo *)"
+fi
+
 fEcho "Phase 1 OK: ${lastTag:-(no previous tag)} -> ${version}"
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
@@ -194,23 +214,10 @@ echo
 fEcho "Phase 3: publish and prove"
 
 ## The release body is the changelog section, verbatim - the same words the repo already carries.
-notes="$(mktemp)"; trap 'rm -f -- "${notes:?}"' EXIT
+notes="$(mktemp)"; trap 'rm -f -- "${notes:?}"; rm -rf -- "${assets:?}"' EXIT
 awk -v ver="## ${version} " -v start="$(fpChangelogStart)" \
 	'NR>=start && index($0, ver)==1 {f=1; next} f && /^## /{exit} f' "${changelog}" > "${notes}" || true
 [[ -s "${notes}" ]] || fNote "WARNING: no changelog section found for ${version}; the release body will be empty."
-
-## Built from the tag, not from the working tree's describe output: these are the bytes people
-## download, and their --version has to say the released version and nothing else.
-assets="$(mktemp -d)"
-fNote "cross-building ${#RELEASE_TARGETS[@]} targets ..."
-for t in "${RELEASE_TARGETS[@]}"; do
-	asset="${EXE_NAME}-${t%%/*}-${t##*/}"; [[ "${t}" == windows/* ]] && asset="${asset}.exe"
-	( cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOOS="${t%%/*}" GOARCH="${t##*/}" \
-		go build -trimpath -ldflags "-s -w -X main.version=${version#v}" -o "${assets}/${asset}" . ) \
-		|| fDie "cross-build failed for ${t}; nothing has been published."
-done
-( cd "${assets}" && "${here}/utility/gen-checksums.bash" > SHA256SUMS ) || fDie "couldn't checksum the release assets."
-fNote "built: $(cd "${assets}" && echo *)"
 
 if ! fWould "gh release create ${version} with ${#RELEASE_TARGETS[@]} binaries and SHA256SUMS"; then
 	"${gitsby}" -q raw gh release create "${version}" --title "${version}" --notes-file "${notes}" \
@@ -252,7 +259,6 @@ if ! fWould "verify releases/latest, then download and run this platform's publi
 		fNote "WARNING: ${proveAsset} did not download-verify-run as ${version} from the published release."
 	fi
 fi
-rm -rf -- "${assets:?}"
 
 echo
 fEcho "Released ${version}"
@@ -264,6 +270,7 @@ echo
 ##		  all by hand, and each has been missed at least once. Both guards here exist because the
 ##		  thing they check has already gone wrong: the two builds' version strings drifting, and the
 ##		  in-script history footers going a whole release without an entry.
+##		- 20260818 JC: The release binaries are built in phase 1, with the pipeline, rather than after the tag is pushed. A target that stops compiling now fails where nothing has been changed; found in phase 3 it would have left a pushed tag with no release behind it.
 ##		- 20260818 JC: Go. The version lives in the tag alone now - the build injects it - so phase 2 no longer bumps a string in two source files and phase 1 no longer has two of them to disagree. Phase 3 cross-builds the whole target matrix and publishes one binary per platform. The proof stopped being 'run both installers': there is one implementation, and what a user actually meets is a download, its checksum, and whether the thing runs.
 ##		- 20260813 JC: All three readings of the changelog start below the commented-out template.
 ##		  Each took the first match, so each found the template's decoy heading instead: the guard

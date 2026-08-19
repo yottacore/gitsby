@@ -1074,27 +1074,40 @@ Go port, later rounds. These wait until the round-one items above hold up.
 	- Historical changelog entries keep the names they shipped with; only vNEXT gets the new ones.
 	- `demo-scenario.toml` deliberately left on the old spellings. The aliases keep it correct, and changing text the scenario prints makes the committed gif stale, which the pipeline compares byte for byte. It rides along with the gif regeneration at release.
 
-- ✋ Per-platform release artifacts with a checksum each; `--arch` becomes real.
+- ✅ Per-platform release artifacts with a checksum each.
+	- Six targets: linux, windows and macOS, amd64 and arm64 each. Published as `gitsby-<goos>-<goarch>` (`.exe` on Windows) with one `SHA256SUMS` over the set. The list lives in `cicd/config.bash`.
+	- Free because the module is pure stdlib with no cgo, so every target cross-builds from one box - macOS included, with no SDK and no Mac.
+	- `--arch` becoming real belongs to the installer, which does not exist yet. See the installer item below.
 
 - ✋ Rework the fuzz suite. Much of what it proves becomes structurally impossible with no shell in the path; figure out what remains meaningful.
 
-- ✋ Retire the scripted implementations and parity.bash together, once the Go leg passes everything. Probably a `legacy/` folder rather than deletion.
-	- Half done already: both scripts are frozen read-only as of 2026-08-18, so what's left is the move to `legacy/` and dropping parity.bash. See design.md, "Direction decisions".
-	- The CI/CD stack moves with them. Everything that still works keeps working from `legacy/cicd/`; what breaks gets ported to Go or dropped, decided file by file rather than up front.
-	- Sizing, so the decision is not re-derived later: `test.bash` 1983 lines and 524 assertions, `cicd.bash` 453, `fuzz.bash` 371, `release.bash` 278, `parity.bash` 234, `config.bash` 113, `cicd-win.ps1` 757, plus about 1,100 lines under `cicd/utility/`.
-	- Free wins, no porting: drop `parity.bash` (nothing left to compare once both scripts go) and `cicd-win.ps1` (it mirrors an engine that is leaving), which also ends the hand-synced lint globs.
-	- `test.bash` is the bulk of the work and the piece worth doing properly. It already tests the Go binary, and moving it gains per-case filtering, real failure diffs, and an explicitly built child environment instead of unsetting inherited state.
-	- Leave the demo gif generator alone - already portable, and its output is pinned byte for byte.
-	- Rework the fuzz suite at the same time; that is the deferred item just above.
-	- PowerShell was considered for the whole stack and rejected. Reasoning in design.md, "Direction decisions".
+- ✅ Retire the scripted implementations, and make the pipeline Go-specific.
+	- `legacy/` holds the six frozen deliverables and nothing else: both builds and the four installers of that era, plus a README saying what they are. No copy of the pipeline - the v2.1.0 tag is a better hotfix tree than any copy could be, since it holds the scripts, the pipeline that built them and the installers all in their original places, unmodified.
+	- A hotfix therefore starts at `git switch -c hotfix/2.1.1 v2.1.0`, ships from that branch with its own tag, and is never merged back to `main` - those paths do not exist there.
+	- `cicd-win.ps1` deleted. One engine, everywhere, which also ends the hand-synced lint globs.
+	- `parity.bash` kept and repointed, rather than dropped as originally planned. Comparing this build against the frozen one is exactly the backwards-compatibility question worth asking, and the harness for it already existed. It is stage 4 of the pipeline now, and it also checks that `update` and `br land` still route where they always did.
+	- The suite runs one leg. The 58 checks that were never about an implementation - the installers, the frozen builds' own platform gates, the source pins on this pipeline's files - stayed, repointed at `legacy/`; they had only ever ridden the Bash leg because that was the leg that always ran. Counted before and after so none went missing: 530 pass, against 513 + 455 across the old three legs.
+	- Pipeline is seven stages now: lint, build + test, fuzz, backwards compatibility, dogfood, demo gif, publish. The Go toolchain is required rather than probed.
+
+- 🔘 Installer for the Go build, and the README install section that documents it. **Blocks `dev` -> `main`.**
+	- `install.bash` and `install.ps1` moved to `legacy/`, so once this branch reaches `main` the four documented one-liners at `raw.githubusercontent.com/jim-collier/gitsby/main/install*.bash` stop resolving. Nothing is broken today - `main` is still v2.1.0 and nothing ships from an integration branch - but the replacements have to land at those exact root paths before the cut.
+	- What it installs is now a binary per platform, so it picks by `<goos>-<goarch>`, which is what makes `--arch` real.
+	- Open with it: whether a PowerShell installer is still wanted at all, when the thing it installs needs no PowerShell.
+	- README "Installation", "Compatibility" and the badges still describe the two-script era. They come with this.
+
+- 🔘 Regenerate the demo gif. Stale twice over: the renamed commands moved text the scenario prints, and the pipeline now renders it from the Go build rather than the dogfooded script.
 
 - ✋ macOS build check on real ARM hardware, including whether signing/quarantine matters for a terminal download.
+	- Narrower than it was: the build itself is no longer in question, since `darwin/arm64` cross-compiles from this box with no SDK. What is left is signing and quarantine on a real machine.
 
 - ✋ `.shcl` goes hierarchical via a real module, replacing the hand parse.
 
-- ✋ Dogfood location change.
+- ✅ Dogfood location change.
+	- Three targets built and placed every run: linux to `util/linux/bin`, windows to `util/mswin/cli/by-self/win64`, macOS to `util/macos/bin`. Windows and macOS each carry a second spelling of the same share, for when the run is happening on that platform instead.
+	- The old bash build is still sitting in `util/linux/bash` and nothing removes it. Worth clearing by hand.
 
-- ✋ Release ordering: the build matrix runs before the release is cut, so a failed build never leaves a half-published release.
+- ✅ Release ordering: the build matrix runs before the release is cut, so a failed build never leaves a half-published release.
+	- All six binaries are built in phase 1, alongside the pipeline gate. A target that stops compiling fails where nothing has been changed; found in phase 3 it would have left a pushed tag with no release behind it.
 
 - ✋ GitHub Actions and platform packaging (.deb/.rpm/.exe installer), deferred to the port by decision.
 

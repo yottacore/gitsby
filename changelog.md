@@ -38,6 +38,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `cicd/release.bash` retries the installer it runs against the freshly published release before reporting that the release isn't installable. Cutting v2.1.0 warned that it wasn't when it was: GitHub serves the tag a little ahead of its assets, and the installer stops rather than quietly skip checksum verification. A warning that fires on a good release is worse than no warning at all.
 
+- The Bash and PowerShell builds and their installers moved to `legacy/`, and the pipeline became Go-specific: one engine instead of two, seven stages, and the Go toolchain required rather than probed. `cicd/parity.bash` was kept and repointed - it compares this build against the frozen v2.1.0 one, which is the backwards-compatibility question, and checks that `update` and `br land` still route where they always did.
+
+- A release is now one binary per platform - linux, windows and macOS, amd64 and arm64 each - with a single `SHA256SUMS` over the set. They are built before the tag is cut, so a target that stops compiling fails while nothing has been changed. The version comes from the tag alone; no file in the tree records it.
+
 ## v2.1.0 - 2026-08-14
 
 ### Added
