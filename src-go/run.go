@@ -156,7 +156,9 @@ func runHandover(name string, args []string) {
 		if ee, ok := err.(*exec.ExitError); ok {
 			os.Exit(ee.ExitCode())
 		}
-		throwUsage("Not found in path: " + name)
+		// Whether it exists was settled before the handover, so whatever this is,
+		// it isn't that.
+		throwUsage("Couldn't run '" + name + "': " + err.Error())
 	}
 	os.Exit(0)
 }

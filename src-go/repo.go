@@ -163,6 +163,11 @@ func settleRepoClone() bool {
 	if cmdArg == "" {
 		throwUsage("No URL given. Syntax: " + meName + " repo clone <url> [directory]")
 	}
+	// 'owner/name' is what create and connect take; refusing it here only after
+	// the plan was confirmed is the surprise.
+	if ownerNameRE.MatchString(cmdArg) && !pathExists(cmdArg) {
+		cmdArg = githubUrl(cmdArg, preferredProtocol())
+	}
 	cloneUrl, cloneDir = cmdArg, cmdArg2
 	if cloneDir == "" {
 		d := strings.TrimSuffix(cloneUrl, "/")

@@ -55,7 +55,7 @@ func afterEq(arg string) string { return arg[strings.Index(arg, "=")+1:] }
 // into a silent no-op.
 func parseArgs(args []string) bool {
 	const maxPositional = 4
-	lastSwitch, lastSwitchAsPassed := "", ""
+	lastSwitch := ""
 	expectingValue := false
 	positional := 0
 	for _, arg := range args {
@@ -68,12 +68,9 @@ func parseArgs(args []string) bool {
 				commitMessage = arg
 			case "config":
 				configFileArg, configFileGiven = arg, true
-			default:
-				throwUsage("Unknown option: '" + lastSwitchAsPassed + "', current parameter: '" + arg + "'.")
 			}
 			expectingValue = false
 		} else if switchRegex.MatchString(arg) {
-			lastSwitchAsPassed = arg
 			t := stripDashes(strings.ToLower(arg))
 			lastSwitch = t
 			switch {
@@ -81,8 +78,11 @@ func parseArgs(args []string) bool {
 				return true
 			case t == "q" || t == "quiet" || t == "y" || t == "yes":
 				quiet = true
-			case t == "no-fetch" || t == "nofetch" || t == "offline":
+			case t == "no-fetch" || t == "nofetch":
 				doFetch = false
+			case t == "offline":
+				// Old spelling of --no-fetch, and a lie: it never stopped a push.
+				throwUsage("There is no --offline option. Offline is a state gitsby finds by trying, not one you declare; use --no-fetch to skip the pre-command fetch (pushes still go out).")
 			case t == "public":
 				repoVisibility, sawPublic = "public", true
 			case t == "private":
@@ -103,7 +103,7 @@ func parseArgs(args []string) bool {
 		} else {
 			positional++
 			if positional > maxPositional {
-				throwUsage("Too many positional arguments: " + strconv.Itoa(positional) + ", for max of " + strconv.Itoa(maxPositional) + ".")
+				throwUsage("Too many positional arguments: " + strconv.Itoa(positional) + ", for max of " + strconv.Itoa(maxPositional) + ". If that was a message or title, quote it.")
 			}
 			switch positional {
 			case 1:
@@ -219,9 +219,17 @@ func sortCommand() {
 		}
 	case "pr":
 		switch strings.ToLower(cmdArg) {
-		case "ok", "create", "new":
+		case "create", "new":
+			if cmdArg3 != "" {
+				throwUsage("Unexpected extra argument '" + cmdArg3 + "'; quote your title.")
+			}
+		case "ok":
 		default:
+			// A number, or nothing. Either way there is no third word.
 			isMutating = false
+			if cmdArg2 != "" {
+				throwUsage("Unexpected extra argument '" + cmdArg2 + "'.")
+			}
 		}
 	case "pullcom", "sync", "br-merge":
 		if commitMessage == "" {
@@ -279,6 +287,11 @@ scan:
 		case wantValue:
 			wantValue = false
 		case wantTool:
+			// Past the tool name every option is the tool's, so one typed here is
+			// ours arriving too late - not a subcommand nobody has heard of.
+			if strings.HasPrefix(arg, "-") {
+				throwUsage("'" + arg + "' is an option, and " + meName + "'s own options come before 'raw'. Syntax: " + meName + " raw <git|gh> <arguments ...>")
+			}
 			if arg != "git" && arg != "gh" {
 				throwUsage("Unknown 'raw' subcommand '" + arg + "'. One of: git, gh.")
 			}
@@ -296,7 +309,7 @@ scan:
 				wantConfig = true
 			case strings.HasPrefix(opt, "config="):
 				configFileArg, configFileGiven = afterEq(arg), true
-			case opt == "no-fetch" || opt == "nofetch" || opt == "offline":
+			case opt == "no-fetch" || opt == "nofetch":
 			case opt == "any-identity" || opt == "anyidentity":
 			case opt == "public" || opt == "private":
 			case opt == "m" || opt == "message" || opt == "msg":

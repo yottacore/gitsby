@@ -30,9 +30,6 @@ const (
 )
 
 func printCopyright() {
-	if quiet {
-		return
-	}
 	echoClean("")
 	echoClean(fmt.Sprintf("%s v%s, Copyright © %s %s.", meName, version, copyrightYear, author))
 	echoClean("Licensed under The MIT License (MIT). Full text at:")
@@ -42,9 +39,6 @@ func printCopyright() {
 }
 
 func printAbout() {
-	if quiet {
-		return
-	}
 	echoClean("")
 	echoClean("Safer, state-checked wrappers for everyday git. Every command verifies the")
 	echoClean("repo state before acting (commit only if dirty, pull only with an upstream,")
@@ -53,9 +47,6 @@ func printAbout() {
 }
 
 func printSyntax() {
-	if quiet {
-		return
-	}
 	echoClean("")
 	echoClean("Common commands:")
 	echoClean("  pullcom [msg] ......: Pull updates, then commit all local changes. Do frequently!")
@@ -165,9 +156,6 @@ func main() {
 
 	mustBeInPath("git")
 	if parseArgs(args) {
-		// Help works from any position: '<noun> <verb> --help' is the reflex every
-		// git user has, and slot 1 always holds a real command, so nothing can be
-		// shadowed.
 		printHelp()
 		echoClean("")
 		return
@@ -176,6 +164,12 @@ func main() {
 	// silently picking one would publish a repo the caller believes is the other.
 	if sawPublic && sawPrivate {
 		throwUsage("--public and --private are mutually exclusive; pick one.")
+	}
+	// Options and no command asks the same thing no arguments at all asks.
+	if cmdName == "" {
+		printHelp()
+		echoCleanForce("")
+		os.Exit(1)
 	}
 	collapseCommand()
 	sortCommand()

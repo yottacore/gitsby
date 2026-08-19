@@ -276,9 +276,8 @@ func loadConfig() {
 	}
 }
 
-// splitAccountKey takes 'account.<name>.<field>' apart, validating the name. A key
-// under 'account.' with a bad or missing name reports as unknown via ok=true with
-// an empty field, so the caller's default arm flags it.
+// splitAccountKey takes 'account.<name>.<field>' apart, validating the name.
+// Anything malformed comes back not-ok, and the caller lists the key as unknown.
 func splitAccountKey(key string) (acct, field string, ok bool) {
 	if !strings.HasPrefix(key, "account.") {
 		return "", "", false

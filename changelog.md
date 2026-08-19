@@ -34,6 +34,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The old spellings are permanent, not a deprecation period. Nothing that works today stops working, and no script needs editing.
 
+- `repo clone` takes `owner/name` as well as a full URL, the way `repo create` and `repo connect` already did - and takes it before showing you the plan, rather than failing on it afterwards.
+
+- `release` with nothing new to release now exits 0 and says so. Every other command treats nothing-to-do as success, and re-running one is meant to be safe.
+
+- `yes` at a confirmation prompt is a yes. Only a bare `y` counted before, so the word most people type aborted the command.
+
+- Options with no command - `gitsby -q`, `gitsby -q --help` - print the command list. The first reported an unknown empty command; the second printed nothing, because `-q` was silencing help somebody had explicitly asked for.
+
+- Trailing arguments are refused everywhere now. `pr <number> extra` was the one place an extra word was silently dropped, and `pr create` with an unquoted title now gives the same quote-your-message hint the other commands give.
+
+- An option typed between `raw` and the tool says where gitsby's own options go, instead of calling it a subcommand nobody has heard of.
+
+### Removed
+
+- `--offline` is no longer accepted as a spelling of `--no-fetch`. It was undocumented, and it never did what the word says - pushes went out regardless. Typing it now says so and names `--no-fetch`, which skips the pre-command fetch. Being offline is still handled on its own: gitsby finds out by trying, and each command degrades or refuses accordingly.
+
 ### Other work
 
 - `cicd/release.bash` retries the installer it runs against the freshly published release before reporting that the release isn't installable. Cutting v2.1.0 warned that it wasn't when it was: GitHub serves the tag a little ahead of its assets, and the installer stops rather than quietly skip checksum verification. A warning that fires on a good release is worse than no warning at all.

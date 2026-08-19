@@ -102,7 +102,9 @@ func releasePreflight() {
 		return
 	}
 	if relExisting := runOut("git", "describe", "--exact-match", "--tags", relTarget); relExisting != "" {
-		throwUsage("Nothing new to release since " + relExisting + ". If that tag never reached origin, push it: git push origin " + relExisting)
+		echoStatus("Nothing new to release since " + relExisting + ".")
+		echoClean("  If that tag never reached origin, push it: git push origin " + relExisting)
+		exitOK()
 	}
 }
 
