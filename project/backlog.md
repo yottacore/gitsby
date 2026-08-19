@@ -126,6 +126,83 @@ From a full review of the Go code, 20260818. gofmt, vet, staticcheck and the sui
 	- Keyed on mutating, not pushing, so `pullcom -q` under a mismatched key is refused outright and pays a live ssh probe, for a local-only commit.
 	- Keyed on whether the command pushes, named by exception so a mutating command added later stays covered until it says otherwise.
 
+From a review against the standing directives, 20260819. Everything below was checked against the code, not inferred. gofmt, vet, staticcheck and the suite (617/0) are all clean, so none of this is tool-visible.
+
+- 🔘 Directive review 20260819 item 1: a second `account apply` deletes the rules and then gives up.
+	- Two accounts claiming the same folder produce the same rule key twice. The first removal takes both, the second finds nothing, and git's "nothing to remove" is read as a failure.
+	- End state is worse than before it ran: no rules at all, and an error.
+	- Nothing warns that two accounts claim one folder in the first place.
+
+- 🔘 Directive review 20260819 item 2: gitsby and plain git can resolve the same folder to different accounts.
+	- The two tie-breaks disagree when two accounts declare the same path. Gitsby goes by declaration order, git goes by what sorts last.
+	- That disagreement is the exact thing `apply` exists to prevent.
+
+- 🔘 Directive review 20260819 item 3: a bare repo, or a `.git` directory, passes the in-a-repo check.
+	- The question is asked of a command that answers in text and exits zero either way.
+	- `status` there prints a full state block ending in "working tree clean", which it has no business claiming. `pullcom` prints its whole plan, gets confirmed, then dies in git.
+
+- 🔘 Directive review 20260819 item 4: a token read from a file is never checked against the account it claims.
+	- The name comes from the config key, so a stale token file reports the right name and pushes as the wrong one.
+	- That is precisely the mistake the identity block exists to catch. With no `gh` installed at all it still names an account.
+
+- 🔘 Directive review 20260819 item 5: `--any-identity` quietly drops the commit identity and key.
+	- Account selection is skipped entirely, but the Account line still names the account as if it had been applied.
+	- Commits get authored by whatever git falls back to. The help only mentions the key mismatch, not the authorship.
+
+- 🔘 Directive review 20260819 item 6: `raw` names an account for a repo you only cloned.
+	- The gate accepts the remote-owner guess, so cloning someone else's repo prints "acting as <them>" - untrue, nothing was applied, and it tells a single-account user the feature exists.
+
+- 🔘 Directive review 20260819 item 7: `br prune` tries to delete remote branches while offline.
+	- `br merge` holds its remote delete back; prune has no such check.
+	- Each failed push is reported as "already gone", blaming the branch for a network problem, and the summary reads as if it finished.
+
+- 🔘 Directive review 20260819 item 8: `release` in a repo with no origin cuts a tag nobody can fetch, silently.
+	- The offline check never trips, because with no remote there is nothing to find unreachable.
+	- `sync` gets this right and says so; release just ends on "Done."
+
+- 🔘 Directive review 20260819 item 9: the pre-command fetch may refresh a remote nothing else reads.
+	- With no remote named, git follows the branch's own tracking remote. Every existence check afterwards reads origin.
+
+- 🔘 Directive review 20260819 item 10: the ssh-login cache ignores which remote it was asked about.
+	- One slot, no key, three different callers. Reachable through `repo connect` from outside a repo, where it produces a mismatch warning about an origin that does not exist.
+
+- 🔘 Directive review 20260819 item 11: `br switch` assumes a single remote.
+	- With two remotes carrying the same branch name git refuses to guess, and the up-front check does not notice because it only ever looks at origin.
+
+- 🔘 Directive review 20260819 item 12: the installers cannot find a release that is only a prerelease.
+	- Both the main route and the fallback ask the same endpoint, and that endpoint skips prereleases. So there is no fallback.
+	- The failure message blames rate limiting, which sends anyone debugging it the wrong way.
+	- Latent today, live the first time a version ships as a prerelease.
+
+- 🔘 Directive review 20260819 item 13: `install.ps1` has no `--help`, and the README tells people to use it.
+
+- 🔘 Directive review 20260819 item 14: `install.ps1` can report success over a binary that failed to run.
+	- The verification step's exit code is never read, and a native command's failure does not stop the script on its own.
+
+- 🔘 Directive review 20260819 item 15: both installers write straight to the final path.
+	- An interrupt mid-copy leaves a truncated executable in place that passed its checksum under a different name.
+	- Re-installing over a copy that is currently running fails on both platforms.
+	- Staging in the destination directory and renaming over the target fixes both at once.
+
+- 🔘 Directive review 20260819 item 16: an unresolvable default branch is re-derived on every ask.
+	- The two branch lookups are the only cached values in the codebase with no "we already asked" flag, so a repo where the answer is empty repeats the whole five-command ladder each time.
+	- Measured: 38 processes for one `status`, 25 of them the same five commands over and over.
+
+- 🔘 Directive review 20260819 item 17: the lint summary reports warnings on a perfectly clean run.
+	- Its filter matches the test harness's own check labels, so a green pipeline reports seven warnings that do not exist.
+	- A warning that fires when nothing is wrong is worse than no warning.
+
+- 🔘 Directive review 20260819 item 18: `--quick` still cross-builds three platforms.
+	- It skips fuzz and the gif, which are not the slow part.
+
+- 🔘 Directive review 20260819 item 19: the hotfix warning watches a folder that no longer exists.
+	- It was written when the deliverable was `bin/gitsby`. A hotfix to the code that actually ships gets nothing.
+
+- 🔘 Directive review 20260819 item 20: file permissions are never checked, and one directory is created wide open.
+	- A token file readable by everyone loads without comment. ssh and gh both refuse or warn on that.
+	- The folder holding the per-account identity fragments is created 0777 and relies entirely on umask.
+	- A malformed inherited `GIT_CONFIG_COUNT` is read as zero, which half-overwrites whatever the caller set up. That variable is injected by the terminal here, so it is not hypothetical.
+
 ### Features and enhancements
 
 - ✅ Code Review 20260818 item 14: skip the identity network probe when no identity block will print.
@@ -188,6 +265,94 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 
 - ✅ Port the remaining read paths: `br prune` preview, `pr list`, default-branch resolution.
 	- Done: `br prune` runs its whole survey and shows the real plan (including the empty-plan answers and the keep reasons); only the deleting half still says it isn't built. Bare `pr` lists and `pr <n>` views with diff; create/ok wait for the writers, and pr's argument shapes refuse with the script's messages. Default-branch resolution itself landed with the previous slice - what this adds is the refusal gate for commands that need a confirmable branch. Config-file errors now match the scripts' one-trailing-blank shape (they throw inside a command substitution there). All verified byte-identical against the bash build; the leg moved 236/202 -> 249/189, and every remaining failure in these areas needs the mutating half.
+
+Same review, 20260819. These are shape and process rather than defects.
+
+- 🔘 Directive review 20260819 item 21: the Go reads as a shell script transcribed into Go syntax.
+	- State is passed through about 120 package-level variables. Several functions take nothing and return nothing, and work only by mutating them.
+	- Not one function returns an error. Failure is a hard exit called from inside leaf helpers, which is also why nothing can be unit tested.
+	- Records are packed into tab-delimited strings and re-parsed to sort them.
+	- All of that is one problem wearing four hats. Gathering the run's state into a struct passed to the command functions is the change the other three follow from.
+	- Note against the old builds: only input and output parity matters now, so mirroring their structure is not a reason to keep any of this.
+
+- 🔘 Directive review 20260819 item 22: there are no Go tests at all.
+	- The whole suite is external. The pure string functions - remote parsing, config values, path canonicalization, tag matching - have a lot of edge cases and nothing exercises them directly.
+
+- 🔘 Directive review 20260819 item 23: add a linter config so the review findings become gates.
+	- gofmt, vet and staticcheck are clean and gated already. A config file would add the checks that caught the rest: unchecked errors, shadowed builtins, and the naming convention below.
+
+- 🔘 Directive review 20260819 item 24: internal names do not follow Go's convention for initialisms.
+	- Twenty-six of them, all unexported, all internal. No effect on output or arguments.
+
+- 🔘 Directive review 20260819 item 25: five discarded errors want either handling or a reason.
+	- Three of them set environment variables that decide the whole account selection.
+
+- 🔘 Directive review 20260819 item 26: the published binaries cannot be rebuilt to the same checksum.
+	- Version control stamps go into the binary, and the release builds its assets before it cuts the tag - so the published binaries carry the previous revision and nobody can reproduce the checksums we publish.
+	- Also wants the build id cleared, the native build built the same way as the cross-builds, and the toolchain pinned. Once it holds, say so in the README.
+
+- 🔘 Directive review 20260819 item 27: no build step limits itself to half the cores.
+	- The compiler defaults to all of them, in every build and in the eight-target release loop.
+
+- 🔘 Directive review 20260819 item 28: nothing in the pipeline looks at the standard library for known problems.
+	- With no third-party dependencies, that is the only library code there is to check.
+
+- 🔘 Directive review 20260819 item 29: no profiling step exists.
+	- A flamegraph would be the wrong instrument here - the program spends its life blocked waiting on git, so a sampling profile is a flat wall with no leaders.
+	- What carries signal is counting spawns per command against a fixture repo, and failing on a regression. The rotation and the seen-marker patterns already exist and can be reused as they are.
+
+- 🔘 Directive review 20260819 item 30: Windows binaries carry no icon and no version details.
+
+- 🔘 Directive review 20260819 item 31: `-q` reaches the publisher but not the three test harnesses.
+	- None of them accepts an option at all, so a quiet run still prints every one of 617 check lines.
+
+- 🔘 Directive review 20260819 item 32: `--target=` and `--release=` are not accepted with an equals sign.
+
+- 🔘 Directive review 20260819 item 33: decide whether `install.ps1` should run on Windows PowerShell 5.1.
+	- It refuses below 7 on purpose, and the reason is sound. But 5.1 is what a fresh Windows install actually has, so the documented one-liner fails there.
+	- The syntax is already 5.1-clean. Lifting it needs a fallback for three variables that do not exist in 5.1, one parameter spelled differently, plus forcing TLS and basic parsing.
+
+- 🔘 Directive review 20260819 item 34: batching the branch deletes in `br prune` is the largest speed win available, and it changes the output.
+	- One push per branch, each forking three processes. Eight branches cost 24 of the command's 81.
+	- Deleting them in one call collapses the per-branch status and warning lines into one, so it needs a decision and a suite carve-out before it can be done.
+
+- 🔘 Directive review 20260819 item 35: ten statements in the public docs are no longer true.
+	- The command count is one short in three places, including the repo blurb.
+	- The README and contributing both send a new contributor to a branch that has no Go code on it.
+	- The README still describes a suite that runs against two implementations.
+	- design.md documents a folder, a test leg and a pipeline engine that were all removed, and its release section describes work that shipped, wrongly.
+	- Two smaller ones: a flag that only ever existed on the deleted engine, and a command spelled the old way.
+
+- 🔘 Directive review 20260819 item 36: the Install section has no sub-headings.
+	- Nothing in the contents leads a reader to "is this in my package manager", though the answer is written a few lines down.
+	- The development section does not say the pipeline commits and pushes at the end, which will surprise someone running it on a fork.
+
+- 🔘 Directive review 20260819 item 37: several of the strongest features are buried.
+	- One static binary with nothing alongside it is the third bullet of a compatibility list.
+	- That every mutating command shows the exact git commands and asks first is the main safety argument and appears once, near the bottom.
+	- `repo create` listing what it is about to publish, the offline behavior, and `account apply` teaching plain git the same rules are each a clause inside a longer paragraph.
+	- Nothing anywhere says gitsby keeps no state of its own.
+	- The repo blurb needs the same count fix, a homepage, and its topics refreshed - it still says bash and powershell.
+
+- 🔘 Directive review 20260819 item 38: design.md has no goals and non-goals section, and no header.
+	- The non-goals are the most interesting thing about the project and they are scattered across three sections and another document.
+	- Everything else about the file is right. It is a decision log with rejection rationale recorded inline, which is the correct form here - do not restructure it.
+
+- 🔘 Directive review 20260819 item 39: twenty-five finished items are still sitting in the open sections.
+	- The Bugs section reads as fourteen open bugs, all of which are done.
+	- The review items also want their outcome bullet labeled, so the finding and the fix can be told apart at a glance.
+
+- 🔘 Directive review 20260819 item 40: about twenty British spellings across the docs, scripts and code comments.
+	- Not in the code of conduct or contributing - those reproduce upstream text and should stay as published.
+
+- 🔘 Directive review 20260819 item 41: five paragraphs run long enough to be hard to scan.
+	- The worst is 620 characters. All five are ideas that want to be bullets.
+
+- 🔘 Directive review 20260819 item 42: no script exists to run an older build alongside the current one.
+	- Worth less here than in the projects it comes from: gitsby exits immediately, so nothing is ever held open. The real use is keeping timestamped builds around to bisect a behavior change.
+
+- 🔘 Directive review 20260819 item 43: the demo script file is stale in two ways beyond the renamed commands.
+	- It points a future editor at the deleted Windows engine, twice. Fix it in the same pass as the regeneration.
 
 ### Done
 
@@ -1248,5 +1413,7 @@ Go port, later rounds. These wait until the round-one items above hold up.
 	- All six binaries are built in phase 1, alongside the pipeline gate. A target that stops compiling fails where nothing has been changed; found in phase 3 it would have left a pushed tag with no release behind it.
 
 - ✋ GitHub Actions and platform packaging (.deb/.rpm/.exe installer), deferred to the port by decision.
+	- The port is underway now, so this is decidable rather than deferred. Two calls: whether a bare workflow (vet, test, build on push and PR) is worth the dependency on a hosted service, and whether a release packager earns its place by bringing the Linux packages with it.
+	- Against the packager: the release already proves itself by downloading, checksumming and running the asset, which is more than it would do. For it: the packages come free.
 
 ### Canceled
