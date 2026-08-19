@@ -531,7 +531,7 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 		- Nothing anywhere says gitsby keeps no state of its own.
 		- The repo blurb needs the same count fix, a homepage, and its topics refreshed - it still says bash and powershell.
 		- Fixed in the docs: the three arguments - it shows its work, it keeps no state of its own, it is one file - are their own short list in "What it is", where nothing else competes with them. The offline behavior, the publish list and `account apply` each became a point of their own instead of a clause. The tagline names the show-and-ask promise.
-		- Left for the owner: the repo blurb, homepage and topics are GitHub settings rather than files here, and changing them edits the public repo page. `gh repo edit --description ... --homepage ... --add-topic go --remove-topic bash` is the one command.
+		- Left to do by hand: the repo blurb, homepage and topics are GitHub settings rather than files here, and changing them edits the public repo page. `gh repo edit --description ... --homepage ... --add-topic go --remove-topic bash` is the one command.
 
 	- ✅ Directive review 20260819 item 38: design.md has no goals and non-goals section, and no header.
 		- The non-goals are the most interesting thing about the project and they are scattered across three sections and another document.
