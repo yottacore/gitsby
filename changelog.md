@@ -31,6 +31,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `identity` shows who commands in this folder act as - the account, the ssh key and who it authenticates as, the commit author, and gh's login - without the branch and working-tree state `status` prints around it. It answers outside a repository too, which is where the question comes up before a `repo clone` or `repo create`.
 
+- Other Git hosts are first-class. Gitsby looks at where `origin` actually points and picks the tool that serves it: `gh` on GitHub, `tea` on Gitea and Forgejo (found under `tea-cli` too, which is how some distributions ship it). Everything that is only Git - branching, committing, pulling, pushing, merging, pruning, releasing, and re-spelling a remote between HTTPS and SSH - now works on any host with no forge client installed at all.
+
+- Accounts can say which forge they are on, with `host` and `user`. An account's token is only applied where it can be used, so a GitHub token is never handed to a push at somebody else's host, and the identity block says which two hosts disagreed. A non-GitHub token is exported under its own variable rather than as `GH_TOKEN`, which `gh` would otherwise pick up.
+
+- The identity block has a `Forge` line for hosts `gh` does not serve, naming the host and who its CLI holds a login for. Previously it simply printed nothing there.
+
 - The Windows binaries carry an icon and version details. Explorer shows the gitsby logo instead of the blank default, and Properties reads a version, description, copyright and file name off the file itself.
 
 ### Changed
@@ -38,6 +44,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `update` is now `pullcom`, which names both halves in the order they run rather than reading like it updates gitsby itself. It also answers to `update`, `pull`, `pullc`, `pullco`, `pullcomm` and `pullcommit`. `sync` is unchanged; the pair was the unclear part, not either word alone.
 
 - `br land` is now `br merge`, the word most people reach for first. `br land` still works.
+
+- `pr` no longer requires `gh` to be installed before it will look at your arguments. It establishes the host first, so a repository on another forge is told which tool it needs rather than told to install a GitHub client it would never use. `pr` on a repository with no remote at all now says so outright instead of failing further in.
+
+- `repo url` re-spells a remote between HTTPS and SSH on any host. It only ever rewrote text - it asks the host nothing - and refusing everywhere but github.com was a limitation of the URL parser rather than a rule.
+
+- The ssh identity probe understands Gitea's greeting as well as GitHub's, so the SSH line names the account on a Gitea remote instead of reporting it unknown.
 
 - The old spellings are permanent, not a deprecation period. Nothing that works today stops working, and no script needs editing.
 

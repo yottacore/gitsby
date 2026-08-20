@@ -96,7 +96,7 @@ What you reach for daily is a one-word command. Everything else is grouped under
 | `repo create`        | `<owner/name>`| `git init` if needed, commit, then create the GitHub repo via [gh](https://github.com/cli/cli) and push to it (`--public`/`--private`; private by default).
 | `repo connect`       | `[target]`    | Publish local work to a remote that already exists and is empty: `git init` if needed, commit, push. Takes a URL or `owner/name`.
 | `repo url`           | `[https\|ssh]` | Show how `origin` authenticates, or switch it between the two. Nothing else about the repo changes.
-| `pr`                 |               | Lists PRs via [gh](https://github.com/cli/cli).
+| `pr`                 |               | Lists PRs, via [gh](https://github.com/cli/cli) on GitHub or [tea](https://gitea.com/gitea/tea) on Gitea.
 | `pr <#>`             |               | View a PR plus its diff.
 | `pr create`          | `[title]`     | Push the current branch and open a PR against `dev`/`main` (no title: the last commit subject).
 | `pr ok`              | `<#>`         | Approve and merge a PR.
@@ -156,7 +156,9 @@ Full detail, including SSH keys, token files, and how Gitsby checks that `gh` an
 
 	> Note: [GitButler](https://gitbutler.com/) is *not* interchangeable with these. While a great tool and a cool idea, it manages its own metadata - that inherently doesn't mix well with other git-based tools that move `HEAD` or rewrite history. It's worth a look, but give it a dedicated trial on a small personal repo rather than mixing it in.
 
-- Gitsby works with any Git remote, GitHub and GitLab included. The exceptions go through [gh](https://github.com/cli/cli) and are therefore GitHub-only: the `pr` commands, `repo create`, and `repo connect` when you give it an `owner/name` instead of a URL.
+- Gitsby works with any Git remote. Nearly everything it does is Git, and Git does not care whose server it is - branching, committing, pulling, pushing, merging, pruning and releasing need no account with anybody.
+- Gitsby looks at where `origin` actually points before reaching for anything else, so a host-specific tool is only ever run against the host it serves. On GitHub that is [gh](https://github.com/cli/cli); on Gitea and Forgejo it is [tea](https://gitea.com/gitea/tea) (some distributions install it as `tea-cli` - either name is found). Neither installed is fine until you ask for something that needs one, and then it says which one and why.
+- Still GitHub-only, because they are about GitHub specifically: `repo create`, and `repo connect` when you give it an `owner/name` instead of a full URL.
 
 - What you need: Git, and nothing else.
 

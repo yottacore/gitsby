@@ -36,13 +36,24 @@ func TestRemoteOwner(t *testing.T) {
 	}
 }
 
+// remoteTarget answers for ANY host - it feeds 'repo url', which rewrites text and
+// never asks the host anything, so refusing everywhere but github.com was the
+// parser's limit showing through as a rule. remoteOwner above is the one that
+// stays GitHub-only, because what it feeds is a GitHub login.
 func TestRemoteTarget(t *testing.T) {
 	tests := []struct{ url, want string }{
 		{"https://github.com/octocat/hello.git", "octocat/hello"},
 		{"git@github.com:octocat/hello.git", "octocat/hello"},
 		{"git@github.com:octocat/hello", "octocat/hello"},
-		{"https://gitlab.com/octocat/hello.git", ""},
+		{"https://gitlab.com/octocat/hello.git", "octocat/hello"},
+		{"https://git.example.com/octocat/hello.git", "octocat/hello"},
+		{"git@git.example.com:octocat/hello.git", "octocat/hello"},
+		// A Gitea instance served under a subpath: the segment above the repo is the
+		// owner, and the routing above that is not.
+		{"https://git.example.com/gitea/octocat/hello.git", "octocat/hello"},
+		{"https://github.com/octocat", ""}, // a host and an owner is not a repo
 		{"/srv/local/repo.git", ""},
+		{"", ""},
 	}
 	for _, tc := range tests {
 		if got := remoteTarget(tc.url); got != tc.want {

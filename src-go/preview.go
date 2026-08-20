@@ -126,14 +126,20 @@ func (a *app) previewBackMerge() {
 	a.out.clean(pad + "git push *")
 }
 
+// previewPr reads the same spellings the commands run, so a plan on a Gitea host
+// names tea's vocabulary rather than promising gh commands that were never going
+// to be the ones issued.
 func (a *app) previewPr() {
 	if a.pr.sub == "create" {
 		a.preview("sync")
-		a.out.clean(pad + "gh pr create --base " + a.branchTarget("") + " --title \"" + a.pr.title + "\"")
+		a.out.clean(pad + a.prCreateDisp(a.branchTarget("")))
 		return
 	}
-	a.out.clean(pad + "gh pr review " + a.pr.num + " --approve *")
-	a.out.clean(pad + "gh pr merge " + a.pr.num + " --merge --delete-branch")
+	a.out.clean(pad + a.prDisp(a.prApproveArgs()) + " *")
+	a.out.clean(pad + a.prDisp(a.prMergeArgs()))
+	if clean := a.prCleanArgs(); clean != nil {
+		a.out.clean(pad + a.prDisp(clean) + " *")
+	}
 	a.out.clean(pad + a.checkoutDisp(a.branchTarget(a.pr.headBranch)) + " *")
 	a.out.clean(pad + "git pull --ff-only *")
 	if a.isHotfixBranch(a.pr.headBranch) {

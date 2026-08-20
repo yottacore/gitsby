@@ -294,6 +294,14 @@ func (a *app) preflight() error {
 	// raw git text - and far better than "succeeding" having sent nothing. The rest
 	// degrade instead: they mean something locally, so they run and say what they
 	// skipped.
+	// Which forge this repo lives on, and which CLI can speak to it - settled before
+	// any pr refusal, so the reason a pr command can't run is the real one rather
+	// than whichever tool happened to be missing.
+	if a.cmd.name == "pr" {
+		if err := a.settlePrTool(); err != nil {
+			return err
+		}
+	}
 	switch a.cmd.name {
 	case "sync":
 		if err := a.requireOnline("sync", "Offline, '"+meName+" pullcom' skips the pull and just commits; run '"+meName+" sync' when you are back online."); err != nil {
@@ -417,18 +425,23 @@ func (a *app) settleTarget() (bool, error) {
 func (a *app) settleGh() error {
 	switch a.cmd.name {
 	case "identity":
-		// Reads gh, writes nothing: the whole point of the command is to name every
-		// account involved, and gh's is one of them.
-		a.gh.isCommand = true
+		// Reads the forge, writes nothing: the whole point of the command is to name
+		// every account involved. Only where gh is the one that answers - on any other
+		// host gh's account says nothing about who this run acts as, and asking it is a
+		// live round trip to learn something irrelevant.
+		a.gh.isCommand = a.onGitHub() || !a.hasOrigin()
 	case "pr":
-		a.gh.isCommand = true
-		if a.pr.sub != "" {
+		a.gh.isCommand = a.pr.tool == toolGh
+		if a.pr.sub != "" && a.gh.isCommand {
 			a.gh.isWrite = true
 			a.gh.probeURL = a.originURL()
 		}
 	case "repo-create":
 		a.gh.isCommand, a.gh.isWrite = true, true
-		if a.ghProtocol() == "ssh" {
+		// 'repo create' is a GitHub command by definition - gh is what creates the
+		// repo - so the host it asks about is github.com, not whatever origin the
+		// directory we happen to be standing in points at.
+		if a.ghProtocol("github.com") == "ssh" {
 			a.gh.probeURL = "git@github.com:" + a.tgt.ghTarget + ".git"
 		}
 	case "repo-connect":

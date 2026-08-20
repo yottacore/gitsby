@@ -55,6 +55,8 @@ Per-account keys, all optional except a `path` to match on:
 | `name`       | Commit author name.
 | `email`      | Commit author email.
 | `protocol`   | `https` or `ssh`, for this account only.
+| `host`       | The forge this account is on. Defaults to `github.com`, which is what every config written before this key existed meant.
+| `user`       | The login on that host, when it isn't `ghAccount` - Gitea checks the username an HTTPS push presents, where GitHub ignores it.
 
 Run `gitsby account` to see what it made of all that, and which account the folder you're standing in resolves to. It is the command to reach for when something went out as the wrong person. A `path` rule pointing at a directory that isn't there is marked as one that can never match, which is usually a typo.
 
@@ -83,6 +85,8 @@ That resolves under `C:/src/github.com/my-work-login/...` and `~/dev/github.com/
 ## No SSH keys needed
 
 The usual way to hold two GitHub accounts on one machine is a pair of SSH keys and a `~/.ssh/config` full of host aliases, which then have to be baked into every remote URL. Gitsby does not need any of that.
+
+An account's token is a credential for the forge that issued it and for nowhere else, so Gitsby only applies one where it can be used: if `host` doesn't match the host `origin` is on, nothing is applied and the identity block says which two hosts disagreed. That is also why a Gitea token is never exported as `GH_TOKEN` - `gh` reads that variable, and every child process would inherit a credential for a host `gh` would try to use it on.
 
 Over HTTPS, `git` authenticates with the account's own token - the one `gh` already stores, or the one `tokenFile` names. Gitsby supplies it for the length of a single command, through the environment, and nothing is written anywhere. So a second account costs one `gh auth login` and three lines of config.
 

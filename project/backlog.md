@@ -133,6 +133,15 @@ None open.
 
 #### Done - Features and enhancements
 
+- ✅ Other Git hosts are first-class; `gh` is reached for only when the remote is actually GitHub's.
+	- Gitsby began as a GitHub program and asked `gh` for things Git could answer on its own, so a Gitea remote got GitHub errors about a repo `gh` was never looking at.
+	- Where `origin` points is now established first, aliases resolved. `gh` serves github.com and `GH_HOST`; `tea` serves Gitea and Forgejo, under `tea-cli` as well - Debian renames it.
+	- Everything answerable with Git alone works on any host with no forge client installed. `repo url` was the clearest case: it only rewrites text, and refused everywhere but github.com purely because of the URL parser.
+	- Accounts gained `host` and `user`, so a token is applied only where it can be used and a non-GitHub token never goes out as `GH_TOKEN`.
+	- A remote whose host can't be named still falls through to `gh`, deliberately - "couldn't tell" is not "definitely not a forge".
+	- `repo create` and `repo connect owner/name` stay GitHub-only, being about GitHub specifically.
+	- The tea path is written against tea's real command surface but has not been exercised against a live Gitea instance; the suite drives it through a stub.
+
 Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. Work top to bottom; everything happens on branches off `gover`, nothing touches the scripted implementations yet.
 
 - ✅ Go scaffolding.

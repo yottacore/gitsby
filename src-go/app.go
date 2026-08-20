@@ -65,6 +65,7 @@ type command struct {
 // preceded it.
 type repoState struct {
 	originURL      cached[string]
+	originRef      cached[remoteRef]
 	coreSSHCommand cached[string]
 	currentBranch  cached[string]
 	hasUpstream    cached[bool]
@@ -79,6 +80,7 @@ type repoState struct {
 // step of ours renames a default branch or invents a dev.
 func (r *repoState) forget() {
 	r.originURL.forget()
+	r.originRef.forget()
 	r.coreSSHCommand.forget()
 	r.currentBranch.forget()
 	r.hasUpstream.forget()
@@ -86,11 +88,19 @@ func (r *repoState) forget() {
 	r.contextDir.forget()
 }
 
+// forgeState is what this run knows about the host side of things, as opposed to
+// the account side: which CLI is installed for the forge origin lives on. Looking
+// it up is two LookPath calls for a name that cannot change mid-run.
+type forgeState struct {
+	tea   cached[string] // Gitea's CLI as this machine spells it, "" when absent
+	login cached[string] // who that CLI holds a login for on origin's host
+}
+
 // ghState is what this run knows about the two accounts a remote command can act
 // as: gh's own, and whoever a remote's ssh key authenticates as. Both cost a live
 // round trip, so both are asked at most once.
 type ghState struct {
-	isCommand bool   // goes through gh at all -> show whose account that is
+	isCommand bool   // goes through a forge CLI at all -> show whose account that is
 	isWrite   bool   // WRITES through gh -> also compare against the ssh key
 	probeURL  string // the url the ssh identity is read from
 	reachable bool   // cleared when the pre-command fetch can't reach origin
@@ -123,19 +133,26 @@ type account struct {
 	tokenWho string
 	// A token file other users on this machine can read, named so it can be fixed.
 	looseTokenFile string
+
+	// The forge this run authenticates to, the variable its token was exported
+	// under, and whether the account we resolved banks somewhere else entirely.
+	credHost  string
+	tokenEnv  string
+	otherHost bool
 }
 
 // app is one run. The command functions take it rather than reach for package
 // state, so any of them can be called twice - or from a test - without the second
 // call inheriting the first one's answers.
 type app struct {
-	opt  options
-	cmd  command
-	out  *printer
-	cfg  *config
-	acct account
-	git  repoState
-	gh   ghState
+	opt   options
+	cmd   command
+	out   *printer
+	cfg   *config
+	acct  account
+	git   repoState
+	gh    ghState
+	forge forgeState
 
 	inRepo bool
 

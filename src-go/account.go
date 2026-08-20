@@ -82,54 +82,17 @@ func (a *app) resolveAccount(dir, url string) error {
 }
 
 // remoteOwner names the GitHub account a remote belongs to, or nothing when that
-// cannot be said. Only github.com counts, and an alias is resolved first. Nothing
-// for other forges, local paths, or anything that doesn't parse: the caller treats
-// empty as "no opinion", so a remote we don't understand can never trigger a refusal.
+// cannot be said. Only a host gh serves counts: the owner of a repo on somebody
+// else's forge is a login on THAT host, and handing it to 'gh auth token --user'
+// asks about an account which was never going to exist. Nothing for local paths or
+// anything that doesn't parse either - the caller treats empty as "no opinion", so
+// a remote we don't understand can never trigger a refusal.
 func remoteOwner(url string) string {
-	host, path := "", ""
-	colon := strings.Index(url, ":")
-	switch {
-	case strings.HasPrefix(url, "ssh://"):
-		path = url[len("ssh://"):]
-	case isDrivePath(url):
-		return "" // a Windows drive path, not 'host:path'
-	case len(url) > 0 && isLetter(url[0]) && strings.Contains(url, "://"):
-		path = url[strings.Index(url, "://")+3:]
-	case colon > 0:
-		host = url[:colon]
-		if at := strings.LastIndex(host, "@"); at >= 0 {
-			host = host[at+1:]
-		}
-		path = url[colon+1:]
-	default:
+	ref := parseRemote(url)
+	if !isGitHubHost(ref.host) || ref.name == "" {
 		return ""
 	}
-	if host == "" {
-		host = path
-		if slash := strings.Index(host, "/"); slash >= 0 {
-			host = host[:slash]
-			path = path[slash+1:]
-		} else {
-			path = ""
-		}
-		if at := strings.LastIndex(host, "@"); at >= 0 {
-			host = host[at+1:]
-		}
-		if c := strings.Index(host, ":"); c >= 0 {
-			host = host[:c]
-		}
-	}
-	path = strings.TrimPrefix(path, "/")
-	if host == "" || !strings.Contains(path, "/") {
-		return ""
-	}
-	if host != "github.com" {
-		host = resolveSSHHost(host)
-	}
-	if host != "github.com" {
-		return ""
-	}
-	return path[:strings.Index(path, "/")]
+	return ref.owner
 }
 
 func isLetter(b byte) bool { return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') }
@@ -163,6 +126,73 @@ func ghTokenFor(who string) string {
 		return ""
 	}
 	return runOut("gh", "auth", "token", "--user", who)
+}
+
+// accountHost is the forge the resolved account belongs to. Unstated means
+// github.com: every account that existed before this key did was a GitHub one, and
+// a config that never mentions a host has to keep behaving exactly as it always did.
+func (a *app) accountHost() string {
+	if host := a.cfg.value(a.acct.name, "host"); host != "" {
+		return host
+	}
+	return "github.com"
+}
+
+// accountServesHost: whether the account we resolved holds credentials for this
+// host. A token is a credential for the forge that ISSUED it and for nowhere else,
+// so handing a GitHub token to a Gitea push authenticates nothing - and does it
+// while looking thoroughly configured, which is the part that costs an afternoon.
+func (a *app) accountServesHost(host string) bool {
+	return host != "" && strings.EqualFold(host, a.accountHost())
+}
+
+// accountLogin is the username the credential helper offers. GitHub ignores it
+// entirely when the password is a token, which is why a literal 'x' served here for
+// as long as this was a GitHub-only program; Gitea checks it, so an account on one
+// has to be able to say who it is.
+func (a *app) accountLogin() string {
+	if user := a.cfg.value(a.acct.name, "user"); user != "" {
+		return user
+	}
+	if a.acct.ghWho != "" {
+		return a.acct.ghWho
+	}
+	return "x"
+}
+
+// authHost is the forge this run will authenticate to, which is what decides
+// whether the account's token is any use and which host the helper is written for.
+// A clone resolves from the URL it was given for the same reason it resolves its
+// account from the destination: the directory we are standing in is not what the
+// command is about.
+func (a *app) authHost() string {
+	if a.cmd.name == "repo-clone" {
+		if host := parseRemote(a.cmd.arg).host; host != "" {
+			return host
+		}
+		// 'owner/name' shorthand has no host in it, and only ever meant github.com.
+		if ownerNameRE.MatchString(a.cmd.arg) && !pathExists(a.cmd.arg) {
+			return "github.com"
+		}
+		return a.accountHost()
+	}
+	if host := a.originHost(); host != "" {
+		return host
+	}
+	// No remote yet - 'repo create' and 'repo connect' are about to make one, and
+	// the account's own host is the only evidence available about where.
+	return a.accountHost()
+}
+
+// tokenEnvVar is the variable the credential helper reads the token out of. GH_TOKEN
+// for GitHub, because gh itself reads that one and the two have to agree; anything
+// else gets its own name, so a Gitea token is never exported into every child
+// process under a variable gh will pick up and act on.
+func tokenEnvVar(host string) string {
+	if isGitHubHost(host) {
+		return "GH_TOKEN"
+	}
+	return "GITSBY_FORGE_TOKEN"
 }
 
 // readTokenFile pulls a token out of a file. Unset, missing, unreadable and empty
@@ -199,14 +229,30 @@ const (
 // from. gh's own store first - it is the one that stays current, so a rotated
 // login is never shadowed by a stale copy on disk - then the file the config
 // names, then the older git-config key. Nothing found is not an error anywhere.
-func (a *app) accountToken() (string, tokenSource, string) {
-	if a.acct.ghWho == "" {
+func (a *app) accountToken(host string) (string, tokenSource, string) {
+	// A named GitHub login is one way to have an account, not the definition of
+	// having one: a Gitea account names a host and a token file and no ghAccount at
+	// all, and testing the GitHub field to decide the record exists gave it nothing.
+	if a.acct.ghWho == "" && a.acct.name == "" {
 		return "", tokenNone, ""
 	}
-	if token := ghTokenFor(a.acct.ghWho); token != "" {
-		return token, tokenFromGh, ""
+	// gh's own store, only for a host gh serves. Asking it about a Gitea account is
+	// asking after a login that was never going to be there.
+	if isGitHubHost(host) {
+		if token := ghTokenFor(a.acct.ghWho); token != "" {
+			return token, tokenFromGh, ""
+		}
 	}
-	for _, file := range []string{a.cfg.value(a.acct.name, "tokenFile"), configOwnScope("gitsby.ghTokenFile")} {
+	files := []string{a.cfg.value(a.acct.name, "tokenFile")}
+	// The older git-config key is GitHub's, by its name and by its vintage, so it
+	// answers only for a run that named a GitHub login - exactly as it did when
+	// there was no other kind. Without that limit, relaxing the guard above would
+	// let an ssh-only folder rule pick up a global token file it was never meant to
+	// use, and then report itself as authenticating over https.
+	if a.acct.ghWho != "" {
+		files = append(files, configOwnScope("gitsby.ghTokenFile"))
+	}
+	for _, file := range files {
 		if token := readTokenFile(file); token != "" {
 			return token, tokenFromFile, file
 		}
@@ -307,15 +353,23 @@ func (a *app) selectAccount(skipGhProbe bool) error {
 		return nil
 	}
 	a.acct.applied = true
-	token, source, tokenFile := a.accountToken()
+	// Where this run is about to authenticate, which is what decides whether the
+	// account's token is any use at all and which host the helper gets written for.
+	credHost := a.authHost()
+	a.acct.credHost = credHost
+	token, source, tokenFile := "", tokenNone, ""
+	if a.accountServesHost(credHost) {
+		token, source, tokenFile = a.accountToken(credHost)
+	}
 	a.acct.looseTokenFile = worldReadable(tokenFile)
+	onGitHubHost := isGitHubHost(credHost)
 	switch {
 	case token != "":
 		// Asked BEFORE the token lands, or the probe answers as the token we are about
 		// to export and the line can only ever say what it already knows. Naming the
 		// account this one replaces is display only, and asking is a live API round
 		// trip. '?' means gh held no account at all.
-		if !skipGhProbe {
+		if onGitHubHost && !skipGhProbe {
 			if active := a.ghLogin(); active != a.acct.ghWho && active != "?" {
 				a.acct.switchedFrom = active
 			}
@@ -323,15 +377,17 @@ func (a *app) selectAccount(skipGhProbe bool) error {
 		// Export whenever a token was found, not only when it replaces a different
 		// active account: the helper below reads GH_TOKEN when git runs it, and the
 		// reset that precedes it has already evicted any credential manager.
-		if err := setEnv("GH_TOKEN", token); err != nil {
+		envVar := tokenEnvVar(credHost)
+		a.acct.tokenEnv = envVar
+		if err := setEnv(envVar, token); err != nil {
 			return err
 		}
-		switch source {
-		case tokenFromGh:
+		switch {
+		case source == tokenFromGh:
 			// gh's own store was asked for this account by name, so there is nothing
 			// left to ask.
 			a.gh.login.set(a.acct.ghWho)
-		default:
+		case onGitHubHost:
 			// A file says nothing about whose token is in it - the name came from a
 			// config key beside it, and a stale file reports that name and pushes as
 			// somebody else. Drop the pre-token answer so the probe below runs with the
@@ -347,14 +403,21 @@ func (a *app) selectAccount(skipGhProbe bool) error {
 		// a credential manager configured for another account cannot answer ahead of
 		// us. The token is read from the environment when the helper runs, never
 		// stored in the config value itself.
-		if err := gitConfigEnv("credential.https://github.com.helper", ""); err != nil {
+		helperKey := "credential.https://" + credHost + ".helper"
+		if err := gitConfigEnv(helperKey, ""); err != nil {
 			return err
 		}
-		if err := gitConfigEnv("credential.https://github.com.helper",
-			`!f(){ test "$1" = get && { echo username=x; echo "password=${GH_TOKEN}"; }; }; f`); err != nil {
+		if err := gitConfigEnv(helperKey,
+			`!f(){ test "$1" = get && { echo username=`+a.accountLogin()+`; echo "password=${`+envVar+`}"; }; }; f`); err != nil {
 			return err
 		}
 		a.acct.usedHTTPSAuth = true
+	case (a.acct.explicit || a.acct.name != "") && !a.accountServesHost(credHost):
+		// The account we resolved banks somewhere else, so none of its credentials
+		// apply here. Said plainly rather than reported as a missing token: the fix is
+		// a host key or a different account, not hunting for a token that would be the
+		// wrong one anyway.
+		a.acct.otherHost = true
 	case a.acct.ghWho != "" && (a.acct.explicit || a.acct.name != ""):
 		// An account we resolved but cannot act as. gh goes on using whichever
 		// account it is logged in as, and the identity block must say so rather than
