@@ -1815,7 +1815,14 @@ GHEOF
 	local acEnvIdent="-u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL ${acEnv}"
 	: > "${ac}/home/.gitconfig"
 	fAssertOut "the account comes from the folder"        "Account \.+: workacct"       bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
-	fAssertOut "and says which rule chose it"             "from config 'work'"          bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	fAssertOut "and says which rule chose it"             "From: account 'work'"          bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	## "(from config 'work')" named neither the file nor which config - and there are two in play,
+	## since 'gitsby.ghAccount' is a git config key and the account blocks are not. An account that
+	## applied cleanly says where to go and look, same as one that didn't.
+	## Folded back to '~' as well: it lives under home, and its absolute spelling is long enough to
+	## be the whole line.
+	fAssertOut "and names the file that rule is written in"  'File: ~/\.config/gitsby/config\.shcl' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	fAssertOut "a sibling tree resolves to the other one" "Account \.+: homeacct"       bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	fAssertNotOut "and not to the first"                  "workacct"                    bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	fAssertNotOut "a folder no rule covers gets no account line"  "Account \.+:"        bash -c "cd '${acAway}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
@@ -1858,12 +1865,12 @@ GHEOF
 			bash -c "cd '${acWork}' && env ${acEnv} GITSBY_CONFIG='${ac}/home/.config/gitsby/linked.shcl' '${gitsby}' account list"
 	fi
 	## Overrides, both directions.
-	fAssertOut "GITSBY_ACCOUNT overrides the folder"  'homeacct \(from GITSBY_ACCOUNT\)'  bash -c "cd '${acWork}' && env ${acEnv} GITSBY_ACCOUNT=home '${gitsby}' -q -NoFetch status"
+	fAssertOut "GITSBY_ACCOUNT overrides the folder"  '^Account .*homeacct'  bash -c "cd '${acWork}' && env ${acEnv} GITSBY_ACCOUNT=home '${gitsby}' -q -NoFetch status"
 	## A bare login is a documented spelling of GITSBY_ACCOUNT, and 'raw' already reports one on
 	## stderr. The identity line asked instead whether some CONFIGURED value had been used, so a
 	## bare login named no account, set no key, and printed nothing at all - silence from the one
 	## command whose job is to say who a push will go out as.
-	fAssertOut "a bare login still gets an identity line"  'barelogin \(from GITSBY_ACCOUNT\)' \
+	fAssertOut "a bare login still gets an identity line"  '^Account .*barelogin' \
 		bash -c "cd '${acAway}' && env ${acEnv} GITSBY_ACCOUNT=barelogin '${gitsby}' -q -NoFetch status"
 	## An account the file defines but that names no GitHub login of its own - a commit identity
 	## and an ssh key and nothing else, which is a whole way of holding a second one. A folder rule

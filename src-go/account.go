@@ -29,7 +29,7 @@ func (a *app) resolveAccount(dir, url string) error {
 	if err := a.cfg.load(a.opt); err != nil {
 		return err
 	}
-	a.acct.name, a.acct.ghWho, a.acct.source, a.acct.explicit = "", "", "", false
+	a.acct.name, a.acct.ghWho, a.acct.source, a.acct.explicit, a.acct.fromFile = "", "", "", false, false
 	if who := os.Getenv("GITSBY_ACCOUNT"); who != "" {
 		// Either the name of a configured account or a bare login - accept both; a
 		// script setting this knows one of the two and shouldn't have to know which.
@@ -43,7 +43,7 @@ func (a *app) resolveAccount(dir, url string) error {
 		} else {
 			a.acct.ghWho = who
 		}
-		a.acct.source, a.acct.explicit = "GITSBY_ACCOUNT", true
+		a.acct.source, a.acct.explicit = "the GITSBY_ACCOUNT environment variable", true
 		return nil
 	}
 	// git config answers for the repo we are standing in, which is the repo in
@@ -54,7 +54,7 @@ func (a *app) resolveAccount(dir, url string) error {
 	// matches those itself, against any path.
 	if dir == a.contextDir() {
 		if fromGit := runOut("git", "config", "--get", "gitsby.ghAccount"); fromGit != "" {
-			a.acct.ghWho, a.acct.source, a.acct.explicit = fromGit, "git config", true
+			a.acct.ghWho, a.acct.source, a.acct.explicit = fromGit, "gitsby.ghAccount in this repo's git config", true
 			// Name the config account too when one claims this folder, so its key and
 			// commit identity still apply - the git key says who, not that the rest of
 			// the account is off. Dropped only when the account names a DIFFERENT
@@ -72,11 +72,11 @@ func (a *app) resolveAccount(dir, url string) error {
 		// A folder rule with no account named still carries a key and a commit
 		// identity, worth applying on their own - it just says nothing about gh.
 		a.acct.ghWho = a.cfg.value(a.acct.name, "ghAccount")
-		a.acct.source = "config '" + a.acct.name + "'"
+		a.acct.source, a.acct.fromFile = "account '"+a.acct.name+"'", true
 		return nil
 	}
 	if fromRemote := remoteOwner(url); fromRemote != "" {
-		a.acct.ghWho, a.acct.source = fromRemote, "the remote"
+		a.acct.ghWho, a.acct.source = fromRemote, "the owner of this repo's remote"
 	}
 	return nil
 }

@@ -222,6 +222,23 @@ func (o options) resolveConfigFile() (string, error) {
 	return "", nil
 }
 
+// displayPath writes a path the way somebody would type it, folding a leading home
+// directory back to '~'. Only for display: the accounts file is usually under home,
+// and its absolute spelling is long enough to be the whole line.
+func displayPath(p string) string {
+	home := homeDir()
+	if home == "" || p == "" {
+		return p
+	}
+	if p == home {
+		return "~"
+	}
+	if rest, found := strings.CutPrefix(p, home+"/"); found {
+		return "~/" + rest
+	}
+	return p
+}
+
 func pathExists(p string) bool { _, err := os.Stat(p); return err == nil }
 
 func isDir(p string) bool {
