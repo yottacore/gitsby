@@ -97,6 +97,17 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 
 ## Direction decisions
 
+- The host decides the tool, and the tool is reached for only once the host is known to be one it serves.
+	- Gitsby began as a GitHub program and reached for `gh` whenever it wanted anything from a remote. Most of what it does is Git, and Git does not care whose server it is - so among these options, it was decided that everything answerable with Git alone must work on any host with no forge client installed.
+	- Where `origin` points is established first, from the remote URL, with any `ssh_config` alias resolved. `gh` serves `github.com` and whatever `GH_HOST` names, so Enterprise stays on the `gh` path; `tea` serves Gitea and Forgejo. Some distributions install tea as `tea-cli`, and both spellings are looked for.
+	- A remote whose host cannot be named - a local path, or a URL shape not parsed - is deliberately NOT a refusal. "We could not tell" and "it is definitely not a forge" are different answers, and only one of them is gitsby's to assert; such a remote falls through to `gh` exactly as before. This follows the rule already standing for remote owners.
+	- `repo create` and `repo connect owner/name` stay GitHub-only. They are about GitHub specifically rather than about whichever host a repository happens to use.
+
+- An account's credentials are only credentials where that account banks.
+	- Accounts gained `host` (defaulting to `github.com`, which is what every config written before the key existed meant) and `user`. If an account's host is not the host `origin` is on, nothing is applied and the identity block names both hosts.
+	- A non-GitHub token is exported under its own variable, never as `GH_TOKEN`: `gh` reads that one, and every child process would otherwise inherit a credential for a host `gh` would try to use it on.
+	- The credential helper is written for the host actually being authenticated to. `user` exists because Gitea checks the username an HTTPS push presents where GitHub ignores it; both it and `host` are validated as plain names, since the helper is a string Git hands to a shell.
+
 - There is no bare `commit`, and no bare `pull` that skips the commit. Both were escape hatches around the workflow the tool exists to enforce.
 	- `commit` alone produces exactly the state gitsby was written to prevent: work committed locally that never reaches the remote, diverging quietly until the merge is painful.
 	- `pull` alone was the only place gitsby let you take upstream changes without dealing with your own work first, which contradicts what it does everywhere else - `br switch`, `br merge`, and `pr create` park it; `br create` off `dev`/`main` carries it onto the new branch.
