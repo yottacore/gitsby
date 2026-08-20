@@ -202,3 +202,56 @@ func TestPrArgsPerTool(t *testing.T) {
 		t.Error("tea prCleanArgs is empty, so 'pr ok' would merge and leave the branch standing")
 	}
 }
+
+// Which login the identity gate compares against. 'ghAccount' is a GitHub login and
+// says nothing about who you are anywhere else, so keying the gate on it alone left
+// every non-GitHub account uncompared - which is a gate that quietly stopped
+// guarding rather than one that said it could not.
+func TestAccountWho(t *testing.T) {
+	tests := []struct {
+		name, ghAccount, user, host, want string
+	}{
+		{"ghAccount answers for GitHub", "alice", "", "github.com", "alice"},
+		{"and for nowhere else", "alice", "", "git.example.test", ""},
+		{"user answers for any host", "", "gitfriend", "git.example.test", "gitfriend"},
+		{"user wins where both are given", "alice", "gitfriend", "github.com", "gitfriend"},
+		{"nothing named is no claim to check", "", "", "git.example.test", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newApp(newPrinter())
+			a.acct.name, a.acct.ghWho = "work", tc.ghAccount
+			a.cfg.values = map[string]string{}
+			if tc.user != "" {
+				a.cfg.values["account.work.user"] = tc.user
+			}
+			if got := a.accountWho(tc.host); got != tc.want {
+				t.Errorf("accountWho(%q) = %q, want %q", tc.host, got, tc.want)
+			}
+		})
+	}
+}
+
+// The write gate reads whichever CLI this run goes through. Unknown must stay
+// unknown: a tea with no login for the host has said nothing about who you are, and
+// refusing on that would refuse every machine that never configured one.
+func TestForgeCLIWho(t *testing.T) {
+	none := newApp(newPrinter())
+	none.gh.tool = toolNone
+	if got := none.forgeCLIWho(); got != "?" {
+		t.Errorf("forgeCLIWho with no tool = %q, want ?", got)
+	}
+	// A tea that answers nothing is '?', not the empty string - the mismatch test
+	// reads '?' as "couldn't tell" and an empty name would too, but only one of them
+	// survives being concatenated into a message.
+	tea := newApp(newPrinter())
+	tea.gh.tool, tea.gh.cli = toolTea, "tea"
+	tea.forge.login.set("")
+	if got := tea.forgeCLIWho(); got != "?" {
+		t.Errorf("forgeCLIWho with no tea login = %q, want ?", got)
+	}
+	tea.forge.login.set("gitfriend")
+	if got := tea.forgeCLIWho(); got != "gitfriend" {
+		t.Errorf("forgeCLIWho = %q, want gitfriend", got)
+	}
+}

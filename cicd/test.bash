@@ -2803,6 +2803,80 @@ GHEOF
 	fAssertNotOut "an account that declares the host IS applied"  'NOT applied' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' identity 2>&1"
 
+	## The identity gate, on a host that is not GitHub. Two accounts disagreeing about who you are is
+	## the same outward-facing mistake wherever it happens, and keying the check on 'ghAccount' - a
+	## GitHub login, which says nothing about who you are anywhere else - left it silently uncovered.
+	## The ssh stub answers with GITEA's greeting, not GitHub's: close enough to look handled by the
+	## existing pattern and different enough not to be.
+	fStub "${fg}/bin/ssh" <<'SSHEOF'
+#!/usr/bin/env bash
+mode=""
+for a in "$@"; do case "$a" in -G) mode=G ;; -T) mode=T ;; esac; done
+if [[ "${mode}" == "G" ]]; then
+	printf 'user git
+hostname %s
+identityfile /etc/hostname
+' "${FAKE_SSH_HOSTNAME:-git.example.test}"
+	exit 0
+fi
+if [[ "${mode}" == "T" ]]; then
+	echo "Hi there, ${FAKE_SSH_LOGIN:-keyowner}! You've successfully authenticated with the key named k, but Gitea does not provide shell access."
+	exit 1
+fi
+exit 0
+SSHEOF
+	local fgSsh="${fg}/sshproj"
+	git init --quiet -b main "${fgSsh}"
+	(
+		cd "${fgSsh}" || exit 1
+		echo a > a.txt && git add --all && git commit --quiet -m init
+		git remote add origin git@git.example.test:acme/proj.git
+	)
+	## Parsing Gitea's greeting is what makes every check below able to say anything at all.
+	fAssertOut "the ssh line names the account a Gitea key authenticates as"  'SSH \.+: keyowner' \
+		bash -c "cd '${fgSsh}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch status 2>&1"
+
+	local fgCanon="${fgSsh}"; ((isWindows)) && fgCanon="$( cd "${fgSsh}" && pwd -W )"
+	cat > "${fg}/mine.shcl" <<-EOF
+		account.mine.path = ${fgCanon}
+		account.mine.host = git.example.test
+		account.mine.user = gitfriend
+	EOF
+	cat > "${fg}/theirs.shcl" <<-EOF
+		account.mine.path = ${fgCanon}
+		account.mine.host = git.example.test
+		account.mine.user = keyowner
+	EOF
+	local fgSync="cd '${fgSsh}' && PATH='${fgPath}' GITSBY_CONFIG="
+	fAssertFail   "sync refuses when a Gitea folder's account is not the key's" \
+		bash -c "${fgSync} '${gitsby}' -q -NoFetch --config '${fg}/mine.shcl' sync 'W'"
+	fAssertOut    "and the refusal names both"  "account is 'gitfriend'.*authenticates as 'keyowner'" \
+		bash -c "${fgSync} '${gitsby}' -q -NoFetch --config '${fg}/mine.shcl' sync 'W' 2>&1 || true"
+	fAssertNotOut "--any-identity says the difference is intended"  'authenticates as' \
+		bash -c "${fgSync} '${gitsby}' -q -NoFetch --any-identity --config '${fg}/mine.shcl' sync 'W' 2>&1 || true"
+	fAssertNotOut "and a matching account does not fire"  'authenticates as' \
+		bash -c "${fgSync} '${gitsby}' -q -NoFetch --config '${fg}/theirs.shcl' sync 'W' 2>&1 || true"
+	## An account whose only login is a GitHub one has made no claim about this host, so there is
+	## nothing to compare - it must not be read as a match either.
+	cat > "${fg}/ghonly.shcl" <<-EOF
+		account.mine.path      = ${fgCanon}
+		account.mine.ghAccount = alice
+	EOF
+	fAssertNotOut "a GitHub-only account makes no claim about a Gitea remote"  'authenticates as' \
+		bash -c "${fgSync} '${gitsby}' -q -NoFetch --config '${fg}/ghonly.shcl' sync 'W' 2>&1 || true"
+
+	## The other half: a write THROUGH tea, acting as tea's login while git pushes as the key. Same
+	## mistake as the gh version of this, and it was reachable only because a tea write now counts
+	## as a write at all.
+	( cd "${fgSsh}" && git checkout --quiet -b fgfeat && echo w > w.txt && git add --all && git commit --quiet -m "work" )
+	fAssertFail "pr create refuses when tea's login is not the key's" \
+		bash -c "cd '${fgSsh}' && PATH='${fgPath}' FAKE_TEA_USER=gitfriend FAKE_SSH_LOGIN=keyowner '${gitsby}' -q -NoFetch pr create 'T'"
+	fAssertOut  "and the refusal names tea rather than gh"  "tea acts as 'gitfriend'" \
+		bash -c "cd '${fgSsh}' && PATH='${fgPath}' FAKE_TEA_USER=gitfriend FAKE_SSH_LOGIN=keyowner '${gitsby}' -q -NoFetch pr create 'T' 2>&1"
+	fAssertNotOut "and agreeing logins do not fire"  'acts as' \
+		bash -c "cd '${fgSsh}' && PATH='${fgPath}' FAKE_TEA_USER=keyowner FAKE_SSH_LOGIN=keyowner '${gitsby}' -q -NoFetch pr create 'T' 2>&1 || true"
+	( cd "${fgSsh}" && git checkout --quiet main )
+
 	## An unparseable remote is not a forge we ruled out - it is one we could not name. The standing
 	## rule is that such a remote never triggers a refusal, so gh keeps the last word exactly as before.
 	git init --quiet -b main "${fg}/localorigin"
