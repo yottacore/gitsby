@@ -88,6 +88,8 @@ The usual way to hold two GitHub accounts on one machine is a pair of SSH keys a
 
 `user` is also what the identity check compares against on a non-GitHub host: if the account says one login and the key `git` pushes with authenticates as another, the command refuses before it sends anything, and `--any-identity` says the difference is intended. An account that names no login for the host makes no claim, so nothing is compared.
 
+Neither the token nor the username is ever written into a config value: Git hands a credential helper to a shell, so both are read from the environment at the moment it runs. Nothing you put in this file becomes part of a command.
+
 An account's token is a credential for the forge that issued it and for nowhere else, so Gitsby only applies one where it can be used: if `host` doesn't match the host `origin` is on, nothing is applied and the identity block says which two hosts disagreed. That is also why a Gitea token is never exported as `GH_TOKEN` - `gh` reads that variable, and every child process would inherit a credential for a host `gh` would try to use it on.
 
 Over HTTPS, `git` authenticates with the account's own token - the one `gh` already stores, or the one `tokenFile` names. Gitsby supplies it for the length of a single command, through the environment, and nothing is written anywhere. So a second account costs one `gh auth login` and three lines of config.

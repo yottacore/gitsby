@@ -356,6 +356,51 @@ printf '#!/usr/bin/env bash\nexec "%s" "$@"\n' "${goBin}" > "${gitsby}"
 chmod +x "${gitsby}"
 fRunFuzz "go"
 
+## The credential helper. gitsby writes it as a git config value, and git hands that value to a
+## SHELL when a push needs credentials - so anything interpolated into it is a command, not a
+## string. The login that goes in there can come from GITSBY_ACCOUNT, from a git config key, or
+## from the config file, and none of those is a place to accept shell. Driven with a real
+## 'git credential fill', because the string is inert until git actually runs it: reading the
+## config value back proves nothing about what happens when it is invoked.
+fCredentialHelperVectors(){
+	local -r ch="${work}/credhelper"
+	mkdir -p "${ch}"
+	git init --quiet -b main "${ch}/proj"
+	(
+		cd "${ch}/proj" || exit 1
+		echo a > a.txt && git add --all && git commit --quiet -m init
+		git remote add origin https://github.com/acme/proj.git
+	)
+	echo tok_fuzz > "${ch}/token"; chmod 600 "${ch}/token" 2>/dev/null || true
+	local vector=""
+	## Single quotes throughout: these are the literal text of an attack, not something to expand.
+	# shellcheck disable=SC2016
+	for vector in '; touch '"${ch}"'/CANARY-ghaccount; echo x' \
+	              '`touch '"${ch}"'/CANARY-backtick`' \
+	              '$(touch '"${ch}"'/CANARY-subshell)' \
+	              '" ; touch '"${ch}"'/CANARY-quote ; "' ; do
+		cat > "${ch}/v.shcl" <<-EOF
+			account.v.path      = ${ch}/proj
+			account.v.ghAccount = ${vector}
+			account.v.tokenFile = ${ch}/token
+		EOF
+		## 'credential fill' makes git invoke the helper for real.
+		( cd "${ch}/proj" && printf 'protocol=https\nhost=github.com\n\n' | \
+			"${gitsby}" -q -NoFetch --config "${ch}/v.shcl" raw git credential fill ) >/dev/null 2>&1 || true
+	done
+	## The helper git holds must carry no login text at all - the name is read from the
+	## environment when it runs, the same way the token is.
+	local helper=""
+	helper="$( cd "${ch}/proj" && "${gitsby}" -q -NoFetch --config "${ch}/v.shcl" raw git config --get credential.https://github.com.helper 2>/dev/null )"
+	# shellcheck disable=SC2016  ## matching the literal variable reference, not its value
+	if [[ "${helper}" == *'${GITSBY_FORGE_USER}'* && "${helper}" != *touch* ]]; then
+		fOk "the credential helper reads its username from the environment"
+	else
+		fFail "the credential helper carries interpolated text: ${helper}"
+	fi
+}
+fCredentialHelperVectors
+
 ## The security assertion: no vector ever caused a side-effect to run.
 if [[ -z "$(find "${work}" -name 'CANARY*' -print -quit)" ]]; then
 	fOk "no injection canary fired"
