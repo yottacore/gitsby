@@ -38,6 +38,14 @@ export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@test
 ## account block below sets its own HOME and opts back out of this with an empty value.
 export GITSBY_CONFIG="${work}/no-accounts.shcl"; : > "${GITSBY_CONFIG}"
 
+## The blocks that test config DISCOVERY opt out of the pin above and fake HOME instead, so they
+## have to neutralize the other two candidates by hand: XDG_CONFIG_HOME is tried before HOME and
+## APPDATA after it, and on a machine where either is set it answers for the real user. Emptied
+## rather than pointed somewhere, so HOME stays the candidate under test. Without this those
+## blocks quietly read whatever accounts the person running the suite had configured, and went
+## red the day they configured any.
+acNoDiscovery="GITSBY_CONFIG= XDG_CONFIG_HOME= APPDATA="
+
 ## Two more inputs the lines above do NOT cover, both of which reach us from an ordinary
 ## working terminal rather than from a config file:
 ##   - GIT_CONFIG_COUNT/KEY_n/VALUE_n outrank every config FILE, including a repo-local one
@@ -1789,9 +1797,9 @@ GHEOF
 	## a space in it from splitting when 'bash -c' re-parses the line, and they would equally stop
 	## a '${PATH}' left in place from ever expanding - which silently empties PATH and fails every
 	## check in this block for want of git.
-	## GITSBY_CONFIG is emptied rather than pointed somewhere: this block is where config discovery
-	## through HOME is the thing under test, and the file-scope export above would outrank it.
-	local acEnv="GITSBY_CONFIG= HOME='${ac}/home' GIT_CONFIG_GLOBAL='${ac}/home/.gitconfig' PATH='${ac}/bin:${PATH}'"
+	## acNoDiscovery empties every config-file input the file scope pinned: this block is where
+	## discovery through HOME is the thing under test.
+	local acEnv="${acNoDiscovery} HOME='${ac}/home' GIT_CONFIG_GLOBAL='${ac}/home/.gitconfig' PATH='${ac}/bin:${PATH}'"
 	## The two identity checks below need one more thing: this file exports GIT_AUTHOR_NAME/EMAIL
 	## for hermeticity, and 'git var GIT_AUTHOR_IDENT' - what the Author line reads - takes those
 	## over any config, whether it came from the account or from the repo. Left in place they pin
@@ -1849,6 +1857,31 @@ GHEOF
 	## command whose job is to say who a push will go out as.
 	fAssertOut "a bare login still gets an identity line"  'barelogin \(from GITSBY_ACCOUNT\)' \
 		bash -c "cd '${acAway}' && env ${acEnv} GITSBY_ACCOUNT=barelogin '${gitsby}' -q -NoFetch status"
+	## An account the file defines but that names no GitHub login of its own - a commit identity
+	## and an ssh key and nothing else, which is a whole way of holding a second one. A folder rule
+	## has always applied such an account; naming the same one through GITSBY_ACCOUNT read it as a
+	## bare login instead, so none of it applied and the ACCOUNT's own name was reported as the
+	## GitHub login the run acts as - asking for it by name got you less than not asking.
+	cat > "${ac}/keysonly.shcl" <<-EOF
+		account.keysonly.name  = Keys Only
+		account.keysonly.email = keys@example.com
+	EOF
+	fAssertOut "an account with no GitHub login still applies when named"  'Keys Only <keys@example\.com>' \
+		bash -c "cd '${acAway}' && env ${acEnvIdent} GITSBY_ACCOUNT=keysonly '${gitsby}' -q -NoFetch --config '${ac}/keysonly.shcl' status"
+	fAssertNotOut "and its own name is not reported as a GitHub login"  'Account \.+: keysonly' \
+		bash -c "cd '${acAway}' && env ${acEnv} GITSBY_ACCOUNT=keysonly '${gitsby}' -q -NoFetch --config '${ac}/keysonly.shcl' status"
+	## A byte-order mark is what a Windows editor writes by default. It lands on the first key in
+	## the file, which then reads as one nothing understands - and the line reporting those printed
+	## the mark along with it, so the only diagnostic named a key that looks exactly right.
+	printf '\xef\xbb\xbf' > "${ac}/bom.shcl"
+	cat >> "${ac}/bom.shcl" <<-EOF
+		account.bom.path      = ${acCanon}/trees/work
+		account.bom.ghAccount = bomacct
+	EOF
+	fAssertOut    "a byte-order mark doesn't eat the config's first key"  'bomacct' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/bom.shcl' status"
+	fAssertNotOut "nor get that key reported as one it couldn't read"  'account\.bom\.path' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/bom.shcl' status"
 	## ...but only for an account ASKED for. The owner of the remote is a guess about a repo, and a
 	## single-account machine must never learn the feature exists.
 	( cd "${acAway}" && git remote add origin https://github.com/someone/repo.git )
@@ -1938,7 +1971,7 @@ GHEOF
 	## 'account apply' hands the same rule to git, which globs gitdir natively - so plain git agrees
 	## under either root, which is the whole point of a config file you can sync.
 	mkdir -p "${ac}/seghome"
-	local acSegEnv="GITSBY_CONFIG= HOME='${ac}/seghome' GIT_CONFIG_GLOBAL='${ac}/seghome/.gitconfig' PATH='${ac}/bin:${PATH}'"
+	local acSegEnv="${acNoDiscovery} HOME='${ac}/seghome' GIT_CONFIG_GLOBAL='${ac}/seghome/.gitconfig' PATH='${ac}/bin:${PATH}'"
 	cat > "${ac}/segapply.shcl" <<-EOF
 		account.seg.pathContains = github.com/alice
 		account.seg.ghAccount    = segacct
@@ -2000,7 +2033,7 @@ GHEOF
 		account.outer.ghAccount = outeracct
 		account.outer.email     = outer@example.com
 	EOF
-	local acNestEnv="GITSBY_CONFIG= HOME='${ac}/nesthome' GIT_CONFIG_GLOBAL='${ac}/nesthome/.gitconfig' PATH='${ac}/bin:${PATH}'"
+	local acNestEnv="${acNoDiscovery} HOME='${ac}/nesthome' GIT_CONFIG_GLOBAL='${ac}/nesthome/.gitconfig' PATH='${ac}/bin:${PATH}'"
 	fAssert "apply writes a nested rule after the tree that contains it" \
 		bash -c "cd '${ac}/trees/work/nested' && env ${acNestEnv} '${gitsby}' -q -NoFetch --config '${ac}/nested.shcl' account apply >/dev/null"
 	fAssertOut "and plain git then agrees with gitsby about the nested folder"  'inner@example\.com' \
@@ -2070,7 +2103,7 @@ GHEOF
 		account.sp.path      = ${acSpaceCanon}
 		account.sp.ghAccount = spacct
 	EOF
-	local acSpaceEnv="GITSBY_CONFIG= HOME='${ac}/spacehome' GIT_CONFIG_GLOBAL='${ac}/spacehome/.gitconfig' PATH='${ac}/bin:${PATH}'"
+	local acSpaceEnv="${acNoDiscovery} HOME='${ac}/spacehome' GIT_CONFIG_GLOBAL='${ac}/spacehome/.gitconfig' PATH='${ac}/bin:${PATH}'"
 	fAssert "account apply writes a rule for a folder whose path has a space" \
 		bash -c "cd '${ac}/my trees/work' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && [[ \"\$(grep -c 'sp\.gitconfig' '${ac}/spacehome/.gitconfig')\" == 1 ]]"
 	fAssert "and re-applying refreshes it instead of duplicating it" \
@@ -2087,7 +2120,7 @@ GHEOF
 		account.b.path      = ${acCanon}/trees/work
 		account.b.ghAccount = bacct
 	EOF
-	local acFragEnv="GITSBY_CONFIG= HOME='${ac}/fraghome' GIT_CONFIG_GLOBAL='${ac}/fraghome/.gitconfig' PATH='${ac}/bin:${PATH}'"
+	local acFragEnv="${acNoDiscovery} HOME='${ac}/fraghome' GIT_CONFIG_GLOBAL='${ac}/fraghome/.gitconfig' PATH='${ac}/bin:${PATH}'"
 	fAssertFail   "account apply fails when a fragment can't be written" \
 		bash -c "cd '${acWork}' && env ${acFragEnv} '${gitsby}' -q -NoFetch --config '${ac}/frag/config.shcl' account apply"
 	fAssertNotOut "and never says it wrote one"  'Wrote ' \
@@ -2583,7 +2616,7 @@ GHEOF
 	: > "${dr}/home/.gitconfig"
 	git init --quiet -b main "${dr}/tree/proj"
 	( cd "${dr}/tree/proj" && echo a > a.txt && git add --all && git commit --quiet -m init )
-	local drEnv="GITSBY_CONFIG= HOME='${dr}/home' GIT_CONFIG_GLOBAL='${dr}/home/.gitconfig' PATH='${dr}/bin:${PATH}'"
+	local drEnv="${acNoDiscovery} HOME='${dr}/home' GIT_CONFIG_GLOBAL='${dr}/home/.gitconfig' PATH='${dr}/bin:${PATH}'"
 	fAssert "account apply runs with two accounts on one folder" \
 		bash -c "cd '${dr}/tree/proj' && env ${drEnv} '${gitsby}' -q account apply >/dev/null"
 	fAssert "and a second run leaves the rules in place" \
@@ -2698,3 +2731,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260819 JC: Pipeline coverage for the directive review: the reproducible-build flags and a binary built with them, the core cap, --quick's cross-builds, govulncheck, the spawn-count and kept-build scripts, -q reaching the harnesses, the lint summary on a clean log, and the demo scenario's command names. Eleven fail against the pipeline that preceded them.
 ##		- 20260819 JC: br prune's plan checks follow the batched deletes - one line for the locals and one for the remotes, which is what the command runs. The remote half needed a fixture of its own: a plan check has to run the command to see a plan, and the check before it had already pruned the world it shared.
 ##		- 20260819 JC: The second adversarial pass. A folder rule spelled through a symlink, checked both by the account line and by which entry 'account list' marks; the shipped-code warning run from a subdirectory, where the pathspec had been reading from the wrong place; and a repo-local commit name or email on its own, each of which the account had been overriding. Five checks, all five failing against the build before them.
+##		- 20260819 JC: A config file's discovery inputs are now neutralized in one place. Faking HOME never covered XDG_CONFIG_HOME (tried first) or APPDATA (tried last), so every block that tests discovery read the accounts of whoever was running the suite - thirty checks went red the day this machine had a config of its own. Plus four checks for the two defects found with it: an account named through GITSBY_ACCOUNT that carries no GitHub login, and a config file with a byte-order mark on it.

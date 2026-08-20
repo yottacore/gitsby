@@ -67,6 +67,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The note that a hotfix changes shipped code appears wherever you run `br merge` from. It only appeared from the top of the repository, and was silently missing from any subdirectory.
 
+- `GITSBY_ACCOUNT` naming a configured account applies that account. Where the account named no GitHub login of its own - a commit identity and an ssh key and nothing else - the name was read as a bare login instead: none of the account applied, the key fell back to whichever one ssh picked, and the account's own name was reported as the GitHub login the run was acting as. A folder rule had always applied such an account, so asking for one by name got you less than not asking. The same account is also kept now when a repository sets `gitsby.ghAccount` itself; an account that names no login disagrees with nothing.
+
+- A config file saved with a byte-order mark keeps its first line. The mark landed on the first key, which was then read as one gitsby doesn't understand and dropped - and the line that reports those printed the mark along with the name, so the only warning named a key that looks exactly right. Windows editors write a mark by default.
+
 ### Removed
 
 - The installers no longer take `--release dev` (`-Release dev`). It installed the tip of a branch, which was possible while the product was a script in the tree; a branch has no published build behind it now. Typing it says so and names the two routes that exist - a release by tag, or a one-command build from source. The contributor setup scripts went with it: a Go checkout needs only Go, and the three commands are in the README.

@@ -266,3 +266,35 @@ func TestCanonPathKeepsMissingTail(t *testing.T) {
 		t.Errorf("canonPath = %q, want %q", got, want)
 	}
 }
+
+// A byte-order mark is what a Windows editor writes by default, and it lands on
+// the first key in the file. Read as part of the name, that key became one
+// nothing understands - and the line reporting those printed the mark with it,
+// so the only diagnostic named a key that looks exactly right.
+func TestConfigLoadStripsBOM(t *testing.T) {
+	cfg := writeConfig(t, "\ufeff"+"account.work.ghAccount = octocat\naccount.work.email = o@example.com\n")
+	if got := cfg.value("work", "ghAccount"); got != "octocat" {
+		t.Errorf("first key after a BOM = %q, want %q", got, "octocat")
+	}
+	if len(cfg.unknown) != 0 {
+		t.Errorf("unknown keys = %v, want none", cfg.unknown)
+	}
+}
+
+// An account is configured when the file names it, whether or not it names a
+// GitHub login of its own: a commit identity and an ssh key are a whole way of
+// using one. Asked the other way, GITSBY_ACCOUNT read such a name as a bare
+// login and applied none of it.
+func TestKnowsAccountWithoutGhAccount(t *testing.T) {
+	cfg := writeConfig(t, "account.sshonly.email = s@example.com\naccount.byrule.path = /srv/x\n")
+	for _, name := range []string{"sshonly", "SshOnly", "byrule"} {
+		if !cfg.knowsAccount(name) {
+			t.Errorf("knowsAccount(%q) = false, want true", name)
+		}
+	}
+	for _, name := range []string{"", "nobody"} {
+		if cfg.knowsAccount(name) {
+			t.Errorf("knowsAccount(%q) = true, want false", name)
+		}
+	}
+}

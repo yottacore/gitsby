@@ -33,8 +33,13 @@ func (a *app) resolveAccount(dir, url string) error {
 	if who := os.Getenv("GITSBY_ACCOUNT"); who != "" {
 		// Either the name of a configured account or a bare login - accept both; a
 		// script setting this knows one of the two and shouldn't have to know which.
-		if v := a.cfg.value(who, "ghAccount"); v != "" {
-			a.acct.name, a.acct.ghWho = who, v
+		// Which of the two it is turns on whether the file DEFINES the name, not on
+		// whether that account names a GitHub login. Asking the second question read
+		// an ssh-only account as a bare login: none of its key, name or email applied,
+		// and the account's own name was then reported as the GitHub login this run
+		// acts as - so asking for an account by name got you less than not asking.
+		if a.cfg.knowsAccount(who) {
+			a.acct.name, a.acct.ghWho = strings.ToLower(who), a.cfg.value(who, "ghAccount")
 		} else {
 			a.acct.ghWho = who
 		}
@@ -52,9 +57,11 @@ func (a *app) resolveAccount(dir, url string) error {
 			a.acct.ghWho, a.acct.source, a.acct.explicit = fromGit, "git config", true
 			// Name the config account too when one claims this folder, so its key and
 			// commit identity still apply - the git key says who, not that the rest of
-			// the account is off.
+			// the account is off. Dropped only when the account names a DIFFERENT
+			// login: one that names none disagrees with nothing, and dropping it there
+			// threw away the very key and identity the folder rule exists to apply.
 			a.acct.name = a.cfg.accountForDir(dir)
-			if a.cfg.value(a.acct.name, "ghAccount") != a.acct.ghWho {
+			if acctWho := a.cfg.value(a.acct.name, "ghAccount"); acctWho != "" && acctWho != a.acct.ghWho {
 				a.acct.name = ""
 			}
 			return nil
