@@ -36,18 +36,23 @@ func (a *app) coreSSHCommand() string {
 
 // identityMismatchText says why the two identities disagree, or nothing. Only a
 // mismatch both sides KNOW about counts: '?' on either side means we couldn't
-// tell, which is not the same as being wrong.
-func identityMismatchText(ghWho, sshWho string) string {
-	if ghWho == "" {
-		ghWho = "?"
+// tell, which is not the same as being wrong. The tool is named rather than
+// assumed - a message about what 'gh' is doing, printed for a run going through
+// tea, sends you to check an account that had nothing to do with it.
+func identityMismatchText(cli, forgeWho, sshWho string) string {
+	if cli == "" {
+		cli = "the forge CLI"
+	}
+	if forgeWho == "" {
+		forgeWho = "?"
 	}
 	if sshWho == "" {
 		sshWho = "?"
 	}
-	if ghWho == "?" || sshWho == "?" || ghWho == sshWho {
+	if forgeWho == "?" || sshWho == "?" || forgeWho == sshWho {
 		return ""
 	}
-	return "gh acts as '" + ghWho + "', but this remote's key authenticates as '" + sshWho + "'."
+	return cli + " acts as '" + forgeWho + "', but this remote's key authenticates as '" + sshWho + "'."
 }
 
 // sshTarget is the host to ask ssh about, pulled out of a remote URL. Empty for

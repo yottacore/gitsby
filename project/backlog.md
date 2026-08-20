@@ -141,6 +141,7 @@ None open.
 	- A remote whose host can't be named still falls through to `gh`, deliberately - "couldn't tell" is not "definitely not a forge".
 	- `repo create` and `repo connect owner/name` stay GitHub-only, being about GitHub specifically.
 	- The tea path is written against tea's real command surface but has not been exercised against a live Gitea instance; the suite drives it through a stub.
+	- Follow-up done: the identity gate covers non-GitHub hosts too. A tea write is compared against the ssh key like a gh write, and the push-side check reads the account's login on the host rather than `ghAccount`. Both were verified against the pre-fix build - a mismatched `pr create` went through and pushed.
 
 Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. Work top to bottom; everything happens on branches off `gover`, nothing touches the scripted implementations yet.
 

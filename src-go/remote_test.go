@@ -98,13 +98,22 @@ func TestSSHConnectTarget(t *testing.T) {
 // Only a mismatch both sides KNOW about counts: '?' means we couldn't tell, which
 // is not the same as being wrong.
 func TestIdentityMismatchText(t *testing.T) {
-	if identityMismatchText("a", "b") == "" {
+	if identityMismatchText("gh", "a", "b") == "" {
 		t.Error("a real mismatch went unreported")
 	}
 	for _, tc := range [][2]string{{"a", "a"}, {"?", "b"}, {"a", "?"}, {"", "b"}, {"a", ""}} {
-		if got := identityMismatchText(tc[0], tc[1]); got != "" {
+		if got := identityMismatchText("gh", tc[0], tc[1]); got != "" {
 			t.Errorf("identityMismatchText(%q, %q) = %q, want none", tc[0], tc[1], got)
 		}
+	}
+	// The tool that acts is named, not assumed. A message about gh, printed for a run
+	// that went through tea, sends you to check an account that was never involved.
+	if got := identityMismatchText("tea", "a", "b"); !strings.HasPrefix(got, "tea acts as") {
+		t.Errorf("identityMismatchText for tea = %q, want it to name tea", got)
+	}
+	// An unnamed tool still has to produce a sentence rather than start with a space.
+	if got := identityMismatchText("", "a", "b"); got == "" || strings.HasPrefix(got, " ") {
+		t.Errorf("identityMismatchText with no tool name = %q", got)
 	}
 }
 

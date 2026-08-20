@@ -100,10 +100,12 @@ type forgeState struct {
 // as: gh's own, and whoever a remote's ssh key authenticates as. Both cost a live
 // round trip, so both are asked at most once.
 type ghState struct {
-	isCommand bool   // goes through a forge CLI at all -> show whose account that is
-	isWrite   bool   // WRITES through gh -> also compare against the ssh key
-	probeURL  string // the url the ssh identity is read from
-	reachable bool   // cleared when the pre-command fetch can't reach origin
+	isCommand bool      // goes through a forge CLI at all -> show whose account that is
+	isWrite   bool      // WRITES through one -> also compare against the ssh key
+	tool      forgeTool // which CLI that is
+	cli       string    // and how this machine spells it
+	probeURL  string    // the url the ssh identity is read from
+	reachable bool      // cleared when the pre-command fetch can't reach origin
 	login     cached[string]
 	protocol  cached[string]
 	// Keyed by remote: one slot answered for whichever url asked first, and three

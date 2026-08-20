@@ -146,16 +146,28 @@ func (a *app) accountServesHost(host string) bool {
 	return host != "" && strings.EqualFold(host, a.accountHost())
 }
 
+// accountWho is the login this run's account has on a host, or nothing when that
+// cannot be said. 'user' is the host-neutral spelling and the more deliberate thing
+// to have typed, so it wins wherever it is given; 'ghAccount' is a GitHub login and
+// answers for GitHub alone. Nothing for an account that names no login on this host
+// at all - which the identity gate reads as "no claim to check", never as a match.
+func (a *app) accountWho(host string) string {
+	if user := a.cfg.value(a.acct.name, "user"); user != "" {
+		return user
+	}
+	if isGitHubHost(host) {
+		return a.acct.ghWho
+	}
+	return ""
+}
+
 // accountLogin is the username the credential helper offers. GitHub ignores it
 // entirely when the password is a token, which is why a literal 'x' served here for
 // as long as this was a GitHub-only program; Gitea checks it, so an account on one
 // has to be able to say who it is.
 func (a *app) accountLogin() string {
-	if user := a.cfg.value(a.acct.name, "user"); user != "" {
-		return user
-	}
-	if a.acct.ghWho != "" {
-		return a.acct.ghWho
+	if who := a.accountWho(a.acct.credHost); who != "" {
+		return who
 	}
 	return "x"
 }

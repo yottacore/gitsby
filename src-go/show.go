@@ -143,6 +143,17 @@ func (a *app) showForgeLine() {
 			who = "unknown - '" + cli + " login add' has no login for this host"
 		}
 		line += " (" + cli + "): " + who
+		// Only a write can act as the wrong account, so only a write gets the
+		// comparison - the same rule the gh line above follows, and the reason this
+		// block exists at all rather than just naming the host.
+		if a.gh.isWrite {
+			keyWho := a.sshLogin(a.gh.probeURL)
+			if identityMismatchText(cli, who, keyWho) != "" {
+				line += "  <-- NOT the ssh key's account ('" + keyWho + "')"
+			} else if keyWho == "?" {
+				line += " (no ssh identity to compare)"
+			}
+		}
 	}
 	a.out.clean("Forge ........: " + line)
 }
@@ -287,7 +298,7 @@ func (a *app) showSSHLine(remoteURL string) {
 // showGhLine: gh-backed commands act as gh's account, not the ssh key's - so name
 // it where it applies.
 func (a *app) showGhLine() {
-	if !a.gh.isCommand {
+	if !a.gh.isCommand || a.gh.tool != toolGh {
 		return
 	}
 	ghWho := a.ghLogin()
@@ -306,7 +317,7 @@ func (a *app) showGhLine() {
 	// made.
 	if a.gh.isWrite {
 		keyWho := a.sshLogin(a.gh.probeURL)
-		if identityMismatchText(ghWho, keyWho) != "" {
+		if identityMismatchText("gh", ghWho, keyWho) != "" {
 			line += "  <-- NOT the ssh key's account ('" + keyWho + "')"
 		} else if keyWho == "?" {
 			line += " (no ssh identity to compare)"

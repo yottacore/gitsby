@@ -426,18 +426,28 @@ func (a *app) settleGh() error {
 	switch a.cmd.name {
 	case "identity":
 		// Reads the forge, writes nothing: the whole point of the command is to name
-		// every account involved. Only where gh is the one that answers - on any other
-		// host gh's account says nothing about who this run acts as, and asking it is a
-		// live round trip to learn something irrelevant.
-		a.gh.isCommand = a.onGitHub() || !a.hasOrigin()
+		// every account involved. gh answers for a GitHub remote and for no remote at
+		// all - with nothing to take a host from, its account is still the only one
+		// that can be asked. Any other host is the Forge line's business.
+		if a.onGitHub() || !a.hasOrigin() {
+			a.gh.tool, a.gh.cli, a.gh.isCommand = toolGh, "gh", true
+		} else {
+			a.gh.tool, a.gh.cli = a.originTool()
+			a.gh.isCommand = a.gh.tool != toolNone
+		}
 	case "pr":
-		a.gh.isCommand = a.pr.tool == toolGh
+		a.gh.tool, a.gh.cli = a.pr.tool, a.pr.cli
+		a.gh.isCommand = a.pr.tool != toolNone
+		// A write is a write whichever CLI makes it: 'pr create' and 'pr ok' act as
+		// the forge account while git pushes as the key, and those two disagreeing is
+		// the same wrong-account mistake on any host.
 		if a.pr.sub != "" && a.gh.isCommand {
 			a.gh.isWrite = true
 			a.gh.probeURL = a.originURL()
 		}
 	case "repo-create":
 		a.gh.isCommand, a.gh.isWrite = true, true
+		a.gh.tool, a.gh.cli = toolGh, "gh"
 		// 'repo create' is a GitHub command by definition - gh is what creates the
 		// repo - so the host it asks about is github.com, not whatever origin the
 		// directory we happen to be standing in points at.
@@ -447,6 +457,7 @@ func (a *app) settleGh() error {
 	case "repo-connect":
 		if a.tgt.ghTarget != "" {
 			a.gh.isCommand, a.gh.isWrite = true, true
+			a.gh.tool, a.gh.cli = toolGh, "gh"
 			// connectURL is the url we resolved ourselves, so probe that rather than
 			// guess.
 			if at := strings.Index(a.tgt.connectURL, "@"); at >= 0 && strings.Contains(a.tgt.connectURL[at:], ":") {
@@ -459,7 +470,7 @@ func (a *app) settleGh() error {
 	// identity block names gh's account, and a write compares against it. A bare
 	// 'pr' or 'pr <n>' prints neither.
 	if a.gh.isCommand && (a.gh.isWrite || a.identityWillPrint()) {
-		_ = a.ghLogin()
+		_ = a.forgeCLIWho()
 	}
 	if a.gh.isWrite {
 		_ = a.sshLogin(a.gh.probeURL)
@@ -474,14 +485,30 @@ type identityMismatch struct {
 	viaGh bool
 }
 
-// identityGate: a gh write acting as a different account than the key git pushes
+// forgeCLIWho names the account the CLI this run goes through acts as, or '?' when
+// it cannot be told. Unknown is deliberately not a mismatch: a tea with no login for
+// this host, or a gh that is offline, has said nothing about who you are, and
+// refusing on that would refuse every unconfigured machine.
+func (a *app) forgeCLIWho() string {
+	switch a.gh.tool {
+	case toolGh:
+		return a.ghLogin()
+	case toolTea:
+		if who := a.forgeLogin(a.gh.cli, a.originHost()); who != "" {
+			return who
+		}
+	}
+	return "?"
+}
+
+// identityGate: a forge write acting as a different account than the key git pushes
 // with is a wrong-account mistake waiting to happen, and it is outward-facing.
 // Refuse it unattended (nobody is there to read a warning); warn interactively,
 // right before the prompt. --any-identity means the difference is intended.
 func (a *app) identityGate() (identityMismatch, error) {
 	var found identityMismatch
 	if a.gh.isWrite && !a.opt.anyIdentity {
-		found.text = identityMismatchText(a.ghLogin(), a.sshLogin(a.gh.probeURL))
+		found.text = identityMismatchText(a.gh.cli, a.forgeCLIWho(), a.sshLogin(a.gh.probeURL))
 		found.viaGh = found.text != ""
 		// Up front, like every other refusal: don't show a plan we won't run.
 		if found.text != "" && a.opt.quiet {
@@ -489,19 +516,23 @@ func (a *app) identityGate() (identityMismatch, error) {
 		}
 	}
 	// The same question for the commands that push with git rather than write
-	// through gh - 'sync' above all, which sends your work to a remote and compared
-	// nothing at all. Only for an account that was CONFIGURED or asked for: one
-	// inferred from the remote's owner says nothing about who you are, and would
-	// fire for every single-account user cloning somebody else's repo.
+	// through a forge CLI - 'sync' above all, which sends your work to a remote and
+	// compared nothing at all. Asked of the account's login ON THIS HOST: 'ghAccount'
+	// is a GitHub login and says nothing about who you are anywhere else, so keying
+	// this on it alone left every non-GitHub account uncompared. Only for an account
+	// that was CONFIGURED or asked for: one inferred from the remote's owner says
+	// nothing about who you are, and would fire for every single-account user cloning
+	// somebody else's repo.
+	acctWho := a.accountWho(a.originHost())
 	if !a.pushesToRemote() || a.opt.anyIdentity || found.text != "" ||
-		a.acct.ghWho == "" || (!a.acct.explicit && a.acct.name == "") {
+		acctWho == "" || (!a.acct.explicit && a.acct.name == "") {
 		return found, nil
 	}
 	pushLogin := a.sshLogin(a.originURL())
-	if pushLogin == "" || pushLogin == "?" || pushLogin == a.acct.ghWho {
+	if pushLogin == "" || pushLogin == "?" || pushLogin == acctWho {
 		return found, nil
 	}
-	found.text = "This folder's account is '" + a.acct.ghWho + "', but origin's key authenticates as '" + pushLogin + "'."
+	found.text = "This folder's account is '" + acctWho + "', but origin's key authenticates as '" + pushLogin + "'."
 	if a.opt.quiet {
 		return found, usagef("%s Nothing was done. Re-run with --any-identity if that is intended.", found.text)
 	}

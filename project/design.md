@@ -103,6 +103,11 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- A remote whose host cannot be named - a local path, or a URL shape not parsed - is deliberately NOT a refusal. "We could not tell" and "it is definitely not a forge" are different answers, and only one of them is gitsby's to assert; such a remote falls through to `gh` exactly as before. This follows the rule already standing for remote owners.
 	- `repo create` and `repo connect owner/name` stay GitHub-only. They are about GitHub specifically rather than about whichever host a repository happens to use.
 
+- The identity gate asks about the host in question, not about GitHub.
+	- Two accounts disagreeing about who you are is the same outward-facing mistake wherever it happens, so a write through any forge CLI is compared against the key Git pushes with, and the message names the tool that would have acted rather than always saying `gh`.
+	- The push-side check reads the account's login on the host being pushed to. `ghAccount` is a GitHub login and answers for GitHub alone; `user` answers anywhere. Keyed on `ghAccount` alone the gate silently stopped guarding every non-GitHub account.
+	- An account naming no login on this host makes no claim, so there is nothing to compare - and that is deliberately not read as a match. Unknown stays unknown on both sides: a `tea` with no login configured, like an unreachable `gh`, has said nothing about who you are, and refusing on that would refuse every unconfigured machine.
+
 - An account's credentials are only credentials where that account banks.
 	- Accounts gained `host` (defaulting to `github.com`, which is what every config written before the key existed meant) and `user`. If an account's host is not the host `origin` is on, nothing is applied and the identity block names both hosts.
 	- A non-GitHub token is exported under its own variable, never as `GH_TOKEN`: `gh` reads that one, and every child process would otherwise inherit a credential for a host `gh` would try to use it on.

@@ -35,6 +35,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Accounts can say which forge they are on, with `host` and `user`. An account's token is only applied where it can be used, so a GitHub token is never handed to a push at somebody else's host, and the identity block says which two hosts disagreed. A non-GitHub token is exported under its own variable rather than as `GH_TOKEN`, which `gh` would otherwise pick up.
 
+- The identity gate covers every host, not just GitHub's. A pull request opened through `tea` while `git` pushes as a different key is refused the same way the `gh` version always was, and the refusal names the tool that would have acted. The check on commands that push with plain Git - `sync` above all - now reads the account's login on the host in question, so an account identified by `user` rather than `ghAccount` is compared instead of skipped.
+
 - The identity block has a `Forge` line for hosts `gh` does not serve, naming the host and who its CLI holds a login for. Previously it simply printed nothing there.
 
 - The Windows binaries carry an icon and version details. Explorer shows the gitsby logo instead of the blank default, and Properties reads a version, description, copyright and file name off the file itself.
