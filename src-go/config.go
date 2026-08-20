@@ -252,6 +252,11 @@ func isReadableFile(p string) bool {
 
 var acctNameOK = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
+// What a hostname or a forge login may contain. Deliberately narrower than either
+// spec allows: these two reach a shell through the credential helper, and nothing
+// legitimate is being excluded.
+var forgeWordOK = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
 // Characters a shell would act on rather than pass through as part of a path.
 // '~' is deliberately absent: the shell expands it, and '~/.ssh/id_ed25519' is
 // how everyone writes a key path.
@@ -319,7 +324,7 @@ func (c *config) load(o options) error {
 			if value != "" {
 				c.segments = append(c.segments, acctRule{canonSegment(value), acct})
 			}
-		case "ghaccount", "tokenfile", "sshkey", "name", "email", "protocol":
+		case "ghaccount", "tokenfile", "sshkey", "name", "email", "protocol", "host", "user":
 			// git hands GIT_SSH_COMMAND and core.sshCommand to a shell, so a key
 			// path carrying whitespace or a shell character is re-parsed there
 			// rather than used - and this file is redirectable by flag and by
@@ -327,6 +332,15 @@ func (c *config) load(o options) error {
 			// whatever key ssh picks is how you push as the wrong person.
 			if field == "sshkey" && strings.ContainsAny(value, sshKeyShellChars) {
 				c.unknown = append(c.unknown, key+" (shell characters in the path)")
+				value = ""
+			}
+			// 'host' and 'user' are interpolated into the credential helper, which
+			// git hands to a shell exactly as it hands one core.sshCommand. Neither
+			// has any business carrying a character a shell would act on, so hold
+			// them to what a hostname and a login can actually contain rather than
+			// trust the file - it is redirectable by flag and by environment variable.
+			if (field == "host" || field == "user") && value != "" && !forgeWordOK.MatchString(value) {
+				c.unknown = append(c.unknown, key+" (not a plain "+field+" name)")
 				value = ""
 			}
 			c.values[key] = value

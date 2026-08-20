@@ -1066,6 +1066,11 @@ GHEOF
 	fAssert "a configured account wins over the remote's owner" \
 		bash -c "cd '${idn}/cfg' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse acme configured' FAKE_GH_LOG='${idn}/cfg.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=tok_configured' '${idn}/cfg.log'"
 	## No origin at all: nothing to parse an owner from, so only the configured account can answer.
+	## Asked through 'raw gh' rather than 'pr': a repo with no remote has nowhere to propose a pull
+	## request to, and pr now says so before it selects anything. Which is the right answer, and
+	## makes it the wrong vehicle for a question about account selection. 'identity' is no good
+	## either - its gh probe deliberately runs BEFORE the token lands, so the log never sees one.
+	## 'raw gh' is the documented scripted surface and runs as whatever was selected.
 	mkdir -p "${idn}/noremote"
 	(
 		cd "${idn}/noremote" || exit 1
@@ -1073,7 +1078,10 @@ GHEOF
 		git config gitsby.ghAccount configured
 	)
 	fAssert "a configured account applies with no remote at all" \
-		bash -c "cd '${idn}/noremote' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse configured' FAKE_GH_LOG='${idn}/nore.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=tok_configured' '${idn}/nore.log'"
+		bash -c "cd '${idn}/noremote' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse configured' FAKE_GH_LOG='${idn}/nore.log' '${gitsby}' -q -NoFetch raw gh api user && grep -q 'GH_TOKEN=tok_configured' '${idn}/nore.log'"
+	## And the refusal itself, which is what makes the line above the right shape.
+	fAssertOut "pr refuses outright with no remote to propose to"  'No .origin. remote' \
+		bash -c "cd '${idn}/noremote' && ${idEnv} '${gitsby}' -q -NoFetch pr 2>&1"
 	## The token file covers a box where that account was never logged in to gh. Absent, unreadable
 	## and empty must all fall back to gh's own account rather than fail - a checkout that was never
 	## set up this way still has to work.
@@ -2670,6 +2678,139 @@ GHEOF
 		fAssert "the account fragments are yours alone" \
 			bash -c "[[ \"\$(stat -c %a '${dr}/home/.config/gitsby/accounts')\" == 700 ]] && [[ \"\$(stat -c %a '${dr}/home/.config/gitsby/accounts/abe.gitconfig')\" == 600 ]]"
 	fi
+
+	##••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+	## Other forges. gitsby was a GitHub program that reached for gh whenever it wanted anything from
+	## a remote; most of what it does is git, and git does not care whose server it is. What is
+	## covered here is the seam: the host decides the tool, the tool is only reached for once the
+	## host is known to be one it serves, and everything that never needed a forge CLI keeps working
+	## without one. A '.test' host is reserved and resolves nowhere, so -NoFetch keeps it all local.
+	##••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+	local fg="${work}/$1-forge"
+	mkdir -p "${fg}/bin" "${fg}/debbin"
+	## A deterministic tea. Logs every call the way the gh stub does, so a check can see not just
+	## that a pull request was asked for but which vocabulary it was asked in.
+	fStub "${fg}/bin/tea" <<'TEAEOF'
+#!/usr/bin/env bash
+[[ -n "${FAKE_TEA_LOG:-}" ]] && echo "$*" >> "${FAKE_TEA_LOG}"
+case "$1 $2" in
+"logins list") printf '"Name"\t"URL"\t"SSHHost"\t"User"\t"Default"\n' ;
+               printf '"work"\t"https://git.example.test"\t""\t"%s"\t"true"\n' "${FAKE_TEA_USER:-giteauser}" ;;
+"pulls list")  printf '"index"\t"head"\n' ; [[ -n "${FAKE_TEA_EXISTING:-}" ]] && printf '"%s"\t"%s"\n' "${FAKE_TEA_EXISTING}" "${FAKE_TEA_HEAD:-feat}" ;;
+*)             : ;;
+esac
+exit 0
+TEAEOF
+	## The same program under the name Debian ships it as. Looking for one spelling finds it only on
+	## the machines that happen to use that one.
+	fStub "${fg}/debbin/tea-cli" <<'TEAEOF'
+#!/usr/bin/env bash
+[[ -n "${FAKE_TEA_LOG:-}" ]] && echo "$*" >> "${FAKE_TEA_LOG}"
+exit 0
+TEAEOF
+	## gh is on the path throughout this block, and must never be the one that answers.
+	fStub "${fg}/bin/gh" <<'GHEOF'
+#!/usr/bin/env bash
+[[ -n "${FAKE_GH_LOG:-}" ]] && echo "$*" >> "${FAKE_GH_LOG}"
+exit 0
+GHEOF
+	cp "${fg}/bin/gh" "${fg}/debbin/gh" 2>/dev/null; fStubShim "${fg}/debbin/gh"
+	local fgRepo="${fg}/proj"
+	git init --quiet -b main "${fgRepo}"
+	(
+		cd "${fgRepo}" || exit 1
+		echo a > a.txt && git add --all && git commit --quiet -m init
+		git remote add origin https://git.example.test/acme/proj.git
+	)
+	local fgPath="${fg}/bin:${PATH}"
+	local fgDeb="${fg}/debbin:${PATH}"
+	## A path with git on it and no forge CLI at all. Not an empty directory: that takes git away
+	## too, and then 'Not found in path: git' comes first and the refusal under test never runs -
+	## the exit-code check passes for a reason that has nothing to do with what it is checking.
+	## Linked, not wrapped: a '#!/usr/bin/env bash' wrapper needs bash found on the very PATH we are
+	## emptying, so it fails to start and the run reads as "not a git repository" instead.
+	mkdir -p "${fg}/gitonly"
+	local fgBare="${fg}/gitonly"
+	## bash as well as git: ${gitsby} is itself a '#!/usr/bin/env bash' shim, so emptying the PATH of
+	## bash stops the binary launching at all - which reads as "not a git repository", not as the
+	## refusal under test.
+	if ! ln -s "$(command -v bash)" "${fg}/gitonly/bash" 2>/dev/null || ! ln -s "$(command -v git)" "${fg}/gitonly/git" 2>/dev/null; then
+		## No symlinks (Windows without developer mode): keep the real path on, minus the stubs.
+		fgBare="${PATH}"
+	fi
+
+	## The whole point: a Gitea remote is served by tea, and gh - installed, on the path, perfectly
+	## willing - is not asked anything at all.
+	: > "${fg}/tea.log"; : > "${fg}/gh.log"
+	fAssert "a Gitea remote lists pull requests through tea" \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_LOG='${fg}/tea.log' FAKE_GH_LOG='${fg}/gh.log' '${gitsby}' -q -NoFetch pr && grep -q '^pulls list' '${fg}/tea.log'"
+	fAssert "and gh is never run for it, though it is installed" \
+		bash -c "! grep -q . '${fg}/gh.log'"
+	## Debian renames the binary because the name was taken. One spelling found is not both found.
+	: > "${fg}/deb.log"
+	fAssert "tea is found under the 'tea-cli' name too" \
+		bash -c "cd '${fgRepo}' && PATH='${fgDeb}' FAKE_TEA_LOG='${fg}/deb.log' '${gitsby}' -q -NoFetch pr && grep -q . '${fg}/deb.log'"
+
+	## No CLI for the host: the refusal has to name the host that decided it and the tool that would
+	## serve it. Telling a Gitea user to install a GitHub client is the failure this replaced.
+	fAssertFail "a Gitea remote with no forge CLI refuses"  bash -c "cd '${fgRepo}' && PATH='${fgBare}' '${gitsby}' -q -NoFetch pr"
+	fAssertOut  "and names the host that decided it"  'git\.example\.test' \
+		bash -c "cd '${fgRepo}' && PATH='${fgBare}' '${gitsby}' -q -NoFetch pr 2>&1"
+	fAssertOut  "and points at tea rather than gh"  'tea' \
+		bash -c "cd '${fgRepo}' && PATH='${fgBare}' '${gitsby}' -q -NoFetch pr 2>&1"
+
+	## 'repo url' only ever rewrites text - it asks the host nothing - so refusing it anywhere but
+	## github.com was the parser's limit showing through as a rule.
+	fAssertOut "repo url shows a Gitea remote's ssh spelling"    'git@git\.example\.test:acme/proj\.git' \
+		bash -c "cd '${fgRepo}' && '${gitsby}' -q -NoFetch repo url 2>&1"
+	fAssertOut "repo url shows its https spelling too"           'https://git\.example\.test/acme/proj\.git' \
+		bash -c "cd '${fgRepo}' && '${gitsby}' -q -NoFetch repo url 2>&1"
+	fAssert    "repo url converts a Gitea remote to ssh" \
+		bash -c "cd '${fgRepo}' && '${gitsby}' -q -NoFetch repo url ssh >/dev/null && git -C '${fgRepo}' remote get-url origin | grep -qx 'git@git.example.test:acme/proj.git'"
+	fAssert    "and back to https" \
+		bash -c "cd '${fgRepo}' && '${gitsby}' -q -NoFetch repo url https >/dev/null && git -C '${fgRepo}' remote get-url origin | grep -qx 'https://git.example.test/acme/proj.git'"
+
+	## The identity block exists to say who the next command acts as. On a host gh does not serve it
+	## had no answer at all - it printed nothing rather than saying it could not tell.
+	fAssertOut "the identity block names the forge host"  'Forge .*git\.example\.test' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch identity 2>&1"
+	fAssertOut "and who tea holds a login for there"      'giteauser' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch identity 2>&1"
+	fAssertNotOut "and prints no GitHub line for it"      'GitHub .gh.' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch identity 2>&1"
+
+	## A token is a credential for the forge that issued it. An account that banks at github.com must
+	## not have its token handed to a Gitea push - and the block has to say why, not report a missing
+	## token that would have been the wrong one anyway.
+	cat > "${fg}/gh-acct.shcl" <<-EOF
+		account.work.path      = $(fWinPath "${fgRepo}")
+		account.work.ghAccount = ghonly
+		account.work.tokenFile = $(fWinPath "${fg}/token")
+	EOF
+	echo tok_ghonly > "${fg}/token"
+	fAssertOut "a github.com account is not applied to a Gitea remote"  'NOT applied' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/gh-acct.shcl' identity 2>&1"
+	fAssertOut "and says it is the host that decided that"  'git\.example\.test' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/gh-acct.shcl' identity 2>&1"
+	## Declaring the host is what makes the same account apply - and the credential helper is then
+	## written for THAT host, never for github.com.
+	cat > "${fg}/tea-acct.shcl" <<-EOF
+		account.work.path      = $(fWinPath "${fgRepo}")
+		account.work.host      = git.example.test
+		account.work.user      = giteauser
+		account.work.tokenFile = $(fWinPath "${fg}/token")
+	EOF
+	fAssertNotOut "an account that declares the host IS applied"  'NOT applied' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' identity 2>&1"
+
+	## An unparseable remote is not a forge we ruled out - it is one we could not name. The standing
+	## rule is that such a remote never triggers a refusal, so gh keeps the last word exactly as before.
+	git init --quiet -b main "${fg}/localorigin"
+	( cd "${fg}/localorigin" && echo a > a.txt && git add --all && git commit --quiet -m init && git remote add origin "${fg}/bare.git" )
+	git init --quiet --bare -b main "${fg}/bare.git"
+	: > "${fg}/local-gh.log"
+	fAssert "a local-path remote still falls through to gh, as it always did" \
+		bash -c "cd '${fg}/localorigin' && PATH='${fgPath}' FAKE_GH_LOG='${fg}/local-gh.log' '${gitsby}' -q -NoFetch pr && grep -q '^pr list' '${fg}/local-gh.log'"
 
 	if ((hasPty)); then
 		## Only 'y' was a yes, so the word people actually type aborted.

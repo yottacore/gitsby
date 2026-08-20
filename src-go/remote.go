@@ -145,7 +145,14 @@ func (a *app) remoteEnv() []string {
 	return env
 }
 
-var sshGreetingRE = regexp.MustCompile(`^Hi ([A-Za-z0-9_.:/-]+)!`)
+// The greeting each forge answers an ssh -T with. GitHub says 'Hi <user>!';
+// Gitea (and Forgejo, which kept the wording) says 'Hi there, <user>!' - close
+// enough to look handled by the first pattern and different enough not to be, so
+// the identity line read 'unknown' on every Gitea remote while looking correct.
+var sshGreetingREs = []*regexp.Regexp{
+	regexp.MustCompile(`^Hi ([A-Za-z0-9_.:/-]+)!`),
+	regexp.MustCompile(`^Hi there, ([A-Za-z0-9_.-]+)!`),
+}
 
 // sshLogin names the account this remote's ssh key authenticates as. GitHub
 // answers 'Hi <user>!' and always exits 1, so parse the greeting, not the status.
@@ -176,8 +183,10 @@ func probeSSHLogin(url, sshCommand string) string {
 	// answered '?' for exactly the multi-key setups this exists for.
 	out, _ := exec.Command(sshCmd[0], args...).CombinedOutput()
 	for _, line := range splitLines(string(out)) {
-		if m := sshGreetingRE.FindStringSubmatch(line); m != nil {
-			return m[1]
+		for _, greeting := range sshGreetingREs {
+			if m := greeting.FindStringSubmatch(line); m != nil {
+				return m[1]
+			}
 		}
 	}
 	return "?"
@@ -223,10 +232,15 @@ func (a *app) isOffline() bool { return !a.gh.reachable }
 
 // ghProtocol: which transport gh hands to git for github.com ('ssh' or 'https').
 // Host-specific, not the global default - they can disagree, and the host one is
-// what github.com operations use.
-func (a *app) ghProtocol() string {
+// what github.com operations use. Only asked for a host gh actually serves: gh's
+// preference says nothing about somebody else's forge, and asking it anyway spends
+// a process to mis-answer a question about a machine gh has never heard of.
+func (a *app) ghProtocol(host string) string {
+	if !isGitHubHost(host) {
+		return "https"
+	}
 	return a.gh.protocol.get(func() string {
-		if inPath("gh") && runOut("gh", "config", "get", "-h", "github.com", "git_protocol") == "ssh" {
+		if inPath("gh") && runOut("gh", "config", "get", "-h", host, "git_protocol") == "ssh" {
 			return "ssh"
 		}
 		return "https"
@@ -239,6 +253,13 @@ func (a *app) ghProtocol() string {
 // answer when nothing says otherwise, so an unconfigured machine behaves exactly
 // as it did before any of this existed.
 func (a *app) preferredProtocol() string {
+	return a.protocolFor(a.originHost())
+}
+
+// protocolFor is the same question about a named host, for the commands settling a
+// remote they do not have yet - a clone's URL and a connect's target name their own
+// host, and it need not be the one the current directory sits on.
+func (a *app) protocolFor(host string) string {
 	proto := a.cfg.value(a.acct.name, "protocol")
 	if proto == "" {
 		proto = a.cfg.values["protocol"]
@@ -247,24 +268,14 @@ func (a *app) preferredProtocol() string {
 	case "https", "ssh":
 		return strings.ToLower(proto)
 	}
-	return a.ghProtocol()
+	return a.ghProtocol(host)
 }
 
-// remoteTarget: 'owner/name' out of any github.com remote URL, or nothing. Used
-// to re-spell a remote in the other transport without asking the network.
-func remoteTarget(url string) string {
-	owner := remoteOwner(url)
-	if owner == "" {
-		return ""
-	}
-	name := strings.TrimSuffix(url, ".git")
-	name = strings.TrimSuffix(name, "/")
-	name = name[strings.LastIndex(name, "/")+1:]
-	if name == "" || name == owner {
-		return ""
-	}
-	return owner + "/" + name
-}
+// remoteTarget: 'owner/name' out of any remote URL, or nothing. Used to re-spell
+// a remote in the other transport without asking the network - which is pure text
+// work on any host, and was refused everywhere but github.com for no better reason
+// than that the parser behind it only knew the one.
+func remoteTarget(url string) string { return parseRemote(url).target() }
 
 // convertibleToHTTPS is true when this repo is on ssh but the account it belongs
 // to could authenticate with a token instead - the one case where saying so is
@@ -278,6 +289,12 @@ func (a *app) convertibleToHTTPS() bool {
 	if sshTarget(url) == "" || remoteTarget(url) == "" {
 		return false
 	}
-	token, _, _ := a.accountToken()
+	// The token has to be one THIS host would accept. Offering to re-spell a Gitea
+	// remote so it authenticates with a GitHub token is an invitation to break a
+	// working repo, and the line reads as advice either way.
+	if !a.accountServesHost(a.originHost()) {
+		return false
+	}
+	token, _, _ := a.accountToken(a.originHost())
 	return token != ""
 }

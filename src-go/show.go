@@ -118,6 +118,33 @@ func (a *app) showIdentity(remoteURL string) {
 	a.showSSHLine(remoteURL)
 	a.out.clean("Author .......: " + commitIdentity())
 	a.showGhLine()
+	a.showForgeLine()
+}
+
+// showForgeLine is the gh line's counterpart for every host gh does not serve.
+// Without it a Gitea repo had no answer at all to the question this whole block
+// exists for - the identity display quietly stopped covering the case rather than
+// saying it couldn't, which is the one thing it is not allowed to do.
+func (a *app) showForgeLine() {
+	host := a.originHost()
+	if host == "" || isGitHubHost(host) {
+		return
+	}
+	tool, cli := a.originTool()
+	line := host
+	switch {
+	case tool == toolNone:
+		line += " - no CLI installed for it here, so git works and pull requests don't"
+	case a.isOffline():
+		line += " (" + cli + ") - offline, so who it acts as is unknown"
+	default:
+		who := a.forgeLogin(cli, host)
+		if who == "" {
+			who = "unknown - '" + cli + " login add' has no login for this host"
+		}
+		line += " (" + cli + "): " + who
+	}
+	a.out.clean("Forge ........: " + line)
 }
 
 // accountDecidedSomething: whether the account resolution actually changed how
@@ -152,6 +179,10 @@ func (a *app) showAccountLine() {
 	switch {
 	case a.acct.bypassed:
 		line += " - NOT applied: --any-identity, so the token, the key and the commit author all stay as they already were"
+	case a.acct.otherHost:
+		// Named rather than reported as a missing token: the fix is a host key or a
+		// different account, not hunting for a token that would be the wrong one.
+		line += " - NOT applied: that account is on " + a.accountHost() + ", and this remote is on " + a.forgeName()
 	case a.acct.noToken:
 		line += " - NOT applied: no token for it here, so gh acts as its own account"
 	case a.acct.tokenWho == "?":

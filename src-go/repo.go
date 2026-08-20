@@ -79,18 +79,6 @@ func sameRemote(a, b string) bool {
 	return canonPath(a) == canonPath(b)
 }
 
-// githubURL: the canonical github.com URL for 'owner/name' in one of the two
-// transports.
-func githubURL(target, proto string) string {
-	if target == "" {
-		return ""
-	}
-	if proto == "ssh" {
-		return "git@github.com:" + target + ".git"
-	}
-	return "https://github.com/" + target + ".git"
-}
-
 // probeRemote is one network round-trip: does the remote exist, and does it have
 // history? No auth prompts - a bad https URL would otherwise stop and ask for
 // credentials mid-run - and the timeout composes onto git's own ssh command, so
@@ -152,10 +140,13 @@ func (a *app) settleRepoURL() (bool, error) {
 		return false, usagef("No origin to re-spell. Connect one first: %s repo connect <url | owner/name>", meName)
 	}
 	if a.cmd.arg != "" {
-		if remoteTarget(current) == "" {
-			return false, usagef("origin isn't a github.com remote, so there is no other spelling of it to switch to.")
+		// Any host, not just github.com: re-spelling a remote is text work that the
+		// host never hears about, and refusing it anywhere else was the parser's limit
+		// showing through as a rule. A local path still has nothing to re-spell.
+		if remoteTarget(current) == "" || a.originHost() == "" {
+			return false, usagef("origin (%s) has no host and 'owner/name' to re-spell, so there is no other spelling of it to switch to.", maskURL(current))
 		}
-		if githubURL(remoteTarget(current), a.cmd.arg) == current {
+		if forgeURL(a.originHost(), remoteTarget(current), a.cmd.arg) == current {
 			a.out.status("origin already uses " + a.cmd.arg + "; nothing to do.")
 			a.out.clean("")
 			return true, nil
@@ -188,8 +179,11 @@ func (a *app) settleRepoClone() (bool, error) {
 	}
 	// 'owner/name' is what create and connect take; refusing it here only after
 	// the plan was confirmed is the surprise.
+	// 'owner/name' has only ever meant github.com, so the transport question is
+	// about github.com too - not about whichever host the directory we are standing
+	// in happens to use.
 	if ownerNameRE.MatchString(a.cmd.arg) && !pathExists(a.cmd.arg) {
-		a.cmd.arg = githubURL(a.cmd.arg, a.preferredProtocol())
+		a.cmd.arg = githubURL(a.cmd.arg, a.protocolFor("github.com"))
 	}
 	a.tgt.cloneURL, a.tgt.cloneDir = a.cmd.arg, a.cloneDestDir()
 	if a.tgt.cloneDir == "" {
@@ -298,7 +292,7 @@ func (a *app) settleRepoConnectTo() error {
 		// gh never uses a host alias, so this is the canonical url. We build this one
 		// ourselves, so the config's transport applies - unlike 'repo create', where gh
 		// adds the remote and only gh's own git_protocol decides.
-		a.tgt.connectURL = githubURL(a.tgt.ghTarget, a.preferredProtocol())
+		a.tgt.connectURL = githubURL(a.tgt.ghTarget, a.protocolFor("github.com"))
 		a.tgt.connectMode = "add"
 		return nil
 	default:
@@ -355,7 +349,7 @@ func (a *app) cmdConnect() error {
 // authenticates to it.
 func (a *app) cmdRepoURL() error {
 	url := a.originURL()
-	return a.step("git", "remote", "set-url", "origin", githubURL(remoteTarget(url), a.cmd.arg))
+	return a.step("git", "remote", "set-url", "origin", forgeURL(a.originHost(), remoteTarget(url), a.cmd.arg))
 }
 
 // cmdRepoURLShow is the bare, read-only form: what origin is now, and its other
@@ -363,14 +357,15 @@ func (a *app) cmdRepoURL() error {
 func (a *app) cmdRepoURLShow() {
 	urlNow := a.originURL()
 	urlTarget := remoteTarget(urlNow)
+	host := a.originHost()
 	a.out.clean("")
 	a.out.clean("origin .......: " + maskURL(urlNow))
-	if urlTarget == "" {
-		a.out.clean("Not a github.com remote, so there is no other spelling of it.")
+	if urlTarget == "" || host == "" {
+		a.out.clean("No host and 'owner/name' to re-spell, so there is no other spelling of it.")
 		return
 	}
-	a.out.clean("as https .....: " + githubURL(urlTarget, "https"))
-	a.out.clean("as ssh .......: " + githubURL(urlTarget, "ssh"))
+	a.out.clean("as https .....: " + forgeURL(host, urlTarget, "https"))
+	a.out.clean("as ssh .......: " + forgeURL(host, urlTarget, "ssh"))
 	a.out.clean("Switch with '" + meName + " repo url <https|ssh>'.")
 }
 
