@@ -443,12 +443,16 @@ func (a *app) selectAccount(skipGhProbe bool) error {
 		// a host key or a different account, not hunting for a token that would be the
 		// wrong one anyway.
 		a.acct.otherHost = true
-	case a.acct.ghWho != "" && (a.acct.explicit || a.acct.name != ""):
+	case a.accountWho(a.accountHost()) != "" && (a.acct.explicit || a.acct.name != ""):
 		// An account we resolved but cannot act as. gh goes on using whichever
 		// account it is logged in as, and the identity block must say so rather than
 		// name what was RESOLVED as if it were APPLIED. Only for an account that was
 		// configured or asked for: one guessed from the remote owner is not a claim
 		// that we can act as it.
+		// Asked of the account's own host rather than of 'ghAccount': a Gitea account
+		// names a host and a 'user' and no GitHub login at all, so testing the GitHub
+		// field left the tokenless case saying NOTHING for exactly the accounts that
+		// were new - which reads as applied.
 		a.acct.noToken = true
 	}
 	// The ssh key stays supported as the way that needs no token at all. Only when

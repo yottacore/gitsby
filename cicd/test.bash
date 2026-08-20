@@ -2803,6 +2803,61 @@ GHEOF
 	fAssertNotOut "an account that declares the host IS applied"  'NOT applied' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' identity 2>&1"
 
+	## An account that never named a host is TAKEN to be a github.com one, which is right for every
+	## config written before the key existed - but it is an assumption, not something the file said.
+	## Reported in the same words as a host somebody actually typed, it sends them through the config
+	## looking for a line that was never there. This account also names no GitHub login, which is the
+	## ordinary shape of a Gitea one: reading 'ghAccount' alone reported it as "(no GitHub account
+	## named)" - true, and no answer at all to the question the line asks.
+	cat > "${fg}/nohost.shcl" <<-EOF
+		account.work.path = $(fWinPath "${fgRepo}")
+		account.work.user = giteauser
+	EOF
+	fAssertOut "an unstated host is reported as unstated, not as one the account set"  'names no host' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/nohost.shcl' identity 2>&1"
+	fAssertOut "and names the key that fixes it"  'host = git\.example\.test' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/nohost.shcl' identity 2>&1"
+	## Anchored on the Account line: 'giteauser' is also what the tea stub answers, so an unanchored
+	## match is satisfied by the Forge line and passes whether the Account line names anybody or not.
+	fAssertOut "and names the account's own login, not the GitHub field it hasn't got"  '^Account .*giteauser' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/nohost.shcl' identity 2>&1"
+
+	## A declared Gitea account with no token applies nothing, and said NOTHING about it. The "no
+	## token" case was keyed on 'ghAccount' - a field a Gitea account has no reason to set - so
+	## exactly the accounts the host key was added for fell through it in silence, which reads as
+	## applied. Nor is gh what acts instead on a host gh does not serve.
+	cat > "${fg}/notoken.shcl" <<-EOF
+		account.work.path = $(fWinPath "${fgRepo}")
+		account.work.host = git.example.test
+		account.work.user = giteauser
+	EOF
+	fAssertOut "a Gitea account with no token says it was not applied"  'NOT applied' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/notoken.shcl' identity 2>&1"
+	fAssertOut "and names what authenticates instead"  'git authenticates however it already would' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/notoken.shcl' identity 2>&1"
+	fAssertNotOut "rather than gh, which does not serve this host"  'gh acts as' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/notoken.shcl' identity 2>&1"
+
+	## 'account list' is the command that always says, so the field that decides whether anything
+	## applies has to be in it - stated or assumed.
+	fAssertOut "account list names the host an account is on"  'host \.+: git\.example\.test' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' account list 2>&1"
+	## Shown for every account once one of them names a forge, including the ones that never said -
+	## that comparison is what answers "why did this one apply and that one not". A config with a
+	## single forge in it has nothing to compare and reads exactly as it did before the key existed.
+	cat > "${fg}/mixed.shcl" <<-EOF
+		account.tea.path = $(fWinPath "${fgRepo}")
+		account.tea.host = git.example.test
+		account.hub.pathContains = somewhere-else
+		account.hub.ghAccount = ghonly
+	EOF
+	fAssertOut "and marks an unstated one as the assumption it is"  'host \.+: github\.com  .default.' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/mixed.shcl' account list 2>&1"
+	fAssertNotOut "but a config with one forge in it is never shown the key"  'host \.+:' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/gh-acct.shcl' account list 2>&1"
+	fAssertOut "and prints the host-neutral login beside the GitHub one"  'login \.+: giteauser' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' account list 2>&1"
+
 	## The identity gate, on a host that is not GitHub. Two accounts disagreeing about who you are is
 	## the same outward-facing mistake wherever it happens, and keying the check on 'ghAccount' - a
 	## GitHub login, which says nothing about who you are anywhere else - left it silently uncovered.

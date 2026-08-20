@@ -124,3 +124,53 @@ account.solo.path = /srv/mine
 		}
 	}
 }
+
+// What 'account list' says about an account, which is where you go when a command
+// did not act as the one you expected. The host key decides whether any of the
+// credentials below it apply at all, so leaving it off the listing meant the
+// command that always says was silent about the only field that had refused.
+func TestAccountListNamesTheHost(t *testing.T) {
+	a := newApp(newPrinter())
+	var buf strings.Builder
+	a.out.out = &buf
+	a.cfg = writeConfig(t, `
+account.gitea.host = git.example.test
+account.gitea.user = giteauser
+account.hub.ghAccount = hublogin
+`)
+	a.showAccount("gitea", false)
+	a.showAccount("hub", false)
+	got := buf.String()
+	for _, want := range []string{
+		"host ....: git.example.test",      // stated
+		"login ...: giteauser",             // the host-neutral login, shown where there is one
+		"host ....: github.com  (default)", // unstated, and marked as the assumption it is
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("account list is missing %q:\n%s", want, got)
+		}
+	}
+	// 'login' is the 'user' key, not a second spelling of the GitHub one - printing it
+	// for an account that never set it would invent a login for every existing config.
+	if strings.Contains(got, "login ...: hublogin") {
+		t.Errorf("the GitHub login was printed as 'login':\n%s", got)
+	}
+}
+
+// The host line is a comparison, so it appears only where there is something to
+// compare. A machine that only ever talks to github.com reads exactly as it did
+// before the key existed - the same rule the Account status line follows, which
+// stays quiet unless an account was explicitly selected.
+func TestAccountListHidesTheHostOnOneForge(t *testing.T) {
+	a := newApp(newPrinter())
+	var buf strings.Builder
+	a.out.out = &buf
+	a.cfg = writeConfig(t, `
+account.work.ghAccount = worklogin
+account.home.ghAccount = homelogin
+`)
+	a.showAccount("work", false)
+	if strings.Contains(buf.String(), "host") {
+		t.Errorf("a single-forge config was shown the host key:\n%s", buf.String())
+	}
+}

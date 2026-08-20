@@ -61,6 +61,11 @@ None open.
 
 #### Done - Bugs
 
+- ✅ The account display never learned about `host` and `user`, so a Gitea account was reported as a GitHub one that had nothing set.
+	- Found on the first real Gitea repo: `status` named "(no GitHub account named)" and said the account was on github.com, which nothing in the config had said.
+	- Four places read `ghAccount` alone. The status line and `account list` both named only the GitHub field; the "no token" case was keyed on it too, so a correctly declared Gitea account with no token said nothing at all and read as applied.
+	- Fixed: all four ask the account's login on the account's own host. An unstated host is now reported as unstated and names the key that fixes it, and `account list` shows the host, marked `(default)` where the file never said.
+
 - ✅ `repo clone` resolves its account from the folder you are standing in, not the one it is cloning into.
 	- Every other command is about the folder you are in. A clone's repo lands somewhere else, so a clone launched from a work repo used the work account whatever tree it was cloning into.
 	- Three ways in, all now closed: the folder rules read the current directory, `gitsby.ghAccount` was read off the surrounding repo, and the owner of that repo's origin stood in when nothing else answered.

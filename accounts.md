@@ -58,7 +58,7 @@ Per-account keys, all optional except a `path` to match on:
 | `host`       | The forge this account is on. Defaults to `github.com`, which is what every config written before this key existed meant.
 | `user`       | The login on that host, when it isn't `ghAccount` - Gitea checks the username an HTTPS push presents, where GitHub ignores it.
 
-Run `gitsby account` to see what it made of all that, and which account the folder you're standing in resolves to. It is the command to reach for when something went out as the wrong person. A `path` rule pointing at a directory that isn't there is marked as one that can never match, which is usually a typo.
+Run `gitsby account` to see what it made of all that, and which account the folder you're standing in resolves to. It is the command to reach for when something went out as the wrong person. A `path` rule pointing at a directory that isn't there is marked as one that can never match, which is usually a typo. Once any account names a `host`, the listing shows one for all of them, marked `(default)` where the file never said - an account meant for another forge that never named one is the usual reason a repository there goes on using `gh`'s account.
 
 ### One config file, several machines
 
