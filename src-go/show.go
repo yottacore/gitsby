@@ -172,9 +172,12 @@ func (a *app) showAccountLine() {
 	if !a.accountDecidedSomething() {
 		return
 	}
-	line := a.acct.ghWho
+	// The login the account claims on its OWN host, not 'ghAccount' alone. Reading
+	// only the GitHub field reported every Gitea account as "(no GitHub account
+	// named)" - true, and no answer at all to the question this line asks.
+	line := a.accountWho(a.accountHost())
 	if line == "" {
-		line = "(no GitHub account named)"
+		line = "(no login named)"
 	}
 	if a.acct.source != "" {
 		line += " (from " + a.acct.source + ")"
@@ -193,9 +196,26 @@ func (a *app) showAccountLine() {
 	case a.acct.otherHost:
 		// Named rather than reported as a missing token: the fix is a host key or a
 		// different account, not hunting for a token that would be the wrong one.
-		line += " - NOT applied: that account is on " + a.accountHost() + ", and this remote is on " + a.forgeName()
+		// An account that never named a host is TAKEN to be a github.com one, for the
+		// configs written before the key existed. Reporting that assumption in the same
+		// words as a host somebody actually typed sends them looking through the config
+		// for a line that was never there, so say which of the two this was.
+		if a.cfg.value(a.acct.name, "host") == "" {
+			line += " - NOT applied: this remote is on " + a.forgeName() +
+				", and that account names no host, so it counts as a github.com one." +
+				" Add 'host = " + a.forgeName() + "' to it."
+		} else {
+			line += " - NOT applied: that account is on " + a.accountHost() + ", and this remote is on " + a.forgeName()
+		}
 	case a.acct.noToken:
-		line += " - NOT applied: no token for it here, so gh acts as its own account"
+		// gh is what goes on acting as itself where gh is the tool. Anywhere else
+		// there is no second identity to fall back to - git pushes with whatever it
+		// was already going to use, which is usually an ssh key.
+		if isGitHubHost(a.accountHost()) {
+			line += " - NOT applied: no token for it here, so gh acts as its own account"
+		} else {
+			line += " - NOT applied: no token for it here, so git authenticates however it already would"
+		}
 	case a.acct.tokenWho == "?":
 		line += " - couldn't check that the token is theirs (gh unreachable, or not installed)"
 	case a.acct.tokenWho != "" && a.acct.tokenWho != a.acct.ghWho:

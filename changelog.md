@@ -33,7 +33,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Other Git hosts are first-class. Gitsby looks at where `origin` actually points and picks the tool that serves it: `gh` on GitHub, `tea` on Gitea and Forgejo (found under `tea-cli` too, which is how some distributions ship it). Everything that is only Git - branching, committing, pulling, pushing, merging, pruning, releasing, and re-spelling a remote between HTTPS and SSH - now works on any host with no forge client installed at all.
 
-- Accounts can say which forge they are on, with `host` and `user`. An account's token is only applied where it can be used, so a GitHub token is never handed to a push at somebody else's host, and the identity block says which two hosts disagreed. A non-GitHub token is exported under its own variable rather than as `GH_TOKEN`, which `gh` would otherwise pick up.
+- Accounts can say which forge they are on, with `host` and `user`. An account's token is only applied where it can be used, so a GitHub token is never handed to a push at somebody else's host, and the identity block says which two hosts disagreed. A non-GitHub token is exported under its own variable rather than as `GH_TOKEN`, which `gh` would otherwise pick up. `account list` shows the host each account is on, marked as the default where the file never said, and both it and the identity block name the account's own login instead of looking only for a GitHub one.
 
 - The credential helper reads both the token and the username from the environment, so nothing from your config file or `GITSBY_ACCOUNT` is ever part of a command Git runs.
 

@@ -22,6 +22,19 @@ import (
 // them. An account can be declared by its keys alone, with no folder rule - it is
 // then only reachable by name, through GITSBY_ACCOUNT, which is a legitimate way
 // to use one.
+// anyHostStated: whether any account in this config names a forge. What makes the
+// host worth a line in the listing - with one forge configured there is nothing to
+// compare, and a machine that only ever talks to github.com should not have the
+// key advertised at it.
+func (c *config) anyHostStated() bool {
+	for key, value := range c.values {
+		if strings.HasSuffix(key, ".host") && value != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *config) accountNames() []string {
 	var seen []string
 	add := func(name string) {
@@ -201,9 +214,16 @@ func (a *app) cmdAccountList() {
 	a.out.clean("Config file ..: " + configDisp)
 	a.out.clean("Here .........: " + a.contextDir())
 	hereAccount := a.cfg.accountForDir(a.contextDir())
-	resolvedLine := a.acct.ghWho
+	resolvedLine := a.accountWho(a.accountHost())
 	if resolvedLine == "" {
-		resolvedLine = "(nothing configured - gh's own account)"
+		// An account that resolved and simply names no login is not the same as no
+		// account at all - reported as "nothing configured" it contradicted the source
+		// printed in the same sentence, and named gh on hosts gh does not serve.
+		if a.acct.name != "" {
+			resolvedLine = "(no login named)"
+		} else {
+			resolvedLine = "(nothing configured - gh's own account)"
+		}
 	}
 	if a.acct.source != "" {
 		resolvedLine += " (from " + a.acct.source + ")"
@@ -261,12 +281,28 @@ func (a *app) showAccount(name string, isHere bool) {
 		marker = "->"
 	}
 	a.out.clean(marker + " " + name)
+	// The host leads, because it decides whether anything under it applies at all.
+	// Leaving the deciding field off the listing made 'account list' - the command
+	// that always says - silent about the one key that had refused an account.
+	// Shown only once some account names a forge, and then for every account,
+	// including the ones that never said: it is the comparison that answers "why did
+	// this one apply and that one not", and it is meaningless where every account is
+	// on the same host. A config with one forge in it reads exactly as it always did.
+	if host := a.cfg.value(name, "host"); host != "" {
+		a.out.clean("     host ....: " + host)
+	} else if a.cfg.anyHostStated() {
+		a.out.clean("     host ....: github.com  (default)")
+	}
 	ghWho := a.cfg.value(name, "ghAccount")
 	ghDisp := ghWho
 	if ghDisp == "" {
 		ghDisp = "(none)"
 	}
 	a.out.clean("     github ..: " + ghDisp)
+	// The host-neutral login, and on a non-GitHub account the only one there is.
+	if user := a.cfg.value(name, "user"); user != "" {
+		a.out.clean("     login ...: " + user)
+	}
 	// Say where a token would come from, never what it is.
 	tokenFrom := "none"
 	if ghWho != "" && ghTokenFor(ghWho) != "" {
