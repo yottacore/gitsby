@@ -166,21 +166,218 @@ func (a *app) accountDecidedSomething() bool {
 		a.acct.usedHTTPSAuth || a.acct.usedSSHKey != "" || a.acct.usedIdentity
 }
 
+// acctLabel and acctCont are the Account block's first-line and continuation
+// prefixes. Same width, so an explanation lines up in a column under the answer
+// instead of wrapping wherever the terminal happens to end.
+const (
+	acctLabel = "Account ......: "
+	acctCont  = "              : "
+)
+
+// accountFile names the accounts file, for advice that tells somebody to edit it.
+// The discovered path where there is one, the default location where there isn't:
+// "add a line to your config" is not advice until it says which file.
+func (a *app) accountFile() string {
+	if a.cfg.file != "" {
+		return a.cfg.file
+	}
+	return "~/.config/gitsby/config.shcl"
+}
+
+// accountKey spells a config key for this run's account the way the file actually
+// takes it - 'account.<name>.<field>'. Advice naming a bare 'host = ...' line was
+// advice to add a key the parser then reports as one it doesn't understand.
+func (a *app) accountKey(field string) string {
+	return "account." + a.acct.name + "." + field
+}
+
+// accountSubject names the account a note is about, in whatever terms the config
+// actually gave it: the login where one is known, otherwise the account's own name,
+// which is the thing the reader has to go and edit. The old "(no login named)"
+// named neither.
+func (a *app) accountSubject() string {
+	if who := a.accountWho(a.accountHost()); who != "" {
+		return who
+	}
+	if a.acct.name != "" {
+		return "'" + a.acct.name + "'"
+	}
+	return "the account asked for"
+}
+
+// accountHeadline is the subject plus where it came from, for the line itself.
+// The source is worth saying next to a login and not next to the account's own
+// name, where "(from config 'work')" only repeats the name it follows.
+func (a *app) accountHeadline() string {
+	subject := a.accountSubject()
+	if a.acct.source != "" && a.accountWho(a.accountHost()) != "" {
+		subject += " (from " + a.acct.source + ")"
+	}
+	return subject
+}
+
+// showAccountNote prints one labeled explanation under the Account line, wrapped at
+// a fixed column rather than at whatever the terminal happens to be. A line given
+// with a leading indent is a literal - a config line to type - and is printed as it
+// stands, since wrapping one would make it wrong.
+func (a *app) showAccountNote(label string, lines ...string) {
+	const labelWidth, bodyWidth = 4, 56 // 'Kept', the longest label; 78 columns in all
+	head := label + ":" + strings.Repeat(" ", labelWidth-len(label)) + " "
+	pad := strings.Repeat(" ", len(head))
+	prefix := head
+	for _, line := range lines {
+		if strings.HasPrefix(line, " ") {
+			a.out.clean(acctCont + pad + line)
+			continue
+		}
+		for _, wrapped := range wrapWords(line, bodyWidth) {
+			a.out.clean(acctCont + prefix + wrapped)
+			prefix = pad
+		}
+	}
+}
+
+// showAccountFix prints the edit that repairs the account, and names the file to
+// make it in on its own line. On its own because a path is the one thing here that
+// can be arbitrarily long, and folding it into the sentence is what made the
+// advice unreadable in the first place.
+func (a *app) showAccountFix(lines ...string) {
+	a.showAccountNote("Fix", lines...)
+	a.showAccountNote("File", a.accountFile())
+}
+
+// showAccountKept says which parts of the account took effect anyway. The ssh key
+// and the commit identity are applied outside the credential decision, so a flat
+// "NOT applied" contradicted the SSH and Author lines printed directly under it -
+// the exact confusion this block exists to prevent.
+func (a *app) showAccountKept() {
+	var parts []string
+	if a.acct.usedSSHKey != "" {
+		parts = append(parts, "ssh key")
+	}
+	if a.acct.usedIdentity {
+		parts = append(parts, "commit identity")
+	}
+	if len(parts) == 0 {
+		return
+	}
+	a.showAccountNote("Kept", "its "+strings.Join(parts, " and ")+
+		" still applied - that is where the SSH and Author lines below come from.")
+}
+
+// showAccountUnapplied covers the cases where the account did not authenticate this
+// run, and reports whether it printed. Separate from the applied line because the
+// two answer different questions: the applied line says who, and this says what
+// happened instead, why, and what to type to fix it. One line carries the first.
+// It cannot carry the other three, and the attempt read as a paragraph.
+func (a *app) showAccountUnapplied() bool {
+	switch {
+	case a.acct.bypassed:
+		a.out.clean(acctLabel + "nothing applied - " + meName + " was run with --any-identity")
+		a.showAccountNote("Why", "--any-identity leaves the token, the ssh key and the commit author exactly as they already were.")
+	case a.acct.otherHost:
+		a.out.clean(acctLabel + a.accountHeadline() + " - no token applied")
+		a.showAccountOtherHost()
+	case a.acct.noToken:
+		a.out.clean(acctLabel + a.accountHeadline() + " - no token applied")
+		a.showAccountNoToken()
+	default:
+		return false
+	}
+	return true
+}
+
+// showAccountOtherHost explains an account whose credentials bank somewhere other
+// than where this remote lives. Three different mistakes end up here and they have
+// three different fixes, so they get three different notes - said in one wording,
+// they sent people hunting through the config for a line that was never there.
+func (a *app) showAccountOtherHost() {
+	forge := a.forgeName()
+	switch {
+	case a.acct.name == "":
+		a.showAccountNote("Why", "'"+a.acct.ghWho+"' came from "+a.acct.source+
+			", which names a GitHub login. This remote is on "+forge+
+			", and a token issued by one forge is no use at another.")
+		a.showAccountKept()
+		a.showAccountFix("declare an account for " + forge + " in the file below, then name that one instead.")
+	case a.cfg.value(a.acct.name, "host") == "":
+		// An account that never named a host is TAKEN to be a github.com one, for the
+		// configs written before the key existed. Said in the same words as a host
+		// somebody actually typed, it sends them looking for a line that isn't there.
+		a.showAccountNote("Why", "that account doesn't say which forge it is for, so "+meName+
+			" read it as a github.com one. This remote is on "+forge+
+			", and a token issued by one forge is no use at another.")
+		a.showAccountKept()
+		a.showAccountFix("add this line to the file below -",
+			"  "+a.accountKey("host")+" = "+forge)
+	default:
+		a.showAccountNote("Why", "that account is declared for "+a.accountHost()+
+			", and this remote is on "+forge+". A token issued by one forge is no use at another.")
+		a.showAccountKept()
+		a.showAccountFix("use an account declared for "+forge+" here, or correct this line in the file below -",
+			"  "+a.accountKey("host")+" = "+forge)
+	}
+}
+
+// showAccountNoToken explains the account gitsby resolved but holds no credential
+// for. gh is what goes on acting as itself where gh is the tool; anywhere else there
+// is no second identity to fall back to, and git pushes with whatever it already had.
+func (a *app) showAccountNoToken() {
+	who := a.accountSubject()
+	if isGitHubHost(a.accountHost()) {
+		a.showAccountNote("Why", meName+" applies an account by handing git and gh its token, and holds none here for "+
+			who+". gh goes on acting as whichever account it is logged in as.")
+		a.showAccountKept()
+		if a.acct.name == "" {
+			a.showAccountNote("Fix", "run 'gh auth login' as "+who+".")
+			return
+		}
+		a.showAccountFix("run 'gh auth login' as "+who+", or point this line at a file holding its token -",
+			"  "+a.accountKey("tokenFile")+" = <token file>")
+		return
+	}
+	a.showAccountNote("Why", meName+" applies an account by handing git its token, and holds none here for "+
+		who+". git authenticates however it already would, usually with an ssh key.")
+	a.showAccountKept()
+	if a.acct.name == "" {
+		return
+	}
+	a.showAccountFix("point this line at a file holding a "+a.accountHost()+" token for it -",
+		"  "+a.accountKey("tokenFile")+" = <token file>")
+}
+
 // showAccountLine leads the block, because it explains the lines under it: the key
 // on the SSH line and the name on the Author line can both be its doing.
 func (a *app) showAccountLine() {
 	if !a.accountDecidedSomething() {
 		return
 	}
+	if !a.showAccountUnapplied() {
+		a.showAccountApplied()
+	}
+	if a.acct.looseTokenFile != "" {
+		a.out.clean(acctCont + "WARNING: " + a.acct.looseTokenFile + " is readable by other users on this machine; chmod 600 it.")
+	}
+	// This repo could authenticate with the account's token instead of a key, and
+	// doesn't. Worth one line, because it is the whole point of configuring accounts
+	// this way - and setting 'protocol = ssh' answers the question, so nobody hears
+	// it twice.
+	if a.convertibleToHTTPS() {
+		a.out.clean(acctCont + "origin still uses ssh; '" + meName + " repo url https' switches it to this account's token.")
+	}
+}
+
+// showAccountApplied names who this run acts as, for the ordinary case where the
+// account did take effect.
+func (a *app) showAccountApplied() {
 	// The login the account claims on its OWN host, not 'ghAccount' alone. Reading
 	// only the GitHub field reported every Gitea account as "(no GitHub account
 	// named)" - true, and no answer at all to the question this line asks.
-	line := a.accountWho(a.accountHost())
-	if line == "" {
-		line = "(no login named)"
-	}
-	if a.acct.source != "" {
-		line += " (from " + a.acct.source + ")"
+	line := a.accountHeadline()
+	if a.accountWho(a.accountHost()) == "" {
+		// It applied its key and its commit identity and simply names no login of its
+		// own - which is a whole way of holding a second account, not a broken one.
+		line += " - it names no login, so gh keeps its own account"
 	}
 	// The one thing the lines below can't show: an https push authenticating with
 	// the token rather than with a key, which is what makes a second account work
@@ -188,49 +385,13 @@ func (a *app) showAccountLine() {
 	if a.acct.usedHTTPSAuth {
 		line += ", git over https"
 	}
-	// Say plainly when the name above is only what we resolved. Without this the
-	// block named an account nothing was actually acting as.
+	a.out.clean(acctLabel + line)
 	switch {
-	case a.acct.bypassed:
-		line += " - NOT applied: --any-identity, so the token, the key and the commit author all stay as they already were"
-	case a.acct.otherHost:
-		// Named rather than reported as a missing token: the fix is a host key or a
-		// different account, not hunting for a token that would be the wrong one.
-		// An account that never named a host is TAKEN to be a github.com one, for the
-		// configs written before the key existed. Reporting that assumption in the same
-		// words as a host somebody actually typed sends them looking through the config
-		// for a line that was never there, so say which of the two this was.
-		if a.cfg.value(a.acct.name, "host") == "" {
-			line += " - NOT applied: this remote is on " + a.forgeName() +
-				", and that account names no host, so it counts as a github.com one." +
-				" Add 'host = " + a.forgeName() + "' to it."
-		} else {
-			line += " - NOT applied: that account is on " + a.accountHost() + ", and this remote is on " + a.forgeName()
-		}
-	case a.acct.noToken:
-		// gh is what goes on acting as itself where gh is the tool. Anywhere else
-		// there is no second identity to fall back to - git pushes with whatever it
-		// was already going to use, which is usually an ssh key.
-		if isGitHubHost(a.accountHost()) {
-			line += " - NOT applied: no token for it here, so gh acts as its own account"
-		} else {
-			line += " - NOT applied: no token for it here, so git authenticates however it already would"
-		}
 	case a.acct.tokenWho == "?":
-		line += " - couldn't check that the token is theirs (gh unreachable, or not installed)"
+		a.showAccountNote("Note", "gh is unreachable or not installed here, so the token could not be checked against the account it claims.")
 	case a.acct.tokenWho != "" && a.acct.tokenWho != a.acct.ghWho:
-		line += " - but the token file authenticates as '" + a.acct.tokenWho + "'"
-	}
-	a.out.clean("Account ......: " + line)
-	if a.acct.looseTokenFile != "" {
-		a.out.clean("              : WARNING: " + a.acct.looseTokenFile + " is readable by other users on this machine; chmod 600 it.")
-	}
-	// This repo could authenticate with the account's token instead of a key, and
-	// doesn't. Worth one line, because it is the whole point of configuring accounts
-	// this way - and setting 'protocol = ssh' answers the question, so nobody hears
-	// it twice.
-	if a.convertibleToHTTPS() {
-		a.out.clean("              : origin still uses ssh; '" + meName + " repo url https' switches it to this account's token.")
+		a.showAccountNote("Warn", "its token file authenticates as '"+a.acct.tokenWho+
+			"', so that is who anything pushed from here goes out as.")
 	}
 }
 

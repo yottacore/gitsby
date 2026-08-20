@@ -82,3 +82,29 @@ func (p *printer) confirm(prompt string) bool {
 	}
 	return false
 }
+
+// wrapWords breaks a sentence at word boundaries, at a fixed column rather than at
+// the terminal's. Fixed on purpose: an explanation written to fit is one that reads
+// the same in a transcript, in a bug report and on a narrow terminal, and a width
+// that moves cannot be written to at all. A word longer than the limit - a path, a
+// URL - is left whole and allowed to overhang, since breaking one makes it
+// un-copyable.
+func wrapWords(text string, width int) []string {
+	var lines []string
+	var line string
+	for _, word := range strings.Fields(text) {
+		switch {
+		case line == "":
+			line = word
+		case len(line)+1+len(word) <= width:
+			line += " " + word
+		default:
+			lines = append(lines, line)
+			line = word
+		}
+	}
+	if line != "" {
+		lines = append(lines, line)
+	}
+	return lines
+}

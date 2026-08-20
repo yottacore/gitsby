@@ -214,19 +214,21 @@ func (a *app) cmdAccountList() {
 	a.out.clean("Config file ..: " + configDisp)
 	a.out.clean("Here .........: " + a.contextDir())
 	hereAccount := a.cfg.accountForDir(a.contextDir())
+	// An account that resolved and simply names no login is not the same as no
+	// account at all - reported as "nothing configured" it contradicted the source
+	// printed in the same sentence, and named gh on hosts gh does not serve. Named
+	// as "(no login named)" it said nothing anybody could act on either: the account
+	// is what the reader has to go and edit, so name that instead.
 	resolvedLine := a.accountWho(a.accountHost())
-	if resolvedLine == "" {
-		// An account that resolved and simply names no login is not the same as no
-		// account at all - reported as "nothing configured" it contradicted the source
-		// printed in the same sentence, and named gh on hosts gh does not serve.
-		if a.acct.name != "" {
-			resolvedLine = "(no login named)"
-		} else {
-			resolvedLine = "(nothing configured - gh's own account)"
+	switch {
+	case resolvedLine != "":
+		if a.acct.source != "" {
+			resolvedLine += " (from " + a.acct.source + ")"
 		}
-	}
-	if a.acct.source != "" {
-		resolvedLine += " (from " + a.acct.source + ")"
+	case a.acct.name != "":
+		resolvedLine = "'" + a.acct.name + "' - it names no login, so gh keeps its own account"
+	default:
+		resolvedLine = "(nothing configured - gh's own account)"
 	}
 	a.out.clean("Resolves to ..: " + resolvedLine)
 	if len(a.cfg.unknown) > 0 {
