@@ -277,7 +277,13 @@ func (c *config) load(o options) error {
 	if err != nil {
 		return nil
 	}
-	for _, line := range splitLines(string(data)) { // a file written on Windows, read on Linux
+	// The byte-order mark a Windows editor writes by default, off the front of the
+	// first line. Left on, it landed on the first key in the file, which then read
+	// as one nothing understands - and the line that reports those printed the mark
+	// as part of the name, so the one diagnostic meant to explain the loss named a
+	// key that looks perfectly valid.
+	text := strings.TrimPrefix(string(data), "\ufeff")
+	for _, line := range splitLines(text) { // a file written on Windows, read on Linux
 		line = strings.TrimLeft(line, " \t")
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -429,6 +435,15 @@ func (c *config) accountForDir(dir string) string {
 		}
 	}
 	return best
+}
+
+// knowsAccount: whether the file defines this account at all, by any key or any
+// folder rule. Deliberately not the same question as whether it names a GitHub
+// login - an account can be a commit identity and an ssh key and nothing else,
+// which is how you hold a second identity with no gh involved, and what the
+// folder rules have always applied.
+func (c *config) knowsAccount(name string) bool {
+	return name != "" && contains(c.accountNames(), strings.ToLower(name))
 }
 
 // value reads one key of one configured account. Both halves lowercased, because

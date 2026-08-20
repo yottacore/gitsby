@@ -418,6 +418,27 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 
 #### Done - Code reviews
 
+- ✅ 20260819d - a third adversarial pass, aimed at what a run inherits from the machine it runs on.
+
+	- Three defects, all in account selection or in what proves it. The first was found by the third: the suite went red on this machine the day it grew a real config of its own, which is what exposed the other two. Four new suite checks (699 -> 703) and two Go tests. Suite 703/0, fuzz 268/0, parity 27/0, spawn counts unchanged.
+
+	- ✅ Code Review 20260819d item 1: the test suite reads the accounts of whoever runs it.
+		- Cause: the blocks that test config discovery opt out of the file-scope `GITSBY_CONFIG` pin and fake `HOME` instead. `XDG_CONFIG_HOME` is tried before `HOME` and `APPDATA` after it, and neither was covered.
+		- Note: harmless until this machine had a gitsby config of its own, at which point thirty checks failed against it. Not a false alarm to wave through either - it is the block that would catch an account regression.
+		- Note: same shape as the symlink rule the round before - one side of a pair normalized and the other left alone.
+		- Fixed: every discovery input emptied in one place, so `HOME` stays the candidate under test. Six env strings went through it. Proven by the thirty failures going away with no product change.
+
+	- ✅ Code Review 20260819d item 2: an account named through `GITSBY_ACCOUNT` applies nothing unless it names a GitHub login.
+		- Cause: the test was whether the account had a `ghAccount` key, not whether the file defined the account at all.
+		- Note: an account can be a commit identity and an ssh key and nothing else, and a folder rule has always applied one - so asking for the same account by name got you less than not asking. The key fell back to whichever one ssh picks, which is the wrong-person push the feature exists to stop.
+		- Note: it also reported the account's own name as the GitHub login the run acts as, which the push-identity gate would then compare against the real one and refuse on.
+		- Fixed: a name the file defines is a configured account either way. Same correction where a repository sets `gitsby.ghAccount` itself - an account naming no login disagrees with nothing, and was being dropped along with its key.
+
+	- ✅ Code Review 20260819d item 3: a byte-order mark eats the config file's first key.
+		- Cause: the mark was left on the front of the first line, so the key it belonged to parsed as one nothing understands.
+		- Note: the ignored-keys line printed the mark as part of the name, so the one diagnostic meant to explain the loss named a key that looks perfectly valid. Windows editors write a mark by default.
+		- Fixed: stripped on the way in. One Go test and two suite checks.
+
 - ✅ 20260819c - a fresh adversarial pass over the rewritten Go, after the refactor settled.
 
 	- Went in against the same directive sections as the round before it, looking for what a whole-file rewrite could have carried across unchanged rather than for anything the linters would see. gofmt, vet, staticcheck, golangci-lint and govulncheck were clean and the suite was 694/0 going in, so none of the four defects below is tool-visible. Five new suite checks (694 -> 699) and three Go tests, every one of them run against the build that preceded its fix.
