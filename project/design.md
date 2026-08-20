@@ -386,6 +386,14 @@ See also the release policy under Architecture, which covers how releases are pu
 
 - The account is resolved by asking the host, not inferred from the key filename or the connection. A name that is merely likely is worse than none here, because it gets believed. When it cannot be resolved the display says so.
 
+- Where the display cannot just state a fact - an account that resolved but did not take effect - it drops into a labeled block under the line rather than growing the line. It was decided that a diagnostic has four separate jobs (what happened, why, what did still take effect, what to type and where), and that a single trailing clause carrying all four is one nobody reads. Each gets its own `Why:` / `Kept:` / `Fix:` / `File:` label, indented under the line it belongs to.
+
+	- Wrapped at a fixed width, not the terminal's. An explanation written to fit reads the same on screen, in a transcript and in a bug report, and a width that moves is one nothing can be written against.
+
+	- Any config key an error or a fix names is spelled the way the file actually takes it, in full. Advice naming a key the parser then rejects is worse than no advice.
+
+	- The path of the file to edit goes on its own labeled line. It is the one thing here that can be arbitrarily long, and folding it into a sentence is what wrecks the wrapping.
+
 ### Testing
 
 - A regression suite, a fuzz suite and a comparison suite, all against throwaway repos built under a temp directory. None touches the network or a real repo. Alongside them, unit tests inside the module cover the parsing, the folder matching and the string handling, which need no repo at all and answer in milliseconds.

@@ -154,6 +154,23 @@ fSameField(){
 	fi
 }
 
+fSameLead(){
+	## The labeled line up to its first ' - ', compared. Used where what the two builds must agree
+	## on is the value the line reports and not the diagnostic after it: the frozen script explains
+	## an account it could not apply in one long trailing clause, this build explains it in a block
+	## underneath, and which of those reads better is not what these checks are asking.
+	local -r label="${1}"; local -r pattern="${2}"; local -r dir="${3}"; shift 3
+	local a="" b=""
+	a="$(fRunNew "${dir}" "${@}" | grep -E "${pattern}" | sed 's/ - .*//' || true)"
+	b="$(fRunRef "${dir}" "${@}" | grep -E "${pattern}" | sed 's/ - .*//' || true)"
+	if [[ "${a}" == "${b}" ]]; then
+		fOk "${label}"
+	else
+		fBad "${label}"
+		printf '      this build: %s\n      frozen:     %s\n' "${a:-(no such line)}" "${b:-(no such line)}"
+	fi
+}
+
 fSameExit(){
 	## Same accept/reject verdict. Used where the two legitimately word a message differently but
 	## must agree on whether the input is valid at all.
@@ -193,7 +210,7 @@ for spelling in "${spellings[@]}"; do
 		account.s.path      = ${spelling}
 		account.s.ghAccount = spellacct
 	EOF
-	fSameField "path spelled '${spelling}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${work}/spell.shcl" status
+	fSameLead  "path spelled '${spelling}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${work}/spell.shcl" status
 done
 
 ## 'pathContains' names folder names rather than a machine's tree, so it is the one rule meant to
@@ -208,9 +225,9 @@ cat > "${work}/seg.shcl" <<-EOF
 	account.seg.pathContains = github.com/alice
 	account.seg.ghAccount    = segacct
 EOF
-fSameField "pathContains resolves the same under root A" '^Account' "${work}/mA/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
-fSameField "pathContains resolves the same under root B" '^Account' "${work}/mB/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
-fSameField "and both agree it is whole folder names"     '^Account' "${work}/mA/github.com/alice-old/proj" -q -NoFetch --config "${work}/seg.shcl" status
+fSameLead  "pathContains resolves the same under root A" '^Account' "${work}/mA/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
+fSameLead  "pathContains resolves the same under root B" '^Account' "${work}/mB/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
+fSameLead  "and both agree it is whole folder names"     '^Account' "${work}/mA/github.com/alice-old/proj" -q -NoFetch --config "${work}/seg.shcl" status
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Option binding. Every build parses its own arguments, and that is where the scripted pair
@@ -283,7 +300,7 @@ for name in mixed MIXED MiXeD; do
 	## the other way this loop ran three identical commands and compared them to each other, which
 	## passes whatever either build does with the variable.
 	export GITSBY_ACCOUNT="${name}"
-	fSameField "GITSBY_ACCOUNT='${name}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${work}/case.shcl" status
+	fSameLead  "GITSBY_ACCOUNT='${name}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${work}/case.shcl" status
 	unset GITSBY_ACCOUNT
 done
 

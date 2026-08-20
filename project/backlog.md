@@ -61,6 +61,13 @@ None open.
 
 #### Done - Bugs
 
+- ✅ The Account line explained an account it could not apply in a single run-on clause nobody could act on.
+	- Real example: "(no login named) (from config 't00mietum-gitea') - NOT applied: this remote is on gitea.com, and that account names no host, so it counts as a github.com one. Add 'host = gitea.com' to it." Two parentheticals back to back, then a clause long enough to wrap wherever the terminal ended.
+	- Nothing in it could be acted on: which config, added where, what "NOT applied" covered, what "counts as" meant.
+	- Worse, it was wrong twice. The line it told you to add is not a line the file accepts - keys are `account.<name>.<field>`, so a bare `host = ...` is reported as one gitsby doesn't understand. And "NOT applied" was false: the ssh key and the commit identity apply outside the credential decision, so it contradicted the SSH and Author lines printed directly underneath.
+	- Fixed: the line says who and what happened, and an indented `Why:` / `Kept:` / `Fix:` / `File:` block underneath says why, which half did apply, exactly what to type, and which file to type it in. Wrapped at a fixed 78 columns rather than at the terminal, so it reads the same in a transcript as on screen.
+	- "(no login named)" is gone from both the status line and `account list`; an account that names no login is now named by its own name, which is the thing you have to go and edit.
+
 - ✅ The account display never learned about `host` and `user`, so a Gitea account was reported as a GitHub one that had nothing set.
 	- Found on the first real Gitea repo: `status` named "(no GitHub account named)" and said the account was on github.com, which nothing in the config had said.
 	- Four places read `ghAccount` alone. The status line and `account list` both named only the GitHub field; the "no token" case was keyed on it too, so a correctly declared Gitea account with no token said nothing at all and read as applied.

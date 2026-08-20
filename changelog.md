@@ -49,6 +49,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `br land` is now `br merge`, the word most people reach for first. `br land` still works.
 
+- Where an account resolves but cannot be applied, the identity display now explains it in a short labeled block under the line rather than in one long trailing clause. It says which half of the account did still apply - an ssh key and a commit identity go in whether or not a token does - why the rest didn't, the exact config line to add, and which file to add it to. The config keys it names are spelled the way the file takes them; the old advice named a bare `host = ...` line, which is not one gitsby reads.
+
 - `pr` no longer requires `gh` to be installed before it will look at your arguments. It establishes the host first, so a repository on another forge is told which tool it needs rather than told to install a GitHub client it would never use. `pr` on a repository with no remote at all now says so outright instead of failing further in.
 
 - `repo url` re-spells a remote between HTTPS and SSH on any host. It only ever rewrote text - it asks the host nothing - and refusing everywhere but github.com was a limitation of the URL parser rather than a rule.
