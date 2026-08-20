@@ -155,14 +155,14 @@ fSameField(){
 }
 
 fSameLead(){
-	## The labeled line up to its first ' - ', compared. Used where what the two builds must agree
-	## on is the value the line reports and not the diagnostic after it: the frozen script explains
-	## an account it could not apply in one long trailing clause, this build explains it in a block
-	## underneath, and which of those reads better is not what these checks are asking.
+	## The labeled line with its trailing explanation cut off, compared. Used where what the two
+	## builds must agree on is the value the line reports and not the prose after it: the frozen
+	## script says where an account came from and why it could not be applied in one long clause on
+	## the line, this build says both underneath, and which reads better is not what these ask.
 	local -r label="${1}"; local -r pattern="${2}"; local -r dir="${3}"; shift 3
 	local a="" b=""
-	a="$(fRunNew "${dir}" "${@}" | grep -E "${pattern}" | sed 's/ - .*//' || true)"
-	b="$(fRunRef "${dir}" "${@}" | grep -E "${pattern}" | sed 's/ - .*//' || true)"
+	a="$(fRunNew "${dir}" "${@}" | grep -E "${pattern}" | sed -e 's/ - .*//' -e 's/ (from .*//' || true)"
+	b="$(fRunRef "${dir}" "${@}" | grep -E "${pattern}" | sed -e 's/ - .*//' -e 's/ (from .*//' || true)"
 	if [[ "${a}" == "${b}" ]]; then
 		fOk "${label}"
 	else

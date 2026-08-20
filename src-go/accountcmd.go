@@ -207,7 +207,7 @@ func (c *config) accountManagedIncludes() []string {
 
 func (a *app) cmdAccountList() {
 	a.out.clean("")
-	configDisp := a.cfg.file
+	configDisp := displayPath(a.cfg.file)
 	if configDisp == "" {
 		configDisp = "(none found)"
 	}
@@ -223,7 +223,7 @@ func (a *app) cmdAccountList() {
 	switch {
 	case resolvedLine != "":
 		if a.acct.source != "" {
-			resolvedLine += " (from " + a.acct.source + ")"
+			resolvedLine += " (from " + a.accountSourceText(false) + ")"
 		}
 	case a.acct.name != "":
 		resolvedLine = "'" + a.acct.name + "' - it names no login, so gh keeps its own account"

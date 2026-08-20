@@ -123,6 +123,7 @@ type account struct {
 
 	// What the selection applied, read back by the identity block.
 	noToken       bool
+	fromFile      bool // the account came from the accounts file, so a fix that edits it needs no second path
 	usedHTTPSAuth bool
 	usedSSHKey    string
 	usedIdentity  bool

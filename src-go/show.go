@@ -179,9 +179,19 @@ const (
 // "add a line to your config" is not advice until it says which file.
 func (a *app) accountFile() string {
 	if a.cfg.file != "" {
-		return a.cfg.file
+		return displayPath(a.cfg.file)
 	}
 	return "~/.config/gitsby/config.shcl"
+}
+
+// accountFileRef points a fix at the accounts file in whichever way costs the
+// reader least: the line above where the From line has already named it, the line
+// below where a File line is about to.
+func (a *app) accountFileRef() string {
+	if a.acct.fromFile {
+		return "the file above"
+	}
+	return "the file below"
 }
 
 // accountKey spells a config key for this run's account the way the file actually
@@ -205,15 +215,29 @@ func (a *app) accountSubject() string {
 	return "the account asked for"
 }
 
-// accountHeadline is the subject plus where it came from, for the line itself.
-// The source is worth saying next to a login and not next to the account's own
-// name, where "(from config 'work')" only repeats the name it follows.
-func (a *app) accountHeadline() string {
-	subject := a.accountSubject()
-	if a.acct.source != "" && a.accountWho(a.accountHost()) != "" {
-		subject += " (from " + a.acct.source + ")"
+// accountSourceText says where this run's account came from, in terms somebody can
+// go and look at. "(from config 'acme')" named neither the file nor which config -
+// and there are two configs in play here, since 'gitsby.ghAccount' is a git config
+// key and the account blocks are not. withFile spells out the accounts file too,
+// for the one caller that has not already put it on screen.
+func (a *app) accountSourceText(withFile bool) string {
+	if a.acct.fromFile && withFile {
+		return a.acct.source + " in " + a.accountFile()
 	}
-	return subject
+	return a.acct.source
+}
+
+// showAccountFrom names where the account came from, and which file that is, under
+// the line they explain. Their own lines rather than a parenthetical: the honest
+// answer names a path, and a path is what makes a line wrap. The source is skipped
+// where the line above already IS the account's name, which is what it would say.
+func (a *app) showAccountFrom() {
+	if a.acct.source != "" && (!a.acct.fromFile || a.accountWho(a.accountHost()) != "") {
+		a.showAccountNote("From", a.accountSourceText(false))
+	}
+	if a.acct.fromFile {
+		a.showAccountNote("File", a.accountFile())
+	}
 }
 
 // showAccountNote prints one labeled explanation under the Account line, wrapped at
@@ -237,13 +261,15 @@ func (a *app) showAccountNote(label string, lines ...string) {
 	}
 }
 
-// showAccountFix prints the edit that repairs the account, and names the file to
-// make it in on its own line. On its own because a path is the one thing here that
-// can be arbitrarily long, and folding it into the sentence is what made the
-// advice unreadable in the first place.
+// showAccountFix prints the edit that repairs the account. The file to make it in
+// goes on its own line, because a path is the one thing here that can be
+// arbitrarily long - unless the From line above already named it, which it does
+// whenever the account came out of that same file.
 func (a *app) showAccountFix(lines ...string) {
 	a.showAccountNote("Fix", lines...)
-	a.showAccountNote("File", a.accountFile())
+	if !a.acct.fromFile {
+		a.showAccountNote("File", a.accountFile())
+	}
 }
 
 // showAccountKept says which parts of the account took effect anyway. The ssh key
@@ -276,10 +302,12 @@ func (a *app) showAccountUnapplied() bool {
 		a.out.clean(acctLabel + "nothing applied - " + meName + " was run with --any-identity")
 		a.showAccountNote("Why", "--any-identity leaves the token, the ssh key and the commit author exactly as they already were.")
 	case a.acct.otherHost:
-		a.out.clean(acctLabel + a.accountHeadline() + " - no token applied")
+		a.out.clean(acctLabel + a.accountSubject() + " - no token applied")
+		a.showAccountFrom()
 		a.showAccountOtherHost()
 	case a.acct.noToken:
-		a.out.clean(acctLabel + a.accountHeadline() + " - no token applied")
+		a.out.clean(acctLabel + a.accountSubject() + " - no token applied")
+		a.showAccountFrom()
 		a.showAccountNoToken()
 	default:
 		return false
@@ -295,11 +323,11 @@ func (a *app) showAccountOtherHost() {
 	forge := a.forgeName()
 	switch {
 	case a.acct.name == "":
-		a.showAccountNote("Why", "'"+a.acct.ghWho+"' came from "+a.acct.source+
-			", which names a GitHub login. This remote is on "+forge+
+		a.showAccountNote("Why", "nothing said which forge '"+a.acct.ghWho+"' is on, so "+meName+
+			" read it as a github.com login. This remote is on "+forge+
 			", and a token issued by one forge is no use at another.")
 		a.showAccountKept()
-		a.showAccountFix("declare an account for " + forge + " in the file below, then name that one instead.")
+		a.showAccountFix("declare an account for " + forge + " in " + a.accountFileRef() + ", then name that one instead.")
 	case a.cfg.value(a.acct.name, "host") == "":
 		// An account that never named a host is TAKEN to be a github.com one, for the
 		// configs written before the key existed. Said in the same words as a host
@@ -308,13 +336,13 @@ func (a *app) showAccountOtherHost() {
 			" read it as a github.com one. This remote is on "+forge+
 			", and a token issued by one forge is no use at another.")
 		a.showAccountKept()
-		a.showAccountFix("add this line to the file below -",
+		a.showAccountFix("add this line to "+a.accountFileRef()+" -",
 			"  "+a.accountKey("host")+" = "+forge)
 	default:
 		a.showAccountNote("Why", "that account is declared for "+a.accountHost()+
 			", and this remote is on "+forge+". A token issued by one forge is no use at another.")
 		a.showAccountKept()
-		a.showAccountFix("use an account declared for "+forge+" here, or correct this line in the file below -",
+		a.showAccountFix("use an account declared for "+forge+" here, or correct this line in "+a.accountFileRef()+" -",
 			"  "+a.accountKey("host")+" = "+forge)
 	}
 }
@@ -373,7 +401,7 @@ func (a *app) showAccountApplied() {
 	// The login the account claims on its OWN host, not 'ghAccount' alone. Reading
 	// only the GitHub field reported every Gitea account as "(no GitHub account
 	// named)" - true, and no answer at all to the question this line asks.
-	line := a.accountHeadline()
+	line := a.accountSubject()
 	if a.accountWho(a.accountHost()) == "" {
 		// It applied its key and its commit identity and simply names no login of its
 		// own - which is a whole way of holding a second account, not a broken one.
@@ -386,6 +414,7 @@ func (a *app) showAccountApplied() {
 		line += ", git over https"
 	}
 	a.out.clean(acctLabel + line)
+	a.showAccountFrom()
 	switch {
 	case a.acct.tokenWho == "?":
 		a.showAccountNote("Note", "gh is unreachable or not installed here, so the token could not be checked against the account it claims.")

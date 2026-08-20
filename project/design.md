@@ -392,7 +392,9 @@ See also the release policy under Architecture, which covers how releases are pu
 
 	- Any config key an error or a fix names is spelled the way the file actually takes it, in full. Advice naming a key the parser then rejects is worse than no advice.
 
-	- The path of the file to edit goes on its own labeled line. It is the one thing here that can be arbitrarily long, and folding it into a sentence is what wrecks the wrapping.
+	- The path of the file to edit goes on its own labeled line. It is the one thing here that can be arbitrarily long, and folding it into a sentence is what wrecks the wrapping. Displayed paths fold a leading home directory back to `~`, so they read as somebody would type them.
+
+	- Where a value came from is named the same way, on its own line, and in terms that can be gone and looked at - the variable, the Git config key, or the account block and its file. "config" alone is ambiguous wherever a program reads more than one.
 
 ### Testing
 

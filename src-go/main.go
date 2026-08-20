@@ -714,7 +714,7 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 	// is not a claim that we act as them, and saying so tells a single-account user
 	// about a feature they never asked for.
 	if !a.opt.quiet && a.acct.ghWho != "" && a.accountDecidedSomething() {
-		a.out.errorf("acting as %s (from %s)", a.acct.ghWho, a.acct.source)
+		a.out.errorf("acting as %s (from %s)", a.acct.ghWho, a.accountSourceText(false))
 	}
 	return a.handover(tool, args)
 }

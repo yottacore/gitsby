@@ -67,6 +67,8 @@ None open.
 	- Worse, it was wrong twice. The line it told you to add is not a line the file accepts - keys are `account.<name>.<field>`, so a bare `host = ...` is reported as one gitsby doesn't understand. And "NOT applied" was false: the ssh key and the commit identity apply outside the credential decision, so it contradicted the SSH and Author lines printed directly underneath.
 	- Fixed: the line says who and what happened, and an indented `Why:` / `Kept:` / `Fix:` / `File:` block underneath says why, which half did apply, exactly what to type, and which file to type it in. Wrapped at a fixed 78 columns rather than at the terminal, so it reads the same in a transcript as on screen.
 	- "(no login named)" is gone from both the status line and `account list`; an account that names no login is now named by its own name, which is the thing you have to go and edit.
+	- Second pass: `(from config 'work')` is gone from the applied line too. It named neither the file nor which config, and there are two of those in play - `gitsby.ghAccount` is a git config key and the account blocks are not. Every account now gets `From:` (the variable, the git config key, or the account block) and `File:` (the accounts file), on their own lines under the answer.
+	- Displayed config paths fold a leading home directory back to `~`, so the file reads as somebody would type it rather than filling the line.
 
 - ✅ The account display never learned about `host` and `user`, so a Gitea account was reported as a GitHub one that had nothing set.
 	- Found on the first real Gitea repo: `status` named "(no GitHub account named)" and said the account was on github.com, which nothing in the config had said.
