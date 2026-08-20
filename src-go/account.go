@@ -207,6 +207,11 @@ func tokenEnvVar(host string) string {
 	return "GITSBY_FORGE_TOKEN"
 }
 
+// userEnvVar is where the credential helper reads the username from. Ours alone -
+// nothing else reads it, and no caller sets it - so unlike the token variable it
+// needs no per-host spelling.
+const userEnvVar = "GITSBY_FORGE_USER"
+
 // readTokenFile pulls a token out of a file. Unset, missing, unreadable and empty
 // are all simply "no token": a machine never set up this way has to fall back to
 // gh's own account, never fail because a path is absent.
@@ -415,12 +420,20 @@ func (a *app) selectAccount(skipGhProbe bool) error {
 		// a credential manager configured for another account cannot answer ahead of
 		// us. The token is read from the environment when the helper runs, never
 		// stored in the config value itself.
+		// The username goes out through the environment, exactly as the token does,
+		// and for the same reason: this string is handed to a SHELL by git, and the
+		// login in it can come from GITSBY_ACCOUNT, from a git config key, or from the
+		// config file - none of which is a place to accept shell. Interpolating it
+		// here put whatever those said inside the command git runs.
+		if err := setEnv(userEnvVar, a.accountLogin()); err != nil {
+			return err
+		}
 		helperKey := "credential.https://" + credHost + ".helper"
 		if err := gitConfigEnv(helperKey, ""); err != nil {
 			return err
 		}
 		if err := gitConfigEnv(helperKey,
-			`!f(){ test "$1" = get && { echo username=`+a.accountLogin()+`; echo "password=${`+envVar+`}"; }; }; f`); err != nil {
+			`!f(){ test "$1" = get && { echo "username=${`+userEnvVar+`}"; echo "password=${`+envVar+`}"; }; }; f`); err != nil {
 			return err
 		}
 		a.acct.usedHTTPSAuth = true

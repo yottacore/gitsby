@@ -141,6 +141,7 @@ None open.
 	- A remote whose host can't be named still falls through to `gh`, deliberately - "couldn't tell" is not "definitely not a forge".
 	- `repo create` and `repo connect owner/name` stay GitHub-only, being about GitHub specifically.
 	- The tea path is written against tea's real command surface but has not been exercised against a live Gitea instance; the suite drives it through a stub.
+	- Defect found and fixed before dogfooding: giving the credential helper a username interpolated the login into a string Git hands to a shell, so a `;`, a backtick or a `$()` in `ghAccount`/`GITSBY_ACCOUNT` ran as a command the moment an HTTPS push needed credentials. Both the token and the username now come from the environment. Fuzz gained four vectors driven through a real `git credential fill`; three of four fired on the pre-fix build.
 	- Follow-up done: the identity gate covers non-GitHub hosts too. A tea write is compared against the ssh key like a gh write, and the push-side check reads the account's login on the host rather than `ghAccount`. Both were verified against the pre-fix build - a mismatched `pr create` went through and pushed.
 
 Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. Work top to bottom; everything happens on branches off `gover`, nothing touches the scripted implementations yet.
