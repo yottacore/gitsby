@@ -459,6 +459,36 @@ func (a *app) writeAccountFragment(dir, name string) error {
 // looking like the ones a person wrote by hand.
 var accountSetFields = []string{"path", "pathContains", "ghAccount", "tokenFile", "sshKey", "name", "email", "protocol", "host", "user"}
 
+// The columns the usage block lines its placeholders up in: ten spaces of indent,
+// then a description column past the widest placeholder.
+const (
+	accountSetPad  = "          "
+	accountSetCont = "                     "
+)
+
+// accountSetUsage spells out the three words 'account set' takes, and what each one
+// is. A reader being told the syntax is a reader who did not know it, so the closed
+// list of keys belongs here rather than one command further on, and the example
+// uses one account name twice - that repetition IS what '<account>' means.
+func accountSetUsage() error {
+	lines := []string{
+		"Syntax: " + meName + " account set <account> <key> <value>",
+		"        Writes 'account.<account>.<key> = <value>' into the accounts file.",
+		accountSetPad + "<account>  A name you pick for one login - 'work', 'personal'.",
+	}
+	key := wrapWords("The setting to change. One of: "+strings.Join(accountSetFields, ", ")+".", 57)
+	lines = append(lines, accountSetPad+"<key>      "+key[0])
+	for _, rest := range key[1:] {
+		lines = append(lines, accountSetCont+rest)
+	}
+	lines = append(lines,
+		accountSetPad+"<value>    What to set it to. Quote it if it has spaces.",
+		"        To give an account the folder it owns and the login to use there:",
+		accountSetPad+meName+" account set work path ~/dev/work",
+		accountSetPad+meName+" account set work ghAccount my-work-login")
+	return usagef("%s", strings.Join(lines, "\n"))
+}
+
 // canonAccountField maps whatever casing was typed onto the documented spelling,
 // or empty for a key nothing reads. Refusing an unknown key is the point: the
 // loader only lists one as ignored, which is a warning nobody reads until the
