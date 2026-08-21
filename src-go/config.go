@@ -216,10 +216,11 @@ func (o options) resolveConfigFile() (string, error) {
 // both jobs - the file a run looks for and the file a run creates - so the place
 // 'account set' writes is the place the next command finds.
 //
-// Each platform is asked in its own terms and nobody else's. XDG_CONFIG_HOME is a
+// Each platform is asked in its own terms and nobody else's - '~/.config' included,
+// which is a Linux spelling and not a Windows or Mac one. XDG_CONFIG_HOME is a
 // Linux and BSD variable, set there by a desktop session rather than by the person
-// running gitsby - reading it on Windows let an MSYS shell's leftovers decide where
-// a Windows run looks for credentials.
+// running gitsby, so reading it on Windows let an MSYS shell's leftovers decide
+// where a Windows run looks for credentials.
 func configCandidates() []string {
 	return configCandidatesFor(runtime.GOOS, os.Getenv("XDG_CONFIG_HOME"), os.Getenv("APPDATA"), homeDir())
 }
@@ -232,16 +233,16 @@ func configCandidatesFor(goos, xdgConfigHome, appData, home string) []string {
 	case "windows":
 		// %APPDATA% and nothing else. A '.config' folder in a Windows profile is an
 		// MSYS habit, not a Windows convention, so it is reached for only where
-		// APPDATA is somehow unset - and then as the last thing left to try.
+		// APPDATA is somehow unset - and then as the last thing left to try, same as
+		// a Mac with no home directory.
 		if appData != "" {
 			return []string{appData + "/gitsby/config.shcl"}
 		}
 	case "darwin":
-		// Application Support is the Mac answer, but macOS is still a Unix and
-		// '~/.config' is where a Mac user's other command-line tools keep theirs, so
-		// it stays behind it rather than being dropped.
+		// Application Support and nothing else, same rule as Windows. macOS is a Unix
+		// underneath, but '~/.config' is a Linux spelling rather than a Mac one.
 		if home != "" {
-			out = append(out, home+"/Library/Application Support/gitsby/config.shcl")
+			return []string{home + "/Library/Application Support/gitsby/config.shcl"}
 		}
 	default:
 		if xdgConfigHome != "" {
