@@ -314,9 +314,10 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 
 - The accounts file lives where the platform in hand keeps one, and the place it used to live is never taken away.
 	- Gitsby searched `$XDG_CONFIG_HOME`, then `~/.config`, then `%APPDATA%`, on every platform. That is a Linux convention applied everywhere: a Windows user's file landed under a dot-directory in their profile, a macOS user's outside `Application Support`, and both only because nothing had been found first.
-	- Among these options, it was decided that each platform leads with its own convention - `%APPDATA%` on Windows, `~/Library/Application Support` on macOS, `$XDG_CONFIG_HOME` or `~/.config` elsewhere - and that `~/.config` stays on the list behind it everywhere. Every file written before this decision is there, and an upgrade that stopped reading one would silently act as the wrong account.
-	- `XDG_CONFIG_HOME` is tried first on all three platforms. Of the locations involved it is the only one somebody sets deliberately; the others are picked by the operating system.
-	- `APPDATA` is now read on Windows only. Off Windows it means nothing, and a variable that a Wine or Samba setup can leave set is not a place to go looking for credentials.
+	- Among these options, it was decided that each platform is asked in its own terms and in nobody else's: `%APPDATA%` on Windows, `~/Library/Application Support` on macOS, `$XDG_CONFIG_HOME` on Linux and the BSDs.
+	- A platform's variable is read on that platform alone. `XDG_CONFIG_HOME` is set by a desktop session rather than by the person running gitsby, so reading it under Windows let an MSYS shell's leftovers decide where a Windows run looked for credentials; `APPDATA` read under Linux did the same for anything that leaves it set, Wine and Samba included.
+	- `~/.config` stays behind the native location on macOS but not on Windows. macOS is a Unix and that is where a Mac user's other command-line tools keep their config; a `.config` folder in a Windows profile is an MSYS habit, and Windows reaches for it only where `%APPDATA%` is somehow unset.
+	- That last point costs a Windows user upgrading from a version that did search `~/.config` - the file stops being found, and "no accounts file" is a valid state rather than an error, so nothing says so. It was decided the platform's own convention is worth that, and the changelog carries the one-line move.
 	- One ordered list answers both questions - where a run looks and where a new file is created - so the file `account set` writes is always the file the next command finds.
 
 ## Branching model

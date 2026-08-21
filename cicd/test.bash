@@ -1862,7 +1862,8 @@ GHEOF
 	( cd "${acWork}" && git config --unset user.email )
 	## Where the file lives is per-platform now, so which candidate wins is worth pinning. Two more
 	## config files, both claiming the same work tree under different account names, so whichever
-	## one was read says so on the Account line.
+	## one was read says so on the Account line. The Linux order is all a Linux run can check; the
+	## Windows and macOS orders are pinned by TestConfigCandidatesFor in the Go tests.
 	mkdir -p "${ac}/xdg/gitsby" "${ac}/appdata/gitsby"
 	cat > "${ac}/xdg/gitsby/config.shcl" <<-EOF
 		account.xdgacct.path      = ${acCanon}/trees/work
@@ -1872,15 +1873,16 @@ GHEOF
 		account.appdata.path      = ${acCanon}/trees/work
 		account.appdata.ghAccount = appdataacct
 	EOF
-	fAssertOut "an XDG_CONFIG_HOME set by hand outranks ~/.config"  'Account \.+: xdgacct' \
+	fAssertOut "XDG_CONFIG_HOME is the config location here, ahead of ~/.config"  'Account \.+: xdgacct' \
 		bash -c "cd '${acWork}' && env ${acEnv} XDG_CONFIG_HOME='${ac}/xdg' '${gitsby}' -q -NoFetch status"
 	fAssertOut "and with none set, ~/.config is still found"  'Account \.+: workacct' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
-	## APPDATA is Windows' own answer to this question and means nothing anywhere else. It used to
-	## be tried on every platform, which put a variable a Wine or Samba setup can leave lying around
-	## on the list of places a Linux run reads credentials from. Asked with a home that holds no
-	## config, so the answer is APPDATA's file or nothing - with the usual one still in place both
-	## platforms would read that instead and the check could not tell them apart.
+	## APPDATA is Windows' own answer to this question and means nothing anywhere else, just as
+	## XDG_CONFIG_HOME means nothing on Windows. Each used to be tried on every platform, which put
+	## a variable a Wine or Samba setup can leave lying around on the list of places a Linux run
+	## reads credentials from, and let an MSYS shell answer for a Windows one. Asked with a home
+	## that holds no config, so the answer is APPDATA's file or nothing - with the usual one still
+	## in place both platforms would read that instead and the check could not tell them apart.
 	mkdir -p "${ac}/nohome"
 	: > "${ac}/nohome/.gitconfig"
 	local acAppdataEnv="${acNoDiscovery} HOME='${ac}/nohome' GIT_CONFIG_GLOBAL='${ac}/nohome/.gitconfig'"

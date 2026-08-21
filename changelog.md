@@ -47,7 +47,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- The accounts file lives where each platform keeps one: `%APPDATA%\gitsby\config.shcl` on Windows, `~/Library/Application Support/gitsby/config.shcl` on macOS, `$XDG_CONFIG_HOME` or `~/.config` elsewhere. That is where `account set` creates a file when there is none, and where `status` points you when it has advice about one. `~/.config/gitsby/config.shcl` is still read on every platform, after the native location, so a file already there keeps working and never has to move. `APPDATA` is no longer consulted off Windows, where it means nothing.
+- The accounts file lives where each platform keeps one, and each platform is asked in its own terms. Windows reads `%APPDATA%\gitsby\config.shcl`; macOS reads `~/Library/Application Support/gitsby/config.shcl`, then `~/.config/gitsby/config.shcl`; Linux and FreeBSD read `$XDG_CONFIG_HOME/gitsby/config.shcl`, then `~/.config/gitsby/config.shcl`. That first entry is also where `account set` creates a file when there is none, and where the identity block points you when it has advice about one.
+
+- `XDG_CONFIG_HOME` is read on Linux and FreeBSD only, and `APPDATA` on Windows only. Each is one platform's variable and means nothing on the others: reading `APPDATA` under Linux put a name that a Wine or Samba install can leave set on the list of places Gitsby looks for credentials, and reading `XDG_CONFIG_HOME` under Windows let an MSYS shell's session answer for a Windows one.
+
+	> **Upgrading on Windows**: if your accounts file is at `%USERPROFILE%\.config\gitsby\config.shcl` - which earlier versions did search - move it to `%APPDATA%\gitsby\config.shcl`, along with the `accounts` folder and any token files beside it. Windows no longer looks in the first location unless `%APPDATA%` is unset, and a file that isn't found is not an error: Gitsby carries on with no accounts configured at all. Linux, FreeBSD and macOS are unaffected - `~/.config` is still read on all three.
 
 - `update` is now `pullcom`, which names both halves in the order they run rather than reading like it updates gitsby itself. It also answers to `update`, `pull`, `pullc`, `pullco`, `pullcomm` and `pullcommit`. `sync` is unchanged; the pair was the unclear part, not either word alone.
 

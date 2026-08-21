@@ -524,7 +524,7 @@ func (a *app) accountSetPlan() (accountSetTarget, error) {
 	}
 	if t.file = a.cfg.file; t.file == "" {
 		if t.file = defaultConfigFile(); t.file == "" {
-			return t, usagef("There is nowhere to put an accounts file: this machine names no home directory, and sets neither XDG_CONFIG_HOME nor APPDATA.")
+			return t, usagef("There is nowhere to put an accounts file: this machine names no home directory. Set HOME, or name a file with --config.")
 		}
 		t.creates = true
 		return t, nil
