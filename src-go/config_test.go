@@ -379,14 +379,19 @@ func TestConfigCandidatesFor(t *testing.T) {
 			want: []string{`C:\Users\jc/.config/gitsby/config.shcl`},
 		},
 		{
-			name: "macOS leads with Application Support, keeps dot-config behind it",
+			name: "macOS is Application Support and nothing else",
 			goos: "darwin", home: "/Users/jc",
-			want: []string{"/Users/jc/Library/Application Support/gitsby/config.shcl", "/Users/jc/.config/gitsby/config.shcl"},
+			want: []string{"/Users/jc/Library/Application Support/gitsby/config.shcl"},
 		},
 		{
-			name: "macOS ignores XDG_CONFIG_HOME and APPDATA both",
+			name: "macOS ignores XDG_CONFIG_HOME, APPDATA and dot-config alike",
 			goos: "darwin", xdg: "/x", appData: `C:\App`, home: "/Users/jc",
-			want: []string{"/Users/jc/Library/Application Support/gitsby/config.shcl", "/Users/jc/.config/gitsby/config.shcl"},
+			want: []string{"/Users/jc/Library/Application Support/gitsby/config.shcl"},
+		},
+		{
+			name: "a Mac with no home directory has nowhere at all",
+			goos: "darwin", xdg: "/x",
+			want: nil,
 		},
 		{
 			name: "nowhere at all is empty, not a guess",
