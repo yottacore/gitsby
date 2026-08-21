@@ -632,7 +632,7 @@ func (a *app) showBeforeState() error {
 	case a.cmd.name == "repo-clone":
 		wd, _ := os.Getwd()
 		a.out.clean("")
-		a.out.clean("Directory ....: " + wd)
+		a.out.clean(dirLabel + wd)
 		a.out.clean("Remote .......: " + maskURL(a.tgt.cloneURL))
 		a.showIdentity(a.tgt.cloneURL)
 		a.out.clean("Clone into ...: " + a.tgt.cloneDir)
@@ -645,7 +645,7 @@ func (a *app) showBeforeState() error {
 		}
 		wd, _ := os.Getwd()
 		a.out.clean("")
-		a.out.clean("Directory ....: " + wd)
+		a.out.clean(dirLabel + wd)
 		a.out.clean("Remote .......: " + remoteDisp)
 		a.showIdentity(a.tgt.connectURL)
 		a.out.clean("Current branch: (not a git repository yet)")

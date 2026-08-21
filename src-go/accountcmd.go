@@ -212,7 +212,7 @@ func (a *app) cmdAccountList() {
 		configDisp = "(none found)"
 	}
 	a.out.clean("Config file ..: " + configDisp)
-	a.out.clean("Current dir ..: " + nativePath(a.contextDir()))
+	a.out.clean(dirLabel + nativePath(a.contextDir()))
 	hereAccount := a.cfg.accountForDir(a.contextDir())
 	// An account that resolved and simply names no login is not the same as no
 	// account at all - reported as "nothing configured" it contradicted the source

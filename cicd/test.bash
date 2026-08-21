@@ -196,6 +196,10 @@ fRunSuite(){
 
 	## Pre-flight display: who we act as, and a compact list of what changes
 	fAssertOut "status names the commit author"  'Author \.+:'            bash -c "cd '${cloneA}' && '${gitsby}' -q status"
+	## One label for one thing: status called the current directory "Directory" while 'account
+	## list' called it "Here", and both print it from the same tool a few lines apart.
+	fAssertOut "status names the current directory"  '^Current dir \.+: '  bash -c "cd '${cloneA}' && '${gitsby}' -q status"
+	fAssertOut "and whoami uses the same label"      '^Current dir \.+: '  bash -c "cd '${cloneA}' && '${gitsby}' -q -NoFetch whoami"
 	fAssertOut "clean worktree says so"          '\(working tree clean\)' bash -c "cd '${cloneA}' && '${gitsby}' -q status"
 	( cd "${cloneA}" && echo probe > probe.txt )
 	fAssertOut "changed file listed"             '\?\? probe\.txt'        bash -c "cd '${cloneA}' && '${gitsby}' -q status"
