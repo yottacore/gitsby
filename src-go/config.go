@@ -216,10 +216,10 @@ func (o options) resolveConfigFile() (string, error) {
 // both jobs - the file a run looks for and the file a run creates - so the place
 // 'account set' writes is the place the next command finds.
 //
-// Each platform leads with its own convention: %APPDATA% on Windows, Application
-// Support on macOS, ~/.config elsewhere. '~/.config' stays on the list everywhere
-// behind that, because it is where every file written before this landed and an
-// upgrade must not lose one.
+// Each platform is asked in its own terms and nobody else's. XDG_CONFIG_HOME is a
+// Linux and BSD variable, set there by a desktop session rather than by the person
+// running gitsby - reading it on Windows let an MSYS shell's leftovers decide where
+// a Windows run looks for credentials.
 func configCandidates() []string {
 	return configCandidatesFor(runtime.GOOS, os.Getenv("XDG_CONFIG_HOME"), os.Getenv("APPDATA"), homeDir())
 }
@@ -228,19 +228,24 @@ func configCandidates() []string {
 // this machine can never produce are still testable from it.
 func configCandidatesFor(goos, xdgConfigHome, appData, home string) []string {
 	var out []string
-	// An XDG_CONFIG_HOME somebody set by hand outranks a location the OS picked, on
-	// every platform - of the three it is the only one that was actually asked for.
-	if xdgConfigHome != "" {
-		out = append(out, xdgConfigHome+"/gitsby/config.shcl")
-	}
 	switch goos {
 	case "windows":
+		// %APPDATA% and nothing else. A '.config' folder in a Windows profile is an
+		// MSYS habit, not a Windows convention, so it is reached for only where
+		// APPDATA is somehow unset - and then as the last thing left to try.
 		if appData != "" {
-			out = append(out, appData+"/gitsby/config.shcl")
+			return []string{appData + "/gitsby/config.shcl"}
 		}
 	case "darwin":
+		// Application Support is the Mac answer, but macOS is still a Unix and
+		// '~/.config' is where a Mac user's other command-line tools keep theirs, so
+		// it stays behind it rather than being dropped.
 		if home != "" {
 			out = append(out, home+"/Library/Application Support/gitsby/config.shcl")
+		}
+	default:
+		if xdgConfigHome != "" {
+			out = append(out, xdgConfigHome+"/gitsby/config.shcl")
 		}
 	}
 	if home != "" {

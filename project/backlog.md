@@ -163,9 +163,9 @@ None open.
 
 - ✅ The accounts file now lives where each platform keeps one.
 	- One search order was used everywhere - `$XDG_CONFIG_HOME`, then `~/.config`, then `%APPDATA%` - which is the Linux convention applied to Windows and macOS as well.
-	- Windows now leads with `%APPDATA%\gitsby\config.shcl`, macOS with `~/Library/Application Support/gitsby/config.shcl`. Everywhere else is unchanged.
-	- `~/.config/gitsby/config.shcl` is still read on every platform, last, so a file already sitting there keeps working and never has to be moved.
-	- `APPDATA` is read on Windows only now. It means nothing elsewhere, and it is not a variable to go looking for credentials behind on a machine that can have it set by accident.
+	- Windows now reads `%APPDATA%\gitsby\config.shcl` and nothing else, macOS `~/Library/Application Support/gitsby/config.shcl` then `~/.config`. Linux and FreeBSD are unchanged.
+	- Each platform's variable is read on that platform alone: `XDG_CONFIG_HOME` on Linux and the BSDs, `APPDATA` on Windows. Both used to be read everywhere, which let an MSYS session answer for a Windows run, and put a name Wine or Samba can leave set on a Linux run's credential search path.
+	- macOS keeps `~/.config` behind Application Support - it is a Unix and that is where its other CLI tools look. Windows does not; a `.config` folder in a Windows profile is an MSYS habit, reached for only if `%APPDATA%` is unset. Windows users upgrading have a one-line move, called out in the changelog.
 	- One ordered list now answers both "where do we look" and "where does a new file go", instead of three copies of the order in three files.
 
 - ✅ `identity` is now `whoami`, and its help line says what it shows.

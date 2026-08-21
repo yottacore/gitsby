@@ -359,23 +359,33 @@ func TestConfigCandidatesFor(t *testing.T) {
 			want: []string{"/h/.config/gitsby/config.shcl"},
 		},
 		{
-			name: "windows leads with APPDATA, keeps dot-config behind it",
+			name: "freebsd reads XDG_CONFIG_HOME like linux does",
+			goos: "freebsd", xdg: "/x", home: "/h",
+			want: []string{"/x/gitsby/config.shcl", "/h/.config/gitsby/config.shcl"},
+		},
+		{
+			name: "windows is APPDATA and nothing else",
 			goos: "windows", appData: `C:\App`, home: `C:\Users\jc`,
-			want: []string{`C:\App/gitsby/config.shcl`, `C:\Users\jc/.config/gitsby/config.shcl`},
+			want: []string{`C:\App/gitsby/config.shcl`},
 		},
 		{
-			name: "an XDG somebody set outranks APPDATA",
-			goos: "windows", xdg: `C:\x`, appData: `C:\App`, home: `C:\Users\jc`,
-			want: []string{`C:\x/gitsby/config.shcl`, `C:\App/gitsby/config.shcl`, `C:\Users\jc/.config/gitsby/config.shcl`},
+			name: "windows ignores XDG_CONFIG_HOME an MSYS shell left set",
+			goos: "windows", xdg: "/c/msys/home/jc/.config", appData: `C:\App`, home: `C:\Users\jc`,
+			want: []string{`C:\App/gitsby/config.shcl`},
 		},
 		{
-			name: "macOS leads with Application Support",
+			name: "windows with no APPDATA falls back to the Unix spelling",
+			goos: "windows", xdg: "/c/msys/home/jc/.config", home: `C:\Users\jc`,
+			want: []string{`C:\Users\jc/.config/gitsby/config.shcl`},
+		},
+		{
+			name: "macOS leads with Application Support, keeps dot-config behind it",
 			goos: "darwin", home: "/Users/jc",
 			want: []string{"/Users/jc/Library/Application Support/gitsby/config.shcl", "/Users/jc/.config/gitsby/config.shcl"},
 		},
 		{
-			name: "macOS ignores APPDATA",
-			goos: "darwin", appData: `C:\App`, home: "/Users/jc",
+			name: "macOS ignores XDG_CONFIG_HOME and APPDATA both",
+			goos: "darwin", xdg: "/x", appData: `C:\App`, home: "/Users/jc",
 			want: []string{"/Users/jc/Library/Application Support/gitsby/config.shcl", "/Users/jc/.config/gitsby/config.shcl"},
 		},
 		{

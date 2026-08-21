@@ -40,10 +40,10 @@ Gitsby reads the first of these that exists, and `account set` creates the first
 | Platform | Where it looks
 | :--      | :--
 | Linux, FreeBSD | `$XDG_CONFIG_HOME/gitsby/config.shcl`, then `~/.config/gitsby/config.shcl`
-| macOS    | `$XDG_CONFIG_HOME/gitsby/config.shcl`, then `~/Library/Application Support/gitsby/config.shcl`, then `~/.config/gitsby/config.shcl`
-| Windows  | `%XDG_CONFIG_HOME%\gitsby\config.shcl`, then `%APPDATA%\gitsby\config.shcl`, then `~\.config\gitsby\config.shcl`
+| macOS    | `~/Library/Application Support/gitsby/config.shcl`, then `~/.config/gitsby/config.shcl`
+| Windows  | `%APPDATA%\gitsby\config.shcl`
 
-`XDG_CONFIG_HOME` comes first everywhere because it is the one of them somebody set on purpose. `~/.config` stays last on every platform, so a file already there keeps working - move it to the platform's own location whenever you like, or never.
+Each platform is asked in its own terms. `XDG_CONFIG_HOME` is a Linux and BSD variable - a desktop session sets it, not you - so it is read there and nowhere else; `%APPDATA%` likewise is read on Windows and nowhere else. macOS keeps `~/.config` behind Application Support, because it is still a Unix and that is where its other command-line tools look. Windows does not: a `.config` folder in a Windows profile is an MSYS habit rather than a Windows convention, and it is reached for only if `%APPDATA%` is somehow unset.
 
 `--config FILE` (`-Config FILE`) overrides all of them, and so does the `GITSBY_CONFIG` environment variable.
 
