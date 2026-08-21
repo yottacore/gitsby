@@ -177,7 +177,7 @@ func (a *app) settleCommand(argv []string) error {
 // enterRepo settles whether we are inside a work tree, and refuses the commands
 // that need one. Every command does - except the repo ones: clone works anywhere,
 // and create/connect exist precisely to turn a plain directory into one.
-// 'identity' too: which account a folder belongs to is worth asking before there
+// 'whoami' too: which account a folder belongs to is worth asking before there
 // is a repo in it.
 func (a *app) enterRepo() error {
 	// One call, three answers. The exit code is no use here: rev-parse answers all
@@ -195,7 +195,7 @@ func (a *app) enterRepo() error {
 		}
 	}
 	a.inRepo = len(answers) == 3 && answers[0] == "true"
-	if a.inRepo || a.cmd.name == "identity" ||
+	if a.inRepo || a.cmd.name == "whoami" ||
 		strings.HasPrefix(a.cmd.name, "repo-") || strings.HasPrefix(a.cmd.name, "account-") {
 		return nil
 	}
@@ -249,7 +249,7 @@ func (a *app) freshenRemote() {
 
 // settleBranchNames resolves the two branch names every command downstream hands
 // git. They can't change mid-command, so they settle once, post-fetch so
-// origin/HEAD is fresh. status, identity and br list run without a resolvable
+// origin/HEAD is fresh. status, whoami and br list run without a resolvable
 // default branch on purpose: they mutate nothing and are the commands you run to
 // see what is wrong, so they report "unknown" instead of refusing.
 func (a *app) settleBranchNames() error {
@@ -280,7 +280,7 @@ func (a *app) settleBranchNames() error {
 // the reason above.
 func (a *app) needsConfirmableBranch() bool {
 	switch a.cmd.name {
-	case "status", "identity", "br-list":
+	case "status", "whoami", "br-list":
 		return false
 	}
 	return !strings.HasPrefix(a.cmd.name, "repo-") && !strings.HasPrefix(a.cmd.name, "account-")
@@ -424,7 +424,7 @@ func (a *app) settleTarget() (bool, error) {
 // that repo will live with afterward can be checked before we start.
 func (a *app) settleGh() error {
 	switch a.cmd.name {
-	case "identity":
+	case "whoami":
 		// Reads the forge, writes nothing: the whole point of the command is to name
 		// every account involved. gh answers for a GitHub remote and for no remote at
 		// all - with nothing to take a host from, its account is still the only one
@@ -544,8 +544,8 @@ func (a *app) runReadOnly() error {
 	switch a.cmd.name {
 	case "status":
 		a.showStatus(true)
-	case "identity":
-		a.cmdIdentity()
+	case "whoami":
+		a.cmdWhoami()
 	case "account-list":
 		a.cmdAccountList()
 	case "repo-url":

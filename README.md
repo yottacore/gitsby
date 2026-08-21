@@ -84,7 +84,7 @@ What you reach for daily is a one-word command. Everything else is grouped under
 | `pullcom`            | `[msg]`       | Pull updates, then commit all local changes. Do frequently!
 | `sync`               | `[msg]`       | Pull, commit, and push. Do infrequently.
 | `status`             |               | Fetch and show current status.
-| `identity`           |               | Show who commands in this folder act as: account, ssh key, commit author, `gh` login.
+| `whoami`             |               | Show who commands in this folder act as: account, ssh key, commit author, git host login.
 | `release`            | `[ver]`       | Cut a release: merge `dev` into `main`, tag, push. No version: the next one after the latest tag.
 | `br`                 |               | Fetch and list branches (`br list` is the same thing).
 | `br create`          | `<branch>`    | Create a new branch off `dev`/`main`. Uncommitted work on `dev`/`main` comes along; on another branch it is parked there first.

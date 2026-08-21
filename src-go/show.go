@@ -91,7 +91,7 @@ func (a *app) showIncoming() {
 
 // identityWillPrint: whether this run reaches showIdentity at all. Every mutating
 // command previews the block, bar 'account apply', which shows the account list
-// instead; among the read-only ones only status and identity do. It gates the live
+// instead; among the read-only ones only status and whoami do. It gates the live
 // probes that feed the block and nothing else, so being over-broad costs a round
 // trip and never an answer.
 func (a *app) identityWillPrint() bool {
@@ -101,7 +101,7 @@ func (a *app) identityWillPrint() bool {
 	if a.cmd.mutating {
 		return true
 	}
-	return a.cmd.name == "status" || a.cmd.name == "identity"
+	return a.cmd.name == "status" || a.cmd.name == "whoami"
 }
 
 // showIdentity: who a remote-touching command will act as. Host aliases in
@@ -519,7 +519,7 @@ func (a *app) showSSHLine(remoteURL string) {
 		line += " via alias '" + hostAlias + "'"
 	}
 	if ssh.keyFile != "" {
-		line += ", key " + ssh.keyFile
+		line += ", key " + nativePath(ssh.keyFile)
 	}
 	// Neither half above answers the question this line exists for: the connect
 	// user is 'git' for every GitHub account, and the key is only ssh's first
@@ -565,11 +565,11 @@ func (a *app) showGhLine() {
 	a.out.clean("GitHub (gh) ..: " + line)
 }
 
-// cmdIdentity is the identity block on its own - the same lines 'status' prints,
+// cmdWhoami is the identity block on its own - the same lines 'status' prints,
 // without the branch and working-tree state, for when the only question is who
 // the next command acts as. Directory and remote lead it because they are what
 // decides the answer.
-func (a *app) cmdIdentity() {
+func (a *app) cmdWhoami() {
 	remoteURL := a.originURL()
 	remoteDisp := maskURL(remoteURL)
 	if remoteDisp == "" {

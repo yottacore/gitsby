@@ -29,7 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - FreeBSD joins the published platforms, amd64 and arm64 both, alongside Linux, Windows and macOS.
 
-- `identity` shows who commands in this folder act as - the account, the ssh key and who it authenticates as, the commit author, and gh's login - without the branch and working-tree state `status` prints around it. It answers outside a repository too, which is where the question comes up before a `repo clone` or `repo create`.
+- `whoami` shows who commands in this folder act as - the account, the ssh key and who it authenticates as, the commit author, and the git host login - without the branch and working-tree state `status` prints around it. It answers outside a repository too, which is where the question comes up before a `repo clone` or `repo create`. `who` and `identity` are accepted spellings of it.
 
 - Other Git hosts are first-class. Gitsby looks at where `origin` actually points and picks the tool that serves it: `gh` on GitHub, `tea` on Gitea and Forgejo (found under `tea-cli` too, which is how some distributions ship it). Everything that is only Git - branching, committing, pulling, pushing, merging, pruning, releasing, and re-spelling a remote between HTTPS and SSH - now works on any host with no host-specific client installed at all.
 
@@ -50,6 +50,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `update` is now `pullcom`, which names both halves in the order they run rather than reading like it updates gitsby itself. It also answers to `update`, `pull`, `pullc`, `pullco`, `pullcomm` and `pullcommit`. `sync` is unchanged; the pair was the unclear part, not either word alone.
 
 - `br land` is now `br merge`, the word most people reach for first. `br land` still works.
+
+- On Windows, every path Gitsby prints is spelled the Windows way - backslashes and an upper-case drive letter. `account list` was showing its folder rules in the internal form paths are matched in, so a rule read as `c:/opt/dev` two lines under the directory it claims, printed as `C:\opt\dev`. Same place, two spellings, on the one screen that exists to say which rule covers where you are.
 
 - The identity display now says where the account it is using came from, and which file that is, on their own lines: `From: An account block named 'acme', because its folder rule covers this directory.` and `File: ~/.config/gitsby/config.shcl`. The old `(from config 'acme')` named neither, and "config" is ambiguous here - `gitsby.ghAccount` is a Git config key and the account blocks are not.
 
