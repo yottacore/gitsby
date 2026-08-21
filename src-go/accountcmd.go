@@ -459,22 +459,27 @@ func (a *app) writeAccountFragment(dir, name string) error {
 // looking like the ones a person wrote by hand.
 var accountSetFields = []string{"path", "pathContains", "ghAccount", "tokenFile", "sshKey", "name", "email", "protocol", "host", "user"}
 
-// The columns the usage block lines its placeholders up in: ten spaces of indent,
-// then a description column past the widest placeholder.
+// The block nests by indent rather than lining up under the 'gitsby: ' prefix: the
+// prefix is on one line only, so hanging everything off its width buries the
+// structure. Placeholders sit two levels in, with a description column past the
+// widest of them, and the examples one level deeper again.
 const (
-	accountSetPad  = "          "
-	accountSetCont = "                     "
+	accountSetIndent = "  "
+	accountSetPad    = accountSetIndent + accountSetIndent
+	accountSetCont   = "               "
 )
 
 // accountSetUsage spells out the three words 'account set' takes, and what each one
 // is. A reader being told the syntax is a reader who did not know it, so the closed
-// list of keys belongs here rather than one command further on, and the example
-// uses one account name twice - that repetition IS what '<account>' means.
+// list of keys belongs here rather than one command further on, and the examples
+// use one account name twice - that repetition IS what '<account>' means. The value
+// forms are the ones the matcher reads: 'pathContains' is a run of folder names, not
+// a glob, so an example with '*' in it would teach a rule that never fires.
 func accountSetUsage() error {
 	lines := []string{
 		"Syntax: " + meName + " account set <account> <key> <value>",
-		"        Writes 'account.<account>.<key> = <value>' into the accounts file.",
-		accountSetPad + "<account>  A name you pick for one login - 'work', 'personal'.",
+		accountSetIndent + "Writes 'account.<account>.<key> = <value>' into the accounts file.",
+		accountSetPad + "<account>  A string you define for one login; e.g. 'work', 'personal'.",
 	}
 	key := wrapWords("The setting to change. One of: "+strings.Join(accountSetFields, ", ")+".", 57)
 	lines = append(lines, accountSetPad+"<key>      "+key[0])
@@ -483,9 +488,12 @@ func accountSetUsage() error {
 	}
 	lines = append(lines,
 		accountSetPad+"<value>    What to set it to. Quote it if it has spaces.",
-		"        To give an account the folder it owns and the login to use there:",
-		accountSetPad+meName+" account set work path ~/dev/work",
-		accountSetPad+meName+" account set work ghAccount my-work-login")
+		accountSetIndent+"Examples:",
+		accountSetPad+"Bind an account to one folder, and the login to use there:",
+		accountSetPad+accountSetIndent+meName+" account set work path ~/dev/work",
+		accountSetPad+accountSetIndent+meName+" account set work ghAccount my-work-login",
+		accountSetPad+"Or by a run of folder names the project's path contains:",
+		accountSetPad+accountSetIndent+meName+" account set work pathContains my-employer/github")
 	return usagef("%s", strings.Join(lines, "\n"))
 }
 

@@ -2979,7 +2979,7 @@ GHEOF
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/dup.shcl' account set dup path /c 2>&1"
 	## Three placeholders are the whole interface. Naming them without saying what they are answers
 	## nothing for the one reader who ever sees this - the one who just typed the command wrong.
-	fAssertOut "the syntax block says what '<account>' is"  '<account>  A name you pick for one login' \
+	fAssertOut "the syntax block says what '<account>' is"  '<account>  A string you define for one login' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set 2>&1"
 	## '<key>' is a closed list, and the command that lists it is this one - a reader sent looking
 	## for the keys elsewhere guesses instead, and a guess is refused a command later.
@@ -2988,6 +2988,10 @@ GHEOF
 	## The example is two lines on one account name, because that repetition is what '<account>' is.
 	fAssertOut "and its example runs as printed"  'gitsby account set work path ~/dev/work' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set 2>&1"
+	## 'pathContains' matches a run of folder names, not a glob. An example with a '*' in it reads
+	## as a pattern language that isn't there, and the rule it teaches never matches anything.
+	fAssertNotOut "and the pathContains example is not a glob"  '[*]' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set 2>&1 | grep pathContains"
 	## The identity block's own vocabulary. "Forge" is a word for people who already knew the answer.
 	fAssertOut "the identity block says 'Git host', not 'Forge'"  '^Git host \.+: git\.example\.test' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' identity 2>&1"
