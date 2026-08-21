@@ -2102,6 +2102,18 @@ GHEOF
 	fAssertOut "and says where a token would come from, not what it is"  "token \.+: gh's own store"  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account"
 	fAssertNotOut "never printing the token itself"   'gho_faketoken'            bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account"
 	fAssert "account list works outside any repo"     bash -c "cd '${ac}' && env ${acEnv} '${gitsby}' -q account >/dev/null"
+	## The header used to say "Here" for the directory status calls "Directory", and "Resolves to"
+	## for the answer status labels "Account" - two words each for one thing, on the one screen
+	## whose whole job is to line the rules up against where you are standing.
+	fAssertOut "account list names the current directory"  '^Current dir \.+: '  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account"
+	fAssertOut "and labels the answer the way status does"  '^Account \.+: workacct'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account"
+	## An unconfigured folder said "(nothing configured - gh's own account)", which named gh on
+	## hosts gh does not serve and answered a question about git's fallback that nobody asked.
+	: > "${ac}/none.shcl"
+	fAssertOut "an unconfigured folder says only that"  '^Account \.+: \(nothing configured\)$' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/none.shcl' account"
+	fAssertNotOut "naming no tool it cannot speak for"  "gh's own account" \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/none.shcl' account"
 	## An entry written by hand has to survive; ours have to refresh rather than accumulate.
 	( cd "${acWork}" && env HOME="${ac}/home" GIT_CONFIG_GLOBAL="${ac}/home/.gitconfig" git config --global includeIf.gitdir:/hand/written/.path /keep/me.gitconfig )
 	fAssert "account apply runs"  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply >/dev/null"
@@ -2657,7 +2669,7 @@ GHEOF
 		bash -c "cd '${dr}/tree/proj' && env ${drEnv} '${gitsby}' -q account 2>&1"
 	## The two tie-breaks used to disagree: gitsby keeps the first rule declared, git keeps the
 	## last written, and sorting the plan by text put them in opposite orders.
-	fAssertOut "gitsby keeps the first rule declared"  'Resolves to \.+: abe' \
+	fAssertOut "gitsby keeps the first rule declared"  'Account \.+: abe' \
 		bash -c "cd '${dr}/tree/proj' && env ${drEnv} '${gitsby}' -q account 2>&1"
 	fAssert "and plain git now resolves it the same way" \
 		bash -c "cd '${dr}/tree/proj' && env ${drEnv} git config gitsby.ghAccount | grep -qx abe"

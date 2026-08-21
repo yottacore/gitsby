@@ -424,6 +424,17 @@ func (a *app) showAccountLine() {
 	}
 }
 
+// accountFallbackNote says what happens instead when an account names no login:
+// whichever forge CLI serves the account's own host goes on using its own. Named
+// only where there is one to name - asserting gh on a Gitea host is the same
+// mistake as assuming every account is a GitHub one.
+func (a *app) accountFallbackNote() string {
+	if _, tool := a.forgeToolFor(a.accountHost()); tool != "" {
+		return ", so " + tool + " keeps its own account"
+	}
+	return ""
+}
+
 // showAccountApplied names who this run acts as, for the ordinary case where the
 // account did take effect.
 func (a *app) showAccountApplied() {
@@ -434,7 +445,7 @@ func (a *app) showAccountApplied() {
 	if a.accountWho(a.accountHost()) == "" {
 		// It applied its key and its commit identity and simply names no login of its
 		// own - which is a whole way of holding a second account, not a broken one.
-		line += " - it names no login, so gh keeps its own account"
+		line += " - it names no login" + a.accountFallbackNote()
 	}
 	// The one thing the lines below can't show: an https push authenticating with
 	// the token rather than with a key, which is what makes a second account work

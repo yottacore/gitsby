@@ -61,6 +61,14 @@ None open.
 
 #### Done - Bugs
 
+- ✅ `account list`'s header raised more questions than it answered.
+	- Real output, in a Gitea folder with nothing set up yet: `Here .........: C:\opt\...\gitea.com\t00mietum\camhauler` over `Resolves to ..: (nothing configured - gh's own account)`.
+	- "Resolves to" names no actor, so the first thing it prompts is "resolves by whom?". "Here" is a second word for the directory `status` calls `Directory`.
+	- And `gh` has no business in that answer on a Gitea host. It is wrong wherever `gh` does not serve, and it answers a question about git's own fallback that nobody asked.
+	- Fixed: `Here` is now `Current dir`, `Resolves to` is now `Account` - the label `status` already puts on the same answer - and an unconfigured folder gets `(nothing configured)`, full stop.
+	- An account that resolves but names no login no longer asserts `gh` either: it names whichever tool serves that account's own host, and names none where there is none.
+	- `status` still says `Directory` for the directory, which is the one word left differing between the two screens.
+
 - ✅ On Windows, `account list` printed the same directory two ways on the one screen.
 	- Real output: `Here .........: C:\opt\...\dev\gitea.com\t00mietum\camhaul` above `folder ..: c:/opt/.../dev/github.com/t00mietum`.
 	- The folder rules are held in the form paths are matched in - lower case, forward slashes - and that form was going straight to the display. Same disk, same tree, two spellings.

@@ -212,13 +212,13 @@ func (a *app) cmdAccountList() {
 		configDisp = "(none found)"
 	}
 	a.out.clean("Config file ..: " + configDisp)
-	a.out.clean("Here .........: " + nativePath(a.contextDir()))
+	a.out.clean("Current dir ..: " + nativePath(a.contextDir()))
 	hereAccount := a.cfg.accountForDir(a.contextDir())
 	// An account that resolved and simply names no login is not the same as no
 	// account at all - reported as "nothing configured" it contradicted the source
-	// printed in the same sentence, and named gh on hosts gh does not serve. Named
-	// as "(no login named)" it said nothing anybody could act on either: the account
-	// is what the reader has to go and edit, so name that instead.
+	// printed in the same sentence. Named as "(no login named)" it said nothing
+	// anybody could act on either: the account is what the reader has to go and
+	// edit, so name that instead.
 	resolvedLine := a.accountWho(a.accountHost())
 	switch {
 	case resolvedLine != "":
@@ -226,11 +226,15 @@ func (a *app) cmdAccountList() {
 			resolvedLine += " (from " + a.accountSourceText(false) + ")"
 		}
 	case a.acct.name != "":
-		resolvedLine = "'" + a.acct.name + "' - it names no login, so gh keeps its own account"
+		resolvedLine = "'" + a.acct.name + "' - it names no login" + a.accountFallbackNote()
 	default:
-		resolvedLine = "(nothing configured - gh's own account)"
+		// Nothing beyond that: this says what gitsby is configured to do here, and
+		// whatever git and the forge CLI fall back to is their own business.
+		resolvedLine = "(nothing configured)"
 	}
-	a.out.clean("Resolves to ..: " + resolvedLine)
+	// Status's label for the same answer. "Resolves to" named no actor, so the first
+	// question it raised was who was doing the resolving.
+	a.out.clean(acctLabel + resolvedLine)
 	if len(a.cfg.unknown) > 0 {
 		a.out.clean("Ignored keys .: " + strings.Join(a.cfg.unknown, ", "))
 	}
