@@ -228,13 +228,38 @@ func (o options) resolveConfigFile() (string, error) {
 func displayPath(p string) string {
 	home := homeDir()
 	if home == "" || p == "" {
-		return p
+		return nativePath(p)
 	}
 	if p == home {
 		return "~"
 	}
 	if rest, found := strings.CutPrefix(p, home+"/"); found {
-		return "~/" + rest
+		return nativePath("~/" + rest)
+	}
+	return nativePath(p)
+}
+
+// nativePath spells a path the way the platform does. Display only, and a no-op
+// off Windows. Folder rules are held in one canonical form - lower case, forward
+// slashes - so a listing printed them beside a 'Here' line that came straight
+// from Windows, and one machine read as two.
+func nativePath(p string) string {
+	if !isWindows() {
+		return p
+	}
+	return windowsPath(p)
+}
+
+// windowsPath is nativePath's conversion on its own, so it can be exercised
+// anywhere. The drive letter is folded up as well as the separators: 'c:' beside
+// 'C:' reads as a different disk, which is the whole complaint.
+func windowsPath(p string) string {
+	if p == "" {
+		return p
+	}
+	p = strings.ReplaceAll(p, "/", `\`)
+	if len(p) >= 2 && p[1] == ':' {
+		p = strings.ToUpper(p[:1]) + p[1:]
 	}
 	return p
 }

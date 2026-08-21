@@ -2485,13 +2485,13 @@ GHEOF
 	fAssert "and no inherited gh token"                    bash -c '[[ -z "${GH_TOKEN:-}" ]]'
 
 	## Go-only: the renamed commands, the aliases that keep every 2.1.0 spelling working, and
-	## 'identity'. The scripts are frozen at the old surface, so asserting the new names on their
+	## 'whoami'. The scripts are frozen at the old surface, so asserting the new names on their
 	## legs would only prove that a frozen file is frozen.
 	local renDir="${work}/rename"
 	git clone --quiet "${origin}" "${renDir}"
 	fAssertOut "help leads with the new name" 'pullcom \[msg\] \.+: Pull updates'        "${gitsby}" --help
 	fAssertOut "and offers br merge"          'br merge \[msg\] \.+: Merge current'      "${gitsby}" --help
-	fAssertOut "and lists identity"           'identity \.+: Who commands here act as'   "${gitsby}" --help
+	fAssertOut "and lists whoami"             'whoami \.+: Show account, ssh key'        "${gitsby}" --help
 	## Every accepted spelling, because a ladder is only worth having if the whole ladder is
 	## there - a missing rung reads as a typo the tool refused for no reason.
 	local spelling
@@ -2504,16 +2504,21 @@ GHEOF
 		bash -c "cd '${renDir}' && '${gitsby}' -q br create renland >/dev/null && '${gitsby}' -q br land 'landed' 2>&1"
 	fAssertOut  "an unknown br subcommand names merge, not land" 'switch, merge, prune' \
 		bash -c "cd '${renDir}' && '${gitsby}' -q br frobnicate 2>&1"
-	## identity is the status block's identity half on its own, and the one read-only command
+	## whoami is the status block's identity half on its own, and the one read-only command
 	## that answers outside a repo - which is where you ask it, before cloning anything.
-	fAssert     "identity exits 0"            bash -c "cd '${renDir}' && '${gitsby}' identity"
+	fAssert     "whoami exits 0"              bash -c "cd '${renDir}' && '${gitsby}' whoami"
 	fAssertOut  "and names the commit author" '^Author \.+: test <test@test>' \
-		bash -c "cd '${renDir}' && '${gitsby}' identity 2>&1"
+		bash -c "cd '${renDir}' && '${gitsby}' whoami 2>&1"
 	fAssertNotOut "and leaves out the working-tree state" 'Local changes:' \
-		bash -c "cd '${renDir}' && '${gitsby}' identity 2>&1"
-	fAssert     "identity answers outside a repo" bash -c "cd '${work}' && '${gitsby}' identity"
-	fAssertFail "identity with a trailing argument rejected" \
-		bash -c "cd '${renDir}' && '${gitsby}' identity extra"
+		bash -c "cd '${renDir}' && '${gitsby}' whoami 2>&1"
+	fAssert     "whoami answers outside a repo" bash -c "cd '${work}' && '${gitsby}' whoami"
+	fAssertFail "whoami with a trailing argument rejected" \
+		bash -c "cd '${renDir}' && '${gitsby}' whoami extra"
+	## Both older spellings are permanent aliases, so neither may quietly become a typo.
+	for spelling in who identity; do
+		fAssertOut "'${spelling}' answers as whoami" '^Author \.+: test <test@test>' \
+			bash -c "cd '${renDir}' && '${gitsby}' ${spelling} 2>&1"
+	done
 
 	## --offline was a silent spelling of --no-fetch that never stopped a push. It is refused by
 	## name now, so the one thing it promised can't be believed on the strength of the word.

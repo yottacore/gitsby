@@ -44,7 +44,7 @@ func (a *app) printSyntax() {
 	a.out.clean("  account apply ......: Teach plain git the same folder rules, so 'git' outside gitsby matches.")
 	a.out.clean("Less common commands:")
 	a.out.clean("  sync [msg] .........: Pull, commit, and push (pullcom, plus the push). Do infrequently.")
-	a.out.clean("  identity ...........: Who commands here act as: account, ssh key, commit author, git host login.")
+	a.out.clean("  whoami .............: Show account, ssh key, commit author, git host login.")
 	a.out.clean("Admin commands, e.g. for small solo projects:")
 	a.out.clean("  br merge [msg] .....: Merge current branch into " + mergeTargetLabel + " (--no-ff), push, delete it local + remote.")
 	a.out.clean("  br prune ...........: Delete branches already merged into " + mergeTargetLabel + ", local + remote.")

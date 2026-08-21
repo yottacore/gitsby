@@ -130,7 +130,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- A remote that can't be reached warns and skips the pull. A remote that *is* reachable but can't fast-forward is a real problem and still fails hard - the distinction is what the pre-command fetch already discovered.
 	- `--no-fetch` declines the incoming round trip, so it skips the pull as well as the fetch. Skipping only the fetch and then pulling anyway would have saved nothing. It is not a way to say "I am offline" - see the offline rule below for why that distinction is deliberate.
 
-- The command set is split by how often you type it. Daily verbs stay one word (`pullcom`, `sync`, `status`, `identity`, `release`); everything else is grouped under a noun (`repo`, `br`, `pr`).
+- The command set is split by how often you type it. Daily verbs stay one word (`pullcom`, `sync`, `status`, `whoami`, `release`); everything else is grouped under a noun (`repo`, `br`, `pr`).
 	- Among the options considered, we decided the extra word is worth it for infrequent commands. It buys discoverability - three nouns to explore instead of a flat list to memorize - and it retires mashed-together abbreviations like `newbr`/`gobr`/`listbr`.
 	- One verb per action across all three nouns: `create`, not `create` in one place and `new` in another. `new` and `go` still work as unpublished spellings, because they are what fingers reach for.
 	- `repository` and `branch` are accepted in full. Only the short forms are published, so the help stays scannable.
@@ -207,6 +207,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- `gitsby.ghAccount` and `gitsby.ghTokenFile` in git config still work and still win, for a single repo that wants to answer for itself.
 	- `gitsby.ghTokenFile` and the per-account `tokenFile` name a token for an account gh has never been logged in as, for a machine set up by copying files rather than by authenticating. gh's own store is consulted first, so a rotated login is never shadowed by a stale token on disk.
 	- Paths are compared canonically, never as text. The Bash build sees `/c/x` where the PowerShell build sees `C:\x`, and a rule that matched in one build and not the other would be worse than no rule at all.
+	- Paths are *displayed* the way the platform spells them, which on Windows is not the canonical form. Every path on screen goes out with backslashes and an upper-case drive letter there, so a folder rule and the directory it claims read as the same place instead of two. The canonical form stays internal, where the matching happens.
 
 - A token, not a key, is the way to hold two accounts - and gitsby says so without taking the choice away.
 	- The conventional answer is a key per account plus `~/.ssh/config` host aliases, which then have to be baked into every remote URL. It works, and it spreads the account across three places that can disagree.
@@ -252,8 +253,9 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- `finish` was considered as a second name for `br merge` and rejected. It overclaims - merging to `dev` still owes a release - and under a permanent-alias promise every spelling is forever.
 	- Go build only. The scripts keep the names they shipped with and stay the reference for everything the rename does not touch.
 
-- `identity` shows the identity block on its own.
+- `whoami` shows the identity block on its own. It also answers to `who` and to `identity`, the name it was built under.
 	- `status` already answers "who does this act as", but buried under branch and working-tree state you did not ask about. `account list` answers a different question - what is configured, everywhere, rather than what applies here.
+	- `whoami` over `identity`: the command is a question, and `identity` is a noun. Every shell already has a `whoami` meaning exactly this, so the name needs no explaining. `identity` is still the word for the block it prints, which is why the block keeps it.
 	- The same lines `status` prints, from the same code, so the two cannot drift apart. That includes the rule that the Account line appears only for an account asked for or configured, never one merely inferred from the remote's owner.
 	- It answers outside a repository too. Which account a folder belongs to is worth knowing before there is anything in it, which is exactly when you are about to clone or create.
 
@@ -305,7 +307,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 
 - `account set` writes the accounts file, but the diagnostic never writes it unasked.
 	- The obvious next step from "gitsby knows the fix" is "gitsby applies the fix", and it was decided against. What gitsby knows is that the account block never named a host - not that the account belongs to the host this repository happens to be on. Applying its token on that inference is exactly the mistake the host field was added to prevent: one host's credential handed to another.
-	- So the fix is offered, not taken. `account set` is an ordinary mutating command with a plan and a confirmation, and `status`/`identity` stay read-only and script-safe.
+	- So the fix is offered, not taken. `account set` is an ordinary mutating command with a plan and a confirmation, and `status`/`whoami` stay read-only and script-safe.
 	- It refuses a key the loader does not read, and a value the loader would drop. A line written past either check lands in the file and is ignored on every load, so the file says one thing and every command does another - the worst of the three possible outcomes.
 	- Everything it does not change comes back byte for byte, byte-order mark and line endings included. This file is hand-written and hand-commented; a command that reformatted it in passing would cost more than it saved.
 	- A key already present more than once is refused rather than guessed at. `path` and `pathContains` are repeatable by design, and replacing the first of several would look like it worked and change nothing that is read.

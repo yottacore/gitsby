@@ -112,7 +112,7 @@ fMeasure(){
 
 fSay "spawn counts (${exe})"
 fMeasure "status"         -q --no-fetch status
-fMeasure "identity"       -q --no-fetch identity
+fMeasure "whoami"         -q --no-fetch whoami
 fMeasure "br list"        -q --no-fetch br list
 fMeasure "account list"   -q --no-fetch account list
 fMeasure "repo url"       -q --no-fetch repo url

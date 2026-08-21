@@ -129,6 +129,10 @@ func collapseCommand(cmd command) (command, error) {
 	switch cmd.name {
 	case "update", "pull", "pullc", "pullco", "pullcom", "pullcomm", "pullcommit":
 		cmd.name = "pullcom"
+	// 'identity' is the name this command was born with, and 'who' is the question
+	// shortened. Both permanent: a spelling that ever worked has to keep working.
+	case "who", "identity":
+		cmd.name = "whoami"
 	}
 	shift := true
 	switch cmd.name {
@@ -189,7 +193,7 @@ func collapseCommand(cmd command) (command, error) {
 // anywhere would make a typo look like it did what you meant.
 func sortCommand(cmd command, opt *options) (command, error) {
 	switch cmd.name {
-	case "status", "identity", "br-list":
+	case "status", "whoami", "br-list":
 		// br list's extra lands in cmd.arg too, after the noun shift, so one test
 		// covers both.
 		cmd.mutating = false

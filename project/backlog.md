@@ -61,6 +61,12 @@ None open.
 
 #### Done - Bugs
 
+- ✅ On Windows, `account list` printed the same directory two ways on the one screen.
+	- Real output: `Here .........: C:\opt\...\dev\gitea.com\t00mietum\camhaul` above `folder ..: c:/opt/.../dev/github.com/t00mietum`.
+	- The folder rules are held in the form paths are matched in - lower case, forward slashes - and that form was going straight to the display. Same disk, same tree, two spellings.
+	- Fixed: every path printed anywhere is spelled the platform's way, which on Windows means backslashes and an upper-case drive letter. The internal form is untouched, so nothing about matching changed.
+	- Covers the config file, `Here`, the folder rules, the machine-free `anywhere` rules, the ssh key, and a token file. No effect off Windows.
+
 - ✅ The Account line explained an account it could not apply in a single run-on clause nobody could act on.
 	- Real example: "(no login named) (from config 't00mietum-gitea') - NOT applied: this remote is on gitea.com, and that account names no host, so it counts as a github.com one. Add 'host = gitea.com' to it." Two parentheticals back to back, then a clause long enough to wrap wherever the terminal ended.
 	- Nothing in it could be acted on: which config, added where, what "NOT applied" covered, what "counts as" meant.
@@ -146,6 +152,12 @@ None open.
 		- Fixed: all three, in the moved text.
 
 #### Done - Features and enhancements
+
+- ✅ `identity` is now `whoami`, and its help line says what it shows.
+	- The command is a question, and the old name was a noun. Every shell already has a `whoami` that means this.
+	- `who` and `identity` both still work, permanently. Those were the two names held back when the command was added.
+	- The help line was "Who commands here act as: ..." - a sentence fragment where every other line starts with a verb. Now "Show account, ssh key, commit author, git host login."
+	- The block it prints is still the identity block; only the command changed.
 
 - ✅ The account diagnostic answers its own questions, and offers the fix as a command.
 	- Read on a real Gitea repo, the block raised more questions than it settled: `'t00mietum-gitea' - no token applied` never said what token, applied to what, or what that string even was, and "that account doesn't say which forge it is for" used a word for people who already knew the answer.
@@ -1559,11 +1571,13 @@ Go port, later rounds. These wait until the round-one items above hold up.
 	- The identity half of `status` on its own - account, ssh key and who it authenticates as, commit author, gh login - without the branch and working-tree state.
 	- Same lines, same code as `status`, so the two can't drift. Answers outside a repository too, which is where you ask it before cloning or creating.
 	- Read-only, so no confirmation and no plan. No alias; `whoami` and `who` were left alone rather than spent, since every alias is permanent.
+	- Superseded 2026-08-21: the command is now `whoami`, with `who` and `identity` as permanent spellings of it. The two names that were held back were held back for this.
 
 - ✅ Sweep the published docs for the renamed commands, and add `identity` to them.
 	- Done: README.md command table (`pullcom`, `br merge`, new `identity` row) plus the prose around it, workflows.md, git_notes_and_oneliners.md. A short paragraph says the old spellings are permanent, and the PowerShell paragraph now names the one place the builds differ - the scripts predate both new names.
 	- Safe to do now: this all sits on `gover`, which nothing ships from until the Go build releases. The published README is whatever `main` holds.
 	- Historical changelog entries keep the names they shipped with; only vNEXT gets the new ones.
+	- The `identity` row became `whoami` in the same docs on 2026-08-21; nothing else in the sweep changed.
 	- `demo-scenario.toml` deliberately left on the old spellings. The aliases keep it correct, and changing text the scenario prints makes the committed gif stale, which the pipeline compares byte for byte. It rides along with the gif regeneration at release.
 
 - ✅ Per-platform release artifacts with a checksum each.

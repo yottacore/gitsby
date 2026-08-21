@@ -212,7 +212,7 @@ func (a *app) cmdAccountList() {
 		configDisp = "(none found)"
 	}
 	a.out.clean("Config file ..: " + configDisp)
-	a.out.clean("Here .........: " + a.contextDir())
+	a.out.clean("Here .........: " + nativePath(a.contextDir()))
 	hereAccount := a.cfg.accountForDir(a.contextDir())
 	// An account that resolved and simply names no login is not the same as no
 	// account at all - reported as "nothing configured" it contradicted the source
@@ -310,11 +310,11 @@ func (a *app) showAccount(name string, isHere bool) {
 	if ghWho != "" && ghTokenFor(ghWho) != "" {
 		tokenFrom = "gh's own store"
 	} else if readTokenFile(a.cfg.value(name, "tokenFile")) != "" {
-		tokenFrom = a.cfg.value(name, "tokenFile")
+		tokenFrom = nativePath(a.cfg.value(name, "tokenFile"))
 	}
 	a.out.clean("     token ...: " + tokenFrom)
 	if sshKey := a.cfg.value(name, "sshKey"); sshKey != "" {
-		a.out.clean("     ssh key .: " + sshKey)
+		a.out.clean("     ssh key .: " + nativePath(sshKey))
 	}
 	acctUser := a.cfg.value(name, "name")
 	acctEmail := a.cfg.value(name, "email")
@@ -337,14 +337,14 @@ func (a *app) showAccount(name string, isHere bool) {
 		// path spelling such as '/tmp/...' looks, since only the shell build can
 		// resolve one.
 		if isDir(folder) {
-			a.out.clean("     folder ..: " + folder)
+			a.out.clean("     folder ..: " + nativePath(folder))
 		} else {
-			a.out.clean("     folder ..: " + folder + "  (no such directory - this rule can never match)")
+			a.out.clean("     folder ..: " + nativePath(folder) + "  (no such directory - this rule can never match)")
 		}
 	}
 	// No existence check on these: naming no machine in particular is the point.
 	for _, seg := range a.cfg.segmentsOf(name) {
-		a.out.clean("     anywhere : .../" + seg + "/...")
+		a.out.clean("     anywhere : " + nativePath(".../"+seg+"/..."))
 	}
 }
 

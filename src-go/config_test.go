@@ -318,3 +318,23 @@ func TestDisplayPath(t *testing.T) {
 		}
 	}
 }
+
+// Folder rules are matched in one canonical spelling - lower case, forward
+// slashes - and a listing printed that beside a 'Here' line straight from
+// Windows. Same tree, two spellings, on the one screen that exists to say which
+// tree a rule claims.
+func TestWindowsPath(t *testing.T) {
+	cases := map[string]string{
+		"c:/opt/dev/github.com/someone": `C:\opt\dev\github.com\someone`,
+		`C:\opt\dev`:                    `C:\opt\dev`,
+		"~/.config/gitsby/config.shcl":  `~\.config\gitsby\config.shcl`,
+		".../github.com/...":            `...\github.com\...`,
+		"c:/":                           `C:\`,
+		"":                              "",
+	}
+	for in, want := range cases {
+		if got := windowsPath(in); got != want {
+			t.Errorf("windowsPath(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

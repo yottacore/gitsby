@@ -148,6 +148,9 @@ func TestCollapseCommand(t *testing.T) {
 		{[]string{"update"}, "pullcom"},
 		{[]string{"pullc"}, "pullcom"},
 		{[]string{"PULL"}, "pullcom"},
+		{[]string{"whoami"}, "whoami"},
+		{[]string{"who"}, "whoami"},
+		{[]string{"identity"}, "whoami"},
 		{[]string{"status"}, "status"},
 	}
 	for _, tc := range tests {
@@ -199,7 +202,7 @@ func TestSortCommandMutating(t *testing.T) {
 		mutating bool
 	}{
 		{[]string{"status"}, false},
-		{[]string{"identity"}, false},
+		{[]string{"whoami"}, false},
 		{[]string{"br", "list"}, false},
 		{[]string{"account", "list"}, false},
 		{[]string{"repo", "url"}, false},
