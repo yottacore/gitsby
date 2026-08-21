@@ -1860,6 +1860,38 @@ GHEOF
 	fAssertOut "and a repo-local email does the same"  'Work Person <repo@example\.com>' \
 		bash -c "cd '${acWork}' && env ${acEnvIdent} '${gitsby}' -q -NoFetch status"
 	( cd "${acWork}" && git config --unset user.email )
+	## Where the file lives is per-platform now, so which candidate wins is worth pinning. Two more
+	## config files, both claiming the same work tree under different account names, so whichever
+	## one was read says so on the Account line.
+	mkdir -p "${ac}/xdg/gitsby" "${ac}/appdata/gitsby"
+	cat > "${ac}/xdg/gitsby/config.shcl" <<-EOF
+		account.xdgacct.path      = ${acCanon}/trees/work
+		account.xdgacct.ghAccount = xdgacct
+	EOF
+	cat > "${ac}/appdata/gitsby/config.shcl" <<-EOF
+		account.appdata.path      = ${acCanon}/trees/work
+		account.appdata.ghAccount = appdataacct
+	EOF
+	fAssertOut "an XDG_CONFIG_HOME set by hand outranks ~/.config"  'Account \.+: xdgacct' \
+		bash -c "cd '${acWork}' && env ${acEnv} XDG_CONFIG_HOME='${ac}/xdg' '${gitsby}' -q -NoFetch status"
+	fAssertOut "and with none set, ~/.config is still found"  'Account \.+: workacct' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	## APPDATA is Windows' own answer to this question and means nothing anywhere else. It used to
+	## be tried on every platform, which put a variable a Wine or Samba setup can leave lying around
+	## on the list of places a Linux run reads credentials from. Asked with a home that holds no
+	## config, so the answer is APPDATA's file or nothing - with the usual one still in place both
+	## platforms would read that instead and the check could not tell them apart.
+	mkdir -p "${ac}/nohome"
+	: > "${ac}/nohome/.gitconfig"
+	local acAppdataEnv="${acNoDiscovery} HOME='${ac}/nohome' GIT_CONFIG_GLOBAL='${ac}/nohome/.gitconfig'"
+	acAppdataEnv+=" PATH='${ac}/bin:${PATH}' APPDATA='${ac}/appdata'"
+	if ((isWindows)); then
+		fAssertOut "on Windows, %APPDATA% is where the file lives"  'Account \.+: appdataacct' \
+			bash -c "cd '${acWork}' && env ${acAppdataEnv} '${gitsby}' -q -NoFetch status"
+	else
+		fAssertNotOut "off Windows, APPDATA is not a config location at all"  'appdataacct' \
+			bash -c "cd '${acWork}' && env ${acAppdataEnv} '${gitsby}' -q -NoFetch status"
+	fi
 	## A rule written through a symlink - a synced folder, a stable name pointing at a dated one,
 	## a home that is itself a link. git answers with the tree's real path, so a rule spelled the
 	## way it was typed was compared against the resolved one and matched nothing. Nor did anything

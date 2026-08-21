@@ -47,6 +47,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- The accounts file lives where each platform keeps one: `%APPDATA%\gitsby\config.shcl` on Windows, `~/Library/Application Support/gitsby/config.shcl` on macOS, `$XDG_CONFIG_HOME` or `~/.config` elsewhere. That is where `account set` creates a file when there is none, and where `status` points you when it has advice about one. `~/.config/gitsby/config.shcl` is still read on every platform, after the native location, so a file already there keeps working and never has to move. `APPDATA` is no longer consulted off Windows, where it means nothing.
+
 - `update` is now `pullcom`, which names both halves in the order they run rather than reading like it updates gitsby itself. It also answers to `update`, `pull`, `pullc`, `pullco`, `pullcomm` and `pullcommit`. `sync` is unchanged; the pair was the unclear part, not either word alone.
 
 - `br land` is now `br merge`, the word most people reach for first. `br land` still works.

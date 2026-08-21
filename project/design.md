@@ -312,6 +312,13 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- Everything it does not change comes back byte for byte, byte-order mark and line endings included. This file is hand-written and hand-commented; a command that reformatted it in passing would cost more than it saved.
 	- A key already present more than once is refused rather than guessed at. `path` and `pathContains` are repeatable by design, and replacing the first of several would look like it worked and change nothing that is read.
 
+- The accounts file lives where the platform in hand keeps one, and the place it used to live is never taken away.
+	- Gitsby searched `$XDG_CONFIG_HOME`, then `~/.config`, then `%APPDATA%`, on every platform. That is a Linux convention applied everywhere: a Windows user's file landed under a dot-directory in their profile, a macOS user's outside `Application Support`, and both only because nothing had been found first.
+	- Among these options, it was decided that each platform leads with its own convention - `%APPDATA%` on Windows, `~/Library/Application Support` on macOS, `$XDG_CONFIG_HOME` or `~/.config` elsewhere - and that `~/.config` stays on the list behind it everywhere. Every file written before this decision is there, and an upgrade that stopped reading one would silently act as the wrong account.
+	- `XDG_CONFIG_HOME` is tried first on all three platforms. Of the locations involved it is the only one somebody sets deliberately; the others are picked by the operating system.
+	- `APPDATA` is now read on Windows only. Off Windows it means nothing, and a variable that a Wine or Samba setup can leave set is not a place to go looking for credentials.
+	- One ordered list answers both questions - where a run looks and where a new file is created - so the file `account set` writes is always the file the next command finds.
+
 ## Branching model
 
 Gitsby's own repo runs the model gitsby enforces, so the tool is its own first user.

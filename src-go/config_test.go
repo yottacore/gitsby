@@ -338,3 +338,62 @@ func TestWindowsPath(t *testing.T) {
 		}
 	}
 }
+
+// Where the accounts file lives is per-platform, and only one of the three orders
+// can be produced on the machine running this. The list is also what decides where
+// a new file is created, so an order that is wrong writes somewhere nothing reads.
+func TestConfigCandidatesFor(t *testing.T) {
+	cases := []struct {
+		name                     string
+		goos, xdg, appData, home string
+		want                     []string
+	}{
+		{
+			name: "linux is xdg then dot-config",
+			goos: "linux", xdg: "/x", appData: `C:\App`, home: "/h",
+			want: []string{"/x/gitsby/config.shcl", "/h/.config/gitsby/config.shcl"},
+		},
+		{
+			name: "linux ignores APPDATA entirely",
+			goos: "linux", appData: `C:\App`, home: "/h",
+			want: []string{"/h/.config/gitsby/config.shcl"},
+		},
+		{
+			name: "windows leads with APPDATA, keeps dot-config behind it",
+			goos: "windows", appData: `C:\App`, home: `C:\Users\jc`,
+			want: []string{`C:\App/gitsby/config.shcl`, `C:\Users\jc/.config/gitsby/config.shcl`},
+		},
+		{
+			name: "an XDG somebody set outranks APPDATA",
+			goos: "windows", xdg: `C:\x`, appData: `C:\App`, home: `C:\Users\jc`,
+			want: []string{`C:\x/gitsby/config.shcl`, `C:\App/gitsby/config.shcl`, `C:\Users\jc/.config/gitsby/config.shcl`},
+		},
+		{
+			name: "macOS leads with Application Support",
+			goos: "darwin", home: "/Users/jc",
+			want: []string{"/Users/jc/Library/Application Support/gitsby/config.shcl", "/Users/jc/.config/gitsby/config.shcl"},
+		},
+		{
+			name: "macOS ignores APPDATA",
+			goos: "darwin", appData: `C:\App`, home: "/Users/jc",
+			want: []string{"/Users/jc/Library/Application Support/gitsby/config.shcl", "/Users/jc/.config/gitsby/config.shcl"},
+		},
+		{
+			name: "nowhere at all is empty, not a guess",
+			goos: "linux",
+			want: nil,
+		},
+	}
+	for _, tc := range cases {
+		got := configCandidatesFor(tc.goos, tc.xdg, tc.appData, tc.home)
+		if len(got) != len(tc.want) {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("%s: candidate %d = %q, want %q", tc.name, i, got[i], tc.want[i])
+			}
+		}
+	}
+}

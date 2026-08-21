@@ -35,11 +35,15 @@ account.personal.ghAccount  = my-personal-login
 account.personal.email      = ada@home.example
 ~~~
 
-Gitsby reads the first of these that exists:
+Gitsby reads the first of these that exists, and `account set` creates the first one when there is no file yet:
 
-1. `$XDG_CONFIG_HOME/gitsby/config.shcl`
-2. `~/.config/gitsby/config.shcl` - the usual place on Linux and macOS, and it works on Windows too
-3. `%APPDATA%\gitsby\config.shcl` - Windows
+| Platform | Where it looks
+| :--      | :--
+| Linux, FreeBSD | `$XDG_CONFIG_HOME/gitsby/config.shcl`, then `~/.config/gitsby/config.shcl`
+| macOS    | `$XDG_CONFIG_HOME/gitsby/config.shcl`, then `~/Library/Application Support/gitsby/config.shcl`, then `~/.config/gitsby/config.shcl`
+| Windows  | `%XDG_CONFIG_HOME%\gitsby\config.shcl`, then `%APPDATA%\gitsby\config.shcl`, then `~\.config\gitsby\config.shcl`
+
+`XDG_CONFIG_HOME` comes first everywhere because it is the one of them somebody set on purpose. `~/.config` stays last on every platform, so a file already there keeps working - move it to the platform's own location whenever you like, or never.
 
 `--config FILE` (`-Config FILE`) overrides all of them, and so does the `GITSBY_CONFIG` environment variable.
 

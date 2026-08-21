@@ -202,17 +202,7 @@ func (o options) resolveConfigFile() (string, error) {
 		}
 		return env, nil
 	}
-	var candidates []string
-	if d := os.Getenv("XDG_CONFIG_HOME"); d != "" {
-		candidates = append(candidates, d+"/gitsby/config.shcl")
-	}
-	if d := homeDir(); d != "" {
-		candidates = append(candidates, d+"/.config/gitsby/config.shcl")
-	}
-	if d := os.Getenv("APPDATA"); d != "" {
-		candidates = append(candidates, d+"/gitsby/config.shcl")
-	}
-	for _, c := range candidates {
+	for _, c := range configCandidates() {
 		// A discovered candidate is skipped rather than refused - unlike one named
 		// explicitly, nobody asserted it was there.
 		if isRegularFile(c) && isReadableFile(c) {
@@ -220,6 +210,53 @@ func (o options) resolveConfigFile() (string, error) {
 		}
 	}
 	return "", nil
+}
+
+// configCandidates lists where an accounts file can live, best first. One list for
+// both jobs - the file a run looks for and the file a run creates - so the place
+// 'account set' writes is the place the next command finds.
+//
+// Each platform leads with its own convention: %APPDATA% on Windows, Application
+// Support on macOS, ~/.config elsewhere. '~/.config' stays on the list everywhere
+// behind that, because it is where every file written before this landed and an
+// upgrade must not lose one.
+func configCandidates() []string {
+	return configCandidatesFor(runtime.GOOS, os.Getenv("XDG_CONFIG_HOME"), os.Getenv("APPDATA"), homeDir())
+}
+
+// configCandidatesFor takes its inputs rather than reading them, so the two orders
+// this machine can never produce are still testable from it.
+func configCandidatesFor(goos, xdgConfigHome, appData, home string) []string {
+	var out []string
+	// An XDG_CONFIG_HOME somebody set by hand outranks a location the OS picked, on
+	// every platform - of the three it is the only one that was actually asked for.
+	if xdgConfigHome != "" {
+		out = append(out, xdgConfigHome+"/gitsby/config.shcl")
+	}
+	switch goos {
+	case "windows":
+		if appData != "" {
+			out = append(out, appData+"/gitsby/config.shcl")
+		}
+	case "darwin":
+		if home != "" {
+			out = append(out, home+"/Library/Application Support/gitsby/config.shcl")
+		}
+	}
+	if home != "" {
+		out = append(out, home+"/.config/gitsby/config.shcl")
+	}
+	return out
+}
+
+// defaultConfigFile is where an accounts file goes when there isn't one yet: the
+// first place 'load' would look, so the file this writes is the file the next run
+// finds. Empty where the machine offers nowhere at all.
+func defaultConfigFile() string {
+	if c := configCandidates(); len(c) > 0 {
+		return c[0]
+	}
+	return ""
 }
 
 // displayPath writes a path the way somebody would type it, folding a leading home

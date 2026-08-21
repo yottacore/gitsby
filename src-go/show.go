@@ -185,6 +185,9 @@ func (a *app) accountFile() string {
 	if a.cfg.file != "" {
 		return displayPath(a.cfg.file)
 	}
+	if d := defaultConfigFile(); d != "" {
+		return displayPath(d)
+	}
 	return "~/.config/gitsby/config.shcl"
 }
 

@@ -149,7 +149,7 @@ Two things follow from that, and they are the reason to bother:
 
 Nothing here is required. With no configuration Gitsby uses whichever account `gh` is logged in as, exactly as it always did. A single-account machine never notices the feature exists.
 
-Full detail, including SSH keys, token files, and how Gitsby checks that `gh` and `git` agree about who you are: [accounts.md](accounts.md).
+Full detail, including where the file lives on each platform, SSH keys, token files, and how Gitsby checks that `gh` and `git` agree about who you are: [accounts.md](accounts.md).
 
 ## Compatibility
 
