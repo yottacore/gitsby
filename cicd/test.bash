@@ -2977,6 +2977,17 @@ GHEOF
 	printf 'account.dup.path = /a\naccount.dup.path = /b\n' > "${fg}/dup.shcl"
 	fAssertOut "a key present twice is not guessed at"  'Edit it by hand' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/dup.shcl' account set dup path /c 2>&1"
+	## Three placeholders are the whole interface. Naming them without saying what they are answers
+	## nothing for the one reader who ever sees this - the one who just typed the command wrong.
+	fAssertOut "the syntax block says what '<account>' is"  '<account>  A name you pick for one login' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set 2>&1"
+	## '<key>' is a closed list, and the command that lists it is this one - a reader sent looking
+	## for the keys elsewhere guesses instead, and a guess is refused a command later.
+	fAssertOut "and lists the keys it takes"  'One of: path, pathContains, ghAccount, tokenFile' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set 2>&1 | tr '\\n' ' ' | tr -s ' '"
+	## The example is two lines on one account name, because that repetition is what '<account>' is.
+	fAssertOut "and its example runs as printed"  'gitsby account set work path ~/dev/work' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set 2>&1"
 	## The identity block's own vocabulary. "Forge" is a word for people who already knew the answer.
 	fAssertOut "the identity block says 'Git host', not 'Forge'"  '^Git host \.+: git\.example\.test' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' identity 2>&1"

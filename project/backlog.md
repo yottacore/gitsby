@@ -61,6 +61,12 @@ None open.
 
 #### Done - Bugs
 
+- ✅ `account set`'s syntax line named three placeholders and defined none of them.
+	- Real output: `Syntax: gitsby account set <account> <key> <value>   (e.g. gitsby account set work host gitea.com)`.
+	- The only person who ever reads it is the one who just typed the command wrong, and it left them to work out what an account is, which keys exist, and what a value looks like.
+	- Fixed: a block. It names the line that gets written - `account.<account>.<key> = <value>` - then defines each placeholder, and lists all ten keys off the same constant the unknown-key refusal reads.
+	- The example is now two commands on one account name, a folder and a login, since that repetition is what `<account>` means.
+
 - ✅ `account list`'s header raised more questions than it answered.
 	- Real output, in a Gitea folder with nothing set up yet: `Here .........: C:\opt\...\gitea.com\t00mietum\camhauler` over `Resolves to ..: (nothing configured - gh's own account)`.
 	- "Resolves to" names no actor, so the first thing it prompts is "resolves by whom?". "Here" is a second word for the directory `status` calls `Directory`.

@@ -213,7 +213,7 @@ func sortCommand(cmd command, opt *options) (command, error) {
 		// Three words exactly. A missing value would otherwise read as a request to
 		// set the key empty, which is a different thing from what anybody typed.
 		if cmd.arg == "" || cmd.arg2 == "" || cmd.arg3 == "" {
-			return cmd, usagef("Syntax: %s account set <account> <key> <value>   (e.g. %s account set work host gitea.com)", meName, meName)
+			return cmd, accountSetUsage()
 		}
 		// Returns here rather than falling through: this is the one command whose
 		// third positional is a value it wants, and the tail below rejects one.
