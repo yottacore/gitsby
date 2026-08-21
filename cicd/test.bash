@@ -1815,7 +1815,15 @@ GHEOF
 	local acEnvIdent="-u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL ${acEnv}"
 	: > "${ac}/home/.gitconfig"
 	fAssertOut "the account comes from the folder"        "Account \.+: workacct"       bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
-	fAssertOut "and says which rule chose it"             "From: account 'work'"          bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	## "account 'work'" was a bare repeat of the name on the line above it, so the one question a
+	## first-time reader asks - what IS that string, and where did gitsby get it - had no answer
+	## anywhere on screen. Say what kind of thing it is, and which of the several possible sources
+	## produced it.
+	fAssertOut "and says what that name is"               "From: An account block named 'work'"  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	## Flattened first: the sentence wraps at a fixed column, so the clause under test straddles two
+	## physical lines and no plain grep can see it whole.
+	fAssertOut "and which rule chose it"                  'because its folder rule covers this directory' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status | sed 's/^ *: *//' | tr '\\n' ' ' | tr -s ' '"
 	## "(from config 'work')" named neither the file nor which config - and there are two in play,
 	## since 'gitsby.ghAccount' is a git config key and the account blocks are not. An account that
 	## applied cleanly says where to go and look, same as one that didn't.
@@ -2012,7 +2020,11 @@ GHEOF
 		account.nt.path      = ${acCanon}/trees/work
 		account.nt.ghAccount = notokenacct
 	EOF
-	fAssertOut "an account with no token says it was not applied"  'no token applied' \
+	fAssertOut "an account with no token says it was not applied"  'no access token used' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/notoken.shcl' status"
+	## These fixtures push to a local bare repo, so there is no host to name - and forgeName() stands
+	## in the word "origin" for one, which on this line reads as a host actually called origin.
+	fAssertNotOut "and does not invent a host to blame"  'used for origin' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/notoken.shcl' status"
 	fAssertNotOut "and an account that WAS applied says no such thing"  'Why:' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
@@ -2779,7 +2791,7 @@ GHEOF
 
 	## The identity block exists to say who the next command acts as. On a host gh does not serve it
 	## had no answer at all - it printed nothing rather than saying it could not tell.
-	fAssertOut "the identity block names the forge host"  'Forge .*git\.example\.test' \
+	fAssertOut "the identity block names the git host"  'Git host .*git\.example\.test' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch identity 2>&1"
 	fAssertOut "and who tea holds a login for there"      'giteauser' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch identity 2>&1"
@@ -2795,7 +2807,7 @@ GHEOF
 		account.work.tokenFile = $(fWinPath "${fg}/token")
 	EOF
 	echo tok_ghonly > "${fg}/token"
-	fAssertOut "a github.com account is not applied to a Gitea remote"  'no token applied' \
+	fAssertOut "a github.com account is not applied to a Gitea remote"  'no access token used for git\.example\.test' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/gh-acct.shcl' identity 2>&1"
 	fAssertOut "and says it is the host that decided that"  'git\.example\.test' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/gh-acct.shcl' identity 2>&1"
@@ -2820,19 +2832,20 @@ GHEOF
 		account.work.path = $(fWinPath "${fgRepo}")
 		account.work.user = giteauser
 	EOF
-	fAssertOut "an unstated host is reported as unstated, not as one the account set"  "doesn't say which forge it is for" \
+	fAssertOut "an unstated host is reported as unstated, not as one the account set"  "doesn't say which git host it is for" \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/nohost.shcl' identity 2>&1 | sed 's/^ *: *//' | tr '\\n' ' ' | tr -s ' '"
-	## The key the fix names has to be one the parser TAKES. The advice used to say to add a bare
-	## "host = ..." line, which this file reads as a key it does not understand - so following it
-	## exactly left the account no more applied than before, and added a complaint of its own.
-	fAssertOut "and names the key that fixes it, spelled the way the file takes it"  'account\.work\.host = git\.example\.test' \
+	## Knowing the fix and printing it as homework is a worse answer than doing it. The advice used
+	## to spell out a config line to add by hand - and before that, one the parser doesn't even take,
+	## so following it exactly left the account no more applied than before. It names the command
+	## that makes the edit now, which cannot be mistyped and cannot name a key nothing reads.
+	fAssertOut "and names the command that fixes it"  "gitsby account set work host git\.example\.test" \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/nohost.shcl' identity 2>&1"
 	## Advice to edit a file that never says WHICH file is not advice. The path is on its own line
 	## because it is the one thing here long enough to wreck the wrapping.
 	fAssertOut "and names the file to make that edit in"  '^File: .*nohost\.shcl$' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/nohost.shcl' identity 2>&1 | sed 's/^ *: *//'"
 	## Anchored on the Account line: 'giteauser' is also what the tea stub answers, so an unanchored
-	## match is satisfied by the Forge line and passes whether the Account line names anybody or not.
+	## match is satisfied by the Git host line and passes whether the Account line names anybody or not.
 	fAssertOut "and names the account's own login, not the GitHub field it hasn't got"  '^Account .*giteauser' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/nohost.shcl' identity 2>&1"
 
@@ -2846,6 +2859,13 @@ GHEOF
 		account.work.email = giteauser@example.test
 	EOF
 	fAssertOut "an account whose token did not apply still says what did"  'commit identity still applied' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/nohost-id.shcl' identity 2>&1 | sed 's/^ *: *//' | tr '\\n' ' ' | tr -s ' '"
+	## Which half, though - it named "the SSH and Author lines" whichever half applied, so an account
+	## that only set a commit identity sent the reader looking for an SSH line that is not printed
+	## anywhere on screen. That reads as a second thing gone wrong.
+	fAssertOut "and names only the lines that are actually printed"  'that is where the Author line below comes from' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/nohost-id.shcl' identity 2>&1 | sed 's/^ *: *//' | tr '\\n' ' ' | tr -s ' '"
+	fAssertNotOut "not an SSH line it never printed"  'SSH and Author lines' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/nohost-id.shcl' identity 2>&1 | sed 's/^ *: *//' | tr '\\n' ' ' | tr -s ' '"
 	## GIT_AUTHOR_NAME/EMAIL are exported at the top of this file for hermeticity and outrank every
 	## config, so the Author line cannot show an account's identity while they are set.
@@ -2861,12 +2881,55 @@ GHEOF
 		account.work.host = git.example.test
 		account.work.user = giteauser
 	EOF
-	fAssertOut "a Gitea account with no token says it was not applied"  'no token applied' \
+	fAssertOut "a Gitea account with no token says it was not applied"  'no access token used for git\.example\.test' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/notoken.shcl' identity 2>&1"
-	fAssertOut "and names what authenticates instead"  'git authenticates however it already would' \
+	fAssertOut "and names what authenticates instead"  'Git authenticates however it already would' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/notoken.shcl' identity 2>&1 | sed 's/^ *: *//' | tr '\\n' ' ' | tr -s ' '"
 	fAssertNotOut "rather than gh, which does not serve this host"  'gh goes on acting as' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/notoken.shcl' identity 2>&1 | sed 's/^ *: *//' | tr '\\n' ' ' | tr -s ' '"
+
+	## 'account set': knowing the fix and printing it as homework is the worse half of an answer.
+	## The whole round trip, because either half alone proves nothing - the command has to write a
+	## line the loader then reads back, and the diagnostic has to stop once it has.
+	cp "${fg}/nohost.shcl" "${fg}/fixme.shcl"
+	fAssertOut "'account set' says which file it will edit, and how"  'add: +account\.work\.host = git\.example\.test' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set work host git.example.test 2>&1"
+	fAssertOut "and the file now holds that line"  '^account\.work\.host = git\.example\.test$' \
+		cat "${fg}/fixme.shcl"
+	## The point of the whole exercise: run what the Fix line said and that complaint is gone. Only
+	## that one - this account still has no token, which is a different sentence about a different
+	## thing, and asserting no complaint at all would be asserting the wrong fix worked.
+	fAssertNotOut "and the account stops being read as a github.com one"  "which git host it is for" \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' identity 2>&1"
+	## Every other line comes back untouched. This file is hand-written and hand-commented, and a
+	## command that reformatted it on the way past would cost more than it saved.
+	fAssertOut "and every other line is unchanged"  '^1$' \
+		bash -c "diff <(grep -v '^account\.work\.host' '${fg}/nohost.shcl') <(grep -v '^account\.work\.host' '${fg}/fixme.shcl') > /dev/null && echo 1"
+	## A key the loader ignores, written past this command, lands in the file and is dropped on every
+	## read - so the file says one thing and every command does another. Refuse it at the door, and
+	## name the keys that ARE read while refusing.
+	fAssertOut "a key nothing reads is refused, not written"  "isn't an account key gitsby reads" \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set work hostname git.example.test 2>&1"
+	## 'host' and 'user' are interpolated into the credential helper, which git hands to a shell. The
+	## loader drops one carrying a shell character; refusing to WRITE it is what keeps the file and
+	## the behaviour from disagreeing.
+	fAssertOut "and so is a shell character in a host name"  "isn't a plain host name" \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set work host 'git.example.test; id' 2>&1"
+	fAssertNotOut "which never reaches the file"  '; id' \
+		cat "${fg}/fixme.shcl"
+	## 'path' is repeatable by design, and any key at all can be in there twice by accident.
+	## Replacing the first and leaving the rest looks like it worked and changes nothing that is read.
+	printf 'account.dup.path = /a\naccount.dup.path = /b\n' > "${fg}/dup.shcl"
+	fAssertOut "a key present twice is not guessed at"  'Edit it by hand' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/dup.shcl' account set dup path /c 2>&1"
+	## The identity block's own vocabulary. "Forge" is a word for people who already knew the answer.
+	fAssertOut "the identity block says 'Git host', not 'Forge'"  '^Git host \.+: git\.example\.test' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' identity 2>&1"
+	## Narrowed to the labeled notes, not narrowed out of meaning: this fixture's own directory is
+	## called '<x>-forge', so every path on screen carries the word and a bare grep for it passes
+	## whatever the prose says. The check above proves these lines print at all.
+	fAssertNotOut "and the word is gone from the block above it"  'forge' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/nohost.shcl' identity 2>&1 | sed 's/^ *: *//' | grep -E '^(From|Why|Kept|Fix):'"
 
 	## 'account list' is the command that always says, so the field that decides whether anything
 	## applies has to be in it - stated or assumed.

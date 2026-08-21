@@ -95,7 +95,7 @@ func (a *app) showIncoming() {
 // probes that feed the block and nothing else, so being over-broad costs a round
 // trip and never an answer.
 func (a *app) identityWillPrint() bool {
-	if a.cmd.name == "account-apply" {
+	if a.cmd.name == "account-apply" || a.cmd.name == "account-set" {
 		return false
 	}
 	if a.cmd.mutating {
@@ -155,7 +155,7 @@ func (a *app) showForgeLine() {
 			}
 		}
 	}
-	a.out.clean("Forge ........: " + line)
+	a.out.clean("Git host .....: " + line)
 }
 
 // accountDecidedSomething: whether the account resolution actually changed how
@@ -185,20 +185,13 @@ func (a *app) accountFile() string {
 }
 
 // accountFileRef points a fix at the accounts file in whichever way costs the
-// reader least: the line above where the From line has already named it, the line
-// below where a File line is about to.
+// reader least: the line above where the From block has already named it, the line
+// below where showAccountFix is about to.
 func (a *app) accountFileRef() string {
 	if a.acct.fromFile {
 		return "the file above"
 	}
 	return "the file below"
-}
-
-// accountKey spells a config key for this run's account the way the file actually
-// takes it - 'account.<name>.<field>'. Advice naming a bare 'host = ...' line was
-// advice to add a key the parser then reports as one it doesn't understand.
-func (a *app) accountKey(field string) string {
-	return "account." + a.acct.name + "." + field
 }
 
 // accountSubject names the account a note is about, in whatever terms the config
@@ -229,15 +222,32 @@ func (a *app) accountSourceText(withFile bool) string {
 
 // showAccountFrom names where the account came from, and which file that is, under
 // the line they explain. Their own lines rather than a parenthetical: the honest
-// answer names a path, and a path is what makes a line wrap. The source is skipped
-// where the line above already IS the account's name, which is what it would say.
+// answer names a path, and a path is what makes a line wrap. Printed even when the
+// source repeats the name on the line above - what the reader is missing there is
+// not the string, it is what KIND of thing the string is and who chose it.
 func (a *app) showAccountFrom() {
-	if a.acct.source != "" && (!a.acct.fromFile || a.accountWho(a.accountHost()) != "") {
-		a.showAccountNote("From", a.accountSourceText(false))
+	if a.acct.source == "" {
+		return
 	}
+	from := upperFirst(a.acct.source)
+	if a.acct.pickedBy != "" {
+		from += ", because " + a.acct.pickedBy
+	}
+	a.showAccountNote("From", from+".")
 	if a.acct.fromFile {
 		a.showAccountNote("File", a.accountFile())
 	}
+}
+
+// upperFirst capitalizes a sentence built from a fragment, so every note under the
+// Account line starts like a sentence whichever fragment it was assembled from.
+// Left alone where the first character is not a letter: '--any-identity' and a
+// config key are spelled the way you type them.
+func upperFirst(text string) string {
+	if text == "" || text[0] < 'a' || text[0] > 'z' {
+		return text
+	}
+	return string(text[0]-32) + text[1:]
 }
 
 // showAccountNote prints one labeled explanation under the Account line, wrapped at
@@ -277,18 +287,25 @@ func (a *app) showAccountFix(lines ...string) {
 // "NOT applied" contradicted the SSH and Author lines printed directly under it -
 // the exact confusion this block exists to prevent.
 func (a *app) showAccountKept() {
-	var parts []string
+	var parts, lines []string
 	if a.acct.usedSSHKey != "" {
-		parts = append(parts, "ssh key")
+		parts, lines = append(parts, "SSH key"), append(lines, "SSH")
 	}
 	if a.acct.usedIdentity {
-		parts = append(parts, "commit identity")
+		parts, lines = append(parts, "commit identity"), append(lines, "Author")
 	}
 	if len(parts) == 0 {
 		return
 	}
-	a.showAccountNote("Kept", "its "+strings.Join(parts, " and ")+
-		" still applied - that is where the SSH and Author lines below come from.")
+	// Named one at a time. Pointing at "the SSH and Author lines" when only the
+	// identity applied sent the reader looking for an SSH line that is not printed
+	// at all, which reads as a second thing gone wrong.
+	tail := " line below comes from."
+	if len(lines) > 1 {
+		tail = " lines below come from."
+	}
+	a.showAccountNote("Kept", "Its "+strings.Join(parts, " and ")+
+		" still applied - that is where the "+strings.Join(lines, " and ")+tail)
 }
 
 // showAccountUnapplied covers the cases where the account did not authenticate this
@@ -300,13 +317,13 @@ func (a *app) showAccountUnapplied() bool {
 	switch {
 	case a.acct.bypassed:
 		a.out.clean(acctLabel + "nothing applied - " + meName + " was run with --any-identity")
-		a.showAccountNote("Why", "--any-identity leaves the token, the ssh key and the commit author exactly as they already were.")
+		a.showAccountNote("Why", "--any-identity leaves the token, the SSH key and the commit author exactly as they already were.")
 	case a.acct.otherHost:
-		a.out.clean(acctLabel + a.accountSubject() + " - no token applied")
+		a.out.clean(acctLabel + a.accountSubject() + a.noTokenText())
 		a.showAccountFrom()
 		a.showAccountOtherHost()
 	case a.acct.noToken:
-		a.out.clean(acctLabel + a.accountSubject() + " - no token applied")
+		a.out.clean(acctLabel + a.accountSubject() + a.noTokenText())
 		a.showAccountFrom()
 		a.showAccountNoToken()
 	default:
@@ -315,35 +332,47 @@ func (a *app) showAccountUnapplied() bool {
 	return true
 }
 
+// noTokenText says what did not happen, in terms that answer WHICH token and
+// applied to WHAT. Naming the host is most of that answer - but a remote whose host
+// cannot be named still reaches here, and forgeName() stands in "origin" for it,
+// which reads as a host called origin. Say less rather than something untrue.
+func (a *app) noTokenText() string {
+	if host := a.originHost(); host != "" {
+		return " - no access token used for " + host
+	}
+	return " - no access token used"
+}
+
 // showAccountOtherHost explains an account whose credentials bank somewhere other
 // than where this remote lives. Three different mistakes end up here and they have
 // three different fixes, so they get three different notes - said in one wording,
 // they sent people hunting through the config for a line that was never there.
 func (a *app) showAccountOtherHost() {
-	forge := a.forgeName()
+	host := a.forgeName()
 	switch {
 	case a.acct.name == "":
-		a.showAccountNote("Why", "nothing said which forge '"+a.acct.ghWho+"' is on, so "+meName+
-			" read it as a github.com login. This remote is on "+forge+
-			", and a token issued by one forge is no use at another.")
+		a.showAccountNote("Why", "Nothing says which git host the login '"+a.acct.ghWho+
+			"' belongs to, and a login with no host named is taken to be a github.com one. This repo's origin is at "+
+			host+", and a token issued by one host is no use at another.")
 		a.showAccountKept()
-		a.showAccountFix("declare an account for " + forge + " in " + a.accountFileRef() + ", then name that one instead.")
+		a.showAccountFix("Declare an account for "+host+" in "+a.accountFileRef()+
+			", then name that one here. To start one:",
+			"  "+meName+" account set <name> host "+host)
 	case a.cfg.value(a.acct.name, "host") == "":
 		// An account that never named a host is TAKEN to be a github.com one, for the
 		// configs written before the key existed. Said in the same words as a host
 		// somebody actually typed, it sends them looking for a line that isn't there.
-		a.showAccountNote("Why", "that account doesn't say which forge it is for, so "+meName+
-			" read it as a github.com one. This remote is on "+forge+
-			", and a token issued by one forge is no use at another.")
+		a.showAccountNote("Why", "That block doesn't say which git host it is for, and a block that doesn't say is taken to be a github.com one. This repo's origin is at "+
+			host+", and a token issued by one host is no use at another.")
 		a.showAccountKept()
-		a.showAccountFix("add this line to "+a.accountFileRef()+" -",
-			"  "+a.accountKey("host")+" = "+forge)
+		a.showAccountFix("Run this:",
+			"  "+meName+" account set "+a.acct.name+" host "+host)
 	default:
-		a.showAccountNote("Why", "that account is declared for "+a.accountHost()+
-			", and this remote is on "+forge+". A token issued by one forge is no use at another.")
+		a.showAccountNote("Why", "That block is declared for "+a.accountHost()+
+			", and this repo's origin is at "+host+". A token issued by one host is no use at another.")
 		a.showAccountKept()
-		a.showAccountFix("use an account declared for "+forge+" here, or correct this line in "+a.accountFileRef()+" -",
-			"  "+a.accountKey("host")+" = "+forge)
+		a.showAccountFix("Name an account declared for "+host+" here, or move this one to that host:",
+			"  "+meName+" account set "+a.acct.name+" host "+host)
 	}
 }
 
@@ -353,25 +382,25 @@ func (a *app) showAccountOtherHost() {
 func (a *app) showAccountNoToken() {
 	who := a.accountSubject()
 	if isGitHubHost(a.accountHost()) {
-		a.showAccountNote("Why", meName+" applies an account by handing git and gh its token, and holds none here for "+
-			who+". gh goes on acting as whichever account it is logged in as.")
+		a.showAccountNote("Why", "An account is applied by handing git and gh its access token, and "+meName+
+			" holds none here for "+who+". gh goes on acting as whichever account it is logged in as.")
 		a.showAccountKept()
 		if a.acct.name == "" {
-			a.showAccountNote("Fix", "run 'gh auth login' as "+who+".")
+			a.showAccountNote("Fix", "Run 'gh auth login' as "+who+".")
 			return
 		}
-		a.showAccountFix("run 'gh auth login' as "+who+", or point this line at a file holding its token -",
-			"  "+a.accountKey("tokenFile")+" = <token file>")
+		a.showAccountFix("Run 'gh auth login' as "+who+", or point this block at a file holding its token:",
+			"  "+meName+" account set "+a.acct.name+" tokenFile <file>")
 		return
 	}
-	a.showAccountNote("Why", meName+" applies an account by handing git its token, and holds none here for "+
-		who+". git authenticates however it already would, usually with an ssh key.")
+	a.showAccountNote("Why", "An account is applied by handing git its access token, and "+meName+
+		" holds none here for "+who+". Git authenticates however it already would, usually with an SSH key.")
 	a.showAccountKept()
 	if a.acct.name == "" {
 		return
 	}
-	a.showAccountFix("point this line at a file holding a "+a.accountHost()+" token for it -",
-		"  "+a.accountKey("tokenFile")+" = <token file>")
+	a.showAccountFix("Point this block at a file holding a "+a.accountHost()+" token for it:",
+		"  "+meName+" account set "+a.acct.name+" tokenFile <file>")
 }
 
 // showAccountLine leads the block, because it explains the lines under it: the key

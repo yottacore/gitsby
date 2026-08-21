@@ -239,11 +239,11 @@ echo
 echo "-- option forms"
 fSame     "an unknown option is refused the same way"     "${tree}" -q --bogus status
 fSame     "an option after the command is refused alike"  "${tree}" -q status --bogus
-## The count is under parity, the sentence after it is not: this build adds the quote-your-message
-## hint that the frozen one gave only when the overflow was one argument smaller. test.bash owns
-## the wording.
-fSameStripped "too many positionals are counted alike"    's/ If that was a message or title, quote it\.$//' \
-	"${tree}" -q br switch a b c
+## Both refuse, and that is the whole claim here. The frozen script counted them - "5, for max of
+## 4" - because four was all its tokenizer took; this build takes five, for 'account set <account>
+## <key> <value>' alone, and every other command rejects the extra a step later, by name. Naming
+## the word is the better answer of the two, and test.bash owns that wording.
+fSameExit "too many positionals are refused by both"      "${tree}" -q br switch a b c
 fSameExit "a spaced --config is accepted by both"         "${tree}" -q -NoFetch --config "${work}/no-accounts.shcl" status
 fSameExit "an empty --config is refused by both"          "${tree}" -q -NoFetch --config "" status
 fSameExit "a --config naming a directory is refused"      "${tree}" -q -NoFetch --config "${work}" status

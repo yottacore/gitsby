@@ -10,6 +10,11 @@
 
 package main
 
+import (
+	"strconv"
+	"strings"
+)
+
 const pad = "    "
 
 func (a *app) preview(what string) {
@@ -72,6 +77,29 @@ func (a *app) preview(what string) {
 		a.out.clean(pad + "git -C " + a.tgt.cloneDir + " checkout dev *")
 	case "repo-url":
 		a.out.clean(pad + "git remote set-url origin " + githubURL(remoteTarget(a.originURL()), a.cmd.arg))
+	case "account-set":
+		// Names the file and both versions of the line, because this is the one
+		// command that edits the accounts file for you - and a config file you did
+		// not type yourself is only trustworthy if it showed you the edit first.
+		t, err := a.accountSetPlan()
+		if err != nil {
+			// Nothing here can refuse - the plan is display. Whatever is wrong with
+			// the arguments is reported by the command itself, a moment later.
+			a.out.clean(pad + "(nothing: " + err.Error() + ")")
+			return
+		}
+		switch {
+		case t.creates:
+			a.out.clean(pad + "create " + displayPath(t.file))
+			a.out.clean(pad + "  add:     " + t.key + " = " + quoteConfigValue(t.value))
+		case t.lineNum > 0:
+			a.out.clean(pad + "edit " + displayPath(t.file) + ", line " + strconv.Itoa(t.lineNum))
+			a.out.clean(pad + "  was:     " + strings.TrimLeft(t.old, " \t"))
+			a.out.clean(pad + "  becomes: " + t.key + " = " + quoteConfigValue(t.value))
+		default:
+			a.out.clean(pad + "edit " + displayPath(t.file))
+			a.out.clean(pad + "  add:     " + t.key + " = " + quoteConfigValue(t.value))
+		}
 	case "account-apply":
 		// Names every file and every condition, because this is the one command
 		// that writes outside the repo you are standing in - into your own global
