@@ -104,7 +104,7 @@ func (a *app) pushIfOnline() error {
 // so a mutating command added later is covered until it says otherwise.
 func (a *app) pushesToRemote() bool {
 	switch a.cmd.name {
-	case "pullcom", "repo-clone", "repo-url", "account-apply":
+	case "pullcom", "repo-clone", "repo-url", "account-apply", "account-set":
 		return false
 	}
 	return a.cmd.mutating

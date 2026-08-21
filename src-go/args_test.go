@@ -73,11 +73,54 @@ func TestParseArgsRefusals(t *testing.T) {
 		{"--offline"},
 		{"--nonsense"},
 		{"-m"},
-		{"a", "b", "c", "d", "e"},
+		{"a", "b", "c", "d", "e", "f"},
 	} {
 		if _, _, _, err := parseArgs(argv); err == nil {
 			t.Errorf("%v was accepted", argv)
 		}
+	}
+}
+
+// The tokenizer takes five positionals for 'account set <name> <key> <value>'
+// alone. Every other command has to keep rejecting the fifth, which is now
+// sortCommand's job rather than the tokenizer's - and the tail that does it was
+// only ever checking the fourth.
+func TestSortCommandRefusesFifthPositional(t *testing.T) {
+	_, cmd, _, err := parseArgs([]string{"repo", "clone", "url", "dir", "extra"})
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	cmd, err = collapseCommand(cmd)
+	if err != nil {
+		t.Fatalf("collapse: %v", err)
+	}
+	opt := defaultOptions()
+	if _, err := sortCommand(cmd, &opt); err == nil {
+		t.Error("a fifth positional was accepted on 'repo clone'")
+	}
+}
+
+// 'account set' is the one command that keeps all three of its shifted
+// positionals, and the tail that rejects a third must not eat its value.
+func TestSortCommandAccountSet(t *testing.T) {
+	_, cmd, _, err := parseArgs([]string{"account", "set", "work", "host", "gitea.com"})
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	cmd, err = collapseCommand(cmd)
+	if err != nil {
+		t.Fatalf("collapse: %v", err)
+	}
+	opt := defaultOptions()
+	got, err := sortCommand(cmd, &opt)
+	if err != nil {
+		t.Fatalf("sort: %v", err)
+	}
+	if got.name != "account-set" || got.arg != "work" || got.arg2 != "host" || got.arg3 != "gitea.com" {
+		t.Errorf("got %q %q/%q/%q", got.name, got.arg, got.arg2, got.arg3)
+	}
+	if !got.mutating {
+		t.Error("account set must be a mutating command")
 	}
 }
 

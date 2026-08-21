@@ -39,7 +39,7 @@ func afterEq(arg string) string { return arg[strings.Index(arg, "=")+1:] }
 // -v is deliberately not an option here - it must not turn a mutating command
 // into a silent no-op.
 func parseArgs(argv []string) (options, command, bool, error) {
-	const maxPositional = 4
+	const maxPositional = 5
 	opt := defaultOptions()
 	cmd := command{mutating: true}
 	lastSwitch := ""
@@ -102,6 +102,8 @@ func parseArgs(argv []string) (options, command, bool, error) {
 				cmd.arg2 = arg
 			case 4:
 				cmd.arg3 = arg
+			case 5:
+				cmd.arg4 = arg
 			}
 		}
 	}
@@ -151,8 +153,10 @@ func collapseCommand(cmd command) (command, error) {
 			cmd.name = "account-list"
 		case "apply":
 			cmd.name = "account-apply"
+		case "set":
+			cmd.name = "account-set"
 		default:
-			return cmd, usagef("Unknown 'account' subcommand '%s'. One of: list, apply.", cmd.arg)
+			return cmd, usagef("Unknown 'account' subcommand '%s'. One of: list, set, apply.", cmd.arg)
 		}
 	case "br", "branch":
 		switch strings.ToLower(cmd.arg) {
@@ -175,7 +179,7 @@ func collapseCommand(cmd command) (command, error) {
 		shift = false
 	}
 	if shift {
-		cmd.arg, cmd.arg2, cmd.arg3 = cmd.arg2, cmd.arg3, ""
+		cmd.arg, cmd.arg2, cmd.arg3, cmd.arg4 = cmd.arg2, cmd.arg3, cmd.arg4, ""
 	}
 	return cmd, nil
 }
@@ -201,6 +205,15 @@ func sortCommand(cmd command, opt *options) (command, error) {
 		if cmd.arg != "" {
 			return cmd, usagef("'%s account apply' takes no arguments (got '%s').", meName, cmd.arg)
 		}
+	case "account-set":
+		// Three words exactly. A missing value would otherwise read as a request to
+		// set the key empty, which is a different thing from what anybody typed.
+		if cmd.arg == "" || cmd.arg2 == "" || cmd.arg3 == "" {
+			return cmd, usagef("Syntax: %s account set <account> <key> <value>   (e.g. %s account set work host gitea.com)", meName, meName)
+		}
+		// Returns here rather than falling through: this is the one command whose
+		// third positional is a value it wants, and the tail below rejects one.
+		return cmd, nil
 	case "pr":
 		switch strings.ToLower(cmd.arg) {
 		case "create", "new":
@@ -244,6 +257,9 @@ func sortCommand(cmd command, opt *options) (command, error) {
 		}
 	default:
 		return cmd, usagef("Unknown command '%s'. Run '%s' with no arguments for a list.", cmd.name, meName)
+	}
+	if cmd.arg4 != "" {
+		return cmd, usagef("Unexpected extra argument '%s'.", cmd.arg4)
 	}
 	if cmd.arg3 != "" {
 		return cmd, usagef("Unexpected extra argument '%s'.", cmd.arg3)

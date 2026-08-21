@@ -428,7 +428,7 @@ func (a *app) settleGh() error {
 		// Reads the forge, writes nothing: the whole point of the command is to name
 		// every account involved. gh answers for a GitHub remote and for no remote at
 		// all - with nothing to take a host from, its account is still the only one
-		// that can be asked. Any other host is the Forge line's business.
+		// that can be asked. Any other host is the Git host line's business.
 		if a.onGitHub() || !a.hasOrigin() {
 			a.gh.tool, a.gh.cli, a.gh.isCommand = toolGh, "gh", true
 		} else {
@@ -604,7 +604,7 @@ func (a *app) runMutating(mismatch identityMismatch) error {
 	}
 	a.out.clean("")
 	switch a.cmd.name {
-	case "account-apply":
+	case "account-apply", "account-set":
 		// every file it wrote was named as it was written; a repo status would add
 		// nothing
 	case "repo-clone":
@@ -624,10 +624,10 @@ func (a *app) runMutating(mismatch identityMismatch) error {
 // stands in.
 func (a *app) showBeforeState() error {
 	switch {
-	case a.cmd.name == "account-apply":
-		// Nothing about a repo is involved: this writes machine-level git config,
-		// and showing branch state here would suggest it does something to the repo
-		// you happen to be standing in.
+	case a.cmd.name == "account-apply" || a.cmd.name == "account-set":
+		// Nothing about a repo is involved: these write config files, and showing
+		// branch state here would suggest they do something to the repo you happen
+		// to be standing in.
 		a.cmdAccountList()
 	case a.cmd.name == "repo-clone":
 		wd, _ := os.Getwd()
@@ -690,6 +690,8 @@ func (a *app) dispatch() error {
 		return a.cmdRepoURL()
 	case "account-apply":
 		return a.cmdAccountApply()
+	case "account-set":
+		return a.cmdAccountSet()
 	}
 	return nil
 }

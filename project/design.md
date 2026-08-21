@@ -296,6 +296,20 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- Which means they carry the last released version rather than the working tree's: a file that changed with every commit could not be a committed file. A release stamps them with the version being cut, in the same commit as the changelog heading, and the pipeline checks the committed ones against the newest tag.
 	- The `.ico` is a committed asset too, not a build product. Image encoders differ between versions, so regenerating it is a hand step (`gen-winres.bash --icon`) run when the logo changes, and nothing gates on reproducing it byte for byte.
 
+- A diagnostic explains itself in the reader's vocabulary, and offers its fix as a command.
+	- The identity block's unapplied-account notes were read by the owner on a real Gitea repository and raised more questions than they answered: which token, applied to what, what the quoted string even was, and what a "forge" is. Among these options, it was decided that the block must answer all four without the reader knowing anything about how gitsby resolves accounts.
+	- "Forge" is gone from the whole tool, the status line included - it is a word for people who already know the answer. The line is `Git host`, and the notes name the host outright wherever they can.
+	- `From:` says what the name IS and which of several possible sources produced it, rather than repeating the name already on the line above. That was the question the old wording could not answer.
+	- Every note names only what is actually on screen. `Kept:` pointed at "the SSH and Author lines" whichever half of the account applied, which sent readers looking for an SSH line that was never printed - a second thing gone wrong, apparently.
+	- Advice that can be a command is a command. `Fix:` names `gitsby account set <account> <key> <value>`, which makes the edit itself, rather than a config line to retype. It cannot be mistyped and cannot name a key the parser does not take, which the advice had already done once.
+
+- `account set` writes the accounts file, but the diagnostic never writes it unasked.
+	- The obvious next step from "gitsby knows the fix" is "gitsby applies the fix", and it was decided against. What gitsby knows is that the account block never named a host - not that the account belongs to the host this repository happens to be on. Applying its token on that inference is exactly the mistake the host field was added to prevent: one host's credential handed to another.
+	- So the fix is offered, not taken. `account set` is an ordinary mutating command with a plan and a confirmation, and `status`/`identity` stay read-only and script-safe.
+	- It refuses a key the loader does not read, and a value the loader would drop. A line written past either check lands in the file and is ignored on every load, so the file says one thing and every command does another - the worst of the three possible outcomes.
+	- Everything it does not change comes back byte for byte, byte-order mark and line endings included. This file is hand-written and hand-commented; a command that reformatted it in passing would cost more than it saved.
+	- A key already present more than once is refused rather than guessed at. `path` and `pathContains` are repeatable by design, and replacing the first of several would look like it worked and change nothing that is read.
+
 ## Branching model
 
 Gitsby's own repo runs the model gitsby enforces, so the tool is its own first user.

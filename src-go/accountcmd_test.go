@@ -10,6 +10,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -172,5 +174,127 @@ account.home.ghAccount = homelogin
 	a.showAccount("work", false)
 	if strings.Contains(buf.String(), "host") {
 		t.Errorf("a single-forge config was shown the host key:\n%s", buf.String())
+	}
+}
+
+// setApp builds a run pointed at a real accounts file, for the writer below.
+func setApp(t *testing.T, body, name, key, value string) (*app, string) {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "config.shcl")
+	if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := newApp(newPrinter())
+	a.opt.configFile, a.opt.configGiven, a.opt.quiet = file, true, true
+	if err := a.cfg.load(a.opt); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	a.cmd = command{name: "account-set", arg: name, arg2: key, arg3: value, mutating: true}
+	return a, file
+}
+
+// The file is hand-written and hand-commented. Everything but the one line being
+// set has to come back out byte for byte, or the command costs more than it saves.
+func TestAccountSetReplacesOneLine(t *testing.T) {
+	body := "# mine\n\naccount.work.path = /srv/work   # the tree\naccount.work.host = github.com\naccount.work.email = a@b.c\n"
+	a, file := setApp(t, body, "work", "host", "gitea.com")
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "# mine\n\naccount.work.path = /srv/work   # the tree\naccount.work.host = gitea.com\naccount.work.email = a@b.c\n"
+	if string(got) != want {
+		t.Errorf("got:\n%q\nwant:\n%q", got, want)
+	}
+}
+
+// Appending is where a trailing newline gets lost: the split leaves an empty last
+// element, and writing after it puts a blank line in the middle of the file.
+func TestAccountSetAppendsKeepingFinalNewline(t *testing.T) {
+	a, file := setApp(t, "account.work.path = /srv/work\n", "work", "host", "gitea.com")
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	got, _ := os.ReadFile(file)
+	want := "account.work.path = /srv/work\naccount.work.host = gitea.com\n"
+	if string(got) != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// A file saved by a Windows editor carries a mark and CRLF endings. Rewriting
+// either of them is a diff across every line of a file the caller wrote by hand.
+func TestAccountSetKeepsBOMAndCRLF(t *testing.T) {
+	a, file := setApp(t, utf8BOM+"account.work.path = C:/work\r\n", "work", "host", "gitea.com")
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	got, _ := os.ReadFile(file)
+	want := utf8BOM + "account.work.path = C:/work\r\naccount.work.host = gitea.com\r\n"
+	if string(got) != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// 'path' is repeatable by design and any key can be in there twice by accident.
+// Replacing the first and leaving the rest looks like it worked and changes
+// nothing that is read.
+func TestAccountSetRefusesADuplicatedKey(t *testing.T) {
+	a, _ := setApp(t, "account.work.path = /a\naccount.work.path = /b\n", "work", "path", "/c")
+	if err := a.cmdAccountSet(); err == nil {
+		t.Error("a key present twice was written anyway")
+	}
+}
+
+// A key the loader ignores, written past this command, lands in the file and is
+// dropped on every read: the file says one thing and every command does another.
+func TestAccountSetRefusesAKeyNothingReads(t *testing.T) {
+	a, _ := setApp(t, "account.work.path = /a\n", "work", "hostname", "gitea.com")
+	if err := a.cmdAccountSet(); err == nil {
+		t.Error("an unread key was accepted")
+	}
+}
+
+// 'host' and 'user' are interpolated into the credential helper, which git hands
+// to a shell. The loader drops one carrying a shell character; refusing to WRITE
+// it is what stops the file and the behaviour disagreeing.
+func TestAccountSetRefusesAShellCharacterInHost(t *testing.T) {
+	a, _ := setApp(t, "account.work.path = /a\n", "work", "host", "gitea.com; id")
+	if err := a.cmdAccountSet(); err == nil {
+		t.Error("a shell character reached the file")
+	}
+}
+
+// The casing typed is not the casing written: the loader takes any, but a line
+// this command wrote has to read back looking like the ones written by hand.
+func TestAccountSetWritesTheDocumentedSpelling(t *testing.T) {
+	a, file := setApp(t, "account.work.path = /a\n", "WORK", "TOKENFILE", "/t")
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	got, _ := os.ReadFile(file)
+	if !strings.Contains(string(got), "account.work.tokenFile = /t") {
+		t.Errorf("got %q", got)
+	}
+}
+
+// A value carrying ' #' is a comment from that point on when it is read back, so
+// it has to go in quoted or the account silently gets a truncated value.
+func TestAccountSetQuotesAValueThatWouldBeReparsed(t *testing.T) {
+	a, file := setApp(t, "account.work.path = /a\n", "work", "name", "Ada #1")
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	got, _ := os.ReadFile(file)
+	if !strings.Contains(string(got), `account.work.name = "Ada #1"`) {
+		t.Fatalf("got %q", got)
+	}
+	// The round trip is the actual claim: it has to read back as what was typed.
+	cfg := writeConfig(t, string(got))
+	if cfg.value("work", "name") != "Ada #1" {
+		t.Errorf("read back as %q", cfg.value("work", "name"))
 	}
 }

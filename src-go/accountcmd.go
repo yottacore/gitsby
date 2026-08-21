@@ -448,3 +448,184 @@ func (a *app) writeAccountFragment(dir, name string) error {
 	a.out.status("Wrote " + fragment)
 	return nil
 }
+
+// accountSetFields: the per-account keys 'account set' will write, spelled the way
+// the file and the docs spell them. The loader lowercases every key on the way in,
+// so the file takes any casing - but a line this command WROTE has to read back
+// looking like the ones a person wrote by hand.
+var accountSetFields = []string{"path", "pathContains", "ghAccount", "tokenFile", "sshKey", "name", "email", "protocol", "host", "user"}
+
+// canonAccountField maps whatever casing was typed onto the documented spelling,
+// or empty for a key nothing reads. Refusing an unknown key is the point: the
+// loader only lists one as ignored, which is a warning nobody reads until the
+// account silently fails to apply.
+func canonAccountField(field string) string {
+	for _, known := range accountSetFields {
+		if strings.EqualFold(known, field) {
+			return known
+		}
+	}
+	return ""
+}
+
+// The byte-order mark a Windows editor writes at the top of a file it saves.
+const utf8BOM = "\ufeff"
+
+// accountSetTarget is what 'account set' would write, and where. Everything the
+// write needs is settled here, off ONE read of the file, so the plan on screen and
+// the edit that follows cannot describe two different files.
+type accountSetTarget struct {
+	file    string
+	key     string
+	value   string
+	lines   []string
+	bom     string
+	crlf    bool
+	lineNum int // 1-based line being replaced; 0 to append
+	old     string
+	creates bool // the file itself does not exist yet
+}
+
+// newLine spells the line to be written, in the file's own line ending.
+func (t accountSetTarget) newLine() string {
+	line := t.key + " = " + quoteConfigValue(t.value)
+	if t.crlf {
+		line += "\r"
+	}
+	return line
+}
+
+// accountSetPlan resolves what 'account set' would do without doing any of it.
+// The value is validated here rather than at write time, so a refusal happens
+// before the plan is shown rather than after it has been agreed to.
+func (a *app) accountSetPlan() (accountSetTarget, error) {
+	var t accountSetTarget
+	name := strings.ToLower(a.cmd.arg)
+	if !acctNameOK.MatchString(name) {
+		return t, usagef("'%s' isn't a usable account name; letters, digits, '.', '_' and '-' only.", a.cmd.arg)
+	}
+	field := canonAccountField(a.cmd.arg2)
+	if field == "" {
+		return t, usagef("'%s' isn't an account key %s reads. One of: %s.", a.cmd.arg2, meName, strings.Join(accountSetFields, ", "))
+	}
+	t.key, t.value = "account."+name+"."+field, a.cmd.arg3
+	// The same two checks the loader makes, made here where they can still be
+	// answered. Written past them the line lands in the file and is then dropped on
+	// every read, so the file says one thing and every command does another.
+	if field == "sshKey" && strings.ContainsAny(t.value, sshKeyShellChars) {
+		return t, usagef("git hands a key path to a shell, so one carrying whitespace or a shell character is re-parsed rather than used. Move the key somewhere plainer.")
+	}
+	if (field == "host" || field == "user") && !forgeWordOK.MatchString(t.value) {
+		return t, usagef("'%s' isn't a plain %s name; letters, digits, '.', '_' and '-' only.", t.value, strings.ToLower(field))
+	}
+	if t.file = a.cfg.file; t.file == "" {
+		if t.file = defaultConfigFile(); t.file == "" {
+			return t, usagef("There is nowhere to put an accounts file: no XDG_CONFIG_HOME, no home directory and no APPDATA.")
+		}
+		t.creates = true
+		return t, nil
+	}
+	data, err := os.ReadFile(t.file)
+	if err != nil {
+		return t, usagef("Couldn't read '%s'.", displayPath(t.file))
+	}
+	// Read apart, written back byte for byte. This file is hand-written and
+	// hand-commented, and a command that reformatted it on the way past - dropping
+	// the mark a Windows editor put there, or rewriting every line ending - would
+	// cost more than it saved. Split on '\n' alone for the same reason.
+	text := string(data)
+	if strings.HasPrefix(text, utf8BOM) {
+		text, t.bom = strings.TrimPrefix(text, utf8BOM), utf8BOM
+	}
+	t.crlf = strings.Contains(text, "\r\n")
+	t.lines = strings.Split(text, "\n")
+	// 'path' and 'pathContains' are repeatable by design, and any key at all can be
+	// in there twice by accident. Replacing the first and leaving the rest would
+	// look like it worked and change nothing, so say so rather than guess.
+	var found []int
+	for i, line := range t.lines {
+		key, _, ok := strings.Cut(strings.TrimLeft(line, " \t"), "=")
+		if ok && strings.EqualFold(strings.TrimRight(key, " \t"), t.key) {
+			found = append(found, i+1)
+			t.old = strings.TrimRight(line, "\r")
+		}
+	}
+	if len(found) > 1 {
+		return t, usagef("'%s' is in %s %d times. Edit it by hand - there is no telling which one you meant.", t.key, displayPath(t.file), len(found))
+	}
+	if len(found) == 1 {
+		t.lineNum = found[0]
+	}
+	return t, nil
+}
+
+// defaultConfigFile is where an accounts file goes when there isn't one yet: the
+// same order 'load' searches for one, so the file this writes is the file the next
+// run finds.
+func defaultConfigFile() string {
+	if d := os.Getenv("XDG_CONFIG_HOME"); d != "" {
+		return d + "/gitsby/config.shcl"
+	}
+	if d := homeDir(); d != "" {
+		return d + "/.config/gitsby/config.shcl"
+	}
+	if d := os.Getenv("APPDATA"); d != "" {
+		return d + "/gitsby/config.shcl"
+	}
+	return ""
+}
+
+// quoteConfigValue wraps a value the reader would otherwise take apart. ' #' starts
+// a comment mid-line and a leading quote is stripped as one, so a value carrying
+// either has to go back in quoted or it will not read back as itself.
+func quoteConfigValue(value string) string {
+	switch {
+	case value == "":
+		return `""`
+	case strings.Contains(value, " #"), strings.Contains(value, "\t#"),
+		value[0] == '"', value[0] == '\'', value[0] == '#',
+		strings.HasSuffix(value, " "), strings.HasSuffix(value, "\t"):
+		return `"` + strings.ReplaceAll(value, `"`, "") + `"`
+	}
+	return value
+}
+
+// cmdAccountSet writes one 'account.<name>.<key> = <value>' line into the accounts
+// file, replacing that key's existing line where it has one. Every other line is
+// copied through untouched.
+func (a *app) cmdAccountSet() error {
+	t, err := a.accountSetPlan()
+	if err != nil {
+		return err
+	}
+	line := t.newLine()
+	switch {
+	case t.creates:
+		dir := t.file
+		if i := strings.LastIndexAny(dir, `/\\`); i > 0 {
+			dir = dir[:i]
+		}
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return usagef("Couldn't create '%s' to put the accounts file in.", displayPath(dir))
+		}
+		t.lines = []string{"# " + meName + " accounts: one 'key = value' per line.", "", line, ""}
+	case t.lineNum > 0:
+		t.lines[t.lineNum-1] = line
+	case len(t.lines) > 0 && strings.TrimRight(t.lines[len(t.lines)-1], "\r") == "":
+		// A file ending in a newline splits to a trailing empty element. Writing over
+		// it and adding a fresh one keeps that final newline where it was, instead of
+		// leaving a blank line in the middle of the file.
+		t.lines[len(t.lines)-1] = line
+		t.lines = append(t.lines, "")
+	default:
+		t.lines = append(t.lines, line)
+	}
+	// 0600 on create: this file names your accounts and points at your token files.
+	// WriteFile only applies a mode when it creates one, so an existing file keeps
+	// the permissions it has - which is the caller's business and not ours.
+	if err := os.WriteFile(t.file, []byte(t.bom+strings.Join(t.lines, "\n")), 0o600); err != nil {
+		return usagef("Couldn't write '%s'. Check permissions on it.", displayPath(t.file))
+	}
+	a.out.status("Wrote " + displayPath(t.file))
+	return nil
+}

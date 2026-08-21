@@ -55,10 +55,21 @@ Per-account keys, all optional except a `path` to match on:
 | `name`       | Commit author name.
 | `email`      | Commit author email.
 | `protocol`   | `https` or `ssh`, for this account only.
-| `host`       | The forge this account is on. Defaults to `github.com`, which is what every config written before this key existed meant.
+| `host`       | The git host this account is on. Defaults to `github.com`, which is what every config written before this key existed meant.
 | `user`       | The login on that host, when it isn't `ghAccount` - Gitea checks the username an HTTPS push presents, where GitHub ignores it.
 
-Run `gitsby account` to see what it made of all that, and which account the folder you're standing in resolves to. It is the command to reach for when something went out as the wrong person. A `path` rule pointing at a directory that isn't there is marked as one that can never match, which is usually a typo. Once any account names a `host`, the listing shows one for all of them, marked `(default)` where the file never said - an account meant for another forge that never named one is the usual reason a repository there goes on using `gh`'s account.
+Run `gitsby account` to see what it made of all that, and which account the folder you're standing in resolves to. It is the command to reach for when something went out as the wrong person. A `path` rule pointing at a directory that isn't there is marked as one that can never match, which is usually a typo. Once any account names a `host`, the listing shows one for all of them, marked `(default)` where the file never said - an account meant for another host that never named one is the usual reason a repository there goes on using `gh`'s account.
+
+The file is meant to be edited by hand, but you don't have to. `gitsby account set <account> <key> <value>` writes one line into it - replacing that key's existing line, or adding one, or creating the file if there isn't one yet. It shows the edit and asks before making it, refuses a key nothing reads rather than leaving a line that is silently dropped on every load, and leaves every other line of the file exactly as you typed it, comments included.
+
+~~~console
+$ gitsby account set work host gitea.com
+    edit ~/.config/gitsby/config.shcl, line 6
+      was:     account.work.host = github.com
+      becomes: account.work.host = gitea.com
+~~~
+
+Where an account isn't applying, the identity block names the `account set` line that fixes it. It won't make that edit for you: all it knows is that the file never said which host the account is for, which is not the same as knowing the account belongs to the host you happen to be pushing to - and guessing wrong means handing one host's token to another.
 
 ### One config file, several machines
 
@@ -90,7 +101,7 @@ The usual way to hold two GitHub accounts on one machine is a pair of SSH keys a
 
 Neither the token nor the username is ever written into a config value: Git hands a credential helper to a shell, so both are read from the environment at the moment it runs. Nothing you put in this file becomes part of a command.
 
-An account's token is a credential for the forge that issued it and for nowhere else, so Gitsby only applies one where it can be used: if `host` doesn't match the host `origin` is on, nothing is applied and the identity block says which two hosts disagreed. That is also why a Gitea token is never exported as `GH_TOKEN` - `gh` reads that variable, and every child process would inherit a credential for a host `gh` would try to use it on.
+An account's token is a credential for the git host that issued it and for nowhere else, so Gitsby only applies one where it can be used: if `host` doesn't match the host `origin` is on, nothing is applied and the identity block says which two hosts disagreed. That is also why a Gitea token is never exported as `GH_TOKEN` - `gh` reads that variable, and every child process would inherit a credential for a host `gh` would try to use it on.
 
 Over HTTPS, `git` authenticates with the account's own token - the one `gh` already stores, or the one `tokenFile` names. Gitsby supplies it for the length of a single command, through the environment, and nothing is written anywhere. So a second account costs one `gh auth login` and three lines of config.
 

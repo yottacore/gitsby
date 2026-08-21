@@ -55,7 +55,8 @@ type command struct {
 	name     string
 	arg      string // subcommand for a grouped noun, else message/branch/version/PR number
 	arg2     string
-	arg3     string // only 'repo clone <url> [dir]' goes this deep
+	arg3     string // 'repo clone <url> [dir]', and 'account set' after the noun shift
+	arg4     string // only 'account <set> <name> <key> <value>' goes this deep
 	mutating bool
 }
 
@@ -118,6 +119,7 @@ type account struct {
 	name     string // configured account claiming this folder, if any
 	ghWho    string // the GitHub account this run acts as
 	source   string // how we decided that, for the identity line
+	pickedBy string // why THIS one of several, where the source doesn't say
 	explicit bool
 	applied  bool
 

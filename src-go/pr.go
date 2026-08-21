@@ -83,7 +83,7 @@ func (a *app) settlePrTool() error {
 		a.pr.tool, a.pr.cli = toolGh, "gh"
 		return nil
 	}
-	return usagef("Can't tell which forge '%s' is, and no forge CLI is installed to ask. %s",
+	return usagef("Can't tell which git host '%s' is, and no CLI for one is installed to ask. %s",
 		maskURL(a.originURL()), a.forgeCLIHint())
 }
 

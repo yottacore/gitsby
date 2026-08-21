@@ -41,7 +41,7 @@ func (a *app) coreSSHCommand() string {
 // tea, sends you to check an account that had nothing to do with it.
 func identityMismatchText(cli, forgeWho, sshWho string) string {
 	if cli == "" {
-		cli = "the forge CLI"
+		cli = "the host's CLI"
 	}
 	if forgeWho == "" {
 		forgeWho = "?"

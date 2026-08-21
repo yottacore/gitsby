@@ -31,15 +31,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `identity` shows who commands in this folder act as - the account, the ssh key and who it authenticates as, the commit author, and gh's login - without the branch and working-tree state `status` prints around it. It answers outside a repository too, which is where the question comes up before a `repo clone` or `repo create`.
 
-- Other Git hosts are first-class. Gitsby looks at where `origin` actually points and picks the tool that serves it: `gh` on GitHub, `tea` on Gitea and Forgejo (found under `tea-cli` too, which is how some distributions ship it). Everything that is only Git - branching, committing, pulling, pushing, merging, pruning, releasing, and re-spelling a remote between HTTPS and SSH - now works on any host with no forge client installed at all.
+- Other Git hosts are first-class. Gitsby looks at where `origin` actually points and picks the tool that serves it: `gh` on GitHub, `tea` on Gitea and Forgejo (found under `tea-cli` too, which is how some distributions ship it). Everything that is only Git - branching, committing, pulling, pushing, merging, pruning, releasing, and re-spelling a remote between HTTPS and SSH - now works on any host with no host-specific client installed at all.
 
-- Accounts can say which forge they are on, with `host` and `user`. An account's token is only applied where it can be used, so a GitHub token is never handed to a push at somebody else's host, and the identity block says which two hosts disagreed. A non-GitHub token is exported under its own variable rather than as `GH_TOKEN`, which `gh` would otherwise pick up. `account list` shows the host each account is on, marked as the default where the file never said, and both it and the identity block name the account's own login instead of looking only for a GitHub one.
+- Accounts can say which git host they are on, with `host` and `user`. An account's token is only applied where it can be used, so a GitHub token is never handed to a push at somebody else's host, and the identity block says which two hosts disagreed. A non-GitHub token is exported under its own variable rather than as `GH_TOKEN`, which `gh` would otherwise pick up. `account list` shows the host each account is on, marked as the default where the file never said, and both it and the identity block name the account's own login instead of looking only for a GitHub one.
 
 - The credential helper reads both the token and the username from the environment, so nothing from your config file or `GITSBY_ACCOUNT` is ever part of a command Git runs.
 
 - The identity gate covers every host, not just GitHub's. A pull request opened through `tea` while `git` pushes as a different key is refused the same way the `gh` version always was, and the refusal names the tool that would have acted. The check on commands that push with plain Git - `sync` above all - now reads the account's login on the host in question, so an account identified by `user` rather than `ghAccount` is compared instead of skipped.
 
-- The identity block has a `Forge` line for hosts `gh` does not serve, naming the host and who its CLI holds a login for. Previously it simply printed nothing there.
+- The identity block has a `Git host` line for hosts `gh` does not serve, naming the host and who its CLI holds a login for. Previously it simply printed nothing there.
+
+- `account set <account> <key> <value>` writes one line into the accounts file, so the fixes the identity block suggests can be typed as a command rather than made by hand. It shows the edit before making it, refuses a key nothing reads instead of leaving a line that is silently dropped, and leaves the rest of the file - comments, spacing, line endings - exactly as you wrote it. It creates the file if there isn't one yet.
 
 - The Windows binaries carry an icon and version details. Explorer shows the gitsby logo instead of the blank default, and Properties reads a version, description, copyright and file name off the file itself.
 
@@ -49,11 +51,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `br land` is now `br merge`, the word most people reach for first. `br land` still works.
 
-- The identity display now says where the account it is using came from, and which file that is, on their own lines: `From: account 'acme'` and `File: ~/.config/gitsby/config.shcl`. The old `(from config 'acme')` named neither, and "config" is ambiguous here - `gitsby.ghAccount` is a Git config key and the account blocks are not.
+- The identity display now says where the account it is using came from, and which file that is, on their own lines: `From: An account block named 'acme', because its folder rule covers this directory.` and `File: ~/.config/gitsby/config.shcl`. The old `(from config 'acme')` named neither, and "config" is ambiguous here - `gitsby.ghAccount` is a Git config key and the account blocks are not.
 
-- Where an account resolves but cannot be applied, that block goes on to explain it rather than trailing one long clause off the end of the line. It says which half of the account did still apply - an ssh key and a commit identity go in whether or not a token does - why the rest didn't, the exact config line to add, and where. The config keys it names are spelled the way the file takes them; the old advice named a bare `host = ...` line, which is not one gitsby reads.
+- Where an account resolves but cannot be applied, that block goes on to explain it rather than trailing one long clause off the end of the line. It says which half of the account did still apply - an SSH key and a commit identity go in whether or not a token does - why the rest didn't, and the `account set` command that fixes it.
 
-- `pr` no longer requires `gh` to be installed before it will look at your arguments. It establishes the host first, so a repository on another forge is told which tool it needs rather than told to install a GitHub client it would never use. `pr` on a repository with no remote at all now says so outright instead of failing further in.
+- The identity block says `Git host` rather than `Forge`, there and everywhere else it appears. "Forge" is a word for people who already knew the answer, and this block exists for the people who don't.
+
+- `pr` no longer requires `gh` to be installed before it will look at your arguments. It establishes the host first, so a repository on another host is told which tool it needs rather than told to install a GitHub client it would never use. `pr` on a repository with no remote at all now says so outright instead of failing further in.
 
 - `repo url` re-spells a remote between HTTPS and SSH on any host. It only ever rewrote text - it asks the host nothing - and refusing everywhere but github.com was a limitation of the URL parser rather than a rule.
 

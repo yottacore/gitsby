@@ -147,6 +147,21 @@ None open.
 
 #### Done - Features and enhancements
 
+- ✅ The account diagnostic answers its own questions, and offers the fix as a command.
+	- Read on a real Gitea repo, the block raised more questions than it settled: `'t00mietum-gitea' - no token applied` never said what token, applied to what, or what that string even was, and "that account doesn't say which forge it is for" used a word for people who already knew the answer.
+	- The headline now names the token and the host it wasn't used for. `From:` says what kind of thing the name is and which of the several possible sources produced it, rather than repeating the name.
+	- "Forge" is gone from the whole tool. The status line is `Git host`, and the notes say "git host" or name the host outright.
+	- The notes read as sentences - capitalised, `SSH` spelled one way throughout.
+	- `Kept:` names only the lines actually on screen. It said "the SSH and Author lines" whichever half applied, sending readers after an SSH line that was never printed.
+	- `Fix:` names one command instead of a config line to copy: `gitsby account set <account> <key> <value>`, new, which makes the edit itself.
+	- It stops short of making the edit unasked, and says why: all it knows is that the file never named a host, which is not the same as knowing the account belongs to this one - and guessing wrong hands one host's token to another.
+
+- ✅ `account set` writes one key of one account into the accounts file.
+	- Shows the edit and asks first; `-q` proceeds. Replaces that key's line, adds one, or creates the file.
+	- Refuses a key nothing reads, and a value the loader would drop - a line written past either lands in the file and is ignored on every load, so the file says one thing and every command does another.
+	- Everything else in the file comes back byte for byte: comments, spacing, a Windows byte-order mark, CRLF endings.
+	- A key already present twice is refused rather than guessed at. `path` is repeatable by design.
+
 - ✅ Other Git hosts are first-class; `gh` is reached for only when the remote is actually GitHub's.
 	- Gitsby began as a GitHub program and asked `gh` for things Git could answer on its own, so a Gitea remote got GitHub errors about a repo `gh` was never looking at.
 	- Where `origin` points is now established first, aliases resolved. `gh` serves github.com and `GH_HOST`; `tea` serves Gitea and Forgejo, under `tea-cli` as well - Debian renames it.

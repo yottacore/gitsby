@@ -30,6 +30,7 @@ func (a *app) resolveAccount(dir, url string) error {
 		return err
 	}
 	a.acct.name, a.acct.ghWho, a.acct.source, a.acct.explicit, a.acct.fromFile = "", "", "", false, false
+	a.acct.pickedBy = ""
 	if who := os.Getenv("GITSBY_ACCOUNT"); who != "" {
 		// Either the name of a configured account or a bare login - accept both; a
 		// script setting this knows one of the two and shouldn't have to know which.
@@ -40,8 +41,10 @@ func (a *app) resolveAccount(dir, url string) error {
 		// acts as - so asking for an account by name got you less than not asking.
 		if a.cfg.knowsAccount(who) {
 			a.acct.name, a.acct.ghWho = strings.ToLower(who), a.cfg.value(who, "ghAccount")
+			a.acct.pickedBy = "it names an account block called '" + a.acct.name + "'"
 		} else {
 			a.acct.ghWho = who
+			a.acct.pickedBy = "it names the login directly - no account block matched it"
 		}
 		a.acct.source, a.acct.explicit = "the GITSBY_ACCOUNT environment variable", true
 		return nil
@@ -72,7 +75,12 @@ func (a *app) resolveAccount(dir, url string) error {
 		// A folder rule with no account named still carries a key and a commit
 		// identity, worth applying on their own - it just says nothing about gh.
 		a.acct.ghWho = a.cfg.value(a.acct.name, "ghAccount")
-		a.acct.source, a.acct.fromFile = "account '"+a.acct.name+"'", true
+		// Named as what it IS, not just what it is called: "account 'work'" read
+		// back as a bare repeat of the name already on the line above, so the one
+		// question a first-time reader asks - what is that string, and where did
+		// gitsby get it - had no answer anywhere on screen.
+		a.acct.source, a.acct.fromFile = "an account block named '"+a.acct.name+"'", true
+		a.acct.pickedBy = "its folder rule covers this directory"
 		return nil
 	}
 	if fromRemote := remoteOwner(url); fromRemote != "" {

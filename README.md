@@ -101,6 +101,7 @@ What you reach for daily is a one-word command. Everything else is grouped under
 | `pr create`          | `[title]`     | Push the current branch and open a PR against `dev`/`main` (no title: the last commit subject).
 | `pr ok`              | `<#>`         | Approve and merge a PR.
 | `account`            |               | Show your configured GitHub accounts, and which one this folder uses (`account list` is the same thing).
+| `account set`        | `<a> <k> <v>` | Set one key of one account in the accounts file, e.g. `account set work host gitea.com`.
 | `account apply`      |               | Teach plain `git` the same folder rules, so `git` outside Gitsby behaves identically.
 | `raw git`            | `<args ...>`  | Run `git` as the account this folder belongs to. Everything after `git` is git's, verbatim.
 | `raw gh`             | `<args ...>`  | The same, for `gh`.
