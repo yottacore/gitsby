@@ -174,6 +174,10 @@ const (
 	acctCont  = "              : "
 )
 
+// dirLabel is the current-directory line, shared by every command that prints one
+// so the tool cannot end up calling the same thing two names on two screens.
+const dirLabel = "Current dir ..: "
+
 // accountFile names the accounts file, for advice that tells somebody to edit it.
 // The discovered path where there is one, the default location where there isn't:
 // "add a line to your config" is not advice until it says which file.
@@ -588,7 +592,7 @@ func (a *app) cmdWhoami() {
 	}
 	wd, _ := os.Getwd()
 	a.out.clean("")
-	a.out.clean("Directory ....: " + wd)
+	a.out.clean(dirLabel + wd)
 	a.out.clean("Remote .......: " + remoteDisp)
 	a.showIdentity(remoteURL)
 	a.out.resetBlank()
@@ -604,7 +608,7 @@ func (a *app) showStatus(withIdentity bool) {
 	}
 	a.out.clean("")
 	wd, _ := os.Getwd()
-	a.out.clean("Directory ....: " + wd)
+	a.out.clean(dirLabel + wd)
 	a.out.clean("Remote .......: " + remoteDisp)
 	if withIdentity {
 		a.showIdentity(remoteURL)

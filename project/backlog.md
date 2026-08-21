@@ -67,7 +67,7 @@ None open.
 	- And `gh` has no business in that answer on a Gitea host. It is wrong wherever `gh` does not serve, and it answers a question about git's own fallback that nobody asked.
 	- Fixed: `Here` is now `Current dir`, `Resolves to` is now `Account` - the label `status` already puts on the same answer - and an unconfigured folder gets `(nothing configured)`, full stop.
 	- An account that resolves but names no login no longer asserts `gh` either: it names whichever tool serves that account's own host, and names none where there is none.
-	- `status` still says `Directory` for the directory, which is the one word left differing between the two screens.
+	- `status` and `whoami` said `Directory` for that same value, so they moved to `Current dir` too - one label, one constant, shared by all four places that print it.
 
 - ✅ On Windows, `account list` printed the same directory two ways on the one screen.
 	- Real output: `Here .........: C:\opt\...\dev\gitea.com\t00mietum\camhaul` above `folder ..: c:/opt/.../dev/github.com/t00mietum`.
