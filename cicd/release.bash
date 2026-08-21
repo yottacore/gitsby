@@ -135,18 +135,13 @@ target="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || 
 [[ -n "${target}" ]] || fDie "branch '${branch}' has no upstream."
 [[ -z "$(git log '@{u}..HEAD' --oneline)" ]] || fDie "branch '${branch}' has unpushed commits."
 
-## The pipeline is two engines, one per platform, and this is the only thing here that cares which
-## OS it is on. cicd.bash has no Windows awareness whatsoever - the Windows engine is a port, not a
-## wrapper - so running it there would gate the release on the wrong thing entirely.
+## One engine, and it is Linux-only. cicd.bash has no Windows awareness whatsoever, so running it
+## under MSYS would gate the release on the wrong thing entirely - refuse rather than pretend.
 if [[ "$(uname -s)" == MINGW* || "$(uname -s)" == MSYS* || "$(uname -s)" == CYGWIN* ]]; then
-	command -v pwsh >/dev/null 2>&1 || fDie "the Windows pipeline needs pwsh, which isn't on PATH."
-	## cygpath because .NET resolves an MSYS path against the current drive root, and says nothing.
-	pipeline=(pwsh -NoProfile -File "$(cygpath -m "${here}/cicd-win.ps1")" -NoPublish -Yes -Message "pre-release check")
-	pipelineName="cicd/cicd-win.ps1 -NoPublish"
-else
-	pipeline=("${here}/cicd.bash" --no-publish -y -m "pre-release check")
-	pipelineName="cicd/cicd.bash --no-publish"
+	fDie "cut the release from Linux - there is no Windows pipeline engine."
 fi
+pipeline=("${here}/cicd.bash" --no-publish -y -m "pre-release check")
+pipelineName="cicd/cicd.bash --no-publish"
 
 ## The whole pipeline, against the tree as it stands. This is the gate.
 if ! fWould "run ${pipelineName}"; then
