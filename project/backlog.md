@@ -161,6 +161,13 @@ None open.
 
 #### Done - Features and enhancements
 
+- ✅ The accounts file now lives where each platform keeps one.
+	- One search order was used everywhere - `$XDG_CONFIG_HOME`, then `~/.config`, then `%APPDATA%` - which is the Linux convention applied to Windows and macOS as well.
+	- Windows now leads with `%APPDATA%\gitsby\config.shcl`, macOS with `~/Library/Application Support/gitsby/config.shcl`. Everywhere else is unchanged.
+	- `~/.config/gitsby/config.shcl` is still read on every platform, last, so a file already sitting there keeps working and never has to be moved.
+	- `APPDATA` is read on Windows only now. It means nothing elsewhere, and it is not a variable to go looking for credentials behind on a machine that can have it set by accident.
+	- One ordered list now answers both "where do we look" and "where does a new file go", instead of three copies of the order in three files.
+
 - ✅ `identity` is now `whoami`, and its help line says what it shows.
 	- The command is a question, and the old name was a noun. Every shell already has a `whoami` that means this.
 	- `who` and `identity` both still work, permanently. Those were the two names held back when the command was added.
@@ -256,7 +263,7 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 
 - ✅ Multiple GitHub accounts, chosen by which folder you are in, for both git and gh.
 	- People with two accounts already keep a folder per account. A config file maps a folder tree to an account, and everything under it acts as that account - gh, git's credentials, the ssh key, the commit identity.
-	- `~/.config/gitsby/config.shcl` (or `$XDG_CONFIG_HOME`, or `%APPDATA%`), flat `key = value` lines, overridable with `--config FILE` or `GITSBY_CONFIG`. With no config file at all, nothing changes.
+	- The platform's own config location - `%APPDATA%` on Windows, `~/Library/Application Support` on macOS, `$XDG_CONFIG_HOME` or `~/.config` elsewhere - flat `key = value` lines, overridable with `--config FILE` or `GITSBY_CONFIG`. With no config file at all, nothing changes.
 	- The ssh-key-and-host-alias trick is no longer needed: over https, git authenticates with the account's own token. Keys stay fully supported for anyone who wants them.
 	- `repo url [https|ssh]` converts an existing remote, which is the only thing between an ssh repo and a token.
 	- `account` explains what is configured and which account applies here. `account apply` writes the same rules into the global git config, so plain `git` matches.

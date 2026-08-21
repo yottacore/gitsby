@@ -524,7 +524,7 @@ func (a *app) accountSetPlan() (accountSetTarget, error) {
 	}
 	if t.file = a.cfg.file; t.file == "" {
 		if t.file = defaultConfigFile(); t.file == "" {
-			return t, usagef("There is nowhere to put an accounts file: no XDG_CONFIG_HOME, no home directory and no APPDATA.")
+			return t, usagef("There is nowhere to put an accounts file: this machine names no home directory, and sets neither XDG_CONFIG_HOME nor APPDATA.")
 		}
 		t.creates = true
 		return t, nil
@@ -561,22 +561,6 @@ func (a *app) accountSetPlan() (accountSetTarget, error) {
 		t.lineNum = found[0]
 	}
 	return t, nil
-}
-
-// defaultConfigFile is where an accounts file goes when there isn't one yet: the
-// same order 'load' searches for one, so the file this writes is the file the next
-// run finds.
-func defaultConfigFile() string {
-	if d := os.Getenv("XDG_CONFIG_HOME"); d != "" {
-		return d + "/gitsby/config.shcl"
-	}
-	if d := homeDir(); d != "" {
-		return d + "/.config/gitsby/config.shcl"
-	}
-	if d := os.Getenv("APPDATA"); d != "" {
-		return d + "/gitsby/config.shcl"
-	}
-	return ""
 }
 
 // quoteConfigValue wraps a value the reader would otherwise take apart. ' #' starts
