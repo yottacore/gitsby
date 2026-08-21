@@ -61,7 +61,7 @@ None open.
 
 #### Done - Bugs
 
-- ✅ `account set`'s syntax block hung its indent off the `gitsby: ` prefix, which is on one line only.
+- ✅ `account set`'s syntax block hung its indent off the `gitsby:` prefix, which is on one line only.
 	- Everything below the first line sat at eight spaces, so the whole block read as one flat wall - the placeholders, the example and the sentence introducing it all at the same depth.
 	- Fixed: it nests two spaces at a time. The written line is under `Syntax:`, the placeholders under that, `Examples:` alongside them and the commands one deeper.
 	- Second example added, for picking an account by a run of folder names rather than an absolute path - the case a person with one employer folder full of repos actually has.
