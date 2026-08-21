@@ -1807,12 +1807,11 @@ GHEOF
 			grep -q 'fpChangelogStart' "${relBash}"
 		fAssertFail "and retitles by line number, not by first match" \
 			grep -qE '0,/\^## vNEXT' "${relBash}"
-		## The gate is the one thing a release most depends on, and the two engines are separate
-		## ports rather than one wrapping the other, so the Bash one on Windows would pass or fail
-		## on the wrong pipeline entirely.
-		fAssert "release.bash knows the pipeline is two engines" \
-			grep -q 'cicd-win.ps1' "${relBash}"
-		fAssert "and gates on whichever one it picked" \
+		## The gate is the one thing a release most depends on, and cicd.bash has no Windows
+		## awareness at all - so a release cut under MSYS has to stop, not run the Linux engine.
+		fAssert "release.bash refuses to cut a release on Windows" \
+			grep -q 'no Windows pipeline engine' "${relBash}"
+		fAssert "and gates on the pipeline it runs" \
 			grep -q 'pipeline\[@\]' "${relBash}"
 	fi
 
