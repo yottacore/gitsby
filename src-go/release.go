@@ -40,8 +40,12 @@ func nextVersion(latest string) (version string, bumped bool) {
 	if minor == "" {
 		minor = "0"
 	}
-	// m[5] already matched [0-9]+, so Atoi only fails on overflow; 0 starts over.
-	patch, _ := strconv.Atoi(m[5])
+	// m[5] already matched [0-9]+, so Atoi only fails on overflow - it answers
+	// with the clamped max, which the bump below would wrap negative; 0 starts over.
+	patch, err := strconv.Atoi(m[5])
+	if err != nil {
+		patch = 0
+	}
 	bumped = m[6] == ""
 	if bumped {
 		patch++
