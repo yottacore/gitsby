@@ -204,6 +204,10 @@ That binary is the whole product. The rest of the tooling below is for running t
 
 - `cicd/utility/keep-build.bash` - archive the current binary, list what is kept, run one, or diff one against the current build on the same arguments. For bisecting a behavior change.
 
+- `cicd/utility/run-latest.ps1` - run the newest build, any arguments forwarded, from a pool of timestamped copies outside PATH. The pool means a rebuild never fights a copy that is still running, and week-old copies age out on their own. PowerShell 7, all platforms.
+
+- `cicd/utility/spawn-report.bash` - print the newest recorded spawn counts with deltas; `--check` reports only what arrived since it last looked, the same marker pattern as `lint-report.bash --check`.
+
 All three suites take `-q`, which drops the per-check line and keeps the failures and the total. The pipeline passes it on an unattended run.
 
 The pipeline fast-forwards from `origin` before it builds anything, so the checks run against the tree that will actually be pushed. It stops if your branch has diverged, warns and carries on if you're offline or the branch has no upstream, and `--no-sync` skips it.

@@ -2439,6 +2439,10 @@ GHEOF
 		bash -c "[[ -x '${root}/cicd/utility/spawn-count.bash' ]] && grep -q 'SPAWN_COUNT_CMD' '${root}/cicd/cicd.bash'"
 	fAssert "and a kept-build script exists for bisecting against an older one" \
 		bash -c "[[ -x '${root}/cicd/utility/keep-build.bash' ]]"
+	fAssert "and a pooled-copy runner exists for driving the newest build" \
+		bash -c "[[ -x '${root}/cicd/utility/run-latest.ps1' ]]"
+	fAssert "and a spawn report exists for the startup look, marker-gated like lint's" \
+		bash -c "[[ -x '${root}/cicd/utility/spawn-report.bash' ]] && grep -q 'spawn-seen' '${root}/cicd/utility/spawn-report.bash'"
 	## -q reached the publisher and nothing else, so an unattended run still printed every one
 	## of 900-odd check lines and buried every stage header.
 	local qHarness=""
