@@ -71,7 +71,7 @@ fDie(){ echo "gen-winres: $*" >&2; exit 1; }
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## --icon: rebuild the .ico from the logo. Six sizes. 16/32/48 stay BMP because Explorer before
 ## Windows 10 does not reliably draw a PNG-compressed entry below 256; the three large ones are
-## PNG, quantized to 256 colours, which takes the file from 134 KB to 48 KB for a 1.3% RMSE the
+## PNG, quantized to 256 colors, which takes the file from 134 KB to 48 KB for a 1.3% RMSE the
 ## eye cannot find at icon size.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 if ((iconOnly)); then

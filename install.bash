@@ -23,9 +23,10 @@ doSystem=0; doYes=0; tag=""
 releaseChannel=""; targetScope=""; arch=""
 
 fEcho(){  echo "[ $* ]"; }
-fErr(){   echo "Error: $*" >&2; exit 1; }
+fErr(){   { echo; echo "Error: $*"; echo; } >&2; exit 1; }
 fLower(){ printf '%s' "${1}" | tr '[:upper:]' '[:lower:]'; }
 fSyntax(){
+	echo
 	cat <<-EOF
 	Usage: install.bash [OPTIONS]
 	Downloads and installs gitsby (with confirmation).
@@ -38,6 +39,7 @@ fSyntax(){
 	  -h, --help             This.
 	  --release              Took 'dev' or 'stable' when gitsby was a script; takes neither now.
 	EOF
+	echo
 }
 
 while [[ $# -gt 0 ]]; do
@@ -141,14 +143,30 @@ if [[ -z "${tag}" ]]; then
 	## 'prerelease: false' is what the redirect would have found.
 	if [[ -z "${tag}" ]]; then
 		releaseList="$(fFetch "https://api.github.com/repos/${repo}/releases" 2>/dev/null || true)"
-		## Two BRE substitutions rather than one alternation: '\|' is a GNU extension and this
-		## has to run under the sed macOS ships.
-		releaseFacts="$(printf '%s\n' "${releaseList}" \
+		## Commas and braces become newlines first, so every key sits on its own line whether
+		## GitHub pretty-prints or packs the JSON on one line. Neither character can appear in
+		## a tag name (checked below) or a boolean. Two BRE substitutions rather than one
+		## alternation: '\|' is a GNU extension and this has to run under the sed macOS ships.
+		#  shellcheck disable=2020  ## 'tr replaces sets of chars' - the duplicate newlines are deliberate: all three go to newline.
+		releaseFacts="$(printf '%s\n' "${releaseList}" | tr ',{[' '\n\n\n' \
 			| sed -n -e 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/T \1/p' \
 			         -e 's/^[[:space:]]*"prerelease":[[:space:]]*\([a-z]*\).*/P \1/p' || true)"
-		tag="$(printf '%s\n' "${releaseFacts}" | awk '$1=="T"{t=$2} $1=="P"&&$2=="false"&&t!=""{print t; exit}' || true)"
+		## Highest version wins, not newest-listed: the list is ordered by publish date, so a
+		## backported fix cut after a newer release would otherwise resolve as latest. The
+		## first three numeric fields decide; a tie keeps the earlier-listed (newer) entry.
+		fPickTag(){
+			awk -v wantPre="$1" '
+				function vkey(t,  v,n,a,i,k) { v=t; sub(/^[vV]/,"",v); n=split(v,a,"[._-]"); k=""
+					for (i=1;i<=3;i++) k = k sprintf("%09d", a[i]+0)
+					return k }
+				$1=="T"{t=$2}
+				$1=="P" && t!="" && (wantPre=="any" || $2==wantPre) {
+					if (vkey(t)>best) { best=vkey(t); bestT=t } }
+				END{ if (bestT!="") print bestT }'
+		}
+		tag="$(printf '%s\n' "${releaseFacts}" | fPickTag false || true)"
 		if [[ -z "${tag}" ]]; then
-			tag="$(printf '%s\n' "${releaseFacts}" | awk '$1=="T"{print $2; exit}' || true)"
+			tag="$(printf '%s\n' "${releaseFacts}" | fPickTag any || true)"
 			[[ -z "${tag}" ]] || fEcho "No full release yet; taking the newest pre-release, ${tag}."
 		fi
 	fi
@@ -227,6 +245,7 @@ got="$(fSha256 "${tmpFile}")"
 [[ "${got}" = "${want}" ]] || fErr "Checksum mismatch for ${asset}; aborting. (Corrupted download or tampering.)"
 fEcho "Checksum verified."
 
+echo
 fEcho "Installing to ${destDir}/gitsby ..."
 ## Staged beside the target and renamed over it, never written in place. Two things that
 ## buys: an interrupt mid-copy leaves the staged file half-written rather than the real one,
@@ -247,6 +266,7 @@ else
 fi
 staged=""
 
+echo
 fEcho "Verifying ..."
 "${destDir}/gitsby" --version
 case ":${PATH}:" in

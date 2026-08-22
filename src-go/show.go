@@ -593,6 +593,7 @@ func (a *app) cmdWhoami() {
 	if remoteDisp == "" {
 		remoteDisp = "(none)"
 	}
+	// A cwd nothing can name prints as empty; not worth stopping a display over.
 	wd, _ := os.Getwd()
 	a.out.clean("")
 	a.out.clean(dirLabel + wd)
@@ -610,6 +611,7 @@ func (a *app) showStatus(withIdentity bool) {
 		remoteDisp = "(none)"
 	}
 	a.out.clean("")
+	// Same as cmdWhoami: an unnameable cwd prints as empty rather than refusing.
 	wd, _ := os.Getwd()
 	a.out.clean(dirLabel + wd)
 	a.out.clean("Remote .......: " + remoteDisp)

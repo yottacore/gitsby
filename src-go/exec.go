@@ -57,8 +57,9 @@ func splitLines(out string) []string {
 
 // runLines is runOut split into lines, empties dropped.
 func runLines(name string, args ...string) []string {
-	var lines []string
-	for _, line := range splitLines(runOut(name, args...)) {
+	all := splitLines(runOut(name, args...))
+	lines := make([]string, 0, len(all))
+	for _, line := range all {
 		if line != "" {
 			lines = append(lines, line)
 		}
@@ -152,7 +153,7 @@ func (a *app) handover(name string, args []string) error {
 		}
 		// Whether it exists was settled before the handover, so whatever this is,
 		// it isn't that.
-		return usagef("Couldn't run '%s': %s", name, err)
+		return usageWrapf(err, "Couldn't run '%s'", name)
 	}
 	return silentExit(0)
 }

@@ -13,6 +13,7 @@ package main
 import (
 	"os"
 	"strings"
+	"unicode"
 )
 
 // remoteRef is a remote URL taken apart: where it lives and what it is called.
@@ -88,7 +89,7 @@ func splitRemoteURL(url string) (host, path string, viaSSH bool) {
 		if at := strings.LastIndex(host, "@"); at >= 0 {
 			host = host[at+1:]
 		}
-		return host, strings.TrimPrefix(path, "/"), viaSSH
+		return hostOrNothing(host, strings.TrimPrefix(path, "/"), viaSSH)
 	}
 	// The two '://' forms both carry the path after the first slash.
 	if slash := strings.Index(host, "/"); slash >= 0 {
@@ -100,7 +101,17 @@ func splitRemoteURL(url string) (host, path string, viaSSH bool) {
 	if colon := strings.Index(host, ":"); colon >= 0 { // a port is not part of the name
 		host = host[:colon]
 	}
-	return host, strings.TrimPrefix(path, "/"), viaSSH
+	return hostOrNothing(host, strings.TrimPrefix(path, "/"), viaSSH)
+}
+
+// hostOrNothing refuses a "host" no host could be: whitespace means some other
+// colon-bearing string landed in the split, and "couldn't tell" (empty) is the
+// honest answer rather than a name for rules to match against.
+func hostOrNothing(host, path string, viaSSH bool) (string, string, bool) {
+	if strings.ContainsFunc(host, unicode.IsSpace) {
+		return "", "", false
+	}
+	return host, path, viaSSH
 }
 
 // githubHosts names the hosts gh is the right tool for. GH_HOST is how gh itself

@@ -158,10 +158,33 @@ func (a *app) cmdPrune() error {
 	// -D with our own gate, not -d. 'git branch -d' asks whether the branch is contained in
 	// its upstream, or in HEAD when it has none - neither of which is the question here, and
 	// the second one refuses a genuinely-merged local-only branch from any other branch.
-	// Re-checked right now rather than trusting the plan: the prompt may have sat a while.
+	// Re-checked right now rather than trusting the plan - the prompt may have sat a while -
+	// but surveyed the way resolvePrune surveys: one 'for-each-ref --merged' per target ref
+	// answers containment for every branch at once, instead of a merge-base fork per branch.
+	// A branch deleted since the plan drops out of the survey, which reads as not-contained
+	// and holds it (and its remote copy) back, same as the per-branch ask did.
+	stillMerged := map[string]bool{}
+	unconfirmed := func() bool {
+		for _, branch := range a.prune.local {
+			if !stillMerged[branch] {
+				return true
+			}
+		}
+		return false
+	}
+	for _, ref := range a.prune.targetRefs {
+		// Later refs are asked only while a candidate is still unconfirmed, so the
+		// common case - everything merged through the first ref - costs one call.
+		if !unconfirmed() {
+			break
+		}
+		for _, branch := range runLines("git", "for-each-ref", "--format=%(refname:short)", "--merged", ref, "refs/heads/") {
+			stillMerged[branch] = true
+		}
+	}
 	var deleteLocal []string
 	for _, branch := range a.prune.local {
-		if !isMergedInto("refs/heads/"+branch, a.prune.targetRefs) {
+		if !stillMerged[branch] {
 			a.out.status("'" + branch + "' is no longer contained in " + a.mergeTarget() + "; leaving it alone.")
 			heldBack[branch] = true
 			continue

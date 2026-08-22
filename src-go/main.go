@@ -630,6 +630,7 @@ func (a *app) showBeforeState() error {
 		// to be standing in.
 		a.cmdAccountList()
 	case a.cmd.name == "repo-clone":
+		// As in the show printers: an unnameable cwd prints as empty.
 		wd, _ := os.Getwd()
 		a.out.clean("")
 		a.out.clean(dirLabel + wd)
@@ -643,6 +644,7 @@ func (a *app) showBeforeState() error {
 		} else {
 			remoteDisp = "github.com/" + a.tgt.ghTarget + " (to be created)"
 		}
+		// As in the show printers: an unnameable cwd prints as empty.
 		wd, _ := os.Getwd()
 		a.out.clean("")
 		a.out.clean(dirLabel + wd)

@@ -331,6 +331,7 @@ func isReadableFile(p string) bool {
 	if err != nil {
 		return false
 	}
+	// Opened only to probe readability; nothing was written, so Close has nothing to say.
 	_ = f.Close()
 	return true
 }
@@ -463,7 +464,9 @@ func splitAccountKey(key string) (acct, field string, ok bool) {
 		return "", "", false
 	}
 	acct, field = rest[:dot], rest[dot+1:]
-	if !acctNameOK.MatchString(acct) {
+	// An empty field ('account.work.') is not an account key either; the whole line
+	// lands with the other ignored ones instead of half-parsing.
+	if field == "" || !acctNameOK.MatchString(acct) {
 		return "", "", false
 	}
 	return acct, field, true
@@ -563,6 +566,8 @@ func (a *app) contextDir() string {
 		if top := runOut("git", "rev-parse", "--show-toplevel"); top != "" {
 			return top
 		}
+		// A cwd nothing can name leaves the context empty, which reads as "nowhere"
+		// to every rule that matches against it.
 		wd, _ := os.Getwd()
 		return wd
 	})

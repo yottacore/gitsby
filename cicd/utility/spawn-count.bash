@@ -45,7 +45,7 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-fSay(){ ((quiet)) || echo "$@"; }
+fEcho_Clean(){ echo "$*"; }
 
 command -v strace >/dev/null 2>&1 || { echo "  spawn counts skipped (no strace)"; exit 0; }
 exe="${root}/${GO_MODULE_DIR}/${EXE_NAME}"
@@ -107,10 +107,10 @@ fMeasure(){
 	n="$(grep -c 'execve(' "${traceFile}" 2>/dev/null || true)"
 	labels+=("${label}")
 	counts+=("${n}")
-	fSay "  ${n}	${label}"
+	((quiet)) || fEcho_Clean "  ${n}	${label}"
 }
 
-fSay "spawn counts (${exe})"
+((quiet)) || fEcho_Clean "spawn counts (${exe})"
 fMeasure "status"         -q --no-fetch status
 fMeasure "whoami"         -q --no-fetch whoami
 fMeasure "br list"        -q --no-fetch br list
@@ -130,20 +130,20 @@ for f in "${countDir}"/spawn_*.tsv; do [[ -f "${f}" ]] && baseline="${f}"; done
 
 declare -i regressed=0
 if [[ -z "${baseline}" ]]; then
-	fSay "  (no baseline yet - recording this run as one)"
+	((quiet)) || fEcho_Clean "  (no baseline yet - recording this run as one)"
 else
-	fSay "  baseline: $(basename "${baseline}")"
+	((quiet)) || fEcho_Clean "  baseline: $(basename "${baseline}")"
 	for ((i = 0; i < ${#labels[@]}; i++)); do
 		was="$(awk -F'\t' -v k="${labels[i]}" '$1==k{print $2}' "${baseline}" || true)"
-		[[ -n "${was}" ]] || { fSay "  NEW    ${labels[i]} (${counts[i]})"; continue; }
+		[[ -n "${was}" ]] || { ((quiet)) || fEcho_Clean "  NEW    ${labels[i]} (${counts[i]})"; continue; }
 		## A tolerance, because a git version can add or drop a helper of its own: two more
 		## processes, or a tenth again, whichever is larger.
 		local_allow=$(( was / 10 )); (( local_allow < 2 )) && local_allow=2
 		if (( counts[i] > was + local_allow )); then
-			echo "  REGRESSED  ${labels[i]}: ${was} -> ${counts[i]}"
+			fEcho_Clean "  REGRESSED  ${labels[i]}: ${was} -> ${counts[i]}"
 			regressed=1
 		elif (( counts[i] < was )); then
-			fSay "  improved   ${labels[i]}: ${was} -> ${counts[i]}"
+			((quiet)) || fEcho_Clean "  improved   ${labels[i]}: ${was} -> ${counts[i]}"
 		fi
 	done
 fi
@@ -159,7 +159,7 @@ out="${countDir}/spawn_${stamp}.tsv"
 : > "${out}"
 for ((i = 0; i < ${#labels[@]}; i++)); do printf '%s\t%s\n' "${labels[i]}" "${counts[i]}" >> "${out}"; done
 gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
-fSay "  recorded $(basename "${out}")"
+((quiet)) || fEcho_Clean "  recorded $(basename "${out}")"
 
 
 ##	History:

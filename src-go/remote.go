@@ -300,6 +300,8 @@ func (a *app) convertibleToHTTPS() bool {
 	if !a.accountServesHost(a.originHost()) {
 		return false
 	}
+	// Only whether a token exists matters here; its source and any load complaint
+	// belong to the identity block, which reports them itself.
 	token, _, _ := a.accountToken(a.originHost())
 	return token != ""
 }

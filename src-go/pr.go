@@ -157,7 +157,7 @@ func parseForgeTable(out string) []map[string]string {
 		return nil
 	}
 	header := strings.Split(lines[0], "\t")
-	var records []map[string]string
+	records := make([]map[string]string, 0, len(lines)-1)
 	for _, line := range lines[1:] {
 		if strings.TrimSpace(line) == "" {
 			continue

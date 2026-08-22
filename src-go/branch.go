@@ -31,6 +31,8 @@ func (a *app) aheadBehind() (ahead, behind int) {
 		if len(fields) != 2 {
 			return [2]int{}
 		}
+		// rev-list's count format is fixed, so a non-number can only mean a git this
+		// code has never met; 0 keeps the status line a status line.
 		behind, _ := strconv.Atoi(fields[0])
 		ahead, _ := strconv.Atoi(fields[1])
 		return [2]int{ahead, behind}
@@ -100,19 +102,6 @@ func (a *app) isProtectedBranch(branch string) bool {
 		return true
 	}
 	return branch == "dev" && (branchExistsLocal("dev") || branchExistsRemote("dev"))
-}
-
-// isMergedInto: true when ref is already contained in any of the refs given. No
-// existence check first - merge-base fails on a ref that has since gone, which is
-// the same answer as skipping it, and asking separately meant one extra call per
-// branch per target every time through.
-func isMergedInto(ref string, into []string) bool {
-	for _, target := range into {
-		if runOK("git", "merge-base", "--is-ancestor", ref, target) {
-			return true
-		}
-	}
-	return false
 }
 
 // defaultBranch prefers origin's HEAD; falls back to whichever of main/master

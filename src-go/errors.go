@@ -36,9 +36,14 @@ type usageError struct {
 	// subshell swallows the wrapping stdout blanks, so only the message escapes
 	// and the parent's own exit adds the single blank that lands.
 	sub bool
+	// cause keeps the underlying error inspectable (errors.Is/As) when one exists;
+	// its text is already part of msg.
+	cause error
 }
 
 func (e *usageError) Error() string { return e.msg }
+
+func (e *usageError) Unwrap() error { return e.cause }
 
 func (e *usageError) report(out *printer) int {
 	if !e.sub {
@@ -55,6 +60,12 @@ func (e *usageError) report(out *printer) int {
 // usagef reports a validation error the caller can act on.
 func usagef(format string, a ...any) error {
 	return &usageError{msg: fmt.Sprintf(format, a...)}
+}
+
+// usageWrapf is usagef over an underlying error: the cause's text lands in the
+// message, and the cause itself stays on the chain for errors.Is/As.
+func usageWrapf(cause error, format string, a ...any) error {
+	return &usageError{msg: fmt.Sprintf(format, a...) + ": " + cause.Error(), cause: cause}
 }
 
 // usageSubf is usagef for the errors the scripts raise inside a command
