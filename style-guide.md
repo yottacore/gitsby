@@ -5,9 +5,9 @@
 <!-- markdownlint-disable MD041 -- First line in a file should be a top-level heading -->
 # Style guide
 
-Canonical coding style for this project's Bash and PowerShell. For contribution process, see [contributing.md](contributing.md).
+Canonical coding style for this project's Go, Bash, and PowerShell. For contribution process, see [contributing.md](contributing.md).
 
-Scope, as of v2.1.0: the product itself is Go now, and Go's style is `gofmt` - the lint stage runs it in list mode and gates on any file it would reformat, so there is nothing to write down here. What this guide still governs is the Bash and PowerShell in `legacy/`, which is frozen and read-only, and the pipeline's own scripts under `cicd/`, which are not.
+Scope: the product itself is Go now. Go's *formatting* is `gofmt` - the lint stage runs it in list mode and gates on any file it would reformat, so layout is not written down here - but the conventions the formatter can't see are, below. The Bash and PowerShell sections govern the frozen, read-only scripts in `legacy/` and the pipeline's own scripts under `cicd/`.
 
 <!-- TOC ignore:true -->
 ## Table of contents
@@ -18,6 +18,7 @@ Scope, as of v2.1.0: the product itself is Go now, and Go's style is `gofmt` - t
 	- [Naming](#naming)
 	- [Comments and headers](#comments-and-headers)
 	- [Misc](#misc)
+- [Go](#go)
 - [Bash](#bash)
 - [PowerShell](#powershell)
 - [Performance](#performance)
@@ -51,6 +52,28 @@ Scope, as of v2.1.0: the product itself is Go now, and Go's style is `gofmt` - t
 - Functions should be idempotent.
 
 - Output should be "friendly", with a blank line to start, a blank line after the end, and never two blank lines in a row (except if beyond script control e.g. in the middle of external command output). The custom bash fEcho*() family of functions help with that.
+
+## Go
+
+`gofmt` settles everything it has an opinion on. The rest:
+
+- Errors return; they don't exit. One `os.Exit` at the top of `main`, no `panic` or `log.Fatal` in library code. A command's failure is a value the caller decides what to do with.
+
+- Add context when passing an error up, and wrap with `%w` (`fmt.Errorf("reading config: %w", err)`) so the chain stays inspectable with `errors.Is`/`As`. Stringifying the cause with `%s`/`%v` throws that away.
+
+- Never discard an error silently. Handle it, return it, or discard it with a one-line comment saying why discarding is correct there.
+
+- Return early. Handle the error or the edge case and get out; the happy path stays at the lowest indent. No `else` after a `return`.
+
+- No goroutines or channels without a measured reason. This program's life is spent waiting on `git`; concurrency here buys latency bugs, not speed.
+
+- Package-level variables are for compiled regexps (`regexp.MustCompile`) and true constants only. Run state lives on the struct that owns the run.
+
+- Keep interfaces small, define them where they are consumed, and don't introduce one until a second implementation exists.
+
+- When a slice's final size is knowable, allocate it with `make(len 0, cap n)` up front.
+
+- `.golangci.yml` at the module root is the gate; a finding there is a defect, not advice.
 
 ## Bash
 

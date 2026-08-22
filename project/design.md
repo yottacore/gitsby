@@ -5,9 +5,39 @@
 <!-- markdownlint-disable MD041 -- First line in a file should be a top-level heading -->
 # Design
 
-Design, requirements, and direction. The active bug and feature task list lives in `backlog.md`.
+Design, requirements, and direction. The active bug and feature task list lives in [backlog.md](backlog.md).
 
 This is a decision log, not a specification. Each entry says what was decided and - where it matters - what was rejected and why, so a later reader can tell a considered choice from an accident. Entries are revised in place when the thinking changes rather than appended to, so what is here is what is currently true.
+
+## Table of contents
+
+<!-- TOC -->
+
+- [Table of contents](#table-of-contents)
+- [Goals and non-goals](#goals-and-non-goals)
+- [Assumptions](#assumptions)
+- [Project structure](#project-structure)
+	- [Folder structure](#folder-structure)
+	- [Logical code structure](#logical-code-structure)
+	- [Execution flow](#execution-flow)
+- [Direction decisions](#direction-decisions)
+- [Branching model](#branching-model)
+	- [How the common models compare](#how-the-common-models-compare)
+	- [Which model this is](#which-model-this-is)
+	- [Why not GitHub Flow](#why-not-github-flow)
+	- [The GitFlow author's caveat](#the-gitflow-authors-caveat)
+	- [Hotfix branches](#hotfix-branches)
+	- [Enforcement](#enforcement)
+	- [Repos that have no dev branch](#repos-that-have-no-dev-branch)
+- [Architecture](#architecture)
+	- [Software stack](#software-stack)
+	- [UI](#ui)
+	- [Testing](#testing)
+	- [Demo](#demo)
+	- [Release policy](#release-policy)
+	- [Automating a release](#automating-a-release)
+
+<!-- /TOC -->
 
 ## Goals and non-goals
 
@@ -100,7 +130,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 - The host decides the tool, and the tool is reached for only once the host is known to be one it serves.
 	- Gitsby began as a GitHub program and reached for `gh` whenever it wanted anything from a remote. Most of what it does is Git, and Git does not care whose server it is - so among these options, it was decided that everything answerable with Git alone must work on any host with no forge client installed.
 	- Where `origin` points is established first, from the remote URL, with any `ssh_config` alias resolved. `gh` serves `github.com` and whatever `GH_HOST` names, so Enterprise stays on the `gh` path; `tea` serves Gitea and Forgejo. Some distributions install tea as `tea-cli`, and both spellings are looked for.
-	- A remote whose host cannot be named - a local path, or a URL shape not parsed - is deliberately NOT a refusal. "We could not tell" and "it is definitely not a forge" are different answers, and only one of them is gitsby's to assert; such a remote falls through to `gh` exactly as before. This follows the rule already standing for remote owners.
+	- A remote whose host cannot be named - a local path, or a URL shape not parsed - is deliberately *not* a refusal. "We could not tell" and "it is definitely not a forge" are different answers, and only one of them is gitsby's to assert; such a remote falls through to `gh` exactly as before. This follows the rule already standing for remote owners.
 	- `repo create` and `repo connect owner/name` stay GitHub-only. They are about GitHub specifically rather than about whichever host a repository happens to use.
 
 - The identity gate asks about the host in question, not about GitHub.
@@ -112,7 +142,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- Accounts gained `host` (defaulting to `github.com`, which is what every config written before the key existed meant) and `user`. If an account's host is not the host `origin` is on, nothing is applied and the identity block names both hosts.
 	- A non-GitHub token is exported under its own variable, never as `GH_TOKEN`: `gh` reads that one, and every child process would otherwise inherit a credential for a host `gh` would try to use it on.
 	- The credential helper is written for the host actually being authenticated to. `user` exists because Gitea checks the username an HTTPS push presents where GitHub ignores it.
-	- Neither the token nor the username is interpolated into the helper - both are read from the environment when it runs. The helper is a string Git hands to a SHELL, and the login reaching it can come from `GITSBY_ACCOUNT`, from a git config key, or from the config file, none of which is a place to accept shell. Interpolating the login put whatever those said inside the command Git runs; the environment removes the class rather than filtering it.
+	- Neither the token nor the username is interpolated into the helper - both are read from the environment when it runs. The helper is a string Git hands to a shell, and the login reaching it can come from `GITSBY_ACCOUNT`, from a git config key, or from the config file, none of which is a place to accept shell. Interpolating the login put whatever those said inside the command Git runs; the environment removes the class rather than filtering it.
 
 - There is no bare `commit`, and no bare `pull` that skips the commit. Both were escape hatches around the workflow the tool exists to enforce.
 	- `commit` alone produces exactly the state gitsby was written to prevent: work committed locally that never reaches the remote, diverging quietly until the merge is painful.
@@ -299,9 +329,9 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- The `.ico` is a committed asset too, not a build product. Image encoders differ between versions, so regenerating it is a hand step (`gen-winres.bash --icon`) run when the logo changes, and nothing gates on reproducing it byte for byte.
 
 - A diagnostic explains itself in the reader's vocabulary, and offers its fix as a command.
-	- The identity block's unapplied-account notes were read by the owner on a real Gitea repository and raised more questions than they answered: which token, applied to what, what the quoted string even was, and what a "forge" is. Among these options, it was decided that the block must answer all four without the reader knowing anything about how gitsby resolves accounts.
+	- The identity block's unapplied-account notes, read on a real Gitea repository, raised more questions than they answered: which token, applied to what, what the quoted string even was, and what a "forge" is. Among these options, it was decided that the block must answer all four without the reader knowing anything about how gitsby resolves accounts.
 	- "Forge" is gone from the whole tool, the status line included - it is a word for people who already know the answer. The line is `Git host`, and the notes name the host outright wherever they can.
-	- `From:` says what the name IS and which of several possible sources produced it, rather than repeating the name already on the line above. That was the question the old wording could not answer.
+	- `From:` says what the name *is* and which of several possible sources produced it, rather than repeating the name already on the line above. That was the question the old wording could not answer.
 	- Every note names only what is actually on screen. `Kept:` pointed at "the SSH and Author lines" whichever half of the account applied, which sent readers looking for an SSH line that was never printed - a second thing gone wrong, apparently.
 	- Advice that can be a command is a command. `Fix:` names `gitsby account set <account> <key> <value>`, which makes the edit itself, rather than a config line to retype. It cannot be mistyped and cannot name a key the parser does not take, which the advice had already done once.
 
@@ -408,7 +438,7 @@ See also the release policy under Architecture, which covers how releases are pu
 
 - Before anything touches a remote, the display names who you would be acting as: the account the SSH key authenticates as, the connection behind it once host aliases are resolved, and the author that would be stamped on commits. Having more than one account configured is common, and pushing as the wrong one is easy and awkward to undo.
 
-- The account is resolved by asking the host, not inferred from the key filename or the connection. A name that is merely likely is worse than none here, because it gets believed. When it cannot be resolved the display says so.
+- The account is resolved by asking the host, not inferred from the key filename or the connection - a guess would get believed. When it cannot be resolved the display says so.
 
 - Where the display cannot just state a fact - an account that resolved but did not take effect - it drops into a labeled block under the line rather than growing the line. It was decided that a diagnostic has four separate jobs (what happened, why, what did still take effect, what to type and where), and that a single trailing clause carrying all four is one nobody reads. Each gets its own `Why:` / `Kept:` / `Fix:` / `File:` label, indented under the line it belongs to.
 

@@ -10,6 +10,7 @@
 [![Latest release](https://img.shields.io/github/v/release/jim-collier/gitsby?include_prereleases&label=release)](https://github.com/jim-collier/gitsby/releases/latest)
 ![Lifecycle: Stable](https://img.shields.io/badge/Lifecycle-Stable-brightgreen)
 ![Support](https://img.shields.io/badge/Support-Maintained-brightgreen)
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ff69b4)](https://github.com/sponsors/jim-collier)
 
 <!-- TOC ignore:true -->
 # Gitsby
@@ -43,8 +44,15 @@
 - [Compatibility](#compatibility)
 - [A typical day](#a-typical-day)
 - [Install](#install)
+	- [Is it in my package manager?](#is-it-in-my-package-manager)
+	- [The one-liners](#the-one-liners)
+	- [Where it goes](#where-it-goes)
+	- [Without the installer](#without-the-installer)
+	- [Or check it yourself](#or-check-it-yourself)
+	- [Coming from 2.x](#coming-from-2x)
 - [How to develop](#how-to-develop)
 - [Contributing](#contributing)
+- [Support Gitsby](#support-gitsby)
 - [Legal stuff](#legal-stuff)
 
 <!-- /TOC -->
@@ -53,7 +61,7 @@
 
 Git has more than eighty porcelain commands, because it supports every workflow, every team size, and every hard edge-case of conflict resolution. That flexibility is the whole reason it's complex.
 
-Gitsby has ten - or 23 counting subcommands. It gets there three ways:
+Gitsby has ten - or 24 counting subcommands. It gets there three ways:
 
 - By applying one opinionated workflow and ignoring the myriad other ways of doing the same thing.
 
@@ -112,6 +120,8 @@ There is deliberately no bare `commit`, and no bare `pull` that skips the commit
 
 `br create`, `br switch`, `br merge`, and `pr create` all deal with your work first. `pullcom` is the one command for both, and it pulls *before* it commits so your work lands on top of everyone else's and history stays linear.
 
+`br prune` deletes a branch only when its tip is provably an ancestor of the merge target, re-checked at the moment of each delete - not `git branch -d`'s upstream-containment test, which answers a different question and gets it wrong in both directions. That exactness is what the workflow buys: every branch lands with a real merge commit, so "merged" is a fact, not a guess. Unmerged work always survives it, and there is deliberately no `--force`.
+
 Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--public`/`--private` (visibility for `repo create`; private by default), `--no-fetch` (skip the fetch and the pull), `--any-identity`, `--config FILE` (read accounts from somewhere other than the usual place), `-h`, `-v`.
 
 **Offline is a state, not a flag.** Every command finds out by trying, and then behaves:
@@ -158,7 +168,9 @@ Full detail, including where the file lives on each platform, SSH keys, token fi
 	> Note: [GitButler](https://gitbutler.com/) is *not* interchangeable with these. While a great tool and a cool idea, it manages its own metadata - that inherently doesn't mix well with other git-based tools that move `HEAD` or rewrite history. It's worth a look, but give it a dedicated trial on a small personal repo rather than mixing it in.
 
 - Gitsby works with any Git remote. Nearly everything it does is Git, and Git does not care whose server it is - branching, committing, pulling, pushing, merging, pruning and releasing need no account with anybody.
+
 - Gitsby looks at where `origin` actually points before reaching for anything else, so a host-specific tool is only ever run against the host it serves. On GitHub that is [gh](https://github.com/cli/cli); on Gitea and Forgejo it is [tea](https://gitea.com/gitea/tea) (some distributions install it as `tea-cli` - either name is found). Neither installed is fine until you ask for something that needs one, and then it says which one and why.
+
 - Still GitHub-only, because they are about GitHub specifically: `repo create`, and `repo connect` when you give it an `owner/name` instead of a full URL.
 
 - What you need: Git, and nothing else.
@@ -211,7 +223,13 @@ curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install.bas
 irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1 | iex
 ~~~
 
-The first on Linux, macOS or FreeBSD; the second on Windows. PowerShell is what runs the second one, not what runs Gitsby - Windows PowerShell 5.1, which every Windows box already has, is enough.
+The first on Linux, macOS or FreeBSD; the second on Windows. PowerShell is what runs the second one, not what runs Gitsby - Windows PowerShell 5.1, which every Windows box already has, is enough. (It runs fine under `pwsh` on any platform too, if PowerShell is what you have handy.)
+
+`iex` can't pass options along. To hand the installer a flag - `-Target system`, `-Tag`, `-Help` - give the same download to a script block instead:
+
+~~~pwsh
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1))) -Help
+~~~
 
 Either one works out which binary this machine needs, takes it from the latest release, and checks it against that release's published `SHA256SUMS` before installing it. There is no unverified route: where the checksum can't be fetched or can't be computed, the install stops instead of carrying on. And either one shows you its plan and asks before touching anything.
 
@@ -247,7 +265,7 @@ Substitute the release you are checking - the tag carries the leading `v` and th
 
 ### Coming from 2.x
 
-Coming from 2.x, where Gitsby was a Bash script and a PowerShell one: install over the top and delete the old `gitsby` or `gitsby.ps1` by hand. Every 2.x command still works, and `update` and `br land` are still accepted alongside their current names, `pullcom` and `br merge`. The scripts themselves are retired - the v2.1.0 tag is where they live.
+Back then Gitsby was a Bash script and a PowerShell one: install over the top and delete the old `gitsby` or `gitsby.ps1` by hand. Every 2.x command still works, and `update` and `br land` are still accepted alongside their current names, `pullcom` and `br merge`. The scripts themselves are retired - the v2.1.0 tag is where they live.
 
 ## How to develop
 
@@ -258,18 +276,17 @@ git clone https://github.com/jim-collier/gitsby.git
 cd gitsby/src-go && go build -o gitsby .
 ~~~
 
-`cicd/cicd.bash` is the local pipeline and the one command to know. Run it before opening a PR. In order, it:
+`cicd/cicd.bash` is the local pipeline and the one command to know. Run it before opening a PR. Seven stages, numbered as the run prints them, behind a stage 0 that fast-forwards from origin so everything after it tests the tree that is actually going out:
 
-1. Fast-forwards from origin, so everything after it tests the tree that is actually going out.
-2. Lints (gofmt, vet, staticcheck, golangci-lint, shellcheck).
-3. Builds, runs the unit tests, and runs the regression suite against the binary it just built.
-4. Runs the fuzz vectors, checks the standard library for known problems, and counts the processes each command spawns.
-5. Compares the build against the frozen v2.1.0 one, for backwards compatibility.
-6. Cross-builds every target and installs each to its own tool directory.
-7. Rebuilds the demo gif, if it changed.
-8. **Commits and pushes.** It ends by publishing - worth knowing before you run it on a fork.
+1. Lints (gofmt, vet, staticcheck, golangci-lint, shellcheck).
+2. Builds, runs the unit tests, and runs the regression suite against the binary it just built.
+3. Runs the fuzz vectors, checks the standard library for known problems, and counts the processes each command spawns.
+4. Compares the build against the frozen v2.1.0 one, for backwards compatibility.
+5. Cross-builds every target and installs each to its own tool directory.
+6. Rebuilds the demo gif, if it changed.
+7. **Commits and pushes.** It ends by publishing - worth knowing before you run it on a fork.
 
-Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `gifsicle` won't stop the rest. Step 6's destinations are one machine's paths, set in `cicd/config.bash`; on anyone else's box that stage finds nothing writable and says so, which is harmless.
+Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `gifsicle` won't stop the rest. Stage 5's destinations are one machine's paths, set in `cicd/config.bash`; on anyone else's box that stage finds nothing writable and says so, which is harmless.
 
 ~~~bash
 cicd/cicd.bash --quick          # skips fuzz and the demo gif; what you want while iterating
@@ -286,6 +303,10 @@ Given that you may be using this for mission-critical work (as I do), Gitsby aim
 Given how it's written, even if a feature fails its design, it should in theory still never compromise your work.
 
 But if you find something that doesn't work as advertised, or behaves in a way you find surprising even if as-designed, please file an issue. Contributions are welcome too - start with [contributing.md](contributing.md).
+
+## Support Gitsby
+
+Gitsby is free, and built and maintained in spare time. If it helps but code and bug reports aren't your thing, a star or a mention still helps other people find it - and if it is saving you real time, [sponsorship](https://github.com/sponsors/jim-collier) is welcome, and never expected.
 
 ## Legal stuff
 
