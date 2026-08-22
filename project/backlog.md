@@ -557,6 +557,40 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 
 #### Done - Code reviews
 
+- ✅ 20260821 - a full pass over the whole tree, docs and installers included. Suite 773 -> 776, fuzz 269/0, parity 27/0, all green; every new check fails against the build or file that preceded its fix.
+
+	- ✅ Code Review 20260821 item 1: the installers trusted GitHub's list order in the fallback release lookup.
+		- The list is ordered by publish date, so a fix backported after a newer release would have resolved as latest and installed a downgrade. Both installers now take the highest version among the candidates; a numeric tie keeps the newer-listed one.
+		- The bash one also stopped depending on GitHub pretty-printing the JSON - the scrape was line-anchored, and a packed payload matched nothing and then blamed rate limiting.
+		- The new suite check runs the backport case against a stub serving a one-line payload; the previous installer fails it both ways.
+
+	- ✅ Code Review 20260821 item 2: `Get-Help` on install.ps1 showed an auto-generated stub.
+		- Comment help was binding to the first function. A blank line under the shebang and two above the function fix the binding; a comment marks them load-bearing.
+		- Also gone: the one `+=`-in-a-loop, and the `iex` one-liner's inability to take flags is now documented in the README with the script-block form.
+
+	- ✅ Code Review 20260821 item 3: `br prune`'s delete-time re-check forked git once per branch.
+		- Now one `for-each-ref --merged` survey, same as the plan-time one, asked per target ref only while a candidate is still unconfirmed - so one branch costs one call and eight branches cost the same. The first cut cost one extra call at n=1, and the spawn counts caught it before it landed.
+
+	- ✅ Code Review 20260821 item 4: no native Go fuzz targets existed.
+		- Five now cover the pure parsers (remote URLs, forge tables, tags, config keys, URL masking); the pipeline hunts briefly past the seed corpus each full pass, capped like the builds.
+		- They paid immediately: a "host" carrying whitespace was matched against account rules instead of reading as unparseable, and `account.<name>.` with no key half-parsed instead of landing with the ignored lines. Both fixed; the crashers are committed as regression seeds.
+
+	- ✅ Code Review 20260821 item 5: error chains were stringified at the two places a usage error carries a cause.
+		- `usageWrapf` keeps the cause on the chain for `errors.Is`/`As`, message text unchanged. `errorlint` and revive's `early-return` now gate what was until now only convention, and the dozen bare `_` discards each carry a one-line reason.
+
+	- ✅ Code Review 20260821 item 6: three pipeline steps ignored the half-the-cores budget the builds keep.
+		- `go test`, `golangci-lint` and vet/staticcheck now run under `BUILD_JOBS`; `go test` also gained `-race`, cheap on a tree with no goroutines and armed for the day one appears.
+
+	- ✅ Code Review 20260821 item 7: `-q` and `-y` behaved identically, against their own help text.
+		- The quiet variable was set and never read. Harness quieting now keys on `-q`; `-y` is unattended and full-volume, as documented. release.bash gained `-q` and hands it to the pipeline. Stage 0 also printed "0/6" in an eight-header run; it says 0/7 now.
+
+	- ✅ Code Review 20260821 item 8: nothing existed to run the newest build the way the pipeline dogfoods it.
+		- `cicd/utility/run-latest.ps1`: pooled timestamped copies outside PATH, week-long age-out, args forwarded, exit code returned. A rebuild never fights a running copy.
+		- `cicd/utility/spawn-report.bash`: the newest recorded spawn counts with deltas, `--check` marker-gated like lint-report's, so the startup look at profiler output has a tool to call.
+
+	- ✅ Code Review 20260821 item 9: docs swept.
+		- Backlog: completed items moved out of Future, empty headings gone, older round numbering unified, example names and paths anonymized. README: sponsor badge and a short support section, the `br prune` exactness paragraph, install subsections in the TOC, the script-block install form, stage numbering matched to what the run prints, count fixes. design.md: table of contents, one duplicated sentence deduplicated. style-guide.md: a Go section for the conventions gofmt can't see. Remaining British spellings fixed, code_of_conduct.md matched back to its upstream text.
+
 - ✅ 20260819d - a third adversarial pass, aimed at what a run inherits from the machine it runs on.
 
 	- Three defects, all in account selection or in what proves it. The first was found by the third: the suite went red on this machine the day it grew a real config of its own, which is what exposed the other two. Four new suite checks (699 -> 703) and two Go tests. Suite 703/0, fuzz 268/0, parity 27/0, spawn counts unchanged.
