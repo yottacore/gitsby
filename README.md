@@ -280,7 +280,7 @@ cd gitsby/src-go && go build -o gitsby .
 
 1. Lints (gofmt, vet, staticcheck, golangci-lint, shellcheck).
 2. Builds, runs the unit tests, and runs the regression suite against the binary it just built.
-3. Runs the fuzz vectors, checks the standard library for known problems, and counts the processes each command spawns.
+3. Runs the fuzz vectors and the native Go fuzz targets, checks the standard library for known problems, and counts the processes each command spawns.
 4. Compares the build against the frozen v2.1.0 one, for backwards compatibility.
 5. Cross-builds every target and installs each to its own tool directory.
 6. Rebuilds the demo gif, if it changed.

@@ -18,6 +18,8 @@
 
 set -eu; set -o pipefail
 
+fEcho(){ echo "[ $* ]"; }
+
 outFile="${1:-}"
 
 fSums(){
@@ -34,7 +36,7 @@ fSums(){
 
 if [[ -n "${outFile}" ]]; then
 	fSums > "${outFile}"
-	echo "[ Wrote ${outFile} ]"
+	fEcho "Wrote ${outFile}"
 else
 	fSums
 fi

@@ -101,7 +101,8 @@ stage_pause=0.4; ((assume_yes)) && stage_pause=0
 
 ## The same reasoning, passed on: the three harnesses print one line per check, and 900-odd
 ## of them bury every stage header in a log nobody is reading live. Failures and totals stay.
-declare -a harness_quiet=(); ((assume_yes)) && harness_quiet=("-q")
+## Keyed on -q, not on unattended: -y is documented as unattended-but-not-quiet.
+declare -a harness_quiet=(); ((quiet)) && harness_quiet=("-q")
 
 ## Publish commit message: -m wins, then config, then a default when unattended.
 ## Empty -> publish interactively (git commit opens an editor); when interactive
@@ -243,7 +244,7 @@ fi
 ## has been built and tested - so a change merged upstream meanwhile would be pushed
 ## having been validated by nothing. Refreshing first means the rest of the run tests
 ## the tree that is actually going out. Publish keeps its own pull as the late guard.
-fSection "0/6  Remote sync"
+fSection "0/7  Remote sync"
 if ((! do_sync)); then
 	fEcho_Clean "remote sync skipped"
 elif ! git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
@@ -349,10 +350,12 @@ else
 	((${#toolDrift[@]} == 0)) || fEcho "WARNING: lint tool versions differ from the recorded set: ${toolDrift[*]}"
 	unformatted="$(cd "${root}/${GO_MODULE_DIR}" && gofmt -l .)"
 	[[ -z "${unformatted}" ]] || fDie "gofmt wants to reformat: ${unformatted}"
-	(cd "${root}/${GO_MODULE_DIR}" && go vet ./...) || fDie "go vet findings"
+	## Same core budget as the builds: BUILD_JOBS caps the go tool's workers, and
+	## GOMAXPROCS caps the analysis threads inside each one.
+	(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${BUILD_JOBS}" go vet -p "${BUILD_JOBS}" ./...) || fDie "go vet findings"
 	fEcho "OK: gofmt + go vet clean"
 	if command -v staticcheck >/dev/null 2>&1; then
-		(cd "${root}/${GO_MODULE_DIR}" && staticcheck ./...) || fDie "staticcheck findings"
+		(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${BUILD_JOBS}" staticcheck ./...) || fDie "staticcheck findings"
 		fEcho "OK: staticcheck clean"
 	else
 		fEcho "WARNING: staticcheck skipped (not installed: go install honnef.co/go/tools/cmd/staticcheck@latest)"
@@ -360,7 +363,7 @@ else
 	## The rest of the set - dropped errors, shadowed builtins, naming - configured in
 	## src-go/.golangci.yml. Gates when installed, like staticcheck above.
 	if command -v golangci-lint >/dev/null 2>&1; then
-		(cd "${root}/${GO_MODULE_DIR}" && golangci-lint run ./...) || fDie "golangci-lint findings"
+		(cd "${root}/${GO_MODULE_DIR}" && golangci-lint run --concurrency "${BUILD_JOBS}" ./...) || fDie "golangci-lint findings"
 		fEcho "OK: golangci-lint clean"
 	else
 		fEcho "WARNING: golangci-lint skipped (not installed: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest)"
@@ -390,7 +393,8 @@ else
 	fEcho "OK: go build (v${go_version#v})"
 	## The unit tests come before the suite below: they answer in milliseconds and
 	## cover the parsing and matching the suite can only reach through a built binary.
-	(cd "${root}/${GO_MODULE_DIR}" && go test ./...) || fDie "go test failures"
+	## -race costs little on a tree with no goroutines and pays the day one appears.
+	(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${BUILD_JOBS}" go test -race -p "${BUILD_JOBS}" ./...) || fDie "go test failures"
 	fEcho "OK: go test"
 	if [[ -f "${TEST_CMD[0]:-}" ]]; then
 		"${TEST_CMD[@]}" ${harness_quiet[@]+"${harness_quiet[@]}"}
@@ -411,6 +415,16 @@ elif [[ -f "${FUZZ_CMD[0]:-}" ]]; then
 	fEcho "OK: fuzz + security passed"
 else
 	fEcho_Clean "no fuzz harness (${FUZZ_CMD[0]:-cicd/fuzz.bash})"
+fi
+## Coverage-guided fuzzing of the pure parsers, briefly. Their seed corpus already ran
+## with 'go test' in stage 2; this hunts a little past it each run. One target per
+## invocation is go's rule, and a crasher lands in src-go/testdata/fuzz/ as evidence.
+if ((do_fuzz)); then
+	for fuzzTarget in $(cd "${root}/${GO_MODULE_DIR}" && go test -list 'Fuzz.*' . 2>/dev/null | grep '^Fuzz' || true); do
+		(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${BUILD_JOBS}" go test -run '^$' -fuzz "^${fuzzTarget}\$" -fuzztime 5s -parallel "${BUILD_JOBS}" . >/dev/null) \
+			|| fDie "fuzzing found a crasher in ${fuzzTarget} (reproducer under ${GO_MODULE_DIR}/testdata/fuzz/)"
+	done
+	fEcho "OK: native fuzz targets"
 fi
 ## With no third-party dependencies the standard library is the only library code there is
 ## to check - and it is linked into every binary we publish. Probe-gated like staticcheck;

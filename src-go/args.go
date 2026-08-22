@@ -127,7 +127,7 @@ func collapseCommand(cmd command) (command, error) {
 	// the 2.1.0 name; 'pull' is safe because the bare pull command is gone, and an
 	// alias onto this one cannot skip the commit the way that one could.
 	switch cmd.name {
-	case "update", "pull", "pullc", "pullco", "pullcom", "pullcomm", "pullcommit":
+	case "update", "pull", "pullc", "pullco", "pullcom", "pullcomm", "pullcommi", "pullcommit":
 		cmd.name = "pullcom"
 	// 'identity' is the name this command was born with, and 'who' is the question
 	// shortened. Both permanent: a spelling that ever worked has to keep working.

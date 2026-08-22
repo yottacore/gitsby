@@ -21,6 +21,7 @@
 ##		                   'gitsby release' decide between them.
 ##		  -n, --dry-run    Say what each phase would do, change nothing. Use this.
 ##		  -y, --yes        Don't ask before phase 2.
+##		  -q, --quiet      -y, and the pipeline run in phase 1 runs quiet too.
 ##		  -h, --help       This.
 ##	Notes:
 ##		- Refuses unless the tree is clean and you are on the merge target.
@@ -46,17 +47,18 @@ root="$(cd "${here}/.." && pwd)"
 source "${here}/config.bash"      ## RELEASE_TARGETS, GO_MODULE_DIR, EXE_NAME
 cd "${root}"
 
-version=""; dryRun=0; assumeYes=0
+version=""; dryRun=0; assumeYes=0; quiet=0
 while (($#)); do case "$1" in
 	-n|--dry-run) dryRun=1; shift ;;
 	-y|--yes)     assumeYes=1; shift ;;
+	-q|--quiet)   quiet=1; assumeYes=1; shift ;;
 	-h|--help)    sed -n '/^##	- Purpose:/,/^##	History:/p' "${BASH_SOURCE[0]}" | sed '$d; s/^##	\{0,1\}//'; exit 0 ;;
 	-*)           echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
 	*)            version="$1"; shift ;;
 esac; done
 
 fEcho(){       echo "[ $* ]"; }
-fNote(){       echo "$*"; }
+fEcho_Clean(){ echo "$*"; }
 fDie(){        echo "FAILED: $*" >&2; exit 1; }
 fWould(){      ((dryRun)) && { echo "   would: $*"; return 0; }; return 1; }
 
@@ -120,7 +122,7 @@ if [[ -z "${version}" ]]; then
 		IFS='.' read -r major minor patch <<< "${lastTag#v}"
 		version="v${major}.${minor}.$((patch + 1))"
 	fi
-	fNote "no version given; the next one after ${lastTag} is ${version}"
+	fEcho_Clean "no version given; the next one after ${lastTag} is ${version}"
 fi
 [[ "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([A-Za-z0-9.-]+)?$ ]] || fDie "'${version}' is not a vX.Y.Z version."
 git rev-parse -q --verify "refs/tags/${version}" >/dev/null && fDie "tag ${version} already exists."
@@ -133,7 +135,7 @@ if [[ -n "${lastTagForFooter}" ]]; then
 		newest="$(grep -oE '^##[[:space:]]+- 20[0-9]{6}' "${f}" | grep -oE '20[0-9]{6}' | sort | tail -n 1)"
 		tagDate="$(git log -1 --format=%cd --date=format:%Y%m%d "${lastTagForFooter}" 2>/dev/null || echo 0)"
 		[[ -n "${newest}" && "${newest}" -ge "${tagDate}" ]] \
-			|| fNote "WARNING: ${f##*/} has no history entry since ${lastTagForFooter} (${tagDate}); add one before releasing."
+			|| fEcho_Clean "WARNING: ${f##*/} has no history entry since ${lastTagForFooter} (${tagDate}); add one before releasing."
 	done
 fi
 
@@ -147,11 +149,12 @@ target="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || 
 ## One pipeline, everywhere. It used to be two engines picked by platform; the Windows one was a
 ## port of this file rather than a wrapper around it, and it retired with the scripts it mirrored.
 pipeline=("${here}/cicd.bash" --no-publish -y -m "pre-release check")
+((quiet)) && pipeline=("${here}/cicd.bash" --no-publish -q -m "pre-release check")
 pipelineName="cicd/cicd.bash --no-publish"
 
 ## The whole pipeline, against the tree as it stands. This is the gate.
 if ! fWould "run ${pipelineName}"; then
-	fNote "running the full pipeline before touching anything ..."
+	fEcho_Clean "running the full pipeline before touching anything ..."
 	"${pipeline[@]}" || fDie "the pipeline did not pass; nothing was changed."
 fi
 
@@ -162,7 +165,7 @@ fi
 ## the released version and nothing else.
 assets="$(mktemp -d)"
 if ! fWould "cross-build ${#RELEASE_TARGETS[@]} targets at ${version}"; then
-	fNote "cross-building ${#RELEASE_TARGETS[@]} targets with ${GO_RELEASE_TOOLCHAIN} ..."
+	fEcho_Clean "cross-building ${#RELEASE_TARGETS[@]} targets with ${GO_RELEASE_TOOLCHAIN} ..."
 	## The .exe files have to carry ${version}, and the committed resource still says the last
 	## one. Stamp it, build, then restore - phase 1 is the phase that changes nothing, and phase
 	## 2 regenerates it for real, on the release branch, next to the changelog edit.
@@ -179,7 +182,7 @@ if ! fWould "cross-build ${#RELEASE_TARGETS[@]} targets at ${version}"; then
 	git -C "${root}" checkout -q -- "${GO_MODULE_DIR}"/*.syso || fDie "couldn't restore the Windows resource; check 'git status'."
 	[[ -z "${failed}" ]] || fDie "cross-build failed for ${failed}; nothing has been changed."
 	( cd "${assets}" && "${here}/utility/gen-checksums.bash" > SHA256SUMS ) || fDie "couldn't checksum the release assets."
-	fNote "built: $(cd "${assets}" && echo *)"
+	fEcho_Clean "built: $(cd "${assets}" && echo *)"
 fi
 
 fEcho "Phase 1 OK: ${lastTag:-(no previous tag)} -> ${version}"
@@ -218,7 +221,7 @@ if ! fWould "branch ${relBranch}, retitle the changelog's vNEXT as '${version} -
 	prNum="$(printf '%s\n' "${prOut}" | grep -oE 'https://github\.com/[^ ]+/pull/[0-9]+' | tail -n 1)"
 	prNum="${prNum##*/}"
 	[[ "${prNum}" =~ ^[0-9]+$ ]] || { echo "${prOut}" >&2; fDie "couldn't read a PR number out of 'pr create' output."; }
-	fNote "opened PR #${prNum} for the version bump"
+	fEcho_Clean "opened PR #${prNum} for the version bump"
 	"${gitsby}" -q pr ok "${prNum}" || fDie "couldn't merge PR #${prNum}; the bump is pushed but nothing is tagged."
 fi
 if ! fWould "gitsby release ${version}"; then
@@ -236,7 +239,7 @@ fEcho "Phase 3: publish and prove"
 notes="$(mktemp)"; trap 'rm -f -- "${notes:?}"; rm -rf -- "${assets:?}"' EXIT
 awk -v ver="## ${version} " -v start="$(fpChangelogStart)" \
 	'NR>=start && index($0, ver)==1 {f=1; next} f && /^## /{exit} f' "${changelog}" > "${notes}" || true
-[[ -s "${notes}" ]] || fNote "WARNING: no changelog section found for ${version}; the release body will be empty."
+[[ -s "${notes}" ]] || fEcho_Clean "WARNING: no changelog section found for ${version}; the release body will be empty."
 
 if ! fWould "gh release create ${version} with ${#RELEASE_TARGETS[@]} binaries and SHA256SUMS"; then
 	"${gitsby}" -q raw gh release create "${version}" --title "${version}" --notes-file "${notes}" \
@@ -248,7 +251,7 @@ fi
 ## That is the whole contract - a download whose checksum matches and whose --version is right.
 if ! fWould "verify releases/latest, then download and run this platform's published binary"; then
 	latest="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/jim-collier/gitsby/releases/latest" 2>/dev/null | sed -n 's|.*/releases/tag/||p')"
-	[[ "${latest}" == "${version}" ]] || fNote "WARNING: releases/latest resolves to '${latest}', not ${version}."
+	[[ "${latest}" == "${version}" ]] || fEcho_Clean "WARNING: releases/latest resolves to '${latest}', not ${version}."
 	## Seconds after publication GitHub serves the tag but not yet the assets, and the installers
 	## stop rather than quietly skip verification when SHA256SUMS can't be fetched - so a first
 	## attempt can fail against a release that is perfectly good. It did on v2.1.0: the same check
@@ -260,7 +263,7 @@ if ! fWould "verify releases/latest, then download and run this platform's publi
 	base="https://github.com/jim-collier/gitsby/releases/download/${version}"
 	proved=0
 	for attempt in 1 2 3; do
-		((attempt > 1)) && { fNote "not downloadable yet; giving GitHub a moment to serve the assets (attempt ${attempt}) ..."; sleep 20; }
+		((attempt > 1)) && { fEcho_Clean "not downloadable yet; giving GitHub a moment to serve the assets (attempt ${attempt}) ..."; sleep 20; }
 		proveDir="$(mktemp -d)"
 		if curl -fsSL -o "${proveDir}/${proveAsset}" "${base}/${proveAsset}" \
 			&& curl -fsSL -o "${proveDir}/SHA256SUMS" "${base}/SHA256SUMS" \
@@ -273,9 +276,9 @@ if ! fWould "verify releases/latest, then download and run this platform's publi
 		((proved)) && break
 	done
 	if ((proved)); then
-		fNote "${proveAsset}: downloaded, checksum verified, and reports ${version}"
+		fEcho_Clean "${proveAsset}: downloaded, checksum verified, and reports ${version}"
 	else
-		fNote "WARNING: ${proveAsset} did not download-verify-run as ${version} from the published release."
+		fEcho_Clean "WARNING: ${proveAsset} did not download-verify-run as ${version} from the published release."
 	fi
 fi
 

@@ -53,7 +53,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 	> **Upgrading on Windows or macOS**: if your accounts file is under `~/.config/gitsby/` - which earlier versions did search everywhere - move that whole folder, `accounts` and any token files included, to `%APPDATA%\gitsby\` on Windows or `~/Library/Application Support/gitsby/` on a Mac. Neither platform looks in the old place any more, and a file that isn't found is not an error: Gitsby carries on with no accounts configured at all. Linux and FreeBSD are unaffected.
 
-- `update` is now `pullcom`, which names both halves in the order they run rather than reading like it updates gitsby itself. It also answers to `update`, `pull`, `pullc`, `pullco`, `pullcomm` and `pullcommit`. `sync` is unchanged; the pair was the unclear part, not either word alone.
+- `update` is now `pullcom`, which names both halves in the order they run rather than reading like it updates gitsby itself. It also answers to `update`, `pull`, and every partial spelling from `pullc` through `pullcommit`. `sync` is unchanged; the pair was the unclear part, not either word alone.
 
 - `br land` is now `br merge`, the word most people reach for first. `br land` still works.
 
@@ -112,6 +112,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `--offline` is no longer accepted as a spelling of `--no-fetch`. It was undocumented, and it never did what the word says - pushes went out regardless. Typing it now says so and names `--no-fetch`, which skips the pre-command fetch. Being offline is still handled on its own: gitsby finds out by trying, and each command degrades or refuses accordingly.
 
 ### Other work
+
+- The installers' fallback release lookup - the path taken when the newest publication is a pre-release - now takes the highest-versioned release rather than the newest-published one, so a fix backported to an older line can never install over a newer release. The lookup also stopped depending on how GitHub formats the list, and `Get-Help` on `install.ps1` shows the real help instead of an auto-generated stub.
+
+- `br prune` re-checks its delete candidates in one git call instead of one per branch, so pruning many branches costs the same handful of processes as pruning one.
+
+- The remote-URL and accounts-file parsers refuse a little more nonsense: a "host" containing whitespace is treated as unparseable rather than matched against account rules, and `account.<name>.` with no key after the final dot is an ignored line rather than a half-parsed account. Both were found by the module's new native fuzz targets, which the pipeline now runs briefly every full pass.
 
 - PSScriptAnalyzer is back in the lint stage. The Windows installer is the one piece of PowerShell that still ships, and it had been going out unlinted since the scripted build was frozen.
 

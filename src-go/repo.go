@@ -382,6 +382,8 @@ func (a *app) showFilesToPublish() {
 	}
 	// Ours, made two lines up, and nothing outside this function ever names it.
 	defer func() { _ = os.RemoveAll(probeDir) }()
+	// A cwd nothing can name makes the probe list nothing; the confirm then shows an
+	// empty list instead of dying, on a machine already in deeper trouble.
 	wd, _ := os.Getwd()
 	env := append(os.Environ(), "GIT_DIR="+probeDir, "GIT_WORK_TREE="+wd)
 	initCmd := exec.Command("git", "init", "--quiet")

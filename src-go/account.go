@@ -329,7 +329,7 @@ func configOwnScope(key string) string {
 // after it act as, and half an account applied is how you push as the wrong one.
 func setEnv(key, value string) error {
 	if err := os.Setenv(key, value); err != nil {
-		return usagef("Couldn't set %s for this run: %s", key, err)
+		return usageWrapf(err, "Couldn't set %s for this run", key)
 	}
 	return nil
 }

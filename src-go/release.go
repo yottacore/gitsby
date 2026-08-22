@@ -40,6 +40,7 @@ func nextVersion(latest string) (version string, bumped bool) {
 	if minor == "" {
 		minor = "0"
 	}
+	// m[5] already matched [0-9]+, so Atoi only fails on overflow; 0 starts over.
 	patch, _ := strconv.Atoi(m[5])
 	bumped = m[6] == ""
 	if bumped {

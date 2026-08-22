@@ -1,4 +1,5 @@
 #!/usr/bin/env pwsh
+
 <#
 .SYNOPSIS
     Downloads and installs the gitsby binary for this platform.
@@ -27,6 +28,11 @@
     SPDX-License-Identifier: MIT
     History: at bottom of script.
 #>
+
+
+# The blank line under the shebang and the two above this are load-bearing: without them the
+# comment help binds to the first function rather than the script, and Get-Help on the file
+# shows an auto-generated stub instead.
 function Install-Gitsby {
     # Attribute lives inside the function, not at file scope: the file is also read as text
     # and evaluated (iex / scriptblock), where a top-level attribute is a parse error.
@@ -65,6 +71,7 @@ function Install-Gitsby {
     }
 
     if ($Help) {
+        Write-Host ''
         Write-Host 'Usage: install.ps1 [OPTIONS]'
         Write-Host 'Downloads and installs gitsby (with confirmation).'
         Write-Host 'Options:'
@@ -75,6 +82,7 @@ function Install-Gitsby {
         Write-Host '  -Yes                  Do not ask for confirmation.'
         Write-Host '  -Help                 This.'
         Write-Host "  -Release              Took 'dev' or 'stable' when gitsby was a script; takes neither now."
+        Write-Host ''
         return
     }
 
@@ -151,11 +159,19 @@ function Install-Gitsby {
         } catch {
             throw "Couldn't work out the latest release of ${repo}. GitHub may be unreachable, or rate-limiting this address (60 requests an hour, unauthenticated). A specific release always works: -Tag TAG. ($($_.Exception.Message))"
         }
-        $newestFull = $releases | Where-Object { -not $_.prerelease } | Select-Object -First 1
+        # Highest version wins, not newest-listed: the list is ordered by publish date, so a
+        # backported fix cut after a newer release would otherwise resolve as latest. The
+        # numeric fields decide; Sort-Object is stable, so a tie keeps the newer-listed entry.
+        $tagVersion = {
+            $v = ($_.tag_name -replace '^[vV]', '') -replace '[-+].*$', ''
+            $parsed = [version]'0.0'
+            if ([version]::TryParse($v, [ref]$parsed)) { $parsed } else { [version]'0.0' }
+        }
+        $newestFull = $releases | Where-Object { -not $_.prerelease } | Sort-Object -Property @{Expression = $tagVersion} -Descending | Select-Object -First 1
         if ($newestFull) {
             $tagName = [string]$newestFull.tag_name
         } elseif ($releases.Count -gt 0) {
-            $tagName = [string]$releases[0].tag_name
+            $tagName = [string](@($releases | Sort-Object -Property @{Expression = $tagVersion} -Descending)[0].tag_name)
             Write-Host "[ No full release yet; taking the newest pre-release, ${tagName}. ]"
         } else {
             throw "${repo} has published no releases, so there is nothing to install. Build the tip yourself: git clone https://github.com/${repo}.git; cd gitsby/src-go; go build -o gitsby ."
@@ -183,13 +199,12 @@ function Install-Gitsby {
         throw "Release ${tagName} publishes no SHA256SUMS, so nothing here can be verified. (A release published seconds ago may not be servable yet; try again shortly.)"
     }
     $want = ''
-    $published = @()
-    foreach ($sumLine in ($sums -split "`r?`n")) {
+    $published = @(foreach ($sumLine in ($sums -split "`r?`n")) {
         if ($sumLine -match '^([0-9a-fA-F]{64})\s+\*?(gitsby-\S+)$') {
-            $published += ($Matches[2] -replace '^gitsby-', '' -replace '\.exe$', '')
             if ($Matches[2] -eq $asset) { $want = $Matches[1] }
+            $Matches[2] -replace '^gitsby-', '' -replace '\.exe$', ''
         }
-    }
+    })
     if (-not $want) {
         $alsoRan = if ($published) { " It publishes: $($published -join ', ')." } else { '' }
         throw "Release ${tagName} publishes no gitsby binary for ${goOs}/${goArch}.${alsoRan} Build it for yours instead - the module is pure Go with no dependencies: git clone https://github.com/${repo}.git; cd gitsby/src-go; go build -o gitsby ."
@@ -253,6 +268,7 @@ function Install-Gitsby {
         if ($got -ne $want) { throw "Checksum mismatch for ${asset}; aborting. (Corrupted download or tampering.)" }
         Write-Host '[ Checksum verified. ]'
 
+        Write-Host ''
         Write-Host "[ Installing to ${destPath} ... ]"
         New-Item -ItemType Directory -Force -Path $destDir | Out-Null
         # Staged in the destination directory and renamed over the target, never written in
@@ -280,6 +296,7 @@ function Install-Gitsby {
             throw
         }
 
+        Write-Host ''
         Write-Host '[ Verifying ... ]'
         & $destPath --version
         # A native command's nonzero exit does not trip $ErrorActionPreference, and nothing here

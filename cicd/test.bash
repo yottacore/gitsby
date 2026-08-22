@@ -1602,6 +1602,23 @@ GHEOF
 	fAssertOut "and says that is what it did"  'No full release yet' \
 		bash -c "PATH='${prl}/bin:${PATH}' bash '${goInst}' -y 2>&1"
 
+	## The list endpoint is ordered by publish date, so a backported fix cut after a newer
+	## release lists first: the fallback has to version-sort rather than take the head. The
+	## payload here is also packed on one line, which is the other half of the same check -
+	## the scrape must not depend on GitHub pretty-printing the JSON.
+	local vsort="${work}/vsort"; mkdir -p "${vsort}/bin"
+	fStub "${vsort}/bin/curl" <<-'CURLEOF'
+		#!/usr/bin/env bash
+		url=""
+		for a in "$@"; do case "$a" in https://*) url="$a" ;; esac; done
+		case "${url}" in
+			*/repos/*/releases) printf '[{"tag_name":"v2.1.1","prerelease":false},{"tag_name":"v3.0.0","prerelease":false}]'; exit 0 ;;
+		esac
+		exit 22
+	CURLEOF
+	fAssertOut "go installer takes the highest version from the fallback, not the newest-listed" 'v3\.0\.0' \
+		bash -c "PATH='${vsort}/bin:${PATH}' bash '${goInst}' -y 2>&1"
+
 	## A whole install, with the network stood in for: resolve, verify, place, run. What this
 	## proves is that the staged-and-renamed path works end to end; the pin below it is what
 	## discriminates, since writing in place would pass this too.
@@ -2967,7 +2984,7 @@ GHEOF
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set work hostname git.example.test 2>&1"
 	## 'host' and 'user' are interpolated into the credential helper, which git hands to a shell. The
 	## loader drops one carrying a shell character; refusing to WRITE it is what keeps the file and
-	## the behaviour from disagreeing.
+	## the behavior from disagreeing.
 	fAssertOut "and so is a shell character in a host name"  "isn't a plain host name" \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set work host 'git.example.test; id' 2>&1"
 	fAssertNotOut "which never reaches the file"  '; id' \

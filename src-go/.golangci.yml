@@ -21,6 +21,7 @@ linters:
   default: none
   enable:
     - errcheck      ## a dropped error is how a write becomes a silent no-op
+    - errorlint     ## %s on an error kills the chain; %w keeps errors.Is/As honest
     - govet
     - ineffassign   ## a value assigned and never read is a line that means nothing
     - predeclared   ## 'min', 'max', 'len' as names read as the builtin at a glance
@@ -36,6 +37,7 @@ linters:
         - name: indent-error-flow
         - name: errorf
         - name: error-return
+        - name: early-return      ## handle the edge and get out; no else after return
         - name: unreachable-code
 
 formatters:

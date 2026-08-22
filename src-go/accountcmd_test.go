@@ -260,7 +260,7 @@ func TestAccountSetRefusesAKeyNothingReads(t *testing.T) {
 
 // 'host' and 'user' are interpolated into the credential helper, which git hands
 // to a shell. The loader drops one carrying a shell character; refusing to WRITE
-// it is what stops the file and the behaviour disagreeing.
+// it is what stops the file and the behavior disagreeing.
 func TestAccountSetRefusesAShellCharacterInHost(t *testing.T) {
 	a, _ := setApp(t, "account.work.path = /a\n", "work", "host", "gitea.com; id")
 	if err := a.cmdAccountSet(); err == nil {
