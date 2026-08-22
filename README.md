@@ -11,6 +11,7 @@
 [![Latest release](https://img.shields.io/github/v/release/jim-collier/gitsby?include_prereleases&label=release)](https://github.com/jim-collier/gitsby/releases/latest)
 ![Lifecycle: Stable](https://img.shields.io/badge/Lifecycle-Stable-brightgreen)
 ![Support](https://img.shields.io/badge/Support-Maintained-brightgreen)
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ff69b4)](https://github.com/sponsors/jim-collier)
 
 <!-- TOC ignore:true -->
 # Gitsby
@@ -35,6 +36,7 @@
 
 <!-- TOC ignore:true -->
 ## Table of contents
+
 <!-- TOC -->
 
 - [What it is](#what-it-is)
@@ -43,8 +45,12 @@
 - [Compatibility](#compatibility)
 - [A typical day](#a-typical-day)
 - [Install](#install)
+	- [Is it in my package manager?](#is-it-in-my-package-manager)
+	- [The one-liners](#the-one-liners)
+	- [Where it goes](#where-it-goes)
 - [How to develop](#how-to-develop)
 - [Contributing](#contributing)
+- [Support Gitsby](#support-gitsby)
 - [Legal stuff](#legal-stuff)
 
 <!-- /TOC -->
@@ -53,7 +59,7 @@
 
 Git has more than eighty porcelain commands, because it supports every workflow, every team size, and every hard edge-case of conflict resolution. That flexibility is the whole reason it's complex.
 
-Gitsby has 9 - or 22 counting subcommands. It gets there three ways:
+Gitsby has nine - or 22 counting subcommands. It gets there three ways:
 
 - By applying one opinionated workflow and ignoring the myriad other ways of doing the same thing.
 
@@ -100,13 +106,19 @@ There is deliberately no bare `commit` and no bare `pull`. Committing without sh
 
 `br create`, `br switch`, `br land`, and `pr create` all deal with your work first. `update` is the one command for both, and it pulls *before* it commits so your work lands on top of everyone else's and history stays linear.
 
+`br prune` deletes a branch only when its tip is provably an ancestor of the merge target, re-checked at the moment of each delete - not `git branch -d`'s upstream-containment test, which answers a different question and gets it wrong in both directions. That exactness is what the workflow buys: every branch lands with a real merge commit, so "merged" is a fact, not a guess. Unmerged work always survives it, and there is deliberately no `--force`.
+
 Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--public`/`--private` (visibility for `repo create`; private by default), `--no-fetch` (skip the fetch and the pull), `--any-identity`, `--config FILE` (read accounts from somewhere other than the usual place), `-h`, `-v`.
 
 The PowerShell version takes the same options in PowerShell form: `-Message MSG`, `-Quiet`/`-y`, `-Public`/`-Private`, `-NoFetch`, `-AnyIdentity`, `-Config FILE`, `-Help`, `-Version`. Commands and arguments are spelled identically in both.
 
-When the fetch finds the remote out of reach, the commands that mean something locally still work. `update` commits, `br create` and `br switch` and `br land` do their branch work, and each says what it skipped and that `sync` will publish it later. The commands that exist to publish - `sync`, `pr create`, `pr ok`, `release` - refuse up front and say what to do instead, rather than failing halfway through or reporting success having sent nothing.
+**Offline is a state, not a flag.** Every command finds out by trying, and then behaves:
 
-`repo create` and `repo connect` list the files they are about to publish before asking, since that is the one command that hands a whole directory over for the first time. The list is what `git add --all` will actually add, `.gitignore` and all - so a stray `.env` is visible while you can still say no.
+- The ones that mean something locally still work. `update` commits; `br create`, `br switch` and `br land` do their branch work. Each says what it skipped, and that `sync` will publish it later.
+
+- The ones that exist to publish - `sync`, `pr create`, `pr ok`, `release` - refuse up front and say what to do instead. None of them fails halfway through, and none reports success having sent nothing.
+
+**Publishing a directory shows you the directory first.** `repo create` and `repo connect` list every file they are about to publish, before asking. The list is what `git add --all` will actually add, `.gitignore` and all - so a stray `.env` is visible while you can still say no.
 
 ## Multiple GitHub accounts
 
@@ -181,6 +193,12 @@ Every mutating command fetches first, shows you the repo state and the exact git
 
 ## Install
 
+### Is it in my package manager?
+
+Not yet - nothing on apt, dnf, Homebrew or winget. The two one-liners below are the supported route.
+
+### The one-liners
+
 ~~~bash
 curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install.bash | bash
 ~~~
@@ -189,9 +207,17 @@ curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install.bas
 irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1 | iex
 ~~~
 
-You need Git, plus either bash 4.4+ or PowerShell 7+. There are no distribution packages yet - nothing on apt, dnf, Homebrew or winget - so these two scripts are the supported route.
+The first installs the Bash build, the second the PowerShell one. You need Git, plus bash 4.4+ or PowerShell 7+ to match - each build is a script, so its runtime is the one thing it needs.
+
+`iex` can't pass options along. To hand the PowerShell installer a flag, give the same download to a script block instead:
+
+~~~pwsh
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1))) -Target system
+~~~
 
 Either one shows you its plan and asks before touching anything. By default it takes the latest full release and checks the download against that release's published `SHA256SUMS`. Asking for a branch or tag instead pulls straight from the tree, which has no published checksum, and the plan says which of the two you are about to get.
+
+### Where it goes
 
 It installs for you alone unless told otherwise:
 
@@ -202,7 +228,7 @@ It installs for you alone unless told otherwise:
 
 On Windows the PowerShell installer also puts that directory on your PATH, since nothing else there will, and says so in the plan. Open a new shell afterwards to pick it up.
 
-For anything else - installing for everyone, or taking the tip of `dev` rather than the latest release - download the installer and run it with `--help`.
+For anything else - installing for everyone, or taking the tip of `dev` rather than the latest release - the Bash installer lists its options under `--help`, and the PowerShell one takes `-Target system`, `-Release dev`, `-Ref <branch-or-tag>` and `-Yes`.
 
 ## How to develop
 
@@ -216,13 +242,17 @@ curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install-dev
 irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install-dev.ps1 | iex
 ~~~
 
-Once it's cloned, `cicd/cicd.bash` is the local pipeline and the one command to know. It fast-forwards from origin first, so everything after it tests the tree that is actually going out, then runs the lint stage, the regression tests, the fuzz vectors, a dogfood install, a demo gif rebuild, and a commit and push at the end. Run it before opening a PR. Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `pwsh` or `gifsicle` won't stop the rest.
+Once it's cloned, `cicd/cicd.bash` is the local pipeline and the one command to know. Run it before opening a PR. It fast-forwards from origin first, so everything after it tests the tree that is actually going out, then runs the lint stage, the regression tests, the fuzz vectors, a dogfood install and a demo gif rebuild.
+
+**It ends by committing and pushing** - worth knowing before you run it on a fork. `--no-publish` stops short of that.
 
 ~~~bash
 cicd/cicd.bash --quick          # skips fuzz and the demo gif; what you want while iterating
 cicd/cicd.bash                  # everything, and it prompts once for a commit message
 cicd/cicd.bash -y -m "message"  # unattended
 ~~~
+
+`cicd/cicd-win.ps1` is the same six stages natively on Windows, with the options in PowerShell spelling (`-Quick`, `-Yes -Message "..."`, `-NoPublish`). Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `pwsh` or `gifsicle` won't stop the rest.
 
 Full prerequisites and process: [contributing.md](contributing.md). Coding style: [style-guide.md](style-guide.md). There's also "[Git notes and one-liners](git_notes_and_oneliners.md)", covering simplified versions of what Gitsby does - useful when you want the raw commands.
 
@@ -233,6 +263,10 @@ Given that you may be using this for mission-critical work (as I do), Gitsby aim
 Given how it's written, even if a feature fails its design, it should in theory still never compromise your work.
 
 But if you find something that doesn't work as advertised, or behaves in a way you find surprising even if as-designed, please file an issue. Contributions are welcome too - start with [contributing.md](contributing.md).
+
+## Support Gitsby
+
+Gitsby is free, and built and maintained in spare time. If it helps but code and bug reports aren't your thing, a star or a mention still helps other people find it - and if it is saving you real time, [sponsorship](https://github.com/sponsors/jim-collier) is welcome, and never expected.
 
 ## Legal stuff
 

@@ -19,7 +19,7 @@ Many of those edge-cases arose in the first place precisely because our git work
 
 I surveyed the git tools, wrappers, and standards available at the time and concluded they were also too flexible - none enforced an opinionated enough workflow. So I wrote x9git, the v1 forerunner of Gitsby.
 
-For years it worked and was useful, but it wasn't comprehensive enough: bare git was still needed, and remembering *two* commonly-used tools was too burdensome. This v2 release - renamed Gitsby - finally fulfills the original vision, with a small but comprehensive end-to-end set of commands.
+For years it worked and was useful, but it never covered the whole job: bare git was still needed, and remembering *two* commonly-used tools was too burdensome. This v2 release - renamed Gitsby - finally fulfills the original vision, with a small but complete end-to-end set of commands.
 
 ## The opinions
 

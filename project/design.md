@@ -5,7 +5,36 @@
 <!-- markdownlint-disable MD041 -- First line in a file should be a top-level heading -->
 # Design
 
-Design, requirements, and direction. The active bug and feature task list lives in `backlog.md`.
+Design, requirements, and direction. The active bug and feature task list lives in [backlog.md](backlog.md).
+
+## Table of contents
+
+<!-- TOC -->
+
+- [Table of contents](#table-of-contents)
+- [Assumptions](#assumptions)
+- [Project structure](#project-structure)
+	- [Folder structure](#folder-structure)
+	- [Logical code structure](#logical-code-structure)
+	- [Execution flow](#execution-flow)
+- [Direction decisions](#direction-decisions)
+- [Branching model](#branching-model)
+	- [How the common models compare](#how-the-common-models-compare)
+	- [Which model this is](#which-model-this-is)
+	- [Why not GitHub Flow](#why-not-github-flow)
+	- [The GitFlow author's caveat](#the-gitflow-authors-caveat)
+	- [Hotfix branches](#hotfix-branches)
+	- [Enforcement](#enforcement)
+	- [Repos that have no dev branch](#repos-that-have-no-dev-branch)
+- [Architecture](#architecture)
+	- [Software stack](#software-stack)
+	- [UI](#ui)
+	- [Testing](#testing)
+	- [Demo](#demo)
+	- [Release policy](#release-policy)
+	- [Automating a release](#automating-a-release)
+
+<!-- /TOC -->
 
 ## Assumptions
 
