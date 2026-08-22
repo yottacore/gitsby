@@ -63,7 +63,7 @@ Depending on how large the project is, you may want to outsource the questioning
 
 > ### Legal Notice <!-- omit in toc -->
 >
-> When contributing to this project, you must agree that you have authored 100% of the content, that you have the necessary rights to the content and that the content you contribute may be provided under the project licence.
+> When contributing to this project, you must agree that you have authored 100% of the content, that you have the necessary rights to the content and that the content you contribute may be provided under the project license.
 
 ### Reporting Bugs
 
@@ -173,15 +173,16 @@ Or clone it yourself and install the tooling by hand.
 
 - `cicd/cicd.bash --quick` - the whole pipeline, minus the slow stages. Run this before you push.
 - `cicd/cicd.bash` - everything, including the fuzz suite and the demo.
-
-- `cicd/parity.bash` - just the parity suite: whether the two builds *answer the same* for one input, rather than whether each behaves correctly. Runs inside the test stage too.
-- `cicd/release.bash --dry-run` - what cutting a release would do, changing nothing.
 - `cicd/test.bash` - just the regression suite. It builds throwaway repos under a temp directory and never touches the network or your real repos.
 - `cicd/fuzz.bash` - just the fuzz suite.
+- `cicd/parity.bash` - just the parity suite: whether the two builds *answer the same* for one input, rather than whether each behaves correctly. Runs inside the test stage too.
+- `cicd/release.bash --dry-run` - what cutting a release would do, changing nothing.
+
+On Windows, `cicd/cicd-win.ps1` is the same pipeline with the options in PowerShell spelling.
 
 The pipeline fast-forwards from `origin` before it builds anything, so the checks run against the tree that will actually be pushed. It stops if your branch has diverged, warns and carries on if you're offline or the branch has no upstream, and `--no-sync` (`-NoSync`) skips it.
 
-Both suites run once per implementation, so a Bash-only change still has to keep the PowerShell side green.
+The regression and fuzz suites each run once per implementation, so a Bash-only change still has to keep the PowerShell side green.
 
 <!-- omit in toc -->
 #### Then

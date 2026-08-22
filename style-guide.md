@@ -9,6 +9,7 @@ Canonical coding style for this project's Bash and PowerShell. For contribution 
 
 <!-- TOC ignore:true -->
 ## Table of contents
+
 <!-- TOC -->
 
 - [Both languages](#both-languages)
