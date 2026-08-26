@@ -180,6 +180,17 @@ fRunSuite(){
 		bash -c "[[ \"\$(cd '${cloneA}' && '${gitsby}' --version | grep -cE '^gitsby v[0-9]')\" == 1 ]]"
 	fAssert "--help names the build once"     \
 		bash -c "[[ \"\$(cd '${cloneA}' && '${gitsby}' --help | grep -cE '^gitsby v[0-9]')\" == 1 ]]"
+	## --about and --donate are the two informational flags. Both answer outside a repo, and each
+	## exists to hand over one link, so the link is what gets asserted.
+	fAssertOut  "--about names the project page"   'github\.com/jim-collier/gitsby' \
+		bash -c "cd '${work}' && '${gitsby}' --about"
+	fAssertOut  "--donate names the sponsor page"  'github\.com/sponsors/jim-collier' \
+		bash -c "cd '${work}' && '${gitsby}' --donate"
+	fAssertOut  "--donate names the build"         '^gitsby v[0-9]' \
+		bash -c "cd '${work}' && '${gitsby}' --donate"
+	fAssert     "bare 'about' word works"          bash -c "cd '${work}' && '${gitsby}' about"
+	fAssert     "bare 'donate' word works"         bash -c "cd '${work}' && '${gitsby}' donate"
+	fAssertOut  "help lists both of them"          '\-\-about.*\-\-donate'  "${gitsby}" --help
 	fAssertFail "no args exits nonzero"        "${gitsby}"
 	fAssertFail "unknown command rejected"     bash -c "cd '${cloneA}' && '${gitsby}' -q frobnicate"
 	fAssertFail "unknown option rejected"      bash -c "cd '${cloneA}' && '${gitsby}' -q status --bogus"
