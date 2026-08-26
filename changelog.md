@@ -45,7 +45,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The Windows binaries carry an icon and version details. Explorer shows the gitsby logo instead of the blank default, and Properties reads a version, description, copyright and file name off the file itself.
 
-- Every build carries a build number alongside the version: `gitsby v2.1.0 dbrk8`. It is the number of minutes from the start of 2000 to the commit the build was made from, in Crockford base32 - five characters, and none of the letters that get misread when somebody reads one back over the phone. Taken from the commit rather than the clock, so the same source always gives the same build number and a published binary can still be rebuilt to the checksum it was published with. `--version`, the help screen and the release notes all name it.
+- Every build carries a build number alongside the version: `gitsby v2.1.0 build dbrk8`. It is the number of minutes from the start of 2000 to the commit the build was made from, in Crockford base32 - five characters, and none of the letters that get misread when somebody reads one back over the phone. Taken from the commit rather than the clock, so the same source always gives the same build number and a published binary can still be rebuilt to the checksum it was published with. `--version`, the help screen and the release notes all name it.
 
 - Commands say which build produced their output, on a line of their own above it, so a report of something going wrong carries the version and build number without anyone having to ask for them. `-q` leaves the line out, and `raw git` and `raw gh` still hand their tool's output straight back with nothing added.
 

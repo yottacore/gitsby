@@ -2448,7 +2448,7 @@ GHEOF
 		bash -c "cd '${root}/src-go' && go build -trimpath -buildvcs=false -o '${work}/vcsprobe' . && ! go version -m '${work}/vcsprobe' | grep -q 'vcs\.revision'"
 	## The build number is minutes since 2000, Crockford base32, lower case. Built here with a
 	## fixed stamp: the suite's own binary carries whatever the last build gave it.
-	fAssertOut "a stamped build reports minutes since 2000 in Crockford base32"  'gitsby v9\.9\.9 dbd05,' \
+	fAssertOut "a stamped build reports minutes since 2000 in Crockford base32"  'gitsby v9\.9\.9 build dbd05,' \
 		bash -c "cd '${root}/src-go' && go build -ldflags '-X main.version=9.9.9 -X main.buildEpoch=1787000000' -o '${work}/bnprobe' . && '${work}/bnprobe' --version"
 	## A number invented from the clock would say the opposite of what a build number means, so
 	## an unstamped build reports none rather than one that moves every minute.

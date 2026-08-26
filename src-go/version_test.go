@@ -84,7 +84,7 @@ func TestVersionTextOmitsAnUnstampedBuild(t *testing.T) {
 		t.Errorf("unstamped versionText() = %q, want %q", got, "v2.1.0")
 	}
 	buildEpoch = "1787000000"
-	if got := versionText(); got != "v2.1.0 dbd05" {
-		t.Errorf("stamped versionText() = %q, want %q", got, "v2.1.0 dbd05")
+	if got := versionText(); got != "v2.1.0 build dbd05" {
+		t.Errorf("stamped versionText() = %q, want %q", got, "v2.1.0 build dbd05")
 	}
 }
