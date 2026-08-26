@@ -173,6 +173,8 @@ None open.
 
 #### Done - Features and enhancements
 
+- ✅ Dogfood destinations tidied. The Linux fallback is `~/.local/bin`, the same dir the installer defaults to, and it only applies to the target matching the box doing the build. Dropped a second macOS entry that spelled out a home directory.
+
 - ✅ `--about` and `--donate`.
 	- `--about` is the copyright block, the description the help screen carries, and a link to the project. `--donate` is the build line, two sentences, and the sponsorship link.
 	- Both answer outside a repository, both take a bare word as well as the flag, and neither reads any configuration.

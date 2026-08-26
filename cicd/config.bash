@@ -141,20 +141,24 @@ DOGFOOD_TARGETS=(
 DOGFOOD_NATIVE_TARGET="linux/amd64"
 DOGFOOD_DESTS_LINUX_AMD64=(
 	"${HOME}/synced/0-0/common/exec/util/linux/bin"
-	"/usr/local/sbin"
 )
 ## Two spellings of one share: the path as this box mounts it, and the path Windows mounts
-## it at. Whichever exists is the one running.
+## it at. Whichever exists is the one running. cli, not gui - gitsby is a terminal program.
 DOGFOOD_DESTS_WINDOWS_AMD64=(
 	"${HOME}/synced/0-0/common/exec/util/mswin/cli/by-self/win64"
 	"C:/opt/0-0/common/exec/synced/util/mswin/cli/by-self/win64"
 )
 ## One macOS slot, so one target: arm64. A universal binary would need lipo, which only
-## exists on a Mac, and there is no second destination to justify it.
+## exists on a Mac, and there is no second destination to justify it. The share mounts at
+## the same spelling from Linux and from macOS, so one entry covers both.
 DOGFOOD_DESTS_DARWIN_ARM64=(
 	"${HOME}/synced/0-0/common/exec/util/macos/bin"
-	"/Users/collierjr/synced/0-0/common/exec/util/macos/bin"
 )
+
+## Last resort when none of the shared dirs above exist - the same dir install.bash uses by
+## default. Only appended to the target that matches the box doing the build: a .exe has no
+## business in a Linux ~/.local/bin, and it would match there every time.
+DOGFOOD_FALLBACK_DIR="${HOME}/.local/bin"
 
 ## Release assets (cicd/release.bash). Every platform the module cross-builds to, which is
 ## every platform Go targets - the tree is pure stdlib with no cgo, so nothing here needs an

@@ -145,14 +145,24 @@ for g in "${SHELL_LINT_WARN_GLOBS[@]:-}"; do for f in $g; do [[ -f "$f" ]] && sh
 ## is writable; empty means the stage will skip that target with a warning. The dest array is
 ## found by name (DOGFOOD_DESTS_<GOOS>_<GOARCH>, upper-cased), so adding a target is a config
 ## edit and nothing here.
+case "${OSTYPE:-}" in
+	linux*)          host_goos="linux"   ;;
+	darwin*)         host_goos="darwin"  ;;
+	msys*|cygwin*)   host_goos="windows" ;;
+	freebsd*)        host_goos="freebsd" ;;
+	*)               host_goos=""        ;;
+esac
 declare -A dogfood_dest=() dogfood_all=()
 for t in "${DOGFOOD_TARGETS[@]:-}"; do
 	[[ -n "${t}" ]] || continue
 	_destVar="DOGFOOD_DESTS_${t^^}"; _destVar="${_destVar//\//_}"
 	declare -n _dests="${_destVar}"
-	d=""; for cand in "${_dests[@]:-}"; do [[ -d "${cand}" && -w "${cand}" ]] && { d="${cand}"; break; }; done
+	_cands=("${_dests[@]:-}")
+	## The fallback belongs to whichever target this box could actually run.
+	if [[ -n "${DOGFOOD_FALLBACK_DIR:-}" && "${t%%/*}" == "${host_goos}" ]]; then _cands+=("${DOGFOOD_FALLBACK_DIR}"); fi
+	d=""; for cand in "${_cands[@]:-}"; do [[ -d "${cand}" && -w "${cand}" ]] && { d="${cand}"; break; }; done
 	dogfood_dest["${t}"]="${d}"
-	dogfood_all["${t}"]="${_dests[*]:-}"
+	dogfood_all["${t}"]="${_cands[*]:-}"
 	unset -n _dests
 done
 

@@ -2517,6 +2517,13 @@ GHEOF
 	fAssert "no build step takes every core"  bash -c "grep -q 'BUILD_JOBS=' '${root}/cicd/config.bash'"
 	fAssertFail "no go build call is missing -p" \
 		bash -c "grep -hE '^[[:space:]]*(go build|.*&& *go build)' '${root}/cicd/cicd.bash' '${root}/cicd/release.bash' | grep -qv 'BUILD_JOBS'"
+	## Every dogfood dest is a share path or a $HOME expansion. A literal home dir would name
+	## an account, and would resolve to nothing on any other box.
+	fAssertFail "no dogfood dest hardcodes a home directory" \
+		bash -c "grep -qE '\"(/home/|/Users/|C:/Users/)' '${root}/cicd/config.bash'"
+	## A .exe would match a Linux ~/.local/bin every run, so the fallback is per-box.
+	fAssert "the dogfood fallback only applies to this box's own target" \
+		bash -c "grep -q 'DOGFOOD_FALLBACK_DIR' '${root}/cicd/config.bash' && grep -q 'host_goos' '${root}/cicd/cicd.bash'"
 	## --quick skips the fuzz and the gif, which are not the slow part; three cross-builds are.
 	fAssert "--quick narrows the cross-builds too" \
 		bash -c "grep -q 'quick).*DOGFOOD_TARGETS=' '${root}/cicd/cicd.bash'"
