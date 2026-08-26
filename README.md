@@ -136,17 +136,19 @@ Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (as
 
 Most people with two GitHub accounts also have a folder for each: one tree for work, one for everything else. Gitsby takes that literally. Say which account owns which folder, once, and every command run anywhere under that folder acts as that account - `git` and `gh` alike.
 
-~~~ini
+~~~yaml
 # ~/.config/gitsby/config.shcl
 
-account.work.path       = ~/dev/work
-account.work.ghAccount  = my-work-login
-account.work.email      = ada@work.example
+account: work
+	path: ~/dev/work
+	ghaccount: my-work-login
+	email: ada@work.example
 
 # Or name folders instead of a root, and the same file works on every machine
-account.personal.pathContains = github.com/my-personal-login
-account.personal.ghAccount    = my-personal-login
-account.personal.email        = ada@home.example
+account: personal
+	pathcontains: github.com/my-personal-login
+	ghaccount: my-personal-login
+	email: ada@home.example
 ~~~
 
 Over HTTPS each account authenticates with its own token - the one `gh` already stores. A second account costs one `gh auth login` and three lines of config: no SSH keys, no `~/.ssh/config` host aliases baked into remote URLs.

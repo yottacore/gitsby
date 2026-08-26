@@ -1,6 +1,7 @@
-// The accounts config: discovery, the flat .shcl parser, and folder matching.
-// Hand parsed on purpose, so nothing has to be installed to read it and no
-// library can drift from what the scripted builds accept.
+// The accounts config: discovery, folder matching, and the reader for the old
+// flat 'key = value' layout. The current layout is SHCL, read and written through
+// the shcl module in shcl.go; the flat reader stays so a file written for the
+// scripted builds keeps working until something rewrites it.
 
 // Copyright © 2026 Jim Collier (CryptogID: ѳ6ᴚ℈𐀘𐇦ɛ𐊁¥Mﾏb϶Δ𐌞)
 // Licensed under The MIT License (MIT). Full text at:
@@ -15,6 +16,8 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+
+	shcl "github.com/jim-collier/shcl/source/go/v2"
 )
 
 type acctRule struct {
@@ -27,11 +30,13 @@ type acctRule struct {
 type config struct {
 	loaded   bool
 	values   map[string]string
-	paths    []acctRule // 'path' rules: absolute folder claims
-	segments []acctRule // 'pathContains' rules: machine-free folder-name runs
-	unknown  []string   // named but not understood - reported, never silent
-	order    []string   // accounts in declaration order, for ones with keys but no folder rule
-	file     string     // named by the identity block when the file held keys nothing reads
+	paths    []acctRule     // 'path' rules: absolute folder claims
+	segments []acctRule     // 'pathContains' rules: machine-free folder-name runs
+	unknown  []string       // named but not understood - reported, never silent
+	order    []string       // accounts in declaration order, for ones with keys but no folder rule
+	file     string         // named by the identity block when the file held keys nothing reads
+	doc      *shcl.Document // the file as parsed, for 'account set' to edit; nil for a flat file or none
+	flat     bool           // the old 'key = value' layout: read as it always was, rewritten by the first edit
 }
 
 func isWindows() bool { return runtime.GOOS == "windows" }
@@ -336,6 +341,9 @@ func isReadableFile(p string) bool {
 	return true
 }
 
+// The byte-order mark a Windows editor writes at the top of a file it saves.
+const utf8BOM = "\ufeff"
+
 var acctNameOK = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // What a hostname or a forge login may contain. Deliberately narrower than either
@@ -348,9 +356,9 @@ var forgeWordOK = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 // how everyone writes a key path.
 const sshKeyShellChars = " \t\n\r\"'\\$;&|<>()*?![]{}" + "`"
 
-// load reads the config once. Flat 'key = value' lines, '#' comments, blank lines
-// ignored. A file that cannot be read at all is the same as no file: the caller
-// asserted nothing about it, and every account path degrades to gh's own.
+// load reads the config once. A file that cannot be read at all is the same as no
+// file: the caller asserted nothing about it, and every account path degrades to
+// gh's own.
 func (c *config) load(o options) error {
 	if c.loaded {
 		return nil
@@ -374,6 +382,18 @@ func (c *config) load(o options) error {
 	// as part of the name, so the one diagnostic meant to explain the loss named a
 	// key that looks perfectly valid.
 	text := strings.TrimPrefix(string(data), "\ufeff")
+	if isFlatConfig(text) {
+		c.flat = true
+		c.loadFlat(text)
+		return nil
+	}
+	c.loadDoc(shcl.Parse(text))
+	return nil
+}
+
+// loadFlat reads the old layout: flat 'key = value' lines, '#' comments, blank
+// lines ignored. The reader the scripted builds had, kept as it was.
+func (c *config) loadFlat(text string) {
 	for _, line := range splitLines(text) { // a file written on Windows, read on Linux
 		line = strings.TrimLeft(line, " \t")
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -401,46 +421,51 @@ func (c *config) load(o options) error {
 			c.unknown = append(c.unknown, key)
 			continue
 		}
-		switch field {
-		case "path":
-			if value != "" {
-				c.paths = append(c.paths, acctRule{canonPath(value), acct})
-			}
-		case "pathcontains":
-			if value != "" {
-				c.segments = append(c.segments, acctRule{canonSegment(value), acct})
-			}
-		case "ghaccount", "tokenfile", "sshkey", "name", "email", "protocol", "host", "user":
-			// git hands GIT_SSH_COMMAND and core.sshCommand to a shell, so a key
-			// path carrying whitespace or a shell character is re-parsed there
-			// rather than used - and this file is redirectable by flag and by
-			// environment variable. Drop it and say so: quietly falling back to
-			// whatever key ssh picks is how you push as the wrong person.
-			if field == "sshkey" && strings.ContainsAny(value, sshKeyShellChars) {
-				c.unknown = append(c.unknown, key+" (shell characters in the path)")
-				value = ""
-			}
-			// 'host' and 'user' are interpolated into the credential helper, which
-			// git hands to a shell exactly as it hands one core.sshCommand. Neither
-			// has any business carrying a character a shell would act on, so hold
-			// them to what a hostname and a login can actually contain rather than
-			// trust the file - it is redirectable by flag and by environment variable.
-			if (field == "host" || field == "user") && value != "" && !forgeWordOK.MatchString(value) {
-				c.unknown = append(c.unknown, key+" (not a plain "+field+" name)")
-				value = ""
-			}
-			c.values[key] = value
-			if !contains(c.order, acct) {
-				c.order = append(c.order, acct)
-			}
-		default:
-			// Named but not understood. Not fatal - a config from a newer gitsby
-			// still has to work - but never silent either: a mistyped key nothing
-			// reads is how you act as the wrong account believing you configured it.
-			c.unknown = append(c.unknown, key)
-		}
+		c.absorb(acct, field, value, key)
 	}
-	return nil
+}
+
+// absorb takes one per-account setting into the model, from either layout. field
+// is lower case; key is the setting as the file spelled it, for the ignored list.
+func (c *config) absorb(acct, field, value, key string) {
+	switch field {
+	case "path":
+		if value != "" {
+			c.paths = append(c.paths, acctRule{canonPath(value), acct})
+		}
+	case "pathcontains":
+		if value != "" {
+			c.segments = append(c.segments, acctRule{canonSegment(value), acct})
+		}
+	case "ghaccount", "tokenfile", "sshkey", "name", "email", "protocol", "host", "user":
+		// git hands GIT_SSH_COMMAND and core.sshCommand to a shell, so a key
+		// path carrying whitespace or a shell character is re-parsed there
+		// rather than used - and this file is redirectable by flag and by
+		// environment variable. Drop it and say so: quietly falling back to
+		// whatever key ssh picks is how you push as the wrong person.
+		if field == "sshkey" && strings.ContainsAny(value, sshKeyShellChars) {
+			c.unknown = append(c.unknown, key+" (shell characters in the path)")
+			value = ""
+		}
+		// 'host' and 'user' are interpolated into the credential helper, which
+		// git hands to a shell exactly as it hands one core.sshCommand. Neither
+		// has any business carrying a character a shell would act on, so hold
+		// them to what a hostname and a login can actually contain rather than
+		// trust the file - it is redirectable by flag and by environment variable.
+		if (field == "host" || field == "user") && value != "" && !forgeWordOK.MatchString(value) {
+			c.unknown = append(c.unknown, key+" (not a plain "+field+" name)")
+			value = ""
+		}
+		c.values["account."+acct+"."+field] = value
+		if !contains(c.order, acct) {
+			c.order = append(c.order, acct)
+		}
+	default:
+		// Named but not understood. Not fatal - a config from a newer gitsby
+		// still has to work - but never silent either: a mistyped key nothing
+		// reads is how you act as the wrong account believing you configured it.
+		c.unknown = append(c.unknown, key)
+	}
 }
 
 func contains(list []string, want string) bool {
@@ -472,26 +497,36 @@ func splitAccountKey(key string) (acct, field string, ok bool) {
 	return acct, field, true
 }
 
-// parseConfigValue trims a value: one optional layer of quotes keeps a literal '#'
-// or meaningful trailing space; otherwise a '#' after whitespace starts a comment,
-// here as well as at the start of a line. Folding one into the value made a folder
-// rule that could never match, which reads exactly like no rule at all.
+// parseConfigValue trims a flat-layout value: one optional layer of quotes keeps
+// a literal '#' or meaningful trailing space; otherwise a '#' after whitespace
+// starts a comment, here as well as at the start of a line. Folding one into the
+// value made a folder rule that could never match, which reads exactly like no
+// rule at all.
 func parseConfigValue(value string) string {
-	if len(value) >= 2 && (value[0] == '"' || value[0] == '\'') {
-		if end := strings.IndexByte(value[1:], value[0]); end >= 0 {
-			return value[1 : 1+end]
+	value, _ = splitFlatValue(value)
+	return value
+}
+
+// splitFlatValue is parseConfigValue with the trailing comment handed back too,
+// so a conversion to the current layout can keep it.
+func splitFlatValue(raw string) (value, comment string) {
+	if len(raw) >= 2 && (raw[0] == '"' || raw[0] == '\'') {
+		if end := strings.IndexByte(raw[1:], raw[0]); end >= 0 {
+			if rest := strings.TrimSpace(raw[2+end:]); strings.HasPrefix(rest, "#") {
+				comment = "  " + rest
+			}
+			return raw[1 : 1+end], comment
 		}
 	}
-	for i := 0; i+1 < len(value); i++ {
-		if (value[i] == ' ' || value[i] == '\t') && value[i+1] == '#' {
-			value = value[:i]
-			break
+	for i := 0; i+1 < len(raw); i++ {
+		if (raw[i] == ' ' || raw[i] == '\t') && raw[i+1] == '#' {
+			return strings.TrimRight(raw[:i], " \t"), "  " + raw[i+1:]
 		}
 	}
-	if strings.HasPrefix(value, "#") {
-		return ""
+	if strings.HasPrefix(raw, "#") {
+		return "", "  " + raw
 	}
-	return strings.TrimRight(value, " \t")
+	return strings.TrimRight(raw, " \t"), ""
 }
 
 // accountForDir names the configured account whose folder contains this one.

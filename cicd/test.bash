@@ -2167,6 +2167,49 @@ GHEOF
 	EOF
 	fAssertOut "a quoted hash stays in the value"  "Account \.+: a#b" \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/quoted.shcl' status"
+	## The current layout: one block per account. Read in every shape a hand-written file takes - a
+	## block, the dotted spelling of the old lines, a folder list, a key in camel case - and what it
+	## can't read is named by the path that reaches it, so the reader can find the line.
+	## Spaces for the nesting: '<<-' strips every leading tab, structure included.
+	cat > "${ac}/hier.shcl" <<-EOF
+		# blocks
+		protocol: https
+		account: hw
+		    path: ${acCanon}/trees/work, ${acCanon}/trees/away
+		    ghAccount: hieracct
+		    nonsense: 1
+		account.hh.path: ${acCanon}/trees/home
+		account.hh.ghaccount: dottedacct
+	EOF
+	fAssertOut "a block-layout config resolves the folder's account"  "Account \.+: hieracct" \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier.shcl' status"
+	fAssertOut "and the second folder in the same list"  "Account \.+: hieracct" \
+		bash -c "cd '${acAway}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier.shcl' status"
+	fAssertOut "and the dotted spelling of the old lines"  "Account \.+: dottedacct" \
+		bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier.shcl' status"
+	fAssertOut "a key nothing reads is named by the path that reaches it"  'Ignored keys \.+:.*account\[hw\]\.nonsense' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier.shcl' account"
+	## 'account set' on a block-layout file edits the block and keeps the rest - comments included -
+	## where it was, in the format's own spacing.
+	cp "${ac}/hier.shcl" "${ac}/hier-set.shcl"
+	fAssertOut "'account set' names the block and the key it adds"  'add: +account\[hw\]\.host: gitea\.example' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier-set.shcl' account set hw host gitea.example 2>&1"
+	fAssertOut "and the block now holds it"  '^	host: gitea\.example$'  cat "${ac}/hier-set.shcl"
+	fAssertOut "with the comment above it kept"  '^# blocks$'  cat "${ac}/hier-set.shcl"
+	fAssertOut "and an existing key is shown before and after"  'was: +ghaccount: hieracct' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier-set.shcl' account set hw ghaccount other 2>&1"
+	## A file created from nothing carries a header naming the keys and a footer naming the format,
+	## and is readable by nobody else: it names accounts and points at token files.
+	local acNew="${ac}/newhome"; mkdir -p "${acNew}"
+	fAssertOut "'account set' creates the file where the next run looks"  'create ~/.config/gitsby/config.shcl' \
+		bash -c "cd '${acWork}' && env ${acNoDiscovery} HOME='${acNew}' PATH='${ac}/bin:${PATH}' '${gitsby}' -q -NoFetch account set fresh ghaccount freshacct 2>&1"
+	fAssertOut "and it names the format it is in"  'This config file format is SHCL'  cat "${acNew}/.config/gitsby/config.shcl"
+	fAssertOut "and the keys it takes"  '^#   pathcontains '  cat "${acNew}/.config/gitsby/config.shcl"
+	fAssertOut "and the next run reads it"  'github \.+: freshacct' \
+		bash -c "cd '${acWork}' && env ${acNoDiscovery} HOME='${acNew}' PATH='${ac}/bin:${PATH}' '${gitsby}' -q -NoFetch account 2>&1"
+	if ! ((isWindows)); then
+		fAssert "and nobody else can read it"  bash -c "[[ \"\$(stat -c '%a' '${acNew}/.config/gitsby/config.shcl')\" == 600 ]]"
+	fi
 	## A named file that isn't there is a typo, not a reason to fall back silently.
 	fAssertFail "a named config that isn't there is refused"        bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/nope.shcl' status"
 	fAssertOut  "and says which file"  'No readable config file'    bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/nope.shcl' status 2>&1"
@@ -3015,19 +3058,24 @@ GHEOF
 	## The whole round trip, because either half alone proves nothing - the command has to write a
 	## line the loader then reads back, and the diagnostic has to stop once it has.
 	cp "${fg}/nohost.shcl" "${fg}/fixme.shcl"
-	fAssertOut "'account set' says which file it will edit, and how"  'add: +account\.work\.host = git\.example\.test' \
+	## This fixture is in the old flat layout, so the first edit rewrites it whole in the current one
+	## - and says so, since the file comes back a different shape from the one that was typed.
+	fAssertOut "'account set' says which file it will edit, and how"  'add: +account\[work\]\.host: git\.example\.test' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set work host git.example.test 2>&1"
-	fAssertOut "and the file now holds that line"  '^account\.work\.host = git\.example\.test$' \
+	fAssertOut "and the file now holds that key, in the block"  '^	host: git\.example\.test$' \
+		cat "${fg}/fixme.shcl"
+	fAssertOut "and the rest came through the change of layout"  '^	user: giteauser$' \
+		cat "${fg}/fixme.shcl"
+	fAssertOut "and the footer names the format"  'This config file format is SHCL' \
 		cat "${fg}/fixme.shcl"
 	## The point of the whole exercise: run what the Fix line said and that complaint is gone. Only
 	## that one - this account still has no token, which is a different sentence about a different
 	## thing, and asserting no complaint at all would be asserting the wrong fix worked.
 	fAssertNotOut "and the account stops being read as a github.com one"  "which git host it is for" \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' identity 2>&1"
-	## Every other line comes back untouched. This file is hand-written and hand-commented, and a
-	## command that reformatted it on the way past would cost more than it saved.
-	fAssertOut "and every other line is unchanged"  '^1$' \
-		bash -c "diff <(grep -v '^account\.work\.host' '${fg}/nohost.shcl') <(grep -v '^account\.work\.host' '${fg}/fixme.shcl') > /dev/null && echo 1"
+	## Now in the current layout, an edit names the line it changes and both versions of the key.
+	fAssertOut "a second edit names the line and what was there"  'was: +host: git\.example\.test' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set work host git.example.org 2>&1"
 	## A key the loader ignores, written past this command, lands in the file and is dropped on every
 	## read - so the file says one thing and every command does another. Refuse it at the door, and
 	## name the keys that ARE read while refusing.
@@ -3051,15 +3099,15 @@ GHEOF
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set 2>&1"
 	## '<key>' is a closed list, and the command that lists it is this one - a reader sent looking
 	## for the keys elsewhere guesses instead, and a guess is refused a command later.
-	fAssertOut "and lists the keys it takes"  'One of: path, pathContains, ghAccount, tokenFile' \
+	fAssertOut "and lists the keys it takes"  'One of: path, pathcontains, ghaccount, tokenfile' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set 2>&1 | tr '\\n' ' ' | tr -s ' '"
 	## The example is two lines on one account name, because that repetition is what '<account>' is.
 	fAssertOut "and its example runs as printed"  'gitsby account set work path ~/dev/work' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set 2>&1"
 	## 'pathContains' matches a run of folder names, not a glob. An example with a '*' in it reads
 	## as a pattern language that isn't there, and the rule it teaches never matches anything.
-	fAssertNotOut "and the pathContains example is not a glob"  '[*]' \
-		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set 2>&1 | grep pathContains"
+	fAssertNotOut "and the pathcontains example is not a glob"  '[*]' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set 2>&1 | grep pathcontains"
 	## The identity block's own vocabulary. "Forge" is a word for people who already knew the answer.
 	fAssertOut "the identity block says 'Git host', not 'Forge'"  '^Git host \.+: git\.example\.test' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' identity 2>&1"
@@ -3228,6 +3276,7 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260819 JC: Which folder a clone resolves its account from. The account block grew a bare origin to clone between its two trees, and the identity block one check that the surrounding repo's owner is never asked about - the step that leaves no trace in the output, only in which token the fetch went out with.
 ##		- 20260819 JC: The shipping installers, at the repo root. Their whole plan is behind the network now - the release lookup and SHA256SUMS both land before it prints - so these checks stop at the argument parse, the refusals, the Windows hand-off, and pins on what a live run reaches. The legacy block stays beside them, still aimed at frozen files. 582 -> 613.
 ##		- 20260819 JC: A block for the directive-review defects: the bare-repo and .git-directory gates, the fetch naming origin, prune's offline hold-back, br switch with two remotes carrying the branch, the contested-folder tie-break both ways, --any-identity's own line, a file-sourced token checked against the account it claims, and the mode bits. Eighteen of them fail against the build that preceded the fixes; the two mode-bit ones are Linux/macOS only.
+##		- 20260826 JC: The accounts file in its block layout: read in every shape, edited in place with the comments kept, created with its header and footer, and a flat file rewritten by its first edit. The old flat fixtures stay as regression guards on the reader that still takes them. 793 -> 808.
 ##		- 20260819 JC: Installer coverage for the directive-review fixes: the pre-release fallback (a stub curl answering only the list endpoint), a whole install end to end with the network stood in for, and pins on the staging, the verification exit code and the Windows PowerShell 5.1 support. Ten of them fail against the installers that preceded the fixes.
 ##		- 20260819 JC: Pipeline coverage for the directive review: the reproducible-build flags and a binary built with them, the core cap, --quick's cross-builds, govulncheck, the spawn-count and kept-build scripts, -q reaching the harnesses, the lint summary on a clean log, and the demo scenario's command names. Eleven fail against the pipeline that preceded them.
 ##		- 20260819 JC: br prune's plan checks follow the batched deletes - one line for the locals and one for the remotes, which is what the command runs. The remote half needed a fixture of its own: a plan check has to run the command to see a plan, and the check before it had already pruned the world it shared.

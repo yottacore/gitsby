@@ -122,21 +122,24 @@ EOF
 chmod 755 "${root}/bin/gh"
 
 ##	The file the demo cats on camera. Kept short enough to read in one screen, and using
-##	'pathContains' rather than 'path' because a run of folder names is the thing being shown.
+##	'pathcontains' rather than 'path' because a run of folder names is the thing being shown.
+##	Spaces for the nesting: '<<-' strips every leading tab, the block structure with them.
 cat > "${XDG_CONFIG_HOME}/gitsby/config.shcl" <<-EOF
-	protocol = https
+	protocol: https
 
-	account.acme.pathContains = github.com/acme-corp
-	account.acme.ghAccount    = mika-at-acme
-	account.acme.tokenFile    = ~/.config/gitsby/acme.token
-	account.acme.name         = ${acmeName}
-	account.acme.email        = ${acmeEmail}
+	account: acme
+	    pathcontains: github.com/acme-corp
+	    ghaccount: mika-at-acme
+	    tokenfile: ~/.config/gitsby/acme.token
+	    name: ${acmeName}
+	    email: ${acmeEmail}
 
-	account.personal.pathContains = github.com/mika-rivers
-	account.personal.ghAccount    = mika-rivers
-	account.personal.tokenFile    = ~/.config/gitsby/personal.token
-	account.personal.name         = ${sideName}
-	account.personal.email        = ${sideEmail}
+	account: personal
+	    pathcontains: github.com/mika-rivers
+	    ghaccount: mika-rivers
+	    tokenfile: ~/.config/gitsby/personal.token
+	    name: ${sideName}
+	    email: ${sideEmail}
 EOF
 
 git init -q --bare "${bare}"
