@@ -138,6 +138,13 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- The push-side check reads the account's login on the host being pushed to. `ghAccount` is a GitHub login and answers for GitHub alone; `user` answers anywhere. Keyed on `ghAccount` alone the gate silently stopped guarding every non-GitHub account.
 	- An account naming no login on this host makes no claim, so there is nothing to compare - and that is deliberately not read as a match. Unknown stays unknown on both sides: a `tea` with no login configured, like an unreachable `gh`, has said nothing about who you are, and refusing on that would refuse every unconfigured machine.
 
+- Every run says which build it came from.
+	- A version alone does not identify a build: between two releases there are dozens, and the one someone is reporting on is usually not a tagged one. So each build carries a build number - minutes from the start of 2000, Crockford base32, five characters until 2063 - printed next to the version.
+	- Crockford's alphabet leaves out I, L, O and U, so a build number read aloud or retyped comes back as the one it was.
+	- It is derived from the commit's own date, not from the clock at build time. A clock-derived number would change on every rebuild, which would mean nobody, including us, could rebuild a published binary to its published checksum - the same property `-buildvcs=false` exists to protect. As a consequence the release cross-builds twice: once in phase 1 as a compile gate, and again in phase 3 from the tagged commit, which is where the uploaded bytes come from.
+	- A hand-run `go build` stamps nothing and reports no build number at all, rather than one invented from the clock. A number that moves every minute would say the opposite of what a build number means.
+	- Output starts with the build line so a bug report carries it without being asked. Not under `-q`, which is the machine-readable mode, and never on `raw git`/`raw gh`, which exist to hand a tool's output back unchanged. `--version` and the help screen already printed a version line and gained the build number there instead of a second line saying the same thing.
+
 - An account's credentials are only credentials where that account banks.
 	- Accounts gained `host` (defaulting to `github.com`, which is what every config written before the key existed meant) and `user`. If an account's host is not the host `origin` is on, nothing is applied and the identity block names both hosts.
 	- A non-GitHub token is exported under its own variable, never as `GH_TOKEN`: `gh` reads that one, and every child process would otherwise inherit a credential for a host `gh` would try to use it on.
@@ -488,11 +495,15 @@ GitHub's `releases/latest` returns the newest release not flagged as a pre-relea
 
 Three phases, so a failure never leaves a half-cut release:
 
-1. **Prepare and verify**, changing nothing outside the working tree. Resolve the version (argument, else the bump `release` would choose), refuse if the tag exists or the changelog has no `vNEXT` section, run the full pipeline, and cross-build every release target. Nothing here needs undoing, so a target that stopped compiling costs nothing to discover.
+1. **Prepare and verify**, changing nothing outside the working tree. Resolve the version (argument, else the bump `release` would choose), refuse if the tag exists or the changelog has no `vNEXT` section, run the full pipeline, and cross-build every release target as a compile gate. Nothing here needs undoing, so a target that stopped compiling costs nothing to discover.
 2. **Land.** Retitle the changelog's `vNEXT` heading, open a PR for it, merge it, then `gitsby release`. The only phase that pushes. The bump goes through a branch and a PR like everything else: committing it straight to the merge target would be the one place this project does to itself what the tool refuses to do for you.
-3. **Publish and prove.** Create the GitHub release with that changelog section as the body, upload the per-platform binaries and their `SHA256SUMS`, then verify - download this platform's published binary, check it, run it, and confirm it reports the released version.
+3. **Publish and prove.** Rebuild the per-platform binaries from the tagged commit, create the GitHub release with that changelog section as the body, upload the binaries and their `SHA256SUMS`, then verify - download this platform's published binary, check it, run it, and confirm it reports the released version.
 
 Decisions inside that shape:
+
+- **The assets are built twice.** Phase 1 compiles every target to prove none has stopped building, where the cost of a failure is nothing. Phase 3 builds them again once the tag exists, and those are the bytes that get uploaded - a build number taken from the commit can only be the tag's if the tag is already there. The second build is the price of "check out the tag, build, and get the published checksums back".
+
+- **The release notes name the build number**, read out of the freshly built binary rather than computed a second time in the release script, so the notes and the download cannot disagree about it.
 
 - **The version lives in the tag and nowhere else.** The build injects it with `-ldflags`, so there is no source string to bump and nothing that can disagree with the tag. That replaced an earlier design in which two builds each carried their own version and were compared to each other before pushing - a guard that only existed because the duplication did.
 

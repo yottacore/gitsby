@@ -173,6 +173,13 @@ None open.
 
 #### Done - Features and enhancements
 
+- ✅ A build number, printed next to the version and on every command's output.
+	- Minutes from the start of 2000, Crockford base32, lower case. Five characters until 2063, and no letters that get misread when one is read back over the phone.
+	- Taken from the commit's date rather than the clock at build time. A clock-derived number changes on every rebuild, which would mean a published binary could never be rebuilt to its published checksum.
+	- Commands print `gitsby <version> <build>` above their output. Not under `-q`, and never on `raw git`/`raw gh`, which hand their tool's output back untouched. `--version` and the help screen gained the build number on the version line they already had, rather than a second line repeating it.
+	- The release cross-builds twice as a result: phase 1 as a compile gate, phase 3 from the tagged commit for the bytes that get uploaded. The release notes name the build number, read out of the built binary so the two cannot disagree.
+	- An unstamped build (a hand-run `go build`) reports no build number at all.
+
 - ✅ Port the mutating commands (`update`/`sync`, `br create`/`land`/`prune`, `pr`, `repo`, `account apply`). Four slices, one branch each.
 	- ✅ The mutating frame plus `update`, `sync`, `br prune`. The frame is the shared part: state, plan, confirm, run, state again, "Done." - and the commit/pull/push core the rest compose from. `br prune` now deletes rather than stopping at its plan. Go leg 249/189 -> 285/153.
 	- ✅ `br create` / `hotfix` / `switch` / `land`, with the hotfix back-merge and the shipped-code warning. Also the up-front branch-name and dirty-protected-branch refusals, and the `New branch ...:` state line. Go leg 285/153 -> 345/93.

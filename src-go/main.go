@@ -95,6 +95,7 @@ func run(out *printer, argv []string) error {
 	if a.cmd.name == "" { // help was asked for, and printed
 		return nil
 	}
+	a.printBanner()
 	if err := a.enterRepo(); err != nil {
 		return err
 	}
@@ -157,6 +158,9 @@ func (a *app) settleCommand(argv []string) error {
 	if a.cmd, err = sortCommand(a.cmd, &a.opt); err != nil {
 		return err
 	}
+	// Whether -q was typed, captured before the rule below writes the same field -
+	// otherwise every piped run looks like it asked for quiet.
+	a.opt.sawQuiet = a.opt.quiet
 	// No tty = nobody to answer a prompt. Read-only commands just go quiet;
 	// mutating ones fail closed (require an explicit -q) so piped/cron input can't
 	// silently auto-confirm.

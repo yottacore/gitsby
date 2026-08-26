@@ -71,6 +71,11 @@ stamp="$(date +%Y%m%d-%H%M%S)"
 ## release injects the clean one. Resolved here because two stages need it and either
 ## can be skipped independently.
 go_version="$(git describe --tags --always --match 'v*' 2>/dev/null || echo 0.0.0)"
+## Build number, as minutes since 2000 in Crockford base32 - the binary does the encoding,
+## this only hands it the seconds. Taken from the commit rather than the clock so the same
+## source builds to the same bytes; a wall-clock stamp would mean nobody, including us,
+## could ever rebuild a published asset to its published checksum.
+go_build_epoch="$(git log -1 --format=%ct 2>/dev/null || echo 0)"
 
 ## Parse options.
 assume_yes=0; quiet=0; quick=0; do_sync=1; do_lint=1; do_test=1; do_fuzz=1; do_parity=1; cli_message=""
@@ -388,7 +393,7 @@ if ((! do_test)); then
 	fEcho_Clean "build + tests skipped"
 else
 	(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 \
-		go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${go_version#v}" -o "${EXE_NAME}" .) \
+		go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${go_version#v} -X main.buildEpoch=${go_build_epoch}" -o "${EXE_NAME}" .) \
 		|| fDie "go build failed"
 	fEcho "OK: go build (v${go_version#v})"
 	## The unit tests come before the suite below: they answer in milliseconds and
@@ -476,7 +481,7 @@ else
 		## suite just ran against is not overwritten by a build that cannot run here.
 		out="${root}/${GO_MODULE_DIR}/${EXE_NAME}-${t//\//-}"
 		(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOOS="${t%%/*}" GOARCH="${t##*/}" \
-			go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${go_version#v}" -o "${out}" .) \
+			go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${go_version#v} -X main.buildEpoch=${go_build_epoch}" -o "${out}" .) \
 			|| fDie "go build failed for ${t}"
 		cp -f "${out}" "${dogfood_dest[${t}]}/${exe}"
 		chmod +x "${dogfood_dest[${t}]}/${exe}"
