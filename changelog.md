@@ -49,6 +49,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Commands say which build produced their output, on a line of their own above it, so a report of something going wrong carries the version and build number without anyone having to ask for them. `-q` leaves the line out, and `raw git` and `raw gh` still hand their tool's output straight back with nothing added.
 
+- `--about` prints what Gitsby is, who wrote it, the license it is under, and where it lives. `--donate` prints the sponsorship link. Both work outside a repository, and both are spelled as bare words too.
+
 ### Changed
 
 - The accounts file lives where each platform keeps one, and each platform is asked in its own terms. Windows reads `%APPDATA%\gitsby\config.shcl`; macOS reads `~/Library/Application Support/gitsby/config.shcl`; Linux and FreeBSD read `$XDG_CONFIG_HOME/gitsby/config.shcl`, then `~/.config/gitsby/config.shcl`. The first of those is also where `account set` creates a file when there is none, and where the identity block points you when it has advice about one.

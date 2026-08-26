@@ -173,6 +173,11 @@ None open.
 
 #### Done - Features and enhancements
 
+- ✅ `--about` and `--donate`.
+	- `--about` is the copyright block, the description the help screen carries, and a link to the project. `--donate` is the build line, two sentences, and the sponsorship link.
+	- Both answer outside a repository, both take a bare word as well as the flag, and neither reads any configuration.
+	- Help lists both on the line that already names `--help` and `--version`.
+
 - ✅ A build number, printed next to the version and on every command's output.
 	- Minutes from the start of 2000, Crockford base32, lower case. Five characters until 2063, and no letters that get misread when one is read back over the phone.
 	- Taken from the commit's date rather than the clock at build time. A clock-derived number changes on every rebuild, which would mean a published binary could never be rebuilt to its published checksum.

@@ -18,11 +18,29 @@ func (a *app) printCopyright() {
 	a.out.clean("")
 }
 
-func (a *app) printAbout() {
+func (a *app) printBlurb() {
 	a.out.clean("")
 	a.out.clean("Safer, state-checked wrappers for everyday git. Every command verifies the")
 	a.out.clean("repo state before acting (commit only if dirty, pull only with an upstream,")
 	a.out.clean("push only if ahead), so each is idempotent and safe to re-run.")
+	a.out.clean("")
+}
+
+func (a *app) printAbout() {
+	a.printCopyright()
+	a.printBlurb()
+	a.out.clean("  " + homeURL)
+	a.out.clean("")
+}
+
+func (a *app) printDonate() {
+	a.out.clean("")
+	a.printBanner()
+	a.out.clean("Gitsby is free, and built and maintained in spare time. A star or a mention")
+	a.out.clean("helps other people find it. If it is saving you real time, sponsorship is")
+	a.out.clean("welcome, and never expected.")
+	a.out.clean("")
+	a.out.clean("  " + donateURL)
 	a.out.clean("")
 }
 
@@ -61,13 +79,13 @@ func (a *app) printSyntax() {
 	a.out.clean("  --any-identity .......: Act as gh's active account, and proceed when it differs from the remote's ssh key.")
 	a.out.clean("  --no-fetch ...........: Skip the pre-command fetch, and the pull. (Pushes still go out.)")
 	a.out.clean("  --config FILE ........: Read accounts from FILE instead of the usual config location.")
-	a.out.clean("  -h, --help  /  -v, --version")
+	a.out.clean("  -h, --help  /  -v, --version  /  --about  /  --donate")
 	a.out.clean("")
 }
 
 func (a *app) printHelp() {
 	a.printCopyright()
-	a.printAbout()
+	a.printBlurb()
 	a.printSyntax()
 }
 

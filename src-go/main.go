@@ -28,6 +28,8 @@ var version = "0.0.0-dev"
 const (
 	copyrightYear = "2014-2026"
 	author        = "Jim Collier"
+	homeURL       = "https://github.com/jim-collier/gitsby"
+	donateURL     = "https://github.com/sponsors/jim-collier"
 )
 
 func main() {
@@ -68,6 +70,12 @@ func run(out *printer, argv []string) error {
 		return nil
 	case "-v", "--ver", "--version", "version":
 		a.printCopyright()
+		return nil
+	case "--about", "about":
+		a.printAbout()
+		return nil
+	case "--donate", "donate":
+		a.printDonate()
 		return nil
 	}
 
