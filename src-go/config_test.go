@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -409,6 +410,129 @@ func TestConfigCandidatesFor(t *testing.T) {
 			if got[i] != tc.want[i] {
 				t.Errorf("%s: candidate %d = %q, want %q", tc.name, i, got[i], tc.want[i])
 			}
+		}
+	}
+}
+
+// The current layout, in every shape the reader takes: one block per account,
+// the dotted spelling a hand conversion produces, a folder given as an array and
+// as a repeated key, a key typed in camel case, and the things it reports.
+func TestConfigLoadHierarchical(t *testing.T) {
+	cfg := writeConfig(t, `# top
+protocol: ssh
+stray: 1
+account.dotted.path: /srv/dotted
+account.dotted.ghAccount: dottedlogin
+account: Block
+	path: /srv/a, "/srv/b c"
+	path: /srv/d
+	pathContains: github.com/alice
+	nonsense: x
+	email: b@example.com
+account: 2024
+	host: gitea.example
+bad = line
+`)
+	if cfg.flat {
+		t.Fatal("read as the flat layout")
+	}
+	if cfg.values["protocol"] != "ssh" {
+		t.Errorf("protocol = %q", cfg.values["protocol"])
+	}
+	if want := []string{"dotted", "block", "2024"}; !slices.Equal(cfg.accountNames(), want) {
+		t.Errorf("accountNames = %v, want %v", cfg.accountNames(), want)
+	}
+	if got := cfg.value("Dotted", "ghAccount"); got != "dottedlogin" {
+		t.Errorf("dotted ghAccount = %q", got)
+	}
+	if got := cfg.foldersOf("block"); !slices.Equal(got, []string{"/srv/a", "/srv/b c", "/srv/d"}) {
+		t.Errorf("block folders = %v", got)
+	}
+	if got := cfg.segmentsOf("block"); !slices.Equal(got, []string{"github.com/alice"}) {
+		t.Errorf("block segments = %v", got)
+	}
+	if got := cfg.value("2024", "host"); got != "gitea.example" {
+		t.Errorf("numeric account host = %q", got)
+	}
+	// Named by the path that reaches them, so the reader can find the line.
+	for _, want := range []string{"stray", "account[Block].nonsense", "line 14 "} {
+		if !slices.ContainsFunc(cfg.unknown, func(s string) bool { return strings.HasPrefix(s, want) }) {
+			t.Errorf("unknown = %v, missing %q", cfg.unknown, want)
+		}
+	}
+	if len(cfg.unknown) != 3 {
+		t.Errorf("unknown = %v, want three", cfg.unknown)
+	}
+}
+
+// An account block with no keys is still an account: it can be named through
+// GITSBY_ACCOUNT, and a name that could climb out of the include directory is
+// reported, not used.
+func TestConfigLoadHierarchicalNames(t *testing.T) {
+	cfg := writeConfig(t, "account: bare\naccount: ../../evil\n\tpath: /x\n")
+	if !cfg.knowsAccount("bare") {
+		t.Error("a block with no keys is not an account")
+	}
+	if cfg.knowsAccount("../../evil") || len(cfg.foldersOf("../../evil")) != 0 {
+		t.Error("a traversal name became an account")
+	}
+	if !slices.Contains(cfg.unknown, "account[../../evil]") {
+		t.Errorf("unknown = %v", cfg.unknown)
+	}
+}
+
+// Which layout a file is in is decided by its own lines, never by its extension.
+func TestIsFlatConfig(t *testing.T) {
+	cases := map[string]bool{
+		"":                                       false,
+		"# only comments\n":                      false,
+		"account.work.path = /x\n":               true,
+		"account.work.path = C:/x  # c: d\n":     true,
+		"account: work\n\tpath: /x\n":            false,
+		"account.work.path: /x\n":                false,
+		"k: a=b\n":                               false,
+		"account.w.path = /x\naccount: w\n":      false, // one current-layout line means the file is in it
+		"\ufeffaccount.work.path = /x\r\n":       true,
+		"just-a-key\naccount.work.ghAccount = x": true,
+	}
+	for in, want := range cases {
+		if got := isFlatConfig(in); got != want {
+			t.Errorf("isFlatConfig(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+// The conversion writes blocks, so a comment above an account's first line stays
+// above the block, one between two keys stays between them, and one above the
+// end - or above a top-level key - is not pulled into the block before it.
+func TestFlatToSHCL(t *testing.T) {
+	in := "# header\n\n# about work\naccount.work.path = /srv/work   # tree\n# between\naccount.work.ghAccount = \"a#b\"\n\n# above protocol\nprotocol = https\naccount.home.email = h@x.y\njust-a-key\n"
+	want := "# header\n\n# about work\n\naccount: work\n\tpath: /srv/work  # tree\n\t# between\n\tghaccount: \"a#b\"\n\n# above protocol\nprotocol: https\n\naccount: home\n\temail: h@x.y\njust-a-key\n\n" + shclBanner
+	if got := flatToSHCL(in); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+	cfg := writeConfig(t, flatToSHCL(in))
+	if cfg.value("work", "ghAccount") != "a#b" || cfg.value("home", "email") != "h@x.y" || cfg.values["protocol"] != "https" {
+		t.Errorf("converted file reads back wrong: %v", cfg.values)
+	}
+}
+
+// What the plan shows is what the file gets, so the spelling comes from the
+// module rather than from a second quoting rule that could drift from it.
+func TestShclValue(t *testing.T) {
+	cases := map[string]string{
+		"plain":    "plain",
+		"Ada #1":   `"Ada #1"`,
+		"":         `""`,
+		`C:\x`:     `"C:\\x"`,
+		"a, b":     `"a, b"`,
+		"C:/work":  `"C:/work"`,
+		"~/dev/w":  "~/dev/w",
+		"trail   ": `"trail   "`,
+	}
+	for in, want := range cases {
+		if got := shclValue(in); got != want {
+			t.Errorf("shclValue(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

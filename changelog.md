@@ -41,7 +41,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The identity block has a `Git host` line for hosts `gh` does not serve, naming the host and who its CLI holds a login for. Previously it simply printed nothing there.
 
-- `account set <account> <key> <value>` writes one line into the accounts file, so the fixes the identity block suggests can be typed as a command rather than made by hand. It shows the edit before making it, refuses a key nothing reads instead of leaving a line that is silently dropped, and leaves the rest of the file - comments, spacing, line endings - exactly as you wrote it. It creates the file if there isn't one yet.
+- `account set <account> <key> <value>` writes one key into an account's block of the accounts file, so the fixes the identity block suggests can be typed as a command rather than made by hand. It shows the edit before making it, refuses a key nothing reads instead of leaving a line that is silently dropped, and keeps the rest of the file - comments and order - as it was. It creates the file if there isn't one yet, with a header naming the keys.
 
 - The Windows binaries carry an icon and version details. Explorer shows the gitsby logo instead of the blank default, and Properties reads a version, description, copyright and file name off the file itself.
 
@@ -52,6 +52,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `--about` prints what Gitsby is, who wrote it, the license it is under, and where it lives. `--donate` prints the sponsorship link. Both work outside a repository, and both are spelled as bare words too.
 
 ### Changed
+
+- The accounts file is in [SHCL](https://github.com/jim-collier/shcl) now - `key: value`, one indented block per account - read and written through that format's own module rather than a parser of Gitsby's own. Several folders for one account are a list: `path: ~/dev/work, ~/dev/other`. Key names settle on lower case (`ghaccount`, `tokenfile`, `sshkey`, `pathcontains`); the file takes any casing. A file in the old flat `key = value` layout is still read as it is, and the first `account set` rewrites it in the new layout with its comments kept. A file `account set` creates ends with a footer naming the format and where its syntax is written down.
 
 - The accounts file lives where each platform keeps one, and each platform is asked in its own terms. Windows reads `%APPDATA%\gitsby\config.shcl`; macOS reads `~/Library/Application Support/gitsby/config.shcl`; Linux and FreeBSD read `$XDG_CONFIG_HOME/gitsby/config.shcl`, then `~/.config/gitsby/config.shcl`. The first of those is also where `account set` creates a file when there is none, and where the identity block points you when it has advice about one.
 

@@ -18,22 +18,28 @@ Nothing here is required. With no configuration Gitsby uses whichever account `g
 
 ## Setting it up
 
-One file, flat `key = value` lines, `#` for comments:
+One file, one block per account, `#` for comments:
 
-~~~ini
+~~~yaml
 # ~/.config/gitsby/config.shcl
 
-protocol = https                            # how new remotes are set up; https needs no ssh key
+protocol: https                  # how new remotes are set up; https needs no ssh key
 
-account.work.path       = ~/dev/work        # the folder tree this account owns
-account.work.ghAccount  = my-work-login
-account.work.name       = Ada Lovelace
-account.work.email      = ada@work.example
+account: work
+	path: ~/dev/work             # the folder tree this account owns
+	ghaccount: my-work-login
+	name: Ada Lovelace
+	email: ada@work.example
 
-account.personal.path       = ~/dev/personal
-account.personal.ghAccount  = my-personal-login
-account.personal.email      = ada@home.example
+account: personal
+	path: ~/dev/personal
+	ghaccount: my-personal-login
+	email: ada@home.example
 ~~~
+
+The format is [SHCL](https://github.com/jim-collier/shcl): `key: value`, blocks by indentation, tabs or spaces. Key names are case-insensitive and settle on lower case. A value holding a `#`, a comma or a colon goes in quotes (`path: "C:/work"`), and a backslash in a bare value is an escape, so a Windows path is either quoted with the backslashes doubled or written with forward slashes, which Gitsby reads either way.
+
+A file written for the 2.x scripts - flat `account.work.path = ~/dev/work` lines - is still read as it is. The first `account set` rewrites it in the layout above, comments included.
 
 Gitsby reads the first of these that exists, and `account set` creates the first one when there is no file yet:
 
@@ -51,40 +57,42 @@ Per-account keys, all optional except a `path` to match on:
 
 | Key             | What it does
 | :--             | :--
-| `path`          | A folder tree this account owns. Repeat the key for more than one. The longest match wins, so a tree nested inside another account's tree belongs to the inner one.
-| `pathContains`  | A run of folder names that appears anywhere in the path, so the same rule works on machines whose roots differ. Whole names only - `alice` never matches `alice-old`. Repeatable.
-| `ghAccount`  | The GitHub login to act as.
-| `tokenFile`  | A file holding that account's token, for a machine where `gh` was never logged in as it.
-| `sshKey`     | A key to use instead of a token. See below.
+| `path`          | A folder tree this account owns. More than one: `path: ~/dev/work, ~/dev/other`, or repeat the key. The longest match wins, so a tree nested inside another account's tree belongs to the inner one.
+| `pathcontains`  | A run of folder names that appears anywhere in the path, so the same rule works on machines whose roots differ. Whole names only - `alice` never matches `alice-old`. Repeatable.
+| `ghaccount`  | The GitHub login to act as.
+| `tokenfile`  | A file holding that account's token, for a machine where `gh` was never logged in as it.
+| `sshkey`     | A key to use instead of a token. See below.
 | `name`       | Commit author name.
 | `email`      | Commit author email.
 | `protocol`   | `https` or `ssh`, for this account only.
 | `host`       | The git host this account is on. Defaults to `github.com`, which is what every config written before this key existed meant.
-| `user`       | The login on that host, when it isn't `ghAccount` - Gitea checks the username an HTTPS push presents, where GitHub ignores it.
+| `user`       | The login on that host, when it isn't `ghaccount` - Gitea checks the username an HTTPS push presents, where GitHub ignores it.
 
 Run `gitsby account` to see what it made of all that, and which account the folder you're standing in resolves to. It is the command to reach for when something went out as the wrong person. A `path` rule pointing at a directory that isn't there is marked as one that can never match, which is usually a typo. Once any account names a `host`, the listing shows one for all of them, marked `(default)` where the file never said - an account meant for another host that never named one is the usual reason a repository there goes on using `gh`'s account.
 
-The file is meant to be edited by hand, but you don't have to. `gitsby account set <account> <key> <value>` writes one line into it - replacing that key's existing line, or adding one, or creating the file if there isn't one yet. It shows the edit and asks before making it, refuses a key nothing reads rather than leaving a line that is silently dropped on every load, and leaves every other line of the file exactly as you typed it, comments included.
+The file is meant to be edited by hand, but you don't have to. `gitsby account set <account> <key> <value>` writes one key into that account's block - replacing it where the block has it, adding it where it doesn't, or creating the file if there isn't one yet. It shows the edit and asks before making it, refuses a key nothing reads rather than leaving a line that is silently dropped on every load, and keeps the rest of the file - comments and order - as it was. The spacing is the format's own: tabs, lower-case keys, one blank line between blocks.
 
 ~~~console
 $ gitsby account set work host gitea.com
-    edit ~/.config/gitsby/config.shcl, line 6
-      was:     account.work.host = github.com
-      becomes: account.work.host = gitea.com
+    edit ~/.config/gitsby/config.shcl, line 8
+      was:     host: github.com
+      becomes: host: gitea.com
 ~~~
 
 Where an account isn't applying, the identity block names the `account set` line that fixes it. It won't make that edit for you: all it knows is that the file never said which host the account is for, which is not the same as knowing the account belongs to the host you happen to be pushing to - and guessing wrong means handing one host's token to another.
 
 ### One config file, several machines
 
-`path` names a tree on the machine you're on, so a config using it can't be synced as-is: the roots differ. `pathContains` names folder names instead, and matches wherever they appear:
+`path` names a tree on the machine you're on, so a config using it can't be synced as-is: the roots differ. `pathcontains` names folder names instead, and matches wherever they appear:
 
-~~~ini
-account.work.pathContains = github.com/my-work-login
-account.work.ghAccount    = my-work-login
+~~~yaml
+account: work
+	pathcontains: github.com/my-work-login
+	ghaccount: my-work-login
 
-account.personal.pathContains = github.com/my-personal-login
-account.personal.ghAccount    = my-personal-login
+account: personal
+	pathcontains: github.com/my-personal-login
+	ghaccount: my-personal-login
 ~~~
 
 That resolves under `C:/src/github.com/my-work-login/...` and `~/dev/github.com/my-work-login/...` alike, so the file syncs unchanged.
@@ -93,7 +101,7 @@ That resolves under `C:/src/github.com/my-work-login/...` and `~/dev/github.com/
 
 - More folder names is the more specific rule, so `github.com/alice` beats a bare `alice`.
 
-- An absolute `path` beats a `pathContains` when both match - naming this machine's own tree is the more specific claim. Mix them freely.
+- An absolute `path` beats a `pathcontains` when both match - naming this machine's own tree is the more specific claim. Mix them freely.
 
 - `gitsby account apply` hands these to git as `includeIf.gitdir:**/github.com/alice/**`, which git globs natively - so plain `git` follows the same rule on every machine too.
 
@@ -107,13 +115,13 @@ Neither the token nor the username is ever written into a config value: Git hand
 
 An account's token is a credential for the git host that issued it and for nowhere else, so Gitsby only applies one where it can be used: if `host` doesn't match the host `origin` is on, nothing is applied and the identity block says which two hosts disagreed. That is also why a Gitea token is never exported as `GH_TOKEN` - `gh` reads that variable, and every child process would inherit a credential for a host `gh` would try to use it on.
 
-Over HTTPS, `git` authenticates with the account's own token - the one `gh` already stores, or the one `tokenFile` names. Gitsby supplies it for the length of a single command, through the environment, and nothing is written anywhere. So a second account costs one `gh auth login` and three lines of config.
+Over HTTPS, `git` authenticates with the account's own token - the one `gh` already stores, or the one `tokenfile` names. Gitsby supplies it for the length of a single command, through the environment, and nothing is written anywhere. So a second account costs one `gh auth login` and three lines of config.
 
 - New remotes follow `protocol`, so `repo connect owner/name` sets up an HTTPS remote by default.
 
-- An existing repo still on SSH is converted with `gitsby repo url https`. Only the remote URL changes - same repo, same history. Gitsby points this out on the identity line when it applies, and setting `protocol = ssh` says you meant it and stops the suggestion.
+- An existing repo still on SSH is converted with `gitsby repo url https`. Only the remote URL changes - same repo, same history. Gitsby points this out on the identity line when it applies, and setting `protocol: ssh` says you meant it and stops the suggestion.
 
-SSH keys keep working, and stay the answer when you can't use a token. Give an account an `sshKey` and Gitsby uses it (with `IdentitiesOnly`, so the agent can't offer the wrong one first). Anything you have already set yourself - `GIT_SSH_COMMAND`, or `core.sshCommand` on the repo - was chosen more deliberately than a folder rule, and wins.
+SSH keys keep working, and stay the answer when you can't use a token. Give an account an `sshkey` and Gitsby uses it (with `IdentitiesOnly`, so the agent can't offer the wrong one first). Anything you have already set yourself - `GIT_SSH_COMMAND`, or `core.sshCommand` on the repo - was chosen more deliberately than a folder rule, and wins.
 
 ## Cloning
 

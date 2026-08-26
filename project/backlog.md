@@ -1695,7 +1695,8 @@ Waiting on hardware, an upstream module, or a decision.
 - ✋ macOS build check on real ARM hardware, including whether signing/quarantine matters for a terminal download.
 	- Narrower than it was: the build itself is no longer in question, since `darwin/arm64` cross-compiles from this box with no SDK. What is left is signing and quarantine on a real machine.
 
-- ✋ `.shcl` goes hierarchical via a real module, replacing the hand parse.
+- ✅ `.shcl` goes hierarchical via a real module, replacing the hand parse.
+	- Done 2026-08-26. The file is read and written through the shcl Go module: one block per account, folders as a list, the old flat layout still read and converted by the first `account set`. A created file carries a key header and the format's footer.
 
 - ✋ GitHub Actions and platform packaging (.deb/.rpm/.exe installer), deferred to the port by decision.
 	- The port is underway now, so this is decidable rather than deferred. Two calls: whether a bare workflow (vet, test, build on push and PR) is worth the dependency on a hosted service, and whether a release packager earns its place by bringing the Linux packages with it.

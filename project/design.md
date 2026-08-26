@@ -135,7 +135,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 
 - The identity gate asks about the host in question, not about GitHub.
 	- Two accounts disagreeing about who you are is the same outward-facing mistake wherever it happens, so a write through any forge CLI is compared against the key Git pushes with, and the message names the tool that would have acted rather than always saying `gh`.
-	- The push-side check reads the account's login on the host being pushed to. `ghAccount` is a GitHub login and answers for GitHub alone; `user` answers anywhere. Keyed on `ghAccount` alone the gate silently stopped guarding every non-GitHub account.
+	- The push-side check reads the account's login on the host being pushed to. `ghaccount` is a GitHub login and answers for GitHub alone; `user` answers anywhere. Keyed on `ghaccount` alone the gate silently stopped guarding every non-GitHub account.
 	- An account naming no login on this host makes no claim, so there is nothing to compare - and that is deliberately not read as a match. Unknown stays unknown on both sides: a `tea` with no login configured, like an unreachable `gh`, has said nothing about who you are, and refusing on that would refuse every unconfigured machine.
 
 - Every run says which build it came from.
@@ -240,9 +240,13 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- The earlier decision was the opposite - `includeIf` on the repo path already selects the ssh key and the commit identity, so a second config system looked like a second thing to keep in step with reality.
 	- What changed the answer is that folder rules are the point. `includeIf` can only say "when you are here, read this"; it cannot be listed, checked, or explained back to you, and writing one block per account per machine by hand is the chore the feature exists to remove.
 	- So the file owns the mapping and `account apply` generates the `includeIf` blocks from it. There is still one source of truth, and plain `git` outside gitsby follows it.
-	- Flat `key = value` lines, hand parsed. Neither build needs anything installed to read it, and neither can parse it differently from the other - which a real format with a real parser per language could not promise.
+	- The file is [SHCL](https://github.com/jim-collier/shcl), read and written through its Go module: `key: value`, one block per account.
+		- The flat `key = value` layout, hand parsed, was the right call while two script builds had to agree on every line of it. With one implementation, a real format buys blocks, comments that survive an edit, and a writer that cannot drift from the reader.
+		- The flat layout is still read as it is. The first `account set` on such a file rewrites it whole in the current layout, comments kept. The frozen 2.x scripts cannot read the result; that is the cost of moving, and they are frozen.
+		- A save goes through the module, which writes its canonical shape - tabs, lower-case keys - rather than the bytes that were there. So the keys are documented in lower case: it is the one spelling a file settles on.
+		- A file created from nothing gets a header naming the keys and the footer `shcl init` writes, naming the format and where its syntax lives.
 	- `gitsby.ghAccount` and `gitsby.ghTokenFile` in git config still work and still win, for a single repo that wants to answer for itself.
-	- `gitsby.ghTokenFile` and the per-account `tokenFile` name a token for an account gh has never been logged in as, for a machine set up by copying files rather than by authenticating. gh's own store is consulted first, so a rotated login is never shadowed by a stale token on disk.
+	- `gitsby.ghTokenFile` and the per-account `tokenfile` name a token for an account gh has never been logged in as, for a machine set up by copying files rather than by authenticating. gh's own store is consulted first, so a rotated login is never shadowed by a stale token on disk.
 	- Paths are compared canonically, never as text. The Bash build sees `/c/x` where the PowerShell build sees `C:\x`, and a rule that matched in one build and not the other would be worse than no rule at all.
 	- Paths are *displayed* the way the platform spells them, which on Windows is not the canonical form. Every path on screen goes out with backslashes and an upper-case drive letter there, so a folder rule and the directory it claims read as the same place instead of two. The canonical form stays internal, where the matching happens.
 
@@ -347,7 +351,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- So the fix is offered, not taken. `account set` is an ordinary mutating command with a plan and a confirmation, and `status`/`whoami` stay read-only and script-safe.
 	- It refuses a key the loader does not read, and a value the loader would drop. A line written past either check lands in the file and is ignored on every load, so the file says one thing and every command does another - the worst of the three possible outcomes.
 	- Everything it does not change comes back byte for byte, byte-order mark and line endings included. This file is hand-written and hand-commented; a command that reformatted it in passing would cost more than it saved.
-	- A key already present more than once is refused rather than guessed at. `path` and `pathContains` are repeatable by design, and replacing the first of several would look like it worked and change nothing that is read.
+	- A key already present more than once is refused rather than guessed at. `path` and `pathcontains` are repeatable by design, and replacing the first of several would look like it worked and change nothing that is read.
 
 - The accounts file lives where the platform in hand keeps one, and the place it used to live is never taken away.
 	- Gitsby searched `$XDG_CONFIG_HOME`, then `~/.config`, then `%APPDATA%`, on every platform. That is a Linux convention applied everywhere: a Windows user's file landed under a dot-directory in their profile, a macOS user's outside `Application Support`, and both only because nothing had been found first.
@@ -435,7 +439,7 @@ See also the release policy under Architecture, which covers how releases are pu
 
 - No state of its own. Everything gitsby knows about a repo, it asks `git` for, so there is nothing to get out of sync and nothing to migrate.
 
-	- The one file it does read is the accounts config, and it is read-only from gitsby's side: it maps folders to accounts and nothing else. Every value it yields is applied through the environment for the length of one command. See "Gitsby does have a config file" above for why that exception was made.
+	- The one file it does read is the accounts config, and apart from `account set` it is read-only from gitsby's side: it maps folders to accounts and nothing else. Every value it yields is applied through the environment for the length of one command. See "Gitsby does have a config file" above for why that exception was made.
 
 ### UI
 

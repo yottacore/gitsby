@@ -12,7 +12,6 @@ package main
 
 import (
 	"strconv"
-	"strings"
 )
 
 const pad = "    "
@@ -91,14 +90,20 @@ func (a *app) preview(what string) {
 		switch {
 		case t.creates:
 			a.out.clean(pad + "create " + displayPath(t.file))
-			a.out.clean(pad + "  add:     " + t.key + " = " + quoteConfigValue(t.value))
+		case t.converts:
+			// The whole file changes shape, so no line number: the one it has now
+			// is not the one the key ends up on.
+			a.out.clean(pad + "rewrite " + displayPath(t.file) + " in the current layout - it is in the old flat one")
 		case t.lineNum > 0:
 			a.out.clean(pad + "edit " + displayPath(t.file) + ", line " + strconv.Itoa(t.lineNum))
-			a.out.clean(pad + "  was:     " + strings.TrimLeft(t.old, " \t"))
-			a.out.clean(pad + "  becomes: " + t.key + " = " + quoteConfigValue(t.value))
 		default:
 			a.out.clean(pad + "edit " + displayPath(t.file))
-			a.out.clean(pad + "  add:     " + t.key + " = " + quoteConfigValue(t.value))
+		}
+		if t.exists {
+			a.out.clean(pad + "  was:     " + t.field + ": " + t.old)
+			a.out.clean(pad + "  becomes: " + t.field + ": " + shclValue(t.value))
+		} else {
+			a.out.clean(pad + "  add:     " + t.disp + "." + t.field + ": " + shclValue(t.value))
 		}
 	case "account-apply":
 		// Names every file and every condition, because this is the one command
