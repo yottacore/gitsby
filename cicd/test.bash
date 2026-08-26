@@ -165,6 +165,21 @@ fRunSuite(){
 	fAssertFail "-v after a command is refused"    bash -c "cd '${cloneA}' && '${gitsby}' -q update -v"
 	fAssertOut  "and says which option"            'Unexpected option'  bash -c "cd '${cloneA}' && '${gitsby}' -q update -v 2>&1"
 	fAssert     "-y alias accepted"            bash -c "cd '${cloneA}' && '${gitsby}' -y status"
+	## Every run says which build produced it, so a bug report carries that without being asked.
+	## Not on the two paths that already print a version line, not under -q, and never on 'raw',
+	## which hands its tool's stdout straight back to whatever is reading it.
+	fAssertOut    "output names the build it came from"  '^gitsby v[0-9]' \
+		bash -c "cd '${cloneA}' && '${gitsby}' -NoFetch status"
+	fAssertNotOut "-q leaves it out"                     '^gitsby v[0-9]' \
+		bash -c "cd '${cloneA}' && '${gitsby}' -q -NoFetch status"
+	fAssertNotOut "'raw' adds nothing to its tool's output"  '^gitsby v[0-9]' \
+		bash -c "cd '${cloneA}' && '${gitsby}' raw git rev-parse --abbrev-ref HEAD 2>/dev/null"
+	## Said once on the paths that were already saying it, rather than a banner above a copyright
+	## line that repeats it.
+	fAssert "--version names the build once"  \
+		bash -c "[[ \"\$(cd '${cloneA}' && '${gitsby}' --version | grep -cE '^gitsby v[0-9]')\" == 1 ]]"
+	fAssert "--help names the build once"     \
+		bash -c "[[ \"\$(cd '${cloneA}' && '${gitsby}' --help | grep -cE '^gitsby v[0-9]')\" == 1 ]]"
 	fAssertFail "no args exits nonzero"        "${gitsby}"
 	fAssertFail "unknown command rejected"     bash -c "cd '${cloneA}' && '${gitsby}' -q frobnicate"
 	fAssertFail "unknown option rejected"      bash -c "cd '${cloneA}' && '${gitsby}' -q status --bogus"
@@ -2420,6 +2435,27 @@ GHEOF
 	## hand-run 'go build', which legitimately carries the stamps.
 	fAssert "and a build with them carries no revision stamp" \
 		bash -c "cd '${root}/src-go' && go build -trimpath -buildvcs=false -o '${work}/vcsprobe' . && ! go version -m '${work}/vcsprobe' | grep -q 'vcs\.revision'"
+	## The build number is minutes since 2000, Crockford base32, lower case. Built here with a
+	## fixed stamp: the suite's own binary carries whatever the last build gave it.
+	fAssertOut "a stamped build reports minutes since 2000 in Crockford base32"  'gitsby v9\.9\.9 dbd05,' \
+		bash -c "cd '${root}/src-go' && go build -ldflags '-X main.version=9.9.9 -X main.buildEpoch=1787000000' -o '${work}/bnprobe' . && '${work}/bnprobe' --version"
+	## A number invented from the clock would say the opposite of what a build number means, so
+	## an unstamped build reports none rather than one that moves every minute.
+	fAssertOut "an unstamped build reports no build number"  '^gitsby v9\.9\.9, Copyright' \
+		bash -c "cd '${root}/src-go' && go build -ldflags '-X main.version=9.9.9' -o '${work}/bnprobe0' . && '${work}/bnprobe0' --version"
+	## Taken from the commit rather than the clock, or a published asset could never be rebuilt
+	## to its published checksum - the same reason -buildvcs=false is above.
+	fAssert "every build site stamps a build number" \
+		bash -c "[[ \"\$(grep -c 'main.buildEpoch=' '${root}/cicd/cicd.bash' '${root}/cicd/release.bash' | awk -F: '{t+=\$2} END{print t}')\" == 3 ]]"
+	fAssert "the build number comes from the commit, not the clock" \
+		bash -c "grep -q 'log -1 --format=%ct' '${root}/cicd/cicd.bash' '${root}/cicd/release.bash'"
+	## Phase 1 proves every target still compiles; phase 3 rebuilds them once the tag exists, and
+	## those are the bytes that get uploaded. Without the second build the published build number
+	## would belong to a commit the tag does not point at.
+	fAssert "the release rebuilds its assets from the tagged commit" \
+		bash -c "[[ \"\$(grep -c 'fpCrossBuild ' '${root}/cicd/release.bash')\" == 2 ]]"
+	fAssert "and the release notes carry the build number" \
+		bash -c "grep -q 'buildLine' '${root}/cicd/release.bash'"
 	fAssert "every build site shares one set of flags" \
 		bash -c "[[ \"\$(grep -c 'GO_BUILD_FLAGS\[@\]' '${root}/cicd/cicd.bash' '${root}/cicd/release.bash' | awk -F: '{t+=\$2} END{print t}')\" == 3 ]]"
 	## The compiler takes every core by default, in every build and in the eight-target

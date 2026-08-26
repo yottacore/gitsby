@@ -62,6 +62,25 @@ fEcho_Clean(){ echo "$*"; }
 fDie(){        echo "FAILED: $*" >&2; exit 1; }
 fWould(){      ((dryRun)) && { echo "   would: $*"; return 0; }; return 1; }
 
+## Cross-build every release target into ${assets} and checksum them. Called twice: in phase 1
+## as a compile gate, where a target that stopped building costs nothing, and again in phase 3
+## from the tagged commit - that second run produces the bytes that get uploaded. Two runs
+## because the build number comes from the commit's own date, and the tag does not exist yet
+## when phase 1 runs. Anyone checking out the tag and building gets the published bytes back.
+fpCrossBuild(){
+	local epoch="$1" t asset
+	crossBuildFailed=""
+	for t in "${RELEASE_TARGETS[@]}"; do
+		asset="${EXE_NAME}-${t%%/*}-${t##*/}"; [[ "${t}" == windows/* ]] && asset="${asset}.exe"
+		( cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOTOOLCHAIN="${GO_RELEASE_TOOLCHAIN}" GOOS="${t%%/*}" GOARCH="${t##*/}" \
+			go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" \
+			-ldflags "${GO_LDFLAGS_COMMON} -X main.version=${version#v} -X main.buildEpoch=${epoch}" \
+			-o "${assets}/${asset}" . ) \
+			|| { crossBuildFailed="${t}"; return 1 ;}
+	done
+	( cd "${assets}" && "${here}/utility/gen-checksums.bash" > SHA256SUMS )
+}
+
 ## The build this release publishes, and the tool this script drives git and gh with. The
 ## pipeline in phase 1 rebuilds it; it has to exist before that, since phase 1 uses it too.
 gitsby="${root}/${GO_MODULE_DIR}/${EXE_NAME}"; [[ -x "${gitsby}" ]] || gitsby="${gitsby}.exe"
@@ -158,11 +177,10 @@ if ! fWould "run ${pipelineName}"; then
 	"${pipeline[@]}" || fDie "the pipeline did not pass; nothing was changed."
 fi
 
-## Every release binary, built here rather than after the tag is pushed. A target that stopped
-## compiling is a phase 1 failure, which costs nothing; discovered in phase 3 it would leave a
-## pushed tag with no release behind it. Built from the version being cut, not from the working
-## tree's describe output - these are the bytes people download, and their --version has to say
-## the released version and nothing else.
+## Every release target, compiled here as a gate. A target that stopped building is a phase 1
+## failure, which costs nothing; discovered in phase 3 it would leave a pushed tag with no
+## release behind it. These are not the bytes that get published - phase 3 rebuilds them from
+## the tagged commit, whose date the build number is taken from.
 assets="$(mktemp -d)"
 if ! fWould "cross-build ${#RELEASE_TARGETS[@]} targets at ${version}"; then
 	fEcho_Clean "cross-building ${#RELEASE_TARGETS[@]} targets with ${GO_RELEASE_TOOLCHAIN} ..."
@@ -170,18 +188,12 @@ if ! fWould "cross-build ${#RELEASE_TARGETS[@]} targets at ${version}"; then
 	## one. Stamp it, build, then restore - phase 1 is the phase that changes nothing, and phase
 	## 2 regenerates it for real, on the release branch, next to the changelog edit.
 	"${winres[@]}" -q "${version}" || fDie "couldn't stamp the Windows resource; nothing has been changed."
-	failed=""
-	for t in "${RELEASE_TARGETS[@]}"; do
-		asset="${EXE_NAME}-${t%%/*}-${t##*/}"; [[ "${t}" == windows/* ]] && asset="${asset}.exe"
-		( cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOTOOLCHAIN="${GO_RELEASE_TOOLCHAIN}" GOOS="${t%%/*}" GOARCH="${t##*/}" \
-			go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${version#v}" -o "${assets}/${asset}" . ) \
-			|| { failed="${t}"; break; }
-	done
+	built=0
+	fpCrossBuild "$(git -C "${root}" log -1 --format=%ct)" || built=$?
 	## Put the stamp back whether that worked or not, so 'nothing has been changed' stays true
 	## of the failure path as well.
 	git -C "${root}" checkout -q -- "${GO_MODULE_DIR}"/*.syso || fDie "couldn't restore the Windows resource; check 'git status'."
-	[[ -z "${failed}" ]] || fDie "cross-build failed for ${failed}; nothing has been changed."
-	( cd "${assets}" && "${here}/utility/gen-checksums.bash" > SHA256SUMS ) || fDie "couldn't checksum the release assets."
+	((built == 0)) || fDie "couldn't build or checksum ${crossBuildFailed:-the release assets}; nothing has been changed."
 	fEcho_Clean "built: $(cd "${assets}" && echo *)"
 fi
 
@@ -235,11 +247,29 @@ fEcho "Phase 2 OK: ${version} tagged and pushed"
 echo
 fEcho "Phase 3: publish and prove"
 
-## The release body is the changelog section, verbatim - the same words the repo already carries.
+## The bytes people download, rebuilt now that the tag exists - their build number is the tagged
+## commit's date, so checking out ${version} and building reproduces them.
+if ! fWould "rebuild ${#RELEASE_TARGETS[@]} targets from the ${version} commit"; then
+	fEcho_Clean "rebuilding ${#RELEASE_TARGETS[@]} targets from ${version} ..."
+	fpCrossBuild "$(git -C "${root}" log -1 --format=%ct "${version}^{commit}")" \
+		|| fDie "couldn't rebuild or checksum ${crossBuildFailed:-the release assets}; the tag is pushed but nothing is published."
+	fEcho_Clean "built: $(cd "${assets}" && echo *)"
+fi
+
+## The release body is the changelog section, verbatim - the same words the repo already carries,
+## plus the line the binary itself prints, so the notes and the download cannot disagree.
 notes="$(mktemp)"; trap 'rm -f -- "${notes:?}"; rm -rf -- "${assets:?}"' EXIT
 awk -v ver="## ${version} " -v start="$(fpChangelogStart)" \
 	'NR>=start && index($0, ver)==1 {f=1; next} f && /^## /{exit} f' "${changelog}" > "${notes}" || true
 [[ -s "${notes}" ]] || fEcho_Clean "WARNING: no changelog section found for ${version}; the release body will be empty."
+nativeAsset="${EXE_NAME}-$(go env GOOS)-$(go env GOARCH)"; [[ "$(go env GOOS)" == windows ]] && nativeAsset="${nativeAsset}.exe"
+buildLine=""
+[[ -x "${assets}/${nativeAsset}" ]] && buildLine="$("${assets}/${nativeAsset}" --version 2>/dev/null | sed -n 's/^\('"${EXE_NAME}"' v[^,]*\),.*/\1/p')"
+if [[ -n "${buildLine}" ]]; then
+	printf '\n---\n\n%s\n' "${buildLine}" >> "${notes}"
+else
+	fEcho_Clean "WARNING: couldn't read a build number out of ${nativeAsset}; the notes will not name one."
+fi
 
 if ! fWould "gh release create ${version} with ${#RELEASE_TARGETS[@]} binaries and SHA256SUMS"; then
 	"${gitsby}" -q raw gh release create "${version}" --title "${version}" --notes-file "${notes}" \

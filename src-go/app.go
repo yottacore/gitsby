@@ -47,6 +47,7 @@ type options struct {
 	configGiven bool // whether it was typed at all: '--config ""' is a mistake, not a fallback
 	sawPublic   bool
 	sawPrivate  bool
+	sawQuiet    bool // quiet as typed, before the no-tty rule sets it for its own reasons
 }
 
 // command is the resolved command and its positional arguments, after the
