@@ -52,12 +52,6 @@ None open.
 
 ### Features and enhancements
 
-- 🔘 Dogfood for a while.
-	- Opened: 20260826-160304
-
-- 🔘 Cut a new release.
-	- Opened: 20260826-160304
-
 - ✋ The repo's blurb, homepage and topics still describe the Bash and PowerShell product.
 	- Opened: 20260819-142046
 	- They name both scripts and give the old command count, and the topics say `bash` rather than `go`.
