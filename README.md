@@ -12,6 +12,7 @@
 ![Lifecycle: Stable](https://img.shields.io/badge/Lifecycle-Stable-brightgreen)
 ![Support](https://img.shields.io/badge/Support-Maintained-brightgreen)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ff69b4)](https://github.com/sponsors/jim-collier)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-%E2%98%95-ff5e5b)](https://ko-fi.com/jimcollier)
 
 <!-- TOC ignore:true -->
 # Gitsby
@@ -266,7 +267,7 @@ But if you find something that doesn't work as advertised, or behaves in a way y
 
 ## Support Gitsby
 
-Gitsby is free, and built and maintained in spare time. If it helps but code and bug reports aren't your thing, a star or a mention still helps other people find it - and if it is saving you real time, [sponsorship](https://github.com/sponsors/jim-collier) is welcome, and never expected.
+Gitsby is free, and built and maintained in spare time. If it helps but code and bug reports aren't your thing, a star or a mention still helps other people find it - and if it is saving you real time, sponsorship through [GitHub](https://github.com/sponsors/jim-collier) or [Ko-fi](https://ko-fi.com/jimcollier) is welcome, and never expected.
 
 ## Legal stuff
 
