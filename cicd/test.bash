@@ -46,10 +46,13 @@ export GITSBY_CONFIG="${work}/no-accounts.shcl"; : > "${GITSBY_CONFIG}"
 ## red the day they configured any.
 acNoDiscovery="GITSBY_CONFIG= XDG_CONFIG_HOME= APPDATA="
 ## So every run behaves like one on a machine with accounts configured: a block that drops the
-## pin and forgets the line above finds an account covering every folder, under a login no
-## check expects, instead of passing on a clean box and failing on a real one.
+## pin and forgets the line above finds an account covering every folder the suite makes, under
+## a login no check expects, instead of passing on a clean box and failing on a real one. A rule
+## of '/' would cover nothing, since a folder rule claims what is under it.
+poisonRoot="${work}"
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) poisonRoot="$(cygpath -m "${work}")" ;; esac
 mkdir -p "${work}/poison-config/gitsby"
-printf 'account: poison\n\tpath: /\n\tghaccount: poisonacct\n' > "${work}/poison-config/gitsby/config.shcl"
+printf 'account: poison\n\tpath: %s\n\tghaccount: poisonacct\n' "${poisonRoot}" > "${work}/poison-config/gitsby/config.shcl"
 export XDG_CONFIG_HOME="${work}/poison-config" APPDATA="${work}/poison-config"
 
 ## Two more inputs the lines above do NOT cover, both of which reach us from an ordinary
@@ -2221,7 +2224,7 @@ GHEOF
 	fAssertOut  "go installer refuses a bad --target=VALUE"   "\-\-target takes 'user' or 'system' \(got 'bogus'\)"  bash -c "bash '${goInst}' --target=bogus"
 	fAssertOut  "and names the dropped --release=dev"         'no .--release dev. any more'  bash -c "bash '${goInst}' --release=dev"
 	fAssertOut  "and refuses a bad --arch=VALUE"              "\-\-arch takes 'amd64' or 'arm64' \(got 'sparc'\)"  bash -c "bash '${goInst}' --arch=sparc"
-	fAssertOut  "and a path-shaped --tag=VALUE"               'not a path'                   bash -c "bash '${goInst}' -y --tag=../x"
+	fAssertOut  "and a path-shaped --tag=VALUE"               'not a path'                   bash -c "HOME='${work}/joinhome' bash '${goInst}' -y --tag=../x"
 	## '--release dev' installed the tip of a branch while the product was a script. A branch has
 	## no build behind it now, so the flag is answered by name rather than left to fail as an
 	## unknown option - the same treatment --offline got.
@@ -4070,11 +4073,12 @@ EOF
 	for winArch in amd64 arm64; do
 		fAssert "the ${winArch} resource is a file in the tree" \
 			bash -c "[[ -s '${root}/src-go/resource_windows_${winArch}.syso' ]]"
-		## The committed resource as well as the script that writes it. UTF-16 in there.
+		## The committed resource as well as the script that writes it. The strings are UTF-16, and
+		## dropping the NULs reads them without grep -P, which not every grep has.
 		fAssert "and carries a copyright string" \
-			grep -aqP 'C\x00o\x00p\x00y\x00r\x00i\x00g\x00h\x00t\x00 \x00' "${root}/src-go/resource_windows_${winArch}.syso"
+			bash -c "tr -d '\\000' < '${root}/src-go/resource_windows_${winArch}.syso' | grep -aqF 'Copyright '"
 		fAssertFail "with no identity marker in it" \
-			grep -aqP '\[\x00I\x00D\x00:' "${root}/src-go/resource_windows_${winArch}.syso"
+			bash -c "tr -d '\\000' < '${root}/src-go/resource_windows_${winArch}.syso' | grep -aqF '[ID:'"
 	done
 	fAssertFail "and the two are not one file copied twice" \
 		cmp -s "${root}/src-go/resource_windows_amd64.syso" "${root}/src-go/resource_windows_arm64.syso"
@@ -4248,7 +4252,7 @@ EOF
 		rm -f -- "${gateFail:?}/spawn-count"
 		fAssert "and a spawn count that rose"  fGateRanSaying 1 'spawn counts regressed'
 		fAssert "the module has at least five fuzz targets for stage 3 to find" \
-			bash -c "[[ \"\$(cd '${root}/src-go' && go test -list 'Fuzz.*' . | grep -c '^Fuzz')\" -ge 5 ]]"
+			bash -c "[[ \"\$(cd '${root}/src-go' && env -u XDG_CONFIG_HOME -u APPDATA go test -list 'Fuzz.*' . | grep -c '^Fuzz')\" -ge 5 ]]"
 		## Stage 5 on a box with none of the shared dirs, then with the first one this box's target names.
 		mkdir -p "${gateDir}/home/.local/bin"
 		fGateOnly dogfood
