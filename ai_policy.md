@@ -14,6 +14,7 @@ Where AI is allowed near this project, where it isn't, and who is accountable ei
 
 <!-- TOC -->
 
+- [A note about reusing this document (please do)](#a-note-about-reusing-this-document-please-do)
 - [Introduction](#introduction)
 - [Problems with AI](#problems-with-ai)
 	- [Cost to the FLOSS commons](#cost-to-the-floss-commons)
@@ -44,21 +45,43 @@ Where AI is allowed near this project, where it isn't, and who is accountable ei
 	- [The test suite](#the-test-suite)
 	- [Contributing](#contributing)
 - [Where this could change](#where-this-could-change)
-- [The use of AI in writing this document](#the-use-of-ai-in-writing-this-document)
+- [About the author](#about-the-author)
+	- [That's great and all but what about AI](#thats-great-and-all-but-what-about-ai)
+	- [The use of AI in writing this document](#the-use-of-ai-in-writing-this-document)
 
 <!-- /TOC -->
 
+## A note about reusing this document (please do)
+
+If you just want a clean AI guidelines document with no commentary, history, or unnecessary author background, delete the following sections. They were written to be cleanly removable:
+
+- Introduction
+
+- Problems with AI (and subsections)
+
+- Non-problems with AI
+
+- About the author (and subsection)
+
+- This note
+
+(Keep the copyright and license footer at the end, per terms of the open [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) license.)
+
 ## Introduction
 
-This project's original author has decades of programming experience. Hobby, then professional, then hobby again.
+LLMs used to be terrible at programming - for many reasons, including context windows that were too small to understand non-toy projects. It was easy to be "against" them then.
 
-When AI started becoming a "thing" in programming, I (the original author) was against it. Which was convenient, because it sucked at it.
+But with the emergence of the latest frontier models - and with local-only desktop models perpetually only a few months behind - they are getting pretty good. (With traps and pitfalls to be sure. Along with egregious mistakes - sometimes funny, sometimes catastrophic.)
 
-That view has softened with the emergence of frontier models like Claude Fable. (Again convenient now that it's pretty capable.) I've been running large AI-led experiments under an alt GitHub account, mostly to find where these tools break and where they hold up.
+The original inventors of computer languages borrowed heavily from linguistics, which is what LLMs happen to be built for. That's why LLMs got good at coding before most other technical work. Even if "AI" pivots to other underlying technologies, LLMs - or at least good understandings of the mechanics and structures of language - will likely have a place in programming for a long time.
 
-One outcome is that this nearly decade-old main account no longer has a blanket "no-AI" policy; but allowed only under strict, human-driven constraints.
+But for now, at the time of writing, even the most cutting-edge frontier models can't be trusted to "vibe code" a project. LLMs can't replace programmers yet - they can (in theory) only make *experienced* programmers more effective - mostly by offloading the tedious, repetitive, low-risk tasks.
 
-This document is a ~~first~~ second pass at documenting what, when, and how AI is allowed into this and other projects.
+Whether AI can ever fully replace humans for building complex projects remains to be seen - but if/when so, it will necessarily require first being able to understand the business, user needs, what users might need but not even be aware of, what users think they need but would be contrary to project goals, the competitive landscape, legal issues like copyright and patent encroachment, project scoping and management, time and budget management, stakeholder buy-in and communication, security auditing, performance tuning, running UAT, live customer feedback sessions, devops, etc. And all of that, better than humans.
+
+That may seem impossible now, but depending on how you measure it, the capability of AI is doubling every 4 to 7 months, at an accelerating rate. With such exponential growth, we may see a 1,000x improvement in 3 years. (If physics and resources allow it that long. Which seems likely for even a few orders of magnitude beyond that, considering that the growth has been accompanied by similar exponential gains in efficiency, real estate needed, memory budget, and per-token and per-query costs.)
+
+But for now, it's not possible. Humans *must* be *the* critical component in the process.
 
 ## Problems with AI
 
@@ -72,13 +95,13 @@ This one is aimed straight at the infrastructure a project like this one sits on
 
 Codeberg, the nonprofit git host, made the case in [Protecting our FLOSS commons from LLMs](https://blog.codeberg.org/protecting-our-floss-commons-from-llms.html) (July 2026). It's short, and worth reading in full whether or not their conclusions are ones you'd agree with. The argument in brief: AI crawlers are expensive to serve, the hardware to serve them on got expensive too, generated contributions cost a maintainer more to review than they cost anyone to produce, and copyleft quietly loses its teeth when code gets regenerated instead of copied.
 
-Let's start with the crawlers: Bots walk every page of every repository, and the "needless accesses create[s] expensive database queries that diminish the service quality for all of us", on top of real hours out of a volunteer sysadmin team.
+Let's start with the crawlers: Bots walk every page of every repository, and the "needless accesses create expensive database queries that diminish the service quality for all of us", on top of real hours out of a volunteer sysadmin team.
 
 Storage got more expensive over the same stretch: a drive they bought for EUR 700 a few years ago now costs EUR 3,700.
 
 Nobody sends that bill to the companies running the crawlers. A large host absorbs it. A small one, an NGO, or a self-hoster might not be able to, and that narrows who can afford to host anything at all.
 
-Then there's the PRs: "People submitting (often well-meaning) low-effort, LLM-generated contributions that require substantial amounts of time to review." That cost isn't shared either. It falls on whoever maintains the project, usually for free, and it scales with how cheap the tooling makes the submission. A model writes a plausible thousand-line pull request faster than anyone can read one.
+Then there are the PRs: "People submitting (often well-meaning) low-effort, LLM-generated contributions that require substantial amounts of time to review." That cost isn't shared either. It falls on whoever maintains the project, usually for free, and it scales with how cheap the tooling makes the submission. A model writes a plausible thousand-line pull request faster than anyone can read one.
 
 That asymmetry is most of the reason the rules further down put the burden where they do.
 
@@ -114,7 +137,7 @@ Used the other way around, for adversarial review, security review, and fuzz and
 
 ### Bad PR
 
-Any project accepting AI-generated contributions carries this risk.
+Any project accepting AI-generated contributions has to accept this risk.
 
 AI is becoming a public enemy. The cause is probably mostly greed-driven and too much hype, the economics, and the sometimes shady public/private tactics used to foist data centers onto communities whose citizens pay the externalities.
 
@@ -140,15 +163,15 @@ The part that matters most: open-weight coding models that fit in 24 to 32 GB on
 
 On capability, the number usually quoted is [METR's](https://metr.org/blog/2025-03-19-measuring-ai-ability-to-complete-long-tasks/): the length of task a model finishes with 50% reliability has doubled about every seven months over the six years to 2025. Fitting only the 2024-2025 data gives a steeper curve. METR puts no single number on that, but on SWE-bench Verified alone they measured a doubling time under three months.
 
-At a seven-month doubling interval, 3 years is about 35x compounded. At a four-month interval, 3 years is over 500x. (This is a trend, not a "prediction".)
+At a seven-month doubling interval, 3 years is about 35x compounded. At a four-month interval, 3 years is over 500x. And the interval itself keeps getting shorter. If that holds, 1,000x in 3 years is well within reach. (This is a trend, not a "prediction".)
 
-So the position is narrower than "AI is worth it". It is that the useful capability is on track to run on a desktop with no cloud data center behind it (e.g. in a solar-powered home office), sooner than later.
+So the position is narrower than "AI is worth it". It is that the useful capability is on track to run on a desktop with no cloud data center behind it (e.g. in a solar-powered home office), sooner rather than later.
 
 ### Economic
 
 The companies leading this are among the largest to ever exist, and may be steering the global economy toward a cliff. If that happens, the cost will fall mostly on people who never opted in.
 
-Time will tell whether this is the largest bubble in history or whether the anticipated returns arrive first. The railroad and dotcom booms both overbuilt too early, badly; and both left infrastructure that eventually got used at rock-bottom prices long after the bust. Late boom investors ate the loss and the public got the buildout. The presumed winners rarely survived either. For example, Google entered search years after Lycos and Alta Vista, stayed private through the whole boom, and came out on top while the former are historical footnotes.
+Time will tell whether this is the largest bubble in history or whether the anticipated returns arrive first. The railroad and dotcom booms both overbuilt too early, badly; and both left infrastructure that eventually got used at rock-bottom prices long after the bust. Late boom investors ate the loss and the public got the buildout. The presumed winners rarely survived either. For example, Google entered search years after Lycos and AltaVista, stayed private through the whole boom, and came out on top while the latter are historical footnotes.
 
 Either way, if guidelines like the ones below were adopted broadly (narrow scope, human accountability, no AI making the decisions that matter) and especially limited to near-future desktop models - then global demand might look less like a gold rush. Maybe that's cope. Or maybe it's true.
 
@@ -170,7 +193,7 @@ The objection usually means something narrower: *situational* context. Who you a
 
 And "understand" belongs in quotes, because nobody can specify what understanding *is* beyond what it *does*. We grant it to other humans on inference alone, for free. (But in the end, can we really be sure *any* intelligence - yours, mine, the pilot of your next flight - is anything more than a next-word-prediction machine, running on wetware, that got good enough at not dying to mistake itself for something else?)
 
-Whether some future hypothetical AGI is LLM-based is an open question. But LLMs have two advantages now: they can "communicate" with us, and we can literally watch them "think" in our own native language. As for coding, the inventors of computer languages borrowed the machinery of linguistics, which is what LLMs happen to be built for, and that is a large part of why these models got good at code before most other technical work. Even if AI advances far beyond LLMs, there may still be a role for LLMs in A) the human interface portion, and/or B) coding agents.
+Whether some future hypothetical AGI is LLM-based is an open question. But LLMs have two advantages now: they can "communicate" with us, and we can literally watch them "think" in our own native language. As for coding, computer languages borrowed heavily from linguistics, which is a large part of why LLMs got good at code so early. Even if AI advances far beyond LLMs, there may still be a role for them in A) the human interface portion, and/or B) coding agents.
 
 ## Good uses of AI
 
@@ -248,13 +271,15 @@ Examples:
 
 - Benchmarking and measurements for competitive comparison charts.
 
-- Asset generation. A tougher call, since creatives need work too and are being replaced by AI at heartbreaking levels. But on a FLOSS project with no pay and nobody stepping up to volunteer, what are you going to do? For example, this author is "artistic enough" - and experienced enough with the tools - to generate image, audio, and video assets by hand. It's just time I'd rather spend on product design, problem-solving, and coding. For assets I usually know exactly what I want and can describe it precisely.
+- Asset generation. A tougher call, since creatives need work too and are being replaced by AI at heartbreaking levels. But on a FLOSS project with no pay and nobody stepping up to volunteer, what are you going to do? Even a maintainer who is "artistic enough" - and experienced enough with the tools - to make image, audio, and video assets by hand may prefer spend that time on product design, problem-solving, and coding. And for assets, it's usually easy to know exactly what's wanted and describe it precisely.
 
 - Boring "required" website setup and generation. Not for the site that *is* the product, where designers and engineers and stakeholders come together to make something good. I mean the bare-minimum commodity web presence even basic FLOSS products need, that nobody wants to slog through unpaid.
 
 ## Rules for AI use in this project
 
-The short version: AI can do the work. People own the decisions, the review, and the result.
+The short version: AI is allowed to do the tedious grunt work - which typically takes the most time. It may even have a go at the most difficult work that even the most talented human programmers have tried and flailed about at.
+
+Either way: People own the goals, the design, the decisions, and every line of code. People are responsible for anything that happens.
 
 ### A person is accountable for every merged line
 
@@ -354,7 +379,7 @@ The curl project frames it bluntly: Code written with AI help "must still follow
 
 ### The test suite
 
-A test suite is not optional with AI-written code. As in, never do it without a rigorous test suite. Luckily, writing tests (as an independent effort) is also the work LLM models are very good at, such as:
+A test suite is not optional with AI-written code. As in, never do it without a rigorous test suite. Luckily, writing tests (as an independent effort) is also the work LLMs are very good at, such as:
 
 - Regression tests of the pinning kind, written after a bug is understood, so the fix cannot silently come undone later. Easy to check, too: revert the fix and watch the test fail.
 
@@ -364,7 +389,7 @@ A test suite is not optional with AI-written code. As in, never do it without a 
 
 - Performance benchmarks that run on a schedule, with a threshold that fails the build. The METR result above applies here too. A model's guess about which version is faster is worth less than a person's.
 
-- Security analysis on the boundary: input handling, path handling, deserialization, anything that spawns a process or opens a URL. Plus a dependency audit that runs on every build, given the hallucinated-package numbers earlier in this document.
+- Security analysis on the boundary: input handling, path handling, deserialization, anything that spawns a process or opens a URL. Plus a dependency audit that runs on every build, since models sometimes suggest packages that don't exist.
 
 Two things that are not tests but look like them:
 
@@ -390,9 +415,9 @@ A pull request that takes longer to review than it took to generate is the thing
 
 The position stated here is conditional. Things that would tighten it:
 
-- Evidence that AI cost more in defects than they catch.
+- Evidence that AI costs more in defects than it catches.
 
-- Contribution volume that makes the review load unsustainable. Codeberg names this as one of their reasons, so it isn't a hypothetical.
+- Contribution volume that makes the review load unsustainable. Codeberg, the nonprofit git host, names this as [one of their reasons](https://blog.codeberg.org/protecting-our-floss-commons-from-llms.html), so it isn't a hypothetical.
 
 - Hosting terms that stop allowing it. A git host's rules are not something a project on it gets to negotiate.
 
@@ -404,9 +429,63 @@ Things that would relax it:
 
 The second list is closer than it looks. That is most of why this document exists rather than a shorter one saying no.
 
-## The use of AI in writing this document
+## About the author
 
-Everyone who knows me knows I love to write. *A lot*. Especially about highly technical subjects.
+I'll share my backstory here, because I think it's probably very similar to anyone reading this who is considering implementing something like this as a policy for their own organization, or personal use. (I would delete this and other "narrative" sections before modifying and deploying, as irrelevant to the actual policies.)
+
+I've been programming since my early teens. Hobby, then professional, then a decades-long side-quest into all the levels of leadership (almost always with programmers in my chain of accountability and with a bit of biased "favored status"). All the while still being an enthusiastic hobby programmer. I've had a pretty standard tech career arc that covered low-level systems programming, Object-Oriented business programming, formal UI/UX design, (traditional) database design, many of the old and newer network and web paradigms, full-stack web dev, mobile development, business analysis/consulting, technical design writing, product ownership, adopted the whole agile thing, and devops with CI/CD. And just like anyone on this path, it involved a fair amount of anxiety over the sheer depth and breadth of new technologies I felt I "should" at least understand well if not also use, the FOMO, and the self-doubt over why I wasn't able to understand it all at once. Then at some point there was a slow-motion revelation - a resignation and acceptance that it's all too much - and the realization that "leaders" aren't supposed to know "everything". *Gestures broadly*. (In that respect, "giving up" meant moving forward and helping others.)
+
+("Letting go" also ironically helped make learning new things easier, by being able to focus on one thing at a time with no pressure of my own making.)
+
+As a kid I started with BASIC, then Pascal in college, then C. (Pretty standard progression at the time.)
+
+Then the OO indoctrination began - first with Visual Basic, some Java, then proper early C#. (And of course mandatory JavaScript, node, etc.)
+
+Thank the gods, I squeaked by without having to really learn C++. (I do have some very old "Learn C++" books that may be lurking somewhere - that sat on my "to-read" pile gathering dust for years.)
+
+Either way, I've struggled mightily to shake the reflexive urge to force OO onto non-OO languages. (Whether procedural, functional, prototypal - anything.)
+
+Go was my first "real" modern, compiled, non-OO language. (And as you may know, boy is it non-OO.) I still struggle to avoiding stapling vaguely OO-like patterns onto it.
+
+Also somehow along the way, I became ~~the world's leading authority~~ some guy who got good at Bash. (Mostly by horribly misusing it for 20 years, using it for things it was never meant for, wondering why it performed so poorly, and cringing at my own earlier work from even a few years ago.)
+
+### That's great and all but what about AI
+
+When AI first started getting OK at programming assistance, I was against it - which was convenient, because it sucked. But I still started testing it in 2021, possibly out of a little FOMO.
+
+Ever since then I've been running AI coding experiments under an alt GitHub account, mostly toy projects to see where the models fall apart, and where they help. I've kept at it because I've watched them improve at an exponential rate along the way. I took the typical AI progression route: First chat, then chat+canvas, then convenience code completion plugins in the IDE, then CLI.
+
+My "no AI" stance on my main account has begun softening with the emergence of the late-2026 frontier models. (Again, convenient, now that it's pretty capable.)
+
+One outcome is that this nearly decade-old main account no longer has a blanket "no-AI" policy. It now allows AI only under strict, human-driven constraints. (As documented here.)
+
+Personally, I use AI to help me:
+
+- Overcome my bad OO habits, by explicitly asking the agent to identify alien OO patterns, and suggest idiomatic refactorings.
+
+- Break my bad habit (again from OO days) of trying to make anything and everything generic, reusable, and inheritable - and just get the thing done.
+
+- Deal with Rust's confusingly myriad ways of doing everything, by suggesting the one idiomatic style I chose to stick to, after searching the documented advice of experts.
+
+	- AI also helps me with the parts of Rust syntax I'm still having trouble hard-wiring into the brain. Which helps perpetuate that problem - but "become a master of Rust syntax" is just not on my life bucket list. Golang...maybe.
+
+- Port code to multiple languages with bit-for-bit fidelity on input and output against a given reference implementation. (E.g., SHCL.)
+
+- Make the subtle refactors that are sometimes required for a codebase to be 100% cross-platform, with native idioms where necessary.
+
+- Build OS-specific packaging and installers.
+
+- Handle most of the devops pipeline, given explicit instructions and references from previous work - including checksum-accurate reproducible builds where possible.
+
+- Free me from the opressive shackles of TDD. (Which I never formally adopted due to its many drawbacks, but still tend to reflexively reach for anyway, in some form or another, out of a vague sense of "obligation". [Obligation to who?])
+
+- Do dull, tedious work like generating benchmark and demo video/GIF harnesses.
+
+- Do adversarial code reviews. This is where AI truly shines. In fact, they're *too* good - and it's a problem converging on a bug-free candidate.
+
+### The use of AI in writing this document
+
+Everyone who knows me knows I love to write. Especially about highly technical subjects.
 
 AI was used on this document for:
 
@@ -414,19 +493,19 @@ AI was used on this document for:
 
 - **Fact-checking**. Several claims here were overstated at best, or flat-out wrong at worst, and got backed off or removed. And sometimes I learn new things along the way.
 
-- **Comparing against other projects' policies**. The rules section was checked against the [Apache Software Foundation's generative tooling guidance](https://www.apache.org/legal/generative-tooling.html), GitHub's guidance on coding agents, and libusb's contribution rules for agents, and a few gaps got filled.
+- **Reducing "conclusion shopping" and confirmation bias**. We humans love to shop for studies and links that support a preconceived argument. I'm no different. AI can offer a good check on that habit if asked, and could be the single best thing a solo writer can use AI for.
 
-- **Reducing "conclusion shopping" and confirmation bias**. We all shop for studies and links that support a preconceived argument. I'm no different. This is a good check on that habit, and probably the single best thing a solo writer can use AI for.
+- **Comparing against other projects' policies**. The rules section was checked against the [Apache Software Foundation's generative tooling guidance](https://www.apache.org/legal/generative-tooling.html), GitHub's guidance on coding agents, and libusb's contribution rules for agents, and a few gaps got filled.
 
 What AI was *not* used for:
 
-- **Content generation**. Every questionable and/or redundant argument made here, every odd injection of unsolicited opinion and narration into what should be a straightforward "guidelines" document, is from a human. This human.
+- **Content generation**. Every questionable and/or redundant argument made here, every odd injection of unsolicited opinion and narration into what should be a straightforward "guidelines" document - is from a human. This human.
 
 - ~~**Grammar-checking**. I prefer the organic feel of my own tedious phrasing, run-on sentences, and abruptly ending such run-on sentences where I've run out of examples but want it to *seem* like there's more, with ", etc.". If it's not tedious for me to read my own writing, it just doesn't *feel* right~~.
 
-	- This second edition was grammar-checked with AI.
+	- Since the second edition, this has been grammar-checked with AI.
 
-- **Tone and appropriateness policing**. Again: probably would have been a good idea.
+- **Tone and appropriateness policing**. Again: not doing but probably should.
 
 ---
 
