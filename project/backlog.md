@@ -54,6 +54,10 @@ To make using these icons easier if desired, add them to a clipboard or key macr
 	- Opened: 20260926-154915
 	- Origin: `writeAccountFragment`, read only. `selectAccount` already keys its helper on the account's host and login. Plausible.
 
+- 🔘 A folder rule of `/` matches no folder, silently. The match looks for the rule plus `/`, which is `//`. `account apply` would write `gitdir/i://` for it too.
+	- Opened: 20260926-163000
+	- Origin: `config.go` folder match and `accountcmd.go` includeIf generation. The match half is Confirmed, the includeIf half Plausible: read.
+
 - 🔘 In `install.bash`, end of input at a terminal prompt exits 1 with no `Aborted.` and no closing blank line. The failing `read` ends the script under `set -e` before the answer is looked at. It is still a no, by accident.
 	- Opened: 20260926-154915
 	- Origin: seen while adding the installer checks. Confirmed: `script -qec "bash install.bash" /dev/null </dev/null` with the stub curl on PATH.
@@ -1870,7 +1874,7 @@ To make using these icons easier if desired, add them to a clipboard or key macr
 	- Added: 8 Go tests, and test.bash checks for the account and identity paths, branches and prune, the installers, and the pipeline itself. The pipeline gets its first runs of stage 0, stage 3, dogfood, the publish message, the real backlog gate, spawn-count and `release.bash --dry-run`.
 	- The suite now runs with a poisoned `XDG_CONFIG_HOME` and `APPDATA`, so a block that fakes HOME and forgets to clear them goes red on any box.
 	- "option typo prints no call stack" looked for text only the bash build printed. It now looks for a Go panic.
-	- Verified: test.bash 1031 -> 1208, every new check seen to fail against its fault. Six bugs found on the way are filed under Bugs.
+	- Verified: test.bash 1031 -> 1208, every new check seen to fail against its fault. Seven bugs found on the way are filed under Bugs.
 
 - ✅ The pre-push gate runs on every branch push, not just `main`.
 	- Opened: 20260924-092200
