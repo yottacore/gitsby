@@ -3955,6 +3955,12 @@ GHEOF
 		bash -c "out=\$('${root}/cicd/utility/test-id.bash' --check -q --root '${ti}' 2>&1); [[ \$? == 1 ]] && grep -qxF '  cicd/test.bash:2' <<< \"\$out\" && grep -qxF '  src-go/x_test.go:1' <<< \"\$out\" && grep -qxF '  AAAAAAA: cicd/test.bash:1 cicd/test.bash:3' <<< \"\$out\" && ! grep -qE 'AAAAAAC|test\.bash:5|x_test\.go:3' <<< \"\$out\""
 	fAssertOut "[Er2NSAB] a minted ID is milliseconds since 2000 in base 62"  '^10$' \
 		"${root}/cicd/utility/test-id.bash" --at '2000-01-01 00:00:00.062 UTC'
+	## A date before 1970 is a negative count, which bash arithmetic refused by skipping ahead
+	## into --check and passing.
+	fAssert "[Er2PEtf] and a date before 2000 is refused, not checked" \
+		bash -c "out=\$('${root}/cicd/utility/test-id.bash' --at 1960-01-01 2>&1); [[ \$? == 2 ]] && grep -qx 'test-id: 1960-01-01 is before 2000' <<< \"\$out\""
+	fAssert "[Er2PEtt] the ID check fails a tree where it finds no tests" \
+		bash -c "out=\$('${root}/cicd/utility/test-id.bash' --check --root '${work}/no-such-tree' 2>&1); [[ \$? == 1 ]] && grep -q '^test-id: found no tests under ' <<< \"\$out\""
 	## A file no glob names is linted by nothing, and a glob that names nothing is a file that moved.
 	fAssert "[Er1LxTE] every tracked markdown file is in a markdown lint glob" \
 		test -z "$(cd "${root}" && git ls-files '*.md' | fLintUncovered MD_LINT_GLOBS)"
@@ -5202,4 +5208,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260924 JC: The pre-push gate runs on pushes to main only. Its checks push to main, and a push of another branch is checked to go out ungated. 1027 -> 1028.
 ##		- 20260924 JC: A folder rule typed with backslashes reads as typed under shcl 3.0, where 2.x read `\t` as a tab. 1028 -> 1029.
 ##		- 20260926 JC: A check for each closed backlog item that had none. Accounts and identity: the gh probe skipped where nothing reads it, repo connect's account and identity, account apply's global writes and credential username, a dead folder rule, ssh's '--'. Branches: release and the back-merge beside a tag with the branch's name, a merge whose branch is already gone from origin, prune's spawn count, origin/HEAD healed, a lone or unborn default branch, masked credentials in a step, the dropped aliases. Installers: bad checksum, no SHA256SUMS, no hash tool, a portal page, a bad redirect tag, joined options, end of input, the sudo mkdir, sums from the release's own generator. Pipeline: stage 0, stage 3, dogfood, the publish message, the real backlog gate, spawn-count's regression exit, the lint globs, the release dry run. The whole suite runs with XDG_CONFIG_HOME and APPDATA poisoned. The call-stack check looked for bash's text and now looks for a Go panic. Every new check fails against its fault. 1031 -> 1208.
-##		- 20260926 JC: Every check carries a test ID at the front of its label. Checks for test-id.bash, and for backlog-check knowing a relabeled check by its ID. 1208 -> 1215.
+##		- 20260926 JC: Every check carries a test ID at the front of its label. Checks for test-id.bash, and for backlog-check knowing a relabeled check by its ID. 1208 -> 1217.
