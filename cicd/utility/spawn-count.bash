@@ -107,7 +107,6 @@ fMeasure(){
 	n="$(grep -c 'execve(' "${traceFile}" 2>/dev/null || true)"
 	labels+=("${label}")
 	counts+=("${n}")
-	((quiet)) || fEcho_Clean "  ${n}	${label}"
 }
 
 ((quiet)) || fEcho_Clean "spawn counts (${exe})"
@@ -129,13 +128,15 @@ baseline=""
 for f in "${countDir}"/spawn_*.tsv; do [[ -f "${f}" ]] && baseline="${f}"; done
 
 declare -i regressed=0
+## One line per command, whatever it did, so a -q-less run shows each count and its verdict.
 if [[ -z "${baseline}" ]]; then
 	((quiet)) || fEcho_Clean "  (no baseline yet - recording this run as one)"
+	for ((i = 0; i < ${#labels[@]}; i++)); do ((quiet)) || fEcho_Clean "  NEW        ${labels[i]}: ${counts[i]}"; done
 else
 	((quiet)) || fEcho_Clean "  baseline: $(basename "${baseline}")"
 	for ((i = 0; i < ${#labels[@]}; i++)); do
 		was="$(awk -F'\t' -v k="${labels[i]}" '$1==k{print $2}' "${baseline}" || true)"
-		[[ -n "${was}" ]] || { ((quiet)) || fEcho_Clean "  NEW    ${labels[i]} (${counts[i]})"; continue; }
+		[[ -n "${was}" ]] || { ((quiet)) || fEcho_Clean "  NEW        ${labels[i]}: ${counts[i]}"; continue; }
 		## A tolerance, because a git version can add or drop a helper of its own: two more
 		## processes, or a tenth again, whichever is larger.
 		local_allow=$(( was / 10 )); (( local_allow < 2 )) && local_allow=2
@@ -144,6 +145,8 @@ else
 			regressed=1
 		elif (( counts[i] < was )); then
 			((quiet)) || fEcho_Clean "  improved   ${labels[i]}: ${was} -> ${counts[i]}"
+		else
+			((quiet)) || fEcho_Clean "  ok         ${labels[i]}: ${counts[i]}"
 		fi
 	done
 fi
@@ -168,3 +171,4 @@ gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		  flamegraph has no leaders in it. Each command is measured against a restored fixture,
 ##		  origin included - prune deletes on both sides, and a leftover makes the next count a
 ##		  different question.
+##		- 20260926 JC: One line per command with its verdict, ok included, in place of the bare counts. The pipeline no longer passes -q.
