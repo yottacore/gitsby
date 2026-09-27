@@ -16,7 +16,7 @@ import (
 // What git prints when ls-remote fails, as git printed it. Only the texts for a
 // host that answered no are missing. A network that is down, a host key ssh
 // refused and a git that never started are unknown, with the line that says why.
-func TestLsRemoteFailure(t *testing.T) {
+func TestLsRemoteFailure(t *testing.T) { // [EptraIZ]
 	const advice = "fatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.\n"
 	const refused = "fatal: unable to access 'https://127.0.0.1:1/me/proj.git/': Failed to connect to 127.0.0.1 port 1 after 0 ms: Could not connect to server"
 	const sshRefused = "ssh: connect to host 127.0.0.1 port 1: Connection refused"
@@ -64,7 +64,7 @@ func TestLsRemoteFailure(t *testing.T) {
 
 // Only an empty remote is connected to. Unknown, or an answer nobody listed,
 // refuses before the plan, and never sends anyone off to create what may exist.
-func TestProbedConnectRefusesUnlessEmpty(t *testing.T) {
+func TestProbedConnectRefusesUnlessEmpty(t *testing.T) { // [EptraIa]
 	const url = "ssh://git@h.example/me/proj.git"
 	const reason = "ssh: connect to host h port 22: Network is unreachable"
 	if err := probedConnect(url, repoEmpty, ""); err != nil {

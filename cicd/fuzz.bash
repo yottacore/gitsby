@@ -180,42 +180,42 @@ GHEOF
 	## Command slot: garbage first tokens are refused, never crash.
 	local repo="${base}/cmd"; fMakeRepo "${repo}"
 	local c
-	for c in "${badCommands[@]}"; do fRefuse "command refused: '${c}'" "${repo}" -q "${c}"; done
+	for c in "${badCommands[@]}"; do fRefuse "[EkzQ7gG] command refused: '${c}'" "${repo}" -q "${c}"; done
 
 	## Subcommand slot: garbage after a valid noun is refused the same way, and never reaches git.
 	local sub
 	for sub in "${badSubcommands[@]}"; do
-		fRefuse "br subcommand refused: '${sub}'"   "${repo}" -q br   "${sub}"
-		fRefuse "repo subcommand refused: '${sub}'" "${repo}" -q repo "${sub}"
+		fRefuse "[El9QuEa] br subcommand refused: '${sub}'"   "${repo}" -q br   "${sub}"
+		fRefuse "[El9QuEb] repo subcommand refused: '${sub}'" "${repo}" -q repo "${sub}"
 	done
 
 	## Options: unknown ones refused in either slot; valid combos accepted.
 	local o
 	for o in "${badOptions[@]}"; do
-		fRefuse "option refused (slot 1): '${o}'" "${repo}" -q "${o}" status
-		fRefuse "option refused (slot 2): '${o}'" "${repo}" -q status "${o}"
+		fRefuse "[EkzQ7gH] option refused (slot 1): '${o}'" "${repo}" -q "${o}" status
+		fRefuse "[EkzQ7gI] option refused (slot 2): '${o}'" "${repo}" -q status "${o}"
 	done
 	## -NoFetch is the spelling both ports take; bash also lowercases '--no-fetch', pwsh rejects it.
-	fAccept "valid combo -q -y status"          "${repo}" -q -y status
-	fAccept "valid combo -q -NoFetch status"    "${repo}" -q -NoFetch status
-	fAccept "valid combo -y -q br list"         "${repo}" -y -q br list
-	[[ "$1" == "bash" ]] && fAccept "valid combo -q --no-fetch status"  "${repo}" -q --no-fetch status
+	fAccept "[EkzQ7gJ] valid combo -q -y status"          "${repo}" -q -y status
+	fAccept "[EkzQ7gK] valid combo -q -NoFetch status"    "${repo}" -q -NoFetch status
+	fAccept "[EkzQ7gL] valid combo -y -q br list"         "${repo}" -y -q br list
+	[[ "$1" == "bash" ]] && fAccept "[EkzQ7gM] valid combo -q --no-fetch status"  "${repo}" -q --no-fetch status
 
 	## Branch names: injection + malformed refs are refused before any action.
 	local b
 	for b in "${badBranch[@]}"; do
-		fRefuse "br create refuses: '${b}'" "${repo}" -q br create "${b}"
-		fRefuse "br switch refuses: '${b}'" "${repo}" -q br switch "${b}"
+		fRefuse "[EkzQ7gN] br create refuses: '${b}'" "${repo}" -q br create "${b}"
+		fRefuse "[EkzQ7gO] br switch refuses: '${b}'" "${repo}" -q br switch "${b}"
 	done
 
 	## br prune takes no argument at all, so that slot is a refusal - and an injection
 	## vector parked there must die at the parser, well before anything is deleted.
 	local p
 	for p in "${inject[@]}"; do
-		fRefuse "br prune refuses an argument: '${p}'" "${repo}" -q br prune "${p}"
+		fRefuse "[El9kLkW] br prune refuses an argument: '${p}'" "${repo}" -q br prune "${p}"
 	done
-	fRefuse "br prune refuses a branch name"     "${repo}" -q br prune main
-	fRefuse "internal br-prune token refused"    "${repo}" -q br-prune
+	fRefuse "[El9kLkX] br prune refuses a branch name"     "${repo}" -q br prune main
+	fRefuse "[El9kLkY] internal br-prune token refused"    "${repo}" -q br-prune
 
 	## Commit messages: anything goes in a message, but it stays inert data. Each
 	## needs a real change to reach 'git commit'; unique content guarantees one.
@@ -224,19 +224,19 @@ GHEOF
 	local -i i=0 m
 	for m in "${!inject[@]}"; do
 		echo "change ${i}" > "${repo2}/seed.txt"; i=$((i + 1))
-		fSurvive "commit message inert: '${inject[m]}'" "${repo2}" -q update "${inject[m]}"
+		fSurvive "[EkzQ7gP] commit message inert: '${inject[m]}'" "${repo2}" -q update "${inject[m]}"
 	done
 	## ...and a bare-glob message must land verbatim, not expand to filenames. The
 	## repo has files, so '*' and '*.txt' would glob if the message weren't literal.
 	local gm
-	for gm in '*' '*.txt' '?' 'v*'; do fMsgLiteral "commit message verbatim: '${gm}'" "${repo2}" "${gm}"; done
+	for gm in '*' '*.txt' '?' 'v*'; do fMsgLiteral "[EkzUx6m] commit message verbatim: '${gm}'" "${repo2}" "${gm}"; done
 
 	## Versions and PR numbers: malformed values refused (release fetches first,
 	## which is local here; pr rejects before any network).
 	local repo3="${base}/ver"; fMakeRepo "${repo3}"
 	local v p
-	for v in "${badVersion[@]}"; do fRefuse "release refuses version: '${v}'" "${repo3}" -q release "${v}"; done
-	for p in "${badPr[@]}";      do fRefuse "pr refuses: '${p}'"              "${repo3}" -q pr "${p}"; done
+	for v in "${badVersion[@]}"; do fRefuse "[EkzQ7gQ] release refuses version: '${v}'" "${repo3}" -q release "${v}"; done
+	for p in "${badPr[@]}";      do fRefuse "[EkzQ7gR] pr refuses: '${p}'"              "${repo3}" -q pr "${p}"; done
 
 	## PR titles: free text like a commit message, and it must reach gh as data, not code.
 	## Needs a branch that isn't the merge target, which is what 'pr create' proposes from.
@@ -244,24 +244,24 @@ GHEOF
 	( cd "${repo4}" && git checkout --quiet -b dev && git push --quiet -u origin dev \
 		&& git checkout --quiet -b feat && echo f > f.txt && git add --all && git commit --quiet -m feat )
 	local t
-	for t in "${inject[@]}"; do fSurvive "pr title inert: '${t}'" "${repo4}" -q pr create "${t}"; done
+	for t in "${inject[@]}"; do fSurvive "[El9Ej20] pr title inert: '${t}'" "${repo4}" -q pr create "${t}"; done
 	## Reading what gh received needs the stub to actually run, which on Windows the PowerShell
 	## build can't do - a shebang file is not something it can start, and the .cmd sibling that
 	## would fix it re-parses these very arguments. Say so rather than pass on a stub that no-oped.
 	if [[ "$1" == "bash" ]] || ((! isWindows)); then
-		for t in '*' '*.txt' '?' 'v*'; do fTitleLiteral "pr title verbatim: '${t}'" "${repo4}" "${t}"; done
+		for t in '*' '*.txt' '?' 'v*'; do fTitleLiteral "[El9Ej21] pr title verbatim: '${t}'" "${repo4}" "${t}"; done
 	else
 		echo "  skipped: pr title verbatim (pwsh on Windows can't run the gh stub)"
 	fi
 	## Proposing from the merge target is nonsense whatever the title says.
 	( cd "${repo4}" && git checkout --quiet dev )
-	fRefuse "pr create refuses from the merge target" "${repo4}" -q pr create 'anything'
+	fRefuse "[El9Ej22] pr create refuses from the merge target" "${repo4}" -q pr create 'anything'
 	( cd "${repo4}" && git checkout --quiet feat )
 
 	## Clone url and directory are user values that reach native git. A junk url is refused
 	## (none of these is cloneable); a glob-shaped directory has to stay literal.
 	local u
-	for u in "${inject[@]}"; do fRefuse "clone url refused: '${u}'" "${repo3}" -q repo clone "${u}"; done
+	for u in "${inject[@]}"; do fRefuse "[El9QuEc] clone url refused: '${u}'" "${repo3}" -q repo clone "${u}"; done
 	local cd_
 	local -a cloneDirs=( '*' '?' 'v*' 'a b' )
 	## Win32 forbids '*' and '?' in a path, so native git can't create such a work tree at all
@@ -272,23 +272,23 @@ GHEOF
 		cloneDirs=( 'a b' )
 		echo "  skipped: clone dir verbatim '*' '?' 'v*' (Win32 forbids those characters in a path)"
 	fi
-	for cd_ in "${cloneDirs[@]}"; do fDirLiteral "clone dir verbatim: '${cd_}'" "${repo3}" "${repo3}.git" "${cd_}"; done
+	for cd_ in "${cloneDirs[@]}"; do fDirLiteral "[El9QuEd] clone dir verbatim: '${cd_}'" "${repo3}" "${repo3}.git" "${cd_}"; done
 
 	## Long and odd input: must not crash. Branch is refused, message accepted.
 	local long; long="$(printf 'x%.0s' {1..5000})"
-	fRefuse  "long branch refused"  "${repo3}" -q br create "${long}"
+	fRefuse  "[EkzQ7gS] long branch refused"  "${repo3}" -q br create "${long}"
 	echo odd > "${repo2}/seed.txt"
-	fSurvive "long message survives" "${repo2}" -q update "${long}"
+	fSurvive "[EkzQ7gT] long message survives" "${repo2}" -q update "${long}"
 	echo odd2 > "${repo2}/seed.txt"
-	fSurvive "unicode/emoji message" "${repo2}" -q update $'café \u{1F600} ‮ rtl'
+	fSurvive "[EkzQ7gU] unicode/emoji message" "${repo2}" -q update $'café \u{1F600} ‮ rtl'
 
 	## The new argument slots. 'raw' fronts exactly two tools, so anything else in that position is
 	## refused rather than run - the one place a wrong answer would execute an arbitrary program.
 	local rawTool
 	for rawTool in "${badCommands[@]}" "${inject[@]}" 'rm' 'sh' 'GIT'; do
-		fRefuse "raw tool refused: '${rawTool}'" "${repo3}" -q raw "${rawTool}" --version
+		fRefuse "[EmMuR5U] raw tool refused: '${rawTool}'" "${repo3}" -q raw "${rawTool}" --version
 	done
-	fRefuse "raw with no tool refused" "${repo3}" -q raw
+	fRefuse "[EmMuR5V] raw with no tool refused" "${repo3}" -q raw
 	## Deliberately NOT fuzzed: the arguments after 'git' or 'gh'. Reaching the tool verbatim is
 	## the whole contract, so an injection vector there is gitsby doing its job, and the canary
 	## would fire on a pass. What is checked above is that nothing but git and gh can be reached.
@@ -296,28 +296,28 @@ GHEOF
 	## repo url takes one of two words and nothing else.
 	local urlArg
 	for urlArg in "${badSubcommands[@]}" "${inject[@]}" 'HTTPS ' 'https extra'; do
-		fRefuse "repo url arg refused: '${urlArg}'" "${repo3}" -q repo url "${urlArg}"
+		fRefuse "[EmMuR5W] repo url arg refused: '${urlArg}'" "${repo3}" -q repo url "${urlArg}"
 	done
 
 	## account has two subcommands, and neither takes an argument.
 	local acctSub
 	for acctSub in "${badSubcommands[@]}" "${inject[@]}"; do
-		fRefuse "account subcommand refused: '${acctSub}'" "${repo3}" -q account "${acctSub}"
+		fRefuse "[EmMuR5X] account subcommand refused: '${acctSub}'" "${repo3}" -q account "${acctSub}"
 	done
-	fRefuse "account list takes no argument"  "${repo3}" -q account list junk
-	fRefuse "account apply takes no argument" "${repo3}" -q account apply junk
+	fRefuse "[EmMuR5Y] account list takes no argument"  "${repo3}" -q account list junk
+	fRefuse "[EmMuR5Z] account apply takes no argument" "${repo3}" -q account apply junk
 
 	## --config names a file. One that isn't there is refused; the value never reaches a shell.
 	local cfg
 	for cfg in "${inject[@]}" '/nonexistent/gitsby.shcl' ''; do
-		fRefuse "bad --config refused: '${cfg}'" "${repo3}" -q --config "${cfg}" status
+		fRefuse "[EmMuR5a] bad --config refused: '${cfg}'" "${repo3}" -q --config "${cfg}" status
 	done
 
 	## GITSBY_ACCOUNT reaches 'gh auth token --user' as a value. It must stay inert there, and an
 	## account nobody holds a token for is simply not selected - never an error, never a canary.
 	local acct
 	for acct in "${inject[@]}" '-x' '--user root'; do
-		GITSBY_ACCOUNT="${acct}" fSurvive "GITSBY_ACCOUNT inert: '${acct}'" "${repo2}" -q --no-fetch status
+		GITSBY_ACCOUNT="${acct}" fSurvive "[EmMuR5b] GITSBY_ACCOUNT inert: '${acct}'" "${repo2}" -q --no-fetch status
 	done
 	unset GITSBY_ACCOUNT
 
@@ -326,8 +326,8 @@ GHEOF
 	local pathCfg="${work}/path-fuzz.shcl" pathVal
 	for pathVal in "${inject[@]}" '.' '..' './x' 'dev/work' '~' '~nobody/x' 'C:work' '\work'; do
 		{ printf 'account.f.path = %s\n' "${pathVal}"; printf 'account.f.ghAccount = fuzzacct\n'; } > "${pathCfg}"
-		fSurvive "path inert: '${pathVal}'" "${repo2}" -q --no-fetch --config "${pathCfg}" status
-		fSurvive "path inert in account: '${pathVal}'" "${repo2}" -q --no-fetch --config "${pathCfg}" account
+		fSurvive "[Ept2CIC] path inert: '${pathVal}'" "${repo2}" -q --no-fetch --config "${pathCfg}" status
+		fSurvive "[Ept2CID] path inert in account: '${pathVal}'" "${repo2}" -q --no-fetch --config "${pathCfg}" account
 	done
 
 	## 'pathContains' is a config VALUE that reaches a native command twice over: it is compared
@@ -337,8 +337,8 @@ GHEOF
 	local segCfg="${work}/seg-fuzz.shcl" seg
 	for seg in "${inject[@]}" '../..' '/' '**' '.'; do
 		{ printf 'account.f.pathContains = %s\n' "${seg}"; printf 'account.f.ghAccount = fuzzacct\n'; } > "${segCfg}"
-		fSurvive "pathContains inert: '${seg}'" "${repo2}" -q --no-fetch --config "${segCfg}" status
-		fSurvive "pathContains inert in account: '${seg}'" "${repo2}" -q --no-fetch --config "${segCfg}" account
+		fSurvive "[EmmNC1Q] pathContains inert: '${seg}'" "${repo2}" -q --no-fetch --config "${segCfg}" status
+		fSurvive "[EmmNC1R] pathContains inert in account: '${seg}'" "${repo2}" -q --no-fetch --config "${segCfg}" account
 	done
 
 	## No-mutate: a refused command leaves HEAD and branch exactly as they were.
@@ -348,9 +348,9 @@ GHEOF
 	fRun "${repo}" -q br create 'bad:name'   ## refused
 	if [[ "$(cd "${repo}" && git rev-parse HEAD)" == "${before_head}" \
 		&& "$(cd "${repo}" && git branch --show-current)" == "${before_branch}" ]]; then
-		fOk "refused command left the repo unchanged"
+		fOk "[EkzQ7gV] refused command left the repo unchanged"
 	else
-		fFail "refused command mutated the repo"
+		fFail "[EkzQ7gV] refused command mutated the repo"
 	fi
 }
 
@@ -403,18 +403,18 @@ fCredentialHelperVectors(){
 	helper="$( cd "${ch}/proj" && "${gitsby}" -q -NoFetch --config "${ch}/v.shcl" raw git config --get credential.https://github.com.helper 2>/dev/null )"
 	# shellcheck disable=SC2016  ## matching the literal variable reference, not its value
 	if [[ "${helper}" == *'${GITSBY_HOST_USER}'* && "${helper}" != *touch* ]]; then
-		fOk "the credential helper reads its username from the environment"
+		fOk "[EnSFBNI] the credential helper reads its username from the environment"
 	else
-		fFail "the credential helper carries interpolated text: ${helper}"
+		fFail "[EnSFBNI] the credential helper carries interpolated text: ${helper}"
 	fi
 }
 fCredentialHelperVectors
 
 ## The security assertion: no vector ever caused a side-effect to run.
 if [[ -z "$(find "${work}" -name 'CANARY*' -print -quit)" ]]; then
-	fOk "no injection canary fired"
+	fOk "[EkzQ7gW] no injection canary fired"
 else
-	fFail "injection canary fired: $(find "${work}" -name 'CANARY*')"
+	fFail "[EkzQ7gW] injection canary fired: $(find "${work}" -name 'CANARY*')"
 fi
 
 echo "passed: ${pass}, failed: ${fail}"
@@ -431,3 +431,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260813 JC: Same environment isolation the behavioral suite grew, plus the gitsby config file this one had never pinned at all.
 ##		- 20260818 JC: One leg, the compiled build. The scripted ones moved to legacy/ and are no longer a fuzz target - nothing new can reach them.
 ##		- 20260914 JC: Vectors for the "path" config value, beside pathContains: the injection set plus relative, dot, tilde and drive-relative spellings. One that isn't absolute is listed as ignored, and nothing fires or crashes either way. 269 -> 301.
+##		- 20260926 JC: Every check carries a test ID at the front of its label.

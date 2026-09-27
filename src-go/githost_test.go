@@ -18,7 +18,7 @@ import (
 
 // Only spellings that need no ssh_config lookup: an alias would send this to a
 // real ssh, and what the box outside answers is not this test's business.
-func TestParseRemote(t *testing.T) {
+func TestParseRemote(t *testing.T) { // [EnS8ftS]
 	tests := []struct {
 		url, host, owner, name string
 	}{
@@ -51,7 +51,7 @@ func TestParseRemote(t *testing.T) {
 // GH_HOST is how gh itself is pointed at an Enterprise instance. Reading it here
 // is what keeps an Enterprise user out of the "not GitHub, so no pull requests"
 // path they don't belong in.
-func TestIsGitHubHost(t *testing.T) {
+func TestIsGitHubHost(t *testing.T) { // [EnS8ftT]
 	tests := []struct {
 		host, ghHost string
 		want         bool
@@ -72,7 +72,7 @@ func TestIsGitHubHost(t *testing.T) {
 	}
 }
 
-func TestHostURL(t *testing.T) {
+func TestHostURL(t *testing.T) { // [Eq2wii2]
 	tests := []struct{ host, target, proto, want string }{
 		{"github.com", "octocat/hello", "https", "https://github.com/octocat/hello.git"},
 		{"github.com", "octocat/hello", "ssh", "git@github.com:octocat/hello.git"},
@@ -91,7 +91,7 @@ func TestHostURL(t *testing.T) {
 // tea's tsv writer quotes every cell, header names included. Left quoted, every
 // lookup misses and every value carries the quotes into whatever it is compared
 // against - which reads as "no such pull request" rather than as a parse problem.
-func TestParseTeaTable(t *testing.T) {
+func TestParseTeaTable(t *testing.T) { // [Eq2wii3]
 	out := "\"index\"\t\"head\"\t\"state\"\n\"7\"\t\"feature-x\"\t\"open\"\n\"9\"\t\"acct:forked\"\t\"closed\"\n"
 	records := parseTeaTable(out)
 	if len(records) != 2 {
@@ -114,7 +114,7 @@ func TestParseTeaTable(t *testing.T) {
 
 // A head branch on a fork is spelled 'owner:branch'. What we compare against, and
 // later hand to git, is the branch on its own.
-func TestHeadBranchName(t *testing.T) {
+func TestHeadBranchName(t *testing.T) { // [EnS8ftU]
 	tests := []struct{ head, want string }{
 		{"feature-x", "feature-x"},
 		{"acct:feature-x", "feature-x"},
@@ -131,7 +131,7 @@ func TestHeadBranchName(t *testing.T) {
 // An account's credentials are only credentials where that account banks. A config
 // that never mentions a host means github.com, because that is all there was when
 // every such config was written.
-func TestAccountServesHost(t *testing.T) {
+func TestAccountServesHost(t *testing.T) { // [EnS8ftV]
 	tests := []struct {
 		name, configured, host string
 		want                   bool
@@ -162,7 +162,7 @@ func TestAccountServesHost(t *testing.T) {
 // The variable a token is exported under. A Gitea token must never land in
 // GH_TOKEN: gh reads that one, and every child process would inherit a credential
 // for a host gh will happily try to use it on.
-func TestTokenEnvVar(t *testing.T) {
+func TestTokenEnvVar(t *testing.T) { // [EnS8ftW]
 	if got := tokenEnvVar("github.com"); got != "GH_TOKEN" {
 		t.Errorf("tokenEnvVar(github.com) = %q, want GH_TOKEN", got)
 	}
@@ -173,7 +173,7 @@ func TestTokenEnvVar(t *testing.T) {
 
 // The pull-request vocabulary per tool. These are what both the preview and the
 // command read, so a disagreement here is a plan promising something else.
-func TestPrArgsPerTool(t *testing.T) {
+func TestPrArgsPerTool(t *testing.T) { // [EnS8ftX]
 	for _, tc := range []struct {
 		tool  hostTool
 		first string
@@ -209,7 +209,7 @@ func TestPrArgsPerTool(t *testing.T) {
 
 // 'pr <n>' is the PR and its diff. gh takes a call for each; tea's detail view
 // carries the diff in one.
-func TestPrViewArgsPerTool(t *testing.T) {
+func TestPrViewArgsPerTool(t *testing.T) { // [Er1LxTq]
 	for _, tc := range []struct {
 		name string
 		tool hostTool
@@ -230,7 +230,7 @@ func TestPrViewArgsPerTool(t *testing.T) {
 }
 
 // And the command runs every call, not just the first.
-func TestCmdPrViewRunsEachCall(t *testing.T) {
+func TestCmdPrViewRunsEachCall(t *testing.T) { // [Er1LxTr]
 	if !inPath("true") {
 		t.Skip("no 'true' to stand in for gh")
 	}
@@ -251,7 +251,7 @@ func TestCmdPrViewRunsEachCall(t *testing.T) {
 // says nothing about who you are anywhere else, so keying the gate on it alone left
 // every non-GitHub account uncompared - which is a gate that quietly stopped
 // guarding rather than one that said it could not.
-func TestAccountWho(t *testing.T) {
+func TestAccountWho(t *testing.T) { // [EnSC7jM]
 	tests := []struct {
 		name, ghAccount, user, host, want string
 	}{
@@ -279,7 +279,7 @@ func TestAccountWho(t *testing.T) {
 // The write gate reads whichever CLI this run goes through. Unknown must stay
 // unknown: a tea with no login for the host has said nothing about who you are, and
 // refusing on that would refuse every machine that never configured one.
-func TestHostCLIWho(t *testing.T) {
+func TestHostCLIWho(t *testing.T) { // [Eq2wii4]
 	none := newApp(newPrinter())
 	none.gh.tool = toolNone
 	if got := none.hostCLIWho(); got != "?" {
@@ -306,7 +306,7 @@ func TestHostCLIWho(t *testing.T) {
 
 // A tea that failed is not a tea with no login, and only a login tea named is
 // compared with the ssh key's account. "No login" is not a login called that.
-func TestShowHostLine(t *testing.T) {
+func TestShowHostLine(t *testing.T) { // [Eq2wii5]
 	tests := []struct {
 		name   string
 		answer hostAnswer

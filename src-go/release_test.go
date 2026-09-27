@@ -11,7 +11,7 @@ package main
 
 import "testing"
 
-func TestNextVersion(t *testing.T) {
+func TestNextVersion(t *testing.T) { // [EnQKNsa]
 	tests := []struct {
 		latest string
 		want   string
@@ -37,7 +37,7 @@ func TestNextVersion(t *testing.T) {
 
 // The scan only read tags with a 'v', so a repo tagged 1.4.2 started over at 0.1.0,
 // and pushed it.
-func TestNewestReleaseTag(t *testing.T) {
+func TestNewestReleaseTag(t *testing.T) { // [EpyIe9L]
 	tests := []struct {
 		sorted []string
 		want   string
@@ -60,7 +60,7 @@ func TestNewestReleaseTag(t *testing.T) {
 }
 
 // Every new tag used to gain a 'v', so a repo tagged 1.4.2 went on with v1.4.3.
-func TestNextReleaseTag(t *testing.T) {
+func TestNextReleaseTag(t *testing.T) { // [EpyLprG]
 	tests := []struct{ latest, want string }{
 		{"", "v0.1.0"},
 		{"v1.4.2", "v1.4.3"},
@@ -74,7 +74,7 @@ func TestNextReleaseTag(t *testing.T) {
 	}
 }
 
-func TestReleaseVersionShape(t *testing.T) {
+func TestReleaseVersionShape(t *testing.T) { // [EnQKNsb]
 	for _, ok := range []string{"1.0.0", "10.20.30", "2.0.0-rc1", "2.0.0.beta"} {
 		if !releaseVerRE.MatchString(ok) {
 			t.Errorf("%q was refused", ok)

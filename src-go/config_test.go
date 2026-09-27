@@ -22,7 +22,7 @@ import (
 	shcl "github.com/yottacore/shcl/source/go/v2"
 )
 
-func TestParseConfigValue(t *testing.T) {
+func TestParseConfigValue(t *testing.T) { // [EnQKNsF]
 	tests := []struct{ in, want string }{
 		{"plain", "plain"},
 		{"trailing   ", "trailing"},
@@ -41,7 +41,7 @@ func TestParseConfigValue(t *testing.T) {
 	}
 }
 
-func TestSplitAccountKey(t *testing.T) {
+func TestSplitAccountKey(t *testing.T) { // [EnQKNsG]
 	tests := []struct {
 		key         string
 		acct, field string
@@ -97,7 +97,7 @@ func driveRule(p string) string {
 	return canonPath(driveFolder(p))
 }
 
-func TestConfigLoad(t *testing.T) {
+func TestConfigLoad(t *testing.T) { // [EnQKNsH]
 	cfg := writeConfig(t, driveFixture(`
 # a comment
 account.work.ghAccount = octocat
@@ -131,7 +131,7 @@ just-a-key
 // git hands core.sshCommand to a shell, so a key path carrying shell characters
 // is dropped rather than used - quietly falling back to whatever key ssh picks is
 // how you push as the wrong person.
-func TestConfigDropsShellCharactersInSSHKey(t *testing.T) {
+func TestConfigDropsShellCharactersInSSHKey(t *testing.T) { // [EnQKNsI]
 	cfg := writeConfig(t, "account.work.sshKey = /keys/id; rm -rf /\n")
 	if got := cfg.value("work", "sshKey"); got != "" {
 		t.Errorf("sshKey = %q, want it dropped", got)
@@ -141,7 +141,7 @@ func TestConfigDropsShellCharactersInSSHKey(t *testing.T) {
 	}
 }
 
-func TestConfigFileMustExistWhenNamed(t *testing.T) {
+func TestConfigFileMustExistWhenNamed(t *testing.T) { // [EnQKNsJ]
 	opt := defaultOptions()
 	opt.configFile, opt.configGiven = filepath.Join(t.TempDir(), "nope.shcl"), true
 	if _, err := opt.resolveConfigFile(); err == nil {
@@ -155,7 +155,7 @@ func TestConfigFileMustExistWhenNamed(t *testing.T) {
 	}
 }
 
-func TestAccountForDir(t *testing.T) {
+func TestAccountForDir(t *testing.T) { // [EnQKNsK]
 	cfg := writeConfig(t, driveFixture(`
 account.outer.path = /srv/code
 account.inner.path = /srv/code/client
@@ -181,7 +181,7 @@ account.anywhere.pathContains = shared/lib
 
 // An absolute claim on this machine's own tree beats a folder-name run, even a
 // longer one.
-func TestAccountForDirPathBeatsSegment(t *testing.T) {
+func TestAccountForDirPathBeatsSegment(t *testing.T) { // [EnQKNsL]
 	cfg := writeConfig(t, `
 account.byname.pathContains = a/b/c
 account.bypath.path = /a/b/c
@@ -191,7 +191,7 @@ account.bypath.path = /a/b/c
 	}
 }
 
-func TestCanonPath(t *testing.T) {
+func TestCanonPath(t *testing.T) { // [EnQKNsM]
 	t.Setenv("HOME", "/home/someone")
 	// Windows reads '/c/x' as the MSYS spelling of drive c:, and folds case.
 	ab, cxy, msys := "/a/b", "C:/x/y", "/c/x"
@@ -216,7 +216,7 @@ func TestCanonPath(t *testing.T) {
 	}
 }
 
-func TestCanonSegment(t *testing.T) {
+func TestCanonSegment(t *testing.T) { // [EnQKNsN]
 	for _, tc := range []struct{ in, want string }{
 		{"/a/b/", "a/b"},
 		{`a\b`, "a/b"},
@@ -230,7 +230,7 @@ func TestCanonSegment(t *testing.T) {
 
 // '..' has to go before a rule sees it, or a destination reached by climbing out
 // of one tree still reads as a folder inside it.
-func TestAbsDirResolvesDotDot(t *testing.T) {
+func TestAbsDirResolvesDotDot(t *testing.T) { // [EnQKNsO]
 	dir := t.TempDir()
 	t.Chdir(dir)
 	got := absDir("sub/../../elsewhere")
@@ -244,7 +244,7 @@ func TestAbsDirResolvesDotDot(t *testing.T) {
 // token. One helper answers it now, and leaves anything it cannot resolve as typed.
 // '~', '${HOME}' and '%USERPROFILE%' are one thing on every platform, so a file
 // synced between Windows and Linux applies on both. Nothing else is a variable.
-func TestExpandHome(t *testing.T) {
+func TestExpandHome(t *testing.T) { // [Eq4rRnD]
 	t.Setenv("HOME", "/home/ada")
 	tests := []struct{ in, want string }{
 		{"~", "/home/ada"},
@@ -272,7 +272,7 @@ func TestExpandHome(t *testing.T) {
 
 // With no home to be found, a '~' path became one rooted at the filesystem top.
 // USERPROFILE is where Windows looks once HOME is empty.
-func TestExpandHomeWithNoHome(t *testing.T) {
+func TestExpandHomeWithNoHome(t *testing.T) { // [Er1LxTp]
 	t.Setenv("HOME", "")
 	t.Setenv("USERPROFILE", "")
 	if home := homeDir(); home != "" {
@@ -287,7 +287,7 @@ func TestExpandHomeWithNoHome(t *testing.T) {
 
 // The key goes to a shell, so a home spelling goes in as the one the shell expands,
 // and a backslash as the slash the shell would otherwise eat.
-func TestSSHKeyArg(t *testing.T) {
+func TestSSHKeyArg(t *testing.T) { // [Eq4rRnE]
 	tests := []struct{ in, want string }{
 		{"~/.ssh/id", "~/.ssh/id"},
 		{"${HOME}/.ssh/id", "~/.ssh/id"},
@@ -307,7 +307,7 @@ func TestSSHKeyArg(t *testing.T) {
 // with the tree's real path and only the Windows build resolved the other side.
 // Nothing said so either: the folder exists, so the "can never match" note in
 // 'account list' stayed quiet while runs acted as the wrong account.
-func TestAccountForDirThroughSymlink(t *testing.T) {
+func TestAccountForDirThroughSymlink(t *testing.T) { // [EnR2Euj]
 	root := t.TempDir()
 	realDir := filepath.Join(root, "real", "proj")
 	if err := os.MkdirAll(realDir, 0o700); err != nil {
@@ -332,7 +332,7 @@ func TestAccountForDirThroughSymlink(t *testing.T) {
 // A destination that does not exist yet still has to canonicalize - 'repo clone'
 // resolves its account against a folder git has never seen - so resolution stops
 // at the nearest ancestor that is really there and puts the rest back on.
-func TestCanonPathKeepsMissingTail(t *testing.T) {
+func TestCanonPathKeepsMissingTail(t *testing.T) { // [EnR2Euk]
 	root := t.TempDir()
 	if err := os.Symlink(root, filepath.Join(root, "self")); err != nil {
 		t.Skipf("no symlinks here: %v", err)
@@ -346,7 +346,7 @@ func TestCanonPathKeepsMissingTail(t *testing.T) {
 // A rule for a folder that isn't there yet climbs to the drive to settle links,
 // and a bare 'C:' is that drive's current directory, not its root. The rule came
 // out as 'c:./work', which 'account apply' handed to git as a relative pattern.
-func TestCanonPathStopsAtTheDriveRoot(t *testing.T) {
+func TestCanonPathStopsAtTheDriveRoot(t *testing.T) { // [Ept3Ug4]
 	if !isWindows() {
 		t.Skip("drive letters are Windows only")
 	}
@@ -361,7 +361,7 @@ func TestCanonPathStopsAtTheDriveRoot(t *testing.T) {
 // the first key in the file. Read as part of the name, that key became one
 // nothing understands - and the line reporting those printed the mark with it,
 // so the only diagnostic named a key that looks exactly right.
-func TestConfigLoadStripsBOM(t *testing.T) {
+func TestConfigLoadStripsBOM(t *testing.T) { // [EnRgpp6]
 	cfg := writeConfig(t, "\ufeff"+"account.work.ghAccount = octocat\naccount.work.email = o@example.com\n")
 	if got := cfg.value("work", "ghAccount"); got != "octocat" {
 		t.Errorf("first key after a BOM = %q, want %q", got, "octocat")
@@ -375,7 +375,7 @@ func TestConfigLoadStripsBOM(t *testing.T) {
 // GitHub login of its own: a commit identity and an ssh key are a whole way of
 // using one. Asked the other way, GITSBY_ACCOUNT read such a name as a bare
 // login and applied none of it.
-func TestKnowsAccountWithoutGhAccount(t *testing.T) {
+func TestKnowsAccountWithoutGhAccount(t *testing.T) { // [EnRgpp7]
 	cfg := writeConfig(t, "account.sshonly.email = s@example.com\naccount.byrule.path = /srv/x\n")
 	for _, name := range []string{"sshonly", "SshOnly", "byrule"} {
 		if !cfg.knowsAccount(name) {
@@ -393,7 +393,7 @@ func TestKnowsAccountWithoutGhAccount(t *testing.T) {
 // slashes - and a listing printed that beside a 'Here' line straight from
 // Windows. Same tree, two spellings, on the one screen that exists to say which
 // tree a rule claims.
-func TestWindowsPath(t *testing.T) {
+func TestWindowsPath(t *testing.T) { // [EnbeoL3]
 	cases := map[string]string{
 		"c:/opt/dev/github.com/someone": `C:\opt\dev\github.com\someone`,
 		`C:\opt\dev`:                    `C:\opt\dev`,
@@ -412,7 +412,7 @@ func TestWindowsPath(t *testing.T) {
 // Where the accounts file lives is per-platform, and only one of the three orders
 // can be produced on the machine running this. The list is also what decides where
 // a new file is created, so an order that is wrong writes somewhere nothing reads.
-func TestConfigCandidatesFor(t *testing.T) {
+func TestConfigCandidatesFor(t *testing.T) { // [Enc9zk4]
 	cases := []struct {
 		name                     string
 		goos, xdg, appData, home string
@@ -486,7 +486,7 @@ func TestConfigCandidatesFor(t *testing.T) {
 // The current layout, in every shape the reader takes: one block per account,
 // the dotted spelling a hand conversion produces, a folder given as an array and
 // as a repeated key, a key typed in camel case, and the things it reports.
-func TestConfigLoadHierarchical(t *testing.T) {
+func TestConfigLoadHierarchical(t *testing.T) { // [Eo61m6H]
 	cfg := writeConfig(t, driveFixture(`# top
 protocol: ssh
 stray: 1
@@ -537,7 +537,7 @@ bad = line
 // An account block with no keys is still an account: it can be named through
 // GITSBY_ACCOUNT, and a name that could climb out of the include directory is
 // reported, not used.
-func TestConfigLoadHierarchicalNames(t *testing.T) {
+func TestConfigLoadHierarchicalNames(t *testing.T) { // [Eo61m6I]
 	cfg := writeConfig(t, "account: bare\naccount: ../../evil\n\tpath: /x\n")
 	if !cfg.knowsAccount("bare") {
 		t.Error("a block with no keys is not an account")
@@ -628,7 +628,7 @@ func wantFolders(t *testing.T, cfg *config, acct string, want ...string) {
 // A key indented one level too far became the child of the key above it, and the
 // loader never asked a key for its children. The account applied without it, and
 // the line that lists what was ignored left it out.
-func TestConfigLoadNestedKeys(t *testing.T) {
+func TestConfigLoadNestedKeys(t *testing.T) { // [EptqIxC]
 	for _, row := range nestedKeyRows {
 		t.Run(row.name, func(t *testing.T) {
 			cfg := writeConfig(t, driveFixture(row.body))
@@ -655,7 +655,7 @@ func TestConfigLoadNestedKeys(t *testing.T) {
 // A chain deeper than the parser keeps still loads, lists every level it kept,
 // and names every line it skipped. The kept depth is the module's answer, so a
 // module that moves its cap moves this test with it.
-func TestConfigLoadNestedKeysAtTheDepthCap(t *testing.T) {
+func TestConfigLoadNestedKeysAtTheDepthCap(t *testing.T) { // [EptqIxD]
 	const chain = 520
 	var body strings.Builder
 	body.WriteString("account: w\n\temail: e@x\n")
@@ -696,7 +696,7 @@ func TestConfigLoadNestedKeysAtTheDepthCap(t *testing.T) {
 }
 
 // Which layout a file is in is decided by its own lines, never by its extension.
-func TestIsFlatConfig(t *testing.T) {
+func TestIsFlatConfig(t *testing.T) { // [Eo61m6J]
 	cases := map[string]bool{
 		"":                                       false,
 		"# only comments\n":                      false,
@@ -719,7 +719,7 @@ func TestIsFlatConfig(t *testing.T) {
 // The conversion writes blocks, so a comment above an account's first line stays
 // above the block, one between two keys stays between them, and one above the
 // end - or above a top-level key - is not pulled into the block before it.
-func TestFlatToSHCL(t *testing.T) {
+func TestFlatToSHCL(t *testing.T) { // [Eo61m6K]
 	in := "# header\n\n# about work\naccount.work.path = /srv/work   # tree\n# between\naccount.work.ghAccount = \"a#b\"\n\n# above protocol\nprotocol = https\naccount.home.email = h@x.y\njust-a-key\n"
 	want := "# header\n\n# about work\n\naccount: work\n\tpath: /srv/work  # tree\n\t# between\n\tghaccount: \"a#b\"\n\n# above protocol\nprotocol: https\n\naccount: home\n\temail: h@x.y\njust-a-key\n\n" + shcl.GenBanner
 	if got := flatToSHCL(in); got != want {
@@ -733,7 +733,7 @@ func TestFlatToSHCL(t *testing.T) {
 
 // What the plan shows is what the file gets, so the spelling comes from the
 // module rather than from a second quoting rule that could drift from it.
-func TestShclValue(t *testing.T) {
+func TestShclValue(t *testing.T) { // [Eo61m6L]
 	cases := map[string]string{
 		"plain":    "plain",
 		"Ada #1":   `"Ada #1"`,
@@ -754,7 +754,7 @@ func TestShclValue(t *testing.T) {
 // A backslash outside double quotes is itself, so a Windows path typed by hand
 // keeps its '\t' and '\n'. SHCL 2.x read those as escapes. A path rule written
 // doubled under 2.x still names its folder, since a rule reads either slash.
-func TestConfigLoadBackslashes(t *testing.T) {
+func TestConfigLoadBackslashes(t *testing.T) { // [Eqp3jdh]
 	cfg := writeConfig(t, "account: w\n\tname: ~\\dev\\tools\n\temail: \"C:\\\\new\"\n")
 	wantValue(t, cfg, "w", "name", `~\dev\tools`)
 	wantValue(t, cfg, "w", "email", `C:\new`)
@@ -767,7 +767,7 @@ func TestConfigLoadBackslashes(t *testing.T) {
 // A folder rule is absolute or it is nothing. Both platforms' answers, whatever
 // this machine is: 'C:work' and '/work' change meaning with the current drive on
 // Windows, and 'C:/work' is no folder on Linux.
-func TestIsAbsFolderFor(t *testing.T) {
+func TestIsAbsFolderFor(t *testing.T) { // [Ept2CIU]
 	cases := []struct {
 		goos string
 		in   string
@@ -800,7 +800,7 @@ func TestIsAbsFolderFor(t *testing.T) {
 	}
 }
 
-func TestFolderRuleProblem(t *testing.T) {
+func TestFolderRuleProblem(t *testing.T) { // [Ept2CIV]
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	cases := map[string]string{
@@ -839,7 +839,7 @@ func TestFolderRuleProblem(t *testing.T) {
 // the folder holding that file - home - so every repo under home took the account,
 // while gitsby matched it nowhere. A file cannot say where a relative value was
 // typed, so the loader lists one instead of guessing, and keeps the account.
-func TestConfigIgnoresARelativePath(t *testing.T) {
+func TestConfigIgnoresARelativePath(t *testing.T) { // [Ept2CIW]
 	abs := filepath.ToSlash(t.TempDir())
 	cases := []struct {
 		name, body string
@@ -878,7 +878,7 @@ func TestConfigIgnoresARelativePath(t *testing.T) {
 // A relative token file was read from whatever folder a command ran in, and ssh
 // read a relative key from each repo's own folder, so a file in a cloned repo
 // could pick either.
-func TestConfigIgnoresARelativeKeyFile(t *testing.T) {
+func TestConfigIgnoresARelativeKeyFile(t *testing.T) { // [Epy6Sgc]
 	t.Setenv("HOME", t.TempDir())
 	abs := filepath.ToSlash(filepath.Join(t.TempDir(), "tok"))
 	cfg := writeConfig(t, "account: work\n\ttokenfile: tok.txt\n\tsshkey: .ssh/id_work\n\temail: w@example.com\n"+
@@ -902,7 +902,7 @@ func TestConfigIgnoresARelativeKeyFile(t *testing.T) {
 	}
 }
 
-func TestAccountApplyPlanSkipsARelativePath(t *testing.T) {
+func TestAccountApplyPlanSkipsARelativePath(t *testing.T) { // [Ept2CIX]
 	abs := filepath.ToSlash(t.TempDir())
 	cfg := writeConfig(t, "account.a.path = .\naccount.b.path = dev/work\naccount.c.path = ~nobody/x\naccount.d.path = "+abs+"\n")
 	plan := cfg.accountApplyPlan()
@@ -913,7 +913,7 @@ func TestAccountApplyPlanSkipsARelativePath(t *testing.T) {
 
 // Each shape at a candidate comes back as itself, not as "no file": a create may
 // go only where nothing is.
-func TestProbeConfigCandidate(t *testing.T) {
+func TestProbeConfigCandidate(t *testing.T) { // [EptZI3z]
 	dir := t.TempDir()
 	if state, _, _ := probeConfigCandidate(filepath.Join(dir, "none.shcl")); state != candidateAbsent {
 		t.Errorf("missing: state = %d, want absent", state)
@@ -989,7 +989,7 @@ func TestProbeConfigCandidate(t *testing.T) {
 
 // Reads pass over a candidate that is there and can't be read, and still find a
 // readable one behind it. Only 'account set' refuses on it.
-func TestResolveConfigFileSkipsAnUnreadableCandidate(t *testing.T) {
+func TestResolveConfigFileSkipsAnUnreadableCandidate(t *testing.T) { // [EptZI40]
 	if isWindows() || os.Geteuid() == 0 {
 		t.Skip("needs a file this user can't read: Windows has no 0200, and root reads through one")
 	}
