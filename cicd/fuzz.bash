@@ -44,8 +44,8 @@ fUnsetInheritedGitConfig(){
 fUnsetInheritedGitConfig
 unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT
 
-## -q silences the per-check line and leaves the header, the failures and the total. A run
-## of 600-odd checks buries every stage header in a pipeline log nobody watches live.
+## -q silences the per-check line and leaves the header, the failures and the total. The
+## pipeline doesn't pass it, even on its own -q runs.
 declare -i quiet=0
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -432,3 +432,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260818 JC: One leg, the compiled build. The scripted ones moved to legacy/ and are no longer a fuzz target - nothing new can reach them.
 ##		- 20260914 JC: Vectors for the "path" config value, beside pathContains: the injection set plus relative, dot, tilde and drive-relative spellings. One that isn't absolute is listed as ignored, and nothing fires or crashes either way. 269 -> 301.
 ##		- 20260926 JC: Every check carries a test ID at the front of its label.
+##		- 20260926 JC: The pipeline no longer passes -q, so every check prints a line.
