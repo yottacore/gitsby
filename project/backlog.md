@@ -67,11 +67,6 @@ Going forward, new issues in the new template at the bottom of this file, will g
 	- Origin: seen while adding the installer checks. Plausible: read.
 	- Test: none yet. The stub curl takes `FAKE_LATEST`, and it never collapses dot segments. So a copy of "go installer refuses a redirect to a tag that isn't one" with a `.../releases/tag/../x` redirect reproduces it, and makes the item Confirmed.
 
-- 🔘 Two test.bash checks on the frozen `install.ps1`, "iex form reaches the plan" and "and refuses without a tty", ask the live GitHub API for the latest release. Several suite runs inside an hour use up the anonymous rate limit, and both go red. The suite's header says it never touches the network.
-	- Opened: 20260926-154915
-	- Origin: seen 2026-09-26 after about fifteen suite runs in an hour. Confirmed: the API answered 403 rate limit exceeded.
-	- Test: the two checks are the bug, so there is nothing separate to write. The installer is frozen, so the fix goes in the checks, which should stub `Invoke-RestMethod` the way `fPsInstall` does. To prove it and catch the next one, the suite could run with `HTTPS_PROXY` and `https_proxy` set to a closed local port, like the poisoned `XDG_CONFIG_HOME`. A check that reaches the network then fails on every run, not only after the limit is used up.
-
 ## Features and enhancements
 
 - 🔘 Move the shcl module from its pinned `dev` commit to the tagged 3.0 release.
@@ -133,6 +128,14 @@ Going forward, new issues in the new template at the bottom of this file, will g
 ## Done
 
 ### Done - Bugs
+
+- ✅ Two test.bash checks on the frozen `install.ps1`, "iex form reaches the plan" and "and refuses without a tty", ask the live GitHub API for the latest release. Several suite runs inside an hour use up the anonymous rate limit, and both go red. The suite's header says it never touches the network.
+	- Closed: 20260926-202618
+	- Opened: 20260926-154915
+	- Origin: seen 2026-09-26 after about fifteen suite runs in an hour. Confirmed: the API answered 403 rate limit exceeded.
+	- Test: the two checks are the bug, so there is nothing separate to write. The installer is frozen, so the fix goes in the checks, which should stub `Invoke-RestMethod` the way `fPsInstall` does. To prove it and catch the next one, the suite could run with `HTTPS_PROXY` and `https_proxy` set to a closed local port, like the poisoned `XDG_CONFIG_HOME`. A check that reaches the network then fails on every run, not only after the limit is used up.
+	- Cause: since the move to the org, `github.com/jim-collier/gitsby/releases/latest` redirects to the org's URL rather than to a tag. The installer found no tag in it and fell back to the API on every run.
+	- Fixed: the checks stub both web cmdlets, and the whole suite runs behind a proxy on a closed port, so a check that reaches the network fails every time. Both checks go red with the stubs taken out.
 
 - ✅ A Windows path with backslashes can read as a different folder. In the block layout, shcl v2 reads `\t` and `\n` as a tab and a newline, quoted or not, so `path: ~\dev\tools` names `~\dev` + tab + `ools` and the rule never matches. `\\` reads as one backslash. The old flat layout is not affected.
 	- Closed: 20260924-132324
