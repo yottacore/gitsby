@@ -1864,6 +1864,13 @@ Going forward, new issues in the new template at the bottom of this file, will g
 
 ### Done - Features and enhancements
 
+- ✅ Every check line in a pipeline run shows its test ID.
+	- Opened: 20260927-105500
+	- Closed: 20260927-111500
+	- The suites already printed them. Native fuzz targets now print the ID from their func line. Spawn counts had none, so each command got one, dated from when it was first measured, and test-id.bash checks them.
+	- The baseline file keeps plain labels, so older baselines still match.
+	- Verified: test.bash 1219 -> 1220. Five checks fail against the old scripts. test-id.bash flags a measure with its ID taken out.
+
 - ✅ A pipeline run shows every regression, fuzz, parity and spawn check, one line each.
 	- Opened: 20260926-204500
 	- Closed: 20260926-215000

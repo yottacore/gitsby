@@ -495,7 +495,9 @@ if ((do_fuzz)); then
 	for fuzzTarget in $(cd "${root}/${GO_MODULE_DIR}" && go test -list 'Fuzz.*' . 2>/dev/null | grep '^Fuzz' || true); do
 		(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${BUILD_JOBS}" go test -run '^$' -fuzz "^${fuzzTarget}\$" -fuzztime 5s -parallel "${BUILD_JOBS}" . >/dev/null) \
 			|| fDie "fuzzing found a crasher in ${fuzzTarget} (reproducer under ${GO_MODULE_DIR}/testdata/fuzz/)"
-		fEcho_Clean "  ok: ${fuzzTarget}"
+		## The test ID sits at the end of the func line, as '// [<id>]'.
+		fuzzId="$(sed -n "s|^func ${fuzzTarget}(.*// \(\[[0-9A-Za-z]*\]\)[[:space:]]*\$|\1 |p" "${root}/${GO_MODULE_DIR}"/*_test.go 2>/dev/null || true)"
+		fEcho_Clean "  ok: ${fuzzId}${fuzzTarget}"
 	done
 	fEcho "OK: native fuzz targets"
 fi
@@ -661,3 +663,4 @@ fEcho_Clean
 ##		- 2026-09-15 JC: The build version is read after the remote sync, and says -dirty for uncommitted source. Read at startup, it could name the commit before a fast-forward, and a publishing run's builds named the commit before the one holding their source.
 ##		- 2026-09-26 JC: The regression and fuzz suites print a line per check under -q too, and each native fuzz target gets one.
 ##		- 2026-09-26 JC: Parity and spawn counts print a line per check under -q too.
+##		- 2026-09-27 JC: Each native fuzz target's line carries its test ID.
