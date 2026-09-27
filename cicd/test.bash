@@ -55,6 +55,12 @@ mkdir -p "${work}/poison-config/gitsby"
 printf 'account: poison\n\tpath: %s\n\tghaccount: poisonacct\n' "${poisonRoot}" > "${work}/poison-config/gitsby/config.shcl"
 export XDG_CONFIG_HOME="${work}/poison-config" APPDATA="${work}/poison-config"
 
+## Nothing here may reach the network. A check that did passed until a few runs in an hour used up
+## GitHub's anonymous API limit, then failed for reasons that had nothing to do with the code. A
+## proxy on a closed port makes curl, git over https, gh and pwsh's web cmdlets fail on every run.
+export HTTPS_PROXY=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 HTTP_PROXY=http://127.0.0.1:9 http_proxy=http://127.0.0.1:9 ALL_PROXY=http://127.0.0.1:9 all_proxy=http://127.0.0.1:9
+unset NO_PROXY no_proxy
+
 ## Two more inputs the lines above do NOT cover, both of which reach us from an ordinary
 ## working terminal rather than from a config file:
 ##   - GIT_CONFIG_COUNT/KEY_n/VALUE_n outrank every config FILE, including a repo-local one
@@ -2178,7 +2184,10 @@ GHEOF
 			## Decode the bytes ourselves rather than Get-Content, which quietly drops a BOM.
 			## irm doesn't, so a BOM'd file reaches iex with U+FEFF glued to the shebang and
 			## the first line stops being a comment - which is how a BOM sat here undetected.
-			local readInst="\$t = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes('${instPsNative}'))"
+			## With no -Ref the installer looks up the latest release first. The stubs answer the
+			## redirect with a tag, the way github.com did before the repo moved to the org. Now
+			## it redirects to the org's URL instead, so the real lookup always fell back to the API.
+			local readInst="function Invoke-WebRequest { [pscustomobject]@{ Headers = @{ Location = 'https://github.com/jim-collier/gitsby/releases/tag/v2.1.0' } } }; function Invoke-RestMethod { throw 'no network in the suite' }; \$t = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes('${instPsNative}'))"
 			fAssertOut "[ElHKNn9] iex form reaches the plan"          'gitsby installer'  fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
 			fAssertOut "[ElHKNnA] and refuses without a tty"          'CAUGHT: Aborted'   fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
 			fAssertOut "[ElHKNnB] and leaves the session alive"       'HOST ALIVE'        fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
@@ -5209,3 +5218,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260924 JC: A folder rule typed with backslashes reads as typed under shcl 3.0, where 2.x read `\t` as a tab. 1028 -> 1029.
 ##		- 20260926 JC: A check for each closed backlog item that had none. Accounts and identity: the gh probe skipped where nothing reads it, repo connect's account and identity, account apply's global writes and credential username, a dead folder rule, ssh's '--'. Branches: release and the back-merge beside a tag with the branch's name, a merge whose branch is already gone from origin, prune's spawn count, origin/HEAD healed, a lone or unborn default branch, masked credentials in a step, the dropped aliases. Installers: bad checksum, no SHA256SUMS, no hash tool, a portal page, a bad redirect tag, joined options, end of input, the sudo mkdir, sums from the release's own generator. Pipeline: stage 0, stage 3, dogfood, the publish message, the real backlog gate, spawn-count's regression exit, the lint globs, the release dry run. The whole suite runs with XDG_CONFIG_HOME and APPDATA poisoned. The call-stack check looked for bash's text and now looks for a Go panic. Every new check fails against its fault. 1031 -> 1208.
 ##		- 20260926 JC: Every check carries a test ID at the front of its label. Checks for test-id.bash, and for backlog-check knowing a relabeled check by its ID. 1208 -> 1217.
+##		- 20260926 JC: The suite runs behind a proxy on a closed port, so a check that reaches the network fails every run. The frozen install.ps1 one-liner checks stub its web lookups; two of them asked the live API and went red once its anonymous limit ran out. 1217 -> 1217.
