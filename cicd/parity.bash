@@ -66,8 +66,8 @@ fUnsetInheritedGitConfig(){
 fUnsetInheritedGitConfig
 unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT
 
-## -q silences the per-check line and leaves the header, the failures and the total. A run
-## of 600-odd checks buries every stage header in a pipeline log nobody watches live.
+## -q silences the per-check line and leaves the header, the failures and the total. The
+## pipeline doesn't pass it, even on its own -q runs.
 declare -i quiet=0
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -331,3 +331,4 @@ echo "parity passed: ${pass}, differed: ${fail}"
 ##		- 20260818 JC: Repointed. The pair used to be the two scripts; it is now this build against the frozen v2.1.0 one under legacy/, which is the question that still has an answer worth having. No pwsh leg: the two scripts were proven identical at v2.1.0, so agreeing with one is agreeing with both. The renamed commands are checked under both spellings, since the old name has to keep working.
 ##		- 20260819 JC: A difference used to end the run. diff exits 1, and under pipefail with -e that killed the script at the FIRST finding, so every later one went unreported - the totals line never printed either. Also a helper for comparing a line with one deliberate difference removed, spelled out per call so it cannot quietly widen.
 ##		- 20260926 JC: Every check carries a test ID at the front of its label.
+##		- 20260926 JC: The pipeline no longer passes -q, so every check prints a line.

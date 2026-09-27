@@ -114,10 +114,9 @@ if ((install_hook)); then exec "${here}/utility/pre-push.bash" --install; fi
 ## Off for unattended runs (-q/-y) where nobody is watching.
 stage_pause=0.4; ((assume_yes)) && stage_pause=0
 
-## The same reasoning, passed on to parity, spawn counts and the demo generator. Keyed on -q, not
-## on unattended: -y is documented as unattended-but-not-quiet. The regression and fuzz suites
-## never get it. One line per check is how a failure's neighbors get read, and -q runs are the
-## usual ones.
+## The same reasoning, passed on to the demo generator. Keyed on -q, not on unattended: -y is
+## documented as unattended-but-not-quiet. The suites, parity and spawn counts never get it. One
+## line per check is how a failure's neighbors get read, and -q runs are the usual ones.
 declare -a harness_quiet=(); ((quiet)) && harness_quiet=("-q")
 
 ## Publish commit message: -m wins, then config, then a default when unattended.
@@ -513,7 +512,7 @@ fi
 ## git for effectively all of its wall clock, so a flamegraph has no leaders in it. What
 ## costs anything is how often we fork git, and that is what regresses silently.
 if ((do_fuzz)) && [[ -f "${SPAWN_COUNT_CMD[0]:-}" ]]; then
-	"${SPAWN_COUNT_CMD[@]}" ${harness_quiet[@]+"${harness_quiet[@]}"} || fDie "spawn counts regressed"
+	"${SPAWN_COUNT_CMD[@]}" || fDie "spawn counts regressed"
 	fEcho "OK: spawn counts"
 fi
 
@@ -525,7 +524,7 @@ fSection "4/7  Backwards compatibility"
 if ((! do_parity)); then
 	fEcho_Clean "compatibility comparison skipped"
 elif [[ -f "${PARITY_CMD[0]:-}" ]]; then
-	"${PARITY_CMD[@]}" ${harness_quiet[@]+"${harness_quiet[@]}"}
+	"${PARITY_CMD[@]}"
 	fEcho "OK: this build answers as the frozen one does"
 else
 	fEcho_Clean "no comparison harness (${PARITY_CMD[0]:-cicd/parity.bash})"
@@ -661,3 +660,4 @@ fEcho_Clean
 ##		- 2026-09-15 JC: A failed py_compile stops the run. At the head of an && list it neither stopped the run nor fired the trap.
 ##		- 2026-09-15 JC: The build version is read after the remote sync, and says -dirty for uncommitted source. Read at startup, it could name the commit before a fast-forward, and a publishing run's builds named the commit before the one holding their source.
 ##		- 2026-09-26 JC: The regression and fuzz suites print a line per check under -q too, and each native fuzz target gets one.
+##		- 2026-09-26 JC: Parity and spawn counts print a line per check under -q too.

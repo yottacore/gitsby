@@ -262,10 +262,9 @@ fGateFullRun(){
 	fGateSays 0 'CI/CD: done\.' -y --quick --no-sync --no-publish --no-dogfood \
 		&& fGateCalled '^go vet' '^go build' '^go test -race' '^test\.bash' '^parity\.bash'
 }
-## The parity line shows the run was quiet at all.
 fGateQuietSuites(){
 	fGateSays 0 'CI/CD: done\.' -q --no-sync --no-publish --no-dogfood --no-demogif \
-		&& fGateCalled '^test\.bash $' '^fuzz\.bash $' '^parity\.bash -q$'
+		&& fGateCalled '^test\.bash $' '^fuzz\.bash $' '^parity\.bash $' '^spawn-count\.bash $'
 }
 ## --install-hook hands over to the installer: the hook is in place, and no stage or gate header
 ## was printed on the way.
@@ -3886,6 +3885,8 @@ GHEOF
 			bash -c "out=\$('${sc}/cicd/utility/spawn-count.bash' -q 2>&1); [[ \$? == 1 ]] && grep -q 'REGRESSED  status: 0 -> ' <<< \"\$out\" && [[ \$(ls '${sc}/cicd/artifacts/spawn' | grep -c '^spawn_.*\.tsv\$') == 1 ]]"
 		fAssert "[Er1LxTA] and --record accepts the rise as the new baseline" \
 			bash -c "'${sc}/cicd/utility/spawn-count.bash' -q --record && [[ \$(ls '${sc}/cicd/artifacts/spawn' | grep -c '^spawn_.*\.tsv\$') == 2 ]]"
+		fAssert "[Er2gqb3] and without -q prints a verdict for every command, unchanged ones too" \
+			bash -c "out=\$('${sc}/cicd/utility/spawn-count.bash' 2>&1) && [[ \$(grep -cE '^  ok +[a-z ]+: [0-9]+\$' <<< \"\$out\") == \$(grep -c '^fMeasure \"' '${root}/cicd/utility/spawn-count.bash') ]]"
 	else
 		echo "  skip: spawn-count regression checks (no strace)"
 	fi
@@ -4199,7 +4200,7 @@ EOF
 		fAssert "[EpsVDHy] --gate and --install-hook together are refused"  fGateSays 2 'separate runs' --gate --install-hook
 		## Regression guard: the full run is what the two functions were carved out of.
 		fAssert "[EpsVDHz] the full run still lints, builds and runs the suites"  fGateFullRun
-		fAssert "[Er2UM3f] a -q run still prints every regression and fuzz check"  fGateQuietSuites
+		fAssert "[Er2UM3f] a -q run still prints every regression, fuzz, parity and spawn check"  fGateQuietSuites
 		fAssert "[EpsVDI0] cicd.bash --help lists --gate and --install-hook" \
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--gate ' <<< \"\$out\" && grep -qE -- '^ +--install-hook ' <<< \"\$out\""
 		fAssert "[EpsVDI1] and contributing.md names --install-hook"  grep -qF -- '--install-hook' "${root}/contributing.md"
@@ -5226,3 +5227,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260926 JC: Every check carries a test ID at the front of its label. Checks for test-id.bash, and for backlog-check knowing a relabeled check by its ID. 1208 -> 1217.
 ##		- 20260926 JC: The suite runs behind a proxy on a closed port, so a check that reaches the network fails every run. The frozen install.ps1 one-liner checks stub its web lookups; two of them asked the live API and went red once its anonymous limit ran out. 1217 -> 1217.
 ##		- 20260926 JC: A pipeline run under -q still prints every regression and fuzz check. 1217 -> 1218.
+##		- 20260926 JC: The same for parity and spawn counts, and spawn-count gives each command a verdict line. 1218 -> 1219.

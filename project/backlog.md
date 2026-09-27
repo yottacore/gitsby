@@ -1864,11 +1864,12 @@ Going forward, new issues in the new template at the bottom of this file, will g
 
 ### Done - Features and enhancements
 
-- ✅ A pipeline run shows every regression and fuzz check, one line each.
+- ✅ A pipeline run shows every regression, fuzz, parity and spawn check, one line each.
 	- Opened: 20260926-204500
-	- Closed: 20260926-212000
-	- Fixed: a `-q` run passed `-q` on to test.bash and fuzz.bash, so only the totals showed. The pipeline no longer passes it to either. Each native fuzz target gets a line too. Parity and spawn counts still take `-q`.
-	- Verified: test.bash 1217 -> 1218. The new check fails against the old pipeline. A `-q` run printed 1525 check lines, all passing.
+	- Closed: 20260926-215000
+	- Fixed: a `-q` run passed `-q` on to the suites, so only the totals showed. The pipeline no longer passes it to any of them. Each native fuzz target gets a line too. Only the demo generator still takes `-q`.
+	- spawn-count printed bare counts, and a verdict only for a change. Each command now gets one line with its count and verdict, `ok` included.
+	- Verified: test.bash 1217 -> 1219. Both new checks fail against the old scripts. A `-q` run printed 1561 check lines, all passing.
 
 - ✅ Every closed backlog item has a regression check, where one makes sense.
 	- Opened: 20260926-144000
