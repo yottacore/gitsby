@@ -11,7 +11,7 @@ package main
 
 import "testing"
 
-func TestParseArgsPositionals(t *testing.T) {
+func TestParseArgsPositionals(t *testing.T) { // [EnQKNs4]
 	opt, cmd, help, err := parseArgs([]string{"repo", "clone", "https://x/y.git", "dir"})
 	if err != nil || help {
 		t.Fatalf("err=%v help=%v", err, help)
@@ -24,7 +24,7 @@ func TestParseArgsPositionals(t *testing.T) {
 	}
 }
 
-func TestParseArgsOptions(t *testing.T) {
+func TestParseArgsOptions(t *testing.T) { // [EnQKNs5]
 	tests := []struct {
 		name string
 		argv []string
@@ -55,7 +55,7 @@ func TestParseArgsOptions(t *testing.T) {
 
 // A value we are already waiting for wins over the option test - there is no
 // other way to write a commit message that starts with a dash.
-func TestParseArgsMessageMayLookLikeAnOption(t *testing.T) {
+func TestParseArgsMessageMayLookLikeAnOption(t *testing.T) { // [EnQKNs6]
 	opt, cmd, _, err := parseArgs([]string{"pullcom", "-m", "-Wall added"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -68,7 +68,7 @@ func TestParseArgsMessageMayLookLikeAnOption(t *testing.T) {
 	}
 }
 
-func TestParseArgsRefusals(t *testing.T) {
+func TestParseArgsRefusals(t *testing.T) { // [EnQKNs7]
 	for _, argv := range [][]string{
 		{"--offline"},
 		{"--nonsense"},
@@ -85,7 +85,7 @@ func TestParseArgsRefusals(t *testing.T) {
 // alone. Every other command has to keep rejecting the fifth, which is now
 // sortCommand's job rather than the tokenizer's - and the tail that does it was
 // only ever checking the fourth.
-func TestSortCommandRefusesFifthPositional(t *testing.T) {
+func TestSortCommandRefusesFifthPositional(t *testing.T) { // [EnXe9ad]
 	_, cmd, _, err := parseArgs([]string{"repo", "clone", "url", "dir", "extra"})
 	if err != nil {
 		t.Fatalf("parse: %v", err)
@@ -102,7 +102,7 @@ func TestSortCommandRefusesFifthPositional(t *testing.T) {
 
 // 'account set' is the one command that keeps all three of its shifted
 // positionals, and the tail that rejects a third must not eat its value.
-func TestSortCommandAccountSet(t *testing.T) {
+func TestSortCommandAccountSet(t *testing.T) { // [EnXe9ae]
 	_, cmd, _, err := parseArgs([]string{"account", "set", "work", "host", "gitea.com"})
 	if err != nil {
 		t.Fatalf("parse: %v", err)
@@ -124,7 +124,7 @@ func TestSortCommandAccountSet(t *testing.T) {
 	}
 }
 
-func TestParseArgsHelpFromAnyPosition(t *testing.T) {
+func TestParseArgsHelpFromAnyPosition(t *testing.T) { // [EnQKNs8]
 	for _, argv := range [][]string{{"--help"}, {"br", "create", "--help"}, {"-h"}} {
 		if _, _, help, err := parseArgs(argv); !help || err != nil {
 			t.Errorf("%v: help=%v err=%v", argv, help, err)
@@ -132,7 +132,7 @@ func TestParseArgsHelpFromAnyPosition(t *testing.T) {
 	}
 }
 
-func TestCollapseCommand(t *testing.T) {
+func TestCollapseCommand(t *testing.T) { // [EnQKNs9]
 	tests := []struct {
 		argv []string
 		want string
@@ -171,7 +171,7 @@ func TestCollapseCommand(t *testing.T) {
 }
 
 // The internal tokens carry a hyphen precisely so they cannot be typed.
-func TestCollapseCommandRefusesInternalTokens(t *testing.T) {
+func TestCollapseCommandRefusesInternalTokens(t *testing.T) { // [EnQKNsA]
 	for _, name := range []string{"br-merge", "repo-clone", "account-apply"} {
 		if _, err := collapseCommand(command{name: name}); err == nil {
 			t.Errorf("%q was accepted as typed", name)
@@ -181,7 +181,7 @@ func TestCollapseCommandRefusesInternalTokens(t *testing.T) {
 
 // The noun shift is what makes 'br list extra' complain about the extra rather
 // than about 'list'.
-func TestSortCommandShiftedPositionals(t *testing.T) {
+func TestSortCommandShiftedPositionals(t *testing.T) { // [EnQKNsB]
 	_, cmd, _, err := parseArgs([]string{"br", "list", "extra"})
 	if err != nil {
 		t.Fatalf("parse: %v", err)
@@ -196,7 +196,7 @@ func TestSortCommandShiftedPositionals(t *testing.T) {
 	}
 }
 
-func TestSortCommandMutating(t *testing.T) {
+func TestSortCommandMutating(t *testing.T) { // [EnQKNsC]
 	tests := []struct {
 		argv     []string
 		mutating bool
@@ -237,7 +237,7 @@ func TestSortCommandMutating(t *testing.T) {
 
 // A bare positional is the commit message when no -m was given, and -m wins when
 // both are.
-func TestSortCommandPositionalMessage(t *testing.T) {
+func TestSortCommandPositionalMessage(t *testing.T) { // [EnQKNsD]
 	opt, cmd, _, _ := parseArgs([]string{"pullcom", "typed here"})
 	cmd, _ = collapseCommand(cmd)
 	if _, err := sortCommand(cmd, &opt); err != nil {
@@ -257,7 +257,7 @@ func TestSortCommandPositionalMessage(t *testing.T) {
 	}
 }
 
-func TestScanPassthrough(t *testing.T) {
+func TestScanPassthrough(t *testing.T) { // [EnQKNsE]
 	tests := []struct {
 		name     string
 		argv     []string
