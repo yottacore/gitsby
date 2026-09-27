@@ -3880,13 +3880,13 @@ GHEOF
 			#!/usr/bin/env bash
 			/bin/sh -c :; /bin/sh -c :; /bin/sh -c :
 		EOF
-		sed -n 's/^fMeasure "\([^"]*\)".*/\1\t0/p' "${root}/cicd/utility/spawn-count.bash" > "${sc}/cicd/artifacts/spawn/spawn_20260101-000000.tsv"
+		sed -n 's/^fMeasure "\[[^]]*\] \([^"]*\)".*/\1\t0/p' "${root}/cicd/utility/spawn-count.bash" > "${sc}/cicd/artifacts/spawn/spawn_20260101-000000.tsv"
 		fAssert "[Er1LxT9] spawn-count.bash fails on a command that starts more than its baseline, and records nothing" \
-			bash -c "out=\$('${sc}/cicd/utility/spawn-count.bash' -q 2>&1); [[ \$? == 1 ]] && grep -q 'REGRESSED  status: 0 -> ' <<< \"\$out\" && [[ \$(ls '${sc}/cicd/artifacts/spawn' | grep -c '^spawn_.*\.tsv\$') == 1 ]]"
+			bash -c "out=\$('${sc}/cicd/utility/spawn-count.bash' -q 2>&1); [[ \$? == 1 ]] && grep -qE 'REGRESSED  \[[0-9A-Za-z]{7}\] status: 0 -> ' <<< \"\$out\" && [[ \$(ls '${sc}/cicd/artifacts/spawn' | grep -c '^spawn_.*\.tsv\$') == 1 ]]"
 		fAssert "[Er1LxTA] and --record accepts the rise as the new baseline" \
 			bash -c "'${sc}/cicd/utility/spawn-count.bash' -q --record && [[ \$(ls '${sc}/cicd/artifacts/spawn' | grep -c '^spawn_.*\.tsv\$') == 2 ]]"
-		fAssert "[Er2gqb3] and without -q prints a verdict for every command, unchanged ones too" \
-			bash -c "out=\$('${sc}/cicd/utility/spawn-count.bash' 2>&1) && [[ \$(grep -cE '^  ok +[a-z ]+: [0-9]+\$' <<< \"\$out\") == \$(grep -c '^fMeasure \"' '${root}/cicd/utility/spawn-count.bash') ]]"
+		fAssert "[Er2gqb3] and without -q prints a verdict and test ID for every command, unchanged ones too" \
+			bash -c "out=\$('${sc}/cicd/utility/spawn-count.bash' 2>&1) && [[ \$(grep -cE '^  ok +\[[0-9A-Za-z]{7}\] [a-z ]+: [0-9]+\$' <<< \"\$out\") == \$(grep -c '^fMeasure \"' '${root}/cicd/utility/spawn-count.bash') ]]"
 	else
 		echo "  skip: spawn-count regression checks (no strace)"
 	fi
@@ -4288,9 +4288,11 @@ EOF
 		git -C "${gateDir}" checkout --quiet -- README.md
 		## Stage 3 without --quick. 'go test -list' failing is swallowed there, so a target list
 		## that came back empty would pass having fuzzed nothing.
+		printf 'package main\n\nfunc FuzzA(f *testing.F) { // [AAAAAAA]\n}\n' > "${gateDir}/src-go/a_test.go"
 		fGateOnly fuzz
 		fAssert "[Er1LxTW] stage 3 runs the fuzz harness, fuzzes each target the module lists, and counts spawns" \
 			fGateRanCalling 0 '^fuzz\.bash' '^go test -run \^\$ -fuzz \^FuzzA\$ -fuzztime 5s -parallel [0-9]+ \.$' '^spawn-count\.bash'
+		fAssert "[Er631Hf] and prints each target on a line of its own, with its test ID"  fGateRanSaying 0 '^  ok: \[AAAAAAA\] FuzzA$'
 		: > "${gateFail}/go-fuzz"
 		fGateOnly fuzz
 		rm -f -- "${gateFail:?}/go-fuzz"
@@ -5228,3 +5230,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260926 JC: The suite runs behind a proxy on a closed port, so a check that reaches the network fails every run. The frozen install.ps1 one-liner checks stub its web lookups; two of them asked the live API and went red once its anonymous limit ran out. 1217 -> 1217.
 ##		- 20260926 JC: A pipeline run under -q still prints every regression and fuzz check. 1217 -> 1218.
 ##		- 20260926 JC: The same for parity and spawn counts, and spawn-count gives each command a verdict line. 1218 -> 1219.
+##		- 20260927 JC: Native fuzz targets and spawn counts print their test IDs. 1219 -> 1220.
