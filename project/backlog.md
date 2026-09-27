@@ -49,34 +49,42 @@ To make using these icons easier if desired, add them to a clipboard or key macr
 - 🔘 `status` says an account came from "gitsby.ghAccount in this repo's git config" when the key reached git through an `account apply` fragment included from the global config. The line also starts with a capital `G`, which no key is spelled with.
 	- Opened: 20260916-163000
 	- Origin: seen on b29w 2026-09-16, not traced to a commit. Confirmed.
+	- Test: none yet. It goes in test.bash right after "account apply runs", where the key reaches the repo only through the fragment. `status` there must name the global config, and keep the key's lower-case spelling.
 
 - 🔘 `account apply` writes `credential.https://github.com.username` from `ghAccount` for every account. An account with `host` set gets no username for its own host, so plain git there can push as whatever the credential manager holds. With both `ghAccount` and `user` set, the fragment names the first while gitsby's own runs use the second.
 	- Opened: 20260926-154915
 	- Origin: `writeAccountFragment`, read only. `selectAccount` already keys its helper on the account's host and login. Plausible.
+	- Test: none yet. The check beside "and asks for the account's login over https" only looks at github.com. An account with `host` and `user` set must get `credential.https://<host>.username` set to its `user`. That check fails today and makes the item Confirmed.
 
 - 🔘 A folder rule of `/` matches no folder, silently. The match looks for the rule plus `/`, which is `//`. `account apply` would write `gitdir/i://` for it too.
 	- Opened: 20260926-163000
 	- Origin: `config.go` folder match and `accountcmd.go` includeIf generation. The match half is Confirmed, the includeIf half Plausible: read.
+	- Test: none yet. Add a `/` rule to the Go tests `TestAccountForDir` and `TestAccountApplyPlanAgreesWithAccountForDir`. The second one fails whenever the plan and the matcher disagree, so it covers both halves.
 
 - 🔘 In `install.bash`, end of input at a terminal prompt exits 1 with no `Aborted.` and no closing blank line. The failing `read` ends the script under `set -e` before the answer is looked at. It is still a no, by accident.
 	- Opened: 20260926-154915
 	- Origin: seen while adding the installer checks. Confirmed: `script -qec "bash install.bash" /dev/null </dev/null` with the stub curl on PATH.
+	- Test: "go installer takes end of input at the prompt as a no" already runs this exact case. It passes, since it only checks that nothing was downloaded. The fix adds a `fBlankAfter '^Aborted\.$'` check on the same run.
 
 - 🔘 `cicd/release.bash` is committed as mode 100644, though its Syntax line says to run it as `cicd/release.bash [VERSION]`. That gives "Permission denied".
 	- Opened: 20260926-154915
 	- Origin: seen while adding the dry-run checks. Confirmed.
+	- Test: none yet. test.bash checks four utility scripts with `[[ -x ]]`, but that reads the working tree, and a local `chmod` hides the problem. The check should read the committed mode from `git ls-files -s`, for every script the docs say to run by path.
 
 - 🔘 `release.bash --dry-run` still prints "tagged and pushed" and "Released v1.2.4" at the end, for steps it only announced.
 	- Opened: 20260926-154915
 	- Origin: seen while adding the dry-run checks. Confirmed.
+	- Test: two checks assert the bug today. "release.bash --dry-run passes on a clean, tagged, pushed clone" and "and a dashed footer date newer than the tag answers it" both look for `Released v1.2.4`. The fix changes both to the dry-run wording and adds a check that "tagged and pushed" is gone.
 
 - 🔘 `install.bash` checks a tag read from the release redirect for its characters only, so `..` segments pass. A typed `--tag` gets the path check as well. Low exposure, since curl collapses dot segments before it reports the URL.
 	- Opened: 20260926-154915
 	- Origin: seen while adding the installer checks. Plausible: read.
+	- Test: none yet. The stub curl takes `FAKE_LATEST`, and it never collapses dot segments. So a copy of "go installer refuses a redirect to a tag that isn't one" with a `.../releases/tag/../x` redirect reproduces it, and makes the item Confirmed.
 
 - 🔘 Two test.bash checks on the frozen `install.ps1`, "iex form reaches the plan" and "and refuses without a tty", ask the live GitHub API for the latest release. Several suite runs inside an hour use up the anonymous rate limit, and both go red. The suite's header says it never touches the network.
 	- Opened: 20260926-154915
 	- Origin: seen 2026-09-26 after about fifteen suite runs in an hour. Confirmed: the API answered 403 rate limit exceeded.
+	- Test: the two checks are the bug, so there is nothing separate to write. The installer is frozen, so the fix goes in the checks, which should stub `Invoke-RestMethod` the way `fPsInstall` does. To prove it and catch the next one, the suite could run with `HTTPS_PROXY` and `https_proxy` set to a closed local port, like the poisoned `XDG_CONFIG_HOME`. A check that reaches the network then fails on every run, not only after the limit is used up.
 
 ### Features and enhancements
 
