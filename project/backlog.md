@@ -7,44 +7,30 @@
 
 This is the product backlog, until bugs, features, and enhancements move to GitHub Issues.
 
+<!-- TOC ignore:true -->
 ## Table of contents
 
 <!-- TOC -->
 
-- [Table of contents](#table-of-contents)
-- [Conventions](#conventions)
-- [Backlog](#backlog)
-	- [Bugs](#bugs)
-	- [Features and enhancements](#features-and-enhancements)
-	- [Done](#done)
-		- [Done - Bugs](#done---bugs)
-		- [Done - Features and enhancements](#done---features-and-enhancements)
-	- [Future and/or deferred](#future-andor-deferred)
-	- [Canceled](#canceled)
+- [Introduction](#introduction)
+- [New format](#new-format)
+- [Bugs](#bugs)
+- [Features and enhancements](#features-and-enhancements)
+- [Done](#done)
+	- [Done - Bugs](#done---bugs)
+	- [Done - Features and enhancements](#done---features-and-enhancements)
+- [Deferred](#deferred)
+- [Canceled](#canceled)
 
 <!-- /TOC -->
 
-## Conventions
+## Introduction
 
-In each section, items are listed approximately from newest to oldest.
+Going forward, new issues in the new template at the bottom of this file, will go in the '## New format' section only. No more status emojis, but will be sorted (top-down) by status, then severity|priority. Issues in the old format (with status emojis) won't be refactored, but will continue to be worked until moved to closed, canceled, or deferred sections, and emojis updated. (Eventually this will all be moved to nano-git-db anyway. This new template is an intermediate effort to make issues going forward more structured and importable.)
 
-Every item should have an `Opened:` and, once finished, a `Closed:` date, as `YYYYmmDD-HHMMSS`. `Opened: n/a` means the open date can't be determined.
+## New format
 
-Automated code review items carry more than dates, and the pipeline checks the first of these. `Origin:` names the commit or round that introduced the defect, whether an earlier round saw it, and `Confirmed` (reproduced) or `Plausible` (read only). A Plausible item is not fixed until it has a repro or a check that fails on the current tree. A review leaves no list of things seen and not filed: each observation is an item, a ✋ item with the trigger that reopens it, or a `Decided against:` line with the reason. A fix to one site of a class names the sibling sites it checked before the item closes. A suite check deleted on a branch is named here, with the decision it encoded and why that changed, or stage 1 stops (`cicd/utility/backlog-check.bash`).
-
-| Icon | Status
-| :--: | :--
-| 🔘   | Not started
-| 🛠️   | Started, and/or partially complete
-| ✋   | Defer
-| ✅   | Complete
-| 🚫   | Canceled
-
-To make using these icons easier if desired, add them to a clipboard or key macro manager. (This format is "temporary" anyway [albeit for a while now], until we switch over to nano-git-db for the minor stuff, and GitHub Issues for the bigger stuff.)
-
-## Backlog
-
-### Bugs
+## Bugs
 
 - 🔘 `status` says an account came from "gitsby.ghAccount in this repo's git config" when the key reached git through an `account apply` fragment included from the global config. The line also starts with a capital `G`, which no key is spelled with.
 	- Opened: 20260916-163000
@@ -86,7 +72,7 @@ To make using these icons easier if desired, add them to a clipboard or key macr
 	- Origin: seen 2026-09-26 after about fifteen suite runs in an hour. Confirmed: the API answered 403 rate limit exceeded.
 	- Test: the two checks are the bug, so there is nothing separate to write. The installer is frozen, so the fix goes in the checks, which should stub `Invoke-RestMethod` the way `fPsInstall` does. To prove it and catch the next one, the suite could run with `HTTPS_PROXY` and `https_proxy` set to a closed local port, like the poisoned `XDG_CONFIG_HOME`. A check that reaches the network then fails on every run, not only after the limit is used up.
 
-### Features and enhancements
+## Features and enhancements
 
 - 🔘 Move the shcl module from its pinned `dev` commit to the tagged 3.0 release.
 	- Opened: 20260924-132324
@@ -144,9 +130,9 @@ To make using these icons easier if desired, add them to a clipboard or key macr
 	- 🔘 Code Review 20260909 enhancement 12: `.gitignore` covers the pipeline's own output and nothing a contributor's machine drops.
 		- Origin: the 2026-09-07 directives.
 
-### Done
+## Done
 
-#### Done - Bugs
+### Done - Bugs
 
 - ✅ A Windows path with backslashes can read as a different folder. In the block layout, shcl v2 reads `\t` and `\n` as a tab and a newline, quoted or not, so `path: ~\dev\tools` names `~\dev` + tab + `ools` and the rule never matches. `\\` reads as one backslash. The old flat layout is not affected.
 	- Closed: 20260924-132324
@@ -1873,7 +1859,7 @@ To make using these icons easier if desired, add them to a clipboard or key macr
 	- ✅ Add a PowerShell badge to README.md.
 		- Added next to the bash badge in the header block, linking to the PowerShell docs.
 
-#### Done - Features and enhancements
+### Done - Features and enhancements
 
 - ✅ Every closed backlog item has a regression check, where one makes sense.
 	- Opened: 20260926-144000
@@ -2468,7 +2454,7 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- Closed: 20260722-165821
 	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
 
-### Future and/or deferred
+## Deferred
 
 Waiting on hardware, an upstream module, or a decision.
 
@@ -2490,6 +2476,75 @@ Waiting on hardware, an upstream module, or a decision.
 	- The port is underway now, so this is decidable rather than deferred. Two calls: whether a bare workflow (vet, test, build on push and PR) is worth the dependency on a hosted service, and whether a release packager earns its place by bringing the Linux packages with it.
 	- Against the packager: the release already proves itself by downloading, checksumming and running the asset, which is more than it would do. For it: the packages come free.
 
-### Canceled
+## Canceled
 
-None.
+
+<!-- New issue template
+
+Legacy statuses:
+
+- 🔘 Not started
+
+- 🛠️ Started, and/or partially complete
+
+- 🔬 Testing not started or finished
+
+- ✋ Defer
+
+- ✅ Complete
+
+- 🚫 Canceled
+
+New issue format:
+
+- Only use rows that you actually need or expect will be filled in. Always fill in the title, ID, Type, Status, Opened and Created by.
+
+- The ID is the local time to the hundredth of a second. Opened is when it was written down, which may differ. (Use a keyboard macro and possibly something like project 'zuid' to generate.)
+
+- Status values, in sort order: Started, Testing, Waiting on signoff, Stalled, Queued, Deferred, Done, Moot, Canceled. Testing means the fix is in and checks are running or still to run. Waiting on signoff means testing passed. Moot means something else changed and made it irrelevant. Canceled means it still applies but was decided against.
+
+- Rows marked [Bug] are for bugs only, and rows marked [Feature] for features and enhancements. Children are not nested. They sit at the top level and point back with Parent ID.
+
+Template:
+
+- Title
+	- ID: YYYYmmDDHHMMSSNN
+	- Type: [Bug|Feature|Enhancement|Task]
+	- Status: [Queued|Started|Stalled|Testing|Waiting on signoff|Moot|Canceled|Deferred|Done]
+	- Priority|Severity [Bug]: [Critical|High|Avg|Low]
+	- Opened: YYYYmmDD-HHMMSS
+	- Opened by:
+	- Assigned to:
+	- Parent ID: YYYYmmDDHHMMSSNN
+	- Prereq IDs:
+		- YYYYmmDDHHMMSSNN
+	- Related IDs:
+		- YYYYmmDDHHMMSSNN
+	- Target OS:
+	- Test environment:
+	- Version and build:
+	- Requirements  [Feature]:
+		- Hierarchical bulleted list.
+	- Steps to reproduce [Bug]:
+		- ...
+	- Incorrect behavior [Bug]:
+	- Expected behavior [Bug]:
+	- Reproduced [Bug]: [No, or when, where and how]
+	- Possible cause [Bug]:
+	- Actual cause [Bug]:
+		- ...
+	- Estimated effort: [High|Avg|Low]
+	- Actual effort: [High|Avg|Low]
+	- Progress log:
+		- YYYYmmDD-HHMMSS: Notable effort.
+	- Decisions:
+		- ...
+	- Actual fix [Bug]:
+	- Branch:
+	- Commit:
+	- Test case: [Reason not applicable, or CI test case #]
+	- Acceptance signoff:
+	- Superseded by ID: YYYYmmDDHHMMSSNN
+	- Closed: YYYYmmDD-HHMMSS
+
+-->
