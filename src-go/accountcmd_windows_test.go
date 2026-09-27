@@ -17,7 +17,7 @@ import (
 // Reads pass over a file held open without read sharing, and the create refuses
 // by name instead of blaming permissions. The OS sentence is localized, so only
 // the fixed text is matched.
-func TestAccountSetRefusesAFileHeldOpen(t *testing.T) {
+func TestAccountSetRefusesAFileHeldOpen(t *testing.T) { // [EptZI3y]
 	a := createApp(t, newPrinter())
 	file := putDefaultConfig(t, keptBody)
 	name, err := syscall.UTF16PtrFromString(file)

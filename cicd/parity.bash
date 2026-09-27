@@ -210,7 +210,7 @@ for spelling in "${spellings[@]}"; do
 		account.s.path      = ${spelling}
 		account.s.ghAccount = spellacct
 	EOF
-	fSameLead  "path spelled '${spelling}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${work}/spell.shcl" status
+	fSameLead  "[EmlpDMW] path spelled '${spelling}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${work}/spell.shcl" status
 done
 
 ## 'pathContains' names folder names rather than a machine's tree, so it is the one rule meant to
@@ -225,9 +225,9 @@ cat > "${work}/seg.shcl" <<-EOF
 	account.seg.pathContains = github.com/alice
 	account.seg.ghAccount    = segacct
 EOF
-fSameLead  "pathContains resolves the same under root A" '^Account' "${work}/mA/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
-fSameLead  "pathContains resolves the same under root B" '^Account' "${work}/mB/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
-fSameLead  "and both agree it is whole folder names"     '^Account' "${work}/mA/github.com/alice-old/proj" -q -NoFetch --config "${work}/seg.shcl" status
+fSameLead  "[EmmDRRY] pathContains resolves the same under root A" '^Account' "${work}/mA/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
+fSameLead  "[EmmDRRZ] pathContains resolves the same under root B" '^Account' "${work}/mB/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
+fSameLead  "[EmmDRRa] and both agree it is whole folder names"     '^Account' "${work}/mA/github.com/alice-old/proj" -q -NoFetch --config "${work}/seg.shcl" status
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Option binding. Every build parses its own arguments, and that is where the scripted pair
@@ -237,20 +237,20 @@ fSameLead  "and both agree it is whole folder names"     '^Account' "${work}/mA/
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 echo
 echo "-- option forms"
-fSame     "an unknown option is refused the same way"     "${tree}" -q --bogus status
-fSame     "an option after the command is refused alike"  "${tree}" -q status --bogus
+fSame     "[EmlpDMX] an unknown option is refused the same way"     "${tree}" -q --bogus status
+fSame     "[EmlpDMY] an option after the command is refused alike"  "${tree}" -q status --bogus
 ## Both refuse, and that is the whole claim here. The frozen script counted them - "5, for max of
 ## 4" - because four was all its tokenizer took; this build takes five, for 'account set <account>
 ## <key> <value>' alone, and every other command rejects the extra a step later, by name. Naming
 ## the word is the better answer of the two, and test.bash owns that wording.
-fSameExit "too many positionals are refused by both"      "${tree}" -q br switch a b c
-fSameExit "a spaced --config is accepted by both"         "${tree}" -q -NoFetch --config "${work}/no-accounts.shcl" status
-fSameExit "an empty --config is refused by both"          "${tree}" -q -NoFetch --config "" status
-fSameExit "a --config naming a directory is refused"      "${tree}" -q -NoFetch --config "${work}" status
-fSameExit "a --config naming nothing there is refused"    "${tree}" -q -NoFetch --config "${work}/nope.shcl" status
-fSameExit "-q and -y together are accepted by both"       "${tree}" -q -y -NoFetch status
-fSameExit "-NoFetch before 'raw' is taken by both"        "${tree}" -q -NoFetch raw git rev-parse HEAD
-fSameExit "a bad 'raw' tool is refused by both"           "${tree}" -q raw curl x
+fSameExit "[EmlpDMZ] too many positionals are refused by both"      "${tree}" -q br switch a b c
+fSameExit "[EmlpDMa] a spaced --config is accepted by both"         "${tree}" -q -NoFetch --config "${work}/no-accounts.shcl" status
+fSameExit "[EmlpDMb] an empty --config is refused by both"          "${tree}" -q -NoFetch --config "" status
+fSameExit "[EmlpDMc] a --config naming a directory is refused"      "${tree}" -q -NoFetch --config "${work}" status
+fSameExit "[EmlpDMd] a --config naming nothing there is refused"    "${tree}" -q -NoFetch --config "${work}/nope.shcl" status
+fSameExit "[EmlpDMe] -q and -y together are accepted by both"       "${tree}" -q -y -NoFetch status
+fSameExit "[EmlpDMf] -NoFetch before 'raw' is taken by both"        "${tree}" -q -NoFetch raw git rev-parse HEAD
+fSameExit "[EmlpDMg] a bad 'raw' tool is refused by both"           "${tree}" -q raw curl x
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Renamed commands. 'update' became 'pullcom' and 'br land' became 'br merge', and both old
@@ -263,8 +263,8 @@ echo "-- renamed commands, old spellings"
 notRepo="${work}/not-a-repo"; mkdir -p "${notRepo}"
 
 ## Against the frozen build, which knows only the old names.
-fSame "'update' answers as it always did"      "${notRepo}" -q -NoFetch update
-fSame "'br land' answers as it always did"     "${notRepo}" -q -NoFetch br land
+fSame "[EnLqMsS] 'update' answers as it always did"      "${notRepo}" -q -NoFetch update
+fSame "[EnLqMsT] 'br land' answers as it always did"     "${notRepo}" -q -NoFetch br land
 
 ## Against itself, since the frozen build never heard the new names. Two spellings of one
 ## command have to be one command, not merely two that are both accepted.
@@ -282,8 +282,8 @@ fSameSpelling(){
 		diff <(printf '%s\n' "${a}") <(printf '%s\n' "${b}") | sed 's/^/      /' | head -12 || true
 	fi
 }
-fSameSpelling "'pullcom' and 'update' are one command"   "${notRepo}" "update"   "pullcom"
-fSameSpelling "'br merge' and 'br land' are one command" "${notRepo}" "br land"  "br merge"
+fSameSpelling "[EnLqMsU] 'pullcom' and 'update' are one command"   "${notRepo}" "update"   "pullcom"
+fSameSpelling "[EnLqMsV] 'br merge' and 'br land' are one command" "${notRepo}" "br land"  "br merge"
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## String case. Bash folds with '${x,,}'; Go compares byte-exact unless told otherwise. The two
@@ -300,7 +300,7 @@ for name in mixed MIXED MiXeD; do
 	## the other way this loop ran three identical commands and compared them to each other, which
 	## passes whatever either build does with the variable.
 	export GITSBY_ACCOUNT="${name}"
-	fSameLead  "GITSBY_ACCOUNT='${name}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${work}/case.shcl" status
+	fSameLead  "[EmlpDMh] GITSBY_ACCOUNT='${name}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${work}/case.shcl" status
 	unset GITSBY_ACCOUNT
 done
 
@@ -313,9 +313,9 @@ echo "-- file encoding"
 for f in "${root}"/legacy/bin/gitsby "${root}"/legacy/bin/gitsby.ps1 "${root}"/legacy/install*.bash "${root}"/legacy/install*.ps1; do
 	[[ -f "${f}" ]] || continue
 	if [[ "$(head -c 2 "${f}")" == "#!" ]]; then
-		fOk "${f##*/} starts with a shebang, not a BOM"
+		fOk "[EmlpDMi] ${f##*/} starts with a shebang, not a BOM"
 	else
-		fBad "${f##*/} does not start with '#!' - a BOM ahead of it breaks 'irm | iex' and direct execution"
+		fBad "[EmlpDMi] ${f##*/} does not start with '#!' - a BOM ahead of it breaks 'irm | iex' and direct execution"
 	fi
 done
 
@@ -330,3 +330,4 @@ echo "parity passed: ${pass}, differed: ${fail}"
 ##		- 20260813 JC: Same environment isolation the behavioral suite grew: env-injected git config and an inherited gh token.
 ##		- 20260818 JC: Repointed. The pair used to be the two scripts; it is now this build against the frozen v2.1.0 one under legacy/, which is the question that still has an answer worth having. No pwsh leg: the two scripts were proven identical at v2.1.0, so agreeing with one is agreeing with both. The renamed commands are checked under both spellings, since the old name has to keep working.
 ##		- 20260819 JC: A difference used to end the run. diff exits 1, and under pipefail with -e that killed the script at the FIRST finding, so every later one went unreported - the totals line never printed either. Also a helper for comparing a line with one deliberate difference removed, spelled out per call so it cannot quietly widen.
+##		- 20260926 JC: Every check carries a test ID at the front of its label.
