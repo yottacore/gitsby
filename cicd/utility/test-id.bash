@@ -57,8 +57,10 @@ if ((! check)); then
 	ms=""
 	if [[ -n "${at}" ]]; then ms="$(date -u -d "${at}" +%s%3N)" || exit 2
 	else ms="$(date -u +%s%3N)"; fi
+	## Checked before the arithmetic: a bad number there aborts this whole block, and the
+	## script would carry on into --check.
+	if [[ ! "${ms}" =~ ^[0-9]+$ ]] || ((10#${ms} < 946684800000)); then echo "test-id: ${at} is before 2000" >&2; exit 2; fi
 	ms=$((10#${ms} - 946684800000))
-	if ((ms < 0)); then echo "test-id: ${at} is before 2000" >&2; exit 2; fi
 	fBase62 "${ms}"
 	exit 0
 fi
@@ -99,6 +101,7 @@ fSites(){
 }
 
 sites="$(fSites)"
+if [[ -z "${sites}" ]]; then echo "test-id: found no tests under ${root}"; exit 1; fi
 findings=""
 missing="$(awk '$1 == "-" { print "  " $3 }' <<< "${sites}")"
 if [[ -n "${missing}" ]]; then findings+="test-id: tests with no ID (mint one with cicd/utility/test-id.bash):"$'\n'"${missing}"$'\n'; fi
