@@ -2478,7 +2478,6 @@ Waiting on hardware, an upstream module, or a decision.
 
 ## Canceled
 
-
 <!-- New issue template
 
 Legacy statuses:
