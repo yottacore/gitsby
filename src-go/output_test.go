@@ -22,7 +22,7 @@ func testPrinter() (*printer, *strings.Builder, *strings.Builder) {
 	return &printer{out: &out, err: &err}, &out, &err
 }
 
-func TestPrinterCollapsesRepeatedBlanks(t *testing.T) {
+func TestPrinterCollapsesRepeatedBlanks(t *testing.T) { // [EnQKNsP]
 	p, out, _ := testPrinter()
 	p.clean("")
 	p.clean("")
@@ -37,7 +37,7 @@ func TestPrinterCollapsesRepeatedBlanks(t *testing.T) {
 
 // forceClean is for the framing that has to be a fixed number of lines rather
 // than a rhythm.
-func TestPrinterForceClean(t *testing.T) {
+func TestPrinterForceClean(t *testing.T) { // [EnQKNsQ]
 	p, out, _ := testPrinter()
 	p.clean("")
 	p.forceClean("")
@@ -47,7 +47,7 @@ func TestPrinterForceClean(t *testing.T) {
 	}
 }
 
-func TestPrinterStatus(t *testing.T) {
+func TestPrinterStatus(t *testing.T) { // [EnQKNsR]
 	p, out, _ := testPrinter()
 	p.status("Done.")
 	p.status("")
@@ -58,7 +58,7 @@ func TestPrinterStatus(t *testing.T) {
 
 // Only 'y' or 'yes' is yes: a typo, a stray newline, or an EOF is a no, because
 // the fallback has to be the harmless answer.
-func TestPrinterConfirm(t *testing.T) {
+func TestPrinterConfirm(t *testing.T) { // [EnQKNsS]
 	for _, tc := range []struct {
 		answer string
 		want   bool
@@ -76,7 +76,7 @@ func TestPrinterConfirm(t *testing.T) {
 
 // An error ends with two blanks where success ends with one; the message itself
 // goes to stderr.
-func TestUsageErrorFraming(t *testing.T) {
+func TestUsageErrorFraming(t *testing.T) { // [EnQKNsT]
 	p, out, errOut := testPrinter()
 	code := reportExit(p, usagef("no such thing: '%s'.", "x"))
 	if code != 1 {
@@ -92,7 +92,7 @@ func TestUsageErrorFraming(t *testing.T) {
 
 // The errors the scripts raise inside a command substitution land with one
 // trailing blank, because the subshell swallowed the wrapping ones.
-func TestUsageSubErrorFraming(t *testing.T) {
+func TestUsageSubErrorFraming(t *testing.T) { // [EnQKNsU]
 	p, out, errOut := testPrinter()
 	if code := reportExit(p, usageSubf("bad config.")); code != 1 {
 		t.Errorf("exit code = %d, want 1", code)
@@ -107,7 +107,7 @@ func TestUsageSubErrorFraming(t *testing.T) {
 
 // Nothing to do is a success everywhere here; a nonzero exit would tell a calling
 // script the opposite.
-func TestErrDoneExitsZeroAndSilently(t *testing.T) {
+func TestErrDoneExitsZeroAndSilently(t *testing.T) { // [EnQKNsV]
 	p, out, errOut := testPrinter()
 	if code := reportExit(p, errDone); code != 0 {
 		t.Errorf("exit code = %d, want 0", code)
@@ -117,7 +117,7 @@ func TestErrDoneExitsZeroAndSilently(t *testing.T) {
 	}
 }
 
-func TestStepErrorFraming(t *testing.T) {
+func TestStepErrorFraming(t *testing.T) { // [EnQKNsW]
 	p, out, errOut := testPrinter()
 	if code := reportExit(p, &stepError{disp: "git push", code: 128}); code != 1 {
 		t.Errorf("exit code = %d, want 1", code)
@@ -130,7 +130,7 @@ func TestStepErrorFraming(t *testing.T) {
 	}
 }
 
-func TestSilentExitSaysNothing(t *testing.T) {
+func TestSilentExitSaysNothing(t *testing.T) { // [EnQKNsX]
 	p, out, errOut := testPrinter()
 	if code := reportExit(p, silentExit(3)); code != 3 {
 		t.Errorf("exit code = %d, want 3", code)
@@ -141,7 +141,7 @@ func TestSilentExitSaysNothing(t *testing.T) {
 }
 
 // A wrapped error still has to be recognized as the ending it is.
-func TestWrappedErrorsKeepTheirFraming(t *testing.T) {
+func TestWrappedErrorsKeepTheirFraming(t *testing.T) { // [EnQKNsY]
 	p, _, _ := testPrinter()
 	if code := reportExit(p, errors.Join(errDone)); code != 0 {
 		t.Errorf("wrapped errDone gave %d, want 0", code)
@@ -150,7 +150,7 @@ func TestWrappedErrorsKeepTheirFraming(t *testing.T) {
 
 // A usage error built around a cause still answers errors.Is and errors.As for it,
 // and is still a usage error to anything asking.
-func TestUsageWrapfKeepsTheCause(t *testing.T) {
+func TestUsageWrapfKeepsTheCause(t *testing.T) { // [Er1LxTs]
 	err := usageWrapf(fs.ErrPermission, "Couldn't run '%s'", "git")
 	if !errors.Is(err, fs.ErrPermission) {
 		t.Errorf("%v lost its cause", err)
@@ -166,7 +166,7 @@ func TestUsageWrapfKeepsTheCause(t *testing.T) {
 
 // cached is what keeps "not asked yet" apart from "asked, and the answer is
 // nothing" - the difference between one lookup and the same five over and over.
-func TestCachedRemembersAnEmptyAnswer(t *testing.T) {
+func TestCachedRemembersAnEmptyAnswer(t *testing.T) { // [EnQKNsZ]
 	var c cached[string]
 	asked := 0
 	ask := func() string { asked++; return "" }
@@ -189,7 +189,7 @@ func TestCachedRemembersAnEmptyAnswer(t *testing.T) {
 // only the very end of the string had been trimmed. 'pr ok' read the PR's head
 // branch out of a two-line answer that way, so on a host that writes CRLF the
 // branch name carried one and matched no ref anywhere.
-func TestSplitLines(t *testing.T) {
+func TestSplitLines(t *testing.T) { // [EnR2Eul]
 	tests := []struct {
 		in   string
 		want []string

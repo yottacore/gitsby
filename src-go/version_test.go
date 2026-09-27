@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-func TestCrockfordBase32(t *testing.T) {
+func TestCrockfordBase32(t *testing.T) { // [Eo59IMl]
 	tests := []struct {
 		n    int64
 		want string
@@ -38,7 +38,7 @@ func TestCrockfordBase32(t *testing.T) {
 	}
 }
 
-func TestCrockfordAlphabetOmitsAmbiguousLetters(t *testing.T) {
+func TestCrockfordAlphabetOmitsAmbiguousLetters(t *testing.T) { // [Eo59IMm]
 	if len(crockford32) != 32 {
 		t.Fatalf("alphabet is %d characters, want 32", len(crockford32))
 	}
@@ -49,7 +49,7 @@ func TestCrockfordAlphabetOmitsAmbiguousLetters(t *testing.T) {
 	}
 }
 
-func TestBuildNumber(t *testing.T) {
+func TestBuildNumber(t *testing.T) { // [Eo59IMn]
 	tests := []struct {
 		stamp string
 		want  string
@@ -74,7 +74,7 @@ func TestBuildNumber(t *testing.T) {
 	}
 }
 
-func TestVersionTextOmitsAnUnstampedBuild(t *testing.T) {
+func TestVersionTextOmitsAnUnstampedBuild(t *testing.T) { // [Eo59IMo]
 	savedEpoch, savedVer := buildEpoch, version
 	defer func() { buildEpoch, version = savedEpoch, savedVer }()
 	version = "2.1.0"

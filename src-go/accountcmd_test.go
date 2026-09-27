@@ -29,7 +29,7 @@ func planFor(t *testing.T, body string) *config {
 	return cfg
 }
 
-func TestAccountApplyPlanOrder(t *testing.T) {
+func TestAccountApplyPlanOrder(t *testing.T) { // [EnQKNs0]
 	cfg := planFor(t, driveFixture(`
 account.inner.path = /srv/code/client
 account.outer.path = /srv/code
@@ -54,7 +54,7 @@ account.broad.pathContains = b
 
 // gitsby reads a rule as plain text and git reads an includeIf as a pattern, so
 // 'lit[x]' bound 'litx' in plain git and 'acme-*' bound 'acme-x'.
-func TestAccountApplyPlanEscapesGlobs(t *testing.T) {
+func TestAccountApplyPlanEscapesGlobs(t *testing.T) { // [Epy6Sgb]
 	cfg := planFor(t, driveFixture("account.a.path = /srv/lit[x]\naccount.b.pathContains = acme-*/q?\n"))
 	var conds []string
 	for _, r := range cfg.accountApplyPlan() {
@@ -71,7 +71,7 @@ func TestAccountApplyPlanEscapesGlobs(t *testing.T) {
 
 // Every rule points at the fragment for its own account, beside the config file
 // that declared it.
-func TestAccountApplyPlanTargets(t *testing.T) {
+func TestAccountApplyPlanTargets(t *testing.T) { // [EnQKNs1]
 	cfg := planFor(t, driveFixture("account.work.path = /srv/work\n"))
 	plan := cfg.accountApplyPlan()
 	if len(plan) != 1 {
@@ -88,7 +88,7 @@ func TestAccountApplyPlanTargets(t *testing.T) {
 // However the accounts file is named, the fragments go in the folder holding it.
 // Joined with backslashes on Windows, or named with no folder, they went under
 // the file itself and apply refused.
-func TestIncludeDir(t *testing.T) {
+func TestIncludeDir(t *testing.T) { // [EpxzLzu]
 	dir := t.TempDir()
 	t.Chdir(dir)
 	want := filepath.ToSlash(dir) + "/accounts"
@@ -108,7 +108,7 @@ func TestIncludeDir(t *testing.T) {
 
 // An account declared by its keys alone has no folder rule, so there is nothing
 // to teach plain git.
-func TestAccountApplyPlanEmptyWithoutFolderRules(t *testing.T) {
+func TestAccountApplyPlanEmptyWithoutFolderRules(t *testing.T) { // [EnQKNs2]
 	cfg := planFor(t, "account.work.ghAccount = octocat\n")
 	if plan := cfg.accountApplyPlan(); plan != nil {
 		t.Errorf("plan = %v, want none", plan)
@@ -117,7 +117,7 @@ func TestAccountApplyPlanEmptyWithoutFolderRules(t *testing.T) {
 
 // Least specific first, and equal specificity backwards: gitsby keeps the FIRST
 // rule declared, so that one has to be written LAST for git to keep it too.
-func TestSortIncludesTieBreaks(t *testing.T) {
+func TestSortIncludesTieBreaks(t *testing.T) { // [EnQKNs3]
 	list := []includeCandidate{
 		{weight: 2, order: 0, pattern: "/same/", account: "first"},
 		{weight: 1, order: 1, pattern: "/short/", account: "second"},
@@ -134,7 +134,7 @@ func TestSortIncludesTieBreaks(t *testing.T) {
 
 // The tie-break that matters: whichever account gitsby resolves a folder to has to
 // be the one git resolves it to, and git takes the last rule written.
-func TestAccountApplyPlanAgreesWithAccountForDir(t *testing.T) {
+func TestAccountApplyPlanAgreesWithAccountForDir(t *testing.T) { // [EnQNsZn]
 	cfg := planFor(t, driveFixture(`
 account.abe.path = /srv/shared
 account.zed.path = /srv/shared
@@ -152,7 +152,7 @@ account.zed.path = /srv/shared
 
 // Two accounts on one folder is a mistake with no right answer, so it gets said
 // out loud rather than settled silently.
-func TestContestedRules(t *testing.T) {
+func TestContestedRules(t *testing.T) { // [EnQNsZo]
 	cfg := planFor(t, driveFixture(`
 account.abe.path = /srv/shared
 account.zed.path = /srv/shared
@@ -177,7 +177,7 @@ account.solo.path = /srv/mine
 // did not act as the one you expected. The host key decides whether any of the
 // credentials below it apply at all, so leaving it off the listing meant the
 // command that always says was silent about the only field that had refused.
-func TestAccountListNamesTheHost(t *testing.T) {
+func TestAccountListNamesTheHost(t *testing.T) { // [EnWSLMf]
 	a := newApp(newPrinter())
 	var buf strings.Builder
 	a.out.out = &buf
@@ -209,7 +209,7 @@ account.hub.ghAccount = hublogin
 // compare. A machine that only ever talks to github.com reads exactly as it did
 // before the key existed - the same rule the Account status line follows, which
 // stays quiet unless an account was explicitly selected.
-func TestAccountListHidesTheHostWithOneGitHost(t *testing.T) {
+func TestAccountListHidesTheHostWithOneGitHost(t *testing.T) { // [Eq2wii0]
 	a := newApp(newPrinter())
 	var buf strings.Builder
 	a.out.out = &buf
@@ -226,7 +226,7 @@ account.home.ghAccount = homelogin
 // A rule prints as the file writes it. The listing used to print the form it was
 // matched in - lower case on Windows, links resolved - so the folder on screen was
 // one nobody had typed, and on Windows a '~' fold spelled home a second way.
-func TestAccountListPrintsRulesAsWritten(t *testing.T) {
+func TestAccountListPrintsRulesAsWritten(t *testing.T) { // [Eq4rRnC]
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	if err := os.MkdirAll(filepath.Join(home, "Dev"), 0o700); err != nil {
@@ -299,7 +299,7 @@ func readBack(t *testing.T, file string) string {
 // A file that isn't there yet is created with a header naming the keys, the one
 // block asked for, and the footer naming the format - and closed to everyone
 // else, since it names accounts and points at token files.
-func TestAccountSetCreatesTheFile(t *testing.T) {
+func TestAccountSetCreatesTheFile(t *testing.T) { // [Eo61m6C]
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("APPDATA", "")
@@ -340,7 +340,7 @@ func TestAccountSetCreatesTheFile(t *testing.T) {
 }
 
 // One key changes; every other line comes back as it was, spacing included.
-func TestAccountSetReplacesOneKey(t *testing.T) {
+func TestAccountSetReplacesOneKey(t *testing.T) { // [Eo61m6D]
 	body := "# mine\n\naccount: work\n\tpath: /srv/work   # the tree\n\thost: github.com\n\temail: a@b.c\n\n" + shcl.GenBanner
 	a, file := setApp(t, body, "work", "host", "gitea.com")
 	plan, err := a.accountSetPlan()
@@ -361,7 +361,7 @@ func TestAccountSetReplacesOneKey(t *testing.T) {
 
 // A key the block doesn't have goes on the end of it; an account the file doesn't
 // have gets a block of its own.
-func TestAccountSetAddsKeysAndBlocks(t *testing.T) {
+func TestAccountSetAddsKeysAndBlocks(t *testing.T) { // [Eo61m6E]
 	a, file := setApp(t, "account: work\n\tpath: /srv/work\n", "work", "host", "gitea.com")
 	if err := a.cmdAccountSet(); err != nil {
 		t.Fatalf("set: %v", err)
@@ -380,7 +380,7 @@ func TestAccountSetAddsKeysAndBlocks(t *testing.T) {
 
 // The dotted spelling is what a hand conversion of the old layout produces, and a
 // key set into such an account has to go into that block, not open a second one.
-func TestAccountSetKeepsTheDottedForm(t *testing.T) {
+func TestAccountSetKeepsTheDottedForm(t *testing.T) { // [Eo61m6F]
 	a, file := setApp(t, "account.work.path: /srv/work\n", "work", "host", "gitea.com")
 	if err := a.cmdAccountSet(); err != nil {
 		t.Fatalf("set: %v", err)
@@ -394,7 +394,7 @@ func TestAccountSetKeepsTheDottedForm(t *testing.T) {
 // A file in the old layout is rewritten in the current one on its first edit,
 // comments and all. The mark a Windows editor wrote and its line endings go, since
 // the module writes one shape.
-func TestAccountSetConvertsAFlatFile(t *testing.T) {
+func TestAccountSetConvertsAFlatFile(t *testing.T) { // [Eo61m6G]
 	body := utf8BOM + "# mine\r\naccount.work.path = C:/work   # tree\r\naccount.work.ghAccount = \"a#b\"\r\nprotocol = https\r\n"
 	a, file := setApp(t, body, "work", "host", "gitea.com")
 	plan, err := a.accountSetPlan()
@@ -438,7 +438,7 @@ func TestAccountSetConvertsAFlatFile(t *testing.T) {
 // A relative path on the command line means the folder the command runs in, as
 // it does for any command. The file can never say that later, so it is written
 // absolute, and the plan shows that value.
-func TestAccountSetResolvesARelativePath(t *testing.T) {
+func TestAccountSetResolvesARelativePath(t *testing.T) { // [Ept2CIR]
 	t.Setenv("HOME", t.TempDir())
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -478,7 +478,7 @@ func TestAccountSetResolvesARelativePath(t *testing.T) {
 
 // gitsby expands only a bare '~' and git expands another user's too, so the two
 // would read such a rule differently. Refused before anything is written.
-func TestAccountSetRefusesAnotherUsersHome(t *testing.T) {
+func TestAccountSetRefusesAnotherUsersHome(t *testing.T) { // [Ept2CIS]
 	body := "account: work\n\temail: w@example.com\n"
 	a, file := setApp(t, body, "work", "path", "~nobody/x")
 	if err := a.cmdAccountSet(); err == nil || !strings.Contains(err.Error(), "another user's home folder") {
@@ -500,7 +500,7 @@ func TestAccountSetRefusesAnotherUsersHome(t *testing.T) {
 	}
 }
 
-func TestManagedIncludePattern(t *testing.T) {
+func TestManagedIncludePattern(t *testing.T) { // [Ept2CIT]
 	cases := []struct {
 		key, want string
 		ok        bool
@@ -523,7 +523,7 @@ func TestManagedIncludePattern(t *testing.T) {
 // 'path' is repeatable by design and any key can be in there twice by accident.
 // Replacing the first and leaving the rest looks like it worked and changes
 // nothing that is read. Both layouts.
-func TestAccountSetRefusesADuplicatedKey(t *testing.T) {
+func TestAccountSetRefusesADuplicatedKey(t *testing.T) { // [EnXe9aY]
 	for _, body := range []string{"account.work.path = /a\naccount.work.path = /b\n", "account: work\n\tpath: /a\n\tpath: /b\n"} {
 		a, _ := setApp(t, body, "work", "path", "/c")
 		if err := a.cmdAccountSet(); err == nil {
@@ -534,7 +534,7 @@ func TestAccountSetRefusesADuplicatedKey(t *testing.T) {
 
 // A key the loader ignores, written past this command, lands in the file and is
 // dropped on every read: the file says one thing and every command does another.
-func TestAccountSetRefusesAKeyNothingReads(t *testing.T) {
+func TestAccountSetRefusesAKeyNothingReads(t *testing.T) { // [EnXe9aZ]
 	a, _ := setApp(t, "account: work\n\tpath: /a\n", "work", "hostname", "gitea.com")
 	if err := a.cmdAccountSet(); err == nil {
 		t.Error("an unread key was accepted")
@@ -543,7 +543,7 @@ func TestAccountSetRefusesAKeyNothingReads(t *testing.T) {
 
 // The syntax block nests two spaces a level. The suite matches its text with no
 // anchor on the leading spaces, so a flat wall of indent would still pass there.
-func TestAccountSetUsageNests(t *testing.T) {
+func TestAccountSetUsageNests(t *testing.T) { // [Er1LxTm]
 	depths := []struct {
 		prefix string
 		want   int
@@ -586,7 +586,7 @@ func TestAccountSetUsageNests(t *testing.T) {
 // 'host' and 'user' are interpolated into the credential helper, which git hands
 // to a shell. The loader drops one carrying a shell character; refusing to WRITE
 // it is what stops the file and the behavior disagreeing.
-func TestAccountSetRefusesAShellCharacterInHost(t *testing.T) {
+func TestAccountSetRefusesAShellCharacterInHost(t *testing.T) { // [EnXe9aa]
 	a, _ := setApp(t, "account: work\n\tpath: /a\n", "work", "host", "gitea.com; id")
 	if err := a.cmdAccountSet(); err == nil {
 		t.Error("a shell character reached the file")
@@ -595,7 +595,7 @@ func TestAccountSetRefusesAShellCharacterInHost(t *testing.T) {
 
 // The casing typed is not the casing written: the format folds key names to lower
 // case, so that is the spelling every file settles on.
-func TestAccountSetWritesTheDocumentedSpelling(t *testing.T) {
+func TestAccountSetWritesTheDocumentedSpelling(t *testing.T) { // [EnXe9ab]
 	a, file := setApp(t, "account: work\n\tpath: /a\n", "WORK", "TOKENFILE", "/t")
 	if err := a.cmdAccountSet(); err != nil {
 		t.Fatalf("set: %v", err)
@@ -607,7 +607,7 @@ func TestAccountSetWritesTheDocumentedSpelling(t *testing.T) {
 
 // A value carrying ' #' is a comment from that point on when it is read back, so
 // it has to go in quoted or the account silently gets a truncated value.
-func TestAccountSetQuotesAValueThatWouldBeReparsed(t *testing.T) {
+func TestAccountSetQuotesAValueThatWouldBeReparsed(t *testing.T) { // [EnXe9ac]
 	a, file := setApp(t, "account: work\n\tpath: /a\n", "work", "name", "Ada #1")
 	if err := a.cmdAccountSet(); err != nil {
 		t.Fatalf("set: %v", err)
@@ -654,7 +654,7 @@ func putDefaultConfig(t *testing.T, body string) string {
 
 // The create opens so it cannot replace anything: a file already there keeps every
 // byte, and a missing one is made 0600 with the text in it.
-func TestCreateAccountsFileNeverReplaces(t *testing.T) {
+func TestCreateAccountsFileNeverReplaces(t *testing.T) { // [EptZI3s]
 	file := filepath.Join(t.TempDir(), "config.shcl")
 	if err := os.WriteFile(file, []byte(keptBody), 0o600); err != nil {
 		t.Fatal(err)
@@ -680,7 +680,7 @@ func TestCreateAccountsFileNeverReplaces(t *testing.T) {
 
 // The item's case: a discovered file this user can write and can't read. Reads
 // pass over it, and the create refuses by name instead of truncating it.
-func TestAccountSetRefusesAnUnreadableFile(t *testing.T) {
+func TestAccountSetRefusesAnUnreadableFile(t *testing.T) { // [EptZI3t]
 	if isWindows() || os.Geteuid() == 0 {
 		t.Skip("needs a file this user can't read: Windows has no 0200, and root reads through one")
 	}
@@ -719,7 +719,7 @@ func TestAccountSetRefusesAnUnreadableFile(t *testing.T) {
 
 // A place reads look in that can't be looked in may hold an accounts file, and a
 // new one ahead of it would hide it from every later command.
-func TestAccountSetRefusesAPlaceItCantLookIn(t *testing.T) {
+func TestAccountSetRefusesAPlaceItCantLookIn(t *testing.T) { // [Epu2PTT]
 	if isWindows() || os.Geteuid() == 0 {
 		t.Skip("needs a folder this user can't search: Windows has no mode bits for it, and root searches through one")
 	}
@@ -761,7 +761,7 @@ func TestAccountSetRefusesAPlaceItCantLookIn(t *testing.T) {
 // A file that opens and then fails to read. Named, it is refused like one that
 // won't open. Found, reads pass over it and 'account set' refuses it. It was
 // recorded before the read, and the edit then worked from no document at all.
-func TestConfigThatFailsToRead(t *testing.T) {
+func TestConfigThatFailsToRead(t *testing.T) { // [Epu2PTU]
 	const mem = "/proc/self/mem"
 	if !isRegularFile(mem) {
 		t.Skip("needs a file that opens and then fails to read, which " + mem + " is on Linux")
@@ -792,7 +792,7 @@ func TestConfigThatFailsToRead(t *testing.T) {
 
 // A file that arrives between the load and the write is refused and kept, not
 // replaced by the one this run planned from nothing.
-func TestAccountSetRefusesAFileThatAppeared(t *testing.T) {
+func TestAccountSetRefusesAFileThatAppeared(t *testing.T) { // [EptZI3u]
 	a := createApp(t, newPrinter())
 	if err := a.cfg.load(a.opt); err != nil {
 		t.Fatalf("load: %v", err)
@@ -808,7 +808,7 @@ func TestAccountSetRefusesAFileThatAppeared(t *testing.T) {
 
 // A link to a missing file is refused, and nothing is made where it points: that
 // is often a synced or unmounted folder that will come back.
-func TestAccountSetRefusesALinkToNothing(t *testing.T) {
+func TestAccountSetRefusesALinkToNothing(t *testing.T) { // [EptZI3v]
 	a := createApp(t, newPrinter())
 	file := defaultConfigFile()
 	target := filepath.Join(homeDir(), "dot", "config.shcl")
@@ -838,7 +838,7 @@ func TestAccountSetRefusesALinkToNothing(t *testing.T) {
 }
 
 // A folder where the file goes is named as a folder, not blamed on permissions.
-func TestAccountSetRefusesSomethingElseInTheWay(t *testing.T) {
+func TestAccountSetRefusesSomethingElseInTheWay(t *testing.T) { // [EptZI3w]
 	a := createApp(t, newPrinter())
 	if err := os.MkdirAll(defaultConfigFile(), 0o700); err != nil {
 		t.Fatal(err)
@@ -857,7 +857,7 @@ func TestAccountSetRefusesSomethingElseInTheWay(t *testing.T) {
 	}
 }
 
-func TestUnreadableFix(t *testing.T) {
+func TestUnreadableFix(t *testing.T) { // [EptZI3x]
 	tests := []struct {
 		goos, file string
 		cause      error
@@ -877,7 +877,7 @@ func TestUnreadableFix(t *testing.T) {
 
 // A refusal comes out of preflight, ahead of the plan and the prompt, and nothing
 // is left for the plan to show.
-func TestAccountSetRefusesBeforeThePlan(t *testing.T) {
+func TestAccountSetRefusesBeforeThePlan(t *testing.T) { // [EpySM7r]
 	for _, tc := range []struct{ body, key, value, want string }{
 		{keptBody, "protocol", "git", "isn't a protocol gitsby uses"},
 		{keptBody, "host", "a b", "isn't a plain host name"},
@@ -896,7 +896,7 @@ func TestAccountSetRefusesBeforeThePlan(t *testing.T) {
 
 // The save keeps every line it didn't edit, however it was typed. The plan says
 // when it can't, which is when the module writes the whole file in its own layout.
-func TestAccountSetPlanSaysWhenTheFileIsReshaped(t *testing.T) {
+func TestAccountSetPlanSaysWhenTheFileIsReshaped(t *testing.T) { // [EpySM7s]
 	canon := "account: work\n\thost: github.com\n"
 	for _, tc := range []struct {
 		name, body string
@@ -939,7 +939,7 @@ func TestAccountSetPlanSaysWhenTheFileIsReshaped(t *testing.T) {
 }
 
 // protocol takes the two values gitsby acts on, in any case, and writes them lower.
-func TestAccountSetProtocol(t *testing.T) {
+func TestAccountSetProtocol(t *testing.T) { // [EpySM7t]
 	a, file := setApp(t, keptBody, "work", "protocol", "SSH")
 	if err := a.cmdAccountSet(); err != nil {
 		t.Fatalf("set: %v", err)
@@ -949,7 +949,7 @@ func TestAccountSetProtocol(t *testing.T) {
 	}
 }
 
-func TestLookupFix(t *testing.T) {
+func TestLookupFix(t *testing.T) { // [Epu2PTV]
 	tests := []struct {
 		goos, file string
 		cause      error
@@ -969,7 +969,7 @@ func TestLookupFix(t *testing.T) {
 
 // The item's case: two edits of one file at once, each saving the file whole. A
 // run that says it wrote keeps its key, and at most one of the two refuses.
-func TestAccountSetKeepsBothOfTwoEditsAtOnce(t *testing.T) {
+func TestAccountSetKeepsBothOfTwoEditsAtOnce(t *testing.T) { // [EpxmDk3]
 	for try := range 20 {
 		first, file := setApp(t, keptBody, "work", "email", "x@example.com")
 		second := newApp(newPrinter())
@@ -1001,7 +1001,7 @@ func TestAccountSetKeepsBothOfTwoEditsAtOnce(t *testing.T) {
 
 // A file written after the load is refused and kept, not saved over with what the
 // plan read. The lock goes with the run.
-func TestAccountSetRefusesAFileThatChanged(t *testing.T) {
+func TestAccountSetRefusesAFileThatChanged(t *testing.T) { // [EpxmDk4]
 	a, file := setApp(t, keptBody, "work", "email", "x@example.com")
 	const since = "account: work\n\tghaccount: keepme\n\tname: Ada\n"
 	if err := os.WriteFile(file, []byte(since), 0o600); err != nil {
@@ -1026,7 +1026,7 @@ func TestAccountSetRefusesAFileThatChanged(t *testing.T) {
 
 // A held lock is waited on and then refused by name. Unlocking removes this run's
 // own lock, and leaves alone one another run made in its place.
-func TestLockAccountsFile(t *testing.T) {
+func TestLockAccountsFile(t *testing.T) { // [EpxmDk5]
 	file := filepath.Join(t.TempDir(), "config.shcl")
 	lock := file + ".lock"
 	unlock, err := lockAccountsFile(file, 0)
@@ -1055,7 +1055,7 @@ func TestLockAccountsFile(t *testing.T) {
 	}
 }
 
-func TestLockFix(t *testing.T) {
+func TestLockFix(t *testing.T) { // [EpxmDk6]
 	tests := []struct {
 		goos, lock string
 		want       []string
@@ -1074,7 +1074,7 @@ func TestLockFix(t *testing.T) {
 // Every variable set here decides which account the rest of the run acts as, so
 // one that can't be set stops the run rather than leaving half an account applied.
 // A NUL byte is a value no process environment can hold.
-func TestSettingTheAccountEnvStopsOnFailure(t *testing.T) {
+func TestSettingTheAccountEnvStopsOnFailure(t *testing.T) { // [Er1LxTn]
 	for _, name := range []string{"GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GITSBY_TEST_ENV"} {
 		t.Setenv(name, "")
 		if err := os.Unsetenv(name); err != nil {

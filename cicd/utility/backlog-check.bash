@@ -9,8 +9,10 @@
 ##		2. A suite check removed on this branch, against the integration branch, is
 ##		   named in the backlog. Two decisions were reversed by deleting the check
 ##		   that encoded them, with nothing written down; this makes that a stop.
-##		The removed-check match is a fixed-string grep for the check's label, so a
-##		label carrying a shell variable has to be quoted in the backlog as written.
+##		The removed-check match is a fixed-string grep for the check's ID or its
+##		label, so a label carrying a shell variable has to be quoted in the backlog
+##		as written. A check that keeps its ID under a new label was edited, not
+##		removed.
 ##	Syntax:
 ##		backlog-check.bash [-q] [--base REF] [--backlog FILE]
 ##		  -q              print findings only
@@ -89,11 +91,20 @@ else
 		diffOut="$(git -C "${root}" diff "${mergeBase}" -- "${suites[@]}" || true)"
 		removed="$(printf '%s\n' "${diffOut}" | sed -nE "/^-/ s/${labelRE}.*/\2/p" | sort -u)"
 		added="$(printf '%s\n' "${diffOut}" | sed -nE "/^\+/ s/${labelRE}.*/\2/p" | sort -u)"
-		unnamed=""
+		## A label starts with its test ID, "[<id>] ". Either half still there means the check is.
+		idRE='^\[([0-9A-Za-z]+)\] (.*)$'
+		addedIds="$(sed -nE "s/${idRE}/\1/p" <<< "${added}")"
+		addedBare="$(sed -E "s/${idRE}/\2/" <<< "${added}")"
+		unnamed=""; n=0
 		while IFS= read -r label; do
 			[[ -n "${label}" ]] || continue
-			grep -qxF -- "${label}" <<< "${added}" && continue
-			grep -qF -- "${label}" "${backlog}" || unnamed+="${label}"$'\n'
+			id=""; bare="${label}"
+			if [[ "${label}" =~ ${idRE} ]]; then id="${BASH_REMATCH[1]}"; bare="${BASH_REMATCH[2]}"; fi
+			[[ -n "${id}" ]] && grep -qxF -- "${id}" <<< "${addedIds}" && continue
+			grep -qxF -- "${bare}" <<< "${addedBare}" && continue
+			n=$((n + 1))
+			[[ -n "${id}" ]] && grep -qF -- "${id}" "${backlog}" && continue
+			if ! grep -qF -- "${bare}" "${backlog}"; then unnamed+="${label}"$'\n'; fi
 		done <<< "${removed}"
 		if [[ -n "${unnamed}" ]]; then
 			echo "backlog-check: suite checks removed since ${base} and not named in the backlog:"
@@ -101,7 +112,6 @@ else
 			echo "  Name each one in the backlog, with the decision it encoded and why that changed."
 			findings=1
 		else
-			n=0; [[ -n "${removed}" ]] && n="$(grep -c . <<< "${removed}")"
 			fEcho_Clean "backlog-check: removed suite checks all named in the backlog (${n} removed since ${base})"
 		fi
 	fi
@@ -113,3 +123,4 @@ exit "${findings}"
 ##	History:
 ##		- 20260910 JC: Created. The review-round audit found the refill came from
 ##		  deferred notes and silently deleted checks, not from fixes undoing fixes.
+##		- 20260926 JC: Reads the test ID at the front of a label. A check whose ID or label is still there was edited, and the backlog can name a removed one by either.
