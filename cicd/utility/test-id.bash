@@ -8,7 +8,7 @@
 ##		- A suite check carries it at the front of its label, as "[<id>] label". A
 ##		  pass/fail pair written out by hand is one check, so its fOk and fFail
 ##		  (fBad in parity) share one. A Go test carries it on its func line, as a
-##		  trailing "// [<id>]".
+##		  trailing "// [<id>]". A spawn-count measure carries it like a suite check.
 ##		- A check inside a loop is one test, so every pass of the loop reports the
 ##		  same ID.
 ##	Syntax:
@@ -32,7 +32,7 @@ set -Eeuo pipefail
 meDir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd -- "${meDir}/../.." && pwd)"
 at=""; check=0; quiet=0
-suites=(cicd/test.bash cicd/fuzz.bash cicd/parity.bash)
+suites=(cicd/test.bash cicd/fuzz.bash cicd/parity.bash cicd/utility/spawn-count.bash)
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--at)      at="${2:?--at needs a date}"; shift ;;
@@ -76,9 +76,11 @@ fSites(){
 			/^[[:space:]]*#/ { next }
 			{
 				s = $0
-				while (match(s, /(^|[^A-Za-z0-9_])(fAssert[A-Za-z]*|fOk|fFail|fBad|fSurvive|fAccept|fRefuse|fMsgLiteral|fDirLiteral|fTitleLiteral|fSame[A-Za-z]*)[[:space:]]+"/)) {
+				while (match(s, /(^|[^A-Za-z0-9_])(fAssert[A-Za-z]*|fOk|fFail|fBad|fSurvive|fAccept|fRefuse|fMsgLiteral|fDirLiteral|fTitleLiteral|fSame[A-Za-z]*|fMeasure)[[:space:]]+"/)) {
 					call = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH)
 					if (s ~ /^\$\{?(desc|label)([^A-Za-z0-9_]|$)/) continue
+					## spawn-count calls it only at the start of a line; elsewhere it is text about one.
+					if (call ~ /fMeasure/ && $0 !~ /^fMeasure[[:space:]]/) continue
 					kind = "check"
 					if (call ~ /fOk[[:space:]]/) kind = "ok"
 					else if (call ~ /(fFail|fBad)[[:space:]]/) kind = "fail"
@@ -128,3 +130,4 @@ exit 0
 
 ##	History:
 ##		- 20260926 JC: Created. Every suite check and Go test got an ID dated from when it was written.
+##		- 20260927 JC: spawn-count's measures are tests too.
