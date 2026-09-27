@@ -95,9 +95,11 @@ fRestore(){
 ## The measurement. -f follows the children, so a git that forks its own helper is counted
 ## where it happens; execve is the event that costs, since that is a new program image.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-declare -a labels=() counts=()
+## The label starts with the test ID, which is printed but kept out of the baseline file, so
+## an older baseline still matches.
+declare -a ids=() labels=() counts=()
 fMeasure(){
-	local label="$1"; shift
+	local label="${1#\[*\] }" id="${1%%\] *}]"; shift
 	fRestore
 	local traceFile="${work}/trace.out"
 	## --no-fetch throughout: a fetch against a local bare origin is a real round trip whose
@@ -105,19 +107,20 @@ fMeasure(){
 	( cd "${work}/live/repo" && strace -f -e trace=execve -o "${traceFile}" "${exe}" "$@" ) >/dev/null 2>&1 || true
 	local n=0
 	n="$(grep -c 'execve(' "${traceFile}" 2>/dev/null || true)"
+	ids+=("${id}")
 	labels+=("${label}")
 	counts+=("${n}")
 }
 
 ((quiet)) || fEcho_Clean "spawn counts (${exe})"
-fMeasure "status"         -q --no-fetch status
-fMeasure "whoami"         -q --no-fetch whoami
-fMeasure "br list"        -q --no-fetch br list
-fMeasure "account list"   -q --no-fetch account list
-fMeasure "repo url"       -q --no-fetch repo url
-fMeasure "pullcom"        -q --no-fetch pullcom "spawn count"
-fMeasure "br switch"      -q --no-fetch br switch main
-fMeasure "br prune"       -q --no-fetch br prune
+fMeasure "[EnQTUO0] status"         -q --no-fetch status
+fMeasure "[EnberSa] whoami"         -q --no-fetch whoami
+fMeasure "[EnQTUe8] br list"        -q --no-fetch br list
+fMeasure "[EnQTUuG] account list"   -q --no-fetch account list
+fMeasure "[EnQTVAO] repo url"       -q --no-fetch repo url
+fMeasure "[EnQTVQW] pullcom"        -q --no-fetch pullcom "spawn count"
+fMeasure "[EnQTVge] br switch"      -q --no-fetch br switch main
+fMeasure "[EnQTVwm] br prune"       -q --no-fetch br prune
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Compare with the newest previous run, then record this one.
@@ -131,22 +134,22 @@ declare -i regressed=0
 ## One line per command, whatever it did, so a -q-less run shows each count and its verdict.
 if [[ -z "${baseline}" ]]; then
 	((quiet)) || fEcho_Clean "  (no baseline yet - recording this run as one)"
-	for ((i = 0; i < ${#labels[@]}; i++)); do ((quiet)) || fEcho_Clean "  NEW        ${labels[i]}: ${counts[i]}"; done
+	for ((i = 0; i < ${#labels[@]}; i++)); do ((quiet)) || fEcho_Clean "  NEW        ${ids[i]} ${labels[i]}: ${counts[i]}"; done
 else
 	((quiet)) || fEcho_Clean "  baseline: $(basename "${baseline}")"
 	for ((i = 0; i < ${#labels[@]}; i++)); do
 		was="$(awk -F'\t' -v k="${labels[i]}" '$1==k{print $2}' "${baseline}" || true)"
-		[[ -n "${was}" ]] || { ((quiet)) || fEcho_Clean "  NEW        ${labels[i]}: ${counts[i]}"; continue; }
+		[[ -n "${was}" ]] || { ((quiet)) || fEcho_Clean "  NEW        ${ids[i]} ${labels[i]}: ${counts[i]}"; continue; }
 		## A tolerance, because a git version can add or drop a helper of its own: two more
 		## processes, or a tenth again, whichever is larger.
 		local_allow=$(( was / 10 )); (( local_allow < 2 )) && local_allow=2
 		if (( counts[i] > was + local_allow )); then
-			fEcho_Clean "  REGRESSED  ${labels[i]}: ${was} -> ${counts[i]}"
+			fEcho_Clean "  REGRESSED  ${ids[i]} ${labels[i]}: ${was} -> ${counts[i]}"
 			regressed=1
 		elif (( counts[i] < was )); then
-			((quiet)) || fEcho_Clean "  improved   ${labels[i]}: ${was} -> ${counts[i]}"
+			((quiet)) || fEcho_Clean "  improved   ${ids[i]} ${labels[i]}: ${was} -> ${counts[i]}"
 		else
-			((quiet)) || fEcho_Clean "  ok         ${labels[i]}: ${counts[i]}"
+			((quiet)) || fEcho_Clean "  ok         ${ids[i]} ${labels[i]}: ${counts[i]}"
 		fi
 	done
 fi
@@ -172,3 +175,4 @@ gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		  origin included - prune deletes on both sides, and a leftover makes the next count a
 ##		  different question.
 ##		- 20260926 JC: One line per command with its verdict, ok included, in place of the bare counts. The pipeline no longer passes -q.
+##		- 20260927 JC: Each command carries a test ID, printed on its line.
