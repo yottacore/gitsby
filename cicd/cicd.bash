@@ -114,9 +114,10 @@ if ((install_hook)); then exec "${here}/utility/pre-push.bash" --install; fi
 ## Off for unattended runs (-q/-y) where nobody is watching.
 stage_pause=0.4; ((assume_yes)) && stage_pause=0
 
-## The same reasoning, passed on: the three harnesses print one line per check, and 900-odd
-## of them bury every stage header in a log nobody is reading live. Failures and totals stay.
-## Keyed on -q, not on unattended: -y is documented as unattended-but-not-quiet.
+## The same reasoning, passed on to parity, spawn counts and the demo generator. Keyed on -q, not
+## on unattended: -y is documented as unattended-but-not-quiet. The regression and fuzz suites
+## never get it. One line per check is how a failure's neighbors get read, and -q runs are the
+## usual ones.
 declare -a harness_quiet=(); ((quiet)) && harness_quiet=("-q")
 
 ## Publish commit message: -m wins, then config, then a default when unattended.
@@ -469,7 +470,7 @@ else
 	## cover the parsing and matching the suite can only reach through a built binary.
 	fUnitTests
 	if [[ -f "${TEST_CMD[0]:-}" ]]; then
-		"${TEST_CMD[@]}" ${harness_quiet[@]+"${harness_quiet[@]}"}
+		"${TEST_CMD[@]}"
 		fEcho "OK: tests passed"
 	else
 		fEcho_Clean "no test harness (${TEST_CMD[0]:-cicd/test.bash})"
@@ -483,7 +484,7 @@ fSection "3/7  Fuzz + security"
 if ((! do_fuzz)); then
 	fEcho_Clean "fuzz + security skipped$( ((quick)) && echo ' (--quick)')"
 elif [[ -f "${FUZZ_CMD[0]:-}" ]]; then
-	"${FUZZ_CMD[@]}" ${harness_quiet[@]+"${harness_quiet[@]}"}
+	"${FUZZ_CMD[@]}"
 	fEcho "OK: fuzz + security passed"
 else
 	fEcho_Clean "no fuzz harness (${FUZZ_CMD[0]:-cicd/fuzz.bash})"
@@ -495,6 +496,7 @@ if ((do_fuzz)); then
 	for fuzzTarget in $(cd "${root}/${GO_MODULE_DIR}" && go test -list 'Fuzz.*' . 2>/dev/null | grep '^Fuzz' || true); do
 		(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${BUILD_JOBS}" go test -run '^$' -fuzz "^${fuzzTarget}\$" -fuzztime 5s -parallel "${BUILD_JOBS}" . >/dev/null) \
 			|| fDie "fuzzing found a crasher in ${fuzzTarget} (reproducer under ${GO_MODULE_DIR}/testdata/fuzz/)"
+		fEcho_Clean "  ok: ${fuzzTarget}"
 	done
 	fEcho "OK: native fuzz targets"
 fi
@@ -658,3 +660,4 @@ fEcho_Clean
 ##		- 2026-09-14 JC: The demo gif renders from a build of its own, stamped with the newest release rather than the commit, and -q reaches its generator. The banner every command prints had put a new version on camera at every commit, so the gif was replaced on nearly every run.
 ##		- 2026-09-15 JC: A failed py_compile stops the run. At the head of an && list it neither stopped the run nor fired the trap.
 ##		- 2026-09-15 JC: The build version is read after the remote sync, and says -dirty for uncommitted source. Read at startup, it could name the commit before a fast-forward, and a publishing run's builds named the commit before the one holding their source.
+##		- 2026-09-26 JC: The regression and fuzz suites print a line per check under -q too, and each native fuzz target gets one.
