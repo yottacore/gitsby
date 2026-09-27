@@ -77,8 +77,8 @@ fUnsetInheritedGitConfig(){
 fUnsetInheritedGitConfig
 unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT
 
-## -q silences the per-check line and leaves the header, the failures and the total. A run
-## of 600-odd checks buries every stage header in a pipeline log nobody watches live.
+## -q silences the per-check line and leaves the header, the failures and the total. The
+## pipeline doesn't pass it, even on its own -q runs.
 declare -i quiet=0
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -261,6 +261,11 @@ fGateCalled(){ local p; for p in "$@"; do grep -qE -- "${p}" "${gateCalls}" || r
 fGateFullRun(){
 	fGateSays 0 'CI/CD: done\.' -y --quick --no-sync --no-publish --no-dogfood \
 		&& fGateCalled '^go vet' '^go build' '^go test -race' '^test\.bash' '^parity\.bash'
+}
+## The parity line shows the run was quiet at all.
+fGateQuietSuites(){
+	fGateSays 0 'CI/CD: done\.' -q --no-sync --no-publish --no-dogfood --no-demogif \
+		&& fGateCalled '^test\.bash $' '^fuzz\.bash $' '^parity\.bash -q$'
 }
 ## --install-hook hands over to the installer: the hook is in place, and no stage or gate header
 ## was printed on the way.
@@ -4194,6 +4199,7 @@ EOF
 		fAssert "[EpsVDHy] --gate and --install-hook together are refused"  fGateSays 2 'separate runs' --gate --install-hook
 		## Regression guard: the full run is what the two functions were carved out of.
 		fAssert "[EpsVDHz] the full run still lints, builds and runs the suites"  fGateFullRun
+		fAssert "[Er2UM3f] a -q run still prints every regression and fuzz check"  fGateQuietSuites
 		fAssert "[EpsVDI0] cicd.bash --help lists --gate and --install-hook" \
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--gate ' <<< \"\$out\" && grep -qE -- '^ +--install-hook ' <<< \"\$out\""
 		fAssert "[EpsVDI1] and contributing.md names --install-hook"  grep -qF -- '--install-hook' "${root}/contributing.md"
@@ -5219,3 +5225,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260926 JC: A check for each closed backlog item that had none. Accounts and identity: the gh probe skipped where nothing reads it, repo connect's account and identity, account apply's global writes and credential username, a dead folder rule, ssh's '--'. Branches: release and the back-merge beside a tag with the branch's name, a merge whose branch is already gone from origin, prune's spawn count, origin/HEAD healed, a lone or unborn default branch, masked credentials in a step, the dropped aliases. Installers: bad checksum, no SHA256SUMS, no hash tool, a portal page, a bad redirect tag, joined options, end of input, the sudo mkdir, sums from the release's own generator. Pipeline: stage 0, stage 3, dogfood, the publish message, the real backlog gate, spawn-count's regression exit, the lint globs, the release dry run. The whole suite runs with XDG_CONFIG_HOME and APPDATA poisoned. The call-stack check looked for bash's text and now looks for a Go panic. Every new check fails against its fault. 1031 -> 1208.
 ##		- 20260926 JC: Every check carries a test ID at the front of its label. Checks for test-id.bash, and for backlog-check knowing a relabeled check by its ID. 1208 -> 1217.
 ##		- 20260926 JC: The suite runs behind a proxy on a closed port, so a check that reaches the network fails every run. The frozen install.ps1 one-liner checks stub its web lookups; two of them asked the live API and went red once its anonymous limit ran out. 1217 -> 1217.
+##		- 20260926 JC: A pipeline run under -q still prints every regression and fuzz check. 1217 -> 1218.
