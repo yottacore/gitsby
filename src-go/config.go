@@ -746,7 +746,7 @@ func (c *config) accountForDir(dir string) string {
 		if r.match == "" {
 			continue
 		}
-		if target != r.match && !strings.HasPrefix(target, r.match+"/") {
+		if !pathUnder(target, r.match) {
 			continue
 		}
 		if len(r.match) > bestLen {
@@ -792,6 +792,39 @@ func (c *config) value(name, key string) string {
 		return ""
 	}
 	return c.values["account."+strings.ToLower(name)+"."+strings.ToLower(key)]
+}
+
+// pathUnder: whether target is the folder root or sits inside it. A root that
+// already ends in a slash - '/' or a drive root - takes no second one, or it
+// matches nothing at all.
+func pathUnder(target, root string) bool {
+	if target == root {
+		return true
+	}
+	if !strings.HasSuffix(root, "/") {
+		root += "/"
+	}
+	return strings.HasPrefix(target, root)
+}
+
+// hostOf is the git host an account banks with: github.com unless it names another.
+func (c *config) hostOf(name string) string {
+	if host := c.value(name, "host"); host != "" {
+		return host
+	}
+	return "github.com"
+}
+
+// loginOf is the login an account's own file entries give for its host. 'user' is
+// host-neutral and wins; 'ghAccount' only means anything on GitHub.
+func (c *config) loginOf(name string) string {
+	if user := c.value(name, "user"); user != "" {
+		return user
+	}
+	if isGitHubHost(c.hostOf(name)) {
+		return c.value(name, "ghAccount")
+	}
+	return ""
 }
 
 // contextDir is what "here" means for folder matching: the repo's top level when

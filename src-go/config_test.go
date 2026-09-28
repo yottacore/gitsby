@@ -179,6 +179,22 @@ account.anywhere.pathContains = shared/lib
 	}
 }
 
+// A rule for the root claims every folder. Matching on the rule plus a slash
+// looked for '//', so it claimed none.
+func TestAccountForDirRootRule(t *testing.T) { // [ErCLIDp]
+	cfg := writeConfig(t, "account.all.path = "+driveFolder("/")+"\naccount.inner.path = "+driveFolder("/srv/code")+"\n")
+	for _, tc := range []struct{ dir, want string }{
+		{"/", "all"},
+		{"/anywhere/at/all", "all"},
+		{"/srv/code/x", "inner"}, // still the most specific
+	} {
+		dir := driveFolder(tc.dir)
+		if got := cfg.accountForDir(dir); got != tc.want {
+			t.Errorf("accountForDir(%q) = %q, want %q", dir, got, tc.want)
+		}
+	}
+}
+
 // An absolute claim on this machine's own tree beats a folder-name run, even a
 // longer one.
 func TestAccountForDirPathBeatsSegment(t *testing.T) { // [EnQKNsL]

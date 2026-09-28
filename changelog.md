@@ -121,6 +121,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - A config file saved with a byte-order mark keeps its first line. The mark landed on the first key, which was then read as one gitsby doesn't understand and dropped - and the line that reports those printed the mark along with the name, so the only warning named a key that looks exactly right. Windows editors write a mark by default.
 
+- `status` names the git config a `gitsby.ghAccount` key came from. It always said "this repo's git config", even for the key `account apply` sets through your global config, and it spelled the key with a capital G.
+
+- `account apply` tells plain git which login to use on the account's own host. It always named github.com and the `ghAccount` login, so an account on another host got nothing, and one setting both `user` and `ghAccount` named a different login than gitsby itself uses.
+
+- A folder rule of `/`, or a bare drive on Windows, covers every folder. It covered none, and `account apply` gave git a rule that matched nothing either.
+
+- The installers check a release tag read from GitHub's redirect for `..` the same way they check a typed `--tag`. The Bash installer also says "Aborted." when the prompt gets end of input, instead of exiting with no word.
+
 ### Removed
 
 - The installers no longer take `--release dev` (`-Release dev`). It installed the tip of a branch, which was possible while the product was a script in the tree; a branch has no published build behind it now. Typing it says so and names the two routes that exist - a release by tag, or a one-command build from source. The contributor setup scripts went with it: a Go checkout needs only Go, and the three commands are in the README.
@@ -128,6 +136,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `--offline` is no longer accepted as a spelling of `--no-fetch`. It was undocumented, and it never did what the word says - pushes went out regardless. Typing it now says so and names `--no-fetch`, which skips the pre-command fetch. Being offline is still handled on its own: gitsby finds out by trying, and each command degrades or refuses accordingly.
 
 ### Other work
+
+- `cicd/release.bash` is committed executable, as its usage line assumes, and a dry run no longer ends by saying it tagged and released the version.
 
 - The demo gif runs about forty-seven seconds instead of just over two minutes, and is less than half the size. Five scenes rather than nine, and one of them stops on its confirmation and is answered on camera - the tool showing its Git and asking first is the first thing the README claims, and the demo had never shown it happening. Captions now appear whole instead of arriving a letter at a time, which had been taking more screen time than the commands they introduce.
 

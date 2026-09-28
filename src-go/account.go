@@ -56,8 +56,10 @@ func (a *app) resolveAccount(dir, url string) error {
 	// repo entirely. The config file's folder rules below have no such limit: gitsby
 	// matches those itself, against any path.
 	if dir == a.contextDir() {
-		if fromGit := runOut("git", "config", "--get", "gitsby.ghAccount"); fromGit != "" {
-			a.acct.ghWho, a.acct.source, a.acct.explicit = fromGit, "gitsby.ghAccount in this repo's git config", true
+		scope, fromGit, _ := strings.Cut(runOut("git", "config", "--show-scope", "--get", "gitsby.ghAccount"), "\t")
+		if fromGit != "" {
+			// Led by "the" so the sentence form doesn't capitalize the key.
+			a.acct.ghWho, a.acct.source, a.acct.explicit = fromGit, "the gitsby.ghAccount key in "+gitScopeText(scope), true
 			// Name the config account too when one claims this folder, so its key and
 			// commit identity still apply - the git key says who, not that the rest of
 			// the account is off. Dropped only when the account names a DIFFERENT
@@ -87,6 +89,25 @@ func (a *app) resolveAccount(dir, url string) error {
 		a.acct.ghWho, a.acct.source = fromRemote, "the owner of this repo's remote"
 	}
 	return nil
+}
+
+// gitScopeText names the config a 'git config --show-scope' scope stands for. An
+// includeIf fragment reports the scope of the file that included it, which is where
+// somebody would go looking for the rule that pulled it in.
+func gitScopeText(scope string) string {
+	switch scope {
+	case "local":
+		return "this repo's git config"
+	case "worktree":
+		return "this worktree's git config"
+	case "global":
+		return "your global git config"
+	case "system":
+		return "the system git config"
+	case "command":
+		return "git config set on the command line or in the environment"
+	}
+	return "git config"
 }
 
 // remoteOwner names the GitHub account a remote belongs to, or nothing when that
@@ -154,10 +175,7 @@ func probeGhToken(who string) string {
 // github.com: every account that existed before this key did was a GitHub one, and
 // a config that never mentions a host has to keep behaving exactly as it always did.
 func (a *app) accountHost() string {
-	if host := a.cfg.value(a.acct.name, "host"); host != "" {
-		return host
-	}
-	return "github.com"
+	return a.cfg.hostOf(a.acct.name)
 }
 
 // accountServesHost: whether the account we resolved holds credentials for this
