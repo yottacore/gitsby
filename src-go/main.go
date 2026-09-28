@@ -418,6 +418,14 @@ func (a *app) preflightBranch() error {
 // anything is shown. True means the answer was "nothing to do" and the run is over.
 func (a *app) settleTarget() (bool, error) {
 	switch a.cmd.name {
+	case "account-unset":
+		// Here rather than in preflight with 'account set', since finding nothing to
+		// take out ends the run.
+		t, done, err := a.accountUnsetPlan()
+		if err != nil || done {
+			return done, err
+		}
+		a.set = &t
 	case "repo-url":
 		// Everything it needs to know settles here, so a bad argument or an
 		// unconvertible remote is refused before a plan promises anything.
@@ -634,7 +642,7 @@ func (a *app) runMutating(mismatch identityMismatch) error {
 	}
 	a.out.clean("")
 	switch a.cmd.name {
-	case "account-apply", "account-set":
+	case "account-apply", "account-set", "account-unset":
 		// every file it wrote was named as it was written; a repo status would add
 		// nothing
 	case "repo-clone":
@@ -654,7 +662,7 @@ func (a *app) runMutating(mismatch identityMismatch) error {
 // stands in.
 func (a *app) showBeforeState() error {
 	switch {
-	case a.cmd.name == "account-apply" || a.cmd.name == "account-set":
+	case a.cmd.name == "account-apply" || a.cmd.name == "account-set" || a.cmd.name == "account-unset":
 		// Nothing about a repo is involved: these write config files, and showing
 		// branch state here would suggest they do something to the repo you happen
 		// to be standing in.
@@ -722,7 +730,7 @@ func (a *app) dispatch() error {
 		return a.cmdRepoURL()
 	case "account-apply":
 		return a.cmdAccountApply()
-	case "account-set":
+	case "account-set", "account-unset":
 		return a.cmdAccountSet()
 	}
 	return nil

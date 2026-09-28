@@ -95,7 +95,7 @@ func (a *app) showIncoming() {
 // probes that feed the block and nothing else, so being over-broad costs a round
 // trip and never an answer.
 func (a *app) identityWillPrint() bool {
-	if a.cmd.name == "account-apply" || a.cmd.name == "account-set" {
+	if a.cmd.name == "account-apply" || a.cmd.name == "account-set" || a.cmd.name == "account-unset" {
 		return false
 	}
 	if a.cmd.mutating {

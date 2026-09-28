@@ -74,12 +74,16 @@ func (a *app) preview(what string) {
 		a.out.clean(pad + "git -C " + a.tgt.cloneDir + " checkout dev *")
 	case "repo-url":
 		a.out.clean(pad + "git remote set-url origin " + hostURL(a.originHost(), remoteTarget(a.originURL()), a.cmd.arg))
-	case "account-set":
+	case "account-set", "account-unset":
 		// Names the file and both versions of the line, because this is the one
 		// command that edits the accounts file for you - and a config file you did
 		// not type yourself is only trustworthy if it showed you the edit first.
-		// Settled in preflight, so a refusal never prints as the plan.
+		// Settled before the plan, so a refusal never prints as one.
 		t := a.set
+		if t.unset {
+			a.previewUnset()
+			return
+		}
 		switch {
 		case t.creates:
 			a.out.clean(pad + "create " + nativePath(t.file))
@@ -129,6 +133,31 @@ func (a *app) preview(what string) {
 		case "push":
 			a.out.clean(pad + "git push -u origin HEAD *")
 		}
+	}
+}
+
+// previewUnset lists every line 'account unset' takes out. One line puts its
+// number in the header, the way a set does; several number each their own.
+func (a *app) previewUnset() {
+	t := a.set
+	numbered := !t.converts && len(t.gone) > 1
+	switch {
+	case t.converts:
+		a.out.clean(pad + "rewrite " + nativePath(t.file) + " in the current layout - it is in the old flat one")
+	case len(t.gone) == 1 && t.gone[0].num > 0:
+		a.out.clean(pad + "edit " + nativePath(t.file) + ", line " + strconv.Itoa(t.gone[0].num))
+	default:
+		a.out.clean(pad + "edit " + nativePath(t.file))
+	}
+	for _, g := range t.gone {
+		if numbered {
+			a.out.clean(pad + "  remove:  line " + strconv.Itoa(g.num) + ", " + g.text)
+		} else {
+			a.out.clean(pad + "  remove:  " + g.text)
+		}
+	}
+	if t.reshapes {
+		a.out.clean(pad + "  also:    the rest of the file comes out in the layout every save writes (tabs, lower-case keys)")
 	}
 }
 

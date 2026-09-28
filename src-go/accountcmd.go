@@ -14,6 +14,7 @@ package main
 import (
 	"cmp"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -552,6 +553,27 @@ func accountSetUsage() error {
 	return usagef("%s", strings.Join(lines, "\n"))
 }
 
+// accountUnsetUsage is the same layout for the two words 'account unset' takes. A
+// key nothing reads can go too, where the block has one: that is the line the
+// listing calls ignored, and this is the way to be rid of it.
+func accountUnsetUsage() error {
+	lines := []string{
+		"Syntax: " + meName + " account unset <account> <key>",
+		accountSetIndent + "Removes '<key>' from the <account> block of the accounts file, every line of it.",
+		accountSetPad + "<account>  The account to change; e.g. 'work', 'personal'.",
+	}
+	key := wrapWords("The setting to remove. One of: "+strings.Join(accountSetFields, ", ")+", or any other key the block has.", 57)
+	lines = append(lines, accountSetPad+"<key>      "+key[0])
+	for _, rest := range key[1:] {
+		lines = append(lines, accountSetCont+rest)
+	}
+	lines = append(lines,
+		accountSetIndent+"Example:",
+		accountSetPad+"Go back to the default host for an account:",
+		accountSetPad+accountSetIndent+meName+" account unset work host")
+	return usagef("%s", strings.Join(lines, "\n"))
+}
+
 // canonAccountField maps whatever casing was typed onto the documented spelling,
 // or empty for a key nothing reads. Refusing an unknown key is the point: the
 // loader only lists one as ignored, which is a warning nobody reads until the
@@ -654,6 +676,14 @@ type accountSetTarget struct {
 	converts bool   // the file is in the old flat layout, and comes out in the current one
 	reshapes bool   // the save changes more of the file than the key: spacing, key case, line ends
 	read     string // the file as the plan read it; the save refuses once it holds anything else
+	unset    bool   // 'account unset': the key comes out rather than going in
+	gone     []goneLine
+}
+
+// goneLine is one line 'account unset' takes out: where it is now, and what it says.
+type goneLine struct {
+	num  int
+	text string
 }
 
 func (t accountSetTarget) path() string { return t.base + "." + t.field }
@@ -934,8 +964,7 @@ func (a *app) accountSetPlan() (accountSetTarget, error) {
 		}
 		t.value = strings.ToLower(t.value)
 	}
-	switch {
-	case a.cfg.file == "":
+	if a.cfg.file == "" {
 		if t.file = defaultConfigFile(); t.file == "" {
 			return t, usagef("There is nowhere to put an accounts file: this machine names no home directory. Set HOME, or name a file with --config.")
 		}
@@ -947,23 +976,8 @@ func (a *app) accountSetPlan() (accountSetTarget, error) {
 		// the first setting after it, and with nothing there yet it would trail the
 		// file as a footer instead.
 		t.doc = shcl.Parse(configHeader + "\naccount: " + name + "\n\n" + shcl.GenBanner)
-	case a.cfg.flat:
-		// Converted whole, comments and all, rather than refused: the file was
-		// written for the scripted builds, and this is the command that moves it on.
-		data, err := os.ReadFile(a.cfg.file)
-		if err != nil {
-			return t, usagef("Couldn't read '%s'.", nativePath(a.cfg.file))
-		}
-		t.file, t.converts, t.read = a.cfg.file, true, string(data)
-		t.doc = shcl.Parse(flatToSHCL(strings.TrimPrefix(string(data), utf8BOM)))
-	default:
-		t.file, t.doc, t.read = a.cfg.file, a.cfg.doc, a.cfg.raw
-	}
-	// A line the read dropped can't be kept, so the save would be a whole-file
-	// rewrite that loses it, and the module refuses one. Said here, before the plan,
-	// rather than after the confirmation.
-	if lost := t.doc.LostCount(); lost > 0 {
-		return t, usagef("%d line(s) of %s couldn't be read, and a rewrite would drop them. Edit it by hand.", lost, nativePath(t.file))
+	} else if err := a.loadForEdit(&t); err != nil {
+		return t, err
 	}
 	// Taken before the edit, so only what the save changes besides the key counts.
 	tidy := t.doc.ToCanonical() == t.read
@@ -1003,11 +1017,145 @@ func (a *app) accountSetPlan() (accountSetTarget, error) {
 	return t, nil
 }
 
+// loadForEdit points t at the accounts file the run loaded, and at the document an
+// edit is made to.
+func (a *app) loadForEdit(t *accountSetTarget) error {
+	if a.cfg.flat {
+		// Converted whole, comments and all, rather than refused: the file was
+		// written for the scripted builds, and this is the command that moves it on.
+		data, err := os.ReadFile(a.cfg.file)
+		if err != nil {
+			return usagef("Couldn't read '%s'.", nativePath(a.cfg.file))
+		}
+		t.file, t.converts, t.read = a.cfg.file, true, string(data)
+		t.doc = shcl.Parse(flatToSHCL(strings.TrimPrefix(string(data), utf8BOM)))
+	} else {
+		t.file, t.doc, t.read = a.cfg.file, a.cfg.doc, a.cfg.raw
+	}
+	return lostRefusal(*t)
+}
+
+// lostRefusal: a line the read dropped can't be kept, so the save would be a
+// whole-file rewrite that loses it, and the module refuses one. Said before the
+// plan rather than after the confirmation.
+func lostRefusal(t accountSetTarget) error {
+	if lost := t.doc.LostCount(); lost > 0 {
+		return usagef("%d line(s) of %s couldn't be read, and a rewrite would drop them. Edit it by hand.", lost, nativePath(t.file))
+	}
+	return nil
+}
+
+// accountUnsetPlan resolves what 'account unset' would take out, off one read the
+// way the set plan does. Every line of the key goes, from every block of that
+// name: the loader merges blocks that share a name, so a line left in a second
+// one would keep the setting in force after the plan said it was gone. done means
+// there was nothing to take out, and that has been said.
+func (a *app) accountUnsetPlan() (t accountSetTarget, done bool, err error) {
+	name := strings.ToLower(a.cmd.arg)
+	if !acctNameOK.MatchString(name) {
+		return t, false, usagef("'%s' isn't a usable account name; letters, digits, '.', '_' and '-' only.", a.cmd.arg)
+	}
+	t.unset, t.disp = true, "account["+name+"]"
+	if a.cfg.file == "" {
+		// Unreadable is not absent: the key may well be in a file that is there and
+		// can't be read, so "nothing to do" would be a guess.
+		for _, c := range configCandidates() {
+			if state, _, perr := probeConfigCandidate(c); state != candidateAbsent {
+				return t, false, unsetUnreadable(c, state, perr)
+			}
+		}
+		a.out.status("No accounts file, so " + t.disp + " has no '" + a.cmd.arg2 + "'; nothing to do.")
+		a.out.clean("")
+		return t, true, nil
+	}
+	if err := a.loadForEdit(&t); err != nil {
+		return t, false, err
+	}
+	tidy := t.doc.ToCanonical() == t.read
+	var paths, names []string
+	blocks, _ := acctBlocks(t.doc)
+	for _, b := range blocks {
+		if b.name == name {
+			paths = append(paths, b.path)
+		}
+		if !slices.Contains(names, b.name) {
+			names = append(names, b.name)
+		}
+	}
+	if len(paths) == 0 {
+		has := "it names no accounts"
+		if len(names) > 0 {
+			has = "it has " + strings.Join(names, ", ")
+		}
+		a.out.status("No " + t.disp + " in " + nativePath(t.file) + " (" + has + "); nothing to do.")
+		a.out.clean("")
+		return t, true, nil
+	}
+	// A key nothing reads can go too, but only one that is there: a typo on the
+	// command line would otherwise come back as "nothing to do".
+	t.field = canonAccountField(a.cmd.arg2)
+	if t.field == "" {
+		for _, p := range paths {
+			if t.doc.Count(p+"."+shcl.QuoteSegment(a.cmd.arg2)) > 0 {
+				t.field = strings.ToLower(a.cmd.arg2)
+			}
+		}
+	}
+	if t.field == "" {
+		return t, false, usagef("'%s' isn't an account key %s reads, and %s has no such line. One of: %s.", a.cmd.arg2, meName, t.disp, strings.Join(accountSetFields, ", "))
+	}
+	for i, p := range paths {
+		paths[i] = p + "." + shcl.QuoteSegment(t.field)
+		for j := range t.doc.Count(paths[i]) {
+			read := t.doc.ReadString(fmt.Sprintf("%s[#%d]", paths[i], j))
+			line := goneLine{num: read.Line, text: t.field + ":"}
+			if read.Raw != nil && *read.Raw != "" {
+				line.text += " " + *read.Raw
+			}
+			t.gone = append(t.gone, line)
+		}
+	}
+	if len(t.gone) == 0 {
+		a.out.status(t.disp + " has no '" + t.field + "' in " + nativePath(t.file) + "; nothing to do.")
+		a.out.clean("")
+		return t, true, nil
+	}
+	for _, p := range paths {
+		t.doc.Remove(p)
+	}
+	if _, kept := t.doc.ToTextKeepLines(); !kept && !tidy && !t.converts {
+		t.reshapes = true
+	}
+	return t, false, nil
+}
+
+// unsetUnreadable: nothing was loaded, but something is where an accounts file can
+// be.
+func unsetUnreadable(file string, state candidateState, cause error) error {
+	why := "Something is there that can't be read as a file, and the key may be in it."
+	fix := []string{"Run this again once it can be read."}
+	switch state {
+	case candidateUnreadable:
+		why = "Opening it failed with: " + causeText(cause) + ". The key may be in it."
+		fix = unreadableFix(runtime.GOOS, file, cause)
+	case candidateUsable:
+		why = "It turned up after this command looked for it."
+		fix = []string{"Run this again. It will edit the file that is there now."}
+	}
+	return refusalBlock("An accounts file is there, and it can't be read.", [][]string{
+		noteLines("File", nativePath(file)),
+		noteLines("Why", why),
+		noteLines("Kept", "Nothing was written."),
+		noteLines("Fix", fix...),
+	}, cause)
+}
+
 // cmdAccountSet writes one key into one account block of the accounts file and
 // saves it through the module. Every line the edit didn't touch comes back as it
 // was. Where the module can't manage that, it writes the whole file in its own
 // layout - tabs, lower-case keys, one blank line at most between blocks - and the
-// plan has said so.
+// plan has said so. 'account unset' saves through here too, with its lines already
+// out of the document.
 func (a *app) cmdAccountSet() error {
 	if a.set == nil {
 		t, err := a.accountSetPlan()

@@ -81,6 +81,8 @@ $ gitsby account set work host gitea.com
       becomes: host: gitea.com
 ~~~
 
+`gitsby account unset <account> <key>` is the way back. It removes every line of that key from the account's block, a repeated `path` included, and shows each line before asking. A key nothing reads can go too, where the block has one, which clears it from the listing's ignored keys. A key that isn't there is nothing to do, not an error.
+
 Where an account isn't applying, the identity block names the `account set` line that fixes it. It won't make that edit for you: all it knows is that the file never said which host the account is for, which is not the same as knowing the account belongs to the host you happen to be pushing to - and guessing wrong means handing one host's token to another.
 
 ### One config file, several machines

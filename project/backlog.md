@@ -40,13 +40,7 @@ Going forward, new issues in the new template at the bottom of this file, will g
 	- Go refuses a v3 tag on a module named `.../v2`, so the tag should bring a `/v3` import path. Move the imports in the same commit.
 	- `release.bash` should refuse a pseudo-version for shcl, so a release cannot go out on a commit pin.
 	- shcl plans the `/v3` path for its 3.0.0 cut, so nothing to report there.
-
-- 🛠️ Code review 20260909 - enhancements from the same pass. Twelve items, none of them urgent. The rest are under Done.
-	- Opened: 20260909-184419
-
-	- 🔘 Code Review 20260909 enhancement 2: there is no `account unset`. Setting a key to an empty value prints the syntax block, so the only way back is the hand edit that `account set` exists to avoid.
-		- Origin: new. Confirmed.
-		- Note: left for the shcl 3.0 move. Removing a key goes through the shcl module, so it is shcl work.
+	- Note: blocked. Checked 2026-09-28: shcl has no 3.0 tag yet, and its `dev` go.mod still says `/v2`.
 
 ## Done
 
@@ -317,7 +311,7 @@ Going forward, new issues in the new template at the bottom of this file, will g
 	- Fixed: a file counts as readable only once it reads to the end, and the loader records it only after the read. A named file that fails to read is refused like one that won't open. A found one is passed over by reads and refused by `account set` as a file it can't read.
 	- Verified: 2 new checks in test.bash, and with the 5 above, 915 -> 922. On `gover` the named case panics and the found one is taken up, and the new Go test fails there. Go tests green, parity.bash 27/0. Linux only, since the case needs `/proc/self/mem`.
 
-- ✅ Code review 20260909 - the pass against the standing directives. Every defect is closed; the enhancements are still open under Features and enhancements.
+- ✅ Code review 20260909 - the pass against the standing directives. Every defect is closed, and the enhancements are under Done too.
 	- Opened: 20260909-184419
 	- Fix order: by class, each class across all its sites in one group of commits. 5 with 11 (unknown is listed, unknown is not missing); 9 with 19 (preview follows command, one spawn per run); 3 and 8 without moving the decisions they sit on; 12 and 20 only once reproduced. 15 and 16 early, since the pipeline is what proves the rest.
 	- Note: about twelve of the twenty sit in code that rounds 20260819b, c, d and 20260821 declared clean. Those rounds read the Go and grepped the rest.
@@ -1856,9 +1850,18 @@ Going forward, new issues in the new template at the bottom of this file, will g
 	- Test: [ErCS7c0] and [ErCS7cF] in test.bash.
 	- Verified: both fail against `gover`.
 
-- ✅ Code review 20260909 - enhancements from the same pass. All but enhancement 2, which is still open.
+- ✅ Code review 20260909 - enhancements from the same pass.
 	- Opened: 20260909-184419
-	- Closed: 20260928-132933
+	- Closed: 20260928-144045
+
+	- ✅ Code Review 20260909 enhancement 2: there is no `account unset`. Setting a key to an empty value prints the syntax block, so the only way back is the hand edit that `account set` exists to avoid.
+		- Origin: new. Confirmed.
+		- Closed: 20260928-144045
+		- Done: `account unset <account> <key>` removes every line of the key from every block of that name, and the plan lists each one. A key nothing reads can go where the block has one. A key or account that isn't there is nothing to do, exit 0. A value after the key is refused, since it would read as removing only that one.
+		- Note: it never needed the shcl 3.0 move. The pinned module already had `Remove`, and it keeps lines on save.
+		- Test: [ErCjvos] to [ErCkAkZ] in test.bash, and `TestAccountUnset*` and `TestSortCommandAccountUnset` in Go.
+		- Verified: five of the six suite checks fail against `gover`. "The rest of the file is as typed" is a regression guard.
+		- Swept: every site that names `account-set` by command name, in main.go, mutate.go, preview.go and show.go, takes `account-unset` too.
 
 	- ✅ Code Review 20260909 enhancement 3: `--about`, `--donate` and `--version` are honored only as the first word, while `--help` works at any position. The help screen lists all four on one line.
 		- Origin: new. Confirmed.

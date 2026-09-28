@@ -167,8 +167,10 @@ func collapseCommand(cmd command) (command, error) {
 			cmd.name = "account-apply"
 		case "set":
 			cmd.name = "account-set"
+		case "unset":
+			cmd.name = "account-unset"
 		default:
-			return cmd, usagef("Unknown 'account' subcommand '%s'. One of: list, set, apply.", cmd.arg)
+			return cmd, usagef("Unknown 'account' subcommand '%s'. One of: list, set, unset, apply.", cmd.arg)
 		}
 	case "br", "branch":
 		switch strings.ToLower(cmd.arg) {
@@ -225,6 +227,16 @@ func sortCommand(cmd command, opt *options) (command, error) {
 		}
 		// Returns here rather than falling through: this is the one command whose
 		// third positional is a value it wants, and the tail below rejects one.
+		return cmd, nil
+	case "account-unset":
+		if cmd.arg == "" || cmd.arg2 == "" {
+			return cmd, accountUnsetUsage()
+		}
+		// A value typed after the key reads like a request to remove only that one,
+		// and this removes them all, so it is refused rather than dropped.
+		if cmd.arg3 != "" {
+			return cmd, usagef("'%s account unset' takes an account and a key, and removes every '%s' line in that block (got '%s' too).", meName, cmd.arg2, cmd.arg3)
+		}
 		return cmd, nil
 	case "pr":
 		switch strings.ToLower(cmd.arg) {
