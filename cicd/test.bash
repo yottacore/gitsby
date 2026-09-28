@@ -5167,6 +5167,24 @@ GHEOF
 	## as a pattern language that isn't there, and the rule it teaches never matches anything.
 	fAssertNotOut "[EncX1Q8] and the pathcontains example is not a glob"  '[*]' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set 2>&1 | grep pathcontains"
+	## 'account unset' is the way back from a set, short of a hand edit. It names each line it takes
+	## out, and leaves every other line as typed.
+	printf 'account: work\n    host: gitea.com\n    email: w@example.com\n' > "${fg}/unset.shcl"
+	fAssertPlan "[ErCjvos] 'account unset' names the line it removes"  'remove: +host: gitea\.com' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/unset.shcl' account unset work host 2>&1"
+	fAssertNotOut "[ErCjvp5] and the file no longer holds it"  'host' \
+		cat "${fg}/unset.shcl"
+	fAssertOut "[ErCjvpK] and the rest of the file is as typed"  '^    email: w@example\.com$' \
+		cat "${fg}/unset.shcl"
+	## A second run is a success with nothing to do, so a script can run it without checking first.
+	fAssert "[ErCjvpY] a key already gone is nothing to do, not a failure" \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/unset.shcl' account unset work host 2>&1 | grep -q 'nothing to do'"
+	## It removes every line of the key, so a value after it would read as a narrower request than
+	## the one carried out.
+	fAssertOut "[ErCkAkK] a value after the key is refused"  "\\(got '/a' too\\)" \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/unset.shcl' account unset work path /a 2>&1"
+	fAssertOut "[ErCkAkZ] and with no key it prints the syntax"  'Syntax: gitsby account unset <account> <key>' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/unset.shcl' account unset work 2>&1"
 	## The identity block's own vocabulary. "Forge" is a word for people who already knew the answer.
 	fAssertOut "[EnXe9aW] the identity block says 'Git host', not 'Forge'"  '^Git host \.+: git\.example\.test' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' identity 2>&1"
@@ -5373,3 +5391,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260927 JC: The Go unit tests print a line per test with its ID, and a failure shows its output. 1220 -> 1222.
 ##		- 20260928 JC: Checks for the account source line, the fragment's credential username, a root folder rule, the installers' redirect tag and end of input, committed script modes, and the release dry run's closing lines. 1222 -> 1235.
 ##		- 20260928 JC: Checks for the information options after a command, the clone folder in full, the installers' write access, sudo, plan and mode, the pre-release tie, the release build from the tag, tool versions outside Go and under GOPATH, the README badges and .gitignore. 1235 -> 1254.
+##		- 20260928 JC: account unset. It names each line it removes, leaves the rest as typed, treats a key already gone as nothing to do, refuses a value after the key, and prints its syntax with no key. Five of the six fail against the tree before them; the rest-as-typed check is a regression guard. 1254 -> 1260.
