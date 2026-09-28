@@ -9,7 +9,10 @@
 
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseArgsPositionals(t *testing.T) { // [EnQKNs4]
 	opt, cmd, help, err := parseArgs([]string{"repo", "clone", "https://x/y.git", "dir"})
@@ -121,6 +124,34 @@ func TestSortCommandAccountSet(t *testing.T) { // [EnXe9ae]
 	}
 	if !got.mutating {
 		t.Error("account set must be a mutating command")
+	}
+}
+
+// Two words exactly: without the key it prints the syntax, and a value after it is
+// refused, since the command removes every line of the key and not just one.
+func TestSortCommandAccountUnset(t *testing.T) { // [ErCjvod]
+	for _, tc := range []struct {
+		argv []string
+		want string
+	}{
+		{[]string{"account", "unset", "work", "host"}, ""},
+		{[]string{"acct", "unset", "work"}, "Syntax: " + meName + " account unset"},
+		{[]string{"account", "unset", "work", "path", "/srv/w"}, "(got '/srv/w' too)"},
+	} {
+		_, cmd, _, err := parseArgs(tc.argv)
+		if err == nil {
+			cmd, err = collapseCommand(cmd)
+		}
+		if err == nil {
+			opt := defaultOptions()
+			cmd, err = sortCommand(cmd, &opt)
+		}
+		switch {
+		case tc.want == "" && (err != nil || cmd.name != "account-unset" || !cmd.mutating):
+			t.Errorf("%v: name %q, mutating %v, err %v", tc.argv, cmd.name, cmd.mutating, err)
+		case tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)):
+			t.Errorf("%v: err = %v, want %q", tc.argv, err, tc.want)
+		}
 	}
 }
 
