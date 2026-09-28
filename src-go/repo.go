@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -224,6 +225,16 @@ func cloneDestDir(url, dir string) string {
 }
 
 func (a *app) cloneDestDir() string { return cloneDestDir(a.cmd.arg, a.cmd.arg2) }
+
+// cloneDirShown is the clone's folder in full. The git commands keep it as typed,
+// but the line that says where the repo goes names the folder gitsby worked out,
+// which a relative spelling leaves to the reader.
+func (a *app) cloneDirShown() string {
+	if full, err := filepath.Abs(a.tgt.cloneDir); err == nil {
+		return nativePath(filepath.ToSlash(full))
+	}
+	return a.tgt.cloneDir
+}
 
 // settleRepoClone derives the target dir, and makes re-runs a no-op instead of
 // an error. True means main is done.

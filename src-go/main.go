@@ -138,13 +138,22 @@ func run(out *printer, argv []string) error {
 // flat name, its arguments, and whether it mutates anything. An empty command
 // name on return means help was asked for and has already printed.
 func (a *app) settleCommand(argv []string) error {
-	opt, cmd, help, err := parseArgs(argv)
+	opt, cmd, info, err := parseArgs(argv)
 	if err != nil {
 		return err
 	}
 	a.opt, a.cmd = opt, cmd
-	if help {
-		a.printHelp()
+	if info != "" {
+		switch info {
+		case "help":
+			a.printHelp()
+		case "version":
+			a.printCopyright()
+		case "about":
+			a.printAbout()
+		case "donate":
+			a.printDonate()
+		}
 		a.out.clean("")
 		a.cmd.name = ""
 		return nil
@@ -630,7 +639,7 @@ func (a *app) runMutating(mismatch identityMismatch) error {
 		// nothing
 	case "repo-clone":
 		// the after-status would show the wrong (current) directory
-		a.out.status("Cloned into '" + a.tgt.cloneDir + "'.")
+		a.out.status("Cloned into '" + a.cloneDirShown() + "'.")
 	default:
 		a.showStatus(false)
 	}
@@ -657,7 +666,7 @@ func (a *app) showBeforeState() error {
 		a.out.clean(dirLabel + wd)
 		a.out.clean("Remote .......: " + maskURL(a.tgt.cloneURL))
 		a.showIdentity(a.tgt.cloneURL)
-		a.out.clean("Clone into ...: " + a.tgt.cloneDir)
+		a.out.clean("Clone into ...: " + a.cloneDirShown())
 	case !a.inRepo:
 		remoteDisp := a.tgt.connectURL
 		if remoteDisp != "" {

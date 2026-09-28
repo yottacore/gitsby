@@ -33,15 +33,15 @@ func stripDashes(s string) string {
 // normalized copy is for matching only, a file name or message keeps its case.
 func afterEq(arg string) string { return arg[strings.Index(arg, "=")+1:] }
 
-// parseArgs fills the option and positional state. The bool reports that help was
-// asked for - from any position: '<noun> <verb> --help' is the reflex every git
-// user has, and slot 1 always holds a real command, so nothing can be shadowed.
-// -v is deliberately not an option here - it must not turn a mutating command
-// into a silent no-op.
-func parseArgs(argv []string) (options, command, bool, error) {
+// parseArgs fills the option and positional state. 'info' names an information
+// option - help, version, about or donate - asked for from any position: '<noun>
+// <verb> --help' is the reflex every git user has, and slot 1 always holds a real
+// command, so nothing can be shadowed. -v is deliberately not an option here - it
+// must not turn a mutating command into a silent no-op.
+func parseArgs(argv []string) (opt options, cmd command, info string, err error) {
 	const maxPositional = 5
-	opt := defaultOptions()
-	cmd := command{mutating: true}
+	opt = defaultOptions()
+	cmd = command{mutating: true}
 	lastSwitch := ""
 	expectingValue := false
 	positional := 0
@@ -63,14 +63,18 @@ func parseArgs(argv []string) (options, command, bool, error) {
 			lastSwitch = t
 			switch {
 			case t == "h" || t == "help":
-				return opt, cmd, true, nil
+				return opt, cmd, "help", nil
+			case t == "version" || t == "ver":
+				return opt, cmd, "version", nil
+			case t == "about" || t == "donate":
+				return opt, cmd, t, nil
 			case t == "q" || t == "quiet" || t == "y" || t == "yes":
 				opt.quiet = true
 			case t == "no-fetch" || t == "nofetch":
 				opt.fetch = false
 			case t == "offline":
 				// Old spelling of --no-fetch, and a lie: it never stopped a push.
-				return opt, cmd, false, usagef("There is no --offline option. Offline is a state gitsby finds by trying, not one you declare; use --no-fetch to skip the pre-command fetch (pushes still go out).")
+				return opt, cmd, "", usagef("There is no --offline option. Offline is a state gitsby finds by trying, not one you declare; use --no-fetch to skip the pre-command fetch (pushes still go out).")
 			case t == "public":
 				opt.visibility, opt.sawPublic = "public", true
 			case t == "private":
@@ -86,12 +90,12 @@ func parseArgs(argv []string) (options, command, bool, error) {
 			case t == "config":
 				expectingValue = true
 			default:
-				return opt, cmd, false, usagef("Unexpected option in this context: '%s'.", arg)
+				return opt, cmd, "", usagef("Unexpected option in this context: '%s'.", arg)
 			}
 		default:
 			positional++
 			if positional > maxPositional {
-				return opt, cmd, false, usagef("Too many positional arguments: %d, for max of %d. If that was a message or title, quote it.", positional, maxPositional)
+				return opt, cmd, "", usagef("Too many positional arguments: %d, for max of %d. If that was a message or title, quote it.", positional, maxPositional)
 			}
 			switch positional {
 			case 1:
@@ -108,9 +112,9 @@ func parseArgs(argv []string) (options, command, bool, error) {
 		}
 	}
 	if expectingValue {
-		return opt, cmd, false, usagef("Never received a parameter for switch '--%s'.", lastSwitch)
+		return opt, cmd, "", usagef("Never received a parameter for switch '--%s'.", lastSwitch)
 	}
-	return opt, cmd, false, nil
+	return opt, cmd, "", nil
 }
 
 // collapseCommand folds '<noun> <verb>' to one internal token and shifts the

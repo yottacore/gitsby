@@ -55,6 +55,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- `--version`, `--about` and `--donate` work after a command, as `--help` always has. `-v` still counts only as the first word, so it can't turn a command into a silent no-op.
+
+- `repo clone` names the folder it clones into in full, in the plan and after. The git command it runs keeps the folder as typed.
+
 - The accounts file is in [SHCL](https://github.com/yottacore/shcl) now - `key: value`, one indented block per account - read and written through that format's own module rather than a parser of Gitsby's own. Several folders for one account are a list: `path: ~/dev/work, ~/dev/other`. Key names settle on lower case (`ghaccount`, `tokenfile`, `sshkey`, `pathcontains`); the file takes any casing. A file in the old flat `key = value` layout is still read as it is, and the first `account set` rewrites it in the new layout with its comments kept. A file `account set` creates ends with a footer naming the format and where its syntax is written down. A backslash is plain text outside double quotes, so a Windows path goes in single quotes as it is typed: `path: 'C:\dev\work'`.
 
 - The accounts file lives where each platform keeps one, and each platform is asked in its own terms. Windows reads `%APPDATA%\gitsby\config.shcl`; macOS reads `~/Library/Application Support/gitsby/config.shcl`; Linux and FreeBSD read `$XDG_CONFIG_HOME/gitsby/config.shcl`, then `~/.config/gitsby/config.shcl`. The first of those is also where `account set` creates a file when there is none, and where the identity block points you when it has advice about one.
@@ -127,6 +131,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - A folder rule of `/`, or a bare drive on Windows, covers every folder. It covered none, and `account apply` gave git a rule that matched nothing either.
 
+- The installers find out before the plan, not after the download, when they can't write the folder they install to. The Bash one also checks that `sudo` exists before promising it. The PowerShell one installs the binary as 755 whatever the umask, as the Bash one does, and its plan says when it creates the folder or clears copies an earlier install left behind.
+
 - The installers check a release tag read from GitHub's redirect for `..` the same way they check a typed `--tag`. The Bash installer also says "Aborted." when the prompt gets end of input, instead of exiting with no word.
 
 ### Removed
@@ -136,6 +142,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `--offline` is no longer accepted as a spelling of `--no-fetch`. It was undocumented, and it never did what the word says - pushes went out regardless. Typing it now says so and names `--no-fetch`, which skips the pre-command fetch. Being offline is still handled on its own: gitsby finds out by trying, and each command degrades or refuses accordingly.
 
 ### Other work
+
+- `cicd/release.bash` builds the published binaries from an export of the tag rather than the working tree. The pipeline also records the versions of the six tools outside Go that can change a result, and warns when one differs. It compared the Go tools only, and missed one installed under `GOPATH` and not on `PATH`.
+
+- The README's badges read what they show from the repo, the Go version included, and `.gitignore` covers what an OS or an editor leaves beside the files.
 
 - `cicd/release.bash` is committed executable, as its usage line assumes, and a dry run no longer ends by saying it tagged and released the version.
 

@@ -59,6 +59,17 @@ GO_TOOL_VERSIONS=(
 	"govulncheck=v1.5.0"
 	"goversioninfo=v1.5.0"
 )
+## The same, for the tools outside Go whose version can change a result: a lint finding, the
+## demo gif's bytes, or a spawn count. Each spells its version its own way, so cicd.bash's
+## fToolVersion knows how to ask every one of them.
+TOOL_VERSIONS=(
+	"shellcheck=0.11.0"
+	"markdownlint=0.49.1"
+	"PSScriptAnalyzer=1.25.0"
+	"gifsicle=1.96"
+	"Pillow=11.1.0"
+	"strace=6.18"
+)
 
 ## Half the cores, rounded up. The compiler takes all of them by default, in every build and
 ## in the eight-target release loop, which makes the machine unusable for the duration.
@@ -117,7 +128,7 @@ FUZZ_CMD=(cicd/fuzz.bash)
 
 ## Stage 4: backwards compatibility. Same input to the Go build and to the frozen v2.1.0
 ## script under legacy/, answers compared byte for byte wherever the two still claim to be
-## the same command. Skipped by --quick; self-skips when legacy/ is gone.
+## the same command. Self-skips when legacy/ is gone.
 PARITY_CMD=(cicd/parity.bash)
 
 ## Full run output is tee'd here (gitignored) so warnings from any stage can be
@@ -222,3 +233,4 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-08-19 JC: The installer is back at the repo root, so its two files are linted again - the root install.bash under shellcheck, install.ps1 under a restored PSScriptAnalyzer glob. FreeBSD joins the release matrix, since it cross-builds for free and the installer would otherwise have nothing to offer a BSD.
 ##		- 2026-09-10 JC: BACKLOG_CHECK_CMD joins stage 1.
 ##		- 2026-09-14 JC: The demo comment names the build the demo really runs.
+##		- 2026-09-28 JC: TOOL_VERSIONS records the six tools outside Go that shape a result. The parity comment no longer says --quick skips it.

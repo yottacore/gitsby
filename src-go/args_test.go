@@ -13,8 +13,8 @@ import "testing"
 
 func TestParseArgsPositionals(t *testing.T) { // [EnQKNs4]
 	opt, cmd, help, err := parseArgs([]string{"repo", "clone", "https://x/y.git", "dir"})
-	if err != nil || help {
-		t.Fatalf("err=%v help=%v", err, help)
+	if err != nil || help != "" {
+		t.Fatalf("err=%v help=%q", err, help)
 	}
 	if cmd.name != "repo" || cmd.arg != "clone" || cmd.arg2 != "https://x/y.git" || cmd.arg3 != "dir" {
 		t.Errorf("positionals landed wrong: %+v", cmd)
@@ -126,9 +126,30 @@ func TestSortCommandAccountSet(t *testing.T) { // [EnXe9ae]
 
 func TestParseArgsHelpFromAnyPosition(t *testing.T) { // [EnQKNs8]
 	for _, argv := range [][]string{{"--help"}, {"br", "create", "--help"}, {"-h"}} {
-		if _, _, help, err := parseArgs(argv); !help || err != nil {
-			t.Errorf("%v: help=%v err=%v", argv, help, err)
+		if _, _, help, err := parseArgs(argv); help != "help" || err != nil {
+			t.Errorf("%v: help=%q err=%v", argv, help, err)
 		}
+	}
+}
+
+// The information options answer from any position, as help does. A message value
+// is still a message, and -v stays first-word only.
+func TestParseArgsInfoFromAnyPosition(t *testing.T) { // [ErCP1Ra]
+	for _, tc := range []struct {
+		argv []string
+		want string
+	}{
+		{[]string{"br", "create", "x", "--version"}, "version"},
+		{[]string{"status", "--about"}, "about"},
+		{[]string{"sync", "--donate"}, "donate"},
+		{[]string{"sync", "-m", "--about"}, ""},
+	} {
+		if _, _, info, err := parseArgs(tc.argv); info != tc.want || err != nil {
+			t.Errorf("%v: info=%q err=%v, want %q", tc.argv, info, err, tc.want)
+		}
+	}
+	if _, _, _, err := parseArgs([]string{"sync", "-v"}); err == nil {
+		t.Error("-v after a command must be refused, not read as --version")
 	}
 }
 
