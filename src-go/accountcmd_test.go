@@ -1104,3 +1104,123 @@ func TestSettingTheAccountEnvStopsOnFailure(t *testing.T) { // [Er1LxTn]
 		t.Errorf("GIT_CONFIG_COUNT = %q after its value failed to set, so git reads a half-written entry", count)
 	}
 }
+
+// unsetApp is setApp for 'account unset': a run pointed at a real accounts file.
+func unsetApp(t *testing.T, body, name, key string) (*app, string) {
+	t.Helper()
+	a, file := setApp(t, body, name, key, "")
+	a.cmd = command{name: "account-unset", arg: name, arg2: key, mutating: true}
+	return a, file
+}
+
+// Every line of the key goes, a repeated one included, and every other line of the
+// file stays as typed: its spacing, its comments, the other block's key of the same
+// name. A blank line above a removed one goes with it.
+func TestAccountUnsetRemovesEveryLine(t *testing.T) { // [ErCjvnV]
+	body := "# mine\naccount: work\n    email: a@x   # trailing\n    path: /srv/w\n\n    path: /srv/w2\naccount: home\n    path: /srv/h\n"
+	a, file := unsetApp(t, body, "Work", "PATH")
+	plan, done, err := a.accountUnsetPlan()
+	if err != nil || done {
+		t.Fatalf("plan: done = %v, err = %v", done, err)
+	}
+	want := []goneLine{{4, "path: /srv/w"}, {6, "path: /srv/w2"}}
+	if !slices.Equal(plan.gone, want) || plan.reshapes {
+		t.Errorf("plan: gone = %v, reshapes = %v; want %v and no reshape", plan.gone, plan.reshapes, want)
+	}
+	a.set = &plan
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("unset: %v", err)
+	}
+	if got := readBack(t, file); got != "# mine\naccount: work\n    email: a@x   # trailing\naccount: home\n    path: /srv/h\n" {
+		t.Errorf("file after unset:\n%s", got)
+	}
+}
+
+// A key nothing reads can go where the block has one, which is how the listing's
+// ignored line gets cleared. One the block lacks is refused, so a typo on the
+// command line isn't answered with "nothing to do".
+func TestAccountUnsetTakesAKeyNothingReads(t *testing.T) { // [ErCjvnj]
+	body := "account: work\n\temial: a@x\n\temail: b@x\n"
+	a, file := unsetApp(t, body, "work", "emial")
+	plan, done, err := a.accountUnsetPlan()
+	if err != nil || done || len(plan.gone) != 1 {
+		t.Fatalf("plan: gone = %v, done = %v, err = %v", plan.gone, done, err)
+	}
+	a.set = &plan
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("unset: %v", err)
+	}
+	if got := readBack(t, file); got != "account: work\n\temail: b@x\n" {
+		t.Errorf("file after unset:\n%s", got)
+	}
+	a, _ = unsetApp(t, body, "work", "emali")
+	if _, _, err := a.accountUnsetPlan(); err == nil || !strings.Contains(err.Error(), "has no such line") {
+		t.Errorf("an unknown key the block lacks: err = %v, want a refusal", err)
+	}
+}
+
+// Nothing to take out is a finished run, not a refusal, and the file is left alone.
+func TestAccountUnsetNothingToDo(t *testing.T) { // [ErCjvnx]
+	for _, tc := range []struct{ name, key string }{{"work", "host"}, {"wrok", "email"}} {
+		a, file := unsetApp(t, keptBody, tc.name, tc.key)
+		if _, done, err := a.accountUnsetPlan(); !done || err != nil {
+			t.Errorf("%s %s: done = %v, err = %v; want done", tc.name, tc.key, done, err)
+		}
+		if got := readBack(t, file); got != keptBody {
+			t.Errorf("%s %s: the file changed:\n%s", tc.name, tc.key, got)
+		}
+	}
+	a := createApp(t, newPrinter())
+	a.cmd = command{name: "account-unset", arg: "work", arg2: "email", mutating: true}
+	if err := a.cfg.load(a.opt); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if _, done, err := a.accountUnsetPlan(); !done || err != nil {
+		t.Errorf("no file at all: done = %v, err = %v; want done", done, err)
+	}
+}
+
+// Unreadable is not absent: with a discovered file that can't be read, nothing
+// loaded, and the key may be in it.
+func TestAccountUnsetRefusesAnUnreadableFile(t *testing.T) { // [ErCjvoB]
+	if isWindows() || os.Geteuid() == 0 {
+		t.Skip("needs a file this user can't read: Windows has no 0200, and root reads through one")
+	}
+	a := createApp(t, newPrinter())
+	a.cmd = command{name: "account-unset", arg: "work", arg2: "ghaccount", mutating: true}
+	file := putDefaultConfig(t, keptBody)
+	if err := os.Chmod(file, 0o200); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(file, 0o600) })
+	if err := a.cfg.load(a.opt); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	_, done, err := a.accountUnsetPlan()
+	if done || err == nil {
+		t.Fatalf("plan: done = %v, err = %v; want a refusal", done, err)
+	}
+	for _, want := range []string{"can't be read", "File: " + nativePath(file), "permission denied", "chmod u+r '" + file + "'"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal is missing %q:\n%s", want, err)
+		}
+	}
+}
+
+// A flat file comes out in the current layout without the key, as a set would
+// leave it.
+func TestAccountUnsetConvertsAFlatFile(t *testing.T) { // [ErCjvoP]
+	a, file := unsetApp(t, "# old\naccount.work.email = a@x\naccount.work.name = Al\n", "work", "name")
+	plan, done, err := a.accountUnsetPlan()
+	if err != nil || done || !plan.converts {
+		t.Fatalf("plan: converts = %v, done = %v, err = %v", plan.converts, done, err)
+	}
+	a.set = &plan
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("unset: %v", err)
+	}
+	got := readBack(t, file)
+	if !strings.HasPrefix(got, "# old\n\naccount: work\n\temail: a@x\n") || strings.Contains(got, "Al") {
+		t.Errorf("file after unset:\n%s", got)
+	}
+}
