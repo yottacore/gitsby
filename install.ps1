@@ -104,7 +104,10 @@ function Install-Gitsby {
     # somebody else's binary while the plan on screen still names ours. ValidatePattern admits
     # '..' and a leading '/', so both are checked here. Reads as a harmless version selector,
     # which is exactly why the confirm prompt is no protection.
-    if ($Tag -and ($Tag -match '(^|/)\.\.(/|$)' -or $Tag -match '^/' -or $Tag -match '//')) {
+    function Test-PathTag([string]$name) {
+        return ($name -match '(^|/)\.\.(/|$)' -or $name -match '^/' -or $name -match '//')
+    }
+    if ($Tag -and (Test-PathTag $Tag)) {
         throw "-Tag names a published release, not a path (got '${Tag}')."
     }
     $installSystemWide = $System.IsPresent -or ($Target -eq 'system')
@@ -200,7 +203,7 @@ function Install-Gitsby {
         }
     }
     # Scraped from a redirect header, so check it the same way as a typed one before it reaches a URL.
-    if ($tagName -notmatch '^[A-Za-z0-9._/-]+$') { throw "The resolved release tag ('${tagName}') isn't a plain git tag; aborting." }
+    if ($tagName -notmatch '^[A-Za-z0-9._/-]+$' -or (Test-PathTag $tagName)) { throw "The resolved release tag ('${tagName}') isn't a plain git tag; aborting." }
 
     # SHA256SUMS decides two things at once, and it is a few hundred bytes: whether this
     # release publishes a binary for this platform, and what that binary should hash to.
@@ -479,3 +482,5 @@ try {
 #     before the plan. The comment help lists the options, the Bash installer's long options
 #     work, and a binary that can't start gets the "would not run" message. -Help lists -Ref,
 #     errors have a blank line either side, and the plan says when it replaces a copy.
+#   - 20260928 JC: A tag read from the release redirect gets the same path check as a typed
+#     one.

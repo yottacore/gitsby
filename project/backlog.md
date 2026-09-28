@@ -32,41 +32,6 @@ Going forward, new issues in the new template at the bottom of this file, will g
 
 ## Bugs
 
-- 🔘 `status` says an account came from "gitsby.ghAccount in this repo's git config" when the key reached git through an `account apply` fragment included from the global config. The line also starts with a capital `G`, which no key is spelled with.
-	- Opened: 20260916-163000
-	- Origin: seen on b29w 2026-09-16, not traced to a commit. Confirmed.
-	- Test: none yet. It goes in test.bash right after "account apply runs", where the key reaches the repo only through the fragment. `status` there must name the global config, and keep the key's lower-case spelling.
-
-- 🔘 `account apply` writes `credential.https://github.com.username` from `ghAccount` for every account. An account with `host` set gets no username for its own host, so plain git there can push as whatever the credential manager holds. With both `ghAccount` and `user` set, the fragment names the first while gitsby's own runs use the second.
-	- Opened: 20260926-154915
-	- Origin: `writeAccountFragment`, read only. `selectAccount` already keys its helper on the account's host and login. Plausible.
-	- Test: none yet. The check beside "and asks for the account's login over https" only looks at github.com. An account with `host` and `user` set must get `credential.https://<host>.username` set to its `user`. That check fails today and makes the item Confirmed.
-
-- 🔘 A folder rule of `/` matches no folder, silently. The match looks for the rule plus `/`, which is `//`. `account apply` would write `gitdir/i://` for it too.
-	- Opened: 20260926-163000
-	- Origin: `config.go` folder match and `accountcmd.go` includeIf generation. The match half is Confirmed, the includeIf half Plausible: read.
-	- Test: none yet. Add a `/` rule to the Go tests `TestAccountForDir` and `TestAccountApplyPlanAgreesWithAccountForDir`. The second one fails whenever the plan and the matcher disagree, so it covers both halves.
-
-- 🔘 In `install.bash`, end of input at a terminal prompt exits 1 with no `Aborted.` and no closing blank line. The failing `read` ends the script under `set -e` before the answer is looked at. It is still a no, by accident.
-	- Opened: 20260926-154915
-	- Origin: seen while adding the installer checks. Confirmed: `script -qec "bash install.bash" /dev/null </dev/null` with the stub curl on PATH.
-	- Test: "go installer takes end of input at the prompt as a no" already runs this exact case. It passes, since it only checks that nothing was downloaded. The fix adds a `fBlankAfter '^Aborted\.$'` check on the same run.
-
-- 🔘 `cicd/release.bash` is committed as mode 100644, though its Syntax line says to run it as `cicd/release.bash [VERSION]`. That gives "Permission denied".
-	- Opened: 20260926-154915
-	- Origin: seen while adding the dry-run checks. Confirmed.
-	- Test: none yet. test.bash checks four utility scripts with `[[ -x ]]`, but that reads the working tree, and a local `chmod` hides the problem. The check should read the committed mode from `git ls-files -s`, for every script the docs say to run by path.
-
-- 🔘 `release.bash --dry-run` still prints "tagged and pushed" and "Released v1.2.4" at the end, for steps it only announced.
-	- Opened: 20260926-154915
-	- Origin: seen while adding the dry-run checks. Confirmed.
-	- Test: two checks assert the bug today. "release.bash --dry-run passes on a clean, tagged, pushed clone" and "and a dashed footer date newer than the tag answers it" both look for `Released v1.2.4`. The fix changes both to the dry-run wording and adds a check that "tagged and pushed" is gone.
-
-- 🔘 `install.bash` checks a tag read from the release redirect for its characters only, so `..` segments pass. A typed `--tag` gets the path check as well. Low exposure, since curl collapses dot segments before it reports the URL.
-	- Opened: 20260926-154915
-	- Origin: seen while adding the installer checks. Plausible: read.
-	- Test: none yet. The stub curl takes `FAKE_LATEST`, and it never collapses dot segments. So a copy of "go installer refuses a redirect to a tag that isn't one" with a `.../releases/tag/../x` redirect reproduces it, and makes the item Confirmed.
-
 ## Features and enhancements
 
 - 🔘 Move the shcl module from its pinned `dev` commit to the tagged 3.0 release.
@@ -128,6 +93,68 @@ Going forward, new issues in the new template at the bottom of this file, will g
 ## Done
 
 ### Done - Bugs
+
+- ✅ `status` says an account came from "gitsby.ghAccount in this repo's git config" when the key reached git through an `account apply` fragment included from the global config. The line also starts with a capital `G`, which no key is spelled with.
+	- Closed: 20260928-131013
+	- Opened: 20260916-163000
+	- Origin: seen on b29w 2026-09-16, not traced to a commit. Confirmed.
+	- Fixed: the line names the scope git reports for the key, so a fragment included from the global config reads "your global git config". It starts with "The", which keeps the key's own spelling.
+	- Swept: `acct.source` has two other readers, the `account` header and a refusal. Both put it mid-sentence, where "the ... key" reads the same.
+	- Verified: the check fails on `gover` and passes here.
+	- Test: [ErCKnBz] in test.bash, on the repo that gets the key only through the fragment.
+
+- ✅ `account apply` writes `credential.https://github.com.username` from `ghAccount` for every account. An account with `host` set gets no username for its own host, so plain git there can push as whatever the credential manager holds. With both `ghAccount` and `user` set, the fragment names the first while gitsby's own runs use the second.
+	- Closed: 20260928-131013
+	- Opened: 20260926-154915
+	- Origin: `writeAccountFragment`, read only. `selectAccount` already keys its helper on the account's host and login. Plausible.
+	- Fixed: the fragment keys the username on the account's host and gives the login gitsby's own runs use: `user`, else `ghAccount` on GitHub. `accountHost` shares the host rule.
+	- Verified: all three checks fail on `gover` and pass here. Confirmed by the same run.
+	- Test: [ErCL5PB], [ErCL5PR] and [ErCL5Pg] in test.bash: the other host gets its `user`, github.com gets nothing for it, and `user` wins over `ghAccount`.
+
+- ✅ A folder rule of `/` matches no folder, silently. The match looks for the rule plus `/`, which is `//`. `account apply` would write `gitdir/i://` for it too.
+	- Closed: 20260928-131013
+	- Opened: 20260926-163000
+	- Origin: `config.go` folder match and `accountcmd.go` includeIf generation. The match half is Confirmed, the includeIf half Plausible: read.
+	- Fixed: a rule ending in a slash, `/` or a drive root, takes no second one, in the matcher and in the includeIf pattern.
+	- Swept: the two other prefix tests on a folder. The managed-includes scan now shares the matcher's test. The stale-rule warning keeps a root's slash, so a drive root is not read as a relative rule. `pathContains` drops slashes before matching, so a rule of `/` there is empty and ignored, as before.
+	- Note: the test.bash header said a `/` rule covers nothing. That line went, since it described this bug.
+	- Verified: all four fail on `gover` and pass here.
+	- Test: `TestAccountForDirRootRule` and `TestAccountApplyPlanRootRule` in Go, plus [ErCLUFY] and [ErCLUFu] in test.bash, where plain git reads the rule `account apply` wrote.
+
+- ✅ In `install.bash`, end of input at a terminal prompt exits 1 with no `Aborted.` and no closing blank line. The failing `read` ends the script under `set -e` before the answer is looked at. It is still a no, by accident.
+	- Closed: 20260928-131013
+	- Opened: 20260926-154915
+	- Origin: seen while adding the installer checks. Confirmed: `script -qec "bash install.bash" /dev/null </dev/null` with the stub curl on PATH.
+	- Fixed: a failed read leaves the answer empty, which is a no.
+	- Swept: install.ps1 already said "Aborted." here, pinned by [Er1LxSf]. The installer has no other `read`.
+	- Verified: the check fails on `gover` and passes here.
+	- Test: [ErCLcN9] in test.bash, on the same run as "go installer takes end of input at the prompt as a no".
+
+- ✅ `cicd/release.bash` is committed as mode 100644, though its Syntax line says to run it as `cicd/release.bash [VERSION]`. That gives "Permission denied".
+	- Closed: 20260928-131013
+	- Opened: 20260926-154915
+	- Origin: seen while adding the dry-run checks. Confirmed.
+	- Fixed: committed as 100755. `demo-repo.bash` and `install.ps1` had the same mode and a shebang, and are executable now too.
+	- Verified: the check listed all three before and passes after.
+	- Test: [ErCM5cg] in test.bash reads every script's committed mode from `git ls-files -s`, leaving out `legacy/` and the files that are only sourced.
+
+- ✅ `release.bash --dry-run` still prints "tagged and pushed" and "Released v1.2.4" at the end, for steps it only announced.
+	- Closed: 20260928-131013
+	- Opened: 20260926-154915
+	- Origin: seen while adding the dry-run checks. Confirmed.
+	- Fixed: under `--dry-run` phase 2 closes with "dry run, v1.2.4 not tagged" and the run with "Dry run done: v1.2.4 was not released".
+	- Verified: all three fail on `gover` and pass here.
+	- Test: [Er1LxSz] and [Er1LxT5] look for the dry-run wording now, and [ErCMBqv] fails on "tagged and pushed" or "Released v1.2.4".
+
+- ✅ `install.bash` checks a tag read from the release redirect for its characters only, so `..` segments pass. A typed `--tag` gets the path check as well. Low exposure, since curl collapses dot segments before it reports the URL.
+	- Closed: 20260928-131013
+	- Opened: 20260926-154915
+	- Origin: seen while adding the installer checks. Plausible: read.
+	- Reproduced: with the stub curl, the old script fetched `releases/download/../x/SHA256SUMS`. Confirmed.
+	- Fixed: the typed and the resolved tag go through one path check.
+	- Swept: install.ps1 had the same gap and fetched `download/../SHA256SUMS` on 5.1, which hands the header back as text. On 7 the header is a `[uri]`, which collapses the `..` first. Fixed the same way.
+	- Verified: all four fail on `gover` and pass here.
+	- Test: [ErCLuem] and [ErCLuf1] in test.bash for install.bash, and [ErCLufF] and [ErCLufT] for install.ps1.
 
 - ✅ Two test.bash checks on the frozen `install.ps1`, "iex form reaches the plan" and "and refuses without a tty", ask the live GitHub API for the latest release. Several suite runs inside an hour use up the anonymous rate limit, and both go red. The suite's header says it never touches the network.
 	- Closed: 20260926-202618

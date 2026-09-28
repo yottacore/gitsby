@@ -162,8 +162,12 @@ func (c *config) accountApplyPlan() []includeRule {
 			continue
 		}
 		// The trailing slash is what makes git apply it to everything below the
-		// folder too.
-		paths = append(paths, includeCandidate{len(r.match), i, globLiteral(r.match) + "/", r.acct})
+		// folder too. A root has one already, and a second matches nothing.
+		pattern := globLiteral(r.match)
+		if !strings.HasSuffix(pattern, "/") {
+			pattern += "/"
+		}
+		paths = append(paths, includeCandidate{len(r.match), i, pattern, r.acct})
 	}
 	for i, r := range c.segments {
 		if r.match == "" {
@@ -228,7 +232,7 @@ func (c *config) accountManagedIncludes() []string {
 		// so ours comes back as 'C:/...' where we wrote '/c/...' - and a prefix test
 		// on the raw text never fires, which quietly turns every re-run into a
 		// duplicate rather than a refresh.
-		if !strings.HasPrefix(canonPath(value), canonDir+"/") {
+		if value := canonPath(value); value == canonDir || !pathUnder(value, canonDir) {
 			continue
 		}
 		// --unset-all takes every entry under a key at once, so a key listed twice
@@ -481,8 +485,9 @@ func (a *app) writeAccountFragment(dir, name string) error {
 		// helper happened to hold first - so a bare 'git push' in a configured folder
 		// could still go out as someone else, which is the gap 'apply' exists to close.
 		// Naming the user is what makes a credential manager look up that account's
-		// entry rather than any entry for the host.
-		{"credential.https://github.com.username", a.cfg.value(name, "ghAccount")},
+		// entry rather than any entry for the host. Keyed on the account's own host
+		// and login, the same pair gitsby's own runs hand the helper.
+		{"credential.https://" + a.cfg.hostOf(name) + ".username", a.cfg.loginOf(name)},
 		// Expanded, since git knows none of the home spellings the accounts file takes.
 		{"gitsby.ghTokenFile", expandHome(a.cfg.value(name, "tokenFile"))},
 	}
@@ -620,7 +625,12 @@ func (c *config) relativeManagedIncludes() []string {
 		if !ok || strings.HasPrefix(pattern, "**/") || slices.Contains(out, pattern) {
 			continue
 		}
-		if folderRuleProblem(strings.TrimSuffix(pattern, "/")) != "" {
+		// A root keeps its slash: 'C:' alone is not a folder.
+		folder := pattern
+		if folder != "/" && !driveRootRE.MatchString(folder) {
+			folder = strings.TrimSuffix(folder, "/")
+		}
+		if folderRuleProblem(folder) != "" {
 			out = append(out, pattern)
 		}
 	}

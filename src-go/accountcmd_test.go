@@ -150,6 +150,18 @@ account.zed.path = /srv/shared
 	}
 }
 
+// git adds '**' to a pattern that ends in a slash, so the root's pattern is the
+// root itself. Given one more slash, '//' matched no repo while gitsby's own
+// matcher covered them all.
+func TestAccountApplyPlanRootRule(t *testing.T) { // [ErCLIE4]
+	cfg := planFor(t, "account.all.path = "+driveFolder("/")+"\n")
+	plan := cfg.accountApplyPlan()
+	want := "includeIf.gitdir/i:" + driveRule("/") + ".path"
+	if len(plan) != 1 || plan[0].cond != want {
+		t.Fatalf("plan = %v, want one rule %q", plan, want)
+	}
+}
+
 // Two accounts on one folder is a mistake with no right answer, so it gets said
 // out loud rather than settled silently.
 func TestContestedRules(t *testing.T) { // [EnQNsZo]

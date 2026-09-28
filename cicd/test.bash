@@ -47,8 +47,7 @@ export GITSBY_CONFIG="${work}/no-accounts.shcl"; : > "${GITSBY_CONFIG}"
 acNoDiscovery="GITSBY_CONFIG= XDG_CONFIG_HOME= APPDATA="
 ## So every run behaves like one on a machine with accounts configured: a block that drops the
 ## pin and forgets the line above finds an account covering every folder the suite makes, under
-## a login no check expects, instead of passing on a clean box and failing on a real one. A rule
-## of '/' would cover nothing, since a folder rule claims what is under it.
+## a login no check expects, instead of passing on a clean box and failing on a real one.
 poisonRoot="${work}"
 case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) poisonRoot="$(cygpath -m "${work}")" ;; esac
 mkdir -p "${work}/poison-config/gitsby"
@@ -2412,9 +2411,11 @@ GHEOF
 	fi
 	## Ctrl-D at the prompt is a no, the same as a closed stdin.
 	if ((hasPty)); then
-		script -qec "env HOME='${eu}/h6' PATH='${ei}/bin:${PATH}' FAKE_CALLS='${eu}/calls6' FAKE_SUMS='${ei}/SHA256SUMS' FAKE_ASSET='${ei}/asset' bash '${goInst}'" /dev/null </dev/null >/dev/null 2>&1 || true
+		script -qec "env HOME='${eu}/h6' PATH='${ei}/bin:${PATH}' FAKE_CALLS='${eu}/calls6' FAKE_SUMS='${ei}/SHA256SUMS' FAKE_ASSET='${ei}/asset' bash '${goInst}'" /dev/null </dev/null >"${eu}/out6" 2>&1 || true
 		fAssert    "[Er1LxSC] go installer takes end of input at the prompt as a no" \
 			bash -c "grep -q '/SHA256SUMS\$' '${eu}/calls6' && ! grep -q '/gitsby-' '${eu}/calls6' && [[ ! -e '${eu}/h6/.local/bin/gitsby' ]]"
+		## The failed read used to end the script before the answer was looked at, with no word said.
+		fAssert    "[ErCLcN9] and says so, with the blank line after"  fBlankAfter '^Aborted\.$' cat "${eu}/out6"
 	fi
 	## Each of these refusals has to leave nothing behind. Turned into a warning, any one of them
 	## puts an unverified binary on PATH and the run still looks like a success.
@@ -2453,6 +2454,11 @@ GHEOF
 	fAssertOut  "[Er1LxSN] go installer refuses a redirect to a tag that isn't one"  "isn't a plain git tag" \
 		bash -c "env HOME='${ev}/h5' PATH='${ei}/bin:${PATH}' FAKE_LATEST='https://github.com/yottacore/gitsby/releases/tag/v1;id' FAKE_SUMS='${ei}/SHA256SUMS' FAKE_ASSET='${ei}/asset' FAKE_CALLS='${ev}/calls5' bash '${goInst}' -y 2>&1"
 	fAssert     "[Er1LxSO] and fetches nothing with it"  bash -c "grep -q '/releases/latest\$' '${ev}/calls5' && ! grep -q 'SHA256SUMS' '${ev}/calls5'"
+	## A '..' segment passed the character test, which was the only one the redirect's tag got.
+	## The stub never collapses dot segments, so this is the case a curl that didn't would give.
+	fAssertOut  "[ErCLuem] and one that climbs out with '..'"  "isn't a plain git tag" \
+		bash -c "env HOME='${ev}/h6' PATH='${ei}/bin:${PATH}' FAKE_LATEST='https://github.com/yottacore/gitsby/releases/tag/../x' FAKE_SUMS='${ei}/SHA256SUMS' FAKE_ASSET='${ei}/asset' FAKE_CALLS='${ev}/calls6' bash '${goInst}' -y 2>&1"
+	fAssert     "[ErCLuf1] and fetches nothing with it"  bash -c "grep -q '/releases/latest\$' '${ev}/calls6' && ! grep -q 'SHA256SUMS' '${ev}/calls6'"
 	## 'install' into a directory that isn't there fails, and a fresh macOS has no /usr/local/bin.
 	## The sudo stub only logs, so nothing reaches the real directory.
 	if [[ ! -w /usr/local/bin ]]; then
@@ -2636,13 +2642,15 @@ GHEOF
 				fFramed fPsInstall "${psi}" "${psi}/h7" 7 "${goInstPs}" -Yes
 			## Each refusal has to leave nothing installed; a warning in its place would not.
 			local psv="${work}/psverify" psvDir=""
-			for psvDir in sum nosums page exit3 badtag eof; do mkdir -p "${psv}/${psvDir}"; cp "${psi}/stubs.ps1" "${psv}/${psvDir}/"; done
+			for psvDir in sum nosums page exit3 badtag dottag eof; do mkdir -p "${psv}/${psvDir}"; cp "${psi}/stubs.ps1" "${psv}/${psvDir}/"; done
 			cp "${ev}/tampered" "${psv}/sum/asset"; cp "${ei}/SHA256SUMS" "${psv}/sum/"
 			cp "${ei}/asset" "${psv}/nosums/"
 			cp "${ev}/portal" "${psv}/page/asset"; cp "${ev}/portalsums" "${psv}/page/SHA256SUMS"
 			cp "${eb}/asset" "${eb}/SHA256SUMS" "${psv}/exit3/"
 			cp "${ei}/asset" "${ei}/SHA256SUMS" "${psv}/badtag/"
 			sed 's|/releases/tag/v1\.2\.3|/releases/tag/v1;id|' "${psi}/stubs.ps1" > "${psv}/badtag/stubs.ps1"
+			cp "${ei}/asset" "${ei}/SHA256SUMS" "${psv}/dottag/"
+			sed 's|/releases/tag/v1\.2\.3|/releases/tag/../x|' "${psi}/stubs.ps1" > "${psv}/dottag/stubs.ps1"
 			cp "${ei}/asset" "${ei}/SHA256SUMS" "${psv}/eof/"
 			fAssertOut "[Er1LxST] go ps installer refuses a download that fails its checksum"  'Checksum mismatch for gitsby-' \
 				fPsInstall "${psv}/sum" "${psv}/sum/home" 7 "${goInstPs}" -Yes
@@ -2665,6 +2673,10 @@ GHEOF
 			fAssertOut "[Er1LxSd] go ps installer refuses a redirect to a tag that isn't one"  "isn't a plain git tag" \
 				fPsInstall "${psv}/badtag" "${psv}/badtag/home" 7 "${goInstPs}" -Yes
 			fAssert    "[Er1LxSe] and fetches nothing with it"  bash -c "grep -q '/releases/latest\$' '${psv}/badtag/calls' && ! grep -q 'SHA256SUMS' '${psv}/badtag/calls'"
+			## 7 hands the header back as a [uri], which collapses the '..' first. 5.1 hands back the text.
+			fAssertOut "[ErCLufF] and one that climbs out with '..'"  "isn't a plain git tag" \
+				fPsInstall "${psv}/dottag" "${psv}/dottag/home" 51 "${goInstPs}" -Yes
+			fAssert    "[ErCLufT] and fetches nothing with it"  bash -c "grep -q '/releases/latest\$' '${psv}/dottag/calls' && ! grep -q 'SHA256SUMS' '${psv}/dottag/calls'"
 			## Read-Host at end of input is AutomationNull, and -notmatch on that is falsy.
 			fAssertOut "[Er1LxSf] go ps installer takes end of input at the prompt as a no"  'Aborted' \
 				fPsInstall "${psv}/eof" "${psv}/eof/home" 7 "${goInstPs}"
@@ -3387,6 +3399,10 @@ GHEOF
 	## Without a username a credential manager answers with any entry it holds for the host.
 	fAssert "[Er1LxSs] and asks for the account's login over https"  bash -c "cd '${acWork}' && env ${acEnv} git config credential.https://github.com.username | grep -qx workacct"
 	fAssert "[EmMuR5x] and the sibling tree gets the other one"        bash -c "cd '${acHome}' && env ${acEnv} git config gitsby.ghAccount | grep -qx homeacct"
+	## The key reaches that repo only through the fragment the global config includes, so that is
+	## the config to name, with the key spelled as git takes it.
+	fAssertOut "[ErCKnBz] and status says it came from the global git config"  "From: The gitsby\.ghAccount key in your global git config\.$" \
+		bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	fAssert "[EmMuR5y] re-applying does not duplicate the rules"  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(grep -c 'gitsby/accounts' '${ac}/home/.gitconfig')\" == 2 ]]"
 	fAssert "[EmMuR5z] and leaves a hand-written includeIf alone"  bash -c "grep -q 'hand/written' '${ac}/home/.gitconfig'"
 	## Removing an account from the config has to remove its rule, or it silently keeps applying.
@@ -3417,6 +3433,37 @@ GHEOF
 		bash -c "cd '${ac}/my trees/work' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && [[ \"\$(grep -c 'sp\.gitconfig' '${ac}/spacehome/.gitconfig')\" == 1 ]]"
 	fAssert "[EnPP5qZ] and dropping that account drops its rule" \
 		bash -c "cd '${ac}/my trees/work' && sed -i '/^account\.sp\./d' '${ac}/spaced.shcl' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && ! grep -q 'sp\.gitconfig' '${ac}/spacehome/.gitconfig'"
+	## The username plain git asks with has to be for the account's own host, and the same login
+	## gitsby's own runs give the helper. It was always github.com and always ghAccount, so an
+	## account on another host got none, and one with both keys set named the other login.
+	mkdir -p "${ac}/hosthome"
+	: > "${ac}/hosthome/.gitconfig"
+	cat > "${ac}/hosts.shcl" <<-EOF
+		account.gt.path        = ${acCanon}/trees/work
+		account.gt.host        = gitea.example.com
+		account.gt.user        = gtuser
+		account.gt.ghAccount   = gtgh
+		account.both.path      = ${acCanon}/trees/home
+		account.both.ghAccount = bothgh
+		account.both.user      = bothuser
+	EOF
+	local acHostEnv="${acNoDiscovery} HOME='${ac}/hosthome' GIT_CONFIG_GLOBAL='${ac}/hosthome/.gitconfig' PATH='${ac}/bin:${PATH}'"
+	fAssert "[ErCL5PB] account apply names the login for an account's own host" \
+		bash -c "cd '${acWork}' && env ${acHostEnv} '${gitsby}' -q -NoFetch --config '${ac}/hosts.shcl' account apply >/dev/null && env ${acHostEnv} git config credential.https://gitea.example.com.username | grep -qx gtuser"
+	fAssertFail "[ErCL5PR] and none for github.com, which that account doesn't use" \
+		bash -c "cd '${acWork}' && env ${acHostEnv} git config credential.https://github.com.username"
+	fAssert "[ErCL5Pg] and user wins over ghAccount, as it does for gitsby's own runs" \
+		bash -c "cd '${acHome}' && env ${acHostEnv} git config credential.https://github.com.username | grep -qx bothuser"
+	## A rule for the root covers every folder. It looked for the rule plus a slash, '//', and
+	## covered none, and the includeIf git got had the same extra slash.
+	mkdir -p "${ac}/roothome"
+	: > "${ac}/roothome/.gitconfig"
+	printf 'account.all.path = %s\naccount.all.ghAccount = rootacct\n' "${acCanon%%/*}/" > "${ac}/root.shcl"
+	local acRootEnv="${acNoDiscovery} HOME='${ac}/roothome' GIT_CONFIG_GLOBAL='${ac}/roothome/.gitconfig' PATH='${ac}/bin:${PATH}'"
+	fAssertOut "[ErCLUFY] a folder rule for the root covers every folder"  "Account \.+: rootacct" \
+		bash -c "cd '${acAway}' && env ${acRootEnv} '${gitsby}' -q -NoFetch --config '${ac}/root.shcl' status"
+	fAssert "[ErCLUFu] and account apply gives plain git the same rule" \
+		bash -c "cd '${acAway}' && env ${acRootEnv} '${gitsby}' -q -NoFetch --config '${ac}/root.shcl' account apply >/dev/null && env ${acRootEnv} git config gitsby.ghAccount | grep -qx rootacct"
 
 	## A folder rule typed relative. 'path: .' went out as 'gitdir/i:./', which git measures from
 	## the folder holding the global git config, so every repo under home took the account while
@@ -3717,7 +3764,10 @@ GHEOF
 		relState="$(fRelState)"
 		fRelRun --dry-run
 		fAssert "[Er1LxSz] release.bash --dry-run passes on a clean, tagged, pushed clone" \
-			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'Released v1.2.4' '${relOut}'"
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'Dry run done: v1.2.4 was not released' '${relOut}'"
+		## It closed by saying the version was tagged, pushed and released, for steps it only announced.
+		fAssert "[ErCMBqv] and doesn't claim to have tagged or released anything" \
+			bash -c "! grep -qE 'tagged and pushed|Released v1\.2\.4' '${relOut}'"
 		fAssert "[Er1LxT0] and announces the pipeline, the cross-build at the next version, the tag and the release, in that order" \
 			awk '/would: run cicd\/cicd\.bash --no-publish$/{a=NR} /would: cross-build [0-9]+ targets at v1\.2\.4$/{b=NR} /would: gitsby release v1\.2\.4$/{c=NR} /would: gh release create v1\.2\.4 with /{d=NR} END{exit !(a && a < b && b < c && c < d)}' "${relOut}"
 		fAssert "[Er1LxT1] and none of those steps reached a tool" \
@@ -3741,7 +3791,7 @@ GHEOF
 		git -C "${relRepo}" push --quiet 2>/dev/null
 		fRelRun --dry-run
 		fAssert "[Er1LxT5] and a dashed footer date newer than the tag answers it" \
-			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'Released v1.2.4' '${relOut}' && ! grep -qF 'has no history entry' '${relOut}'"
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'Dry run done: v1.2.4 was not released' '${relOut}' && ! grep -qF 'has no history entry' '${relOut}'"
 	fi
 
 	## Recursive removal. demo-repo.bash is the only script here that removes a path someone else
@@ -3868,6 +3918,10 @@ GHEOF
 		bash -c "[[ -x '${root}/cicd/utility/run-latest.ps1' ]]"
 	fAssert "[EndUdZR] and a spawn report exists for the startup look, marker-gated like lint's" \
 		bash -c "[[ -x '${root}/cicd/utility/spawn-report.bash' ]] && grep -q 'spawn-seen' '${root}/cicd/utility/spawn-report.bash'"
+	## The mode a clone gets, not the one this tree happens to have: a local chmod hid release.bash
+	## going out without its executable bit. Every script runs by path but the ones only sourced.
+	fAssert "[ErCM5cg] every script that runs by path is committed executable" \
+		bash -c "cd '${root}' && git ls-files -s -- '*.bash' '*.ps1' ':!legacy/' ':!cicd/config.bash' ':!cicd/utility/include/' | awk '\$1 != \"100755\" { bad = 1; print \$4 } END { exit bad }'"
 	## The step itself, against a build that starts three processes per command and a baseline
 	## that says none, so every command reads as a rise. Needs strace, like the step.
 	if command -v strace >/dev/null 2>&1; then
@@ -5241,3 +5295,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260926 JC: The same for parity and spawn counts, and spawn-count gives each command a verdict line. 1218 -> 1219.
 ##		- 20260927 JC: Native fuzz targets and spawn counts print their test IDs. 1219 -> 1220.
 ##		- 20260927 JC: The Go unit tests print a line per test with its ID, and a failure shows its output. 1220 -> 1222.
+##		- 20260928 JC: Checks for the account source line, the fragment's credential username, a root folder rule, the installers' redirect tag and end of input, committed script modes, and the release dry run's closing lines. 1222 -> 1235.
