@@ -1864,6 +1864,12 @@ Going forward, new issues in the new template at the bottom of this file, will g
 
 ### Done - Features and enhancements
 
+- ✅ The Go unit tests print a line per test, with its test ID.
+	- Opened: 20260927-112000
+	- Closed: 20260927-114500
+	- They showed as one `OK: go test` line. A full run and `--gate` now print one line per top-level test, and nothing for subtests. The rest of `go test -v`'s output shows only when a test fails.
+	- Verified: test.bash 1220 -> 1222. Both new checks fail against the old pipeline. The real gate printed 153 lines on Linux, one per test. The one Windows-only test doesn't run here.
+
 - ✅ Every check line in a pipeline run shows its test ID.
 	- Opened: 20260927-105500
 	- Closed: 20260927-111500
