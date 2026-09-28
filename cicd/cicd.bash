@@ -272,8 +272,23 @@ fStageLint(){
 	fEcho "OK: backlog check"
 }
 fUnitTests(){
-	## -race costs little on a tree with no goroutines and pays the day one appears.
-	(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${BUILD_JOBS}" go test -race -p "${BUILD_JOBS}" ./...) || fDie "go test failures"
+	local log="" ids="" rc=0
+	log="$(mktemp "${TMPDIR:-/tmp}/gitsby-gotest.XXXXXX")"
+	## -race costs little on a tree with no goroutines and pays the day one appears. -v is for
+	## the line per test below; the rest of what it prints is shown only when something failed.
+	(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${BUILD_JOBS}" go test -race -p "${BUILD_JOBS}" -v ./...) >"${log}" 2>&1 || rc=$?
+	## A line per top-level test, with the ID from the end of its func line. Subtests are
+	## indented in the log, so they don't match.
+	ids="$(find "${root}/${GO_MODULE_DIR}" -name '*_test.go' -type f -exec sed -nE 's#^func ((Test|Fuzz)[A-Za-z0-9_]*)\(.*// \[([0-9A-Za-z]+)\][[:space:]]*$#\1 \3#p' {} + 2>/dev/null || true)"
+	IDS="${ids}" awk '
+		BEGIN { n = split(ENVIRON["IDS"], l, "\n"); for (i = 1; i <= n; i++) { split(l[i], f, " "); id[f[1]] = "[" f[2] "] " } }
+		/^--- (PASS|FAIL|SKIP): / { v = ($2 == "PASS:") ? "ok" : ($2 == "FAIL:") ? "FAIL" : "skip"; print "  " v ": " id[$3] $3 }' "${log}"
+	if ((rc)); then
+		grep -vE '^ *(=== (RUN|PAUSE|CONT|NAME)|--- (PASS|SKIP))' "${log}" || true
+		rm -f -- "${log:?}"
+		fDie "go test failures"
+	fi
+	rm -f -- "${log:?}"
 	fEcho "OK: go test"
 }
 
@@ -664,3 +679,4 @@ fEcho_Clean
 ##		- 2026-09-26 JC: The regression and fuzz suites print a line per check under -q too, and each native fuzz target gets one.
 ##		- 2026-09-26 JC: Parity and spawn counts print a line per check under -q too.
 ##		- 2026-09-27 JC: Each native fuzz target's line carries its test ID.
+##		- 2026-09-27 JC: The Go unit tests print a line per test, with its test ID. Their full output shows only on a failure.
