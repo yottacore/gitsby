@@ -252,7 +252,7 @@ fi
 if ! fWould "gitsby release ${version}"; then
 	"${gitsby}" -q release "${version}" || fDie "'gitsby release' failed; the version commit is pushed but no tag was cut."
 fi
-fEcho "Phase 2 OK: ${version} tagged and pushed"
+if ((dryRun)); then fEcho "Phase 2 OK: dry run, ${version} not tagged"; else fEcho "Phase 2 OK: ${version} tagged and pushed"; fi
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Phase 3: publish and prove. A failure here is recoverable by hand and corrupts nothing.
@@ -337,7 +337,7 @@ if ! fWould "verify releases/latest, then download and run this platform's publi
 fi
 
 echo
-fEcho "Released ${version}"
+if ((dryRun)); then fEcho "Dry run done: ${version} was not released"; else fEcho "Released ${version}"; fi
 echo
 
 ##	History:
@@ -366,3 +366,4 @@ echo
 ##		- 20260826 JC: Phase 3 rebuilds the assets from the tagged commit, since the build number comes from that commit's date. The phase 1 build is only a compile gate now.
 ##		- 20260915 JC: The footer check covers every pipeline and installer script that keeps a history and changed since the last release, not only the two harnesses. Three pipeline files had gone a month without an entry. The notes' build line is the banner's first line, now that the copyright has a line of its own.
 ##		- 20260916 JC: A version with a semver suffix publishes as a pre-release. The tag decides it, since the tag is already the only thing that names a version. 'releases/latest' skips pre-releases by definition, so the phase 3 proof now checks that a candidate does NOT resolve there; the old check would have warned on every good one.
+##		- 20260928 JC: A dry run no longer ends by saying the version was tagged, pushed and released. Committed executable, as its syntax line assumes.
