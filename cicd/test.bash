@@ -4262,6 +4262,8 @@ EOF
 			case "\${1:-} \${2:-}" in
 				"version -m") for s in ${gatePipeTools}; do [[ "\${s%%=*}" != "\$(basename "\${3:-}")" ]] || printf 'mod\tx\t%s\th1:x\n' "\${s#*=}"; done; exit 0 ;;
 				"test -list") echo FuzzA; exit 0 ;;
+				"test -race") if [[ -e '${gateFail}/go-test' ]]; then printf -- '--- FAIL: TestA (0.00s)\n    a_test.go:4: boom\n'
+					else printf -- '=== RUN   TestA\n--- PASS: TestA (0.00s)\n    --- PASS: TestA/sub (0.00s)\n--- PASS: TestC (0.00s)\n'; fi ;;
 			esac
 			[[ "\$*" != *" -fuzz "* || ! -e '${gateFail}/go-fuzz' ]] || exit 1
 			[[ ! -e "${gateFail}/go-\${1:-}" ]] || exit 1
@@ -4280,15 +4282,22 @@ EOF
 		echo two >> "${gateDir}/README.md"
 		git -C "${gateDir}" commit --quiet -m two -- README.md
 		echo edited >> "${gateDir}/README.md"
+		printf 'package main\n\nfunc FuzzA(f *testing.F) { // [AAAAAAA]\n}\nfunc TestA(t *testing.T) { // [AAAAAAB]\n}\n' > "${gateDir}/src-go/a_test.go"
 		fGateOnly test
+		fAssert "[Er7b6m3] the unit tests print a line per test with its ID, and none for a subtest" \
+			bash -c "grep -qxF '  ok: [AAAAAAB] TestA' '${gateOut}' && grep -qxF '  ok: TestC' '${gateOut}' && ! grep -qF -- '=== RUN' '${gateOut}' && ! grep -qF 'TestA/sub' '${gateOut}'"
 		fAssert "[Er1LxTU] a build names the commit it was built from, and -dirty for uncommitted source" \
 			fGateRanCalling 0 '^go build .* -X main\.version=9\.8\.7-1-g[0-9a-f]+-dirty -X main\.buildEpoch='
 		fAssert "[Er1LxTV] and reads that after the remote sync, which can move HEAD" \
 			awk '/^fSection "0\/7  Remote sync"/{s=NR} /^go_version=/{g=NR} END{exit !(s && g > s)}' "${root}/cicd/cicd.bash"
+		: > "${gateFail}/go-test"
+		fGateOnly test
+		rm -f -- "${gateFail:?}/go-test"
+		fAssert "[Er7b6mH] and a failing one stops the run, with its line and its output" \
+			bash -c "[[ '${gateRc}' == 1 ]] && grep -qxF '  FAIL: [AAAAAAB] TestA' '${gateOut}' && grep -qF 'a_test.go:4: boom' '${gateOut}' && grep -qF 'go test failures' '${gateOut}'"
 		git -C "${gateDir}" checkout --quiet -- README.md
 		## Stage 3 without --quick. 'go test -list' failing is swallowed there, so a target list
 		## that came back empty would pass having fuzzed nothing.
-		printf 'package main\n\nfunc FuzzA(f *testing.F) { // [AAAAAAA]\n}\n' > "${gateDir}/src-go/a_test.go"
 		fGateOnly fuzz
 		fAssert "[Er1LxTW] stage 3 runs the fuzz harness, fuzzes each target the module lists, and counts spawns" \
 			fGateRanCalling 0 '^fuzz\.bash' '^go test -run \^\$ -fuzz \^FuzzA\$ -fuzztime 5s -parallel [0-9]+ \.$' '^spawn-count\.bash'
@@ -5231,3 +5240,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260926 JC: A pipeline run under -q still prints every regression and fuzz check. 1217 -> 1218.
 ##		- 20260926 JC: The same for parity and spawn counts, and spawn-count gives each command a verdict line. 1218 -> 1219.
 ##		- 20260927 JC: Native fuzz targets and spawn counts print their test IDs. 1219 -> 1220.
+##		- 20260927 JC: The Go unit tests print a line per test with its ID, and a failure shows its output. 1220 -> 1222.
