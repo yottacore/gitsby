@@ -22,6 +22,7 @@ Scope: the product itself is Go now. Go's *formatting* is `gofmt` - the lint sta
 - [Bash](#bash)
 - [PowerShell](#powershell)
 - [Performance](#performance)
+	- [Go performance](#go-performance)
 	- [Bash performance](#bash-performance)
 	- [PowerShell performance](#powershell-performance)
 
@@ -67,7 +68,7 @@ Scope: the product itself is Go now. Go's *formatting* is `gofmt` - the lint sta
 
 - No goroutines or channels without a measured reason. This program's life is spent waiting on `git`; concurrency here buys latency bugs, not speed.
 
-- Package-level variables are for compiled regexps (`regexp.MustCompile`) and true constants only. Run state lives on the struct that owns the run.
+- Package-level variables are for what Go can't make a constant: compiled regexps, `errors.New` sentinels, read-only lookup tables, and strings the linker sets with `-X`. Nothing at package level changes after startup. Run state lives on the struct that owns the run.
 
 - Keep interfaces small, define them where they are consumed, and don't introduce one until a second implementation exists.
 
@@ -130,6 +131,16 @@ Correctness comes first. What follows costs nothing extra to write, so it is hab
 - Hoist what cannot change during a run. The default branch, the merge target, and the account probes are resolved once and kept in a variable, not asked for again at each use.
 
 - Don't make every run pay for what few runs need. Probes that cost a round trip belong to the commands that actually use them.
+
+### Go performance
+
+- A `git` process costs milliseconds, and everything done in memory costs microseconds. Count processes first. The pipeline's spawn-count step fails a command that starts more of them than its recorded baseline.
+
+- Ask once and keep the answer. A value the run needs in several places is memoized on the run's state. The step runners clear it after a step that could change it, rather than each writer doing so.
+
+- Build strings with `strings.Builder` or `strings.Join`, not `+=` in a loop.
+
+- Preallocate where the final size is known, per the Go section. Where it isn't, a plain `append` is fine.
 
 ### Bash performance
 

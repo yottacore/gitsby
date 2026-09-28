@@ -5,11 +5,10 @@
 <!-- markdownlint-disable MD041 -- First line in a file should be a top-level heading -->
 <div align="center">
 
-[![Go](https://img.shields.io/badge/Go-00ADD8.svg?logo=go&logoColor=white)](https://go.dev/)
+[![Go](https://img.shields.io/github/go-mod/go-version/yottacore/gitsby?filename=src-go%2Fgo.mod&logo=go&logoColor=white&label=Go&color=00ADD8)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Latest release](https://img.shields.io/github/v/release/yottacore/gitsby?include_prereleases&label=release)](https://github.com/yottacore/gitsby/releases/latest)
-![Lifecycle: Stable](https://img.shields.io/badge/Lifecycle-Stable-brightgreen)
-![Support](https://img.shields.io/badge/Support-Maintained-brightgreen)
+[![Last commit](https://img.shields.io/github/last-commit/yottacore/gitsby?label=last%20commit)](https://github.com/yottacore/gitsby/commits)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ff69b4)](https://github.com/sponsors/jim-collier)
 
 <!-- TOC ignore:true -->
@@ -231,6 +230,12 @@ The first on Linux, macOS or FreeBSD; the second on Windows. PowerShell is what 
 
 ~~~pwsh
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/yottacore/gitsby/main/install.ps1))) -Help
+~~~
+
+The Bash one takes its flags after `bash -s --`:
+
+~~~bash
+curl -fsSL https://raw.githubusercontent.com/yottacore/gitsby/main/install.bash | bash -s -- --help
 ~~~
 
 Either one works out which binary this machine needs, takes it from the latest release, and checks it against that release's published `SHA256SUMS` before installing it. There is no unverified route: where the checksum can't be fetched or can't be computed, the install stops instead of carrying on. And either one shows you its plan and asks before touching anything.
