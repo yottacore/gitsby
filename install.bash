@@ -92,9 +92,8 @@ esac
 ## The tag lands in a download URL, so a path-shaped one walks out of this repo and installs
 ## somebody else's binary while the plan on screen still names ours. Reads as a harmless
 ## version selector, which is exactly why the confirm prompt is no protection here.
-case "${tag}" in
-	""|*/../*|../*|*/..|..|/*|*//*) [[ -z "${tag}" ]] || fErr "--tag names a published release, not a path (got '${tag}')." ;;
-esac
+fIsPathTag(){ case "$1" in */../*|../*|*/..|..|/*|*//*) return 0 ;; esac; return 1 ;}
+[[ -z "${tag}" ]] || ! fIsPathTag "${tag}" || fErr "--tag names a published release, not a path (got '${tag}')."
 [[ -z "${tag}" || "${tag}" =~ ^[A-Za-z0-9._/-]+$ ]] || fErr "--tag has characters that aren't valid in a git tag (got '${tag}')."
 
 ## Downloader: curl or wget, whichever exists.
@@ -174,6 +173,7 @@ if [[ -z "${tag}" ]]; then
 	[[ -n "${tag}" ]] || fErr "Couldn't work out the latest release of ${repo}. GitHub may be unreachable, or rate-limiting this address (60 requests an hour, unauthenticated). A specific release always works: --tag TAG."
 	## Scraped from a redirect header, so check it the same way as a typed one before it reaches a URL.
 	[[ "${tag}" =~ ^[A-Za-z0-9._/-]+$ ]] || fErr "The resolved release tag ('${tag}') isn't a plain git tag; aborting."
+	! fIsPathTag "${tag}" || fErr "The resolved release tag ('${tag}') isn't a plain git tag; aborting."
 fi
 
 ## sha256 tool, before anything is promised. Every install path here is a release asset, so
@@ -228,8 +228,9 @@ if [[ ${doYes} -eq 0 ]]; then
 	## When piped (curl | bash) stdin is the script, so confirm via the terminal.
 	## (-r /dev/tty isn't enough - it can exist yet fail to open with no
 	## controlling terminal - so test with a real open.)
-	if   [[ -t 0 ]];                  then read -r -p "Continue? [y/N] " answer
-	elif { : </dev/tty; } 2>/dev/null; then read -r -p "Continue? [y/N] " answer </dev/tty
+	## End of input fails the read, and it is still a no.
+	if   [[ -t 0 ]];                  then read -r -p "Continue? [y/N] " answer || true
+	elif { : </dev/tty; } 2>/dev/null; then read -r -p "Continue? [y/N] " answer </dev/tty || true
 	else fErr "No terminal to confirm on; re-run with -y (e.g. '| bash -s -- -y')."
 	fi
 	case "${answer}" in y|Y|yes|Yes|YES) ;; *) echo; echo "Aborted."; echo; exit 1 ;; esac
@@ -296,3 +297,4 @@ echo
 ##		- 20260819 JC: The release fallback is one. Both routes asked releases/latest, which GitHub defines as the newest release that is NOT a pre-release - so on a repo whose newest publication is one, the fallback failed in exactly the way the primary had, and blamed rate limiting for it. The list endpoint answers instead, newest first, preferring a full release and saying so when only a candidate exists.
 ##		- 20260819 JC: The binary is staged in the destination directory and renamed over the target. Written in place, an interrupt mid-copy left a truncated executable that had passed its checksum under another name, and re-installing over a copy that was running failed outright. --help lists every option the parser accepts.
 ##		- 20260915 JC: SHA256SUMS is read with either case of hash and with CRLF line ends. --help lists --ref, and says --release stable still names the default. The no-binary refusal, a declined prompt and the pre-release notice have a blank line either side. The plan says when it replaces a copy, and a binary that won't run is named with its exit code.
+##		- 20260928 JC: End of input at the prompt says Aborted, as a typed no does. A tag read from the release redirect gets the same path check as a typed one.
