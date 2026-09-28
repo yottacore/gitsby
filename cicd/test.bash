@@ -296,7 +296,8 @@ fGateDemoQuiet(){ local gen=""; fGateDemoRun "$1" && gen="$(fGateDemoGen)" && [[
 ## Stage 6 with -y while the build fails: the run warns, and the generator never runs.
 fGateDemoBuildFails(){ fGateDemoRun -y && grep -qF 'WARNING: demo build failed' "${gateOut}" && [[ -z "$(fGateDemoGen)" ]] ;}
 ## The gate passes, and says nothing about lint tool versions.
-fGateNoDrift(){ fGateStatus 0 --gate && ! grep -q 'lint tool versions differ' "${gateOut}" ;}
+## Go tools only: the fixture pins those, and the rest are whatever this box has.
+fGateNoDrift(){ fGateStatus 0 --gate && ! grep -qE 'tool versions differ.* (staticcheck|golangci-lint|govulncheck|goversioninfo) ' "${gateOut}" ;}
 ## One -y run with every stage skipped but those named in $1 (sync lint test fuzz parity dogfood
 ## demogif publish), the rest passed on. Its exit status lands in ${gateRc}, output in ${gateOut},
 ## and the calls log starts empty.
@@ -417,6 +418,12 @@ fRunSuite(){
 	fAssert     "[Eo5Hqnj] bare 'about' word works"          bash -c "cd '${work}' && '${gitsby}' about"
 	fAssert     "[Eo5Hqnk] bare 'donate' word works"         bash -c "cd '${work}' && '${gitsby}' donate"
 	fAssertOut  "[Eo5Hqnl] help lists both of them"          '\-\-about.*\-\-donate'  "${gitsby}" --help
+	## Help lists all four on one line, and only --help worked past the first word.
+	fAssertOut  "[ErCP1Qd] --version works after a command, as --help does"  '^gitsby v[0-9]' \
+		bash -c "cd '${cloneA}' && '${gitsby}' br create infoflag --version"
+	fAssert     "[ErCP1Qu] and the command does nothing"  bash -c "cd '${cloneA}' && ! git rev-parse --verify -q refs/heads/infoflag"
+	fAssertOut  "[ErCP1R9] and --about"   'github\.com/yottacore/gitsby'      bash -c "cd '${cloneA}' && '${gitsby}' status --about"
+	fAssertOut  "[ErCP1RM] and --donate"  'github\.com/sponsors/jim-collier'  bash -c "cd '${cloneA}' && '${gitsby}' sync --donate"
 	fAssertFail "[EknhbCE] no args exits nonzero"        "${gitsby}"
 	fAssertFail "[EknhbCF] unknown command rejected"     bash -c "cd '${cloneA}' && '${gitsby}' -q frobnicate"
 	fAssertFail "[EknhbCG] unknown option rejected"      bash -c "cd '${cloneA}' && '${gitsby}' -q status --bogus"
@@ -1189,6 +1196,15 @@ fRunSuite(){
 	( cd "${cl}/nodev-seed" && echo n > n.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main )
 	fAssert "[EkykHFQ] repo clone of a no-dev repo stays on default"  bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${o3}' nd && [[ \"\$(cd nd && git branch --show-current)\" == main ]]"
 	fAssert "[EkykHFR] repo clone into a pre-existing empty dir"      bash -c "cd '${cl}' && mkdir -p pre && '${gitsby}' -q repo clone '${origin}' pre && [[ -d pre/.git ]]"
+	## A folder given relative was shown the way it was typed, which leaves the reader to work out
+	## where it lands. The git command keeps the typed form.
+	## Windows prints its own spelling of the path, which this fixture does not build.
+	if ! ((isWindows)); then
+		fAssertOut "[ErCS7c0] repo clone names the folder in full"  "^Clone into \.+: ${cl//./\\.}/sub/named$" \
+			bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${origin}' sub/named"
+		fAssertOut "[ErCS7cF] and says where it cloned in full as well"  "Cloned into '${cl//./\\.}/sub/named2'" \
+			bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${origin}' sub/named2"
+	fi
 	fAssertFail "[EkykHFS] repo clone over a different-url clone refused"  bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${o3}' cl1"
 
 	## connect: publish a local-only repo to a fresh empty remote; idempotent; guards
@@ -2333,12 +2349,15 @@ GHEOF
 		url=""
 		for a in "$@"; do case "$a" in https://*) url="$a" ;; esac; done
 		case "${url}" in
-			*/repos/*/releases) printf '[{"tag_name":"v2.9.0-rc1","prerelease":true},{"tag_name":"v3.0.0-rc1","prerelease":true}]'; exit 0 ;;
+			*/repos/*/releases) list='[{"tag_name":"v2.9.0-rc1","prerelease":true},{"tag_name":"v3.0.0-rc1","prerelease":true}]'; printf '%s' "${FAKE_LIST:-${list}}"; exit 0 ;;
 		esac
 		exit 22
 	CURLEOF
 	fAssertOut "[Er1LxS8] and from the pre-releases when there is no full release" 'newest pre-release, v3\.0\.0-rc1' \
 		bash -c "PATH='${vpre}/bin:${PATH}' bash '${goInst}' -y 2>&1"
+	## Two pre-releases of one version tie on the numbers, and the newer-listed one wins.
+	fAssertOut "[ErCRFkF] and the newer of two pre-releases of one version" 'newest pre-release, v3\.0\.0-beta\.2' \
+		bash -c "PATH='${vpre}/bin:${PATH}' FAKE_LIST='[{\"tag_name\":\"v3.0.0-beta.2\",\"prerelease\":true},{\"tag_name\":\"v3.0.0-beta.1\",\"prerelease\":true}]' bash '${goInst}' -y 2>&1"
 
 	## A whole install, with the network stood in for: resolve, verify, place, run. What this
 	## proves is that the staged-and-renamed path works end to end; the pin below it is what
@@ -2471,6 +2490,23 @@ GHEOF
 			bash -c "env HOME='${es}/home' PATH='${es}/bin:${ei}/bin:${PATH}' FAKE_SUDO_LOG='${es}/log' FAKE_SUMS='${ei}/SHA256SUMS' FAKE_ASSET='${ei}/asset' bash '${goInst}' --target system -y >/dev/null 2>&1; \
 				[[ \"\$(head -n 1 '${es}/log')\" == 'mkdir -p /usr/local/bin' ]] && [[ \"\$(sed -n 2p '${es}/log')\" == 'install -m 755 '* ]]"
 	fi
+	## Both of these were found at the copy, after the download, or promised in the plan and then
+	## failed as a missing command.
+	local eno="${work}/instnosudo"; mkdir -p "${eno}/bin"
+	for farmTool in bash uname tr sed head cut cat mktemp rm paste sha256sum; do
+		farmPath="$( command -v "${farmTool}" 2>/dev/null || true )"
+		if [[ -n "${farmPath}" ]]; then ln -sf "${farmPath}" "${eno}/bin/${farmTool}"; fi
+	done
+	cp "${ei}/bin/curl" "${eno}/bin/"
+	if [[ ! -w /usr/local/bin ]]; then
+		fAssertOut "[ErCRQbq] go installer refuses a system install with no sudo, before the plan"  'there is no sudo here' \
+			bash -c "env HOME='${eno}/home' PATH='${eno}/bin' FAKE_SUMS='${ei}/SHA256SUMS' FAKE_ASSET='${ei}/asset' '${eno}/bin/bash' '${goInst}' --target system -y 2>&1"
+	fi
+	mkdir -p "${eno}/rohome/.local"; chmod 555 "${eno}/rohome/.local"
+	fAssertOut "[ErCRQc5] go installer refuses a user folder it can't write, before the plan"  "\.local isn't writable by you" \
+		bash -c "env HOME='${eno}/rohome' PATH='${ei}/bin:${PATH}' FAKE_CALLS='${eno}/calls' FAKE_SUMS='${ei}/SHA256SUMS' FAKE_ASSET='${ei}/asset' bash '${goInst}' -y 2>&1"
+	fAssert    "[ErCRQcM] and downloads nothing"  bash -c "grep -q '/SHA256SUMS\$' '${eno}/calls' && ! grep -q '/gitsby-' '${eno}/calls'"
+	chmod 755 "${eno}/rohome/.local"
 	## A binary that ran and failed ended the run on its own exit code, with nothing said.
 	local eb="${work}/instbad"; mkdir -p "${eb}"
 	printf '#!/usr/bin/env bash\nexit 3\n' > "${eb}/asset"
@@ -2686,6 +2722,19 @@ GHEOF
 			TMPDIR="${pst}" fAssertOut "[Er1LxSh] go ps installer installs from a temp dir with brackets in its path"  'gitsby v1\.2\.3 \(stand-in\)' \
 				fPsInstall "${psi}" "${psi}/htmp" 7 "${goInstPs}" -Yes
 			fAssert    "[Er1LxSi] and removes its temp dir afterwards"  bash -c "[[ -z \"\$(ls -A '${pst}')\" ]]"
+			## The plan named the file it would install and not the folder it would create first.
+			local psUmask=""; psUmask="$(umask)"; umask 077
+			fAssertOut "[ErCRQcb] go ps installer's plan says it creates the folder"  "Create .*/\.local/bin \(it doesn't exist yet\)" \
+				fPsInstall "${psi}" "${psi}/hfresh" 7 "${goInstPs}" -Yes
+			umask "${psUmask}"
+			## chmod +x kept the umask's other bits, so the two installers left different modes.
+			fAssert    "[ErCRQcr] and installs the binary 755 whatever the umask" \
+				bash -c "[[ \"\$(stat -c %a '${psi}/hfresh/.local/bin/gitsby')\" == 755 ]]"
+			mkdir -p "${psi}/hro/.local"; chmod 555 "${psi}/hro/.local"
+			fAssertOut "[ErCRQd6] go ps installer refuses a user folder it can't write, before the plan"  "can't write there" \
+				fPsInstall "${psi}" "${psi}/hro" 7 "${goInstPs}" -Yes
+			fAssert    "[ErCRQdL] and downloads nothing"  bash -c "! grep -q '/gitsby-' '${psi}/calls'"
+			chmod 755 "${psi}/hro/.local"
 			fAssert    "[Er1LxSj] go install.ps1 names its temp dir at random"  bash -c "grep -q 'tmpDir = Join-Path.*GetRandomFileName' '${goInstPs}'"
 		fi
 	fi
@@ -3794,6 +3843,14 @@ GHEOF
 			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'Dry run done: v1.2.4 was not released' '${relOut}' && ! grep -qF 'has no history entry' '${relOut}'"
 	fi
 
+	## Phase 3 is the build that gets published, and no dry run reaches it. It compiled the working
+	## tree while its comment said the tag, which match only when nothing moved since phase 2.
+	# shellcheck disable=SC2016  ## the pins are literal source text.
+	local relPinExport='archive "${version}^{commit}" | tar -x -C "${tagTree}"' relPinBuild='"${version}^{commit}")" "${tagTree}"'
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssert "[ErCQl7V] release.bash builds the published bytes from an export of the tag" \
+		bash -c 'grep -qF -- "$1" "$3" && grep -qF -- "$2" "$3"' _ "${relPinExport}" "${relPinBuild}" "${root}/cicd/release.bash"
+
 	## Recursive removal. demo-repo.bash is the only script here that removes a path someone else
 	## named, so it gets real checks; the rest only ever remove what mktemp just handed them, and
 	## that is pinned in the source. None of these files belong to an implementation, which is why
@@ -3922,6 +3979,13 @@ GHEOF
 	## going out without its executable bit. Every script runs by path but the ones only sourced.
 	fAssert "[ErCM5cg] every script that runs by path is committed executable" \
 		bash -c "cd '${root}' && git ls-files -s -- '*.bash' '*.ps1' ':!legacy/' ':!cicd/config.bash' ':!cicd/utility/include/' | awk '\$1 != \"100755\" { bad = 1; print \$4 } END { exit bad }'"
+	## What a contributor's machine drops beside the files, and nothing the repo tracks.
+	fAssert "[ErCRneY] .gitignore covers OS and editor leftovers, and no tracked file" \
+		bash -c "cd '${root}' && git check-ignore -q --no-index .DS_Store && git check-ignore -q --no-index .vscode/x && git check-ignore -q --no-index src-go/x.swp && git check-ignore -q --no-index src-go/gitsby.test && [[ -z \"\$(git ls-files -ci --exclude-standard)\" ]]"
+	## A badge the repo grants itself asserts nothing outside the README. Apart from the license
+	## and the sponsor link, each one reads what it shows from the repo, the Go version included.
+	fAssert "[ErCP9Yz] the README's badges read what they show from the repo" \
+		bash -c "grep -q 'shields\.io/github/go-mod/go-version/yottacore/gitsby?filename=src-go%2Fgo\.mod' '${root}/README.md' && ! grep 'img\.shields\.io/badge/' '${root}/README.md' | grep -vE 'badge/(License|Sponsor)-'"
 	## The step itself, against a build that starts three processes per command and a baseline
 	## that says none, so every command reads as a rise. Needs strace, like the step.
 	if command -v strace >/dev/null 2>&1; then
@@ -4236,7 +4300,12 @@ EOF
 				'^go vet -p [0-9]+ ' '^staticcheck ' '^golangci-lint run --concurrency [0-9]+ ' '^gen-winres\.bash --check -q' '^backlog-check\.bash -q' '^go test -race -p [0-9]+ '
 		## This fixture's go answers 'version -m' with nothing, so every tool reads as unknown.
 		fAssert "[Er1LxTR] and warns when a lint tool's version is not the recorded one" \
-			fGateSays 0 'WARNING: lint tool versions differ from the recorded set: .*staticcheck unknown \(recorded v' --gate
+			fGateSays 0 'WARNING: tool versions differ from the recorded set: .*staticcheck unknown \(recorded v' --gate
+		## The tools outside Go are compared too. strace stands in for them: nothing here runs it.
+		fGateStub "${gateDir}/bin/strace" strace "echo 'strace -- version 0.1'"
+		fAssert "[ErCQOcE] and when a tool outside Go is at another version" \
+			fGateSays 0 'WARNING: tool versions differ from the recorded set: .*strace 0\.1 \(recorded ' --gate
+		rm -f -- "${gateDir:?}/bin/strace"
 		## Tied to the gate having passed: a run that did nothing at all adds nothing either.
 		fAssert "[EpsVDHu] and nothing the full run adds" \
 			bash -c "grep -q 'gate: passed' '${gateOut}' && ! grep -qE '^go build|^test\.bash|^fuzz\.bash|^parity\.bash|^spawn-count\.bash|^n8git_backup-and-publish|^govulncheck|-fuzz' '${gateCalls}' && ! grep -q 'Remote sync' '${gateOut}' && [[ ! -e '${gateDir}/cicd/artifacts/lint' ]]"
@@ -4315,6 +4384,7 @@ EOF
 			printf '%s\n' "go \$*" >> '${gateCalls}'
 			case "\${1:-} \${2:-}" in
 				"version -m") for s in ${gatePipeTools}; do [[ "\${s%%=*}" != "\$(basename "\${3:-}")" ]] || printf 'mod\tx\t%s\th1:x\n' "\${s#*=}"; done; exit 0 ;;
+				"env GOPATH") echo '${gateDir}/gopath'; exit 0 ;;
 				"test -list") echo FuzzA; exit 0 ;;
 				"test -race") if [[ -e '${gateFail}/go-test' ]]; then printf -- '--- FAIL: TestA (0.00s)\n    a_test.go:4: boom\n'
 					else printf -- '=== RUN   TestA\n--- PASS: TestA (0.00s)\n    --- PASS: TestA/sub (0.00s)\n--- PASS: TestC (0.00s)\n'; fi ;;
@@ -4324,7 +4394,13 @@ EOF
 			o=''; for a in "\$@"; do [[ "\${o}" != 1 ]] || : > "\${a}"; o=''; [[ "\${a}" != -o ]] || o=1; done
 		EOF
 		fGateStub "${gateDir}/bin/python3" python3 "printf 'pycache %s %s\n' \"\${PYTHONPYCACHEPREFIX:-unset}\" \"\$([[ -d \"\${PYTHONPYCACHEPREFIX:-}\" ]] && echo dir || echo nodir)\" >> '${gateCalls}'"
+		## Where 'go install' puts it and not on PATH, which is how it sits on a box that never
+		## added GOPATH/bin. The version check looked on PATH only, and skipped it without a word.
+		mkdir -p "${gateDir}/gopath/bin"
+		fGateStub "${gateDir}/gopath/bin/goversioninfo" goversioninfo
 		fAssert "[Er1LxTS] the gate says nothing about lint tool versions that match the recorded set"  fGateNoDrift
+		fAssert "[ErCQVGY] and finds a Go tool under GOPATH to ask" \
+			bash -c "grep -q '^go version -m .*/goversioninfo\$' '${gateCalls}'"
 		gatePyCache="$(sed -n 's/^pycache \(.*\) dir$/\1/p' "${gateCalls}")"
 		fAssert "[Er1LxTT] py_compile writes its cache to a folder of its own, removed afterwards" \
 			bash -c "[[ -n '${gatePyCache}' && ! -e '${gatePyCache}' ]]"
@@ -5296,3 +5372,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260927 JC: Native fuzz targets and spawn counts print their test IDs. 1219 -> 1220.
 ##		- 20260927 JC: The Go unit tests print a line per test with its ID, and a failure shows its output. 1220 -> 1222.
 ##		- 20260928 JC: Checks for the account source line, the fragment's credential username, a root folder rule, the installers' redirect tag and end of input, committed script modes, and the release dry run's closing lines. 1222 -> 1235.
+##		- 20260928 JC: Checks for the information options after a command, the clone folder in full, the installers' write access, sudo, plan and mode, the pre-release tie, the release build from the tag, tool versions outside Go and under GOPATH, the README badges and .gitignore. 1235 -> 1254.

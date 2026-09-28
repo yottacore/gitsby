@@ -355,6 +355,10 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- The scripted builds each carried a `thisVersion` string by hand, and a release rewrote both. They had drifted before, which is why phase 1 compared them.
 	- A Go build takes its version from `-ldflags` at build time, so there is nothing in the source that can disagree with the tag. Cutting a release edits two files, neither of them source: the changelog heading, and the Windows resource below.
 
+- Releases are built by the pipeline's own scripts, not by goreleaser.
+	- The build is already byte-identical from one set of flags, and a release can be rebuilt from its tag to its published checksums. goreleaser adds its own stamps and defaults, and each would have to be turned off to keep that.
+	- Its real gain is packaging - `.deb`, `.rpm`, Homebrew and the like - and packaging is its own deferred decision. If a packager is ever adopted, it gets weighed then, for that job alone.
+
 - Windows binaries carry an icon and version details.
 	- A pure Go build links no resource, so Explorer showed the default blank icon and an empty Properties tab. Among the options - `goversioninfo` from a generated spec, or writing the COFF resource by hand to keep the zero-dependency character - we decided on the former: a malformed hand-written resource links cleanly and fails only on the machine that runs it, which is not something a Linux box can disprove.
 	- The `.syso` files are committed rather than generated during the build. They are linked into binaries whose checksums we publish, so rebuilding a release from its tag must not depend on a tool being installed - the same reasoning that put `-buildvcs=false` in the build flags.

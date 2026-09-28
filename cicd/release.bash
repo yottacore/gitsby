@@ -70,12 +70,13 @@ fWould(){      ((dryRun)) && { echo "   would: $*"; return 0; }; return 1; }
 ## from the tagged commit - that second run produces the bytes that get uploaded. Two runs
 ## because the build number comes from the commit's own date, and the tag does not exist yet
 ## when phase 1 runs. Anyone checking out the tag and building gets the published bytes back.
+## <src> is the tree to build: the working tree for the gate, an export of the tag to publish.
 fpCrossBuild(){
-	local epoch="$1" t asset
+	local epoch="$1" src="$2" t asset
 	crossBuildFailed=""
 	for t in "${RELEASE_TARGETS[@]}"; do
 		asset="${EXE_NAME}-${t%%/*}-${t##*/}"; [[ "${t}" == windows/* ]] && asset="${asset}.exe"
-		( cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOTOOLCHAIN="${GO_RELEASE_TOOLCHAIN}" GOOS="${t%%/*}" GOARCH="${t##*/}" \
+		( cd "${src}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOTOOLCHAIN="${GO_RELEASE_TOOLCHAIN}" GOOS="${t%%/*}" GOARCH="${t##*/}" \
 			go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" \
 			-ldflags "${GO_LDFLAGS_COMMON} -X main.version=${version#v} -X main.buildEpoch=${epoch}" \
 			-o "${assets}/${asset}" . ) \
@@ -194,7 +195,8 @@ fi
 ## failure, which costs nothing; discovered in phase 3 it would leave a pushed tag with no
 ## release behind it. These are not the bytes that get published - phase 3 rebuilds them from
 ## the tagged commit, whose date the build number is taken from.
-assets="$(mktemp -d)"
+assets="$(mktemp -d)"; tagTree=""; notes=""
+trap 'rm -rf -- "${assets:?}"; [[ -z "${tagTree}" ]] || rm -rf -- "${tagTree:?}"; [[ -z "${notes}" ]] || rm -f -- "${notes:?}"' EXIT
 if ! fWould "cross-build ${#RELEASE_TARGETS[@]} targets at ${version}"; then
 	fEcho_Clean "cross-building ${#RELEASE_TARGETS[@]} targets with ${GO_RELEASE_TOOLCHAIN} ..."
 	## The .exe files have to carry ${version}, and the committed resource still says the last
@@ -202,7 +204,7 @@ if ! fWould "cross-build ${#RELEASE_TARGETS[@]} targets at ${version}"; then
 	## 2 regenerates it for real, on the release branch, next to the changelog edit.
 	"${winres[@]}" -q "${version}" || fDie "couldn't stamp the Windows resource; nothing has been changed."
 	built=0
-	fpCrossBuild "$(git -C "${root}" log -1 --format=%ct)" || built=$?
+	fpCrossBuild "$(git -C "${root}" log -1 --format=%ct)" "${root}" || built=$?
 	## Put the stamp back whether that worked or not, so 'nothing has been changed' stays true
 	## of the failure path as well.
 	git -C "${root}" checkout -q -- "${GO_MODULE_DIR}"/*.syso || fDie "couldn't restore the Windows resource; check 'git status'."
@@ -264,14 +266,19 @@ fEcho "Phase 3: publish and prove"
 ## commit's date, so checking out ${version} and building reproduces them.
 if ! fWould "rebuild ${#RELEASE_TARGETS[@]} targets from the ${version} commit"; then
 	fEcho_Clean "rebuilding ${#RELEASE_TARGETS[@]} targets from ${version} ..."
-	fpCrossBuild "$(git -C "${root}" log -1 --format=%ct "${version}^{commit}")" \
+	## From the tag's own files, not the working tree. The two match when nothing has moved
+	## since phase 2, and nothing here checks that it hasn't.
+	tagTree="$(mktemp -d)"
+	git -C "${root}" archive "${version}^{commit}" | tar -x -C "${tagTree}" \
+		|| fDie "couldn't export ${version} to build from; the tag is pushed but nothing is published."
+	fpCrossBuild "$(git -C "${root}" log -1 --format=%ct "${version}^{commit}")" "${tagTree}" \
 		|| fDie "couldn't rebuild or checksum ${crossBuildFailed:-the release assets}; the tag is pushed but nothing is published."
 	fEcho_Clean "built: $(cd "${assets}" && echo *)"
 fi
 
 ## The release body is the changelog section, verbatim - the same words the repo already carries,
 ## plus the line the binary itself prints, so the notes and the download cannot disagree.
-notes="$(mktemp)"; trap 'rm -f -- "${notes:?}"; rm -rf -- "${assets:?}"' EXIT
+notes="$(mktemp)"
 awk -v ver="## ${version} " -v start="$(fpChangelogStart)" \
 	'NR>=start && index($0, ver)==1 {f=1; next} f && /^## /{exit} f' "${changelog}" > "${notes}" || true
 [[ -s "${notes}" ]] || fEcho_Clean "WARNING: no changelog section found for ${version}; the release body will be empty."
@@ -367,3 +374,4 @@ echo
 ##		- 20260915 JC: The footer check covers every pipeline and installer script that keeps a history and changed since the last release, not only the two harnesses. Three pipeline files had gone a month without an entry. The notes' build line is the banner's first line, now that the copyright has a line of its own.
 ##		- 20260916 JC: A version with a semver suffix publishes as a pre-release. The tag decides it, since the tag is already the only thing that names a version. 'releases/latest' skips pre-releases by definition, so the phase 3 proof now checks that a candidate does NOT resolve there; the old check would have warned on every good one.
 ##		- 20260928 JC: A dry run no longer ends by saying the version was tagged, pushed and released. Committed executable, as its syntax line assumes.
+##		- 20260928 JC: Phase 3 builds the published bytes from an export of the tag rather than the working tree. The temp folders go on any exit, not only after phase 3 starts.

@@ -153,6 +153,28 @@ for g in "${SHELL_LINT_WARN_GLOBS[@]:-}"; do for f in $g; do [[ -f "$f" ]] && sh
 
 ## Stage 1's body and stage 2's unit tests, as functions so that --gate runs the same code a
 ## full run does. Two copies would drift, and the hook would pass what the pipeline stops.
+## Where 'go install' puts a tool, in the order go resolves them. gen-winres looks the same way,
+## so a tool one of them finds is not skipped by the other.
+fGoToolPath(){ local found="" dir="" goPath=""
+	found="$( command -v "$1" 2>/dev/null || true )"
+	goPath="$(go env GOPATH 2>/dev/null || true)"
+	for dir in "$(go env GOBIN 2>/dev/null || true)" "${goPath:+${goPath%%:*}/bin}"; do
+		if [[ -z "${found}" && -n "${dir}" && -x "${dir}/$1" ]]; then found="${dir}/$1"; fi
+	done
+	echo "${found}"
+}
+## The version of each tool in TOOL_VERSIONS, however it spells it. Nothing when it is missing.
+fToolVersion(){
+	case "$1" in
+		shellcheck)       shellcheck --version 2>/dev/null | awk '$1=="version:"{print $2}' ;;
+		markdownlint)     markdownlint --version 2>/dev/null || npx --no-install markdownlint --version 2>/dev/null ;;
+		PSScriptAnalyzer) pwsh -NoProfile -Command '$m = Get-Module -ListAvailable PSScriptAnalyzer | Sort-Object Version -Descending | Select-Object -First 1; if ($m) { $m.Version.ToString() }' 2>/dev/null ;;
+		gifsicle)         gifsicle --version 2>/dev/null | awk 'NR==1{print $NF}' ;;
+		Pillow)           python3 -c 'import PIL; print(PIL.__version__)' 2>/dev/null ;;
+		strace)           strace -V 2>/dev/null | awk 'NR==1{print $NF}' ;;
+	esac
+}
+
 fStageLint(){
 	local f g _ng n md_files ps_files py_cache toolDrift toolSpec toolName toolWant toolPath toolHave unformatted winres_status
 	((${#shell_files[@]})) || fDie "no shell files matched SHELL_LINT_GLOBS"
@@ -226,15 +248,21 @@ fStageLint(){
 	## the usual reason a finding appears - or stops appearing - on a tree nobody touched.
 	## Warned about only: this pipeline installs nothing, and a version skew is a thing to
 	## know rather than a reason to refuse to build.
+	## A tool that is missing altogether is warned about by the step that needs it.
 	toolDrift=()
 	for toolSpec in "${GO_TOOL_VERSIONS[@]}"; do
 		toolName="${toolSpec%%=*}"; toolWant="${toolSpec#*=}"
-		toolPath="$( command -v "${toolName}" 2>/dev/null || true )"
+		toolPath="$(fGoToolPath "${toolName}")"
 		[[ -n "${toolPath}" ]] || continue
-		toolHave="$( go version -m "${toolPath}" 2>/dev/null | awk '$1=="mod"{print $3; exit}' )"
+		toolHave="$( go version -m "${toolPath}" 2>/dev/null | awk '$1=="mod"{print $3; exit}' || true )"
 		[[ "${toolHave}" == "${toolWant}" ]] || toolDrift+=( "${toolName} ${toolHave:-unknown} (recorded ${toolWant})" )
 	done
-	((${#toolDrift[@]} == 0)) || fEcho "WARNING: lint tool versions differ from the recorded set: ${toolDrift[*]}"
+	for toolSpec in "${TOOL_VERSIONS[@]}"; do
+		toolName="${toolSpec%%=*}"; toolWant="${toolSpec#*=}"
+		toolHave="$(fToolVersion "${toolName}" || true)"
+		[[ -z "${toolHave}" || "${toolHave}" == "${toolWant}" ]] || toolDrift+=( "${toolName} ${toolHave} (recorded ${toolWant})" )
+	done
+	((${#toolDrift[@]} == 0)) || fEcho "WARNING: tool versions differ from the recorded set: ${toolDrift[*]}"
 	unformatted="$(cd "${root}/${GO_MODULE_DIR}" && gofmt -l .)"
 	[[ -z "${unformatted}" ]] || fDie "gofmt wants to reformat: ${unformatted}"
 	## Same core budget as the builds: BUILD_JOBS caps the go tool's workers, and
@@ -680,3 +708,4 @@ fEcho_Clean
 ##		- 2026-09-26 JC: Parity and spawn counts print a line per check under -q too.
 ##		- 2026-09-27 JC: Each native fuzz target's line carries its test ID.
 ##		- 2026-09-27 JC: The Go unit tests print a line per test, with its test ID. Their full output shows only on a failure.
+##		- 2026-09-28 JC: The tool version check covers six tools outside Go, and finds a Go tool where go install put it when that is not on PATH.
