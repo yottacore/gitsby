@@ -185,7 +185,8 @@ function Install-Gitsby {
         $releases = @($releaseList)
         # Highest version wins, not newest-listed: the list is ordered by publish date, so a
         # backported fix cut after a newer release would otherwise resolve as latest. The
-        # numeric fields decide; Sort-Object is stable, so a tie keeps the newer-listed entry.
+        # numeric fields decide; Sort-Object is stable, so a tie keeps the newer-listed entry. Two
+        # pre-releases of one version tie, and release.bash publishes them in order.
         $tagVersion = {
             $v = ($_.tag_name -replace '^[vV]', '') -replace '[-+].*$', ''
             $parsed = [version]'0.0'
@@ -256,9 +257,12 @@ function Install-Gitsby {
             return $true
         } catch { return $false }
     }
-    if ($installSystemWide -and -not (Test-Writable $destDir)) {
-        $elevate = if ($onWindows) { 'Run PowerShell as administrator' } else { 'Run it with sudo' }
-        throw "Installing for all users needs write access to ${destDir}, which this shell doesn't have. ${elevate}, or install for this account alone, which is the default."
+    if (-not (Test-Writable $destDir)) {
+        if ($installSystemWide) {
+            $elevate = if ($onWindows) { 'Run PowerShell as administrator' } else { 'Run it with sudo' }
+            throw "Installing for all users needs write access to ${destDir}, which this shell doesn't have. ${elevate}, or install for this account alone, which is the default."
+        }
+        throw "Can't install to ${destDir}: this account can't write there. Check its owner and permissions."
     }
 
     Write-Host ''
@@ -268,6 +272,11 @@ function Install-Gitsby {
     Write-Host '  - Verify it against the release''s published SHA256SUMS'
     if (Test-Path -LiteralPath $destPath) { Write-Host "  - Install it to ${destPath}, replacing the one already there" }
     else { Write-Host "  - Install it to ${destPath}" }
+    if (-not (Test-Path -LiteralPath $destDir -PathType Container)) { Write-Host "  - Create ${destDir} (it doesn't exist yet)" }
+    # What an earlier install on Windows had to leave behind, because the old copy was running.
+    if ($onWindows -and (Test-Path -LiteralPath $destPath) -and (Get-ChildItem -LiteralPath $destDir -Filter 'gitsby.exe.replaced-*' -ErrorAction SilentlyContinue)) {
+        Write-Host "  - Remove the old copies an earlier install left in ${destDir}"
+    }
     # Windows puts nothing on PATH for you, so without this the install finishes with a program
     # that cannot be run by name. On *nix the destination is a conventional bin dir already.
     if ($onWindows -and (($env:PATH -split [IO.Path]::PathSeparator) -notcontains $destDir)) {
@@ -322,7 +331,8 @@ function Install-Gitsby {
         $staged = Join-Path -Path $destDir -ChildPath ('.gitsby.install.' + [IO.Path]::GetRandomFileName())
         try {
             Copy-Item -LiteralPath $tmpFile -Destination $staged -Force
-            if (-not $onWindows) { chmod +x $staged }
+            # 755 whatever the umask, the same as the Bash installer.
+            if (-not $onWindows) { chmod 755 $staged }
             # Windows will not delete or overwrite a running executable, but it will rename one:
             # move the incumbent aside, then put the new one in its place. What it leaves behind
             # goes at the next install, once nothing is holding it open.
@@ -483,4 +493,6 @@ try {
 #     work, and a binary that can't start gets the "would not run" message. -Help lists -Ref,
 #     errors have a blank line either side, and the plan says when it replaces a copy.
 #   - 20260928 JC: A tag read from the release redirect gets the same path check as a typed
-#     one.
+#     one. A user install checks it can write its folder before the plan. The binary is
+#     installed 755 whatever the umask. The plan says when it creates the folder, and when it
+#     clears copies an earlier install left behind.

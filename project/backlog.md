@@ -41,54 +41,12 @@ Going forward, new issues in the new template at the bottom of this file, will g
 	- `release.bash` should refuse a pseudo-version for shcl, so a release cannot go out on a commit pin.
 	- shcl plans the `/v3` path for its 3.0.0 cut, so nothing to report there.
 
-- 🛠️ Code review 20260909 - enhancements from the same pass. Twelve items, none of them urgent.
+- 🛠️ Code review 20260909 - enhancements from the same pass. Twelve items, none of them urgent. The rest are under Done.
 	- Opened: 20260909-184419
 
 	- 🔘 Code Review 20260909 enhancement 2: there is no `account unset`. Setting a key to an empty value prints the syntax block, so the only way back is the hand edit that `account set` exists to avoid.
 		- Origin: new. Confirmed.
-
-	- 🔘 Code Review 20260909 enhancement 3: `--about`, `--donate` and `--version` are honored only as the first word, while `--help` works at any position. The help screen lists all four on one line.
-		- Origin: new. Confirmed.
-
-	- 🔘 Code Review 20260909 enhancement 4: two of the six README badges are shields the repo grants itself and assert nothing outside the README. The language badge names no version.
-		- Origin: new.
-
-	- ✅ Code Review 20260909 enhancement 5: three things the README leaves out.
-		- The build number, which every command prints and which comes from the commit rather than the clock.
-		- How to ask for a pre-release, which is what the first Go publication will be.
-		- The real check counts. "Several hundred" rounds down from eight hundred and ten, plus the fuzz and comparison suites.
-		- Origin: new.
-		- Closed: 20260916-132641
-		- Decided 20260916: the first Go publication is v3.0.0-beta.1, published as a pre-release. release.bash reads that off the tag's semver suffix, so there is no flag to pass. design.md's release policy is rewritten rather than amended, since it argued the other way.
-		- Counts measured on gover, not carried over: 1013 regression, 301 fuzz, 27 comparison.
-
-	- 🔘 Code Review 20260909 enhancement 6: record that goreleaser is not being adopted, and why, so the question stops coming back. The hand-rolled build is already byte-identical from one flag set, goreleaser would have to be talked out of its own stamps, and packaging is the only thing it would add.
-		- Origin: the 2026-09-07 directives ask for the decision to be recorded.
-
-	- 🔘 Code Review 20260909 enhancement 7: `--quick` still runs the two slowest harnesses in full. Neither takes a flag to shorten itself.
-		- Origin: the 2026-09-07 directives.
-
-	- 🔘 Code Review 20260909 enhancement 8: tool pinning covers the four Go tools and silently skips the one that is not on the path. Six other tools that shape results are pinned nowhere.
-		- Origin: the 2026-09-07 directives.
-
-	- 🔘 Code Review 20260909 enhancement 9: the release's final build compiles the working tree rather than a checkout of the tag. The two match in the ordinary case, and the comment above it claims the stronger thing.
-		- Origin: new. Plausible: read.
-
-	- 🔘 Code Review 20260909 enhancement 10: smaller points in the installers.
-		- No writability check for a user-scope install, so it fails after the download the way the system scope does.
-		- sudo is promised without checking it exists.
-		- The two scripts leave the installed file in different modes, and the PowerShell one takes the umask.
-		- The PowerShell plan does not mention creating the destination folder, or clearing its own leftovers.
-		- The README does not say how to pass a flag to the bash one-liner, though the script knows the answer in a comment nobody sees.
-		- The two release sorters have no tie-break between two pre-releases of one version. It was unreachable while every publication was a full release. From 20260916 a suffixed tag publishes as a pre-release, so a v3.0.0-beta.2 following beta.1 reaches it; re-check whether a comment is still enough.
-		- Origin: the writability and sudo bullets were in the 20260819a notes as seen and not filed; the tie-break was the 20260909 round's own deferral. Plausible: read.
-		- Note: since item 13, install.ps1 checks write access for a system install before the plan. The user scope can reuse that check.
-
-	- 🔘 Code Review 20260909 enhancement 11: preallocate the slices whose size is already known, about fourteen of them. The style guide could also use a Go performance section, and its package-variable rule needs widening: five variables that Go cannot express as constants currently read as standing violations.
-		- Origin: new. The five package variables were flagged by 20260819a items 21-25 and left as the ones Go cannot make constants.
-
-	- 🔘 Code Review 20260909 enhancement 12: `.gitignore` covers the pipeline's own output and nothing a contributor's machine drops.
-		- Origin: the 2026-09-07 directives.
+		- Note: left for the shcl 3.0 move. Removing a key goes through the shcl module, so it is shcl work.
 
 ## Done
 
@@ -1890,6 +1848,92 @@ Going forward, new issues in the new template at the bottom of this file, will g
 		- Added next to the bash badge in the header block, linking to the PowerShell docs.
 
 ### Done - Features and enhancements
+
+- ✅ `repo clone` names the folder it clones into in full.
+	- Opened: 20260928-132933
+	- Closed: 20260928-132933
+	- Done: the plan's "Clone into" line and the "Cloned into" status showed the folder as typed, or as worked out from the URL, relative. Both print it in full now, per the path rule in the UI style guide. The git command keeps the typed form.
+	- Test: [ErCS7c0] and [ErCS7cF] in test.bash.
+	- Verified: both fail against `gover`.
+
+- ✅ Code review 20260909 - enhancements from the same pass. All but enhancement 2, which is still open.
+	- Opened: 20260909-184419
+	- Closed: 20260928-132933
+
+	- ✅ Code Review 20260909 enhancement 3: `--about`, `--donate` and `--version` are honored only as the first word, while `--help` works at any position. The help screen lists all four on one line.
+		- Origin: new. Confirmed.
+		- Closed: 20260928-132933
+		- Done: they work at any position after the command, as `--help` does. A value after `-m` is still a message, and `-v` still counts only as the first word, so it cannot turn a mutating command into a no-op.
+		- Test: [ErCP1Qd], [ErCP1Qu], [ErCP1R9] and [ErCP1RM] in test.bash, and `TestParseArgsInfoFromAnyPosition` in Go.
+		- Verified: the three that print fail against `gover`. "And the command does nothing" is a regression guard, since `gover` refused the option.
+
+	- ✅ Code Review 20260909 enhancement 4: two of the six README badges are shields the repo grants itself and assert nothing outside the README. The language badge names no version.
+		- Origin: new.
+		- Closed: 20260928-132933
+		- Done: "Lifecycle: Stable" went, and "Support: Maintained" became a last-commit badge. The Go badge reads the version from `src-go/go.mod`. It errors on `main` until the Go build is released there, which is when this README reaches `main`.
+		- Test: [ErCP9Yz] in test.bash. It fails on the old README.
+
+	- ✅ Code Review 20260909 enhancement 5: three things the README leaves out.
+		- The build number, which every command prints and which comes from the commit rather than the clock.
+		- How to ask for a pre-release, which is what the first Go publication will be.
+		- The real check counts. "Several hundred" rounds down from eight hundred and ten, plus the fuzz and comparison suites.
+		- Origin: new.
+		- Closed: 20260916-132641
+		- Decided 20260916: the first Go publication is v3.0.0-beta.1, published as a pre-release. release.bash reads that off the tag's semver suffix, so there is no flag to pass. design.md's release policy is rewritten rather than amended, since it argued the other way.
+		- Counts measured on gover, not carried over: 1013 regression, 301 fuzz, 27 comparison.
+
+	- ✅ Code Review 20260909 enhancement 6: record that goreleaser is not being adopted, and why, so the question stops coming back. The hand-rolled build is already byte-identical from one flag set, goreleaser would have to be talked out of its own stamps, and packaging is the only thing it would add.
+		- Origin: the 2026-09-07 directives ask for the decision to be recorded.
+		- Closed: 20260928-132933
+		- Done: recorded in design.md under "Direction decisions".
+		- Test: none, since this records a decision.
+
+	- ✅ Code Review 20260909 enhancement 7: `--quick` still runs the two slowest harnesses in full. Neither takes a flag to shorten itself.
+		- Origin: the 2026-09-07 directives.
+		- Closed: 20260928-132933
+		- Decided against: test.bash takes about 73 s over 1240 checks, with no hot spot. The one block worth skipping is the PowerShell installer at 16 s, and a quick run would then not test the one piece of PowerShell that ships. `--quick` already skips fuzz entirely.
+		- Done: config.bash said `--quick` skips the comparison harness, which it never did. The comment is fixed.
+		- Test: none, since nothing changed in what runs.
+
+	- ✅ Code Review 20260909 enhancement 8: tool pinning covers the four Go tools and silently skips the one that is not on the path. Six other tools that shape results are pinned nowhere.
+		- Origin: the 2026-09-07 directives.
+		- Closed: 20260928-132933
+		- Done: the Go tools are found where `go install` puts them, as gen-winres finds goversioninfo. On b23 goversioninfo is under GOPATH and not on PATH, so its version was never compared. `TOOL_VERSIONS` records shellcheck, markdownlint, PSScriptAnalyzer, gifsicle, Pillow and strace, compared and warned about the same way.
+		- Test: [ErCQOcE] and [ErCQVGY] in test.bash. [Er1LxTR] now matches the wider warning.
+		- Verified: both fail against `gover`.
+
+	- ✅ Code Review 20260909 enhancement 9: the release's final build compiles the working tree rather than a checkout of the tag. The two match in the ordinary case, and the comment above it claims the stronger thing.
+		- Origin: new. Plausible: read.
+		- Closed: 20260928-132933
+		- Done: phase 3 exports the tag with `git archive` and builds that. The temp folders now go on any exit.
+		- Test: [ErCQl7V] in test.bash pins it in the source, since no dry run reaches phase 3.
+
+	- ✅ Code Review 20260909 enhancement 10: smaller points in the installers.
+		- No writability check for a user-scope install, so it fails after the download the way the system scope does.
+		- sudo is promised without checking it exists.
+		- The two scripts leave the installed file in different modes, and the PowerShell one takes the umask.
+		- The PowerShell plan does not mention creating the destination folder, or clearing its own leftovers.
+		- The README does not say how to pass a flag to the bash one-liner, though the script knows the answer in a comment nobody sees.
+		- The two release sorters have no tie-break between two pre-releases of one version. It was unreachable while every publication was a full release. From 20260916 a suffixed tag publishes as a pre-release, so a v3.0.0-beta.2 following beta.1 reaches it; re-check whether a comment is still enough.
+		- Origin: the writability and sudo bullets were in the 20260819a notes as seen and not filed; the tie-break was the 20260909 round's own deferral. Plausible: read.
+		- Note: since item 13, install.ps1 checks write access for a system install before the plan. The user scope can reuse that check.
+		- Closed: 20260928-132933
+		- Done: both installers check a user install can write its folder before the plan. The Bash one checks sudo exists before promising it. The PowerShell one installs 755, and its plan names the folder it creates and the leftovers it clears. The README shows `bash -s --` with a flag.
+		- Decided against: a real tie-break between pre-releases. The newer-listed one wins a tie, and release.bash publishes in order, so both sorter comments now say that instead.
+		- Test: [ErCRQbq], [ErCRQc5], [ErCRQcM], [ErCRQcb], [ErCRQcr], [ErCRQd6] and [ErCRQdL] in test.bash, plus [ErCRFkF] for the tie.
+		- Verified: all but the tie check fail against `gover`. That one is a regression guard.
+
+	- ✅ Code Review 20260909 enhancement 11: preallocate the slices whose size is already known, about fourteen of them. The style guide could also use a Go performance section, and its package-variable rule needs widening: five variables that Go cannot express as constants currently read as standing violations.
+		- Origin: new. The five package variables were flagged by 20260819a items 21-25 and left as the ones Go cannot make constants.
+		- Closed: 20260928-132933
+		- Done: the prealloc linter finds six sites now, three in tests. The other three are a cold usage printer, a per-batch slice that resets, and a loop whose total is not known, so none changed. The style guide gained a Go performance section, and its package-variable rule names what Go cannot make a constant.
+		- Test: none. A prealloc gate would need `//nolint` on the three sites above.
+
+	- ✅ Code Review 20260909 enhancement 12: `.gitignore` covers the pipeline's own output and nothing a contributor's machine drops.
+		- Origin: the 2026-09-07 directives.
+		- Closed: 20260928-132933
+		- Done: `.gitignore` covers OS files, editor swap files and folders, and go test output.
+		- Test: [ErCRneY] in test.bash, which also fails if the repo tracks anything ignored.
 
 - ✅ The Go unit tests print a line per test, with its test ID.
 	- Opened: 20260927-112000

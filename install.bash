@@ -153,7 +153,8 @@ if [[ -z "${tag}" ]]; then
 			         -e 's/^[[:space:]]*"prerelease":[[:space:]]*\([a-z]*\).*/P \1/p' || true)"
 		## Highest version wins, not newest-listed: the list is ordered by publish date, so a
 		## backported fix cut after a newer release would otherwise resolve as latest. The
-		## first three numeric fields decide; a tie keeps the earlier-listed (newer) entry.
+		## first three numeric fields decide; a tie keeps the earlier-listed (newer) entry. Two
+		## pre-releases of one version tie, and release.bash publishes them in order.
 		fPickTag(){
 			awk -v wantPre="$1" '
 				function vkey(t,  v,n,a,i,k) { v=t; sub(/^[vV]/,"",v); n=split(v,a,"[._-]"); k=""
@@ -206,10 +207,18 @@ if [[ -z "${want}" ]]; then
 	exit 1
 fi
 
+## Found out before the plan, not at the copy after the download.
 destDir="${HOME}/.local/bin"; needSudo=0
 if [[ ${doSystem} -eq 1 ]]; then
 	destDir="/usr/local/bin"
 	[[ -w "${destDir}" ]] || needSudo=1
+	[[ ${needSudo} -eq 0 ]] || command -v sudo >/dev/null 2>&1 \
+		|| fErr "Installing for all users needs write access to ${destDir}, and there is no sudo here. Run it as a user who can write there, or install for this account alone, which is the default."
+else
+	## The nearest folder that exists is the one that takes the write.
+	userDir="${destDir}"
+	while [[ -n "${userDir}" && ! -d "${userDir}" ]]; do userDir="${userDir%/*}"; done
+	[[ -w "${userDir:-/}" ]] || fErr "Can't install to ${destDir}: ${userDir:-/} isn't writable by you. Check its owner and permissions."
 fi
 
 echo
@@ -297,4 +306,4 @@ echo
 ##		- 20260819 JC: The release fallback is one. Both routes asked releases/latest, which GitHub defines as the newest release that is NOT a pre-release - so on a repo whose newest publication is one, the fallback failed in exactly the way the primary had, and blamed rate limiting for it. The list endpoint answers instead, newest first, preferring a full release and saying so when only a candidate exists.
 ##		- 20260819 JC: The binary is staged in the destination directory and renamed over the target. Written in place, an interrupt mid-copy left a truncated executable that had passed its checksum under another name, and re-installing over a copy that was running failed outright. --help lists every option the parser accepts.
 ##		- 20260915 JC: SHA256SUMS is read with either case of hash and with CRLF line ends. --help lists --ref, and says --release stable still names the default. The no-binary refusal, a declined prompt and the pre-release notice have a blank line either side. The plan says when it replaces a copy, and a binary that won't run is named with its exit code.
-##		- 20260928 JC: End of input at the prompt says Aborted, as a typed no does. A tag read from the release redirect gets the same path check as a typed one.
+##		- 20260928 JC: End of input at the prompt says Aborted, as a typed no does. A tag read from the release redirect gets the same path check as a typed one. A user install checks it can write its folder, and a system one that sudo exists, both before the plan.
