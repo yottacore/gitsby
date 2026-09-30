@@ -16,12 +16,14 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	shcl "github.com/yottacore/shcl/source/go/v2"
 )
@@ -114,6 +116,47 @@ func (c *config) includeDir() string {
 	return strings.TrimSuffix(filepath.ToSlash(dir), "/") + "/accounts"
 }
 
+// fragmentNames maps each account to its fragment's file name: the host, then the
+// login it goes out as. One login on two hosts then gets two files, and a look in
+// the folder says which is which. An account with no login uses its own name in
+// that slot. Two accounts sharing a host and a login each add their own name too,
+// since the accounts file can hold both.
+func (c *config) fragmentNames() map[string]string {
+	names := c.accountNames()
+	base := make(map[string]string, len(names))
+	count := map[string]int{}
+	for _, name := range names {
+		who := c.loginOf(name)
+		if who == "" {
+			who = name
+		}
+		base[name] = fileSafe(c.hostOf(name)) + "_" + fileSafe(who)
+		count[base[name]]++
+	}
+	files := make(map[string]string, len(names))
+	for _, name := range names {
+		file := base[name]
+		if count[file] > 1 {
+			file += "_" + name
+		}
+		files[name] = file + ".gitconfig"
+	}
+	return files
+}
+
+// fileSafe holds a host or login to what the account name itself may use, so it
+// can't climb out of the include folder. 'host' and 'user' are checked on load,
+// but 'ghaccount' is not. Lower case, so two spellings of one login don't make
+// two files.
+func fileSafe(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x80 && (r == '.' || r == '_' || r == '-' || unicode.IsLetter(r) || unicode.IsDigit(r)) {
+			return r
+		}
+		return '-'
+	}, strings.ToLower(s))
+}
+
 // git's exit status for "the key you asked me to unset isn't there".
 const gitConfigNothingToUnset = 5
 
@@ -181,9 +224,10 @@ func (c *config) accountApplyPlan() []includeRule {
 	}
 	sortIncludes(segments)
 	sortIncludes(paths)
+	files := c.fragmentNames()
 	plan := make([]includeRule, 0, len(segments)+len(paths))
 	for _, cand := range slices.Concat(segments, paths) {
-		plan = append(plan, includeRule{"includeIf.gitdir/i:" + cand.pattern + ".path", dir + "/" + cand.account + ".gitconfig"})
+		plan = append(plan, includeRule{"includeIf.gitdir/i:" + cand.pattern + ".path", dir + "/" + files[cand.account]})
 	}
 	return plan
 }
@@ -429,9 +473,21 @@ func (a *app) cmdAccountApply() error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return usagef("Couldn't create '%s' for the account fragments. Check permissions on '%s'.", nativePath(dir), nativePath(filepath.Dir(dir)))
 	}
+	files := a.cfg.fragmentNames()
 	for _, name := range a.cfg.accountNames() {
-		if err := a.writeAccountFragment(dir, name); err != nil {
+		if err := a.writeAccountFragment(dir, files[name], name); err != nil {
 			return err
+		}
+	}
+	// A fragment left from an account since renamed or dropped, or from before
+	// fragments were named by host. Named rather than removed, since nothing says
+	// gitsby put it there.
+	if entries, err := os.ReadDir(dir); err == nil {
+		written := slices.Collect(maps.Values(files))
+		for _, e := range entries {
+			if strings.HasSuffix(e.Name(), ".gitconfig") && !slices.Contains(written, e.Name()) {
+				a.out.status("Not used any more, safe to remove: " + nativePath(dir+"/"+e.Name()))
+			}
 		}
 	}
 	// Drop ours before adding, so a folder rule that was removed from the config
@@ -460,8 +516,8 @@ func (a *app) cmdAccountApply() error {
 // outside the repo you are standing in, so it is the one place where a discarded
 // exit code turns into a silent no-op - it said "Wrote" and exited 0 whatever
 // happened.
-func (a *app) writeAccountFragment(dir, name string) error {
-	fragment := dir + "/" + name + ".gitconfig"
+func (a *app) writeAccountFragment(dir, file, name string) error {
+	fragment := dir + "/" + file
 	if err := os.WriteFile(fragment, nil, 0o600); err != nil {
 		return usagef("Couldn't write '%s'. Check permissions on '%s'.", fragment, dir)
 	}
@@ -546,10 +602,10 @@ func accountSetUsage() error {
 		accountSetPad+"<value>    What to set it to. Quote it if it has spaces.",
 		accountSetIndent+"Examples:",
 		accountSetPad+"Bind an account to one folder, and the login to use there:",
-		accountSetPad+accountSetIndent+meName+" account set work path ~/dev/work",
-		accountSetPad+accountSetIndent+meName+" account set work ghaccount my-work-login",
+		accountSetPad+accountSetIndent+meName+" account set github.com_my-work-login path ~/dev/work",
+		accountSetPad+accountSetIndent+meName+" account set github.com_my-work-login ghaccount my-work-login",
 		accountSetPad+"Or by a run of folder names the project's path contains:",
-		accountSetPad+accountSetIndent+meName+" account set work pathcontains my-employer/github")
+		accountSetPad+accountSetIndent+meName+" account set github.com_my-work-login pathcontains my-employer/github")
 	return usagef("%s", strings.Join(lines, "\n"))
 }
 
@@ -570,7 +626,7 @@ func accountUnsetUsage() error {
 	lines = append(lines,
 		accountSetIndent+"Example:",
 		accountSetPad+"Go back to the default host for an account:",
-		accountSetPad+accountSetIndent+meName+" account unset work host")
+		accountSetPad+accountSetIndent+meName+" account unset gitea.com_my-login host")
 	return usagef("%s", strings.Join(lines, "\n"))
 }
 
