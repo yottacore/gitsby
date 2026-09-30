@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -555,7 +556,12 @@ func (c *config) load(o options) error {
 // loadFlat reads the old layout: flat 'key = value' lines, '#' comments, blank
 // lines ignored. The reader the scripted builds had, kept as it was.
 func (c *config) loadFlat(text string) {
-	for _, line := range splitLines(text) { // a file written on Windows, read on Linux
+	// A key given twice is read from its last line, and the earlier lines that said
+	// something else are listed, the same as in the current layout.
+	var protocols []binding
+	given := map[[2]string][]binding{}
+	var keys [][2]string
+	for n, line := range splitLines(text) { // a file written on Windows, read on Linux
 		line = strings.TrimLeft(line, " \t")
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -576,13 +582,28 @@ func (c *config) loadFlat(text string) {
 		acct, field, ok := splitAccountKey(key)
 		if !ok {
 			if key == "protocol" {
-				c.values[key] = c.protocolValue(key, value)
+				protocols = append(protocols, binding{value, key, n + 1})
 				continue
 			}
 			c.unknown = append(c.unknown, key)
 			continue
 		}
-		c.absorb(acct, field, value, key)
+		if field == "path" || field == "pathcontains" || !slices.Contains(accountSetFields, field) {
+			c.absorb(acct, field, value, key)
+			continue
+		}
+		k := [2]string{acct, field}
+		if _, seen := given[k]; !seen {
+			keys = append(keys, k)
+		}
+		given[k] = append(given[k], binding{value, key, n + 1})
+	}
+	if len(protocols) > 0 {
+		c.values["protocol"] = c.protocolValue("protocol", c.lastBinding(protocols).value)
+	}
+	for _, k := range keys {
+		last := c.lastBinding(given[k])
+		c.absorb(k[0], k[1], last.value, last.disp)
 	}
 }
 

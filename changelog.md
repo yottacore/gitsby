@@ -111,6 +111,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- A key given two different values for one account, such as two blocks with the same name, is listed as ignored with its line number. The last value was read and the rest dropped without a word, so a GitHub block and a Gitea block under one name mixed their host and email. `account set` now edits the key in whichever block holds it; it always edited the first block, which could leave a later block's value as the one read. A repeated top-level `protocol` is listed the same way, and so is a repeat in a 2.x flat file.
+
 - `account set` no longer replaces an accounts file it can't read. It names the file, says why and what to do, and writes nothing. It also refuses when a file turns up while it runs, or when a link where the file goes points at nothing.
 
 - `br prune` no longer deletes a branch on origin that has moved since your last fetch. It asks origin just before deleting, leaves a moved branch alone, and reports one already deleted there instead of abandoning the rest. This happened with `--no-fetch`, or when someone pushed while the prompt waited. With `--no-fetch` and origin unreachable, it now says so instead of guessing the branches were already gone.
