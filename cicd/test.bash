@@ -3179,7 +3179,7 @@ GHEOF
 	fAssert "[EpxzLzs] account apply takes a --config named from the folder it runs in" \
 		bash -c "cd '${ac}/rel' && env ${acRelEnv} '${gitsby}' -q -NoFetch --config rel.shcl account apply >/dev/null"
 	fAssert "[EpxzLzt] and writes the fragments beside it, included by absolute path" \
-		bash -c "[[ -f '${ac}/rel/accounts/rel.gitconfig' ]] && env ${acRelEnv} git config --global --get-regexp '^includeif\.' | grep -qE ' /.+/rel/accounts/rel\.gitconfig$'"
+		bash -c "[[ -f '${ac}/rel/accounts/github.com_relacct.gitconfig' ]] && env ${acRelEnv} git config --global --get-regexp '^includeif\.' | grep -qE ' /.+/rel/accounts/github\.com_relacct\.gitconfig$'"
 	## '~', '${HOME}' and '%USERPROFILE%' are one folder on every platform, so a file synced from a
 	## Windows box applies here too. git knows none of them, so apply hands it the folder itself, and
 	## the ssh command gets the '~' its shell expands.
@@ -3456,6 +3456,11 @@ GHEOF
 	fAssert "[EmMuR5z] and leaves a hand-written includeIf alone"  bash -c "grep -q 'hand/written' '${ac}/home/.gitconfig'"
 	## Removing an account from the config has to remove its rule, or it silently keeps applying.
 	fAssert "[EmMuR60] dropping an account drops its rule"  bash -c "cd '${acWork}' && sed -i '/^account\.home\./d' '${ac}/home/.config/gitsby/config.shcl' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(grep -c 'gitsby/accounts' '${ac}/home/.gitconfig')\" == 1 ]]"
+	## Fragments are named by host and login, so a renamed account leaves its old file behind. It is
+	## named, not deleted, since nothing proves gitsby wrote it.
+	fAssertOut "[ErO1tXx] and names the fragment no rule uses any more"  'Not used any more, safe to remove: .*/accounts/github\.com_homeacct\.gitconfig' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply 2>&1"
+	fAssert "[ErO1tYE] and leaves it there"  bash -c "[[ -f '${ac}/home/.config/gitsby/accounts/github.com_homeacct.gitconfig' ]]"
 
 	## The helper git is handed has to carry the token even when gh is ALREADY that account. The
 	## export used to sit inside the "this replaces a different account" branch while the helper
@@ -3477,11 +3482,11 @@ GHEOF
 	EOF
 	local acSpaceEnv="${acNoDiscovery} HOME='${ac}/spacehome' GIT_CONFIG_GLOBAL='${ac}/spacehome/.gitconfig' PATH='${ac}/bin:${PATH}'"
 	fAssert "[EnPP5qX] account apply writes a rule for a folder whose path has a space" \
-		bash -c "cd '${ac}/my trees/work' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && [[ \"\$(grep -c 'sp\.gitconfig' '${ac}/spacehome/.gitconfig')\" == 1 ]]"
+		bash -c "cd '${ac}/my trees/work' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && [[ \"\$(grep -c 'spacct\.gitconfig' '${ac}/spacehome/.gitconfig')\" == 1 ]]"
 	fAssert "[EnPP5qY] and re-applying refreshes it instead of duplicating it" \
-		bash -c "cd '${ac}/my trees/work' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && [[ \"\$(grep -c 'sp\.gitconfig' '${ac}/spacehome/.gitconfig')\" == 1 ]]"
+		bash -c "cd '${ac}/my trees/work' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && [[ \"\$(grep -c 'spacct\.gitconfig' '${ac}/spacehome/.gitconfig')\" == 1 ]]"
 	fAssert "[EnPP5qZ] and dropping that account drops its rule" \
-		bash -c "cd '${ac}/my trees/work' && sed -i '/^account\.sp\./d' '${ac}/spaced.shcl' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && ! grep -q 'sp\.gitconfig' '${ac}/spacehome/.gitconfig'"
+		bash -c "cd '${ac}/my trees/work' && sed -i '/^account\.sp\./d' '${ac}/spaced.shcl' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && ! grep -q 'spacct\.gitconfig' '${ac}/spacehome/.gitconfig'"
 	## The username plain git asks with has to be for the account's own host, and the same login
 	## gitsby's own runs give the helper. It was always github.com and always ghAccount, so an
 	## account on another host got none, and one with both keys set named the other login.
@@ -3583,7 +3588,7 @@ GHEOF
 	fAssertNotOut "[Epy6SgX] and no token is read from the folder a command runs in"  'token \.\.\.: tok\.txt' \
 		bash -c "${acRelRun} '${acRel}/cfg/relkey.shcl' account list"
 	fAssert "[Epy6SgY] a relative sshkey goes into no git config fragment" \
-		bash -c "${acRelRun} '${acRel}/cfg/relkey.shcl' account apply >/dev/null && grep -q rk@example.com '${acRel}/cfg/accounts/rk.gitconfig' && ! grep -qi sshcommand '${acRel}/cfg/accounts/rk.gitconfig'"
+		bash -c "${acRelRun} '${acRel}/cfg/relkey.shcl' account apply >/dev/null && grep -q rk@example.com '${acRel}/cfg/accounts/github.com_rk.gitconfig' && ! grep -qi sshcommand '${acRel}/cfg/accounts/github.com_rk.gitconfig'"
 	: > "${acRel}/cfg/keyset.shcl"
 	fAssert "[Epy6SgZ] account set writes a relative tokenfile as the file it names from here" \
 		bash -c "${acRelRun} '${acRel}/cfg/keyset.shcl' account set rk tokenfile tok.txt >/dev/null && grep -qF -e 'tokenfile: ${acRelProj}/tok.txt' -e 'tokenfile: \"${acRelProj}/tok.txt\"' '${acRel}/cfg/keyset.shcl'"
@@ -3593,7 +3598,7 @@ GHEOF
 	## 'apply' is the one command that writes outside the repo you are standing in, and it reported
 	## success whatever happened: the truncate error was discarded and every 'git config' exit code
 	## ignored. A directory where the fragment file belongs is the cheapest way to fail one write.
-	mkdir -p "${ac}/frag/accounts/b.gitconfig" "${ac}/fraghome"
+	mkdir -p "${ac}/frag/accounts/github.com_bacct.gitconfig" "${ac}/fraghome"
 	: > "${ac}/fraghome/.gitconfig"
 	cat > "${ac}/frag/config.shcl" <<-EOF
 		account.b.path      = ${acCanon}/trees/work
@@ -3604,7 +3609,7 @@ GHEOF
 		bash -c "cd '${acWork}' && env ${acFragEnv} '${gitsby}' -q -NoFetch --config '${ac}/frag/config.shcl' account apply"
 	fAssertNotOut "[EnPP5qb] and never says it wrote one"  'Wrote ' \
 		bash -c "cd '${acWork}' && env ${acFragEnv} '${gitsby}' -q -NoFetch --config '${ac}/frag/config.shcl' account apply 2>&1"
-	fAssert       "[EnPP5qc] and wrote no includeIf rule either"  bash -c "! grep -q 'b\.gitconfig' '${ac}/fraghome/.gitconfig'"
+	fAssert       "[EnPP5qc] and wrote no includeIf rule either"  bash -c "! grep -q 'bacct\.gitconfig' '${ac}/fraghome/.gitconfig'"
 	## The same for the global config itself: a path under a plain file can't be locked for writing.
 	mkdir -p "${ac}/addfail"; : > "${ac}/notadir"
 	cat > "${ac}/addfail/config.shcl" <<-EOF
@@ -3624,7 +3629,7 @@ GHEOF
 	## earlier run stayed that way through every re-apply.
 	if ((! isWindows)); then
 		fAssert "[EnQsbMK] account apply tightens a fragment left readable by an earlier run" \
-			bash -c "chmod 644 '${ac}/home/.config/gitsby/accounts/work.gitconfig' && cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(stat -c '%a' '${ac}/home/.config/gitsby/accounts/work.gitconfig')\" == 600 ]]"
+			bash -c "chmod 644 '${ac}/home/.config/gitsby/accounts/github.com_workacct.gitconfig' && cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(stat -c '%a' '${ac}/home/.config/gitsby/accounts/github.com_workacct.gitconfig')\" == 600 ]]"
 	fi
 
 	## The sshKey value is concatenated into GIT_SSH_COMMAND and into core.sshCommand, and git hands
@@ -4879,7 +4884,7 @@ EOF
 		fAssertOut "[EnQNsZl] a token file other users can read is called out"  'readable by other users' \
 			bash -c "cd '${dr}/tree/proj' && env ${drEnv} '${gitsby}' -q -NoFetch --config '${dr}/token.shcl' identity 2>&1"
 		fAssert "[EnQNsZm] the account fragments are yours alone" \
-			bash -c "[[ \"\$(stat -c %a '${dr}/home/.config/gitsby/accounts')\" == 700 ]] && [[ \"\$(stat -c %a '${dr}/home/.config/gitsby/accounts/abe.gitconfig')\" == 600 ]]"
+			bash -c "[[ \"\$(stat -c %a '${dr}/home/.config/gitsby/accounts')\" == 700 ]] && [[ \"\$(stat -c %a '${dr}/home/.config/gitsby/accounts/github.com_abe.gitconfig')\" == 600 ]]"
 	fi
 
 	##••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
@@ -5161,7 +5166,7 @@ GHEOF
 	fAssertOut "[EncI7Np] and lists the keys it takes"  'One of: path, pathcontains, ghaccount, tokenfile' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set 2>&1 | tr '\\n' ' ' | tr -s ' '"
 	## The example is two lines on one account name, because that repetition is what '<account>' is.
-	fAssertOut "[EncI7Nq] and its example runs as printed"  'gitsby account set work path ~/dev/work' \
+	fAssertOut "[EncI7Nq] and its example runs as printed"  'gitsby account set github.com_my-work-login path ~/dev/work' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set 2>&1"
 	## 'pathContains' matches a run of folder names, not a glob. An example with a '*' in it reads
 	## as a pattern language that isn't there, and the rule it teaches never matches anything.

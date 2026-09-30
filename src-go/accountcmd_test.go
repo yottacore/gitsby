@@ -77,11 +77,42 @@ func TestAccountApplyPlanTargets(t *testing.T) { // [EnQKNs1]
 	if len(plan) != 1 {
 		t.Fatalf("plan = %v", plan)
 	}
-	if want := cfg.includeDir() + "/work.gitconfig"; plan[0].target != want {
+	if want := cfg.includeDir() + "/github.com_work.gitconfig"; plan[0].target != want {
 		t.Errorf("target = %q, want %q", plan[0].target, want)
 	}
 	if !strings.HasSuffix(cfg.includeDir(), "/accounts") {
 		t.Errorf("includeDir = %q", cfg.includeDir())
+	}
+}
+
+// A fragment is named for the host and the login, so the same login on two hosts
+// gets two files. Sharing both falls back to the account name as well.
+func TestFragmentNames(t *testing.T) { // [ErO1tXi]
+	cfg := planFor(t, `
+account.a.host = gitea.com
+account.a.user = t00mietum
+account.b.ghAccount = t00mietum
+account.c.ghAccount = Ada/../x
+account.d.email = d@example.com
+account.e.ghAccount = shared
+account.f.ghAccount = shared
+`)
+	want := map[string]string{
+		"a": "gitea.com_t00mietum.gitconfig",
+		"b": "github.com_t00mietum.gitconfig",
+		"c": "github.com_ada-..-x.gitconfig",
+		"d": "github.com_d.gitconfig",
+		"e": "github.com_shared_e.gitconfig",
+		"f": "github.com_shared_f.gitconfig",
+	}
+	got := cfg.fragmentNames()
+	for name, file := range want {
+		if got[name] != file {
+			t.Errorf("fragment for %s = %q, want %q", name, got[name], file)
+		}
+	}
+	if len(got) != len(want) {
+		t.Errorf("fragments = %v", got)
 	}
 }
 
@@ -144,7 +175,7 @@ account.zed.path = /srv/shared
 		t.Fatalf("plan = %v", plan)
 	}
 	lastWins := plan[len(plan)-1].target
-	want := cfg.includeDir() + "/" + cfg.accountForDir(driveFolder("/srv/shared/x")) + ".gitconfig"
+	want := cfg.includeDir() + "/" + cfg.fragmentNames()[cfg.accountForDir(driveFolder("/srv/shared/x"))]
 	if lastWins != want {
 		t.Errorf("git would keep %q, gitsby resolves to %q", lastWins, want)
 	}

@@ -149,7 +149,7 @@ gitsby: Another run is editing the accounts file.
 
 - A path goes on its own labeled line, never inside a sentence or parentheses.
 
-- A fix that can be a command is given as one, such as `gitsby account set work host gitea.com`. A config line to retype can be mistyped. A literal to copy is indented under its note and never wrapped.
+- A fix that can be a command is given as one, such as `gitsby account set gitea.com_my-login host gitea.com`. A config line to retype can be mistyped. A literal to copy is indented under its note and never wrapped.
 
 - A config key is spelled in full, the way the file takes it. So is an example value, which has to be one the matcher really accepts.
 
