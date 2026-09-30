@@ -593,7 +593,7 @@ var nestedKeyRows = []struct {
 		[]string{"account[w].email.sshkey (indented under email)", "account[w].email.sshkey.x (indented under sshkey)"},
 		func(t *testing.T, cfg *config) { wantValue(t, cfg, "w", "email", "e@x") }},
 	{"under a repeated field", "account: w\n\temail: e@x\n\t\tsshkey: k1\n\temail: f@x\n\t\tsshkey: k2\n",
-		[]string{"account[w].email.sshkey (indented under email)"},
+		[]string{"account[w].email.sshkey (indented under email)", "account[w].email: e@x (line 2; line 4 gives it again, and that one is read)"},
 		func(t *testing.T, cfg *config) { wantValue(t, cfg, "w", "email", "f@x") }},
 	{"a block under protocol", "protocol: https\n\taccount: w\n\t\tpath: /srv/a\n",
 		[]string{"protocol.account (indented under protocol)", "protocol.account.path (indented under account)"},
@@ -1039,5 +1039,50 @@ func TestResolveConfigFileSkipsAnUnreadableCandidate(t *testing.T) { // [EptZI40
 	}
 	if got, err := defaultOptions().resolveConfigFile(); got != "" || err != nil {
 		t.Errorf("with only the unreadable file: got %q, %v, want no file and no error", got, err)
+	}
+}
+
+// One key given twice to one account - in a block opened again, in blocks whose
+// names differ only in case, or in a dotted line beside a block - was read last
+// wins without a word, so two accounts written as one went unnoticed. The last is
+// still read, and each earlier one that said something else is listed. Pieces
+// that don't disagree are just one account.
+func TestRepeatedAccountKeys(t *testing.T) { // [ErO6xla]
+	const read = " gives it again, and that one is read)"
+	for _, tc := range []struct {
+		label, body, host, email string
+		ignored                  []string
+	}{
+		{"two blocks, one name", "account: tt\n\thost: gitea.com\n\temail: a@x\n\naccount: tt\n\thost: github.com\n\temail: b@y\n",
+			"github.com", "b@y", []string{"account[tt].host: gitea.com (line 2; line 6" + read, "account[tt].email: a@x (line 3; line 7" + read}},
+		{"names differing in case", "account: tt\n\temail: a@x\n\naccount: TT\n\temail: b@y\n",
+			"github.com", "b@y", []string{"account[tt].email: a@x (line 2; line 5" + read}},
+		{"a block, then a dotted line", "account: tt\n\temail: a@x\naccount.tt.email: b@y\n",
+			"github.com", "b@y", []string{"account[tt].email: a@x (line 2; line 3" + read}},
+		{"dotted lines around another block", "account.tt.email: a@x\naccount: other\n\temail: o@x\naccount.tt.host: gitea.com\n",
+			"gitea.com", "a@x", nil},
+		{"a block opened again to add a key", "account: tt\n\temail: a@x\naccount: other\n\temail: o@x\naccount: tt\n\thost: gitea.com\n",
+			"gitea.com", "a@x", nil},
+		{"the same value twice", "account: tt\n\temail: a@x\n\naccount: tt\n\temail: a@x\n",
+			"github.com", "a@x", nil},
+		{"2.x flat lines", "account.tt.host = gitea.com\naccount.tt.email = a@x\naccount.TT.host = github.com\n",
+			"github.com", "a@x", []string{"account.tt.host: gitea.com (line 1; line 3" + read}},
+	} {
+		cfg := writeConfig(t, tc.body)
+		if got := cfg.hostOf("tt"); got != tc.host {
+			t.Errorf("%s: host = %q, want %q", tc.label, got, tc.host)
+		}
+		if got := cfg.value("tt", "email"); got != tc.email {
+			t.Errorf("%s: email = %q, want %q", tc.label, got, tc.email)
+		}
+		if !slices.Equal(cfg.unknown, tc.ignored) {
+			t.Errorf("%s: ignored = %q, want %q", tc.label, cfg.unknown, tc.ignored)
+		}
+	}
+	for _, body := range []string{"protocol: ssh\nprotocol: https\n", "protocol = ssh\nprotocol = https\n"} {
+		cfg := writeConfig(t, body)
+		if got, want := cfg.unknown, []string{"protocol: ssh (line 1; line 2" + read}; cfg.values["protocol"] != "https" || !slices.Equal(got, want) {
+			t.Errorf("%q: protocol = %q, ignored = %q, want https and %q", body, cfg.values["protocol"], got, want)
+		}
 	}
 }

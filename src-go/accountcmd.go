@@ -1037,11 +1037,21 @@ func (a *app) accountSetPlan() (accountSetTarget, error) {
 	}
 	// Taken before the edit, so only what the save changes besides the key counts.
 	tidy := t.doc.ToCanonical() == t.read
+	// One account can be in pieces: blocks whose names differ only in case, or
+	// dotted lines beside a block. The key is edited in whichever piece holds it,
+	// and added to the first when none does. Editing the first regardless left a
+	// later piece's value as the one read.
 	blocks, _ := acctBlocks(t.doc)
+	n := 0
 	for _, b := range blocks {
-		if b.name == name {
+		if b.name != name {
+			continue
+		}
+		if t.base == "" {
 			t.base = b.path
-			break
+		}
+		if held := t.doc.Count(b.path + "." + shcl.QuoteSegment(t.field)); held > 0 {
+			t.base, n = b.path, n+held
 		}
 	}
 	if t.base == "" {
@@ -1051,7 +1061,7 @@ func (a *app) accountSetPlan() (accountSetTarget, error) {
 	// 'path' and 'pathcontains' are repeatable by design, and any key at all can be
 	// in there twice by accident. Replacing the first and leaving the rest would
 	// look like it worked and change nothing, so say so rather than guess.
-	if n := t.doc.Count(t.path()); n > 1 {
+	if n > 1 {
 		return t, usagef("'%s' is in %s %d times. Edit it by hand - there is no telling which one you meant.", t.disp+"."+t.field, nativePath(t.file), n)
 	}
 	if read := t.doc.ReadString(t.path()); read.Status != shcl.NotFound {
