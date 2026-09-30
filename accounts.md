@@ -25,13 +25,13 @@ One file, one block per account, `#` for comments:
 
 protocol: https                  # how new remotes are set up; https needs no ssh key
 
-account: work
+account: github.com_my-work-login
 	path: ~/dev/work             # the folder tree this account owns
 	ghaccount: my-work-login
 	name: Ada Lovelace
 	email: ada@work.example
 
-account: personal
+account: github.com_my-personal-login
 	path: ~/dev/personal
 	ghaccount: my-personal-login
 	email: ada@home.example
@@ -75,7 +75,7 @@ Run `gitsby account` to see what it made of all that, and which account the fold
 The file is meant to be edited by hand, but you don't have to. `gitsby account set <account> <key> <value>` writes one key into that account's block - replacing it where the block has it, adding it where it doesn't, or creating the file if there isn't one yet. It shows the edit and asks before making it, refuses a key nothing reads rather than leaving a line that is silently dropped on every load, and keeps every other line of the file as it was. A few edits can't, such as a key added to an account written as `account.work.email:` lines. Then the whole file comes out in the format's own spacing, with tabs, lower-case keys and one blank line between blocks, and the plan says so first.
 
 ~~~console
-$ gitsby account set work host gitea.com
+$ gitsby account set gitea.com_my-work-login host gitea.com
     edit /home/pat/.config/gitsby/config.shcl, line 8
       was:     host: github.com
       becomes: host: gitea.com
@@ -90,11 +90,11 @@ Where an account isn't applying, the identity block names the `account set` line
 `path` names a tree on the machine you're on, so a config using it can't be synced as-is: the roots differ. `pathcontains` names folder names instead, and matches wherever they appear:
 
 ~~~yaml
-account: work
+account: github.com_my-work-login
 	pathcontains: github.com/my-work-login
 	ghaccount: my-work-login
 
-account: personal
+account: github.com_my-personal-login
 	pathcontains: github.com/my-personal-login
 	ghaccount: my-personal-login
 ~~~
@@ -142,7 +142,7 @@ With no rule covering the destination, gh stays on its own account. The owner of
 
 ## Teaching plain git the same rules
 
-`gitsby account apply` writes the same folder rules into your global git config, as ordinary `includeIf` blocks pointing at one small file per account. After that a bare `git commit` or `git push` in one of those folders uses the right identity and the right key, with Gitsby nowhere in the picture.
+`gitsby account apply` writes the same folder rules into your global git config, as ordinary `includeIf` blocks pointing at one small file per account. Each file is named for the host and the login, such as `accounts/gitea.com_ada.gitconfig`, so one login on two hosts gets two files. A file left from an account since renamed is named in the output, not deleted. After that a bare `git commit` or `git push` in one of those folders uses the right identity and the right key, with Gitsby nowhere in the picture.
 
 It is safe to re-run: it replaces only the entries it wrote before, leaves any you wrote by hand alone, and drops rules for accounts you have since removed.
 

@@ -110,8 +110,9 @@ func (a *app) preview(what string) {
 		// that writes outside the repo you are standing in - into your own global
 		// git config.
 		applyDir := a.cfg.includeDir()
+		files := a.cfg.fragmentNames()
 		for _, name := range a.cfg.accountNames() {
-			a.out.clean(pad + "write " + applyDir + "/" + name + ".gitconfig")
+			a.out.clean(pad + "write " + applyDir + "/" + files[name])
 		}
 		for _, key := range a.cfg.accountManagedIncludes() {
 			a.out.clean(pad + "git config --global --unset-all " + key)

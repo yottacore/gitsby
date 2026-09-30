@@ -30,6 +30,38 @@ Going forward, new issues in the new template at the bottom of this file, will g
 
 ## New format
 
+- Two account blocks with one name merge without a word
+	- ID: 2026093013034093
+	- Type: Bug
+	- Status: Queued
+	- Priority|Severity [Bug]: Avg
+	- Opened: 2026-09-30
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- Write `account: t00mietum` twice, one block with `host: gitea.com` and one with `host: github.com`.
+		- Run `gitsby account list --config` on that file.
+	- Incorrect behavior [Bug]: One account is listed, with a mix of both blocks' values. Nothing says a block was merged.
+	- Expected behavior [Bug]: The clash is reported, the same way an unread key is.
+	- Possible cause [Bug]: The loader dedupes block names before it reads them.
+	- Estimated effort: Low
+
+- `account apply` names fragments by host and login
+	- ID: 2026093013031520
+	- Type: Enhancement
+	- Status: Done
+	- Opened: 2026-09-30
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- Each fragment is `<host>_<login>.gitconfig`, in lower case.
+		- An account with no login uses its own name there.
+		- Two accounts that share a host and login each add their account name.
+		- Help and doc examples name accounts the same way.
+	- Decisions:
+		- A fragment no rule uses any more is named in the output, not deleted. Nothing proves gitsby wrote it.
+	- Branch: acct-files
+	- Test case: TestFragmentNames, plus two apply checks in test.bash.
+	- Closed: 2026-09-30
+
 ## Bugs
 
 ## Features and enhancements
