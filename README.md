@@ -108,8 +108,8 @@ What you reach for daily is a one-word command. Everything else is grouped under
 | `pr create`          | `[title]`     | Push the current branch and open a PR against `dev`/`main` (no title: the last commit subject).
 | `pr ok`              | `<#>`         | Approve and merge a PR.
 | `account`            |               | Show your configured GitHub accounts, and which one this folder uses (`account list` is the same thing).
-| `account set`        | `<a> <k> <v>` | Set one key of one account in the accounts file, e.g. `account set work path ~/dev/work`. Run it bare for the keys it takes.
-| `account unset`      | `<a> <k>`     | Remove one key from one account, every line of it, e.g. `account unset work host`.
+| `account set`        | `<a> <k> <v>` | Set one key of one account in the accounts file, e.g. `account set github.com_my-work-login path ~/dev/work`. Run it bare for the keys it takes.
+| `account unset`      | `<a> <k>`     | Remove one key from one account, every line of it, e.g. `account unset github.com_my-work-login host`.
 | `account apply`      |               | Teach plain `git` the same folder rules, so `git` outside Gitsby behaves identically.
 | `raw git`            | `<args ...>`  | Run `git` as the account this folder belongs to. Everything after `git` is git's, verbatim.
 | `raw gh`             | `<args ...>`  | The same, for `gh`.
@@ -139,13 +139,13 @@ Most people with two GitHub accounts also have a folder for each: one tree for w
 ~~~yaml
 # ~/.config/gitsby/config.shcl
 
-account: work
+account: github.com_my-work-login
 	path: ~/dev/work
 	ghaccount: my-work-login
 	email: ada@work.example
 
 # Or name folders instead of a root, and the same file works on every machine
-account: personal
+account: github.com_my-personal-login
 	pathcontains: github.com/my-personal-login
 	ghaccount: my-personal-login
 	email: ada@home.example

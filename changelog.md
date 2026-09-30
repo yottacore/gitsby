@@ -57,6 +57,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- `account apply` names each account's git config file for its host and login, such as `accounts/gitea.com_ada.gitconfig`, so the same login on two hosts no longer looks like one account. Two accounts that share both also carry their own names. A file left from an older name is listed in the output and kept.
+
 - `--version`, `--about` and `--donate` work after a command, as `--help` always has. `-v` still counts only as the first word, so it can't turn a command into a silent no-op.
 
 - `repo clone` names the folder it clones into in full, in the plan and after. The git command it runs keeps the folder as typed.
