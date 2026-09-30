@@ -1,11 +1,10 @@
 <!-- markdownlint-disable MD007 -- Unordered list indentation -->
 <!-- markdownlint-disable MD010 -- No hard tabs -->
 <!-- markdownlint-disable MD033 -- No inline html -->
-<!-- markdownlint-disable MD055 -- Table pipe style [Expected: leading_and_trailing; Actual: leading_only; Missing trailing pipe] -->
 <!-- markdownlint-disable MD041 -- First line in a file should be a top-level heading -->
-# Gitsby backlog
 
-This is the product backlog, until bugs, features, and enhancements move to GitHub Issues.
+<!-- TOC ignore:true -->
+# Gitsby backlog
 
 <!-- TOC ignore:true -->
 ## Table of contents
@@ -13,22 +12,26 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 <!-- TOC -->
 
 - [Introduction](#introduction)
-- [New format](#new-format)
-- [Bugs](#bugs)
-- [Features and enhancements](#features-and-enhancements)
-- [Done](#done)
-	- [Done - Bugs](#done---bugs)
-	- [Done - Features and enhancements](#done---features-and-enhancements)
-- [Deferred](#deferred)
-- [Canceled](#canceled)
+- [Issues](#issues)
+- [Old format](#old-format)
+	- [Bugs](#bugs)
+	- [Features and enhancements](#features-and-enhancements)
+	- [Done](#done)
+		- [Done - Bugs](#done---bugs)
+		- [Done - Features and enhancements](#done---features-and-enhancements)
+	- [Deferred](#deferred)
+	- [Canceled](#canceled)
+- [Template](#template)
 
 <!-- /TOC -->
 
 ## Introduction
 
-Going forward, new issues in the new template at the bottom of this file, will go in the '## New format' section only. No more status emojis, but will be sorted (top-down) by status, then severity|priority. Issues in the old format (with status emojis) won't be refactored, but will continue to be worked until moved to closed, canceled, or deferred sections, and emojis updated. (Eventually this will all be moved to nano-git-db anyway. This new template is an intermediate effort to make issues going forward more structured and importable.)
+Going forward, new issues in the new template at the bottom of this file, will go in the '## New format' section only. No more status emojis. Refer to '## Reference' for sort order. Issues in the old format (with status emojis) won't be refactored, but will continue to be worked until moved to closed, canceled, or deferred sections, and emojis updated. (Eventually this will all be moved to nano-git-db anyway. This new template is an intermediate effort to make issues going forward more structured and importable.)
 
-## New format
+This is the product backlog, until bugs, features, and enhancements move to GitHub Issues.
+
+## Issues
 
 - Two account blocks with one name merge without a word
 	- ID: 2026093013034093
@@ -76,9 +79,11 @@ Going forward, new issues in the new template at the bottom of this file, will g
 	- Test case: TestFragmentNames, plus two apply checks in test.bash.
 	- Closed: 2026-09-30
 
-## Bugs
+## Old format
 
-## Features and enhancements
+### Bugs
+
+### Features and enhancements
 
 - 🔘 Move the shcl module from its pinned `dev` commit to the tagged 3.0 release.
 	- Opened: 20260924-132324
@@ -88,9 +93,9 @@ Going forward, new issues in the new template at the bottom of this file, will g
 	- shcl plans the `/v3` path for its 3.0.0 cut, so nothing to report there.
 	- Note: blocked. Checked 2026-09-28: shcl has no 3.0 tag yet, and its `dev` go.mod still says `/v2`.
 
-## Done
+### Done
 
-### Done - Bugs
+#### Done - Bugs
 
 - ✅ `status` says an account came from "gitsby.ghAccount in this repo's git config" when the key reached git through an `account apply` fragment included from the global config. The line also starts with a capital `G`, which no key is spelled with.
 	- Closed: 20260928-131013
@@ -1887,7 +1892,7 @@ Going forward, new issues in the new template at the bottom of this file, will g
 	- ✅ Add a PowerShell badge to README.md.
 		- Added next to the bash badge in the header block, linking to the PowerShell docs.
 
-### Done - Features and enhancements
+#### Done - Features and enhancements
 
 - ✅ `repo clone` names the folder it clones into in full.
 	- Opened: 20260928-132933
@@ -2597,7 +2602,7 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- Closed: 20260722-165821
 	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
 
-## Deferred
+### Deferred
 
 Waiting on hardware, an upstream module, or a decision.
 
@@ -2619,11 +2624,11 @@ Waiting on hardware, an upstream module, or a decision.
 	- The port is underway now, so this is decidable rather than deferred. Two calls: whether a bare workflow (vet, test, build on push and PR) is worth the dependency on a hosted service, and whether a release packager earns its place by bringing the Linux packages with it.
 	- Against the packager: the release already proves itself by downloading, checksumming and running the asset, which is more than it would do. For it: the packages come free.
 
-## Canceled
+### Canceled
 
-<!-- New issue template
+## Template
 
-Legacy statuses:
+### Old format
 
 - 🔘 Not started
 
@@ -2637,56 +2642,61 @@ Legacy statuses:
 
 - 🚫 Canceled
 
-New issue format:
+### New format
 
-- Only use rows that you actually need or expect will be filled in. Always fill in the title, ID, Type, Status, Opened and Created by.
+- Notes:
 
-- The ID is the local time to the hundredth of a second. Opened is when it was written down, which may differ. (Use a keyboard macro and possibly something like project 'zuid' to generate.)
+	- Only use rows that you actually need or expect will be filled in. Always fill in the title, ID, Type, Status, Opened and Created by.
 
-- Status values, in sort order: Started, Testing, Waiting on signoff, Stalled, Queued, Deferred, Done, Moot, Canceled. Testing means the fix is in and checks are running or still to run. Waiting on signoff means testing passed. Moot means something else changed and made it irrelevant. Canceled means it still applies but was decided against.
+	- The ID is the local time to the hundredth of a second. Opened is when it was written down, which may differ. (Use a keyboard macro and possibly something like project 'zuid' to generate.)
 
-- Rows marked [Bug] are for bugs only, and rows marked [Feature] for features and enhancements. Children are not nested. They sit at the top level and point back with Parent ID.
+	- Status values meaning: Testing means the fix is in and checks are running or still to run. Waiting on signoff means automated testing passed. Moot means something else changed that made it irrelevant. Canceled means it still applies but was decided against. Waiting for testing means the fix is in and waits on a long CI run or an outside test host. Can't reproduce means a real attempt to reproduce it failed.
+
+	- As issues are worked, and statuses change, place them in correct sorting order within the list:
+		- First by status: Waiting for answers, Waiting on signoff, Testing, Waiting for testing, Can't reproduce, Stalled, Started, Queued, Done, Deferred, Canceled, Moot
+		- Then by severity|priority: Critical, High, Avg, Low
+		- Then by type: Bugs, [not bugs together]
+
+	- Rows marked [Bug] are for bugs only, and rows marked [Feature] for features and enhancements. Children are not nested. They sit at the top level and point back with Parent ID.
 
 Template:
 
 - Title
 	- ID: YYYYmmDDHHMMSSNN
 	- Type: [Bug|Feature|Enhancement|Task]
-	- Status: [Queued|Started|Stalled|Testing|Waiting on signoff|Moot|Canceled|Deferred|Done]
+	- Status: [Queued|Waiting for answers|Waiting on signoff|Waiting for testing|Started|Testing|Stalled|Can't reproduce|Moot|Canceled|Deferred|Done]
+	- Needs local test suite run?:
+	- Needs external testing:
 	- Priority|Severity [Bug]: [Critical|High|Avg|Low]
-	- Opened: YYYYmmDD-HHMMSS
+	- Opened:
 	- Opened by:
 	- Assigned to:
-	- Parent ID: YYYYmmDDHHMMSSNN
+	- Parent ID:
 	- Prereq IDs:
-		- YYYYmmDDHHMMSSNN
 	- Related IDs:
-		- YYYYmmDDHHMMSSNN
 	- Target OS:
 	- Test environment:
 	- Version and build:
 	- Requirements  [Feature]:
 		- Hierarchical bulleted list.
 	- Steps to reproduce [Bug]:
-		- ...
+		- …
 	- Incorrect behavior [Bug]:
 	- Expected behavior [Bug]:
 	- Reproduced [Bug]: [No, or when, where and how]
 	- Possible cause [Bug]:
 	- Actual cause [Bug]:
-		- ...
+		- …
 	- Estimated effort: [High|Avg|Low]
 	- Actual effort: [High|Avg|Low]
 	- Progress log:
-		- YYYYmmDD-HHMMSS: Notable effort.
+		- …
 	- Decisions:
-		- ...
+		- …
 	- Actual fix [Bug]:
 	- Branch:
 	- Commit:
 	- Test case: [Reason not applicable, or CI test case #]
 	- Acceptance signoff:
-	- Superseded by ID: YYYYmmDDHHMMSSNN
-	- Closed: YYYYmmDD-HHMMSS
-
--->
+	- Superseded by ID:
+	- Closed:
