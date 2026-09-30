@@ -11,7 +11,9 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
+	"slices"
 	"strings"
 
 	shcl "github.com/yottacore/shcl/source/go/v2"
@@ -103,7 +105,7 @@ func (c *config) loadDoc(doc *shcl.Document) {
 	for _, name := range dedupe(doc.Children("")) {
 		switch name {
 		case "protocol":
-			c.values[name] = c.protocolValue(name, lastString(doc, name))
+			c.values[name] = c.protocolValue(name, c.lastBinding(bindings(doc, name, name)).value)
 			c.listNested(doc, name, name, name)
 		case "account":
 		default:
@@ -113,6 +115,14 @@ func (c *config) loadDoc(doc *shcl.Document) {
 	}
 	blocks, stray := acctBlocks(doc)
 	c.unknown = append(c.unknown, stray...)
+	// A single-valued key can reach one account more than once: repeated in a
+	// block, in a block opened again further down (the format merges the two), or
+	// in blocks whose names differ only in case. The last is read, as the flat
+	// reader always did. The earlier ones are listed, since two hosts or two emails
+	// is two accounts written as one, and reading one of them without a word is how
+	// that went unnoticed.
+	given := map[[2]string][]binding{}
+	var keys [][2]string
 	for _, b := range blocks {
 		if !acctNameOK.MatchString(b.name) {
 			c.unknown = append(c.unknown, b.disp)
@@ -130,11 +140,57 @@ func (c *config) loadDoc(doc *shcl.Document) {
 					c.absorb(b.name, field, value, b.disp+"."+field)
 				}
 			default:
-				c.absorb(b.name, field, lastString(doc, path), b.disp+"."+field)
+				// A key nothing reads is only listed, and listed here, ahead of
+				// anything indented under it.
+				if !slices.Contains(accountSetFields, field) {
+					c.absorb(b.name, field, "", b.disp+"."+field)
+					break
+				}
+				key := [2]string{b.name, field}
+				if _, seen := given[key]; !seen {
+					keys = append(keys, key)
+				}
+				given[key] = append(given[key], bindings(doc, path, b.disp+"."+field)...)
 			}
 			c.listNested(doc, path, b.disp+"."+field, field)
 		}
 	}
+	for _, key := range keys {
+		last := c.lastBinding(given[key])
+		c.absorb(key[0], key[1], last.value, last.disp)
+	}
+}
+
+// binding is one line giving a single-valued key.
+type binding struct {
+	value, disp string
+	line        int
+}
+
+func bindings(doc *shcl.Document, path, disp string) []binding {
+	lines := doc.Lines(path)
+	out := make([]binding, 0, len(lines))
+	for j := range doc.Count(path) {
+		out = append(out, binding{doc.GetStringOr(fmt.Sprintf("%s[#%d]", path, j), ""), disp, lines[j]})
+	}
+	return out
+}
+
+// lastBinding picks the line that is read, and lists every earlier one that said
+// something else. By line, since the pieces of one account come back in the order
+// their names first appear, not the order their keys do.
+func (c *config) lastBinding(list []binding) binding {
+	if len(list) == 0 {
+		return binding{}
+	}
+	slices.SortStableFunc(list, func(x, y binding) int { return cmp.Compare(x.line, y.line) })
+	last := list[len(list)-1]
+	for _, earlier := range list[:len(list)-1] {
+		if earlier.value != last.value {
+			c.unknown = append(c.unknown, fmt.Sprintf("%s: %s (line %d; line %d gives it again, and that one is read)", earlier.disp, earlier.value, earlier.line, last.line))
+		}
+	}
+	return last
 }
 
 // listNested puts every key below a path on the ignored list: nothing reads a
@@ -150,16 +206,6 @@ func (c *config) listNested(doc *shcl.Document, at, disp, parent string) {
 		}
 		c.listNested(doc, at+"."+shcl.QuoteSegment(name), disp+"."+name, name)
 	}
-}
-
-// lastString reads a scalar given more than once the way the flat reader did:
-// the last one wins.
-func lastString(doc *shcl.Document, path string) string {
-	n := doc.Count(path)
-	if n == 0 {
-		return ""
-	}
-	return doc.GetStringOr(fmt.Sprintf("%s[#%d]", path, n-1), "")
 }
 
 // allStrings reads every value a key was given, across repeats and arrays.

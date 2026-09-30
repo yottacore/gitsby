@@ -3441,6 +3441,12 @@ GHEOF
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/dead.shcl' account list"
 	fAssertNotOut "[Er1LxSr] and only that one"  'folder \.+: .*/trees/work .*can never match' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/dead.shcl' account list"
+	## Two blocks under one name are one account, each key read from the last line to give it. The
+	## lines it overrode were dropped without a word, so a gitea block and a github block under one
+	## name committed with one's email and authenticated with the other's host.
+	printf 'account: tt\n\thost: gitea.com\n\temail: a@example.com\n\naccount: tt\n\thost: github.com\n\temail: b@example.com\n' > "${ac}/twice.shcl"
+	fAssertOut "[ErO6xm2] account list names a key an earlier block gave differently"  'account\[tt\]\.host: gitea\.com \(line 2; line 6 gives it again, and that one is read\)' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/twice.shcl' account list"
 	## An entry written by hand has to survive; ours have to refresh rather than accumulate.
 	( cd "${acWork}" && env HOME="${ac}/home" GIT_CONFIG_GLOBAL="${ac}/home/.gitconfig" git config --global includeIf.gitdir:/hand/written/.path /keep/me.gitconfig )
 	fAssert "[EmMuR5v] account apply runs"  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply >/dev/null"

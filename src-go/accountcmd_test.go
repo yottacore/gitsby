@@ -402,6 +402,24 @@ func TestAccountSetReplacesOneKey(t *testing.T) { // [Eo61m6D]
 	}
 }
 
+// An account in two pieces has its key edited where the key is. Edited in the
+// first piece regardless, the second one's value was still the one read.
+func TestAccountSetFindsTheKeyInAnyPiece(t *testing.T) { // [ErO6xlo]
+	body := "account: tt\n\temail: a@x\n\naccount: TT\n\thost: github.com\n"
+	a, file := setApp(t, body, "tt", "host", "gitea.com")
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if got, want := readBack(t, file), strings.Replace(body, "github.com", "gitea.com", 1); got != want {
+		t.Errorf("got:\n%q\nwant:\n%q", got, want)
+	}
+	body = "account: tt\n\thost: gitea.com\n\naccount: TT\n\thost: github.com\n"
+	a, _ = setApp(t, body, "tt", "host", "codeberg.org")
+	if _, err := a.accountSetPlan(); err == nil || !strings.Contains(err.Error(), "2 times") {
+		t.Errorf("a key in both pieces: err = %v, want a refusal", err)
+	}
+}
+
 // A key the block doesn't have goes on the end of it; an account the file doesn't
 // have gets a block of its own.
 func TestAccountSetAddsKeysAndBlocks(t *testing.T) { // [Eo61m6E]
