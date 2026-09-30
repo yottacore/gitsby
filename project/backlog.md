@@ -33,7 +33,7 @@ Going forward, new issues in the new template at the bottom of this file, will g
 - Two account blocks with one name merge without a word
 	- ID: 2026093013034093
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority|Severity [Bug]: Avg
 	- Opened: 2026-09-30
 	- Opened by: jim-collier
@@ -42,8 +42,22 @@ Going forward, new issues in the new template at the bottom of this file, will g
 		- Run `gitsby account list --config` on that file.
 	- Incorrect behavior [Bug]: One account is listed, with a mix of both blocks' values. Nothing says a block was merged.
 	- Expected behavior [Bug]: The clash is reported, the same way an unread key is.
-	- Possible cause [Bug]: The loader dedupes block names before it reads them.
+	- Reproduced [Bug]: Yes, 2026-09-30.
+	- Actual cause [Bug]:
+		- SHCL merges two blocks with the same name on purpose. It is how a key gets added further down.
+		- gitsby read each repeated key last-wins and said nothing. Names differing only in case, and a dotted line beside a block, merged the same way.
+		- `account set` edited the first block even when a later one held the key.
+		- The 2.x flat reader had the same silent last-wins.
 	- Estimated effort: Low
+	- Actual effort: Avg
+	- Decisions:
+		- Merging stays, since the format allows it. What gets reported is a key given two different values.
+		- The last line is still read, as before. Each earlier one is listed as ignored, with its line.
+		- A repeated top-level `protocol` is listed the same way.
+	- Actual fix [Bug]: Repeated keys are checked per account after the whole file is read, in both layouts. `account set` edits the block holding the key, and refuses when more than one does.
+	- Branch: dup-acct
+	- Test case: TestRepeatedAccountKeys, TestAccountSetFindsTheKeyInAnyPiece, and one account list check in test.bash.
+	- Closed: 2026-09-30
 
 - `account apply` names fragments by host and login
 	- ID: 2026093013031520
