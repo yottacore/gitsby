@@ -1686,6 +1686,12 @@ GHEOF
 	fAssertOut "the credential helper carries a token when gh is already that account"  'password=gho_faketoken' \
 		bash -c "cd '${acWork}' && printf 'protocol=https\nhost=github.com\n\n' | env FAKE_GH_ACTIVE=workacct ${acEnv} '${gitsby}' -q raw git credential fill"
 
+	## Plain git after 'account apply', with gh active as a different account than this folder's.
+	fAssertOut "after apply, plain git gets the folder account's token"  'password=gho_faketoken' \
+		bash -c "cd '${acWork}' && printf 'protocol=https\nhost=github.com\n\n' | env GIT_TERMINAL_PROMPT=0 ${acEnv} git credential fill"
+	fAssertOut "as that account"  'username=workacct' \
+		bash -c "cd '${acWork}' && printf 'protocol=https\nhost=github.com\n\n' | env GIT_TERMINAL_PROMPT=0 ${acEnv} git credential fill"
+
 	## An account name becomes a file name under the include directory, so it must not be able to
 	## climb out of it. 'account apply' wrote the fragment wherever the name pointed - a name with
 	## a couple of '../' in it reached the real '~/.gitconfig' and truncated it.
