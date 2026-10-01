@@ -782,6 +782,42 @@ func TestConfigLoadBackslashes(t *testing.T) { // [Eqp3jdh]
 	}
 }
 
+// A backslash value is written in single quotes, never bare, so the file shows
+// how to type the next Windows path. One with an apostrophe can't be, and goes in
+// double quotes with the backslashes doubled. Every spelling reads back as given.
+func TestBackslashValuesGoInSingleQuotes(t *testing.T) { // [ErUT4Wp]
+	cases := map[string]string{
+		`~\dev\tools`:     `'~\dev\tools'`,
+		`\\srv\share`:     `'\\srv\share'`,
+		`%USERPROFILE%\x`: `'%USERPROFILE%\x'`,
+		`C:\work\new`:     `'C:\work\new'`,
+		`C:\Bob's\new`:    `"C:\\Bob's\\new"`,
+		"C:\\a\u200bb":    `"C:\\a\u200Bb"`,
+	}
+	for in, want := range cases {
+		if got := shclValue(in); got != want {
+			t.Errorf("shclValue(%q) = %q, want %q", in, got, want)
+		}
+		a, file := setApp(t, "account: work\n\temail: a@x\n", "work", "name", in)
+		if err := a.preflight(); err != nil {
+			t.Fatalf("%q: preflight: %v", in, err)
+		}
+		if err := a.cmdAccountSet(); err != nil {
+			t.Fatalf("%q: set: %v", in, err)
+		}
+		if got := readBack(t, file); got != "account: work\n\temail: a@x\n\tname: "+want+"\n" {
+			t.Errorf("%q: file:\n%q", in, got)
+		}
+		cfg := &config{values: map[string]string{}}
+		opt := defaultOptions()
+		opt.configFile, opt.configGiven = file, true
+		if err := cfg.load(opt); err != nil {
+			t.Fatalf("%q: load: %v", in, err)
+		}
+		wantValue(t, cfg, "work", "name", in)
+	}
+}
+
 // Inside double quotes '\w' is no escape, and the line is listed rather than read
 // with a newline where '\n' was. The shcl beta pinned before 2026-10-01 loaded the
 // rule as 'C:\work', a newline and 'ew', which on Windows matched nothing.

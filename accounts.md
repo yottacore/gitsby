@@ -37,7 +37,7 @@ account: github.com_my-personal-login
 	email: ada@home.example
 ~~~
 
-The format is [SHCL](https://github.com/yottacore/shcl): `key: value`, blocks by indentation, tabs or spaces. Key names are case-insensitive and settle on lower case. A value holding a `#`, a comma or a colon goes in quotes (`path: "C:/work"`). A backslash is just a character, except inside double quotes, where it starts an escape. So a Windows path goes in single quotes (`path: 'C:\dev\work'`), or is written with forward slashes. Gitsby reads either slash.
+The format is [SHCL](https://github.com/yottacore/shcl): `key: value`, blocks by indentation, tabs or spaces. Key names are case-insensitive and settle on lower case. A value holding a `#`, a comma or a colon goes in quotes (`path: 'C:/work'`). A backslash is just a character, except inside double quotes, where it starts an escape. So a Windows path goes in single quotes (`path: 'C:\dev\work'`), or is written with forward slashes. Gitsby reads either slash, and writes a backslash path in single quotes. A path holding an apostrophe can't go in single quotes, so it goes in double quotes with each backslash doubled (`path: "C:\\Bob's\\work"`).
 
 A file written for the 2.x scripts - flat `account.work.path = ~/dev/work` lines - is still read as it is. The first `account set` rewrites it in the layout above, comments included.
 
