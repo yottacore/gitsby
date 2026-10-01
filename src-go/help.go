@@ -42,6 +42,7 @@ func (a *app) printDonate() {
 	a.out.clean("welcome, and never expected.")
 	a.out.clean("")
 	a.out.clean("  " + donateURL)
+	a.out.clean("  " + kofiURL)
 	a.out.clean("")
 }
 
