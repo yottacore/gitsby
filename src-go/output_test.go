@@ -206,3 +206,12 @@ func TestSplitLines(t *testing.T) { // [EnR2Eul]
 		}
 	}
 }
+
+// A path in a note is printed on one line, space and all, however long it is.
+func TestNoteKeepsAPathWhole(t *testing.T) { // [ErTHntr]
+	path := "/Users/someone/Library/Application Support/gitsby/" + strings.Repeat("x", 40) + "/config.shcl"
+	got := noteLines("File", path)
+	if want := []string{"File: " + path}; !slices.Equal(got, want) {
+		t.Errorf("noteLines = %q, want %q", got, want)
+	}
+}

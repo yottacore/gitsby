@@ -55,8 +55,9 @@ fBase62(){
 
 if ((! check)); then
 	ms=""
+	## Now from the shell rather than date, whose %N is GNU-only. BSD date prints it literally.
 	if [[ -n "${at}" ]]; then ms="$(date -u -d "${at}" +%s%3N)" || exit 2
-	else ms="$(date -u +%s%3N)"; fi
+	else ms="${EPOCHREALTIME//[!0-9]/}"; ms="${ms:0:${#ms}-3}"; fi
 	## Checked before the arithmetic: a bad number there aborts this whole block, and the
 	## script would carry on into --check.
 	if [[ ! "${ms}" =~ ^[0-9]+$ ]] || ((10#${ms} < 946684800000)); then echo "test-id: ${at} is before 2000" >&2; exit 2; fi
@@ -131,3 +132,4 @@ exit 0
 ##	History:
 ##		- 20260926 JC: Created. Every suite check and Go test got an ID dated from when it was written.
 ##		- 20260927 JC: spawn-count's measures are tests too.
+##		- 20261001 JC: The current time comes from EPOCHREALTIME, so minting works with BSD date. '--at' still needs GNU date.

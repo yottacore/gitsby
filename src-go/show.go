@@ -12,6 +12,7 @@ package main
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -272,7 +273,8 @@ func (a *app) showAccountNote(label string, lines ...string) {
 }
 
 // noteLines lays out one labeled note, so a refusal can use the same layout as
-// the identity block without printing through it.
+// the identity block without printing through it. A line that is one absolute path
+// goes out whole: a path can hold a space, and macOS's own config folder does.
 func noteLines(label string, lines ...string) []string {
 	const labelWidth, bodyWidth = 4, 56 // 'Kept', the longest label; 78 columns in all
 	head := label + ":" + strings.Repeat(" ", labelWidth-len(label)) + " "
@@ -282,6 +284,11 @@ func noteLines(label string, lines ...string) []string {
 	for _, line := range lines {
 		if strings.HasPrefix(line, " ") {
 			out = append(out, pad+line)
+			continue
+		}
+		if filepath.IsAbs(line) || strings.HasPrefix(line, "/") {
+			out = append(out, prefix+line)
+			prefix = pad
 			continue
 		}
 		for _, wrapped := range wrapWords(line, bodyWidth) {

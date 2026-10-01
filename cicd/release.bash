@@ -238,7 +238,7 @@ if ! fWould "branch ${relBranch}, retitle the changelog's vNEXT as '${version} -
 	## By line number, so the substitution cannot wander to a heading somewhere else in the file.
 	clLine="$(fpChangelogVnext)"
 	[[ -n "${clLine}" ]] || fDie "the changelog's '## vNEXT' heading went missing after phase 1."
-	sed -i "${clLine}s/^## vNEXT.*$/## ${version} - ${today}/" "${changelog}"
+	sed -i.bak "${clLine}s/^## vNEXT.*$/## ${version} - ${today}/" "${changelog}" && rm -f "${changelog:?}.bak"
 	## And the Windows resource, which is the other thing in the tree that names a version. It
 	## goes in the same commit, so the tag it is reachable from is the one it claims.
 	"${winres[@]}" -q "${version}" || fDie "couldn't stamp the Windows resource; the branch is created but nothing is pushed."
@@ -375,3 +375,4 @@ echo
 ##		- 20260916 JC: A version with a semver suffix publishes as a pre-release. The tag decides it, since the tag is already the only thing that names a version. 'releases/latest' skips pre-releases by definition, so the phase 3 proof now checks that a candidate does NOT resolve there; the old check would have warned on every good one.
 ##		- 20260928 JC: A dry run no longer ends by saying the version was tagged, pushed and released. Committed executable, as its syntax line assumes.
 ##		- 20260928 JC: Phase 3 builds the published bytes from an export of the tag rather than the working tree. The temp folders go on any exit, not only after phase 3 starts.
+##		- 20261001 JC: 'sed -i' in a form BSD sed also takes.

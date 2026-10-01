@@ -111,6 +111,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- A path with a space in it is printed on one line, however long. On macOS the accounts file is under `~/Library/Application Support/`, and a long path was broken at that space, so it couldn't be copied.
+
+- A doubled slash in a folder rule is folded even when the folder doesn't exist yet, such as a clone target. Only a folder already on disk had it folded.
+
 - A key given two different values for one account, such as two blocks with the same name, is listed as ignored with its line number. The last value was read and the rest dropped without a word, so a GitHub block and a Gitea block under one name mixed their host and email. `account set` now edits the key in whichever block holds it; it always edited the first block, which could leave a later block's value as the one read. A repeated top-level `protocol` is listed the same way, and so is a repeat in a 2.x flat file.
 
 - `account set` no longer replaces an accounts file it can't read. It names the file, says why and what to do, and writes nothing. It also refuses when a file turns up while it runs, or when a link where the file goes points at nothing.
@@ -170,6 +174,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The Bash and PowerShell builds and their installers moved to `legacy/`, and the pipeline became Go-specific: one engine instead of two, seven stages, and the Go toolchain required rather than probed. `cicd/parity.bash` was kept and repointed - it compares this build against the frozen v2.1.0 one, which is the backwards-compatibility question, and checks that `update` and `br land` still route where they always did.
 
 - A release is now one binary per platform - linux, windows, macOS and FreeBSD, amd64 and arm64 each - with a single `SHA256SUMS` over the set. They are built before the tag is cut, so a target that stops compiling fails while nothing has been changed. The version comes from the tag alone; no file in the tree records it.
+
+- `cicd/test.bash`, `cicd/parity.bash`, `cicd/release.bash` and the Go unit tests run on macOS. They assumed GNU `sed -i`, `stat -c`, `grep -P` and `date +%N`, and `~/.config` as the accounts folder. The parity check also put raw paths into a sed pattern, and `cicd/utility/test-id.bash` mints IDs without GNU date.
 
 ## v2.1.0 - 2026-08-14
 

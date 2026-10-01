@@ -48,6 +48,11 @@ trap 'rm -rf -- "${work:?}"' EXIT
 workNative="${work}"
 command -v cygpath >/dev/null 2>&1 && workNative="$(cygpath -m "${work}")"
 workBack="${workNative//\//\\}"
+## Escaped for sed. The backslash spelling of '/var/folders/4g/...' has '\4' in it, which sed
+## reads as a backreference.
+fSedLiteral(){ printf '%s\n' "${1}" | sed -e 's/[]\.*[^$|]/\\&/g' ;}
+reRoot="$(fSedLiteral "${root}")"; reWork="$(fSedLiteral "${work}")"
+reWorkNative="$(fSedLiteral "${workNative}")"; reWorkBack="$(fSedLiteral "${workBack}")"
 
 ## Same hermeticity as the behavioral suite, and for the same reasons.
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
@@ -101,8 +106,8 @@ fNormalize(){
 	## everything else differing is the point of this file.
 	## Every spelling of the work directory folds to one token: the two shells legitimately echo a
 	## path the way their own runtime spells it, and that is not a parity finding.
-	sed -e 's/gitsby\.ps1/gitsby/g' -e "s|${root}|<root>|g" \
-		-e "s|${workBack}|<work>|gI" -e "s|${workNative}|<work>|gI" -e "s|${work}|<work>|g"
+	sed -e 's/gitsby\.ps1/gitsby/g' -e "s|${reRoot}|<root>|g" \
+		-e "s|${reWorkBack}|<work>|gI" -e "s|${reWorkNative}|<work>|gI" -e "s|${reWork}|<work>|g"
 }
 
 fRunNew(){ local -r d="${1}"; shift; ( cd "${d}" || exit 1; "${newBuild}" "${@}" 2>&1 || true ) | fNormalize ;}
@@ -199,7 +204,12 @@ git init --quiet -b main "${tree}"
 ( cd "${tree}" && echo a > a.txt && git add --all && git commit --quiet -m init )
 
 declare -a spellings=("${workNative}/tree")
-if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]]; then
+if [[ "${OSTYPE:-}" != msys* && "${OSTYPE:-}" != cygwin* ]]; then
+	## Symlinks resolved, because the frozen script never resolves them and this build does on
+	## purpose. On macOS the temp dir is under /var, a link to /private/var, so the typed spelling
+	## only ever matched in this build.
+	spellings=("$(cd "${tree}" && pwd -P)")
+else
 	winPath="$( cd "${tree}" && pwd -W )"
 	spellings+=("${winPath}")
 	spellings+=("${winPath//\//\\}")
@@ -332,3 +342,4 @@ echo "parity passed: ${pass}, differed: ${fail}"
 ##		- 20260819 JC: A difference used to end the run. diff exits 1, and under pipefail with -e that killed the script at the FIRST finding, so every later one went unreported - the totals line never printed either. Also a helper for comparing a line with one deliberate difference removed, spelled out per call so it cannot quietly widen.
 ##		- 20260926 JC: Every check carries a test ID at the front of its label.
 ##		- 20260926 JC: The pipeline no longer passes -q, so every check prints a line.
+##		- 20261001 JC: Paths are escaped before going into a sed pattern. Off Windows the folder rule is written with symlinks resolved, since the frozen script never resolves them.
