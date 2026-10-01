@@ -999,6 +999,48 @@ func TestAccountSetPlanSaysWhenTheFileIsReshaped(t *testing.T) { // [EpySM7s]
 	}
 }
 
+// A line the read dropped comes back as it was when the edit keeps the rest of
+// the file. An edit that rewrites the file would lose it, and that is refused
+// ahead of the plan.
+func TestAccountSetKeepsALineItCouldntRead(t *testing.T) { // [ErUQP71]
+	body := "account: work\n\temail: a@x\n* stray\naccount: home\n\temail: h@x\n\tname: H\n"
+	a, file := setApp(t, body, "home", "email", "n@x")
+	if err := a.preflight(); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	if a.set.reshapes {
+		t.Errorf("plan says the file is reshaped")
+	}
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if got, want := readBack(t, file), strings.Replace(body, "h@x", "n@x", 1); got != want {
+		t.Errorf("got:\n%q\nwant:\n%q", got, want)
+	}
+
+	a, file = unsetApp(t, body, "home", "name")
+	plan, done, err := a.accountUnsetPlan()
+	if err != nil || done {
+		t.Fatalf("unset plan: done = %v, err = %v", done, err)
+	}
+	a.set = &plan
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("unset: %v", err)
+	}
+	if got, want := readBack(t, file), strings.Replace(body, "\tname: H\n", "", 1); got != want {
+		t.Errorf("unset got:\n%q\nwant:\n%q", got, want)
+	}
+
+	// A key added under a dotted line rewrites the file.
+	a, file = setApp(t, "account.work.email: a@x\n* stray\n", "work", "name", "N")
+	if err := a.preflight(); err == nil || !strings.Contains(err.Error(), "Edit it by hand") {
+		t.Errorf("rewrite over a lost line: err = %v", err)
+	}
+	if got := readBack(t, file); got != "account.work.email: a@x\n* stray\n" {
+		t.Errorf("refused edit changed the file:\n%q", got)
+	}
+}
+
 // protocol takes the two values gitsby acts on, in any case, and writes them lower.
 func TestAccountSetProtocol(t *testing.T) { // [EpySM7t]
 	a, file := setApp(t, keptBody, "work", "protocol", "SSH")
