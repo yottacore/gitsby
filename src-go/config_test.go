@@ -208,7 +208,9 @@ account.bypath.path = /a/b/c
 }
 
 func TestCanonPath(t *testing.T) { // [EnQKNsM]
-	t.Setenv("HOME", "/home/someone")
+	// A home nothing on this machine has, so no link under it changes the answer.
+	// macOS's /home is one, to /System/Volumes/Data/home.
+	t.Setenv("HOME", "/gitsby-no-such-home/someone")
 	// Windows reads '/c/x' as the MSYS spelling of drive c:, and folds case.
 	ab, cxy, msys := "/a/b", "C:/x/y", "/c/x"
 	if isWindows() {
@@ -221,8 +223,8 @@ func TestCanonPath(t *testing.T) { // [EnQKNsM]
 		{"/", "/"},
 		{`C:\x\y`, cxy},
 		{"/c/x", msys},
-		{"~", "/home/someone"},
-		{"~/code", "/home/someone/code"},
+		{"~", "/gitsby-no-such-home/someone"},
+		{"~/code", "/gitsby-no-such-home/someone/code"},
 		{"~notme/code", "~notme/code"}, // only our own '~' expands
 	}
 	for _, tc := range tests {

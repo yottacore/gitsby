@@ -117,6 +117,7 @@ func sshKeyArg(value string) string {
 var (
 	msysDriveRE = regexp.MustCompile(`^/([A-Za-z])(/.*)?$`)
 	driveRootRE = regexp.MustCompile(`^[A-Za-z]:/$`)
+	slashRunRE  = regexp.MustCompile(`/{2,}`)
 	// A drive root or a share. 'C:work' and '/work' are left out on purpose: both
 	// mean something different depending on the current drive or directory.
 	winAbsFolderRE = regexp.MustCompile(`^(?:[A-Za-z]:/|//[^/]+/[^/]+)`)
@@ -197,6 +198,13 @@ func canonPath(p string) string {
 		return ""
 	}
 	p = pathSpelling(p)
+	// resolveLinks folds a doubled slash only when part of the path exists. A
+	// leading pair stays, since it names a UNC share.
+	lead := ""
+	if strings.HasPrefix(p, "//") {
+		lead = "/"
+	}
+	p = lead + slashRunRE.ReplaceAllString(p, "/")
 	p = resolveLinks(p)
 	if isWindows() {
 		p = strings.ToLower(p)

@@ -24,7 +24,9 @@ set -Eeuo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/.." && pwd)"
-work="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-test.XXXXXX")"
+## Resolved, because the build reports a folder with its links resolved. On macOS mktemp answers
+## under /var, a link to /private/var, and with a doubled slash when TMPDIR ends in one.
+work="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/gitsby-test.XXXXXX")" && pwd -P)"
 trap 'rm -rf -- "${work:?}"' EXIT
 
 ## Keep test commits hermetic (no reliance on the user's git config).
@@ -109,6 +111,11 @@ fPlanOf(){ awk '/Going to do/{p=1;next} p&&/^\[/{exit} p' ;}
 ## Without it the pwsh leg finds the stub, runs nothing, and reads the silence as empty output.
 isWindows=0
 case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) isWindows=1 ;; esac
+## The config folder under a home, which is the one place each platform looks. macOS reads its
+## own and nothing else, '~/.config' included. confRe is the same for a regex.
+isMac=0; confRel=".config/gitsby"
+[[ "$(uname -s)" == Darwin ]] && { isMac=1; confRel="Library/Application Support/gitsby"; }
+confRe="${confRel//./\\.}"
 fStubShim(){ ((isWindows)) && printf '@echo off\r\nbash "%s" %%*\r\n' "$1" > "$1.cmd"; return 0 ;}
 ## Write a stub from stdin, runnable by both builds.
 fStub(){ cat > "$1"; chmod +x "$1"; fStubShim "$1" ;}
@@ -133,6 +140,11 @@ fi
 hasPty=0
 if command -v script >/dev/null 2>&1 && script -qec true /dev/null >/dev/null 2>&1; then hasPty=1; fi
 fAnswerPrompt(){ local answer="$1"; shift; printf '%s\n' "${answer}" | script -qec "$*" /dev/null 2>&1 || true ;}
+## A file's permission bits and inode number, from GNU stat or BSD stat. Exported, since most
+## checks that need them run inside 'bash -c'.
+fMode(){  stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1" ;}
+fInode(){ stat -c %i "$1" 2>/dev/null || stat -f %i "$1" ;}
+export -f fMode fInode
 
 ## Runs PowerShell source TEXT the way the documented one-liners do (iex / scriptblock), with
 ## stdin at EOF so a confirmation prompt refuses instead of blocking.
@@ -2424,7 +2436,7 @@ GHEOF
 		fFramed env HOME="${eu}/h5" PATH="${ei}/bin:${PATH}" FAKE_SUMS="${ei}/SHA256SUMS" FAKE_ASSET="${ei}/asset" bash "${goInst}" -y
 	## A piped answer's Enter is never echoed, so the line above is the prompt. Aborted. on a line
 	## of its own is then the blank line a terminal shows.
-	if command -v script >/dev/null 2>&1; then
+	if ((hasPty)); then
 		fAssert    "[EpykPX8] and a declined prompt"  fBlankAfter '^Aborted\.$' \
 			fAnswerPrompt n "env HOME='${eu}/h4' PATH='${ei}/bin:${PATH}' FAKE_SUMS='${ei}/SHA256SUMS' FAKE_ASSET='${ei}/asset' bash '${goInst}'"
 	fi
@@ -2729,7 +2741,7 @@ GHEOF
 			umask "${psUmask}"
 			## chmod +x kept the umask's other bits, so the two installers left different modes.
 			fAssert    "[ErCRQcr] and installs the binary 755 whatever the umask" \
-				bash -c "[[ \"\$(stat -c %a '${psi}/hfresh/.local/bin/gitsby')\" == 755 ]]"
+				bash -c "[[ \"\$(fMode '${psi}/hfresh/.local/bin/gitsby')\" == 755 ]]"
 			mkdir -p "${psi}/hro/.local"; chmod 555 "${psi}/hro/.local"
 			fAssertOut "[ErCRQd6] go ps installer refuses a user folder it can't write, before the plan"  "can't write there" \
 				fPsInstall "${psi}" "${psi}/hro" 7 "${goInstPs}" -Yes
@@ -2805,7 +2817,7 @@ GHEOF
 	## a bare exit-code refusal - that build refuses the whole command as unknown. Those are kept as
 	## regression guards and each is paired with a check on the message, which is what discriminates.
 	local ac="${work}/$1-acct"
-	mkdir -p "${ac}/home/.config/gitsby" "${ac}/bin" "${ac}/trees/work" "${ac}/trees/home"
+	mkdir -p "${ac}/home/${confRel}" "${ac}/bin" "${ac}/trees/work" "${ac}/trees/home"
 	fStub "${ac}/bin/gh" <<-'EOF'
 		#!/usr/bin/env bash
 		[[ -n "${FAKE_GH_LOG:-}" ]] && echo "$*" >> "${FAKE_GH_LOG}"
@@ -2824,7 +2836,7 @@ GHEOF
 	## type ('C:/x', '/c/x') already resolve the same in both.
 	local acCanon="${ac}"
 	((isWindows)) && acCanon="$( cd "${ac}" && pwd -W )"
-	cat > "${ac}/home/.config/gitsby/config.shcl" <<-EOF
+	cat > "${ac}/home/${confRel}/config.shcl" <<-EOF
 		# folder accounts
 		account.work.path      = ${acCanon}/trees/work
 		account.work.ghAccount = workacct
@@ -2871,7 +2883,7 @@ GHEOF
 	## applied cleanly says where to go and look, same as one that didn't.
 	## In full, never folded back to '~': the folder rules under it print in full, and one screen
 	## spelling home two ways reads as two places.
-	fAssertOut "[EnXCRqK] and names the file that rule is written in"  "File: ${ac//./\\.}/home/\\.config/gitsby/config\\.shcl" \
+	fAssertOut "[EnXCRqK] and names the file that rule is written in"  "File: ${ac//./\\.}/home/${confRe}/config\\.shcl" \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	fAssertOut "[EmMuR5e] a sibling tree resolves to the other one" "Account \.+: homeacct"       bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	fAssertNotOut "[EmMuR5f] and not to the first"                  "workacct"                    bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
@@ -2924,10 +2936,15 @@ GHEOF
 		account.appdata.path      = ${acCanon}/trees/work
 		account.appdata.ghAccount = appdataacct
 	EOF
-	fAssertOut "[Enc9zk0] XDG_CONFIG_HOME is the config location here, ahead of ~/.config"  'Account \.+: xdgacct' \
-		bash -c "cd '${acWork}' && env ${acEnv} XDG_CONFIG_HOME='${ac}/xdg' '${gitsby}' -q -NoFetch status"
-	fAssertOut "[Enc9zk1] and with none set, ~/.config is still found"  'Account \.+: workacct' \
-		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	if ((isMac)); then
+		fAssertOut "[ErTFfDS] on macOS, XDG_CONFIG_HOME is not a config location at all"  'Account \.+: workacct' \
+			bash -c "cd '${acWork}' && env ${acEnv} XDG_CONFIG_HOME='${ac}/xdg' '${gitsby}' -q -NoFetch status"
+	else
+		fAssertOut "[Enc9zk0] XDG_CONFIG_HOME is the config location here, ahead of ~/.config"  'Account \.+: xdgacct' \
+			bash -c "cd '${acWork}' && env ${acEnv} XDG_CONFIG_HOME='${ac}/xdg' '${gitsby}' -q -NoFetch status"
+		fAssertOut "[Enc9zk1] and with none set, ~/.config is still found"  'Account \.+: workacct' \
+			bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	fi
 	## APPDATA is Windows' own answer to this question and means nothing anywhere else, just as
 	## XDG_CONFIG_HOME means nothing on Windows. Each used to be tried on every platform, which put
 	## a variable a Wine or Samba setup can leave lying around on the list of places a Linux run
@@ -2952,14 +2969,14 @@ GHEOF
 	if ln -s "${ac}/trees/work" "${ac}/linked" 2>/dev/null; then
 		local acLinkCanon="${ac}/linked"
 		((isWindows)) && acLinkCanon="$( cd "${ac}/linked" && pwd -W )"
-		cat > "${ac}/home/.config/gitsby/linked.shcl" <<-EOF
+		cat > "${ac}/home/${confRel}/linked.shcl" <<-EOF
 			account.linked.path      = ${acLinkCanon}/proj
 			account.linked.ghAccount = linkedacct
 		EOF
 		fAssertOut "[EnR2Euh] a folder rule spelled through a symlink still claims the folder"  'Account \.+: linkedacct' \
-			bash -c "cd '${acWork}' && env ${acEnv} GITSBY_CONFIG='${ac}/home/.config/gitsby/linked.shcl' '${gitsby}' -q -NoFetch status"
+			bash -c "cd '${acWork}' && env ${acEnv} GITSBY_CONFIG='${ac}/home/${confRel}/linked.shcl' '${gitsby}' -q -NoFetch status"
 		fAssertOut "[EnR2Eui] and 'account list' marks it as the one in force"  '^-> linked' \
-			bash -c "cd '${acWork}' && env ${acEnv} GITSBY_CONFIG='${ac}/home/.config/gitsby/linked.shcl' '${gitsby}' account list"
+			bash -c "cd '${acWork}' && env ${acEnv} GITSBY_CONFIG='${ac}/home/${confRel}/linked.shcl' '${gitsby}' account list"
 	fi
 	## Overrides, both directions.
 	fAssertOut "[EmMuR5m] GITSBY_ACCOUNT overrides the folder"  '^Account .*homeacct'  bash -c "cd '${acWork}' && env ${acEnv} GITSBY_ACCOUNT=home '${gitsby}' -q -NoFetch status"
@@ -3294,14 +3311,14 @@ GHEOF
 	## A file created from nothing carries a header naming the keys and a footer naming the format,
 	## and is readable by nobody else: it names accounts and points at token files.
 	local acNew="${ac}/newhome"; mkdir -p "${acNew}"
-	fAssertOut "[Eo61m64] 'account set' creates the file where the next run looks"  "create ${acNew//./\\.}/\\.config/gitsby/config\\.shcl" \
+	fAssertOut "[Eo61m64] 'account set' creates the file where the next run looks"  "create ${acNew//./\\.}/${confRe}/config\\.shcl" \
 		bash -c "cd '${acWork}' && env ${acNoDiscovery} HOME='${acNew}' PATH='${ac}/bin:${PATH}' '${gitsby}' -q -NoFetch account set fresh ghaccount freshacct 2>&1"
-	fAssertOut "[Eo61m65] and it names the format it is in"  'This config file format is SHCL'  cat "${acNew}/.config/gitsby/config.shcl"
-	fAssertOut "[Eo61m66] and the keys it takes"  '^#   pathcontains '  cat "${acNew}/.config/gitsby/config.shcl"
+	fAssertOut "[Eo61m65] and it names the format it is in"  'This config file format is SHCL'  cat "${acNew}/${confRel}/config.shcl"
+	fAssertOut "[Eo61m66] and the keys it takes"  '^#   pathcontains '  cat "${acNew}/${confRel}/config.shcl"
 	fAssertOut "[Eo61m67] and the next run reads it"  'github \.+: freshacct' \
 		bash -c "cd '${acWork}' && env ${acNoDiscovery} HOME='${acNew}' PATH='${ac}/bin:${PATH}' '${gitsby}' -q -NoFetch account 2>&1"
 	if ! ((isWindows)); then
-		fAssert "[Eo61m68] and nobody else can read it"  bash -c "[[ \"\$(stat -c '%a' '${acNew}/.config/gitsby/config.shcl')\" == 600 ]]"
+		fAssert "[Eo61m68] and nobody else can read it"  bash -c "[[ \"\$(fMode '${acNew}/${confRel}/config.shcl')\" == 600 ]]"
 	fi
 	## Two edits at once each read the whole file and save it whole, and the later save dropped the
 	## earlier one's key. Now the second waits on a lock beside the file and refuses if the file
@@ -3333,16 +3350,16 @@ GHEOF
 	## MSYS, and root reads a 0200 file anyway.
 	if ! ((isWindows)) && [[ "$(id -u)" != 0 ]]; then
 		local acUnr="${ac}/unreadable"
-		mkdir -p "${acUnr}/home/.config/gitsby" "${acUnr}/xdg" "${acUnr}/dot" "${acUnr}/linkhome/.config/gitsby" "${acUnr}/dirhome/.config/gitsby/config.shcl"
+		mkdir -p "${acUnr}/home/${confRel}" "${acUnr}/xdg" "${acUnr}/dot" "${acUnr}/linkhome/${confRel}" "${acUnr}/dirhome/${confRel}/config.shcl"
 		printf 'account: kept\n\tghaccount: keptacct\n' > "${acUnr}/body.shcl"
-		local acUnrFile="${acUnr}/home/.config/gitsby/config.shcl"
+		local acUnrFile="${acUnr}/home/${confRel}/config.shcl"
 		cp "${acUnr}/body.shcl" "${acUnrFile}"; chmod 200 "${acUnrFile}"
-		ln -s "${acUnr}/dot/config.shcl" "${acUnr}/linkhome/.config/gitsby/config.shcl"
+		ln -s "${acUnr}/dot/config.shcl" "${acUnr}/linkhome/${confRel}/config.shcl"
 		local acUnrEnv="${acNoDiscovery} HOME='${acUnr}/home' PATH='${ac}/bin:${PATH}'"
 		local acUnrSet="'${gitsby}' -q -NoFetch account set kept email k@example.com"
 		fAssertFail "[Epta2t6] 'account set' refuses to create over an accounts file it can't read" \
 			bash -c "cd '${acWork}' && env ${acUnrEnv} ${acUnrSet}"
-		fAssertOut "[Epta2t7] and names the file"  "File: +${acUnr//./\\.}/home/\\.config/gitsby/config\\.shcl" \
+		fAssertOut "[Epta2t7] and names the file"  "File: +${acUnr//./\\.}/home/${confRe}/config\\.shcl" \
 			bash -c "cd '${acWork}' && env ${acUnrEnv} ${acUnrSet} 2>&1"
 		fAssertOut "[Epta2t8] and says why it can't read it"  'permission denied' \
 			bash -c "cd '${acWork}' && env ${acUnrEnv} ${acUnrSet} 2>&1"
@@ -3362,13 +3379,13 @@ GHEOF
 			bash -c "cd '${acWork}' && env ${acNoDiscovery} HOME='${acUnr}/dirhome' PATH='${ac}/bin:${PATH}' ${acUnrSet} 2>&1"
 		## A folder reads look in that can't be searched may hold an accounts file, and a new one in
 		## XDG_CONFIG_HOME would go in ahead of it and hide it.
-		local acShutDir="${acUnr}/shuthome/.config/gitsby"
+		local acShutDir="${acUnr}/shuthome/${confRel}"
 		mkdir -p "${acShutDir}" "${acUnr}/shutxdg"
 		cp "${acUnr}/body.shcl" "${acShutDir}/config.shcl"; chmod 600 "${acShutDir}"
 		local acShutEnv="${acNoDiscovery} XDG_CONFIG_HOME='${acUnr}/shutxdg' HOME='${acUnr}/shuthome' PATH='${ac}/bin:${PATH}'"
 		fAssertFail "[Epu2PTM] 'account set' refuses to create while a folder it looks in can't be searched" \
 			bash -c "cd '${acWork}' && env ${acShutEnv} ${acUnrSet}"
-		fAssertOut "[Epu2PTN] and names the file it couldn't look for"  "File: +${acUnr//./\\.}/shuthome/\\.config/gitsby/config\\.shcl" \
+		fAssertOut "[Epu2PTN] and names the file it couldn't look for"  "File: +${acUnr//./\\.}/shuthome/${confRe}/config\\.shcl" \
 			bash -c "cd '${acWork}' && env ${acShutEnv} ${acUnrSet} 2>&1"
 		fAssertOut "[Epu2PTO] and gives the command that makes the folder searchable"  "chmod u\\+x '${acShutDir//./\\.}'" \
 			bash -c "cd '${acWork}' && env ${acShutEnv} ${acUnrSet} 2>&1"
@@ -3380,7 +3397,7 @@ GHEOF
 		if [[ -f /proc/self/mem ]]; then
 			fAssertOut "[Epu2PTR] a named accounts file that fails to read is refused"  "GITSBY_CONFIG names '/proc/self/mem', which can't be read" \
 				bash -c "cd '${acWork}' && env ${acNoDiscovery} GITSBY_CONFIG=/proc/self/mem HOME='${acUnr}/home' PATH='${ac}/bin:${PATH}' ${acUnrSet} 2>&1"
-			mkdir -p "${acUnr}/memhome/.config/gitsby"; ln -sf /proc/self/mem "${acUnr}/memhome/.config/gitsby/config.shcl"
+			mkdir -p "${acUnr}/memhome/${confRel}"; ln -sf /proc/self/mem "${acUnr}/memhome/${confRel}/config.shcl"
 			fAssertOut "[Epu2PTS] and a found one is refused by 'account set' as a file it can't read"  "is already there, and it can't be read" \
 				bash -c "cd '${acWork}' && env ${acNoDiscovery} HOME='${acUnr}/memhome' PATH='${ac}/bin:${PATH}' ${acUnrSet} 2>&1"
 		fi
@@ -3461,12 +3478,12 @@ GHEOF
 	fAssert "[EmMuR5y] re-applying does not duplicate the rules"  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(grep -c 'gitsby/accounts' '${ac}/home/.gitconfig')\" == 2 ]]"
 	fAssert "[EmMuR5z] and leaves a hand-written includeIf alone"  bash -c "grep -q 'hand/written' '${ac}/home/.gitconfig'"
 	## Removing an account from the config has to remove its rule, or it silently keeps applying.
-	fAssert "[EmMuR60] dropping an account drops its rule"  bash -c "cd '${acWork}' && sed -i '/^account\.home\./d' '${ac}/home/.config/gitsby/config.shcl' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(grep -c 'gitsby/accounts' '${ac}/home/.gitconfig')\" == 1 ]]"
+	fAssert "[EmMuR60] dropping an account drops its rule"  bash -c "cd '${acWork}' && sed -i.bak '/^account\.home\./d' '${ac}/home/${confRel}/config.shcl' && rm -f '${ac}/home/${confRel}/config.shcl.bak' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(grep -c 'gitsby/accounts' '${ac}/home/.gitconfig')\" == 1 ]]"
 	## Fragments are named by host and login, so a renamed account leaves its old file behind. It is
 	## named, not deleted, since nothing proves gitsby wrote it.
 	fAssertOut "[ErO1tXx] and names the fragment no rule uses any more"  'Not used any more, safe to remove: .*/accounts/github\.com_homeacct\.gitconfig' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply 2>&1"
-	fAssert "[ErO1tYE] and leaves it there"  bash -c "[[ -f '${ac}/home/.config/gitsby/accounts/github.com_homeacct.gitconfig' ]]"
+	fAssert "[ErO1tYE] and leaves it there"  bash -c "[[ -f '${ac}/home/${confRel}/accounts/github.com_homeacct.gitconfig' ]]"
 
 	## The helper git is handed has to carry the token even when gh is ALREADY that account. The
 	## export used to sit inside the "this replaces a different account" branch while the helper
@@ -3492,7 +3509,7 @@ GHEOF
 	fAssert "[EnPP5qY] and re-applying refreshes it instead of duplicating it" \
 		bash -c "cd '${ac}/my trees/work' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && [[ \"\$(grep -c 'spacct\.gitconfig' '${ac}/spacehome/.gitconfig')\" == 1 ]]"
 	fAssert "[EnPP5qZ] and dropping that account drops its rule" \
-		bash -c "cd '${ac}/my trees/work' && sed -i '/^account\.sp\./d' '${ac}/spaced.shcl' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && ! grep -q 'spacct\.gitconfig' '${ac}/spacehome/.gitconfig'"
+		bash -c "cd '${ac}/my trees/work' && sed -i.bak '/^account\.sp\./d' '${ac}/spaced.shcl' && rm -f '${ac}/spaced.shcl.bak' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && ! grep -q 'spacct\.gitconfig' '${ac}/spacehome/.gitconfig'"
 	## The username plain git asks with has to be for the account's own host, and the same login
 	## gitsby's own runs give the helper. It was always github.com and always ghAccount, so an
 	## account on another host got none, and one with both keys set named the other login.
@@ -3635,7 +3652,7 @@ GHEOF
 	## earlier run stayed that way through every re-apply.
 	if ((! isWindows)); then
 		fAssert "[EnQsbMK] account apply tightens a fragment left readable by an earlier run" \
-			bash -c "chmod 644 '${ac}/home/.config/gitsby/accounts/github.com_workacct.gitconfig' && cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(stat -c '%a' '${ac}/home/.config/gitsby/accounts/github.com_workacct.gitconfig')\" == 600 ]]"
+			bash -c "chmod 644 '${ac}/home/${confRel}/accounts/github.com_workacct.gitconfig' && cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(fMode '${ac}/home/${confRel}/accounts/github.com_workacct.gitconfig')\" == 600 ]]"
 	fi
 
 	## The sshKey value is concatenated into GIT_SSH_COMMAND and into core.sshCommand, and git hands
@@ -3714,9 +3731,9 @@ GHEOF
 	fAssertNotOut "[EmMwqPa] converting it silences the offer"  "repo url https' switches it"  bash -c "cd '${acSsh}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	## Saying you want ssh is an answer, and answered advice must stop.
 	( cd "${acSsh}" && git remote set-url origin git@github.com:workacct/thing.git )
-	echo "account.work.protocol = ssh" >> "${ac}/home/.config/gitsby/config.shcl"
+	echo "account.work.protocol = ssh" >> "${ac}/home/${confRel}/config.shcl"
 	fAssertNotOut "[EmMwqPb] and 'protocol = ssh' silences it too"  "repo url https' switches it"  bash -c "cd '${acSsh}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
-	sed -i '/^account\.work\.protocol/d' "${ac}/home/.config/gitsby/config.shcl"
+	sed -i.bak '/^account\.work\.protocol/d' "${ac}/home/${confRel}/config.shcl" && rm -f "${ac:?}/home/${confRel}/config.shcl.bak"
 
 	## raw passthrough. The promise is that everything after the tool name reaches it untouched,
 	## that stdout is the tool's alone, and that the exit code is the tool's too.
@@ -4078,10 +4095,10 @@ GHEOF
 	printf '%s "[AAAAAAA] one" true\n%s "[AAAAAAB] two" true\n' "${chk}" "${chk}" > "${bi}/cicd/test.bash"
 	printf '# Backlog\n' > "${bi}/project/backlog.md"
 	( cd "${bi}" && git add --all && git commit --quiet -m base && git checkout --quiet -b feat )
-	sed -i 's/\[AAAAAAA\] one/[AAAAAAA] one, reworded/' "${bi}/cicd/test.bash"
+	sed -i.bak 's/\[AAAAAAA\] one/[AAAAAAA] one, reworded/' "${bi}/cicd/test.bash" && rm -f "${bi:?}/cicd/test.bash.bak"
 	fAssertOut "[Er2NSAQ] the backlog gate reads a relabeled check as edited, by its ID"  '\(0 removed since gover\)' \
 		"${bi}/cicd/utility/backlog-check.bash"
-	sed -i '/AAAAAAB/d' "${bi}/cicd/test.bash"
+	sed -i.bak '/AAAAAAB/d' "${bi}/cicd/test.bash" && rm -f "${bi:?}/cicd/test.bash.bak"
 	fAssertOut "[Er2NSAe] and still fails one that was removed"  '^  "\[AAAAAAB\] two"$' \
 		"${bi}/cicd/utility/backlog-check.bash"
 	echo 'AAAAAAB went with the command it tested.' >> "${bi}/project/backlog.md"
@@ -4097,12 +4114,17 @@ GHEOF
 	printf 'func TestNoID(t *testing.T) {\n}\nfunc TestHasID(t *testing.T) { // [AAAAAAD]\n}\n' > "${ti}/src-go/x_test.go"
 	fAssert "[Er2NS9x] and fails a tree where one is missing or shared, naming each" \
 		bash -c "out=\$('${root}/cicd/utility/test-id.bash' --check -q --root '${ti}' 2>&1); [[ \$? == 1 ]] && grep -qxF '  cicd/test.bash:2' <<< \"\$out\" && grep -qxF '  src-go/x_test.go:1' <<< \"\$out\" && grep -qxF '  AAAAAAA: cicd/test.bash:1 cicd/test.bash:3' <<< \"\$out\" && ! grep -qE 'AAAAAAC|test\.bash:5|x_test\.go:3' <<< \"\$out\""
-	fAssertOut "[Er2NSAB] a minted ID is milliseconds since 2000 in base 62"  '^10$' \
-		"${root}/cicd/utility/test-id.bash" --at '2000-01-01 00:00:00.062 UTC'
-	## A date before 1970 is a negative count, which bash arithmetic refused by skipping ahead
-	## into --check and passing.
-	fAssert "[Er2PEtf] and a date before 2000 is refused, not checked" \
-		bash -c "out=\$('${root}/cicd/utility/test-id.bash' --at 1960-01-01 2>&1); [[ \$? == 2 ]] && grep -qx 'test-id: 1960-01-01 is before 2000' <<< \"\$out\""
+	fAssertOut "[ErTFcXs] an ID minted for now is seven characters of base 62"  '^[0-9A-Za-z]{7}$' \
+		"${root}/cicd/utility/test-id.bash"
+	## --at reads its date with GNU date, which BSD userlands don't have.
+	if date -u -d @0 >/dev/null 2>&1; then
+		fAssertOut "[Er2NSAB] a minted ID is milliseconds since 2000 in base 62"  '^10$' \
+			"${root}/cicd/utility/test-id.bash" --at '2000-01-01 00:00:00.062 UTC'
+		## A date before 1970 is a negative count, which bash arithmetic refused by skipping ahead
+		## into --check and passing.
+		fAssert "[Er2PEtf] and a date before 2000 is refused, not checked" \
+			bash -c "out=\$('${root}/cicd/utility/test-id.bash' --at 1960-01-01 2>&1); [[ \$? == 2 ]] && grep -qx 'test-id: 1960-01-01 is before 2000' <<< \"\$out\""
+	fi
 	fAssert "[Er2PEtt] the ID check fails a tree where it finds no tests" \
 		bash -c "out=\$('${root}/cicd/utility/test-id.bash' --check --root '${work}/no-such-tree' 2>&1); [[ \$? == 1 ]] && grep -q '^test-id: found no tests under ' <<< \"\$out\""
 	## A file no glob names is linted by nothing, and a glob that names nothing is a file that moved.
@@ -4219,7 +4241,7 @@ EOF
 		fAssert "[EnQf0UE] windows/${winExe} builds with the resource beside it" \
 			bash -c "cd '${root}/src-go' && CGO_ENABLED=0 GOOS=windows GOARCH=${winExe} go build -trimpath -buildvcs=false -o '${work}/winres-${winExe}.exe' ."
 		fAssert "[EnQf0UF] and the .exe carries version details" \
-			bash -c "grep -aqP 'V\x00S\x00_\x00V\x00E\x00R\x00S\x00I\x00O\x00N\x00_\x00I\x00N\x00F\x00O\x00' '${work}/winres-${winExe}.exe'"
+			bash -c "tr -d '\\000' < '${work}/winres-${winExe}.exe' | grep -aqF 'VS_VERSION_INFO'"
 		fAssert "[EnQf0UG] and an icon" \
 			bash -c "LC_ALL=C grep -aq \$'\x89PNG' '${work}/winres-${winExe}.exe'"
 	done
@@ -4246,7 +4268,7 @@ EOF
 	## GOOS_GOARCH suffix would link into every platform, which is a bigger mistake than
 	## shipping none at all.
 	fAssertFail "[EnQf0UH] nothing but windows picks the resource up" \
-		bash -c "grep -aqP 'V\x00S\x00_\x00V\x00E\x00R\x00S\x00I\x00O\x00N\x00_\x00I\x00N\x00F\x00O\x00' '${work}/vcsprobe'"
+		bash -c "tr -d '\\000' < '${work}/vcsprobe' | grep -aqF 'VS_VERSION_INFO'"
 	## Committed rather than generated at build time: it is linked into bytes we publish
 	## checksums for, so rebuilding a release from its tag must not need a tool installed.
 	local winArch=""
@@ -4264,7 +4286,7 @@ EOF
 		cmp -s "${root}/src-go/resource_windows_amd64.syso" "${root}/src-go/resource_windows_arm64.syso"
 	## Six sizes, 16 through 256. Windows synthesizes the rest, badly.
 	fAssert "[EnQf0UK] the icon holds the six sizes it is generated with" \
-		bash -c "[[ \"\$(head -c 6 '${root}/assets/gitsby.ico' | od -An -tu1 | tr -s ' ')\" == ' 0 0 1 0 6 0' ]]"
+		bash -c "[[ \"\$(head -c 6 '${root}/assets/gitsby.ico' | od -An -tu1 | xargs)\" == '0 0 1 0 6 0' ]]"
 	fAssert "[EnQf0UL] the pipeline checks the resource against the newest tag" \
 		bash -c "grep -q 'WINRES_CMD' '${root}/cicd/cicd.bash' && grep -q 'WINRES_CMD' '${root}/cicd/config.bash'"
 	## Phase 1 builds the assets, phase 2 commits the bump - so the stamp has to happen twice,
@@ -4487,7 +4509,7 @@ EOF
 		fAssert "[Er1LxTh] under the 0/7 header"  grep -qxF '[ 0/7  Remote sync ]' "${gateOut}"
 		## The same file on both sides, far enough apart to merge. Without --autostash git refuses.
 		fGateUpstream two notes.txt
-		sed -i 's/^1$/edited/' "${gateDir}/notes.txt"
+		sed -i.bak 's/^1$/edited/' "${gateDir}/notes.txt" && rm -f "${gateDir:?}/notes.txt.bak"
 		fGateOnly sync
 		fAssert "[Er1LxTi] and carries an uncommitted edit across the fast-forward" \
 			bash -c "[[ '${gateRc}' == 0 && \"\$(git -C '${gateDir}' rev-parse HEAD)\" == \"\$(git -C '${gateOther}' rev-parse HEAD)\" && \"\$(head -n 1 '${gateDir}/notes.txt')\" == edited && \"\$(tail -n 1 '${gateDir}/notes.txt')\" == two ]]"
@@ -4527,10 +4549,10 @@ EOF
 		git -C "${hookRepo}" push --quiet -u origin main 2>/dev/null
 
 		fAssert "[EpsVDI2] install writes an executable pre-push hook" \
-			bash -c "'${hookRepo}/cicd/utility/pre-push.bash' --install && grep -qxF '## gitsby pre-push gate - installed by cicd/cicd.bash --install-hook' '${hookFile}' && [[ \"\$(stat -c %a '${hookFile}')\" == 755 ]]"
-		hookSum="$(sha256sum "${hookFile}" 2>/dev/null || true) $(stat -c %i "${hookFile}" 2>/dev/null || true)"
+			bash -c "'${hookRepo}/cicd/utility/pre-push.bash' --install && grep -qxF '## gitsby pre-push gate - installed by cicd/cicd.bash --install-hook' '${hookFile}' && [[ \"\$(fMode '${hookFile}')\" == 755 ]]"
+		hookSum="$(sha256sum "${hookFile}" 2>/dev/null || true) $(fInode "${hookFile}" 2>/dev/null || true)"
 		fAssert "[EpsVDI3] and a second install changes nothing" \
-			bash -c "'${hookRepo}/cicd/utility/pre-push.bash' --install && [[ \"\$(sha256sum '${hookFile}') \$(stat -c %i '${hookFile}')\" == '${hookSum}' ]]"
+			bash -c "'${hookRepo}/cicd/utility/pre-push.bash' --install && [[ \"\$(sha256sum '${hookFile}') \$(fInode '${hookFile}')\" == '${hookSum}' ]]"
 		## A hook from an earlier version of this script: the marker line, other text beneath it.
 		# shellcheck disable=SC2016  ## written as text, for the hook to expand.
 		printf '%s\n' '#!/usr/bin/env bash' '## gitsby pre-push gate - installed by cicd/cicd.bash --install-hook' \
@@ -4745,7 +4767,7 @@ EOF
 	## Directive review 20260819. Every check below fails against the build that preceded it,
 	## bar the two marked as follow-up state checks on the run above them.
 	local dr="${work}/$1-dirrev"
-	mkdir -p "${dr}/bin" "${dr}/home/.config/gitsby" "${dr}/tree"
+	mkdir -p "${dr}/bin" "${dr}/home/${confRel}" "${dr}/tree"
 	local drCanon="${dr}"
 	((isWindows)) && drCanon="$( cd "${dr}" && pwd -W )"
 
@@ -4827,7 +4849,7 @@ EOF
 		esac
 		exit 1
 	GHEOF
-	cat > "${dr}/home/.config/gitsby/config.shcl" <<-CFGEOF
+	cat > "${dr}/home/${confRel}/config.shcl" <<-CFGEOF
 		account.abe.path      = ${drCanon}/tree
 		account.abe.ghAccount = abe
 		account.abe.name      = Abe Person
@@ -4890,7 +4912,7 @@ EOF
 		fAssertOut "[EnQNsZl] a token file other users can read is called out"  'readable by other users' \
 			bash -c "cd '${dr}/tree/proj' && env ${drEnv} '${gitsby}' -q -NoFetch --config '${dr}/token.shcl' identity 2>&1"
 		fAssert "[EnQNsZm] the account fragments are yours alone" \
-			bash -c "[[ \"\$(stat -c %a '${dr}/home/.config/gitsby/accounts')\" == 700 ]] && [[ \"\$(stat -c %a '${dr}/home/.config/gitsby/accounts/github.com_abe.gitconfig')\" == 600 ]]"
+			bash -c "[[ \"\$(fMode '${dr}/home/${confRel}/accounts')\" == 700 ]] && [[ \"\$(fMode '${dr}/home/${confRel}/accounts/github.com_abe.gitconfig')\" == 600 ]]"
 	fi
 
 	##••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
@@ -5403,3 +5425,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260928 JC: Checks for the account source line, the fragment's credential username, a root folder rule, the installers' redirect tag and end of input, committed script modes, and the release dry run's closing lines. 1222 -> 1235.
 ##		- 20260928 JC: Checks for the information options after a command, the clone folder in full, the installers' write access, sudo, plan and mode, the pre-release tie, the release build from the tag, tool versions outside Go and under GOPATH, the README badges and .gitignore. 1235 -> 1254.
 ##		- 20260928 JC: account unset. It names each line it removes, leaves the rest as typed, treats a key already gone as nothing to do, refuses a value after the key, and prints its syntax with no key. Five of the six fail against the tree before them; the rest-as-typed check is a regression guard. 1254 -> 1260.
+##		- 20261001 JC: Runs on macOS. The work folder is resolved, the accounts file goes where each platform looks, and 'sed -i', 'stat', 'grep -P', 'od' and 'script' are used in forms BSD also takes or are skipped without them. On macOS XDG_CONFIG_HOME is checked as ignored. A check for minting an ID for now. 1260 -> 1261.
