@@ -180,3 +180,26 @@ func FuzzConfigKeyValue(f *testing.F) { // [EndU98O]
 		}
 	})
 }
+
+func FuzzSetValue(f *testing.F) { // [ErUTuA8]
+	for _, seed := range []string{`C:\work\new`, `~\dev\tools`, `\\srv\share`, `C:\Bob's\new`, "C:\\a\u200bb", `a\b, c`, `x\#y`, `'q'`, `\`, "a\\\tb", "plain"} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, value string) {
+		// What the plan shows and the file holds must read back as the value typed,
+		// whichever quotes it went in.
+		doc := shcl.New()
+		if !setValue(doc, "v", value) {
+			return
+		}
+		back := shcl.Parse(doc.ToCanonical())
+		if got, status := back.GetString("v"); status == shcl.Good && got != value {
+			t.Errorf("setValue(%q) wrote %q, read back %q", value, doc.ToCanonical(), got)
+		}
+		// A line break goes in a raw block, which has no quotes to check.
+		spelled := shclValue(value)
+		if strings.Contains(value, `\`) && !strings.ContainsAny(value, "\r\n") && !strings.HasPrefix(spelled, "'") && !strings.HasPrefix(spelled, `"`) {
+			t.Errorf("setValue(%q) wrote a backslash value bare: %s", value, spelled)
+		}
+	})
+}

@@ -1074,7 +1074,7 @@ func (a *app) accountSetPlan() (accountSetTarget, error) {
 	// before the plan, and the plan knows whether the rest of the file comes back
 	// as written. A few edits can't keep it, such as a key added under a dotted
 	// line; those save the whole file in the module's own layout.
-	if !t.doc.SetString(t.path(), t.value) {
+	if !setValue(t.doc, t.path(), t.value) {
 		return t, usagef("'%s' isn't a setting the file can hold (%s).", t.disp+"."+t.field, t.doc.WriteReason(t.path()))
 	}
 	_, kept := t.doc.ToTextKeepLines()

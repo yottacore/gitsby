@@ -234,8 +234,36 @@ func dedupe(names []string) []string {
 // line on disk cannot disagree.
 func shclValue(value string) string {
 	doc := shcl.New()
-	doc.SetString("v", value)
+	setValue(doc, "v", value)
 	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(doc.ToCanonical()), "v:"))
+}
+
+// setValue writes a value with a backslash in single quotes, where every
+// backslash is itself. The module writes some Windows paths bare, and the file
+// should show the spelling that is safe to copy for the next path typed by hand.
+// Single quotes can't hold an apostrophe or a line break, so those values, and
+// ones with a character the module writes as a \u escape to make it seen, keep
+// the module's double quotes, with each backslash doubled.
+func setValue(doc *shcl.Document, path, value string) bool {
+	if strings.Contains(value, `\`) && !strings.ContainsAny(value, "'\r\n") && !hasUEscape(value) && doc.SetLiteral(path, "'"+value+"'") {
+		if got, status := doc.GetString(path); status == shcl.Good && got == value {
+			return true
+		}
+	}
+	return doc.SetString(path, value)
+}
+
+// hasUEscape: the module spells value with a \u or \U escape. Only double quotes
+// hold escapes, and a doubled backslash is not the start of one.
+func hasUEscape(value string) bool {
+	doc := shcl.New()
+	doc.SetString("v", value)
+	spelled := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(doc.ToCanonical()), "v:"))
+	if !strings.HasPrefix(spelled, `"`) {
+		return false
+	}
+	spelled = strings.ReplaceAll(spelled, `\\`, "")
+	return strings.Contains(spelled, `\u`) || strings.Contains(spelled, `\U`)
 }
 
 // flatToSHCL respells the old layout in the current one, so the comments and
