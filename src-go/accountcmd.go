@@ -1077,7 +1077,11 @@ func (a *app) accountSetPlan() (accountSetTarget, error) {
 	if !t.doc.SetString(t.path(), t.value) {
 		return t, usagef("'%s' isn't a setting the file can hold (%s).", t.disp+"."+t.field, t.doc.WriteReason(t.path()))
 	}
-	if _, kept := t.doc.ToTextKeepLines(); !kept && !tidy && !t.creates && !t.converts {
+	_, kept := t.doc.ToTextKeepLines()
+	if err := lostRefusal(t, kept); err != nil {
+		return t, err
+	}
+	if !kept && !tidy && !t.creates && !t.converts {
 		t.reshapes = true
 	}
 	return t, nil
@@ -1098,14 +1102,15 @@ func (a *app) loadForEdit(t *accountSetTarget) error {
 	} else {
 		t.file, t.doc, t.read = a.cfg.file, a.cfg.doc, a.cfg.raw
 	}
-	return lostRefusal(*t)
+	return nil
 }
 
-// lostRefusal: a line the read dropped can't be kept, so the save would be a
-// whole-file rewrite that loses it, and the module refuses one. Said before the
-// plan rather than after the confirmation.
-func lostRefusal(t accountSetTarget) error {
-	if lost := t.doc.LostCount(); lost > 0 {
+// lostRefusal: a line the read dropped comes back where it was when the rest of
+// the file does. Only an edit that rewrites the whole file would lose it, and the
+// module refuses that save. Said before the plan rather than after the
+// confirmation.
+func lostRefusal(t accountSetTarget, kept bool) error {
+	if lost := t.doc.LostCount(); lost > 0 && !kept {
 		return usagef("%d line(s) of %s couldn't be read, and a rewrite would drop them. Edit it by hand.", lost, nativePath(t.file))
 	}
 	return nil
@@ -1189,7 +1194,11 @@ func (a *app) accountUnsetPlan() (t accountSetTarget, done bool, err error) {
 	for _, p := range paths {
 		t.doc.Remove(p)
 	}
-	if _, kept := t.doc.ToTextKeepLines(); !kept && !tidy && !t.converts {
+	_, kept := t.doc.ToTextKeepLines()
+	if err := lostRefusal(t, kept); err != nil {
+		return t, false, err
+	}
+	if !kept && !tidy && !t.converts {
 		t.reshapes = true
 	}
 	return t, false, nil
