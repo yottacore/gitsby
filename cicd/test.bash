@@ -420,10 +420,12 @@ fRunSuite(){
 	fAssert "[Eo59IMe] --help names the build once"     \
 		bash -c "[[ \"\$(cd '${cloneA}' && '${gitsby}' --help | grep -cE '^gitsby v[0-9]')\" == 1 ]]"
 	## --about and --donate are the two informational flags. Both answer outside a repo, and each
-	## exists to hand over one link, so the link is what gets asserted.
+	## exists to hand over links, so the links are what get asserted.
 	fAssertOut  "[Eo5Hqng] --about names the project page"   'github\.com/yottacore/gitsby' \
 		bash -c "cd '${work}' && '${gitsby}' --about"
 	fAssertOut  "[Eo5Hqnh] --donate names the sponsor page"  'github\.com/sponsors/jim-collier' \
+		bash -c "cd '${work}' && '${gitsby}' --donate"
+	fAssertOut  "[ErTuVvi] --donate names the Ko-fi page"    'ko-fi\.com/jimcollier' \
 		bash -c "cd '${work}' && '${gitsby}' --donate"
 	fAssertOut  "[Eo5Hqni] --donate names the build"         '^gitsby v[0-9]' \
 		bash -c "cd '${work}' && '${gitsby}' --donate"
@@ -4011,9 +4013,9 @@ GHEOF
 	fAssert "[ErCRneY] .gitignore covers OS and editor leftovers, and no tracked file" \
 		bash -c "cd '${root}' && git check-ignore -q --no-index .DS_Store && git check-ignore -q --no-index .vscode/x && git check-ignore -q --no-index src-go/x.swp && git check-ignore -q --no-index src-go/gitsby.test && [[ -z \"\$(git ls-files -ci --exclude-standard)\" ]]"
 	## A badge the repo grants itself asserts nothing outside the README. Apart from the license
-	## and the sponsor link, each one reads what it shows from the repo, the Go version included.
+	## and the sponsor links, each one reads what it shows from the repo, the Go version included.
 	fAssert "[ErCP9Yz] the README's badges read what they show from the repo" \
-		bash -c "grep -q 'shields\.io/github/go-mod/go-version/yottacore/gitsby?filename=src-go%2Fgo\.mod' '${root}/README.md' && ! grep 'img\.shields\.io/badge/' '${root}/README.md' | grep -vE 'badge/(License|Sponsor)-'"
+		bash -c "grep -q 'shields\.io/github/go-mod/go-version/yottacore/gitsby?filename=src-go%2Fgo\.mod' '${root}/README.md' && ! grep 'img\.shields\.io/badge/' '${root}/README.md' | grep -vE 'badge/(License|Sponsor|Ko--fi)-'"
 	## The step itself, against a build that starts three processes per command and a baseline
 	## that says none, so every command reads as a rise. Needs strace, like the step.
 	if command -v strace >/dev/null 2>&1; then

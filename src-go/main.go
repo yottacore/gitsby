@@ -30,6 +30,7 @@ const (
 	author        = "Jim Collier"
 	homeURL       = "https://github.com/yottacore/gitsby"
 	donateURL     = "https://github.com/sponsors/jim-collier"
+	kofiURL       = "https://ko-fi.com/jimcollier"
 )
 
 func main() {
