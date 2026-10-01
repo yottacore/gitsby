@@ -1582,6 +1582,19 @@ fpReadTokenFile(){
 	tr -d '[:space:]' < "${file}" 2>/dev/null || true
 :;}
 
+fpAccountCredentialHelper(){
+	## Asks gh for the token when git needs it, so no token is ever written down. The login and path
+	## go into a line of shell, so anything that would need quoting is refused.
+	local -r who="${1:-}"; local file="${2:-}"
+	[[ "${who}" =~ ^[A-Za-z0-9-]+$ ]] || return 0
+	local fromFile=""
+	if [[ -n "${file}" ]]; then
+		file="${file/#\~/${HOME:-}}"
+		[[ "${file}" == *\'* ]] || fromFile="; [ -n \"\$t\" ] || t=\"\$(tr -d \"[:space:]\" < '${file}' 2>/dev/null)\""
+	fi
+	echo "!f(){ test \"\$1\" = get || return 0; t=\"\$(gh auth token --user ${who} 2>/dev/null)\"${fromFile}; [ -n \"\$t\" ] || return 0; echo username=${who}; echo \"password=\$t\"; }; f"
+:;}
+
 fpResolveAccount(){
 	## Who this folder says to act as, worked out once and used by the identity block, the gh
 	## selection and the passthrough alike. Most specific first:
@@ -2002,6 +2015,9 @@ fCmdAccountApply(){
 		## manager look up that account's entry rather than any entry for the host.
 		[[ -n "${ghWho}" ]] && git config --file "${fragment}" "credential.https://github.com.username" "${ghWho}"
 		local tokenFile="$(fpAccountValue "${name}" tokenFile)"; [[ -n "${tokenFile}" ]] && git config --file "${fragment}" gitsby.ghTokenFile "${tokenFile}"
+		## gh's own helper only answers for its active account, so plain git needs one per account.
+		local helper="$(fpAccountCredentialHelper "${ghWho}" "${tokenFile}")"
+		[[ -n "${helper}" ]] && git config --file "${fragment}" --add "credential.https://github.com.helper" "${helper}"
 		local sshKey="$(fpAccountValue "${name}" sshKey)"
 		[[ -n "${sshKey}" ]] && git config --file "${fragment}" core.sshCommand "ssh -i ${sshKey} -o IdentitiesOnly=yes"
 		fEcho "Wrote ${fragment}"
@@ -2945,3 +2961,4 @@ declare -i isSourced; { (return 0 2>/dev/null) && isSourced=1; } || isSourced=0
 ##		- 20260812 JC: The identity line says when an account was resolved but not applied, and the commands that push with git compare it against the key origin authenticates as - "sync" compared nothing at all. "account apply" also writes the https credential username. "br prune" asks git once per target ref rather than twice per branch, and a folder rule pointing at no directory is marked as one that can never match.
 ##		- 20260812 JC: "account.<name>.pathContains" matches a run of folder names anywhere in a path, so one config file can be synced between machines whose roots differ. Whole names only; more names is the more specific rule; an absolute "path" still wins. "account apply" emits it as a gitdir glob, which git handles natively.
 ##		- 20260813 JC: The publish preview's throwaway git dir survives an interrupt no longer - it is removed on the way out of the run, not only on the way out of the function that made it.
+##		- 20260930 JC: 'account apply' adds a credential helper per account, so plain git can push over https as an account gh isn't active on.
