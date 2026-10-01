@@ -87,11 +87,12 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 - 🔘 Move the shcl module from its pinned `dev` commit to the tagged 3.0 release.
 	- Opened: 20260924-132324
-	- The pin is `v2.0.0-20260926000044-f2a8ad2aed34` since 2026-09-25, shcl `dev` just ahead of the beta cut. Go sorts it below v2.0.0. Nothing asks for v2.0.0 on the new import path, so nothing picks it over the pin.
+	- The pin is `v2.0.0-20261001214152-b10c2009d36c` since 2026-10-01, shcl `dev` at what will be the beta cut. Go sorts it below v2.0.0. Nothing asks for v2.0.0 on the new import path, so nothing picks it over the pin.
 	- Go refuses a v3 tag on a module named `.../v2`, so the tag should bring a `/v3` import path. Move the imports in the same commit.
 	- `release.bash` should refuse a pseudo-version for shcl, so a release cannot go out on a commit pin.
 	- shcl plans the `/v3` path for its 3.0.0 cut, so nothing to report there.
 	- Note: blocked. Checked 2026-09-28: shcl has no 3.0 tag yet, and its `dev` go.mod still says `/v2`.
+	- Note: moved to the cut candidate on 2026-10-01. A line the file couldn't read is now kept through an edit, and a double-quoted path with a stray escape is listed instead of read with a newline in it. Still `/v2`.
 
 ### Done
 

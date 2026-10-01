@@ -782,6 +782,20 @@ func TestConfigLoadBackslashes(t *testing.T) { // [Eqp3jdh]
 	}
 }
 
+// Inside double quotes '\w' is no escape, and the line is listed rather than read
+// with a newline where '\n' was. The shcl beta pinned before 2026-10-01 loaded the
+// rule as 'C:\work', a newline and 'ew', which on Windows matched nothing.
+func TestConfigListsAnUnknownEscape(t *testing.T) { // [ErUQP7F]
+	cfg := writeConfig(t, "account: w\n\tpath: \"C:\\work\\new\"\n\temail: e@x\n")
+	wantValue(t, cfg, "w", "email", "e@x")
+	if len(cfg.paths) != 0 {
+		t.Errorf("the line was read as a rule: %+v", cfg.paths)
+	}
+	if got := strings.Join(cfg.unknown, " | "); !strings.Contains(got, "line 2 (unknown escape") {
+		t.Errorf("ignored = %q, want line 2 named", got)
+	}
+}
+
 // A folder rule is absolute or it is nothing. Both platforms' answers, whatever
 // this machine is: 'C:work' and '/work' change meaning with the current drive on
 // Windows, and 'C:/work' is no folder on Linux.
