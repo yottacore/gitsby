@@ -116,7 +116,7 @@ func hostOrNothing(host, path string, viaSSH bool) (string, string, bool) {
 	return host, path, viaSSH
 }
 
-// githubHosts names the hosts gh is the right tool for. GH_HOST is how gh itself
+// isGitHubHost says whether gh is the right tool for host. GH_HOST is how gh itself
 // is pointed at an Enterprise instance, so a remote on that host is gh territory
 // just as much as github.com is - and reading it here is what keeps Enterprise
 // users out of the "not GitHub, so no pull requests" path they don't belong in.

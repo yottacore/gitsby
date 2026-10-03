@@ -78,7 +78,7 @@ Scope: the product itself is Go now. Go's *formatting* is `gofmt` - the lint sta
 
 ## Bash
 
-- Bash 4.4 is the floor, and the script refuses to run below it. Write to Bash 5 idioms otherwise, rather than portable-but-clunky POSIX-only workarounds. (The installers are the exception: they run on macOS stock bash 3.2, so that they can report what to do about it.)
+- Bash 4.4 is the floor, and each script in `cicd/` refuses to run below it, as its first command. A file that is only sourced leaves the check to the script sourcing it, and `n8git_backup-and-publish` is shared with other projects and has none. Write to Bash 5 idioms otherwise, rather than portable-but-clunky POSIX-only workarounds. (`install.bash` is the exception: it runs on macOS stock bash 3.2, since the one-line install pipes it to whatever `bash` is there. What it installs needs no shell.)
 
 - Must pass shellcheck. Per-file disables go at the top, each with a short reason (see the top of `cicd/test.bash`).
 

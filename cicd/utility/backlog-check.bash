@@ -3,7 +3,8 @@
 ##	Purpose:
 ##		Two backlog rules that review rounds kept leaking through, checked in cicd
 ##		stage 1 instead of by hand:
-##		1. Every open code-review item (not ✅ ✋ 🚫) carries an "Origin:" sub-bullet -
+##		1. Every open code-review item (not ✅ ✋ 🚫, or in the new format not Done,
+##		   Canceled, Moot or Deferred) carries an "Origin:" sub-bullet -
 ##		   the commit or round that introduced it, whether an earlier round saw it,
 ##		   and Confirmed (reproduced) or Plausible (read only).
 ##		2. A suite check removed on this branch, against the integration branch, is
@@ -27,6 +28,9 @@
 ##	SPDX-License-Identifier: MIT
 
 
+if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
+	printf '%s\n' "${0##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
+fi
 set -Eeuo pipefail
 
 meDir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -52,18 +56,36 @@ git -C "${root}" rev-parse --git-dir >/dev/null 2>&1 || { echo "backlog-check: $
 
 findings=0
 
-## 1. Open review items without an Origin line. An item runs from its "\t- " line to
-## the next line at that depth or shallower; its sub-bullets sit at two tabs.
-noOrigin="$(awk '
-	/^\t- / || /^- / || /^#/ { if (cur != "" && !found) print cur; cur = ""; found = 0 }
-	/^\t- / && /Code Review [0-9]+ (item|enhancement) [0-9]+:/ && !/(✅|✋|🚫)/ {
-		cur = $0; sub(/:.*/, "", cur); sub(/^\t- [^ ]+ /, "", cur)
+## 1. Open review items without an Origin line, in either format. An old one is a
+## "\t- <emoji> Code Review ..." line, open unless the emoji says done, deferred or
+## canceled, and runs to the next line at its depth or shallower; its sub-bullets sit
+## at two tabs. A new one is a top-level "- Code Review ..." item, open unless its
+## Status row says Done, Canceled, Moot or Deferred, and runs to the next top-level
+## line; its rows sit at one tab. Each open item is listed, and listed again as
+## missing when it has no Origin row.
+reviewScan="$(awk '
+	function flush() {
+		if (cur != "" && open) { print "open " cur; if (!found) print "missing " cur }
+		cur = ""; found = 0; open = 0; fmt = ""
 	}
-	/^\t\t- Origin:/ { found = 1 }
-	END { if (cur != "" && !found) print cur }
+	/^#/ || /^- / { flush() }
+	/^\t- / && fmt != "new" {
+		flush()
+		if (/Code Review [0-9]+[a-z]* (item|enhancement) [0-9]+:/ && !/(✅|✋|🚫)/) {
+			cur = $0; sub(/:.*/, "", cur); sub(/^\t- [^ ]+ /, "", cur); fmt = "old"; open = 1
+		}
+	}
+	/^- Code Review / { cur = $0; sub(/:.*/, "", cur); sub(/^- /, "", cur); fmt = "new"; open = 1 }
+	fmt == "old" && /^\t\t- Origin:/ { found = 1 }
+	fmt == "new" && /^\t- Origin:/   { found = 1 }
+	fmt == "new" && /^\t- Status:/ {
+		status = $0; sub(/^\t- Status:[ \t]*/, "", status)
+		if (status ~ /^(Done|Canceled|Moot|Deferred)([^A-Za-z]|$)/) open = 0
+	}
+	END { flush() }
 ' "${backlog}")"
-## A real tab, not '\t': -E leaves the escape alone, so this counted nothing at all.
-openCount="$(grep -E $'^\t- .*Code Review [0-9]+ (item|enhancement) [0-9]+:' "${backlog}" | grep -cvE '✅|✋|🚫' || true)"
+noOrigin="$(sed -n 's/^missing //p' <<< "${reviewScan}")"
+openCount="$(grep -c '^open ' <<< "${reviewScan}" || true)"
 if [[ -n "${noOrigin}" ]]; then
 	echo "backlog-check: open review items with no 'Origin:' sub-bullet:"
 	while IFS= read -r line; do echo "  ${line}"; done <<< "${noOrigin}"

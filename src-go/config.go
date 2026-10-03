@@ -294,7 +294,7 @@ func canonSegment(s string) string {
 	return s
 }
 
-// configFile picks the file to read: the first candidate that exists, or nothing.
+// resolveConfigFile picks the file to read: the first candidate that exists, or nothing.
 // A file named explicitly must exist - naming one that isn't there is a typo, not
 // a fallback - and it is asked whether the option was TYPED, not whether it has a
 // value: '--config ""' falling back to the default file would act as the wrong
