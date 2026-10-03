@@ -61,7 +61,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 item 4: `br merge` says the target is as it was without checking
 	- ID: 2026100313123895
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on signoff
 	- Priority|Severity [Bug]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -69,10 +69,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Have `git merge --abort` fail after a conflicted `br merge`.
 	- Incorrect behavior [Bug]: gitsby ignores the failure and prints that the target "is as it was". The tree is still mid-merge.
 	- Expected behavior [Bug]: When the abort fails, say the tree is mid-merge and name the commands to settle it.
-	- Reproduced [Bug]: No. Read only.
+	- Reproduced [Bug]: Yes, 2026-10-03, with a git that refuses only `merge --abort`. `br merge` said dev "is as it was", then failed a checkout on the conflicted tree. The hotfix back-merge said dev was untouched and ended in Done, exit 0. `release` goes through the same code as `br merge`.
 	- Possible cause [Bug]: `_ = runOK("git", "merge", "--abort")` in `backOutMerge`, and the same at the dev back-merge.
-	- Origin: branchcmd.go:226 from bfbae90 (2026-09-15). Not seen before. Plausible.
+	- Origin: branchcmd.go:226 from bfbae90 (2026-09-15). Not seen before. Confirmed.
+	- Actual cause [Bug]: Both sites threw away the abort's exit status.
 	- Estimated effort: Low
+	- Actual fix [Bug]: A failed abort now refuses with Why, Kept and Fix lines. They say the target is still mid-merge, that nothing was committed to it, and give the commands to drop the merge and go back. git's own reason for the failed abort shows above it. The back-merge also offers finishing the merge by hand, which carries the hotfix across.
+	- Note: The back-merge now exits 1 when its abort fails, even though the hotfix landed. A clean abort there is unchanged and still ends in a warning.
+	- Swept: both `merge --abort` calls in src-go. `release` backs out through `backOutMerge`, so it is covered too and was run by hand. No other git step in src-go has its result discarded, apart from the listings and two best-effort calls in repo.go and remote.go whose comments say why.
+	- Verified: the same runs on `gover` said the target was as it was, and the back-merge exited 0. Here all six checks pass, and test.bash passes 1288 of 1288. `go test ./...` and `cicd.bash --gate` pass.
+	- Branch: errmsg
+	- Test case: [ErfwTrE] and [ErfwTrT] for the back-merge, [ErfwTrh], [ErfwTrv], [ErfwTs8] and [ErfwTsM] for `br merge`, all in test.bash.
+	- Acceptance signoff: Waiting. New refusal wording, and the back-merge's exit status changed.
 
 - Code Review 20261003 enhancement 1: The spawn-count fixture can't see the account paths
 	- ID: 2026100313123975

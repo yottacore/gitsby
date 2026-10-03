@@ -1848,6 +1848,19 @@ GHEOF
 	fAssert    "[ElCp8pt] a conflicting back-merge leaves dev alone"  \
 		bash -c "cd '${hfc}' && git checkout --quiet dev && echo devtext > README.md && git commit --quiet -am devtext && git push --quiet && '${gitsby}' -q -NoFetch br hotfix clash >/dev/null 2>&1 && echo hftext > README.md && '${gitsby}' -q -NoFetch update wip >/dev/null 2>&1 && '${gitsby}' -q -NoFetch br land Clash >/dev/null 2>&1; [[ \"\$(git show origin/main:README.md)\" == hftext && \"\$(git show origin/dev:README.md)\" == devtext ]]"
 	fAssert    "[ElCp8pu] and the tree is not left mid-merge"  bash -c "cd '${hfc}' && [[ ! -e .git/MERGE_HEAD ]] && [[ -z \"\$(git status --porcelain)\" ]]"
+	## The abort's own result was never read, so a failed one left the tree mid-merge while the run
+	## said it had backed out. A git that refuses only the abort stands in for whatever stops it.
+	local abortShim="${work}/$1-abortshim"
+	mkdir -p "${abortShim}"
+	fStub "${abortShim}/git" <<-EOF
+		#!/usr/bin/env bash
+		if [[ "\${1:-} \${2:-}" == "merge --abort" ]]; then echo "fatal: abort refused for this check" >&2; exit 128; fi
+		exec '$(command -v git)' "\$@"
+	EOF
+	fAssertOut "[ErfwTrE] a back-merge whose abort fails says dev is still mid-merge"  "^  Why:  'git merge --abort' failed, so 'dev' is still mid-merge\.$" \
+		bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix clash2 >/dev/null 2>&1 && echo hf2text > README.md && '${gitsby}' -q -NoFetch update wip >/dev/null 2>&1 && env PATH='${abortShim}':\"\${PATH}\" '${gitsby}' -q -NoFetch br land Clash2 > '${abortShim}/back.out' 2>&1; echo \"rc=\$?\" >> '${abortShim}/back.out'; cat '${abortShim}/back.out'"
+	fAssertOut "[ErfwTrT] and fails rather than ending in Done"  '^rc=1$'  cat "${abortShim}/back.out"
+	( cd "${hfc}" || exit 1; git merge --abort 2>/dev/null || true )
 	## The forward merge left the tree in conflict and the merge open, on a bare step failure.
 	local fm="${work}/$1-mergeclash"
 	git init --quiet --bare -b main "${fm}/origin.git"
@@ -1865,6 +1878,11 @@ GHEOF
 	fAssert     "[EpyIe9F] and leaves dev as it was"        bash -c "cd '${fm}/c' && [[ \"\$(git show dev:f.txt)\" == theirs && \"\$(git show origin/dev:f.txt)\" == theirs ]]"
 	fAssert     "[EpyIe9G] and goes back to the branch"     bash -c "cd '${fm}/c' && [[ \"\$(git branch --show-current)\" == clash ]]"
 	fAssertOut  "[EpyIe9H] and names the commands to settle it"  "git merge dev, then '.*br merge'"  bash -c "cd '${fm}/c' && '${gitsby}' -q -NoFetch br merge Clash 2>&1"
+	fAssertOut    "[ErfwTrh] a br merge whose abort fails says dev is still mid-merge"  "^  Why:  'git merge --abort' failed, so 'dev' is still mid-merge\.$" \
+		bash -c "cd '${fm}/c' && env PATH='${abortShim}':\"\${PATH}\" '${gitsby}' -q -NoFetch br merge Clash > '${abortShim}/merge.out' 2>&1; cat '${abortShim}/merge.out'"
+	fAssertNotOut "[ErfwTrv] and never says dev is as it was"  'as it was'  cat "${abortShim}/merge.out"
+	fAssertOut    "[ErfwTs8] and names the commands to drop it and go back"  "^          git merge --abort\$"  cat "${abortShim}/merge.out"
+	fAssertOut    "[ErfwTsM] including the way back to the branch"  "^          git checkout clash\$"  cat "${abortShim}/merge.out"
 	## release merges dev into main the same way.
 	( cd "${fm}/c" || exit 1; git merge --abort 2>/dev/null || true; git checkout --quiet main && echo mainside > f.txt && git commit --quiet -am mainside && git push --quiet && git checkout --quiet clash )
 	fAssertFail "[EpyIe9I] a release whose dev won't merge into main refuses"  bash -c "cd '${fm}/c' && '${gitsby}' -q -NoFetch release v1.0.0"
