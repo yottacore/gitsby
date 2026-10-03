@@ -182,14 +182,14 @@ DOGFOOD_FALLBACK_DIR="${HOME}/.local/bin"
 ## Release assets (cicd/release.bash). Every platform the module cross-builds to, which is
 ## every platform Go targets - the tree is pure stdlib with no cgo, so nothing here needs an
 ## SDK or a machine of its own. Published as gitsby-<goos>-<goarch>, with .exe on Windows,
-## alongside a SHA256SUMS over the set.
+## alongside a SHA256SUMS over the set. macOS is one universal file for both CPUs, joined the
+## way dogfood joins it, so the installers take the same file on any Mac.
 RELEASE_TARGETS=(
 	"linux/amd64"
 	"linux/arm64"
 	"windows/amd64"
 	"windows/arm64"
-	"darwin/amd64"
-	"darwin/arm64"
+	"darwin/universal"
 	"freebsd/amd64"
 	"freebsd/arm64"
 )
@@ -238,3 +238,4 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-09-28 JC: TOOL_VERSIONS records the six tools outside Go that shape a result. The parity comment no longer says --quick skips it.
 ##		- 2026-10-03 JC: macOS dogfood is one universal binary, so Intel Macs can run it too.
 ##		- 2026-10-03 JC: PS_LINT_SETTINGS: the PowerShell lint rules moved out of cicd.bash into a settings file.
+##		- 2026-10-03 JC: The macOS release is one universal binary, in place of one per CPU.

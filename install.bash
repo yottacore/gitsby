@@ -34,6 +34,7 @@ fSyntax(){
 	  --target user|system   Install for you (~/.local/bin, default) or everyone (/usr/local/bin).
 	  -s, --system           The same thing as --target system.
 	  --arch amd64|arm64     Which binary to fetch. Detected from this machine by default.
+	                         macOS has one binary for both.
 	  -t, --tag TAG          A published release tag (default: the latest release).
 	  -r, --ref TAG          The older name for --tag.
 	  -y, --yes              Don't ask for confirmation.
@@ -115,7 +116,11 @@ case "${goOs}" in
 	mingw*|msys*|cygwin*|windows*)
 		fErr "On Windows, use the PowerShell installer, which also puts the install directory on your PATH: irm https://raw.githubusercontent.com/${repo}/main/install.ps1 | iex" ;;
 esac
-if [[ -z "${arch}" ]]; then
+if [[ "${goOs}" == darwin ]]; then
+	## One universal binary runs on both Mac CPUs, so there is nothing to pick.
+	[[ -z "${arch}" ]] || { echo; fEcho "The macOS binary runs on both CPUs, so --arch ${arch} changes nothing here."; }
+	arch="universal"
+elif [[ -z "${arch}" ]]; then
 	case "$(uname -m 2>/dev/null || echo unknown)" in
 		x86_64|amd64)  arch="amd64" ;;
 		aarch64|arm64) arch="arm64" ;;
@@ -308,3 +313,4 @@ echo
 ##		- 20260915 JC: SHA256SUMS is read with either case of hash and with CRLF line ends. --help lists --ref, and says --release stable still names the default. The no-binary refusal, a declined prompt and the pre-release notice have a blank line either side. The plan says when it replaces a copy, and a binary that won't run is named with its exit code.
 ##		- 20260928 JC: End of input at the prompt says Aborted, as a typed no does. A tag read from the release redirect gets the same path check as a typed one. A user install checks it can write its folder, and a system one that sudo exists, both before the plan.
 ##		- 20261003 JC: The hash lookup reads SHA256SUMS to the end. A head that quit at the first match could fail the write before it, and the install ended with nothing said.
+##		- 20261003 JC: A Mac takes gitsby-darwin-universal, one binary for both CPUs, in place of one per CPU. --arch there is noted and changes nothing.

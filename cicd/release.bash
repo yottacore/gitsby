@@ -74,18 +74,70 @@ fWould(){      ((dryRun)) && { echo "   would: $*"; return 0; }; return 1; }
 ## because the build number comes from the commit's own date, and the tag does not exist yet
 ## when phase 1 runs. Anyone checking out the tag and building gets the published bytes back.
 ## <src> is the tree to build: the working tree for the gate, an export of the tag to publish.
+## darwin/universal is both Mac CPUs, built apart and joined, amd64 first. The join adds no
+## stamp of its own, so the same two builds always make the same file.
 fpCrossBuild(){
-	local epoch="$1" src="$2" t asset
+	local epoch="$1" src="$2" t asset arch part
+	local -a arches parts
 	crossBuildFailed=""
 	for t in "${RELEASE_TARGETS[@]}"; do
-		asset="${EXE_NAME}-${t%%/*}-${t##*/}"; [[ "${t}" == windows/* ]] && asset="${asset}.exe"
-		( cd "${src}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOTOOLCHAIN="${GO_RELEASE_TOOLCHAIN}" GOOS="${t%%/*}" GOARCH="${t##*/}" \
-			go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" \
-			-ldflags "${GO_LDFLAGS_COMMON} -X main.version=${version#v} -X main.buildEpoch=${epoch}" \
-			-o "${assets}/${asset}" . ) \
-			|| { crossBuildFailed="${t}"; return 1 ;}
+		asset="$(fpAssetName "${t%%/*}" "${t##*/}")"
+		## Hashed under this name, and GitHub renames anything outside this set on upload.
+		[[ "${asset}" =~ ^[A-Za-z0-9._-]+$ ]] || { crossBuildFailed="${t} (GitHub would rename ${asset})"; return 1 ;}
+		arches=("${t##*/}"); [[ "${t}" == darwin/universal ]] && arches=(amd64 arm64)
+		parts=()
+		for arch in "${arches[@]}"; do
+			part="${assets}/${asset}"; ((${#arches[@]} == 1)) || part="${assets}/${asset}-${arch}"
+			( cd "${src}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOTOOLCHAIN="${GO_RELEASE_TOOLCHAIN}" GOOS="${t%%/*}" GOARCH="${arch}" \
+				go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" \
+				-ldflags "${GO_LDFLAGS_COMMON} -X main.version=${version#v} -X main.buildEpoch=${epoch}" \
+				-o "${part}" . ) \
+				|| { crossBuildFailed="${t%%/*}/${arch}"; return 1 ;}
+			parts+=("${part}")
+		done
+		if ((${#parts[@]} > 1)); then
+			"${here}/utility/macho-universal.bash" "${assets}/${asset}" "${parts[@]}" || { crossBuildFailed="${t}"; return 1 ;}
+			## Executable like the go build output, or a cut on a Mac reads no build line from it.
+			chmod +x "${assets}/${asset}"
+			rm -f -- "${parts[@]}"
+		fi
 	done
 	( cd "${assets}" && "${here}/utility/gen-checksums.bash" > SHA256SUMS )
+}
+
+## What a target is published as. The Mac build runs on both CPUs, so every Mac asks for it.
+fpAssetName(){
+	local goos="$1" goarch="$2"
+	[[ "${goos}" == darwin ]] && goarch="universal"
+	if [[ "${goos}" == windows ]]; then echo "${EXE_NAME}-${goos}-${goarch}.exe"; else echo "${EXE_NAME}-${goos}-${goarch}"; fi
+}
+
+## Phase 3's proof: one published asset fetched and checked against the published SHA256SUMS,
+## and with $2 set, run too. Reads ${base}.
+## Seconds after publication GitHub serves the tag but not yet the assets, and the installers
+## stop rather than quietly skip verification when SHA256SUMS can't be fetched - so a first
+## attempt can fail against a release that is perfectly good. It did on v2.1.0: the same check
+## passed unchanged minutes later, with elapsed time the only difference. Retry before saying
+## anything, or the one warning that would mean a broken release is the one nobody believes.
+## --version is read whole, then matched. A grep -q quits at the match, and the rest of the
+## banner then fails to write, which pipefail reports as a failed proof.
+fpProve(){
+	local asset="$1" run="$2" attempt dir out ok=0
+	for attempt in 1 2 3; do
+		((attempt > 1)) && { fEcho_Clean "not downloadable yet; giving GitHub a moment to serve the assets (attempt ${attempt}) ..."; sleep 20; }
+		dir="$(mktemp -d)"
+		if curl -fsSL -o "${dir}/${asset}" "${base}/${asset}" \
+			&& curl -fsSL -o "${dir}/SHA256SUMS" "${base}/SHA256SUMS" \
+			&& ( cd "${dir}" && grep -F " ${asset}" SHA256SUMS | sha256sum --check --status ) \
+			&& { ((! run)) || { chmod +x "${dir}/${asset}" \
+				&& out="$("${dir}/${asset}" --version 2>/dev/null)" \
+				&& [[ "${out}" == *"v${version#v}"* ]] ;} ;}; then
+			ok=1
+		fi
+		rm -rf -- "${dir:?}"
+		((ok)) && break
+	done
+	((ok))
 }
 
 ## The build this release publishes, and the tool this script drives git and gh with. The
@@ -287,7 +339,7 @@ notes="$(mktemp)"
 awk -v ver="## ${version} " -v start="$(fpChangelogStart)" \
 	'NR>=start && index($0, ver)==1 {f=1; next} f && /^## /{exit} f' "${changelog}" > "${notes}" || true
 [[ -s "${notes}" ]] || fEcho_Clean "WARNING: no changelog section found for ${version}; the release body will be empty."
-nativeAsset="${EXE_NAME}-$(go env GOOS)-$(go env GOARCH)"; [[ "$(go env GOOS)" == windows ]] && nativeAsset="${nativeAsset}.exe"
+nativeAsset="$(fpAssetName "$(go env GOOS)" "$(go env GOARCH)")"
 buildLine=""
 [[ -x "${assets}/${nativeAsset}" ]] && buildLine="$("${assets}/${nativeAsset}" --version 2>/dev/null | awk -v want="${EXE_NAME} v" 'index($0, want) == 1 && !seen {print; seen = 1}' || true)"
 if [[ -n "${buildLine}" ]]; then
@@ -307,7 +359,7 @@ fi
 ## Prove it the way a user meets it, not by trusting the steps above: fetch the asset for THIS
 ## platform back off the published release, check it against the published SHA256SUMS, and run it.
 ## That is the whole contract - a download whose checksum matches and whose --version is right.
-if ! fWould "verify releases/latest, then download and run this platform's published binary"; then
+if ! fWould "verify releases/latest, then download and run this platform's published binary, and check the macOS one"; then
 	latest="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/yottacore/gitsby/releases/latest" 2>/dev/null | sed -n 's|.*/releases/tag/||p' || true)"
 	## 'releases/latest' is the newest release NOT flagged as a pre-release, so a candidate must
 	## not resolve there and a full release must. Asking it the same question both ways round
@@ -318,36 +370,23 @@ if ! fWould "verify releases/latest, then download and run this platform's publi
 	else
 		[[ "${latest}" == "${version}" ]] || fEcho_Clean "WARNING: releases/latest resolves to '${latest}', not ${version}."
 	fi
-	## Seconds after publication GitHub serves the tag but not yet the assets, and the installers
-	## stop rather than quietly skip verification when SHA256SUMS can't be fetched - so a first
-	## attempt can fail against a release that is perfectly good. It did on v2.1.0: the same check
-	## passed unchanged minutes later, with elapsed time the only difference. Retry before saying
-	## anything, or the one warning that would mean a broken release is the one nobody believes.
-	## Whichever asset belongs to the machine running this.
-	proveOs="$(go env GOOS)"; proveArch="$(go env GOARCH)"
-	proveAsset="${EXE_NAME}-${proveOs}-${proveArch}"; [[ "${proveOs}" == windows ]] && proveAsset="${proveAsset}.exe"
 	base="https://github.com/yottacore/gitsby/releases/download/${version}"
-	## --version is read whole, then matched. A grep -q quits at the match, and the rest of the
-	## banner then fails to write, which pipefail reports as a failed proof.
-	proved=0
-	for attempt in 1 2 3; do
-		((attempt > 1)) && { fEcho_Clean "not downloadable yet; giving GitHub a moment to serve the assets (attempt ${attempt}) ..."; sleep 20; }
-		proveDir="$(mktemp -d)"
-		if curl -fsSL -o "${proveDir}/${proveAsset}" "${base}/${proveAsset}" \
-			&& curl -fsSL -o "${proveDir}/SHA256SUMS" "${base}/SHA256SUMS" \
-			&& ( cd "${proveDir}" && grep -F " ${proveAsset}" SHA256SUMS | sha256sum --check --status ) \
-			&& chmod +x "${proveDir}/${proveAsset}" \
-			&& proveOut="$("${proveDir}/${proveAsset}" --version 2>/dev/null)" \
-			&& [[ "${proveOut}" == *"v${version#v}"* ]]; then
-			proved=1
-		fi
-		rm -rf -- "${proveDir:?}"
-		((proved)) && break
-	done
-	if ((proved)); then
+	## Whichever asset belongs to the machine running this.
+	proveAsset="$(fpAssetName "$(go env GOOS)" "$(go env GOARCH)")"
+	if fpProve "${proveAsset}" 1; then
 		fEcho_Clean "${proveAsset}: downloaded, checksum verified, and reports ${version}"
 	else
 		fEcho_Clean "WARNING: ${proveAsset} did not download-verify-run as ${version} from the published release."
+	fi
+	## The Mac file is the one asset this script writes itself rather than go build, so it is
+	## checked from any box. Running it needs a Mac.
+	macAsset="$(fpAssetName darwin universal)"
+	if [[ "${macAsset}" != "${proveAsset}" ]]; then
+		if fpProve "${macAsset}" 0; then
+			fEcho_Clean "${macAsset}: downloaded and checksum verified; not run, since this is not a Mac"
+		else
+			fEcho_Clean "WARNING: ${macAsset} did not download and verify from the published release."
+		fi
 	fi
 fi
 
@@ -386,3 +425,4 @@ echo
 ##		- 20261001 JC: 'sed -i' in a form BSD sed also takes.
 ##		- 20261003 JC: A PR number, a releases/latest answer or a build line that can't be read no longer ends the run with nothing said. Under set -e each assignment took its command's failure, so the message written for it never ran.
 ##		- 20261003 JC: The tag list and the proof's --version are read whole before they are matched. A head or grep -q that quit early could fail the writer under pipefail: the proof now and then, and the tag lookup every time once there are a few thousand tags.
+##		- 20261003 JC: macOS publishes one universal binary, both Mac builds joined by macho-universal.bash, in place of one per CPU. The proof checks it against SHA256SUMS from any box, since only a Mac can run it. An asset name GitHub would rewrite stops the build before it is hashed.
