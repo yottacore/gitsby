@@ -3871,6 +3871,54 @@ GHEOF
 		fRelRun --dry-run
 		fAssert "[Er1LxT5] and a dashed footer date newer than the tag answers it" \
 			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'Dry run done: v1.2.4 was not released' '${relOut}' && ! grep -qF 'has no history entry' '${relOut}'"
+		## Past the dry run. Phase 2 read the PR number through a grep that exits 1 on no match, and
+		## under set -e that ended the run before the message written for it. The stub prints no URL.
+		: > "${relRepo}/src-go/resource_windows_amd64.syso"
+		fStub "${relRepo}/src-go/gitsby" <<-EOF
+			#!/usr/bin/env bash
+			case "\${2:-}" in
+				pr) [[ "\${3:-}" != create ]] || cat '${rel}/pr-url' 2>/dev/null ;;
+				release) git tag "\${3:?}" ;;
+			esac
+			exit 0
+		EOF
+		git -C "${relRepo}" add --all
+		git -C "${relRepo}" commit --quiet -m 'syso and gitsby'
+		git -C "${relRepo}" push --quiet 2>/dev/null
+		fRelRun -y
+		# shellcheck disable=SC2016  ## the inner shell does the expanding.
+		fAssert "[Erfs74j] release.bash says so when 'pr create' prints no pull URL" \
+			bash -c '[[ "$1" == 1 ]] && grep -qF -- "$2" "$3"' _ "${relRc}" "couldn't read a PR number out of 'pr create' output." "${relOut}"
+		git -C "${relRepo}" checkout -q -- .
+		## Phase 3, which no dry run reaches. releases/latest can't be reached, and the build's own
+		## --version exits 3, and either one ended the run with nothing said. The published binary
+		## prints its version and then more than a pipe holds, which a grep -q reading it would
+		## cut off, failing the proof under pipefail.
+		echo 'https://github.com/yottacore/gitsby/pull/7' > "${rel}/pr-url"
+		mkdir -p "${rel}/served"
+		printf '#!/usr/bin/env bash\necho "gitsby v1.2.4 (stand-in)"\nprintf "%%0200000d\\n" 0\n' > "${rel}/served/gitsby-linux-amd64"
+		(cd "${rel}/served" && sha256sum gitsby-linux-amd64 > SHA256SUMS)
+		fStub "${rel}/bin/go" <<-'EOF'
+			#!/usr/bin/env bash
+			case "${1:-}" in
+				env) case "${2:-}" in GOOS) echo linux ;; GOARCH) echo amd64 ;; esac ;;
+				build) while (($#)); do [[ "$1" != -o ]] || { printf '#!/usr/bin/env bash\necho "gitsby v1.2.4"\nexit 3\n' > "$2"; chmod +x "$2"; }; shift; done ;;
+			esac
+			exit 0
+		EOF
+		fStub "${rel}/bin/curl" <<-EOF
+			#!/usr/bin/env bash
+			out=""; url=""
+			while ((\$#)); do case "\$1" in -o|-w) [[ "\$1" != -o ]] || out="\$2"; shift 2 ;; https://*) url="\$1"; shift ;; *) shift ;; esac; done
+			[[ "\${out}" != /dev/null && -f '${rel}/served/'"\${url##*/}" ]] || exit 22
+			cp '${rel}/served/'"\${url##*/}" "\${out}"
+		EOF
+		printf '#!/usr/bin/env bash\nexit 0\n' > "${rel}/bin/sleep"; chmod +x "${rel}/bin/sleep"
+		fRelRun -y
+		fAssert "[Erfs75a] release.bash phase 3 runs to the end when releases/latest and the build line can't be read" \
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF \"WARNING: releases/latest resolves to '', not v1.2.4.\" '${relOut}' && grep -qF 'Released v1.2.4' '${relOut}'"
+		git -C "${relRepo}" checkout -q -- .
+		git -C "${relRepo}" tag -d v1.2.4 >/dev/null
 	fi
 
 	## Phase 3 is the build that gets published, and no dry run reaches it. It compiled the working
@@ -5457,3 +5505,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260928 JC: account unset. It names each line it removes, leaves the rest as typed, treats a key already gone as nothing to do, refuses a value after the key, and prints its syntax with no key. Five of the six fail against the tree before them; the rest-as-typed check is a regression guard. 1254 -> 1260.
 ##		- 20261001 JC: Runs on macOS. The work folder is resolved, the accounts file goes where each platform looks, and 'sed -i', 'stat', 'grep -P', 'od' and 'script' are used in forms BSD also takes or are skipped without them. On macOS XDG_CONFIG_HOME is checked as ignored. A check for minting an ID for now. 1260 -> 1261.
 ##		- 20261003 JC: The macOS universal joiner: the joined file, its two refusals, and the dogfood target that uses it. The rm check covers the new script. 1268 -> 1273.
+##		- 20261003 JC: release.bash past its dry run, with stubs: a 'pr create' with no URL, and a phase 3 where releases/latest can't be reached and the build line can't be read. Both fail against the tree before them. 1273 -> 1275.
