@@ -10,14 +10,21 @@
 ##		  The work tree AND the origin are restored between runs: prune deletes branches
 ##		  on both sides, and leaving either behind makes the next command's count a
 ##		  different question.
+##		- Some commands run again in a folder an account's rule covers, with a fake gh
+##		  and ssh, and on a pty with no -q, the way someone at a terminal runs them.
+##		  Those are the paths that ask gh and ssh who you are.
+##		- Each command has a limit, written beside it below. A count over its limit
+##		  fails, --record or not. A fix that lowers a count lowers its limit too.
 ##		- Baseline is the newest previous run in the artifact dir, GFS-rotated like the
 ##		  lint logs. No baseline yet means the first run records one and passes.
 ##	Syntax:
 ##		cicd/utility/spawn-count.bash [-q|--quiet] [--record]
-##		  --record   Write the counts even when they regressed (accept a deliberate rise).
+##		  --record   Write the counts even when they rose against the baseline (accept a
+##		             deliberate rise). It does not lift a limit.
 ##	Requires:
 ##		- strace. Linux only; the step self-skips anywhere else, which is the same
 ##		  treatment every other probe-gated tool gets.
+##		- script, from util-linux, for the pty runs. Without it those are skipped and say so.
 ##	History: At bottom of script.
 
 ##	Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
@@ -58,14 +65,50 @@ work="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-spawn.XXXXXX")"
 trap 'rm -rf -- "${work:?}"' EXIT
 
 ## Hermetic, for the same reasons the suites are: an inherited config decides which account a
-## command acts as, and that changes how many processes it starts.
+## command acts as, and that changes how many processes it starts. HOME and the two other
+## places gitsby looks for its config are emptied or moved, so a measure that drops the pin
+## still can't read the real user's accounts.
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 export GIT_AUTHOR_NAME=spawn GIT_AUTHOR_EMAIL=spawn@test
 export GIT_COMMITTER_NAME=spawn GIT_COMMITTER_EMAIL=spawn@test
-export GITSBY_CONFIG="${work}/no-accounts.shcl"; : > "${GITSBY_CONFIG}"
+noAccounts="${work}/no-accounts.shcl"; : > "${noAccounts}"
+export GITSBY_CONFIG="${noAccounts}"
+mkdir -p "${work}/home"
+export HOME="${work}/home" XDG_CONFIG_HOME="" APPDATA=""
 for ((i = 0; i < ${GIT_CONFIG_COUNT:-0}; i++)); do unset "GIT_CONFIG_KEY_${i}" "GIT_CONFIG_VALUE_${i}"; done
 unset GIT_CONFIG_COUNT
-unset GH_TOKEN GITHUB_TOKEN GITSBY_ACCOUNT
+unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT GIT_SSH_COMMAND GIT_SSH
+
+## Nothing here reaches the network. The account folders' origins name github.com, so a fake gh
+## and ssh answer what gitsby asks, and a proxy on a closed port fails anything that still tries
+## https. The fakes run under this bash by full path: '#!/usr/bin/env bash' would add env's own
+## exec and one failed one per PATH entry ahead of bash, and those would be counted as ours.
+mkdir -p "${work}/bin"
+cat > "${work}/bin/gh" <<EOF
+#!${BASH}
+## gh holds no account, so a token comes from the account's file; 'api user' answers for the
+## token gitsby exported, or for gh's own login without one.
+case "\$1 \$2" in
+	"api user")   if [[ -n "\${GH_TOKEN:-}" ]]; then echo "\${GH_TOKEN#tok_}"; else echo ghuser; fi ;;
+	"auth token") exit 1 ;;
+	"config get") echo https ;;
+	*)            echo "fake gh: unhandled: \$*" >&2; exit 2 ;;
+esac
+EOF
+cat > "${work}/bin/ssh" <<EOF
+#!${BASH}
+for arg in "\$@"; do
+	case "\${arg}" in
+		-G) printf 'user git\nhostname github.com\n'; exit 0 ;;
+		-T) echo "Hi acme! You've successfully authenticated, but GitHub does not provide shell access."; exit 1 ;;
+	esac
+done
+exit 255
+EOF
+chmod +x "${work}/bin/gh" "${work}/bin/ssh"
+export PATH="${work}/bin:${PATH}"
+export HTTPS_PROXY=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 HTTP_PROXY=http://127.0.0.1:9 http_proxy=http://127.0.0.1:9 ALL_PROXY=http://127.0.0.1:9 all_proxy=http://127.0.0.1:9
+unset NO_PROXY no_proxy
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## The world: a bare origin and a clone, with a merged branch and an unmerged one, so prune
@@ -87,78 +130,150 @@ git clone --quiet "${pristine}/origin.git" "${pristine}/repo" 2>/dev/null
 	git checkout --quiet dev
 )
 
+## Two copies of that clone whose origin is on github.com, one over ssh and one over https, each
+## covered by an account's folder rule. The Account line prints only for an account picked like
+## that, never for one guessed from the remote's owner, so this is the path a configured user
+## takes. The token comes from a file, since the fake gh holds none: that is the case that asks
+## gh who the token belongs to, before and after it is exported. A changed file gives status a
+## list to print. Three logins, so the listing asks gh about each.
+cp -a "${pristine}/repo" "${pristine}/acct-ssh"
+cp -a "${pristine}/repo" "${pristine}/acct-https"
+git -C "${pristine}/acct-ssh"   remote set-url origin git@github.com:acme/proj.git
+git -C "${pristine}/acct-https" remote set-url origin https://github.com/beta/proj.git
+echo four >> "${pristine}/acct-ssh/file.txt"
+echo four >> "${pristine}/acct-https/file.txt"
+printf 'tok_acme\n' > "${work}/home/acme.token"
+printf 'tok_beta\n' > "${work}/home/beta.token"
+chmod 600 "${work}/home/acme.token" "${work}/home/beta.token"
+accounts="${work}/accounts.shcl"
+cat > "${accounts}" <<EOF
+account: acme
+	path: ${work}/live/acct-ssh
+	ghaccount: acme
+	tokenfile: ${work}/home/acme.token
+	email: acme@example.com
+account: beta
+	path: ${work}/live/acct-https
+	ghaccount: beta
+	tokenfile: ${work}/home/beta.token
+	email: beta@example.com
+account: gamma
+	ghaccount: gamma
+	sshkey: ${work}/home/id_gamma
+	email: gamma@example.com
+EOF
+
 fRestore(){
 	rm -rf -- "${work:?}/live"
 	mkdir -p "${work}/live"
-	cp -a "${pristine}/origin.git" "${work}/live/origin.git"
-	cp -a "${pristine}/repo" "${work}/live/repo"
+	cp -a "${pristine}/." "${work}/live/"
 }
+
+hasPty=0
+if command -v script >/dev/null 2>&1 && script -qec true /dev/null </dev/null >/dev/null 2>&1; then hasPty=1; fi
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## The measurement. -f follows the children, so a git that forks its own helper is counted
 ## where it happens; execve is the event that costs, since that is a new program image.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## The label starts with the test ID, which is printed but kept out of the baseline file, so
-## an older baseline still matches.
-declare -a ids=() labels=() counts=()
+## an older baseline still matches. Then the limit, how it runs, and the folder:
+##   pipe  stdout to /dev/null, the way the pipeline and a script see it
+##   tty   on a pty with stdin at end of input, which is a terminal to gitsby
+## A folder starting 'acct' runs with the accounts file, and any other with the empty one.
+declare -a ids=() labels=() counts=() limits=() skipped=()
 fMeasure(){
-	local label="${1#\[*\] }" id="${1%%\] *}]"; shift
+	local label="${1#\[*\] }" id="${1%%\] *}]" limit="$2" how="$3" folder="$4"; shift 4
+	local config="${noAccounts}" traceFile="${work}/trace.out" n=0 skip=""
+	[[ "${folder}" == acct* ]] && config="${accounts}"
 	fRestore
-	local traceFile="${work}/trace.out"
-	## --no-fetch throughout: a fetch against a local bare origin is a real round trip whose
-	## cost belongs to git rather than to us, and it varies with what the last command left.
-	( cd "${work}/live/repo" && strace -f -e trace=execve -o "${traceFile}" "${exe}" "$@" ) >/dev/null 2>&1 || true
-	local n=0
-	n="$(grep -c 'execve(' "${traceFile}" 2>/dev/null || true)"
+	: > "${traceFile}"
+	if [[ "${how}" == tty ]] && ((! hasPty)); then
+		skip="no pty"
+	elif [[ "${how}" == tty ]]; then
+		local traced=""
+		printf -v traced '%q ' strace -f -e trace=execve -o "${traceFile}" "${exe}" "$@"
+		## TERM is set so tput has an answer to give; the count is the same either way.
+		( cd "${work}/live/${folder}" && GITSBY_CONFIG="${config}" TERM=xterm SHELL="${BASH}" script -qec "${traced}" /dev/null </dev/null ) >/dev/null 2>&1 || true
+	else
+		( cd "${work}/live/${folder}" && GITSBY_CONFIG="${config}" strace -f -e trace=execve -o "${traceFile}" "${exe}" "$@" ) >/dev/null 2>&1 || true
+	fi
+	[[ -n "${skip}" ]] || n="$(grep -c 'execve(' "${traceFile}" 2>/dev/null || true)"
 	ids+=("${id}")
 	labels+=("${label}")
 	counts+=("${n}")
+	limits+=("${limit}")
+	skipped+=("${skip}")
 }
 
+## Limits are today's counts, so any rise fails. --no-fetch on all but one: a fetch's cost is
+## mostly git's own (upload-pack, a maintenance run), and a github.com origin can't be fetched
+## here at all. The one with a fetch runs against the local origin, restored before it.
 ((quiet)) || fEcho_Clean "spawn counts (${exe})"
-fMeasure "[EnQTUO0] status"         -q --no-fetch status
-fMeasure "[EnberSa] whoami"         -q --no-fetch whoami
-fMeasure "[EnQTUe8] br list"        -q --no-fetch br list
-fMeasure "[EnQTUuG] account list"   -q --no-fetch account list
-fMeasure "[EnQTVAO] repo url"       -q --no-fetch repo url
-fMeasure "[EnQTVQW] pullcom"        -q --no-fetch pullcom "spawn count"
-fMeasure "[EnQTVge] br switch"      -q --no-fetch br switch main
-fMeasure "[EnQTVwm] br prune"       -q --no-fetch br prune
+fMeasure "[EnQTUO0] status"                              14 pipe repo        -q --no-fetch status
+fMeasure "[EnberSa] whoami"                               9 pipe repo        -q --no-fetch whoami
+fMeasure "[EnQTUe8] br list"                              9 pipe repo        -q --no-fetch br list
+fMeasure "[EnQTUuG] account list"                         9 pipe repo        -q --no-fetch account list
+fMeasure "[EnQTVAO] repo url"                             8 pipe repo        -q --no-fetch repo url
+fMeasure "[EnQTVQW] pullcom"                             25 pipe repo        -q --no-fetch pullcom "spawn count"
+fMeasure "[EnQTVge] br switch"                           33 pipe repo        -q --no-fetch br switch main
+fMeasure "[EnQTVwm] br prune"                            39 pipe repo        -q --no-fetch br prune
+fMeasure "[Erg2KIz] status with a fetch"                 21 tty  repo        status
+fMeasure "[Erg2KJr] status in an account folder"         25 tty  acct-ssh    --no-fetch status
+fMeasure "[Erg2KKj] whoami in an account folder"         19 tty  acct-ssh    --no-fetch whoami
+fMeasure "[Erg2KLb] account list with accounts"          14 tty  acct-ssh    --no-fetch account list
+fMeasure "[Erg2KMS] status in an https account folder"   21 tty  acct-https  --no-fetch status
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-## Compare with the newest previous run, then record this one.
+## Each count against its limit, then against the newest previous run; then record this one.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 countDir="${root}/${SPAWN_COUNT_DIR}"
 mkdir -p "${countDir}"
 baseline=""
 for f in "${countDir}"/spawn_*.tsv; do [[ -f "${f}" ]] && baseline="${f}"; done
 
-declare -i regressed=0
+declare -i regressed=0 overLimit=0 underLimit=0
 ## One line per command, whatever it did, so a -q-less run shows each count and its verdict.
 if [[ -z "${baseline}" ]]; then
 	((quiet)) || fEcho_Clean "  (no baseline yet - recording this run as one)"
-	for ((i = 0; i < ${#labels[@]}; i++)); do ((quiet)) || fEcho_Clean "  NEW        ${ids[i]} ${labels[i]}: ${counts[i]}"; done
 else
 	((quiet)) || fEcho_Clean "  baseline: $(basename "${baseline}")"
-	for ((i = 0; i < ${#labels[@]}; i++)); do
-		was="$(awk -F'\t' -v k="${labels[i]}" '$1==k{print $2}' "${baseline}" || true)"
-		[[ -n "${was}" ]] || { ((quiet)) || fEcho_Clean "  NEW        ${ids[i]} ${labels[i]}: ${counts[i]}"; continue; }
-		## Arithmetic on text from a file runs any $(...) in an array subscript, so only digits go on.
-		[[ "${was}" =~ ^[0-9]+$ ]] || { echo "spawn-count: $(basename "${baseline}") has '${was}' for ${labels[i]}, which isn't a count. Fix or delete that file." >&2; exit 1; }
-		## A tolerance, because a git version can add or drop a helper of its own: two more
-		## processes, or a tenth again, whichever is larger.
-		local_allow=$(( was / 10 )); (( local_allow < 2 )) && local_allow=2
-		if (( counts[i] > was + local_allow )); then
-			fEcho_Clean "  REGRESSED  ${ids[i]} ${labels[i]}: ${was} -> ${counts[i]}"
-			regressed=1
-		elif (( counts[i] < was )); then
-			((quiet)) || fEcho_Clean "  improved   ${ids[i]} ${labels[i]}: ${was} -> ${counts[i]}"
-		else
-			((quiet)) || fEcho_Clean "  ok         ${ids[i]} ${labels[i]}: ${counts[i]}"
-		fi
-	done
 fi
+for ((i = 0; i < ${#labels[@]}; i++)); do
+	if [[ -n "${skipped[i]}" ]]; then
+		((quiet)) || fEcho_Clean "  skipped    ${ids[i]} ${labels[i]} (${skipped[i]})"
+		continue
+	fi
+	if (( counts[i] > limits[i] )); then
+		fEcho_Clean "  OVER LIMIT ${ids[i]} ${labels[i]}: ${counts[i]}, limit ${limits[i]}"
+		overLimit=1
+		continue
+	fi
+	(( counts[i] < limits[i] )) && underLimit=$((underLimit + 1))
+	was=""
+	[[ -z "${baseline}" ]] || was="$(awk -F'\t' -v k="${labels[i]}" '$1==k{print $2}' "${baseline}" || true)"
+	[[ -n "${was}" ]] || { ((quiet)) || fEcho_Clean "  NEW        ${ids[i]} ${labels[i]}: ${counts[i]}"; continue; }
+	## Arithmetic on text from a file runs any $(...) in an array subscript, so only digits go on.
+	[[ "${was}" =~ ^[0-9]+$ ]] || { echo "spawn-count: $(basename "${baseline}") has '${was}' for ${labels[i]}, which isn't a count. Fix or delete that file." >&2; exit 1; }
+	## A tolerance, because a git version can add or drop a helper of its own: two more
+	## processes, or a tenth again, whichever is larger. The limit above has none.
+	local_allow=$(( was / 10 )); (( local_allow < 2 )) && local_allow=2
+	if (( counts[i] > was + local_allow )); then
+		fEcho_Clean "  REGRESSED  ${ids[i]} ${labels[i]}: ${was} -> ${counts[i]}"
+		regressed=1
+	elif (( counts[i] < was )); then
+		((quiet)) || fEcho_Clean "  improved   ${ids[i]} ${labels[i]}: ${was} -> ${counts[i]}, limit ${limits[i]}"
+	else
+		((quiet)) || fEcho_Clean "  ok         ${ids[i]} ${labels[i]}: ${counts[i]}"
+	fi
+done
+((quiet)) || ((underLimit == 0)) || fEcho_Clean "  ${underLimit} under their limit; lower those limits in ${BASH_SOURCE[0]##*/} to keep the gain."
 
+if ((overLimit)); then
+	echo "spawn counts went over their limits; nothing recorded." >&2
+	echo "  A deliberate rise raises the limit beside the command in ${BASH_SOURCE[0]##*/}." >&2
+	exit 1
+fi
 if ((regressed)) && ((! record)); then
 	echo "spawn counts regressed against $(basename "${baseline}"); nothing recorded." >&2
 	echo "  Re-run with --record to accept the new counts as the baseline." >&2
@@ -168,7 +283,9 @@ fi
 stamp="$(date +%Y%m%d-%H%M%S)"
 out="${countDir}/spawn_${stamp}.tsv"
 : > "${out}"
-for ((i = 0; i < ${#labels[@]}; i++)); do printf '%s\t%s\n' "${labels[i]}" "${counts[i]}" >> "${out}"; done
+for ((i = 0; i < ${#labels[@]}; i++)); do
+	[[ -n "${skipped[i]}" ]] || printf '%s\t%s\n' "${labels[i]}" "${counts[i]}" >> "${out}"
+done
 gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ((quiet)) || fEcho_Clean "  recorded $(basename "${out}")"
 
@@ -181,3 +298,4 @@ gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		  different question.
 ##		- 20260926 JC: One line per command with its verdict, ok included, in place of the bare counts. The pipeline no longer passes -q.
 ##		- 20260927 JC: Each command carries a test ID, printed on its line.
+##		- 20261003 JC: A limit per command that fails at any rise, --record or not. An account folder with a fake gh and ssh, a pty run with no -q, and a status that fetches, for status, whoami and the account listing.
