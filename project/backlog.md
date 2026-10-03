@@ -33,6 +33,30 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- Run the tests on a Mac and a Windows box as part of the pipeline
+	- ID: 2026100312332924
+	- Type: Enhancement
+	- Status: Queued
+	- Needs external testing: b26, and vm925w or b29w
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Target OS: macOS, Windows
+	- Requirements  [Feature]:
+		- macOS is still built every run, either here or on b26.
+		- When b26 is up, the pipeline runs the tests on it.
+		- It does the same on a Windows box.
+		- A box that is off or busy is skipped, and the run says so. It does not fail the run.
+		- Each box is taken through the host lock first, the way the other projects do.
+	- Decisions:
+		- Not built or tested on either box yet. This item only files the work.
+	- Progress log:
+		- The macOS build is already here. Dogfood cross-builds `darwin/arm64` every run, and a release builds `darwin/amd64` and `darwin/arm64`.
+		- b26 is an Intel Mac, so testing there needs `darwin/amd64`, which dogfood does not build.
+		- The pipeline and the Go tests were made to pass on macOS on 2026-10-01 (def75ab), run by hand. Nothing runs them there since.
+		- The Go tests can be cross-built with `go test -c`, so neither box would need Go installed. test.bash on b26 would need Homebrew's bash, since the default there is 3.2.
+		- No stage runs the Go tests on Windows today. That is how `TestCanonPath` and `TestDisplayPath` broke there unnoticed.
+
 - Two account blocks with one name merge without a word
 	- ID: 2026093013034093
 	- Type: Bug
