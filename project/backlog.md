@@ -44,10 +44,12 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Target OS: macOS, Windows
 	- Requirements  [Feature]:
 		- macOS is still built every run, either here or on b26.
-		- When b26 is up, the pipeline runs the tests on it.
-		- It does the same on a Windows box.
-		- A box that is off or busy is skipped, and the run says so. It does not fail the run.
+		- When b26 is up and not reserved, the pipeline runs the tests on it, against the universal dogfood build.
+		- It does the same on a Windows box, vm925w or b29w, against the Windows dogfood build.
+		- A box that is off, or reserved by another session, is skipped, and the run says so. It does not fail the run, and it does not wait in line.
 		- Each box is taken through the host lock first, the way the other projects do.
+			- The lock's `wrap <host> --wait 0 -- <command>` takes a free box and holds it only while the command runs.
+			- The lock script is not in this repo. Where it is missing, the stage is skipped with a note.
 	- Decisions:
 		- Not built or tested on either box yet. This item only files the work.
 	- Progress log:
