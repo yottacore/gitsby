@@ -253,20 +253,28 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: lowfix
 	- Test case: TestDocCommentsNameWhatTheySitOn. A doc comment that opens with a camelCase word has to name what it sits on, and none may hold a second comment headed by another function's name.
 	- Acceptance signoff: Self-closed: mechanical.
-	- Closed: 2026-10-03
+	- Closed: 20261003-143901
 
 - Code Review 20261003 item 7: Spawn reports do arithmetic on numbers read from files
 	- ID: 2026100313123935
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on signoff
 	- Priority|Severity [Bug]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
 	- Incorrect behavior [Bug]: spawn-count.bash and spawn-report.bash read counts from tsv files and use them in arithmetic unchecked. That's the subscript-injection trap gfs-rotate was fixed for.
 	- Expected behavior [Bug]: A count that isn't digits is refused.
-	- Reproduced [Bug]: No. The scripts write those files themselves, so the risk is low.
-	- Origin: spawn-count.bash:143 from dd4359b (2026-08-19). Same class as the 2026-09-15 gfs-rotate fix. Plausible.
+	- Reproduced [Bug]: Yes, 2026-10-03. A recording whose count is `BASH_VERSINFO[$(touch ran)0]` ran the `touch` in spawn-report.bash, for the newest recording and for the one before it, and in spawn-count.bash for the baseline. The scripts write those files themselves, so the risk is low. An unset name such as `x[...]` stops at `set -u` first and runs nothing.
+	- Origin: spawn-count.bash:143 from dd4359b (2026-08-19). Same class as the 2026-09-15 gfs-rotate fix. Plausible when filed, confirmed since.
+	- Sweep: every live script that reads a number from a file and does arithmetic on it, gfs-rotate.bash excepted.
+	- Actual cause [Bug]: The count was used in `(( ))` straight from the file.
 	- Estimated effort: Low
+	- Actual fix [Bug]: Both scripts check that a count read from a recording is digits before any arithmetic. Anything else exits 1 naming the file, the command and the value. spawn-report.bash's header lists the new exit code.
+	- Swept: spawn-count.bash's baseline, and spawn-report.bash's newest and previous recordings, are the only file values that reach arithmetic. The rest read only numbers made by a command: `grep -c`, `wc -c`, `od`, `stat`, `git rev-list --count`, `git log` dates, awk line numbers in release.bash, and the footer dates release.bash cuts down to digits. test-id.bash already checks its value. Left alone: release.bash's patch bump on a `v*` tag name, since a tag can't hold `[` and so can't run anything, and keep-build.bash's number, which is typed on its own command line.
+	- Verified: the three new checks fail on `gover`, where the `touch` ran each time, and pass here with nothing run.
+	- Branch: lowfix
+	- Test case: [ErfzUGl] and [ErfzUH0] for spawn-report.bash, [ErfzUHF] for spawn-count.bash, in test.bash. The last needs strace, like the other spawn-count checks.
+	- Acceptance signoff: Waiting. It closes a command injection, so it touches security.
 
 - Code Review 20261003 item 8: The Origin gate doesn't read new-format items
 	- ID: 2026100313150825
