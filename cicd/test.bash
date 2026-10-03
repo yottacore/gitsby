@@ -5606,3 +5606,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20261003 JC: The macOS universal joiner: the joined file, its two refusals, and the dogfood target that uses it. The rm check covers the new script. 1268 -> 1273.
 ##		- 20261003 JC: release.bash past its dry run, with stubs: a 'pr create' with no URL, and a phase 3 where releases/latest can't be reached and the build line can't be read. Both fail against the tree before them. 1273 -> 1275.
 ##		- 20261003 JC: A long --version from the published binary, thousands of tags for release.bash and gen-winres.bash, a long SHA256SUMS for the installer, and a full spawn folder. All five fail against the tree before them. 1275 -> 1280.
+##		- 20261003 JC: The Bash 4.4 floor in every pipeline script, spawn counts that aren't numbers, and the backlog gate on new-format review items. Every new check fails against the tree before it. 1288 -> 1310.
