@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 item 3: Write and read failures in account commands guess at the cause
 	- ID: 2026100313123881
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on signoff
 	- Priority|Severity [Bug]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -44,16 +44,25 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Run `account apply` or `account set` where the write fails for a reason other than permissions, such as a full disk or a read-only filesystem.
 	- Incorrect behavior [Bug]: The message says to check permissions. The real error is dropped.
 	- Expected behavior [Bug]: The message keeps the real error. The permissions hint shows only when it is a permissions error.
-	- Reproduced [Bug]: Read only. Each site has the error in hand and returns a message without it.
+	- Reproduced [Bug]: Yes, 2026-10-03. A folder where an `account apply` fragment goes, a lock name too long for the filesystem, and a plain file where the accounts file's folder goes. Each dropped the reason, and the first two said to check permissions.
 	- Possible cause [Bug]: `usagef` where `usageWrapf` exists for this. Seven sites in accountcmd.go.
-	- Origin: accountcmd.go, from 11905d2 (2026-09-16) and 62af07b (2026-09-28). Not seen by an earlier round. Plausible.
+	- Origin: accountcmd.go, from 11905d2 (2026-09-16) and 62af07b (2026-09-28). Not seen by an earlier round. Confirmed.
 	- Sweep: every `usagef("Couldn't ...` that has an `err` in scope.
+	- Actual cause [Bug]: Each site had the error in hand and printed a fixed message instead. Most of them guessed permissions.
 	- Estimated effort: Low
+	- Actual fix [Bug]: Each refusal now says what failed, with File, Why, Kept and Fix lines under it. Why has the OS's reason. Fix names permissions only for a permissions error, and otherwise says to run again once the reason is fixed. The save, the create and the lock point at the folder, since that is what they write in.
+	- Note: The labeled layout is the UI guide's, which keeps a path out of the sentence.
+	- Swept: the seven sites the review named, plus the lock, the partly written create and the relative path in `account set`. Left alone: the three `git config` failures in `account apply`, which have no error in hand while git prints its own, and the three in repo.go, which already give the reason. Found by a grep for `usagef("Couldn't` over src-go.
+	- Verified: the five site tests fail on `gover` and pass here. The test.bash pair was run by hand against both builds. test.bash passes 1288 of 1288, and `go test ./...` and `cicd.bash --gate` pass.
+	- Branch: errmsg
+	- Commit: 52b5c44
+	- Test case: TestAccountApplyKeepsTheReasonAFragmentFailed, TestLockKeepsTheReasonItFailed, TestAccountSetKeepsTheReasonItsFolderFailed, TestLoadForEditKeepsTheReasonTheReadFailed and TestAbsPathValueKeepsTheReasonTheFolderIsGone for the sites, TestWriteRefusalNamesPermissionsOnlyWhenTheyAreTheCause for the rule, and [Erfv8YB] and [Erfv8Yu] in test.bash. The chmod and save sites have no unprivileged way to fail, so the rule test covers them.
+	- Acceptance signoff: Waiting. The wording and layout of ten refusals changed.
 
 - Code Review 20261003 item 4: `br merge` says the target is as it was without checking
 	- ID: 2026100313123895
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on signoff
 	- Priority|Severity [Bug]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -61,10 +70,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Have `git merge --abort` fail after a conflicted `br merge`.
 	- Incorrect behavior [Bug]: gitsby ignores the failure and prints that the target "is as it was". The tree is still mid-merge.
 	- Expected behavior [Bug]: When the abort fails, say the tree is mid-merge and name the commands to settle it.
-	- Reproduced [Bug]: No. Read only.
+	- Reproduced [Bug]: Yes, 2026-10-03, with a git that refuses only `merge --abort`. `br merge` said dev "is as it was", then failed a checkout on the conflicted tree. The hotfix back-merge said dev was untouched and ended in Done, exit 0. `release` goes through the same code as `br merge`.
 	- Possible cause [Bug]: `_ = runOK("git", "merge", "--abort")` in `backOutMerge`, and the same at the dev back-merge.
-	- Origin: branchcmd.go:226 from bfbae90 (2026-09-15). Not seen before. Plausible.
+	- Origin: branchcmd.go:226 from bfbae90 (2026-09-15). Not seen before. Confirmed.
+	- Actual cause [Bug]: Both sites threw away the abort's exit status.
 	- Estimated effort: Low
+	- Actual fix [Bug]: A failed abort now refuses with Why, Kept and Fix lines. They say the target is still mid-merge, that nothing was committed to it, and give the commands to drop the merge and go back. git's own reason for the failed abort shows above it. The back-merge also offers finishing the merge by hand, which carries the hotfix across.
+	- Note: The back-merge now exits 1 when its abort fails, even though the hotfix landed. A clean abort there is unchanged and still ends in a warning.
+	- Swept: both `merge --abort` calls in src-go. `release` backs out through `backOutMerge`, so it is covered too and was run by hand. No other git step in src-go has its result discarded, apart from the listings and two best-effort calls in repo.go and remote.go whose comments say why.
+	- Verified: the same runs on `gover` said the target was as it was, and the back-merge exited 0. Here all six checks pass, and test.bash passes 1288 of 1288. `go test ./...` and `cicd.bash --gate` pass.
+	- Branch: errmsg
+	- Commit: d7511a2
+	- Test case: [ErfwTrE] and [ErfwTrT] for the back-merge, [ErfwTrh], [ErfwTrv], [ErfwTs8] and [ErfwTsM] for `br merge`, all in test.bash.
+	- Acceptance signoff: Waiting. New refusal wording, and the back-merge's exit status changed.
 
 - Code Review 20261003 enhancement 1: The spawn-count fixture can't see the account paths
 	- ID: 2026100313123975
