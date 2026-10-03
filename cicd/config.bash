@@ -108,6 +108,8 @@ PS_LINT_GLOBS=(
 	"install.ps1"
 	"cicd/utility/run-latest.ps1"
 )
+## Its rules, in the file editors find on their own.
+PS_LINT_SETTINGS="PSScriptAnalyzerSettings.psd1"
 
 ## Stage 1: the committed Windows resource (icon + version details), checked rather than built.
 ## It is linked into the .exe files we publish checksums for, so it lives in the tree the same
@@ -235,3 +237,4 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-09-14 JC: The demo comment names the build the demo really runs.
 ##		- 2026-09-28 JC: TOOL_VERSIONS records the six tools outside Go that shape a result. The parity comment no longer says --quick skips it.
 ##		- 2026-10-03 JC: macOS dogfood is one universal binary, so Intel Macs can run it too.
+##		- 2026-10-03 JC: PS_LINT_SETTINGS: the PowerShell lint rules moved out of cicd.bash into a settings file.

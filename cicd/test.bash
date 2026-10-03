@@ -234,6 +234,8 @@ fMakeGateFixture(){
 	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${root}/cicd/utility/include/gh-account.bash" "${gateDir}/cicd/utility/include/"
 	## Empty, so the lint globs and PY_LINT_FILES resolve, and stage 6 finds a scenario.
 	: > "${gateDir}/install.bash"; : > "${gateDir}/install.ps1"; : > "${gateDir}/cicd/utility/demo/gen-demo-gif.py"
+	: > "${gateDir}/cicd/utility/run-latest.ps1"
+	cp "${root}/PSScriptAnalyzerSettings.psd1" "${gateDir}/"
 	: > "${gateDir}/cicd/utility/demo/demo-scenario.toml"
 	echo "# Fixture" > "${gateDir}/README.md"
 	for s in test fuzz parity; do fGateStub "${gateDir}/cicd/${s}.bash" "${s}"; done
@@ -245,10 +247,11 @@ fMakeGateFixture(){
 	## passes no --out.
 	fGateStub "${gateDir}/bin/python3" python3 "o=''; for a in \"\$@\"; do [[ \"\${o}\" != 1 ]] || printf GIF89a > \"\${a}\"; o=''; [[ \"\${a}\" != --out ]] || o=1; done"
 	fGateStub "${gateDir}/bin/gifsicle" gifsicle "cp -f -- \"\${2:-}\" \"\${4:-}\""
-	## The probes answer yes whatever the marker says, so a failure is the tool's finding and
-	## not "not installed".
+	## The probe answers yes whatever the marker says, so a failure is the tool's finding and
+	## not "not installed". pwsh probes for its module in the same call as the lint, and exits 3
+	## when it has none.
 	fGateStub "${gateDir}/bin/shellcheck" shellcheck "[[ \"\${1:-}\" != --version ]] || exit 0"
-	fGateStub "${gateDir}/bin/pwsh" pwsh "[[ \"\$*\" != *Get-Command* ]] || exit 0"
+	fGateStub "${gateDir}/bin/pwsh" pwsh "[[ ! -e '${gateFail}/pwsh-nomodule' ]] || exit 3"
 	## gofmt reports by listing files, exiting 0 either way; the engine reads the list.
 	fGateStub "${gateDir}/bin/gofmt" gofmt "if [[ -e '${gateFail}/gofmt' ]]; then echo main.go; fi; exit 0"
 	## go fails by subcommand (go-vet, go-test, go-build), and 'version -m' names no module. A
@@ -270,6 +273,8 @@ fGateStatus(){
 }
 ## As above, and the output matches the extended regex $2.
 fGateSays(){ local want="$1" pat="$2"; shift 2; fGateStatus "${want}" "$@" && grep -qE -- "${pat}" "${gateOut}" ;}
+## fGateSays on --gate, for the fixture with the real pwsh. The module dir is the caller's.
+fGatePwshSays(){ PSModulePath="${gatePsModules}" fGateSays "$1" "$2" --gate ;}
 ## True when every extended regex given matches a line of the calls log.
 fGateCalled(){ local p; for p in "$@"; do grep -qE -- "${p}" "${gateCalls}" || return 1; done; return 0 ;}
 fGateFullRun(){
@@ -4507,6 +4512,16 @@ EOF
 		fAssert "[EpsVDHt] and runs every lint check and the unit tests" \
 			fGateCalled '^shellcheck [^-]' '^markdownlint ' '^python3 -m py_compile' 'Invoke-ScriptAnalyzer -Path' '^gofmt -l' \
 				'^go vet -p [0-9]+ ' '^staticcheck ' '^golangci-lint run --concurrency [0-9]+ ' '^gen-winres\.bash --check -q' '^backlog-check\.bash -q' '^go test -race -p [0-9]+ '
+		## Each pwsh start costs about a second, and the version check used to start its own.
+		fAssert "[Erg6RxS] and starts pwsh once, handing it every PowerShell file" \
+			bash -c "[[ \$(grep -c '^pwsh ' '${gateCalls}') == 1 ]] && grep '^pwsh ' '${gateCalls}' | grep -qF \"'install.ps1','cicd/utility/run-latest.ps1'\""
+		: > "${gateFail}/pwsh-nomodule"
+		fAssert "[Erg6Rxh] a box with no PSScriptAnalyzer module skips that lint with a warning" \
+			fGateSays 0 'WARNING: PSScriptAnalyzer skipped' --gate
+		rm -f -- "${gateFail:?}/pwsh-nomodule"
+		mv "${gateDir}/PSScriptAnalyzerSettings.psd1" "${gateDir}/settings.psd1.away"
+		fAssert "[Erg6Rxu] and a missing settings file fails the gate, not the rules"  fGateSays 1 'settings not found' --gate
+		mv "${gateDir}/settings.psd1.away" "${gateDir}/PSScriptAnalyzerSettings.psd1"
 		## This fixture's go answers 'version -m' with nothing, so every tool reads as unknown.
 		fAssert "[Er1LxTR] and warns when a lint tool's version is not the recorded one" \
 			fGateSays 0 'WARNING: tool versions differ from the recorded set: .*staticcheck unknown \(recorded v' --gate
@@ -4541,6 +4556,31 @@ EOF
 		git init --quiet "${gateDir}"
 		cp "${root}/cicd/utility/pre-push.bash" "${gateDir}/cicd/utility/" 2>/dev/null || true
 		fAssert "[Epsd07M] cicd.bash --install-hook installs the hook and runs no stage"  fGateInstallHook
+
+		## The PowerShell lint with the real pwsh and the repo's settings file, on a fixture of its
+		## own. The settings carry the 5.1 rule, and a file that won't parse must fail whatever
+		## severity they ask for. The fixture's HOME hides a module installed for the user, so the
+		## runs are told where it is.
+		local gatePsModules=""
+		# shellcheck disable=SC2016  ## pwsh's own variables.
+		gatePsModules="$(pwsh -NoProfile -NonInteractive -Command '$m = Get-Module -ListAvailable PSScriptAnalyzer | Select-Object -First 1; if ($m) { Split-Path (Split-Path $m.ModuleBase) }' </dev/null 2>/dev/null || true)"
+		# shellcheck disable=SC2016  ## PowerShell source, written as it is.
+		if [[ -n "${gatePsModules}" ]]; then
+			gateDir="${work}/gate-pwsh"
+			fMakeGateFixture
+			rm -f -- "${gateDir:?}/bin/pwsh"
+			printf 'Get-ChildItem | Out-Null\n' > "${gateDir}/install.ps1"
+			fAssert "[Erg6Ry8] the real PowerShell lint passes a clean file"  fGatePwshSays 0 'OK: PSScriptAnalyzer clean'
+			printf '$x = $null ?? 1\nWrite-Output $x\n' > "${gateDir}/cicd/utility/run-latest.ps1"
+			fAssert "[Erg6RyM] and fails one that Windows PowerShell 5.1 can't parse"  fGatePwshSays 1 'PSUseCompatibleSyntax'
+			printf 'function Get-Broken { param($a\n' > "${gateDir}/cicd/utility/run-latest.ps1"
+			fAssert "[Erg6Rya] and fails one that doesn't parse at all"  fGatePwshSays 1 'MissingEndParenthesisInFunctionParameterList'
+		else
+			echo "  skip: real PowerShell lint checks (pwsh or PSScriptAnalyzer not installed)"
+		fi
+		## The same rule as the .ps1 files: no BOM, nothing outside ASCII.
+		fAssert "[Erg6Ryo] PSScriptAnalyzerSettings.psd1 is plain ASCII" \
+			bash -c "[[ -z \$(LC_ALL=C tr -d '\\000-\\177' < '${root}/PSScriptAnalyzerSettings.psd1') ]]"
 
 		## The demo stage, on a fixture of its own that is a git repo with tags. Only stage 6 runs,
 		## and its build, generator and optimizer are stubs, so what is checked is the stamp each
@@ -5616,3 +5656,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20261003 JC: A long --version from the published binary, thousands of tags for release.bash and gen-winres.bash, a long SHA256SUMS for the installer, and a full spawn folder. All five fail against the tree before them. 1275 -> 1280.
 ##		- 20261003 JC: The Bash 4.4 floor in every pipeline script, spawn counts that aren't numbers, and the backlog gate on new-format review items. Every new check fails against the tree before it. 1288 -> 1310.
 ##		- 20261003 JC: spawn-count.bash fails a count over the limit written beside it, --record or not. Its stub build names its shell by path. 1310 -> 1311.
+##		- 20261003 JC: The PowerShell lint starts pwsh once for every file, reads its rules from the settings file, and still fails a file that does not parse. The real pwsh runs it on a fixture of its own. 1311 -> 1318.
