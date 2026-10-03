@@ -3639,6 +3639,14 @@ GHEOF
 		bash -c "cd '${acWork}' && env ${acFragEnv} '${gitsby}' -q -NoFetch --config '${ac}/frag/config.shcl' account apply"
 	fAssertNotOut "[EnPP5qb] and never says it wrote one"  'Wrote ' \
 		bash -c "cd '${acWork}' && env ${acFragEnv} '${gitsby}' -q -NoFetch --config '${ac}/frag/config.shcl' account apply 2>&1"
+	## It said to check permissions whatever went wrong, and dropped the reason. Windows refuses a
+	## write to a folder as access denied, so there the permissions fix is the right one.
+	if ((! isWindows)); then
+		fAssertOut    "[Erfv8YB] and gives the reason it couldn't"  'Why:  Writing it failed with: is a directory\.' \
+			bash -c "cd '${acWork}' && env ${acFragEnv} '${gitsby}' -q -NoFetch --config '${ac}/frag/config.shcl' account apply 2>&1"
+		fAssertNotOut "[Erfv8Yu] and doesn't blame permissions for it"  'ermission|writable' \
+			bash -c "cd '${acWork}' && env ${acFragEnv} '${gitsby}' -q -NoFetch --config '${ac}/frag/config.shcl' account apply 2>&1"
+	fi
 	fAssert       "[EnPP5qc] and wrote no includeIf rule either"  bash -c "! grep -q 'bacct\.gitconfig' '${ac}/fraghome/.gitconfig'"
 	## The same for the global config itself: a path under a plain file can't be locked for writing.
 	mkdir -p "${ac}/addfail"; : > "${ac}/notadir"
