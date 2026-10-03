@@ -238,6 +238,24 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash `[ErgCzfP]`, `[ErgCzfc]`, `[ErgCzfq]` (install.bash on a Mac), `[ErgDQ7N]` (install.ps1, pinned since pwsh can't fake a Mac), `[ErgCzeJ]`, `[ErgCzeW]`, `[ErgCzek]`, `[ErgCzey]`, `[ErgCzfB]` (release.bash).
 	- Swept: every `darwin` and `arm64` reader in the repo. release.bash, config.bash, both installers, the installer and release fixtures in test.bash, README, design.md and the changelog. cicd.bash dogfood already joins. Nothing in `src-go` reads asset names. `legacy/` is frozen.
 
+- The README install line fails while v2.1.0 is the newest full release
+	- ID: 2026100315501800
+	- Type: Bug
+	- Status: Queued
+	- Priority|Severity [Bug]: High
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Related IDs: 2026100313491873
+	- Steps to reproduce [Bug]:
+		- Run gover's install.bash with no version, against the releases as they are today.
+	- Incorrect behavior [Bug]: It picks v2.1.0 and stops with "publishes no gitsby binary for linux/amd64". v2.1.0 has only the `gitsby` and `gitsby.ps1` scripts.
+	- Expected behavior [Bug]: The install line works on the day the Go build reaches `main`.
+	- Reproduced [Bug]: Yes, 2026-10-03, against the live release list.
+	- Possible cause [Bug]: The installer takes a pre-release only when no full release exists, and the first Go release is v3.0.0-beta.1, which must not reach the install line. So the line resolves to a release the new installer can't install. This was true before item 2026100313491873.
+	- Notes:
+		- Blocks the release that merges gover to `main`.
+		- What the install line should give during the beta is a call for signoff, not a worker.
+
 - Code Review 20261003 enhancement 2: Network probes run one after another
 	- ID: 2026100313123988
 	- Type: Enhancement
@@ -275,6 +293,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Not built or tested on either box yet. This item only files the work.
 	- Progress log:
 		- The macOS build is already here. A release builds `darwin/amd64` and `darwin/arm64`.
+		- Note: since item 2026100313491873, a release publishes one universal macOS file in place of those two.
 		- b26 is an Intel Mac, so testing there needs `darwin/amd64`. Dogfood builds it since item 2026100312571262.
 		- The pipeline and the Go tests were made to pass on macOS on 2026-10-01 (def75ab), run by hand. Nothing runs them there since.
 		- The Go tests can be cross-built with `go test -c`, so neither box would need Go installed. test.bash on b26 would need Homebrew's bash, since the default there is 3.2.
@@ -305,6 +324,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Test the automatic conversion on them, the one gitsby does on first run with no help from shcl.
 	- Notes:
 		- Today's checks feed in hand-typed 2.x text.
+
+- The dogfood check passes on the release target list too
+	- ID: 2026100315501801
+	- Type: Bug
+	- Status: Queued
+	- Priority|Severity [Bug]: Low
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: [ErfYFrl] looks for `"darwin/universal"` anywhere in config.bash. The release list has it now as well, so the check still passes if dogfood loses that target.
+	- Expected behavior [Bug]: The check reads the dogfood target list only.
+	- Reproduced [Bug]: No. Read only.
+	- Origin: [ErfYFrl] from item 2026100312571262. The release list gained the entry in item 2026100313491873. Plausible.
+	- Estimated effort: Low
 
 - Code Review 20261003 enhancement 5: Answer branch checks from one read
 	- ID: 2026100313123948
