@@ -49,14 +49,15 @@ func (a *app) cmdPull() error {
 	// Skipping beats failing when the remote is simply out of reach: pullcom is the
 	// only way to commit, so being offline must not turn a good commit into a
 	// failed command. A reachable remote that can't fast-forward is a real problem
-	// and still fails hard.
+	// and still fails hard. --no-fetch skips it too, rather than merging the last
+	// fetch's copy: that would say "up to date" about refs nobody has checked.
 	switch {
 	case !a.opt.fetch:
 		a.out.status("Skipping the pull (--no-fetch).")
 	case !a.gh.reachable:
 		a.out.status("WARNING: remote unreachable; skipping the pull. Local changes still get committed.")
 	case a.hasUpstream():
-		return a.step("git", "pull", "--ff-only", "--autostash")
+		return a.step("git", a.pullArgs("--autostash")...)
 	default:
 		a.out.status("No upstream configured for this branch; nothing to pull.")
 	}
@@ -65,12 +66,31 @@ func (a *app) cmdPull() error {
 
 // pullIfOnline is the pull inside a multi-step command. Same offline rule as
 // cmdPull, quietly: --no-fetch and an unreachable remote both mean skip. Extra
-// arguments go through to git pull.
+// arguments go through to git.
 func (a *app) pullIfOnline(extra ...string) error {
 	if a.opt.fetch && a.gh.reachable && a.hasUpstream() {
-		return a.step("git", append([]string{"pull", "--ff-only"}, extra...)...)
+		return a.step("git", a.pullArgs(extra...)...)
 	}
 	return nil
+}
+
+// pullArgs is the pull, for a branch that has an upstream. By the time it runs,
+// the fetch at the start of the command has already brought in every branch on
+// origin, and 'git pull' would only ask origin the same question again. So it
+// merges what that fetch left, which is also what the plan's incoming list
+// showed. An upstream on some other remote was not part of that fetch, so it
+// still pulls. A local branch as upstream needs no fetch at all. No upstream
+// gives the merge too, for the plan; the runners skip the step then.
+func (a *app) pullArgs(extra ...string) []string {
+	return pullArgsFor(a.upstream(), extra...)
+}
+
+func pullArgsFor(upstream string, extra ...string) []string {
+	if upstream != "" && !strings.HasPrefix(upstream, "refs/remotes/origin/") && !strings.HasPrefix(upstream, "refs/heads/") {
+		return append([]string{"pull", "--ff-only"}, extra...)
+	}
+	args := append([]string{"merge", "--ff-only"}, extra...)
+	return append(args, "@{u}")
 }
 
 // pushIfOnline is the park push, for a command that still means something without

@@ -206,9 +206,11 @@ fMeasure(){
 	skipped+=("${skip}")
 }
 
-## Limits are today's counts, so any rise fails. --no-fetch on all but one: a fetch's cost is
+## Limits are today's counts, so any rise fails. --no-fetch on all but two: a fetch's cost is
 ## mostly git's own (upload-pack, a maintenance run), and a github.com origin can't be fetched
-## here at all. The one with a fetch runs against the local origin, restored before it.
+## here at all. The two with a fetch run against the local origin, restored before each. pullcom
+## is one of them because its pull step only runs after a fetch, and that step used to ask
+## origin a second time.
 ((quiet)) || fEcho_Clean "spawn counts (${exe})"
 fMeasure "[EnQTUO0] status"                              14 pipe repo        -q --no-fetch status
 fMeasure "[EnberSa] whoami"                               9 pipe repo        -q --no-fetch whoami
@@ -216,6 +218,7 @@ fMeasure "[EnQTUe8] br list"                              9 pipe repo        -q 
 fMeasure "[EnQTUuG] account list"                         9 pipe repo        -q --no-fetch account list
 fMeasure "[EnQTVAO] repo url"                             8 pipe repo        -q --no-fetch repo url
 fMeasure "[EnQTVQW] pullcom"                             25 pipe repo        -q --no-fetch pullcom "spawn count"
+fMeasure "[ErgAQyw] pullcom with a fetch"                 32 pipe repo        -q pullcom "spawn count"
 fMeasure "[EnQTVge] br switch"                           33 pipe repo        -q --no-fetch br switch main
 fMeasure "[EnQTVwm] br prune"                            39 pipe repo        -q --no-fetch br prune
 fMeasure "[Erg2KIz] status with a fetch"                 21 tty  repo        status
@@ -299,3 +302,4 @@ gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		- 20260926 JC: One line per command with its verdict, ok included, in place of the bare counts. The pipeline no longer passes -q.
 ##		- 20260927 JC: Each command carries a test ID, printed on its line.
 ##		- 20261003 JC: A limit per command that fails at any rise, --record or not. An account folder with a fake gh and ssh, a pty run with no -q, and a status that fetches, for status, whoami and the account listing.
+##		- 20261003 JC: pullcom with a fetch, so the pull step is counted.
