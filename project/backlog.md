@@ -201,15 +201,31 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 enhancement 3: `sync` and `pullcom` fetch twice
 	- ID: 2026100313124002
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Waiting on signoff
 	- Priority [Feature]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
 	- Requirements  [Feature]:
 		- After the start-of-command fetch works, merge from the upstream with `--ff-only` rather than pulling, so origin is asked once.
+	- Actual effort: Avg
 	- Decisions:
 		- The plan text changes, and so does parity with v2.1.0. OK'd 2026-10-03.
 	- Origin: mutate.go pull steps, there since the port. Confirmed in a trace.
+	- Done: Every pull step is now `git merge --ff-only @{u}`, with `--autostash` where the pull had it. That covers `pullcom`, `sync`, and the park and target pulls in `br`, `release` and `pr`. The merge brings in what the plan's incoming list showed, rather than whatever origin has by the time the prompt is answered.
+	- Done: A branch whose upstream is on another remote still pulls, since the start fetch covers origin only. Merging there would call the branch up to date against a stale ref. The plan reads each branch's upstream and shows the step that will run.
+	- Done: `--no-fetch` and offline keep their meaning: the step is skipped with the same message, and nothing stale is merged. A diverged branch still refuses, as v2.1.0 did, since its pull was `--ff-only --autostash` too. Same git message, exit code, and untouched tree. A conflicting autostash still stops before the commit.
+	- Done: The plan reads one `for-each-ref` for the target branch's upstream. `br switch` and the rest take the branch's local existence from the same answer, so their counts don't rise.
+	- Done: design.md has the rule, and the plan example in style-guide_ui-ux.md shows the new line.
+	- Note: Parity had no plan check before. It now compares the `pullcom` and `sync` plans with the frozen build, with the two spellings of the pull line mapped to one token.
+	- Note: The spawn-count `pullcom` measure runs with `--no-fetch`, so the pull step never runs there and it stays at 25. A new measure, `pullcom` with a fetch, went from 38 to 32 and its limit is 32. The measure is the gate.
+	- Note: [ElHNo4O] in test.bash matched `git pull --ff-only` in the `br switch` plan. It now matches the merge line. What it checks, that switching onto the current branch still plans the pull, is unchanged.
+	- Swept: `grep -n 'pull' src-go/*.go`. The two runners, `cmdPull` and `pullIfOnline`, and every plan line that named a pull, all in preview.go. cicd.bash's own fast-forward already used `merge --ff-only --autostash '@{u}'`.
+	- Verified: `go test ./...`, `cicd/parity.bash` 29/0, `cicd/cicd.bash --gate`, spawn-count with every count at or under its limit, and full test.bash 1328/0.
+	- Verified: against the gover build, [Erg9NT0], [Erg9NTS] and [Erg9NTw] fail, parity's two plan checks pass without the mapping, and the new spawn measure goes over its limit at 38. With the other-remote case taken out, [Erg9NUd], [Erg9NUr], [Erg9y2K] and [ErgA5KD] fail. With `--no-fetch` merging, [Erg9NUA] and [Erg9NUN] fail. With the plan guessing the target's upstream, [Erg9y2K] fails.
+	- Branch: onefetch
+	- Commit: 55f5e22
+	- Test case: [Erg9NT0] to [Erg9NUr] and [Erg9y2K] in test.bash, [ErgA5KD] TestPullArgsFor, [ErgAC3e] and [ErgAC4V] in parity.bash, and the [ErgAQyw] spawn-count limit.
+	- Acceptance signoff: Waiting. The plan now shows `@{u}` rather than a branch name, and the other-remote fallback was a choice.
 
 - Run the tests on a Mac and a Windows box as part of the pipeline
 	- ID: 2026100312332924
