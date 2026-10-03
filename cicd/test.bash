@@ -678,7 +678,7 @@ fRunSuite(){
 	## Already on the target: no checkout and no park happen, so the plan must not list them.
 	( cd "${cloneA}" && echo swp > swp.txt )
 	fAssertNotPlan "[ElHNo4N] br switch onto the current branch plans no commit"  'git commit'  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch dev"
-	fAssertPlan   "[ElHNo4O] and still plans the pull"  'git pull --ff-only'                   bash -c "cd '${cloneA}' && '${gitsby}' -q br switch dev"
+	fAssertPlan   "[ElHNo4O] and still plans the pull"  'git merge --ff-only @\{u\}'            bash -c "cd '${cloneA}' && '${gitsby}' -q br switch dev"
 
 	## Detached HEAD guard
 	fAssertFail "[EknhbCn] mutating command on detached HEAD rejected"  bash -c "cd '${cloneA}' && git checkout --quiet HEAD~0 --detach && '${gitsby}' -q update x"
@@ -775,6 +775,43 @@ fRunSuite(){
 	## -NoFetch, not --no-fetch: pwsh has no such parameter and would fail, and the old pattern
 	## matched its complaint about the flag - green for the wrong reason. Bash takes either.
 	fAssertOut "[El9W15p] no-fetch skips the pull too"  'Skipping the pull' bash -c "cd '${off}' && echo nf > nf.txt && '${gitsby}' -q -NoFetch update 'no-fetch work'"
+
+	## The fetch at the start of the command already brought origin's branches in, so the pull
+	## step merges what it left rather than asking origin a second time. Origin answers through
+	## an upload-pack that logs each time it is asked.
+	local onceO="${work}/$1-onceo.git" onceA="${work}/$1-oncea" onceB="${work}/$1-onceb" onceLog="${work}/$1-once.log"
+	git init --quiet --bare -b main "${onceO}"
+	git clone --quiet "${onceO}" "${onceA}" 2>/dev/null
+	( cd "${onceA}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main )
+	git clone --quiet "${onceO}" "${onceB}"
+	( cd "${onceB}" && echo two > g.txt && git add --all && git commit --quiet -m "from B" && git push --quiet )
+	( cd "${onceA}" && git config remote.origin.uploadpack "echo asked >> '${onceLog}'; git upload-pack" )
+	fAssertPlan "[Erg9NT0] pullcom plans a merge of the upstream"  '^ +git merge --ff-only --autostash @\{u\} \*$'  bash -c "cd '${onceA}' && '${gitsby}' -q -NoFetch pullcom"
+	( cd "${onceA}" && echo dirty >> f.txt )
+	: > "${onceLog}"
+	fAssert "[Erg9NTE] pullcom brings in what origin has"  bash -c "cd '${onceA}' && '${gitsby}' -q pullcom 'once' && [[ -f g.txt ]] && git merge-base --is-ancestor origin/main HEAD && grep -q dirty f.txt"
+	fAssert "[Erg9NTS] and asks origin once"               bash -c "[[ \"\$(grep -c asked '${onceLog}')\" == 1 ]]"
+	( cd "${onceA}" && git push --quiet )
+	( cd "${onceB}" && git pull --quiet --ff-only && echo three > h.txt && git add --all && git commit --quiet -m "B again" && git push --quiet )
+	( cd "${onceA}" && echo dirty2 >> f.txt )
+	: > "${onceLog}"
+	fAssert "[Erg9NTg] sync brings it in and publishes"   bash -c "cd '${onceA}' && '${gitsby}' -q sync 'once more' && [[ -f h.txt ]] && [[ \"\$(git rev-parse HEAD)\" == \"\$(git -C '${onceO}' rev-parse main)\" ]]"
+	fAssert "[Erg9NTw] and asks origin once too"          bash -c "[[ \"\$(grep -c asked '${onceLog}')\" == 1 ]]"
+	## --no-fetch keeps its meaning: skip the pull, not merge whatever an earlier fetch left,
+	## which would call the branch up to date against refs nobody checked.
+	( cd "${onceB}" && git pull --quiet --ff-only && echo four > i.txt && git add --all && git commit --quiet -m "B thrice" && git push --quiet )
+	( cd "${onceA}" && git fetch --quiet && echo nf >> f.txt )
+	: > "${onceLog}"
+	fAssertOut "[Erg9NUA] --no-fetch still skips the pull"          'Skipping the pull' bash -c "cd '${onceA}' && '${gitsby}' -q -NoFetch pullcom 'nf'"
+	fAssert    "[Erg9NUN] and leaves the fetched commit unmerged"  bash -c "cd '${onceA}' && [[ ! -f i.txt ]] && [[ ! -s '${onceLog}' ]]"
+	## An upstream on another remote was not part of that fetch, so it still pulls from there.
+	( cd "${onceA}" && git remote add up "${onceO}" && git fetch --quiet up && git branch --quiet -u up/main && git reset --quiet --hard up/main )
+	( cd "${onceB}" && echo five > j.txt && git add --all && git commit --quiet -m "B four" && git push --quiet )
+	fAssertPlan "[Erg9NUd] an upstream on another remote plans a pull"  '^ +git pull --ff-only --autostash \*$'  bash -c "cd '${onceA}' && '${gitsby}' -q -NoFetch pullcom"
+	fAssert     "[Erg9NUr] and pulls from it"                           bash -c "cd '${onceA}' && '${gitsby}' -q pullcom && [[ -f j.txt ]]"
+	## The plan reads the same thing for a branch it has not checked out yet.
+	( cd "${onceA}" && git checkout --quiet -b side )
+	fAssertPlan "[Erg9y2K] so does the plan for a branch checked out later"  '^ +git pull --ff-only \*$'  bash -c "cd '${onceA}' && '${gitsby}' -q -NoFetch br switch main"
 
 	## A command that still means something locally runs offline and says what it skipped; a
 	## command that exists to publish refuses up front, before the plan promises a push.

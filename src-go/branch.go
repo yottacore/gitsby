@@ -18,8 +18,35 @@ func (a *app) currentBranch() string {
 	return a.git.currentBranch.get(func() string { return runOut("git", "branch", "--show-current") })
 }
 
-func (a *app) hasUpstream() bool {
-	return a.git.hasUpstream.get(func() bool { return runOK("git", "rev-parse", "--abbrev-ref", "@{u}") })
+// upstream is the current branch's upstream as a full ref, "" when it has none.
+// Full, so the pull step can tell origin's branches from another remote's.
+func (a *app) upstream() string {
+	return a.git.upstream.get(func() string { return runOut("git", "rev-parse", "--symbolic-full-name", "@{u}") })
+}
+
+func (a *app) hasUpstream() bool { return a.upstream() != "" }
+
+// localBranches maps every local branch to its upstream's full ref, "" for none,
+// in one call. The plan reads it for branches the run checks out later.
+func (a *app) localBranches() map[string]string {
+	return a.git.localBranches.get(func() map[string]string {
+		lines := runLines("git", "for-each-ref", "--format=%(refname:lstrip=2) %(upstream)", "refs/heads/")
+		branches := make(map[string]string, len(lines))
+		for _, line := range lines {
+			name, up, _ := strings.Cut(line, " ")
+			branches[name] = up
+		}
+		return branches
+	})
+}
+
+// upstreamOf is upstream for any branch. One with no local copy yet is checked
+// out tracking origin's, so "" stands for that too.
+func (a *app) upstreamOf(branch string) string {
+	if branch == a.currentBranch() {
+		return a.upstream()
+	}
+	return a.localBranches()[branch]
 }
 
 // aheadBehind: both directions against the upstream, in the one call that answers
@@ -77,7 +104,9 @@ func refuseOptionShapedRefs(names ...string) error {
 // only ever looks at origin. So name origin, and let the plan say the same thing
 // the command will run.
 func (a *app) checkoutArgs(branch string) []string {
-	if branch != "" && !branchExistsLocal(branch) && branchExistsRemote(branch) {
+	// The local half from localBranches, which the plan's pull line for the same
+	// branch reads anyway.
+	if _, local := a.localBranches()[branch]; branch != "" && !local && branchExistsRemote(branch) {
 		return []string{"checkout", "-b", branch, "--track", "origin/" + branch}
 	}
 	return []string{"checkout", branch}
