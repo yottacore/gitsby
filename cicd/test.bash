@@ -20,6 +20,9 @@
 ##	SPDX-License-Identifier: MIT
 
 
+if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
+	printf '%s\n' "${0##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
+fi
 set -Eeuo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -381,6 +384,17 @@ fTrackedBash(){
 		if [[ -f "${root}/${f}" ]]; then IFS= read -r first < "${root}/${f}" || true; fi
 		if [[ "${f}" == *.bash || "${first}" =~ ^#!.*[/[:space:]]bash([[:space:]]|$) ]]; then printf '%s\n' "${f}"; fi
 	done
+}
+## Whether the script $1 refuses a bash below its floor before running anything: a copy with the
+## floor raised past any real bash, named as the original, has to exit 1 with the one line. A
+## copy the raise didn't change has no floor and is not run, since some of these do real work.
+fBashFloorRefuses(){
+	local dir="${work}/bash-floor/${1//\//_}" out="" rc=0
+	mkdir -p "${dir}"
+	sed 's/< 404 ))/< 9999 ))/' "${root}/$1" > "${dir}/${1##*/}"
+	if cmp -s "${root}/$1" "${dir}/${1##*/}"; then return 1; fi
+	out="$(cd "${dir}" && bash "./${1##*/}" </dev/null 2>&1)" || rc=$?
+	[[ "${rc}" == 1 && "${out}" == "${1##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}."* && "${out}" != *$'\n'* ]]
 }
 
 ## The whole suite, against whatever ${gitsby} points at.
@@ -4254,6 +4268,15 @@ GHEOF
 		test -z "$(cd "${root}" && git ls-files '*.ps1' ':!legacy' | fLintUncovered PS_LINT_GLOBS both)"
 	fAssert "[Er1LxTH] and every lint glob matches a file" \
 		test -z "$(fLintGlobs MD_LINT_GLOBS empty; fLintGlobs SHELL_LINT_GLOBS empty; fLintGlobs PS_LINT_GLOBS empty)"
+	## Bash 4.4 is the floor the style guide sets. install.bash runs on 3.2 on purpose, a file the
+	## others source needs no check of its own, and the publish helper is shared and left as it is.
+	local bfScript="" bfFound=0
+	while IFS= read -r bfScript; do
+		case "${bfScript}" in install.bash|cicd/config.bash|cicd/utility/include/*|cicd/utility/n8git_backup-and-publish) continue ;; esac
+		bfFound=$((bfFound + 1))
+		fAssert "[ErfyDHs] ${bfScript} refuses a bash older than 4.4, before anything else"  fBashFloorRefuses "${bfScript}"
+	done < <(fTrackedBash)
+	fAssertFail "[ErfyLds] and that check found scripts to look at"  test "${bfFound}" = 0
 	## A commit message the user typed passes through the engine's output helpers.
 	fAssertFail "[Er1LxTI] cicd.bash prints with printf, never echo -e"  grep -qE '^[^#]*echo -e' "${root}/cicd/cicd.bash"
 	## The linter set is argued for line by line, and 'default: none' means a new golangci-lint
