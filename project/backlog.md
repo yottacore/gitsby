@@ -51,11 +51,28 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Decisions:
 		- Not built or tested on either box yet. This item only files the work.
 	- Progress log:
-		- The macOS build is already here. Dogfood cross-builds `darwin/arm64` every run, and a release builds `darwin/amd64` and `darwin/arm64`.
-		- b26 is an Intel Mac, so testing there needs `darwin/amd64`, which dogfood does not build.
+		- The macOS build is already here. A release builds `darwin/amd64` and `darwin/arm64`.
+		- b26 is an Intel Mac, so testing there needs `darwin/amd64`. Dogfood builds it since item 2026100312571262.
 		- The pipeline and the Go tests were made to pass on macOS on 2026-10-01 (def75ab), run by hand. Nothing runs them there since.
 		- The Go tests can be cross-built with `go test -c`, so neither box would need Go installed. test.bash on b26 would need Homebrew's bash, since the default there is 3.2.
 		- No stage runs the Go tests on Windows today. That is how `TestCanonPath` and `TestDisplayPath` broke there unnoticed.
+
+- Dogfood builds macOS for both CPUs
+	- ID: 2026100312571262
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Related IDs: 2026100312332924
+	- Requirements  [Feature]:
+		- Add `darwin/amd64` to the dogfood targets.
+	- Decisions:
+		- There is one macOS dogfood folder and both builds are named `gitsby`, so they are joined into one universal binary there.
+		- lipo only exists on a Mac, so a small script writes the universal file. Each build goes in unchanged.
+	- Branch: macfat
+	- Test case: four checks in test.bash for the joined file, its refusals and the dogfood target.
+	- Closed: 2026-10-03
 
 - Two account blocks with one name merge without a word
 	- ID: 2026093013034093
