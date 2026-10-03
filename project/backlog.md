@@ -160,6 +160,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: [ErfYFrl] from item 2026100312571262. The release list gained the entry in item 2026100313491873. Plausible.
 	- Estimated effort: Low
 
+- The plan shows `@{u}` where it could name the branch
+	- ID: 2026100316463300
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature]: Low
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Related IDs: 2026100313124002
+	- Requirements  [Feature]:
+		- The pull step's plan line names the upstream, such as `git merge --ff-only --autostash origin/feature`, rather than `@{u}`.
+		- The step runs with that same name, so the plan still shows exactly what runs.
+	- Decisions:
+		- The resolved name over `@{u}` (2026-10-03). It reads plainly and says which remote branch comes in.
+	- Notes:
+		- The plan already reads each branch's upstream with one `for-each-ref`, so this needs no new git call. The spawn-count limits will show if it does.
+
 - Code Review 20261003 enhancement 5: Answer branch checks from one read
 	- ID: 2026100313123948
 	- Type: Enhancement
@@ -448,7 +464,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: onefetch
 	- Commit: 55f5e22
 	- Test case: [Erg9NT0] to [Erg9NUr] and [Erg9y2K] in test.bash, [ErgA5KD] TestPullArgsFor, [ErgAC3e] and [ErgAC4V] in parity.bash, and the [ErgAQyw] spawn-count limit.
-	- Acceptance signoff: OK, 2026-10-03. Whether the plan shows `@{u}` or the resolved branch name is still a question.
+	- Acceptance signoff: OK, 2026-10-03. The plan will name the resolved branch rather than `@{u}`, filed as its own item.
 	- Closed: 20261003-163955
 
 - Dogfood builds macOS for both CPUs
