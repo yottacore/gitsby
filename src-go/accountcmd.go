@@ -1102,6 +1102,16 @@ func (a *app) loadForEdit(t *accountSetTarget) error {
 	} else {
 		t.file, t.doc, t.read = a.cfg.file, a.cfg.doc, a.cfg.raw
 	}
+	// Saved as it stands, the file would mix the two formats' spellings, and the
+	// next run would convert lines that were already right.
+	if mig := a.cfg.migration; mig != nil && !mig.done {
+		return refusalBlock(fmt.Sprintf("The accounts file is still in the SHCL %d.x format.", mig.from), [][]string{
+			noteLines("File", nativePath(t.file)),
+			noteLines("Why", "It couldn't be converted: "+mig.why+"."),
+			noteLines("Kept", "Nothing was written."),
+			noteLines("Fix", "Run this again. The next run tries the conversion first."),
+		}, nil)
+	}
 	return nil
 }
 

@@ -44,6 +44,8 @@ type config struct {
 	doc      *shcl.Document // the file as parsed, for 'account set' to edit; nil for a flat file or none
 	flat     bool           // the old 'key = value' layout: read as it always was, rewritten by the first edit
 	raw      string         // the file as read, so an edit can tell it changed since
+
+	migration *formatMigration // set when the file was in an older SHCL format
 }
 
 func isWindows() bool { return runtime.GOOS == "windows" }
@@ -553,6 +555,16 @@ func (c *config) load(o options) error {
 		c.flat = true
 		c.loadFlat(text)
 		return nil
+	}
+	if from := oldFormat(text); from > 0 {
+		converted, m := migrateText(string(data))
+		c.migration = &formatMigration{from: from, changed: changedLines(string(data), m.Text), lost: m.Lost}
+		replaceOldFormat(file, string(data), converted, c.migration)
+		if c.migration.done {
+			c.raw = converted
+		}
+		// Read as converted either way, so the values are the ones the file meant.
+		data = []byte(converted)
 	}
 	// The whole file, mark and all: the module takes the mark off for the read and
 	// keeps the text, so 'account set' writes back every line it didn't edit.
