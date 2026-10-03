@@ -1916,6 +1916,7 @@ GHEOF
 	fAssertOut "[ErfwTrE] a back-merge whose abort fails says dev is still mid-merge"  "^  Why:  'git merge --abort' failed, so 'dev' is still mid-merge\.$" \
 		bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix clash2 >/dev/null 2>&1 && echo hf2text > README.md && '${gitsby}' -q -NoFetch update wip >/dev/null 2>&1 && env PATH='${abortShim}':\"\${PATH}\" '${gitsby}' -q -NoFetch br land Clash2 > '${abortShim}/back.out' 2>&1; echo \"rc=\$?\" >> '${abortShim}/back.out'; cat '${abortShim}/back.out'"
 	fAssertOut "[ErfwTrT] and fails rather than ending in Done"  '^rc=1$'  cat "${abortShim}/back.out"
+	fAssertOut "[ErgQv90] but says the hotfix itself landed"  "^  Kept: The hotfix landed on 'main' - that part is done\." cat "${abortShim}/back.out"
 	( cd "${hfc}" || exit 1; git merge --abort 2>/dev/null || true )
 	## The forward merge left the tree in conflict and the merge open, on a bare step failure.
 	local fm="${work}/$1-mergeclash"
@@ -4080,6 +4081,17 @@ GHEOF
 		fRelRun --dry-run
 		fAssert "[Erfs77J] release.bash finds the last release among thousands of tags" \
 			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'Phase 1 OK: v1.2.3 -> v1.2.4' '${relOut}'"
+		## The patch bump is arithmetic on part of a tag name, so only digits may reach it.
+		git -C "${relRepo}" tag v1.3.08
+		fRelRun --dry-run
+		fAssert "[ErgRj8P] release.bash bumps a patch with a leading zero as decimal" \
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'Phase 1 OK: v1.3.08 -> v1.3.9' '${relOut}'"
+		git -C "${relRepo}" tag -d v1.3.08 >/dev/null
+		git -C "${relRepo}" tag v1.3.0rc1
+		fRelRun --dry-run
+		fAssert "[ErgRj8c] and refuses to bump a tag whose patch isn't digits" \
+			bash -c "[[ '${relRc}' == 1 ]] && grep -qF \"can't work out the version after v1.3.0rc1\" '${relOut}'"
+		git -C "${relRepo}" tag -d v1.3.0rc1 >/dev/null
 		git clone --quiet "${relRepo}" "${rel}/winres" 2>/dev/null
 		cp "${root}/cicd/utility/gen-winres.bash" "${rel}/winres/cicd/utility/"
 		fAssertOut "[Erfs78A] and so does gen-winres.bash" 'gen-winres: no icon at assets/gitsby\.ico' \
@@ -4214,6 +4226,20 @@ GHEOF
 		bash -c "[[ -x '${root}/cicd/utility/spawn-count.bash' ]] && grep -q 'SPAWN_COUNT_CMD' '${root}/cicd/cicd.bash'"
 	fAssert "[EnQTPxw] and a kept-build script exists for bisecting against an older one" \
 		bash -c "[[ -x '${root}/cicd/utility/keep-build.bash' ]]"
+	## Its build number went into an integer variable, which evaluates what it's given.
+	local kb="${work}/kb"
+	mkdir -p "${kb}/cicd/utility/include" "${kb}/cicd/artifacts/builds"
+	cp "${root}/cicd/config.bash" "${kb}/cicd/"
+	cp "${root}/cicd/utility/keep-build.bash" "${kb}/cicd/utility/"
+	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${kb}/cicd/utility/include/"
+	fStub "${kb}/cicd/artifacts/builds/build_20260101-000000.gitsby" <<-'EOF'
+		#!/bin/sh
+		echo "kept build ran"
+	EOF
+	fAssertOut "[ErgRj8q] and it runs a kept build by number" '^kept build ran$' bash "${kb}/cicd/utility/keep-build.bash" --run 1
+	# shellcheck disable=SC2016  ## The substitution is the input, for the script to refuse.
+	fAssert "[ErgRq9b] and refuses one that isn't digits, without running it" \
+		bash -c "out=\$(bash '${kb}/cicd/utility/keep-build.bash' --run 'BASH_VERSINFO[\$(touch ${kb}/ran)0]' 2>&1); [[ \$? == 1 ]] && grep -qF \"isn't a build number\" <<< \"\$out\" && [[ ! -e '${kb}/ran' ]]"
 	fAssert "[EndUdZQ] and a pooled-copy runner exists for driving the newest build" \
 		bash -c "[[ -x '${root}/cicd/utility/run-latest.ps1' ]]"
 	fAssert "[EndUdZR] and a spawn report exists for the startup look, marker-gated like lint's" \
@@ -4290,12 +4316,17 @@ GHEOF
 			bash -c "'${sc}/cicd/utility/spawn-count.bash' -q --record && [[ \$(ls '${sc}/cicd/artifacts/spawn' | grep -c '^spawn_.*\.tsv\$') == 2 ]]"
 		fAssert "[Er2gqb3] and without -q prints a verdict and test ID for every command, unchanged ones too" \
 			bash -c "out=\$('${sc}/cicd/utility/spawn-count.bash' 2>&1) && [[ \$(grep -cE '^  ok +\[[0-9A-Za-z]{7}\] [a-z ]+: [0-9]+\$' <<< \"\$out\") == \$(grep -c '^fMeasure \"' '${root}/cicd/utility/spawn-count.bash') ]]"
-		## A limit is the number in the source, so --record can't lift it. A copy with one limit
-		## under the stub's four processes.
+		## A limit is the number in the source plus headroom, so --record can't lift it. A copy
+		## expecting one, so its limit of three is under the stub's four processes.
 		sed 's/^\(fMeasure "\[EnQTUO0\] status" *\)[0-9][0-9]*/\11/' "${root}/cicd/utility/spawn-count.bash" > "${sc}/cicd/utility/spawn-count-low.bash"
 		chmod +x "${sc}/cicd/utility/spawn-count-low.bash"
 		fAssert "[Erg2KNK] and fails a count over its limit, --record or not, and records nothing" \
-			bash -c "was=\$(ls '${sc}/cicd/artifacts/spawn'); out=\$('${sc}/cicd/utility/spawn-count-low.bash' -q --record 2>&1); [[ \$? == 1 ]] && grep -qE '^  OVER LIMIT \[EnQTUO0\] status: [0-9]+, limit 1\$' <<< \"\$out\" && ! grep -q 'OVER LIMIT \[EnberSa\]' <<< \"\$out\" && [[ \$(ls '${sc}/cicd/artifacts/spawn') == \"\$was\" ]]"
+			bash -c "was=\$(ls '${sc}/cicd/artifacts/spawn'); out=\$('${sc}/cicd/utility/spawn-count-low.bash' -q --record 2>&1); [[ \$? == 1 ]] && grep -qE '^  OVER LIMIT \[EnQTUO0\] status: [0-9]+, limit 3 \(expected 1\)\$' <<< \"\$out\" && ! grep -q 'OVER LIMIT \[EnberSa\]' <<< \"\$out\" && [[ \$(ls '${sc}/cicd/artifacts/spawn') == \"\$was\" ]]"
+		## The headroom is the point: one helper more than expected must not fail the gate.
+		sed 's/^\(fMeasure "\[EnQTUO0\] status" *\)[0-9][0-9]*/\13/' "${root}/cicd/utility/spawn-count.bash" > "${sc}/cicd/utility/spawn-count-near.bash"
+		chmod +x "${sc}/cicd/utility/spawn-count-near.bash"
+		fAssert "[ErgR83a] and passes a count one over its expected one" \
+			bash -c "out=\$('${sc}/cicd/utility/spawn-count-near.bash' 2>&1) && grep -qE '^  ok +\[EnQTUO0\] status: 4\$' <<< \"\$out\""
 		## The baseline's counts go into arithmetic, as the report's do.
 		# shellcheck disable=SC2016  ## As above, for the script to refuse.
 		printf 'status\tBASH_VERSINFO[$(touch %s/ran)0]\n' "${sc}" > "${sc}/cicd/artifacts/spawn/spawn_20991231-000000.tsv"
@@ -4678,6 +4709,8 @@ EOF
 			fAssert "[Erg6RyM] and fails one that Windows PowerShell 5.1 can't parse"  fGatePwshSays 1 'PSUseCompatibleSyntax'
 			printf 'function Get-Broken { param($a\n' > "${gateDir}/cicd/utility/run-latest.ps1"
 			fAssert "[Erg6Rya] and fails one that doesn't parse at all"  fGatePwshSays 1 'MissingEndParenthesisInFunctionParameterList'
+			printf 'if ($true) {\n  Write-Output 1\n}\n' > "${gateDir}/cicd/utility/run-latest.ps1"
+			fAssert "[ErgRMMj] and fails one indented two spaces"  fGatePwshSays 1 'PSUseConsistentIndentation'
 		else
 			echo "  skip: real PowerShell lint checks (pwsh or PSScriptAnalyzer not installed)"
 		fi

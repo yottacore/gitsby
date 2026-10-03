@@ -43,7 +43,9 @@ fDie(){ echo "keep-build: $*" >&2; exit 1; }
 fKept(){ ls -1 "${keepDir}"/build_*."${EXE_NAME}" 2>/dev/null || true; }
 
 fNth(){
-	local -i want="$1"
+	## An integer variable evaluates what it's given, so the argument is checked first.
+	[[ "$1" =~ ^[0-9]+$ ]] || fDie "'$1' isn't a build number (see --list)."
+	local -i want="10#$1"
 	local -a kept=()
 	mapfile -t kept < <(fKept)
 	((${#kept[@]})) || fDie "nothing kept yet in ${KEEP_BUILD_DIR}; run this with no arguments first."
@@ -99,3 +101,4 @@ esac
 ##		- 20260819 JC: Created. The bisecting half of the profiling directive: gitsby exits
 ##		  immediately, so there is nothing to run alongside anything - what is actually
 ##		  wanted is last week's binary, and a diff of the two on the same arguments.
+##		- 20261003 JC: A build number that is not digits is refused before arithmetic sees it.

@@ -199,8 +199,10 @@ if [[ -z "${version}" ]]; then
 		## A candidate promotes to its own plain version rather than bumping past it.
 		version="${lastTag%%-*}"
 	else
+		## Only digits reach the arithmetic, and 10# keeps a leading zero from reading as octal.
+		[[ "${lastTag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fDie "can't work out the version after ${lastTag}; pass one explicitly."
 		IFS='.' read -r major minor patch <<< "${lastTag#v}"
-		version="v${major}.${minor}.$((patch + 1))"
+		version="v${major}.${minor}.$((10#${patch} + 1))"
 	fi
 	fEcho_Clean "no version given; the next one after ${lastTag} is ${version}"
 fi
@@ -426,3 +428,4 @@ echo
 ##		- 20261003 JC: A PR number, a releases/latest answer or a build line that can't be read no longer ends the run with nothing said. Under set -e each assignment took its command's failure, so the message written for it never ran.
 ##		- 20261003 JC: The tag list and the proof's --version are read whole before they are matched. A head or grep -q that quit early could fail the writer under pipefail: the proof now and then, and the tag lookup every time once there are a few thousand tags.
 ##		- 20261003 JC: macOS publishes one universal binary, both Mac builds joined by macho-universal.bash, in place of one per CPU. The proof checks it against SHA256SUMS from any box, since only a Mac can run it. An asset name GitHub would rewrite stops the build before it is hashed.
+##		- 20261003 JC: The patch bump refuses a last tag that is not plain digits, and reads a leading zero as decimal.
