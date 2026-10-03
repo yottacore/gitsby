@@ -33,6 +33,128 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- Code Review 20261003 item 1: release.bash can stop partway with no message
+	- ID: 2026100313123851
+	- Type: Bug
+	- Status: Queued
+	- Priority|Severity [Bug]: High
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- Have `pr create` print no github.com pull URL, or have curl fail in the proof step.
+	- Incorrect behavior [Bug]: The script exits 1 with nothing printed. The first case is after the branch, the changelog edit and the PR exist. The second is after the release is published, so the proof is skipped.
+	- Expected behavior [Bug]: The `fDie` right below each line runs and says what's left half done.
+	- Reproduced [Bug]: Yes, 2026-10-03. The first by hand, the second by simulation.
+	- Possible cause [Bug]: `x="$(... | grep ...)"` and `x="$(curl ... | sed ...)"` under `set -e` and `pipefail`, with no `|| true`. It's one of the Bash traps.
+	- Origin: release.bash:248 from 78224a2 (2026-08-12) and :306 from 8ff6681 (2026-09-24). Neither was filed before. The :306 block is the phase 3 path that has never run. Confirmed.
+	- Estimated effort: Low
+
+- Code Review 20261003 item 2: A pipeline reader that quits early can fail its writer
+	- ID: 2026100313123865
+	- Type: Bug
+	- Status: Queued
+	- Priority|Severity [Bug]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]:
+		- release.bash's proof step pipes `--version` into `grep -q`. Now and then grep quits first and the check fails. That costs two retries and can end in a false warning that the release didn't verify.
+		- `tag --sort ... | head -n 1` in release.bash and gen-winres.bash fails the same way once there are enough tags.
+	- Expected behavior [Bug]: Capture the output first, then match it, the way cicd.bash already does.
+	- Reproduced [Bug]: The proof step failed 1 run in 300. The tag lookup failed every time with 3000 tags, never with today's 6.
+	- Origin: release.bash:132 and :333 from 988b72d (2026-08-18), gen-winres.bash:100 from e6af523 (2026-08-19). Same class as the Bash trap on early-exit readers. Confirmed for the proof step, Plausible at today's tag count.
+	- Sweep: also `spawn-report.bash:53` and `install.bash:196`.
+	- Estimated effort: Low
+
+- Code Review 20261003 item 3: Write and read failures in account commands guess at the cause
+	- ID: 2026100313123881
+	- Type: Bug
+	- Status: Queued
+	- Priority|Severity [Bug]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- Run `account apply` or `account set` where the write fails for a reason other than permissions, such as a full disk or a read-only filesystem.
+	- Incorrect behavior [Bug]: The message says to check permissions. The real error is dropped.
+	- Expected behavior [Bug]: The message keeps the real error. The permissions hint shows only when it is a permissions error.
+	- Reproduced [Bug]: Read only. Each site has the error in hand and returns a message without it.
+	- Possible cause [Bug]: `usagef` where `usageWrapf` exists for this. Seven sites in accountcmd.go.
+	- Origin: accountcmd.go, from 11905d2 (2026-09-16) and 62af07b (2026-09-28). Not seen by an earlier round. Plausible.
+	- Sweep: every `usagef("Couldn't ...` that has an `err` in scope.
+	- Estimated effort: Low
+
+- Code Review 20261003 item 4: `br merge` says the target is as it was without checking
+	- ID: 2026100313123895
+	- Type: Bug
+	- Status: Queued
+	- Priority|Severity [Bug]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- Have `git merge --abort` fail after a conflicted `br merge`.
+	- Incorrect behavior [Bug]: gitsby ignores the failure and prints that the target "is as it was". The tree is still mid-merge.
+	- Expected behavior [Bug]: When the abort fails, say the tree is mid-merge and name the commands to settle it.
+	- Reproduced [Bug]: No. Read only.
+	- Possible cause [Bug]: `_ = runOK("git", "merge", "--abort")` in `backOutMerge`, and the same at the dev back-merge.
+	- Origin: branchcmd.go:226 from bfbae90 (2026-09-15). Not seen before. Plausible.
+	- Estimated effort: Low
+
+- Code Review 20261003 enhancement 1: The spawn-count fixture can't see the account paths
+	- ID: 2026100313123975
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- Add a configured account, a fake `gh` and a pty run to the fixture, so it counts what a real user's `status`, `whoami` and `account list` start.
+		- Give each counted command a threshold that fails the gate.
+	- Decisions:
+		- Do this first. The other spawn items in this round need it to prove anything.
+	- Origin: spawn-count.bash uses an empty config, a local origin and captured stdout. Four of this round's spawn findings are out of its sight. Confirmed.
+
+- Code Review 20261003 enhancement 2: Network probes run one after another
+	- ID: 2026100313123988
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Prereq IDs: 2026100313123975
+	- Requirements  [Feature]:
+		- `status` and `whoami` in a token-file account folder wait on two `gh api user` calls and an `ssh -T`, in turn. With 300 ms each that is about 950 ms where 300 would do.
+		- `account list` starts `gh` once per account, in turn. `account apply`, `set` and `unset` pay it too, since they print the list.
+	- Decisions:
+		- Against: the public style guide bans goroutines outright, and the directive allows them for real concurrent work. Settle that before using them here.
+		- The first probe might be replaced by a local `gh config get` read, with no goroutine at all. Try that first.
+	- Origin: account.go and accountcmd.go. The per-account `gh` call was measured in 20260909 item 19 and kept. Confirmed with injected delays.
+
+- Code Review 20261003 enhancement 3: `sync` and `pullcom` fetch twice
+	- ID: 2026100313124002
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- After the start-of-command fetch works, merge from the upstream with `--ff-only` rather than pulling, so origin is asked once.
+	- Decisions:
+		- The plan text changes, and so does parity with v2.1.0. That needs a yes first.
+	- Origin: mutate.go pull steps, there since the port. Confirmed in a trace.
+
+- Code Review 20261003 enhancement 4: PowerShell lint starts pwsh four times
+	- ID: 2026100313124015
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- Run both PSScriptAnalyzer passes over every file in one pwsh call. It's about 10 s now and about 3 s that way, on every `--gate`.
+		- Put the rules in a `PSScriptAnalyzerSettings.psd1`, as the directive asks, rather than inline in cicd.bash.
+	- Decisions:
+		- Indentation stays four spaces. The directive's tab rule doesn't reindent existing code.
+	- Origin: cicd.bash stage 1. Confirmed, timed.
+
 - Run the tests on a Mac and a Windows box as part of the pipeline
 	- ID: 2026100312332924
 	- Type: Enhancement
@@ -70,6 +192,136 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Requirements  [Feature]:
 		- Write the pipeline stage the parent item describes.
 		- It is not done until it has run on b26 and on a Windows box.
+
+- Code Review 20261003 item 5: The style guide says Bash 4.4 is enforced, and nothing checks
+	- ID: 2026100313123908
+	- Type: Bug
+	- Status: Queued
+	- Priority|Severity [Bug]: Low
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: style-guide.md says "the script refuses to run below" Bash 4.4. No live script checks the version. The check was in the frozen bash build.
+	- Expected behavior [Bug]: Either the pipeline scripts check, or the guide says what's true.
+	- Reproduced [Bug]: Yes. No `BASH_VERSINFO` outside legacy/.
+	- Origin: style-guide.md from 235697c (2026-07-27), true for the bash build then. Confirmed.
+	- Estimated effort: Low
+
+- Code Review 20261003 item 6: Doc comments sit on the wrong function or name an old one
+	- ID: 2026100313123922
+	- Type: Bug
+	- Status: Queued
+	- Priority|Severity [Bug]: Low
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]:
+		- In accountcmd.go, `accountNames`' comment sits above `anyHostStated`, and `accountNames` has none.
+		- `resolveConfigFile`'s comment calls it `configFile`. `isGitHubHost`'s calls it `githubHosts`.
+	- Expected behavior [Bug]: Each comment is on its function and starts with its name.
+	- Reproduced [Bug]: Yes, by reading.
+	- Origin: a function added between a comment and its target, and two renames that left the comment behind. Confirmed.
+	- Estimated effort: Low
+
+- Code Review 20261003 item 7: Spawn reports do arithmetic on numbers read from files
+	- ID: 2026100313123935
+	- Type: Bug
+	- Status: Queued
+	- Priority|Severity [Bug]: Low
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: spawn-count.bash and spawn-report.bash read counts from tsv files and use them in arithmetic unchecked. That's the subscript-injection trap gfs-rotate was fixed for.
+	- Expected behavior [Bug]: A count that isn't digits is refused.
+	- Reproduced [Bug]: No. The scripts write those files themselves, so the risk is low.
+	- Origin: spawn-count.bash:143 from dd4359b (2026-08-19). Same class as the 2026-09-15 gfs-rotate fix. Plausible.
+	- Estimated effort: Low
+
+- Code Review 20261003 item 8: The Origin gate doesn't read new-format items
+	- ID: 2026100313150825
+	- Type: Bug
+	- Status: Queued
+	- Priority|Severity [Bug]: Low
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: backlog-check.bash looks for review items in the old format only. With this round's items filed it reports "0 listed", so an item with no `Origin:` row would pass.
+	- Expected behavior [Bug]: It finds open review items in both formats.
+	- Reproduced [Bug]: Yes, 2026-10-03.
+	- Origin: backlog-check.bash from the 2026-09-10 rules, before the new item format. Confirmed.
+	- Estimated effort: Low
+
+- Code Review 20261003 enhancement 5: Answer branch checks from one read
+	- ID: 2026100313123948
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature]: Low
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Prereq IDs: 2026100313123975
+	- Requirements  [Feature]:
+		- Each branch-exists check starts its own `git show-ref`. `br switch` starts 8 and `br prune` 7.
+		- Read local and origin branches once per run, and drop that in `forget()` like the rest.
+		- `release` works out dev again on its own. Use `mergeTarget()`, which already caches it.
+	- Origin: branch.go:47 from ae16451 (2026-08-17), and release.go. Confirmed with strace.
+
+- Code Review 20261003 enhancement 6: Spawns that are repeated or not needed
+	- ID: 2026100313124028
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature]: Low
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Prereq IDs: 2026100313123975
+	- Requirements  [Feature]:
+		- `convertibleToHTTPS` asks `gh` for the protocol before a free text test that already says no on an https origin.
+		- Two `rev-parse` calls at startup where one would do.
+		- The `gitsby.ghTokenFile` lookup runs when the account's own file already gave a token, and runs twice.
+		- `origin/HEAD` is read twice after a fetch.
+		- Lists start `tput cols` where the ioctl in tty_linux.go would do.
+	- Origin: remote.go:320 from 0a3ef88 (2026-08-19), the rest from the port. Each saves 1 or 2 spawns. Confirmed with strace.
+
+- Code Review 20261003 enhancement 7: Go code tidy
+	- ID: 2026100313130047
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature]: Low
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- `cmdPrune` gets branch names back out of git's argv by index math. Have `leaseDeleteBatches` return them.
+		- The account ssh command, the exclusive-create writer and the push-or-set-upstream args are each built in two or three places. Make one of each.
+		- `ghState` also keeps the tea and reachability state. Rename it, and read reachability through `isOffline()` everywhere.
+		- The flat-line parse is written three times, and `[2]string` keys stand in for a named type.
+		- `contains` beside `slices.Contains`, a BOM literal beside `utf8BOM`, a GOOS test beside `isWindows()`.
+	- Origin: mostly the work since 20260909: shcl, prune leases, tea support. Confirmed by grep.
+
+- Code Review 20261003 enhancement 8: Pipeline scripts and the style guide against the new Bash rules
+	- ID: 2026100313130060
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature]: Low
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- New with the directives' Bash section, after 20260909. Not regressions.
+		- About 40 snake_case variables, most in cicd.bash and fuzz.bash, and private globals with one underscore.
+		- Unbraced expansions, most in gfs-rotate.bash, lint-report.bash and spawn-report.bash.
+		- test.bash, fuzz.bash and parity.bash print with bare echo. Several scripts define their own echo helpers that differ.
+		- `include/gh-account.bash` has no header and nothing sources it. Only a test fixture copies it.
+		- style-guide.md's Bash and Go sections lack most of the directive's rules. It also bans new echo wrappers, which reads as banning an error helper, and allows interfaces only for a second implementation, not a test seam.
+	- Decisions:
+		- Open question: whether config.bash's UPPER_SNAKE settings stay as a config convention.
+		- gfs-rotate.bash is a shared Bubbles file. A change there goes to every copy.
+	- Origin: directives 2026-09-09 to 2026-10-03, Bash section. Confirmed by a parse of every script.
+
+- Code Review 20261003 enhancement 9: Measure building without inlining
+	- ID: 2026100313140061
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature]: Low
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- `-gcflags=all=-l` made the Linux binary 5.8% smaller, 3.32 MB to 3.13 MB. The timings showed no change, but the box was loaded.
+		- Time it on an idle box. Adopt it only if it's no slower.
+	- Origin: build flags in config.bash. Size Confirmed, speed Plausible.
 
 - Dogfood builds macOS for both CPUs
 	- ID: 2026100312571262
