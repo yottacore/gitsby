@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -1313,5 +1314,154 @@ func TestAccountUnsetConvertsAFlatFile(t *testing.T) { // [ErCjvoP]
 	got := readBack(t, file)
 	if !strings.HasPrefix(got, "# old\n\naccount: work\n\temail: a@x\n") || strings.Contains(got, "Al") {
 		t.Errorf("file after unset:\n%s", got)
+	}
+}
+
+// A write that fails keeps the OS's reason, and only a permissions error gets the
+// permissions fix. Every write in the account commands refused with "check
+// permissions", a full disk and a read-only filesystem included.
+func TestWriteRefusalNamesPermissionsOnlyWhenTheyAreTheCause(t *testing.T) { // [Erfv8ZU]
+	const permFix = "Make the folder it is in writable, then run this again."
+	causes := []struct {
+		err  error
+		perm bool
+	}{
+		{&fs.PathError{Op: "open", Path: "/h/c.shcl", Err: fs.ErrPermission}, true},
+		{&fs.PathError{Op: "open", Path: "/h/c.shcl", Err: errors.New("read-only file system")}, false},
+		{&fs.PathError{Op: "write", Path: "/h/c.shcl", Err: errors.New("no space left on device")}, false},
+		{&fs.PathError{Op: "open", Path: "/h/c.shcl", Err: errors.New("is a directory")}, false},
+		{errors.New("/h/c.shcl: not a regular file"), false},
+	}
+	for _, c := range causes {
+		err := writeRefusal("Couldn't save the accounts file.", "Saving it", c.err, "Nothing was written.", permFix, noteLines("File", "/h/c.shcl"))
+		msg := err.Error()
+		if !strings.Contains(msg, "Why:  Saving it failed with: "+causeText(c.err)+".") {
+			t.Errorf("%v: the reason is missing:\n%s", c.err, msg)
+		}
+		if got := strings.Contains(msg, "writable"); got != c.perm {
+			t.Errorf("%v: permissions fix shown = %v, want %v:\n%s", c.err, got, c.perm, msg)
+		}
+		if !errors.Is(err, c.err) {
+			t.Errorf("%v: the cause is not on the chain", c.err)
+		}
+		// The module's own refusals carry their path in the text, and come through as is.
+		var pe *fs.PathError
+		if errors.As(c.err, &pe) && strings.Count(msg, "/h/c.shcl") != 1 {
+			t.Errorf("%v: the path should be on its File line only:\n%s", c.err, msg)
+		}
+	}
+}
+
+// The review's case through 'account apply': a folder where a fragment goes. It
+// said to check permissions on the folder above and dropped "is a directory".
+func TestAccountApplyKeepsTheReasonAFragmentFailed(t *testing.T) { // [Erfv8Zp]
+	if isWindows() {
+		t.Skip("Windows refuses a write to a folder as access denied, which is a permissions error")
+	}
+	cfg := writeConfig(t, "account: b\n\tpath: /srv/b\n\tghaccount: bacct\n")
+	a := newApp(newPrinter())
+	a.cfg = cfg
+	fragment := filepath.Join(filepath.FromSlash(cfg.includeDir()), cfg.fragmentNames()["b"])
+	if err := os.MkdirAll(fragment, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	err := a.cmdAccountApply()
+	if err == nil {
+		t.Fatal("apply: no refusal")
+	}
+	for _, want := range []string{"File: " + nativePath(fragment), "Why:  Writing it failed with: is a directory.", "Your global git config"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal is missing %q:\n%s", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "ermission") {
+		t.Errorf("refusal blames permissions:\n%s", err)
+	}
+}
+
+// A lock name past the filesystem's limit said to check permissions on the folder.
+func TestLockKeepsTheReasonItFailed(t *testing.T) { // [Erfv8a8]
+	if isWindows() {
+		t.Skip("needs a 255-byte name limit on one path part")
+	}
+	// 251 bytes is a name the folder takes, and its lock name at 256 is not.
+	file := filepath.Join(t.TempDir(), strings.Repeat("z", 246)+".shcl")
+	_, err := lockAccountsFile(file, 0)
+	if err == nil {
+		t.Fatal("lock: no refusal")
+	}
+	for _, want := range []string{"Lock: " + nativePath(file+".lock"), "Why:  Creating it failed with: file name too long.", "Kept: Nothing was written."} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal is missing %q:\n%s", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "writable") || strings.Contains(err.Error(), "ermission") {
+		t.Errorf("refusal blames permissions:\n%s", err)
+	}
+}
+
+// A plain file where the accounts file's folders go. The refusal named the folder
+// and nothing else.
+func TestAccountSetKeepsTheReasonItsFolderFailed(t *testing.T) { // [Erfv8ad]
+	a := createApp(t, newPrinter())
+	blocker := filepath.Dir(filepath.Dir(defaultConfigFile()))
+	if err := os.MkdirAll(filepath.Dir(blocker), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(blocker, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.cfg.load(a.opt); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	err := a.cmdAccountSet()
+	if err == nil {
+		t.Fatal("set: no refusal")
+	}
+	for _, want := range []string{"Couldn't create the folder the accounts file goes in.", "Why:  Creating it failed with: ", "Kept: Nothing was written."} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal is missing %q:\n%s", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "writable") {
+		t.Errorf("refusal blames permissions:\n%s", err)
+	}
+	if !isWindows() && !strings.Contains(err.Error(), "File: "+nativePath(blocker)+"\n  Why:  Creating it failed with: not a directory.") {
+		t.Errorf("refusal should name the file in the way and why:\n%s", err)
+	}
+}
+
+// The flat file is read again to convert it, and a failure there dropped its reason.
+func TestLoadForEditKeepsTheReasonTheReadFailed(t *testing.T) { // [Erfv8b9]
+	a := newApp(newPrinter())
+	a.cfg.flat, a.cfg.file = true, t.TempDir()
+	err := a.loadForEdit(&accountSetTarget{})
+	if err == nil {
+		t.Fatal("no refusal")
+	}
+	for _, want := range []string{"File: " + nativePath(a.cfg.file), "Why:  Reading it failed with: ", "Fix:  Run this again once it can be read."} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal is missing %q:\n%s", want, err)
+		}
+	}
+}
+
+// A relative path with no current folder to be relative to. It said only that it
+// couldn't work the path out.
+func TestAbsPathValueKeepsTheReasonTheFolderIsGone(t *testing.T) { // [Erfv8bb]
+	if runtime.GOOS != "linux" {
+		t.Skip("needs a current folder that can be removed out from under the run")
+	}
+	dir := filepath.Join(t.TempDir(), "gone")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	if err := os.Remove(dir); err != nil {
+		t.Fatal(err)
+	}
+	_, err := absPathValue("tok.txt", "file")
+	if err == nil || !strings.Contains(err.Error(), "since finding the current folder failed with: getwd: no such file or directory") {
+		t.Errorf("err = %v, want the reason the current folder couldn't be found", err)
 	}
 }
