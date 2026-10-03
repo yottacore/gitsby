@@ -78,6 +78,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: release.bash:132 and :333, gen-winres.bash:100, spawn-report.bash:53 and install.bash:196, all fixed. Left alone, since `|| true` keeps the right value there: install.bash's wget redirect read, cicd.bash's tool version read and parity.bash's diff excerpts. Found by a grep for `| head`, `| grep -q` and `| awk ... exit` over every `.bash` outside `legacy/`. test.bash's `| grep -q` runs inside `bash -c`, which has no pipefail.
 	- Verified: all five checks fail on `gover` and pass here. test.bash passes 1280 of 1280 with both fixes in.
 	- Branch: relpipe
+	- Commit: e8195e6
 	- Test case: in test.bash, [Erfs76S] for a published binary whose `--version` outruns a pipe, [Erfs77J] and [Erfs78A] for 3000 tags, [Erfs792] for a long SHA256SUMS, and [Erfs79u] for 1000 spawn recordings.
 	- Acceptance signoff: Self-closed: reproduced, the checks fail before the fix and pass after, and the sweep is answered.
 	- Closed: 20261003-141543
