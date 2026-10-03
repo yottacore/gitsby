@@ -227,8 +227,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Note: install.bash has no check. It runs on stock macOS bash 3.2 by design, which its header and the guide both say, and what it installs needs no shell.
 	- Note: n8git_backup-and-publish has no check either. It is a helper shared with other projects, like gfs-rotate.bash. config.bash and the two include files are only sourced.
 	- Swept: every tracked bash file outside legacy/, through the same list the shell lint coverage check reads. The test fails a new script that lacks the check.
-	- Verified: under a real bash 3.2.57 and 4.3.48 each of the 16 refuses with its line and exit 1, and under 4.4.23 the check passes. Under 3.2 on `gover` they ran on. The new checks fail 16 of 16 on `gover` and pass here.
+	- Verified: under a real bash 3.2.57 and 4.3.48 each of the 16 refuses with its line and exit 1, and under 4.4.23 none does. Under 3.2 on `gover` they ran on. The new checks fail 16 of 16 on `gover` and pass here.
 	- Branch: lowfix
+	- Commit: c9bc222
 	- Test case: [ErfyDHs] in test.bash, one per script, runs a copy with the floor raised and expects the refusal and nothing else. [ErfyLds] fails it if the list comes back empty.
 	- Acceptance signoff: Waiting. The guide's wording changed, and n8git_backup-and-publish was left without a check.
 
@@ -251,6 +252,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: all 514 doc comments on top-level declarations in src-go. No other one names a different function or an old one. 17 outside the tests open with prose, such as "The byte-order mark ..." on `utf8BOM`, and name nothing; they were left as they are. Most test functions open the same way, with the case they cover.
 	- Verified: the new test fails on the three comments on `gover` and passes here. `go test ./...` passes.
 	- Branch: lowfix
+	- Commit: 8805239
 	- Test case: TestDocCommentsNameWhatTheySitOn. A doc comment that opens with a camelCase word has to name what it sits on, and none may hold a second comment headed by another function's name.
 	- Acceptance signoff: Self-closed: mechanical.
 	- Closed: 20261003-143901
@@ -273,6 +275,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: spawn-count.bash's baseline, and spawn-report.bash's newest and previous recordings, are the only file values that reach arithmetic. The rest read only numbers made by a command: `grep -c`, `wc -c`, `od`, `stat`, `git rev-list --count`, `git log` dates, awk line numbers in release.bash, and the footer dates release.bash cuts down to digits. test-id.bash already checks its value. Left alone: release.bash's patch bump on a `v*` tag name, since a tag can't hold `[` and so can't run anything, and keep-build.bash's number, which is typed on its own command line.
 	- Verified: the three new checks fail on `gover`, where the `touch` ran each time, and pass here with nothing run.
 	- Branch: lowfix
+	- Commit: f31269f
 	- Test case: [ErfzUGl] and [ErfzUH0] for spawn-report.bash, [ErfzUHF] for spawn-count.bash, in test.bash. The last needs strace, like the other spawn-count checks.
 	- Acceptance signoff: Waiting. It closes a command injection, so it touches security.
 
@@ -289,10 +292,11 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: backlog-check.bash from the 2026-09-10 rules, before the new item format. Confirmed.
 	- Actual cause [Bug]: It matched only a tab-indented title with a status emoji, and took its Origin row at two tabs.
 	- Estimated effort: Low
-	- Actual fix [Bug]: It reads both formats. A new-format review item is a top-level title starting "Code Review", open unless its Status row says Done, Canceled, Moot or Deferred, the same four the old emoji stand for, with Moot added. Its Origin row sits one tab in. The old format also takes a round with a letter after the date, such as 20260819d, which it missed before. All of those are closed.
+	- Actual fix [Bug]: It reads both formats. A new-format review item is a top-level title starting "Code Review", open unless its Status row says Done, Canceled, Moot or Deferred. The old emoji stand for three of those, and Moot is new. Its Origin row sits one tab in. The old format also takes a round with a letter after the date, such as 20260819d, which it missed before. All of those are closed.
 	- Swept: backlog-check.bash is the only script that reads review items out of the backlog.
 	- Verified: on a copy of this backlog with item 8's Origin row taken out, the gate on `gover` said "0 listed" and passed. Here it names item 8 and exits 1, and on the real backlog it lists 14 open items. The two new checks fail on `gover` and pass here.
 	- Branch: lowfix
+	- Commit: d78b9c9
 	- Test case: [Erg0LJv] and [Erg0LK9] in test.bash.
 	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
 	- Closed: 20261003-145130
