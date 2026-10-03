@@ -129,7 +129,9 @@ winres=("${here}/utility/gen-winres.bash"); winresStatus=0
 
 ## The last release, for the guards below. The version itself comes from the tag this cuts, not
 ## from anything in the tree - there is no longer a string in a source file that can disagree.
-lastTag="$(git -c versionsort.suffix=- tag --sort=-v:refname --list 'v*' | head -n 1)"
+## Listed whole and then cut, since a 'head' downstream fails git's write once there are enough tags.
+lastTags="$(git -c versionsort.suffix=- tag --sort=-v:refname --list 'v*')" || fDie "couldn't list the v* tags."
+lastTag="${lastTags%%$'\n'*}"
 
 ## The changelog has to have something to release. 'vNEXT' is this project's convention for
 ## "landed but not cut", and releasing with no such section means the notes would be empty.
@@ -245,7 +247,7 @@ if ! fWould "branch ${relBranch}, retitle the changelog's vNEXT as '${version} -
 	## gitsby's own 'pr create' rather than gh directly: it already knows this repo's merge target,
 	## which is the one thing a hand-written --base can get wrong.
 	prOut="$("${gitsby}" -q pr create "${version}" 2>&1)" || { echo "${prOut}" >&2; fDie "couldn't open the version-bump PR."; }
-	prNum="$(printf '%s\n' "${prOut}" | grep -oE 'https://github\.com/[^ ]+/pull/[0-9]+' | tail -n 1)"
+	prNum="$(printf '%s\n' "${prOut}" | grep -oE 'https://github\.com/[^ ]+/pull/[0-9]+' | tail -n 1 || true)"
 	prNum="${prNum##*/}"
 	[[ "${prNum}" =~ ^[0-9]+$ ]] || { echo "${prOut}" >&2; fDie "couldn't read a PR number out of 'pr create' output."; }
 	fEcho_Clean "opened PR #${prNum} for the version bump"
@@ -284,7 +286,7 @@ awk -v ver="## ${version} " -v start="$(fpChangelogStart)" \
 [[ -s "${notes}" ]] || fEcho_Clean "WARNING: no changelog section found for ${version}; the release body will be empty."
 nativeAsset="${EXE_NAME}-$(go env GOOS)-$(go env GOARCH)"; [[ "$(go env GOOS)" == windows ]] && nativeAsset="${nativeAsset}.exe"
 buildLine=""
-[[ -x "${assets}/${nativeAsset}" ]] && buildLine="$("${assets}/${nativeAsset}" --version 2>/dev/null | awk -v want="${EXE_NAME} v" 'index($0, want) == 1 && !seen {print; seen = 1}')"
+[[ -x "${assets}/${nativeAsset}" ]] && buildLine="$("${assets}/${nativeAsset}" --version 2>/dev/null | awk -v want="${EXE_NAME} v" 'index($0, want) == 1 && !seen {print; seen = 1}' || true)"
 if [[ -n "${buildLine}" ]]; then
 	printf '\n---\n\n%s\n' "${buildLine}" >> "${notes}"
 else
@@ -303,7 +305,7 @@ fi
 ## platform back off the published release, check it against the published SHA256SUMS, and run it.
 ## That is the whole contract - a download whose checksum matches and whose --version is right.
 if ! fWould "verify releases/latest, then download and run this platform's published binary"; then
-	latest="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/yottacore/gitsby/releases/latest" 2>/dev/null | sed -n 's|.*/releases/tag/||p')"
+	latest="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/yottacore/gitsby/releases/latest" 2>/dev/null | sed -n 's|.*/releases/tag/||p' || true)"
 	## 'releases/latest' is the newest release NOT flagged as a pre-release, so a candidate must
 	## not resolve there and a full release must. Asking it the same question both ways round
 	## would warn on every good beta, which is the failure the 20260814 entry below is about.
@@ -322,6 +324,8 @@ if ! fWould "verify releases/latest, then download and run this platform's publi
 	proveOs="$(go env GOOS)"; proveArch="$(go env GOARCH)"
 	proveAsset="${EXE_NAME}-${proveOs}-${proveArch}"; [[ "${proveOs}" == windows ]] && proveAsset="${proveAsset}.exe"
 	base="https://github.com/yottacore/gitsby/releases/download/${version}"
+	## --version is read whole, then matched. A grep -q quits at the match, and the rest of the
+	## banner then fails to write, which pipefail reports as a failed proof.
 	proved=0
 	for attempt in 1 2 3; do
 		((attempt > 1)) && { fEcho_Clean "not downloadable yet; giving GitHub a moment to serve the assets (attempt ${attempt}) ..."; sleep 20; }
@@ -330,7 +334,8 @@ if ! fWould "verify releases/latest, then download and run this platform's publi
 			&& curl -fsSL -o "${proveDir}/SHA256SUMS" "${base}/SHA256SUMS" \
 			&& ( cd "${proveDir}" && grep -F " ${proveAsset}" SHA256SUMS | sha256sum --check --status ) \
 			&& chmod +x "${proveDir}/${proveAsset}" \
-			&& "${proveDir}/${proveAsset}" --version 2>/dev/null | grep -q "v${version#v}"; then
+			&& proveOut="$("${proveDir}/${proveAsset}" --version 2>/dev/null)" \
+			&& [[ "${proveOut}" == *"v${version#v}"* ]]; then
 			proved=1
 		fi
 		rm -rf -- "${proveDir:?}"
@@ -376,3 +381,5 @@ echo
 ##		- 20260928 JC: A dry run no longer ends by saying the version was tagged, pushed and released. Committed executable, as its syntax line assumes.
 ##		- 20260928 JC: Phase 3 builds the published bytes from an export of the tag rather than the working tree. The temp folders go on any exit, not only after phase 3 starts.
 ##		- 20261001 JC: 'sed -i' in a form BSD sed also takes.
+##		- 20261003 JC: A PR number, a releases/latest answer or a build line that can't be read no longer ends the run with nothing said. Under set -e each assignment took its command's failure, so the message written for it never ran.
+##		- 20261003 JC: The tag list and the proof's --version are read whole before they are matched. A head or grep -q that quit early could fail the writer under pipefail: the proof now and then, and the tag lookup every time once there are a few thousand tags.

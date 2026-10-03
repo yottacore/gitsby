@@ -50,7 +50,7 @@ fNewestTwo(){
 		[[ -e "$f" ]] || continue
 		b="$(basename "$f")"; t="${b#spawn_}"; t="${t%%_*}"; t="${t%.tsv}"
 		printf '%s\t%s\n' "$t" "$f"
-	done | sort -r | head -n 2
+	done | sort -r | sed -n '1,2p'
 }
 
 [[ -d "$dir" ]] || fSkip "no spawn dir: $dir"
@@ -93,3 +93,4 @@ done < "$newest"
 ##	History:
 ##		- 20260821 JC: Created. The lint-report --check pattern, pointed at the spawn
 ##		  recordings, so the startup look at profiler output has a tool to call.
+##		- 20261003 JC: The newest two are taken without a head, which failed the sort's write once the folder held a thousand or so recordings.
