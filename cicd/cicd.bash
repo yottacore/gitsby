@@ -171,7 +171,8 @@ fToolVersion(){
 	case "$1" in
 		shellcheck)       shellcheck --version 2>/dev/null | awk '$1=="version:"{print $2}' ;;
 		markdownlint)     markdownlint --version 2>/dev/null || npx --no-install markdownlint --version 2>/dev/null ;;
-		PSScriptAnalyzer) pwsh -NoProfile -Command '$m = Get-Module -ListAvailable PSScriptAnalyzer | Sort-Object Version -Descending | Select-Object -First 1; if ($m) { $m.Version.ToString() }' 2>/dev/null ;;
+		## Stage 1's lint already asked, so pwsh need not start again.
+		PSScriptAnalyzer) if [[ -n "${psaAsked:-}" ]]; then echo "${psaVersion}"; else pwsh -NoProfile -Command '$m = Get-Module -ListAvailable PSScriptAnalyzer | Sort-Object Version -Descending | Select-Object -First 1; if ($m) { $m.Version.ToString() }' 2>/dev/null; fi ;;
 		gifsicle)         gifsicle --version 2>/dev/null | awk 'NR==1{print $NF}' ;;
 		Pillow)           python3 -c 'import PIL; print(PIL.__version__)' 2>/dev/null ;;
 		strace)           strace -V 2>/dev/null | awk 'NR==1{print $NF}' ;;
@@ -179,7 +180,7 @@ fToolVersion(){
 }
 
 fStageLint(){
-	local f g _ng n md_files ps_files py_cache toolDrift toolSpec toolName toolWant toolPath toolHave unformatted winres_status
+	local f g _ng n md_files ps_files psList psScript psRc psOut q py_cache toolDrift toolSpec toolName toolWant toolPath toolHave unformatted winres_status
 	((${#shell_files[@]})) || fDie "no shell files matched SHELL_LINT_GLOBS"
 	for f in "${shell_files[@]}"; do
 		bash -n "$f" || fDie "syntax error: $f"
@@ -229,18 +230,28 @@ fStageLint(){
 		for g in "${PS_LINT_GLOBS[@]}"; do for f in $g; do [[ -f "$f" ]] && ps_files+=("$f"); done; done
 		((_ng)) || shopt -u nullglob
 		if ((${#ps_files[@]})); then
-			if pwsh -NoProfile -Command "Get-Command Invoke-ScriptAnalyzer" >/dev/null 2>&1; then
-				for f in "${ps_files[@]}"; do
-					pwsh -NoProfile -Command "\$r = Invoke-ScriptAnalyzer -Path '${f}' -Severity Error,Warning,Information; \$r | Format-Table -AutoSize | Out-String -Width 200 | Write-Host; exit @(\$r).Count" || fDie "PSScriptAnalyzer findings in ${f}"
-					## The installer has to run on Windows PowerShell 5.1 - that is what a fresh
-					## Windows box has, and the box most likely to be installing this for the first
-					## time. Nothing else here checks the syntax against it.
-					pwsh -NoProfile -Command "\$s = @{Rules=@{PSUseCompatibleSyntax=@{Enable=\$true;TargetVersions=@('5.1','7.0')}}}; \$r = Invoke-ScriptAnalyzer -Path '${f}' -IncludeRule PSUseCompatibleSyntax -Settings \$s; \$r | Format-Table -AutoSize | Out-String -Width 200 | Write-Host; exit @(\$r).Count" || fDie "PowerShell 5.1 syntax findings in ${f}"
-				done
-				fEcho "OK: PSScriptAnalyzer clean, 5.1-compatible (${#ps_files[@]} file(s))"
+			## One pwsh for every file, the module probe and its version: each start costs about a
+			## second. A file that fails to parse is reported from ParseFile and not analyzed, so
+			## a Severity filter in the settings can't hide it. Exit 3 is a missing module.
+			psList=""; q="'"
+			for f in "${ps_files[@]}"; do psList+="${psList:+,}${q}${f//${q}/${q}${q}}${q}"; done
+			psScript="\$ErrorActionPreference = 'Stop'; \$m = Get-Module -ListAvailable PSScriptAnalyzer | Sort-Object Version -Descending | Select-Object -First 1; if (-not \$m) { exit 3 }; 'PSScriptAnalyzer-version ' + \$m.Version; \$bad = 0"
+			psScript+="; foreach (\$f in @(${psList})) { \$parseErrors = \$null; [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path \$PWD \$f), [ref]\$null, [ref]\$parseErrors)"
+			psScript+="; if (\$parseErrors) { \$bad++; \$parseErrors | Select-Object @{Name='ScriptName'; Expression={\$f}}, @{Name='Line'; Expression={\$_.Extent.StartLineNumber}}, ErrorId, Message | Format-Table -AutoSize | Out-String -Width 200 | Write-Host; continue }"
+			psScript+="; \$r = Invoke-ScriptAnalyzer -Path \$f -Settings ${q}${PS_LINT_SETTINGS//${q}/${q}${q}}${q}; if (\$r) { \$bad++; \$r | Format-Table -AutoSize | Out-String -Width 200 | Write-Host } }; exit [int](\$bad -gt 0)"
+			psRc=0
+			if ! command -v pwsh >/dev/null 2>&1; then psRc=3
 			else
-				fEcho "WARNING: PSScriptAnalyzer skipped (pwsh + PSScriptAnalyzer module not both installed)"
+				[[ -f "${PS_LINT_SETTINGS}" ]] || fDie "PSScriptAnalyzer settings not found: ${PS_LINT_SETTINGS}"
+				psOut="$(pwsh -NoProfile -NonInteractive -Command "${psScript}" </dev/null)" || psRc=$?
+				psaVersion="$(sed -n 's/^PSScriptAnalyzer-version //p' <<< "${psOut}")"; psaAsked=1
+				[[ -z "${psOut}" ]] || sed '/^PSScriptAnalyzer-version /d' <<< "${psOut}"
 			fi
+			case "${psRc}" in
+				0) fEcho "OK: PSScriptAnalyzer clean, 5.1-compatible (${#ps_files[@]} file(s))" ;;
+				3) fEcho "WARNING: PSScriptAnalyzer skipped (pwsh + PSScriptAnalyzer module not both installed)" ;;
+				*) fDie "PSScriptAnalyzer findings, listed above" ;;
+			esac
 		fi
 	fi
 	## gofmt is the arbiter of format, vet gates, staticcheck gates when installed.
@@ -724,3 +735,4 @@ fEcho_Clean
 ##		- 2026-09-27 JC: The Go unit tests print a line per test, with its test ID. Their full output shows only on a failure.
 ##		- 2026-09-28 JC: The tool version check covers six tools outside Go, and finds a Go tool where go install put it when that is not on PATH.
 ##		- 2026-10-03 JC: macOS dogfood is a universal binary, both Mac CPUs built and joined, so Intel Macs can run it too.
+##		- 2026-10-03 JC: PowerShell lint is one pwsh for every file, with its rules in PSScriptAnalyzerSettings.psd1. A file that fails to parse fails the lint on its own.
