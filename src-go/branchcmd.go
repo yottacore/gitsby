@@ -223,7 +223,20 @@ func (a *app) backOutMerge(stepErr error, from, into, returnTo, settle string) e
 	if !runOK("git", "rev-parse", "-q", "--verify", "MERGE_HEAD") {
 		return stepErr
 	}
-	_ = runOK("git", "merge", "--abort")
+	// Not quietly: when it fails, git's own reason is the one that says what to fix.
+	if !a.inheritOK("git", "merge", "--abort") {
+		a.out.resetBlank()
+		fix := []string{"Drop the merge:", "  git merge --abort"}
+		if returnTo != "" && returnTo != into {
+			fix = []string{"Drop the merge, then go back to '" + returnTo + "':", "  git merge --abort", "  git checkout " + typedArg(returnTo, runtime.GOOS)}
+		}
+		fix = append(fix, "Then settle the conflict by hand, and run it again:", "  "+settle)
+		return refusalBlock("'"+from+"' would not merge cleanly into '"+into+"', and backing the merge out failed.", [][]string{
+			noteLines("Why", "'git merge --abort' failed, so '"+into+"' is still mid-merge."),
+			noteLines("Kept", "Nothing was committed to '"+into+"'."),
+			noteLines("Fix", fix...),
+		}, stepErr)
+	}
 	a.out.resetBlank()
 	a.out.status("Backed out: '" + from + "' would not merge cleanly into '" + into + "', which is as it was.")
 	if returnTo != "" && returnTo != a.currentBranch() {
@@ -280,7 +293,17 @@ func (a *app) backMergeToDev() error {
 		a.out.resetBlank()
 		return a.pushIfOnline()
 	}
-	_ = runOK("git", "merge", "--abort")
+	// A failed abort leaves the tree mid-merge, which no later command should
+	// stumble on unwarned, so the run fails even though the hotfix itself is done.
+	if !a.inheritOK("git", "merge", "--abort") {
+		a.out.resetBlank()
+		return refusalBlock("'"+mainBranch+"' would not merge cleanly into '"+devBranch+"', and backing the merge out failed.", [][]string{
+			noteLines("Why", "'git merge --abort' failed, so '"+devBranch+"' is still mid-merge."),
+			noteLines("Kept", "The hotfix landed on '"+mainBranch+"' - that part is done. Nothing was committed to '"+devBranch+"'."),
+			noteLines("Fix", "Settle the conflict by hand and commit it, which carries the hotfix across. Or drop the merge for now:", "  git merge --abort",
+				"Then carry it across by hand later:", "  git merge "+mergeRef),
+		}, nil)
+	}
 	a.out.resetBlank()
 	a.out.status("WARNING: '" + mainBranch + "' would not merge cleanly into '" + devBranch + "'; left '" + devBranch + "' untouched.")
 	a.out.clean("  The hotfix landed on '" + mainBranch + "' - that part is done.")
