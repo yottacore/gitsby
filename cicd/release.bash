@@ -129,7 +129,9 @@ winres=("${here}/utility/gen-winres.bash"); winresStatus=0
 
 ## The last release, for the guards below. The version itself comes from the tag this cuts, not
 ## from anything in the tree - there is no longer a string in a source file that can disagree.
-lastTag="$(git -c versionsort.suffix=- tag --sort=-v:refname --list 'v*' | head -n 1)"
+## Listed whole and then cut, since a 'head' downstream fails git's write once there are enough tags.
+lastTags="$(git -c versionsort.suffix=- tag --sort=-v:refname --list 'v*')" || fDie "couldn't list the v* tags."
+lastTag="${lastTags%%$'\n'*}"
 
 ## The changelog has to have something to release. 'vNEXT' is this project's convention for
 ## "landed but not cut", and releasing with no such section means the notes would be empty.
@@ -322,6 +324,8 @@ if ! fWould "verify releases/latest, then download and run this platform's publi
 	proveOs="$(go env GOOS)"; proveArch="$(go env GOARCH)"
 	proveAsset="${EXE_NAME}-${proveOs}-${proveArch}"; [[ "${proveOs}" == windows ]] && proveAsset="${proveAsset}.exe"
 	base="https://github.com/yottacore/gitsby/releases/download/${version}"
+	## --version is read whole, then matched. A grep -q quits at the match, and the rest of the
+	## banner then fails to write, which pipefail reports as a failed proof.
 	proved=0
 	for attempt in 1 2 3; do
 		((attempt > 1)) && { fEcho_Clean "not downloadable yet; giving GitHub a moment to serve the assets (attempt ${attempt}) ..."; sleep 20; }
@@ -330,7 +334,8 @@ if ! fWould "verify releases/latest, then download and run this platform's publi
 			&& curl -fsSL -o "${proveDir}/SHA256SUMS" "${base}/SHA256SUMS" \
 			&& ( cd "${proveDir}" && grep -F " ${proveAsset}" SHA256SUMS | sha256sum --check --status ) \
 			&& chmod +x "${proveDir}/${proveAsset}" \
-			&& "${proveDir}/${proveAsset}" --version 2>/dev/null | grep -q "v${version#v}"; then
+			&& proveOut="$("${proveDir}/${proveAsset}" --version 2>/dev/null)" \
+			&& [[ "${proveOut}" == *"v${version#v}"* ]]; then
 			proved=1
 		fi
 		rm -rf -- "${proveDir:?}"
@@ -377,3 +382,4 @@ echo
 ##		- 20260928 JC: Phase 3 builds the published bytes from an export of the tag rather than the working tree. The temp folders go on any exit, not only after phase 3 starts.
 ##		- 20261001 JC: 'sed -i' in a form BSD sed also takes.
 ##		- 20261003 JC: A PR number, a releases/latest answer or a build line that can't be read no longer ends the run with nothing said. Under set -e each assignment took its command's failure, so the message written for it never ran.
+##		- 20261003 JC: The tag list and the proof's --version are read whole before they are matched. A head or grep -q that quit early could fail the writer under pipefail: the proof now and then, and the tag lookup every time once there are a few thousand tags.

@@ -193,7 +193,7 @@ base="https://github.com/${repo}/releases/download/${tag}"
 ## Either case of hash and either line ending, as sha256sum -c and the PowerShell installer take.
 sums="$(fFetch "${base}/SHA256SUMS" 2>/dev/null | tr -d '\r' || true)"
 [[ -n "${sums}" ]] || fErr "Release ${tag} publishes no SHA256SUMS, so nothing here can be verified. (A release published seconds ago may not be servable yet; try again shortly.)"
-want="$(printf '%s\n' "${sums}" | sed -n "s/^\([0-9a-fA-F]\{64\}\)[[:space:]]*\*\{0,1\}${asset}\$/\1/p" | head -n 1 | tr '[:upper:]' '[:lower:]')"
+want="$(printf '%s\n' "${sums}" | sed -n "s/^\([0-9a-fA-F]\{64\}\)[[:space:]]*\*\{0,1\}${asset}\$/\1/p" | sed -n '1p' | tr '[:upper:]' '[:lower:]')"
 if [[ -z "${want}" ]]; then
 	{
 		echo
@@ -307,3 +307,4 @@ echo
 ##		- 20260819 JC: The binary is staged in the destination directory and renamed over the target. Written in place, an interrupt mid-copy left a truncated executable that had passed its checksum under another name, and re-installing over a copy that was running failed outright. --help lists every option the parser accepts.
 ##		- 20260915 JC: SHA256SUMS is read with either case of hash and with CRLF line ends. --help lists --ref, and says --release stable still names the default. The no-binary refusal, a declined prompt and the pre-release notice have a blank line either side. The plan says when it replaces a copy, and a binary that won't run is named with its exit code.
 ##		- 20260928 JC: End of input at the prompt says Aborted, as a typed no does. A tag read from the release redirect gets the same path check as a typed one. A user install checks it can write its folder, and a system one that sudo exists, both before the plan.
+##		- 20261003 JC: The hash lookup reads SHA256SUMS to the end. A head that quit at the first match could fail the write before it, and the install ended with nothing said.

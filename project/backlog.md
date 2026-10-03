@@ -51,8 +51,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Estimated effort: Low
 	- Actual fix [Bug]: Each of the three ends in `|| true`, so the check below it runs and says what happened.
 	- Swept: every `$( )` assignment in release.bash. The build line was the only other one that could end the run unseen. The rest end in `|| true` or `|| fDie`, or run a command that prints its own error.
-	- Verified: both checks fail on `gover` and pass here. Each of the three sites, put back alone, fails its check.
+	- Verified: both checks fail on `gover` and pass here. Each of the three sites, put back alone, fails its check. test.bash passes 1280 of 1280 with both fixes in.
 	- Branch: relpipe
+	- Commit: 0b664d5
 	- Test case: [Erfs74j] and [Erfs75a] in test.bash. They run release.bash past its dry run, with gh, curl and gitsby stubbed. The second is the first run of the phase 3 `releases/latest` block.
 	- Acceptance signoff: Self-closed: reproduced, and the checks fail before the fix and pass after.
 	- Closed: 20261003-141520
@@ -60,7 +61,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 item 2: A pipeline reader that quits early can fail its writer
 	- ID: 2026100313123865
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority|Severity [Bug]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -70,8 +71,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: Capture the output first, then match it, the way cicd.bash already does.
 	- Reproduced [Bug]: The proof step failed 1 run in 300. The tag lookup failed every time with 3000 tags, never with today's 6.
 	- Origin: release.bash:132 and :333 from 988b72d (2026-08-18), gen-winres.bash:100 from e6af523 (2026-08-19). Same class as the Bash trap on early-exit readers. Confirmed for the proof step, Plausible at today's tag count.
+	- Actual cause [Bug]: `head -n 1` and `grep -q` stop reading at the first match. A writer with more to say than a pipe holds then fails writing the rest, and `pipefail` fails the pipeline.
 	- Sweep: also `spawn-report.bash:53` and `install.bash:196`.
 	- Estimated effort: Low
+	- Actual fix [Bug]: The tag lists and the proof's `--version` are captured whole and then matched, the way cicd.bash reads the tags. The installer and spawn-report.bash take their first lines with `sed -n`, which reads to the end.
+	- Swept: release.bash:132 and :333, gen-winres.bash:100, spawn-report.bash:53 and install.bash:196, all fixed. Left alone, since `|| true` keeps the right value there: install.bash's wget redirect read, cicd.bash's tool version read and parity.bash's diff excerpts. Found by a grep for `| head`, `| grep -q` and `| awk ... exit` over every `.bash` outside `legacy/`. test.bash's `| grep -q` runs inside `bash -c`, which has no pipefail.
+	- Verified: all five checks fail on `gover` and pass here. test.bash passes 1280 of 1280 with both fixes in.
+	- Branch: relpipe
+	- Test case: in test.bash, [Erfs76S] for a published binary whose `--version` outruns a pipe, [Erfs77J] and [Erfs78A] for 3000 tags, [Erfs792] for a long SHA256SUMS, and [Erfs79u] for 1000 spawn recordings.
+	- Acceptance signoff: Self-closed: reproduced, the checks fail before the fix and pass after, and the sweep is answered.
+	- Closed: 20261003-141543
 
 - Code Review 20261003 item 3: Write and read failures in account commands guess at the cause
 	- ID: 2026100313123881
