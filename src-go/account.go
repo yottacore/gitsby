@@ -29,6 +29,7 @@ func (a *app) resolveAccount(dir, url string) error {
 	if err := a.cfg.load(a.opt); err != nil {
 		return err
 	}
+	a.reportMigration()
 	a.acct.name, a.acct.ghWho, a.acct.source, a.acct.explicit, a.acct.fromFile = "", "", "", false, false
 	a.acct.pickedBy = ""
 	if who := os.Getenv("GITSBY_ACCOUNT"); who != "" {
