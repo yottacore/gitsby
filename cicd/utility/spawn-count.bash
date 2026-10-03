@@ -143,6 +143,8 @@ else
 	for ((i = 0; i < ${#labels[@]}; i++)); do
 		was="$(awk -F'\t' -v k="${labels[i]}" '$1==k{print $2}' "${baseline}" || true)"
 		[[ -n "${was}" ]] || { ((quiet)) || fEcho_Clean "  NEW        ${ids[i]} ${labels[i]}: ${counts[i]}"; continue; }
+		## Arithmetic on text from a file runs any $(...) in an array subscript, so only digits go on.
+		[[ "${was}" =~ ^[0-9]+$ ]] || { echo "spawn-count: $(basename "${baseline}") has '${was}' for ${labels[i]}, which isn't a count. Fix or delete that file." >&2; exit 1; }
 		## A tolerance, because a git version can add or drop a helper of its own: two more
 		## processes, or a tenth again, whichever is larger.
 		local_allow=$(( was / 10 )); (( local_allow < 2 )) && local_allow=2

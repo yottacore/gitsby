@@ -4116,6 +4116,21 @@ GHEOF
 	(cd "${work}/spawnmany" && touch spawn_20260101-{000001..001000}_padpadpadpadpadpadpadpadpadpadpadpad.tsv)
 	fAssertOut "[Erfs79u] and it reads a folder of many recordings"  '^COUNTS spawn_20260101-001000_' \
 		bash "${root}/cicd/utility/spawn-report.bash" --dir "${work}/spawnmany"
+	## A count is used in arithmetic, which runs a $(...) inside the subscript of any array that is
+	## set. One folder has that in its newest recording and one in the recording before, and each
+	## has to be refused.
+	local srBad="${work}/spawnbad"
+	mkdir -p "${srBad}/newest" "${srBad}/previous"
+	printf 'status\t5\n' > "${srBad}/newest/spawn_20260101-000001.tsv"
+	printf 'status\t5\n' > "${srBad}/previous/spawn_20260101-000002.tsv"
+	# shellcheck disable=SC2016  ## The fixture's own substitution, left for the script to refuse.
+	printf 'status\tBASH_VERSINFO[$(touch %s/ran)0]\n' "${srBad}/newest" > "${srBad}/newest/spawn_20260101-000002.tsv"
+	# shellcheck disable=SC2016
+	printf 'status\tBASH_VERSINFO[$(touch %s/ran)0]\n' "${srBad}/previous" > "${srBad}/previous/spawn_20260101-000001.tsv"
+	fAssert "[ErfzUGl] and refuses a count that isn't a number, without running it" \
+		bash -c "out=\$('${root}/cicd/utility/spawn-report.bash' --dir '${srBad}/newest' 2>&1); [[ \$? == 1 ]] && grep -qF \"spawn_20260101-000002.tsv has 'BASH_VERSINFO[\" <<< \"\$out\" && [[ ! -e '${srBad}/newest/ran' ]]"
+	fAssert "[ErfzUH0] and in the recording it compares against" \
+		bash -c "out=\$('${root}/cicd/utility/spawn-report.bash' --dir '${srBad}/previous' 2>&1); [[ \$? == 1 ]] && grep -qF \"spawn_20260101-000001.tsv has 'BASH_VERSINFO[\" <<< \"\$out\" && [[ ! -e '${srBad}/previous/ran' ]]"
 	## One macOS dogfood folder serves Macs of both CPUs, so the build there is universal. The
 	## fixtures are only a Mach-O header and a few bytes, which is all the joiner reads.
 	local fatDir="${work}/macho" fatJoin="${root}/cicd/utility/macho-universal.bash"
@@ -4165,6 +4180,11 @@ GHEOF
 			bash -c "'${sc}/cicd/utility/spawn-count.bash' -q --record && [[ \$(ls '${sc}/cicd/artifacts/spawn' | grep -c '^spawn_.*\.tsv\$') == 2 ]]"
 		fAssert "[Er2gqb3] and without -q prints a verdict and test ID for every command, unchanged ones too" \
 			bash -c "out=\$('${sc}/cicd/utility/spawn-count.bash' 2>&1) && [[ \$(grep -cE '^  ok +\[[0-9A-Za-z]{7}\] [a-z ]+: [0-9]+\$' <<< \"\$out\") == \$(grep -c '^fMeasure \"' '${root}/cicd/utility/spawn-count.bash') ]]"
+		## The baseline's counts go into arithmetic, as the report's do.
+		# shellcheck disable=SC2016  ## As above, for the script to refuse.
+		printf 'status\tBASH_VERSINFO[$(touch %s/ran)0]\n' "${sc}" > "${sc}/cicd/artifacts/spawn/spawn_20991231-000000.tsv"
+		fAssert "[ErfzUHF] and refuses a baseline count that isn't a number, without running it or recording" \
+			bash -c "was=\$(ls '${sc}/cicd/artifacts/spawn'); out=\$('${sc}/cicd/utility/spawn-count.bash' -q 2>&1); [[ \$? == 1 ]] && grep -qF \"spawn_20991231-000000.tsv has 'BASH_VERSINFO[\" <<< \"\$out\" && [[ ! -e '${sc}/ran' ]] && [[ \$(ls '${sc}/cicd/artifacts/spawn') == \"\$was\" ]]"
 	else
 		echo "  skip: spawn-count regression checks (no strace)"
 	fi
