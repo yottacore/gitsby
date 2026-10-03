@@ -33,184 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- Code Review 20261003 item 3: Write and read failures in account commands guess at the cause
-	- ID: 2026100313123881
-	- Type: Bug
-	- Status: Waiting on signoff
-	- Priority|Severity [Bug]: Avg
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]:
-		- Run `account apply` or `account set` where the write fails for a reason other than permissions, such as a full disk or a read-only filesystem.
-	- Incorrect behavior [Bug]: The message says to check permissions. The real error is dropped.
-	- Expected behavior [Bug]: The message keeps the real error. The permissions hint shows only when it is a permissions error.
-	- Reproduced [Bug]: Yes, 2026-10-03. A folder where an `account apply` fragment goes, a lock name too long for the filesystem, and a plain file where the accounts file's folder goes. Each dropped the reason, and the first two said to check permissions.
-	- Possible cause [Bug]: `usagef` where `usageWrapf` exists for this. Seven sites in accountcmd.go.
-	- Origin: accountcmd.go, from 11905d2 (2026-09-16) and 62af07b (2026-09-28). Not seen by an earlier round. Confirmed.
-	- Sweep: every `usagef("Couldn't ...` that has an `err` in scope.
-	- Actual cause [Bug]: Each site had the error in hand and printed a fixed message instead. Most of them guessed permissions.
-	- Estimated effort: Low
-	- Actual fix [Bug]: Each refusal now says what failed, with File, Why, Kept and Fix lines under it. Why has the OS's reason. Fix names permissions only for a permissions error, and otherwise says to run again once the reason is fixed. The save, the create and the lock point at the folder, since that is what they write in.
-	- Note: The labeled layout is the UI guide's, which keeps a path out of the sentence.
-	- Swept: the seven sites the review named, plus the lock, the partly written create and the relative path in `account set`. Left alone: the three `git config` failures in `account apply`, which have no error in hand while git prints its own, and the three in repo.go, which already give the reason. Found by a grep for `usagef("Couldn't` over src-go.
-	- Verified: the five site tests fail on `gover` and pass here. The test.bash pair was run by hand against both builds. test.bash passes 1288 of 1288, and `go test ./...` and `cicd.bash --gate` pass.
-	- Branch: errmsg
-	- Commit: 52b5c44
-	- Test case: TestAccountApplyKeepsTheReasonAFragmentFailed, TestLockKeepsTheReasonItFailed, TestAccountSetKeepsTheReasonItsFolderFailed, TestLoadForEditKeepsTheReasonTheReadFailed and TestAbsPathValueKeepsTheReasonTheFolderIsGone for the sites, TestWriteRefusalNamesPermissionsOnlyWhenTheyAreTheCause for the rule, and [Erfv8YB] and [Erfv8Yu] in test.bash. The chmod and save sites have no unprivileged way to fail, so the rule test covers them.
-	- Acceptance signoff: Waiting. The wording and layout of ten refusals changed.
-
-- Code Review 20261003 item 4: `br merge` says the target is as it was without checking
-	- ID: 2026100313123895
-	- Type: Bug
-	- Status: Waiting on signoff
-	- Priority|Severity [Bug]: Avg
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]:
-		- Have `git merge --abort` fail after a conflicted `br merge`.
-	- Incorrect behavior [Bug]: gitsby ignores the failure and prints that the target "is as it was". The tree is still mid-merge.
-	- Expected behavior [Bug]: When the abort fails, say the tree is mid-merge and name the commands to settle it.
-	- Reproduced [Bug]: Yes, 2026-10-03, with a git that refuses only `merge --abort`. `br merge` said dev "is as it was", then failed a checkout on the conflicted tree. The hotfix back-merge said dev was untouched and ended in Done, exit 0. `release` goes through the same code as `br merge`.
-	- Possible cause [Bug]: `_ = runOK("git", "merge", "--abort")` in `backOutMerge`, and the same at the dev back-merge.
-	- Origin: branchcmd.go:226 from bfbae90 (2026-09-15). Not seen before. Confirmed.
-	- Actual cause [Bug]: Both sites threw away the abort's exit status.
-	- Estimated effort: Low
-	- Actual fix [Bug]: A failed abort now refuses with Why, Kept and Fix lines. They say the target is still mid-merge, that nothing was committed to it, and give the commands to drop the merge and go back. git's own reason for the failed abort shows above it. The back-merge also offers finishing the merge by hand, which carries the hotfix across.
-	- Note: The back-merge now exits 1 when its abort fails, even though the hotfix landed. A clean abort there is unchanged and still ends in a warning.
-	- Swept: both `merge --abort` calls in src-go. `release` backs out through `backOutMerge`, so it is covered too and was run by hand. No other git step in src-go has its result discarded, apart from the listings and two best-effort calls in repo.go and remote.go whose comments say why.
-	- Verified: the same runs on `gover` said the target was as it was, and the back-merge exited 0. Here all six checks pass, and test.bash passes 1288 of 1288. `go test ./...` and `cicd.bash --gate` pass.
-	- Branch: errmsg
-	- Commit: d7511a2
-	- Test case: [ErfwTrE] and [ErfwTrT] for the back-merge, [ErfwTrh], [ErfwTrv], [ErfwTs8] and [ErfwTsM] for `br merge`, all in test.bash.
-	- Acceptance signoff: Waiting. New refusal wording, and the back-merge's exit status changed.
-
-- Code Review 20261003 enhancement 1: The spawn-count fixture can't see the account paths
-	- ID: 2026100313123975
-	- Type: Enhancement
-	- Status: Waiting on signoff
-	- Priority [Feature]: Avg
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Requirements  [Feature]:
-		- Add a configured account, a fake `gh` and a pty run to the fixture, so it counts what a real user's `status`, `whoami` and `account list` start.
-		- Give each counted command a threshold that fails the gate.
-	- Actual effort: Avg
-	- Decisions:
-		- Do this first. The other spawn items in this round need it to prove anything.
-	- Origin: spawn-count.bash uses an empty config, a local origin and captured stdout. Four of this round's spawn findings are out of its sight. Confirmed.
-	- Done: The fixture has two more clones whose origin is on github.com, one over ssh and one over https. An account's folder rule covers each, with a token file and no token in gh. A fake `gh` and `ssh` answer on PATH, and a proxy on a closed port stops anything else. HOME moved into the fixture.
-	- Done: Five new measures run on a pty with no `-q`: `status` with a fetch, `status`, `whoami` and `account list` in the ssh folder, and `status` in the https folder.
-	- Done: Each command has a limit written beside it, set at today's count. A count over it fails and records nothing, and `--record` doesn't lift it. The baseline compare is unchanged. So is the tsv, so spawn-report.bash reads it as before.
-	- Note: The new measures see what enhancements 2, 5 and 6 will move: both `gh api user` calls and the `ssh -T`, one `gh` per login in the listing, `tput cols`, the `gitsby.ghTokenFile` lookup made twice, the protocol asked of `gh` on an https origin, and `origin/HEAD` read twice after a fetch. The older measures already see `show-ref` in `br switch` and `br prune`, and the two `rev-parse` calls at startup.
-	- Note: The limits have no tolerance. A git version that adds a helper of its own trips them, and the fix then is raising the limit by hand.
-	- Note: The stub build in test.bash's spawn-count checks names `/bin/sh` rather than going through env, so its count doesn't depend on PATH.
-	- Verified: full test.bash on spawnfix, 1311 passed, 0 failed.
-	- Verified: the 13 counts were the same over four runs, and the first eight match the 2026-09-30 baseline. Lowering one limit below its count failed a `--record` run with nothing recorded; put back, the run passes.
-	- Branch: spawnfix
-	- Commit: 921674f, 5c0d35b
-	- Test case: The limits in spawn-count.bash, run in stage 3. [Erg2KNK] in test.bash fails a count over its limit under `--record`. It fails against the script before this change.
-	- Acceptance signoff: Waiting. Which commands to measure, and limits with no tolerance, were choices.
-
-- Code Review 20261003 enhancement 4: PowerShell lint starts pwsh four times
-	- ID: 2026100313124015
-	- Type: Enhancement
-	- Status: Waiting on signoff
-	- Priority [Feature]: Avg
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Requirements  [Feature]:
-		- Run both PSScriptAnalyzer passes over every file in one pwsh call. It's about 10 s now and about 3 s that way, on every `--gate`.
-		- Put the rules in a `PSScriptAnalyzerSettings.psd1`, as the directive asks, rather than inline in cicd.bash.
-	- Decisions:
-		- Indentation stays four spaces. The directive's tab rule doesn't reindent existing code.
-	- Origin: cicd.bash stage 1. Confirmed, timed.
-	- Done: One pwsh now probes for the module, lints every file and reports the module's version, so the tool version check doesn't start another. The rules are in `PSScriptAnalyzerSettings.psd1` at the repo root. A file that doesn't parse is caught by the parser before the analyzer runs, so a Severity filter added to the settings later can't hide it.
-	- Note: The old first pass filtered by severity, which dropped parse errors. Only the 5.1 pass caught them.
-	- Note: `PSUseConsistentIndentation` is not in the settings. Set to four spaces it flags nine hand-aligned continuation lines in install.ps1, and passing it would mean reindenting them.
-	- Swept: every pwsh start in cicd.bash. The lint probe, both passes per file and the version check were the only ones.
-	- Verified: the lint went from six pwsh starts to one, and from about 5.4 s to 2.6 s on this box. `cicd.bash --gate` passes, 21.1 s before and 20.2 s after, most of it the Go tests. It fails on an alias, on 5.1-only syntax and on a parse error in run-latest.ps1, and on an alias in install.ps1, then passes again once the file is back. test.bash passes 1318 of 1318.
-	- Branch: pslint
-	- Commit: 5f2d55c
-	- Test case: [Erg6RxS] counts the pwsh starts in a gate run and checks both files are in the one call. [Erg6Rxh], [Erg6Rxu], [Erg6Ry8], [Erg6RyM], [Erg6Rya] and [Erg6Ryo] cover the missing module, the missing settings file, the real lint on clean, 5.1-only and broken files, and the settings file being ASCII. Each failed against the old code or a broken settings file, except [Erg6Rxh], which the old code also passes.
-	- Acceptance signoff: Waiting. Leaving the indentation rule out is a call the item didn't spell out.
-
-- Code Review 20261003 enhancement 3: `sync` and `pullcom` fetch twice
-	- ID: 2026100313124002
-	- Type: Enhancement
-	- Status: Waiting on signoff
-	- Priority [Feature]: Avg
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Requirements  [Feature]:
-		- After the start-of-command fetch works, merge from the upstream with `--ff-only` rather than pulling, so origin is asked once.
-	- Actual effort: Avg
-	- Decisions:
-		- The plan text changes, and so does parity with v2.1.0. OK'd 2026-10-03.
-	- Origin: mutate.go pull steps, there since the port. Confirmed in a trace.
-	- Done: Every pull step is now `git merge --ff-only @{u}`, with `--autostash` where the pull had it. That covers `pullcom`, `sync`, and the park and target pulls in `br`, `release` and `pr`. The merge brings in what the plan's incoming list showed, rather than whatever origin has by the time the prompt is answered.
-	- Done: A branch whose upstream is on another remote still pulls, since the start fetch covers origin only. Merging there would call the branch up to date against a stale ref. The plan reads each branch's upstream and shows the step that will run.
-	- Done: `--no-fetch` and offline keep their meaning: the step is skipped with the same message, and nothing stale is merged. A diverged branch still refuses, as v2.1.0 did, since its pull was `--ff-only --autostash` too. Same git message, exit code, and untouched tree. A conflicting autostash still stops before the commit.
-	- Done: The plan reads one `for-each-ref` for the target branch's upstream. `br switch` and the rest take the branch's local existence from the same answer, so their counts don't rise.
-	- Done: design.md has the rule, and the plan example in style-guide_ui-ux.md shows the new line.
-	- Note: Parity had no plan check before. It now compares the `pullcom` and `sync` plans with the frozen build, with the two spellings of the pull line mapped to one token.
-	- Note: The spawn-count `pullcom` measure runs with `--no-fetch`, so the pull step never runs there and it stays at 25. A new measure, `pullcom` with a fetch, went from 38 to 32 and its limit is 32. The measure is the gate.
-	- Note: [ElHNo4O] in test.bash matched `git pull --ff-only` in the `br switch` plan. It now matches the merge line. What it checks, that switching onto the current branch still plans the pull, is unchanged.
-	- Swept: `grep -n 'pull' src-go/*.go`. The two runners, `cmdPull` and `pullIfOnline`, and every plan line that named a pull, all in preview.go. cicd.bash's own fast-forward already used `merge --ff-only --autostash '@{u}'`.
-	- Verified: `go test ./...`, `cicd/parity.bash` 29/0, `cicd/cicd.bash --gate`, spawn-count with every count at or under its limit, and full test.bash 1328/0.
-	- Verified: against the gover build, [Erg9NT0], [Erg9NTS] and [Erg9NTw] fail, parity's two plan checks pass without the mapping, and the new spawn measure goes over its limit at 38. With the other-remote case taken out, [Erg9NUd], [Erg9NUr], [Erg9y2K] and [ErgA5KD] fail. With `--no-fetch` merging, [Erg9NUA] and [Erg9NUN] fail. With the plan guessing the target's upstream, [Erg9y2K] fails.
-	- Branch: onefetch
-	- Commit: 55f5e22
-	- Test case: [Erg9NT0] to [Erg9NUr] and [Erg9y2K] in test.bash, [ErgA5KD] TestPullArgsFor, [ErgAC3e] and [ErgAC4V] in parity.bash, and the [ErgAQyw] spawn-count limit.
-	- Acceptance signoff: Waiting. The plan now shows `@{u}` rather than a branch name, and the other-remote fallback was a choice.
-
-- Code Review 20261003 item 5: The style guide says Bash 4.4 is enforced, and nothing checks
-	- ID: 2026100313123908
-	- Type: Bug
-	- Status: Waiting on signoff
-	- Priority|Severity [Bug]: Low
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: style-guide.md says "the script refuses to run below" Bash 4.4. No live script checks the version. The check was in the frozen bash build.
-	- Expected behavior [Bug]: Either the pipeline scripts check, or the guide says what's true.
-	- Reproduced [Bug]: Yes. No `BASH_VERSINFO` outside legacy/.
-	- Origin: style-guide.md from 235697c (2026-07-27), true for the bash build then. Confirmed.
-	- Decisions:
-		- The floor stays Bash 4.4, and the pipeline scripts check it (2026-10-03). b26, the Mac, has bash 5.
-		- gfs-rotate.bash is a shared Bubbles file and is left alone (2026-10-03).
-	- Actual cause [Bug]: The guide's sentence came over from the bash build, where gitsby itself checked. The pipeline scripts never did.
-	- Estimated effort: Low
-	- Actual fix [Bug]: Each of the 16 scripts in cicd/ that is run directly now checks the version as its first command. Below 4.4 it exits 1 with one line naming the version found and the macOS fix. The guide now says that, and names what has no check.
-	- Note: install.bash has no check. It runs on stock macOS bash 3.2 by design, which its header and the guide both say, and what it installs needs no shell.
-	- Note: n8git_backup-and-publish has no check either. It is a helper shared with other projects, like gfs-rotate.bash. config.bash and the two include files are only sourced.
-	- Swept: every tracked bash file outside legacy/, through the same list the shell lint coverage check reads. The test fails a new script that lacks the check.
-	- Verified: under a real bash 3.2.57 and 4.3.48 each of the 16 refuses with its line and exit 1, and under 4.4.23 none does. Under 3.2 on `gover` they ran on. The new checks fail 16 of 16 on `gover` and pass here.
-	- Branch: lowfix
-	- Commit: c9bc222
-	- Test case: [ErfyDHs] in test.bash, one per script, runs a copy with the floor raised and expects the refusal and nothing else. [ErfyLds] fails it if the list comes back empty.
-	- Acceptance signoff: Waiting. The guide's wording changed, and n8git_backup-and-publish was left without a check.
-
-- Code Review 20261003 item 7: Spawn reports do arithmetic on numbers read from files
-	- ID: 2026100313123935
-	- Type: Bug
-	- Status: Waiting on signoff
-	- Priority|Severity [Bug]: Low
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: spawn-count.bash and spawn-report.bash read counts from tsv files and use them in arithmetic unchecked. That's the subscript-injection trap gfs-rotate was fixed for.
-	- Expected behavior [Bug]: A count that isn't digits is refused.
-	- Reproduced [Bug]: Yes, 2026-10-03. A recording whose count is `BASH_VERSINFO[$(touch ran)0]` ran the `touch` in spawn-report.bash, for the newest recording and for the one before it, and in spawn-count.bash for the baseline. The scripts write those files themselves, so the risk is low. An unset name such as `x[...]` stops at `set -u` first and runs nothing.
-	- Origin: spawn-count.bash:143 from dd4359b (2026-08-19). Same class as the 2026-09-15 gfs-rotate fix. Plausible when filed, confirmed since.
-	- Sweep: every live script that reads a number from a file and does arithmetic on it, gfs-rotate.bash excepted.
-	- Actual cause [Bug]: The count was used in `(( ))` straight from the file.
-	- Estimated effort: Low
-	- Actual fix [Bug]: Both scripts check that a count read from a recording is digits before any arithmetic. Anything else exits 1 naming the file, the command and the value. spawn-report.bash's header lists the new exit code.
-	- Swept: spawn-count.bash's baseline, and spawn-report.bash's newest and previous recordings, are the only file values that reach arithmetic. The rest read only numbers made by a command: `grep -c`, `wc -c`, `od`, `stat`, `git rev-list --count`, `git log` dates, awk line numbers in release.bash, and the footer dates release.bash cuts down to digits. test-id.bash already checks its value. Left alone: release.bash's patch bump on a `v*` tag name, since a tag can't hold `[` and so can't run anything, and keep-build.bash's number, which is typed on its own command line.
-	- Verified: the three new checks fail on `gover`, where the `touch` ran each time, and pass here with nothing run.
-	- Branch: lowfix
-	- Commit: f31269f
-	- Test case: [ErfzUGl] and [ErfzUH0] for spawn-report.bash, [ErfzUHF] for spawn-count.bash, in test.bash. The last needs strace, like the other spawn-count checks.
-	- Acceptance signoff: Waiting. It closes a command injection, so it touches security.
-
 - macOS release gets a universal binary
 	- ID: 2026100313491873
 	- Type: Enhancement
@@ -439,6 +261,60 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: Self-closed: reproduced, and the checks fail before the fix and pass after.
 	- Closed: 20261003-141520
 
+- Code Review 20261003 item 3: Write and read failures in account commands guess at the cause
+	- ID: 2026100313123881
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- Run `account apply` or `account set` where the write fails for a reason other than permissions, such as a full disk or a read-only filesystem.
+	- Incorrect behavior [Bug]: The message says to check permissions. The real error is dropped.
+	- Expected behavior [Bug]: The message keeps the real error. The permissions hint shows only when it is a permissions error.
+	- Reproduced [Bug]: Yes, 2026-10-03. A folder where an `account apply` fragment goes, a lock name too long for the filesystem, and a plain file where the accounts file's folder goes. Each dropped the reason, and the first two said to check permissions.
+	- Possible cause [Bug]: `usagef` where `usageWrapf` exists for this. Seven sites in accountcmd.go.
+	- Origin: accountcmd.go, from 11905d2 (2026-09-16) and 62af07b (2026-09-28). Not seen by an earlier round. Confirmed.
+	- Sweep: every `usagef("Couldn't ...` that has an `err` in scope.
+	- Actual cause [Bug]: Each site had the error in hand and printed a fixed message instead. Most of them guessed permissions.
+	- Estimated effort: Low
+	- Actual fix [Bug]: Each refusal now says what failed, with File, Why, Kept and Fix lines under it. Why has the OS's reason. Fix names permissions only for a permissions error, and otherwise says to run again once the reason is fixed. The save, the create and the lock point at the folder, since that is what they write in.
+	- Note: The labeled layout is the UI guide's, which keeps a path out of the sentence.
+	- Swept: the seven sites the review named, plus the lock, the partly written create and the relative path in `account set`. Left alone: the three `git config` failures in `account apply`, which have no error in hand while git prints its own, and the three in repo.go, which already give the reason. Found by a grep for `usagef("Couldn't` over src-go.
+	- Verified: the five site tests fail on `gover` and pass here. The test.bash pair was run by hand against both builds. test.bash passes 1288 of 1288, and `go test ./...` and `cicd.bash --gate` pass.
+	- Branch: errmsg
+	- Commit: 52b5c44
+	- Test case: TestAccountApplyKeepsTheReasonAFragmentFailed, TestLockKeepsTheReasonItFailed, TestAccountSetKeepsTheReasonItsFolderFailed, TestLoadForEditKeepsTheReasonTheReadFailed and TestAbsPathValueKeepsTheReasonTheFolderIsGone for the sites, TestWriteRefusalNamesPermissionsOnlyWhenTheyAreTheCause for the rule, and [Erfv8YB] and [Erfv8Yu] in test.bash. The chmod and save sites have no unprivileged way to fail, so the rule test covers them.
+	- Acceptance signoff: OK, 2026-10-03.
+	- Closed: 20261003-163955
+
+- Code Review 20261003 item 4: `br merge` says the target is as it was without checking
+	- ID: 2026100313123895
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- Have `git merge --abort` fail after a conflicted `br merge`.
+	- Incorrect behavior [Bug]: gitsby ignores the failure and prints that the target "is as it was". The tree is still mid-merge.
+	- Expected behavior [Bug]: When the abort fails, say the tree is mid-merge and name the commands to settle it.
+	- Reproduced [Bug]: Yes, 2026-10-03, with a git that refuses only `merge --abort`. `br merge` said dev "is as it was", then failed a checkout on the conflicted tree. The hotfix back-merge said dev was untouched and ended in Done, exit 0. `release` goes through the same code as `br merge`.
+	- Possible cause [Bug]: `_ = runOK("git", "merge", "--abort")` in `backOutMerge`, and the same at the dev back-merge.
+	- Origin: branchcmd.go:226 from bfbae90 (2026-09-15). Not seen before. Confirmed.
+	- Actual cause [Bug]: Both sites threw away the abort's exit status.
+	- Estimated effort: Low
+	- Actual fix [Bug]: A failed abort now refuses with Why, Kept and Fix lines. They say the target is still mid-merge, that nothing was committed to it, and give the commands to drop the merge and go back. git's own reason for the failed abort shows above it. The back-merge also offers finishing the merge by hand, which carries the hotfix across.
+	- Note: The back-merge now exits 1 when its abort fails, even though the hotfix landed. A clean abort there is unchanged and still ends in a warning.
+	- Note: That refusal's Kept line says the hotfix landed on the default branch and that part is done. [ErgQv90] checks it, added 2026-10-03.
+	- Swept: both `merge --abort` calls in src-go. `release` backs out through `backOutMerge`, so it is covered too and was run by hand. No other git step in src-go has its result discarded, apart from the listings and two best-effort calls in repo.go and remote.go whose comments say why.
+	- Verified: the same runs on `gover` said the target was as it was, and the back-merge exited 0. Here all six checks pass, and test.bash passes 1288 of 1288. `go test ./...` and `cicd.bash --gate` pass.
+	- Branch: errmsg
+	- Commit: d7511a2
+	- Test case: [ErfwTrE], [ErfwTrT] and [ErgQv90] for the back-merge, [ErfwTrh], [ErfwTrv], [ErfwTs8] and [ErfwTsM] for `br merge`, all in test.bash.
+	- Acceptance signoff: OK, 2026-10-03.
+	- Closed: 20261003-163955
+
 - Code Review 20261003 item 2: A pipeline reader that quits early can fail its writer
 	- ID: 2026100313123865
 	- Type: Bug
@@ -493,6 +369,88 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: TestRepeatedAccountKeys, TestAccountSetFindsTheKeyInAnyPiece, and one account list check in test.bash.
 	- Closed: 2026-09-30
 
+- Code Review 20261003 enhancement 1: The spawn-count fixture can't see the account paths
+	- ID: 2026100313123975
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- Add a configured account, a fake `gh` and a pty run to the fixture, so it counts what a real user's `status`, `whoami` and `account list` start.
+		- Give each counted command a threshold that fails the gate.
+	- Actual effort: Avg
+	- Decisions:
+		- Do this first. The other spawn items in this round need it to prove anything.
+	- Origin: spawn-count.bash uses an empty config, a local origin and captured stdout. Four of this round's spawn findings are out of its sight. Confirmed.
+	- Done: The fixture has two more clones whose origin is on github.com, one over ssh and one over https. An account's folder rule covers each, with a token file and no token in gh. A fake `gh` and `ssh` answer on PATH, and a proxy on a closed port stops anything else. HOME moved into the fixture.
+	- Done: Five new measures run on a pty with no `-q`: `status` with a fetch, `status`, `whoami` and `account list` in the ssh folder, and `status` in the https folder.
+	- Done: Each command has a limit written beside it, set at today's count. A count over it fails and records nothing, and `--record` doesn't lift it. The baseline compare is unchanged. So is the tsv, so spawn-report.bash reads it as before.
+	- Note: The new measures see what enhancements 2, 5 and 6 will move: both `gh api user` calls and the `ssh -T`, one `gh` per login in the listing, `tput cols`, the `gitsby.ghTokenFile` lookup made twice, the protocol asked of `gh` on an https origin, and `origin/HEAD` read twice after a fetch. The older measures already see `show-ref` in `br switch` and `br prune`, and the two `rev-parse` calls at startup.
+	- Done: The number beside each command is its expected count. The limit is that plus 2, or a tenth again, whichever is larger, the same room the baseline compare gives. A git update that starts one more helper no longer fails the gate. Changed after signoff, 2026-10-03.
+	- Note: The stub build in test.bash's spawn-count checks names `/bin/sh` rather than going through env, so its count doesn't depend on PATH.
+	- Verified: full test.bash on spawnfix, 1311 passed, 0 failed.
+	- Verified: the 13 counts were the same over four runs, and the first eight match the 2026-09-30 baseline. Lowering one limit below its count failed a `--record` run with nothing recorded; put back, the run passes.
+	- Branch: spawnfix
+	- Commit: 921674f, 5c0d35b
+	- Test case: The limits in spawn-count.bash, run in stage 3. [Erg2KNK] in test.bash fails a count over its limit under `--record`. It fails against the script before this change. [ErgR83a] passes a count one over the expected one, and fails against the limits with no headroom.
+	- Acceptance signoff: OK, 2026-10-03, with headroom on the limits.
+	- Closed: 20261003-163955
+
+- Code Review 20261003 enhancement 4: PowerShell lint starts pwsh four times
+	- ID: 2026100313124015
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- Run both PSScriptAnalyzer passes over every file in one pwsh call. It's about 10 s now and about 3 s that way, on every `--gate`.
+		- Put the rules in a `PSScriptAnalyzerSettings.psd1`, as the directive asks, rather than inline in cicd.bash.
+	- Decisions:
+		- Indentation stays four spaces. The directive's tab rule doesn't reindent existing code.
+	- Origin: cicd.bash stage 1. Confirmed, timed.
+	- Done: One pwsh now probes for the module, lints every file and reports the module's version, so the tool version check doesn't start another. The rules are in `PSScriptAnalyzerSettings.psd1` at the repo root. A file that doesn't parse is caught by the parser before the analyzer runs, so a Severity filter added to the settings later can't hide it.
+	- Note: The old first pass filtered by severity, which dropped parse errors. Only the 5.1 pass caught them.
+	- Done: `PSUseConsistentIndentation` is on, at four spaces. Nine continuation lines in install.ps1 were reindented to suit it, and one `@( )` around a loop was dropped, since nothing there needs an array. Turned on after signoff, 2026-10-03.
+	- Swept: every pwsh start in cicd.bash. The lint probe, both passes per file and the version check were the only ones.
+	- Verified: the lint went from six pwsh starts to one, and from about 5.4 s to 2.6 s on this box. `cicd.bash --gate` passes, 21.1 s before and 20.2 s after, most of it the Go tests. It fails on an alias, on 5.1-only syntax and on a parse error in run-latest.ps1, and on an alias in install.ps1, then passes again once the file is back. test.bash passes 1318 of 1318.
+	- Branch: pslint
+	- Commit: 5f2d55c
+	- Test case: [Erg6RxS] counts the pwsh starts in a gate run and checks both files are in the one call. [Erg6Rxh], [Erg6Rxu], [Erg6Ry8], [Erg6RyM], [Erg6Rya] and [Erg6Ryo] cover the missing module, the missing settings file, the real lint on clean, 5.1-only and broken files, and the settings file being ASCII. Each failed against the old code or a broken settings file, except [Erg6Rxh], which the old code also passes. [ErgRMMj] fails a file indented two spaces, and fails against the settings without the rule.
+	- Acceptance signoff: OK, 2026-10-03, with the indentation rule on.
+	- Closed: 20261003-163955
+
+- Code Review 20261003 enhancement 3: `sync` and `pullcom` fetch twice
+	- ID: 2026100313124002
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- After the start-of-command fetch works, merge from the upstream with `--ff-only` rather than pulling, so origin is asked once.
+	- Actual effort: Avg
+	- Decisions:
+		- The plan text changes, and so does parity with v2.1.0. OK'd 2026-10-03.
+	- Origin: mutate.go pull steps, there since the port. Confirmed in a trace.
+	- Done: Every pull step is now `git merge --ff-only @{u}`, with `--autostash` where the pull had it. That covers `pullcom`, `sync`, and the park and target pulls in `br`, `release` and `pr`. The merge brings in what the plan's incoming list showed, rather than whatever origin has by the time the prompt is answered.
+	- Done: A branch whose upstream is on another remote still pulls, since the start fetch covers origin only. Merging there would call the branch up to date against a stale ref. The plan reads each branch's upstream and shows the step that will run.
+	- Done: `--no-fetch` and offline keep their meaning: the step is skipped with the same message, and nothing stale is merged. A diverged branch still refuses, as v2.1.0 did, since its pull was `--ff-only --autostash` too. Same git message, exit code, and untouched tree. A conflicting autostash still stops before the commit.
+	- Done: The plan reads one `for-each-ref` for the target branch's upstream. `br switch` and the rest take the branch's local existence from the same answer, so their counts don't rise.
+	- Done: design.md has the rule, and the plan example in style-guide_ui-ux.md shows the new line.
+	- Note: Parity had no plan check before. It now compares the `pullcom` and `sync` plans with the frozen build, with the two spellings of the pull line mapped to one token.
+	- Note: The spawn-count `pullcom` measure runs with `--no-fetch`, so the pull step never runs there and it stays at 25. A new measure, `pullcom` with a fetch, went from 38 to 32 and its limit is 32. The measure is the gate.
+	- Note: [ElHNo4O] in test.bash matched `git pull --ff-only` in the `br switch` plan. It now matches the merge line. What it checks, that switching onto the current branch still plans the pull, is unchanged.
+	- Swept: `grep -n 'pull' src-go/*.go`. The two runners, `cmdPull` and `pullIfOnline`, and every plan line that named a pull, all in preview.go. cicd.bash's own fast-forward already used `merge --ff-only --autostash '@{u}'`.
+	- Verified: `go test ./...`, `cicd/parity.bash` 29/0, `cicd/cicd.bash --gate`, spawn-count with every count at or under its limit, and full test.bash 1328/0.
+	- Verified: against the gover build, [Erg9NT0], [Erg9NTS] and [Erg9NTw] fail, parity's two plan checks pass without the mapping, and the new spawn measure goes over its limit at 38. With the other-remote case taken out, [Erg9NUd], [Erg9NUr], [Erg9y2K] and [ErgA5KD] fail. With `--no-fetch` merging, [Erg9NUA] and [Erg9NUN] fail. With the plan guessing the target's upstream, [Erg9y2K] fails.
+	- Branch: onefetch
+	- Commit: 55f5e22
+	- Test case: [Erg9NT0] to [Erg9NUr] and [Erg9y2K] in test.bash, [ErgA5KD] TestPullArgsFor, [ErgAC3e] and [ErgAC4V] in parity.bash, and the [ErgAQyw] spawn-count limit.
+	- Acceptance signoff: OK, 2026-10-03. Whether the plan shows `@{u}` or the resolved branch name is still a question.
+	- Closed: 20261003-163955
+
 - Dogfood builds macOS for both CPUs
 	- ID: 2026100312571262
 	- Type: Enhancement
@@ -545,6 +503,56 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: acct-files
 	- Test case: TestFragmentNames, plus two apply checks in test.bash.
 	- Closed: 2026-09-30
+
+- Code Review 20261003 item 5: The style guide says Bash 4.4 is enforced, and nothing checks
+	- ID: 2026100313123908
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Low
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: style-guide.md says "the script refuses to run below" Bash 4.4. No live script checks the version. The check was in the frozen bash build.
+	- Expected behavior [Bug]: Either the pipeline scripts check, or the guide says what's true.
+	- Reproduced [Bug]: Yes. No `BASH_VERSINFO` outside legacy/.
+	- Origin: style-guide.md from 235697c (2026-07-27), true for the bash build then. Confirmed.
+	- Decisions:
+		- The floor stays Bash 4.4, and the pipeline scripts check it (2026-10-03). b26, the Mac, has bash 5.
+		- gfs-rotate.bash is a shared Bubbles file and is left alone (2026-10-03).
+	- Actual cause [Bug]: The guide's sentence came over from the bash build, where gitsby itself checked. The pipeline scripts never did.
+	- Estimated effort: Low
+	- Actual fix [Bug]: Each of the 16 scripts in cicd/ that is run directly now checks the version as its first command. Below 4.4 it exits 1 with one line naming the version found and the macOS fix. The guide now says that, and names what has no check.
+	- Note: install.bash has no check. It runs on stock macOS bash 3.2 by design, which its header and the guide both say, and what it installs needs no shell.
+	- Note: n8git_backup-and-publish has no check either. It is a helper shared with other projects, like gfs-rotate.bash. config.bash and the two include files are only sourced.
+	- Swept: every tracked bash file outside legacy/, through the same list the shell lint coverage check reads. The test fails a new script that lacks the check.
+	- Verified: under a real bash 3.2.57 and 4.3.48 each of the 16 refuses with its line and exit 1, and under 4.4.23 none does. Under 3.2 on `gover` they ran on. The new checks fail 16 of 16 on `gover` and pass here.
+	- Branch: lowfix
+	- Commit: c9bc222
+	- Test case: [ErfyDHs] in test.bash, one per script, runs a copy with the floor raised and expects the refusal and nothing else. [ErfyLds] fails it if the list comes back empty.
+	- Acceptance signoff: OK, 2026-10-03, n8git_backup-and-publish included.
+	- Closed: 20261003-163955
+
+- Code Review 20261003 item 7: Spawn reports do arithmetic on numbers read from files
+	- ID: 2026100313123935
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Low
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: spawn-count.bash and spawn-report.bash read counts from tsv files and use them in arithmetic unchecked. That's the subscript-injection trap gfs-rotate was fixed for.
+	- Expected behavior [Bug]: A count that isn't digits is refused.
+	- Reproduced [Bug]: Yes, 2026-10-03. A recording whose count is `BASH_VERSINFO[$(touch ran)0]` ran the `touch` in spawn-report.bash, for the newest recording and for the one before it, and in spawn-count.bash for the baseline. The scripts write those files themselves, so the risk is low. An unset name such as `x[...]` stops at `set -u` first and runs nothing.
+	- Origin: spawn-count.bash:143 from dd4359b (2026-08-19). Same class as the 2026-09-15 gfs-rotate fix. Plausible when filed, confirmed since.
+	- Sweep: every live script that reads a number from a file and does arithmetic on it, gfs-rotate.bash excepted.
+	- Actual cause [Bug]: The count was used in `(( ))` straight from the file.
+	- Estimated effort: Low
+	- Actual fix [Bug]: Both scripts check that a count read from a recording is digits before any arithmetic. Anything else exits 1 naming the file, the command and the value. spawn-report.bash's header lists the new exit code.
+	- Swept: spawn-count.bash's baseline, and spawn-report.bash's newest and previous recordings, are the only file values that reach arithmetic. The rest read only numbers made by a command: `grep -c`, `wc -c`, `od`, `stat`, `git rev-list --count`, `git log` dates, awk line numbers in release.bash, and the footer dates release.bash cuts down to digits. test-id.bash already checks its value. release.bash's patch bump on a `v*` tag name and keep-build.bash's build number were left alone at first, since a tag can't hold `[` and the number is typed on the script's own command line. Both check for digits since 2026-10-03, after signoff: a tag such as `v1.3.0rc1` stopped the bump with a bare bash error, `v1.3.08` read as octal, and a crafted build number did run a command.
+	- Verified: the three new checks fail on `gover`, where the `touch` ran each time, and pass here with nothing run.
+	- Branch: lowfix
+	- Commit: f31269f
+	- Test case: [ErfzUGl] and [ErfzUH0] for spawn-report.bash, [ErfzUHF] for spawn-count.bash, in test.bash. The last needs strace, like the other spawn-count checks. [ErgRj8P] and [ErgRj8c] for the patch bump, [ErgRj8q] and [ErgRq9b] for keep-build.bash. All but [ErgRj8q], which checks the plain case, fail against the scripts before.
+	- Acceptance signoff: OK, 2026-10-03.
+	- Closed: 20261003-163955
 
 - Code Review 20261003 item 6: Doc comments sit on the wrong function or name an old one
 	- ID: 2026100313123922
