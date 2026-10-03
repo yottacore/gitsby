@@ -4005,6 +4005,25 @@ GHEOF
 		bash -c "[[ -x '${root}/cicd/utility/run-latest.ps1' ]]"
 	fAssert "[EndUdZR] and a spawn report exists for the startup look, marker-gated like lint's" \
 		bash -c "[[ -x '${root}/cicd/utility/spawn-report.bash' ]] && grep -q 'spawn-seen' '${root}/cicd/utility/spawn-report.bash'"
+	## One macOS dogfood folder serves Macs of both CPUs, so the build there is universal. The
+	## fixtures are only a Mach-O header and a few bytes, which is all the joiner reads.
+	local fatDir="${work}/macho" fatJoin="${root}/cicd/utility/macho-universal.bash"
+	mkdir -p "${fatDir}"
+	printf '%b' '\xcf\xfa\xed\xfe\x07\x00\x00\x01\x03\x00\x00\x00AMD' > "${fatDir}/amd64"
+	printf '%b' '\xcf\xfa\xed\xfe\x0c\x00\x00\x01\x00\x00\x00\x00ARM' > "${fatDir}/arm64"
+	printf 'ELF' > "${fatDir}/elf"
+	fAssert "[ErfYFr8] macho-universal.bash joins two Mac builds, each whole on its own 16 KiB boundary" \
+		bash -c "'${fatJoin}' '${fatDir}/fat' '${fatDir}/amd64' '${fatDir}/arm64' \
+			&& [[ \"\$(od -An -tx1 -N48 '${fatDir}/fat' | xargs)\" == 'ca fe ba be 00 00 00 02 01 00 00 07 00 00 00 03 00 00 40 00 00 00 00 0f 00 00 00 0e 01 00 00 0c 00 00 00 00 00 00 80 00 00 00 00 0f 00 00 00 0e' ]] \
+			&& [[ \$(wc -c < '${fatDir}/fat') -eq 32783 ]] \
+			&& tail -c +16385 '${fatDir}/fat' | head -c 15 | cmp -s - '${fatDir}/amd64' \
+			&& tail -c +32769 '${fatDir}/fat' | cmp -s - '${fatDir}/arm64'"
+	fAssertOut "[ErfYFrL] and refuses a build that is not 64-bit Mach-O" 'not a 64-bit Mach-O build' \
+		"${fatJoin}" "${fatDir}/bad" "${fatDir}/amd64" "${fatDir}/elf"
+	fAssertOut "[ErfYFrY] and two builds for one CPU" 'two builds for one CPU' \
+		"${fatJoin}" "${fatDir}/bad" "${fatDir}/arm64" "${fatDir}/arm64"
+	fAssert "[ErfYFrl] dogfood builds macOS universal, and joins it with that script" \
+		bash -c "grep -q '^[[:space:]]*\"darwin/universal\"' '${root}/cicd/config.bash' && grep -q 'macho-universal\.bash' '${root}/cicd/cicd.bash' && [[ ! -e '${fatDir}/bad' ]]"
 	## The mode a clone gets, not the one this tree happens to have: a local chmod hid release.bash
 	## going out without its executable bit. Every script runs by path but the ones only sourced.
 	fAssert "[ErCM5cg] every script that runs by path is committed executable" \
@@ -4487,7 +4506,7 @@ EOF
 		fAssert "[Er1LxTb] dogfood falls back to ~/.local/bin for the target this box runs, and only that one" \
 			bash -c "[[ '${gateRc}' == 0 && -f '${gateDir}/home/.local/bin/gitsby' && ! -e '${gateDir}/home/.local/bin/gitsby.exe' ]]"
 		fAssert "[Er1LxTc] and says the other targets have nowhere to go" \
-			bash -c "grep -qF 'WARNING: no windows/amd64 dogfood dest exists/writable' '${gateOut}' && grep -qF 'WARNING: no darwin/arm64 dogfood dest exists/writable' '${gateOut}'"
+			bash -c "grep -qF 'WARNING: no windows/amd64 dogfood dest exists/writable' '${gateOut}' && grep -qF 'WARNING: no darwin/universal dogfood dest exists/writable' '${gateOut}'"
 		# shellcheck disable=SC2016
 		gateDest="$(cd "${gateDir}" && HOME="${gateDir}/home" bash -c 'source cicd/config.bash && echo "${DOGFOOD_DESTS_LINUX_AMD64[0]}"')"
 		mkdir -p "${gateDest}"
@@ -5437,3 +5456,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260928 JC: Checks for the information options after a command, the clone folder in full, the installers' write access, sudo, plan and mode, the pre-release tie, the release build from the tag, tool versions outside Go and under GOPATH, the README badges and .gitignore. 1235 -> 1254.
 ##		- 20260928 JC: account unset. It names each line it removes, leaves the rest as typed, treats a key already gone as nothing to do, refuses a value after the key, and prints its syntax with no key. Five of the six fail against the tree before them; the rest-as-typed check is a regression guard. 1254 -> 1260.
 ##		- 20261001 JC: Runs on macOS. The work folder is resolved, the accounts file goes where each platform looks, and 'sed -i', 'stat', 'grep -P', 'od' and 'script' are used in forms BSD also takes or are skipped without them. On macOS XDG_CONFIG_HOME is checked as ignored. A check for minting an ID for now. 1260 -> 1261.
+##		- 20261003 JC: The macOS universal joiner: the joined file, its two refusals, and the dogfood target that uses it. The rm check covers the new script. 1268 -> 1273.

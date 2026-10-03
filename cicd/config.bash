@@ -151,7 +151,7 @@ KEEP_BUILD_DIR="cicd/artifacts/builds"      # relative to repo root; created if 
 DOGFOOD_TARGETS=(
 	"linux/amd64"
 	"windows/amd64"
-	"darwin/arm64"
+	"darwin/universal"
 )
 ## What --quick narrows the list above to. Cross-building the other two is the slow part of
 ## a run; this one is the binary the next hand-run picks up, so it stays.
@@ -165,10 +165,10 @@ DOGFOOD_DESTS_WINDOWS_AMD64=(
 	"${HOME}/synced/0-0/common/exec/util/mswin/cli/by-self/win64"
 	"C:/opt/0-0/common/exec/synced/util/mswin/cli/by-self/win64"
 )
-## One macOS slot, so one target: arm64. A universal binary would need lipo, which only
-## exists on a Mac, and there is no second destination to justify it. The share mounts at
-## the same spelling from Linux and from macOS, so one entry covers both.
-DOGFOOD_DESTS_DARWIN_ARM64=(
+## One macOS slot, and Macs of both CPUs read it, so the target is a universal binary:
+## amd64 and arm64 built apart, then joined by cicd/utility/macho-universal.bash. The share
+## mounts at the same spelling from Linux and from macOS, so one entry covers both.
+DOGFOOD_DESTS_DARWIN_UNIVERSAL=(
 	"${HOME}/synced/0-0/common/exec/util/macos/bin"
 )
 
@@ -234,3 +234,4 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-09-10 JC: BACKLOG_CHECK_CMD joins stage 1.
 ##		- 2026-09-14 JC: The demo comment names the build the demo really runs.
 ##		- 2026-09-28 JC: TOOL_VERSIONS records the six tools outside Go that shape a result. The parity comment no longer says --quick skips it.
+##		- 2026-10-03 JC: macOS dogfood is one universal binary, so Intel Macs can run it too.
