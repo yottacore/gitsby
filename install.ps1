@@ -12,6 +12,7 @@
         -Target user|system   Install for you (default) or for all users.
         -System               The same thing as -Target system.
         -Arch amd64|arm64     Which binary to fetch. Detected from this machine by default.
+                              macOS has one binary for both.
         -Tag TAG              A published release tag (default: the latest release).
         -Ref TAG              The older name for -Tag.
         -Yes                  Don't ask for confirmation.
@@ -81,6 +82,7 @@ function Install-Gitsby {
         Write-Host '  -Target user|system   Install for you (default) or for all users.'
         Write-Host '  -System               The same thing as -Target system.'
         Write-Host '  -Arch amd64|arm64     Which binary to fetch. Detected from this machine by default.'
+        Write-Host '                        macOS has one binary for both.'
         Write-Host '  -Tag TAG              A published release tag (default: the latest release).'
         Write-Host '  -Ref TAG              The older name for -Tag.'
         Write-Host '  -Yes                  Do not ask for confirmation.'
@@ -136,6 +138,14 @@ function Install-Gitsby {
         { $_ -in 'x64', 'x86_64', 'amd64' } { 'amd64'; break }
         { $_ -in 'arm64', 'aarch64' }       { 'arm64'; break }
         default                             { $archName }
+    }
+    # One universal binary runs on both Mac CPUs, so there is nothing to pick.
+    if ($onMac) {
+        if ($Arch) {
+            Write-Host ''
+            Write-Host "[ The macOS binary runs on both CPUs, so -Arch ${Arch} changes nothing here. ]"
+        }
+        $goArch = 'universal'
     }
     $asset = "gitsby-${goOs}-${goArch}"
     if ($onWindows) { $asset += '.exe' }
@@ -496,3 +506,5 @@ try {
 #     one. A user install checks it can write its folder before the plan. The binary is
 #     installed 755 whatever the umask. The plan says when it creates the folder, and when it
 #     clears copies an earlier install left behind.
+#   - 20261003 JC: A Mac takes gitsby-darwin-universal, one binary for both CPUs, in place of
+#     one per CPU. -Arch there is noted and changes nothing.

@@ -278,6 +278,12 @@ sha256sum gitsby
 
 Substitute the release you are checking - the tag carries the leading `v` and the version stamped into the binary does not. The build number comes from the tagged commit's time, which is what the `git log` part reads. Set `GOOS` and `GOARCH` for a platform other than this one. Nobody has to take our word for what is in a download, including us.
 
+The macOS download is one universal file that runs on Intel and Apple silicon alike. Build it twice with `GOOS=darwin`, as `gitsby-amd64` with `GOARCH=amd64` and as `gitsby-arm64` with `GOARCH=arm64`, then join the two, amd64 first. The join adds nothing of its own, so the same two builds always give the same file:
+
+~~~bash
+../cicd/utility/macho-universal.bash gitsby gitsby-amd64 gitsby-arm64
+~~~
+
 Every command prints that version and build number above its output, so a bug report can name the build it came from. Two builds of one commit carry the same number, because it comes from the commit's time and not from the clock.
 
 ### Coming from 2.x
