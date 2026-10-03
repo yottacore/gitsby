@@ -59,6 +59,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The Go tests can be cross-built with `go test -c`, so neither box would need Go installed. test.bash on b26 would need Homebrew's bash, since the default there is 3.2.
 		- No stage runs the Go tests on Windows today. That is how `TestCanonPath` and `TestDisplayPath` broke there unnoticed.
 
+- Build the stage
+	- ID: 2026100313002135
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Parent ID: 2026100312332924
+	- Requirements  [Feature]:
+		- Write the pipeline stage the parent item describes.
+		- It is not done until it has run on b26 and on a Windows box.
+
 - Dogfood builds macOS for both CPUs
 	- ID: 2026100312571262
 	- Type: Enhancement
