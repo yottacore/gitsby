@@ -4238,6 +4238,13 @@ GHEOF
 		"${bl}/cicd/utility/backlog-check.bash"
 	fAssert "[Er1LxTD] and fails an open review item with no Origin line, by name" \
 		bash -c "out=\$('${bl}/cicd/utility/backlog-check.bash' -q --backlog '${bl}/project/no-origin.md' 2>&1); [[ \$? == 1 ]] && grep -qxF '  Code Review 20260101 item 4' <<< \"\$out\" && ! grep -qF 'item 1' <<< \"\$out\""
+	## The new item format: a top-level title with its rows a tab in, open by its Status row. The
+	## gate read only the old one, so a round filed this way was never checked.
+	printf '# Backlog\n\n## Issues\n\n- Code Review 20260102 item 1: x\n\t- Status: Waiting on signoff\n\t- Origin: y\n\n- Code Review 20260102 item 2: x\n\t- Status: Queued\n\t- Why: z\n\n- Code Review 20260102 enhancement 3: x\n\t- Status: Done\n\n- Code Review 20260102 item 4: x\n\t- Status: Moot\n\n- Code Review 20260102 item 5: x\n\t- Status: Canceled\n\n- Code Review 20260102 item 6: x\n\t- Status: Deferred\n\n- Another item\n\t- Status: Queued\n\n## Old format\n\n\t- 🔘 Code Review 20260101 item 1: x\n\t\t- Origin: y\n' > "${bl}/project/new-format.md"
+	fAssertOut "[Erg0LJv] and counts open review items in the new format too" 'Origin: present on every open review item \(3 listed\)' \
+		bash -c "sed '/item 2: x/,/Why: z/ s/Why: z/Origin: y/' '${bl}/project/new-format.md' > '${bl}/project/new-format-ok.md' && '${bl}/cicd/utility/backlog-check.bash' --backlog '${bl}/project/new-format-ok.md'"
+	fAssert "[Erg0LK9] and fails an open one with no Origin row, by name, leaving the closed ones be" \
+		bash -c "out=\$('${bl}/cicd/utility/backlog-check.bash' -q --backlog '${bl}/project/new-format.md' 2>&1); [[ \$? == 1 ]] && [[ \$(grep -c '^  ' <<< \"\$out\") == 1 ]] && grep -qxF '  Code Review 20260102 item 2' <<< \"\$out\""
 	## A test is known by its ID, so a new label on an old ID is an edit. The fixture lines spell
 	## the check names through %s, or the ID gate below would read them as checks of this file.
 	local bi="${work}/bl-ids" chk=fAssert

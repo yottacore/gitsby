@@ -279,7 +279,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 item 8: The Origin gate doesn't read new-format items
 	- ID: 2026100313150825
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -287,7 +287,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: It finds open review items in both formats.
 	- Reproduced [Bug]: Yes, 2026-10-03.
 	- Origin: backlog-check.bash from the 2026-09-10 rules, before the new item format. Confirmed.
+	- Actual cause [Bug]: It matched only a tab-indented title with a status emoji, and took its Origin row at two tabs.
 	- Estimated effort: Low
+	- Actual fix [Bug]: It reads both formats. A new-format review item is a top-level title starting "Code Review", open unless its Status row says Done, Canceled, Moot or Deferred, the same four the old emoji stand for, with Moot added. Its Origin row sits one tab in. The old format also takes a round with a letter after the date, such as 20260819d, which it missed before. All of those are closed.
+	- Swept: backlog-check.bash is the only script that reads review items out of the backlog.
+	- Verified: on a copy of this backlog with item 8's Origin row taken out, the gate on `gover` said "0 listed" and passed. Here it names item 8 and exits 1, and on the real backlog it lists 14 open items. The two new checks fail on `gover` and pass here.
+	- Branch: lowfix
+	- Test case: [Erg0LJv] and [Erg0LK9] in test.bash.
+	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
+	- Closed: 20261003-145130
 
 - Code Review 20261003 enhancement 5: Answer branch checks from one read
 	- ID: 2026100313123948
