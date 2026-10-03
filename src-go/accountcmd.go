@@ -28,10 +28,6 @@ import (
 	shcl "github.com/yottacore/shcl/source/go/v2"
 )
 
-// accountNames: every account the config file defines, in the order it defines
-// them. An account can be declared by its keys alone, with no folder rule - it is
-// then only reachable by name, through GITSBY_ACCOUNT, which is a legitimate way
-// to use one.
 // anyHostStated: whether any account in this config names a git host. What makes the
 // host worth a line in the listing - with one git host configured there is nothing to
 // compare, and a machine that only ever talks to github.com should not have the
@@ -45,6 +41,10 @@ func (c *config) anyHostStated() bool {
 	return false
 }
 
+// accountNames: every account the config file defines, in the order it defines
+// them. An account can be declared by its keys alone, with no folder rule - it is
+// then only reachable by name, through GITSBY_ACCOUNT, which is a legitimate way
+// to use one.
 func (c *config) accountNames() []string {
 	var seen []string
 	add := func(name string) {

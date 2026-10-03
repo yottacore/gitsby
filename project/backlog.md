@@ -84,6 +84,54 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [ErfwTrE] and [ErfwTrT] for the back-merge, [ErfwTrh], [ErfwTrv], [ErfwTs8] and [ErfwTsM] for `br merge`, all in test.bash.
 	- Acceptance signoff: Waiting. New refusal wording, and the back-merge's exit status changed.
 
+- Code Review 20261003 item 5: The style guide says Bash 4.4 is enforced, and nothing checks
+	- ID: 2026100313123908
+	- Type: Bug
+	- Status: Waiting on signoff
+	- Priority|Severity [Bug]: Low
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: style-guide.md says "the script refuses to run below" Bash 4.4. No live script checks the version. The check was in the frozen bash build.
+	- Expected behavior [Bug]: Either the pipeline scripts check, or the guide says what's true.
+	- Reproduced [Bug]: Yes. No `BASH_VERSINFO` outside legacy/.
+	- Origin: style-guide.md from 235697c (2026-07-27), true for the bash build then. Confirmed.
+	- Decisions:
+		- The floor stays Bash 4.4, and the pipeline scripts check it (2026-10-03). b26, the Mac, has bash 5.
+		- gfs-rotate.bash is a shared Bubbles file and is left alone (2026-10-03).
+	- Actual cause [Bug]: The guide's sentence came over from the bash build, where gitsby itself checked. The pipeline scripts never did.
+	- Estimated effort: Low
+	- Actual fix [Bug]: Each of the 16 scripts in cicd/ that is run directly now checks the version as its first command. Below 4.4 it exits 1 with one line naming the version found and the macOS fix. The guide now says that, and names what has no check.
+	- Note: install.bash has no check. It runs on stock macOS bash 3.2 by design, which its header and the guide both say, and what it installs needs no shell.
+	- Note: n8git_backup-and-publish has no check either. It is a helper shared with other projects, like gfs-rotate.bash. config.bash and the two include files are only sourced.
+	- Swept: every tracked bash file outside legacy/, through the same list the shell lint coverage check reads. The test fails a new script that lacks the check.
+	- Verified: under a real bash 3.2.57 and 4.3.48 each of the 16 refuses with its line and exit 1, and under 4.4.23 none does. Under 3.2 on `gover` they ran on. The new checks fail 16 of 16 on `gover` and pass here.
+	- Branch: lowfix
+	- Commit: c9bc222
+	- Test case: [ErfyDHs] in test.bash, one per script, runs a copy with the floor raised and expects the refusal and nothing else. [ErfyLds] fails it if the list comes back empty.
+	- Acceptance signoff: Waiting. The guide's wording changed, and n8git_backup-and-publish was left without a check.
+
+- Code Review 20261003 item 7: Spawn reports do arithmetic on numbers read from files
+	- ID: 2026100313123935
+	- Type: Bug
+	- Status: Waiting on signoff
+	- Priority|Severity [Bug]: Low
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: spawn-count.bash and spawn-report.bash read counts from tsv files and use them in arithmetic unchecked. That's the subscript-injection trap gfs-rotate was fixed for.
+	- Expected behavior [Bug]: A count that isn't digits is refused.
+	- Reproduced [Bug]: Yes, 2026-10-03. A recording whose count is `BASH_VERSINFO[$(touch ran)0]` ran the `touch` in spawn-report.bash, for the newest recording and for the one before it, and in spawn-count.bash for the baseline. The scripts write those files themselves, so the risk is low. An unset name such as `x[...]` stops at `set -u` first and runs nothing.
+	- Origin: spawn-count.bash:143 from dd4359b (2026-08-19). Same class as the 2026-09-15 gfs-rotate fix. Plausible when filed, confirmed since.
+	- Sweep: every live script that reads a number from a file and does arithmetic on it, gfs-rotate.bash excepted.
+	- Actual cause [Bug]: The count was used in `(( ))` straight from the file.
+	- Estimated effort: Low
+	- Actual fix [Bug]: Both scripts check that a count read from a recording is digits before any arithmetic. Anything else exits 1 naming the file, the command and the value. spawn-report.bash's header lists the new exit code.
+	- Swept: spawn-count.bash's baseline, and spawn-report.bash's newest and previous recordings, are the only file values that reach arithmetic. The rest read only numbers made by a command: `grep -c`, `wc -c`, `od`, `stat`, `git rev-list --count`, `git log` dates, awk line numbers in release.bash, and the footer dates release.bash cuts down to digits. test-id.bash already checks its value. Left alone: release.bash's patch bump on a `v*` tag name, since a tag can't hold `[` and so can't run anything, and keep-build.bash's number, which is typed on its own command line.
+	- Verified: the three new checks fail on `gover`, where the `touch` ran each time, and pass here with nothing run.
+	- Branch: lowfix
+	- Commit: f31269f
+	- Test case: [ErfzUGl] and [ErfzUH0] for spawn-report.bash, [ErfzUHF] for spawn-count.bash, in test.bash. The last needs strace, like the other spawn-count checks.
+	- Acceptance signoff: Waiting. It closes a command injection, so it touches security.
+
 - Code Review 20261003 enhancement 1: The spawn-count fixture can't see the account paths
 	- ID: 2026100313123975
 	- Type: Enhancement
@@ -206,60 +254,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Notes:
 		- Dogfood already builds one with `macho-universal.bash`. Release assets still publish `darwin/amd64` and `darwin/arm64` apart.
 		- Open: whether it replaces the two or sits beside them. install.bash picks a Mac asset by CPU today.
-
-- Code Review 20261003 item 5: The style guide says Bash 4.4 is enforced, and nothing checks
-	- ID: 2026100313123908
-	- Type: Bug
-	- Status: Queued
-	- Priority|Severity [Bug]: Low
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: style-guide.md says "the script refuses to run below" Bash 4.4. No live script checks the version. The check was in the frozen bash build.
-	- Expected behavior [Bug]: Either the pipeline scripts check, or the guide says what's true.
-	- Reproduced [Bug]: Yes. No `BASH_VERSINFO` outside legacy/.
-	- Origin: style-guide.md from 235697c (2026-07-27), true for the bash build then. Confirmed.
-	- Estimated effort: Low
-
-- Code Review 20261003 item 6: Doc comments sit on the wrong function or name an old one
-	- ID: 2026100313123922
-	- Type: Bug
-	- Status: Queued
-	- Priority|Severity [Bug]: Low
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]:
-		- In accountcmd.go, `accountNames`' comment sits above `anyHostStated`, and `accountNames` has none.
-		- `resolveConfigFile`'s comment calls it `configFile`. `isGitHubHost`'s calls it `githubHosts`.
-	- Expected behavior [Bug]: Each comment is on its function and starts with its name.
-	- Reproduced [Bug]: Yes, by reading.
-	- Origin: a function added between a comment and its target, and two renames that left the comment behind. Confirmed.
-	- Estimated effort: Low
-
-- Code Review 20261003 item 7: Spawn reports do arithmetic on numbers read from files
-	- ID: 2026100313123935
-	- Type: Bug
-	- Status: Queued
-	- Priority|Severity [Bug]: Low
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: spawn-count.bash and spawn-report.bash read counts from tsv files and use them in arithmetic unchecked. That's the subscript-injection trap gfs-rotate was fixed for.
-	- Expected behavior [Bug]: A count that isn't digits is refused.
-	- Reproduced [Bug]: No. The scripts write those files themselves, so the risk is low.
-	- Origin: spawn-count.bash:143 from dd4359b (2026-08-19). Same class as the 2026-09-15 gfs-rotate fix. Plausible.
-	- Estimated effort: Low
-
-- Code Review 20261003 item 8: The Origin gate doesn't read new-format items
-	- ID: 2026100313150825
-	- Type: Bug
-	- Status: Queued
-	- Priority|Severity [Bug]: Low
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: backlog-check.bash looks for review items in the old format only. With this round's items filed it reports "0 listed", so an item with no `Origin:` row would pass.
-	- Expected behavior [Bug]: It finds open review items in both formats.
-	- Reproduced [Bug]: Yes, 2026-10-03.
-	- Origin: backlog-check.bash from the 2026-09-10 rules, before the new item format. Confirmed.
-	- Estimated effort: Low
 
 - Code Review 20261003 enhancement 5: Answer branch checks from one read
 	- ID: 2026100313123948
@@ -468,6 +462,52 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: acct-files
 	- Test case: TestFragmentNames, plus two apply checks in test.bash.
 	- Closed: 2026-09-30
+
+- Code Review 20261003 item 6: Doc comments sit on the wrong function or name an old one
+	- ID: 2026100313123922
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Low
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]:
+		- In accountcmd.go, `accountNames`' comment sits above `anyHostStated`, and `accountNames` has none.
+		- `resolveConfigFile`'s comment calls it `configFile`. `isGitHubHost`'s calls it `githubHosts`.
+	- Expected behavior [Bug]: Each comment is on its function and starts with its name.
+	- Reproduced [Bug]: Yes, by reading.
+	- Origin: a function added between a comment and its target, and two renames that left the comment behind. Confirmed.
+	- Actual cause [Bug]: As the origin says.
+	- Estimated effort: Low
+	- Actual fix [Bug]: `accountNames`' comment moved onto it. The other two now start with the function's own name.
+	- Swept: all 514 doc comments on top-level declarations in src-go. No other one names a different function or an old one. 17 outside the tests open with prose, such as "The byte-order mark ..." on `utf8BOM`, and name nothing; they were left as they are. Most test functions open the same way, with the case they cover.
+	- Verified: the new test fails on the three comments on `gover` and passes here. `go test ./...` passes.
+	- Branch: lowfix
+	- Commit: 8805239
+	- Test case: TestDocCommentsNameWhatTheySitOn. A doc comment that opens with a camelCase word has to name what it sits on, and none may hold a second comment headed by another function's name.
+	- Acceptance signoff: Self-closed: mechanical.
+	- Closed: 20261003-143901
+
+- Code Review 20261003 item 8: The Origin gate doesn't read new-format items
+	- ID: 2026100313150825
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Low
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: backlog-check.bash looks for review items in the old format only. With this round's items filed it reports "0 listed", so an item with no `Origin:` row would pass.
+	- Expected behavior [Bug]: It finds open review items in both formats.
+	- Reproduced [Bug]: Yes, 2026-10-03.
+	- Origin: backlog-check.bash from the 2026-09-10 rules, before the new item format. Confirmed.
+	- Actual cause [Bug]: It matched only a tab-indented title with a status emoji, and took its Origin row at two tabs.
+	- Estimated effort: Low
+	- Actual fix [Bug]: It reads both formats. A new-format review item is a top-level title starting "Code Review", open unless its Status row says Done, Canceled, Moot or Deferred. The old emoji stand for three of those, and Moot is new. Its Origin row sits one tab in. The old format also takes a round with a letter after the date, such as 20260819d, which it missed before. All of those are closed.
+	- Swept: backlog-check.bash is the only script that reads review items out of the backlog.
+	- Verified: on a copy of this backlog with item 8's Origin row taken out, the gate on `gover` said "0 listed" and passed. Here it names item 8 and exits 1, and on the real backlog it lists 14 open items. The two new checks fail on `gover` and pass here.
+	- Branch: lowfix
+	- Commit: d78b9c9
+	- Test case: [Erg0LJv] and [Erg0LK9] in test.bash.
+	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
+	- Closed: 20261003-145130
 
 ## Old format
 

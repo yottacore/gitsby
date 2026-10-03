@@ -20,6 +20,9 @@
 ##	SPDX-License-Identifier: MIT
 
 
+if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
+	printf '%s\n' "${0##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
+fi
 set -Eeuo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -381,6 +384,17 @@ fTrackedBash(){
 		if [[ -f "${root}/${f}" ]]; then IFS= read -r first < "${root}/${f}" || true; fi
 		if [[ "${f}" == *.bash || "${first}" =~ ^#!.*[/[:space:]]bash([[:space:]]|$) ]]; then printf '%s\n' "${f}"; fi
 	done
+}
+## Whether the script $1 refuses a bash below its floor before running anything: a copy with the
+## floor raised past any real bash, named as the original, has to exit 1 with the one line. A
+## copy the raise didn't change has no floor and is not run, since some of these do real work.
+fBashFloorRefuses(){
+	local dir="${work}/bash-floor/${1//\//_}" out="" rc=0
+	mkdir -p "${dir}"
+	sed 's/< 404 ))/< 9999 ))/' "${root}/$1" > "${dir}/${1##*/}"
+	if cmp -s "${root}/$1" "${dir}/${1##*/}"; then return 1; fi
+	out="$(cd "${dir}" && bash "./${1##*/}" </dev/null 2>&1)" || rc=$?
+	[[ "${rc}" == 1 && "${out}" == "${1##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}."* && "${out}" != *$'\n'* ]]
 }
 
 ## The whole suite, against whatever ${gitsby} points at.
@@ -4102,6 +4116,21 @@ GHEOF
 	(cd "${work}/spawnmany" && touch spawn_20260101-{000001..001000}_padpadpadpadpadpadpadpadpadpadpadpad.tsv)
 	fAssertOut "[Erfs79u] and it reads a folder of many recordings"  '^COUNTS spawn_20260101-001000_' \
 		bash "${root}/cicd/utility/spawn-report.bash" --dir "${work}/spawnmany"
+	## A count is used in arithmetic, which runs a $(...) inside the subscript of any array that is
+	## set. One folder has that in its newest recording and one in the recording before, and each
+	## has to be refused.
+	local srBad="${work}/spawnbad"
+	mkdir -p "${srBad}/newest" "${srBad}/previous"
+	printf 'status\t5\n' > "${srBad}/newest/spawn_20260101-000001.tsv"
+	printf 'status\t5\n' > "${srBad}/previous/spawn_20260101-000002.tsv"
+	# shellcheck disable=SC2016  ## The fixture's own substitution, left for the script to refuse.
+	printf 'status\tBASH_VERSINFO[$(touch %s/ran)0]\n' "${srBad}/newest" > "${srBad}/newest/spawn_20260101-000002.tsv"
+	# shellcheck disable=SC2016
+	printf 'status\tBASH_VERSINFO[$(touch %s/ran)0]\n' "${srBad}/previous" > "${srBad}/previous/spawn_20260101-000001.tsv"
+	fAssert "[ErfzUGl] and refuses a count that isn't a number, without running it" \
+		bash -c "out=\$('${root}/cicd/utility/spawn-report.bash' --dir '${srBad}/newest' 2>&1); [[ \$? == 1 ]] && grep -qF \"spawn_20260101-000002.tsv has 'BASH_VERSINFO[\" <<< \"\$out\" && [[ ! -e '${srBad}/newest/ran' ]]"
+	fAssert "[ErfzUH0] and in the recording it compares against" \
+		bash -c "out=\$('${root}/cicd/utility/spawn-report.bash' --dir '${srBad}/previous' 2>&1); [[ \$? == 1 ]] && grep -qF \"spawn_20260101-000001.tsv has 'BASH_VERSINFO[\" <<< \"\$out\" && [[ ! -e '${srBad}/previous/ran' ]]"
 	## One macOS dogfood folder serves Macs of both CPUs, so the build there is universal. The
 	## fixtures are only a Mach-O header and a few bytes, which is all the joiner reads.
 	local fatDir="${work}/macho" fatJoin="${root}/cicd/utility/macho-universal.bash"
@@ -4151,6 +4180,11 @@ GHEOF
 			bash -c "'${sc}/cicd/utility/spawn-count.bash' -q --record && [[ \$(ls '${sc}/cicd/artifacts/spawn' | grep -c '^spawn_.*\.tsv\$') == 2 ]]"
 		fAssert "[Er2gqb3] and without -q prints a verdict and test ID for every command, unchanged ones too" \
 			bash -c "out=\$('${sc}/cicd/utility/spawn-count.bash' 2>&1) && [[ \$(grep -cE '^  ok +\[[0-9A-Za-z]{7}\] [a-z ]+: [0-9]+\$' <<< \"\$out\") == \$(grep -c '^fMeasure \"' '${root}/cicd/utility/spawn-count.bash') ]]"
+		## The baseline's counts go into arithmetic, as the report's do.
+		# shellcheck disable=SC2016  ## As above, for the script to refuse.
+		printf 'status\tBASH_VERSINFO[$(touch %s/ran)0]\n' "${sc}" > "${sc}/cicd/artifacts/spawn/spawn_20991231-000000.tsv"
+		fAssert "[ErfzUHF] and refuses a baseline count that isn't a number, without running it or recording" \
+			bash -c "was=\$(ls '${sc}/cicd/artifacts/spawn'); out=\$('${sc}/cicd/utility/spawn-count.bash' -q 2>&1); [[ \$? == 1 ]] && grep -qF \"spawn_20991231-000000.tsv has 'BASH_VERSINFO[\" <<< \"\$out\" && [[ ! -e '${sc}/ran' ]] && [[ \$(ls '${sc}/cicd/artifacts/spawn') == \"\$was\" ]]"
 	else
 		echo "  skip: spawn-count regression checks (no strace)"
 	fi
@@ -4204,6 +4238,13 @@ GHEOF
 		"${bl}/cicd/utility/backlog-check.bash"
 	fAssert "[Er1LxTD] and fails an open review item with no Origin line, by name" \
 		bash -c "out=\$('${bl}/cicd/utility/backlog-check.bash' -q --backlog '${bl}/project/no-origin.md' 2>&1); [[ \$? == 1 ]] && grep -qxF '  Code Review 20260101 item 4' <<< \"\$out\" && ! grep -qF 'item 1' <<< \"\$out\""
+	## The new item format: a top-level title with its rows a tab in, open by its Status row. The
+	## gate read only the old one, so a round filed this way was never checked.
+	printf '# Backlog\n\n## Issues\n\n- Code Review 20260102 item 1: x\n\t- Status: Waiting on signoff\n\t- Origin: y\n\n- Code Review 20260102 item 2: x\n\t- Status: Queued\n\t- Why: z\n\n- Code Review 20260102 enhancement 3: x\n\t- Status: Done\n\n- Code Review 20260102 item 4: x\n\t- Status: Moot\n\n- Code Review 20260102 item 5: x\n\t- Status: Canceled\n\n- Code Review 20260102 item 6: x\n\t- Status: Deferred\n\n- Another item\n\t- Status: Queued\n\n## Old format\n\n\t- 🔘 Code Review 20260101 item 1: x\n\t\t- Origin: y\n' > "${bl}/project/new-format.md"
+	fAssertOut "[Erg0LJv] and counts open review items in the new format too" 'Origin: present on every open review item \(3 listed\)' \
+		bash -c "sed '/item 2: x/,/Why: z/ s/Why: z/Origin: y/' '${bl}/project/new-format.md' > '${bl}/project/new-format-ok.md' && '${bl}/cicd/utility/backlog-check.bash' --backlog '${bl}/project/new-format-ok.md'"
+	fAssert "[Erg0LK9] and fails an open one with no Origin row, by name, leaving the closed ones be" \
+		bash -c "out=\$('${bl}/cicd/utility/backlog-check.bash' -q --backlog '${bl}/project/new-format.md' 2>&1); [[ \$? == 1 ]] && [[ \$(grep -c '^  ' <<< \"\$out\") == 1 ]] && grep -qxF '  Code Review 20260102 item 2' <<< \"\$out\""
 	## A test is known by its ID, so a new label on an old ID is an edit. The fixture lines spell
 	## the check names through %s, or the ID gate below would read them as checks of this file.
 	local bi="${work}/bl-ids" chk=fAssert
@@ -4254,6 +4295,15 @@ GHEOF
 		test -z "$(cd "${root}" && git ls-files '*.ps1' ':!legacy' | fLintUncovered PS_LINT_GLOBS both)"
 	fAssert "[Er1LxTH] and every lint glob matches a file" \
 		test -z "$(fLintGlobs MD_LINT_GLOBS empty; fLintGlobs SHELL_LINT_GLOBS empty; fLintGlobs PS_LINT_GLOBS empty)"
+	## Bash 4.4 is the floor the style guide sets. install.bash runs on 3.2 on purpose, a file the
+	## others source needs no check of its own, and the publish helper is shared and left as it is.
+	local bfScript="" bfFound=0
+	while IFS= read -r bfScript; do
+		case "${bfScript}" in install.bash|cicd/config.bash|cicd/utility/include/*|cicd/utility/n8git_backup-and-publish) continue ;; esac
+		bfFound=$((bfFound + 1))
+		fAssert "[ErfyDHs] ${bfScript} refuses a bash older than 4.4, before anything else"  fBashFloorRefuses "${bfScript}"
+	done < <(fTrackedBash)
+	fAssertFail "[ErfyLds] and that check found scripts to look at"  test "${bfFound}" = 0
 	## A commit message the user typed passes through the engine's output helpers.
 	fAssertFail "[Er1LxTI] cicd.bash prints with printf, never echo -e"  grep -qE '^[^#]*echo -e' "${root}/cicd/cicd.bash"
 	## The linter set is argued for line by line, and 'default: none' means a new golangci-lint
@@ -5556,3 +5606,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20261003 JC: The macOS universal joiner: the joined file, its two refusals, and the dogfood target that uses it. The rm check covers the new script. 1268 -> 1273.
 ##		- 20261003 JC: release.bash past its dry run, with stubs: a 'pr create' with no URL, and a phase 3 where releases/latest can't be reached and the build line can't be read. Both fail against the tree before them. 1273 -> 1275.
 ##		- 20261003 JC: A long --version from the published binary, thousands of tags for release.bash and gen-winres.bash, a long SHA256SUMS for the installer, and a full spawn folder. All five fail against the tree before them. 1275 -> 1280.
+##		- 20261003 JC: The Bash 4.4 floor in every pipeline script, spawn counts that aren't numbers, and the backlog gate on new-format review items. Every new check fails against the tree before it. 1288 -> 1310.

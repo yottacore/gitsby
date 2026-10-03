@@ -14,7 +14,7 @@
 ##		  --force     with --check, report even if already seen
 ##		  --no-mark   with --check, do not update the marker
 ##		  --dir DIR   tsv directory (default: cicd/artifacts/spawn next to this script)
-##	Exit: 0 normal, 2 skip (no dir / no recordings).
+##	Exit: 0 normal, 1 a recording with a count that isn't a number, 2 skip (no dir / no recordings).
 ##	History: At bottom of script.
 
 ##	Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
@@ -23,6 +23,9 @@
 ##	SPDX-License-Identifier: MIT
 
 
+if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
+	printf '%s\n' "${0##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
+fi
 set -Eeuo pipefail
 
 meDir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,6 +44,8 @@ while (($#)); do case "$1" in
 esac; done
 
 fSkip(){ echo "spawn-report: $1" >&2; exit 2; }
+## Arithmetic on text from a file runs any $(...) in an array subscript, so only digits go on.
+fCount(){ [[ "$2" =~ ^[0-9]+$ ]] || { echo "spawn-report: $1 has '$2' for $3, which isn't a count." >&2; exit 1; } ;}
 
 ##	Newest two spawn_<ts>[_role].tsv by timestamp - a gfs role suffix is ignored,
 ##	the timestamp is stable.
@@ -78,9 +83,11 @@ tag="COUNTS"; ((check)) && tag="NEW"
 fEcho_Clean "${tag} $(basename "$newest")$( [[ -n "$prev" ]] && echo "  (vs $(basename "$prev"))" )"
 while IFS=$'\t' read -r label count; do
 	[[ -n "$label" ]] || continue
+	fCount "${newest##*/}" "$count" "$label"
 	delta=""
 	if [[ -n "$prev" ]]; then
 		was="$(awk -F'\t' -v k="$label" '$1==k{print $2}' "$prev")"
+		[[ -z "$was" ]] || fCount "${prev##*/}" "$was" "$label"
 		if   [[ -z "$was" ]];              then delta="  (new)"
 		elif (( count > was ));            then delta="  (was ${was})"
 		elif (( count < was ));            then delta="  (was ${was})"
