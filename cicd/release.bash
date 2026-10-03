@@ -245,7 +245,7 @@ if ! fWould "branch ${relBranch}, retitle the changelog's vNEXT as '${version} -
 	## gitsby's own 'pr create' rather than gh directly: it already knows this repo's merge target,
 	## which is the one thing a hand-written --base can get wrong.
 	prOut="$("${gitsby}" -q pr create "${version}" 2>&1)" || { echo "${prOut}" >&2; fDie "couldn't open the version-bump PR."; }
-	prNum="$(printf '%s\n' "${prOut}" | grep -oE 'https://github\.com/[^ ]+/pull/[0-9]+' | tail -n 1)"
+	prNum="$(printf '%s\n' "${prOut}" | grep -oE 'https://github\.com/[^ ]+/pull/[0-9]+' | tail -n 1 || true)"
 	prNum="${prNum##*/}"
 	[[ "${prNum}" =~ ^[0-9]+$ ]] || { echo "${prOut}" >&2; fDie "couldn't read a PR number out of 'pr create' output."; }
 	fEcho_Clean "opened PR #${prNum} for the version bump"
@@ -284,7 +284,7 @@ awk -v ver="## ${version} " -v start="$(fpChangelogStart)" \
 [[ -s "${notes}" ]] || fEcho_Clean "WARNING: no changelog section found for ${version}; the release body will be empty."
 nativeAsset="${EXE_NAME}-$(go env GOOS)-$(go env GOARCH)"; [[ "$(go env GOOS)" == windows ]] && nativeAsset="${nativeAsset}.exe"
 buildLine=""
-[[ -x "${assets}/${nativeAsset}" ]] && buildLine="$("${assets}/${nativeAsset}" --version 2>/dev/null | awk -v want="${EXE_NAME} v" 'index($0, want) == 1 && !seen {print; seen = 1}')"
+[[ -x "${assets}/${nativeAsset}" ]] && buildLine="$("${assets}/${nativeAsset}" --version 2>/dev/null | awk -v want="${EXE_NAME} v" 'index($0, want) == 1 && !seen {print; seen = 1}' || true)"
 if [[ -n "${buildLine}" ]]; then
 	printf '\n---\n\n%s\n' "${buildLine}" >> "${notes}"
 else
@@ -303,7 +303,7 @@ fi
 ## platform back off the published release, check it against the published SHA256SUMS, and run it.
 ## That is the whole contract - a download whose checksum matches and whose --version is right.
 if ! fWould "verify releases/latest, then download and run this platform's published binary"; then
-	latest="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/yottacore/gitsby/releases/latest" 2>/dev/null | sed -n 's|.*/releases/tag/||p')"
+	latest="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/yottacore/gitsby/releases/latest" 2>/dev/null | sed -n 's|.*/releases/tag/||p' || true)"
 	## 'releases/latest' is the newest release NOT flagged as a pre-release, so a candidate must
 	## not resolve there and a full release must. Asking it the same question both ways round
 	## would warn on every good beta, which is the failure the 20260814 entry below is about.
@@ -376,3 +376,4 @@ echo
 ##		- 20260928 JC: A dry run no longer ends by saying the version was tagged, pushed and released. Committed executable, as its syntax line assumes.
 ##		- 20260928 JC: Phase 3 builds the published bytes from an export of the tag rather than the working tree. The temp folders go on any exit, not only after phase 3 starts.
 ##		- 20261001 JC: 'sed -i' in a form BSD sed also takes.
+##		- 20261003 JC: A PR number, a releases/latest answer or a build line that can't be read no longer ends the run with nothing said. Under set -e each assignment took its command's failure, so the message written for it never ran.

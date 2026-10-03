@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 item 1: release.bash can stop partway with no message
 	- ID: 2026100313123851
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority|Severity [Bug]: High
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -47,7 +47,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: Yes, 2026-10-03. The first by hand, the second by simulation.
 	- Possible cause [Bug]: `x="$(... | grep ...)"` and `x="$(curl ... | sed ...)"` under `set -e` and `pipefail`, with no `|| true`. It's one of the Bash traps.
 	- Origin: release.bash:248 from 78224a2 (2026-08-12) and :306 from 8ff6681 (2026-09-24). Neither was filed before. The :306 block is the phase 3 path that has never run. Confirmed.
+	- Actual cause [Bug]: Under `set -e`, an assignment from `$( )` takes its command's failure. The PR number grep, the `releases/latest` curl and the build line read from the native binary each ended the run there, above the message meant for it.
 	- Estimated effort: Low
+	- Actual fix [Bug]: Each of the three ends in `|| true`, so the check below it runs and says what happened.
+	- Swept: every `$( )` assignment in release.bash. The build line was the only other one that could end the run unseen. The rest end in `|| true` or `|| fDie`, or run a command that prints its own error.
+	- Verified: both checks fail on `gover` and pass here. Each of the three sites, put back alone, fails its check.
+	- Branch: relpipe
+	- Test case: [Erfs74j] and [Erfs75a] in test.bash. They run release.bash past its dry run, with gh, curl and gitsby stubbed. The second is the first run of the phase 3 `releases/latest` block.
+	- Acceptance signoff: Self-closed: reproduced, and the checks fail before the fix and pass after.
+	- Closed: 20261003-141520
 
 - Code Review 20261003 item 2: A pipeline reader that quits early can fail its writer
 	- ID: 2026100313123865
