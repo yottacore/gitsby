@@ -2455,9 +2455,10 @@ GHEOF
 	## SHA256SUMS comes from the generator the release uses, run where a SHA256SUMS already sits,
 	## so the names the installers look up are the ones it writes.
 	local eiOs="" eiArch=""
-	for eiOs in linux darwin freebsd; do
+	for eiOs in linux freebsd; do
 		for eiArch in amd64 arm64; do cp "${ei}/asset" "${ei}/assets/gitsby-${eiOs}-${eiArch}"; done
 	done
+	cp "${ei}/asset" "${ei}/assets/gitsby-darwin-universal"
 	cp "${ei}/asset" "${ei}/assets/gitsby-windows-amd64.exe"
 	echo stale > "${ei}/assets/SHA256SUMS"
 	( cd "${ei}/assets" && bash "${root}/cicd/utility/gen-checksums.bash" SHA256SUMS >/dev/null ) || true
@@ -2483,6 +2484,20 @@ GHEOF
 		bash -c "env ${eiEnv} bash '${goInst}' -y >/dev/null 2>&1 && '${ei}/home/.local/bin/gitsby' --version | grep -q 'stand-in'"
 	fAssert    "[EnQQYo0] and leaves no staging file behind" \
 		bash -c "! compgen -G '${ei}/home/.local/bin/.gitsby.install.*' >/dev/null"
+	## A Mac release is one universal binary, so every Mac CPU asks for the same file. A fake
+	## uname reports Darwin and the CPU named in FAKE_CPU.
+	local em="${work}/instmac"; mkdir -p "${em}/bin"
+	fStub "${em}/bin/uname" <<-'EOF'
+		#!/usr/bin/env bash
+		case "${1:-}" in -m) echo "${FAKE_CPU:-arm64}" ;; *) echo Darwin ;; esac
+	EOF
+	local emEnv="PATH='${em}/bin:${ei}/bin:${PATH}' FAKE_SUMS='${ei}/SHA256SUMS' FAKE_ASSET='${ei}/asset'"
+	fAssert    "[ErgCzfP] go installer on an Apple silicon Mac installs gitsby-darwin-universal" \
+		bash -c "out=\$(env ${emEnv} HOME='${em}/h1' FAKE_CALLS='${em}/calls1' bash '${goInst}' -y 2>&1); grep -q 'gitsby v1\.2\.3 (stand-in)' <<< \"\${out}\" && grep -q '/download/v1\.2\.3/gitsby-darwin-universal\$' '${em}/calls1'"
+	fAssert    "[ErgCzfc] and on an Intel one" \
+		bash -c "out=\$(env ${emEnv} HOME='${em}/h2' FAKE_CALLS='${em}/calls2' FAKE_CPU=x86_64 bash '${goInst}' -y 2>&1); grep -q 'gitsby v1\.2\.3 (stand-in)' <<< \"\${out}\" && grep -q '/download/v1\.2\.3/gitsby-darwin-universal\$' '${em}/calls2'"
+	fAssert    "[ErgCzfq] and says --arch changes nothing there" \
+		bash -c "out=\$(env ${emEnv} HOME='${em}/h3' FAKE_CALLS='${em}/calls3' bash '${goInst}' --arch amd64 -y 2>&1); grep -qF 'The macOS binary runs on both CPUs, so --arch amd64 changes nothing here.' <<< \"\${out}\" && grep -q '/gitsby-darwin-universal\$' '${em}/calls3'"
 	## Written straight to the final path, an interrupt mid-copy leaves a truncated executable
 	## where the real one should be, and a write over a copy that is running fails outright.
 	## Reproducing either needs a signal or a live process, so the staging is pinned here.
@@ -2556,9 +2571,10 @@ GHEOF
 	## A portal page listed in SHA256SUMS, so the first-byte check is the only thing that can refuse it.
 	printf '<html>portal</html>\n' > "${ev}/portal"
 	local evHash=""; evHash="$( sha256sum "${ev}/portal" | cut -d' ' -f1 )"
-	for eiOs in linux darwin freebsd; do
+	for eiOs in linux freebsd; do
 		for eiArch in amd64 arm64; do echo "${evHash}  gitsby-${eiOs}-${eiArch}"; done
 	done > "${ev}/portalsums"
+	echo "${evHash}  gitsby-darwin-universal" >> "${ev}/portalsums"
 	fAssertOut  "[Er1LxSL] go installer refuses a web page served as the binary"  'came back as a web page' \
 		bash -c "env HOME='${ev}/h4' PATH='${ei}/bin:${PATH}' FAKE_SUMS='${ev}/portalsums' FAKE_ASSET='${ev}/portal' bash '${goInst}' -y 2>&1"
 	fAssert     "[Er1LxSM] and installs nothing"  bash -c "[[ ! -e '${ev}/h4/.local/bin/gitsby' ]]"
@@ -2604,9 +2620,10 @@ GHEOF
 	local eb="${work}/instbad"; mkdir -p "${eb}"
 	printf '#!/usr/bin/env bash\nexit 3\n' > "${eb}/asset"
 	local ebHash=""; ebHash="$( sha256sum "${eb}/asset" | cut -d' ' -f1 )"
-	for eiOs in linux darwin freebsd; do
+	for eiOs in linux freebsd; do
 		for eiArch in amd64 arm64; do echo "${ebHash}  gitsby-${eiOs}-${eiArch}"; done
 	done > "${eb}/SHA256SUMS"
+	echo "${ebHash}  gitsby-darwin-universal" >> "${eb}/SHA256SUMS"
 	fAssertOut "[EpykPX9] go installer says when the installed binary won't run"  'but it would not run \(exit 3\)' \
 		bash -c "env HOME='${eb}/home' PATH='${ei}/bin:${PATH}' FAKE_SUMS='${eb}/SHA256SUMS' FAKE_ASSET='${eb}/asset' bash '${goInst}' -y 2>&1"
 	if command -v pwsh >/dev/null 2>&1; then
@@ -2750,15 +2767,20 @@ GHEOF
 				fPsInstall "${psi}" "${psi}/hgnu3" 7 "${goInstPs}" -Yes --tag
 			## The compare passed only because -ne ignores case.
 			fAssert    "[EpyfWSl] go install.ps1 compares checksums with case spelled out"  bash -c "grep -q 'ToLowerInvariant() -cne' '${goInstPs}'"
+			## $IsMacOS is a constant pwsh won't let a stub replace, so off a Mac this is a pin.
+			# shellcheck disable=SC2016  ## pwsh's variable, matched as text.
+			fAssert    "[ErgDQ7N] go install.ps1 asks a Mac for gitsby-darwin-universal" \
+				bash -c 'sed -n "/^    if (\\\$onMac) {\$/,/^    }\$/p" "$1" | grep -qF -- "$2"' _ "${goInstPs}" "\$goArch = 'universal'"
 			## A binary that can't start throws, so the message for one that won't run was reached
 			## only by one that started and failed.
 			local psb="${work}/psbad"; mkdir -p "${psb}"
 			cp "${psi}/stubs.ps1" "${psb}/"
 			printf '\177ELF not a binary' > "${psb}/asset"
 			local psbHash=""; psbHash="$( sha256sum "${psb}/asset" | cut -d' ' -f1 )"
-			for eiOs in linux darwin freebsd; do
+			for eiOs in linux freebsd; do
 				for eiArch in amd64 arm64; do echo "${psbHash}  gitsby-${eiOs}-${eiArch}"; done
 			done > "${psb}/SHA256SUMS"
+			echo "${psbHash}  gitsby-darwin-universal" >> "${psb}/SHA256SUMS"
 			fAssertOut "[EpyfWSm] go ps installer says when the installed binary can't start"  'but it would not run' \
 				fPsInstall "${psb}" "${psb}/home" 7 "${goInstPs}" -Yes
 			fAssertOut "[EpykPXD] go ps installer's plan says it replaces the one already there"  'replacing the one already there' \
@@ -3920,7 +3942,7 @@ GHEOF
 			if [[ "\$(basename "\$0") \${1:-}" == "go env" ]]; then case "\${2:-}" in GOOS) echo linux ;; GOARCH) echo amd64 ;; esac; fi
 			exit 0
 		EOF
-		for relStub in cicd/cicd.bash cicd/utility/gen-winres.bash cicd/utility/gen-checksums.bash src-go/gitsby; do cp "${rel}/stub" "${relRepo}/${relStub}"; done
+		for relStub in cicd/cicd.bash cicd/utility/gen-winres.bash cicd/utility/gen-checksums.bash cicd/utility/macho-universal.bash src-go/gitsby; do cp "${rel}/stub" "${relRepo}/${relStub}"; done
 		for relStub in gh go curl; do cp "${rel}/stub" "${rel}/bin/${relStub}"; done
 		printf '%s\n' '# Changelog' '' '<!--' '## TEMPLATE_vNEXT - DATE' '' '- template' '-->' '' '## vNEXT' '' '- a change' '' '## v1.2.3 - 2090-01-01' '' '- older' > "${relRepo}/changelog.md"
 		git -C "${relRepo}" add --all
@@ -3966,6 +3988,7 @@ GHEOF
 			case "\${2:-}" in
 				pr) [[ "\${3:-}" != create ]] || cat '${rel}/pr-url' 2>/dev/null ;;
 				release) git tag "\${3:?}" ;;
+				raw) mkdir -p '${rel}/published'; for a in "\$@"; do [[ ! -f "\${a}" ]] || cp "\${a}" '${rel}/published/'; done ;;
 			esac
 			exit 0
 		EOF
@@ -3984,12 +4007,23 @@ GHEOF
 		echo 'https://github.com/yottacore/gitsby/pull/7' > "${rel}/pr-url"
 		mkdir -p "${rel}/served"
 		printf '#!/usr/bin/env bash\necho "gitsby v1.2.4 (stand-in)"\nprintf "%%0200000d\\n" 0\n' > "${rel}/served/gitsby-linux-amd64"
-		(cd "${rel}/served" && sha256sum gitsby-linux-amd64 > SHA256SUMS)
+		printf 'mac stand-in\n' > "${rel}/served/gitsby-darwin-universal"
+		(cd "${rel}/served" && sha256sum gitsby-linux-amd64 gitsby-darwin-universal > SHA256SUMS)
+		## The real joiner from here on, fed a Mach-O header for each Mac CPU, the same fixture
+		## the joiner's own checks use.
+		cp "${root}/cicd/utility/macho-universal.bash" "${relRepo}/cicd/utility/"
+		git -C "${relRepo}" add --all
+		git -C "${relRepo}" commit --quiet -m 'joiner'
+		git -C "${relRepo}" push --quiet 2>/dev/null
 		fStub "${rel}/bin/go" <<-'EOF'
 			#!/usr/bin/env bash
 			case "${1:-}" in
 				env) case "${2:-}" in GOOS) echo linux ;; GOARCH) echo amd64 ;; esac ;;
-				build) while (($#)); do [[ "$1" != -o ]] || { printf '#!/usr/bin/env bash\necho "gitsby v1.2.4"\nexit 3\n' > "$2"; chmod +x "$2"; }; shift; done ;;
+				build) while (($#)); do [[ "$1" != -o ]] || case "${GOOS:-}/${GOARCH:-}" in
+					darwin/amd64) printf '%b' '\xcf\xfa\xed\xfe\x07\x00\x00\x01\x03\x00\x00\x00AMD' > "$2" ;;
+					darwin/arm64) printf '%b' '\xcf\xfa\xed\xfe\x0c\x00\x00\x01\x00\x00\x00\x00ARM' > "$2" ;;
+					*) printf '#!/usr/bin/env bash\necho "gitsby v1.2.4"\nexit 3\n' > "$2"; chmod +x "$2" ;;
+				esac; shift; done ;;
 			esac
 			exit 0
 		EOF
@@ -4006,8 +4040,40 @@ GHEOF
 			bash -c "[[ '${relRc}' == 0 ]] && grep -qF \"WARNING: releases/latest resolves to '', not v1.2.4.\" '${relOut}' && grep -qF 'Released v1.2.4' '${relOut}'"
 		fAssert "[Erfs76S] and its proof reads the whole --version output before matching it" \
 			grep -qF 'gitsby-linux-amd64: downloaded, checksum verified, and reports v1.2.4' "${relOut}"
+		## macOS is one file for both CPUs, written by the joiner rather than go build.
+		printf '%b' '\xcf\xfa\xed\xfe\x07\x00\x00\x01\x03\x00\x00\x00AMD' > "${rel}/mac-amd64"
+		printf '%b' '\xcf\xfa\xed\xfe\x0c\x00\x00\x01\x00\x00\x00\x00ARM' > "${rel}/mac-arm64"
+		fAssert "[ErgCzeJ] release.bash publishes one executable macOS asset, both Mac builds joined, and none per CPU" \
+			bash -c "[[ \"\$(od -An -tx1 -N8 '${rel}/published/gitsby-darwin-universal' | xargs)\" == 'ca fe ba be 00 00 00 02' ]] \
+				&& tail -c +16385 '${rel}/published/gitsby-darwin-universal' | head -c 15 | cmp -s - '${rel}/mac-amd64' \
+				&& tail -c +32769 '${rel}/published/gitsby-darwin-universal' | cmp -s - '${rel}/mac-arm64' \
+				&& [[ -x '${rel}/published/gitsby-darwin-universal' ]] \
+				&& ! compgen -G '${rel}/published/gitsby-darwin-[!u]*' >/dev/null && [[ -f '${rel}/published/gitsby-linux-arm64' ]]"
+		fAssert "[ErgCzeW] and its proof checks the macOS asset against SHA256SUMS from a box that can't run it" \
+			grep -qF 'gitsby-darwin-universal: downloaded and checksum verified; not run, since this is not a Mac' "${relOut}"
 		git -C "${relRepo}" checkout -q -- .
 		git -C "${relRepo}" tag -d v1.2.4 >/dev/null
+		echo 'tampered' > "${rel}/served/gitsby-darwin-universal"
+		fRelRun -y
+		fAssert "[ErgCzek] and warns when the published macOS asset fails its checksum" \
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'WARNING: gitsby-darwin-universal did not download and verify from the published release.' '${relOut}'"
+		git -C "${relRepo}" checkout -q -- .
+		git -C "${relRepo}" tag -d v1.2.4 >/dev/null
+		## A Mac build that isn't Mach-O is refused by the joiner, and that stops phase 1.
+		fStub "${rel}/bin/go" <<-'EOF'
+			#!/usr/bin/env bash
+			case "${1:-}" in
+				env) case "${2:-}" in GOOS) echo linux ;; GOARCH) echo amd64 ;; esac ;;
+				build) while (($#)); do [[ "$1" != -o ]] || printf 'ELF' > "$2"; shift; done ;;
+			esac
+			exit 0
+		EOF
+		relState="$(fRelState)"
+		fRelRun -y
+		fAssert "[ErgCzey] release.bash stops before tagging when the Mac builds won't join" \
+			bash -c "[[ '${relRc}' == 1 ]] && grep -qF 'not a 64-bit Mach-O build' '${relOut}' && grep -qF \"couldn't build or checksum darwin/universal; nothing has been changed.\" '${relOut}'"
+		fAssert "[ErgCzfB] and leaves HEAD, the tags and origin as they were"  test "${relState}" = "$(fRelState)"
+		git -C "${relRepo}" tag -d v1.2.4 >/dev/null 2>&1 || true
 		## A head reading the tag list quit at the first line, and git died writing the rest once
 		## the list outgrew a pipe. The same lookup sits in gen-winres.bash.
 		seq 1 3000 | awk '{print "create refs/tags/v0.0.1-padpadpadpadpadpadpadpadpadpadpadpadpad." $1 " HEAD"}' | git -C "${relRepo}" update-ref --stdin
@@ -5694,3 +5760,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20261003 JC: The Bash 4.4 floor in every pipeline script, spawn counts that aren't numbers, and the backlog gate on new-format review items. Every new check fails against the tree before it. 1288 -> 1310.
 ##		- 20261003 JC: spawn-count.bash fails a count over the limit written beside it, --record or not. Its stub build names its shell by path. 1310 -> 1311.
 ##		- 20261003 JC: The PowerShell lint starts pwsh once for every file, reads its rules from the settings file, and still fails a file that does not parse. The real pwsh runs it on a fixture of its own. 1311 -> 1318.
+##		- 20261003 JC: The macOS release is one universal binary. Both installers ask any Mac for it, release.bash joins it, publishes nothing per Mac CPU, checks it by checksum from Linux, and stops on a Mac build that will not join. Every new check fails against the tree before it. 1328 -> 1337.

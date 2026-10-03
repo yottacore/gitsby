@@ -282,7 +282,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - macOS release gets a universal binary
 	- ID: 2026100313491873
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Waiting for testing
+	- Needs external testing: b26. Both installers on a real Mac take `gitsby-darwin-universal`, and it runs. An Apple silicon Mac is still untested.
 	- Priority [Feature]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -291,7 +292,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- MacOS gets a universal binary for both amd64 and ARM.
 	- Notes:
 		- Dogfood already builds one with `macho-universal.bash`. Release assets still publish `darwin/amd64` and `darwin/arm64` apart.
-		- Open: whether it replaces the two or sits beside them. install.bash picks a Mac asset by CPU today.
+	- Decisions:
+		- It replaces the two `darwin/amd64` and `darwin/arm64` assets, rather than sitting beside them (2026-10-03).
+		- Published as `gitsby-darwin-universal`. On a Mac, `--arch` is noted and changes nothing.
+	- Progress log:
+		- Done: the release builds both Mac CPUs and joins them with `macho-universal.bash`, as dogfood does. Both installers ask any Mac for the one file. The release proof checks it against `SHA256SUMS` from Linux, where it can't run. README says how to rebuild it, and design.md has the decision.
+		- Verified: both Mac builds made twice, each time with an empty build cache, joined to the same bytes. `file` reads the result as a universal binary holding both.
+		- Verified: 9 new checks pass, and all 9 fail on the tree before.
+		- Note: the Go installer can't install v2.1.0 on any platform, before or after this. That release publishes the `gitsby` and `gitsby.ps1` scripts, not per-platform binaries.
+	- Branch: macuni
+	- Test case: test.bash `[ErgCzfP]`, `[ErgCzfc]`, `[ErgCzfq]` (install.bash on a Mac), `[ErgDQ7N]` (install.ps1, pinned since pwsh can't fake a Mac), `[ErgCzeJ]`, `[ErgCzeW]`, `[ErgCzek]`, `[ErgCzey]`, `[ErgCzfB]` (release.bash).
+	- Swept: every `darwin` and `arm64` reader in the repo. release.bash, config.bash, both installers, the installer and release fixtures in test.bash, README, design.md and the changelog. cicd.bash dogfood already joins. Nothing in `src-go` reads asset names. `legacy/` is frozen.
 
 - Code Review 20261003 enhancement 5: Answer branch checks from one read
 	- ID: 2026100313123948

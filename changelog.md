@@ -29,6 +29,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - FreeBSD joins the published platforms, amd64 and arm64 both, alongside Linux, Windows and macOS.
 
+- macOS gets one universal binary that runs on Intel and Apple silicon alike, in place of one per CPU. Both installers take it on any Mac.
+
 - `whoami` shows who commands in this folder act as - the account, the ssh key and who it authenticates as, the commit author, and the git host login - without the branch and working-tree state `status` prints around it. It answers outside a repository too, which is where the question comes up before a `repo clone` or `repo create`. `who` and `identity` are accepted spellings of it.
 
 - Other Git hosts are first-class. Gitsby looks at where `origin` actually points and picks the tool that serves it: `gh` on GitHub, `tea` on Gitea and Forgejo (found under `tea-cli` too, which is how some distributions ship it). Everything that is only Git - branching, committing, pulling, pushing, merging, pruning, releasing, and re-spelling a remote between HTTPS and SSH - now works on any host with no host-specific client installed at all.
