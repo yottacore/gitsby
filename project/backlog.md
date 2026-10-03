@@ -235,7 +235,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 item 6: Doc comments sit on the wrong function or name an old one
 	- ID: 2026100313123922
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -245,7 +245,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: Each comment is on its function and starts with its name.
 	- Reproduced [Bug]: Yes, by reading.
 	- Origin: a function added between a comment and its target, and two renames that left the comment behind. Confirmed.
+	- Actual cause [Bug]: As the origin says.
 	- Estimated effort: Low
+	- Actual fix [Bug]: `accountNames`' comment moved onto it. The other two now start with the function's own name.
+	- Swept: all 514 doc comments on top-level declarations in src-go. No other one names a different function or an old one. 17 outside the tests open with prose, such as "The byte-order mark ..." on `utf8BOM`, and name nothing; they were left as they are. Most test functions open the same way, with the case they cover.
+	- Verified: the new test fails on the three comments on `gover` and passes here. `go test ./...` passes.
+	- Branch: lowfix
+	- Test case: TestDocCommentsNameWhatTheySitOn. A doc comment that opens with a camelCase word has to name what it sits on, and none may hold a second comment headed by another function's name.
+	- Acceptance signoff: Self-closed: mechanical.
+	- Closed: 2026-10-03
 
 - Code Review 20261003 item 7: Spawn reports do arithmetic on numbers read from files
 	- ID: 2026100313123935
