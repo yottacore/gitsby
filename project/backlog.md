@@ -124,7 +124,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- `status` and `whoami` in a token-file account folder wait on two `gh api user` calls and an `ssh -T`, in turn. With 300 ms each that is about 950 ms where 300 would do.
 		- `account list` starts `gh` once per account, in turn. `account apply`, `set` and `unset` pay it too, since they print the list.
 	- Decisions:
-		- Against: the public style guide bans goroutines outright, and the directive allows them for real concurrent work. Settle that before using them here.
+		- Against: the public style guide allows goroutines only with a measured reason. The 950 ms against 300 above is that reason, so the fix may use them.
 		- The first probe might be replaced by a local `gh config get` read, with no goroutine at all. Try that first.
 	- Origin: account.go and accountcmd.go. The per-account `gh` call was measured in 20260909 item 19 and kept. Confirmed with injected delays.
 
@@ -138,7 +138,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Requirements  [Feature]:
 		- After the start-of-command fetch works, merge from the upstream with `--ff-only` rather than pulling, so origin is asked once.
 	- Decisions:
-		- The plan text changes, and so does parity with v2.1.0. That needs a yes first.
+		- The plan text changes, and so does parity with v2.1.0. OK'd 2026-10-03.
 	- Origin: mutate.go pull steps, there since the port. Confirmed in a trace.
 
 - Code Review 20261003 enhancement 4: PowerShell lint starts pwsh four times
@@ -307,7 +307,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- `include/gh-account.bash` has no header and nothing sources it. Only a test fixture copies it.
 		- style-guide.md's Bash and Go sections lack most of the directive's rules. It also bans new echo wrappers, which reads as banning an error helper, and allows interfaces only for a second implementation, not a test seam.
 	- Decisions:
-		- Open question: whether config.bash's UPPER_SNAKE settings stay as a config convention.
+		- config.bash's UPPER_SNAKE settings stay (2026-10-03). They are sourced settings read like environment variables, some are exported, and the directive lets the language's own case convention win.
 		- gfs-rotate.bash is a shared Bubbles file. A change there goes to every copy.
 	- Origin: directives 2026-09-09 to 2026-10-03, Bash section. Confirmed by a parse of every script.
 
