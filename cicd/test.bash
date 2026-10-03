@@ -5141,6 +5141,15 @@ GHEOF
 	## Now in the current layout, an edit names the line it changes and both versions of the key.
 	fAssertOut "[Eo61m6B] a second edit names the line and what was there"  'was: +host: git\.example\.test' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set work host git.example.org 2>&1"
+	## A file written under SHCL 2.x is kept under a dated name, and replaced by one converted for 3.x.
+	mkdir -p "${fg}/old2x"
+	printf 'account: work\n\tname: C:\\\\new\n\n#\n# This config file format is SHCL.\n# "Simple Hierarchical Config Language"\n#\n' > "${fg}/old2x/config.shcl"
+	fAssertOut "[ErfOMAH] a SHCL 2.x accounts file is converted, and the old one kept"  'Converted .* from the SHCL 2\.x format' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/old2x/config.shcl' identity 2>&1"
+	fAssertOut "[ErfOMAV] and the old one sits beside it under a dated name"  '^config_backup_[0-9]{8}-[0-9]{6}_format-v2\.shcl$' \
+		ls "${fg}/old2x"
+	fAssertOut "[ErfOMAj] and the new one names the format"  '^##    Format   3' \
+		cat "${fg}/old2x/config.shcl"
 	## A key the loader ignores, written past this command, lands in the file and is dropped on every
 	## read - so the file says one thing and every command does another. Refuse it at the door, and
 	## name the keys that ARE read while refusing.

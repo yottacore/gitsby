@@ -62,6 +62,25 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: TestRepeatedAccountKeys, TestAccountSetFindsTheKeyInAnyPiece, and one account list check in test.bash.
 	- Closed: 2026-09-30
 
+- Convert an accounts file from an older SHCL format
+	- ID: 2026100312145843
+	- Type: Enhancement
+	- Status: Done
+	- Priority|Severity [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- When a new shcl major breaks the old format, the old file is renamed `<name>_backup_YYYYmmDD-HHMMSS_format-v<N>.shcl`.
+		- A new file goes in its place at the same path, written through shcl with whatever it can convert.
+		- Don't race or trample shcl, which may do the backup and conversion itself one day. Look for a shcl API that helps first.
+	- Decisions:
+		- shcl 3.0 changes what a backslash means outside double quotes, so 2.x files qualify. Its `Migrate` and `FormatVersion` do the conversion and the check.
+		- A file is old when its `Format` line says so, or when it has the 2.x footer. One with neither reads as current and is left alone.
+		- Done on the first run that reads the file, with a note on stderr. Where it can't be written, the run reads it converted and `account set` refuses.
+	- Branch: cfgmig
+	- Test case: TestOldFormat, TestOldFormatFileIsConverted, TestUnmarkedFileIsLeftAlone, TestOldFormatUnwritable, TestOldFormatThroughALink, TestOldFormatConvertedByAnotherRun, and three checks in test.bash.
+	- Closed: 2026-10-03
+
 - `account apply` names fragments by host and login
 	- ID: 2026093013031520
 	- Type: Enhancement
@@ -93,6 +112,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- shcl plans the `/v3` path for its 3.0.0 cut, so nothing to report there.
 	- Note: blocked. Checked 2026-09-28: shcl has no 3.0 tag yet, and its `dev` go.mod still says `/v2`.
 	- Note: moved to the cut candidate on 2026-10-01. A line the file couldn't read is now kept through an edit, and a double-quoted path with a stray escape is listed instead of read with a newline in it. Still `/v2`.
+	- At the move, read the changelog for format breaks since the beta, and for any API that backs up or converts a file itself. The converter from item 2026100312145843 must not race it.
 
 ### Done
 
@@ -2652,6 +2672,8 @@ Waiting on hardware, an upstream module, or a decision.
 	- The ID is the local time to the hundredth of a second. Opened is when it was written down, which may differ. (Use a keyboard macro and possibly something like project 'zuid' to generate.)
 
 	- Status values meaning: Testing means the fix is in and checks are running or still to run. Waiting on signoff means automated testing passed. Moot means something else changed that made it irrelevant. Canceled means it still applies but was decided against. Waiting for testing means the fix is in and waits on a long CI run or an outside test host. Can't reproduce means a real attempt to reproduce it failed.
+
+	- An item waiting on signoff that is hard to test by hand is closed once the fix is sure and a regression test covers it, where one can be written.
 
 	- As issues are worked, and statuses change, place them in correct sorting order within the list:
 		- First by status: Waiting for answers, Waiting on signoff, Testing, Waiting for testing, Can't reproduce, Stalled, Started, Queued, Done, Deferred, Canceled, Moot
