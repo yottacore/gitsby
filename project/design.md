@@ -360,6 +360,11 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- The installer had to answer for a platform with no asset either way. Adding one costs a line in the target list - the module is pure stdlib with no cgo, so every target cross-builds from one box - which is cheaper than documenting an exception.
 	- OpenBSD and NetBSD are still that exception. They fall through to the build-from-source message, which names the platforms the release did publish.
 
+- macOS is published as one universal binary, `gitsby-darwin-universal`, in place of one per CPU (2026-10-03).
+	- Both installers take it on any Mac, so there is no CPU to detect. A shell under Rosetta reports Intel on Apple silicon, and can no longer pick the slower build. `--arch` there is noted and changes nothing.
+	- lipo only exists on a Mac, so `cicd/utility/macho-universal.bash` writes the file, the same one dogfood uses. Each build goes in unchanged, at a fixed 16 KiB alignment, after a header that names only CPU, offset and size. The same two builds always make the same file, so the release still rebuilds to its published checksum.
+	- The release proof runs only the binary for the box cutting it. From Linux, the Mac file is downloaded and checked against `SHA256SUMS`, and the joiner refuses a build that is not 64-bit Mach-O or repeats a CPU.
+
 - The version lives in the tag and nowhere else.
 	- The scripted builds each carried a `thisVersion` string by hand, and a release rewrote both. They had drifted before, which is why phase 1 compared them.
 	- A Go build takes its version from `-ldflags` at build time, so there is nothing in the source that can disagree with the tag. Cutting a release edits two files, neither of them source: the changelog heading, and the Windows resource below.
