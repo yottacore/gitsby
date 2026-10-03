@@ -593,9 +593,20 @@ else
 		## Built into the module dir under the target's own name, so the native binary the
 		## suite just ran against is not overwritten by a build that cannot run here.
 		out="${root}/${GO_MODULE_DIR}/${EXE_NAME}-${t//\//-}"
-		(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOOS="${t%%/*}" GOARCH="${t##*/}" \
-			go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${go_version#v} -X main.buildEpoch=${go_build_epoch}" -o "${out}" .) \
-			|| fDie "go build failed for ${t}"
+		## darwin/universal is both Mac CPUs, built apart and joined.
+		arches=("${t##*/}"); [[ "${t}" == darwin/universal ]] && arches=(amd64 arm64)
+		parts=()
+		for arch in "${arches[@]}"; do
+			part="${out}"; ((${#arches[@]} == 1)) || part="${out}-${arch}"
+			(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOOS="${t%%/*}" GOARCH="${arch}" \
+				go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${go_version#v} -X main.buildEpoch=${go_build_epoch}" -o "${part}" .) \
+				|| fDie "go build failed for ${t%%/*}/${arch}"
+			parts+=("${part}")
+		done
+		if ((${#parts[@]} > 1)); then
+			"${root}/cicd/utility/macho-universal.bash" "${out}" "${parts[@]}" || fDie "could not join the ${t} builds"
+			rm -f -- "${parts[@]}"
+		fi
 		cp -f "${out}" "${dogfood_dest[${t}]}/${exe}"
 		chmod +x "${dogfood_dest[${t}]}/${exe}"
 		rm -f -- "${out:?}"
@@ -709,3 +720,4 @@ fEcho_Clean
 ##		- 2026-09-27 JC: Each native fuzz target's line carries its test ID.
 ##		- 2026-09-27 JC: The Go unit tests print a line per test, with its test ID. Their full output shows only on a failure.
 ##		- 2026-09-28 JC: The tool version check covers six tools outside Go, and finds a Go tool where go install put it when that is not on PATH.
+##		- 2026-10-03 JC: macOS dogfood is a universal binary, both Mac CPUs built and joined, so Intel Macs can run it too.
