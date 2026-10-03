@@ -179,6 +179,23 @@ fSameLead(){
 	fi
 }
 
+## The plan block alone, compared. The state block above it words its labels differently in this
+## build, which test.bash owns; the plan is the git each build runs, in order. One deliberate
+## difference may be mapped to a single spelling on both sides, spelled out at the call site.
+fPlanBlock(){ awk '/^Going to do/{p=1;next} /^\[/{p=0} p' ;}
+fSamePlan(){
+	local -r label="${1}"; local -r drop="${2}"; local -r dir="${3}"; shift 3
+	local a="" b=""
+	a="$(fRunNew "${dir}" "${@}" | fPlanBlock | sed -E "${drop}")"
+	b="$(fRunRef "${dir}" "${@}" | fPlanBlock | sed -E "${drop}")"
+	if [[ -n "${a}" && "${a}" == "${b}" ]]; then
+		fOk "${label}"
+	else
+		fBad "${label}"
+		diff <(printf '%s\n' "${a}") <(printf '%s\n' "${b}") | sed 's/^/      /' | head -12 || true
+	fi
+}
+
 fSameExit(){
 	## Same accept/reject verdict. Used where the two legitimately word a message differently but
 	## must agree on whether the input is valid at all.
@@ -299,6 +316,22 @@ fSameSpelling "[EnLqMsU] 'pullcom' and 'update' are one command"   "${notRepo}" 
 fSameSpelling "[EnLqMsV] 'br merge' and 'br land' are one command" "${notRepo}" "br land"  "br merge"
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+## Plans. The pull step changed on purpose on 2026-10-03: the fetch at the start of the command
+## already has origin's branches, so this build merges the upstream rather than pulling, which
+## asked origin again. Both spellings of that one line map to one token; every other line still
+## has to match the frozen build.
+##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+echo
+echo "-- plans"
+planOrigin="${work}/plan-origin.git"; planTree="${work}/plan-tree"
+git init --quiet --bare -b main "${planOrigin}"
+git clone --quiet "${planOrigin}" "${planTree}" 2>/dev/null
+( cd "${planTree}" && echo a > a.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main )
+pullStep='s/^    git (pull --ff-only --autostash|merge --ff-only --autostash @\{u\}) \*$/    <pull step> */'
+fSamePlan "[ErgAC3e] pullcom plans the same steps, the pull step aside" "${pullStep}" "${planTree}" -q -NoFetch update
+fSamePlan "[ErgAC4V] sync plans the same steps, the pull step aside"    "${pullStep}" "${planTree}" -q -NoFetch sync
+
+##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## String case. Bash folds with '${x,,}'; Go compares byte-exact unless told otherwise. The two
 ## drift apart wherever one is applied and the other is assumed.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
@@ -346,3 +379,4 @@ echo "parity passed: ${pass}, differed: ${fail}"
 ##		- 20260926 JC: Every check carries a test ID at the front of its label.
 ##		- 20260926 JC: The pipeline no longer passes -q, so every check prints a line.
 ##		- 20261001 JC: Paths are escaped before going into a sed pattern. Off Windows the folder rule is written with symlinks resolved, since the frozen script never resolves them.
+##		- 20261003 JC: Compares the pullcom and sync plans, with the pull step's new spelling mapped to one token on both sides.
