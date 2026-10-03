@@ -53,8 +53,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Bug]: Each refusal now says what failed, with File, Why, Kept and Fix lines under it. Why has the OS's reason. Fix names permissions only for a permissions error, and otherwise says to run again once the reason is fixed. The save, the create and the lock point at the folder, since that is what they write in.
 	- Note: The labeled layout is the UI guide's, which keeps a path out of the sentence.
 	- Swept: the seven sites the review named, plus the lock, the partly written create and the relative path in `account set`. Left alone: the three `git config` failures in `account apply`, which have no error in hand while git prints its own, and the three in repo.go, which already give the reason. Found by a grep for `usagef("Couldn't` over src-go.
-	- Verified: the five site tests fail on `gover` and pass here. The test.bash pair was run by hand against both builds. `go test ./...` and `cicd.bash --gate` pass.
+	- Verified: the five site tests fail on `gover` and pass here. The test.bash pair was run by hand against both builds. test.bash passes 1288 of 1288, and `go test ./...` and `cicd.bash --gate` pass.
 	- Branch: errmsg
+	- Commit: 52b5c44
 	- Test case: TestAccountApplyKeepsTheReasonAFragmentFailed, TestLockKeepsTheReasonItFailed, TestAccountSetKeepsTheReasonItsFolderFailed, TestLoadForEditKeepsTheReasonTheReadFailed and TestAbsPathValueKeepsTheReasonTheFolderIsGone for the sites, TestWriteRefusalNamesPermissionsOnlyWhenTheyAreTheCause for the rule, and [Erfv8YB] and [Erfv8Yu] in test.bash. The chmod and save sites have no unprivileged way to fail, so the rule test covers them.
 	- Acceptance signoff: Waiting. The wording and layout of ten refusals changed.
 
@@ -79,6 +80,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: both `merge --abort` calls in src-go. `release` backs out through `backOutMerge`, so it is covered too and was run by hand. No other git step in src-go has its result discarded, apart from the listings and two best-effort calls in repo.go and remote.go whose comments say why.
 	- Verified: the same runs on `gover` said the target was as it was, and the back-merge exited 0. Here all six checks pass, and test.bash passes 1288 of 1288. `go test ./...` and `cicd.bash --gate` pass.
 	- Branch: errmsg
+	- Commit: d7511a2
 	- Test case: [ErfwTrE] and [ErfwTrT] for the back-merge, [ErfwTrh], [ErfwTrv], [ErfwTs8] and [ErfwTsM] for `br merge`, all in test.bash.
 	- Acceptance signoff: Waiting. New refusal wording, and the back-merge's exit status changed.
 
