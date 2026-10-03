@@ -97,7 +97,8 @@ fi
 ## Which version the resource claims.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 if [[ -z "${version}" ]]; then
-	version="$(git -C "${root}" -c versionsort.suffix=- tag --sort=-v:refname --list 'v*' 2>/dev/null | head -n 1)"
+	versions="$(git -C "${root}" -c versionsort.suffix=- tag --sort=-v:refname --list 'v*' 2>/dev/null || true)"
+	version="${versions%%$'\n'*}"
 	[[ -n "${version}" ]] || fDie "no v* tag to take a version from; pass one."
 fi
 [[ "${version}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([A-Za-z0-9.-]+)?$ ]] || fDie "'${version}' is not a vX.Y.Z version."
@@ -209,3 +210,4 @@ exit 0
 ##		  the resource that gives them both. Committed rather than generated at build time, so the
 ##		  published .exe can be rebuilt from its tag without the tool.
 ##		- 20260915 JC: LegalCopyright takes its years from the program, which printed 2014-2026 while the resource said 2026.
+##		- 20261003 JC: The newest tag is cut from the whole list. A head that quit at the first line failed git's write once there were a few thousand tags.
