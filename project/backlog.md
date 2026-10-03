@@ -111,6 +111,29 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: The limits in spawn-count.bash, run in stage 3. [Erg2KNK] in test.bash fails a count over its limit under `--record`. It fails against the script before this change.
 	- Acceptance signoff: Waiting. Which commands to measure, and limits with no tolerance, were choices.
 
+- Code Review 20261003 enhancement 4: PowerShell lint starts pwsh four times
+	- ID: 2026100313124015
+	- Type: Enhancement
+	- Status: Waiting on signoff
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- Run both PSScriptAnalyzer passes over every file in one pwsh call. It's about 10 s now and about 3 s that way, on every `--gate`.
+		- Put the rules in a `PSScriptAnalyzerSettings.psd1`, as the directive asks, rather than inline in cicd.bash.
+	- Decisions:
+		- Indentation stays four spaces. The directive's tab rule doesn't reindent existing code.
+	- Origin: cicd.bash stage 1. Confirmed, timed.
+	- Done: One pwsh now probes for the module, lints every file and reports the module's version, so the tool version check doesn't start another. The rules are in `PSScriptAnalyzerSettings.psd1` at the repo root. A file that doesn't parse is caught by the parser before the analyzer runs, so a Severity filter added to the settings later can't hide it.
+	- Note: The old first pass filtered by severity, which dropped parse errors. Only the 5.1 pass caught them.
+	- Note: `PSUseConsistentIndentation` is not in the settings. Set to four spaces it flags nine hand-aligned continuation lines in install.ps1, and passing it would mean reindenting them.
+	- Swept: every pwsh start in cicd.bash. The lint probe, both passes per file and the version check were the only ones.
+	- Verified: the lint went from six pwsh starts to one, and from about 5.4 s to 2.6 s on this box. `cicd.bash --gate` passes, 21.1 s before and 20.2 s after, most of it the Go tests. It fails on an alias, on 5.1-only syntax and on a parse error in run-latest.ps1, and on an alias in install.ps1, then passes again once the file is back. test.bash passes 1318 of 1318.
+	- Branch: pslint
+	- Commit: 5f2d55c
+	- Test case: [Erg6RxS] counts the pwsh starts in a gate run and checks both files are in the one call. [Erg6Rxh], [Erg6Rxu], [Erg6Ry8], [Erg6RyM], [Erg6Rya] and [Erg6Ryo] cover the missing module, the missing settings file, the real lint on clean, 5.1-only and broken files, and the settings file being ASCII. Each failed against the old code or a broken settings file, except [Erg6Rxh], which the old code also passes.
+	- Acceptance signoff: Waiting. Leaving the indentation rule out is a call the item didn't spell out.
+
 - Code Review 20261003 item 5: The style guide says Bash 4.4 is enforced, and nothing checks
 	- ID: 2026100313123908
 	- Type: Bug
@@ -187,20 +210,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Decisions:
 		- The plan text changes, and so does parity with v2.1.0. OK'd 2026-10-03.
 	- Origin: mutate.go pull steps, there since the port. Confirmed in a trace.
-
-- Code Review 20261003 enhancement 4: PowerShell lint starts pwsh four times
-	- ID: 2026100313124015
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature]: Avg
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Requirements  [Feature]:
-		- Run both PSScriptAnalyzer passes over every file in one pwsh call. It's about 10 s now and about 3 s that way, on every `--gate`.
-		- Put the rules in a `PSScriptAnalyzerSettings.psd1`, as the directive asks, rather than inline in cicd.bash.
-	- Decisions:
-		- Indentation stays four spaces. The directive's tab rule doesn't reindent existing code.
-	- Origin: cicd.bash stage 1. Confirmed, timed.
 
 - Run the tests on a Mac and a Windows box as part of the pipeline
 	- ID: 2026100312332924
