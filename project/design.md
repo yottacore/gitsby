@@ -163,6 +163,11 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- Pulling first fast-forwards under `--autostash`, so the dirty tree rides over and the commit lands on top. History stays linear and fast-forward-only stays satisfiable, which is the whole reason the tool never merges behind your back.
 	- Nothing is risked by pulling first: on a failed pull `--autostash` restores the tree as it found it, rather than stranding work in the stash. (A restore that conflicts is the one case git leaves the entry behind, and it says so.)
 
+- The pull step asks origin nothing new (2026-10-03). The fetch at the start of the command already brought in origin's branches, so the step is `git merge --ff-only @{u}`, which merges what the plan's incoming list showed. `git pull` asked origin a second time.
+	- A branch whose upstream is on another remote still pulls, since that fetch covers origin only. The plan reads each branch's upstream and shows which one runs.
+	- `--no-fetch` and offline skip the step as before, rather than merging what an earlier fetch left. That would call the branch up to date against refs nobody checked.
+	- It stays fast-forward only, as the pull was. A diverged branch still refuses, with the tree left as it was.
+
 - Being offline must never turn a good commit into a failed command, now that `pullcom` is the only way to commit.
 	- A remote that can't be reached warns and skips the pull. A remote that *is* reachable but can't fast-forward is a real problem and still fails hard - the distinction is what the pre-command fetch already discovered.
 	- `--no-fetch` declines the incoming round trip, so it skips the pull as well as the fetch. Skipping only the fetch and then pulling anyway would have saved nothing. It is not a way to say "I am offline" - see the offline rule below for why that distinction is deliberate.

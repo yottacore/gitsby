@@ -10,7 +10,10 @@
 
 package main
 
-import "strconv"
+import (
+	"strconv"
+	"strings"
+)
 
 const pad = "    "
 
@@ -24,7 +27,7 @@ func (a *app) preview(what string) {
 		a.out.clean(pad + "git add --all")
 		a.out.clean(pad + msgDisp + " *")
 	case "pull":
-		a.out.clean(pad + "git pull --ff-only --autostash *")
+		a.out.clean(pad + a.pullDisp(a.currentBranch(), "--autostash"))
 	case "pullcom":
 		a.preview("pull")
 		a.preview("commit")
@@ -49,16 +52,16 @@ func (a *app) preview(what string) {
 			a.preview("sync")
 			a.out.clean(pad + a.checkoutDisp(target))
 		}
-		a.out.clean(pad + "git pull --ff-only *")
+		a.out.clean(pad + a.pullDisp(target))
 	case "br-merge":
 		a.preview("sync")
 		a.out.clean(pad + a.checkoutDisp(a.branchTarget("")))
-		a.out.clean(pad + "git pull --ff-only *")
+		a.out.clean(pad + a.pullDisp(a.branchTarget("")))
 		a.out.clean(pad + "git merge --no-ff " + a.currentBranch())
 		a.out.clean(pad + "git push *")
 		a.out.clean(pad + "git branch -d " + a.currentBranch() + " *")
 		a.out.clean(pad + "git push --force-with-lease origin --delete " + a.currentBranch() + " *")
-		a.out.clean(pad + "git pull --ff-only *")
+		a.out.clean(pad + a.pullDisp(a.branchTarget("")))
 		// A hotfix owes dev the same change, or the next release undoes it.
 		if a.isHotfixBranch("") {
 			a.previewBackMerge()
@@ -167,14 +170,21 @@ func (a *app) previewUnset() {
 func (a *app) previewNewBranch(baseBranch string) {
 	if a.isProtectedBranch("") {
 		a.out.clean(pad + a.checkoutDisp(baseBranch) + " *")
-		a.out.clean(pad + "git pull --ff-only --autostash *")
+		a.out.clean(pad + a.pullDisp(baseBranch, "--autostash"))
 	} else {
 		a.preview("sync")
 		a.out.clean(pad + a.checkoutDisp(baseBranch) + " *")
-		a.out.clean(pad + "git pull --ff-only *")
+		a.out.clean(pad + a.pullDisp(baseBranch))
 	}
 	a.out.clean(pad + "git checkout -b " + a.cmd.arg)
 	a.out.clean(pad + "git push -u origin " + a.cmd.arg + " *")
+}
+
+// pullDisp is the plan's pull line for a branch, said the way the step will run
+// it there: pullArgs, read from that branch's upstream rather than the current
+// one's.
+func (a *app) pullDisp(branch string, extra ...string) string {
+	return "git " + strings.Join(pullArgsFor(a.upstreamOf(branch), extra...), " ") + " *"
 }
 
 // previewBackMerge is the tail every hotfix path shares: dev has to receive what
@@ -200,7 +210,7 @@ func (a *app) previewPr() {
 		a.out.clean(pad + a.prDisp(clean) + " *")
 	}
 	a.out.clean(pad + a.checkoutDisp(a.branchTarget(a.pr.headBranch)) + " *")
-	a.out.clean(pad + "git pull --ff-only *")
+	a.out.clean(pad + a.pullDisp(a.branchTarget(a.pr.headBranch)))
 	if a.isHotfixBranch(a.pr.headBranch) {
 		a.previewBackMerge()
 	}
@@ -211,10 +221,10 @@ func (a *app) previewRelease() {
 	hasDev := a.mergeTarget() == "dev"
 	if hasDev {
 		a.out.clean(pad + a.checkoutDisp("dev") + " *")
-		a.out.clean(pad + "git pull --ff-only *")
+		a.out.clean(pad + a.pullDisp("dev"))
 	}
 	a.out.clean(pad + a.checkoutDisp(a.defaultBranch()) + " *")
-	a.out.clean(pad + "git pull --ff-only *")
+	a.out.clean(pad + a.pullDisp(a.defaultBranch()))
 	if hasDev {
 		a.out.clean(pad + "git merge --no-ff dev")
 	}
