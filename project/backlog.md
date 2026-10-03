@@ -33,56 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- Code Review 20261003 item 1: release.bash can stop partway with no message
-	- ID: 2026100313123851
-	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: High
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]:
-		- Have `pr create` print no github.com pull URL, or have curl fail in the proof step.
-	- Incorrect behavior [Bug]: The script exits 1 with nothing printed. The first case is after the branch, the changelog edit and the PR exist. The second is after the release is published, so the proof is skipped.
-	- Expected behavior [Bug]: The `fDie` right below each line runs and says what's left half done.
-	- Reproduced [Bug]: Yes, 2026-10-03. The first by hand, the second by simulation.
-	- Possible cause [Bug]: `x="$(... | grep ...)"` and `x="$(curl ... | sed ...)"` under `set -e` and `pipefail`, with no `|| true`. It's one of the Bash traps.
-	- Origin: release.bash:248 from 78224a2 (2026-08-12) and :306 from 8ff6681 (2026-09-24). Neither was filed before. The :306 block is the phase 3 path that has never run. Confirmed.
-	- Actual cause [Bug]: Under `set -e`, an assignment from `$( )` takes its command's failure. The PR number grep, the `releases/latest` curl and the build line read from the native binary each ended the run there, above the message meant for it.
-	- Estimated effort: Low
-	- Actual fix [Bug]: Each of the three ends in `|| true`, so the check below it runs and says what happened.
-	- Swept: every `$( )` assignment in release.bash. The build line was the only other one that could end the run unseen. The rest end in `|| true` or `|| fDie`, or run a command that prints its own error.
-	- Verified: both checks fail on `gover` and pass here. Each of the three sites, put back alone, fails its check. test.bash passes 1280 of 1280 with both fixes in.
-	- Branch: relpipe
-	- Commit: 0b664d5
-	- Test case: [Erfs74j] and [Erfs75a] in test.bash. They run release.bash past its dry run, with gh, curl and gitsby stubbed. The second is the first run of the phase 3 `releases/latest` block.
-	- Acceptance signoff: Self-closed: reproduced, and the checks fail before the fix and pass after.
-	- Closed: 20261003-141520
-
-- Code Review 20261003 item 2: A pipeline reader that quits early can fail its writer
-	- ID: 2026100313123865
-	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: Avg
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]:
-		- release.bash's proof step pipes `--version` into `grep -q`. Now and then grep quits first and the check fails. That costs two retries and can end in a false warning that the release didn't verify.
-		- `tag --sort ... | head -n 1` in release.bash and gen-winres.bash fails the same way once there are enough tags.
-	- Expected behavior [Bug]: Capture the output first, then match it, the way cicd.bash already does.
-	- Reproduced [Bug]: The proof step failed 1 run in 300. The tag lookup failed every time with 3000 tags, never with today's 6.
-	- Origin: release.bash:132 and :333 from 988b72d (2026-08-18), gen-winres.bash:100 from e6af523 (2026-08-19). Same class as the Bash trap on early-exit readers. Confirmed for the proof step, Plausible at today's tag count.
-	- Actual cause [Bug]: `head -n 1` and `grep -q` stop reading at the first match. A writer with more to say than a pipe holds then fails writing the rest, and `pipefail` fails the pipeline.
-	- Sweep: also `spawn-report.bash:53` and `install.bash:196`.
-	- Estimated effort: Low
-	- Actual fix [Bug]: The tag lists and the proof's `--version` are captured whole and then matched, the way cicd.bash reads the tags. The installer and spawn-report.bash take their first lines with `sed -n`, which reads to the end.
-	- Swept: release.bash:132 and :333, gen-winres.bash:100, spawn-report.bash:53 and install.bash:196, all fixed. Left alone, since `|| true` keeps the right value there: install.bash's wget redirect read, cicd.bash's tool version read and parity.bash's diff excerpts. Found by a grep for `| head`, `| grep -q` and `| awk ... exit` over every `.bash` outside `legacy/`. test.bash's `| grep -q` runs inside `bash -c`, which has no pipefail.
-	- Verified: all five checks fail on `gover` and pass here. test.bash passes 1280 of 1280 with both fixes in.
-	- Branch: relpipe
-	- Commit: e8195e6
-	- Test case: in test.bash, [Erfs76S] for a published binary whose `--version` outruns a pipe, [Erfs77J] and [Erfs78A] for 3000 tags, [Erfs792] for a long SHA256SUMS, and [Erfs79u] for 1000 spawn recordings.
-	- Acceptance signoff: Self-closed: reproduced, the checks fail before the fix and pass after, and the sweep is answered.
-	- Closed: 20261003-141543
-
 - Code Review 20261003 item 3: Write and read failures in account commands guess at the cause
 	- ID: 2026100313123881
 	- Type: Bug
@@ -369,22 +319,55 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Time it on an idle box. Adopt it only if it's no slower.
 	- Origin: build flags in config.bash. Size Confirmed, speed Plausible.
 
-- Dogfood builds macOS for both CPUs
-	- ID: 2026100312571262
-	- Type: Enhancement
+- Code Review 20261003 item 1: release.bash can stop partway with no message
+	- ID: 2026100313123851
+	- Type: Bug
 	- Status: Done
-	- Priority [Feature]: Avg
+	- Priority|Severity [Bug]: High
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
-	- Related IDs: 2026100312332924
-	- Requirements  [Feature]:
-		- Add `darwin/amd64` to the dogfood targets.
-	- Decisions:
-		- There is one macOS dogfood folder and both builds are named `gitsby`, so they are joined into one universal binary there.
-		- lipo only exists on a Mac, so a small script writes the universal file. Each build goes in unchanged.
-	- Branch: macfat
-	- Test case: four checks in test.bash for the joined file, its refusals and the dogfood target.
-	- Closed: 2026-10-03
+	- Steps to reproduce [Bug]:
+		- Have `pr create` print no github.com pull URL, or have curl fail in the proof step.
+	- Incorrect behavior [Bug]: The script exits 1 with nothing printed. The first case is after the branch, the changelog edit and the PR exist. The second is after the release is published, so the proof is skipped.
+	- Expected behavior [Bug]: The `fDie` right below each line runs and says what's left half done.
+	- Reproduced [Bug]: Yes, 2026-10-03. The first by hand, the second by simulation.
+	- Possible cause [Bug]: `x="$(... | grep ...)"` and `x="$(curl ... | sed ...)"` under `set -e` and `pipefail`, with no `|| true`. It's one of the Bash traps.
+	- Origin: release.bash:248 from 78224a2 (2026-08-12) and :306 from 8ff6681 (2026-09-24). Neither was filed before. The :306 block is the phase 3 path that has never run. Confirmed.
+	- Actual cause [Bug]: Under `set -e`, an assignment from `$( )` takes its command's failure. The PR number grep, the `releases/latest` curl and the build line read from the native binary each ended the run there, above the message meant for it.
+	- Estimated effort: Low
+	- Actual fix [Bug]: Each of the three ends in `|| true`, so the check below it runs and says what happened.
+	- Swept: every `$( )` assignment in release.bash. The build line was the only other one that could end the run unseen. The rest end in `|| true` or `|| fDie`, or run a command that prints its own error.
+	- Verified: both checks fail on `gover` and pass here. Each of the three sites, put back alone, fails its check. test.bash passes 1280 of 1280 with both fixes in.
+	- Branch: relpipe
+	- Commit: 0b664d5
+	- Test case: [Erfs74j] and [Erfs75a] in test.bash. They run release.bash past its dry run, with gh, curl and gitsby stubbed. The second is the first run of the phase 3 `releases/latest` block.
+	- Acceptance signoff: Self-closed: reproduced, and the checks fail before the fix and pass after.
+	- Closed: 20261003-141520
+
+- Code Review 20261003 item 2: A pipeline reader that quits early can fail its writer
+	- ID: 2026100313123865
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]:
+		- release.bash's proof step pipes `--version` into `grep -q`. Now and then grep quits first and the check fails. That costs two retries and can end in a false warning that the release didn't verify.
+		- `tag --sort ... | head -n 1` in release.bash and gen-winres.bash fails the same way once there are enough tags.
+	- Expected behavior [Bug]: Capture the output first, then match it, the way cicd.bash already does.
+	- Reproduced [Bug]: The proof step failed 1 run in 300. The tag lookup failed every time with 3000 tags, never with today's 6.
+	- Origin: release.bash:132 and :333 from 988b72d (2026-08-18), gen-winres.bash:100 from e6af523 (2026-08-19). Same class as the Bash trap on early-exit readers. Confirmed for the proof step, Plausible at today's tag count.
+	- Actual cause [Bug]: `head -n 1` and `grep -q` stop reading at the first match. A writer with more to say than a pipe holds then fails writing the rest, and `pipefail` fails the pipeline.
+	- Sweep: also `spawn-report.bash:53` and `install.bash:196`.
+	- Estimated effort: Low
+	- Actual fix [Bug]: The tag lists and the proof's `--version` are captured whole and then matched, the way cicd.bash reads the tags. The installer and spawn-report.bash take their first lines with `sed -n`, which reads to the end.
+	- Swept: release.bash:132 and :333, gen-winres.bash:100, spawn-report.bash:53 and install.bash:196, all fixed. Left alone, since `|| true` keeps the right value there: install.bash's wget redirect read, cicd.bash's tool version read and parity.bash's diff excerpts. Found by a grep for `| head`, `| grep -q` and `| awk ... exit` over every `.bash` outside `legacy/`. test.bash's `| grep -q` runs inside `bash -c`, which has no pipefail.
+	- Verified: all five checks fail on `gover` and pass here. test.bash passes 1280 of 1280 with both fixes in.
+	- Branch: relpipe
+	- Commit: e8195e6
+	- Test case: in test.bash, [Erfs76S] for a published binary whose `--version` outruns a pipe, [Erfs77J] and [Erfs78A] for 3000 tags, [Erfs792] for a long SHA256SUMS, and [Erfs79u] for 1000 spawn recordings.
+	- Acceptance signoff: Self-closed: reproduced, the checks fail before the fix and pass after, and the sweep is answered.
+	- Closed: 20261003-141543
 
 - Two account blocks with one name merge without a word
 	- ID: 2026093013034093
@@ -414,6 +397,23 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: dup-acct
 	- Test case: TestRepeatedAccountKeys, TestAccountSetFindsTheKeyInAnyPiece, and one account list check in test.bash.
 	- Closed: 2026-09-30
+
+- Dogfood builds macOS for both CPUs
+	- ID: 2026100312571262
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Related IDs: 2026100312332924
+	- Requirements  [Feature]:
+		- Add `darwin/amd64` to the dogfood targets.
+	- Decisions:
+		- There is one macOS dogfood folder and both builds are named `gitsby`, so they are joined into one universal binary there.
+		- lipo only exists on a Mac, so a small script writes the universal file. Each build goes in unchanged.
+	- Branch: macfat
+	- Test case: four checks in test.bash for the joined file, its refusals and the dogfood target.
+	- Closed: 2026-10-03
 
 - Convert an accounts file from an older SHCL format
 	- ID: 2026100312145843
