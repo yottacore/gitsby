@@ -125,7 +125,7 @@ function Install-Gitsby {
         # RuntimeInformation arrived in .NET Framework 4.7.1, so an older 5.1 box falls back to
         # the environment. Both spellings land on the same two names below.
         $osArch = try { [string][Runtime.InteropServices.RuntimeInformation]::OSArchitecture }
-                  catch { [string]$env:PROCESSOR_ARCHITECTURE }
+        catch { [string]$env:PROCESSOR_ARCHITECTURE }
         switch ($osArch) {
             'X64'   { 'amd64' }
             'Arm64' { 'arm64' }
@@ -235,12 +235,12 @@ function Install-Gitsby {
         throw "Release ${tagName} publishes no SHA256SUMS, so nothing here can be verified. (A release published seconds ago may not be servable yet; try again shortly.)"
     }
     $want = ''
-    $published = @(foreach ($sumLine in ($sums -split "`r?`n")) {
+    $published = foreach ($sumLine in ($sums -split "`r?`n")) {
         if ($sumLine -match '^([0-9a-fA-F]{64})\s+\*?(gitsby-\S+)$') {
             if ($Matches[2] -eq $asset) { $want = $Matches[1] }
             $Matches[2] -replace '^gitsby-', '' -replace '\.exe$', ''
         }
-    })
+    }
     if (-not $want) {
         $alsoRan = if ($published) { " It publishes: $($published -join ', ')." } else { '' }
         throw "Release ${tagName} publishes no gitsby binary for ${goOs}/${goArch}.${alsoRan} Build it for yours instead - the module is pure Go with no dependencies: git clone https://github.com/${repo}.git; cd gitsby/src-go; go build -o gitsby ."
@@ -320,7 +320,7 @@ function Install-Gitsby {
         # -AsByteStream is 7's spelling of what 5.1 calls -Encoding Byte; each is an error on
         # the other's parser, so the branch is on the version rather than on a try/catch.
         $firstByte = if ($isPS7) { Get-Content -LiteralPath $tmpFile -AsByteStream -TotalCount 1 }
-                     else { Get-Content -LiteralPath $tmpFile -Encoding Byte -TotalCount 1 }
+        else { Get-Content -LiteralPath $tmpFile -Encoding Byte -TotalCount 1 }
         if ($firstByte -eq [byte][char]'<') {
             throw 'The download came back as a web page, not a binary - something between here and GitHub is intercepting it.'
         }
@@ -387,8 +387,8 @@ function Install-Gitsby {
                     if (($stored -split $pathSep) -notcontains $destDir) {
                         $joined = if ([string]::IsNullOrEmpty($stored)) { $destDir } else { $stored.TrimEnd($pathSep) + $pathSep + $destDir }
                         $storedKind = if ($stored) { $pathKey.GetValueKind('PATH') }
-                            elseif ($joined -match '%') { [Microsoft.Win32.RegistryValueKind]::ExpandString }
-                            else { [Microsoft.Win32.RegistryValueKind]::String }
+                        elseif ($joined -match '%') { [Microsoft.Win32.RegistryValueKind]::ExpandString }
+                        else { [Microsoft.Win32.RegistryValueKind]::String }
                         Set-ItemProperty -LiteralPath $pathKeyPath -Name 'PATH' -Value $joined -Type $storedKind
                     }
                     $env:PATH = $env:PATH.TrimEnd($pathSep) + $pathSep + $destDir

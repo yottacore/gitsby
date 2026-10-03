@@ -13,8 +13,9 @@
 ##		- Some commands run again in a folder an account's rule covers, with a fake gh
 ##		  and ssh, and on a pty with no -q, the way someone at a terminal runs them.
 ##		  Those are the paths that ask gh and ssh who you are.
-##		- Each command has a limit, written beside it below. A count over its limit
-##		  fails, --record or not. A fix that lowers a count lowers its limit too.
+##		- Each command has an expected count, written beside it below. Its limit is
+##		  that plus 2, or a tenth again, whichever is larger. A count over the limit
+##		  fails, --record or not. A fix that lowers a count lowers the number too.
 ##		- Baseline is the newest previous run in the artifact dir, GFS-rotated like the
 ##		  lint logs. No baseline yet means the first run records one and passes.
 ##	Syntax:
@@ -177,13 +178,16 @@ if command -v script >/dev/null 2>&1 && script -qec true /dev/null </dev/null >/
 ## where it happens; execve is the event that costs, since that is a new program image.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## The label starts with the test ID, which is printed but kept out of the baseline file, so
-## an older baseline still matches. Then the limit, how it runs, and the folder:
+## an older baseline still matches. Then the expected count, how it runs, and the folder:
 ##   pipe  stdout to /dev/null, the way the pipeline and a script see it
 ##   tty   on a pty with stdin at end of input, which is a terminal to gitsby
 ## A folder starting 'acct' runs with the accounts file, and any other with the empty one.
-declare -a ids=() labels=() counts=() limits=() skipped=()
+## Room for a git version that adds or drops a helper of its own: two more processes, or a
+## tenth again, whichever is larger. A real regression costs more than that.
+fHeadroom(){ local n=$(( $1 / 10 )); (( n < 2 )) && n=2; echo "${n}"; }
+declare -a ids=() labels=() counts=() expects=() limits=() skipped=()
 fMeasure(){
-	local label="${1#\[*\] }" id="${1%%\] *}]" limit="$2" how="$3" folder="$4"; shift 4
+	local label="${1#\[*\] }" id="${1%%\] *}]" expect="$2" how="$3" folder="$4"; shift 4
 	local config="${noAccounts}" traceFile="${work}/trace.out" n=0 skip=""
 	[[ "${folder}" == acct* ]] && config="${accounts}"
 	fRestore
@@ -202,11 +206,12 @@ fMeasure(){
 	ids+=("${id}")
 	labels+=("${label}")
 	counts+=("${n}")
-	limits+=("${limit}")
+	expects+=("${expect}")
+	limits+=("$(( expect + $(fHeadroom "${expect}") ))")
 	skipped+=("${skip}")
 }
 
-## Limits are today's counts, so any rise fails. --no-fetch on all but two: a fetch's cost is
+## Expected counts are today's. --no-fetch on all but two: a fetch's cost is
 ## mostly git's own (upload-pack, a maintenance run), and a github.com origin can't be fetched
 ## here at all. The two with a fetch run against the local origin, restored before each. pullcom
 ## is one of them because its pull step only runs after a fetch, and that step used to ask
@@ -248,33 +253,30 @@ for ((i = 0; i < ${#labels[@]}; i++)); do
 		continue
 	fi
 	if (( counts[i] > limits[i] )); then
-		fEcho_Clean "  OVER LIMIT ${ids[i]} ${labels[i]}: ${counts[i]}, limit ${limits[i]}"
+		fEcho_Clean "  OVER LIMIT ${ids[i]} ${labels[i]}: ${counts[i]}, limit ${limits[i]} (expected ${expects[i]})"
 		overLimit=1
 		continue
 	fi
-	(( counts[i] < limits[i] )) && underLimit=$((underLimit + 1))
+	(( counts[i] < expects[i] )) && underLimit=$((underLimit + 1))
 	was=""
 	[[ -z "${baseline}" ]] || was="$(awk -F'\t' -v k="${labels[i]}" '$1==k{print $2}' "${baseline}" || true)"
 	[[ -n "${was}" ]] || { ((quiet)) || fEcho_Clean "  NEW        ${ids[i]} ${labels[i]}: ${counts[i]}"; continue; }
 	## Arithmetic on text from a file runs any $(...) in an array subscript, so only digits go on.
 	[[ "${was}" =~ ^[0-9]+$ ]] || { echo "spawn-count: $(basename "${baseline}") has '${was}' for ${labels[i]}, which isn't a count. Fix or delete that file." >&2; exit 1; }
-	## A tolerance, because a git version can add or drop a helper of its own: two more
-	## processes, or a tenth again, whichever is larger. The limit above has none.
-	local_allow=$(( was / 10 )); (( local_allow < 2 )) && local_allow=2
-	if (( counts[i] > was + local_allow )); then
+	if (( counts[i] > was + $(fHeadroom "${was}") )); then
 		fEcho_Clean "  REGRESSED  ${ids[i]} ${labels[i]}: ${was} -> ${counts[i]}"
 		regressed=1
 	elif (( counts[i] < was )); then
-		((quiet)) || fEcho_Clean "  improved   ${ids[i]} ${labels[i]}: ${was} -> ${counts[i]}, limit ${limits[i]}"
+		((quiet)) || fEcho_Clean "  improved   ${ids[i]} ${labels[i]}: ${was} -> ${counts[i]}, expected ${expects[i]}"
 	else
 		((quiet)) || fEcho_Clean "  ok         ${ids[i]} ${labels[i]}: ${counts[i]}"
 	fi
 done
-((quiet)) || ((underLimit == 0)) || fEcho_Clean "  ${underLimit} under their limit; lower those limits in ${BASH_SOURCE[0]##*/} to keep the gain."
+((quiet)) || ((underLimit == 0)) || fEcho_Clean "  ${underLimit} under their expected count; lower those numbers in ${BASH_SOURCE[0]##*/} to keep the gain."
 
 if ((overLimit)); then
 	echo "spawn counts went over their limits; nothing recorded." >&2
-	echo "  A deliberate rise raises the limit beside the command in ${BASH_SOURCE[0]##*/}." >&2
+	echo "  A deliberate rise raises the expected count beside the command in ${BASH_SOURCE[0]##*/}." >&2
 	exit 1
 fi
 if ((regressed)) && ((! record)); then
@@ -303,3 +305,4 @@ gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		- 20260927 JC: Each command carries a test ID, printed on its line.
 ##		- 20261003 JC: A limit per command that fails at any rise, --record or not. An account folder with a fake gh and ssh, a pty run with no -q, and a status that fetches, for status, whoami and the account listing.
 ##		- 20261003 JC: pullcom with a fetch, so the pull step is counted.
+##		- 20261003 JC: The number beside each command is the expected count, and its limit adds the same headroom the baseline compare allows, so a git update that starts one more helper doesn't fail the gate.
