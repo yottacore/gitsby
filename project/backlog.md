@@ -84,6 +84,33 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [ErfwTrE] and [ErfwTrT] for the back-merge, [ErfwTrh], [ErfwTrv], [ErfwTs8] and [ErfwTsM] for `br merge`, all in test.bash.
 	- Acceptance signoff: Waiting. New refusal wording, and the back-merge's exit status changed.
 
+- Code Review 20261003 enhancement 1: The spawn-count fixture can't see the account paths
+	- ID: 2026100313123975
+	- Type: Enhancement
+	- Status: Waiting on signoff
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- Add a configured account, a fake `gh` and a pty run to the fixture, so it counts what a real user's `status`, `whoami` and `account list` start.
+		- Give each counted command a threshold that fails the gate.
+	- Actual effort: Avg
+	- Decisions:
+		- Do this first. The other spawn items in this round need it to prove anything.
+	- Origin: spawn-count.bash uses an empty config, a local origin and captured stdout. Four of this round's spawn findings are out of its sight. Confirmed.
+	- Done: The fixture has two more clones whose origin is on github.com, one over ssh and one over https. An account's folder rule covers each, with a token file and no token in gh. A fake `gh` and `ssh` answer on PATH, and a proxy on a closed port stops anything else. HOME moved into the fixture.
+	- Done: Five new measures run on a pty with no `-q`: `status` with a fetch, `status`, `whoami` and `account list` in the ssh folder, and `status` in the https folder.
+	- Done: Each command has a limit written beside it, set at today's count. A count over it fails and records nothing, and `--record` doesn't lift it. The baseline compare is unchanged. So is the tsv, so spawn-report.bash reads it as before.
+	- Note: The new measures see what enhancements 2, 5 and 6 will move: both `gh api user` calls and the `ssh -T`, one `gh` per login in the listing, `tput cols`, the `gitsby.ghTokenFile` lookup made twice, the protocol asked of `gh` on an https origin, and `origin/HEAD` read twice after a fetch. The older measures already see `show-ref` in `br switch` and `br prune`, and the two `rev-parse` calls at startup.
+	- Note: The limits have no tolerance. A git version that adds a helper of its own trips them, and the fix then is raising the limit by hand.
+	- Note: The stub build in test.bash's spawn-count checks names `/bin/sh` rather than going through env, so its count doesn't depend on PATH.
+	- Verified: full test.bash on spawnfix, 1311 passed, 0 failed.
+	- Verified: the 13 counts were the same over four runs, and the first eight match the 2026-09-30 baseline. Lowering one limit below its count failed a `--record` run with nothing recorded; put back, the run passes.
+	- Branch: spawnfix
+	- Commit: 921674f, 5c0d35b
+	- Test case: The limits in spawn-count.bash, run in stage 3. [Erg2KNK] in test.bash fails a count over its limit under `--record`. It fails against the script before this change.
+	- Acceptance signoff: Waiting. Which commands to measure, and limits with no tolerance, were choices.
+
 - Code Review 20261003 item 5: The style guide says Bash 4.4 is enforced, and nothing checks
 	- ID: 2026100313123908
 	- Type: Bug
@@ -131,33 +158,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: f31269f
 	- Test case: [ErfzUGl] and [ErfzUH0] for spawn-report.bash, [ErfzUHF] for spawn-count.bash, in test.bash. The last needs strace, like the other spawn-count checks.
 	- Acceptance signoff: Waiting. It closes a command injection, so it touches security.
-
-- Code Review 20261003 enhancement 1: The spawn-count fixture can't see the account paths
-	- ID: 2026100313123975
-	- Type: Enhancement
-	- Status: Waiting for testing
-	- Needs local test suite run?: Yes. The one full run gave 1310 passed and 1 failed, [Emq7Y6y] on a `rm` of a variable path in spawn-count.bash. 5c0d35b replaced it, and that check now passes alone.
-	- Priority [Feature]: Avg
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Requirements  [Feature]:
-		- Add a configured account, a fake `gh` and a pty run to the fixture, so it counts what a real user's `status`, `whoami` and `account list` start.
-		- Give each counted command a threshold that fails the gate.
-	- Actual effort: Avg
-	- Decisions:
-		- Do this first. The other spawn items in this round need it to prove anything.
-	- Origin: spawn-count.bash uses an empty config, a local origin and captured stdout. Four of this round's spawn findings are out of its sight. Confirmed.
-	- Done: The fixture has two more clones whose origin is on github.com, one over ssh and one over https. An account's folder rule covers each, with a token file and no token in gh. A fake `gh` and `ssh` answer on PATH, and a proxy on a closed port stops anything else. HOME moved into the fixture.
-	- Done: Five new measures run on a pty with no `-q`: `status` with a fetch, `status`, `whoami` and `account list` in the ssh folder, and `status` in the https folder.
-	- Done: Each command has a limit written beside it, set at today's count. A count over it fails and records nothing, and `--record` doesn't lift it. The baseline compare is unchanged. So is the tsv, so spawn-report.bash reads it as before.
-	- Note: The new measures see what enhancements 2, 5 and 6 will move: both `gh api user` calls and the `ssh -T`, one `gh` per login in the listing, `tput cols`, the `gitsby.ghTokenFile` lookup made twice, the protocol asked of `gh` on an https origin, and `origin/HEAD` read twice after a fetch. The older measures already see `show-ref` in `br switch` and `br prune`, and the two `rev-parse` calls at startup.
-	- Note: The limits have no tolerance. A git version that adds a helper of its own trips them, and the fix then is raising the limit by hand.
-	- Note: The stub build in test.bash's spawn-count checks names `/bin/sh` rather than going through env, so its count doesn't depend on PATH.
-	- Verified: the 13 counts were the same over four runs, and the first eight match the 2026-09-30 baseline. Lowering one limit below its count failed a `--record` run with nothing recorded; put back, the run passes.
-	- Branch: spawnfix
-	- Commit: 921674f, 5c0d35b
-	- Test case: The limits in spawn-count.bash, run in stage 3. [Erg2KNK] in test.bash fails a count over its limit under `--record`. It fails against the script before this change.
-	- Acceptance signoff: Waiting. Which commands to measure, and limits with no tolerance, were choices.
 
 - Code Review 20261003 enhancement 2: Network probes run one after another
 	- ID: 2026100313123988
