@@ -471,7 +471,9 @@ func (a *app) cmdAccountApply() error {
 	// 0700, not 0777-and-hope-for-umask: these fragments name your accounts and
 	// point at your token file, and they sit under your own config directory.
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return usagef("Couldn't create '%s' for the account fragments. Check permissions on '%s'.", nativePath(dir), nativePath(filepath.Dir(dir)))
+		return writeRefusal("Couldn't create the folder the account fragments go in.", "Creating it", err,
+			"Nothing was written.", "Make the folder it goes in writable, then run this again.",
+			noteLines("File", nativePath(failedAt(err, dir))))
 	}
 	files := a.cfg.fragmentNames()
 	for _, name := range a.cfg.accountNames() {
@@ -518,14 +520,20 @@ func (a *app) cmdAccountApply() error {
 // happened.
 func (a *app) writeAccountFragment(dir, file, name string) error {
 	fragment := dir + "/" + file
+	// Nothing goes into the global config until every fragment is written.
+	const fragmentKept = "Fragments written before it stay. Your global git config was not changed."
 	if err := os.WriteFile(fragment, nil, 0o600); err != nil {
-		return usagef("Couldn't write '%s'. Check permissions on '%s'.", fragment, dir)
+		return writeRefusal("Couldn't write an account fragment.", "Writing it", err,
+			fragmentKept, "Check permissions on it and on the folder it is in, then run this again.",
+			noteLines("File", nativePath(fragment)))
 	}
 	// WriteFile only applies its mode when it creates the file, so a fragment left
 	// world-readable by an earlier run - or by a umask - stays that way through
 	// every re-apply. It names the account and points at the token file.
 	if err := os.Chmod(fragment, 0o600); err != nil && !isWindows() {
-		return usagef("Couldn't set permissions on '%s'; it names your account and points at your token file.", fragment)
+		return writeRefusal("Couldn't make an account fragment private. It names your account and points at your token file.", "Setting its mode", err,
+			fragmentKept, "Make it yours, or remove it, then run this again.",
+			noteLines("File", nativePath(fragment)))
 	}
 	write := func(key, value string) error {
 		if !a.inheritOK("git", "config", "--file", fragment, key, value) {
@@ -666,10 +674,11 @@ func absPathValue(value, what string) (string, error) {
 		return "", usagef("'%s' starts with a variable %s doesn't expand. Only '~', '${HOME}' and '%%USERPROFILE%%' are, or give the full path.", value, meName)
 	}
 	abs, err := filepath.Abs(value)
-	if err == nil {
-		abs = filepath.ToSlash(abs)
+	if err != nil {
+		return "", usagef("Couldn't work out which %s '%s' is from here, since finding the current folder failed with: %s. Give the full path.", what, value, causeText(err))
 	}
-	if err != nil || folderRuleProblem(abs) != "" {
+	abs = filepath.ToSlash(abs)
+	if folderRuleProblem(abs) != "" {
 		return "", usagef("Couldn't work out which %s '%s' is from here. Give the full path.", what, value)
 	}
 	return abs, nil
@@ -832,6 +841,32 @@ func refusalBlock(head string, notes [][]string, cause error) error {
 	return &usageError{msg: strings.Join(lines, "\n"), cause: cause}
 }
 
+// writeRefusal says a step that writes was turned down, with the reason the OS
+// gave. The permissions fix is offered only for a permissions error. A full disk,
+// a read-only filesystem or a folder where a file goes names itself in Why, and a
+// hint about permissions there sends the reader the wrong way.
+func writeRefusal(head, doing string, cause error, kept, permFix string, where ...[]string) error {
+	fix := "Run this again once that is fixed."
+	if errors.Is(cause, fs.ErrPermission) {
+		fix = permFix
+	}
+	return refusalBlock(head, append(where,
+		noteLines("Why", doing+" failed with: "+causeText(cause)+"."),
+		noteLines("Kept", kept),
+		noteLines("Fix", fix),
+	), cause)
+}
+
+// failedAt is the path an OS error names, else want. A MkdirAll that fails
+// partway names the folder it stopped at, which can be above the one asked for.
+func failedAt(err error, want string) string {
+	var pe *fs.PathError
+	if errors.As(err, &pe) && pe.Path != "" {
+		return pe.Path
+	}
+	return want
+}
+
 // causeText is the OS's reason alone. The path is already on its own line, and a
 // PathError repeats it.
 func causeText(err error) string {
@@ -939,7 +974,9 @@ func lockAccountsFile(file string, wait time.Duration) (func(), error) {
 		pending := runtime.GOOS == "windows" && errors.Is(err, fs.ErrPermission)
 		switch {
 		case !held && (!pending || time.Now().After(deadline)):
-			return nil, usagef("Couldn't make the lock '%s' beside the accounts file, so nothing was written. Check permissions on the folder it is in.", nativePath(lock))
+			return nil, writeRefusal("Couldn't make the lock beside the accounts file.", "Creating it", err,
+				"Nothing was written.", "Make the folder it is in writable, then run this again.",
+				noteLines("File", nativePath(file)), noteLines("Lock", nativePath(lock)))
 		case time.Now().After(deadline):
 			return nil, refusalBlock("Another run is editing the accounts file.", [][]string{
 				noteLines("File", nativePath(file)),
@@ -1095,7 +1132,12 @@ func (a *app) loadForEdit(t *accountSetTarget) error {
 		// written for the scripted builds, and this is the command that moves it on.
 		data, err := os.ReadFile(a.cfg.file)
 		if err != nil {
-			return usagef("Couldn't read '%s'.", nativePath(a.cfg.file))
+			return refusalBlock("Couldn't read the accounts file again to convert it.", [][]string{
+				noteLines("File", nativePath(a.cfg.file)),
+				noteLines("Why", "Reading it failed with: "+causeText(err)+"."),
+				noteLines("Kept", "Nothing was written."),
+				noteLines("Fix", unreadableFix(runtime.GOOS, a.cfg.file, err)...),
+			}, err)
 		}
 		t.file, t.converts, t.read = a.cfg.file, true, string(data)
 		t.doc = shcl.Parse(flatToSHCL(strings.TrimPrefix(string(data), utf8BOM)))
@@ -1253,7 +1295,9 @@ func (a *app) cmdAccountSet() error {
 	if t.creates {
 		dir := filepath.Dir(t.file)
 		if err := os.MkdirAll(dir, 0o700); err != nil {
-			return usagef("Couldn't create '%s' to put the accounts file in.", nativePath(dir))
+			return writeRefusal("Couldn't create the folder the accounts file goes in.", "Creating it", err,
+				"Nothing was written.", "Make the folder it goes in writable, then run this again.",
+				noteLines("File", nativePath(failedAt(err, dir))))
 		}
 	}
 	// Over a create too: one between its open and its write holds an empty file,
@@ -1273,12 +1317,19 @@ func (a *app) cmdAccountSet() error {
 			a.out.status("Wrote " + nativePath(t.file))
 			return nil
 		case opened:
-			return usagef("Couldn't finish writing '%s', so it may be incomplete. Check the disk it is on before running this again.", nativePath(t.file))
+			return refusalBlock("Couldn't finish writing the accounts file, so it may be incomplete.", [][]string{
+				noteLines("File", nativePath(t.file)),
+				noteLines("Why", "Writing it failed with: "+causeText(err)+"."),
+				noteLines("Kept", "The file was made, with whatever went in before the failure."),
+				noteLines("Fix", "Check what it holds, then run this again."),
+			}, err)
 		case errors.Is(err, fs.ErrExist):
 			state, fi, perr := probeConfigCandidate(t.file)
 			return configRefusal(t.file, state, fi, perr)
 		}
-		return usagef("Couldn't write '%s'. Check permissions on it.", nativePath(t.file))
+		return writeRefusal("Couldn't create the accounts file.", "Creating it", err,
+			"Nothing was written.", "Make the folder it is in writable, then run this again.",
+			noteLines("File", nativePath(t.file)))
 	}
 	if now, err := os.ReadFile(t.file); err != nil || string(now) != t.read {
 		return changedRefusal(t.file, err)
@@ -1288,7 +1339,11 @@ func (a *app) cmdAccountSet() error {
 		if errors.As(err, &refused) {
 			return usagef("%d line(s) of %s couldn't be read, and a rewrite would drop them. Edit it by hand.", refused.Lost, nativePath(t.file))
 		}
-		return usagef("Couldn't write '%s'. Check permissions on it.", nativePath(t.file))
+		// The save writes a new file beside it and renames it over, so a permissions
+		// error is the folder's, not the file's.
+		return writeRefusal("Couldn't save the accounts file.", "Saving it", err,
+			"Nothing was written.", "Make the folder it is in writable, then run this again.",
+			noteLines("File", nativePath(t.file)))
 	}
 	a.out.status("Wrote " + nativePath(t.file))
 	return nil

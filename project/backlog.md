@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 item 3: Write and read failures in account commands guess at the cause
 	- ID: 2026100313123881
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on signoff
 	- Priority|Severity [Bug]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -44,11 +44,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Run `account apply` or `account set` where the write fails for a reason other than permissions, such as a full disk or a read-only filesystem.
 	- Incorrect behavior [Bug]: The message says to check permissions. The real error is dropped.
 	- Expected behavior [Bug]: The message keeps the real error. The permissions hint shows only when it is a permissions error.
-	- Reproduced [Bug]: Read only. Each site has the error in hand and returns a message without it.
+	- Reproduced [Bug]: Yes, 2026-10-03. A folder where an `account apply` fragment goes, a lock name too long for the filesystem, and a plain file where the accounts file's folder goes. Each dropped the reason, and the first two said to check permissions.
 	- Possible cause [Bug]: `usagef` where `usageWrapf` exists for this. Seven sites in accountcmd.go.
-	- Origin: accountcmd.go, from 11905d2 (2026-09-16) and 62af07b (2026-09-28). Not seen by an earlier round. Plausible.
+	- Origin: accountcmd.go, from 11905d2 (2026-09-16) and 62af07b (2026-09-28). Not seen by an earlier round. Confirmed.
 	- Sweep: every `usagef("Couldn't ...` that has an `err` in scope.
+	- Actual cause [Bug]: Each site had the error in hand and printed a fixed message instead. Most of them guessed permissions.
 	- Estimated effort: Low
+	- Actual fix [Bug]: Each refusal now says what failed, with File, Why, Kept and Fix lines under it. Why has the OS's reason. Fix names permissions only for a permissions error, and otherwise says to run again once the reason is fixed. The save, the create and the lock point at the folder, since that is what they write in.
+	- Note: The labeled layout is the UI guide's, which keeps a path out of the sentence.
+	- Swept: the seven sites the review named, plus the lock, the partly written create and the relative path in `account set`. Left alone: the three `git config` failures in `account apply`, which have no error in hand while git prints its own, and the three in repo.go, which already give the reason. Found by a grep for `usagef("Couldn't` over src-go.
+	- Verified: the five site tests fail on `gover` and pass here. The test.bash pair was run by hand against both builds. `go test ./...` and `cicd.bash --gate` pass.
+	- Branch: errmsg
+	- Test case: TestAccountApplyKeepsTheReasonAFragmentFailed, TestLockKeepsTheReasonItFailed, TestAccountSetKeepsTheReasonItsFolderFailed, TestLoadForEditKeepsTheReasonTheReadFailed and TestAbsPathValueKeepsTheReasonTheFolderIsGone for the sites, TestWriteRefusalNamesPermissionsOnlyWhenTheyAreTheCause for the rule, and [Erfv8YB] and [Erfv8Yu] in test.bash. The chmod and save sites have no unprivileged way to fail, so the rule test covers them.
+	- Acceptance signoff: Waiting. The wording and layout of ten refusals changed.
 
 - Code Review 20261003 item 4: `br merge` says the target is as it was without checking
 	- ID: 2026100313123895
