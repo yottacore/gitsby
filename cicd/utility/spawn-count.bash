@@ -187,7 +187,7 @@ fMeasure(){
 	local config="${noAccounts}" traceFile="${work}/trace.out" n=0 skip=""
 	[[ "${folder}" == acct* ]] && config="${accounts}"
 	fRestore
-	rm -f -- "${traceFile}"
+	: > "${traceFile}"
 	if [[ "${how}" == tty ]] && ((! hasPty)); then
 		skip="no pty"
 	elif [[ "${how}" == tty ]]; then
