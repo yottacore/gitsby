@@ -4162,7 +4162,9 @@ GHEOF
 	fAssert "[ErCP9Yz] the README's badges read what they show from the repo" \
 		bash -c "grep -q 'shields\.io/github/go-mod/go-version/yottacore/gitsby?filename=src-go%2Fgo\.mod' '${root}/README.md' && ! grep 'img\.shields\.io/badge/' '${root}/README.md' | grep -vE 'badge/(License|Sponsor|Ko--fi)-'"
 	## The step itself, against a build that starts three processes per command and a baseline
-	## that says none, so every command reads as a rise. Needs strace, like the step.
+	## that says none, so every command reads as a rise. Needs strace, like the step. The stub
+	## names its shell by path: env would try each PATH entry in turn, and every try is counted,
+	## so its count would follow PATH and could pass the lowest limit.
 	if command -v strace >/dev/null 2>&1; then
 		local sc="${work}/sc"
 		mkdir -p "${sc}/cicd/utility/include" "${sc}/src-go" "${sc}/cicd/artifacts/spawn"
@@ -4170,7 +4172,7 @@ GHEOF
 		cp "${root}/cicd/utility/spawn-count.bash" "${sc}/cicd/utility/"
 		cp "${root}/cicd/utility/include/gfs-rotate.bash" "${sc}/cicd/utility/include/"
 		fStub "${sc}/src-go/gitsby" <<-'EOF'
-			#!/usr/bin/env bash
+			#!/bin/sh
 			/bin/sh -c :; /bin/sh -c :; /bin/sh -c :
 		EOF
 		sed -n 's/^fMeasure "\[[^]]*\] \([^"]*\)".*/\1\t0/p' "${root}/cicd/utility/spawn-count.bash" > "${sc}/cicd/artifacts/spawn/spawn_20260101-000000.tsv"
@@ -4180,6 +4182,12 @@ GHEOF
 			bash -c "'${sc}/cicd/utility/spawn-count.bash' -q --record && [[ \$(ls '${sc}/cicd/artifacts/spawn' | grep -c '^spawn_.*\.tsv\$') == 2 ]]"
 		fAssert "[Er2gqb3] and without -q prints a verdict and test ID for every command, unchanged ones too" \
 			bash -c "out=\$('${sc}/cicd/utility/spawn-count.bash' 2>&1) && [[ \$(grep -cE '^  ok +\[[0-9A-Za-z]{7}\] [a-z ]+: [0-9]+\$' <<< \"\$out\") == \$(grep -c '^fMeasure \"' '${root}/cicd/utility/spawn-count.bash') ]]"
+		## A limit is the number in the source, so --record can't lift it. A copy with one limit
+		## under the stub's four processes.
+		sed 's/^\(fMeasure "\[EnQTUO0\] status" *\)[0-9][0-9]*/\11/' "${root}/cicd/utility/spawn-count.bash" > "${sc}/cicd/utility/spawn-count-low.bash"
+		chmod +x "${sc}/cicd/utility/spawn-count-low.bash"
+		fAssert "[Erg2KNK] and fails a count over its limit, --record or not, and records nothing" \
+			bash -c "was=\$(ls '${sc}/cicd/artifacts/spawn'); out=\$('${sc}/cicd/utility/spawn-count-low.bash' -q --record 2>&1); [[ \$? == 1 ]] && grep -qE '^  OVER LIMIT \[EnQTUO0\] status: [0-9]+, limit 1\$' <<< \"\$out\" && ! grep -q 'OVER LIMIT \[EnberSa\]' <<< \"\$out\" && [[ \$(ls '${sc}/cicd/artifacts/spawn') == \"\$was\" ]]"
 		## The baseline's counts go into arithmetic, as the report's do.
 		# shellcheck disable=SC2016  ## As above, for the script to refuse.
 		printf 'status\tBASH_VERSINFO[$(touch %s/ran)0]\n' "${sc}" > "${sc}/cicd/artifacts/spawn/spawn_20991231-000000.tsv"
@@ -5607,3 +5615,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20261003 JC: release.bash past its dry run, with stubs: a 'pr create' with no URL, and a phase 3 where releases/latest can't be reached and the build line can't be read. Both fail against the tree before them. 1273 -> 1275.
 ##		- 20261003 JC: A long --version from the published binary, thousands of tags for release.bash and gen-winres.bash, a long SHA256SUMS for the installer, and a full spawn folder. All five fail against the tree before them. 1275 -> 1280.
 ##		- 20261003 JC: The Bash 4.4 floor in every pipeline script, spawn counts that aren't numbers, and the backlog gate on new-format review items. Every new check fails against the tree before it. 1288 -> 1310.
+##		- 20261003 JC: spawn-count.bash fails a count over the limit written beside it, --record or not. Its stub build names its shell by path. 1310 -> 1311.
