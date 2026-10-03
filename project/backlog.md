@@ -210,7 +210,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 item 5: The style guide says Bash 4.4 is enforced, and nothing checks
 	- ID: 2026100313123908
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on signoff
 	- Priority|Severity [Bug]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -218,7 +218,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: Either the pipeline scripts check, or the guide says what's true.
 	- Reproduced [Bug]: Yes. No `BASH_VERSINFO` outside legacy/.
 	- Origin: style-guide.md from 235697c (2026-07-27), true for the bash build then. Confirmed.
+	- Decisions:
+		- The floor stays Bash 4.4, and the pipeline scripts check it (2026-10-03). b26, the Mac, has bash 5.
+		- gfs-rotate.bash is a shared Bubbles file and is left alone (2026-10-03).
+	- Actual cause [Bug]: The guide's sentence came over from the bash build, where gitsby itself checked. The pipeline scripts never did.
 	- Estimated effort: Low
+	- Actual fix [Bug]: Each of the 16 scripts in cicd/ that is run directly now checks the version as its first command. Below 4.4 it exits 1 with one line naming the version found and the macOS fix. The guide now says that, and names what has no check.
+	- Note: install.bash has no check. It runs on stock macOS bash 3.2 by design, which its header and the guide both say, and what it installs needs no shell.
+	- Note: n8git_backup-and-publish has no check either. It is a helper shared with other projects, like gfs-rotate.bash. config.bash and the two include files are only sourced.
+	- Swept: every tracked bash file outside legacy/, through the same list the shell lint coverage check reads. The test fails a new script that lacks the check.
+	- Verified: under a real bash 3.2.57 and 4.3.48 each of the 16 refuses with its line and exit 1, and under 4.4.23 the check passes. Under 3.2 on `gover` they ran on. The new checks fail 16 of 16 on `gover` and pass here.
+	- Branch: lowfix
+	- Test case: [ErfyDHs] in test.bash, one per script, runs a copy with the floor raised and expects the refusal and nothing else. [ErfyLds] fails it if the list comes back empty.
+	- Acceptance signoff: Waiting. The guide's wording changed, and n8git_backup-and-publish was left without a check.
 
 - Code Review 20261003 item 6: Doc comments sit on the wrong function or name an old one
 	- ID: 2026100313123922
