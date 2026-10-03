@@ -193,6 +193,34 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Write the pipeline stage the parent item describes.
 		- It is not done until it has run on b26 and on a Windows box.
 
+- Pipeline test for converting old SHCL settings files
+	- ID: 2026100313483664
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Related IDs: 2026100312145843
+	- Requirements  [Feature]:
+		- As part of CICD, create settings files in the older SHCL format versions.
+		- Test the automatic conversion on them, the one gitsby does on first run with no help from shcl.
+	- Notes:
+		- Today's checks feed in hand-typed 2.x text.
+
+- macOS release gets a universal binary
+	- ID: 2026100313491873
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Related IDs: 2026100312571262
+	- Requirements  [Feature]:
+		- MacOS gets a universal binary for both amd64 and ARM.
+	- Notes:
+		- Dogfood already builds one with `macho-universal.bash`. Release assets still publish `darwin/amd64` and `darwin/arm64` apart.
+		- Open: whether it replaces the two or sits beside them. install.bash picks a Mac asset by CPU today.
+
 - Code Review 20261003 item 5: The style guide says Bash 4.4 is enforced, and nothing checks
 	- ID: 2026100313123908
 	- Type: Bug
