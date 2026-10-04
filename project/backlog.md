@@ -109,7 +109,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 enhancement 2: Network probes run one after another
 	- ID: 2026100313123988
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Waiting for testing
+	- Needs local test suite run?: Yes. test.bash, for the new and changed checks in place.
 	- Priority [Feature]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -121,6 +122,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Against: the public style guide allows goroutines only with a measured reason. The 950 ms against 300 above is that reason, so the fix may use them.
 		- The first probe might be replaced by a local `gh config get` read, with no goroutine at all. Try that first.
 	- Origin: account.go and accountcmd.go. The per-account `gh` call was measured in 20260909 item 19 and kept. Confirmed with injected delays.
+	- Progress log:
+		- Done: the first probe reads gh's active login from gh's own config, with no network. Only a token already in the environment still sends it to the API, since that token outranks the config.
+		- Done: the token-file check and the ssh probe start ahead, and each is read where its line prints. The token check starts when the token is exported, so it also runs alongside the fetch. `whoami` and the commands that write through gh start theirs the same way. Output order is unchanged.
+		- Done: `account list` asks gh about every login at once, up to eight at a time, then prints in the same order. The per-login cache from 20260909 item 19 stays.
+		- Done: a probe nobody read is killed when the run ends.
+		- Verified: with 300 ms injected on each round trip, best of 3 on b23: status in the ssh account folder 930 -> 319 ms, whoami there 923 -> 316, status in the https folder 624 -> 316, status with a failed fetch 628 -> 319. With 300 ms on gh's token store as well: status 1228 -> 621, account list with three accounts 917 -> 615. Output is byte for byte the same in all five.
+		- Verified: spawn counts unchanged on all 14 measures. The config read replaces one gh call one for one.
+		- Verified: `[ErkSC4L]`, `[ErkSctG]`, `[ErkSC4Z]` and the changed `[Er1LxSk]` fail on the build before this and pass after. `[ErkSC4L]` and `[ErkSctG]` also fail with only the ssh probe put back in turn. `[ErkSC48]` fails with the end-of-run kill taken out. The affected test.bash blocks pass 103/0, also on a race-enabled build with no race reported. `go test -race ./...` and the gate (lint and Go tests) are clean.
+		- Note: `[Er1LxSk]` now looks for the config read and no API call, and `[Er1LxSl]` and `[Er1LxSm]` refuse either one. `[Er1LxSn]` runs with a token already in the environment, the one case that still reaches the API. The rule they check, ask only where a block prints, is unchanged. The fake gh stubs answer `config get ... user`.
+		- Note: offline, the identity block can now name gh's active account from its config, where it said nothing before. Display only.
+	- Swept: every caller of `ghLogin`, `sshLogin` and `ghTokenFor`. The probes in `settleGh`, `selectAccount`, `identityGate` and the identity block lines all read through the same caches. `showHostLine` asks tea, which reads a local file, so it stays as it was.
+	- Branch: probes
+	- Commit: cc71200
+	- Test case: test.bash `[ErkSC4L]`, `[ErkSctG]`, `[ErkSC4Z]`, `[ErkSC4m]` (regression guard), `[Er1LxSk]`; Go `[ErkSC3h]`, `[ErkSC3v]`, `[ErkSC48]`, `[ErkTEpz]`.
 
 - Run the tests on a Mac and a Windows box as part of the pipeline
 	- ID: 2026100312332924
