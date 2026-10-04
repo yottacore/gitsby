@@ -295,7 +295,7 @@ git clone https://github.com/yottacore/gitsby.git
 cd gitsby/src-go && go build -o gitsby .
 ~~~
 
-`cicd/cicd.bash` is the local pipeline and the one command to know. Run it before opening a PR. Seven stages, numbered as the run prints them, behind a stage 0 that fast-forwards from origin so everything after it tests the tree that is actually going out:
+`cicd/cicd.bash` is the local pipeline and the one command to know. Run it before opening a PR. Eight stages, numbered as the run prints them, behind a stage 0 that fast-forwards from origin so everything after it tests the tree that is actually going out:
 
 1. Lints (gofmt, vet, staticcheck, golangci-lint, shellcheck).
 2. Builds, runs the unit tests, and runs the regression suite of over 1000 checks against the binary it just built.
@@ -303,12 +303,13 @@ cd gitsby/src-go && go build -o gitsby .
 4. Compares the build against the frozen v2.1.0 one across a few dozen checks, for backwards compatibility.
 5. Cross-builds every target and installs each to its own tool directory.
 6. Rebuilds the demo gif, if it changed.
-7. **Commits and pushes.** It ends by publishing - worth knowing before you run it on a fork.
+7. Runs the Go tests on a Mac and a Windows box over ssh, and the regression suite on the Mac.
+8. **Commits and pushes.** It ends by publishing - worth knowing before you run it on a fork.
 
-Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `gifsicle` won't stop the rest. Stage 5's destinations are one machine's paths, set in `cicd/config.bash`; on anyone else's box that stage finds nothing writable and says so, which is harmless.
+Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `gifsicle` won't stop the rest. Stage 5's destinations are one machine's paths, set in `cicd/config.bash`; on anyone else's box that stage finds nothing writable and says so, which is harmless. Stage 7's boxes are that machine's too, and a box that is off or busy is skipped the same way.
 
 ~~~bash
-cicd/cicd.bash --quick          # skips fuzz and the demo gif; what you want while iterating
+cicd/cicd.bash --quick          # skips fuzz, the demo gif and the Mac and Windows tests; what you want while iterating
 cicd/cicd.bash                  # everything, and it prompts once for a commit message
 cicd/cicd.bash -y -m "message"  # unattended
 cicd/cicd.bash --gate           # every lint check and the unit tests; what the pre-push hook runs
