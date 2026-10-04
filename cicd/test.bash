@@ -228,6 +228,10 @@ fAssertPlan(){    local desc="$1"; local pat="$2"; shift 2; local out=""; out="$
 	if     grep -qE "$pat" <<< "$(fPlanOf <<< "${out}")"; then fOk "$desc"; else fFail "$desc"; fi; }
 fAssertNotPlan(){ local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
 	if ! grep -qE "$pat" <<< "$(fPlanOf <<< "${out}")"; then fOk "$desc"; else fFail "$desc"; fi; }
+## Succeeds when the plan line matching <pattern> is the step that ran: the same text, announced.
+fPlanRan(){ local pat="$1"; shift; local out="" line=""; out="$("$@" 2>&1 || true)"
+	line="$(grep -m1 -E -- "${pat}" <<< "$(fPlanOf <<< "${out}")" || true)"; line="${line#"${line%%[! ]*}"}"; line="${line% \*}"
+	[[ -n "${line}" ]] && grep -qxF -- "[ ${line} ... ]" <<< "${out}" ;}
 
 ## Fixture: bare origin with an initial commit on main, plus two clones.
 fMakeFixture(){
@@ -724,7 +728,7 @@ fRunSuite(){
 	## Already on the target: no checkout and no park happen, so the plan must not list them.
 	( cd "${cloneA}" && echo swp > swp.txt )
 	fAssertNotPlan "[ElHNo4N] br switch onto the current branch plans no commit"  'git commit'  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch dev"
-	fAssertPlan   "[ElHNo4O] and still plans the pull"  'git merge --ff-only @\{u\}'            bash -c "cd '${cloneA}' && '${gitsby}' -q br switch dev"
+	fAssertPlan   "[ElHNo4O] and still plans the pull"  'git merge --ff-only origin/dev \*$'    bash -c "cd '${cloneA}' && '${gitsby}' -q br switch dev"
 
 	## Detached HEAD guard
 	fAssertFail "[EknhbCn] mutating command on detached HEAD rejected"  bash -c "cd '${cloneA}' && git checkout --quiet HEAD~0 --detach && '${gitsby}' -q update x"
@@ -836,7 +840,7 @@ fRunSuite(){
 	## not the pull's ask, so the clone gets the ref, and acts like old git on any version.
 	( cd "${onceA}" && git config remote.origin.followRemoteHEAD never && git remote set-head origin main >/dev/null )
 	( cd "${onceA}" && git config remote.origin.uploadpack "echo asked >> '${onceLog}'; git upload-pack" )
-	fAssertPlan "[Erg9NT0] pullcom plans a merge of the upstream"  '^ +git merge --ff-only --autostash @\{u\} \*$'  bash -c "cd '${onceA}' && '${gitsby}' -q -NoFetch pullcom"
+	fAssertPlan "[Erg9NT0] pullcom plans a merge of the upstream"  '^ +git merge --ff-only --autostash origin/main \*$'  bash -c "cd '${onceA}' && '${gitsby}' -q -NoFetch pullcom"
 	( cd "${onceA}" && echo dirty >> f.txt )
 	: > "${onceLog}"
 	fAssert "[Erg9NTE] pullcom brings in what origin has"  bash -c "cd '${onceA}' && '${gitsby}' -q pullcom 'once' && [[ -f g.txt ]] && git merge-base --is-ancestor origin/main HEAD && grep -q dirty f.txt"
@@ -862,6 +866,20 @@ fRunSuite(){
 	## The plan reads the same thing for a branch it has not checked out yet.
 	( cd "${onceA}" && git checkout --quiet -b side )
 	fAssertPlan "[Erg9y2K] so does the plan for a branch checked out later"  '^ +git pull --ff-only \*$'  bash -c "cd '${onceA}' && '${gitsby}' -q -NoFetch br switch main"
+	## The pull line names the upstream, and the step runs that same name. It is git's short
+	## form, spelled out further where a tag would also answer to the short one.
+	local nameO="${work}/$1-nameo.git" nameA="${work}/$1-namea" nameB="${work}/$1-nameb"
+	git init --quiet --bare -b main "${nameO}"
+	git clone --quiet "${nameO}" "${nameA}" 2>/dev/null
+	( cd "${nameA}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main && git push --quiet origin main:refs/heads/far )
+	fAssertPlan "[Erl2Vub] the pull line names the upstream"  '^ +git merge --ff-only --autostash origin/main \*$'  bash -c "cd '${nameA}' && '${gitsby}' -q -NoFetch pullcom"
+	fAssertPlan "[Erl2Vup] and origin's copy, for a branch checked out from it later"  '^ +git merge --ff-only origin/far \*$'  bash -c "cd '${nameA}' && '${gitsby}' -q -NoFetch br switch far"
+	git clone --quiet "${nameO}" "${nameB}" 2>/dev/null
+	( cd "${nameB}" && git checkout --quiet far && echo two > g.txt && git add --all && git commit --quiet -m "from B" && git push --quiet )
+	( cd "${nameA}" && git tag origin/far )
+	fAssertPlan "[Erl2Vv4] a name a tag also answers to is spelled out further"  '^ +git merge --ff-only --autostash remotes/origin/far \*$'  bash -c "cd '${nameA}' && '${gitsby}' -q -NoFetch pullcom"
+	fAssert     "[Erl2VvI] and the step that runs is the line the plan showed"  fPlanRan '^ +git merge --ff-only'  bash -c "cd '${nameA}' && '${gitsby}' -q pullcom"
+	fAssert     "[Erl2eIe] and it brings in origin's commit"  bash -c "cd '${nameA}' && [[ -f g.txt ]]"
 
 	## A command that still means something locally runs offline and says what it skipped; a
 	## command that exists to publish refuses up front, before the plan promises a push.

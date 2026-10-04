@@ -96,7 +96,7 @@ type repoState struct {
 	originRef      cached[remoteRef]
 	coreSSHCommand cached[string]
 	currentBranch  cached[string]
-	upstream       cached[string]
+	upstream       cached[upstreamRef]
 	branches       cached[branchRefs]
 	aheadBehind    cached[[2]int]
 	contextDir     cached[string]
