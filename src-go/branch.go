@@ -40,7 +40,7 @@ func (a *app) hasUpstream() bool { return a.upstream().full != "" }
 
 // branchRefs is every local branch with its upstream, and every branch origin
 // has with git's short name for it. One for-each-ref answers all of the run's
-// existence checks, which were a show-ref each.
+// existence checks.
 type branchRefs struct {
 	local  map[string]upstreamRef
 	origin map[string]string
