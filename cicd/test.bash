@@ -687,7 +687,7 @@ fRunSuite(){
 	## a failed push would cut a second one on the same commit, stranding the first forever.
 	fAssert     "[ElHNo4I] bare release stands down when there is nothing new"  bash -c "cd '${cloneA}' && '${gitsby}' -q release"
 	fAssertOut  "[ElHNo4J] and says so"  'Nothing new to release since v1\.3\.1'  bash -c "cd '${cloneA}' && '${gitsby}' -q release 2>&1"
-	fAssertOut  "[ElHNo4K] and names the tag to push if it never landed"  'push it: git push origin v1\.3\.1'  bash -c "cd '${cloneA}' && '${gitsby}' -q release 2>&1"
+	fAssertOut  "[ElHNo4K] and names the tag to push if it never landed"  'push it: git push origin tag v1\.3\.1'  bash -c "cd '${cloneA}' && '${gitsby}' -q release 2>&1"
 	fAssert     "[ElHNo4L] and cut no tag doing so"  bash -c "cd '${cloneA}' && ! git rev-parse -q --verify refs/tags/v1.3.2 >/dev/null"
 	## A version you typed is deliberate, so it still works on an already-released commit.
 	fAssert     "[ElHNo4M] an explicit version still releases the same commit"  bash -c "cd '${cloneA}' && '${gitsby}' -q release v1.4.0 && git rev-parse -q --verify refs/tags/v1.4.0 >/dev/null"
@@ -698,6 +698,10 @@ fRunSuite(){
 	git clone --quiet "${bt}/origin.git" "${bt}/c" 2>/dev/null
 	( cd "${bt}/c" || exit 1; echo a > a.txt && git add --all && git commit --quiet -m init && git tag -a 1.4.2 -m 1.4.2 && git push --quiet -u origin main --tags && echo b > b.txt )
 	fAssert     "[EpyIe9A] release counts on from a tag with no v"  bash -c "cd '${bt}/c' && '${gitsby}' -q -NoFetch release && git rev-parse -q --verify refs/tags/1.4.3 >/dev/null && ! git rev-parse -q --verify refs/tags/v0.1.0 >/dev/null"
+	## A branch spelled like the new tag made 'git push origin <tag>' match two refs and send neither.
+	( cd "${bt}/c" && git branch 1.4.4 && echo c > c.txt )
+	fAssert     "[ErlVf0K] release pushes its tag beside a branch of the same name" \
+		bash -c "cd '${bt}/c' && '${gitsby}' -q -NoFetch release >/dev/null 2>&1 && git -C '${bt}/origin.git' rev-parse -q --verify refs/tags/1.4.4 >/dev/null"
 	## Every new tag used to gain a 'v', so a repo tagged that way went on with mixed spellings.
 	fAssert     "[EpyLprE] and spells the new tag without one too"  bash -c "cd '${bt}/c' && ! git rev-parse -q --verify refs/tags/v1.4.3 >/dev/null"
 	fAssertFail "[EpyIe9B] a typed version already tagged with no v is refused"  bash -c "cd '${bt}/c' && '${gitsby}' -q -NoFetch release 1.4.2"
@@ -1522,6 +1526,15 @@ fRunSuite(){
 	( cd "${oh}/t" && git tag origin/trunk2 )
 	fAssertOut "[Erl643s] a tag named like origin's default leaves the default branch alone"  '^Default branch: trunk2$'  bash -c "cd '${oh}/t' && '${gitsby}' -q status"
 	fAssert    "[Erl6446] and br create still works there"  bash -c "cd '${oh}/t' && '${gitsby}' -q br create tagside >/dev/null 2>&1 && [[ \"\$(git branch --show-current)\" == tagside ]]"
+	## A tag named 'origin/<branch>' made the short name ambiguous, so checking out a branch
+	## only origin has failed. A tag named like a new branch did the same to its first push.
+	( cd "${oh}/t" && git push --quiet origin HEAD:refs/heads/remonly && git tag origin/remonly && git tag tagtwin )
+	fAssert    "[ErlVezf] a branch only origin has checks out beside a tag named like origin's copy" \
+		bash -c "cd '${oh}/t' && '${gitsby}' -q -NoFetch br switch remonly >/dev/null 2>&1 && [[ \"\$(git branch --show-current)\" == remonly ]] && [[ \"\$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}')\" == *origin/remonly ]]"
+	fAssertPlan "[ErlVezt] and the plan shows the full ref it checks out"  '^ +git checkout -b remonly2 --track refs/remotes/origin/remonly2$' \
+		bash -c "cd '${oh}/t' && git push --quiet origin HEAD:refs/heads/remonly2 && '${gitsby}' -q -NoFetch br switch remonly2"
+	fAssert    "[ErlVf06] br create publishes a branch a tag already has the name of" \
+		bash -c "cd '${oh}/t' && '${gitsby}' -q -NoFetch br create tagtwin >/dev/null 2>&1 && git -C '${oh}/origin.git' rev-parse -q --verify refs/heads/tagtwin >/dev/null && [[ \"\$(git rev-parse --symbolic-full-name '@{u}')\" == refs/remotes/origin/tagtwin ]]"
 
 	## owner/name targets: the gh path, driven by a deterministic fake gh (no network). Covers
 	## 'repo create' (repo absent), 'repo connect' remote-add (present but empty, https + ssh),
