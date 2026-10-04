@@ -216,7 +216,15 @@ fBlankAfter(){ local pat="$1"; shift; { "$@" 2>&1 || true; } | tr -d '\r' | PAT=
 	seen && !found { found = 1; ok = $0 == "" }
 	$0 ~ ENVIRON["PAT"] { seen = 1 }
 	END { exit !(found && ok) }' ;}
-fAssertPlan(){    local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
+## Looks for a UTF-16 string in a binary by dropping the NULs. 0 found, 1 read to the end and
+## not found, 2 not read. The C locale on both: under UTF-8, macOS tr and grep stop at the first
+## byte that isn't text, and a check expecting no match then passes having read nothing.
+fBinHas(){ local -a st; LC_ALL=C tr -d '\000' < "$1" | LC_ALL=C grep -aqF -- "$2"; st=("${PIPESTATUS[@]}")
+	if [[ "${st[1]}" == 0 ]]; then return 0; fi
+	if [[ "${st[0]}" == 0 && "${st[1]}" == 1 ]]; then return 1; fi
+	return 2 ;}
+fBinLacks(){ local rc=0; fBinHas "$@" || rc=$?; [[ "${rc}" == 1 ]] ;}
+fAssertPlan(){   local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
 	if     grep -qE "$pat" <<< "$(fPlanOf <<< "${out}")"; then fOk "$desc"; else fFail "$desc"; fi; }
 fAssertNotPlan(){ local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
 	if ! grep -qE "$pat" <<< "$(fPlanOf <<< "${out}")"; then fOk "$desc"; else fFail "$desc"; fi; }
@@ -823,6 +831,10 @@ fRunSuite(){
 	( cd "${onceA}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main )
 	git clone --quiet "${onceO}" "${onceB}"
 	( cd "${onceB}" && echo two > g.txt && git add --all && git commit --quiet -m "from B" && git push --quiet )
+	## onceA was cloned before origin had a commit, so it has no origin/HEAD. git before 2.47
+	## never writes one on fetch, and the fetch's repair of it asks origin again. That repair is
+	## not the pull's ask, so the clone gets the ref, and acts like old git on any version.
+	( cd "${onceA}" && git config remote.origin.followRemoteHEAD never && git remote set-head origin main >/dev/null )
 	( cd "${onceA}" && git config remote.origin.uploadpack "echo asked >> '${onceLog}'; git upload-pack" )
 	fAssertPlan "[Erg9NT0] pullcom plans a merge of the upstream"  '^ +git merge --ff-only --autostash @\{u\} \*$'  bash -c "cd '${onceA}' && '${gitsby}' -q -NoFetch pullcom"
 	( cd "${onceA}" && echo dirty >> f.txt )
@@ -4777,7 +4789,7 @@ EOF
 		fAssert "[EnQf0UE] windows/${winExe} builds with the resource beside it" \
 			bash -c "cd '${root}/src-go' && CGO_ENABLED=0 GOOS=windows GOARCH=${winExe} go build -trimpath -buildvcs=false -o '${work}/winres-${winExe}.exe' ."
 		fAssert "[EnQf0UF] and the .exe carries version details" \
-			bash -c "tr -d '\\000' < '${work}/winres-${winExe}.exe' | grep -aqF 'VS_VERSION_INFO'"
+			fBinHas "${work}/winres-${winExe}.exe" 'VS_VERSION_INFO'
 		fAssert "[EnQf0UG] and an icon" \
 			bash -c "LC_ALL=C grep -aq \$'\x89PNG' '${work}/winres-${winExe}.exe'"
 	done
@@ -4803,8 +4815,10 @@ EOF
 	## vcsprobe above is this same tree built for the host. A resource named without the
 	## GOOS_GOARCH suffix would link into every platform, which is a bigger mistake than
 	## shipping none at all.
-	fAssertFail "[EnQf0UH] nothing but windows picks the resource up" \
-		bash -c "tr -d '\\000' < '${work}/vcsprobe' | grep -aqF 'VS_VERSION_INFO'"
+	fAssert "[EnQf0UH] nothing but windows picks the resource up" \
+		fBinLacks "${work}/vcsprobe" 'VS_VERSION_INFO'
+	fAssertFail "[Erki5JE] a file that can't be read is not one without the string" \
+		fBinLacks "${work}/no-such-binary" 'VS_VERSION_INFO'
 	## Committed rather than generated at build time: it is linked into bytes we publish
 	## checksums for, so rebuilding a release from its tag must not need a tool installed.
 	local winArch=""
@@ -4814,9 +4828,9 @@ EOF
 		## The committed resource as well as the script that writes it. The strings are UTF-16, and
 		## dropping the NULs reads them without grep -P, which not every grep has.
 		fAssert "[Er1LxTO] and carries a copyright string" \
-			bash -c "tr -d '\\000' < '${root}/src-go/resource_windows_${winArch}.syso' | grep -aqF 'Copyright '"
-		fAssertFail "[Er1LxTP] with no identity marker in it" \
-			bash -c "tr -d '\\000' < '${root}/src-go/resource_windows_${winArch}.syso' | grep -aqF '[ID:'"
+			fBinHas "${root}/src-go/resource_windows_${winArch}.syso" 'Copyright '
+		fAssert "[Er1LxTP] with no identity marker in it" \
+			fBinLacks "${root}/src-go/resource_windows_${winArch}.syso" '[ID:'
 	done
 	fAssertFail "[EnQf0UJ] and the two are not one file copied twice" \
 		cmp -s "${root}/src-go/resource_windows_amd64.syso" "${root}/src-go/resource_windows_arm64.syso"
@@ -6183,3 +6197,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20261003 JC: The macOS release is one universal binary. Both installers ask any Mac for it, release.bash joins it, publishes nothing per Mac CPU, checks it by checksum from Linux, and stops on a Mac build that will not join. Every new check fails against the tree before it. 1328 -> 1337.
 ##		- 20261003 JC: The install line with no tag, in both installers, against release lists shaped like GitHub's: a beta taken while the latest full release has no binary, a full release kept over a newer beta, a clear stop when nothing has one, and an explicit tag as before. release.bash phase 3 says which release the line takes. The older list fixtures publish a binary now. Every new check that can fail against the tree before it does. 1344 -> 1365.
 ##		- 20261004 JC: The dogfood macOS check reads the dogfood target list, not any line in config.bash. A file the last build on SHCL 2.x wrote is converted and lists the same accounts; that build is compiled from its commit, offline. 1365 -> 1370.
+##		- 20261004 JC: The binary string checks read in the C locale, so they work on macOS, and a check for no match fails when the file was not read. The asks-origin-once fixture has its origin/HEAD set, so git before 2.47 counts the same. 1399 -> 1400.
