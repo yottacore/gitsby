@@ -144,6 +144,7 @@ fpProve(){
 ## pipeline in phase 1 rebuilds it; it has to exist before that, since phase 1 uses it too.
 gitsby="${root}/${GO_MODULE_DIR}/${EXE_NAME}"; [[ -x "${gitsby}" ]] || gitsby="${gitsby}.exe"
 changelog="${root}/changelog.md"
+ghRepo="yottacore/gitsby"
 
 ## changelog.md opens with a commented-out template whose headings are shaped exactly like real
 ## ones, so a first-match search finds the decoy and not the section it meant. That has caused
@@ -163,6 +164,69 @@ fpChangelogVnext(){
 	local -i start; start="$(fpChangelogStart)"
 	awk -v start="${start}" 'NR>=start && /^## vNEXT/{print NR; exit}' "${changelog}"
 :;}
+
+## The downloads table for the release body, from the files in ${assets}: a row per OS, a column
+## per CPU, each cell a link to that file on the release. The Mac file runs on either CPU, so it
+## is linked under both. Checksums and the installers go on one line below it.
+fpDownloadsTable(){
+	local dl="https://github.com/${ghRepo}/releases/download/${version}" raw="https://raw.githubusercontent.com/${ghRepo}/${version}"
+	local f name stem os cpu cell line extra=""
+	local -A link=() osSeen=() cpuSeen=()
+	local -a oses=() cpus=() cells=() width=()
+	local -i i c cols
+	for f in "${assets}"/*; do
+		name="${f##*/}"; [[ "${name}" == "${EXE_NAME}"-*-* ]] || continue
+		stem="${name#"${EXE_NAME}-"}"; stem="${stem%.exe}"; os="${stem%%-*}"; cpu="${stem#*-}"
+		link["${os}/${cpu}"]="[${name}](${dl}/${name})"; osSeen["${os}"]=1
+		[[ "${cpu}" == universal ]] || cpuSeen["${cpu}"]=1
+	done
+	for os in linux darwin windows freebsd; do [[ -z "${osSeen[${os}]:-}" ]] || { oses+=("${os}"); unset "osSeen[${os}]"; }; done
+	for cpu in amd64 arm64; do [[ -z "${cpuSeen[${cpu}]:-}" ]] || { cpus+=("${cpu}"); unset "cpuSeen[${cpu}]"; }; done
+	## Anything past the usual four OSes and two CPUs goes after them, sorted.
+	if ((${#osSeen[@]}));  then mapfile -t -O "${#oses[@]}" oses < <(printf '%s\n' "${!osSeen[@]}"  | LC_ALL=C sort); fi
+	if ((${#cpuSeen[@]})); then mapfile -t -O "${#cpus[@]}" cpus < <(printf '%s\n' "${!cpuSeen[@]}" | LC_ALL=C sort); fi
+	((${#cpus[@]})) || cpus=(universal)
+	((${#oses[@]})) || return 0
+
+	## Every cell in reading order, header and rule row included, so one pass finds the widths.
+	cols=$((${#cpus[@]} + 1))
+	cells=("OS" "${cpus[@]}")
+	for ((c = 0; c < cols; c++)); do cells+=(":---"); done
+	for os in "${oses[@]}"; do
+		case "${os}" in linux) cells+=("Linux") ;; darwin) cells+=("macOS") ;; windows) cells+=("Windows") ;; freebsd) cells+=("FreeBSD") ;; *) cells+=("${os}") ;; esac
+		for cpu in "${cpus[@]}"; do cells+=("${link[${os}/${cpu}]:-${link[${os}/universal]:--}}"); done
+	done
+	for ((i = 0; i < ${#cells[@]}; i++)); do
+		((${#cells[i]} <= ${width[i % cols]:-0})) || width[i % cols]=${#cells[i]}
+	done
+	echo "### Downloads"
+	echo
+	## A leading pipe and no trailing one, with every column but the last padded.
+	for ((i = 0; i < ${#cells[@]}; i += cols)); do
+		line=""
+		for ((c = 0; c < cols - 1; c++)); do printf -v cell '| %-*s ' "${width[c]}" "${cells[i + c]}"; line+="${cell}"; done
+		echo "${line}| ${cells[i + cols - 1]}"
+	done
+	[[ ! -f "${assets}/SHA256SUMS" ]] || extra="Checksums: [SHA256SUMS](${dl}/SHA256SUMS)."
+	line=""
+	for f in install.bash install.ps1; do [[ ! -f "${root}/${f}" ]] || line+="${line:+, }[${f}](${raw}/${f})"; done
+	[[ -z "${line}" ]] || extra+="${extra:+ }Installers: ${line}."
+	[[ -z "${extra}" ]] || printf '\n%s\n' "${extra}"
+:;}
+
+## The downloads table $2 goes at the foot of the section whose heading is on line $1, so the
+## changelog in the tag and the release body stay the same text.
+fpChangelogAddDownloads(){
+	local updated
+	updated="$(TABLE="$2" awk -v at="$1" '
+		function put() { print ""; print ENVIRON["TABLE"]; done = 1 }
+		NR <= at || done   { print; next }
+		/^## /             { put(); print ""; print; next }
+		/^[[:space:]]*$/   { blanks++; next }
+		                   { for (; blanks > 0; blanks--) print ""; print }
+		END                { if (!done) put() }' "${changelog}")" || return 1
+	printf '%s\n' "${updated}" > "${changelog}"
+}
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Phase 1: prepare and verify. Nothing here changes anything outside the working tree, so a
@@ -191,6 +255,10 @@ lastTag="${lastTags%%$'\n'*}"
 ## The changelog has to have something to release. 'vNEXT' is this project's convention for
 ## "landed but not cut", and releasing with no such section means the notes would be empty.
 [[ -n "$(fpChangelogVnext)" ]] || fDie "changelog has no '## vNEXT' section, so there is nothing to release."
+## Phase 2 writes the downloads table from the files it built, so one already there is stale.
+if awk -v at="$(fpChangelogVnext)" 'NR > at && /^## /{exit} NR > at && /^### Downloads[[:space:]]*$/{found = 1; exit} END{exit !found}' "${changelog}"; then
+	fDie "the changelog's vNEXT section already has a '### Downloads' heading. Take it out; the release writes that table itself."
+fi
 
 ## Where the version comes from: the argument, else the same bump 'gitsby release' would choose.
 if [[ -z "${version}" ]]; then
@@ -290,14 +358,22 @@ relBranch="rel-${version#v}"
 ## exactly what the tool refuses to do for you, so the thing that cuts the release must not do it
 ## either. 'gitsby release' below is the only push to the default branch, and that push IS the
 ## release rather than a shortcut around one.
-if ! fWould "branch ${relBranch}, retitle the changelog's vNEXT as '${version} - ${today}', and land it through a PR"; then
+if ! fWould "branch ${relBranch}, retitle the changelog's vNEXT as '${version} - ${today}', add its downloads table, and land it through a PR"; then
 	"${gitsby}" -q br create "${relBranch}" || fDie "couldn't create ${relBranch}."
-	## The changelog heading is the whole of it. Nothing in the tree records the version any more -
-	## the build injects it from the tag - so this is the only file a release edits.
+	## The changelog heading and the downloads table under it are the whole of it. Nothing in the
+	## tree records the version any more - the build injects it from the tag - so this is the only
+	## file a release edits.
 	## By line number, so the substitution cannot wander to a heading somewhere else in the file.
 	clLine="$(fpChangelogVnext)"
 	[[ -n "${clLine}" ]] || fDie "the changelog's '## vNEXT' heading went missing after phase 1."
 	sed -i.bak "${clLine}s/^## vNEXT.*$/## ${version} - ${today}/" "${changelog}" && rm -f "${changelog:?}.bak"
+	## From the files phase 1 built. Phase 3 builds the same set again from the tag.
+	dlTable="$(fpDownloadsTable)"
+	if [[ -z "${dlTable}" ]]; then
+		fEcho_Clean "WARNING: phase 1 built no binaries to link, so the changelog gets no downloads table."
+	else
+		fpChangelogAddDownloads "${clLine}" "${dlTable}" || fDie "couldn't add the downloads table to the changelog; the branch is created but nothing is pushed."
+	fi
 	## And the Windows resource, which is the other thing in the tree that names a version. It
 	## goes in the same commit, so the tag it is reachable from is the one it claims.
 	"${winres[@]}" -q "${version}" || fDie "couldn't stamp the Windows resource; the branch is created but nothing is pushed."
@@ -341,6 +417,20 @@ notes="$(mktemp)"
 awk -v ver="## ${version} " -v start="$(fpChangelogStart)" \
 	'NR>=start && index($0, ver)==1 {f=1; next} f && /^## /{exit} f' "${changelog}" > "${notes}" || true
 [[ -s "${notes}" ]] || fEcho_Clean "WARNING: no changelog section found for ${version}; the release body will be empty."
+## The table was written from phase 1's build, and these are phase 3's files. Same targets, so
+## they should match; say so where they don't.
+if ((! dryRun)); then
+	declare -A linked=()
+	mapfile -t linkedList < <(DL="](https://github.com/${ghRepo}/releases/download/${version}/" awk '
+		{ s = $0; while ((i = index(s, ENVIRON["DL"])) > 0) { s = substr(s, i + length(ENVIRON["DL"])); j = index(s, ")"); if (j) print substr(s, 1, j - 1) } }' "${notes}")
+	for f in "${linkedList[@]}"; do
+		linked["${f}"]=1
+		[[ -f "${assets}/${f}" ]] || fEcho_Clean "WARNING: the release notes link ${f}, which isn't being published."
+	done
+	for f in "${assets}"/*; do
+		[[ -n "${linked[${f##*/}]:-}" ]] || fEcho_Clean "WARNING: the release notes don't link ${f##*/}, which is being published."
+	done
+fi
 nativeAsset="$(fpAssetName "$(go env GOOS)" "$(go env GOARCH)")"
 buildLine=""
 [[ -x "${assets}/${nativeAsset}" ]] && buildLine="$("${assets}/${nativeAsset}" --version 2>/dev/null | awk -v want="${EXE_NAME} v" 'index($0, want) == 1 && !seen {print; seen = 1}' || true)"
@@ -362,7 +452,7 @@ fi
 ## platform back off the published release, check it against the published SHA256SUMS, and run it.
 ## That is the whole contract - a download whose checksum matches and whose --version is right.
 if ! fWould "verify releases/latest, download and run this platform's published binary, check the macOS one, and see which release the install line takes"; then
-	latest="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/yottacore/gitsby/releases/latest" 2>/dev/null | sed -n 's|.*/releases/tag/||p' || true)"
+	latest="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/${ghRepo}/releases/latest" 2>/dev/null | sed -n 's|.*/releases/tag/||p' || true)"
 	## 'releases/latest' is the newest release NOT flagged as a pre-release, so a candidate must
 	## not resolve there and a full release must. Asking it the same question both ways round
 	## would warn on every good beta, which is the failure the 20260814 entry below is about.
@@ -372,7 +462,7 @@ if ! fWould "verify releases/latest, download and run this platform's published 
 	else
 		[[ "${latest}" == "${version}" ]] || fEcho_Clean "WARNING: releases/latest resolves to '${latest}', not ${version}."
 	fi
-	base="https://github.com/yottacore/gitsby/releases/download/${version}"
+	base="https://github.com/${ghRepo}/releases/download/${version}"
 	## Whichever asset belongs to the machine running this.
 	proveAsset="$(fpAssetName "$(go env GOOS)" "$(go env GOARCH)")"
 	if fpProve "${proveAsset}" 1; then
@@ -454,3 +544,4 @@ echo
 ##		- 20261003 JC: macOS publishes one universal binary, both Mac builds joined by macho-universal.bash, in place of one per CPU. The proof checks it against SHA256SUMS from any box, since only a Mac can run it. An asset name GitHub would rewrite stops the build before it is hashed.
 ##		- 20261003 JC: The patch bump refuses a last tag that is not plain digits, and reads a leading zero as decimal.
 ##		- 20261003 JC: Phase 3 runs the tag's install.bash into a throwaway home and says which release the install line now takes. A full release has to be taken; a pre-release is taken while no full release has a gitsby binary, and passed over for one that does. The note that the pre-release flag alone keeps a beta off the install line is gone, since until 3.0.0 it doesn't.
+##		- 20261004 JC: Phase 2 writes a downloads table at the foot of the changelog section it retitles, from the files phase 1 built: a row per OS, a column per CPU, the Mac file under both, and the checksums and installers on a line below. The release body is still that section verbatim. Phase 1 refuses a vNEXT that already has one, and phase 3 warns when what it publishes and the table disagree. The repo name is in one place.

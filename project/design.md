@@ -586,7 +586,7 @@ The first Go publication is a beta, and it was first meant to stay off the insta
 Three phases, so a failure never leaves a half-cut release:
 
 1. **Prepare and verify**, changing nothing outside the working tree. Resolve the version (argument, else the bump `release` would choose), refuse if the tag exists or the changelog has no `vNEXT` section, run the full pipeline, and cross-build every release target as a compile gate. Nothing here needs undoing, so a target that stopped compiling costs nothing to discover.
-2. **Land.** Retitle the changelog's `vNEXT` heading, open a PR for it, merge it, then `gitsby release`. The only phase that pushes. The bump goes through a branch and a PR like everything else: committing it straight to the merge target would be the one place this project does to itself what the tool refuses to do for you.
+2. **Land.** Retitle the changelog's `vNEXT` heading and add a downloads table at the foot of that section, open a PR for it, merge it, then `gitsby release`. The only phase that pushes. The bump goes through a branch and a PR like everything else: committing it straight to the merge target would be the one place this project does to itself what the tool refuses to do for you.
 3. **Publish and prove.** Rebuild the per-platform binaries from the tagged commit, create the GitHub release with that changelog section as the body, upload the binaries and their `SHA256SUMS`, then verify - download this platform's published binary, check it, run it, and confirm it reports the released version. Last, see which release the install line now takes.
 
 Decisions inside that shape:
@@ -594,6 +594,8 @@ Decisions inside that shape:
 - **The assets are built twice.** Phase 1 compiles every target to prove none has stopped building, where the cost of a failure is nothing. Phase 3 builds them again once the tag exists, and those are the bytes that get uploaded - a build number taken from the commit can only be the tag's if the tag is already there. The second build is the price of "check out the tag, build, and get the published checksums back".
 
 - **The release notes name the build number**, read out of the freshly built binary rather than computed a second time in the release script, so the notes and the download cannot disagree about it.
+
+- **The downloads table lives in the changelog.** Phase 2 writes it into the section it retitles, from the files phase 1 built, so the release body stays a verbatim copy of the section. Rows are OSes and columns are CPUs, and each cell links that file on the release. The macOS file runs on both CPUs, so it is linked under both. Phase 1 refuses a `vNEXT` section that already has one, and phase 3 warns when the files it publishes and the table disagree.
 
 - **The version lives in the tag and nowhere else.** The build injects it with `-ldflags`, so there is no source string to bump and nothing that can disagree with the tag. That replaced an earlier design in which two builds each carried their own version and were compared to each other before pushing - a guard that only existed because the duplication did.
 
@@ -603,4 +605,4 @@ Decisions inside that shape:
 
 - **History footers are warned about, not gated.** The suites' own footers are checked for an entry newer than the last release tag. It is a warning because a release with a stale footer is untidy, not wrong, and a hard gate on a habit is a gate people learn to work around.
 
-- **Assets are built before the tag is cut.** With version-control stamps switched off at build time, a phase-1 binary and one built from the tagged commit are byte-identical. Phase 2 changes two files: a changelog heading, which no binary contains, and the Windows resource - which phase 1 stamps with the same version before building and puts back afterwards, so both phases link identical bytes. The ordering therefore costs nothing, and the reproducibility it used to cost is what `-buildvcs=false` bought back.
+- **Assets are built before the tag is cut.** With version-control stamps switched off at build time, a phase-1 binary and one built from the tagged commit are byte-identical. Phase 2 changes two files: the changelog, which no binary contains, and the Windows resource - which phase 1 stamps with the same version before building and puts back afterwards, so both phases link identical bytes. The ordering therefore costs nothing, and the reproducibility it used to cost is what `-buildvcs=false` bought back.
