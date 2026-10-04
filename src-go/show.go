@@ -40,6 +40,7 @@ func (a *app) terminalWidth() int {
 		}
 		w := termCols(os.Stdout)
 		if w == 0 && inPath("tput") {
+			// An answer that isn't a number leaves 0, which takes the fallback.
 			w, _ = strconv.Atoi(runOut("tput", "cols"))
 		}
 		if w >= 40 {
