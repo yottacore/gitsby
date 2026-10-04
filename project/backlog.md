@@ -334,6 +334,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: `grep -n 'symbolic-ref\|--short\|abbrev-ref\|"origin/"\|refs/remotes' src-go/*.go`. `currentBranch` uses `branch --show-current`, which ignores tags. The branch list cuts full ref names. prune cuts full refs. The upstream's short name is left as git spells it on purpose, since the plan shows what runs. remote.go only tests origin/HEAD for empty. release.go and the back-merge build `origin/<name>` rather than reading it; the back-merge already merges by full ref. The release guard's short names are filed as 2026100411392800.
 	- Verified: Go `TestDefaultBranchBesideSameNamedTag` fails on the gover build with `remotes/origin/main` and `heads/trunkish`, and passes after. The two test.bash checks, run by hand outside the suite, fail before and pass after. `go test -race`, `test-id.bash --check`, shellcheck, and spawn-count with no count up.
 	- Branch: deftag
+	- Commit: f12765b
 	- Test case: test.bash [Erl643s] and [Erl6446]. Go `TestDefaultBranchBesideSameNamedTag` [Erl643f].
 
 - The release guard names branches short, so a tag can stand in for one
