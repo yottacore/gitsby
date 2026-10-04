@@ -33,6 +33,73 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- Run the tests on a Mac and a Windows box as part of the pipeline
+	- ID: 2026100312332924
+	- Type: Enhancement
+	- Status: Waiting on signoff
+	- Needs external testing: None left. It ran on b26 and vm925w on 2026-10-04. b29w runs only when vm925w is taken.
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Related IDs: 2026100409453279, 2026100409453281, 2026100409453283
+	- Target OS: macOS, Windows
+	- Requirements  [Feature]:
+		- macOS is still built every run, either here or on b26.
+		- When b26 is up and not reserved, the pipeline runs the tests on it, against the universal dogfood build.
+		- It does the same on a Windows box, vm925w or b29w, against the Windows dogfood build.
+		- A box that is off, or reserved by another session, is skipped, and the run says so. It does not fail the run, and it does not wait in line.
+		- Each box is taken through the host lock first, the way the other projects do.
+			- The lock's `wrap <host> --wait 0 -- <command>` takes a free box and holds it only while the command runs.
+			- The lock script is not in this repo. Where it is missing, the stage is skipped with a note.
+	- Decisions:
+		- Not built or tested on either box yet. This item only files the work.
+			- Since 2026-10-04 it is built, and has run on both boxes.
+		- 2026-10-04: What runs. Both boxes run the Go tests, cross-built here for darwin/amd64 and windows/amd64. b26 also runs test.bash against the universal dogfood build, under Homebrew's bash (`/usr/local/bin/bash`, 5.2), since `/bin/bash` there is 3.2. It runs in a copy of the tree kept in the stage's own folder under the remote home. Fuzz and parity are not run remotely.
+			- So the Windows box gets the Go tests only, not a run against the Windows dogfood build. Neither box has a bash to run test.bash with.
+		- 2026-10-04: The stage runs on full runs only. `--quick` and `--gate` skip it.
+		- 2026-10-04: Locking. The lock script knows only vm925w and b29w by default. The stage adds b26 to the lock's host list in its own environment, and takes each box with `wrap <host> --wait 0 -- <command>`. A box that is off, unreachable, or held by another session is skipped with a note, and never fails the run or waits. On Windows either vm925w or b29w will do, whichever is free. With no lock script the stage is skipped with a note.
+		- 2026-10-04: The lock script is outside this repo, and is not changed for this.
+	- Progress log:
+		- The macOS build is already here. A release builds `darwin/amd64` and `darwin/arm64`.
+		- Note: since item 2026100313491873, a release publishes one universal macOS file in place of those two.
+		- b26 is an Intel Mac, so testing there needs `darwin/amd64`. Dogfood builds it since item 2026100312571262.
+		- The pipeline and the Go tests were made to pass on macOS on 2026-10-01 (def75ab), run by hand. Nothing runs them there since.
+		- The Go tests can be cross-built with `go test -c`, so neither box would need Go installed. test.bash on b26 would need Homebrew's bash, since the default there is 3.2.
+		- No stage runs the Go tests on Windows today. That is how `TestCanonPath` and `TestDisplayPath` broke there unnoticed.
+		- Done: stage 7, "Mac + Windows tests", in `cicd/remote-tests.bash`. Publish is stage 8. How it works is on the child item.
+		- Verified: the stage run alone on 2026-10-04, on b26 and vm925w. b26's Go tests all pass, and its test.bash run passed 1209 and failed 5. vm925w's Go tests failed one. Those come from three bugs, filed as their own items. vm925w was free, so b29w was not tried.
+		- Verified: `TestCanonPath` passes on vm925w. `TestDisplayPath` no longer exists, since `displayPath` was removed on 2026-09-16.
+		- Note: until those three bugs are fixed, a full run stops at stage 7.
+	- Branch: remtest
+	- Commit: 5af99d6
+	- Test case: test.bash `[ErkbDSi]` to `[ErkbDTn]` for the stage in cicd.bash, and `[ErkbDU2]` to `[Erkbdua]` for the harness, 22 in all.
+
+- Build the stage
+	- ID: 2026100313002135
+	- Type: Task
+	- Status: Waiting on signoff
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Parent ID: 2026100312332924
+	- Requirements  [Feature]:
+		- Write the pipeline stage the parent item describes.
+		- It is not done until it has run on b26 and on a Windows box.
+	- Progress log:
+		- Done: `cicd/remote-tests.bash` asks each box over ssh first, then builds the Go tests for the platforms that answered. Each box is taken through the lock only for its own run.
+		- Done: the Mac gets a copy of the tree with the git dir, fetches the Go modules, then runs the Go tests and test.bash. The suite reads the history, and its own builds run with downloads blocked. The copy sits in `~/gitsby-remote-tests`, marked as the stage's, and a folder of that name without the mark is left alone.
+		- Done: Windows gets the module and its test binary in a folder under `%TEMP%` made for the run. It is removed after, and only when the run made it.
+		- Done: cicd.bash builds the universal Mac binary with the function dogfood uses, and hands it to the harness. Each Go test prints a line with its ID, from an include stage 2 now shares. `--no-remote` skips the stage.
+		- Note: b26's shell startup file prints on every ssh command, which breaks rsync, scp and sftp. The copy goes as a tar stream, and output is read from a marker line on.
+		- Note: the lock is asked as a plain process. Asked as the calling session, a miss keeps the session in line, and the box is set aside for it for up to five minutes.
+		- Note: the copy is about 120 MB with the git dir, sent whole each run. That takes a few seconds on the LAN. The Mac half of a run takes about seven minutes, most of it test.bash.
+		- Verified: test.bash 1398/0 on b23, with the 22 new checks.
+		- Verified: eight faults put into a copy of the harness, one at a time, each turned its check red. The session id handed to the lock, no `--wait 0`, no skip without a lock script, no mark check, removing a Windows folder the run didn't make, no marker filter, every free Windows box run, and a dropped box counted as failed.
+		- Verified: with `--quick` no longer skipping stage 7 and the Mac build left behind in cicd.bash, test.bash failed exactly `[ErkbDSi]`, `[ErkbDT4]` and `[ErkbDTL]`. The gate (lint and Go tests) passes.
+	- Branch: remtest
+	- Commit: 5af99d6
+	- Test case: test.bash `[ErkbDSi]` to `[Erkbdua]`, as on the parent.
+
 - macOS release gets a universal binary
 	- ID: 2026100313491873
 	- Type: Enhancement
@@ -137,44 +204,53 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: 74b1914
 	- Test case: test.bash `[ErfYFrl]`.
 
-- Run the tests on a Mac and a Windows box as part of the pipeline
-	- ID: 2026100312332924
-	- Type: Enhancement
+- test.bash's binary checks fail on macOS
+	- ID: 2026100409453279
+	- Type: Bug
 	- Status: Queued
-	- Needs external testing: b26, and vm925w or b29w
-	- Priority [Feature]: Avg
-	- Opened: 2026-10-03
+	- Priority|Severity [Bug]: Avg
+	- Opened: 20261004-094532
 	- Opened by: jim-collier
-	- Target OS: macOS, Windows
-	- Requirements  [Feature]:
-		- macOS is still built every run, either here or on b26.
-		- When b26 is up and not reserved, the pipeline runs the tests on it, against the universal dogfood build.
-		- It does the same on a Windows box, vm925w or b29w, against the Windows dogfood build.
-		- A box that is off, or reserved by another session, is skipped, and the run says so. It does not fail the run, and it does not wait in line.
-		- Each box is taken through the host lock first, the way the other projects do.
-			- The lock's `wrap <host> --wait 0 -- <command>` takes a free box and holds it only while the command runs.
-			- The lock script is not in this repo. Where it is missing, the stage is skipped with a note.
-	- Decisions:
-		- Not built or tested on either box yet. This item only files the work.
-	- Progress log:
-		- The macOS build is already here. A release builds `darwin/amd64` and `darwin/arm64`.
-		- Note: since item 2026100313491873, a release publishes one universal macOS file in place of those two.
-		- b26 is an Intel Mac, so testing there needs `darwin/amd64`. Dogfood builds it since item 2026100312571262.
-		- The pipeline and the Go tests were made to pass on macOS on 2026-10-01 (def75ab), run by hand. Nothing runs them there since.
-		- The Go tests can be cross-built with `go test -c`, so neither box would need Go installed. test.bash on b26 would need Homebrew's bash, since the default there is 3.2.
-		- No stage runs the Go tests on Windows today. That is how `TestCanonPath` and `TestDisplayPath` broke there unnoticed.
+	- Related IDs: 2026100312332924
+	- Target OS: macOS
+	- Incorrect behavior [Bug]: On b26 `tr -d '\000'` stops with "Illegal byte sequence" on a binary file. So `[Er1LxTO]` and `[EnQf0UF]` fail, and `[Er1LxTP]` and `[EnQf0UH]`, which expect no match, pass without reading anything.
+	- Expected behavior [Bug]: The four checks read the file on macOS as they do on Linux.
+	- Reproduced [Bug]: Yes, 2026-10-04, in stage 7's run on b26, where ssh gets `LANG=en_US.UTF-8`, and again by hand on the `.syso` files.
+	- Possible cause [Bug]: macOS `tr` and `grep` both check bytes against the locale. With `LC_ALL=C` on both, the copyright check found its string on b26. On the `tr` alone it still failed.
+	- Origin: the `tr` lines, from def75ab (2026-10-01, the macOS pass, which swapped out `grep -P`) and 4990d4f (2026-09-26). Not seen by an earlier round. Confirmed.
+	- Estimated effort: Low
 
-- Build the stage
-	- ID: 2026100313002135
-	- Type: Task
+- `[Erg9NTS]` counts git's origin/HEAD repair on git before 2.47
+	- ID: 2026100409453281
+	- Type: Bug
 	- Status: Queued
-	- Priority [Feature]: Avg
-	- Opened: 2026-10-03
+	- Priority|Severity [Bug]: Low
+	- Opened: 20261004-094532
 	- Opened by: jim-collier
-	- Parent ID: 2026100312332924
-	- Requirements  [Feature]:
-		- Write the pipeline stage the parent item describes.
-		- It is not done until it has run on b26 and on a Windows box.
+	- Related IDs: 2026100312332924
+	- Target OS: macOS
+	- Incorrect behavior [Bug]: On b26, with Apple git 2.39.5, "and asks origin once" counts two asks.
+	- Expected behavior [Bug]: The check counts the pull's asks only, on any git.
+	- Reproduced [Bug]: Yes, 2026-10-04, in stage 7's run on b26, and by hand with the same fixture. A plain `git fetch` asks once there. With `git remote set-head origin main` run first the count is one.
+	- Possible cause [Bug]: The fixture's clone has no origin/HEAD, since it was cloned before origin had a commit. On git before 2.47 the fetch doesn't write one, so `fetchRemote` repairs it with `git remote set-head --auto`, which asks origin again. That repair is by design. Setting origin/HEAD in the fixture first should fix the check.
+	- Origin: `[Erg9NTS]`, from 55f5e22 (2026-10-03, Code Review 20261003 enhancement 3). Never run on a git before 2.47. Confirmed.
+	- Estimated effort: Low
+
+- `TestConfigLoadBackslashes` fails on Windows
+	- ID: 2026100409453283
+	- Type: Bug
+	- Status: Queued
+	- Priority|Severity [Bug]: Low
+	- Opened: 20261004-094532
+	- Opened by: jim-collier
+	- Related IDs: 2026100312332924
+	- Target OS: Windows
+	- Incorrect behavior [Bug]: On vm925w the test fails with "a doubled path rule names \"\", want w". The rule `/srv\work` is listed as not an absolute folder.
+	- Expected behavior [Bug]: The test passes on Windows, as it does on Linux and macOS.
+	- Reproduced [Bug]: Yes, 2026-10-04, in stage 7's run on vm925w.
+	- Possible cause [Bug]: The fixture writes the rule as `/srv\\work`, which is not absolute on Windows, so it is ignored there, as designed. The folder it is matched against goes through `driveFolder` and the rule doesn't. Writing the rule from `driveFolder` too should fix it.
+	- Origin: `TestConfigLoadBackslashes`, from d772814 (2026-09-24, the move to the shcl 3 beta). No stage ran the Go tests on Windows until stage 7. Confirmed.
+	- Estimated effort: Low
 
 - The plan shows `@{u}` where it could name the branch
 	- ID: 2026100316463300
