@@ -207,7 +207,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Stage 7 names b26 as a Windows host to the lock
 	- ID: 2026100410340781
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on signoff
 	- Priority|Severity [Bug]: Low
 	- Opened: 20261004-103407
 	- Opened by: jim-collier
@@ -217,6 +217,30 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: Yes, 2026-10-04. The lock's `hosts` lists b26 twice under the stage's setting. Nothing breaks today, since the stage names each host.
 	- Origin: remote-tests.bash from item 2026100312332924. The lock gained its other-hosts list the same day. Confirmed.
 	- Estimated effort: Low
+	- Needs external testing: Optional. A stage 7 run on b26 and a Windows box under the real lock.
+	- Actual cause [Bug]: The stage built one host list from the Mac and Windows settings and passed it as the lock's Windows list.
+	- Actual fix [Bug]: The Windows list is the Windows hosts only. The other-hosts list is the lock's own, as its `hosts` reports it, plus any Mac not already in it, so the lock's status still lists boxes like vmFreeBSD while the stage runs. An older lock with no other-hosts list refuses the Mac by name, and the stage skips it with that note.
+	- Progress log:
+		- Verified: against the real lock, read only. Under the old setting `hosts` gives `b26 vm925w b29w b26 vmDebARM64 vmFreeBSD`. Under the new one it gives `vm925w b29w b26 vmDebARM64 vmFreeBSD`.
+		- Verified: on a private lock directory with an empty other-hosts list, `wrap b26` exits 2 with "unknown host", which the stage reports as a skip.
+		- Verified: test.bash 1401/0. With the old remote-tests.bash, `[ErkbDUa]` and `[ErkqZtP]` fail, 1399/2.
+		- Note: `[ErkbDUa]` keeps its ID. It used to require b26 in the Windows list, and now requires it once, in the other list.
+	- Swept: every reader of the two host settings. cicd.bash only prints them, and config.bash only sets them. The lock's prefix is still taken from its file name.
+	- Branch: lockhosts
+	- Commit: 5a45371
+	- Test case: test.bash `[ErkbDUa]` (lists passed to the lock) and `[ErkqZtP]` (older lock with no other-hosts list).
+
+- shellcheck crashes now and then on test.bash
+	- ID: 2026100410472492
+	- Type: Bug
+	- Status: Queued
+	- Priority|Severity [Bug]: Low
+	- Opened: 20261004-104724
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: shellcheck 0.11.0 on b23 segfaults on `cicd/test.bash` in about half of runs, gover's copy included, though less often there. Smaller scripts never crash. A bigger stack and dropping its cached pages did not help. A lint stage run can fail on this alone.
+	- Expected behavior [Bug]: The lint stage passes or fails on what the file says.
+	- Reproduced [Bug]: Yes, 2026-10-04, on b23.
+	- Estimated effort: Avg
 
 - The plan shows `@{u}` where it could name the branch
 	- ID: 2026100316463300
