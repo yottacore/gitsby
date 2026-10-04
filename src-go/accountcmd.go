@@ -342,6 +342,11 @@ func (a *app) cmdAccountList() {
 	}
 	a.out.clean("")
 	a.out.clean("Accounts:")
+	logins := make([]string, 0, len(names))
+	for _, name := range names {
+		logins = append(logins, a.cfg.value(name, "ghAccount"))
+	}
+	a.askGhTokens(logins)
 	for _, name := range names {
 		a.showAccount(name, name == hereAccount)
 	}

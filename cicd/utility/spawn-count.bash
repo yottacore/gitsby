@@ -92,7 +92,7 @@ cat > "${work}/bin/gh" <<EOF
 case "\$1 \$2" in
 	"api user")   if [[ -n "\${GH_TOKEN:-}" ]]; then echo "\${GH_TOKEN#tok_}"; else echo ghuser; fi ;;
 	"auth token") exit 1 ;;
-	"config get") echo https ;;
+	"config get") case " \$* " in *" user "*) echo ghuser ;; *) echo https ;; esac ;;
 	*)            echo "fake gh: unhandled: \$*" >&2; exit 2 ;;
 esac
 EOF
@@ -134,9 +134,9 @@ git clone --quiet "${pristine}/origin.git" "${pristine}/repo" 2>/dev/null
 ## Two copies of that clone whose origin is on github.com, one over ssh and one over https, each
 ## covered by an account's folder rule. The Account line prints only for an account picked like
 ## that, never for one guessed from the remote's owner, so this is the path a configured user
-## takes. The token comes from a file, since the fake gh holds none: that is the case that asks
-## gh who the token belongs to, before and after it is exported. A changed file gives status a
-## list to print. Three logins, so the listing asks gh about each.
+## takes. The token comes from a file, since the fake gh holds none: that is the case that reads
+## gh's own login before the token is exported, and asks who the token belongs to after. A
+## changed file gives status a list to print. Three logins, so the listing asks gh about each.
 cp -a "${pristine}/repo" "${pristine}/acct-ssh"
 cp -a "${pristine}/repo" "${pristine}/acct-https"
 git -C "${pristine}/acct-ssh"   remote set-url origin git@github.com:acme/proj.git
