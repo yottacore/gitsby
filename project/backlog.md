@@ -337,29 +337,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: 75e7e34
 	- Test case: Go `TestConvertibleAsksGhOnlyForSSH` [Erl3JkJ], `TestEnterRepoSettlesTopLevel` [Erl3JkX], `TestAccountTokenAsksGitConfigOnlyWhenNeeded` [Erl3Jkl], `TestFetchReadsOriginHeadOnce` [Erl3Jkz], and on Linux `TestTerminalWidthAsksTheKernel` [Erl3JlD]. Also the spawn-count limits.
 
-- The release guard names branches short, so a tag can stand in for one
-	- ID: 2026100411392800
-	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: Low
-	- Opened: 20261004-113928
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]:
-		- Tag something `main`, `dev` or `origin/main` in a repo with nothing new to release.
-		- Run `gitsby release`.
-	- Incorrect behavior [Bug]: The "nothing new" guard passes `main`, `origin/main` and `origin/dev` to `merge-base` and `describe`. git reads a tag of that name before the branch, so the guard can answer about the tag.
-	- Expected behavior [Bug]: The guard reads the branches by full ref.
-	- Reproduced [Bug]: Yes, 2026-10-04. With unreleased work on main, dev or origin/dev, and an old tag named `main` and `origin/main`, or `origin/dev`, or `dev`, a bare `release` said "Nothing new to release" and stopped.
-	- Cause: Confirmed. The guard built short branch names, and git reads `refs/tags/<name>` before `refs/heads/<name>` and `refs/remotes/<name>`.
-	- Fixed: the guard reads main, origin's main and dev by `refs/heads/...` and `refs/remotes/origin/...`. It runs nothing the plan prints, so the plan is unchanged.
-	- Swept: `grep -n '"git",' src-go/*.go`, looking at merge, merge-base, describe, rev-parse, rev-list, log and diff. The release merges, the dev fast-forward and its ancestor check, the back-merge, `br merge`, the hotfix diff and `branchHasUnpushed` already use full refs. rev-parse, rev-list, log and show.go's diff use `HEAD`, `@{u}` or fixed names. The pull's `merge --ff-only` takes git's own short upstream name, which git already spells as `remotes/origin/<name>` when a tag shares `origin/<name>`, so it stays. Outside that list, pushes by branch name and the `--track origin/<name>` checkout break the same way; filed as 2026100411431800.
-	- Verified: Go `TestReleaseGuardBesideSameNamedTags` fails in all three cases with the old release.go and passes after. `go test -race`, `go vet`, gofmt, `test-id.bash --check` and spawn-count with no count up. A bare `release` on a scratch repo still says "Nothing new" with nothing new, and cuts v1.0.1 with tags `main` and `origin/main` beside new work.
-	- Branch: reltag
-	- Commit: b587ac4
-	- Test case: Go `TestReleaseGuardBesideSameNamedTags` [Erl6xej].
-	- Closed: 20261004-114318
-	- Acceptance signoff: Self-closed: reproduced, the test fails before the fix and passes after, and the sweep is answered.
-
 - Pushes and remote-only checkouts name a branch short, so a tag can break them
 	- ID: 2026100411431800
 	- Type: Bug
@@ -754,6 +731,29 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: acct-files
 	- Test case: TestFragmentNames, plus two apply checks in test.bash.
 	- Closed: 2026-09-30
+
+- The release guard names branches short, so a tag can stand in for one
+	- ID: 2026100411392800
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Low
+	- Opened: 20261004-113928
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- Tag something `main`, `dev` or `origin/main` in a repo with nothing new to release.
+		- Run `gitsby release`.
+	- Incorrect behavior [Bug]: The "nothing new" guard passes `main`, `origin/main` and `origin/dev` to `merge-base` and `describe`. git reads a tag of that name before the branch, so the guard can answer about the tag.
+	- Expected behavior [Bug]: The guard reads the branches by full ref.
+	- Reproduced [Bug]: Yes, 2026-10-04. With unreleased work on main, dev or origin/dev, and an old tag named `main` and `origin/main`, or `origin/dev`, or `dev`, a bare `release` said "Nothing new to release" and stopped.
+	- Cause: Confirmed. The guard built short branch names, and git reads `refs/tags/<name>` before `refs/heads/<name>` and `refs/remotes/<name>`.
+	- Fixed: the guard reads main, origin's main and dev by `refs/heads/...` and `refs/remotes/origin/...`. It runs nothing the plan prints, so the plan is unchanged.
+	- Swept: `grep -n '"git",' src-go/*.go`, looking at merge, merge-base, describe, rev-parse, rev-list, log and diff. The release merges, the dev fast-forward and its ancestor check, the back-merge, `br merge`, the hotfix diff and `branchHasUnpushed` already use full refs. rev-parse, rev-list, log and show.go's diff use `HEAD`, `@{u}` or fixed names. The pull's `merge --ff-only` takes git's own short upstream name, which git already spells as `remotes/origin/<name>` when a tag shares `origin/<name>`, so it stays. Outside that list, pushes by branch name and the `--track origin/<name>` checkout break the same way; filed as 2026100411431800.
+	- Verified: Go `TestReleaseGuardBesideSameNamedTags` fails in all three cases with the old release.go and passes after. `go test -race`, `go vet`, gofmt, `test-id.bash --check` and spawn-count with no count up. A bare `release` on a scratch repo still says "Nothing new" with nothing new, and cuts v1.0.1 with tags `main` and `origin/main` beside new work.
+	- Branch: reltag
+	- Commit: b587ac4
+	- Test case: Go `TestReleaseGuardBesideSameNamedTags` [Erl6xej].
+	- Closed: 20261004-114318
+	- Acceptance signoff: Self-closed: reproduced, the test fails before the fix and passes after, and the sweep is answered.
 
 - `[Erg9NTS]` counts git's origin/HEAD repair on git before 2.47
 	- ID: 2026100409453281
