@@ -5316,7 +5316,11 @@ EOF
 		echo mac > "${rtMacBin}"
 		fStub "${rtLock}" <<-EOF
 			#!/usr/bin/env bash
-			printf 'lock %s hosts=%s session=%s\n' "\$*" "\${X_WINDOWS_HOSTS:-}" "\${X_CODE_SESSION_ID:-unset}" >> '${rtLog}'
+			known=" \${X_WINDOWS_HOSTS:-vm925w b29w} "
+			[[ -e '${rtFail}/oldlock' ]] || known+="\${X_OTHER_HOSTS-b26 vmFreeBSD} "
+			if [[ "\${1:-}" == hosts ]]; then read -r known <<< "\${known}"; echo "\${known}"; exit 0; fi
+			printf 'lock %s win=%s other=%s session=%s\n' "\$*" "\${X_WINDOWS_HOSTS:-}" "\${X_OTHER_HOSTS-unset}" "\${X_CODE_SESSION_ID:-unset}" >> '${rtLog}'
+			[[ "\${known}" == *" \${2:-} "* ]] || { echo "x_windows-host-lock.bash: unknown host '\$2'" >&2; exit 2; }
 			if [[ -e '${rtFail}/busy-'"\${2:-}" ]]; then
 				echo "queued: position 1 for \$2 (all). \$2 is held by session abcd (pid 1, other/project), done about 10:00, lease to 10:20" >&2
 				echo "still queued: position 1 for \$2 (all). \$2 is held by session abcd (pid 1, other/project), done about 10:00, lease to 10:20" >&2
@@ -5367,8 +5371,8 @@ EOF
 		fAssert "[ErkbDUK] a box that does not answer is skipped with a note and never taken, and the run passes" \
 			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'skip: b26, not reachable over ssh (tried b26)' '${rtOut}' && grep -qF 'skip: b29w, not reachable over ssh (tried b29w,b29w-wif)' '${rtOut}' && ! grep -qE '^(lock|go test)' '${rtLog}'"
 		fRemoteRun --mac-bin "${rtMacBin}"
-		fAssert "[ErkbDUa] the lock wraps each box with no wait, knows the Mac too, and is not asked as the calling session" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^lock wrap b26 --wait 0 .* -- .*remote-tests\.bash --held mac b26 b26 hosts=b26 vm925w b29w session=unset\$' '${rtLog}' && grep -qE '^lock wrap vm925w --wait 0 .* hosts=b26 vm925w b29w session=unset\$' '${rtLog}'"
+		fAssert "[ErkbDUa] the lock wraps each box with no wait, knows the Mac as one of its other hosts and only once, and is not asked as the calling session" \
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^lock wrap b26 --wait 0 .* -- .*remote-tests\.bash --held mac b26 b26 win=vm925w b29w other=b26 vmFreeBSD session=unset\$' '${rtLog}' && grep -qE '^lock wrap vm925w --wait 0 .* win=vm925w b29w other=b26 vmFreeBSD session=unset\$' '${rtLog}'"
 		fAssert "[ErkbDUn] and only the first free Windows box runs"  bash -c "! grep -q '^lock wrap b29w' '${rtLog}' && grep -qxF '  passed on: b26 vm925w' '${rtOut}'"
 		fAssert "[ErkbDVD] each box prints a line per Go test with its ID, and nothing from the Mac's login" \
 			bash -c "[[ \$(grep -cxF '  ok: [AAAAAAB] TestA' '${rtOut}') == 2 ]] && grep -qxF '  ok: [AAAAAAC] a check' '${rtOut}' && ! grep -qF 'bashrc' '${rtOut}'"
@@ -5377,6 +5381,11 @@ EOF
 		fAssert "[ErkbDVk] that copy is marked as the stage's, and holds the git dir, both builds and the fetched modules" \
 			bash -c "cd '${rtMac}/gitsby-remote-tests' && [[ -f .gitsby-remote-tests && -f tree/src-go/gitsby-test && \"\$(cat tree/src-go/gitsby)\" == mac ]] && git -C tree ls-files --error-unmatch src-go/a_test.go >/dev/null && grep -qx 'go mod download' '${rtLog}'"
 		fAssert "[ErkbDWC] the Windows box gets a folder under %TEMP% for the run, removed after"  fRemoteWinCleaned vm925w
+		: > "${rtFail}/oldlock"
+		fRemoteRun --mac-bin "${rtMacBin}"
+		rm -f -- "${rtFail:?}/oldlock"
+		fAssert "[ErkqZtP] a lock with no list beside its Windows one is still handed the Mac there, and the Mac is skipped with its refusal" \
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^lock wrap b26 .* win=vm925w b29w other=b26 session=unset\$' '${rtLog}' && grep -qF \"skip: b26, the lock would not take it (exit 2): x_windows-host-lock.bash: unknown host 'b26'\" '${rtOut}' && grep -qxF '  passed on: vm925w' '${rtOut}'"
 		: > "${rtFail}/busy-vm925w"; : > "${rtFail}/down-b29w"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		fAssert "[ErkbDXc] a Windows box someone else holds is skipped, naming who, and the next one runs, on its second name" \
