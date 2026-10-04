@@ -5191,10 +5191,11 @@ EOF
 		fGateOnly dogfood
 		fAssert "[Er1LxTd] a configured dest that exists wins over the fallback" \
 			bash -c "[[ '${gateRc}' == 0 && -f '${gateDest}/gitsby' && ! -e '${gateDir}/home/.local/bin/gitsby' ]]"
-		## Stage 7 hands its harness a universal Mac build joined the way dogfood joins one.
+		## Stage 7 hands its harness a universal Mac build joined the way dogfood joins one, and a
+		## build for each Unix box's target.
 		fGateOnly remote
-		fAssert "[ErkbDSi] stage 7 builds the universal Mac binary, hands it to the remote harness and removes it" \
-			bash -c "[[ '${gateRc}' == 0 && ! -e '${gateDir}/src-go/gitsby-darwin-universal' ]] && grep -qxF '[ 7/8  Mac + Windows tests ]' '${gateOut}' && grep -qF 'macho-universal.bash ${gateDir}/src-go/gitsby-darwin-universal ' '${gateCalls}' && grep -qxF 'remote-tests.bash --mac-bin ${gateDir}/src-go/gitsby-darwin-universal' '${gateCalls}'"
+		fAssert "[ErkbDSi] stage 7 builds the universal Mac binary and the Unix ones, hands them to the remote harness and removes them" \
+			bash -c "[[ '${gateRc}' == 0 && ! -e '${gateDir}/src-go/gitsby-darwin-universal' && ! -e '${gateDir}/src-go/gitsby-freebsd-amd64' && ! -e '${gateDir}/src-go/gitsby-linux-arm64' ]] && grep -qxF '[ 7/8  Mac + Windows tests ]' '${gateOut}' && grep -qF 'macho-universal.bash ${gateDir}/src-go/gitsby-darwin-universal ' '${gateCalls}' && grep -qxF 'remote-tests.bash --mac-bin ${gateDir}/src-go/gitsby-darwin-universal --bin freebsd/amd64 ${gateDir}/src-go/gitsby-freebsd-amd64 --bin linux/arm64 ${gateDir}/src-go/gitsby-linux-arm64' '${gateCalls}'"
 		fGateOnly remote --quick
 		fAssert "[ErkbDT4] and --quick leaves it out, saying so" \
 			bash -c "[[ '${gateRc}' == 0 ]] && ! grep -qE '^(remote-tests|macho-universal)\.bash' '${gateCalls}' && grep -qxF 'Mac + Windows tests skipped (--quick)' '${gateOut}'"
@@ -5416,6 +5417,8 @@ EOF
 		mkdir -p "${rt}/cicd/utility/include" "${rt}/src-go" "${rtBin}" "${rtMac}" "${rtFail}" "${rtLock%/*}"
 		cp "${root}/cicd/remote-tests.bash" "${root}/cicd/config.bash" "${rt}/cicd/"
 		cp "${root}/cicd/utility/include/go-test-lines.bash" "${rt}/cicd/utility/include/"
+		## The Unix boxes have runs of their own further down, with the config put back.
+		echo 'REMOTE_UNIX_HOSTS=()' >> "${rt}/cicd/config.bash"
 		printf 'package main\n\nfunc TestA(t *testing.T) { // [AAAAAAB]\n}\n' > "${rt}/src-go/a_test.go"
 		git init --quiet -b main "${rt}"
 		git -C "${rt}" add --all
@@ -5446,7 +5449,10 @@ EOF
 			[[ "\${cmd}" != 'exit 0' ]] || exit 0
 			echo '[ ~/.bashrc ]'; echo
 			case "\${cmd}" in
-				*'go mod download'*) HOME='${rtMac}' PATH='${rtBin}':"\${PATH}" exec bash -c "\${cmd}" ;;
+				*'/.gitsby-remote-tests'*)
+					h='${rtMac}'; [[ "\${host}" == b26 ]] || h='${work}/remote-unix-'"\${host}"
+					mkdir -p "\${h}"; HOME="\${h}" PATH='${rtBin}':"\${PATH}" exec bash -c "\${cmd}" ;;
+				*'command -v'*) echo '@@gitsby-remote-tests@@'; cat '${rtFail}/lacks-'"\${host}" 2>/dev/null || true ;;
 				*mkdir*) cat > /dev/null; echo '@@gitsby-remote-tests@@'; [[ ! -e '${rtFail}/nomkdir-'"\${host}" ]] || exit 1; echo made ;;
 				*-test.v*)
 					echo '@@gitsby-remote-tests@@'
@@ -5529,6 +5535,41 @@ EOF
 		rm -f -- "${rtFail:?}/go-build"
 		fAssert "[ErkbduL] Go tests that do not build for the Mac fail the run before any box is taken" \
 			bash -c "[[ '${rtRc}' == 1 ]] && grep -qF 'FAIL: the Go tests do not build for darwin/amd64' '${rtOut}' && ! grep -q '^lock ' '${rtLog}'"
+		## The Unix boxes, as config.bash names them, beside the Mac and Windows ones.
+		cp "${root}/cicd/config.bash" "${rt}/cicd/"
+		local rtBsd="${work}/remote-unix-bsdtest@vmFreeBSD/gitsby-remote-tests" rtArm="${work}/remote-unix-tester@vmDebARM64/gitsby-remote-tests"
+		echo freebsd > "${work}/remote-bsdbin"; echo arm64 > "${work}/remote-armbin"
+		local rtBins=(--mac-bin "${rtMacBin}" --bin freebsd/amd64 "${work}/remote-bsdbin" --bin linux/arm64 "${work}/remote-armbin")
+		fRemoteRun "${rtBins[@]}"
+		fAssert "[Erm9Pnk] each Unix box is taken by name from the lock's other list, with no wait, and every one runs" \
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^lock wrap vmFreeBSD --wait 0 .* -- .*remote-tests\.bash --held unix vmFreeBSD bsdtest@vmFreeBSD win=vm925w b29w other=b26 vmFreeBSD vmDebARM64 session=unset\$' '${rtLog}' && grep -qE '^lock wrap vmDebARM64 --wait 0 .* --held unix vmDebARM64 tester@vmDebARM64 win=vm925w b29w other=b26 vmFreeBSD vmDebARM64 session=unset\$' '${rtLog}' && [[ \$(grep -cxF '  ok: [AAAAAAB] TestA' '${rtOut}') == 4 ]]"
+		fAssert "[Erm9Pnx] each gets the Go tests and the build for its own target, in a marked copy of the tree with the git dir" \
+			bash -c "[[ -f '${rtBsd}/.gitsby-remote-tests' && -f '${rtBsd}/tree/src-go/gitsby-test' && \"\$(cat '${rtBsd}/tree/src-go/gitsby')\" == freebsd && \"\$(cat '${rtArm}/tree/src-go/gitsby')\" == arm64 ]] && git -C '${rtBsd}/tree' ls-files --error-unmatch src-go/a_test.go >/dev/null && grep -qxF '  vmFreeBSD: go test (freebsd/amd64)' '${rtOut}' && grep -qxF '  vmDebARM64: go test (linux/arm64)' '${rtOut}'"
+		fAssert "[Erm9PoA] and runs test.bash there with the box's own bash, after fetching the modules" \
+			bash -c "grep -qF 'ssh bsdtest@vmFreeBSD echo @@gitsby-remote-tests@@; cd \"\$HOME/gitsby-remote-tests/tree\" && bash cicd/test.bash' '${rtLog}' && grep -qF 'ssh tester@vmDebARM64 echo @@gitsby-remote-tests@@; cd \"\$HOME/gitsby-remote-tests/tree\" && bash cicd/test.bash' '${rtLog}' && grep -q '^ssh bsdtest@vmFreeBSD .*tar -xf .*go mod download' '${rtLog}' && grep -qF '  vmDebARM64: test.bash against the linux/arm64 build' '${rtOut}'"
+		echo 'go ' > "${rtFail}/lacks-tester@vmDebARM64"
+		fRemoteRun "${rtBins[@]}"
+		rm -f -- "${rtFail:?}/lacks-tester@vmDebARM64"
+		fAssert "[Erm9PoN] a Unix box without a tool the suite needs runs the Go tests only, fetches nothing, and says what it lacks" \
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qxF '  skip: test.bash on vmDebARM64, which lacks: go' '${rtOut}' && grep -q '^ssh tester@vmDebARM64 .*-test\.v' '${rtLog}' && ! grep -q '^ssh tester@vmDebARM64 .*cicd/test\.bash' '${rtLog}' && ! grep -q '^ssh tester@vmDebARM64 .*go mod download' '${rtLog}' && grep -q '^ssh bsdtest@vmFreeBSD .*cicd/test\.bash' '${rtLog}'"
+		fRemoteRun --mac-bin "${rtMacBin}"
+		fAssert "[Erm9Poa] with no build for its target a Unix box runs the Go tests only, and says so" \
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qxF '  skip: test.bash on vmFreeBSD, since no freebsd/amd64 build was given (--bin)' '${rtOut}' && ! grep -q '^ssh bsdtest@vmFreeBSD .*cicd/test\.bash' '${rtLog}' && grep -q '^ssh bsdtest@vmFreeBSD .*-test\.v' '${rtLog}'"
+		: > "${rtFail}/down-bsdtest@vmFreeBSD"; : > "${rtFail}/busy-vmDebARM64"
+		fRemoteRun "${rtBins[@]}"
+		rm -f -- "${rtFail:?}"/down-* "${rtFail:?}"/busy-*
+		fAssert "[Erm9Pon] a Unix box that is off or held by someone else is skipped, and the run passes" \
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'skip: vmFreeBSD, not reachable over ssh (tried bsdtest@vmFreeBSD)' '${rtOut}' && ! grep -q '^lock wrap vmFreeBSD' '${rtLog}' && grep -qF 'skip: vmDebARM64, held by session abcd' '${rtOut}' && ! grep -q '^ssh tester@vmDebARM64 .*-test\.v' '${rtLog}'"
+		: > "${rtFail}/suitefail-bsdtest@vmFreeBSD"
+		fRemoteRun "${rtBins[@]}"
+		rm -f -- "${rtFail:?}/suitefail-bsdtest@vmFreeBSD"
+		fAssert "[Erm9Pp1] a failing suite on a Unix box fails the run"  bash -c "[[ '${rtRc}' == 1 ]] && grep -qxF '  FAIL: vmFreeBSD test.bash' '${rtOut}' && grep -qF 'failed on: vmFreeBSD' '${rtOut}'"
+		echo 'REMOTE_UNIX_HOSTS+=("vmOther:u@vmOther")' >> "${rt}/cicd/config.bash"
+		fRemoteRun "${rtBins[@]}"
+		cp "${root}/cicd/config.bash" "${rt}/cicd/"
+		fAssert "[Erm9PpE] a Unix box with no target set stops the run before anything is reached" \
+			bash -c "[[ '${rtRc}' == 2 ]] && grep -qF 'REMOTE_UNIX_TARGETS has no target like freebsd/amd64 for vmOther' '${rtOut}' && [[ ! -s '${rtLog}' ]]"
+
 		## Last, since it replaces the copy the checks above looked at.
 		mv "${rtMac}/gitsby-remote-tests" "${rtMac}/ours"
 		mkdir -p "${rtMac}/gitsby-remote-tests"
