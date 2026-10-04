@@ -33,6 +33,30 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- shellcheck crashes now and then on test.bash
+	- ID: 2026100410472492
+	- Type: Bug
+	- Status: Waiting for answers
+	- Priority|Severity [Bug]: Low
+	- Opened: 20261004-104724
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: shellcheck 0.11.0 on b23 segfaults on `cicd/test.bash` in about half of runs, gover's copy included, though less often there. Smaller scripts never crash. A bigger stack and dropping its cached pages did not help. A lint stage run can fail on this alone.
+	- Expected behavior [Bug]: The lint stage passes or fails on what the file says.
+	- Reproduced [Bug]: Yes, 2026-10-04, on b23.
+	- Actual cause [Bug]: Not in this repo or in shellcheck. Memory on b23 gets corrupted in windows that come and go, and other programs crash in the same windows. test.bash is the only script big enough to give shellcheck a large heap, about 2.5 GB, so it is the one hit. What corrupts it, kernel or hardware, is still unknown.
+	- Estimated effort: Avg
+	- Progress log:
+		- Verified: on 2026-10-04 the same binary crashed 9 of 10 runs on test.bash around 10:49, then 0 of 122 between 11:00 and 11:10, on the same file.
+		- Verified: python3.13, rustc, rust-lld and opt crashed in that same 10:40-10:53 window, with the same kind of bad pointer fault. There was a similar burst of crashes from system tools on 2026-10-03.
+		- Verified: the upstream static 0.11.0 build, made with a different GHC, crashes too. Run side by side in a bad window, it crashed about as often as the Debian one.
+		- Verified: the installed binary and its libraries match their package checksums.
+		- Every crash is in the GHC garbage collector, following a heap pointer that is not a valid address.
+		- Ruled out: the Debian build, the GHC version, a damaged copy of the binary, a single bad CPU core, and test.bash itself. Bisecting test.bash makes no sense, since the same file passes every run outside a bad window.
+		- Both builds refuse the GC and stack options, so there is no shellcheck setting to aim at this. A pinned upstream binary would crash the same way, and a retry would only hide a machine fault. Nothing changed in the lint stage.
+		- Question: finding the source on b23 needs root or a reboot. Chase it on the machine, or close this as not a gitsby bug?
+	- Test case: None. The fault is in the machine, and nothing in the repo can check for it.
+	- Branch: scsegv
+
 - Run the tests on a Mac and a Windows box as part of the pipeline
 	- ID: 2026100312332924
 	- Type: Enhancement
@@ -229,18 +253,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: oldshcl
 	- Commit: 74b1914
 	- Test case: test.bash `[ErfYFrl]`.
-
-- shellcheck crashes now and then on test.bash
-	- ID: 2026100410472492
-	- Type: Bug
-	- Status: Queued
-	- Priority|Severity [Bug]: Low
-	- Opened: 20261004-104724
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: shellcheck 0.11.0 on b23 segfaults on `cicd/test.bash` in about half of runs, gover's copy included, though less often there. Smaller scripts never crash. A bigger stack and dropping its cached pages did not help. A lint stage run can fail on this alone.
-	- Expected behavior [Bug]: The lint stage passes or fails on what the file says.
-	- Reproduced [Bug]: Yes, 2026-10-04, on b23.
-	- Estimated effort: Avg
 
 - The plan shows `@{u}` where it could name the branch
 	- ID: 2026100316463300
