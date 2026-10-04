@@ -776,7 +776,9 @@ func TestConfigLoadBackslashes(t *testing.T) { // [Eqp3jdh]
 	cfg := writeConfig(t, "account: w\n\tname: ~\\dev\\tools\n\temail: \"C:\\\\new\"\n")
 	wantValue(t, cfg, "w", "name", `~\dev\tools`)
 	wantValue(t, cfg, "w", "email", `C:\new`)
-	cfg = writeConfig(t, "account: w\n\tpath: /srv\\\\work\n\n#\n# This config file format is SHCL.\n#\n")
+	// Through driveFolder: '/srv' is not absolute on Windows, so the rule would be
+	// ignored there by design.
+	cfg = writeConfig(t, "account: w\n\tpath: "+driveFolder("/srv")+"\\\\work\n\n#\n# This config file format is SHCL.\n#\n")
 	if got := cfg.accountForDir(driveFolder("/srv/work/x")); got != "w" {
 		t.Errorf("a doubled path rule names %q, want w: %+v", got, cfg)
 	}
