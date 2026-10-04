@@ -199,14 +199,25 @@ if [[ -z "${lock}" ]]; then
 	fEcho_Clean "  skip: every box, since there is no host lock script (${REMOTE_LOCK_GLOB})"
 	exit 0
 fi
-## The lock reads its settings from variables named after its own file. Its default host list
-## holds the Windows boxes only. A caller with a session id is taken to be the whole session,
-## and one that misses keeps its place in line for minutes, holding the box back from others,
-## so the lock is asked as a plain process, whose place goes when it exits.
+## The lock reads its settings from variables named after its own file. It keeps two host
+## lists, and hands out only the Windows one for 'any' and 'all', so a Mac goes in the other.
+## That one starts from the lock's own, so its status still lists the rest while this runs. An
+## older lock has no other list and refuses a Mac by name, which skips it with that note.
+## A caller with a session id is taken to be the whole session, and one that misses keeps its
+## place in line for minutes, holding the box back from others, so the lock is asked as a
+## plain process, whose place goes when it exits.
 lockVar="${lock##*/}"; lockVar="${lockVar%%_*}"; lockVar="${lockVar^^}"
-lockHosts=""
-for spec in "${REMOTE_MAC_HOSTS[@]}" "${REMOTE_WINDOWS_HOSTS[@]}"; do lockHosts+="${lockHosts:+ }$(fLockName "${spec}")"; done
-fLock(){ env -u "${lockVar}_CODE_SESSION_ID" -u "${lockVar}_PID" "${lockVar}_WINDOWS_HOSTS=${lockHosts}" "${lock}" "$@" ;}
+declare -a winNames=()
+for spec in "${REMOTE_WINDOWS_HOSTS[@]}"; do winNames+=("$(fLockName "${spec}")"); done
+lockWin="${winNames[*]}"
+lockOther=" $(env "${lockVar}_WINDOWS_HOSTS=${lockWin}" "${lock}" hosts 2>/dev/null || true) "
+for name in "${winNames[@]}"; do lockOther="${lockOther// ${name} / }"; done
+for spec in "${REMOTE_MAC_HOSTS[@]}"; do
+	name="$(fLockName "${spec}")"
+	[[ "${lockOther}" == *" ${name} "* ]] || lockOther+="${name} "
+done
+read -r lockOther <<< "${lockOther}"
+fLock(){ env -u "${lockVar}_CODE_SESSION_ID" -u "${lockVar}_PID" "${lockVar}_WINDOWS_HOSTS=${lockWin}" "${lockVar}_OTHER_HOSTS=${lockOther}" "${lock}" "$@" ;}
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-remote.XXXXXX")"
 trap 'rm -rf -- "${work:?}"' EXIT
