@@ -56,6 +56,7 @@ func reportExit(out *printer, err error) int {
 
 func run(out *printer, argv []string) error {
 	a := newApp(out)
+	defer a.endProbes()
 
 	// Only the command slot counts for help and the version - scanning the whole
 	// argv would make a message like "add -v flag" silently short-circuit.
@@ -504,15 +505,25 @@ func (a *app) settleGh() error {
 			}
 		}
 	}
-	// Prime the probe caches here, like the scripts prime them in-shell: every later
-	// use would otherwise repeat the round trip. Only where the answer is read: the
-	// identity block names gh's account, and a write compares against it. A bare
-	// 'pr' or 'pr <n>' prints neither.
+	// Start the round trips here, all at once, and read each where it is used: in
+	// turn the identity block waited on the sum of them. Only where the answer is
+	// read: the identity block names gh's account, and a write compares against it.
+	// A bare 'pr' or 'pr <n>' prints neither. tea's answer is a local file, so it
+	// is simply asked.
 	if a.gh.isCommand && (a.gh.isWrite || a.identityWillPrint()) {
-		_ = a.hostCLIWho()
+		if a.gh.tool == toolGh {
+			a.askGhLoginAhead()
+		} else {
+			_ = a.hostCLIWho()
+		}
 	}
 	if a.gh.isWrite {
-		_ = a.sshLogin(a.gh.probeURL)
+		a.askSSHLoginAhead(a.gh.probeURL)
+	}
+	if a.identityWillPrint() {
+		if url := a.identityURL(); a.sshLineAsks(url) {
+			a.askSSHLoginAhead(url)
+		}
 	}
 	return nil
 }
