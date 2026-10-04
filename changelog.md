@@ -59,6 +59,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- `status`, `whoami` and every command's identity block ask gh and ssh who you are at the same time, not one after the other, and read gh's active account from gh's own config instead of asking GitHub. In an account folder on a slow network that waits about a third as long. `account list` asks gh about every account at once.
+
 - `account apply` names each account's git config file for its host and login, such as `accounts/gitea.com_ada.gitconfig`, so the same login on two hosts no longer looks like one account. Two accounts that share both also carry their own names. A file left from an older name is listed in the output and kept.
 
 - `--version`, `--about` and `--donate` work after a command, as `--help` always has. `-v` still counts only as the first word, so it can't turn a command into a silent no-op.

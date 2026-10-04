@@ -10,6 +10,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"regexp"
@@ -176,7 +177,13 @@ func (a *app) sshLogin(url string) string {
 	if who, asked := a.gh.sshLogins[url]; asked {
 		return who
 	}
-	who := probeSSHLogin(url, a.gitSSHCommand())
+	var who string
+	if pending := a.gh.sshAhead[url]; pending != nil {
+		delete(a.gh.sshAhead, url)
+		who = pending.wait()
+	} else {
+		who = probeSSHLogin(context.Background(), os.Environ(), url, a.gitSSHCommand())
+	}
 	if a.gh.sshLogins == nil {
 		a.gh.sshLogins = map[string]string{}
 	}
@@ -184,7 +191,20 @@ func (a *app) sshLogin(url string) string {
 	return who
 }
 
-func probeSSHLogin(url, sshCommand string) string {
+// askSSHLoginAhead starts the sshLogin probe without waiting for it. Everything
+// it reads from the run is read here, on this goroutine.
+func (a *app) askSSHLoginAhead(url string) {
+	if _, asked := a.gh.sshLogins[url]; asked || a.gh.sshAhead[url] != nil {
+		return
+	}
+	ctx, env, sshCommand := a.probeContext(), os.Environ(), a.gitSSHCommand()
+	if a.gh.sshAhead == nil {
+		a.gh.sshAhead = map[string]*ahead[string]{}
+	}
+	a.gh.sshAhead[url] = startAhead(func() string { return probeSSHLogin(ctx, env, url, sshCommand) })
+}
+
+func probeSSHLogin(ctx context.Context, env []string, url, sshCommand string) string {
 	target := sshConnectTarget(url)
 	if target == "" || !inPath("ssh") {
 		return "?"
@@ -197,7 +217,9 @@ func probeSSHLogin(url, sshCommand string) string {
 	// Both streams: ssh writes host-key and missing-identity warnings ahead of the
 	// greeting, so it is not reliably the first line - anchoring to the whole output
 	// answered '?' for exactly the multi-key setups this exists for.
-	out, _ := exec.Command(sshCmd[0], args...).CombinedOutput()
+	probe := exec.CommandContext(ctx, sshCmd[0], args...)
+	probe.Env = env
+	out, _ := probe.CombinedOutput()
 	for _, line := range splitLines(string(out)) {
 		for _, greeting := range sshGreetingREs {
 			if m := greeting.FindStringSubmatch(line); m != nil {
