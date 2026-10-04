@@ -214,37 +214,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: every `darwin` and `arm64` reader in the repo. release.bash, config.bash, both installers, the installer and release fixtures in test.bash, README, design.md and the changelog. cicd.bash dogfood already joins. Nothing in `src-go` reads asset names. `legacy/` is frozen.
 	- Verified: stage 7 on b26 (2026-10-04) passed the installer checks with stubbed downloads, `[ErgCzfP]`, `[ErgCzfc]` and `[ErgCzfq]` among them.
 
-- test.bash removes the folder it was started from when mktemp fails
-	- ID: 2026100415391365
-	- Type: Bug
-	- Status: Queued
-	- Priority|Severity [Bug]: High
-	- Opened: 20261004-153913
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]:
-		- Run `cicd/test.bash` with `TMPDIR` set to something that isn't a folder, such as a file.
-	- Incorrect behavior [Bug]: `mktemp -d` fails, and `work` ends up as the current folder. The exit trap then runs `rm -rf` on it. Started from the repo root, that is the whole checkout, `.git` included.
-	- Expected behavior [Bug]: The suite stops before it sets the trap, and removes nothing.
-	- Reproduced [Bug]: Yes, 2026-10-04 on b23, against a scratch folder, which was removed. The same day it removed the gitsby checkout, which came back whole from the 15:30 ZFS snapshot.
-	- Possible cause [Bug]: test.bash line 32 is `work="$(cd "$(mktemp -d ...)" && pwd -P)"`. The mktemp failure is lost, and `cd ""` succeeds without moving.
-	- Note: a probable fix checks the mktemp result before resolving it, and refuses a `work` that isn't a `gitsby-test.*` folder before arming the trap. A grep of `cicd` and the installers finds no other `cd "$(mktemp` site.
-
-- Run the tests on FreeBSD and on Linux arm64 in stage 7 too
-	- ID: 2026100413264100
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature]: Avg
-	- Opened: 20261004-132641
-	- Opened by: jim-collier
-	- Related IDs: 2026100312332924
-	- Target OS: FreeBSD, Linux arm64
-	- Requirements  [Feature]:
-		- Two more test boxes share the host lock: vmFreeBSD and vmDebARM64. Both are VMs with a virtual display.
-		- Stage 7 runs the cross-built Go tests on each, against the FreeBSD amd64 and Linux arm64 builds, the same way it does on vm925w.
-		- test.bash runs there too where bash and the tools it needs are on the box.
-		- A box that is off or reserved is skipped, the same as the others.
-	- Note: FreeBSD and Linux arm64 are published targets that no test has run on yet.
-
 - Release notes group the downloads in a table
 	- ID: 2026100415020736
 	- Type: Enhancement
@@ -275,6 +244,37 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: 72ae04b
 	- Test case: test.bash `[Erm33Wu]`, `[Erm33X8]`, `[Erm33XL]`, `[Erm33XZ]`, `[Erm33Xn]`.
 	- Note: the installers read `SHA256SUMS` and the release list, never the body, so they are untouched.
+
+- test.bash removes the folder it was started from when mktemp fails
+	- ID: 2026100415391365
+	- Type: Bug
+	- Status: Queued
+	- Priority|Severity [Bug]: High
+	- Opened: 20261004-153913
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- Run `cicd/test.bash` with `TMPDIR` set to something that isn't a folder, such as a file.
+	- Incorrect behavior [Bug]: `mktemp -d` fails, and `work` ends up as the current folder. The exit trap then runs `rm -rf` on it. Started from the repo root, that is the whole checkout, `.git` included.
+	- Expected behavior [Bug]: The suite stops before it sets the trap, and removes nothing.
+	- Reproduced [Bug]: Yes, 2026-10-04 on b23, against a scratch folder, which was removed. The same day it removed the gitsby checkout, which came back whole from the 15:30 ZFS snapshot.
+	- Possible cause [Bug]: test.bash line 32 is `work="$(cd "$(mktemp -d ...)" && pwd -P)"`. The mktemp failure is lost, and `cd ""` succeeds without moving.
+	- Note: a probable fix checks the mktemp result before resolving it, and refuses a `work` that isn't a `gitsby-test.*` folder before arming the trap. A grep of `cicd` and the installers finds no other `cd "$(mktemp` site.
+
+- Run the tests on FreeBSD and on Linux arm64 in stage 7 too
+	- ID: 2026100413264100
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature]: Avg
+	- Opened: 20261004-132641
+	- Opened by: jim-collier
+	- Related IDs: 2026100312332924
+	- Target OS: FreeBSD, Linux arm64
+	- Requirements  [Feature]:
+		- Two more test boxes share the host lock: vmFreeBSD and vmDebARM64. Both are VMs with a virtual display.
+		- Stage 7 runs the cross-built Go tests on each, against the FreeBSD amd64 and Linux arm64 builds, the same way it does on vm925w.
+		- test.bash runs there too where bash and the tools it needs are on the box.
+		- A box that is off or reserved is skipped, the same as the others.
+	- Note: FreeBSD and Linux arm64 are published targets that no test has run on yet.
 
 - Code Review 20261003 enhancement 7: Go code tidy
 	- ID: 2026100313130047
