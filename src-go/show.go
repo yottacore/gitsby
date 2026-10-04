@@ -483,11 +483,11 @@ func (a *app) showAccountApplied() {
 	}
 	a.out.clean(acctLabel + line)
 	a.showAccountFrom()
-	switch {
-	case a.acct.tokenWho == "?":
+	switch tokenWho := a.tokenFileWho(); {
+	case tokenWho == "?":
 		a.showAccountNote("Note", "gh is unreachable or not installed here, so the token could not be checked against the account it claims.")
-	case a.acct.tokenWho != "" && a.acct.tokenWho != a.acct.ghWho:
-		a.showAccountNote("Warn", "its token file authenticates as '"+a.acct.tokenWho+
+	case tokenWho != "" && tokenWho != a.acct.ghWho:
+		a.showAccountNote("Warn", "its token file authenticates as '"+tokenWho+
 			"', so that is who anything pushed from here goes out as.")
 	}
 }
@@ -528,6 +528,26 @@ func readSSHConfig(target string) sshConfig {
 		}
 	}
 	return cfg
+}
+
+// sshLineAsks: whether the SSH line will ask the host who the key is, so the
+// probe can start before the lines ahead of it print. The same tests showSSHLine
+// makes, less the 'ssh -G' read, which names a host for any target it can parse.
+func (a *app) sshLineAsks(remoteURL string) bool {
+	return sshTarget(remoteURL) != "" && inPath("ssh") && !a.isOffline()
+}
+
+// identityURL is the remote showIdentity is handed, worked out before
+// showBeforeState gets there: a clone shows the url it clones, a create or connect
+// outside a repo the one it is about to set, and everything else origin.
+func (a *app) identityURL() string {
+	switch {
+	case a.cmd.name == "repo-clone":
+		return a.tgt.cloneURL
+	case a.cmd.mutating && !a.inRepo:
+		return a.tgt.connectURL
+	}
+	return a.originURL()
 }
 
 func (a *app) showSSHLine(remoteURL string) {

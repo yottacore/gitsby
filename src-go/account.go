@@ -10,10 +10,13 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 )
 
@@ -161,6 +164,39 @@ func (a *app) ghTokenFor(who string) string {
 	}
 	a.gh.tokens[who] = token
 	return token
+}
+
+// askGhTokens asks gh for every login at once, ahead of a listing that prints
+// them in turn. A handful at a time: one gh each, and a long accounts file should
+// not start them all together. One login is left to ghTokenFor - nothing to
+// overlap it with.
+func (a *app) askGhTokens(logins []string) {
+	var asking []string
+	for _, who := range logins {
+		if _, asked := a.gh.tokens[who]; !asked && who != "" && !slices.Contains(asking, who) {
+			asking = append(asking, who)
+		}
+	}
+	if len(asking) < 2 {
+		return
+	}
+	answers := make([]string, len(asking))
+	slots := make(chan struct{}, 8)
+	var wg sync.WaitGroup
+	for i, who := range asking {
+		wg.Go(func() {
+			slots <- struct{}{}
+			defer func() { <-slots }()
+			answers[i] = probeGhToken(who)
+		})
+	}
+	wg.Wait()
+	if a.gh.tokens == nil {
+		a.gh.tokens = map[string]string{}
+	}
+	for i, who := range asking {
+		a.gh.tokens[who] = answers[i]
+	}
 }
 
 // probeGhToken asks gh's own credential store - no network, no prompt - so it
@@ -425,12 +461,13 @@ func (a *app) selectAccount(skipGhProbe bool) error {
 	onGitHubHost := isGitHubHost(credHost)
 	switch {
 	case token != "":
-		// Asked BEFORE the token lands, or the probe answers as the token we are about
-		// to export and the line can only ever say what it already knows. Naming the
-		// account this one replaces is display only, and asking is a live API round
-		// trip. '?' means gh held no account at all.
+		// Asked BEFORE the token lands: where the answer comes from the API, it would
+		// otherwise come back as the token we are about to export, and the line could
+		// only ever say what it already knows. Naming the account this one replaces is
+		// display only, so it skips a run that prints no block. '?' means gh held no
+		// account at all.
 		if onGitHubHost && !skipGhProbe {
-			if active := a.ghLogin(); active != a.acct.ghWho && active != "?" {
+			if active := a.ghActiveLogin(credHost); active != a.acct.ghWho && active != "?" {
 				a.acct.switchedFrom = active
 			}
 		}
@@ -452,10 +489,12 @@ func (a *app) selectAccount(skipGhProbe bool) error {
 			// config key beside it, and a stale file reports that name and pushes as
 			// somebody else. Drop the pre-token answer so the probe below runs with the
 			// token, and ask GitHub who it really belongs to. Only when a block will
-			// print it: this is a live round trip.
+			// print it: this is a live round trip, started now so it runs alongside the
+			// fetch and the ssh probe rather than ahead of them.
 			a.gh.login.forget()
 			if !skipGhProbe {
-				a.acct.tokenWho = a.ghLogin()
+				a.askGhLoginAhead()
+				a.acct.checkTokenWho = true
 			}
 		}
 		// The same token is what lets git itself push as this account over https,
@@ -553,18 +592,64 @@ func localIdentityKeys() map[string]bool {
 // regardless of which key git pushes with. '?' when gh can't say.
 func (a *app) ghLogin() string {
 	return a.gh.login.get(func() string {
-		if !inPath("gh") {
-			return "?"
+		if pending := a.gh.loginAhead; pending != nil {
+			a.gh.loginAhead = nil
+			return pending.wait()
 		}
-		cmd := exec.Command("gh", "api", "user", "--jq", ".login")
-		cmd.Env = append(os.Environ(), "GH_PROMPT_DISABLED=1")
-		out, err := cmd.Output()
-		if err != nil {
-			return "?"
-		}
-		if login := strings.TrimRight(string(out), "\r\n"); login != "" {
-			return login
-		}
-		return "?"
+		return probeGhLogin(context.Background(), os.Environ())
 	})
+}
+
+// askGhLoginAhead starts the ghLogin probe without waiting for it. The
+// environment is taken now, on this goroutine: the token just exported is the one
+// being asked about.
+func (a *app) askGhLoginAhead() {
+	if a.gh.login.known || a.gh.loginAhead != nil {
+		return
+	}
+	ctx, env := a.probeContext(), os.Environ()
+	a.gh.loginAhead = startAhead(func() string { return probeGhLogin(ctx, env) })
+}
+
+func probeGhLogin(ctx context.Context, env []string) string {
+	if !inPath("gh") {
+		return "?"
+	}
+	cmd := exec.CommandContext(ctx, "gh", "api", "user", "--jq", ".login")
+	cmd.Env = append(env, "GH_PROMPT_DISABLED=1")
+	out, err := cmd.Output()
+	if err != nil {
+		return "?"
+	}
+	if login := strings.TrimRight(string(out), "\r\n"); login != "" {
+		return login
+	}
+	return "?"
+}
+
+// ghActiveLogin names the account gh is logged in to a host as, from gh's own
+// config: no network. A token in the environment outranks that login, and only
+// the API can say whose it is.
+func (a *app) ghActiveLogin(host string) string {
+	for _, name := range []string{"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"} {
+		if os.Getenv(name) != "" {
+			return a.ghLogin()
+		}
+	}
+	if !inPath("gh") {
+		return "?"
+	}
+	if who := runOut("gh", "config", "get", "-h", host, "user"); who != "" {
+		return who
+	}
+	return "?"
+}
+
+// tokenFileWho is who a file-sourced token authenticates as, or nothing when this
+// run did not ask.
+func (a *app) tokenFileWho() string {
+	if !a.acct.checkTokenWho {
+		return ""
+	}
+	return a.ghLogin()
 }

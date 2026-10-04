@@ -1486,8 +1486,11 @@ case "$1 $2" in
 	"api user")    ## Whose token gh is holding - the exported one when there is one, like the real
 	               ## thing. A probe run after the switch can then only ever answer with the account
 	               ## it just switched to, which is what the pre-switch probe exists to avoid.
+	               ## FAKE_NET_DELAY stands in for the round trip.
+	               [[ -n "${FAKE_NET_DELAY:-}" ]] && sleep "${FAKE_NET_DELAY}"
 	               if [[ -n "${GH_TOKEN:-}" ]]; then echo "${GH_TOKEN#tok_}"; else echo "${FAKE_GH_LOGIN:-ghuser}"; fi ;;
 	"auth token")  ## accounts gh holds, space separated; exit 1 for anyone else, like the real thing
+	               [[ -n "${FAKE_GH_TOKEN_DELAY:-}" ]] && sleep "${FAKE_GH_TOKEN_DELAY}"
 	               case " ${FAKE_GH_ACCOUNTS:-} " in *" $4 "*) echo "tok_$4" ;; *) exit 1 ;; esac ;;
 	"repo view")   ## Real gh distinguishes these on stderr, and gitsby now reads it: a name that
 	               ## resolves to nothing is not the same answer as an API it couldn't reach.
@@ -1497,7 +1500,8 @@ case "$1 $2" in
 	                 empty)    echo true ;;
 	                 nonempty) echo false ;;
 	               esac ;;
-	"config get")  echo "${FAKE_GH_PROTO:-https}" ;;
+	"config get")  ## The host's 'user' is gh's active login, read from its config with no token involved.
+	               if [[ " $* " == *" user "* ]]; then echo "${FAKE_GH_LOGIN:-ghuser}"; else echo "${FAKE_GH_PROTO:-https}"; fi ;;
 	"pr list")     echo "${FAKE_GH_EXISTING:-}" ;;  ## an already-open PR number for this branch, or nothing
 	"pr create")   echo "https://github.com/me/proj/pull/${FAKE_GH_NEWPR:-1}" ;;
 	"pr review")   : ;;  ## gitsby treats approval as best-effort; nothing to fake
@@ -1544,6 +1548,7 @@ GHEOF
 		done
 		[[ "${mode}" == "G" ]] && { printf 'user git\nhostname github.com\n'; exit 0; }
 		if [[ "${mode}" == "T" ]]; then
+			[[ -n "${FAKE_NET_DELAY:-}" ]] && sleep "${FAKE_NET_DELAY}"
 			login="${FAKE_SSH_LOGIN:-${FAKE_GH_LOGIN:-ghuser}}"
 			[[ -n "${key}" ]] && login="$(basename "${key}")"
 			echo "Hi ${login}! You've successfully authenticated, but GitHub does not provide shell access."
@@ -1825,6 +1830,42 @@ GHEOF
 	## answers as the token just exported and the line can only ever say what it already knows.
 	fAssertOut "[EnPP5qV] the identity block names the account gh was on before the switch"  "gh's active account is 'someoneelse'" \
 		bash -c "cd '${idn}/cfg' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse configured' '${gitsby}' -q -NoFetch identity 2>&1"
+	## gh's config names its own login, but a token already in the environment outranks it, and
+	## only the API can say whose that is. A regression guard: the build that asked the API every
+	## time passes it too.
+	fAssertOut "[ErkSC4m] a token already in the environment is named by the API, not by gh's config"  "gh's active account is 'inherited'" \
+		bash -c "cd '${idn}/cfg' && ${idEnv} GH_TOKEN=tok_inherited FAKE_GH_ACCOUNTS='someoneelse configured' '${gitsby}' -q -NoFetch identity 2>&1"
+
+	## The token-file check and the ssh probe are both round trips, and in turn the identity block
+	## waited on the sum of them. At a second each, together is a little over one, and in turn is
+	## two or more. The lines are checked too, so a run that skipped a probe can't pass on speed.
+	local idPar="${idn}/par.gitconfig" idParFrom="" idParT0=0 idParT1=0
+	git config --file "${idPar}" gitsby.ghTokenFile "${idn}/token.txt"
+	for idParFrom in status whoami; do
+		idParT0="$(date +%s%N)"
+		( cd "${idn}/cfg" && env PATH="${ghp}" FAKE_GH_LOGIN=someoneelse FAKE_GH_ACCOUNTS=someoneelse FAKE_NET_DELAY=1 GIT_CONFIG_GLOBAL="${idPar}" "${gitsby}" -q -NoFetch "${idParFrom}" > "${idn}/par-${idParFrom}.out" 2>&1 ) || true
+		idParT1="$(date +%s%N)"
+		case "${idParFrom}" in
+			status) fAssert "[ErkSC4L] status in a token-file folder asks gh and ssh together" \
+				bash -c "grep -q \"authenticates as 'fromfile'\" '${idn}/par-status.out' && grep -q '^SSH \.*: someoneelse ' '${idn}/par-status.out' && (( ${idParT1} - ${idParT0} < 1700000000 ))" ;;
+			whoami) fAssert "[ErkSctG] whoami there does too" \
+				bash -c "grep -q \"authenticates as 'fromfile'\" '${idn}/par-whoami.out' && grep -q '^SSH \.*: someoneelse ' '${idn}/par-whoami.out' && (( ${idParT1} - ${idParT0} < 1700000000 ))" ;;
+		esac
+	done
+
+	## The listing asks gh's store about every login, and in turn it waited on each. Three at a
+	## second each is about one together. Run where no account applies, so only the listing asks.
+	mkdir -p "${idn}/plain"
+	cat > "${idn}/three.shcl" <<-EOF
+		account.one.ghAccount   = one
+		account.two.ghAccount   = two
+		account.three.ghAccount = three
+	EOF
+	idParT0="$(date +%s%N)"
+	( cd "${idn}/plain" && env PATH="${ghp}" FAKE_GH_ACCOUNTS=two FAKE_GH_TOKEN_DELAY=1 "${gitsby}" -q --config "${idn}/three.shcl" account list > "${idn}/par-list.out" 2>&1 ) || true
+	idParT1="$(date +%s%N)"
+	fAssert "[ErkSC4Z] account list asks gh about every login together" \
+		bash -c "[[ \"\$(grep -c 'token \.*: ' '${idn}/par-list.out')\" == 3 ]] && grep -q \"token \.*: gh's own store\" '${idn}/par-list.out' && (( ${idParT1} - ${idParT0} < 1800000000 ))"
 
 	## The remote's owner is the step that needs no configuration at all, and it is the one step a
 	## clone cannot use. The repo being cloned is as likely a stranger's as ours, and the repo we are
@@ -3058,6 +3099,7 @@ GHEOF
 			"auth token") [[ "${3:-}" == "--user" && "${4:-}" == "workacct" ]] && { echo "gho_faketoken"; exit 0; }; exit 1 ;;
 			"api user")   [[ -n "${FAKE_GH_PROMPT_LOG:-}" ]] && echo "${GH_PROMPT_DISABLED-UNSET}" >> "${FAKE_GH_PROMPT_LOG}"
 			              echo "${FAKE_GH_ACTIVE:-otheracct}"; exit 0 ;;
+			"config get") [[ " $* " == *" user "* ]] && { echo "${FAKE_GH_ACTIVE:-otheracct}"; exit 0; } ;;
 		esac
 		exit 1
 	EOF
@@ -3127,19 +3169,21 @@ GHEOF
 	## work account has one in the stub, so only it says so.
 	fAssertOut    "[EmMuR5j] the held token is what enables https auth"  'git over https'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	fAssertNotOut "[EmMuR5k] and an account with no token claims nothing" 'git over https' bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
-	## Asking gh who is logged in is a live API round trip, and only the identity block reads the
-	## answer. The token lookup still has to happen, or the account is not applied at all.
+	## Only the identity block reads who gh is logged in as. The token lookup still has to happen,
+	## or the account is not applied at all. gh's config answers it with no round trip; the API is
+	## asked only where a token in the environment outranks that login.
 	: > "${ac}/probe-status.log"; : > "${ac}/probe-br.log"; : > "${ac}/probe-raw.log"
 	fAssert "[Er1LxSk] status asks gh who is logged in, for the identity block" \
-		bash -c "cd '${acWork}' && env ${acEnv} FAKE_GH_LOG='${ac}/probe-status.log' '${gitsby}' -q -NoFetch status >/dev/null && grep -q '^api user' '${ac}/probe-status.log'"
+		bash -c "cd '${acWork}' && env ${acEnv} FAKE_GH_LOG='${ac}/probe-status.log' '${gitsby}' -q -NoFetch status >/dev/null && grep -q '^config get -h github.com user' '${ac}/probe-status.log' && ! grep -q '^api user' '${ac}/probe-status.log'"
 	fAssert "[Er1LxSl] a command that prints no identity block does not" \
-		bash -c "cd '${acWork}' && env ${acEnv} FAKE_GH_LOG='${ac}/probe-br.log' '${gitsby}' -q -NoFetch br list >/dev/null && grep -q '^auth token' '${ac}/probe-br.log' && ! grep -q '^api user' '${ac}/probe-br.log'"
+		bash -c "cd '${acWork}' && env ${acEnv} FAKE_GH_LOG='${ac}/probe-br.log' '${gitsby}' -q -NoFetch br list >/dev/null && grep -q '^auth token' '${ac}/probe-br.log' && ! grep -qE '^(api user|config get -h [^ ]+ user)' '${ac}/probe-br.log'"
 	fAssert "[Er1LxSm] and neither does raw" \
-		bash -c "cd '${acWork}' && env ${acEnv} FAKE_GH_LOG='${ac}/probe-raw.log' '${gitsby}' -q raw git status >/dev/null && grep -q '^auth token' '${ac}/probe-raw.log' && ! grep -q '^api user' '${ac}/probe-raw.log'"
-	## gh can stop and ask to log in, and nobody is there to answer a probe.
+		bash -c "cd '${acWork}' && env ${acEnv} FAKE_GH_LOG='${ac}/probe-raw.log' '${gitsby}' -q raw git status >/dev/null && grep -q '^auth token' '${ac}/probe-raw.log' && ! grep -qE '^(api user|config get -h [^ ]+ user)' '${ac}/probe-raw.log'"
+	## gh can stop and ask to log in, and nobody is there to answer a probe. A token already in the
+	## environment is what still sends the login question to the API.
 	: > "${ac}/prompt.log"
 	fAssert "[Er1LxSn] the gh login probe turns gh's prompts off" \
-		bash -c "cd '${acWork}' && env -u GH_PROMPT_DISABLED ${acEnv} FAKE_GH_PROMPT_LOG='${ac}/prompt.log' '${gitsby}' -q -NoFetch status >/dev/null && grep -q . '${ac}/prompt.log' && ! grep -qvx 1 '${ac}/prompt.log'"
+		bash -c "cd '${acWork}' && env -u GH_PROMPT_DISABLED ${acEnv} GH_TOKEN=gho_inherited FAKE_GH_PROMPT_LOG='${ac}/prompt.log' '${gitsby}' -q -NoFetch status >/dev/null && grep -q . '${ac}/prompt.log' && ! grep -qvx 1 '${ac}/prompt.log'"
 	## A value typed for one repo specifically outranks a rule about a whole tree. A regression
 	## guard, not a discriminating check: code with no accounts at all reads the same repo-local
 	## value and passes it too. What it is here to catch is a future account that overrides one.
@@ -5359,6 +5403,7 @@ EOF
 		case "$1 $2" in
 			"auth token") exit 1 ;;
 			"api user")   echo "${FAKE_GH_ACTIVE:-someoneelse}"; exit 0 ;;
+			"config get") [[ " $* " == *" user "* ]] && { echo "${FAKE_GH_ACTIVE:-someoneelse}"; exit 0; } ;;
 		esac
 		exit 1
 	GHEOF

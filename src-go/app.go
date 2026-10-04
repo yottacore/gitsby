@@ -9,7 +9,10 @@
 
 package main
 
-import "os"
+import (
+	"context"
+	"os"
+)
 
 // cached remembers one answer that costs a process to ask for, and keeps "not
 // asked yet" apart from "asked, and the answer is nothing" - which is the
@@ -33,6 +36,29 @@ func (c *cached[T]) set(value T) {
 func (c *cached[T]) forget() {
 	var zero T
 	c.value, c.known = zero, false
+}
+
+// ahead is an answer worked out on a goroutine of its own, for a round trip the
+// run would otherwise sit and wait on in turn. The goroutine touches nothing but
+// its own fields, and ends when ask does; ask runs its child under the run's probe
+// context, so the end of the run kills one nobody read.
+type ahead[T any] struct {
+	done  chan struct{}
+	value T
+}
+
+func startAhead[T any](ask func() T) *ahead[T] {
+	pending := &ahead[T]{done: make(chan struct{})}
+	go func() {
+		defer close(pending.done)
+		pending.value = ask()
+	}()
+	return pending
+}
+
+func (p *ahead[T]) wait() T {
+	<-p.done
+	return p.value
 }
 
 // options is everything the parser can be told. The whole vocabulary is taken
@@ -115,6 +141,10 @@ type ghState struct {
 	// Keyed by remote: one slot answered for whichever url asked first, and three
 	// callers ask about three different ones in the same run.
 	sshLogins map[string]string
+	// The same two questions, already asked and not yet read. Each probe is a
+	// network round trip, and in turn the identity block waited on the sum of them.
+	loginAhead *ahead[string]
+	sshAhead   map[string]*ahead[string]
 	// Keyed by login: the listing asks after every account that names one, and
 	// 'account set' prints that listing before its own edit, so the same names come
 	// round more than once. Nothing logs gh in or out mid-run, and the answer is
@@ -141,9 +171,9 @@ type account struct {
 	// --any-identity: nothing was selected at all, and the block must not read as
 	// though it had been.
 	bypassed bool
-	// Who a file-sourced token actually authenticates as. The name above came from
-	// a config key, which a stale file will happily agree with.
-	tokenWho string
+	// Whether to ask who a file-sourced token actually authenticates as. The name
+	// above came from a config key, which a stale file will happily agree with.
+	checkTokenWho bool
 	// A token file other users on this machine can read, named so it can be fixed.
 	looseTokenFile string
 
@@ -190,6 +220,10 @@ type app struct {
 	// Measured once: measuring twice in one run would only let the plan and the
 	// after-shot wrap differently.
 	termWidth cached[int]
+
+	// Ends with the run, and takes any probe still going with it.
+	probeCtx  context.Context
+	probeStop context.CancelFunc
 }
 
 func newApp(out *printer) *app {
@@ -202,5 +236,22 @@ func newApp(out *printer) *app {
 		stamp: stampNow(),
 
 		userSSHCommand: os.Getenv("GIT_SSH_COMMAND") != "",
+	}
+}
+
+// probeContext is what a probe started ahead runs under. Made on first use, so an
+// app built bare in a test still has one.
+func (a *app) probeContext() context.Context {
+	if a.probeCtx == nil {
+		a.probeCtx, a.probeStop = context.WithCancel(context.Background())
+	}
+	return a.probeCtx
+}
+
+// endProbes kills whatever was asked ahead and never read: a refusal can end the
+// run before the line that wanted the answer prints.
+func (a *app) endProbes() {
+	if a.probeStop != nil {
+		a.probeStop()
 	}
 }
