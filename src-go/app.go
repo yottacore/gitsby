@@ -98,6 +98,8 @@ type repoState struct {
 	currentBranch  cached[string]
 	upstream       cached[upstreamRef]
 	branches       cached[branchRefs]
+	originHead     cached[string]
+	ownTokenFile   cached[string]
 	aheadBehind    cached[[2]int]
 	contextDir     cached[string]
 	defaultBranch  cached[string]
@@ -114,6 +116,8 @@ func (r *repoState) forget() {
 	r.currentBranch.forget()
 	r.upstream.forget()
 	r.branches.forget()
+	r.originHead.forget()
+	r.ownTokenFile.forget()
 	r.aheadBehind.forget()
 	r.contextDir.forget()
 }

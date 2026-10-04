@@ -12,6 +12,7 @@ package main
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 )
@@ -203,12 +204,26 @@ func (a *app) settleCommand(argv []string) error {
 // 'whoami' too: which account a folder belongs to is worth asking before there
 // is a repo in it.
 func (a *app) enterRepo() error {
-	// One call, three answers. The exit code is no use here: rev-parse answers all
+	// One call, four answers. The exit code is no use here: rev-parse answers all
 	// of these in text and exits zero either way, so success says only that we are
 	// somewhere git understands - which a bare repo and the .git directory itself
 	// both are, and neither is a place where any of this means anything. A bare one
 	// answers true to --is-inside-git-dir as well, so it has to be named first.
-	answers := runLines("git", "rev-parse", "--is-inside-work-tree", "--is-inside-git-dir", "--is-bare-repository")
+	// The top level comes fourth, for folder matching. Outside a work tree git
+	// refuses that one and exits nonzero after printing the other three, so the
+	// output is read whatever the exit code says.
+	out, _ := exec.Command("git", "rev-parse", "--is-inside-work-tree", "--is-inside-git-dir", "--is-bare-repository", "--show-toplevel").Output()
+	var answers []string
+	for _, line := range splitLines(string(out)) {
+		if line != "" {
+			answers = append(answers, line)
+		}
+	}
+	top := ""
+	if len(answers) == 4 && answers[0] == "true" {
+		top, answers = answers[3], answers[:3]
+	}
+	a.git.contextDir.set(topOrWorkingDir(top))
 	if len(answers) == 3 {
 		if answers[2] == "true" {
 			return usagef("This is a bare repository: no working tree, so there is nothing here to commit, switch or push. Work in a clone of it instead.")

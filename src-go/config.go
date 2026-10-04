@@ -873,12 +873,16 @@ func (c *config) loginOf(name string) string {
 // directory when not - which is what a fresh 'repo clone' has to go on.
 func (a *app) contextDir() string {
 	return a.git.contextDir.get(func() string {
-		if top := runOut("git", "rev-parse", "--show-toplevel"); top != "" {
-			return top
-		}
-		// A cwd nothing can name leaves the context empty, which reads as "nowhere"
-		// to every rule that matches against it.
-		wd, _ := os.Getwd()
-		return wd
+		return topOrWorkingDir(runOut("git", "rev-parse", "--show-toplevel"))
 	})
+}
+
+func topOrWorkingDir(top string) string {
+	if top != "" {
+		return top
+	}
+	// A cwd nothing can name leaves the context empty, which reads as "nowhere"
+	// to every rule that matches against it.
+	wd, _ := os.Getwd()
+	return wd
 }
