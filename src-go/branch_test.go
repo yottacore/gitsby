@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -104,5 +105,32 @@ func TestUpstreamNames(t *testing.T) { // [Erl1x3E]
 	}
 	if got := a.upstream(); got != tests[0].want {
 		t.Errorf("upstream() = %v, want %v", got, tests[0].want)
+	}
+}
+
+// git shortens a ref as far as it stays unambiguous, so a tag sharing the short
+// name made origin's default read as "remotes/origin/main", and an unborn one as
+// "heads/main". The name comes from the full ref, whatever tags exist.
+func TestDefaultBranchBesideSameNamedTag(t *testing.T) { // [Erl643f]
+	_, clone := gitTestRepo(t)
+	runGit(t, clone, "remote", "set-head", "origin", "main")
+	runGit(t, clone, "tag", "origin/main")
+	t.Chdir(clone)
+	if got := newApp(newPrinter()).defaultBranch(); got != "main" {
+		t.Errorf("defaultBranch() beside tag origin/main = %q, want main", got)
+	}
+
+	unborn := filepath.Join(t.TempDir(), "unborn")
+	runGit(t, filepath.Dir(unborn), "init", "-q", "-b", "trunkish", unborn)
+	hash := exec.Command("git", "hash-object", "-w", "--stdin")
+	hash.Dir = unborn
+	blob, err := hash.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, unborn, "tag", "trunkish", strings.TrimSpace(string(blob)))
+	t.Chdir(unborn)
+	if got := newApp(newPrinter()).defaultBranch(); got != "trunkish" {
+		t.Errorf("unborn defaultBranch() beside tag trunkish = %q, want trunkish", got)
 	}
 }

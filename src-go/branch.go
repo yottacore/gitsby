@@ -186,18 +186,19 @@ func (a *app) defaultBranch() string {
 	return a.git.defaultBranch.get(a.resolveDefaultBranch)
 }
 
-// originHead is origin/HEAD's target, short, "" when there is none. The fetch
-// reads it to decide whether to heal it, and the default branch comes from the
-// same answer.
+// originHead is origin/HEAD's target as a full ref, "" when there is none. The
+// fetch reads it to decide whether to heal it, and the default branch comes from
+// the same answer. Never --short: git lengthens that to 'remotes/origin/main'
+// when a tag is named 'origin/main'.
 func (a *app) originHead() string {
 	return a.git.originHead.get(func() string {
-		return runOut("git", "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD")
+		return runOut("git", "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD")
 	})
 }
 
 func (a *app) resolveDefaultBranch() string {
-	if originHead := a.originHead(); originHead != "" {
-		return strings.TrimPrefix(originHead, "origin/")
+	if branch, ok := strings.CutPrefix(a.originHead(), "refs/remotes/origin/"); ok && branch != "" {
+		return branch
 	}
 	for _, name := range []string{"main", "master", "trunk"} {
 		if a.branchExistsLocal(name) {
@@ -213,7 +214,7 @@ func (a *app) resolveDefaultBranch() string {
 	}
 	// Unborn HEAD: nothing exists yet, so the name it will get is the honest answer.
 	if len(locals) == 0 {
-		if head := runOut("git", "symbolic-ref", "--quiet", "--short", "HEAD"); head != "" {
+		if head, ok := strings.CutPrefix(runOut("git", "symbolic-ref", "--quiet", "HEAD"), "refs/heads/"); ok && head != "" {
 			return head
 		}
 		return "main"
