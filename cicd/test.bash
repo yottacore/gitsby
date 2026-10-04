@@ -224,7 +224,7 @@ fBinHas(){ local -a st; LC_ALL=C tr -d '\000' < "$1" | LC_ALL=C grep -aqF -- "$2
 	if [[ "${st[0]}" == 0 && "${st[1]}" == 1 ]]; then return 1; fi
 	return 2 ;}
 fBinLacks(){ local rc=0; fBinHas "$@" || rc=$?; [[ "${rc}" == 1 ]] ;}
-fAssertPlan(){   local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
+fAssertPlan(){    local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
 	if     grep -qE "$pat" <<< "$(fPlanOf <<< "${out}")"; then fOk "$desc"; else fFail "$desc"; fi; }
 fAssertNotPlan(){ local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
 	if ! grep -qE "$pat" <<< "$(fPlanOf <<< "${out}")"; then fOk "$desc"; else fFail "$desc"; fi; }
