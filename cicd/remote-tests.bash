@@ -7,17 +7,21 @@
 ##		  Both run in a copy of this tree, git dir included, in the stage's own folder under
 ##		  the box's home, replaced each run. The suite reads the history and builds offline, so
 ##		  the box fetches the Go modules first.
+##		- Other Unix boxes, such as FreeBSD and Linux arm64: the same as the Mac, as each box's
+##		  test user, against the build given for its target. test.bash runs only where the box
+##		  has the tools it needs, and the Go tests run either way.
 ##		- Windows: the Go tests, cross-built, in a folder under %TEMP% made for the run and
 ##		  removed after it. There is no bash on those boxes to run the suite with.
 ##		- Each box is taken through the host lock for the length of its run, and only if it is
 ##		  free right now. A box that is off, unreachable or taken by someone else is skipped
-##		  with a note, and so is the whole stage when there is no lock script. Every Mac in the
-##		  list runs; of the Windows boxes, the first free one does.
+##		  with a note, and so is the whole stage when there is no lock script. Every Mac and
+##		  Unix box in the list runs; of the Windows boxes, the first free one does.
 ##		- The boxes, the lock and the paths are in config.bash, under stage 7.
 ##	Syntax:
-##		cicd/remote-tests.bash [--mac-bin FILE]
+##		cicd/remote-tests.bash [--mac-bin FILE] [--bin GOOS/GOARCH FILE]...
 ##		  --mac-bin FILE  the universal build test.bash runs against on the Mac. Without it the
 ##		                  Mac runs the Go tests only.
+##		  --bin T FILE    the same for the Unix boxes whose target is T, such as freebsd/amd64.
 ##		  (--held is how the script calls itself under the lock, and is not for use by hand.)
 ##	Exit: 0 nothing failed, skipped boxes included; 1 a test failed, or a box could not be set
 ##	      up for one; 2 bad usage.
@@ -42,13 +46,20 @@ source "${here}/config.bash"
 source "${here}/utility/include/go-test-lines.bash"
 
 macBin=""; held=()
+declare -A unixBin=()
 while (($#)); do case "$1" in
 	--mac-bin) [[ -n "${2:-}" ]] || { echo "--mac-bin needs a file" >&2; exit 2; }; macBin="$2"; shift 2 ;;
+	--bin)     [[ "${2:-}" == */* && -n "${3:-}" ]] || { echo "--bin needs a target like freebsd/amd64, then a file" >&2; exit 2; }
+	           [[ -f "$3" ]] || { echo "--bin: no such file: $3" >&2; exit 2; }
+	           unixBin["$2"]="$3"; shift 3 ;;
 	--held)    (($# >= 4)) || { echo "--held needs a kind, a lock name and an ssh name" >&2; exit 2; }; held=("$2" "$3" "$4"); shift 4 ;;
 	-h|--help) sed -n '/^##	Purpose:/,/^##	History:/p' "${BASH_SOURCE[0]}" | sed '$d; s/^##	\{0,1\}//'; exit 0 ;;
 	*)         echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
 esac; done
 [[ -z "${macBin}" || -f "${macBin}" ]] || { echo "--mac-bin: no such file: ${macBin}" >&2; exit 2; }
+for spec in "${REMOTE_UNIX_HOSTS[@]}"; do
+	[[ "${REMOTE_UNIX_TARGETS[${spec%%:*}]:-}" == */* ]] || { echo "config.bash: REMOTE_UNIX_TARGETS has no target like freebsd/amd64 for ${spec%%:*}" >&2; exit 2; }
+done
 
 fEcho_Clean(){ printf '%s\n' "$*"; }
 
@@ -106,11 +117,33 @@ fGoTestFailures(){ grep -vE '^ *(=== (RUN|PAUSE|CONT|NAME)|--- (PASS|SKIP))' "$1
 
 fResult(){ echo "$2" > "${work}/result-$1" ;}
 
-## Under the lock: the Mac $1, reached as $2.
-fRunMac(){
-	local lockName="$1" sshName="$2" rc=0 failed=0 dir log="${work}/gotest-$1.log" bashDir
-	printf -v dir '%q' "${REMOTE_MAC_DIR}"
-	fEcho_Clean "  ${lockName}: copying the tree to ~/${REMOTE_MAC_DIR}/tree"
+## A target's name in file names: freebsd/amd64 -> freebsd-amd64.
+fTag(){ echo "${1/\//-}" ;}
+
+## Under the lock: the Mac or other Unix box $2, reached as $3, by the kind $1. Both get a copy
+## of the tree in the stage's folder under the box's home, run the Go tests built for them there,
+## then test.bash against the build given for them.
+fRunPosix(){
+	local kind="$1" lockName="$2" sshName="$3" rc=0 failed=0 dir log="${work}/gotest-$2.log" bashDir
+	local target tarFile hasBin binName suiteCmd missing="" fetch="go mod download"
+	if [[ "${kind}" == mac ]]; then
+		target="darwin/${REMOTE_MAC_GOARCH}" tarFile="${work}/mac.tar" hasBin="${work}/mac-has-bin" binName="the universal build"
+		printf -v dir '%q' "${REMOTE_MAC_DIR}"
+		## Homebrew's bash first, so the scripts the suite starts by their shebang get it too.
+		printf -v bashDir '%q' "$(dirname "${REMOTE_MAC_BASH}")"
+		suiteCmd="PATH=${bashDir}:\"\$PATH\" ${REMOTE_MAC_BASH} cicd/test.bash"
+	else
+		target="${REMOTE_UNIX_TARGETS[${lockName}]}"
+		tarFile="${work}/unix-$(fTag "${target}").tar" hasBin="${work}/has-bin-$(fTag "${target}")" binName="the ${target} build"
+		printf -v dir '%q' "${REMOTE_UNIX_DIR}"
+		suiteCmd="bash cicd/test.bash"
+		## Only the suite needs these, so a box without them still runs the Go tests.
+		missing="$(fRemote "${sshName}" "echo ${mark}; for t in ${REMOTE_UNIX_NEEDS[*]}; do command -v \"\$t\" >/dev/null 2>&1 || printf '%s ' \"\$t\"; done" -n)" || rc=$?
+		if ((rc)); then fEcho_Clean "  skip: ${lockName}, lost the connection while looking for its tools"; fResult "${lockName}" lost; return 0; fi
+		read -r missing <<< "${missing}"
+		if [[ -n "${missing}" || ! -f "${hasBin}" ]]; then fetch=":"; fi
+	fi
+	fEcho_Clean "  ${lockName}: copying the tree to ~/${dir}/tree"
 	## The marker is checked again right before the removal, and a folder without it is not
 	## this stage's to touch.
 	fRemote "${sshName}" "echo ${mark}
@@ -122,27 +155,28 @@ fRunMac(){
 		if [ -f \"\$d/${ownMark}\" ]; then rm -rf \"\$d/tree\"; fi
 		tar -xf - -C \"\$d\"
 		cd \"\$d/tree/${GO_MODULE_DIR}\"
-		go mod download" < "${work}/mac.tar" || rc=$?
+		${fetch}" < "${tarFile}" || rc=$?
 	if ((rc == 255)); then fEcho_Clean "  skip: ${lockName}, lost the connection while copying the tree"; fResult "${lockName}" lost; return 0; fi
 	if ((rc)); then fEcho_Clean "  FAIL: ${lockName}, could not copy the tree or fetch the Go modules (exit ${rc})"; fResult "${lockName}" fail; return 0; fi
 
-	fEcho_Clean "  ${lockName}: go test (darwin/${REMOTE_MAC_GOARCH})"
+	fEcho_Clean "  ${lockName}: go test (${target})"
 	rc=0
 	fRemote "${sshName}" "echo ${mark}; cd \"\$HOME/${dir}/tree/${GO_MODULE_DIR}\" && ./${EXE_NAME}-test -test.v" -n >"${log}" 2>&1 || rc=$?
 	if ((rc == 255)); then fEcho_Clean "  skip: ${lockName}, lost the connection during go test"; fResult "${lockName}" lost; return 0; fi
 	fGoTestLines "${log}" "${root}/${GO_MODULE_DIR}"
 	if ((rc)); then fGoTestFailures "${log}"; fEcho_Clean "  FAIL: ${lockName} go test"; failed=1; fi
 
-	if [[ -f "${work}/mac-has-bin" ]]; then
-		fEcho_Clean "  ${lockName}: test.bash against the universal build"
-		## Homebrew's bash first, so the scripts the suite starts by their shebang get it too.
-		printf -v bashDir '%q' "$(dirname "${REMOTE_MAC_BASH}")"
+	if [[ ! -f "${hasBin}" ]]; then
+		if [[ "${kind}" == mac ]]; then fEcho_Clean "  skip: test.bash on ${lockName}, since no universal build was given (--mac-bin)"
+		else fEcho_Clean "  skip: test.bash on ${lockName}, since no ${target} build was given (--bin)"; fi
+	elif [[ -n "${missing}" ]]; then
+		fEcho_Clean "  skip: test.bash on ${lockName}, which lacks: ${missing}"
+	else
+		fEcho_Clean "  ${lockName}: test.bash against ${binName}"
 		rc=0
-		fRemote "${sshName}" "echo ${mark}; cd \"\$HOME/${dir}/tree\" && PATH=${bashDir}:\"\$PATH\" ${REMOTE_MAC_BASH} cicd/test.bash" -n || rc=$?
+		fRemote "${sshName}" "echo ${mark}; cd \"\$HOME/${dir}/tree\" && ${suiteCmd}" -n || rc=$?
 		if ((rc == 255)); then fEcho_Clean "  skip: ${lockName}, lost the connection during test.bash"; fResult "${lockName}" lost; return 0; fi
 		if ((rc)); then fEcho_Clean "  FAIL: ${lockName} test.bash"; failed=1; fi
-	else
-		fEcho_Clean "  skip: test.bash on ${lockName}, since no universal build was given (--mac-bin)"
 	fi
 	if ((failed)); then fResult "${lockName}" fail; else fResult "${lockName}" pass; fi
 }
@@ -183,9 +217,9 @@ if ((${#held[@]})); then
 	if [[ -n "${REMOTE_TESTS_ERR_FD:-}" ]]; then exec 2>&"${REMOTE_TESTS_ERR_FD}"; fi
 	: > "${work}/started-${held[1]}"
 	case "${held[0]}" in
-		mac)     fRunMac "${held[1]}" "${held[2]}" ;;
-		windows) fRunWindows "${held[1]}" "${held[2]}" ;;
-		*)       echo "--held: unknown kind '${held[0]}'" >&2; exit 2 ;;
+		mac|unix) fRunPosix "${held[0]}" "${held[1]}" "${held[2]}" ;;
+		windows)  fRunWindows "${held[1]}" "${held[2]}" ;;
+		*)        echo "--held: unknown kind '${held[0]}'" >&2; exit 2 ;;
 	esac
 	exit 0
 fi
@@ -200,9 +234,10 @@ if [[ -z "${lock}" ]]; then
 	exit 0
 fi
 ## The lock reads its settings from variables named after its own file. It keeps two host
-## lists, and hands out only the Windows one for 'any' and 'all', so a Mac goes in the other.
+## lists, and hands out only the Windows one for 'any' and 'all', so a Mac or Unix box goes in
+## the other.
 ## That one starts from the lock's own, so its status still lists the rest while this runs. An
-## older lock has no other list and refuses a Mac by name, which skips it with that note.
+## older lock has no other list and refuses those by name, which skips each with that note.
 ## A caller with a session id is taken to be the whole session, and one that misses keeps its
 ## place in line for minutes, holding the box back from others, so the lock is asked as a
 ## plain process, whose place goes when it exits.
@@ -212,7 +247,7 @@ for spec in "${REMOTE_WINDOWS_HOSTS[@]}"; do winNames+=("$(fLockName "${spec}")"
 lockWin="${winNames[*]}"
 lockOther=" $(env "${lockVar}_WINDOWS_HOSTS=${lockWin}" "${lock}" hosts 2>/dev/null || true) "
 for name in "${winNames[@]}"; do lockOther="${lockOther// ${name} / }"; done
-for spec in "${REMOTE_MAC_HOSTS[@]}"; do
+for spec in "${REMOTE_MAC_HOSTS[@]}" "${REMOTE_UNIX_HOSTS[@]}"; do
 	name="$(fLockName "${spec}")"
 	[[ "${lockOther}" == *" ${name} "* ]] || lockOther+="${name} "
 done
@@ -222,10 +257,18 @@ fLock(){ env -u "${lockVar}_CODE_SESSION_ID" -u "${lockVar}_PID" "${lockVar}_WIN
 work="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-remote.XXXXXX")"
 trap 'rm -rf -- "${work:?}"' EXIT
 
-declare -a macRun=() winRun=()
+declare -a macRun=() unixRun=() winRun=()
+declare -A unixTargets=()
 for spec in "${REMOTE_MAC_HOSTS[@]}"; do
 	name="$(fReachable "${spec}")"
 	if [[ -n "${name}" ]]; then macRun+=("$(fLockName "${spec}") ${name}")
+	else fEcho_Clean "  skip: $(fLockName "${spec}"), not reachable over ssh (tried $(fSshNames "${spec}"))"; fi
+done
+for spec in "${REMOTE_UNIX_HOSTS[@]}"; do
+	name="$(fReachable "${spec}")"
+	if [[ -n "${name}" ]]; then
+		unixRun+=("$(fLockName "${spec}") ${name}")
+		unixTargets["${REMOTE_UNIX_TARGETS[$(fLockName "${spec}")]}"]=1
 	else fEcho_Clean "  skip: $(fLockName "${spec}"), not reachable over ssh (tried $(fSshNames "${spec}"))"; fi
 done
 for spec in "${REMOTE_WINDOWS_HOSTS[@]}"; do
@@ -244,21 +287,43 @@ if ((${#macRun[@]})); then
 		chmod +x "${work}/mac/tree/${GO_MODULE_DIR}/${EXE_NAME}"
 		: > "${work}/mac-has-bin"
 	fi
+fi
+for target in "${!unixTargets[@]}"; do
+	tag="$(fTag "${target}")"
+	mkdir -p "${work}/unix-${tag}/tree/${GO_MODULE_DIR}"
+	fBuildTests "${target%%/*}" "${target##*/}" "${work}/unix-${tag}/tree/${GO_MODULE_DIR}/${EXE_NAME}-test" \
+		|| { fEcho_Clean "  FAIL: the Go tests do not build for ${target}"; exit 1; }
+	if [[ -n "${unixBin[${target}]:-}" ]]; then
+		cp -f -- "${unixBin[${target}]}" "${work}/unix-${tag}/tree/${GO_MODULE_DIR}/${EXE_NAME}"
+		chmod +x "${work}/unix-${tag}/tree/${GO_MODULE_DIR}/${EXE_NAME}"
+		: > "${work}/has-bin-${tag}"
+	fi
+done
+if ((${#macRun[@]} + ${#unixRun[@]})); then
 	## The tree as it stands, tracked files and new ones not ignored, which is what the
 	## pipeline tests here. Then the git dir. In a linked worktree that is the main one's, with
 	## this worktree's HEAD and index laid over it. The pre-push gate's snapshot is a whole
-	## second tree, and nothing on the Mac uses it.
-	(cd "${root}" && git ls-files -z -co --exclude-standard) | fExisting > "${work}/mac.files"
-	tar -cf "${work}/mac.tar" -C "${root}" --null -T "${work}/mac.files" --transform 's,^,tree/,S'
+	## second tree, and nothing on the boxes uses it. Each box's builds go on a copy of that.
+	(cd "${root}" && git ls-files -z -co --exclude-standard) | fExisting > "${work}/tree.files"
+	tar -cf "${work}/tree.tar" -C "${root}" --null -T "${work}/tree.files" --transform 's,^,tree/,S'
 	gitDir="$(cd "${root}" && cd "$(git rev-parse --git-dir)" && pwd -P)"
 	gitCommon="$(cd "${root}" && cd "$(git rev-parse --git-common-dir)" && pwd -P)"
-	tar -rf "${work}/mac.tar" -C "${gitCommon}" --exclude='./gitsby-gate*' --exclude=./worktrees --transform 's,^\.,tree/.git,S' .
+	tar -rf "${work}/tree.tar" -C "${gitCommon}" --exclude='./gitsby-gate*' --exclude=./worktrees --transform 's,^\.,tree/.git,S' .
 	if [[ "${gitDir}" != "${gitCommon}" ]]; then
-		mkdir -p "${work}/mac/tree/.git"
-		cp -f -- "${gitDir}/HEAD" "${gitDir}/index" "${work}/mac/tree/.git/"
-		tar -rf "${work}/mac.tar" -C "${work}/mac" tree/.git
+		mkdir -p "${work}/linked/tree/.git"
+		cp -f -- "${gitDir}/HEAD" "${gitDir}/index" "${work}/linked/tree/.git/"
+		tar -rf "${work}/tree.tar" -C "${work}/linked" tree/.git
 	fi
-	tar -rf "${work}/mac.tar" -C "${work}/mac" "tree/${GO_MODULE_DIR}"
+	if ((${#macRun[@]})); then
+		cp -f -- "${work}/tree.tar" "${work}/mac.tar"
+		tar -rf "${work}/mac.tar" -C "${work}/mac" "tree/${GO_MODULE_DIR}"
+	fi
+	for target in "${!unixTargets[@]}"; do
+		tag="$(fTag "${target}")"
+		cp -f -- "${work}/tree.tar" "${work}/unix-${tag}.tar"
+		tar -rf "${work}/unix-${tag}.tar" -C "${work}/unix-${tag}" "tree/${GO_MODULE_DIR}"
+	done
+	rm -f -- "${work:?}/tree.tar"
 fi
 if ((${#winRun[@]})); then
 	mkdir -p "${work}/win/${GO_MODULE_DIR}"
@@ -292,6 +357,7 @@ fUnderLock(){
 }
 
 for entry in "${macRun[@]}"; do fUnderLock mac "${entry% *}" "${entry#* }" || true; done
+for entry in "${unixRun[@]}"; do fUnderLock unix "${entry% *}" "${entry#* }" || true; done
 for entry in "${winRun[@]}"; do
 	if fUnderLock windows "${entry% *}" "${entry#* }"; then break; fi
 done
@@ -315,3 +381,4 @@ fEcho_Clean "  passed on: ${passed[*]:-none}"
 
 ##	History:
 ##		- 2026-10-04 JC: Created. The Go tests on a Mac and a Windows box, and test.bash on the Mac against the universal build, each box taken through the host lock and skipped when it is off or taken.
+##		- 2026-10-04 JC: The same run as the Mac's on other Unix boxes, FreeBSD amd64 and Linux arm64 to start, each as its test user. test.bash there only where the box has the tools for it.

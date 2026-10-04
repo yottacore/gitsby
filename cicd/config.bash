@@ -229,6 +229,14 @@ REMOTE_MAC_GOARCH="amd64"
 REMOTE_MAC_BASH="/usr/local/bin/bash"
 ## The stage's own folder under the Mac's home, holding the copy of the tree the suite runs in.
 REMOTE_MAC_DIR="gitsby-remote-tests"
+## Other Unix boxes, run the way the Mac is, each as its test user: the Go tests built for its
+## target, then test.bash against the build cicd.bash makes for that target, where the box has
+## every tool in REMOTE_UNIX_NEEDS. Every box in the list runs. The lock knows both by name.
+REMOTE_UNIX_HOSTS=("vmFreeBSD:bsdtest@vmFreeBSD" "vmDebARM64:tester@vmDebARM64")
+declare -gA REMOTE_UNIX_TARGETS=([vmFreeBSD]="freebsd/amd64" [vmDebARM64]="linux/arm64")
+## go for the suite's own builds; an older one fetches the toolchain go.mod names.
+REMOTE_UNIX_NEEDS=(bash git go)
+REMOTE_UNIX_DIR="gitsby-remote-tests"
 
 ## Stage 8: backup + publish to git (runs from repo root). The engine always
 ## passes --quiet (it already gave the message prompt) and, when it has one,
@@ -258,3 +266,4 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-10-03 JC: PS_LINT_SETTINGS: the PowerShell lint rules moved out of cicd.bash into a settings file.
 ##		- 2026-10-03 JC: The macOS release is one universal binary, in place of one per CPU.
 ##		- 2026-10-04 JC: Stage 7 runs the tests on a Mac and a Windows box. Publish is stage 8.
+##		- 2026-10-04 JC: Stage 7 also runs them on a FreeBSD amd64 and a Linux arm64 box.
