@@ -10,6 +10,7 @@ package main
 
 import (
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -26,18 +27,47 @@ func (a *app) upstream() string {
 
 func (a *app) hasUpstream() bool { return a.upstream() != "" }
 
-// localBranches maps every local branch to its upstream's full ref, "" for none,
-// in one call. The plan reads it for branches the run checks out later.
-func (a *app) localBranches() map[string]string {
-	return a.git.localBranches.get(func() map[string]string {
-		lines := runLines("git", "for-each-ref", "--format=%(refname:lstrip=2) %(upstream)", "refs/heads/")
-		branches := make(map[string]string, len(lines))
+// branchRefs is every local branch with its upstream's full ref, "" for none,
+// and every branch origin has. One for-each-ref answers all of the run's
+// existence checks, which were a show-ref each.
+type branchRefs struct {
+	local  map[string]string
+	origin map[string]bool
+}
+
+func (a *app) branchRefs() branchRefs {
+	return a.git.branches.get(func() branchRefs {
+		refs := branchRefs{local: map[string]string{}, origin: map[string]bool{}}
+		// A ref name can't hold a space, so an empty field still has its place.
+		lines := runLines("git", "for-each-ref", "--format=%(refname) %(upstream)", "refs/heads/", "refs/remotes/origin/")
 		for _, line := range lines {
-			name, up, _ := strings.Cut(line, " ")
-			branches[name] = up
+			ref, up, _ := strings.Cut(line, " ")
+			if name, ok := strings.CutPrefix(ref, "refs/heads/"); ok {
+				refs.local[name] = up
+			} else if name, ok := strings.CutPrefix(ref, "refs/remotes/origin/"); ok {
+				refs.origin[name] = true
+			}
 		}
-		return branches
+		return refs
 	})
+}
+
+func (a *app) branchExistsLocal(branch string) bool {
+	_, ok := a.branchRefs().local[branch]
+	return ok
+}
+
+func (a *app) branchExistsRemote(branch string) bool { return a.branchRefs().origin[branch] }
+
+// localBranchNames in refname order, the order for-each-ref lists them in.
+func (a *app) localBranchNames() []string {
+	local := a.branchRefs().local
+	names := make([]string, 0, len(local))
+	for name := range local {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // upstreamOf is upstream for any branch. One with no local copy yet is checked
@@ -46,7 +76,7 @@ func (a *app) upstreamOf(branch string) string {
 	if branch == a.currentBranch() {
 		return a.upstream()
 	}
-	return a.localBranches()[branch]
+	return a.branchRefs().local[branch]
 }
 
 // aheadBehind: both directions against the upstream, in the one call that answers
@@ -69,14 +99,6 @@ func (a *app) aheadBehind() (ahead, behind int) {
 
 // isAhead: -n 1 stops at the first commit - the count doesn't matter here.
 func isAhead() bool { return runOut("git", "rev-list", "-n", "1", "@{u}..") != "" }
-
-func branchExistsLocal(branch string) bool {
-	return runOK("git", "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
-}
-
-func branchExistsRemote(branch string) bool {
-	return runOK("git", "show-ref", "--verify", "--quiet", "refs/remotes/origin/"+branch)
-}
 
 // branchHasUnpushed asks about a NAMED branch, not HEAD: ahead-ness of a branch
 // you aren't standing on can't be asked with '@{u}'.
@@ -104,9 +126,7 @@ func refuseOptionShapedRefs(names ...string) error {
 // only ever looks at origin. So name origin, and let the plan say the same thing
 // the command will run.
 func (a *app) checkoutArgs(branch string) []string {
-	// The local half from localBranches, which the plan's pull line for the same
-	// branch reads anyway.
-	if _, local := a.localBranches()[branch]; branch != "" && !local && branchExistsRemote(branch) {
+	if branch != "" && !a.branchExistsLocal(branch) && a.branchExistsRemote(branch) {
 		return []string{"checkout", "-b", branch, "--track", "origin/" + branch}
 	}
 	return []string{"checkout", branch}
@@ -130,7 +150,7 @@ func (a *app) isProtectedBranch(branch string) bool {
 	if branch == "main" || branch == "master" { // a leftover one isn't ours to touch either
 		return true
 	}
-	return branch == "dev" && (branchExistsLocal("dev") || branchExistsRemote("dev"))
+	return branch == "dev" && (a.branchExistsLocal("dev") || a.branchExistsRemote("dev"))
 }
 
 // defaultBranch prefers origin's HEAD; falls back to whichever of main/master
@@ -139,22 +159,22 @@ func (a *app) isProtectedBranch(branch string) bool {
 // sole local branch is the honest answer there. Guessing "main" at the end would
 // name a branch that doesn't exist - the caller refuses instead.
 func (a *app) defaultBranch() string {
-	return a.git.defaultBranch.get(resolveDefaultBranch)
+	return a.git.defaultBranch.get(a.resolveDefaultBranch)
 }
 
-func resolveDefaultBranch() string {
+func (a *app) resolveDefaultBranch() string {
 	if originHead := runOut("git", "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"); originHead != "" {
 		return strings.TrimPrefix(originHead, "origin/")
 	}
 	for _, name := range []string{"main", "master", "trunk"} {
-		if branchExistsLocal(name) {
+		if a.branchExistsLocal(name) {
 			return name
 		}
 	}
 	// Nothing conventional to go on: a lone branch is the default by elimination.
 	// A named one has to stay stable as feature branches come and go, which is why
 	// the list above is checked first.
-	locals := runLines("git", "for-each-ref", "--format=%(refname:lstrip=2)", "refs/heads")
+	locals := a.localBranchNames()
 	if len(locals) == 1 {
 		return locals[0]
 	}
@@ -172,7 +192,7 @@ func resolveDefaultBranch() string {
 // has one; else the default branch.
 func (a *app) mergeTarget() string {
 	return a.git.mergeTarget.get(func() string {
-		if branchExistsLocal("dev") || branchExistsRemote("dev") {
+		if a.branchExistsLocal("dev") || a.branchExistsRemote("dev") {
 			return "dev"
 		}
 		return a.defaultBranch()

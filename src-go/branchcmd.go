@@ -18,14 +18,14 @@ import (
 
 // checkNewBranchName vets the name given to br create/hotfix. Git owns the rules
 // for what a ref may be called, so ask git rather than keep a second copy of them.
-func checkNewBranchName(name string) error {
+func (a *app) checkNewBranchName(name string) error {
 	if !runOK("git", "check-ref-format", "--branch", name) {
 		return usagef("'%s' is not a valid branch name.", name)
 	}
-	if branchExistsLocal(name) {
+	if a.branchExistsLocal(name) {
 		return usagef("Branch '%s' already exists; use: %s br switch %s", name, meName, name)
 	}
-	if branchExistsRemote(name) {
+	if a.branchExistsRemote(name) {
 		return usagef("Branch '%s' already exists on origin; use: %s br switch %s", name, meName, name)
 	}
 	return nil
@@ -256,7 +256,7 @@ func (a *app) backOutMerge(stepErr error, from, into, returnTo, settle string) e
 // carry the hotfix nowhere. ('pr ok' can't run offline at all.)
 func (a *app) backMergeRef() string {
 	mainBranch := a.defaultBranch()
-	if !a.isOffline() && runOK("git", "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+mainBranch) {
+	if !a.isOffline() && a.branchExistsRemote(mainBranch) {
 		return "origin/" + mainBranch
 	}
 	return mainBranch
@@ -272,7 +272,7 @@ func (a *app) backMergeToDev() error {
 	if devBranch == mainBranch { // no dev in this repo: nothing to carry back
 		return nil
 	}
-	if !branchExistsLocal(devBranch) && !branchExistsRemote(devBranch) {
+	if !a.branchExistsLocal(devBranch) && !a.branchExistsRemote(devBranch) {
 		return nil
 	}
 	mergeRef := a.backMergeRef()
@@ -322,7 +322,7 @@ func (a *app) warnHotfixTouchedCode(workBranch, targetBranch string) {
 	}
 	// Full refs, since a tag of the same name wins over the branch.
 	base := "refs/heads/" + targetBranch
-	if !branchExistsLocal(targetBranch) {
+	if !a.branchExistsLocal(targetBranch) {
 		base = "refs/remotes/origin/" + targetBranch
 	}
 	// Paths come back from the top of the tree, wherever this runs from.

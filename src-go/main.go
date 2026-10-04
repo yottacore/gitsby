@@ -291,7 +291,7 @@ func (a *app) settleBranchNames() error {
 	if dflt == "" {
 		return usagef("Can't tell this repo's default branch. Set it with 'git remote set-head origin --auto', or create a main/master.")
 	}
-	if !branchExistsLocal(dflt) && !branchExistsRemote(dflt) {
+	if !a.branchExistsLocal(dflt) && !a.branchExistsRemote(dflt) {
 		return usagef("This repo's default branch resolves to '%s', which exists neither here nor on origin. Fix it with 'git remote set-head origin --auto'.", dflt)
 	}
 	return nil
@@ -382,7 +382,7 @@ func (a *app) preflightBranch() error {
 			return syntaxUsage("No branch name given.", "br create <new branch name>",
 				placeholder{"<new branch name>", "The branch to create off " + mergeTargetLabel + ", e.g. login-form."})
 		}
-		return checkNewBranchName(a.cmd.arg)
+		return a.checkNewBranchName(a.cmd.arg)
 	case "br-hotfix":
 		if a.cmd.arg == "" {
 			return syntaxUsage("No name given.", "br hotfix <name>",
@@ -391,7 +391,7 @@ func (a *app) preflightBranch() error {
 		// The prefix is the marker, so put it on ourselves - and accept it if the user
 		// typed it.
 		a.cmd.arg = "hotfix/" + strings.TrimPrefix(a.cmd.arg, "hotfix/")
-		return checkNewBranchName(a.cmd.arg)
+		return a.checkNewBranchName(a.cmd.arg)
 	case "br-merge":
 		// Merging ends in 'git branch -d', so a leftover main/master must be refused
 		// here for the same reason br prune never lists one - and up front, not after a
@@ -400,7 +400,7 @@ func (a *app) preflightBranch() error {
 			return usagef("'%s' is a protected branch; landing it would delete it. Run this from a work branch instead.", a.currentBranch())
 		}
 	case "br-switch":
-		if a.cmd.arg != "" && !branchExistsLocal(a.cmd.arg) && !branchExistsRemote(a.cmd.arg) {
+		if a.cmd.arg != "" && !a.branchExistsLocal(a.cmd.arg) && !a.branchExistsRemote(a.cmd.arg) {
 			return usagef("No branch '%s' locally or on origin. To create it: %s br create %s", a.cmd.arg, meName, a.cmd.arg)
 		}
 		// Refusing a dirty protected branch belongs here too, before the plan is shown

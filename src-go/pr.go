@@ -300,8 +300,8 @@ func (a *app) prAcceptPreflight(prBranch string) error {
 	// with 'branch -D' either way, and '@{u}' above answers nothing at all for a
 	// branch that was pushed without -u - so standing on that one, the guard passed
 	// and the commits went with the branch.
-	if branchExistsLocal(a.pr.headBranch) {
-		if !branchExistsRemote(a.pr.headBranch) {
+	if a.branchExistsLocal(a.pr.headBranch) {
+		if !a.branchExistsRemote(a.pr.headBranch) {
 			return usagef("'%s' is here but not on origin, so PR #%s holds none of it - and it would be deleted. Push it first: git push -u origin %s", a.pr.headBranch, a.pr.num, a.pr.headBranch)
 		}
 		if branchHasUnpushed(a.pr.headBranch) {

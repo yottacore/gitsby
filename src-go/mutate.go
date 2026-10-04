@@ -262,7 +262,7 @@ func (a *app) cmdPrune() error {
 		} else {
 			var stillHere []string
 			for _, branch := range deleteLocal {
-				if branchExistsLocal(branch) {
+				if a.branchExistsLocal(branch) {
 					stillHere = append(stillHere, branch)
 					// Its remote copy stays too: deleting that would leave a branch here
 					// with nothing on origin behind it.
@@ -331,7 +331,7 @@ func (a *app) pruneRemote(branches []string, onOrigin map[string]string, asked b
 			// went rather than writing the batch off: a delete that went through takes the
 			// remote-tracking ref with it, which is a local lookup.
 			for _, branch := range batch {
-				if branchExistsRemote(branch) {
+				if a.branchExistsRemote(branch) {
 					stillThere = append(stillThere, branch)
 				} else {
 					done++
