@@ -84,28 +84,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: 55cc1e8
 	- Test case: FuzzOldFormatValue, and test.bash `[ErkNuhS]`, `[ErkNuhf]`, `[ErkNuht]`, `[ErkNui6]`, `[ErkNuiK]`.
 
-- The dogfood check passes on the release target list too
-	- ID: 2026100315501801
-	- Type: Bug
-	- Status: Waiting for testing
-	- Needs local test suite run?: Yes. test.bash, for `[ErfYFrl]` in place.
-	- Priority|Severity [Bug]: Low
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: [ErfYFrl] looks for `"darwin/universal"` anywhere in config.bash. The release list has it now as well, so the check still passes if dogfood loses that target.
-	- Expected behavior [Bug]: The check reads the dogfood target list only.
-	- Reproduced [Bug]: Yes, 2026-10-04. With the entry taken out of `DOGFOOD_TARGETS` only, the old check still passed.
-	- Origin: [ErfYFrl] from item 2026100312571262. The release list gained the entry in item 2026100313491873. Confirmed.
-	- Estimated effort: Low
-	- Actual cause [Bug]: The check grepped the whole file for the line, and `RELEASE_TARGETS` has the same line.
-	- Actual fix [Bug]: The check sources config.bash and looks in `DOGFOOD_TARGETS` only.
-	- Progress log:
-		- Verified: on a copy of config.bash without the dogfood entry, the old check passes and the new one fails. The new one passes on the real file.
-	- Swept: the other config.bash checks in test.bash. Each looks for a setting by its own name, and none reads an entry two lists share.
-	- Branch: oldshcl
-	- Commit: 74b1914
-	- Test case: test.bash `[ErfYFrl]`.
-
 - Code Review 20261003 enhancement 2: Network probes run one after another
 	- ID: 2026100313123988
 	- Type: Enhancement
@@ -136,6 +114,28 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: probes
 	- Commit: cc71200
 	- Test case: test.bash `[ErkSC4L]`, `[ErkSctG]`, `[ErkSC4Z]`, `[ErkSC4m]` (regression guard), `[Er1LxSk]`; Go `[ErkSC3h]`, `[ErkSC3v]`, `[ErkSC48]`, `[ErkTEpz]`.
+
+- The dogfood check passes on the release target list too
+	- ID: 2026100315501801
+	- Type: Bug
+	- Status: Waiting for testing
+	- Needs local test suite run?: Yes. test.bash, for `[ErfYFrl]` in place.
+	- Priority|Severity [Bug]: Low
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: [ErfYFrl] looks for `"darwin/universal"` anywhere in config.bash. The release list has it now as well, so the check still passes if dogfood loses that target.
+	- Expected behavior [Bug]: The check reads the dogfood target list only.
+	- Reproduced [Bug]: Yes, 2026-10-04. With the entry taken out of `DOGFOOD_TARGETS` only, the old check still passed.
+	- Origin: [ErfYFrl] from item 2026100312571262. The release list gained the entry in item 2026100313491873. Confirmed.
+	- Estimated effort: Low
+	- Actual cause [Bug]: The check grepped the whole file for the line, and `RELEASE_TARGETS` has the same line.
+	- Actual fix [Bug]: The check sources config.bash and looks in `DOGFOOD_TARGETS` only.
+	- Progress log:
+		- Verified: on a copy of config.bash without the dogfood entry, the old check passes and the new one fails. The new one passes on the real file.
+	- Swept: the other config.bash checks in test.bash. Each looks for a setting by its own name, and none reads an entry two lists share.
+	- Branch: oldshcl
+	- Commit: 74b1914
+	- Test case: test.bash `[ErfYFrl]`.
 
 - Run the tests on a Mac and a Windows box as part of the pipeline
 	- ID: 2026100312332924
