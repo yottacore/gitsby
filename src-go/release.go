@@ -144,21 +144,21 @@ func (a *app) releasePreflight() error {
 	}
 	relMain := a.defaultBranch()
 	relTarget := relMain
-	if !branchExistsLocal(relMain) {
+	if !a.branchExistsLocal(relMain) {
 		relTarget = "origin/" + relMain
 	}
 	// The local branch is what gets tagged and pushed, so it is what "nothing new"
 	// is about. Stand down if origin holds commits we don't: the pull would bring
 	// them in.
-	if relTarget == relMain && branchExistsRemote(relMain) {
+	if relTarget == relMain && a.branchExistsRemote(relMain) {
 		if !runOK("git", "merge-base", "--is-ancestor", "origin/"+relMain, relMain) {
 			return nil
 		}
 	}
 	relSource := ""
-	if branchExistsRemote("dev") {
+	if a.branchExistsRemote("dev") {
 		relSource = "origin/dev"
-	} else if branchExistsLocal("dev") {
+	} else if a.branchExistsLocal("dev") {
 		relSource = "dev"
 	}
 	if relSource != "" && !runOK("git", "merge-base", "--is-ancestor", relSource, relTarget) {
@@ -177,8 +177,9 @@ func (a *app) releasePreflight() error {
 // and pushes both.
 func (a *app) cmdRelease() error {
 	mainBranch := a.defaultBranch()
+	// The same answer the plan read, so the run can't take a dev the plan never showed.
 	devBranch := ""
-	if branchExistsLocal("dev") || branchExistsRemote("dev") {
+	if a.mergeTarget() == "dev" {
 		devBranch = "dev"
 	}
 	startBranch := a.currentBranch()

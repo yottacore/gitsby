@@ -239,10 +239,12 @@ func probeSSHLogin(ctx context.Context, env []string, url, sshCommand string) st
 // for a username mid-command.
 func (a *app) fetchRemote() {
 	// The one thing that moves a ref without being a step, so the runners' own
-	// invalidation never covers it. Only the counted answer: a fetch moves
-	// origin/*, which is half of ahead-behind, and leaves everything else the run
-	// has settled exactly where it was.
+	// invalidation never covers it. Only what reads origin/*: ahead-behind, the
+	// branch list and origin/HEAD. Everything else the run has settled stays where
+	// it was.
 	a.git.aheadBehind.forget()
+	a.git.branches.forget()
+	a.git.originHead.forget()
 	env := a.remoteEnv()
 	// Named, not implied: a bare 'git fetch' follows the current branch's own
 	// tracking remote, and every existence check afterwards reads origin.
@@ -256,10 +258,12 @@ func (a *app) fetchRemote() {
 	// Healing queries the remote again, so only when there is nothing to read:
 	// git < 2.47 never wrote one. A ref left stale by an upstream rename survives,
 	// and main already refuses naming the fix.
-	if !runOK("git", "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD") {
+	// The answer is kept: the default branch is read from it next.
+	if a.originHead() == "" {
 		setHead := exec.Command("git", "remote", "set-head", "origin", "--auto")
 		setHead.Env = env
 		_ = setHead.Run()
+		a.git.originHead.forget()
 	}
 }
 
@@ -339,11 +343,13 @@ func remoteTarget(url string) string { return parseRemote(url).target() }
 // worth a line. Someone who set 'protocol = ssh' has answered the question
 // already, and hears nothing.
 func (a *app) convertibleToHTTPS() bool {
-	if a.acct.name == "" || a.preferredProtocol() != "https" {
+	if a.acct.name == "" {
 		return false
 	}
+	// The text test first: it is free, and on an https origin it already says no
+	// before gh is asked for its protocol.
 	url := a.originURL()
-	if sshTarget(url) == "" || remoteTarget(url) == "" {
+	if sshTarget(url) == "" || remoteTarget(url) == "" || a.preferredProtocol() != "https" {
 		return false
 	}
 	// The token has to be one THIS host would accept. Offering to re-spell a Gitea

@@ -197,8 +197,9 @@ fMeasure(){
 	elif [[ "${how}" == tty ]]; then
 		local traced=""
 		printf -v traced '%q ' strace -f -e trace=execve -o "${traceFile}" "${exe}" "$@"
-		## TERM is set so tput has an answer to give; the count is the same either way.
-		( cd "${work}/live/${folder}" && GITSBY_CONFIG="${config}" TERM=xterm SHELL="${BASH}" script -qec "${traced}" /dev/null </dev/null ) >/dev/null 2>&1 || true
+		## The pty gets a size outside the trace, as a real terminal's has. A pty nobody sized
+		## reads as width 0, and gitsby then asks tput. TERM is set so tput has an answer.
+		( cd "${work}/live/${folder}" && GITSBY_CONFIG="${config}" TERM=xterm SHELL="${BASH}" script -qec "stty cols 120 rows 40 2>/dev/null; ${traced}" /dev/null </dev/null ) >/dev/null 2>&1 || true
 	else
 		( cd "${work}/live/${folder}" && GITSBY_CONFIG="${config}" strace -f -e trace=execve -o "${traceFile}" "${exe}" "$@" ) >/dev/null 2>&1 || true
 	fi
@@ -217,20 +218,20 @@ fMeasure(){
 ## is one of them because its pull step only runs after a fetch, and that step used to ask
 ## origin a second time.
 ((quiet)) || fEcho_Clean "spawn counts (${exe})"
-fMeasure "[EnQTUO0] status"                              14 pipe repo        -q --no-fetch status
-fMeasure "[EnberSa] whoami"                               9 pipe repo        -q --no-fetch whoami
-fMeasure "[EnQTUe8] br list"                              9 pipe repo        -q --no-fetch br list
-fMeasure "[EnQTUuG] account list"                         9 pipe repo        -q --no-fetch account list
-fMeasure "[EnQTVAO] repo url"                             8 pipe repo        -q --no-fetch repo url
-fMeasure "[EnQTVQW] pullcom"                             25 pipe repo        -q --no-fetch pullcom "spawn count"
-fMeasure "[ErgAQyw] pullcom with a fetch"                 32 pipe repo        -q pullcom "spawn count"
-fMeasure "[EnQTVge] br switch"                           33 pipe repo        -q --no-fetch br switch main
-fMeasure "[EnQTVwm] br prune"                            39 pipe repo        -q --no-fetch br prune
-fMeasure "[Erg2KIz] status with a fetch"                 21 tty  repo        status
-fMeasure "[Erg2KJr] status in an account folder"         25 tty  acct-ssh    --no-fetch status
-fMeasure "[Erg2KKj] whoami in an account folder"         19 tty  acct-ssh    --no-fetch whoami
-fMeasure "[Erg2KLb] account list with accounts"          14 tty  acct-ssh    --no-fetch account list
-fMeasure "[Erg2KMS] status in an https account folder"   21 tty  acct-https  --no-fetch status
+fMeasure "[EnQTUO0] status"                              11 pipe repo        -q --no-fetch status
+fMeasure "[EnberSa] whoami"                               7 pipe repo        -q --no-fetch whoami
+fMeasure "[EnQTUe8] br list"                              7 pipe repo        -q --no-fetch br list
+fMeasure "[EnQTUuG] account list"                         7 pipe repo        -q --no-fetch account list
+fMeasure "[EnQTVAO] repo url"                             6 pipe repo        -q --no-fetch repo url
+fMeasure "[EnQTVQW] pullcom"                             21 pipe repo        -q --no-fetch pullcom "spawn count"
+fMeasure "[ErgAQyw] pullcom with a fetch"                 28 pipe repo        -q pullcom "spawn count"
+fMeasure "[EnQTVge] br switch"                           26 pipe repo        -q --no-fetch br switch main
+fMeasure "[EnQTVwm] br prune"                            31 pipe repo        -q --no-fetch br prune
+fMeasure "[Erg2KIz] status with a fetch"                 17 tty  repo        status
+fMeasure "[Erg2KJr] status in an account folder"         19 tty  acct-ssh    --no-fetch status
+fMeasure "[Erg2KKj] whoami in an account folder"         15 tty  acct-ssh    --no-fetch whoami
+fMeasure "[Erg2KLb] account list with accounts"          11 tty  acct-ssh    --no-fetch account list
+fMeasure "[Erg2KMS] status in an https account folder"   15 tty  acct-https  --no-fetch status
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Each count against its limit, then against the newest previous run; then record this one.
@@ -306,3 +307,5 @@ gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		- 20261003 JC: A limit per command that fails at any rise, --record or not. An account folder with a fake gh and ssh, a pty run with no -q, and a status that fetches, for status, whoami and the account listing.
 ##		- 20261003 JC: pullcom with a fetch, so the pull step is counted.
 ##		- 20261003 JC: The number beside each command is the expected count, and its limit adds the same headroom the baseline compare allows, so a git update that starts one more helper doesn't fail the gate.
+##		- 20261004 JC: Lower expected counts, now that one read answers every branch check.
+##		- 20261004 JC: The pty runs get a size, as a real terminal has. Lower expected counts for the startup and token lookups that were asked twice.

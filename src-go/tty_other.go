@@ -17,3 +17,6 @@ func isTTY(f *os.File) bool {
 	fi, err := f.Stat()
 	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
+
+// termCols has no query here, so the width comes from tput.
+func termCols(*os.File) int { return 0 }

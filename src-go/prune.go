@@ -30,10 +30,10 @@ func (p prunePlan) empty() bool { return len(p.local) == 0 && len(p.remote) == 0
 func (a *app) resolvePrune() error {
 	target := a.mergeTarget()
 	targetRemoteRef := "refs/remotes/origin/" + target
-	if branchExistsLocal(target) {
+	if a.branchExistsLocal(target) {
 		a.prune.targetRefs = append(a.prune.targetRefs, "refs/heads/"+target)
 	}
-	haveTargetRemote := branchExistsRemote(target)
+	haveTargetRemote := a.branchExistsRemote(target)
 	if haveTargetRemote {
 		a.prune.targetRefs = append(a.prune.targetRefs, targetRemoteRef)
 	}
@@ -53,9 +53,9 @@ func (a *app) resolvePrune() error {
 	if haveTargetRemote {
 		mergedRemote = originTips(runLines("git", "for-each-ref", "--format=%(objectname) %(refname)", "--merged", targetRemoteRef, "refs/remotes/origin/"))
 	}
-	// lstrip, not :short, which prints 'heads/<name>' for a branch that shares its name
-	// with a tag.
-	for _, branch := range runLines("git", "for-each-ref", "--format=%(refname:lstrip=2)", "refs/heads/") {
+	// Names cut from the full ref, never :short, which prints 'heads/<name>' for a
+	// branch that shares its name with a tag.
+	for _, branch := range a.localBranchNames() {
 		// The branch we're standing on can't be deleted, and protected ones never are.
 		// But if it WOULD have qualified, say so - otherwise it just vanishes from
 		// every list.
