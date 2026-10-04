@@ -340,7 +340,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - The release guard names branches short, so a tag can stand in for one
 	- ID: 2026100411392800
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 20261004-113928
 	- Opened by: jim-collier
@@ -349,7 +349,31 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Run `gitsby release`.
 	- Incorrect behavior [Bug]: The "nothing new" guard passes `main`, `origin/main` and `origin/dev` to `merge-base` and `describe`. git reads a tag of that name before the branch, so the guard can answer about the tag.
 	- Expected behavior [Bug]: The guard reads the branches by full ref.
-	- Reproduced [Bug]: No. Read only, found while sweeping 2026100411344972.
+	- Reproduced [Bug]: Yes, 2026-10-04. With unreleased work on main, dev or origin/dev, and an old tag named `main` and `origin/main`, or `origin/dev`, or `dev`, a bare `release` said "Nothing new to release" and stopped.
+	- Cause: Confirmed. The guard built short branch names, and git reads `refs/tags/<name>` before `refs/heads/<name>` and `refs/remotes/<name>`.
+	- Fixed: the guard reads main, origin's main and dev by `refs/heads/...` and `refs/remotes/origin/...`. It runs nothing the plan prints, so the plan is unchanged.
+	- Swept: `grep -n '"git",' src-go/*.go`, looking at merge, merge-base, describe, rev-parse, rev-list, log and diff. The release merges, the dev fast-forward and its ancestor check, the back-merge, `br merge`, the hotfix diff and `branchHasUnpushed` already use full refs. rev-parse, rev-list, log and show.go's diff use `HEAD`, `@{u}` or fixed names. The pull's `merge --ff-only` takes git's own short upstream name, which git already spells as `remotes/origin/<name>` when a tag shares `origin/<name>`, so it stays. Outside that list, pushes by branch name and the `--track origin/<name>` checkout break the same way; filed as 2026100411431800.
+	- Verified: Go `TestReleaseGuardBesideSameNamedTags` fails in all three cases with the old release.go and passes after. `go test -race`, `go vet`, gofmt, `test-id.bash --check` and spawn-count with no count up. A bare `release` on a scratch repo still says "Nothing new" with nothing new, and cuts v1.0.1 with tags `main` and `origin/main` beside new work.
+	- Branch: reltag
+	- Commit: b587ac4
+	- Test case: Go `TestReleaseGuardBesideSameNamedTags` [Erl6xej].
+	- Closed: 20261004-114318
+	- Acceptance signoff: Self-closed: reproduced, the test fails before the fix and passes after, and the sweep is answered.
+
+- Pushes and remote-only checkouts name a branch short, so a tag can break them
+	- ID: 2026100411431800
+	- Type: Bug
+	- Status: Queued
+	- Priority|Severity [Bug]: Low
+	- Opened: 20261004-114318
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- With a tag `origin/dev` and `dev` only on origin, check out `dev` through gitsby.
+		- Or create a branch whose name a tag already has, and let gitsby publish it.
+	- Incorrect behavior [Bug]: `git checkout -b dev --track origin/dev` fails with "ambiguous object name". `git push -u origin <name>` fails with "src refspec matches more than one". The release's `git push origin <tag>` fails the same way beside a branch of the tag's name.
+	- Expected behavior [Bug]: These go by full ref. `--track refs/remotes/origin/<name>` and `push -u origin refs/heads/<name>` both set the upstream as usual.
+	- Reproduced [Bug]: Yes for the checkout and the branch push, 2026-10-04, with plain git. The release tag push is read only.
+	- Note: the plan prints these lines, so the fix changes what users see. `publishBranch` in mutate.go and `checkoutArgs` in branch.go.
 
 - Code Review 20261003 enhancement 7: Go code tidy
 	- ID: 2026100313130047
