@@ -5663,7 +5663,7 @@ GHEOF
 		cat "${fg}/old2x/config.shcl"
 	## The same on a file the last build on shcl 2.x wrote itself, compiled here from its commit.
 	## Nothing may be downloaded in this suite, so its shcl module has to be in the module cache
-	## already. go.mod lists it for the Go tests, which is what puts it there.
+	## already. go.mod lists it for the Go tests, so the lint and unit test stages fetch it.
 	local og="${fg}/old2xbuild" ogKv ogAcct ogKey ogValue ogSet=0 ogFile ogDir
 	mkdir -p "${og}/home"
 	local -a ogEnv=(env GITSBY_CONFIG= XDG_CONFIG_HOME= APPDATA= HOME="${og}/home" GIT_CONFIG_GLOBAL="${og}/home/.gitconfig")
