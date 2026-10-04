@@ -152,7 +152,8 @@ func (a *app) requireOnline(cmd, instead string) error {
 }
 
 // publishBranch is a new branch's own first push, which is separate from the park
-// push above it.
+// push above it. It runs right after the checkout, so HEAD is the branch, and a tag
+// with the branch's name can't make the push ambiguous the way the name would.
 func (a *app) publishBranch(branch string) error {
 	if !a.hasOrigin() {
 		return nil
@@ -161,7 +162,7 @@ func (a *app) publishBranch(branch string) error {
 		a.out.status("WARNING: remote unreachable; '" + branch + "' is local only for now - '" + meName + " sync' publishes it.")
 		return nil
 	}
-	return a.step("git", "push", "-u", "origin", branch)
+	return a.step("git", "push", "-u", "origin", "HEAD")
 }
 
 // cmdCommitPull pulls BEFORE committing. Committing first mints a local commit,

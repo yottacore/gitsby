@@ -148,10 +148,11 @@ func refuseOptionShapedRefs(names ...string) error {
 // tracking branch from a remote copy only when exactly one remote has it; with two
 // it refuses to guess, and the up-front existence check never notices because it
 // only ever looks at origin. So name origin, and let the plan say the same thing
-// the command will run.
+// the command will run. By full ref, since a tag named 'origin/<branch>' makes the
+// short name ambiguous and git then refuses the checkout.
 func (a *app) checkoutArgs(branch string) []string {
 	if branch != "" && !a.branchExistsLocal(branch) && a.branchExistsRemote(branch) {
-		return []string{"checkout", "-b", branch, "--track", "origin/" + branch}
+		return []string{"checkout", "-b", branch, "--track", "refs/remotes/origin/" + branch}
 	}
 	return []string{"checkout", branch}
 }
