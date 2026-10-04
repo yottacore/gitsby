@@ -43,7 +43,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Incorrect behavior [Bug]: shellcheck 0.11.0 on b23 segfaults on `cicd/test.bash` in about half of runs, gover's copy included, though less often there. Smaller scripts never crash. A bigger stack and dropping its cached pages did not help. A lint stage run can fail on this alone.
 	- Expected behavior [Bug]: The lint stage passes or fails on what the file says.
 	- Reproduced [Bug]: Yes, 2026-10-04, on b23.
-	- Actual cause [Bug]: Not in this repo or in shellcheck. Memory on b23 gets corrupted in windows that come and go, and other programs crash in the same windows. test.bash is the only script big enough to give shellcheck a large heap, about 2.5 GB, so it is the one hit. What corrupts it, kernel or hardware, is still unknown.
+	- Actual cause [Bug]: Not in this repo or in shellcheck. Most likely a CPU setting on b23. Since 2026-09-28 the CPU has run with tuning registers another program set and never put back, and the kernel flags it as out of spec. Programs with big heaps crash in bursts under it. Confirming it needs root.
 	- Estimated effort: Avg
 	- Progress log:
 		- Verified: on 2026-10-04 the same binary crashed 9 of 10 runs on test.bash around 10:49, then 0 of 122 between 11:00 and 11:10, on the same file.
@@ -53,7 +53,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Every crash is in the GHC garbage collector, following a heap pointer that is not a valid address.
 		- Ruled out: the Debian build, the GHC version, a damaged copy of the binary, a single bad CPU core, and test.bash itself. Bisecting test.bash makes no sense, since the same file passes every run outside a bad window.
 		- Both builds refuse the GC and stack options, so there is no shellcheck setting to aim at this. A pinned upstream binary would crash the same way, and a retry would only hide a machine fault. Nothing changed in the lint stage.
-		- Question: finding the source on b23 needs root or a reboot. Chase it on the machine, or close this as not a gitsby bug?
+		- Answered 2026-10-04: try to find it without a reboot.
+		- Ruled out on 2026-10-04: swapping. The swap was idle all through the 10:40 burst, and forcing shellcheck's heap through swap crashed nothing.
+		- Found: the kernel's out-of-spec flag, set when a program writes CPU tuning registers. That happened at 06:49 on 2026-09-28, and the program exited without restoring them. Since then, unrelated programs crash in bursts. Before that, this boot had one burst, on 2026-09-17, put down to a kernel problem at the time. The detail is in `.claude/details.md`.
+		- Question: reading the registers to confirm takes root, and so does putting them back. A reboot clears them too. Which one?
 	- Test case: None. The fault is in the machine, and nothing in the repo can check for it.
 	- Branch: scsegv
 
@@ -237,21 +240,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash `[ErgCzfP]`, `[ErgCzfc]`, `[ErgCzfq]` (install.bash on a Mac), `[ErgDQ7N]` (install.ps1, pinned since pwsh can't fake a Mac), `[ErgCzeJ]`, `[ErgCzeW]`, `[ErgCzek]`, `[ErgCzey]`, `[ErgCzfB]` (release.bash).
 	- Swept: every `darwin` and `arm64` reader in the repo. release.bash, config.bash, both installers, the installer and release fixtures in test.bash, README, design.md and the changelog. cicd.bash dogfood already joins. Nothing in `src-go` reads asset names. `legacy/` is frozen.
 	- Verified: stage 7 on b26 (2026-10-04) passed the installer checks with stubbed downloads, `[ErgCzfP]`, `[ErgCzfc]` and `[ErgCzfq]` among them.
-
-- Pushes and remote-only checkouts name a branch short, so a tag can break them
-	- ID: 2026100411431800
-	- Type: Bug
-	- Status: Queued
-	- Priority|Severity [Bug]: Low
-	- Opened: 20261004-114318
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]:
-		- With a tag `origin/dev` and `dev` only on origin, check out `dev` through gitsby.
-		- Or create a branch whose name a tag already has, and let gitsby publish it.
-	- Incorrect behavior [Bug]: `git checkout -b dev --track origin/dev` fails with "ambiguous object name". `git push -u origin <name>` fails with "src refspec matches more than one". The release's `git push origin <tag>` fails the same way beside a branch of the tag's name.
-	- Expected behavior [Bug]: These go by full ref. `--track refs/remotes/origin/<name>` and `push -u origin refs/heads/<name>` both set the upstream as usual.
-	- Reproduced [Bug]: Yes for the checkout and the branch push, 2026-10-04, with plain git. The release tag push is read only.
-	- Note: the plan prints these lines, so the fix changes what users see. `publishBranch` in mutate.go and `checkoutArgs` in branch.go.
 
 - Code Review 20261003 enhancement 7: Go code tidy
 	- ID: 2026100313130047
@@ -658,6 +646,30 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: acct-files
 	- Test case: TestFragmentNames, plus two apply checks in test.bash.
 	- Closed: 2026-09-30
+
+- Pushes and remote-only checkouts name a branch short, so a tag can break them
+	- ID: 2026100411431800
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Low
+	- Opened: 20261004-114318
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- With a tag `origin/dev` and `dev` only on origin, check out `dev` through gitsby.
+		- Or create a branch whose name a tag already has, and let gitsby publish it.
+	- Incorrect behavior [Bug]: `git checkout -b dev --track origin/dev` fails with "ambiguous object name". `git push -u origin <name>` fails with "src refspec matches more than one". The release's `git push origin <tag>` fails the same way beside a branch of the tag's name.
+	- Expected behavior [Bug]: These go by full ref. `--track refs/remotes/origin/<name>` and `push -u origin refs/heads/<name>` both set the upstream as usual.
+	- Reproduced [Bug]: Yes for the checkout and the branch push, 2026-10-04, with plain git. The release tag push is read only.
+	- Note: the plan prints these lines, so the fix changes what users see. `publishBranch` in mutate.go and `checkoutArgs` in branch.go.
+	- Actual effort: Low
+	- Done: The checkout names `refs/remotes/origin/<name>`. A new branch's first push is `git push -u origin HEAD`, like every other first push here, since it runs right after the checkout. The release pushes `git push origin tag <tag>`, and the "push it" hint says the same.
+	- Note: Full refs in every printed line, or `HEAD` for the push, was a question. Chosen 2026-10-04: the full ref only where the line has no shorter safe form. Short names stay where git already resolves them right, such as the back-merge and the delete pushes, which print short and run full.
+	- Verified: an old and a new build run side by side on a scratch repo. The old one fails all three cases, and the new one passes all three. test.bash 1412/0, parity 29/0, `cicd.bash --gate`.
+	- Branch: fullrefs
+	- Commit: 887dce5
+	- Test case: [ErlVezf], [ErlVezt], [ErlVf06] and [ErlVf0K] in test.bash.
+	- Acceptance signoff: Self-closed: the approach was left to the work, and the tests fail before and pass after.
+	- Closed: 20261004-132519
 
 - The dogfood check passes on the release target list too
 	- ID: 2026100315501801

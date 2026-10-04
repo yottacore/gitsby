@@ -139,6 +139,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - A config file saved with a byte-order mark keeps its first line. The mark landed on the first key, which was then read as one gitsby doesn't understand and dropped - and the line that reports those printed the mark along with the name, so the only warning named a key that looks exactly right. Windows editors write a mark by default.
 
+- A tag no longer breaks a checkout or a push that shares its name. Checking out a branch only origin has failed beside a tag named `origin/<branch>`, and a new branch or a release tag failed to push beside a ref of the same name. The plan now shows `--track refs/remotes/origin/<branch>`, `git push -u origin HEAD` and `git push origin tag <tag>`.
+
 - `gitsby.ghTokenFile` is read from your global or system git config only, never from a repository's own. A cloned repository could name any file you can read and have it loaded as a token. `gitsby.ghAccount` is still read from a repository, since it only picks among your own accounts.
 
 - `status` names the git config a `gitsby.ghAccount` key came from. It always said "this repo's git config", even for the key `account apply` sets through your global config, and it spelled the key with a capital G.

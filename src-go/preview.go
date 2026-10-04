@@ -177,7 +177,7 @@ func (a *app) previewNewBranch(baseBranch string) {
 		a.out.clean(pad + a.pullDisp(baseBranch))
 	}
 	a.out.clean(pad + "git checkout -b " + a.cmd.arg)
-	a.out.clean(pad + "git push -u origin " + a.cmd.arg + " *")
+	a.out.clean(pad + "git push -u origin HEAD *")
 }
 
 // pullDisp is the plan's pull line for a branch, said the way the step will run
@@ -230,7 +230,7 @@ func (a *app) previewRelease() {
 	}
 	a.out.clean(pad + "git tag -a " + a.rel.tag)
 	a.out.clean(pad + "git push *")
-	a.out.clean(pad + "git push origin " + a.rel.tag + " *")
+	a.out.clean(pad + "git push origin tag " + a.rel.tag + " *")
 	if hasDev {
 		a.out.clean(pad + a.checkoutDisp("dev") + " *")
 		a.out.clean(pad + "git merge --ff-only " + a.defaultBranch() + " *")
