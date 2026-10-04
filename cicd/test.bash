@@ -398,6 +398,14 @@ fHookPush(){ local dir="$1"; shift; : > "${hookLog}"; git -C "${dir}" push "$@" 
 fTreeDigest(){ (cd "$1" && find . -type f -exec sha256sum {} + | LC_ALL=C sort | sha256sum) ;}
 ## The release fixture's HEAD, tags, what its origin holds and whether its tree is clean, as one string.
 fRelState(){ { git -C "${relRepo}" rev-parse HEAD; git -C "${relRepo}" tag; git -C "${relRepo}" ls-remote origin; git -C "${relRepo}" status --porcelain; } 2>&1 ;}
+## The release fixture's changelog section for version $1, and its downloads table one row per
+## line with the padding taken out, then 'aligned' when every row's pipes sit in the same columns.
+fRelSection(){ awk -v ver="## $1 - " 'index($0, ver) == 1 {f = 1; next} f && /^## /{exit} f' "${relRepo}/changelog.md" ;}
+fRelTable(){ fRelSection "$1" | awk '
+	/^\| / { pos = ""; for (i = 1; i < length($0); i++) if (substr($0, i, 2) == "| ") pos = pos i ","
+		if (cols == "") cols = pos; else if (pos != cols) bad = 1
+		row = $0; gsub(/ *\| */, "|", row); print substr(row, 2) }
+	END { if (cols != "" && !bad) print "aligned" }' ;}
 ## release.bash in that fixture with the stubs first on PATH. Output lands in ${relOut}, its exit
 ## status in ${relRc}, and the calls log starts empty.
 fRelRun(){ : > "${relCalls}"; relRc=0; (cd "${relRepo}" && PATH="${rel}/bin:${PATH}" bash cicd/release.bash "$@") </dev/null >"${relOut}" 2>&1 || relRc=$? ;}
@@ -4261,7 +4269,11 @@ GHEOF
 				build) while (($#)); do [[ "$1" != -o ]] || case "${GOOS:-}/${GOARCH:-}" in
 					darwin/amd64) printf '%b' '\xcf\xfa\xed\xfe\x07\x00\x00\x01\x03\x00\x00\x00AMD' > "$2" ;;
 					darwin/arm64) printf '%b' '\xcf\xfa\xed\xfe\x0c\x00\x00\x01\x00\x00\x00\x00ARM' > "$2" ;;
-					*) printf '#!/usr/bin/env bash\necho "gitsby v1.2.4"\nexit 3\n' > "$2"; chmod +x "$2" ;;
+					*) printf '#!/usr/bin/env bash\necho "gitsby v1.2.4"\nexit 3\n' > "$2"; chmod +x "$2"
+						## With REL_PHASE1_TREE set, phase 3's build, outside that tree, makes one file more and one fewer.
+						if [[ -n "${REL_PHASE1_TREE:-}" && "${PWD}" != "${REL_PHASE1_TREE}"/* ]]; then
+							: > "${2%/*}/gitsby-plan9-386"; [[ "$2" != */gitsby-freebsd-arm64 ]] || rm -f "$2"
+						fi ;;
 				esac; shift; done ;;
 			esac
 			exit 0
@@ -4290,12 +4302,34 @@ GHEOF
 				&& ! compgen -G '${rel}/published/gitsby-darwin-[!u]*' >/dev/null && [[ -f '${rel}/published/gitsby-linux-arm64' ]]"
 		fAssert "[ErgCzeW] and its proof checks the macOS asset against SHA256SUMS from a box that can't run it" \
 			grep -qF 'gitsby-darwin-universal: downloaded and checksum verified; not run, since this is not a Mac' "${relOut}"
+		## The release's changelog section ends with a downloads table, written in phase 2 from the files
+		## phase 1 built, and the release body is that section as it stands, then the build line.
+		local relDl="https://github.com/yottacore/gitsby/releases/download/v1.2.4" relWant=""
+		relWant="$(printf '%s\n' 'OS|amd64|arm64' ':---|:---|:---' \
+			"Linux|[gitsby-linux-amd64](${relDl}/gitsby-linux-amd64)|[gitsby-linux-arm64](${relDl}/gitsby-linux-arm64)" \
+			"macOS|[gitsby-darwin-universal](${relDl}/gitsby-darwin-universal)|[gitsby-darwin-universal](${relDl}/gitsby-darwin-universal)" \
+			"Windows|[gitsby-windows-amd64.exe](${relDl}/gitsby-windows-amd64.exe)|[gitsby-windows-arm64.exe](${relDl}/gitsby-windows-arm64.exe)" \
+			"FreeBSD|[gitsby-freebsd-amd64](${relDl}/gitsby-freebsd-amd64)|[gitsby-freebsd-arm64](${relDl}/gitsby-freebsd-arm64)" aligned)"
+		fAssert "[Erm33Wu] release.bash adds a downloads table to the released changelog section, a row per OS and a column per CPU" \
+			test "${relWant}" = "$(fRelTable v1.2.4)"
+		fAssert "[Erm33X8] and puts it at the foot of the section, with the checksums on a line below it" \
+			test "$(printf '%s\n' '- a change' '### Downloads' "Checksums: [SHA256SUMS](${relDl}/SHA256SUMS).")" = "$(fRelSection v1.2.4 | grep -v -e '^|' -e '^$')"
+		# shellcheck disable=SC2016  ## the inner shell does the expanding.
+		fAssert "[Erm33XL] and the release body is that section word for word, with every published file linked" \
+			bash -c '[[ -n "$1" && "$1" == "$(sed "/^---\$/,\$d" "$2"/tmp.*)" ]] && ! grep -q "WARNING: the release notes" "$3"' _ "$(fRelSection v1.2.4)" "${rel}/published" "${relOut}"
 		git -C "${relRepo}" checkout -q -- .
 		git -C "${relRepo}" tag -d v1.2.4 >/dev/null
 		echo 'tampered' > "${rel}/served/gitsby-darwin-universal"
 		fRelRun -y
 		fAssert "[ErgCzek] and warns when the published macOS asset fails its checksum" \
 			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'WARNING: gitsby-darwin-universal did not download and verify from the published release.' '${relOut}'"
+		git -C "${relRepo}" checkout -q -- .
+		git -C "${relRepo}" tag -d v1.2.4 >/dev/null
+		## The table comes from phase 1's files and the upload from phase 3's, so a file only one of
+		## them made is named both ways round.
+		REL_PHASE1_TREE="${relRepo}" fRelRun -y
+		fAssert "[Erm33XZ] release.bash warns when what it publishes and the notes' downloads table disagree" \
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF \"WARNING: the release notes don't link gitsby-plan9-386, which is being published.\" '${relOut}' && grep -qF \"WARNING: the release notes link gitsby-freebsd-arm64, which isn't being published.\" '${relOut}'"
 		git -C "${relRepo}" checkout -q -- .
 		git -C "${relRepo}" tag -d v1.2.4 >/dev/null
 		## Phase 3 says which release the install line takes, by running the tag's install.bash
@@ -4362,6 +4396,17 @@ GHEOF
 		fAssert "[ErgRj8c] and refuses to bump a tag whose patch isn't digits" \
 			bash -c "[[ '${relRc}' == 1 ]] && grep -qF \"can't work out the version after v1.3.0rc1\" '${relOut}'"
 		git -C "${relRepo}" tag -d v1.3.0rc1 >/dev/null
+		## Phase 2 writes the downloads table, so one already under vNEXT is stale.
+		sed -i 's/^- a change$/- a change\n\n### Downloads\n\n- stale/' "${relRepo}/changelog.md"
+		git -C "${relRepo}" commit --quiet -am 'stale table'
+		git -C "${relRepo}" push --quiet 2>/dev/null
+		relState="$(fRelState)"
+		fRelRun --dry-run
+		## Compared here: with the thousands of tags above, the state is too long to pass as one argument.
+		local relSame=0; if [[ "${relState}" == "$(fRelState)" ]]; then relSame=1; fi
+		# shellcheck disable=SC2016  ## the inner shell does the expanding.
+		fAssert "[Erm33Xn] release.bash refuses a vNEXT section that already has a downloads table, and changes nothing" \
+			bash -c '[[ "$1" == 1 && "$4" == 1 ]] && grep -qF -- "$2" "$3"' _ "${relRc}" "the changelog's vNEXT section already has a '### Downloads' heading" "${relOut}" "${relSame}"
 		git clone --quiet "${relRepo}" "${rel}/winres" 2>/dev/null
 		cp "${root}/cicd/utility/gen-winres.bash" "${rel}/winres/cicd/utility/"
 		fAssertOut "[Erfs78A] and so does gen-winres.bash" 'gen-winres: no icon at assets/gitsby\.ico' \
@@ -6246,3 +6291,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20261004 JC: The binary string checks read in the C locale, so they work on macOS, and a check for no match fails when the file was not read. The asks-origin-once fixture has its origin/HEAD set, so git before 2.47 counts the same. 1399 -> 1400.
 ##		- 20261004 JC: The pull line names the upstream, as git shortens it, and the step that runs is the line the plan showed. 1401 -> 1406.
 ##		- 20261004 JC: A tag named like origin's default branch no longer changes the name the default branch reads as. 1406 -> 1408.
+##		- 20261004 JC: The release's changelog section gets a downloads table, one row per OS and one column per CPU, written from the files phase 1 built. The release body is still that section word for word. Phase 1 refuses a vNEXT that already has one, and phase 3 warns when the files it publishes and the table disagree. Four of the five new checks fail against the tree before them; the fifth, the body matching the section, held before too. 1412 -> 1417.

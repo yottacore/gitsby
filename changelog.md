@@ -57,6 +57,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The accounts file takes `~`, `${HOME}` and `%USERPROFILE%` as the home folder on every platform, with either slash, so one file synced between Windows and Linux applies on both. No other variable is expanded, and a rule that starts with one is listed as ignored.
 
+- The release notes list the downloads in a table, one row per OS and one column per CPU, with each cell linking its file. macOS has one file for both CPUs, so it sits under both. The checksums and the two installers are on a line below the table.
+
 ### Changed
 
 - `status`, `whoami` and every command's identity block ask gh and ssh who you are at the same time, not one after the other, and read gh's active account from gh's own config instead of asking GitHub. In an account folder on a slow network that waits about a third as long. `account list` asks gh about every account at once.
