@@ -167,7 +167,7 @@ func (a *app) releasePreflight() error {
 	}
 	if relExisting := runOut("git", "describe", "--exact-match", "--tags", relTarget); relExisting != "" {
 		a.out.status("Nothing new to release since " + relExisting + ".")
-		a.out.clean("  If that tag never reached origin, push it: git push origin " + relExisting)
+		a.out.clean("  If that tag never reached origin, push it: git push origin tag " + relExisting)
 		a.out.clean("")
 		return errDone
 	}
@@ -229,7 +229,9 @@ func (a *app) cmdRelease() error {
 		if err := a.step("git", push...); err != nil {
 			return err
 		}
-		if err := a.step("git", "push", "origin", a.rel.tag); err != nil {
+		// 'tag' names refs/tags only, so a branch with the tag's name can't make the
+		// push ambiguous.
+		if err := a.step("git", "push", "origin", "tag", a.rel.tag); err != nil {
 			return err
 		}
 	}
