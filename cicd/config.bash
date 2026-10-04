@@ -212,7 +212,25 @@ DEMOGIF_ARCHIVE_DIR="../private/demo/gif"    # out-of-tree originals, GFS-rotate
 ## optimized one. Lossy modes buy almost nothing on a 35-color text demo.
 DEMOGIF_OPT_CMD=(gifsicle -O3)
 
-## Stage 7: backup + publish to git (runs from repo root). The engine always
+## Stage 7: Mac + Windows tests, over ssh. Each box is taken through a host lock shared with
+## other projects, only while its run lasts and only if free right now. The lock is a script
+## outside the repo; the first file matching REMOTE_LOCK_GLOB is it, and with none the stage
+## is skipped. The boxes are this machine's, so on anyone else's that is what happens.
+REMOTE_TEST_CMD=(cicd/remote-tests.bash)
+REMOTE_LOCK_GLOB="${HOME}/synced/0-0/common/exec/util/linux/bash/*_windows-host-lock.bash"
+## Each entry is the name the lock knows a box by, then optionally a colon and the ssh names it
+## answers to, tried in order. b29w is up on wired or on wifi, under a different name for each.
+## Every Mac in the list runs; of the Windows boxes, the first free one does.
+REMOTE_MAC_HOSTS=("b26")
+REMOTE_WINDOWS_HOSTS=("vm925w" "b29w:b29w,b29w-wif")
+## b26 is an Intel Mac. Its /bin/bash is 3.2, below the suite's floor, so the suite runs under
+## Homebrew's, which is not on the PATH an ssh command gets.
+REMOTE_MAC_GOARCH="amd64"
+REMOTE_MAC_BASH="/usr/local/bin/bash"
+## The stage's own folder under the Mac's home, holding the copy of the tree the suite runs in.
+REMOTE_MAC_DIR="gitsby-remote-tests"
+
+## Stage 8: backup + publish to git (runs from repo root). The engine always
 ## passes --quiet (it already gave the message prompt) and, when it has one,
 ## -m MESSAGE.
 GIT_PUBLISH=(cicd/utility/n8git_backup-and-publish)
@@ -239,3 +257,4 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-10-03 JC: macOS dogfood is one universal binary, so Intel Macs can run it too.
 ##		- 2026-10-03 JC: PS_LINT_SETTINGS: the PowerShell lint rules moved out of cicd.bash into a settings file.
 ##		- 2026-10-03 JC: The macOS release is one universal binary, in place of one per CPU.
+##		- 2026-10-04 JC: Stage 7 runs the tests on a Mac and a Windows box. Publish is stage 8.
