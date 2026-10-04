@@ -273,11 +273,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Run the tests on FreeBSD and on Linux arm64 in stage 7 too
 	- ID: 2026100413264100
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Waiting for testing
+	- Needs local test suite run?: Yes. The full test.bash on b23, with the 8 new checks and the changed `[ErkbDSi]`.
+	- Needs external testing: A full stage 7 run, with b26 and a Windows box beside the two new ones. The run alone on the two new boxes is done.
 	- Priority [Feature]: Avg
 	- Opened: 20261004-132641
 	- Opened by: jim-collier
-	- Related IDs: 2026100312332924
+	- Related IDs: 2026100312332924, 2026100416430451, 2026100416430456
 	- Target OS: FreeBSD, Linux arm64
 	- Requirements  [Feature]:
 		- Two more test boxes share the host lock: vmFreeBSD and vmDebARM64. Both are VMs with a virtual display.
@@ -285,6 +287,56 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- test.bash runs there too where bash and the tools it needs are on the box.
 		- A box that is off or reserved is skipped, the same as the others.
 	- Note: FreeBSD and Linux arm64 are published targets that no test has run on yet.
+	- Decisions:
+		- 2026-10-04: Both boxes have a test user with no password: `bsdtest` on vmFreeBSD and `tester` on vmDebARM64, neither with sudo. Both also take root over ssh. Root is for setup only, such as installing what test.bash needs. The tests run as the test user.
+		- 2026-10-04: vmFreeBSD runs FreeBSD 15.1 at a static 192.168.1.119. vmDebARM64 is at 192.168.1.118. Both are libvirt VMs on b23.
+		- 2026-10-04: Both boxes are taken through the host lock by name, in its other-hosts list, like b26.
+	- Progress log:
+		- Done: stage 7 runs the Mac's flow on each Unix box in `REMOTE_UNIX_HOSTS`, as its test user. Each box gets a copy of the tree, the Go tests built for its target, and the build cicd.bash makes for that target. Targets are set per box in `REMOTE_UNIX_TARGETS`.
+		- Done: test.bash runs only where the box has bash, git and go (`REMOTE_UNIX_NEEDS`). Otherwise the box runs the Go tests and the run names what it lacks. The module fetch is skipped too.
+		- Done: cicd.bash builds `freebsd/amd64` and `linux/arm64` the way dogfood builds, hands them to the harness with `--bin`, and removes them after. The stage keeps its name, "Mac + Windows tests".
+		- Done: README and contributing.md list the new boxes.
+		- Installed on vmDebARM64 as root: Go 1.26.8 from go.dev, in `/usr/local/go`, linked from `/usr/local/bin/go` and `gofmt`. bash, git and jq were already there.
+		- Nothing installed on vmFreeBSD. bash, git, jq and Go 1.25 were already there. Go fetches the 1.26.2 toolchain go.mod names into the test user's module cache on the first run.
+		- Verified: the 8 new checks and `[ErkbDSi]` pass, and each new one fails against gover's harness. Six faults put into a copy of the harness, one at a time, each turned its check red: the Unix boxes left out of the lock's list, a missing tool ignored, the module fetch always run, no target check, one target's build sent to every box, and gover's harness. `[ErkbDSi]` fails against gover's cicd.bash and with a Unix build left behind.
+		- Verified: shellcheck, `test-id.bash --check` and the gate pass.
+		- Verified: stage 7's harness run against only the two new boxes, under the lock, 2026-10-04. vmFreeBSD: test.bash 1178/0, Go tests all pass but `TestLockAccountsFile`. vmDebARM64: Go tests all pass, test.bash 1436/1, the one being `[ErkSC4L]`. Both filed as their own bugs.
+		- Note: vmDebARM64 is an emulated arm64 CPU. Its test.bash took about 40 minutes, against about one on vmFreeBSD, so a full run is that much longer.
+	- Swept: every reader of the stage 7 settings. cicd.bash prints and builds from them, remote-tests.bash runs from them, and the test.bash fixture copies config.bash. The existing harness checks pin the Mac and Windows boxes, so their fixture empties `REMOTE_UNIX_HOSTS` and the new checks put it back.
+	- Note: `[ErkbDSi]` keeps its ID. It used to require only the Mac build in the harness call, and now requires the two Unix builds as well, all three removed after.
+	- Branch: unixrt
+	- Commit: f331e15
+	- Test case: test.bash `[Erm9Pnk]`, `[Erm9Pnx]`, `[Erm9PoA]`, `[Erm9PoN]`, `[Erm9Poa]`, `[Erm9Pon]`, `[Erm9Pp1]`, `[Erm9PpE]`, and `[ErkbDSi]` (changed).
+
+- `TestLockAccountsFile` fails on FreeBSD
+	- ID: 2026100416430451
+	- Type: Bug
+	- Status: Queued
+	- Priority|Severity [Bug]: Low
+	- Opened: 20261004-164304
+	- Opened by: jim-collier
+	- Related IDs: 2026100413264100
+	- Target OS: FreeBSD
+	- Test environment: vmFreeBSD, FreeBSD 15.1 amd64, UFS.
+	- Incorrect behavior [Bug]: "unlock removed a lock it didn't make". The test removes the lock, writes a new one at the same path, and unlock removes that one too.
+	- Expected behavior [Bug]: unlock leaves a lock file it did not make.
+	- Reproduced [Bug]: Yes, 2026-10-04, in stage 7 on vmFreeBSD. It passes on Linux, macOS and Windows.
+	- Possible cause [Bug]: unlock tells its own lock by `os.SameFile`, which compares device and inode. UFS hands the freed inode number straight to the new file, so the new lock looks like the old one. Not checked.
+
+- `[ErkSC4L]` fails on the emulated arm64 box
+	- ID: 2026100416430456
+	- Type: Bug
+	- Status: Queued
+	- Priority|Severity [Bug]: Low
+	- Opened: 20261004-164304
+	- Opened by: jim-collier
+	- Related IDs: 2026100413264100, 2026100313123988
+	- Target OS: Linux arm64
+	- Test environment: vmDebARM64, Debian 13 arm64 on an emulated CPU.
+	- Incorrect behavior [Bug]: "status in a token-file folder asks gh and ssh together" fails there. Its twin `[ErkSctG]`, for whoami, passes.
+	- Expected behavior [Bug]: the check passes on a slow box when the two probes do run together.
+	- Reproduced [Bug]: Once, 2026-10-04, in stage 7 on vmDebARM64. Not rerun.
+	- Possible cause [Bug]: the check wants the run under 1.7 s with each probe delayed 1 s. On an emulated CPU the rest of `status` likely takes more than the 0.7 s left. Not checked.
 
 - Code Review 20261003 enhancement 7: Go code tidy
 	- ID: 2026100313130047
