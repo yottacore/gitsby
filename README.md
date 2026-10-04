@@ -255,11 +255,7 @@ On Windows the PowerShell installer also puts that directory on your PATH, since
 
 For anything else - installing for everyone, taking an older release, or naming the architecture yourself - download the installer and run it with `--help`.
 
-A pre-release is flagged as one, so neither installer takes it by default: both go for the newest full release. Name its tag to install one.
-
-~~~bash
-curl -fsSL https://raw.githubusercontent.com/yottacore/gitsby/main/install.bash | bash -s -- --tag v3.0.0-beta.1
-~~~
+Either installer takes the newest full release that has a binary in it. Until there is one, that means the newest pre-release, and the installer says so. After that, a pre-release is installed only by naming its tag with `--tag`.
 
 ### Without the installer
 

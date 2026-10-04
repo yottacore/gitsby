@@ -559,11 +559,19 @@ The rules these entries lead to are collected in [style-guide_ui-ux.md](style-gu
 
 A version whose tag carries a semver suffix - `v3.0.0-beta.1` - is published as a pre-release. A plain `vX.Y.Z` is published as a full release. The tag decides it, with no flag to pass and nothing to remember, because the tag is already the only place a version is written.
 
-GitHub's `releases/latest` returns the newest release not flagged as a pre-release, and that is the point. A candidate sits beside the full release without displacing it, so every documented one-liner install goes on resolving to the newest full version until a full version replaces it. Asking for a candidate is `--tag`/`-Tag`.
+GitHub's `releases/latest` returns the newest release not flagged as a pre-release. A candidate sits beside the full release without displacing it.
 
-The installers read the release list rather than that redirect. They take the highest full release, and the newest pre-release only when there is no full one, so a repo whose only publication is a pre-release still installs.
+With no tag, the installers take the newest full release that publishes a gitsby binary. While no full release does, they take the newest pre-release that does, and say so. A full release with a binary always wins, so once there is one, a later candidate is installed only by naming it with `--tag`/`-Tag`.
 
-This reverses an earlier decision to publish everything as a full release. That one was taken while both installers resolved through the `releases/latest` redirect, which would have left a flagged candidate uninstallable, so the suffix in the tag was the only signal available. The installers read the list now, so the reason is gone, and the first Go publication is a beta that must not land on everyone who follows the install line in the README.
+- A binary is an asset named `gitsby-<os>-<arch>`, for any platform, not only the one installing. Every machine is then pointed at the same release, and one it leaves out is told what that release does publish. v2.1.0 and older publish the scripts that came before the binaries, so they don't count.
+
+- Newest is the highest version, not the latest listed, so a backported fix doesn't displace a newer line. Two pre-releases of one version go by publish order. A full release and a pre-release are never compared by version, so the trap where `1.0.0-rc1` sorts above `1.0.0` can't arise.
+
+- `releases/latest` is asked first, since it is a redirect with no API rate limit, and when its `SHA256SUMS` lists a binary that is the answer. Otherwise the installers read the release list once, which says what every release published. That costs one of the 60 unauthenticated API requests an hour, and an explicit tag needs neither.
+
+This reverses an earlier decision to publish everything as a full release. That one was taken while both installers resolved through the `releases/latest` redirect, which would have left a flagged candidate uninstallable, so the suffix in the tag was the only signal available. The installers fall back to the list now, so the reason is gone.
+
+The first Go publication is a beta, and it was first meant to stay off the install line in the README. But v2.1.0, the newest full release, publishes only the old scripts, so a line that skipped the beta had nothing it could install until 3.0.0. The beta is what it takes until then.
 
 ### Automating a release
 
@@ -573,7 +581,7 @@ Three phases, so a failure never leaves a half-cut release:
 
 1. **Prepare and verify**, changing nothing outside the working tree. Resolve the version (argument, else the bump `release` would choose), refuse if the tag exists or the changelog has no `vNEXT` section, run the full pipeline, and cross-build every release target as a compile gate. Nothing here needs undoing, so a target that stopped compiling costs nothing to discover.
 2. **Land.** Retitle the changelog's `vNEXT` heading, open a PR for it, merge it, then `gitsby release`. The only phase that pushes. The bump goes through a branch and a PR like everything else: committing it straight to the merge target would be the one place this project does to itself what the tool refuses to do for you.
-3. **Publish and prove.** Rebuild the per-platform binaries from the tagged commit, create the GitHub release with that changelog section as the body, upload the binaries and their `SHA256SUMS`, then verify - download this platform's published binary, check it, run it, and confirm it reports the released version.
+3. **Publish and prove.** Rebuild the per-platform binaries from the tagged commit, create the GitHub release with that changelog section as the body, upload the binaries and their `SHA256SUMS`, then verify - download this platform's published binary, check it, run it, and confirm it reports the released version. Last, see which release the install line now takes.
 
 Decisions inside that shape:
 
@@ -584,6 +592,8 @@ Decisions inside that shape:
 - **The version lives in the tag and nowhere else.** The build injects it with `-ldflags`, so there is no source string to bump and nothing that can disagree with the tag. That replaced an earlier design in which two builds each carried their own version and were compared to each other before pushing - a guard that only existed because the duplication did.
 
 - **The proof is the contract, not the installer.** Download, checksum, run. That is what an installer does at the end of its plan, and it is also what someone who skipped the installer does by hand, so the narrower check covers both. The installers' own behavior is covered by the suite, which reaches everything up to the network. The earlier version of this ran both installer one-liners side by side, which is what caught the PowerShell checksum bug that had silently skipped verification since the day it was added.
+
+- **Which release the install line takes is checked live.** It depends on what GitHub holds, which the suite can't reach. Phase 3 runs the tag's `install.bash` into a throwaway home and reads the release from its plan. A full release has to be the one taken. A pre-release is taken while no full release has a binary, and passed over for one that does.
 
 - **History footers are warned about, not gated.** The suites' own footers are checked for an entry newer than the last release tag. It is a warning because a release with a stale footer is untidy, not wrong, and a hard gate on a habit is a gate people learn to work around.
 
