@@ -31,9 +31,9 @@
 ##		- Guards that have caught real mistakes: the harnesses must carry a
 ##		  history-footer entry newer than the last release tag, and the changelog
 ##		  must have a real vNEXT section rather than the decoy template heading.
-##		- A version with a semver suffix - v3.0.0-beta.1 - publishes as a pre-release,
-##		  so 'releases/latest' and both installers go on resolving to the newest full
-##		  release. Asking for one is 'install.bash --tag v3.0.0-beta.1'.
+##		- A version with a semver suffix - v3.0.0-beta.1 - publishes as a pre-release.
+##		  The installers take one by default only while no full release publishes a
+##		  gitsby binary; past that, a pre-release is asked for with --tag.
 
 ##	History: At bottom of script.
 
@@ -210,8 +210,8 @@ fi
 git rev-parse -q --verify "refs/tags/${version}" >/dev/null && fDie "tag ${version} already exists."
 
 ## A suffixed version is a candidate, and GitHub is told so. The tag decides it, because the tag
-## is already the only place a version is written. 'releases/latest' skips pre-releases, which is
-## what keeps a beta off the documented one-liner installs until a full release replaces it.
+## is already the only place a version is written. Once a full release publishes a gitsby binary,
+## that flag is what keeps later candidates off the install line in the README.
 prerelease=0; [[ "${version}" == *-* ]] && prerelease=1
 if ((prerelease)); then
 	fEcho_Clean "${version} carries a semver suffix, so it publishes as a pre-release."
@@ -361,7 +361,7 @@ fi
 ## Prove it the way a user meets it, not by trusting the steps above: fetch the asset for THIS
 ## platform back off the published release, check it against the published SHA256SUMS, and run it.
 ## That is the whole contract - a download whose checksum matches and whose --version is right.
-if ! fWould "verify releases/latest, then download and run this platform's published binary, and check the macOS one"; then
+if ! fWould "verify releases/latest, download and run this platform's published binary, check the macOS one, and see which release the install line takes"; then
 	latest="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/yottacore/gitsby/releases/latest" 2>/dev/null | sed -n 's|.*/releases/tag/||p' || true)"
 	## 'releases/latest' is the newest release NOT flagged as a pre-release, so a candidate must
 	## not resolve there and a full release must. Asking it the same question both ways round
@@ -389,6 +389,30 @@ if ! fWould "verify releases/latest, then download and run this platform's publi
 		else
 			fEcho_Clean "WARNING: ${macAsset} did not download and verify from the published release."
 		fi
+	fi
+	## Which release the install line in the README now takes. That depends on what GitHub
+	## holds, which no suite can reach, so the installer from the tag - what main now serves -
+	## runs into a throwaway home and its plan says. A full release has to be the one it takes.
+	## A pre-release is taken while no full release has a binary, and passed over for one that
+	## does; any other pick means the list it read was not the one just published.
+	if [[ -f "${tagTree}/install.bash" ]]; then
+		lineHome="$(mktemp -d)"
+		lineOut="$(HOME="${lineHome}" bash "${tagTree}/install.bash" -y 2>&1 </dev/null || true)"
+		rm -rf -- "${lineHome:?}"
+		lineTag="$(printf '%s\n' "${lineOut}" | sed -n 's/^  - Download [^ ]* (\(.*\)) from .*/\1/p' | sed -n '1p')"
+		if [[ -z "${lineTag}" ]]; then
+			fEcho_Clean "WARNING: the install line stopped before naming a release: $(printf '%s\n' "${lineOut}" | sed -n 's/^Error: //p' | sed -n '1p')"
+		elif [[ "${lineTag}" == "${version}" ]]; then
+			fEcho_Clean "the install line takes ${version}"
+		elif ((prerelease)) && [[ "${lineTag}" != *-* ]]; then
+			fEcho_Clean "the install line stays on ${lineTag}, a full release with a binary; ${version} is taken by naming it"
+		elif ((prerelease)); then
+			fEcho_Clean "WARNING: the install line takes ${lineTag}, neither ${version} nor a full release."
+		else
+			fEcho_Clean "WARNING: the install line takes ${lineTag}, not ${version}."
+		fi
+	else
+		fEcho_Clean "WARNING: ${version} has no install.bash, so which release the install line takes went unchecked."
 	fi
 fi
 
@@ -429,3 +453,4 @@ echo
 ##		- 20261003 JC: The tag list and the proof's --version are read whole before they are matched. A head or grep -q that quit early could fail the writer under pipefail: the proof now and then, and the tag lookup every time once there are a few thousand tags.
 ##		- 20261003 JC: macOS publishes one universal binary, both Mac builds joined by macho-universal.bash, in place of one per CPU. The proof checks it against SHA256SUMS from any box, since only a Mac can run it. An asset name GitHub would rewrite stops the build before it is hashed.
 ##		- 20261003 JC: The patch bump refuses a last tag that is not plain digits, and reads a leading zero as decimal.
+##		- 20261003 JC: Phase 3 runs the tag's install.bash into a throwaway home and says which release the install line now takes. A full release has to be taken; a pre-release is taken while no full release has a gitsby binary, and passed over for one that does. The note that the pre-release flag alone keeps a beta off the install line is gone, since until 3.0.0 it doesn't.

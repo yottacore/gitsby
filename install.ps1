@@ -150,13 +150,45 @@ function Install-Gitsby {
     $asset = "gitsby-${goOs}-${goArch}"
     if ($onWindows) { $asset += '.exe' }
 
-    # No -Tag: resolve the latest release from the releases/latest redirect (no auth, no
-    # API rate limit); unauthenticated API only as fallback (60 req/hr per IP).
+    # Whatever names a release reaches a download URL, so it is checked the same way as a typed tag.
+    function Assert-PlainTag([string]$name) {
+        if ($name -notmatch '^[A-Za-z0-9._/-]+$' -or (Test-PathTag $name)) { throw "The resolved release tag ('${name}') isn't a plain git tag; aborting." }
+    }
+    # SHA256SUMS decides two things at once, and it is a few hundred bytes: whether a release
+    # publishes a binary for this platform, and what that binary should hash to. It is fetched
+    # before the plan, so the plan can promise a specific file before anything large is
+    # downloaded. Every install path here is a release asset, so every one is verified - there
+    # is no unverified route left to fall back to.
+    function Get-ChecksumText([string]$name) {
+        try {
+            # GitHub serves SHA256SUMS as application/octet-stream, and Invoke-WebRequest returns
+            # .Content as bytes for anything it doesn't consider text. Splitting those into lines
+            # matched nothing, so every default install skipped verification and said there was no
+            # SHA256SUMS - which wasn't true.
+            $body = (Invoke-WebRequest -Uri "https://github.com/${repo}/releases/download/${name}/SHA256SUMS" -UseBasicParsing).Content
+            if ($body -is [byte[]]) { return [Text.Encoding]::UTF8.GetString($body) }
+            return [string]$body
+        } catch { return '' }
+    }
+    # A binary is an asset named gitsby-<os>-<arch>, for any platform. v2.1.0 and older publish
+    # the scripts that came before them, so they don't count. Any platform rather than this one,
+    # so every machine is pointed at the same release, and one it leaves out is told what it does
+    # publish.
+    function Test-GitsbyBinary([string]$sumsText) {
+        return [bool]($sumsText -match '(?m)^[0-9a-fA-F]{64}\s+\*?gitsby-\S+\r?$')
+    }
+
+    # No -Tag: the newest full release that publishes a gitsby binary, or while none does, the
+    # newest pre-release that does.
     # Resolved into its own variable for the same reason as $archName: a scraped tag assigned
     # back to $Tag re-runs its ValidatePattern, which turns the check below into dead code and
     # reports a malformed tag as whatever the surrounding catch happens to say.
     $tagName = $Tag
+    $sums = ''
+    $sumsFor = ''
     if (-not $tagName) {
+        # releases/latest first: a redirect, so no auth and no API rate limit. It is the newest
+        # full release, and when its SHA256SUMS lists a binary that is the answer.
         # 7's headers have Location as a property and no string indexer. 5.1's are a
         # WebHeaderCollection, where the indexer works and the property is an error under strict
         # mode. Anything unreadable counts as no answer, so the list lookup below still runs.
@@ -178,59 +210,62 @@ function Install-Gitsby {
         } catch {
             if ($_.Exception.PSObject.Properties['Response'] -and $_.Exception.Response) { $location = Read-LocationHeader $_.Exception.Response }
         }
-        if ($location -match '/releases/tag/([^/\s]+)') { $tagName = $Matches[1] }
+        $noBinary = ''
+        if ($location -match '/releases/tag/([^/\s]+)') {
+            $tagName = $Matches[1]
+            # Scraped from a redirect header, so checked before it reaches a URL.
+            Assert-PlainTag $tagName
+            $sums = Get-ChecksumText $tagName
+            $sumsFor = $tagName
+            # A full release with only the old scripts in it. One with no SHA256SUMS at all stays
+            # put, for the check below to name.
+            if ($sums -and -not (Test-GitsbyBinary $sums)) {
+                $noBinary = $tagName
+                $tagName = ''
+            }
+        }
+        if (-not $tagName) {
+            # The list says what each release published, so one request settles it.
+            # releases/latest skips pre-releases, and that is the other case this is for.
+            try {
+                $releaseList = Invoke-RestMethod -Uri "https://api.github.com/repos/${repo}/releases" -UseBasicParsing
+            } catch {
+                if ($noBinary) {
+                    throw "${noBinary}, the latest full release, has no gitsby binary, and the release list that would name one couldn't be read. GitHub may be unreachable, or rate-limiting this address (60 requests an hour, unauthenticated). A specific release always works: -Tag TAG. ($($_.Exception.Message))"
+                }
+                throw "Couldn't work out the latest release of ${repo}. GitHub may be unreachable, or rate-limiting this address (60 requests an hour, unauthenticated). A specific release always works: -Tag TAG. ($($_.Exception.Message))"
+            }
+            # Wrapped only once assigned. 5.1 sends the whole array down the pipeline as one object,
+            # so @() around the call made a list of one, and every tag name came out as one tag.
+            $releases = @($releaseList)
+            $withBinary = @($releases | Where-Object { @($_.assets | Where-Object { [string]$_.name -like 'gitsby-*' }).Count -gt 0 })
+            # Highest version wins, not newest-listed: the list is ordered by publish date, so a
+            # backported fix cut after a newer release would otherwise be taken. The numeric
+            # fields decide; Sort-Object is stable, so a tie keeps the newer-listed entry. Two
+            # pre-releases of one version tie, and release.bash publishes them in order. A full
+            # release is never weighed against a pre-release.
+            $tagVersion = {
+                $v = ($_.tag_name -replace '^[vV]', '') -replace '[-+].*$', ''
+                $parsed = [version]'0.0'
+                if ([version]::TryParse($v, [ref]$parsed)) { $parsed } else { [version]'0.0' }
+            }
+            $newestFull = $withBinary | Where-Object { -not $_.prerelease } | Sort-Object -Property @{Expression = $tagVersion} -Descending | Select-Object -First 1
+            $newestPre = $withBinary | Where-Object { $_.prerelease } | Sort-Object -Property @{Expression = $tagVersion} -Descending | Select-Object -First 1
+            if ($newestFull) {
+                $tagName = [string]$newestFull.tag_name
+            } elseif ($newestPre) {
+                $tagName = [string]$newestPre.tag_name
+                Write-Host ''
+                Write-Host "[ No full release has a gitsby binary yet; taking the newest pre-release, ${tagName}. ]"
+            } else {
+                throw "No release of ${repo} publishes a gitsby binary yet, so there is nothing to install. Build it instead - the module is pure Go with no dependencies: git clone https://github.com/${repo}.git; cd gitsby/src-go; go build -o gitsby ."
+            }
+        }
     }
-    if (-not $tagName) {
-        # 'releases/latest' is defined as the newest release that is NOT a pre-release, so a
-        # repo whose newest publication is one has nothing there for the redirect above to
-        # find. That is the case this exists for - and it used to ask the same endpoint again,
-        # which fails identically. The list endpoint comes back newest-first.
-        try {
-            $releaseList = Invoke-RestMethod -Uri "https://api.github.com/repos/${repo}/releases" -UseBasicParsing
-        } catch {
-            throw "Couldn't work out the latest release of ${repo}. GitHub may be unreachable, or rate-limiting this address (60 requests an hour, unauthenticated). A specific release always works: -Tag TAG. ($($_.Exception.Message))"
-        }
-        # Wrapped only once assigned. 5.1 sends the whole array down the pipeline as one object,
-        # so @() around the call made a list of one, and every tag name came out as one tag.
-        $releases = @($releaseList)
-        # Highest version wins, not newest-listed: the list is ordered by publish date, so a
-        # backported fix cut after a newer release would otherwise resolve as latest. The
-        # numeric fields decide; Sort-Object is stable, so a tie keeps the newer-listed entry. Two
-        # pre-releases of one version tie, and release.bash publishes them in order.
-        $tagVersion = {
-            $v = ($_.tag_name -replace '^[vV]', '') -replace '[-+].*$', ''
-            $parsed = [version]'0.0'
-            if ([version]::TryParse($v, [ref]$parsed)) { $parsed } else { [version]'0.0' }
-        }
-        $newestFull = $releases | Where-Object { -not $_.prerelease } | Sort-Object -Property @{Expression = $tagVersion} -Descending | Select-Object -First 1
-        if ($newestFull) {
-            $tagName = [string]$newestFull.tag_name
-        } elseif ($releases.Count -gt 0) {
-            $tagName = [string](@($releases | Sort-Object -Property @{Expression = $tagVersion} -Descending)[0].tag_name)
-            Write-Host ''
-            Write-Host "[ No full release yet; taking the newest pre-release, ${tagName}. ]"
-        } else {
-            throw "${repo} has published no releases, so there is nothing to install. Build the tip yourself: git clone https://github.com/${repo}.git; cd gitsby/src-go; go build -o gitsby ."
-        }
-    }
-    # Scraped from a redirect header, so check it the same way as a typed one before it reaches a URL.
-    if ($tagName -notmatch '^[A-Za-z0-9._/-]+$' -or (Test-PathTag $tagName)) { throw "The resolved release tag ('${tagName}') isn't a plain git tag; aborting." }
+    Assert-PlainTag $tagName
 
-    # SHA256SUMS decides two things at once, and it is a few hundred bytes: whether this
-    # release publishes a binary for this platform, and what that binary should hash to.
-    # Fetching it up front means the plan can promise a specific file, before anything large
-    # is downloaded. Every install path here is a release asset, so every one is verified -
-    # there is no unverified route left to fall back to.
     $base = "https://github.com/${repo}/releases/download/${tagName}"
-    $sums = ''
-    try {
-        # GitHub serves SHA256SUMS as application/octet-stream, and Invoke-WebRequest returns
-        # .Content as bytes for anything it doesn't consider text. Splitting those into lines
-        # matched nothing, so every default install skipped verification and said there was no
-        # SHA256SUMS - which wasn't true.
-        $body = (Invoke-WebRequest -Uri "${base}/SHA256SUMS" -UseBasicParsing).Content
-        $sums = if ($body -is [byte[]]) { [Text.Encoding]::UTF8.GetString($body) } else { [string]$body }
-    } catch { $sums = '' }
+    if ($sumsFor -ne $tagName) { $sums = Get-ChecksumText $tagName }
     if (-not $sums) {
         throw "Release ${tagName} publishes no SHA256SUMS, so nothing here can be verified. (A release published seconds ago may not be servable yet; try again shortly.)"
     }
@@ -508,3 +543,7 @@ try {
 #     clears copies an earlier install left behind.
 #   - 20261003 JC: A Mac takes gitsby-darwin-universal, one binary for both CPUs, in place of
 #     one per CPU. -Arch there is noted and changes nothing.
+#   - 20261003 JC: With no -Tag, the newest full release that publishes a gitsby binary, or
+#     while none does, the newest pre-release that does. v2.1.0 publishes only the old
+#     scripts, so until 3.0.0 the install line found nothing to install. releases/latest is
+#     still asked first, and the release list only when its SHA256SUMS names no binary.

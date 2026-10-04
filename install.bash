@@ -129,9 +129,29 @@ elif [[ -z "${arch}" ]]; then
 fi
 asset="gitsby-${goOs}-${arch}"
 
-## No --tag: resolve the latest release from the releases/latest redirect (no auth, no API
-## rate limit); unauthenticated API scrape only as fallback (60 req/hr per IP).
+## Whatever names a release reaches a download URL, so it is checked the same way as a typed tag.
+fCheckTag(){
+	if [[ "$1" =~ ^[A-Za-z0-9._/-]+$ ]] && ! fIsPathTag "$1"; then return 0; fi
+	fErr "The resolved release tag ('$1') isn't a plain git tag; aborting."
+}
+## Either case of hash and either line ending, as sha256sum -c and the PowerShell installer take.
+fSums(){ fFetch "https://github.com/${repo}/releases/download/$1/SHA256SUMS" 2>/dev/null | tr -d '\r' || true ;}
+## The platforms a SHA256SUMS lists a gitsby binary for, as "linux-amd64, darwin-universal".
+fPublished(){ printf '%s\n' "$1" | sed -n 's/^[0-9a-fA-F]\{64\}[[:space:]]*\*\{0,1\}gitsby-//p' | sed 's/\.exe$//' | paste -sd, - | sed 's/,/, /g' ;}
+
+## SHA256SUMS decides two things at once, and it is a few hundred bytes: whether a release
+## publishes a binary for this platform, and what that binary should hash to. It is fetched
+## before the plan, so the plan can promise a specific file before anything large is downloaded.
+sums=""; sumsFor=""; published=""
+
+## No --tag: the newest full release that publishes a gitsby binary, or while none does, the
+## newest pre-release that does. A binary is an asset named gitsby-<os>-<arch>, for any
+## platform. v2.1.0 and older publish the scripts that came before them, so they don't count.
+## Any platform rather than this one, so every machine is pointed at the same release, and one
+## it leaves out is told what it does publish.
 if [[ -z "${tag}" ]]; then
+	## releases/latest first: a redirect, so no auth and no API rate limit. It is the newest full
+	## release, and when its SHA256SUMS lists a binary that is the answer.
 	## Every lookup here needs '|| true': under 'set -e' an assignment carries its command's
 	## status, so a failed one takes the whole run out silently - past the fallback below and
 	## past the message that explains it. wget is the surprising one: it answers a declined
@@ -141,45 +161,60 @@ if [[ -z "${tag}" ]]; then
 	elif command -v wget >/dev/null 2>&1; then
 		tag="$(wget -q --max-redirect=0 -S -O /dev/null "https://github.com/${repo}/releases/latest" 2>&1 | sed -n 's|.*[Ll]ocation: .*/releases/tag/\([^[:space:]]*\).*|\1|p' | head -n 1 || true)"
 	fi
-	## 'releases/latest' is defined as the newest release that is NOT a pre-release, so a repo
-	## whose newest publication is one has nothing there to redirect to. That is the case this
-	## fallback exists for - and it used to ask the same endpoint again over the API, which
-	## fails identically. The list endpoint comes back newest-first, so the first entry marked
-	## 'prerelease: false' is what the redirect would have found.
+	noBinary=""
+	if [[ -n "${tag}" ]]; then
+		## Scraped from a redirect header, so checked before it reaches a URL.
+		fCheckTag "${tag}"
+		sums="$(fSums "${tag}")"; sumsFor="${tag}"
+		published="$(fPublished "${sums}")"
+		## A full release with only the old scripts in it. One with no SHA256SUMS at all stays
+		## put, for the check below to name.
+		if [[ -n "${sums}" && -z "${published}" ]]; then noBinary="${tag}"; tag=""; fi
+	fi
+	## The list says what each release published, so one request settles it. releases/latest
+	## skips pre-releases, and that is the other case this is for.
+	releaseFacts=""
 	if [[ -z "${tag}" ]]; then
 		releaseList="$(fFetch "https://api.github.com/repos/${repo}/releases" 2>/dev/null || true)"
 		## Commas and braces become newlines first, so every key sits on its own line whether
 		## GitHub pretty-prints or packs the JSON on one line. Neither character can appear in
 		## a tag name (checked below) or a boolean. Two BRE substitutions rather than one
 		## alternation: '\|' is a GNU extension and this has to run under the sed macOS ships.
+		## A binary is known by its download URL, which names the release it belongs to.
 		#  shellcheck disable=2020  ## 'tr replaces sets of chars' - the duplicate newlines are deliberate: all three go to newline.
 		releaseFacts="$(printf '%s\n' "${releaseList}" | tr ',{[' '\n\n\n' \
 			| sed -n -e 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/T \1/p' \
-			         -e 's/^[[:space:]]*"prerelease":[[:space:]]*\([a-z]*\).*/P \1/p' || true)"
+			         -e 's/^[[:space:]]*"prerelease":[[:space:]]*\([a-z]*\).*/P \1/p' \
+			         -e 's|^[[:space:]]*"browser_download_url":[[:space:]]*"[^"]*/releases/download/\(.*\)/gitsby-[^/"]*".*|B \1|p' || true)"
 		## Highest version wins, not newest-listed: the list is ordered by publish date, so a
-		## backported fix cut after a newer release would otherwise resolve as latest. The
-		## first three numeric fields decide; a tie keeps the earlier-listed (newer) entry. Two
-		## pre-releases of one version tie, and release.bash publishes them in order.
+		## backported fix cut after a newer release would otherwise be taken. The first three
+		## numeric fields decide; a tie keeps the earlier-listed (newer) entry. Two pre-releases
+		## of one version tie, and release.bash publishes them in order. A full release is never
+		## weighed against a pre-release, which is where sort -V would put 1.0.0-rc1 above 1.0.0.
 		fPickTag(){
 			awk -v wantPre="$1" '
 				function vkey(t,  v,n,a,i,k) { v=t; sub(/^[vV]/,"",v); n=split(v,a,"[._-]"); k=""
 					for (i=1;i<=3;i++) k = k sprintf("%09d", a[i]+0)
 					return k }
-				$1=="T"{t=$2}
-				$1=="P" && t!="" && (wantPre=="any" || $2==wantPre) {
-					if (vkey(t)>best) { best=vkey(t); bestT=t } }
-				END{ if (bestT!="") print bestT }'
+				$1=="T" { t=$2 }
+				$1=="P" && t!="" { pre[t]=$2; listed[++count]=t; t="" }
+				$1=="B" { binary[$2]=1 }
+				END { for (i=1;i<=count;i++) { c=listed[i]
+						if ((c in binary) && pre[c]==wantPre && vkey(c)>best) { best=vkey(c); bestT=c } }
+					if (bestT!="") print bestT }'
 		}
 		tag="$(printf '%s\n' "${releaseFacts}" | fPickTag false || true)"
 		if [[ -z "${tag}" ]]; then
-			tag="$(printf '%s\n' "${releaseFacts}" | fPickTag any || true)"
-			[[ -z "${tag}" ]] || { echo; fEcho "No full release yet; taking the newest pre-release, ${tag}."; }
+			tag="$(printf '%s\n' "${releaseFacts}" | fPickTag true || true)"
+			[[ -z "${tag}" ]] || { echo; fEcho "No full release has a gitsby binary yet; taking the newest pre-release, ${tag}."; }
 		fi
 	fi
-	[[ -n "${tag}" ]] || fErr "Couldn't work out the latest release of ${repo}. GitHub may be unreachable, or rate-limiting this address (60 requests an hour, unauthenticated). A specific release always works: --tag TAG."
-	## Scraped from a redirect header, so check it the same way as a typed one before it reaches a URL.
-	[[ "${tag}" =~ ^[A-Za-z0-9._/-]+$ ]] || fErr "The resolved release tag ('${tag}') isn't a plain git tag; aborting."
-	! fIsPathTag "${tag}" || fErr "The resolved release tag ('${tag}') isn't a plain git tag; aborting."
+	if [[ -z "${tag}" ]]; then
+		[[ -z "${releaseFacts}" ]] || fErr "No release of ${repo} publishes a gitsby binary yet, so there is nothing to install. Build it instead - the module is pure Go with no dependencies: git clone https://github.com/${repo}.git && cd gitsby/src-go && go build -o gitsby ."
+		[[ -z "${noBinary}" ]] || fErr "${noBinary}, the latest full release, has no gitsby binary, and the release list that would name one couldn't be read. GitHub may be unreachable, or rate-limiting this address (60 requests an hour, unauthenticated). A specific release always works: --tag TAG."
+		fErr "Couldn't work out the latest release of ${repo}. GitHub may be unreachable, or rate-limiting this address (60 requests an hour, unauthenticated). A specific release always works: --tag TAG."
+	fi
+	fCheckTag "${tag}"
 fi
 
 ## sha256 tool, before anything is promised. Every install path here is a release asset, so
@@ -191,19 +226,14 @@ elif command -v openssl   >/dev/null 2>&1; then fSha256(){ openssl dgst -sha256 
 else fErr "No sha256 tool here (need sha256sum, shasum or openssl), so the download can't be verified. Install one and re-run."
 fi
 
-## SHA256SUMS decides two things at once, and it is a few hundred bytes: whether this release
-## publishes a binary for this platform, and what that binary should hash to. Fetching it up
-## front means the plan can promise a specific file, before anything large is downloaded.
 base="https://github.com/${repo}/releases/download/${tag}"
-## Either case of hash and either line ending, as sha256sum -c and the PowerShell installer take.
-sums="$(fFetch "${base}/SHA256SUMS" 2>/dev/null | tr -d '\r' || true)"
+if [[ "${sumsFor}" != "${tag}" ]]; then sums="$(fSums "${tag}")"; published="$(fPublished "${sums}")"; fi
 [[ -n "${sums}" ]] || fErr "Release ${tag} publishes no SHA256SUMS, so nothing here can be verified. (A release published seconds ago may not be servable yet; try again shortly.)"
 want="$(printf '%s\n' "${sums}" | sed -n "s/^\([0-9a-fA-F]\{64\}\)[[:space:]]*\*\{0,1\}${asset}\$/\1/p" | sed -n '1p' | tr '[:upper:]' '[:lower:]')"
 if [[ -z "${want}" ]]; then
 	{
 		echo
 		echo "Error: release ${tag} publishes no gitsby binary for ${goOs}/${arch}."
-		published="$(printf '%s\n' "${sums}" | sed -n 's/^[0-9a-fA-F]\{64\}[[:space:]]*\*\{0,1\}gitsby-//p' | sed 's/\.exe$//' | paste -sd, - | sed 's/,/, /g')"
 		[[ -z "${published}" ]] || echo "  It publishes: ${published}"
 		echo "  Build it for yours instead - the module is pure Go with no dependencies:"
 		echo "    git clone https://github.com/${repo}.git && cd gitsby/src-go && go build -o gitsby ."
@@ -314,3 +344,4 @@ echo
 ##		- 20260928 JC: End of input at the prompt says Aborted, as a typed no does. A tag read from the release redirect gets the same path check as a typed one. A user install checks it can write its folder, and a system one that sudo exists, both before the plan.
 ##		- 20261003 JC: The hash lookup reads SHA256SUMS to the end. A head that quit at the first match could fail the write before it, and the install ended with nothing said.
 ##		- 20261003 JC: A Mac takes gitsby-darwin-universal, one binary for both CPUs, in place of one per CPU. --arch there is noted and changes nothing.
+##		- 20261003 JC: With no --tag, the newest full release that publishes a gitsby binary, or while none does, the newest pre-release that does. v2.1.0 publishes only the old scripts, so until 3.0.0 the install line found nothing to install. releases/latest is still asked first, and the release list only when its SHA256SUMS names no binary.
