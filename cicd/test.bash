@@ -29,8 +29,19 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/.." && pwd)"
 ## Resolved, because the build reports a folder with its links resolved. On macOS mktemp answers
 ## under /var, a link to /private/var, and with a doubled slash when TMPDIR ends in one.
-work="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/gitsby-test.XXXXXX")" && pwd -P)"
-trap 'rm -rf -- "${work:?}"' EXIT
+## mktemp gets its own line. Inside the cd its failure was lost, 'cd ""' stayed put, and the trap
+## removed the folder the suite was started from, a whole checkout once.
+workMade="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-test.XXXXXX")" || exit 1
+work="$(cd -- "${workMade:?}" && pwd -P)" || exit 1
+workMark="${work}/.gitsby-test-scratch"
+if [[ "${work##*/}" != gitsby-test.* || ! "${work}" -ef "${workMade}" || -n "$(ls -A -- "${work}")" ]]; then
+	printf '%s\n' "${0##*/}: '${work}' is not a fresh scratch folder from mktemp, so the run stops here and removes nothing." >&2; exit 1
+fi
+: > "${workMark}"
+## Checked again at exit, so only the folder made above is ever removed. An if, not &&: a false
+## test as the trap's last command would become the suite's exit status.
+fRemoveWork(){ if [[ "${work##*/}" == gitsby-test.* && -f "${workMark}" ]]; then rm -rf -- "${work:?}"; fi ;}
+trap fRemoveWork EXIT
 
 ## Keep test commits hermetic (no reliance on the user's git config).
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
@@ -4466,7 +4477,21 @@ GHEOF
 	for rmScript in "${rmScripts[@]}"; do
 		fAssert "[Emq7Y6y] ${rmScript} never removes an unguarded variable path" \
 			bash -c '[[ -f "$1" ]] && ! grep -qE "$2" "$1"' _ "${root}/${rmScript}" 'rm -[rf]+ +(-- )?"\$\{[a-zA-Z_][a-zA-Z_0-9]*\}'
+		## A cd around a mktemp loses the failure and stays where it is, so the scratch path that
+		## comes back is the current folder.
+		fAssert "[Erm5vYa] ${rmScript} checks mktemp before changing into what it made" \
+			bash -c '[[ -f "$1" ]] && ! grep -qE "$2" "$1"' _ "${root}/${rmScript}" 'cd( --)? +"?\$\(mktemp'
 	done
+	## This suite's own scratch folder, with mktemp failing for real: TMPDIR is a file. It runs from a
+	## folder of its own, and the canary has to survive. The folder named like the suite's empty
+	## config file makes a build without the guard fail on its next line and remove the folder at
+	## once, rather than run every check in there first.
+	local selfRun="${work}/selfrun" selfRc=0
+	mkdir -p "${selfRun}/start/no-accounts.shcl"; echo keepme > "${selfRun}/start/canary.txt"; : > "${selfRun}/tmpdir-is-a-file"
+	( cd "${selfRun}/start" || exit 97; TMPDIR="${selfRun}/tmpdir-is-a-file" bash "${here}/test.bash" -q ) >/dev/null 2>&1 </dev/null || selfRc=$?
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssert "[Erm5vXj] test.bash stops when mktemp fails, and leaves the folder it ran from" \
+		bash -c '[[ "$1" == 1 && -f "$2/canary.txt" && -d "$2/no-accounts.shcl" ]]' _ "${selfRc}" "${selfRun}/start"
 	## ------------------------------------------------------------------------------------
 	## The pipeline itself, after the directive review. Where a check would need a whole run
 	## to exercise, it pins the thing in the source and says so.
@@ -6292,3 +6317,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20261004 JC: The pull line names the upstream, as git shortens it, and the step that runs is the line the plan showed. 1401 -> 1406.
 ##		- 20261004 JC: A tag named like origin's default branch no longer changes the name the default branch reads as. 1406 -> 1408.
 ##		- 20261004 JC: The release's changelog section gets a downloads table, one row per OS and one column per CPU, written from the files phase 1 built. The release body is still that section word for word. Phase 1 refuses a vNEXT that already has one, and phase 3 warns when the files it publishes and the table disagree. Four of the five new checks fail against the tree before them; the fifth, the body matching the section, held before too. 1412 -> 1417.
+##		- 20261004 JC: A failed mktemp stops the suite before the exit trap is set, and the trap removes only the scratch folder the suite made and marked. It removed the folder the suite was started from before. Run for real with TMPDIR a file, from a folder with a canary in it, and no script here changes into a mktemp result unchecked. The run fails against the tree before it. 1417 -> 1444.

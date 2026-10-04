@@ -186,6 +186,31 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: 4a1b65c
 	- Test case: test.bash [Erl2Vub], [Erl2Vup], [Erl2Vv4], [Erl2VvI] and [Erl2eIe]. Go `TestPullArgsFor` [ErgA5KD] and `TestUpstreamNames` [Erl1x3E].
 
+- test.bash removes the folder it was started from when mktemp fails
+	- ID: 2026100415391365
+	- Type: Bug
+	- Status: Waiting for testing
+	- Needs local test suite run?: Yes. The full test.bash, which should come to 1444 passed and 0 failed. The new checks ran on their own, not inside a full run.
+	- Priority|Severity [Bug]: High
+	- Opened: 20261004-153913
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- Run `cicd/test.bash` with `TMPDIR` set to something that isn't a folder, such as a file.
+	- Incorrect behavior [Bug]: `mktemp -d` fails, and `work` ends up as the current folder. The exit trap then runs `rm -rf` on it. Started from the repo root, that is the whole checkout, `.git` included.
+	- Expected behavior [Bug]: The suite stops before it sets the trap, and removes nothing.
+	- Reproduced [Bug]: Yes, 2026-10-04 on b23, against a scratch folder, which was removed. The same day it removed the gitsby checkout, which came back whole from the 15:30 ZFS snapshot.
+	- Possible cause [Bug]: test.bash line 32 is `work="$(cd "$(mktemp -d ...)" && pwd -P)"`. The mktemp failure is lost, and `cd ""` succeeds without moving.
+	- Note: a probable fix checks the mktemp result before resolving it, and refuses a `work` that isn't a `gitsby-test.*` folder before arming the trap. A grep of `cicd` and the installers finds no other `cd "$(mktemp` site.
+	- Actual cause [Bug]: The mktemp call sat inside the `cd` that resolves it, so its failure was lost. `cd ""` succeeds without moving, so `work` became the current folder, and the exit trap removed it.
+	- Actual fix [Bug]: mktemp runs on its own line and stops the suite when it fails. Before the trap is set, the resolved folder has to be the one mktemp made, named `gitsby-test.*`, and empty. A marker file goes in it, and the trap removes the folder only while the name and the marker are both there.
+	- Swept: install.bash and every script in cicd/, cicd/utility/ and cicd/utility/demo/. Only test.bash wrapped mktemp in a `cd`. The rest assign mktemp straight to a variable under `set -e`, so a failure stops them or leaves an empty value that `${x:?}` refuses before any `rm`. demo-repo.bash and remote-tests.bash already check a marker before removing. The shared files in cicd/utility/include/ have no mktemp and no recursive removal.
+	- Verified: with TMPDIR a file, the suite before the fix removed the folder it was started from, canary included, and the fixed one stopped at mktemp and left it alone. `[Erm5vXj]` fails against the old test.bash and passes against the new one, and so does `[Erm5vYa]`'s pattern on test.bash. With mktemp working, the scratch folder is still removed and the exit code kept, for a plain TMPDIR, one ending in a slash, and one reached through a link.
+	- Verified: shellcheck, `test-id.bash --check`, and `cicd.bash --gate`.
+	- Not run: the full test.bash. No run reaches the trap's refusal of a folder without the marker.
+	- Test case: test.bash `[Erm5vXj]`, a real run with mktemp failing, and `[Erm5vYa]`, no script changes into a mktemp result unchecked.
+	- Branch: tmpguard
+	- Commit: 566589f
+
 - macOS release gets a universal binary
 	- ID: 2026100313491873
 	- Type: Enhancement
@@ -244,21 +269,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: 72ae04b
 	- Test case: test.bash `[Erm33Wu]`, `[Erm33X8]`, `[Erm33XL]`, `[Erm33XZ]`, `[Erm33Xn]`.
 	- Note: the installers read `SHA256SUMS` and the release list, never the body, so they are untouched.
-
-- test.bash removes the folder it was started from when mktemp fails
-	- ID: 2026100415391365
-	- Type: Bug
-	- Status: Queued
-	- Priority|Severity [Bug]: High
-	- Opened: 20261004-153913
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]:
-		- Run `cicd/test.bash` with `TMPDIR` set to something that isn't a folder, such as a file.
-	- Incorrect behavior [Bug]: `mktemp -d` fails, and `work` ends up as the current folder. The exit trap then runs `rm -rf` on it. Started from the repo root, that is the whole checkout, `.git` included.
-	- Expected behavior [Bug]: The suite stops before it sets the trap, and removes nothing.
-	- Reproduced [Bug]: Yes, 2026-10-04 on b23, against a scratch folder, which was removed. The same day it removed the gitsby checkout, which came back whole from the 15:30 ZFS snapshot.
-	- Possible cause [Bug]: test.bash line 32 is `work="$(cd "$(mktemp -d ...)" && pwd -P)"`. The mktemp failure is lost, and `cd ""` succeeds without moving.
-	- Note: a probable fix checks the mktemp result before resolving it, and refuses a `work` that isn't a `gitsby-test.*` folder before arming the trap. A grep of `cicd` and the installers finds no other `cd "$(mktemp` site.
 
 - Run the tests on FreeBSD and on Linux arm64 in stage 7 too
 	- ID: 2026100413264100
