@@ -13,6 +13,7 @@ package main
 
 import (
 	"cmp"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -953,7 +954,9 @@ const accountLockWait = 3 * time.Second
 // wrote. The lock goes beside the file, not on it: the save renames a new file
 // over the name, and a lock on the old one guards nothing. An exclusive create is
 // the one lock every platform has. The func it returns removes the lock, but only
-// while it is still the one this run made.
+// while it is still the one this run made. That is told by a random token written
+// into it, not by device and inode: UFS hands a freed inode number straight to the
+// next new file, so another run's lock made after ours went can look like ours.
 func lockAccountsFile(file string, wait time.Duration) (func(), error) {
 	// The save writes through a link, so two names for one file take one lock.
 	target := file
@@ -965,10 +968,19 @@ func lockAccountsFile(file string, wait time.Duration) (func(), error) {
 	for {
 		f, err := os.OpenFile(lock, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 		if err == nil {
-			mine, serr := f.Stat()
-			_ = f.Close()
+			token := rand.Text()
+			_, err = f.WriteString(token)
+			if cerr := f.Close(); err == nil {
+				err = cerr
+			}
+			if err != nil {
+				_ = os.Remove(lock)
+				return nil, writeRefusal("Couldn't make the lock beside the accounts file.", "Writing it", err,
+					"Nothing was written.", "Make the folder it is in writable, then run this again.",
+					noteLines("File", nativePath(file)), noteLines("Lock", nativePath(lock)))
+			}
 			return func() {
-				if now, err := os.Lstat(lock); serr != nil || (err == nil && os.SameFile(mine, now)) {
+				if now, err := os.ReadFile(lock); err == nil && string(now) == token {
 					_ = os.Remove(lock)
 				}
 			}, nil

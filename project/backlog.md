@@ -311,7 +311,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `TestLockAccountsFile` fails on FreeBSD
 	- ID: 2026100416430451
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting for testing
+	- Needs local test suite run?: Yes. The full test.bash on b23. Nothing it runs changed, so its total should not move.
+	- Needs external testing: Stage 7 on vmFreeBSD. Then Waiting on signoff, since it changes what the lock file holds and when it is removed.
 	- Priority|Severity [Bug]: Low
 	- Opened: 20261004-164304
 	- Opened by: jim-collier
@@ -322,6 +324,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: unlock leaves a lock file it did not make.
 	- Reproduced [Bug]: Yes, 2026-10-04, in stage 7 on vmFreeBSD. It passes on Linux, macOS and Windows.
 	- Possible cause [Bug]: unlock tells its own lock by `os.SameFile`, which compares device and inode. UFS hands the freed inode number straight to the new file, so the new lock looks like the old one. Not checked.
+	- Actual cause [Bug]: As above, checked on vmFreeBSD 2026-10-04. A file removed and made again at the same path got the same inode number 20 times out of 20 on UFS.
+	- Actual fix [Bug]: Each lock gets a random token written into it. Unlock removes the lock only when it still holds this run's token, so a lock another run made after ours is left alone, whatever inode it got. A lock whose token can't be written is removed at once and the run refused, the same as one that can't be made.
+	- Progress log:
+		- Verified: `TestLockAccountsFile` fails on vmFreeBSD before the fix, three runs of three, and passes after, five of five. All the Go tests pass there after the fix.
+		- Verified: `TestUnlockLeavesALockInItsInode` fails on Linux before the fix and passes after. It writes over the lock in place, so the other run's lock keeps our inode on any filesystem.
+		- Verified: the gate and `test-id.bash --check` pass. The package vets for Windows and macOS.
+		- Note: older builds leave the lock empty, so they and this one never mistake each other's locks.
+	- Swept: `os.SameFile`, `Stat_t`, `.Ino` and `ModTime` in src-go. The lock was the only file identity check. Both callers, `account set` and the old-format conversion, only `defer unlock()`, and the signature is unchanged. test.bash's `[EpxmDk1]` makes an empty lock by hand, which still blocks the create. Not run, since it waits for the full test.bash.
+	- Branch: lockid
+	- Commit: ea96f4d
+	- Test case: `TestLockAccountsFile` [EpxmDk5] on FreeBSD, and `TestUnlockLeavesALockInItsInode` [ErmLh0B] on any platform.
 
 - `[ErkSC4L]` fails on the emulated arm64 box
 	- ID: 2026100416430456
