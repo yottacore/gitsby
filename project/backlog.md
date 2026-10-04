@@ -118,7 +118,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Pipeline test for converting old SHCL settings files
 	- ID: 2026100313483664
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Waiting for testing
+	- Needs local test suite run?: Yes. test.bash, for the five new checks in place, and stage 3 for the new fuzz target.
 	- Priority [Feature]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -128,19 +129,37 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Test the automatic conversion on them, the one gitsby does on first run with no help from shcl.
 	- Notes:
 		- Today's checks feed in hand-typed 2.x text.
+	- Progress log:
+		- Done: test.bash compiles the last gitsby build on SHCL 2.x from its commit (c42091c), and has it write an accounts file with `account set`. The current build has to convert that file, list every account the way the old build did, and keep the old file byte for byte. A fuzz target writes values through the 2.x module itself and checks each reads the same after the conversion.
+		- Note: nothing is downloaded at test time. The 2.x module is a test-only require in go.mod, so the lint and unit test stages put it in the module cache, and the old build compiles from there with the proxy off. A box whose cache lacks it fails `[ErkNuhS]` by name; `go mod download` in `src-go` fixes that.
+		- Note: 2.x is the only older format gitsby ever wrote. SHCL 1.x has no Go module and writes the same footer as 2.x, so a 1.x file is converted as a 2.x one. By shcl's 2.0.0 changelog only quoted key names changed between the two, and gitsby's keys have none. Not run.
+		- Verified: the five checks pass on their own against the current build. `[ErkNui6]` fails with the conversion taken out of `migrateText`, and all five fail with an empty module cache. `go vet ./...` from an empty module cache fetched the 2.x module, and the old build then compiled offline.
+		- Verified: FuzzOldFormatValue's seeds fail with the conversion taken out, 6 of 13, and 90 s of fuzzing found nothing. go test -race, vet, staticcheck, golangci-lint, shellcheck and the test ID check are clean.
+	- Branch: oldshcl
+	- Commit: 55cc1e8
+	- Test case: FuzzOldFormatValue, and test.bash `[ErkNuhS]`, `[ErkNuhf]`, `[ErkNuht]`, `[ErkNui6]`, `[ErkNuiK]`.
 
 - The dogfood check passes on the release target list too
 	- ID: 2026100315501801
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting for testing
+	- Needs local test suite run?: Yes. test.bash, for `[ErfYFrl]` in place.
 	- Priority|Severity [Bug]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
 	- Incorrect behavior [Bug]: [ErfYFrl] looks for `"darwin/universal"` anywhere in config.bash. The release list has it now as well, so the check still passes if dogfood loses that target.
 	- Expected behavior [Bug]: The check reads the dogfood target list only.
-	- Reproduced [Bug]: No. Read only.
-	- Origin: [ErfYFrl] from item 2026100312571262. The release list gained the entry in item 2026100313491873. Plausible.
+	- Reproduced [Bug]: Yes, 2026-10-04. With the entry taken out of `DOGFOOD_TARGETS` only, the old check still passed.
+	- Origin: [ErfYFrl] from item 2026100312571262. The release list gained the entry in item 2026100313491873. Confirmed.
 	- Estimated effort: Low
+	- Actual cause [Bug]: The check grepped the whole file for the line, and `RELEASE_TARGETS` has the same line.
+	- Actual fix [Bug]: The check sources config.bash and looks in `DOGFOOD_TARGETS` only.
+	- Progress log:
+		- Verified: on a copy of config.bash without the dogfood entry, the old check passes and the new one fails. The new one passes on the real file.
+	- Swept: the other config.bash checks in test.bash. Each looks for a setting by its own name, and none reads an entry two lists share.
+	- Branch: oldshcl
+	- Commit: 74b1914
+	- Test case: test.bash `[ErfYFrl]`.
 
 - The plan shows `@{u}` where it could name the branch
 	- ID: 2026100316463300
