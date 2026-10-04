@@ -142,24 +142,25 @@ func (a *app) releasePreflight() error {
 	if !a.rel.bumped || runOut("git", "status", "--porcelain") != "" || isAhead() {
 		return nil
 	}
+	// Full refs throughout, since git reads a tag of the same name ahead of a branch.
 	relMain := a.defaultBranch()
-	relTarget := relMain
+	relTarget := "refs/heads/" + relMain
 	if !a.branchExistsLocal(relMain) {
-		relTarget = "origin/" + relMain
+		relTarget = "refs/remotes/origin/" + relMain
 	}
 	// The local branch is what gets tagged and pushed, so it is what "nothing new"
 	// is about. Stand down if origin holds commits we don't: the pull would bring
 	// them in.
-	if relTarget == relMain && a.branchExistsRemote(relMain) {
-		if !runOK("git", "merge-base", "--is-ancestor", "origin/"+relMain, relMain) {
+	if a.branchExistsLocal(relMain) && a.branchExistsRemote(relMain) {
+		if !runOK("git", "merge-base", "--is-ancestor", "refs/remotes/origin/"+relMain, relTarget) {
 			return nil
 		}
 	}
 	relSource := ""
 	if a.branchExistsRemote("dev") {
-		relSource = "origin/dev"
+		relSource = "refs/remotes/origin/dev"
 	} else if a.branchExistsLocal("dev") {
-		relSource = "dev"
+		relSource = "refs/heads/dev"
 	}
 	if relSource != "" && !runOK("git", "merge-base", "--is-ancestor", relSource, relTarget) {
 		return nil
