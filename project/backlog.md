@@ -254,10 +254,25 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: 74b1914
 	- Test case: test.bash `[ErfYFrl]`.
 
+- A tag named after origin's default branch breaks the default branch read
+	- ID: 2026100411344972
+	- Type: Bug
+	- Status: Queued
+	- Priority|Severity [Bug]: Low
+	- Opened: 20261004-113449
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- In a clone whose origin/HEAD points at `origin/main`, run `git tag origin/main`.
+		- Run `gitsby status`, or any branch command.
+	- Incorrect behavior [Bug]: The default branch reads as `remotes/origin/main`. Branch commands refuse, saying it exists neither here nor on origin.
+	- Expected behavior [Bug]: The default branch is `main`.
+	- Reproduced [Bug]: Yes, 2026-10-04, on the gover build and on branch spawncut.
+	- Possible cause [Bug]: `symbolic-ref --short` spells the target the way git shortens it, longer where a tag shares the short name, and the code strips only `origin/`. Reading it without `--short` and stripping `refs/remotes/origin/` would not depend on tags.
+
 - The plan shows `@{u}` where it could name the branch
 	- ID: 2026100316463300
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Waiting on signoff
 	- Priority [Feature]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -269,11 +284,24 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The resolved name over `@{u}` (2026-10-03). It reads plainly and says which remote branch comes in.
 	- Notes:
 		- The plan already reads each branch's upstream with one `for-each-ref`, so this needs no new git call. The spawn-count limits will show if it does.
+	- Actual effort: Low
+	- Done: The pull step names the upstream the way git shortens it, such as `origin/feature`, in the plan and in the step that runs. For the current branch one `rev-parse` gives both the full and the short name. For the others, the one branch read gives them.
+	- Done: A branch the run will check out from origin names origin's copy. Where a tag also answers to the short name, git spells it out further, as `remotes/origin/feature`, and that is what shows and runs. A local upstream whose name starts with a dash goes by its full ref, so git can't read it as an option.
+	- Done: A branch with no upstream still shows `@{u}`. Its step is skipped, so there is nothing to name.
+	- Done: design.md has the rule, the plan example in style-guide_ui-ux.md shows the name, and parity's mapping of the pull line names it too.
+	- Note: No spawn count changed. The same calls ask for one more field each.
+	- Note: [ElHNo4O] and [Erg9NT0] matched `@{u}` and now match the name. What each checks is unchanged.
+	- Note: A tag named after origin's default branch breaks the default branch read. That was there before this item and is filed as 2026100411344972.
+	- Swept: `grep -n '@{u}' src-go/*.go`. Both runners and every plan line go through `pullArgsFor`. The other `@{u}` uses are reads, such as ahead and behind and the incoming list, not steps the plan shows.
+	- Verified: test.bash 1406/0, parity 29/0, `go test -race`, and `cicd.bash --gate`. On the build before this item, [Erg9NT0], [Erl2Vub], [Erl2Vup] and [Erl2Vv4] fail. [Erl2VvI] passes there too, since the old plan and step both said `@{u}`. With the step handed a different name than the plan, it fails.
+	- Branch: spawncut
+	- Commit: 4a1b65c
+	- Test case: test.bash [Erl2Vub], [Erl2Vup], [Erl2Vv4], [Erl2VvI] and [Erl2eIe]. Go `TestPullArgsFor` [ErgA5KD] and `TestUpstreamNames` [Erl1x3E].
 
 - Code Review 20261003 enhancement 5: Answer branch checks from one read
 	- ID: 2026100313123948
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -283,11 +311,26 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Read local and origin branches once per run, and drop that in `forget()` like the rest.
 		- `release` works out dev again on its own. Use `mergeTarget()`, which already caches it.
 	- Origin: branch.go:47 from ae16451 (2026-08-17), and release.go. Confirmed with strace.
+	- Actual effort: Avg
+	- Done: One `for-each-ref` reads every local branch with its upstream, and every branch on origin. Each existence check reads that, where each was a `show-ref` of its own. The prune survey and the default branch fallback take their list of local branches from it too.
+	- Done: `forget()` drops it with the rest, so any step reads it again. The fetch drops it too, since the fetch moves origin's branches without being a step.
+	- Done: `release` takes dev from `mergeTarget()`, the same answer its plan reads.
+	- Note: `br prune`'s delete-time re-check is unchanged. It still asks git right then, with `for-each-ref --merged`, and nothing cached stands in for it.
+	- Note: Spawn counts, before -> after: status 14 -> 12, whoami 9 -> 8, br list 9 -> 8, account list 9 -> 8, repo url 8 -> 7, pullcom 25 -> 22, pullcom with a fetch 32 -> 30, br switch 33 -> 27, br prune 39 -> 32, status with a fetch 21 -> 20, status in an account folder 25 -> 23, whoami there 19 -> 18, account list with accounts 14 -> 13, status in the https folder 21 -> 19. The expected counts in spawn-count.bash went down to match.
+	- Note: On a case-insensitive file system, `show-ref` could find a loose branch under another case. The list matches names exactly, as git already did for packed branches.
+	- Swept: `grep -n 'show-ref\|"--verify"' src-go/*.go`. Every `branchExistsLocal` and `branchExistsRemote` caller, and the back-merge's own `rev-parse --verify` of origin's default branch. The `show-ref` left in repo.go asks about a new clone's folder, not this repo.
+	- Verified: test.bash 1406/0, parity 29/0, `go test -race`, `cicd.bash --gate`, and spawn-count. `TestBranchReadsFollowWrites` fails with the fetch's drop taken out, and again with the runners' drop taken out.
+	- Branch: spawncut
+	- Commit: 82dc453
+	- Test case: Go `TestBranchReadsFollowWrites` [Erl1x2z], and the spawn-count limits.
+	- Acceptance signoff: Self-closed: does what the item asked, and its test fails without the fix.
+	- Closed: 20261004-113600
 
 - Code Review 20261003 enhancement 6: Spawns that are repeated or not needed
 	- ID: 2026100313124028
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Waiting for testing
+	- Needs external testing: The width read on macOS. It is cross-built and vetted, not run. A list in `gitsby status` on a Mac terminal should be cut at the window width.
 	- Priority [Feature]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -299,6 +342,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- `origin/HEAD` is read twice after a fetch.
 		- Lists start `tput cols` where the ioctl in tty_linux.go would do.
 	- Origin: remote.go:320 from 0a3ef88 (2026-08-19), the rest from the port. Each saves 1 or 2 spawns. Confirmed with strace.
+	- Actual effort: Avg
+	- Done: `convertibleToHTTPS` does its text tests before asking gh for the protocol, so an https origin asks gh nothing.
+	- Done: The startup `rev-parse` also asks for the top level, which settles the folder accounts match against. Outside a work tree git refuses that part after printing the other three answers, so the output is read whatever the exit code. Outside a repo the folder is the working directory, as before.
+	- Done: The `gitsby.ghTokenFile` lookup runs only when the account's own token file gave nothing, and then once a run. The account's file comes first in the lookup, so the answer can't change.
+	- Done: The fetch's check of origin/HEAD keeps its answer, and the default branch reads it from there.
+	- Done: Lists take the width from the kernel on Linux, macOS and the BSDs. tput answers where the kernel says 0, and on Windows.
+	- Note: spawn-count's pty runs now get a size, as a real terminal has. An unsized pty reads as width 0, which sends gitsby to tput.
+	- Note: Spawn counts, before -> after: status 12 -> 11, whoami 8 -> 7, br list 8 -> 7, account list 8 -> 7, repo url 7 -> 6, pullcom 22 -> 21, pullcom with a fetch 30 -> 28, br switch 27 -> 26, br prune 32 -> 31, status with a fetch 20 -> 17, status in an account folder 23 -> 19, whoami there 18 -> 15, account list with accounts 13 -> 11, status in the https folder 19 -> 15. The expected counts in spawn-count.bash went down to match.
+	- Note: design.md says the `gitsby.ghAccount` and `gitsby.ghTokenFile` git-config keys "still win". For the token file, the code has read the account's own file first since the port. That order is unchanged here.
+	- Swept: `grep -n '"tput"\|show-toplevel\|symbolic-ref\|configOwnScope(\|preferredProtocol()' src-go/*.go`. The one `tput`, both `--show-toplevel` reads, the origin/HEAD read (the other `symbolic-ref` reads HEAD for an unborn branch), the one `configOwnScope` caller, and the `preferredProtocol` caller in `convertibleToHTTPS`.
+	- Verified: test.bash 1406/0, parity 29/0, `go test -race`, `cicd.bash --gate`, spawn-count, and builds for linux, windows and darwin on amd64 and arm64, plus freebsd. Each of the five new Go tests fails on the build before this item and passes after.
+	- Branch: spawncut
+	- Commit: 75e7e34
+	- Test case: Go `TestConvertibleAsksGhOnlyForSSH` [Erl3JkJ], `TestEnterRepoSettlesTopLevel` [Erl3JkX], `TestAccountTokenAsksGitConfigOnlyWhenNeeded` [Erl3Jkl], `TestFetchReadsOriginHeadOnce` [Erl3Jkz], and on Linux `TestTerminalWidthAsksTheKernel` [Erl3JlD]. Also the spawn-count limits.
 
 - Code Review 20261003 enhancement 7: Go code tidy
 	- ID: 2026100313130047
