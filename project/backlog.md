@@ -230,6 +230,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- A box that is off or reserved is skipped, the same as the others.
 	- Note: FreeBSD and Linux arm64 are published targets that no test has run on yet.
 
+- Release notes group the downloads in a table
+	- ID: 2026100415020736
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-04
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- When creating a release, use a table to group downloads.
+		- CPU architecture goes in columns, and target OS in rows.
+	- Notes:
+		- The release body is the changelog section verbatim today. GitHub lists the assets in a flat list under it.
+		- macOS is one universal file, so its row doesn't split by CPU the way the others do.
+
 - Code Review 20261003 enhancement 7: Go code tidy
 	- ID: 2026100313130047
 	- Type: Enhancement
