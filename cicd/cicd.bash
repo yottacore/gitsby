@@ -27,7 +27,8 @@
 ##	   4. backwards compatibility (cicd/parity.bash: this build vs the frozen v2.1.0 one)
 ##	   5. dogfood (cross-build every target and install each to its first existing dir)
 ##	   6. demo gif (fake-terminal render; skipped under --quick)
-##	   7. backup + publish to git (runs from repo root)
+##	   7. Mac + Windows tests (cicd/remote-tests.bash, over ssh on whichever box is free; skipped under --quick)
+##	   8. backup + publish to git (runs from repo root)
 ##	- Syntax:
 ##	  cicd/cicd.bash [options]
 ##	  Options:
@@ -42,8 +43,9 @@
 ##	   --no-parity         skip the backwards-compatibility comparison
 ##	   --no-dogfood        skip installing the build(s) locally
 ##	   --no-demogif        skip regenerating the demo gif
+##	   --no-remote         skip the Mac + Windows tests
 ##	   --no-publish        skip the git backup + publish stage
-##	   --quick             skip the slow stages (fuzz, demo gif)
+##	   --quick             skip the slow stages (fuzz, demo gif, Mac + Windows tests)
 ##	   --gate              fast pre-push gate: every lint check and go test; no sync, build, suites, prompt or log
 ##	   --install-hook      install the git pre-push hook that runs --gate on each commit pushed to main
 ##	   -h, --help          show this help
@@ -70,11 +72,12 @@ root="$(cd "${here}/.." && pwd)"   ## the git repo root (cicd/..)
 export PATH="${HOME}/.local/bin:${PATH}"   ## user-prefix npm tools (markdownlint) win
 source "${here}/config.bash"
 source "${here}/utility/include/gfs-rotate.bash"       ## gfs_rotate() for the artifact dirs
+source "${here}/utility/include/go-test-lines.bash"    ## fGoTestLines(), shared with remote-tests.bash
 cd "${root}"
 stamp="$(date +%Y%m%d-%H%M%S)"
 
 ## Parse options.
-assume_yes=0; quiet=0; quick=0; do_sync=1; do_lint=1; do_test=1; do_fuzz=1; do_parity=1; cli_message=""
+assume_yes=0; quiet=0; quick=0; do_sync=1; do_lint=1; do_test=1; do_fuzz=1; do_parity=1; do_remote=1; cli_message=""
 gate=0; install_hook=0; stage_opts=()
 while (($#)); do case "$1" in
 	-q|--quiet)               quiet=1; assume_yes=1; shift ;;   ## quiet + unattended; publish runs quiet too
@@ -86,11 +89,12 @@ while (($#)); do case "$1" in
 	--no-parity)              do_parity=0; stage_opts+=("$1"); shift ;;
 	--no-dogfood)             DOGFOOD_TARGETS=(); stage_opts+=("$1"); shift ;;
 	--no-demogif)             DO_DEMOGIF=0; stage_opts+=("$1"); shift ;;
+	--no-remote)              do_remote=0; stage_opts+=("$1"); shift ;;
 	--no-publish)             GIT_PUBLISH=(); stage_opts+=("$1"); shift ;;
 	## Cross-building three platforms is the slow part of a run, not the fuzz and the gif -
 	## so the flag whose job is skipping the slow parts has to skip that too. The native
 	## target stays, since the dogfooded binary is what the next hand-run uses.
-	--quick)                  quick=1; do_fuzz=0; DO_DEMOGIF=0; DOGFOOD_TARGETS=("${DOGFOOD_NATIVE_TARGET}"); stage_opts+=("$1"); shift ;;
+	--quick)                  quick=1; do_fuzz=0; DO_DEMOGIF=0; do_remote=0; DOGFOOD_TARGETS=("${DOGFOOD_NATIVE_TARGET}"); stage_opts+=("$1"); shift ;;
 	--message=*|--msg=*|-m=*) cli_message="${1#*=}"; stage_opts+=("${1%%=*}"); shift ;;
 	-m|--message|--msg)       cli_message="${2-}"; stage_opts+=("$1"); shift; (($#)) && shift ;;
 	## pre-push.bash looks for this arm's literal text to tell a commit that has a gate from
@@ -314,17 +318,12 @@ fStageLint(){
 	fEcho "OK: backlog check"
 }
 fUnitTests(){
-	local log="" ids="" rc=0
+	local log="" rc=0
 	log="$(mktemp "${TMPDIR:-/tmp}/gitsby-gotest.XXXXXX")"
 	## -race costs little on a tree with no goroutines and pays the day one appears. -v is for
 	## the line per test below; the rest of what it prints is shown only when something failed.
 	(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${BUILD_JOBS}" go test -race -p "${BUILD_JOBS}" -v ./...) >"${log}" 2>&1 || rc=$?
-	## A line per top-level test, with the ID from the end of its func line. Subtests are
-	## indented in the log, so they don't match.
-	ids="$(find "${root}/${GO_MODULE_DIR}" -name '*_test.go' -type f -exec sed -nE 's#^func ((Test|Fuzz)[A-Za-z0-9_]*)\(.*// \[([0-9A-Za-z]+)\][[:space:]]*$#\1 \3#p' {} + 2>/dev/null || true)"
-	IDS="${ids}" awk '
-		BEGIN { n = split(ENVIRON["IDS"], l, "\n"); for (i = 1; i <= n; i++) { split(l[i], f, " "); id[f[1]] = "[" f[2] "] " } }
-		/^--- (PASS|FAIL|SKIP): / { v = ($2 == "PASS:") ? "ok" : ($2 == "FAIL:") ? "FAIL" : "skip"; print "  " v ": " id[$3] $3 }' "${log}"
+	fGoTestLines "${log}" "${root}/${GO_MODULE_DIR}"
 	if ((rc)); then
 		grep -vE '^ *(=== (RUN|PAUSE|CONT|NAME)|--- (PASS|SKIP))' "${log}" || true
 		rm -f -- "${log:?}"
@@ -430,6 +429,13 @@ elif ((DO_DEMOGIF)); then
 else
 	fEcho_Clean "Demo gif ............: $( ((quick)) && echo '(skipped --quick)' || echo '(skipped)')"
 fi
+if ((do_remote)) && [[ -f "${REMOTE_TEST_CMD[0]:-}" ]]; then
+	fEcho_Clean "Mac + Windows tests .: ${REMOTE_TEST_CMD[*]} (${REMOTE_MAC_HOSTS[*]%%:*}; first free of ${REMOTE_WINDOWS_HOSTS[*]%%:*})"
+elif ((do_remote)); then
+	fEcho_Clean "Mac + Windows tests .: (no harness yet: ${REMOTE_TEST_CMD[0]:-cicd/remote-tests.bash})"
+else
+	fEcho_Clean "Mac + Windows tests .: $( ((quick)) && echo '(skipped --quick)' || echo '(skipped)')"
+fi
 if ((${#GIT_PUBLISH[@]} == 0)); then
 	fEcho_Clean "Publish (last) ......: (disabled)"
 elif [[ -n "$publish_msg" ]]; then
@@ -467,7 +473,7 @@ fi
 ## has been built and tested - so a change merged upstream meanwhile would be pushed
 ## having been validated by nothing. Refreshing first means the rest of the run tests
 ## the tree that is actually going out. Publish keeps its own pull as the late guard.
-fSection "0/7  Remote sync"
+fSection "0/8  Remote sync"
 if ((! do_sync)); then
 	fEcho_Clean "remote sync skipped"
 elif ! git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
@@ -492,7 +498,7 @@ fi
 
 ## Version stamped into every build this run. Dev builds carry what describe says; a
 ## release injects the clean one. Read after the sync, which can move HEAD. -dirty
-## because a run that publishes builds source whose commit stage 7 hasn't made yet.
+## because a run that publishes builds source whose commit stage 8 hasn't made yet.
 go_version="$(git describe --tags --always --dirty --match 'v*' 2>/dev/null || echo 0.0.0)"
 ## Build number, as minutes since 2000 in Crockford base32 - the binary does the encoding,
 ## this only hands it the seconds. Taken from the commit rather than the clock so the same
@@ -504,7 +510,7 @@ go_build_epoch="$(git log -1 --format=%ct 2>/dev/null || echo 0)"
 ## over the pipeline's own scripts and the installer (gating - never an auto-formatter:
 ## those are hand-formatted on purpose). markdownlint, py_compile and PSScriptAnalyzer
 ## are probe-gated extras.
-fSection "1/7  Lint"
+fSection "1/8  Lint"
 if ((! do_lint)); then
 	fEcho_Clean "lint skipped"
 else
@@ -514,7 +520,7 @@ fi
 ## Stage 2: build, then the regression suite against what was just built. The build is
 ## the native one; the cross-builds happen at dogfood, where they have somewhere to go.
 ## Dev builds carry the describe version; release builds inject the clean one.
-fSection "2/7  Build + regression tests"
+fSection "2/8  Build + regression tests"
 if ((! do_test)); then
 	fEcho_Clean "build + tests skipped"
 else
@@ -536,7 +542,7 @@ fi
 ## Stage 3: fuzz + security (adversarial input against our parsing, plus checks
 ## of what we shell out to). Slow, so skipped under --quick. Same lands-later
 ## policy as the tests.
-fSection "3/7  Fuzz + security"
+fSection "3/8  Fuzz + security"
 if ((! do_fuzz)); then
 	fEcho_Clean "fuzz + security skipped$( ((quick)) && echo ' (--quick)')"
 elif [[ -f "${FUZZ_CMD[0]:-}" ]]; then
@@ -579,7 +585,7 @@ fi
 ## build at a time, so it passes while this build and the frozen one quietly disagree about
 ## the same input - which is what every port defect that reached users actually was. This
 ## asks the other question: do they ANSWER the same? Self-skips once legacy/ is gone.
-fSection "4/7  Backwards compatibility"
+fSection "4/8  Backwards compatibility"
 if ((! do_parity)); then
 	fEcho_Clean "compatibility comparison skipped"
 elif [[ -f "${PARITY_CMD[0]:-}" ]]; then
@@ -593,7 +599,26 @@ fi
 ## writable dir in that target's list. No sudo fallback on purpose - an unwritable dest is a
 ## warning, not an unattended privilege escalation. A cross-build failure is fatal: it means
 ## the tree stopped being portable, which is worth finding here rather than at a release.
-fSection "5/7  Dogfood"
+fSection "5/8  Dogfood"
+## Builds target $1 (goos/goarch) to the file $2. Stage 7 builds the Mac one this way too, so
+## the Mac tests run against the same build dogfood installs.
+fCrossBuild(){
+	local target="$1" out="$2" arch part
+	local -a arches parts=()
+	## darwin/universal is both Mac CPUs, built apart and joined.
+	arches=("${target##*/}"); [[ "${target}" == darwin/universal ]] && arches=(amd64 arm64)
+	for arch in "${arches[@]}"; do
+		part="${out}"; ((${#arches[@]} == 1)) || part="${out}-${arch}"
+		(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOOS="${target%%/*}" GOARCH="${arch}" \
+			go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${go_version#v} -X main.buildEpoch=${go_build_epoch}" -o "${part}" .) \
+			|| fDie "go build failed for ${target%%/*}/${arch}"
+		parts+=("${part}")
+	done
+	if ((${#parts[@]} > 1)); then
+		"${root}/cicd/utility/macho-universal.bash" "${out}" "${parts[@]}" || fDie "could not join the ${target} builds"
+		rm -f -- "${parts[@]}"
+	fi
+}
 df_did=0
 if ((! ${#DOGFOOD_TARGETS[@]})); then
 	fEcho_Clean "dogfood disabled"
@@ -607,20 +632,7 @@ else
 		## Built into the module dir under the target's own name, so the native binary the
 		## suite just ran against is not overwritten by a build that cannot run here.
 		out="${root}/${GO_MODULE_DIR}/${EXE_NAME}-${t//\//-}"
-		## darwin/universal is both Mac CPUs, built apart and joined.
-		arches=("${t##*/}"); [[ "${t}" == darwin/universal ]] && arches=(amd64 arm64)
-		parts=()
-		for arch in "${arches[@]}"; do
-			part="${out}"; ((${#arches[@]} == 1)) || part="${out}-${arch}"
-			(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOOS="${t%%/*}" GOARCH="${arch}" \
-				go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${go_version#v} -X main.buildEpoch=${go_build_epoch}" -o "${part}" .) \
-				|| fDie "go build failed for ${t%%/*}/${arch}"
-			parts+=("${part}")
-		done
-		if ((${#parts[@]} > 1)); then
-			"${root}/cicd/utility/macho-universal.bash" "${out}" "${parts[@]}" || fDie "could not join the ${t} builds"
-			rm -f -- "${parts[@]}"
-		fi
+		fCrossBuild "${t}" "${out}"
 		cp -f "${out}" "${dogfood_dest[${t}]}/${exe}"
 		chmod +x "${dogfood_dest[${t}]}/${exe}"
 		rm -f -- "${out:?}"
@@ -635,7 +647,7 @@ fi
 ## animated loop. A failure is a warning, never a stop. When the render differs
 ## from the committed copy, a timestamped original is kept (GFS-pruned) out of
 ## tree, then landed in-repo.
-fSection "6/7  Demo gif"
+fSection "6/8  Demo gif"
 if ((! DO_DEMOGIF)); then
 	fEcho_Clean "demo gif skipped$( ((quick)) && echo ' (--quick)')"
 elif [[ ! -f "${DEMOGIF_SCENARIO}" ]]; then
@@ -690,8 +702,27 @@ else
 	rm -f -- "${demogif_bin:?}"
 fi
 
-## Stage 7: backup + publish.
-fSection "7/7  Backup + publish"
+## Stage 7: the Go tests on a Mac and a Windows box, and the regression suite on the Mac against
+## the universal build. Nothing else runs the tests on either platform, and Windows-only breaks
+## went unnoticed for weeks before this. A box that is off, unreachable or taken by someone else
+## is skipped with a note rather than waited for. Slow, so skipped under --quick.
+fSection "7/8  Mac + Windows tests"
+if ((! do_remote)); then
+	fEcho_Clean "Mac + Windows tests skipped$( ((quick)) && echo ' (--quick)')"
+elif [[ ! -f "${REMOTE_TEST_CMD[0]:-}" ]]; then
+	fEcho_Clean "no remote test harness (${REMOTE_TEST_CMD[0]:-cicd/remote-tests.bash})"
+else
+	remote_bin="${root}/${GO_MODULE_DIR}/${EXE_NAME}-darwin-universal"
+	fCrossBuild darwin/universal "${remote_bin}"
+	remote_rc=0
+	"${REMOTE_TEST_CMD[@]}" --mac-bin "${remote_bin}" || remote_rc=$?
+	rm -f -- "${remote_bin:?}"
+	((remote_rc == 0)) || fDie "Mac or Windows tests failed (see above)"
+	fEcho "OK: Mac + Windows tests"
+fi
+
+## Stage 8: backup + publish.
+fSection "8/8  Backup + publish"
 ## Always run the publisher quiet: cicd already gave the initial prompt, so skip
 ## its redundant continue-prompt. With no message it still lets git open the editor.
 pub_flags=(--quiet)
@@ -736,3 +767,4 @@ fEcho_Clean
 ##		- 2026-09-28 JC: The tool version check covers six tools outside Go, and finds a Go tool where go install put it when that is not on PATH.
 ##		- 2026-10-03 JC: macOS dogfood is a universal binary, both Mac CPUs built and joined, so Intel Macs can run it too.
 ##		- 2026-10-03 JC: PowerShell lint is one pwsh for every file, with its rules in PSScriptAnalyzerSettings.psd1. A file that fails to parse fails the lint on its own.
+##		- 2026-10-04 JC: Stage 7 runs the Go tests on a Mac and a Windows box, and the regression suite on the Mac against the universal build, through cicd/remote-tests.bash. A box that is off or taken is skipped, not waited for. Full runs only. Publish is stage 8.

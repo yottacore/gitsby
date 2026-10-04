@@ -253,15 +253,17 @@ fMakeGateFixture(){
 	local s
 	mkdir -p "${gateDir}/cicd/utility/include" "${gateDir}/cicd/utility/demo" "${gateDir}/bin" "${gateDir}/home" "${gateDir}/src-go" "${gateFail}"
 	cp "${root}/cicd/cicd.bash" "${root}/cicd/config.bash" "${gateDir}/cicd/"
-	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${root}/cicd/utility/include/gh-account.bash" "${gateDir}/cicd/utility/include/"
+	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${root}/cicd/utility/include/gh-account.bash" "${root}/cicd/utility/include/go-test-lines.bash" "${gateDir}/cicd/utility/include/"
 	## Empty, so the lint globs and PY_LINT_FILES resolve, and stage 6 finds a scenario.
 	: > "${gateDir}/install.bash"; : > "${gateDir}/install.ps1"; : > "${gateDir}/cicd/utility/demo/gen-demo-gif.py"
 	: > "${gateDir}/cicd/utility/run-latest.ps1"
 	cp "${root}/PSScriptAnalyzerSettings.psd1" "${gateDir}/"
 	: > "${gateDir}/cicd/utility/demo/demo-scenario.toml"
 	echo "# Fixture" > "${gateDir}/README.md"
-	for s in test fuzz parity; do fGateStub "${gateDir}/cicd/${s}.bash" "${s}"; done
+	for s in test fuzz parity remote-tests; do fGateStub "${gateDir}/cicd/${s}.bash" "${s}"; done
 	for s in gen-winres backlog-check spawn-count; do fGateStub "${gateDir}/cicd/utility/${s}.bash" "${s}"; done
+	## Writes the joined file, so stage 7 has a build to remove.
+	fGateStub "${gateDir}/cicd/utility/macho-universal.bash" macho-universal ": > \"\${1:-/dev/null}\""
 	fGateStub "${gateDir}/cicd/utility/n8git_backup-and-publish" n8git_backup-and-publish
 	for s in markdownlint staticcheck golangci-lint govulncheck; do fGateStub "${gateDir}/bin/${s}" "${s}"; done
 	## The demo generator writes a gif header to its --out, and the optimizer, called as
@@ -315,7 +317,7 @@ fGateInstallHook(){
 		&& ! grep -qE '[0-9]/[0-9]  ' "${gateOut}"
 }
 ## Stage 6 on its own against the fixture, run with $1 (-y or -q). True when it exits 0.
-fGateDemoRun(){ fGateStatus 0 "$1" --no-sync --no-lint --no-test --no-fuzz --no-parity --no-dogfood --no-publish ;}
+fGateDemoRun(){ fGateStatus 0 "$1" --no-sync --no-lint --no-test --no-fuzz --no-parity --no-dogfood --no-remote --no-publish ;}
 ## The last run's calls-log line for the demo's build, and for its generator. Empty when absent.
 fGateDemoBuild(){ grep -E -- "^go build .* -o ${gateDir}/src-go/gitsby-demo( |\$)" "${gateCalls}" || true ;}
 fGateDemoGen(){ grep -E -- '^python3 cicd/utility/demo/gen-demo-gif\.py ' "${gateCalls}" || true ;}
@@ -347,7 +349,7 @@ fGateOnly(){
 	local keep=" $1 " s
 	local -a skip=()
 	shift
-	for s in sync lint test fuzz parity dogfood demogif publish; do [[ "${keep}" == *" ${s} "* ]] || skip+=("--no-${s}"); done
+	for s in sync lint test fuzz parity dogfood demogif remote publish; do [[ "${keep}" == *" ${s} "* ]] || skip+=("--no-${s}"); done
 	: > "${gateCalls}"; gateRc=0
 	fGateRun -y "${skip[@]}" "$@" </dev/null >"${gateOut}" 2>&1 || gateRc=$?
 }
@@ -363,6 +365,20 @@ fGateUpstream(){
 	git -C "${gateOther}" add "${file}"
 	git -C "${gateOther}" commit --quiet -m "$1"
 	git -C "${gateOther}" push --quiet 2>/dev/null
+}
+## remote-tests.bash in its fixture, with the stubs first on PATH, and a session id set that the
+## lock must not be handed. Output lands in ${rtOut}, the status in ${rtRc}, and the calls log
+## starts empty.
+fRemoteRun(){
+	: > "${rtLog}"; rtRc=0
+	(cd "${rt}" && HOME="${rtHome}" PATH="${rtBin}:${PATH}" X_CODE_SESSION_ID=s X_PID=$$ ./cicd/remote-tests.bash "$@") </dev/null >"${rtOut}" 2>&1 || rtRc=$?
+}
+## True when the last run made a folder under %TEMP% on the Windows box $1, and removed that one.
+fRemoteWinCleaned(){
+	local d=""
+	d="$(sed -n "s/^ssh $1 .*mkdir \"\\(%TEMP%[^\"]*\\)\".*/\\1/p" "${rtLog}")"
+	d="${d%%$'\n'*}"
+	[[ "${d}" == '%TEMP%\test_gitsby_'* ]] && grep -qF "rmdir /s /q \"${d}\"" "${rtLog}"
 }
 ## A push from $1, the rest being its arguments. Output lands in ${hookOut}; the gate log starts empty.
 fHookPush(){ local dir="$1"; shift; : > "${hookLog}"; git -C "${dir}" push "$@" >"${hookOut}" 2>&1 ;}
@@ -4872,6 +4888,8 @@ EOF
 		## Tied to the gate having passed: a run that did nothing at all adds nothing either.
 		fAssert "[EpsVDHu] and nothing the full run adds" \
 			bash -c "grep -q 'gate: passed' '${gateOut}' && ! grep -qE '^go build|^test\.bash|^fuzz\.bash|^parity\.bash|^spawn-count\.bash|^n8git_backup-and-publish|^govulncheck|-fuzz' '${gateCalls}' && ! grep -q 'Remote sync' '${gateOut}' && [[ ! -e '${gateDir}/cicd/artifacts/lint' ]]"
+		fAssert "[ErkbDTZ] and not the Mac and Windows tests" \
+			bash -c "grep -q 'gate: passed' '${gateOut}' && ! grep -qE '^(remote-tests|macho-universal)\.bash' '${gateCalls}' && ! grep -q 'Mac + Windows' '${gateOut}'"
 		local gateTool
 		for gateTool in shellcheck markdownlint python3 pwsh gofmt go-vet staticcheck golangci-lint backlog-check go-test; do
 			: > "${gateFail}/${gateTool}"
@@ -4890,6 +4908,8 @@ EOF
 		fAssert "[EpsVDI0] cicd.bash --help lists --gate and --install-hook" \
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--gate ' <<< \"\$out\" && grep -qE -- '^ +--install-hook ' <<< \"\$out\""
 		fAssert "[EpsVDI1] and contributing.md names --install-hook"  grep -qF -- '--install-hook' "${root}/contributing.md"
+		fAssert "[ErkbDTn] cicd.bash --help lists --no-remote" \
+			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--no-remote ' <<< \"\$out\""
 		## Last on this fixture, since it makes it a git repo. Every tool is still a stub, so an
 		## --install-hook that fell through into a full run would reach nothing outside it.
 		git init --quiet "${gateDir}"
@@ -5009,7 +5029,7 @@ EOF
 		fAssert "[Er1LxTU] a build names the commit it was built from, and -dirty for uncommitted source" \
 			fGateRanCalling 0 '^go build .* -X main\.version=9\.8\.7-1-g[0-9a-f]+-dirty -X main\.buildEpoch='
 		fAssert "[Er1LxTV] and reads that after the remote sync, which can move HEAD" \
-			awk '/^fSection "0\/7  Remote sync"/{s=NR} /^go_version=/{g=NR} END{exit !(s && g > s)}' "${root}/cicd/cicd.bash"
+			awk '/^fSection "0\/8  Remote sync"/{s=NR} /^go_version=/{g=NR} END{exit !(s && g > s)}' "${root}/cicd/cicd.bash"
 		: > "${gateFail}/go-test"
 		fGateOnly test
 		rm -f -- "${gateFail:?}/go-test"
@@ -5050,6 +5070,18 @@ EOF
 		fGateOnly dogfood
 		fAssert "[Er1LxTd] a configured dest that exists wins over the fallback" \
 			bash -c "[[ '${gateRc}' == 0 && -f '${gateDest}/gitsby' && ! -e '${gateDir}/home/.local/bin/gitsby' ]]"
+		## Stage 7 hands its harness a universal Mac build joined the way dogfood joins one.
+		fGateOnly remote
+		fAssert "[ErkbDSi] stage 7 builds the universal Mac binary, hands it to the remote harness and removes it" \
+			bash -c "[[ '${gateRc}' == 0 && ! -e '${gateDir}/src-go/gitsby-darwin-universal' ]] && grep -qxF '[ 7/8  Mac + Windows tests ]' '${gateOut}' && grep -qF 'macho-universal.bash ${gateDir}/src-go/gitsby-darwin-universal ' '${gateCalls}' && grep -qxF 'remote-tests.bash --mac-bin ${gateDir}/src-go/gitsby-darwin-universal' '${gateCalls}'"
+		fGateOnly remote --quick
+		fAssert "[ErkbDT4] and --quick leaves it out, saying so" \
+			bash -c "[[ '${gateRc}' == 0 ]] && ! grep -qE '^(remote-tests|macho-universal)\.bash' '${gateCalls}' && grep -qxF 'Mac + Windows tests skipped (--quick)' '${gateOut}'"
+		: > "${gateFail}/remote-tests"
+		fGateOnly remote
+		rm -f -- "${gateFail:?}/remote-tests"
+		fAssert "[ErkbDTL] and a failure there stops the run, with the build still removed" \
+			bash -c "[[ '${gateRc}' == 1 && ! -e '${gateDir}/src-go/gitsby-darwin-universal' ]] && grep -qF 'Mac or Windows tests failed' '${gateOut}'"
 		fGateOnly publish -m 'hands off'
 		fAssert "[Er1LxTe] -m hands its message to the publisher"  fGateRanCalling 0 '^n8git_backup-and-publish --quiet -m hands off$'
 		fGateOnly publish --message='hands off'
@@ -5063,7 +5095,7 @@ EOF
 		fGateOnly sync
 		fAssert "[Er1LxTg] stage 0 fast-forwards a tree that is only behind" \
 			bash -c "[[ '${gateRc}' == 0 && \"\$(git -C '${gateDir}' rev-parse HEAD)\" == \"\$(git -C '${gateOther}' rev-parse HEAD)\" ]] && grep -qF 'fast-forwarding 1 commit(s) from origin' '${gateOut}'"
-		fAssert "[Er1LxTh] under the 0/7 header"  grep -qxF '[ 0/7  Remote sync ]' "${gateOut}"
+		fAssert "[Er1LxTh] under the 0/8 header"  grep -qxF '[ 0/8  Remote sync ]' "${gateOut}"
 		## The same file on both sides, far enough apart to merge. Without --autostash git refuses.
 		fGateUpstream two notes.txt
 		sed -i.bak 's/^1$/edited/' "${gateDir}/notes.txt" && rm -f "${gateDir:?}/notes.txt.bak"
@@ -5251,6 +5283,129 @@ EOF
 		fAssert "[Epsd07Q] a gate worktree without its .git file is refused and left as it was" \
 			bash -c "[[ '${hookRc}' != 0 && -n '${hookSnapSum}' && '${hookSnapSum}' == '${hookSnapAfter}' && ! -s '${hookLog}' ]] && grep -qE 'is not this repo.s gate worktree' '${hookOut}'"
 		if [[ -f "${hookDir}/gate-dotgit-aside" && ! -e "${hookSnap}/.git" ]]; then mv "${hookDir}/gate-dotgit-aside" "${hookSnap}/.git"; fi
+
+		## The Mac and Windows harness, against an ssh that answers per host after printing what
+		## the Mac's login prints, a lock that refuses a box when a marker says it is held, and a
+		## go that writes what it is asked to build. Each stub fails on a marker named for what it
+		## stands in for and the host. The Mac's setup command runs for real, in a home of its
+		## own, since it is what removes the old copy there.
+		local rt="${work}/remote" rtBin="${work}/remote-bin" rtHome="${work}/remote-home" rtMac="${work}/remote-mac"
+		local rtLog="${work}/remote-calls.log" rtFail="${work}/remote-fail" rtOut="${work}/remote-out.txt" rtRc=0 rtMacBin="${work}/remote-macbin" rtHost=""
+		local rtLock="${rtHome}/synced/0-0/common/exec/util/linux/bash/x_windows-host-lock.bash"
+		mkdir -p "${rt}/cicd/utility/include" "${rt}/src-go" "${rtBin}" "${rtMac}" "${rtFail}" "${rtLock%/*}"
+		cp "${root}/cicd/remote-tests.bash" "${root}/cicd/config.bash" "${rt}/cicd/"
+		cp "${root}/cicd/utility/include/go-test-lines.bash" "${rt}/cicd/utility/include/"
+		printf 'package main\n\nfunc TestA(t *testing.T) { // [AAAAAAB]\n}\n' > "${rt}/src-go/a_test.go"
+		git init --quiet -b main "${rt}"
+		git -C "${rt}" add --all
+		git -C "${rt}" commit --quiet -m init
+		echo mac > "${rtMacBin}"
+		fStub "${rtLock}" <<-EOF
+			#!/usr/bin/env bash
+			printf 'lock %s hosts=%s session=%s\n' "\$*" "\${X_WINDOWS_HOSTS:-}" "\${X_CODE_SESSION_ID:-unset}" >> '${rtLog}'
+			if [[ -e '${rtFail}/busy-'"\${2:-}" ]]; then
+				echo "queued: position 1 for \$2 (all). \$2 is held by session abcd (pid 1, other/project), done about 10:00, lease to 10:20" >&2
+				echo "still queued: position 1 for \$2 (all). \$2 is held by session abcd (pid 1, other/project), done about 10:00, lease to 10:20" >&2
+				exit 3
+			fi
+			while [[ "\${1:-}" != -- ]]; do shift; done
+			shift
+			exec "\$@"
+		EOF
+		fStub "${rtBin}/ssh" <<-EOF
+			#!/usr/bin/env bash
+			while [[ "\${1:-}" == -* ]]; do if [[ "\$1" == -o ]]; then shift 2; else shift; fi; done
+			host="\$1"; cmd="\$2"
+			printf 'ssh %s %s\n' "\${host}" "\${cmd//\$'\n'/ }" >> '${rtLog}'
+			[[ ! -e '${rtFail}/down-'"\${host}" ]] || exit 255
+			[[ "\${cmd}" != 'exit 0' ]] || exit 0
+			echo '[ ~/.bashrc ]'; echo
+			case "\${cmd}" in
+				*'go mod download'*) HOME='${rtMac}' PATH='${rtBin}':"\${PATH}" exec bash -c "\${cmd}" ;;
+				*mkdir*) cat > /dev/null; echo '@@gitsby-remote-tests@@'; [[ ! -e '${rtFail}/nomkdir-'"\${host}" ]] || exit 1; echo made ;;
+				*-test.v*)
+					echo '@@gitsby-remote-tests@@'
+					[[ ! -e '${rtFail}/lost-'"\${host}" ]] || exit 255
+					if [[ -e '${rtFail}/gofail-'"\${host}" ]]; then printf -- '--- FAIL: TestA (0.00s)\n    a_test.go:4: boom\n'; exit 1; fi
+					printf -- '=== RUN   TestA\n--- PASS: TestA (0.00s)\n' ;;
+				*cicd/test.bash*)
+					echo '@@gitsby-remote-tests@@'
+					if [[ -e '${rtFail}/suitefail-'"\${host}" ]]; then echo '  FAIL: [AAAAAAC] a check'; exit 1; fi
+					echo '  ok: [AAAAAAC] a check' ;;
+				*) echo '@@gitsby-remote-tests@@' ;;
+			esac
+		EOF
+		fStub "${rtBin}/go" <<-EOF
+			#!/usr/bin/env bash
+			printf 'go %s\n' "\$*" >> '${rtLog}'
+			[[ "\${1:-}" != mod ]] || exit 0
+			[[ ! -e '${rtFail}/go-build' ]] || exit 1
+			o=''; for a in "\$@"; do [[ "\${o}" != 1 ]] || : > "\${a}"; o=''; [[ "\${a}" != -o ]] || o=1; done
+		EOF
+		mv "${rtLock}" "${rtLock}.away"
+		fRemoteRun --mac-bin "${rtMacBin}"
+		mv "${rtLock}.away" "${rtLock}"
+		fAssert "[ErkbDU2] with no host lock script every box is skipped, none is reached, and the run passes" \
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'skip: every box, since there is no host lock script' '${rtOut}' && ! grep -q '^ssh ' '${rtLog}'"
+		for rtHost in b26 vm925w b29w b29w-wif; do : > "${rtFail}/down-${rtHost}"; done
+		fRemoteRun --mac-bin "${rtMacBin}"
+		rm -f -- "${rtFail:?}"/down-*
+		fAssert "[ErkbDUK] a box that does not answer is skipped with a note and never taken, and the run passes" \
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'skip: b26, not reachable over ssh (tried b26)' '${rtOut}' && grep -qF 'skip: b29w, not reachable over ssh (tried b29w,b29w-wif)' '${rtOut}' && ! grep -qE '^(lock|go test)' '${rtLog}'"
+		fRemoteRun --mac-bin "${rtMacBin}"
+		fAssert "[ErkbDUa] the lock wraps each box with no wait, knows the Mac too, and is not asked as the calling session" \
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^lock wrap b26 --wait 0 .* -- .*remote-tests\.bash --held mac b26 b26 hosts=b26 vm925w b29w session=unset\$' '${rtLog}' && grep -qE '^lock wrap vm925w --wait 0 .* hosts=b26 vm925w b29w session=unset\$' '${rtLog}'"
+		fAssert "[ErkbDUn] and only the first free Windows box runs"  bash -c "! grep -q '^lock wrap b29w' '${rtLog}' && grep -qxF '  passed on: b26 vm925w' '${rtOut}'"
+		fAssert "[ErkbDVD] each box prints a line per Go test with its ID, and nothing from the Mac's login" \
+			bash -c "[[ \$(grep -cxF '  ok: [AAAAAAB] TestA' '${rtOut}') == 2 ]] && grep -qxF '  ok: [AAAAAAC] a check' '${rtOut}' && ! grep -qF 'bashrc' '${rtOut}'"
+		fAssert "[ErkbDVV] the Mac runs the suite in the stage's copy of the tree, under its own bash, first on PATH" \
+			bash -c "grep -qF 'cd \"\$HOME/gitsby-remote-tests/tree\" && PATH=/usr/local/bin:\"\$PATH\" /usr/local/bin/bash cicd/test.bash' '${rtLog}'"
+		fAssert "[ErkbDVk] that copy is marked as the stage's, and holds the git dir, both builds and the fetched modules" \
+			bash -c "cd '${rtMac}/gitsby-remote-tests' && [[ -f .gitsby-remote-tests && -f tree/src-go/gitsby-test && \"\$(cat tree/src-go/gitsby)\" == mac ]] && git -C tree ls-files --error-unmatch src-go/a_test.go >/dev/null && grep -qx 'go mod download' '${rtLog}'"
+		fAssert "[ErkbDWC] the Windows box gets a folder under %TEMP% for the run, removed after"  fRemoteWinCleaned vm925w
+		: > "${rtFail}/busy-vm925w"; : > "${rtFail}/down-b29w"
+		fRemoteRun --mac-bin "${rtMacBin}"
+		fAssert "[ErkbDXc] a Windows box someone else holds is skipped, naming who, and the next one runs, on its second name" \
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'skip: vm925w, held by session abcd (pid 1, other/project)' '${rtOut}' && grep -q '^ssh b29w-wif .*-test\.v' '${rtLog}' && grep -qxF '  passed on: b26 b29w' '${rtOut}'"
+		: > "${rtFail}/busy-b29w"
+		fRemoteRun --mac-bin "${rtMacBin}"
+		rm -f -- "${rtFail:?}"/busy-* "${rtFail:?}"/down-*
+		fAssert "[ErkbDY9] with every Windows box taken the run still passes, and says so" \
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'skip: b29w, held by' '${rtOut}' && grep -qxF '  passed on: b26' '${rtOut}'"
+		: > "${rtFail}/gofail-vm925w"
+		fRemoteRun --mac-bin "${rtMacBin}"
+		rm -f -- "${rtFail:?}/gofail-vm925w"
+		fAssert "[ErkbDYT] a failing Go test fails the run, with its line and its output" \
+			bash -c "[[ '${rtRc}' == 1 ]] && grep -qxF '  FAIL: [AAAAAAB] TestA' '${rtOut}' && grep -qF 'a_test.go:4: boom' '${rtOut}' && grep -qxF '  passed on: b26; failed on: vm925w' '${rtOut}'"
+		: > "${rtFail}/suitefail-b26"
+		fRemoteRun --mac-bin "${rtMacBin}"
+		rm -f -- "${rtFail:?}/suitefail-b26"
+		fAssert "[ErkbDYk] and so does a failing suite on the Mac"  bash -c "[[ '${rtRc}' == 1 ]] && grep -qxF '  FAIL: b26 test.bash' '${rtOut}'"
+		: > "${rtFail}/lost-b26"
+		fRemoteRun --mac-bin "${rtMacBin}"
+		rm -f -- "${rtFail:?}/lost-b26"
+		fAssert "[ErkbDZ0] a box that drops mid-run is skipped, not failed" \
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'skip: b26, lost the connection during go test' '${rtOut}'"
+		fRemoteRun
+		fAssert "[Erkbdts] with no universal build the Mac runs the Go tests only, and says so" \
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'skip: test.bash on b26' '${rtOut}' && ! grep -qF 'cicd/test.bash' '${rtLog}' && grep -q '^ssh b26 .*-test\.v' '${rtLog}'"
+		: > "${rtFail}/nomkdir-vm925w"
+		fRemoteRun
+		rm -f -- "${rtFail:?}/nomkdir-vm925w"
+		fAssert "[Erkbdu7] a Windows folder the run did not make is never removed" \
+			bash -c "[[ '${rtRc}' == 1 ]] && ! grep -q '^ssh vm925w .*rmdir' '${rtLog}' && grep -qF 'FAIL: vm925w, could not copy the Go tests' '${rtOut}'"
+		: > "${rtFail}/go-build"
+		fRemoteRun
+		rm -f -- "${rtFail:?}/go-build"
+		fAssert "[ErkbduL] Go tests that do not build for the Mac fail the run before any box is taken" \
+			bash -c "[[ '${rtRc}' == 1 ]] && grep -qF 'FAIL: the Go tests do not build for darwin/amd64' '${rtOut}' && ! grep -q '^lock ' '${rtLog}'"
+		## Last, since it replaces the copy the checks above looked at.
+		mv "${rtMac}/gitsby-remote-tests" "${rtMac}/ours"
+		mkdir -p "${rtMac}/gitsby-remote-tests"
+		echo theirs > "${rtMac}/gitsby-remote-tests/keep.txt"
+		fRemoteRun --mac-bin "${rtMacBin}"
+		fAssert "[Erkbdua] a folder of that name without the stage's mark is left alone, and the run fails" \
+			bash -c "[[ '${rtRc}' == 1 && \"\$(cat '${rtMac}/gitsby-remote-tests/keep.txt')\" == theirs && ! -e '${rtMac}/gitsby-remote-tests/tree' ]] && grep -qF 'is not this stage' '${rtOut}'"
 	fi
 
 	## Go-only: the renamed commands, the aliases that keep every 2.1.0 spelling working, and
