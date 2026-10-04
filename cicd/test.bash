@@ -181,6 +181,28 @@ fBashHelpNamesAll(){ local inst="$1" help="" opts="" opt=""
 		grep -qE -- "(^|[ ,])${opt}([ ,=]|\$)" <<< "${help}" || { echo "not in --help: ${opt}"; return 1; }
 	done <<< "${opts}"
 }
+## A release list the way GitHub's API sends one, newest first: an author block ahead of the tag,
+## then the pre-release flag, then each asset with an uploader block and its download URL. The
+## braces and commas in the URLs are GitHub's too. Each argument is TAG:PRERELEASE:ASSET,ASSET,...
+fReleaseList(){ local spec="" relTag="" relPre="" relAssets="" relAsset="" firstRel=1 firstAsset=1
+	printf '[\n'
+	for spec in "$@"; do
+		relTag="${spec%%:*}"; relPre="${spec#*:}"; relAssets="${relPre#*:}"; relPre="${relPre%%:*}"
+		((firstRel)) || printf '  },\n'; firstRel=0
+		printf '  {\n    "upload_url": "https://uploads.github.com/repos/yottacore/gitsby/releases/1/assets{?name,label}",\n    "author": {\n      "login": "someone",\n      "following_url": "https://api.github.com/users/someone/following{/other_user}"\n    },\n'
+		printf '    "tag_name": "%s",\n    "name": "%s",\n    "prerelease": %s,\n    "assets": [\n' "${relTag}" "${relTag}" "${relPre}"
+		firstAsset=1
+		for relAsset in ${relAssets//,/ }; do
+			((firstAsset)) || printf '      },\n'; firstAsset=0
+			printf '      {\n        "name": "%s",\n        "uploader": {\n          "login": "someone"\n        },\n' "${relAsset}"
+			printf '        "browser_download_url": "https://github.com/yottacore/gitsby/releases/download/%s/%s"\n' "${relTag}" "${relAsset}"
+		done
+		((firstAsset)) || printf '      }\n'
+		printf '    ]\n'
+	done
+	((firstRel)) || printf '  }\n'
+	printf ']\n'
+}
 ## Succeeds when the command's output, both streams, starts and ends on a blank line.
 fFramed(){ local out=""; out="$("$@" 2>&1; printf x)"; out="${out%x}"; [[ "${out}" == $'\n'* && "${out}" == *$'\n\n' ]] ;}
 ## Succeeds when the first output line matching <pattern> has a blank line either side of it.
@@ -2404,15 +2426,15 @@ GHEOF
 		url=""
 		for a in "$@"; do case "$a" in https://*) url="$a" ;; esac; done
 		case "${url}" in
-			*/repos/*/releases) printf '[\n  {\n    "tag_name": "v9.9.9-rc1",\n    "prerelease": true\n  }\n]\n'; exit 0 ;;
+			*/repos/*/releases) printf '[\n  {\n    "tag_name": "v9.9.9-rc1",\n    "prerelease": true,\n    "assets": [\n      {\n        "browser_download_url": "https://github.com/yottacore/gitsby/releases/download/v9.9.9-rc1/gitsby-linux-amd64"\n      }\n    ]\n  }\n]\n'; exit 0 ;;
 		esac
 		exit 22
 	CURLEOF
 	fAssertOut "[EnQQYnw] go installer falls back to a pre-release when that is all there is"  'v9\.9\.9-rc1' \
 		bash -c "PATH='${prl}/bin:${PATH}' bash '${goInst}' -y 2>&1"
-	fAssertOut "[EnQQYnx] and says that is what it did"  'No full release yet' \
+	fAssertOut "[EnQQYnx] and says that is what it did"  'No full release has a gitsby binary yet' \
 		bash -c "PATH='${prl}/bin:${PATH}' bash '${goInst}' -y 2>&1"
-	fAssert    "[EpykPX1] and sets that notice off with blank lines"  fBlankAround 'No full release yet' \
+	fAssert    "[EpykPX1] and sets that notice off with blank lines"  fBlankAround 'No full release has a gitsby binary yet' \
 		env PATH="${prl}/bin:${PATH}" bash "${goInst}" -y
 
 	## The list endpoint is ordered by publish date, so a backported fix cut after a newer
@@ -2425,7 +2447,7 @@ GHEOF
 		url=""
 		for a in "$@"; do case "$a" in https://*) url="$a" ;; esac; done
 		case "${url}" in
-			*/repos/*/releases) printf '[{"tag_name":"v2.1.1","prerelease":false},{"tag_name":"v3.0.0","prerelease":false}]'; exit 0 ;;
+			*/repos/*/releases) printf '[{"tag_name":"v2.1.1","prerelease":false,"assets":[{"browser_download_url":"https://github.com/yottacore/gitsby/releases/download/v2.1.1/gitsby-linux-amd64"}]},{"tag_name":"v3.0.0","prerelease":false,"assets":[{"browser_download_url":"https://github.com/yottacore/gitsby/releases/download/v3.0.0/gitsby-linux-amd64"}]}]'; exit 0 ;;
 		esac
 		exit 22
 	CURLEOF
@@ -2437,8 +2459,10 @@ GHEOF
 		#!/usr/bin/env bash
 		url=""
 		for a in "$@"; do case "$a" in https://*) url="$a" ;; esac; done
+		## FAKE_LIST names the pre-releases, newest first, each publishing a binary.
+		fPre(){ printf '{"tag_name":"%s","prerelease":true,"assets":[{"browser_download_url":"https://github.com/yottacore/gitsby/releases/download/%s/gitsby-linux-amd64"}]}' "$1" "$1" ;}
 		case "${url}" in
-			*/repos/*/releases) list='[{"tag_name":"v2.9.0-rc1","prerelease":true},{"tag_name":"v3.0.0-rc1","prerelease":true}]'; printf '%s' "${FAKE_LIST:-${list}}"; exit 0 ;;
+			*/repos/*/releases) list=""; for t in ${FAKE_LIST:-v2.9.0-rc1 v3.0.0-rc1}; do list="${list:+${list},}$(fPre "${t}")"; done; printf '[%s]' "${list}"; exit 0 ;;
 		esac
 		exit 22
 	CURLEOF
@@ -2446,7 +2470,7 @@ GHEOF
 		bash -c "PATH='${vpre}/bin:${PATH}' bash '${goInst}' -y 2>&1"
 	## Two pre-releases of one version tie on the numbers, and the newer-listed one wins.
 	fAssertOut "[ErCRFkF] and the newer of two pre-releases of one version" 'newest pre-release, v3\.0\.0-beta\.2' \
-		bash -c "PATH='${vpre}/bin:${PATH}' FAKE_LIST='[{\"tag_name\":\"v3.0.0-beta.2\",\"prerelease\":true},{\"tag_name\":\"v3.0.0-beta.1\",\"prerelease\":true}]' bash '${goInst}' -y 2>&1"
+		bash -c "PATH='${vpre}/bin:${PATH}' FAKE_LIST='v3.0.0-beta.2 v3.0.0-beta.1' bash '${goInst}' -y 2>&1"
 
 	## A whole install, with the network stood in for: resolve, verify, place, run. What this
 	## proves is that the staged-and-renamed path works end to end; the pin below it is what
@@ -2627,6 +2651,58 @@ GHEOF
 	echo "${ebHash}  gitsby-darwin-universal" >> "${eb}/SHA256SUMS"
 	fAssertOut "[EpykPX9] go installer says when the installed binary won't run"  'but it would not run \(exit 3\)' \
 		bash -c "env HOME='${eb}/home' PATH='${ei}/bin:${PATH}' FAKE_SUMS='${eb}/SHA256SUMS' FAKE_ASSET='${eb}/asset' bash '${goInst}' -y 2>&1"
+	## The install line with no --tag, against release lists shaped like GitHub's. v2.1.0 is the
+	## newest full release and publishes only the old scripts, so until 3.0.0 the line found
+	## nothing it could install. Each tag's SHA256SUMS is served from a folder, and a tag with
+	## none there 404s. The redirect and the list each answer only when given a value.
+	local rl="${work}/rellist" rlTag=""; mkdir -p "${rl}/bin" "${rl}/sums"
+	local rlGo="SHA256SUMS,gitsby-linux-amd64,gitsby-linux-arm64,gitsby-freebsd-amd64,gitsby-freebsd-arm64,gitsby-darwin-universal,gitsby-windows-amd64.exe"
+	local rlOld="gitsby,gitsby.ps1,SHA256SUMS"
+	printf '%s *gitsby\n%s *gitsby.ps1\n' "$(printf '%064d' 1)" "$(printf '%064d' 2)" > "${rl}/sums/v2.1.0"
+	for rlTag in v3.0.0 v3.0.0-beta.1 v3.1.0-beta.1; do cp "${ei}/SHA256SUMS" "${rl}/sums/${rlTag}"; done
+	fReleaseList "v3.0.0-beta.1:true:${rlGo}" "v2.1.0:false:${rlOld}" "v2.0.2:false:${rlOld}" > "${rl}/beta.json"
+	fReleaseList "v3.1.0-beta.1:true:${rlGo}" "v3.0.0:false:${rlGo}" "v3.0.0-beta.1:true:${rlGo}" "v2.1.0:false:${rlOld}" > "${rl}/full.json"
+	fReleaseList "v2.1.1-rc.1:true:${rlOld}" "v2.1.0:false:${rlOld}" "v2.0.2:false:${rlOld}" > "${rl}/none.json"
+	fStub "${rl}/bin/curl" <<-'CURLEOF'
+		#!/usr/bin/env bash
+		url=""
+		for a in "$@"; do case "$a" in https://*) url="$a" ;; esac; done
+		echo "${url}" >> "${FAKE_CALLS}"
+		case "${url}" in
+			*/releases/latest)       [[ -n "${FAKE_LATEST}" ]] || exit 22; printf '%s' "https://github.com/yottacore/gitsby/releases/tag/${FAKE_LATEST}"; exit 0 ;;
+			*/repos/*/releases)      [[ -n "${FAKE_LIST}" ]] || exit 22; cat "${FAKE_LIST}"; exit 0 ;;
+			*/download/*/SHA256SUMS) tag="${url%/SHA256SUMS}"; tag="${tag##*/download/}"; [[ -f "${FAKE_SUMS_DIR}/${tag}" ]] || exit 22; cat "${FAKE_SUMS_DIR}/${tag}"; exit 0 ;;
+			*/download/*/gitsby-*)   cat "${FAKE_ASSET}"; exit 0 ;;
+		esac
+		exit 22
+	CURLEOF
+	## install.bash with the stubs above: <case> names its home and calls log, <latest> is the
+	## tag the redirect names, <list> the list file, either one empty to have it fail.
+	fRlInstall(){ local rlCase="$1" rlLatest="$2" rlList="$3"; shift 3; : > "${rl}/calls-${rlCase}"
+		env HOME="${rl}/h-${rlCase}" PATH="${rl}/bin:${PATH}" FAKE_CALLS="${rl}/calls-${rlCase}" FAKE_LATEST="${rlLatest}" FAKE_LIST="${rlList}" \
+			FAKE_SUMS_DIR="${rl}/sums" FAKE_ASSET="${ei}/asset" bash "${goInst}" "$@" 2>&1 ;}
+	fAssertOut "[ErgajCd] go installer takes a pre-release with a binary when the latest full release has none"  'newest pre-release, v3\.0\.0-beta\.1' \
+		fRlInstall beta v2.1.0 "${rl}/beta.json" -y
+	fAssert    "[ErgajCr] and installs it from that pre-release" \
+		bash -c "grep -q '/download/v3\.0\.0-beta\.1/gitsby-' '${rl}/calls-beta' && '${rl}/h-beta/.local/bin/gitsby' --version | grep -q 'stand-in'"
+	## A full release with a binary always wins, so a later beta stays off the line.
+	fAssertOut "[ErgajD5] go installer takes a full release with a binary over a newer pre-release"  '\(v3\.0\.0\) from' \
+		fRlInstall full "" "${rl}/full.json" -y
+	fAssert    "[ErgajDJ] and asks no list when the latest full release has a binary" \
+		bash -c "out=\$(env HOME='${rl}/h-fast' PATH='${rl}/bin:${PATH}' FAKE_CALLS='${rl}/calls-fast' FAKE_LATEST=v3.0.0 FAKE_LIST='${rl}/full.json' FAKE_SUMS_DIR='${rl}/sums' FAKE_ASSET='${ei}/asset' bash '${goInst}' -y 2>&1); grep -qF '(v3.0.0) from' <<< \"\${out}\" && ! grep -q '/repos/' '${rl}/calls-fast'"
+	fAssertOut "[ErgajDW] go installer says when no release publishes a binary"  'No release of yottacore/gitsby publishes a gitsby binary yet' \
+		fRlInstall none v2.1.0 "${rl}/none.json" -y
+	fAssert    "[ErgajDk] and exits nonzero having downloaded nothing" \
+		bash -c "! env HOME='${rl}/h-none2' PATH='${rl}/bin:${PATH}' FAKE_CALLS='${rl}/calls-none2' FAKE_LATEST=v2.1.0 FAKE_LIST='${rl}/none.json' FAKE_SUMS_DIR='${rl}/sums' FAKE_ASSET='${ei}/asset' bash '${goInst}' -y >/dev/null 2>&1 \
+			&& grep -q '/repos/' '${rl}/calls-none2' && ! grep -q '/gitsby-' '${rl}/calls-none2'"
+	fAssertOut "[ErgajDy] go installer names the full release with no binary when the list can't be read"  'v2\.1\.0, the latest full release, has no gitsby binary.*rate-limiting' \
+		fRlInstall nolist v2.1.0 "" -y
+	## An explicit tag asks neither the redirect nor the list, and is refused or installed as before.
+	fAssertOut "[ErgajEC] go installer still refuses a --tag release with no binary for this platform"  'release v2\.1\.0 publishes no gitsby binary for' \
+		fRlInstall tag21 v3.0.0 "${rl}/full.json" --tag v2.1.0 -y
+	fAssert    "[ErgajEP] and installs a --tag pre-release without looking anything up" \
+		bash -c "out=\$(env HOME='${rl}/h-tagb' PATH='${rl}/bin:${PATH}' FAKE_CALLS='${rl}/calls-tagb' FAKE_LATEST=v3.0.0 FAKE_LIST='${rl}/full.json' FAKE_SUMS_DIR='${rl}/sums' FAKE_ASSET='${ei}/asset' bash '${goInst}' --tag v3.0.0-beta.1 -y 2>&1); grep -q 'stand-in' <<< \"\${out}\" \
+			&& grep -q '/download/v3\.0\.0-beta\.1/gitsby-' '${rl}/calls-tagb' && ! grep -qE 'releases/latest|/repos/' '${rl}/calls-tagb'"
 	if command -v pwsh >/dev/null 2>&1; then
 		local goInstPs="${root}/install.ps1"
 		fAssertFail "[EnPlcJ8] go ps installer refuses a bad -Target"    pwsh -NoProfile -File "${goInstPs}" -Target bogus
@@ -2731,7 +2807,8 @@ GHEOF
 					Add-Content -LiteralPath "$env:FAKE_DIR/calls" -Value $Uri
 					# The whole array as one object, the way 5.1 sends it.
 					$pre = $env:FAKE_SHAPE -eq 'pre'
-					Write-Output -NoEnumerate @([pscustomobject]@{ tag_name = 'v1.2.2'; prerelease = $pre }, [pscustomobject]@{ tag_name = 'v1.2.3'; prerelease = $pre })
+					$assets = @([pscustomobject]@{ name = 'gitsby-linux-amd64' })
+					Write-Output -NoEnumerate @([pscustomobject]@{ tag_name = 'v1.2.2'; prerelease = $pre; assets = $assets }, [pscustomobject]@{ tag_name = 'v1.2.3'; prerelease = $pre; assets = $assets })
 				}
 			PSEOF
 			## On 5.1 the redirect was never read, and the list it fell back to came back as one
@@ -2786,7 +2863,7 @@ GHEOF
 				fPsInstall "${psb}" "${psb}/home" 7 "${goInstPs}" -Yes
 			fAssertOut "[EpykPXD] go ps installer's plan says it replaces the one already there"  'replacing the one already there' \
 				fPsInstall "${psi}" "${psi}/h7" 7 "${goInstPs}" -Yes
-			fAssert    "[EpykPXE] go ps installer sets the pre-release notice off with blank lines"  fBlankAround 'No full release yet' \
+			fAssert    "[EpykPXE] go ps installer sets the pre-release notice off with blank lines"  fBlankAround 'No full release has a gitsby binary yet' \
 				fPsInstall "${psi}" "${psi}/hpre" pre "${goInstPs}" -Yes
 			fAssertOut "[Er1LxSR] and names the highest version in it"  'newest pre-release, v1\.2\.3' \
 				fPsInstall "${psi}" "${psi}/hpre" pre "${goInstPs}" -Yes
@@ -2852,6 +2929,58 @@ GHEOF
 			fAssert    "[ErCRQdL] and downloads nothing"  bash -c "! grep -q '/gitsby-' '${psi}/calls'"
 			chmod 755 "${psi}/hro/.local"
 			fAssert    "[Er1LxSj] go install.ps1 names its temp dir at random"  bash -c "grep -q 'tmpDir = Join-Path.*GetRandomFileName' '${goInstPs}'"
+			## The install line with no -Tag, against the release lists the Bash installer's checks
+			## use. FAKE_LATEST names the tag the redirect goes to, FAKE_LIST the list file, and
+			## each tag's SHA256SUMS comes from FAKE_SUMS_DIR; an empty one fails.
+			local rlp="${work}/rellistps"; mkdir -p "${rlp}"
+			cp "${ei}/asset" "${rlp}/"
+			cat > "${rlp}/stubs.ps1" <<-'PSEOF'
+				function Invoke-WebRequest {
+					param($Uri, $MaximumRedirection, [switch]$UseBasicParsing, $ErrorAction, $OutFile)
+					Add-Content -LiteralPath "$env:FAKE_DIR/calls" -Value $Uri
+					if ($Uri -like '*/releases/latest') {
+						if (-not $env:FAKE_LATEST) { throw [Exception]::new('The remote server returned an error: (404) Not Found.') }
+						$failure = [Exception]::new('Response status code does not indicate success: 302 (Found).')
+						$failure | Add-Member -NotePropertyName Response -NotePropertyValue ([pscustomobject]@{ Headers = [pscustomobject]@{ Location = [uri]"https://github.com/yottacore/gitsby/releases/tag/$env:FAKE_LATEST" } })
+						throw $failure
+					}
+					if ($Uri -match '/download/([^/]+)/SHA256SUMS$') {
+						$sumsFile = Join-Path -Path $env:FAKE_SUMS_DIR -ChildPath $Matches[1]
+						if (-not (Test-Path -LiteralPath $sumsFile)) { throw 'The remote server returned an error: (404) Not Found.' }
+						return [pscustomobject]@{ Content = [IO.File]::ReadAllBytes($sumsFile) }
+					}
+					if ($Uri -like '*/gitsby-*') { Copy-Item -LiteralPath "$env:FAKE_DIR/asset" -Destination $OutFile; return }
+					throw "no stub for $Uri"
+				}
+				function Invoke-RestMethod {
+					param($Uri, [switch]$UseBasicParsing)
+					Add-Content -LiteralPath "$env:FAKE_DIR/calls" -Value $Uri
+					if (-not $env:FAKE_LIST) { throw 'Response status code does not indicate success: 403 (rate limit exceeded).' }
+					$list = Get-Content -Raw -LiteralPath $env:FAKE_LIST | ConvertFrom-Json
+					# The whole array as one object, the way 5.1 sends it.
+					Write-Output -NoEnumerate @($list)
+				}
+			PSEOF
+			## <case> names the home; <latest> and <list> as for fRlInstall. Calls go to ${rlp}/calls.
+			fRlPsInstall(){ local rlCase="$1" rlLatest="$2" rlList="$3"; shift 3
+				( export FAKE_LATEST="${rlLatest}" FAKE_LIST="${rlList}" FAKE_SUMS_DIR="${rl}/sums"; fPsInstall "${rlp}" "${rlp}/h-${rlCase}" 7 "${goInstPs}" "$@" ) ;}
+			fAssertOut "[ErgajEe] go ps installer takes a pre-release with a binary when the latest full release has none"  'newest pre-release, v3\.0\.0-beta\.1' \
+				fRlPsInstall beta v2.1.0 "${rl}/beta.json" -Yes
+			fAssert    "[ErgajEt] and installs it from that pre-release" \
+				bash -c "grep -q '/download/v3\.0\.0-beta\.1/gitsby-' '${rlp}/calls' && '${rlp}/h-beta/.local/bin/gitsby' --version | grep -q 'stand-in'"
+			fAssertOut "[ErgajF7] go ps installer takes a full release with a binary over a newer pre-release"  '\(v3\.0\.0\) from' \
+				fRlPsInstall full "" "${rl}/full.json" -Yes
+			fAssertOut "[ErgajFL] go ps installer says when no release publishes a binary"  'No release of yottacore/gitsby publishes a gitsby binary yet' \
+				fRlPsInstall none v2.1.0 "${rl}/none.json" -Yes
+			fAssert    "[ErgajFa] and downloads nothing"  bash -c "grep -q '/repos/' '${rlp}/calls' && ! grep -q '/gitsby-' '${rlp}/calls'"
+			fAssertOut "[ErgajFo] go ps installer names the full release with no binary when the list can't be read"  'v2\.1\.0, the latest full release, has no gitsby binary.*rate-limiting' \
+				fRlPsInstall nolist v2.1.0 "" -Yes
+			fAssertOut "[ErgajG1] go ps installer still refuses a -Tag release with no binary for this platform"  'Release v2\.1\.0 publishes no gitsby binary for' \
+				fRlPsInstall tag21 v3.0.0 "${rl}/full.json" -Tag v2.1.0 -Yes
+			fAssertOut "[ErgajGF] and installs a -Tag pre-release"  'gitsby v1\.2\.3 \(stand-in\)' \
+				fRlPsInstall tagb v3.0.0 "${rl}/full.json" -Tag v3.0.0-beta.1 -Yes
+			fAssert    "[ErgajGU] without looking anything up" \
+				bash -c "grep -q '/download/v3\.0\.0-beta\.1/gitsby-' '${rlp}/calls' && ! grep -qE 'releases/latest|/repos/' '${rlp}/calls'"
 		fi
 	fi
 
@@ -4033,7 +4162,7 @@ GHEOF
 			out=""; url=""
 			while ((\$#)); do case "\$1" in -o|-w) [[ "\$1" != -o ]] || out="\$2"; shift 2 ;; https://*) url="\$1"; shift ;; *) shift ;; esac; done
 			[[ "\${out}" != /dev/null && -f '${rel}/served/'"\${url##*/}" ]] || exit 22
-			cp '${rel}/served/'"\${url##*/}" "\${out}"
+			if [[ -n "\${out}" ]]; then cp '${rel}/served/'"\${url##*/}" "\${out}"; else cat '${rel}/served/'"\${url##*/}"; fi
 		EOF
 		printf '#!/usr/bin/env bash\nexit 0\n' > "${rel}/bin/sleep"; chmod +x "${rel}/bin/sleep"
 		fRelRun -y
@@ -4060,6 +4189,38 @@ GHEOF
 			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'WARNING: gitsby-darwin-universal did not download and verify from the published release.' '${relOut}'"
 		git -C "${relRepo}" checkout -q -- .
 		git -C "${relRepo}" tag -d v1.2.4 >/dev/null
+		## Phase 3 says which release the install line takes, by running the tag's install.bash
+		## against the list the stub serves. A beta is taken while no full release has a binary,
+		## and passed over for one that does. An older pre-release means a stale list.
+		cp "${root}/install.bash" "${relRepo}/"
+		git -C "${relRepo}" add install.bash
+		git -C "${relRepo}" commit --quiet -m 'installer'
+		git -C "${relRepo}" push --quiet 2>/dev/null
+		fStub "${rel}/bin/uname" <<-'EOF'
+			#!/usr/bin/env bash
+			case "${1:-}" in -m) echo x86_64 ;; *) echo Linux ;; esac
+		EOF
+		printf '#!/usr/bin/env bash\necho "gitsby v1.3.0-beta.1 (stand-in)"\n' > "${rel}/served/gitsby-linux-amd64"
+		(cd "${rel}/served" && sha256sum gitsby-linux-amd64 gitsby-darwin-universal > SHA256SUMS)
+		local relGo="SHA256SUMS,gitsby-linux-amd64,gitsby-darwin-universal" relOld="gitsby,gitsby.ps1,SHA256SUMS"
+		fReleaseList "v1.3.0-beta.1:true:${relGo}" "v1.2.3:false:${relOld}" > "${rel}/served/releases"
+		fRelRun -y v1.3.0-beta.1
+		fAssert "[ErgajGi] release.bash says the install line takes a beta while no full release has a binary" \
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qxF 'the install line takes v1.3.0-beta.1' '${relOut}' && ! grep -q 'WARNING: the install line' '${relOut}'"
+		git -C "${relRepo}" checkout -q -- .
+		git -C "${relRepo}" tag -d v1.3.0-beta.1 >/dev/null
+		fReleaseList "v1.3.0-beta.1:true:${relGo}" "v1.2.3:false:${relGo}" > "${rel}/served/releases"
+		fRelRun -y v1.3.0-beta.1
+		fAssert "[ErgajGw] and that it stays on a full release that has one" \
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'the install line stays on v1.2.3, a full release with a binary' '${relOut}' && ! grep -q 'WARNING: the install line' '${relOut}'"
+		git -C "${relRepo}" checkout -q -- .
+		git -C "${relRepo}" tag -d v1.3.0-beta.1 >/dev/null
+		fReleaseList "v1.3.0-alpha.1:true:${relGo}" "v1.2.3:false:${relOld}" > "${rel}/served/releases"
+		fRelRun -y v1.3.0-beta.1
+		fAssert "[ErgajHA] and warns when it takes an older pre-release instead" \
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'WARNING: the install line takes v1.3.0-alpha.1, neither v1.3.0-beta.1 nor a full release.' '${relOut}'"
+		git -C "${relRepo}" checkout -q -- .
+		git -C "${relRepo}" tag -d v1.3.0-beta.1 >/dev/null
 		## A Mac build that isn't Mach-O is refused by the joiner, and that stops phase 1.
 		fStub "${rel}/bin/go" <<-'EOF'
 			#!/usr/bin/env bash
@@ -5795,3 +5956,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20261003 JC: The PowerShell lint starts pwsh once for every file, reads its rules from the settings file, and still fails a file that does not parse. The real pwsh runs it on a fixture of its own. 1311 -> 1318.
 ##		- 20261003 JC: The pull step merges what the start fetch brought, so origin is asked once. A branch that tracks another remote still pulls, and `--no-fetch` still skips the pull. 1318 -> 1328.
 ##		- 20261003 JC: The macOS release is one universal binary. Both installers ask any Mac for it, release.bash joins it, publishes nothing per Mac CPU, checks it by checksum from Linux, and stops on a Mac build that will not join. Every new check fails against the tree before it. 1328 -> 1337.
+##		- 20261003 JC: The install line with no tag, in both installers, against release lists shaped like GitHub's: a beta taken while the latest full release has no binary, a full release kept over a newer beta, a clear stop when nothing has one, and an explicit tag as before. release.bash phase 3 says which release the line takes. The older list fixtures publish a binary now. Every new check that can fail against the tree before it does. 1344 -> 1365.
