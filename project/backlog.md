@@ -241,6 +241,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: every `darwin` and `arm64` reader in the repo. release.bash, config.bash, both installers, the installer and release fixtures in test.bash, README, design.md and the changelog. cicd.bash dogfood already joins. Nothing in `src-go` reads asset names. `legacy/` is frozen.
 	- Verified: stage 7 on b26 (2026-10-04) passed the installer checks with stubbed downloads, `[ErgCzfP]`, `[ErgCzfc]` and `[ErgCzfq]` among them.
 
+- Run the tests on FreeBSD and on Linux arm64 in stage 7 too
+	- ID: 2026100413264100
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature]: Avg
+	- Opened: 20261004-132641
+	- Opened by: jim-collier
+	- Related IDs: 2026100312332924
+	- Target OS: FreeBSD, Linux arm64
+	- Requirements  [Feature]:
+		- Two more test boxes share the host lock: vmFreeBSD and vmDebARM64. Both are VMs with a virtual display.
+		- Stage 7 runs the cross-built Go tests on each, against the FreeBSD amd64 and Linux arm64 builds, the same way it does on vm925w.
+		- test.bash runs there too where bash and the tools it needs are on the box.
+		- A box that is off or reserved is skipped, the same as the others.
+	- Note: FreeBSD and Linux arm64 are published targets that no test has run on yet.
+
 - Code Review 20261003 enhancement 7: Go code tidy
 	- ID: 2026100313130047
 	- Type: Enhancement
