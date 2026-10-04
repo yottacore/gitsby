@@ -239,10 +239,10 @@ func probeSSHLogin(ctx context.Context, env []string, url, sshCommand string) st
 // for a username mid-command.
 func (a *app) fetchRemote() {
 	// The one thing that moves a ref without being a step, so the runners' own
-	// invalidation never covers it. Only the counted answer: a fetch moves
-	// origin/*, which is half of ahead-behind, and leaves everything else the run
-	// has settled exactly where it was.
+	// invalidation never covers it. Only what reads origin/*: ahead-behind and the
+	// branch list. Everything else the run has settled stays where it was.
 	a.git.aheadBehind.forget()
+	a.git.branches.forget()
 	env := a.remoteEnv()
 	// Named, not implied: a bare 'git fetch' follows the current branch's own
 	// tracking remote, and every existence check afterwards reads origin.

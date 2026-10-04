@@ -97,7 +97,7 @@ type repoState struct {
 	coreSSHCommand cached[string]
 	currentBranch  cached[string]
 	upstream       cached[string]
-	localBranches  cached[map[string]string]
+	branches       cached[branchRefs]
 	aheadBehind    cached[[2]int]
 	contextDir     cached[string]
 	defaultBranch  cached[string]
@@ -113,7 +113,7 @@ func (r *repoState) forget() {
 	r.coreSSHCommand.forget()
 	r.currentBranch.forget()
 	r.upstream.forget()
-	r.localBranches.forget()
+	r.branches.forget()
 	r.aheadBehind.forget()
 	r.contextDir.forget()
 }
