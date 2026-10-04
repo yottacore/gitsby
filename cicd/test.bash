@@ -4444,7 +4444,7 @@ GHEOF
 	fAssertOut "[ErfYFrY] and two builds for one CPU" 'two builds for one CPU' \
 		"${fatJoin}" "${fatDir}/bad" "${fatDir}/arm64" "${fatDir}/arm64"
 	fAssert "[ErfYFrl] dogfood builds macOS universal, and joins it with that script" \
-		bash -c "grep -q '^[[:space:]]*\"darwin/universal\"' '${root}/cicd/config.bash' && grep -q 'macho-universal\.bash' '${root}/cicd/cicd.bash' && [[ ! -e '${fatDir}/bad' ]]"
+		bash -c "cd '${root}' && source cicd/config.bash && [[ \" \${DOGFOOD_TARGETS[*]} \" == *' darwin/universal '* ]] && grep -q 'macho-universal\.bash' cicd/cicd.bash && [[ ! -e '${fatDir}/bad' ]]"
 	## The mode a clone gets, not the one this tree happens to have: a local chmod hid release.bash
 	## going out without its executable bit. Every script runs by path but the ones only sourced.
 	fAssert "[ErCM5cg] every script that runs by path is committed executable" \
