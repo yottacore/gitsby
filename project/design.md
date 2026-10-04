@@ -259,6 +259,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 			- The old format is known by the footer's `Format` line, or for SHCL 2.x by its own footer. A file with neither was typed by hand to the current docs, and is read as current and left alone.
 			- The module is asked first, so a later one that converts a file itself leaves nothing for gitsby to do.
 			- Where the file can't be replaced, it is read converted for that run, and `account set` refuses. An edit would mix the two formats in one file.
+			- The tests use files the old format's own writer made. The last gitsby build on SHCL 2.x is compiled from its commit, writes a file, and the current build has to list every account the way it did. The 2.x module is in go.mod for the tests only and never reaches the binary.
 	- `gitsby.ghAccount` and `gitsby.ghTokenFile` in git config still work and still win, for a single repo that wants to answer for itself.
 	- `gitsby.ghTokenFile` and the per-account `tokenfile` name a token for an account gh has never been logged in as, for a machine set up by copying files rather than by authenticating. gh's own store is consulted first, so a rotated login is never shadowed by a stale token on disk.
 	- Paths are compared canonically, never as text. The Bash build sees `/c/x` where the PowerShell build sees `C:\x`, and a rule that matched in one build and not the other would be worse than no rule at all.
