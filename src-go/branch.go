@@ -19,33 +19,47 @@ func (a *app) currentBranch() string {
 	return a.git.currentBranch.get(func() string { return runOut("git", "branch", "--show-current") })
 }
 
-// upstream is the current branch's upstream as a full ref, "" when it has none.
-// Full, so the pull step can tell origin's branches from another remote's.
-func (a *app) upstream() string {
-	return a.git.upstream.get(func() string { return runOut("git", "rev-parse", "--symbolic-full-name", "@{u}") })
+// upstreamRef is a branch's upstream two ways. The full ref says whose it is; the
+// short one is git's own unambiguous name for it, which the plan prints and the
+// pull step runs.
+type upstreamRef struct{ full, short string }
+
+// upstream is the current branch's upstream, empty when it has none. One call
+// for both forms, since rev-parse applies each option to the names after it.
+func (a *app) upstream() upstreamRef {
+	return a.git.upstream.get(func() upstreamRef {
+		lines := runLines("git", "rev-parse", "--symbolic-full-name", "@{u}", "--abbrev-ref", "@{u}")
+		if len(lines) != 2 {
+			return upstreamRef{}
+		}
+		return upstreamRef{full: lines[0], short: lines[1]}
+	})
 }
 
-func (a *app) hasUpstream() bool { return a.upstream() != "" }
+func (a *app) hasUpstream() bool { return a.upstream().full != "" }
 
-// branchRefs is every local branch with its upstream's full ref, "" for none,
-// and every branch origin has. One for-each-ref answers all of the run's
+// branchRefs is every local branch with its upstream, and every branch origin
+// has with git's short name for it. One for-each-ref answers all of the run's
 // existence checks, which were a show-ref each.
 type branchRefs struct {
-	local  map[string]string
-	origin map[string]bool
+	local  map[string]upstreamRef
+	origin map[string]string
 }
 
 func (a *app) branchRefs() branchRefs {
 	return a.git.branches.get(func() branchRefs {
-		refs := branchRefs{local: map[string]string{}, origin: map[string]bool{}}
+		refs := branchRefs{local: map[string]upstreamRef{}, origin: map[string]string{}}
 		// A ref name can't hold a space, so an empty field still has its place.
-		lines := runLines("git", "for-each-ref", "--format=%(refname) %(upstream)", "refs/heads/", "refs/remotes/origin/")
+		lines := runLines("git", "for-each-ref", "--format=%(refname) %(refname:short) %(upstream) %(upstream:short)", "refs/heads/", "refs/remotes/origin/")
 		for _, line := range lines {
-			ref, up, _ := strings.Cut(line, " ")
-			if name, ok := strings.CutPrefix(ref, "refs/heads/"); ok {
-				refs.local[name] = up
-			} else if name, ok := strings.CutPrefix(ref, "refs/remotes/origin/"); ok {
-				refs.origin[name] = true
+			fields := strings.Split(line, " ")
+			if len(fields) != 4 {
+				continue
+			}
+			if name, ok := strings.CutPrefix(fields[0], "refs/heads/"); ok {
+				refs.local[name] = upstreamRef{full: fields[2], short: fields[3]}
+			} else if name, ok := strings.CutPrefix(fields[0], "refs/remotes/origin/"); ok {
+				refs.origin[name] = fields[1]
 			}
 		}
 		return refs
@@ -57,7 +71,10 @@ func (a *app) branchExistsLocal(branch string) bool {
 	return ok
 }
 
-func (a *app) branchExistsRemote(branch string) bool { return a.branchRefs().origin[branch] }
+func (a *app) branchExistsRemote(branch string) bool {
+	_, ok := a.branchRefs().origin[branch]
+	return ok
+}
 
 // localBranchNames in refname order, the order for-each-ref lists them in.
 func (a *app) localBranchNames() []string {
@@ -71,12 +88,19 @@ func (a *app) localBranchNames() []string {
 }
 
 // upstreamOf is upstream for any branch. One with no local copy yet is checked
-// out tracking origin's, so "" stands for that too.
-func (a *app) upstreamOf(branch string) string {
+// out tracking origin's, so that is its upstream.
+func (a *app) upstreamOf(branch string) upstreamRef {
 	if branch == a.currentBranch() {
 		return a.upstream()
 	}
-	return a.branchRefs().local[branch]
+	refs := a.branchRefs()
+	if up, ok := refs.local[branch]; ok {
+		return up
+	}
+	if short, ok := refs.origin[branch]; ok {
+		return upstreamRef{full: "refs/remotes/origin/" + branch, short: short}
+	}
+	return upstreamRef{}
 }
 
 // aheadBehind: both directions against the upstream, in the one call that answers

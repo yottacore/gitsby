@@ -85,12 +85,24 @@ func (a *app) pullArgs(extra ...string) []string {
 	return pullArgsFor(a.upstream(), extra...)
 }
 
-func pullArgsFor(upstream string, extra ...string) []string {
-	if upstream != "" && !strings.HasPrefix(upstream, "refs/remotes/origin/") && !strings.HasPrefix(upstream, "refs/heads/") {
+// pullArgsFor names the upstream the way git shortens it, which is never
+// ambiguous, so the plan says which branch comes in and the step merges that
+// same name. Only a branch with no upstream at all is left to '@{u}'. A local
+// upstream whose name starts with a dash would read as an option, so it goes by
+// its full ref.
+func pullArgsFor(upstream upstreamRef, extra ...string) []string {
+	if upstream.full != "" && !strings.HasPrefix(upstream.full, "refs/remotes/origin/") && !strings.HasPrefix(upstream.full, "refs/heads/") {
 		return append([]string{"pull", "--ff-only"}, extra...)
 	}
+	name := upstream.short
+	switch {
+	case upstream.full == "":
+		name = "@{u}"
+	case name == "" || strings.HasPrefix(name, "-"):
+		name = upstream.full
+	}
 	args := append([]string{"merge", "--ff-only"}, extra...)
-	return append(args, "@{u}")
+	return append(args, name)
 }
 
 // pushIfOnline is the park push, for a command that still means something without

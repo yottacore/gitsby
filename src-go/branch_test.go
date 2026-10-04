@@ -79,3 +79,30 @@ func TestBranchReadsFollowWrites(t *testing.T) { // [Erl1x2z]
 		t.Error("after a step made it, the local branch is still missing")
 	}
 }
+
+// The pull step names the upstream as git shortens it, and the plan reads the same
+// name for a branch it checks out later, from origin's copy when there is no local one.
+func TestUpstreamNames(t *testing.T) { // [Erl1x3E]
+	_, clone := gitTestRepo(t)
+	runGit(t, clone, "push", "-q", "origin", "HEAD:refs/heads/far")
+	runGit(t, clone, "branch", "-q", "lone")
+	t.Chdir(clone)
+	a := newApp(newPrinter())
+	tests := []struct {
+		branch string
+		want   upstreamRef
+	}{
+		{"main", upstreamRef{"refs/remotes/origin/main", "origin/main"}},
+		{"far", upstreamRef{"refs/remotes/origin/far", "origin/far"}},
+		{"lone", upstreamRef{}},
+		{"nowhere", upstreamRef{}},
+	}
+	for _, tc := range tests {
+		if got := a.upstreamOf(tc.branch); got != tc.want {
+			t.Errorf("upstreamOf(%q) = %v, want %v", tc.branch, got, tc.want)
+		}
+	}
+	if got := a.upstream(); got != tests[0].want {
+		t.Errorf("upstream() = %v, want %v", got, tests[0].want)
+	}
+}
