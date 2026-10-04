@@ -188,7 +188,7 @@ That binary is the whole product. The rest of the tooling below is for running t
 
 - `cicd/cicd.bash --quick` - the whole pipeline, minus the slow stages. Run this before you open a PR.
 
-- `cicd/cicd.bash` - everything, including the fuzz suite, the demo, and the tests on a Mac and a Windows box.
+- `cicd/cicd.bash` - everything, including the fuzz suite, the demo, and the tests on a Mac, a Windows box and other Unix boxes.
 
 - `cicd/cicd.bash --gate` - every lint check and the unit tests, and nothing else: no sync, no build, no suites, no prompt and no run log. This is what the pre-push hook runs.
 
@@ -204,7 +204,7 @@ That binary is the whole product. The rest of the tooling below is for running t
 
 - `cicd/fuzz.bash` - just the fuzz suite.
 
-- `cicd/remote-tests.bash` - just the Mac and Windows tests: the Go tests on both, over ssh, and the regression suite on the Mac when given a universal build with `--mac-bin`, as the pipeline does. Each box is taken through a shared host lock for its run, and one that is off or busy is skipped. The boxes and the lock are one machine's, set in `cicd/config.bash`, so elsewhere it skips them all and says why.
+- `cicd/remote-tests.bash` - just the tests on other boxes: the Go tests on each, over ssh, and the regression suite on the Mac when given a universal build with `--mac-bin`, as the pipeline does. The FreeBSD and Linux arm64 boxes run the suite too when given their builds with `--bin`, if they have bash, git and Go. Each box is taken through a shared host lock for its run, and one that is off or busy is skipped. The boxes and the lock are one machine's, set in `cicd/config.bash`, so elsewhere it skips them all and says why.
 
 - `cicd/utility/spawn-count.bash` - how many processes each command starts, against the newest previous run. This is the profiling step: the program is blocked on git for effectively all of its wall clock, so a sampling profile has no leaders in it.
 

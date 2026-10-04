@@ -27,7 +27,7 @@
 ##	   4. backwards compatibility (cicd/parity.bash: this build vs the frozen v2.1.0 one)
 ##	   5. dogfood (cross-build every target and install each to its first existing dir)
 ##	   6. demo gif (fake-terminal render; skipped under --quick)
-##	   7. Mac + Windows tests (cicd/remote-tests.bash, over ssh on whichever box is free; skipped under --quick)
+##	   7. Mac + Windows tests (cicd/remote-tests.bash, over ssh on the Mac, the Unix boxes and whichever Windows box is free; skipped under --quick)
 ##	   8. backup + publish to git (runs from repo root)
 ##	- Syntax:
 ##	  cicd/cicd.bash [options]
@@ -430,7 +430,7 @@ else
 	fEcho_Clean "Demo gif ............: $( ((quick)) && echo '(skipped --quick)' || echo '(skipped)')"
 fi
 if ((do_remote)) && [[ -f "${REMOTE_TEST_CMD[0]:-}" ]]; then
-	fEcho_Clean "Mac + Windows tests .: ${REMOTE_TEST_CMD[*]} (${REMOTE_MAC_HOSTS[*]%%:*}; first free of ${REMOTE_WINDOWS_HOSTS[*]%%:*})"
+	fEcho_Clean "Mac + Windows tests .: ${REMOTE_TEST_CMD[*]} (${REMOTE_MAC_HOSTS[*]%%:*} ${REMOTE_UNIX_HOSTS[*]%%:*}; first free of ${REMOTE_WINDOWS_HOSTS[*]%%:*})"
 elif ((do_remote)); then
 	fEcho_Clean "Mac + Windows tests .: (no harness yet: ${REMOTE_TEST_CMD[0]:-cicd/remote-tests.bash})"
 else
@@ -702,9 +702,9 @@ else
 	rm -f -- "${demogif_bin:?}"
 fi
 
-## Stage 7: the Go tests on a Mac and a Windows box, and the regression suite on the Mac against
-## the universal build. Nothing else runs the tests on either platform, and Windows-only breaks
-## went unnoticed for weeks before this. A box that is off, unreachable or taken by someone else
+## Stage 7: the Go tests on a Mac, a Windows box and the other Unix boxes, and the regression
+## suite on the Mac and the Unix boxes against the build for each. Nothing else runs the tests on
+## those platforms, and Windows-only breaks went unnoticed for weeks before this. A box that is off, unreachable or taken by someone else
 ## is skipped with a note rather than waited for. Slow, so skipped under --quick.
 fSection "7/8  Mac + Windows tests"
 if ((! do_remote)); then
@@ -714,9 +714,17 @@ elif [[ ! -f "${REMOTE_TEST_CMD[0]:-}" ]]; then
 else
 	remote_bin="${root}/${GO_MODULE_DIR}/${EXE_NAME}-darwin-universal"
 	fCrossBuild darwin/universal "${remote_bin}"
+	remote_args=(--mac-bin "${remote_bin}"); remote_bins=("${remote_bin}")
+	mapfile -t remote_targets < <(printf '%s\n' "${REMOTE_UNIX_TARGETS[@]}" | sort -u)
+	for t in "${remote_targets[@]}"; do
+		[[ -n "${t}" ]] || continue
+		remote_bins+=("${root}/${GO_MODULE_DIR}/${EXE_NAME}-${t/\//-}")
+		fCrossBuild "${t}" "${remote_bins[-1]}"
+		remote_args+=(--bin "${t}" "${remote_bins[-1]}")
+	done
 	remote_rc=0
-	"${REMOTE_TEST_CMD[@]}" --mac-bin "${remote_bin}" || remote_rc=$?
-	rm -f -- "${remote_bin:?}"
+	"${REMOTE_TEST_CMD[@]}" "${remote_args[@]}" || remote_rc=$?
+	rm -f -- "${remote_bins[@]}"
 	((remote_rc == 0)) || fDie "Mac or Windows tests failed (see above)"
 	fEcho "OK: Mac + Windows tests"
 fi
@@ -768,3 +776,4 @@ fEcho_Clean
 ##		- 2026-10-03 JC: macOS dogfood is a universal binary, both Mac CPUs built and joined, so Intel Macs can run it too.
 ##		- 2026-10-03 JC: PowerShell lint is one pwsh for every file, with its rules in PSScriptAnalyzerSettings.psd1. A file that fails to parse fails the lint on its own.
 ##		- 2026-10-04 JC: Stage 7 runs the Go tests on a Mac and a Windows box, and the regression suite on the Mac against the universal build, through cicd/remote-tests.bash. A box that is off or taken is skipped, not waited for. Full runs only. Publish is stage 8.
+##		- 2026-10-04 JC: Stage 7 also builds for each Unix box's target in config.bash, FreeBSD amd64 and Linux arm64 to start, and hands those builds to the harness.
