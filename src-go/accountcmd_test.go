@@ -1159,6 +1159,35 @@ func TestLockAccountsFile(t *testing.T) { // [EpxmDk5]
 	}
 }
 
+// Another run's lock can keep the device and inode ours had, as on UFS, where a
+// freed inode number goes straight to the next new file. Writing over ours in
+// place gives the same on any filesystem.
+func TestUnlockLeavesALockInItsInode(t *testing.T) { // [ErmLh0B]
+	lock := filepath.Join(t.TempDir(), "config.shcl") + ".lock"
+	unlock, err := lockAccountsFile(strings.TrimSuffix(lock, ".lock"), 0)
+	if err != nil {
+		t.Fatalf("lock: %v", err)
+	}
+	before, err := os.Lstat(lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Lstat(lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(before, after) {
+		t.Fatal("the lock written over lost its identity, so this tests nothing")
+	}
+	unlock()
+	if _, err := os.Lstat(lock); err != nil {
+		t.Errorf("unlock removed a lock it didn't make: %v", err)
+	}
+}
+
 func TestLockFix(t *testing.T) { // [EpxmDk6]
 	tests := []struct {
 		goos, lock string
