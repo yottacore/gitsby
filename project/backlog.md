@@ -124,6 +124,37 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: 5af99d6
 	- Test case: test.bash `[ErkbDSi]` to `[Erkbdua]`, as on the parent.
 
+- Code Review 20261003 enhancement 2: Network probes run one after another
+	- ID: 2026100313123988
+	- Type: Enhancement
+	- Status: Waiting on signoff
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Prereq IDs: 2026100313123975
+	- Requirements  [Feature]:
+		- `status` and `whoami` in a token-file account folder wait on two `gh api user` calls and an `ssh -T`, in turn. With 300 ms each that is about 950 ms where 300 would do.
+		- `account list` starts `gh` once per account, in turn. `account apply`, `set` and `unset` pay it too, since they print the list.
+	- Decisions:
+		- Against: the public style guide allows goroutines only with a measured reason. The 950 ms against 300 above is that reason, so the fix may use them.
+		- The first probe might be replaced by a local `gh config get` read, with no goroutine at all. Try that first.
+	- Origin: account.go and accountcmd.go. The per-account `gh` call was measured in 20260909 item 19 and kept. Confirmed with injected delays.
+	- Progress log:
+		- Done: the first probe reads gh's active login from gh's own config, with no network. Only a token already in the environment still sends it to the API, since that token outranks the config.
+		- Done: the token-file check and the ssh probe start ahead, and each is read where its line prints. The token check starts when the token is exported, so it also runs alongside the fetch. `whoami` and the commands that write through gh start theirs the same way. Output order is unchanged.
+		- Done: `account list` asks gh about every login at once, up to eight at a time, then prints in the same order. The per-login cache from 20260909 item 19 stays.
+		- Done: a probe nobody read is killed when the run ends.
+		- Verified: with 300 ms injected on each round trip, best of 3 on b23: status in the ssh account folder 930 -> 319 ms, whoami there 923 -> 316, status in the https folder 624 -> 316, status with a failed fetch 628 -> 319. With 300 ms on gh's token store as well: status 1228 -> 621, account list with three accounts 917 -> 615. Output is byte for byte the same in all five.
+		- Verified: spawn counts unchanged on all 14 measures. The config read replaces one gh call one for one.
+		- Verified: `[ErkSC4L]`, `[ErkSctG]`, `[ErkSC4Z]` and the changed `[Er1LxSk]` fail on the build before this and pass after. `[ErkSC4L]` and `[ErkSctG]` also fail with only the ssh probe put back in turn. `[ErkSC48]` fails with the end-of-run kill taken out. The affected test.bash blocks pass 103/0, also on a race-enabled build with no race reported. `go test -race ./...` and the gate (lint and Go tests) are clean.
+		- Note: `[Er1LxSk]` now looks for the config read and no API call, and `[Er1LxSl]` and `[Er1LxSm]` refuse either one. `[Er1LxSn]` runs with a token already in the environment, the one case that still reaches the API. The rule they check, ask only where a block prints, is unchanged. The fake gh stubs answer `config get ... user`.
+		- Note: offline, the identity block can now name gh's active account from its config, where it said nothing before. Display only.
+	- Swept: every caller of `ghLogin`, `sshLogin` and `ghTokenFor`. The probes in `settleGh`, `selectAccount`, `identityGate` and the identity block lines all read through the same caches. `showHostLine` asks tea, which reads a local file, so it stays as it was.
+	- Branch: probes
+	- Commit: cc71200
+	- Test case: test.bash `[ErkSC4L]`, `[ErkSctG]`, `[ErkSC4Z]`, `[ErkSC4m]` (regression guard), `[Er1LxSk]`; Go `[ErkSC3h]`, `[ErkSC3v]`, `[ErkSC48]`, `[ErkTEpz]`.
+	- Verified: test.bash 1408/0, `go test ./...`, fuzz.bash 301/0 and parity 29/0 on merged gover, 2026-10-04.
+
 - Stage 7 names b26 as a Windows host to the lock
 	- ID: 2026100410340781
 	- Type: Bug
@@ -205,106 +236,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: 7c37ca9
 	- Test case: test.bash `[ErgCzfP]`, `[ErgCzfc]`, `[ErgCzfq]` (install.bash on a Mac), `[ErgDQ7N]` (install.ps1, pinned since pwsh can't fake a Mac), `[ErgCzeJ]`, `[ErgCzeW]`, `[ErgCzek]`, `[ErgCzey]`, `[ErgCzfB]` (release.bash).
 	- Swept: every `darwin` and `arm64` reader in the repo. release.bash, config.bash, both installers, the installer and release fixtures in test.bash, README, design.md and the changelog. cicd.bash dogfood already joins. Nothing in `src-go` reads asset names. `legacy/` is frozen.
-
-- Pipeline test for converting old SHCL settings files
-	- ID: 2026100313483664
-	- Type: Enhancement
-	- Status: Waiting for testing
-	- Needs local test suite run?: Yes. test.bash, for the five new checks in place, and stage 3 for the new fuzz target.
-	- Priority [Feature]: Avg
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Related IDs: 2026100312145843
-	- Requirements  [Feature]:
-		- As part of CICD, create settings files in the older SHCL format versions.
-		- Test the automatic conversion on them, the one gitsby does on first run with no help from shcl.
-	- Notes:
-		- Today's checks feed in hand-typed 2.x text.
-	- Progress log:
-		- Done: test.bash compiles the last gitsby build on SHCL 2.x from its commit (c42091c), and has it write an accounts file with `account set`. The current build has to convert that file, list every account the way the old build did, and keep the old file byte for byte. A fuzz target writes values through the 2.x module itself and checks each reads the same after the conversion.
-		- Note: nothing is downloaded at test time. The 2.x module is a test-only require in go.mod, so the lint and unit test stages put it in the module cache, and the old build compiles from there with the proxy off. A box whose cache lacks it fails `[ErkNuhS]` by name; `go mod download` in `src-go` fixes that.
-		- Note: 2.x is the only older format gitsby ever wrote. SHCL 1.x has no Go module and writes the same footer as 2.x, so a 1.x file is converted as a 2.x one. By shcl's 2.0.0 changelog only quoted key names changed between the two, and gitsby's keys have none. Not run.
-		- Verified: the five checks pass on their own against the current build. `[ErkNui6]` fails with the conversion taken out of `migrateText`, and all five fail with an empty module cache. `go vet ./...` from an empty module cache fetched the 2.x module, and the old build then compiled offline.
-		- Verified: FuzzOldFormatValue's seeds fail with the conversion taken out, 6 of 13, and 90 s of fuzzing found nothing. go test -race, vet, staticcheck, golangci-lint, shellcheck and the test ID check are clean.
-	- Branch: oldshcl
-	- Commit: 55cc1e8
-	- Test case: FuzzOldFormatValue, and test.bash `[ErkNuhS]`, `[ErkNuhf]`, `[ErkNuht]`, `[ErkNui6]`, `[ErkNuiK]`.
-
-- Code Review 20261003 enhancement 2: Network probes run one after another
-	- ID: 2026100313123988
-	- Type: Enhancement
-	- Status: Waiting for testing
-	- Needs local test suite run?: Yes. test.bash, for the new and changed checks in place.
-	- Priority [Feature]: Avg
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Prereq IDs: 2026100313123975
-	- Requirements  [Feature]:
-		- `status` and `whoami` in a token-file account folder wait on two `gh api user` calls and an `ssh -T`, in turn. With 300 ms each that is about 950 ms where 300 would do.
-		- `account list` starts `gh` once per account, in turn. `account apply`, `set` and `unset` pay it too, since they print the list.
-	- Decisions:
-		- Against: the public style guide allows goroutines only with a measured reason. The 950 ms against 300 above is that reason, so the fix may use them.
-		- The first probe might be replaced by a local `gh config get` read, with no goroutine at all. Try that first.
-	- Origin: account.go and accountcmd.go. The per-account `gh` call was measured in 20260909 item 19 and kept. Confirmed with injected delays.
-	- Progress log:
-		- Done: the first probe reads gh's active login from gh's own config, with no network. Only a token already in the environment still sends it to the API, since that token outranks the config.
-		- Done: the token-file check and the ssh probe start ahead, and each is read where its line prints. The token check starts when the token is exported, so it also runs alongside the fetch. `whoami` and the commands that write through gh start theirs the same way. Output order is unchanged.
-		- Done: `account list` asks gh about every login at once, up to eight at a time, then prints in the same order. The per-login cache from 20260909 item 19 stays.
-		- Done: a probe nobody read is killed when the run ends.
-		- Verified: with 300 ms injected on each round trip, best of 3 on b23: status in the ssh account folder 930 -> 319 ms, whoami there 923 -> 316, status in the https folder 624 -> 316, status with a failed fetch 628 -> 319. With 300 ms on gh's token store as well: status 1228 -> 621, account list with three accounts 917 -> 615. Output is byte for byte the same in all five.
-		- Verified: spawn counts unchanged on all 14 measures. The config read replaces one gh call one for one.
-		- Verified: `[ErkSC4L]`, `[ErkSctG]`, `[ErkSC4Z]` and the changed `[Er1LxSk]` fail on the build before this and pass after. `[ErkSC4L]` and `[ErkSctG]` also fail with only the ssh probe put back in turn. `[ErkSC48]` fails with the end-of-run kill taken out. The affected test.bash blocks pass 103/0, also on a race-enabled build with no race reported. `go test -race ./...` and the gate (lint and Go tests) are clean.
-		- Note: `[Er1LxSk]` now looks for the config read and no API call, and `[Er1LxSl]` and `[Er1LxSm]` refuse either one. `[Er1LxSn]` runs with a token already in the environment, the one case that still reaches the API. The rule they check, ask only where a block prints, is unchanged. The fake gh stubs answer `config get ... user`.
-		- Note: offline, the identity block can now name gh's active account from its config, where it said nothing before. Display only.
-	- Swept: every caller of `ghLogin`, `sshLogin` and `ghTokenFor`. The probes in `settleGh`, `selectAccount`, `identityGate` and the identity block lines all read through the same caches. `showHostLine` asks tea, which reads a local file, so it stays as it was.
-	- Branch: probes
-	- Commit: cc71200
-	- Test case: test.bash `[ErkSC4L]`, `[ErkSctG]`, `[ErkSC4Z]`, `[ErkSC4m]` (regression guard), `[Er1LxSk]`; Go `[ErkSC3h]`, `[ErkSC3v]`, `[ErkSC48]`, `[ErkTEpz]`.
-
-- The dogfood check passes on the release target list too
-	- ID: 2026100315501801
-	- Type: Bug
-	- Status: Waiting for testing
-	- Needs local test suite run?: Yes. test.bash, for `[ErfYFrl]` in place.
-	- Priority|Severity [Bug]: Low
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: [ErfYFrl] looks for `"darwin/universal"` anywhere in config.bash. The release list has it now as well, so the check still passes if dogfood loses that target.
-	- Expected behavior [Bug]: The check reads the dogfood target list only.
-	- Reproduced [Bug]: Yes, 2026-10-04. With the entry taken out of `DOGFOOD_TARGETS` only, the old check still passed.
-	- Origin: [ErfYFrl] from item 2026100312571262. The release list gained the entry in item 2026100313491873. Confirmed.
-	- Estimated effort: Low
-	- Actual cause [Bug]: The check grepped the whole file for the line, and `RELEASE_TARGETS` has the same line.
-	- Actual fix [Bug]: The check sources config.bash and looks in `DOGFOOD_TARGETS` only.
-	- Progress log:
-		- Verified: on a copy of config.bash without the dogfood entry, the old check passes and the new one fails. The new one passes on the real file.
-	- Swept: the other config.bash checks in test.bash. Each looks for a setting by its own name, and none reads an entry two lists share.
-	- Branch: oldshcl
-	- Commit: 74b1914
-	- Test case: test.bash `[ErfYFrl]`.
-
-- A tag named after origin's default branch breaks the default branch read
-	- ID: 2026100411344972
-	- Type: Bug
-	- Status: Waiting for testing
-	- Needs local test suite run?: Yes. test.bash, for `[Erl643s]` and `[Erl6446]` in place.
-	- Priority|Severity [Bug]: Low
-	- Opened: 20261004-113449
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]:
-		- In a clone whose origin/HEAD points at `origin/main`, run `git tag origin/main`.
-		- Run `gitsby status`, or any branch command.
-	- Incorrect behavior [Bug]: The default branch reads as `remotes/origin/main`. Branch commands refuse, saying it exists neither here nor on origin.
-	- Expected behavior [Bug]: The default branch is `main`.
-	- Reproduced [Bug]: Yes, 2026-10-04, on the gover build and on branch spawncut.
-	- Possible cause [Bug]: `symbolic-ref --short` spells the target the way git shortens it, longer where a tag shares the short name, and the code strips only `origin/`. Reading it without `--short` and stripping `refs/remotes/origin/` would not depend on tags.
-	- Cause: Confirmed. origin/HEAD was read with `--short`, and only `origin/` was cut off. The unborn-repo fallback read HEAD the same way, so a tag named like the unborn branch gave `heads/<name>`.
-	- Fixed: both read the full ref and cut `refs/remotes/origin/` or `refs/heads/`. A target outside origin falls through to the usual guesses.
-	- Swept: `grep -n 'symbolic-ref\|--short\|abbrev-ref\|"origin/"\|refs/remotes' src-go/*.go`. `currentBranch` uses `branch --show-current`, which ignores tags. The branch list cuts full ref names. prune cuts full refs. The upstream's short name is left as git spells it on purpose, since the plan shows what runs. remote.go only tests origin/HEAD for empty. release.go and the back-merge build `origin/<name>` rather than reading it; the back-merge already merges by full ref. The release guard's short names are filed as 2026100411392800.
-	- Verified: Go `TestDefaultBranchBesideSameNamedTag` fails on the gover build with `remotes/origin/main` and `heads/trunkish`, and passes after. The two test.bash checks, run by hand outside the suite, fail before and pass after. `go test -race`, `test-id.bash --check`, shellcheck, and spawn-count with no count up.
-	- Branch: deftag
-	- Commit: f12765b
-	- Test case: test.bash [Erl643s] and [Erl6446]. Go `TestDefaultBranchBesideSameNamedTag` [Erl643f].
 
 - Code Review 20261003 enhancement 6: Spawns that are repeated or not needed
 	- ID: 2026100313124028
@@ -597,6 +528,32 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: TestRepeatedAccountKeys, TestAccountSetFindsTheKeyInAnyPiece, and one account list check in test.bash.
 	- Closed: 2026-09-30
 
+- Pipeline test for converting old SHCL settings files
+	- ID: 2026100313483664
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Related IDs: 2026100312145843
+	- Requirements  [Feature]:
+		- As part of CICD, create settings files in the older SHCL format versions.
+		- Test the automatic conversion on them, the one gitsby does on first run with no help from shcl.
+	- Notes:
+		- Today's checks feed in hand-typed 2.x text.
+	- Progress log:
+		- Done: test.bash compiles the last gitsby build on SHCL 2.x from its commit (c42091c), and has it write an accounts file with `account set`. The current build has to convert that file, list every account the way the old build did, and keep the old file byte for byte. A fuzz target writes values through the 2.x module itself and checks each reads the same after the conversion.
+		- Note: nothing is downloaded at test time. The 2.x module is a test-only require in go.mod, so the lint and unit test stages put it in the module cache, and the old build compiles from there with the proxy off. A box whose cache lacks it fails `[ErkNuhS]` by name; `go mod download` in `src-go` fixes that.
+		- Note: 2.x is the only older format gitsby ever wrote. SHCL 1.x has no Go module and writes the same footer as 2.x, so a 1.x file is converted as a 2.x one. By shcl's 2.0.0 changelog only quoted key names changed between the two, and gitsby's keys have none. Not run.
+		- Verified: the five checks pass on their own against the current build. `[ErkNui6]` fails with the conversion taken out of `migrateText`, and all five fail with an empty module cache. `go vet ./...` from an empty module cache fetched the 2.x module, and the old build then compiled offline.
+		- Verified: FuzzOldFormatValue's seeds fail with the conversion taken out, 6 of 13, and 90 s of fuzzing found nothing. go test -race, vet, staticcheck, golangci-lint, shellcheck and the test ID check are clean.
+	- Branch: oldshcl
+	- Commit: 55cc1e8
+	- Test case: FuzzOldFormatValue, and test.bash `[ErkNuhS]`, `[ErkNuhf]`, `[ErkNuht]`, `[ErkNui6]`, `[ErkNuiK]`.
+	- Verified: test.bash 1408/0, `go test ./...`, fuzz.bash 301/0 and parity 29/0 on merged gover, 2026-10-04.
+	- Acceptance signoff: Self-closed: tests only, the intent was clear, and every new check passes in the full suite. 30 s more of FuzzOldFormatValue found nothing.
+	- Closed: 20261004-114742
+
 - Code Review 20261003 enhancement 1: The spawn-count fixture can't see the account paths
 	- ID: 2026100313123975
 	- Type: Enhancement
@@ -731,6 +688,55 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: acct-files
 	- Test case: TestFragmentNames, plus two apply checks in test.bash.
 	- Closed: 2026-09-30
+
+- The dogfood check passes on the release target list too
+	- ID: 2026100315501801
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Low
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: [ErfYFrl] looks for `"darwin/universal"` anywhere in config.bash. The release list has it now as well, so the check still passes if dogfood loses that target.
+	- Expected behavior [Bug]: The check reads the dogfood target list only.
+	- Reproduced [Bug]: Yes, 2026-10-04. With the entry taken out of `DOGFOOD_TARGETS` only, the old check still passed.
+	- Origin: [ErfYFrl] from item 2026100312571262. The release list gained the entry in item 2026100313491873. Confirmed.
+	- Estimated effort: Low
+	- Actual cause [Bug]: The check grepped the whole file for the line, and `RELEASE_TARGETS` has the same line.
+	- Actual fix [Bug]: The check sources config.bash and looks in `DOGFOOD_TARGETS` only.
+	- Progress log:
+		- Verified: on a copy of config.bash without the dogfood entry, the old check passes and the new one fails. The new one passes on the real file.
+	- Swept: the other config.bash checks in test.bash. Each looks for a setting by its own name, and none reads an entry two lists share.
+	- Branch: oldshcl
+	- Commit: 74b1914
+	- Test case: test.bash `[ErfYFrl]`.
+	- Verified: test.bash 1408/0, `go test ./...`, fuzz.bash 301/0 and parity 29/0 on merged gover, 2026-10-04.
+	- Acceptance signoff: Self-closed: reproduced, the check failed before and passes after.
+	- Closed: 20261004-114742
+
+- A tag named after origin's default branch breaks the default branch read
+	- ID: 2026100411344972
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Low
+	- Opened: 20261004-113449
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- In a clone whose origin/HEAD points at `origin/main`, run `git tag origin/main`.
+		- Run `gitsby status`, or any branch command.
+	- Incorrect behavior [Bug]: The default branch reads as `remotes/origin/main`. Branch commands refuse, saying it exists neither here nor on origin.
+	- Expected behavior [Bug]: The default branch is `main`.
+	- Reproduced [Bug]: Yes, 2026-10-04, on the gover build and on branch spawncut.
+	- Possible cause [Bug]: `symbolic-ref --short` spells the target the way git shortens it, longer where a tag shares the short name, and the code strips only `origin/`. Reading it without `--short` and stripping `refs/remotes/origin/` would not depend on tags.
+	- Cause: Confirmed. origin/HEAD was read with `--short`, and only `origin/` was cut off. The unborn-repo fallback read HEAD the same way, so a tag named like the unborn branch gave `heads/<name>`.
+	- Fixed: both read the full ref and cut `refs/remotes/origin/` or `refs/heads/`. A target outside origin falls through to the usual guesses.
+	- Swept: `grep -n 'symbolic-ref\|--short\|abbrev-ref\|"origin/"\|refs/remotes' src-go/*.go`. `currentBranch` uses `branch --show-current`, which ignores tags. The branch list cuts full ref names. prune cuts full refs. The upstream's short name is left as git spells it on purpose, since the plan shows what runs. remote.go only tests origin/HEAD for empty. release.go and the back-merge build `origin/<name>` rather than reading it; the back-merge already merges by full ref. The release guard's short names are filed as 2026100411392800.
+	- Verified: Go `TestDefaultBranchBesideSameNamedTag` fails on the gover build with `remotes/origin/main` and `heads/trunkish`, and passes after. The two test.bash checks, run by hand outside the suite, fail before and pass after. `go test -race`, `test-id.bash --check`, shellcheck, and spawn-count with no count up.
+	- Branch: deftag
+	- Commit: f12765b
+	- Test case: test.bash [Erl643s] and [Erl6446]. Go `TestDefaultBranchBesideSameNamedTag` [Erl643f].
+	- Verified: test.bash 1408/0, `go test ./...`, fuzz.bash 301/0 and parity 29/0 on merged gover, 2026-10-04.
+	- Acceptance signoff: Self-closed: reproduced, the tests fail before and pass after.
+	- Closed: 20261004-114742
 
 - The release guard names branches short, so a tag can stand in for one
 	- ID: 2026100411392800
