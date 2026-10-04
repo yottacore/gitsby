@@ -317,7 +317,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - A tag named after origin's default branch breaks the default branch read
 	- ID: 2026100411344972
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting for testing
+	- Needs local test suite run?: Yes. test.bash, for `[Erl643s]` and `[Erl6446]` in place.
 	- Priority|Severity [Bug]: Low
 	- Opened: 20261004-113449
 	- Opened by: jim-collier
@@ -328,6 +329,26 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: The default branch is `main`.
 	- Reproduced [Bug]: Yes, 2026-10-04, on the gover build and on branch spawncut.
 	- Possible cause [Bug]: `symbolic-ref --short` spells the target the way git shortens it, longer where a tag shares the short name, and the code strips only `origin/`. Reading it without `--short` and stripping `refs/remotes/origin/` would not depend on tags.
+	- Cause: Confirmed. origin/HEAD was read with `--short`, and only `origin/` was cut off. The unborn-repo fallback read HEAD the same way, so a tag named like the unborn branch gave `heads/<name>`.
+	- Fixed: both read the full ref and cut `refs/remotes/origin/` or `refs/heads/`. A target outside origin falls through to the usual guesses.
+	- Swept: `grep -n 'symbolic-ref\|--short\|abbrev-ref\|"origin/"\|refs/remotes' src-go/*.go`. `currentBranch` uses `branch --show-current`, which ignores tags. The branch list cuts full ref names. prune cuts full refs. The upstream's short name is left as git spells it on purpose, since the plan shows what runs. remote.go only tests origin/HEAD for empty. release.go and the back-merge build `origin/<name>` rather than reading it; the back-merge already merges by full ref. The release guard's short names are filed as 2026100411392800.
+	- Verified: Go `TestDefaultBranchBesideSameNamedTag` fails on the gover build with `remotes/origin/main` and `heads/trunkish`, and passes after. The two test.bash checks, run by hand outside the suite, fail before and pass after. `go test -race`, `test-id.bash --check`, shellcheck, and spawn-count with no count up.
+	- Branch: deftag
+	- Test case: test.bash [Erl643s] and [Erl6446]. Go `TestDefaultBranchBesideSameNamedTag` [Erl643f].
+
+- The release guard names branches short, so a tag can stand in for one
+	- ID: 2026100411392800
+	- Type: Bug
+	- Status: Queued
+	- Priority|Severity [Bug]: Low
+	- Opened: 20261004-113928
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- Tag something `main`, `dev` or `origin/main` in a repo with nothing new to release.
+		- Run `gitsby release`.
+	- Incorrect behavior [Bug]: The "nothing new" guard passes `main`, `origin/main` and `origin/dev` to `merge-base` and `describe`. git reads a tag of that name before the branch, so the guard can answer about the tag.
+	- Expected behavior [Bug]: The guard reads the branches by full ref.
+	- Reproduced [Bug]: No. Read only, found while sweeping 2026100411344972.
 
 - Code Review 20261003 enhancement 7: Go code tidy
 	- ID: 2026100313130047

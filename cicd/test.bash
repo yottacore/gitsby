@@ -1516,6 +1516,12 @@ fRunSuite(){
 	## Healing asks origin a second time, so a clone that already has the ref is left alone.
 	fAssert    "[Er1LxRq] and a clone that has one isn't asked again" \
 		bash -c "cd '${oh}/c' && GIT_TRACE='${oh}/trace' '${gitsby}' -q status >/dev/null 2>&1; [[ -s '${oh}/trace' ]] && ! grep -qF 'remote set-head' '${oh}/trace'"
+	## A tag named like origin's default made git spell it 'remotes/origin/trunk2', and branch
+	## commands then refused, saying that branch was nowhere.
+	git clone --quiet "${oh}/origin.git" "${oh}/t" 2>/dev/null
+	( cd "${oh}/t" && git tag origin/trunk2 )
+	fAssertOut "[Erl643s] a tag named like origin's default leaves the default branch alone"  '^Default branch: trunk2$'  bash -c "cd '${oh}/t' && '${gitsby}' -q status"
+	fAssert    "[Erl6446] and br create still works there"  bash -c "cd '${oh}/t' && '${gitsby}' -q br create tagside >/dev/null 2>&1 && [[ \"\$(git branch --show-current)\" == tagside ]]"
 
 	## owner/name targets: the gh path, driven by a deterministic fake gh (no network). Covers
 	## 'repo create' (repo absent), 'repo connect' remote-add (present but empty, https + ssh),
@@ -6226,3 +6232,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20261004 JC: The dogfood macOS check reads the dogfood target list, not any line in config.bash. A file the last build on SHCL 2.x wrote is converted and lists the same accounts; that build is compiled from its commit, offline. 1365 -> 1370.
 ##		- 20261004 JC: The binary string checks read in the C locale, so they work on macOS, and a check for no match fails when the file was not read. The asks-origin-once fixture has its origin/HEAD set, so git before 2.47 counts the same. 1399 -> 1400.
 ##		- 20261004 JC: The pull line names the upstream, as git shortens it, and the step that runs is the line the plan showed. 1401 -> 1406.
+##		- 20261004 JC: A tag named like origin's default branch no longer changes the name the default branch reads as. 1406 -> 1408.
