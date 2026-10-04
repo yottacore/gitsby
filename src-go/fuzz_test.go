@@ -19,6 +19,7 @@ import (
 	"testing"
 	"unicode"
 
+	shcl2 "github.com/jim-collier/shcl/source/go/v2"
 	shcl "github.com/yottacore/shcl/source/go/v2"
 )
 
@@ -200,6 +201,33 @@ func FuzzSetValue(f *testing.F) { // [ErUTuA8]
 		spelled := shclValue(value)
 		if strings.Contains(value, `\`) && !strings.ContainsAny(value, "\r\n") && !strings.HasPrefix(spelled, "'") && !strings.HasPrefix(spelled, `"`) {
 			t.Errorf("setValue(%q) wrote a backslash value bare: %s", value, spelled)
+		}
+	})
+}
+
+// A value the 2.x module wrote reads the same after the conversion as 2.x read
+// it. The text is the 2.x writer's own, so this follows whatever it did with
+// quotes and escapes rather than a guess at it.
+func FuzzOldFormatValue(f *testing.F) { // [ErkNuhE]
+	for _, seed := range []string{`C:\work\new`, `~\dev\tools`, `\\srv\share`, `C:\Bob's\new`, `%USERPROFILE%\x`, `a\tb`, `"q"`, `'q'`, `x # y`, `[a, b]`, `\`, "tab\there", "plain"} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, value string) {
+		doc := shcl2.Parse("account: w\n\temail: e@x\n")
+		if !doc.SetString("account[#0].name", value) {
+			return
+		}
+		text := doc.ToCanonical() + "\n" + shcl2Footer
+		was, status := shcl2.Parse(text).GetString("account[#0].name")
+		if status != shcl2.Good {
+			return
+		}
+		cfg := writeConfig(t, text)
+		if cfg.migration == nil || !cfg.migration.done {
+			t.Fatalf("not converted: %+v\n%s", cfg.migration, text)
+		}
+		if got := cfg.value("w", "name"); got != was {
+			t.Errorf("2.x read %q from\n%s\nand after the conversion it reads %q:\n%s", was, text, got, readBack(t, cfg.file))
 		}
 	})
 }

@@ -5661,6 +5661,31 @@ GHEOF
 		ls "${fg}/old2x"
 	fAssertOut "[ErfOMAj] and the new one names the format"  '^##    Format   3' \
 		cat "${fg}/old2x/config.shcl"
+	## The same on a file the last build on shcl 2.x wrote itself, compiled here from its commit.
+	## Nothing may be downloaded in this suite, so its shcl module has to be in the module cache
+	## already. go.mod lists it for the Go tests, which is what puts it there.
+	local og="${fg}/old2xbuild" ogKv ogAcct ogKey ogValue ogSet=0 ogFile ogDir
+	mkdir -p "${og}/home"
+	local -a ogEnv=(env GITSBY_CONFIG= XDG_CONFIG_HOME= APPDATA= HOME="${og}/home" GIT_CONFIG_GLOBAL="${og}/home/.gitconfig")
+	fAssert "[ErkNuhS] the last build on SHCL 2.x compiles from its commit, with nothing downloaded" \
+		bash -c "git -C '${root}' archive c42091c02c7d151010ed791a5f62771a8fe2489c src-go | tar -x -C '${og}' \
+			&& cd '${og}/src-go' && env -u XDG_CONFIG_HOME -u APPDATA GOWORK=off GOPROXY=off GOFLAGS=-mod=readonly CGO_ENABLED=0 go build -o '${og}/gitsby-2x' ."
+	for ogKv in 'work|email|a@x.test' 'work|path|~\dev\tools' "work|name|O'Brien \\ x" 'home|email|h@x.test' 'home|path|/srv/a b' 'home|sshkey|\\srv\keys\t1'; do
+		IFS='|' read -r ogAcct ogKey ogValue <<< "${ogKv}"
+		if (cd "${og}" && "${ogEnv[@]}" "${og}/gitsby-2x" -q account set "${ogAcct}" "${ogKey}" "${ogValue}") </dev/null >/dev/null 2>&1; then ogSet=$((ogSet + 1)); fi
+	done
+	ogFile="$(find "${og}/home" -name config.shcl -print -quit 2>/dev/null || true)"
+	ogDir="$(dirname "${ogFile:-${og}/none/x}")"
+	fAssert "[ErkNuhf] and that build writes an accounts file in the 2.x format" \
+		bash -c "[[ '${ogSet}' == 6 && -n '${ogFile}' ]] && grep -qxF '# This config file format is SHCL.' '${ogFile}' && cp '${ogFile}' '${og}/written.shcl'"
+	(cd "${og}" && "${ogEnv[@]}" "${og}/gitsby-2x" --config "${ogFile}" account list) </dev/null 2>/dev/null | sed -n '/^Accounts:/,$p' > "${og}/old.txt" || true
+	(cd "${og}" && "${ogEnv[@]}" "${gitsby}" --config "${ogFile}" account list) </dev/null 2>"${og}/new.err" | sed -n '/^Accounts:/,$p' > "${og}/new.txt" || true
+	fAssert "[ErkNuht] the current build converts it on first read" \
+		bash -c "grep -q 'Converted .* from the SHCL 2\.x format' '${og}/new.err' && grep -qx '##    Format   3' '${ogFile}'"
+	fAssert "[ErkNui6] and reads every account the way the 2.x build did" \
+		bash -c "grep -qx '   work' '${og}/old.txt' && grep -qx '   home' '${og}/old.txt' && cmp -s '${og}/old.txt' '${og}/new.txt'"
+	fAssert "[ErkNuiK] and keeps the file that build wrote, byte for byte, under a dated name" \
+		bash -c "set -- '${ogDir}'/config_backup_*_format-v2.shcl; [[ \$# == 1 && -f \"\$1\" ]] && cmp -s \"\$1\" '${og}/written.shcl'"
 	## A key the loader ignores, written past this command, lands in the file and is dropped on every
 	## read - so the file says one thing and every command does another. Refuse it at the door, and
 	## name the keys that ARE read while refusing.
@@ -5957,3 +5982,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20261003 JC: The pull step merges what the start fetch brought, so origin is asked once. A branch that tracks another remote still pulls, and `--no-fetch` still skips the pull. 1318 -> 1328.
 ##		- 20261003 JC: The macOS release is one universal binary. Both installers ask any Mac for it, release.bash joins it, publishes nothing per Mac CPU, checks it by checksum from Linux, and stops on a Mac build that will not join. Every new check fails against the tree before it. 1328 -> 1337.
 ##		- 20261003 JC: The install line with no tag, in both installers, against release lists shaped like GitHub's: a beta taken while the latest full release has no binary, a full release kept over a newer beta, a clear stop when nothing has one, and an explicit tag as before. release.bash phase 3 says which release the line takes. The older list fixtures publish a binary now. Every new check that can fail against the tree before it does. 1344 -> 1365.
+##		- 20261004 JC: The dogfood macOS check reads the dogfood target list, not any line in config.bash. A file the last build on SHCL 2.x wrote is converted and lists the same accounts; that build is compiled from its commit, offline. 1365 -> 1370.
