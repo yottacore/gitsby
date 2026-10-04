@@ -43,7 +43,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Incorrect behavior [Bug]: shellcheck 0.11.0 on b23 segfaults on `cicd/test.bash` in about half of runs, gover's copy included, though less often there. Smaller scripts never crash. A bigger stack and dropping its cached pages did not help. A lint stage run can fail on this alone.
 	- Expected behavior [Bug]: The lint stage passes or fails on what the file says.
 	- Reproduced [Bug]: Yes, 2026-10-04, on b23.
-	- Actual cause [Bug]: Not in this repo or in shellcheck. Most likely a CPU setting on b23. Since 2026-09-28 the CPU has run with tuning registers another program set and never put back, and the kernel flags it as out of spec. Programs with big heaps crash in bursts under it. Confirming it needs root.
+	- Actual cause [Bug]: Not in this repo or in shellcheck. Memory on b23 gets corrupted in bursts, and other programs crash in the same windows. What corrupts it is still unknown.
 	- Estimated effort: Avg
 	- Progress log:
 		- Verified: on 2026-10-04 the same binary crashed 9 of 10 runs on test.bash around 10:49, then 0 of 122 between 11:00 and 11:10, on the same file.
@@ -55,8 +55,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Both builds refuse the GC and stack options, so there is no shellcheck setting to aim at this. A pinned upstream binary would crash the same way, and a retry would only hide a machine fault. Nothing changed in the lint stage.
 		- Answered 2026-10-04: try to find it without a reboot.
 		- Ruled out on 2026-10-04: swapping. The swap was idle all through the 10:40 burst, and forcing shellcheck's heap through swap crashed nothing.
-		- Found: the kernel's out-of-spec flag, set when a program writes CPU tuning registers. That happened at 06:49 on 2026-09-28, and the program exited without restoring them. Since then, unrelated programs crash in bursts. Before that, this boot had one burst, on 2026-09-17, put down to a kernel problem at the time. The detail is in `.claude/details.md`.
-		- Question: reading the registers to confirm takes root, and so does putting them back. A reboot clears them too. Which one?
+		- Ruled out on 2026-10-04: CPU tuning registers. The kernel's out-of-spec flag showed another program wrote them on 2026-09-28. Read back as root, none of them holds what that program sets, so it put them back. The flag stays set once raised.
+		- Question: no lead is left that works without a reboot. Reboot when convenient and see whether the bursts stop, or close this as not a gitsby bug?
 	- Test case: None. The fault is in the machine, and nothing in the repo can check for it.
 	- Branch: scsegv
 
