@@ -272,6 +272,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Verified: the release.bash block of test.bash, 38 passed. Against release.bash before the change, four of the five new checks fail. `[Erm33XL]` held before too, since the body was already the section.
 		- Not run: the full test.bash, the gate, and a real cut.
 	- Branch: dltable
+	- Commit: 72ae04b
 	- Test case: test.bash `[Erm33Wu]`, `[Erm33X8]`, `[Erm33XL]`, `[Erm33XZ]`, `[Erm33Xn]`.
 	- Note: the installers read `SHA256SUMS` and the release list, never the body, so they are untouched.
 
