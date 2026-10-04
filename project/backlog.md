@@ -60,41 +60,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash `[ErgCzfP]`, `[ErgCzfc]`, `[ErgCzfq]` (install.bash on a Mac), `[ErgDQ7N]` (install.ps1, pinned since pwsh can't fake a Mac), `[ErgCzeJ]`, `[ErgCzeW]`, `[ErgCzek]`, `[ErgCzey]`, `[ErgCzfB]` (release.bash).
 	- Swept: every `darwin` and `arm64` reader in the repo. release.bash, config.bash, both installers, the installer and release fixtures in test.bash, README, design.md and the changelog. cicd.bash dogfood already joins. Nothing in `src-go` reads asset names. `legacy/` is frozen.
 
-- The README install line fails while v2.1.0 is the newest full release
-	- ID: 2026100315501800
-	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: High
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Related IDs: 2026100313491873
-	- Steps to reproduce [Bug]:
-		- Run gover's install.bash with no version, against the releases as they are today.
-	- Incorrect behavior [Bug]: It picks v2.1.0 and stops with "publishes no gitsby binary for linux/amd64". v2.1.0 has only the `gitsby` and `gitsby.ps1` scripts.
-	- Expected behavior [Bug]: The install line works on the day the Go build reaches `main`.
-	- Reproduced [Bug]: Yes, 2026-10-03, against the live release list.
-	- Possible cause [Bug]: The installer takes a pre-release only when no full release exists, and the first Go release is v3.0.0-beta.1, which must not reach the install line. So the line resolves to a release the new installer can't install. This was true before item 2026100313491873.
-	- Notes:
-		- Blocks the release that merges gover to `main`.
-		- What the install line should give during the beta is a call for signoff, not a worker.
-	- Actual cause [Bug]: With no tag, both installers took the newest full release from the `releases/latest` redirect and never asked whether it had a Go binary. The release list was read only when there was no full release at all.
-	- Decisions:
-		- 2026-10-03: The install line takes the beta while no full release publishes a gitsby binary. This reverses the earlier rule that the beta must not reach the install line. A full release with a binary always wins over any pre-release, so once 3.0.0 is out, later betas stay off the line.
-		- A binary means any asset named `gitsby-<os>-<arch>`, not one for this platform. Every machine is pointed at the same release, and one it leaves out is told "publishes no gitsby binary for linux/386. It publishes: ..." rather than quietly getting an older beta that covers it.
-		- Newest is the highest version. Full releases are compared only with each other, and pre-releases only with each other, so the `sort -V` trap can't arise. Two pre-releases of one version go by list order, which is publish order.
-		- `releases/latest` is still asked first, since it has no API limit, and settles it when its SHA256SUMS lists a binary. The release list is read only otherwise, in one request, from the asset URLs it carries.
-		- The README's `--tag v3.0.0-beta.1` line is dropped, since the plain line takes that beta. The paragraph says a later pre-release needs `--tag`.
-		- Against: design.md "The proof is the contract, not the installer". Phase 3 now also runs the tag's install.bash, only to read which release it takes. The contract proof is unchanged, and design.md has a bullet for the new step.
-	- Actual fix [Bug]: Both installers, with no tag, keep the redirect's release only when its SHA256SUMS lists a gitsby binary. Otherwise they read the list and take the highest full release with one, else the highest pre-release with one, and say so. When none has one they stop and say so, and when the list can't be read they name the full release that had none. An explicit tag works as before, and `--tag v2.1.0` still stops with "publishes no gitsby binary". release.bash phase 3 runs the tag's install.bash into a throwaway home, says which release the line takes, and warns when a full release isn't taken or a pre-release loses to an older one.
-	- Swept: `releases/latest`, `pre-release`, `full release`, `beta.1` and `one-liner` across install.bash, install.ps1, release.bash, README.md, design.md and test.bash. README, design.md "Release policy" and "Automating a release", and release.bash's header and pre-release comment are updated. `legacy/` is frozen and left alone.
-	- Verified: 14 of the 21 new checks fail against gover's installers and release.bash and pass here. The other 7 pin what must not change (an explicit tag, a full release over a newer beta, no list request when the redirect's release has a binary) and pass on both. test.bash 1365/0, and `cicd.bash --gate` passes. Both installers run against the live release list stop with "No release of yottacore/gitsby publishes a gitsby binary yet", which is today's state.
-	- Note: the checks run under pwsh 7 and bash 5.2 here. Windows PowerShell 5.1 and macOS bash 3.2 were not run, as with the other installer checks.
-	- Branch: betainst
-	- Commit: f1c7157
-	- Test case: [ErgajCd] through [ErgajEP] (install.bash), [ErgajEe] through [ErgajGU] (install.ps1) and [ErgajGi], [ErgajGw], [ErgajHA] (release.bash phase 3) in test.bash.
-	- Acceptance signoff: Self-closed: the rule was set by hand on 2026-10-03, and the checks fail before the fix and pass after.
-	- Closed: 20261003-171623
-
 - Code Review 20261003 enhancement 2: Network probes run one after another
 	- ID: 2026100313123988
 	- Type: Enhancement
@@ -268,6 +233,41 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- `-gcflags=all=-l` made the Linux binary 5.8% smaller, 3.32 MB to 3.13 MB. The timings showed no change, but the box was loaded.
 		- Time it on an idle box. Adopt it only if it's no slower.
 	- Origin: build flags in config.bash. Size Confirmed, speed Plausible.
+
+- The README install line fails while v2.1.0 is the newest full release
+	- ID: 2026100315501800
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: High
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Related IDs: 2026100313491873
+	- Steps to reproduce [Bug]:
+		- Run gover's install.bash with no version, against the releases as they are today.
+	- Incorrect behavior [Bug]: It picks v2.1.0 and stops with "publishes no gitsby binary for linux/amd64". v2.1.0 has only the `gitsby` and `gitsby.ps1` scripts.
+	- Expected behavior [Bug]: The install line works on the day the Go build reaches `main`.
+	- Reproduced [Bug]: Yes, 2026-10-03, against the live release list.
+	- Possible cause [Bug]: The installer takes a pre-release only when no full release exists, and the first Go release is v3.0.0-beta.1, which must not reach the install line. So the line resolves to a release the new installer can't install. This was true before item 2026100313491873.
+	- Notes:
+		- Blocks the release that merges gover to `main`.
+		- What the install line should give during the beta is a call for signoff, not a worker.
+	- Actual cause [Bug]: With no tag, both installers took the newest full release from the `releases/latest` redirect and never asked whether it had a Go binary. The release list was read only when there was no full release at all.
+	- Decisions:
+		- 2026-10-03: The install line takes the beta while no full release publishes a gitsby binary. This reverses the earlier rule that the beta must not reach the install line. A full release with a binary always wins over any pre-release, so once 3.0.0 is out, later betas stay off the line.
+		- A binary means any asset named `gitsby-<os>-<arch>`, not one for this platform. Every machine is pointed at the same release, and one it leaves out is told "publishes no gitsby binary for linux/386. It publishes: ..." rather than quietly getting an older beta that covers it.
+		- Newest is the highest version. Full releases are compared only with each other, and pre-releases only with each other, so the `sort -V` trap can't arise. Two pre-releases of one version go by list order, which is publish order.
+		- `releases/latest` is still asked first, since it has no API limit, and settles it when its SHA256SUMS lists a binary. The release list is read only otherwise, in one request, from the asset URLs it carries.
+		- The README's `--tag v3.0.0-beta.1` line is dropped, since the plain line takes that beta. The paragraph says a later pre-release needs `--tag`.
+		- Against: design.md "The proof is the contract, not the installer". Phase 3 now also runs the tag's install.bash, only to read which release it takes. The contract proof is unchanged, and design.md has a bullet for the new step.
+	- Actual fix [Bug]: Both installers, with no tag, keep the redirect's release only when its SHA256SUMS lists a gitsby binary. Otherwise they read the list and take the highest full release with one, else the highest pre-release with one, and say so. When none has one they stop and say so, and when the list can't be read they name the full release that had none. An explicit tag works as before, and `--tag v2.1.0` still stops with "publishes no gitsby binary". release.bash phase 3 runs the tag's install.bash into a throwaway home, says which release the line takes, and warns when a full release isn't taken or a pre-release loses to an older one.
+	- Swept: `releases/latest`, `pre-release`, `full release`, `beta.1` and `one-liner` across install.bash, install.ps1, release.bash, README.md, design.md and test.bash. README, design.md "Release policy" and "Automating a release", and release.bash's header and pre-release comment are updated. `legacy/` is frozen and left alone.
+	- Verified: 14 of the 21 new checks fail against gover's installers and release.bash and pass here. The other 7 pin what must not change (an explicit tag, a full release over a newer beta, no list request when the redirect's release has a binary) and pass on both. test.bash 1365/0, and `cicd.bash --gate` passes. Both installers run against the live release list stop with "No release of yottacore/gitsby publishes a gitsby binary yet", which is today's state.
+	- Note: the checks run under pwsh 7 and bash 5.2 here. Windows PowerShell 5.1 and macOS bash 3.2 were not run, as with the other installer checks.
+	- Branch: betainst
+	- Commit: f1c7157
+	- Test case: [ErgajCd] through [ErgajEP] (install.bash), [ErgajEe] through [ErgajGU] (install.ps1) and [ErgajGi], [ErgajGw], [ErgajHA] (release.bash phase 3) in test.bash.
+	- Acceptance signoff: Self-closed: the rule was set by hand on 2026-10-03, and the checks fail before the fix and pass after.
+	- Closed: 20261003-171623
 
 - Code Review 20261003 item 1: release.bash can stop partway with no message
 	- ID: 2026100313123851
