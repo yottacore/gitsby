@@ -86,3 +86,43 @@ func TestReleaseVersionShape(t *testing.T) { // [EnQKNsb]
 		}
 	}
 }
+
+// A tag named like a branch the guard reads must not stand in for it. Each case
+// has unreleased work, so the guard has to let the release go ahead.
+func TestReleaseGuardBesideSameNamedTags(t *testing.T) { // [Erl6xej]
+	for _, tc := range []struct {
+		name string
+		dev  string
+		tags []string
+	}{
+		{"main and origin/main", "", []string{"main", "origin/main"}},
+		{"origin/dev", "push", []string{"origin/dev"}},
+		{"local dev", "local", []string{"dev"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, clone := gitTestRepo(t)
+			runGit(t, clone, "tag", "-a", "v1.0.0", "-m", "v1.0.0")
+			for _, tag := range tc.tags {
+				runGit(t, clone, "tag", tag)
+			}
+			if tc.dev != "" {
+				runGit(t, clone, "checkout", "-q", "-b", "dev")
+				runGit(t, clone, "commit", "-q", "--allow-empty", "-m", "unreleased")
+				if tc.dev == "push" {
+					runGit(t, clone, "push", "-q", "-u", "origin", "dev")
+				}
+				runGit(t, clone, "checkout", "-q", "main")
+			} else {
+				runGit(t, clone, "commit", "-q", "--allow-empty", "-m", "unreleased")
+				runGit(t, clone, "push", "-q", "origin", "refs/heads/main")
+			}
+			runGit(t, clone, "remote", "set-head", "origin", "main")
+			t.Chdir(clone)
+			a := newApp(newPrinter())
+			a.rel = releasePlan{tag: "v1.0.1", bumped: true}
+			if err := a.releasePreflight(); err != nil {
+				t.Errorf("releasePreflight() with unreleased work = %v, want nil", err)
+			}
+		})
+	}
+}
