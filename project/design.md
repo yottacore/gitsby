@@ -261,7 +261,11 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 			- The module is asked first, so a later one that converts a file itself leaves nothing for gitsby to do.
 			- Where the file can't be replaced, it is read converted for that run, and `account set` refuses. An edit would mix the two formats in one file.
 			- The tests use files the old format's own writer made. The last gitsby build on SHCL 2.x is compiled from its commit, writes a file, and the current build has to list every account the way it did. The 2.x module is in go.mod for the tests only and never reaches the binary.
-	- `gitsby.ghAccount` and `gitsby.ghTokenFile` in git config still work and still win, for a single repo that wants to answer for itself.
+	- `gitsby.ghAccount` in git config still works and still wins, for a single repo that wants to answer for itself.
+	- `gitsby.ghTokenFile` in git config still works, but only as a fallback. The account's own `tokenfile` comes first, as it did in 2.1.0.
+		- The accounts file is where an account is set up, and `account list` shows what it holds. A key left in a global git config from an older setup would otherwise override every account's token without showing up there.
+		- `account apply` writes each account's `tokenfile` into that account's git config fragment under this key, so the two agree unless one was set by hand.
+		- The key is read from global and system git config only, never a repo's own. A cloned repo could otherwise name any readable file and have it loaded as a token.
 	- `gitsby.ghTokenFile` and the per-account `tokenfile` name a token for an account gh has never been logged in as, for a machine set up by copying files rather than by authenticating. gh's own store is consulted first, so a rotated login is never shadowed by a stale token on disk.
 	- Paths are compared canonically, never as text. The Bash build sees `/c/x` where the PowerShell build sees `C:\x`, and a rule that matched in one build and not the other would be worse than no rule at all.
 	- Paths are *displayed* the way the platform spells them, which on Windows is not the canonical form. Every path on screen goes out with backslashes and an upper-case drive letter there, so a folder rule and the directory it claims read as the same place instead of two. The canonical form stays internal, where the matching happens.
