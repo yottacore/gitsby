@@ -186,8 +186,17 @@ func (a *app) defaultBranch() string {
 	return a.git.defaultBranch.get(a.resolveDefaultBranch)
 }
 
+// originHead is origin/HEAD's target, short, "" when there is none. The fetch
+// reads it to decide whether to heal it, and the default branch comes from the
+// same answer.
+func (a *app) originHead() string {
+	return a.git.originHead.get(func() string {
+		return runOut("git", "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD")
+	})
+}
+
 func (a *app) resolveDefaultBranch() string {
-	if originHead := runOut("git", "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"); originHead != "" {
+	if originHead := a.originHead(); originHead != "" {
 		return strings.TrimPrefix(originHead, "origin/")
 	}
 	for _, name := range []string{"main", "master", "trunk"} {

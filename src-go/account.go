@@ -339,16 +339,19 @@ func (a *app) accountToken(host string) (string, tokenSource, string) {
 			return token, tokenFromGh, ""
 		}
 	}
-	files := []string{a.cfg.value(a.acct.name, "tokenFile")}
+	if file := a.cfg.value(a.acct.name, "tokenFile"); file != "" {
+		if token := readTokenFile(file); token != "" {
+			return token, tokenFromFile, file
+		}
+	}
 	// The older git-config key is GitHub's, by its name and by its vintage, so it
 	// answers only for a run that named a GitHub login - exactly as it did when
 	// there was no other kind. Without that limit, relaxing the guard above would
 	// let an ssh-only folder rule pick up a global token file it was never meant to
-	// use, and then report itself as authenticating over https.
+	// use, and then report itself as authenticating over https. Asked only once the
+	// account's own file has given nothing, since that file comes first.
 	if a.acct.ghWho != "" {
-		files = append(files, configOwnScope("gitsby.ghTokenFile"))
-	}
-	for _, file := range files {
+		file := a.git.ownTokenFile.get(func() string { return configOwnScope("gitsby.ghTokenFile") })
 		if token := readTokenFile(file); token != "" {
 			return token, tokenFromFile, file
 		}

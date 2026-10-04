@@ -18,3 +18,6 @@ func isTTY(f *os.File) bool {
 	var mode uint32
 	return syscall.GetConsoleMode(syscall.Handle(f.Fd()), &mode) == nil
 }
+
+// termCols has no query here, so the width comes from tput.
+func termCols(*os.File) int { return 0 }
