@@ -74,7 +74,7 @@ func TestResolveDefaultBranchWithoutOrigin(t *testing.T) { // [Er1LxTo]
 		if tc.commit {
 			git("commit", "-q", "--allow-empty", "-m", "first")
 		}
-		if got := resolveDefaultBranch(); got != tc.branch {
+		if got := (&app{}).resolveDefaultBranch(); got != tc.branch {
 			t.Errorf("resolveDefaultBranch() with commit=%v = %q, want %q", tc.commit, got, tc.branch)
 		}
 	}

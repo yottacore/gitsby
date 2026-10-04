@@ -30,14 +30,20 @@ func (a *app) showList(name string, args ...string) {
 
 // terminalWidth: asked once. Every capped list was spawning its own tput, and
 // measuring twice in one run would only let the plan and the after-shot wrap
-// differently.
+// differently. The kernel is asked first, where the platform has the call, and
+// tput only when that gives nothing.
 func (a *app) terminalWidth() int {
 	return a.termWidth.get(func() int {
 		const fallback = 100
-		if !isTTY(os.Stdout) || !inPath("tput") {
+		if !isTTY(os.Stdout) {
 			return fallback
 		}
-		if w, err := strconv.Atoi(runOut("tput", "cols")); err == nil && w >= 40 {
+		w := termCols(os.Stdout)
+		if w == 0 && inPath("tput") {
+			// An answer that isn't a number leaves 0, which takes the fallback.
+			w, _ = strconv.Atoi(runOut("tput", "cols"))
+		}
+		if w >= 40 {
 			return w
 		}
 		return fallback

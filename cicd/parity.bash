@@ -318,8 +318,8 @@ fSameSpelling "[EnLqMsV] 'br merge' and 'br land' are one command" "${notRepo}" 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Plans. The pull step changed on purpose on 2026-10-03: the fetch at the start of the command
 ## already has origin's branches, so this build merges the upstream rather than pulling, which
-## asked origin again. Both spellings of that one line map to one token; every other line still
-## has to match the frozen build.
+## asked origin again, and names it. Both spellings of that one line map to one token; every
+## other line still has to match the frozen build.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 echo
 echo "-- plans"
@@ -327,7 +327,7 @@ planOrigin="${work}/plan-origin.git"; planTree="${work}/plan-tree"
 git init --quiet --bare -b main "${planOrigin}"
 git clone --quiet "${planOrigin}" "${planTree}" 2>/dev/null
 ( cd "${planTree}" && echo a > a.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main )
-pullStep='s/^    git (pull --ff-only --autostash|merge --ff-only --autostash @\{u\}) \*$/    <pull step> */'
+pullStep='s/^    git (pull --ff-only --autostash|merge --ff-only --autostash origin\/main) \*$/    <pull step> */'
 fSamePlan "[ErgAC3e] pullcom plans the same steps, the pull step aside" "${pullStep}" "${planTree}" -q -NoFetch update
 fSamePlan "[ErgAC4V] sync plans the same steps, the pull step aside"    "${pullStep}" "${planTree}" -q -NoFetch sync
 
@@ -380,3 +380,4 @@ echo "parity passed: ${pass}, differed: ${fail}"
 ##		- 20260926 JC: The pipeline no longer passes -q, so every check prints a line.
 ##		- 20261001 JC: Paths are escaped before going into a sed pattern. Off Windows the folder rule is written with symlinks resolved, since the frozen script never resolves them.
 ##		- 20261003 JC: Compares the pullcom and sync plans, with the pull step's new spelling mapped to one token on both sides.
+##		- 20261004 JC: The pull step's merge names the upstream, so the mapping names it too.

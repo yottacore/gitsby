@@ -82,7 +82,7 @@ New output follows this guide. Where the program and the guide disagree, one of 
 ~~~text
 Going to do (steps marked * only if needed, based on repo state):
     git checkout main *
-    git merge --ff-only --autostash @{u} *
+    git merge --ff-only --autostash origin/main *
     git checkout -b login-form
     git push -u origin login-form *
 
