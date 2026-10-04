@@ -204,93 +204,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: 74b1914
 	- Test case: test.bash `[ErfYFrl]`.
 
-- test.bash's binary checks fail on macOS
-	- ID: 2026100409453279
+- Stage 7 names b26 as a Windows host to the lock
+	- ID: 2026100410340781
 	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: Avg
-	- Opened: 20261004-094532
-	- Opened by: jim-collier
-	- Related IDs: 2026100312332924
-	- Target OS: macOS
-	- Incorrect behavior [Bug]: On b26 `tr -d '\000'` stops with "Illegal byte sequence" on a binary file. So `[Er1LxTO]` and `[EnQf0UF]` fail, and `[Er1LxTP]` and `[EnQf0UH]`, which expect no match, pass without reading anything.
-	- Expected behavior [Bug]: The four checks read the file on macOS as they do on Linux.
-	- Reproduced [Bug]: Yes, 2026-10-04, in stage 7's run on b26, where ssh gets `LANG=en_US.UTF-8`, and again by hand on the `.syso` files.
-	- Possible cause [Bug]: macOS `tr` and `grep` both check bytes against the locale. With `LC_ALL=C` on both, the copyright check found its string on b26. On the `tr` alone it still failed.
-	- Origin: the `tr` lines, from def75ab (2026-10-01, the macOS pass, which swapped out `grep -P`) and 4990d4f (2026-09-26). Not seen by an earlier round. Confirmed.
-	- Estimated effort: Low
-	- Actual cause [Bug]: macOS `tr` and `grep` check bytes against the locale, and ssh there gets a UTF-8 one. `tr` stopped at the first byte that wasn't text. The two checks expecting no match passed because nothing was read.
-	- Actual effort: Low
-	- Progress log:
-		- Verified: on b26 the old checks fail two and pass two without reading. The new ones pass all four.
-		- Verified: the new `[Erki5JE]` fails against the old way of reading and passes with the helper.
-		- Verified: test.bash on Linux, 1399 -> 1400, all passing.
-		- Verified: stage 7 run alone passes on b26 and vm925w. test.bash on b26 is 1216/0.
-	- Actual fix [Bug]: The four checks go through one helper in test.bash that runs `tr` and `grep` in the C locale. It tells a string not found apart from a file not read, so the two no-match checks fail when the read fails.
-	- Note: the two no-match checks moved from `fAssertFail` to `fAssert`. They keep their IDs and labels.
-	- Swept: every `tr` and `grep` in `cicd/` that reads a binary file. Only these four did. The icon check `[EnQf0UG]` already had `LC_ALL=C`, and the `od` reads of Mach-O headers don't depend on the locale.
-	- Branch: remfix
-	- Commit: fad69c8
-	- Test case: test.bash `[EnQf0UF]`, `[EnQf0UH]`, `[Er1LxTO]` and `[Er1LxTP]`, plus the new `[Erki5JE]`.
-	- Acceptance signoff: Self-closed: reproduced, and the checks fail before and pass after on b26.
-	- Closed: 20261004-103900
-
-- `[Erg9NTS]` counts git's origin/HEAD repair on git before 2.47
-	- ID: 2026100409453281
-	- Type: Bug
-	- Status: Done
+	- Status: Queued
 	- Priority|Severity [Bug]: Low
-	- Opened: 20261004-094532
+	- Opened: 20261004-103407
 	- Opened by: jim-collier
 	- Related IDs: 2026100312332924
-	- Target OS: macOS
-	- Incorrect behavior [Bug]: On b26, with Apple git 2.39.5, "and asks origin once" counts two asks.
-	- Expected behavior [Bug]: The check counts the pull's asks only, on any git.
-	- Reproduced [Bug]: Yes, 2026-10-04, in stage 7's run on b26, and by hand with the same fixture. A plain `git fetch` asks once there. With `git remote set-head origin main` run first the count is one.
-	- Possible cause [Bug]: The fixture's clone has no origin/HEAD, since it was cloned before origin had a commit. On git before 2.47 the fetch doesn't write one, so `fetchRemote` repairs it with `git remote set-head --auto`, which asks origin again. That repair is by design. Setting origin/HEAD in the fixture first should fix the check.
-	- Origin: `[Erg9NTS]`, from 55f5e22 (2026-10-03, Code Review 20261003 enhancement 3). Never run on a git before 2.47. Confirmed.
+	- Incorrect behavior [Bug]: remote-tests.bash puts every host, b26 included, in the lock's Windows host list. The lock now knows b26 as a host of its own through its other-hosts list, so b26 is listed twice and joins the Windows boxes for `any` and `all`.
+	- Expected behavior [Bug]: Mac hosts go in the lock's other-hosts list and Windows hosts in its Windows list.
+	- Reproduced [Bug]: Yes, 2026-10-04. The lock's `hosts` lists b26 twice under the stage's setting. Nothing breaks today, since the stage names each host.
+	- Origin: remote-tests.bash from item 2026100312332924. The lock gained its other-hosts list the same day. Confirmed.
 	- Estimated effort: Low
-	- Actual cause [Bug]: As above. The fixture's clone has no origin/HEAD, and on git before 2.47 gitsby's repair of it asks origin a second time.
-	- Actual effort: Low
-	- Progress log:
-		- Verified: on b26, git 2.39.5, the old fixture counts two asks and the new one counts one.
-		- Verified: on Linux, git 2.51, the old fixture with `followRemoteHEAD` set to never counts two, and the new one counts one.
-		- Verified: stage 7 run alone passes on b26 and vm925w.
-	- Actual fix [Bug]: The fixture sets origin/HEAD on the clone before counting. It also sets `followRemoteHEAD` to never, so newer git leaves the ref alone the way old git does, and the check reads the same on any version. The repair in gitsby is unchanged.
-	- Swept: `[Erg9NTw]` counts on the same clone, so the same line covers it. No other check counts asks of origin.
-	- Branch: remfix
-	- Commit: fad69c8
-	- Test case: test.bash `[Erg9NTS]`.
-	- Acceptance signoff: Self-closed: reproduced, and the check fails before and passes after on b26.
-	- Closed: 20261004-103900
-
-- `TestConfigLoadBackslashes` fails on Windows
-	- ID: 2026100409453283
-	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: Low
-	- Opened: 20261004-094532
-	- Opened by: jim-collier
-	- Related IDs: 2026100312332924
-	- Target OS: Windows
-	- Incorrect behavior [Bug]: On vm925w the test fails with "a doubled path rule names \"\", want w". The rule `/srv\work` is listed as not an absolute folder.
-	- Expected behavior [Bug]: The test passes on Windows, as it does on Linux and macOS.
-	- Reproduced [Bug]: Yes, 2026-10-04, in stage 7's run on vm925w.
-	- Possible cause [Bug]: The fixture writes the rule as `/srv\\work`, which is not absolute on Windows, so it is ignored there, as designed. The folder it is matched against goes through `driveFolder` and the rule doesn't. Writing the rule from `driveFolder` too should fix it.
-	- Origin: `TestConfigLoadBackslashes`, from d772814 (2026-09-24, the move to the shcl 3 beta). No stage ran the Go tests on Windows until stage 7. Confirmed.
-	- Estimated effort: Low
-	- Actual cause [Bug]: As above. `/srv\\work` is not absolute on Windows, so the rule is ignored there by design.
-	- Actual effort: Low
-	- Progress log:
-		- Verified: on vm925w the old test fails with the same message, and the new one passes.
-		- Verified: stage 7 run alone passes on b26 and vm925w, every Go test on both.
-	- Actual fix [Bug]: The fixture writes the rule from `driveFolder`, so it is a drive path on Windows. The rule that ignores a folder that isn't absolute is unchanged.
-	- Swept: the other Go tests with a `/`-rooted rule all pass on vm925w. None of them matches a folder against the rule.
-	- Branch: remfix
-	- Commit: fad69c8
-	- Test case: `TestConfigLoadBackslashes` `[Eqp3jdh]`.
-	- Acceptance signoff: Self-closed: reproduced, and the test fails before and passes after on vm925w.
-	- Closed: 20261004-103900
 
 - The plan shows `@{u}` where it could name the branch
 	- ID: 2026100316463300
@@ -443,6 +369,37 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [Erfs74j] and [Erfs75a] in test.bash. They run release.bash past its dry run, with gh, curl and gitsby stubbed. The second is the first run of the phase 3 `releases/latest` block.
 	- Acceptance signoff: Self-closed: reproduced, and the checks fail before the fix and pass after.
 	- Closed: 20261003-141520
+
+- test.bash's binary checks fail on macOS
+	- ID: 2026100409453279
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Avg
+	- Opened: 20261004-094532
+	- Opened by: jim-collier
+	- Related IDs: 2026100312332924
+	- Target OS: macOS
+	- Incorrect behavior [Bug]: On b26 `tr -d '\000'` stops with "Illegal byte sequence" on a binary file. So `[Er1LxTO]` and `[EnQf0UF]` fail, and `[Er1LxTP]` and `[EnQf0UH]`, which expect no match, pass without reading anything.
+	- Expected behavior [Bug]: The four checks read the file on macOS as they do on Linux.
+	- Reproduced [Bug]: Yes, 2026-10-04, in stage 7's run on b26, where ssh gets `LANG=en_US.UTF-8`, and again by hand on the `.syso` files.
+	- Possible cause [Bug]: macOS `tr` and `grep` both check bytes against the locale. With `LC_ALL=C` on both, the copyright check found its string on b26. On the `tr` alone it still failed.
+	- Origin: the `tr` lines, from def75ab (2026-10-01, the macOS pass, which swapped out `grep -P`) and 4990d4f (2026-09-26). Not seen by an earlier round. Confirmed.
+	- Estimated effort: Low
+	- Actual cause [Bug]: macOS `tr` and `grep` check bytes against the locale, and ssh there gets a UTF-8 one. `tr` stopped at the first byte that wasn't text. The two checks expecting no match passed because nothing was read.
+	- Actual effort: Low
+	- Progress log:
+		- Verified: on b26 the old checks fail two and pass two without reading. The new ones pass all four.
+		- Verified: the new `[Erki5JE]` fails against the old way of reading and passes with the helper.
+		- Verified: test.bash on Linux, 1399 -> 1400, all passing.
+		- Verified: stage 7 run alone passes on b26 and vm925w. test.bash on b26 is 1216/0.
+	- Actual fix [Bug]: The four checks go through one helper in test.bash that runs `tr` and `grep` in the C locale. It tells a string not found apart from a file not read, so the two no-match checks fail when the read fails.
+	- Note: the two no-match checks moved from `fAssertFail` to `fAssert`. They keep their IDs and labels.
+	- Swept: every `tr` and `grep` in `cicd/` that reads a binary file. Only these four did. The icon check `[EnQf0UG]` already had `LC_ALL=C`, and the `od` reads of Mach-O headers don't depend on the locale.
+	- Branch: remfix
+	- Commit: fad69c8
+	- Test case: test.bash `[EnQf0UF]`, `[EnQf0UH]`, `[Er1LxTO]` and `[Er1LxTP]`, plus the new `[Erki5JE]`.
+	- Acceptance signoff: Self-closed: reproduced, and the checks fail before and pass after on b26.
+	- Closed: 20261004-103900
 
 - Code Review 20261003 item 3: Write and read failures in account commands guess at the cause
 	- ID: 2026100313123881
@@ -686,6 +643,63 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: acct-files
 	- Test case: TestFragmentNames, plus two apply checks in test.bash.
 	- Closed: 2026-09-30
+
+- `[Erg9NTS]` counts git's origin/HEAD repair on git before 2.47
+	- ID: 2026100409453281
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Low
+	- Opened: 20261004-094532
+	- Opened by: jim-collier
+	- Related IDs: 2026100312332924
+	- Target OS: macOS
+	- Incorrect behavior [Bug]: On b26, with Apple git 2.39.5, "and asks origin once" counts two asks.
+	- Expected behavior [Bug]: The check counts the pull's asks only, on any git.
+	- Reproduced [Bug]: Yes, 2026-10-04, in stage 7's run on b26, and by hand with the same fixture. A plain `git fetch` asks once there. With `git remote set-head origin main` run first the count is one.
+	- Possible cause [Bug]: The fixture's clone has no origin/HEAD, since it was cloned before origin had a commit. On git before 2.47 the fetch doesn't write one, so `fetchRemote` repairs it with `git remote set-head --auto`, which asks origin again. That repair is by design. Setting origin/HEAD in the fixture first should fix the check.
+	- Origin: `[Erg9NTS]`, from 55f5e22 (2026-10-03, Code Review 20261003 enhancement 3). Never run on a git before 2.47. Confirmed.
+	- Estimated effort: Low
+	- Actual cause [Bug]: As above. The fixture's clone has no origin/HEAD, and on git before 2.47 gitsby's repair of it asks origin a second time.
+	- Actual effort: Low
+	- Progress log:
+		- Verified: on b26, git 2.39.5, the old fixture counts two asks and the new one counts one.
+		- Verified: on Linux, git 2.51, the old fixture with `followRemoteHEAD` set to never counts two, and the new one counts one.
+		- Verified: stage 7 run alone passes on b26 and vm925w.
+	- Actual fix [Bug]: The fixture sets origin/HEAD on the clone before counting. It also sets `followRemoteHEAD` to never, so newer git leaves the ref alone the way old git does, and the check reads the same on any version. The repair in gitsby is unchanged.
+	- Swept: `[Erg9NTw]` counts on the same clone, so the same line covers it. No other check counts asks of origin.
+	- Branch: remfix
+	- Commit: fad69c8
+	- Test case: test.bash `[Erg9NTS]`.
+	- Acceptance signoff: Self-closed: reproduced, and the check fails before and passes after on b26.
+	- Closed: 20261004-103900
+
+- `TestConfigLoadBackslashes` fails on Windows
+	- ID: 2026100409453283
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Low
+	- Opened: 20261004-094532
+	- Opened by: jim-collier
+	- Related IDs: 2026100312332924
+	- Target OS: Windows
+	- Incorrect behavior [Bug]: On vm925w the test fails with "a doubled path rule names \"\", want w". The rule `/srv\work` is listed as not an absolute folder.
+	- Expected behavior [Bug]: The test passes on Windows, as it does on Linux and macOS.
+	- Reproduced [Bug]: Yes, 2026-10-04, in stage 7's run on vm925w.
+	- Possible cause [Bug]: The fixture writes the rule as `/srv\\work`, which is not absolute on Windows, so it is ignored there, as designed. The folder it is matched against goes through `driveFolder` and the rule doesn't. Writing the rule from `driveFolder` too should fix it.
+	- Origin: `TestConfigLoadBackslashes`, from d772814 (2026-09-24, the move to the shcl 3 beta). No stage ran the Go tests on Windows until stage 7. Confirmed.
+	- Estimated effort: Low
+	- Actual cause [Bug]: As above. `/srv\\work` is not absolute on Windows, so the rule is ignored there by design.
+	- Actual effort: Low
+	- Progress log:
+		- Verified: on vm925w the old test fails with the same message, and the new one passes.
+		- Verified: stage 7 run alone passes on b26 and vm925w, every Go test on both.
+	- Actual fix [Bug]: The fixture writes the rule from `driveFolder`, so it is a drive path on Windows. The rule that ignores a folder that isn't absolute is unchanged.
+	- Swept: the other Go tests with a `/`-rooted rule all pass on vm925w. None of them matches a folder against the rule.
+	- Branch: remfix
+	- Commit: fad69c8
+	- Test case: `TestConfigLoadBackslashes` `[Eqp3jdh]`.
+	- Acceptance signoff: Self-closed: reproduced, and the test fails before and passes after on vm925w.
+	- Closed: 20261004-103900
 
 - Code Review 20261003 item 5: The style guide says Bash 4.4 is enforced, and nothing checks
 	- ID: 2026100313123908
