@@ -214,7 +214,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026100313491873
 	- Type: Enhancement
 	- Status: Waiting for testing
-	- Needs external testing: b26. Both installers on a real Mac take `gitsby-darwin-universal`, and it runs. An Apple silicon Mac is still untested.
+	- Needs external testing: The first release that publishes `gitsby-darwin-universal`. Both installers on a real Mac download it, and it runs. The installers can only fetch from a release. An Apple silicon Mac is still untested.
 	- Priority [Feature]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -236,37 +236,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: 7c37ca9
 	- Test case: test.bash `[ErgCzfP]`, `[ErgCzfc]`, `[ErgCzfq]` (install.bash on a Mac), `[ErgDQ7N]` (install.ps1, pinned since pwsh can't fake a Mac), `[ErgCzeJ]`, `[ErgCzeW]`, `[ErgCzek]`, `[ErgCzey]`, `[ErgCzfB]` (release.bash).
 	- Swept: every `darwin` and `arm64` reader in the repo. release.bash, config.bash, both installers, the installer and release fixtures in test.bash, README, design.md and the changelog. cicd.bash dogfood already joins. Nothing in `src-go` reads asset names. `legacy/` is frozen.
-
-- Code Review 20261003 enhancement 6: Spawns that are repeated or not needed
-	- ID: 2026100313124028
-	- Type: Enhancement
-	- Status: Waiting for testing
-	- Needs external testing: The width read on macOS. It is cross-built and vetted, not run. A list in `gitsby status` on a Mac terminal should be cut at the window width.
-	- Priority [Feature]: Low
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Prereq IDs: 2026100313123975
-	- Requirements  [Feature]:
-		- `convertibleToHTTPS` asks `gh` for the protocol before a free text test that already says no on an https origin.
-		- Two `rev-parse` calls at startup where one would do.
-		- The `gitsby.ghTokenFile` lookup runs when the account's own file already gave a token, and runs twice.
-		- `origin/HEAD` is read twice after a fetch.
-		- Lists start `tput cols` where the ioctl in tty_linux.go would do.
-	- Origin: remote.go:320 from 0a3ef88 (2026-08-19), the rest from the port. Each saves 1 or 2 spawns. Confirmed with strace.
-	- Actual effort: Avg
-	- Done: `convertibleToHTTPS` does its text tests before asking gh for the protocol, so an https origin asks gh nothing.
-	- Done: The startup `rev-parse` also asks for the top level, which settles the folder accounts match against. Outside a work tree git refuses that part after printing the other three answers, so the output is read whatever the exit code. Outside a repo the folder is the working directory, as before.
-	- Done: The `gitsby.ghTokenFile` lookup runs only when the account's own token file gave nothing, and then once a run. The account's file comes first in the lookup, so the answer can't change.
-	- Done: The fetch's check of origin/HEAD keeps its answer, and the default branch reads it from there.
-	- Done: Lists take the width from the kernel on Linux, macOS and the BSDs. tput answers where the kernel says 0, and on Windows.
-	- Note: spawn-count's pty runs now get a size, as a real terminal has. An unsized pty reads as width 0, which sends gitsby to tput.
-	- Note: Spawn counts, before -> after: status 12 -> 11, whoami 8 -> 7, br list 8 -> 7, account list 8 -> 7, repo url 7 -> 6, pullcom 22 -> 21, pullcom with a fetch 30 -> 28, br switch 27 -> 26, br prune 32 -> 31, status with a fetch 20 -> 17, status in an account folder 23 -> 19, whoami there 18 -> 15, account list with accounts 13 -> 11, status in the https folder 19 -> 15. The expected counts in spawn-count.bash went down to match.
-	- Note: design.md says the `gitsby.ghAccount` and `gitsby.ghTokenFile` git-config keys "still win". For the token file, the code has read the account's own file first since the port. That order is unchanged here.
-	- Swept: `grep -n '"tput"\|show-toplevel\|symbolic-ref\|configOwnScope(\|preferredProtocol()' src-go/*.go`. The one `tput`, both `--show-toplevel` reads, the origin/HEAD read (the other `symbolic-ref` reads HEAD for an unborn branch), the one `configOwnScope` caller, and the `preferredProtocol` caller in `convertibleToHTTPS`.
-	- Verified: test.bash 1406/0, parity 29/0, `go test -race`, `cicd.bash --gate`, spawn-count, and builds for linux, windows and darwin on amd64 and arm64, plus freebsd. Each of the five new Go tests fails on the build before this item and passes after.
-	- Branch: spawncut
-	- Commit: 75e7e34
-	- Test case: Go `TestConvertibleAsksGhOnlyForSSH` [Erl3JkJ], `TestEnterRepoSettlesTopLevel` [Erl3JkX], `TestAccountTokenAsksGitConfigOnlyWhenNeeded` [Erl3Jkl], `TestFetchReadsOriginHeadOnce` [Erl3Jkz], and on Linux `TestTerminalWidthAsksTheKernel` [Erl3JlD]. Also the spawn-count limits.
+	- Verified: stage 7 on b26 (2026-10-04) passed the installer checks with stubbed downloads, `[ErgCzfP]`, `[ErgCzfc]` and `[ErgCzfq]` among them.
 
 - Pushes and remote-only checkouts name a branch short, so a tag can break them
 	- ID: 2026100411431800
@@ -913,6 +883,39 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [Erg0LJv] and [Erg0LK9] in test.bash.
 	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
 	- Closed: 20261003-145130
+
+- Code Review 20261003 enhancement 6: Spawns that are repeated or not needed
+	- ID: 2026100313124028
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature]: Low
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Prereq IDs: 2026100313123975
+	- Requirements  [Feature]:
+		- `convertibleToHTTPS` asks `gh` for the protocol before a free text test that already says no on an https origin.
+		- Two `rev-parse` calls at startup where one would do.
+		- The `gitsby.ghTokenFile` lookup runs when the account's own file already gave a token, and runs twice.
+		- `origin/HEAD` is read twice after a fetch.
+		- Lists start `tput cols` where the ioctl in tty_linux.go would do.
+	- Origin: remote.go:320 from 0a3ef88 (2026-08-19), the rest from the port. Each saves 1 or 2 spawns. Confirmed with strace.
+	- Actual effort: Avg
+	- Done: `convertibleToHTTPS` does its text tests before asking gh for the protocol, so an https origin asks gh nothing.
+	- Done: The startup `rev-parse` also asks for the top level, which settles the folder accounts match against. Outside a work tree git refuses that part after printing the other three answers, so the output is read whatever the exit code. Outside a repo the folder is the working directory, as before.
+	- Done: The `gitsby.ghTokenFile` lookup runs only when the account's own token file gave nothing, and then once a run. The account's file comes first in the lookup, so the answer can't change.
+	- Done: The fetch's check of origin/HEAD keeps its answer, and the default branch reads it from there.
+	- Done: Lists take the width from the kernel on Linux, macOS and the BSDs. tput answers where the kernel says 0, and on Windows.
+	- Note: spawn-count's pty runs now get a size, as a real terminal has. An unsized pty reads as width 0, which sends gitsby to tput.
+	- Note: Spawn counts, before -> after: status 12 -> 11, whoami 8 -> 7, br list 8 -> 7, account list 8 -> 7, repo url 7 -> 6, pullcom 22 -> 21, pullcom with a fetch 30 -> 28, br switch 27 -> 26, br prune 32 -> 31, status with a fetch 20 -> 17, status in an account folder 23 -> 19, whoami there 18 -> 15, account list with accounts 13 -> 11, status in the https folder 19 -> 15. The expected counts in spawn-count.bash went down to match.
+	- Note: design.md says the `gitsby.ghAccount` and `gitsby.ghTokenFile` git-config keys "still win". For the token file, the code has read the account's own file first since the port. That order is unchanged here.
+	- Swept: `grep -n '"tput"\|show-toplevel\|symbolic-ref\|configOwnScope(\|preferredProtocol()' src-go/*.go`. The one `tput`, both `--show-toplevel` reads, the origin/HEAD read (the other `symbolic-ref` reads HEAD for an unborn branch), the one `configOwnScope` caller, and the `preferredProtocol` caller in `convertibleToHTTPS`.
+	- Verified: test.bash 1406/0, parity 29/0, `go test -race`, `cicd.bash --gate`, spawn-count, and builds for linux, windows and darwin on amd64 and arm64, plus freebsd. Each of the five new Go tests fails on the build before this item and passes after.
+	- Branch: spawncut
+	- Commit: 75e7e34
+	- Test case: Go `TestConvertibleAsksGhOnlyForSSH` [Erl3JkJ], `TestEnterRepoSettlesTopLevel` [Erl3JkX], `TestAccountTokenAsksGitConfigOnlyWhenNeeded` [Erl3Jkl], `TestFetchReadsOriginHeadOnce` [Erl3Jkz], and on Linux `TestTerminalWidthAsksTheKernel` [Erl3JlD]. Also the spawn-count limits.
+	- Verified: on b26, in a real terminal 40 columns wide, a long line in the `status` list is cut at 40, and at 120 it is not cut. A stand-in `tput` was never run, so the width came from the kernel. 2026-10-04.
+	- Acceptance signoff: Self-closed: the intent was clear, every cut has a test that fails before and passes after, and the Mac width read ran.
+	- Closed: 20261004-115346
 
 - Code Review 20261003 enhancement 5: Answer branch checks from one read
 	- ID: 2026100313123948
