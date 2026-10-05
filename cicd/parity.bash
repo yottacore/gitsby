@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+#  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
+
 ##	Purpose:
 ##		- Backwards compatibility. Compares this build against the frozen v2.1.0
 ##		  script under legacy/, rather than each against a spec. cicd/test.bash
@@ -74,20 +76,31 @@ fUnsetInheritedGitConfig(){
 fUnsetInheritedGitConfig
 unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT
 
+## Output helpers, the same family as cicd.bash's: fEcho_Clean prints a line as given and
+## collapses repeated blanks, fEcho prints a "[ ... ]" status line, and fUsage refuses the
+## command line.
+declare -i __wasLastEchoBlank=0
+fEcho_Clean(){
+	if [[ -n "${1:-}" ]]; then printf '%s\n' "$*"; __wasLastEchoBlank=0
+	elif ((! __wasLastEchoBlank)); then echo; __wasLastEchoBlank=1; fi
+}
+fEcho(){  if [[ -n "$*" ]]; then fEcho_Clean "[ $* ]"; else fEcho_Clean ""; fi; }
+fUsage(){ fEcho_Clean "$*" >&2; exit 2; }
+
 ## -q silences the per-check line and leaves the header, the failures and the total. The
 ## pipeline doesn't pass it, even on its own -q runs.
 declare -i quiet=0
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		-q|--quiet) quiet=1; shift ;;
-		-h|--help)  echo "Usage: $(basename "${BASH_SOURCE[0]}") [-q|--quiet]"; exit 0 ;;
-		*)          echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
+		-h|--help)  fEcho_Clean "Usage: $(basename "${BASH_SOURCE[0]}") [-q|--quiet]"; exit 0 ;;
+		*)          fUsage "unknown option: ${1} (try --help)" ;;
 	esac
 done
 
 declare -i pass=0 fail=0
-fOk(){   pass=$((pass+1)); ((quiet)) || echo "  ok: $*"; }
-fBad(){  fail=$((fail+1)); echo "  DIFFER: $*"; }
+fOk(){   pass=$((pass+1)); ((quiet)) || fEcho_Clean "  ok: $*"; }
+fBad(){  fail=$((fail+1)); fEcho_Clean "  DIFFER: $*"; }
 
 ## The subject and the reference. 'new' is whatever cicd stage 2 just built; 'ref' is the
 ## frozen script, read-only and never rebuilt.
@@ -95,11 +108,11 @@ newBuild="${root}/src-go/gitsby"; [[ -x "${newBuild}" ]] || newBuild="${newBuild
 refBuild="${root}/legacy/bin/gitsby"
 
 if [[ ! -x "${newBuild}" ]]; then
-	echo "parity: no build at src-go/gitsby - nothing to compare, skipping."
+	fEcho_Clean "parity: no build at src-go/gitsby - nothing to compare, skipping."
 	exit 0
 fi
 if [[ ! -f "${refBuild}" ]]; then
-	echo "parity: no frozen build at legacy/bin/gitsby - nothing to compare against, skipping."
+	fEcho_Clean "parity: no frozen build at legacy/bin/gitsby - nothing to compare against, skipping."
 	exit 0
 fi
 
@@ -207,9 +220,9 @@ fSameExit(){
 	if [[ $((ra == 0)) -eq $((rb == 0)) ]]; then fOk "${label}"; else fBad "${label} (this build exit ${ra}, frozen exit ${rb})"; fi
 }
 
-echo
-echo "[ gitsby parity: this build vs the frozen v2.1.0 script ]"
-echo
+fEcho_Clean
+fEcho "gitsby parity: this build vs the frozen v2.1.0 script"
+fEcho_Clean
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Path spelling. The folder rule is the feature most exposed to path handling, and this is where
@@ -217,7 +230,7 @@ echo
 ## other did not, so the same rule matched in one and not the other. Silently, which is the worst
 ## kind. Go resolves paths its own third way, so the question is live again.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-echo "-- folder rules, however the path is spelled"
+fEcho_Clean "-- folder rules, however the path is spelled"
 tree="${work}/tree"
 mkdir -p "${tree}"
 git init --quiet -b main "${tree}"
@@ -245,8 +258,8 @@ done
 
 ## 'pathContains' names folder names rather than a machine's tree, so it is the one rule meant to
 ## be identical everywhere - which makes any divergence between the builds worth more here, not less.
-echo
-echo "-- pathContains rules"
+fEcho_Clean
+fEcho_Clean "-- pathContains rules"
 mkdir -p "${work}/mA/github.com/alice/proj" "${work}/mB/github.com/alice/proj" "${work}/mA/github.com/alice-old/proj"
 for d in "${work}/mA/github.com/alice/proj" "${work}/mB/github.com/alice/proj" "${work}/mA/github.com/alice-old/proj"; do
 	git init --quiet -b main "${d}"
@@ -265,8 +278,8 @@ fSameLead  "[EmmDRRa] and both agree it is whole folder names"     '^Account' "$
 ## binding nothing, and a bare '--' killing the process before any code ran. The Go build parses
 ## by hand for exactly this reason, which is worth proving rather than assuming.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-echo
-echo "-- option forms"
+fEcho_Clean
+fEcho_Clean "-- option forms"
 fSame     "[EmlpDMX] an unknown option is refused the same way"     "${tree}" -q --bogus status
 fSame     "[EmlpDMY] an option after the command is refused alike"  "${tree}" -q status --bogus
 ## Both refuse, and that is the whole claim here. The frozen script counted them - "5, for max of
@@ -288,8 +301,8 @@ fSameExit "[EmlpDMg] a bad 'raw' tool is refused by both"           "${tree}" -q
 ## Run outside a repository, where both builds refuse for a reason that has nothing to do with
 ## the rename: what is being compared is that the old name still ROUTES, and to the same place.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-echo
-echo "-- renamed commands, old spellings"
+fEcho_Clean
+fEcho_Clean "-- renamed commands, old spellings"
 notRepo="${work}/not-a-repo"; mkdir -p "${notRepo}"
 
 ## Against the frozen build, which knows only the old names.
@@ -321,8 +334,8 @@ fSameSpelling "[EnLqMsV] 'br merge' and 'br land' are one command" "${notRepo}" 
 ## asked origin again, and names it. Both spellings of that one line map to one token; every
 ## other line still has to match the frozen build.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-echo
-echo "-- plans"
+fEcho_Clean
+fEcho_Clean "-- plans"
 planOrigin="${work}/plan-origin.git"; planTree="${work}/plan-tree"
 git init --quiet --bare -b main "${planOrigin}"
 git clone --quiet "${planOrigin}" "${planTree}" 2>/dev/null
@@ -335,8 +348,8 @@ fSamePlan "[ErgAC4V] sync plans the same steps, the pull step aside"    "${pullS
 ## String case. Bash folds with '${x,,}'; Go compares byte-exact unless told otherwise. The two
 ## drift apart wherever one is applied and the other is assumed.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-echo
-echo "-- string case"
+fEcho_Clean
+fEcho_Clean "-- string case"
 cat > "${work}/case.shcl" <<-EOF
 	account.mixed.path      = ${spellings[0]}
 	account.mixed.ghAccount = caseacct
@@ -354,8 +367,8 @@ done
 ## File encoding. A BOM is invisible in an editor and in 'Get-Content', and has broken both the
 ## documented one-liner installs and direct execution of the script. Bytes, not text.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-echo
-echo "-- file encoding"
+fEcho_Clean
+fEcho_Clean "-- file encoding"
 for f in "${root}"/legacy/bin/gitsby "${root}"/legacy/bin/gitsby.ps1 "${root}"/legacy/install*.bash "${root}"/legacy/install*.ps1; do
 	[[ -f "${f}" ]] || continue
 	if [[ "$(head -c 2 "${f}")" == "#!" ]]; then
@@ -365,8 +378,8 @@ for f in "${root}"/legacy/bin/gitsby "${root}"/legacy/bin/gitsby.ps1 "${root}"/l
 	fi
 done
 
-echo
-echo "parity passed: ${pass}, differed: ${fail}"
+fEcho_Clean
+fEcho_Clean "parity passed: ${pass}, differed: ${fail}"
 ((fail == 0)) || exit 1
 
 ##	History:
@@ -381,3 +394,5 @@ echo "parity passed: ${pass}, differed: ${fail}"
 ##		- 20261001 JC: Paths are escaped before going into a sed pattern. Off Windows the folder rule is written with symlinks resolved, since the frozen script never resolves them.
 ##		- 20261003 JC: Compares the pullcom and sync plans, with the pull step's new spelling mapped to one token on both sides.
 ##		- 20261004 JC: The pull step's merge names the upstream, so the mapping names it too.
+##		- 20261004 JC: Prints through fEcho and fEcho_Clean, like the other pipeline scripts.
+##		  Every expansion braced, and shellcheck holds it there.

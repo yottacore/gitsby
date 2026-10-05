@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+#  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
+
 ##	Purpose:
 ##		- Joins macOS builds for different CPUs into one universal binary, which
 ##		  runs on Intel and Apple silicon Macs alike.
@@ -22,7 +24,7 @@ if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
 fi
 set -Eeuo pipefail
 
-fDie(){ echo "macho-universal: $*" >&2; exit 1; }
+fDie(){ printf '%s\n' "macho-universal: $*" >&2; exit 1; }
 
 ## Each build starts on a 16 KiB boundary, the arm64 page size. lipo uses the same for both
 ## CPUs today.
@@ -73,3 +75,5 @@ mv -f -- "${tmp}" "${out}"
 ##	History:
 ##		- 20261003 JC: Created. Dogfood puts one macOS file in one shared folder, and it has to
 ##		  run on both Intel and Apple silicon.
+##		- 20261004 JC: fDie prints with printf. Every expansion braced, and shellcheck holds it
+##		  there.

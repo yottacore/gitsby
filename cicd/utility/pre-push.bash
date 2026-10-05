@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+#  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
+
 ##	Purpose:
 ##		The git pre-push hook for this repo, and its installer.
 ##		- --install writes a small hook into the repo's hooks directory that runs this
@@ -54,8 +56,11 @@ fi
 exec "${hook}" "$@"
 EOF
 
-declare -i _wasLastEchoBlank=0
-fEcho_Clean(){ if [[ -n "${1:-}" ]]; then printf '%s\n' "$*"; _wasLastEchoBlank=0; elif [[ $_wasLastEchoBlank -eq 0 ]] && echo; then _wasLastEchoBlank=1; fi; }
+declare -i __wasLastEchoBlank=0
+fEcho_Clean(){
+	if [[ -n "${1:-}" ]]; then printf '%s\n' "$*"; __wasLastEchoBlank=0
+	elif ((! __wasLastEchoBlank)); then echo; __wasLastEchoBlank=1; fi
+}
 fEcho(){       if [[ -n "$*"     ]]; then fEcho_Clean "[ $* ]"; else fEcho_Clean ""; fi; }
 
 fUsage(){ fEcho_Clean "$1 (try --help)" >&2; exit 2; }
@@ -246,3 +251,5 @@ esac
 ##		- 20260914 JC: The hook finds its checkout from where git started it when the push came from
 ##		  a subdirectory. A relative --work-tree had sent it to the directory above, ungated.
 ##		- 20260924 JC: Only a push to main is gated. Every other branch goes out without it.
+##		- 20261004 JC: fEcho_Clean keeps its state in a two-underscore global and reads in one
+##		  pass. Every expansion braced, and shellcheck holds it there.

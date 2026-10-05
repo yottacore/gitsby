@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+#  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
+
 ##	Purpose:
 ##		Two backlog rules that review rounds kept leaking through, checked in cicd
 ##		stage 1 instead of by hand:
@@ -50,7 +52,7 @@ while [[ $# -gt 0 ]]; do
 	shift
 done
 
-fEcho_Clean(){ ((quiet)) || echo "$*"; }
+fEcho_Clean(){ ((quiet)) || printf '%s\n' "$*"; }
 [[ -r "${backlog}" ]] || { echo "backlog-check: no backlog at ${backlog}" >&2; exit 2; }
 git -C "${root}" rev-parse --git-dir >/dev/null 2>&1 || { echo "backlog-check: ${root} is not a git repo" >&2; exit 2; }
 
@@ -146,3 +148,5 @@ exit "${findings}"
 ##		- 20260910 JC: Created. The review-round audit found the refill came from
 ##		  deferred notes and silently deleted checks, not from fixes undoing fixes.
 ##		- 20260926 JC: Reads the test ID at the front of a label. A check whose ID or label is still there was edited, and the backlog can name a removed one by either.
+##		- 20261004 JC: fEcho_Clean prints with printf. Every expansion braced, and shellcheck
+##		  holds it there.
