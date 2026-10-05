@@ -93,7 +93,7 @@ Scope: the product itself is Go now. Go's *formatting* is `gofmt` - the lint sta
 
 - Files end in `.bash`. The shebang comes first, then the file's shellcheck lines, then a `##` header with the purpose, copyright and license. History goes at the bottom. `cicd/utility/keep-build.bash` shows the layout.
 
-- Must pass shellcheck. Per-file disables go at the top, each with a short reason (see the top of `cicd/test.bash`). Each script also turns on shellcheck's `require-variable-braces` there, so an unbraced expansion fails the lint stage. There is no formatter.
+- Must pass shellcheck. Per-file disables go at the top, each with a short reason (see the top of `cicd/test.bash`). Each script but the shared `n8git_backup-and-publish` also turns on shellcheck's `require-variable-braces` there, so an unbraced expansion fails the lint stage. There is no formatter.
 
 - Functions are `fCamelCase`, with an underscore to group a family: `fEcho`, `fEcho_Clean`. Variables are camelCase. A global that only one function or family uses starts with two underscores, such as `__wasLastEchoBlank`. The settings in `cicd/config.bash` are the exception. They are UPPER_SNAKE, since they are sourced and read like environment variables.
 
