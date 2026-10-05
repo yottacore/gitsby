@@ -157,9 +157,9 @@ const leasePushBudget = 16384
 // short name against its tags too, and one match too many sends none of them. A
 // batch closes before the next branch would take its arguments past budget; a
 // branch too long for any budget still goes, alone.
-func leaseDeleteBatches(branches []string, tested map[string]string, budget int) [][]string {
+func leaseDeleteBatches(branches []string, tested map[string]string, budget int) []leaseBatch {
 	const fixedLen = len("push") + len("origin") + len("--delete") + 3
-	var batches [][]string
+	var batches []leaseBatch
 	var group []string
 	size := fixedLen
 	flush := func() {
@@ -175,7 +175,7 @@ func leaseDeleteBatches(branches []string, tested map[string]string, budget int)
 		for _, branch := range group {
 			args = append(args, "refs/heads/"+branch)
 		}
-		batches = append(batches, args)
+		batches = append(batches, leaseBatch{branches: group, args: args})
 		group, size = nil, fixedLen
 	}
 	for _, branch := range branches {
@@ -188,6 +188,12 @@ func leaseDeleteBatches(branches []string, tested map[string]string, budget int)
 	}
 	flush()
 	return batches
+}
+
+// leaseBatch is one delete push: the branches it deletes, and git's arguments.
+type leaseBatch struct {
+	branches []string
+	args     []string
 }
 
 // leaseArg: a ref name cannot hold ':', so git splits this one correctly.
