@@ -11,8 +11,6 @@
 package main
 
 import (
-	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -150,7 +148,7 @@ func replaceOldFormat(file, read, converted string, mig *formatMigration) {
 		return
 	}
 	backup := backupName(target, mig.from, time.Now())
-	if err := writeNew(backup, read, fi.Mode().Perm()); err != nil {
+	if _, err := createNew(backup, read, fi.Mode().Perm()); err != nil {
 		mig.why = "the old copy couldn't be written: " + causeText(err)
 		return
 	}
@@ -161,20 +159,6 @@ func replaceOldFormat(file, read, converted string, mig *formatMigration) {
 		return
 	}
 	mig.backup, mig.done = backup, true
-}
-
-// writeNew writes a file that must not exist yet, with the mode of the one it
-// copies: this one names accounts and token files.
-func writeNew(file, text string, mode fs.FileMode) error {
-	f, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
-	if err != nil {
-		return err
-	}
-	_, err = f.WriteString(text)
-	if err == nil {
-		err = f.Sync()
-	}
-	return errors.Join(err, f.Close())
 }
 
 // reportMigration says once what the load did to an old file. On stderr, so a

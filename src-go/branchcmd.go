@@ -136,11 +136,7 @@ func (a *app) cmdMerge() error {
 			a.out.status("WARNING: remote unreachable; the merge to '" + targetBranch + "' is local only - '" + meName + " sync' publishes it.")
 		}
 	default:
-		push := []string{"push"}
-		if !a.hasUpstream() {
-			push = []string{"push", "-u", "origin", "HEAD"}
-		}
-		if err := a.step("git", push...); err != nil {
+		if err := a.step("git", a.pushArgs()...); err != nil {
 			return err
 		}
 		mergePublished = true
@@ -208,7 +204,7 @@ func (a *app) mergeDeleteRemote(branch, mergedTip string) {
 		a.out.clean("")
 		a.out.status("git push --force-with-lease origin --delete " + branch + " ...")
 		// Non-fatal: the lease can still refuse, if the branch moved after the ask.
-		if !a.inheritOK("git", leaseDeleteBatches(send, tested, leasePushBudget)[0]...) {
+		if !a.inheritOK("git", leaseDeleteBatches(send, tested, leasePushBudget)[0].args...) {
 			a.out.status("WARNING: couldn't delete origin's '" + branch + "'; left it alone.")
 		}
 		a.out.resetBlank()

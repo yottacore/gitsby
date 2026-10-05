@@ -54,7 +54,7 @@ func (a *app) cmdPull() error {
 	switch {
 	case !a.opt.fetch:
 		a.out.status("Skipping the pull (--no-fetch).")
-	case !a.gh.reachable:
+	case a.isOffline():
 		a.out.status("WARNING: remote unreachable; skipping the pull. Local changes still get committed.")
 	case a.hasUpstream():
 		return a.step("git", a.pullArgs("--autostash")...)
@@ -68,7 +68,7 @@ func (a *app) cmdPull() error {
 // cmdPull, quietly: --no-fetch and an unreachable remote both mean skip. Extra
 // arguments go through to git.
 func (a *app) pullIfOnline(extra ...string) error {
-	if a.opt.fetch && a.gh.reachable && a.hasUpstream() {
+	if a.opt.fetch && !a.isOffline() && a.hasUpstream() {
 		return a.step("git", a.pullArgs(extra...)...)
 	}
 	return nil
@@ -122,12 +122,19 @@ func (a *app) pushIfOnline() error {
 		a.out.status("Nothing to push.")
 	case a.isOffline():
 		a.out.status("WARNING: remote unreachable; skipping the push. The work stays local on '" + a.currentBranch() + "' - '" + meName + " sync' from it publishes it.")
-	case !a.hasUpstream():
-		return a.step("git", "push", "-u", "origin", "HEAD") // first publish of this branch
 	default:
-		return a.step("git", "push")
+		return a.step("git", a.pushArgs()...)
 	}
 	return nil
+}
+
+// pushArgs pushes the current branch. One with no upstream yet is a first publish:
+// it goes up under its own name and tracks origin's copy from then on.
+func (a *app) pushArgs() []string {
+	if !a.hasUpstream() {
+		return []string{"push", "-u", "origin", "HEAD"}
+	}
+	return []string{"push"}
 }
 
 // pushesToRemote: whether this command sends anything to origin. The identity
@@ -329,21 +336,16 @@ func (a *app) pruneRemote(branches []string, onOrigin map[string]string, asked b
 	}
 	done := 0
 	var stillThere []string
-	for _, args := range leaseDeleteBatches(send, a.prune.remoteTip, leasePushBudget) {
-		// The refs close the list, one for each lease.
-		var batch []string
-		for _, ref := range args[len(args)-(len(args)-3)/2:] {
-			batch = append(batch, strings.TrimPrefix(ref, "refs/heads/"))
-		}
+	for _, batch := range leaseDeleteBatches(send, a.prune.remoteTip, leasePushBudget) {
 		a.out.clean("")
-		a.out.status("git push --force-with-lease origin --delete " + strings.Join(batch, " ") + " ...")
-		if a.inheritOK("git", args...) {
-			done += len(batch)
+		a.out.status("git push --force-with-lease origin --delete " + strings.Join(batch.branches, " ") + " ...")
+		if a.inheritOK("git", batch.args...) {
+			done += len(batch.branches)
 		} else {
 			// Non-fatal, same as br merge. A leased delete is decided per ref, so count what
 			// went rather than writing the batch off: a delete that went through takes the
 			// remote-tracking ref with it, which is a local lookup.
-			for _, branch := range batch {
+			for _, branch := range batch.branches {
 				if a.branchExistsRemote(branch) {
 					stillThere = append(stillThere, branch)
 				} else {

@@ -395,10 +395,8 @@ func (a *app) cmdConnect() error {
 	case "push":
 		// origin already set - just make sure everything is published
 		switch {
-		case !a.hasUpstream():
-			return a.step("git", "push", "-u", "origin", "HEAD")
-		case isAhead():
-			return a.step("git", "push")
+		case !a.hasUpstream() || isAhead():
+			return a.step("git", a.pushArgs()...)
 		default:
 			a.out.status("Nothing to push; already connected and current.")
 		}

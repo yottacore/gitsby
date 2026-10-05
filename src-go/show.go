@@ -157,8 +157,8 @@ func (a *app) showHostLine() {
 		// Only a write can act as the wrong account, so only a write gets the
 		// comparison - the same rule the gh line above follows, and the reason this
 		// block exists at all rather than just naming the host.
-		if a.gh.isWrite {
-			keyWho := a.sshLogin(a.gh.probeURL)
+		if a.remote.isWrite {
+			keyWho := a.sshLogin(a.remote.probeURL)
 			if identityMismatchText(cli, who, keyWho) != "" {
 				line += "  <-- NOT the ssh key's account ('" + keyWho + "')"
 			} else if keyWho == "?" {
@@ -602,7 +602,7 @@ func (a *app) showSSHLine(remoteURL string) {
 // showGhLine: gh-backed commands act as gh's account, not the ssh key's - so name
 // it where it applies.
 func (a *app) showGhLine() {
-	if !a.gh.isCommand || a.gh.tool != toolGh {
+	if !a.remote.isCommand || a.remote.tool != toolGh {
 		return
 	}
 	ghWho := a.ghLogin()
@@ -619,8 +619,8 @@ func (a *app) showGhLine() {
 	// Only a write can act as the wrong account, so only a write gets the
 	// comparison. The round trip behind it is the one the SSH line above already
 	// made.
-	if a.gh.isWrite {
-		keyWho := a.sshLogin(a.gh.probeURL)
+	if a.remote.isWrite {
+		keyWho := a.sshLogin(a.remote.probeURL)
 		if identityMismatchText("gh", ghWho, keyWho) != "" {
 			line += "  <-- NOT the ssh key's account ('" + keyWho + "')"
 		} else if keyWho == "?" {

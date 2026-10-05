@@ -174,34 +174,34 @@ var sshGreetingREs = []*regexp.Regexp{
 // remotes, no agent, or anything else unresolvable - and a deploy key answers
 // with a repo name, which simply won't match any login. Unknown is not wrong.
 func (a *app) sshLogin(url string) string {
-	if who, asked := a.gh.sshLogins[url]; asked {
+	if who, asked := a.remote.sshLogins[url]; asked {
 		return who
 	}
 	var who string
-	if pending := a.gh.sshAhead[url]; pending != nil {
-		delete(a.gh.sshAhead, url)
+	if pending := a.remote.sshAhead[url]; pending != nil {
+		delete(a.remote.sshAhead, url)
 		who = pending.wait()
 	} else {
 		who = probeSSHLogin(context.Background(), os.Environ(), url, a.gitSSHCommand())
 	}
-	if a.gh.sshLogins == nil {
-		a.gh.sshLogins = map[string]string{}
+	if a.remote.sshLogins == nil {
+		a.remote.sshLogins = map[string]string{}
 	}
-	a.gh.sshLogins[url] = who
+	a.remote.sshLogins[url] = who
 	return who
 }
 
 // askSSHLoginAhead starts the sshLogin probe without waiting for it. Everything
 // it reads from the run is read here, on this goroutine.
 func (a *app) askSSHLoginAhead(url string) {
-	if _, asked := a.gh.sshLogins[url]; asked || a.gh.sshAhead[url] != nil {
+	if _, asked := a.remote.sshLogins[url]; asked || a.remote.sshAhead[url] != nil {
 		return
 	}
 	ctx, env, sshCommand := a.probeContext(), os.Environ(), a.gitSSHCommand()
-	if a.gh.sshAhead == nil {
-		a.gh.sshAhead = map[string]*ahead[string]{}
+	if a.remote.sshAhead == nil {
+		a.remote.sshAhead = map[string]*ahead[string]{}
 	}
-	a.gh.sshAhead[url] = startAhead(func() string { return probeSSHLogin(ctx, env, url, sshCommand) })
+	a.remote.sshAhead[url] = startAhead(func() string { return probeSSHLogin(ctx, env, url, sshCommand) })
 }
 
 func probeSSHLogin(ctx context.Context, env []string, url, sshCommand string) string {
@@ -251,7 +251,7 @@ func (a *app) fetchRemote() {
 	fetch := exec.Command("git", "fetch", "--quiet", "--prune", "origin")
 	fetch.Env = env
 	if fetch.Run() != nil {
-		a.gh.reachable = false
+		a.remote.offline = true
 		a.out.status("WARNING: git fetch failed (offline?); remote info may be stale.")
 		return
 	}
@@ -289,7 +289,7 @@ func (a *app) askOriginHeads() (map[string]string, bool) {
 // offline. br prune's delete-time ask of origin reports its own failure without
 // changing it. --no-fetch is NOT offline: it declines the incoming round trip,
 // and pushes still go out.
-func (a *app) isOffline() bool { return !a.gh.reachable }
+func (a *app) isOffline() bool { return a.remote.offline }
 
 // ghProtocol: which transport gh hands to git for github.com ('ssh' or 'https').
 // Host-specific, not the global default - they can disagree, and the host one is
@@ -300,7 +300,7 @@ func (a *app) ghProtocol(host string) string {
 	if !isGitHubHost(host) {
 		return "https"
 	}
-	return a.gh.protocol.get(func() string {
+	return a.remote.protocol.get(func() string {
 		if inPath("gh") && runOut("gh", "config", "get", "-h", host, "git_protocol") == "ssh" {
 			return "ssh"
 		}
