@@ -309,47 +309,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: every `darwin` and `arm64` reader in the repo. release.bash, config.bash, both installers, the installer and release fixtures in test.bash, README, design.md and the changelog. cicd.bash dogfood already joins. Nothing in `src-go` reads asset names. `legacy/` is frozen.
 	- Verified: stage 7 on b26 (2026-10-04) passed the installer checks with stubbed downloads, `[ErgCzfP]`, `[ErgCzfc]` and `[ErgCzfq]` among them.
 
-- Run the tests on FreeBSD and on Linux arm64 in stage 7 too
-	- ID: 2026100413264100
-	- Type: Enhancement
-	- Status: Waiting for testing
-	- Needs external testing: Stage 7 on b26. It was skipped on 2026-10-04 since another session held it.
-	- Priority [Feature]: Avg
-	- Opened: 20261004-132641
-	- Opened by: jim-collier
-	- Related IDs: 2026100312332924, 2026100416430451, 2026100416430456
-	- Target OS: FreeBSD, Linux arm64
-	- Requirements  [Feature]:
-		- Two more test boxes share the host lock: vmFreeBSD and vmDebARM64. Both are VMs with a virtual display.
-		- Stage 7 runs the cross-built Go tests on each, against the FreeBSD amd64 and Linux arm64 builds, the same way it does on vm925w.
-		- test.bash runs there too where bash and the tools it needs are on the box.
-		- A box that is off or reserved is skipped, the same as the others.
-	- Note: FreeBSD and Linux arm64 are published targets that no test has run on yet.
-	- Decisions:
-		- 2026-10-04: Both boxes have a test user with no password: `bsdtest` on vmFreeBSD and `tester` on vmDebARM64, neither with sudo. Both also take root over ssh. Root is for setup only, such as installing what test.bash needs. The tests run as the test user.
-		- 2026-10-04: vmFreeBSD runs FreeBSD 15.1 at a static 192.168.1.119. vmDebARM64 is at 192.168.1.118. Both are libvirt VMs on b23.
-		- 2026-10-04: Both boxes are taken through the host lock by name, in its other-hosts list, like b26.
-	- Progress log:
-		- Done: stage 7 runs the Mac's flow on each Unix box in `REMOTE_UNIX_HOSTS`, as its test user. Each box gets a copy of the tree, the Go tests built for its target, and the build cicd.bash makes for that target. Targets are set per box in `REMOTE_UNIX_TARGETS`.
-		- Done: test.bash runs only where the box has bash, git and go (`REMOTE_UNIX_NEEDS`). Otherwise the box runs the Go tests and the run names what it lacks. The module fetch is skipped too.
-		- Done: cicd.bash builds `freebsd/amd64` and `linux/arm64` the way dogfood builds, hands them to the harness with `--bin`, and removes them after. The stage keeps its name, "Mac + Windows tests".
-		- Done: README and contributing.md list the new boxes.
-		- Installed on vmDebARM64 as root: Go 1.26.8 from go.dev, in `/usr/local/go`, linked from `/usr/local/bin/go` and `gofmt`. bash, git and jq were already there.
-		- Nothing installed on vmFreeBSD. bash, git, jq and Go 1.25 were already there. Go fetches the 1.26.2 toolchain go.mod names into the test user's module cache on the first run.
-		- Verified: the 8 new checks and `[ErkbDSi]` pass, and each new one fails against gover's harness. Six faults put into a copy of the harness, one at a time, each turned its check red: the Unix boxes left out of the lock's list, a missing tool ignored, the module fetch always run, no target check, one target's build sent to every box, and gover's harness. `[ErkbDSi]` fails against gover's cicd.bash and with a Unix build left behind.
-		- Verified: shellcheck, `test-id.bash --check` and the gate pass.
-		- Verified: stage 7's harness run against only the two new boxes, under the lock, 2026-10-04. vmFreeBSD: test.bash 1178/0, Go tests all pass but `TestLockAccountsFile`. vmDebARM64: Go tests all pass, test.bash 1436/1, the one being `[ErkSC4L]`. Both filed as their own bugs.
-		- Note: vmDebARM64 is an emulated arm64 CPU. Its test.bash took about 40 minutes, against about one on vmFreeBSD, so a full run is that much longer.
-	- Swept: every reader of the stage 7 settings. cicd.bash prints and builds from them, remote-tests.bash runs from them, and the test.bash fixture copies config.bash. The existing harness checks pin the Mac and Windows boxes, so their fixture empties `REMOTE_UNIX_HOSTS` and the new checks put it back.
-	- Note: `[ErkbDSi]` keeps its ID. It used to require only the Mac build in the harness call, and now requires the two Unix builds as well, all three removed after.
-	- Branch: unixrt
-	- Commit: f331e15
-	- Test case: test.bash `[Erm9Pnk]`, `[Erm9Pnx]`, `[Erm9PoA]`, `[Erm9PoN]`, `[Erm9Poa]`, `[Erm9Pon]`, `[Erm9Pp1]`, `[Erm9PpE]`, and `[ErkbDSi]` (changed).
-	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
-	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it.
-	- Question: stage 7 is still labeled "Mac + Windows tests". Renaming it changes output text that `[ErkbDSi]`, `[ErkbDT4]` and `[ErkbDTL]` check. Rename it?
-		- Answer: yes, to "Remote tests". Filed as 2026100418431100.
-
 - test.bash removes the folder it was started from when mktemp fails
 	- ID: 2026100415391365
 	- Type: Bug
@@ -1078,6 +1037,50 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: Go `TestBranchReadsFollowWrites` [Erl1x2z], and the spawn-count limits.
 	- Acceptance signoff: Self-closed: does what the item asked, and its test fails without the fix.
 	- Closed: 20261004-113600
+
+- Run the tests on FreeBSD and on Linux arm64 in stage 7 too
+	- ID: 2026100413264100
+	- Type: Enhancement
+	- Status: Done
+	- Needs external testing: None left. b26 ran on 2026-10-04.
+	- Priority [Feature]: Avg
+	- Opened: 20261004-132641
+	- Opened by: jim-collier
+	- Related IDs: 2026100312332924, 2026100416430451, 2026100416430456
+	- Target OS: FreeBSD, Linux arm64
+	- Requirements  [Feature]:
+		- Two more test boxes share the host lock: vmFreeBSD and vmDebARM64. Both are VMs with a virtual display.
+		- Stage 7 runs the cross-built Go tests on each, against the FreeBSD amd64 and Linux arm64 builds, the same way it does on vm925w.
+		- test.bash runs there too where bash and the tools it needs are on the box.
+		- A box that is off or reserved is skipped, the same as the others.
+	- Note: FreeBSD and Linux arm64 are published targets that no test has run on yet.
+	- Decisions:
+		- 2026-10-04: Both boxes have a test user with no password: `bsdtest` on vmFreeBSD and `tester` on vmDebARM64, neither with sudo. Both also take root over ssh. Root is for setup only, such as installing what test.bash needs. The tests run as the test user.
+		- 2026-10-04: vmFreeBSD runs FreeBSD 15.1 at a static 192.168.1.119. vmDebARM64 is at 192.168.1.118. Both are libvirt VMs on b23.
+		- 2026-10-04: Both boxes are taken through the host lock by name, in its other-hosts list, like b26.
+	- Progress log:
+		- Done: stage 7 runs the Mac's flow on each Unix box in `REMOTE_UNIX_HOSTS`, as its test user. Each box gets a copy of the tree, the Go tests built for its target, and the build cicd.bash makes for that target. Targets are set per box in `REMOTE_UNIX_TARGETS`.
+		- Done: test.bash runs only where the box has bash, git and go (`REMOTE_UNIX_NEEDS`). Otherwise the box runs the Go tests and the run names what it lacks. The module fetch is skipped too.
+		- Done: cicd.bash builds `freebsd/amd64` and `linux/arm64` the way dogfood builds, hands them to the harness with `--bin`, and removes them after. The stage keeps its name, "Mac + Windows tests".
+		- Done: README and contributing.md list the new boxes.
+		- Installed on vmDebARM64 as root: Go 1.26.8 from go.dev, in `/usr/local/go`, linked from `/usr/local/bin/go` and `gofmt`. bash, git and jq were already there.
+		- Nothing installed on vmFreeBSD. bash, git, jq and Go 1.25 were already there. Go fetches the 1.26.2 toolchain go.mod names into the test user's module cache on the first run.
+		- Verified: the 8 new checks and `[ErkbDSi]` pass, and each new one fails against gover's harness. Six faults put into a copy of the harness, one at a time, each turned its check red: the Unix boxes left out of the lock's list, a missing tool ignored, the module fetch always run, no target check, one target's build sent to every box, and gover's harness. `[ErkbDSi]` fails against gover's cicd.bash and with a Unix build left behind.
+		- Verified: shellcheck, `test-id.bash --check` and the gate pass.
+		- Verified: stage 7's harness run against only the two new boxes, under the lock, 2026-10-04. vmFreeBSD: test.bash 1178/0, Go tests all pass but `TestLockAccountsFile`. vmDebARM64: Go tests all pass, test.bash 1436/1, the one being `[ErkSC4L]`. Both filed as their own bugs.
+		- Note: vmDebARM64 is an emulated arm64 CPU. Its test.bash took about 40 minutes, against about one on vmFreeBSD, so a full run is that much longer.
+	- Swept: every reader of the stage 7 settings. cicd.bash prints and builds from them, remote-tests.bash runs from them, and the test.bash fixture copies config.bash. The existing harness checks pin the Mac and Windows boxes, so their fixture empties `REMOTE_UNIX_HOSTS` and the new checks put it back.
+	- Note: `[ErkbDSi]` keeps its ID. It used to require only the Mac build in the harness call, and now requires the two Unix builds as well, all three removed after.
+	- Branch: unixrt
+	- Commit: f331e15
+	- Test case: test.bash `[Erm9Pnk]`, `[Erm9Pnx]`, `[Erm9PoA]`, `[Erm9PoN]`, `[Erm9Poa]`, `[Erm9Pon]`, `[Erm9Pp1]`, `[Erm9PpE]`, and `[ErkbDSi]` (changed).
+	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
+	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it.
+	- Question: stage 7 is still labeled "Mac + Windows tests". Renaming it changes output text that `[ErkbDSi]`, `[ErkbDT4]` and `[ErkbDTL]` check. Rename it?
+		- Answer: yes, to "Remote tests". Filed as 2026100418431100.
+	- Verified: stage 7's harness on gover after round 4, 2026-10-04. b26: Go tests pass, and test.bash against the universal build 1255/0. vmFreeBSD, vmDebARM64 and vm925w: Go tests pass. The Unix boxes ran Go tests only this time, since no Unix builds were passed. Their full test.bash ran earlier the same day and failed only `[Emq7Y6y]`, fixed since.
+	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
+	- Closed: 20261004-190953
 
 - Code Review 20261003 enhancement 8: Pipeline scripts and the style guide against the new Bash rules
 	- ID: 2026100313130060
