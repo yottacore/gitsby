@@ -36,8 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `--staged`: commit only what is staged, and leave the rest of the tree alone
 	- ID: 2026100512025340
 	- Type: Enhancement
-	- Status: Waiting for testing
-	- Needs local test suite run?: The full test.bash, which should come to 1471 with the 18 new checks. Then signoff, since this adds a flag and plan wording.
+	- Status: Waiting on signoff
 	- Priority [Feature]: High
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
@@ -66,6 +65,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Note: `br hotfix` takes the flag too, since it is the same recipe as `br create`. `pr create` and `release` also commit the whole tree, and refuse the flag for now. Adding it there later breaks nobody.
 		- Done: help, README, workflows.md, the changelog, and design.md, with the line the Decisions ask for and the autostash finding.
 		- Verified: `go test ./...` and the gate pass. The 18 new suite checks pass on their own. With `--autostash` put back on every pull, 6 of them fail. With the read-ahead turned off, 4 fail.
+		- Verified: the full test.bash on the merged tree, 1471/0 (2026-10-05).
+		- For signoff: `br hotfix` taking the flag, `pr create` and `release` refusing it, and the plan's two list labels, "staged, so committed:" and "not staged, so left as is:".
 	- Branch: staged
 	- Commit: efe1522
 	- Test case: Go tests `[Err7CYL]`, `[Err7CYY]`, `[Err7CYm]`. test.bash `[Err7W8V]` through `[Err7WAA]`, 18 checks.
