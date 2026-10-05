@@ -46,10 +46,12 @@ The opinions are mostly informed by industry and conventional best-practices, le
 - Published material can be corrected without waiting for a release. `br hotfix <name>` branches off the default branch rather than `dev`, lands there, then carries the change back into `dev` so the next release cannot undo it.
 
 - Commit the whole working tree (`git add --all`), every time. The staging area is not a workspace; partial staging is one of those fringe cases left to raw `git`.
+	- `--staged` is the exception, for a tree that holds edits which aren't part of the change. It commits what `git add` already staged, and leaves the rest. Gitsby still stages nothing itself.
 
 - Commit and pull frequently (`pullcom`); push less often (`sync`).
 
 - Uncommitted work should never block anything. The pull inside `pullcom`/`sync` auto-stashes around itself, `br create` off `dev`/`main` carries uncommitted work onto the new branch, and everything else parks current work first - though never auto-committed onto `main`/`dev` - so nothing is ever stranded or lost.
+	- Under `--staged` nothing is stashed, since git's stash puts staged work back unstaged. Where git would then refuse a pull or checkout over the edits left in the tree, gitsby refuses before it starts.
 
 - Every branch tracks a same-named branch on `origin`, from the moment it's created.
 

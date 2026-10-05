@@ -44,7 +44,7 @@ func (a *app) cmdNewBranch(newBranch, baseBranch string) error {
 				return err
 			}
 		}
-		if err := a.pullIfOnline("--autostash"); err != nil {
+		if err := a.pullIfOnline(a.autostash()...); err != nil {
 			return err
 		}
 	} else {

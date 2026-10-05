@@ -25,15 +25,26 @@ func (a *app) cmdCommit() error {
 		a.out.clean("")
 		a.out.status("Unresolved conflicts; nothing was committed:")
 		a.showLines(conflicted)
+		if a.opt.staged { // nothing was stashed
+			return usagef("Resolve those, then run '%s pullcom' again.", meName)
+		}
 		return usagef("Resolve those, then run '%s pullcom' again. Git also kept your pre-pull tree - see 'git stash list'.", meName)
 	}
-	if err := a.step("git", "add", "--all"); err != nil {
-		return err
+	if a.opt.staged {
+		if runOK("git", "diff", "--cached", "--quiet") {
+			a.out.status("Nothing staged, so nothing was committed.")
+			return nil
+		}
+	} else {
+		if err := a.step("git", "add", "--all"); err != nil {
+			return err
+		}
+		if runOut("git", "status", "--porcelain") == "" {
+			a.out.status("Nothing to commit.")
+			return nil
+		}
 	}
 	switch {
-	case runOut("git", "status", "--porcelain") == "":
-		a.out.status("Nothing to commit.")
-		return nil
 	case a.opt.message != "":
 		return a.step("git", "commit", "-m", a.opt.message)
 	case a.opt.quiet:
@@ -57,7 +68,7 @@ func (a *app) cmdPull() error {
 	case a.isOffline():
 		a.out.status("WARNING: remote unreachable; skipping the pull. Local changes still get committed.")
 	case a.hasUpstream():
-		return a.step("git", a.pullArgs("--autostash")...)
+		return a.step("git", a.pullArgs(a.autostash()...)...)
 	default:
 		a.out.status("No upstream configured for this branch; nothing to pull.")
 	}
