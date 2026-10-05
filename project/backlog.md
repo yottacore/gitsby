@@ -33,6 +33,29 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- Run the windows/arm64 build somewhere
+	- ID: 2026100507345200
+	- Type: Enhancement
+	- Status: Waiting for answers
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-05
+	- Opened by: jim-collier
+	- Related IDs: 2026100413264100
+	- Requirements  [Feature]:
+		- The release publishes `gitsby-windows-arm64.exe`, but no box runs it. Stage 7 runs Windows tests on amd64 only, on vm925w.
+	- Notes:
+		- vmDebARM64 has Wine. In theory the windows/arm64 build runs there, slowly, since that CPU is emulated.
+		- First probe: whether that Wine runs an ARM64 PE at all, with `--version` and then the Go test binary. Not run yet. The box was held by another session on 2026-10-05.
+		- If it runs, stage 7 could run the windows/arm64 Go tests there, under Wine, beside the linux/arm64 run. Wine is not Windows, so it would add to vm925w's run, not replace it.
+	- Progress log:
+		- Verified: vmDebARM64 has Debian's Wine 10.0 for arm64, with the ARM64 Windows libraries. gitsby and its Go tests both build for windows/arm64 as ARM64 PE files.
+		- Tried 2026-10-05: `gitsby.exe --version` under Wine, as the test user, over ssh with no display. It never printed anything. Wine's own first-run setup spun at full CPU for 12 minutes and wrote nothing to the new Wine folder. The Go test binary was not tried, since no Windows program gets that far.
+		- Verified: every Wine process there faults with an illegal instruction, over and over, on the first instruction of Wine's own system call entry points. That is inside Wine, before any of gitsby's code runs.
+		- Cause, inferred: branch protection. The emulated CPU has it, Debian builds Wine's library marked for it, and those entry points lack the instruction it requires. Not confirmed by turning it off, since that takes root plus a reboot or a VM change. The C library there has no per-program switch for it.
+		- Not changed: stage 7 and the docs. Nothing runs under Wine there yet.
+		- Question: run it at all? One way is to give vmDebARM64 a CPU model without branch protection, which changes its linux/arm64 runs too. Another is `arm64.nobti` on its kernel command line plus a reboot. Or leave windows/arm64 untested until a Wine fix.
+	- Branch: winebti
+
 - macOS release gets a universal binary
 	- ID: 2026100313491873
 	- Type: Enhancement
@@ -60,21 +83,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash `[ErgCzfP]`, `[ErgCzfc]`, `[ErgCzfq]` (install.bash on a Mac), `[ErgDQ7N]` (install.ps1, pinned since pwsh can't fake a Mac), `[ErgCzeJ]`, `[ErgCzeW]`, `[ErgCzek]`, `[ErgCzey]`, `[ErgCzfB]` (release.bash).
 	- Swept: every `darwin` and `arm64` reader in the repo. release.bash, config.bash, both installers, the installer and release fixtures in test.bash, README, design.md and the changelog. cicd.bash dogfood already joins. Nothing in `src-go` reads asset names. `legacy/` is frozen.
 	- Verified: stage 7 on b26 (2026-10-04) passed the installer checks with stubbed downloads, `[ErgCzfP]`, `[ErgCzfc]` and `[ErgCzfq]` among them.
-
-- Run the windows/arm64 build somewhere
-	- ID: 2026100507345200
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature]: Avg
-	- Opened: 2026-10-05
-	- Opened by: jim-collier
-	- Related IDs: 2026100413264100
-	- Requirements  [Feature]:
-		- The release publishes `gitsby-windows-arm64.exe`, but no box runs it. Stage 7 runs Windows tests on amd64 only, on vm925w.
-	- Notes:
-		- vmDebARM64 has Wine. In theory the windows/arm64 build runs there, slowly, since that CPU is emulated.
-		- First probe: whether that Wine runs an ARM64 PE at all, with `--version` and then the Go test binary. Not run yet. The box was held by another session on 2026-10-05.
-		- If it runs, stage 7 could run the windows/arm64 Go tests there, under Wine, beside the linux/arm64 run. Wine is not Windows, so it would add to vm925w's run, not replace it.
 
 - Code Review 20261003 enhancement 2: Network probes run one after another
 	- ID: 2026100313123988
