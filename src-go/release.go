@@ -138,8 +138,13 @@ func (a *app) releasePreflight() error {
 	// promoting a candidate, are deliberate and stay allowed. Fails open: if we
 	// can't tell, the release goes ahead. 'release' parks first, so uncommitted work
 	// or unpushed commits ARE something to release even when the branches currently
-	// look level - the guard only speaks for a settled repo.
-	if !a.rel.bumped || runOut("git", "status", "--porcelain") != "" || isAhead() {
+	// look level - the guard only speaks for a settled repo. Under --staged only
+	// the index is parked, so edits left out of it are nothing to release.
+	parks := runOut("git", "status", "--porcelain") != ""
+	if a.opt.staged {
+		parks = !runOK("git", "diff", "--cached", "--quiet")
+	}
+	if !a.rel.bumped || parks || isAhead() {
 		return nil
 	}
 	// Full refs throughout, since git reads a tag of the same name ahead of a branch.

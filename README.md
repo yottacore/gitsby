@@ -125,7 +125,7 @@ There is deliberately no bare `commit`, and no bare `pull` that skips the commit
 
 Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--public`/`--private` (visibility for `repo create`; private by default), `--no-fetch` (skip the fetch and the pull), `--staged` (commit only what is staged, see below), `--any-identity`, `--config FILE` (read accounts from somewhere other than the usual place), `-h`, `-v`, `--about`, `--donate`.
 
-**`--staged` commits what you staged and nothing else.** It is for a tree that holds edits which aren't part of the change. `pullcom`, `sync`, and the `br` commands that commit before they move take it. The plan lists which files get committed and which stay behind, and unstaged edits and untracked files stay where they are. On a branch switch they come along, the way plain `git` carries them. Where git would refuse a pull or a checkout over them, gitsby refuses before it starts, with nothing done. Without the flag nothing changes: every command commits the whole tree.
+**`--staged` commits what you staged and nothing else.** It is for a tree that holds edits which aren't part of the change. `pullcom`, `sync`, `pr create`, `release`, and the `br` commands that commit before they move take it. The plan lists which files get committed and which stay behind, and unstaged edits and untracked files stay where they are. On a branch switch they come along, the way plain `git` carries them. Where git would refuse a pull or a checkout over them, gitsby refuses before it starts, with nothing done. Without the flag nothing changes: every command commits the whole tree.
 
 **Offline is a state, not a flag.** Every command finds out by trying, and then behaves:
 
