@@ -148,6 +148,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The table goes in the changelog's release section too, so the release body stays a verbatim copy of that section. release.bash writes it into the section when it cuts the release, from the actual asset list (2026-10-04).
 		- Rows are target OS (Linux, macOS, Windows, FreeBSD, whatever the release publishes). Columns are CPU (amd64, arm64). macOS is one universal file, `gitsby-darwin-universal`, so its row doesn't split by CPU. Each cell links the asset's download URL for that tag (2026-10-04).
 		- `SHA256SUMS` and the install scripts go on one line under the table (2026-10-04).
+		- The macOS file is linked under both CPU columns (2026-10-04).
 	- Progress log:
 		- Done: release.bash phase 2 adds a `### Downloads` table at the foot of the section it retitles, built from the files phase 1 made. Rows run Linux, macOS, Windows, FreeBSD, then any other OS. Columns run amd64, arm64, then any other CPU. A missing file shows `-`. One line below links `SHA256SUMS` and the tag's `install.bash` and `install.ps1`.
 		- Done: the macOS file is linked under both CPU columns, since a markdown table cell can't span two. That is one reading of "doesn't split by CPU", for signoff.
@@ -162,6 +163,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
 	- Note: the installers read `SHA256SUMS` and the release list, never the body, so they are untouched.
 	- Question: a table cell can't span two columns, so the macOS universal file is listed under both amd64 and arm64. Is that the wanted reading of "its row doesn't split by CPU"?
+		- Answer: yes, both columns. Moved to Decisions.
 
 - Stage 7 names b26 as a Windows host to the lock
 	- ID: 2026100410340781
@@ -346,6 +348,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
 	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it.
 	- Question: stage 7 is still labeled "Mac + Windows tests". Renaming it changes output text that `[ErkbDSi]`, `[ErkbDT4]` and `[ErkbDTL]` check. Rename it?
+		- Answer: yes, to "Remote tests". Filed as 2026100418431100.
 
 - Code Review 20261003 enhancement 8: Pipeline scripts and the style guide against the new Bash rules
 	- ID: 2026100313130060
@@ -373,7 +376,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: directives 2026-09-09 to 2026-10-03, Bash section. Confirmed by a parse of every script.
 	- Progress log:
 		- Question: the symlink change is in `n8git_backup-and-publish`, not gfs-rotate.bash. slodworld's copy has it (commit 8dd2c57, 2026-10-04). It leaves out of the backup any dir link inside the repo, and any link that points back into the project. The synced copy and gitsby's copy don't have it yet. Every project's `private` link points outside its project, so it is still backed up. Should it go to the synced copy and to gitsby's? Not changed here.
+			- Answer: no. It stays in slodworld only for now (2026-10-04).
 		- Question: `include/gh-account.bash` shipped in v2.1.0, and changelog.md lists it under Added, as a helper for pipelines that call gh. The gate fixture would run without it, but deleting it drops a released helper with no Removed entry. It got a header instead. Delete it anyway?
+			- Answer: no. It stays, with the header (2026-10-04).
 		- Note: Left alone. The `fp` prefix on private functions in release.bash and gen-winres.bash is the v2.1.0 habit, and two test.bash checks read those names. cicd.bash's `_dests` is a nameref. `n8git_backup-and-publish` is shared and keeps its five unbraced expansions, so the new check skips it. install.bash's output helpers are unchanged. The report scripts' own output lines still use echo.
 		- Note: gfs-rotate.bash copies touched outside this repo, all left uncommitted. Paths are under the dev tree unless shown.
 			- Written as the new shared copy: `~/synced/0-0/common/exec/util/linux/bash/include/`, and the `cicd/utility/include/` copy in convert-base-v2, zuid, slodworld, slodworld2 and gitea camhauler.
@@ -396,6 +401,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Note: failed in the 2026-10-04 test batch, on b23, vmFreeBSD and vmDebARM64. `[Emq7Y6y]` now finds gfs-rotate.bash's `rm -f "${file}"` in its prune loop. The old unbraced `"$file"` slipped past the check's pattern, so bracing it brought an unguarded removal into view rather than adding one. The fix is a guarded path, such as `${file:?}`, in every copy of the shared file. Left for the next round.
 	- Branch: bashstyle
 	- Commit: 20ab499, 0952f39, 102c13f
+
+- Rename stage 7 to "Remote tests"
+	- ID: 2026100418431100
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature]: Low
+	- Opened: 20261004-184311
+	- Opened by: jim-collier
+	- Related IDs: 2026100413264100
+	- Requirements  [Feature]:
+		- Stage 7 runs on FreeBSD and Linux arm64 boxes too, so "Mac + Windows tests" no longer fits. It becomes "Remote tests".
+	- Note: `[ErkbDSi]`, `[ErkbDT4]` and `[ErkbDTL]` read the label and change with it. They keep their IDs.
 
 - test.bash removes the folder it was started from when mktemp fails
 	- ID: 2026100415391365
