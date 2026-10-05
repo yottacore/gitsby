@@ -495,6 +495,80 @@ fBraceRuleOn(){ awk '/^[[:space:]]*#[[:space:]]*shellcheck[[:space:]].*enable=re
 	/^[[:space:]]*($|#)/ { next } { exit } END { exit !on }' "${root}/$1" ;}
 
 ## The whole suite, against whatever ${gitsby} points at.
+## The two lists a --staged plan shows under its commit, as "committed|left", each name followed
+## by a space.
+fStagedListsAre(){ [[ "$(fPlanOf < "$1" | awk '
+	/staged, so committed:/ { s = 1; next }
+	/not staged, so left as is:/ { s = 2; next }
+	/^    [^ ]/ { s = 0 }
+	s == 1 && NF { c = c $1 " " }
+	s == 2 && NF { l = l $1 " " }
+	END { printf "%s|%s", c, l }')" == "$2" ]] ;}
+
+## --staged commits the index and leaves the rest of the tree where it is. Its pulls go without
+## --autostash, since git reapplies that without --index and staged work comes back unstaged, so
+## the commit after the pull would take nothing. Where git would then refuse a step over the edits
+## left in the tree, the run is refused before its plan. Own origin, with main, dev and feat.
+fStagedChecks(){
+	local stO="${work}/$1-staged.git" stA="${work}/$1-stageda" stB="${work}/$1-stagedb" stOut="${work}/$1-staged.out" stHead=""
+	git init --quiet --bare -b main "${stO}"
+	git clone --quiet "${stO}" "${stA}" 2>/dev/null
+	( cd "${stA}" && echo a > f1 && echo b > f2 && echo z > far && git add f1 f2 far && git commit --quiet -m init && git push --quiet -u origin main
+	  git checkout --quiet -b dev && git push --quiet -u origin dev && git checkout --quiet -b feat && git push --quiet -u origin feat )
+	git clone --quiet "${stO}" "${stB}"
+	( cd "${stB}" && git checkout --quiet feat && echo x > far && git add far && git commit --quiet -m "from B" && git push --quiet )
+	( cd "${stA}" && echo a2 > f1 && git add f1 && echo b2 > f2 && echo u > untracked
+	  "${gitsby}" -q pullcom --staged 'only f1' > "${stOut}" 2>&1 ) || true
+	fAssertNotPlan "[Err7W8V] pullcom --staged plans no 'git add'"  'git add'  cat "${stOut}"
+	fAssertPlan    "[Err7W8b] and pulls with no --autostash"        '^ +git merge --ff-only origin/feat \*$'  cat "${stOut}"
+	fAssert        "[Err7W8i] the plan lists what is committed and what stays"  fStagedListsAre "${stOut}" "f1 |f2 untracked "
+	fAssert        "[Err7W8p] the commit takes the staged file alone, on top of origin's commit" \
+		bash -c "cd '${stA}' && [[ \"\$(git show --name-only --format= HEAD)\" == f1 && \"\$(git log -1 --format=%s HEAD~1)\" == 'from B' ]]"
+	fAssert        "[Err7W8v] and the unstaged edit and new file stay as they were" \
+		bash -c "cd '${stA}' && [[ \"\$(git status --porcelain | tr '\n' ,)\" == ' M f2,?? untracked,' ]] && grep -qx b2 f2"
+	fAssert        "[Err7W91] nothing staged says so and commits nothing" \
+		bash -c "cd '${stA}' && head=\"\$(git rev-parse HEAD)\" && out=\"\$('${gitsby}' -q pullcom --staged 2>&1)\" && grep -q 'Nothing staged, so nothing was committed' <<< \"\${out}\" && [[ \"\$(git rev-parse HEAD)\" == \"\${head}\" ]]"
+	( cd "${stA}" && git push --quiet )
+	## Ignoring the flag on a command that commits everything would sweep in what it kept out.
+	fAssertOut     "[Err7W97] --staged is refused where the whole tree would be committed"  'staged works with pullcom, sync'  bash -c "cd '${stA}' && '${gitsby}' -q release --staged 2>&1"
+	fAssertOut     "[Err7W9D] help lists --staged"  '^  --staged \.+: Commit only what is staged'  "${gitsby}" --help
+
+	## origin changes the file with an unstaged edit here: no stash, so git would refuse the pull.
+	( cd "${stB}" && git pull --quiet --ff-only && echo x2 > f2 && git add f2 && git commit --quiet -m "f2 from B" && git push --quiet )
+	( cd "${stA}" && echo a3 > f1 && git add f1 )
+	stHead="$(git -C "${stA}" rev-parse HEAD)"
+	fAssertOut     "[Err7W9J] a pull that would overwrite an unstaged edit is refused"  "'git merge --ff-only origin/feat' would overwrite edits here"  bash -c "cd '${stA}' && '${gitsby}' -q pullcom --staged 2>&1"
+	fAssertNotOut  "[Err7W9P] before the plan"  'Going to do'  bash -c "cd '${stA}' && '${gitsby}' -q pullcom --staged 2>&1"
+	fAssert        "[Err7W9U] with the tree and branch as they were" \
+		bash -c "cd '${stA}' && [[ \"\$(git status --porcelain | tr '\n' ,)\" == 'M  f1, M f2,?? untracked,' && \"\$(git rev-parse HEAD)\" == '${stHead}' ]]"
+	( cd "${stA}" && git checkout --quiet -- f2 && git merge --quiet --ff-only origin/feat )
+
+	## br switch commits the staged file on the branch it leaves, and carries the rest over.
+	fAssert        "[Err7W9a] br switch --staged commits the staged file and carries the rest" \
+		bash -c "cd '${stA}' && '${gitsby}' -q br switch dev --staged && [[ \"\$(git branch --show-current)\" == dev && \"\$(git status --porcelain | tr '\n' ,)\" == '?? untracked,' && \"\$(git show origin/feat:f1)\" == a3 ]]"
+	## A checkout that would overwrite an edit left behind is refused before anything runs.
+	( cd "${stB}" && git checkout --quiet dev && echo dv > l1 && git add l1 && git commit --quiet -m l1 && git push --quiet
+	  git checkout --quiet feat && git pull --quiet --ff-only && echo s > s1 && git add s1 && echo mine > l1 )
+	fAssertOut     "[Err7W9h] a checkout that would overwrite a file left behind is refused"  "'git checkout dev' would overwrite edits here"  bash -c "cd '${stB}' && '${gitsby}' -q br switch dev --staged 2>&1"
+	fAssert        "[Err7W9n] with nothing committed or pushed" \
+		bash -c "cd '${stB}' && [[ \"\$(git branch --show-current)\" == feat && \"\$(git rev-parse HEAD)\" == \"\$(git rev-parse origin/feat)\" && \"\$(git status --porcelain | tr '\n' ,)\" == 'A  s1,?? l1,' ]]"
+
+	## br create from dev commits nothing and carries the tree, and the pull on the way keeps what
+	## is staged. dev moves on origin so that pull has something to bring in.
+	( cd "${stB}" && git stash --quiet --include-untracked && git checkout --quiet dev && git merge --quiet --ff-only origin/dev && echo f9 > far2 && git add far2 && git commit --quiet -m far2 && git push --quiet )
+	( cd "${stA}" && echo b9 > f2 && git add f2
+	  "${gitsby}" -q br create feat4 --staged > "${stOut}" 2>&1 ) || true
+	fAssertNotPlan "[Err7W9t] br create from dev --staged pulls with no --autostash"  'autostash'  cat "${stOut}"
+	fAssert        "[Err7W9z] and the staged edit is still staged on the new branch" \
+		bash -c "cd '${stA}' && [[ \"\$(git branch --show-current)\" == feat4 && \"\$(git status --porcelain | tr '\n' ,)\" == 'M  f2,?? untracked,' && -f far2 ]]"
+
+	## br merge commits the staged part, merges it, and carries the rest to dev.
+	fAssert        "[Err7WA4] br merge --staged merges the staged edit and carries the rest" \
+		bash -c "cd '${stA}' && '${gitsby}' -q br merge --staged 'merge feat4' && [[ \"\$(git branch --show-current)\" == dev && \"\$(git show dev:f2)\" == b9 && \"\$(git log -1 --format=%s)\" == 'merge feat4' && \"\$(git status --porcelain | tr '\n' ,)\" == '?? untracked,' ]]"
+	fAssert        "[Err7WAA] and publishes dev" \
+		bash -c "cd '${stA}' && [[ \"\$(git rev-parse dev)\" == \"\$(git rev-parse origin/dev)\" ]]"
+}
+
 fRunSuite(){
 	fEcho_Clean "suite: ${1} (${gitsby})"
 
@@ -926,6 +1000,7 @@ fRunSuite(){
 	fAssertPlan "[Erl2Vv4] a name a tag also answers to is spelled out further"  '^ +git merge --ff-only --autostash remotes/origin/far \*$'  bash -c "cd '${nameA}' && '${gitsby}' -q -NoFetch pullcom"
 	fAssert     "[Erl2VvI] and the step that runs is the line the plan showed"  fPlanRan '^ +git merge --ff-only'  bash -c "cd '${nameA}' && '${gitsby}' -q pullcom"
 	fAssert     "[Erl2eIe] and it brings in origin's commit"  bash -c "cd '${nameA}' && [[ -f g.txt ]]"
+	fStagedChecks "$1"
 
 	## A command that still means something locally runs offline and says what it skipped; a
 	## command that exists to publish refuses up front, before the plan promises a push.
@@ -6411,3 +6486,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261004 JC: A failed mktemp stops the suite before the exit trap is set, and the trap removes only the scratch folder the suite made and marked. It removed the folder the suite was started from before. Run for real with TMPDIR a file, from a folder with a canary in it, and no script here changes into a mktemp result unchecked. The run fails against the tree before it. 1417 -> 1444.
 ##		- 20261004 JC: The probe checks prove the probes overlap from the order the fake round trips start and end in, not from a time limit. Each waits for the others to start, so the checks hold on a slow box, and fail on a build that asks in turn. 1444 -> 1444.
 ##		- 20261004 JC: Prints through fEcho_Clean, like the other pipeline scripts. Three checks that read cicd.bash look for its new camelCase names. Every expansion braced, and shellcheck enforces it.
+##		- 20261005 JC: --staged commits only the staged file, on top of origin's commit, with the rest of the tree left as it was. Its pulls have no --autostash, and the staged edit stays staged through br create from dev. A pull or a checkout that would overwrite an edit left behind is refused before the plan, with nothing committed. br switch and br merge carry the rest over. Refused where the whole tree is committed. 1453 -> 1471.
