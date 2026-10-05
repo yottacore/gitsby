@@ -33,34 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- macOS release gets a universal binary
-	- ID: 2026100313491873
-	- Type: Enhancement
-	- Status: Waiting for testing
-	- Needs external testing: The first release that publishes `gitsby-darwin-universal`. Both installers on a real Mac download it, and it runs. The installers can only fetch from a release. An Apple silicon Mac is still untested.
-	- Priority [Feature]: Avg
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Related IDs: 2026100312571262
-	- Requirements  [Feature]:
-		- MacOS gets a universal binary for both amd64 and ARM.
-	- Notes:
-		- Dogfood already builds one with `macho-universal.bash`. Release assets still publish `darwin/amd64` and `darwin/arm64` apart.
-	- Decisions:
-		- It replaces the two `darwin/amd64` and `darwin/arm64` assets, rather than sitting beside them (2026-10-03).
-		- Published as `gitsby-darwin-universal`. On a Mac, `--arch` is noted and changes nothing.
-	- Progress log:
-		- Done: the release builds both Mac CPUs and joins them with `macho-universal.bash`, as dogfood does. Both installers ask any Mac for the one file. The release proof checks it against `SHA256SUMS` from Linux, where it can't run. README says how to rebuild it, and design.md has the decision.
-		- Verified: release.bash's own cross-build, run twice from an empty build cache each time, wrote the same `SHA256SUMS` over seven assets, with no per-CPU Mac file left beside them. `file` reads the Mac one as a universal binary holding both builds.
-		- Verified: a release dry run, the gate, and the full test.bash, 1337 passed.
-		- Verified: 9 new checks pass, and all 9 fail on the tree before.
-		- Note: the Go installer can't install v2.1.0 on any platform, before or after this. That release publishes the `gitsby` and `gitsby.ps1` scripts, not per-platform binaries.
-	- Branch: macuni
-	- Commit: 7c37ca9
-	- Test case: test.bash `[ErgCzfP]`, `[ErgCzfc]`, `[ErgCzfq]` (install.bash on a Mac), `[ErgDQ7N]` (install.ps1, pinned since pwsh can't fake a Mac), `[ErgCzeJ]`, `[ErgCzeW]`, `[ErgCzek]`, `[ErgCzey]`, `[ErgCzfB]` (release.bash).
-	- Swept: every `darwin` and `arm64` reader in the repo. release.bash, config.bash, both installers, the installer and release fixtures in test.bash, README, design.md and the changelog. cicd.bash dogfood already joins. Nothing in `src-go` reads asset names. `legacy/` is frozen.
-	- Verified: stage 7 on b26 (2026-10-04) passed the installer checks with stubbed downloads, `[ErgCzfP]`, `[ErgCzfc]` and `[ErgCzfq]` among them.
-
 - `--staged`: commit only what is staged, and leave the rest of the tree alone
 	- ID: 2026100512025340
 	- Type: Enhancement
@@ -98,6 +70,34 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: efe1522
 	- Test case: Go tests `[Err7CYL]`, `[Err7CYY]`, `[Err7CYm]`. test.bash `[Err7W8V]` through `[Err7WAA]`, 18 checks.
 	- Swept: every `--autostash` and `git add --all` in `src-go`. The commit and the pull in mutate.go, br create from `main` or `dev` in branchcmd.go, and both plan lines in preview.go. The file list in repo.go is for `repo create` and `repo connect`, which refuse the flag. The pulls in pr.go and release.go run on a clean tree, and those commands refuse the flag.
+
+- macOS release gets a universal binary
+	- ID: 2026100313491873
+	- Type: Enhancement
+	- Status: Waiting for testing
+	- Needs external testing: The first release that publishes `gitsby-darwin-universal`. Both installers on a real Mac download it, and it runs. The installers can only fetch from a release. An Apple silicon Mac is still untested.
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Related IDs: 2026100312571262
+	- Requirements  [Feature]:
+		- MacOS gets a universal binary for both amd64 and ARM.
+	- Notes:
+		- Dogfood already builds one with `macho-universal.bash`. Release assets still publish `darwin/amd64` and `darwin/arm64` apart.
+	- Decisions:
+		- It replaces the two `darwin/amd64` and `darwin/arm64` assets, rather than sitting beside them (2026-10-03).
+		- Published as `gitsby-darwin-universal`. On a Mac, `--arch` is noted and changes nothing.
+	- Progress log:
+		- Done: the release builds both Mac CPUs and joins them with `macho-universal.bash`, as dogfood does. Both installers ask any Mac for the one file. The release proof checks it against `SHA256SUMS` from Linux, where it can't run. README says how to rebuild it, and design.md has the decision.
+		- Verified: release.bash's own cross-build, run twice from an empty build cache each time, wrote the same `SHA256SUMS` over seven assets, with no per-CPU Mac file left beside them. `file` reads the Mac one as a universal binary holding both builds.
+		- Verified: a release dry run, the gate, and the full test.bash, 1337 passed.
+		- Verified: 9 new checks pass, and all 9 fail on the tree before.
+		- Note: the Go installer can't install v2.1.0 on any platform, before or after this. That release publishes the `gitsby` and `gitsby.ps1` scripts, not per-platform binaries.
+	- Branch: macuni
+	- Commit: 7c37ca9
+	- Test case: test.bash `[ErgCzfP]`, `[ErgCzfc]`, `[ErgCzfq]` (install.bash on a Mac), `[ErgDQ7N]` (install.ps1, pinned since pwsh can't fake a Mac), `[ErgCzeJ]`, `[ErgCzeW]`, `[ErgCzek]`, `[ErgCzey]`, `[ErgCzfB]` (release.bash).
+	- Swept: every `darwin` and `arm64` reader in the repo. release.bash, config.bash, both installers, the installer and release fixtures in test.bash, README, design.md and the changelog. cicd.bash dogfood already joins. Nothing in `src-go` reads asset names. `legacy/` is frozen.
+	- Verified: stage 7 on b26 (2026-10-04) passed the installer checks with stubbed downloads, `[ErgCzfP]`, `[ErgCzfc]` and `[ErgCzfq]` among them.
 
 - Run the windows/arm64 build somewhere
 	- ID: 2026100507345200
@@ -1327,6 +1327,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- shcl plans the `/v3` path for its 3.0.0 cut, so nothing to report there.
 	- Note: blocked. Checked 2026-09-28: shcl has no 3.0 tag yet, and its `dev` go.mod still says `/v2`.
 	- Note: moved to the cut candidate on 2026-10-01. A line the file couldn't read is now kept through an edit, and a double-quoted path with a stray escape is listed instead of read with a newline in it. Still `/v2`.
+	- Note: checked 2026-10-05, still no 3.0 tag, and `dev` go.mod still says `/v2`.
 	- At the move, read the changelog for format breaks since the beta, and for any API that backs up or converts a file itself. The converter from item 2026100312145843 must not race it.
 
 ### Done
