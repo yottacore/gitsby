@@ -33,10 +33,38 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- macOS release gets a universal binary
+	- ID: 2026100313491873
+	- Type: Enhancement
+	- Status: Waiting for testing
+	- Needs external testing: The first release that publishes `gitsby-darwin-universal`. Both installers on a real Mac download it, and it runs. The installers can only fetch from a release. An Apple silicon Mac is still untested.
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Related IDs: 2026100312571262
+	- Requirements  [Feature]:
+		- MacOS gets a universal binary for both amd64 and ARM.
+	- Notes:
+		- Dogfood already builds one with `macho-universal.bash`. Release assets still publish `darwin/amd64` and `darwin/arm64` apart.
+	- Decisions:
+		- It replaces the two `darwin/amd64` and `darwin/arm64` assets, rather than sitting beside them (2026-10-03).
+		- Published as `gitsby-darwin-universal`. On a Mac, `--arch` is noted and changes nothing.
+	- Progress log:
+		- Done: the release builds both Mac CPUs and joins them with `macho-universal.bash`, as dogfood does. Both installers ask any Mac for the one file. The release proof checks it against `SHA256SUMS` from Linux, where it can't run. README says how to rebuild it, and design.md has the decision.
+		- Verified: release.bash's own cross-build, run twice from an empty build cache each time, wrote the same `SHA256SUMS` over seven assets, with no per-CPU Mac file left beside them. `file` reads the Mac one as a universal binary holding both builds.
+		- Verified: a release dry run, the gate, and the full test.bash, 1337 passed.
+		- Verified: 9 new checks pass, and all 9 fail on the tree before.
+		- Note: the Go installer can't install v2.1.0 on any platform, before or after this. That release publishes the `gitsby` and `gitsby.ps1` scripts, not per-platform binaries.
+	- Branch: macuni
+	- Commit: 7c37ca9
+	- Test case: test.bash `[ErgCzfP]`, `[ErgCzfc]`, `[ErgCzfq]` (install.bash on a Mac), `[ErgDQ7N]` (install.ps1, pinned since pwsh can't fake a Mac), `[ErgCzeJ]`, `[ErgCzeW]`, `[ErgCzek]`, `[ErgCzey]`, `[ErgCzfB]` (release.bash).
+	- Swept: every `darwin` and `arm64` reader in the repo. release.bash, config.bash, both installers, the installer and release fixtures in test.bash, README, design.md and the changelog. cicd.bash dogfood already joins. Nothing in `src-go` reads asset names. `legacy/` is frozen.
+	- Verified: stage 7 on b26 (2026-10-04) passed the installer checks with stubbed downloads, `[ErgCzfP]`, `[ErgCzfc]` and `[ErgCzfq]` among them.
+
 - Code Review 20261003 enhancement 2: Network probes run one after another
 	- ID: 2026100313123988
 	- Type: Enhancement
-	- Status: Waiting on signoff
+	- Status: Done
 	- Priority [Feature]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -63,11 +91,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: cc71200
 	- Test case: test.bash `[ErkSC4L]`, `[ErkSctG]`, `[ErkSC4Z]`, `[ErkSC4m]` (regression guard), `[Er1LxSk]`; Go `[ErkSC3h]`, `[ErkSC3v]`, `[ErkSC48]`, `[ErkTEpz]`.
 	- Verified: test.bash 1408/0, `go test ./...`, fuzz.bash 301/0 and parity 29/0 on merged gover, 2026-10-04.
+	- Acceptance signoff: Self-closed: the goroutines have the measured reason the style guide asks for, output is unchanged, and the checks fail before and pass after.
+	- Closed: 20261005-072140
 
 - Release notes group the downloads in a table
 	- ID: 2026100415020736
 	- Type: Enhancement
-	- Status: Waiting on signoff
+	- Status: Done
 	- Priority [Feature]: Avg
 	- Opened: 2026-10-04
 	- Opened by: jim-collier
@@ -97,11 +127,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Note: the installers read `SHA256SUMS` and the release list, never the body, so they are untouched.
 	- Question: a table cell can't span two columns, so the macOS universal file is listed under both amd64 and arm64. Is that the wanted reading of "its row doesn't split by CPU"?
 		- Answer: yes, both columns. Moved to Decisions.
+	- Acceptance signoff: Self-closed: its one question is answered, and the checks fail before and pass after. The first real cut runs it against GitHub, and phase 3 warns if the table and the published files disagree.
+	- Closed: 20261005-072140
 
 - The plan shows `@{u}` where it could name the branch
 	- ID: 2026100316463300
 	- Type: Enhancement
-	- Status: Waiting on signoff
+	- Status: Done
 	- Priority [Feature]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -126,34 +158,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: spawncut
 	- Commit: 4a1b65c
 	- Test case: test.bash [Erl2Vub], [Erl2Vup], [Erl2Vv4], [Erl2VvI] and [Erl2eIe]. Go `TestPullArgsFor` [ErgA5KD] and `TestUpstreamNames` [Erl1x3E].
-
-- macOS release gets a universal binary
-	- ID: 2026100313491873
-	- Type: Enhancement
-	- Status: Waiting for testing
-	- Needs external testing: The first release that publishes `gitsby-darwin-universal`. Both installers on a real Mac download it, and it runs. The installers can only fetch from a release. An Apple silicon Mac is still untested.
-	- Priority [Feature]: Avg
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Related IDs: 2026100312571262
-	- Requirements  [Feature]:
-		- MacOS gets a universal binary for both amd64 and ARM.
-	- Notes:
-		- Dogfood already builds one with `macho-universal.bash`. Release assets still publish `darwin/amd64` and `darwin/arm64` apart.
-	- Decisions:
-		- It replaces the two `darwin/amd64` and `darwin/arm64` assets, rather than sitting beside them (2026-10-03).
-		- Published as `gitsby-darwin-universal`. On a Mac, `--arch` is noted and changes nothing.
-	- Progress log:
-		- Done: the release builds both Mac CPUs and joins them with `macho-universal.bash`, as dogfood does. Both installers ask any Mac for the one file. The release proof checks it against `SHA256SUMS` from Linux, where it can't run. README says how to rebuild it, and design.md has the decision.
-		- Verified: release.bash's own cross-build, run twice from an empty build cache each time, wrote the same `SHA256SUMS` over seven assets, with no per-CPU Mac file left beside them. `file` reads the Mac one as a universal binary holding both builds.
-		- Verified: a release dry run, the gate, and the full test.bash, 1337 passed.
-		- Verified: 9 new checks pass, and all 9 fail on the tree before.
-		- Note: the Go installer can't install v2.1.0 on any platform, before or after this. That release publishes the `gitsby` and `gitsby.ps1` scripts, not per-platform binaries.
-	- Branch: macuni
-	- Commit: 7c37ca9
-	- Test case: test.bash `[ErgCzfP]`, `[ErgCzfc]`, `[ErgCzfq]` (install.bash on a Mac), `[ErgDQ7N]` (install.ps1, pinned since pwsh can't fake a Mac), `[ErgCzeJ]`, `[ErgCzeW]`, `[ErgCzek]`, `[ErgCzey]`, `[ErgCzfB]` (release.bash).
-	- Swept: every `darwin` and `arm64` reader in the repo. release.bash, config.bash, both installers, the installer and release fixtures in test.bash, README, design.md and the changelog. cicd.bash dogfood already joins. Nothing in `src-go` reads asset names. `legacy/` is frozen.
-	- Verified: stage 7 on b26 (2026-10-04) passed the installer checks with stubbed downloads, `[ErgCzfP]`, `[ErgCzfc]` and `[ErgCzfq]` among them.
+	- Acceptance signoff: Self-closed: the rule was set by hand on 2026-10-03, and the checks fail before and pass after.
+	- Closed: 20261005-072140
 
 - test.bash removes the folder it was started from when mktemp fails
 	- ID: 2026100415391365
