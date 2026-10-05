@@ -5059,8 +5059,8 @@ EOF
 		## Tied to the gate having passed: a run that did nothing at all adds nothing either.
 		fAssert "[EpsVDHu] and nothing the full run adds" \
 			bash -c "grep -q 'gate: passed' '${gateOut}' && ! grep -qE '^go build|^test\.bash|^fuzz\.bash|^parity\.bash|^spawn-count\.bash|^n8git_backup-and-publish|^govulncheck|-fuzz' '${gateCalls}' && ! grep -q 'Remote sync' '${gateOut}' && [[ ! -e '${gateDir}/cicd/artifacts/lint' ]]"
-		fAssert "[ErkbDTZ] and not the Mac and Windows tests" \
-			bash -c "grep -q 'gate: passed' '${gateOut}' && ! grep -qE '^(remote-tests|macho-universal)\.bash' '${gateCalls}' && ! grep -q 'Mac + Windows' '${gateOut}'"
+		fAssert "[ErkbDTZ] and not the remote tests" \
+			bash -c "grep -q 'gate: passed' '${gateOut}' && ! grep -qE '^(remote-tests|macho-universal)\.bash' '${gateCalls}' && ! grep -q 'Remote tests' '${gateOut}'"
 		local gateTool
 		for gateTool in shellcheck markdownlint python3 pwsh gofmt go-vet staticcheck golangci-lint backlog-check go-test; do
 			: > "${gateFail}/${gateTool}"
@@ -5245,15 +5245,15 @@ EOF
 		## build for each Unix box's target.
 		fGateOnly remote
 		fAssert "[ErkbDSi] stage 7 builds the universal Mac binary and the Unix ones, hands them to the remote harness and removes them" \
-			bash -c "[[ '${gateRc}' == 0 && ! -e '${gateDir}/src-go/gitsby-darwin-universal' && ! -e '${gateDir}/src-go/gitsby-freebsd-amd64' && ! -e '${gateDir}/src-go/gitsby-linux-arm64' ]] && grep -qxF '[ 7/8  Mac + Windows tests ]' '${gateOut}' && grep -qF 'macho-universal.bash ${gateDir}/src-go/gitsby-darwin-universal ' '${gateCalls}' && grep -qxF 'remote-tests.bash --mac-bin ${gateDir}/src-go/gitsby-darwin-universal --bin freebsd/amd64 ${gateDir}/src-go/gitsby-freebsd-amd64 --bin linux/arm64 ${gateDir}/src-go/gitsby-linux-arm64' '${gateCalls}'"
+			bash -c "[[ '${gateRc}' == 0 && ! -e '${gateDir}/src-go/gitsby-darwin-universal' && ! -e '${gateDir}/src-go/gitsby-freebsd-amd64' && ! -e '${gateDir}/src-go/gitsby-linux-arm64' ]] && grep -qxF '[ 7/8  Remote tests ]' '${gateOut}' && grep -qF 'macho-universal.bash ${gateDir}/src-go/gitsby-darwin-universal ' '${gateCalls}' && grep -qxF 'remote-tests.bash --mac-bin ${gateDir}/src-go/gitsby-darwin-universal --bin freebsd/amd64 ${gateDir}/src-go/gitsby-freebsd-amd64 --bin linux/arm64 ${gateDir}/src-go/gitsby-linux-arm64' '${gateCalls}'"
 		fGateOnly remote --quick
 		fAssert "[ErkbDT4] and --quick leaves it out, saying so" \
-			bash -c "[[ '${gateRc}' == 0 ]] && ! grep -qE '^(remote-tests|macho-universal)\.bash' '${gateCalls}' && grep -qxF 'Mac + Windows tests skipped (--quick)' '${gateOut}'"
+			bash -c "[[ '${gateRc}' == 0 ]] && ! grep -qE '^(remote-tests|macho-universal)\.bash' '${gateCalls}' && grep -qxF 'Remote tests skipped (--quick)' '${gateOut}'"
 		: > "${gateFail}/remote-tests"
 		fGateOnly remote
 		rm -f -- "${gateFail:?}/remote-tests"
 		fAssert "[ErkbDTL] and a failure there stops the run, with the build still removed" \
-			bash -c "[[ '${gateRc}' == 1 && ! -e '${gateDir}/src-go/gitsby-darwin-universal' ]] && grep -qF 'Mac or Windows tests failed' '${gateOut}'"
+			bash -c "[[ '${gateRc}' == 1 && ! -e '${gateDir}/src-go/gitsby-darwin-universal' ]] && grep -qF 'Remote tests failed' '${gateOut}'"
 		fGateOnly publish -m 'hands off'
 		fAssert "[Er1LxTe] -m hands its message to the publisher"  fGateRanCalling 0 '^n8git_backup-and-publish --quiet -m hands off$'
 		fGateOnly publish --message='hands off'

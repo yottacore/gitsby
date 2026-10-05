@@ -28,7 +28,7 @@
 ##	   4. backwards compatibility (cicd/parity.bash: this build vs the frozen v2.1.0 one)
 ##	   5. dogfood (cross-build every target and install each to its first existing dir)
 ##	   6. demo gif (fake-terminal render; skipped under --quick)
-##	   7. Mac + Windows tests (cicd/remote-tests.bash, over ssh on the Mac, the Unix boxes and whichever Windows box is free; skipped under --quick)
+##	   7. Remote tests (cicd/remote-tests.bash, over ssh on the Mac, the Unix boxes and whichever Windows box is free; skipped under --quick)
 ##	   8. backup + publish to git (runs from repo root)
 ##	- Syntax:
 ##	  cicd/cicd.bash [options]
@@ -44,9 +44,9 @@
 ##	   --no-parity         skip the backwards-compatibility comparison
 ##	   --no-dogfood        skip installing the build(s) locally
 ##	   --no-demogif        skip regenerating the demo gif
-##	   --no-remote         skip the Mac + Windows tests
+##	   --no-remote         skip the remote tests
 ##	   --no-publish        skip the git backup + publish stage
-##	   --quick             skip the slow stages (fuzz, demo gif, Mac + Windows tests)
+##	   --quick             skip the slow stages (fuzz, demo gif, remote tests)
 ##	   --gate              fast pre-push gate: every lint check and go test; no sync, build, suites, prompt or log
 ##	   --install-hook      install the git pre-push hook that runs --gate on each commit pushed to main
 ##	   -h, --help          show this help
@@ -441,11 +441,11 @@ else
 	fEcho_Clean "Demo gif ............: ${skipNote}"
 fi
 if ((doRemote)) && [[ -f "${REMOTE_TEST_CMD[0]:-}" ]]; then
-	fEcho_Clean "Mac + Windows tests .: ${REMOTE_TEST_CMD[*]} (${REMOTE_MAC_HOSTS[*]%%:*} ${REMOTE_UNIX_HOSTS[*]%%:*}; first free of ${REMOTE_WINDOWS_HOSTS[*]%%:*})"
+	fEcho_Clean "Remote tests ........: ${REMOTE_TEST_CMD[*]} (${REMOTE_MAC_HOSTS[*]%%:*} ${REMOTE_UNIX_HOSTS[*]%%:*}; first free of ${REMOTE_WINDOWS_HOSTS[*]%%:*})"
 elif ((doRemote)); then
-	fEcho_Clean "Mac + Windows tests .: (no harness yet: ${REMOTE_TEST_CMD[0]:-cicd/remote-tests.bash})"
+	fEcho_Clean "Remote tests ........: (no harness yet: ${REMOTE_TEST_CMD[0]:-cicd/remote-tests.bash})"
 else
-	fEcho_Clean "Mac + Windows tests .: ${skipNote}"
+	fEcho_Clean "Remote tests ........: ${skipNote}"
 fi
 if ((${#GIT_PUBLISH[@]} == 0)); then
 	fEcho_Clean "Publish (last) ......: (disabled)"
@@ -717,9 +717,9 @@ fi
 ## suite on the Mac and the Unix boxes against the build for each. Nothing else runs the tests on
 ## those platforms, and Windows-only breaks went unnoticed for weeks before this. A box that is off, unreachable or taken by someone else
 ## is skipped with a note rather than waited for. Slow, so skipped under --quick.
-fSection "7/8  Mac + Windows tests"
+fSection "7/8  Remote tests"
 if ((! doRemote)); then
-	fEcho_Clean "Mac + Windows tests skipped${quickNote}"
+	fEcho_Clean "Remote tests skipped${quickNote}"
 elif [[ ! -f "${REMOTE_TEST_CMD[0]:-}" ]]; then
 	fEcho_Clean "no remote test harness (${REMOTE_TEST_CMD[0]:-cicd/remote-tests.bash})"
 else
@@ -736,8 +736,8 @@ else
 	remoteRc=0
 	"${REMOTE_TEST_CMD[@]}" "${remoteArgs[@]}" || remoteRc=$?
 	rm -f -- "${remoteBins[@]}"
-	((remoteRc == 0)) || fDie "Mac or Windows tests failed (see above)"
-	fEcho "OK: Mac + Windows tests"
+	((remoteRc == 0)) || fDie "Remote tests failed (see above)"
+	fEcho "OK: Remote tests"
 fi
 
 ## Stage 8: backup + publish.
