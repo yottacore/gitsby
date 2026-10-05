@@ -33,73 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- Run the tests on a Mac and a Windows box as part of the pipeline
-	- ID: 2026100312332924
-	- Type: Enhancement
-	- Status: Waiting on signoff
-	- Needs external testing: None left. It ran on b26 and vm925w on 2026-10-04. b29w runs only when vm925w is taken.
-	- Priority [Feature]: Avg
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Related IDs: 2026100409453279, 2026100409453281, 2026100409453283
-	- Target OS: macOS, Windows
-	- Requirements  [Feature]:
-		- macOS is still built every run, either here or on b26.
-		- When b26 is up and not reserved, the pipeline runs the tests on it, against the universal dogfood build.
-		- It does the same on a Windows box, vm925w or b29w, against the Windows dogfood build.
-		- A box that is off, or reserved by another session, is skipped, and the run says so. It does not fail the run, and it does not wait in line.
-		- Each box is taken through the host lock first, the way the other projects do.
-			- The lock's `wrap <host> --wait 0 -- <command>` takes a free box and holds it only while the command runs.
-			- The lock script is not in this repo. Where it is missing, the stage is skipped with a note.
-	- Decisions:
-		- Not built or tested on either box yet. This item only files the work.
-			- Since 2026-10-04 it is built, and has run on both boxes.
-		- 2026-10-04: What runs. Both boxes run the Go tests, cross-built here for darwin/amd64 and windows/amd64. b26 also runs test.bash against the universal dogfood build, under Homebrew's bash (`/usr/local/bin/bash`, 5.2), since `/bin/bash` there is 3.2. It runs in a copy of the tree kept in the stage's own folder under the remote home. Fuzz and parity are not run remotely.
-			- So the Windows box gets the Go tests only, not a run against the Windows dogfood build. Neither box has a bash to run test.bash with.
-		- 2026-10-04: The stage runs on full runs only. `--quick` and `--gate` skip it.
-		- 2026-10-04: Locking. The lock script knows only vm925w and b29w by default. The stage adds b26 to the lock's host list in its own environment, and takes each box with `wrap <host> --wait 0 -- <command>`. A box that is off, unreachable, or held by another session is skipped with a note, and never fails the run or waits. On Windows either vm925w or b29w will do, whichever is free. With no lock script the stage is skipped with a note.
-		- 2026-10-04: The lock script is outside this repo, and is not changed for this.
-	- Progress log:
-		- The macOS build is already here. A release builds `darwin/amd64` and `darwin/arm64`.
-		- Note: since item 2026100313491873, a release publishes one universal macOS file in place of those two.
-		- b26 is an Intel Mac, so testing there needs `darwin/amd64`. Dogfood builds it since item 2026100312571262.
-		- The pipeline and the Go tests were made to pass on macOS on 2026-10-01 (def75ab), run by hand. Nothing runs them there since.
-		- The Go tests can be cross-built with `go test -c`, so neither box would need Go installed. test.bash on b26 would need Homebrew's bash, since the default there is 3.2.
-		- No stage runs the Go tests on Windows today. That is how `TestCanonPath` and `TestDisplayPath` broke there unnoticed.
-		- Done: stage 7, "Mac + Windows tests", in `cicd/remote-tests.bash`. Publish is stage 8. How it works is on the child item.
-		- Verified: the stage run alone on 2026-10-04, on b26 and vm925w. b26's Go tests all pass, and its test.bash run passed 1209 and failed 5. vm925w's Go tests failed one. Those come from three bugs, filed as their own items. vm925w was free, so b29w was not tried.
-		- Verified: `TestCanonPath` passes on vm925w. `TestDisplayPath` no longer exists, since `displayPath` was removed on 2026-09-16.
-		- Note: until those three bugs are fixed, a full run stops at stage 7.
-	- Branch: remtest
-	- Commit: 5af99d6
-	- Test case: test.bash `[ErkbDSi]` to `[ErkbDTn]` for the stage in cicd.bash, and `[ErkbDU2]` to `[Erkbdua]` for the harness, 22 in all.
-
-- Build the stage
-	- ID: 2026100313002135
-	- Type: Task
-	- Status: Waiting on signoff
-	- Priority [Feature]: Avg
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Parent ID: 2026100312332924
-	- Requirements  [Feature]:
-		- Write the pipeline stage the parent item describes.
-		- It is not done until it has run on b26 and on a Windows box.
-	- Progress log:
-		- Done: `cicd/remote-tests.bash` asks each box over ssh first, then builds the Go tests for the platforms that answered. Each box is taken through the lock only for its own run.
-		- Done: the Mac gets a copy of the tree with the git dir, fetches the Go modules, then runs the Go tests and test.bash. The suite reads the history, and its own builds run with downloads blocked. The copy sits in `~/gitsby-remote-tests`, marked as the stage's, and a folder of that name without the mark is left alone.
-		- Done: Windows gets the module and its test binary in a folder under `%TEMP%` made for the run. It is removed after, and only when the run made it.
-		- Done: cicd.bash builds the universal Mac binary with the function dogfood uses, and hands it to the harness. Each Go test prints a line with its ID, from an include stage 2 now shares. `--no-remote` skips the stage.
-		- Note: b26's shell startup file prints on every ssh command, which breaks rsync, scp and sftp. The copy goes as a tar stream, and output is read from a marker line on.
-		- Note: the lock is asked as a plain process. Asked as the calling session, a miss keeps the session in line, and the box is set aside for it for up to five minutes.
-		- Note: the copy is about 120 MB with the git dir, sent whole each run. That takes a few seconds on the LAN. The Mac half of a run takes about seven minutes, most of it test.bash.
-		- Verified: test.bash 1398/0 on b23, with the 22 new checks.
-		- Verified: eight faults put into a copy of the harness, one at a time, each turned its check red. The session id handed to the lock, no `--wait 0`, no skip without a lock script, no mark check, removing a Windows folder the run didn't make, no marker filter, every free Windows box run, and a dropped box counted as failed.
-		- Verified: with `--quick` no longer skipping stage 7 and the Mac build left behind in cicd.bash, test.bash failed exactly `[ErkbDSi]`, `[ErkbDT4]` and `[ErkbDTL]`. The gate (lint and Go tests) passes.
-	- Branch: remtest
-	- Commit: 5af99d6
-	- Test case: test.bash `[ErkbDSi]` to `[Erkbdua]`, as on the parent.
-
 - Code Review 20261003 enhancement 2: Network probes run one after another
 	- ID: 2026100313123988
 	- Type: Enhancement
@@ -165,60 +98,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Question: a table cell can't span two columns, so the macOS universal file is listed under both amd64 and arm64. Is that the wanted reading of "its row doesn't split by CPU"?
 		- Answer: yes, both columns. Moved to Decisions.
 
-- Stage 7 names b26 as a Windows host to the lock
-	- ID: 2026100410340781
-	- Type: Bug
-	- Status: Waiting on signoff
-	- Priority|Severity [Bug]: Low
-	- Opened: 20261004-103407
-	- Opened by: jim-collier
-	- Related IDs: 2026100312332924
-	- Incorrect behavior [Bug]: remote-tests.bash puts every host, b26 included, in the lock's Windows host list. The lock now knows b26 as a host of its own through its other-hosts list, so b26 is listed twice and joins the Windows boxes for `any` and `all`.
-	- Expected behavior [Bug]: Mac hosts go in the lock's other-hosts list and Windows hosts in its Windows list.
-	- Reproduced [Bug]: Yes, 2026-10-04. The lock's `hosts` lists b26 twice under the stage's setting. Nothing breaks today, since the stage names each host.
-	- Origin: remote-tests.bash from item 2026100312332924. The lock gained its other-hosts list the same day. Confirmed.
-	- Estimated effort: Low
-	- Needs external testing: Optional. A stage 7 run on b26 and a Windows box under the real lock.
-	- Actual cause [Bug]: The stage built one host list from the Mac and Windows settings and passed it as the lock's Windows list.
-	- Actual fix [Bug]: The Windows list is the Windows hosts only. The other-hosts list is the lock's own, as its `hosts` reports it, plus any Mac not already in it, so the lock's status still lists boxes like vmFreeBSD while the stage runs. An older lock with no other-hosts list refuses the Mac by name, and the stage skips it with that note.
-	- Progress log:
-		- Verified: against the real lock, read only. Under the old setting `hosts` gives `b26 vm925w b29w b26 vmDebARM64 vmFreeBSD`. Under the new one it gives `vm925w b29w b26 vmDebARM64 vmFreeBSD`.
-		- Verified: on a private lock directory with an empty other-hosts list, `wrap b26` exits 2 with "unknown host", which the stage reports as a skip.
-		- Verified: test.bash 1401/0. With the old remote-tests.bash, `[ErkbDUa]` and `[ErkqZtP]` fail, 1399/2.
-		- Note: `[ErkbDUa]` keeps its ID. It used to require b26 in the Windows list, and now requires it once, in the other list.
-	- Swept: every reader of the two host settings. cicd.bash only prints them, and config.bash only sets them. The lock's prefix is still taken from its file name.
-	- Branch: lockhosts
-	- Commit: 5a45371
-	- Test case: test.bash `[ErkbDUa]` (lists passed to the lock) and `[ErkqZtP]` (older lock with no other-hosts list).
-
-- `TestLockAccountsFile` fails on FreeBSD
-	- ID: 2026100416430451
-	- Type: Bug
-	- Status: Waiting on signoff
-	- Priority|Severity [Bug]: Low
-	- Opened: 20261004-164304
-	- Opened by: jim-collier
-	- Related IDs: 2026100413264100
-	- Target OS: FreeBSD
-	- Test environment: vmFreeBSD, FreeBSD 15.1 amd64, UFS.
-	- Incorrect behavior [Bug]: "unlock removed a lock it didn't make". The test removes the lock, writes a new one at the same path, and unlock removes that one too.
-	- Expected behavior [Bug]: unlock leaves a lock file it did not make.
-	- Reproduced [Bug]: Yes, 2026-10-04, in stage 7 on vmFreeBSD. It passes on Linux, macOS and Windows.
-	- Possible cause [Bug]: unlock tells its own lock by `os.SameFile`, which compares device and inode. UFS hands the freed inode number straight to the new file, so the new lock looks like the old one. Not checked.
-	- Actual cause [Bug]: As above, checked on vmFreeBSD 2026-10-04. A file removed and made again at the same path got the same inode number 20 times out of 20 on UFS.
-	- Actual fix [Bug]: Each lock gets a random token written into it. Unlock removes the lock only when it still holds this run's token, so a lock another run made after ours is left alone, whatever inode it got. A lock whose token can't be written is removed at once and the run refused, the same as one that can't be made.
-	- Progress log:
-		- Verified: `TestLockAccountsFile` fails on vmFreeBSD before the fix, three runs of three, and passes after, five of five. All the Go tests pass there after the fix.
-		- Verified: `TestUnlockLeavesALockInItsInode` fails on Linux before the fix and passes after. It writes over the lock in place, so the other run's lock keeps our inode on any filesystem.
-		- Verified: the gate and `test-id.bash --check` pass. The package vets for Windows and macOS.
-		- Note: older builds leave the lock empty, so they and this one never mistake each other's locks.
-	- Swept: `os.SameFile`, `Stat_t`, `.Ino` and `ModTime` in src-go. The lock was the only file identity check. Both callers, `account set` and the old-format conversion, only `defer unlock()`, and the signature is unchanged. test.bash's `[EpxmDk1]` makes an empty lock by hand, which still blocks the create. Not run, since it waits for the full test.bash.
-	- Branch: lockid
-	- Commit: ea96f4d
-	- Test case: `TestLockAccountsFile` [EpxmDk5] on FreeBSD, and `TestUnlockLeavesALockInItsInode` [ErmLh0B] on any platform.
-	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
-	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it.
-
 - The plan shows `@{u}` where it could name the branch
 	- ID: 2026100316463300
 	- Type: Enhancement
@@ -247,39 +126,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: spawncut
 	- Commit: 4a1b65c
 	- Test case: test.bash [Erl2Vub], [Erl2Vup], [Erl2Vv4], [Erl2VvI] and [Erl2eIe]. Go `TestPullArgsFor` [ErgA5KD] and `TestUpstreamNames` [Erl1x3E].
-
-- Code Review 20261003 enhancement 7: Go code tidy
-	- ID: 2026100313130047
-	- Type: Enhancement
-	- Status: Waiting on signoff
-	- Priority [Feature]: Low
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Requirements  [Feature]:
-		- `cmdPrune` gets branch names back out of git's argv by index math. Have `leaseDeleteBatches` return them.
-		- The account ssh command, the exclusive-create writer and the push-or-set-upstream args are each built in two or three places. Make one of each.
-		- `ghState` also keeps the tea and reachability state. Rename it, and read reachability through `isOffline()` everywhere.
-		- The flat-line parse is written three times, and `[2]string` keys stand in for a named type.
-		- `contains` beside `slices.Contains`, a BOM literal beside `utf8BOM`, a GOOS test beside `isWindows()`.
-	- Origin: mostly the work since 20260909: shcl, prune leases, tea support. Confirmed by grep.
-	- Actual effort: Low
-	- Done: Each delete batch comes back with the branches it deletes, and `pruneRemote` reads them from there. The prune gate and its leases are unchanged.
-	- Done: `sshKeyCommand`, `createNew` and `pushArgs` are the one of each. `createNew` takes over from `createAccountsFile`, the conversion's `writeNew`, and the lock's own open. The lock keeps its random token.
-	- Done: `ghState` is now `remoteState`, kept on the run as `remote`. Reachability is an `offline` flag, so the zero value is online, and every reader goes through `isOffline()`.
-	- Done: The old layout is split into lines once, by `flatLines`, for the load, the conversion and its look ahead. `acctKey` names the account and field pair in both layouts.
-	- Done: `contains` is gone for `slices.Contains`, the load trims `utf8BOM`, and the lock's Windows test calls `isWindows()`.
-	- Note: The lock file is now synced before it is closed, as the other two creates already were.
-	- Note: Two Go tests follow the new names without changing what they check. `TestLeaseDeleteBatches` now also checks the branch names each batch hands back. `TestCreateAccountsFileNeverReplaces` calls `createNew`.
-	- Note: Left alone: `publishBranch` and `repo connect`'s add case always push with `-u`, so they don't ask about an upstream. The plan's push lines are display text. Every other `runtime.GOOS` passes the platform to a function so tests can set it.
-	- Swept: `grep -n 'IdentitiesOnly\|O_EXCL\|"-u", "origin"\|\.gh\.\|reachable\|\[2\]string\|contains(\|\\ufeff\|runtime.GOOS' src-go/*.go`.
-	- Verified: `go test -race ./...`, `go vet` for linux, windows, darwin and freebsd on amd64 and arm64, `cicd.bash --gate`, and spawn-count with every count the same as before. The git, gh and ssh command lines that spawn-count's runs start are the same before and after.
-	- Verified: the old and new flat readers and converters agree over about 3.3 million fuzzed inputs.
-	- Branch: gotidy
-	- Commit: 101f180, 791e19a, 546d7ad, ed08dfb, 83a8517
-	- Test case: The existing suites cover it, since nothing should change. Run: the Go tests and spawn-count. Still to run: test.bash, fuzz.bash and parity.bash.
-	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
-	- Verified: fuzz.bash 301/0, parity.bash and the spawn counts all pass on gover 2026-10-04.
-	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it.
 
 - macOS release gets a universal binary
 	- ID: 2026100313491873
@@ -536,6 +382,79 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: TestRepeatedAccountKeys, TestAccountSetFindsTheKeyInAnyPiece, and one account list check in test.bash.
 	- Closed: 2026-09-30
 
+- Run the tests on a Mac and a Windows box as part of the pipeline
+	- ID: 2026100312332924
+	- Type: Enhancement
+	- Status: Done
+	- Needs external testing: None left. It ran on b26 and vm925w on 2026-10-04. b29w runs only when vm925w is taken.
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Related IDs: 2026100409453279, 2026100409453281, 2026100409453283
+	- Target OS: macOS, Windows
+	- Requirements  [Feature]:
+		- macOS is still built every run, either here or on b26.
+		- When b26 is up and not reserved, the pipeline runs the tests on it, against the universal dogfood build.
+		- It does the same on a Windows box, vm925w or b29w, against the Windows dogfood build.
+		- A box that is off, or reserved by another session, is skipped, and the run says so. It does not fail the run, and it does not wait in line.
+		- Each box is taken through the host lock first, the way the other projects do.
+			- The lock's `wrap <host> --wait 0 -- <command>` takes a free box and holds it only while the command runs.
+			- The lock script is not in this repo. Where it is missing, the stage is skipped with a note.
+	- Decisions:
+		- Not built or tested on either box yet. This item only files the work.
+			- Since 2026-10-04 it is built, and has run on both boxes.
+		- 2026-10-04: What runs. Both boxes run the Go tests, cross-built here for darwin/amd64 and windows/amd64. b26 also runs test.bash against the universal dogfood build, under Homebrew's bash (`/usr/local/bin/bash`, 5.2), since `/bin/bash` there is 3.2. It runs in a copy of the tree kept in the stage's own folder under the remote home. Fuzz and parity are not run remotely.
+			- So the Windows box gets the Go tests only, not a run against the Windows dogfood build. Neither box has a bash to run test.bash with.
+		- 2026-10-04: The stage runs on full runs only. `--quick` and `--gate` skip it.
+		- 2026-10-04: Locking. The lock script knows only vm925w and b29w by default. The stage adds b26 to the lock's host list in its own environment, and takes each box with `wrap <host> --wait 0 -- <command>`. A box that is off, unreachable, or held by another session is skipped with a note, and never fails the run or waits. On Windows either vm925w or b29w will do, whichever is free. With no lock script the stage is skipped with a note.
+		- 2026-10-04: The lock script is outside this repo, and is not changed for this.
+	- Progress log:
+		- The macOS build is already here. A release builds `darwin/amd64` and `darwin/arm64`.
+		- Note: since item 2026100313491873, a release publishes one universal macOS file in place of those two.
+		- b26 is an Intel Mac, so testing there needs `darwin/amd64`. Dogfood builds it since item 2026100312571262.
+		- The pipeline and the Go tests were made to pass on macOS on 2026-10-01 (def75ab), run by hand. Nothing runs them there since.
+		- The Go tests can be cross-built with `go test -c`, so neither box would need Go installed. test.bash on b26 would need Homebrew's bash, since the default there is 3.2.
+		- No stage runs the Go tests on Windows today. That is how `TestCanonPath` and `TestDisplayPath` broke there unnoticed.
+		- Done: stage 7, "Mac + Windows tests", in `cicd/remote-tests.bash`. Publish is stage 8. How it works is on the child item.
+		- Verified: the stage run alone on 2026-10-04, on b26 and vm925w. b26's Go tests all pass, and its test.bash run passed 1209 and failed 5. vm925w's Go tests failed one. Those come from three bugs, filed as their own items. vm925w was free, so b29w was not tried.
+		- Verified: `TestCanonPath` passes on vm925w. `TestDisplayPath` no longer exists, since `displayPath` was removed on 2026-09-16.
+		- Note: until those three bugs are fixed, a full run stops at stage 7.
+	- Branch: remtest
+	- Commit: 5af99d6
+	- Test case: test.bash `[ErkbDSi]` to `[ErkbDTn]` for the stage in cicd.bash, and `[ErkbDU2]` to `[Erkbdua]` for the harness, 22 in all.
+	- Verified: a full pipeline run on 2026-10-05 passed on every box.
+	- Acceptance signoff: OK, 2026-10-05, after the full run.
+	- Closed: 20261005-071114
+
+- Build the stage
+	- ID: 2026100313002135
+	- Type: Task
+	- Status: Done
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Parent ID: 2026100312332924
+	- Requirements  [Feature]:
+		- Write the pipeline stage the parent item describes.
+		- It is not done until it has run on b26 and on a Windows box.
+	- Progress log:
+		- Done: `cicd/remote-tests.bash` asks each box over ssh first, then builds the Go tests for the platforms that answered. Each box is taken through the lock only for its own run.
+		- Done: the Mac gets a copy of the tree with the git dir, fetches the Go modules, then runs the Go tests and test.bash. The suite reads the history, and its own builds run with downloads blocked. The copy sits in `~/gitsby-remote-tests`, marked as the stage's, and a folder of that name without the mark is left alone.
+		- Done: Windows gets the module and its test binary in a folder under `%TEMP%` made for the run. It is removed after, and only when the run made it.
+		- Done: cicd.bash builds the universal Mac binary with the function dogfood uses, and hands it to the harness. Each Go test prints a line with its ID, from an include stage 2 now shares. `--no-remote` skips the stage.
+		- Note: b26's shell startup file prints on every ssh command, which breaks rsync, scp and sftp. The copy goes as a tar stream, and output is read from a marker line on.
+		- Note: the lock is asked as a plain process. Asked as the calling session, a miss keeps the session in line, and the box is set aside for it for up to five minutes.
+		- Note: the copy is about 120 MB with the git dir, sent whole each run. That takes a few seconds on the LAN. The Mac half of a run takes about seven minutes, most of it test.bash.
+		- Verified: test.bash 1398/0 on b23, with the 22 new checks.
+		- Verified: eight faults put into a copy of the harness, one at a time, each turned its check red. The session id handed to the lock, no `--wait 0`, no skip without a lock script, no mark check, removing a Windows folder the run didn't make, no marker filter, every free Windows box run, and a dropped box counted as failed.
+		- Verified: with `--quick` no longer skipping stage 7 and the Mac build left behind in cicd.bash, test.bash failed exactly `[ErkbDSi]`, `[ErkbDT4]` and `[ErkbDTL]`. The gate (lint and Go tests) passes.
+	- Branch: remtest
+	- Commit: 5af99d6
+	- Test case: test.bash `[ErkbDSi]` to `[Erkbdua]`, as on the parent.
+	- Verified: a full pipeline run on 2026-10-05 passed on every box.
+	- Acceptance signoff: OK, 2026-10-05, after the full run.
+	- Closed: 20261005-071114
+
 - Pipeline test for converting old SHCL settings files
 	- ID: 2026100313483664
 	- Type: Enhancement
@@ -696,6 +615,110 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: acct-files
 	- Test case: TestFragmentNames, plus two apply checks in test.bash.
 	- Closed: 2026-09-30
+
+- Run the tests on FreeBSD and on Linux arm64 in stage 7 too
+	- ID: 2026100413264100
+	- Type: Enhancement
+	- Status: Done
+	- Needs external testing: None left. b26 ran on 2026-10-04.
+	- Priority [Feature]: Avg
+	- Opened: 20261004-132641
+	- Opened by: jim-collier
+	- Related IDs: 2026100312332924, 2026100416430451, 2026100416430456
+	- Target OS: FreeBSD, Linux arm64
+	- Requirements  [Feature]:
+		- Two more test boxes share the host lock: vmFreeBSD and vmDebARM64. Both are VMs with a virtual display.
+		- Stage 7 runs the cross-built Go tests on each, against the FreeBSD amd64 and Linux arm64 builds, the same way it does on vm925w.
+		- test.bash runs there too where bash and the tools it needs are on the box.
+		- A box that is off or reserved is skipped, the same as the others.
+	- Note: FreeBSD and Linux arm64 are published targets that no test has run on yet.
+	- Decisions:
+		- 2026-10-04: Both boxes have a test user with no password: `bsdtest` on vmFreeBSD and `tester` on vmDebARM64, neither with sudo. Both also take root over ssh. Root is for setup only, such as installing what test.bash needs. The tests run as the test user.
+		- 2026-10-04: vmFreeBSD runs FreeBSD 15.1 at a static 192.168.1.119. vmDebARM64 is at 192.168.1.118. Both are libvirt VMs on b23.
+		- 2026-10-04: Both boxes are taken through the host lock by name, in its other-hosts list, like b26.
+	- Progress log:
+		- Done: stage 7 runs the Mac's flow on each Unix box in `REMOTE_UNIX_HOSTS`, as its test user. Each box gets a copy of the tree, the Go tests built for its target, and the build cicd.bash makes for that target. Targets are set per box in `REMOTE_UNIX_TARGETS`.
+		- Done: test.bash runs only where the box has bash, git and go (`REMOTE_UNIX_NEEDS`). Otherwise the box runs the Go tests and the run names what it lacks. The module fetch is skipped too.
+		- Done: cicd.bash builds `freebsd/amd64` and `linux/arm64` the way dogfood builds, hands them to the harness with `--bin`, and removes them after. The stage keeps its name, "Mac + Windows tests".
+		- Done: README and contributing.md list the new boxes.
+		- Installed on vmDebARM64 as root: Go 1.26.8 from go.dev, in `/usr/local/go`, linked from `/usr/local/bin/go` and `gofmt`. bash, git and jq were already there.
+		- Nothing installed on vmFreeBSD. bash, git, jq and Go 1.25 were already there. Go fetches the 1.26.2 toolchain go.mod names into the test user's module cache on the first run.
+		- Verified: the 8 new checks and `[ErkbDSi]` pass, and each new one fails against gover's harness. Six faults put into a copy of the harness, one at a time, each turned its check red: the Unix boxes left out of the lock's list, a missing tool ignored, the module fetch always run, no target check, one target's build sent to every box, and gover's harness. `[ErkbDSi]` fails against gover's cicd.bash and with a Unix build left behind.
+		- Verified: shellcheck, `test-id.bash --check` and the gate pass.
+		- Verified: stage 7's harness run against only the two new boxes, under the lock, 2026-10-04. vmFreeBSD: test.bash 1178/0, Go tests all pass but `TestLockAccountsFile`. vmDebARM64: Go tests all pass, test.bash 1436/1, the one being `[ErkSC4L]`. Both filed as their own bugs.
+		- Note: vmDebARM64 is an emulated arm64 CPU. Its test.bash took about 40 minutes, against about one on vmFreeBSD, so a full run is that much longer.
+	- Swept: every reader of the stage 7 settings. cicd.bash prints and builds from them, remote-tests.bash runs from them, and the test.bash fixture copies config.bash. The existing harness checks pin the Mac and Windows boxes, so their fixture empties `REMOTE_UNIX_HOSTS` and the new checks put it back.
+	- Note: `[ErkbDSi]` keeps its ID. It used to require only the Mac build in the harness call, and now requires the two Unix builds as well, all three removed after.
+	- Branch: unixrt
+	- Commit: f331e15
+	- Test case: test.bash `[Erm9Pnk]`, `[Erm9Pnx]`, `[Erm9PoA]`, `[Erm9PoN]`, `[Erm9Poa]`, `[Erm9Pon]`, `[Erm9Pp1]`, `[Erm9PpE]`, and `[ErkbDSi]` (changed).
+	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
+	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it.
+	- Question: stage 7 is still labeled "Mac + Windows tests". Renaming it changes output text that `[ErkbDSi]`, `[ErkbDT4]` and `[ErkbDTL]` check. Rename it?
+		- Answer: yes, to "Remote tests". Filed as 2026100418431100.
+	- Verified: stage 7's harness on gover after round 4, 2026-10-04. b26: Go tests pass, and test.bash against the universal build 1255/0. vmFreeBSD, vmDebARM64 and vm925w: Go tests pass. The Unix boxes ran Go tests only this time, since no Unix builds were passed. Their full test.bash ran earlier the same day and failed only `[Emq7Y6y]`, fixed since.
+	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
+	- Closed: 20261004-190953
+
+- Stage 7 names b26 as a Windows host to the lock
+	- ID: 2026100410340781
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Low
+	- Opened: 20261004-103407
+	- Opened by: jim-collier
+	- Related IDs: 2026100312332924
+	- Incorrect behavior [Bug]: remote-tests.bash puts every host, b26 included, in the lock's Windows host list. The lock now knows b26 as a host of its own through its other-hosts list, so b26 is listed twice and joins the Windows boxes for `any` and `all`.
+	- Expected behavior [Bug]: Mac hosts go in the lock's other-hosts list and Windows hosts in its Windows list.
+	- Reproduced [Bug]: Yes, 2026-10-04. The lock's `hosts` lists b26 twice under the stage's setting. Nothing breaks today, since the stage names each host.
+	- Origin: remote-tests.bash from item 2026100312332924. The lock gained its other-hosts list the same day. Confirmed.
+	- Estimated effort: Low
+	- Needs external testing: Optional. A stage 7 run on b26 and a Windows box under the real lock.
+	- Actual cause [Bug]: The stage built one host list from the Mac and Windows settings and passed it as the lock's Windows list.
+	- Actual fix [Bug]: The Windows list is the Windows hosts only. The other-hosts list is the lock's own, as its `hosts` reports it, plus any Mac not already in it, so the lock's status still lists boxes like vmFreeBSD while the stage runs. An older lock with no other-hosts list refuses the Mac by name, and the stage skips it with that note.
+	- Progress log:
+		- Verified: against the real lock, read only. Under the old setting `hosts` gives `b26 vm925w b29w b26 vmDebARM64 vmFreeBSD`. Under the new one it gives `vm925w b29w b26 vmDebARM64 vmFreeBSD`.
+		- Verified: on a private lock directory with an empty other-hosts list, `wrap b26` exits 2 with "unknown host", which the stage reports as a skip.
+		- Verified: test.bash 1401/0. With the old remote-tests.bash, `[ErkbDUa]` and `[ErkqZtP]` fail, 1399/2.
+		- Note: `[ErkbDUa]` keeps its ID. It used to require b26 in the Windows list, and now requires it once, in the other list.
+	- Swept: every reader of the two host settings. cicd.bash only prints them, and config.bash only sets them. The lock's prefix is still taken from its file name.
+	- Branch: lockhosts
+	- Commit: 5a45371
+	- Test case: test.bash `[ErkbDUa]` (lists passed to the lock) and `[ErkqZtP]` (older lock with no other-hosts list).
+	- Verified: a full pipeline run on 2026-10-05 passed on every box.
+	- Acceptance signoff: OK, 2026-10-05, after the full run.
+	- Closed: 20261005-071114
+
+- `TestLockAccountsFile` fails on FreeBSD
+	- ID: 2026100416430451
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Low
+	- Opened: 20261004-164304
+	- Opened by: jim-collier
+	- Related IDs: 2026100413264100
+	- Target OS: FreeBSD
+	- Test environment: vmFreeBSD, FreeBSD 15.1 amd64, UFS.
+	- Incorrect behavior [Bug]: "unlock removed a lock it didn't make". The test removes the lock, writes a new one at the same path, and unlock removes that one too.
+	- Expected behavior [Bug]: unlock leaves a lock file it did not make.
+	- Reproduced [Bug]: Yes, 2026-10-04, in stage 7 on vmFreeBSD. It passes on Linux, macOS and Windows.
+	- Possible cause [Bug]: unlock tells its own lock by `os.SameFile`, which compares device and inode. UFS hands the freed inode number straight to the new file, so the new lock looks like the old one. Not checked.
+	- Actual cause [Bug]: As above, checked on vmFreeBSD 2026-10-04. A file removed and made again at the same path got the same inode number 20 times out of 20 on UFS.
+	- Actual fix [Bug]: Each lock gets a random token written into it. Unlock removes the lock only when it still holds this run's token, so a lock another run made after ours is left alone, whatever inode it got. A lock whose token can't be written is removed at once and the run refused, the same as one that can't be made.
+	- Progress log:
+		- Verified: `TestLockAccountsFile` fails on vmFreeBSD before the fix, three runs of three, and passes after, five of five. All the Go tests pass there after the fix.
+		- Verified: `TestUnlockLeavesALockInItsInode` fails on Linux before the fix and passes after. It writes over the lock in place, so the other run's lock keeps our inode on any filesystem.
+		- Verified: the gate and `test-id.bash --check` pass. The package vets for Windows and macOS.
+		- Note: older builds leave the lock empty, so they and this one never mistake each other's locks.
+	- Swept: `os.SameFile`, `Stat_t`, `.Ino` and `ModTime` in src-go. The lock was the only file identity check. Both callers, `account set` and the old-format conversion, only `defer unlock()`, and the signature is unchanged. test.bash's `[EpxmDk1]` makes an empty lock by hand, which still blocks the create. Not run, since it waits for the full test.bash.
+	- Branch: lockid
+	- Commit: ea96f4d
+	- Test case: `TestLockAccountsFile` [EpxmDk5] on FreeBSD, and `TestUnlockLeavesALockInItsInode` [ErmLh0B] on any platform.
+	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
+	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it.
+	- Verified: a full pipeline run on 2026-10-05 passed on every box.
+	- Acceptance signoff: OK, 2026-10-05, after the full run.
+	- Closed: 20261005-071114
 
 - `[ErkSC4L]` fails on the emulated arm64 box
 	- ID: 2026100416430456
@@ -977,6 +1000,42 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
 	- Closed: 20261003-145130
 
+- Code Review 20261003 enhancement 7: Go code tidy
+	- ID: 2026100313130047
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature]: Low
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- `cmdPrune` gets branch names back out of git's argv by index math. Have `leaseDeleteBatches` return them.
+		- The account ssh command, the exclusive-create writer and the push-or-set-upstream args are each built in two or three places. Make one of each.
+		- `ghState` also keeps the tea and reachability state. Rename it, and read reachability through `isOffline()` everywhere.
+		- The flat-line parse is written three times, and `[2]string` keys stand in for a named type.
+		- `contains` beside `slices.Contains`, a BOM literal beside `utf8BOM`, a GOOS test beside `isWindows()`.
+	- Origin: mostly the work since 20260909: shcl, prune leases, tea support. Confirmed by grep.
+	- Actual effort: Low
+	- Done: Each delete batch comes back with the branches it deletes, and `pruneRemote` reads them from there. The prune gate and its leases are unchanged.
+	- Done: `sshKeyCommand`, `createNew` and `pushArgs` are the one of each. `createNew` takes over from `createAccountsFile`, the conversion's `writeNew`, and the lock's own open. The lock keeps its random token.
+	- Done: `ghState` is now `remoteState`, kept on the run as `remote`. Reachability is an `offline` flag, so the zero value is online, and every reader goes through `isOffline()`.
+	- Done: The old layout is split into lines once, by `flatLines`, for the load, the conversion and its look ahead. `acctKey` names the account and field pair in both layouts.
+	- Done: `contains` is gone for `slices.Contains`, the load trims `utf8BOM`, and the lock's Windows test calls `isWindows()`.
+	- Note: The lock file is now synced before it is closed, as the other two creates already were.
+	- Note: Two Go tests follow the new names without changing what they check. `TestLeaseDeleteBatches` now also checks the branch names each batch hands back. `TestCreateAccountsFileNeverReplaces` calls `createNew`.
+	- Note: Left alone: `publishBranch` and `repo connect`'s add case always push with `-u`, so they don't ask about an upstream. The plan's push lines are display text. Every other `runtime.GOOS` passes the platform to a function so tests can set it.
+	- Swept: `grep -n 'IdentitiesOnly\|O_EXCL\|"-u", "origin"\|\.gh\.\|reachable\|\[2\]string\|contains(\|\\ufeff\|runtime.GOOS' src-go/*.go`.
+	- Verified: `go test -race ./...`, `go vet` for linux, windows, darwin and freebsd on amd64 and arm64, `cicd.bash --gate`, and spawn-count with every count the same as before. The git, gh and ssh command lines that spawn-count's runs start are the same before and after.
+	- Verified: the old and new flat readers and converters agree over about 3.3 million fuzzed inputs.
+	- Branch: gotidy
+	- Commit: 101f180, 791e19a, 546d7ad, ed08dfb, 83a8517
+	- Test case: The existing suites cover it, since nothing should change. Run: the Go tests and spawn-count. Still to run: test.bash, fuzz.bash and parity.bash.
+	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
+	- Verified: fuzz.bash 301/0, parity.bash and the spawn counts all pass on gover 2026-10-04.
+	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it.
+	- Verified: a full pipeline run on 2026-10-05 passed on every box.
+	- Acceptance signoff: OK, 2026-10-05, after the full run.
+	- Closed: 20261005-071114
+
 - Code Review 20261003 enhancement 6: Spawns that are repeated or not needed
 	- ID: 2026100313124028
 	- Type: Enhancement
@@ -1037,50 +1096,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: Go `TestBranchReadsFollowWrites` [Erl1x2z], and the spawn-count limits.
 	- Acceptance signoff: Self-closed: does what the item asked, and its test fails without the fix.
 	- Closed: 20261004-113600
-
-- Run the tests on FreeBSD and on Linux arm64 in stage 7 too
-	- ID: 2026100413264100
-	- Type: Enhancement
-	- Status: Done
-	- Needs external testing: None left. b26 ran on 2026-10-04.
-	- Priority [Feature]: Avg
-	- Opened: 20261004-132641
-	- Opened by: jim-collier
-	- Related IDs: 2026100312332924, 2026100416430451, 2026100416430456
-	- Target OS: FreeBSD, Linux arm64
-	- Requirements  [Feature]:
-		- Two more test boxes share the host lock: vmFreeBSD and vmDebARM64. Both are VMs with a virtual display.
-		- Stage 7 runs the cross-built Go tests on each, against the FreeBSD amd64 and Linux arm64 builds, the same way it does on vm925w.
-		- test.bash runs there too where bash and the tools it needs are on the box.
-		- A box that is off or reserved is skipped, the same as the others.
-	- Note: FreeBSD and Linux arm64 are published targets that no test has run on yet.
-	- Decisions:
-		- 2026-10-04: Both boxes have a test user with no password: `bsdtest` on vmFreeBSD and `tester` on vmDebARM64, neither with sudo. Both also take root over ssh. Root is for setup only, such as installing what test.bash needs. The tests run as the test user.
-		- 2026-10-04: vmFreeBSD runs FreeBSD 15.1 at a static 192.168.1.119. vmDebARM64 is at 192.168.1.118. Both are libvirt VMs on b23.
-		- 2026-10-04: Both boxes are taken through the host lock by name, in its other-hosts list, like b26.
-	- Progress log:
-		- Done: stage 7 runs the Mac's flow on each Unix box in `REMOTE_UNIX_HOSTS`, as its test user. Each box gets a copy of the tree, the Go tests built for its target, and the build cicd.bash makes for that target. Targets are set per box in `REMOTE_UNIX_TARGETS`.
-		- Done: test.bash runs only where the box has bash, git and go (`REMOTE_UNIX_NEEDS`). Otherwise the box runs the Go tests and the run names what it lacks. The module fetch is skipped too.
-		- Done: cicd.bash builds `freebsd/amd64` and `linux/arm64` the way dogfood builds, hands them to the harness with `--bin`, and removes them after. The stage keeps its name, "Mac + Windows tests".
-		- Done: README and contributing.md list the new boxes.
-		- Installed on vmDebARM64 as root: Go 1.26.8 from go.dev, in `/usr/local/go`, linked from `/usr/local/bin/go` and `gofmt`. bash, git and jq were already there.
-		- Nothing installed on vmFreeBSD. bash, git, jq and Go 1.25 were already there. Go fetches the 1.26.2 toolchain go.mod names into the test user's module cache on the first run.
-		- Verified: the 8 new checks and `[ErkbDSi]` pass, and each new one fails against gover's harness. Six faults put into a copy of the harness, one at a time, each turned its check red: the Unix boxes left out of the lock's list, a missing tool ignored, the module fetch always run, no target check, one target's build sent to every box, and gover's harness. `[ErkbDSi]` fails against gover's cicd.bash and with a Unix build left behind.
-		- Verified: shellcheck, `test-id.bash --check` and the gate pass.
-		- Verified: stage 7's harness run against only the two new boxes, under the lock, 2026-10-04. vmFreeBSD: test.bash 1178/0, Go tests all pass but `TestLockAccountsFile`. vmDebARM64: Go tests all pass, test.bash 1436/1, the one being `[ErkSC4L]`. Both filed as their own bugs.
-		- Note: vmDebARM64 is an emulated arm64 CPU. Its test.bash took about 40 minutes, against about one on vmFreeBSD, so a full run is that much longer.
-	- Swept: every reader of the stage 7 settings. cicd.bash prints and builds from them, remote-tests.bash runs from them, and the test.bash fixture copies config.bash. The existing harness checks pin the Mac and Windows boxes, so their fixture empties `REMOTE_UNIX_HOSTS` and the new checks put it back.
-	- Note: `[ErkbDSi]` keeps its ID. It used to require only the Mac build in the harness call, and now requires the two Unix builds as well, all three removed after.
-	- Branch: unixrt
-	- Commit: f331e15
-	- Test case: test.bash `[Erm9Pnk]`, `[Erm9Pnx]`, `[Erm9PoA]`, `[Erm9PoN]`, `[Erm9Poa]`, `[Erm9Pon]`, `[Erm9Pp1]`, `[Erm9PpE]`, and `[ErkbDSi]` (changed).
-	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
-	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it.
-	- Question: stage 7 is still labeled "Mac + Windows tests". Renaming it changes output text that `[ErkbDSi]`, `[ErkbDT4]` and `[ErkbDTL]` check. Rename it?
-		- Answer: yes, to "Remote tests". Filed as 2026100418431100.
-	- Verified: stage 7's harness on gover after round 4, 2026-10-04. b26: Go tests pass, and test.bash against the universal build 1255/0. vmFreeBSD, vmDebARM64 and vm925w: Go tests pass. The Unix boxes ran Go tests only this time, since no Unix builds were passed. Their full test.bash ran earlier the same day and failed only `[Emq7Y6y]`, fixed since.
-	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
-	- Closed: 20261004-190953
 
 - Code Review 20261003 enhancement 8: Pipeline scripts and the style guide against the new Bash rules
 	- ID: 2026100313130060
