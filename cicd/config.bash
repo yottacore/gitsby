@@ -213,7 +213,7 @@ DEMOGIF_ARCHIVE_DIR="../private/demo/gif"    # out-of-tree originals, GFS-rotate
 ## optimized one. Lossy modes buy almost nothing on a 35-color text demo.
 DEMOGIF_OPT_CMD=(gifsicle -O3)
 
-## Stage 7: Mac + Windows tests, over ssh. Each box is taken through a host lock shared with
+## Stage 7: Remote tests, over ssh. Each box is taken through a host lock shared with
 ## other projects, only while its run lasts and only if free right now. The lock is a script
 ## outside the repo; the first file matching REMOTE_LOCK_GLOB is it, and with none the stage
 ## is skipped. The boxes are this machine's, so on anyone else's that is what happens.
