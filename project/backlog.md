@@ -442,7 +442,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: old and new gfs-rotate.bash agree file for file and line for line over 25 rounds of rotation in five time zones, DST gaps included. The bad-count guard still works, and keep-build.bash still rotates with it.
 	- Test case: test.bash `[ErmXzJR]`, every pipeline script turns on shellcheck's brace rule. Renames have no behavior to test; the suites cover them.
 	- Branch: bashstyle
-	- Commit: 20ab499, 0952f39
+	- Commit: 20ab499, 0952f39, 102c13f
 
 - The README install line fails while v2.1.0 is the newest full release
 	- ID: 2026100315501800
