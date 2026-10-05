@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+#  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
+
 ##	Purpose:
 ##		- Writes the Windows resource (.syso) the Go linker picks up, so the .exe carries an
 ##		  icon and the version details Explorer's Properties tab reads.
@@ -67,8 +69,8 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-fSay(){ ((quiet)) || echo "$@"; }
-fDie(){ echo "gen-winres: $*" >&2; exit 1; }
+fEcho_Clean(){ ((quiet)) || printf '%s\n' "$*"; }
+fDie(){ printf '%s\n' "gen-winres: $*" >&2; exit 1; }
 
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
@@ -91,7 +93,7 @@ if ((iconOnly)); then
 	icotool -c -o "${icon}" "${tmp}/i16.png" "${tmp}/i32.png" "${tmp}/i48.png" \
 		--raw="${tmp}/i64.png" --raw="${tmp}/i128.png" --raw="${tmp}/i256.png" \
 		|| fDie "icotool couldn't write ${icon}."
-	fSay "wrote assets/$(basename "${icon}") ($(stat -c%s "${icon}") bytes)"
+	fEcho_Clean "wrote assets/$(basename "${icon}") ($(stat -c%s "${icon}") bytes)"
 	exit 0
 fi
 
@@ -116,7 +118,7 @@ if [[ -z "${goversioninfo}" ]]; then
 	## Refused where it would silently ship the wrong bytes. --check answers 3 instead, which is
 	## how the callers tell "not installed" from "stale" without probing for the tool themselves.
 	((check)) || fDie "goversioninfo isn't installed (see --help)."
-	fSay "  windows resource check skipped (no goversioninfo)"
+	fEcho_Clean "  windows resource check skipped (no goversioninfo)"
 	exit 3
 fi
 
@@ -199,12 +201,12 @@ for arch in "${arches[@]}"; do
 			differed=1
 		fi
 	else
-		fSay "  wrote ${GO_MODULE_DIR}/${name} ($(stat -c%s "${out}/${name}") bytes)"
+		fEcho_Clean "  wrote ${GO_MODULE_DIR}/${name} ($(stat -c%s "${out}/${name}") bytes)"
 	fi
 done
 
 if ((differed)); then exit 1; fi
-if ((check)); then fSay "  windows resources match ${version}"; fi
+if ((check)); then fEcho_Clean "  windows resources match ${version}"; fi
 exit 0
 
 
@@ -214,3 +216,5 @@ exit 0
 ##		  published .exe can be rebuilt from its tag without the tool.
 ##		- 20260915 JC: LegalCopyright takes its years from the program, which printed 2014-2026 while the resource said 2026.
 ##		- 20261003 JC: The newest tag is cut from the whole list. A head that quit at the first line failed git's write once there were a few thousand tags.
+##		- 20261004 JC: fSay is fEcho_Clean, like the other pipeline scripts, and prints with
+##		  printf. Every expansion braced, and shellcheck enforces it.

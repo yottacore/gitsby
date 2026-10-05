@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+#  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
+
 ##	Purpose:
 ##		Surface the newest recorded spawn counts, the profiling counterpart to
 ##		lint-report.bash. spawn-count.bash records one spawn_<ts>.tsv per cicd run
@@ -32,7 +34,7 @@ meDir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 dir="${meDir}/../artifacts/spawn"
 check=0; force=0; noMark=0
 
-fEcho_Clean(){ echo "$*"; }
+fEcho_Clean(){ printf '%s\n' "$*"; }
 
 while (($#)); do case "$1" in
 	--check)   check=1; shift ;;
@@ -51,53 +53,55 @@ fCount(){ [[ "$2" =~ ^[0-9]+$ ]] || { echo "spawn-report: $1 has '$2' for $3, wh
 ##	the timestamp is stable.
 fNewestTwo(){
 	local d="$1" f b t
-	for f in "$d"/spawn_*.tsv; do
-		[[ -e "$f" ]] || continue
-		b="$(basename "$f")"; t="${b#spawn_}"; t="${t%%_*}"; t="${t%.tsv}"
-		printf '%s\t%s\n' "$t" "$f"
+	for f in "${d}"/spawn_*.tsv; do
+		[[ -e "${f}" ]] || continue
+		b="$(basename "${f}")"; t="${b#spawn_}"; t="${t%%_*}"; t="${t%.tsv}"
+		printf '%s\t%s\n' "${t}" "${f}"
 	done | sort -r | sed -n '1,2p'
 }
 
-[[ -d "$dir" ]] || fSkip "no spawn dir: $dir"
-newestTwo="$(fNewestTwo "$dir")"
-[[ -n "$newestTwo" ]] || fSkip "no recordings in $dir"
-ts="$(printf '%s\n' "$newestTwo" | sed -n '1p' | cut -f1)"
-newest="$(printf '%s\n' "$newestTwo" | sed -n '1p' | cut -f2)"
-prev="$(printf '%s\n' "$newestTwo" | sed -n '2p' | cut -f2)"
+[[ -d "${dir}" ]] || fSkip "no spawn dir: ${dir}"
+newestTwo="$(fNewestTwo "${dir}")"
+[[ -n "${newestTwo}" ]] || fSkip "no recordings in ${dir}"
+ts="$(printf '%s\n' "${newestTwo}" | sed -n '1p' | cut -f1)"
+newest="$(printf '%s\n' "${newestTwo}" | sed -n '1p' | cut -f2)"
+prev="$(printf '%s\n' "${newestTwo}" | sed -n '2p' | cut -f2)"
 
 marker="${dir}/.spawn-seen"
 if ((check)) && ((! force)); then
-	seen=""; [[ -f "$marker" ]] && seen="$(tr -d '[:space:]' < "$marker" 2>/dev/null)"
-	if [[ -n "$ts" && -n "$seen" && ! "$ts" > "$seen" ]]; then
-		fEcho_Clean "SEEN $(basename "$newest")  (nothing newer than $seen)"; exit 0
+	seen=""; [[ -f "${marker}" ]] && seen="$(tr -d '[:space:]' < "${marker}" 2>/dev/null)"
+	if [[ -n "${ts}" && -n "${seen}" && ! "${ts}" > "${seen}" ]]; then
+		fEcho_Clean "SEEN $(basename "${newest}")  (nothing newer than ${seen})"; exit 0
 	fi
 fi
 
 ##	Record before printing, same as lint-report: a caller that closes stdout early
 ##	still records the look.
-if ((check)) && ((! noMark)) && [[ -n "$ts" ]]; then
-	printf '%s\n' "$ts" > "$marker" 2>/dev/null || echo "spawn-report: could not write marker: $marker" >&2
+if ((check)) && ((! noMark)) && [[ -n "${ts}" ]]; then
+	printf '%s\n' "${ts}" > "${marker}" 2>/dev/null || echo "spawn-report: could not write marker: ${marker}" >&2
 fi
 
 tag="COUNTS"; ((check)) && tag="NEW"
-fEcho_Clean "${tag} $(basename "$newest")$( [[ -n "$prev" ]] && echo "  (vs $(basename "$prev"))" )"
+fEcho_Clean "${tag} $(basename "${newest}")$( [[ -n "${prev}" ]] && echo "  (vs $(basename "${prev}"))" )"
 while IFS=$'\t' read -r label count; do
-	[[ -n "$label" ]] || continue
-	fCount "${newest##*/}" "$count" "$label"
+	[[ -n "${label}" ]] || continue
+	fCount "${newest##*/}" "${count}" "${label}"
 	delta=""
-	if [[ -n "$prev" ]]; then
-		was="$(awk -F'\t' -v k="$label" '$1==k{print $2}' "$prev")"
-		[[ -z "$was" ]] || fCount "${prev##*/}" "$was" "$label"
-		if   [[ -z "$was" ]];              then delta="  (new)"
+	if [[ -n "${prev}" ]]; then
+		was="$(awk -F'\t' -v k="${label}" '$1==k{print $2}' "${prev}")"
+		[[ -z "${was}" ]] || fCount "${prev##*/}" "${was}" "${label}"
+		if   [[ -z "${was}" ]];              then delta="  (new)"
 		elif (( count > was ));            then delta="  (was ${was})"
 		elif (( count < was ));            then delta="  (was ${was})"
 		fi
 	fi
 	fEcho_Clean "  ${count}	${label}${delta}"
-done < "$newest"
+done < "${newest}"
 
 
 ##	History:
 ##		- 20260821 JC: Created. The lint-report --check pattern, pointed at the spawn
 ##		  recordings, so the startup look at profiler output has a tool to call.
 ##		- 20261003 JC: The newest two are taken without a head, which failed the sort's write once the folder held a thousand or so recordings.
+##		- 20261004 JC: fEcho_Clean prints with printf. Every expansion braced, and shellcheck
+##		  enforces it.

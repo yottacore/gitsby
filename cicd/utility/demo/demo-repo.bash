@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+#  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
+
 ##	Purpose:
 ##		- Builds a throwaway, fully anonymized world for the demo gif: two git repos in
 ##		  two separate folder trees, a local bare "origin", and a gitsby config file that
@@ -201,3 +203,4 @@ GIT_COMMITTER_NAME="${sideName}" GIT_COMMITTER_EMAIL="${sideEmail}" \
 ##		- 20260819: The fake tokens are 0600 and a stub gh goes first on PATH. Both were showing on camera: the permission warning on every scene, and the real gh answering as whoever is logged in on the machine doing the rendering.
 ##		- 20260813: ROOT is checked before it is removed. It was taken on trust and wiped first thing, so a mistyped or inherited argument cost whatever was there. Directories this script builds are stamped, and only a stamped one is removed.
 ##		- 20260914: The header names the second thing the gif's repeat rests on, the release stamp on the demo's build.
+##		- 20261004 JC: Every expansion braced, and shellcheck enforces it.

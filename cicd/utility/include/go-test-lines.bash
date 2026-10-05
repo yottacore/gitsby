@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+
+#  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
+
 ## fGoTestLines LOG MODULE_DIR: one line per top-level test in a 'go test -v' log, as
 ## "  ok: [<id>] TestName", with the ID from the end of that test's func line in MODULE_DIR.
 ##

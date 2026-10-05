@@ -2,6 +2,7 @@
 
 #  shellcheck disable=2155  ## 'Declare and assign separately.' Cumbersome and unnecessary here.
 #  shellcheck disable=2086  ## 'Double quote to prevent word splitting.' OK for integer flags.
+#  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
 
 ##	Purpose:
 ##		Surface warnings from the newest cicd run log. cicd tees each run to
@@ -52,36 +53,36 @@ fSkip() { echo "lint-report: $1" >&2; exit 2; }   ## 2 = non-fatal skip (matches
 ##	one, is ignored (the timestamp is stable).
 fNewest() {
 	local d="$1" best="" newest="" f b t
-	for f in "$d"/run_*.log; do
-		[[ -e "$f" ]] || continue
-		b="$(basename "$f")"; t="${b#run_}"; t="${t%%_*}"; t="${t%.log}"
-		[[ "$t" > "$best" ]] && { best="$t"; newest="$f"; }
+	for f in "${d}"/run_*.log; do
+		[[ -e "${f}" ]] || continue
+		b="$(basename "${f}")"; t="${b#run_}"; t="${t%%_*}"; t="${t%.log}"
+		[[ "${t}" > "${best}" ]] && { best="${t}"; newest="${f}"; }
 	done
-	[[ -n "$newest" ]] || return 1
-	printf '%s\t%s\n' "$best" "$newest"
+	[[ -n "${newest}" ]] || return 1
+	printf '%s\t%s\n' "${best}" "${newest}"
 }
 
-if [[ -n "$file" ]]; then
-	[[ -f "$file" ]] || fSkip "no such file: $file"
-	log="$file"; b="$(basename "$file")"; ts="${b#run_}"; ts="${ts%%_*}"; ts="${ts%.log}"
+if [[ -n "${file}" ]]; then
+	[[ -f "${file}" ]] || fSkip "no such file: ${file}"
+	log="${file}"; b="$(basename "${file}")"; ts="${b#run_}"; ts="${ts%%_*}"; ts="${ts%.log}"
 else
-	[[ -d "$dir" ]] || fSkip "no log dir: $dir"
-	nb="$(fNewest "$dir")" || fSkip "no run logs in $dir"
+	[[ -d "${dir}" ]] || fSkip "no log dir: ${dir}"
+	nb="$(fNewest "${dir}")" || fSkip "no run logs in ${dir}"
 	ts="${nb%%$'\t'*}"; log="${nb#*$'\t'}"
 fi
 
 marker="${dir}/.lint-seen"
 if ((check)) && ((! force)); then
-	seen=""; [[ -f "$marker" ]] && seen="$(tr -d '[:space:]' < "$marker" 2>/dev/null)"
-	if [[ -n "$ts" && -n "$seen" && ! "$ts" > "$seen" ]]; then
-		echo "SEEN $(basename "$log")  (nothing newer than $seen)"; exit 0
+	seen=""; [[ -f "${marker}" ]] && seen="$(tr -d '[:space:]' < "${marker}" 2>/dev/null)"
+	if [[ -n "${ts}" && -n "${seen}" && ! "${ts}" > "${seen}" ]]; then
+		echo "SEEN $(basename "${log}")  (nothing newer than ${seen})"; exit 0
 	fi
 fi
 
 ##	Record the marker now (before printing the body) so a caller that pipes stdout
 ##	to head/less and closes it early still records the look.
-if ((check)) && ((! noMark)) && [[ -n "$ts" ]]; then
-	printf '%s\n' "$ts" > "$marker" 2>/dev/null || echo "lint-report: could not write marker: $marker" >&2
+if ((check)) && ((! noMark)) && [[ -n "${ts}" ]]; then
+	printf '%s\n' "${ts}" > "${marker}" 2>/dev/null || echo "lint-report: could not write marker: ${marker}" >&2
 fi
 
 ##	Findings are matched by each tool's own output format: the engine's "WARNING:"
@@ -94,20 +95,21 @@ fi
 ##	errors.go. A report that cries wolf gets ignored, and this one sat unread for
 ##	three weeks. The suites' "  ok: <label>" lines are still dropped, since a label
 ##	can quote any of these forms.
-warns="$(grep -nE 'WARNING:|\bSC[0-9]{4}\b|\bMD[0-9]{3}/[a-z]|\.go:[0-9]+(:[0-9]+)?: |\bGO-[0-9]{4}-[0-9]+|\bPS[A-Z][A-Za-z]+ +(ParseError|Error|Warning|Information)\b|\.py", line [0-9]+' "$log" 2>/dev/null \
+warns="$(grep -nE 'WARNING:|\bSC[0-9]{4}\b|\bMD[0-9]{3}/[a-z]|\.go:[0-9]+(:[0-9]+)?: |\bGO-[0-9]{4}-[0-9]+|\bPS[A-Z][A-Za-z]+ +(ParseError|Error|Warning|Information)\b|\.py", line [0-9]+' "${log}" 2>/dev/null \
 	| grep -vE '^[0-9]+:[[:space:]]*(ok|FAIL|parity ok|parity FAIL):' || true)"
-if [[ -n "$warns" ]]; then n=$(printf '%s\n' "$warns" | grep -c .); else n=0; fi
+if [[ -n "${warns}" ]]; then n=$(printf '%s\n' "${warns}" | grep -c .); else n=0; fi
 
 tag="FLAG"; ((check)) && tag="NEW"
 if ((n)); then
-	echo "${tag} $(basename "$log")  (${n} warning line(s))"
+	echo "${tag} $(basename "${log}")  (${n} warning line(s))"
 	echo
-	printf '%s\n' "$warns"
+	printf '%s\n' "${warns}"
 else
-	echo "CLEAN $(basename "$log")  (0 warnings)"
+	echo "CLEAN $(basename "${log}")  (0 warnings)"
 fi
 
 
 ##	Script history:
 ##		- 20260709: Created.
 ##		- 20260915: Matches each tool's output format rather than the words warning and error, which matched a file named errors.go in the archive listing.
+##		- 20261004 JC: Every expansion braced, and shellcheck enforces it.
