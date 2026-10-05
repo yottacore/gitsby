@@ -122,12 +122,19 @@ func (a *app) pushIfOnline() error {
 		a.out.status("Nothing to push.")
 	case a.isOffline():
 		a.out.status("WARNING: remote unreachable; skipping the push. The work stays local on '" + a.currentBranch() + "' - '" + meName + " sync' from it publishes it.")
-	case !a.hasUpstream():
-		return a.step("git", "push", "-u", "origin", "HEAD") // first publish of this branch
 	default:
-		return a.step("git", "push")
+		return a.step("git", a.pushArgs()...)
 	}
 	return nil
+}
+
+// pushArgs pushes the current branch. One with no upstream yet is a first publish:
+// it goes up under its own name and tracks origin's copy from then on.
+func (a *app) pushArgs() []string {
+	if !a.hasUpstream() {
+		return []string{"push", "-u", "origin", "HEAD"}
+	}
+	return []string{"push"}
 }
 
 // pushesToRemote: whether this command sends anything to origin. The identity
