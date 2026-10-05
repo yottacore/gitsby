@@ -238,6 +238,10 @@ declare -gA REMOTE_UNIX_TARGETS=([vmFreeBSD]="freebsd/amd64" [vmDebARM64]="linux
 ## go for the suite's own builds; an older one fetches the toolchain go.mod names.
 REMOTE_UNIX_NEEDS=(bash git go)
 REMOTE_UNIX_DIR="gitsby-remote-tests"
+## Unix boxes that also run the Go tests built for a Windows target, under Wine, after their own.
+## Wine is not Windows, so this adds to the Windows box's run, and doesn't replace it. A box
+## without wine skips it with a note. vmDebARM64 needs arm64.nobti on its kernel line for this.
+declare -gA REMOTE_UNIX_WINE=([vmDebARM64]="windows/arm64")
 
 ## Stage 8: backup + publish to git (runs from repo root). The engine always
 ## passes --quiet (it already gave the message prompt) and, when it has one,
@@ -269,3 +273,4 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-10-04 JC: Stage 7 runs the tests on a Mac and a Windows box. Publish is stage 8.
 ##		- 2026-10-04 JC: Stage 7 also runs them on a FreeBSD amd64 and a Linux arm64 box.
 ##		- 2026-10-04 JC: Every expansion braced, and shellcheck enforces it. The settings stay upper case.
+##		- 2026-10-05 JC: REMOTE_UNIX_WINE: the Linux arm64 box also runs the windows/arm64 Go tests under Wine.

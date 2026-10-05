@@ -12,6 +12,9 @@
 ##		- Other Unix boxes, such as FreeBSD and Linux arm64: the same as the Mac, as each box's
 ##		  test user, against the build given for its target. test.bash runs only where the box
 ##		  has the tools it needs, and the Go tests run either way.
+##		- A Unix box named in REMOTE_UNIX_WINE also runs the Go tests built for that Windows
+##		  target, under Wine, with a Wine folder kept beside the tree between runs. That adds to
+##		  the Windows box's run; Wine is not Windows.
 ##		- Windows: the Go tests, cross-built, in a folder under %TEMP% made for the run and
 ##		  removed after it. There is no bash on those boxes to run the suite with.
 ##		- Each box is taken through the host lock for the length of its run, and only if it is
@@ -61,6 +64,9 @@ esac; done
 [[ -z "${macBin}" || -f "${macBin}" ]] || { echo "--mac-bin: no such file: ${macBin}" >&2; exit 2; }
 for spec in "${REMOTE_UNIX_HOSTS[@]}"; do
 	[[ "${REMOTE_UNIX_TARGETS[${spec%%:*}]:-}" == */* ]] || { echo "config.bash: REMOTE_UNIX_TARGETS has no target like freebsd/amd64 for ${spec%%:*}" >&2; exit 2; }
+done
+for name in "${!REMOTE_UNIX_WINE[@]}"; do
+	[[ "${REMOTE_UNIX_WINE[${name}]}" == windows/* ]] || { echo "config.bash: REMOTE_UNIX_WINE for ${name} is not a target like windows/arm64" >&2; exit 2; }
 done
 
 fEcho_Clean(){ printf '%s\n' "$*"; }
@@ -167,6 +173,32 @@ fRunPosix(){
 	if ((rc == 255)); then fEcho_Clean "  skip: ${lockName}, lost the connection during go test"; fResult "${lockName}" lost; return 0; fi
 	fGoTestLines "${log}" "${root}/${GO_MODULE_DIR}"
 	if ((rc)); then fGoTestFailures "${log}"; fEcho_Clean "  FAIL: ${lockName} go test"; failed=1; fi
+
+	local wineTarget="" wineLog="${work}/gotest-wine-$2.log" hasWine=""
+	if [[ "${kind}" == unix ]]; then wineTarget="${REMOTE_UNIX_WINE[${lockName}]:-}"; fi
+	if [[ -n "${wineTarget}" ]]; then
+		rc=0
+		hasWine="$(fRemote "${sshName}" "echo ${mark}; if command -v wine >/dev/null 2>&1; then echo yes; fi" -n)" || rc=$?
+		if ((rc)); then fEcho_Clean "  skip: ${lockName}, lost the connection while looking for wine"; fResult "${lockName}" lost; return 0; fi
+		if [[ "${hasWine}" != yes ]]; then
+			fEcho_Clean "  skip: ${wineTarget} go test on ${lockName}, which lacks wine"
+		else
+			fEcho_Clean "  ${lockName}: go test (${wineTarget} under Wine)"
+			## No display, and none of Wine's first-run extras. Wine spun forever here once, so it
+			## gets a limit, and wineserver -k takes down what timeout leaves.
+			rc=0
+			fRemote "${sshName}" "echo ${mark}; cd \"\$HOME/${dir}/tree/${GO_MODULE_DIR}\" || exit 1
+				unset DISPLAY WAYLAND_DISPLAY
+				export WINEPREFIX=\"\$HOME/${dir}/wine\" WINEDEBUG=-all WINEDLLOVERRIDES='mscoree,mshtml,winemenubuilder.exe=d'
+				timeout 900 wine ./${EXE_NAME}-test-$(fTag "${wineTarget}").exe -test.v; r=\$?
+				wineserver -k 2>/dev/null
+				exit \$r" -n >"${wineLog}" 2>&1 || rc=$?
+			if ((rc == 255)); then fEcho_Clean "  skip: ${lockName}, lost the connection during the Wine go test"; fResult "${lockName}" lost; return 0; fi
+			fGoTestLines "${wineLog}" "${root}/${GO_MODULE_DIR}"
+			if ((rc == 124)); then fEcho_Clean "  FAIL: ${lockName} go test (${wineTarget} under Wine) ran out of time"; failed=1
+			elif ((rc)); then fGoTestFailures "${wineLog}"; fEcho_Clean "  FAIL: ${lockName} go test (${wineTarget} under Wine)"; failed=1; fi
+		fi
+	fi
 
 	if [[ ! -f "${hasBin}" ]]; then
 		if [[ "${kind}" == mac ]]; then fEcho_Clean "  skip: test.bash on ${lockName}, since no universal build was given (--mac-bin)"
@@ -326,6 +358,23 @@ if ((${#macRun[@]} + ${#unixRun[@]})); then
 		tar -rf "${work}/unix-${tag}.tar" -C "${work}/unix-${tag}" "tree/${GO_MODULE_DIR}"
 	done
 	rm -f -- "${work:?}/tree.tar"
+	## The Windows tests a Unix box runs under Wine go in the copy of the tree it gets.
+	declare -A wineIn=()
+	for entry in "${unixRun[@]}"; do
+		wineTarget="${REMOTE_UNIX_WINE[${entry% *}]:-}"
+		if [[ -z "${wineTarget}" ]]; then continue; fi
+		wineExe="${EXE_NAME}-test-$(fTag "${wineTarget}").exe"
+		if [[ ! -f "${work}/wine/tree/${GO_MODULE_DIR}/${wineExe}" ]]; then
+			mkdir -p "${work}/wine/tree/${GO_MODULE_DIR}"
+			fBuildTests windows "${wineTarget##*/}" "${work}/wine/tree/${GO_MODULE_DIR}/${wineExe}" \
+				|| { fEcho_Clean "  FAIL: the Go tests do not build for ${wineTarget}"; exit 1; }
+		fi
+		tag="$(fTag "${REMOTE_UNIX_TARGETS[${entry% *}]}")"
+		if [[ -z "${wineIn[${tag} ${wineExe}]:-}" ]]; then
+			tar -rf "${work}/unix-${tag}.tar" -C "${work}/wine" "tree/${GO_MODULE_DIR}/${wineExe}"
+			wineIn["${tag} ${wineExe}"]=1
+		fi
+	done
 fi
 if ((${#winRun[@]})); then
 	mkdir -p "${work}/win/${GO_MODULE_DIR}"
@@ -385,3 +434,4 @@ fEcho_Clean "  passed on: ${passed[*]:-none}"
 ##		- 2026-10-04 JC: Created. The Go tests on a Mac and a Windows box, and test.bash on the Mac against the universal build, each box taken through the host lock and skipped when it is off or taken.
 ##		- 2026-10-04 JC: The same run as the Mac's on other Unix boxes, FreeBSD amd64 and Linux arm64 to start, each as its test user. test.bash there only where the box has the tools for it.
 ##		- 2026-10-04 JC: Every expansion braced, and shellcheck enforces it.
+##		- 2026-10-05 JC: A Unix box can also run the Go tests for a Windows target under Wine. The Linux arm64 box runs the windows/arm64 ones.
