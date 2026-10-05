@@ -402,7 +402,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 enhancement 9: Measure building without inlining
 	- ID: 2026100313140061
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Canceled
 	- Priority [Feature]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -410,6 +410,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- `-gcflags=all=-l` made the Linux binary 5.8% smaller, 3.32 MB to 3.13 MB. The timings showed no change, but the box was loaded.
 		- Time it on an idle box. Adopt it only if it's no slower.
 	- Origin: build flags in config.bash. Size Confirmed, speed Plausible.
+	- Progress log:
+		- Verified: 2026-10-04, release-style builds of the gover tree with and without the flag, run in alternating pairs in one session, 500 pairs and then 1000 more per command. The two runs agreed. Medians from the 1000-pair run, without -> with the flag:
+			- `--version`: 1.32 -> 1.47 ms, 11% slower.
+			- `status --no-fetch`: 11.16 -> 11.62 ms, 4% slower.
+			- `whoami --no-fetch`: 7.28 -> 7.65 ms, 5% slower.
+			- `account list`: 7.15 -> 7.57 ms, 6% slower.
+			- The flagged build was the faster of a pair in 6% to 18% of pairs. The gap is several times the spread of each median.
+		- Verified: sizes, without -> with the flag. linux/amd64 3.63 -> 3.36 MB, linux/arm64 3.47 -> 3.15, windows/amd64 3.83 -> 3.53, windows/arm64 3.50 -> 3.18, darwin/universal 7.02 -> 6.49, freebsd/amd64 3.54 -> 3.29, freebsd/arm64 3.34 -> 3.15. That is 6% to 9% smaller.
+	- Decided against: the flag. Every common command got measurably slower, and the item asked for no slower. About 0.3 MB per binary does not pay for that.
+	- Test case: none. Nothing changed in the build, so there is nothing to pin.
+	- Acceptance signoff: Self-closed: the item's own rule decided it.
+	- Closed: 20261004-170600
 
 - The README install line fails while v2.1.0 is the newest full release
 	- ID: 2026100315501800
