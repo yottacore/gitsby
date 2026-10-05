@@ -986,7 +986,7 @@ func lockAccountsFile(file string, wait time.Duration) (func(), error) {
 		// Windows refuses a create over a file whose delete is still pending, which is
 		// what another run's lock is for a moment after it lets go.
 		held := errors.Is(err, fs.ErrExist)
-		pending := runtime.GOOS == "windows" && errors.Is(err, fs.ErrPermission)
+		pending := isWindows() && errors.Is(err, fs.ErrPermission)
 		switch {
 		case !held && (!pending || time.Now().After(deadline)):
 			return nil, writeRefusal("Couldn't make the lock beside the accounts file.", "Creating it", err,

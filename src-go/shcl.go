@@ -128,7 +128,7 @@ func (c *config) loadDoc(doc *shcl.Document) {
 			c.unknown = append(c.unknown, b.disp)
 			continue
 		}
-		if !contains(c.order, b.name) {
+		if !slices.Contains(c.order, b.name) {
 			c.order = append(c.order, b.name)
 		}
 		for _, field := range dedupe(doc.Children(b.path)) {
@@ -201,7 +201,7 @@ func (c *config) lastBinding(list []binding) binding {
 func (c *config) listNested(doc *shcl.Document, at, disp, parent string) {
 	for _, name := range dedupe(doc.Children(at)) {
 		// Once per path: a repeated key with a child under each is one line to fix.
-		if entry := disp + "." + name + " (indented under " + parent + ")"; !contains(c.unknown, entry) {
+		if entry := disp + "." + name + " (indented under " + parent + ")"; !slices.Contains(c.unknown, entry) {
 			c.unknown = append(c.unknown, entry)
 		}
 		c.listNested(doc, at+"."+shcl.QuoteSegment(name), disp+"."+name, name)
@@ -222,7 +222,7 @@ func allStrings(doc *shcl.Document, path string) []string {
 func dedupe(names []string) []string {
 	var out []string
 	for _, name := range names {
-		if !contains(out, name) {
+		if !slices.Contains(out, name) {
 			out = append(out, name)
 		}
 	}
