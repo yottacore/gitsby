@@ -353,7 +353,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Rename stage 7 to "Remote tests"
 	- ID: 2026100418431100
 	- Type: Task
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature]: Low
 	- Opened: 20261004-184311
 	- Opened by: jim-collier
@@ -361,6 +361,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Requirements  [Feature]:
 		- Stage 7 runs on FreeBSD and Linux arm64 boxes too, so "Mac + Windows tests" no longer fits. It becomes "Remote tests".
 	- Note: `[ErkbDSi]`, `[ErkbDT4]` and `[ErkbDTL]` read the label and change with it. They keep their IDs.
+	- Progress log:
+		- Done: cicd.bash's usage, plan line, section, skip, failure and OK lines say "Remote tests", and so do config.bash's stage 7 comment and the README's `--quick` line. The failure line said "Mac or Windows tests failed", so it changed too. The plan line keeps its dot column.
+		- Done: `[ErkbDTZ]` and the three checks above follow the new text, with the same IDs.
+	- Swept: "Mac + Windows", "Mac and Windows" and "Mac or Windows" across the repo, `legacy/` aside. Left alone, since they mean the boxes and not the stage: accounts.md, remote-tests.bash's purpose line, two comments in test.bash, and the dated history footers in cicd.bash and config.bash. The vNEXT changelog doesn't describe stage 7, so it has no entry.
+	- Verified: `[ErkbDSi]`, `[ErkbDT4]` and `[ErkbDTL]` fail against gover's cicd.bash and pass against the new one. `[ErkbDTZ]` checks for the label's absence, so it passes either way.
+	- Verified: test.bash 1453/0, shellcheck, `test-id.bash --check`, `backlog-check.bash` and `cicd.bash --gate`.
+	- Test case: test.bash `[ErkbDSi]`, `[ErkbDT4]`, `[ErkbDTL]` and `[ErkbDTZ]`.
+	- Acceptance signoff: Self-closed: rename.
+	- Closed: 20261004-185642
+	- Branch: remote-tests-label
+	- Commit: f546f7f
 
 - test.bash removes the folder it was started from when mktemp fails
 	- ID: 2026100415391365
