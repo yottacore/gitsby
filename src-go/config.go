@@ -558,7 +558,7 @@ func (c *config) load(o options) error {
 	// as one nothing understands - and the line that reports those printed the mark
 	// as part of the name, so the one diagnostic meant to explain the loss named a
 	// key that looks perfectly valid.
-	text := strings.TrimPrefix(string(data), "\ufeff")
+	text := strings.TrimPrefix(string(data), utf8BOM)
 	if isFlatConfig(text) {
 		c.flat = true
 		c.loadFlat(text)
@@ -685,7 +685,7 @@ func (c *config) absorb(acct, field, value, key string) {
 		// when it is named.
 		if problem := folderRuleProblem(value); problem != "" {
 			c.unknown = append(c.unknown, key+" ("+problem+": "+value+")")
-			if !contains(c.order, acct) {
+			if !slices.Contains(c.order, acct) {
 				c.order = append(c.order, acct)
 			}
 			break
@@ -730,7 +730,7 @@ func (c *config) absorb(acct, field, value, key string) {
 			value = c.protocolValue(key, value)
 		}
 		c.values["account."+acct+"."+field] = value
-		if !contains(c.order, acct) {
+		if !slices.Contains(c.order, acct) {
 			c.order = append(c.order, acct)
 		}
 	default:
@@ -753,15 +753,6 @@ func (c *config) protocolValue(key, value string) string {
 		return ""
 	}
 	return value
-}
-
-func contains(list []string, want string) bool {
-	for _, s := range list {
-		if s == want {
-			return true
-		}
-	}
-	return false
 }
 
 // splitAccountKey takes 'account.<name>.<field>' apart, validating the name.
@@ -867,7 +858,7 @@ func (c *config) accountForDir(dir string) string {
 // which is how you hold a second identity with no gh involved, and what the
 // folder rules have always applied.
 func (c *config) knowsAccount(name string) bool {
-	return name != "" && contains(c.accountNames(), strings.ToLower(name))
+	return name != "" && slices.Contains(c.accountNames(), strings.ToLower(name))
 }
 
 // value reads one key of one configured account. Both halves lowercased, because
