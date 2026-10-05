@@ -303,7 +303,7 @@ cd gitsby/src-go && go build -o gitsby .
 4. Compares the build against the frozen v2.1.0 one across a few dozen checks, for backwards compatibility.
 5. Cross-builds every target and installs each to its own tool directory.
 6. Rebuilds the demo gif, if it changed.
-7. Runs the Go tests on a Mac, a Windows box, a FreeBSD box and a Linux arm64 box over ssh, and the regression suite on all but Windows.
+7. Runs the Go tests on a Mac, a Windows box, a FreeBSD box and a Linux arm64 box over ssh, and the regression suite on all but Windows. The Linux arm64 box also runs the windows/arm64 Go tests under Wine.
 8. **Commits and pushes.** It ends by publishing - worth knowing before you run it on a fork.
 
 Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `gifsicle` won't stop the rest. Stage 5's destinations are one machine's paths, set in `cicd/config.bash`; on anyone else's box that stage finds nothing writable and says so, which is harmless. Stage 7's boxes are that machine's too, and a box that is off or busy is skipped the same way.

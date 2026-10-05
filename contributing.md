@@ -204,7 +204,7 @@ That binary is the whole product. The rest of the tooling below is for running t
 
 - `cicd/fuzz.bash` - just the fuzz suite.
 
-- `cicd/remote-tests.bash` - just the tests on other boxes: the Go tests on each, over ssh, and the regression suite on the Mac when given a universal build with `--mac-bin`, as the pipeline does. The FreeBSD and Linux arm64 boxes run the suite too when given their builds with `--bin`, if they have bash, git and Go. Each box is taken through a shared host lock for its run, and one that is off or busy is skipped. The boxes and the lock are one machine's, set in `cicd/config.bash`, so elsewhere it skips them all and says why.
+- `cicd/remote-tests.bash` - just the tests on other boxes: the Go tests on each, over ssh, and the regression suite on the Mac when given a universal build with `--mac-bin`, as the pipeline does. The FreeBSD and Linux arm64 boxes run the suite too when given their builds with `--bin`, if they have bash, git and Go. The Linux arm64 box also runs the windows/arm64 Go tests under Wine, in addition to the Windows box's run. Each box is taken through a shared host lock for its run, and one that is off or busy is skipped. The boxes and the lock are one machine's, set in `cicd/config.bash`, so elsewhere it skips them all and says why.
 
 - `cicd/utility/spawn-count.bash` - how many processes each command starts, against the newest previous run. This is the profiling step: the program is blocked on git for effectively all of its wall clock, so a sampling profile has no leaders in it.
 
