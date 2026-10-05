@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+#  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
+
 ##	Purpose:
 ##		- Counts the processes gitsby spawns per command, and fails when a count grows.
 ##		- This is the profiling step, and it is deliberately not a sampling profiler: the
@@ -56,7 +58,7 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-fEcho_Clean(){ echo "$*"; }
+fEcho_Clean(){ printf '%s\n' "$*"; }
 
 command -v strace >/dev/null 2>&1 || { echo "  spawn counts skipped (no strace)"; exit 0; }
 exe="${root}/${GO_MODULE_DIR}/${EXE_NAME}"
@@ -309,3 +311,5 @@ gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		- 20261003 JC: The number beside each command is the expected count, and its limit adds the same headroom the baseline compare allows, so a git update that starts one more helper doesn't fail the gate.
 ##		- 20261004 JC: Lower expected counts, now that one read answers every branch check.
 ##		- 20261004 JC: The pty runs get a size, as a real terminal has. Lower expected counts for the startup and token lookups that were asked twice.
+##		- 20261004 JC: fEcho_Clean prints with printf. Every expansion braced, and shellcheck
+##		  holds it there.

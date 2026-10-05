@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+#  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
+
 ##	Purpose:
 ##		- Writes SHA256SUMS for a directory of release assets, named as the assets are
 ##		  named on the release, to stdout or a given file.
@@ -21,7 +23,7 @@ if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
 fi
 set -eu; set -o pipefail
 
-fEcho(){ echo "[ $* ]"; }
+fEcho(){ printf '%s\n' "[ $* ]"; }
 
 outFile="${1:-}"
 
@@ -48,3 +50,5 @@ fi
 ##	History:
 ##		- 20260724: Created.
 ##		- 20260818: Checksums the directory it is run in rather than a hard-coded bin/ holding two scripts. A release is now one binary per platform, and the set changes with the target list.
+##		- 20261004 JC: fEcho prints with printf. Every expansion braced, and shellcheck holds it
+##		  there.

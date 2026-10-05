@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+#  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
+
 ##	Purpose:
 ##		- Keeps timestamped copies of the built binary, and runs one of them, so a
 ##		  behavior change can be bisected against a build that predates it.
@@ -37,7 +39,7 @@ source "${here}/include/gfs-rotate.bash"
 keepDir="${root}/${KEEP_BUILD_DIR}"
 exe="${root}/${GO_MODULE_DIR}/${EXE_NAME}"
 
-fDie(){ echo "keep-build: $*" >&2; exit 1; }
+fDie(){ printf '%s\n' "keep-build: $*" >&2; exit 1; }
 
 ## Newest last, which is what the GFS naming already sorts to.
 fKept(){ ls -1 "${keepDir}"/build_*."${EXE_NAME}" 2>/dev/null || true; }
@@ -102,3 +104,5 @@ esac
 ##		  immediately, so there is nothing to run alongside anything - what is actually
 ##		  wanted is last week's binary, and a diff of the two on the same arguments.
 ##		- 20261003 JC: A build number that is not digits is refused before arithmetic sees it.
+##		- 20261004 JC: fDie prints with printf. Every expansion braced, and shellcheck holds it
+##		  there.

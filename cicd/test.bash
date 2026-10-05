@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 #  shellcheck disable=2317  ## 'Can't reach.' False hits on functions invoked indirectly.
+#  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
 
 ##	Purpose:
 ##		- Regression tests for the compiled build in src-go/.
@@ -92,29 +93,38 @@ fUnsetInheritedGitConfig(){
 fUnsetInheritedGitConfig
 unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT
 
+## Output helpers, the same family as cicd.bash's: fEcho_Clean prints a line as given and
+## collapses repeated blanks, and fUsage refuses the command line.
+declare -i __wasLastEchoBlank=0
+fEcho_Clean(){
+	if [[ -n "${1:-}" ]]; then printf '%s\n' "$*"; __wasLastEchoBlank=0
+	elif ((! __wasLastEchoBlank)); then echo; __wasLastEchoBlank=1; fi
+}
+fUsage(){ fEcho_Clean "$*" >&2; exit 2; }
+
 ## -q silences the per-check line and leaves the header, the failures and the total. The
 ## pipeline doesn't pass it, even on its own -q runs.
 declare -i quiet=0
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		-q|--quiet) quiet=1; shift ;;
-		-h|--help)  echo "Usage: $(basename "${BASH_SOURCE[0]}") [-q|--quiet]"; exit 0 ;;
-		*)          echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
+		-h|--help)  fEcho_Clean "Usage: $(basename "${BASH_SOURCE[0]}") [-q|--quiet]"; exit 0 ;;
+		*)          fUsage "unknown option: ${1} (try --help)" ;;
 	esac
 done
 
 declare -i pass=0 fail=0
-fOk(){   pass=$((pass+1)); ((quiet)) || echo "  ok: $*"; }
-fFail(){ fail=$((fail+1)); echo "  FAIL: $*"; }
+fOk(){   pass=$((pass+1)); ((quiet)) || fEcho_Clean "  ok: $*"; }
+fFail(){ fail=$((fail+1)); fEcho_Clean "  FAIL: $*"; }
 ## Assert the command succeeds / fails (output discarded; -q keeps gitsby promptless).
-fAssert(){     local desc="$1"; shift; if   "$@" >/dev/null 2>&1; then fOk "$desc"; else fFail "$desc"; fi; }
-fAssertFail(){ local desc="$1"; shift; if ! "$@" >/dev/null 2>&1; then fOk "$desc"; else fFail "$desc"; fi; }
+fAssert(){     local desc="$1"; shift; if   "$@" >/dev/null 2>&1; then fOk "${desc}"; else fFail "${desc}"; fi; }
+fAssertFail(){ local desc="$1"; shift; if ! "$@" >/dev/null 2>&1; then fOk "${desc}"; else fFail "${desc}"; fi; }
 ## Assert the command's output matches an extended regex (for the pre-flight display).
 ## Capture rather than pipe: 'grep -q' would close the pipe early and pipefail would call that a failure.
 fAssertOut(){  local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
-	if grep -qE "$pat" <<< "${out}"; then fOk "$desc"; else fFail "$desc"; fi; }
+	if grep -qE "${pat}" <<< "${out}"; then fOk "${desc}"; else fFail "${desc}"; fi; }
 fAssertNotOut(){ local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
-	if ! grep -qE "$pat" <<< "${out}"; then fOk "$desc"; else fFail "$desc"; fi; }
+	if ! grep -qE "${pat}" <<< "${out}"; then fOk "${desc}"; else fFail "${desc}"; fi; }
 ## Matches against the PLAN only, not the whole run. Every "plans X" assertion against full
 ## output is also satisfied by the execution echo of the same command, so it cannot tell a
 ## preview that lists a step from one that silently stopped listing it. Plan lines are indented
@@ -244,9 +254,9 @@ fAllMet(){ local word="" ended="" total=0 before=0
 	done < "$1"
 	[[ "${total}" == "$2" && "${before}" == "$2" ]] ;}
 fAssertPlan(){    local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
-	if     grep -qE "$pat" <<< "$(fPlanOf <<< "${out}")"; then fOk "$desc"; else fFail "$desc"; fi; }
+	if     grep -qE "${pat}" <<< "$(fPlanOf <<< "${out}")"; then fOk "${desc}"; else fFail "${desc}"; fi; }
 fAssertNotPlan(){ local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
-	if ! grep -qE "$pat" <<< "$(fPlanOf <<< "${out}")"; then fOk "$desc"; else fFail "$desc"; fi; }
+	if ! grep -qE "${pat}" <<< "$(fPlanOf <<< "${out}")"; then fOk "${desc}"; else fFail "${desc}"; fi; }
 ## Succeeds when the plan line matching <pattern> is the step that ran: the same text, announced.
 fPlanRan(){ local pat="$1"; shift; local out="" line=""; out="$("$@" 2>&1 || true)"
 	line="$(grep -m1 -E -- "${pat}" <<< "$(fPlanOf <<< "${out}")" || true)"; line="${line#"${line%%[! ]*}"}"; line="${line% \*}"
@@ -440,7 +450,7 @@ fLintGlobs(){
 		shopt -s nullglob
 		for g in "${lgGlobs[@]}"; do
 			n=0
-			for f in $g; do
+			for f in ${g}; do
 				if [[ -f "${f}" ]]; then n=$((n + 1)); [[ "${2:-}" == empty ]] || printf '%s\n' "${f}"; fi
 			done
 			if [[ "${2:-}" == empty ]] && ((n == 0)); then printf '%s\n' "${g}"; fi
@@ -479,9 +489,14 @@ fBashFloorRefuses(){
 	[[ "${rc}" == 1 && "${out}" == "${1##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}."* && "${out}" != *$'\n'* ]]
 }
 
+## Whether shellcheck's brace rule is on for the whole of script $1. The directive has to come
+## before the first command, or it covers only the command after it.
+fBraceRuleOn(){ awk '/^[[:space:]]*#[[:space:]]*shellcheck[[:space:]].*enable=require-variable-braces/ { on = 1; exit }
+	/^[[:space:]]*($|#)/ { next } { exit } END { exit !on }' "${root}/$1" ;}
+
 ## The whole suite, against whatever ${gitsby} points at.
 fRunSuite(){
-	echo "suite: $1 (${gitsby})"
+	fEcho_Clean "suite: ${1} (${gitsby})"
 
 	## Help + bad input surface
 	fAssert     "[EknhbCC] help exits 0"                 "${gitsby}" --help
@@ -4209,7 +4224,7 @@ GHEOF
 	fAssert "[Er1LxSy] and reads a footer date written 20260819 or 2026-08-19" \
 		bash -c '[[ -n "$1" ]] && grep -qE "$1" <<< "$2" && grep -qE "$1" <<< "$3"' _ "${relFootRe}" $'##\t- 20260819 JC: x' $'##\t- 2026-08-19 JC: x'
 	if [[ "$(uname -s)" != Linux ]]; then
-		echo "  skip: release.bash --dry-run checks (Linux only)"
+		fEcho_Clean "  skip: release.bash --dry-run checks (Linux only)"
 	else
 		## --dry-run end to end, in a clone whose pipeline, build, gh and go are stubs that log. A dry
 		## run that took one real step would push, tag or publish, so each step has to be announced in
@@ -4580,7 +4595,7 @@ GHEOF
 		bash -c "grep -qE '\"(/home/|/Users/|C:/Users/)' '${root}/cicd/config.bash'"
 	## A .exe would match a Linux ~/.local/bin every run, so the fallback is per-box.
 	fAssert "[Eo67ohl] the dogfood fallback only applies to this box's own target" \
-		bash -c "grep -q 'DOGFOOD_FALLBACK_DIR' '${root}/cicd/config.bash' && grep -q 'host_goos' '${root}/cicd/cicd.bash'"
+		bash -c "grep -q 'DOGFOOD_FALLBACK_DIR' '${root}/cicd/config.bash' && grep -q 'hostGoos' '${root}/cicd/cicd.bash'"
 	## --quick skips the fuzz and the gif, which are not the slow part; three cross-builds are.
 	fAssert "[EnQTPxt] --quick narrows the cross-builds too" \
 		bash -c "grep -q 'quick).*DOGFOOD_TARGETS=' '${root}/cicd/cicd.bash'"
@@ -4700,7 +4715,7 @@ GHEOF
 		fAssert "[ErfzUHF] and refuses a baseline count that isn't a number, without running it or recording" \
 			bash -c "was=\$(ls '${sc}/cicd/artifacts/spawn'); out=\$('${sc}/cicd/utility/spawn-count.bash' -q 2>&1); [[ \$? == 1 ]] && grep -qF \"spawn_20991231-000000.tsv has 'BASH_VERSINFO[\" <<< \"\$out\" && [[ ! -e '${sc}/ran' ]] && [[ \$(ls '${sc}/cicd/artifacts/spawn') == \"\$was\" ]]"
 	else
-		echo "  skip: spawn-count regression checks (no strace)"
+		fEcho_Clean "  skip: spawn-count regression checks (no strace)"
 	fi
 	## -q reached the publisher and nothing else, so an unattended run still printed every one
 	## of 900-odd check lines and buried every stage header.
@@ -4708,7 +4723,7 @@ GHEOF
 	for qHarness in test fuzz parity; do
 		fAssert "[EnQTPxx] cicd/${qHarness}.bash accepts -q"  bash -c "grep -q -- '-q|--quiet) quiet=1' '${root}/cicd/${qHarness}.bash'"
 	done
-	fAssert "[EnQTPxy] and the engine hands it on"  bash -c "grep -q 'harness_quiet' '${root}/cicd/cicd.bash'"
+	fAssert "[EnQTPxy] and the engine hands it on"  bash -c "grep -q 'harnessQuiet' '${root}/cicd/cicd.bash'"
 	## The lint summary matched the suites' own check labels - several of which contain the
 	## words "warning" and "error", because that is what those checks are about.
 	local lrLog="${work}/lint-report"; mkdir -p "${lrLog}"
@@ -4818,6 +4833,14 @@ GHEOF
 		fAssert "[ErfyDHs] ${bfScript} refuses a bash older than 4.4, before anything else"  fBashFloorRefuses "${bfScript}"
 	done < <(fTrackedBash)
 	fAssertFail "[ErfyLds] and that check found scripts to look at"  test "${bfFound}" = 0
+	## The style guide says every expansion is braced, and shellcheck holds that only in a file that
+	## turns the rule on. The publish helper is shared and left as it is.
+	local brScript="" brMissing=""
+	while IFS= read -r brScript; do
+		[[ "${brScript}" == cicd/utility/n8git_backup-and-publish ]] && continue
+		fBraceRuleOn "${brScript}" || brMissing+="${brScript} "
+	done < <(fTrackedBash)
+	fAssert "[ErmXzJR] every pipeline script has shellcheck hold its expansions braced"  test -z "${brMissing}"
 	## A commit message the user typed passes through the engine's output helpers.
 	fAssertFail "[Er1LxTI] cicd.bash prints with printf, never echo -e"  grep -qE '^[^#]*echo -e' "${root}/cicd/cicd.bash"
 	## The linter set is argued for line by line, and 'default: none' means a new golangci-lint
@@ -4912,7 +4935,7 @@ EOF
 		fAssert "[Epsq7r0] the committed demo gif ends on three seconds of black" \
 			python3 -c 'import sys; from PIL import Image; im = Image.open(sys.argv[1]); im.seek(im.n_frames - 1); sys.exit(0 if im.info.get("duration") == 3000 and im.convert("RGB").getextrema() == ((0, 0), (0, 0), (0, 0)) else 1)' "${root}/assets/demo.gif"
 	else
-		echo "  skip: demo renderer checks (need python3 with Pillow, and fc-match)"
+		fEcho_Clean "  skip: demo renderer checks (need python3 with Pillow, and fc-match)"
 	fi
 
 	## The Windows resource. Built here rather than pinned in the source, because the failure
@@ -5006,7 +5029,7 @@ EOF
 	## The pre-push gate: cicd.bash --gate against the stubbed engine above, then the hook in a
 	## throwaway clone whose cicd.bash is a stub. Linux only, like the pipeline they belong to.
 	if [[ "$(uname -s)" != Linux ]]; then
-		echo "  skip: pre-push gate checks (Linux only)"
+		fEcho_Clean "  skip: pre-push gate checks (Linux only)"
 	else
 		local gateDir="${work}/gate" gateCalls="${work}/gate-calls.log" gateFail="${work}/gate-fail" gateOut="${work}/gate-out.txt"
 		fMakeGateFixture
@@ -5085,7 +5108,7 @@ EOF
 			printf 'if ($true) {\n  Write-Output 1\n}\n' > "${gateDir}/cicd/utility/run-latest.ps1"
 			fAssert "[ErgRMMj] and fails one indented two spaces"  fGatePwshSays 1 'PSUseConsistentIndentation'
 		else
-			echo "  skip: real PowerShell lint checks (pwsh or PSScriptAnalyzer not installed)"
+			fEcho_Clean "  skip: real PowerShell lint checks (pwsh or PSScriptAnalyzer not installed)"
 		fi
 		## The same rule as the .ps1 files: no BOM, nothing outside ASCII.
 		fAssert "[Erg6Ryo] PSScriptAnalyzerSettings.psd1 is plain ASCII" \
@@ -5177,7 +5200,7 @@ EOF
 		fAssert "[Er1LxTU] a build names the commit it was built from, and -dirty for uncommitted source" \
 			fGateRanCalling 0 '^go build .* -X main\.version=9\.8\.7-1-g[0-9a-f]+-dirty -X main\.buildEpoch='
 		fAssert "[Er1LxTV] and reads that after the remote sync, which can move HEAD" \
-			awk '/^fSection "0\/8  Remote sync"/{s=NR} /^go_version=/{g=NR} END{exit !(s && g > s)}' "${root}/cicd/cicd.bash"
+			awk '/^fSection "0\/8  Remote sync"/{s=NR} /^goVersion=/{g=NR} END{exit !(s && g > s)}' "${root}/cicd/cicd.bash"
 		: > "${gateFail}/go-test"
 		fGateOnly test
 		rm -f -- "${gateFail:?}/go-test"
@@ -6286,19 +6309,19 @@ SSHEOF
 	fi
 }
 
-echo "gitsby regression tests (fixture: ${work})"
+fEcho_Clean "gitsby regression tests (fixture: ${work})"
 
 ## One implementation, and it gates. The shim keeps ${gitsby} a plain single path so the
 ## 'bash -c' interpolation throughout the suite stays as it is.
 goBin="${root}/src-go/gitsby"; [[ -x "${goBin}" ]] || goBin="${goBin}.exe"
-[[ -x "${goBin}" ]] || { echo "no build at src-go/gitsby - run 'go build' there, or cicd.bash stage 2" >&2; exit 1; }
+[[ -x "${goBin}" ]] || { fEcho_Clean "no build at src-go/gitsby - run 'go build' there, or cicd.bash stage 2" >&2; exit 1; }
 gitsby="${work}/gitsby-go"
 printf '#!/usr/bin/env bash\nexec "%s" "$@"\n' "${goBin}" > "${gitsby}"
 chmod +x "${gitsby}"
 fMakeFixture "${work}/go"
 fRunSuite "go"
 
-echo "passed: ${pass}, failed: ${fail}"
+fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ((fail == 0)) || exit 1
 
 
@@ -6387,3 +6410,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20261004 JC: The release's changelog section gets a downloads table, one row per OS and one column per CPU, written from the files phase 1 built. The release body is still that section word for word. Phase 1 refuses a vNEXT that already has one, and phase 3 warns when the files it publishes and the table disagree. Four of the five new checks fail against the tree before them; the fifth, the body matching the section, held before too. 1412 -> 1417.
 ##		- 20261004 JC: A failed mktemp stops the suite before the exit trap is set, and the trap removes only the scratch folder the suite made and marked. It removed the folder the suite was started from before. Run for real with TMPDIR a file, from a folder with a canary in it, and no script here changes into a mktemp result unchecked. The run fails against the tree before it. 1417 -> 1444.
 ##		- 20261004 JC: The probe checks prove the probes overlap from the order the fake round trips start and end in, not from a time limit. Each waits for the others to start, so the checks hold on a slow box, and fail on a build that asks in turn. 1444 -> 1444.
+##		- 20261004 JC: Prints through fEcho_Clean, like the other pipeline scripts. Three checks that read cicd.bash look for its new camelCase names. Every expansion braced, and shellcheck holds it there.
