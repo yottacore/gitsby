@@ -76,9 +76,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Done: `pr ok` still refuses the flag, since it commits nothing. The old test.bash check that release refuses the flag, `[Err7W97]`, is commented out with the reason, and `[ErrG0tG]` asks the same of `repo connect`. Go test `[Err7CYY]` now expects `pr create` and `release` to take it.
 		- Done: README, the changelog and design.md list the 2 commands. Help and workflows.md name no commands for the flag, so they needed nothing.
 		- Verified: `go test ./...` and the gate pass. The 12 new suite checks and the 25 around them pass on their own. Against the build before this, 10 of the 12 fail; the other 2, a plan with no `git add` and `pr ok` refusing, pass either way and guard against a regression. With the release read-ahead turned off, 2 fail. With the nothing-new rule back on the whole tree, 3 fail.
+		- Verified: the full test.bash on the branch, 1482/0 (2026-10-05).
 		- For signoff: the plan's two list labels only.
 	- Branch: staged, stagedpr
-	- Commit: efe1522
+	- Commit: efe1522, eca617e
 	- Test case: Go tests `[Err7CYL]`, `[Err7CYY]`, `[Err7CYm]`. test.bash `[Err7W8V]` through `[Err7WAA]`, 18 checks, with `[Err7W97]` off since 2026-10-05. For `pr create` and `release`: `[ErrG0tG]` through `[ErrG0uY]` and `[ErrG0uf]` through `[ErrG0uu]`, 12 checks.
 	- Swept: every `--autostash` and `git add --all` in `src-go`. The commit and the pull in mutate.go, br create from `main` or `dev` in branchcmd.go, and both plan lines in preview.go. The file list in repo.go is for `repo create` and `repo connect`, which refuse the flag. The pulls in pr.go and release.go run on a clean tree, and those commands refuse the flag.
 	- Swept (2026-10-05, `pr create` and `release`): every step after their commit. In release.go the pulls of `dev` and the default branch, both checkouts, the merge and its back-out, the tag, both pushes, and the fast-forward of `dev`. Its nothing-new check read the whole tree as work to release, and now reads the index under the flag. In pr.go the push and the `gh` or `tea` call. `pr ok` reads the whole tree to refuse, and refuses the flag. The line above about pr.go and release.go held only while they refused the flag.
