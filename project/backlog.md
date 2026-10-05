@@ -399,7 +399,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 enhancement 8: Pipeline scripts and the style guide against the new Bash rules
 	- ID: 2026100313130060
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Waiting for testing
+	- Needs local test suite run?: Yes. Full test.bash, fuzz.bash and parity.bash on b23, then a full cicd run. test.bash should be gover's total plus one, for `[ErmXzJR]`. fuzz and parity should not change. Only the gate, the new check and the three changed checks were run.
 	- Priority [Feature]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -413,7 +414,35 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Decisions:
 		- config.bash's UPPER_SNAKE settings stay (2026-10-03). They are sourced settings read like environment variables, some are exported, and the directive lets the language's own case convention win.
 		- gfs-rotate.bash is a shared Bubbles file. A change there goes to every copy.
+		- 2026-10-04: Every copy of gfs-rotate.bash changes, starting from the synced copy as it was changed that day, with dates by printf. Copies in other projects are left uncommitted there.
+			- A copy with its own edits, or one that differs from the synced copy by more than its known history, is patched rather than overwritten, and listed.
+			- Skipped: git worktrees other than a project's main checkout, anything under `0_archive`, anything under `.git/`, and the `wsl/` copy.
+		- 2026-10-04: Another project changed its copy of a shared file to leave symlinks out. If that is in gfs-rotate.bash, it goes to every copy. If it is in another file, that file is not changed here. Either way the `private` link every project has is never left out.
+		- 2026-10-04: `include/gh-account.bash` is deleted only if the gate fixture can do without it. Otherwise it gets a header. No existing test is deleted.
+		- 2026-10-04: `local -n` nameref names are not renamed. The odd suffixes are on purpose.
 	- Origin: directives 2026-09-09 to 2026-10-03, Bash section. Confirmed by a parse of every script.
+	- Progress log:
+		- Question: the symlink change is in `n8git_backup-and-publish`, not gfs-rotate.bash. slodworld's copy has it (commit 8dd2c57, 2026-10-04). It leaves out of the backup any dir link inside the repo, and any link that points back into the project. The synced copy and gitsby's copy don't have it yet. Every project's `private` link points outside its project, so it is still backed up. Should it go to the synced copy and to gitsby's? Not changed here.
+		- Question: `include/gh-account.bash` shipped in v2.1.0, and changelog.md lists it under Added, as a helper for pipelines that call gh. The gate fixture would run without it, but deleting it drops a released helper with no Removed entry. It got a header instead. Delete it anyway?
+		- Note: Left alone. The `fp` prefix on private functions in release.bash and gen-winres.bash is the v2.1.0 habit, and two test.bash checks read those names. cicd.bash's `_dests` is a nameref. `n8git_backup-and-publish` is shared and keeps its five unbraced expansions, so the new check skips it. install.bash's output helpers are unchanged. The report scripts' own output lines still use echo.
+		- Note: gfs-rotate.bash copies touched outside this repo, all left uncommitted. Paths are under the dev tree unless shown.
+			- Written as the new shared copy: `~/synced/0-0/common/exec/util/linux/bash/include/`, and the `cicd/utility/include/` copy in convert-base-v2, zuid, slodworld, slodworld2 and gitea camhauler.
+			- The same, over a 2026-09-15 sync that was never committed there: photopea-local, zfs-auto-snapshot, x9ps1-git, tradeclanker, ti84ce-ish, nano-git-db (`github_floss`), link-repair, bash5-marmot and camhauler-cli. tooblin's copy was untracked.
+			- Patched, since each had edits of its own: silkterm, whose spelling fix is now in every copy. shcl and silkterm's `forks/shcl` clone, which keep their own history line; their better names are now in every copy. nemo-anywhere, which keeps its own header with no file-wide disables, so it has two per-function nameref disables.
+			- Skipped: the synced `wsl/` copy, `0_archive/rename-foundry`, silkterm's `forks/shcl-v2` worktree, and gitsby's gate snapshot under `.git/`.
+	- Done: cicd.bash, fuzz.bash and pre-push.bash use camelCase variables, and a global only the output helpers use starts with two underscores. cicd.bash's helpers come before the option loop, so a bad option goes through `fUsage`. Its two-read lines are split.
+	- Done: test.bash, fuzz.bash and parity.bash print through `fEcho_Clean`, and parity's header through `fEcho`. Every helper family under `cicd/` prints with printf, and gen-winres's `fSay` is `fEcho_Clean`.
+	- Done: Every expansion is braced. Each script turns on shellcheck's brace rule at the top, so the lint stage fails an unbraced one.
+	- Done: gfs-rotate.bash adopts the synced copy's printf dates, and its loop variables have real names. One of them can't be `epoch`, since `_gfs_ts` has a local of that name, and its nameref would set that instead.
+	- Done: gh-account.bash has a header, copyright and history.
+	- Done: style-guide.md's Go section takes the directive's rules, and allows an interface for a test seam. Its Bash section has the layout, naming, quoting and output rules, and a list of Bash traps. An error helper is the rule now, not banned.
+	- Swept: a parse of every pipeline script for snake_case and one-underscore names. Only namerefs, the sourced-file guards and the proxy variables are left. test.bash, fuzz.bash, parity.bash, release.bash, the utility scripts, the Go source and the docs were grepped for every renamed name. Three test.bash checks read cicd.bash's names and were changed to match: `[Eo67ohl]`, `[EnQTPxy]` and `[Er1LxTV]`.
+	- Verified: `[ErmXzJR]` fails on gover, listing all 22 scripts, and passes here. The three changed checks fail on gover's cicd.bash and pass here. A file with an unbraced expansion fails shellcheck.
+	- Verified: shellcheck over every pipeline script, `test-id.bash --check`, `backlog-check.bash` and `cicd.bash --gate` pass. cicd.bash's plan is the same as gover's, with and without `--quick`, and its option errors read and exit as before.
+	- Verified: old and new gfs-rotate.bash agree file for file and line for line over 25 rounds of rotation in five time zones, DST gaps included. The bad-count guard still works, and keep-build.bash still rotates with it.
+	- Test case: test.bash `[ErmXzJR]`, every pipeline script turns on shellcheck's brace rule. Renames have no behavior to test; the suites cover them.
+	- Branch: bashstyle
+	- Commit: 20ab499, 0952f39
 
 - The README install line fails while v2.1.0 is the newest full release
 	- ID: 2026100315501800
