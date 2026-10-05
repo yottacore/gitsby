@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `--staged`: commit only what is staged, and leave the rest of the tree alone
 	- ID: 2026100512025340
 	- Type: Enhancement
-	- Status: Waiting on signoff
+	- Status: Done
 	- Priority [Feature]: High
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
@@ -78,11 +78,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Verified: `go test ./...` and the gate pass. The 12 new suite checks and the 25 around them pass on their own. Against the build before this, 10 of the 12 fail; the other 2, a plan with no `git add` and `pr ok` refusing, pass either way and guard against a regression. With the release read-ahead turned off, 2 fail. With the nothing-new rule back on the whole tree, 3 fail.
 		- Verified: the full test.bash on the branch, 1482/0 (2026-10-05).
 		- For signoff: the plan's two list labels only.
+		- Answered 2026-10-05: the labels read "Changes to commit:" and "Changes to leave alone:". The plan prints before anything runs, so past tense read wrong.
 	- Branch: staged, stagedpr
 	- Commit: efe1522, eca617e
 	- Test case: Go tests `[Err7CYL]`, `[Err7CYY]`, `[Err7CYm]`. test.bash `[Err7W8V]` through `[Err7WAA]`, 18 checks, with `[Err7W97]` off since 2026-10-05. For `pr create` and `release`: `[ErrG0tG]` through `[ErrG0uY]` and `[ErrG0uf]` through `[ErrG0uu]`, 12 checks.
 	- Swept: every `--autostash` and `git add --all` in `src-go`. The commit and the pull in mutate.go, br create from `main` or `dev` in branchcmd.go, and both plan lines in preview.go. The file list in repo.go is for `repo create` and `repo connect`, which refuse the flag. The pulls in pr.go and release.go run on a clean tree, and those commands refuse the flag.
 	- Swept (2026-10-05, `pr create` and `release`): every step after their commit. In release.go the pulls of `dev` and the default branch, both checkouts, the merge and its back-out, the tag, both pushes, and the fast-forward of `dev`. Its nothing-new check read the whole tree as work to release, and now reads the index under the flag. In pr.go the push and the `gh` or `tea` call. `pr ok` reads the whole tree to refuse, and refuses the flag. The line above about pr.go and release.go held only while they refused the flag.
+	- Acceptance signoff: 2026-10-05, all 3 choices answered.
+	- Closed: 2026-10-05
 
 - macOS release gets a universal binary
 	- ID: 2026100313491873
