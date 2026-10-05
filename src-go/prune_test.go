@@ -65,7 +65,10 @@ func argListLen(args []string) int {
 
 func TestLeaseDeleteBatches(t *testing.T) { // [EptMdzD]
 	got := leaseDeleteBatches([]string{"a", "b"}, map[string]string{"a": "va", "b": "vb"}, leasePushBudget)
-	want := [][]string{{"push", "--force-with-lease=refs/heads/a:va", "--force-with-lease=refs/heads/b:vb", "origin", "--delete", "refs/heads/a", "refs/heads/b"}}
+	want := []leaseBatch{{
+		branches: []string{"a", "b"},
+		args:     []string{"push", "--force-with-lease=refs/heads/a:va", "--force-with-lease=refs/heads/b:vb", "origin", "--delete", "refs/heads/a", "refs/heads/b"},
+	}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("leaseDeleteBatches = %q, want %q", got, want)
 	}
@@ -88,13 +91,17 @@ func TestLeaseDeleteBatches(t *testing.T) { // [EptMdzD]
 
 // checkBatches holds each batch to its shape: its leases, then origin --delete, then
 // the same branches in order, within budget unless it carries the one oversized name.
-func checkBatches(t *testing.T, name string, got [][]string, tested map[string]string, budget int, wantBranches [][]string, oversized string) {
+// The names it hands back are those branches too.
+func checkBatches(t *testing.T, name string, got []leaseBatch, tested map[string]string, budget int, wantBranches [][]string, oversized string) {
 	t.Helper()
 	if len(got) != len(wantBranches) {
 		t.Fatalf("%s: %d batches, want %d: %q", name, len(got), len(wantBranches), got)
 	}
-	for i, args := range got {
-		branches := wantBranches[i]
+	for i, batch := range got {
+		branches, args := wantBranches[i], batch.args
+		if !reflect.DeepEqual(batch.branches, branches) {
+			t.Errorf("%s: batch %d names %q, want %q", name, i, batch.branches, branches)
+		}
 		want := []string{"push"}
 		for _, branch := range branches {
 			want = append(want, leaseArg(branch, tested[branch]))

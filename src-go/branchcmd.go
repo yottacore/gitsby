@@ -208,7 +208,7 @@ func (a *app) mergeDeleteRemote(branch, mergedTip string) {
 		a.out.clean("")
 		a.out.status("git push --force-with-lease origin --delete " + branch + " ...")
 		// Non-fatal: the lease can still refuse, if the branch moved after the ask.
-		if !a.inheritOK("git", leaseDeleteBatches(send, tested, leasePushBudget)[0]...) {
+		if !a.inheritOK("git", leaseDeleteBatches(send, tested, leasePushBudget)[0].args...) {
 			a.out.status("WARNING: couldn't delete origin's '" + branch + "'; left it alone.")
 		}
 		a.out.resetBlank()

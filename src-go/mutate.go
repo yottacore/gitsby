@@ -329,21 +329,16 @@ func (a *app) pruneRemote(branches []string, onOrigin map[string]string, asked b
 	}
 	done := 0
 	var stillThere []string
-	for _, args := range leaseDeleteBatches(send, a.prune.remoteTip, leasePushBudget) {
-		// The refs close the list, one for each lease.
-		var batch []string
-		for _, ref := range args[len(args)-(len(args)-3)/2:] {
-			batch = append(batch, strings.TrimPrefix(ref, "refs/heads/"))
-		}
+	for _, batch := range leaseDeleteBatches(send, a.prune.remoteTip, leasePushBudget) {
 		a.out.clean("")
-		a.out.status("git push --force-with-lease origin --delete " + strings.Join(batch, " ") + " ...")
-		if a.inheritOK("git", args...) {
-			done += len(batch)
+		a.out.status("git push --force-with-lease origin --delete " + strings.Join(batch.branches, " ") + " ...")
+		if a.inheritOK("git", batch.args...) {
+			done += len(batch.branches)
 		} else {
 			// Non-fatal, same as br merge. A leased delete is decided per ref, so count what
 			// went rather than writing the batch off: a delete that went through takes the
 			// remote-tracking ref with it, which is a local lookup.
-			for _, branch := range batch {
+			for _, branch := range batch.branches {
 				if a.branchExistsRemote(branch) {
 					stillThere = append(stillThere, branch)
 				} else {
