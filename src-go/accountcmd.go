@@ -571,7 +571,7 @@ func (a *app) writeAccountFragment(dir, file, name string) error {
 		}
 	}
 	if sshKey := a.cfg.value(name, "sshKey"); sshKey != "" {
-		if err := write("core.sshCommand", "ssh -i "+sshKeyArg(sshKey)+" -o IdentitiesOnly=yes"); err != nil {
+		if err := write("core.sshCommand", sshKeyCommand(sshKey)); err != nil {
 			return err
 		}
 	}
@@ -925,14 +925,16 @@ func lookupFix(goos, file string, cause error) []string {
 	return []string{"Make the folder it is in searchable, then run this again:", "  chmod u+x '" + dir + "'"}
 }
 
-// createAccountsFile makes the file and writes it through one handle. The open
-// fails on anything already at the path, a link included, so it can never
+// createNew makes a file that must not exist yet and writes it through one
+// handle: the accounts file, the old copy a conversion keeps, and the lock. The
+// open fails on anything already at the path, a link included, so it can never
 // truncate - and writing through that same handle means no empty file sits there
-// for another run to load in between. opened says whether the file now exists
-// because of this call, which a failed write leaves in place: removing it by name
-// could delete a file another run has since renamed over it.
-func createAccountsFile(file, text string) (opened bool, err error) {
-	f, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+// for another run to load in between. The mode is set from the first byte, since
+// each of these names accounts and token files. opened says whether the file now
+// exists because of this call, which a failed write leaves in place: removing it
+// by name could delete a file another run has since renamed over it.
+func createNew(file, text string, mode fs.FileMode) (opened bool, err error) {
+	f, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
 	if err != nil {
 		return false, err
 	}
@@ -964,15 +966,11 @@ func lockAccountsFile(file string, wait time.Duration) (func(), error) {
 		target = resolved
 	}
 	lock := target + ".lock"
+	token := rand.Text()
 	deadline := time.Now().Add(wait)
 	for {
-		f, err := os.OpenFile(lock, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-		if err == nil {
-			token := rand.Text()
-			_, err = f.WriteString(token)
-			if cerr := f.Close(); err == nil {
-				err = cerr
-			}
+		opened, err := createNew(lock, token, 0o600)
+		if opened {
 			if err != nil {
 				_ = os.Remove(lock)
 				return nil, writeRefusal("Couldn't make the lock beside the accounts file.", "Writing it", err,
@@ -1328,7 +1326,7 @@ func (a *app) cmdAccountSet() error {
 		// 0600 from the first byte: this file names your accounts and points at your
 		// token files. Opened so it cannot replace anything, since a file already
 		// there - even one this run could not read - holds someone's accounts.
-		opened, err := createAccountsFile(t.file, t.doc.ToCanonical())
+		opened, err := createNew(t.file, t.doc.ToCanonical(), 0o600)
 		switch {
 		case err == nil:
 			a.out.status("Wrote " + nativePath(t.file))

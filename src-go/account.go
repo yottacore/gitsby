@@ -545,9 +545,7 @@ func (a *app) selectAccount(skipGhProbe bool) error {
 	// set on the repo, was chosen more deliberately than a folder rule was.
 	if sshKey := a.cfg.value(a.acct.name, "sshKey"); sshKey != "" &&
 		os.Getenv("GIT_SSH_COMMAND") == "" && a.coreSSHCommand() == "" {
-		// IdentitiesOnly, or ssh offers every key the agent holds and the server
-		// picks the first that authenticates - on a two-account machine a coin toss.
-		if err := setEnv("GIT_SSH_COMMAND", "ssh -i "+sshKeyArg(sshKey)+" -o IdentitiesOnly=yes"); err != nil {
+		if err := setEnv("GIT_SSH_COMMAND", sshKeyCommand(sshKey)); err != nil {
 			return err
 		}
 		a.acct.usedSSHKey = sshKey

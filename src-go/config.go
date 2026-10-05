@@ -116,6 +116,14 @@ func sshKeyArg(value string) string {
 	return strings.ReplaceAll(value, `\`, "/")
 }
 
+// sshKeyCommand is the ssh command for an account's key, for GIT_SSH_COMMAND and
+// for core.sshCommand alike. IdentitiesOnly, or ssh offers every key the agent
+// holds and the server picks the first that authenticates - on a two-account
+// machine a coin toss.
+func sshKeyCommand(value string) string {
+	return "ssh -i " + sshKeyArg(value) + " -o IdentitiesOnly=yes"
+}
+
 var (
 	msysDriveRE = regexp.MustCompile(`^/([A-Za-z])(/.*)?$`)
 	driveRootRE = regexp.MustCompile(`^[A-Za-z]:/$`)

@@ -136,11 +136,7 @@ func (a *app) cmdMerge() error {
 			a.out.status("WARNING: remote unreachable; the merge to '" + targetBranch + "' is local only - '" + meName + " sync' publishes it.")
 		}
 	default:
-		push := []string{"push"}
-		if !a.hasUpstream() {
-			push = []string{"push", "-u", "origin", "HEAD"}
-		}
-		if err := a.step("git", push...); err != nil {
+		if err := a.step("git", a.pushArgs()...); err != nil {
 			return err
 		}
 		mergePublished = true
