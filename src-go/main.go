@@ -485,38 +485,38 @@ func (a *app) settleGh() error {
 		// all - with nothing to take a host from, its account is still the only one
 		// that can be asked. Any other host is the Git host line's business.
 		if a.onGitHub() || !a.hasOrigin() {
-			a.gh.tool, a.gh.cli, a.gh.isCommand = toolGh, "gh", true
+			a.remote.tool, a.remote.cli, a.remote.isCommand = toolGh, "gh", true
 		} else {
-			a.gh.tool, a.gh.cli = a.originTool()
-			a.gh.isCommand = a.gh.tool != toolNone
+			a.remote.tool, a.remote.cli = a.originTool()
+			a.remote.isCommand = a.remote.tool != toolNone
 		}
 	case "pr":
-		a.gh.tool, a.gh.cli = a.pr.tool, a.pr.cli
-		a.gh.isCommand = a.pr.tool != toolNone
+		a.remote.tool, a.remote.cli = a.pr.tool, a.pr.cli
+		a.remote.isCommand = a.pr.tool != toolNone
 		// A write is a write whichever CLI makes it: 'pr create' and 'pr ok' act as
 		// the git host account while git pushes as the key, and those two disagreeing is
 		// the same wrong-account mistake on any host.
-		if a.pr.sub != "" && a.gh.isCommand {
-			a.gh.isWrite = true
-			a.gh.probeURL = a.originURL()
+		if a.pr.sub != "" && a.remote.isCommand {
+			a.remote.isWrite = true
+			a.remote.probeURL = a.originURL()
 		}
 	case "repo-create":
-		a.gh.isCommand, a.gh.isWrite = true, true
-		a.gh.tool, a.gh.cli = toolGh, "gh"
+		a.remote.isCommand, a.remote.isWrite = true, true
+		a.remote.tool, a.remote.cli = toolGh, "gh"
 		// 'repo create' is a GitHub command by definition - gh is what creates the
 		// repo - so the host it asks about is github.com, not whatever origin the
 		// directory we happen to be standing in points at.
 		if a.ghProtocol("github.com") == "ssh" {
-			a.gh.probeURL = "git@github.com:" + a.tgt.ghTarget + ".git"
+			a.remote.probeURL = "git@github.com:" + a.tgt.ghTarget + ".git"
 		}
 	case "repo-connect":
 		if a.tgt.ghTarget != "" {
-			a.gh.isCommand, a.gh.isWrite = true, true
-			a.gh.tool, a.gh.cli = toolGh, "gh"
+			a.remote.isCommand, a.remote.isWrite = true, true
+			a.remote.tool, a.remote.cli = toolGh, "gh"
 			// connectURL is the url we resolved ourselves, so probe that rather than
 			// guess.
 			if at := strings.Index(a.tgt.connectURL, "@"); at >= 0 && strings.Contains(a.tgt.connectURL[at:], ":") {
-				a.gh.probeURL = a.tgt.connectURL
+				a.remote.probeURL = a.tgt.connectURL
 			}
 		}
 	}
@@ -525,15 +525,15 @@ func (a *app) settleGh() error {
 	// read: the identity block names gh's account, and a write compares against it.
 	// A bare 'pr' or 'pr <n>' prints neither. tea's answer is a local file, so it
 	// is simply asked.
-	if a.gh.isCommand && (a.gh.isWrite || a.identityWillPrint()) {
-		if a.gh.tool == toolGh {
+	if a.remote.isCommand && (a.remote.isWrite || a.identityWillPrint()) {
+		if a.remote.tool == toolGh {
 			a.askGhLoginAhead()
 		} else {
 			_ = a.hostCLIWho()
 		}
 	}
-	if a.gh.isWrite {
-		a.askSSHLoginAhead(a.gh.probeURL)
+	if a.remote.isWrite {
+		a.askSSHLoginAhead(a.remote.probeURL)
 	}
 	if a.identityWillPrint() {
 		if url := a.identityURL(); a.sshLineAsks(url) {
@@ -555,11 +555,11 @@ type identityMismatch struct {
 // this host, or a gh that is offline, has said nothing about who you are, and
 // refusing on that would refuse every unconfigured machine.
 func (a *app) hostCLIWho() string {
-	switch a.gh.tool {
+	switch a.remote.tool {
 	case toolGh:
 		return a.ghLogin()
 	case toolTea:
-		if who, _ := a.hostLogin(a.gh.cli, a.originHost()); who != "" {
+		if who, _ := a.hostLogin(a.remote.cli, a.originHost()); who != "" {
 			return who
 		}
 	}
@@ -572,8 +572,8 @@ func (a *app) hostCLIWho() string {
 // right before the prompt. --any-identity means the difference is intended.
 func (a *app) identityGate() (identityMismatch, error) {
 	var found identityMismatch
-	if a.gh.isWrite && !a.opt.anyIdentity {
-		found.text = identityMismatchText(a.gh.cli, a.hostCLIWho(), a.sshLogin(a.gh.probeURL))
+	if a.remote.isWrite && !a.opt.anyIdentity {
+		found.text = identityMismatchText(a.remote.cli, a.hostCLIWho(), a.sshLogin(a.remote.probeURL))
 		found.viaGh = found.text != ""
 		// Up front, like every other refusal: don't show a plan we won't run.
 		if found.text != "" && a.opt.quiet {

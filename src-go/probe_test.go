@@ -40,11 +40,11 @@ func TestGhLoginAskedAheadAnswersForItsOwnToken(t *testing.T) { // [ErkSC3h]
 	if got := a.ghLogin(); got != "first" {
 		t.Errorf("ghLogin() = %q, want first: the token exported when it was asked", got)
 	}
-	if a.gh.loginAhead != nil {
+	if a.remote.loginAhead != nil {
 		t.Error("the answer was read but is still pending")
 	}
 	a.askGhLoginAhead()
-	if a.gh.loginAhead != nil {
+	if a.remote.loginAhead != nil {
 		t.Error("asked again for an answer already known")
 	}
 }
@@ -57,16 +57,16 @@ func TestSSHLoginAskedAheadIsReadBack(t *testing.T) { // [ErkSC3v]
 	url := "git@github.com:a/b.git"
 	a.askSSHLoginAhead(url)
 	a.askSSHLoginAhead(url)
-	if len(a.gh.sshAhead) != 1 {
-		t.Fatalf("%d probes pending for one remote, want 1", len(a.gh.sshAhead))
+	if len(a.remote.sshAhead) != 1 {
+		t.Fatalf("%d probes pending for one remote, want 1", len(a.remote.sshAhead))
 	}
 	if got := a.sshLogin(url); got != "bob" {
 		t.Errorf("sshLogin() = %q, want bob", got)
 	}
-	if len(a.gh.sshAhead) != 0 {
+	if len(a.remote.sshAhead) != 0 {
 		t.Error("the answer was read but is still pending")
 	}
-	if got := a.gh.sshLogins[url]; got != "bob" {
+	if got := a.remote.sshLogins[url]; got != "bob" {
 		t.Errorf("cached answer = %q, want bob", got)
 	}
 }
@@ -77,7 +77,7 @@ func TestEndProbesKillsAProbeNobodyRead(t *testing.T) { // [ErkSC48]
 	a := newApp(newPrinter())
 	url := "git@github.com:a/b.git"
 	a.askSSHLoginAhead(url)
-	pending := a.gh.sshAhead[url]
+	pending := a.remote.sshAhead[url]
 	started := time.Now()
 	a.endProbes()
 	if got := pending.wait(); got != "?" {
@@ -94,7 +94,7 @@ func TestAskGhTokensAsksEachLoginOnce(t *testing.T) { // [ErkTEpz]
 	a := newApp(newPrinter())
 	a.askGhTokens([]string{"one", "two", "one", "", "three"})
 	for who, want := range map[string]string{"one": "", "two": "tok_two", "three": ""} {
-		if got, known := a.gh.tokens[who]; !known || got != want {
+		if got, known := a.remote.tokens[who]; !known || got != want {
 			t.Errorf("token for %s = %q (known %v), want %q", who, got, known, want)
 		}
 	}

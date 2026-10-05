@@ -101,7 +101,7 @@ func TestSSHConnectTarget(t *testing.T) { // [EnQKNsf]
 func TestSSHLoginIsPerRemote(t *testing.T) { // [Er1LxTt]
 	t.Setenv("GIT_SSH_COMMAND", "ssh") // keeps the core.sshCommand lookup off this repo
 	a := newApp(newPrinter())
-	a.gh.sshLogins = map[string]string{"git@github.com:a/b.git": "alice"}
+	a.remote.sshLogins = map[string]string{"git@github.com:a/b.git": "alice"}
 	if got := a.sshLogin("git@github.com:a/b.git"); got != "alice" {
 		t.Errorf("sshLogin(seeded) = %q, want alice", got)
 	}
