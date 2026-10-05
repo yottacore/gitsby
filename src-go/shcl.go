@@ -121,8 +121,8 @@ func (c *config) loadDoc(doc *shcl.Document) {
 	// reader always did. The earlier ones are listed, since two hosts or two emails
 	// is two accounts written as one, and reading one of them without a word is how
 	// that went unnoticed.
-	given := map[[2]string][]binding{}
-	var keys [][2]string
+	given := map[acctKey][]binding{}
+	var keys []acctKey
 	for _, b := range blocks {
 		if !acctNameOK.MatchString(b.name) {
 			c.unknown = append(c.unknown, b.disp)
@@ -146,7 +146,7 @@ func (c *config) loadDoc(doc *shcl.Document) {
 					c.absorb(b.name, field, "", b.disp+"."+field)
 					break
 				}
-				key := [2]string{b.name, field}
+				key := acctKey{b.name, field}
 				if _, seen := given[key]; !seen {
 					keys = append(keys, key)
 				}
@@ -157,7 +157,7 @@ func (c *config) loadDoc(doc *shcl.Document) {
 	}
 	for _, key := range keys {
 		last := c.lastBinding(given[key])
-		c.absorb(key[0], key[1], last.value, last.disp)
+		c.absorb(key.acct, key.field, last.value, last.disp)
 	}
 }
 
@@ -274,30 +274,28 @@ func hasUEscape(value string) bool {
 // that was not a setting stays as it was, and the module reports it the way the
 // flat reader did.
 func flatToSHCL(text string) string {
-	lines := splitLines(text)
+	lines := flatLines(text)
 	var out []string
 	open := "" // the account whose block the last line went into
 	for i, line := range lines {
-		line = strings.TrimLeft(line, " \t")
-		if line == "" || strings.HasPrefix(line, "#") {
+		if line.note {
 			// Indented only while the block goes on past it, so a comment above the
 			// next account - or the end - is not the last field's.
+			text := line.text
 			if open != "" && flatAccountAfter(lines, i) == open {
-				line = "\t" + line
+				text = "\t" + text
 			}
-			out = append(out, line)
+			out = append(out, text)
 			continue
 		}
-		key, rawValue, found := strings.Cut(line, "=")
-		if !found {
-			out, open = append(out, line), ""
+		if !line.setting {
+			out, open = append(out, line.text), ""
 			continue
 		}
-		key = strings.ToLower(strings.TrimRight(key, " \t"))
-		value, comment := splitFlatValue(strings.TrimLeft(rawValue, " \t"))
-		acct, field, ok := splitAccountKey(key)
+		value, comment := splitFlatValue(line.raw)
+		acct, field, ok := splitAccountKey(line.key)
 		if !ok {
-			out, open = append(out, key+": "+shclValue(value)+comment), ""
+			out, open = append(out, line.key+": "+shclValue(value)+comment), ""
 			continue
 		}
 		if acct != open {
@@ -317,17 +315,15 @@ func flatToSHCL(text string) string {
 
 // flatAccountAfter names the account the next setting past line i belongs to, or
 // nothing where the next line is not an account's.
-func flatAccountAfter(lines []string, i int) string {
+func flatAccountAfter(lines []flatLine, i int) string {
 	for _, line := range lines[i+1:] {
-		line = strings.TrimLeft(line, " \t")
-		if line == "" || strings.HasPrefix(line, "#") {
+		if line.note {
 			continue
 		}
-		key, _, found := strings.Cut(line, "=")
-		if !found {
+		if !line.setting {
 			return ""
 		}
-		acct, _, ok := splitAccountKey(strings.ToLower(strings.TrimRight(key, " \t")))
+		acct, _, ok := splitAccountKey(line.key)
 		if !ok {
 			return ""
 		}
