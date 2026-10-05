@@ -4833,14 +4833,14 @@ GHEOF
 		fAssert "[ErfyDHs] ${bfScript} refuses a bash older than 4.4, before anything else"  fBashFloorRefuses "${bfScript}"
 	done < <(fTrackedBash)
 	fAssertFail "[ErfyLds] and that check found scripts to look at"  test "${bfFound}" = 0
-	## The style guide says every expansion is braced, and shellcheck holds that only in a file that
-	## turns the rule on. The publish helper is shared and left as it is.
+	## The style guide says every expansion is braced, and shellcheck checks that only in a file
+	## that turns the rule on. The publish helper is shared and left as it is.
 	local brScript="" brMissing=""
 	while IFS= read -r brScript; do
 		[[ "${brScript}" == cicd/utility/n8git_backup-and-publish ]] && continue
 		fBraceRuleOn "${brScript}" || brMissing+="${brScript} "
 	done < <(fTrackedBash)
-	fAssert "[ErmXzJR] every pipeline script has shellcheck hold its expansions braced"  test -z "${brMissing}"
+	fAssert "[ErmXzJR] every pipeline script turns on shellcheck's brace rule"  test -z "${brMissing}"
 	## A commit message the user typed passes through the engine's output helpers.
 	fAssertFail "[Er1LxTI] cicd.bash prints with printf, never echo -e"  grep -qE '^[^#]*echo -e' "${root}/cicd/cicd.bash"
 	## The linter set is argued for line by line, and 'default: none' means a new golangci-lint
@@ -6410,4 +6410,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261004 JC: The release's changelog section gets a downloads table, one row per OS and one column per CPU, written from the files phase 1 built. The release body is still that section word for word. Phase 1 refuses a vNEXT that already has one, and phase 3 warns when the files it publishes and the table disagree. Four of the five new checks fail against the tree before them; the fifth, the body matching the section, held before too. 1412 -> 1417.
 ##		- 20261004 JC: A failed mktemp stops the suite before the exit trap is set, and the trap removes only the scratch folder the suite made and marked. It removed the folder the suite was started from before. Run for real with TMPDIR a file, from a folder with a canary in it, and no script here changes into a mktemp result unchecked. The run fails against the tree before it. 1417 -> 1444.
 ##		- 20261004 JC: The probe checks prove the probes overlap from the order the fake round trips start and end in, not from a time limit. Each waits for the others to start, so the checks hold on a slow box, and fail on a build that asks in turn. 1444 -> 1444.
-##		- 20261004 JC: Prints through fEcho_Clean, like the other pipeline scripts. Three checks that read cicd.bash look for its new camelCase names. Every expansion braced, and shellcheck holds it there.
+##		- 20261004 JC: Prints through fEcho_Clean, like the other pipeline scripts. Three checks that read cicd.bash look for its new camelCase names. Every expansion braced, and shellcheck enforces it.

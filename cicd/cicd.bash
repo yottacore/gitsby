@@ -788,4 +788,4 @@ fEcho_Clean
 ##		- 2026-10-03 JC: PowerShell lint is one pwsh for every file, with its rules in PSScriptAnalyzerSettings.psd1. A file that fails to parse fails the lint on its own.
 ##		- 2026-10-04 JC: Stage 7 runs the Go tests on a Mac and a Windows box, and the regression suite on the Mac against the universal build, through cicd/remote-tests.bash. A box that is off or taken is skipped, not waited for. Full runs only. Publish is stage 8.
 ##		- 2026-10-04 JC: Stage 7 also builds for each Unix box's target in config.bash, FreeBSD amd64 and Linux arm64 to start, and hands those builds to the harness.
-##		- 2026-10-04 JC: Variables are camelCase, and the output helpers keep their state in two-underscore globals. The helpers come before the option loop, so a bad option goes through fUsage too. Every expansion braced, and shellcheck holds it there.
+##		- 2026-10-04 JC: Variables are camelCase, and the output helpers keep their state in two-underscore globals. The helpers come before the option loop, so a bad option goes through fUsage too. Every expansion braced, and shellcheck enforces it.

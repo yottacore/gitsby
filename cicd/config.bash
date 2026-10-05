@@ -268,4 +268,4 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-10-03 JC: The macOS release is one universal binary, in place of one per CPU.
 ##		- 2026-10-04 JC: Stage 7 runs the tests on a Mac and a Windows box. Publish is stage 8.
 ##		- 2026-10-04 JC: Stage 7 also runs them on a FreeBSD amd64 and a Linux arm64 box.
-##		- 2026-10-04 JC: Every expansion braced, and shellcheck holds it there. The settings stay upper case.
+##		- 2026-10-04 JC: Every expansion braced, and shellcheck enforces it. The settings stay upper case.

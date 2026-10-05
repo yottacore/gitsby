@@ -395,4 +395,4 @@ fEcho_Clean "parity passed: ${pass}, differed: ${fail}"
 ##		- 20261003 JC: Compares the pullcom and sync plans, with the pull step's new spelling mapped to one token on both sides.
 ##		- 20261004 JC: The pull step's merge names the upstream, so the mapping names it too.
 ##		- 20261004 JC: Prints through fEcho and fEcho_Clean, like the other pipeline scripts.
-##		  Every expansion braced, and shellcheck holds it there.
+##		  Every expansion braced, and shellcheck enforces it.

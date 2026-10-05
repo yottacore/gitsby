@@ -149,4 +149,4 @@ exit "${findings}"
 ##		  deferred notes and silently deleted checks, not from fixes undoing fixes.
 ##		- 20260926 JC: Reads the test ID at the front of a label. A check whose ID or label is still there was edited, and the backlog can name a removed one by either.
 ##		- 20261004 JC: fEcho_Clean prints with printf. Every expansion braced, and shellcheck
-##		  holds it there.
+##		  enforces it.

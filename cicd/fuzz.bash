@@ -447,4 +447,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20260914 JC: Vectors for the "path" config value, beside pathContains: the injection set plus relative, dot, tilde and drive-relative spellings. One that isn't absolute is listed as ignored, and nothing fires or crashes either way. 269 -> 301.
 ##		- 20260926 JC: Every check carries a test ID at the front of its label.
 ##		- 20260926 JC: The pipeline no longer passes -q, so every check prints a line.
-##		- 20261004 JC: Prints through fEcho_Clean, like the other pipeline scripts. Variables are camelCase, and fRun hands back its output in two-underscore globals. Every expansion braced, and shellcheck holds it there.
+##		- 20261004 JC: Prints through fEcho_Clean, like the other pipeline scripts. Variables are camelCase, and fRun hands back its output in two-underscore globals. Every expansion braced, and shellcheck enforces it.

@@ -104,4 +104,4 @@ done < "${newest}"
 ##		  recordings, so the startup look at profiler output has a tool to call.
 ##		- 20261003 JC: The newest two are taken without a head, which failed the sort's write once the folder held a thousand or so recordings.
 ##		- 20261004 JC: fEcho_Clean prints with printf. Every expansion braced, and shellcheck
-##		  holds it there.
+##		  enforces it.

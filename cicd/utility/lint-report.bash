@@ -112,4 +112,4 @@ fi
 ##	Script history:
 ##		- 20260709: Created.
 ##		- 20260915: Matches each tool's output format rather than the words warning and error, which matched a file named errors.go in the archive listing.
-##		- 20261004 JC: Every expansion braced, and shellcheck holds it there.
+##		- 20261004 JC: Every expansion braced, and shellcheck enforces it.

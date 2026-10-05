@@ -217,4 +217,4 @@ exit 0
 ##		- 20260915 JC: LegalCopyright takes its years from the program, which printed 2014-2026 while the resource said 2026.
 ##		- 20261003 JC: The newest tag is cut from the whole list. A head that quit at the first line failed git's write once there were a few thousand tags.
 ##		- 20261004 JC: fSay is fEcho_Clean, like the other pipeline scripts, and prints with
-##		  printf. Every expansion braced, and shellcheck holds it there.
+##		  printf. Every expansion braced, and shellcheck enforces it.

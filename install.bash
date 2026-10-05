@@ -347,4 +347,4 @@ echo
 ##		- 20261003 JC: The hash lookup reads SHA256SUMS to the end. A head that quit at the first match could fail the write before it, and the install ended with nothing said.
 ##		- 20261003 JC: A Mac takes gitsby-darwin-universal, one binary for both CPUs, in place of one per CPU. --arch there is noted and changes nothing.
 ##		- 20261003 JC: With no --tag, the newest full release that publishes a gitsby binary, or while none does, the newest pre-release that does. v2.1.0 publishes only the old scripts, so until 3.0.0 the install line found nothing to install. releases/latest is still asked first, and the release list only when its SHA256SUMS names no binary.
-##		- 20261004 JC: Every expansion braced, and shellcheck holds it there.
+##		- 20261004 JC: Every expansion braced, and shellcheck enforces it.

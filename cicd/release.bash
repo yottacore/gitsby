@@ -547,4 +547,4 @@ echo
 ##		- 20261003 JC: Phase 3 runs the tag's install.bash into a throwaway home and says which release the install line now takes. A full release has to be taken; a pre-release is taken while no full release has a gitsby binary, and passed over for one that does. The note that the pre-release flag alone keeps a beta off the install line is gone, since until 3.0.0 it doesn't.
 ##		- 20261004 JC: Phase 2 writes a downloads table at the foot of the changelog section it retitles, from the files phase 1 built: a row per OS, a column per CPU, the Mac file under both, and the checksums and installers on a line below. The release body is still that section verbatim. Phase 1 refuses a vNEXT that already has one, and phase 3 warns when what it publishes and the table disagree. The repo name is in one place.
 ##		- 20261004 JC: The output helpers print with printf, as cicd.bash does. Every expansion
-##		  braced, and shellcheck holds it there.
+##		  braced, and shellcheck enforces it.
