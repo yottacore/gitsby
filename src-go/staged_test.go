@@ -27,19 +27,22 @@ func TestParseArgsStaged(t *testing.T) { // [Err7CYL]
 
 // Every command that would commit the whole tree anyway refuses it, rather than
 // sweeping in the edits it was typed to keep out.
+// pr create and release refused it until 2026-10-05, and take it since.
 func TestCheckStagedFlag(t *testing.T) { // [Err7CYY]
 	staged := options{staged: true}
-	for _, name := range []string{"pullcom", "sync", "br-create", "br-hotfix", "br-switch", "br-merge"} {
-		if err := checkStagedFlag(name, staged); err != nil {
-			t.Errorf("%s refused: %v", name, err)
+	for _, cmd := range []command{{name: "pullcom"}, {name: "sync"}, {name: "br-create"}, {name: "br-hotfix"}, {name: "br-switch"}, {name: "br-merge"},
+		{name: "release"}, {name: "pr", arg: "create"}, {name: "pr", arg: "new"}, {name: "pr", arg: "Create"}} {
+		if err := checkStagedFlag(cmd, staged); err != nil {
+			t.Errorf("%s %s refused: %v", cmd.name, cmd.arg, err)
 		}
 	}
-	for _, name := range []string{"pr", "release", "repo-create", "repo-connect", "status", "br-prune", "account-set"} {
-		if err := checkStagedFlag(name, staged); err == nil {
-			t.Errorf("%s took --staged", name)
+	for _, cmd := range []command{{name: "pr"}, {name: "pr", arg: "ok", arg2: "7"}, {name: "pr", arg: "7"}, {name: "repo-create"}, {name: "repo-connect"},
+		{name: "status"}, {name: "br-prune"}, {name: "account-set"}} {
+		if err := checkStagedFlag(cmd, staged); err == nil {
+			t.Errorf("%s %s took --staged", cmd.name, cmd.arg)
 		}
-		if err := checkStagedFlag(name, options{}); err != nil {
-			t.Errorf("%s refused with no --staged: %v", name, err)
+		if err := checkStagedFlag(cmd, options{}); err != nil {
+			t.Errorf("%s %s refused with no --staged: %v", cmd.name, cmd.arg, err)
 		}
 	}
 }
