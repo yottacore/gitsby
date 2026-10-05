@@ -90,8 +90,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - macOS release gets a universal binary
 	- ID: 2026100313491873
 	- Type: Enhancement
-	- Status: Waiting for testing
-	- Needs external testing: The first release that publishes `gitsby-darwin-universal`. Both installers on a real Mac download it, and it runs. The installers can only fetch from a release. An Apple silicon Mac is still untested.
+	- Status: Done
 	- Priority [Feature]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -114,6 +113,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash `[ErgCzfP]`, `[ErgCzfc]`, `[ErgCzfq]` (install.bash on a Mac), `[ErgDQ7N]` (install.ps1, pinned since pwsh can't fake a Mac), `[ErgCzeJ]`, `[ErgCzeW]`, `[ErgCzek]`, `[ErgCzey]`, `[ErgCzfB]` (release.bash).
 	- Swept: every `darwin` and `arm64` reader in the repo. release.bash, config.bash, both installers, the installer and release fixtures in test.bash, README, design.md and the changelog. cicd.bash dogfood already joins. Nothing in `src-go` reads asset names. `legacy/` is frozen.
 	- Verified: stage 7 on b26 (2026-10-04) passed the installer checks with stubbed downloads, `[ErgCzfP]`, `[ErgCzfc]` and `[ErgCzfq]` among them.
+	- Verified 2026-10-05 on b26, an Intel Mac on macOS 15.8: the real universal build, served as a stand-in pre-release in place of GitHub. install.bash piped into the stock bash 3.2, and install.ps1 under pwsh, each found the pre-release, checked the sum, installed it and ran it. `lipo` lists both CPUs, and the arm64 half keeps a valid ad-hoc signature after the join.
+	- Not run here: the download from GitHub itself. release.bash downloads and checks the Mac file from every real release. Running it on Apple silicon moved to the deferred ARM hardware item.
+	- Acceptance signoff: OK, 2026-10-05, after the b26 install.
+	- Closed: 2026-10-05
 
 - Run the windows/arm64 build somewhere
 	- ID: 2026100507345200
@@ -3871,6 +3874,7 @@ Waiting on hardware, an upstream module, or a decision.
 - ✋ macOS signing and quarantine on real ARM hardware: does a terminal download need either?
 	- Opened: 20260817-115422
 	- All that is left of the old macOS item. The build half is settled and filed under done.
+	- Also untested on Apple silicon: the universal binary running at all. Its arm64 half has a valid ad-hoc signature, checked on b26 2026-10-05, but b26 is Intel.
 
 - ✋ GitHub Actions and platform packaging (.deb/.rpm/.exe installer), deferred to the port by decision.
 	- Opened: 20260817-115422
