@@ -309,7 +309,7 @@ cd gitsby/src-go && go build -o gitsby .
 Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `gifsicle` won't stop the rest. Stage 5's destinations are one machine's paths, set in `cicd/config.bash`; on anyone else's box that stage finds nothing writable and says so, which is harmless. Stage 7's boxes are that machine's too, and a box that is off or busy is skipped the same way.
 
 ~~~bash
-cicd/cicd.bash --quick          # skips fuzz, the demo gif and the Mac and Windows tests; what you want while iterating
+cicd/cicd.bash --quick          # skips fuzz, the demo gif and the remote tests; what you want while iterating
 cicd/cicd.bash                  # everything, and it prompts once for a commit message
 cicd/cicd.bash -y -m "message"  # unattended
 cicd/cicd.bash --gate           # every lint check and the unit tests; what the pre-push hook runs
