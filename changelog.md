@@ -29,6 +29,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - FreeBSD joins the published platforms, amd64 and arm64 both, alongside Linux, Windows and macOS.
 
+- `--staged` commits only what is already staged, on `pullcom`, `sync`, `br create`, `br hotfix`, `br switch` and `br merge`. Unstaged edits and untracked files stay where they are, and come along on a branch switch the way plain `git` carries them. The plan lists which files get committed and which stay behind. Where git would refuse a pull or a checkout over the edits left behind, the run stops before its plan, with nothing done.
+
 - macOS gets one universal binary that runs on Intel and Apple silicon alike, in place of one per CPU. Both installers take it on any Mac.
 
 - `whoami` shows who commands in this folder act as - the account, the ssh key and who it authenticates as, the commit author, and the git host login - without the branch and working-tree state `status` prints around it. It answers outside a repository too, which is where the question comes up before a `repo clone` or `repo create`. `who` and `identity` are accepted spellings of it.
