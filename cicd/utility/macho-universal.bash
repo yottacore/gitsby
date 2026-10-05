@@ -75,5 +75,4 @@ mv -f -- "${tmp}" "${out}"
 ##	History:
 ##		- 20261003 JC: Created. Dogfood puts one macOS file in one shared folder, and it has to
 ##		  run on both Intel and Apple silicon.
-##		- 20261004 JC: fDie prints with printf. Every expansion braced, and shellcheck holds it
-##		  there.
+##		- 20261004 JC: fDie prints with printf. Every expansion braced, and shellcheck enforces it.

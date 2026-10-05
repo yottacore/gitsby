@@ -50,5 +50,4 @@ fi
 ##	History:
 ##		- 20260724: Created.
 ##		- 20260818: Checksums the directory it is run in rather than a hard-coded bin/ holding two scripts. A release is now one binary per platform, and the set changes with the target list.
-##		- 20261004 JC: fEcho prints with printf. Every expansion braced, and shellcheck holds it
-##		  there.
+##		- 20261004 JC: fEcho prints with printf. Every expansion braced, and shellcheck enforces it.

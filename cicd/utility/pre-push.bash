@@ -252,4 +252,4 @@ esac
 ##		  a subdirectory. A relative --work-tree had sent it to the directory above, ungated.
 ##		- 20260924 JC: Only a push to main is gated. Every other branch goes out without it.
 ##		- 20261004 JC: fEcho_Clean keeps its state in a two-underscore global and reads in one
-##		  pass. Every expansion braced, and shellcheck holds it there.
+##		  pass. Every expansion braced, and shellcheck enforces it.

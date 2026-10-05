@@ -138,4 +138,4 @@ exit 0
 ##		- 20260926 JC: Created. Every suite check and Go test got an ID dated from when it was written.
 ##		- 20260927 JC: spawn-count's measures are tests too.
 ##		- 20261001 JC: The current time comes from EPOCHREALTIME, so minting works with BSD date. '--at' still needs GNU date.
-##		- 20261004 JC: Every expansion braced, and shellcheck holds it there.
+##		- 20261004 JC: Every expansion braced, and shellcheck enforces it.

@@ -312,4 +312,4 @@ gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		- 20261004 JC: Lower expected counts, now that one read answers every branch check.
 ##		- 20261004 JC: The pty runs get a size, as a real terminal has. Lower expected counts for the startup and token lookups that were asked twice.
 ##		- 20261004 JC: fEcho_Clean prints with printf. Every expansion braced, and shellcheck
-##		  holds it there.
+##		  enforces it.

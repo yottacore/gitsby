@@ -384,4 +384,4 @@ fEcho_Clean "  passed on: ${passed[*]:-none}"
 ##	History:
 ##		- 2026-10-04 JC: Created. The Go tests on a Mac and a Windows box, and test.bash on the Mac against the universal build, each box taken through the host lock and skipped when it is off or taken.
 ##		- 2026-10-04 JC: The same run as the Mac's on other Unix boxes, FreeBSD amd64 and Linux arm64 to start, each as its test user. test.bash there only where the box has the tools for it.
-##		- 2026-10-04 JC: Every expansion braced, and shellcheck holds it there.
+##		- 2026-10-04 JC: Every expansion braced, and shellcheck enforces it.

@@ -104,5 +104,4 @@ esac
 ##		  immediately, so there is nothing to run alongside anything - what is actually
 ##		  wanted is last week's binary, and a diff of the two on the same arguments.
 ##		- 20261003 JC: A build number that is not digits is refused before arithmetic sees it.
-##		- 20261004 JC: fDie prints with printf. Every expansion braced, and shellcheck holds it
-##		  there.
+##		- 20261004 JC: fDie prints with printf. Every expansion braced, and shellcheck enforces it.
