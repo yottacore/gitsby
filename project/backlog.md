@@ -33,43 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- Run the windows/arm64 build somewhere
-	- ID: 2026100507345200
-	- Type: Enhancement
-	- Status: Waiting for testing
-	- Needs external testing: A full stage 7 run, with test.bash on vmDebARM64 (about 40 minutes) and the other boxes.
-	- Priority [Feature]: Avg
-	- Opened: 2026-10-05
-	- Opened by: jim-collier
-	- Related IDs: 2026100413264100
-	- Requirements  [Feature]:
-		- The release publishes `gitsby-windows-arm64.exe`, but no box runs it. Stage 7 runs Windows tests on amd64 only, on vm925w.
-	- Notes:
-		- vmDebARM64 has Wine. In theory the windows/arm64 build runs there, slowly, since that CPU is emulated.
-		- First probe: whether that Wine runs an ARM64 PE at all, with `--version` and then the Go test binary. Not run yet. The box was held by another session on 2026-10-05.
-		- If it runs, stage 7 could run the windows/arm64 Go tests there, under Wine, beside the linux/arm64 run. Wine is not Windows, so it would add to vm925w's run, not replace it.
-	- Progress log:
-		- Verified: vmDebARM64 has Debian's Wine 10.0 for arm64, with the ARM64 Windows libraries. gitsby and its Go tests both build for windows/arm64 as ARM64 PE files.
-		- Tried 2026-10-05: `gitsby.exe --version` under Wine, as the test user, over ssh with no display. It never printed anything. Wine's own first-run setup spun at full CPU for 12 minutes and wrote nothing to the new Wine folder. The Go test binary was not tried, since no Windows program gets that far.
-		- Verified: every Wine process there faults with an illegal instruction, over and over, on the first instruction of Wine's own system call entry points. That is inside Wine, before any of gitsby's code runs.
-		- Cause, inferred: branch protection. The emulated CPU has it, Debian builds Wine's library marked for it, and those entry points lack the instruction it requires. Not confirmed by turning it off, since that takes root plus a reboot or a VM change. The C library there has no per-program switch for it.
-		- Not changed: stage 7 and the docs. Nothing runs under Wine there yet.
-		- Question: run it at all? One way is to give vmDebARM64 a CPU model without branch protection, which changes its linux/arm64 runs too. Another is `arm64.nobti` on its kernel command line plus a reboot. Or leave windows/arm64 untested until a Wine fix.
-		- Answered 2026-10-05: `arm64.nobti` on vmDebARM64's kernel command line, kept across reboots.
-		- Done: the boot loader config there adds `arm64.nobti`. How to undo it is in the private notes.
-		- Verified: after the reboot the kernel line has it, the kernel no longer reports branch protection, and the CPU flags no longer list it.
-		- Verified: that was the cause. Wine's first-run setup finished in about 90 seconds, and `gitsby.exe --version` printed the version in 1 second.
-		- Verified: the windows/arm64 Go tests under Wine, first run: 171 passed, 6 failed, 22 skipped, in under a minute. All 6 make a symlink. Wine's symlink call reports success and makes nothing. That is a known Wine stub, and a small probe there showed it.
-		- Fixed: the tests check the link is there after making it, and skip or drop the link case when it isn't. Under Wine that gives 173 passed, 26 skipped, none failed. The Go tests here still pass.
-		- Verified: linux/arm64 on that box still works after the change. The native `--version` runs, and its Go tests pass, 198 with 1 skipped.
-		- Done: stage 7 runs the windows/arm64 Go tests under Wine on vmDebARM64, after its linux/arm64 ones. It adds to vm925w's run; that is unchanged. README, contributing.md and the script headers say so.
-		- Verified: stage 7's script alone, against vmDebARM64 only and without test.bash, passed both Go test runs in 3 minutes, Wine's first-run setup included.
-		- Note: Wine there has no Windows git, so the tests that need git skip under Wine. vm925w still runs those.
-	- Branch: winebti, winenobti
-	- Commit: f176e7a
-	- Test case: stage 7's Wine run on vmDebARM64. The 6 symlink tests failed under Wine before the fix, and pass or skip after.
-	- Swept: every `os.Symlink` in the Go tests, 8 sites. Code outside the tests makes no links.
-
 - macOS release gets a universal binary
 	- ID: 2026100313491873
 	- Type: Enhancement
@@ -97,6 +60,43 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash `[ErgCzfP]`, `[ErgCzfc]`, `[ErgCzfq]` (install.bash on a Mac), `[ErgDQ7N]` (install.ps1, pinned since pwsh can't fake a Mac), `[ErgCzeJ]`, `[ErgCzeW]`, `[ErgCzek]`, `[ErgCzey]`, `[ErgCzfB]` (release.bash).
 	- Swept: every `darwin` and `arm64` reader in the repo. release.bash, config.bash, both installers, the installer and release fixtures in test.bash, README, design.md and the changelog. cicd.bash dogfood already joins. Nothing in `src-go` reads asset names. `legacy/` is frozen.
 	- Verified: stage 7 on b26 (2026-10-04) passed the installer checks with stubbed downloads, `[ErgCzfP]`, `[ErgCzfc]` and `[ErgCzfq]` among them.
+
+- Run the windows/arm64 build somewhere
+	- ID: 2026100507345200
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-05
+	- Opened by: jim-collier
+	- Related IDs: 2026100413264100
+	- Requirements  [Feature]:
+		- The release publishes `gitsby-windows-arm64.exe`, but no box runs it. Stage 7 runs Windows tests on amd64 only, on vm925w.
+	- Notes:
+		- vmDebARM64 has Wine. In theory the windows/arm64 build runs there, slowly, since that CPU is emulated.
+		- First probe: whether that Wine runs an ARM64 PE at all, with `--version` and then the Go test binary. Not run yet. The box was held by another session on 2026-10-05.
+		- If it runs, stage 7 could run the windows/arm64 Go tests there, under Wine, beside the linux/arm64 run. Wine is not Windows, so it would add to vm925w's run, not replace it.
+	- Progress log:
+		- Verified: vmDebARM64 has Debian's Wine 10.0 for arm64, with the ARM64 Windows libraries. gitsby and its Go tests both build for windows/arm64 as ARM64 PE files.
+		- Tried 2026-10-05: `gitsby.exe --version` under Wine, as the test user, over ssh with no display. It never printed anything. Wine's own first-run setup spun at full CPU for 12 minutes and wrote nothing to the new Wine folder. The Go test binary was not tried, since no Windows program gets that far.
+		- Verified: every Wine process there faults with an illegal instruction, over and over, on the first instruction of Wine's own system call entry points. That is inside Wine, before any of gitsby's code runs.
+		- Cause, inferred: branch protection. The emulated CPU has it, Debian builds Wine's library marked for it, and those entry points lack the instruction it requires. Not confirmed by turning it off, since that takes root plus a reboot or a VM change. The C library there has no per-program switch for it.
+		- Not changed: stage 7 and the docs. Nothing runs under Wine there yet.
+		- Question: run it at all? One way is to give vmDebARM64 a CPU model without branch protection, which changes its linux/arm64 runs too. Another is `arm64.nobti` on its kernel command line plus a reboot. Or leave windows/arm64 untested until a Wine fix.
+		- Answered 2026-10-05: `arm64.nobti` on vmDebARM64's kernel command line, kept across reboots.
+		- Done: the boot loader config there adds `arm64.nobti`. How to undo it is in the private notes.
+		- Verified: after the reboot the kernel line has it, the kernel no longer reports branch protection, and the CPU flags no longer list it.
+		- Verified: that was the cause. Wine's first-run setup finished in about 90 seconds, and `gitsby.exe --version` printed the version in 1 second.
+		- Verified: the windows/arm64 Go tests under Wine, first run: 171 passed, 6 failed, 22 skipped, in under a minute. All 6 make a symlink. Wine's symlink call reports success and makes nothing. That is a known Wine stub, and a small probe there showed it.
+		- Fixed: the tests check the link is there after making it, and skip or drop the link case when it isn't. Under Wine that gives 173 passed, 26 skipped, none failed. The Go tests here still pass.
+		- Verified: linux/arm64 on that box still works after the change. The native `--version` runs, and its Go tests pass, 198 with 1 skipped.
+		- Done: stage 7 runs the windows/arm64 Go tests under Wine on vmDebARM64, after its linux/arm64 ones. It adds to vm925w's run; that is unchanged. README, contributing.md and the script headers say so.
+		- Verified: stage 7's script alone, against vmDebARM64 only and without test.bash, passed both Go test runs in 3 minutes, Wine's first-run setup included.
+		- Note: Wine there has no Windows git, so the tests that need git skip under Wine. vm925w still runs those.
+		- Verified 2026-10-05: a full stage 7 run passed on every box. Under Wine, 173 passed and 26 skipped. vmDebARM64's test.bash passed 1438, b26's 1255 and vmFreeBSD's 1179, none failed. b29w ran the Windows Go tests, symlink helper included, since vm925w was held: 180 passed, 19 skipped.
+	- Branch: winebti, winenobti
+	- Commit: f176e7a
+	- Test case: stage 7's Wine run on vmDebARM64. The 6 symlink tests failed under Wine before the fix, and pass or skip after.
+	- Swept: every `os.Symlink` in the Go tests, 8 sites. Code outside the tests makes no links.
 
 - Code Review 20261003 enhancement 2: Network probes run one after another
 	- ID: 2026100313123988
