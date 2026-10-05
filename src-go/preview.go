@@ -24,10 +24,15 @@ func (a *app) preview(what string) {
 		if a.opt.message != "" {
 			msgDisp = `git commit -m "` + a.opt.message + `"`
 		}
+		if a.opt.staged {
+			a.out.clean(pad + msgDisp + " *")
+			a.previewSplit()
+			return
+		}
 		a.out.clean(pad + "git add --all")
 		a.out.clean(pad + msgDisp + " *")
 	case "pull":
-		a.out.clean(pad + a.pullDisp(a.currentBranch(), "--autostash"))
+		a.out.clean(pad + a.pullDisp(a.currentBranch(), a.autostash()...))
 	case "pullcom":
 		a.preview("pull")
 		a.preview("commit")
@@ -170,7 +175,7 @@ func (a *app) previewUnset() {
 func (a *app) previewNewBranch(baseBranch string) {
 	if a.isProtectedBranch("") {
 		a.out.clean(pad + a.checkoutDisp(baseBranch) + " *")
-		a.out.clean(pad + a.pullDisp(baseBranch, "--autostash"))
+		a.out.clean(pad + a.pullDisp(baseBranch, a.autostash()...))
 	} else {
 		a.preview("sync")
 		a.out.clean(pad + a.checkoutDisp(baseBranch) + " *")

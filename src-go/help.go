@@ -81,6 +81,7 @@ func (a *app) printSyntax() {
 	a.out.clean("  --public / --private .: Visibility for the repo 'repo create' makes (default: private).")
 	a.out.clean("  --any-identity .......: Act as gh's active account, and proceed when it differs from the remote's ssh key.")
 	a.out.clean("  --no-fetch ...........: Skip the pre-command fetch, and the pull. (Pushes still go out.)")
+	a.out.clean("  --staged .............: Commit only what is staged, and leave the rest of the tree as it is.")
 	a.out.clean("  --config FILE ........: Read accounts from FILE instead of the usual config location.")
 	a.out.clean("  -h, --help  /  -v, --version  /  --about  /  --donate")
 	a.out.clean("")

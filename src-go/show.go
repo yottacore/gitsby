@@ -51,7 +51,10 @@ func (a *app) terminalWidth() int {
 }
 
 // showLines is the same treatment for lines we already hold.
-func (a *app) showLines(outLines []string) {
+func (a *app) showLines(outLines []string) { a.showLinesAt("    ", outLines) }
+
+// showLinesAt is showLines under a deeper indent, for a list inside the plan.
+func (a *app) showLinesAt(indent string, outLines []string) {
 	const maxLines = 25
 	termWidth := a.terminalWidth()
 	shown := 0
@@ -59,14 +62,14 @@ func (a *app) showLines(outLines []string) {
 		if shown >= maxLines {
 			break
 		}
-		if r := []rune(line); len(r) > termWidth-4 {
-			line = string(r[:termWidth-7]) + "..."
+		if r := []rune(line); len(r) > termWidth-len(indent) {
+			line = string(r[:termWidth-len(indent)-3]) + "..."
 		}
-		a.out.clean("    " + line)
+		a.out.clean(indent + line)
 		shown++
 	}
 	if len(outLines) > shown {
-		a.out.cleanf("    ... and %d more", len(outLines)-shown)
+		a.out.cleanf("%s... and %d more", indent, len(outLines)-shown)
 	}
 	a.lastListCount = len(outLines)
 }

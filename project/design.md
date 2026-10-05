@@ -52,6 +52,7 @@ Goals, in priority order:
 Non-goals, each one deliberate:
 
 - **Covering all of git.** Roughly 90% of git's complexity serves about 10% of the cases. Partial staging, rebase surgery, conflict resolution, multiple remotes: those belong to raw `git`, and gitsby stays out of the way for them rather than growing a worse version of each.
+	- `--staged` doesn't go against this. Gitsby still stages nothing itself. With the flag it only stops `git add --all` from undoing a `git add` that was already made.
 
 - **Being a git replacement.** Gitsby, `git`, `gh`, Lazygit and Tig are meant to be intermixed on the same repo, in any order. Anything that would make gitsby the only safe tool for a repo is off the table.
 
@@ -168,6 +169,15 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- A branch whose upstream is on another remote still pulls, since that fetch covers origin only. The plan reads each branch's upstream and shows which one runs.
 	- `--no-fetch` and offline skip the step as before, rather than merging what an earlier fetch left. That would call the branch up to date against refs nobody checked.
 	- It stays fast-forward only, as the pull was. A diverged branch still refuses, with the tree left as it was.
+
+- `--staged` commits the index only, and its pulls go without `--autostash` (2026-10-05).
+	- It is a flag on `pullcom`, `sync`, and the branch commands that commit before they move. Any other command refuses it, since ignoring it would sweep in the edits it was typed to keep out. It is opt-in: a file staged long ago would otherwise make a commit quietly smaller.
+	- Git reapplies its autostash without `--index`. Staged work comes back unstaged, and a file staged and then edited again loses its staged copy, so the commit after the pull would take nothing. Checked on git 2.51, and git's current source still applies it that way.
+	- A plain fast-forward keeps the index as it is. Where it would change a file that has edits here, git refuses and changes nothing.
+	- Committing the staged part before the pull was the other choice. It would leave a branch whose remote had moved ahead diverged, which is the case pulling first exists to avoid.
+	- So the run reads ahead. A pull or checkout that git would refuse over the edits left in the tree is refused before the plan. The checkouts come after the commit and the push, and finding out there would leave the run half done.
+	- A pull from a remote other than origin can't be read ahead, since the fetch covers origin only. Git refuses that one itself, with nothing changed.
+	- On a checkout the edits left behind come along, the way plain git carries them. `br create` from `main` or `dev` commits nothing, so there the staged part comes along too, still staged.
 
 - Being offline must never turn a good commit into a failed command, now that `pullcom` is the only way to commit.
 	- A remote that can't be reached warns and skips the pull. A remote that *is* reachable but can't fast-forward is a real problem and still fails hard - the distinction is what the pre-command fetch already discovered.

@@ -178,6 +178,9 @@ func (a *app) settleCommand(argv []string) error {
 	if a.cmd, err = sortCommand(a.cmd, &a.opt); err != nil {
 		return err
 	}
+	if err := checkStagedFlag(a.cmd.name, a.opt); err != nil {
+		return err
+	}
 	// Whether -q was typed, captured before the rule below writes the same field -
 	// otherwise every piped run looks like it asked for quiet.
 	a.opt.sawQuiet = a.opt.quiet
@@ -385,7 +388,10 @@ func (a *app) preflight() error {
 		}
 		a.set = &t
 	}
-	return a.preflightBranch()
+	if err := a.preflightBranch(); err != nil {
+		return err
+	}
+	return a.stagedPreflight()
 }
 
 // preflightBranch validates branch arguments up front, so a bad name can't
