@@ -368,7 +368,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 enhancement 7: Go code tidy
 	- ID: 2026100313130047
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Waiting for testing
+	- Needs local test suite run?: Yes. Full test.bash, fuzz.bash and parity.bash on b23. Totals should match gover's.
 	- Priority [Feature]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -379,6 +380,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The flat-line parse is written three times, and `[2]string` keys stand in for a named type.
 		- `contains` beside `slices.Contains`, a BOM literal beside `utf8BOM`, a GOOS test beside `isWindows()`.
 	- Origin: mostly the work since 20260909: shcl, prune leases, tea support. Confirmed by grep.
+	- Actual effort: Low
+	- Done: Each delete batch comes back with the branches it deletes, and `pruneRemote` reads them from there. The prune gate and its leases are unchanged.
+	- Done: `sshKeyCommand`, `createNew` and `pushArgs` are the one of each. `createNew` takes over from `createAccountsFile`, the conversion's `writeNew`, and the lock's own open. The lock keeps its random token.
+	- Done: `ghState` is now `remoteState`, kept on the run as `remote`. Reachability is an `offline` flag, so the zero value is online, and every reader goes through `isOffline()`.
+	- Done: The old layout is split into lines once, by `flatLines`, for the load, the conversion and its look ahead. `acctKey` names the account and field pair in both layouts.
+	- Done: `contains` is gone for `slices.Contains`, the load trims `utf8BOM`, and the lock's Windows test calls `isWindows()`.
+	- Note: The lock file is now synced before it is closed, as the other two creates already were.
+	- Note: Two Go tests follow the new names without changing what they check. `TestLeaseDeleteBatches` now also checks the branch names each batch hands back. `TestCreateAccountsFileNeverReplaces` calls `createNew`.
+	- Note: Left alone: `publishBranch` and `repo connect`'s add case always push with `-u`, so they don't ask about an upstream. The plan's push lines are display text. Every other `runtime.GOOS` passes the platform to a function so tests can set it.
+	- Swept: `grep -n 'IdentitiesOnly\|O_EXCL\|"-u", "origin"\|\.gh\.\|reachable\|\[2\]string\|contains(\|\\ufeff\|runtime.GOOS' src-go/*.go`.
+	- Verified: `go test -race ./...`, `go vet` for linux, windows, darwin and freebsd on amd64 and arm64, `cicd.bash --gate`, and spawn-count with every count the same as before. The git, gh and ssh command lines that spawn-count's runs start are the same before and after.
+	- Verified: the old and new flat readers and converters agree over about 3.3 million fuzzed inputs.
+	- Branch: gotidy
+	- Commit: 101f180, 791e19a, 546d7ad, ed08dfb, 83a8517
+	- Test case: The existing suites cover it, since nothing should change. Run: the Go tests and spawn-count. Still to run: test.bash, fuzz.bash and parity.bash.
 
 - Code Review 20261003 enhancement 8: Pipeline scripts and the style guide against the new Bash rules
 	- ID: 2026100313130060

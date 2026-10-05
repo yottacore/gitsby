@@ -116,6 +116,14 @@ func sshKeyArg(value string) string {
 	return strings.ReplaceAll(value, `\`, "/")
 }
 
+// sshKeyCommand is the ssh command for an account's key, for GIT_SSH_COMMAND and
+// for core.sshCommand alike. IdentitiesOnly, or ssh offers every key the agent
+// holds and the server picks the first that authenticates - on a two-account
+// machine a coin toss.
+func sshKeyCommand(value string) string {
+	return "ssh -i " + sshKeyArg(value) + " -o IdentitiesOnly=yes"
+}
+
 var (
 	msysDriveRE = regexp.MustCompile(`^/([A-Za-z])(/.*)?$`)
 	driveRootRE = regexp.MustCompile(`^[A-Za-z]:/$`)
@@ -550,7 +558,7 @@ func (c *config) load(o options) error {
 	// as one nothing understands - and the line that reports those printed the mark
 	// as part of the name, so the one diagnostic meant to explain the loss named a
 	// key that looks perfectly valid.
-	text := strings.TrimPrefix(string(data), "\ufeff")
+	text := strings.TrimPrefix(string(data), utf8BOM)
 	if isFlatConfig(text) {
 		c.flat = true
 		c.loadFlat(text)
@@ -573,26 +581,63 @@ func (c *config) load(o options) error {
 	return nil
 }
 
+// flatLine is one line of the old layout, read the one way all three of its
+// readers need: the load, the conversion, and the conversion's look ahead.
+type flatLine struct {
+	text    string // the line without its indent
+	note    bool   // blank, or a comment
+	setting bool   // has an '='; key and raw are set only then
+	key     string // lower case, as every lookup spells it
+	raw     string // the value as typed, comment and quotes included
+}
+
+// flatLines splits the old layout into lines. A file written on Windows reads
+// the same on Linux.
+func flatLines(text string) []flatLine {
+	lines := splitLines(text)
+	out := make([]flatLine, 0, len(lines))
+	for _, line := range lines {
+		text := strings.TrimLeft(line, " \t")
+		if text == "" || strings.HasPrefix(text, "#") {
+			out = append(out, flatLine{text: text, note: true})
+			continue
+		}
+		key, raw, found := strings.Cut(text, "=")
+		if !found {
+			out = append(out, flatLine{text: text})
+			continue
+		}
+		out = append(out, flatLine{
+			text:    text,
+			setting: true,
+			key:     strings.ToLower(strings.TrimRight(key, " \t")),
+			raw:     strings.TrimLeft(raw, " \t"),
+		})
+	}
+	return out
+}
+
+// acctKey is one single-valued setting of one account, which either layout may
+// give more than once.
+type acctKey struct{ acct, field string }
+
 // loadFlat reads the old layout: flat 'key = value' lines, '#' comments, blank
 // lines ignored. The reader the scripted builds had, kept as it was.
 func (c *config) loadFlat(text string) {
 	// A key given twice is read from its last line, and the earlier lines that said
 	// something else are listed, the same as in the current layout.
 	var protocols []binding
-	given := map[[2]string][]binding{}
-	var keys [][2]string
-	for n, line := range splitLines(text) { // a file written on Windows, read on Linux
-		line = strings.TrimLeft(line, " \t")
-		if line == "" || strings.HasPrefix(line, "#") {
+	given := map[acctKey][]binding{}
+	var keys []acctKey
+	for n, line := range flatLines(text) {
+		if line.note {
 			continue
 		}
-		key, rawValue, found := strings.Cut(line, "=")
-		if !found {
-			c.unknown = append(c.unknown, line)
+		if !line.setting {
+			c.unknown = append(c.unknown, line.text)
 			continue
 		}
-		key = strings.ToLower(strings.TrimRight(key, " \t"))
-		value := parseConfigValue(strings.TrimLeft(rawValue, " \t"))
+		key, value := line.key, parseConfigValue(line.raw)
 		if key == "" {
 			continue
 		}
@@ -612,7 +657,7 @@ func (c *config) loadFlat(text string) {
 			c.absorb(acct, field, value, key)
 			continue
 		}
-		k := [2]string{acct, field}
+		k := acctKey{acct, field}
 		if _, seen := given[k]; !seen {
 			keys = append(keys, k)
 		}
@@ -623,7 +668,7 @@ func (c *config) loadFlat(text string) {
 	}
 	for _, k := range keys {
 		last := c.lastBinding(given[k])
-		c.absorb(k[0], k[1], last.value, last.disp)
+		c.absorb(k.acct, k.field, last.value, last.disp)
 	}
 }
 
@@ -640,7 +685,7 @@ func (c *config) absorb(acct, field, value, key string) {
 		// when it is named.
 		if problem := folderRuleProblem(value); problem != "" {
 			c.unknown = append(c.unknown, key+" ("+problem+": "+value+")")
-			if !contains(c.order, acct) {
+			if !slices.Contains(c.order, acct) {
 				c.order = append(c.order, acct)
 			}
 			break
@@ -685,7 +730,7 @@ func (c *config) absorb(acct, field, value, key string) {
 			value = c.protocolValue(key, value)
 		}
 		c.values["account."+acct+"."+field] = value
-		if !contains(c.order, acct) {
+		if !slices.Contains(c.order, acct) {
 			c.order = append(c.order, acct)
 		}
 	default:
@@ -708,15 +753,6 @@ func (c *config) protocolValue(key, value string) string {
 		return ""
 	}
 	return value
-}
-
-func contains(list []string, want string) bool {
-	for _, s := range list {
-		if s == want {
-			return true
-		}
-	}
-	return false
 }
 
 // splitAccountKey takes 'account.<name>.<field>' apart, validating the name.
@@ -822,7 +858,7 @@ func (c *config) accountForDir(dir string) string {
 // which is how you hold a second identity with no gh involved, and what the
 // folder rules have always applied.
 func (c *config) knowsAccount(name string) bool {
-	return name != "" && contains(c.accountNames(), strings.ToLower(name))
+	return name != "" && slices.Contains(c.accountNames(), strings.ToLower(name))
 }
 
 // value reads one key of one configured account. Both halves lowercased, because

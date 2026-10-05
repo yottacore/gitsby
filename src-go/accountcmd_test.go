@@ -721,7 +721,7 @@ func TestCreateAccountsFileNeverReplaces(t *testing.T) { // [EptZI3s]
 	if err := os.WriteFile(file, []byte(keptBody), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	opened, err := createAccountsFile(file, "new")
+	opened, err := createNew(file, "new", 0o600)
 	if opened || !errors.Is(err, fs.ErrExist) {
 		t.Errorf("over a file: opened = %v, err = %v, want not opened and an exists error", opened, err)
 	}
@@ -729,7 +729,7 @@ func TestCreateAccountsFileNeverReplaces(t *testing.T) { // [EptZI3s]
 		t.Errorf("the file already there changed:\n%q", got)
 	}
 	fresh := filepath.Join(t.TempDir(), "fresh.shcl")
-	if opened, err = createAccountsFile(fresh, "new"); !opened || err != nil {
+	if opened, err = createNew(fresh, "new", 0o600); !opened || err != nil {
 		t.Errorf("where nothing is: opened = %v, err = %v, want opened and no error", opened, err)
 	}
 	if got := readBack(t, fresh); got != "new" {

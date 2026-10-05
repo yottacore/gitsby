@@ -281,7 +281,7 @@ func TestAccountWho(t *testing.T) { // [EnSC7jM]
 // refusing on that would refuse every machine that never configured one.
 func TestHostCLIWho(t *testing.T) { // [Eq2wii4]
 	none := newApp(newPrinter())
-	none.gh.tool = toolNone
+	none.remote.tool = toolNone
 	if got := none.hostCLIWho(); got != "?" {
 		t.Errorf("hostCLIWho with no tool = %q, want ?", got)
 	}
@@ -289,7 +289,7 @@ func TestHostCLIWho(t *testing.T) { // [Eq2wii4]
 	// reads '?' as "couldn't tell" and an empty name would too, but only one of them
 	// survives being concatenated into a message.
 	tea := newApp(newPrinter())
-	tea.gh.tool, tea.gh.cli = toolTea, "tea"
+	tea.remote.tool, tea.remote.cli = toolTea, "tea"
 	tea.host.login.set(hostAnswer{})
 	if got := tea.hostCLIWho(); got != "?" {
 		t.Errorf("hostCLIWho with no tea login = %q, want ?", got)
@@ -324,8 +324,8 @@ func TestShowHostLine(t *testing.T) { // [Eq2wii5]
 			a.git.originRef.set(remoteRef{host: "git.example.test", owner: "acme", name: "proj"})
 			a.host.tea.set("tea")
 			a.host.login.set(tc.answer)
-			a.gh.isWrite, a.gh.probeURL = true, "git@git.example.test:acme/proj.git"
-			a.gh.sshLogins = map[string]string{a.gh.probeURL: "alice"}
+			a.remote.isWrite, a.remote.probeURL = true, "git@git.example.test:acme/proj.git"
+			a.remote.sshLogins = map[string]string{a.remote.probeURL: "alice"}
 			a.showHostLine()
 			if !strings.Contains(out.String(), tc.has) {
 				t.Errorf("%q does not say %q", out, tc.has)

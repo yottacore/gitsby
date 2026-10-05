@@ -155,14 +155,14 @@ func resolveSSHHost(alias string) string {
 // Asked once per login: gh answers about one account at a time, so the listing
 // spent a process on every account it printed, twice over for 'account set'.
 func (a *app) ghTokenFor(who string) string {
-	if token, asked := a.gh.tokens[who]; asked {
+	if token, asked := a.remote.tokens[who]; asked {
 		return token
 	}
 	token := probeGhToken(who)
-	if a.gh.tokens == nil {
-		a.gh.tokens = map[string]string{}
+	if a.remote.tokens == nil {
+		a.remote.tokens = map[string]string{}
 	}
-	a.gh.tokens[who] = token
+	a.remote.tokens[who] = token
 	return token
 }
 
@@ -173,7 +173,7 @@ func (a *app) ghTokenFor(who string) string {
 func (a *app) askGhTokens(logins []string) {
 	var asking []string
 	for _, who := range logins {
-		if _, asked := a.gh.tokens[who]; !asked && who != "" && !slices.Contains(asking, who) {
+		if _, asked := a.remote.tokens[who]; !asked && who != "" && !slices.Contains(asking, who) {
 			asking = append(asking, who)
 		}
 	}
@@ -191,11 +191,11 @@ func (a *app) askGhTokens(logins []string) {
 		})
 	}
 	wg.Wait()
-	if a.gh.tokens == nil {
-		a.gh.tokens = map[string]string{}
+	if a.remote.tokens == nil {
+		a.remote.tokens = map[string]string{}
 	}
 	for i, who := range asking {
-		a.gh.tokens[who] = answers[i]
+		a.remote.tokens[who] = answers[i]
 	}
 }
 
@@ -486,7 +486,7 @@ func (a *app) selectAccount(skipGhProbe bool) error {
 		case source == tokenFromGh:
 			// gh's own store was asked for this account by name, so there is nothing
 			// left to ask.
-			a.gh.login.set(a.acct.ghWho)
+			a.remote.login.set(a.acct.ghWho)
 		case onGitHubHost:
 			// A file says nothing about whose token is in it - the name came from a
 			// config key beside it, and a stale file reports that name and pushes as
@@ -494,7 +494,7 @@ func (a *app) selectAccount(skipGhProbe bool) error {
 			// token, and ask GitHub who it really belongs to. Only when a block will
 			// print it: this is a live round trip, started now so it runs alongside the
 			// fetch and the ssh probe rather than ahead of them.
-			a.gh.login.forget()
+			a.remote.login.forget()
 			if !skipGhProbe {
 				a.askGhLoginAhead()
 				a.acct.checkTokenWho = true
@@ -545,9 +545,7 @@ func (a *app) selectAccount(skipGhProbe bool) error {
 	// set on the repo, was chosen more deliberately than a folder rule was.
 	if sshKey := a.cfg.value(a.acct.name, "sshKey"); sshKey != "" &&
 		os.Getenv("GIT_SSH_COMMAND") == "" && a.coreSSHCommand() == "" {
-		// IdentitiesOnly, or ssh offers every key the agent holds and the server
-		// picks the first that authenticates - on a two-account machine a coin toss.
-		if err := setEnv("GIT_SSH_COMMAND", "ssh -i "+sshKeyArg(sshKey)+" -o IdentitiesOnly=yes"); err != nil {
+		if err := setEnv("GIT_SSH_COMMAND", sshKeyCommand(sshKey)); err != nil {
 			return err
 		}
 		a.acct.usedSSHKey = sshKey
@@ -594,9 +592,9 @@ func localIdentityKeys() map[string]bool {
 // and never consults ssh config, so this is who every gh-backed command acts as -
 // regardless of which key git pushes with. '?' when gh can't say.
 func (a *app) ghLogin() string {
-	return a.gh.login.get(func() string {
-		if pending := a.gh.loginAhead; pending != nil {
-			a.gh.loginAhead = nil
+	return a.remote.login.get(func() string {
+		if pending := a.remote.loginAhead; pending != nil {
+			a.remote.loginAhead = nil
 			return pending.wait()
 		}
 		return probeGhLogin(context.Background(), os.Environ())
@@ -607,11 +605,11 @@ func (a *app) ghLogin() string {
 // environment is taken now, on this goroutine: the token just exported is the one
 // being asked about.
 func (a *app) askGhLoginAhead() {
-	if a.gh.login.known || a.gh.loginAhead != nil {
+	if a.remote.login.known || a.remote.loginAhead != nil {
 		return
 	}
 	ctx, env := a.probeContext(), os.Environ()
-	a.gh.loginAhead = startAhead(func() string { return probeGhLogin(ctx, env) })
+	a.remote.loginAhead = startAhead(func() string { return probeGhLogin(ctx, env) })
 }
 
 func probeGhLogin(ctx context.Context, env []string) string {
