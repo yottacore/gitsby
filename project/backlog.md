@@ -66,6 +66,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Verified: stage 7's script alone, against vmDebARM64 only and without test.bash, passed both Go test runs in 3 minutes, Wine's first-run setup included.
 		- Note: Wine there has no Windows git, so the tests that need git skip under Wine. vm925w still runs those.
 	- Branch: winebti, winenobti
+	- Commit: f176e7a
 	- Test case: stage 7's Wine run on vmDebARM64. The 6 symlink tests failed under Wine before the fix, and pass or skip after.
 	- Swept: every `os.Symlink` in the Go tests, 8 sites. Code outside the tests makes no links.
 
