@@ -61,6 +61,31 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: every `darwin` and `arm64` reader in the repo. release.bash, config.bash, both installers, the installer and release fixtures in test.bash, README, design.md and the changelog. cicd.bash dogfood already joins. Nothing in `src-go` reads asset names. `legacy/` is frozen.
 	- Verified: stage 7 on b26 (2026-10-04) passed the installer checks with stubbed downloads, `[ErgCzfP]`, `[ErgCzfc]` and `[ErgCzfq]` among them.
 
+- `--staged`: commit only what is staged, and leave the rest of the tree alone
+	- ID: 2026100512025340
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature]: High
+	- Opened: 2026-10-05
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- A `--staged` flag on `pullcom`, `sync`, and the branch commands that commit the tree before they move: `br create` off a feature branch, `br switch` and `br merge`.
+		- With it, the commit takes the index only. Nothing is staged, and unstaged or untracked edits stay where they are.
+			- Nothing staged means nothing is committed. The command goes on with the rest.
+			- On a checkout, the leftover edits come along, the way plain git does it.
+			- Where git would refuse that checkout, the plan says so before anything runs.
+		- The plan shows which files get committed and which stay behind.
+		- Without the flag, nothing changes.
+	- Notes:
+		- Each of those commands runs `git add --all` first today. In a tree with hand edits that aren't part of the change, that sweeps them in.
+		- `br create` from `main` or `dev` already carries edits over, and stays that way.
+	- Decisions:
+		- A flag, not a new command (2026-10-05). It keeps the count of commands down.
+		- Opt-in, not switched on by finding something staged (2026-10-05). A file staged long ago would quietly make the commit smaller, and under `-q` nobody reads the plan. Most users never think about the index, and shouldn't have to.
+		- It doesn't go against design.md's line that partial staging belongs to raw git. Gitsby still stages nothing itself. It only stops undoing a `git add` that was already made. design.md gets a line saying so.
+		- Before the first Go release, since flags and aliases are permanent after it.
+	- Estimated effort: Avg
+
 - Run the windows/arm64 build somewhere
 	- ID: 2026100507345200
 	- Type: Enhancement
