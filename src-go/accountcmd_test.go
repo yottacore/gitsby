@@ -278,7 +278,7 @@ func TestAccountListPrintsRulesAsWritten(t *testing.T) { // [Eq4rRnC]
 	}
 	link := filepath.Join(t.TempDir(), "Linked")
 	linked := filepath.ToSlash(link)
-	if err := os.Symlink(filepath.Join(home, "Dev"), link); err != nil {
+	if err := madeSymlink(filepath.Join(home, "Dev"), link); err != nil {
 		linked = "" // no symlinks for this user on Windows
 	}
 	body := "account: work\n\tpath: ~/Dev\n\tpath: ${HOME}\\Dev\n\tpath: %UserProfile%/Dev\n\tpathcontains: /Acme/Code/\n\ttokenfile: ~/tok\n\tsshkey: ${HOME}/.ssh/id\n"
@@ -838,7 +838,7 @@ func TestConfigThatFailsToRead(t *testing.T) { // [Epu2PTU]
 	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(mem, file); err != nil {
+	if err := madeSymlink(mem, file); err != nil {
 		t.Skipf("no symlink here: %v", err)
 	}
 	if err := found.cfg.load(found.opt); err != nil {
@@ -879,7 +879,7 @@ func TestAccountSetRefusesALinkToNothing(t *testing.T) { // [EptZI3v]
 			t.Fatal(err)
 		}
 	}
-	if err := os.Symlink(target, file); err != nil {
+	if err := madeSymlink(target, file); err != nil {
 		t.Skipf("no symlink here: %v", err)
 	}
 	if err := a.cfg.load(a.opt); err != nil {

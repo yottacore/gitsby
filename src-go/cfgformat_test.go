@@ -188,7 +188,7 @@ func TestOldFormatThroughALink(t *testing.T) { // [ErfO2CY]
 		t.Fatal(err)
 	}
 	link := filepath.Join(linkDir, "config.shcl")
-	if err := os.Symlink(target, link); err != nil {
+	if err := madeSymlink(target, link); err != nil {
 		t.Fatal(err)
 	}
 	cfg := &config{values: map[string]string{}}
