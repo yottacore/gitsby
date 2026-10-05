@@ -353,7 +353,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 enhancement 8: Pipeline scripts and the style guide against the new Bash rules
 	- ID: 2026100313130060
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -395,12 +395,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: `[ErmXzJR]` fails on gover, listing all 22 scripts, and passes here. The three changed checks fail on gover's cicd.bash and pass here. A file with an unbraced expansion fails shellcheck.
 	- Verified: shellcheck over every pipeline script, `test-id.bash --check`, `backlog-check.bash` and `cicd.bash --gate` pass. cicd.bash's plan is the same as gover's, with and without `--quick`, and its option errors read and exit as before.
 	- Verified: old and new gfs-rotate.bash agree file for file and line for line over 25 rounds of rotation in five time zones, DST gaps included. The bad-count guard still works, and keep-build.bash still rotates with it.
-	- Test case: test.bash `[ErmXzJR]`, every pipeline script turns on shellcheck's brace rule. Renames have no behavior to test; the suites cover them.
+	- Test case: test.bash `[ErmXzJR]`, every pipeline script turns on shellcheck's brace rule. Renames have no behavior to test; the suites cover them. `[Emq7Y6y]` covers the guarded removal in gfs-rotate.bash.
 	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
 	- Verified: fuzz.bash 301/0, parity.bash and the spawn counts all pass on gover 2026-10-04.
 	- Note: failed in the 2026-10-04 test batch, on b23, vmFreeBSD and vmDebARM64. `[Emq7Y6y]` now finds gfs-rotate.bash's `rm -f "${file}"` in its prune loop. The old unbraced `"$file"` slipped past the check's pattern, so bracing it brought an unguarded removal into view rather than adding one. The fix is a guarded path, such as `${file:?}`, in every copy of the shared file. Left for the next round.
-	- Branch: bashstyle
-	- Commit: 20ab499, 0952f39, 102c13f
+	- Done: gfs-rotate.bash refuses an empty path in its prune, and ends options before it, so a path starting with a dash is not read as a flag. That was its only removal. A history line says so in every copy.
+	- Note: the same change went to every copy listed above, patched in place, and left uncommitted outside this repo. The 17 that matched this repo's copy match it again. shcl, silkterm's `forks/shcl` and nemo-anywhere keep their own edits. The same copies were skipped.
+	- Swept: a grep of gfs-rotate.bash for `rm`, in every copy. The prune is the only one.
+	- Verified: `[Emq7Y6y]` fails on gover for gfs-rotate.bash and passes here. test.bash 1453/0.
+	- Verified: old and new copies agree file for file and line for line over 25 rounds of rotation in five time zones, for this repo's copy and the three patched ones. keep-build.bash still rotates with it. shellcheck passes on every copy.
+	- Verified: `test-id.bash --check`, `backlog-check.bash` and `cicd.bash --gate` pass.
+	- Branch: bashstyle, gfsguard
+	- Commit: 20ab499, 0952f39, 102c13f, 03d3b80
+	- Acceptance signoff: Self-closed: mechanical. The rest was done and verified earlier, and `[Emq7Y6y]` fails before this fix and passes after.
+	- Closed: 20261004-185001
 
 - Rename stage 7 to "Remote tests"
 	- ID: 2026100418431100
