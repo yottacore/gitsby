@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+#  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
+
 ##	Purpose:
 ##		- Mints the ID a new test carries, and checks that every test has one.
 ##		- An ID is the milliseconds from 2000-01-01 UTC to when the test was written,
@@ -136,3 +138,4 @@ exit 0
 ##		- 20260926 JC: Created. Every suite check and Go test got an ID dated from when it was written.
 ##		- 20260927 JC: spawn-count's measures are tests too.
 ##		- 20261001 JC: The current time comes from EPOCHREALTIME, so minting works with BSD date. '--at' still needs GNU date.
+##		- 20261004 JC: Every expansion braced, and shellcheck enforces it.

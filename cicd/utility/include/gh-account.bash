@@ -1,26 +1,35 @@
 #!/usr/bin/env bash
-## Point gh at the account that belongs to wherever the pipeline is running, for this process only.
-##
-## gh keeps one active account per host. A pipeline that assumes it is the right one acts as
-## whoever was last switched to, which against another account's repo either 404s or - worse -
-## succeeds somewhere it should not have. 'gh auth switch' is the wrong fix for a script: it is
-## global, it outlives the run, and a failure part-way leaves the machine switched.
-##
-## Configuration is read through git, so an includeIf on the repo path selects it - the same
-## mechanism that already picks the ssh key and the commit identity. In ~/.gitconfig-<account>:
-##
-##     [gitsby]
-##         ghAccount   = someaccount
-##         ghTokenFile = /path/to/token.txt
-##
-## Neither key is required, and nothing here fails when they are absent: an unconfigured checkout,
-## a missing token file, or no gh at all all leave gh's own account in place. That is deliberate -
-## a pipeline must not break on a box that was never set up this way.
-##
-## Usage:
-##     source "${here}/include/gh-account.bash"
-##     fGhAccount_Select            ## exports GH_TOKEN when it can, silently no-ops when it can't
-##     fEcho "Acting as $(fGhAccount_Active)"
+
+#  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
+
+##	Purpose:
+##		- Point gh at the account that belongs to wherever the pipeline is running, for this
+##		  process only.
+##		- gh keeps one active account per host. A pipeline that assumes it is the right one acts
+##		  as whoever was last switched to, which against another account's repo either 404s or -
+##		  worse - succeeds somewhere it should not have. 'gh auth switch' is the wrong fix for a
+##		  script: it is global, it outlives the run, and a failure part-way leaves the machine
+##		  switched.
+##		- Configuration is read through git, so an includeIf on the repo path selects it - the
+##		  same mechanism that already picks the ssh key and the commit identity. In
+##		  ~/.gitconfig-<account>:
+##		      [gitsby]
+##		          ghAccount   = someaccount
+##		          ghTokenFile = /path/to/token.txt
+##		- Neither key is required, and nothing here fails when they are absent: an unconfigured
+##		  checkout, a missing token file, or no gh at all all leave gh's own account in place.
+##		  That is deliberate - a pipeline must not break on a box that was never set up this way.
+##	Usage:
+##		source "${here}/include/gh-account.bash"
+##		fGhAccount_Select            ## exports GH_TOKEN when it can, silently no-ops when it can't
+##		fEcho "Acting as $(fGhAccount_Active)"
+##	History: At bottom of script.
+
+##	Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
+##	Licensed under The MIT License (MIT). Full text at:
+##		https://mit-license.org/
+##	SPDX-License-Identifier: MIT
+
 
 fGhAccount_Configured(){
 	## The account configured for this path, or nothing.
@@ -57,3 +66,8 @@ fGhAccount_Select(){
 	[[ -n "${token}" ]] || return 0
 	export GH_TOKEN="${token}"
 :;}
+
+
+##	History:
+##		- 20260807 JC: Created.
+##		- 20261004 JC: Header with purpose, copyright and license, like the other pipeline scripts.

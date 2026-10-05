@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+#  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
+
 ##	Purpose:
 ##		- Adversarial fuzz + injection-safety for gitsby's OWN input surface: the
 ##		  command slot, options, and branch/message/version/pr arguments. Not
@@ -47,20 +49,29 @@ fUnsetInheritedGitConfig(){
 fUnsetInheritedGitConfig
 unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT
 
+## Output helpers, the same family as cicd.bash's: fEcho_Clean prints a line as given and
+## collapses repeated blanks, and fUsage refuses the command line.
+declare -i __wasLastEchoBlank=0
+fEcho_Clean(){
+	if [[ -n "${1:-}" ]]; then printf '%s\n' "$*"; __wasLastEchoBlank=0
+	elif ((! __wasLastEchoBlank)); then echo; __wasLastEchoBlank=1; fi
+}
+fUsage(){ fEcho_Clean "$*" >&2; exit 2; }
+
 ## -q silences the per-check line and leaves the header, the failures and the total. The
 ## pipeline doesn't pass it, even on its own -q runs.
 declare -i quiet=0
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		-q|--quiet) quiet=1; shift ;;
-		-h|--help)  echo "Usage: $(basename "${BASH_SOURCE[0]}") [-q|--quiet]"; exit 0 ;;
-		*)          echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
+		-h|--help)  fEcho_Clean "Usage: $(basename "${BASH_SOURCE[0]}") [-q|--quiet]"; exit 0 ;;
+		*)          fUsage "unknown option: ${1} (try --help)" ;;
 	esac
 done
 
 declare -i pass=0 fail=0
-fOk(){   pass=$((pass+1)); ((quiet)) || echo "  ok: $*"; }
-fFail(){ fail=$((fail+1)); echo "  FAIL: $*"; }
+fOk(){   pass=$((pass+1)); ((quiet)) || fEcho_Clean "  ok: $*"; }
+fFail(){ fail=$((fail+1)); fEcho_Clean "  FAIL: $*"; }
 
 declare -i isWindows=0
 case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) isWindows=1 ;; esac
@@ -69,30 +80,30 @@ case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) isWindows=1 ;; esac
 ## ("gitsby: <msg>", exit 1) matches none of these; an uncaught bash error, a
 ## non-0/1 exit dump, or a pwsh StrictMode/runtime fault does. The arg parser's
 ## "Reverse call stack:" line is a deliberate refusal, not a crash, so it's out.
-_crashRe='unbound variable|: syntax error|bad substitution|command not found|integer expression expected|not a valid identifier|divide by zero|division by 0|bad array subscript|: line [0-9]+:|At line# |Command# \.\.\.|Err# \.\.\.|cannot be retrieved because it has not been set|Cannot index into a null|Attempted to divide by zero|Method invocation failed|Unable to find type'
+crashRe='unbound variable|: syntax error|bad substitution|command not found|integer expression expected|not a valid identifier|divide by zero|division by 0|bad array subscript|: line [0-9]+:|At line# |Command# \.\.\.|Err# \.\.\.|cannot be retrieved because it has not been set|Cannot index into a null|Attempted to divide by zero|Method invocation failed|Unable to find type'
 
-_out=""; declare -i _code=0
+__runOut=""; declare -i __runCode=0
 ## Run gitsby in a directory with the given args verbatim (no reshell of the
 ## vector), capturing merged output and exit code without tripping set -e.
 fRun(){
 	local -r dir="$1"; shift
-	_out="$( { cd "${dir}" && "${gitsby}" "$@"; } </dev/null 2>&1 )" && _code=0 || _code=$?
+	__runOut="$( { cd "${dir}" && "${gitsby}" "$@"; } </dev/null 2>&1 )" && __runCode=0 || __runCode=$?
 }
-_isCrash(){ grep -qE "${_crashRe}" <<< "${_out}" || ((_code >= 2)); }
+fIsCrash(){ grep -qE "${crashRe}" <<< "${__runOut}" || ((__runCode >= 2)); }
 
 ## Must survive (accept or refuse - either is fine) without an internal crash.
 fSurvive(){ local -r desc="$1"; local -r dir="$2"; shift 2; fRun "${dir}" "$@"
-	if _isCrash; then fFail "${desc} (exit ${_code})"; else fOk "${desc}"; fi; }
+	if fIsCrash; then fFail "${desc} (exit ${__runCode})"; else fOk "${desc}"; fi; }
 ## Must be ACCEPTED: exit 0, no crash. fSurvive can't say this - it passes on a flat refusal,
 ## so a valid option spelling that stopped being recognized would look fine.
 fAccept(){ local -r desc="$1"; local -r dir="$2"; shift 2; fRun "${dir}" "$@"
-	if _isCrash; then fFail "${desc}: crashed (exit ${_code})"
-	elif ((_code != 0)); then fFail "${desc}: refused (exit ${_code}), should accept"
+	if fIsCrash; then fFail "${desc}: crashed (exit ${__runCode})"
+	elif ((__runCode != 0)); then fFail "${desc}: refused (exit ${__runCode}), should accept"
 	else fOk "${desc}"; fi; }
 ## Must refuse: nonzero exit, no crash.
 fRefuse(){ local -r desc="$1"; local -r dir="$2"; shift 2; fRun "${dir}" "$@"
-	if _isCrash; then fFail "${desc}: crashed (exit ${_code})"
-	elif ((_code == 0)); then fFail "${desc}: accepted, should refuse"
+	if fIsCrash; then fFail "${desc}: crashed (exit ${__runCode})"
+	elif ((__runCode == 0)); then fFail "${desc}: accepted, should refuse"
 	else fOk "${desc}"; fi; }
 ## Commit a message and confirm it lands in the log verbatim - catches a shell
 ## glob-expanding a bare '*'/'?' message into filenames before git sees it.
@@ -100,7 +111,7 @@ fMsgLiteral(){ local -r desc="$1"; local -r dir="$2"; local -r msg="$3"
 	echo "chg ${RANDOM}" > "${dir}/seed.txt"
 	fRun "${dir}" -q update "${msg}"
 	local rec; rec="$(cd "${dir}" && git log -1 --format=%s)"
-	if _isCrash;             then fFail "${desc}: crashed (exit ${_code})"
+	if fIsCrash;             then fFail "${desc}: crashed (exit ${__runCode})"
 	elif [[ "${rec}" == "${msg}" ]]; then fOk "${desc}"
 	else fFail "${desc}: recorded [${rec}], expected [${msg}]"; fi; }
 
@@ -111,7 +122,7 @@ fMsgLiteral(){ local -r desc="$1"; local -r dir="$2"; local -r msg="$3"
 fDirLiteral(){ local -r desc="$1"; local -r dir="$2"; local -r url="$3"; local -r name="$4"
 	rm -rf "${dir:?}/${name}"
 	fRun "${dir}" -q repo clone "${url}" "${name}"
-	if _isCrash;                         then fFail "${desc}: crashed (exit ${_code})"
+	if fIsCrash;                         then fFail "${desc}: crashed (exit ${__runCode})"
 	elif [[ -d "${dir}/${name}/.git" ]]; then fOk "${desc}"
 	else fFail "${desc}: no clone at [${name}]"; fi; }
 
@@ -119,7 +130,7 @@ fTitleLiteral(){ local -r desc="$1"; local -r dir="$2"; local -r title="$3"
 	rm -f -- "${ghLog:?}"
 	fRun "${dir}" -q pr create "${title}"
 	local rec; rec="$(awk '/^--title$/{getline; print; exit}' "${ghLog}" 2>/dev/null || true)"
-	if _isCrash;                   then fFail "${desc}: crashed (exit ${_code})"
+	if fIsCrash;                   then fFail "${desc}: crashed (exit ${__runCode})"
 	elif [[ "${rec}" == "${title}" ]]; then fOk "${desc}"
 	else fFail "${desc}: gh got [${rec}], expected [${title}]"; fi; }
 
@@ -132,7 +143,7 @@ fMakeRepo(){
 		&& git commit --quiet -m seed && git push --quiet -u origin main )
 }
 
-## Vectors. None of these strings contain a _crashRe keyword, so a vector echoed
+## Vectors. None of these strings contain a crashRe keyword, so a vector echoed
 ## back in gitsby's output can't self-trip the crash check.
 ## The single quotes are the point: these must reach gitsby as literal text, not
 ## expand here - that's what proves gitsby keeps them inert.
@@ -156,7 +167,7 @@ badPr=( abc 3.5 '$(touch CANARY_P)' 'x' 'ok' 'ok abc' 'ok 1 2' )
 
 ## The whole fuzz suite against whatever ${gitsby} points at.
 fRunFuzz(){
-	echo "fuzz: $1 (${gitsby})"
+	fEcho_Clean "fuzz: ${1} (${gitsby})"
 	local -r base="${work}/$1"
 	mkdir -p "${base}"
 
@@ -254,7 +265,7 @@ GHEOF
 	if [[ "$1" == "bash" ]] || ((! isWindows)); then
 		for t in '*' '*.txt' '?' 'v*'; do fTitleLiteral "[El9Ej21] pr title verbatim: '${t}'" "${repo4}" "${t}"; done
 	else
-		echo "  skipped: pr title verbatim (pwsh on Windows can't run the gh stub)"
+		fEcho_Clean "  skipped: pr title verbatim (pwsh on Windows can't run the gh stub)"
 	fi
 	## Proposing from the merge target is nonsense whatever the title says.
 	( cd "${repo4}" && git checkout --quiet dev )
@@ -265,7 +276,7 @@ GHEOF
 	## (none of these is cloneable); a glob-shaped directory has to stay literal.
 	local u
 	for u in "${inject[@]}"; do fRefuse "[El9QuEc] clone url refused: '${u}'" "${repo3}" -q repo clone "${u}"; done
-	local cd_
+	local cloneDir
 	local -a cloneDirs=( '*' '?' 'v*' 'a b' )
 	## Win32 forbids '*' and '?' in a path, so native git can't create such a work tree at all
 	## ("could not create work tree dir '*': Invalid argument") - the invariant is unprovable
@@ -273,9 +284,9 @@ GHEOF
 	## guess wrong. A space is legal, so 'a b' stays.
 	if ((isWindows)); then
 		cloneDirs=( 'a b' )
-		echo "  skipped: clone dir verbatim '*' '?' 'v*' (Win32 forbids those characters in a path)"
+		fEcho_Clean "  skipped: clone dir verbatim '*' '?' 'v*' (Win32 forbids those characters in a path)"
 	fi
-	for cd_ in "${cloneDirs[@]}"; do fDirLiteral "[El9QuEd] clone dir verbatim: '${cd_}'" "${repo3}" "${repo3}.git" "${cd_}"; done
+	for cloneDir in "${cloneDirs[@]}"; do fDirLiteral "[El9QuEd] clone dir verbatim: '${cloneDir}'" "${repo3}" "${repo3}.git" "${cloneDir}"; done
 
 	## Long and odd input: must not crash. Branch is refused, message accepted.
 	local long; long="$(printf 'x%.0s' {1..5000})"
@@ -345,24 +356,24 @@ GHEOF
 	done
 
 	## No-mutate: a refused command leaves HEAD and branch exactly as they were.
-	local before_head before_branch
-	before_head="$(cd "${repo}" && git rev-parse HEAD)"
-	before_branch="$(cd "${repo}" && git branch --show-current)"
+	local headBefore branchBefore
+	headBefore="$(cd "${repo}" && git rev-parse HEAD)"
+	branchBefore="$(cd "${repo}" && git branch --show-current)"
 	fRun "${repo}" -q br create 'bad:name'   ## refused
-	if [[ "$(cd "${repo}" && git rev-parse HEAD)" == "${before_head}" \
-		&& "$(cd "${repo}" && git branch --show-current)" == "${before_branch}" ]]; then
+	if [[ "$(cd "${repo}" && git rev-parse HEAD)" == "${headBefore}" \
+		&& "$(cd "${repo}" && git branch --show-current)" == "${branchBefore}" ]]; then
 		fOk "[EkzQ7gV] refused command left the repo unchanged"
 	else
 		fFail "[EkzQ7gV] refused command mutated the repo"
 	fi
 }
 
-echo "gitsby fuzz + security (fixtures: ${work})"
+fEcho_Clean "gitsby fuzz + security (fixtures: ${work})"
 
 ## One implementation. The shim keeps ${gitsby} a single path, so the argument passing
 ## above is unchanged.
 goBin="${root}/src-go/gitsby"; [[ -x "${goBin}" ]] || goBin="${goBin}.exe"
-[[ -x "${goBin}" ]] || { echo "no build at src-go/gitsby - run 'go build' there, or cicd.bash stage 2" >&2; exit 1; }
+[[ -x "${goBin}" ]] || { fEcho_Clean "no build at src-go/gitsby - run 'go build' there, or cicd.bash stage 2" >&2; exit 1; }
 gitsby="${work}/gitsby-go"
 printf '#!/usr/bin/env bash\nexec "%s" "$@"\n' "${goBin}" > "${gitsby}"
 chmod +x "${gitsby}"
@@ -420,7 +431,7 @@ else
 	fFail "[EkzQ7gW] injection canary fired: $(find "${work}" -name 'CANARY*')"
 fi
 
-echo "passed: ${pass}, failed: ${fail}"
+fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ((fail == 0)) || exit 1
 
 
@@ -436,3 +447,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20260914 JC: Vectors for the "path" config value, beside pathContains: the injection set plus relative, dot, tilde and drive-relative spellings. One that isn't absolute is listed as ignored, and nothing fires or crashes either way. 269 -> 301.
 ##		- 20260926 JC: Every check carries a test ID at the front of its label.
 ##		- 20260926 JC: The pipeline no longer passes -q, so every check prints a line.
+##		- 20261004 JC: Prints through fEcho_Clean, like the other pipeline scripts. Variables are camelCase, and fRun hands back its output in two-underscore globals. Every expansion braced, and shellcheck enforces it.

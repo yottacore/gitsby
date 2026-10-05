@@ -16,6 +16,7 @@
 #  shellcheck disable=2178  ## 'Variable was used as an array but is now assigned a string.' False hits on associative arrays with e.g. 'local -n assocArray=$1'.
 #  shellcheck disable=2181  ## 'Check exit code directly, not indirectly with $?.'
 #  shellcheck disable=2317  ## 'Can't reach.' (I.e. an 'exit' is used for debugging - and makes an unusable visual mess.)
+#  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
 
 ##	- Purpose: Local CI/CD pipeline. Generic engine for a Go project;
 ##	  per-project settings live in config.bash.
@@ -76,87 +77,97 @@ source "${here}/utility/include/go-test-lines.bash"    ## fGoTestLines(), shared
 cd "${root}"
 stamp="$(date +%Y%m%d-%H%M%S)"
 
+## Output helpers: fEcho / fEcho_Clean, blank-collapsing.
+## fEcho "msg" -> "[ msg ]" status line; fEcho_Clean "msg" -> plain line, and a
+## bare call collapses repeated blanks. fSection draws the leading-blank + rule
+## letterbox before a major stage header; fDie prints a fatal line and exits, and
+## fUsage refuses the command line.
+## printf, not 'echo -e': a commit message the user typed passes through here, and echo -e
+## would animate any backslash escape or ANSI sequence in it. bin/gitsby does the same.
+declare -i __wasLastEchoBlank=0
+fEcho_ResetBlankCounter(){ __wasLastEchoBlank=0; }
+fEcho_Clean(){
+	if [[ -n "${1:-}" ]]; then printf '%s\n' "$*"; __wasLastEchoBlank=0
+	elif ((! __wasLastEchoBlank)); then echo; __wasLastEchoBlank=1; fi
+}
+fEcho(){       if [[ -n "$*"     ]]; then fEcho_Clean "[ $* ]"; else fEcho_Clean ""; fi; }
+fEcho_Force(){ fEcho_ResetBlankCounter; fEcho "$*"; }
+__letterbox="••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••"
+fSection(){ fEcho_Clean; fEcho_Clean "${__letterbox}"; fEcho "$*"; [[ "${stagePause:-0}" == 0 ]] || sleep "${stagePause}"; }
+fDie(){ { fEcho_Force "FAILED: $*"; } >&2; exit 1; }
+fUsage(){ fEcho_Clean "$*" >&2; exit 2; }
+
 ## Parse options.
-assume_yes=0; quiet=0; quick=0; do_sync=1; do_lint=1; do_test=1; do_fuzz=1; do_parity=1; do_remote=1; cli_message=""
-gate=0; install_hook=0; stage_opts=()
+assumeYes=0; quiet=0; quick=0; doSync=1; doLint=1; doTest=1; doFuzz=1; doParity=1; doRemote=1; cliMessage=""
+gate=0; installHook=0; stageOpts=()
 while (($#)); do case "$1" in
-	-q|--quiet)               quiet=1; assume_yes=1; shift ;;   ## quiet + unattended; publish runs quiet too
-	-y|--yes)                 assume_yes=1; shift ;;
-	--no-sync)                do_sync=0; stage_opts+=("$1"); shift ;;
-	--no-lint)                do_lint=0; stage_opts+=("$1"); shift ;;
-	--no-test)                do_test=0; stage_opts+=("$1"); shift ;;
-	--no-fuzz)                do_fuzz=0; stage_opts+=("$1"); shift ;;
-	--no-parity)              do_parity=0; stage_opts+=("$1"); shift ;;
-	--no-dogfood)             DOGFOOD_TARGETS=(); stage_opts+=("$1"); shift ;;
-	--no-demogif)             DO_DEMOGIF=0; stage_opts+=("$1"); shift ;;
-	--no-remote)              do_remote=0; stage_opts+=("$1"); shift ;;
-	--no-publish)             GIT_PUBLISH=(); stage_opts+=("$1"); shift ;;
+	-q|--quiet)               quiet=1; assumeYes=1; shift ;;   ## quiet + unattended; publish runs quiet too
+	-y|--yes)                 assumeYes=1; shift ;;
+	--no-sync)                doSync=0; stageOpts+=("$1"); shift ;;
+	--no-lint)                doLint=0; stageOpts+=("$1"); shift ;;
+	--no-test)                doTest=0; stageOpts+=("$1"); shift ;;
+	--no-fuzz)                doFuzz=0; stageOpts+=("$1"); shift ;;
+	--no-parity)              doParity=0; stageOpts+=("$1"); shift ;;
+	--no-dogfood)             DOGFOOD_TARGETS=(); stageOpts+=("$1"); shift ;;
+	--no-demogif)             DO_DEMOGIF=0; stageOpts+=("$1"); shift ;;
+	--no-remote)              doRemote=0; stageOpts+=("$1"); shift ;;
+	--no-publish)             GIT_PUBLISH=(); stageOpts+=("$1"); shift ;;
 	## Cross-building three platforms is the slow part of a run, not the fuzz and the gif -
 	## so the flag whose job is skipping the slow parts has to skip that too. The native
 	## target stays, since the dogfooded binary is what the next hand-run uses.
-	--quick)                  quick=1; do_fuzz=0; DO_DEMOGIF=0; do_remote=0; DOGFOOD_TARGETS=("${DOGFOOD_NATIVE_TARGET}"); stage_opts+=("$1"); shift ;;
-	--message=*|--msg=*|-m=*) cli_message="${1#*=}"; stage_opts+=("${1%%=*}"); shift ;;
-	-m|--message|--msg)       cli_message="${2-}"; stage_opts+=("$1"); shift; (($#)) && shift ;;
+	--quick)                  quick=1; doFuzz=0; DO_DEMOGIF=0; doRemote=0; DOGFOOD_TARGETS=("${DOGFOOD_NATIVE_TARGET}"); stageOpts+=("$1"); shift ;;
+	--message=*|--msg=*|-m=*) cliMessage="${1#*=}"; stageOpts+=("${1%%=*}"); shift ;;
+	-m|--message|--msg)       cliMessage="${2-}"; stageOpts+=("$1"); shift; (($#)) && shift ;;
 	## pre-push.bash looks for this arm's literal text to tell a commit that has a gate from
 	## one cut before it existed, so keep the spelling.
-	--gate)                   gate=1; assume_yes=1; shift ;;
-	--install-hook)           install_hook=1; shift ;;
+	--gate)                   gate=1; assumeYes=1; shift ;;
+	--install-hook)           installHook=1; shift ;;
 	-h|--help)                sed -n '/^##	- Purpose:/,/^##	History:/p' "${BASH_SOURCE[0]}" | sed '$d; s/^##	\{0,1\}//'; exit 0 ;;
-	*) echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
+	*) fUsage "unknown option: ${1} (try --help)" ;;
 esac; done
 
 ## Both run a fixed thing, so a stage option beside either would read as taking effect when it
 ## cannot. Refused rather than ignored.
-if ((gate && install_hook)); then echo "--gate and --install-hook are separate runs; give one." >&2; exit 2; fi
-if ((${#stage_opts[@]})); then
+if ((gate && installHook)); then fUsage "--gate and --install-hook are separate runs; give one."; fi
+if ((${#stageOpts[@]})); then
 	if ((gate)); then
-		echo "--gate runs a fixed set of checks and takes no stage options (got: ${stage_opts[*]})" >&2; exit 2
-	elif ((install_hook)); then
-		echo "--install-hook installs the hook and takes no stage options (got: ${stage_opts[*]})" >&2; exit 2
+		fUsage "--gate runs a fixed set of checks and takes no stage options (got: ${stageOpts[*]})"
+	elif ((installHook)); then
+		fUsage "--install-hook installs the hook and takes no stage options (got: ${stageOpts[*]})"
 	fi
 fi
-if ((install_hook)); then exec "${here}/utility/pre-push.bash" --install; fi
+if ((installHook)); then exec "${here}/utility/pre-push.bash" --install; fi
 
 ## Brief beat after each stage header so the cheap fast stages stay readable.
 ## Off for unattended runs (-q/-y) where nobody is watching.
-stage_pause=0.4; ((assume_yes)) && stage_pause=0
+stagePause=0.4; ((assumeYes)) && stagePause=0
 
 ## The same reasoning, passed on to the demo generator. Keyed on -q, not on unattended: -y is
 ## documented as unattended-but-not-quiet. The suites, parity and spawn counts never get it. One
 ## line per check is how a failure's neighbors get read, and -q runs are the usual ones.
-declare -a harness_quiet=(); ((quiet)) && harness_quiet=("-q")
+declare -a harnessQuiet=(); ((quiet)) && harnessQuiet=("-q")
+
+## What the plan and the stage lines say about a stage that --quick skipped.
+skipNote="(skipped)"; quickNote=""
+if ((quick)); then skipNote="(skipped --quick)"; quickNote=" (--quick)"; fi
 
 ## Publish commit message: -m wins, then config, then a default when unattended.
 ## Empty -> publish interactively (git commit opens an editor); when interactive
 ## we offer to capture a message at the preflight prompt below.
-publish_msg=""
-if   [[ -n "$cli_message" ]];              then publish_msg="$cli_message"
-elif [[ -n "${PUBLISH_AUTO_MESSAGE:-}" ]]; then publish_msg="$PUBLISH_AUTO_MESSAGE"
-elif ((assume_yes));                       then publish_msg="${APP_NAME} CI/CD ${stamp}"
+publishMsg=""
+if   [[ -n "${cliMessage}" ]];              then publishMsg="${cliMessage}"
+elif [[ -n "${PUBLISH_AUTO_MESSAGE:-}" ]]; then publishMsg="${PUBLISH_AUTO_MESSAGE}"
+elif ((assumeYes));                       then publishMsg="${APP_NAME} CI/CD ${stamp}"
 fi
 
-## Output helpers: fEcho / fEcho_Clean, blank-collapsing.
-## fEcho "msg" -> "[ msg ]" status line; fEcho_Clean "msg" -> plain line, and a
-## bare call collapses repeated blanks. fSection draws the leading-blank + rule
-## letterbox before a major stage header; fDie prints a fatal line and exits.
-## printf, not 'echo -e': a commit message the user typed passes through here, and echo -e
-## would animate any backslash escape or ANSI sequence in it. bin/gitsby does the same.
-declare -i _wasLastEchoBlank=0
-fEcho_ResetBlankCounter(){ _wasLastEchoBlank=0; }
-fEcho_Clean(){ if [[ -n "${1:-}" ]]; then printf '%s\n' "$*"; _wasLastEchoBlank=0; elif [[ $_wasLastEchoBlank -eq 0 ]] && echo; then _wasLastEchoBlank=1; fi; }
-fEcho(){       if [[ -n "$*"     ]]; then fEcho_Clean "[ $* ]"; else fEcho_Clean ""; fi; }
-fEcho_Force(){ fEcho_ResetBlankCounter; fEcho "$*"; }
-_letterbox="••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••"
-fSection(){ fEcho_Clean; fEcho_Clean "${_letterbox}"; fEcho "$*"; [[ "${stage_pause:-0}" == 0 ]] || sleep "${stage_pause}"; }
-fDie(){ { fEcho_Force "FAILED: $*"; } >&2; exit 1; }
-trap 'rc=$?; printf "\n[ CICD ABORTED (exit %s) at line %s: %s ]\n" "$rc" "$LINENO" "$BASH_COMMAND" >&2; exit $rc' ERR
+trap 'rc=$?; printf "\n[ CICD ABORTED (exit %s) at line %s: %s ]\n" "${rc}" "${LINENO}" "${BASH_COMMAND}" >&2; exit "${rc}"' ERR
 
 ## Expand the configured shell-file globs once (nullglob, restored after).
-shell_files=(); shell_warn_files=()
-_ng=0; shopt -q nullglob && _ng=1; shopt -s nullglob
-for g in "${SHELL_LINT_GLOBS[@]}"; do for f in $g; do [[ -f "$f" ]] && shell_files+=("$f"); done; done
-for g in "${SHELL_LINT_WARN_GLOBS[@]:-}"; do for f in $g; do [[ -f "$f" ]] && shell_warn_files+=("$f"); done; done
-((_ng)) || shopt -u nullglob
+shellFiles=(); shellWarnFiles=()
+hadNullglob=0; shopt -q nullglob && hadNullglob=1; shopt -s nullglob
+for g in "${SHELL_LINT_GLOBS[@]}"; do for f in ${g}; do [[ -f "${f}" ]] && shellFiles+=("${f}"); done; done
+for g in "${SHELL_LINT_WARN_GLOBS[@]:-}"; do for f in ${g}; do [[ -f "${f}" ]] && shellWarnFiles+=("${f}"); done; done
+((hadNullglob)) || shopt -u nullglob
 
 ## Stage 1's body and stage 2's unit tests, as functions so that --gate runs the same code a
 ## full run does. Two copies would drift, and the hook would pass what the pipeline stops.
@@ -184,35 +195,35 @@ fToolVersion(){
 }
 
 fStageLint(){
-	local f g _ng n md_files ps_files psList psScript psRc psOut q py_cache toolDrift toolSpec toolName toolWant toolPath toolHave unformatted winres_status
-	((${#shell_files[@]})) || fDie "no shell files matched SHELL_LINT_GLOBS"
-	for f in "${shell_files[@]}"; do
-		bash -n "$f" || fDie "syntax error: $f"
+	local f g hadNullglob n mdFiles psFiles psList psScript psRc psOut q pyCache toolDrift toolSpec toolName toolWant toolPath toolHave unformatted winresStatus
+	((${#shellFiles[@]})) || fDie "no shell files matched SHELL_LINT_GLOBS"
+	for f in "${shellFiles[@]}"; do
+		bash -n "${f}" || fDie "syntax error: ${f}"
 	done
-	fEcho "OK: bash -n (${#shell_files[@]} file(s))"
+	fEcho "OK: bash -n (${#shellFiles[@]} file(s))"
 	shellcheck --version >/dev/null 2>&1 || fDie "shellcheck not installed"
-	shellcheck "${shell_files[@]}"
+	shellcheck "${shellFiles[@]}"
 	fEcho "OK: shellcheck clean"
 	## Legacy files: report findings without gating (the refactor retires this list).
-	if ((${#shell_warn_files[@]})); then
-		for f in "${shell_warn_files[@]}"; do
-			bash -n "$f" || fDie "syntax error: $f"
-			n="$(shellcheck "$f" 2>/dev/null | grep -c "^In " || true)"
+	if ((${#shellWarnFiles[@]})); then
+		for f in "${shellWarnFiles[@]}"; do
+			bash -n "${f}" || fDie "syntax error: ${f}"
+			n="$(shellcheck "${f}" 2>/dev/null | grep -c "^In " || true)"
 			if ((n)); then fEcho "WARNING: ${n} shellcheck finding(s) in legacy ${f} (report-only until the refactor)"
 			else fEcho "OK: legacy ${f} clean"; fi
 		done
 	fi
 	if ((${#MD_LINT_GLOBS[@]})); then
-		md_files=()
-		_ng=0; shopt -q nullglob && _ng=1; shopt -s nullglob
-		for g in "${MD_LINT_GLOBS[@]}"; do for f in $g; do [[ -f "$f" ]] && md_files+=("$f"); done; done
-		((_ng)) || shopt -u nullglob
+		mdFiles=()
+		hadNullglob=0; shopt -q nullglob && hadNullglob=1; shopt -s nullglob
+		for g in "${MD_LINT_GLOBS[@]}"; do for f in ${g}; do [[ -f "${f}" ]] && mdFiles+=("${f}"); done; done
+		((hadNullglob)) || shopt -u nullglob
 		if command -v markdownlint >/dev/null 2>&1; then
-			markdownlint "${md_files[@]}"
-			fEcho "OK: markdownlint clean (${#md_files[@]} file(s))"
+			markdownlint "${mdFiles[@]}"
+			fEcho "OK: markdownlint clean (${#mdFiles[@]} file(s))"
 		elif npx --no-install markdownlint --version >/dev/null 2>&1; then
-			npx --no-install markdownlint "${md_files[@]}"
-			fEcho "OK: markdownlint clean (${#md_files[@]} file(s))"
+			npx --no-install markdownlint "${mdFiles[@]}"
+			fEcho "OK: markdownlint clean (${#mdFiles[@]} file(s))"
 		else
 			fEcho "WARNING: markdownlint skipped (not installed: npm install -g markdownlint-cli)"
 		fi
@@ -220,25 +231,25 @@ fStageLint(){
 	if [[ -n "${PY_LINT_FILES+x}" ]] && ((${#PY_LINT_FILES[@]})); then
 		## At the head of an && list a failure neither stopped the run nor fired the trap. The
 		## cache goes to a folder of our own, since py_compile writes one beside each file.
-		py_cache="$(mktemp -d)"
-		if ! PYTHONPYCACHEPREFIX="${py_cache}" python3 -m py_compile "${PY_LINT_FILES[@]}"; then
-			rm -rf -- "${py_cache:?}"
+		pyCache="$(mktemp -d)"
+		if ! PYTHONPYCACHEPREFIX="${pyCache}" python3 -m py_compile "${PY_LINT_FILES[@]}"; then
+			rm -rf -- "${pyCache:?}"
 			fDie "py_compile"
 		fi
-		rm -rf -- "${py_cache:?}"
+		rm -rf -- "${pyCache:?}"
 		fEcho "OK: py_compile (${#PY_LINT_FILES[@]} file(s))"
 	fi
 	if [[ -n "${PS_LINT_GLOBS+x}" ]] && ((${#PS_LINT_GLOBS[@]})); then
-		ps_files=()
-		_ng=0; shopt -q nullglob && _ng=1; shopt -s nullglob
-		for g in "${PS_LINT_GLOBS[@]}"; do for f in $g; do [[ -f "$f" ]] && ps_files+=("$f"); done; done
-		((_ng)) || shopt -u nullglob
-		if ((${#ps_files[@]})); then
+		psFiles=()
+		hadNullglob=0; shopt -q nullglob && hadNullglob=1; shopt -s nullglob
+		for g in "${PS_LINT_GLOBS[@]}"; do for f in ${g}; do [[ -f "${f}" ]] && psFiles+=("${f}"); done; done
+		((hadNullglob)) || shopt -u nullglob
+		if ((${#psFiles[@]})); then
 			## One pwsh for every file, the module probe and its version: each start costs about a
 			## second. A file that fails to parse is reported from ParseFile and not analyzed, so
 			## a Severity filter in the settings can't hide it. Exit 3 is a missing module.
 			psList=""; q="'"
-			for f in "${ps_files[@]}"; do psList+="${psList:+,}${q}${f//${q}/${q}${q}}${q}"; done
+			for f in "${psFiles[@]}"; do psList+="${psList:+,}${q}${f//${q}/${q}${q}}${q}"; done
 			psScript="\$ErrorActionPreference = 'Stop'; \$m = Get-Module -ListAvailable PSScriptAnalyzer | Sort-Object Version -Descending | Select-Object -First 1; if (-not \$m) { exit 3 }; 'PSScriptAnalyzer-version ' + \$m.Version; \$bad = 0"
 			psScript+="; foreach (\$f in @(${psList})) { \$parseErrors = \$null; [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path \$PWD \$f), [ref]\$null, [ref]\$parseErrors)"
 			psScript+="; if (\$parseErrors) { \$bad++; \$parseErrors | Select-Object @{Name='ScriptName'; Expression={\$f}}, @{Name='Line'; Expression={\$_.Extent.StartLineNumber}}, ErrorId, Message | Format-Table -AutoSize | Out-String -Width 200 | Write-Host; continue }"
@@ -252,7 +263,7 @@ fStageLint(){
 				[[ -z "${psOut}" ]] || sed '/^PSScriptAnalyzer-version /d' <<< "${psOut}"
 			fi
 			case "${psRc}" in
-				0) fEcho "OK: PSScriptAnalyzer clean, 5.1-compatible (${#ps_files[@]} file(s))" ;;
+				0) fEcho "OK: PSScriptAnalyzer clean, 5.1-compatible (${#psFiles[@]} file(s))" ;;
 				3) fEcho "WARNING: PSScriptAnalyzer skipped (pwsh + PSScriptAnalyzer module not both installed)" ;;
 				*) fDie "PSScriptAnalyzer findings, listed above" ;;
 			esac
@@ -304,9 +315,9 @@ fStageLint(){
 	## The committed Windows resource, against what the newest tag would generate. It is linked
 	## into published bytes, so an edited icon or description that nobody regenerated would ship
 	## silently. Probe-gated like the two above.
-	winres_status=0
-	"${WINRES_CMD[@]}" --check -q || winres_status=$?
-	case "${winres_status}" in
+	winresStatus=0
+	"${WINRES_CMD[@]}" --check -q || winresStatus=$?
+	case "${winresStatus}" in
 		0) fEcho "OK: windows resource current" ;;
 		3) fEcho "WARNING: windows resource check skipped (not installed: go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.5.0)" ;;
 		*) fDie "windows resource is stale" ;;
@@ -338,30 +349,30 @@ fUnitTests(){
 ## found by name (DOGFOOD_DESTS_<GOOS>_<GOARCH>, upper-cased), so adding a target is a config
 ## edit and nothing here.
 case "${OSTYPE:-}" in
-	linux*)          host_goos="linux"   ;;
-	darwin*)         host_goos="darwin"  ;;
-	msys*|cygwin*)   host_goos="windows" ;;
-	freebsd*)        host_goos="freebsd" ;;
-	*)               host_goos=""        ;;
+	linux*)          hostGoos="linux"   ;;
+	darwin*)         hostGoos="darwin"  ;;
+	msys*|cygwin*)   hostGoos="windows" ;;
+	freebsd*)        hostGoos="freebsd" ;;
+	*)               hostGoos=""        ;;
 esac
-declare -A dogfood_dest=() dogfood_all=()
+declare -A dogfoodDest=() dogfoodAll=()
 for t in "${DOGFOOD_TARGETS[@]:-}"; do
 	[[ -n "${t}" ]] || continue
-	_destVar="DOGFOOD_DESTS_${t^^}"; _destVar="${_destVar//\//_}"
-	declare -n _dests="${_destVar}"
-	_cands=("${_dests[@]:-}")
+	destVar="DOGFOOD_DESTS_${t^^}"; destVar="${destVar//\//_}"
+	declare -n _dests="${destVar}"
+	destCands=("${_dests[@]:-}")
 	## The fallback belongs to whichever target this box could actually run.
-	if [[ -n "${DOGFOOD_FALLBACK_DIR:-}" && "${t%%/*}" == "${host_goos}" ]]; then _cands+=("${DOGFOOD_FALLBACK_DIR}"); fi
-	d=""; for cand in "${_cands[@]:-}"; do [[ -d "${cand}" && -w "${cand}" ]] && { d="${cand}"; break; }; done
-	dogfood_dest["${t}"]="${d}"
-	dogfood_all["${t}"]="${_cands[*]:-}"
+	if [[ -n "${DOGFOOD_FALLBACK_DIR:-}" && "${t%%/*}" == "${hostGoos}" ]]; then destCands+=("${DOGFOOD_FALLBACK_DIR}"); fi
+	foundDest=""; for cand in "${destCands[@]:-}"; do [[ -d "${cand}" && -w "${cand}" ]] && { foundDest="${cand}"; break; }; done
+	dogfoodDest["${t}"]="${foundDest}"
+	dogfoodAll["${t}"]="${destCands[*]:-}"
 	unset -n _dests
 done
 
 ## Display helpers for the plan block: 'linux/amd64' -> 'linux', and the dotted leader that
 ## lines every value up on the same column as the fixed labels below.
 fPlanOS(){ case "${1%%/*}" in darwin) echo macos ;; *) echo "${1%%/*}" ;; esac ;}
-fPlanLine(){ local -r _dots="........................"; local -i n=$(( 20 - ${#1} )); ((n < 0)) && n=0; fEcho_Clean "${1} ${_dots:0:n}: ${2}" ;}
+fPlanLine(){ local -r dots="........................"; local -i n=$(( 20 - ${#1} )); ((n < 0)) && n=0; fEcho_Clean "${1} ${dots:0:n}: ${2}" ;}
 
 ## --gate: what the pre-push hook runs against the commit being pushed. The stages it leaves
 ## out are the slow ones, and the ones that change something: a fetch, a build, an install, a push.
@@ -384,29 +395,29 @@ fEcho_Clean
 fEcho_Clean "${APP_NAME} local CI/CD"
 fEcho_Clean
 fEcho_Clean "Repo root ...........: ${root}"
-if ((do_lint)); then
-	fEcho_Clean "Lint ................: gofmt + go vet + staticcheck, shellcheck on ${#shell_files[@]} shell file(s)  (+ golangci-lint, markdownlint, py_compile, PSScriptAnalyzer, windows resource if available)"
+if ((doLint)); then
+	fEcho_Clean "Lint ................: gofmt + go vet + staticcheck, shellcheck on ${#shellFiles[@]} shell file(s)  (+ golangci-lint, markdownlint, py_compile, PSScriptAnalyzer, windows resource if available)"
 else
 	fEcho_Clean "Lint ................: (skipped)"
 fi
-if ((do_test)) && [[ -f "${TEST_CMD[0]:-}" ]]; then
+if ((doTest)) && [[ -f "${TEST_CMD[0]:-}" ]]; then
 	fEcho_Clean "Tests ...............: ${TEST_CMD[*]}"
-elif ((do_test)); then
+elif ((doTest)); then
 	fEcho_Clean "Tests ...............: (no harness yet: ${TEST_CMD[0]:-cicd/test.bash})"
 else
 	fEcho_Clean "Tests ...............: (skipped)"
 fi
-if ((do_test)); then
+if ((doTest)); then
 	fEcho_Clean "Go build ............: ${GO_MODULE_DIR} -> ${GO_MODULE_DIR}/${EXE_NAME} (the suite's subject)"
 fi
-if ((do_fuzz)) && [[ -f "${FUZZ_CMD[0]:-}" ]]; then
+if ((doFuzz)) && [[ -f "${FUZZ_CMD[0]:-}" ]]; then
 	fEcho_Clean "Fuzz + security .....: ${FUZZ_CMD[*]}"
-elif ((do_fuzz)); then
+elif ((doFuzz)); then
 	fEcho_Clean "Fuzz + security .....: (no harness yet: ${FUZZ_CMD[0]:-cicd/fuzz.bash})"
 else
-	fEcho_Clean "Fuzz + security .....: $( ((quick)) && echo '(skipped --quick)' || echo '(skipped)')"
+	fEcho_Clean "Fuzz + security .....: ${skipNote}"
 fi
-if ((! do_parity)); then
+if ((! doParity)); then
 	fEcho_Clean "Compatibility .......: (skipped)"
 elif [[ -f "${PARITY_CMD[0]:-}" ]]; then
 	fEcho_Clean "Compatibility .......: ${PARITY_CMD[*]} (this build vs legacy/bin)"
@@ -416,8 +427,8 @@ fi
 if ((${#DOGFOOD_TARGETS[@]})); then
 	for t in "${DOGFOOD_TARGETS[@]}"; do
 		exe="${EXE_NAME}"; [[ "${t}" == windows/* ]] && exe="${EXE_NAME}.exe"
-		if [[ -n "${dogfood_dest[${t}]}" ]]; then fPlanLine "Dogfood ($(fPlanOS "${t}"))" "build ${t} -> ${dogfood_dest[${t}]}/${exe}"
-		else fPlanLine "Dogfood ($(fPlanOS "${t}"))" "<none of: ${dogfood_all[${t}]} exists - will skip>"; fi
+		if [[ -n "${dogfoodDest[${t}]}" ]]; then fPlanLine "Dogfood ($(fPlanOS "${t}"))" "build ${t} -> ${dogfoodDest[${t}]}/${exe}"
+		else fPlanLine "Dogfood ($(fPlanOS "${t}"))" "<none of: ${dogfoodAll[${t}]} exists - will skip>"; fi
 	done
 else
 	fEcho_Clean "Dogfood .............: (disabled)"
@@ -427,19 +438,19 @@ if ((DO_DEMOGIF)) && [[ -f "${DEMOGIF_SCENARIO}" ]]; then
 elif ((DO_DEMOGIF)); then
 	fEcho_Clean "Demo gif ............: (no scenario yet: ${DEMOGIF_SCENARIO})"
 else
-	fEcho_Clean "Demo gif ............: $( ((quick)) && echo '(skipped --quick)' || echo '(skipped)')"
+	fEcho_Clean "Demo gif ............: ${skipNote}"
 fi
-if ((do_remote)) && [[ -f "${REMOTE_TEST_CMD[0]:-}" ]]; then
+if ((doRemote)) && [[ -f "${REMOTE_TEST_CMD[0]:-}" ]]; then
 	fEcho_Clean "Mac + Windows tests .: ${REMOTE_TEST_CMD[*]} (${REMOTE_MAC_HOSTS[*]%%:*} ${REMOTE_UNIX_HOSTS[*]%%:*}; first free of ${REMOTE_WINDOWS_HOSTS[*]%%:*})"
-elif ((do_remote)); then
+elif ((doRemote)); then
 	fEcho_Clean "Mac + Windows tests .: (no harness yet: ${REMOTE_TEST_CMD[0]:-cicd/remote-tests.bash})"
 else
-	fEcho_Clean "Mac + Windows tests .: $( ((quick)) && echo '(skipped --quick)' || echo '(skipped)')"
+	fEcho_Clean "Mac + Windows tests .: ${skipNote}"
 fi
 if ((${#GIT_PUBLISH[@]} == 0)); then
 	fEcho_Clean "Publish (last) ......: (disabled)"
-elif [[ -n "$publish_msg" ]]; then
-	fEcho_Clean "Publish (last) ......: ${GIT_PUBLISH[*]} (hands-off: \"${publish_msg}\")"
+elif [[ -n "${publishMsg}" ]]; then
+	fEcho_Clean "Publish (last) ......: ${GIT_PUBLISH[*]} (hands-off: \"${publishMsg}\")"
 else
 	fEcho_Clean "Publish (last) ......: ${GIT_PUBLISH[*]} (will prompt for message; blank = editor)"
 fi
@@ -447,14 +458,14 @@ fEcho_Clean
 fEcho_Clean "Fail-fast: any error aborts before the next stage."
 fEcho_Clean
 
-if ((! assume_yes)); then
+if ((! assumeYes)); then
 	## Capture the commit message up front so the run can finish unattended. This
 	## is the natural place to bail on the common (publish) path - Ctrl+C here
 	## aborts; there is no separate "Proceed? [y/N]" (removed to cut friction).
-	if ((${#GIT_PUBLISH[@]})) && [[ -z "$publish_msg" ]]; then
-		read -r -p "Publish commit message (blank = editor; Ctrl+C aborts): " m
+	if ((${#GIT_PUBLISH[@]})) && [[ -z "${publishMsg}" ]]; then
+		read -r -p "Publish commit message (blank = editor; Ctrl+C aborts): " typedMessage
 		fEcho_ResetBlankCounter
-		[[ -n "$m" ]] && publish_msg="$m"
+		[[ -n "${typedMessage}" ]] && publishMsg="${typedMessage}"
 	fi
 fi
 
@@ -465,8 +476,8 @@ if [[ -n "${LINT_LOG_DIR:-}" ]] && mkdir -p "${root}/${LINT_LOG_DIR}" 2>/dev/nul
 	exec > >(tee "${root}/${LINT_LOG_DIR}/run_${stamp}.log") 2>&1
 	## Wait for tee to drain on exit, else the shell prompt returns mid-flush and
 	## the last output lands after it (looks like the prompt "came back").
-	tee_pid=$!
-	trap 'exec 1>&- 2>&-; wait "${tee_pid}" 2>/dev/null' EXIT
+	teePid=$!
+	trap 'exec 1>&- 2>&-; wait "${teePid}" 2>/dev/null' EXIT
 fi
 
 ## Stage 0: remote sync. The publish stage pulls too, but that is after everything
@@ -474,7 +485,7 @@ fi
 ## having been validated by nothing. Refreshing first means the rest of the run tests
 ## the tree that is actually going out. Publish keeps its own pull as the late guard.
 fSection "0/8  Remote sync"
-if ((! do_sync)); then
+if ((! doSync)); then
 	fEcho_Clean "remote sync skipped"
 elif ! git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
 	## No upstream is an ordinary state for a brand-new branch, not a reason to stop.
@@ -499,19 +510,19 @@ fi
 ## Version stamped into every build this run. Dev builds carry what describe says; a
 ## release injects the clean one. Read after the sync, which can move HEAD. -dirty
 ## because a run that publishes builds source whose commit stage 8 hasn't made yet.
-go_version="$(git describe --tags --always --dirty --match 'v*' 2>/dev/null || echo 0.0.0)"
+goVersion="$(git describe --tags --always --dirty --match 'v*' 2>/dev/null || echo 0.0.0)"
 ## Build number, as minutes since 2000 in Crockford base32 - the binary does the encoding,
 ## this only hands it the seconds. Taken from the commit rather than the clock so the same
 ## source builds to the same bytes; a wall-clock stamp would mean nobody, including us,
 ## could ever rebuild a published asset to its published checksum.
-go_build_epoch="$(git log -1 --format=%ct 2>/dev/null || echo 0)"
+goBuildEpoch="$(git log -1 --format=%ct 2>/dev/null || echo 0)"
 
 ## Stage 1: lint. gofmt/vet/staticcheck over the module, then bash -n and shellcheck
 ## over the pipeline's own scripts and the installer (gating - never an auto-formatter:
 ## those are hand-formatted on purpose). markdownlint, py_compile and PSScriptAnalyzer
 ## are probe-gated extras.
 fSection "1/8  Lint"
-if ((! do_lint)); then
+if ((! doLint)); then
 	fEcho_Clean "lint skipped"
 else
 	fStageLint
@@ -521,13 +532,13 @@ fi
 ## the native one; the cross-builds happen at dogfood, where they have somewhere to go.
 ## Dev builds carry the describe version; release builds inject the clean one.
 fSection "2/8  Build + regression tests"
-if ((! do_test)); then
+if ((! doTest)); then
 	fEcho_Clean "build + tests skipped"
 else
 	(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 \
-		go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${go_version#v} -X main.buildEpoch=${go_build_epoch}" -o "${EXE_NAME}" .) \
+		go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${goVersion#v} -X main.buildEpoch=${goBuildEpoch}" -o "${EXE_NAME}" .) \
 		|| fDie "go build failed"
-	fEcho "OK: go build (v${go_version#v})"
+	fEcho "OK: go build (v${goVersion#v})"
 	## The unit tests come before the suite below: they answer in milliseconds and
 	## cover the parsing and matching the suite can only reach through a built binary.
 	fUnitTests
@@ -543,8 +554,8 @@ fi
 ## of what we shell out to). Slow, so skipped under --quick. Same lands-later
 ## policy as the tests.
 fSection "3/8  Fuzz + security"
-if ((! do_fuzz)); then
-	fEcho_Clean "fuzz + security skipped$( ((quick)) && echo ' (--quick)')"
+if ((! doFuzz)); then
+	fEcho_Clean "fuzz + security skipped${quickNote}"
 elif [[ -f "${FUZZ_CMD[0]:-}" ]]; then
 	"${FUZZ_CMD[@]}"
 	fEcho "OK: fuzz + security passed"
@@ -554,7 +565,7 @@ fi
 ## Coverage-guided fuzzing of the pure parsers, briefly. Their seed corpus already ran
 ## with 'go test' in stage 2; this hunts a little past it each run. One target per
 ## invocation is go's rule, and a crasher lands in src-go/testdata/fuzz/ as evidence.
-if ((do_fuzz)); then
+if ((doFuzz)); then
 	for fuzzTarget in $(cd "${root}/${GO_MODULE_DIR}" && go test -list 'Fuzz.*' . 2>/dev/null | grep '^Fuzz' || true); do
 		(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${BUILD_JOBS}" go test -run '^$' -fuzz "^${fuzzTarget}\$" -fuzztime 5s -parallel "${BUILD_JOBS}" . >/dev/null) \
 			|| fDie "fuzzing found a crasher in ${fuzzTarget} (reproducer under ${GO_MODULE_DIR}/testdata/fuzz/)"
@@ -576,7 +587,7 @@ fi
 ## The profiling half, and deliberately not a sampling profile: this program is blocked on
 ## git for effectively all of its wall clock, so a flamegraph has no leaders in it. What
 ## costs anything is how often we fork git, and that is what regresses silently.
-if ((do_fuzz)) && [[ -f "${SPAWN_COUNT_CMD[0]:-}" ]]; then
+if ((doFuzz)) && [[ -f "${SPAWN_COUNT_CMD[0]:-}" ]]; then
 	"${SPAWN_COUNT_CMD[@]}" || fDie "spawn counts regressed"
 	fEcho "OK: spawn counts"
 fi
@@ -586,7 +597,7 @@ fi
 ## the same input - which is what every port defect that reached users actually was. This
 ## asks the other question: do they ANSWER the same? Self-skips once legacy/ is gone.
 fSection "4/8  Backwards compatibility"
-if ((! do_parity)); then
+if ((! doParity)); then
 	fEcho_Clean "compatibility comparison skipped"
 elif [[ -f "${PARITY_CMD[0]:-}" ]]; then
 	"${PARITY_CMD[@]}"
@@ -610,7 +621,7 @@ fCrossBuild(){
 	for arch in "${arches[@]}"; do
 		part="${out}"; ((${#arches[@]} == 1)) || part="${out}-${arch}"
 		(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOOS="${target%%/*}" GOARCH="${arch}" \
-			go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${go_version#v} -X main.buildEpoch=${go_build_epoch}" -o "${part}" .) \
+			go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${goVersion#v} -X main.buildEpoch=${goBuildEpoch}" -o "${part}" .) \
 			|| fDie "go build failed for ${target%%/*}/${arch}"
 		parts+=("${part}")
 	done
@@ -619,28 +630,28 @@ fCrossBuild(){
 		rm -f -- "${parts[@]}"
 	fi
 }
-df_did=0
+dogfoodDone=0
 if ((! ${#DOGFOOD_TARGETS[@]})); then
 	fEcho_Clean "dogfood disabled"
 else
 	for t in "${DOGFOOD_TARGETS[@]}"; do
 		exe="${EXE_NAME}"; [[ "${t}" == windows/* ]] && exe="${EXE_NAME}.exe"
-		if [[ -z "${dogfood_dest[${t}]}" ]]; then
-			fEcho "WARNING: no ${t} dogfood dest exists/writable (${dogfood_all[${t}]}); skipping"
+		if [[ -z "${dogfoodDest[${t}]}" ]]; then
+			fEcho "WARNING: no ${t} dogfood dest exists/writable (${dogfoodAll[${t}]}); skipping"
 			continue
 		fi
 		## Built into the module dir under the target's own name, so the native binary the
 		## suite just ran against is not overwritten by a build that cannot run here.
 		out="${root}/${GO_MODULE_DIR}/${EXE_NAME}-${t//\//-}"
 		fCrossBuild "${t}" "${out}"
-		cp -f "${out}" "${dogfood_dest[${t}]}/${exe}"
-		chmod +x "${dogfood_dest[${t}]}/${exe}"
+		cp -f "${out}" "${dogfoodDest[${t}]}/${exe}"
+		chmod +x "${dogfoodDest[${t}]}/${exe}"
 		rm -f -- "${out:?}"
-		fEcho "OK: installed (${t}) -> ${dogfood_dest[${t}]}/${exe}"
-		df_did=1
+		fEcho "OK: installed (${t}) -> ${dogfoodDest[${t}]}/${exe}"
+		dogfoodDone=1
 	done
 fi
-((df_did)) || fEcho_Clean "dogfood: nothing installed"
+((dogfoodDone)) || fEcho_Clean "dogfood: nothing installed"
 
 ## Stage 6: demo gif. Types the scenario into a fake terminal, runs each command
 ## against a build of its own, stamped with the newest release, renders the
@@ -649,57 +660,57 @@ fi
 ## tree, then landed in-repo.
 fSection "6/8  Demo gif"
 if ((! DO_DEMOGIF)); then
-	fEcho_Clean "demo gif skipped$( ((quick)) && echo ' (--quick)')"
+	fEcho_Clean "demo gif skipped${quickNote}"
 elif [[ ! -f "${DEMOGIF_SCENARIO}" ]]; then
 	fEcho_Clean "no demo scenario (${DEMOGIF_SCENARIO})"
 else
-	demogif_out="${root}/${DEMOGIF_OUT}"
-	demogif_tmp="${demogif_out}.new"
-	mkdir -p "$(dirname "${demogif_out}")"
+	demogifOut="${root}/${DEMOGIF_OUT}"
+	demogifTmp="${demogifOut}.new"
+	mkdir -p "$(dirname "${demogifOut}")"
 	## Every command prints a banner naming its build, and a build stamped with the commit put a
 	## new one on camera at every commit, so the whole gif was replaced on every run. The demo's
 	## own build carries the newest release instead - the version and build number that release's
 	## published binary prints - so the gif changes only when what it shows does.
-	demo_version="0.0.0"; demo_build_epoch=""
-	demo_tags="$(git -c versionsort.suffix=- tag --sort=-v:refname --list 'v*' 2>/dev/null || true)"
-	demo_tag="${demo_tags%%$'\n'*}"
-	if [[ "${demo_tag}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([A-Za-z0-9.-]+)?$ ]]; then
-		demo_version="${demo_tag#v}"
-		demo_build_epoch="$(git log -1 --format=%ct "${demo_tag}^{commit}" 2>/dev/null || true)"
-	elif [[ -n "${demo_tag}" ]]; then
-		fEcho "WARNING: the newest v* tag '${demo_tag}' is not a version, so the demo build is stamped 0.0.0"
+	demoVersion="0.0.0"; demoBuildEpoch=""
+	demoTags="$(git -c versionsort.suffix=- tag --sort=-v:refname --list 'v*' 2>/dev/null || true)"
+	demoTag="${demoTags%%$'\n'*}"
+	if [[ "${demoTag}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([A-Za-z0-9.-]+)?$ ]]; then
+		demoVersion="${demoTag#v}"
+		demoBuildEpoch="$(git log -1 --format=%ct "${demoTag}^{commit}" 2>/dev/null || true)"
+	elif [[ -n "${demoTag}" ]]; then
+		fEcho "WARNING: the newest v* tag '${demoTag}' is not a version, so the demo build is stamped 0.0.0"
 	fi
-	demogif_bin="${root}/${GO_MODULE_DIR}/${EXE_NAME}-demo"
+	demogifBin="${root}/${GO_MODULE_DIR}/${EXE_NAME}-demo"
 	if ! (cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 \
-		go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${demo_version} -X main.buildEpoch=${demo_build_epoch}" -o "${demogif_bin}" .); then
+		go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${demoVersion} -X main.buildEpoch=${demoBuildEpoch}" -o "${demogifBin}" .); then
 		fEcho "WARNING: demo build failed, so no demo gif was rendered (continuing)"
-	elif (cd "${root}" && python3 "${DEMOGIF_CMD[@]}" ${harness_quiet[@]+"${harness_quiet[@]}"} --out "${demogif_tmp}" --bin "${demogif_bin}"); then
+	elif (cd "${root}" && python3 "${DEMOGIF_CMD[@]}" ${harnessQuiet[@]+"${harnessQuiet[@]}"} --out "${demogifTmp}" --bin "${demogifBin}"); then
 		if [[ -n "${DEMOGIF_OPT_CMD[*]:-}" ]] && command -v "${DEMOGIF_OPT_CMD[0]}" >/dev/null 2>&1; then
-			demogif_was=$(stat -c%s "${demogif_tmp}")
-			if "${DEMOGIF_OPT_CMD[@]}" "${demogif_tmp}" -o "${demogif_tmp}.opt" 2>/dev/null; then
-				mv -f "${demogif_tmp}.opt" "${demogif_tmp}"
-				fEcho_Clean "optimized: $((demogif_was / 1024)) -> $(( $(stat -c%s "${demogif_tmp}") / 1024 )) KiB"
+			demogifWas=$(stat -c%s "${demogifTmp}")
+			if "${DEMOGIF_OPT_CMD[@]}" "${demogifTmp}" -o "${demogifTmp}.opt" 2>/dev/null; then
+				mv -f "${demogifTmp}.opt" "${demogifTmp}"
+				fEcho_Clean "optimized: $((demogifWas / 1024)) -> $(( $(stat -c%s "${demogifTmp}") / 1024 )) KiB"
 			else
-				rm -f -- "${demogif_tmp:?}.opt"
+				rm -f -- "${demogifTmp:?}.opt"
 				fEcho_Clean "${DEMOGIF_OPT_CMD[0]}: failed, keeping the raw render"
 			fi
 		fi
-		if [[ -f "${demogif_out}" ]] && cmp -s "${demogif_tmp}" "${demogif_out}"; then
-			rm -f -- "${demogif_tmp:?}"
+		if [[ -f "${demogifOut}" ]] && cmp -s "${demogifTmp}" "${demogifOut}"; then
+			rm -f -- "${demogifTmp:?}"
 			fEcho "OK: demo gif unchanged"
 		else
 			## Keep the new original out of tree (GFS-pruned), then land it in the repo.
 			mkdir -p "${DEMOGIF_ARCHIVE_DIR}"
-			cp -f "${demogif_tmp}" "${DEMOGIF_ARCHIVE_DIR}/demo_${stamp}.gif"
+			cp -f "${demogifTmp}" "${DEMOGIF_ARCHIVE_DIR}/demo_${stamp}.gif"
 			gfs_rotate "${DEMOGIF_ARCHIVE_DIR}" demo gif >/dev/null 2>&1 || true
-			mv -f "${demogif_tmp}" "${demogif_out}"
+			mv -f "${demogifTmp}" "${demogifOut}"
 			fEcho "OK: demo gif regenerated"
 		fi
 	else
-		rm -f -- "${demogif_tmp:?}"
+		rm -f -- "${demogifTmp:?}"
 		fEcho "WARNING: demo gif generation failed (continuing)"
 	fi
-	rm -f -- "${demogif_bin:?}"
+	rm -f -- "${demogifBin:?}"
 fi
 
 ## Stage 7: the Go tests on a Mac, a Windows box and the other Unix boxes, and the regression
@@ -707,25 +718,25 @@ fi
 ## those platforms, and Windows-only breaks went unnoticed for weeks before this. A box that is off, unreachable or taken by someone else
 ## is skipped with a note rather than waited for. Slow, so skipped under --quick.
 fSection "7/8  Mac + Windows tests"
-if ((! do_remote)); then
-	fEcho_Clean "Mac + Windows tests skipped$( ((quick)) && echo ' (--quick)')"
+if ((! doRemote)); then
+	fEcho_Clean "Mac + Windows tests skipped${quickNote}"
 elif [[ ! -f "${REMOTE_TEST_CMD[0]:-}" ]]; then
 	fEcho_Clean "no remote test harness (${REMOTE_TEST_CMD[0]:-cicd/remote-tests.bash})"
 else
-	remote_bin="${root}/${GO_MODULE_DIR}/${EXE_NAME}-darwin-universal"
-	fCrossBuild darwin/universal "${remote_bin}"
-	remote_args=(--mac-bin "${remote_bin}"); remote_bins=("${remote_bin}")
-	mapfile -t remote_targets < <(printf '%s\n' "${REMOTE_UNIX_TARGETS[@]}" | sort -u)
-	for t in "${remote_targets[@]}"; do
+	remoteBin="${root}/${GO_MODULE_DIR}/${EXE_NAME}-darwin-universal"
+	fCrossBuild darwin/universal "${remoteBin}"
+	remoteArgs=(--mac-bin "${remoteBin}"); remoteBins=("${remoteBin}")
+	mapfile -t remoteTargets < <(printf '%s\n' "${REMOTE_UNIX_TARGETS[@]}" | sort -u)
+	for t in "${remoteTargets[@]}"; do
 		[[ -n "${t}" ]] || continue
-		remote_bins+=("${root}/${GO_MODULE_DIR}/${EXE_NAME}-${t/\//-}")
-		fCrossBuild "${t}" "${remote_bins[-1]}"
-		remote_args+=(--bin "${t}" "${remote_bins[-1]}")
+		remoteBins+=("${root}/${GO_MODULE_DIR}/${EXE_NAME}-${t/\//-}")
+		fCrossBuild "${t}" "${remoteBins[-1]}"
+		remoteArgs+=(--bin "${t}" "${remoteBins[-1]}")
 	done
-	remote_rc=0
-	"${REMOTE_TEST_CMD[@]}" "${remote_args[@]}" || remote_rc=$?
-	rm -f -- "${remote_bins[@]}"
-	((remote_rc == 0)) || fDie "Mac or Windows tests failed (see above)"
+	remoteRc=0
+	"${REMOTE_TEST_CMD[@]}" "${remoteArgs[@]}" || remoteRc=$?
+	rm -f -- "${remoteBins[@]}"
+	((remoteRc == 0)) || fDie "Mac or Windows tests failed (see above)"
 	fEcho "OK: Mac + Windows tests"
 fi
 
@@ -733,17 +744,17 @@ fi
 fSection "8/8  Backup + publish"
 ## Always run the publisher quiet: cicd already gave the initial prompt, so skip
 ## its redundant continue-prompt. With no message it still lets git open the editor.
-pub_flags=(--quiet)
+pubFlags=(--quiet)
 if ((${#GIT_PUBLISH[@]} == 0)); then
 	fEcho_Clean "publish disabled"
-elif [[ -n "$publish_msg" ]]; then
+elif [[ -n "${publishMsg}" ]]; then
 	## Hands-off: the publisher fills the empty commit message from -m so `git
 	## commit` won't open an editor.
-	fEcho_Clean "hands-off publish (commit message: \"${publish_msg}\")"
-	"${GIT_PUBLISH[@]}" "${pub_flags[@]}" -m "${publish_msg}"
+	fEcho_Clean "hands-off publish (commit message: \"${publishMsg}\")"
+	"${GIT_PUBLISH[@]}" "${pubFlags[@]}" -m "${publishMsg}"
 	fEcho "OK: published"
 else
-	"${GIT_PUBLISH[@]}" "${pub_flags[@]}"
+	"${GIT_PUBLISH[@]}" "${pubFlags[@]}"
 	fEcho "OK: published"
 fi
 
@@ -777,3 +788,4 @@ fEcho_Clean
 ##		- 2026-10-03 JC: PowerShell lint is one pwsh for every file, with its rules in PSScriptAnalyzerSettings.psd1. A file that fails to parse fails the lint on its own.
 ##		- 2026-10-04 JC: Stage 7 runs the Go tests on a Mac and a Windows box, and the regression suite on the Mac against the universal build, through cicd/remote-tests.bash. A box that is off or taken is skipped, not waited for. Full runs only. Publish is stage 8.
 ##		- 2026-10-04 JC: Stage 7 also builds for each Unix box's target in config.bash, FreeBSD amd64 and Linux arm64 to start, and hands those builds to the harness.
+##		- 2026-10-04 JC: Variables are camelCase, and the output helpers keep their state in two-underscore globals. The helpers come before the option loop, so a bad option goes through fUsage too. Every expansion braced, and shellcheck enforces it.
