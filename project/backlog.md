@@ -339,7 +339,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `[ErkSC4L]` fails on the emulated arm64 box
 	- ID: 2026100416430456
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting for testing
+	- Needs local test suite run?: Yes. The full test.bash on b23, which should stay at 1444 passed. Only the three changed checks were run.
+	- Needs external testing: The next stage 7 run on vmDebARM64. The three checks alone passed there.
 	- Priority|Severity [Bug]: Low
 	- Opened: 20261004-164304
 	- Opened by: jim-collier
@@ -350,6 +352,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: the check passes on a slow box when the two probes do run together.
 	- Reproduced [Bug]: Once, 2026-10-04, in stage 7 on vmDebARM64. Not rerun.
 	- Possible cause [Bug]: the check wants the run under 1.7 s with each probe delayed 1 s. On an emulated CPU the rest of `status` likely takes more than the 0.7 s left. Not checked.
+	- Actual cause [Bug]: the time limit. On vmDebARM64 `status` alone takes about 0.5 s, so with the 1 s probe it came to about 1.5 s against the 1.7 s limit. Any load on the box pushed it over. `whoami` is a little faster, which is why it passed in the stage 7 run.
+	- Progress log:
+		- Verified: on vmDebARM64 with all eight CPUs kept busy, the old `[ErkSC4L]` and `[ErkSctG]` failed three runs of three. Idle, they passed three of three.
+		- Verified: the new checks passed there three of three, idle and busy.
+		- Verified: on b23 and on vmDebARM64, the new `[ErkSC4L]` and `[ErkSctG]` fail on a build that asks ssh only when its line prints. On b23 they also fail on a build that waits for the gh answer before asking ssh, and `[ErkSC4Z]` fails on one that asks gh one login at a time. All three pass on the current build.
+		- Verified: the gate (lint and Go tests) and `test-id.bash --check` pass.
+		- Note: the checks were rewritten, not their rule. The probes still have to run together, per 2026100313123988.
+	- Actual fix [Bug]: the fake gh and ssh round trips log when they start and end, and each waits for the others to start before it ends. Asked together they always overlap, and asked in turn the first one ends alone after about 15 s. The checks read that log instead of timing the run.
+	- Swept: every check in test.bash that times a run. `[ErkSC4Z]` (account list) had the same kind of limit and was changed the same way. `[EpsVDIJ]` times a gate waiting on a lock, and only asks for at least 2 s, which a slow box can't break. Left alone: the Go test `[ErkSC48]`, which gives a killed probe 10 s, and the prompt polls in the `br prune` checks, which wait up to 10 s. Neither tests that work ran together.
+	- Branch: probeov
+	- Commit: 9f455a2
+	- Test case: test.bash `[ErkSC4L]`, `[ErkSctG]`, `[ErkSC4Z]`.
 
 - Code Review 20261003 enhancement 7: Go code tidy
 	- ID: 2026100313130047
