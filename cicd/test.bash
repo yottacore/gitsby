@@ -235,6 +235,14 @@ fBinHas(){ local -a st; LC_ALL=C tr -d '\000' < "$1" | LC_ALL=C grep -aqF -- "$2
 	if [[ "${st[0]}" == 0 && "${st[1]}" == 1 ]]; then return 1; fi
 	return 2 ;}
 fBinLacks(){ local rc=0; fBinHas "$@" || rc=$?; [[ "${rc}" == 1 ]] ;}
+## Probes ran together when every one of them, <count> in all, started before any ended. Reads
+## the log the fake-meet stub writes.
+fAllMet(){ local word="" ended="" total=0 before=0
+	while read -r word _; do
+		if [[ "${word}" == end ]]; then ended=1
+		elif [[ "${word}" == start ]]; then total=$((total + 1)); [[ -n "${ended}" ]] || before=$((before + 1)); fi
+	done < "$1"
+	[[ "${total}" == "$2" && "${before}" == "$2" ]] ;}
 fAssertPlan(){    local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
 	if     grep -qE "$pat" <<< "$(fPlanOf <<< "${out}")"; then fOk "$desc"; else fFail "$desc"; fi; }
 fAssertNotPlan(){ local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
@@ -1570,11 +1578,10 @@ case "$1 $2" in
 	"api user")    ## Whose token gh is holding - the exported one when there is one, like the real
 	               ## thing. A probe run after the switch can then only ever answer with the account
 	               ## it just switched to, which is what the pre-switch probe exists to avoid.
-	               ## FAKE_NET_DELAY stands in for the round trip.
-	               [[ -n "${FAKE_NET_DELAY:-}" ]] && sleep "${FAKE_NET_DELAY}"
+	               if [[ "${FAKE_MEET:-}" == net ]]; then fake-meet "gh api user"; fi
 	               if [[ -n "${GH_TOKEN:-}" ]]; then echo "${GH_TOKEN#tok_}"; else echo "${FAKE_GH_LOGIN:-ghuser}"; fi ;;
 	"auth token")  ## accounts gh holds, space separated; exit 1 for anyone else, like the real thing
-	               [[ -n "${FAKE_GH_TOKEN_DELAY:-}" ]] && sleep "${FAKE_GH_TOKEN_DELAY}"
+	               if [[ "${FAKE_MEET:-}" == token ]]; then fake-meet "gh auth token $4"; fi
 	               case " ${FAKE_GH_ACCOUNTS:-} " in *" $4 "*) echo "tok_$4" ;; *) exit 1 ;; esac ;;
 	"repo view")   ## Real gh distinguishes these on stderr, and gitsby now reads it: a name that
 	               ## resolves to nothing is not the same answer as an API it couldn't reach.
@@ -1632,13 +1639,32 @@ GHEOF
 		done
 		[[ "${mode}" == "G" ]] && { printf 'user git\nhostname github.com\n'; exit 0; }
 		if [[ "${mode}" == "T" ]]; then
-			[[ -n "${FAKE_NET_DELAY:-}" ]] && sleep "${FAKE_NET_DELAY}"
+			if [[ "${FAKE_MEET:-}" == net ]]; then fake-meet "ssh -T"; fi
 			login="${FAKE_SSH_LOGIN:-${FAKE_GH_LOGIN:-ghuser}}"
 			[[ -n "${key}" ]] && login="$(basename "${key}")"
 			echo "Hi ${login}! You've successfully authenticated, but GitHub does not provide shell access."
 			exit 1
 		fi
 		exit 0
+	EOF
+	## A round trip for the probe checks that ends only once FAKE_MEET_COUNT probes have started.
+	## Probes asked together then always overlap and probes asked in turn never do, on a box of any
+	## speed, where a time limit failed on a slow one. The first of a run in turn gives up waiting
+	## after about 15 s.
+	fStub "${gh}/bin/fake-meet" <<-'EOF'
+		#!/usr/bin/env bash
+		echo "start $1" >> "${FAKE_MEET_LOG}"
+		tries=0
+		while ((tries < 300)); do
+			seen=0
+			while read -r word _; do
+				if [[ "${word}" == start ]]; then seen=$((seen + 1)); fi
+			done < "${FAKE_MEET_LOG}"
+			if ((seen >= FAKE_MEET_COUNT)); then break; fi
+			sleep 0.05
+			tries=$((tries + 1))
+		done
+		echo "end $1" >> "${FAKE_MEET_LOG}"
 	EOF
 	local ghp="${gh}/bin:${PATH}"
 
@@ -1921,35 +1947,36 @@ GHEOF
 		bash -c "cd '${idn}/cfg' && ${idEnv} GH_TOKEN=tok_inherited FAKE_GH_ACCOUNTS='someoneelse configured' '${gitsby}' -q -NoFetch identity 2>&1"
 
 	## The token-file check and the ssh probe are both round trips, and in turn the identity block
-	## waited on the sum of them. At a second each, together is a little over one, and in turn is
-	## two or more. The lines are checked too, so a run that skipped a probe can't pass on speed.
-	local idPar="${idn}/par.gitconfig" idParFrom="" idParT0=0 idParT1=0
+	## waited on the sum of them. Each fake round trip waits for the other to start, so asked
+	## together they overlap and asked in turn they can't. The lines are checked too, so a run that
+	## skipped a probe can't pass.
+	local idPar="${idn}/par.gitconfig" idParFrom="" idParMet=""
 	git config --file "${idPar}" gitsby.ghTokenFile "${idn}/token.txt"
 	for idParFrom in status whoami; do
-		idParT0="$(date +%s%N)"
-		( cd "${idn}/cfg" && env PATH="${ghp}" FAKE_GH_LOGIN=someoneelse FAKE_GH_ACCOUNTS=someoneelse FAKE_NET_DELAY=1 GIT_CONFIG_GLOBAL="${idPar}" "${gitsby}" -q -NoFetch "${idParFrom}" > "${idn}/par-${idParFrom}.out" 2>&1 ) || true
-		idParT1="$(date +%s%N)"
+		: > "${idn}/meet-${idParFrom}.log"
+		( cd "${idn}/cfg" && env PATH="${ghp}" FAKE_GH_LOGIN=someoneelse FAKE_GH_ACCOUNTS=someoneelse FAKE_MEET=net FAKE_MEET_LOG="${idn}/meet-${idParFrom}.log" FAKE_MEET_COUNT=2 GIT_CONFIG_GLOBAL="${idPar}" "${gitsby}" -q -NoFetch "${idParFrom}" > "${idn}/par-${idParFrom}.out" 2>&1 ) || true
+		idParMet=no; if fAllMet "${idn}/meet-${idParFrom}.log" 2; then idParMet=yes; fi
 		case "${idParFrom}" in
 			status) fAssert "[ErkSC4L] status in a token-file folder asks gh and ssh together" \
-				bash -c "grep -q \"authenticates as 'fromfile'\" '${idn}/par-status.out' && grep -q '^SSH \.*: someoneelse ' '${idn}/par-status.out' && (( ${idParT1} - ${idParT0} < 1700000000 ))" ;;
+				bash -c "grep -q \"authenticates as 'fromfile'\" '${idn}/par-status.out' && grep -q '^SSH \.*: someoneelse ' '${idn}/par-status.out' && [[ ${idParMet} == yes ]]" ;;
 			whoami) fAssert "[ErkSctG] whoami there does too" \
-				bash -c "grep -q \"authenticates as 'fromfile'\" '${idn}/par-whoami.out' && grep -q '^SSH \.*: someoneelse ' '${idn}/par-whoami.out' && (( ${idParT1} - ${idParT0} < 1700000000 ))" ;;
+				bash -c "grep -q \"authenticates as 'fromfile'\" '${idn}/par-whoami.out' && grep -q '^SSH \.*: someoneelse ' '${idn}/par-whoami.out' && [[ ${idParMet} == yes ]]" ;;
 		esac
 	done
 
-	## The listing asks gh's store about every login, and in turn it waited on each. Three at a
-	## second each is about one together. Run where no account applies, so only the listing asks.
+	## The listing asks gh's store about every login, and in turn it waited on each. All three have
+	## to be asked before any answers. Run where no account applies, so only the listing asks.
 	mkdir -p "${idn}/plain"
 	cat > "${idn}/three.shcl" <<-EOF
 		account.one.ghAccount   = one
 		account.two.ghAccount   = two
 		account.three.ghAccount = three
 	EOF
-	idParT0="$(date +%s%N)"
-	( cd "${idn}/plain" && env PATH="${ghp}" FAKE_GH_ACCOUNTS=two FAKE_GH_TOKEN_DELAY=1 "${gitsby}" -q --config "${idn}/three.shcl" account list > "${idn}/par-list.out" 2>&1 ) || true
-	idParT1="$(date +%s%N)"
+	: > "${idn}/meet-list.log"
+	( cd "${idn}/plain" && env PATH="${ghp}" FAKE_GH_ACCOUNTS=two FAKE_MEET=token FAKE_MEET_LOG="${idn}/meet-list.log" FAKE_MEET_COUNT=3 "${gitsby}" -q --config "${idn}/three.shcl" account list > "${idn}/par-list.out" 2>&1 ) || true
+	idParMet=no; if fAllMet "${idn}/meet-list.log" 3; then idParMet=yes; fi
 	fAssert "[ErkSC4Z] account list asks gh about every login together" \
-		bash -c "[[ \"\$(grep -c 'token \.*: ' '${idn}/par-list.out')\" == 3 ]] && grep -q \"token \.*: gh's own store\" '${idn}/par-list.out' && (( ${idParT1} - ${idParT0} < 1800000000 ))"
+		bash -c "[[ \"\$(grep -c 'token \.*: ' '${idn}/par-list.out')\" == 3 ]] && grep -q \"token \.*: gh's own store\" '${idn}/par-list.out' && [[ ${idParMet} == yes ]]"
 
 	## The remote's owner is the step that needs no configuration at all, and it is the one step a
 	## clone cannot use. The repo being cloned is as likely a stranger's as ours, and the repo we are
@@ -6359,3 +6386,4 @@ echo "passed: ${pass}, failed: ${fail}"
 ##		- 20261004 JC: A tag named like origin's default branch no longer changes the name the default branch reads as. 1406 -> 1408.
 ##		- 20261004 JC: The release's changelog section gets a downloads table, one row per OS and one column per CPU, written from the files phase 1 built. The release body is still that section word for word. Phase 1 refuses a vNEXT that already has one, and phase 3 warns when the files it publishes and the table disagree. Four of the five new checks fail against the tree before them; the fifth, the body matching the section, held before too. 1412 -> 1417.
 ##		- 20261004 JC: A failed mktemp stops the suite before the exit trap is set, and the trap removes only the scratch folder the suite made and marked. It removed the folder the suite was started from before. Run for real with TMPDIR a file, from a folder with a canary in it, and no script here changes into a mktemp result unchecked. The run fails against the tree before it. 1417 -> 1444.
+##		- 20261004 JC: The probe checks prove the probes overlap from the order the fake round trips start and end in, not from a time limit. Each waits for the others to start, so the checks hold on a slow box, and fail on a build that asks in turn. 1444 -> 1444.
