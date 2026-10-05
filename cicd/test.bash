@@ -530,7 +530,10 @@ fStagedChecks(){
 		bash -c "cd '${stA}' && head=\"\$(git rev-parse HEAD)\" && out=\"\$('${gitsby}' -q pullcom --staged 2>&1)\" && grep -q 'Nothing staged, so nothing was committed' <<< \"\${out}\" && [[ \"\$(git rev-parse HEAD)\" == \"\${head}\" ]]"
 	( cd "${stA}" && git push --quiet )
 	## Ignoring the flag on a command that commits everything would sweep in what it kept out.
-	fAssertOut     "[Err7W97] --staged is refused where the whole tree would be committed"  'staged works with pullcom, sync'  bash -c "cd '${stA}' && '${gitsby}' -q release --staged 2>&1"
+	## Off since 2026-10-05: release takes --staged now, so it is no longer refused. ErrG0tG below
+	## asks the same of repo connect, which still commits the whole tree.
+	# fAssertOut     "[Err7W97] --staged is refused where the whole tree would be committed"  'staged works with pullcom, sync'  bash -c "cd '${stA}' && '${gitsby}' -q release --staged 2>&1"
+	fAssertOut     "[ErrG0tG] --staged is refused where the whole tree would be committed"  'staged works with pullcom, sync, .*, pr create and release\.'  bash -c "cd '${stA}' && '${gitsby}' -q repo connect '${work}/$1-staged-nowhere.git' --staged 2>&1"
 	fAssertOut     "[Err7W9D] help lists --staged"  '^  --staged \.+: Commit only what is staged'  "${gitsby}" --help
 
 	## origin changes the file with an unstaged edit here: no stash, so git would refuse the pull.
@@ -567,6 +570,29 @@ fStagedChecks(){
 		bash -c "cd '${stA}' && '${gitsby}' -q br merge --staged 'merge feat4' && [[ \"\$(git branch --show-current)\" == dev && \"\$(git show dev:f2)\" == b9 && \"\$(git log -1 --format=%s)\" == 'merge feat4' && \"\$(git status --porcelain | tr '\n' ,)\" == '?? untracked,' ]]"
 	fAssert        "[Err7WAA] and publishes dev" \
 		bash -c "cd '${stA}' && [[ \"\$(git rev-parse dev)\" == \"\$(git rev-parse origin/dev)\" ]]"
+
+	## release parks the staged part only, and every step after it, the merge, the tag, the move
+	## back to dev, runs with the rest still in the tree. main is brought level with dev first, so
+	## f2 is the same on both and its edit can ride along.
+	( cd "${stA}" && git branch --quiet -f main dev && git push --quiet origin main && echo r1 > f1 && git add f1 && echo r2 > f2
+	  "${gitsby}" -q release --staged > "${stOut}" 2>&1 ) || true
+	fAssertNotPlan "[ErrG0tN] release --staged plans no 'git add'"  'git add'  cat "${stOut}"
+	fAssert        "[ErrG0tY] and lists what is committed and what stays"  fStagedListsAre "${stOut}" "f1 |f2 untracked "
+	fAssert        "[ErrG0th] the release takes the staged edit alone, tagged on origin" \
+		bash -c "cd '${stA}' && [[ \"\$(git show origin/main:f1)\" == r1 && \"\$(git show origin/main:f2)\" == b9 ]] && git ls-remote --tags origin | grep -q 'refs/tags/v0\.1\.0$'"
+	fAssert        "[ErrG0ts] and ends back on dev with the rest of the tree as it was" \
+		bash -c "cd '${stA}' && [[ \"\$(git branch --show-current)\" == dev && \"\$(git status --porcelain | tr '\n' ,)\" == ' M f2,?? untracked,' ]] && grep -qx r2 f2"
+	## Only the index is parked, so a level repo with edits left out of it has nothing new.
+	fAssertOut     "[ErrG0u1] with nothing staged and nothing new, release --staged says so"  'Nothing new to release since v0\.1\.0'  bash -c "cd '${stA}' && '${gitsby}' -q release --staged 2>&1"
+	fAssert        "[ErrG0uB] and cuts no tag" \
+		bash -c "cd '${stA}' && [[ \"\$(git tag | tr '\n' ,)\" == 'v0.1.0,' ]]"
+	## main gains a fix to far, which has an edit here: the checkout of main would be refused.
+	( cd "${stB}" && git checkout --quiet main && git pull --quiet --ff-only && echo hot > far && git add far && git commit --quiet -m hot && git push --quiet )
+	( cd "${stA}" && git fetch --quiet && git branch --quiet -f main origin/main && echo mine > far && echo r3 > f1 && git add f1 )
+	stHead="$(git -C "${stA}" rev-parse HEAD)"
+	fAssertOut     "[ErrG0uK] a release whose checkout would overwrite a file left behind is refused"  "'git checkout main' would overwrite edits here"  bash -c "cd '${stA}' && '${gitsby}' -q release --staged 2>&1"
+	fAssert        "[ErrG0uY] before the plan, with nothing committed or tagged" \
+		bash -c "cd '${stA}' && out=\"\$('${gitsby}' -q release --staged 2>&1)\"; ! grep -q 'Going to do' <<< \"\${out}\" && [[ \"\$(git rev-parse HEAD)\" == '${stHead}' && \"\$(git rev-parse origin/dev)\" == '${stHead}' && \"\$(git status --porcelain | tr '\n' ,)\" == 'M  f1, M f2, M far,?? untracked,' && \"\$(git tag | tr '\n' ,)\" == 'v0.1.0,' ]]"
 }
 
 fRunSuite(){
@@ -1929,6 +1955,14 @@ GHEOF
 	( cd "${pnc}" && git checkout --quiet -b hotfix/prfix main && echo fix > fix.txt && git add --all && git commit --quiet -m "Fix it" )
 	fAssert "[Er1LxRt] pr create from a hotfix bases the PR on the default branch" \
 		bash -c "cd '${pnc}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prhf.log' '${gitsby}' -q pr create && grep -q -- '--base main ' '${gh}/prhf.log'"
+	## pr create --staged pushes the staged edit alone, and the rest stays in the tree.
+	( cd "${pnc}" && git checkout --quiet -b pnstaged dev && echo s > s.txt && echo t > t.txt && git add s.txt t.txt && git commit --quiet -m "Stage some"
+	  echo s2 > s.txt && git add s.txt && echo t2 > t.txt && echo u > u.txt )
+	fAssert "[ErrG0uf] pr create --staged opens the PR with the staged edit alone pushed" \
+		bash -c "cd '${pnc}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prst.log' '${gitsby}' -q pr create --staged 'Staged only' && grep -q -- '--head pnstaged --title Staged only' '${gh}/prst.log' && [[ \"\$(git show origin/pnstaged:s.txt)\" == s2 && \"\$(git show origin/pnstaged:t.txt)\" == t ]]"
+	fAssert "[ErrG0un] and leaves the rest of the tree as it was" \
+		bash -c "cd '${pnc}' && [[ \"\$(git status --porcelain | tr '\n' ,)\" == ' M t.txt,?? u.txt,' ]] && grep -qx t2 t.txt"
+	fAssertOut "[ErrG0uu] pr ok still refuses --staged"  'staged works with pullcom, sync'  bash -c "cd '${pnc}' && PATH='${ghp}' '${gitsby}' -q pr ok 7 --staged 2>&1"
 
 	## A branch whose name starts with a dash can't be typed here - the parser reads a leading dash
 	## as an option of ours - but a clone brings whatever the remote has, and then git reads it as
@@ -6487,3 +6521,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261004 JC: The probe checks prove the probes overlap from the order the fake round trips start and end in, not from a time limit. Each waits for the others to start, so the checks hold on a slow box, and fail on a build that asks in turn. 1444 -> 1444.
 ##		- 20261004 JC: Prints through fEcho_Clean, like the other pipeline scripts. Three checks that read cicd.bash look for its new camelCase names. Every expansion braced, and shellcheck enforces it.
 ##		- 20261005 JC: --staged commits only the staged file, on top of origin's commit, with the rest of the tree left as it was. Its pulls have no --autostash, and the staged edit stays staged through br create from dev. A pull or a checkout that would overwrite an edit left behind is refused before the plan, with nothing committed. br switch and br merge carry the rest over. Refused where the whole tree is committed. 1453 -> 1471.
+##		- 20261005 JC: pr create and release take --staged. pr create pushes the staged edit alone, and release tags it, merges, and ends back on dev with the rest of the tree as it was. A level repo with edits left out of the index has nothing new to release. A checkout of main that would overwrite an edit left behind is refused before the plan. The release refusal check is off, and repo connect is asked instead. 1471 -> 1482.

@@ -19,15 +19,20 @@ import (
 
 // checkStagedFlag refuses --staged where the command would commit everything
 // anyway. Ignoring it there would sweep in the very edits it was typed to keep out.
-func checkStagedFlag(name string, opt options) error {
+// Read ahead of sortPr, so pr's subcommand is still the raw argument here.
+func checkStagedFlag(cmd command, opt options) error {
 	if !opt.staged {
 		return nil
 	}
-	switch name {
-	case "pullcom", "sync", "br-create", "br-hotfix", "br-switch", "br-merge":
+	switch cmd.name {
+	case "pullcom", "sync", "br-create", "br-hotfix", "br-switch", "br-merge", "release":
 		return nil
+	case "pr":
+		if sub := strings.ToLower(cmd.arg); sub == "create" || sub == "new" {
+			return nil
+		}
 	}
-	return usagef("--staged works with pullcom, sync, br create, br hotfix, br switch and br merge.")
+	return usagef("--staged works with pullcom, sync, br create, br hotfix, br switch, br merge, pr create and release.")
 }
 
 // treeSplit is the working tree as --staged sees it, with paths from the top of
@@ -122,8 +127,12 @@ func (a *app) stagedPreflight() error {
 	all, left := pathSet(split.staged, split.left), pathSet(split.left)
 	current := a.currentBranch()
 	switch a.cmd.name {
-	case "pullcom", "sync":
+	case "pullcom", "sync", "pr":
+		// pr create parks like sync. The host call after it names its branch, so
+		// neither gh nor tea looks at the tree.
 		return a.stagedPullCheck(current, all)
+	case "release":
+		return a.stagedReleaseCheck(current, all, left)
 	case "br-create", "br-hotfix":
 		base := a.mergeTarget()
 		if a.cmd.name == "br-hotfix" {
@@ -175,6 +184,30 @@ func (a *app) stagedMoveCheck(target string, all, left map[string]bool) error {
 		return err
 	}
 	return a.stagedPullCheck(target, left)
+}
+
+// stagedReleaseCheck follows cmdRelease: park, then dev and its pull, then the
+// default branch and its pull. Each check that passes leaves a file the same on
+// every branch read so far, so the merge, the move back to dev and its
+// fast-forward, and the last checkout can't touch one either. The index stands in
+// for whichever branch is being left, for the same reason.
+func (a *app) stagedReleaseCheck(current string, all, left map[string]bool) error {
+	here := current
+	if a.mergeTarget() == "dev" && here != "dev" {
+		if err := a.stagedMoveCheck("dev", all, left); err != nil {
+			return err
+		}
+		here = "dev"
+	} else if err := a.stagedPullCheck(current, all); err != nil {
+		return err
+	}
+	mainBranch := a.defaultBranch()
+	if here != mainBranch {
+		if err := a.stagedCheckoutCheck(mainBranch, left, true); err != nil {
+			return err
+		}
+	}
+	return a.stagedPullCheck(mainBranch, left)
 }
 
 // stagedPullCheck: a fast-forward with no stash is refused when it would change a

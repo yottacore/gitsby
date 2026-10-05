@@ -29,7 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - FreeBSD joins the published platforms, amd64 and arm64 both, alongside Linux, Windows and macOS.
 
-- `--staged` commits only what is already staged, on `pullcom`, `sync`, `br create`, `br hotfix`, `br switch` and `br merge`. Unstaged edits and untracked files stay where they are, and come along on a branch switch the way plain `git` carries them. The plan lists which files get committed and which stay behind. Where git would refuse a pull or a checkout over the edits left behind, the run stops before its plan, with nothing done.
+- `--staged` commits only what is already staged, on `pullcom`, `sync`, `br create`, `br hotfix`, `br switch`, `br merge`, `pr create` and `release`. Unstaged edits and untracked files stay where they are, and come along on a branch switch the way plain `git` carries them. The plan lists which files get committed and which stay behind. Where git would refuse a pull or a checkout over the edits left behind, the run stops before its plan, with nothing done.
 
 - macOS gets one universal binary that runs on Intel and Apple silicon alike, in place of one per CPU. Both installers take it on any Mac.
 
