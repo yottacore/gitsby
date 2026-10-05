@@ -297,11 +297,11 @@ func (a *app) previewSplit() {
 	if len(a.split.staged) == 0 {
 		a.out.clean(pad + "  nothing is staged, so nothing is committed")
 	} else {
-		a.out.clean(pad + "  staged, so committed:")
+		a.out.clean(pad + "  Changes to commit:")
 		a.showLinesAt(pad+"    ", a.split.staged)
 	}
 	if len(a.split.left) > 0 {
-		a.out.clean(pad + "  not staged, so left as is:")
+		a.out.clean(pad + "  Changes to leave alone:")
 		a.showLinesAt(pad+"    ", a.split.left)
 	}
 }

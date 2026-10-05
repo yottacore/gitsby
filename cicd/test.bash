@@ -498,8 +498,8 @@ fBraceRuleOn(){ awk '/^[[:space:]]*#[[:space:]]*shellcheck[[:space:]].*enable=re
 ## The two lists a --staged plan shows under its commit, as "committed|left", each name followed
 ## by a space.
 fStagedListsAre(){ [[ "$(fPlanOf < "$1" | awk '
-	/staged, so committed:/ { s = 1; next }
-	/not staged, so left as is:/ { s = 2; next }
+	/Changes to commit:/ { s = 1; next }
+	/Changes to leave alone:/ { s = 2; next }
 	/^    [^ ]/ { s = 0 }
 	s == 1 && NF { c = c $1 " " }
 	s == 2 && NF { l = l $1 " " }
