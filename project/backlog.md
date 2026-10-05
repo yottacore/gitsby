@@ -61,6 +61,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: every `darwin` and `arm64` reader in the repo. release.bash, config.bash, both installers, the installer and release fixtures in test.bash, README, design.md and the changelog. cicd.bash dogfood already joins. Nothing in `src-go` reads asset names. `legacy/` is frozen.
 	- Verified: stage 7 on b26 (2026-10-04) passed the installer checks with stubbed downloads, `[ErgCzfP]`, `[ErgCzfc]` and `[ErgCzfq]` among them.
 
+- Run the windows/arm64 build somewhere
+	- ID: 2026100507345200
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-05
+	- Opened by: jim-collier
+	- Related IDs: 2026100413264100
+	- Requirements  [Feature]:
+		- The release publishes `gitsby-windows-arm64.exe`, but no box runs it. Stage 7 runs Windows tests on amd64 only, on vm925w.
+	- Notes:
+		- vmDebARM64 has Wine. In theory the windows/arm64 build runs there, slowly, since that CPU is emulated.
+		- First probe: whether that Wine runs an ARM64 PE at all, with `--version` and then the Go test binary. Not run yet. The box was held by another session on 2026-10-05.
+		- If it runs, stage 7 could run the windows/arm64 Go tests there, under Wine, beside the linux/arm64 run. Wine is not Windows, so it would add to vm925w's run, not replace it.
+
 - Code Review 20261003 enhancement 2: Network probes run one after another
 	- ID: 2026100313123988
 	- Type: Enhancement
