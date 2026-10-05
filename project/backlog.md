@@ -131,6 +131,38 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash `[ErkSC4L]`, `[ErkSctG]`, `[ErkSC4Z]`, `[ErkSC4m]` (regression guard), `[Er1LxSk]`; Go `[ErkSC3h]`, `[ErkSC3v]`, `[ErkSC48]`, `[ErkTEpz]`.
 	- Verified: test.bash 1408/0, `go test ./...`, fuzz.bash 301/0 and parity 29/0 on merged gover, 2026-10-04.
 
+- Release notes group the downloads in a table
+	- ID: 2026100415020736
+	- Type: Enhancement
+	- Status: Waiting on signoff
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-04
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- When creating a release, use a table to group downloads.
+		- CPU architecture goes in columns, and target OS in rows.
+	- Notes:
+		- The release body is the changelog section verbatim today. GitHub lists the assets in a flat list under it.
+		- macOS is one universal file, so its row doesn't split by CPU the way the others do.
+	- Decisions:
+		- The table goes in the changelog's release section too, so the release body stays a verbatim copy of that section. release.bash writes it into the section when it cuts the release, from the actual asset list (2026-10-04).
+		- Rows are target OS (Linux, macOS, Windows, FreeBSD, whatever the release publishes). Columns are CPU (amd64, arm64). macOS is one universal file, `gitsby-darwin-universal`, so its row doesn't split by CPU. Each cell links the asset's download URL for that tag (2026-10-04).
+		- `SHA256SUMS` and the install scripts go on one line under the table (2026-10-04).
+	- Progress log:
+		- Done: release.bash phase 2 adds a `### Downloads` table at the foot of the section it retitles, built from the files phase 1 made. Rows run Linux, macOS, Windows, FreeBSD, then any other OS. Columns run amd64, arm64, then any other CPU. A missing file shows `-`. One line below links `SHA256SUMS` and the tag's `install.bash` and `install.ps1`.
+		- Done: the macOS file is linked under both CPU columns, since a markdown table cell can't span two. That is one reading of "doesn't split by CPU", for signoff.
+		- Done: phase 1 refuses a vNEXT section that already has a `### Downloads` heading. Phase 3 warns when the table and the files it publishes disagree. With no binaries built, phase 2 warns and writes no table.
+		- Done: design.md and the changelog say so. The repo name is set once in release.bash.
+		- Verified: shellcheck on both scripts, `test-id.bash --check`, and markdownlint on changelog.md and design.md. A table written into a copy of the real changelog passed markdownlint.
+		- Verified: the release.bash block of test.bash, 38 passed. Against release.bash before the change, four of the five new checks fail. `[Erm33XL]` held before too, since the body was already the section.
+		- Not run: the full test.bash, the gate, and a real cut.
+	- Branch: dltable
+	- Commit: 72ae04b
+	- Test case: test.bash `[Erm33Wu]`, `[Erm33X8]`, `[Erm33XL]`, `[Erm33XZ]`, `[Erm33Xn]`.
+	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
+	- Note: the installers read `SHA256SUMS` and the release list, never the body, so they are untouched.
+	- Question: a table cell can't span two columns, so the macOS universal file is listed under both amd64 and arm64. Is that the wanted reading of "its row doesn't split by CPU"?
+
 - Stage 7 names b26 as a Windows host to the lock
 	- ID: 2026100410340781
 	- Type: Bug
@@ -156,6 +188,34 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: lockhosts
 	- Commit: 5a45371
 	- Test case: test.bash `[ErkbDUa]` (lists passed to the lock) and `[ErkqZtP]` (older lock with no other-hosts list).
+
+- `TestLockAccountsFile` fails on FreeBSD
+	- ID: 2026100416430451
+	- Type: Bug
+	- Status: Waiting on signoff
+	- Priority|Severity [Bug]: Low
+	- Opened: 20261004-164304
+	- Opened by: jim-collier
+	- Related IDs: 2026100413264100
+	- Target OS: FreeBSD
+	- Test environment: vmFreeBSD, FreeBSD 15.1 amd64, UFS.
+	- Incorrect behavior [Bug]: "unlock removed a lock it didn't make". The test removes the lock, writes a new one at the same path, and unlock removes that one too.
+	- Expected behavior [Bug]: unlock leaves a lock file it did not make.
+	- Reproduced [Bug]: Yes, 2026-10-04, in stage 7 on vmFreeBSD. It passes on Linux, macOS and Windows.
+	- Possible cause [Bug]: unlock tells its own lock by `os.SameFile`, which compares device and inode. UFS hands the freed inode number straight to the new file, so the new lock looks like the old one. Not checked.
+	- Actual cause [Bug]: As above, checked on vmFreeBSD 2026-10-04. A file removed and made again at the same path got the same inode number 20 times out of 20 on UFS.
+	- Actual fix [Bug]: Each lock gets a random token written into it. Unlock removes the lock only when it still holds this run's token, so a lock another run made after ours is left alone, whatever inode it got. A lock whose token can't be written is removed at once and the run refused, the same as one that can't be made.
+	- Progress log:
+		- Verified: `TestLockAccountsFile` fails on vmFreeBSD before the fix, three runs of three, and passes after, five of five. All the Go tests pass there after the fix.
+		- Verified: `TestUnlockLeavesALockInItsInode` fails on Linux before the fix and passes after. It writes over the lock in place, so the other run's lock keeps our inode on any filesystem.
+		- Verified: the gate and `test-id.bash --check` pass. The package vets for Windows and macOS.
+		- Note: older builds leave the lock empty, so they and this one never mistake each other's locks.
+	- Swept: `os.SameFile`, `Stat_t`, `.Ino` and `ModTime` in src-go. The lock was the only file identity check. Both callers, `account set` and the old-format conversion, only `defer unlock()`, and the signature is unchanged. test.bash's `[EpxmDk1]` makes an empty lock by hand, which still blocks the create. Not run, since it waits for the full test.bash.
+	- Branch: lockid
+	- Commit: ea96f4d
+	- Test case: `TestLockAccountsFile` [EpxmDk5] on FreeBSD, and `TestUnlockLeavesALockInItsInode` [ErmLh0B] on any platform.
+	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
+	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it.
 
 - The plan shows `@{u}` where it could name the branch
 	- ID: 2026100316463300
@@ -186,30 +246,38 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: 4a1b65c
 	- Test case: test.bash [Erl2Vub], [Erl2Vup], [Erl2Vv4], [Erl2VvI] and [Erl2eIe]. Go `TestPullArgsFor` [ErgA5KD] and `TestUpstreamNames` [Erl1x3E].
 
-- test.bash removes the folder it was started from when mktemp fails
-	- ID: 2026100415391365
-	- Type: Bug
-	- Status: Waiting for testing
-	- Needs local test suite run?: Yes. The full test.bash, which should come to 1444 passed and 0 failed. The new checks ran on their own, not inside a full run.
-	- Priority|Severity [Bug]: High
-	- Opened: 20261004-153913
+- Code Review 20261003 enhancement 7: Go code tidy
+	- ID: 2026100313130047
+	- Type: Enhancement
+	- Status: Waiting on signoff
+	- Priority [Feature]: Low
+	- Opened: 2026-10-03
 	- Opened by: jim-collier
-	- Steps to reproduce [Bug]:
-		- Run `cicd/test.bash` with `TMPDIR` set to something that isn't a folder, such as a file.
-	- Incorrect behavior [Bug]: `mktemp -d` fails, and `work` ends up as the current folder. The exit trap then runs `rm -rf` on it. Started from the repo root, that is the whole checkout, `.git` included.
-	- Expected behavior [Bug]: The suite stops before it sets the trap, and removes nothing.
-	- Reproduced [Bug]: Yes, 2026-10-04 on b23, against a scratch folder, which was removed. The same day it removed the gitsby checkout, which came back whole from the 15:30 ZFS snapshot.
-	- Possible cause [Bug]: test.bash line 32 is `work="$(cd "$(mktemp -d ...)" && pwd -P)"`. The mktemp failure is lost, and `cd ""` succeeds without moving.
-	- Note: a probable fix checks the mktemp result before resolving it, and refuses a `work` that isn't a `gitsby-test.*` folder before arming the trap. A grep of `cicd` and the installers finds no other `cd "$(mktemp` site.
-	- Actual cause [Bug]: The mktemp call sat inside the `cd` that resolves it, so its failure was lost. `cd ""` succeeds without moving, so `work` became the current folder, and the exit trap removed it.
-	- Actual fix [Bug]: mktemp runs on its own line and stops the suite when it fails. Before the trap is set, the resolved folder has to be the one mktemp made, named `gitsby-test.*`, and empty. A marker file goes in it, and the trap removes the folder only while the name and the marker are both there.
-	- Swept: install.bash and every script in cicd/, cicd/utility/ and cicd/utility/demo/. Only test.bash wrapped mktemp in a `cd`. The rest assign mktemp straight to a variable under `set -e`, so a failure stops them or leaves an empty value that `${x:?}` refuses before any `rm`. demo-repo.bash and remote-tests.bash already check a marker before removing. The shared files in cicd/utility/include/ have no mktemp and no recursive removal.
-	- Verified: with TMPDIR a file, the suite before the fix removed the folder it was started from, canary included, and the fixed one stopped at mktemp and left it alone. `[Erm5vXj]` fails against the old test.bash and passes against the new one, and so does `[Erm5vYa]`'s pattern on test.bash. With mktemp working, the scratch folder is still removed and the exit code kept, for a plain TMPDIR, one ending in a slash, and one reached through a link.
-	- Verified: shellcheck, `test-id.bash --check`, and `cicd.bash --gate`.
-	- Not run: the full test.bash. No run reaches the trap's refusal of a folder without the marker.
-	- Test case: test.bash `[Erm5vXj]`, a real run with mktemp failing, and `[Erm5vYa]`, no script changes into a mktemp result unchecked.
-	- Branch: tmpguard
-	- Commit: 566589f
+	- Requirements  [Feature]:
+		- `cmdPrune` gets branch names back out of git's argv by index math. Have `leaseDeleteBatches` return them.
+		- The account ssh command, the exclusive-create writer and the push-or-set-upstream args are each built in two or three places. Make one of each.
+		- `ghState` also keeps the tea and reachability state. Rename it, and read reachability through `isOffline()` everywhere.
+		- The flat-line parse is written three times, and `[2]string` keys stand in for a named type.
+		- `contains` beside `slices.Contains`, a BOM literal beside `utf8BOM`, a GOOS test beside `isWindows()`.
+	- Origin: mostly the work since 20260909: shcl, prune leases, tea support. Confirmed by grep.
+	- Actual effort: Low
+	- Done: Each delete batch comes back with the branches it deletes, and `pruneRemote` reads them from there. The prune gate and its leases are unchanged.
+	- Done: `sshKeyCommand`, `createNew` and `pushArgs` are the one of each. `createNew` takes over from `createAccountsFile`, the conversion's `writeNew`, and the lock's own open. The lock keeps its random token.
+	- Done: `ghState` is now `remoteState`, kept on the run as `remote`. Reachability is an `offline` flag, so the zero value is online, and every reader goes through `isOffline()`.
+	- Done: The old layout is split into lines once, by `flatLines`, for the load, the conversion and its look ahead. `acctKey` names the account and field pair in both layouts.
+	- Done: `contains` is gone for `slices.Contains`, the load trims `utf8BOM`, and the lock's Windows test calls `isWindows()`.
+	- Note: The lock file is now synced before it is closed, as the other two creates already were.
+	- Note: Two Go tests follow the new names without changing what they check. `TestLeaseDeleteBatches` now also checks the branch names each batch hands back. `TestCreateAccountsFileNeverReplaces` calls `createNew`.
+	- Note: Left alone: `publishBranch` and `repo connect`'s add case always push with `-u`, so they don't ask about an upstream. The plan's push lines are display text. Every other `runtime.GOOS` passes the platform to a function so tests can set it.
+	- Swept: `grep -n 'IdentitiesOnly\|O_EXCL\|"-u", "origin"\|\.gh\.\|reachable\|\[2\]string\|contains(\|\\ufeff\|runtime.GOOS' src-go/*.go`.
+	- Verified: `go test -race ./...`, `go vet` for linux, windows, darwin and freebsd on amd64 and arm64, `cicd.bash --gate`, and spawn-count with every count the same as before. The git, gh and ssh command lines that spawn-count's runs start are the same before and after.
+	- Verified: the old and new flat readers and converters agree over about 3.3 million fuzzed inputs.
+	- Branch: gotidy
+	- Commit: 101f180, 791e19a, 546d7ad, ed08dfb, 83a8517
+	- Test case: The existing suites cover it, since nothing should change. Run: the Go tests and spawn-count. Still to run: test.bash, fuzz.bash and parity.bash.
+	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
+	- Verified: fuzz.bash 301/0, parity.bash and the spawn counts all pass on gover 2026-10-04.
+	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it.
 
 - macOS release gets a universal binary
 	- ID: 2026100313491873
@@ -239,43 +307,11 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: every `darwin` and `arm64` reader in the repo. release.bash, config.bash, both installers, the installer and release fixtures in test.bash, README, design.md and the changelog. cicd.bash dogfood already joins. Nothing in `src-go` reads asset names. `legacy/` is frozen.
 	- Verified: stage 7 on b26 (2026-10-04) passed the installer checks with stubbed downloads, `[ErgCzfP]`, `[ErgCzfc]` and `[ErgCzfq]` among them.
 
-- Release notes group the downloads in a table
-	- ID: 2026100415020736
-	- Type: Enhancement
-	- Status: Waiting for testing
-	- Needs local test suite run?: The full test.bash, to confirm the total goes 1412 -> 1417. Only its release.bash block was run. Then Waiting on signoff, since it changes release text.
-	- Priority [Feature]: Avg
-	- Opened: 2026-10-04
-	- Opened by: jim-collier
-	- Requirements  [Feature]:
-		- When creating a release, use a table to group downloads.
-		- CPU architecture goes in columns, and target OS in rows.
-	- Notes:
-		- The release body is the changelog section verbatim today. GitHub lists the assets in a flat list under it.
-		- macOS is one universal file, so its row doesn't split by CPU the way the others do.
-	- Decisions:
-		- The table goes in the changelog's release section too, so the release body stays a verbatim copy of that section. release.bash writes it into the section when it cuts the release, from the actual asset list (2026-10-04).
-		- Rows are target OS (Linux, macOS, Windows, FreeBSD, whatever the release publishes). Columns are CPU (amd64, arm64). macOS is one universal file, `gitsby-darwin-universal`, so its row doesn't split by CPU. Each cell links the asset's download URL for that tag (2026-10-04).
-		- `SHA256SUMS` and the install scripts go on one line under the table (2026-10-04).
-	- Progress log:
-		- Done: release.bash phase 2 adds a `### Downloads` table at the foot of the section it retitles, built from the files phase 1 made. Rows run Linux, macOS, Windows, FreeBSD, then any other OS. Columns run amd64, arm64, then any other CPU. A missing file shows `-`. One line below links `SHA256SUMS` and the tag's `install.bash` and `install.ps1`.
-		- Done: the macOS file is linked under both CPU columns, since a markdown table cell can't span two. That is one reading of "doesn't split by CPU", for signoff.
-		- Done: phase 1 refuses a vNEXT section that already has a `### Downloads` heading. Phase 3 warns when the table and the files it publishes disagree. With no binaries built, phase 2 warns and writes no table.
-		- Done: design.md and the changelog say so. The repo name is set once in release.bash.
-		- Verified: shellcheck on both scripts, `test-id.bash --check`, and markdownlint on changelog.md and design.md. A table written into a copy of the real changelog passed markdownlint.
-		- Verified: the release.bash block of test.bash, 38 passed. Against release.bash before the change, four of the five new checks fail. `[Erm33XL]` held before too, since the body was already the section.
-		- Not run: the full test.bash, the gate, and a real cut.
-	- Branch: dltable
-	- Commit: 72ae04b
-	- Test case: test.bash `[Erm33Wu]`, `[Erm33X8]`, `[Erm33XL]`, `[Erm33XZ]`, `[Erm33Xn]`.
-	- Note: the installers read `SHA256SUMS` and the release list, never the body, so they are untouched.
-
 - Run the tests on FreeBSD and on Linux arm64 in stage 7 too
 	- ID: 2026100413264100
 	- Type: Enhancement
 	- Status: Waiting for testing
-	- Needs local test suite run?: Yes. The full test.bash on b23, with the 8 new checks and the changed `[ErkbDSi]`.
-	- Needs external testing: A full stage 7 run, with b26 and a Windows box beside the two new ones. The run alone on the two new boxes is done.
+	- Needs external testing: Stage 7 on b26. It was skipped on 2026-10-04 since another session held it.
 	- Priority [Feature]: Avg
 	- Opened: 20261004-132641
 	- Opened by: jim-collier
@@ -307,100 +343,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: unixrt
 	- Commit: f331e15
 	- Test case: test.bash `[Erm9Pnk]`, `[Erm9Pnx]`, `[Erm9PoA]`, `[Erm9PoN]`, `[Erm9Poa]`, `[Erm9Pon]`, `[Erm9Pp1]`, `[Erm9PpE]`, and `[ErkbDSi]` (changed).
-
-- `TestLockAccountsFile` fails on FreeBSD
-	- ID: 2026100416430451
-	- Type: Bug
-	- Status: Waiting for testing
-	- Needs local test suite run?: Yes. The full test.bash on b23. Nothing it runs changed, so its total should not move.
-	- Needs external testing: Stage 7 on vmFreeBSD. Then Waiting on signoff, since it changes what the lock file holds and when it is removed.
-	- Priority|Severity [Bug]: Low
-	- Opened: 20261004-164304
-	- Opened by: jim-collier
-	- Related IDs: 2026100413264100
-	- Target OS: FreeBSD
-	- Test environment: vmFreeBSD, FreeBSD 15.1 amd64, UFS.
-	- Incorrect behavior [Bug]: "unlock removed a lock it didn't make". The test removes the lock, writes a new one at the same path, and unlock removes that one too.
-	- Expected behavior [Bug]: unlock leaves a lock file it did not make.
-	- Reproduced [Bug]: Yes, 2026-10-04, in stage 7 on vmFreeBSD. It passes on Linux, macOS and Windows.
-	- Possible cause [Bug]: unlock tells its own lock by `os.SameFile`, which compares device and inode. UFS hands the freed inode number straight to the new file, so the new lock looks like the old one. Not checked.
-	- Actual cause [Bug]: As above, checked on vmFreeBSD 2026-10-04. A file removed and made again at the same path got the same inode number 20 times out of 20 on UFS.
-	- Actual fix [Bug]: Each lock gets a random token written into it. Unlock removes the lock only when it still holds this run's token, so a lock another run made after ours is left alone, whatever inode it got. A lock whose token can't be written is removed at once and the run refused, the same as one that can't be made.
-	- Progress log:
-		- Verified: `TestLockAccountsFile` fails on vmFreeBSD before the fix, three runs of three, and passes after, five of five. All the Go tests pass there after the fix.
-		- Verified: `TestUnlockLeavesALockInItsInode` fails on Linux before the fix and passes after. It writes over the lock in place, so the other run's lock keeps our inode on any filesystem.
-		- Verified: the gate and `test-id.bash --check` pass. The package vets for Windows and macOS.
-		- Note: older builds leave the lock empty, so they and this one never mistake each other's locks.
-	- Swept: `os.SameFile`, `Stat_t`, `.Ino` and `ModTime` in src-go. The lock was the only file identity check. Both callers, `account set` and the old-format conversion, only `defer unlock()`, and the signature is unchanged. test.bash's `[EpxmDk1]` makes an empty lock by hand, which still blocks the create. Not run, since it waits for the full test.bash.
-	- Branch: lockid
-	- Commit: ea96f4d
-	- Test case: `TestLockAccountsFile` [EpxmDk5] on FreeBSD, and `TestUnlockLeavesALockInItsInode` [ErmLh0B] on any platform.
-
-- `[ErkSC4L]` fails on the emulated arm64 box
-	- ID: 2026100416430456
-	- Type: Bug
-	- Status: Waiting for testing
-	- Needs local test suite run?: Yes. The full test.bash on b23, which should stay at 1444 passed. Only the three changed checks were run.
-	- Needs external testing: The next stage 7 run on vmDebARM64. The three checks alone passed there.
-	- Priority|Severity [Bug]: Low
-	- Opened: 20261004-164304
-	- Opened by: jim-collier
-	- Related IDs: 2026100413264100, 2026100313123988
-	- Target OS: Linux arm64
-	- Test environment: vmDebARM64, Debian 13 arm64 on an emulated CPU.
-	- Incorrect behavior [Bug]: "status in a token-file folder asks gh and ssh together" fails there. Its twin `[ErkSctG]`, for whoami, passes.
-	- Expected behavior [Bug]: the check passes on a slow box when the two probes do run together.
-	- Reproduced [Bug]: Once, 2026-10-04, in stage 7 on vmDebARM64. Not rerun.
-	- Possible cause [Bug]: the check wants the run under 1.7 s with each probe delayed 1 s. On an emulated CPU the rest of `status` likely takes more than the 0.7 s left. Not checked.
-	- Actual cause [Bug]: the time limit. On vmDebARM64 `status` alone takes about 0.5 s, so with the 1 s probe it came to about 1.5 s against the 1.7 s limit. Any load on the box pushed it over. `whoami` is a little faster, which is why it passed in the stage 7 run.
-	- Progress log:
-		- Verified: on vmDebARM64 with all eight CPUs kept busy, the old `[ErkSC4L]` and `[ErkSctG]` failed three runs of three. Idle, they passed three of three.
-		- Verified: the new checks passed there three of three, idle and busy.
-		- Verified: on b23 and on vmDebARM64, the new `[ErkSC4L]` and `[ErkSctG]` fail on a build that asks ssh only when its line prints. On b23 they also fail on a build that waits for the gh answer before asking ssh, and `[ErkSC4Z]` fails on one that asks gh one login at a time. All three pass on the current build.
-		- Verified: the gate (lint and Go tests) and `test-id.bash --check` pass.
-		- Note: the checks were rewritten, not their rule. The probes still have to run together, per 2026100313123988.
-	- Actual fix [Bug]: the fake gh and ssh round trips log when they start and end, and each waits for the others to start before it ends. Asked together they always overlap, and asked in turn the first one ends alone after about 15 s. The checks read that log instead of timing the run.
-	- Swept: every check in test.bash that times a run. `[ErkSC4Z]` (account list) had the same kind of limit and was changed the same way. `[EpsVDIJ]` times a gate waiting on a lock, and only asks for at least 2 s, which a slow box can't break. Left alone: the Go test `[ErkSC48]`, which gives a killed probe 10 s, and the prompt polls in the `br prune` checks, which wait up to 10 s. Neither tests that work ran together.
-	- Branch: probeov
-	- Commit: 9f455a2
-	- Test case: test.bash `[ErkSC4L]`, `[ErkSctG]`, `[ErkSC4Z]`.
-
-- Code Review 20261003 enhancement 7: Go code tidy
-	- ID: 2026100313130047
-	- Type: Enhancement
-	- Status: Waiting for testing
-	- Needs local test suite run?: Yes. Full test.bash, fuzz.bash and parity.bash on b23. Totals should match gover's.
-	- Priority [Feature]: Low
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Requirements  [Feature]:
-		- `cmdPrune` gets branch names back out of git's argv by index math. Have `leaseDeleteBatches` return them.
-		- The account ssh command, the exclusive-create writer and the push-or-set-upstream args are each built in two or three places. Make one of each.
-		- `ghState` also keeps the tea and reachability state. Rename it, and read reachability through `isOffline()` everywhere.
-		- The flat-line parse is written three times, and `[2]string` keys stand in for a named type.
-		- `contains` beside `slices.Contains`, a BOM literal beside `utf8BOM`, a GOOS test beside `isWindows()`.
-	- Origin: mostly the work since 20260909: shcl, prune leases, tea support. Confirmed by grep.
-	- Actual effort: Low
-	- Done: Each delete batch comes back with the branches it deletes, and `pruneRemote` reads them from there. The prune gate and its leases are unchanged.
-	- Done: `sshKeyCommand`, `createNew` and `pushArgs` are the one of each. `createNew` takes over from `createAccountsFile`, the conversion's `writeNew`, and the lock's own open. The lock keeps its random token.
-	- Done: `ghState` is now `remoteState`, kept on the run as `remote`. Reachability is an `offline` flag, so the zero value is online, and every reader goes through `isOffline()`.
-	- Done: The old layout is split into lines once, by `flatLines`, for the load, the conversion and its look ahead. `acctKey` names the account and field pair in both layouts.
-	- Done: `contains` is gone for `slices.Contains`, the load trims `utf8BOM`, and the lock's Windows test calls `isWindows()`.
-	- Note: The lock file is now synced before it is closed, as the other two creates already were.
-	- Note: Two Go tests follow the new names without changing what they check. `TestLeaseDeleteBatches` now also checks the branch names each batch hands back. `TestCreateAccountsFileNeverReplaces` calls `createNew`.
-	- Note: Left alone: `publishBranch` and `repo connect`'s add case always push with `-u`, so they don't ask about an upstream. The plan's push lines are display text. Every other `runtime.GOOS` passes the platform to a function so tests can set it.
-	- Swept: `grep -n 'IdentitiesOnly\|O_EXCL\|"-u", "origin"\|\.gh\.\|reachable\|\[2\]string\|contains(\|\\ufeff\|runtime.GOOS' src-go/*.go`.
-	- Verified: `go test -race ./...`, `go vet` for linux, windows, darwin and freebsd on amd64 and arm64, `cicd.bash --gate`, and spawn-count with every count the same as before. The git, gh and ssh command lines that spawn-count's runs start are the same before and after.
-	- Verified: the old and new flat readers and converters agree over about 3.3 million fuzzed inputs.
-	- Branch: gotidy
-	- Commit: 101f180, 791e19a, 546d7ad, ed08dfb, 83a8517
-	- Test case: The existing suites cover it, since nothing should change. Run: the Go tests and spawn-count. Still to run: test.bash, fuzz.bash and parity.bash.
+	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
+	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it.
+	- Question: stage 7 is still labeled "Mac + Windows tests". Renaming it changes output text that `[ErkbDSi]`, `[ErkbDT4]` and `[ErkbDTL]` check. Rename it?
 
 - Code Review 20261003 enhancement 8: Pipeline scripts and the style guide against the new Bash rules
 	- ID: 2026100313130060
 	- Type: Enhancement
-	- Status: Waiting for testing
-	- Needs local test suite run?: Yes. Full test.bash, fuzz.bash and parity.bash on b23, then a full cicd run. test.bash should be gover's total plus one, for `[ErmXzJR]`. fuzz and parity should not change. Only the gate, the new check and the three changed checks were run.
+	- Status: Queued
 	- Priority [Feature]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -441,8 +391,39 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: shellcheck over every pipeline script, `test-id.bash --check`, `backlog-check.bash` and `cicd.bash --gate` pass. cicd.bash's plan is the same as gover's, with and without `--quick`, and its option errors read and exit as before.
 	- Verified: old and new gfs-rotate.bash agree file for file and line for line over 25 rounds of rotation in five time zones, DST gaps included. The bad-count guard still works, and keep-build.bash still rotates with it.
 	- Test case: test.bash `[ErmXzJR]`, every pipeline script turns on shellcheck's brace rule. Renames have no behavior to test; the suites cover them.
+	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
+	- Verified: fuzz.bash 301/0, parity.bash and the spawn counts all pass on gover 2026-10-04.
+	- Note: failed in the 2026-10-04 test batch, on b23, vmFreeBSD and vmDebARM64. `[Emq7Y6y]` now finds gfs-rotate.bash's `rm -f "${file}"` in its prune loop. The old unbraced `"$file"` slipped past the check's pattern, so bracing it brought an unguarded removal into view rather than adding one. The fix is a guarded path, such as `${file:?}`, in every copy of the shared file. Left for the next round.
 	- Branch: bashstyle
 	- Commit: 20ab499, 0952f39, 102c13f
+
+- test.bash removes the folder it was started from when mktemp fails
+	- ID: 2026100415391365
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: High
+	- Opened: 20261004-153913
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- Run `cicd/test.bash` with `TMPDIR` set to something that isn't a folder, such as a file.
+	- Incorrect behavior [Bug]: `mktemp -d` fails, and `work` ends up as the current folder. The exit trap then runs `rm -rf` on it. Started from the repo root, that is the whole checkout, `.git` included.
+	- Expected behavior [Bug]: The suite stops before it sets the trap, and removes nothing.
+	- Reproduced [Bug]: Yes, 2026-10-04 on b23, against a scratch folder, which was removed. The same day it removed the gitsby checkout, which came back whole from the 15:30 ZFS snapshot.
+	- Possible cause [Bug]: test.bash line 32 is `work="$(cd "$(mktemp -d ...)" && pwd -P)"`. The mktemp failure is lost, and `cd ""` succeeds without moving.
+	- Note: a probable fix checks the mktemp result before resolving it, and refuses a `work` that isn't a `gitsby-test.*` folder before arming the trap. A grep of `cicd` and the installers finds no other `cd "$(mktemp` site.
+	- Actual cause [Bug]: The mktemp call sat inside the `cd` that resolves it, so its failure was lost. `cd ""` succeeds without moving, so `work` became the current folder, and the exit trap removed it.
+	- Actual fix [Bug]: mktemp runs on its own line and stops the suite when it fails. Before the trap is set, the resolved folder has to be the one mktemp made, named `gitsby-test.*`, and empty. A marker file goes in it, and the trap removes the folder only while the name and the marker are both there.
+	- Swept: install.bash and every script in cicd/, cicd/utility/ and cicd/utility/demo/. Only test.bash wrapped mktemp in a `cd`. The rest assign mktemp straight to a variable under `set -e`, so a failure stops them or leaves an empty value that `${x:?}` refuses before any `rm`. demo-repo.bash and remote-tests.bash already check a marker before removing. The shared files in cicd/utility/include/ have no mktemp and no recursive removal.
+	- Verified: with TMPDIR a file, the suite before the fix removed the folder it was started from, canary included, and the fixed one stopped at mktemp and left it alone. `[Erm5vXj]` fails against the old test.bash and passes against the new one, and so does `[Erm5vYa]`'s pattern on test.bash. With mktemp working, the scratch folder is still removed and the exit code kept, for a plain TMPDIR, one ending in a slash, and one reached through a link.
+	- Verified: shellcheck, `test-id.bash --check`, and `cicd.bash --gate`.
+	- Not run: the full test.bash. No run reaches the trap's refusal of a folder without the marker.
+	- Test case: test.bash `[Erm5vXj]`, a real run with mktemp failing, and `[Erm5vYa]`, no script changes into a mktemp result unchecked.
+	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
+	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it.
+	- Acceptance signoff: Self-closed. Reproduced, its test failed before the fix and passes after, and the sweep is answered.
+	- Closed: 20261004-182117
+	- Branch: tmpguard
+	- Commit: 566589f
 
 - The README install line fails while v2.1.0 is the newest full release
 	- ID: 2026100315501800
@@ -803,6 +784,37 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: acct-files
 	- Test case: TestFragmentNames, plus two apply checks in test.bash.
 	- Closed: 2026-09-30
+
+- `[ErkSC4L]` fails on the emulated arm64 box
+	- ID: 2026100416430456
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Low
+	- Opened: 20261004-164304
+	- Opened by: jim-collier
+	- Related IDs: 2026100413264100, 2026100313123988
+	- Target OS: Linux arm64
+	- Test environment: vmDebARM64, Debian 13 arm64 on an emulated CPU.
+	- Incorrect behavior [Bug]: "status in a token-file folder asks gh and ssh together" fails there. Its twin `[ErkSctG]`, for whoami, passes.
+	- Expected behavior [Bug]: the check passes on a slow box when the two probes do run together.
+	- Reproduced [Bug]: Once, 2026-10-04, in stage 7 on vmDebARM64. Not rerun.
+	- Possible cause [Bug]: the check wants the run under 1.7 s with each probe delayed 1 s. On an emulated CPU the rest of `status` likely takes more than the 0.7 s left. Not checked.
+	- Actual cause [Bug]: the time limit. On vmDebARM64 `status` alone takes about 0.5 s, so with the 1 s probe it came to about 1.5 s against the 1.7 s limit. Any load on the box pushed it over. `whoami` is a little faster, which is why it passed in the stage 7 run.
+	- Progress log:
+		- Verified: on vmDebARM64 with all eight CPUs kept busy, the old `[ErkSC4L]` and `[ErkSctG]` failed three runs of three. Idle, they passed three of three.
+		- Verified: the new checks passed there three of three, idle and busy.
+		- Verified: on b23 and on vmDebARM64, the new `[ErkSC4L]` and `[ErkSctG]` fail on a build that asks ssh only when its line prints. On b23 they also fail on a build that waits for the gh answer before asking ssh, and `[ErkSC4Z]` fails on one that asks gh one login at a time. All three pass on the current build.
+		- Verified: the gate (lint and Go tests) and `test-id.bash --check` pass.
+		- Note: the checks were rewritten, not their rule. The probes still have to run together, per 2026100313123988.
+	- Actual fix [Bug]: the fake gh and ssh round trips log when they start and end, and each waits for the others to start before it ends. Asked together they always overlap, and asked in turn the first one ends alone after about 15 s. The checks read that log instead of timing the run.
+	- Swept: every check in test.bash that times a run. `[ErkSC4Z]` (account list) had the same kind of limit and was changed the same way. `[EpsVDIJ]` times a gate waiting on a lock, and only asks for at least 2 s, which a slow box can't break. Left alone: the Go test `[ErkSC48]`, which gives a killed probe 10 s, and the prompt polls in the `br prune` checks, which wait up to 10 s. Neither tests that work ran together.
+	- Branch: probeov
+	- Commit: 9f455a2
+	- Test case: test.bash `[ErkSC4L]`, `[ErkSctG]`, `[ErkSC4Z]`.
+	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
+	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it. The three probe checks passed there.
+	- Acceptance signoff: Self-closed. The checks failed on a busy box before and pass after, and the twins are covered.
+	- Closed: 20261004-182117
 
 - Pushes and remote-only checkouts name a branch short, so a tag can break them
 	- ID: 2026100411431800
