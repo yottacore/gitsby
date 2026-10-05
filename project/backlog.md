@@ -82,6 +82,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Cause, inferred: branch protection. The emulated CPU has it, Debian builds Wine's library marked for it, and those entry points lack the instruction it requires. Not confirmed by turning it off, since that takes root plus a reboot or a VM change. The C library there has no per-program switch for it.
 		- Not changed: stage 7 and the docs. Nothing runs under Wine there yet.
 		- Question: run it at all? One way is to give vmDebARM64 a CPU model without branch protection, which changes its linux/arm64 runs too. Another is `arm64.nobti` on its kernel command line plus a reboot. Or leave windows/arm64 untested until a Wine fix.
+	- Branch: winebti
 
 - Code Review 20261003 enhancement 2: Network probes run one after another
 	- ID: 2026100313123988
