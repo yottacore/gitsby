@@ -350,29 +350,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Question: stage 7 is still labeled "Mac + Windows tests". Renaming it changes output text that `[ErkbDSi]`, `[ErkbDT4]` and `[ErkbDTL]` check. Rename it?
 		- Answer: yes, to "Remote tests". Filed as 2026100418431100.
 
-- Rename stage 7 to "Remote tests"
-	- ID: 2026100418431100
-	- Type: Task
-	- Status: Done
-	- Priority [Feature]: Low
-	- Opened: 20261004-184311
-	- Opened by: jim-collier
-	- Related IDs: 2026100413264100
-	- Requirements  [Feature]:
-		- Stage 7 runs on FreeBSD and Linux arm64 boxes too, so "Mac + Windows tests" no longer fits. It becomes "Remote tests".
-	- Note: `[ErkbDSi]`, `[ErkbDT4]` and `[ErkbDTL]` read the label and change with it. They keep their IDs.
-	- Progress log:
-		- Done: cicd.bash's usage, plan line, section, skip, failure and OK lines say "Remote tests", and so do config.bash's stage 7 comment and the README's `--quick` line. The failure line said "Mac or Windows tests failed", so it changed too. The plan line keeps its dot column.
-		- Done: `[ErkbDTZ]` and the three checks above follow the new text, with the same IDs.
-	- Swept: "Mac + Windows", "Mac and Windows" and "Mac or Windows" across the repo, `legacy/` aside. Left alone, since they mean the boxes and not the stage: accounts.md, remote-tests.bash's purpose line, two comments in test.bash, and the dated history footers in cicd.bash and config.bash. The vNEXT changelog doesn't describe stage 7, so it has no entry.
-	- Verified: `[ErkbDSi]`, `[ErkbDT4]` and `[ErkbDTL]` fail against gover's cicd.bash and pass against the new one. `[ErkbDTZ]` checks for the label's absence, so it passes either way.
-	- Verified: test.bash 1453/0, shellcheck, `test-id.bash --check`, `backlog-check.bash` and `cicd.bash --gate`.
-	- Test case: test.bash `[ErkbDSi]`, `[ErkbDT4]`, `[ErkbDTL]` and `[ErkbDTZ]`.
-	- Acceptance signoff: Self-closed: rename.
-	- Closed: 20261004-185642
-	- Branch: remote-tests-label
-	- Commit: f546f7f
-
 - test.bash removes the folder it was started from when mktemp fails
 	- ID: 2026100415391365
 	- Type: Bug
@@ -1161,6 +1138,29 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: 20ab499, 0952f39, 102c13f, 03d3b80
 	- Acceptance signoff: Self-closed: mechanical. The rest was done and verified earlier, and `[Emq7Y6y]` fails before this fix and passes after.
 	- Closed: 20261004-185001
+
+- Rename stage 7 to "Remote tests"
+	- ID: 2026100418431100
+	- Type: Task
+	- Status: Done
+	- Priority [Feature]: Low
+	- Opened: 20261004-184311
+	- Opened by: jim-collier
+	- Related IDs: 2026100413264100
+	- Requirements  [Feature]:
+		- Stage 7 runs on FreeBSD and Linux arm64 boxes too, so "Mac + Windows tests" no longer fits. It becomes "Remote tests".
+	- Note: `[ErkbDSi]`, `[ErkbDT4]` and `[ErkbDTL]` read the label and change with it. They keep their IDs.
+	- Progress log:
+		- Done: cicd.bash's usage, plan line, section, skip, failure and OK lines say "Remote tests", and so do config.bash's stage 7 comment and the README's `--quick` line. The failure line said "Mac or Windows tests failed", so it changed too. The plan line keeps its dot column.
+		- Done: `[ErkbDTZ]` and the three checks above follow the new text, with the same IDs.
+	- Swept: "Mac + Windows", "Mac and Windows" and "Mac or Windows" across the repo, `legacy/` aside. Left alone, since they mean the boxes and not the stage: accounts.md, remote-tests.bash's purpose line, two comments in test.bash, and the dated history footers in cicd.bash and config.bash. The vNEXT changelog doesn't describe stage 7, so it has no entry.
+	- Verified: `[ErkbDSi]`, `[ErkbDT4]` and `[ErkbDTL]` fail against gover's cicd.bash and pass against the new one. `[ErkbDTZ]` checks for the label's absence, so it passes either way.
+	- Verified: test.bash 1453/0, shellcheck, `test-id.bash --check`, `backlog-check.bash` and `cicd.bash --gate`.
+	- Test case: test.bash `[ErkbDSi]`, `[ErkbDT4]`, `[ErkbDTL]` and `[ErkbDTZ]`.
+	- Acceptance signoff: Self-closed: rename.
+	- Closed: 20261004-185642
+	- Branch: remote-tests-label
+	- Commit: f546f7f
 
 - shellcheck crashes now and then on test.bash
 	- ID: 2026100410472492
