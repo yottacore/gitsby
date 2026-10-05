@@ -130,16 +130,17 @@ type hostState struct {
 	login cached[hostAnswer] // who that CLI holds a login for on origin's host
 }
 
-// ghState is what this run knows about the two accounts a remote command can act
-// as: gh's own, and whoever a remote's ssh key authenticates as. Both cost a live
-// round trip, so both are asked at most once.
-type ghState struct {
+// remoteState is what this run knows about origin and who it talks to origin as:
+// whether the pre-command fetch reached it, which git host CLI the command goes
+// through, that CLI's own account, and whoever a remote's ssh key authenticates
+// as. The accounts cost a live round trip, so each is asked at most once.
+type remoteState struct {
 	isCommand bool     // goes through a git host CLI at all -> show whose account that is
 	isWrite   bool     // WRITES through one -> also compare against the ssh key
 	tool      hostTool // which CLI that is
 	cli       string   // and how this machine spells it
 	probeURL  string   // the url the ssh identity is read from
-	reachable bool     // cleared when the pre-command fetch can't reach origin
+	offline   bool     // set when the pre-command fetch can't reach origin; read it through isOffline
 	login     cached[string]
 	protocol  cached[string]
 	// Keyed by remote: one slot answered for whichever url asked first, and three
@@ -192,14 +193,14 @@ type account struct {
 // state, so any of them can be called twice - or from a test - without the second
 // call inheriting the first one's answers.
 type app struct {
-	opt  options
-	cmd  command
-	out  *printer
-	cfg  *config
-	acct account
-	git  repoState
-	gh   ghState
-	host hostState
+	opt    options
+	cmd    command
+	out    *printer
+	cfg    *config
+	acct   account
+	git    repoState
+	remote remoteState
+	host   hostState
 
 	inRepo bool
 
@@ -234,7 +235,6 @@ func newApp(out *printer) *app {
 	return &app{
 		out:   out,
 		cfg:   &config{values: map[string]string{}},
-		gh:    ghState{reachable: true},
 		opt:   defaultOptions(),
 		cmd:   command{mutating: true},
 		stamp: stampNow(),

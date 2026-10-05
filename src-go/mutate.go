@@ -54,7 +54,7 @@ func (a *app) cmdPull() error {
 	switch {
 	case !a.opt.fetch:
 		a.out.status("Skipping the pull (--no-fetch).")
-	case !a.gh.reachable:
+	case a.isOffline():
 		a.out.status("WARNING: remote unreachable; skipping the pull. Local changes still get committed.")
 	case a.hasUpstream():
 		return a.step("git", a.pullArgs("--autostash")...)
@@ -68,7 +68,7 @@ func (a *app) cmdPull() error {
 // cmdPull, quietly: --no-fetch and an unreachable remote both mean skip. Extra
 // arguments go through to git.
 func (a *app) pullIfOnline(extra ...string) error {
-	if a.opt.fetch && a.gh.reachable && a.hasUpstream() {
+	if a.opt.fetch && !a.isOffline() && a.hasUpstream() {
 		return a.step("git", a.pullArgs(extra...)...)
 	}
 	return nil
