@@ -64,7 +64,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `--staged`: commit only what is staged, and leave the rest of the tree alone
 	- ID: 2026100512025340
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Waiting for testing
+	- Needs local test suite run?: The full test.bash, which should come to 1471 with the 18 new checks. Then signoff, since this adds a flag and plan wording.
 	- Priority [Feature]: High
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
@@ -85,6 +86,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- It doesn't go against design.md's line that partial staging belongs to raw git. Gitsby still stages nothing itself. It only stops undoing a `git add` that was already made. design.md gets a line saying so.
 		- Before the first Go release, since flags and aliases are permanent after it.
 	- Estimated effort: Avg
+	- Progress log:
+		- Verified: git's autostash brings staged work back unstaged, on git 2.51. A file staged and then edited again lost its staged copy. Git's current source still reapplies it that way. A plain fast-forward with no stash kept the index, and where incoming commits touched a file with edits here, git refused and changed nothing.
+		- So with `--staged` no pull uses `--autostash`. Committing the staged part before the pull was the other way, but a remote that moved ahead would then be diverged.
+		- Done: `--staged` on `pullcom`, `sync`, `br create`, `br hotfix`, `br switch` and `br merge`. The commit takes the index only, and the plan lists what is committed and what stays. Nothing staged commits nothing, and the run goes on.
+		- Done: a pull or checkout that git would refuse over the edits left in the tree is refused before the plan, with nothing done. That is the reading taken of "the plan says so before anything runs": a plan that can't finish isn't shown. A pull from a remote other than origin can't be read ahead; git refuses that one at the time.
+		- Note: `br hotfix` takes the flag too, since it is the same recipe as `br create`. `pr create` and `release` also commit the whole tree, and refuse the flag for now. Adding it there later breaks nobody.
+		- Done: help, README, workflows.md, the changelog, and design.md, with the line the Decisions ask for and the autostash finding.
+		- Verified: `go test ./...` and the gate pass. The 18 new suite checks pass on their own. With `--autostash` put back on every pull, 6 of them fail. With the read-ahead turned off, 4 fail.
+	- Branch: staged
+	- Commit: efe1522
+	- Test case: Go tests `[Err7CYL]`, `[Err7CYY]`, `[Err7CYm]`. test.bash `[Err7W8V]` through `[Err7WAA]`, 18 checks.
+	- Swept: every `--autostash` and `git add --all` in `src-go`. The commit and the pull in mutate.go, br create from `main` or `dev` in branchcmd.go, and both plan lines in preview.go. The file list in repo.go is for `repo create` and `repo connect`, which refuse the flag. The pulls in pr.go and release.go run on a clean tree, and those commands refuse the flag.
 
 - Run the windows/arm64 build somewhere
 	- ID: 2026100507345200
