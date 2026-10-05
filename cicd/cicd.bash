@@ -714,7 +714,8 @@ else
 fi
 
 ## Stage 7: the Go tests on a Mac, a Windows box and the other Unix boxes, and the regression
-## suite on the Mac and the Unix boxes against the build for each. Nothing else runs the tests on
+## suite on the Mac and the Unix boxes against the build for each. The Linux arm64 box also runs
+## the windows/arm64 Go tests under Wine. Nothing else runs the tests on
 ## those platforms, and Windows-only breaks went unnoticed for weeks before this. A box that is off, unreachable or taken by someone else
 ## is skipped with a note rather than waited for. Slow, so skipped under --quick.
 fSection "7/8  Remote tests"

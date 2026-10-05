@@ -77,6 +77,18 @@ func writeConfig(t *testing.T, body string) *config {
 	return cfg
 }
 
+// madeSymlink is os.Symlink, then a look for the link. Wine says yes and makes
+// nothing, so a test there would run its link case against no link.
+func madeSymlink(oldname, newname string) error {
+	if err := os.Symlink(oldname, newname); err != nil {
+		return err
+	}
+	if _, err := os.Lstat(newname); err != nil {
+		return fmt.Errorf("the link was reported made but isn't there: %w", err)
+	}
+	return nil
+}
+
 // driveFolder spells a made-up folder such as '/srv/work' as an absolute path on
 // the platform running the test. On Windows it names no drive, so it is
 // root-relative there, and a rule spelled that way is ignored.
@@ -332,7 +344,7 @@ func TestAccountForDirThroughSymlink(t *testing.T) { // [EnR2Euj]
 		t.Fatal(err)
 	}
 	link := filepath.Join(root, "link")
-	if err := os.Symlink(filepath.Join(root, "real"), link); err != nil {
+	if err := madeSymlink(filepath.Join(root, "real"), link); err != nil {
 		t.Skipf("no symlinks here: %v", err)
 	}
 	cfg := writeConfig(t, "account.work.ghAccount = octocat\naccount.work.path = "+filepath.ToSlash(link)+"/proj\n")
@@ -352,7 +364,7 @@ func TestAccountForDirThroughSymlink(t *testing.T) { // [EnR2Euj]
 // at the nearest ancestor that is really there and puts the rest back on.
 func TestCanonPathKeepsMissingTail(t *testing.T) { // [EnR2Euk]
 	root := t.TempDir()
-	if err := os.Symlink(root, filepath.Join(root, "self")); err != nil {
+	if err := madeSymlink(root, filepath.Join(root, "self")); err != nil {
 		t.Skipf("no symlinks here: %v", err)
 	}
 	got := canonPath(filepath.ToSlash(filepath.Join(root, "self", "not", "there", "yet")))
@@ -1003,7 +1015,7 @@ func TestProbeConfigCandidate(t *testing.T) { // [EptZI3z]
 		t.Errorf("folder: state = %d, want not a file, and a FileInfo saying folder", state)
 	}
 	link := filepath.Join(dir, "link.shcl")
-	if err := os.Symlink(filepath.Join(dir, "nowhere"), link); err != nil {
+	if err := madeSymlink(filepath.Join(dir, "nowhere"), link); err != nil {
 		t.Logf("no symlink here, so the link case is not run: %v", err)
 	} else if state, _, _ := probeConfigCandidate(link); state != candidateBrokenLink {
 		t.Errorf("link to nothing: state = %d, want a broken link", state)
@@ -1038,7 +1050,7 @@ func TestProbeConfigCandidate(t *testing.T) { // [EptZI3z]
 	}
 	// A link into that folder points at something that may well be there.
 	through := filepath.Join(dir, "through.shcl")
-	if err := os.Symlink(filepath.Join(shut, "config.shcl"), through); err == nil {
+	if err := madeSymlink(filepath.Join(shut, "config.shcl"), through); err == nil {
 		if state, _, _ := probeConfigCandidate(through); state != candidateUnknown {
 			t.Errorf("link into a folder that can't be searched: state = %d, want unknown", state)
 		}
