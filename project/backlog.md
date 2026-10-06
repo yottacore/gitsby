@@ -33,6 +33,25 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- `repo clone` hands git a folder name taken from the URL, and git can read it as an option
+	- ID: 2026100607545802
+	- Type: Bug
+	- Status: Waiting on signoff
+	- Priority|Severity [Bug]: High
+	- Opened: 20261006-074900
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: With no folder given, `repo clone` names it after the URL's last part. A URL ending in `--upload-pack=<cmd>.git` put that text in git's argument list as an option. On a local or `file://` clone git runs it as a command.
+	- Expected behavior [Bug]: The URL and the folder always reach git as plain arguments.
+	- Reproduced [Bug]: Yes. A bare repo named `--upload-pack=touch CANARY;git-upload-pack.git`, then `gitsby -q repo clone file://...` made the canary file.
+	- Actual cause [Bug]: `cmdClone` ran `git clone <url> <dir>` with no `--` in front.
+	- Actual fix [Bug]: `git clone -- <url> <dir>`, and the plan line shows the same.
+	- Swept: every `a.step` call for git, gh and tea. gitsby's own parser refuses an argument that starts with a dash, `--` included, checked for `br create`, `repo connect`, `repo url` and `repo create`. So only a value gitsby builds from other input can start with one, and the clone folder was the only such value. Built URLs start with a scheme.
+	- Branch: fuzzwork
+	- Commit: 07d6883
+	- Test case: fuzz.bash [Ervo5NU]. Red on `gover`'s code, green here.
+	- Verified: fuzz.bash 311/0, test.bash 1491/0, parity.bash 29/0 on the branch.
+	- Acceptance signoff: waits, since it touches security.
+
 - Code Review 20261005 item 1: workflows.md says gitsby won't push your own work to `main` or `dev`, and it does
 	- ID: 2026100516202544
 	- Type: Bug
@@ -157,6 +176,37 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: af0b41b
 	- Test case: [ErsJhb6] in test.bash, help lists `--yes`. Red on `gover`, green here.
 	- Closed: 20261005-172300
+
+- `account` prints a value with a newline in it across 2 lines
+	- ID: 2026100607545812
+	- Type: Bug
+	- Status: Queued
+	- Priority|Severity [Bug]: Low
+	- Opened: 20261006-075458
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: `account set a name $'n\nemail ..: evil@x'` saves the value quoted and safe. But `account` prints it on 2 lines, and the second one looks like a field of its own.
+	- Expected behavior [Bug]: A value prints on one line, with any control character shown escaped.
+	- Reproduced [Bug]: Yes, on `fuzzwork`, 2026-10-06.
+
+- `br switch HEAD` commits and pushes the working tree, then fails
+	- ID: 2026100607545807
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Avg
+	- Opened: 20261006-074900
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: `origin/HEAD` was counted as a branch on origin. So `br switch HEAD` passed the check that the branch exists, parked the dirty tree with a commit and a push, then failed at `git checkout -b HEAD`.
+	- Expected behavior [Bug]: Refuse before touching anything.
+	- Reproduced [Bug]: Yes, with a dirty tree on a pushed feature branch.
+	- Actual cause [Bug]: `branchRefs` read every `refs/remotes/origin/*` as a branch, `HEAD` included.
+	- Actual fix [Bug]: `origin/HEAD` is skipped there.
+	- Swept: `branchRefs` is the one place origin's branches are read for the existence checks.
+	- Branch: fuzzwork
+	- Commit: 07d6883
+	- Test case: fuzz.bash [Ervo5NW]. Red on `gover`'s code, green here.
+	- Verified: fuzz.bash 311/0, test.bash 1491/0, parity.bash 29/0 on the branch.
+	- Acceptance signoff: Self-closed: reproduced, red before the fix and green after.
+	- Closed: 20261006-075458
 
 - `assets/logo.png` is 512x512 and 254 KB for a 128 px README image
 	- ID: 2026100519502150
@@ -1509,10 +1559,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ### Features and enhancements
 
-- 🔘 Rework the fuzz suite. Much of what it proves becomes structurally impossible with no shell in the path; figure out what remains meaningful.
-	- Opened: 20260817-115422
-	- Note: taken out of Deferred 2026-10-06, to work next round.
-
 - 🔘 Move the shcl module from its pinned `dev` commit to the tagged 3.0 release.
 	- Opened: 20260924-132324
 	- The pin is `v2.0.0-20261001214152-b10c2009d36c` since 2026-10-01, shcl `dev` at what will be the beta cut. Go sorts it below v2.0.0. Nothing asks for v2.0.0 on the new import path, so nothing picks it over the pin.
@@ -1521,7 +1567,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- shcl plans the `/v3` path for its 3.0.0 cut, so nothing to report there.
 	- Note: blocked. Checked 2026-09-28: shcl has no 3.0 tag yet, and its `dev` go.mod still says `/v2`.
 	- Note: moved to the cut candidate on 2026-10-01. A line the file couldn't read is now kept through an edit, and a double-quoted path with a stray escape is listed instead of read with a newline in it. Still `/v2`.
-	- Note: checked 2026-10-05, still no 3.0 tag, and `dev` go.mod still says `/v2`.
+	- Note: checked 2026-10-05 and 2026-10-06, still no 3.0 tag, and `dev` go.mod still says `/v2`.
 	- At the move, read the changelog for format breaks since the beta, and for any API that backs up or converts a file itself. The converter from item 2026100312145843 must not race it.
 
 ### Done
@@ -3324,6 +3370,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Added next to the bash badge in the header block, linking to the PowerShell docs.
 
 #### Done - Features and enhancements
+
+- ✅ Rework the fuzz suite. Much of what it proves becomes structurally impossible with no shell in the path; figure out what remains meaningful.
+	- Opened: 20260817-115422
+	- Closed: 20261006-075458
+	- Done: audited every vector group against the Go build. The old suite assumed a shell between user input and git; the Go build runs git, gh and tea through argument arrays, so most old vectors can no longer inject. They stay as cheap regression guards against a shell-out creeping back. Added checks that drive the spots where a user value still reaches a real tool, each through the real consumer: a clone directory derived from an option-shaped URL tail (argument injection into git), a ref that is also a revision ('br switch HEAD'), a shell-bearing 'sshkey' through a real ssh, 'account apply' escaping glob characters in a folder rule and dropping a shell-bearing host or user, and a junk GIT_CONFIG_COUNT on the 'git credential fill' path. The credential-helper vector already drove the real consumer and still does. 301 -> 311.
+	- Done: two product bugs the new vectors caught, fixed in the same branch. 'repo clone' now passes '--' before the derived directory, so a URL tail like '--upload-pack=...' can't reach git as an option. origin/HEAD is no longer counted as a branch, so 'br switch HEAD' refuses up front instead of committing and pushing the working tree to park it and then failing.
+	- Decided against: deleting any existing vector. With no shell in the path most are inert, but each still guards against a regression to a shell-out, so none was removed and backlog-check needs no deletion entry. Also against duplicating the native Go fuzz targets, which already cover the pure parsers.
+	- Note: a config value with a newline in it is quoted safely in the file and never injects, but `account` prints it across lines. Filed as its own item, 2026100607545812.
+	- Test case: new checks [Ervo5NU] clone-dir argument injection, [Ervo5NW] 'br switch HEAD' leaves the repo untouched, [Ervo5Nd] shell-bearing sshkey never reaches ssh, [Ervo5NY] apply escapes folder-rule globs, [Ervo5Nb] apply drops a shell-bearing host or user, [Ervo5Ng] junk GIT_CONFIG_COUNT refused - all in fuzz.bash.
+	- Swept: the git/gh call sites that take a user-controlled leading argument - clone dir, refs into checkout/switch, sshkey and host/user into the credential helper key and the includeIf fragments, and GIT_CONFIG_COUNT. The helper reads its username from the environment, so nothing is interpolated into the shell string git runs.
+	- Verified: fuzz.bash 311/0, test.bash 1491/0, parity.bash 29/0 on the branch. Each new check was watched red by breaking the Go code it guards. `go test ./...` and the gate pass.
+	- Note: the 2 product fixes are filed as their own items, 2026100607545802 and 2026100607545807.
+	- Acceptance signoff: Self-closed: tests only, and no existing check changed meaning.
 
 - ✅ `repo clone` names the folder it clones into in full.
 	- Opened: 20260928-132933

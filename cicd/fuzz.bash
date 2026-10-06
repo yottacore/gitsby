@@ -411,6 +411,21 @@ fCredentialHelperVectors(){
 		( cd "${ch}/proj" && printf 'protocol=https\nhost=github.com\n\n' | \
 			"${gitsby}" -q -NoFetch --config "${ch}/v.shcl" raw git credential fill ) >/dev/null 2>&1 || true
 	done
+	## GIT_CONFIG_COUNT is the one environment value gitsby reads and numbers its own
+	## config entries on from, so a junk count must be refused rather than treated as
+	## zero and numbered over the caller's entries - and a count carrying a command
+	## substitution must stay text, never be evaluated. Driven on the same path that
+	## actually adds config (the credential helper), which is where the count is read.
+	local badCount="" why=""
+	# shellcheck disable=SC2016
+	for badCount in 'x[$(touch '"${ch}"'/CANARY-count)]' '-1' '1e3'; do
+		GIT_CONFIG_COUNT="${badCount}" fRun "${ch}/proj" -q -NoFetch --config "${ch}/v.shcl" raw git credential fill
+		why=""
+		if fIsCrash; then why="crashed (exit ${__runCode})"; elif ((__runCode == 0)); then why="accepted"; fi
+		if [[ -z "${why}" ]]; then fOk "[Ervo5Ng] junk GIT_CONFIG_COUNT refused: '${badCount}'"
+		else fFail "[Ervo5Ng] junk GIT_CONFIG_COUNT '${badCount}': ${why}"; fi
+	done
+
 	## The helper git holds must carry no login text at all - the name is read from the
 	## environment when it runs, the same way the token is.
 	local helper=""
@@ -423,6 +438,126 @@ fCredentialHelperVectors(){
 	fi
 }
 fCredentialHelperVectors
+
+## Argument injection into git. A folder name, a ref, or anything else user-controlled that
+## reaches git as a leading argument must not be read as an option. 'repo clone' derives the
+## work-tree name from the URL's last path part, so a URL whose tail is option-shaped puts that
+## option in git's argument list unless gitsby separates it with '--'. A local clone runs the
+## value of '--upload-pack' through a shell, which is what makes the attempt observable here.
+fCloneArgInjection(){
+	if ((isWindows)); then
+		fEcho_Clean "  skipped: clone dir arg injection (path characters Win32 forbids)"
+		return
+	fi
+	local -r dir="${work}/clonearg"
+	mkdir -p "${dir}"
+	## The bare repo's own folder name is the option string. The canary is a bare name, so the
+	## command it is smuggled into would create it in whatever directory the clone runs from.
+	# shellcheck disable=SC2016
+	local -r evil='--upload-pack=touch CANARY-clonearg;git-upload-pack'
+	git init --quiet --bare -b main "${dir}/${evil}.git"
+	( git init --quiet -b main "${dir}/seed" && cd "${dir}/seed" \
+		&& echo s > s.txt && git add --all && git commit --quiet -m s \
+		&& git push --quiet "${dir}/${evil}.git" main ) >/dev/null 2>&1
+	fRun "${dir}" -q repo clone "file://${dir}/${evil}.git"
+	local why=""
+	if fIsCrash; then why="crashed (exit ${__runCode})"
+	elif [[ -e "${dir}/CANARY-clonearg" ]]; then why="it reached git as an option"; fi
+	if [[ -z "${why}" ]]; then fOk "[Ervo5NU] a derived clone directory cannot reach git as an option"
+	else fFail "[Ervo5NU] derived clone directory: ${why}"; fi
+}
+fCloneArgInjection
+
+## A ref name that is also a revision or a non-branch must be refused before any work is parked.
+## origin/HEAD is a symbolic ref at the default branch, not a branch, so 'br switch HEAD' passed
+## the up-front existence check, committed and pushed the working tree to park it, then failed at
+## 'git checkout -b HEAD'. The invariant under test is the no-mutate one, on the branch writers.
+fSwitchUntouched(){
+	local -r repo="${work}/switchref"
+	fMakeRepo "${repo}"
+	( cd "${repo}" && git checkout --quiet -b feat && echo f > f.txt \
+		&& git add --all && git commit --quiet -m feat && git push --quiet -u origin feat ) >/dev/null 2>&1
+	## Uncommitted work that 'park then move' would publish if the switch got that far.
+	echo dirty > "${repo}/f.txt"
+	local headBefore remoteBefore
+	headBefore="$(cd "${repo}" && git rev-parse HEAD)"
+	remoteBefore="$(cd "${repo}" && git rev-parse origin/feat)"
+	fRun "${repo}" -q br switch HEAD
+	local headAfter remoteAfter
+	headAfter="$(cd "${repo}" && git rev-parse HEAD)"
+	remoteAfter="$(cd "${repo}" && git rev-parse origin/feat)"
+	local why=""
+	if fIsCrash; then why="crashed (exit ${__runCode})"
+	elif ((__runCode == 0)); then why="accepted, should refuse"
+	elif [[ "${headAfter}" != "${headBefore}" || "${remoteAfter}" != "${remoteBefore}" ]]; then why="changed the repo before refusing"; fi
+	if [[ -z "${why}" ]]; then fOk "[Ervo5NW] br switch HEAD refuses and leaves the repo untouched"
+	else fFail "[Ervo5NW] br switch HEAD: ${why}"; fi
+}
+fSwitchUntouched
+
+## A config 'sshkey' becomes GIT_SSH_COMMAND, which git hands to a shell - so a key path carrying
+## a shell character would be re-parsed there and run. The value is dropped on load; proven by a
+## real command that would use the key, with a fake ssh on PATH so nothing reaches the network.
+## The canary is inside the key value: it fires only if the shell ever sees the string, which it
+## does not when the value is dropped and git execs ssh directly.
+fSshKeyInert(){
+	local -r dir="${work}/sshkey"
+	mkdir -p "${dir}/bin"
+	git init --quiet -b main "${dir}/proj" >/dev/null 2>&1
+	( cd "${dir}/proj" && git commit --quiet --allow-empty -m init \
+		&& git remote add origin ssh://git@example.invalid/acme/proj.git ) >/dev/null 2>&1
+	printf '#!/usr/bin/env bash\nexit 1\n' > "${dir}/bin/ssh"; chmod +x "${dir}/bin/ssh"
+	## Each value is an absolute path (so the "must be absolute" rule doesn't drop it first)
+	## carrying a shell metacharacter. A '#' can't appear - the config format reads it as a
+	## comment - so a redirect and a substitution carry the canary instead, each firing whatever
+	## trails them on the reconstructed command line.
+	local key="" why=""
+	# shellcheck disable=SC2016
+	for key in "${dir}/k;>${dir}/CANARY-sshkey" "${dir}/k\$(touch ${dir}/CANARY-sshkey)" "${dir}/k\`touch ${dir}/CANARY-sshkey\`"; do
+		printf 'account.s.path = %s\naccount.s.sshKey = %s\n' "${dir}/proj" "${key}" > "${dir}/s.shcl"
+		## ls-remote against an unreachable host exits nonzero by design, so the exit code says
+		## nothing here - only the canary does, and a gitsby-internal crash would still show in
+		## the output pattern.
+		PATH="${dir}/bin:${PATH}" fRun "${dir}/proj" -q -NoFetch --config "${dir}/s.shcl" raw git ls-remote origin
+		why=""
+		if grep -qE "${crashRe}" <<< "${__runOut}"; then why="crashed"
+		elif [[ -e "${dir}/CANARY-sshkey" ]]; then why="reached ssh"; fi
+		if [[ -z "${why}" ]]; then fOk "[Ervo5Nd] shell-bearing sshKey never reaches ssh: '${key}'"
+		else fFail "[Ervo5Nd] shell-bearing sshKey '${key}': ${why}"; fi
+	done
+}
+fSshKeyInert
+
+## 'account apply' turns folder rules and account values into a git config file and the includeIf
+## keys that pull it in. It writes them with 'git config', so git's own writer quotes a value - what
+## gitsby owns is escaping the glob characters git itself reads in a gitdir pattern, and dropping a
+## shell-bearing host or user before either becomes a credential key.
+fAccountApplyVectors(){
+	local -r dir="${work}/apply"
+	mkdir -p "${dir}/covered"
+	git init --quiet -b main "${dir}/covered" >/dev/null 2>&1
+	: > "${dir}/global"
+	# shellcheck disable=SC2016
+	cat > "${dir}/a.shcl" <<EOF
+account.a.path         = ${dir}/covered
+account.a.pathContains = d*e
+account.a.host         = a;touch ${dir}/CANARY-apply
+account.a.user         = a b
+account.a.name         = n\$(touch ${dir}/CANARY-apply)
+EOF
+	GIT_CONFIG_GLOBAL="${dir}/global" fRun "${dir}" -q --config "${dir}/a.shcl" account apply
+	local why=""
+	if fIsCrash; then why="crashed (exit ${__runCode})"
+	elif ! grep -qF 'd\*e' <<< "${__runOut}"; then why="left a glob character unescaped"; fi
+	if [[ -z "${why}" ]]; then fOk "[Ervo5NY] account apply escapes glob characters in a folder rule"
+	else fFail "[Ervo5NY] account apply folder rule: ${why}"; fi
+	## The shell-bearing host and the spaced user must not appear in any fragment.
+	local hit=""
+	hit="$(grep -rlF -e 'a;touch' -e 'a b' "${dir}/accounts" 2>/dev/null || true)"
+	if [[ -z "${hit}" ]]; then fOk "[Ervo5Nb] account apply drops a shell-bearing host and a spaced user"
+	else fFail "[Ervo5Nb] a shell-bearing host or spaced user reached an account fragment"; fi
+}
+fAccountApplyVectors
 
 ## The security assertion: no vector ever caused a side-effect to run.
 if [[ -z "$(find "${work}" -name 'CANARY*' -print -quit)" ]]; then
@@ -448,3 +583,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20260926 JC: Every check carries a test ID at the front of its label.
 ##		- 20260926 JC: The pipeline no longer passes -q, so every check prints a line.
 ##		- 20261004 JC: Prints through fEcho_Clean, like the other pipeline scripts. Variables are camelCase, and fRun hands back its output in two-underscore globals. Every expansion braced, and shellcheck enforces it.
+##		- 20261006 JC: Reworked for the no-shell Go build. The surviving vectors stay as regression guards against a shell slipping back into the path, and the suite now drives the places a value still reaches a real tool: a clone directory derived from a URL tail that is option-shaped (argument injection into git), a ref that is also a revision ('br switch HEAD', which parked work before refusing), a shell-bearing 'sshkey' through a real ssh, 'account apply' escaping glob characters in a folder rule and dropping a shell-bearing host or user, and a junk GIT_CONFIG_COUNT on the credential path. 301 -> 311. Two product bugs fixed alongside (clone '--', origin/HEAD not a branch).
