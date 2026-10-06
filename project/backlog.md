@@ -36,9 +36,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `repo clone` hands git a folder name taken from the URL, and git can read it as an option
 	- ID: 2026100607545802
 	- Type: Bug
-	- Status: Waiting on signoff
+	- Status: Done
 	- Priority|Severity [Bug]: High
 	- Opened: 20261006-074900
+	- Closed: 20261006-104608
 	- Opened by: jim-collier
 	- Incorrect behavior [Bug]: With no folder given, `repo clone` names it after the URL's last part. A URL ending in `--upload-pack=<cmd>.git` put that text in git's argument list as an option. On a local or `file://` clone git runs it as a command.
 	- Expected behavior [Bug]: The URL and the folder always reach git as plain arguments.
@@ -50,12 +51,11 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: 07d6883
 	- Test case: fuzz.bash [Ervo5NU]. Red on `gover`'s code, green here.
 	- Verified: fuzz.bash 311/0, test.bash 1491/0, parity.bash 29/0 on the branch.
-	- Acceptance signoff: waits, since it touches security.
 
 - Code Review 20261005 item 1: workflows.md says gitsby won't push your own work to `main` or `dev`, and it does
 	- ID: 2026100516202544
 	- Type: Bug
-	- Status: Waiting on signoff
+	- Status: Done
 	- Priority|Severity [Bug]: Avg
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
@@ -82,7 +82,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261005 item 3: The help and design.md disagree on which commands are daily
 	- ID: 2026100516202618
 	- Type: Bug
-	- Status: Waiting on signoff
+	- Status: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
@@ -91,9 +91,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: Yes, `gitsby --help` against design.md and the style guide.
 	- Origin: design.md:188 from faaa69e (2026-07-26). The help's groups go back to 2.x, 0394a80 in 2022. No round saw it. Confirmed.
 	- Note: The help's groups read true. The one-word split isn't about how often a command is typed, so the design line and the style guide should say what it is. Regrouping the help is the other choice.
-	- Progress log:
-		- 2026-10-05: Asked what the problem is. The reword proposed is in the reply.
-		- 2026-10-05: The reword was OK'd.
 	- Actual fix [Bug]: design.md and the UI style guide now call the one-word commands the workflow steps, with everything else under the thing it acts on. The help is unchanged.
 	- Branch: direct
 	- Commit: d97811c
@@ -103,7 +100,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261005 item 4: Help says "GitHub accounts" where an account can be on any git host
 	- ID: 2026100516202655
 	- Type: Bug
-	- Status: Waiting on signoff
+	- Status: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
@@ -125,7 +122,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261005 item 5: The README's count of subcommands is stale
 	- ID: 2026100516202693
 	- Type: Bug
-	- Status: Waiting on signoff
+	- Status: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
@@ -143,7 +140,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261005 enhancement 1: Step lines print their arguments unquoted
 	- ID: 2026100516202730
 	- Type: Enhancement
-	- Status: Waiting on signoff
+	- Status: Done
 	- Priority|Severity [Feature]: Low
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
@@ -157,12 +154,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: docfix
 	- Commit: af0b41b
 	- Test case: [ErsJhaE] in test.bash, a plan line and its step line must match for `-m 'two words; here'`, red on `gover` and green here. [ErsJhZM] TestShellWord has a shell read 10 awkward values back unchanged.
+	- Acceptance signoff: Self-closed 2026-10-06. Tested, and it follows the plan and the README with no open choice left.
 	- Closed: 20261005-172300
 
 - Code Review 20261005 enhancement 2: The help leaves out what the README shows
 	- ID: 2026100516202767
 	- Type: Enhancement
-	- Status: Waiting on signoff
+	- Status: Done
 	- Priority|Severity [Feature]: Low
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
@@ -174,7 +172,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Done: The help lists `--yes`, says `repo connect` takes a URL or `owner/name`, and starts the `account set` and `account unset` lines with their arguments.
 	- Branch: docfix
 	- Commit: af0b41b
-	- Test case: [ErsJhb6] in test.bash, help lists `--yes`. Red on `gover`, green here.
+	- Test case: [ErsJhb6] in test.bash, help lists `--yes`. Red on `gover`, green here. [ErwbTHe], [ErwbTHr] and [ErwbV0h] check the `repo connect`, `account set` and `account unset` lines, each red against the help before it.
+	- Acceptance signoff: Self-closed 2026-10-06. Tested, and the help now matches the README with no open choice left.
 	- Closed: 20261005-172300
 
 - `br switch HEAD` commits and pushes the working tree, then fails
