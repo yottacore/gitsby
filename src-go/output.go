@@ -65,6 +65,13 @@ func (p *printer) status(s string) {
 	p.clean("[ " + s + " ]")
 }
 
+// warn writes one line to stderr, unprefixed, for a warning that sits in the
+// stdout flow just above the prompt.
+func (p *printer) warn(s string) {
+	_, _ = fmt.Fprintln(p.err, s)
+	p.lastBlank = false
+}
+
 // errorf writes to stderr, prefixed the way every message from here is.
 func (p *printer) errorf(format string, a ...any) {
 	_, _ = fmt.Fprintln(p.err, meName+": "+fmt.Sprintf(format, a...))

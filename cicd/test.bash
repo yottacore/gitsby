@@ -716,7 +716,7 @@ fRunSuite(){
 	## sync takes its message positionally like update, and nothing checked that it lands - the
 	## message could quietly be replaced by the auto-generated timestamp with the suite still green.
 	( cd "${cloneA}" && echo s > s.txt )
-	fAssert "[ElHQEx6] sync records the message it was given"  bash -c "cd '${cloneA}' && '${gitsby}' -q sync 'synced by name' && git log -1 --format=%s | grep -qx 'synced by name'"
+	fAssert "[ElHQEx6] sync records the message it was given"  bash -c "cd '${cloneA}' && '${gitsby}' -q --direct sync 'synced by name' && git log -1 --format=%s | grep -qx 'synced by name'"
 	fAssertFail "[El9W15k] dropped 'commit' command rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q commit 'no such command'"
 	## 'pull' went away in v2 because it let you skip the commit. The compiled build takes the
 	## word again as a spelling of the command that pulls AND commits, which structurally can't.
@@ -731,9 +731,18 @@ fRunSuite(){
 			bash -c "cd '${cloneA}' && out=\"\$('${gitsby}' -q ${v1Alias} 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"Unknown command '${v1Alias}'\" <<< \"\${out}\""
 	done
 
+	## sync on main is your own work going straight to it. Warned, refused under -q, and
+	## --direct says it's meant.
+	fAssert     "[ErsjjDN] sync -q on main refuses, naming --direct" \
+		bash -c "cd '${cloneA}' && out=\"\$('${gitsby}' -q sync 'push file2' 2>&1)\"; [[ \$? != 0 ]] && grep -qF 'Re-run with --direct' <<< \"\${out}\""
+	fAssert     "[ErsjjEE] and pushed nothing"  bash -c "cd '${cloneA}' && [[ \"\$(git ls-remote origin refs/heads/main | cut -f1)\" != \"\$(git rev-parse main)\" ]]"
+	fAssertOut  "[ErsjjF5] asked in person, it warns above the prompt" "WARNING: This pushes your own work straight to 'main'" \
+		fAnswerPrompt n "cd '${cloneA}' && '${gitsby}' sync 'push file2'"
+	fAssertOut  "[ErsjjFy] help lists --direct"  '^  --direct \.+: Let sync push straight to' "${gitsby}" --help
 	## sync: publishes; remote matches local
-	fAssert "[EknhbCN] sync runs"            bash -c "cd '${cloneA}' && '${gitsby}' -q sync 'push file2'"
+	fAssert "[EknhbCN] sync runs"            bash -c "cd '${cloneA}' && '${gitsby}' -q --direct sync 'push file2'"
 	fAssert "[EknhbCO] remote main matches"  bash -c "cd '${cloneA}' && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]]"
+	fAssert "[ErsjjGp] with nothing left to send, sync on main runs without --direct" bash -c "cd '${cloneA}' && '${gitsby}' -q sync 'noop'"
 
 	## remote moved ahead + local dirty -> update commits the local work, then fast-forwards
 	(
@@ -1004,7 +1013,7 @@ fRunSuite(){
 	( cd "${onceB}" && git pull --quiet --ff-only && echo three > h.txt && git add --all && git commit --quiet -m "B again" && git push --quiet )
 	( cd "${onceA}" && echo dirty2 >> f.txt )
 	: > "${onceLog}"
-	fAssert "[Erg9NTg] sync brings it in and publishes"   bash -c "cd '${onceA}' && '${gitsby}' -q sync 'once more' && [[ -f h.txt ]] && [[ \"\$(git rev-parse HEAD)\" == \"\$(git -C '${onceO}' rev-parse main)\" ]]"
+	fAssert "[Erg9NTg] sync brings it in and publishes"   bash -c "cd '${onceA}' && '${gitsby}' -q --direct sync 'once more' && [[ -f h.txt ]] && [[ \"\$(git rev-parse HEAD)\" == \"\$(git -C '${onceO}' rev-parse main)\" ]]"
 	fAssert "[Erg9NTw] and asks origin once too"          bash -c "[[ \"\$(grep -c asked '${onceLog}')\" == 1 ]]"
 	## --no-fetch keeps its meaning: skip the pull, not merge whatever an earlier fetch left,
 	## which would call the branch up to date against refs nobody checked.
@@ -1471,6 +1480,7 @@ fRunSuite(){
 	mv "${pnOrigin}.away" "${pnOrigin}"
 	fAssertOut "[EpxuX5o] br merge offline names br prune for origin's copy"  "Leaving origin's 'later' alone.*br prune' deletes both"  cat "${work}/$1-pn9.out"
 	( cd "${pnA}" && "${gitsby}" -q sync "publish later" && "${gitsby}" -q br prune ) > "${work}/$1-pn9b.out" 2>&1 || true
+	fAssertNotOut "[ErsjjHh] publishing that merge from dev needs no --direct"  'straight to'  cat "${work}/$1-pn9b.out"
 	fAssert    "[EpxuX5p] and once online, sync then br prune clears both" \
 		bash -c "! git -C '${pnA}' show-ref --verify --quiet refs/heads/later && ! git -C '${pnOrigin}' show-ref --verify --quiet refs/heads/later"
 
