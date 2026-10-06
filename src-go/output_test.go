@@ -242,6 +242,15 @@ func TestPrintableEscapesControlsOnly(t *testing.T) { // [ErvuMUv]
 	}
 }
 
+func mustUsage(t *testing.T, err error) *usageError {
+	t.Helper()
+	var ue *usageError
+	if !errors.As(err, &ue) {
+		t.Fatalf("%v is not a usage error", err)
+	}
+	return ue
+}
+
 // Every line out is escaped, wherever the value came from, while a usage error
 // built from lines keeps them.
 func TestEveryLineOutIsEscaped(t *testing.T) { // [ErwXroS]
@@ -251,8 +260,8 @@ func TestEveryLineOutIsEscaped(t *testing.T) { // [ErwXroS]
 	p.status("Wrote " + evil)
 	p.warn("WARNING: " + evil)
 	p.errorf("acting as %s", evil)
-	usagef("'%s' isn't a usable account name", evil).(*usageError).report(p)
-	usageWrapf(errors.New(evil), "Couldn't run '%s'", "gh").(*usageError).report(p)
+	mustUsage(t, usagef("'%s' isn't a usable account name", evil)).report(p)
+	mustUsage(t, usageWrapf(errors.New(evil), "Couldn't run '%s'", "gh")).report(p)
 	for _, s := range []string{out.String(), errOut.String()} {
 		for _, line := range strings.Split(s, "\n") {
 			if strings.HasPrefix(line, "Remote") || strings.ContainsRune(line, '\x1b') {
@@ -261,7 +270,7 @@ func TestEveryLineOutIsEscaped(t *testing.T) { // [ErwXroS]
 		}
 	}
 	p, _, errOut = testPrinter()
-	accountUnsetUsage().(*usageError).report(p)
+	mustUsage(t, accountUnsetUsage()).report(p)
 	if n := strings.Count(errOut.String(), "\n"); n < 5 || strings.Contains(errOut.String(), `\n`) {
 		t.Errorf("the syntax help lost its lines: %q", errOut.String())
 	}
