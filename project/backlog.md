@@ -158,6 +158,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [ErsJhb6] in test.bash, help lists `--yes`. Red on `gover`, green here.
 	- Closed: 20261005-172300
 
+- `assets/logo.png` is 512x512 and 254 KB for a 128 px README image
+	- ID: 2026100519502150
+	- Type: Enhancement
+	- Status: Waiting on signoff
+	- Priority|Severity [Feature]: Low
+	- Opened: 20261005-195021
+	- Opened by: jim-collier
+	- Note: It is also what `gen-winres.bash --icon` reads for `assets/gitsby.ico`, whose largest size is 256.
+	- Progress log:
+		- 2026-10-05: Scaled to 256x256 RGBA, 84 KB. `gitsby.ico` is left as made from the 512 px original.
+	- Swept: README width 128, `gen-winres.bash` (largest size 256), design.md, changelog.md, trademark.md and the backlog's `.ico` note. None state the logo's size or need 512 px.
+	- Branch: logo
+	- Commit: 1e70d74
+	- Test case: None, asset only.
+
 - Code Review 20261005 item 2: design.md still states decisions that were reversed or outgrown
 	- ID: 2026100516202581
 	- Type: Bug
