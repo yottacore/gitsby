@@ -37,6 +37,8 @@ The opinions are mostly informed by industry and conventional best-practices, le
 
 	(`br merge` and `release` do push the target branch - but that push *is* the merge or the release, not a shortcut around one.)
 
+	`sync` warns before it pushes your own commits straight to one of these branches, and with `-q` it refuses. `--direct` says you mean it.
+
 - Pushed history is permanent. No rebase, no amend, no rewriting, and never `git push -f`.
 
 - Feature branches are short-lived: branch off, do the work, land it, delete it (local and remote).
@@ -93,7 +95,7 @@ The opinions are mostly informed by industry and conventional best-practices, le
 
 	- The short-lived branch half is what Gitsby already encourages. Branches get created, merged, and deleted, and `br prune` removes the ones you forgot about.
 
-	- The commit-straight-to-trunk half is the one thing Gitsby won't do. It won't push your own work to `main` or `dev`, even when you have permission. A team that works that way should use plain `git`.
+	- The commit-straight-to-trunk half is the one thing Gitsby argues with. It warns before pushing your own work to `main` or `dev`, even when you have permission, and refuses with `-q` unless given `--direct`. A team that works that way every day is better off with plain `git`.
 
 - **Any workflow that rewrites history**: Purposely not supported.
 
@@ -103,4 +105,4 @@ The opinions are mostly informed by industry and conventional best-practices, le
 
 One difference matters more than which of these you pick: they're all conventions - a document the team agrees to, and then drifts away from as a deadline gets close.
 
-With Gitsby, *the workflow is the tool*. There's no command for "push to `main` anyway", so there's nothing to remember and nothing to quietly erode over time.
+With Gitsby, *the workflow is the tool*. Pushing your own work to `main` anyway takes typing `--direct`, so there's nothing to remember and nothing to quietly erode over time.

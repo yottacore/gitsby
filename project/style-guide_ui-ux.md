@@ -40,7 +40,7 @@ New output follows this guide. Where the program and the guide disagree, one of 
 
 ## Commands and options
 
-- Daily commands are one word: `pullcom`, `sync`, `status`, `whoami`, `release`. The rest sit under a noun: `repo`, `br`, `pr`, `account`, `raw`.
+- The workflow steps are one word: `pullcom`, `sync`, `status`, `whoami`, `release`. Everything else sits under the thing it acts on: `repo`, `br`, `pr`, `account`, `raw`.
 
 - One verb per action, across every noun. It's `create` everywhere, not `create` in one place and `new` in another.
 
@@ -101,7 +101,7 @@ Continue? (y|n):
 
 - With no terminal to ask on, the run refuses and names `-q`. It never waits for input that can't come.
 
-- `-q` or `-y` answers yes. Where a person would get a warning, `-q` gets a refusal, since nobody is there to read it. `--any-identity` is how a script says an account mismatch is intended.
+- `-q` or `-y` answers yes. Where a person would get a warning, `-q` gets a refusal, since nobody is there to read it. `--any-identity` is how a script says an account mismatch is intended, and `--direct` that a push straight to `main` or `dev` is.
 
 - Offline, a command that exists to publish refuses before its plan. One that means something locally runs, says what it skipped, and names `sync` as the way to publish later.
 

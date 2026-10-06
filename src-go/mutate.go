@@ -139,6 +139,28 @@ func (a *app) pushIfOnline() error {
 	return nil
 }
 
+// directPush: sync is about to send your own work straight to main, dev or the
+// default branch, which the workflow routes through a branch and a pull request.
+// A merge is not that - br merge offline, the hotfix back-merge and release all
+// leave one for sync to publish - so only commits made on the branch itself
+// count, plus a tree that is about to become one. design.md "--direct".
+func (a *app) directPush() bool {
+	if a.cmd.name != "sync" || a.opt.direct || !a.hasOrigin() || !a.isProtectedBranch("") {
+		return false
+	}
+	if a.hasUpstream() && runOut("git", "rev-list", "--first-parent", "--no-merges", "-n", "1", "@{u}..HEAD") != "" {
+		return true
+	}
+	if a.opt.staged {
+		return !runOK("git", "diff", "--cached", "--quiet")
+	}
+	return runOut("git", "status", "--porcelain") != ""
+}
+
+func (a *app) directPushText() string {
+	return "This pushes your own work straight to '" + a.currentBranch() + "', where the workflow puts it on a branch and merges it through a pull request."
+}
+
 // pushArgs pushes the current branch. One with no upstream yet is a first publish:
 // it goes up under its own name and tracks origin's copy from then on.
 func (a *app) pushArgs() []string {
