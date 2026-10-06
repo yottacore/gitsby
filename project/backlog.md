@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261005 item 1: workflows.md says gitsby won't push your own work to `main` or `dev`, and it does
 	- ID: 2026100516202544
 	- Type: Bug
-	- Status: Waiting for answers
+	- Status: Waiting on signoff
 	- Priority|Severity [Bug]: Avg
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
@@ -47,13 +47,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Note: 2 ways out. Reword workflows.md to say gitsby steers work onto branches and still allows a deliberate commit on `main` or `dev`. Or warn above the prompt when the push goes to `main` or `dev`. Refusing is out, since the tool's own advice and every repo with no `dev` lean on it.
 	- Note: The reword is the smaller change. A warning would show on every push in a GitHub Flow repo that commits to `main`.
 	- Progress log:
-		- 2026-10-05: The fix chosen is a warning on stderr before going ahead, with a flag to turn it off. Open: the flag's name, and whether `-q` without it refuses, as the UI style guide says a warning does under `-q`.
-	- Test case: none if reworded, since it's docs only. A warning gets a test.bash check on `main`, `dev` and a feature branch.
+		- 2026-10-05: The fix chosen is a warning on stderr before going ahead, with a flag to turn it off.
+		- 2026-10-05: The flag is `--direct`. `-q` without it refuses, per the UI style guide's rule for warnings, since the question about `-q` went unanswered.
+	- Decisions:
+		- A warning plus `--direct`, not a refusal and not a doc reword alone (2026-10-05).
+		- A flag for this one case, not a general `--no-warn` (2026-10-05).
+	- Actual fix [Bug]: `sync` on `main`, `dev` or the default branch warns on stderr above the prompt when it would push commits made on that branch, or commit a dirty tree there. Under `-q` it refuses and names `--direct`. A merge left for `sync` to publish doesn't count, so `br merge` offline and the hotfix back-merge still publish without it. workflows.md, the README, design.md and the UI style guide say so.
+	- Note: [ElHQEx6], [EknhbCN] and [Erg9NTg] sync on `main` to test sync itself, and now pass `--direct`. What each checks is unchanged.
+	- Branch: direct
+	- Commit: d97811c
+	- Test case: test.bash [ErsjjDN] refuses under `-q`, [ErsjjEE] pushed nothing, [ErsjjF5] warns above the prompt on a pty, [ErsjjFy] help lists it. Each red on `gover`. [ErsjjGp] a clean re-run and [ErsjjHh] a merge published from `dev` stay quiet, each red with the merge and clean-tree tests taken out.
+	- Closed: 20261005-190835
 
 - Code Review 20261005 item 3: The help and design.md disagree on which commands are daily
 	- ID: 2026100516202618
 	- Type: Bug
-	- Status: Waiting for answers
+	- Status: Waiting on signoff
 	- Priority|Severity [Bug]: Low
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
@@ -64,12 +73,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Note: The help's groups read true. The one-word split isn't about how often a command is typed, so the design line and the style guide should say what it is. Regrouping the help is the other choice.
 	- Progress log:
 		- 2026-10-05: Asked what the problem is. The reword proposed is in the reply.
-	- Test case: none if the docs change. A regrouped help keeps its existing help checks.
+		- 2026-10-05: The reword was OK'd.
+	- Actual fix [Bug]: design.md and the UI style guide now call the one-word commands the workflow steps, with everything else under the thing it acts on. The help is unchanged.
+	- Branch: direct
+	- Commit: d97811c
+	- Test case: none, docs only.
+	- Closed: 20261005-190835
 
 - Code Review 20261005 item 4: Help says "GitHub accounts" where an account can be on any git host
 	- ID: 2026100516202655
 	- Type: Bug
-	- Status: Waiting for answers
+	- Status: Waiting on signoff
 	- Priority|Severity [Bug]: Low
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
@@ -78,10 +92,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: Yes, `gitsby --help`.
 	- Origin: help.go:62 from 63d5782 (2026-08-08), before accounts took a `host`. No round saw it. Confirmed.
 	- Decisions:
-		- The README's "Multiple GitHub accounts" heading and the title of accounts.md stay. Most readers come for GitHub, and a heading change moves the anchor too.
+		- The README's "Multiple GitHub accounts" heading changes too (2026-10-05). It is "Multiple accounts" now, and so is accounts.md's title.
 	- Progress log:
 		- 2026-10-05: Asked what the problem is. Answered in the reply.
+		- 2026-10-05: OK'd, with the README heading changed as well.
+	- Actual fix [Bug]: "accounts" in the help's `account` line, the README's `account` row and design.md's heading. The README section and accounts.md are titled "Multiple accounts", with the TOC entry updated. The prose that says "two GitHub accounts" stays, since GitHub is the usual case.
+	- Branch: direct
+	- Commit: d97811c
 	- Test case: none, wording only.
+	- Closed: 20261005-190835
 
 - Code Review 20261005 item 5: The README's count of subcommands is stale
 	- ID: 2026100516202693
