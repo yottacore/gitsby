@@ -215,3 +215,29 @@ func TestNoteKeepsAPathWhole(t *testing.T) { // [ErTHntr]
 		t.Errorf("noteLines = %q, want %q", got, want)
 	}
 }
+
+// A value prints on one line, with nothing in it that drives the terminal, and a
+// printable character comes out as written - a path is never re-spelled.
+func TestPrintableEscapesControlsOnly(t *testing.T) { // [ErvuMUv]
+	cases := []struct{ in, want string }{
+		{"plain", "plain"},
+		{`C:\Users\pat\dev`, `C:\Users\pat\dev`},
+		{`a\nb`, `a\nb`},
+		{"/srv/caf\u00e9 \u2028x/\u00a0", "/srv/caf\u00e9 \u2028x/\u00a0"},
+		{"n\nemail ..: evil@x", `n\nemail ..: evil@x`},
+		{"a\tb\rc\x1b[31md\x7fe\x00f\u0085g", `a\tb\u000Dc\u001B[31md\u007Fe\u0000f\u0085g`},
+		{"\xff\n", "\xff" + `\n`},
+	}
+	for _, c := range cases {
+		if got := printable(c.in); got != c.want {
+			t.Errorf("printable(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+	// The same spelling the accounts file gives each one, so the listing and the
+	// file read alike.
+	for _, v := range []string{"a\nb", "a\tb", "a\rb", "a\x1bb", "a\x7fb", "a\x01b", "a\u0085b"} {
+		if got, file := printable(v), shclValue(v); `"`+got+`"` != file {
+			t.Errorf("printable(%q) = %q, the file writes %s", v, got, file)
+		}
+	}
+}

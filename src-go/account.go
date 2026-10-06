@@ -418,7 +418,7 @@ func gitConfigEnv(key, value string) error {
 	if raw := os.Getenv("GIT_CONFIG_COUNT"); raw != "" {
 		parsed, err := strconv.Atoi(raw)
 		if err != nil || parsed < 0 {
-			return usagef("GIT_CONFIG_COUNT is '%s', which isn't a count - unset it, or set it to the number of GIT_CONFIG_KEY_n entries you meant.", raw)
+			return usagef("GIT_CONFIG_COUNT is '%s', which isn't a count - unset it, or set it to the number of GIT_CONFIG_KEY_n entries you meant.", printable(raw))
 		}
 		n = parsed
 	}

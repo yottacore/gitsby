@@ -16,6 +16,8 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // A write to the terminal that fails has nowhere left to report it, and the next
@@ -75,6 +77,33 @@ func (p *printer) warn(s string) {
 // errorf writes to stderr, prefixed the way every message from here is.
 func (p *printer) errorf(format string, a ...any) {
 	_, _ = fmt.Fprintln(p.err, meName+": "+fmt.Sprintf(format, a...))
+}
+
+// printable escapes the control characters in a value for display, the way the
+// accounts file writes them: \n, \t, and \uXXXX for the rest. A newline split one
+// field into two, and an ESC drives the terminal. Everything else, a backslash
+// included, prints as written, so a path never comes out re-spelled.
+func printable(s string) string {
+	if !strings.ContainsFunc(s, unicode.IsControl) {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		switch {
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case unicode.IsControl(r):
+			fmt.Fprintf(&b, `\u%04X`, r)
+		default:
+			// Byte for byte, so a byte that isn't UTF-8 isn't turned into U+FFFD.
+			b.WriteString(s[i : i+size])
+		}
+		i += size
+	}
+	return b.String()
 }
 
 // confirm gates every mutation. Only 'y' or 'yes' is yes: a typo, a stray
