@@ -22,7 +22,7 @@ func (a *app) preview(what string) {
 	case "commit":
 		msgDisp := "git commit"
 		if a.opt.message != "" {
-			msgDisp = `git commit -m "` + a.opt.message + `"`
+			msgDisp = "git commit -m " + shellWord(a.opt.message, true)
 		}
 		if a.opt.staged {
 			a.out.clean(pad + msgDisp + " *")
