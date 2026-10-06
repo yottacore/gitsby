@@ -181,11 +181,18 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- `release` reads ahead every pull and checkout up to the default branch. A file that passes is the same on every branch read so far, so the merge, the move back to `dev` and the last checkout can't touch it either. Only the index counts as work to release, so a level repo with edits left out of it has nothing new.
 	- `pr create` parks the way `sync` does. `gh` and `tea` are handed the branch by name, and neither looks at the tree then.
 
+- `sync` warns before it pushes your own work straight to `main`, `dev` or the default branch, and `--direct` says it's meant (2026-10-05).
+	- workflows.md had promised gitsby never does this, and `sync` always had. Refusing outright was out. Gitsby's own advice on a dirty `main` is to commit there with `pullcom`, and some repos commit on `main` every day.
+	- Only commits made on the branch itself count, plus a tree about to become one. A merge doesn't. `br merge` offline, the hotfix back-merge and `release` each leave one for `sync` to publish, and gitsby names `sync` as the way to do it.
+	- The warning goes to stderr, last before the prompt. Under `-q` it's a refusal, the rule for any warning nobody is there to read.
+	- `pullcom` stays quiet. It sends nothing, and the push is what the workflow is about.
+	- The flag is for this one case, not a general `--no-warn`. Flags are permanent, and a general one would also hide whatever warning comes next.
+
 - Being offline must never turn a good commit into a failed command, now that `pullcom` is the only way to commit.
 	- A remote that can't be reached warns and skips the pull. A remote that *is* reachable but can't fast-forward is a real problem and still fails hard - the distinction is what the pre-command fetch already discovered.
 	- `--no-fetch` declines the incoming round trip, so it skips the pull as well as the fetch. Skipping only the fetch and then pulling anyway would have saved nothing. It is not a way to say "I am offline" - see the offline rule below for why that distinction is deliberate.
 
-- The command set is split by how often you type it. Daily verbs stay one word (`pullcom`, `sync`, `status`, `whoami`, `release`); everything else is grouped under a noun (`repo`, `br`, `pr`, `account`, `raw`).
+- The one-word commands are the workflow steps: commit and share (`pullcom`, `sync`), look (`status`, `whoami`), and `release`. Everything else sits under the thing it acts on (`repo`, `br`, `pr`, `account`, `raw`).
 	- Among the options considered, we decided the extra word is worth it for infrequent commands. It buys discoverability - three nouns to explore instead of a flat list to memorize - and it retires mashed-together abbreviations like `newbr`/`gobr`/`listbr`.
 	- One verb per action across all three nouns: `create`, not `create` in one place and `new` in another. `new` and `go` still work as unpublished spellings, because they are what fingers reach for.
 	- `repository` and `branch` are accepted in full. Only the short forms are published, so the help stays scannable.
@@ -246,7 +253,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- The same command backs the fetch and the remote probe. Both used to force a bare `ssh` for the connect timeout, and because `GIT_SSH_COMMAND` outranks `core.sshCommand` that silently overrode the repo's key - a private repo only that key can read looked like being offline. A quoted command is the exception: gitsby can't add the timeout to it without re-shelling, so the fetch leaves it to git and goes without one.
 	- The key named in the identity line comes from the same place, so the line cannot report the right account beside the wrong key file. Half-right is worse than either half alone: it invites you to trust whichever half happens to be wrong.
 
-- Which GitHub account you act as is decided by the folder you are in.
+- Which account you act as is decided by the folder you are in.
 	- People who have two accounts almost always have a folder per account already. That existing habit is the configuration; asking them to restate it per repo would be asking twice.
 	- One account is resolved per run and applied to everything at once - gh, git's credentials, the ssh key, and the commit identity - because a run that pushes as one person and commits as another is the failure this exists to prevent.
 	- Resolution order, most specific first: `GITSBY_ACCOUNT`, then `gitsby.ghAccount` in git config, then the config file's folder rules, then the owner of the remote. Finding none of them is the ordinary single-account case and changes nothing.

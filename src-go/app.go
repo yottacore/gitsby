@@ -69,6 +69,7 @@ type options struct {
 	fetch       bool // cleared by --no-fetch
 	visibility  string
 	anyIdentity bool // a gh/ssh account mismatch here is intended
+	direct      bool // sync straight to main/master/dev is intended
 	staged      bool // commit the index only, and leave the rest of the tree
 	configFile  string
 	configGiven bool // whether it was typed at all: '--config ""' is a mistake, not a fallback

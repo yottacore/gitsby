@@ -2,7 +2,7 @@
 <!-- markdownlint-disable MD010 -- No hard tabs -->
 <!-- markdownlint-disable MD055 -- Table pipe style -->
 
-# Multiple GitHub accounts
+# Multiple accounts
 
 Most people with two GitHub accounts also have a folder for each: one tree for work, one for everything else. Gitsby takes that literally. Say which account owns which folder, once, and every command run anywhere under that folder acts as that account - `git` and `gh` alike.
 
