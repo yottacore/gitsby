@@ -739,8 +739,10 @@ fRunSuite(){
 	fAssert     "[ErsjjDN] sync -q on main refuses, naming --direct" \
 		bash -c "cd '${cloneA}' && out=\"\$('${gitsby}' -q sync 'push file2' 2>&1)\"; [[ \$? != 0 ]] && grep -qF 'Re-run with --direct' <<< \"\${out}\""
 	fAssert     "[ErsjjEE] and pushed nothing"  bash -c "cd '${cloneA}' && [[ \"\$(git ls-remote origin refs/heads/main | cut -f1)\" != \"\$(git rev-parse main)\" ]]"
-	fAssertOut  "[ErsjjF5] asked in person, it warns above the prompt" "WARNING: This pushes your work straight to 'main'\\. But the recommended workflow" \
-		fAnswerPrompt n "cd '${cloneA}' && '${gitsby}' sync 'push file2'"
+	if ((hasPty)); then
+		fAssertOut  "[ErsjjF5] asked in person, it warns above the prompt" "WARNING: This pushes your work straight to 'main'\\. But the recommended workflow" \
+			fAnswerPrompt n "cd '${cloneA}' && '${gitsby}' sync 'push file2'"
+	fi
 	fAssertOut  "[ErsjjFy] help lists --direct"  '^  --direct \.+: Let sync push straight to' "${gitsby}" --help
 	## sync: publishes; remote matches local
 	fAssert "[EknhbCN] sync runs"            bash -c "cd '${cloneA}' && '${gitsby}' -q --direct sync 'push file2'"
