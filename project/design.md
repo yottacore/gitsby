@@ -185,7 +185,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- A remote that can't be reached warns and skips the pull. A remote that *is* reachable but can't fast-forward is a real problem and still fails hard - the distinction is what the pre-command fetch already discovered.
 	- `--no-fetch` declines the incoming round trip, so it skips the pull as well as the fetch. Skipping only the fetch and then pulling anyway would have saved nothing. It is not a way to say "I am offline" - see the offline rule below for why that distinction is deliberate.
 
-- The command set is split by how often you type it. Daily verbs stay one word (`pullcom`, `sync`, `status`, `whoami`, `release`); everything else is grouped under a noun (`repo`, `br`, `pr`).
+- The command set is split by how often you type it. Daily verbs stay one word (`pullcom`, `sync`, `status`, `whoami`, `release`); everything else is grouped under a noun (`repo`, `br`, `pr`, `account`, `raw`).
 	- Among the options considered, we decided the extra word is worth it for infrequent commands. It buys discoverability - three nouns to explore instead of a flat list to memorize - and it retires mashed-together abbreviations like `newbr`/`gobr`/`listbr`.
 	- One verb per action across all three nouns: `create`, not `create` in one place and `new` in another. `new` and `go` still work as unpublished spellings, because they are what fingers reach for.
 	- `repository` and `branch` are accepted in full. Only the short forms are published, so the help stays scannable.
@@ -199,7 +199,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 
 - Pull requests are subcommands of one noun (`pr`, `pr create`, `pr <n>`, `pr ok <n>`) rather than separate top-level verbs.
 	- This puts everything about a PR in one place to look, and matches how `repo` and `br` group.
-	- `pr create` defaults its title to the last commit subject. The alternative, requiring a title, was rejected as inconsistent with `pullcom`/`sync`, which generate a message when none is given. The preview shows the resolved title before the prompt, so a bad default is visible rather than surprising.
+	- `pr create` defaults its title to the last commit subject. The alternative, requiring a title, was rejected as inconsistent with `pullcom`/`sync`, which never require a message. Without one they open git's editor, and under `-q` they make one up. The preview shows the resolved title before the prompt, so a bad default is visible rather than surprising.
 
 - `br prune` deletes only what is provably already landed, and never takes a branch name.
 	- `br merge` and `pr ok` delete the branch they merged, but nothing cleaned up after a PR merged from the web UI or another machine, after a superseded branch, or after one simply abandoned. Those accumulate, and a noisy `br list` works against the tool's own goal of keeping the repo easy to see at a glance.
@@ -342,7 +342,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- Among the options considered, PowerShell was rejected for the stack. A single pwsh engine would have retired the hand-synced Windows copy, but only the interpreter is portable - the stack still shells out to git, gh, shellcheck, markdownlint and the rest, so the glue changes syntax without changing what it depends on. It also adds an interpreter that has to be installed, where Bash is already present everywhere the project builds and Go needs nothing at all.
 	- The test suite was the specific reason. It fakes `gh`, `git` and `uname` by writing shebang scripts onto PATH, which a process launched from .NET cannot execute on Windows - so a PowerShell port would have traded one platform trap for a new one.
 	- What stays as it is: the demo gif generator, already portable and pinned byte for byte to a font stack and an optimizer, and the lint stage, genuinely better expressed as a shell pipeline than as compiled code.
-	- Done as of 2026-08-18. `cicd-win.ps1` is deleted, the engine runs seven stages, and the Go toolchain is required rather than probed. The remaining Bash is the pipeline's own, not the product's.
+	- Done as of 2026-08-18. `cicd-win.ps1` is deleted, one Bash engine runs every stage, and the Go toolchain is required rather than probed. The remaining Bash is the pipeline's own, not the product's.
 
 - Pushes to `main` are gated by a pre-push hook that runs `cicd/cicd.bash --gate` on the pushed commit.
 	- Among the options considered, gating the working tree was rejected, though it is the usual hook default. Uncommitted edits are routine here, and a push names commits, not a tree. Each pushed commit is checked out in a detached worktree at `.git/gitsby-gate` and checked there. That also gets a branch pushed from elsewhere right.
@@ -509,7 +509,7 @@ See also the release policy under Architecture, which covers how releases are pu
 
 - The frozen scripts need Bash 4.4+ (for *nix or WSL), and/or PowerShell 7+ (cross-platform).
 
-- Nothing else at run time except `git`, plus `gh` for the commands that need it: every `pr` form, `repo create`, and `repo connect` when given an `owner/name` rather than a URL.
+- Nothing else at run time except `git`, plus the git host's own tool for the commands that need one. That is `gh` on GitHub and `tea` on Gitea or Forgejo for every `pr` form, and `gh` for `repo create` and for `repo connect` given an `owner/name` rather than a URL. A host gitsby comes to serve later brings its own tool the same way.
 
 - No state of its own. Everything gitsby knows about a repo, it asks `git` for, so there is nothing to get out of sync and nothing to migrate.
 
@@ -533,7 +533,7 @@ The rules these entries lead to are collected in [style-guide_ui-ux.md](style-gu
 
 	- Any config key an error or a fix names is spelled the way the file actually takes it, in full. Advice naming a key the parser then rejects is worse than no advice.
 
-	- The path of the file to edit goes on its own labeled line. It is the one thing here that can be arbitrarily long, and folding it into a sentence is what wrecks the wrapping. Displayed paths fold a leading home directory back to `~`, so they read as somebody would type them.
+	- The path of the file to edit goes on its own labeled line. It is the one thing here that can be arbitrarily long, and folding it into a sentence is what wrecks the wrapping.
 
 	- Where a value came from is named the same way, on its own line, and in terms that can be gone and looked at - the variable, the Git config key, or the account block and its file. "config" alone is ambiguous wherever a program reads more than one.
 
