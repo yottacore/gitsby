@@ -611,6 +611,9 @@ fRunSuite(){
 	fAssertOut  "[ElAGF7I] help doesn't promise a bare patch bump" 'release .*: .*next after latest tag' "${gitsby}" --help
 	fAssertOut  "[ElAGF7J] help doesn't overpromise br create"    'br create .*: .*carried or parked'   "${gitsby}" --help
 	fAssertOut  "[ErsJhb6] help lists --yes"                      '^  -q, -y, --quiet, --yes: Assume yes' "${gitsby}" --help
+	fAssertOut  "[ErwbTHe] help says repo connect takes owner/name"  '^  repo connect .*owner/name' "${gitsby}" --help
+	fAssertOut  "[ErwbTHr] help gives account set its args"       '^  account set \.*: <account> <key> <value>\. ' "${gitsby}" --help
+	fAssertOut  "[ErwbV0h] help gives account unset its args"     '^  account unset \.*: <account> <key>\. ' "${gitsby}" --help
 	fAssert     "[ErsJhby] README's command count matches the help" fHelpCountsTen
 	## A pasted step line has to run as shown, so it quotes what the plan quotes.
 	fAssert     "[ErsJhaE] a step line quotes the message the way the plan does" \
@@ -6552,3 +6555,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261005 JC: --staged commits only the staged file, on top of origin's commit, with the rest of the tree left as it was. Its pulls have no --autostash, and the staged edit stays staged through br create from dev. A pull or a checkout that would overwrite an edit left behind is refused before the plan, with nothing committed. br switch and br merge carry the rest over. Refused where the whole tree is committed. 1453 -> 1471.
 ##		- 20261005 JC: pr create and release take --staged. pr create pushes the staged edit alone, and release tags it, merges, and ends back on dev with the rest of the tree as it was. A level repo with edits left out of the index has nothing new to release. A checkout of main that would overwrite an edit left behind is refused before the plan. The release refusal check is off, and repo connect is asked instead. 1471 -> 1482.
 ##		- 20261006 JC: A value with a newline or an ESC in it prints escaped and on one line, in the account listing and on the Author line. 1491 -> 1494.
+##		- 20261006 JC: The help shows what repo connect, account set and account unset take. Each check fails against the help before it. 1494 -> 1497.
