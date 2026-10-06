@@ -33,6 +33,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- `assets/logo.png` is 512x512 and 254 KB for a 128 px README image
+	- ID: 2026100519502150
+	- Type: Enhancement
+	- Status: Waiting on signoff
+	- Priority|Severity [Bug]: Low
+	- Opened: 20261005-195021
+	- Opened by: jim-collier
+	- Note: It is also what `gen-winres.bash --icon` reads for `assets/gitsby.ico`, whose largest size is 256.
+	- Progress log:
+		- 2026-10-05: Scaled to 256x256 RGBA, 84 KB. `gitsby.ico` is left as made from the 512 px original.
+	- Swept: README width 128, `gen-winres.bash` (largest size 256), design.md, changelog.md, trademark.md and the backlog's `.ico` note. None state the logo's size or need 512 px.
+	- Branch: logo
+	- Commit: 1e70d74
+	- Test case: None, asset only.
+
 - Code Review 20261005 item 1: workflows.md says gitsby won't push your own work to `main` or `dev`, and it does
 	- ID: 2026100516202544
 	- Type: Bug
