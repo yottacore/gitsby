@@ -49,6 +49,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Progress log:
 		- 2026-10-05: The fix chosen is a warning on stderr before going ahead, with a flag to turn it off.
 		- 2026-10-05: The flag is `--direct`. `-q` without it refuses, per the UI style guide's rule for warnings, since the question about `-q` went unanswered.
+		- 2026-10-05: Warning reworded as given in review. The `-q` refusal starts with the same sentences.
 	- Decisions:
 		- A warning plus `--direct`, not a refusal and not a doc reword alone (2026-10-05).
 		- A flag for this one case, not a general `--no-warn` (2026-10-05).

@@ -158,7 +158,7 @@ func (a *app) directPush() bool {
 }
 
 func (a *app) directPushText() string {
-	return "This pushes your own work straight to '" + a.currentBranch() + "', where the workflow puts it on a branch and merges it through a pull request."
+	return "This pushes your work straight to '" + a.currentBranch() + "'. But the recommended workflow is to push to a branch and merge one level higher through a pull request."
 }
 
 // pushArgs pushes the current branch. One with no upstream yet is a first publish:
