@@ -344,7 +344,7 @@ func (a *app) prCreateDisp(base string) string {
 	if a.pr.tool == toolTea {
 		verb = "pulls create"
 	}
-	return a.pr.cli + " " + verb + " --base " + base + " --title \"" + a.pr.title + "\""
+	return a.pr.cli + " " + verb + " --base " + base + " --title " + shellWord(a.pr.title, true)
 }
 
 func (a *app) cmdPrAccept() error {

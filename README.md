@@ -61,7 +61,7 @@
 
 Git has more than eighty porcelain commands, because it supports every workflow, every team size, and every hard edge-case of conflict resolution. That flexibility is the whole reason it's complex.
 
-Gitsby has ten - or 24 counting subcommands. It gets there three ways:
+Gitsby has ten - about two dozen counting subcommands. It gets there three ways:
 
 - By applying one opinionated workflow and ignoring the myriad other ways of doing the same thing.
 

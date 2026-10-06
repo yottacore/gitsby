@@ -11,6 +11,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -146,6 +147,36 @@ func TestMaskURL(t *testing.T) { // [EnQKNsh]
 	for _, tc := range tests {
 		if got := maskURL(tc.in); got != tc.want {
 			t.Errorf("maskURL(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestShellWord(t *testing.T) { // [ErsJhZM]
+	tests := []struct {
+		in     string
+		always bool
+		want   string
+	}{
+		{"origin/main", false, "origin/main"},
+		{"wip", true, `"wip"`},
+		{"two words; here", false, `"two words; here"`},
+		{"it's $HOME", false, `'it'\''s $HOME'`},
+		{"", false, `""`},
+	}
+	for _, tc := range tests {
+		if got := shellWord(tc.in, tc.always); got != tc.want {
+			t.Errorf("shellWord(%q, %v) = %q, want %q", tc.in, tc.always, got, tc.want)
+		}
+	}
+	// What gets pasted is what ran: a shell reads each one back unchanged.
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no sh")
+	}
+	for _, in := range []string{"a b", "x;y&z|w", `say "hi"`, "it's", "$HOME `id` \\n", "*?[a]", "~/x", "a\tb", "-n", "!x"} {
+		out, err := exec.Command(sh, "-c", "printf '%s' "+shellWord(in, false)).Output()
+		if err != nil || string(out) != in {
+			t.Errorf("sh read %q back as %q (%v)", in, out, err)
 		}
 	}
 }
