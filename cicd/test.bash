@@ -595,6 +595,10 @@ fStagedChecks(){
 		bash -c "cd '${stA}' && out=\"\$('${gitsby}' -q release --staged 2>&1)\"; ! grep -q 'Going to do' <<< \"\${out}\" && [[ \"\$(git rev-parse HEAD)\" == '${stHead}' && \"\$(git rev-parse origin/dev)\" == '${stHead}' && \"\$(git status --porcelain | tr '\n' ,)\" == 'M  f1, M f2, M far,?? untracked,' && \"\$(git tag | tr '\n' ,)\" == 'v0.1.0,' ]]"
 }
 
+## README says "Gitsby has ten". The help's command groups start at "Common commands:".
+fHelpCountsTen(){ local help="" n=""; help="$("${gitsby}" --help)"
+	n="$(awk '/^Options:/{exit} /^Common commands:/{f=1} f && /^  [a-z]/{print $1}' <<< "${help}" | sort -u | wc -l)"
+	[[ "${n// /}" == "10" ]] && grep -qF 'Gitsby has ten' "${here}/../README.md" ;}
 fRunSuite(){
 	fEcho_Clean "suite: ${1} (${gitsby})"
 
@@ -606,6 +610,11 @@ fRunSuite(){
 	fAssertOut  "[ElA8dDE] help keeps the pull-then-commit order" 'sync .*: Pull, commit, and push' "${gitsby}" --help
 	fAssertOut  "[ElAGF7I] help doesn't promise a bare patch bump" 'release .*: .*next after latest tag' "${gitsby}" --help
 	fAssertOut  "[ElAGF7J] help doesn't overpromise br create"    'br create .*: .*carried or parked'   "${gitsby}" --help
+	fAssertOut  "[ErsJhb6] help lists --yes"                      '^  -q, -y, --quiet, --yes: Assume yes' "${gitsby}" --help
+	fAssert     "[ErsJhby] README's command count matches the help" fHelpCountsTen
+	## A pasted step line has to run as shown, so it quotes what the plan quotes.
+	fAssert     "[ErsJhaE] a step line quotes the message the way the plan does" \
+		fPlanRan 'git commit -m' bash -c "d='${work}/$1-quoted' && git init --quiet \"\${d}\" && cd \"\${d}\" && echo q > f && '${gitsby}' -q pullcom -m 'two words; here'"
 	## Asking for help after a command is the reflex every git user has, and both builds must
 	## answer it the same way. -v is the opposite case: alongside a command it used to make the
 	## PowerShell build print the version and exit 0, doing none of the work it was asked for.

@@ -112,10 +112,24 @@ func (a *app) inheritOK(name string, args ...string) bool {
 // token in the announcement or the failure.
 func (a *app) step(name string, args ...string) error {
 	disp := maskURL(name)
-	for _, arg := range args {
-		disp += " " + maskURL(arg)
+	for i, arg := range args {
+		disp += " " + shellWord(maskURL(arg), i > 0 && args[i-1] == "-m") // as the plan shows it
 	}
 	return a.stepAs(disp, disp, name, args...)
+}
+
+// shellWord quotes an argument for display so a pasted line runs as shown.
+// Double quotes where nothing inside them expands, since the plan has always
+// shown a message that way; single quotes otherwise. always quotes a plain
+// word too, for the plan's message.
+func shellWord(s string, always bool) string {
+	if !always && s != "" && strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@%+=:,./-") == "" {
+		return s
+	}
+	if !strings.ContainsAny(s, "\"$`\\!") {
+		return `"` + s + `"`
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // stepAs announces one thing and runs another, for the gh calls whose real
