@@ -241,3 +241,28 @@ func TestPrintableEscapesControlsOnly(t *testing.T) { // [ErvuMUv]
 		}
 	}
 }
+
+// Every line out is escaped, wherever the value came from, while a usage error
+// built from lines keeps them.
+func TestEveryLineOutIsEscaped(t *testing.T) { // [ErwXroS]
+	p, out, errOut := testPrinter()
+	evil := "x\nRemote .......: y\x1b[2J"
+	p.clean("Git host .....: " + evil)
+	p.status("Wrote " + evil)
+	p.warn("WARNING: " + evil)
+	p.errorf("acting as %s", evil)
+	usagef("'%s' isn't a usable account name", evil).(*usageError).report(p)
+	usageWrapf(errors.New(evil), "Couldn't run '%s'", "gh").(*usageError).report(p)
+	for _, s := range []string{out.String(), errOut.String()} {
+		for _, line := range strings.Split(s, "\n") {
+			if strings.HasPrefix(line, "Remote") || strings.ContainsRune(line, '\x1b') {
+				t.Errorf("a value broke out of its line: %q", s)
+			}
+		}
+	}
+	p, _, errOut = testPrinter()
+	accountUnsetUsage().(*usageError).report(p)
+	if n := strings.Count(errOut.String(), "\n"); n < 5 || strings.Contains(errOut.String(), `\n`) {
+		t.Errorf("the syntax help lost its lines: %q", errOut.String())
+	}
+}

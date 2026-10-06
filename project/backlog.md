@@ -140,27 +140,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [ErsJhby] in test.bash counts the help's top-level commands and needs 10, with "Gitsby has ten" in the README. Red with the README saying eleven, green as committed.
 	- Closed: 20261005-172300
 
-- `account` prints a value with a newline in it across 2 lines
-	- ID: 2026100607545812
-	- Type: Bug
-	- Status: Waiting on signoff
-	- Priority|Severity [Bug]: Low
-	- Opened: 20261006-075458
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: `account set a name $'n\nemail ..: evil@x'` saves the value quoted and safe. But `account` prints it on 2 lines, and the second one looks like a field of its own.
-	- Expected behavior [Bug]: A value prints on one line, with any control character shown escaped.
-	- Reproduced [Bug]: Yes, on `fuzzwork`, 2026-10-06. Again on `gover` the same day: the commits row printed `n`, then `email ..: evil@x <?>` on a line of its own. An ESC in a value reached the terminal as is.
-	- Actual cause [Bug]: Every display site printed the value as read. Only the plan's `add:` and `becomes:` lines escaped it, since they show the file's own spelling.
-	- Actual fix [Bug]: `printable` shows a control character the way the accounts file writes it: `\n`, `\t`, and `\u001B` style for the rest of C0, DEL and C1. Every display site of a config value goes through it. What is stored, and what goes to git config and the fragments, is unchanged. The rule is in the UI style guide under "Words and values".
-	- Against: "A path is never re-spelled for display". Only control characters change. Every printable character prints as written, a backslash included, and a byte that isn't UTF-8 passes through, so a path with none in it prints byte for byte the same.
-	- Swept: the `account` list (every row, the Account and Ignored keys lines, the shared-rule and stale-rule warnings); the status and `whoami` Account line, its notes (through `noteLines`, which refusals use too), the Config, SSH and Author lines and the loose token file warning; the `account set` and `unset` plans (`was:`, `becomes:`, `add:`, `remove:`); the `account apply` plan, its status lines and refusals, and the unused-fragment line; the `raw` "acting as" line; and the refusals that quote a typed value (account name, key, host, user, protocol, path, GIT_CONFIG_COUNT). `host`, `user` and `protocol` were already held to plain characters, and account names to letters, digits, `.`, `_` and `-`.
-	- Note: git drops a newline from an ident itself, so the Author line shows only the ESC escaped.
-	- Branch: ctlesc
-	- Commit: 3594df7
-	- Test case: test.bash [ErvuMUH], [ErvuMUU] and [ErvuMUh], and Go `TestPrintableEscapesControlsOnly` [ErvuMUv].
-	- Verified: all 3 suite checks red on `gover`, green here. The Go test fails with the escaping taken out. test.bash 1494/0, fuzz.bash 311/0, parity.bash 29/0, `go test ./...` and the gate pass.
-	- Acceptance signoff: waits, since it changes output users see and has an "Against:" line.
-
 - Code Review 20261005 enhancement 1: Step lines print their arguments unquoted
 	- ID: 2026100516202730
 	- Type: Enhancement
@@ -217,6 +196,31 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: fuzz.bash 311/0, test.bash 1491/0, parity.bash 29/0 on the branch.
 	- Acceptance signoff: Self-closed: reproduced, red before the fix and green after.
 	- Closed: 20261006-075458
+
+- `account` prints a value with a newline in it across 2 lines
+	- ID: 2026100607545812
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Low
+	- Opened: 20261006-075458
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: `account set a name $'n\nemail ..: evil@x'` saves the value quoted and safe. But `account` prints it on 2 lines, and the second one looks like a field of its own.
+	- Expected behavior [Bug]: A value prints on one line, with any control character shown escaped.
+	- Reproduced [Bug]: Yes, on `fuzzwork`, 2026-10-06. Again on `gover` the same day: the commits row printed `n`, then `email ..: evil@x <?>` on a line of its own. An ESC in a value reached the terminal as is.
+	- Actual cause [Bug]: Every display site printed the value as read. Only the plan's `add:` and `becomes:` lines escaped it, since they show the file's own spelling.
+	- Actual fix [Bug]: `printable` shows a control character the way the accounts file writes it: `\n`, `\t`, and `\u001B` style for the rest of C0, DEL and C1. Every display site of a config value goes through it. What is stored, and what goes to git config and the fragments, is unchanged. The rule is in the UI style guide under "Words and values".
+	- Against: "A path is never re-spelled for display". Only control characters change. Every printable character prints as written, a backslash included, and a byte that isn't UTF-8 passes through, so a path with none in it prints byte for byte the same.
+	- Swept: the `account` list (every row, the Account and Ignored keys lines, the shared-rule and stale-rule warnings); the status and `whoami` Account line, its notes (through `noteLines`, which refusals use too), the Config, SSH and Author lines and the loose token file warning; the `account set` and `unset` plans (`was:`, `becomes:`, `add:`, `remove:`); the `account apply` plan, its status lines and refusals, and the unused-fragment line; the `raw` "acting as" line; and the refusals that quote a typed value (account name, key, host, user, protocol, path, GIT_CONFIG_COUNT). `host`, `user` and `protocol` were already held to plain characters, and account names to letters, digits, `.`, `_` and `-`.
+	- Note: git drops a newline from an ident itself, so the Author line shows only the ESC escaped.
+	- Branch: ctlesc, escall
+	- Commit: 3594df7, ESCALL_SHA
+	- Test case: test.bash [ErvuMUH], [ErvuMUU] and [ErvuMUh], and Go `TestPrintableEscapesControlsOnly` [ErvuMUv], and `TestEveryLineOutIsEscaped` [ErwXroS].
+	- Verified: all 3 suite checks red on `gover`, green here. The Go test fails with the escaping taken out. test.bash 1494/0, fuzz.bash 311/0, parity.bash 29/0, `go test ./...` and the gate pass.
+	- Decisions:
+		- Anything from a file or another tool gets escaped, with no exceptions to remember. So the escaping moved into the printer's line writers and the error constructors' args, and covers the cwd, remote URL, gh and tea logins, clone folder and config path too. A usage error built from lines keeps its line breaks.
+		- A typed `\n` in a value prints the same as an escaped newline. Left that way, since a real control character in a config value is nearly always a mistake or an attack, and doubling backslashes would re-spell every Windows path.
+	- Acceptance signoff: jim-collier 2026-10-06
+	- Closed: 20261006-104500
 
 - `assets/logo.png` is 512x512 and 254 KB for a 128 px README image
 	- ID: 2026100519502150

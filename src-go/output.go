@@ -39,7 +39,7 @@ func (p *printer) resetBlank() { p.lastBlank = false }
 // not already blank.
 func (p *printer) clean(s string) {
 	if s != "" {
-		_, _ = fmt.Fprintln(p.out, s)
+		_, _ = fmt.Fprintln(p.out, printable(s))
 		p.lastBlank = false
 		return
 	}
@@ -70,13 +70,38 @@ func (p *printer) status(s string) {
 // warn writes one line to stderr, unprefixed, for a warning that sits in the
 // stdout flow just above the prompt.
 func (p *printer) warn(s string) {
-	_, _ = fmt.Fprintln(p.err, s)
+	_, _ = fmt.Fprintln(p.err, printable(s))
 	p.lastBlank = false
 }
 
-// errorf writes to stderr, prefixed the way every message from here is.
+// errorf writes to stderr, prefixed the way every message from here is. The
+// args are escaped and the format isn't, so a message can still run to more
+// than one line on purpose.
 func (p *printer) errorf(format string, a ...any) {
-	_, _ = fmt.Fprintln(p.err, meName+": "+fmt.Sprintf(format, a...))
+	p.errorText(fmt.Sprintf(format, escArgs(a)...))
+}
+
+// errorText is errorf for a message already built, and escaped, by usagef.
+func (p *printer) errorText(msg string) {
+	_, _ = fmt.Fprintln(p.err, meName+": "+msg)
+}
+
+// escArgs runs printable over the text args of a Sprintf. Every line writer
+// escapes too, but only these can't, since a usage error is meant to have
+// more than one line.
+func escArgs(a []any) []any {
+	out := make([]any, len(a))
+	for i, v := range a {
+		switch x := v.(type) {
+		case string:
+			out[i] = printable(x)
+		case error:
+			out[i] = printable(x.Error())
+		default:
+			out[i] = v
+		}
+	}
+	return out
 }
 
 // printable escapes the control characters in a value for display, the way the
@@ -109,7 +134,7 @@ func printable(s string) string {
 // confirm gates every mutation. Only 'y' or 'yes' is yes: a typo, a stray
 // newline, or an EOF is a no, because the fallback has to be the harmless answer.
 func (p *printer) confirm(prompt string) bool {
-	_, _ = fmt.Fprint(p.out, prompt)
+	_, _ = fmt.Fprint(p.out, printable(prompt))
 	answer, _ := bufio.NewReader(p.in).ReadString('\n')
 	p.resetBlank()
 	switch strings.ToLower(strings.TrimSpace(answer)) {
