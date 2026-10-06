@@ -58,7 +58,9 @@ func (a *app) branchRefs() branchRefs {
 			}
 			if name, ok := strings.CutPrefix(fields[0], "refs/heads/"); ok {
 				refs.local[name] = upstreamRef{full: fields[2], short: fields[3]}
-			} else if name, ok := strings.CutPrefix(fields[0], "refs/remotes/origin/"); ok {
+			} else if name, ok := strings.CutPrefix(fields[0], "refs/remotes/origin/"); ok && name != "HEAD" {
+				// origin/HEAD is a pointer at the default branch, not a branch. Counted as
+				// one, 'br switch HEAD' passed the up-front check and parked work first.
 				refs.origin[name] = fields[1]
 			}
 		}
