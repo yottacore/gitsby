@@ -1509,10 +1509,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ### Features and enhancements
 
-- 🔘 Rework the fuzz suite. Much of what it proves becomes structurally impossible with no shell in the path; figure out what remains meaningful.
-	- Opened: 20260817-115422
-	- Note: taken out of Deferred 2026-10-06, to work next round.
-
 - 🔘 Move the shcl module from its pinned `dev` commit to the tagged 3.0 release.
 	- Opened: 20260924-132324
 	- The pin is `v2.0.0-20261001214152-b10c2009d36c` since 2026-10-01, shcl `dev` at what will be the beta cut. Go sorts it below v2.0.0. Nothing asks for v2.0.0 on the new import path, so nothing picks it over the pin.
@@ -3324,6 +3320,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Added next to the bash badge in the header block, linking to the PowerShell docs.
 
 #### Done - Features and enhancements
+
+- ✅ Rework the fuzz suite. Much of what it proves becomes structurally impossible with no shell in the path; figure out what remains meaningful.
+	- Opened: 20260817-115422
+	- Closed: 20261006-081500
+	- Done: audited every vector group against the Go build. The old suite assumed a shell between user input and git; the Go build runs git, gh and tea through argument arrays, so most old vectors can no longer inject. They stay as cheap regression guards against a shell-out creeping back. Added checks that drive the spots where a user value still reaches a real tool, each through the real consumer: a clone directory derived from an option-shaped URL tail (argument injection into git), a ref that is also a revision ('br switch HEAD'), a shell-bearing 'sshkey' through a real ssh, 'account apply' escaping glob characters in a folder rule and dropping a shell-bearing host or user, and a junk GIT_CONFIG_COUNT on the 'git credential fill' path. The credential-helper vector already drove the real consumer and still does. 301 -> 311.
+	- Done: two product bugs the new vectors caught, fixed in the same branch. 'repo clone' now passes '--' before the derived directory, so a URL tail like '--upload-pack=...' can't reach git as an option. origin/HEAD is no longer counted as a branch, so 'br switch HEAD' refuses up front instead of committing and pushing the working tree to park it and then failing.
+	- Decided against: deleting any existing vector. With no shell in the path most are inert, but each still guards against a regression to a shell-out, so none was removed and backlog-check needs no deletion entry. Also against duplicating the native Go fuzz targets, which already cover the pure parsers.
+	- Note: a config value with an embedded newline is quoted safely in the file and never injects, but 'account' prints it across lines, which can mimic a second field on screen. Display only, filed as a separate minor item rather than fixed here.
+	- Test case: new checks [Ervo5NU] clone-dir argument injection, [Ervo5NW] 'br switch HEAD' leaves the repo untouched, [Ervo5Nd] shell-bearing sshkey never reaches ssh, [Ervo5NY] apply escapes folder-rule globs, [Ervo5Nb] apply drops a shell-bearing host or user, [Ervo5Ng] junk GIT_CONFIG_COUNT refused - all in fuzz.bash.
+	- Swept: the git/gh call sites that take a user-controlled leading argument - clone dir, refs into checkout/switch, sshkey and host/user into the credential helper key and the includeIf fragments, and GIT_CONFIG_COUNT. The helper reads its username from the environment, so nothing is interpolated into the shell string git runs.
+	- Verified: fuzz.bash 311/0 on the clean build. Each new check watched red by breaking the Go code it guards (copy aside, rebuild, restore, rebuild clean). 'go test ./...' and the gate pass.
+	- Needs local test suite run?: test.bash and parity.bash, to confirm the clone-plan and branch-ref fixtures still pass after the 'git clone --' and origin/HEAD changes. The clone-plan assertions match 'git clone .*' so they should, but a full run was not done here.
+	- Acceptance signoff: the two product fixes touch security-adjacent behavior (argument injection, and a mutate-before-refuse), so a glance is worth it before this is counted fully closed.
 
 - ✅ `repo clone` names the folder it clones into in full.
 	- Opened: 20260928-132933
