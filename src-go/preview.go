@@ -78,7 +78,7 @@ func (a *app) preview(what string) {
 	case "release":
 		a.previewRelease()
 	case "repo-clone":
-		a.out.clean(pad + "git clone " + maskURL(a.tgt.cloneURL) + " " + a.tgt.cloneDir)
+		a.out.clean(pad + "git clone -- " + maskURL(a.tgt.cloneURL) + " " + a.tgt.cloneDir)
 		a.out.clean(pad + "git -C " + a.tgt.cloneDir + " checkout dev *")
 	case "repo-url":
 		a.out.clean(pad + "git remote set-url origin " + hostURL(a.originHost(), remoteTarget(a.originURL()), a.cmd.arg))

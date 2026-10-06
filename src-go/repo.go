@@ -363,7 +363,9 @@ func (a *app) settleRepoConnectTo() error {
 }
 
 func (a *app) cmdClone() error {
-	if err := a.step("git", "clone", a.tgt.cloneURL, a.tgt.cloneDir); err != nil {
+	// The folder can come from the URL's last part, so it may start with a dash, and
+	// git would read it as an option of its own.
+	if err := a.step("git", "clone", "--", a.tgt.cloneURL, a.tgt.cloneDir); err != nil {
 		return err
 	}
 	// Opinionated: if the repo works dev-first, start there.
