@@ -153,14 +153,18 @@ fRunPosix(){
 	fi
 	fEcho_Clean "  ${lockName}: copying the tree to ~/${dir}/tree"
 	## The marker is checked again right before the removal, and a folder without it is not
-	## this stage's to touch.
+	## this stage's to touch. The old tree is moved aside first: a Finder window open on it
+	## rewrites .DS_Store mid-rm, which failed the whole copy. Leftovers get another go next run.
 	fRemote "${sshName}" "echo ${mark}
 		set -e
 		d=\"\$HOME/${dir}\"
 		if [ -e \"\$d\" ] && [ ! -f \"\$d/${ownMark}\" ]; then echo \"\$d is not this stage's folder, so it was left alone\" >&2; exit 3; fi
 		mkdir -p \"\$d\"
 		: > \"\$d/${ownMark}\"
-		if [ -f \"\$d/${ownMark}\" ]; then rm -rf \"\$d/tree\"; fi
+		if [ -f \"\$d/${ownMark}\" ]; then
+			if [ -e \"\$d/tree\" ]; then mv \"\$d/tree\" \"\$d/old.\$\$\"; fi
+			rm -rf \"\$d\"/old.* 2>/dev/null || echo \"note: some of \$d/old.* would not go\" >&2
+		fi
 		tar -xf - -C \"\$d\"
 		cd \"\$d/tree/${GO_MODULE_DIR}\"
 		${fetch}" < "${tarFile}" || rc=$?
