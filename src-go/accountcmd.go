@@ -320,9 +320,9 @@ func (a *app) cmdAccountList() {
 	}
 	// Status's label for the same answer. "Resolves to" named no actor, so the first
 	// question it raised was who was doing the resolving.
-	a.out.clean(acctLabel + resolvedLine)
+	a.out.clean(acctLabel + printable(resolvedLine))
 	if len(a.cfg.unknown) > 0 {
-		a.out.clean("Ignored keys .: " + strings.Join(a.cfg.unknown, ", "))
+		a.out.clean("Ignored keys .: " + printable(strings.Join(a.cfg.unknown, ", ")))
 	}
 	// Here and nowhere else: this is the command the docs send you to when something
 	// went out as the wrong person, and asking git costs every other command a process.
@@ -330,7 +330,7 @@ func (a *app) cmdAccountList() {
 	warnStale := func() {
 		for _, pattern := range stale {
 			a.out.clean("")
-			a.out.clean("WARNING: your global git config still has the rule 'gitdir/i:" + pattern + "' from an earlier 'account apply'. " +
+			a.out.clean("WARNING: your global git config still has the rule 'gitdir/i:" + printable(pattern) + "' from an earlier 'account apply'. " +
 				"Its folder isn't absolute, so plain git can apply that account far from where it was typed. Run '" + meName + " account apply' to remove it.")
 		}
 	}
@@ -353,7 +353,7 @@ func (a *app) cmdAccountList() {
 	}
 	for _, contested := range a.cfg.contestedRules() {
 		a.out.clean("")
-		a.out.clean("WARNING: more than one account claims " + contested + " - only the first is used.")
+		a.out.clean("WARNING: more than one account claims " + printable(contested) + " - only the first is used.")
 	}
 	warnStale()
 }
@@ -401,7 +401,7 @@ func (a *app) showAccount(name string, isHere bool) {
 	// this one apply and that one not", and it is meaningless where every account is
 	// on the same host. A config with one git host in it reads exactly as it always did.
 	if host := a.cfg.value(name, "host"); host != "" {
-		a.out.clean("     host ....: " + host)
+		a.out.clean("     host ....: " + printable(host))
 	} else if a.cfg.anyHostStated() {
 		a.out.clean("     host ....: github.com  (default)")
 	}
@@ -410,10 +410,10 @@ func (a *app) showAccount(name string, isHere bool) {
 	if ghDisp == "" {
 		ghDisp = "(none)"
 	}
-	a.out.clean("     github ..: " + ghDisp)
+	a.out.clean("     github ..: " + printable(ghDisp))
 	// The host-neutral login, and on a non-GitHub account the only one there is.
 	if user := a.cfg.value(name, "user"); user != "" {
-		a.out.clean("     login ...: " + user)
+		a.out.clean("     login ...: " + printable(user))
 	}
 	// Say where a token would come from, never what it is.
 	tokenFrom := "(none)"
@@ -422,9 +422,9 @@ func (a *app) showAccount(name string, isHere bool) {
 	} else if readTokenFile(a.cfg.value(name, "tokenFile")) != "" {
 		tokenFrom = a.cfg.value(name, "tokenFile")
 	}
-	a.out.clean("     token ...: " + tokenFrom)
+	a.out.clean("     token ...: " + printable(tokenFrom))
 	if sshKey := a.cfg.value(name, "sshKey"); sshKey != "" {
-		a.out.clean("     ssh key .: " + sshKey)
+		a.out.clean("     ssh key .: " + printable(sshKey))
 	}
 	acctUser := a.cfg.value(name, "name")
 	acctEmail := a.cfg.value(name, "email")
@@ -435,10 +435,10 @@ func (a *app) showAccount(name string, isHere bool) {
 		if acctEmail == "" {
 			acctEmail = "?"
 		}
-		a.out.clean("     commits .: " + acctUser + " <" + acctEmail + ">")
+		a.out.clean("     commits .: " + printable(acctUser+" <"+acctEmail+">"))
 	}
 	if proto := a.cfg.value(name, "protocol"); proto != "" {
-		a.out.clean("     protocol : " + proto)
+		a.out.clean("     protocol : " + printable(proto))
 	}
 	// Each rule as the file writes it. The canonical form is lower case on Windows
 	// with every link resolved, so printing that named a folder nobody had typed.
@@ -449,14 +449,14 @@ func (a *app) showAccount(name string, isHere bool) {
 		// path spelling such as '/tmp/...' looks, since only the shell build can
 		// resolve one.
 		if isDir(r.match) {
-			a.out.clean("     folder ..: " + r.written)
+			a.out.clean("     folder ..: " + printable(r.written))
 		} else {
-			a.out.clean("     folder ..: " + r.written + "  (no such directory - this rule can never match)")
+			a.out.clean("     folder ..: " + printable(r.written) + "  (no such directory - this rule can never match)")
 		}
 	}
 	// No existence check on these: naming no machine in particular is the point.
 	for _, r := range rulesOf(a.cfg.segments, name) {
-		a.out.clean("     anywhere : .../" + strings.Trim(r.written, `/\`) + "/...")
+		a.out.clean("     anywhere : .../" + printable(strings.Trim(r.written, `/\`)) + "/...")
 	}
 }
 
@@ -494,7 +494,7 @@ func (a *app) cmdAccountApply() error {
 		written := slices.Collect(maps.Values(files))
 		for _, e := range entries {
 			if strings.HasSuffix(e.Name(), ".gitconfig") && !slices.Contains(written, e.Name()) {
-				a.out.status("Not used any more, safe to remove: " + nativePath(dir+"/"+e.Name()))
+				a.out.status("Not used any more, safe to remove: " + printable(nativePath(dir+"/"+e.Name())))
 			}
 		}
 	}
@@ -507,14 +507,14 @@ func (a *app) cmdAccountApply() error {
 		// loop is asking for. Only a real failure is one - reading 5 as one left the
 		// config with no rules at all and the command reporting an error.
 		if rc := a.inheritRC("git", "config", "--global", "--unset-all", key); rc != 0 && rc != gitConfigNothingToUnset {
-			return usagef("Couldn't remove the old rule '%s' from your global git config; nothing further was applied.", key)
+			return usagef("Couldn't remove the old rule '%s' from your global git config; nothing further was applied.", printable(key))
 		}
 	}
 	for _, rule := range a.cfg.accountApplyPlan() {
 		if !a.inheritOK("git", "config", "--global", "--add", rule.cond, rule.target) {
-			return usagef("Couldn't add '%s' to your global git config.", rule.cond)
+			return usagef("Couldn't add '%s' to your global git config.", printable(rule.cond))
 		}
-		a.out.status("git config --global --add " + rule.cond)
+		a.out.status("git config --global --add " + printable(rule.cond))
 	}
 	return nil
 }
@@ -673,19 +673,19 @@ func absPathValue(value, what string) (string, error) {
 	case "":
 		return value, nil
 	case ruleNoHome:
-		return "", usagef("'%s' starts at the home folder, and this machine names none. Give the full path.", value)
+		return "", usagef("'%s' starts at the home folder, and this machine names none. Give the full path.", printable(value))
 	case ruleOtherHome:
-		return "", usagef("'%s' names another user's home folder, and only a bare '~' is expanded. Give the full path.", value)
+		return "", usagef("'%s' names another user's home folder, and only a bare '~' is expanded. Give the full path.", printable(value))
 	case ruleOtherVar:
-		return "", usagef("'%s' starts with a variable %s doesn't expand. Only '~', '${HOME}' and '%%USERPROFILE%%' are, or give the full path.", value, meName)
+		return "", usagef("'%s' starts with a variable %s doesn't expand. Only '~', '${HOME}' and '%%USERPROFILE%%' are, or give the full path.", printable(value), meName)
 	}
 	abs, err := filepath.Abs(value)
 	if err != nil {
-		return "", usagef("Couldn't work out which %s '%s' is from here, since finding the current folder failed with: %s. Give the full path.", what, value, causeText(err))
+		return "", usagef("Couldn't work out which %s '%s' is from here, since finding the current folder failed with: %s. Give the full path.", what, printable(value), causeText(err))
 	}
 	abs = filepath.ToSlash(abs)
 	if folderRuleProblem(abs) != "" {
-		return "", usagef("Couldn't work out which %s '%s' is from here. Give the full path.", what, value)
+		return "", usagef("Couldn't work out which %s '%s' is from here. Give the full path.", what, printable(value))
 	}
 	return abs, nil
 }
@@ -1038,11 +1038,11 @@ func (a *app) accountSetPlan() (accountSetTarget, error) {
 	var t accountSetTarget
 	name := strings.ToLower(a.cmd.arg)
 	if !acctNameOK.MatchString(name) {
-		return t, usagef("'%s' isn't a usable account name; letters, digits, '.', '_' and '-' only.", a.cmd.arg)
+		return t, usagef("'%s' isn't a usable account name; letters, digits, '.', '_' and '-' only.", printable(a.cmd.arg))
 	}
 	t.field = canonAccountField(a.cmd.arg2)
 	if t.field == "" {
-		return t, usagef("'%s' isn't an account key %s reads. One of: %s.", a.cmd.arg2, meName, strings.Join(accountSetFields, ", "))
+		return t, usagef("'%s' isn't an account key %s reads. One of: %s.", printable(a.cmd.arg2), meName, strings.Join(accountSetFields, ", "))
 	}
 	t.value, t.disp = a.cmd.arg3, "account["+name+"]"
 	var err error
@@ -1064,11 +1064,11 @@ func (a *app) accountSetPlan() (accountSetTarget, error) {
 		return t, usagef("git hands a key path to a shell, so one carrying whitespace or a shell character is re-parsed rather than used. Move the key somewhere plainer.")
 	}
 	if (t.field == "host" || t.field == "user") && !hostWordOK.MatchString(t.value) {
-		return t, usagef("'%s' isn't a plain %s name; letters, digits, '.', '_' and '-' only.", t.value, t.field)
+		return t, usagef("'%s' isn't a plain %s name; letters, digits, '.', '_' and '-' only.", printable(t.value), t.field)
 	}
 	if t.field == "protocol" {
 		if !protocolOK(t.value) {
-			return t, usagef("'%s' isn't a protocol %s uses. One of: https, ssh.", t.value, meName)
+			return t, usagef("'%s' isn't a protocol %s uses. One of: https, ssh.", printable(t.value), meName)
 		}
 		t.value = strings.ToLower(t.value)
 	}
@@ -1191,7 +1191,7 @@ func lostRefusal(t accountSetTarget, kept bool) error {
 func (a *app) accountUnsetPlan() (t accountSetTarget, done bool, err error) {
 	name := strings.ToLower(a.cmd.arg)
 	if !acctNameOK.MatchString(name) {
-		return t, false, usagef("'%s' isn't a usable account name; letters, digits, '.', '_' and '-' only.", a.cmd.arg)
+		return t, false, usagef("'%s' isn't a usable account name; letters, digits, '.', '_' and '-' only.", printable(a.cmd.arg))
 	}
 	t.unset, t.disp = true, "account["+name+"]"
 	if a.cfg.file == "" {
@@ -1240,7 +1240,7 @@ func (a *app) accountUnsetPlan() (t accountSetTarget, done bool, err error) {
 		}
 	}
 	if t.field == "" {
-		return t, false, usagef("'%s' isn't an account key %s reads, and %s has no such line. One of: %s.", a.cmd.arg2, meName, t.disp, strings.Join(accountSetFields, ", "))
+		return t, false, usagef("'%s' isn't an account key %s reads, and %s has no such line. One of: %s.", printable(a.cmd.arg2), meName, t.disp, strings.Join(accountSetFields, ", "))
 	}
 	for i, p := range paths {
 		paths[i] = p + "." + shcl.QuoteSegment(t.field)

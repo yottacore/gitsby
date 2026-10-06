@@ -123,10 +123,10 @@ func (a *app) showIdentity(remoteURL string) {
 	// believing you configured it, so say so - once, here, rather than failing or
 	// staying quiet.
 	if len(a.cfg.unknown) > 0 {
-		a.out.clean("Config .......: " + a.cfg.file + " - ignored: " + strings.Join(a.cfg.unknown, ", "))
+		a.out.clean("Config .......: " + printable(a.cfg.file+" - ignored: "+strings.Join(a.cfg.unknown, ", ")))
 	}
 	a.showSSHLine(remoteURL)
-	a.out.clean("Author .......: " + commitIdentity())
+	a.out.clean("Author .......: " + printable(commitIdentity()))
 	a.showGhLine()
 	a.showHostLine()
 }
@@ -291,6 +291,7 @@ func noteLines(label string, lines ...string) []string {
 	prefix := head
 	var out []string
 	for _, line := range lines {
+		line = printable(line)
 		if strings.HasPrefix(line, " ") {
 			out = append(out, pad+line)
 			continue
@@ -356,11 +357,11 @@ func (a *app) showAccountUnapplied() bool {
 		a.out.clean(acctLabel + "nothing applied - " + meName + " was run with --any-identity")
 		a.showAccountNote("Why", "--any-identity leaves the token, the SSH key and the commit author exactly as they already were.")
 	case a.acct.otherHost:
-		a.out.clean(acctLabel + a.accountSubject() + a.noTokenText())
+		a.out.clean(acctLabel + printable(a.accountSubject()+a.noTokenText()))
 		a.showAccountFrom()
 		a.showAccountOtherHost()
 	case a.acct.noToken:
-		a.out.clean(acctLabel + a.accountSubject() + a.noTokenText())
+		a.out.clean(acctLabel + printable(a.accountSubject()+a.noTokenText()))
 		a.showAccountFrom()
 		a.showAccountNoToken()
 	default:
@@ -450,7 +451,7 @@ func (a *app) showAccountLine() {
 		a.showAccountApplied()
 	}
 	if a.acct.looseTokenFile != "" {
-		a.out.clean(acctCont + "WARNING: " + a.acct.looseTokenFile + " is readable by other users on this machine; chmod 600 it.")
+		a.out.clean(acctCont + "WARNING: " + printable(a.acct.looseTokenFile) + " is readable by other users on this machine; chmod 600 it.")
 	}
 	// This repo could authenticate with the account's token instead of a key, and
 	// doesn't. Worth one line, because it is the whole point of configuring accounts
@@ -490,7 +491,7 @@ func (a *app) showAccountApplied() {
 	if a.acct.usedHTTPSAuth {
 		line += ", git over https"
 	}
-	a.out.clean(acctLabel + line)
+	a.out.clean(acctLabel + printable(line))
 	a.showAccountFrom()
 	switch tokenWho := a.tokenFileWho(); {
 	case tokenWho == "?":
@@ -599,7 +600,7 @@ func (a *app) showSSHLine(remoteURL string) {
 			account = resolved
 		}
 	}
-	a.out.clean("SSH ..........: " + account + " (" + line + ")")
+	a.out.clean("SSH ..........: " + printable(account+" ("+line+")"))
 }
 
 // showGhLine: gh-backed commands act as gh's account, not the ssh key's - so name

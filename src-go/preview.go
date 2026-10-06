@@ -105,10 +105,10 @@ func (a *app) preview(what string) {
 			a.out.clean(pad + "edit " + nativePath(t.file))
 		}
 		if t.exists {
-			a.out.clean(pad + "  was:     " + t.field + ": " + t.old)
-			a.out.clean(pad + "  becomes: " + t.field + ": " + shclValue(t.value))
+			a.out.clean(pad + "  was:     " + t.field + ": " + printable(t.old))
+			a.out.clean(pad + "  becomes: " + t.field + ": " + printable(shclValue(t.value)))
 		} else {
-			a.out.clean(pad + "  add:     " + t.disp + "." + t.field + ": " + shclValue(t.value))
+			a.out.clean(pad + "  add:     " + t.disp + "." + t.field + ": " + printable(shclValue(t.value)))
 		}
 		if t.reshapes {
 			a.out.clean(pad + "  also:    the rest of the file comes out in the layout every save writes (tabs, lower-case keys)")
@@ -123,10 +123,10 @@ func (a *app) preview(what string) {
 			a.out.clean(pad + "write " + applyDir + "/" + files[name])
 		}
 		for _, key := range a.cfg.accountManagedIncludes() {
-			a.out.clean(pad + "git config --global --unset-all " + key)
+			a.out.clean(pad + "git config --global --unset-all " + printable(key))
 		}
 		for _, rule := range a.cfg.accountApplyPlan() {
-			a.out.clean(pad + "git config --global --add " + rule.cond + " " + rule.target)
+			a.out.clean(pad + "git config --global --add " + printable(rule.cond+" "+rule.target))
 		}
 	case "repo-create", "repo-connect":
 		if !a.inRepo {
@@ -160,9 +160,9 @@ func (a *app) previewUnset() {
 	}
 	for _, g := range t.gone {
 		if numbered {
-			a.out.clean(pad + "  remove:  line " + strconv.Itoa(g.num) + ", " + g.text)
+			a.out.clean(pad + "  remove:  line " + strconv.Itoa(g.num) + ", " + printable(g.text))
 		} else {
-			a.out.clean(pad + "  remove:  " + g.text)
+			a.out.clean(pad + "  remove:  " + printable(g.text))
 		}
 	}
 	if t.reshapes {

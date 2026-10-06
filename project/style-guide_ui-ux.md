@@ -167,6 +167,8 @@ gitsby: Another run is editing the accounts file.
 
 - Never "the config" on its own. Name the environment variable, the git config key, or the account block and its file.
 
+- A value prints on one line. A control character in it is shown the way the accounts file writes it: `\n`, `\t`, and `\u001B` style for the rest. Every other character prints as written, a backslash included, so no path is re-spelled. This goes for a value quoted in an error too.
+
 - A missing thing is `(none)`, a setting with no value is `(unset)`, and an answer that couldn't be found out is `(unknown - ...)` with the reason.
 
 ## Scripts
