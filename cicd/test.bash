@@ -3995,6 +3995,16 @@ GHEOF
 	printf 'account: tt\n\thost: gitea.com\n\temail: a@example.com\n\naccount: tt\n\thost: github.com\n\temail: b@example.com\n' > "${ac}/twice.shcl"
 	fAssertOut "[ErO6xm2] account list names a key an earlier block gave differently"  'account\[tt\]\.host: gitea\.com \(line 2; line 6 gives it again, and that one is read\)' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/twice.shcl' account list"
+	## A value holding a newline printed across 2 lines, the second looking like a field of its own,
+	## and an ESC in one reached the terminal as is.
+	printf 'account: esc\n\tpath: %s/trees/work\n\tname: "n\\nemail ..: evil@x\\u001B[31m"\n\temail: e@example.com\n' "${acCanon}" > "${ac}/esc.shcl"
+	fAssertOut "[ErvuMUH] account list shows a control character in a value escaped, on one line"  'commits \.+: n\\nemail \.\.: evil@x\\u001B\[31m <e@example\.com>$' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/esc.shcl' account list"
+	fAssertNotOut "[ErvuMUU] and no line of it starts a field of its own, or holds a raw ESC"  $'^email \\.\\.|\x1b' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/esc.shcl' account list"
+	## git drops the newline from an ident itself, so the Author line has only the ESC to show.
+	fAssertOut "[ErvuMUh] whoami's Author line shows the ESC escaped too"  '^Author \.+: [^ ]*email \.\.: evil@x\\u001B\[31m <e@example\.com>$' \
+		bash -c "cd '${acWork}' && env ${acEnvIdent} '${gitsby}' -q -NoFetch --config '${ac}/esc.shcl' whoami"
 	## An entry written by hand has to survive; ours have to refresh rather than accumulate.
 	( cd "${acWork}" && env HOME="${ac}/home" GIT_CONFIG_GLOBAL="${ac}/home/.gitconfig" git config --global includeIf.gitdir:/hand/written/.path /keep/me.gitconfig )
 	fAssert "[EmMuR5v] account apply runs"  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply >/dev/null"
@@ -6541,3 +6551,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261004 JC: Prints through fEcho_Clean, like the other pipeline scripts. Three checks that read cicd.bash look for its new camelCase names. Every expansion braced, and shellcheck enforces it.
 ##		- 20261005 JC: --staged commits only the staged file, on top of origin's commit, with the rest of the tree left as it was. Its pulls have no --autostash, and the staged edit stays staged through br create from dev. A pull or a checkout that would overwrite an edit left behind is refused before the plan, with nothing committed. br switch and br merge carry the rest over. Refused where the whole tree is committed. 1453 -> 1471.
 ##		- 20261005 JC: pr create and release take --staged. pr create pushes the staged edit alone, and release tags it, merges, and ends back on dev with the rest of the tree as it was. A level repo with edits left out of the index has nothing new to release. A checkout of main that would overwrite an edit left behind is refused before the plan. The release refusal check is off, and repo connect is asked instead. 1471 -> 1482.
+##		- 20261006 JC: A value with a newline or an ESC in it prints escaped and on one line, in the account listing and on the Author line. 1491 -> 1494.
