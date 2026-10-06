@@ -161,17 +161,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `assets/logo.png` is 512x512 and 254 KB for a 128 px README image
 	- ID: 2026100519502150
 	- Type: Enhancement
-	- Status: Waiting on signoff
+	- Status: Done
 	- Priority|Severity [Feature]: Low
 	- Opened: 20261005-195021
 	- Opened by: jim-collier
 	- Note: It is also what `gen-winres.bash --icon` reads for `assets/gitsby.ico`, whose largest size is 256.
 	- Progress log:
 		- 2026-10-05: Scaled to 256x256 RGBA, 84 KB. `gitsby.ico` is left as made from the 512 px original.
+		- 2026-10-06: Put back to 512 px, and the README shows it at 512.
+	- Decisions:
+		- Keep 512 px and show it at full size. It is a cool logo.
 	- Swept: README width 128, `gen-winres.bash` (largest size 256), design.md, changelog.md, trademark.md and the backlog's `.ico` note. None state the logo's size or need 512 px.
-	- Branch: logo
+	- Branch: logo, logo512
 	- Commit: 1e70d74
 	- Test case: None, asset only.
+	- Acceptance signoff: jim-collier 2026-10-06
+	- Closed: 20261006-072500
 
 - Code Review 20261005 item 2: design.md still states decisions that were reversed or outgrown
 	- ID: 2026100516202581
@@ -1503,6 +1508,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 ### Bugs
 
 ### Features and enhancements
+
+- 🔘 Rework the fuzz suite. Much of what it proves becomes structurally impossible with no shell in the path; figure out what remains meaningful.
+	- Opened: 20260817-115422
+	- Note: taken out of Deferred 2026-10-06, to work next round.
 
 - 🔘 Move the shcl module from its pinned `dev` commit to the tagged 3.0 release.
 	- Opened: 20260924-132324
@@ -4034,9 +4043,6 @@ Waiting on hardware, an upstream module, or a decision.
 	- Deferred until the Go build is released on `main`. Until then the description would be ahead of what a visitor can actually download, which is worse than being behind.
 	- One command when the time comes: `gh repo edit --description ... --homepage ... --add-topic go --remove-topic bash`.
 
-- ✋ Rework the fuzz suite. Much of what it proves becomes structurally impossible with no shell in the path; figure out what remains meaningful.
-	- Opened: 20260817-115422
-
 - ✋ macOS signing and quarantine on real ARM hardware: does a terminal download need either?
 	- Opened: 20260817-115422
 	- All that is left of the old macOS item. The build half is settled and filed under done.
@@ -4046,6 +4052,7 @@ Waiting on hardware, an upstream module, or a decision.
 	- Opened: 20260817-115422
 	- The port is underway now, so this is decidable rather than deferred. Two calls: whether a bare workflow (vet, test, build on push and PR) is worth the dependency on a hosted service, and whether a release packager earns its place by bringing the Linux packages with it.
 	- Against the packager: the release already proves itself by downloading, checksumming and running the asset, which is more than it would do. For it: the packages come free.
+	- Note: stays deferred, asked 2026-10-06. The project should lean on any one git host as little as it can.
 
 ### Canceled
 
