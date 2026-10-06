@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261005 item 1: workflows.md says gitsby won't push your own work to `main` or `dev`, and it does
 	- ID: 2026100516202544
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting for answers
 	- Priority|Severity [Bug]: Avg
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
@@ -46,12 +46,102 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: workflows.md:96 from bae69b6 and :105 from dc5054c, both 2026-07-28. The behavior is older. The 2.x refusal named `update` as the way to commit on a protected branch on purpose. No earlier round saw it. Confirmed.
 	- Note: 2 ways out. Reword workflows.md to say gitsby steers work onto branches and still allows a deliberate commit on `main` or `dev`. Or warn above the prompt when the push goes to `main` or `dev`. Refusing is out, since the tool's own advice and every repo with no `dev` lean on it.
 	- Note: The reword is the smaller change. A warning would show on every push in a GitHub Flow repo that commits to `main`.
+	- Progress log:
+		- 2026-10-05: The fix chosen is a warning on stderr before going ahead, with a flag to turn it off. Open: the flag's name, and whether `-q` without it refuses, as the UI style guide says a warning does under `-q`.
 	- Test case: none if reworded, since it's docs only. A warning gets a test.bash check on `main`, `dev` and a feature branch.
+
+- Code Review 20261005 item 3: The help and design.md disagree on which commands are daily
+	- ID: 2026100516202618
+	- Type: Bug
+	- Status: Waiting for answers
+	- Priority|Severity [Bug]: Low
+	- Opened: 2026-10-05
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: design.md:188 and the UI style guide say commands split by how often they're typed, with `pullcom`, `sync`, `status`, `whoami` and `release` as the daily one-word verbs. The help puts `sync` and `whoami` under "Less common commands" and `release` under "Admin commands", and lists `br create` and `br switch` as common. The README tags `sync` "Do infrequently".
+	- Expected behavior [Bug]: One story about how the commands are grouped.
+	- Reproduced [Bug]: Yes, `gitsby --help` against design.md and the style guide.
+	- Origin: design.md:188 from faaa69e (2026-07-26). The help's groups go back to 2.x, 0394a80 in 2022. No round saw it. Confirmed.
+	- Note: The help's groups read true. The one-word split isn't about how often a command is typed, so the design line and the style guide should say what it is. Regrouping the help is the other choice.
+	- Progress log:
+		- 2026-10-05: Asked what the problem is. The reword proposed is in the reply.
+	- Test case: none if the docs change. A regrouped help keeps its existing help checks.
+
+- Code Review 20261005 item 4: Help says "GitHub accounts" where an account can be on any git host
+	- ID: 2026100516202655
+	- Type: Bug
+	- Status: Waiting for answers
+	- Priority|Severity [Bug]: Low
+	- Opened: 2026-10-05
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: The help's `account` line says "Show your configured GitHub accounts", right above 2 examples that use `gitea.com`. The README's `account` row says the same. design.md:249 opens with "Which GitHub account you act as".
+	- Expected behavior [Bug]: Say "accounts" where any host is meant.
+	- Reproduced [Bug]: Yes, `gitsby --help`.
+	- Origin: help.go:62 from 63d5782 (2026-08-08), before accounts took a `host`. No round saw it. Confirmed.
+	- Decisions:
+		- The README's "Multiple GitHub accounts" heading and the title of accounts.md stay. Most readers come for GitHub, and a heading change moves the anchor too.
+	- Progress log:
+		- 2026-10-05: Asked what the problem is. Answered in the reply.
+	- Test case: none, wording only.
+
+- Code Review 20261005 item 5: The README's count of subcommands is stale
+	- ID: 2026100516202693
+	- Type: Bug
+	- Status: Waiting on signoff
+	- Priority|Severity [Bug]: Low
+	- Opened: 2026-10-05
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: The README says gitsby has "ten - or 24 counting subcommands". The help lists 25 since `account unset` came in.
+	- Expected behavior [Bug]: A number that a check keeps true, or wording with no number.
+	- Reproduced [Bug]: Yes, by counting the help's entries.
+	- Origin: README:64 from c18c606 (2026-08-21). `account unset` is 62af07b (2026-09-28). No round saw it. Confirmed.
+	- Note: "ten" can keep its number with a check on the help's top-level commands. The subcommand count could say "about two dozen" and claim nothing exact.
+	- Actual fix [Bug]: The README says "about two dozen counting subcommands". "ten" stays, and a check holds it.
+	- Branch: docfix
+	- Commit: a1f6d68, af0b41b
+	- Test case: [ErsJhby] in test.bash counts the help's top-level commands and needs 10, with "Gitsby has ten" in the README. Red with the README saying eleven, green as committed.
+	- Closed: 20261005-172300
+
+- Code Review 20261005 enhancement 1: Step lines print their arguments unquoted
+	- ID: 2026100516202730
+	- Type: Enhancement
+	- Status: Waiting on signoff
+	- Priority|Severity [Feature]: Low
+	- Opened: 2026-10-05
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- A step line quotes an argument the way the plan does. The plan shows `git commit -m "two words; here"`, and the step shows `[ git commit -m two words; here ... ]`. Pasted into a shell, the step line runs `here` as a command.
+		- The failure line, `gitsby: '...' failed`, quotes the same way.
+	- Origin: `step` in exec.go, from the port. 2.x printed `$*` the same way.
+	- Note: parity.bash compares this output with 2.x, so the change needs its carve-out there.
+	- Done: Step lines quote an argument that needs it, and quote a `-m` value the way the plan does. The plan's commit message and `pr create` title go through the same quoting, so a message with `"` or `$` in it now shows in single quotes there too. The demo's `sync` step line gains its quotes, so the gif changes at the next full run.
+	- Note: parity.bash needed no carve-out. It passed 29 of 29.
+	- Branch: docfix
+	- Commit: af0b41b
+	- Test case: [ErsJhaE] in test.bash, a plan line and its step line must match for `-m 'two words; here'`, red on `gover` and green here. [ErsJhZM] TestShellWord has a shell read 10 awkward values back unchanged.
+	- Closed: 20261005-172300
+
+- Code Review 20261005 enhancement 2: The help leaves out what the README shows
+	- ID: 2026100516202767
+	- Type: Enhancement
+	- Status: Waiting on signoff
+	- Priority|Severity [Feature]: Low
+	- Opened: 2026-10-05
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- `--yes` is taken but not listed. The help shows `-q, --quiet, -y`.
+		- `repo connect [url]`, where it also takes `owner/name`. The README shows `[target]`.
+		- `account set` and `account unset` show no arguments. The README shows `<a> <k> <v>` and `<a> <k>`.
+	- Origin: help.go, various. No round saw it.
+	- Done: The help lists `--yes`, says `repo connect` takes a URL or `owner/name`, and starts the `account set` and `account unset` lines with their arguments.
+	- Branch: docfix
+	- Commit: af0b41b
+	- Test case: [ErsJhb6] in test.bash, help lists `--yes`. Red on `gover`, green here.
+	- Closed: 20261005-172300
 
 - Code Review 20261005 item 2: design.md still states decisions that were reversed or outgrown
 	- ID: 2026100516202581
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
@@ -66,78 +156,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: the commits named above, 2026-07-26 to 2026-08-20. No round saw these lines. Confirmed.
 	- Note: The 20260910 churn audit found this class twice, in its items 8 and 18. A decision reversed in one section and left standing in another. This is the third time. A reversal should grep every doc for the old rule before it merges.
 	- Note: :345 is history. Reword it so it doesn't count stages, and there's no number left to drift.
-	- Test case: none, docs only.
-
-- Code Review 20261005 item 3: The help and design.md disagree on which commands are daily
-	- ID: 2026100516202618
-	- Type: Bug
-	- Status: Queued
-	- Priority|Severity [Bug]: Low
-	- Opened: 2026-10-05
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: design.md:188 and the UI style guide say commands split by how often they're typed, with `pullcom`, `sync`, `status`, `whoami` and `release` as the daily one-word verbs. The help puts `sync` and `whoami` under "Less common commands" and `release` under "Admin commands", and lists `br create` and `br switch` as common. The README tags `sync` "Do infrequently".
-	- Expected behavior [Bug]: One story about how the commands are grouped.
-	- Reproduced [Bug]: Yes, `gitsby --help` against design.md and the style guide.
-	- Origin: design.md:188 from faaa69e (2026-07-26). The help's groups go back to 2.x, 0394a80 in 2022. No round saw it. Confirmed.
-	- Note: The help's groups read true. The one-word split isn't about how often a command is typed, so the design line and the style guide should say what it is. Regrouping the help is the other choice.
-	- Test case: none if the docs change. A regrouped help keeps its existing help checks.
-
-- Code Review 20261005 item 4: Help says "GitHub accounts" where an account can be on any git host
-	- ID: 2026100516202655
-	- Type: Bug
-	- Status: Queued
-	- Priority|Severity [Bug]: Low
-	- Opened: 2026-10-05
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: The help's `account` line says "Show your configured GitHub accounts", right above 2 examples that use `gitea.com`. The README's `account` row says the same. design.md:249 opens with "Which GitHub account you act as".
-	- Expected behavior [Bug]: Say "accounts" where any host is meant.
-	- Reproduced [Bug]: Yes, `gitsby --help`.
-	- Origin: help.go:62 from 63d5782 (2026-08-08), before accounts took a `host`. No round saw it. Confirmed.
-	- Decisions:
-		- The README's "Multiple GitHub accounts" heading and the title of accounts.md stay. Most readers come for GitHub, and a heading change moves the anchor too.
-	- Test case: none, wording only.
-
-- Code Review 20261005 item 5: The README's count of subcommands is stale
-	- ID: 2026100516202693
-	- Type: Bug
-	- Status: Queued
-	- Priority|Severity [Bug]: Low
-	- Opened: 2026-10-05
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: The README says gitsby has "ten - or 24 counting subcommands". The help lists 25 since `account unset` came in.
-	- Expected behavior [Bug]: A number that a check keeps true, or wording with no number.
-	- Reproduced [Bug]: Yes, by counting the help's entries.
-	- Origin: README:64 from c18c606 (2026-08-21). `account unset` is 62af07b (2026-09-28). No round saw it. Confirmed.
-	- Note: "ten" can keep its number with a check on the help's top-level commands. The subcommand count could say "about two dozen" and claim nothing exact.
-	- Test case: a test.bash check that counts the help's top-level commands against the README, if "ten" stays.
-
-- Code Review 20261005 enhancement 1: Step lines print their arguments unquoted
-	- ID: 2026100516202730
-	- Type: Enhancement
-	- Status: Queued
-	- Priority|Severity [Feature]: Low
-	- Opened: 2026-10-05
-	- Opened by: jim-collier
-	- Requirements [Feature]:
-		- A step line quotes an argument the way the plan does. The plan shows `git commit -m "two words; here"`, and the step shows `[ git commit -m two words; here ... ]`. Pasted into a shell, the step line runs `here` as a command.
-		- The failure line, `gitsby: '...' failed`, quotes the same way.
-	- Origin: `step` in exec.go, from the port. 2.x printed `$*` the same way.
-	- Note: parity.bash compares this output with 2.x, so the change needs its carve-out there.
-	- Test case: a test.bash check on a message with a space and a `;`.
-
-- Code Review 20261005 enhancement 2: The help leaves out what the README shows
-	- ID: 2026100516202767
-	- Type: Enhancement
-	- Status: Queued
-	- Priority|Severity [Feature]: Low
-	- Opened: 2026-10-05
-	- Opened by: jim-collier
-	- Requirements [Feature]:
-		- `--yes` is taken but not listed. The help shows `-q, --quiet, -y`.
-		- `repo connect [url]`, where it also takes `owner/name`. The README shows `[target]`.
-		- `account set` and `account unset` show no arguments. The README shows `<a> <k> <v>` and `<a> <k>`.
-	- Origin: help.go, various. No round saw it.
-	- Test case: the existing help checks, updated.
+	- Actual fix [Bug]: All 5 lines now say what is true. The run-time tools line names the git host's own tool, `gh` or `tea`, and says a later host brings its own the same way. The stage line no longer counts stages.
+	- Swept: the old wording of each line, grepped across every .md in the repo. The other hits are dated history in the changelog and the backlog.
+	- Branch: docfix
+	- Commit: a1f6d68
+	- Test case: none, docs only. Nothing in the rewording is a number or a list a check could hold.
+	- Acceptance signoff: Self-closed: the item named each line, and each fix only states what the code does.
+	- Closed: 20261005-172300
 
 - `--staged`: commit only what is staged, and leave the rest of the tree alone
 	- ID: 2026100512025340
