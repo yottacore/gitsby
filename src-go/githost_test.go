@@ -11,6 +11,7 @@
 package main
 
 import (
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -336,5 +337,47 @@ func TestShowHostLine(t *testing.T) { // [Eq2wii5]
 				}
 			}
 		})
+	}
+}
+
+// tea bolds the number, and a build with no version stamped says 'development',
+// which is also what Debian's 0.9.2 says.
+func TestTeaVersionReadsEnv(t *testing.T) { // [ErwoOfq]
+	tests := []struct {
+		text string
+		want bool
+	}{
+		{"Version: \x1b[1m0.11.0\x1b[0m\tgolang: 1.24.4", true},
+		{"Version: \x1b[1mv0.16.0\x1b[0m\tgolang: 1.26.1", true},
+		{"Version: 1.0.0\tgolang: 1.26.1", true},
+		{"Version: \x1b[1m0.10.1\x1b[0m\tgolang: 1.23.0", false},
+		{"Version: \x1b[1mdevelopment\x1b[0m\tgolang: 1.24.4", false},
+		{"", false},
+	}
+	for _, tc := range tests {
+		if got := teaVersionReadsEnv(tc.text); got != tc.want {
+			t.Errorf("teaVersionReadsEnv(%q) = %v, want %v", tc.text, got, tc.want)
+		}
+	}
+}
+
+// tea falls back to GH_TOKEN and glab sends its token to whatever host it is
+// told, so a GitHub token handed on would go to somebody else's server.
+func TestHostTokenEnvKeepsGitHubTokens(t *testing.T) { // [ErwoOg3]
+	t.Setenv("GITEA_TOKEN", "")
+	t.Setenv("GITEA_INSTANCE_URL", "")
+	t.Setenv("GH_TOKEN", "tok_gh")
+	a := newApp(newPrinter())
+	a.acct.tokenEnv, a.acct.credHost = "GH_TOKEN", "github.com"
+	if gave, err := a.hostTokenEnv("GITEA_TOKEN", "GITEA_INSTANCE_URL"); gave || err != nil || os.Getenv("GITEA_TOKEN") != "" {
+		t.Fatalf("a GitHub token was handed on: gave=%v err=%v", gave, err)
+	}
+	t.Setenv("GITSBY_HOST_TOKEN", "tok_gitea")
+	a.acct.tokenEnv, a.acct.credHost = "GITSBY_HOST_TOKEN", "git.example.test"
+	if gave, err := a.hostTokenEnv("GITEA_TOKEN", "GITEA_INSTANCE_URL"); !gave || err != nil {
+		t.Fatalf("a Gitea token was not handed on: gave=%v err=%v", gave, err)
+	}
+	if os.Getenv("GITEA_TOKEN") != "tok_gitea" || os.Getenv("GITEA_INSTANCE_URL") != "https://git.example.test" {
+		t.Errorf("got GITEA_TOKEN=%q GITEA_INSTANCE_URL=%q", os.Getenv("GITEA_TOKEN"), os.Getenv("GITEA_INSTANCE_URL"))
 	}
 }

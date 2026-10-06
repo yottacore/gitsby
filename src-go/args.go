@@ -13,6 +13,7 @@ package main
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -295,7 +296,7 @@ func sortCommand(cmd command, opt *options) (command, error) {
 	return cmd, nil
 }
 
-// scanPassthrough spots 'raw <git|gh>' ahead of the main parser, because past the
+// scanPassthrough spots 'raw <tool>' ahead of the main parser, because past the
 // tool name the arguments belong to the tool: a '-q' there is its own flag, not
 // ours. Ours come first. The whole option vocabulary is taken here, spelled and
 // normalized the same way as the main parser; the ones with nothing to act on in
@@ -319,10 +320,10 @@ scan:
 			// Past the tool name every option is the tool's, so one typed here is
 			// ours arriving too late - not a subcommand nobody has heard of.
 			if strings.HasPrefix(arg, "-") {
-				return "", nil, syntaxUsage("'"+arg+"' is an option, and "+meName+"'s own options come before 'raw'.", "raw <git|gh> <arguments ...>", rawDefs()...)
+				return "", nil, syntaxUsage("'"+arg+"' is an option, and "+meName+"'s own options come before 'raw'.", rawSyntax, rawDefs()...)
 			}
-			if arg != "git" && arg != "gh" {
-				return "", nil, usagef("Unknown 'raw' subcommand '%s'. One of: git, gh.", arg)
+			if !slices.Contains(rawTools, arg) && arg != "tea-cli" {
+				return "", nil, usagef("Unknown 'raw' subcommand '%s'. One of: %s.", arg, strings.Join(rawTools, ", "))
 			}
 			tool, wantTool = arg, false
 		case arg == "raw":
@@ -340,6 +341,7 @@ scan:
 				opt.configFile, opt.configGiven = afterEq(arg), true
 			case o == "no-fetch" || o == "nofetch":
 			case o == "any-identity" || o == "anyidentity":
+				opt.anyIdentity = true
 			case o == "direct":
 			case o == "public" || o == "private":
 			case o == "staged":
@@ -352,14 +354,22 @@ scan:
 		}
 	}
 	if wantTool {
-		return "", nil, syntaxUsage("", "raw <git|gh> <arguments ...>", rawDefs()...)
+		return "", nil, syntaxUsage("", rawSyntax, rawDefs()...)
 	}
 	return tool, ptArgs, nil
 }
 
+// rawTools are what 'raw' fronts: git, the git host CLIs, and the front ends
+// that run git underneath. gitui is missing on purpose - it goes through libgit2,
+// which never reads the GIT_CONFIG_* the account is applied through. tea is also
+// taken as 'tea-cli', Debian's name for it.
+var rawTools = []string{"git", "gh", "tea", "glab", "lazygit", "tig"}
+
+const rawSyntax = "raw <tool> <arguments ...>"
+
 func rawDefs() []placeholder {
 	return []placeholder{
-		{"<git|gh>", "The tool to run as the account this folder belongs to."},
+		{"<tool>", "One of " + strings.Join(rawTools, ", ") + ", run as the account this folder belongs to."},
 		{"<arguments ...>", "Handed to that tool unchanged."},
 	}
 }

@@ -144,7 +144,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- Crockford's alphabet leaves out I, L, O and U, so a build number read aloud or retyped comes back as the one it was.
 	- It is derived from the commit's own date, not from the clock at build time. A clock-derived number would change on every rebuild, which would mean nobody, including us, could rebuild a published binary to its published checksum - the same property `-buildvcs=false` exists to protect. As a consequence the release cross-builds twice: once in phase 1 as a compile gate, and again in phase 3 from the tagged commit, which is where the uploaded bytes come from.
 	- A hand-run `go build` stamps nothing and reports no build number at all, rather than one invented from the clock. A number that moves every minute would say the opposite of what a build number means.
-	- Output starts with the build line so a bug report carries it without being asked. Not under `-q`, which is the machine-readable mode, and never on `raw git`/`raw gh`, which exist to hand a tool's output back unchanged. `--version` and the help screen already printed a version line and gained the build number there instead of a second line saying the same thing.
+	- Output starts with the build line so a bug report carries it without being asked. Not under `-q`, which is the machine-readable mode, and never on `raw`, which exists to hand a tool's output back unchanged. `--version` and the help screen already printed a version line and gained the build number there instead of a second line saying the same thing.
 
 - An account's credentials are only credentials where that account banks.
 	- Accounts gained `host` (defaulting to `github.com`, which is what every config written before the key existed meant) and `user`. If an account's host is not the host `origin` is on, nothing is applied and the identity block names both hosts.
@@ -308,6 +308,8 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- Everything after the tool name is the tool's, verbatim. Our own options have to come first, because past that point a `-q` is git's flag and not ours.
 	- The PowerShell build cannot get those arguments from its own parameters: the binder claims `-m`, `-q` and friends wherever they appear, so `raw git commit -m "msg"` would arrive rearranged. It reads the process command line instead, and refuses rather than guessing when that is unavailable.
 	- stdout belongs to the tool alone and the exit code is passed straight back, so a script can pipe it. The one line naming the account goes to stderr, and `-q` silences it.
+	- The tools are a fixed list: git, gh, tea, glab, lazygit and tig. Each is a git host CLI that takes a token from the environment, or a front end that runs git underneath, so acting as the account means something for every one. An open slot would hand the token to any program typed there. A tool that reads neither, like gitui on libgit2, would look like it ran as the account and wouldn't.
+	- Where gitsby can tell a tool will act as somebody else anyway, as with tea before 0.11, it warns. `-q` refuses instead, and `--any-identity` runs it with no account applied.
 
 - Commands that hand a branch to someone else's deletion must park work first.
 	- `gh pr merge --delete-branch` removes the branch local and remote. Anything not pushed is outside the pull request, so merging it would drop that work from the branch it lived on.
