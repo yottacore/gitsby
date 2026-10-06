@@ -296,10 +296,10 @@ GHEOF
 	echo odd2 > "${repo2}/seed.txt"
 	fSurvive "[EkzQ7gU] unicode/emoji message" "${repo2}" -q update $'café \u{1F600} ‮ rtl'
 
-	## The new argument slots. 'raw' fronts exactly two tools, so anything else in that position is
+	## The new argument slots. 'raw' fronts a fixed few tools, so anything else in that position is
 	## refused rather than run - the one place a wrong answer would execute an arbitrary program.
 	local rawTool
-	for rawTool in "${badCommands[@]}" "${inject[@]}" 'rm' 'sh' 'GIT'; do
+	for rawTool in "${badCommands[@]}" "${inject[@]}" 'rm' 'sh' 'GIT' 'TEA' 'gitui'; do
 		fRefuse "[EmMuR5U] raw tool refused: '${rawTool}'" "${repo3}" -q raw "${rawTool}" --version
 	done
 	fRefuse "[EmMuR5V] raw with no tool refused" "${repo3}" -q raw
@@ -583,4 +583,5 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20260926 JC: Every check carries a test ID at the front of its label.
 ##		- 20260926 JC: The pipeline no longer passes -q, so every check prints a line.
 ##		- 20261004 JC: Prints through fEcho_Clean, like the other pipeline scripts. Variables are camelCase, and fRun hands back its output in two-underscore globals. Every expansion braced, and shellcheck enforces it.
+##		- 20261006 JC: 'TEA' and 'gitui' join the raw tool vectors, now that raw runs tea.
 ##		- 20261006 JC: Reworked for the no-shell Go build. The surviving vectors stay as regression guards against a shell slipping back into the path, and the suite now drives the places a value still reaches a real tool: a clone directory derived from a URL tail that is option-shaped (argument injection into git), a ref that is also a revision ('br switch HEAD', which parked work before refusing), a shell-bearing 'sshkey' through a real ssh, 'account apply' escaping glob characters in a folder rule and dropping a shell-bearing host or user, and a junk GIT_CONFIG_COUNT on the credential path. 301 -> 311. Two product bugs fixed alongside (clone '--', origin/HEAD not a branch).

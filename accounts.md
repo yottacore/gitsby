@@ -150,7 +150,7 @@ It is safe to re-run: it replaces only the entries it wrote before, leaves any y
 
 ## Scripts
 
-`gitsby raw git ...` and `gitsby raw gh ...` run the real tool as the folder's account and then get out of the way. Everything after `git` or `gh` is passed through exactly as typed, stdout is the tool's alone, and the exit code is the tool's too - so an existing script becomes account-correct by prefixing its commands rather than being rewritten.
+`gitsby raw git ...` and `gitsby raw gh ...` run the real tool as the folder's account and then get out of the way. `tea`, `glab`, `lazygit` and `tig` work the same way. Everything after the tool name is passed through exactly as typed, stdout is the tool's alone, and the exit code is the tool's too - so an existing script becomes account-correct by prefixing its commands rather than being rewritten.
 
 ~~~bash
 gitsby raw git push origin HEAD
@@ -159,6 +159,10 @@ gitsby raw gh pr list --json number
 ## One line on stderr says who you are acting as. -q silences it.
 gitsby -q raw git rev-parse HEAD
 ~~~
+
+`tea` and `glab` get the account's token for the repo's host in their own variables, `GITEA_TOKEN` and `GITLAB_TOKEN`, with the host beside it. A GitHub token is never handed to either one. tea before 0.11 ignores those variables and uses the first login it has for the host. When that login is somebody else Gitsby warns, and with `-q` it refuses. Debian 13's `tea-cli` is 0.9.2, so it's one of those.
+
+`lazygit` and `tig` run git underneath, so they get the account the same way `git` does. gitui isn't on the list because it doesn't go through git, and wouldn't see the account at all.
 
 `GITSBY_ACCOUNT` overrides the folder for one run, or for a whole script's environment. It takes either an account name from the config file or a bare GitHub login.
 

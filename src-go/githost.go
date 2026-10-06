@@ -14,6 +14,8 @@ import (
 	"bytes"
 	"os"
 	"os/exec"
+	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -172,6 +174,71 @@ func (a *app) teaCommand() string {
 		}
 		return ""
 	})
+}
+
+// hostTokenEnv hands the account's token for this run's host to a git host CLI
+// other than gh, in the variables that CLI reads, with the host beside it so the
+// token only goes back where it came from. A GitHub token is never handed over:
+// that one is gh's, already in GH_TOKEN. Says whether there was a token to give.
+func (a *app) hostTokenEnv(tokenVar, hostVar string) (bool, error) {
+	if a.acct.tokenEnv == "" || isGitHubHost(a.acct.credHost) {
+		return false, nil
+	}
+	if err := setEnv(tokenVar, os.Getenv(a.acct.tokenEnv)); err != nil {
+		return false, err
+	}
+	return true, setEnv(hostVar, "https://"+a.acct.credHost)
+}
+
+// teaVersionRE reads 'tea --version', once ansiRE has taken the bold off the number.
+var (
+	teaVersionRE = regexp.MustCompile(`^Version:\s*v?(\d+)\.(\d+)`)
+	ansiRE       = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+)
+
+// teaReadsEnv: tea 0.11 was the first to take its login from GITEA_TOKEN and
+// GITEA_INSTANCE_URL. A build that says 'development' counts as older, since
+// that is what Debian's 0.9.2 says.
+func teaReadsEnv(cli string) bool { return teaVersionReadsEnv(runOut(cli, "--version")) }
+
+func teaVersionReadsEnv(text string) bool {
+	m := teaVersionRE.FindStringSubmatch(ansiRE.ReplaceAllString(text, ""))
+	if m == nil {
+		return false
+	}
+	major, _ := strconv.Atoi(m[1])
+	minor, _ := strconv.Atoi(m[2])
+	return major > 0 || minor >= 11
+}
+
+// teaAsAccount points 'raw tea' at the account. A tea too old for the env login
+// uses the first login it has for the host, the same one 'logins list' puts
+// first, so only that one being somebody else is a problem. -q can't warn, so it
+// refuses. Couldn't tell is not somebody else. Says whether it warned.
+func (a *app) teaAsAccount(cli string) (bool, error) {
+	// Read before we set it, so this is the caller's own env login.
+	callerEnvLogin := os.Getenv("GITEA_INSTANCE_URL") != ""
+	gave, err := a.hostTokenEnv("GITEA_TOKEN", "GITEA_INSTANCE_URL")
+	if err != nil {
+		return false, err
+	}
+	want := a.accountWho(a.acct.credHost)
+	if want == "" || !a.accountDecidedSomething() || (!gave && callerEnvLogin) || (gave && teaReadsEnv(cli)) {
+		return false, nil
+	}
+	got, failure := a.hostLogin(cli, a.acct.credHost)
+	if failure != "" || got == "" || strings.EqualFold(got, want) {
+		return false, nil
+	}
+	why, fix := "this tea is older than 0.11 and ignores the account's token", "Update tea"
+	if !gave {
+		why, fix = "the account has no token for "+a.acct.credHost, "Give the account a tokenfile"
+	}
+	if a.opt.quiet {
+		return false, usagef("tea would act as '%s', its own login for %s, not as '%s', since %s. %s, or run it anyway with --any-identity.", got, a.acct.credHost, want, why, fix)
+	}
+	a.out.warn("WARNING: tea acts as '" + got + "', its own login for " + a.acct.credHost + ", not as '" + want + "', since " + why + ".")
+	return true, nil
 }
 
 // hostURL is the canonical URL for 'owner/name' on a host, in one of the two

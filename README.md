@@ -113,7 +113,7 @@ What you reach for daily is a one-word command. Everything else is grouped under
 | `account unset`      | `<a> <k>`     | Remove one key from one account, every line of it, e.g. `account unset github.com_my-work-login host`.
 | `account apply`      |               | Teach plain `git` the same folder rules, so `git` outside Gitsby behaves identically.
 | `raw git`            | `<args ...>`  | Run `git` as the account this folder belongs to. Everything after `git` is git's, verbatim.
-| `raw gh`             | `<args ...>`  | The same, for `gh`.
+| `raw gh`             | `<args ...>`  | The same, for `gh`. Also `tea`, `glab`, `lazygit` and `tig`.
 
 `pullcom` was once called `update`, and `br merge` was `br land`. The old spellings still work and always will, so nothing you have typed or scripted stops working. `pullcom` also answers to `pull`, and to anything between it and the full word.
 
@@ -160,7 +160,7 @@ Two things follow from that, and they are the reason to bother:
 
 - `gitsby account apply` writes the same folder rules into your global Git config, as ordinary `includeIf` blocks. Plain `git` then agrees with Gitsby even when Gitsby isn't involved.
 
-- `gitsby raw git ...` runs any Git command as the folder's account. Existing scripts become account-correct by prefixing them, not by rewriting them.
+- `gitsby raw git ...` runs any Git command as the folder's account, and so does `raw gh`, `raw tea` or `raw glab` for the host's own CLI. Existing scripts become account-correct by prefixing them, not by rewriting them.
 
 Nothing here is required. With no configuration Gitsby uses whichever account `gh` is logged in as, exactly as it always did. A single-account machine never notices the feature exists.
 

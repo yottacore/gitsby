@@ -298,6 +298,27 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: Self-closed: the item named each line, and each fix only states what the code does.
 	- Closed: 20261005-172300
 
+- `raw` runs tea and other common CLIs, not only git and gh
+	- ID: 2026100611524343
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature]: Avg
+	- Opened: 20261006-115243
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- `raw tea` (or `tea-cli`), `raw glab`, `raw lazygit` and `raw tig` run as the folder's account, like `raw git`.
+	- Decisions:
+		- A fixed list, not any program. An open slot would hand the token to whatever was typed there.
+		- tea and glab get the account's token in their own variables, with the host beside it. Never a GitHub token.
+		- gitui is left out. It uses libgit2, which never sees the account.
+		- tea before 0.11 ignores the token. When its own login for the host is somebody else, gitsby warns, and `-q` refuses.
+	- Note: `--any-identity` before `raw` was taken and ignored. It now applies nothing, and the "acting as" line stays quiet.
+	- Note: The "acting as" line now names a Gitea account too. It only read the GitHub login before.
+	- Branch: raw-tools
+	- Test case: test.bash, 12 new checks and 1 reworded. 10 are red on `gover`, and the other 3 went red with the fix broken. 2 Go tests, and 2 fuzz vectors.
+	- Verified: test.bash 1509/0, fuzz.bash 313/0, parity.bash 29/0, the gate. Only against stubs. No real tea 0.11 or glab here.
+	- Closed: 20261006-115243
+
 - `--staged`: commit only what is staged, and leave the rest of the tree alone
 	- ID: 2026100512025340
 	- Type: Enhancement
