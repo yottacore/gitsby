@@ -19,7 +19,7 @@
 
 <table style="border: none; border-collapse: collapse;">
 	<tr style="border: none; border-collapse: collapse;">
-		<td style="border: none; border-collapse: collapse;"><img src="assets/logo.png" alt="Logo" width="128"/></td>
+		<td style="border: none; border-collapse: collapse;"><img src="assets/logo.png" alt="Logo" width="512"/></td>
 		<td style="border: none;">A simple, safe, opinionated Git wrapper for everyday work: ten commands instead of eighty-odd, and a workflow the tool enforces rather than a convention you're asked to remember.<br /><br />Every command that changes anything shows you the exact Git it will run, and asks first.<br /><br />It also knows which of your GitHub accounts owns which folder, so work and personal repos stay separate.</td>
 	</tr>
 </table>
