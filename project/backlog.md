@@ -33,6 +33,37 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- Stage 7 fails b26 when a Finder window is open on the test folder
+	- ID: 2026100611181887
+	- Type: Bug
+	- Status: Waiting for testing
+	- Priority|Severity [Bug]: Avg
+	- Opened: 20261006-111818
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: The full run on 2026-10-06 failed b26 before any test ran. The tree there held only `.git` and 3 `.DS_Store` files, all from the run's minute.
+	- Expected behavior [Bug]: A Finder window on the folder doesn't stop the run.
+	- Reproduced [Bug]: Yes, on Linux, with a file in the old tree that `rm` can't remove. The copy step exits 1 and leaves the same half-removed tree.
+	- Actual cause [Bug]: Finder rewrites `.DS_Store` while `rm -rf` runs, the rmdir fails, and `set -e` ends the copy step.
+	- Actual fix [Bug]: The old tree is moved aside to `old.<pid>` before it's removed. What won't go gets a note, and another try next run.
+	- Branch: ptyguard
+	- Test case: None in a suite. Checked by hand against the old and new step.
+	- Note: Not yet run on b26, which was held by another session. The next full run there closes it.
+
+- test.bash's `--direct` prompt check fails on FreeBSD and macOS
+	- ID: 2026100611181886
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Avg
+	- Opened: 20261006-111818
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: [ErsjjF5] failed on vmFreeBSD in stage 7 on 2026-10-06, 1222/1.
+	- Reproduced [Bug]: Yes, by running test.bash again on vmFreeBSD.
+	- Actual cause [Bug]: The check answers the prompt through util-linux `script -qec`, and the BSD `script` doesn't take it. Every other prompt check sits under `hasPty`. This one, from d97811c, didn't.
+	- Actual fix [Bug]: Put it under `hasPty`.
+	- Branch: ptyguard
+	- Verified: test.bash 1222/0 on vmFreeBSD.
+	- Closed: 20261006-111818
+
 - `repo clone` hands git a folder name taken from the URL, and git can read it as an option
 	- ID: 2026100607545802
 	- Type: Bug
