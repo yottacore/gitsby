@@ -81,6 +81,8 @@ func parseArgs(argv []string) (opt options, cmd command, info string, err error)
 				opt.visibility, opt.sawPrivate = "private", true
 			case t == "any-identity" || t == "anyidentity":
 				opt.anyIdentity = true
+			case t == "direct":
+				opt.direct = true
 			case t == "staged":
 				opt.staged = true
 			case strings.HasPrefix(t, "m=") || strings.HasPrefix(t, "message=") || strings.HasPrefix(t, "msg="):
@@ -338,6 +340,7 @@ scan:
 				opt.configFile, opt.configGiven = afterEq(arg), true
 			case o == "no-fetch" || o == "nofetch":
 			case o == "any-identity" || o == "anyidentity":
+			case o == "direct":
 			case o == "public" || o == "private":
 			case o == "staged":
 			case o == "m" || o == "message" || o == "msg":

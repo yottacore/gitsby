@@ -40,7 +40,7 @@
 
 - [What it is](#what-it-is)
 - [Commands](#commands)
-- [Multiple GitHub accounts](#multiple-github-accounts)
+- [Multiple accounts](#multiple-accounts)
 - [Compatibility](#compatibility)
 - [A typical day](#a-typical-day)
 - [Install](#install)
@@ -108,7 +108,7 @@ What you reach for daily is a one-word command. Everything else is grouped under
 | `pr <#>`             |               | View a PR plus its diff.
 | `pr create`          | `[title]`     | Push the current branch and open a PR against `dev`/`main` (no title: the last commit subject).
 | `pr ok`              | `<#>`         | Approve and merge a PR.
-| `account`            |               | Show your configured GitHub accounts, and which one this folder uses (`account list` is the same thing).
+| `account`            |               | Show your configured accounts, and which one this folder uses (`account list` is the same thing).
 | `account set`        | `<a> <k> <v>` | Set one key of one account in the accounts file, e.g. `account set github.com_my-work-login path ~/dev/work`. Run it bare for the keys it takes.
 | `account unset`      | `<a> <k>`     | Remove one key from one account, every line of it, e.g. `account unset github.com_my-work-login host`.
 | `account apply`      |               | Teach plain `git` the same folder rules, so `git` outside Gitsby behaves identically.
@@ -123,7 +123,7 @@ There is deliberately no bare `commit`, and no bare `pull` that skips the commit
 
 `br prune` deletes a branch only when its tip is provably an ancestor of the merge target, re-checked at the moment of each delete - not `git branch -d`'s upstream-containment test, which answers a different question and gets it wrong in both directions. That exactness is what the workflow buys: every branch lands with a real merge commit, so "merged" is a fact, not a guess. Unmerged work always survives it, and there is deliberately no `--force`.
 
-Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--public`/`--private` (visibility for `repo create`; private by default), `--no-fetch` (skip the fetch and the pull), `--staged` (commit only what is staged, see below), `--any-identity`, `--config FILE` (read accounts from somewhere other than the usual place), `-h`, `-v`, `--about`, `--donate`.
+Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--public`/`--private` (visibility for `repo create`; private by default), `--no-fetch` (skip the fetch and the pull), `--direct` (let `sync` push your own work straight to `main` or `dev`), `--staged` (commit only what is staged, see below), `--any-identity`, `--config FILE` (read accounts from somewhere other than the usual place), `-h`, `-v`, `--about`, `--donate`.
 
 **`--staged` commits what you staged and nothing else.** It is for a tree that holds edits which aren't part of the change. `pullcom`, `sync`, `pr create`, `release`, and the `br` commands that commit before they move take it. The plan lists which files get committed and which stay behind, and unstaged edits and untracked files stay where they are. On a branch switch they come along, the way plain `git` carries them. Where git would refuse a pull or a checkout over them, gitsby refuses before it starts, with nothing done. Without the flag nothing changes: every command commits the whole tree.
 
@@ -135,7 +135,7 @@ Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (as
 
 **Publishing a directory shows you the directory first.** `repo create` and `repo connect` list every file they are about to publish, before asking. The list is what `git add --all` will actually add, `.gitignore` and all - so a stray `.env` is visible while you can still say no.
 
-## Multiple GitHub accounts
+## Multiple accounts
 
 Most people with two GitHub accounts also have a folder for each: one tree for work, one for everything else. Gitsby takes that literally. Say which account owns which folder, once, and every command run anywhere under that folder acts as that account - `git` and `gh` alike.
 
