@@ -213,7 +213,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: the `account` list (every row, the Account and Ignored keys lines, the shared-rule and stale-rule warnings); the status and `whoami` Account line, its notes (through `noteLines`, which refusals use too), the Config, SSH and Author lines and the loose token file warning; the `account set` and `unset` plans (`was:`, `becomes:`, `add:`, `remove:`); the `account apply` plan, its status lines and refusals, and the unused-fragment line; the `raw` "acting as" line; and the refusals that quote a typed value (account name, key, host, user, protocol, path, GIT_CONFIG_COUNT). `host`, `user` and `protocol` were already held to plain characters, and account names to letters, digits, `.`, `_` and `-`.
 	- Note: git drops a newline from an ident itself, so the Author line shows only the ESC escaped.
 	- Branch: ctlesc, escall
-	- Commit: 3594df7, ESCALL_SHA
+	- Commit: 3594df7, 4ef4f47
 	- Test case: test.bash [ErvuMUH], [ErvuMUU] and [ErvuMUh], and Go `TestPrintableEscapesControlsOnly` [ErvuMUv], and `TestEveryLineOutIsEscaped` [ErwXroS].
 	- Verified: all 3 suite checks red on `gover`, green here. The Go test fails with the escaping taken out. test.bash 1494/0, fuzz.bash 311/0, parity.bash 29/0, `go test ./...` and the gate pass.
 	- Decisions:
