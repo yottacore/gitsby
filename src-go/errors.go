@@ -50,7 +50,7 @@ func (e *usageError) report(out *printer) int {
 	if !e.sub {
 		out.clean("")
 	}
-	out.errorf("%s", e.msg)
+	out.errorText(e.msg)
 	out.forceClean("")
 	if !e.sub {
 		out.forceClean("")
@@ -60,19 +60,19 @@ func (e *usageError) report(out *printer) int {
 
 // usagef reports a validation error the caller can act on.
 func usagef(format string, a ...any) error {
-	return &usageError{msg: fmt.Sprintf(format, a...)}
+	return &usageError{msg: fmt.Sprintf(format, escArgs(a)...)}
 }
 
 // usageWrapf is usagef over an underlying error: the cause's text lands in the
 // message, and the cause itself stays on the chain for errors.Is/As.
 func usageWrapf(cause error, format string, a ...any) error {
-	return &usageError{msg: fmt.Sprintf(format, a...) + ": " + cause.Error(), cause: cause}
+	return &usageError{msg: fmt.Sprintf(format, escArgs(a)...) + ": " + printable(cause.Error()), cause: cause}
 }
 
 // usageSubf is usagef for the errors the scripts raise inside a command
 // substitution, which land with one trailing blank instead of two.
 func usageSubf(format string, a ...any) error {
-	return &usageError{msg: fmt.Sprintf(format, a...), sub: true}
+	return &usageError{msg: fmt.Sprintf(format, escArgs(a)...), sub: true}
 }
 
 // placeholder is one word on a Syntax: line, and what it stands for.

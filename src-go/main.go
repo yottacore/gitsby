@@ -52,7 +52,7 @@ func reportExit(out *printer, err error) int {
 	if errors.As(err, &reporter) {
 		return reporter.report(out)
 	}
-	return (&usageError{msg: err.Error()}).report(out)
+	return (&usageError{msg: printable(err.Error())}).report(out)
 }
 
 func run(out *printer, argv []string) error {
@@ -798,7 +798,7 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 	// is not a claim that we act as them, and saying so tells a single-account user
 	// about a feature they never asked for.
 	if !a.opt.quiet && a.acct.ghWho != "" && a.accountDecidedSomething() {
-		a.out.errorf("acting as %s (from %s)", printable(a.acct.ghWho), printable(a.accountSourceText(false)))
+		a.out.errorf("acting as %s (from %s)", a.acct.ghWho, a.accountSourceText(false))
 	}
 	return a.handover(tool, args)
 }
