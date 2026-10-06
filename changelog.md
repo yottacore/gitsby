@@ -55,6 +55,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Commands say which build produced their output, on a line of their own above it, so a report of something going wrong carries the version and build number without anyone having to ask for them. `-q` leaves the line out, and `raw git` and `raw gh` still hand their tool's output straight back with nothing added.
 
+- `raw` also runs `tea`, `glab`, `lazygit` and `tig` as the folder's account. tea and glab get the account's token for the repo's host, never a GitHub one. A tea older than 0.11 can't take it, so when its own login for the host is somebody else Gitsby warns, and `-q` refuses. `--any-identity` before `raw` works now too, and runs the tool with no account applied.
+
 - `--about` prints what Gitsby is, who wrote it, the license it is under, and where it lives. `--donate` prints the sponsorship link. Both work outside a repository, and both are spelled as bare words too.
 
 - The accounts file takes `~`, `${HOME}` and `%USERPROFILE%` as the home folder on every platform, with either slash, so one file synced between Windows and Linux applies on both. No other variable is expanded, and a rule that starts with one is listed as ignored.
