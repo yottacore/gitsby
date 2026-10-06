@@ -350,7 +350,7 @@ func (a *app) preflight() error {
 		}
 		// Nobody is there to read the warning, so -q refuses instead.
 		if a.opt.quiet && a.directPush() {
-			return usagef("%s Nothing was done. Re-run with --direct if that is intended, or move the work to a branch with '%s br create <name>'.", a.directPushText(), meName)
+			return usagef("%s Nothing was done. Re-run with --direct if that is intended, or move the work to a branch with '%s br create <branch-name>'.", a.directPushText(), meName)
 		}
 	case "release":
 		// With no remote at all the check below never trips - there is nothing to find
@@ -669,7 +669,7 @@ func (a *app) runMutating(mismatch identityMismatch) error {
 	if !a.opt.quiet && a.directPush() {
 		a.out.clean("")
 		a.out.warn("WARNING: " + a.directPushText())
-		a.out.warn("  To keep it off '" + a.currentBranch() + "', answer n and run '" + meName + " br create <name>'. (--direct silences this.)")
+		a.out.warn("  To keep it off '" + a.currentBranch() + "', answer n and run '" + meName + " br create <branch-name>'. (The '--direct' flag silences this warning.)")
 	}
 	if !a.opt.quiet {
 		a.out.clean("")
