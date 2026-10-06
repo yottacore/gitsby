@@ -416,13 +416,14 @@ fCredentialHelperVectors(){
 	## zero and numbered over the caller's entries - and a count carrying a command
 	## substitution must stay text, never be evaluated. Driven on the same path that
 	## actually adds config (the credential helper), which is where the count is read.
-	local badCount=""
+	local badCount="" why=""
 	# shellcheck disable=SC2016
 	for badCount in 'x[$(touch '"${ch}"'/CANARY-count)]' '-1' '1e3'; do
 		GIT_CONFIG_COUNT="${badCount}" fRun "${ch}/proj" -q -NoFetch --config "${ch}/v.shcl" raw git credential fill
-		if fIsCrash;             then fFail "[Ervo5Ng] junk GIT_CONFIG_COUNT refused: '${badCount}' (exit ${__runCode})"
-		elif ((__runCode == 0)); then fFail "[Ervo5Ng] junk GIT_CONFIG_COUNT accepted: '${badCount}'"
-		else fOk "[Ervo5Ng] junk GIT_CONFIG_COUNT refused: '${badCount}'"; fi
+		why=""
+		if fIsCrash; then why="crashed (exit ${__runCode})"; elif ((__runCode == 0)); then why="accepted"; fi
+		if [[ -z "${why}" ]]; then fOk "[Ervo5Ng] junk GIT_CONFIG_COUNT refused: '${badCount}'"
+		else fFail "[Ervo5Ng] junk GIT_CONFIG_COUNT '${badCount}': ${why}"; fi
 	done
 
 	## The helper git holds must carry no login text at all - the name is read from the
@@ -459,9 +460,11 @@ fCloneArgInjection(){
 		&& echo s > s.txt && git add --all && git commit --quiet -m s \
 		&& git push --quiet "${dir}/${evil}.git" main ) >/dev/null 2>&1
 	fRun "${dir}" -q repo clone "file://${dir}/${evil}.git"
-	if fIsCrash;                            then fFail "[Ervo5NU] clone dir arg injection: crashed (exit ${__runCode})"
-	elif [[ -e "${dir}/CANARY-clonearg" ]]; then fFail "[Ervo5NU] a derived clone directory reached git as an option"
-	else fOk "[Ervo5NU] a derived clone directory cannot reach git as an option"; fi
+	local why=""
+	if fIsCrash; then why="crashed (exit ${__runCode})"
+	elif [[ -e "${dir}/CANARY-clonearg" ]]; then why="it reached git as an option"; fi
+	if [[ -z "${why}" ]]; then fOk "[Ervo5NU] a derived clone directory cannot reach git as an option"
+	else fFail "[Ervo5NU] derived clone directory: ${why}"; fi
 }
 fCloneArgInjection
 
@@ -483,11 +486,12 @@ fSwitchUntouched(){
 	local headAfter remoteAfter
 	headAfter="$(cd "${repo}" && git rev-parse HEAD)"
 	remoteAfter="$(cd "${repo}" && git rev-parse origin/feat)"
-	if fIsCrash;             then fFail "[Ervo5NW] br switch HEAD: crashed (exit ${__runCode})"
-	elif ((__runCode == 0)); then fFail "[Ervo5NW] br switch HEAD accepted, should refuse"
-	elif [[ "${headAfter}" != "${headBefore}" || "${remoteAfter}" != "${remoteBefore}" ]]; then
-		fFail "[Ervo5NW] br switch HEAD mutated the repo before refusing"
-	else fOk "[Ervo5NW] br switch HEAD refuses and leaves the repo untouched"; fi
+	local why=""
+	if fIsCrash; then why="crashed (exit ${__runCode})"
+	elif ((__runCode == 0)); then why="accepted, should refuse"
+	elif [[ "${headAfter}" != "${headBefore}" || "${remoteAfter}" != "${remoteBefore}" ]]; then why="changed the repo before refusing"; fi
+	if [[ -z "${why}" ]]; then fOk "[Ervo5NW] br switch HEAD refuses and leaves the repo untouched"
+	else fFail "[Ervo5NW] br switch HEAD: ${why}"; fi
 }
 fSwitchUntouched
 
@@ -507,7 +511,7 @@ fSshKeyInert(){
 	## carrying a shell metacharacter. A '#' can't appear - the config format reads it as a
 	## comment - so a redirect and a substitution carry the canary instead, each firing whatever
 	## trails them on the reconstructed command line.
-	local key=""
+	local key="" why=""
 	# shellcheck disable=SC2016
 	for key in "${dir}/k;>${dir}/CANARY-sshkey" "${dir}/k\$(touch ${dir}/CANARY-sshkey)" "${dir}/k\`touch ${dir}/CANARY-sshkey\`"; do
 		printf 'account.s.path = %s\naccount.s.sshKey = %s\n' "${dir}/proj" "${key}" > "${dir}/s.shcl"
@@ -515,9 +519,11 @@ fSshKeyInert(){
 		## nothing here - only the canary does, and a gitsby-internal crash would still show in
 		## the output pattern.
 		PATH="${dir}/bin:${PATH}" fRun "${dir}/proj" -q -NoFetch --config "${dir}/s.shcl" raw git ls-remote origin
-		if grep -qE "${crashRe}" <<< "${__runOut}"; then fFail "[Ervo5Nd] shell-bearing sshKey: crashed"
-		elif [[ -e "${dir}/CANARY-sshkey" ]];       then fFail "[Ervo5Nd] a shell-bearing sshKey reached ssh: '${key}'"
-		else fOk "[Ervo5Nd] shell-bearing sshKey never reaches ssh: '${key}'"; fi
+		why=""
+		if grep -qE "${crashRe}" <<< "${__runOut}"; then why="crashed"
+		elif [[ -e "${dir}/CANARY-sshkey" ]]; then why="reached ssh"; fi
+		if [[ -z "${why}" ]]; then fOk "[Ervo5Nd] shell-bearing sshKey never reaches ssh: '${key}'"
+		else fFail "[Ervo5Nd] shell-bearing sshKey '${key}': ${why}"; fi
 	done
 }
 fSshKeyInert
@@ -540,14 +546,16 @@ account.a.user         = a b
 account.a.name         = n\$(touch ${dir}/CANARY-apply)
 EOF
 	GIT_CONFIG_GLOBAL="${dir}/global" fRun "${dir}" -q --config "${dir}/a.shcl" account apply
-	if fIsCrash; then fFail "[Ervo5NY] account apply: crashed (exit ${__runCode})"
-	elif grep -qF 'd\*e' <<< "${__runOut}"; then fOk "[Ervo5NY] account apply escapes glob characters in a folder rule"
-	else fFail "[Ervo5NY] account apply left a glob character unescaped in a folder rule"; fi
+	local why=""
+	if fIsCrash; then why="crashed (exit ${__runCode})"
+	elif ! grep -qF 'd\*e' <<< "${__runOut}"; then why="left a glob character unescaped"; fi
+	if [[ -z "${why}" ]]; then fOk "[Ervo5NY] account apply escapes glob characters in a folder rule"
+	else fFail "[Ervo5NY] account apply folder rule: ${why}"; fi
 	## The shell-bearing host and the spaced user must not appear in any fragment.
 	local hit=""
 	hit="$(grep -rlF -e 'a;touch' -e 'a b' "${dir}/accounts" 2>/dev/null || true)"
-	if [[ -n "${hit}" ]]; then fFail "[Ervo5Nb] a shell-bearing host or spaced user reached an account fragment"
-	else fOk "[Ervo5Nb] account apply drops a shell-bearing host and a spaced user"; fi
+	if [[ -z "${hit}" ]]; then fOk "[Ervo5Nb] account apply drops a shell-bearing host and a spaced user"
+	else fFail "[Ervo5Nb] a shell-bearing host or spaced user reached an account fragment"; fi
 }
 fAccountApplyVectors
 
