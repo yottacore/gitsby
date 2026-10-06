@@ -4295,6 +4295,8 @@ GHEOF
 	fAssertNotOut "[EmMuR6A] and nothing of ours on stdout"  'Account' bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' raw git rev-parse --abbrev-ref HEAD 2>/dev/null"
 	fAssertOut "[EmMuR6B] the identity note goes to stderr"  'acting as workacct'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' raw git rev-parse HEAD 2>&1 >/dev/null"
 	fAssertNotOut "[EmMuR6C] -q silences it"  'acting as'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git rev-parse HEAD 2>&1 >/dev/null"
+	## --any-identity applies nothing, so there is nobody to be acting as.
+	fAssertNotOut "[ErwotWU] nor does --any-identity name anybody"  'acting as'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' --any-identity raw git rev-parse HEAD 2>&1 >/dev/null"
 	## The flag most likely to be stolen by our own parser, and the one git uses constantly.
 	fAssertOut "[EmMuR6D] an option after the tool belongs to the tool"  'acting as'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' raw git log -q --oneline -1 2>&1"
 	## Nonzero alone proves nothing here - a build with no 'raw' at all also exits 1 - so what makes
@@ -4307,7 +4309,7 @@ GHEOF
 	fAssertOut  "[EmZiVet] and says what it wanted"  'Syntax: gitsby(\.ps1)? raw'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw 2>&1"
 	fAssertOut  "[Eq4W7zY] and what its arguments are"  '^  <arguments \.\.\.>  +Handed to that tool unchanged'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw 2>&1"
 	fAssertFail "[EmMuR6I] raw with a tool we don't front is refused" bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw rm -rf /"
-	fAssertOut  "[EmMuR6J] and names the two it does"  'One of: git, gh'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw curl x 2>&1"
+	fAssertOut  "[EmMuR6J] and names the ones it does"  'One of: git, gh, tea, glab, lazygit, tig'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw curl x 2>&1"
 	## Only the passthrough's own scan runs before 'raw', so an option it didn't take left the main
 	## parser looking at a command called 'raw' - and it reported "Unknown command 'raw'", naming
 	## the one token that was not the problem. These are inert here; being taken is the point.
@@ -6006,12 +6008,13 @@ EOF
 	fStub "${fg}/bin/tea" <<'TEAEOF'
 #!/usr/bin/env bash
 [[ -n "${FAKE_TEA_LOG:-}" ]] && echo "$*" >> "${FAKE_TEA_LOG}"
+[[ "$1" == "--version" ]] && { printf 'Version: \033[1m%s\033[0m\tgolang: 1.24.4\n' "${FAKE_TEA_VERSION:-development}"; exit 0; }
 case "$1 $2" in
 "logins list") [[ -n "${FAKE_TEA_FAIL:-}" ]] && { echo "${FAKE_TEA_FAIL}" >&2; exit 1; }
                printf '"Name"\t"URL"\t"SSHHost"\t"User"\t"Default"\n' ;
                printf '"work"\t"%s"\t""\t"%s"\t"true"\n' "${FAKE_TEA_URL:-https://git.example.test}" "${FAKE_TEA_USER:-giteauser}" ;;
 "pulls list")  printf '"index"\t"head"\n' ; [[ -n "${FAKE_TEA_EXISTING:-}" ]] && printf '"%s"\t"%s"\n' "${FAKE_TEA_EXISTING}" "${FAKE_TEA_HEAD:-feat}" ;;
-*)             : ;;
+*)             [[ -n "${FAKE_TEA_ENV:-}" ]] && echo "url=${GITEA_INSTANCE_URL:-} token=${GITEA_TOKEN:-}" ;;
 esac
 exit 0
 TEAEOF
@@ -6022,6 +6025,15 @@ TEAEOF
 [[ -n "${FAKE_TEA_LOG:-}" ]] && echo "$*" >> "${FAKE_TEA_LOG}"
 exit 0
 TEAEOF
+	fStub "${fg}/bin/glab" <<'GLEOF'
+#!/usr/bin/env bash
+echo "host=${GITLAB_HOST:-} token=${GITLAB_TOKEN:-}"
+GLEOF
+	## tig and lazygit are git underneath, so they get the account through git's own config.
+	fStub "${fg}/bin/tig" <<'TIGEOF'
+#!/usr/bin/env bash
+git config --get-all credential.https://git.example.test.helper
+TIGEOF
 	## gh is on the path throughout this block, and must never be the one that answers.
 	fStub "${fg}/bin/gh" <<'GHEOF'
 #!/usr/bin/env bash
@@ -6127,6 +6139,36 @@ GHEOF
 	EOF
 	fAssertNotOut "[EnS8ftQ] an account that declares the host IS applied"  'Why:' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' identity 2>&1"
+
+	## raw tea and glab. Each takes a token from its own variables, so the account's goes there, with
+	## its host beside it so the token only goes back where it came from.
+	fAssertOut "[ErwoOgH] raw tea hands tea the account's token and host"  '^url=https://git\.example\.test token=tok_ghonly$' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_ENV=1 '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami"
+	fAssertOut "[ErwoOgV] and so does raw glab"  '^host=https://git\.example\.test token=tok_ghonly$' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw glab auth status"
+	fAssertOut "[ErwoOgi] --any-identity hands tea nothing"  '^url= token=$' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_ENV=1 '${gitsby}' -q -NoFetch --any-identity --config '${fg}/tea-acct.shcl' raw tea whoami"
+	: > "${fg}/rawdeb.log"
+	fAssert "[ErwoOgv] raw tea runs Debian's tea-cli when that is the one installed" \
+		bash -c "cd '${fgRepo}' && PATH='${fgDeb}' FAKE_TEA_LOG='${fg}/rawdeb.log' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami && grep -qx whoami '${fg}/rawdeb.log'"
+	fAssertOut "[ErwoOh9] raw tig gets the account through git"  'password=\$\{GITSBY_HOST_TOKEN\}' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw tig"
+	## A Gitea account has no GitHub login, and the line used to read only that one.
+	fAssertOut "[ErwoOhN] raw names the Gitea account it acts as"  'acting as giteauser' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_VERSION=0.11.0 '${gitsby}' -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami 2>&1"
+	## A tea older than 0.11 ignores the token and uses the first login it has for the host. Only
+	## that login being somebody else is worth a word, and -q, with nobody to read it, refuses.
+	fAssertOut "[ErwoOha] an older tea acting as somebody else is warned about"  "WARNING: tea acts as 'someoneelse'" \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_USER=someoneelse '${gitsby}' -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami 2>&1"
+	fAssertNotOut "[Erwr2ep] and the line under it doesn't claim the account"  'acting as' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_USER=someoneelse '${gitsby}' -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami 2>&1"
+	fAssertNotOut "[ErwoOhp] a tea new enough for the token is not"  'WARNING' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_USER=someoneelse FAKE_TEA_VERSION=0.11.0 '${gitsby}' -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami 2>&1"
+	: > "${fg}/refused.log"
+	fAssert "[ErwoOi3] and -q refuses the older one, before tea runs" \
+		bash -c "cd '${fgRepo}' && ! PATH='${fgPath}' FAKE_TEA_USER=someoneelse FAKE_TEA_LOG='${fg}/refused.log' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami 2>/dev/null && ! grep -q '^whoami' '${fg}/refused.log'"
+	fAssertOut "[ErwoOiH] saying which login it would have used"  "its own login for git\.example\.test, not as 'giteauser'" \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_USER=someoneelse '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami 2>&1"
 
 	## An account that never named a host is TAKEN to be a github.com one, which is right for every
 	## config written before the key existed - but it is an assumption, not something the file said.
@@ -6558,3 +6600,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261005 JC: pr create and release take --staged. pr create pushes the staged edit alone, and release tags it, merges, and ends back on dev with the rest of the tree as it was. A level repo with edits left out of the index has nothing new to release. A checkout of main that would overwrite an edit left behind is refused before the plan. The release refusal check is off, and repo connect is asked instead. 1471 -> 1482.
 ##		- 20261006 JC: A value with a newline or an ESC in it prints escaped and on one line, in the account listing and on the Author line. 1491 -> 1494.
 ##		- 20261006 JC: The help shows what repo connect, account set and account unset take. Each check fails against the help before it. 1494 -> 1497.
+##		- 20261006 JC: raw runs tea, glab, lazygit and tig. tea and glab get the account's token and host, and an older tea acting as somebody else is warned about, or refused under -q. --any-identity before raw applies nothing and names nobody. 1497 -> 1509.

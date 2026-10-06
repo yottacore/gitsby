@@ -52,7 +52,7 @@ New output follows this guide. Where the program and the guide disagree, one of 
 
 - An option gitsby no longer takes, or one whose name promised more than it did, is refused by name and points at the one to use. It is never quietly ignored.
 
-- gitsby's own options go before `raw git` or `raw gh`. Everything after the tool name belongs to that tool.
+- gitsby's own options go before `raw <tool>`. Everything after the tool name belongs to that tool.
 
 ## Layout
 
@@ -125,7 +125,7 @@ Continue? (y|n):
 | :---        | :---
 | 0           | Success, and "nothing to do"
 | 1           | A refusal, a failed step, or a "no" at the prompt
-| The tool's  | `raw git` and `raw gh` hand back whatever the tool exited with
+| The tool's  | `raw` hands back whatever the tool exited with
 
 ## Diagnostics
 
@@ -175,4 +175,4 @@ gitsby: Another run is editing the accounts file.
 
 - `-q` is the machine-readable mode. It prints no build line and asks nothing.
 
-- `raw git` and `raw gh` give stdout to the tool alone. The one line naming the account goes to stderr, and `-q` silences it.
+- `raw` gives stdout to the tool alone. The one line naming the account goes to stderr, and `-q` silences it.

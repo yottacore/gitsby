@@ -82,7 +82,7 @@ func run(out *printer, argv []string) error {
 		return nil
 	}
 
-	// 'raw git|gh' hands everything after the tool to the real thing, verbatim, as
+	// 'raw <tool>' hands everything after the tool to the real thing, verbatim, as
 	// the account this folder belongs to. Scanned ahead of the main parser and of
 	// the git PATH check - 'raw gh' must work without git installed.
 	tool, ptArgs, err := scanPassthrough(argv, &a.opt)
@@ -783,7 +783,17 @@ func (a *app) dispatch() error {
 // somebody else's command run under the right identity, and a script piping its
 // output must get that output and nothing else.
 func (a *app) cmdPassthrough(tool string, args []string) error {
-	if err := mustBeInPath(tool); err != nil {
+	name := tool
+	if tool == "tea" || tool == "tea-cli" {
+		// Either spelling runs whichever one is installed.
+		if !inPath(name) {
+			name = a.teaCommand()
+		}
+		if name == "" {
+			return usagef("Not found in path: %s", tool)
+		}
+	}
+	if err := mustBeInPath(name); err != nil {
 		return err
 	}
 	if err := a.resolveAccount(a.contextDir(), a.originURL()); err != nil {
@@ -792,15 +802,33 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 	if err := a.selectAccount(true); err != nil {
 		return err
 	}
+	warned := false
+	if !a.acct.bypassed {
+		switch tool {
+		case "tea", "tea-cli":
+			var err error
+			if warned, err = a.teaAsAccount(name); err != nil {
+				return err
+			}
+		case "glab":
+			if _, err := a.hostTokenEnv("GITLAB_TOKEN", "GITLAB_HOST"); err != nil {
+				return err
+			}
+		}
+	}
 	// One line, on stderr, so a pipeline reading stdout sees only the tool.
 	// Silence is what '-q' is for.
 	// The same test the identity block uses: a name inferred from the remote's owner
 	// is not a claim that we act as them, and saying so tells a single-account user
 	// about a feature they never asked for.
-	if !a.opt.quiet && a.acct.ghWho != "" && a.accountDecidedSomething() {
-		a.out.errorf("acting as %s (from %s)", a.acct.ghWho, a.accountSourceText(false))
+	who := a.acct.ghWho
+	if who == "" {
+		who = a.accountWho(a.acct.credHost)
 	}
-	return a.handover(tool, args)
+	if !a.opt.quiet && !a.acct.bypassed && !warned && who != "" && a.accountDecidedSomething() {
+		a.out.errorf("acting as %s (from %s)", who, a.accountSourceText(false))
+	}
+	return a.handover(name, args)
 }
 
 func (a *app) cmdBrList() {

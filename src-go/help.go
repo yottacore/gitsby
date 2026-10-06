@@ -74,7 +74,7 @@ func (a *app) printSyntax() {
 	a.out.clean("  release [ver] ......: Cut a release: merge dev into main, tag, push. No ver: next after latest tag.")
 	a.out.clean("For scripts:")
 	a.out.clean("  raw git <args> .....: Run git as the account this folder belongs to. Everything after 'git' is git's.")
-	a.out.clean("  raw gh <args> ......: The same, for gh.")
+	a.out.clean("  raw gh <args> ......: The same, for gh. Also tea, glab, lazygit and tig.")
 	a.out.clean("Options:")
 	a.out.clean("  -m, --message MSG ....: Commit or merge message (or give it positionally).")
 	a.out.clean("  -q, -y, --quiet, --yes: Assume yes - no prompts; if committing with no message, one is generated.")
