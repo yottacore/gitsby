@@ -351,23 +351,41 @@ fGateCalled(){ local p; for p in "$@"; do grep -qE -- "${p}" "${gateCalls}" || r
 fGateNested(){ gateNested=1 fGateSays 2 'already in the container' -y --container ;}
 ## The image does stages 1-4, so none of them may run a second time out here.
 fGateContainerRun(){
-	fGateSays 0 'OK: the container run' -y --container --quick --no-sync --no-publish --no-dogfood \
+	fGateSays 0 'OK: the container run' -y --quick --no-sync --no-publish --no-dogfood \
 		&& fGateCalled '^docker run .* -y --no-sync --no-dogfood --no-remote --no-publish --no-fuzz --no-demogif$' \
 		&& ! fGateCalled '^go (vet|build|test)' && ! fGateCalled '^(test|parity|fuzz|spawn-count)\.bash' \
 		&& grep -q 'lint ran in the container' "${gateOut}"
 }
 ## The demo renders in there too, with the gif's archive mounted, and never out here.
 fGateContainerDemo(){
-	fGateSays 0 'demo gif ran in the container' -y --container --no-sync --no-publish --no-dogfood --no-remote --no-fuzz \
+	fGateSays 0 'demo gif ran in the container' -y --no-sync --no-publish --no-dogfood --no-remote --no-fuzz \
 		&& fGateCalled '^docker run .*/private/demo/gif:.* -y --no-sync --no-dogfood --no-remote --no-publish --no-fuzz$' \
 		&& ! fGateCalled '^(python3 .*gen-demo-gif|gifsicle)'
 }
 fGateFullRun(){
-	fGateSays 0 'CI/CD: done\.' -y --quick --no-sync --no-publish --no-dogfood \
-		&& fGateCalled '^go vet' '^go build' '^go test -race' '^test\.bash' '^parity\.bash'
+	fGateSays 0 'CI/CD: done\.' -y --no-container --quick --no-sync --no-publish --no-dogfood \
+		&& fGateCalled '^go vet' '^go build' '^go test -race' '^test\.bash' '^parity\.bash' && ! fGateCalled '^docker '
 }
+## A box whose docker doesn't answer runs everything here, and says why.
+fGateNoDocker(){
+	: > "${gateFail}/docker"
+	local rc=0
+	fGateSays 0 "docker isn't usable here" -y --quick --no-sync --no-publish --no-dogfood && fGateCalled '^go build' '^test\.bash' || rc=1
+	rm -f -- "${gateFail:?}/docker"
+	return "${rc}"
+}
+## Asked for by name, the container is not quietly dropped.
+fGateNoDockerAsked(){
+	: > "${gateFail}/docker"
+	local rc=0
+	fGateSays 1 'needs a working docker' -y --container --quick --no-sync --no-publish --no-dogfood || rc=1
+	rm -f -- "${gateFail:?}/docker"
+	return "${rc}"
+}
+## Inside the container a plain run is the inner one, so it starts no other.
+fGateInnerPlain(){ gateNested=1 fGateSays 0 'CI/CD: done\.' -y --quick --no-sync --no-publish --no-dogfood && ! fGateCalled '^docker ' && fGateCalled '^go build' ;}
 fGateQuietSuites(){
-	fGateSays 0 'CI/CD: done\.' -q --no-sync --no-publish --no-dogfood --no-demogif \
+	fGateSays 0 'CI/CD: done\.' -q --no-container --no-sync --no-publish --no-dogfood --no-demogif \
 		&& fGateCalled '^test\.bash $' '^fuzz\.bash $' '^parity\.bash $' '^spawn-count\.bash $'
 }
 ## --install-hook hands over to the installer: the hook is in place, and no stage or gate header
@@ -378,7 +396,7 @@ fGateInstallHook(){
 		&& ! grep -qE '[0-9]/[0-9]  ' "${gateOut}"
 }
 ## Stage 6 on its own against the fixture, run with $1 (-y or -q). True when it exits 0.
-fGateDemoRun(){ fGateStatus 0 "$1" --no-sync --no-lint --no-test --no-fuzz --no-parity --no-dogfood --no-remote --no-publish ;}
+fGateDemoRun(){ fGateStatus 0 "$1" --no-container --no-sync --no-lint --no-test --no-fuzz --no-parity --no-dogfood --no-remote --no-publish ;}
 ## The last run's calls-log line for the demo's build, and for its generator. Empty when absent.
 fGateDemoBuild(){ grep -E -- "^go build .* -o ${gateDir}/src-go/gitsby-demo( |\$)" "${gateCalls}" || true ;}
 fGateDemoGen(){ grep -E -- '^python3 cicd/utility/demo/gen-demo-gif\.py ' "${gateCalls}" || true ;}
@@ -412,7 +430,7 @@ fGateOnly(){
 	shift
 	for s in sync lint test fuzz parity dogfood demogif remote publish; do [[ "${keep}" == *" ${s} "* ]] || skip+=("--no-${s}"); done
 	: > "${gateCalls}"; gateRc=0
-	fGateRun -y "${skip[@]}" "$@" </dev/null >"${gateOut}" 2>&1 || gateRc=$?
+	fGateRun -y --no-container "${skip[@]}" "$@" </dev/null >"${gateOut}" 2>&1 || gateRc=$?
 }
 ## After fGateOnly: the run exited $1, and every extended regex after it matches the calls log.
 fGateRanCalling(){ local want="$1"; shift; [[ "${gateRc}" == "${want}" ]] && fGateCalled "$@" ;}
@@ -5250,8 +5268,12 @@ EOF
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--container ' <<< \"\$out\""
 		fAssert "[EsJgejN] --container with --gate is refused"  fGateSays 2 'goes with a full run' --container --gate
 		fAssert "[EsJgekF] --container inside the container is refused"  fGateNested
-		fAssert "[EsJgel8] --container hands stages 1-4 to the image and runs none of them here"  fGateContainerRun
+		fAssert "[EsJgel8] a plain run hands stages 1-4 to the image and runs none of them here"  fGateContainerRun
 		fAssert "[EsK1B7q] and the demo gif as well"  fGateContainerDemo
+		fAssert "[EsK46gt] a box without a working docker runs them here, with a warning"  fGateNoDocker
+		fAssert "[EsK46i7] but --container there stops"  fGateNoDockerAsked
+		fAssert "[EsK46j7] --container and --no-container together are refused"  fGateSays 2 'opposites' -y --container --no-container
+		fAssert "[EsK46k5] a plain run inside the container starts no other"  fGateInnerPlain
 		## A tool config.bash pins that the image never installs would leave the image without it.
 		printf 'TOOL_VERSIONS+=("zzz=1")\n' >> "${gateDir}/cicd/config.bash"
 		fAssert "[EsJgem1] --container stops on a pinned tool the recipe doesn't take"  fGateSays 1 'no ARG VER_zzz' -y --container --no-sync
@@ -6633,3 +6655,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261006 JC: raw runs tea, glab, lazygit and tig. tea and glab get the account's token and host, and an older tea acting as somebody else is warned about, or refused under -q. --any-identity before raw applies nothing and names nobody. 1497 -> 1509.
 ##		- 20261010 JC: cicd.bash --container hands stages 1-4 to the image, refuses --gate and a nested run, and stops on a pinned tool the recipe doesn't take. 1509 -> 1514.
 ##		- 20261010 JC: --container renders the demo in the image as well. 1514 -> 1515.
+##		- 20261010 JC: A plain run uses the container. --no-container, or a box without docker, runs here; --container there stops. 1515 -> 1519.
