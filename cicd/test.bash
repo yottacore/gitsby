@@ -326,7 +326,12 @@ fMakeGateFixture(){
 }
 ## The fixture's engine with the stubs first on PATH. HOME is the fixture's as well: the engine
 ## puts ~/.local/bin ahead of PATH, and a real markdownlint there would answer for the stub.
-fGateRun(){ (cd "${gateDir}" && HOME="${gateDir}/home" PATH="${gateDir}/bin:${PATH}" ./cicd/cicd.bash "$@") ;}
+## The suite may itself run in the container, so the engine's marker for that is set only when
+## a check asks for it.
+fGateRun(){ (
+	if [[ -n "${gateNested:-}" ]]; then export GITSBY_CICD_IN_CONTAINER=1; else unset GITSBY_CICD_IN_CONTAINER; fi
+	cd "${gateDir}" && HOME="${gateDir}/home" PATH="${gateDir}/bin:${PATH}" ./cicd/cicd.bash "$@"
+) ;}
 ## True when the run exits with exactly $1. An unknown option exits 2, so a plain nonzero test
 ## would pass a build that never heard of the option. Output lands in ${gateOut}, and the calls
 ## log starts empty.
@@ -343,7 +348,7 @@ fGateSays(){ local want="$1" pat="$2"; shift 2; fGateStatus "${want}" "$@" && gr
 fGatePwshSays(){ PSModulePath="${gatePsModules}" fGateSays "$1" "$2" --gate ;}
 ## True when every extended regex given matches a line of the calls log.
 fGateCalled(){ local p; for p in "$@"; do grep -qE -- "${p}" "${gateCalls}" || return 1; done; return 0 ;}
-fGateNested(){ GITSBY_CICD_IN_CONTAINER=1 fGateSays 2 'already in the container' -y --container ;}
+fGateNested(){ gateNested=1 fGateSays 2 'already in the container' -y --container ;}
 ## The image does stages 1-4, so none of them may run a second time out here.
 fGateContainerRun(){
 	fGateSays 0 'stages 1-4 in the container' -y --container --quick --no-sync --no-publish --no-dogfood \
