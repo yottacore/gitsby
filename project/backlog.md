@@ -49,6 +49,23 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: None in a suite. Checked by hand against the old and new step.
 	- Note: Not yet run on b26, which was held by another session. The next full run there closes it.
 
+- Run the lint and test stages in a pinned container
+	- ID: 2026101009380628
+	- Type: Enhancement
+	- Status: Done
+	- Priority|Severity [Feature]: Avg
+	- Opened: 2026-10-10
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- Stages 1-4 can run in a Debian trixie image with our Go and every pinned lint and test tool, so a host update can't move a finding.
+		- The versions come from config.bash, not a second list.
+		- The rest stays on the host: sync, dogfood, the demo (fonts), remote tests and publish.
+	- Done: `cicd.bash --container`, from `cicd/container/Dockerfile`. The tag hashes the recipe and the versions, and a new image replaces the old one. Go caches live in a named volume. git joined `TOOL_VERSIONS`, since trixie's 2.47 spawns 4 more processes on a fetch than the host's 2.51.
+	- Branch: ctr
+	- Test case: [EsJgeiS] to [EsJgem1] in test.bash, against the stubbed engine. The recipe guard was watched to fail by hand.
+	- Verified: a run in the container matched the host baselines, test.bash 1509/0, fuzz.bash 313/0, parity.bash 29/0 and spawn counts. With the new checks, 1514/0 both in the container and on the host. The fixture sets the container marker itself, since the suite inside the image inherited it.
+	- Closed: 20261010-100500
+
 - test.bash's `--direct` prompt check fails on FreeBSD and macOS
 	- ID: 2026100611181886
 	- Type: Bug

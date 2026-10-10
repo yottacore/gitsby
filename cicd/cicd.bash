@@ -47,6 +47,7 @@
 ##	   --no-remote         skip the remote tests
 ##	   --no-publish        skip the git backup + publish stage
 ##	   --quick             skip the slow stages (fuzz, demo gif, remote tests)
+##	   --container         run stages 1-4 in the pinned image from cicd/container/Dockerfile
 ##	   --gate              fast pre-push gate: every lint check and go test; no sync, build, suites, prompt or log
 ##	   --install-hook      install the git pre-push hook that runs --gate on each commit pushed to main
 ##	   -h, --help          show this help
@@ -99,7 +100,7 @@ fUsage(){ fEcho_Clean "$*" >&2; exit 2; }
 
 ## Parse options.
 assumeYes=0; quiet=0; quick=0; doSync=1; doLint=1; doTest=1; doFuzz=1; doParity=1; doRemote=1; cliMessage=""
-gate=0; installHook=0; stageOpts=()
+gate=0; installHook=0; stageOpts=(); container=0
 while (($#)); do case "$1" in
 	-q|--quiet)               quiet=1; assumeYes=1; shift ;;   ## quiet + unattended; publish runs quiet too
 	-y|--yes)                 assumeYes=1; shift ;;
@@ -122,6 +123,7 @@ while (($#)); do case "$1" in
 	## one cut before it existed, so keep the spelling.
 	--gate)                   gate=1; assumeYes=1; shift ;;
 	--install-hook)           installHook=1; shift ;;
+	--container)              container=1; shift ;;
 	-h|--help)                sed -n '/^##	- Purpose:/,/^##	History:/p' "${BASH_SOURCE[0]}" | sed '$d; s/^##	\{0,1\}//'; exit 0 ;;
 	*) fUsage "unknown option: ${1} (try --help)" ;;
 esac; done
@@ -136,6 +138,8 @@ if ((${#stageOpts[@]})); then
 		fUsage "--install-hook installs the hook and takes no stage options (got: ${stageOpts[*]})"
 	fi
 fi
+if ((container)) && ((gate || installHook)); then fUsage "--container goes with a full run, not --gate or --install-hook."; fi
+if ((container)) && [[ -n "${GITSBY_CICD_IN_CONTAINER:-}" ]]; then fUsage "already in the container; --container would start another."; fi
 if ((installHook)); then exec "${here}/utility/pre-push.bash" --install; fi
 
 ## Brief beat after each stage header so the cheap fast stages stay readable.
@@ -191,6 +195,7 @@ fToolVersion(){
 		gifsicle)         gifsicle --version 2>/dev/null | awk 'NR==1{print $NF}' ;;
 		Pillow)           python3 -c 'import PIL; print(PIL.__version__)' 2>/dev/null ;;
 		strace)           strace -V 2>/dev/null | awk 'NR==1{print $NF}' ;;
+		git)              git --version 2>/dev/null | awk '{print $3}' ;;
 	esac
 }
 
@@ -389,12 +394,37 @@ if ((gate)); then
 	exit 0
 fi
 
+## --container: the image's versions come from config.bash, and its tag hashes the recipe plus
+## those, so a bumped version can't run on the old image.
+if ((container)); then
+	command -v docker >/dev/null 2>&1 || fDie "--container needs docker"
+	containerRecipe="${here}/container/Dockerfile"
+	[[ -f "${containerRecipe}" ]] || fDie "missing ${containerRecipe}"
+	containerArgs=(--build-arg "VER_go=${GO_RELEASE_TOOLCHAIN#go}")
+	for toolSpec in "${GO_TOOL_VERSIONS[@]}" "${TOOL_VERSIONS[@]}"; do
+		toolName="${toolSpec%%=*}"; toolName="VER_${toolName//-/_}"
+		grep -qxF "ARG ${toolName}" "${containerRecipe}" || fDie "config.bash pins ${toolSpec%%=*}, and the container recipe has no ARG ${toolName} for it"
+		containerArgs+=(--build-arg "${toolName}=${toolSpec#*=}")
+	done
+	containerImage="${APP_NAME}-cicd:$( { cat "${containerRecipe}"; printf '%s\n' "${containerArgs[@]}"; } | git hash-object --stdin | cut -c1-12 )"
+	## The same stages as here, minus everything that needs this box.
+	containerRun=(-y --no-sync --no-dogfood --no-demogif --no-remote --no-publish)
+	((quiet))    && containerRun[0]=-q
+	((doLint))   || containerRun+=(--no-lint)
+	((doTest))   || containerRun+=(--no-test)
+	((doFuzz))   || containerRun+=(--no-fuzz)
+	((doParity)) || containerRun+=(--no-parity)
+fi
+
 ## Preflight: show the plan with resolved paths, then confirm.
 
 fEcho_Clean
 fEcho_Clean "${APP_NAME} local CI/CD"
 fEcho_Clean
 fEcho_Clean "Repo root ...........: ${root}"
+if ((container)); then
+	fEcho_Clean "Container ...........: stages 1-4 in ${containerImage}"
+fi
 if ((doLint)); then
 	fEcho_Clean "Lint ................: gofmt + go vet + staticcheck, shellcheck on ${#shellFiles[@]} shell file(s)  (+ golangci-lint, markdownlint, py_compile, PSScriptAnalyzer, windows resource if available)"
 else
@@ -471,7 +501,8 @@ fi
 
 ## Tee the rest of the run (all stages) to a gitignored log so warnings from any
 ## stage can be reviewed after the fact. Rotate the prior (closed) logs first.
-if [[ -n "${LINT_LOG_DIR:-}" ]] && mkdir -p "${root}/${LINT_LOG_DIR}" 2>/dev/null; then
+## Inside the container the outer run's log already has all of it.
+if [[ -n "${LINT_LOG_DIR:-}" && -z "${GITSBY_CICD_IN_CONTAINER:-}" ]] && mkdir -p "${root}/${LINT_LOG_DIR}" 2>/dev/null; then
 	gfs_rotate "${root}/${LINT_LOG_DIR}" run log >/dev/null 2>&1 || true
 	exec > >(tee "${root}/${LINT_LOG_DIR}/run_${stamp}.log") 2>&1
 	## Wait for tee to drain on exit, else the shell prompt returns mid-flush and
@@ -517,13 +548,41 @@ goVersion="$(git describe --tags --always --dirty --match 'v*' 2>/dev/null || ec
 ## could ever rebuild a published asset to its published checksum.
 goBuildEpoch="$(git log -1 --format=%ct 2>/dev/null || echo 0)"
 
+## --container: stages 1-4 run in the pinned image, against this same tree. It is mounted at
+## the same path, so paths in the output and a worktree's .git file still resolve. The Go
+## caches live in a named volume, or every run would download and build from nothing.
+if ((container)); then
+	fSection "Container"
+	if docker image inspect "${containerImage}" >/dev/null 2>&1; then
+		fEcho_Clean "image ${containerImage}"
+	else
+		fEcho_Clean "building ${containerImage}"
+		docker build -q -t "${containerImage}" "${containerArgs[@]}" "${here}/container" >/dev/null || fDie "image build failed"
+		## The one it replaces is close to 2 GB nobody runs again.
+		while IFS= read -r oldImage; do
+			if [[ -z "${oldImage}" || "${oldImage}" == "${containerImage}" ]]; then continue; fi
+			if docker rmi "${oldImage}" >/dev/null 2>&1; then fEcho_Clean "removed ${oldImage}"
+			else fEcho_Clean "kept ${oldImage} (in use)"; fi
+		done < <(docker image ls "${containerImage%%:*}" --format '{{.Repository}}:{{.Tag}}' 2>/dev/null || true)
+	fi
+	containerMounts=(-v "${root}:${root}" -v "${APP_NAME}-cicd-cache:/cache" --tmpfs "/tmp:rw,exec,mode=1777")
+	gitCommon="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+	if [[ -n "${gitCommon}" && "${gitCommon}" != "${root}/"* ]]; then containerMounts+=(-v "${gitCommon}:${gitCommon}"); fi
+	fEcho_Clean "runs cicd.bash ${containerRun[*]}"
+	docker run --rm --init --user "$(id -u):$(id -g)" "${containerMounts[@]}" -w "${root}" \
+		"${containerImage}" bash "${root}/cicd/cicd.bash" "${containerRun[@]}" \
+		|| fDie "the run in the container failed (above)"
+	fEcho "OK: stages 1-4 in the container"
+	doLint=0; doTest=0; doFuzz=0; doParity=0; ranWhere="ran in the container"
+fi
+
 ## Stage 1: lint. gofmt/vet/staticcheck over the module, then bash -n and shellcheck
 ## over the pipeline's own scripts and the installer (gating - never an auto-formatter:
 ## those are hand-formatted on purpose). markdownlint, py_compile and PSScriptAnalyzer
 ## are probe-gated extras.
 fSection "1/8  Lint"
 if ((! doLint)); then
-	fEcho_Clean "lint skipped"
+	fEcho_Clean "lint ${ranWhere:-skipped}"
 else
 	fStageLint
 fi
@@ -533,7 +592,7 @@ fi
 ## Dev builds carry the describe version; release builds inject the clean one.
 fSection "2/8  Build + regression tests"
 if ((! doTest)); then
-	fEcho_Clean "build + tests skipped"
+	fEcho_Clean "build + tests ${ranWhere:-skipped}"
 else
 	(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 \
 		go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${goVersion#v} -X main.buildEpoch=${goBuildEpoch}" -o "${EXE_NAME}" .) \
@@ -555,7 +614,7 @@ fi
 ## policy as the tests.
 fSection "3/8  Fuzz + security"
 if ((! doFuzz)); then
-	fEcho_Clean "fuzz + security skipped${quickNote}"
+	fEcho_Clean "fuzz + security ${ranWhere:-skipped${quickNote}}"
 elif [[ -f "${FUZZ_CMD[0]:-}" ]]; then
 	"${FUZZ_CMD[@]}"
 	fEcho "OK: fuzz + security passed"
@@ -578,7 +637,9 @@ fi
 ## With no third-party dependencies the standard library is the only library code there is
 ## to check - and it is linked into every binary we publish. Probe-gated like staticcheck;
 ## it runs even under --quick, because it is a lookup rather than a workload.
-if command -v govulncheck >/dev/null 2>&1; then
+if [[ -n "${ranWhere:-}" ]]; then
+	:
+elif command -v govulncheck >/dev/null 2>&1; then
 	(cd "${root}/${GO_MODULE_DIR}" && govulncheck ./...) || fDie "govulncheck findings"
 	fEcho "OK: govulncheck clean"
 else
@@ -598,7 +659,7 @@ fi
 ## asks the other question: do they ANSWER the same? Self-skips once legacy/ is gone.
 fSection "4/8  Backwards compatibility"
 if ((! doParity)); then
-	fEcho_Clean "compatibility comparison skipped"
+	fEcho_Clean "compatibility comparison ${ranWhere:-skipped}"
 elif [[ -f "${PARITY_CMD[0]:-}" ]]; then
 	"${PARITY_CMD[@]}"
 	fEcho "OK: this build answers as the frozen one does"
@@ -790,3 +851,4 @@ fEcho_Clean
 ##		- 2026-10-04 JC: Stage 7 runs the Go tests on a Mac and a Windows box, and the regression suite on the Mac against the universal build, through cicd/remote-tests.bash. A box that is off or taken is skipped, not waited for. Full runs only. Publish is stage 8.
 ##		- 2026-10-04 JC: Stage 7 also builds for each Unix box's target in config.bash, FreeBSD amd64 and Linux arm64 to start, and hands those builds to the harness.
 ##		- 2026-10-04 JC: Variables are camelCase, and the output helpers keep their state in two-underscore globals. The helpers come before the option loop, so a bad option goes through fUsage too. Every expansion braced, and shellcheck enforces it.
+##		- 2026-10-10 JC: --container runs stages 1-4 in an image built from cicd/container/Dockerfile, with the versions config.bash pins. A pinned tool the recipe doesn't take stops the run. The tool version check knows git.

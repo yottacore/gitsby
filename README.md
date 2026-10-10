@@ -314,6 +314,7 @@ Any stage whose tooling isn't installed reports itself absent and is skipped, so
 cicd/cicd.bash --quick          # skips fuzz, the demo gif and the remote tests; what you want while iterating
 cicd/cicd.bash                  # everything, and it prompts once for a commit message
 cicd/cicd.bash -y -m "message"  # unattended
+cicd/cicd.bash --container      # stages 1-4 in a pinned Debian image; needs docker
 cicd/cicd.bash --gate           # every lint check and the unit tests; what the pre-push hook runs
 cicd/cicd.bash --install-hook   # run --gate on the pushed commit before every push to main
 ~~~
