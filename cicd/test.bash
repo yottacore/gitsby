@@ -292,8 +292,9 @@ fGateStub(){
 }
 fMakeGateFixture(){
 	local s
-	mkdir -p "${gateDir}/cicd/utility/include" "${gateDir}/cicd/utility/demo" "${gateDir}/bin" "${gateDir}/home" "${gateDir}/src-go" "${gateFail}"
+	mkdir -p "${gateDir}/cicd/utility/include" "${gateDir}/cicd/utility/demo" "${gateDir}/cicd/container" "${gateDir}/bin" "${gateDir}/home" "${gateDir}/src-go" "${gateFail}"
 	cp "${root}/cicd/cicd.bash" "${root}/cicd/config.bash" "${gateDir}/cicd/"
+	cp "${root}/cicd/container/Dockerfile" "${gateDir}/cicd/container/"
 	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${root}/cicd/utility/include/gh-account.bash" "${root}/cicd/utility/include/go-test-lines.bash" "${gateDir}/cicd/utility/include/"
 	## Empty, so the lint globs and PY_LINT_FILES resolve, and stage 6 finds a scenario.
 	: > "${gateDir}/install.bash"; : > "${gateDir}/install.ps1"; : > "${gateDir}/cicd/utility/demo/gen-demo-gif.py"
@@ -306,7 +307,7 @@ fMakeGateFixture(){
 	## Writes the joined file, so stage 7 has a build to remove.
 	fGateStub "${gateDir}/cicd/utility/macho-universal.bash" macho-universal ": > \"\${1:-/dev/null}\""
 	fGateStub "${gateDir}/cicd/utility/n8git_backup-and-publish" n8git_backup-and-publish
-	for s in markdownlint staticcheck golangci-lint govulncheck; do fGateStub "${gateDir}/bin/${s}" "${s}"; done
+	for s in markdownlint staticcheck golangci-lint govulncheck docker; do fGateStub "${gateDir}/bin/${s}" "${s}"; done
 	## The demo generator writes a gif header to its --out, and the optimizer, called as
 	## 'gifsicle -O3 IN -o OUT', copies IN to OUT, so stage 6 has a file to compare. py_compile
 	## passes no --out.
@@ -342,6 +343,14 @@ fGateSays(){ local want="$1" pat="$2"; shift 2; fGateStatus "${want}" "$@" && gr
 fGatePwshSays(){ PSModulePath="${gatePsModules}" fGateSays "$1" "$2" --gate ;}
 ## True when every extended regex given matches a line of the calls log.
 fGateCalled(){ local p; for p in "$@"; do grep -qE -- "${p}" "${gateCalls}" || return 1; done; return 0 ;}
+fGateNested(){ GITSBY_CICD_IN_CONTAINER=1 fGateSays 2 'already in the container' -y --container ;}
+## The image does stages 1-4, so none of them may run a second time out here.
+fGateContainerRun(){
+	fGateSays 0 'stages 1-4 in the container' -y --container --quick --no-sync --no-publish --no-dogfood \
+		&& fGateCalled '^docker run .* -y --no-sync --no-dogfood --no-demogif --no-remote --no-publish --no-fuzz$' \
+		&& ! fGateCalled '^go (vet|build|test)' && ! fGateCalled '^(test|parity|fuzz|spawn-count)\.bash' \
+		&& grep -q 'lint ran in the container' "${gateOut}"
+}
 fGateFullRun(){
 	fGateSays 0 'CI/CD: done\.' -y --quick --no-sync --no-publish --no-dogfood \
 		&& fGateCalled '^go vet' '^go build' '^go test -race' '^test\.bash' '^parity\.bash'
@@ -5226,6 +5235,15 @@ EOF
 		fAssert "[EpsVDI1] and contributing.md names --install-hook"  grep -qF -- '--install-hook' "${root}/contributing.md"
 		fAssert "[ErkbDTn] cicd.bash --help lists --no-remote" \
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--no-remote ' <<< \"\$out\""
+		fAssert "[EsJgeiS] cicd.bash --help lists --container" \
+			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--container ' <<< \"\$out\""
+		fAssert "[EsJgejN] --container with --gate is refused"  fGateSays 2 'goes with a full run' --container --gate
+		fAssert "[EsJgekF] --container inside the container is refused"  fGateNested
+		fAssert "[EsJgel8] --container hands stages 1-4 to the image and runs none of them here"  fGateContainerRun
+		## A tool config.bash pins that the image never installs would leave the image without it.
+		printf 'TOOL_VERSIONS+=("zzz=1")\n' >> "${gateDir}/cicd/config.bash"
+		fAssert "[EsJgem1] --container stops on a pinned tool the recipe doesn't take"  fGateSays 1 'no ARG VER_zzz' -y --container --no-sync
+		cp "${root}/cicd/config.bash" "${gateDir}/cicd/config.bash"
 		## Last on this fixture, since it makes it a git repo. Every tool is still a stub, so an
 		## --install-hook that fell through into a full run would reach nothing outside it.
 		git init --quiet "${gateDir}"
@@ -6601,3 +6619,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261006 JC: A value with a newline or an ESC in it prints escaped and on one line, in the account listing and on the Author line. 1491 -> 1494.
 ##		- 20261006 JC: The help shows what repo connect, account set and account unset take. Each check fails against the help before it. 1494 -> 1497.
 ##		- 20261006 JC: raw runs tea, glab, lazygit and tig. tea and glab get the account's token and host, and an older tea acting as somebody else is warned about, or refused under -q. --any-identity before raw applies nothing and names nobody. 1497 -> 1509.
+##		- 20261010 JC: cicd.bash --container hands stages 1-4 to the image, refuses --gate and a nested run, and stops on a pinned tool the recipe doesn't take. 1509 -> 1514.
