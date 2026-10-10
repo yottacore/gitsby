@@ -70,6 +70,7 @@ TOOL_VERSIONS=(
 	"gifsicle=1.96"
 	"Pillow=11.1.0"
 	"strace=6.18"
+	"git=2.51.0"
 )
 
 ## Half the cores, rounded up. The compiler takes all of them by default, in every build and
@@ -274,3 +275,4 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-10-04 JC: Stage 7 also runs them on a FreeBSD amd64 and a Linux arm64 box.
 ##		- 2026-10-04 JC: Every expansion braced, and shellcheck enforces it. The settings stay upper case.
 ##		- 2026-10-05 JC: REMOTE_UNIX_WINE: the Linux arm64 box also runs the windows/arm64 Go tests under Wine.
+##		- 2026-10-10 JC: TOOL_VERSIONS records git, since an older one spawns more on a fetch. Every pinned tool is also what the --container image installs.
