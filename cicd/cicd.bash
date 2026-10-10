@@ -47,7 +47,7 @@
 ##	   --no-remote         skip the remote tests
 ##	   --no-publish        skip the git backup + publish stage
 ##	   --quick             skip the slow stages (fuzz, demo gif, remote tests)
-##	   --container         run stages 1-4 in the pinned image from cicd/container/Dockerfile
+##	   --container         run stages 1-4 and the demo gif in the pinned image from cicd/container/Dockerfile
 ##	   --gate              fast pre-push gate: every lint check and go test; no sync, build, suites, prompt or log
 ##	   --install-hook      install the git pre-push hook that runs --gate on each commit pushed to main
 ##	   -h, --help          show this help
@@ -408,12 +408,13 @@ if ((container)); then
 	done
 	containerImage="${APP_NAME}-cicd:$( { cat "${containerRecipe}"; printf '%s\n' "${containerArgs[@]}"; } | git hash-object --stdin | cut -c1-12 )"
 	## The same stages as here, minus everything that needs this box.
-	containerRun=(-y --no-sync --no-dogfood --no-demogif --no-remote --no-publish)
+	containerRun=(-y --no-sync --no-dogfood --no-remote --no-publish)
 	((quiet))    && containerRun[0]=-q
 	((doLint))   || containerRun+=(--no-lint)
 	((doTest))   || containerRun+=(--no-test)
 	((doFuzz))   || containerRun+=(--no-fuzz)
 	((doParity)) || containerRun+=(--no-parity)
+	((DO_DEMOGIF)) || containerRun+=(--no-demogif)
 fi
 
 ## Preflight: show the plan with resolved paths, then confirm.
@@ -423,7 +424,7 @@ fEcho_Clean "${APP_NAME} local CI/CD"
 fEcho_Clean
 fEcho_Clean "Repo root ...........: ${root}"
 if ((container)); then
-	fEcho_Clean "Container ...........: stages 1-4 in ${containerImage}"
+	fEcho_Clean "Container ...........: stages 1-4 and 6 in ${containerImage}"
 fi
 if ((doLint)); then
 	fEcho_Clean "Lint ................: gofmt + go vet + staticcheck, shellcheck on ${#shellFiles[@]} shell file(s)  (+ golangci-lint, markdownlint, py_compile, PSScriptAnalyzer, windows resource if available)"
@@ -548,9 +549,10 @@ goVersion="$(git describe --tags --always --dirty --match 'v*' 2>/dev/null || ec
 ## could ever rebuild a published asset to its published checksum.
 goBuildEpoch="$(git log -1 --format=%ct 2>/dev/null || echo 0)"
 
-## --container: stages 1-4 run in the pinned image, against this same tree. It is mounted at
-## the same path, so paths in the output and a worktree's .git file still resolve. The Go
-## caches live in a named volume, or every run would download and build from nothing.
+## --container: stages 1-4 and the demo run in the pinned image, against this same tree. It is
+## mounted at the same path, so paths in the output and a worktree's .git file still resolve.
+## The Go caches live in a named volume, or every run would download and build from nothing.
+## The demo's fonts are in the image, so its gif matches no matter what this box has installed.
 if ((container)); then
 	fSection "Container"
 	if docker image inspect "${containerImage}" >/dev/null 2>&1; then
@@ -568,12 +570,18 @@ if ((container)); then
 	containerMounts=(-v "${root}:${root}" -v "${APP_NAME}-cicd-cache:/cache" --tmpfs "/tmp:rw,exec,mode=1777")
 	gitCommon="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
 	if [[ -n "${gitCommon}" && "${gitCommon}" != "${root}/"* ]]; then containerMounts+=(-v "${gitCommon}:${gitCommon}"); fi
+	## The gif's out-of-tree archive, at the path the config spells, through any symlink on the way.
+	if ((DO_DEMOGIF)); then
+		mkdir -p "${DEMOGIF_ARCHIVE_DIR}" || fDie "can't make ${DEMOGIF_ARCHIVE_DIR}"
+		containerMounts+=(-v "$(realpath -m -- "${DEMOGIF_ARCHIVE_DIR}"):$(realpath -s -m -- "${DEMOGIF_ARCHIVE_DIR}")")
+	fi
 	fEcho_Clean "runs cicd.bash ${containerRun[*]}"
 	docker run --rm --init --user "$(id -u):$(id -g)" "${containerMounts[@]}" -w "${root}" \
 		"${containerImage}" bash "${root}/cicd/cicd.bash" "${containerRun[@]}" \
 		|| fDie "the run in the container failed (above)"
-	fEcho "OK: stages 1-4 in the container"
-	doLint=0; doTest=0; doFuzz=0; doParity=0; ranWhere="ran in the container"
+	fEcho "OK: the container run"
+	if ((DO_DEMOGIF)); then demoWhere="ran in the container"; fi
+	doLint=0; doTest=0; doFuzz=0; doParity=0; DO_DEMOGIF=0; ranWhere="ran in the container"
 fi
 
 ## Stage 1: lint. gofmt/vet/staticcheck over the module, then bash -n and shellcheck
@@ -721,7 +729,7 @@ fi
 ## tree, then landed in-repo.
 fSection "6/8  Demo gif"
 if ((! DO_DEMOGIF)); then
-	fEcho_Clean "demo gif skipped${quickNote}"
+	fEcho_Clean "demo gif ${demoWhere:-skipped${quickNote}}"
 elif [[ ! -f "${DEMOGIF_SCENARIO}" ]]; then
 	fEcho_Clean "no demo scenario (${DEMOGIF_SCENARIO})"
 else
@@ -852,3 +860,4 @@ fEcho_Clean
 ##		- 2026-10-04 JC: Stage 7 also builds for each Unix box's target in config.bash, FreeBSD amd64 and Linux arm64 to start, and hands those builds to the harness.
 ##		- 2026-10-04 JC: Variables are camelCase, and the output helpers keep their state in two-underscore globals. The helpers come before the option loop, so a bad option goes through fUsage too. Every expansion braced, and shellcheck enforces it.
 ##		- 2026-10-10 JC: --container runs stages 1-4 in an image built from cicd/container/Dockerfile, with the versions config.bash pins. A pinned tool the recipe doesn't take stops the run. The tool version check knows git.
+##		- 2026-10-10 JC: --container renders the demo gif in the image too, with its font pinned there.

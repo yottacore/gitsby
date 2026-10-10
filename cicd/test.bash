@@ -351,10 +351,16 @@ fGateCalled(){ local p; for p in "$@"; do grep -qE -- "${p}" "${gateCalls}" || r
 fGateNested(){ gateNested=1 fGateSays 2 'already in the container' -y --container ;}
 ## The image does stages 1-4, so none of them may run a second time out here.
 fGateContainerRun(){
-	fGateSays 0 'stages 1-4 in the container' -y --container --quick --no-sync --no-publish --no-dogfood \
-		&& fGateCalled '^docker run .* -y --no-sync --no-dogfood --no-demogif --no-remote --no-publish --no-fuzz$' \
+	fGateSays 0 'OK: the container run' -y --container --quick --no-sync --no-publish --no-dogfood \
+		&& fGateCalled '^docker run .* -y --no-sync --no-dogfood --no-remote --no-publish --no-fuzz --no-demogif$' \
 		&& ! fGateCalled '^go (vet|build|test)' && ! fGateCalled '^(test|parity|fuzz|spawn-count)\.bash' \
 		&& grep -q 'lint ran in the container' "${gateOut}"
+}
+## The demo renders in there too, with the gif's archive mounted, and never out here.
+fGateContainerDemo(){
+	fGateSays 0 'demo gif ran in the container' -y --container --no-sync --no-publish --no-dogfood --no-remote --no-fuzz \
+		&& fGateCalled '^docker run .*/private/demo/gif:.* -y --no-sync --no-dogfood --no-remote --no-publish --no-fuzz$' \
+		&& ! fGateCalled '^(python3 .*gen-demo-gif|gifsicle)'
 }
 fGateFullRun(){
 	fGateSays 0 'CI/CD: done\.' -y --quick --no-sync --no-publish --no-dogfood \
@@ -5245,6 +5251,7 @@ EOF
 		fAssert "[EsJgejN] --container with --gate is refused"  fGateSays 2 'goes with a full run' --container --gate
 		fAssert "[EsJgekF] --container inside the container is refused"  fGateNested
 		fAssert "[EsJgel8] --container hands stages 1-4 to the image and runs none of them here"  fGateContainerRun
+		fAssert "[EsK1B7q] and the demo gif as well"  fGateContainerDemo
 		## A tool config.bash pins that the image never installs would leave the image without it.
 		printf 'TOOL_VERSIONS+=("zzz=1")\n' >> "${gateDir}/cicd/config.bash"
 		fAssert "[EsJgem1] --container stops on a pinned tool the recipe doesn't take"  fGateSays 1 'no ARG VER_zzz' -y --container --no-sync
@@ -6625,3 +6632,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261006 JC: The help shows what repo connect, account set and account unset take. Each check fails against the help before it. 1494 -> 1497.
 ##		- 20261006 JC: raw runs tea, glab, lazygit and tig. tea and glab get the account's token and host, and an older tea acting as somebody else is warned about, or refused under -q. --any-identity before raw applies nothing and names nobody. 1497 -> 1509.
 ##		- 20261010 JC: cicd.bash --container hands stages 1-4 to the image, refuses --gate and a nested run, and stops on a pinned tool the recipe doesn't take. 1509 -> 1514.
+##		- 20261010 JC: --container renders the demo in the image as well. 1514 -> 1515.

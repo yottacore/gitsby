@@ -1,6 +1,6 @@
-# Lint, build and test tools for 'cicd.bash --container', pinned, so stages 1-4 don't
-# depend on what the host has installed. Sync, dogfood, the demo, remote tests and
-# publish stay on the host.
+# Lint, build, test and demo tools for 'cicd.bash --container', pinned, so stages 1-4
+# and the demo gif don't depend on what the host has installed. Sync, dogfood, remote
+# tests and publish stay on the host.
 #
 # The versions come from config.bash as build args, and the tag hashes this file
 # plus those args. A version bump without its checksum here fails the build.
@@ -10,14 +10,34 @@
 
 FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
 
-# gcc is for go test -race, libicu and libgssapi for pwsh. Pillow, fontconfig and a
-# font let test.bash's demo renderer checks run; the demo itself stays on the host.
+# Apt reads the snapshot the base image was cut from, so a trixie point release can't
+# move Pillow, freetype or cairo under the demo gif. The base names it in a comment.
+ARG APT_SNAP=20261005T000000Z
+RUN sed -i -e "s|^URIs: http://deb.debian.org/debian-security|URIs: http://snapshot.debian.org/archive/debian-security/${APT_SNAP}|" \
+		-e "s|^URIs: http://deb.debian.org/debian\$|URIs: http://snapshot.debian.org/archive/debian/${APT_SNAP}|" \
+		-e 's|^Signed-By:|Check-Valid-Until: no\nSigned-By:|' /etc/apt/sources.list.d/debian.sources \
+	&& ! grep -q deb.debian.org /etc/apt/sources.list.d/debian.sources
+
+# gcc is for go test -race, libicu and libgssapi for pwsh. The python and font
+# packages are what the demo renderer draws with.
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends \
 		bash ca-certificates curl openssl xz-utils unzip gcc libc6-dev \
-		python3 python3-pil fontconfig fonts-dejavu-core gifsicle \
+		python3 python3-pil python3-fonttools python3-gi python3-gi-cairo gir1.2-pango-1.0 \
+		fontconfig fonts-dejavu-core fonts-noto-color-emoji gifsicle \
 		libicu76 libgssapi-krb5-2 \
 	&& rm -rf /var/lib/apt/lists/*
+
+# The demo's face. The emoji font above is Debian's, a different build from the one on
+# b23, but the demo draws no emoji today, so the gif's bytes don't see it.
+ARG MONASPACE_VER=1.400
+ARG MONASPACE_SHA256=ab66d71be751495f679727332a3345597943bd4d7beebca03f5cde04bf994de7
+RUN cd /tmp \
+	&& curl -fsSLo m.zip "https://github.com/githubnext/monaspace/releases/download/v${MONASPACE_VER}/monaspace-static-v${MONASPACE_VER}.zip" \
+	&& echo "${MONASPACE_SHA256}  m.zip" | sha256sum -c - \
+	&& mkdir -p /usr/local/share/fonts/monaspace \
+	&& unzip -j -q m.zip 'Static Fonts/Monaspace Argon/MonaspaceArgon-SemiBold.otf' -d /usr/local/share/fonts/monaspace \
+	&& rm -f m.zip && fc-cache -f >/dev/null
 
 ARG VER_Pillow
 ARG VER_gifsicle
