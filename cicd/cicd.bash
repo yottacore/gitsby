@@ -47,7 +47,8 @@
 ##	   --no-remote         skip the remote tests
 ##	   --no-publish        skip the git backup + publish stage
 ##	   --quick             skip the slow stages (fuzz, demo gif, remote tests)
-##	   --container         run stages 1-4 and the demo gif in the pinned image from cicd/container/Dockerfile
+##	   --container         run stages 1-4 and the demo gif in the pinned image from cicd/container/Dockerfile (the default)
+##	   --no-container      run them on this box instead
 ##	   --gate              fast pre-push gate: every lint check and go test; no sync, build, suites, prompt or log
 ##	   --install-hook      install the git pre-push hook that runs --gate on each commit pushed to main
 ##	   -h, --help          show this help
@@ -100,7 +101,7 @@ fUsage(){ fEcho_Clean "$*" >&2; exit 2; }
 
 ## Parse options.
 assumeYes=0; quiet=0; quick=0; doSync=1; doLint=1; doTest=1; doFuzz=1; doParity=1; doRemote=1; cliMessage=""
-gate=0; installHook=0; stageOpts=(); container=0
+gate=0; installHook=0; stageOpts=(); containerOpt=""
 while (($#)); do case "$1" in
 	-q|--quiet)               quiet=1; assumeYes=1; shift ;;   ## quiet + unattended; publish runs quiet too
 	-y|--yes)                 assumeYes=1; shift ;;
@@ -123,7 +124,9 @@ while (($#)); do case "$1" in
 	## one cut before it existed, so keep the spelling.
 	--gate)                   gate=1; assumeYes=1; shift ;;
 	--install-hook)           installHook=1; shift ;;
-	--container)              container=1; shift ;;
+	--container|--no-container)
+		[[ -z "${containerOpt}" || "${containerOpt}" == "$1" ]] || fUsage "--container and --no-container are opposites; give one."
+		containerOpt="$1"; shift ;;
 	-h|--help)                sed -n '/^##	- Purpose:/,/^##	History:/p' "${BASH_SOURCE[0]}" | sed '$d; s/^##	\{0,1\}//'; exit 0 ;;
 	*) fUsage "unknown option: ${1} (try --help)" ;;
 esac; done
@@ -138,8 +141,16 @@ if ((${#stageOpts[@]})); then
 		fUsage "--install-hook installs the hook and takes no stage options (got: ${stageOpts[*]})"
 	fi
 fi
-if ((container)) && ((gate || installHook)); then fUsage "--container goes with a full run, not --gate or --install-hook."; fi
-if ((container)) && [[ -n "${GITSBY_CICD_IN_CONTAINER:-}" ]]; then fUsage "already in the container; --container would start another."; fi
+if [[ -n "${containerOpt}" ]] && ((gate || installHook)); then fUsage "${containerOpt} goes with a full run, not --gate or --install-hook."; fi
+if [[ "${containerOpt}" == --container && -n "${GITSBY_CICD_IN_CONTAINER:-}" ]]; then fUsage "already in the container; --container would start another."; fi
+## Asked for, it has to work. By default, a box with no usable docker runs everything here, and says so.
+container=0; containerNote=""
+if [[ -n "${GITSBY_CICD_IN_CONTAINER:-}" || "${containerOpt}" == --no-container ]] || ((gate || installHook)); then :
+elif [[ "${containerOpt}" == --container ]]; then container=1
+elif [[ "${CICD_CONTAINER:-0}" == 1 ]]; then
+	if docker info >/dev/null 2>&1; then container=1
+	else containerNote="WARNING: docker isn't usable here, so stages 1-4 and the demo run on this box, with its own tool versions"; fi
+fi
 if ((installHook)); then exec "${here}/utility/pre-push.bash" --install; fi
 
 ## Brief beat after each stage header so the cheap fast stages stay readable.
@@ -397,7 +408,7 @@ fi
 ## --container: the image's versions come from config.bash, and its tag hashes the recipe plus
 ## those, so a bumped version can't run on the old image.
 if ((container)); then
-	command -v docker >/dev/null 2>&1 || fDie "--container needs docker"
+	docker info >/dev/null 2>&1 || fDie "--container needs a working docker"
 	containerRecipe="${here}/container/Dockerfile"
 	[[ -f "${containerRecipe}" ]] || fDie "missing ${containerRecipe}"
 	containerArgs=(--build-arg "VER_go=${GO_RELEASE_TOOLCHAIN#go}")
@@ -425,6 +436,8 @@ fEcho_Clean
 fEcho_Clean "Repo root ...........: ${root}"
 if ((container)); then
 	fEcho_Clean "Container ...........: stages 1-4 and 6 in ${containerImage}"
+elif [[ -n "${containerNote}" ]]; then
+	fEcho "${containerNote}"
 fi
 if ((doLint)); then
 	fEcho_Clean "Lint ................: gofmt + go vet + staticcheck, shellcheck on ${#shellFiles[@]} shell file(s)  (+ golangci-lint, markdownlint, py_compile, PSScriptAnalyzer, windows resource if available)"
@@ -861,3 +874,4 @@ fEcho_Clean
 ##		- 2026-10-04 JC: Variables are camelCase, and the output helpers keep their state in two-underscore globals. The helpers come before the option loop, so a bad option goes through fUsage too. Every expansion braced, and shellcheck enforces it.
 ##		- 2026-10-10 JC: --container runs stages 1-4 in an image built from cicd/container/Dockerfile, with the versions config.bash pins. A pinned tool the recipe doesn't take stops the run. The tool version check knows git.
 ##		- 2026-10-10 JC: --container renders the demo gif in the image too, with its font pinned there.
+##		- 2026-10-10 JC: The container is the default, set by CICD_CONTAINER in config.bash. --no-container runs on this box, and so does a box without docker, with a warning.

@@ -46,6 +46,9 @@ GO_LDFLAGS_COMMON="-s -w -buildid="
 ## and go.mod's 'go' line is a minimum, not a pin. Release builds only: a dev build should
 ## follow whatever is installed.
 GO_RELEASE_TOOLCHAIN="go1.26.2"
+## Stages 1-4 and the demo run in the image from cicd/container/Dockerfile unless this is 0
+## or the run says --no-container. A box without a working docker runs them here, with a warning.
+CICD_CONTAINER=1
 
 ## The versions the Go tools were at when this pipeline last gated a green run. Recorded,
 ## compared and warned about - never installed and never enforced. Which version passed
@@ -276,3 +279,4 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-10-04 JC: Every expansion braced, and shellcheck enforces it. The settings stay upper case.
 ##		- 2026-10-05 JC: REMOTE_UNIX_WINE: the Linux arm64 box also runs the windows/arm64 Go tests under Wine.
 ##		- 2026-10-10 JC: TOOL_VERSIONS records git, since an older one spawns more on a fetch. Every pinned tool is also what the --container image installs.
+##		- 2026-10-10 JC: CICD_CONTAINER: the container is the default.

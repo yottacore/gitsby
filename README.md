@@ -308,13 +308,13 @@ cd gitsby/src-go && go build -o gitsby .
 7. Runs the Go tests on a Mac, a Windows box, a FreeBSD box and a Linux arm64 box over ssh, and the regression suite on all but Windows. The Linux arm64 box also runs the windows/arm64 Go tests under Wine.
 8. **Commits and pushes.** It ends by publishing - worth knowing before you run it on a fork.
 
-Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `gifsicle` won't stop the rest. Stage 5's destinations are one machine's paths, set in `cicd/config.bash`; on anyone else's box that stage finds nothing writable and says so, which is harmless. Stage 7's boxes are that machine's too, and a box that is off or busy is skipped the same way.
+Stages 1-4 and the demo gif run in a Debian image built from `cicd/container/Dockerfile`, so every box lints, tests and renders with the same tool versions. Without a working docker they run on the box itself, with a warning. Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `gifsicle` won't stop the rest. Stage 5's destinations are one machine's paths, set in `cicd/config.bash`; on anyone else's box that stage finds nothing writable and says so, which is harmless. Stage 7's boxes are that machine's too, and a box that is off or busy is skipped the same way.
 
 ~~~bash
 cicd/cicd.bash --quick          # skips fuzz, the demo gif and the remote tests; what you want while iterating
 cicd/cicd.bash                  # everything, and it prompts once for a commit message
 cicd/cicd.bash -y -m "message"  # unattended
-cicd/cicd.bash --container      # stages 1-4 and the demo gif in a pinned Debian image; needs docker
+cicd/cicd.bash --no-container   # stages 1-4 and the demo gif on this box, not in the pinned image
 cicd/cicd.bash --gate           # every lint check and the unit tests; what the pre-push hook runs
 cicd/cicd.bash --install-hook   # run --gate on the pushed commit before every push to main
 ~~~
