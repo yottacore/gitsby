@@ -59,11 +59,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Requirements [Feature]:
 		- Stages 1-4 can run in a Debian trixie image with our Go and every pinned lint and test tool, so a host update can't move a finding.
 		- The versions come from config.bash, not a second list.
-		- The rest stays on the host: sync, dogfood, the demo (fonts), remote tests and publish.
+		- The demo gif renders there too, so a host update can't change its bytes either.
+		- The rest stays on the host: sync, dogfood, remote tests and publish.
 	- Done: `cicd.bash --container`, from `cicd/container/Dockerfile`. The tag hashes the recipe and the versions, and a new image replaces the old one. Go caches live in a named volume. git joined `TOOL_VERSIONS`, since trixie's 2.47 spawns 4 more processes on a fetch than the host's 2.51.
 	- Branch: ctr
 	- Test case: [EsJgeiS] to [EsJgem1] in test.bash, against the stubbed engine. The recipe guard was watched to fail by hand.
 	- Verified: a run in the container matched the host baselines, test.bash 1509/0, fuzz.bash 313/0, parity.bash 29/0 and spawn counts. With the new checks, 1514/0 both in the container and on the host. The fixture sets the container marker itself, since the suite inside the image inherited it.
+	- Done 2026-10-10: the demo gif renders in the image as well. Apt reads the snapshot the base was cut from, so Pillow, freetype and cairo can't move, and the image has the Monaspace release file the host uses. The emoji font is Debian's, not the host's build, but the demo draws no emoji. The render matched the committed gif byte for byte, and with the font hidden it didn't.
+	- Test case: [EsK1B7q] in test.bash.
 	- Closed: 20261010-100500
 
 - test.bash's `--direct` prompt check fails on FreeBSD and macOS
