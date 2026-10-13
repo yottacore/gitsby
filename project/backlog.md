@@ -98,7 +98,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Opened by: jim-collier
 	- Incorrect behavior [Bug]: [ErsjjF5] failed on vmFreeBSD in stage 7 on 2026-10-06, 1222/1.
 	- Reproduced [Bug]: Yes, by running test.bash again on vmFreeBSD.
-	- Actual cause [Bug]: The check answers the prompt through util-linux `script -qec`, and the BSD `script` doesn't take it. Every other prompt check sits under `hasPty`. This one, from d97811c, didn't.
+	- Actual cause [Bug]: The check answers the prompt through util-linux `script -qec`, and the BSD `script` doesn't take it. Every other prompt check sits under `hasPty`. This one, from e1cc030, didn't.
 	- Actual fix [Bug]: Put it under `hasPty`.
 	- Branch: ptyguard
 	- Verified: test.bash 1222/0 on vmFreeBSD.
@@ -119,7 +119,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Bug]: `git clone -- <url> <dir>`, and the plan line shows the same.
 	- Swept: every `a.step` call for git, gh and tea. gitsby's own parser refuses an argument that starts with a dash, `--` included, checked for `br create`, `repo connect`, `repo url` and `repo create`. So only a value gitsby builds from other input can start with one, and the clone folder was the only such value. Built URLs start with a scheme.
 	- Branch: fuzzwork
-	- Commit: 07d6883
+	- Commit: c1b10fc
 	- Test case: fuzz.bash [Ervo5NU]. Red on `gover`'s code, green here.
 	- Verified: fuzz.bash 311/0, test.bash 1491/0, parity.bash 29/0 on the branch.
 
@@ -133,7 +133,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Incorrect behavior [Bug]: workflows.md says "There's no command for 'push to `main` anyway'", and that gitsby won't push your own work to `main` or `dev` even with permission. `pullcom` commits there and `sync` pushes there, and the plan says nothing about it. The refusal on a dirty `main` or `dev` even suggests `gitsby pullcom` to commit there on purpose. The README's first line says the tool enforces the workflow.
 	- Expected behavior [Bug]: The docs and the tool say the same thing.
 	- Reproduced [Bug]: Yes. A clone of a bare origin, one edit on `main`, then `gitsby sync -q -m x` pushed `main -> main` and exited 0. The same on `dev`.
-	- Origin: workflows.md:96 from bae69b6 and :105 from dc5054c, both 2026-07-28. The behavior is older. The 2.x refusal named `update` as the way to commit on a protected branch on purpose. No earlier round saw it. Confirmed.
+	- Origin: workflows.md:96 from ab8d389 and :105 from 584e0ff, both 2026-07-28. The behavior is older. The 2.x refusal named `update` as the way to commit on a protected branch on purpose. No earlier round saw it. Confirmed.
 	- Note: 2 ways out. Reword workflows.md to say gitsby steers work onto branches and still allows a deliberate commit on `main` or `dev`. Or warn above the prompt when the push goes to `main` or `dev`. Refusing is out, since the tool's own advice and every repo with no `dev` lean on it.
 	- Note: The reword is the smaller change. A warning would show on every push in a GitHub Flow repo that commits to `main`.
 	- Progress log:
@@ -146,7 +146,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Bug]: `sync` on `main`, `dev` or the default branch warns on stderr above the prompt when it would push commits made on that branch, or commit a dirty tree there. Under `-q` it refuses and names `--direct`. A merge left for `sync` to publish doesn't count, so `br merge` offline and the hotfix back-merge still publish without it. workflows.md, the README, design.md and the UI style guide say so.
 	- Note: [ElHQEx6], [EknhbCN] and [Erg9NTg] sync on `main` to test sync itself, and now pass `--direct`. What each checks is unchanged.
 	- Branch: direct
-	- Commit: d97811c
+	- Commit: e1cc030
 	- Test case: test.bash [ErsjjDN] refuses under `-q`, [ErsjjEE] pushed nothing, [ErsjjF5] warns above the prompt on a pty, [ErsjjFy] help lists it. Each red on `gover`. [ErsjjGp] a clean re-run and [ErsjjHh] a merge published from `dev` stay quiet, each red with the merge and clean-tree tests taken out.
 	- Closed: 20261005-190835
 
@@ -160,11 +160,11 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Incorrect behavior [Bug]: design.md:188 and the UI style guide say commands split by how often they're typed, with `pullcom`, `sync`, `status`, `whoami` and `release` as the daily one-word verbs. The help puts `sync` and `whoami` under "Less common commands" and `release` under "Admin commands", and lists `br create` and `br switch` as common. The README tags `sync` "Do infrequently".
 	- Expected behavior [Bug]: One story about how the commands are grouped.
 	- Reproduced [Bug]: Yes, `gitsby --help` against design.md and the style guide.
-	- Origin: design.md:188 from faaa69e (2026-07-26). The help's groups go back to 2.x, 0394a80 in 2022. No round saw it. Confirmed.
+	- Origin: design.md:188 from d446496 (2026-07-26). The help's groups go back to 2.x, 3a97c0e in 2022. No round saw it. Confirmed.
 	- Note: The help's groups read true. The one-word split isn't about how often a command is typed, so the design line and the style guide should say what it is. Regrouping the help is the other choice.
 	- Actual fix [Bug]: design.md and the UI style guide now call the one-word commands the workflow steps, with everything else under the thing it acts on. The help is unchanged.
 	- Branch: direct
-	- Commit: d97811c
+	- Commit: e1cc030
 	- Test case: none, docs only.
 	- Closed: 20261005-190835
 
@@ -178,7 +178,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Incorrect behavior [Bug]: The help's `account` line says "Show your configured GitHub accounts", right above 2 examples that use `gitea.com`. The README's `account` row says the same. design.md:249 opens with "Which GitHub account you act as".
 	- Expected behavior [Bug]: Say "accounts" where any host is meant.
 	- Reproduced [Bug]: Yes, `gitsby --help`.
-	- Origin: help.go:62 from 63d5782 (2026-08-08), before accounts took a `host`. No round saw it. Confirmed.
+	- Origin: help.go:62 from fc0ddda (2026-08-08), before accounts took a `host`. No round saw it. Confirmed.
 	- Decisions:
 		- The README's "Multiple GitHub accounts" heading changes too (2026-10-05). It is "Multiple accounts" now, and so is accounts.md's title.
 	- Progress log:
@@ -186,7 +186,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 2026-10-05: OK'd, with the README heading changed as well.
 	- Actual fix [Bug]: "accounts" in the help's `account` line, the README's `account` row and design.md's heading. The README section and accounts.md are titled "Multiple accounts", with the TOC entry updated. The prose that says "two GitHub accounts" stays, since GitHub is the usual case.
 	- Branch: direct
-	- Commit: d97811c
+	- Commit: e1cc030
 	- Test case: none, wording only.
 	- Closed: 20261005-190835
 
@@ -200,11 +200,11 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Incorrect behavior [Bug]: The README says gitsby has "ten - or 24 counting subcommands". The help lists 25 since `account unset` came in.
 	- Expected behavior [Bug]: A number that a check keeps true, or wording with no number.
 	- Reproduced [Bug]: Yes, by counting the help's entries.
-	- Origin: README:64 from c18c606 (2026-08-21). `account unset` is 62af07b (2026-09-28). No round saw it. Confirmed.
+	- Origin: README:64 from 4ec5fd4 (2026-08-21). `account unset` is 1ed0f3a (2026-09-28). No round saw it. Confirmed.
 	- Note: "ten" can keep its number with a check on the help's top-level commands. The subcommand count could say "about two dozen" and claim nothing exact.
 	- Actual fix [Bug]: The README says "about two dozen counting subcommands". "ten" stays, and a check holds it.
 	- Branch: docfix
-	- Commit: a1f6d68, af0b41b
+	- Commit: f4f624b, 2206206
 	- Test case: [ErsJhby] in test.bash counts the help's top-level commands and needs 10, with "Gitsby has ten" in the README. Red with the README saying eleven, green as committed.
 	- Closed: 20261005-172300
 
@@ -223,7 +223,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Done: Step lines quote an argument that needs it, and quote a `-m` value the way the plan does. The plan's commit message and `pr create` title go through the same quoting, so a message with `"` or `$` in it now shows in single quotes there too. The demo's `sync` step line gains its quotes, so the gif changes at the next full run.
 	- Note: parity.bash needed no carve-out. It passed 29 of 29.
 	- Branch: docfix
-	- Commit: af0b41b
+	- Commit: 2206206
 	- Test case: [ErsJhaE] in test.bash, a plan line and its step line must match for `-m 'two words; here'`, red on `gover` and green here. [ErsJhZM] TestShellWord has a shell read 10 awkward values back unchanged.
 	- Acceptance signoff: Self-closed 2026-10-06. Tested, and it follows the plan and the README with no open choice left.
 	- Closed: 20261005-172300
@@ -242,7 +242,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: help.go, various. No round saw it.
 	- Done: The help lists `--yes`, says `repo connect` takes a URL or `owner/name`, and starts the `account set` and `account unset` lines with their arguments.
 	- Branch: docfix
-	- Commit: af0b41b
+	- Commit: 2206206
 	- Test case: [ErsJhb6] in test.bash, help lists `--yes`. Red on `gover`, green here. [ErwbTHe], [ErwbTHr] and [ErwbV0h] check the `repo connect`, `account set` and `account unset` lines, each red against the help before it.
 	- Acceptance signoff: Self-closed 2026-10-06. Tested, and the help now matches the README with no open choice left.
 	- Closed: 20261005-172300
@@ -261,7 +261,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Bug]: `origin/HEAD` is skipped there.
 	- Swept: `branchRefs` is the one place origin's branches are read for the existence checks.
 	- Branch: fuzzwork
-	- Commit: 07d6883
+	- Commit: c1b10fc
 	- Test case: fuzz.bash [Ervo5NW]. Red on `gover`'s code, green here.
 	- Verified: fuzz.bash 311/0, test.bash 1491/0, parity.bash 29/0 on the branch.
 	- Acceptance signoff: Self-closed: reproduced, red before the fix and green after.
@@ -283,7 +283,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: the `account` list (every row, the Account and Ignored keys lines, the shared-rule and stale-rule warnings); the status and `whoami` Account line, its notes (through `noteLines`, which refusals use too), the Config, SSH and Author lines and the loose token file warning; the `account set` and `unset` plans (`was:`, `becomes:`, `add:`, `remove:`); the `account apply` plan, its status lines and refusals, and the unused-fragment line; the `raw` "acting as" line; and the refusals that quote a typed value (account name, key, host, user, protocol, path, GIT_CONFIG_COUNT). `host`, `user` and `protocol` were already held to plain characters, and account names to letters, digits, `.`, `_` and `-`.
 	- Note: git drops a newline from an ident itself, so the Author line shows only the ESC escaped.
 	- Branch: ctlesc, escall
-	- Commit: 3594df7, 4ef4f47
+	- Commit: 2be7d35, 47bcda3
 	- Test case: test.bash [ErvuMUH], [ErvuMUU] and [ErvuMUh], and Go `TestPrintableEscapesControlsOnly` [ErvuMUv], and `TestEveryLineOutIsEscaped` [ErwXroS].
 	- Verified: all 3 suite checks red on `gover`, green here. The Go test fails with the escaping taken out. test.bash 1494/0, fuzz.bash 311/0, parity.bash 29/0, `go test ./...` and the gate pass.
 	- Decisions:
@@ -307,7 +307,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Keep 512 px and show it at full size. It is a cool logo.
 	- Swept: README width 128, `gen-winres.bash` (largest size 256), design.md, changelog.md, trademark.md and the backlog's `.ico` note. None state the logo's size or need 512 px.
 	- Branch: logo, logo512
-	- Commit: 1e70d74
+	- Commit: ec2564a
 	- Test case: None, asset only.
 	- Acceptance signoff: jim-collier 2026-10-06
 	- Closed: 20261006-072500
@@ -320,11 +320,11 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
 	- Incorrect behavior [Bug]: design.md says it is revised in place, so what it holds is true now. 5 lines aren't.
-		- :536 says displayed paths fold the home folder back to `~`. That was reversed on 2026-09-16. Line 540 and the UI style guide both say a path is never re-spelled. From a620930.
-		- :345 says the engine runs 7 stages. It's 8 behind a stage 0 since 2026-10-04. From 5d8f84e.
-		- :188 names the nouns as `repo`, `br` and `pr`. `account` and `raw` came later, and the UI style guide lists all 5. From faaa69e.
-		- :202 says `pullcom` and `sync` make up a message when none is given, and uses that as the reason `pr create` has a default title. They open git's editor, and make one up only under `-q`. From f1dbffe.
-		- :512 says `gh` is needed for every `pr` form. On Gitea `pr` goes through `tea`, as "Direction decisions" and the README say. From 79d5ea5.
+		- :536 says displayed paths fold the home folder back to `~`. That was reversed on 2026-09-16. Line 540 and the UI style guide both say a path is never re-spelled. From 919141f.
+		- :345 says the engine runs 7 stages. It's 8 behind a stage 0 since 2026-10-04. From fa41f83.
+		- :188 names the nouns as `repo`, `br` and `pr`. `account` and `raw` came later, and the UI style guide lists all 5. From d446496.
+		- :202 says `pullcom` and `sync` make up a message when none is given, and uses that as the reason `pr create` has a default title. They open git's editor, and make one up only under `-q`. From 0ec08bd.
+		- :512 says `gh` is needed for every `pr` form. On Gitea `pr` goes through `tea`, as "Direction decisions" and the README say. From 2835bb7.
 	- Expected behavior [Bug]: Each line says what is true now.
 	- Reproduced [Bug]: Yes, each line read against the code, the help or the line that reversed it.
 	- Origin: the commits named above, 2026-07-26 to 2026-08-20. No round saw these lines. Confirmed.
@@ -333,7 +333,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Bug]: All 5 lines now say what is true. The run-time tools line names the git host's own tool, `gh` or `tea`, and says a later host brings its own the same way. The stage line no longer counts stages.
 	- Swept: the old wording of each line, grepped across every .md in the repo. The other hits are dated history in the changelog and the backlog.
 	- Branch: docfix
-	- Commit: a1f6d68
+	- Commit: f4f624b
 	- Test case: none, docs only. Nothing in the rewording is a number or a list a check could hold.
 	- Acceptance signoff: Self-closed: the item named each line, and each fix only states what the code does.
 	- Closed: 20261005-172300
@@ -406,7 +406,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- For signoff: the plan's two list labels only.
 		- Answered 2026-10-05: the labels read "Changes to commit:" and "Changes to leave alone:". The plan prints before anything runs, so past tense read wrong.
 	- Branch: staged, stagedpr
-	- Commit: efe1522, eca617e
+	- Commit: 9f53a91, 7c3281d
 	- Test case: Go tests `[Err7CYL]`, `[Err7CYY]`, `[Err7CYm]`. test.bash `[Err7W8V]` through `[Err7WAA]`, 18 checks, with `[Err7W97]` off since 2026-10-05. For `pr create` and `release`: `[ErrG0tG]` through `[ErrG0uY]` and `[ErrG0uf]` through `[ErrG0uu]`, 12 checks.
 	- Swept: every `--autostash` and `git add --all` in `src-go`. The commit and the pull in mutate.go, br create from `main` or `dev` in branchcmd.go, and both plan lines in preview.go. The file list in repo.go is for `repo create` and `repo connect`, which refuse the flag. The pulls in pr.go and release.go run on a clean tree, and those commands refuse the flag.
 	- Swept (2026-10-05, `pr create` and `release`): every step after their commit. In release.go the pulls of `dev` and the default branch, both checkouts, the merge and its back-out, the tag, both pushes, and the fast-forward of `dev`. Its nothing-new check read the whole tree as work to release, and now reads the index under the flag. In pr.go the push and the `gh` or `tea` call. `pr ok` reads the whole tree to refuse, and refuses the flag. The line above about pr.go and release.go held only while they refused the flag.
@@ -435,7 +435,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Verified: 9 new checks pass, and all 9 fail on the tree before.
 		- Note: the Go installer can't install v2.1.0 on any platform, before or after this. That release publishes the `gitsby` and `gitsby.ps1` scripts, not per-platform binaries.
 	- Branch: macuni
-	- Commit: 7c37ca9
+	- Commit: 28b8f2d
 	- Test case: test.bash `[ErgCzfP]`, `[ErgCzfc]`, `[ErgCzfq]` (install.bash on a Mac), `[ErgDQ7N]` (install.ps1, pinned since pwsh can't fake a Mac), `[ErgCzeJ]`, `[ErgCzeW]`, `[ErgCzek]`, `[ErgCzey]`, `[ErgCzfB]` (release.bash).
 	- Swept: every `darwin` and `arm64` reader in the repo. release.bash, config.bash, both installers, the installer and release fixtures in test.bash, README, design.md and the changelog. cicd.bash dogfood already joins. Nothing in `src-go` reads asset names. `legacy/` is frozen.
 	- Verified: stage 7 on b26 (2026-10-04) passed the installer checks with stubbed downloads, `[ErgCzfP]`, `[ErgCzfc]` and `[ErgCzfq]` among them.
@@ -477,7 +477,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Note: Wine there has no Windows git, so the tests that need git skip under Wine. vm925w still runs those.
 		- Verified 2026-10-05: a full stage 7 run passed on every box. Under Wine, 173 passed and 26 skipped. vmDebARM64's test.bash passed 1438, b26's 1255 and vmFreeBSD's 1179, none failed. b29w ran the Windows Go tests, symlink helper included, since vm925w was held: 180 passed, 19 skipped.
 	- Branch: winebti, winenobti
-	- Commit: f176e7a
+	- Commit: cda31a7
 	- Test case: stage 7's Wine run on vmDebARM64. The 6 symlink tests failed under Wine before the fix, and pass or skip after.
 	- Swept: every `os.Symlink` in the Go tests, 8 sites. Code outside the tests makes no links.
 
@@ -508,7 +508,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Note: offline, the identity block can now name gh's active account from its config, where it said nothing before. Display only.
 	- Swept: every caller of `ghLogin`, `sshLogin` and `ghTokenFor`. The probes in `settleGh`, `selectAccount`, `identityGate` and the identity block lines all read through the same caches. `showHostLine` asks tea, which reads a local file, so it stays as it was.
 	- Branch: probes
-	- Commit: cc71200
+	- Commit: 545712a
 	- Test case: test.bash `[ErkSC4L]`, `[ErkSctG]`, `[ErkSC4Z]`, `[ErkSC4m]` (regression guard), `[Er1LxSk]`; Go `[ErkSC3h]`, `[ErkSC3v]`, `[ErkSC48]`, `[ErkTEpz]`.
 	- Verified: test.bash 1408/0, `go test ./...`, fuzz.bash 301/0 and parity 29/0 on merged gover, 2026-10-04.
 	- Acceptance signoff: Self-closed: the goroutines have the measured reason the style guide asks for, output is unchanged, and the checks fail before and pass after.
@@ -541,7 +541,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Verified: the release.bash block of test.bash, 38 passed. Against release.bash before the change, four of the five new checks fail. `[Erm33XL]` held before too, since the body was already the section.
 		- Not run: the full test.bash, the gate, and a real cut.
 	- Branch: dltable
-	- Commit: 72ae04b
+	- Commit: 035cb8e
 	- Test case: test.bash `[Erm33Wu]`, `[Erm33X8]`, `[Erm33XL]`, `[Erm33XZ]`, `[Erm33Xn]`.
 	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
 	- Note: the installers read `SHA256SUMS` and the release list, never the body, so they are untouched.
@@ -576,7 +576,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: `grep -n '@{u}' src-go/*.go`. Both runners and every plan line go through `pullArgsFor`. The other `@{u}` uses are reads, such as ahead and behind and the incoming list, not steps the plan shows.
 	- Verified: test.bash 1406/0, parity 29/0, `go test -race`, and `cicd.bash --gate`. On the build before this item, [Erg9NT0], [Erl2Vub], [Erl2Vup] and [Erl2Vv4] fail. [Erl2VvI] passes there too, since the old plan and step both said `@{u}`. With the step handed a different name than the plan, it fails.
 	- Branch: spawncut
-	- Commit: 4a1b65c
+	- Commit: 7979ffb
 	- Test case: test.bash [Erl2Vub], [Erl2Vup], [Erl2Vv4], [Erl2VvI] and [Erl2eIe]. Go `TestPullArgsFor` [ErgA5KD] and `TestUpstreamNames` [Erl1x3E].
 	- Acceptance signoff: Self-closed: the rule was set by hand on 2026-10-03, and the checks fail before and pass after.
 	- Closed: 20261005-072140
@@ -607,7 +607,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: Self-closed. Reproduced, its test failed before the fix and passes after, and the sweep is answered.
 	- Closed: 20261004-182117
 	- Branch: tmpguard
-	- Commit: 566589f
+	- Commit: 609ccb9
 
 - The README install line fails while v2.1.0 is the newest full release
 	- ID: 2026100315501800
@@ -639,7 +639,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: 14 of the 21 new checks fail against gover's installers and release.bash and pass here. The other 7 pin what must not change (an explicit tag, a full release over a newer beta, no list request when the redirect's release has a binary) and pass on both. test.bash 1365/0, and `cicd.bash --gate` passes. Both installers run against the live release list stop with "No release of yottacore/gitsby publishes a gitsby binary yet", which is today's state.
 	- Note: the checks run under pwsh 7 and bash 5.2 here. Windows PowerShell 5.1 and macOS bash 3.2 were not run, as with the other installer checks.
 	- Branch: betainst
-	- Commit: f1c7157
+	- Commit: 4ccd133
 	- Test case: [ErgajCd] through [ErgajEP] (install.bash), [ErgajEe] through [ErgajGU] (install.ps1) and [ErgajGi], [ErgajGw], [ErgajHA] (release.bash phase 3) in test.bash.
 	- Acceptance signoff: Self-closed: the rule was set by hand on 2026-10-03, and the checks fail before the fix and pass after.
 	- Closed: 20261003-171623
@@ -657,14 +657,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: The `fDie` right below each line runs and says what's left half done.
 	- Reproduced [Bug]: Yes, 2026-10-03. The first by hand, the second by simulation.
 	- Possible cause [Bug]: `x="$(... | grep ...)"` and `x="$(curl ... | sed ...)"` under `set -e` and `pipefail`, with no `|| true`. It's one of the Bash traps.
-	- Origin: release.bash:248 from 78224a2 (2026-08-12) and :306 from 8ff6681 (2026-09-24). Neither was filed before. The :306 block is the phase 3 path that has never run. Confirmed.
+	- Origin: release.bash:248 from 6cdfd95 (2026-08-12) and :306 from 5a2239b (2026-09-24). Neither was filed before. The :306 block is the phase 3 path that has never run. Confirmed.
 	- Actual cause [Bug]: Under `set -e`, an assignment from `$( )` takes its command's failure. The PR number grep, the `releases/latest` curl and the build line read from the native binary each ended the run there, above the message meant for it.
 	- Estimated effort: Low
 	- Actual fix [Bug]: Each of the three ends in `|| true`, so the check below it runs and says what happened.
 	- Swept: every `$( )` assignment in release.bash. The build line was the only other one that could end the run unseen. The rest end in `|| true` or `|| fDie`, or run a command that prints its own error.
 	- Verified: both checks fail on `gover` and pass here. Each of the three sites, put back alone, fails its check. test.bash passes 1280 of 1280 with both fixes in.
 	- Branch: relpipe
-	- Commit: 0b664d5
+	- Commit: f529e4f
 	- Test case: [Erfs74j] and [Erfs75a] in test.bash. They run release.bash past its dry run, with gh, curl and gitsby stubbed. The second is the first run of the phase 3 `releases/latest` block.
 	- Acceptance signoff: Self-closed: reproduced, and the checks fail before the fix and pass after.
 	- Closed: 20261003-141520
@@ -682,7 +682,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: The four checks read the file on macOS as they do on Linux.
 	- Reproduced [Bug]: Yes, 2026-10-04, in stage 7's run on b26, where ssh gets `LANG=en_US.UTF-8`, and again by hand on the `.syso` files.
 	- Possible cause [Bug]: macOS `tr` and `grep` both check bytes against the locale. With `LC_ALL=C` on both, the copyright check found its string on b26. On the `tr` alone it still failed.
-	- Origin: the `tr` lines, from def75ab (2026-10-01, the macOS pass, which swapped out `grep -P`) and 4990d4f (2026-09-26). Not seen by an earlier round. Confirmed.
+	- Origin: the `tr` lines, from 5eadb03 (2026-10-01, the macOS pass, which swapped out `grep -P`) and 7846d29 (2026-09-26). Not seen by an earlier round. Confirmed.
 	- Estimated effort: Low
 	- Actual cause [Bug]: macOS `tr` and `grep` check bytes against the locale, and ssh there gets a UTF-8 one. `tr` stopped at the first byte that wasn't text. The two checks expecting no match passed because nothing was read.
 	- Actual effort: Low
@@ -695,7 +695,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Note: the two no-match checks moved from `fAssertFail` to `fAssert`. They keep their IDs and labels.
 	- Swept: every `tr` and `grep` in `cicd/` that reads a binary file. Only these four did. The icon check `[EnQf0UG]` already had `LC_ALL=C`, and the `od` reads of Mach-O headers don't depend on the locale.
 	- Branch: remfix
-	- Commit: fad69c8
+	- Commit: 6842035
 	- Test case: test.bash `[EnQf0UF]`, `[EnQf0UH]`, `[Er1LxTO]` and `[Er1LxTP]`, plus the new `[Erki5JE]`.
 	- Acceptance signoff: Self-closed: reproduced, and the checks fail before and pass after on b26.
 	- Closed: 20261004-103900
@@ -713,7 +713,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: The message keeps the real error. The permissions hint shows only when it is a permissions error.
 	- Reproduced [Bug]: Yes, 2026-10-03. A folder where an `account apply` fragment goes, a lock name too long for the filesystem, and a plain file where the accounts file's folder goes. Each dropped the reason, and the first two said to check permissions.
 	- Possible cause [Bug]: `usagef` where `usageWrapf` exists for this. Seven sites in accountcmd.go.
-	- Origin: accountcmd.go, from 11905d2 (2026-09-16) and 62af07b (2026-09-28). Not seen by an earlier round. Confirmed.
+	- Origin: accountcmd.go, from 0ad1374 (2026-09-16) and 1ed0f3a (2026-09-28). Not seen by an earlier round. Confirmed.
 	- Sweep: every `usagef("Couldn't ...` that has an `err` in scope.
 	- Actual cause [Bug]: Each site had the error in hand and printed a fixed message instead. Most of them guessed permissions.
 	- Estimated effort: Low
@@ -722,7 +722,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: the seven sites the review named, plus the lock, the partly written create and the relative path in `account set`. Left alone: the three `git config` failures in `account apply`, which have no error in hand while git prints its own, and the three in repo.go, which already give the reason. Found by a grep for `usagef("Couldn't` over src-go.
 	- Verified: the five site tests fail on `gover` and pass here. The test.bash pair was run by hand against both builds. test.bash passes 1288 of 1288, and `go test ./...` and `cicd.bash --gate` pass.
 	- Branch: errmsg
-	- Commit: 52b5c44
+	- Commit: b64bc2e
 	- Test case: TestAccountApplyKeepsTheReasonAFragmentFailed, TestLockKeepsTheReasonItFailed, TestAccountSetKeepsTheReasonItsFolderFailed, TestLoadForEditKeepsTheReasonTheReadFailed and TestAbsPathValueKeepsTheReasonTheFolderIsGone for the sites, TestWriteRefusalNamesPermissionsOnlyWhenTheyAreTheCause for the rule, and [Erfv8YB] and [Erfv8Yu] in test.bash. The chmod and save sites have no unprivileged way to fail, so the rule test covers them.
 	- Acceptance signoff: OK, 2026-10-03.
 	- Closed: 20261003-163955
@@ -740,7 +740,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: When the abort fails, say the tree is mid-merge and name the commands to settle it.
 	- Reproduced [Bug]: Yes, 2026-10-03, with a git that refuses only `merge --abort`. `br merge` said dev "is as it was", then failed a checkout on the conflicted tree. The hotfix back-merge said dev was untouched and ended in Done, exit 0. `release` goes through the same code as `br merge`.
 	- Possible cause [Bug]: `_ = runOK("git", "merge", "--abort")` in `backOutMerge`, and the same at the dev back-merge.
-	- Origin: branchcmd.go:226 from bfbae90 (2026-09-15). Not seen before. Confirmed.
+	- Origin: branchcmd.go:226 from b34a25c (2026-09-15). Not seen before. Confirmed.
 	- Actual cause [Bug]: Both sites threw away the abort's exit status.
 	- Estimated effort: Low
 	- Actual fix [Bug]: A failed abort now refuses with Why, Kept and Fix lines. They say the target is still mid-merge, that nothing was committed to it, and give the commands to drop the merge and go back. git's own reason for the failed abort shows above it. The back-merge also offers finishing the merge by hand, which carries the hotfix across.
@@ -749,7 +749,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: both `merge --abort` calls in src-go. `release` backs out through `backOutMerge`, so it is covered too and was run by hand. No other git step in src-go has its result discarded, apart from the listings and two best-effort calls in repo.go and remote.go whose comments say why.
 	- Verified: the same runs on `gover` said the target was as it was, and the back-merge exited 0. Here all six checks pass, and test.bash passes 1288 of 1288. `go test ./...` and `cicd.bash --gate` pass.
 	- Branch: errmsg
-	- Commit: d7511a2
+	- Commit: ef2b917
 	- Test case: [ErfwTrE], [ErfwTrT] and [ErgQv90] for the back-merge, [ErfwTrh], [ErfwTrv], [ErfwTs8] and [ErfwTsM] for `br merge`, all in test.bash.
 	- Acceptance signoff: OK, 2026-10-03.
 	- Closed: 20261003-163955
@@ -766,7 +766,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- `tag --sort ... | head -n 1` in release.bash and gen-winres.bash fails the same way once there are enough tags.
 	- Expected behavior [Bug]: Capture the output first, then match it, the way cicd.bash already does.
 	- Reproduced [Bug]: The proof step failed 1 run in 300. The tag lookup failed every time with 3000 tags, never with today's 6.
-	- Origin: release.bash:132 and :333 from 988b72d (2026-08-18), gen-winres.bash:100 from e6af523 (2026-08-19). Same class as the Bash trap on early-exit readers. Confirmed for the proof step, Plausible at today's tag count.
+	- Origin: release.bash:132 and :333 from 1928f35 (2026-08-18), gen-winres.bash:100 from cf5922e (2026-08-19). Same class as the Bash trap on early-exit readers. Confirmed for the proof step, Plausible at today's tag count.
 	- Actual cause [Bug]: `head -n 1` and `grep -q` stop reading at the first match. A writer with more to say than a pipe holds then fails writing the rest, and `pipefail` fails the pipeline.
 	- Sweep: also `spawn-report.bash:53` and `install.bash:196`.
 	- Estimated effort: Low
@@ -774,7 +774,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: release.bash:132 and :333, gen-winres.bash:100, spawn-report.bash:53 and install.bash:196, all fixed. Left alone, since `|| true` keeps the right value there: install.bash's wget redirect read, cicd.bash's tool version read and parity.bash's diff excerpts. Found by a grep for `| head`, `| grep -q` and `| awk ... exit` over every `.bash` outside `legacy/`. test.bash's `| grep -q` runs inside `bash -c`, which has no pipefail.
 	- Verified: all five checks fail on `gover` and pass here. test.bash passes 1280 of 1280 with both fixes in.
 	- Branch: relpipe
-	- Commit: e8195e6
+	- Commit: 76675b3
 	- Test case: in test.bash, [Erfs76S] for a published binary whose `--version` outruns a pipe, [Erfs77J] and [Erfs78A] for 3000 tags, [Erfs792] for a long SHA256SUMS, and [Erfs79u] for 1000 spawn recordings.
 	- Acceptance signoff: Self-closed: reproduced, the checks fail before the fix and pass after, and the sweep is answered.
 	- Closed: 20261003-141543
@@ -838,7 +838,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The macOS build is already here. A release builds `darwin/amd64` and `darwin/arm64`.
 		- Note: since item 2026100313491873, a release publishes one universal macOS file in place of those two.
 		- b26 is an Intel Mac, so testing there needs `darwin/amd64`. Dogfood builds it since item 2026100312571262.
-		- The pipeline and the Go tests were made to pass on macOS on 2026-10-01 (def75ab), run by hand. Nothing runs them there since.
+		- The pipeline and the Go tests were made to pass on macOS on 2026-10-01 (5eadb03), run by hand. Nothing runs them there since.
 		- The Go tests can be cross-built with `go test -c`, so neither box would need Go installed. test.bash on b26 would need Homebrew's bash, since the default there is 3.2.
 		- No stage runs the Go tests on Windows today. That is how `TestCanonPath` and `TestDisplayPath` broke there unnoticed.
 		- Done: stage 7, "Mac + Windows tests", in `cicd/remote-tests.bash`. Publish is stage 8. How it works is on the child item.
@@ -846,7 +846,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Verified: `TestCanonPath` passes on vm925w. `TestDisplayPath` no longer exists, since `displayPath` was removed on 2026-09-16.
 		- Note: until those three bugs are fixed, a full run stops at stage 7.
 	- Branch: remtest
-	- Commit: 5af99d6
+	- Commit: 956d07b
 	- Test case: test.bash `[ErkbDSi]` to `[ErkbDTn]` for the stage in cicd.bash, and `[ErkbDU2]` to `[Erkbdua]` for the harness, 22 in all.
 	- Verified: a full pipeline run on 2026-10-05 passed on every box.
 	- Acceptance signoff: OK, 2026-10-05, after the full run.
@@ -875,7 +875,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Verified: eight faults put into a copy of the harness, one at a time, each turned its check red. The session id handed to the lock, no `--wait 0`, no skip without a lock script, no mark check, removing a Windows folder the run didn't make, no marker filter, every free Windows box run, and a dropped box counted as failed.
 		- Verified: with `--quick` no longer skipping stage 7 and the Mac build left behind in cicd.bash, test.bash failed exactly `[ErkbDSi]`, `[ErkbDT4]` and `[ErkbDTL]`. The gate (lint and Go tests) passes.
 	- Branch: remtest
-	- Commit: 5af99d6
+	- Commit: 956d07b
 	- Test case: test.bash `[ErkbDSi]` to `[Erkbdua]`, as on the parent.
 	- Verified: a full pipeline run on 2026-10-05 passed on every box.
 	- Acceptance signoff: OK, 2026-10-05, after the full run.
@@ -895,13 +895,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Notes:
 		- Today's checks feed in hand-typed 2.x text.
 	- Progress log:
-		- Done: test.bash compiles the last gitsby build on SHCL 2.x from its commit (c42091c), and has it write an accounts file with `account set`. The current build has to convert that file, list every account the way the old build did, and keep the old file byte for byte. A fuzz target writes values through the 2.x module itself and checks each reads the same after the conversion.
+		- Done: test.bash compiles the last gitsby build on SHCL 2.x from its commit (53a6231), and has it write an accounts file with `account set`. The current build has to convert that file, list every account the way the old build did, and keep the old file byte for byte. A fuzz target writes values through the 2.x module itself and checks each reads the same after the conversion.
 		- Note: nothing is downloaded at test time. The 2.x module is a test-only require in go.mod, so the lint and unit test stages put it in the module cache, and the old build compiles from there with the proxy off. A box whose cache lacks it fails `[ErkNuhS]` by name; `go mod download` in `src-go` fixes that.
 		- Note: 2.x is the only older format gitsby ever wrote. SHCL 1.x has no Go module and writes the same footer as 2.x, so a 1.x file is converted as a 2.x one. By shcl's 2.0.0 changelog only quoted key names changed between the two, and gitsby's keys have none. Not run.
 		- Verified: the five checks pass on their own against the current build. `[ErkNui6]` fails with the conversion taken out of `migrateText`, and all five fail with an empty module cache. `go vet ./...` from an empty module cache fetched the 2.x module, and the old build then compiled offline.
 		- Verified: FuzzOldFormatValue's seeds fail with the conversion taken out, 6 of 13, and 90 s of fuzzing found nothing. go test -race, vet, staticcheck, golangci-lint, shellcheck and the test ID check are clean.
 	- Branch: oldshcl
-	- Commit: 55cc1e8
+	- Commit: af80433
 	- Test case: FuzzOldFormatValue, and test.bash `[ErkNuhS]`, `[ErkNuhf]`, `[ErkNuht]`, `[ErkNui6]`, `[ErkNuiK]`.
 	- Verified: test.bash 1408/0, `go test ./...`, fuzz.bash 301/0 and parity 29/0 on merged gover, 2026-10-04.
 	- Acceptance signoff: Self-closed: tests only, the intent was clear, and every new check passes in the full suite. 30 s more of FuzzOldFormatValue found nothing.
@@ -930,7 +930,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: full test.bash on spawnfix, 1311 passed, 0 failed.
 	- Verified: the 13 counts were the same over four runs, and the first eight match the 2026-09-30 baseline. Lowering one limit below its count failed a `--record` run with nothing recorded; put back, the run passes.
 	- Branch: spawnfix
-	- Commit: 921674f, 5c0d35b
+	- Commit: e6fca88, 0073a9c
 	- Test case: The limits in spawn-count.bash, run in stage 3. [Erg2KNK] in test.bash fails a count over its limit under `--record`. It fails against the script before this change. [ErgR83a] passes a count one over the expected one, and fails against the limits with no headroom.
 	- Acceptance signoff: OK, 2026-10-03, with headroom on the limits.
 	- Closed: 20261003-163955
@@ -954,7 +954,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: every pwsh start in cicd.bash. The lint probe, both passes per file and the version check were the only ones.
 	- Verified: the lint went from six pwsh starts to one, and from about 5.4 s to 2.6 s on this box. `cicd.bash --gate` passes, 21.1 s before and 20.2 s after, most of it the Go tests. It fails on an alias, on 5.1-only syntax and on a parse error in run-latest.ps1, and on an alias in install.ps1, then passes again once the file is back. test.bash passes 1318 of 1318.
 	- Branch: pslint
-	- Commit: 5f2d55c
+	- Commit: 94db0f5
 	- Test case: [Erg6RxS] counts the pwsh starts in a gate run and checks both files are in the one call. [Erg6Rxh], [Erg6Rxu], [Erg6Ry8], [Erg6RyM], [Erg6Rya] and [Erg6Ryo] cover the missing module, the missing settings file, the real lint on clean, 5.1-only and broken files, and the settings file being ASCII. Each failed against the old code or a broken settings file, except [Erg6Rxh], which the old code also passes. [ErgRMMj] fails a file indented two spaces, and fails against the settings without the rule.
 	- Acceptance signoff: OK, 2026-10-03, with the indentation rule on.
 	- Closed: 20261003-163955
@@ -984,7 +984,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: `go test ./...`, `cicd/parity.bash` 29/0, `cicd/cicd.bash --gate`, spawn-count with every count at or under its limit, and full test.bash 1328/0.
 	- Verified: against the gover build, [Erg9NT0], [Erg9NTS] and [Erg9NTw] fail, parity's two plan checks pass without the mapping, and the new spawn measure goes over its limit at 38. With the other-remote case taken out, [Erg9NUd], [Erg9NUr], [Erg9y2K] and [ErgA5KD] fail. With `--no-fetch` merging, [Erg9NUA] and [Erg9NUN] fail. With the plan guessing the target's upstream, [Erg9y2K] fails.
 	- Branch: onefetch
-	- Commit: 55f5e22
+	- Commit: f61adb6
 	- Test case: [Erg9NT0] to [Erg9NUr] and [Erg9y2K] in test.bash, [ErgA5KD] TestPullArgsFor, [ErgAC3e] and [ErgAC4V] in parity.bash, and the [ErgAQyw] spawn-count limit.
 	- Acceptance signoff: OK, 2026-10-03. The plan will name the resolved branch rather than `@{u}`, filed as its own item.
 	- Closed: 20261003-163955
@@ -1076,7 +1076,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: every reader of the stage 7 settings. cicd.bash prints and builds from them, remote-tests.bash runs from them, and the test.bash fixture copies config.bash. The existing harness checks pin the Mac and Windows boxes, so their fixture empties `REMOTE_UNIX_HOSTS` and the new checks put it back.
 	- Note: `[ErkbDSi]` keeps its ID. It used to require only the Mac build in the harness call, and now requires the two Unix builds as well, all three removed after.
 	- Branch: unixrt
-	- Commit: f331e15
+	- Commit: c59ef24
 	- Test case: test.bash `[Erm9Pnk]`, `[Erm9Pnx]`, `[Erm9PoA]`, `[Erm9PoN]`, `[Erm9Poa]`, `[Erm9Pon]`, `[Erm9Pp1]`, `[Erm9PpE]`, and `[ErkbDSi]` (changed).
 	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
 	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it.
@@ -1109,7 +1109,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Note: `[ErkbDUa]` keeps its ID. It used to require b26 in the Windows list, and now requires it once, in the other list.
 	- Swept: every reader of the two host settings. cicd.bash only prints them, and config.bash only sets them. The lock's prefix is still taken from its file name.
 	- Branch: lockhosts
-	- Commit: 5a45371
+	- Commit: 2541492
 	- Test case: test.bash `[ErkbDUa]` (lists passed to the lock) and `[ErkqZtP]` (older lock with no other-hosts list).
 	- Verified: a full pipeline run on 2026-10-05 passed on every box.
 	- Acceptance signoff: OK, 2026-10-05, after the full run.
@@ -1138,7 +1138,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Note: older builds leave the lock empty, so they and this one never mistake each other's locks.
 	- Swept: `os.SameFile`, `Stat_t`, `.Ino` and `ModTime` in src-go. The lock was the only file identity check. Both callers, `account set` and the old-format conversion, only `defer unlock()`, and the signature is unchanged. test.bash's `[EpxmDk1]` makes an empty lock by hand, which still blocks the create. Not run, since it waits for the full test.bash.
 	- Branch: lockid
-	- Commit: ea96f4d
+	- Commit: 0738416
 	- Test case: `TestLockAccountsFile` [EpxmDk5] on FreeBSD, and `TestUnlockLeavesALockInItsInode` [ErmLh0B] on any platform.
 	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
 	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it.
@@ -1170,7 +1170,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Bug]: the fake gh and ssh round trips log when they start and end, and each waits for the others to start before it ends. Asked together they always overlap, and asked in turn the first one ends alone after about 15 s. The checks read that log instead of timing the run.
 	- Swept: every check in test.bash that times a run. `[ErkSC4Z]` (account list) had the same kind of limit and was changed the same way. `[EpsVDIJ]` times a gate waiting on a lock, and only asks for at least 2 s, which a slow box can't break. Left alone: the Go test `[ErkSC48]`, which gives a killed probe 10 s, and the prompt polls in the `br prune` checks, which wait up to 10 s. Neither tests that work ran together.
 	- Branch: probeov
-	- Commit: 9f455a2
+	- Commit: 773af25
 	- Test case: test.bash `[ErkSC4L]`, `[ErkSctG]`, `[ErkSC4Z]`.
 	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
 	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it. The three probe checks passed there.
@@ -1196,7 +1196,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Note: Full refs in every printed line, or `HEAD` for the push, was a question. Chosen 2026-10-04: the full ref only where the line has no shorter safe form. Short names stay where git already resolves them right, such as the back-merge and the delete pushes, which print short and run full.
 	- Verified: an old and a new build run side by side on a scratch repo. The old one fails all three cases, and the new one passes all three. test.bash 1412/0, parity 29/0, `cicd.bash --gate`.
 	- Branch: fullrefs
-	- Commit: 887dce5
+	- Commit: a71263d
 	- Test case: [ErlVezf], [ErlVezt], [ErlVf06] and [ErlVf0K] in test.bash.
 	- Acceptance signoff: Self-closed: the approach was left to the work, and the tests fail before and pass after.
 	- Closed: 20261004-132519
@@ -1219,7 +1219,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Verified: on a copy of config.bash without the dogfood entry, the old check passes and the new one fails. The new one passes on the real file.
 	- Swept: the other config.bash checks in test.bash. Each looks for a setting by its own name, and none reads an entry two lists share.
 	- Branch: oldshcl
-	- Commit: 74b1914
+	- Commit: bc18a24
 	- Test case: test.bash `[ErfYFrl]`.
 	- Verified: test.bash 1408/0, `go test ./...`, fuzz.bash 301/0 and parity 29/0 on merged gover, 2026-10-04.
 	- Acceptance signoff: Self-closed: reproduced, the check failed before and passes after.
@@ -1244,7 +1244,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: `grep -n 'symbolic-ref\|--short\|abbrev-ref\|"origin/"\|refs/remotes' src-go/*.go`. `currentBranch` uses `branch --show-current`, which ignores tags. The branch list cuts full ref names. prune cuts full refs. The upstream's short name is left as git spells it on purpose, since the plan shows what runs. remote.go only tests origin/HEAD for empty. release.go and the back-merge build `origin/<name>` rather than reading it; the back-merge already merges by full ref. The release guard's short names are filed as 2026100411392800.
 	- Verified: Go `TestDefaultBranchBesideSameNamedTag` fails on the gover build with `remotes/origin/main` and `heads/trunkish`, and passes after. The two test.bash checks, run by hand outside the suite, fail before and pass after. `go test -race`, `test-id.bash --check`, shellcheck, and spawn-count with no count up.
 	- Branch: deftag
-	- Commit: f12765b
+	- Commit: b4b0fc1
 	- Test case: test.bash [Erl643s] and [Erl6446]. Go `TestDefaultBranchBesideSameNamedTag` [Erl643f].
 	- Verified: test.bash 1408/0, `go test ./...`, fuzz.bash 301/0 and parity 29/0 on merged gover, 2026-10-04.
 	- Acceptance signoff: Self-closed: reproduced, the tests fail before and pass after.
@@ -1268,7 +1268,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: `grep -n '"git",' src-go/*.go`, looking at merge, merge-base, describe, rev-parse, rev-list, log and diff. The release merges, the dev fast-forward and its ancestor check, the back-merge, `br merge`, the hotfix diff and `branchHasUnpushed` already use full refs. rev-parse, rev-list, log and show.go's diff use `HEAD`, `@{u}` or fixed names. The pull's `merge --ff-only` takes git's own short upstream name, which git already spells as `remotes/origin/<name>` when a tag shares `origin/<name>`, so it stays. Outside that list, pushes by branch name and the `--track origin/<name>` checkout break the same way; filed as 2026100411431800.
 	- Verified: Go `TestReleaseGuardBesideSameNamedTags` fails in all three cases with the old release.go and passes after. `go test -race`, `go vet`, gofmt, `test-id.bash --check` and spawn-count with no count up. A bare `release` on a scratch repo still says "Nothing new" with nothing new, and cuts v1.0.1 with tags `main` and `origin/main` beside new work.
 	- Branch: reltag
-	- Commit: b587ac4
+	- Commit: 3517631
 	- Test case: Go `TestReleaseGuardBesideSameNamedTags` [Erl6xej].
 	- Closed: 20261004-114318
 	- Acceptance signoff: Self-closed: reproduced, the test fails before the fix and passes after, and the sweep is answered.
@@ -1286,7 +1286,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: The check counts the pull's asks only, on any git.
 	- Reproduced [Bug]: Yes, 2026-10-04, in stage 7's run on b26, and by hand with the same fixture. A plain `git fetch` asks once there. With `git remote set-head origin main` run first the count is one.
 	- Possible cause [Bug]: The fixture's clone has no origin/HEAD, since it was cloned before origin had a commit. On git before 2.47 the fetch doesn't write one, so `fetchRemote` repairs it with `git remote set-head --auto`, which asks origin again. That repair is by design. Setting origin/HEAD in the fixture first should fix the check.
-	- Origin: `[Erg9NTS]`, from 55f5e22 (2026-10-03, Code Review 20261003 enhancement 3). Never run on a git before 2.47. Confirmed.
+	- Origin: `[Erg9NTS]`, from f61adb6 (2026-10-03, Code Review 20261003 enhancement 3). Never run on a git before 2.47. Confirmed.
 	- Estimated effort: Low
 	- Actual cause [Bug]: As above. The fixture's clone has no origin/HEAD, and on git before 2.47 gitsby's repair of it asks origin a second time.
 	- Actual effort: Low
@@ -1297,7 +1297,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Bug]: The fixture sets origin/HEAD on the clone before counting. It also sets `followRemoteHEAD` to never, so newer git leaves the ref alone the way old git does, and the check reads the same on any version. The repair in gitsby is unchanged.
 	- Swept: `[Erg9NTw]` counts on the same clone, so the same line covers it. No other check counts asks of origin.
 	- Branch: remfix
-	- Commit: fad69c8
+	- Commit: 6842035
 	- Test case: test.bash `[Erg9NTS]`.
 	- Acceptance signoff: Self-closed: reproduced, and the check fails before and passes after on b26.
 	- Closed: 20261004-103900
@@ -1315,7 +1315,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: The test passes on Windows, as it does on Linux and macOS.
 	- Reproduced [Bug]: Yes, 2026-10-04, in stage 7's run on vm925w.
 	- Possible cause [Bug]: The fixture writes the rule as `/srv\\work`, which is not absolute on Windows, so it is ignored there, as designed. The folder it is matched against goes through `driveFolder` and the rule doesn't. Writing the rule from `driveFolder` too should fix it.
-	- Origin: `TestConfigLoadBackslashes`, from d772814 (2026-09-24, the move to the shcl 3 beta). No stage ran the Go tests on Windows until stage 7. Confirmed.
+	- Origin: `TestConfigLoadBackslashes`, from ca0e55c (2026-09-24, the move to the shcl 3 beta). No stage ran the Go tests on Windows until stage 7. Confirmed.
 	- Estimated effort: Low
 	- Actual cause [Bug]: As above. `/srv\\work` is not absolute on Windows, so the rule is ignored there by design.
 	- Actual effort: Low
@@ -1325,7 +1325,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Bug]: The fixture writes the rule from `driveFolder`, so it is a drive path on Windows. The rule that ignores a folder that isn't absolute is unchanged.
 	- Swept: the other Go tests with a `/`-rooted rule all pass on vm925w. None of them matches a folder against the rule.
 	- Branch: remfix
-	- Commit: fad69c8
+	- Commit: 6842035
 	- Test case: `TestConfigLoadBackslashes` `[Eqp3jdh]`.
 	- Acceptance signoff: Self-closed: reproduced, and the test fails before and passes after on vm925w.
 	- Closed: 20261004-103900
@@ -1340,7 +1340,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Incorrect behavior [Bug]: style-guide.md says "the script refuses to run below" Bash 4.4. No live script checks the version. The check was in the frozen bash build.
 	- Expected behavior [Bug]: Either the pipeline scripts check, or the guide says what's true.
 	- Reproduced [Bug]: Yes. No `BASH_VERSINFO` outside legacy/.
-	- Origin: style-guide.md from 235697c (2026-07-27), true for the bash build then. Confirmed.
+	- Origin: style-guide.md from f735649 (2026-07-27), true for the bash build then. Confirmed.
 	- Decisions:
 		- The floor stays Bash 4.4, and the pipeline scripts check it (2026-10-03). b26, the Mac, has bash 5.
 		- gfs-rotate.bash is a shared Bubbles file and is left alone (2026-10-03).
@@ -1352,7 +1352,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: every tracked bash file outside legacy/, through the same list the shell lint coverage check reads. The test fails a new script that lacks the check.
 	- Verified: under a real bash 3.2.57 and 4.3.48 each of the 16 refuses with its line and exit 1, and under 4.4.23 none does. Under 3.2 on `gover` they ran on. The new checks fail 16 of 16 on `gover` and pass here.
 	- Branch: lowfix
-	- Commit: c9bc222
+	- Commit: 29af32f
 	- Test case: [ErfyDHs] in test.bash, one per script, runs a copy with the floor raised and expects the refusal and nothing else. [ErfyLds] fails it if the list comes back empty.
 	- Acceptance signoff: OK, 2026-10-03, n8git_backup-and-publish included.
 	- Closed: 20261003-163955
@@ -1367,7 +1367,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Incorrect behavior [Bug]: spawn-count.bash and spawn-report.bash read counts from tsv files and use them in arithmetic unchecked. That's the subscript-injection trap gfs-rotate was fixed for.
 	- Expected behavior [Bug]: A count that isn't digits is refused.
 	- Reproduced [Bug]: Yes, 2026-10-03. A recording whose count is `BASH_VERSINFO[$(touch ran)0]` ran the `touch` in spawn-report.bash, for the newest recording and for the one before it, and in spawn-count.bash for the baseline. The scripts write those files themselves, so the risk is low. An unset name such as `x[...]` stops at `set -u` first and runs nothing.
-	- Origin: spawn-count.bash:143 from dd4359b (2026-08-19). Same class as the 2026-09-15 gfs-rotate fix. Plausible when filed, confirmed since.
+	- Origin: spawn-count.bash:143 from 894d857 (2026-08-19). Same class as the 2026-09-15 gfs-rotate fix. Plausible when filed, confirmed since.
 	- Sweep: every live script that reads a number from a file and does arithmetic on it, gfs-rotate.bash excepted.
 	- Actual cause [Bug]: The count was used in `(( ))` straight from the file.
 	- Estimated effort: Low
@@ -1375,7 +1375,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: spawn-count.bash's baseline, and spawn-report.bash's newest and previous recordings, are the only file values that reach arithmetic. The rest read only numbers made by a command: `grep -c`, `wc -c`, `od`, `stat`, `git rev-list --count`, `git log` dates, awk line numbers in release.bash, and the footer dates release.bash cuts down to digits. test-id.bash already checks its value. release.bash's patch bump on a `v*` tag name and keep-build.bash's build number were left alone at first, since a tag can't hold `[` and the number is typed on the script's own command line. Both check for digits since 2026-10-03, after signoff: a tag such as `v1.3.0rc1` stopped the bump with a bare bash error, `v1.3.08` read as octal, and a crafted build number did run a command.
 	- Verified: the three new checks fail on `gover`, where the `touch` ran each time, and pass here with nothing run.
 	- Branch: lowfix
-	- Commit: f31269f
+	- Commit: 8d4cd6c
 	- Test case: [ErfzUGl] and [ErfzUH0] for spawn-report.bash, [ErfzUHF] for spawn-count.bash, in test.bash. The last needs strace, like the other spawn-count checks. [ErgRj8P] and [ErgRj8c] for the patch bump, [ErgRj8q] and [ErgRq9b] for keep-build.bash. All but [ErgRj8q], which checks the plain case, fail against the scripts before.
 	- Acceptance signoff: OK, 2026-10-03.
 	- Closed: 20261003-163955
@@ -1399,7 +1399,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: all 514 doc comments on top-level declarations in src-go. No other one names a different function or an old one. 17 outside the tests open with prose, such as "The byte-order mark ..." on `utf8BOM`, and name nothing; they were left as they are. Most test functions open the same way, with the case they cover.
 	- Verified: the new test fails on the three comments on `gover` and passes here. `go test ./...` passes.
 	- Branch: lowfix
-	- Commit: 8805239
+	- Commit: 95acb6e
 	- Test case: TestDocCommentsNameWhatTheySitOn. A doc comment that opens with a camelCase word has to name what it sits on, and none may hold a second comment headed by another function's name.
 	- Acceptance signoff: Self-closed: mechanical.
 	- Closed: 20261003-143901
@@ -1421,7 +1421,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: backlog-check.bash is the only script that reads review items out of the backlog.
 	- Verified: on a copy of this backlog with item 8's Origin row taken out, the gate on `gover` said "0 listed" and passed. Here it names item 8 and exits 1, and on the real backlog it lists 14 open items. The two new checks fail on `gover` and pass here.
 	- Branch: lowfix
-	- Commit: d78b9c9
+	- Commit: aacb723
 	- Test case: [Erg0LJv] and [Erg0LK9] in test.bash.
 	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
 	- Closed: 20261003-145130
@@ -1453,7 +1453,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: `go test -race ./...`, `go vet` for linux, windows, darwin and freebsd on amd64 and arm64, `cicd.bash --gate`, and spawn-count with every count the same as before. The git, gh and ssh command lines that spawn-count's runs start are the same before and after.
 	- Verified: the old and new flat readers and converters agree over about 3.3 million fuzzed inputs.
 	- Branch: gotidy
-	- Commit: 101f180, 791e19a, 546d7ad, ed08dfb, 83a8517
+	- Commit: 0114261, 38cc756, cc2c638, 2da34ed, 9580110
 	- Test case: The existing suites cover it, since nothing should change. Run: the Go tests and spawn-count. Still to run: test.bash, fuzz.bash and parity.bash.
 	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
 	- Verified: fuzz.bash 301/0, parity.bash and the spawn counts all pass on gover 2026-10-04.
@@ -1476,7 +1476,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The `gitsby.ghTokenFile` lookup runs when the account's own file already gave a token, and runs twice.
 		- `origin/HEAD` is read twice after a fetch.
 		- Lists start `tput cols` where the ioctl in tty_linux.go would do.
-	- Origin: remote.go:320 from 0a3ef88 (2026-08-19), the rest from the port. Each saves 1 or 2 spawns. Confirmed with strace.
+	- Origin: remote.go:320 from 4918b5b (2026-08-19), the rest from the port. Each saves 1 or 2 spawns. Confirmed with strace.
 	- Actual effort: Avg
 	- Done: `convertibleToHTTPS` does its text tests before asking gh for the protocol, so an https origin asks gh nothing.
 	- Done: The startup `rev-parse` also asks for the top level, which settles the folder accounts match against. Outside a work tree git refuses that part after printing the other three answers, so the output is read whatever the exit code. Outside a repo the folder is the working directory, as before.
@@ -1489,7 +1489,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: `grep -n '"tput"\|show-toplevel\|symbolic-ref\|configOwnScope(\|preferredProtocol()' src-go/*.go`. The one `tput`, both `--show-toplevel` reads, the origin/HEAD read (the other `symbolic-ref` reads HEAD for an unborn branch), the one `configOwnScope` caller, and the `preferredProtocol` caller in `convertibleToHTTPS`.
 	- Verified: test.bash 1406/0, parity 29/0, `go test -race`, `cicd.bash --gate`, spawn-count, and builds for linux, windows and darwin on amd64 and arm64, plus freebsd. Each of the five new Go tests fails on the build before this item and passes after.
 	- Branch: spawncut
-	- Commit: 75e7e34
+	- Commit: 12752d0
 	- Test case: Go `TestConvertibleAsksGhOnlyForSSH` [Erl3JkJ], `TestEnterRepoSettlesTopLevel` [Erl3JkX], `TestAccountTokenAsksGitConfigOnlyWhenNeeded` [Erl3Jkl], `TestFetchReadsOriginHeadOnce` [Erl3Jkz], and on Linux `TestTerminalWidthAsksTheKernel` [Erl3JlD]. Also the spawn-count limits.
 	- Verified: on b26, in a real terminal 40 columns wide, a long line in the `status` list is cut at 40, and at 120 it is not cut. A stand-in `tput` was never run, so the width came from the kernel. 2026-10-04.
 	- Acceptance signoff: Self-closed: the intent was clear, every cut has a test that fails before and passes after, and the Mac width read ran.
@@ -1507,7 +1507,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Each branch-exists check starts its own `git show-ref`. `br switch` starts 8 and `br prune` 7.
 		- Read local and origin branches once per run, and drop that in `forget()` like the rest.
 		- `release` works out dev again on its own. Use `mergeTarget()`, which already caches it.
-	- Origin: branch.go:47 from ae16451 (2026-08-17), and release.go. Confirmed with strace.
+	- Origin: branch.go:47 from 3d22222 (2026-08-17), and release.go. Confirmed with strace.
 	- Actual effort: Avg
 	- Done: One `for-each-ref` reads every local branch with its upstream, and every branch on origin. Each existence check reads that, where each was a `show-ref` of its own. The prune survey and the default branch fallback take their list of local branches from it too.
 	- Done: `forget()` drops it with the rest, so any step reads it again. The fetch drops it too, since the fetch moves origin's branches without being a step.
@@ -1518,7 +1518,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: `grep -n 'show-ref\|"--verify"' src-go/*.go`. Every `branchExistsLocal` and `branchExistsRemote` caller, and the back-merge's own `rev-parse --verify` of origin's default branch. The `show-ref` left in repo.go asks about a new clone's folder, not this repo.
 	- Verified: test.bash 1406/0, parity 29/0, `go test -race`, `cicd.bash --gate`, and spawn-count. `TestBranchReadsFollowWrites` fails with the fetch's drop taken out, and again with the runners' drop taken out.
 	- Branch: spawncut
-	- Commit: 82dc453
+	- Commit: f9716e4
 	- Test case: Go `TestBranchReadsFollowWrites` [Erl1x2z], and the spawn-count limits.
 	- Acceptance signoff: Self-closed: does what the item asked, and its test fails without the fix.
 	- Closed: 20261004-113600
@@ -1579,7 +1579,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: old and new copies agree file for file and line for line over 25 rounds of rotation in five time zones, for this repo's copy and the three patched ones. keep-build.bash still rotates with it. shellcheck passes on every copy.
 	- Verified: `test-id.bash --check`, `backlog-check.bash` and `cicd.bash --gate` pass.
 	- Branch: bashstyle, gfsguard
-	- Commit: 20ab499, 0952f39, 102c13f, 03d3b80
+	- Commit: bcdf93c, 08a22c5, 1fc2982, 0fa9910
 	- Acceptance signoff: Self-closed: mechanical. The rest was done and verified earlier, and `[Emq7Y6y]` fails before this fix and passes after.
 	- Closed: 20261004-185001
 
@@ -1604,7 +1604,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: Self-closed: rename.
 	- Closed: 20261004-185642
 	- Branch: remote-tests-label
-	- Commit: f546f7f
+	- Commit: 9049ec8
 
 - shellcheck crashes now and then on test.bash
 	- ID: 2026100410472492
@@ -1767,7 +1767,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Fixed: five scenes, 47.7 s and 5.65 MB. `br create` stops on its confirmation and is answered on camera. Captions appear whole instead of being typed.
 	- Note: the old target predates showing the confirmation. design.md now puts it at about fifty seconds.
 	- Verified: 3 new checks, 1013 -> 1016, each watched red against the code before this.
-	- Origin: aa63736, the first demo, looped in 18.4 s. 7096bdd took it to 67 s, 9e16dd5 to 84 s and 48089c6 to 122 s. The directives have asked for twenty to thirty seconds since at least 2026-08-22. Confirmed.
+	- Origin: 1a5a1a3, the first demo, looped in 18.4 s. 12d7d2d took it to 67 s, 7ed0e23 to 84 s and 30af5c5 to 122 s. The directives have asked for twenty to thirty seconds since at least 2026-08-22. Confirmed.
 
 - ✅ The backlog gate says nothing is listed, whatever the backlog holds.
 	- Closed: 20260916-075518
@@ -1775,7 +1775,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced: stage 1 prints "Origin: present on every open review item (0 listed)" with twelve open items sitting in the file.
 	- Cause: the count's pattern starts `^\t`, and `-E` leaves that escape alone, so it matched nothing. It counted closed items too, had it matched any.
 	- Note: found while relabeling two suite checks. The rule itself is enforced by the awk above the count, which reads tabs correctly and was never affected.
-	- Origin: 00bf888, the commit that added the gate. Confirmed.
+	- Origin: 2319e09, the commit that added the gate. Confirmed.
 	- Fixed: the pattern carries a real tab, and closed items are left out of the count.
 	- Verified: 0 before and 12 after, against the same backlog. shellcheck clean.
 
@@ -1786,7 +1786,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Cause: `gitSSHCommand` reads a quoted command as plain `ssh`, which suits the probe it was written for. `remoteEnv` then exports that as `GIT_SSH_COMMAND`, which outranks `core.sshCommand` for the fetch, the origin check and the repo probe.
 	- Note: a private repo whose key is only named there fails to fetch, and reads as offline. Pushes are not affected, since they don't go through `remoteEnv`.
 	- Note: found while working Code Review 20260909 item 6.
-	- Origin: 0a3ef88 (the port), with its copies gathered into `remoteEnv` by cd2a527. No earlier round saw it. Confirmed.
+	- Origin: 4918b5b (the port), with its copies gathered into `remoteEnv` by 88ff4ab. No earlier round saw it. Confirmed.
 	- Fixed: a quoted ssh command is left for git to run as is, so the fetch uses the repo's key and goes without the connect timeout. Adding the timeout would mean re-shelling the value. Recorded in design.md.
 	- Sweep: `remoteEnv` is the only place gitsby exports an ssh command for git. The account's `sshkey` can't carry a quote, and a caller's own `GIT_SSH_COMMAND` was already left alone.
 	- Verified: `TestRemoteEnvLeavesAQuotedSSHCommandToGit` fails on `gover`. With the quoted command above, `status` now fetches with `-i /k y/key`.
@@ -1797,7 +1797,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced: with a `python3` on PATH that exits 1, a full run exits 0 and prints `OK: py_compile`. `cicd.bash --gate` does the same.
 	- Cause: the compile is the first half of an `&&` list. Under `set -e` a failure there neither stops the script nor fires the error trap.
 	- Note: the line clears `cicd/utility/__pycache__`, but `py_compile` writes `cicd/utility/demo/__pycache__`, beside the file it compiles, so the cache stays. The same on `gover`.
-	- Origin: e014c29, the first pipeline. No earlier round saw it. Confirmed.
+	- Origin: bbce553, the first pipeline. No earlier round saw it. Confirmed.
 	- Fixed: a failed compile stops lint with `FAILED: py_compile`. The cache goes to a temporary folder that is removed after, so nothing is written beside the file.
 	- Sweep: no other lint check sits at the head of an `&&` list.
 	- Verified: 1 new check in test.bash, the gate failing when `python3` does, which fails on `gover`. 950 -> 953 with item 6's two. A real lint run leaves the tree's own cache untouched.
@@ -1808,7 +1808,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced: `path: "<home>/d*"` lists as a folder that can never match, and gitsby names no account in `<home>/dev/work/proj`. After `account apply`, plain git gives that repo the account's email. `pathcontains: "acme-*"` does the same under `.../acme-x/...`, and `pathcontains: "**"` gives every repo on the disk the account.
 	- Cause: gitsby compares a rule as literal text, and `account apply` writes it into an includeIf, which git matches as a glob.
 	- Note: found while designing Code Review 20260909 item 1, which closes the relative half of the same disagreement.
-	- Origin: `accountApplyPlan` since f48f89d (the port), and the scripted `account apply` before it. No earlier round saw it; fuzz.bash feeds `**` to `pathContains` and asserts only that nothing crashes. Confirmed.
+	- Origin: `accountApplyPlan` since 8da8951 (the port), and the scripted `account apply` before it. No earlier round saw it; fuzz.bash feeds `**` to `pathContains` and asserts only that nothing crashes. Confirmed.
 	- Fixed: `account apply` escapes `*`, `?`, `[` and `\` in both kinds of rule, so git reads a rule as the plain text gitsby does. Listing such a rule as ignored was the other choice. It would have dropped a working rule for a real folder with `[` in its name. Recorded in design.md.
 	- Sweep: `account apply` is the only place a rule goes to git. An include written by an earlier apply is still recognized as ours and replaced, since that match is on the fragment path.
 	- Decided against: a warning for a glob character in a rule. A `path` like `~/d*` already shows as a folder that can never match, and the `account set` help says `pathcontains` is a run of folder names.
@@ -1819,7 +1819,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Opened: 20260914-145514
 	- Reproduced: with `tokenfile: tok.txt`, `account list` says `token ...: tok.txt` in a repo holding a `tok.txt` and `none` in a repo without one. `sshkey: id_work` goes into the account's git config fragment as `ssh -i id_work`, which ssh reads from each repo's own folder.
 	- Note: a repo someone else wrote can then decide which token or key a push uses. Same class as Code Review 20260909 item 1.
-	- Origin: `absorb` and `readTokenFile` since f48f89d (the port), and the scripted builds before it. No earlier round saw it. Confirmed for `tokenfile` and for what `sshkey` writes; the push with a relative key was not run.
+	- Origin: `absorb` and `readTokenFile` since 8da8951 (the port), and the scripted builds before it. No earlier round saw it. Confirmed for `tokenfile` and for what `sshkey` writes; the push with a relative key was not run.
 	- Fixed: both keys are held to the same absolute-or-`~` test as `path`. A relative one is listed as ignored, reads no token and writes no key. `account set` writes a relative value as the file it names from where it runs. A relative `gitsby.ghTokenFile` in git config reads no token.
 	- Sweep: `account set` now checks a key for shell characters after resolving it, since the folder it was typed in can hold a space. No other stored value names a file.
 	- Verified: 5 new checks in test.bash, all failing on `gover`, 941 -> 950 with the four above. `TestConfigIgnoresARelativeKeyFile` fails on `gover`. The same results on vm925w. fuzz.bash 301/0, parity.bash 27/0.
@@ -1830,7 +1830,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced: built for Windows and run on vm925w, `TestCanonPath` and `TestDisplayPath` fail on `gover`, since they expect Linux spellings.
 	- Note: no pipeline stage runs the Go tests on Windows, so nothing reports it.
 	- Probable fix: spell those fixtures the way each platform writes an absolute path.
-	- Origin: `TestCanonPath` since 0a3ef88 and `TestDisplayPath` since a620930. No earlier round ran the Go tests on Windows. Confirmed.
+	- Origin: `TestCanonPath` since 4918b5b and `TestDisplayPath` since 919141f. No earlier round ran the Go tests on Windows. Confirmed.
 	- Sweep: on Windows the accounts file never showed as `~`. The home folder and APPDATA are spelled with backslashes, and the file name goes on with `/`. Confirmed, and fixed here: either slash and any case count there now.
 	- Fixed: each fixture is spelled the way the platform running it writes that path, and every assertion checks what it did before. `TestCanonPath` also covers the MSYS drive fold.
 	- Verified: all 131 Go tests pass on vm925w, the lock tests and the lease-delete quoting tests included. The two new Windows cases in `TestDisplayPath` fail against `gover`.
@@ -1842,7 +1842,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Cause: `includeDir` cuts the file name off at the last `/`. A path spelled with `\` has none, so the fragments folder goes under the file itself.
 	- Probable fix: cut at the last `/` or `\`, as `cmdAccountSet` already does for the file's own folder.
 	- Note: found while working Code Review 20260909 item 1.
-	- Origin: `includeDir` since 9eb34e7 (go: repo and account). No earlier round saw it. Confirmed on the `gover` build.
+	- Origin: `includeDir` since 115bb7d (go: repo and account). No earlier round saw it. Confirmed on the `gover` build.
 	- Sweep: a `--config` named with no folder failed the same way on every platform, as `wl.shcl/accounts`. A relative include would be wrong anyway, since git reads one from its own config's folder. Confirmed on Linux, and fixed here. `account set` finds the file's folder the same way now.
 	- Fixed: the fragments go in the absolute folder holding the accounts file, however the file was named. Apply's two refusals name that folder the way the platform writes it.
 	- Verified: 2 new checks in test.bash, both failing on `gover`, 939 -> 941. `TestIncludeDir` fails on `gover` on Linux and on Windows. On vm925w, apply with the file named in backslashes writes the fragment, and plain git then uses the account's email in the rule's folder. parity.bash 27/0.
@@ -1853,7 +1853,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced: with origin unreachable, `br prune` deleted the local branch, kept origin's copy and said "'gitsby br prune' again once online". Once online, the second run said "Nothing to prune" and origin kept the branch. The warning for a branch origin has moved since the last fetch ("takes a fresh look") ends the same way.
 	- Cause: prune takes its candidates from local branches, and both warnings print after the local branch is gone.
 	- Probable fix: name what deletes that copy on origin once it has been checked, instead of a second run.
-	- Origin: the unreachable line from 75c2c7c (Code Review 20260819a item 7), the moved line from Code Review 20260909 item 2. No earlier round saw it. Confirmed.
+	- Origin: the unreachable line from 353f5c9 (Code Review 20260819a item 7), the moved line from Code Review 20260909 item 2. No earlier round saw it. Confirmed.
 	- Sweep: `br merge` with origin unreachable said `br prune` clears origin's copy later, and deleted the local branch that prune would need. Confirmed, and fixed here: the branch stays with origin's copy until the merge is pushed.
 	- Fixed: prune asks origin before it deletes anything. A copy origin has moved keeps its local branch, so the second run the warning names can look again. When origin can't be reached the local branches still go, as decided 2026-09-14, and the warning prints a leased delete to type for each copy.
 	- Keep: offline, prune still deletes the local branch and holds origin's copy.
@@ -1867,7 +1867,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Cause: each delete names the branch by its short name, which git matches against every ref on origin.
 	- Probable fix: name each delete by its full ref, `refs/heads/<branch>`.
 	- Note: `br merge` names its delete the same way. Read, not run.
-	- Origin: bb60cc5 (the port). No earlier round saw it. Confirmed.
+	- Origin: cfb6d90 (the port). No earlier round saw it. Confirmed.
 	- Sweep: once the tag is fetched, git lists the branch here as `heads/amb`, so prune tried to delete a branch that doesn't exist. Prune's listings and the default-branch lookup now read the name whole. `br merge`'s delete names the full ref too.
 	- Fixed: every remote delete names `refs/heads/<branch>`.
 	- Verified: 3 new checks in test.bash. Two fail on `gover`; the kept tag is a regression guard.
@@ -1878,7 +1878,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced: with a branch `tagged` pushed one commit past `dev` and a tag `tagged` on `dev`, `br merge --no-fetch` merged the tag, and the branch's commit never reached `dev` on origin.
 	- Cause: `git merge` reads a short name as a tag before a branch. `git checkout` does the opposite, so the switch before it looked right.
 	- Note: found in the sweep for the tag on origin above. The `br merge --no-fetch` fix below leases on the merged tip, which only holds if the branch is what was merged.
-	- Origin: `cmdMerge` since 53c6c0f. Confirmed.
+	- Origin: `cmdMerge` since 86ca0b1. Confirmed.
 	- Sweep: `release` merges `dev`, fast-forwards `dev` and checks ancestry by short name, and the hotfix back-merge merges `main` or `origin/main` the same way. All now name full refs. Checkouts stay as they are.
 	- Fixed: `br merge`, `release` and the back-merge name the full ref of what they merge.
 	- Verified: 2 new checks in test.bash, both failing on `gover`.
@@ -1890,7 +1890,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Cause: with the fetch declined, the park push reads the local copy of origin and finds nothing ahead, and the delete push removes whatever origin holds.
 	- Note: with the fetch on, the pull brings the commit in first and the merge keeps it. Found while designing Code Review 20260909 item 2.
 	- Probable fix: ask origin and lease the delete, reusing what `br prune` does for Code Review 20260909 item 2.
-	- Origin: `cmdMerge` since 53c6c0f (go branch commands). No earlier round saw it. Confirmed.
+	- Origin: `cmdMerge` since 86ca0b1 (go branch commands). No earlier round saw it. Confirmed.
 	- Fixed: `br merge` asks origin before deleting its copy, and leases the delete on the tip it merged. A copy holding commits the merge doesn't have is left alone, and the warning names the `br switch` and `br merge` that bring them in. A copy already gone is reported as gone.
 	- Verified: 4 new checks in test.bash. Three fail on `gover`, including following the advice; the merge's push is a regression guard. Across the four items test.bash went 925 -> 939, with parity.bash 27/0 and the Go tests green. Linux only.
 
@@ -1902,7 +1902,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Note: found while designing Code Review 20260909 item 3, which stops the create from replacing a file but leaves two edits as they are.
 	- Note: a create stalled between its open and its write loses its key to an edit that runs in between. The edit reads the empty file and saves over it, so a lock has to cover the create as well as the edit.
 	- Probable fix: refuse the save when the file changed since the plan read it, and hold a lock beside the file from that check to the save.
-	- Origin: 9282c09 (`account set`), whose whole-file write the shcl save (8203670) kept. No earlier round saw it. Confirmed.
+	- Origin: 9c6bda8 (`account set`), whose whole-file write the shcl save (8d3f857) kept. No earlier round saw it. Confirmed.
 	- Sweep: `account set` is the only writer of the accounts file, and the flat-file conversion saves through the same path. `account apply` writes its fragments whole, but two runs write the same text from one file, and its includeIf edits go through git, which locks its own config.
 	- Fixed: `account set` takes a lock beside the accounts file, reads the file again, and refuses if it changed since the plan read it. A create holds the same lock. A lock that stays put is waited on for three seconds, then refused by name, with the command that removes it.
 	- Verified: 3 new checks in test.bash, 922 -> 925. With the re-read taken out, two runs at once lost a key in 10 of 10 tries and both new Go tests on it fail. Go tests green, parity.bash 27/0. Linux only so far.
@@ -1915,7 +1915,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Probable fix: keep the two apart. When tea fails, say it couldn't be asked and repeat tea's reason.
 	- Note: display only. The identity check already reads nothing as unknown, so no refusal acts on it.
 	- Note: found in the sweep for Code Review 20260909 item 11.
-	- Origin: 4573f4c added the tea path and this line. No earlier round saw it. Confirmed.
+	- Origin: 9333159 added the tea path and this line. No earlier round saw it. Confirmed.
 	- Sweep: `forgeCLIWho`, which the identity check reads, already takes both as unknown, and the two `pulls list` reads in `pr` check whether tea ran. The Git host line also compared its "unknown" text with the ssh key's account, so a write with no tea login printed a NOT-the-key warning. Fixed here.
 	- Fixed: the Git host line says tea couldn't be asked and repeats tea's reason when tea fails, and keeps "has no login for this host" for a tea that answered. Only a login tea named is compared with the ssh key's account.
 	- Verified: 3 new checks in test.bash, 912 -> 915. Two fail on `gover`, and the no-login check is a regression guard. `TestShowForgeLine` fails on `gover` for the no-login row. Go tests green, parity.bash 27/0. Linux only.
@@ -1927,7 +1927,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Cause: a place whose lookup fails for any reason counts as empty. Only the place being written is safe, through its exclusive open.
 	- Probable fix: at the places other than the one written, count a lookup failure other than "no such file" or "not a folder" as something there, and refuse by name.
 	- Note: found while reviewing Code Review 20260909 item 3, whose design counts a failed lookup as empty on purpose.
-	- Origin: the `XDG_CONFIG_HOME` order from 5ef5201 meets the create path from 8203670. No earlier round saw it. Confirmed.
+	- Origin: the `XDG_CONFIG_HOME` order from 72e1231 meets the create path from 8d3f857. No earlier round saw it. Confirmed.
 	- Sweep: reads, the create check and the refusal after a lost race all look a place up through one probe, so all three changed together. A link whose target can't be looked up read as a link to nothing, and now reads as unknown too.
 	- Fixed: a place an accounts file can live that can't be looked in no longer counts as empty. `account set` refuses to create while one is there. It names the file and the reason, and gives `chmod u+x` when the folder the file sits in is the one that can't be searched. Reads still pass over it.
 	- Verified: 5 new checks in test.bash. On `gover` the create went ahead and wrote the new file in `XDG_CONFIG_HOME`, and the new Go tests fail there. The link case fails with its half of the fix taken out. The Windows, macOS and FreeBSD builds compile. Linux only.
@@ -1939,7 +1939,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Cause: the loader records the file before reading it, and a failed read leaves no parsed document for the edit to use.
 	- Note: a file on a disk or mount that returns read errors reaches the same place. Found while designing Code Review 20260909 item 3.
 	- Probable fix: record the file only once it has been read, and refuse a named file whose read fails the way one that can't be opened is refused.
-	- Origin: `load` sets the file ahead of the read since f48f89d (the port). The edit took the parsed document from it in 8203670 (shcl config). No earlier round saw it. Confirmed.
+	- Origin: `load` sets the file ahead of the read since 8da8951 (the port). The edit took the parsed document from it in 8d3f857 (shcl config). No earlier round saw it. Confirmed.
 	- Sweep: the SSH line also checks the key file ssh names by opening it. That is display only, and ssh reports its own failure, so it stays. A token file is read in full, and a failed read already counts as no token.
 	- Fixed: a file counts as readable only once it reads to the end, and the loader records it only after the read. A named file that fails to read is refused like one that won't open. A found one is passed over by reads and refused by `account set` as a file it can't read.
 	- Verified: 2 new checks in test.bash, and with the 5 above, 915 -> 922. On `gover` the named case panics and the found one is taken up, and the new Go test fails there. Go tests green, parity.bash 27/0. Linux only, since the case needs `/proc/self/mem`.
@@ -1952,7 +1952,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ✅ Code Review 20260909 item 19: `account list` runs one `gh` per configured account.
 		- Closed: 20260916-080622
 		- The token lookup sits inside the listing loop. One account costs one process and twenty cost twenty, and `account set` pays the same bill before its edit, because it prints the listing first.
-		- Origin: 0a3ef88; 7abe3f7 widened the listing two days after the 20260818 memoization round. Confirmed, measured.
+		- Origin: 4918b5b; 919e837 widened the listing two days after the 20260818 memoization round. Confirmed, measured.
 		- Fixed: the answer is remembered per login for the run, in the same place the ssh logins already were. Nothing logs gh in or out mid-run, and the answer is keyed by the login rather than by whoever gh acts as, so there is no invalidation to get wrong.
 		- Note: gh answers about one login at a time, so twenty distinct logins still cost twenty. What is gone is asking twice for the same one - which the listing did for every account sharing a login, and `account set` did by printing the whole listing before its edit.
 		- Note: the item said the style guide states the rule this breaks. It does not; that guide covers output.
@@ -1974,7 +1974,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Two British spellings in the code of conduct.
 		- contributing.md and the code of conduct both advertise being produced by a generator.
 		- trademark.md holds a hard-wrapped paragraph, and writes its contact address with a circled letter A in place of the at sign.
-		- Origin: mixed. Recipe from cb367a4, outdated by 3b16d8d. design.md:494 outdated by 20260819a item 12. design.md:356 is the cfgloc heading (5ef5201) whose sub-bullets a38eda1 reversed the same day. Code of conduct spellings are from 0d94ec6 and were fixed on `main` only (f2a0b9a). Confirmed.
+		- Origin: mixed. Recipe from 96b3b88, outdated by b283d31. design.md:494 outdated by 20260819a item 12. design.md:356 is the cfgloc heading (72e1231) whose sub-bullets 14e2488 reversed the same day. Code of conduct spellings are from 2b3692f and were fixed on `main` only (5e335f0). Confirmed.
 		- Fixed: the recipe carries the build number. The code of conduct has `main`'s contact line and spellings, and neither it nor contributing.md names a generator. design.md says how the installers pick a release, and its config-location heading matches what follows. README names the Windows PATH entry. `account list` with no accounts names `account set`. config.bash numbers its stages as the run prints them. The backlog no longer opens on v2.0.0. The style guide says "All languages", and the private pointer names all three. trademark.md is unwrapped and uses an at sign.
 		- Fixed: "forge" is out of design.md's prose and every comment, and design.md now claims only the output and the docs.
 		- Decided against: changing the accounts link in a created file. It names `main`, which gets the current `accounts.md` at the first Go release, and nothing released writes that file before then.
@@ -1992,7 +1992,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The generator writes copyright 2026 while the program prints 2014-2026.
 		- A dev or dogfood build is stamped with the parent commit's version, because the stamp is read before the commit that holds the source.
 		- The version banner puts the copyright on the same line, where a separate line was asked for.
-		- Origin: mixed. The lint match is e014c29 and this is its second false positive after 20260819a item 17, which added an exclude instead of narrowing the match. `git-auto-msg.bash` has had no caller since e014c29. The banner has always been one line. Confirmed.
+		- Origin: mixed. The lint match is bbce553 and this is its second false positive after 20260819a item 17, which added an exclude instead of narrowing the match. `git-auto-msg.bash` has had no caller since bbce553. The banner has always been one line. Confirmed.
 		- Keep: narrow the positive match to the tools' own output formats. No third exclude.
 		- Fixed: the lint report matches each tool's own output format, and no exclude was added. `run-latest.ps1` is in the PowerShell lint. `git-auto-msg.bash` is gone. cicd.bash, config.bash and release.bash have their missing history entries, and the release check now covers every pipeline and installer script that keeps a history and changed since the last release. The Windows resource takes its copyright years from the program, and both resource files were regenerated for v2.1.0. A build's version is read after the remote sync and says `-dirty` when the source isn't committed. The copyright has a line of its own, and the release notes take the banner's first line.
 		- Decided against: moving the seen markers. Each sits beside the logs it records, both are gitignored, and a clean checkout loses the two together, after which the next look correctly reports NEW.
@@ -2008,7 +2008,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Several exit paths skip the blank line framing: the "publishes no binary for this platform" block, the declined prompt, the pre-release notice, and every error the PowerShell one raises.
 		- Neither plan says it will overwrite an existing install.
 		- Nothing is said when the installed binary will not run. The run simply ends.
-		- Origin: 200310a. Five of the six were in the 20260819a notes as seen and not filed. Confirmed against a local mock.
+		- Origin: ee3caa0. Five of the six were in the 20260819a notes as seen and not filed. Confirmed against a local mock.
 		- Fixed: `SHA256SUMS` is read with either case of hash and with CRLF line ends, and the platforms it lists come through either way. `--release stable` stays, and the help and the refusal say it names the default. `--help` lists `-r` and `--ref`, and install.ps1's `-Help` lists `-Ref`. The no-binary refusal, a declined prompt and the pre-release notice have a blank line either side, in both installers, and so does every error install.ps1 prints when run as a file. Both plans say when they replace an installed copy. install.bash says when the installed binary won't run, with its exit code. Recorded in design.md.
 		- Decided against: refusing `--release stable`. It always meant the latest release, which an install without it still takes.
 		- Note: run through `iex` or a script block, install.ps1 rethrows and PowerShell prints the error, so only the blank line before it is the installer's.
@@ -2023,7 +2023,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The joined `--target=value` form is refused, though the bash one takes it and the documented spelling uses it.
 		- The checksum compare works only because the operator is case-insensitive by default. A case-sensitive one would fail every good install.
 		- The message for a binary that will not run is unreachable in the common case, because a launch failure is a terminating error and the outer handler prints raw text instead.
-		- Origin: 200310a. Four of the five were in the 20260819a notes as seen and not filed. The parameter help is fallout from 20260821 item 2, which bound the help to a script that has no parameters. Confirmed against a local mock.
+		- Origin: ee3caa0. Four of the five were in the 20260819a notes as seen and not filed. The parameter help is fallout from 20260821 item 2, which bound the help to a script that has no parameters. Confirmed against a local mock.
 		- Fixed: a system install that can't write its folder is refused before the plan, naming the folder and saying to run as administrator, or with sudo off Windows. The comment help lists every option in its description, since a script-level `param()` breaks the `iex` one-liner. The Bash installer's long options work, with the value joined by `=` or apart. The checksum compare lowers both sides and says so. A binary that can't start gets the same "would not run" message as one that exits nonzero. Recorded in design.md.
 		- Decided against: elevating. The `iex` and script block forms have no file to start again as administrator.
 		- Sweep: the plan's "run elevated" line went, since the refusal now comes first. A user-scope install still has no write check; that is the first bullet of enhancement 10.
@@ -2035,7 +2035,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Cause: not the one filed. Asked to stop on errors, 5.1 answers the redirect with an error that holds no response, so the header is never read. The list lookup behind it got 5.1's whole array as one item, so every tag name made one tag.
 		- Note: the filed cause is real one step on. With no full release, 5.1's 404 carries headers where reading Location as a property is an error under strict mode, and the run ended inside the catch.
 		- Note: 5.1 is the shell Windows ships and the documented one-liner path.
-		- Origin: 200310a; 20260819a item 33 added 5.1 support and missed these lines. Filed as Plausible, since read. Confirmed on 5.1.
+		- Origin: ee3caa0; 20260819a item 33 added 5.1 support and missed these lines. Filed as Plausible, since read. Confirmed on 5.1.
 		- Fixed: the redirect is asked for without stopping on an error, which on 5.1 hands back the 302 itself. The header is read by name on either version's object, and anything unreadable falls through to the list. The list is assigned before it is wrapped.
 		- Sweep: every web call in install.ps1. The `SHA256SUMS` and asset downloads read no header and return one object.
 		- Verified: 4 new checks in test.bash, with the stubs answering the way each version does. Three fail on the tree before, and reading 7's redirect is a guard. test.bash 977 -> 1007 with items 13 and 14, the Go tests and the pre-push gate green. On vm925w, 5.1 and 7.6 both resolve v2.1.0 from the real releases and stop at its missing Windows binary, where `gover` on 5.1 stops at the joined tag.
@@ -2045,7 +2045,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The refusals are decided inside the preview, so the refusal prints as the plan and it still asks you to confirm. Answering yes fails with the same sentence. Every other command settles its refusals before the plan.
 		- A save rewrites the file into the canonical layout, which is the settled decision, but the plan calls it an edit of one line. Space indentation, mixed-case keys, line endings and duplicate blocks are all reshaped with no word.
 		- `protocol` takes any value at all. The two it honors are documented in the header of the file it writes, and anything else is quietly ignored later.
-		- Origin: 9282c09 for the refusals. The plan text is left over from the byte-for-byte decision that 8203670 reversed. Confirmed.
+		- Origin: 9c6bda8 for the refusals. The plan text is left over from the byte-for-byte decision that 8d3f857 reversed. Confirmed.
 		- Keep: saves stay canonical. The plan says so; nothing goes back to byte-for-byte.
 		- Reversed 20260925: shcl's 3.0 beta saves an edit and keeps every other line as written. `account set` uses it, and the `also:` line now shows only when the module falls back to a whole-file rewrite.
 			- Removed from test.bash: "an edit that respaces the file says so in the plan" and "and a file already spaced that way hears nothing of it". Both pinned the canonical rewrite. The same file now keeps its spacing with no `also:` line, and the plan line is checked on a dotted-line add instead.
@@ -2057,7 +2057,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Closed: 20260915-131144
 		- The path it watches is this project's own source folder. In any other repo the check matches nothing and stays quiet.
 		- Also, the check cannot tell "nothing changed" from "the comparison could not run".
-		- Origin: 75c2c7c. Fourth patch to this path (`bin/` -> `src-go/` -> `:(top)src-go/`). Confirmed: a code hotfix outside `src-go/` printed nothing, and so did a comparison that failed.
+		- Origin: 353f5c9. Fourth patch to this path (`bin/` -> `src-go/` -> `:(top)src-go/`). Confirmed: a code hotfix outside `src-go/` printed nothing, and so did a comparison that failed.
 		- Fixed: the note fires when a hotfix changes anything that doesn't look like documentation by its file name. A repo with no release tags gets no note, and a failed comparison says it couldn't tell. Recorded in design.md.
 		- Decided against: watching a named folder, and naming the folder in config.
 		- Note: in this project a hotfix to an installer or to `cicd/` now gets the note too, though neither goes into a release asset.
@@ -2067,7 +2067,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Closed: 20260915-124817
 		- Reproduced: a conflicting merge onto the protected branch ended on a bare step failure, with the tree in conflict and the merge still open.
 		- Note: the back-merge path in the same file handles the same failure the other way. It aborts, says what got through, and names the command to finish by hand.
-		- Origin: 0a3ef88; the frozen bash has the same asymmetry. Confirmed.
+		- Origin: 4918b5b; the frozen bash has the same asymmetry. Confirmed.
 		- Fixed: a merge stopped by conflicts is aborted, the run goes back to the branch it started on, and the refusal names the commands to settle it there. The target branch is left as it was.
 		- Sweep: `release` merges `dev` into the default branch the same way and left it mid-merge too, with nothing tagged. Same fix. The back-merge already aborted, and the other merges are fast-forward only.
 		- Verified: 7 new checks in test.bash. Four fail on `gover`: the tree left mid-merge, the branch left behind, the missing advice, and `release` left mid-merge on the default branch. Two refusals and the untouched `dev` are regression guards.
@@ -2076,7 +2076,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Closed: 20260915-124817
 		- Reproduced: against a Gitea remote the plan named a github.com URL, and the command then set the Gitea one.
 		- Cause: the preview builds its line with the GitHub-only helper while the command uses the host-aware one. The read-only half was widened and the preview was left behind.
-		- Origin: 4573f4c moved the command to `forgeURL` and left the preview on `githubURL`. Confirmed.
+		- Origin: 9333159 moved the command to `forgeURL` and left the preview on `githubURL`. Confirmed.
 		- Fixed: the plan builds the address the way the command does.
 		- Sweep: every preview line against its command. No other plan names a different host, branch or command than the one run. The other `githubURL` callers take `owner/name`, which has only ever meant github.com.
 		- Verified: 1 new check in test.bash, which fails on `gover`.
@@ -2085,7 +2085,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Closed: 20260915-124817
 		- Cause: the tag scan matches a `v` followed by a digit, so a tag like `1.0.0` is invisible and the next version starts from nothing. The duplicate-tag guard below it does see those tags, so the two halves of one command disagree about which tags exist.
 		- Note: unattended there is no prompt, and the invented tag is pushed.
-		- Origin: f669f14 (the port); `legacy/bin/gitsby:2232` has the same scan. Confirmed.
+		- Origin: 089776d (the port); `legacy/bin/gitsby:2232` has the same scan. Confirmed.
 		- Fixed: a tag with no `v` counts too, when it is a whole X.Y.Z, so a date or build number can't restart the numbering. The duplicate guard refuses either spelling. A new tag is spelled like the tag it counts from, and the first one gets a `v`. A typed version is tagged as typed.
 		- Note: the first fix gave every new tag a `v`, the way typed versions always had. That left a repo tagged `1.4.2` going on with `v1.4.3`, and a typed `1.4.3` came out as `v1.4.3`. Changed the same day. `cicd/release.bash` always passes a version with the `v`, so this project's tags are unchanged.
 		- Sweep: `cicd/release.bash` and the demo stamp scan only this project's own tags, which all carry the `v`. The frozen bash is left as it is.
@@ -2097,12 +2097,12 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Cause: `account apply` turns it into an includeIf rule spelled `./`, and git resolves a leading `./` against the folder holding the config file, which is the home directory. Every repo under home then commits as that account and offers its login to the credential helper.
 		- Note: this is the wrong-account commit the whole feature exists to stop, and nothing on screen says it happened. A bare `.` is the natural thing to type from the folder you mean to bind.
 		- Probable fix: refuse a `path` that is not absolute, list one as ignored when read, and test the folder's existence against the resolved value rather than against the current directory.
-		- Origin: `canonPath` since f48f89d (the port); no round has handled a relative value. Confirmed.
+		- Origin: `canonPath` since 8da8951 (the port); no round has handled a relative value. Confirmed.
 		- Note: v2.1.0 does the same. The scripted `account apply` writes `gitdir/i:./` for a flat `path = .`, so a file from the release carries it.
 		- Note: `account set` resolves a relative path from the folder it runs in rather than refusing it. Only the loader ignores one, since a file cannot say where a value was typed.
 		- Sweep: `tokenfile`, `sshkey` and `gitsby.ghTokenFile` take paths too, and a relative one is read from wherever a command runs. Filed as its own bug. A glob character in a folder rule is the other way the two matchers disagree, also filed.
 		- Fixed: `account set` writes a relative `path` as the absolute folder it names, and refuses another user's `~`. A relative rule already in a file is listed as ignored and `account apply` never writes one. `account list` warns about one an earlier apply left behind. On Windows a rule for a folder not made yet no longer reads as `c:./work`, which apply handed to git as relative.
-		- Verified: 13 new checks in test.bash, 12 red against the tree before and green after, the last a regression guard, 863 -> 876. fuzz.bash 269 -> 301, and eight new Go tests red before and green after. On vm925w the new Go tests pass, `account set` from `C:\` writes `C:/sub`, and `account apply` writes `c:/...` where it wrote `c:./...`. A full Go run there failed eight older tests on `1b4f757`, whose `/srv/...` fixtures name no drive. With a drive in them it fails only `TestCanonPath` and `TestDisplayPath`, which fail on `gover` too. macOS and the BSDs untested.
+		- Verified: 13 new checks in test.bash, 12 red against the tree before and green after, the last a regression guard, 863 -> 876. fuzz.bash 269 -> 301, and eight new Go tests red before and green after. On vm925w the new Go tests pass, `account set` from `C:\` writes `C:/sub`, and `account apply` writes `c:/...` where it wrote `c:./...`. A full Go run there failed eight older tests on `9a81b39`, whose `/srv/...` fixtures name no drive. With a drive in them it fails only `TestCanonPath` and `TestDisplayPath`, which fail on `gover` too. macOS and the BSDs untested.
 
 	- ✅ Code Review 20260909 item 2: `br prune --no-fetch` deletes a branch on origin that origin has moved past.
 		- Closed: 20260914-165502
@@ -2110,7 +2110,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Cause: the remote half of the plan reads the local mirror of origin, and the delete-time re-check surveys local branches only, so origin is never asked again. `--no-fetch` leaves the mirror as stale as it was.
 		- Note: the plan line asserts each branch was re-checked at delete time. With the fetch left on, the same case is handled correctly, so the flag is the trigger, and its help text gives no hint that it makes this command unsafe.
 		- Probable fix: ask origin about each remote candidate before the delete push, or send the delete with a lease so git refuses on stale information.
-		- Origin: bb60cc5 (the port). The remote half has always read the local mirror, and the plan line from 0a3ef88 has overclaimed since. Not fallout from the 20260821 re-check rework. Confirmed.
+		- Origin: cfb6d90 (the port). The remote half has always read the local mirror, and the plan line from 4918b5b has overclaimed since. Not fallout from the 20260821 re-check rework. Confirmed.
 		- Note: the same unasked origin drops every remote delete when one branch is already gone there, and under `--no-fetch` reports an unreachable origin as branches "already gone". Both are fixed with this item.
 		- Sweep: `br merge` deletes its branch on origin the same way under `--no-fetch`, filed as its own bug. `pr ok` leaves the delete to the git host after it merges, so no local copy of origin decides it.
 		- Decided against: checking whether origin's merge target was rewritten since the last fetch. Telling needs objects the run declined to fetch, and gitsby never rewrites a shared branch.
@@ -2123,7 +2123,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Cause: a candidate that fails the readable test is skipped, so an empty answer means both "no file anywhere" and "a file that could not be read".
 		- Note: mode 0000 fails cleanly, so the window is a file that is writable and not readable.
 		- Probable fix: keep the two cases apart and refuse the second by name. Open the create so it cannot truncate.
-		- Origin: 8203670 (shcl) meets the older decision that a discovered unreadable file is skipped, not refused. Confirmed.
+		- Origin: 8d3f857 (shcl) meets the older decision that a discovered unreadable file is skipped, not refused. Confirmed.
 		- Keep: reads still skip an unreadable candidate. Only the create path refuses when a candidate exists and cannot be read.
 		- Note: with `XDG_CONFIG_HOME` set, the new file goes ahead of the unreadable one instead, and every later command reads the new one. A link to a file that isn't there is written through. On Windows the same state is a file another program holds open, where the write fails too and the message blames permissions.
 		- Sweep: two `account set` runs at once on one file keep one key, and a file that opens but can't be read through crashes `account set`. Both filed as their own bugs.
@@ -2143,7 +2143,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Reproduced: an `sshkey` written one tab further in than the keys around it does not apply, and `account list` reports only the unknown key beside it.
 		- Note: over-indent the key that picks the ssh key or the token file and the account applies without it, silently. The listing that always says, says nothing.
 		- Probable fix: walk the children of each key as well as the children of each block, and add whatever turns up to the ignored list.
-		- Origin: 8203670 (the shcl parser). Third instance of malformed input dropped silently, after 20260819d item 3 and the 20260821 fuzz find. The flat parser has ignored-list tests; this path has none. Confirmed.
+		- Origin: 8d3f857 (the shcl parser). Third instance of malformed input dropped silently, after 20260819d item 3 and the 20260821 fuzz find. The flat parser has ignored-list tests; this path has none. Confirmed.
 		- Sweep: every level the shcl loader walks, with a test per level.
 		- Sweep: every level the loader walks has a test: top-level keys, protocol, both account spellings, their fields, and anything under those at any depth. A stacked list and a raw block are not listed. A key inside a block with a refused name stays covered by the block's own entry.
 		- Fixed: the loader lists every key it does not read, at any depth. A key indented under another key is named by the path that reaches it and the key it sits under, such as `account[w].email.sshkey (indented under email)`. The key above it still applies. A stacked list and a raw block list nothing.
@@ -2154,7 +2154,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Closed: 20260915-121200
 		- Cause: an ssh command taken from the environment or from git config is passed through whenever it is not empty and carries no quotes, so a single space survives. Splitting it yields nothing, and the first element is read anyway.
 		- Note: it fires where a push is compared against the account, and for a write through gh. `sync` with an account named panicked before its plan, with the blank command set either way.
-		- Origin: ae16451 (the port). Filed as Plausible, since read from the identity block; reproduced through the identity check instead. Confirmed.
+		- Origin: 3d22222 (the port). Filed as Plausible, since read from the identity block; reproduced through the identity check instead. Confirmed.
 		- Fixed: a blank ssh command counts as none, so the probe and the fetch use plain `ssh`. The probe also falls back to `ssh` if a split ever comes back empty.
 		- Sweep: the other splits of a command line either check the length first or only loop over the words.
 		- Verified: 2 new checks in test.bash on the `sync` comparison, one per spelling, both failing on `gover`. `TestGitSSHCommandBlank` fails on `gover`.
@@ -2164,7 +2164,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Cause: the remote probe answers missing for any failure. A comment a few lines above it says unknown must not collapse into missing, and the GitHub-side probe honors that by reading the error text.
 		- Note: offline, `repo connect` says a repo that exists does not, and points at the command that would create a second one.
 		- Probable fix: read the error text, keep "could not tell" as its own answer, and give it its own message.
-		- Origin: 0a3ef88. The same bug was fixed in `ghRepoState` (20260818 item 7), same file, and this sibling was missed. Confirmed.
+		- Origin: 4918b5b. The same bug was fixed in `ghRepoState` (20260818 item 7), same file, and this sibling was missed. Confirmed.
 		- Sweep: every caller that turns a tool failure into an answer.
 		- Sweep: every place a tool's failure is read as an answer was checked. A tea that fails reads as having no login for the host; filed as its own bug. The rest either say unknown already, refuse on the answer they assume, or read local state that fails loudly a step later.
 		- Fixed: `repo connect` reads what git said, not only that it failed. Only git's words for a host that was reached and said no count as missing. Anything else refuses before the plan, says there is no telling whether the remote exists, repeats git's reason, and names no command. The missing message is reworded, and an answer nobody listed refuses instead of connecting.
@@ -2188,7 +2188,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The run also lasts about two minutes against a twenty to thirty second budget, and its closing black is two seconds where three was asked for.
 		- The quiet flag reaches every other child of the pipeline and not the demo generator.
 		- Probable fix: stamp a fixed version for the demo build, or keep the banner out of the demo run.
-		- Origin: 3b16d8d (build number) put a per-commit banner on `status`, which the demo captures. Confirmed.
+		- Origin: b283d31 (build number) put a per-commit banner on `status`, which the demo captures. Confirmed.
 		- Note: the length half of the third bullet is filed as its own bug at the top of this section. This item covers the rebuild on every commit, the closing black and the quiet flag.
 		- Fixed: the demo renders from a build of its own, stamped with the newest release tag and that tag's commit time rather than the commit. The banner on camera now reads `gitsby v2.1.0 build db8ey` and stays put until the next release. `-q` reaches the generator, and the loop ends on three seconds of black. The committed gif is the new render, and the three comments and the design.md sentence name the release stamp.
 		- Verified: two builds of one source, stamped like two consecutive commits, rendered to gifs that differ. 11 new checks, 852 -> 863. Nine fail on `gover`, and the other two, `-y` alone and the repeat render, are regression guards. The two build-site pins now count four sites and fail on `gover`. With `versionsort.suffix` taken out, the release-candidate check fails. The render is 960x540 and 12412356 bytes, loops in 124.84 s on the 20 ms grid, and ends on 3 s of black. A pipeline run regenerated the gif in 47 s. The next run, on the commit holding the gif, left it unchanged in 87 s, with the suite at 863/0 and parity 27/0. Linux only: Windows, macOS and the BSDs are untested.
@@ -3623,7 +3623,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - ✅ Paths are spelled more than one way between the config file and the screen.
 	- Opened: 20260916-110027
 	- Closed: 20260916-164500
-	- Decided 20260916: a path is never re-spelled for display. One gitsby worked out itself prints in full, one the config file holds prints as the file holds it. The accounts file line stops folding to `~`, which reverses the display half of 82b924f.
+	- Decided 20260916: a path is never re-spelled for display. One gitsby worked out itself prints in full, one the config file holds prints as the file holds it. The accounts file line stops folding to `~`, which reverses the display half of 807aa30.
 	- Decided 20260916: the config file takes `~`, `${HOME}` and `%USERPROFILE%` as the same thing on every platform, and either slash in any rule. Closed set of variables, expanded by gitsby, never through a shell. One this machine does not set makes the rule ignored and listed. No drive-letter mapping across platforms.
 	- Already handled on read: `\` to `/`, `~`, `~/`, `~\`, and `/c/x` to `C:/x` on Windows. New: the variables, and keeping the text as written.
 	- Work: `displayPath` only folds, so it collapses into `nativePath` at 28 call sites. The value model has to keep the as-written text beside the canonical form, since a value is normalized on read - `a\tb` reads back as `a/tb` today. Four checks assert a printed `~` (test.bash 2412, 2776, 2824, 2850) and change with the code; their labels do not.

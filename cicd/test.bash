@@ -6326,7 +6326,7 @@ GHEOF
 	mkdir -p "${og}/home"
 	local -a ogEnv=(env GITSBY_CONFIG= XDG_CONFIG_HOME= APPDATA= HOME="${og}/home" GIT_CONFIG_GLOBAL="${og}/home/.gitconfig")
 	fAssert "[ErkNuhS] the last build on SHCL 2.x compiles from its commit, with nothing downloaded" \
-		bash -c "git -C '${root}' archive c42091c02c7d151010ed791a5f62771a8fe2489c src-go | tar -x -C '${og}' \
+		bash -c "git -C '${root}' archive 53a62316dd3440cffada0c938b4cd8ad7351c36b src-go | tar -x -C '${og}' \
 			&& cd '${og}/src-go' && env -u XDG_CONFIG_HOME -u APPDATA GOWORK=off GOPROXY=off GOFLAGS=-mod=readonly CGO_ENABLED=0 go build -o '${og}/gitsby-2x' ."
 	for ogKv in 'work|email|a@x.test' 'work|path|~\dev\tools' "work|name|O'Brien \\ x" 'home|email|h@x.test' 'home|path|/srv/a b' 'home|sshkey|\\srv\keys\t1'; do
 		IFS='|' read -r ogAcct ogKey ogValue <<< "${ogKv}"
