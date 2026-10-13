@@ -36,6 +36,7 @@ This is a decision log, not a specification. Each entry says what was decided an
 	- [Demo](#demo)
 	- [Release policy](#release-policy)
 	- [Automating a release](#automating-a-release)
+- [Copyright and license](#copyright-and-license)
 
 <!-- /TOC -->
 
@@ -627,3 +628,8 @@ Decisions inside that shape:
 - **History footers are warned about, not gated.** The suites' own footers are checked for an entry newer than the last release tag. It is a warning because a release with a stale footer is untidy, not wrong, and a hard gate on a habit is a gate people learn to work around.
 
 - **Assets are built before the tag is cut.** With version-control stamps switched off at build time, a phase-1 binary and one built from the tagged commit are byte-identical. Phase 2 changes two files: the changelog, which no binary contains, and the Windows resource - which phase 1 stamps with the same version before building and puts back afterwards, so both phases link identical bytes. The ordering therefore costs nothing, and the reproducibility it used to cost is what `-buildvcs=false` bought back.
+
+## Copyright and license
+
+> Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]<br>
+> Licensed under Creative Commons Attribution 4.0 International (CC BY 4.0) <https://creativecommons.org/licenses/by/4.0/>.

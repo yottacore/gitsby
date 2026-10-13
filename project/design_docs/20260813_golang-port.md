@@ -16,6 +16,7 @@ Gitsby moves from two scripted implementations to one compiled Go binary. This d
 - [Migration route](#migration-route)
 - [Effects outside the program](#effects-outside-the-program)
 - [Still to figure out](#still-to-figure-out)
+- [Copyright and license](#copyright-and-license)
 
 <!-- /TOC -->
 
@@ -106,3 +107,8 @@ This gives a continuous pass or fail signal, keeps the work abortable at any poi
 - How long the scripted implementations stay in the repository after the Go leg passes, and whether either is worth keeping as a fallback. Probably just punting and moving to a "legacy" folder as with some sister projects is the way.
 
 - Whether the release automation cuts the release before or after the build matrix runs, so a failed build never produces a half-published release.
+
+## Copyright and license
+
+> Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]<br>
+> Licensed under Creative Commons Attribution 4.0 International (CC BY 4.0) <https://creativecommons.org/licenses/by/4.0/>.
