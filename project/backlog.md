@@ -49,6 +49,79 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: None in a suite. Checked by hand against the old and new step.
 	- Note: Not yet run on b26, which was held by another session. The next full run there closes it.
 
+- Updates to CICD script flags
+	- ID: 2026101816064793
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261018-160647
+	- Opened by: jim-collier
+	- Milestone: Pre-next-cut. Do next.
+	- Requirements [Feature]:
+		- `--ci`: Rename `--gate`.
+		- `--quick`:
+			- Runs whatever linting, validation, and testing steps are very quick.
+			- Cross-compiles whatever is fast; e.g. maybe skip slow arm64.
+			- Skips anything requiring an external host.
+		- No flags by default does everything.
+		- The other existing flags can stay.
+	- Note: `--gate` is also named by the pre-push hook `--install-hook` writes, and in the README and memory.
+
+- Leak, memory, and correctness checks in CICD
+	- ID: 2026101816064794
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261018-160647
+	- Opened by: jim-collier
+	- Milestone: Pre-next-cut.
+	- Related IDs: 2026101816064793, 2026101009380628
+	- Requirements [Feature]:
+		- For all code:
+			- The checks cover first-party and third-party code. Vendored code is included.
+				- On third-party code, run the leak, memory, and correctness checks named here, not style lints. Style findings in someone else's module aren't ours to fix.
+				- CodeQL reports only on source inside the database's root. For its run, vendor the dependencies into the tree first (`go mod vendor`, unpacked sdists for Python).
+			- Any report fails the test that made it.
+			- Any leak is fixed. If the fix has to wait, it gets a backlog item, and the test that shows it turns the check off with that item's ID beside it.
+			- A `--leakcheck` flag adds the slow checks:
+				- CodeQL, from a pinned CLI run locally. No hosted service.
+				- A soak test. It loops through the program's main actions headless, and fails if the heap at round 2N is larger than at round N by more than a set margin. The heap report is kept as a pipeline artifact.
+			- Every tool is pinned and runs in the build container or lint image, never installed on the host.
+			- Each new gate is watched to fail before it's trusted, by planting the leak it's meant to catch and seeing it go red.
+			- Known-advisory scans run on every full run: `govulncheck` and `pip-audit`. They cover third-party code only, which is the point.
+		- For Go:
+			- Go leaks are goroutines that never exit, and references held too long: a map or slice that only grows, or a small slice keeping a big backing array alive.
+			- Every package's tests run `goleak.VerifyTestMain(m)` from `go.uber.org/goleak`, pinned in go.mod. A goroutine still running after the tests fails the run, whether our code or a dependency started it.
+			- Every full run runs the whole test suite with `-race`.
+			- If the code uses cgo, every full run also runs the tests with `-asan`, in a build dir of its own.
+			- Every full run runs `go vet` and `staticcheck`. `go vet`'s `lostcancel` and `copylocks` checks are the leak-related ones.
+			- The soak test reads `runtime.MemStats.HeapInuse` and `runtime.NumGoroutine()` at round N and 2N, after `runtime.GC()`. Its heap profile (`pprof`) is kept as the artifact, and `go tool pprof -base` shows what grew.
+			- Traps:
+				- `goleak.VerifyNone` per test doesn't work with `t.Parallel()`. Use `VerifyTestMain`.
+				- goleak ignores by function name. That's the only form of suppression allowed.
+				- `go test` caches a pass. Run with `-count=1`.
+				- One `runtime.GC()` can leave garbage behind. Call it twice before reading the stats, or the margin has to be wide enough to hide a real leak.
+				- `-race` needs cgo on some platforms. A job with `CGO_ENABLED=0` fails to build it or skips it, so check the job's env.
+				- `-race` is 2 to 20 times slower and uses 5 to 10 times the memory. Size the job's timeout for it.
+		- For Python:
+			- Python leaks are references held too long: module-level caches, `functools.lru_cache` on a method, closures kept in a global list, and C extensions that drop a reference count.
+			- Every full run runs the tests with `-X dev` and `-W error::ResourceWarning`, so an unclosed file or socket fails the test.
+			- Every full run runs the tests under `pytest-memray`. Each test that loops gets `@pytest.mark.limit_leaks(...)` with a margin. memray sees native allocations, so leaks in C extensions show up, third-party ones included.
+			- After the tests, `gc.collect()` runs, and `gc.garbage` must be empty.
+			- The soak test takes `tracemalloc` snapshots at round N and 2N and fails on growth past the margin. The top lines of `snapshot.compare_to()` are kept as the artifact.
+			- ruff runs `B019` (`lru_cache` on a method), `SIM115` (`open` with no context manager), and `B006` (mutable default argument).
+			- `--leakcheck` also runs the tests on a CPython built with `--with-address-sanitizer`, under `PYTHONMALLOC=malloc`, for C extensions.
+				- The interpreter's own reports are suppressed by library name, `libpython` only.
+			- Traps:
+				- Start `tracemalloc` before importing the code under test, or allocations made at import aren't traced.
+				- The first rounds fill caches: the regex cache, interned strings, freelists, and lazy imports. That's why it's round N against 2N, never 0 against N.
+				- `tracemalloc` sees only allocations made through Python's allocator. A C extension calling `malloc` directly is invisible to it. memray covers that.
+				- memray runs on Linux and macOS only. On Windows, the test exits as skipped, not passed.
+				- pytest keeps the traceback of a failed test, which keeps its frames alive. A leak count from a run with failures means nothing.
+				- `ResourceWarning` shows only in dev mode or with `-W`. A plain run hides it.
+				- Without `PYTHONMALLOC=malloc`, ASan can't see inside pymalloc's pools.
+	- Note: The Rust, C, and C++ parts of the list were left out, since there's no code in those here. The only Python is the demo gif script, which uses Pillow, cairo, Pango, and fontTools, and it has no tests yet. The Go code starts one goroutine (`startAhead` in app.go), and builds use `CGO_ENABLED=0`.
+
 - Run on the last Core 2 Duo, and AMD CPUs from that era.
 	- ID: 2026101301161852
 	- Type: Enhancement
