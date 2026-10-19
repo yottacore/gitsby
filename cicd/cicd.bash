@@ -23,12 +23,12 @@
 ##	- Stages (fail-fast, any error aborts before the next stage):
 ##	   0. remote sync (fast-forward from origin before anything is built or tested)
 ##	   1. lint (gofmt + go vet + staticcheck + golangci-lint, and shellcheck over the pipeline's own scripts)
-##	   2. build + unit tests (go test) + regression tests (cicd/test.bash against the compiled binary)
-##	   3. fuzz + security (cicd/fuzz.bash) + govulncheck + spawn counts; skipped under --quick
+##	   2. build + unit tests (go test) + regression tests (cicd/test.bash against the compiled binary; --quick skips the suite)
+##	   3. fuzz + security (cicd/fuzz.bash) + native fuzz targets + govulncheck + spawn counts; --quick skips the native fuzzing and govulncheck
 ##	   4. backwards compatibility (cicd/parity.bash: this build vs the frozen v2.1.0 one)
 ##	   5. dogfood (cross-build every target and install each to its first existing dir)
 ##	   6. demo gif (fake-terminal render; skipped under --quick)
-##	   7. Remote tests (cicd/remote-tests.bash, over ssh on the Mac, the Unix boxes and whichever Windows box is free; skipped under --quick)
+##	   7. Remote tests (cicd/remote-tests.bash, over ssh on the Mac, the Unix boxes and whichever Windows box is free; --quick only cross-builds the Unix boxes' targets)
 ##	   8. backup + publish to git (runs from repo root)
 ##	- Syntax:
 ##	  cicd/cicd.bash [options]
@@ -46,7 +46,7 @@
 ##	   --no-demogif        skip regenerating the demo gif
 ##	   --no-remote         skip the remote tests
 ##	   --no-publish        skip the git backup + publish stage
-##	   --quick             skip the slow stages (fuzz, demo gif, remote tests)
+##	   --quick             skip the slow steps and every host but origin: the regression suite, native fuzzing, govulncheck, demo gif and remote tests
 ##	   --container         run stages 1-4 and the demo gif in the pinned image from cicd/container/Dockerfile (the default)
 ##	   --no-container      run them on this box instead
 ##	   --gate              fast pre-push gate: every lint check and go test; no sync, build, suites, prompt or log
@@ -100,7 +100,7 @@ fDie(){ { fEcho_Force "FAILED: $*"; } >&2; exit 1; }
 fUsage(){ fEcho_Clean "$*" >&2; exit 2; }
 
 ## Parse options.
-assumeYes=0; quiet=0; quick=0; doSync=1; doLint=1; doTest=1; doFuzz=1; doParity=1; doRemote=1; cliMessage=""
+assumeYes=0; quiet=0; quick=0; doSync=1; doLint=1; doTest=1; doFuzz=1; doParity=1; doRemote=1; noRemote=0; cliMessage=""
 gate=0; installHook=0; stageOpts=(); containerOpt=""
 while (($#)); do case "$1" in
 	-q|--quiet)               quiet=1; assumeYes=1; shift ;;   ## quiet + unattended; publish runs quiet too
@@ -112,12 +112,12 @@ while (($#)); do case "$1" in
 	--no-parity)              doParity=0; stageOpts+=("$1"); shift ;;
 	--no-dogfood)             DOGFOOD_TARGETS=(); stageOpts+=("$1"); shift ;;
 	--no-demogif)             DO_DEMOGIF=0; stageOpts+=("$1"); shift ;;
-	--no-remote)              doRemote=0; stageOpts+=("$1"); shift ;;
+	--no-remote)              doRemote=0; noRemote=1; stageOpts+=("$1"); shift ;;
 	--no-publish)             GIT_PUBLISH=(); stageOpts+=("$1"); shift ;;
-	## Cross-building three platforms is the slow part of a run, not the fuzz and the gif -
-	## so the flag whose job is skipping the slow parts has to skip that too. The native
-	## target stays, since the dogfooded binary is what the next hand-run uses.
-	--quick)                  quick=1; doFuzz=0; DO_DEMOGIF=0; doRemote=0; DOGFOOD_TARGETS=("${DOGFOOD_NATIVE_TARGET}"); stageOpts+=("$1"); shift ;;
+	## Leaves out each step that takes over about half a minute, or reaches a host other than
+	## origin. Every cross-build is a few seconds, so they all stay. Sync and publish stay too,
+	## since origin is the repo's own host. The rest of what it skips is read off ${quick} below.
+	--quick)                  quick=1; DO_DEMOGIF=0; doRemote=0; stageOpts+=("$1"); shift ;;
 	--message=*|--msg=*|-m=*) cliMessage="${1#*=}"; stageOpts+=("${1%%=*}"); shift ;;
 	-m|--message|--msg)       cliMessage="${2-}"; stageOpts+=("$1"); shift; (($#)) && shift ;;
 	## pre-push.bash looks for this arm's literal text to tell a commit that has a gate from
@@ -421,12 +421,16 @@ if ((container)); then
 	## The same stages as here, minus everything that needs this box.
 	containerRun=(-y --no-sync --no-dogfood --no-remote --no-publish)
 	((quiet))    && containerRun[0]=-q
+	((quick))    && containerRun+=(--quick)
 	((doLint))   || containerRun+=(--no-lint)
 	((doTest))   || containerRun+=(--no-test)
 	((doFuzz))   || containerRun+=(--no-fuzz)
 	((doParity)) || containerRun+=(--no-parity)
 	((DO_DEMOGIF)) || containerRun+=(--no-demogif)
 fi
+
+## The Unix boxes' targets, once each. Stage 7 builds them, under --quick too.
+mapfile -t remoteTargets < <(printf '%s\n' "${REMOTE_UNIX_TARGETS[@]}" | sort -u)
 
 ## Preflight: show the plan with resolved paths, then confirm.
 
@@ -444,7 +448,9 @@ if ((doLint)); then
 else
 	fEcho_Clean "Lint ................: (skipped)"
 fi
-if ((doTest)) && [[ -f "${TEST_CMD[0]:-}" ]]; then
+if ((doTest && quick)); then
+	fEcho_Clean "Tests ...............: go test; ${TEST_CMD[*]} ${skipNote}"
+elif ((doTest)) && [[ -f "${TEST_CMD[0]:-}" ]]; then
 	fEcho_Clean "Tests ...............: ${TEST_CMD[*]}"
 elif ((doTest)); then
 	fEcho_Clean "Tests ...............: (no harness yet: ${TEST_CMD[0]:-cicd/test.bash})"
@@ -454,7 +460,9 @@ fi
 if ((doTest)); then
 	fEcho_Clean "Go build ............: ${GO_MODULE_DIR} -> ${GO_MODULE_DIR}/${EXE_NAME} (the suite's subject)"
 fi
-if ((doFuzz)) && [[ -f "${FUZZ_CMD[0]:-}" ]]; then
+if ((doFuzz && quick)) && [[ -f "${FUZZ_CMD[0]:-}" ]]; then
+	fEcho_Clean "Fuzz + security .....: ${FUZZ_CMD[*]} and spawn counts, native fuzzing and govulncheck ${skipNote}"
+elif ((doFuzz)) && [[ -f "${FUZZ_CMD[0]:-}" ]]; then
 	fEcho_Clean "Fuzz + security .....: ${FUZZ_CMD[*]}"
 elif ((doFuzz)); then
 	fEcho_Clean "Fuzz + security .....: (no harness yet: ${FUZZ_CMD[0]:-cicd/fuzz.bash})"
@@ -488,6 +496,8 @@ if ((doRemote)) && [[ -f "${REMOTE_TEST_CMD[0]:-}" ]]; then
 	fEcho_Clean "Remote tests ........: ${REMOTE_TEST_CMD[*]} (${REMOTE_MAC_HOSTS[*]%%:*} ${REMOTE_UNIX_HOSTS[*]%%:*}; first free of ${REMOTE_WINDOWS_HOSTS[*]%%:*})"
 elif ((doRemote)); then
 	fEcho_Clean "Remote tests ........: (no harness yet: ${REMOTE_TEST_CMD[0]:-cicd/remote-tests.bash})"
+elif ((quick && ! noRemote)); then
+	fEcho_Clean "Remote tests ........: ${skipNote}, cross-builds only: ${remoteTargets[*]}"
 else
 	fEcho_Clean "Remote tests ........: ${skipNote}"
 fi
@@ -622,7 +632,10 @@ else
 	## The unit tests come before the suite below: they answer in milliseconds and
 	## cover the parsing and matching the suite can only reach through a built binary.
 	fUnitTests
-	if [[ -f "${TEST_CMD[0]:-}" ]]; then
+	## Well over a minute here, so the one slow step a quick run leaves out of this stage.
+	if ((quick)); then
+		fEcho_Clean "regression tests skipped (--quick)"
+	elif [[ -f "${TEST_CMD[0]:-}" ]]; then
 		"${TEST_CMD[@]}"
 		fEcho "OK: tests passed"
 	else
@@ -631,8 +644,9 @@ else
 fi
 
 ## Stage 3: fuzz + security (adversarial input against our parsing, plus checks
-## of what we shell out to). Slow, so skipped under --quick. Same lands-later
-## policy as the tests.
+## of what we shell out to). The harness and the spawn counts take seconds and run under
+## --quick; the native fuzzing doesn't, and govulncheck asks vuln.go.dev, so those two don't.
+## Same lands-later policy as the tests.
 fSection "3/8  Fuzz + security"
 if ((! doFuzz)); then
 	fEcho_Clean "fuzz + security ${ranWhere:-skipped${quickNote}}"
@@ -645,7 +659,9 @@ fi
 ## Coverage-guided fuzzing of the pure parsers, briefly. Their seed corpus already ran
 ## with 'go test' in stage 2; this hunts a little past it each run. One target per
 ## invocation is go's rule, and a crasher lands in src-go/testdata/fuzz/ as evidence.
-if ((doFuzz)); then
+if ((doFuzz && quick)); then
+	fEcho_Clean "native fuzz targets skipped (--quick)"
+elif ((doFuzz)); then
 	for fuzzTarget in $(cd "${root}/${GO_MODULE_DIR}" && go test -list 'Fuzz.*' . 2>/dev/null | grep '^Fuzz' || true); do
 		(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${BUILD_JOBS}" go test -run '^$' -fuzz "^${fuzzTarget}\$" -fuzztime 5s -parallel "${BUILD_JOBS}" . >/dev/null) \
 			|| fDie "fuzzing found a crasher in ${fuzzTarget} (reproducer under ${GO_MODULE_DIR}/testdata/fuzz/)"
@@ -656,10 +672,11 @@ if ((doFuzz)); then
 	fEcho "OK: native fuzz targets"
 fi
 ## With no third-party dependencies the standard library is the only library code there is
-## to check - and it is linked into every binary we publish. Probe-gated like staticcheck;
-## it runs even under --quick, because it is a lookup rather than a workload.
+## to check - and it is linked into every binary we publish. Probe-gated like staticcheck.
 if [[ -n "${ranWhere:-}" ]]; then
 	:
+elif ((quick)); then
+	fEcho_Clean "govulncheck skipped (--quick: it reaches vuln.go.dev)"
 elif command -v govulncheck >/dev/null 2>&1; then
 	(cd "${root}/${GO_MODULE_DIR}" && govulncheck ./...) || fDie "govulncheck findings"
 	fEcho "OK: govulncheck clean"
@@ -799,17 +816,29 @@ fi
 ## suite on the Mac and the Unix boxes against the build for each. The Linux arm64 box also runs
 ## the windows/arm64 Go tests under Wine. Nothing else runs the tests on
 ## those platforms, and Windows-only breaks went unnoticed for weeks before this. A box that is off, unreachable or taken by someone else
-## is skipped with a note rather than waited for. Slow, so skipped under --quick.
+## is skipped with a note rather than waited for. Slow, and on other hosts, so --quick only
+## builds the Unix boxes' targets, which takes seconds and finds one that stopped compiling.
+## --no-remote leaves those out too, and the run in the container always gets it.
 fSection "7/8  Remote tests"
 if ((! doRemote)); then
 	fEcho_Clean "Remote tests skipped${quickNote}"
+	if ((quick && ! noRemote)); then
+		quickBuilt=()
+		for t in "${remoteTargets[@]}"; do
+			[[ -n "${t}" ]] || continue
+			out="${root}/${GO_MODULE_DIR}/${EXE_NAME}-${t/\//-}"
+			fCrossBuild "${t}" "${out}"
+			rm -f -- "${out:?}"
+			quickBuilt+=("${t}")
+		done
+		((${#quickBuilt[@]} == 0)) || fEcho "OK: cross-built ${quickBuilt[*]}"
+	fi
 elif [[ ! -f "${REMOTE_TEST_CMD[0]:-}" ]]; then
 	fEcho_Clean "no remote test harness (${REMOTE_TEST_CMD[0]:-cicd/remote-tests.bash})"
 else
 	remoteBin="${root}/${GO_MODULE_DIR}/${EXE_NAME}-darwin-universal"
 	fCrossBuild darwin/universal "${remoteBin}"
 	remoteArgs=(--mac-bin "${remoteBin}"); remoteBins=("${remoteBin}")
-	mapfile -t remoteTargets < <(printf '%s\n' "${REMOTE_UNIX_TARGETS[@]}" | sort -u)
 	for t in "${remoteTargets[@]}"; do
 		[[ -n "${t}" ]] || continue
 		remoteBins+=("${root}/${GO_MODULE_DIR}/${EXE_NAME}-${t/\//-}")
@@ -875,3 +904,4 @@ fEcho_Clean
 ##		- 2026-10-10 JC: --container runs stages 1-4 in an image built from cicd/container/Dockerfile, with the versions config.bash pins. A pinned tool the recipe doesn't take stops the run. The tool version check knows git.
 ##		- 2026-10-10 JC: --container renders the demo gif in the image too, with its font pinned there.
 ##		- 2026-10-10 JC: The container is the default, set by CICD_CONTAINER in config.bash. --no-container runs on this box, and so does a box without docker, with a warning.
+##		- 2026-10-18 JC: --quick leaves out each step over about half a minute and anything that reaches a host other than origin: the regression suite, the native fuzz targets, govulncheck, the demo gif and the remote tests. It now runs fuzz.bash and the spawn counts, dogfoods every target, and cross-builds the Unix boxes' targets without testing them.

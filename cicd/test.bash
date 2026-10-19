@@ -351,10 +351,16 @@ fGateCalled(){ local p; for p in "$@"; do grep -qE -- "${p}" "${gateCalls}" || r
 fGateNested(){ gateNested=1 fGateSays 2 'already in the container' -y --container ;}
 ## The image does stages 1-4, so none of them may run a second time out here.
 fGateContainerRun(){
-	fGateSays 0 'OK: the container run' -y --quick --no-sync --no-publish --no-dogfood \
+	fGateSays 0 'OK: the container run' -y --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
 		&& fGateCalled '^docker run .* -y --no-sync --no-dogfood --no-remote --no-publish --no-fuzz --no-demogif$' \
 		&& ! fGateCalled '^go (vet|build|test)' && ! fGateCalled '^(test|parity|fuzz|spawn-count)\.bash' \
 		&& grep -q 'lint ran in the container' "${gateOut}"
+}
+## --quick is handed to the run in there, which is where it skips the suite.
+fGateContainerQuick(){
+	fGateSays 0 'OK: the container run' -y --quick --no-sync --no-publish --no-dogfood \
+		&& fGateCalled '^docker run .* -y --no-sync --no-dogfood --no-remote --no-publish --quick --no-demogif$' \
+		&& ! fGateCalled '^(test|parity|fuzz|spawn-count)\.bash'
 }
 ## The demo renders in there too, with the gif's archive mounted, and never out here.
 fGateContainerDemo(){
@@ -363,14 +369,21 @@ fGateContainerDemo(){
 		&& ! fGateCalled '^(python3 .*gen-demo-gif|gifsicle)'
 }
 fGateFullRun(){
-	fGateSays 0 'CI/CD: done\.' -y --no-container --quick --no-sync --no-publish --no-dogfood \
+	fGateSays 0 'CI/CD: done\.' -y --no-container --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
 		&& fGateCalled '^go vet' '^go build' '^go test -race' '^test\.bash' '^parity\.bash' && ! fGateCalled '^docker '
+}
+## --quick keeps what takes seconds and drops what takes longer or reaches a host other than origin.
+fGateQuickRun(){
+	fGateSays 0 'CI/CD: done\.' -y --no-container --quick --no-sync --no-publish --no-dogfood \
+		&& fGateCalled '^go vet' '^go build' '^go test -race' '^fuzz\.bash' '^spawn-count\.bash' '^parity\.bash' \
+		&& ! grep -qE '^(test|remote-tests)\.bash|^go test .*-fuzz |^govulncheck|^python3 cicd/utility/demo/gen-demo-gif' "${gateCalls}" \
+		&& grep -qxF 'regression tests skipped (--quick)' "${gateOut}" && grep -qxF 'govulncheck skipped (--quick: it reaches vuln.go.dev)' "${gateOut}"
 }
 ## A box whose docker doesn't answer runs everything here, and says why.
 fGateNoDocker(){
 	: > "${gateFail}/docker"
 	local rc=0
-	fGateSays 0 "docker isn't usable here" -y --quick --no-sync --no-publish --no-dogfood && fGateCalled '^go build' '^test\.bash' || rc=1
+	fGateSays 0 "docker isn't usable here" -y --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood && fGateCalled '^go build' '^test\.bash' || rc=1
 	rm -f -- "${gateFail:?}/docker"
 	return "${rc}"
 }
@@ -4780,8 +4793,10 @@ GHEOF
 	fAssert "[Eo67ohl] the dogfood fallback only applies to this box's own target" \
 		bash -c "grep -q 'DOGFOOD_FALLBACK_DIR' '${root}/cicd/config.bash' && grep -q 'hostGoos' '${root}/cicd/cicd.bash'"
 	## --quick skips the fuzz and the gif, which are not the slow part; three cross-builds are.
-	fAssert "[EnQTPxt] --quick narrows the cross-builds too" \
-		bash -c "grep -q 'quick).*DOGFOOD_TARGETS=' '${root}/cicd/cicd.bash'"
+	## Off since 2026-10-18: each cross-build takes seconds, so --quick dogfoods every target.
+	## Et6FC31 below asks the opposite of the run itself.
+	# fAssert "[EnQTPxt] --quick narrows the cross-builds too" \
+	# 	bash -c "grep -q 'quick).*DOGFOOD_TARGETS=' '${root}/cicd/cicd.bash'"
 	## With no third-party dependencies the standard library is the only library code there is.
 	fAssert "[EnQTPxu] the pipeline checks the standard library for known problems" \
 		bash -c "grep -q 'govulncheck' '${root}/cicd/cicd.bash'"
@@ -5256,12 +5271,15 @@ EOF
 		done
 		fAssert "[EpsVDHx] --gate refuses a stage option"  fGateSays 2 'takes no stage options \(got: --no-lint\)' --gate --no-lint
 		fAssert "[EpsVDHy] --gate and --install-hook together are refused"  fGateSays 2 'separate runs' --gate --install-hook
+		## pre-push.bash tells a commit that has the gate by this text in its cicd.bash.
+		fAssert "[Et6FC3t] the gate's option arm keeps the text the hook looks for"  grep -qF -- '--gate)' "${root}/cicd/cicd.bash"
 		## Regression guard: the full run is what the two functions were carved out of.
 		fAssert "[EpsVDHz] the full run still lints, builds and runs the suites"  fGateFullRun
 		fAssert "[Er2UM3f] a -q run still prints every regression, fuzz, parity and spawn check"  fGateQuietSuites
 		fAssert "[EpsVDI0] cicd.bash --help lists --gate and --install-hook" \
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--gate ' <<< \"\$out\" && grep -qE -- '^ +--install-hook ' <<< \"\$out\""
 		fAssert "[EpsVDI1] and contributing.md names --install-hook"  grep -qF -- '--install-hook' "${root}/contributing.md"
+		fAssert "[Et6FC4K] --quick runs the steps that take seconds, and none that take longer or reach another host"  fGateQuickRun
 		fAssert "[ErkbDTn] cicd.bash --help lists --no-remote" \
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--no-remote ' <<< \"\$out\""
 		fAssert "[EsJgeiS] cicd.bash --help lists --container" \
@@ -5269,6 +5287,7 @@ EOF
 		fAssert "[EsJgejN] --container with --gate is refused"  fGateSays 2 'goes with a full run' --container --gate
 		fAssert "[EsJgekF] --container inside the container is refused"  fGateNested
 		fAssert "[EsJgel8] a plain run hands stages 1-4 to the image and runs none of them here"  fGateContainerRun
+		fAssert "[Et6FC46] and --quick goes in with them"  fGateContainerQuick
 		fAssert "[EsK1B7q] and the demo gif as well"  fGateContainerDemo
 		fAssert "[EsK46gt] a box without a working docker runs them here, with a warning"  fGateNoDocker
 		fAssert "[EsK46i7] but --container there stops"  fGateNoDockerAsked
@@ -5438,6 +5457,10 @@ EOF
 		fGateOnly dogfood
 		fAssert "[Er1LxTd] a configured dest that exists wins over the fallback" \
 			bash -c "[[ '${gateRc}' == 0 && -f '${gateDest}/gitsby' && ! -e '${gateDir}/home/.local/bin/gitsby' ]]"
+		rm -f -- "${gateDest:?}/gitsby"
+		fGateOnly dogfood --quick
+		fAssert "[Et6FC31] --quick dogfoods every target, not only this box's" \
+			bash -c "[[ '${gateRc}' == 0 && -f '${gateDest}/gitsby' ]] && grep -qF 'WARNING: no windows/amd64 dogfood dest exists/writable' '${gateOut}' && grep -qF 'WARNING: no darwin/universal dogfood dest exists/writable' '${gateOut}'"
 		## Stage 7 hands its harness a universal Mac build joined the way dogfood joins one, and a
 		## build for each Unix box's target.
 		fGateOnly remote
@@ -5446,6 +5469,12 @@ EOF
 		fGateOnly remote --quick
 		fAssert "[ErkbDT4] and --quick leaves it out, saying so" \
 			bash -c "[[ '${gateRc}' == 0 ]] && ! grep -qE '^(remote-tests|macho-universal)\.bash' '${gateCalls}' && grep -qxF 'Remote tests skipped (--quick)' '${gateOut}'"
+		fAssert "[Et6FC2n] but still cross-builds the Unix boxes' targets, and removes each build" \
+			bash -c "[[ '${gateRc}' == 0 && ! -e '${gateDir}/src-go/gitsby-freebsd-amd64' && ! -e '${gateDir}/src-go/gitsby-linux-arm64' ]] && grep -qE '^go build .* -o ${gateDir}/src-go/gitsby-freebsd-amd64( |\$)' '${gateCalls}' && grep -qE '^go build .* -o ${gateDir}/src-go/gitsby-linux-arm64( |\$)' '${gateCalls}' && grep -qxF '[ OK: cross-built freebsd/amd64 linux/arm64 ]' '${gateOut}'"
+		## The run in the container gets --no-remote, and the builds are done out here.
+		fGateOnly remote --quick --no-remote
+		fAssert "[Et6Htmj] and with --no-remote as well, builds nothing there" \
+			bash -c "[[ '${gateRc}' == 0 ]] && ! grep -qE '^go build ' '${gateCalls}' && grep -qxF 'Remote tests skipped (--quick)' '${gateOut}'"
 		: > "${gateFail}/remote-tests"
 		fGateOnly remote
 		rm -f -- "${gateFail:?}/remote-tests"
