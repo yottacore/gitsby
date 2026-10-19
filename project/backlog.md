@@ -33,6 +33,33 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- `raw gh` loops forever when `gh` on PATH leads back to gitsby
+	- ID: 2026101916533300
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Critical
+	- Opened: 20261019-165333
+	- Opened by: jim-collier
+	- Target OS: Linux
+	- Test environment: b28l
+	- Steps to reproduce [Bug]:
+		- On a box where the first `gh` on PATH is, or runs, gitsby, run `gitsby raw gh <anything>`.
+		- Not confirmed which form b28l had: a symlink or copy of gitsby named `gh`, or a wrapper script that calls `gitsby raw gh "$@"`.
+	- Incorrect behavior [Bug]:
+		- Endless loop that eats time and a lot of memory. The session that hit it got out by calling the real `gh` by full path.
+	- Expected behavior [Bug]:
+		- Stop at once with a plain error that names the PATH entry, and never start a second copy of itself.
+	- Reproduced [No]: Not on b23, where `gh` is the real binary. A stand-in `gh` wrapper on PATH should do it.
+	- Possible cause [Bug]:
+		- `cmdPassthrough` in main.go checks `gh` only with `mustBeInPath`, then `handover` in exec.go runs it by bare name. Nothing checks that the file found isn't gitsby itself, or something that calls it. A wrapper makes each run start the next, with no limit.
+	- Requirements [Bug fix]:
+		- Find the tool by walking PATH ourselves. Skip any entry that resolves (symlinks followed, `os.SameFile`) to the running gitsby. If nothing else is left, refuse with the usual "Not found in path" error and say a PATH entry points back at gitsby.
+		- Set an env var such as `GITSBY_RAW_ACTIVE` on the handover. If it's already set when `raw` starts, refuse with a message that names it. This catches wrappers the file check can't see. Read it at startup, before the run sets it.
+		- Cover `tea`, `glab`, `lazygit`, and `tig` the same way, since they share the path.
+		- Test case needs a stand-in `gh` that is a wrapper and one that is a symlink to the build. Watch both fail on the current build first, and put a spawn limit on the test so a regression can't eat the box.
+	- Progress log:
+		- 2026-10-19: Logged from a report by another project's session on b28l. Cause is from reading the code, not from a run there. Still need the output of `type -a gh` on b28l.
+
 - Updates to CICD script flags
 	- ID: 2026101816064793
 	- Type: Enhancement
