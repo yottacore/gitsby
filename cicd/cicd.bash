@@ -817,10 +817,11 @@ elif command -v govulncheck >/dev/null 2>&1; then
 else
 	fEcho "WARNING: govulncheck skipped (not installed: go install golang.org/x/vuln/cmd/govulncheck@latest)"
 fi
-## The demo's Python libraries, at the versions installed here. They come from Debian's archive
+## The demo's Python libraries, at the versions installed here. Most come from Debian's archive
 ## rather than pip, so pip-audit gets a list of pins, not an environment. Debian patches a hole
 ## without moving the upstream version, so it can report one already fixed; PIP_AUDIT_IGNORE in
-## config.bash lists those, each with the backlog item that checks it.
+## config.bash lists those, each with the backlog item that checks it. Off the container a box's
+## own old Pillow fails here on purpose; it is the copy that box renders with.
 if [[ -n "${ranWhere:-}" || -z "${PY_AUDIT_DISTS+x}" ]] || ((! ${#PY_AUDIT_DISTS[@]})); then
 	:
 elif ((quick)); then
@@ -838,7 +839,10 @@ else
 	pip-audit -r "${pyReq}" --no-deps --disable-pip --progress-spinner off "${pyAuditArgs[@]}" 2>&1 \
 		| { grep -v '^WARNING:pip_audit._cli:' || true; } || pyRc=$?
 	rm -f -- "${pyReq:?}"
-	((pyRc == 0)) || fDie "pip-audit findings"
+	if ((pyRc)); then
+		[[ -n "${GITSBY_CICD_IN_CONTAINER:-}" ]] && fDie "pip-audit findings"
+		fDie "pip-audit findings in this box's libraries; the container pins its own in cicd/container/requirements.txt"
+	fi
 	fEcho "OK: pip-audit clean (${pyPins//$'\n'/, })"
 fi
 ## The profiling half, and deliberately not a sampling profile: this program is blocked on

@@ -517,7 +517,8 @@ fGatePipAudit(){
 fGatePipAuditFinds(){
 	: > "${gateFail}/pip-audit"
 	local rc=0
-	fGateSays 1 'pip-audit findings' -y --no-container --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood || rc=1
+	fGateSays 1 'pip-audit findings in this box.s libraries; the container pins its own in cicd/container/requirements\.txt' \
+		-y --no-container --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood || rc=1
 	rm -f -- "${gateFail:?}/pip-audit"
 	return "${rc}"
 }
@@ -5578,7 +5579,7 @@ EOF
 		fAssert "[EtAFLrn] and with the Python bundle's sum"  fGateCodeQLSumInTag CODEQL_PY_SHA256
 		fAssert "[EtAFLsf] --leakcheck runs CodeQL's Python suite over the pipeline's Python files and the installed source of the libraries they import"  fGateCodeQLPython
 		fAssert "[Et9PJsY] a full run audits the demo's Python libraries, and govulncheck takes in the test-only modules"  fGatePipAudit
-		fAssert "[Et9R5lO] and a pip-audit finding stops it"  fGatePipAuditFinds
+		fAssert "[Et9R5lO] and a pip-audit finding stops it, pointing off the box to the container's pins"  fGatePipAuditFinds
 		fAssert "[ErkbDTn] cicd.bash --help lists --no-remote" \
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--no-remote ' <<< \"\$out\""
 		fAssert "[EsJgeiS] cicd.bash --help lists --container" \
