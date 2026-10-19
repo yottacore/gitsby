@@ -201,7 +201,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Run CodeQL over the demo script and its Python libraries
 	- ID: 2026101907065426
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Waiting for answers
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261019-070654
 	- Opened by: jim-collier
@@ -211,6 +211,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The same rules as the Go run: style findings in third-party code are dropped, and any other finding fails the run.
 		- The Python bundle is pinned in config.bash and installed in the image, like the Go one.
 	- Note: Split from 2026101816064794, which covers the Go code.
+	- Progress log:
+		- 2026-10-19: A trial run, outside the pipeline, of CodeQL 2.27.2's Python security and quality suite over the 2 pipeline scripts and the 4 libraries. Our own 2 scripts have no findings. The libraries have 648, and 331 of them aren't style by the Go rule. That's 116 in Pillow, 187 in fontTools, and 28 in PyGObject. Too many to set aside one by one, so nothing is built yet.
+		- Most of the 331 are tagged reliability only, such as cyclic imports and empty except blocks. Python's quality queries tag nearly everything reliability or maintainability, so the Go rule keeps far more here than it does for Go.
+		- Limiting the libraries to the modules the demo's library calls load still leaves 133.
+		- Only 2 are tagged security, both a regex character range in fontTools' XML module, which the demo doesn't load.
+		- Library code would be the installed Debian builds' own .py files, taken through dpkg, instead of the upstream sdists. They're what the demo runs, with Debian's security patches in, and have no test suites. Their compiled C parts are out of reach of the Python extractor either way.
+		- The Python bundle shares every common file with the Go one, byte for byte, so it adds about 66 MB to the image, without its example queries. The trial took 12 s to build the database and 37 s to analyze.
+		- Proposal: in third-party Python, count only findings tagged security, and keep the Go rule for Go. The one regex finding goes on `CODEQL_IGNORE` as not reachable. Our own scripts stay held to the whole suite.
+		- Question: OK to hold third-party Python to security findings only? The other way is to keep the Go rule and put 185 rule and file pairs on `CODEQL_IGNORE`, or 59 with only the modules the demo loads.
+	- Branch: pyql
 
 - Run on the last Core 2 Duo, and AMD CPUs from that era.
 	- ID: 2026101301161852
