@@ -11,7 +11,7 @@
 FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
 
 # Apt reads the snapshot the base image was cut from, so a trixie point release can't
-# move Pillow, freetype or cairo under the demo gif. The base names it in a comment.
+# move freetype or cairo under the demo gif. The base names it in a comment.
 ARG APT_SNAP=20261005T000000Z
 RUN sed -i -e "s|^URIs: http://deb.debian.org/debian-security|URIs: http://snapshot.debian.org/archive/debian-security/${APT_SNAP}|" \
 		-e "s|^URIs: http://deb.debian.org/debian\$|URIs: http://snapshot.debian.org/archive/debian/${APT_SNAP}|" \
@@ -20,10 +20,12 @@ RUN sed -i -e "s|^URIs: http://deb.debian.org/debian-security|URIs: http://snaps
 
 # gcc is for go test -race, libicu and libgssapi for pwsh. The python and font
 # packages are what the demo renderer draws with, and python3-venv holds ruff and pip-audit.
+# Pillow isn't among them. It comes from the lock below, since trixie's has advisories
+# fixed only in 12.3.0.
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends \
 		bash ca-certificates curl openssl xz-utils zstd unzip gcc libc6-dev \
-		python3 python3-pil python3-fonttools python3-gi python3-gi-cairo gir1.2-pango-1.0 python3-venv \
+		python3 python3-fonttools python3-gi python3-gi-cairo gir1.2-pango-1.0 python3-venv \
 		fontconfig fonts-dejavu-core fonts-noto-color-emoji gifsicle \
 		libicu76 libgssapi-krb5-2 \
 	&& rm -rf /var/lib/apt/lists/*
@@ -39,23 +41,28 @@ RUN cd /tmp \
 	&& unzip -j -q m.zip 'Static Fonts/Monaspace Argon/MonaspaceArgon-SemiBold.otf' -d /usr/local/share/fonts/monaspace \
 	&& rm -f m.zip && fc-cache -f >/dev/null
 
-ARG VER_Pillow
-ARG VER_gifsicle
-RUN python3 -c "import PIL; assert PIL.__version__ == '${VER_Pillow:?}', PIL.__version__" \
-	&& gifsicle --version | awk -v want="${VER_gifsicle:?}" 'NR==1 { if ($NF != want) { print "gifsicle " $NF; exit 1 } }'
-
-# Python's lint and audit tools, in a venv of their own so the demo's Debian libraries stay
-# the only ones on the system python. The lock pins every wheel by hash.
+# Python's lint and audit tools, in a venv of their own so the demo's libraries stay the only
+# ones on the system python. The lock pins every wheel by hash. Its Pillow goes on the system
+# python, next to Debian's gi and cairo, where the demo can import it. Apt installed no other
+# Pillow, so pip's guard for Debian's own packages has nothing to guard there.
 ARG VER_ruff
 ARG VER_pip_audit
+ARG VER_Pillow
+ARG VER_gifsicle
 COPY requirements.txt /tmp/pytools.txt
-RUN : "${VER_ruff:?}${VER_pip_audit:?}" \
+RUN : "${VER_ruff:?}${VER_pip_audit:?}${VER_Pillow:?}${VER_gifsicle:?}" \
+	&& grep -v '^pillow==' /tmp/pytools.txt > /tmp/venv.txt \
+	&& grep '^pillow==' /tmp/pytools.txt > /tmp/pil.txt \
 	&& python3 -m venv /opt/pytools \
-	&& /opt/pytools/bin/pip install -q --no-cache-dir --disable-pip-version-check --require-hashes --no-deps --only-binary=:all: -r /tmp/pytools.txt \
+	&& /opt/pytools/bin/pip install -q --no-cache-dir --disable-pip-version-check --require-hashes --no-deps --only-binary=:all: -r /tmp/venv.txt \
+	&& /opt/pytools/bin/pip --python /usr/bin/python3 install -q --no-cache-dir --disable-pip-version-check --root-user-action=ignore \
+		--break-system-packages --require-hashes --no-deps --only-binary=:all: -r /tmp/pil.txt \
 	&& ln -s /opt/pytools/bin/ruff /opt/pytools/bin/pip-audit /usr/local/bin/ \
 	&& ruff --version | awk -v want="${VER_ruff}" '{ if ($2 != want) { print "ruff " $2; exit 1 } }' \
 	&& pip-audit --version | awk -v want="${VER_pip_audit}" '{ if ($2 != want) { print "pip-audit " $2; exit 1 } }' \
-	&& rm -f /tmp/pytools.txt
+	&& python3 -c "import PIL; assert PIL.__version__ == '${VER_Pillow}', PIL.__version__" \
+	&& gifsicle --version | awk -v want="${VER_gifsicle}" 'NR==1 { if ($NF != want) { print "gifsicle " $NF; exit 1 } }' \
+	&& rm -f /tmp/pytools.txt /tmp/venv.txt /tmp/pil.txt
 
 # git and strace are newer on the host than in trixie, and both change a spawn count.
 # Same builds, from the snapshot archive.
@@ -132,14 +139,20 @@ RUN : "${VER_staticcheck:?}${VER_golangci_lint:?}${VER_govulncheck:?}${VER_gover
 
 # --leakcheck's CodeQL: the Go-only bundle, CLI and query packs in one file. It adds about
 # 400 MB to a 2.6 GB image, and stays here rather than in an image of its own, which would
-# need its own tag, build and cleanup. Its sum is in config.bash, beside the version.
+# need its own tag, build and cleanup. The Python bundle goes over it. Every file the two share
+# is the same, so that adds only Python's own packs, about 66 MB without its examples. Both
+# sums are in config.bash, beside the version.
 ARG VER_codeql
 ARG CODEQL_SHA256
+ARG CODEQL_PY_SHA256
 WORKDIR /tmp/cq
-RUN : "${VER_codeql:?}${CODEQL_SHA256:?}" \
+RUN : "${VER_codeql:?}${CODEQL_SHA256:?}${CODEQL_PY_SHA256:?}" \
 	&& curl -fsSLo cq.tar.zst "https://github.com/github/codeql-action/releases/download/codeql-bundle-v${VER_codeql}/codeql-bundle-go-linux64.tar.zst" \
+	&& curl -fsSLo cqpy.tar.zst "https://github.com/github/codeql-action/releases/download/codeql-bundle-v${VER_codeql}/codeql-bundle-python-linux64.tar.zst" \
 	&& echo "${CODEQL_SHA256}  cq.tar.zst" | sha256sum -c - \
+	&& echo "${CODEQL_PY_SHA256}  cqpy.tar.zst" | sha256sum -c - \
 	&& tar -C /opt --zstd -xf cq.tar.zst \
+	&& tar -C /opt --zstd -xf cqpy.tar.zst --exclude=codeql/qlpacks/codeql/python-examples \
 	&& ln -s /opt/codeql/codeql /usr/local/bin/codeql \
 	&& codeql version --format=terse | awk -v want="${VER_codeql}" '{ if ($1 != want) { print "codeql " $1; exit 1 } }' \
 	&& cd / && rm -rf /tmp/cq

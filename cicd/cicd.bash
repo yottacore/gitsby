@@ -47,7 +47,7 @@
 ##	   --no-remote         skip the remote tests
 ##	   --no-publish        skip the git backup + publish stage
 ##	   --quick             skip the slow steps and every host but origin: the regression suite, native fuzzing, govulncheck, pip-audit, demo gif and remote tests
-##	   --leakcheck         add the slow leak checks: a soak test of the everyday commands, and CodeQL over the Go code and its vendored dependencies for each release OS, with the heap profiles and CodeQL's reports kept in cicd/artifacts/leakcheck/
+##	   --leakcheck         add the slow leak checks: a soak test of the everyday commands, and CodeQL over the Go code and its vendored dependencies for each release OS and over the pipeline's Python and the libraries it imports, with the heap profiles and CodeQL's reports kept in cicd/artifacts/leakcheck/
 ##	   --container         run stages 1-4 and the demo gif in the pinned image from cicd/container/Dockerfile (the default)
 ##	   --no-container      run them on this box instead
 ##	   --gate              fast pre-push gate: every lint check and go test; no sync, build, suites, prompt or log
@@ -215,6 +215,17 @@ fToolVersion(){
 		codeql)           codeql version --format=terse 2>/dev/null ;;
 	esac
 }
+## "name have (recorded want)" for each tool named that isn't at its version in TOOL_VERSIONS. A
+## missing one isn't listed, since the step that needs it says so.
+fToolDrift(){ local toolName="" toolSpec="" toolHave=""
+	for toolName in "$@"; do
+		for toolSpec in "${TOOL_VERSIONS[@]}"; do
+			[[ "${toolSpec%%=*}" == "${toolName}" ]] || continue
+			toolHave="$(fToolVersion "${toolName}" || true)"
+			[[ -z "${toolHave}" || "${toolHave}" == "${toolSpec#*=}" ]] || printf '%s\n' "${toolName} ${toolHave} (recorded ${toolSpec#*=})"
+		done
+	done
+}
 
 fStageLint(){
 	local f g hadNullglob n mdFiles psFiles psList psScript psRc psOut q pyCache toolDrift toolSpec toolName toolWant toolPath toolHave unformatted winresStatus
@@ -318,11 +329,7 @@ fStageLint(){
 		toolHave="$( go version -m "${toolPath}" 2>/dev/null | awk '$1=="mod"{print $3; exit}' || true )"
 		[[ "${toolHave}" == "${toolWant}" ]] || toolDrift+=( "${toolName} ${toolHave:-unknown} (recorded ${toolWant})" )
 	done
-	for toolSpec in "${TOOL_VERSIONS[@]}"; do
-		toolName="${toolSpec%%=*}"; toolWant="${toolSpec#*=}"
-		toolHave="$(fToolVersion "${toolName}" || true)"
-		[[ -z "${toolHave}" || "${toolHave}" == "${toolWant}" ]] || toolDrift+=( "${toolName} ${toolHave} (recorded ${toolWant})" )
-	done
+	mapfile -t -O "${#toolDrift[@]}" toolDrift < <(fToolDrift "${TOOL_VERSIONS[@]%%=*}")
 	((${#toolDrift[@]} == 0)) || fEcho "WARNING: tool versions differ from the recorded set: ${toolDrift[*]}"
 	unformatted="$(cd "${root}/${GO_MODULE_DIR}" && gofmt -l .)"
 	[[ -z "${unformatted}" ]] || fDie "gofmt wants to reformat: ${unformatted}"
@@ -403,10 +410,37 @@ fLeakCheck(){
 	done < <(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'soak_[0-9]*-[0-9]*' | sort -r | tail -n +21)
 	fCodeQL
 }
+## Python's half of the scratch copy: the pipeline's own files at their paths in the tree, and
+## under vendor/ the installed source of the libraries they import. That's a wheel's own file
+## list, or, for a Debian build, which has none, dpkg's list for the package that installed it.
+fCodeQLPySource(){
+	(cd "${root}" && tar -cf - -- "${PY_LINT_FILES[@]}") | tar -C "$1" -xf - || return 1
+	python3 -c '
+import importlib.metadata as md, pathlib, re, shutil, subprocess, sys
+dest = pathlib.Path(sys.argv[1])
+norm = lambda name: re.sub(r"[-_.]+", "_", name).lower()
+for name in sys.argv[2:]:
+    dist = md.distribution(name)
+    site = pathlib.Path(dist.locate_file("")).resolve()
+    if dist.files is not None:
+        files = [pathlib.Path(dist.locate_file(f)).resolve() for f in dist.files]
+    else:
+        meta = next(p for p in site.glob("*-info") if norm(p.name.split("-")[0]) == norm(name))
+        pkg = subprocess.run(["dpkg-query", "-S", str(meta)], capture_output=True, text=True, check=True).stdout.split(":")[0]
+        files = [pathlib.Path(f) for f in subprocess.run(["dpkg-query", "-L", pkg], capture_output=True, text=True, check=True).stdout.splitlines()]
+    files = [f for f in files if f.suffix == ".py" and f.is_relative_to(site)]
+    if not files:
+        sys.exit(f"found no installed source for {name}")
+    for f in files:
+        (dest / f.relative_to(site)).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(f, dest / f.relative_to(site))
+' "$1/vendor" "${PY_AUDIT_DISTS[@]}"
+}
 ## CodeQL reports only on source under the database's root, so it runs over a scratch copy of the
 ## module with its dependencies vendored in, the tree left as it was. Tests and vendor/ are both
 ## off by default in the Go extractor. It sees one OS's files at a time, so it runs once for each
-## OS a release is built for. The reports are kept beside the soak runs, newest 20.
+## OS a release is built for. Python's run is one more, over a scratch copy of its own. The
+## reports are kept beside the soak runs, newest 20.
 fCodeQL(){
 	local leakDir="${root}/${LEAKCHECK_DIR}" cqDir="" cqWork="" log="" rc=0 goos="" old=""
 	local -a cqFiles=() cqOses=() sarifs=() cqIgnore=()
@@ -429,6 +463,14 @@ fCodeQL(){
 			--output="${cqDir}/${goos}.sarif" --threads="${BUILD_JOBS}" >>"${log}" 2>&1 || rc=1
 		sarifs+=("${cqDir}/${goos}.sarif")
 	done
+	if ((! rc)); then
+		mkdir -p "${cqWork}/py/vendor"
+		fCodeQLPySource "${cqWork}/py" >>"${log}" 2>&1 || rc=1
+	fi
+	((rc)) || codeql database create "${cqWork}/db-python" --language=python --source-root="${cqWork}/py" --threads="${BUILD_JOBS}" >>"${log}" 2>&1 || rc=1
+	((rc)) || codeql database analyze "${cqWork}/db-python" "${CODEQL_PY_SUITE}" --format=sarif-latest \
+		--output="${cqDir}/python.sarif" --threads="${BUILD_JOBS}" >>"${log}" 2>&1 || rc=1
+	sarifs+=("${cqDir}/python.sarif")
 	((rc)) && tail -n 30 "${log}"
 	## Made by mktemp above, and checked again here, since this one is recursive.
 	if [[ "${cqWork##*/}" == gitsby-codeql.* && -f "${log}" ]]; then rm -rf -- "${cqWork:?}"; fi
@@ -436,7 +478,7 @@ fCodeQL(){
 	for old in ${CODEQL_IGNORE[@]+"${CODEQL_IGNORE[@]}"}; do cqIgnore+=(--ignore "${old}"); done
 	python3 "${here}/utility/codeql-findings.py" "${cqIgnore[@]}" "${sarifs[@]}" || rc=$?
 	((rc == 0)) || fDie "CodeQL findings; the reports are in ${cqDir}"
-	fEcho "OK: CodeQL clean (${CODEQL_SUITE##*/} on ${cqOses[*]}, ${#CODEQL_IGNORE[@]} set aside)"
+	fEcho "OK: CodeQL clean (${CODEQL_SUITE##*/} on ${cqOses[*]}, and ${CODEQL_PY_SUITE##*/}, ${#CODEQL_IGNORE[@]} set aside)"
 	## Only ever the reports, so no recursive delete.
 	while IFS= read -r old; do
 		rm -f -- "${old:?}"/*.sarif
@@ -501,7 +543,7 @@ if ((container)); then
 		grep -qxF "ARG ${toolName}" "${containerRecipe}" || fDie "config.bash pins ${toolSpec%%=*}, and the container recipe has no ARG ${toolName} for it"
 		containerArgs+=(--build-arg "${toolName}=${toolSpec#*=}")
 	done
-	containerArgs+=(--build-arg "CODEQL_SHA256=${CODEQL_SHA256}")
+	containerArgs+=(--build-arg "CODEQL_SHA256=${CODEQL_SHA256}" --build-arg "CODEQL_PY_SHA256=${CODEQL_PY_SHA256}")
 	## The Python tools' lock is the other file the recipe copies in.
 	containerImage="${APP_NAME}-cicd:$( { cat "${containerRecipe}" "${here}/container/requirements.txt"; printf '%s\n' "${containerArgs[@]}"; } | git hash-object --stdin | cut -c1-12 )"
 	## The same stages as here, minus everything that needs this box.
@@ -557,7 +599,7 @@ else
 	fEcho_Clean "Fuzz + security .....: ${skipNote}"
 fi
 if ((leakcheck)); then
-	fEcho_Clean "Leak checks .........: soak test, ${LEAKCHECK_SOAK_ROUNDS} rounds against ${LEAKCHECK_SOAK_ROUNDS} more, and CodeQL's ${CODEQL_SUITE##*/} for each release OS -> ${LEAKCHECK_DIR}/"
+	fEcho_Clean "Leak checks .........: soak test, ${LEAKCHECK_SOAK_ROUNDS} rounds against ${LEAKCHECK_SOAK_ROUNDS} more, CodeQL's ${CODEQL_SUITE##*/} for each release OS, and its ${CODEQL_PY_SUITE##*/} -> ${LEAKCHECK_DIR}/"
 else
 	fEcho_Clean "Leak checks .........: (add with --leakcheck)"
 fi
@@ -914,9 +956,19 @@ else
 				fEcho_Clean "${DEMOGIF_OPT_CMD[0]}: failed, keeping the raw render"
 			fi
 		fi
+		demoDrift=()
+		if [[ -f "${demogifOut}" ]] && ! cmp -s "${demogifTmp}" "${demogifOut}"; then
+			mapfile -t demoDrift < <(fToolDrift ${DEMOGIF_TOOLS[@]+"${DEMOGIF_TOOLS[@]}"})
+		fi
 		if [[ -f "${demogifOut}" ]] && cmp -s "${demogifTmp}" "${demogifOut}"; then
 			rm -f -- "${demogifTmp:?}"
 			fEcho "OK: demo gif unchanged"
+		elif ((${#demoDrift[@]})); then
+			## Drawn with another version of a tool that shapes its bytes, as on a box running
+			## --no-container, so the difference may be the tool's. A warning, as a tool version
+			## is everywhere else.
+			rm -f -- "${demogifTmp:?}"
+			fEcho "WARNING: demo gif differs, but this box has ${demoDrift[*]}, so the committed one stays"
 		else
 			## Keep the new original out of tree (GFS-pruned), then land it in the repo.
 			mkdir -p "${DEMOGIF_ARCHIVE_DIR}"
@@ -1028,3 +1080,4 @@ fEcho_Clean
 ##		- 2026-10-19 JC: --leakcheck adds a soak test of the everyday commands to stage 3, run in the container like the rest, with each run's heap profiles kept under cicd/artifacts/leakcheck/. go test runs -count=1, and its TestMain fails on a goroutine left running. Stage 1 runs ruff's leak rules over the demo script, and stage 3 runs pip-audit over its libraries. govulncheck takes in the test-only modules. The image tag covers the Python tools' lock.
 ##		- 2026-10-19 JC: --leakcheck runs CodeQL as well, in the image, over a scratch copy of the module with its dependencies vendored in, once for each release OS. Any finding fails, except style findings in vendored code and those config.bash sets aside, and the reports are kept with the soak runs.
 ##		- 2026-10-19 JC: Every build pins GOAMD64=v1, so a stray environment can't raise the CPU floor.
+##		- 2026-10-19 JC: --leakcheck's CodeQL also runs Python's suite, over the pipeline's Python files and the installed source of the libraries they import. A demo gif that differs, drawn where Pillow or gifsicle isn't at its recorded version, is a warning and the committed one stays.

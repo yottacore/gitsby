@@ -164,7 +164,7 @@ That binary is the whole product. The rest of the tooling below is for running t
 
 - `markdownlint` (`npm install -g markdownlint-cli`), to lint the docs.
 
-- `python3` with Pillow, and optionally `gifsicle`, to regenerate the demo. Only needed for a full pipeline run.
+- `python3` with Pillow, and optionally `gifsicle`, to regenerate the demo. Only needed for a full pipeline run. A render made with a Pillow or gifsicle other than the version `cicd/config.bash` records is compared, but never replaces the committed gif, since the tool can change its bytes. The container has the recorded ones.
 
 - `ruff` (`pipx install ruff`), to check the demo script for references it holds too long or never lets go. Warns and skips when absent.
 
@@ -194,7 +194,7 @@ That binary is the whole product. The rest of the tooling below is for running t
 
 - `cicd/cicd.bash` - everything, including the fuzz suite, the demo, and the tests on a Mac, a Windows box and other Unix boxes.
 
-- `cicd/cicd.bash --leakcheck` - adds the slow leak checks to whatever else the run does. First a soak test: the everyday commands, round after round in one process against a throwaway repo, failing if the heap grows past a margin or a goroutine is left behind between round N and round 2N. Each run's heap profiles land in `cicd/artifacts/leakcheck/`, and the summary names the `go tool pprof -base` command that shows what grew. Then CodeQL runs its security and quality queries over the Go code, once for each OS a release is built for, with the dependencies vendored into a scratch copy so they get checked too. Any finding fails the run, except style findings in someone else's code and the few `cicd/config.bash` sets aside until their backlog item is done. Its reports land beside the heap profiles. CodeQL comes with the container image, so `--leakcheck` with `--no-container` stops on a box without it. The unit tests catch a goroutine left running on every run, with or without the flag.
+- `cicd/cicd.bash --leakcheck` - adds the slow leak checks to whatever else the run does. First a soak test: the everyday commands, round after round in one process against a throwaway repo, failing if the heap grows past a margin or a goroutine is left behind between round N and round 2N. Each run's heap profiles land in `cicd/artifacts/leakcheck/`, and the summary names the `go tool pprof -base` command that shows what grew. Then CodeQL runs its security and quality queries over the Go code, once for each OS a release is built for, with the dependencies vendored into a scratch copy so they get checked too. It runs Python's over the pipeline's Python files the same way, with the installed source of the libraries the demo imports. Any finding fails the run, except in someone else's code, where only security, correctness and reliability findings count in Go, and only security ones in Python. A few more are set aside in `cicd/config.bash`, each with its backlog item. Its reports land beside the heap profiles. CodeQL comes with the container image, so `--leakcheck` with `--no-container` stops on a box without it. The unit tests catch a goroutine left running on every run, with or without the flag.
 
 - `cicd/cicd.bash --gate` - every lint check and the unit tests, and nothing else: no sync, no build, no suites, no prompt and no run log. This is what the pre-push hook runs.
 
