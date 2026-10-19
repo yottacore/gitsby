@@ -263,7 +263,7 @@ Examples:
 
 The short version: AI is allowed to do the tedious grunt work, project plumbing, and consistency-checking - which typically takes the most time.
 
-But people own the goals, the design, the decisions, and every line of code. People are responsible for anything that happens.
+But people are responsible for the goals, design, decisions, and every line of code.
 
 People write the product code. That's the program itself, the part a user runs.
 
@@ -275,9 +275,9 @@ Other uses that don't write product code are fine. For example:
 
 - Code, security, performance, and consistency reviews.
 
-- Filing backlog issues from what those reviews find, automatically or by hand.
+- Filing backlog issues from what those reviews find.
 
-- Writing CI/CD and build pipelines.
+- Writing build, CI, and/or CD pipelines.
 
 - Writing tests, test pipelines, and fuzz harnesses.
 
