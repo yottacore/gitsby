@@ -118,16 +118,30 @@ PY_LINT_RULES=(B019 SIM115 B006)
 ## by --quick, like govulncheck.
 PY_AUDIT_DISTS=(Pillow fonttools pycairo PyGObject)
 ## Advisories against the upstream versions of the Debian builds the demo runs on. Debian's
-## builds carry security patches past those versions, so each still has to be checked
-## against its tracker: backlog 2026101905585018. A new advisory fails the run.
+## builds carry security patches past those versions, so each one names the Debian build
+## that fixed it, or says there's none in trixie yet: backlog 2026101905585018. A new
+## advisory fails the run.
 PIP_AUDIT_IGNORE=(
-	## Pillow 11.1.0
-	PYSEC-2026-165 PYSEC-2026-2249 PYSEC-2026-2250 PYSEC-2026-2252 PYSEC-2026-2253
-	PYSEC-2026-2254 PYSEC-2026-2255 PYSEC-2026-2256 PYSEC-2026-2257 PYSEC-2026-2874
-	PYSEC-2026-3451 PYSEC-2026-3453 PYSEC-2026-3454 PYSEC-2026-3493 PYSEC-2026-3494
-	PYSEC-2026-3495 PYSEC-2026-3496
-	## fontTools 4.57.0
-	CVE-2025-66034
+	## Pillow 11.1.0-5+deb13u4
+	PYSEC-2026-2249  # CVE-2026-25990, fixed in 11.1.0-5+deb13u1
+	PYSEC-2026-2250  # CVE-2026-40192, fixed in 11.1.0-5+deb13u2
+	PYSEC-2026-165   # CVE-2026-42308, fixed in 11.1.0-5+deb13u3
+	PYSEC-2026-2874  # CVE-2026-42310, fixed in 11.1.0-5+deb13u3, followup in deb13u4
+	PYSEC-2026-2252  # CVE-2026-42311, fixed in 11.1.0-5+deb13u3
+	PYSEC-2026-2257  # CVE-2026-55798, Windows viewer only, Debian not affected
+	PYSEC-2026-3493  # CVE-2026-54058, McIdas files, no trixie fix
+	PYSEC-2026-2253  # CVE-2026-54059, PCF fonts, no trixie fix
+	PYSEC-2026-2254  # CVE-2026-54060, bitmap font compile, no trixie fix
+	PYSEC-2026-2255  # CVE-2026-55379, BDF fonts, no trixie fix
+	PYSEC-2026-2256  # CVE-2026-55380, GD files, no trixie fix
+	PYSEC-2026-3454  # CVE-2026-59197, rank filter, no trixie fix
+	PYSEC-2026-3494  # CVE-2026-59198, TGA writer, no trixie fix
+	PYSEC-2026-3451  # CVE-2026-59199, paste/crop near 2^31, no trixie fix
+	PYSEC-2026-3495  # CVE-2026-59200, PDF streams, no trixie fix
+	PYSEC-2026-3496  # CVE-2026-59204, JPEG2000 tiles, no trixie fix
+	PYSEC-2026-3453  # CVE-2026-59205, ImageCms apply, no trixie fix
+	## fontTools 4.57.0-1+deb13u1
+	CVE-2025-66034   # fixed in 4.57.0-1+deb13u1
 )
 ## PowerShell (probe-gated: needs pwsh + the PSScriptAnalyzer module). Back after the
 ## scripted build was frozen: the installer is the one piece of PowerShell that still
