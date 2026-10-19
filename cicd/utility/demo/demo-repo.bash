@@ -14,7 +14,8 @@
 ##		  when the demo actually changes.
 ##		- Writes "$root/demo.env" holding the env the scenario steps source before each
 ##		  gitsby call.
-##	Syntax: demo-repo.bash [ROOT]   (ROOT default: /tmp/gitsby-demo)
+##	Syntax: demo-repo.bash [--remove] [ROOT]   (ROOT default: /tmp/gitsby-demo)
+##		--remove takes ROOT away, after the same check, and builds nothing.
 ##	History: At bottom of script.
 
 ##	Copyright (c) 2026 Bubbles
@@ -28,6 +29,7 @@ if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
 fi
 set -eu; set -o pipefail
 
+removeOnly=0; if [[ "${1:-}" == --remove ]]; then removeOnly=1; shift; fi
 root="${1:-/tmp/gitsby-demo}"
 
 ##	HOME is the root itself, so the paths the demo prints and the "~/..." in its prompt
@@ -80,6 +82,7 @@ if [[ -e "${root}" ]]; then
 	fi
 	rm -rf -- "${root:?}"
 fi
+((removeOnly)) && exit 0
 mkdir -p "${root}" "${work}" "${side}" "${XDG_CONFIG_HOME}/gitsby"
 : > "${stamp}"
 
@@ -204,3 +207,4 @@ GIT_COMMITTER_NAME="${sideName}" GIT_COMMITTER_EMAIL="${sideEmail}" \
 ##		- 20260813: ROOT is checked before it is removed. It was taken on trust and wiped first thing, so a mistyped or inherited argument cost whatever was there. Directories this script builds are stamped, and only a stamped one is removed.
 ##		- 20260914: The header names the second thing the gif's repeat rests on, the release stamp on the demo's build.
 ##		- 20261004 JC: Every expansion braced, and shellcheck enforces it.
+##		- 20261019 JC: --remove, so cicd can take the world away once the gif is drawn.

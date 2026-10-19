@@ -52,6 +52,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Note: `--gate` is also named by the pre-push hook `--install-hook` writes, and in the README and memory.
 	- Progress log:
 		- 2026-10-18: Each step was timed on b23, at a load of about 16. Every cross-build takes 4 to 6 s, arm64 included, and the lint stage about 23 s in all. The regression suite takes about 100 s, and the native fuzz targets 5 s each for 8 targets. fuzz.bash takes about 7 s, the spawn counts 3 s, parity 2 s, and go test 3 to 12 s.
+		- 2026-10-19: The leak checks join the plain full run, through 2026101912030152, so no flags does everything again.
 	- Decisions:
 		- The 30 s budget is per step. The lint stage alone is close to it, so a whole-run budget would leave nothing else.
 		- Sync and publish stay in `--quick`. They only fetch from and push to origin, the repo's own git host, and the requirement is about other hosts. `--no-sync` and `--no-publish` still turn them off.
@@ -67,7 +68,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Builds should clean up stale artifacts and side-effects when done
 	- ID: 2026101912030138
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Waiting for testing
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261019-120301
 	- Opened by: jim-collier
@@ -75,11 +76,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Requirements [Feature]:
 		- Verify or ensure that builds clean up stale artifacts and side-effects after they're done.
 			- Caches, container cruft, tmp files, etc.
+	- Progress log:
+		- 2026-10-19: Checked each kind on b23. The harnesses, release.bash and the utilities already remove their temp folders on exit. Artifacts under `cicd/artifacts/` are rotated or capped at 20. Containers run with `--rm`, a new image removes the one it replaces, and the build cache is all in use by images. The Go cache volume is kept on purpose, and Go trims its own build cache. The pre-push snapshot is kept on purpose too, for warm caches.
+		- 2026-10-19: 2 gaps were found and fixed. cicd.bash's own temp files were removed one by one, so a run stopped partway left them behind. They now sit in one folder per run, removed on exit, a TERM or Ctrl+C included. The demo's repos at `/tmp/gitsby-demo` stayed after every run off the container. Stage 6 now removes them through `demo-repo.bash --remove`, which keeps the script's ownership check.
+	- Branch: leakflags
+	- Test case: test.bash `[EtBTWt7]` for the temp folder after a pass, a stop and a TERM, and `[EtBTWtL]` for the demo's repos.
+	- Verified: Both fail against gover's cicd.bash. test.bash 1571 -> 1579, 0 failed, and `cicd.bash --gate` passes. `demo-repo.bash --remove` removed a world it built, refused a folder it didn't, and passed on one that wasn't there.
+	- Note: Needs one real full run, in the container and with `--no-container`, to see `/tmp/gitsby-demo` and the scratch folder gone.
 
 - CICD gets `--leakcheck` and `--no-leakcheck` flags
 	- ID: 2026101912030152
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Waiting for testing
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261019-120301
 	- Opened by: jim-collier
@@ -89,6 +97,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- CICD should have both `--leakcheck` and `--no-leakcheck`.
 			- `--leakcheck` is useful to add back in for `--quick`.
 			- `--no-leakcheck` is useful to exclude it from the default, or with `--quiet`.
+	- Decisions:
+		- The leak checks run on a plain full run. `--quick` and `--no-fuzz` both turn them off, since they're part of stage 3. Either flag wins over that, in any order. Both together are refused.
+		- A plain run off the container, with no CodeQL, warns and skips CodeQL like govulncheck. `--leakcheck` asked for by name still stops there.
+		- The run in the container gets the flag as given. It gets `--quick` and `--no-fuzz` too, so it works out the same default.
+	- Branch: leakflags
+	- Test case: test.bash `[EtBTWs2]`, `[EtBTWsG]`, `[EtBTWsT]`, `[EtBTWsg]`, `[EtBTWsu]` and `[EtBTWta]`, plus `[Et9PJrE]` and `[Et9PJs6]` reworded with the same IDs.
+	- Verified: Every one fails against gover's cicd.bash. test.bash 1571 -> 1579, 0 failed, and `cicd.bash --gate` passes. `[Er1LxTW]`'s stage 3 run takes `--no-leakcheck` now, since its fixture's go stub has no soak test.
+	- Swept: the help text, stage 3's header line, README, contributing.md, config.bash comments and both history footers.
+	- Note: A full run now takes CodeQL's time, once per release OS plus Python. Needs one real full run to see it pass in the container.
 
 - Check the demo's Pillow and fontTools advisories against Debian's fixes
 	- ID: 2026101905585018

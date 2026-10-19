@@ -24,7 +24,7 @@
 ##	   0. remote sync (fast-forward from origin before anything is built or tested)
 ##	   1. lint (gofmt + go vet + staticcheck + golangci-lint, shellcheck over the pipeline's own scripts, and ruff's leak rules over the demo script)
 ##	   2. build + unit tests (go test -race, failing on a goroutine left running) + regression tests (cicd/test.bash against the compiled binary; --quick skips the suite)
-##	   3. fuzz + security (cicd/fuzz.bash) + native fuzz targets + govulncheck + pip-audit + spawn counts; --quick skips the native fuzzing and both audits, and --leakcheck adds the soak test and CodeQL
+##	   3. fuzz + security (cicd/fuzz.bash) + native fuzz targets + govulncheck + pip-audit + spawn counts + leak checks (a soak test and CodeQL); --quick skips the native fuzzing, both audits and the leak checks
 ##	   4. backwards compatibility (cicd/parity.bash: this build vs the frozen v2.1.0 one)
 ##	   5. dogfood (cross-build every target and install each to its first existing dir)
 ##	   6. demo gif (fake-terminal render; skipped under --quick)
@@ -46,8 +46,9 @@
 ##	   --no-demogif        skip regenerating the demo gif
 ##	   --no-remote         skip the remote tests
 ##	   --no-publish        skip the git backup + publish stage
-##	   --quick             skip the slow steps and every host but origin: the regression suite, native fuzzing, govulncheck, pip-audit, demo gif and remote tests
-##	   --leakcheck         add the slow leak checks: a soak test of the everyday commands, and CodeQL over the Go code and its vendored dependencies for each release OS and over the pipeline's Python and the libraries it imports, with the heap profiles and CodeQL's reports kept in cicd/artifacts/leakcheck/
+##	   --quick             skip the slow steps and every host but origin: the regression suite, native fuzzing, govulncheck, pip-audit, leak checks, demo gif and remote tests
+##	   --leakcheck         run the leak checks even under --quick or --no-fuzz: a soak test of the everyday commands, and CodeQL over the Go code and its vendored dependencies for each release OS and over the pipeline's Python and the libraries it imports, with the heap profiles and CodeQL's reports kept in cicd/artifacts/leakcheck/
+##	   --no-leakcheck      skip the leak checks
 ##	   --container         run stages 1-4 and the demo gif in the pinned image from cicd/container/Dockerfile (the default)
 ##	   --no-container      run them on this box instead
 ##	   --gate              fast pre-push gate: every lint check and go test; no sync, build, suites, prompt or log
@@ -101,7 +102,7 @@ fDie(){ { fEcho_Force "FAILED: $*"; } >&2; exit 1; }
 fUsage(){ fEcho_Clean "$*" >&2; exit 2; }
 
 ## Parse options.
-assumeYes=0; quiet=0; quick=0; leakcheck=0; doSync=1; doLint=1; doTest=1; doFuzz=1; doParity=1; doRemote=1; noRemote=0; cliMessage=""
+assumeYes=0; quiet=0; quick=0; leakcheck=0; leakOpt=""; doSync=1; doLint=1; doTest=1; doFuzz=1; doParity=1; doRemote=1; noRemote=0; cliMessage=""
 gate=0; installHook=0; stageOpts=(); containerOpt=""
 while (($#)); do case "$1" in
 	-q|--quiet)               quiet=1; assumeYes=1; shift ;;   ## quiet + unattended; publish runs quiet too
@@ -119,8 +120,10 @@ while (($#)); do case "$1" in
 	## origin. Every cross-build is a few seconds, so they all stay. Sync and publish stay too,
 	## since origin is the repo's own host. The rest of what it skips is read off ${quick} below.
 	--quick)                  quick=1; DO_DEMOGIF=0; doRemote=0; stageOpts+=("$1"); shift ;;
-	## Adds to whatever else the run does, --quick included, since it was asked for by name.
-	--leakcheck)              leakcheck=1; stageOpts+=("$1"); shift ;;
+	## Either one wins over the default below, --quick included, since it was asked for by name.
+	--leakcheck|--no-leakcheck)
+		[[ -z "${leakOpt}" || "${leakOpt}" == "$1" ]] || fUsage "--leakcheck and --no-leakcheck are opposites; give one."
+		leakOpt="$1"; stageOpts+=("$1"); shift ;;
 	--message=*|--msg=*|-m=*) cliMessage="${1#*=}"; stageOpts+=("${1%%=*}"); shift ;;
 	-m|--message|--msg)       cliMessage="${2-}"; stageOpts+=("$1"); shift; (($#)) && shift ;;
 	## pre-push.bash looks for this arm's literal text to tell a commit that has a gate from
@@ -133,6 +136,11 @@ while (($#)); do case "$1" in
 	-h|--help)                sed -n '/^##	- Purpose:/,/^##	History:/p' "${BASH_SOURCE[0]}" | sed '$d; s/^##	\{0,1\}//'; exit 0 ;;
 	*) fUsage "unknown option: ${1} (try --help)" ;;
 esac; done
+
+## On for a full run, and off for --quick and --no-fuzz, which both ask for less of stage 3.
+if   [[ "${leakOpt}" == --leakcheck ]]; then leakcheck=1
+elif [[ -z "${leakOpt}" ]] && ((! quick && doFuzz)); then leakcheck=1
+fi
 
 ## Both run a fixed thing, so a stage option beside either would read as taking effect when it
 ## cannot. Refused rather than ignored.
@@ -155,6 +163,13 @@ elif [[ "${CICD_CONTAINER:-0}" == 1 ]]; then
 	else containerNote="WARNING: docker isn't usable here, so stages 1-4 and the demo run on this box, with its own tool versions"; fi
 fi
 if ((installHook)); then exec "${here}/utility/pre-push.bash" --install; fi
+
+## One scratch folder for the run's temp files, so a run stopped partway leaves none behind.
+## Marked, and checked again before the recursive delete.
+runTmp="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-cicd.XXXXXX")" || fDie "can't make a scratch folder"
+: > "${runTmp}/.gitsby-cicd-run"
+fRemoveRunTmp(){ if [[ "${runTmp##*/}" == gitsby-cicd.* && -f "${runTmp}/.gitsby-cicd-run" ]]; then rm -rf -- "${runTmp:?}"; fi ;}
+trap fRemoveRunTmp EXIT
 
 ## Brief beat after each stage header so the cheap fast stages stay readable.
 ## Off for unattended runs (-q/-y) where nobody is watching.
@@ -264,7 +279,7 @@ fStageLint(){
 	if [[ -n "${PY_LINT_FILES+x}" ]] && ((${#PY_LINT_FILES[@]})); then
 		## At the head of an && list a failure neither stopped the run nor fired the trap. The
 		## cache goes to a folder of our own, since py_compile writes one beside each file.
-		pyCache="$(mktemp -d)"
+		pyCache="$(mktemp -d "${runTmp}/pycache.XXXXXX")"
 		if ! PYTHONPYCACHEPREFIX="${pyCache}" python3 -m py_compile "${PY_LINT_FILES[@]}"; then
 			rm -rf -- "${pyCache:?}"
 			fDie "py_compile"
@@ -369,7 +384,7 @@ fStageLint(){
 }
 fUnitTests(){
 	local log="" rc=0
-	log="$(mktemp "${TMPDIR:-/tmp}/gitsby-gotest.XXXXXX")"
+	log="$(mktemp "${runTmp}/gotest.XXXXXX")"
 	## -race costs little on a tree with one goroutine. TestMain fails the run on a goroutine
 	## still going at the end. -count=1, since a cached pass would skip both. -v is for the line
 	## per test below; the rest of what it prints is shown only when something failed.
@@ -391,7 +406,7 @@ fLeakCheck(){
 	local leakDir="${root}/${LEAKCHECK_DIR}" soakDir="" log="" rc=0 old=""
 	soakDir="${leakDir}/soak_${stamp}"
 	mkdir -p "${soakDir}" || fDie "can't make ${soakDir}"
-	log="$(mktemp "${TMPDIR:-/tmp}/gitsby-soak.XXXXXX")"
+	log="$(mktemp "${runTmp}/soak.XXXXXX")"
 	(cd "${root}/${GO_MODULE_DIR}" && GITSBY_SOAK_ROUNDS="${LEAKCHECK_SOAK_ROUNDS}" GITSBY_SOAK_OUT="${soakDir}" \
 		go test -count=1 -run '^TestSoak$' -v .) >"${log}" 2>&1 || rc=$?
 	fGoTestLines "${log}" "${root}/${GO_MODULE_DIR}"
@@ -444,11 +459,16 @@ for name in sys.argv[2:]:
 fCodeQL(){
 	local leakDir="${root}/${LEAKCHECK_DIR}" cqDir="" cqWork="" log="" rc=0 goos="" old=""
 	local -a cqFiles=() cqOses=() sarifs=() cqIgnore=()
-	command -v codeql >/dev/null 2>&1 || fDie "CodeQL isn't installed here. It comes with the container image, so run without --no-container"
+	## Asked for, it has to work. As part of a plain run it's probe-gated like govulncheck.
+	if ! command -v codeql >/dev/null 2>&1; then
+		[[ "${leakOpt}" == --leakcheck ]] && fDie "CodeQL isn't installed here. It comes with the container image, so run without --no-container"
+		fEcho "WARNING: CodeQL skipped (not installed here; the container image has it)"
+		return 0
+	fi
 	mapfile -t cqOses < <(printf '%s\n' "${RELEASE_TARGETS[@]%%/*}" | sort -u)
 	cqDir="${leakDir}/codeql_${stamp}"
 	mkdir -p "${cqDir}" || fDie "can't make ${cqDir}"
-	cqWork="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-codeql.XXXXXX")" || fDie "can't make a scratch folder for CodeQL"
+	cqWork="$(mktemp -d "${runTmp}/gitsby-codeql.XXXXXX")" || fDie "can't make a scratch folder for CodeQL"
 	log="${cqWork}/codeql.log"; : > "${log}"
 	## The source alone, not the builds beside it.
 	mapfile -t cqFiles < <(cd "${root}" && find "${GO_MODULE_DIR}" -type f \( -name '*.go' -o -name go.mod -o -name go.sum \))
@@ -550,7 +570,8 @@ if ((container)); then
 	containerRun=(-y --no-sync --no-dogfood --no-remote --no-publish)
 	((quiet))    && containerRun[0]=-q
 	((quick))    && containerRun+=(--quick)
-	((leakcheck)) && containerRun+=(--leakcheck)
+	## As given. The run in there gets --quick and --no-fuzz too, so works out the same default.
+	[[ -z "${leakOpt}" ]] || containerRun+=("${leakOpt}")
 	((doLint))   || containerRun+=(--no-lint)
 	((doTest))   || containerRun+=(--no-test)
 	((doFuzz))   || containerRun+=(--no-fuzz)
@@ -600,8 +621,10 @@ else
 fi
 if ((leakcheck)); then
 	fEcho_Clean "Leak checks .........: soak test, ${LEAKCHECK_SOAK_ROUNDS} rounds against ${LEAKCHECK_SOAK_ROUNDS} more, CodeQL's ${CODEQL_SUITE##*/} for each release OS, and its ${CODEQL_PY_SUITE##*/} -> ${LEAKCHECK_DIR}/"
+elif [[ "${leakOpt}" == --no-leakcheck ]]; then
+	fEcho_Clean "Leak checks .........: (skipped)"
 else
-	fEcho_Clean "Leak checks .........: (add with --leakcheck)"
+	fEcho_Clean "Leak checks .........: ${skipNote}, add with --leakcheck"
 fi
 if ((! doParity)); then
 	fEcho_Clean "Compatibility .......: (skipped)"
@@ -666,7 +689,7 @@ if [[ -n "${LINT_LOG_DIR:-}" && -z "${GITSBY_CICD_IN_CONTAINER:-}" ]] && mkdir -
 	## Wait for tee to drain on exit, else the shell prompt returns mid-flush and
 	## the last output lands after it (looks like the prompt "came back").
 	teePid=$!
-	trap 'exec 1>&- 2>&-; wait "${teePid}" 2>/dev/null' EXIT
+	trap 'fRemoveRunTmp; exec 1>&- 2>&-; wait "${teePid}" 2>/dev/null' EXIT
 fi
 
 ## Stage 0: remote sync. The publish stage pulls too, but that is after everything
@@ -780,7 +803,7 @@ fi
 ## Stage 3: fuzz + security (adversarial input against our parsing, plus checks
 ## of what we shell out to). The harness and the spawn counts take seconds and run under
 ## --quick; the native fuzzing doesn't, and govulncheck and pip-audit ask a server, so those
-## don't either. --leakcheck's soak test comes last. Same lands-later policy as the tests.
+## don't either. The leak checks come last. Same lands-later policy as the tests.
 fSection "3/8  Fuzz + security"
 if ((! doFuzz)); then
 	fEcho_Clean "fuzz + security ${ranWhere:-skipped${quickNote}}"
@@ -832,7 +855,7 @@ elif ! pyPins="$(python3 -c 'import importlib.metadata as m, sys; [print(f"{d}==
 	fEcho "WARNING: pip-audit skipped (the demo's libraries aren't all installed here: ${PY_AUDIT_DISTS[*]})"
 else
 	pyAuditArgs=(); for f in ${PIP_AUDIT_IGNORE[@]+"${PIP_AUDIT_IGNORE[@]}"}; do pyAuditArgs+=(--ignore-vuln "${f}"); done
-	pyReq="$(mktemp "${TMPDIR:-/tmp}/gitsby-pyreq.XXXXXX")"
+	pyReq="$(mktemp "${runTmp}/pyreq.XXXXXX")"
 	printf '%s\n' "${pyPins}" >"${pyReq}"
 	pyRc=0
 	## Its advice to hash the pins is for a pip install, which this isn't.
@@ -852,7 +875,7 @@ if ((doFuzz)) && [[ -f "${SPAWN_COUNT_CMD[0]:-}" ]]; then
 	"${SPAWN_COUNT_CMD[@]}" || fDie "spawn counts regressed"
 	fEcho "OK: spawn counts"
 fi
-## Asked for by name, so not tied to --no-fuzz. The container's run did it already.
+## The container's run did it already.
 if ((leakcheck)) && [[ -z "${ranWhere:-}" ]]; then
 	fLeakCheck
 fi
@@ -986,6 +1009,8 @@ else
 		fEcho "WARNING: demo gif generation failed (continuing)"
 	fi
 	rm -f -- "${demogifBin:?}"
+	## The scenario builds its world at a fixed path, since the path is on camera.
+	bash "${root}/cicd/utility/demo/demo-repo.bash" --remove || fEcho "WARNING: left the demo's repos in place"
 fi
 
 ## Stage 7: the Go tests on a Mac, a Windows box and the other Unix boxes, and the regression
@@ -1085,3 +1110,4 @@ fEcho_Clean
 ##		- 2026-10-19 JC: --leakcheck runs CodeQL as well, in the image, over a scratch copy of the module with its dependencies vendored in, once for each release OS. Any finding fails, except style findings in vendored code and those config.bash sets aside, and the reports are kept with the soak runs.
 ##		- 2026-10-19 JC: Every build pins GOAMD64=v1, so a stray environment can't raise the CPU floor.
 ##		- 2026-10-19 JC: --leakcheck's CodeQL also runs Python's suite, over the pipeline's Python files and the installed source of the libraries they import. A demo gif that differs, drawn where Pillow or gifsicle isn't at its recorded version, is a warning and the committed one stays.
+##		- 2026-10-19 JC: The leak checks run on every full run, and not under --quick or --no-fuzz. --leakcheck adds them back and --no-leakcheck leaves them out. A plain run with no CodeQL warns and goes on. The run's temp files sit in one folder that goes when it exits, and stage 6 removes the demo's repos once the gif is drawn.
