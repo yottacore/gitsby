@@ -166,7 +166,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Check the demo's Pillow and fontTools advisories against Debian's fixes
 	- ID: 2026101905585018
 	- Type: Task
-	- Status: Queued
+	- Status: Waiting for answers
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261019-055850
 	- Opened by: jim-collier
@@ -176,6 +176,12 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Check each against Debian's security tracker. The ones Debian fixed stay on `PIP_AUDIT_IGNORE` in config.bash, with a note naming the fix. For the rest, move the demo to a Pillow and fontTools that fix them.
 		- A newer Pillow can change the demo gif's bytes, so the gif is rendered and compared again.
 	- Note: The demo draws only its own text, in its own fonts, so none of these reach it through outside input today.
+	- Progress log:
+		- 2026-10-19: Checked all 18 against Debian's tracker and the changelogs of the installed builds. 7 are fixed or don't apply: fontTools' one, fixed in `4.57.0-1+deb13u1`, and 6 of Pillow's, fixed in `deb13u1` to `deb13u4` or Windows-only. Each now has a note on `PIP_AUDIT_IGNORE`.
+		- 11 Pillow advisories have no trixie fix. Debian marks most "no-dsa, minor issue", and all are fixed upstream in 12.3.0 and in sid's `12.3.0-1`. They're CVE-2026-54058, 54059, 54060, 55379, 55380, 59197, 59198, 59199, 59200, 59204, and 59205. They cover file formats and calls the demo doesn't use, plus paste and crop with coordinates near 2^31, where the demo passes only its own small ones.
+		- Moving only Pillow fixes them all, since fontTools is already fixed. That means Pillow 12.3.0 in the image, either as a hash-pinned wheel or as sid's package from the snapshot archive. The wheel brings its own FreeType, so the glyphs may change. Either way the gif gets rendered and compared again, the image's Pillow version pin changes, and a render on the host would no longer match the image's. The renderer also calls one private Pillow method, which 12.x may have changed.
+		- Question: should Pillow move to 12.3.0 now, and if so as a wheel or as sid's package? Or should it stay on Debian's build, with the 11 kept on the list until trixie fixes them?
+	- Branch: pyadv
 
 - CodeQL flags 2 spots in shcl 2.0.0, the old writer the tests use
 	- ID: 2026101906343987
