@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Updates to CICD script flags
 	- ID: 2026101816064793
 	- Type: Enhancement
-	- Status: Waiting on signoff
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261018-160647
 	- Opened by: jim-collier
@@ -64,6 +64,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: cicdflags
 	- Test case: test.bash `[Et6FC3t]` for the `--gate)` arm the hook looks for. `[Et6FC4K]`, `[Et6FC46]`, `[Et6FC31]` and `[Et6FC2n]` for `--quick`. `[EnQTPxt]` is off since 2026-10-18.
 	- Swept: the help header, history footer, README, contributing.md and config.bash comments for both flags. pre-push.bash still finds `--gate)` in the option arm. design.md names only `--gate` and is unchanged. The test.bash helpers that used `--quick` as shorthand for skipping fuzz, the demo and the remote tests now name those flags.
+	- Acceptance signoff: Signed off by jim-collier in conversation, 2026-10-19.
+	- Closed: 20261019-150000
 
 - Builds should clean up stale artifacts and side-effects when done
 	- ID: 2026101912030138
