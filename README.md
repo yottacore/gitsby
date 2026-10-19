@@ -299,9 +299,9 @@ cd gitsby/src-go && go build -o gitsby .
 
 `cicd/cicd.bash` is the local pipeline and the one command to know. Run it before opening a PR. Eight stages, numbered as the run prints them, behind a stage 0 that fast-forwards from origin so everything after it tests the tree that is actually going out:
 
-1. Lints (gofmt, vet, staticcheck, golangci-lint, shellcheck).
-2. Builds, runs the unit tests, and runs the regression suite of over 1000 checks against the binary it just built.
-3. Runs about 300 fuzz vectors and the native Go fuzz targets, checks the standard library for known problems, and counts the processes each command spawns.
+1. Lints (gofmt, vet, staticcheck, golangci-lint, shellcheck, and ruff on the demo script).
+2. Builds, runs the unit tests under the race detector, and runs the regression suite of over 1000 checks against the binary it just built. A goroutine still running when the unit tests end fails them.
+3. Runs about 300 fuzz vectors and the native Go fuzz targets, checks the standard library and the Go and Python libraries it uses for known problems, and counts the processes each command spawns. With `--leakcheck` it also runs a soak test, below.
 4. Compares the build against the frozen v2.1.0 one across a few dozen checks, for backwards compatibility.
 5. Cross-builds every target and installs each to its own tool directory.
 6. Rebuilds the demo gif, if it changed.
@@ -311,7 +311,8 @@ cd gitsby/src-go && go build -o gitsby .
 Stages 1-4 and the demo gif run in a Debian image built from `cicd/container/Dockerfile`, so every box lints, tests and renders with the same tool versions. Without a working docker they run on the box itself, with a warning. Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `gifsicle` won't stop the rest. Stage 5's destinations are one machine's paths, set in `cicd/config.bash`; on anyone else's box that stage finds nothing writable and says so, which is harmless. Stage 7's boxes are that machine's too, and a box that is off or busy is skipped the same way.
 
 ~~~bash
-cicd/cicd.bash --quick          # skips the regression suite, native fuzzing, govulncheck, the demo gif and the remote tests; what you want while iterating
+cicd/cicd.bash --quick          # skips the regression suite, native fuzzing, govulncheck, pip-audit, the demo gif and the remote tests; what you want while iterating
+cicd/cicd.bash --leakcheck      # adds the soak test: the everyday commands in a loop, failing if the heap or the goroutine count keeps growing
 cicd/cicd.bash                  # everything, and it prompts once for a commit message
 cicd/cicd.bash -y -m "message"  # unattended
 cicd/cicd.bash --no-container   # stages 1-4 and the demo gif on this box, not in the pinned image

@@ -69,7 +69,7 @@ Scope: the product itself is Go now. Go's *formatting* is `gofmt` - the lint sta
 
 - Return early. Handle the error or the edge case and get out; the happy path stays at the lowest indent. No `else` after a `return`.
 
-- No goroutines or channels without a measured reason. This program's life is spent waiting on `git`; concurrency here buys latency bugs, not speed. Where a measurement does call for it, as with the account probes that each wait on the network, guard shared state with a `sync.Mutex` rather than a channel. Every goroutine gets a clear way out, through a `context.Context` where it can be cancelled, and the tests run with `-race`.
+- No goroutines or channels without a measured reason. This program's life is spent waiting on `git`; concurrency here buys latency bugs, not speed. Where a measurement does call for it, as with the account probes that each wait on the network, guard shared state with a `sync.Mutex` rather than a channel. Every goroutine gets a clear way out, through a `context.Context` where it can be cancelled, and the tests run with `-race` and fail on one still running when they end.
 
 - Package-level variables are for what Go can't make a constant: compiled regexps, `errors.New` sentinels, read-only lookup tables, and strings the linker sets with `-X`. Nothing at package level changes after startup. Run state lives on the struct that owns the run.
 

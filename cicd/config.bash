@@ -74,6 +74,8 @@ TOOL_VERSIONS=(
 	"Pillow=11.1.0"
 	"strace=6.18"
 	"git=2.51.0"
+	"ruff=0.15.22"
+	"pip-audit=2.10.1"
 )
 
 ## Half the cores, rounded up. The compiler takes all of them by default, in every build and
@@ -84,7 +86,7 @@ BUILD_JOBS=$(( ( $( nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null |
 ## then every first-party shell file (globs, expanded by the engine). shellcheck is
 ## gating; there is deliberately NO bash formatter stage - the pipeline's own scripts are
 ## hand-formatted on purpose. Markdown is probe-gated (markdownlint if installed); the .py
-## just gets a compile check. legacy/ is deliberately absent from every glob: it is frozen,
+## gets a compile check and ruff's leak rules. legacy/ is deliberately absent from every glob: it is frozen,
 ## so a newer shellcheck finding there is noise nobody is allowed to fix.
 SHELL_LINT_GLOBS=(
 	"install.bash"
@@ -104,6 +106,24 @@ MD_LINT_GLOBS=(
 )
 PY_LINT_FILES=(
 	"cicd/utility/demo/gen-demo-gif.py"
+)
+## ruff over the same files, these rules only: lru_cache on a method (B019), open() with no
+## 'with' (SIM115), and a mutable default argument (B006). Probe-gated.
+PY_LINT_RULES=(B019 SIM115 B006)
+## Stage 3: pip-audit over the third-party libraries those files import, as installed. Skipped
+## by --quick, like govulncheck.
+PY_AUDIT_DISTS=(Pillow fonttools pycairo PyGObject)
+## Advisories against the upstream versions of the Debian builds the demo runs on. Debian's
+## builds carry security patches past those versions, so each still has to be checked
+## against its tracker: backlog 2026101905585018. A new advisory fails the run.
+PIP_AUDIT_IGNORE=(
+	## Pillow 11.1.0
+	PYSEC-2026-165 PYSEC-2026-2249 PYSEC-2026-2250 PYSEC-2026-2252 PYSEC-2026-2253
+	PYSEC-2026-2254 PYSEC-2026-2255 PYSEC-2026-2256 PYSEC-2026-2257 PYSEC-2026-2874
+	PYSEC-2026-3451 PYSEC-2026-3453 PYSEC-2026-3454 PYSEC-2026-3493 PYSEC-2026-3494
+	PYSEC-2026-3495 PYSEC-2026-3496
+	## fontTools 4.57.0
+	CVE-2025-66034
 )
 ## PowerShell (probe-gated: needs pwsh + the PSScriptAnalyzer module). Back after the
 ## scripted build was frozen: the installer is the one piece of PowerShell that still
@@ -153,8 +173,13 @@ SPAWN_COUNT_CMD=(cicd/utility/spawn-count.bash)
 ## Where a kept build is archived, for bisecting a behavior change against an older one.
 KEEP_BUILD_DIR="cicd/artifacts/builds"      # relative to repo root; created if missing (gitignored)
 
+## --leakcheck: the soak test's rounds (N, then N more, compared), and where each run's heap
+## profiles go, one folder per run.
+LEAKCHECK_SOAK_ROUNDS=30
+LEAKCHECK_DIR="cicd/artifacts/leakcheck"    # relative to repo root; created if missing (gitignored)
+
 ## Stage 5: dogfood. Build each target and copy it to the first existing, writable dir in
-## that target's list. Cross-building is free here - the module is pure stdlib with no cgo -
+## that target's list. Cross-building is free here - the module is pure Go with no cgo -
 ## so every target is built every run rather than on a cadence. Destination arrays are found
 ## by name: DOGFOOD_DESTS_<GOOS>_<GOARCH>, upper-cased.
 DOGFOOD_TARGETS=(
@@ -184,7 +209,7 @@ DOGFOOD_DESTS_DARWIN_UNIVERSAL=(
 DOGFOOD_FALLBACK_DIR="${HOME}/.local/bin"
 
 ## Release assets (cicd/release.bash). Every platform the module cross-builds to, which is
-## every platform Go targets - the tree is pure stdlib with no cgo, so nothing here needs an
+## every platform Go targets - the tree is pure Go with no cgo, so nothing here needs an
 ## SDK or a machine of its own. Published as gitsby-<goos>-<goarch>, with .exe on Windows,
 ## alongside a SHA256SUMS over the set. macOS is one universal file for both CPUs, joined the
 ## way dogfood joins it, so the installers take the same file on any Mac.
@@ -280,3 +305,4 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-10-10 JC: TOOL_VERSIONS records git, since an older one spawns more on a fetch. Every pinned tool is also what the --container image installs.
 ##		- 2026-10-10 JC: CICD_CONTAINER: the container is the default.
 ##		- 2026-10-18 JC: DOGFOOD_NATIVE_TARGET is gone. --quick dogfoods every target now, since each cross-build takes seconds.
+##		- 2026-10-19 JC: PY_LINT_RULES, PY_AUDIT_DISTS and PIP_AUDIT_IGNORE: ruff's leak rules over the demo script, and pip-audit over what it imports. LEAKCHECK_*: the --leakcheck soak test. TOOL_VERSIONS records ruff and pip-audit.
