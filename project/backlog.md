@@ -33,21 +33,66 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- Stage 7 fails b26 when a Finder window is open on the test folder
-	- ID: 2026100611181887
-	- Type: Bug
-	- Status: Waiting for testing
-	- Priority|Severity [Bug]: Avg
-	- Opened: 20261006-111818
+- Check the demo's Pillow and fontTools advisories against Debian's fixes
+	- ID: 2026101905585018
+	- Type: Task
+	- Status: Waiting for answers
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261019-055850
 	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: The full run on 2026-10-06 failed b26 before any test ran. The tree there held only `.git` and 3 `.DS_Store` files, all from the run's minute.
-	- Expected behavior [Bug]: A Finder window on the folder doesn't stop the run.
-	- Reproduced [Bug]: Yes, on Linux, with a file in the old tree that `rm` can't remove. The copy step exits 1 and leaves the same half-removed tree.
-	- Actual cause [Bug]: Finder rewrites `.DS_Store` while `rm -rf` runs, the rmdir fails, and `set -e` ends the copy step.
-	- Actual fix [Bug]: The old tree is moved aside to `old.<pid>` before it's removed. What won't go gets a note, and another try next run.
-	- Branch: ptyguard
-	- Test case: None in a suite. Checked by hand against the old and new step.
-	- Note: Not yet run on b26, which was held by another session. The next full run there closes it.
+	- Related IDs: 2026101816064794
+	- Requirements [Feature]:
+		- pip-audit reports 17 advisories against Pillow 11.1.0 and 1 against fontTools 4.57.0. The image has Debian's builds, `11.1.0-5+deb13u4` and `4.57.0-1+deb13u1`, which carry security patches past those versions.
+		- Check each against Debian's security tracker. The ones Debian fixed stay on `PIP_AUDIT_IGNORE` in config.bash, with a note naming the fix. For the rest, move the demo to a Pillow and fontTools that fix them.
+		- A newer Pillow can change the demo gif's bytes, so the gif is rendered and compared again.
+	- Note: The demo draws only its own text, in its own fonts, so none of these reach it through outside input today.
+	- Progress log:
+		- 2026-10-19: Checked all 18 against Debian's tracker and the changelogs of the installed builds. 7 are fixed or don't apply: fontTools' one, fixed in `4.57.0-1+deb13u1`, and 6 of Pillow's, fixed in `deb13u1` to `deb13u4` or Windows-only. Each now has a note on `PIP_AUDIT_IGNORE`.
+		- 11 Pillow advisories have no trixie fix. Debian marks most "no-dsa, minor issue", and all are fixed upstream in 12.3.0 and in sid's `12.3.0-1`. They're CVE-2026-54058, 54059, 54060, 55379, 55380, 59197, 59198, 59199, 59200, 59204, and 59205. They cover file formats and calls the demo doesn't use, plus paste and crop with coordinates near 2^31, where the demo passes only its own small ones.
+		- Moving only Pillow fixes them all, since fontTools is already fixed. That means Pillow 12.3.0 in the image, either as a hash-pinned wheel or as sid's package from the snapshot archive. The wheel brings its own FreeType, so the glyphs may change. Either way the gif gets rendered and compared again, the image's Pillow version pin changes, and a render on the host would no longer match the image's. The renderer also calls one private Pillow method, which 12.x may have changed.
+		- Question: should Pillow move to 12.3.0 now, and if so as a wheel or as sid's package? Or should it stay on Debian's build, with the 11 kept on the list until trixie fixes them?
+	- Branch: pyadv
+
+- Run CodeQL over the demo script and its Python libraries
+	- ID: 2026101907065426
+	- Type: Enhancement
+	- Status: Waiting for answers
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261019-070654
+	- Opened by: jim-collier
+	- Related IDs: 2026101816064794
+	- Requirements [Feature]:
+		- `--leakcheck` runs CodeQL's Python queries over the pipeline's Python files, with the sdists of Pillow, fontTools, pycairo and PyGObject unpacked into the database's root, at the versions the image has.
+		- The same rules as the Go run: style findings in third-party code are dropped, and any other finding fails the run.
+		- The Python bundle is pinned in config.bash and installed in the image, like the Go one.
+	- Note: Split from 2026101816064794, which covers the Go code.
+	- Progress log:
+		- 2026-10-19: A trial run, outside the pipeline, of CodeQL 2.27.2's Python security and quality suite over the 2 pipeline scripts and the 4 libraries. Our own 2 scripts have no findings. The libraries have 648, and 331 of them aren't style by the Go rule. That's 116 in Pillow, 187 in fontTools, and 28 in PyGObject. Too many to set aside one by one, so nothing is built yet.
+		- Most of the 331 are tagged reliability only, such as cyclic imports and empty except blocks. Python's quality queries tag nearly everything reliability or maintainability, so the Go rule keeps far more here than it does for Go.
+		- Limiting the libraries to the modules the demo's library calls load still leaves 133.
+		- Only 2 are tagged security, both a regex character range in fontTools' XML module, which the demo doesn't load.
+		- Library code would be the installed Debian builds' own .py files, taken through dpkg, instead of the upstream sdists. They're what the demo runs, with Debian's security patches in, and have no test suites. Their compiled C parts are out of reach of the Python extractor either way.
+		- The Python bundle shares every common file with the Go one, byte for byte, so it adds about 66 MB to the image, without its example queries. The trial took 12 s to build the database and 37 s to analyze.
+		- Proposal: in third-party Python, count only findings tagged security, and keep the Go rule for Go. The one regex finding goes on `CODEQL_IGNORE` as not reachable. Our own scripts stay held to the whole suite.
+		- Question: OK to hold third-party Python to security findings only? The other way is to keep the Go rule and put 185 rule and file pairs on `CODEQL_IGNORE`, or 59 with only the modules the demo loads.
+	- Branch: pyql
+
+- CodeQL flags 2 spots in shcl 2.0.0, the old writer the tests use
+	- ID: 2026101906343987
+	- Type: Task
+	- Status: Waiting for answers
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261019-063439
+	- Opened by: jim-collier
+	- Related IDs: 2026101816064794
+	- Requirements [Feature]:
+		- `github.com/jim-collier/shcl/source/go/v2` v2.0.0 is used by the tests only, to write accounts files in the old format.
+		- CodeQL's `go/incorrect-integer-conversion` flags shcl.go line 4266. A `strconv.ParseUint(t, 10, 32)` result goes to `int` with no upper bound check, which overflows where `int` is 32 bits.
+		- CodeQL's `go/unhandled-writable-file-close` flags line 2625. The error from closing a written file is dropped, after a `Sync` whose error is checked.
+		- Fix both in shcl's 2.x line, or decide they don't matter for a writer only the tests use. Either way, take both off `CODEQL_IGNORE` in config.bash.
+	- Progress log:
+		- 2026-10-19: Waits on a call. Fixing them means a 2.x release of shcl, a sister project, and the tests pin its v2.0.0 tag.
+	- Note: The live shcl module has neither.
 
 - Updates to CICD script flags
 	- ID: 2026101816064793
@@ -80,11 +125,30 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash `[Et6FC3t]` for the `--gate)` arm the hook looks for. `[Et6FC4K]`, `[Et6FC46]`, `[Et6FC31]` and `[Et6FC2n]` for `--quick`. `[EnQTPxt]` is off since 2026-10-18.
 	- Swept: the help header, history footer, README, contributing.md and config.bash comments for both flags. pre-push.bash still finds `--gate)` in the option arm. design.md names only `--gate` and is unchanged. The test.bash helpers that used `--quick` as shorthand for skipping fuzz, the demo and the remote tests now name those flags.
 
+- Stage 7 fails b26 when a Finder window is open on the test folder
+	- ID: 2026100611181887
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Avg
+	- Opened: 20261006-111818
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: The full run on 2026-10-06 failed b26 before any test ran. The tree there held only `.git` and 3 `.DS_Store` files, all from the run's minute.
+	- Expected behavior [Bug]: A Finder window on the folder doesn't stop the run.
+	- Reproduced [Bug]: Yes, on Linux, with a file in the old tree that `rm` can't remove. The copy step exits 1 and leaves the same half-removed tree.
+	- Actual cause [Bug]: Finder rewrites `.DS_Store` while `rm -rf` runs, the rmdir fails, and `set -e` ends the copy step.
+	- Actual fix [Bug]: The old tree is moved aside to `old.<pid>` before it's removed. What won't go gets a note, and another try next run.
+	- Branch: ptyguard
+	- Test case: None in a suite. Checked by hand against the old and new step.
+	- Note: Not yet run on b26, which was held by another session. The next full run there closes it.
+	- Verified: the full run on 2026-10-19 copied the tree to b26 and passed there, test.bash 1346/0.
+	- Acceptance signoff: Self-closed. The item asked for one full run on b26.
+	- Closed: 20261019-084100
+
 - Leak, memory, and correctness checks in CICD
 	- ID: 2026101816064794
 	- Type: Enhancement
-	- Status: Waiting for testing
-	- Needs external testing: Stage 7, since the Go tests on the Mac, Windows and Unix boxes now run goleak's TestMain too, and test.bash there has the new checks of how CodeQL's reports are read.
+	- Status: Done
+	- Needs external testing: Done 2026-10-19. A full run passed stage 7 on b26, vmFreeBSD, vmDebARM64 and vm925w.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261018-160647
 	- Opened by: jim-collier
@@ -162,65 +226,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- A full container run with `--leakcheck` passed, with sync, dogfood, the demo, the remote tests and publish off: test.bash 1560/0, fuzz.bash 313/0, parity 29/0, the spawn counts, the soak test and CodeQL on all 4 OSes.
 	- Swept: The comments in cicd.bash and test.bash that said there were no third-party dependencies, the 2 "pure stdlib" lines in config.bash, the style guide's goroutine rule, the help header, both history footers, README and contributing.md. install.bash's "pure Go with no dependencies" is about what a build needs installed first, and goleak is test-only, so it stays. remote-tests.bash runs compiled test binaries, which never cache, so it needs no `-count=1`.
 		- CodeQL: the help header, the history footers of cicd.bash, config.bash, test.bash and the Dockerfile's comments, README and contributing.md. The kill check covers legacy/ too, which has none.
-
-- Check the demo's Pillow and fontTools advisories against Debian's fixes
-	- ID: 2026101905585018
-	- Type: Task
-	- Status: Waiting for answers
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261019-055850
-	- Opened by: jim-collier
-	- Related IDs: 2026101816064794
-	- Requirements [Feature]:
-		- pip-audit reports 17 advisories against Pillow 11.1.0 and 1 against fontTools 4.57.0. The image has Debian's builds, `11.1.0-5+deb13u4` and `4.57.0-1+deb13u1`, which carry security patches past those versions.
-		- Check each against Debian's security tracker. The ones Debian fixed stay on `PIP_AUDIT_IGNORE` in config.bash, with a note naming the fix. For the rest, move the demo to a Pillow and fontTools that fix them.
-		- A newer Pillow can change the demo gif's bytes, so the gif is rendered and compared again.
-	- Note: The demo draws only its own text, in its own fonts, so none of these reach it through outside input today.
-	- Progress log:
-		- 2026-10-19: Checked all 18 against Debian's tracker and the changelogs of the installed builds. 7 are fixed or don't apply: fontTools' one, fixed in `4.57.0-1+deb13u1`, and 6 of Pillow's, fixed in `deb13u1` to `deb13u4` or Windows-only. Each now has a note on `PIP_AUDIT_IGNORE`.
-		- 11 Pillow advisories have no trixie fix. Debian marks most "no-dsa, minor issue", and all are fixed upstream in 12.3.0 and in sid's `12.3.0-1`. They're CVE-2026-54058, 54059, 54060, 55379, 55380, 59197, 59198, 59199, 59200, 59204, and 59205. They cover file formats and calls the demo doesn't use, plus paste and crop with coordinates near 2^31, where the demo passes only its own small ones.
-		- Moving only Pillow fixes them all, since fontTools is already fixed. That means Pillow 12.3.0 in the image, either as a hash-pinned wheel or as sid's package from the snapshot archive. The wheel brings its own FreeType, so the glyphs may change. Either way the gif gets rendered and compared again, the image's Pillow version pin changes, and a render on the host would no longer match the image's. The renderer also calls one private Pillow method, which 12.x may have changed.
-		- Question: should Pillow move to 12.3.0 now, and if so as a wheel or as sid's package? Or should it stay on Debian's build, with the 11 kept on the list until trixie fixes them?
-	- Branch: pyadv
-
-- CodeQL flags 2 spots in shcl 2.0.0, the old writer the tests use
-	- ID: 2026101906343987
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261019-063439
-	- Opened by: jim-collier
-	- Related IDs: 2026101816064794
-	- Requirements [Feature]:
-		- `github.com/jim-collier/shcl/source/go/v2` v2.0.0 is used by the tests only, to write accounts files in the old format.
-		- CodeQL's `go/incorrect-integer-conversion` flags shcl.go line 4266. A `strconv.ParseUint(t, 10, 32)` result goes to `int` with no upper bound check, which overflows where `int` is 32 bits.
-		- CodeQL's `go/unhandled-writable-file-close` flags line 2625. The error from closing a written file is dropped, after a `Sync` whose error is checked.
-		- Fix both in shcl's 2.x line, or decide they don't matter for a writer only the tests use. Either way, take both off `CODEQL_IGNORE` in config.bash.
-	- Note: The live shcl module has neither.
-
-- Run CodeQL over the demo script and its Python libraries
-	- ID: 2026101907065426
-	- Type: Enhancement
-	- Status: Waiting for answers
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261019-070654
-	- Opened by: jim-collier
-	- Related IDs: 2026101816064794
-	- Requirements [Feature]:
-		- `--leakcheck` runs CodeQL's Python queries over the pipeline's Python files, with the sdists of Pillow, fontTools, pycairo and PyGObject unpacked into the database's root, at the versions the image has.
-		- The same rules as the Go run: style findings in third-party code are dropped, and any other finding fails the run.
-		- The Python bundle is pinned in config.bash and installed in the image, like the Go one.
-	- Note: Split from 2026101816064794, which covers the Go code.
-	- Progress log:
-		- 2026-10-19: A trial run, outside the pipeline, of CodeQL 2.27.2's Python security and quality suite over the 2 pipeline scripts and the 4 libraries. Our own 2 scripts have no findings. The libraries have 648, and 331 of them aren't style by the Go rule. That's 116 in Pillow, 187 in fontTools, and 28 in PyGObject. Too many to set aside one by one, so nothing is built yet.
-		- Most of the 331 are tagged reliability only, such as cyclic imports and empty except blocks. Python's quality queries tag nearly everything reliability or maintainability, so the Go rule keeps far more here than it does for Go.
-		- Limiting the libraries to the modules the demo's library calls load still leaves 133.
-		- Only 2 are tagged security, both a regex character range in fontTools' XML module, which the demo doesn't load.
-		- Library code would be the installed Debian builds' own .py files, taken through dpkg, instead of the upstream sdists. They're what the demo runs, with Debian's security patches in, and have no test suites. Their compiled C parts are out of reach of the Python extractor either way.
-		- The Python bundle shares every common file with the Go one, byte for byte, so it adds about 66 MB to the image, without its example queries. The trial took 12 s to build the database and 37 s to analyze.
-		- Proposal: in third-party Python, count only findings tagged security, and keep the Go rule for Go. The one regex finding goes on `CODEQL_IGNORE` as not reachable. Our own scripts stay held to the whole suite.
-		- Question: OK to hold third-party Python to security findings only? The other way is to keep the Go rule and put 185 rule and file pairs on `CODEQL_IGNORE`, or 59 with only the modules the demo loads.
-	- Branch: pyql
+	- Verified: full run 2026-10-19, publish off. test.bash 1561/0 and fuzz.bash 313/0 in the image, then test.bash 1346/0 on b26, 1249/0 on vmFreeBSD and 1546/0 on vmDebARM64, and the Go tests on all 4 boxes.
+	- Acceptance signoff: Self-closed. The open calls moved to 2026101905585018, 2026101906343987 and 2026101907065426.
+	- Closed: 20261019-084100
 
 - Run on the last Core 2 Duo, and AMD CPUs from that era.
 	- ID: 2026101301161852
