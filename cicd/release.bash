@@ -89,7 +89,7 @@ fpCrossBuild(){
 		parts=()
 		for arch in "${arches[@]}"; do
 			part="${assets}/${asset}"; ((${#arches[@]} == 1)) || part="${assets}/${asset}-${arch}"
-			( cd "${src}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOTOOLCHAIN="${GO_RELEASE_TOOLCHAIN}" GOOS="${t%%/*}" GOARCH="${arch}" \
+			( cd "${src}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOAMD64=v1 GOTOOLCHAIN="${GO_RELEASE_TOOLCHAIN}" GOOS="${t%%/*}" GOARCH="${arch}" \
 				go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" \
 				-ldflags "${GO_LDFLAGS_COMMON} -X main.version=${version#v} -X main.buildEpoch=${epoch}" \
 				-o "${part}" . ) \
@@ -548,3 +548,4 @@ echo
 ##		- 20261004 JC: Phase 2 writes a downloads table at the foot of the changelog section it retitles, from the files phase 1 built: a row per OS, a column per CPU, the Mac file under both, and the checksums and installers on a line below. The release body is still that section verbatim. Phase 1 refuses a vNEXT that already has one, and phase 3 warns when what it publishes and the table disagree. The repo name is in one place.
 ##		- 20261004 JC: The output helpers print with printf, as cicd.bash does. Every expansion
 ##		  braced, and shellcheck enforces it.
+##		- 20261019 JC: The release builds pin GOAMD64=v1, so a stray environment can't raise the CPU floor.

@@ -209,7 +209,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Run on the last Core 2 Duo, and AMD CPUs from that era.
 	- ID: 2026101301161852
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Needs external testing: Yes, on an old CPU or an emulated one.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261013-011618
@@ -223,6 +223,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Tests run the release build on an emulated Penryn and Phenom II, through Intel SDE or QEMU's `-cpu Penryn` and `-cpu phenom`.
 	- Progress log:
 		- 20261013: Go builds for plain x86-64 by default (`GOAMD64=v1`), and nothing here sets it, so this may already hold. Pin `GOAMD64=v1` in the release build so a stray environment can't raise it. The standard library already picks faster code at run time.
+		- 20261019: Every build pins `GOAMD64=v1` now: release, dogfood and cross builds, the native and demo builds, the remote test builds, and the README's rebuild line. It's Go's default, so the published bytes don't change. The module has no assembly or cgo of its own, and neither does shcl.
+	- Decisions:
+		- The emulated run was a one-off, and stays out of the pipeline. The pin is what can regress, and the suite watches it. Go's own startup check refuses a CPU below the level a build was made for, so the pin decides which CPUs run it. The CPU emulator would add about 450 MB to the container image to recheck that each run. Revisit if a dependency with its own assembly comes in.
+	- Verified:
+		- The linux/amd64 release build runs on an emulated Penryn and Phenom II: `--version`, `--help`, `status`, `whoami`, `br list`, `sync` to a local origin, and `br create`. Builds for v2 and v3 are refused on both, and the v3 build runs on an emulated CPU that has v3.
+		- Every release target builds to the same bytes with the pin as without it. A `GOAMD64=v3` in the environment, or in `go env -w`, changes the amd64 bytes of an unpinned build and not of a pinned one.
+	- Swept: `cicd.bash` (native build, `fCrossBuild` for dogfood and stage 7's Mac build, demo build), `release.bash` `fpCrossBuild` (phases 1 and 3), `remote-tests.bash` `fBuildTests`, README's rebuild line. The container image builds no gitsby binary, only tools, and its stages run the cicd.bash sites above. Windows, FreeBSD and the Mac amd64 half get the same pin through those sites.
+	- Branch: oldcpu
+	- Test case: [Et9l12K] in test.bash. It fails with the pin dropped from any one build site or from the README.
+	- Acceptance signoff: Self-closed: the intent was clear, and the pin changes no published bytes.
+	- Closed: 20261019-072414
 
 - Run the lint and test stages in a pinned container
 	- ID: 2026101009380628

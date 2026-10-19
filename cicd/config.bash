@@ -38,7 +38,9 @@ GO_MODULE_DIR="src-go"
 ##                  bytes on any machine with the same toolchain (pinned in go.mod).
 ##   -s -w          no symbol table, no DWARF: smaller is one of the two things that matter.
 ## CGO_ENABLED=0 goes with them, on the native build as well as the cross-builds, so every
-## artifact the pipeline produces is the same kind of thing.
+## artifact the pipeline produces is the same kind of thing. GOAMD64=v1 sits beside it at each
+## site. It's Go's default, so the bytes don't change, but a GOAMD64 left in the environment or
+## in 'go env -w' would raise the CPU floor past the Core 2 Duo and Phenom II.
 GO_BUILD_FLAGS=(-trimpath -buildvcs=false)
 GO_LDFLAGS_COMMON="-s -w -buildid="
 ## The toolchain that builds the published assets. Two compiler versions produce different
@@ -323,3 +325,4 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-10-18 JC: DOGFOOD_NATIVE_TARGET is gone. --quick dogfoods every target now, since each cross-build takes seconds.
 ##		- 2026-10-19 JC: PY_LINT_RULES, PY_AUDIT_DISTS and PIP_AUDIT_IGNORE: ruff's leak rules over the demo script, and pip-audit over what it imports. LEAKCHECK_*: the --leakcheck soak test. TOOL_VERSIONS records ruff and pip-audit.
 ##		- 2026-10-19 JC: --leakcheck runs CodeQL too, from a pinned bundle in the image, with CODEQL_IGNORE for findings set aside. TOOL_VERSIONS records it.
+##		- 2026-10-19 JC: Notes the GOAMD64=v1 pin beside CGO_ENABLED=0.
