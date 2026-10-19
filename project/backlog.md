@@ -64,6 +64,32 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash `[Et6FC3t]` for the `--gate)` arm the hook looks for. `[Et6FC4K]`, `[Et6FC46]`, `[Et6FC31]` and `[Et6FC2n]` for `--quick`. `[EnQTPxt]` is off since 2026-10-18.
 	- Swept: the help header, history footer, README, contributing.md and config.bash comments for both flags. pre-push.bash still finds `--gate)` in the option arm. design.md names only `--gate` and is unchanged. The test.bash helpers that used `--quick` as shorthand for skipping fuzz, the demo and the remote tests now name those flags.
 
+- Builds should clean up stale artifacts and side-effects when done
+	- ID: 2026101912030138
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261019-120301
+	- Opened by: jim-collier
+	- Milestone: Pre-next-cut.
+	- Requirements [Feature]:
+		- Verify or ensure that builds clean up stale artifacts and side-effects after they're done.
+			- Caches, container cruft, tmp files, etc.
+
+- CICD gets `--leakcheck` and `--no-leakcheck` flags
+	- ID: 2026101912030152
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261019-120301
+	- Opened by: jim-collier
+	- Milestone: Pre-next-cut.
+	- Related IDs: 2026101816064793, 2026101816064794
+	- Requirements [Feature]:
+		- CICD should have both `--leakcheck` and `--no-leakcheck`.
+			- `--leakcheck` is useful to add back in for `--quick`.
+			- `--no-leakcheck` is useful to exclude it from the default, or with `--quiet`.
+
 - Check the demo's Pillow and fontTools advisories against Debian's fixes
 	- ID: 2026101905585018
 	- Type: Task
