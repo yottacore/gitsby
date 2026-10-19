@@ -305,6 +305,7 @@ fMakeGateFixture(){
 	echo "# Fixture" > "${gateDir}/README.md"
 	for s in test fuzz parity remote-tests; do fGateStub "${gateDir}/cicd/${s}.bash" "${s}"; done
 	for s in gen-winres backlog-check spawn-count; do fGateStub "${gateDir}/cicd/utility/${s}.bash" "${s}"; done
+	fGateStub "${gateDir}/cicd/utility/demo/demo-repo.bash" demo-repo
 	## Writes the joined file, so stage 7 has a build to remove.
 	fGateStub "${gateDir}/cicd/utility/macho-universal.bash" macho-universal ": > \"\${1:-/dev/null}\""
 	fGateStub "${gateDir}/cicd/utility/n8git_backup-and-publish" n8git_backup-and-publish
@@ -333,8 +334,11 @@ fMakeGateFixture(){
 	## go fails by subcommand (go-vet, go-test, go-build), and 'version -m' names no module. A
 	## passing build leaves its -o file behind, so the demo stage has a build to remove. The soak
 	## test passes only when it was handed its rounds, and leaves its summary where it was told;
-	## 'soak' fails it, and 'soak-skip' skips it.
-	fGateStub "${gateDir}/bin/go" "go-\${1:-}" "[[ \"\${1:-}\" != version ]] || exit 0; if [[ ! -e \"${gateFail}/go-\${1:-}\" ]]; then o=''; for a in \"\$@\"; do [[ \"\${o}\" != 1 ]] || : > \"\${a}\"; o=''; [[ \"\${a}\" != -o ]] || o=1; done; fi
+	## 'soak' fails it, and 'soak-skip' skips it. 'hang' holds go vet for a few seconds, so a
+	## check can stop the run partway.
+	fGateStub "${gateDir}/bin/go" "go-\${1:-}" "[[ \"\${1:-}\" != version ]] || exit 0
+		[[ \"\${1:-}\" != vet || ! -e '${gateFail}/hang' ]] || { : > '${gateFail}/hung'; sleep 5; }
+		if [[ ! -e \"${gateFail}/go-\${1:-}\" ]]; then o=''; for a in \"\$@\"; do [[ \"\${o}\" != 1 ]] || : > \"\${a}\"; o=''; [[ \"\${a}\" != -o ]] || o=1; done; fi
 		if [[ -n \"\${GITSBY_SOAK_ROUNDS:-}\" ]]; then
 			if [[ -e '${gateFail}/soak-skip' ]]; then echo '--- SKIP: TestSoak (0.00s)'; exit 0; fi
 			if [[ -e '${gateFail}/soak' ]]; then echo '--- FAIL: TestSoak (0.00s)'; exit 1; fi
@@ -403,10 +407,63 @@ fGateLeakRun(){
 		&& grep -qE '^Leak checks \.+: soak test, [0-9]+ rounds' "${gateOut}" \
 		&& compgen -G "${gateDir}/cicd/artifacts/leakcheck/soak_*-*/soak.txt" >/dev/null
 }
-## And a run without it runs no soak test, and says how to ask for one.
+## And --quick without it runs no soak test, and says how to ask for one.
 fGateNoLeakRun(){
 	fGateSays 0 'CI/CD: done\.' -y --no-container --quick --no-sync --no-publish --no-dogfood \
-		&& ! fGateCalled 'TestSoak' && grep -qxF 'Leak checks .........: (add with --leakcheck)' "${gateOut}"
+		&& ! fGateCalled 'TestSoak' && grep -qxF 'Leak checks .........: (skipped --quick), add with --leakcheck' "${gateOut}"
+}
+## A full run does the leak checks with no flag at all.
+fGateLeakDefault(){
+	fGateSays 0 'OK: CodeQL clean' -y --no-container --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
+		&& fGateCalled '^go test -count=1 -run \^TestSoak\$ -v \.$' '^codeql database create ' \
+		&& grep -qE '^Leak checks \.+: soak test, [0-9]+ rounds' "${gateOut}"
+}
+## $1 the option that turns them off on a full run, $2 the plan line it leaves.
+fGateLeakOff(){
+	fGateSays 0 'CI/CD: done\.' -y --no-container "$1" --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
+		&& ! fGateCalled 'TestSoak' '^codeql ' && grep -qxF "Leak checks .........: $2" "${gateOut}"
+}
+## --no-leakcheck reaches the run in the container as given, and a plain run passes neither.
+fGateContainerNoLeak(){
+	fGateSays 0 'OK: the container run' -y --no-leakcheck --no-sync --no-publish --no-dogfood --no-remote \
+		&& fGateCalled '^docker run .* -y --no-sync --no-dogfood --no-remote --no-publish --no-leakcheck$'
+}
+## A plain run off the container, on a box without CodeQL, says so and goes on. Asked for by
+## name, it stops instead: [Et9ZcMh].
+fGateNoCodeQLDefault(){
+	local d="" keep="" rc=0
+	local -a dirs=()
+	mv "${gateDir}/bin/codeql" "${gateDir}/bin/codeql.away"
+	IFS=: read -ra dirs <<< "${PATH}"
+	for d in "${dirs[@]}"; do [[ -x "${d}/codeql" ]] || keep+="${keep:+:}${d}"; done
+	PATH="${keep}" fGateSays 0 'WARNING: CodeQL skipped \(not installed here' -y --no-container --no-demogif --no-remote --no-sync --no-publish --no-dogfood || rc=1
+	mv "${gateDir}/bin/codeql.away" "${gateDir}/bin/codeql"
+	((rc == 0)) && grep -q 'CI/CD: done\.' "${gateOut}" && grep -q 'OK: soak test' "${gateOut}"
+}
+## The run's temp files sit in one folder of its own, gone once the run ends: after a pass, after
+## a stop, and after a TERM partway through.
+fGateRunTmp(){
+	local t="${gateDir}/tmp-run" pid="" i=0 rc=0
+	rm -rf -- "${t:?}"; mkdir -p "${t}"
+	TMPDIR="${t}" fGateStatus 0 -y --no-container --quick --no-sync --no-publish --no-dogfood || return 1
+	[[ -z "$(ls -A "${t}")" ]] || return 1
+	: > "${gateFail}/go-test"
+	TMPDIR="${t}" fGateStatus 1 -y --no-container --quick --no-sync --no-publish --no-dogfood || rc=1
+	rm -f -- "${gateFail:?}/go-test"
+	((rc == 0)) && [[ -z "$(ls -A "${t}")" ]] || return 1
+	: > "${gateFail}/hang"; rm -f -- "${gateFail:?}/hung"
+	( cd "${gateDir}" && HOME="${gateDir}/home" PATH="${gateDir}/bin:${PATH}" TMPDIR="${t}" exec ./cicd/cicd.bash -y --no-container --quick --no-sync --no-publish --no-dogfood ) </dev/null >"${gateOut}" 2>&1 &
+	pid=$!
+	for ((i = 0; i < 100; i++)); do [[ -e "${gateFail}/hung" ]] && break; sleep 0.05; done
+	[[ -n "$(compgen -G "${t}/gitsby-cicd.*")" ]] || { rm -f -- "${gateFail:?}/hang"; kill "${pid}" 2>/dev/null; wait "${pid}" 2>/dev/null; return 1; }
+	kill -TERM "${pid}"; wait "${pid}" 2>/dev/null || true
+	rm -f -- "${gateFail:?}/hang"
+	[[ -z "$(ls -A "${t}")" ]]
+}
+## Stage 6 takes the scenario's world away once the gif is drawn, through the script that built it.
+fGateDemoRemoved(){
+	fGateSays 0 'CI/CD: done\.' -y --no-container --no-lint --no-test --no-fuzz --no-parity --no-remote --no-sync --no-publish --no-dogfood \
+		&& fGateCalled '^demo-repo\.bash --remove$'
 }
 fGateContainerLeak(){
 	fGateSays 0 'OK: the container run' -y --quick --leakcheck --no-sync --no-publish --no-dogfood \
@@ -5563,13 +5620,20 @@ EOF
 		fAssert "[Et9R5kk] and leaves out pip-audit, which reaches pypi.org" \
 			bash -c "! grep -q '^pip-audit -r' '${gateCalls}' && grep -qxF 'pip-audit skipped (--quick: it reaches pypi.org)' '${gateOut}'"
 		fAssert "[Et9PJr1] --leakcheck adds the soak test, with its rounds and a folder of its own"  fGateLeakRun
-		fAssert "[Et9PJrE] and a run without it has none"  fGateNoLeakRun
+		fAssert "[Et9PJrE] and --quick without it has none, and says how to add them"  fGateNoLeakRun
+		fAssert "[EtBTWs2] a full run does the leak checks with no flag"  fGateLeakDefault
+		fAssert "[EtBTWsG] --no-leakcheck leaves them out of a full run"  fGateLeakOff --no-leakcheck '(skipped)'
+		fAssert "[EtBTWsT] and so does --no-fuzz"  fGateLeakOff --no-fuzz '(skipped), add with --leakcheck'
+		fAssert "[EtBTWsg] --leakcheck and --no-leakcheck together are refused"  fGateSays 2 'opposites' -y --leakcheck --no-leakcheck
+		fAssert "[EtBTWsu] a plain run on a box without CodeQL warns and goes on"  fGateNoCodeQLDefault
 		fAssert "[Et9PJrf] a soak test that fails stops the run"  fGateLeakStops soak
 		fAssert "[Et9R5kx] and so does one that skipped, since it measured nothing"  fGateLeakStops soak-skip
 		fAssert "[Et9R5lA] the newest 20 soak runs are kept, and a folder with anything else in it is left alone"  fGateLeakPrune
 		fAssert "[Et9PJrt] --gate refuses --leakcheck"  fGateSays 2 'takes no stage options \(got: --leakcheck\)' --gate --leakcheck
-		fAssert "[Et9PJs6] cicd.bash --help lists --leakcheck" \
-			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--leakcheck ' <<< \"\$out\""
+		fAssert "[Et9PJs6] cicd.bash --help lists --leakcheck and --no-leakcheck" \
+			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--leakcheck ' <<< \"\$out\" && grep -qE -- '^ +--no-leakcheck ' <<< \"\$out\""
+		fAssert "[EtBTWt7] a run's temp files are gone once it ends, stopped or not"  fGateRunTmp
+		fAssert "[EtBTWtL] stage 6 removes the demo's repos once the gif is drawn"  fGateDemoRemoved
 		fAssert "[Et9ZcLy] --leakcheck runs CodeQL over a copy of the module with its dependencies vendored in, once per release OS, and keeps the reports"  fGateCodeQL
 		fAssert "[Et9ZcME] a CodeQL finding stops the run"  fGateCodeQLStops codeql-findings 'CodeQL findings; the reports are in .*/codeql_[0-9]+-[0-9]+ \]'
 		fAssert "[Et9ZcMS] and so does a CodeQL run that didn't finish"  fGateCodeQLStops codeql "CodeQL didn't finish"
@@ -5589,6 +5653,7 @@ EOF
 		fAssert "[EsJgel8] a plain run hands stages 1-4 to the image and runs none of them here"  fGateContainerRun
 		fAssert "[Et6FC46] and --quick goes in with them"  fGateContainerQuick
 		fAssert "[Et9PJrS] and --leakcheck too, and the soak test runs only in there"  fGateContainerLeak
+		fAssert "[EtBTWta] and --no-leakcheck"  fGateContainerNoLeak
 		fAssert "[Et9R5kW] the image's tag changes with the Python tools' lock"  fGateLockInTag
 		fAssert "[EsK1B7q] and the demo gif as well"  fGateContainerDemo
 		fAssert "[EsK46gt] a box without a working docker runs them here, with a warning"  fGateNoDocker
@@ -5727,8 +5792,8 @@ EOF
 			bash -c "[[ '${gateRc}' == 1 ]] && grep -qxF '  FAIL: [AAAAAAB] TestA' '${gateOut}' && grep -qF 'a_test.go:4: boom' '${gateOut}' && grep -qF 'go test failures' '${gateOut}'"
 		git -C "${gateDir}" checkout --quiet -- README.md
 		## Stage 3 without --quick. 'go test -list' failing is swallowed there, so a target list
-		## that came back empty would pass having fuzzed nothing.
-		fGateOnly fuzz
+		## that came back empty would pass having fuzzed nothing. The leak checks have checks of their own.
+		fGateOnly fuzz --no-leakcheck
 		fAssert "[Er1LxTW] stage 3 runs the fuzz harness, fuzzes each target the module lists, and counts spawns" \
 			fGateRanCalling 0 '^fuzz\.bash' '^go test -run \^\$ -fuzz \^FuzzA\$ -fuzztime 5s -parallel [0-9]+ \.$' '^spawn-count\.bash'
 		fAssert "[Er631Hf] and prints each target on a line of its own, with its test ID"  fGateRanSaying 0 '^  ok: \[AAAAAAA\] FuzzA$'
@@ -6992,3 +7057,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261019 JC: --leakcheck runs CodeQL too, once per release OS, over the module with its dependencies vendored in, and how its reports are read is checked on reports written here. No tracked script or Go file may start a terminal multiplexer or kill by process name. 1540 -> 1560.
 ##		- 20261019 JC: Every build pins plain x86-64, the README's rebuild line too, so a Core 2 Duo or a Phenom II still runs the release. Fails with the pin dropped from any one of them. 1560 -> 1561.
 ##		- 20261019 JC: --leakcheck's CodeQL runs Python's suite too, over the pipeline's Python and the installed source of the demo's libraries, with the bundle and its sum in the image. Python reports are read by their own rule, security only in third-party code. The demo's Pillow is the lock's, and a demo gif drawn with another Pillow than the recorded one is left alone. 1561 -> 1571.
+##		- 20261019 JC: The leak checks run by default, off under --quick and --no-fuzz, with --leakcheck and --no-leakcheck to say otherwise. The run's temp files are gone once it ends, even after a TERM, and stage 6 removes the demo's repos. 1571 -> 1579.

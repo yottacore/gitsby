@@ -115,7 +115,7 @@ PY_LINT_FILES=(
 ## 'with' (SIM115), and a mutable default argument (B006). Probe-gated.
 PY_LINT_RULES=(B019 SIM115 B006)
 ## Stage 3: pip-audit over the third-party libraries those files import, as installed. Skipped
-## by --quick, like govulncheck. --leakcheck's CodeQL reads their installed source too.
+## by --quick, like govulncheck. The leak checks' CodeQL reads their installed source too.
 PY_AUDIT_DISTS=(Pillow fonttools pycairo PyGObject)
 ## Advisories against the upstream versions of the Debian builds the demo runs on. Debian's
 ## builds carry security patches past those versions, so each one names the Debian build
@@ -173,11 +173,11 @@ SPAWN_COUNT_CMD=(cicd/utility/spawn-count.bash)
 ## Where a kept build is archived, for bisecting a behavior change against an older one.
 KEEP_BUILD_DIR="cicd/artifacts/builds"      # relative to repo root; created if missing (gitignored)
 
-## --leakcheck: the soak test's rounds (N, then N more, compared), and where each run's heap
+## The leak checks: the soak test's rounds (N, then N more, compared), and where each run's heap
 ## profiles go, one folder per run.
 LEAKCHECK_SOAK_ROUNDS=30
 LEAKCHECK_DIR="cicd/artifacts/leakcheck"    # relative to repo root; created if missing (gitignored)
-## --leakcheck also runs CodeQL, from the Go and Python bundles of the version in TOOL_VERSIONS:
+## They also run CodeQL, from the Go and Python bundles of the version in TOOL_VERSIONS:
 ## the CLI and its query packs, checked against these sums when the image is built. It's in the
 ## image and nowhere else. Each language gets its security and quality suite. Go's runs once for
 ## each OS in RELEASE_TARGETS, since the extractor sees one OS's files at a time. Python's runs

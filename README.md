@@ -301,7 +301,7 @@ cd gitsby/src-go && go build -o gitsby .
 
 1. Lints (gofmt, vet, staticcheck, golangci-lint, shellcheck, and ruff on the demo script).
 2. Builds, runs the unit tests under the race detector, and runs the regression suite of over 1000 checks against the binary it just built. A goroutine still running when the unit tests end fails them.
-3. Runs about 300 fuzz vectors and the native Go fuzz targets, checks the standard library and the Go and Python libraries it uses for known problems, and counts the processes each command spawns. With `--leakcheck` it also runs a soak test and CodeQL, below.
+3. Runs about 300 fuzz vectors and the native Go fuzz targets, checks the standard library and the Go and Python libraries it uses for known problems, and counts the processes each command spawns. Then the leak checks: a soak test, the everyday commands in a loop that fails if the heap or the goroutine count keeps growing, and CodeQL over the Go code, the pipeline's Python, and the libraries both use.
 4. Compares the build against the frozen v2.1.0 one across a few dozen checks, for backwards compatibility.
 5. Cross-builds every target and installs each to its own tool directory.
 6. Rebuilds the demo gif, if it changed.
@@ -311,8 +311,8 @@ cd gitsby/src-go && go build -o gitsby .
 Stages 1-4 and the demo gif run in a Debian image built from `cicd/container/Dockerfile`, so every box lints, tests and renders with the same tool versions. Without a working docker they run on the box itself, with a warning. Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `gifsicle` won't stop the rest. Stage 5's destinations are one machine's paths, set in `cicd/config.bash`; on anyone else's box that stage finds nothing writable and says so, which is harmless. Stage 7's boxes are that machine's too, and a box that is off or busy is skipped the same way.
 
 ~~~bash
-cicd/cicd.bash --quick          # skips the regression suite, native fuzzing, govulncheck, pip-audit, the demo gif and the remote tests; what you want while iterating
-cicd/cicd.bash --leakcheck      # adds the soak test, the everyday commands in a loop that fails if the heap or the goroutine count keeps growing, and CodeQL over the Go code, the pipeline's Python, and the libraries both use
+cicd/cicd.bash --quick          # skips the regression suite, native fuzzing, govulncheck, pip-audit, the leak checks, the demo gif and the remote tests; what you want while iterating
+cicd/cicd.bash --no-leakcheck   # everything but the soak test and CodeQL, the slowest part of stage 3; --leakcheck adds them back to --quick
 cicd/cicd.bash                  # everything, and it prompts once for a commit message
 cicd/cicd.bash -y -m "message"  # unattended
 cicd/cicd.bash --no-container   # stages 1-4 and the demo gif on this box, not in the pinned image
