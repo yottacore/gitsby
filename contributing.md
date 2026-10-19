@@ -186,7 +186,7 @@ That binary is the whole product. The rest of the tooling below is for running t
 <!-- omit in toc -->
 #### Run the checks
 
-- `cicd/cicd.bash --quick` - the whole pipeline, minus the slow stages. Run this before you open a PR.
+- `cicd/cicd.bash --quick` - the whole pipeline, minus each step that takes more than about half a minute or reaches a host other than origin. That leaves out the regression suite, the native fuzz targets, govulncheck, the demo, and the remote tests. What you want while iterating; run the full pipeline before you open a PR.
 
 - `cicd/cicd.bash` - everything, including the fuzz suite, the demo, and the tests on a Mac, a Windows box and other Unix boxes.
 

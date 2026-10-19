@@ -127,10 +127,12 @@ WINRES_CMD=(cicd/utility/gen-winres.bash)
 BACKLOG_CHECK_CMD=(cicd/utility/backlog-check.bash)
 
 ## Stage 2: build + regression tests. The suite runs against the compiled binary and gates.
+## Skipped by --quick, which keeps only the build and go test here.
 TEST_CMD=(cicd/test.bash)
 
 ## Stage 3: fuzz + security (adversarial input against gitsby's own command/option/
-## arg surface, with an injection canary). Skipped by --quick.
+## arg surface, with an injection canary). Runs under --quick too; the native fuzz
+## targets and govulncheck don't.
 FUZZ_CMD=(cicd/fuzz.bash)
 
 ## Stage 4: backwards compatibility. Same input to the Go build and to the frozen v2.1.0
@@ -160,9 +162,6 @@ DOGFOOD_TARGETS=(
 	"windows/amd64"
 	"darwin/universal"
 )
-## What --quick narrows the list above to. Cross-building the other two is the slow part of
-## a run; this one is the binary the next hand-run picks up, so it stays.
-DOGFOOD_NATIVE_TARGET="linux/amd64"
 DOGFOOD_DESTS_LINUX_AMD64=(
 	"${HOME}/synced/0-0/common/exec/util/linux/bin"
 )
@@ -280,3 +279,4 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-10-05 JC: REMOTE_UNIX_WINE: the Linux arm64 box also runs the windows/arm64 Go tests under Wine.
 ##		- 2026-10-10 JC: TOOL_VERSIONS records git, since an older one spawns more on a fetch. Every pinned tool is also what the --container image installs.
 ##		- 2026-10-10 JC: CICD_CONTAINER: the container is the default.
+##		- 2026-10-18 JC: DOGFOOD_NATIVE_TARGET is gone. --quick dogfoods every target now, since each cross-build takes seconds.

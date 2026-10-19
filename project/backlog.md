@@ -52,13 +52,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Updates to CICD script flags
 	- ID: 2026101816064793
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Waiting on signoff
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261018-160647
 	- Opened by: jim-collier
 	- Milestone: Pre-next-cut. Do next.
 	- Requirements [Feature]:
-		- `--ci`: Rename `--gate`.
+		- `--gate` keeps its name. No `--ci` alias.
 		- `--quick`:
 			- Runs whatever linting, validation, and testing steps are very quick.
 			- Cross-compiles whatever is fast; e.g. maybe skip slow arm64.
@@ -66,6 +66,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- No flags by default does everything.
 		- The other existing flags can stay.
 	- Note: `--gate` is also named by the pre-push hook `--install-hook` writes, and in the README and memory.
+	- Progress log:
+		- 2026-10-18: Each step was timed on b23, at a load of about 16. Every cross-build takes 4 to 6 s, arm64 included, and the lint stage about 23 s in all. The regression suite takes about 100 s, and the native fuzz targets 5 s each for 8 targets. fuzz.bash takes about 7 s, the spawn counts 3 s, parity 2 s, and go test 3 to 12 s.
+	- Decisions:
+		- The 30 s budget is per step. The lint stage alone is close to it, so a whole-run budget would leave nothing else.
+		- Sync and publish stay in `--quick`. They only fetch from and push to origin, the repo's own git host, and the requirement is about other hosts. `--no-sync` and `--no-publish` still turn them off.
+		- govulncheck is out of `--quick`, since it asks vuln.go.dev. That reverses the 2026-08-19 call that it runs there as a lookup.
+		- `--quick` runs fuzz.bash and the spawn counts now. Both take seconds. The native fuzz targets stay out.
+		- `--quick` dogfoods every target again, and builds the FreeBSD and Linux arm64 targets without testing them. That reverses review 20260819a item 18, whose reason was that cross-builds were the slow part. `[EnQTPxt] --quick narrows the cross-builds too` is off for that reason.
+		- The regression suite is out of `--quick`. That supersedes the 20260909 enhancement 7 call to keep it whole there. contributing.md now says to run the full pipeline before a PR.
+		- The demo gif stays out of `--quick`. It takes about 15 s, but it's not a check.
+	- Branch: cicdflags
+	- Test case: test.bash `[Et6FC3t]` for the `--gate)` arm the hook looks for. `[Et6FC4K]`, `[Et6FC46]`, `[Et6FC31]` and `[Et6FC2n]` for `--quick`. `[EnQTPxt]` is off since 2026-10-18.
+	- Swept: the help header, history footer, README, contributing.md and config.bash comments for both flags. pre-push.bash still finds `--gate)` in the option arm. design.md names only `--gate` and is unchanged. The test.bash helpers that used `--quick` as shorthand for skipping fuzz, the demo and the remote tests now name those flags.
 
 - Leak, memory, and correctness checks in CICD
 	- ID: 2026101816064794
