@@ -717,7 +717,7 @@ fSection "2/8  Build + regression tests"
 if ((! doTest)); then
 	fEcho_Clean "build + tests ${ranWhere:-skipped}"
 else
-	(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 \
+	(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOAMD64=v1 \
 		go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${goVersion#v} -X main.buildEpoch=${goBuildEpoch}" -o "${EXE_NAME}" .) \
 		|| fDie "go build failed"
 	fEcho "OK: go build (v${goVersion#v})"
@@ -839,7 +839,7 @@ fCrossBuild(){
 	arches=("${target##*/}"); [[ "${target}" == darwin/universal ]] && arches=(amd64 arm64)
 	for arch in "${arches[@]}"; do
 		part="${out}"; ((${#arches[@]} == 1)) || part="${out}-${arch}"
-		(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOOS="${target%%/*}" GOARCH="${arch}" \
+		(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOAMD64=v1 GOOS="${target%%/*}" GOARCH="${arch}" \
 			go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${goVersion#v} -X main.buildEpoch=${goBuildEpoch}" -o "${part}" .) \
 			|| fDie "go build failed for ${target%%/*}/${arch}"
 		parts+=("${part}")
@@ -900,7 +900,7 @@ else
 		fEcho "WARNING: the newest v* tag '${demoTag}' is not a version, so the demo build is stamped 0.0.0"
 	fi
 	demogifBin="${root}/${GO_MODULE_DIR}/${EXE_NAME}-demo"
-	if ! (cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 \
+	if ! (cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOAMD64=v1 \
 		go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${demoVersion} -X main.buildEpoch=${demoBuildEpoch}" -o "${demogifBin}" .); then
 		fEcho "WARNING: demo build failed, so no demo gif was rendered (continuing)"
 	elif (cd "${root}" && python3 "${DEMOGIF_CMD[@]}" ${harnessQuiet[@]+"${harnessQuiet[@]}"} --out "${demogifTmp}" --bin "${demogifBin}"); then
@@ -1027,3 +1027,4 @@ fEcho_Clean
 ##		- 2026-10-18 JC: --quick leaves out each step over about half a minute and anything that reaches a host other than origin: the regression suite, the native fuzz targets, govulncheck, the demo gif and the remote tests. It now runs fuzz.bash and the spawn counts, dogfoods every target, and cross-builds the Unix boxes' targets without testing them.
 ##		- 2026-10-19 JC: --leakcheck adds a soak test of the everyday commands to stage 3, run in the container like the rest, with each run's heap profiles kept under cicd/artifacts/leakcheck/. go test runs -count=1, and its TestMain fails on a goroutine left running. Stage 1 runs ruff's leak rules over the demo script, and stage 3 runs pip-audit over its libraries. govulncheck takes in the test-only modules. The image tag covers the Python tools' lock.
 ##		- 2026-10-19 JC: --leakcheck runs CodeQL as well, in the image, over a scratch copy of the module with its dependencies vendored in, once for each release OS. Any finding fails, except style findings in vendored code and those config.bash sets aside, and the reports are kept with the soak runs.
+##		- 2026-10-19 JC: Every build pins GOAMD64=v1, so a stray environment can't raise the CPU floor.

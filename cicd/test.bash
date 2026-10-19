@@ -4951,6 +4951,10 @@ GHEOF
 	# shellcheck disable=SC2016
 	fAssert "[Er1LxT8] and the release assets are built by the pinned toolchain" \
 		grep -qF 'GOTOOLCHAIN="${GO_RELEASE_TOOLCHAIN}"' "${root}/cicd/release.bash"
+	## Go builds for plain x86-64 unless a GOAMD64 in the environment says otherwise, and then
+	## a Core 2 Duo or a Phenom II refuses to start it. Every build pins it, the README's too.
+	fAssert "[Et9l12K] every build pins plain x86-64, so a Core 2 Duo still runs it" \
+		bash -c "sites=\$(cat '${root}/cicd/cicd.bash' '${root}/cicd/release.bash' '${root}/cicd/remote-tests.bash' | grep -v '^[[:space:]]*#' | grep 'CGO_ENABLED=0'); [[ \$(grep -c . <<< \"\${sites}\") -ge 5 ]] && ! grep -v 'GOAMD64=v1' <<< \"\${sites}\" | grep -q . && grep -q '^CGO_ENABLED=0 GOAMD64=v1 go build' '${root}/README.md'"
 	## Every dogfood dest is a share path or a $HOME expansion. A literal home dir would name
 	## an account, and would resolve to nothing on any other box.
 	fAssertFail "[Eo67ohk] no dogfood dest hardcodes a home directory" \
@@ -6915,3 +6919,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261010 JC: A plain run uses the container. --no-container, or a box without docker, runs here; --container there stops. 1515 -> 1519.
 ##		- 20261019 JC: --leakcheck adds the soak test, in the container too, and keeps the newest 20 runs' profiles. ruff's leak rules, pip-audit, govulncheck -test, go test -count=1, and goleak in every Go package's tests are checked for. 1524 -> 1540.
 ##		- 20261019 JC: --leakcheck runs CodeQL too, once per release OS, over the module with its dependencies vendored in, and how its reports are read is checked on reports written here. No tracked script or Go file may start a terminal multiplexer or kill by process name. 1540 -> 1560.
+##		- 20261019 JC: Every build pins plain x86-64, the README's rebuild line too, so a Core 2 Duo or a Phenom II still runs the release. Fails with the pin dropped from any one of them. 1560 -> 1561.

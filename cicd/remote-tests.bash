@@ -108,7 +108,7 @@ fReachable(){
 
 ## The Go tests built for $1/$2 into the file $3.
 fBuildTests(){
-	(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOOS="$1" GOARCH="$2" GOMAXPROCS="${BUILD_JOBS}" go test -c -p "${BUILD_JOBS}" -o "$3" .)
+	(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOAMD64=v1 GOOS="$1" GOARCH="$2" GOMAXPROCS="${BUILD_JOBS}" go test -c -p "${BUILD_JOBS}" -o "$3" .)
 }
 
 ## NUL-separated paths in, the ones that exist out. A tracked file deleted in the tree is still
@@ -439,3 +439,4 @@ fEcho_Clean "  passed on: ${passed[*]:-none}"
 ##		- 2026-10-04 JC: The same run as the Mac's on other Unix boxes, FreeBSD amd64 and Linux arm64 to start, each as its test user. test.bash there only where the box has the tools for it.
 ##		- 2026-10-04 JC: Every expansion braced, and shellcheck enforces it.
 ##		- 2026-10-05 JC: A Unix box can also run the Go tests for a Windows target under Wine. The Linux arm64 box runs the windows/arm64 ones.
+##		- 2026-10-19 JC: The test builds pin GOAMD64=v1, like the release.

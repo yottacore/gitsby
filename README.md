@@ -270,7 +270,7 @@ The published binaries are reproducible. Build a release tag with the Go toolcha
 ~~~bash
 git clone --branch v2.2.0 https://github.com/yottacore/gitsby
 cd gitsby/src-go
-CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags "-s -w -buildid= -X main.version=2.2.0 -X main.buildEpoch=$(git log -1 --format=%ct)" -o gitsby .
+CGO_ENABLED=0 GOAMD64=v1 go build -trimpath -buildvcs=false -ldflags "-s -w -buildid= -X main.version=2.2.0 -X main.buildEpoch=$(git log -1 --format=%ct)" -o gitsby .
 sha256sum gitsby
 ~~~
 
