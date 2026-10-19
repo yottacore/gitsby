@@ -34,6 +34,7 @@ Where AI is allowed near this project, where it isn't, and who is accountable ei
 	- [Porting to other operating systems](#porting-to-other-operating-systems)
 	- [Tedious non-coding tasks that pay nothing](#tedious-non-coding-tasks-that-pay-nothing)
 - [Rules for AI use in this project](#rules-for-ai-use-in-this-project)
+	- [No vibe code](#no-vibe-code)
 	- [A person is accountable for every merged line](#a-person-is-accountable-for-every-merged-line)
 	- [Self-assessment of AI speedup is not evidence](#self-assessment-of-ai-speedup-is-not-evidence)
 	- [What the agent is allowed to reach](#what-the-agent-is-allowed-to-reach)
@@ -227,7 +228,7 @@ Verification is where LLMs are strongest, because a wrong answer is cheaper than
 
 - Triaging linter, static analyzer, and profiler output. These produce more findings than anyone can read. Sorting the real ones from the noise, with reasons attached, is a good fit.
 
-A model that reports a defect can usually write the fix too. Those patches are accepted on the same terms as any other: read, understood, covered by a test.
+A model that reports a defect files it as an issue, and a person writes the fix. See [No vibe code](#no-vibe-code).
 
 ### Tests and tooling
 
@@ -281,6 +282,26 @@ The short version: AI is allowed to do the tedious grunt work - which typically 
 
 Either way: People own the goals, the design, the decisions, and every line of code. People are responsible for anything that happens.
 
+### No vibe code
+
+People write the product code. That's the program itself, the part a user runs. AI-written product code isn't accepted here, however it was produced.
+
+There's one exception, porting a reference implementation to another language. The design and behavior already exist and were written by people, and the existing tests show whether the port matches. The rules for that are under [Porting to other languages](#porting-to-other-languages).
+
+Other uses that don't write product code are fine. For example:
+
+- Reviewing pull requests.
+
+- Code, security, performance, and consistency reviews.
+
+- Filing backlog issues from what those reviews find, automatically or by hand.
+
+- Writing CI/CD and build pipelines.
+
+- Writing tests, test pipelines, and fuzz harnesses.
+
+When a review finds a defect, it goes in as an issue and a person writes the fix.
+
 ### A person is accountable for every merged line
 
 AI is not an author and not a defense. Whoever merges a change owns it, answers questions about it, and fixes it when it breaks. "The model wrote it" is not something anyone gets to say.
@@ -320,6 +341,8 @@ An agent that can run commands can do anything the account running it can. So it
 - Draft tests, build scripts, and CI configuration.
 
 - Sort and explain linter, analyzer, and profiler output.
+
+- File issues from what a review finds.
 
 ### What always needs full human review
 
@@ -399,7 +422,9 @@ Two things that are not tests but look like them:
 
 ### Contributing
 
-Contributions that used AI will not be automatically rejected. Two conditions:
+Contributions that used AI will not be automatically rejected. Three conditions:
+
+- No AI-written product code, apart from a port as described in [No vibe code](#no-vibe-code). Tests adn pipelines written with AI are fine.
 
 - Say so in the pull request, along with roughly what it was used for. No process detail needed, no apology expected. Some projects want a trailer on every commit (libusb requires one, and the Apache guidance suggests it). Here it goes in the pull request, once. Commit messages describe the change, not the tooling used to make it. The same convention that applies to editors, formatters, and everything else.
 
