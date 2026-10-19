@@ -76,6 +76,7 @@ TOOL_VERSIONS=(
 	"git=2.51.0"
 	"ruff=0.15.22"
 	"pip-audit=2.10.1"
+	"codeql=2.27.2"
 )
 
 ## Half the cores, rounded up. The compiler takes all of them by default, in every build and
@@ -85,8 +86,8 @@ BUILD_JOBS=$(( ( $( nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null |
 ## Stage 1: lint. Go first (gofmt is the arbiter of format, vet and staticcheck gate),
 ## then every first-party shell file (globs, expanded by the engine). shellcheck is
 ## gating; there is deliberately NO bash formatter stage - the pipeline's own scripts are
-## hand-formatted on purpose. Markdown is probe-gated (markdownlint if installed); the .py
-## gets a compile check and ruff's leak rules. legacy/ is deliberately absent from every glob: it is frozen,
+## hand-formatted on purpose. Markdown is probe-gated (markdownlint if installed); the Python
+## files get a compile check and ruff's leak rules. legacy/ is deliberately absent from every glob: it is frozen,
 ## so a newer shellcheck finding there is noise nobody is allowed to fix.
 SHELL_LINT_GLOBS=(
 	"install.bash"
@@ -106,6 +107,7 @@ MD_LINT_GLOBS=(
 )
 PY_LINT_FILES=(
 	"cicd/utility/demo/gen-demo-gif.py"
+	"cicd/utility/codeql-findings.py"
 )
 ## ruff over the same files, these rules only: lru_cache on a method (B019), open() with no
 ## 'with' (SIM115), and a mutable default argument (B006). Probe-gated.
@@ -177,6 +179,20 @@ KEEP_BUILD_DIR="cicd/artifacts/builds"      # relative to repo root; created if 
 ## profiles go, one folder per run.
 LEAKCHECK_SOAK_ROUNDS=30
 LEAKCHECK_DIR="cicd/artifacts/leakcheck"    # relative to repo root; created if missing (gitignored)
+## --leakcheck also runs CodeQL, from the Go-only bundle of the version in TOOL_VERSIONS: the CLI
+## and its query packs, checked against this sum when the image is built. It's in the image and
+## nowhere else. The suite is the security and quality one, run once for each OS in
+## RELEASE_TARGETS, since the extractor sees one OS's files at a time. On vendor/ only its
+## security, correctness and reliability findings count (cicd/utility/codeql-findings.py).
+CODEQL_SHA256="0cfb942cd33fb71d3a3b84dad626ef8895ea3f1ceb097bc8cdb7d4493f032ae9"
+CODEQL_SUITE="codeql/go-queries:codeql-suites/go-security-and-quality.qls"
+## Findings set aside until their backlog item is done, as "rule path". One that stops being
+## reported fails the run, so this list can't outlive what it covers.
+CODEQL_IGNORE=(
+	## shcl 2.0.0, the old writer the tests use to make old-format files: backlog 2026101906343987
+	"go/incorrect-integer-conversion vendor/github.com/jim-collier/shcl/source/go/v2/shcl.go"
+	"go/unhandled-writable-file-close vendor/github.com/jim-collier/shcl/source/go/v2/shcl.go"
+)
 
 ## Stage 5: dogfood. Build each target and copy it to the first existing, writable dir in
 ## that target's list. Cross-building is free here - the module is pure Go with no cgo -
@@ -306,3 +322,4 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-10-10 JC: CICD_CONTAINER: the container is the default.
 ##		- 2026-10-18 JC: DOGFOOD_NATIVE_TARGET is gone. --quick dogfoods every target now, since each cross-build takes seconds.
 ##		- 2026-10-19 JC: PY_LINT_RULES, PY_AUDIT_DISTS and PIP_AUDIT_IGNORE: ruff's leak rules over the demo script, and pip-audit over what it imports. LEAKCHECK_*: the --leakcheck soak test. TOOL_VERSIONS records ruff and pip-audit.
+##		- 2026-10-19 JC: --leakcheck runs CodeQL too, from a pinned bundle in the image, with CODEQL_IGNORE for findings set aside. TOOL_VERSIONS records it.

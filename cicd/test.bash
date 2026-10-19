@@ -298,6 +298,7 @@ fMakeGateFixture(){
 	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${root}/cicd/utility/include/gh-account.bash" "${root}/cicd/utility/include/go-test-lines.bash" "${gateDir}/cicd/utility/include/"
 	## Empty, so the lint globs and PY_LINT_FILES resolve, and stage 6 finds a scenario.
 	: > "${gateDir}/install.bash"; : > "${gateDir}/install.ps1"; : > "${gateDir}/cicd/utility/demo/gen-demo-gif.py"
+	: > "${gateDir}/cicd/utility/codeql-findings.py"; : > "${gateDir}/src-go/go.mod"; : > "${gateDir}/src-go/main.go"
 	: > "${gateDir}/cicd/utility/run-latest.ps1"
 	cp "${root}/PSScriptAnalyzerSettings.psd1" "${gateDir}/"
 	: > "${gateDir}/cicd/utility/demo/demo-scenario.toml"
@@ -311,7 +312,11 @@ fMakeGateFixture(){
 	## The demo generator writes a gif header to its --out, and the optimizer, called as
 	## 'gifsicle -O3 IN -o OUT', copies IN to OUT, so stage 6 has a file to compare. py_compile
 	## passes no --out.
-	fGateStub "${gateDir}/bin/python3" python3 "o=''; for a in \"\$@\"; do [[ \"\${o}\" != 1 ]] || printf GIF89a > \"\${a}\"; o=''; [[ \"\${a}\" != --out ]] || o=1; done"
+	fGateStub "${gateDir}/bin/python3" python3 "o=''; for a in \"\$@\"; do [[ \"\${o}\" != 1 ]] || printf GIF89a > \"\${a}\"; o=''; [[ \"\${a}\" != --out ]] || o=1; done
+		[[ \"\${1:-}\" != */codeql-findings.py || ! -e '${gateFail}/codeql-findings' ]] || exit 1"
+	## CodeQL writes its report to --output=, and says nothing when asked its version. A database
+	## names the OS it was made for on a line of its own.
+	fGateStub "${gateDir}/bin/codeql" codeql "[[ \"\${1:-}\" != version ]] || exit 0; [[ \"\${2:-}\" != create ]] || printf 'GOOS=%s\\n' \"\${GOOS:-}\" >> '${gateCalls}'; for a in \"\$@\"; do [[ \"\${a}\" != --output=* ]] || printf '{}' > \"\${a#--output=}\"; done"
 	fGateStub "${gateDir}/bin/gifsicle" gifsicle "cp -f -- \"\${2:-}\" \"\${4:-}\""
 	## The probe answers yes whatever the marker says, so a failure is the tool's finding and
 	## not "not installed". pwsh probes for its module in the same call as the lint, and exits 3
@@ -425,6 +430,64 @@ fGateLeakPrune(){
 	fGateSays 0 'WARNING: kept .*/soak_20200101-000010, which has more in it' -y --no-container --quick --leakcheck --no-sync --no-publish --no-dogfood \
 		&& [[ "$(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'soak_*' | wc -l)" == 21 ]] \
 		&& [[ -f "${leakDir}/soak_20200101-000010/notes.txt" && ! -e "${leakDir}/soak_20200101-000011" && -d "${leakDir}/soak_20200101-000013" ]]
+}
+## CodeQL runs over a scratch copy of the module with its dependencies vendored in, tests and
+## vendor/ extracted, once for each OS a release is built for, and the reports are kept. The tree
+## never gets a vendor/, and the copy is gone.
+fGateCodeQL(){
+	local scratch="" goos=""
+	fGateSays 0 'OK: CodeQL clean \(go-security-and-quality\.qls on darwin freebsd linux windows, [0-9]+ set aside\)' -y --no-container --quick --leakcheck --no-sync --no-publish --no-dogfood \
+		&& fGateCalled '^go mod vendor$' \
+			'^codeql database create [^ ]+/gitsby-codeql\.[^ /]+/db-linux --language=go --source-root=[^ ]+/gitsby-codeql\.[^ /]+/src-go --threads=[0-9]+ -O go\.extract_tests=true -O go\.extract_vendor_dirs=true$' \
+			'^codeql database analyze [^ ]+/db-linux codeql/go-queries:codeql-suites/go-security-and-quality\.qls --format=sarif-latest --output=[^ ]+/cicd/artifacts/leakcheck/codeql_[0-9]+-[0-9]+/linux\.sarif --threads=[0-9]+$' \
+			'^python3 [^ ]+/cicd/utility/codeql-findings\.py --ignore go/incorrect-integer-conversion vendor/.* [^ ]+/codeql_[0-9]+-[0-9]+/darwin\.sarif [^ ]+/freebsd\.sarif [^ ]+/linux\.sarif [^ ]+/windows\.sarif$' \
+		&& for goos in darwin freebsd linux windows; do fGateCalled "^GOOS=${goos}\$" "^codeql database create [^ ]+/db-${goos} " || return 1; done \
+		&& [[ ! -e "${gateDir}/src-go/vendor" ]] \
+		&& compgen -G "${gateDir}/cicd/artifacts/leakcheck/codeql_*-*/linux.sarif" >/dev/null \
+		&& scratch="$(grep -oE -- '--source-root=[^ ]+/src-go' "${gateCalls}" | head -n1)" && scratch="${scratch#--source-root=}" \
+		&& [[ -n "${scratch}" && ! -e "${scratch%/src-go}" ]]
+}
+## $1 the marker that spoils a CodeQL step, $2 what the run has to say as it stops.
+fGateCodeQLStops(){
+	: > "${gateFail}/$1"
+	local rc=0
+	fGateSays 1 "$2" -y --no-container --leakcheck --no-lint --no-test --no-fuzz --no-parity --no-demogif --no-remote --no-sync --no-publish --no-dogfood --quick || rc=1
+	rm -f -- "${gateFail:?}/$1"
+	return "${rc}"
+}
+## With no CodeQL on PATH, --leakcheck stops rather than skipping it. The image's own copy is
+## taken off PATH too, since the suite may run in there.
+fGateNoCodeQL(){
+	local d="" keep="" rc=0
+	local -a dirs=()
+	mv "${gateDir}/bin/codeql" "${gateDir}/bin/codeql.away"
+	IFS=: read -ra dirs <<< "${PATH}"
+	for d in "${dirs[@]}"; do [[ -x "${d}/codeql" ]] || keep+="${keep:+:}${d}"; done
+	PATH="${keep}" fGateSays 1 "CodeQL isn't installed here" -y --no-container --leakcheck --no-lint --no-test --no-fuzz --no-parity --no-demogif --no-remote --no-sync --no-publish --no-dogfood --quick || rc=1
+	mv "${gateDir}/bin/codeql.away" "${gateDir}/bin/codeql"
+	return "${rc}"
+}
+## 22 older runs' reports, one of them beside a file CodeQL never writes. After one more run the
+## newest 20 are left, plus that one, which is kept and named.
+fGateCodeQLPrune(){
+	local leakDir="${gateDir}/cicd/artifacts/leakcheck" i d
+	rm -rf -- "${leakDir:?}"
+	for i in $(seq 10 31); do d="${leakDir}/codeql_20200101-0000${i}"; mkdir -p "${d}"; : > "${d}/linux.sarif"; : > "${d}/windows.sarif"; done
+	: > "${leakDir}/codeql_20200101-000010/notes.txt"
+	fGateSays 0 'WARNING: kept .*/codeql_20200101-000010, which has more in it' -y --no-container --quick --leakcheck --no-sync --no-publish --no-dogfood \
+		&& [[ "$(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'codeql_*' | wc -l)" == 21 ]] \
+		&& [[ -f "${leakDir}/codeql_20200101-000010/notes.txt" && ! -e "${leakDir}/codeql_20200101-000011" && -d "${leakDir}/codeql_20200101-000013" ]]
+}
+## The image's tag follows CodeQL's sum, which reaches the recipe as a build arg.
+fGateCodeQLSumInTag(){
+	local before="" after="" rc=0
+	fGateSays 0 'OK: the container run' -y --quick --no-sync --no-publish --no-dogfood || return 1
+	before="$(grep -oE 'gitsby-cicd:[0-9a-f]+' "${gateOut}" | head -n1)"
+	printf 'CODEQL_SHA256="%s"\n' 0000 >> "${gateDir}/cicd/config.bash"
+	fGateSays 0 'OK: the container run' -y --quick --no-sync --no-publish --no-dogfood || rc=1
+	after="$(grep -oE 'gitsby-cicd:[0-9a-f]+' "${gateOut}" | head -n1)"
+	cp "${root}/cicd/config.bash" "${gateDir}/cicd/config.bash"
+	[[ "${rc}" == 0 && -n "${before}" && -n "${after}" && "${before}" != "${after}" ]]
 }
 ## pip-audit gets the demo's libraries as pins, with the known advisories set aside, and
 ## govulncheck takes in the test-only modules.
@@ -601,6 +664,36 @@ fTrackedBash(){
 		if [[ "${f}" == *.bash || "${first}" =~ ^#!.*[/[:space:]]bash([[:space:]]|$) ]]; then printf '%s\n' "${f}"; fi
 	done
 }
+## Tracked scripts and Go files, legacy/ too, that name a terminal multiplexer or a kill by process
+## name. A file with no extension counts when it starts with #!.
+fKillByName(){
+	local f="" first=""
+	local -a files=()
+	while IFS= read -r f; do
+		[[ -f "${root}/${f}" ]] || continue
+		case "${f##*/}" in
+			*.bash|*.sh|*.go|*.py|*.ps1|*.psm1) files+=("${root}/${f}") ;;
+			*.*) ;;
+			*) first=""; IFS= read -r first < "${root}/${f}" || true; [[ "${first}" != '#!'* ]] || files+=("${root}/${f}") ;;
+		esac
+	done < <(cd "${root}" && git ls-files)
+	((${#files[@]})) || { echo "(no files)"; return 0; }
+	grep -lwE 'tm[u]x|pk[i]ll|kil[l]all' -- "${files[@]}" || true
+}
+## A CodeQL report for codeql-findings.py: $1 the file, $2 the files it extracted, space separated,
+## then one "rule path" per finding. go/style is tagged maintainability only, go/bug correctness.
+fSarif(){
+	local out="$1" scanned="$2" f="" sep="" arts="" res=""
+	shift 2
+	for f in ${scanned}; do arts+="${sep}{\"physicalLocation\":{\"artifactLocation\":{\"uri\":\"${f}\"}}}"; sep=","; done
+	sep=""
+	for f in "$@"; do
+		res+="${sep}{\"ruleId\":\"${f%% *}\",\"message\":{\"text\":\"found\"},\"locations\":[{\"physicalLocation\":{\"artifactLocation\":{\"uri\":\"${f#* }\"},\"region\":{\"startLine\":3}}}]}"; sep=","
+	done
+	printf '{"runs":[{"tool":{"driver":{"rules":[{"id":"go/style","properties":{"tags":["quality","maintainability"]}},{"id":"go/bug","properties":{"tags":["quality","correctness"]}}]}},"invocations":[{"toolExecutionNotifications":[{"descriptor":{"id":"go/diagnostics/successfully-extracted-files"},"locations":[%s]}]}],"results":[%s]}]}\n' "${arts}" "${res}" > "${out}"
+}
+## True when codeql-findings.py, given the rest of the args, exits with exactly $1.
+fFindings(){ local want="$1" rc=0; shift; python3 "${root}/cicd/utility/codeql-findings.py" "$@" >/dev/null 2>&1 || rc=$?; [[ "${rc}" == "${want}" ]] ;}
 ## Whether the script $1 refuses a bash below its floor before running anything: a copy with the
 ## floor raised past any real bash, named as the original, has to exit 1 with the one line. A
 ## copy the raise didn't change has no floor and is not run, since some of these do real work.
@@ -5098,6 +5191,41 @@ GHEOF
 		test -z "$(cd "${root}" && git ls-files '*.ps1' ':!legacy' | fLintUncovered PS_LINT_GLOBS both)"
 	fAssert "[Er1LxTH] and every lint glob matches a file" \
 		test -z "$(fLintGlobs MD_LINT_GLOBS empty; fLintGlobs SHELL_LINT_GLOBS empty; fLintGlobs PS_LINT_GLOBS empty)"
+	## A terminal multiplexer or a kill by process name can take down sessions that aren't this
+	## run's. A kill goes to a PID the script started. The brackets keep this file from matching itself.
+	fAssert "[Et9aIeg] no tracked script or Go file runs a terminal multiplexer or kills by process name" \
+		test -z "$(fKillByName)"
+	## CodeQL comes from the image, checked against the sum config.bash keeps beside its version.
+	fAssert "[Et9aIeu] the image installs CodeQL's Go bundle and checks it against config.bash's sum" \
+		bash -c "grep -qx 'ARG CODEQL_SHA256' '${root}/cicd/container/Dockerfile' && grep -q 'codeql-bundle-go-linux64\.tar\.zst' '${root}/cicd/container/Dockerfile' && grep -qF 'echo \"\${CODEQL_SHA256}  cq.tar.zst\" | sha256sum -c -' '${root}/cicd/container/Dockerfile' && grep -qE '^CODEQL_SHA256=\"[0-9a-f]{64}\"\$' '${root}/cicd/config.bash'"
+	## What --leakcheck makes of CodeQL's report, on reports written here.
+	if command -v python3 >/dev/null 2>&1; then
+		local cqAll="main.go main_test.go vendor/x/y.go" cqMissing=""
+		fSarif "${work}/cq-none.sarif" "${cqAll}"
+		fSarif "${work}/cq-ours.sarif" "${cqAll}" "go/style main.go"
+		fSarif "${work}/cq-vstyle.sarif" "${cqAll}" "go/style vendor/x/y.go"
+		fSarif "${work}/cq-vbug.sarif" "${cqAll}" "go/bug vendor/x/y.go"
+		fAssert "[Et9ZcNT] codeql-findings.py passes a report with nothing in it"  fFindings 0 "${work}/cq-none.sarif"
+		fAssert "[Et9ZcNj] and fails a finding in our own code, a style one too"  fFindings 1 "${work}/cq-ours.sarif"
+		fAssert "[Et9ZcO1] and drops a style finding under vendor/"  fFindings 0 "${work}/cq-vstyle.sarif"
+		fAssert "[Et9ZcOF] but fails a correctness one there"  fFindings 1 "${work}/cq-vbug.sarif"
+		fAssert "[Et9aIdh] a finding set aside by rule and file is let through"  fFindings 0 --ignore "go/bug vendor/x/y.go" "${work}/cq-vbug.sarif"
+		fAssert "[Et9aIdy] and one set aside that is no longer reported fails"  fFindings 1 --ignore "go/bug vendor/x/y.go" "${work}/cq-none.sarif"
+		## One report per OS. A finding in one of them is still reported, and still current.
+		fAssert "[Et9eeOv] a finding in only one OS's report still fails, and is still current when set aside" \
+			bash -c "$(declare -f fFindings); root='${root}'; fFindings 1 '${work}/cq-none.sarif' '${work}/cq-vbug.sarif' && fFindings 0 --ignore 'go/bug vendor/x/y.go' '${work}/cq-none.sarif' '${work}/cq-vbug.sarif'"
+		## Each list leaves out one of the three kinds of file the run has to have scanned.
+		for cqMissing in "main.go main_test.go" "main.go vendor/x/y.go" "main_test.go vendor/x/y.go"; do
+			fSarif "${work}/cq-short.sarif" "${cqMissing}"
+			fAssert "[Et9aIeD] a report that extracted only ${cqMissing} fails"  fFindings 2 "${work}/cq-short.sarif"
+		done
+		fAssert "[Et9eeP9] and so does a run where only one OS's report falls short"  fFindings 2 "${work}/cq-none.sarif" "${work}/cq-short.sarif"
+		printf '{"runs":[{"tool":{"driver":{"rules":[]}}}]}\n' > "${work}/cq-norules.sarif"
+		fAssert "[Et9aIeR] and so does one where no query ran, or no report at all" \
+			bash -c "$(declare -f fFindings); root='${root}'; fFindings 2 '${work}/cq-norules.sarif' && fFindings 2 '${work}/cq-no-such.sarif'"
+	else
+		fEcho_Clean "  skip: CodeQL report checks (need python3)"
+	fi
 	## Bash 4.4 is the floor the style guide sets. install.bash runs on 3.2 on purpose, a file the
 	## others source needs no check of its own, and the publish helper is shared and left as it is.
 	local bfScript="" bfFound=0
@@ -5310,7 +5438,7 @@ EOF
 		fAssert "[EpsVDHs] the gate passes a clean tree without asking anything"  fGateStatus 0 --gate
 		## Only the leak-shaped rules, and go test never from its cache.
 		fAssert "[Et9PJsK] and runs ruff's leak rules over the demo script" \
-			fGateCalled '^ruff check --isolated --no-cache --quiet --select B019,SIM115,B006 cicd/utility/demo/gen-demo-gif\.py$'
+			fGateCalled '^ruff check --isolated --no-cache --quiet --select B019,SIM115,B006 cicd/utility/demo/gen-demo-gif\.py cicd/utility/codeql-findings\.py$'
 		fAssert "[Et9R5lb] and runs go test with -count=1"  fGateCalled '^go test -race -p [0-9]+ -count=1 '
 		## go vet, golangci-lint and go test on the build's core budget.
 		fAssert "[EpsVDHt] and runs every lint check and the unit tests" \
@@ -5370,6 +5498,12 @@ EOF
 		fAssert "[Et9PJrt] --gate refuses --leakcheck"  fGateSays 2 'takes no stage options \(got: --leakcheck\)' --gate --leakcheck
 		fAssert "[Et9PJs6] cicd.bash --help lists --leakcheck" \
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--leakcheck ' <<< \"\$out\""
+		fAssert "[Et9ZcLy] --leakcheck runs CodeQL over a copy of the module with its dependencies vendored in, once per release OS, and keeps the reports"  fGateCodeQL
+		fAssert "[Et9ZcME] a CodeQL finding stops the run"  fGateCodeQLStops codeql-findings 'CodeQL findings; the reports are in .*/codeql_[0-9]+-[0-9]+ \]'
+		fAssert "[Et9ZcMS] and so does a CodeQL run that didn't finish"  fGateCodeQLStops codeql "CodeQL didn't finish"
+		fAssert "[Et9ZcMh] and so does a box without CodeQL, rather than skip it"  fGateNoCodeQL
+		fAssert "[Et9ZcMx] the newest 20 runs' CodeQL reports are kept, and a folder with anything else in it is left alone"  fGateCodeQLPrune
+		fAssert "[Et9ZcNC] the image's tag changes with CodeQL's sum"  fGateCodeQLSumInTag
 		fAssert "[Et9PJsY] a full run audits the demo's Python libraries, and govulncheck takes in the test-only modules"  fGatePipAudit
 		fAssert "[Et9R5lO] and a pip-audit finding stops it"  fGatePipAuditFinds
 		fAssert "[ErkbDTn] cicd.bash --help lists --no-remote" \
@@ -6780,3 +6914,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261010 JC: --container renders the demo in the image as well. 1514 -> 1515.
 ##		- 20261010 JC: A plain run uses the container. --no-container, or a box without docker, runs here; --container there stops. 1515 -> 1519.
 ##		- 20261019 JC: --leakcheck adds the soak test, in the container too, and keeps the newest 20 runs' profiles. ruff's leak rules, pip-audit, govulncheck -test, go test -count=1, and goleak in every Go package's tests are checked for. 1524 -> 1540.
+##		- 20261019 JC: --leakcheck runs CodeQL too, once per release OS, over the module with its dependencies vendored in, and how its reports are read is checked on reports written here. No tracked script or Go file may start a terminal multiplexer or kill by process name. 1540 -> 1560.

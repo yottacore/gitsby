@@ -83,8 +83,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Leak, memory, and correctness checks in CICD
 	- ID: 2026101816064794
 	- Type: Enhancement
-	- Status: Started
-	- Needs external testing: Stage 7, since the Go tests on the Mac, Windows and Unix boxes now run goleak's TestMain too.
+	- Status: Waiting for testing
+	- Needs external testing: Stage 7, since the Go tests on the Mac, Windows and Unix boxes now run goleak's TestMain too, and test.bash there has the new checks of how CodeQL's reports are read.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261018-160647
 	- Opened by: jim-collier
@@ -139,17 +139,29 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 2026-10-19: Everything but CodeQL is in, on `leakchk`. CodeQL is the part left. `fLeakCheck` in cicd.bash marks where it joins.
 		- 2026-10-19: Already there, so not added again: every full run had `go test -race`, `go vet` with its default analyzers, `lostcancel` and `copylocks` among them, and `staticcheck`. Only the builds set `CGO_ENABLED=0`. The image has gcc, so the race detector works there, and a planted data race failed it.
 		- 2026-10-19: Not applicable: `-asan`, since nothing imports "C". The test-time Python checks (`-X dev`, pytest-memray, `gc.garbage`, the tracemalloc soak, and an ASan CPython) wait until the demo script has tests to run them on.
+		- 2026-10-19: CodeQL is in, on `codeql`. `--leakcheck` runs it in the image over a scratch copy of the module, with `go mod vendor` done there. The Go extractor leaves out tests and vendor/ by default, so both are turned on. It runs once for each OS a release is built for, since the extractor sees one OS's files at a time.
+		- 2026-10-19: CodeQL found 2 problems in shcl 2.0.0, the old writer the tests use. Both are set aside until 2026101906343987.
+		- 2026-10-19: Split out: CodeQL over the demo script and its Python libraries, as 2026101907065426.
+		- 2026-10-19: A source check now stops any tracked script or Go file from running tmux, pkill or killall.
 	- Decisions:
 		- The soak test is a Go test, `TestSoak`, run in one process. It loops pullcom, br create, sync, br merge, status, br, whoami and br prune against a bare origin and a clone, 30 rounds and then 30 more. It skips unless `GITSBY_SOAK_ROUNDS` is set, so a plain `go test` doesn't run it. The heap margin is 256 KB; 2 reads differ by under 100 KB, on a heap under 2 MB.
 		- pip-audit checks the demo's libraries at the versions installed, given as pins, since they come from Debian's archive and not pip. Debian patches them without moving the upstream version, so the 18 advisories reported today are set aside in config.bash until 2026101905585018 checks them. A new one fails the run.
 		- ruff and pip-audit go into the image from a lock that pins every wheel by hash.
-	- Branch: leakchk
-	- Test case: `TestMain` [Et9PJqa] runs goleak, and `TestSoak` is [Et9PJqo]. test.bash [Et9PJr1], [Et9PJrE], [Et9PJrS], [Et9PJrf], [Et9R5kx], [Et9R5lA], [Et9PJrt] and [Et9PJs6] for `--leakcheck`. [Et9PJsK] and the ruff pass of [EpsVDHv] for ruff. [Et9PJsY], [Et9R5kk] and [Et9R5lO] for pip-audit and `govulncheck -test`. [Et9R5lb] for `-count=1`, [Et9R5lo] for goleak in every Go package, and [Et9R5kW] for the image tag.
+		- CodeQL goes in the default image, not one of its own. The Go-only bundle adds about 400 MB on disk to a 2.6 GB image, and a second image would need its own tag, build and cleanup.
+		- On vendor/, only findings from queries tagged security, correctness or reliability count. The rest of the suite is style, such as a value assigned and never read.
+		- A finding is set aside by rule and file in `CODEQL_IGNORE`, with its backlog item beside it. An entry no report has any more fails the run.
+		- `--leakcheck --no-container` stops on a box without CodeQL rather than skipping it, since it was asked for by name.
+	- Branch: leakchk, codeql
+	- Test case: `TestMain` [Et9PJqa] runs goleak, and `TestSoak` is [Et9PJqo]. test.bash [Et9PJr1], [Et9PJrE], [Et9PJrS], [Et9PJrf], [Et9R5kx], [Et9R5lA], [Et9PJrt] and [Et9PJs6] for `--leakcheck`. [Et9PJsK] and the ruff pass of [EpsVDHv] for ruff. [Et9PJsY], [Et9R5kk] and [Et9R5lO] for pip-audit and `govulncheck -test`. [Et9R5lb] for `-count=1`, [Et9R5lo] for goleak in every Go package, and [Et9R5kW] for the image tag. [Et9ZcLy], [Et9ZcME], [Et9ZcMS], [Et9ZcMh], [Et9ZcMx] and [Et9ZcNC] for the CodeQL step, and [Et9aIeu] for its install. [Et9ZcNT], [Et9ZcNj], [Et9ZcO1], [Et9ZcOF], [Et9aIdh], [Et9aIdy], [Et9eeOv], [Et9aIeD], [Et9eeP9] and [Et9aIeR] for how its reports are read. [Et9aIeg] for tmux, pkill and killall.
 	- Verified:
 		- A goroutine left running in `startAhead` failed the unit tests through goleak. In the soak test, a goroutine left per run failed it on the count, and a 4 KB slice kept per run failed it on the heap, where `go tool pprof -base` named `run`. Each was restored by copy, and both pass after.
 		- ruff failed on a planted B019, SIM115 and B006, and `--gate` stopped on it. pip-audit failed in the image with one advisory taken off the list.
 		- test.bash 1524 -> 1540, 0 failed. The 16 new checks all failed against gover's cicd.bash and config.bash. A full container run with `--leakcheck` passed, with sync, dogfood, the demo, the remote tests and publish off.
+		- A planted `n == n` in app.go failed `--leakcheck` in the image, on CodeQL's comparison-of-identical-expressions query. Turning off the extractor's test option failed it too. Both were restored by copy, and the run passes after.
+		- test.bash 1540 -> 1560, 0 failed. The new checks all failed against gover's cicd.bash, config.bash and Dockerfile, or against a broken copy of codeql-findings.py. The kill check failed on `pkill` and `tmux` lines planted in a script, a `tmux` line in a Go file, and a `killall` line in legacy/bin/gitsby.
+		- A full container run with `--leakcheck` passed, with sync, dogfood, the demo, the remote tests and publish off: test.bash 1560/0, fuzz.bash 313/0, parity 29/0, the spawn counts, the soak test and CodeQL on all 4 OSes.
 	- Swept: The comments in cicd.bash and test.bash that said there were no third-party dependencies, the 2 "pure stdlib" lines in config.bash, the style guide's goroutine rule, the help header, both history footers, README and contributing.md. install.bash's "pure Go with no dependencies" is about what a build needs installed first, and goleak is test-only, so it stays. remote-tests.bash runs compiled test binaries, which never cache, so it needs no `-count=1`.
+		- CodeQL: the help header, the history footers of cicd.bash, config.bash, test.bash and the Dockerfile's comments, README and contributing.md. The kill check covers legacy/ too, which has none.
 
 - Check the demo's Pillow and fontTools advisories against Debian's fixes
 	- ID: 2026101905585018
@@ -164,6 +176,35 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Check each against Debian's security tracker. The ones Debian fixed stay on `PIP_AUDIT_IGNORE` in config.bash, with a note naming the fix. For the rest, move the demo to a Pillow and fontTools that fix them.
 		- A newer Pillow can change the demo gif's bytes, so the gif is rendered and compared again.
 	- Note: The demo draws only its own text, in its own fonts, so none of these reach it through outside input today.
+
+- CodeQL flags 2 spots in shcl 2.0.0, the old writer the tests use
+	- ID: 2026101906343987
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261019-063439
+	- Opened by: jim-collier
+	- Related IDs: 2026101816064794
+	- Requirements [Feature]:
+		- `github.com/jim-collier/shcl/source/go/v2` v2.0.0 is used by the tests only, to write accounts files in the old format.
+		- CodeQL's `go/incorrect-integer-conversion` flags shcl.go line 4266. A `strconv.ParseUint(t, 10, 32)` result goes to `int` with no upper bound check, which overflows where `int` is 32 bits.
+		- CodeQL's `go/unhandled-writable-file-close` flags line 2625. The error from closing a written file is dropped, after a `Sync` whose error is checked.
+		- Fix both in shcl's 2.x line, or decide they don't matter for a writer only the tests use. Either way, take both off `CODEQL_IGNORE` in config.bash.
+	- Note: The live shcl module has neither.
+
+- Run CodeQL over the demo script and its Python libraries
+	- ID: 2026101907065426
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261019-070654
+	- Opened by: jim-collier
+	- Related IDs: 2026101816064794
+	- Requirements [Feature]:
+		- `--leakcheck` runs CodeQL's Python queries over the pipeline's Python files, with the sdists of Pillow, fontTools, pycairo and PyGObject unpacked into the database's root, at the versions the image has.
+		- The same rules as the Go run: style findings in third-party code are dropped, and any other finding fails the run.
+		- The Python bundle is pinned in config.bash and installed in the image, like the Go one.
+	- Note: Split from 2026101816064794, which covers the Go code.
 
 - Run on the last Core 2 Duo, and AMD CPUs from that era.
 	- ID: 2026101301161852

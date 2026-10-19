@@ -24,7 +24,7 @@
 ##	   0. remote sync (fast-forward from origin before anything is built or tested)
 ##	   1. lint (gofmt + go vet + staticcheck + golangci-lint, shellcheck over the pipeline's own scripts, and ruff's leak rules over the demo script)
 ##	   2. build + unit tests (go test -race, failing on a goroutine left running) + regression tests (cicd/test.bash against the compiled binary; --quick skips the suite)
-##	   3. fuzz + security (cicd/fuzz.bash) + native fuzz targets + govulncheck + pip-audit + spawn counts; --quick skips the native fuzzing and both audits, and --leakcheck adds the soak test
+##	   3. fuzz + security (cicd/fuzz.bash) + native fuzz targets + govulncheck + pip-audit + spawn counts; --quick skips the native fuzzing and both audits, and --leakcheck adds the soak test and CodeQL
 ##	   4. backwards compatibility (cicd/parity.bash: this build vs the frozen v2.1.0 one)
 ##	   5. dogfood (cross-build every target and install each to its first existing dir)
 ##	   6. demo gif (fake-terminal render; skipped under --quick)
@@ -47,7 +47,7 @@
 ##	   --no-remote         skip the remote tests
 ##	   --no-publish        skip the git backup + publish stage
 ##	   --quick             skip the slow steps and every host but origin: the regression suite, native fuzzing, govulncheck, pip-audit, demo gif and remote tests
-##	   --leakcheck         add the slow leak checks: a soak test of the everyday commands, with its heap profiles kept in cicd/artifacts/leakcheck/
+##	   --leakcheck         add the slow leak checks: a soak test of the everyday commands, and CodeQL over the Go code and its vendored dependencies for each release OS, with the heap profiles and CodeQL's reports kept in cicd/artifacts/leakcheck/
 ##	   --container         run stages 1-4 and the demo gif in the pinned image from cicd/container/Dockerfile (the default)
 ##	   --no-container      run them on this box instead
 ##	   --gate              fast pre-push gate: every lint check and go test; no sync, build, suites, prompt or log
@@ -212,6 +212,7 @@ fToolVersion(){
 		git)              git --version 2>/dev/null | awk '{print $3}' ;;
 		ruff)             ruff --version 2>/dev/null | awk '{print $2}' ;;
 		pip-audit)        pip-audit --version 2>/dev/null | awk '{print $2}' ;;
+		codeql)           codeql version --format=terse 2>/dev/null ;;
 	esac
 }
 
@@ -400,8 +401,47 @@ fLeakCheck(){
 		rm -f -- "${old:?}"/heap-round-*.pprof "${old:?}/soak.txt"
 		rmdir -- "${old}" 2>/dev/null || fEcho "WARNING: kept ${old}, which has more in it than the soak test wrote"
 	done < <(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'soak_[0-9]*-[0-9]*' | sort -r | tail -n +21)
-	## CodeQL joins here (backlog 2026101816064794): a pinned CLI from the image, over the
-	## module with its dependencies vendored in.
+	fCodeQL
+}
+## CodeQL reports only on source under the database's root, so it runs over a scratch copy of the
+## module with its dependencies vendored in, the tree left as it was. Tests and vendor/ are both
+## off by default in the Go extractor. It sees one OS's files at a time, so it runs once for each
+## OS a release is built for. The reports are kept beside the soak runs, newest 20.
+fCodeQL(){
+	local leakDir="${root}/${LEAKCHECK_DIR}" cqDir="" cqWork="" log="" rc=0 goos="" old=""
+	local -a cqFiles=() cqOses=() sarifs=() cqIgnore=()
+	command -v codeql >/dev/null 2>&1 || fDie "CodeQL isn't installed here. It comes with the container image, so run without --no-container"
+	mapfile -t cqOses < <(printf '%s\n' "${RELEASE_TARGETS[@]%%/*}" | sort -u)
+	cqDir="${leakDir}/codeql_${stamp}"
+	mkdir -p "${cqDir}" || fDie "can't make ${cqDir}"
+	cqWork="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-codeql.XXXXXX")" || fDie "can't make a scratch folder for CodeQL"
+	log="${cqWork}/codeql.log"; : > "${log}"
+	## The source alone, not the builds beside it.
+	mapfile -t cqFiles < <(cd "${root}" && find "${GO_MODULE_DIR}" -type f \( -name '*.go' -o -name go.mod -o -name go.sum \))
+	((${#cqFiles[@]})) || fDie "found no files under ${GO_MODULE_DIR} for CodeQL"
+	(cd "${root}" && tar -cf - -- "${cqFiles[@]}") | tar -C "${cqWork}" -xf - || rc=1
+	((rc)) || (cd "${cqWork}/${GO_MODULE_DIR}" && go mod vendor) >"${log}" 2>&1 || rc=1
+	for goos in "${cqOses[@]}"; do
+		((rc)) && break
+		GOOS="${goos}" codeql database create "${cqWork}/db-${goos}" --language=go --source-root="${cqWork}/${GO_MODULE_DIR}" --threads="${BUILD_JOBS}" \
+			-O go.extract_tests=true -O go.extract_vendor_dirs=true >>"${log}" 2>&1 || rc=1
+		((rc)) || codeql database analyze "${cqWork}/db-${goos}" "${CODEQL_SUITE}" --format=sarif-latest \
+			--output="${cqDir}/${goos}.sarif" --threads="${BUILD_JOBS}" >>"${log}" 2>&1 || rc=1
+		sarifs+=("${cqDir}/${goos}.sarif")
+	done
+	((rc)) && tail -n 30 "${log}"
+	## Made by mktemp above, and checked again here, since this one is recursive.
+	if [[ "${cqWork##*/}" == gitsby-codeql.* && -f "${log}" ]]; then rm -rf -- "${cqWork:?}"; fi
+	((rc == 0)) || fDie "CodeQL didn't finish (above)"
+	for old in ${CODEQL_IGNORE[@]+"${CODEQL_IGNORE[@]}"}; do cqIgnore+=(--ignore "${old}"); done
+	python3 "${here}/utility/codeql-findings.py" "${cqIgnore[@]}" "${sarifs[@]}" || rc=$?
+	((rc == 0)) || fDie "CodeQL findings; the reports are in ${cqDir}"
+	fEcho "OK: CodeQL clean (${CODEQL_SUITE##*/} on ${cqOses[*]}, ${#CODEQL_IGNORE[@]} set aside)"
+	## Only ever the reports, so no recursive delete.
+	while IFS= read -r old; do
+		rm -f -- "${old:?}"/*.sarif
+		rmdir -- "${old}" 2>/dev/null || fEcho "WARNING: kept ${old}, which has more in it than CodeQL's reports"
+	done < <(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'codeql_[0-9]*-[0-9]*' | sort -r | tail -n +21)
 }
 
 ## Dogfood destinations, resolved once. Per target, the first configured dir that exists and
@@ -461,6 +501,7 @@ if ((container)); then
 		grep -qxF "ARG ${toolName}" "${containerRecipe}" || fDie "config.bash pins ${toolSpec%%=*}, and the container recipe has no ARG ${toolName} for it"
 		containerArgs+=(--build-arg "${toolName}=${toolSpec#*=}")
 	done
+	containerArgs+=(--build-arg "CODEQL_SHA256=${CODEQL_SHA256}")
 	## The Python tools' lock is the other file the recipe copies in.
 	containerImage="${APP_NAME}-cicd:$( { cat "${containerRecipe}" "${here}/container/requirements.txt"; printf '%s\n' "${containerArgs[@]}"; } | git hash-object --stdin | cut -c1-12 )"
 	## The same stages as here, minus everything that needs this box.
@@ -516,7 +557,7 @@ else
 	fEcho_Clean "Fuzz + security .....: ${skipNote}"
 fi
 if ((leakcheck)); then
-	fEcho_Clean "Leak checks .........: soak test, ${LEAKCHECK_SOAK_ROUNDS} rounds against ${LEAKCHECK_SOAK_ROUNDS} more -> ${LEAKCHECK_DIR}/"
+	fEcho_Clean "Leak checks .........: soak test, ${LEAKCHECK_SOAK_ROUNDS} rounds against ${LEAKCHECK_SOAK_ROUNDS} more, and CodeQL's ${CODEQL_SUITE##*/} for each release OS -> ${LEAKCHECK_DIR}/"
 else
 	fEcho_Clean "Leak checks .........: (add with --leakcheck)"
 fi
@@ -985,3 +1026,4 @@ fEcho_Clean
 ##		- 2026-10-10 JC: The container is the default, set by CICD_CONTAINER in config.bash. --no-container runs on this box, and so does a box without docker, with a warning.
 ##		- 2026-10-18 JC: --quick leaves out each step over about half a minute and anything that reaches a host other than origin: the regression suite, the native fuzz targets, govulncheck, the demo gif and the remote tests. It now runs fuzz.bash and the spawn counts, dogfoods every target, and cross-builds the Unix boxes' targets without testing them.
 ##		- 2026-10-19 JC: --leakcheck adds a soak test of the everyday commands to stage 3, run in the container like the rest, with each run's heap profiles kept under cicd/artifacts/leakcheck/. go test runs -count=1, and its TestMain fails on a goroutine left running. Stage 1 runs ruff's leak rules over the demo script, and stage 3 runs pip-audit over its libraries. govulncheck takes in the test-only modules. The image tag covers the Python tools' lock.
+##		- 2026-10-19 JC: --leakcheck runs CodeQL as well, in the image, over a scratch copy of the module with its dependencies vendored in, once for each release OS. Any finding fails, except style findings in vendored code and those config.bash sets aside, and the reports are kept with the soak runs.

@@ -1,4 +1,4 @@
-# Lint, build, test and demo tools for 'cicd.bash --container', pinned, so stages 1-4
+# Lint, build, test, leak check and demo tools for 'cicd.bash --container', pinned, so stages 1-4
 # and the demo gif don't depend on what the host has installed. Sync, dogfood, remote
 # tests and publish stay on the host.
 #
@@ -22,7 +22,7 @@ RUN sed -i -e "s|^URIs: http://deb.debian.org/debian-security|URIs: http://snaps
 # packages are what the demo renderer draws with, and python3-venv holds ruff and pip-audit.
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends \
-		bash ca-certificates curl openssl xz-utils unzip gcc libc6-dev \
+		bash ca-certificates curl openssl xz-utils zstd unzip gcc libc6-dev \
 		python3 python3-pil python3-fonttools python3-gi python3-gi-cairo gir1.2-pango-1.0 python3-venv \
 		fontconfig fonts-dejavu-core fonts-noto-color-emoji gifsicle \
 		libicu76 libgssapi-krb5-2 \
@@ -129,6 +129,20 @@ RUN : "${VER_staticcheck:?}${VER_golangci_lint:?}${VER_govulncheck:?}${VER_gover
 	&& /opt/go/bin/go install "golang.org/x/vuln/cmd/govulncheck@${VER_govulncheck}" \
 	&& /opt/go/bin/go install "github.com/josephspurrier/goversioninfo/cmd/goversioninfo@${VER_goversioninfo}" \
 	&& rm -rf /tmp/gopath /tmp/gocache
+
+# --leakcheck's CodeQL: the Go-only bundle, CLI and query packs in one file. It adds about
+# 400 MB to a 2.6 GB image, and stays here rather than in an image of its own, which would
+# need its own tag, build and cleanup. Its sum is in config.bash, beside the version.
+ARG VER_codeql
+ARG CODEQL_SHA256
+WORKDIR /tmp/cq
+RUN : "${VER_codeql:?}${CODEQL_SHA256:?}" \
+	&& curl -fsSLo cq.tar.zst "https://github.com/github/codeql-action/releases/download/codeql-bundle-v${VER_codeql}/codeql-bundle-go-linux64.tar.zst" \
+	&& echo "${CODEQL_SHA256}  cq.tar.zst" | sha256sum -c - \
+	&& tar -C /opt --zstd -xf cq.tar.zst \
+	&& ln -s /opt/codeql/codeql /usr/local/bin/codeql \
+	&& codeql version --format=terse | awk -v want="${VER_codeql}" '{ if ($1 != want) { print "codeql " $1; exit 1 } }' \
+	&& cd / && rm -rf /tmp/cq
 
 # Runs as the caller's uid, which has no passwd entry. /cache takes the named volume,
 # which copies this dir's mode when new, so anyone can write.
