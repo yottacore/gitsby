@@ -294,7 +294,7 @@ fMakeGateFixture(){
 	local s
 	mkdir -p "${gateDir}/cicd/utility/include" "${gateDir}/cicd/utility/demo" "${gateDir}/cicd/container" "${gateDir}/bin" "${gateDir}/home" "${gateDir}/src-go" "${gateFail}"
 	cp "${root}/cicd/cicd.bash" "${root}/cicd/config.bash" "${gateDir}/cicd/"
-	cp "${root}/cicd/container/Dockerfile" "${gateDir}/cicd/container/"
+	cp "${root}/cicd/container/Dockerfile" "${root}/cicd/container/requirements.txt" "${gateDir}/cicd/container/"
 	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${root}/cicd/utility/include/gh-account.bash" "${root}/cicd/utility/include/go-test-lines.bash" "${gateDir}/cicd/utility/include/"
 	## Empty, so the lint globs and PY_LINT_FILES resolve, and stage 6 finds a scenario.
 	: > "${gateDir}/install.bash"; : > "${gateDir}/install.ps1"; : > "${gateDir}/cicd/utility/demo/gen-demo-gif.py"
@@ -307,7 +307,7 @@ fMakeGateFixture(){
 	## Writes the joined file, so stage 7 has a build to remove.
 	fGateStub "${gateDir}/cicd/utility/macho-universal.bash" macho-universal ": > \"\${1:-/dev/null}\""
 	fGateStub "${gateDir}/cicd/utility/n8git_backup-and-publish" n8git_backup-and-publish
-	for s in markdownlint staticcheck golangci-lint govulncheck docker; do fGateStub "${gateDir}/bin/${s}" "${s}"; done
+	for s in markdownlint staticcheck golangci-lint govulncheck docker ruff pip-audit; do fGateStub "${gateDir}/bin/${s}" "${s}"; done
 	## The demo generator writes a gif header to its --out, and the optimizer, called as
 	## 'gifsicle -O3 IN -o OUT', copies IN to OUT, so stage 6 has a file to compare. py_compile
 	## passes no --out.
@@ -321,8 +321,15 @@ fMakeGateFixture(){
 	## gofmt reports by listing files, exiting 0 either way; the engine reads the list.
 	fGateStub "${gateDir}/bin/gofmt" gofmt "if [[ -e '${gateFail}/gofmt' ]]; then echo main.go; fi; exit 0"
 	## go fails by subcommand (go-vet, go-test, go-build), and 'version -m' names no module. A
-	## passing build leaves its -o file behind, so the demo stage has a build to remove.
-	fGateStub "${gateDir}/bin/go" "go-\${1:-}" "[[ \"\${1:-}\" != version ]] || exit 0; if [[ ! -e \"${gateFail}/go-\${1:-}\" ]]; then o=''; for a in \"\$@\"; do [[ \"\${o}\" != 1 ]] || : > \"\${a}\"; o=''; [[ \"\${a}\" != -o ]] || o=1; done; fi"
+	## passing build leaves its -o file behind, so the demo stage has a build to remove. The soak
+	## test passes only when it was handed its rounds, and leaves its summary where it was told;
+	## 'soak' fails it, and 'soak-skip' skips it.
+	fGateStub "${gateDir}/bin/go" "go-\${1:-}" "[[ \"\${1:-}\" != version ]] || exit 0; if [[ ! -e \"${gateFail}/go-\${1:-}\" ]]; then o=''; for a in \"\$@\"; do [[ \"\${o}\" != 1 ]] || : > \"\${a}\"; o=''; [[ \"\${a}\" != -o ]] || o=1; done; fi
+		if [[ -n \"\${GITSBY_SOAK_ROUNDS:-}\" ]]; then
+			if [[ -e '${gateFail}/soak-skip' ]]; then echo '--- SKIP: TestSoak (0.00s)'; exit 0; fi
+			if [[ -e '${gateFail}/soak' ]]; then echo '--- FAIL: TestSoak (0.00s)'; exit 1; fi
+			echo '--- PASS: TestSoak (0.00s)'; echo 'heap in use: 1 -> 1' > \"\${GITSBY_SOAK_OUT}/soak.txt\"
+		fi"
 }
 ## The fixture's engine with the stubs first on PATH. HOME is the fixture's as well: the engine
 ## puts ~/.local/bin ahead of PATH, and a real markdownlint there would answer for the stub.
@@ -378,6 +385,72 @@ fGateQuickRun(){
 		&& fGateCalled '^go vet' '^go build' '^go test -race' '^fuzz\.bash' '^spawn-count\.bash' '^parity\.bash' \
 		&& ! grep -qE '^(test|remote-tests)\.bash|^go test .*-fuzz |^govulncheck|^python3 cicd/utility/demo/gen-demo-gif' "${gateCalls}" \
 		&& grep -qxF 'regression tests skipped (--quick)' "${gateOut}" && grep -qxF 'govulncheck skipped (--quick: it reaches vuln.go.dev)' "${gateOut}"
+}
+## --leakcheck adds the soak test, under --quick too, and keeps what it wrote in a folder of the run's own.
+fGateLeakRun(){
+	fGateSays 0 'OK: soak test' -y --no-container --quick --leakcheck --no-sync --no-publish --no-dogfood \
+		&& fGateCalled '^go test -count=1 -run \^TestSoak\$ -v \.$' \
+		&& grep -qE '^Leak checks \.+: soak test, [0-9]+ rounds' "${gateOut}" \
+		&& compgen -G "${gateDir}/cicd/artifacts/leakcheck/soak_*-*/soak.txt" >/dev/null
+}
+## And a run without it runs no soak test, and says how to ask for one.
+fGateNoLeakRun(){
+	fGateSays 0 'CI/CD: done\.' -y --no-container --quick --no-sync --no-publish --no-dogfood \
+		&& ! fGateCalled 'TestSoak' && grep -qxF 'Leak checks .........: (add with --leakcheck)' "${gateOut}"
+}
+fGateContainerLeak(){
+	fGateSays 0 'OK: the container run' -y --quick --leakcheck --no-sync --no-publish --no-dogfood \
+		&& fGateCalled '^docker run .* -y --no-sync --no-dogfood --no-remote --no-publish --quick --leakcheck --no-demogif$' \
+		&& ! fGateCalled 'TestSoak'
+}
+## $1 the marker that spoils the soak test. The run has to stop either way: a soak test that
+## skipped measured nothing.
+fGateLeakStops(){
+	: > "${gateFail}/$1"
+	local rc=0
+	fGateSays 1 'soak test failed' -y --no-container --leakcheck --no-lint --no-test --no-fuzz --no-parity --no-demogif --no-remote --no-sync --no-publish --no-dogfood --quick || rc=1
+	rm -f -- "${gateFail:?}/$1"
+	return "${rc}"
+}
+## 22 older runs, one of them holding a file the test never writes. After one more run the newest
+## 20 are left, plus that one, which is kept and named.
+fGateLeakPrune(){
+	local leakDir="${gateDir}/cicd/artifacts/leakcheck" i d
+	## Earlier checks' runs, possibly from this same second, would shift the count.
+	rm -rf -- "${leakDir:?}"
+	for i in $(seq 10 31); do
+		d="${leakDir}/soak_20200101-0000${i}"; mkdir -p "${d}"; : > "${d}/soak.txt"; : > "${d}/heap-round-030.pprof"
+	done
+	: > "${leakDir}/soak_20200101-000010/notes.txt"
+	fGateSays 0 'WARNING: kept .*/soak_20200101-000010, which has more in it' -y --no-container --quick --leakcheck --no-sync --no-publish --no-dogfood \
+		&& [[ "$(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'soak_*' | wc -l)" == 21 ]] \
+		&& [[ -f "${leakDir}/soak_20200101-000010/notes.txt" && ! -e "${leakDir}/soak_20200101-000011" && -d "${leakDir}/soak_20200101-000013" ]]
+}
+## pip-audit gets the demo's libraries as pins, with the known advisories set aside, and
+## govulncheck takes in the test-only modules.
+fGatePipAudit(){
+	fGateSays 0 'OK: pip-audit clean' -y --no-container --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
+		&& fGateCalled '^python3 -c import importlib\.metadata.* Pillow fonttools pycairo PyGObject$' \
+			'^pip-audit -r [^ ]+ --no-deps --disable-pip --progress-spinner off --ignore-vuln .*--ignore-vuln CVE-2025-66034$' \
+			'^govulncheck -test \./\.\.\.$'
+}
+fGatePipAuditFinds(){
+	: > "${gateFail}/pip-audit"
+	local rc=0
+	fGateSays 1 'pip-audit findings' -y --no-container --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood || rc=1
+	rm -f -- "${gateFail:?}/pip-audit"
+	return "${rc}"
+}
+## The image's tag follows the Python tools' lock as well as the recipe.
+fGateLockInTag(){
+	local before="" after="" rc=0
+	fGateSays 0 'OK: the container run' -y --quick --no-sync --no-publish --no-dogfood || return 1
+	before="$(grep -oE 'gitsby-cicd:[0-9a-f]+' "${gateOut}" | head -n1)"
+	echo "# changed" >> "${gateDir}/cicd/container/requirements.txt"
+	fGateSays 0 'OK: the container run' -y --quick --no-sync --no-publish --no-dogfood || rc=1
+	after="$(grep -oE 'gitsby-cicd:[0-9a-f]+' "${gateOut}" | head -n1)"
+	cp "${root}/cicd/container/requirements.txt" "${gateDir}/cicd/container/requirements.txt"
+	[[ "${rc}" == 0 && -n "${before}" && -n "${after}" && "${before}" != "${after}" ]]
 }
 ## A box whose docker doesn't answer runs everything here, and says why.
 fGateNoDocker(){
@@ -4797,9 +4870,12 @@ GHEOF
 	## Et6FC31 below asks the opposite of the run itself.
 	# fAssert "[EnQTPxt] --quick narrows the cross-builds too" \
 	# 	bash -c "grep -q 'quick).*DOGFOOD_TARGETS=' '${root}/cicd/cicd.bash'"
-	## With no third-party dependencies the standard library is the only library code there is.
+	## The standard library is linked into every binary, and so is shcl.
 	fAssert "[EnQTPxu] the pipeline checks the standard library for known problems" \
 		bash -c "grep -q 'govulncheck' '${root}/cicd/cicd.bash'"
+	## Every folder with Go tests in it, so a package added later can't go without.
+	fAssert "[Et9R5lo] each Go package's tests fail on a goroutine left running, through a pinned goleak" \
+		bash -c "grep -qE '^[[:space:]]*go\.uber\.org/goleak v[0-9]+\.[0-9]+\.[0-9]+\$' '${root}/src-go/go.mod' && n=0 && while IFS= read -r d; do grep -qF 'goleak.VerifyTestMain(m)' \"\${d}\"/*_test.go || exit 1; n=\$((n + 1)); done < <(find '${root}/src-go' -name '*_test.go' -not -path '*/testdata/*' -printf '%h\n' | sort -u) && ((n > 0))"
 	## The profiling step. A sampling profile would be a flat wall here - this program is
 	## blocked on git for all of its wall clock - so what gets measured is how often it forks.
 	fAssert "[EnQTPxv] a spawn-count step exists and gates" \
@@ -5232,6 +5308,10 @@ EOF
 		local gateDir="${work}/gate" gateCalls="${work}/gate-calls.log" gateFail="${work}/gate-fail" gateOut="${work}/gate-out.txt"
 		fMakeGateFixture
 		fAssert "[EpsVDHs] the gate passes a clean tree without asking anything"  fGateStatus 0 --gate
+		## Only the leak-shaped rules, and go test never from its cache.
+		fAssert "[Et9PJsK] and runs ruff's leak rules over the demo script" \
+			fGateCalled '^ruff check --isolated --no-cache --quiet --select B019,SIM115,B006 cicd/utility/demo/gen-demo-gif\.py$'
+		fAssert "[Et9R5lb] and runs go test with -count=1"  fGateCalled '^go test -race -p [0-9]+ -count=1 '
 		## go vet, golangci-lint and go test on the build's core budget.
 		fAssert "[EpsVDHt] and runs every lint check and the unit tests" \
 			fGateCalled '^shellcheck [^-]' '^markdownlint ' '^python3 -m py_compile' 'Invoke-ScriptAnalyzer -Path' '^gofmt -l' \
@@ -5260,7 +5340,7 @@ EOF
 		fAssert "[ErkbDTZ] and not the remote tests" \
 			bash -c "grep -q 'gate: passed' '${gateOut}' && ! grep -qE '^(remote-tests|macho-universal)\.bash' '${gateCalls}' && ! grep -q 'Remote tests' '${gateOut}'"
 		local gateTool
-		for gateTool in shellcheck markdownlint python3 pwsh gofmt go-vet staticcheck golangci-lint backlog-check go-test; do
+		for gateTool in shellcheck markdownlint python3 ruff pwsh gofmt go-vet staticcheck golangci-lint backlog-check go-test; do
 			: > "${gateFail}/${gateTool}"
 			fAssert "[EpsVDHv] the gate fails when ${gateTool} finds something"  fGateStatus 1 --gate
 			if [[ "${gateTool}" == gofmt ]]; then
@@ -5280,6 +5360,18 @@ EOF
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--gate ' <<< \"\$out\" && grep -qE -- '^ +--install-hook ' <<< \"\$out\""
 		fAssert "[EpsVDI1] and contributing.md names --install-hook"  grep -qF -- '--install-hook' "${root}/contributing.md"
 		fAssert "[Et6FC4K] --quick runs the steps that take seconds, and none that take longer or reach another host"  fGateQuickRun
+		fAssert "[Et9R5kk] and leaves out pip-audit, which reaches pypi.org" \
+			bash -c "! grep -q '^pip-audit -r' '${gateCalls}' && grep -qxF 'pip-audit skipped (--quick: it reaches pypi.org)' '${gateOut}'"
+		fAssert "[Et9PJr1] --leakcheck adds the soak test, with its rounds and a folder of its own"  fGateLeakRun
+		fAssert "[Et9PJrE] and a run without it has none"  fGateNoLeakRun
+		fAssert "[Et9PJrf] a soak test that fails stops the run"  fGateLeakStops soak
+		fAssert "[Et9R5kx] and so does one that skipped, since it measured nothing"  fGateLeakStops soak-skip
+		fAssert "[Et9R5lA] the newest 20 soak runs are kept, and a folder with anything else in it is left alone"  fGateLeakPrune
+		fAssert "[Et9PJrt] --gate refuses --leakcheck"  fGateSays 2 'takes no stage options \(got: --leakcheck\)' --gate --leakcheck
+		fAssert "[Et9PJs6] cicd.bash --help lists --leakcheck" \
+			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--leakcheck ' <<< \"\$out\""
+		fAssert "[Et9PJsY] a full run audits the demo's Python libraries, and govulncheck takes in the test-only modules"  fGatePipAudit
+		fAssert "[Et9R5lO] and a pip-audit finding stops it"  fGatePipAuditFinds
 		fAssert "[ErkbDTn] cicd.bash --help lists --no-remote" \
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--no-remote ' <<< \"\$out\""
 		fAssert "[EsJgeiS] cicd.bash --help lists --container" \
@@ -5288,6 +5380,8 @@ EOF
 		fAssert "[EsJgekF] --container inside the container is refused"  fGateNested
 		fAssert "[EsJgel8] a plain run hands stages 1-4 to the image and runs none of them here"  fGateContainerRun
 		fAssert "[Et6FC46] and --quick goes in with them"  fGateContainerQuick
+		fAssert "[Et9PJrS] and --leakcheck too, and the soak test runs only in there"  fGateContainerLeak
+		fAssert "[Et9R5kW] the image's tag changes with the Python tools' lock"  fGateLockInTag
 		fAssert "[EsK1B7q] and the demo gif as well"  fGateContainerDemo
 		fAssert "[EsK46gt] a box without a working docker runs them here, with a warning"  fGateNoDocker
 		fAssert "[EsK46i7] but --container there stops"  fGateNoDockerAsked
@@ -6685,3 +6779,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261010 JC: cicd.bash --container hands stages 1-4 to the image, refuses --gate and a nested run, and stops on a pinned tool the recipe doesn't take. 1509 -> 1514.
 ##		- 20261010 JC: --container renders the demo in the image as well. 1514 -> 1515.
 ##		- 20261010 JC: A plain run uses the container. --no-container, or a box without docker, runs here; --container there stops. 1515 -> 1519.
+##		- 20261019 JC: --leakcheck adds the soak test, in the container too, and keeps the newest 20 runs' profiles. ruff's leak rules, pip-audit, govulncheck -test, go test -count=1, and goleak in every Go package's tests are checked for. 1524 -> 1540.

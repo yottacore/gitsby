@@ -154,7 +154,7 @@ That binary is the whole product. The rest of the tooling below is for running t
 
 - `golangci-lint` (`go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`), for the rest of the Go lint set. Configured in `src-go/.golangci.yml`; warns and skips when absent.
 
-- `govulncheck` (`go install golang.org/x/vuln/cmd/govulncheck@latest`), to check the standard library for known problems. Same treatment.
+- `govulncheck` (`go install golang.org/x/vuln/cmd/govulncheck@latest`), to check the standard library and every module in `go.mod`, the test-only ones included, for known problems. Same treatment.
 
 - `goversioninfo` (`go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.5.0`), to check the committed Windows resource against the newest tag. Warns and skips when absent; a release refuses without it.
 
@@ -165,6 +165,10 @@ That binary is the whole product. The rest of the tooling below is for running t
 - `markdownlint` (`npm install -g markdownlint-cli`), to lint the docs.
 
 - `python3` with Pillow, and optionally `gifsicle`, to regenerate the demo. Only needed for a full pipeline run.
+
+- `ruff` (`pipx install ruff`), to check the demo script for references it holds too long or never lets go. Warns and skips when absent.
+
+- `pip-audit` (`pipx install pip-audit`), to check the demo's Python libraries for known problems. Warns and skips when absent, like govulncheck.
 
 - `gh`, if you want to exercise the `pr` command.
 
@@ -186,9 +190,11 @@ That binary is the whole product. The rest of the tooling below is for running t
 <!-- omit in toc -->
 #### Run the checks
 
-- `cicd/cicd.bash --quick` - the whole pipeline, minus each step that takes more than about half a minute or reaches a host other than origin. That leaves out the regression suite, the native fuzz targets, govulncheck, the demo, and the remote tests. What you want while iterating; run the full pipeline before you open a PR.
+- `cicd/cicd.bash --quick` - the whole pipeline, minus each step that takes more than about half a minute or reaches a host other than origin. That leaves out the regression suite, the native fuzz targets, govulncheck, pip-audit, the demo, and the remote tests. What you want while iterating; run the full pipeline before you open a PR.
 
 - `cicd/cicd.bash` - everything, including the fuzz suite, the demo, and the tests on a Mac, a Windows box and other Unix boxes.
+
+- `cicd/cicd.bash --leakcheck` - adds the slow leak checks to whatever else the run does. For now that's a soak test: the everyday commands, round after round in one process against a throwaway repo, failing if the heap grows past a margin or a goroutine is left behind between round N and round 2N. Each run's heap profiles land in `cicd/artifacts/leakcheck/`, and the summary names the `go tool pprof -base` command that shows what grew. The unit tests catch a goroutine left running on every run, with or without the flag.
 
 - `cicd/cicd.bash --gate` - every lint check and the unit tests, and nothing else: no sync, no build, no suites, no prompt and no run log. This is what the pre-push hook runs.
 

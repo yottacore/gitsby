@@ -22,9 +22,9 @@
 ##	  per-project settings live in config.bash.
 ##	- Stages (fail-fast, any error aborts before the next stage):
 ##	   0. remote sync (fast-forward from origin before anything is built or tested)
-##	   1. lint (gofmt + go vet + staticcheck + golangci-lint, and shellcheck over the pipeline's own scripts)
-##	   2. build + unit tests (go test) + regression tests (cicd/test.bash against the compiled binary; --quick skips the suite)
-##	   3. fuzz + security (cicd/fuzz.bash) + native fuzz targets + govulncheck + spawn counts; --quick skips the native fuzzing and govulncheck
+##	   1. lint (gofmt + go vet + staticcheck + golangci-lint, shellcheck over the pipeline's own scripts, and ruff's leak rules over the demo script)
+##	   2. build + unit tests (go test -race, failing on a goroutine left running) + regression tests (cicd/test.bash against the compiled binary; --quick skips the suite)
+##	   3. fuzz + security (cicd/fuzz.bash) + native fuzz targets + govulncheck + pip-audit + spawn counts; --quick skips the native fuzzing and both audits, and --leakcheck adds the soak test
 ##	   4. backwards compatibility (cicd/parity.bash: this build vs the frozen v2.1.0 one)
 ##	   5. dogfood (cross-build every target and install each to its first existing dir)
 ##	   6. demo gif (fake-terminal render; skipped under --quick)
@@ -46,7 +46,8 @@
 ##	   --no-demogif        skip regenerating the demo gif
 ##	   --no-remote         skip the remote tests
 ##	   --no-publish        skip the git backup + publish stage
-##	   --quick             skip the slow steps and every host but origin: the regression suite, native fuzzing, govulncheck, demo gif and remote tests
+##	   --quick             skip the slow steps and every host but origin: the regression suite, native fuzzing, govulncheck, pip-audit, demo gif and remote tests
+##	   --leakcheck         add the slow leak checks: a soak test of the everyday commands, with its heap profiles kept in cicd/artifacts/leakcheck/
 ##	   --container         run stages 1-4 and the demo gif in the pinned image from cicd/container/Dockerfile (the default)
 ##	   --no-container      run them on this box instead
 ##	   --gate              fast pre-push gate: every lint check and go test; no sync, build, suites, prompt or log
@@ -100,7 +101,7 @@ fDie(){ { fEcho_Force "FAILED: $*"; } >&2; exit 1; }
 fUsage(){ fEcho_Clean "$*" >&2; exit 2; }
 
 ## Parse options.
-assumeYes=0; quiet=0; quick=0; doSync=1; doLint=1; doTest=1; doFuzz=1; doParity=1; doRemote=1; noRemote=0; cliMessage=""
+assumeYes=0; quiet=0; quick=0; leakcheck=0; doSync=1; doLint=1; doTest=1; doFuzz=1; doParity=1; doRemote=1; noRemote=0; cliMessage=""
 gate=0; installHook=0; stageOpts=(); containerOpt=""
 while (($#)); do case "$1" in
 	-q|--quiet)               quiet=1; assumeYes=1; shift ;;   ## quiet + unattended; publish runs quiet too
@@ -118,6 +119,8 @@ while (($#)); do case "$1" in
 	## origin. Every cross-build is a few seconds, so they all stay. Sync and publish stay too,
 	## since origin is the repo's own host. The rest of what it skips is read off ${quick} below.
 	--quick)                  quick=1; DO_DEMOGIF=0; doRemote=0; stageOpts+=("$1"); shift ;;
+	## Adds to whatever else the run does, --quick included, since it was asked for by name.
+	--leakcheck)              leakcheck=1; stageOpts+=("$1"); shift ;;
 	--message=*|--msg=*|-m=*) cliMessage="${1#*=}"; stageOpts+=("${1%%=*}"); shift ;;
 	-m|--message|--msg)       cliMessage="${2-}"; stageOpts+=("$1"); shift; (($#)) && shift ;;
 	## pre-push.bash looks for this arm's literal text to tell a commit that has a gate from
@@ -207,6 +210,8 @@ fToolVersion(){
 		Pillow)           python3 -c 'import PIL; print(PIL.__version__)' 2>/dev/null ;;
 		strace)           strace -V 2>/dev/null | awk 'NR==1{print $NF}' ;;
 		git)              git --version 2>/dev/null | awk '{print $3}' ;;
+		ruff)             ruff --version 2>/dev/null | awk '{print $2}' ;;
+		pip-audit)        pip-audit --version 2>/dev/null | awk '{print $2}' ;;
 	esac
 }
 
@@ -254,6 +259,16 @@ fStageLint(){
 		fi
 		rm -rf -- "${pyCache:?}"
 		fEcho "OK: py_compile (${#PY_LINT_FILES[@]} file(s))"
+		## Only the rules for references held too long, or never let go. --isolated, so a
+		## stray ruff config can't widen or narrow them.
+		if [[ -z "${PY_LINT_RULES+x}" ]] || ((! ${#PY_LINT_RULES[@]})); then
+			:
+		elif command -v ruff >/dev/null 2>&1; then
+			ruff check --isolated --no-cache --quiet --select "$(IFS=,; echo "${PY_LINT_RULES[*]}")" "${PY_LINT_FILES[@]}" || fDie "ruff findings"
+			fEcho "OK: ruff ${PY_LINT_RULES[*]} clean (${#PY_LINT_FILES[@]} file(s))"
+		else
+			fEcho "WARNING: ruff skipped (not installed: pipx install ruff)"
+		fi
 	fi
 	if [[ -n "${PS_LINT_GLOBS+x}" ]] && ((${#PS_LINT_GLOBS[@]})); then
 		psFiles=()
@@ -347,9 +362,10 @@ fStageLint(){
 fUnitTests(){
 	local log="" rc=0
 	log="$(mktemp "${TMPDIR:-/tmp}/gitsby-gotest.XXXXXX")"
-	## -race costs little on a tree with no goroutines and pays the day one appears. -v is for
-	## the line per test below; the rest of what it prints is shown only when something failed.
-	(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${BUILD_JOBS}" go test -race -p "${BUILD_JOBS}" -v ./...) >"${log}" 2>&1 || rc=$?
+	## -race costs little on a tree with one goroutine. TestMain fails the run on a goroutine
+	## still going at the end. -count=1, since a cached pass would skip both. -v is for the line
+	## per test below; the rest of what it prints is shown only when something failed.
+	(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${BUILD_JOBS}" go test -race -p "${BUILD_JOBS}" -count=1 -v ./...) >"${log}" 2>&1 || rc=$?
 	fGoTestLines "${log}" "${root}/${GO_MODULE_DIR}"
 	if ((rc)); then
 		grep -vE '^ *(=== (RUN|PAUSE|CONT|NAME)|--- (PASS|SKIP))' "${log}" || true
@@ -358,6 +374,34 @@ fUnitTests(){
 	fi
 	rm -f -- "${log:?}"
 	fEcho "OK: go test"
+}
+## --leakcheck: the checks too slow for every run. The soak test loops the everyday commands
+## in one process and compares the heap and goroutine count at round N and 2N. Not under
+## -race, which would swamp the heap it measures. Each run keeps its heap profiles in a
+## folder of its own; the newest 20 stay.
+fLeakCheck(){
+	local leakDir="${root}/${LEAKCHECK_DIR}" soakDir="" log="" rc=0 old=""
+	soakDir="${leakDir}/soak_${stamp}"
+	mkdir -p "${soakDir}" || fDie "can't make ${soakDir}"
+	log="$(mktemp "${TMPDIR:-/tmp}/gitsby-soak.XXXXXX")"
+	(cd "${root}/${GO_MODULE_DIR}" && GITSBY_SOAK_ROUNDS="${LEAKCHECK_SOAK_ROUNDS}" GITSBY_SOAK_OUT="${soakDir}" \
+		go test -count=1 -run '^TestSoak$' -v .) >"${log}" 2>&1 || rc=$?
+	fGoTestLines "${log}" "${root}/${GO_MODULE_DIR}"
+	if ((rc)) || ! grep -q '^--- PASS: TestSoak' "${log}"; then
+		grep -vE '^ *(=== (RUN|PAUSE|CONT|NAME)|--- (PASS|SKIP))' "${log}" || true
+		rm -f -- "${log:?}"
+		fDie "soak test failed; heap profiles in ${soakDir}"
+	fi
+	rm -f -- "${log:?}"
+	sed 's/^/  /' "${soakDir}/soak.txt"
+	fEcho "OK: soak test"
+	## Only ever the files the test writes, so no recursive delete.
+	while IFS= read -r old; do
+		rm -f -- "${old:?}"/heap-round-*.pprof "${old:?}/soak.txt"
+		rmdir -- "${old}" 2>/dev/null || fEcho "WARNING: kept ${old}, which has more in it than the soak test wrote"
+	done < <(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'soak_[0-9]*-[0-9]*' | sort -r | tail -n +21)
+	## CodeQL joins here (backlog 2026101816064794): a pinned CLI from the image, over the
+	## module with its dependencies vendored in.
 }
 
 ## Dogfood destinations, resolved once. Per target, the first configured dir that exists and
@@ -417,11 +461,13 @@ if ((container)); then
 		grep -qxF "ARG ${toolName}" "${containerRecipe}" || fDie "config.bash pins ${toolSpec%%=*}, and the container recipe has no ARG ${toolName} for it"
 		containerArgs+=(--build-arg "${toolName}=${toolSpec#*=}")
 	done
-	containerImage="${APP_NAME}-cicd:$( { cat "${containerRecipe}"; printf '%s\n' "${containerArgs[@]}"; } | git hash-object --stdin | cut -c1-12 )"
+	## The Python tools' lock is the other file the recipe copies in.
+	containerImage="${APP_NAME}-cicd:$( { cat "${containerRecipe}" "${here}/container/requirements.txt"; printf '%s\n' "${containerArgs[@]}"; } | git hash-object --stdin | cut -c1-12 )"
 	## The same stages as here, minus everything that needs this box.
 	containerRun=(-y --no-sync --no-dogfood --no-remote --no-publish)
 	((quiet))    && containerRun[0]=-q
 	((quick))    && containerRun+=(--quick)
+	((leakcheck)) && containerRun+=(--leakcheck)
 	((doLint))   || containerRun+=(--no-lint)
 	((doTest))   || containerRun+=(--no-test)
 	((doFuzz))   || containerRun+=(--no-fuzz)
@@ -444,7 +490,7 @@ elif [[ -n "${containerNote}" ]]; then
 	fEcho "${containerNote}"
 fi
 if ((doLint)); then
-	fEcho_Clean "Lint ................: gofmt + go vet + staticcheck, shellcheck on ${#shellFiles[@]} shell file(s)  (+ golangci-lint, markdownlint, py_compile, PSScriptAnalyzer, windows resource if available)"
+	fEcho_Clean "Lint ................: gofmt + go vet + staticcheck, shellcheck on ${#shellFiles[@]} shell file(s)  (+ golangci-lint, markdownlint, py_compile, ruff, PSScriptAnalyzer, windows resource if available)"
 else
 	fEcho_Clean "Lint ................: (skipped)"
 fi
@@ -461,13 +507,18 @@ if ((doTest)); then
 	fEcho_Clean "Go build ............: ${GO_MODULE_DIR} -> ${GO_MODULE_DIR}/${EXE_NAME} (the suite's subject)"
 fi
 if ((doFuzz && quick)) && [[ -f "${FUZZ_CMD[0]:-}" ]]; then
-	fEcho_Clean "Fuzz + security .....: ${FUZZ_CMD[*]} and spawn counts, native fuzzing and govulncheck ${skipNote}"
+	fEcho_Clean "Fuzz + security .....: ${FUZZ_CMD[*]} and spawn counts, native fuzzing, govulncheck and pip-audit ${skipNote}"
 elif ((doFuzz)) && [[ -f "${FUZZ_CMD[0]:-}" ]]; then
 	fEcho_Clean "Fuzz + security .....: ${FUZZ_CMD[*]}"
 elif ((doFuzz)); then
 	fEcho_Clean "Fuzz + security .....: (no harness yet: ${FUZZ_CMD[0]:-cicd/fuzz.bash})"
 else
 	fEcho_Clean "Fuzz + security .....: ${skipNote}"
+fi
+if ((leakcheck)); then
+	fEcho_Clean "Leak checks .........: soak test, ${LEAKCHECK_SOAK_ROUNDS} rounds against ${LEAKCHECK_SOAK_ROUNDS} more -> ${LEAKCHECK_DIR}/"
+else
+	fEcho_Clean "Leak checks .........: (add with --leakcheck)"
 fi
 if ((! doParity)); then
 	fEcho_Clean "Compatibility .......: (skipped)"
@@ -645,8 +696,8 @@ fi
 
 ## Stage 3: fuzz + security (adversarial input against our parsing, plus checks
 ## of what we shell out to). The harness and the spawn counts take seconds and run under
-## --quick; the native fuzzing doesn't, and govulncheck asks vuln.go.dev, so those two don't.
-## Same lands-later policy as the tests.
+## --quick; the native fuzzing doesn't, and govulncheck and pip-audit ask a server, so those
+## don't either. --leakcheck's soak test comes last. Same lands-later policy as the tests.
 fSection "3/8  Fuzz + security"
 if ((! doFuzz)); then
 	fEcho_Clean "fuzz + security ${ranWhere:-skipped${quickNote}}"
@@ -671,17 +722,41 @@ elif ((doFuzz)); then
 	done
 	fEcho "OK: native fuzz targets"
 fi
-## With no third-party dependencies the standard library is the only library code there is
-## to check - and it is linked into every binary we publish. Probe-gated like staticcheck.
+## The standard library and every module in go.mod, the test-only ones too (-test). The
+## library code is linked into every binary we publish. Probe-gated liek staticcheck.
 if [[ -n "${ranWhere:-}" ]]; then
 	:
 elif ((quick)); then
 	fEcho_Clean "govulncheck skipped (--quick: it reaches vuln.go.dev)"
 elif command -v govulncheck >/dev/null 2>&1; then
-	(cd "${root}/${GO_MODULE_DIR}" && govulncheck ./...) || fDie "govulncheck findings"
+	(cd "${root}/${GO_MODULE_DIR}" && govulncheck -test ./...) || fDie "govulncheck findings"
 	fEcho "OK: govulncheck clean"
 else
 	fEcho "WARNING: govulncheck skipped (not installed: go install golang.org/x/vuln/cmd/govulncheck@latest)"
+fi
+## The demo's Python libraries, at the versions installed here. They come from Debian's archive
+## rather than pip, so pip-audit gets a list of pins, not an environment. Debian patches a hole
+## without moving the upstream version, so it can report one already fixed; PIP_AUDIT_IGNORE in
+## config.bash lists those, each with the backlog item that checks it.
+if [[ -n "${ranWhere:-}" || -z "${PY_AUDIT_DISTS+x}" ]] || ((! ${#PY_AUDIT_DISTS[@]})); then
+	:
+elif ((quick)); then
+	fEcho_Clean "pip-audit skipped (--quick: it reaches pypi.org)"
+elif ! command -v pip-audit >/dev/null 2>&1; then
+	fEcho "WARNING: pip-audit skipped (not installed: pipx install pip-audit)"
+elif ! pyPins="$(python3 -c 'import importlib.metadata as m, sys; [print(f"{d}=={m.version(d)}") for d in sys.argv[1:]]' "${PY_AUDIT_DISTS[@]}" 2>/dev/null)"; then
+	fEcho "WARNING: pip-audit skipped (the demo's libraries aren't all installed here: ${PY_AUDIT_DISTS[*]})"
+else
+	pyAuditArgs=(); for f in ${PIP_AUDIT_IGNORE[@]+"${PIP_AUDIT_IGNORE[@]}"}; do pyAuditArgs+=(--ignore-vuln "${f}"); done
+	pyReq="$(mktemp "${TMPDIR:-/tmp}/gitsby-pyreq.XXXXXX")"
+	printf '%s\n' "${pyPins}" >"${pyReq}"
+	pyRc=0
+	## Its advice to hash the pins is for a pip install, which this isn't.
+	pip-audit -r "${pyReq}" --no-deps --disable-pip --progress-spinner off "${pyAuditArgs[@]}" 2>&1 \
+		| { grep -v '^WARNING:pip_audit._cli:' || true; } || pyRc=$?
+	rm -f -- "${pyReq:?}"
+	((pyRc == 0)) || fDie "pip-audit findings"
+	fEcho "OK: pip-audit clean (${pyPins//$'\n'/, })"
 fi
 ## The profiling half, and deliberately not a sampling profile: this program is blocked on
 ## git for effectively all of its wall clock, so a flamegraph has no leaders in it. What
@@ -689,6 +764,10 @@ fi
 if ((doFuzz)) && [[ -f "${SPAWN_COUNT_CMD[0]:-}" ]]; then
 	"${SPAWN_COUNT_CMD[@]}" || fDie "spawn counts regressed"
 	fEcho "OK: spawn counts"
+fi
+## Asked for by name, so not tied to --no-fuzz. The container's run did it already.
+if ((leakcheck)) && [[ -z "${ranWhere:-}" ]]; then
+	fLeakCheck
 fi
 
 ## Stage 4: backwards compatibility. The behavioral suite asks "is this correct?" of one
@@ -905,3 +984,4 @@ fEcho_Clean
 ##		- 2026-10-10 JC: --container renders the demo gif in the image too, with its font pinned there.
 ##		- 2026-10-10 JC: The container is the default, set by CICD_CONTAINER in config.bash. --no-container runs on this box, and so does a box without docker, with a warning.
 ##		- 2026-10-18 JC: --quick leaves out each step over about half a minute and anything that reaches a host other than origin: the regression suite, the native fuzz targets, govulncheck, the demo gif and the remote tests. It now runs fuzz.bash and the spawn counts, dogfoods every target, and cross-builds the Unix boxes' targets without testing them.
+##		- 2026-10-19 JC: --leakcheck adds a soak test of the everyday commands to stage 3, run in the container like the rest, with each run's heap profiles kept under cicd/artifacts/leakcheck/. go test runs -count=1, and its TestMain fails on a goroutine left running. Stage 1 runs ruff's leak rules over the demo script, and stage 3 runs pip-audit over its libraries. govulncheck takes in the test-only modules. The image tag covers the Python tools' lock.

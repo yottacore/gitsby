@@ -83,7 +83,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Leak, memory, and correctness checks in CICD
 	- ID: 2026101816064794
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Started
+	- Needs external testing: Stage 7, since the Go tests on the Mac, Windows and Unix boxes now run goleak's TestMain too.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261018-160647
 	- Opened by: jim-collier
@@ -134,6 +135,35 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 				- `ResourceWarning` shows only in dev mode or with `-W`. A plain run hides it.
 				- Without `PYTHONMALLOC=malloc`, ASan can't see inside pymalloc's pools.
 	- Note: The Rust, C, and C++ parts of the list were left out, since there's no code in those here. The only Python is the demo gif script, which uses Pillow, cairo, Pango, and fontTools, and it has no tests yet. The Go code starts one goroutine (`startAhead` in app.go), and builds use `CGO_ENABLED=0`.
+	- Progress log:
+		- 2026-10-19: Everything but CodeQL is in, on `leakchk`. CodeQL is the part left. `fLeakCheck` in cicd.bash marks where it joins.
+		- 2026-10-19: Already there, so not added again: every full run had `go test -race`, `go vet` with its default analyzers, `lostcancel` and `copylocks` among them, and `staticcheck`. Only the builds set `CGO_ENABLED=0`. The image has gcc, so the race detector works there, and a planted data race failed it.
+		- 2026-10-19: Not applicable: `-asan`, since nothing imports "C". The test-time Python checks (`-X dev`, pytest-memray, `gc.garbage`, the tracemalloc soak, and an ASan CPython) wait until the demo script has tests to run them on.
+	- Decisions:
+		- The soak test is a Go test, `TestSoak`, run in one process. It loops pullcom, br create, sync, br merge, status, br, whoami and br prune against a bare origin and a clone, 30 rounds and then 30 more. It skips unless `GITSBY_SOAK_ROUNDS` is set, so a plain `go test` doesn't run it. The heap margin is 256 KB; 2 reads differ by under 100 KB, on a heap under 2 MB.
+		- pip-audit checks the demo's libraries at the versions installed, given as pins, since they come from Debian's archive and not pip. Debian patches them without moving the upstream version, so the 18 advisories reported today are set aside in config.bash until 2026101905585018 checks them. A new one fails the run.
+		- ruff and pip-audit go into the image from a lock that pins every wheel by hash.
+	- Branch: leakchk
+	- Test case: `TestMain` [Et9PJqa] runs goleak, and `TestSoak` is [Et9PJqo]. test.bash [Et9PJr1], [Et9PJrE], [Et9PJrS], [Et9PJrf], [Et9R5kx], [Et9R5lA], [Et9PJrt] and [Et9PJs6] for `--leakcheck`. [Et9PJsK] and the ruff pass of [EpsVDHv] for ruff. [Et9PJsY], [Et9R5kk] and [Et9R5lO] for pip-audit and `govulncheck -test`. [Et9R5lb] for `-count=1`, [Et9R5lo] for goleak in every Go package, and [Et9R5kW] for the image tag.
+	- Verified:
+		- A goroutine left running in `startAhead` failed the unit tests through goleak. In the soak test, a goroutine left per run failed it on the count, and a 4 KB slice kept per run failed it on the heap, where `go tool pprof -base` named `run`. Each was restored by copy, and both pass after.
+		- ruff failed on a planted B019, SIM115 and B006, and `--gate` stopped on it. pip-audit failed in the image with one advisory taken off the list.
+		- test.bash 1524 -> 1540, 0 failed. The 16 new checks all failed against gover's cicd.bash and config.bash. A full container run with `--leakcheck` passed, with sync, dogfood, the demo, the remote tests and publish off.
+	- Swept: The comments in cicd.bash and test.bash that said there were no third-party dependencies, the 2 "pure stdlib" lines in config.bash, the style guide's goroutine rule, the help header, both history footers, README and contributing.md. install.bash's "pure Go with no dependencies" is about what a build needs installed first, and goleak is test-only, so it stays. remote-tests.bash runs compiled test binaries, which never cache, so it needs no `-count=1`.
+
+- Check the demo's Pillow and fontTools advisories against Debian's fixes
+	- ID: 2026101905585018
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261019-055850
+	- Opened by: jim-collier
+	- Related IDs: 2026101816064794
+	- Requirements [Feature]:
+		- pip-audit reports 17 advisories against Pillow 11.1.0 and 1 against fontTools 4.57.0. The image has Debian's builds, `11.1.0-5+deb13u4` and `4.57.0-1+deb13u1`, which carry security patches past those versions.
+		- Check each against Debian's security tracker. The ones Debian fixed stay on `PIP_AUDIT_IGNORE` in config.bash, with a note naming the fix. For the rest, move the demo to a Pillow and fontTools that fix them.
+		- A newer Pillow can change the demo gif's bytes, so the gif is rendered and compared again.
+	- Note: The demo draws only its own text, in its own fonts, so none of these reach it through outside input today.
 
 - Run on the last Core 2 Duo, and AMD CPUs from that era.
 	- ID: 2026101301161852
