@@ -73,7 +73,7 @@ TOOL_VERSIONS=(
 	"markdownlint=0.49.1"
 	"PSScriptAnalyzer=1.25.0"
 	"gifsicle=1.96"
-	"Pillow=11.1.0"
+	"Pillow=12.3.0"
 	"strace=6.18"
 	"git=2.51.0"
 	"ruff=0.15.22"
@@ -115,31 +115,13 @@ PY_LINT_FILES=(
 ## 'with' (SIM115), and a mutable default argument (B006). Probe-gated.
 PY_LINT_RULES=(B019 SIM115 B006)
 ## Stage 3: pip-audit over the third-party libraries those files import, as installed. Skipped
-## by --quick, like govulncheck.
+## by --quick, like govulncheck. --leakcheck's CodeQL reads their installed source too.
 PY_AUDIT_DISTS=(Pillow fonttools pycairo PyGObject)
 ## Advisories against the upstream versions of the Debian builds the demo runs on. Debian's
 ## builds carry security patches past those versions, so each one names the Debian build
-## that fixed it, or says there's none in trixie yet: backlog 2026101905585018. A new
-## advisory fails the run.
+## that fixed it: backlog 2026101905585018. Pillow is the upstream wheel, so it needs none.
+## A new advisory fails the run.
 PIP_AUDIT_IGNORE=(
-	## Pillow 11.1.0-5+deb13u4
-	PYSEC-2026-2249  # CVE-2026-25990, fixed in 11.1.0-5+deb13u1
-	PYSEC-2026-2250  # CVE-2026-40192, fixed in 11.1.0-5+deb13u2
-	PYSEC-2026-165   # CVE-2026-42308, fixed in 11.1.0-5+deb13u3
-	PYSEC-2026-2874  # CVE-2026-42310, fixed in 11.1.0-5+deb13u3, followup in deb13u4
-	PYSEC-2026-2252  # CVE-2026-42311, fixed in 11.1.0-5+deb13u3
-	PYSEC-2026-2257  # CVE-2026-55798, Windows viewer only, Debian not affected
-	PYSEC-2026-3493  # CVE-2026-54058, McIdas files, no trixie fix
-	PYSEC-2026-2253  # CVE-2026-54059, PCF fonts, no trixie fix
-	PYSEC-2026-2254  # CVE-2026-54060, bitmap font compile, no trixie fix
-	PYSEC-2026-2255  # CVE-2026-55379, BDF fonts, no trixie fix
-	PYSEC-2026-2256  # CVE-2026-55380, GD files, no trixie fix
-	PYSEC-2026-3454  # CVE-2026-59197, rank filter, no trixie fix
-	PYSEC-2026-3494  # CVE-2026-59198, TGA writer, no trixie fix
-	PYSEC-2026-3451  # CVE-2026-59199, paste/crop near 2^31, no trixie fix
-	PYSEC-2026-3495  # CVE-2026-59200, PDF streams, no trixie fix
-	PYSEC-2026-3496  # CVE-2026-59204, JPEG2000 tiles, no trixie fix
-	PYSEC-2026-3453  # CVE-2026-59205, ImageCms apply, no trixie fix
 	## fontTools 4.57.0-1+deb13u1
 	CVE-2025-66034   # fixed in 4.57.0-1+deb13u1
 )
@@ -195,19 +177,27 @@ KEEP_BUILD_DIR="cicd/artifacts/builds"      # relative to repo root; created if 
 ## profiles go, one folder per run.
 LEAKCHECK_SOAK_ROUNDS=30
 LEAKCHECK_DIR="cicd/artifacts/leakcheck"    # relative to repo root; created if missing (gitignored)
-## --leakcheck also runs CodeQL, from the Go-only bundle of the version in TOOL_VERSIONS: the CLI
-## and its query packs, checked against this sum when the image is built. It's in the image and
-## nowhere else. The suite is the security and quality one, run once for each OS in
-## RELEASE_TARGETS, since the extractor sees one OS's files at a time. On vendor/ only its
-## security, correctness and reliability findings count (cicd/utility/codeql-findings.py).
+## --leakcheck also runs CodeQL, from the Go and Python bundles of the version in TOOL_VERSIONS:
+## the CLI and its query packs, checked against these sums when the image is built. It's in the
+## image and nowhere else. Each language gets its security and quality suite. Go's runs once for
+## each OS in RELEASE_TARGETS, since the extractor sees one OS's files at a time. Python's runs
+## once, over PY_LINT_FILES and the installed source of PY_AUDIT_DISTS. Third-party code goes
+## under vendor/, where only Go's security, correctness and reliability findings count, and only
+## Python's security ones (cicd/utility/codeql-findings.py).
 CODEQL_SHA256="0cfb942cd33fb71d3a3b84dad626ef8895ea3f1ceb097bc8cdb7d4493f032ae9"
+CODEQL_PY_SHA256="b0dce01b3aa8d14cfbac8a653eb1921fb71514695fc33b79f0e0e2eb81467350"
 CODEQL_SUITE="codeql/go-queries:codeql-suites/go-security-and-quality.qls"
-## Findings set aside until their backlog item is done, as "rule path". One that stops being
-## reported fails the run, so this list can't outlive what it covers.
+CODEQL_PY_SUITE="codeql/python-queries:codeql-suites/python-security-and-quality.qls"
+## Findings set aside, as "rule path", each with its backlog item. One that stops being reported
+## fails the run, so this list can't outlive what it covers.
 CODEQL_IGNORE=(
-	## shcl 2.0.0, the old writer the tests use to make old-format files: backlog 2026101906343987
+	## shcl 2.0.0, the old writer the tests use to make old-format files. Won't fix: it's frozen,
+	## and only the tests run it. Backlog 2026101906343987.
 	"go/incorrect-integer-conversion vendor/github.com/jim-collier/shcl/source/go/v2/shcl.go"
 	"go/unhandled-writable-file-close vendor/github.com/jim-collier/shcl/source/go/v2/shcl.go"
+	## A wide regex character range in fontTools' XML module. Not reachable: the demo never loads
+	## that module. Backlog 2026101907065426.
+	"py/overly-large-range vendor/fontTools/misc/etree.py"
 )
 
 ## Stage 5: dogfood. Build each target and copy it to the first existing, writable dir in
@@ -267,6 +257,10 @@ DEMOGIF_SCENARIO="cicd/utility/demo/demo-scenario.toml"
 DEMOGIF_CMD=(cicd/utility/demo/gen-demo-gif.py --scenario "${DEMOGIF_SCENARIO}")
 DEMOGIF_OUT="assets/demo.gif"                # in-repo copy the README embeds
 DEMOGIF_ARCHIVE_DIR="../private/demo/gif"    # out-of-tree originals, GFS-rotated
+## The tools in TOOL_VERSIONS that shape the gif's bytes. A render that differs from the committed
+## gif, made where one of them isn't at its recorded version, is warned about and not kept, since
+## the difference may be the tool's. The image always has the recorded ones.
+DEMOGIF_TOOLS=(Pillow gifsicle)
 ## Lossless squeeze, when the tool is around; skipped silently if not. Worth
 ## about 9% - the renderer already crops each frame to what changed, so most of
 ## the win is banked. Stays before the compare, so the committed file is the
@@ -340,3 +334,4 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-10-19 JC: PY_LINT_RULES, PY_AUDIT_DISTS and PIP_AUDIT_IGNORE: ruff's leak rules over the demo script, and pip-audit over what it imports. LEAKCHECK_*: the --leakcheck soak test. TOOL_VERSIONS records ruff and pip-audit.
 ##		- 2026-10-19 JC: --leakcheck runs CodeQL too, from a pinned bundle in the image, with CODEQL_IGNORE for findings set aside. TOOL_VERSIONS records it.
 ##		- 2026-10-19 JC: Notes the GOAMD64=v1 pin beside CGO_ENABLED=0.
+##		- 2026-10-19 JC: Pillow 12.3.0, from the upstream wheel, and only fontTools is left on PIP_AUDIT_IGNORE. CodeQL's Python suite runs too, with its own bundle sum. DEMOGIF_TOOLS names the tools a demo render has to match.

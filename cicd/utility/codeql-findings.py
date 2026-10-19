@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 
-##	Purpose: Read the SARIF reports a CodeQL run wrote, one per OS, print what
-##		they found, and fail on any of it. Third-party code under vendor/ is held
-##		to the queries tagged security, correctness or reliability; its style
-##		findings are dropped, since they aren't ours to fix. A report that didn't
-##		take in first-party code, its tests and vendor/ fails as well, since it
-##		checked less than it says.
+##	Purpose: Read the SARIF reports a CodeQL run wrote, one per OS for Go and one
+##		for Python, print what they found, and fail on any of it. Third-party code
+##		under vendor/ is held to fewer queries, since its style findings aren't ours
+##		to fix: in Go, those tagged security, correctness or reliability, and in
+##		Python only security, since Python's quality queries tag nearly everything
+##		reliability. A report that didn't take in first-party code and vendor/, and
+##		for Go its tests, fails as well, since it checked less than it says.
 ##	Syntax:
 ##		codeql-findings.py [--ignore "RULE PATH"]... SARIF...
 ##		  --ignore   a finding set aside, by rule ID and file. One that no report
 ##		             has any more fails the run, so the list can't go stale.
-##		  SARIF      one report per OS, each held to the same rules.
+##		  SARIF      the reports. Each one's language is the one it extracted.
 ##	Exit: 0 nothing found, 1 findings, 2 the report is unreadable or covers too little.
 ##	History: At bottom of script.
 
@@ -22,7 +23,12 @@
 
 import json, sys
 
-KEEP_IN_VENDOR = {"security", "correctness", "reliability"}
+## By the prefix CodeQL gives each language's rules and diagnostics.
+KEEP_IN_VENDOR = {
+	"go": {"security", "correctness", "reliability"},
+	"py": {"security"},
+}
+SOURCE_SUFFIX = {"go": ".go", "py": ".py"}
 
 
 def fail(msg):
@@ -41,22 +47,27 @@ def read_run(path):
 	run = runs[0]
 	if not run.get("tool", {}).get("driver", {}).get("rules"):
 		fail(f"{path}: no queries ran")
-	## The extractor names each file it took in. The file list beside it names every .go file
-	## under the root, tests included whether they were taken in or not.
-	seen = []
+	## The extractor names each file it took in, under an ID that starts with its language. The
+	## file list beside it names every source file under the root, taken in or not.
+	seen, langs = [], set()
 	for inv in run.get("invocations", []):
 		for note in inv.get("toolExecutionNotifications", []):
-			if note.get("descriptor", {}).get("id", "").endswith("/diagnostics/successfully-extracted-files"):
+			note_id = note.get("descriptor", {}).get("id", "")
+			if note_id.endswith("/diagnostics/successfully-extracted-files"):
+				langs.add(note_id.split("/")[0])
 				for loc in note.get("locations", []):
 					seen.append(loc.get("physicalLocation", {}).get("artifactLocation", {}).get("uri", ""))
-	go_files = [u for u in seen if u.endswith(".go")]
-	if not any(u.startswith("vendor/") for u in go_files):
+	if len(langs) != 1 or not langs <= KEEP_IN_VENDOR.keys():
+		fail(f"{path}: expected files extracted for one of {sorted(KEEP_IN_VENDOR)}, found {sorted(langs) or 'none'}")
+	lang = langs.pop()
+	files = [u for u in seen if u.endswith(SOURCE_SUFFIX[lang])]
+	if not any(u.startswith("vendor/") for u in files):
 		fail(f"{path}: nothing under vendor/ was extracted")
-	if not any(u.endswith("_test.go") and not u.startswith("vendor/") for u in go_files):
+	if lang == "go" and not any(u.endswith("_test.go") and not u.startswith("vendor/") for u in files):
 		fail(f"{path}: no test files were extracted")
-	if not any(not u.endswith("_test.go") and not u.startswith("vendor/") for u in go_files):
+	if not any(not u.endswith("_test.go") and not u.startswith("vendor/") for u in files):
 		fail(f"{path}: no first-party source was extracted")
-	return run
+	return run, lang
 
 
 def main(argv):
@@ -77,14 +88,14 @@ def main(argv):
 	## One finding in code every OS builds shows up in each report, so each is listed once.
 	found = {}
 	for sarif in paths:
-		run = read_run(sarif)
+		run, lang = read_run(sarif)
 		tags = {r.get("id"): set(r.get("properties", {}).get("tags", [])) for r in run["tool"]["driver"]["rules"]}
 		for res in run.get("results", []):
 			rule = res.get("ruleId", "")
 			loc = (res.get("locations") or [{}])[0].get("physicalLocation", {})
 			path = loc.get("artifactLocation", {}).get("uri", "?")
 			line = loc.get("region", {}).get("startLine", 0)
-			if path.startswith("vendor/") and not (tags.get(rule, set()) & KEEP_IN_VENDOR):
+			if path.startswith("vendor/") and not (tags.get(rule, set()) & KEEP_IN_VENDOR[lang]):
 				continue
 			if (rule, path) in ignore:
 				ignore[(rule, path)] += 1
@@ -105,3 +116,4 @@ if __name__ == "__main__":
 
 ##	History:
 ##		- 20261019: Created, for cicd.bash --leakcheck.
+##		- 20261019: Reads Python reports too. Third-party Python is held to security findings only.

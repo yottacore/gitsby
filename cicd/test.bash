@@ -312,11 +312,16 @@ fMakeGateFixture(){
 	## The demo generator writes a gif header to its --out, and the optimizer, called as
 	## 'gifsicle -O3 IN -o OUT', copies IN to OUT, so stage 6 has a file to compare. py_compile
 	## passes no --out.
+	## Asked for Pillow's version, it answers with what the 'pillow' marker holds, and nothing
+	## without one. Asked to copy the demo's libraries for CodeQL, it leaves one file in place.
 	fGateStub "${gateDir}/bin/python3" python3 "o=''; for a in \"\$@\"; do [[ \"\${o}\" != 1 ]] || printf GIF89a > \"\${a}\"; o=''; [[ \"\${a}\" != --out ]] || o=1; done
+		[[ \"\${1:-}\" != -c || \"\${2:-}\" != *PIL.__version__* ]] || cat '${gateFail}/pillow' 2>/dev/null || true
+		[[ \"\${1:-}\" != -c || \"\${2:-}\" != *dpkg-query* ]] || { mkdir -p \"\${3}/PIL\" && : > \"\${3}/PIL/Image.py\"; }
 		[[ \"\${1:-}\" != */codeql-findings.py || ! -e '${gateFail}/codeql-findings' ]] || exit 1"
 	## CodeQL writes its report to --output=, and says nothing when asked its version. A database
-	## names the OS it was made for on a line of its own.
-	fGateStub "${gateDir}/bin/codeql" codeql "[[ \"\${1:-}\" != version ]] || exit 0; [[ \"\${2:-}\" != create ]] || printf 'GOOS=%s\\n' \"\${GOOS:-}\" >> '${gateCalls}'; for a in \"\$@\"; do [[ \"\${a}\" != --output=* ]] || printf '{}' > \"\${a#--output=}\"; done"
+	## names the OS it was made for on a line of its own, and each .py file under its root on one more.
+	fGateStub "${gateDir}/bin/codeql" codeql "[[ \"\${1:-}\" != version ]] || exit 0; [[ \"\${2:-}\" != create ]] || printf 'GOOS=%s\\n' \"\${GOOS:-}\" >> '${gateCalls}'; for a in \"\$@\"; do [[ \"\${a}\" != --output=* ]] || printf '{}' > \"\${a#--output=}\"; done
+		for a in \"\$@\"; do [[ \"\${a}\" != --source-root=* ]] || (cd \"\${a#--source-root=}\" && find . -name '*.py' | sort | sed 's/^/py: /') >> '${gateCalls}'; done"
 	fGateStub "${gateDir}/bin/gifsicle" gifsicle "cp -f -- \"\${2:-}\" \"\${4:-}\""
 	## The probe answers yes whatever the marker says, so a failure is the tool's finding and
 	## not "not installed". pwsh probes for its module in the same call as the lint, and exits 3
@@ -436,16 +441,27 @@ fGateLeakPrune(){
 ## never gets a vendor/, and the copy is gone.
 fGateCodeQL(){
 	local scratch="" goos=""
-	fGateSays 0 'OK: CodeQL clean \(go-security-and-quality\.qls on darwin freebsd linux windows, [0-9]+ set aside\)' -y --no-container --quick --leakcheck --no-sync --no-publish --no-dogfood \
+	fGateSays 0 'OK: CodeQL clean \(go-security-and-quality\.qls on darwin freebsd linux windows, and python-security-and-quality\.qls, [0-9]+ set aside\)' -y --no-container --quick --leakcheck --no-sync --no-publish --no-dogfood \
 		&& fGateCalled '^go mod vendor$' \
 			'^codeql database create [^ ]+/gitsby-codeql\.[^ /]+/db-linux --language=go --source-root=[^ ]+/gitsby-codeql\.[^ /]+/src-go --threads=[0-9]+ -O go\.extract_tests=true -O go\.extract_vendor_dirs=true$' \
 			'^codeql database analyze [^ ]+/db-linux codeql/go-queries:codeql-suites/go-security-and-quality\.qls --format=sarif-latest --output=[^ ]+/cicd/artifacts/leakcheck/codeql_[0-9]+-[0-9]+/linux\.sarif --threads=[0-9]+$' \
-			'^python3 [^ ]+/cicd/utility/codeql-findings\.py --ignore go/incorrect-integer-conversion vendor/.* [^ ]+/codeql_[0-9]+-[0-9]+/darwin\.sarif [^ ]+/freebsd\.sarif [^ ]+/linux\.sarif [^ ]+/windows\.sarif$' \
+			'^python3 [^ ]+/cicd/utility/codeql-findings\.py --ignore go/incorrect-integer-conversion vendor/.* [^ ]+/codeql_[0-9]+-[0-9]+/darwin\.sarif [^ ]+/freebsd\.sarif [^ ]+/linux\.sarif [^ ]+/windows\.sarif [^ ]+/python\.sarif$' \
 		&& for goos in darwin freebsd linux windows; do fGateCalled "^GOOS=${goos}\$" "^codeql database create [^ ]+/db-${goos} " || return 1; done \
 		&& [[ ! -e "${gateDir}/src-go/vendor" ]] \
 		&& compgen -G "${gateDir}/cicd/artifacts/leakcheck/codeql_*-*/linux.sarif" >/dev/null \
 		&& scratch="$(grep -oE -- '--source-root=[^ ]+/src-go' "${gateCalls}" | head -n1)" && scratch="${scratch#--source-root=}" \
 		&& [[ -n "${scratch}" && ! -e "${scratch%/src-go}" ]]
+}
+## Python's run is one database over a scratch copy of its own: the pipeline's Python files at their
+## paths, and the libraries' installed source under vendor/. Its report goes to the findings with
+## Go's, with the fontTools finding set aside.
+fGateCodeQLPython(){
+	fGateSays 0 'OK: CodeQL clean \(.*, and python-security-and-quality\.qls, [0-9]+ set aside\)' -y --no-container --quick --leakcheck --no-sync --no-publish --no-dogfood \
+		&& fGateCalled '^ [^ ]+/gitsby-codeql\.[^ /]+/py/vendor Pillow fonttools pycairo PyGObject$' \
+			'^codeql database create [^ ]+/gitsby-codeql\.[^ /]+/db-python --language=python --source-root=[^ ]+/gitsby-codeql\.[^ /]+/py --threads=[0-9]+$' \
+			'^py: \./cicd/utility/demo/gen-demo-gif\.py$' '^py: \./cicd/utility/codeql-findings\.py$' '^py: \./vendor/PIL/Image\.py$' \
+			'^codeql database analyze [^ ]+/db-python codeql/python-queries:codeql-suites/python-security-and-quality\.qls --format=sarif-latest --output=[^ ]+/cicd/artifacts/leakcheck/codeql_[0-9]+-[0-9]+/python\.sarif --threads=[0-9]+$' \
+			'^python3 [^ ]+/cicd/utility/codeql-findings\.py .*--ignore py/overly-large-range vendor/fontTools/misc/etree\.py [^ ]+/darwin\.sarif .*[^ ]+/windows\.sarif [^ ]+/python\.sarif$'
 }
 ## $1 the marker that spoils a CodeQL step, $2 what the run has to say as it stops.
 fGateCodeQLStops(){
@@ -478,12 +494,13 @@ fGateCodeQLPrune(){
 		&& [[ "$(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'codeql_*' | wc -l)" == 21 ]] \
 		&& [[ -f "${leakDir}/codeql_20200101-000010/notes.txt" && ! -e "${leakDir}/codeql_20200101-000011" && -d "${leakDir}/codeql_20200101-000013" ]]
 }
-## The image's tag follows CodeQL's sum, which reaches the recipe as a build arg.
+## The image's tag follows CodeQL's sum, which reaches the recipe as a build arg. $1 names the sum,
+## Go's by default.
 fGateCodeQLSumInTag(){
 	local before="" after="" rc=0
 	fGateSays 0 'OK: the container run' -y --quick --no-sync --no-publish --no-dogfood || return 1
 	before="$(grep -oE 'gitsby-cicd:[0-9a-f]+' "${gateOut}" | head -n1)"
-	printf 'CODEQL_SHA256="%s"\n' 0000 >> "${gateDir}/cicd/config.bash"
+	printf '%s="%s"\n' "${1:-CODEQL_SHA256}" 0000 >> "${gateDir}/cicd/config.bash"
 	fGateSays 0 'OK: the container run' -y --quick --no-sync --no-publish --no-dogfood || rc=1
 	after="$(grep -oE 'gitsby-cicd:[0-9a-f]+' "${gateOut}" | head -n1)"
 	cp "${root}/cicd/config.bash" "${gateDir}/cicd/config.bash"
@@ -494,7 +511,7 @@ fGateCodeQLSumInTag(){
 fGatePipAudit(){
 	fGateSays 0 'OK: pip-audit clean' -y --no-container --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
 		&& fGateCalled '^python3 -c import importlib\.metadata.* Pillow fonttools pycairo PyGObject$' \
-			'^pip-audit -r [^ ]+ --no-deps --disable-pip --progress-spinner off --ignore-vuln .*--ignore-vuln CVE-2025-66034$' \
+			'^pip-audit -r [^ ]+ --no-deps --disable-pip --progress-spinner off (--ignore-vuln [^ ]+ )*--ignore-vuln CVE-2025-66034$' \
 			'^govulncheck -test \./\.\.\.$'
 }
 fGatePipAuditFinds(){
@@ -567,6 +584,23 @@ fGateDemoSame(){ fGateDemoRun -y && [[ -n "$1" && "$(fGateDemoBuild)" == "$1" ]]
 fGateDemoQuiet(){ local gen=""; fGateDemoRun "$1" && gen="$(fGateDemoGen)" && [[ -n "${gen}" && "$(grep -cE -- ' -q( |$)' <<< "${gen}")" == "$2" ]] ;}
 ## Stage 6 with -y while the build fails: the run warns, and the generator never runs.
 fGateDemoBuildFails(){ fGateDemoRun -y && grep -qF 'WARNING: demo build failed' "${gateOut}" && [[ -z "$(fGateDemoGen)" ]] ;}
+## A render that differs from the committed gif, made where Pillow isn't at its recorded version,
+## leaves the committed one alone and says why. At the recorded version it replaces it. Every
+## render here is "GIF89a", and the committed one starts out as "old".
+fGateDemoDrift(){
+	local want="" rc=0
+	# shellcheck source=/dev/null
+	want="$(cd "${gateDir}" && source cicd/config.bash && printf '%s\n' "${TOOL_VERSIONS[@]}" | sed -n 's/^Pillow=//p')"
+	[[ -n "${want}" ]] || return 1
+	printf old > "${gateDir}/assets/demo.gif"
+	echo 0.0.1 > "${gateFail}/pillow"
+	fGateDemoRun -y && grep -qE "^\\[ WARNING: demo gif differs, but this box has Pillow 0\.0\.1 \(recorded ${want//./\\.}\), so the committed one stays" "${gateOut}" \
+		&& [[ "$(cat "${gateDir}/assets/demo.gif")" == old && ! -e "${gateDir}/assets/demo.gif.new" ]] || rc=1
+	echo "${want}" > "${gateFail}/pillow"
+	((rc)) || { fGateDemoRun -y && grep -qF 'OK: demo gif regenerated' "${gateOut}" && [[ "$(cat "${gateDir}/assets/demo.gif")" == GIF89a ]] ;} || rc=1
+	rm -f -- "${gateFail:?}/pillow"
+	return "${rc}"
+}
 ## The gate passes, and says nothing about lint tool versions.
 ## Go tools only: the fixture pins those, and the rest are whatever this box has.
 fGateNoDrift(){ fGateStatus 0 --gate && ! grep -qE 'tool versions differ.* (staticcheck|golangci-lint|govulncheck|goversioninfo) ' "${gateOut}" ;}
@@ -681,19 +715,33 @@ fKillByName(){
 	grep -lwE 'tm[u]x|pk[i]ll|kil[l]all' -- "${files[@]}" || true
 }
 ## A CodeQL report for codeql-findings.py: $1 the file, $2 the files it extracted, space separated,
-## then one "rule path" per finding. go/style is tagged maintainability only, go/bug correctness.
+## then one "rule path" per finding. Its language is Python when the first file is a .py one, and
+## Go otherwise. go/style and py/style are tagged maintainability only, go/bug correctness, py/bug
+## correctness and reliability, and py/hole security.
 fSarif(){
-	local out="$1" scanned="$2" f="" sep="" arts="" res=""
+	local out="$1" scanned="$2" f="" sep="" arts="" res="" lang="go"
 	shift 2
+	[[ "${scanned%% *}" != *.py ]] || lang="py"
 	for f in ${scanned}; do arts+="${sep}{\"physicalLocation\":{\"artifactLocation\":{\"uri\":\"${f}\"}}}"; sep=","; done
 	sep=""
 	for f in "$@"; do
 		res+="${sep}{\"ruleId\":\"${f%% *}\",\"message\":{\"text\":\"found\"},\"locations\":[{\"physicalLocation\":{\"artifactLocation\":{\"uri\":\"${f#* }\"},\"region\":{\"startLine\":3}}}]}"; sep=","
 	done
-	printf '{"runs":[{"tool":{"driver":{"rules":[{"id":"go/style","properties":{"tags":["quality","maintainability"]}},{"id":"go/bug","properties":{"tags":["quality","correctness"]}}]}},"invocations":[{"toolExecutionNotifications":[{"descriptor":{"id":"go/diagnostics/successfully-extracted-files"},"locations":[%s]}]}],"results":[%s]}]}\n' "${arts}" "${res}" > "${out}"
+	printf '{"runs":[{"tool":{"driver":{"rules":[{"id":"go/style","properties":{"tags":["quality","maintainability"]}},{"id":"go/bug","properties":{"tags":["quality","correctness"]}},{"id":"py/style","properties":{"tags":["quality","maintainability"]}},{"id":"py/bug","properties":{"tags":["quality","correctness","reliability"]}},{"id":"py/hole","properties":{"tags":["security","external/cwe/cwe-020"]}}]}},"invocations":[{"toolExecutionNotifications":[{"descriptor":{"id":"%s/diagnostics/successfully-extracted-files"},"locations":[%s]}]}],"results":[%s]}]}\n' "${lang}" "${arts}" "${res}" > "${out}"
 }
 ## True when codeql-findings.py, given the rest of the args, exits with exactly $1.
 fFindings(){ local want="$1" rc=0; shift; python3 "${root}/cicd/utility/codeql-findings.py" "$@" >/dev/null 2>&1 || rc=$?; [[ "${rc}" == "${want}" ]] ;}
+## The lock's Pillow line is the version TOOL_VERSIONS records, pinned by hash. The image installs
+## that line alone on the system python, and no Debian Pillow beside it.
+fPillowFromLock(){
+	local want="" dockerfile="${root}/cicd/container/Dockerfile"
+	# shellcheck source=/dev/null
+	want="$(cd "${root}" && source cicd/config.bash && printf '%s\n' "${TOOL_VERSIONS[@]}" | sed -n 's/^Pillow=//p')"
+	[[ -n "${want}" ]] && grep -qE "^pillow==${want//./\\.} --hash=sha256:[0-9a-f]{64}\$" "${root}/cicd/container/requirements.txt" \
+		&& grep -qF "grep '^pillow==' /tmp/pytools.txt > /tmp/pil.txt" "${dockerfile}" \
+		&& grep -qF -- "--python /usr/bin/python3 install" "${dockerfile}" && grep -qF -- "-r /tmp/pil.txt" "${dockerfile}" \
+		&& ! grep -qwE 'python3-pil' "${dockerfile}"
+}
 ## Whether the script $1 refuses a bash below its floor before running anything: a copy with the
 ## floor raised past any real bash, named as the original, has to exit 1 with the one line. A
 ## copy the raise didn't change has no floor and is not run, since some of these do real work.
@@ -5202,6 +5250,10 @@ GHEOF
 	## CodeQL comes from the image, checked against the sum config.bash keeps beside its version.
 	fAssert "[Et9aIeu] the image installs CodeQL's Go bundle and checks it against config.bash's sum" \
 		bash -c "grep -qx 'ARG CODEQL_SHA256' '${root}/cicd/container/Dockerfile' && grep -q 'codeql-bundle-go-linux64\.tar\.zst' '${root}/cicd/container/Dockerfile' && grep -qF 'echo \"\${CODEQL_SHA256}  cq.tar.zst\" | sha256sum -c -' '${root}/cicd/container/Dockerfile' && grep -qE '^CODEQL_SHA256=\"[0-9a-f]{64}\"\$' '${root}/cicd/config.bash'"
+	fAssert "[EtAFLqv] and puts the Python bundle over it, without its examples, checked against a sum of its own" \
+		bash -c "grep -qx 'ARG CODEQL_PY_SHA256' '${root}/cicd/container/Dockerfile' && grep -q 'codeql-bundle-python-linux64\.tar\.zst' '${root}/cicd/container/Dockerfile' && grep -qF 'echo \"\${CODEQL_PY_SHA256}  cqpy.tar.zst\" | sha256sum -c -' '${root}/cicd/container/Dockerfile' && grep -qF 'tar -C /opt --zstd -xf cqpy.tar.zst --exclude=codeql/qlpacks/codeql/python-examples' '${root}/cicd/container/Dockerfile' && grep -qE '^CODEQL_PY_SHA256=\"[0-9a-f]{64}\"\$' '${root}/cicd/config.bash'"
+	## The demo's Pillow is the upstream wheel, pinned in the lock, and the only one on the system python.
+	fAssert "[EtAFLx0] the lock pins the Pillow config.bash records, the image puts it on the system python, and apt installs none"  fPillowFromLock
 	## What --leakcheck makes of CodeQL's report, on reports written here.
 	if command -v python3 >/dev/null 2>&1; then
 		local cqAll="main.go main_test.go vendor/x/y.go" cqMissing=""
@@ -5224,6 +5276,21 @@ GHEOF
 			fAssert "[Et9aIeD] a report that extracted only ${cqMissing} fails"  fFindings 2 "${work}/cq-short.sarif"
 		done
 		fAssert "[Et9eeP9] and so does a run where only one OS's report falls short"  fFindings 2 "${work}/cq-none.sarif" "${work}/cq-short.sarif"
+		## Python's report: no tests to require, and in vendor/ only security findings count.
+		local cqPyAll="cicd/x.py vendor/PIL/y.py"
+		fSarif "${work}/cqpy-none.sarif" "${cqPyAll}"
+		fSarif "${work}/cqpy-ours.sarif" "${cqPyAll}" "py/style cicd/x.py"
+		fSarif "${work}/cqpy-vbug.sarif" "${cqPyAll}" "py/bug vendor/PIL/y.py"
+		fSarif "${work}/cqpy-vhole.sarif" "${cqPyAll}" "py/hole vendor/PIL/y.py"
+		fAssert "[EtAFLtW] a Python report with nothing in it passes, and a style finding in our own Python fails" \
+			bash -c "$(declare -f fFindings); root='${root}'; fFindings 0 '${work}/cqpy-none.sarif' && fFindings 1 '${work}/cqpy-ours.sarif'"
+		fAssert "[EtAFLuO] and a correctness or reliability finding in third-party Python is dropped"  fFindings 0 "${work}/cqpy-vbug.sarif"
+		fAssert "[EtAFLvG] but a security one there fails, beside a Go report too" \
+			bash -c "$(declare -f fFindings); root='${root}'; fFindings 1 '${work}/cqpy-vhole.sarif' && fFindings 1 '${work}/cq-none.sarif' '${work}/cqpy-vhole.sarif'"
+		for cqMissing in "cicd/x.py" "vendor/PIL/y.py"; do
+			fSarif "${work}/cqpy-short.sarif" "${cqMissing}"
+			fAssert "[EtAFLw8] a Python report that extracted only ${cqMissing} fails"  fFindings 2 "${work}/cqpy-short.sarif"
+		done
 		printf '{"runs":[{"tool":{"driver":{"rules":[]}}}]}\n' > "${work}/cq-norules.sarif"
 		fAssert "[Et9aIeR] and so does one where no query ran, or no report at all" \
 			bash -c "$(declare -f fFindings); root='${root}'; fFindings 2 '${work}/cq-norules.sarif' && fFindings 2 '${work}/cq-no-such.sarif'"
@@ -5508,6 +5575,8 @@ EOF
 		fAssert "[Et9ZcMh] and so does a box without CodeQL, rather than skip it"  fGateNoCodeQL
 		fAssert "[Et9ZcMx] the newest 20 runs' CodeQL reports are kept, and a folder with anything else in it is left alone"  fGateCodeQLPrune
 		fAssert "[Et9ZcNC] the image's tag changes with CodeQL's sum"  fGateCodeQLSumInTag
+		fAssert "[EtAFLrn] and with the Python bundle's sum"  fGateCodeQLSumInTag CODEQL_PY_SHA256
+		fAssert "[EtAFLsf] --leakcheck runs CodeQL's Python suite over the pipeline's Python files and the installed source of the libraries they import"  fGateCodeQLPython
 		fAssert "[Et9PJsY] a full run audits the demo's Python libraries, and govulncheck takes in the test-only modules"  fGatePipAudit
 		fAssert "[Et9R5lO] and a pip-audit finding stops it"  fGatePipAuditFinds
 		fAssert "[ErkbDTn] cicd.bash --help lists --no-remote" \
@@ -5596,6 +5665,7 @@ EOF
 		: > "${gateFail}/go-build"
 		fAssert "[Epsq7r8] a failed demo build warns, renders nothing and the run goes on"  fGateDemoBuildFails
 		rm -f -- "${gateFail:?}/go-build"
+		fAssert "[EtAFLxs] a demo gif that differs, drawn with another Pillow than the recorded one, is left alone with a warning"  fGateDemoDrift
 		gateDir="${work}/gate"
 
 		## The stages the gate leaves out, on a fixture of their own that becomes a git repo with a
@@ -6920,3 +6990,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261019 JC: --leakcheck adds the soak test, in the container too, and keeps the newest 20 runs' profiles. ruff's leak rules, pip-audit, govulncheck -test, go test -count=1, and goleak in every Go package's tests are checked for. 1524 -> 1540.
 ##		- 20261019 JC: --leakcheck runs CodeQL too, once per release OS, over the module with its dependencies vendored in, and how its reports are read is checked on reports written here. No tracked script or Go file may start a terminal multiplexer or kill by process name. 1540 -> 1560.
 ##		- 20261019 JC: Every build pins plain x86-64, the README's rebuild line too, so a Core 2 Duo or a Phenom II still runs the release. Fails with the pin dropped from any one of them. 1560 -> 1561.
+##		- 20261019 JC: --leakcheck's CodeQL runs Python's suite too, over the pipeline's Python and the installed source of the demo's libraries, with the bundle and its sum in the image. Python reports are read by their own rule, security only in third-party code. The demo's Pillow is the lock's, and a demo gif drawn with another Pillow than the recorded one is left alone. 1561 -> 1571.

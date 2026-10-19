@@ -312,7 +312,7 @@ Stages 1-4 and the demo gif run in a Debian image built from `cicd/container/Doc
 
 ~~~bash
 cicd/cicd.bash --quick          # skips the regression suite, native fuzzing, govulncheck, pip-audit, the demo gif and the remote tests; what you want while iterating
-cicd/cicd.bash --leakcheck      # adds the soak test, the everyday commands in a loop that fails if the heap or the goroutine count keeps growing, and CodeQL over the Go code and its dependencies
+cicd/cicd.bash --leakcheck      # adds the soak test, the everyday commands in a loop that fails if the heap or the goroutine count keeps growing, and CodeQL over the Go code, the pipeline's Python, and the libraries both use
 cicd/cicd.bash                  # everything, and it prompts once for a commit message
 cicd/cicd.bash -y -m "message"  # unattended
 cicd/cicd.bash --no-container   # stages 1-4 and the demo gif on this box, not in the pinned image
