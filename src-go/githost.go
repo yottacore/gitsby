@@ -13,7 +13,6 @@ package main
 import (
 	"bytes"
 	"os"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -322,7 +321,7 @@ func (a *app) hostLogin(cli, host string) (user, failure string) {
 		if cli == "" || host == "" {
 			return hostAnswer{}
 		}
-		list := exec.Command(cli, "logins", "list", "--output", "tsv")
+		list := toolCmd(cli, "logins", "list", "--output", "tsv")
 		var errText bytes.Buffer
 		list.Stderr = &errText
 		out, err := list.Output()

@@ -11,7 +11,6 @@ package main
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -22,7 +21,7 @@ import (
 // off-screen - the 'less -FX' idea without a pager.
 func (a *app) showList(name string, args ...string) {
 	var outLines []string
-	if out, _ := exec.Command(name, args...).Output(); len(out) > 0 {
+	if out, _ := toolCmd(name, args...).Output(); len(out) > 0 {
 		outLines = strings.Split(strings.TrimRight(string(out), "\n"), "\n")
 	}
 	a.showLines(outLines)
@@ -514,7 +513,7 @@ type sshConfig struct {
 // believed. '--': an option-shaped host must not parse as an option.
 func readSSHConfig(target string) sshConfig {
 	var cfg sshConfig
-	out, _ := exec.Command("ssh", "-G", "--", target).Output()
+	out, _ := toolCmd("ssh", "-G", "--", target).Output()
 	for _, line := range splitLines(string(out)) {
 		key, value, found := strings.Cut(line, " ")
 		if !found || value == "" {

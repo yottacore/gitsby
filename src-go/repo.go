@@ -13,7 +13,6 @@ package main
 import (
 	"bytes"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -94,7 +93,7 @@ func sameRemote(a, b string) bool {
 // The answer is missing only when git's own words say the host was reached and
 // said no; anything else is unknown, with the reason git gave.
 func (a *app) probeRemote(url string) (repoExistence, string) {
-	probe := exec.Command("git", "ls-remote", url)
+	probe := toolCmd("git", "ls-remote", url)
 	probe.Env = a.remoteEnv()
 	var errText bytes.Buffer
 	probe.Stderr = &errText
@@ -154,7 +153,7 @@ func probedConnect(url string, state repoExistence, reason string) error {
 // it could not say. These two commands skip the pre-command fetch (they have no
 // origin yet), so this is the only place either can discover a network that is down.
 func ghRepoState(target string) (repoExistence, string) {
-	cmd := exec.Command("gh", "repo", "view", target, "--json", "isEmpty", "--jq", ".isEmpty")
+	cmd := toolCmd("gh", "repo", "view", target, "--json", "isEmpty", "--jq", ".isEmpty")
 	var errText bytes.Buffer
 	cmd.Stderr = &errText
 	out, err := cmd.Output()
@@ -448,12 +447,12 @@ func (a *app) showFilesToPublish() {
 	// empty list instead of dying, on a machine already in deeper trouble.
 	wd, _ := os.Getwd()
 	env := append(os.Environ(), "GIT_DIR="+probeDir, "GIT_WORK_TREE="+wd)
-	initCmd := exec.Command("git", "init", "--quiet")
+	initCmd := toolCmd("git", "init", "--quiet")
 	initCmd.Env = env
 	_ = initCmd.Run()
 	a.out.clean("")
 	a.out.clean("Files to publish:")
-	ls := exec.Command("git", "ls-files", "--others", "--exclude-standard")
+	ls := toolCmd("git", "ls-files", "--others", "--exclude-standard")
 	ls.Env = env
 	var outLines []string
 	if out, _ := ls.Output(); len(out) > 0 {

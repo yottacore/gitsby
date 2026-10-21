@@ -119,6 +119,8 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 
 - No command shells out through `eval`. Arguments are passed as arrays, so a message or branch name is never re-parsed.
 
+- Every program gitsby runs, git included, is found by one lookup that passes over any PATH entry that is gitsby itself. A link named `gh` to gitsby would otherwise start gitsby with gh's arguments. With nothing else on PATH, the command refuses with "Not found in path" and names that entry. The program still sees its own name as argv[0].
+
 - Any command named inside an error message, or in the built-in help, has to be one the parser still accepts. The help is the only documentation most people read, so it drifting is a defect, not a typo.
 
 - A recursive or forced removal may only target a path the running script itself created, and has to be able to prove it.
@@ -311,6 +313,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- stdout belongs to the tool alone and the exit code is passed straight back, so a script can pipe it. The one line naming the account goes to stderr, and `-q` silences it.
 	- The tools are a fixed list: git, gh, tea, glab, lazygit and tig. Each is a git host CLI that takes a token from the environment, or a front end that runs git underneath, so acting as the account means something for every one. An open slot would hand the token to any program typed there. A tool that reads neither, like gitui on libgit2, would look like it ran as the account and wouldn't.
 	- Where gitsby can tell a tool will act as somebody else anyway, as with tea before 0.11, it warns. `-q` refuses instead, and `--any-identity` runs it with no account applied.
+	- A tool on PATH that leads back to gitsby would start it again, with no end. So `raw` walks PATH itself and passes over any entry that is the running binary, by link or hardlink. A wrapper script can't be seen that way, so `raw` sets `GITSBY_RAW_ACTIVE` for everything it starts, and a `raw` that finds it set refuses. A hook that calls `gitsby raw` under `raw git` is refused too.
 
 - Commands that hand a branch to someone else's deletion must park work first.
 	- `gh pr merge --delete-branch` removes the branch local and remote. Anything not pushed is outside the pull request, so merging it would drop that work from the branch it lived on.

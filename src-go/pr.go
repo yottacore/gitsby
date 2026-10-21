@@ -71,8 +71,16 @@ func (a *app) settlePrTool() error {
 	if a.pr.tool != toolNone {
 		return nil
 	}
-	// A host we could name, and nothing here that speaks to it.
+	// A host we could name, and nothing here that speaks to it. When the tool's
+	// name on PATH is only this binary, that is the thing to say, not "install it".
 	if host := a.originHost(); host != "" {
+		want := teaNames
+		if isGitHubHost(host) {
+			want = []string{"gh"}
+		}
+		if err := shadowed(want...); err != nil {
+			return err
+		}
 		return usagef("Nothing installed here can talk to %s. %s", host, a.hostCLIHint())
 	}
 	// No host to name at all - a local path, or a URL shape we don't parse. Not a
@@ -84,6 +92,9 @@ func (a *app) settlePrTool() error {
 	if inPath("gh") {
 		a.pr.tool, a.pr.cli = toolGh, "gh"
 		return nil
+	}
+	if err := shadowed("gh"); err != nil {
+		return err
 	}
 	return usagef("Can't tell which git host '%s' is, and no CLI for one is installed to ask. %s",
 		maskURL(a.originURL()), a.hostCLIHint())
