@@ -1970,6 +1970,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Note: blocked. Checked 2026-09-28: shcl has no 3.0 tag yet, and its `dev` go.mod still says `/v2`.
 	- Note: moved to the cut candidate on 2026-10-01. A line the file couldn't read is now kept through an edit, and a double-quoted path with a stray escape is listed instead of read with a newline in it. Still `/v2`.
 	- Note: checked 2026-10-05 and 2026-10-06, still no 3.0 tag, and `dev` go.mod still says `/v2`.
+	- Note: checked again 2026-10-21. Newest tag is still v2.0.0.
 	- At the move, read the changelog for format breaks since the beta, and for any API that backs up or converts a file itself. The converter from item 2026100312145843 must not race it.
 
 ### Done
