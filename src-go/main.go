@@ -783,17 +783,37 @@ func (a *app) dispatch() error {
 // somebody else's command run under the right identity, and a script piping its
 // output must get that output and nothing else.
 func (a *app) cmdPassthrough(tool string, args []string) error {
-	name := tool
+	if a.rawActive != "" {
+		return usagef("%s is set, to '%s'. A 'raw' run sets it for what it starts, and refuses when it finds it, so a tool that leads back to %s can't loop. Unset it to run anyway.", rawActiveVar, a.rawActive, meName)
+	}
+	names := []string{tool}
 	if tool == "tea" || tool == "tea-cli" {
-		// Either spelling runs whichever one is installed.
-		if !inPath(name) {
-			name = a.teaCommand()
-		}
-		if name == "" {
-			return usagef("Not found in path: %s", tool)
+		// Either spelling runs whichever one is installed, the typed one first.
+		names = []string{tool, teaNames[0]}
+		if tool == teaNames[0] {
+			names[1] = teaNames[1]
 		}
 	}
-	if err := mustBeInPath(name); err != nil {
+	name, path := "", ""
+	var ours []string
+	for _, try := range names {
+		found, skipped := lookTool(try)
+		ours = append(ours, skipped...)
+		if found != "" {
+			name, path = try, found
+			break
+		}
+	}
+	switch {
+	case path == "" && len(ours) == 1:
+		return usagef("Not found in path: %s. '%s' is %s itself.", tool, ours[0], meName)
+	case path == "" && len(ours) > 1:
+		return usagef("Not found in path: %s. '%s' are %s itself.", tool, strings.Join(ours, "', '"), meName)
+	case path == "":
+		return usagef("Not found in path: %s", tool)
+	}
+	// Before any probe below runs the tool, since a wrapper would start us again.
+	if err := setEnv(rawActiveVar, path); err != nil {
 		return err
 	}
 	if err := a.resolveAccount(a.contextDir(), a.originURL()); err != nil {
@@ -807,7 +827,7 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 		switch tool {
 		case "tea", "tea-cli":
 			var err error
-			if warned, err = a.teaAsAccount(name); err != nil {
+			if warned, err = a.teaAsAccount(path); err != nil {
 				return err
 			}
 		case "glab":
@@ -828,7 +848,7 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 	if !a.opt.quiet && !a.acct.bypassed && !warned && who != "" && a.accountDecidedSomething() {
 		a.out.errorf("acting as %s (from %s)", who, a.accountSourceText(false))
 	}
-	return a.handover(name, args)
+	return a.handover(name, path, args)
 }
 
 func (a *app) cmdBrList() {

@@ -91,7 +91,7 @@ fUnsetInheritedGitConfig(){
 	unset GIT_CONFIG_COUNT
 }
 fUnsetInheritedGitConfig
-unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT
+unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT GITSBY_RAW_ACTIVE
 
 ## Output helpers, the same family as cicd.bash's: fEcho_Clean prints a line as given and
 ## collapses repeated blanks, and fUsage refuses the command line.
@@ -4628,6 +4628,35 @@ GHEOF
 	fAssertOut  "[EmZiVes] and the message is git's, not ours"  'Needed a single revision'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git rev-parse --verify nosuchref 2>&1"
 	fAssert     "[EmMuR6F] and its success is too"                   bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git rev-parse --verify HEAD >/dev/null"
 	fAssertOut  "[EmMuR6G] raw gh reaches gh"  'gho_faketoken'       bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw gh auth token --user workacct"
+	## A tool on PATH that leads back to gitsby looped forever: a link to the binary, or a wrapper
+	## that runs 'raw <tool>' again. Each wrapper counts its starts and quits past 5, so a loop
+	## that comes back stays small. With only the link on PATH the shim can't find bash, so those
+	## run the build directly. No links on Windows, so it sits that one out.
+	if (( ! isWindows )); then
+		local rl="${ac}/rawloop" rlTool=""
+		mkdir -p "${rl}/link" "${rl}/wrap"
+		for rlTool in gh tea glab lazygit tig; do
+			ln -sf "${goBin}" "${rl}/link/${rlTool}"  ## the build itself; ${gitsby} is a shim
+			# shellcheck disable=SC2016  ## the wrapper expands these, not us
+			printf '#!%s\nn=0; [[ -f %q ]] && read -r n < %q\nn=$(( n + 1 )); echo "${n}" > %q\n(( n > 5 )) && { echo "spawn limit" >&2; exit 99; }\nexec %q raw "${0##*/}" "$@"\n' \
+				"$(command -v bash)" "${rl}/count" "${rl}/count" "${rl}/count" "${gitsby}" > "${rl}/wrap/${rlTool}"
+			chmod +x "${rl}/wrap/${rlTool}"
+		done
+		fAssertOut    "[EtMXMMC] a gh that is gitsby is skipped for the next one on PATH"  'gho_faketoken' \
+			bash -c "cd '${acWork}' && env ${acEnv} PATH='${rl}/link:${ac}/bin:${PATH}' '${gitsby}' -q raw gh auth token --user workacct"
+		fAssertOut    "[EtMXMN4] and with no other gh, refused naming the entry"  "Not found in path: gh\\. '.*/rawloop/link/gh' is gitsby itself" \
+			bash -c "cd '${acWork}' && env ${acEnv} PATH='${rl}/link' '${goBin}' -q raw gh auth token"
+		fAssertOut    "[EtMXMNv] a gh wrapper that runs raw gh again is refused at once"  "GITSBY_RAW_ACTIVE is set, to '.*/rawloop/wrap/gh'" \
+			bash -c "cd '${acWork}' && : > '${rl}/count' && env ${acEnv} PATH='${rl}/wrap:${ac}/bin:${PATH}' '${gitsby}' -q raw gh auth token"
+		fAssertNotOut "[EtMXMOn] and never reaches the spawn limit"  'spawn limit' \
+			bash -c "cd '${acWork}' && : > '${rl}/count' && env ${acEnv} PATH='${rl}/wrap:${ac}/bin:${PATH}' '${gitsby}' -q raw gh auth token"
+		for rlTool in tea glab lazygit tig; do
+			fAssertOut "[EtMXMPe] a ${rlTool} that is gitsby is refused too"  "Not found in path: ${rlTool}\\. '.*/rawloop/link/${rlTool}' is gitsby itself" \
+				bash -c "cd '${acWork}' && env ${acEnv} PATH='${rl}/link' '${goBin}' -q raw ${rlTool} --version"
+			fAssertOut "[EtMXMQW] and a ${rlTool} wrapper too"  "GITSBY_RAW_ACTIVE is set, to '.*/rawloop/wrap/${rlTool}'" \
+				bash -c "cd '${acWork}' && : > '${rl}/count' && env ${acEnv} PATH='${rl}/wrap:${ac}/bin:${PATH}' '${gitsby}' -q raw ${rlTool} --version"
+		done
+	fi
 	fAssertFail "[EmMuR6H] raw with no tool is refused"              bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw"
 	fAssertOut  "[EmZiVet] and says what it wanted"  'Syntax: gitsby(\.ps1)? raw'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw 2>&1"
 	fAssertOut  "[Eq4W7zY] and what its arguments are"  '^  <arguments \.\.\.>  +Handed to that tool unchanged'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw 2>&1"
@@ -7058,3 +7087,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261019 JC: Every build pins plain x86-64, the README's rebuild line too, so a Core 2 Duo or a Phenom II still runs the release. Fails with the pin dropped from any one of them. 1560 -> 1561.
 ##		- 20261019 JC: --leakcheck's CodeQL runs Python's suite too, over the pipeline's Python and the installed source of the demo's libraries, with the bundle and its sum in the image. Python reports are read by their own rule, security only in third-party code. The demo's Pillow is the lock's, and a demo gif drawn with another Pillow than the recorded one is left alone. 1561 -> 1571.
 ##		- 20261019 JC: The leak checks run by default, off under --quick and --no-fuzz, with --leakcheck and --no-leakcheck to say otherwise. The run's temp files are gone once it ends, even after a TERM, and stage 6 removes the demo's repos. 1571 -> 1579.
+##		- 20261021 JC: raw passes over a tool on PATH that is gitsby itself, and refuses when started under another raw, so a gh, tea, glab, lazygit or tig that leads back can't loop. 1579 -> 1591.

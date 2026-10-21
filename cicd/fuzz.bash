@@ -47,7 +47,7 @@ fUnsetInheritedGitConfig(){
 	unset GIT_CONFIG_COUNT
 }
 fUnsetInheritedGitConfig
-unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT
+unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT GITSBY_RAW_ACTIVE
 
 ## Output helpers, the same family as cicd.bash's: fEcho_Clean prints a line as given and
 ## collapses repeated blanks, and fUsage refuses the command line.

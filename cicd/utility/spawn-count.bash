@@ -80,7 +80,7 @@ mkdir -p "${work}/home"
 export HOME="${work}/home" XDG_CONFIG_HOME="" APPDATA=""
 for ((i = 0; i < ${GIT_CONFIG_COUNT:-0}; i++)); do unset "GIT_CONFIG_KEY_${i}" "GIT_CONFIG_VALUE_${i}"; done
 unset GIT_CONFIG_COUNT
-unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT GIT_SSH_COMMAND GIT_SSH
+unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT GITSBY_RAW_ACTIVE GIT_SSH_COMMAND GIT_SSH
 
 ## Nothing here reaches the network. The account folders' origins name github.com, so a fake gh
 ## and ssh answer what gitsby asks, and a proxy on a closed port fails anything that still tries

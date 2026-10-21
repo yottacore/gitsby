@@ -15,6 +15,8 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -157,10 +159,48 @@ func inPath(name string) bool {
 	return err == nil
 }
 
+// rawActiveVar is set for everything 'raw' starts. A 'raw' that finds it already
+// set refuses, so a tool on PATH that calls gitsby back can't loop (2026101916533300).
+const rawActiveVar = "GITSBY_RAW_ACTIVE"
+
+// lookTool is exec.LookPath that skips any PATH entry leading back to this very
+// binary, through a symlink or a hardlink. Each candidate still goes through
+// LookPath, so PATHEXT and the exec bit work as before. A relative entry is
+// skipped, since LookPath's ErrDot never let one run. Also returns the entries
+// skipped as ours.
+func lookTool(name string) (found string, ours []string) {
+	var self os.FileInfo
+	if exe, err := os.Executable(); err == nil {
+		self, _ = os.Stat(exe) // couldn't tell is not "it's us"
+	}
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+		if dir == "" || !filepath.IsAbs(dir) {
+			continue
+		}
+		path, err := exec.LookPath(filepath.Join(dir, name))
+		if err != nil {
+			continue
+		}
+		if self != nil {
+			if fi, err := os.Stat(path); err == nil && os.SameFile(self, fi) {
+				if !slices.Contains(ours, path) {
+					ours = append(ours, path)
+				}
+				continue
+			}
+		}
+		return path, ours
+	}
+	return "", ours
+}
+
 // handover runs the tool with our stdio and leaves with its exit code - the
-// portable stand-in for the scripts' exec, which cannot exist on Windows.
-func (a *app) handover(name string, args []string) error {
-	if err := stdio(exec.Command(name, args...)).Run(); err != nil {
+// portable stand-in for the scripts' exec, which cannot exist on Windows. path is
+// what runs; the tool still sees name as its argv[0].
+func (a *app) handover(name, path string, args []string) error {
+	cmd := exec.Command(path, args...)
+	cmd.Args[0] = name
+	if err := stdio(cmd).Run(); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			return silentExit(exitErr.ExitCode())

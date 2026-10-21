@@ -36,7 +36,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting for answers
+		- Waits on the questions entry for 2026101916533300: whether a `raw` under another one, such as a git hook calling `gitsby raw`, should be refused or allowed a few levels. The fix is in either way.
+	- Needs local test suite run?: No. test.bash ran 1591/0.
+	- Needs external testing: b28l, the box that hit it, with `type -a gh` and a `gitsby raw gh auth status` there. Stage 7, since the PATH walk is new code on macOS, FreeBSD and Windows.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Critical
 	- Opened: 20261019-165333
 	- Opened by: jim-collier
@@ -49,7 +52,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Endless loop that eats time and a lot of memory. The session that hit it got out by calling the real `gh` by full path.
 	- Expected behavior [Bug]:
 		- Stop at once with a plain error that names the PATH entry, and never start a second copy of itself.
-	- Reproduced [No]: Not on b23, where `gh` is the real binary. A stand-in `gh` wrapper on PATH should do it.
+	- Reproduced [Bug]: 2026-10-21 on b23, with stand-ins on PATH. A wrapper `gh` that runs `gitsby raw gh "$@"` started itself until its counter stopped it at 20. A link named `gh` to the build ran gitsby as gh, which answered "Unknown command 'auth'". The link alone doesn't loop, since gitsby doesn't read its own name, so b28l most likely had a wrapper.
 	- Possible cause [Bug]:
 		- `cmdPassthrough` in main.go checks `gh` only with `mustBeInPath`, then `handover` in exec.go runs it by bare name. Nothing checks that the file found isn't gitsby itself, or something that calls it. A wrapper makes each run start the next, with no limit.
 	- Requirements [Bug fix]:
@@ -59,6 +62,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Test case needs a stand-in `gh` that is a wrapper and one that is a symlink to the build. Watch both fail on the current build first, and put a spawn limit on the test so a regression can't eat the box.
 	- Progress log:
 		- 2026-10-19: Logged from a report by another project's session on b28l. Cause is from reading the code, not from a run there. Still need the output of `type -a gh` on b28l.
+		- 2026-10-21: Fixed as the requirements ask. `raw` walks PATH itself, through `exec.LookPath` on each entry, and passes over an entry that is the running binary. It sets `GITSBY_RAW_ACTIVE` to the tool's path before anything runs the tool, the tea probes and the account's gh calls included, and a `raw` that finds it set at startup refuses and names it. The hermetic suites unset it.
+	- Actual cause [Bug]:
+		- As the possible cause says. `raw` ran the tool by bare name and never asked what it found. Every run through a wrapper started the next.
+	- Actual fix [Bug]: `lookTool` in exec.go, used by `cmdPassthrough` for all six tools, and `rawActive` read in `newApp`. The tool still sees its own name as argv[0]. design.md's `raw` bullets say so.
+	- Decisions:
+		- With no other copy left, the refusal is "Not found in path: gh. '<entry>' is gitsby itself.", with the entry as found.
+		- A gitsby entry ahead of a real tool is passed over without a word.
+		- A plain copy of gitsby named `gh` isn't the same file, so only the env check stops it, on its second start.
+	- Branch: round-20261021
+	- Test case: test.bash `[EtMXMMC]`, `[EtMXMN4]`, `[EtMXMNv]` and `[EtMXMOn]` for gh, and `[EtMXMPe]` and `[EtMXMQW]` for tea, glab, lazygit and tig, as a link and as a wrapper each. Each wrapper quits after 5 starts. Go `[EtMXfI7]` for the PATH walk and `[EtMXfJm]` for the refusal.
+	- Verified: All 12 new test.bash checks fail on the build before the fix, with the other 1579 passing. The 5 with only the link on PATH were rerun outside the suite with the same command and pattern, and fail there too. After it, test.bash 1579 -> 1591, 0 failed. Both Go tests fail with the self check and the env check taken out. `GOOS=windows go vet` and darwin and freebsd builds pass. The wrapper stand-in started once, then refused.
+	- Swept: every `raw` tool shares `cmdPassthrough`, git included. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
 
 - Updates to CICD script flags
 	- ID: 2026101816064793
@@ -135,6 +150,23 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: Every one fails against gover's cicd.bash. test.bash 1571 -> 1579, 0 failed, and `cicd.bash --gate` passes. `[Er1LxTW]`'s stage 3 run takes `--no-leakcheck` now, since its fixture's go stub has no soak test.
 	- Swept: the help text, stage 3's header line, README, contributing.md, config.bash comments and both history footers.
 	- Note: A full run now takes CodeQL's time, once per release OS plus Python. Needs one real full run to see it pass in the container.
+
+- `pr` and `repo create` run `gh` by bare name, so one on PATH that is gitsby runs gitsby
+	- ID: 2026102111572785
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261021-115727
+	- Opened by: jim-collier
+	- Related IDs: 2026101916533300
+	- Steps to reproduce [Bug]:
+		- Put a link named `gh` to gitsby first on PATH, with no real gh after it, and run `gitsby pr` in a GitHub repo.
+	- Incorrect behavior [Bug]:
+		- It runs gitsby as `gh pr list`, which prints gitsby's own `pr` syntax help, then "'gh pr list' failed (exit 1)".
+	- Expected behavior [Bug]:
+		- The same refusal `raw` gives: "Not found in path: gh", naming the entry that is gitsby.
+	- Possible cause [Bug]:
+		- `hostToolFor`, `mustBeInPath` and the tea lookup ask `exec.LookPath`, and the runners pass the bare name. 2026101916533300 fixed only `raw`. `lookTool` in exec.go could serve them too.
 
 - Check the demo's Pillow and fontTools advisories against Debian's fixes
 	- ID: 2026101905585018
