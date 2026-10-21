@@ -12,7 +12,6 @@ package main
 import (
 	"errors"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -215,7 +214,7 @@ func (a *app) enterRepo() error {
 	// The top level comes fourth, for folder matching. Outside a work tree git
 	// refuses that one and exits nonzero after printing the other three, so the
 	// output is read whatever the exit code says.
-	out, _ := exec.Command("git", "rev-parse", "--is-inside-work-tree", "--is-inside-git-dir", "--is-bare-repository", "--show-toplevel").Output()
+	out, _ := toolCmd("git", "rev-parse", "--is-inside-work-tree", "--is-inside-git-dir", "--is-bare-repository", "--show-toplevel").Output()
 	var answers []string
 	for _, line := range splitLines(string(out)) {
 		if line != "" {
@@ -797,20 +796,15 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 	name, path := "", ""
 	var ours []string
 	for _, try := range names {
-		found, skipped := lookTool(try)
+		found, skipped := findTool(try)
 		ours = append(ours, skipped...)
 		if found != "" {
 			name, path = try, found
 			break
 		}
 	}
-	switch {
-	case path == "" && len(ours) == 1:
-		return usagef("Not found in path: %s. '%s' is %s itself.", tool, ours[0], meName)
-	case path == "" && len(ours) > 1:
-		return usagef("Not found in path: %s. '%s' are %s itself.", tool, strings.Join(ours, "', '"), meName)
-	case path == "":
-		return usagef("Not found in path: %s", tool)
+	if path == "" {
+		return notInPath(tool, ours)
 	}
 	// Before any probe below runs the tool, since a wrapper would start us again.
 	if err := setEnv(rawActiveVar, path); err != nil {

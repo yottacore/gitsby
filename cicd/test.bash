@@ -4656,6 +4656,19 @@ GHEOF
 			fAssertOut "[EtMXMQW] and a ${rlTool} wrapper too"  "GITSBY_RAW_ACTIVE is set, to '.*/rawloop/wrap/${rlTool}'" \
 				bash -c "cd '${acWork}' && : > '${rl}/count' && env ${acEnv} PATH='${rl}/wrap:${ac}/bin:${PATH}' '${gitsby}' -q raw ${rlTool} --version"
 		done
+		## The same for the commands that run a host tool themselves: 'pr' ran the link as
+		## 'gh pr list' and printed our own syntax help. git alone sits beside the links.
+		mkdir -p "${rl}/git" "${rl}/ghrepo" "${rl}/gitea" "${rl}/create"
+		echo c > "${rl}/create/c.txt"
+		ln -sf "$(command -v git)" "${rl}/git/git"
+		( cd "${rl}/ghrepo" && git init --quiet -b main && git remote add origin https://github.com/someone/repo.git )
+		( cd "${rl}/gitea" && git init --quiet -b main && git remote add origin https://gitea.example.com/someone/repo.git )
+		fAssertOut "[EtMclGb] pr with only a gh that is gitsby is refused naming the entry"  "Not found in path: gh\\. '.*/rawloop/link/gh' is gitsby itself" \
+			bash -c "cd '${rl}/ghrepo' && env ${acEnv} PATH='${rl}/link:${rl}/git' '${goBin}' -q -NoFetch pr 2>&1"
+		fAssertOut "[EtMclHS] and so is repo create"  "Not found in path: gh\\. '.*/rawloop/link/gh' is gitsby itself" \
+			bash -c "cd '${rl}/create' && env ${acEnv} PATH='${rl}/link:${rl}/git' '${goBin}' -q repo create me/proj 2>&1"
+		fAssertOut "[EtMclIK] and pr on another host, with only a tea that is gitsby"  "Not found in path: tea\\. '.*/rawloop/link/tea' is gitsby itself" \
+			bash -c "cd '${rl}/gitea' && env ${acEnv} PATH='${rl}/link:${rl}/git' '${goBin}' -q -NoFetch pr 2>&1"
 	fi
 	fAssertFail "[EmMuR6H] raw with no tool is refused"              bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw"
 	fAssertOut  "[EmZiVet] and says what it wanted"  'Syntax: gitsby(\.ps1)? raw'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw 2>&1"

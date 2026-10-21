@@ -12,12 +12,14 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 )
 
 // runOut captures a command's stdout, trimmed. Any failure is simply no output -
@@ -33,7 +35,7 @@ func runOut(name string, args ...string) string {
 // that is down, and stating the first when it was the second sends you off to
 // create something that already exists.
 func runOutOK(name string, args ...string) (string, bool) {
-	out, err := exec.Command(name, args...).Output()
+	out, err := toolCmd(name, args...).Output()
 	if err != nil {
 		return "", false
 	}
@@ -42,7 +44,7 @@ func runOutOK(name string, args ...string) (string, bool) {
 
 // runOK is the exit-code question: did it succeed at all.
 func runOK(name string, args ...string) bool {
-	return exec.Command(name, args...).Run() == nil
+	return toolCmd(name, args...).Run() == nil
 }
 
 // splitLines cuts captured output into lines. The trailing '\r' comes off every
@@ -93,13 +95,13 @@ func stdio(cmd *exec.Cmd) *exec.Cmd {
 // for listings whose output IS the point and whose failure has nothing to add.
 func (a *app) inherit(name string, args ...string) {
 	a.git.forget()
-	_ = stdio(exec.Command(name, args...)).Run()
+	_ = stdio(toolCmd(name, args...)).Run()
 }
 
 // inheritRC is inherit that reports the exit code, for the callers that print it.
 func (a *app) inheritRC(name string, args ...string) int {
 	a.git.forget()
-	return exitCode(stdio(exec.Command(name, args...)).Run())
+	return exitCode(stdio(toolCmd(name, args...)).Run())
 }
 
 // inheritOK is inherit that still answers whether it worked - for the steps whose
@@ -148,15 +150,101 @@ func (a *app) stepAs(announce, label, name string, args ...string) error {
 }
 
 func mustBeInPath(name string) error {
-	if _, err := exec.LookPath(name); err != nil {
-		return usagef("Not found in path: %s", name)
+	if path, ours := findTool(name); path == "" {
+		return notInPath(name, ours)
 	}
 	return nil
 }
 
 func inPath(name string) bool {
-	_, err := exec.LookPath(name)
-	return err == nil
+	path, _ := findTool(name)
+	return path != ""
+}
+
+// notInPath is the refusal for a tool not found, naming any entry passed over
+// for being this binary, since that is the only reason a user can see it there.
+func notInPath(tool string, ours []string) error {
+	switch len(ours) {
+	case 0:
+		return usagef("Not found in path: %s", tool)
+	case 1:
+		return usagef("Not found in path: %s. '%s' is %s itself.", tool, ours[0], meName)
+	}
+	return usagef("Not found in path: %s. '%s' are %s itself.", tool, strings.Join(ours, "', '"), meName)
+}
+
+// shadowed is notInPath for the first of names when any of them was passed over
+// as this binary, and nil otherwise, for a caller with its own not-installed text.
+func shadowed(names ...string) error {
+	var ours []string
+	for _, name := range names {
+		_, skipped := findTool(name)
+		ours = append(ours, skipped...)
+	}
+	if len(ours) == 0 {
+		return nil
+	}
+	return notInPath(names[0], ours)
+}
+
+// toolCmd is exec.Command with the program found by findTool, so nothing gitsby
+// runs by name can be gitsby again (2026102111572785). Every spawn goes through it
+// or toolCmdContext. The program keeps its own name as argv[0]. A name with a
+// path in it is run as given.
+func toolCmd(name string, args ...string) *exec.Cmd {
+	path, missing := toolPath(name)
+	return named(exec.Command(path, args...), name, missing)
+}
+
+func toolCmdContext(ctx context.Context, name string, args ...string) *exec.Cmd {
+	path, missing := toolPath(name)
+	return named(exec.CommandContext(ctx, path, args...), name, missing)
+}
+
+// toolPath is what toolCmd runs for name, or name itself and why not.
+func toolPath(name string) (string, error) {
+	if filepath.Base(name) != name {
+		return name, nil
+	}
+	found, ours := findTool(name)
+	if found == "" {
+		return name, notInPath(name, ours)
+	}
+	return found, nil
+}
+
+func named(cmd *exec.Cmd, name string, missing error) *exec.Cmd {
+	cmd.Args[0] = name
+	if missing != nil {
+		// exec.Command's own look would run the entry that is us.
+		cmd.Err = missing
+	}
+	return cmd
+}
+
+// toolCache holds findTool's answers. PATH is part of the key, since a test may
+// change it between runs in one process. Locked, since look-ahead goroutines spawn too.
+var toolCache = struct {
+	sync.Mutex
+	found map[[2]string]toolFound
+}{found: map[[2]string]toolFound{}}
+
+type toolFound struct {
+	path string
+	ours []string
+}
+
+// findTool is lookTool asked once per name, for every program gitsby runs.
+func findTool(name string) (string, []string) {
+	key := [2]string{name, os.Getenv("PATH")}
+	toolCache.Lock()
+	defer toolCache.Unlock()
+	hit, ok := toolCache.found[key]
+	if !ok {
+		hit.path, hit.ours = lookTool(name)
+		toolCache.found[key] = hit
+	}
+	return hit.path, hit.ours
 }
 
 // rawActiveVar is set for everything 'raw' starts. A 'raw' that finds it already

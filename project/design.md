@@ -119,6 +119,8 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 
 - No command shells out through `eval`. Arguments are passed as arrays, so a message or branch name is never re-parsed.
 
+- Every program gitsby runs, git included, is found by one lookup that passes over any PATH entry that is gitsby itself. A link named `gh` to gitsby would otherwise start gitsby with gh's arguments. With nothing else on PATH, the command refuses with "Not found in path" and names that entry. The program still sees its own name as argv[0].
+
 - Any command named inside an error message, or in the built-in help, has to be one the parser still accepts. The help is the only documentation most people read, so it drifting is a defect, not a typo.
 
 - A recursive or forced removal may only target a path the running script itself created, and has to be able to prove it.

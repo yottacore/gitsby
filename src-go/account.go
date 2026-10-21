@@ -12,7 +12,6 @@ package main
 import (
 	"context"
 	"os"
-	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
@@ -616,7 +615,7 @@ func probeGhLogin(ctx context.Context, env []string) string {
 	if !inPath("gh") {
 		return "?"
 	}
-	cmd := exec.CommandContext(ctx, "gh", "api", "user", "--jq", ".login")
+	cmd := toolCmdContext(ctx, "gh", "api", "user", "--jq", ".login")
 	cmd.Env = append(env, "GH_PROMPT_DISABLED=1")
 	out, err := cmd.Output()
 	if err != nil {

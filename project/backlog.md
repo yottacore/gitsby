@@ -154,7 +154,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `pr` and `repo create` run `gh` by bare name, so one on PATH that is gitsby runs gitsby
 	- ID: 2026102111572785
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting for testing
+	- Needs local test suite run?: No. test.bash ran after the fix.
+	- Needs external testing: Stage 7. Every spawn now runs by the path the PATH walk found, git included, and that walk is only cross-built for macOS, FreeBSD and Windows.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261021-115727
 	- Opened by: jim-collier
@@ -167,6 +169,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The same refusal `raw` gives: "Not found in path: gh", naming the entry that is gitsby.
 	- Possible cause [Bug]:
 		- `hostToolFor`, `mustBeInPath` and the tea lookup ask `exec.LookPath`, and the runners pass the bare name. 2026101916533300 fixed only `raw`. `lookTool` in exec.go could serve them too.
+	- Reproduced [Bug]: 20261021, on the build before the fix. `pr` in a GitHub repo gave "'gh pr list' failed (exit 1)", `pr` on another host "'tea pulls list' failed (exit 1)", and `repo create` "Couldn't ask GitHub about me/proj ... Unexpected option in this context: '--json'".
+	- Actual cause [Bug]:
+		- Every spawn outside `raw` went through `exec.Command` with the bare name, and every "is it installed" asked `exec.LookPath`, both of which find the link that is gitsby.
+	- Actual fix [Bug]:
+		- One lookup for every program gitsby runs, git included: `toolCmd` and `toolCmdContext` in exec.go build the command from `findTool`, which is `lookTool` asked once per name and PATH. A name found only as gitsby gets a "Not found in path" error that names the entry, and is never started. `inPath` and `mustBeInPath` ask the same lookup, so the gh login checks, the tea probes and `hostToolFor` see a gitsby-only gh or tea as not installed. `pr` says so by name rather than suggesting an install, and `repo create` and `repo connect` refuse through `mustBeInPath`. `raw` uses the same refusal text through `notInPath`. A Go test fails if any other file calls `exec.Command`, `exec.LookPath` and the like, so a new call site can't skip it.
+		- design.md "Execution flow" has a bullet for it.
+	- Swept: every `exec.Command`, `exec.CommandContext` and `exec.LookPath` outside tests. exec.go's runners (runOut, runOutOK, runOK, inherit, inheritRC, so step and stepAs), show.go (showList, `ssh -G`), githost.go (`tea logins list`, `tea --version` through runOut, teaCommand and hostToolFor through inPath), repo.go (`gh repo view`, `git ls-remote`, `git init`, `git ls-files`, both mustBeInPath("gh")), remote.go (ssh probe, `git fetch`, `git remote set-head`, `git ls-remote`, `gh config get`), account.go (`gh auth token`, `gh api user`, `gh config get`), main.go (`git rev-parse`, mustBeInPath("git"), raw), pr.go (settlePrTool and every pr.cli run). handover still runs the path raw resolved. The frozen bash and pwsh builds were not touched.
+	- Test case: test.bash `[EtMclGb]`, `[EtMclHS]`, `[EtMclIK]`; Go `[EtMclJC]` (TestToolCmdSkipsSelf), `[EtMctyX]` (TestOneSpawnSite).
+	- Branch: round-20261021
+	- Verified: The 3 new test.bash checks fail on the build before the fix. After it, test.bash 1591 -> 1594, 0 failed. The 2 Go tests fail with toolCmd's refusal taken out and with an `exec.Command` put back in show.go. `go test ./...`, `cicd.bash --gate`, `GOOS=windows go vet ./...`, and darwin, freebsd and windows builds pass.
 
 - Check the demo's Pillow and fontTools advisories against Debian's fixes
 	- ID: 2026101905585018

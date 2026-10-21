@@ -12,7 +12,6 @@ package main
 import (
 	"context"
 	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 )
@@ -217,7 +216,7 @@ func probeSSHLogin(ctx context.Context, env []string, url, sshCommand string) st
 	// Both streams: ssh writes host-key and missing-identity warnings ahead of the
 	// greeting, so it is not reliably the first line - anchoring to the whole output
 	// answered '?' for exactly the multi-key setups this exists for.
-	probe := exec.CommandContext(ctx, sshCmd[0], args...)
+	probe := toolCmdContext(ctx, sshCmd[0], args...)
 	probe.Env = env
 	out, _ := probe.CombinedOutput()
 	for _, line := range splitLines(string(out)) {
@@ -248,7 +247,7 @@ func (a *app) fetchRemote() {
 	env := a.remoteEnv()
 	// Named, not implied: a bare 'git fetch' follows the current branch's own
 	// tracking remote, and every existence check afterwards reads origin.
-	fetch := exec.Command("git", "fetch", "--quiet", "--prune", "origin")
+	fetch := toolCmd("git", "fetch", "--quiet", "--prune", "origin")
 	fetch.Env = env
 	if fetch.Run() != nil {
 		a.remote.offline = true
@@ -260,7 +259,7 @@ func (a *app) fetchRemote() {
 	// and main already refuses naming the fix.
 	// The answer is kept: the default branch is read from it next.
 	if a.originHead() == "" {
-		setHead := exec.Command("git", "remote", "set-head", "origin", "--auto")
+		setHead := toolCmd("git", "remote", "set-head", "origin", "--auto")
 		setHead.Env = env
 		_ = setHead.Run()
 		a.git.originHead.forget()
@@ -275,7 +274,7 @@ func (a *app) fetchRemote() {
 // git's own reason goes to the terminal. false means origin was not asked, which
 // says nothing about any branch.
 func (a *app) askOriginHeads() (map[string]string, bool) {
-	ask := exec.Command("git", "ls-remote", "--heads", "origin")
+	ask := toolCmd("git", "ls-remote", "--heads", "origin")
 	ask.Env = a.remoteEnv()
 	ask.Stderr = os.Stderr
 	out, err := ask.Output()
