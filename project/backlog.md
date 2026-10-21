@@ -39,7 +39,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Status: Waiting for answers
 		- Waits on the questions entry for 2026101916533300: whether a `raw` under another one, such as a git hook calling `gitsby raw`, should be refused or allowed a few levels. The fix is in either way.
 	- Needs local test suite run?: No. test.bash ran 1591/0.
-	- Needs external testing: b28l, the box that hit it, with `type -a gh` and a `gitsby raw gh auth status` there. Stage 7, since the PATH walk is new code on macOS, FreeBSD and Windows.
+	- Needs external testing: b28l, the box that hit it, with `type -a gh` and a `gitsby raw gh auth status` there. Stage 7 is done.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Critical
 	- Opened: 20261019-165333
 	- Opened by: jim-collier
@@ -73,6 +73,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: round-20261021
 	- Test case: test.bash `[EtMXMMC]`, `[EtMXMN4]`, `[EtMXMNv]` and `[EtMXMOn]` for gh, and `[EtMXMPe]` and `[EtMXMQW]` for tea, glab, lazygit and tig, as a link and as a wrapper each. Each wrapper quits after 5 starts. Go `[EtMXfI7]` for the PATH walk and `[EtMXfJm]` for the refusal.
 	- Verified: All 12 new test.bash checks fail on the build before the fix, with the other 1579 passing. The 5 with only the link on PATH were rerun outside the suite with the same command and pattern, and fail there too. After it, test.bash 1579 -> 1591, 0 failed. Both Go tests fail with the self check and the env check taken out. `GOOS=windows go vet` and darwin and freebsd builds pass. The wrapper stand-in started once, then refused.
+	- Verified: 2026-10-21, stage 7 passed on every box. test.bash 1368/0 on b26 and 1271/0 on vmFreeBSD, each 15 more than on 10-19, all from this round, and 1579/0 on vmDebARM64, 23 more, with leakflags' 8. All 12 of this item's test.bash checks ran on each. The Go tests passed there and on vm925w, where `[EtMXfI7]` skips, since it needs symlinks and the exec bit, and `[EtMXfJm]` passed.
 	- Swept: every `raw` tool shares `cmdPassthrough`, git included. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
 
 - Updates to CICD script flags
@@ -112,7 +113,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Builds should clean up stale artifacts and side-effects when done
 	- ID: 2026101912030138
 	- Type: Enhancement
-	- Status: Waiting for testing
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261019-120301
 	- Opened by: jim-collier
@@ -127,11 +128,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash `[EtBTWt7]` for the temp folder after a pass, a stop and a TERM, and `[EtBTWtL]` for the demo's repos.
 	- Verified: Both fail against gover's cicd.bash. test.bash 1571 -> 1579, 0 failed, and `cicd.bash --gate` passes. `demo-repo.bash --remove` removed a world it built, refused a folder it didn't, and passed on one that wasn't there.
 	- Note: Needs one real full run, in the container and with `--no-container`, to see `/tmp/gitsby-demo` and the scratch folder gone.
+	- Verified: 2026-10-21 on b23. A `--no-container` full run passed every stage, and after it `/tmp/gitsby-demo`, left there by a run on 10-19, was gone, and so was its scratch folder. A full run in the container stopped in stage 3 on pip-audit (2026102113100000), and its scratch folder was still gone, as was the one from a `--quick --leakcheck` run there. No gitsby-cicd container was left, and no new untagged image. The container's `/tmp` is a tmpfs that goes with it, so its demo repos can't outlive it.
+	- Acceptance signoff: Self-closed: the item asked for these runs, and both cleanups show on the box.
+	- Closed: 20261021-130500
 
 - CICD gets `--leakcheck` and `--no-leakcheck` flags
 	- ID: 2026101912030152
 	- Type: Enhancement
-	- Status: Waiting for testing
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261019-120301
 	- Opened by: jim-collier
@@ -150,11 +154,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: Every one fails against gover's cicd.bash. test.bash 1571 -> 1579, 0 failed, and `cicd.bash --gate` passes. `[Er1LxTW]`'s stage 3 run takes `--no-leakcheck` now, since its fixture's go stub has no soak test.
 	- Swept: the help text, stage 3's header line, README, contributing.md, config.bash comments and both history footers.
 	- Note: A full run now takes CodeQL's time, once per release OS plus Python. Needs one real full run to see it pass in the container.
+	- Verified: 2026-10-21 on b23. A plain full run in the container stopped in stage 3 on pip-audit, on new Pillow advisories (2026102113100000), before the leak checks. A `--quick --leakcheck` run there then passed: the soak test in about 15 s, and CodeQL clean on darwin, freebsd, linux and windows at about 15 s each and Python at about 45 s, so the leak checks add about 2 minutes. The rest of stage 3 took about 1.5 minutes in the stopped run. A `--no-container` full run warned and skipped CodeQL, and passed.
+	- Acceptance signoff: Self-closed: the flags and the leak checks passed in the container. The pip-audit stop is its own item.
+	- Closed: 20261021-130500
 
 - `pr` and `repo create` run `gh` by bare name, so one on PATH that is gitsby runs gitsby
 	- ID: 2026102111572785
 	- Type: Bug
-	- Status: Waiting for testing
+	- Status: Done
 	- Needs local test suite run?: No. test.bash ran after the fix.
 	- Needs external testing: Stage 7. Every spawn now runs by the path the PATH walk found, git included, and that walk is only cross-built for macOS, FreeBSD and Windows.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
@@ -179,6 +186,35 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash `[EtMclGb]`, `[EtMclHS]`, `[EtMclIK]`; Go `[EtMclJC]` (TestToolCmdSkipsSelf), `[EtMctyX]` (TestOneSpawnSite).
 	- Branch: round-20261021
 	- Verified: The 3 new test.bash checks fail on the build before the fix. After it, test.bash 1591 -> 1594, 0 failed. The 2 Go tests fail with toolCmd's refusal taken out and with an `exec.Command` put back in show.go. `go test ./...`, `cicd.bash --gate`, `GOOS=windows go vet ./...`, and darwin, freebsd and windows builds pass.
+	- Verified: 2026-10-21, stage 7 passed on b26, vmFreeBSD, vmDebARM64 and vm925w, so every spawn in those suites went through the PATH walk on each OS. The 3 new test.bash checks ran on the 3 Unix boxes, and `[EtMctyX]` passed on all 4. On vm925w `[EtMclJC]` skips, since it needs symlinks and the exec bit, so the self check itself is untested on Windows. test.bash 1594/0 on b23, in the container and off it.
+	- Acceptance signoff: Self-closed: stage 7 passed everywhere, which was all that was left.
+	- Closed: 20261021-132100
+
+- pip-audit fails every full run in the container on 8 new Pillow 12.3.0 advisories
+	- ID: 2026102113100000
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261021-131000
+	- Opened by: jim-collier
+	- Related IDs: 2026101905585018, 2026101912030152
+	- Requirements [Feature]:
+		- pip-audit in the image reports CVE-2026-112395, 112397, 112400, 112404, 112895, 112896, 112897 and 112899 against Pillow 12.3.0, all fixed in 13.0.0. Stage 3 stops there, so a plain full run in the container can't pass.
+		- Check each, then move the lock's Pillow to 13.0.0, or list on `PIP_AUDIT_IGNORE` any that can't reach the demo. A newer Pillow means rendering and comparing the gif again, as 2026101905585018 did.
+	- Progress log:
+		- 2026-10-21: Seen on a full run on b23. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-12295100/run1.log`. Stages 1 and 2 passed, test.bash 1594/0, and so did fuzz.bash 313/0, the native fuzz targets and govulncheck.
+
+- `--no-fuzz` still runs govulncheck and pip-audit
+	- ID: 2026102113100100
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261021-131001
+	- Opened by: jim-collier
+	- Related IDs: 2026102113100000
+	- Incorrect behavior [Bug]:
+		- The help says `--no-fuzz` skips the fuzz + security stage, but in cicd.bash only fuzz.bash, the native fuzz targets, the spawn counts and the leak checks look at it. govulncheck and pip-audit still run, so `--no-fuzz` doesn't get past a pip-audit stop.
+	- Reproduced [Bug]: No. Read from the code, 2026-10-21.
 
 - Check the demo's Pillow and fontTools advisories against Debian's fixes
 	- ID: 2026101905585018
