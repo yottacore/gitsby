@@ -566,7 +566,7 @@ fGateCodeQLSumInTag(){
 ## pip-audit gets the demo's libraries as pins, with the known advisories set aside, and
 ## govulncheck takes in the test-only modules.
 fGatePipAudit(){
-	fGateSays 0 'OK: pip-audit clean' -y --no-container --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
+	fGateSays 0 'OK: pip-audit clean' -y --no-container --no-leakcheck --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
 		&& fGateCalled '^python3 -c import importlib\.metadata.* Pillow fonttools pycairo PyGObject$' \
 			'^pip-audit -r [^ ]+ --no-deps --disable-pip --progress-spinner off (--ignore-vuln [^ ]+ )*--ignore-vuln CVE-2025-66034$' \
 			'^govulncheck -test \./\.\.\.$'
@@ -575,9 +575,15 @@ fGatePipAuditFinds(){
 	: > "${gateFail}/pip-audit"
 	local rc=0
 	fGateSays 1 'pip-audit findings in this box.s libraries; the container pins its own in cicd/container/requirements\.txt' \
-		-y --no-container --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood || rc=1
+		-y --no-container --no-leakcheck --no-demogif --no-remote --no-sync --no-publish --no-dogfood || rc=1
 	rm -f -- "${gateFail:?}/pip-audit"
 	return "${rc}"
+}
+## --no-fuzz skips all of stage 3, as its help says, the two audits included.
+fGateNoFuzz(){
+	fGateSays 0 'CI/CD: done\.' -y --no-container --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
+		&& ! grep -qE '^(govulncheck -test|pip-audit -r|fuzz\.bash|spawn-count\.bash)( |$)|^go test .*-fuzz ' "${gateCalls}" \
+		&& grep -qxF 'fuzz + security skipped' "${gateOut}"
 }
 ## The image's tag follows the Python tools' lock as well as the recipe.
 fGateLockInTag(){
@@ -5697,6 +5703,7 @@ EOF
 		fAssert "[EtAFLsf] --leakcheck runs CodeQL's Python suite over the pipeline's Python files and the installed source of the libraries they import"  fGateCodeQLPython
 		fAssert "[Et9PJsY] a full run audits the demo's Python libraries, and govulncheck takes in the test-only modules"  fGatePipAudit
 		fAssert "[Et9R5lO] and a pip-audit finding stops it, pointing off the box to the container's pins"  fGatePipAuditFinds
+		fAssert "[EtOKpZS] --no-fuzz leaves out govulncheck and pip-audit with the rest of stage 3"  fGateNoFuzz
 		fAssert "[ErkbDTn] cicd.bash --help lists --no-remote" \
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--no-remote ' <<< \"\$out\""
 		fAssert "[EsJgeiS] cicd.bash --help lists --container" \
@@ -7112,3 +7119,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261019 JC: --leakcheck's CodeQL runs Python's suite too, over the pipeline's Python and the installed source of the demo's libraries, with the bundle and its sum in the image. Python reports are read by their own rule, security only in third-party code. The demo's Pillow is the lock's, and a demo gif drawn with another Pillow than the recorded one is left alone. 1561 -> 1571.
 ##		- 20261019 JC: The leak checks run by default, off under --quick and --no-fuzz, with --leakcheck and --no-leakcheck to say otherwise. The run's temp files are gone once it ends, even after a TERM, and stage 6 removes the demo's repos. 1571 -> 1579.
 ##		- 20261021 JC: raw passes over a tool on PATH that is gitsby itself, and refuses when started under another raw, so a gh, tea, glab, lazygit or tig that leads back can't loop. 1579 -> 1591.
+##		- 20261021 JC: --no-fuzz leaves out govulncheck and pip-audit, and the pip-audit checks no longer lean on it to skip the rest of stage 3. 1597 -> 1598.

@@ -198,7 +198,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - pip-audit fails every full run in the container on 8 new Pillow 12.3.0 advisories
 	- ID: 2026102113100000
 	- Type: Task
-	- Status: Queued
+	- Status: Waiting for testing
+	- Needs local test suite run?: Yes. A plain full run in the container, which this item stopped at stage 3.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261021-131000
 	- Opened by: jim-collier
@@ -208,18 +209,38 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Check each, then move the lock's Pillow to 13.0.0, or list on `PIP_AUDIT_IGNORE` any that can't reach the demo. A newer Pillow means rendering and comparing the gif again, as 2026101905585018 did.
 	- Progress log:
 		- 2026-10-21: Seen on a full run on b23. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-12295100/run1.log`. Stages 1 and 2 passed, test.bash 1594/0, and so did fuzz.bash 313/0, the native fuzz targets and govulncheck.
+		- 2026-10-21: Checked all 8 against PyPI's advisories. 4 are in TIFF decoding and saving (112395, 112404, 112896, 112897). The others are a PDF append (112895), a GIF seek after a decompression bomb error (112400), a zero-width PPM through ImageMorph (112397), and EPS through Ghostscript (112899). The demo opens no image file and saves only its own GIF, so none reach it.
+		- 2026-10-21: PyPI now lists 24 advisories against 12.3.0, all fixed in 13.0.0. 13.0.0 has a CPython 3.13 manylinux x86_64 wheel, and the lock's hash is the one PyPI gives. Its breaking changes touch nothing the renderer calls.
+		- 2026-10-21: The lock's Pillow is 13.0.0, and `PIP_AUDIT_IGNORE` still holds only fontTools' entry. The image's tag moved to `gitsby-cicd:6fd011f04201`.
+	- Decisions:
+		- Moved Pillow rather than listing the 8. The answer on 2026101905585018 allows it, 13.0.0 fixes them all, and a list of 24 would need its own upkeep.
+	- Branch: round-20261022
+	- Test case: test.bash [EtAFLx0] for the lock's Pillow, and pip-audit's [Et9PJsY] and [Et9R5lO]. The image build also stops on a Pillow other than the recorded one. No new check, since the audit in the image is what failed.
+	- Verified: Stage 3 and the demo stage in the new image. pip-audit is clean on Pillow 13.0.0 with fontTools' one entry set aside, govulncheck is clean, fuzz.bash 313/0, and the spawn counts pass. The demo gif renders byte for byte the same, so it didn't change. test.bash 1598/0, and `cicd.bash --gate` passes.
+	- Swept: `TOOL_VERSIONS`, the Dockerfile's Pillow check, which reads the ARG, and its apt comment, the lock's header, and contributing.md's demo prerequisite, which names no version. "12.3.0" is left only in the backlog and the history footer.
 
 - `--no-fuzz` still runs govulncheck and pip-audit
 	- ID: 2026102113100100
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261021-131001
 	- Opened by: jim-collier
 	- Related IDs: 2026102113100000
 	- Incorrect behavior [Bug]:
 		- The help says `--no-fuzz` skips the fuzz + security stage, but in cicd.bash only fuzz.bash, the native fuzz targets, the spawn counts and the leak checks look at it. govulncheck and pip-audit still run, so `--no-fuzz` doesn't get past a pip-audit stop.
-	- Reproduced [Bug]: No. Read from the code, 2026-10-21.
+	- Reproduced [Bug]: Yes, 2026-10-21, by [EtOKpZS] against the old cicd.bash.
+	- Actual cause [Bug]:
+		- govulncheck sat outside the `--no-fuzz` gate on purpose at first (894d857, 2026-08-19). `--quick` then worked by turning fuzz off, and govulncheck ran under it anyway, "because it is a lookup rather than a workload".
+		- 81def43 (2026-10-18) made `--quick` skip it, since it reaches vuln.go.dev, and dropped that reason, but left it outside the gate. pip-audit copied its gate on 2026-10-19.
+	- Decisions:
+		- The reason for the split is gone, and the leakflags item 2026101912030152 already treats `--no-fuzz` as turning off what's in stage 3. So `--no-fuzz` skips the whole stage, as the help says, and also the help stays as it is.
+	- Actual fix [Bug]: govulncheck and pip-audit check `--no-fuzz` like the rest of stage 3.
+	- Branch: round-20261022
+	- Test case: test.bash [EtOKpZS]. [Et9PJsY] and [Et9R5lO] had used `--no-fuzz` to skip the rest of stage 3, so they pass `--no-leakcheck` now, with the same IDs.
+	- Verified: [EtOKpZS] fails against the old cicd.bash and passes with the fix. test.bash 1597 -> 1598, 0 failed, and `cicd.bash --gate` passes.
+	- Swept: the help's stage list and option lines, README (no mention), contributing.md, where `--leakcheck` adding the leak checks back to `--no-fuzz` still holds, config.bash's pip-audit comment, and the history footers of cicd.bash and test.bash. The run in the container already gets `--no-fuzz` as given.
+	- Closed: 20261021-194000
 
 - Check the demo's Pillow and fontTools advisories against Debian's fixes
 	- ID: 2026101905585018
