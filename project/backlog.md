@@ -215,6 +215,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Decisions:
 		- Moved Pillow rather than listing the 8. The answer on 2026101905585018 allows it, 13.0.0 fixes them all, and a list of 24 would need its own upkeep.
 	- Branch: round-20261022
+	- Commit: 73d6a98
 	- Test case: test.bash [EtAFLx0] for the lock's Pillow, and pip-audit's [Et9PJsY] and [Et9R5lO]. The image build also stops on a Pillow other than the recorded one. No new check, since the audit in the image is what failed.
 	- Verified: Stage 3 and the demo stage in the new image. pip-audit is clean on Pillow 13.0.0 with fontTools' one entry set aside, govulncheck is clean, fuzz.bash 313/0, and the spawn counts pass. The demo gif renders byte for byte the same, so it didn't change. test.bash 1598/0, and `cicd.bash --gate` passes.
 	- Swept: `TOOL_VERSIONS`, the Dockerfile's Pillow check, which reads the ARG, and its apt comment, the lock's header, and contributing.md's demo prerequisite, which names no version. "12.3.0" is left only in the backlog and the history footer.
@@ -237,6 +238,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The reason for the split is gone, and the leakflags item 2026101912030152 already treats `--no-fuzz` as turning off what's in stage 3. So `--no-fuzz` skips the whole stage, as the help says, and also the help stays as it is.
 	- Actual fix [Bug]: govulncheck and pip-audit check `--no-fuzz` like the rest of stage 3.
 	- Branch: round-20261022
+	- Commit: 73d6a98
 	- Test case: test.bash [EtOKpZS]. [Et9PJsY] and [Et9R5lO] had used `--no-fuzz` to skip the rest of stage 3, so they pass `--no-leakcheck` now, with the same IDs.
 	- Verified: [EtOKpZS] fails against the old cicd.bash and passes with the fix. test.bash 1597 -> 1598, 0 failed, and `cicd.bash --gate` passes.
 	- Swept: the help's stage list and option lines, README (no mention), contributing.md, where `--leakcheck` adding the leak checks back to `--no-fuzz` still holds, config.bash's pip-audit comment, and the history footers of cicd.bash and test.bash. The run in the container already gets `--no-fuzz` as given.
