@@ -36,8 +36,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
-	- Status: Waiting for answers
-		- Waits on the questions entry for 2026101916533300: whether a `raw` under another one, such as a git hook calling `gitsby raw`, should be refused or allowed a few levels. The fix is in either way.
+	- Status: Queued
+		- Answer to whether a `raw` under another one, such as a git hook calling `gitsby raw`, is refused: "What any sane human git user would expect." So hooks and other nested runs work, and a wrapper loop still stops.
 	- Needs local test suite run?: No. test.bash ran 1591/0.
 	- Needs external testing: b28l, the box that hit it, with `type -a gh` and a `gitsby raw gh auth status` there. Stage 7 is done.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Critical
@@ -113,7 +113,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Builds should clean up stale artifacts and side-effects when done
 	- ID: 2026101912030138
 	- Type: Enhancement
-	- Status: Done
+	- Status: Waiting for testing
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261019-120301
 	- Opened by: jim-collier
@@ -129,8 +129,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: Both fail against gover's cicd.bash. test.bash 1571 -> 1579, 0 failed, and `cicd.bash --gate` passes. `demo-repo.bash --remove` removed a world it built, refused a folder it didn't, and passed on one that wasn't there.
 	- Note: Needs one real full run, in the container and with `--no-container`, to see `/tmp/gitsby-demo` and the scratch folder gone.
 	- Verified: 2026-10-21 on b23. A `--no-container` full run passed every stage, and after it `/tmp/gitsby-demo`, left there by a run on 10-19, was gone, and so was its scratch folder. A full run in the container stopped in stage 3 on pip-audit (2026102113100000), and its scratch folder was still gone, as was the one from a `--quick --leakcheck` run there. No gitsby-cicd container was left, and no new untagged image. The container's `/tmp` is a tmpfs that goes with it, so its demo repos can't outlive it.
-	- Acceptance signoff: Self-closed: the item asked for these runs, and both cleanups show on the box.
-	- Closed: 20261021-130500
+	- Note: Reopened 2026-10-22. The container half never reached stage 6, so it still needs one full run there that passes.
 
 - CICD gets `--leakcheck` and `--no-leakcheck` flags
 	- ID: 2026101912030152
