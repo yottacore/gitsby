@@ -2070,6 +2070,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 ### Features and enhancements
 
 - 🔘 Move the shcl module from its pinned `dev` commit to the tagged 3.0 release.
+	- Status: Stalled
+		- Waits on shcl tagging 3.0 with a `/v3` module path.
 	- Opened: 20260924-132324
 	- The pin is `v2.0.0-20261001214152-b10c2009d36c` since 2026-10-01, shcl `dev` at what will be the beta cut. Go sorts it below v2.0.0. Nothing asks for v2.0.0 on the new import path, so nothing picks it over the pin.
 	- Go refuses a v3 tag on a module named `.../v2`, so the tag should bring a `/v3` import path. Move the imports in the same commit.
