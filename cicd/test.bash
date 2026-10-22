@@ -6660,6 +6660,11 @@ GHEOF
 	: > "${fg}/glab.log"
 	fAssert "[EtRsYMX] raw glab auth status is pinned to the account's host" \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_GLAB_LOG='${fg}/glab.log' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw glab auth status >/dev/null && grep -qx 'auth status --hostname git.example.test' '${fg}/glab.log'"
+	## A host's ssh endpoint (ssh.gitlab.gnome.org) is the same service, so its token still applies.
+	git -C "${fgRepo}" remote set-url origin git@ssh.git.example.test:acme/proj.git
+	fAssertOut "[EtRzPaH] a remote on ssh.<host> still gets the account's token and host" '^host=https://git\.example\.test token=tok_ghonly$' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw glab api user"
+	git -C "${fgRepo}" remote set-url origin https://git.example.test/acme/proj.git
 	fAssertOut "[ErwoOgi] --any-identity hands tea nothing"  '^url= token=$' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_ENV=1 '${gitsby}' -q -NoFetch --any-identity --config '${fg}/tea-acct.shcl' raw tea whoami"
 	: > "${fg}/rawdeb.log"

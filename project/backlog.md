@@ -112,6 +112,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 2026-10-22: `raw glab mr list` and `raw glab repo view` in a GNOME clone fail with "none of the git remotes ... point to a known GitLab host". The remote is `ssh.gitlab.gnome.org`, the API host is `gitlab.gnome.org`, and glab matches them by name. `-R t00mietum/gtk` works when `GITLAB_HOST` is set. gitsby sets `GITLAB_HOST` with an `https://` prefix.
 		- 2026-10-22: `raw glab auth status` outside a repo sent the GNOME token to gitlab.com, which answered 401. glab applies `GITLAB_TOKEN` to every host it knows. Fixed on branch glabtoken: gitsby adds `--hostname <account host>` unless one is given. Test.bash `[EtRsYMX]`, Go `[EtRsVxf]`. Inside a GNOME clone no token is passed at all, because the remote is `ssh.gitlab.gnome.org` and the account's host is `gitlab.gnome.org`.
 		- 2026-10-22: gitsby warns the token file is readable by other users.
+		- 2026-10-22: Fixed on branch glabtoken: a remote on `ssh.<host>` now counts as `<host>` for the account's token and credential helper (`serviceHost` in account.go). Test.bash `[EtRzPaH]`, Go `[EtRzPK4]`. Checked for real: `raw glab mr list -R GNOME/gtk` in a GNOME clone lists the open merge requests as t00mietum.
+		- 2026-10-22: `raw glab repo view` with no `-R` still fails in a GNOME clone. glab matches the remote's host (`ssh.gitlab.gnome.org`) to `GITLAB_HOST` itself. Still open, along with `pr`.
 
 - Updates to CICD script flags
 	- ID: 2026101816064793

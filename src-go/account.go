@@ -248,6 +248,16 @@ func (a *app) accountLogin() string {
 	return "x"
 }
 
+// serviceHost drops a leading 'ssh.', the name some hosts give their ssh
+// endpoint (ssh.gitlab.gnome.org, ssh.github.com). Tokens and the credential
+// helper belong to the web host.
+func serviceHost(host string) string {
+	if rest, ok := strings.CutPrefix(host, "ssh."); ok && strings.Contains(rest, ".") {
+		return rest
+	}
+	return host
+}
+
 // authHost is the git host this run will authenticate to, which is what decides
 // whether the account's token is any use and which host the helper is written for.
 // A clone resolves from the URL it was given for the same reason it resolves its
@@ -256,7 +266,7 @@ func (a *app) accountLogin() string {
 func (a *app) authHost() string {
 	if a.cmd.name == "repo-clone" {
 		if host := parseRemote(a.cmd.arg).host; host != "" {
-			return host
+			return serviceHost(host)
 		}
 		// 'owner/name' shorthand has no host in it, and only ever meant github.com.
 		if ownerNameRE.MatchString(a.cmd.arg) && !pathExists(a.cmd.arg) {
@@ -265,7 +275,7 @@ func (a *app) authHost() string {
 		return a.accountHost()
 	}
 	if host := a.originHost(); host != "" {
-		return host
+		return serviceHost(host)
 	}
 	// No remote yet - 'repo create' and 'repo connect' are about to make one, and
 	// the account's own host is the only evidence available about where.

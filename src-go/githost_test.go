@@ -399,3 +399,18 @@ func TestGlabScopeAuth(t *testing.T) { // [EtRsVxf]
 		}
 	}
 }
+
+func TestServiceHost(t *testing.T) { // [EtRzPK4]
+	for in, want := range map[string]string{
+		"ssh.gitlab.gnome.org": "gitlab.gnome.org",
+		"ssh.github.com":       "github.com",
+		"gitlab.gnome.org":     "gitlab.gnome.org",
+		"ssh.local":            "ssh.local",
+		"ssh":                  "ssh",
+		"":                     "",
+	} {
+		if got := serviceHost(in); got != want {
+			t.Errorf("%q -> %q, want %q", in, got, want)
+		}
+	}
+}
