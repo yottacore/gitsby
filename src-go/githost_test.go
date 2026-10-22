@@ -381,3 +381,21 @@ func TestHostTokenEnvKeepsGitHubTokens(t *testing.T) { // [ErwoOg3]
 		t.Errorf("got GITEA_TOKEN=%q GITEA_INSTANCE_URL=%q", os.Getenv("GITEA_TOKEN"), os.Getenv("GITEA_INSTANCE_URL"))
 	}
 }
+
+// 'glab auth status' with no host walks every host glab knows, and gitlab.com
+// would see a token that belongs to another server.
+func TestGlabScopeAuth(t *testing.T) { // [EtRsVxf]
+	h := "gitlab.example.test"
+	for _, c := range []struct{ in, want string }{
+		{"auth status", "auth status --hostname gitlab.example.test"},
+		{"auth status --hostname other.test", "auth status --hostname other.test"},
+		{"auth status -h other.test", "auth status -h other.test"},
+		{"auth status --hostname=other.test", "auth status --hostname=other.test"},
+		{"mr list", "mr list"},
+		{"auth", "auth"},
+	} {
+		if got := strings.Join(glabScopeAuth(strings.Fields(c.in), h), " "); got != c.want {
+			t.Errorf("%q -> %q, want %q", c.in, got, c.want)
+		}
+	}
+}

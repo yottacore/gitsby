@@ -6536,6 +6536,7 @@ exit 0
 TEAEOF
 	fStub "${fg}/bin/glab" <<'GLEOF'
 #!/usr/bin/env bash
+[[ -n "${FAKE_GLAB_LOG:-}" ]] && echo "$*" >> "${FAKE_GLAB_LOG}"
 echo "host=${GITLAB_HOST:-} token=${GITLAB_TOKEN:-}"
 GLEOF
 	## tig and lazygit are git underneath, so they get the account through git's own config.
@@ -6655,6 +6656,10 @@ GHEOF
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_ENV=1 '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami"
 	fAssertOut "[ErwoOgV] and so does raw glab"  '^host=https://git\.example\.test token=tok_ghonly$' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw glab auth status"
+	## glab auth status with no host checks every host glab knows, and sends our one token to all of them.
+	: > "${fg}/glab.log"
+	fAssert "[EtRsYMX] raw glab auth status is pinned to the account's host" \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_GLAB_LOG='${fg}/glab.log' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw glab auth status >/dev/null && grep -qx 'auth status --hostname git.example.test' '${fg}/glab.log'"
 	fAssertOut "[ErwoOgi] --any-identity hands tea nothing"  '^url= token=$' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_ENV=1 '${gitsby}' -q -NoFetch --any-identity --config '${fg}/tea-acct.shcl' raw tea whoami"
 	: > "${fg}/rawdeb.log"

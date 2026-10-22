@@ -826,8 +826,12 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 				return err
 			}
 		case "glab":
-			if _, err := a.hostTokenEnv("GITLAB_TOKEN", "GITLAB_HOST"); err != nil {
+			gave, err := a.hostTokenEnv("GITLAB_TOKEN", "GITLAB_HOST")
+			if err != nil {
 				return err
+			}
+			if gave {
+				args = glabScopeAuth(args, a.acct.credHost)
 			}
 		}
 	}

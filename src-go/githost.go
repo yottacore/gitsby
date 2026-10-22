@@ -189,6 +189,20 @@ func (a *app) hostTokenEnv(tokenVar, hostVar string) (bool, error) {
 	return true, setEnv(hostVar, "https://"+a.acct.credHost)
 }
 
+// glabScopeAuth pins 'glab auth status' to the account's host. Left alone it
+// checks every host glab knows, gitlab.com included, with the one token we set.
+func glabScopeAuth(args []string, host string) []string {
+	if len(args) < 2 || args[0] != "auth" || args[1] != "status" {
+		return args
+	}
+	for _, x := range args[2:] {
+		if x == "-h" || x == "--hostname" || strings.HasPrefix(x, "--hostname=") {
+			return args
+		}
+	}
+	return append(append([]string{}, args...), "--hostname", host)
+}
+
 // teaVersionRE reads 'tea --version', once ansiRE has taken the bold off the number.
 var (
 	teaVersionRE = regexp.MustCompile(`^Version:\s*v?(\d+)\.(\d+)`)
