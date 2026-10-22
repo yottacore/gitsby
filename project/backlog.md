@@ -37,9 +37,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026101916533300
 	- Type: Bug
 	- Status: Waiting for testing
-		- Waits on stage 7 for the 2026-10-22 nesting change, and on b28l.
+		- Waits on b28l.
 	- Needs local test suite run?: No. test.bash ran 1597/0.
-	- Needs external testing: Stage 7 for the 2026-10-22 change, since the chain in `GITSBY_RAW_ACTIVE` is new on every OS, Windows Go tests included. Then b28l, the box that hit it, with `type -a gh` and a `gitsby raw gh auth status` there.
+	- Needs external testing: b28l, the box that hit it, with `type -a gh` and a `gitsby raw gh auth status` there.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Critical
 	- Opened: 20261019-165333
 	- Opened by: jim-collier
@@ -80,6 +80,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: All 12 new test.bash checks fail on the build before the fix, with the other 1579 passing. The 5 with only the link on PATH were rerun outside the suite with the same command and pattern, and fail there too. After it, test.bash 1579 -> 1591, 0 failed. Both Go tests fail with the self check and the env check taken out. `GOOS=windows go vet` and darwin and freebsd builds pass. The wrapper stand-in started once, then refused.
 	- Verified: 2026-10-21, stage 7 passed on every box. test.bash 1368/0 on b26 and 1271/0 on vmFreeBSD, each 15 more than on 10-19, all from this round, and 1579/0 on vmDebARM64, 23 more, with leakflags' 8. All 12 of this item's test.bash checks ran on each. The Go tests passed there and on vm925w, where `[EtMXfI7]` skips, since it needs symlinks and the exec bit, and `[EtMXfJm]` passed.
 	- Verified: 2026-10-22, test.bash 1594 -> 1597, 0 failed, with the reworded `[EtMXMNv]` and `[EtMXMQW]`. On the build before, the 3 new checks fail. The Go tests fail with each part of `rawNest` taken out in turn: the repeat check, the probe mark, the depth limit, the folder and the separator between arguments. Outside the suite, a wrapper `gh` started once and was refused, and one adding an argument each time stopped at 16. `GOOS=windows go vet` and the Windows test build, and darwin and freebsd builds, pass.
+	- Verified: 2026-10-22, stage 7 passed on every box for the nesting change. test.bash 1371/0 on b26 and 1274/0 on vmFreeBSD, each 3 more than on 10-21, which are `[EtOGJ6U]`, `[EtOGJ6i]` and `[EtOGJ6v]`. 1583/0 on vmDebARM64, 4 more, those 3 plus `[EtOKpZS]`, which sits in the Linux-only pre-push gate block. `[EtOGJ79]` and `[EtOGJ7M]` passed in the Go tests on b26, vmFreeBSD, vmDebARM64 natively and under Wine, and vm925w, where the Go tests were 191 ok and 23 skipped, 2 more ok than on 10-21. `[EtMXfJm]` passed there too. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log`.
 	- Swept: every `raw` tool shares `cmdPassthrough`, git included. 2026-10-22: `rawActive` has one reader, `cmdPassthrough`, and the variable is unset in all 4 hermetic suites. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
 
 - Updates to CICD script flags
@@ -119,7 +120,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Builds should clean up stale artifacts and side-effects when done
 	- ID: 2026101912030138
 	- Type: Enhancement
-	- Status: Waiting for testing
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261019-120301
 	- Opened by: jim-collier
@@ -136,6 +137,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Note: Needs one real full run, in the container and with `--no-container`, to see `/tmp/gitsby-demo` and the scratch folder gone.
 	- Verified: 2026-10-21 on b23. A `--no-container` full run passed every stage, and after it `/tmp/gitsby-demo`, left there by a run on 10-19, was gone, and so was its scratch folder. A full run in the container stopped in stage 3 on pip-audit (2026102113100000), and its scratch folder was still gone, as was the one from a `--quick --leakcheck` run there. No gitsby-cicd container was left, and no new untagged image. The container's `/tmp` is a tmpfs that goes with it, so its demo repos can't outlive it.
 	- Note: Reopened 2026-10-22. The container half never reached stage 6, so it still needs one full run there that passes.
+	- Verified: 2026-10-22 on b23. A full run in the container passed every stage, stage 6 and stage 7 included. After it its scratch folder was gone, `/tmp/gitsby-demo` wasn't there, no gitsby-cicd container was left, and there was no new untagged image. A `--no-container --no-remote` full run then passed too, with the same 4 checks clean. Logs: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log` and `run2.log` beside it.
+	- Acceptance signoff: Self-closed: the full run in the container passed with nothing left behind, which was all that was left.
+	- Closed: 20261021-203604
 
 - CICD gets `--leakcheck` and `--no-leakcheck` flags
 	- ID: 2026101912030152
@@ -198,8 +202,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - pip-audit fails every full run in the container on 8 new Pillow 12.3.0 advisories
 	- ID: 2026102113100000
 	- Type: Task
-	- Status: Waiting for testing
-	- Needs local test suite run?: Yes. A plain full run in the container, which this item stopped at stage 3.
+	- Status: Done
+	- Needs local test suite run?: No. The plain full run in the container passed 2026-10-22.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261021-131000
 	- Opened by: jim-collier
@@ -219,6 +223,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash [EtAFLx0] for the lock's Pillow, and pip-audit's [Et9PJsY] and [Et9R5lO]. The image build also stops on a Pillow other than the recorded one. No new check, since the audit in the image is what failed.
 	- Verified: Stage 3 and the demo stage in the new image. pip-audit is clean on Pillow 13.0.0 with fontTools' one entry set aside, govulncheck is clean, fuzz.bash 313/0, and the spawn counts pass. The demo gif renders byte for byte the same, so it didn't change. test.bash 1598/0, and `cicd.bash --gate` passes.
 	- Swept: `TOOL_VERSIONS`, the Dockerfile's Pillow check, which reads the ARG, and its apt comment, the lock's header, and contributing.md's demo prerequisite, which names no version. "12.3.0" is left only in the backlog and the history footer.
+	- Verified: 2026-10-22, a plain full run in the container on b23 passed every stage. Stage 3's pip-audit was clean on Pillow 13.0.0, and stage 6 rendered the demo gif unchanged. test.bash 1598/0, fuzz.bash 313/0, parity 29/0. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log`.
+	- Acceptance signoff: Self-closed: its own test, the plain full run in the container, passed.
+	- Closed: 20261021-203604
 
 - `--no-fuzz` still runs govulncheck and pip-audit
 	- ID: 2026102113100100
