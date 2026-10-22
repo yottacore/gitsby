@@ -83,6 +83,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: 2026-10-22, stage 7 passed on every box for the nesting change. test.bash 1371/0 on b26 and 1274/0 on vmFreeBSD, each 3 more than on 10-21, which are `[EtOGJ6U]`, `[EtOGJ6i]` and `[EtOGJ6v]`. 1583/0 on vmDebARM64, 4 more, those 3 plus `[EtOKpZS]`, which sits in the Linux-only pre-push gate block. `[EtOGJ79]` and `[EtOGJ7M]` passed in the Go tests on b26, vmFreeBSD, vmDebARM64 natively and under Wine, and vm925w, where the Go tests were 191 ok and 23 skipped, 2 more ok than on 10-21. `[EtMXfJm]` passed there too. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log`.
 	- Swept: every `raw` tool shares `cmdPassthrough`, git included. 2026-10-22: `rawActive` has one reader, `cmdPassthrough`, and the variable is unset in all 4 hermetic suites. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
 
+- test.bash on b26 prints `grep: warning: stray \ before -` 22 times
+	- ID: 2026102120365577
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261021-203655
+	- Opened by: jim-collier
+	- Target OS: macOS
+	- Test environment: b26
+	- Incorrect behavior [Bug]:
+		- Stage 7's b26 log has the warning 22 times, on 2026-10-21 and 2026-10-22 both. The checks still pass, but it's noise in the log, and a pattern grep warns about may not match what it should.
+	- Expected behavior [Bug]:
+		- No grep warnings. Each pattern matches the same lines on every box.
+
 - Updates to CICD script flags
 	- ID: 2026101816064793
 	- Type: Enhancement
