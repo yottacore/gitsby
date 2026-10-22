@@ -830,7 +830,7 @@ elif ((doFuzz)); then
 fi
 ## The standard library and every module in go.mod, the test-only ones too (-test). The
 ## library code is linked into every binary we publish. Probe-gated liek staticcheck.
-if [[ -n "${ranWhere:-}" ]]; then
+if [[ -n "${ranWhere:-}" ]] || ((! doFuzz)); then
 	:
 elif ((quick)); then
 	fEcho_Clean "govulncheck skipped (--quick: it reaches vuln.go.dev)"
@@ -845,7 +845,7 @@ fi
 ## without moving the upstream version, so it can report one already fixed; PIP_AUDIT_IGNORE in
 ## config.bash lists those, each with the backlog item that checks it. Off the container a box's
 ## own old Pillow fails here on purpose; it is the copy that box renders with.
-if [[ -n "${ranWhere:-}" || -z "${PY_AUDIT_DISTS+x}" ]] || ((! ${#PY_AUDIT_DISTS[@]})); then
+if [[ -n "${ranWhere:-}" || -z "${PY_AUDIT_DISTS+x}" ]] || ((! doFuzz || ! ${#PY_AUDIT_DISTS[@]})); then
 	:
 elif ((quick)); then
 	fEcho_Clean "pip-audit skipped (--quick: it reaches pypi.org)"
@@ -1111,3 +1111,4 @@ fEcho_Clean
 ##		- 2026-10-19 JC: Every build pins GOAMD64=v1, so a stray environment can't raise the CPU floor.
 ##		- 2026-10-19 JC: --leakcheck's CodeQL also runs Python's suite, over the pipeline's Python files and the installed source of the libraries they import. A demo gif that differs, drawn where Pillow or gifsicle isn't at its recorded version, is a warning and the committed one stays.
 ##		- 2026-10-19 JC: The leak checks run on every full run, and not under --quick or --no-fuzz. --leakcheck adds them back and --no-leakcheck leaves them out. A plain run with no CodeQL warns and goes on. The run's temp files sit in one folder that goes when it exits, and stage 6 removes the demo's repos once the gif is drawn.
+##		- 2026-10-21 JC: --no-fuzz skips govulncheck adn pip-audit too, as its help says. They sat outside it from when govulncheck still ran under --quick, which stopped on 2026-10-18.

@@ -21,7 +21,7 @@ RUN sed -i -e "s|^URIs: http://deb.debian.org/debian-security|URIs: http://snaps
 # gcc is for go test -race, libicu and libgssapi for pwsh. The python and font
 # packages are what the demo renderer draws with, and python3-venv holds ruff and pip-audit.
 # Pillow isn't among them. It comes from the lock below, since trixie's has advisories
-# fixed only in 12.3.0.
+# fixed only upstream.
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends \
 		bash ca-certificates curl openssl xz-utils zstd unzip gcc libc6-dev \

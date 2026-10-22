@@ -212,7 +212,7 @@ type app struct {
 	// still wants the connect timeout that stops a dead remote hanging every command.
 	userSSHCommand bool
 
-	// GITSBY_RAW_ACTIVE as the run found it, before 'raw' sets its own.
+	// GITSBY_RAW_ACTIVE as the run found it, before 'raw' adds itself.
 	rawActive string
 
 	// The stamp a quiet commit falls back to with no message and no editor.

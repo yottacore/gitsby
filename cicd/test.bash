@@ -566,7 +566,7 @@ fGateCodeQLSumInTag(){
 ## pip-audit gets the demo's libraries as pins, with the known advisories set aside, and
 ## govulncheck takes in the test-only modules.
 fGatePipAudit(){
-	fGateSays 0 'OK: pip-audit clean' -y --no-container --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
+	fGateSays 0 'OK: pip-audit clean' -y --no-container --no-leakcheck --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
 		&& fGateCalled '^python3 -c import importlib\.metadata.* Pillow fonttools pycairo PyGObject$' \
 			'^pip-audit -r [^ ]+ --no-deps --disable-pip --progress-spinner off (--ignore-vuln [^ ]+ )*--ignore-vuln CVE-2025-66034$' \
 			'^govulncheck -test \./\.\.\.$'
@@ -575,9 +575,15 @@ fGatePipAuditFinds(){
 	: > "${gateFail}/pip-audit"
 	local rc=0
 	fGateSays 1 'pip-audit findings in this box.s libraries; the container pins its own in cicd/container/requirements\.txt' \
-		-y --no-container --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood || rc=1
+		-y --no-container --no-leakcheck --no-demogif --no-remote --no-sync --no-publish --no-dogfood || rc=1
 	rm -f -- "${gateFail:?}/pip-audit"
 	return "${rc}"
+}
+## --no-fuzz skips all of stage 3, as its help says, the two audits included.
+fGateNoFuzz(){
+	fGateSays 0 'CI/CD: done\.' -y --no-container --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
+		&& ! grep -qE '^(govulncheck -test|pip-audit -r|fuzz\.bash|spawn-count\.bash)( |$)|^go test .*-fuzz ' "${gateCalls}" \
+		&& grep -qxF 'fuzz + security skipped' "${gateOut}"
 }
 ## The image's tag follows the Python tools' lock as well as the recipe.
 fGateLockInTag(){
@@ -4628,6 +4634,17 @@ GHEOF
 	fAssertOut  "[EmZiVes] and the message is git's, not ours"  'Needed a single revision'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git rev-parse --verify nosuchref 2>&1"
 	fAssert     "[EmMuR6F] and its success is too"                   bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git rev-parse --verify HEAD >/dev/null"
 	fAssertOut  "[EmMuR6G] raw gh reaches gh"  'gho_faketoken'       bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw gh auth token --user workacct"
+	## A raw under a raw that isn't a loop runs as plain git would: a hook during 'raw git commit',
+	## and an alias whose command is 'raw' again. Both were refused once. Nothing of ours is added.
+	local rh="${ac}/rawhook"
+	git init --quiet -b main "${rh}" && echo a > "${rh}/a.txt" && git -C "${rh}" add a.txt
+	printf '#!/bin/sh\n%q raw git symbolic-ref --short HEAD > %q 2>&1\n' "${goBin}" "${rh}.out" > "${rh}/.git/hooks/pre-commit"
+	chmod +x "${rh}/.git/hooks/pre-commit"
+	git -C "${rh}" config alias.nest "!${goBin} raw git symbolic-ref --short HEAD"
+	fAssert    "[EtOGJ6U] a hook that runs raw git under raw git commit lets the commit through" \
+		bash -c "cd '${rh}' && env ${acEnv} '${goBin}' raw git -c user.name=t -c user.email=t@example.com commit -q -m one"
+	fAssert    "[EtOGJ6i] and its raw gets git's answer and nothing else"  bash -c "[[ \"\$(cat '${rh}.out')\" == main ]]"
+	fAssertOut "[EtOGJ6v] an alias that runs raw git under raw git works too"  '^main$'  bash -c "cd '${rh}' && env ${acEnv} '${goBin}' raw git nest"
 	## A tool on PATH that leads back to gitsby looped forever: a link to the binary, or a wrapper
 	## that runs 'raw <tool>' again. Each wrapper counts its starts and quits past 5, so a loop
 	## that comes back stays small. With only the link on PATH the shim can't find bash, so those
@@ -4646,14 +4663,14 @@ GHEOF
 			bash -c "cd '${acWork}' && env ${acEnv} PATH='${rl}/link:${ac}/bin:${PATH}' '${gitsby}' -q raw gh auth token --user workacct"
 		fAssertOut    "[EtMXMN4] and with no other gh, refused naming the entry"  "Not found in path: gh\\. '.*/rawloop/link/gh' is gitsby itself" \
 			bash -c "cd '${acWork}' && env ${acEnv} PATH='${rl}/link' '${goBin}' -q raw gh auth token"
-		fAssertOut    "[EtMXMNv] a gh wrapper that runs raw gh again is refused at once"  "GITSBY_RAW_ACTIVE is set, to '.*/rawloop/wrap/gh'" \
+		fAssertOut    "[EtMXMNv] a gh wrapper that runs raw gh again is refused at once, naming it"  "Looping: '.*/rawloop/wrap/gh' is already running under a 'raw gh'" \
 			bash -c "cd '${acWork}' && : > '${rl}/count' && env ${acEnv} PATH='${rl}/wrap:${ac}/bin:${PATH}' '${gitsby}' -q raw gh auth token"
 		fAssertNotOut "[EtMXMOn] and never reaches the spawn limit"  'spawn limit' \
 			bash -c "cd '${acWork}' && : > '${rl}/count' && env ${acEnv} PATH='${rl}/wrap:${ac}/bin:${PATH}' '${gitsby}' -q raw gh auth token"
 		for rlTool in tea glab lazygit tig; do
 			fAssertOut "[EtMXMPe] a ${rlTool} that is gitsby is refused too"  "Not found in path: ${rlTool}\\. '.*/rawloop/link/${rlTool}' is gitsby itself" \
 				bash -c "cd '${acWork}' && env ${acEnv} PATH='${rl}/link' '${goBin}' -q raw ${rlTool} --version"
-			fAssertOut "[EtMXMQW] and a ${rlTool} wrapper too"  "GITSBY_RAW_ACTIVE is set, to '.*/rawloop/wrap/${rlTool}'" \
+			fAssertOut "[EtMXMQW] and a ${rlTool} wrapper too"  "Looping: '.*/rawloop/wrap/${rlTool}' is already running under a 'raw ${rlTool}'" \
 				bash -c "cd '${acWork}' && : > '${rl}/count' && env ${acEnv} PATH='${rl}/wrap:${ac}/bin:${PATH}' '${gitsby}' -q raw ${rlTool} --version"
 		done
 		## The same for the commands that run a host tool themselves: 'pr' ran the link as
@@ -5686,6 +5703,7 @@ EOF
 		fAssert "[EtAFLsf] --leakcheck runs CodeQL's Python suite over the pipeline's Python files and the installed source of the libraries they import"  fGateCodeQLPython
 		fAssert "[Et9PJsY] a full run audits the demo's Python libraries, and govulncheck takes in the test-only modules"  fGatePipAudit
 		fAssert "[Et9R5lO] and a pip-audit finding stops it, pointing off the box to the container's pins"  fGatePipAuditFinds
+		fAssert "[EtOKpZS] --no-fuzz leaves out govulncheck and pip-audit with the rest of stage 3"  fGateNoFuzz
 		fAssert "[ErkbDTn] cicd.bash --help lists --no-remote" \
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--no-remote ' <<< \"\$out\""
 		fAssert "[EsJgeiS] cicd.bash --help lists --container" \
@@ -7101,3 +7119,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261019 JC: --leakcheck's CodeQL runs Python's suite too, over the pipeline's Python and the installed source of the demo's libraries, with the bundle and its sum in the image. Python reports are read by their own rule, security only in third-party code. The demo's Pillow is the lock's, and a demo gif drawn with another Pillow than the recorded one is left alone. 1561 -> 1571.
 ##		- 20261019 JC: The leak checks run by default, off under --quick and --no-fuzz, with --leakcheck and --no-leakcheck to say otherwise. The run's temp files are gone once it ends, even after a TERM, and stage 6 removes the demo's repos. 1571 -> 1579.
 ##		- 20261021 JC: raw passes over a tool on PATH that is gitsby itself, and refuses when started under another raw, so a gh, tea, glab, lazygit or tig that leads back can't loop. 1579 -> 1591.
+##		- 20261021 JC: --no-fuzz leaves out govulncheck and pip-audit, and the pip-audit checks no longer lean on it to skip the rest of stage 3. 1597 -> 1598.

@@ -13,6 +13,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"os/exec"
@@ -247,9 +249,44 @@ func findTool(name string) (string, []string) {
 	return hit.path, hit.ours
 }
 
-// rawActiveVar is set for everything 'raw' starts. A 'raw' that finds it already
-// set refuses, so a tool on PATH that calls gitsby back can't loop (2026101916533300).
+// rawActiveVar holds the chain of 'raw' runs above this one, for everything 'raw'
+// starts. A 'raw' refuses only to start what is already on it, so a hook or alias
+// calling 'gitsby raw' works and a wrapper on PATH that calls us back can't loop
+// (2026101916533300).
 const rawActiveVar = "GITSBY_RAW_ACTIVE"
+
+// rawDepthMax stops a loop whose arguments change each time. No real hook stack
+// nests this deep.
+const rawDepthMax = 16
+
+// rawProbing ends the chain while 'raw' runs tools only to check them, before the
+// handover. Nothing those start has a reason to call 'raw', so one that does is a
+// loop, and its own probes would start more.
+const rawProbing = "probe"
+
+// rawNest is chain with this run added, or the refusal if this run would loop.
+// An entry is the tool's name and a short hash of its path, the folder and the
+// arguments, so the variable stays small.
+func rawNest(chain, name, path string, args []string) (string, error) {
+	cwd, _ := os.Getwd() // couldn't tell hashes the same every level
+	sum := sha256.New()
+	for _, part := range append([]string{path, cwd}, args...) {
+		sum.Write([]byte(part))
+		sum.Write([]byte{0})
+	}
+	entry := name + ":" + hex.EncodeToString(sum.Sum(nil)[:6])
+	above := strings.Fields(chain)
+	if len(above) > 0 && above[len(above)-1] == rawProbing {
+		return "", usagef("Looping: 'raw %s' was started by a tool %s was only checking, and would run '%s'. A %s on PATH that calls '%s raw %s' does that. Unset %s to run anyway.", name, meName, path, name, meName, name, rawActiveVar)
+	}
+	if slices.Contains(above, entry) {
+		return "", usagef("Looping: '%s' is already running under a 'raw %s' with the same arguments, in the same folder. A %s on PATH that calls '%s raw %s' does that. Unset %s to run anyway.", path, name, name, meName, name, rawActiveVar)
+	}
+	if len(above) >= rawDepthMax {
+		return "", usagef("Looping: 'raw %s' would be %d deep under other 'raw' runs. A tool that calls '%s raw' with new arguments each time does that. Unset %s to run anyway.", name, len(above)+1, meName, rawActiveVar)
+	}
+	return strings.Join(append(above, entry), " "), nil
+}
 
 // lookTool is exec.LookPath that skips any PATH entry leading back to this very
 // binary, through a symlink or a hardlink. Each candidate still goes through

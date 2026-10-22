@@ -36,10 +36,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
-	- Status: Waiting for answers
-		- Waits on the questions entry for 2026101916533300: whether a `raw` under another one, such as a git hook calling `gitsby raw`, should be refused or allowed a few levels. The fix is in either way.
-	- Needs local test suite run?: No. test.bash ran 1591/0.
-	- Needs external testing: b28l, the box that hit it, with `type -a gh` and a `gitsby raw gh auth status` there. Stage 7 is done.
+	- Status: Waiting for testing
+		- Waits on b28l.
+	- Needs local test suite run?: No. test.bash ran 1597/0.
+	- Needs external testing: b28l, the box that hit it, with `type -a gh` and a `gitsby raw gh auth status` there.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Critical
 	- Opened: 20261019-165333
 	- Opened by: jim-collier
@@ -63,18 +63,39 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Progress log:
 		- 2026-10-19: Logged from a report by another project's session on b28l. Cause is from reading the code, not from a run there. Still need the output of `type -a gh` on b28l.
 		- 2026-10-21: Fixed as the requirements ask. `raw` walks PATH itself, through `exec.LookPath` on each entry, and passes over an entry that is the running binary. It sets `GITSBY_RAW_ACTIVE` to the tool's path before anything runs the tool, the tea probes and the account's gh calls included, and a `raw` that finds it set at startup refuses and names it. The hermetic suites unset it.
+		- 2026-10-22: The guard refused every nested `raw`, hooks and aliases included. `GITSBY_RAW_ACTIVE` is now the chain of `raw` runs above, one short entry each, and a `raw` refuses only to start one already on it. While `raw` runs tools only to check them, such as the tea and gh probes, the chain ends in a probe mark, and a `raw` started under that refuses. A loop with new arguments each time stops at 16 deep.
 	- Actual cause [Bug]:
 		- As the possible cause says. `raw` ran the tool by bare name and never asked what it found. Every run through a wrapper started the next.
-	- Actual fix [Bug]: `lookTool` in exec.go, used by `cmdPassthrough` for all six tools, and `rawActive` read in `newApp`. The tool still sees its own name as argv[0]. design.md's `raw` bullets say so.
+	- Actual fix [Bug]: `lookTool` in exec.go, used by `cmdPassthrough` for all six tools, and `rawActive` read in `newApp`. The tool still sees its own name as argv[0]. design.md's `raw` bullets say so. Since 2026-10-22, `rawNest` in exec.go builds and checks the chain.
 	- Decisions:
 		- With no other copy left, the refusal is "Not found in path: gh. '<entry>' is gitsby itself.", with the entry as found.
 		- A gitsby entry ahead of a real tool is passed over without a word.
 		- A plain copy of gitsby named `gh` isn't the same file, so only the env check stops it, on its second start.
-	- Branch: round-20261021
-	- Test case: test.bash `[EtMXMMC]`, `[EtMXMN4]`, `[EtMXMNv]` and `[EtMXMOn]` for gh, and `[EtMXMPe]` and `[EtMXMQW]` for tea, glab, lazygit and tig, as a link and as a wrapper each. Each wrapper quits after 5 starts. Go `[EtMXfI7]` for the PATH walk and `[EtMXfJm]` for the refusal.
+		- 2026-10-22, from the answer "What any sane human git user would expect": whatever nesting plain git allows works the same under gitsby, with no refusal and nothing added to the output. That covers hooks under `raw git commit` or `push`, git aliases, lazygit and tig custom commands, and scripts. A loop gitsby causes still stops at once and names what looped.
+		- An entry is the tool's name and a 12-digit hash of its path, the folder and the arguments. The folder is in it so a hook that runs the same command in a submodule isn't taken for a loop. Refusing on the same tool file alone was rejected, since it refuses `raw git` under `raw git`.
+		- A `raw` started by one of gitsby's own checks of a tool is refused, since nothing a check runs has a reason to call `raw`. Without that, the tea wrapper check `[EtMXMQW]` failed, since the `--version` and `logins list` probes each started a nested `raw`.
+		- The depth limit is 16. Plain git would loop forever there.
+	- Branch: round-20261021, then round-20261022
+	- Test case: test.bash `[EtMXMMC]`, `[EtMXMN4]`, `[EtMXMNv]` and `[EtMXMOn]` for gh, and `[EtMXMPe]` and `[EtMXMQW]` for tea, glab, lazygit and tig, as a link and as a wrapper each. Each wrapper quits after 5 starts. Go `[EtMXfI7]` for the PATH walk and `[EtMXfJm]` for the refusal, reworded 2026-10-22 to a repeat on the chain. Since then test.bash `[EtOGJ6U]` and `[EtOGJ6i]` for a pre-commit hook running `raw git` under `raw git commit`, `[EtOGJ6v]` for an alias doing the same, and Go `[EtOGJ79]` for the chain and the probe mark and `[EtOGJ7M]` for the depth limit.
 	- Verified: All 12 new test.bash checks fail on the build before the fix, with the other 1579 passing. The 5 with only the link on PATH were rerun outside the suite with the same command and pattern, and fail there too. After it, test.bash 1579 -> 1591, 0 failed. Both Go tests fail with the self check and the env check taken out. `GOOS=windows go vet` and darwin and freebsd builds pass. The wrapper stand-in started once, then refused.
 	- Verified: 2026-10-21, stage 7 passed on every box. test.bash 1368/0 on b26 and 1271/0 on vmFreeBSD, each 15 more than on 10-19, all from this round, and 1579/0 on vmDebARM64, 23 more, with leakflags' 8. All 12 of this item's test.bash checks ran on each. The Go tests passed there and on vm925w, where `[EtMXfI7]` skips, since it needs symlinks and the exec bit, and `[EtMXfJm]` passed.
-	- Swept: every `raw` tool shares `cmdPassthrough`, git included. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
+	- Verified: 2026-10-22, test.bash 1594 -> 1597, 0 failed, with the reworded `[EtMXMNv]` and `[EtMXMQW]`. On the build before, the 3 new checks fail. The Go tests fail with each part of `rawNest` taken out in turn: the repeat check, the probe mark, the depth limit, the folder and the separator between arguments. Outside the suite, a wrapper `gh` started once and was refused, and one adding an argument each time stopped at 16. `GOOS=windows go vet` and the Windows test build, and darwin and freebsd builds, pass.
+	- Verified: 2026-10-22, stage 7 passed on every box for the nesting change. test.bash 1371/0 on b26 and 1274/0 on vmFreeBSD, each 3 more than on 10-21, which are `[EtOGJ6U]`, `[EtOGJ6i]` and `[EtOGJ6v]`. 1583/0 on vmDebARM64, 4 more, those 3 plus `[EtOKpZS]`, which sits in the Linux-only pre-push gate block. `[EtOGJ79]` and `[EtOGJ7M]` passed in the Go tests on b26, vmFreeBSD, vmDebARM64 natively and under Wine, and vm925w, where the Go tests were 191 ok and 23 skipped, 2 more ok than on 10-21. `[EtMXfJm]` passed there too. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log`.
+	- Swept: every `raw` tool shares `cmdPassthrough`, git included. 2026-10-22: `rawActive` has one reader, `cmdPassthrough`, and the variable is unset in all 4 hermetic suites. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
+
+- test.bash on b26 prints `grep: warning: stray \ before -` 22 times
+	- ID: 2026102120365577
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261021-203655
+	- Opened by: jim-collier
+	- Target OS: macOS
+	- Test environment: b26
+	- Incorrect behavior [Bug]:
+		- Stage 7's b26 log has the warning 22 times, on 2026-10-21 and 2026-10-22 both. The checks still pass, but it's noise in the log, and a pattern grep warns about may not match what it should.
+	- Expected behavior [Bug]:
+		- No grep warnings. Each pattern matches the same lines on every box.
 
 - Updates to CICD script flags
 	- ID: 2026101816064793
@@ -129,8 +150,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: Both fail against gover's cicd.bash. test.bash 1571 -> 1579, 0 failed, and `cicd.bash --gate` passes. `demo-repo.bash --remove` removed a world it built, refused a folder it didn't, and passed on one that wasn't there.
 	- Note: Needs one real full run, in the container and with `--no-container`, to see `/tmp/gitsby-demo` and the scratch folder gone.
 	- Verified: 2026-10-21 on b23. A `--no-container` full run passed every stage, and after it `/tmp/gitsby-demo`, left there by a run on 10-19, was gone, and so was its scratch folder. A full run in the container stopped in stage 3 on pip-audit (2026102113100000), and its scratch folder was still gone, as was the one from a `--quick --leakcheck` run there. No gitsby-cicd container was left, and no new untagged image. The container's `/tmp` is a tmpfs that goes with it, so its demo repos can't outlive it.
-	- Acceptance signoff: Self-closed: the item asked for these runs, and both cleanups show on the box.
-	- Closed: 20261021-130500
+	- Note: Reopened 2026-10-22. The container half never reached stage 6, so it still needs one full run there that passes.
+	- Verified: 2026-10-22 on b23. A full run in the container passed every stage, stage 6 and stage 7 included. After it its scratch folder was gone, `/tmp/gitsby-demo` wasn't there, no gitsby-cicd container was left, and there was no new untagged image. A `--no-container --no-remote` full run then passed too, with the same 4 checks clean. Logs: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log` and `run2.log` beside it.
+	- Acceptance signoff: Self-closed: the full run in the container passed with nothing left behind, which was all that was left.
+	- Closed: 20261021-203604
 
 - CICD gets `--leakcheck` and `--no-leakcheck` flags
 	- ID: 2026101912030152
@@ -193,7 +216,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - pip-audit fails every full run in the container on 8 new Pillow 12.3.0 advisories
 	- ID: 2026102113100000
 	- Type: Task
-	- Status: Queued
+	- Status: Done
+	- Needs local test suite run?: No. The plain full run in the container passed 2026-10-22.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261021-131000
 	- Opened by: jim-collier
@@ -203,18 +227,43 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Check each, then move the lock's Pillow to 13.0.0, or list on `PIP_AUDIT_IGNORE` any that can't reach the demo. A newer Pillow means rendering and comparing the gif again, as 2026101905585018 did.
 	- Progress log:
 		- 2026-10-21: Seen on a full run on b23. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-12295100/run1.log`. Stages 1 and 2 passed, test.bash 1594/0, and so did fuzz.bash 313/0, the native fuzz targets and govulncheck.
+		- 2026-10-21: Checked all 8 against PyPI's advisories. 4 are in TIFF decoding and saving (112395, 112404, 112896, 112897). The others are a PDF append (112895), a GIF seek after a decompression bomb error (112400), a zero-width PPM through ImageMorph (112397), and EPS through Ghostscript (112899). The demo opens no image file and saves only its own GIF, so none reach it.
+		- 2026-10-21: PyPI now lists 24 advisories against 12.3.0, all fixed in 13.0.0. 13.0.0 has a CPython 3.13 manylinux x86_64 wheel, and the lock's hash is the one PyPI gives. Its breaking changes touch nothing the renderer calls.
+		- 2026-10-21: The lock's Pillow is 13.0.0, and `PIP_AUDIT_IGNORE` still holds only fontTools' entry. The image's tag moved to `gitsby-cicd:6fd011f04201`.
+	- Decisions:
+		- Moved Pillow rather than listing the 8. The answer on 2026101905585018 allows it, 13.0.0 fixes them all, and a list of 24 would need its own upkeep.
+	- Branch: round-20261022
+	- Commit: 73d6a98
+	- Test case: test.bash [EtAFLx0] for the lock's Pillow, and pip-audit's [Et9PJsY] and [Et9R5lO]. The image build also stops on a Pillow other than the recorded one. No new check, since the audit in the image is what failed.
+	- Verified: Stage 3 and the demo stage in the new image. pip-audit is clean on Pillow 13.0.0 with fontTools' one entry set aside, govulncheck is clean, fuzz.bash 313/0, and the spawn counts pass. The demo gif renders byte for byte the same, so it didn't change. test.bash 1598/0, and `cicd.bash --gate` passes.
+	- Swept: `TOOL_VERSIONS`, the Dockerfile's Pillow check, which reads the ARG, and its apt comment, the lock's header, and contributing.md's demo prerequisite, which names no version. "12.3.0" is left only in the backlog and the history footer.
+	- Verified: 2026-10-22, a plain full run in the container on b23 passed every stage. Stage 3's pip-audit was clean on Pillow 13.0.0, and stage 6 rendered the demo gif unchanged. test.bash 1598/0, fuzz.bash 313/0, parity 29/0. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log`.
+	- Acceptance signoff: Self-closed: its own test, the plain full run in the container, passed.
+	- Closed: 20261021-203604
 
 - `--no-fuzz` still runs govulncheck and pip-audit
 	- ID: 2026102113100100
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261021-131001
 	- Opened by: jim-collier
 	- Related IDs: 2026102113100000
 	- Incorrect behavior [Bug]:
 		- The help says `--no-fuzz` skips the fuzz + security stage, but in cicd.bash only fuzz.bash, the native fuzz targets, the spawn counts and the leak checks look at it. govulncheck and pip-audit still run, so `--no-fuzz` doesn't get past a pip-audit stop.
-	- Reproduced [Bug]: No. Read from the code, 2026-10-21.
+	- Reproduced [Bug]: Yes, 2026-10-21, by [EtOKpZS] against the old cicd.bash.
+	- Actual cause [Bug]:
+		- govulncheck sat outside the `--no-fuzz` gate on purpose at first (894d857, 2026-08-19). `--quick` then worked by turning fuzz off, and govulncheck ran under it anyway, "because it is a lookup rather than a workload".
+		- 81def43 (2026-10-18) made `--quick` skip it, since it reaches vuln.go.dev, and dropped that reason, but left it outside the gate. pip-audit copied its gate on 2026-10-19.
+	- Decisions:
+		- The reason for the split is gone, and the leakflags item 2026101912030152 already treats `--no-fuzz` as turning off what's in stage 3. So `--no-fuzz` skips the whole stage, as the help says, and also the help stays as it is.
+	- Actual fix [Bug]: govulncheck and pip-audit check `--no-fuzz` like the rest of stage 3.
+	- Branch: round-20261022
+	- Commit: 73d6a98
+	- Test case: test.bash [EtOKpZS]. [Et9PJsY] and [Et9R5lO] had used `--no-fuzz` to skip the rest of stage 3, so they pass `--no-leakcheck` now, with the same IDs.
+	- Verified: [EtOKpZS] fails against the old cicd.bash and passes with the fix. test.bash 1597 -> 1598, 0 failed, and `cicd.bash --gate` passes.
+	- Swept: the help's stage list and option lines, README (no mention), contributing.md, where `--leakcheck` adding the leak checks back to `--no-fuzz` still holds, config.bash's pip-audit comment, and the history footers of cicd.bash and test.bash. The run in the container already gets `--no-fuzz` as given.
+	- Closed: 20261021-194000
 
 - Check the demo's Pillow and fontTools advisories against Debian's fixes
 	- ID: 2026101905585018
@@ -2042,6 +2091,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 ### Features and enhancements
 
 - 🔘 Move the shcl module from its pinned `dev` commit to the tagged 3.0 release.
+	- Status: Stalled
+		- Waits on shcl tagging 3.0 with a `/v3` module path.
 	- Opened: 20260924-132324
 	- The pin is `v2.0.0-20261001214152-b10c2009d36c` since 2026-10-01, shcl `dev` at what will be the beta cut. Go sorts it below v2.0.0. Nothing asks for v2.0.0 on the new import path, so nothing picks it over the pin.
 	- Go refuses a v3 tag on a module named `.../v2`, so the tag should bring a `/v3` import path. Move the imports in the same commit.

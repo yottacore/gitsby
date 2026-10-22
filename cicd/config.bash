@@ -73,7 +73,7 @@ TOOL_VERSIONS=(
 	"markdownlint=0.49.1"
 	"PSScriptAnalyzer=1.25.0"
 	"gifsicle=1.96"
-	"Pillow=12.3.0"
+	"Pillow=13.0.0"
 	"strace=6.18"
 	"git=2.51.0"
 	"ruff=0.15.22"
@@ -115,7 +115,7 @@ PY_LINT_FILES=(
 ## 'with' (SIM115), and a mutable default argument (B006). Probe-gated.
 PY_LINT_RULES=(B019 SIM115 B006)
 ## Stage 3: pip-audit over the third-party libraries those files import, as installed. Skipped
-## by --quick, like govulncheck. The leak checks' CodeQL reads their installed source too.
+## by --quick and --no-fuzz, like govulncheck. The leak checks' CodeQL reads their installed source too.
 PY_AUDIT_DISTS=(Pillow fonttools pycairo PyGObject)
 ## Advisories against the upstream versions of the Debian builds the demo runs on. Debian's
 ## builds carry security patches past those versions, so each one names the Debian build
@@ -335,3 +335,4 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-10-19 JC: --leakcheck runs CodeQL too, from a pinned bundle in the image, with CODEQL_IGNORE for findings set aside. TOOL_VERSIONS records it.
 ##		- 2026-10-19 JC: Notes the GOAMD64=v1 pin beside CGO_ENABLED=0.
 ##		- 2026-10-19 JC: Pillow 12.3.0, from the upstream wheel, and only fontTools is left on PIP_AUDIT_IGNORE. CodeQL's Python suite runs too, with its own bundle sum. DEMOGIF_TOOLS names the tools a demo render has to match.
+##		- 2026-10-21 JC: Pillow 13.0.0, which fixes the advisories against 12.3.0. --no-fuzz skips pip-audit too.
