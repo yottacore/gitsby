@@ -4628,6 +4628,17 @@ GHEOF
 	fAssertOut  "[EmZiVes] and the message is git's, not ours"  'Needed a single revision'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git rev-parse --verify nosuchref 2>&1"
 	fAssert     "[EmMuR6F] and its success is too"                   bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git rev-parse --verify HEAD >/dev/null"
 	fAssertOut  "[EmMuR6G] raw gh reaches gh"  'gho_faketoken'       bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw gh auth token --user workacct"
+	## A raw under a raw that isn't a loop runs as plain git would: a hook during 'raw git commit',
+	## and an alias whose command is 'raw' again. Both were refused once. Nothing of ours is added.
+	local rh="${ac}/rawhook"
+	git init --quiet -b main "${rh}" && echo a > "${rh}/a.txt" && git -C "${rh}" add a.txt
+	printf '#!/bin/sh\n%q raw git symbolic-ref --short HEAD > %q 2>&1\n' "${goBin}" "${rh}.out" > "${rh}/.git/hooks/pre-commit"
+	chmod +x "${rh}/.git/hooks/pre-commit"
+	git -C "${rh}" config alias.nest "!${goBin} raw git symbolic-ref --short HEAD"
+	fAssert    "[EtOGJ6U] a hook that runs raw git under raw git commit lets the commit through" \
+		bash -c "cd '${rh}' && env ${acEnv} '${goBin}' raw git -c user.name=t -c user.email=t@example.com commit -q -m one"
+	fAssert    "[EtOGJ6i] and its raw gets git's answer and nothing else"  bash -c "[[ \"\$(cat '${rh}.out')\" == main ]]"
+	fAssertOut "[EtOGJ6v] an alias that runs raw git under raw git works too"  '^main$'  bash -c "cd '${rh}' && env ${acEnv} '${goBin}' raw git nest"
 	## A tool on PATH that leads back to gitsby looped forever: a link to the binary, or a wrapper
 	## that runs 'raw <tool>' again. Each wrapper counts its starts and quits past 5, so a loop
 	## that comes back stays small. With only the link on PATH the shim can't find bash, so those
@@ -4646,14 +4657,14 @@ GHEOF
 			bash -c "cd '${acWork}' && env ${acEnv} PATH='${rl}/link:${ac}/bin:${PATH}' '${gitsby}' -q raw gh auth token --user workacct"
 		fAssertOut    "[EtMXMN4] and with no other gh, refused naming the entry"  "Not found in path: gh\\. '.*/rawloop/link/gh' is gitsby itself" \
 			bash -c "cd '${acWork}' && env ${acEnv} PATH='${rl}/link' '${goBin}' -q raw gh auth token"
-		fAssertOut    "[EtMXMNv] a gh wrapper that runs raw gh again is refused at once"  "GITSBY_RAW_ACTIVE is set, to '.*/rawloop/wrap/gh'" \
+		fAssertOut    "[EtMXMNv] a gh wrapper that runs raw gh again is refused at once, naming it"  "Looping: '.*/rawloop/wrap/gh' is already running under a 'raw gh'" \
 			bash -c "cd '${acWork}' && : > '${rl}/count' && env ${acEnv} PATH='${rl}/wrap:${ac}/bin:${PATH}' '${gitsby}' -q raw gh auth token"
 		fAssertNotOut "[EtMXMOn] and never reaches the spawn limit"  'spawn limit' \
 			bash -c "cd '${acWork}' && : > '${rl}/count' && env ${acEnv} PATH='${rl}/wrap:${ac}/bin:${PATH}' '${gitsby}' -q raw gh auth token"
 		for rlTool in tea glab lazygit tig; do
 			fAssertOut "[EtMXMPe] a ${rlTool} that is gitsby is refused too"  "Not found in path: ${rlTool}\\. '.*/rawloop/link/${rlTool}' is gitsby itself" \
 				bash -c "cd '${acWork}' && env ${acEnv} PATH='${rl}/link' '${goBin}' -q raw ${rlTool} --version"
-			fAssertOut "[EtMXMQW] and a ${rlTool} wrapper too"  "GITSBY_RAW_ACTIVE is set, to '.*/rawloop/wrap/${rlTool}'" \
+			fAssertOut "[EtMXMQW] and a ${rlTool} wrapper too"  "Looping: '.*/rawloop/wrap/${rlTool}' is already running under a 'raw ${rlTool}'" \
 				bash -c "cd '${acWork}' && : > '${rl}/count' && env ${acEnv} PATH='${rl}/wrap:${ac}/bin:${PATH}' '${gitsby}' -q raw ${rlTool} --version"
 		done
 		## The same for the commands that run a host tool themselves: 'pr' ran the link as

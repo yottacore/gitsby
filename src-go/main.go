@@ -782,9 +782,6 @@ func (a *app) dispatch() error {
 // somebody else's command run under the right identity, and a script piping its
 // output must get that output and nothing else.
 func (a *app) cmdPassthrough(tool string, args []string) error {
-	if a.rawActive != "" {
-		return usagef("%s is set, to '%s'. A 'raw' run sets it for what it starts, and refuses when it finds it, so a tool that leads back to %s can't loop. Unset it to run anyway.", rawActiveVar, a.rawActive, meName)
-	}
 	names := []string{tool}
 	if tool == "tea" || tool == "tea-cli" {
 		// Either spelling runs whichever one is installed, the typed one first.
@@ -806,8 +803,12 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 	if path == "" {
 		return notInPath(tool, ours)
 	}
+	chain, err := rawNest(a.rawActive, name, path, args)
+	if err != nil {
+		return err
+	}
 	// Before any probe below runs the tool, since a wrapper would start us again.
-	if err := setEnv(rawActiveVar, path); err != nil {
+	if err := setEnv(rawActiveVar, chain+" "+rawProbing); err != nil {
 		return err
 	}
 	if err := a.resolveAccount(a.contextDir(), a.originURL()); err != nil {
@@ -841,6 +842,9 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 	}
 	if !a.opt.quiet && !a.acct.bypassed && !warned && who != "" && a.accountDecidedSomething() {
 		a.out.errorf("acting as %s (from %s)", who, a.accountSourceText(false))
+	}
+	if err := setEnv(rawActiveVar, chain); err != nil {
+		return err
 	}
 	return a.handover(name, path, args)
 }

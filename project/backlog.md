@@ -36,10 +36,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
-	- Status: Queued
-		- Answer to whether a `raw` under another one, such as a git hook calling `gitsby raw`, is refused: "What any sane human git user would expect." So hooks and other nested runs work, and a wrapper loop still stops.
-	- Needs local test suite run?: No. test.bash ran 1591/0.
-	- Needs external testing: b28l, the box that hit it, with `type -a gh` and a `gitsby raw gh auth status` there. Stage 7 is done.
+	- Status: Waiting for testing
+		- Waits on stage 7 for the 2026-10-22 nesting change, and on b28l.
+	- Needs local test suite run?: No. test.bash ran 1597/0.
+	- Needs external testing: Stage 7 for the 2026-10-22 change, since the chain in `GITSBY_RAW_ACTIVE` is new on every OS, Windows Go tests included. Then b28l, the box that hit it, with `type -a gh` and a `gitsby raw gh auth status` there.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Critical
 	- Opened: 20261019-165333
 	- Opened by: jim-collier
@@ -63,18 +63,24 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Progress log:
 		- 2026-10-19: Logged from a report by another project's session on b28l. Cause is from reading the code, not from a run there. Still need the output of `type -a gh` on b28l.
 		- 2026-10-21: Fixed as the requirements ask. `raw` walks PATH itself, through `exec.LookPath` on each entry, and passes over an entry that is the running binary. It sets `GITSBY_RAW_ACTIVE` to the tool's path before anything runs the tool, the tea probes and the account's gh calls included, and a `raw` that finds it set at startup refuses and names it. The hermetic suites unset it.
+		- 2026-10-22: The guard refused every nested `raw`, hooks and aliases included. `GITSBY_RAW_ACTIVE` is now the chain of `raw` runs above, one short entry each, and a `raw` refuses only to start one already on it. While `raw` runs tools only to check them, such as the tea and gh probes, the chain ends in a probe mark, and a `raw` started under that refuses. A loop with new arguments each time stops at 16 deep.
 	- Actual cause [Bug]:
 		- As the possible cause says. `raw` ran the tool by bare name and never asked what it found. Every run through a wrapper started the next.
-	- Actual fix [Bug]: `lookTool` in exec.go, used by `cmdPassthrough` for all six tools, and `rawActive` read in `newApp`. The tool still sees its own name as argv[0]. design.md's `raw` bullets say so.
+	- Actual fix [Bug]: `lookTool` in exec.go, used by `cmdPassthrough` for all six tools, and `rawActive` read in `newApp`. The tool still sees its own name as argv[0]. design.md's `raw` bullets say so. Since 2026-10-22, `rawNest` in exec.go builds and checks the chain.
 	- Decisions:
 		- With no other copy left, the refusal is "Not found in path: gh. '<entry>' is gitsby itself.", with the entry as found.
 		- A gitsby entry ahead of a real tool is passed over without a word.
 		- A plain copy of gitsby named `gh` isn't the same file, so only the env check stops it, on its second start.
-	- Branch: round-20261021
-	- Test case: test.bash `[EtMXMMC]`, `[EtMXMN4]`, `[EtMXMNv]` and `[EtMXMOn]` for gh, and `[EtMXMPe]` and `[EtMXMQW]` for tea, glab, lazygit and tig, as a link and as a wrapper each. Each wrapper quits after 5 starts. Go `[EtMXfI7]` for the PATH walk and `[EtMXfJm]` for the refusal.
+		- 2026-10-22, from the answer "What any sane human git user would expect": whatever nesting plain git allows works the same under gitsby, with no refusal and nothing added to the output. That covers hooks under `raw git commit` or `push`, git aliases, lazygit and tig custom commands, and scripts. A loop gitsby causes still stops at once and names what looped.
+		- An entry is the tool's name and a 12-digit hash of its path, the folder and the arguments. The folder is in it so a hook that runs the same command in a submodule isn't taken for a loop. Refusing on the same tool file alone was rejected, since it refuses `raw git` under `raw git`.
+		- A `raw` started by one of gitsby's own checks of a tool is refused, since nothing a check runs has a reason to call `raw`. Without that, the tea wrapper check `[EtMXMQW]` failed, since the `--version` and `logins list` probes each started a nested `raw`.
+		- The depth limit is 16. Plain git would loop forever there.
+	- Branch: round-20261021, then round-20261022
+	- Test case: test.bash `[EtMXMMC]`, `[EtMXMN4]`, `[EtMXMNv]` and `[EtMXMOn]` for gh, and `[EtMXMPe]` and `[EtMXMQW]` for tea, glab, lazygit and tig, as a link and as a wrapper each. Each wrapper quits after 5 starts. Go `[EtMXfI7]` for the PATH walk and `[EtMXfJm]` for the refusal, reworded 2026-10-22 to a repeat on the chain. Since then test.bash `[EtOGJ6U]` and `[EtOGJ6i]` for a pre-commit hook running `raw git` under `raw git commit`, `[EtOGJ6v]` for an alias doing the same, and Go `[EtOGJ79]` for the chain and the probe mark and `[EtOGJ7M]` for the depth limit.
 	- Verified: All 12 new test.bash checks fail on the build before the fix, with the other 1579 passing. The 5 with only the link on PATH were rerun outside the suite with the same command and pattern, and fail there too. After it, test.bash 1579 -> 1591, 0 failed. Both Go tests fail with the self check and the env check taken out. `GOOS=windows go vet` and darwin and freebsd builds pass. The wrapper stand-in started once, then refused.
 	- Verified: 2026-10-21, stage 7 passed on every box. test.bash 1368/0 on b26 and 1271/0 on vmFreeBSD, each 15 more than on 10-19, all from this round, and 1579/0 on vmDebARM64, 23 more, with leakflags' 8. All 12 of this item's test.bash checks ran on each. The Go tests passed there and on vm925w, where `[EtMXfI7]` skips, since it needs symlinks and the exec bit, and `[EtMXfJm]` passed.
-	- Swept: every `raw` tool shares `cmdPassthrough`, git included. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
+	- Verified: 2026-10-22, test.bash 1594 -> 1597, 0 failed, with the reworded `[EtMXMNv]` and `[EtMXMQW]`. On the build before, the 3 new checks fail. The Go tests fail with each part of `rawNest` taken out in turn: the repeat check, the probe mark, the depth limit, the folder and the separator between arguments. Outside the suite, a wrapper `gh` started once and was refused, and one adding an argument each time stopped at 16. `GOOS=windows go vet` and the Windows test build, and darwin and freebsd builds, pass.
+	- Swept: every `raw` tool shares `cmdPassthrough`, git included. 2026-10-22: `rawActive` has one reader, `cmdPassthrough`, and the variable is unset in all 4 hermetic suites. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
 
 - Updates to CICD script flags
 	- ID: 2026101816064793
