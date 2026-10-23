@@ -70,7 +70,7 @@ func (a *app) printSyntax() {
 	a.out.clean("  br merge [msg] .....: Merge current branch into " + mergeTargetLabel + " (--no-ff), push, delete it local + remote.")
 	a.out.clean("  br prune ...........: Delete branches already merged into " + mergeTargetLabel + ", local + remote.")
 	a.out.clean("  br hotfix <name> ...: Branch off the default branch, to correct what's already published.")
-	a.out.clean("  pr [create|n|ok n] .: Create, list, review, or accept a pull request (gh on GitHub, tea on Gitea).")
+	a.out.clean("  pr [create|n|ok n] .: Create, list, review, or accept a pull request (gh on GitHub, glab on GitLab, tea on Gitea).")
 	a.out.clean("  release [ver] ......: Cut a release: merge dev into main, tag, push. No ver: next after latest tag.")
 	a.out.clean("For scripts:")
 	a.out.clean("  raw git <args> .....: Run git as the account this folder belongs to. Everything after 'git' is git's.")

@@ -133,7 +133,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 
 - The host decides the tool, and the tool is reached for only once the host is known to be one it serves.
 	- Gitsby began as a GitHub program and reached for `gh` whenever it wanted anything from a remote. Most of what it does is Git, and Git does not care whose server it is - so among these options, it was decided that everything answerable with Git alone must work on any host with no host-specific client installed.
-	- Where `origin` points is established first, from the remote URL, with any `ssh_config` alias resolved. `gh` serves `github.com` and whatever `GH_HOST` names, so Enterprise stays on the `gh` path; `tea` serves Gitea and Forgejo. Some distributions install tea as `tea-cli`, and both spellings are looked for.
+	- Where `origin` points is established first, from the remote URL, with any `ssh_config` alias resolved. `gh` serves `github.com` and whatever `GH_HOST` names, so Enterprise stays on the `gh` path; `glab` serves gitlab.com, any host named `gitlab.*`, and whatever `GITLAB_HOST` names. `tea` serves Gitea and Forgejo. A leading `ssh.` on the host is dropped when matching an account or choosing a tool. Some distributions install tea as `tea-cli`, and both spellings are looked for.
 	- A remote whose host cannot be named - a local path, or a URL shape not parsed - is deliberately *not* a refusal. "We could not tell" and "it is definitely not GitHub" are different answers, and only one of them is gitsby's to assert; such a remote falls through to `gh` exactly as before. This follows the rule already standing for remote owners.
 	- `repo create` and `repo connect owner/name` stay GitHub-only. They are about GitHub specifically rather than about whichever host a repository happens to use.
 
@@ -182,7 +182,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- A pull from a remote other than origin can't be read ahead, since the fetch covers origin only. Git refuses that one itself, with nothing changed.
 	- On a checkout the edits left behind come along, the way plain git carries them. `br create` from `main` or `dev` commits nothing, so there the staged part comes along too, still staged.
 	- `release` reads ahead every pull and checkout up to the default branch. A file that passes is the same on every branch read so far, so the merge, the move back to `dev` and the last checkout can't touch it either. Only the index counts as work to release, so a level repo with edits left out of it has nothing new.
-	- `pr create` parks the way `sync` does. `gh` and `tea` are handed the branch by name, and neither looks at the tree then.
+	- `pr create` parks the way `sync` does. `gh`, `glab`, and `tea` are handed the branch by name, and neither looks at the tree then.
 
 - `sync` warns before it pushes your own work straight to `main`, `dev` or the default branch, and `--direct` says it's meant (2026-10-05).
 	- workflows.md had promised gitsby never does this, and `sync` always had. Refusing outright was out. Gitsby's own advice on a dirty `main` is to commit there with `pullcom`, and some repos commit on `main` every day.
@@ -522,7 +522,7 @@ See also the release policy under Architecture, which covers how releases are pu
 
 - The frozen scripts need Bash 4.4+ (for *nix or WSL), and/or PowerShell 7+ (cross-platform).
 
-- Nothing else at run time except `git`, plus the git host's own tool for the commands that need one. That is `gh` on GitHub and `tea` on Gitea or Forgejo for every `pr` form, and `gh` for `repo create` and for `repo connect` given an `owner/name` rather than a URL. A host gitsby comes to serve later brings its own tool the same way.
+- Nothing else at run time except `git`, plus the git host's own tool for the commands that need one. That is `gh` on GitHub, `glab` on GitLab, and `tea` on Gitea or Forgejo for every `pr` form, and `gh` for `repo create` and for `repo connect` given an `owner/name` rather than a URL. A host gitsby comes to serve later brings its own tool the same way.
 
 - No state of its own. Everything gitsby knows about a repo, it asks `git` for, so there is nothing to get out of sync and nothing to migrate.
 

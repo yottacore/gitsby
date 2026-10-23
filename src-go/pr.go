@@ -10,7 +10,9 @@
 package main
 
 import (
+	"encoding/json"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -68,6 +70,12 @@ func (a *app) settlePrTool() error {
 		return usagef("No 'origin' remote, so there is nowhere to open a pull request. Connect one first: %s repo connect <url | owner/name>", meName)
 	}
 	a.pr.tool, a.pr.cli = a.originTool()
+	if a.pr.tool == toolGlab && !a.acct.bypassed {
+		// The account's token and host, so glab needs no login of its own.
+		if _, err := a.hostTokenEnv("GITLAB_TOKEN", "GITLAB_HOST"); err != nil {
+			return err
+		}
+	}
 	if a.pr.tool != toolNone {
 		return nil
 	}
@@ -77,6 +85,8 @@ func (a *app) settlePrTool() error {
 		want := teaNames
 		if isGitHubHost(host) {
 			want = []string{"gh"}
+		} else if isGitLabHost(host) {
+			want = []string{"glab"}
 		}
 		if err := shadowed(want...); err != nil {
 			return err
@@ -109,7 +119,15 @@ func (a *app) settlePrTool() error {
 // view, so one call covers both.
 const teaDetailFields = "index,title,state,author,base,head,url,body,diff"
 
+// glabArgs adds the repo, for the reason glabRepoArg gives.
+func (a *app) glabArgs(args ...string) []string {
+	return append(args, "-R", a.glabRepoArg())
+}
+
 func (a *app) prListArgs() []string {
+	if a.pr.tool == toolGlab {
+		return a.glabArgs("mr", "list")
+	}
 	if a.pr.tool == toolTea {
 		return []string{"pulls", "list"}
 	}
@@ -119,6 +137,9 @@ func (a *app) prListArgs() []string {
 // prViewArgs is a list of calls, not one: what gh needs two commands for, tea does
 // in a single detail view.
 func (a *app) prViewArgs() [][]string {
+	if a.pr.tool == toolGlab {
+		return [][]string{a.glabArgs("mr", "view", a.pr.num), a.glabArgs("mr", "diff", a.pr.num)}
+	}
 	if a.pr.tool == toolTea {
 		return [][]string{{"pulls", a.pr.num, "--fields", teaDetailFields}}
 	}
@@ -126,6 +147,9 @@ func (a *app) prViewArgs() [][]string {
 }
 
 func (a *app) prCreateArgs(base string) []string {
+	if a.pr.tool == toolGlab {
+		return a.glabArgs("mr", "create", "--target-branch", base, "--source-branch", a.currentBranch(), "--title", a.pr.title, "--description", "", "--yes")
+	}
 	if a.pr.tool == toolTea {
 		return []string{"pulls", "create", "--base", base, "--head", a.currentBranch(), "--title", a.pr.title}
 	}
@@ -133,6 +157,9 @@ func (a *app) prCreateArgs(base string) []string {
 }
 
 func (a *app) prApproveArgs() []string {
+	if a.pr.tool == toolGlab {
+		return a.glabArgs("mr", "approve", a.pr.num)
+	}
 	if a.pr.tool == toolTea {
 		return []string{"pulls", "approve", a.pr.num}
 	}
@@ -140,6 +167,9 @@ func (a *app) prApproveArgs() []string {
 }
 
 func (a *app) prMergeArgs() []string {
+	if a.pr.tool == toolGlab {
+		return a.glabArgs("mr", "merge", a.pr.num, "--remove-source-branch", "--yes")
+	}
 	if a.pr.tool == toolTea {
 		return []string{"pulls", "merge", a.pr.num, "--style", "merge"}
 	}
@@ -154,6 +184,13 @@ func (a *app) prCleanArgs() []string {
 		return []string{"pulls", "clean", a.pr.num}
 	}
 	return nil
+}
+
+// glabMR is the part of glab's JSON for a merge request that we read.
+type glabMR struct {
+	IID    int    `json:"iid"`
+	State  string `json:"state"`
+	Source string `json:"source_branch"`
 }
 
 // prDisp is one call written out the way the preview shows it.
@@ -239,6 +276,17 @@ func (a *app) prPreflight() error {
 // which covers both "there isn't one" and "we couldn't ask". Only a courtesy
 // message hangs off it, so the two collapsing into one answer costs nothing.
 func (a *app) openPrForBranch(prBranch string) string {
+	if a.pr.tool == toolGlab {
+		out, ok := runOutOK(a.pr.cli, a.glabArgs("mr", "list", "--source-branch", prBranch, "--output", "json")...)
+		if !ok {
+			return ""
+		}
+		var list []glabMR
+		if json.Unmarshal([]byte(out), &list) != nil || len(list) == 0 {
+			return ""
+		}
+		return strconv.Itoa(list[0].IID)
+	}
 	if a.pr.tool == toolTea {
 		out, ok := runOutOK(a.pr.cli, "pulls", "list", "--state", "open", "--fields", "index,head", "--output", "tsv")
 		if !ok {
@@ -260,6 +308,19 @@ func (a *app) openPrForBranch(prBranch string) string {
 // whatever branch we happen to be standing on. The caller refuses on !ok, which is
 // the whole reason this is settled before a plan rather than during one.
 func (a *app) readPr() (head, state string, ok bool) {
+	if a.pr.tool == toolGlab {
+		out, ran := runOutOK(a.pr.cli, a.glabArgs("mr", "view", a.pr.num, "--output", "json")...)
+		var mr glabMR
+		if !ran || json.Unmarshal([]byte(out), &mr) != nil || mr.Source == "" {
+			return "", "", false
+		}
+		// glab says 'opened' where gh and tea say open.
+		state = strings.ToLower(mr.State)
+		if state == "opened" {
+			state = "open"
+		}
+		return mr.Source, state, true
+	}
 	if a.pr.tool == toolTea {
 		out, ran := runOutOK(a.pr.cli, "pulls", a.pr.num, "--fields", "index,head,state", "--output", "tsv")
 		if !ran {
@@ -345,17 +406,23 @@ func (a *app) cmdPrCreate() error {
 	// print --head and --body too, which the preview doesn't, so the two lines would
 	// disagree.
 	base := a.branchTarget("")
-	return a.stepAs(a.prCreateDisp(base), a.pr.cli+" pr create", a.pr.cli, a.prCreateArgs(base)...)
+	return a.stepAs(a.prCreateDisp(base), a.pr.cli+" "+a.prCreateVerb(), a.pr.cli, a.prCreateArgs(base)...)
+}
+
+func (a *app) prCreateVerb() string {
+	switch a.pr.tool {
+	case toolTea:
+		return "pulls create"
+	case toolGlab:
+		return "mr create"
+	}
+	return "pr create"
 }
 
 // prCreateDisp is the one line the preview and the run both show for a create -
 // the title and the base, without the flags neither of them promised.
 func (a *app) prCreateDisp(base string) string {
-	verb := "pr create"
-	if a.pr.tool == toolTea {
-		verb = "pulls create"
-	}
-	return a.pr.cli + " " + verb + " --base " + base + " --title " + shellWord(a.pr.title, true)
+	return a.pr.cli + " " + a.prCreateVerb() + " --base " + base + " --title " + shellWord(a.pr.title, true)
 }
 
 func (a *app) cmdPrAccept() error {

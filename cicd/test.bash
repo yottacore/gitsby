@@ -6665,6 +6665,47 @@ GHEOF
 	fAssertOut "[EtRzPaH] a remote on ssh.<host> still gets the account's token and host" '^host=https://git\.example\.test token=tok_ghonly$' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw glab api user"
 	git -C "${fgRepo}" remote set-url origin https://git.example.test/acme/proj.git
+	## A GitLab remote is served by glab, not tea. The remote is on the ssh endpoint, and the repo is
+	## two groups deep, so glab is told the repo with -R rather than left to read it from the remote.
+	mkdir -p "${fg}/glbin"
+	fStub "${fg}/glbin/glab" <<'GLEOF'
+#!/usr/bin/env bash
+[[ -n "${FAKE_GLAB_LOG:-}" ]] && echo "$* host=${GITLAB_HOST:-} token=${GITLAB_TOKEN:-}" >> "${FAKE_GLAB_LOG}"
+case "$1 $2" in
+"mr view")  echo "{\"iid\":7,\"state\":\"${FAKE_GLAB_STATE:-opened}\",\"source_branch\":\"glfeat\"}" ;;
+"mr list")  if [[ -n "${FAKE_GLAB_EXISTING:-}" ]]; then echo "[{\"iid\":${FAKE_GLAB_EXISTING}}]"; else echo "[]"; fi ;;
+esac
+exit 0
+GLEOF
+	local fgGl="${fg}/glproj" fgGlPath="${fg}/glbin:${fg}/bin:${PATH}"
+	git init --quiet -b main "${fgGl}"
+	(
+		cd "${fgGl}" || exit 1
+		echo a > a.txt && git add --all && git commit --quiet -m init
+		git remote add origin git@ssh.gitlab.example.test:grp/sub/proj.git
+		git checkout --quiet -b glfeat && echo b > b.txt && git add --all && git commit --quiet -m feat
+	)
+	cat > "${fg}/gl-acct.shcl" <<-EOF
+		account.work.path      = $(fWinPath "${fgGl}")
+		account.work.host      = gitlab.example.test
+		account.work.user      = gluser
+		account.work.tokenFile = $(fWinPath "${fg}/token")
+	EOF
+	: > "${fg}/glab.log"; : > "${fg}/tea.log"
+	fAssert "[EtTo1Qf] a GitLab remote lists merge requests through glab, with -R" \
+		bash -c "cd '${fgGl}' && PATH='${fgGlPath}' FAKE_GLAB_LOG='${fg}/glab.log' FAKE_TEA_LOG='${fg}/tea.log' '${gitsby}' -q -NoFetch pr && grep -q '^mr list -R grp/sub/proj ' '${fg}/glab.log'"
+	fAssert "[EtTo1XC] and tea is never run for it" \
+		bash -c "! grep -q . '${fg}/tea.log'"
+	: > "${fg}/glab.log"
+	fAssert "[EtTo1dj] pr <n> shows the merge request and its diff" \
+		bash -c "cd '${fgGl}' && PATH='${fgGlPath}' FAKE_GLAB_LOG='${fg}/glab.log' '${gitsby}' -q -NoFetch pr 7 && grep -q '^mr view 7 -R grp/sub/proj ' '${fg}/glab.log' && grep -q '^mr diff 7 -R grp/sub/proj ' '${fg}/glab.log'"
+	: > "${fg}/glab.log"
+	fAssert "[EtTo1kG] glab gets the account's token and host for pr" \
+		bash -c "cd '${fgGl}' && PATH='${fgGlPath}' FAKE_GLAB_LOG='${fg}/glab.log' '${gitsby}' -q -NoFetch --config '${fg}/gl-acct.shcl' pr && grep -q 'host=https://gitlab\.example\.test token=tok_ghonly\$' '${fg}/glab.log'"
+	fAssertOut "[EtTo1qn] pr create refuses a branch that already has an open merge request" 'PR #3 is already open' \
+		bash -c "cd '${fgGl}' && PATH='${fgGlPath}' FAKE_GLAB_EXISTING=3 '${gitsby}' -q -NoFetch pr create 2>&1 || true"
+	fAssertOut "[EtTo1xK] pr ok reads glab's 'merged' as not open" 'PR #7 is merged, not open' \
+		bash -c "cd '${fgGl}' && PATH='${fgGlPath}' FAKE_GLAB_STATE=merged '${gitsby}' -q -NoFetch pr ok 7 2>&1 || true"
 	fAssertOut "[ErwoOgi] --any-identity hands tea nothing"  '^url= token=$' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_ENV=1 '${gitsby}' -q -NoFetch --any-identity --config '${fg}/tea-acct.shcl' raw tea whoami"
 	: > "${fg}/rawdeb.log"

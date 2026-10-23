@@ -414,3 +414,22 @@ func TestServiceHost(t *testing.T) { // [EtRzPK4]
 		}
 	}
 }
+
+func TestIsGitLabHost(t *testing.T) { // [EtTo2FR]
+	t.Setenv("GITLAB_HOST", "https://code.example.test/")
+	for host, want := range map[string]bool{
+		"gitlab.com":           true,
+		"gitlab.gnome.org":     true,
+		"ssh.gitlab.gnome.org": true,
+		"GitLab.example.test":  true,
+		"code.example.test":    true,
+		"github.com":           false,
+		"git.example.test":     false,
+		"mygitlab.test":        false,
+		"":                     false,
+	} {
+		if got := isGitLabHost(host); got != want {
+			t.Errorf("%q: got %v, want %v", host, got, want)
+		}
+	}
+}
