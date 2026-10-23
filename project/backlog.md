@@ -56,6 +56,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Not checked: why `[Et9R5lo]` passed in stage 7 on b26 and vmFreeBSD. Likely a GNU find first on b26's PATH, and a FreeBSD find that has `-printf`.
 	- Test case: test.bash `[Et9R5lo]` itself on the Mac runners, and `[EtUUvVS]`, which needs no Mac.
 	- Branch: fix-macos-find
+	- Commit: 0d01f82
 
 - CICD runs on GitHub's free macOS runners
 	- ID: 2026102218410000
