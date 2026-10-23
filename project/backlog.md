@@ -115,6 +115,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 2026-10-22: Fixed on branch glabtoken: a remote on `ssh.<host>` now counts as `<host>` for the account's token and credential helper (`serviceHost` in account.go). Test.bash `[EtRzPaH]`, Go `[EtRzPK4]`. Checked for real: `raw glab mr list -R GNOME/gtk` in a GNOME clone lists the open merge requests as t00mietum.
 		- 2026-10-22: `raw glab repo view` with no `-R` still fails in a GNOME clone. glab matches the remote's host (`ssh.gitlab.gnome.org`) to `GITLAB_HOST` itself. Still open, along with `pr`.
 
+- CICD runs on GitHub's free macOS runners
+	- ID: 2026102218410000
+	- Type: Enhancement
+	- Status: Queued
+	- Opened: 20261022-184100
+	- Opened by: jim-collier
+	- Target OS: macOS
+	- Requirements [Feature]:
+		- Run CICD on GitHub's free macOS runners.
+		- Build, run the tests, and smoke-test the CLI on the built binary.
+	- Progress log:
+		- 2026-10-22: Logged. This is a GitHub Actions use, set against the standing decision that Actions stay deferred (asked again 2026-10-06). Asked for by hand, so it overrides that for macOS only.
+		- 2026-10-22: Intel macOS testing can also use vmKt6m, user `wintest`, in addition to b26. The public key already gets in. Not yet added to stage 7 or the host lock.
+
 - Updates to CICD script flags
 	- ID: 2026101816064793
 	- Type: Enhancement
