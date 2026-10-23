@@ -71,7 +71,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026102306584122
 	- Type: Bug
 	- Status: Waiting on automated testing
-		- Waits only on vmDebARM64, which another session's lock held through the 2026-10-23 stage 7.
+		- Waits only on vmDebARM64, which another session's lock held through the 2026-10-23 stage 7, and again through a vmDebARM64-only try from 08:01 to 08:12.
 	- Needs local test suite run?: No. test.bash ran 1667/0.
 	- Needs external testing: Stage 7 on vmDebARM64, for the reworded and new raw checks in test.bash and the Go tests. Every other box passed them.
 	- Needs hand testing: b28l, with tukzedo's wrapper and the real `gh`, after a dogfood run, together with 2026101916533300.
@@ -117,29 +117,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: 2026-10-23, test.bash 1662 -> 1667, 0 failed. On the build before, the 8 reworded and new checks fail. The Go tests fail with the pass-over, the probe file match and the kept probe mark each taken out. The rig shows every one of the five commands reaching the real `gh`, where before each was refused. The hook and alias rig still passes. `GOOS=windows go vet` and the Windows test build, and darwin and freebsd builds, pass.
 	- Verified: 2026-10-23, the round's full run. The 8 reworded and new test.bash checks passed in the container, on b26 and on vmFreeBSD, and `[EtMXfJm]`, `[EtOGJ79]` and `[EtOGJ7M]` in the Go tests on b26, vmFreeBSD and vm925w. test.bash was 1438 of 1439 on b26 and 1341 of 1342 on vmFreeBSD, each 6 more than on 10-22. The one failure on each is `[EtAFLx0]`, from 2026102220133673. Go tests: b26 211 ok and 6 skipped, vmFreeBSD 213 ok and 4 skipped, vm925w 195 ok and 23 skipped. The macOS workflow, run 39970887647, passed the same checks on both runners, test.bash 1417 of 1418 with the same one failure. b29w was not reachable. Logs: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261023-07353000/run.log` for the container, `run2.log` beside it for stage 7.
 	- Swept: `rawActive` and `rawNest` have one caller, `cmdPassthrough`, which every `raw` tool shares. `findTool` and its cache are unchanged for every other spawn. README names no refusal text. design.md's `raw` bullet updated.
-
-- The workflow YAML check `[EtUDfjj]` skips in the container and on most boxes
-	- ID: 2026102220133673
-	- Type: Enhancement
-	- Status: Waiting on automated testing
-	- Needs local test suite run?: test.bash in the container, once `[EtAFLx0]` follows the Dockerfile. `[EtUDfjj]` itself has passed there.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261022-201336
-	- Opened by: jim-collier
-	- Related IDs: 2026102218410000
-	- Requirements [Feature]:
-		- Add PyYAML to `cicd/container/requirements.txt` so `[EtUDfjj]` runs in the container, and name the test ID in its skip line.
-	- Progress log:
-		- 2026-10-22: Found by the round's test batch. The check ran only on vmDebARM64 and on b23 outside the container.
-		- 2026-10-23: PyYAML 6.0.3 is in the image's lock, on the system python beside Pillow, and the image build fails if it doesn't import. No known advisory against it. The skip line names `[EtUDfjj]`.
-		- 2026-10-23: `[EtAFLx0]` failed everywhere on the Dockerfile's new lines. It now runs the image's own split patterns over the lock, and the new `[EtXHtxS]` holds PyYAML to the same. Both fail on the old lines and on a mutated Dockerfile, and pass now. test.bash 1667 -> 1668, 0 failed on b23.
-	- Decisions:
-		- No `VER_PyYAML` and no `TOOL_VERSIONS` entry. Its version changes no result, only whether the check runs, and the lock's hash pins it already.
-		- Not in `PY_AUDIT_DISTS`, which lists what the demo imports. A box without PyYAML would skip all of pip-audit.
-	- Verified: 2026-10-23, the image `gitsby-cicd:e6176a22793a` builds. In it `python3 -I -c 'import yaml'` succeeds, `[EtUDfjj]`'s check passes against the repo mounted read-only and fails on a broken workflow, and pip-audit finds nothing for `pyyaml==6.0.3`.
-	- Verified: 2026-10-23, the round's full run in the container on `gitsby-cicd:e6176a22793a`. `[EtUDfjj]` ran and passed there. test.bash was 1666 of 1667, 7 more than on 10-22: the round's 6 new checks and `[EtUDfjj]`, which skipped there before. pip-audit, fuzz 313/0, parity 29/0, CodeQL and the gif passed too. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261023-07353000/run.log`, and `run2.log` beside it for the later stages.
-	- Test case: `[EtUDfjj]` itself, `[EtXHtxS]`, and the import check in the image build.
-	- Swept: test.bash's other `skip:` lines each stand for a group of checks, and their libraries (Pillow, python3, strace, pwsh) are in the image already.
 
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
@@ -1784,6 +1761,31 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [Erg0LJv] and [Erg0LK9] in test.bash.
 	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
 	- Closed: 20261003-145130
+
+- The workflow YAML check `[EtUDfjj]` skips in the container and on most boxes
+	- ID: 2026102220133673
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261022-201336
+	- Opened by: jim-collier
+	- Related IDs: 2026102218410000
+	- Requirements [Feature]:
+		- Add PyYAML to `cicd/container/requirements.txt` so `[EtUDfjj]` runs in the container, and name the test ID in its skip line.
+	- Progress log:
+		- 2026-10-22: Found by the round's test batch. The check ran only on vmDebARM64 and on b23 outside the container.
+		- 2026-10-23: PyYAML 6.0.3 is in the image's lock, on the system python beside Pillow, and the image build fails if it doesn't import. No known advisory against it. The skip line names `[EtUDfjj]`.
+		- 2026-10-23: `[EtAFLx0]` failed everywhere on the Dockerfile's new lines. It now runs the image's own split patterns over the lock, and the new `[EtXHtxS]` holds PyYAML to the same. Both fail on the old lines and on a mutated Dockerfile, and pass now. test.bash 1667 -> 1668, 0 failed on b23.
+	- Decisions:
+		- No `VER_PyYAML` and no `TOOL_VERSIONS` entry. Its version changes no result, only whether the check runs, and the lock's hash pins it already.
+		- Not in `PY_AUDIT_DISTS`, which lists what the demo imports. A box without PyYAML would skip all of pip-audit.
+	- Verified: 2026-10-23, the image `gitsby-cicd:e6176a22793a` builds. In it `python3 -I -c 'import yaml'` succeeds, `[EtUDfjj]`'s check passes against the repo mounted read-only and fails on a broken workflow, and pip-audit finds nothing for `pyyaml==6.0.3`.
+	- Verified: 2026-10-23, the round's full run in the container on `gitsby-cicd:e6176a22793a`. `[EtUDfjj]` ran and passed there. test.bash was 1666 of 1667, 7 more than on 10-22: the round's 6 new checks and `[EtUDfjj]`, which skipped there before. pip-audit, fuzz 313/0, parity 29/0, CodeQL and the gif passed too. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261023-07353000/run.log`, and `run2.log` beside it for the later stages.
+	- Verified: 2026-10-23, test.bash in the container on `gitsby-cicd:e6176a22793a`, 1668/0, with `[EtUDfjj]`, `[EtAFLx0]` and `[EtXHtxS]` passing. The macOS workflow, run 39974608816, was 1419/0 on both runners, `[EtAFLx0]` and `[EtXHtxS]` included. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261023-08013000/run.log`.
+	- Test case: `[EtUDfjj]` itself, `[EtXHtxS]` and `[EtAFLx0]` for the image's lines, and the import check in the image build.
+	- Swept: test.bash's other `skip:` lines each stand for a group of checks, and their libraries (Pillow, python3, strace, pwsh) are in the image already.
+	- Acceptance signoff: Self-closed: `[EtUDfjj]` runs in the container now, and the checks on the image fail on the old lines and pass after.
+	- Closed: 20261023-081155
 
 - Check the demo's Pillow and fontTools advisories against Debian's fixes
 	- ID: 2026101905585018
