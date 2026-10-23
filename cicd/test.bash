@@ -5181,7 +5181,7 @@ GHEOF
 		fAssert "[EtUDfjj] and each one parses, with triggers and jobs" \
 			python3 -I -c 'import glob, sys, yaml; fs = glob.glob(sys.argv[1] + "/.github/workflows/*.y*ml"); ds = [yaml.safe_load(open(f)) for f in fs]; sys.exit(0 if fs and all(isinstance(d, dict) and ("on" in d or True in d) and isinstance(d.get("jobs"), dict) and d["jobs"] for d in ds) else 1)' "${root}"
 	else
-		fEcho_Clean "  skip: workflow parse check (needs python3 with PyYAML)"
+		fEcho_Clean "  skip: [EtUDfjj] workflow parse check (needs python3 with PyYAML)"
 	fi
 	## The profiling step. A sampling profile would be a flat wall here - this program is
 	## blocked on git for all of its wall clock - so what gets measured is how often it forks.
@@ -7222,3 +7222,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261021 JC: raw passes over a tool on PATH that is gitsby itself, and refuses when started under another raw, so a gh, tea, glab, lazygit or tig that leads back can't loop. 1579 -> 1591.
 ##		- 20261021 JC: --no-fuzz leaves out govulncheck and pip-audit, and the pip-audit checks no longer lean on it to skip the rest of stage 3. 1597 -> 1598.
 ##		- 20261022 JC: The goleak check lists test folders without find's GNU-only output format, which failed it on macOS, and a check keeps that format out of the suite and the installer. 1661 -> 1662.
+##		- 20261023 JC: The workflow parse check's skip line names its test ID, and the image has PyYAML, so the check runs there.

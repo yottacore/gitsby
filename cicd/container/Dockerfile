@@ -43,26 +43,28 @@ RUN cd /tmp \
 
 # Python's lint and audit tools, in a venv of their own so the demo's libraries stay the only
 # ones on the system python. The lock pins every wheel by hash. Its Pillow goes on the system
-# python, next to Debian's gi and cairo, where the demo can import it. Apt installed no other
-# Pillow, so pip's guard for Debian's own packages has nothing to guard there.
+# python, next to Debian's gi and cairo, where the demo can import it, and so does PyYAML, for
+# test.bash's workflow parse check. Apt installed neither, so pip's guard for Debian's own
+# packages has nothing to guard there.
 ARG VER_ruff
 ARG VER_pip_audit
 ARG VER_Pillow
 ARG VER_gifsicle
 COPY requirements.txt /tmp/pytools.txt
 RUN : "${VER_ruff:?}${VER_pip_audit:?}${VER_Pillow:?}${VER_gifsicle:?}" \
-	&& grep -v '^pillow==' /tmp/pytools.txt > /tmp/venv.txt \
-	&& grep '^pillow==' /tmp/pytools.txt > /tmp/pil.txt \
+	&& grep -vE '^(pillow|pyyaml)==' /tmp/pytools.txt > /tmp/venv.txt \
+	&& grep -E '^(pillow|pyyaml)==' /tmp/pytools.txt > /tmp/sys.txt \
 	&& python3 -m venv /opt/pytools \
 	&& /opt/pytools/bin/pip install -q --no-cache-dir --disable-pip-version-check --require-hashes --no-deps --only-binary=:all: -r /tmp/venv.txt \
 	&& /opt/pytools/bin/pip --python /usr/bin/python3 install -q --no-cache-dir --disable-pip-version-check --root-user-action=ignore \
-		--break-system-packages --require-hashes --no-deps --only-binary=:all: -r /tmp/pil.txt \
+		--break-system-packages --require-hashes --no-deps --only-binary=:all: -r /tmp/sys.txt \
 	&& ln -s /opt/pytools/bin/ruff /opt/pytools/bin/pip-audit /usr/local/bin/ \
 	&& ruff --version | awk -v want="${VER_ruff}" '{ if ($2 != want) { print "ruff " $2; exit 1 } }' \
 	&& pip-audit --version | awk -v want="${VER_pip_audit}" '{ if ($2 != want) { print "pip-audit " $2; exit 1 } }' \
 	&& python3 -c "import PIL; assert PIL.__version__ == '${VER_Pillow}', PIL.__version__" \
+	&& python3 -I -c 'import yaml' \
 	&& gifsicle --version | awk -v want="${VER_gifsicle}" 'NR==1 { if ($NF != want) { print "gifsicle " $NF; exit 1 } }' \
-	&& rm -f /tmp/pytools.txt /tmp/venv.txt /tmp/pil.txt
+	&& rm -f /tmp/pytools.txt /tmp/venv.txt /tmp/sys.txt
 
 # git and strace are newer on the host than in trixie, and both change a spawn count.
 # Same builds, from the snapshot archive.

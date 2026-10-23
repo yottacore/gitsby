@@ -116,6 +116,27 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: 2026-10-23, test.bash 1662 -> 1667, 0 failed. On the build before, the 8 reworded and new checks fail. The Go tests fail with the pass-over, the probe file match and the kept probe mark each taken out. The rig shows every one of the five commands reaching the real `gh`, where before each was refused. The hook and alias rig still passes. `GOOS=windows go vet` and the Windows test build, and darwin and freebsd builds, pass.
 	- Swept: `rawActive` and `rawNest` have one caller, `cmdPassthrough`, which every `raw` tool shares. `findTool` and its cache are unchanged for every other spawn. README names no refusal text. design.md's `raw` bullet updated.
 
+- The workflow YAML check `[EtUDfjj]` skips in the container and on most boxes
+	- ID: 2026102220133673
+	- Type: Enhancement
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: A full run in the container, the only arm that shows `[EtUDfjj]` runs there rather than skipping.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261022-201336
+	- Opened by: jim-collier
+	- Related IDs: 2026102218410000
+	- Requirements [Feature]:
+		- Add PyYAML to `cicd/container/requirements.txt` so `[EtUDfjj]` runs in the container, and name the test ID in its skip line.
+	- Progress log:
+		- 2026-10-22: Found by the round's test batch. The check ran only on vmDebARM64 and on b23 outside the container.
+		- 2026-10-23: PyYAML 6.0.3 is in the image's lock, on the system python beside Pillow, and the image build fails if it doesn't import. No known advisory against it. The skip line names `[EtUDfjj]`. Also fixed a typo in a cicd.bash comment ("liek").
+	- Decisions:
+		- No `VER_PyYAML` and no `TOOL_VERSIONS` entry. Its version changes no result, only whether the check runs, and the lock's hash pins it already.
+		- Not in `PY_AUDIT_DISTS`, which lists what the demo imports. A box without PyYAML would skip all of pip-audit.
+	- Verified: 2026-10-23, the image `gitsby-cicd:e6176a22793a` builds. In it `python3 -I -c 'import yaml'` succeeds, `[EtUDfjj]`'s check passes against the repo mounted read-only and fails on a broken workflow, and pip-audit finds nothing for `pyyaml==6.0.3`.
+	- Test case: `[EtUDfjj]` itself, plus the import check in the image build.
+	- Swept: test.bash's other `skip:` lines each stand for a group of checks, and their libraries (Pillow, python3, strace, pwsh) are in the image already.
+
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
@@ -167,19 +188,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: 2026-10-22, test.bash 1594 -> 1597, 0 failed, with the reworded `[EtMXMNv]` and `[EtMXMQW]`. On the build before, the 3 new checks fail. The Go tests fail with each part of `rawNest` taken out in turn: the repeat check, the probe mark, the depth limit, the folder and the separator between arguments. Outside the suite, a wrapper `gh` started once and was refused, and one adding an argument each time stopped at 16. `GOOS=windows go vet` and the Windows test build, and darwin and freebsd builds, pass.
 	- Verified: 2026-10-22, stage 7 passed on every box for the nesting change. test.bash 1371/0 on b26 and 1274/0 on vmFreeBSD, each 3 more than on 10-21, which are `[EtOGJ6U]`, `[EtOGJ6i]` and `[EtOGJ6v]`. 1583/0 on vmDebARM64, 4 more, those 3 plus `[EtOKpZS]`, which sits in the Linux-only pre-push gate block. `[EtOGJ79]` and `[EtOGJ7M]` passed in the Go tests on b26, vmFreeBSD, vmDebARM64 natively and under Wine, and vm925w, where the Go tests were 191 ok and 23 skipped, 2 more ok than on 10-21. `[EtMXfJm]` passed there too. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log`.
 	- Swept: every `raw` tool shares `cmdPassthrough`, git included. 2026-10-22: `rawActive` has one reader, `cmdPassthrough`, and the variable is unset in all 4 hermetic suites. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
-
-- The workflow YAML check `[EtUDfjj]` skips in the container and on most boxes
-	- ID: 2026102220133673
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261022-201336
-	- Opened by: jim-collier
-	- Related IDs: 2026102218410000
-	- Requirements [Feature]:
-		- Add PyYAML to `cicd/container/requirements.txt` so `[EtUDfjj]` runs in the container, and name the test ID in its skip line.
-	- Progress log:
-		- 2026-10-22: Found by the round's test batch. The check ran only on vmDebARM64 and on b23 outside the container.
 
 - `repo clone` hands git a folder name taken from the URL, and git can read it as an option
 	- ID: 2026100607545802
