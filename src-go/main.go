@@ -790,22 +790,41 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 			names[1] = teaNames[1]
 		}
 	}
+	// Not findTool: a tool file whose run is already on the chain is a wrapper that
+	// started us, so the next one on PATH is the tool it wraps.
 	name, path := "", ""
-	var ours []string
+	var ours, passed []string
 	for _, try := range names {
-		found, skipped := findTool(try)
+		found, skipped := walkTool(try, func(cand string) bool {
+			if rawOnChain(a.rawActive, rawEntry(try, cand, args)) {
+				passed = append(passed, cand)
+				return false
+			}
+			return true
+		})
 		ours = append(ours, skipped...)
 		if found != "" {
 			name, path = try, found
 			break
 		}
 	}
+	if path == "" && len(passed) > 0 {
+		return usagef("Looping: '%s' is already running under a 'raw %s' above this one, and there's no other %s after it on PATH. A %s on PATH that calls '%s raw %s' does that.", strings.Join(passed, "', '"), tool, tool, tool, meName, tool)
+	}
 	if path == "" {
 		return notInPath(tool, ours)
 	}
-	chain, err := rawNest(a.rawActive, name, path, args)
+	chain, err := rawNest(a.rawActive, name, rawEntry(name, path, args))
 	if err != nil {
 		return err
+	}
+	if rawProbed(chain) || len(passed) > 0 {
+		// The raw above did the account work, for these arguments in this folder, or
+		// is only checking a tool. Its environment is the one to keep.
+		if err := setEnv(rawActiveVar, chain); err != nil {
+			return err
+		}
+		return a.handover(name, path, args)
 	}
 	// Before any probe below runs the tool, since a wrapper would start us again.
 	if err := setEnv(rawActiveVar, chain+" "+rawProbing); err != nil {
@@ -849,6 +868,11 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 	}
 	if !a.opt.quiet && !a.acct.bypassed && !warned && who != "" && a.accountDecidedSomething() {
 		a.out.errorf("acting as %s (from %s)", who, a.accountSourceText(false))
+	}
+	// For the arguments handed over, which glab's may not be, so a wrapper's raw
+	// finds its run on the chain.
+	if chain, err = rawNest(a.rawActive, name, rawEntry(name, path, args)); err != nil {
+		return err
 	}
 	if err := setEnv(rawActiveVar, chain); err != nil {
 		return err

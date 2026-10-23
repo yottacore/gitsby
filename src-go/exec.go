@@ -250,9 +250,9 @@ func findTool(name string) (string, []string) {
 }
 
 // rawActiveVar holds the chain of 'raw' runs above this one, for everything 'raw'
-// starts. A 'raw' refuses only to start what is already on it, so a hook or alias
-// calling 'gitsby raw' works and a wrapper on PATH that calls us back can't loop
-// (2026101916533300).
+// starts. A 'raw' passes over a tool file whose run is already on it and takes
+// the next one on PATH, so a hook or alias calling 'gitsby raw' works, and so does
+// a wrapper on PATH that calls us back (2026101916533300, 2026102306584122).
 const rawActiveVar = "GITSBY_RAW_ACTIVE"
 
 // rawDepthMax stops a loop whose arguments change each time. No real hook stack
@@ -260,32 +260,63 @@ const rawActiveVar = "GITSBY_RAW_ACTIVE"
 const rawDepthMax = 16
 
 // rawProbing ends the chain while 'raw' runs tools only to check them, before the
-// handover. Nothing those start has a reason to call 'raw', so one that does is a
-// loop, and its own probes would start more.
+// handover. Nothing those start has a reason to call 'raw', so a 'raw' under it
+// passes over every tool file on the chain whatever its arguments, and does no
+// account work, so its probes can't multiply.
 const rawProbing = "probe"
 
-// rawNest is chain with this run added, or the refusal if this run would loop.
-// An entry is the tool's name and a short hash of its path, the folder and the
-// arguments, so the variable stays small.
-func rawNest(chain, name, path string, args []string) (string, error) {
+// rawEntry is one 'raw' run on the chain: the tool's name, a short hash of its
+// path, and one of its path, the folder and the arguments, so the variable stays
+// small and a probe can match the file alone.
+func rawEntry(name, path string, args []string) string {
 	cwd, _ := os.Getwd() // couldn't tell hashes the same every level
+	return name + ":" + rawHash(path) + ":" + rawHash(append([]string{path, cwd}, args...)...)
+}
+
+func rawHash(parts ...string) string {
 	sum := sha256.New()
-	for _, part := range append([]string{path, cwd}, args...) {
+	for _, part := range parts {
 		sum.Write([]byte(part))
 		sum.Write([]byte{0})
 	}
-	entry := name + ":" + hex.EncodeToString(sum.Sum(nil)[:6])
+	return hex.EncodeToString(sum.Sum(nil)[:6])
+}
+
+// rawProbed says whether chain ends in the probe mark.
+func rawProbed(chain string) bool {
 	above := strings.Fields(chain)
-	if len(above) > 0 && above[len(above)-1] == rawProbing {
-		return "", usagef("Looping: 'raw %s' was started by a tool %s was only checking, and would run '%s'. A %s on PATH that calls '%s raw %s' does that. Unset %s to run anyway.", name, meName, path, name, meName, name, rawActiveVar)
+	return len(above) > 0 && above[len(above)-1] == rawProbing
+}
+
+// rawOnChain says whether entry is already running above: the same run, or under
+// the probe mark the same tool file.
+func rawOnChain(chain, entry string) bool {
+	probing := rawProbed(chain)
+	file := entry[:strings.LastIndexByte(entry, ':')+1]
+	for _, above := range strings.Fields(chain) {
+		if above == entry || (probing && strings.HasPrefix(above, file)) {
+			return true
+		}
 	}
-	if slices.Contains(above, entry) {
-		return "", usagef("Looping: '%s' is already running under a 'raw %s' with the same arguments, in the same folder. A %s on PATH that calls '%s raw %s' does that. Unset %s to run anyway.", path, name, name, meName, name, rawActiveVar)
+	return false
+}
+
+// rawNest is chain with entry added, keeping any probe mark last, or the refusal
+// past rawDepthMax.
+func rawNest(chain, name, entry string) (string, error) {
+	above := strings.Fields(chain)
+	probing := rawProbed(chain)
+	if probing {
+		above = above[:len(above)-1]
 	}
 	if len(above) >= rawDepthMax {
-		return "", usagef("Looping: 'raw %s' would be %d deep under other 'raw' runs. A tool that calls '%s raw' with new arguments each time does that. Unset %s to run anyway.", name, len(above)+1, meName, rawActiveVar)
+		return "", usagef("Looping: 'raw %s' would be %d deep under other 'raw' runs. A tool that calls '%s raw' with new arguments each time does that.", name, len(above)+1, meName)
 	}
-	return strings.Join(append(above, entry), " "), nil
+	above = append(above, entry)
+	if probing {
+		above = append(above, rawProbing)
+	}
+	return strings.Join(above, " "), nil
 }
 
 // lookTool is exec.LookPath that skips any PATH entry leading back to this very
@@ -294,6 +325,11 @@ func rawNest(chain, name, path string, args []string) (string, error) {
 // skipped, since LookPath's ErrDot never let one run. Also returns the entries
 // skipped as ours.
 func lookTool(name string) (found string, ours []string) {
+	return walkTool(name, nil)
+}
+
+// walkTool is lookTool taking only a candidate take accepts, when take isn't nil.
+func walkTool(name string, take func(string) bool) (found string, ours []string) {
 	var self os.FileInfo
 	if exe, err := os.Executable(); err == nil {
 		self, _ = os.Stat(exe) // couldn't tell is not "it's us"
@@ -313,6 +349,9 @@ func lookTool(name string) (found string, ours []string) {
 				}
 				continue
 			}
+		}
+		if take != nil && !take(path) {
+			continue
 		}
 		return path, ours
 	}

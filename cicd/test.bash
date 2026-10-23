@@ -795,16 +795,29 @@ fSarif(){
 }
 ## True when codeql-findings.py, given the rest of the args, exits with exactly $1.
 fFindings(){ local want="$1" rc=0; shift; python3 "${root}/cicd/utility/codeql-findings.py" "$@" >/dev/null 2>&1 || rc=$?; [[ "${rc}" == "${want}" ]] ;}
+## Whether the lock line for $1 is pinned by hash and goes to the system python: the image's own
+## patterns, run over the lock, send it to the file installed there and keep it out of the venv's.
+fSysPyFromLock(){
+	local dockerfile="${root}/cicd/container/Dockerfile" lock="${root}/cicd/container/requirements.txt" sysPat="" venvPat=""
+	sysPat="$(sed -n "s|.*grep -E '\([^']*\)' /tmp/pytools.txt > /tmp/sys.txt.*|\1|p" "${dockerfile}")"
+	venvPat="$(sed -n "s|.*grep -vE '\([^']*\)' /tmp/pytools.txt > /tmp/venv.txt.*|\1|p" "${dockerfile}")"
+	[[ -n "${sysPat}" && -n "${venvPat}" ]] && grep -qE "^$1==[^ ]+ --hash=sha256:[0-9a-f]{64}\$" "${lock}" \
+		&& grep -E -- "${sysPat}" "${lock}" | grep -q "^$1==" && grep -E -- "${venvPat}" "${lock}" | grep -q "^$1==" \
+		&& grep -qF -- "--python /usr/bin/python3 install" "${dockerfile}" && grep -qF -- "-r /tmp/sys.txt" "${dockerfile}"
+}
 ## The lock's Pillow line is the version TOOL_VERSIONS records, pinned by hash. The image installs
-## that line alone on the system python, and no Debian Pillow beside it.
+## it on the system python, and no Debian Pillow beside it.
 fPillowFromLock(){
 	local want="" dockerfile="${root}/cicd/container/Dockerfile"
 	# shellcheck source=/dev/null
 	want="$(cd "${root}" && source cicd/config.bash && printf '%s\n' "${TOOL_VERSIONS[@]}" | sed -n 's/^Pillow=//p')"
 	[[ -n "${want}" ]] && grep -qE "^pillow==${want//./\\.} --hash=sha256:[0-9a-f]{64}\$" "${root}/cicd/container/requirements.txt" \
-		&& grep -qF "grep '^pillow==' /tmp/pytools.txt > /tmp/pil.txt" "${dockerfile}" \
-		&& grep -qF -- "--python /usr/bin/python3 install" "${dockerfile}" && grep -qF -- "-r /tmp/pil.txt" "${dockerfile}" \
-		&& ! grep -qwE 'python3-pil' "${dockerfile}"
+		&& fSysPyFromLock pillow && ! grep -qwE 'python3-pil' "${dockerfile}"
+}
+## PyYAML the same way, and the build fails where test.bash's own probe would.
+fPyYamlFromLock(){
+	local dockerfile="${root}/cicd/container/Dockerfile"
+	fSysPyFromLock pyyaml && grep -qF "python3 -I -c 'import yaml'" "${dockerfile}" && ! grep -qwE 'python3-yaml' "${dockerfile}"
 }
 ## Whether the script $1 refuses a bash below its floor before running anything: a copy with the
 ## floor raised past any real bash, named as the original, has to exit 1 with the one line. A
@@ -4646,32 +4659,54 @@ GHEOF
 	fAssert    "[EtOGJ6i] and its raw gets git's answer and nothing else"  bash -c "[[ \"\$(cat '${rh}.out')\" == main ]]"
 	fAssertOut "[EtOGJ6v] an alias that runs raw git under raw git works too"  '^main$'  bash -c "cd '${rh}' && env ${acEnv} '${goBin}' raw git nest"
 	## A tool on PATH that leads back to gitsby looped forever: a link to the binary, or a wrapper
-	## that runs 'raw <tool>' again. Each wrapper counts its starts and quits past 5, so a loop
-	## that comes back stays small. With only the link on PATH the shim can't find bash, so those
-	## run the build directly. No links on Windows, so it sits that one out.
+	## that runs 'raw <tool>' again. The wrapper then got refused; now it reaches the tool after it
+	## on PATH. Each wrapper counts its starts and quits past 8, so a loop that comes back stays
+	## small. A gh call of gitsby's own takes 3 behind it, and 'pr' and 'whoami' make 2. With only
+	## the link on PATH the shim can't find bash, so those run the build directly. No links on
+	## Windows, so it sits that one out.
 	if (( ! isWindows )); then
 		local rl="${ac}/rawloop" rlTool=""
-		mkdir -p "${rl}/link" "${rl}/wrap"
+		# shellcheck disable=SC2016  ## the wrapper expands these, not us
+		local rlWrap='#!%s\nn=0; [[ -f %q ]] && read -r n < %q\nn=$(( n + 1 )); echo "${n}" > %q\n(( n > 8 )) && { echo "spawn limit" >&2; exit 99; }\nexec %q raw "${0##*/}" "$@"\n'
+		mkdir -p "${rl}/link" "${rl}/wrap" "${rl}/real"
 		for rlTool in gh tea glab lazygit tig; do
 			ln -sf "${goBin}" "${rl}/link/${rlTool}"  ## the build itself; ${gitsby} is a shim
-			# shellcheck disable=SC2016  ## the wrapper expands these, not us
-			printf '#!%s\nn=0; [[ -f %q ]] && read -r n < %q\nn=$(( n + 1 )); echo "${n}" > %q\n(( n > 5 )) && { echo "spawn limit" >&2; exit 99; }\nexec %q raw "${0##*/}" "$@"\n' \
-				"$(command -v bash)" "${rl}/count" "${rl}/count" "${rl}/count" "${gitsby}" > "${rl}/wrap/${rlTool}"
+			if [[ "${rlTool}" != gh ]]; then  ## gh's is the fake in ${ac}/bin
+				printf '#!/bin/sh\necho "real %s $*"\n' "${rlTool}" > "${rl}/real/${rlTool}" && chmod +x "${rl}/real/${rlTool}"
+			fi
+			# shellcheck disable=SC2059  ## one template, two targets
+			printf "${rlWrap}" "$(command -v bash)" "${rl}/count" "${rl}/count" "${rl}/count" "${gitsby}" > "${rl}/wrap/${rlTool}"
 			chmod +x "${rl}/wrap/${rlTool}"
 		done
+		## The same gh wrapper with nothing after it, and git: the build itself, since bash isn't on PATH.
+		mkdir -p "${rl}/alone"
+		ln -sf "$(command -v git)" "${rl}/alone/git"
+		# shellcheck disable=SC2059
+		printf "${rlWrap}" "$(command -v bash)" "${rl}/count" "${rl}/count" "${rl}/count" "${goBin}" > "${rl}/alone/gh" && chmod +x "${rl}/alone/gh"
 		fAssertOut    "[EtMXMMC] a gh that is gitsby is skipped for the next one on PATH"  'gho_faketoken' \
 			bash -c "cd '${acWork}' && env ${acEnv} PATH='${rl}/link:${ac}/bin:${PATH}' '${gitsby}' -q raw gh auth token --user workacct"
 		fAssertOut    "[EtMXMN4] and with no other gh, refused naming the entry"  "Not found in path: gh\\. '.*/rawloop/link/gh' is gitsby itself" \
 			bash -c "cd '${acWork}' && env ${acEnv} PATH='${rl}/link' '${goBin}' -q raw gh auth token"
-		fAssertOut    "[EtMXMNv] a gh wrapper that runs raw gh again is refused at once, naming it"  "Looping: '.*/rawloop/wrap/gh' is already running under a 'raw gh'" \
-			bash -c "cd '${acWork}' && : > '${rl}/count' && env ${acEnv} PATH='${rl}/wrap:${ac}/bin:${PATH}' '${gitsby}' -q raw gh auth token"
-		fAssertNotOut "[EtMXMOn] and never reaches the spawn limit"  'spawn limit' \
-			bash -c "cd '${acWork}' && : > '${rl}/count' && env ${acEnv} PATH='${rl}/wrap:${ac}/bin:${PATH}' '${gitsby}' -q raw gh auth token"
+		local rlWrapEnv="${acEnv} PATH='${rl}/wrap:${rl}/real:${ac}/bin:${PATH}'"
+		fAssertOut    "[EtMXMNv] a gh wrapper that runs raw gh again reaches the gh after it on PATH"  '^gho_faketoken$' \
+			bash -c "cd '${acWork}' && : > '${rl}/count' && env ${rlWrapEnv} '${gitsby}' -q raw gh auth token --user workacct"
+		fAssert       "[EtMXMOn] and starts the wrapper at most twice, its probe's start included" \
+			bash -c "cd '${acWork}' && : > '${rl}/count' && env ${rlWrapEnv} '${gitsby}' -q raw gh auth token --user workacct && (( \$(cat '${rl}/count') <= 2 ))"
+		fAssertOut    "[EtX5aJ4] so does a bare gh, or a script calling one"  '^gho_faketoken$' \
+			bash -c "cd '${acWork}' && : > '${rl}/count' && env ${rlWrapEnv} bash -c 'gh auth token --user workacct' 2>/dev/null"
+		fAssertOut    "[EtX5aJH] and with no gh after it, refused naming it"  "Looping: '.*/rawloop/alone/gh' is already running under a 'raw gh' above this one" \
+			bash -c "cd '${acWork}' && : > '${rl}/count' && env ${acEnv} PATH='${rl}/alone' '${goBin}' -q raw gh auth token"
+		## Unsetting it would bring the loop back.
+		fAssertNotOut "[EtX5aJV] without saying to unset GITSBY_RAW_ACTIVE"  'Unset|GITSBY_RAW_ACTIVE|spawn limit' \
+			bash -c "cd '${acWork}' && : > '${rl}/count' && env ${acEnv} PATH='${rl}/alone' '${goBin}' -q raw gh auth token"
+		## gitsby's own gh calls run the wrapper too, and failed behind it as "not logged in".
+		fAssert       "[EtX5aJj] whoami behind a gh wrapper says what it says without one" \
+			bash -c "cd '${acWork}' && : > '${rl}/count' && diff <(env ${rlWrapEnv} '${gitsby}' -NoFetch whoami 2>/dev/null) <(env ${acEnv} '${gitsby}' -NoFetch whoami 2>/dev/null)"
 		for rlTool in tea glab lazygit tig; do
 			fAssertOut "[EtMXMPe] a ${rlTool} that is gitsby is refused too"  "Not found in path: ${rlTool}\\. '.*/rawloop/link/${rlTool}' is gitsby itself" \
 				bash -c "cd '${acWork}' && env ${acEnv} PATH='${rl}/link' '${goBin}' -q raw ${rlTool} --version"
-			fAssertOut "[EtMXMQW] and a ${rlTool} wrapper too"  "Looping: '.*/rawloop/wrap/${rlTool}' is already running under a 'raw ${rlTool}'" \
-				bash -c "cd '${acWork}' && : > '${rl}/count' && env ${acEnv} PATH='${rl}/wrap:${ac}/bin:${PATH}' '${gitsby}' -q raw ${rlTool} --version"
+			fAssertOut "[EtMXMQW] and a ${rlTool} wrapper reaches the ${rlTool} after it"  "^real ${rlTool} --version$" \
+				bash -c "cd '${acWork}' && : > '${rl}/count' && env ${rlWrapEnv} '${gitsby}' -q raw ${rlTool} --version"
 		done
 		## The same for the commands that run a host tool themselves: 'pr' ran the link as
 		## 'gh pr list' and printed our own syntax help. git alone sits beside the links.
@@ -4680,6 +4715,8 @@ GHEOF
 		ln -sf "$(command -v git)" "${rl}/git/git"
 		( cd "${rl}/ghrepo" && git init --quiet -b main && git remote add origin https://github.com/someone/repo.git )
 		( cd "${rl}/gitea" && git init --quiet -b main && git remote add origin https://gitea.example.com/someone/repo.git )
+		fAssertOut    "[EtX5aJx] pr behind a gh wrapper reaches gh's pr list"  '^pr list' \
+			bash -c "cd '${rl}/ghrepo' && : > '${rl}/count' && : > '${rl}/ghlog' && env ${rlWrapEnv} FAKE_GH_LOG='${rl}/ghlog' '${gitsby}' -q -NoFetch pr >/dev/null 2>&1; cat '${rl}/ghlog'"
 		fAssertOut "[EtMclGb] pr with only a gh that is gitsby is refused naming the entry"  "Not found in path: gh\\. '.*/rawloop/link/gh' is gitsby itself" \
 			bash -c "cd '${rl}/ghrepo' && env ${acEnv} PATH='${rl}/link:${rl}/git' '${goBin}' -q -NoFetch pr 2>&1"
 		fAssertOut "[EtMclHS] and so is repo create"  "Not found in path: gh\\. '.*/rawloop/link/gh' is gitsby itself" \
@@ -5157,7 +5194,7 @@ GHEOF
 		fAssert "[EtUDfjj] and each one parses, with triggers and jobs" \
 			python3 -I -c 'import glob, sys, yaml; fs = glob.glob(sys.argv[1] + "/.github/workflows/*.y*ml"); ds = [yaml.safe_load(open(f)) for f in fs]; sys.exit(0 if fs and all(isinstance(d, dict) and ("on" in d or True in d) and isinstance(d.get("jobs"), dict) and d["jobs"] for d in ds) else 1)' "${root}"
 	else
-		fEcho_Clean "  skip: workflow parse check (needs python3 with PyYAML)"
+		fEcho_Clean "  skip: [EtUDfjj] workflow parse check (needs python3 with PyYAML)"
 	fi
 	## The profiling step. A sampling profile would be a flat wall here - this program is
 	## blocked on git for all of its wall clock - so what gets measured is how often it forks.
@@ -5392,6 +5429,9 @@ GHEOF
 		bash -c "grep -qx 'ARG CODEQL_PY_SHA256' '${root}/cicd/container/Dockerfile' && grep -q 'codeql-bundle-python-linux64\.tar\.zst' '${root}/cicd/container/Dockerfile' && grep -qF 'echo \"\${CODEQL_PY_SHA256}  cqpy.tar.zst\" | sha256sum -c -' '${root}/cicd/container/Dockerfile' && grep -qF 'tar -C /opt --zstd -xf cqpy.tar.zst --exclude=codeql/qlpacks/codeql/python-examples' '${root}/cicd/container/Dockerfile' && grep -qE '^CODEQL_PY_SHA256=\"[0-9a-f]{64}\"\$' '${root}/cicd/config.bash'"
 	## The demo's Pillow is the upstream wheel, pinned in the lock, and the only one on the system python.
 	fAssert "[EtAFLx0] the lock pins the Pillow config.bash records, the image puts it on the system python, and apt installs none"  fPillowFromLock
+	## test.bash's own probe for [EtUDfjj] runs the system python, so the image's PyYAML has to be there.
+	fAssert "[EtXHtxS] the lock pins PyYAML, the image puts it on the system python and checks it imports, and apt installs none" \
+		fPyYamlFromLock
 	## What --leakcheck makes of CodeQL's report, on reports written here.
 	if command -v python3 >/dev/null 2>&1; then
 		local cqAll="main.go main_test.go vendor/x/y.go" cqMissing=""
@@ -7198,3 +7238,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261021 JC: raw passes over a tool on PATH that is gitsby itself, and refuses when started under another raw, so a gh, tea, glab, lazygit or tig that leads back can't loop. 1579 -> 1591.
 ##		- 20261021 JC: --no-fuzz leaves out govulncheck and pip-audit, and the pip-audit checks no longer lean on it to skip the rest of stage 3. 1597 -> 1598.
 ##		- 20261022 JC: The goleak check lists test folders without find's GNU-only output format, which failed it on macOS, and a check keeps that format out of the suite and the installer. 1661 -> 1662.
+##		- 20261023 JC: The workflow parse check's skip line names its test ID, and the image has PyYAML, so the check runs there. The Pillow lock check reads the image's own patterns, and a check holds PyYAML to the same. 1667 -> 1668.

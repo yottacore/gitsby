@@ -33,16 +33,102 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- `raw gh` loops forever behind a wrapper that clears the environment first
+	- ID: 2026102306584127
+	- Type: Bug
+	- Status: Waiting for answers
+		- Waits on its question in questions.md.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261023-065841
+	- Opened by: jim-collier
+	- Related IDs: 2026101916533300
+	- Target OS: All
+	- Steps to reproduce [Bug]:
+		- Put a `gh` first on PATH that runs `exec env -u GITSBY_RAW_ACTIVE gitsby raw gh "$@"`, or goes through `sudo`, `su -` or `env -i`, which drop it too. Run `gitsby raw gh --version`.
+	- Incorrect behavior [Bug]:
+		- Each start loses the chain, so nothing stops the loop. The rig's counter stopped it at 20.
+	- Expected behavior [Bug]:
+		- Stops after a few starts, like any other wrapper.
+	- Reproduced [Bug]: 2026-10-23 on b23, with `private/claude_simple/tools/rawloop-rig.bash`.
+	- Possible cause [Bug]:
+		- The chain lives only in the environment. A check of the parent processes would catch it, but costs a lookup per platform on every `raw`.
+
+- gitsby started under a tool's name could act as `raw` for it
+	- ID: 2026102306584132
+	- Type: Enhancement
+	- Status: Waiting for answers
+		- Waits on its question in questions.md.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261023-065841
+	- Opened by: jim-collier
+	- Related IDs: 2026101916533300, 2026102306584122
+	- Requirements [Feature]:
+		- A link to gitsby named `gh`, `tea`, `glab`, `lazygit` or `tig` runs `gitsby raw <name>`. Today it answers "Unknown command 'auth'".
+	- Progress log:
+		- 2026-10-23: From testing the b28l loop. tukzedo wanted every bare `gh` to go through gitsby, and wrote a wrapper script for it. A link would do the same with no script, and the PATH walk already passes over gitsby itself.
+
+- A `gh` wrapper that calls `gitsby raw gh` still fails, and gitsby's own `gh` calls fail behind it
+	- ID: 2026102306584122
+	- Type: Bug
+	- Status: Waiting on automated testing
+		- Waits only on vmDebARM64, which another session's lock held through the 2026-10-23 stage 7, and again through a vmDebARM64-only try from 08:01 to 08:12.
+	- Needs local test suite run?: No. test.bash ran 1667/0.
+	- Needs external testing: Stage 7 on vmDebARM64, for the reworded and new raw checks in test.bash and the Go tests. Every other box passed them.
+	- Needs hand testing: b28l, with tukzedo's wrapper and the real `gh`, after a dogfood run, together with 2026101916533300.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261023-065841
+	- Opened by: jim-collier
+	- Related IDs: 2026101916533300
+	- Target OS: All
+	- Steps to reproduce [Bug]:
+		- Put the wrapper tukzedo used on b28l first on PATH, a `gh` that runs `exec gitsby raw gh "$@"`, with the real `gh` later on PATH.
+		- Run `gitsby raw gh --version`, a bare `gh --version`, a script that calls bare `gh`, `gitsby whoami` and `gitsby pr`.
+	- Incorrect behavior [Bug]:
+		- No loop since 2026101916533300, but every one fails. `raw` refuses with "Looping: ... Unset GITSBY_RAW_ACTIVE to run anyway." `whoami` says gh is not logged in, and `pr` says "'gh pr list' failed".
+		- The hint is wrong for a wrapper. Unsetting the variable brings the endless loop back.
+	- Expected behavior [Bug]:
+		- The wrapper does what it was written for. Every one of those reaches the real `gh`, as the account, after one extra start.
+	- Reproduced [Bug]: 2026-10-23 on b23, with `private/claude_simple/tools/rawloop-rig.bash`. 2 or 3 wrapper starts each, then the refusal. 6 for `whoami` and `pr`, from their probes.
+	- Possible cause [Bug]:
+		- `rawNest` refuses when its own entry is already on the chain. That entry means the file it found is what started it, so the file is a wrapper. Passing over that entry and going on down PATH would find the real tool.
+	- Requirements [Bug fix]:
+		- A `raw` whose entry for a PATH entry is already on the chain passes over that entry and tries the next one. It refuses only when none is left, or past the depth limit.
+		- A `raw` started under the probe mark does the same, and hands over with no account work or probes of its own, so probes can't multiply.
+		- The refusal drops the advice to unset `GITSBY_RAW_ACTIVE`, or gives it only where it can't loop.
+		- Hooks and aliases that call `raw` keep working as the 2026-10-22 decision says.
+		- Test case: the wrapper above, with each of those commands reaching the real `gh` and a counted cap on starts. Watch it fail on the current build first.
+	- Actual cause [Bug]:
+		- As guessed. `rawNest` refused a repeat instead of passing over the file that started it, and a `raw` under the probe mark refused outright, so every probe behind the wrapper failed too.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 2026-10-23: The item it follows set out to refuse. The 2026-10-22 answer, "What any sane human git user would expect", points at making a wrapper like this work instead. tukzedo's memory now says never to put such a wrapper on PATH.
+		- 2026-10-23: Fixed. `raw` walks PATH per candidate and passes over a tool file whose run, same folder and arguments, is already on the chain, then takes the next one. It refuses only when none is left, or past 16 deep, and no longer says to unset `GITSBY_RAW_ACTIVE`. A `raw` that passed one over, or runs under the probe mark, hands over with no account work or probes.
+		- Cost behind the wrapper, in wrapper starts: `raw gh` 2, its probe and the handover. A bare `gh` or a script 3. Each `gh` call gitsby makes 3, so `whoami` and `pr` take 6, as before, but now reach the real `gh`. A wrapper adding an argument each time takes 2 per level and stops at 16 deep, 32 starts, the same as before.
+		- Departs from the wording: not "one extra start". Getting there would mean gitsby's own `gh` calls not starting a full `raw` behind the wrapper, for one by having every gitsby mark what it runs the way the probes are marked. That changes hooks under non-raw commands, so it isn't done here.
+	- Decisions:
+		- Under the probe mark, a tool file on the chain is passed over whatever its arguments. A probe's arguments are gitsby's own, so nothing under it has a reason to run that file again. Matching on the arguments too cost 2 starts a probe, and a drifting wrapper's probes each ran to the depth limit.
+		- A chain entry now holds a hash of the tool's path on its own as well as the one over path, folder and arguments.
+		- The entry handed over is for the arguments handed over, which `glab auth status` changes.
+	- Actual fix [Bug]:
+		- `walkTool` in exec.go is `lookTool` with a filter, and `cmdPassthrough` uses it with `rawOnChain`. `rawNest` only adds the entry and keeps the probe mark last.
+	- Branch: round-20261023b
+	- Test case: test.bash `[EtMXMNv]`, `[EtMXMOn]` and `[EtMXMQW]`, reworded to reach the tool, and new `[EtX5aJ4]` (bare gh), `[EtX5aJH]` and `[EtX5aJV]` (refusal with nothing after it), `[EtX5aJj]` (whoami) and `[EtX5aJx]` (pr). Each wrapper quits past 8 starts now, since a gitsby `gh` call takes 3. Go `[EtMXfJm]`, `[EtOGJ79]` and `[EtOGJ7M]`, reworded.
+	- Verified: 2026-10-23, test.bash 1662 -> 1667, 0 failed. On the build before, the 8 reworded and new checks fail. The Go tests fail with the pass-over, the probe file match and the kept probe mark each taken out. The rig shows every one of the five commands reaching the real `gh`, where before each was refused. The hook and alias rig still passes. `GOOS=windows go vet` and the Windows test build, and darwin and freebsd builds, pass.
+	- Verified: 2026-10-23, the round's full run. The 8 reworded and new test.bash checks passed in the container, on b26 and on vmFreeBSD, and `[EtMXfJm]`, `[EtOGJ79]` and `[EtOGJ7M]` in the Go tests on b26, vmFreeBSD and vm925w. test.bash was 1438 of 1439 on b26 and 1341 of 1342 on vmFreeBSD, each 6 more than on 10-22. The one failure on each is `[EtAFLx0]`, from 2026102220133673. Go tests: b26 211 ok and 6 skipped, vmFreeBSD 213 ok and 4 skipped, vm925w 195 ok and 23 skipped. The macOS workflow, run 39970887647, passed the same checks on both runners, test.bash 1417 of 1418 with the same one failure. b29w was not reachable. Logs: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261023-07353000/run.log` for the container, `run2.log` beside it for stage 7.
+	- Swept: `rawActive` and `rawNest` have one caller, `cmdPassthrough`, which every `raw` tool shares. `findTool` and its cache are unchanged for every other spawn. README names no refusal text. design.md's `raw` bullet updated.
+
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
 	- Status: Waiting on UAT
-		- Waits on b28l.
+		- Waits on b28l, after 2026102306584122 and a dogfood run. b28l runs the synced build `9e82970` from 2026-10-19, which has neither fix.
 	- Needs local test suite run?: No. test.bash ran 1597/0.
-	- Needs external testing: b28l, the box that hit it, with `type -a gh` and a `gitsby raw gh auth status` there.
+	- Needs external testing: b28l, the box that hit it, with tukzedo's wrapper on PATH and a `gitsby raw gh auth status` there.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Critical
 	- Opened: 20261019-165333
 	- Opened by: jim-collier
+	- Prereq IDs: 2026102306584122
 	- Target OS: Linux
 	- Test environment: b28l
 	- Steps to reproduce [Bug]:
@@ -64,6 +150,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 2026-10-19: Logged from a report by another project's session on b28l. Cause is from reading the code, not from a run there. Still need the output of `type -a gh` on b28l.
 		- 2026-10-21: Fixed as the requirements ask. `raw` walks PATH itself, through `exec.LookPath` on each entry, and passes over an entry that is the running binary. It sets `GITSBY_RAW_ACTIVE` to the tool's path before anything runs the tool, the tea probes and the account's gh calls included, and a `raw` that finds it set at startup refuses and names it. The hermetic suites unset it.
 		- 2026-10-22: The guard refused every nested `raw`, hooks and aliases included. `GITSBY_RAW_ACTIVE` is now the chain of `raw` runs above, one short entry each, and a `raw` refuses only to start one already on it. While `raw` runs tools only to check them, such as the tea and gh probes, the chain ends in a probe mark, and a `raw` started under that refuses. A loop with new arguments each time stops at 16 deep.
+		- 2026-10-23: The b28l session was tukzedo's. Its memory.md says a `gh` wrapper running `exec gitsby raw gh "$@"` grew to about 15,000 processes and 56 GB in 28 minutes on 2026-10-19. Tried that wrapper on b23 against the gover build: no loop, 2 or 3 starts and a refusal. The old build loops in every case until the rig's cap. The wrapper still fails, and so do gitsby's own gh calls behind it, filed as 2026102306584122. A wrapper that clears the environment still loops, filed as 2026102306584127. Rig: `private/claude_simple/tools/rawloop-rig.bash`.
 	- Actual cause [Bug]:
 		- As the possible cause says. `raw` ran the tool by bare name and never asked what it found. Every run through a wrapper started the next.
 	- Actual fix [Bug]: `lookTool` in exec.go, used by `cmdPassthrough` for all six tools, and `rawActive` read in `newApp`. The tool still sees its own name as argv[0]. design.md's `raw` bullets say so. Since 2026-10-22, `rawNest` in exec.go builds and checks the chain.
@@ -83,18 +170,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: 2026-10-22, stage 7 passed on every box for the nesting change. test.bash 1371/0 on b26 and 1274/0 on vmFreeBSD, each 3 more than on 10-21, which are `[EtOGJ6U]`, `[EtOGJ6i]` and `[EtOGJ6v]`. 1583/0 on vmDebARM64, 4 more, those 3 plus `[EtOKpZS]`, which sits in the Linux-only pre-push gate block. `[EtOGJ79]` and `[EtOGJ7M]` passed in the Go tests on b26, vmFreeBSD, vmDebARM64 natively and under Wine, and vm925w, where the Go tests were 191 ok and 23 skipped, 2 more ok than on 10-21. `[EtMXfJm]` passed there too. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log`.
 	- Swept: every `raw` tool shares `cmdPassthrough`, git included. 2026-10-22: `rawActive` has one reader, `cmdPassthrough`, and the variable is unset in all 4 hermetic suites. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
 
-- The workflow YAML check `[EtUDfjj]` skips in the container and on most boxes
-	- ID: 2026102220133673
+- A full run's container has no name or label, so a stop can't tell it from another project's
+	- ID: 2026102307533128
 	- Type: Enhancement
 	- Status: Queued
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261022-201336
+	- Opened: 20261023-075331
 	- Opened by: jim-collier
-	- Related IDs: 2026102218410000
 	- Requirements [Feature]:
-		- Add PyYAML to `cicd/container/requirements.txt` so `[EtUDfjj]` runs in the container, and name the test ID in its skip line.
+		- The `docker run` in cicd.bash gives its container a name or label that carries the run, such as the start time, so the run can be found and stopped by it alone.
 	- Progress log:
-		- 2026-10-22: Found by the round's test batch. The check ran only on vmDebARM64 and on b23 outside the container.
+		- 2026-10-23: The round's full run got docker's generated names (`inspiring_kepler`, `frosty_sutherland`), next to other projects' containers on the same box.
 
 - `repo clone` hands git a folder name taken from the URL, and git can read it as an option
 	- ID: 2026100607545802
@@ -1675,6 +1761,31 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [Erg0LJv] and [Erg0LK9] in test.bash.
 	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
 	- Closed: 20261003-145130
+
+- The workflow YAML check `[EtUDfjj]` skips in the container and on most boxes
+	- ID: 2026102220133673
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261022-201336
+	- Opened by: jim-collier
+	- Related IDs: 2026102218410000
+	- Requirements [Feature]:
+		- Add PyYAML to `cicd/container/requirements.txt` so `[EtUDfjj]` runs in the container, and name the test ID in its skip line.
+	- Progress log:
+		- 2026-10-22: Found by the round's test batch. The check ran only on vmDebARM64 and on b23 outside the container.
+		- 2026-10-23: PyYAML 6.0.3 is in the image's lock, on the system python beside Pillow, and the image build fails if it doesn't import. No known advisory against it. The skip line names `[EtUDfjj]`.
+		- 2026-10-23: `[EtAFLx0]` failed everywhere on the Dockerfile's new lines. It now runs the image's own split patterns over the lock, and the new `[EtXHtxS]` holds PyYAML to the same. Both fail on the old lines and on a mutated Dockerfile, and pass now. test.bash 1667 -> 1668, 0 failed on b23.
+	- Decisions:
+		- No `VER_PyYAML` and no `TOOL_VERSIONS` entry. Its version changes no result, only whether the check runs, and the lock's hash pins it already.
+		- Not in `PY_AUDIT_DISTS`, which lists what the demo imports. A box without PyYAML would skip all of pip-audit.
+	- Verified: 2026-10-23, the image `gitsby-cicd:e6176a22793a` builds. In it `python3 -I -c 'import yaml'` succeeds, `[EtUDfjj]`'s check passes against the repo mounted read-only and fails on a broken workflow, and pip-audit finds nothing for `pyyaml==6.0.3`.
+	- Verified: 2026-10-23, the round's full run in the container on `gitsby-cicd:e6176a22793a`. `[EtUDfjj]` ran and passed there. test.bash was 1666 of 1667, 7 more than on 10-22: the round's 6 new checks and `[EtUDfjj]`, which skipped there before. pip-audit, fuzz 313/0, parity 29/0, CodeQL and the gif passed too. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261023-07353000/run.log`, and `run2.log` beside it for the later stages.
+	- Verified: 2026-10-23, test.bash in the container on `gitsby-cicd:e6176a22793a`, 1668/0, with `[EtUDfjj]`, `[EtAFLx0]` and `[EtXHtxS]` passing. The macOS workflow, run 39974608816, was 1419/0 on both runners, `[EtAFLx0]` and `[EtXHtxS]` included. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261023-08013000/run.log`.
+	- Test case: `[EtUDfjj]` itself, `[EtXHtxS]` and `[EtAFLx0]` for the image's lines, and the import check in the image build.
+	- Swept: test.bash's other `skip:` lines each stand for a group of checks, and their libraries (Pillow, python3, strace, pwsh) are in the image already.
+	- Acceptance signoff: Self-closed: `[EtUDfjj]` runs in the container now, and the checks on the image fail on the old lines and pass after.
+	- Closed: 20261023-081155
 
 - Check the demo's Pillow and fontTools advisories against Debian's fixes
 	- ID: 2026101905585018

@@ -58,75 +58,113 @@ func TestLookToolSkipsSelf(t *testing.T) { // [EtMXfI7]
 	}
 }
 
-// A 'raw' that would start what a 'raw' above it already started, same tool file,
-// arguments and folder, refuses before running anything, and names the tool.
-// The variable is read as the run found it.
+// A 'raw' whose tool file is already running under a 'raw' above it, same
+// arguments and folder, is a wrapper's: it passes over that file to the next one
+// on PATH, and refuses naming it only when none is left. Unsetting the variable
+// would loop, so the refusal doesn't say to. The variable is read as the run
+// found it.
 func TestRawRefusesInsideRaw(t *testing.T) { // [EtMXfJm]
-	dir := t.TempDir()
-	gh := filepath.Join(dir, "gh")
+	wrapDir, realDir := t.TempDir(), t.TempDir()
+	ext := ""
 	if runtime.GOOS == "windows" {
-		gh += ".exe"
+		ext = ".exe"
 	}
+	ran := filepath.Join(realDir, "ran")
+	wrap, realGh := filepath.Join(wrapDir, "gh"+ext), filepath.Join(realDir, "gh"+ext)
 	// Never this test binary, so a regression that runs it can't start us again.
-	if err := os.WriteFile(gh, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
+	for gh, says := range map[string]string{wrap: "wrapper", realGh: "real"} {
+		if err := os.WriteFile(gh, []byte("#!/bin/sh\necho "+says+" > '"+ran+"'\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
-	t.Setenv("PATH", dir)
 	args := []string{"auth", "status"}
-	above, err := rawNest("", "gh", gh, args)
+	above, err := rawNest("", "gh", rawEntry("gh", wrap, args))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(rawActiveVar, above)
-	a := newApp(newPrinter())
-	err = a.cmdPassthrough("gh", args)
-	if err == nil || !strings.Contains(err.Error(), "Looping") || !strings.Contains(err.Error(), gh) || !strings.Contains(err.Error(), rawActiveVar) {
+
+	if runtime.GOOS != "windows" {
+		t.Setenv("PATH", wrapDir+string(os.PathListSeparator)+realDir)
+		err = newApp(newPrinter()).cmdPassthrough("gh", args)
+		if err == nil || err.Error() != silentExit(0).Error() {
+			t.Errorf("passing over: %v", err)
+		}
+		if got, _ := os.ReadFile(ran); string(got) != "real\n" {
+			t.Errorf("the next gh didn't run: %q", got)
+		}
+		if chain := strings.Fields(os.Getenv(rawActiveVar)); len(chain) != 2 || chain[1] != rawEntry("gh", realGh, args) {
+			t.Errorf("handed over with %q", chain)
+		}
+		t.Setenv(rawActiveVar, above)
+	}
+
+	t.Setenv("PATH", wrapDir)
+	err = newApp(newPrinter()).cmdPassthrough("gh", args)
+	if err == nil || !strings.Contains(err.Error(), "Looping") || !strings.Contains(err.Error(), wrap) || strings.Contains(err.Error(), rawActiveVar) {
 		t.Errorf("got %v", err)
 	}
 }
 
-// The chain refuses only a repeat, or anything started while 'raw' was only
-// checking a tool. Other arguments, another folder or another tool file nest, as
-// a hook calling 'raw git' under 'raw git commit' does.
+// Only a repeat is on the chain: other arguments, another folder or another tool
+// file nest, as a hook calling 'raw git' under 'raw git commit' does. Under the
+// probe mark the tool file alone is a match, and the mark stays last.
 func TestRawNestChain(t *testing.T) { // [EtOGJ79]
 	t.Chdir(t.TempDir())
-	chain, err := rawNest("", "git", "/bin/git", []string{"commit", "-m", "x"})
+	commit := []string{"commit", "-m", "x"}
+	chain, err := rawNest("", "git", rawEntry("git", "/bin/git", commit))
 	if err != nil || len(strings.Fields(chain)) != 1 {
 		t.Fatalf("first: %q, %v", chain, err)
 	}
-	if _, err := rawNest(chain, "git", "/bin/git", []string{"commit", "-m", "x"}); err == nil || !strings.Contains(err.Error(), "'/bin/git'") {
-		t.Errorf("a repeat ran: %v", err)
+	if !rawOnChain(chain, rawEntry("git", "/bin/git", commit)) {
+		t.Errorf("a repeat isn't on the chain")
 	}
 	// Joined differently, the same words are other arguments.
 	for _, args := range [][]string{{"status"}, {"commit-m", "x"}, {"commit", "-mx"}} {
-		if next, err := rawNest(chain, "git", "/bin/git", args); err != nil || len(strings.Fields(next)) != 2 {
+		if rawOnChain(chain, rawEntry("git", "/bin/git", args)) {
+			t.Errorf("%q counted as a repeat", args)
+		}
+		if next, err := rawNest(chain, "git", rawEntry("git", "/bin/git", args)); err != nil || len(strings.Fields(next)) != 2 {
 			t.Errorf("%q refused: %q, %v", args, next, err)
 		}
 	}
-	if _, err := rawNest(chain, "git", "/usr/local/bin/git", []string{"commit", "-m", "x"}); err != nil {
-		t.Errorf("another git refused: %v", err)
+	if rawOnChain(chain, rawEntry("git", "/usr/local/bin/git", commit)) {
+		t.Errorf("another git counted as a repeat")
 	}
-	if _, err := rawNest(chain+" "+rawProbing, "gh", "/bin/gh", []string{"api", "user"}); err == nil || !strings.Contains(err.Error(), "only checking") {
-		t.Errorf("a raw from a probe ran: %v", err)
+	probing := chain + " " + rawProbing
+	if !rawOnChain(probing, rawEntry("git", "/bin/git", []string{"--version"})) {
+		t.Errorf("under the probe mark, the same git with other arguments isn't on the chain")
+	}
+	if rawOnChain(probing, rawEntry("gh", "/bin/gh", []string{"api", "user"})) {
+		t.Errorf("under the probe mark, another tool counted as on the chain")
+	}
+	next, err := rawNest(probing, "gh", rawEntry("gh", "/bin/gh", []string{"api", "user"}))
+	if fields := strings.Fields(next); err != nil || len(fields) != 3 || fields[2] != rawProbing {
+		t.Errorf("under the probe mark: %q, %v", next, err)
 	}
 	t.Chdir(t.TempDir())
-	if _, err := rawNest(chain, "git", "/bin/git", []string{"commit", "-m", "x"}); err != nil {
-		t.Errorf("another folder refused: %v", err)
+	if rawOnChain(chain, rawEntry("git", "/bin/git", commit)) {
+		t.Errorf("another folder counted as a repeat")
 	}
 }
 
 // A loop with new arguments each time stops at rawDepthMax, and says how deep.
+// The probe mark isn't a level.
 func TestRawNestDepth(t *testing.T) { // [EtOGJ7M]
 	chain := ""
 	for n := range rawDepthMax {
 		var err error
-		if chain, err = rawNest(chain, "gh", "/bin/gh", []string{strconv.Itoa(n)}); err != nil {
+		if chain, err = rawNest(chain, "gh", rawEntry("gh", "/bin/gh", []string{strconv.Itoa(n)})); err != nil {
 			t.Fatalf("refused at %d: %v", n+1, err)
 		}
 	}
-	_, err := rawNest(chain, "gh", "/bin/gh", []string{"last"})
-	if err == nil || !strings.Contains(err.Error(), strconv.Itoa(rawDepthMax+1)+" deep") {
+	_, err := rawNest(chain, "gh", rawEntry("gh", "/bin/gh", []string{"last"}))
+	if err == nil || !strings.Contains(err.Error(), strconv.Itoa(rawDepthMax+1)+" deep") || strings.Contains(err.Error(), rawActiveVar) {
 		t.Errorf("got %v", err)
+	}
+	_, err = rawNest(chain+" "+rawProbing, "gh", rawEntry("gh", "/bin/gh", []string{"last"}))
+	if err == nil || !strings.Contains(err.Error(), strconv.Itoa(rawDepthMax+1)+" deep") {
+		t.Errorf("under the probe mark: %v", err)
 	}
 }
 
