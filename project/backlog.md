@@ -83,34 +83,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: 2026-10-22, stage 7 passed on every box for the nesting change. test.bash 1371/0 on b26 and 1274/0 on vmFreeBSD, each 3 more than on 10-21, which are `[EtOGJ6U]`, `[EtOGJ6i]` and `[EtOGJ6v]`. 1583/0 on vmDebARM64, 4 more, those 3 plus `[EtOKpZS]`, which sits in the Linux-only pre-push gate block. `[EtOGJ79]` and `[EtOGJ7M]` passed in the Go tests on b26, vmFreeBSD, vmDebARM64 natively and under Wine, and vm925w, where the Go tests were 191 ok and 23 skipped, 2 more ok than on 10-21. `[EtMXfJm]` passed there too. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log`.
 	- Swept: every `raw` tool shares `cmdPassthrough`, git included. 2026-10-22: `rawActive` has one reader, `cmdPassthrough`, and the variable is unset in all 4 hermetic suites. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
 
-- gitsby should work with glab
-	- ID: 2026102209210000
-	- Type: Enhancement
-	- Status: Waiting on UAT
-		- Waits on a person trying the writing `pr` forms on a GitLab repo of their own.
-	- Needs local test suite run?: No. test.bash ran 1659/0.
-	- Needs hand testing: on a GitLab repo you can write to, `gitsby pr create` from a feature branch, then `gitsby pr ok <n>` on it. Both write to the remote, so they were not run here.
-	- Opened: 20261022-092100
-	- Opened by: jim-collier
-	- Milestone: Pre-next-cut.
-	- Requirements [Feature]:
-		- gitsby should work with glab. (Now installed on b23.)
-	- Progress log:
-		- 2026-10-22: First real run, against gitlab.gnome.org as t00mietum (glab 1.53.0, token now in place). `raw glab api user` works and answers as t00mietum, so the account and token reach glab.
-		- 2026-10-22: `gitsby pr` in a GNOME clone runs `tea-cli pulls list`, not glab, and fails. `pr` has no glab path.
-		- 2026-10-22: `raw glab mr list` and `raw glab repo view` in a GNOME clone fail with "none of the git remotes ... point to a known GitLab host". The remote is `ssh.gitlab.gnome.org`, the API host is `gitlab.gnome.org`, and glab matches them by name. `-R t00mietum/gtk` works when `GITLAB_HOST` is set. gitsby sets `GITLAB_HOST` with an `https://` prefix.
-		- 2026-10-22: `raw glab auth status` outside a repo sent the GNOME token to gitlab.com, which answered 401. glab applies `GITLAB_TOKEN` to every host it knows. Fixed on branch glabtoken: gitsby adds `--hostname <account host>` unless one is given. Test.bash `[EtRsYMX]`, Go `[EtRsVxf]`. Inside a GNOME clone no token is passed at all, because the remote is `ssh.gitlab.gnome.org` and the account's host is `gitlab.gnome.org`.
-		- 2026-10-22: gitsby warns the token file is readable by other users.
-		- 2026-10-22: Fixed on branch glabtoken: a remote on `ssh.<host>` now counts as `<host>` for the account's token and credential helper (`serviceHost` in account.go). Test.bash `[EtRzPaH]`, Go `[EtRzPK4]`. Checked for real: `raw glab mr list -R GNOME/gtk` in a GNOME clone lists the open merge requests as t00mietum.
-		- 2026-10-22: `raw glab repo view` with no `-R` still fails in a GNOME clone. glab matches the remote's host (`ssh.gitlab.gnome.org`) to `GITLAB_HOST` itself. Still open, along with `pr`.
-		- 2026-10-22: `pr` runs glab on a GitLab host, with the repo passed by `-R` (197677f). Test.bash `[EtTo1Qf]` to `[EtTo1xK]`, Go `[EtTo2FR]`.
-		- 2026-10-22: Fixed: when origin is on the account host's `ssh.` name, `raw glab` sets `GITLAB_HOST` to origin's host and `GITLAB_API_HOST` to the account's, glab's own setting for a git host apart from its API. `pr` is left as it was, since `-R` already works there. test.bash `[EtRzPaH]` reworded with the same ID: the token still goes, and the account's host now reaches glab as the API host.
-		- 2026-10-22: `raw glab auth status` still fails, inside a repo or out: glab checks only hosts in its own config file, and refuses one that only `GITLAB_HOST` and `GITLAB_TOKEN` name. glab's own behavior, still on its main branch. gitsby can't fix it without writing glab's config. Upstream draft: `private/claude_simple/upstream/2026102209210000/`.
-	- Verified: 2026-10-22, in the GNOME gtk clone as t00mietum, read-only: `raw glab repo view -b main`, `raw glab mr list` and `raw glab issue list` with no `-R`, `raw glab mr list -R GNOME/gtk`, `raw glab api user`, `gitsby -NoFetch pr` and `gitsby -NoFetch pr 10551`. A plain `raw glab repo view` there finds GNOME/gtk, then fails on its README, since it asks for the checked-out branch, which is only on the fork. That is glab's, and happens with any branch origin lacks.
-	- Verified: 2026-10-22, test.bash 1659/0, 1658 -> 1659, with `[EtU8Fno]` failing on a build without the new call, and nothing else failing. Go `[EtU8FXc]` fails with `glabRemoteHost` stubbed out.
-	- Test case: test.bash `[EtU8Fno]` and Go `[EtU8FXc]` for the ssh host, plus the ones named above.
-	- Swept: `hostTokenEnv` has 3 callers. `raw glab` gets the new step. `pr` passes `-R`. `raw tea` was not changed: tea finds its login from the remote too, but no Gitea host seen so far puts ssh on `ssh.<host>`. Not checked against a real tea.
-
 - The workflow YAML check `[EtUDfjj]` skips in the container and on most boxes
 	- ID: 2026102220133673
 	- Type: Enhancement
@@ -2072,6 +2044,36 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Closed: 20261004-185642
 	- Branch: remote-tests-label
 	- Commit: 9049ec8
+
+- gitsby should work with glab
+	- ID: 2026102209210000
+	- Type: Enhancement
+	- Status: Done
+		- Waits on a person trying the writing `pr` forms on a GitLab repo of their own.
+	- Needs local test suite run?: No. test.bash ran 1659/0.
+	- Needs hand testing: on a GitLab repo you can write to, `gitsby pr create` from a feature branch, then `gitsby pr ok <n>` on it. Both write to the remote, so they were not run here.
+	- Opened: 20261022-092100
+	- Opened by: jim-collier
+	- Milestone: Pre-next-cut.
+	- Requirements [Feature]:
+		- gitsby should work with glab. (Now installed on b23.)
+	- Progress log:
+		- 2026-10-22: First real run, against gitlab.gnome.org as t00mietum (glab 1.53.0, token now in place). `raw glab api user` works and answers as t00mietum, so the account and token reach glab.
+		- 2026-10-22: `gitsby pr` in a GNOME clone runs `tea-cli pulls list`, not glab, and fails. `pr` has no glab path.
+		- 2026-10-22: `raw glab mr list` and `raw glab repo view` in a GNOME clone fail with "none of the git remotes ... point to a known GitLab host". The remote is `ssh.gitlab.gnome.org`, the API host is `gitlab.gnome.org`, and glab matches them by name. `-R t00mietum/gtk` works when `GITLAB_HOST` is set. gitsby sets `GITLAB_HOST` with an `https://` prefix.
+		- 2026-10-22: `raw glab auth status` outside a repo sent the GNOME token to gitlab.com, which answered 401. glab applies `GITLAB_TOKEN` to every host it knows. Fixed on branch glabtoken: gitsby adds `--hostname <account host>` unless one is given. Test.bash `[EtRsYMX]`, Go `[EtRsVxf]`. Inside a GNOME clone no token is passed at all, because the remote is `ssh.gitlab.gnome.org` and the account's host is `gitlab.gnome.org`.
+		- 2026-10-22: gitsby warns the token file is readable by other users.
+		- 2026-10-22: Fixed on branch glabtoken: a remote on `ssh.<host>` now counts as `<host>` for the account's token and credential helper (`serviceHost` in account.go). Test.bash `[EtRzPaH]`, Go `[EtRzPK4]`. Checked for real: `raw glab mr list -R GNOME/gtk` in a GNOME clone lists the open merge requests as t00mietum.
+		- 2026-10-22: `raw glab repo view` with no `-R` still fails in a GNOME clone. glab matches the remote's host (`ssh.gitlab.gnome.org`) to `GITLAB_HOST` itself. Still open, along with `pr`.
+		- 2026-10-22: `pr` runs glab on a GitLab host, with the repo passed by `-R` (197677f). Test.bash `[EtTo1Qf]` to `[EtTo1xK]`, Go `[EtTo2FR]`.
+		- 2026-10-22: Fixed: when origin is on the account host's `ssh.` name, `raw glab` sets `GITLAB_HOST` to origin's host and `GITLAB_API_HOST` to the account's, glab's own setting for a git host apart from its API. `pr` is left as it was, since `-R` already works there. test.bash `[EtRzPaH]` reworded with the same ID: the token still goes, and the account's host now reaches glab as the API host.
+		- 2026-10-22: `raw glab auth status` still fails, inside a repo or out: glab checks only hosts in its own config file, and refuses one that only `GITLAB_HOST` and `GITLAB_TOKEN` name. glab's own behavior, still on its main branch. gitsby can't fix it without writing glab's config. Upstream draft: `private/claude_simple/upstream/2026102209210000/`.
+	- Verified: 2026-10-22, in the GNOME gtk clone as t00mietum, read-only: `raw glab repo view -b main`, `raw glab mr list` and `raw glab issue list` with no `-R`, `raw glab mr list -R GNOME/gtk`, `raw glab api user`, `gitsby -NoFetch pr` and `gitsby -NoFetch pr 10551`. A plain `raw glab repo view` there finds GNOME/gtk, then fails on its README, since it asks for the checked-out branch, which is only on the fork. That is glab's, and happens with any branch origin lacks.
+	- Verified: 2026-10-22, test.bash 1659/0, 1658 -> 1659, with `[EtU8Fno]` failing on a build without the new call, and nothing else failing. Go `[EtU8FXc]` fails with `glabRemoteHost` stubbed out.
+	- Test case: test.bash `[EtU8Fno]` and Go `[EtU8FXc]` for the ssh host, plus the ones named above.
+	- Swept: `hostTokenEnv` has 3 callers. `raw glab` gets the new step. `pr` passes `-R`. `raw tea` was not changed: tea finds its login from the remote too, but no Gitea host seen so far puts ssh on `ssh.<host>`. Not checked against a real tea.
+	- Acceptance signoff: Won't test. The write path (`pr create`, `pr ok`) on a GitLab repo was left untested by choice, 2026-10-23.
+	- Closed: 20261023-064239
 
 - CICD runs on GitHub's free macOS runners
 	- ID: 2026102218410000
