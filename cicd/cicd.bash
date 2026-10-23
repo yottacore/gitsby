@@ -829,7 +829,7 @@ elif ((doFuzz)); then
 	fEcho "OK: native fuzz targets"
 fi
 ## The standard library and every module in go.mod, the test-only ones too (-test). The
-## library code is linked into every binary we publish. Probe-gated like staticcheck.
+## library code is linked into every binary we publish. Probe-gated liek staticcheck.
 if [[ -n "${ranWhere:-}" ]] || ((! doFuzz)); then
 	:
 elif ((quick)); then
