@@ -122,9 +122,9 @@ fAssertFail(){ local desc="$1"; shift; if ! "$@" >/dev/null 2>&1; then fOk "${de
 ## Assert the command's output matches an extended regex (for the pre-flight display).
 ## Capture rather than pipe: 'grep -q' would close the pipe early and pipefail would call that a failure.
 fAssertOut(){  local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
-	if grep -qE "${pat}" <<< "${out}"; then fOk "${desc}"; else fFail "${desc}"; fi; }
+	if grep -qE -- "${pat}" <<< "${out}"; then fOk "${desc}"; else fFail "${desc}"; fi; }
 fAssertNotOut(){ local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
-	if ! grep -qE "${pat}" <<< "${out}"; then fOk "${desc}"; else fFail "${desc}"; fi; }
+	if ! grep -qE -- "${pat}" <<< "${out}"; then fOk "${desc}"; else fFail "${desc}"; fi; }
 ## Matches against the PLAN only, not the whole run. Every "plans X" assertion against full
 ## output is also satisfied by the execution echo of the same command, so it cannot tell a
 ## preview that lists a step from one that silently stopped listing it. Plan lines are indented
@@ -254,9 +254,9 @@ fAllMet(){ local word="" ended="" total=0 before=0
 	done < "$1"
 	[[ "${total}" == "$2" && "${before}" == "$2" ]] ;}
 fAssertPlan(){    local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
-	if     grep -qE "${pat}" <<< "$(fPlanOf <<< "${out}")"; then fOk "${desc}"; else fFail "${desc}"; fi; }
+	if     grep -qE -- "${pat}" <<< "$(fPlanOf <<< "${out}")"; then fOk "${desc}"; else fFail "${desc}"; fi; }
 fAssertNotPlan(){ local desc="$1"; local pat="$2"; shift 2; local out=""; out="$("$@" 2>&1 || true)"
-	if ! grep -qE "${pat}" <<< "$(fPlanOf <<< "${out}")"; then fOk "${desc}"; else fFail "${desc}"; fi; }
+	if ! grep -qE -- "${pat}" <<< "$(fPlanOf <<< "${out}")"; then fOk "${desc}"; else fFail "${desc}"; fi; }
 ## Succeeds when the plan line matching <pattern> is the step that ran: the same text, announced.
 fPlanRan(){ local pat="$1"; shift; local out="" line=""; out="$("$@" 2>&1 || true)"
 	line="$(grep -m1 -E -- "${pat}" <<< "$(fPlanOf <<< "${out}")" || true)"; line="${line#"${line%%[! ]*}"}"; line="${line% \*}"
@@ -983,7 +983,7 @@ fRunSuite(){
 		bash -c "cd '${work}' && '${gitsby}' --donate"
 	fAssert     "[Eo5Hqnj] bare 'about' word works"          bash -c "cd '${work}' && '${gitsby}' about"
 	fAssert     "[Eo5Hqnk] bare 'donate' word works"         bash -c "cd '${work}' && '${gitsby}' donate"
-	fAssertOut  "[Eo5Hqnl] help lists both of them"          '\-\-about.*\-\-donate'  "${gitsby}" --help
+	fAssertOut  "[Eo5Hqnl] help lists both of them"          '--about.*--donate'  "${gitsby}" --help
 	## Help lists all four on one line, and only --help worked past the first word.
 	fAssertOut  "[ErCP1Qd] --version works after a command, as --help does"  '^gitsby v[0-9]' \
 		bash -c "cd '${cloneA}' && '${gitsby}' br create infoflag --version"
@@ -2869,17 +2869,17 @@ GHEOF
 	## outright, so no latest-release lookup) and stops at the confirmation.
 	local inst="${root}/legacy/install.bash"
 	fAssert     "[ElFABI0] installer --help works"                    bash -c "bash '${inst}' --help"
-	fAssertOut  "[ElFABI1] and documents --release"                   '\-\-release dev\|stable'   bash -c "bash '${inst}' --help"
-	fAssertOut  "[ElFABI2] and documents --target"                    '\-\-target user\|system'   bash -c "bash '${inst}' --help"
-	fAssertOut  "[ElFABI3] and documents --arch"                      '\-\-arch x64\|amd64\|arm64' bash -c "bash '${inst}' --help"
+	fAssertOut  "[ElFABI1] and documents --release"                   '--release dev[|]stable'    bash -c "bash '${inst}' --help"
+	fAssertOut  "[ElFABI2] and documents --target"                    '--target user[|]system'    bash -c "bash '${inst}' --help"
+	fAssertOut  "[ElFABI3] and documents --arch"                      '--arch x64[|]amd64[|]arm64' bash -c "bash '${inst}' --help"
 	## Assert the reason, not just the failure: an installer that never heard of --target also
 	## exits nonzero here, so a bare exit-code check would pass with the option missing entirely.
 	fAssertFail "[ElFABI4] installer exits nonzero on a bad --target"  bash -c "bash '${inst}' --target bogus"
-	fAssertOut  "[ElFABI5] installer refuses a bad --target"           "\-\-target takes"          bash -c "bash '${inst}' --target bogus"
-	fAssertOut  "[ElFABI6] installer refuses a bad --arch"             "\-\-arch takes"            bash -c "bash '${inst}' --arch sparc"
-	fAssertOut  "[ElFABI7] installer refuses a bad --release"          "\-\-release takes"         bash -c "bash '${inst}' --release beta"
+	fAssertOut  "[ElFABI5] installer refuses a bad --target"           "--target takes"            bash -c "bash '${inst}' --target bogus"
+	fAssertOut  "[ElFABI6] installer refuses a bad --arch"             "--arch takes"              bash -c "bash '${inst}' --arch sparc"
+	fAssertOut  "[ElFABI7] installer refuses a bad --release"          "--release takes"           bash -c "bash '${inst}' --release beta"
 	fAssertOut  "[ElFABI8] installer refuses --release with --ref"     'Use --release or --ref'    bash -c "bash '${inst}' --release dev --ref main"
-	fAssertOut  "[ElFABI9] installer refuses a valueless --target"     "\-\-target needs a value"  bash -c "bash '${inst}' --target"
+	fAssertOut  "[ElFABI9] installer refuses a valueless --target"     "--target needs a value"    bash -c "bash '${inst}' --target"
 	## A ref is interpolated into a download URL, so a path-shaped one installs a script from
 	## some other repo while the printed plan still names this one.
 	fAssertOut  "[ElHKNn4] installer refuses a path-shaped --ref"      'not a path'                bash -c "bash '${inst}' -y --ref '../../evil/repo/main'"
@@ -2978,20 +2978,20 @@ GHEOF
 	## release.bash phase 3, against a real published release.
 	local goInst="${root}/install.bash"
 	fAssert     "[EnPlcIq] go installer --help works"                   bash -c "bash '${goInst}' --help"
-	fAssertOut  "[EnPlcIr] and documents --target"                      '\-\-target user\|system'  bash -c "bash '${goInst}' --help"
-	fAssertOut  "[EnPlcIs] and documents --arch"                        '\-\-arch amd64\|arm64'    bash -c "bash '${goInst}' --help"
-	fAssertOut  "[EnPlcIt] and documents --tag"                         '\-\-tag TAG'               bash -c "bash '${goInst}' --help"
+	fAssertOut  "[EnPlcIr] and documents --target"                      '--target user[|]system'   bash -c "bash '${goInst}' --help"
+	fAssertOut  "[EnPlcIs] and documents --arch"                        '--arch amd64[|]arm64'     bash -c "bash '${goInst}' --help"
+	fAssertOut  "[EnPlcIt] and documents --tag"                         '--tag TAG'                 bash -c "bash '${goInst}' --help"
 	## The header says --help lists every option the parser takes, and --ref was left out.
 	fAssert     "[EpykPWy] and names every option the parser takes"     fBashHelpNamesAll "${goInst}"
-	fAssertOut  "[EnPlcIu] go installer refuses a bad --target"         "\-\-target takes"          bash -c "bash '${goInst}' --target bogus"
-	fAssertOut  "[EnPlcIv] go installer refuses a valueless --target"   "\-\-target needs a value"  bash -c "bash '${goInst}' --target"
+	fAssertOut  "[EnPlcIu] go installer refuses a bad --target"         "--target takes"            bash -c "bash '${goInst}' --target bogus"
+	fAssertOut  "[EnPlcIv] go installer refuses a valueless --target"   "--target needs a value"    bash -c "bash '${goInst}' --target"
 	## --arch names the asset now rather than being accepted and ignored, so the two spellings
 	## the release publishes are the two it takes.
-	fAssertOut  "[EnPlcIw] go installer refuses a bad --arch"           "\-\-arch takes"            bash -c "bash '${goInst}' --arch sparc"
+	fAssertOut  "[EnPlcIw] go installer refuses a bad --arch"           "--arch takes"              bash -c "bash '${goInst}' --arch sparc"
 	## The joined spellings are case arms of their own, so the checks above say nothing about them.
-	fAssertOut  "[Er1LxS4] go installer refuses a bad --target=VALUE"   "\-\-target takes 'user' or 'system' \(got 'bogus'\)"  bash -c "bash '${goInst}' --target=bogus"
+	fAssertOut  "[Er1LxS4] go installer refuses a bad --target=VALUE"   "--target takes 'user' or 'system' \(got 'bogus'\)"  bash -c "bash '${goInst}' --target=bogus"
 	fAssertOut  "[Er1LxS5] and names the dropped --release=dev"         'no .--release dev. any more'  bash -c "bash '${goInst}' --release=dev"
-	fAssertOut  "[Er1LxS6] and refuses a bad --arch=VALUE"              "\-\-arch takes 'amd64' or 'arm64' \(got 'sparc'\)"  bash -c "bash '${goInst}' --arch=sparc"
+	fAssertOut  "[Er1LxS6] and refuses a bad --arch=VALUE"              "--arch takes 'amd64' or 'arm64' \(got 'sparc'\)"  bash -c "bash '${goInst}' --arch=sparc"
 	fAssertOut  "[Er1LxS7] and a path-shaped --tag=VALUE"               'not a path'                   bash -c "HOME='${work}/joinhome' bash '${goInst}' -y --tag=../x"
 	## '--release dev' installed the tip of a branch while the product was a script. A branch has
 	## no build behind it now, so the flag is answered by name rather than left to fail as an
@@ -3470,7 +3470,7 @@ GHEOF
 			fAssert    "[EpyfWSi] and looks up no latest release"  bash -c "! grep -q 'releases/latest' '${psi}/calls'"
 			fAssertOut "[EpyfWSj] go ps installer takes --target and --arch with the value apart"  'gitsby v1\.2\.3 \(stand-in\)' \
 				fPsInstall "${psi}" "${psi}/hgnu2" 7 "${goInstPs}" --target user --arch amd64 -Yes
-			fAssertOut "[EpyfWSk] go ps installer says a --tag needs a value"  '\-\-tag needs a value' \
+			fAssertOut "[EpyfWSk] go ps installer says a --tag needs a value"  '--tag needs a value' \
 				fPsInstall "${psi}" "${psi}/hgnu3" 7 "${goInstPs}" -Yes --tag
 			## The compare passed only because -ne ignores case.
 			fAssert    "[EpyfWSl] go install.ps1 compares checksums with case spelled out"  bash -c "grep -q 'ToLowerInvariant() -cne' '${goInstPs}'"
@@ -4584,7 +4584,7 @@ GHEOF
 	## Each build names itself in its own syntax lines, so the pattern has to allow both spellings.
 	fAssertOut  "[EmZiVeq] and names the two that are"  'Syntax: gitsby(\.ps1)? repo url'  bash -c "cd '${ru}' && '${gitsby}' -q -NoFetch repo url ftp 2>&1"
 	## Whoever reads a Syntax: line just typed the command wrong, so each placeholder is defined under it.
-	fAssertOut  "[Eq4W7zV] and says what leaving it off does"  '^  \[https\|ssh\]  +Switches origin .* Without it'  bash -c "cd '${ru}' && '${gitsby}' -q -NoFetch repo url ftp 2>&1"
+	fAssertOut  "[Eq4W7zV] and says what leaving it off does"  '^  \[https[|]ssh\]  +Switches origin .* Without it'  bash -c "cd '${ru}' && '${gitsby}' -q -NoFetch repo url ftp 2>&1"
 	fAssertOut  "[Eq4W7zW] repo clone with no URL defines both of its placeholders"  '^  \[directory\]  +The folder'  bash -c "cd '${ru}' && '${gitsby}' -q -NoFetch repo clone 2>&1"
 	fAssertOut  "[Eq4W7zX] br hotfix with no name says what the name becomes"  '^ +created as hotfix/<name>'  bash -c "cd '${ru}' && '${gitsby}' -q -NoFetch br hotfix 2>&1"
 	## A remote with no second spelling must say so rather than invent one, and a repo with no
@@ -5050,6 +5050,13 @@ GHEOF
 		## comes back is the current folder.
 		fAssert "[Erm5vYa] ${rmScript} checks mktemp before changing into what it made" \
 			bash -c '[[ -f "$1" ]] && ! grep -qE "$2" "$1"' _ "${root}/${rmScript}" 'cd( --)? +"?\$\(mktemp'
+		## A backslash before a dash or a pipe is undefined in a regex. GNU grep 3.8 and up warns
+		## about the dash, and BSD grep may read the pipe as alternation. Put '--' before a pattern
+		## that starts with a dash, and write a literal pipe as [|].
+		fAssert "[EtU6AcV] ${rmScript} has no backslashed dash" \
+			bash -c '[[ -f "$1" ]] && ! grep -qE "$2" "$1"' _ "${root}/${rmScript}" '[\]-'
+		fAssert "[EtU6Acj] ${rmScript} has no backslashed pipe in a check pattern" \
+			bash -c '[[ -f "$1" ]] && ! grep -qE "$2" "$1"' _ "${root}/${rmScript}" '^[[:space:]]*(fAssert[A-Za-z]*|fPlanRan|fGateSays)[[:space:]].*[\][|]'
 	done
 	## This suite's own scratch folder, with mktemp failing for real: TMPDIR is a file. It runs from a
 	## folder of its own, and the canary has to survive. The folder named like the suite's empty

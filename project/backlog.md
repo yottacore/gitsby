@@ -33,6 +33,30 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- test.bash on b26 prints `grep: warning: stray \ before -` 22 times
+	- ID: 2026102120365577
+	- Type: Bug
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: test.bash, which should go 1598 -> 1650, the 26 scripts times the 2 new checks.
+	- Needs external testing: b26 stage 7 log shows no grep warning, and b26, vmFreeBSD and vmDebARM64 each count 52 more checks than on 10-22.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261021-203655
+	- Opened by: jim-collier
+	- Target OS: macOS
+	- Test environment: b26
+	- Incorrect behavior [Bug]:
+		- Stage 7's b26 log has the warning 22 times, on 2026-10-21 and 2026-10-22 both. The checks still pass, but it's noise in the log, and a pattern grep warns about may not match what it should.
+	- Expected behavior [Bug]:
+		- No grep warnings. Each pattern matches the same lines on every box.
+	- Actual cause [Bug]:
+		- b26 has GNU grep 3.12, which warns about `\-` in a pattern given without `-e`. 17 `fAssertOut` patterns in test.bash escaped their leading dashes so grep wouldn't read them as options. Debian's grep 3.11 here prints nothing for the same patterns.
+		- 6 of those patterns also wrote a literal pipe as `\|`, which is undefined in an extended regex. GNU reads it as a pipe, and other greps may read it as alternation, which matches more.
+	- Actual fix [Bug]: `fAssertOut`, `fAssertNotOut`, `fAssertPlan` and `fAssertNotPlan` pass the pattern after `--`, as `fPlanRan` and `fGateSays` already did. The patterns drop the backslashes, and a literal pipe is `[|]`.
+	- Branch: round-20261023
+	- Test case: test.bash `[EtU6AcV]` fails on a backslashed dash anywhere in the 26 pipeline and installer scripts, and `[EtU6Acj]` on a backslashed pipe in a check pattern. Both sit in the `[Emq7Y6y]` loop.
+	- Verified: before the fix both new checks fail on cicd/test.bash only, `[EtU6Acj]` on 6 lines. After it all 26 scripts pass both. The 20 changed or neighboring installer and help checks pass when run alone against the real output, and `[Eq4W7zV]`'s pattern matches `repo url ftp` output. A `[|]` pattern does not match a line without the pipe. shellcheck, `test-id.bash --check` and the gate pass.
+	- Swept: every `grep` taking a pattern variable in cicd. parity.bash's 4 `grep -E "${pattern}"` calls get fixed patterns with no leading dash, so they stay. No `\-` anywhere else in the repo. The awk `\|` at test.bash's table reader is awk, not grep, and stays.
+
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
@@ -82,20 +106,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: 2026-10-22, test.bash 1594 -> 1597, 0 failed, with the reworded `[EtMXMNv]` and `[EtMXMQW]`. On the build before, the 3 new checks fail. The Go tests fail with each part of `rawNest` taken out in turn: the repeat check, the probe mark, the depth limit, the folder and the separator between arguments. Outside the suite, a wrapper `gh` started once and was refused, and one adding an argument each time stopped at 16. `GOOS=windows go vet` and the Windows test build, and darwin and freebsd builds, pass.
 	- Verified: 2026-10-22, stage 7 passed on every box for the nesting change. test.bash 1371/0 on b26 and 1274/0 on vmFreeBSD, each 3 more than on 10-21, which are `[EtOGJ6U]`, `[EtOGJ6i]` and `[EtOGJ6v]`. 1583/0 on vmDebARM64, 4 more, those 3 plus `[EtOKpZS]`, which sits in the Linux-only pre-push gate block. `[EtOGJ79]` and `[EtOGJ7M]` passed in the Go tests on b26, vmFreeBSD, vmDebARM64 natively and under Wine, and vm925w, where the Go tests were 191 ok and 23 skipped, 2 more ok than on 10-21. `[EtMXfJm]` passed there too. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log`.
 	- Swept: every `raw` tool shares `cmdPassthrough`, git included. 2026-10-22: `rawActive` has one reader, `cmdPassthrough`, and the variable is unset in all 4 hermetic suites. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
-
-- test.bash on b26 prints `grep: warning: stray \ before -` 22 times
-	- ID: 2026102120365577
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261021-203655
-	- Opened by: jim-collier
-	- Target OS: macOS
-	- Test environment: b26
-	- Incorrect behavior [Bug]:
-		- Stage 7's b26 log has the warning 22 times, on 2026-10-21 and 2026-10-22 both. The checks still pass, but it's noise in the log, and a pattern grep warns about may not match what it should.
-	- Expected behavior [Bug]:
-		- No grep warnings. Each pattern matches the same lines on every box.
 
 - gitsby should work with glab
 	- ID: 2026102209210000
