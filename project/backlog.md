@@ -57,6 +57,30 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: before the fix both new checks fail on cicd/test.bash only, `[EtU6Acj]` on 6 lines. After it all 26 scripts pass both. The 20 changed or neighboring installer and help checks pass when run alone against the real output, and `[Eq4W7zV]`'s pattern matches `repo url ftp` output. A `[|]` pattern does not match a line without the pipe. shellcheck, `test-id.bash --check` and the gate pass.
 	- Swept: every `grep` taking a pattern variable in cicd. parity.bash's 4 `grep -E "${pattern}"` calls get fixed patterns with no leading dash, so they stay. No `\-` anywhere else in the repo. The awk `\|` at test.bash's table reader is awk, not grep, and stays.
 
+- CICD runs on GitHub's free macOS runners
+	- ID: 2026102218410000
+	- Type: Enhancement
+	- Status: Waiting on automated testing
+	- Needs external testing: The first GitHub run of `.github/workflows/macos.yml`, on both runners, once the round reaches `gover` or a PR is opened from it.
+	- Opened: 20261022-184100
+	- Opened by: jim-collier
+	- Target OS: macOS
+	- Requirements [Feature]:
+		- Run CICD on GitHub's free macOS runners.
+		- Build, run the tests, and smoke-test the CLI on the built binary.
+	- Progress log:
+		- 2026-10-22: Logged. This is a GitHub Actions use, set against the standing decision that Actions stay deferred (asked again 2026-10-06). Asked for by hand, so it overrides that for macOS only.
+		- 2026-10-22: Intel macOS testing can also use vmKt6m, user `wintest`, in addition to b26. The public key already gets in. Not yet added to stage 7 or the host lock.
+		- 2026-10-22: Added `.github/workflows/macos.yml`, on `macos-15-intel` and `macos-latest` (Apple silicon), both free for a public repo. It builds `src-go/gitsby`, runs `go test -race`, smoke-tests the binary (`--version`, `--help`, and `status` in a throwaway repo, which must change nothing), then runs test.bash with Homebrew bash first on PATH. It runs on a push to `gover`, `dev` or `main`, on every PR, and by hand. design.md "Direction decisions" says why, and that it isn't a gate.
+	- Decisions:
+		- test.bash runs as a plain step, as on b26. Nothing it needs was found missing on the runners, and its setsid, pty, strace and PyYAML checks already skip with a note there. A failure shows as a failed step.
+		- Both CPUs, since the free tier has both. Actions are pinned by commit with the tag beside it, and Go comes from go.mod.
+		- A push of a round branch doesn't run it. A PR from one does.
+	- Verified: 2026-10-22, the workflow lints clean. The build, `go test` and smoke steps pass as written on Linux, and the smoke step fails when it expects the wrong branch.
+	- Verified: 2026-10-22, test.bash 1661/0, 1659 -> 1661. `[EtUDegV]` fails on a tag pin, a fixed `go-version`, or no workflow at all. `[EtUDfjj]` fails on broken YAML or a workflow with no jobs.
+	- Test case: test.bash `[EtUDegV]` and `[EtUDfjj]` for the workflow files. The workflow itself is the test on the Macs.
+	- Branch: round-20261023
+
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
@@ -134,20 +158,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: 2026-10-22, test.bash 1659/0, 1658 -> 1659, with `[EtU8Fno]` failing on a build without the new call, and nothing else failing. Go `[EtU8FXc]` fails with `glabRemoteHost` stubbed out.
 	- Test case: test.bash `[EtU8Fno]` and Go `[EtU8FXc]` for the ssh host, plus the ones named above.
 	- Swept: `hostTokenEnv` has 3 callers. `raw glab` gets the new step. `pr` passes `-R`. `raw tea` was not changed: tea finds its login from the remote too, but no Gitea host seen so far puts ssh on `ssh.<host>`. Not checked against a real tea.
-
-- CICD runs on GitHub's free macOS runners
-	- ID: 2026102218410000
-	- Type: Enhancement
-	- Status: Queued
-	- Opened: 20261022-184100
-	- Opened by: jim-collier
-	- Target OS: macOS
-	- Requirements [Feature]:
-		- Run CICD on GitHub's free macOS runners.
-		- Build, run the tests, and smoke-test the CLI on the built binary.
-	- Progress log:
-		- 2026-10-22: Logged. This is a GitHub Actions use, set against the standing decision that Actions stay deferred (asked again 2026-10-06). Asked for by hand, so it overrides that for macOS only.
-		- 2026-10-22: Intel macOS testing can also use vmKt6m, user `wintest`, in addition to b26. The public key already gets in. Not yet added to stage 7 or the host lock.
 
 - Updates to CICD script flags
 	- ID: 2026101816064793

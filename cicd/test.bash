@@ -5145,6 +5145,16 @@ GHEOF
 	## Every folder with Go tests in it, so a package added later can't go without.
 	fAssert "[Et9R5lo] each Go package's tests fail on a goroutine left running, through a pinned goleak" \
 		bash -c "grep -qE '^[[:space:]]*go\.uber\.org/goleak v[0-9]+\.[0-9]+\.[0-9]+\$' '${root}/src-go/go.mod' && n=0 && while IFS= read -r d; do grep -qF 'goleak.VerifyTestMain(m)' \"\${d}\"/*_test.go || exit 1; n=\$((n + 1)); done < <(find '${root}/src-go' -name '*_test.go' -not -path '*/testdata/*' -printf '%h\n' | sort -u) && ((n > 0))"
+	## The hosted Mac workflow (design.md, "Direction decisions"). A tag can be moved under it and
+	## a commit can't, and the Go version keeps one home.
+	fAssert "[EtUDegV] every GitHub workflow pins its actions by commit, and takes Go from go.mod" \
+		bash -c "shopt -s nullglob; n=0; for f in '${root}'/.github/workflows/*.yml '${root}'/.github/workflows/*.yaml; do n=\$((n + 1)); ! grep -E '^[[:space:]-]*uses:' \"\${f}\" | grep -qvE 'uses:[[:space:]]*[^@[:space:]]+@[0-9a-f]{40}([[:space:]]|\$)' || exit 1; ! grep -qE '^[[:space:]]*go-version:' \"\${f}\" || exit 1; ! grep -q 'actions/setup-go@' \"\${f}\" || grep -qE '^[[:space:]]*go-version-file:[[:space:]]*src-go/go\.mod[[:space:]]*\$' \"\${f}\" || exit 1; done; ((n > 0))"
+	if python3 -I -c 'import yaml' >/dev/null 2>&1; then
+		fAssert "[EtUDfjj] and each one parses, with triggers and jobs" \
+			python3 -I -c 'import glob, sys, yaml; fs = glob.glob(sys.argv[1] + "/.github/workflows/*.y*ml"); ds = [yaml.safe_load(open(f)) for f in fs]; sys.exit(0 if fs and all(isinstance(d, dict) and ("on" in d or True in d) and isinstance(d.get("jobs"), dict) and d["jobs"] for d in ds) else 1)' "${root}"
+	else
+		fEcho_Clean "  skip: workflow parse check (needs python3 with PyYAML)"
+	fi
 	## The profiling step. A sampling profile would be a flat wall here - this program is
 	## blocked on git for all of its wall clock - so what gets measured is how often it forks.
 	fAssert "[EnQTPxv] a spawn-count step exists and gates" \

@@ -366,6 +366,11 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- git hands a hook the checkout it pushes from, through `GIT_DIR`, `GIT_WORK_TREE` and `GIT_PREFIX`. The hook drops them before anything else, or its git calls and the unit tests would act on that checkout instead of the gate worktree.
 	- Accepted cost: the gate runs the pushed commit's own pipeline and unit tests, as running the pipeline on that commit would. `git push --no-verify` is how to push to `main` without running it.
 
+- A GitHub Actions workflow, `.github/workflows/macos.yml`, builds and tests on GitHub's hosted Macs, Intel and Apple silicon, on each push to `gover`, `dev` and `main` and on each pull request.
+	- It is an extra check, not a gate. Nothing waits on it, and nothing is published from it. `cicd/cicd.bash` stays the one pipeline, and its stage 7 still tests a real Mac over ssh.
+	- Hosted runners otherwise stay out, so the project leans on any one git host as little as possible. This one was asked for on 2026-10-22, for macOS only. No Apple silicon Mac is on hand to test on, and the hosted one costs nothing for a public repo.
+	- It runs what stage 7 runs on a Mac, `go test` and `cicd/test.bash` against the build, plus a smoke test of the binary. It uses nothing from `cicd/` but the suite, so it can't grow into a second pipeline.
+
 - The frozen builds live in `legacy/`, holding the deliverables alone - both scripts and the four installers of that era. No copy of the pipeline went with them.
 	- Among the options considered, copying `cicd/` into `legacy/cicd/` was rejected. The v2.1.0 tag is a better hotfix tree than any copy: it holds the scripts, the pipeline that built them and the installers all in their original places, wired to each other and unmodified. A copy would have needed its config edited - no dogfood, no publish, no demo, different lint globs - so the thing reached for during a hotfix would no longer have matched what shipped.
 	- Rot argues the same way. In a few years the old suite may not run from either location, and a rotted copy at a tag is inert where a rotted copy in the working tree keeps surfacing in greps, lint globs and reviews.
