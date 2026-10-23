@@ -203,6 +203,21 @@ func glabScopeAuth(args []string, host string) []string {
 	return append(append([]string{}, args...), "--hostname", host)
 }
 
+// glabRemoteHost points glab at origin when origin is on the account host's ssh
+// name (ssh.gitlab.gnome.org). glab takes a repo only from a remote whose host is
+// GITLAB_HOST, so GITLAB_HOST names origin's host and GITLAB_API_HOST sends the API
+// calls to the account's. 'pr' needs none of this, since it passes -R.
+func (a *app) glabRemoteHost() error {
+	remote, host := a.originHost(), a.acct.credHost
+	if strings.EqualFold(remote, host) || !strings.EqualFold(serviceHost(remote), host) {
+		return nil
+	}
+	if err := setEnv("GITLAB_HOST", "https://"+remote); err != nil {
+		return err
+	}
+	return setEnv("GITLAB_API_HOST", host)
+}
+
 // teaVersionRE reads 'tea --version', once ansiRE has taken the bold off the number.
 var (
 	teaVersionRE = regexp.MustCompile(`^Version:\s*v?(\d+)\.(\d+)`)

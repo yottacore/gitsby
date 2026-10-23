@@ -415,6 +415,30 @@ func TestServiceHost(t *testing.T) { // [EtRzPK4]
 	}
 }
 
+// glab finds the repo only through a remote on GITLAB_HOST, so a remote on the
+// account host's ssh name gets that name there, and the API keeps the account host.
+func TestGlabRemoteHost(t *testing.T) { // [EtU8FXc]
+	for _, c := range []struct{ remote, host, wantHost, wantAPI string }{
+		{"ssh.gitlab.example.test", "gitlab.example.test", "https://ssh.gitlab.example.test", "gitlab.example.test"},
+		{"gitlab.example.test", "gitlab.example.test", "before", ""},
+		{"GitLab.example.test", "gitlab.example.test", "before", ""},
+		{"ssh.other.test", "gitlab.example.test", "before", ""},
+		{"", "gitlab.example.test", "before", ""},
+	} {
+		t.Setenv("GITLAB_HOST", "before")
+		t.Setenv("GITLAB_API_HOST", "")
+		a := newApp(newPrinter())
+		a.acct.credHost = c.host
+		a.git.originRef.set(remoteRef{host: c.remote, owner: "grp", name: "proj"})
+		if err := a.glabRemoteHost(); err != nil {
+			t.Fatal(err)
+		}
+		if got, api := os.Getenv("GITLAB_HOST"), os.Getenv("GITLAB_API_HOST"); got != c.wantHost || api != c.wantAPI {
+			t.Errorf("%q: GITLAB_HOST=%q GITLAB_API_HOST=%q, want %q %q", c.remote, got, api, c.wantHost, c.wantAPI)
+		}
+	}
+}
+
 func TestIsGitLabHost(t *testing.T) { // [EtTo2FR]
 	t.Setenv("GITLAB_HOST", "https://code.example.test/")
 	for host, want := range map[string]bool{
