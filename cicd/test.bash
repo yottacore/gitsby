@@ -5144,7 +5144,11 @@ GHEOF
 		bash -c "grep -q 'govulncheck' '${root}/cicd/cicd.bash'"
 	## Every folder with Go tests in it, so a package added later can't go without.
 	fAssert "[Et9R5lo] each Go package's tests fail on a goroutine left running, through a pinned goleak" \
-		bash -c "grep -qE '^[[:space:]]*go\.uber\.org/goleak v[0-9]+\.[0-9]+\.[0-9]+\$' '${root}/src-go/go.mod' && n=0 && while IFS= read -r d; do grep -qF 'goleak.VerifyTestMain(m)' \"\${d}\"/*_test.go || exit 1; n=\$((n + 1)); done < <(find '${root}/src-go' -name '*_test.go' -not -path '*/testdata/*' -printf '%h\n' | sort -u) && ((n > 0))"
+		bash -c "grep -qE '^[[:space:]]*go\.uber\.org/goleak v[0-9]+\.[0-9]+\.[0-9]+\$' '${root}/src-go/go.mod' && n=0 && while IFS= read -r d; do grep -qF 'goleak.VerifyTestMain(m)' \"\${d}\"/*_test.go || exit 1; n=\$((n + 1)); done < <(find '${root}/src-go' -name '*_test.go' -not -path '*/testdata/*' | sed 's|/[^/]*\$||' | sort -u) && ((n > 0))"
+	## The suite and the installer run on macOS too, whose find has no format option, so a check
+	## built on it finds nothing there and fails, or passes having read nothing.
+	fAssert "[EtUUvVS] the suite and the installer ask find for no GNU-only output format" \
+		bash -c "! grep -nE '^[^#]*(^|[^[:alnum:]_-])find[[:space:]][^#]*[[:space:]]-f?print[f]' '${root}/cicd/test.bash' '${root}/install.bash'"
 	## The hosted Mac workflow (design.md, "Direction decisions"). A tag can be moved under it and
 	## a commit can't, and the Go version keeps one home.
 	fAssert "[EtUDegV] every GitHub workflow pins its actions by commit, and takes Go from go.mod" \
@@ -7193,3 +7197,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261019 JC: The leak checks run by default, off under --quick and --no-fuzz, with --leakcheck and --no-leakcheck to say otherwise. The run's temp files are gone once it ends, even after a TERM, and stage 6 removes the demo's repos. 1571 -> 1579.
 ##		- 20261021 JC: raw passes over a tool on PATH that is gitsby itself, and refuses when started under another raw, so a gh, tea, glab, lazygit or tig that leads back can't loop. 1579 -> 1591.
 ##		- 20261021 JC: --no-fuzz leaves out govulncheck and pip-audit, and the pip-audit checks no longer lean on it to skip the rest of stage 3. 1597 -> 1598.
+##		- 20261022 JC: The goleak check lists test folders without find's GNU-only output format, which failed it on macOS, and a check keeps that format out of the suite and the installer. 1661 -> 1662.
