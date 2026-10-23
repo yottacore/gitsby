@@ -33,56 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- test.bash's goleak check `[Et9R5lo]` fails on macOS, since BSD find has no `-printf`
-	- ID: 2026102220274491
-	- Type: Bug
-	- Status: Waiting on automated testing
-	- Needs external testing: The macOS workflow run on GitHub after this merges to `gover`, on both runners. `[Et9R5lo]` and `[EtUUvVS]` should pass there.
-	- Priority|Severity [Bug]: Avg
-	- Opened: 20261022-202744
-	- Opened by: jim-collier
-	- Related IDs: 2026102218410000
-	- Target OS: macOS
-	- Steps to reproduce [Bug]:
-		- Run `cicd/test.bash` on a Mac whose `find` is the system one.
-	- Incorrect behavior [Bug]: `[Et9R5lo]` fails. The first macOS workflow run, 39893939993 on `macos-latest` (arm64), passed 1411 and failed only that one.
-	- Expected behavior [Bug]: It passes whenever every folder with Go tests calls `goleak.VerifyTestMain(m)`, on any OS.
-	- Reproduced [Bug]: Yes, 2026-10-22 on b23, with a stand-in `find` on PATH that refuses `-printf` the way BSD find does. The check failed.
-	- Actual cause [Bug]: The check listed test folders with `find ... -printf '%h\n'`. BSD find has no `-printf`, so it printed nothing. The loop then counted 0 folders and failed.
-	- Actual fix [Bug]: The folder is cut off the file path with `sed`, then `sort -u`. Same folders as before on b23, and the check still fails when one package lacks goleak. New check `[EtUUvVS]` fails if a `find` with `-printf` or `-fprintf` comes back into test.bash or install.bash.
-	- Swept: `find -printf`, `sed -i` without a suffix, `grep -P`, `readlink -f`, `date -d`, `date +%N`, `stat -c`, `sort -V`, `xargs -r`, `realpath -m`, `tar --transform`, `wc -l` compared as text, `\?` and `\t` in sed, in cicd/*.bash, cicd/utility/*.bash, cicd/utility/include/*.bash and install.bash. In test.bash, only `[Et9R5lo]` used one where a Mac runs it. The bare `sed -i` and `date +%N` sit in the Linux-only release and pre-push blocks, and so do the `wc -l` compares and the remote-tests checks that run `tar --transform`. `date -d` runs behind a probe for GNU date. `stat` falls back to BSD's. The rest are in Linux-only cicd.bash, in keep-build.bash's `--keep` path, which test.bash doesn't run, and in the `--help` text of backlog-check, test-id and lint-report, where BSD sed would leave the tab in the printed help.
-	- Verified: 2026-10-22, with BSD-like find, `[Et9R5lo]` fails on the old test.bash and passes on the new one. It passes on a stand-in tree and fails once one package there drops goleak. `[EtUUvVS]` fails on the old test.bash and passes on the new one. `cicd.bash --gate` and `backlog-check.bash` passed.
-	- Verified: 2026-10-22, test.bash on b23 1662/0, 1661 -> 1662.
-	- Not checked: why `[Et9R5lo]` passed in stage 7 on b26 and vmFreeBSD. Likely a GNU find first on b26's PATH, and a FreeBSD find that has `-printf`.
-	- Test case: test.bash `[Et9R5lo]` itself on the Mac runners, and `[EtUUvVS]`, which needs no Mac.
-	- Branch: fix-macos-find
-	- Commit: 0d01f82
-
-- CICD runs on GitHub's free macOS runners
-	- ID: 2026102218410000
-	- Type: Enhancement
-	- Status: Waiting on automated testing
-	- Needs external testing: The first GitHub run of `.github/workflows/macos.yml`, on both runners, once the round reaches `gover` or a PR is opened from it.
-	- Opened: 20261022-184100
-	- Opened by: jim-collier
-	- Target OS: macOS
-	- Requirements [Feature]:
-		- Run CICD on GitHub's free macOS runners.
-		- Build, run the tests, and smoke-test the CLI on the built binary.
-	- Progress log:
-		- 2026-10-22: Logged. This is a GitHub Actions use, set against the standing decision that Actions stay deferred (asked again 2026-10-06). Asked for by hand, so it overrides that for macOS only.
-		- 2026-10-22: Intel macOS testing can also use vmKt6m, user `wintest`, in addition to b26. The public key already gets in. Not yet added to stage 7 or the host lock.
-		- 2026-10-22: Added `.github/workflows/macos.yml`, on `macos-15-intel` and `macos-latest` (Apple silicon), both free for a public repo. It builds `src-go/gitsby`, runs `go test -race`, smoke-tests the binary (`--version`, `--help`, and `status` in a throwaway repo, which must change nothing), then runs test.bash with Homebrew bash first on PATH. It runs on a push to `gover`, `dev` or `main`, on every PR, and by hand. design.md "Direction decisions" says why, and that it isn't a gate.
-	- Decisions:
-		- test.bash runs as a plain step, as on b26. Nothing it needs was found missing on the runners, and its setsid, pty, strace and PyYAML checks already skip with a note there. A failure shows as a failed step.
-		- Both CPUs, since the free tier has both. Actions are pinned by commit with the tag beside it, and Go comes from go.mod.
-		- A push of a round branch doesn't run it. A PR from one does.
-	- Verified: 2026-10-22, the workflow lints clean. The build, `go test` and smoke steps pass as written on Linux, and the smoke step fails when it expects the wrong branch.
-	- Verified: 2026-10-22, test.bash 1661/0, 1659 -> 1661. `[EtUDegV]` fails on a tag pin, a fixed `go-version`, or no workflow at all. `[EtUDfjj]` fails on broken YAML or a workflow with no jobs.
-	- Verified: 2026-10-22, in the full run, `[EtUDegV]` passed in the container and on b26, vmFreeBSD and vmDebARM64. `[EtUDfjj]` passed on vmDebARM64 and in test.bash on b23 off the container, 1661/0. The container, b26 and vmFreeBSD skip it, since they have no PyYAML. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261022-19253166/run.log`.
-	- Test case: test.bash `[EtUDegV]` and `[EtUDfjj]` for the workflow files. The workflow itself is the test on the Macs.
-	- Branch: round-20261023
-
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
@@ -396,6 +346,34 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept (2026-10-05, `pr create` and `release`): every step after their commit. In release.go the pulls of `dev` and the default branch, both checkouts, the merge and its back-out, the tag, both pushes, and the fast-forward of `dev`. Its nothing-new check read the whole tree as work to release, and now reads the index under the flag. In pr.go the push and the `gh` or `tea` call. `pr ok` reads the whole tree to refuse, and refuses the flag. The line above about pr.go and release.go held only while they refused the flag.
 	- Acceptance signoff: 2026-10-05, all 3 choices answered.
 	- Closed: 2026-10-05
+
+- test.bash's goleak check `[Et9R5lo]` fails on macOS, since BSD find has no `-printf`
+	- ID: 2026102220274491
+	- Type: Bug
+	- Status: Done
+	- Needs external testing: No
+	- Priority|Severity [Bug]: Avg
+	- Opened: 20261022-202744
+	- Opened by: jim-collier
+	- Related IDs: 2026102218410000
+	- Target OS: macOS
+	- Steps to reproduce [Bug]:
+		- Run `cicd/test.bash` on a Mac whose `find` is the system one.
+	- Incorrect behavior [Bug]: `[Et9R5lo]` fails. The first macOS workflow run, 39893939993 on `macos-latest` (arm64), passed 1411 and failed only that one.
+	- Expected behavior [Bug]: It passes whenever every folder with Go tests calls `goleak.VerifyTestMain(m)`, on any OS.
+	- Reproduced [Bug]: Yes, 2026-10-22 on b23, with a stand-in `find` on PATH that refuses `-printf` the way BSD find does. The check failed.
+	- Actual cause [Bug]: The check listed test folders with `find ... -printf '%h\n'`. BSD find has no `-printf`, so it printed nothing. The loop then counted 0 folders and failed.
+	- Actual fix [Bug]: The folder is cut off the file path with `sed`, then `sort -u`. Same folders as before on b23, and the check still fails when one package lacks goleak. New check `[EtUUvVS]` fails if a `find` with `-printf` or `-fprintf` comes back into test.bash or install.bash.
+	- Swept: `find -printf`, `sed -i` without a suffix, `grep -P`, `readlink -f`, `date -d`, `date +%N`, `stat -c`, `sort -V`, `xargs -r`, `realpath -m`, `tar --transform`, `wc -l` compared as text, `\?` and `\t` in sed, in cicd/*.bash, cicd/utility/*.bash, cicd/utility/include/*.bash and install.bash. In test.bash, only `[Et9R5lo]` used one where a Mac runs it. The bare `sed -i` and `date +%N` sit in the Linux-only release and pre-push blocks, and so do the `wc -l` compares and the remote-tests checks that run `tar --transform`. `date -d` runs behind a probe for GNU date. `stat` falls back to BSD's. The rest are in Linux-only cicd.bash, in keep-build.bash's `--keep` path, which test.bash doesn't run, and in the `--help` text of backlog-check, test-id and lint-report, where BSD sed would leave the tab in the printed help.
+	- Verified: 2026-10-22, with BSD-like find, `[Et9R5lo]` fails on the old test.bash and passes on the new one. It passes on a stand-in tree and fails once one package there drops goleak. `[EtUUvVS]` fails on the old test.bash and passes on the new one. `cicd.bash --gate` and `backlog-check.bash` passed.
+	- Verified: 2026-10-22, test.bash on b23 1662/0, 1661 -> 1662.
+	- Not checked: why `[Et9R5lo]` passed in stage 7 on b26 and vmFreeBSD. Likely a GNU find first on b26's PATH, and a FreeBSD find that has `-printf`.
+	- Test case: test.bash `[Et9R5lo]` itself on the Mac runners, and `[EtUUvVS]`, which needs no Mac.
+	- Branch: fix-macos-find
+	- Commit: 0d01f82
+	- Verified: 2026-10-22, run 39895628537: `[Et9R5lo]` and `[EtUUvVS]` passed on `macos-15-intel` and `macos-latest`. Both had failed `[Et9R5lo]` in run 39893939993.
+	- Acceptance signoff: Passed its own test on both runners, no open choice.
+	- Closed: 20261022-203900
 
 - Stage 7 fails b26 when a Finder window is open on the test folder
 	- ID: 2026100611181887
@@ -2094,6 +2072,34 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Closed: 20261004-185642
 	- Branch: remote-tests-label
 	- Commit: 9049ec8
+
+- CICD runs on GitHub's free macOS runners
+	- ID: 2026102218410000
+	- Type: Enhancement
+	- Status: Done
+	- Needs external testing: No
+	- Opened: 20261022-184100
+	- Opened by: jim-collier
+	- Target OS: macOS
+	- Requirements [Feature]:
+		- Run CICD on GitHub's free macOS runners.
+		- Build, run the tests, and smoke-test the CLI on the built binary.
+	- Progress log:
+		- 2026-10-22: Logged. This is a GitHub Actions use, set against the standing decision that Actions stay deferred (asked again 2026-10-06). Asked for by hand, so it overrides that for macOS only.
+		- 2026-10-22: Intel macOS testing can also use vmKt6m, user `wintest`, in addition to b26. The public key already gets in. Not yet added to stage 7 or the host lock.
+		- 2026-10-22: Added `.github/workflows/macos.yml`, on `macos-15-intel` and `macos-latest` (Apple silicon), both free for a public repo. It builds `src-go/gitsby`, runs `go test -race`, smoke-tests the binary (`--version`, `--help`, and `status` in a throwaway repo, which must change nothing), then runs test.bash with Homebrew bash first on PATH. It runs on a push to `gover`, `dev` or `main`, on every PR, and by hand. design.md "Direction decisions" says why, and that it isn't a gate.
+	- Decisions:
+		- test.bash runs as a plain step, as on b26. Nothing it needs was found missing on the runners, and its setsid, pty, strace and PyYAML checks already skip with a note there. A failure shows as a failed step.
+		- Both CPUs, since the free tier has both. Actions are pinned by commit with the tag beside it, and Go comes from go.mod.
+		- A push of a round branch doesn't run it. A PR from one does.
+	- Verified: 2026-10-22, the workflow lints clean. The build, `go test` and smoke steps pass as written on Linux, and the smoke step fails when it expects the wrong branch.
+	- Verified: 2026-10-22, test.bash 1661/0, 1659 -> 1661. `[EtUDegV]` fails on a tag pin, a fixed `go-version`, or no workflow at all. `[EtUDfjj]` fails on broken YAML or a workflow with no jobs.
+	- Verified: 2026-10-22, in the full run, `[EtUDegV]` passed in the container and on b26, vmFreeBSD and vmDebARM64. `[EtUDfjj]` passed on vmDebARM64 and in test.bash on b23 off the container, 1661/0. The container, b26 and vmFreeBSD skip it, since they have no PyYAML. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261022-19253166/run.log`.
+	- Test case: test.bash `[EtUDegV]` and `[EtUDfjj]` for the workflow files. The workflow itself is the test on the Macs.
+	- Branch: round-20261023
+	- Verified: 2026-10-22, GitHub run 39895628537 on gover (`fix-macos-find` merge): `macos-15-intel` and `macos-latest` both completed with success, about 11 minutes each, test.bash and the smoke step included. The run before it, 39893939993, failed both on `[Et9R5lo]` alone (1411 passed, 1 failed), which is item 2026102220274491.
+	- Acceptance signoff: Passed its own test on both runners, no open choice.
+	- Closed: 20261022-203900
 
 - `account apply` names fragments by host and login
 	- ID: 2026093013031520
