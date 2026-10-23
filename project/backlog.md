@@ -149,442 +149,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Progress log:
 		- 2026-10-22: Found by the round's test batch. The check ran only on vmDebARM64 and on b23 outside the container.
 
-- Updates to CICD script flags
-	- ID: 2026101816064793
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261018-160647
-	- Opened by: jim-collier
-	- Milestone: Pre-next-cut. Do next.
-	- Requirements [Feature]:
-		- `--gate` keeps its name. No `--ci` alias.
-		- `--quick`:
-			- Runs whatever linting, validation, and testing steps are very quick.
-			- Cross-compiles whatever is fast; e.g. maybe skip slow arm64.
-			- Skips anything requiring an external host.
-		- No flags by default does everything.
-		- The other existing flags can stay.
-	- Note: `--gate` is also named by the pre-push hook `--install-hook` writes, and in the README and memory.
-	- Progress log:
-		- 2026-10-18: Each step was timed on b23, at a load of about 16. Every cross-build takes 4 to 6 s, arm64 included, and the lint stage about 23 s in all. The regression suite takes about 100 s, and the native fuzz targets 5 s each for 8 targets. fuzz.bash takes about 7 s, the spawn counts 3 s, parity 2 s, and go test 3 to 12 s.
-		- 2026-10-19: The leak checks join the plain full run, through 2026101912030152, so no flags does everything again.
-	- Decisions:
-		- The 30 s budget is per step. The lint stage alone is close to it, so a whole-run budget would leave nothing else.
-		- Sync and publish stay in `--quick`. They only fetch from and push to origin, the repo's own git host, and the requirement is about other hosts. `--no-sync` and `--no-publish` still turn them off.
-		- govulncheck is out of `--quick`, since it asks vuln.go.dev. That reverses the 2026-08-19 call that it runs there as a lookup.
-		- `--quick` runs fuzz.bash and the spawn counts now. Both take seconds. The native fuzz targets stay out.
-		- `--quick` dogfoods every target again, and builds the FreeBSD and Linux arm64 targets without testing them. That reverses review 20260819a item 18, whose reason was that cross-builds were the slow part. `[EnQTPxt] --quick narrows the cross-builds too` is off for that reason.
-		- The regression suite is out of `--quick`. That supersedes the 20260909 enhancement 7 call to keep it whole there. contributing.md now says to run the full pipeline before a PR.
-		- The demo gif stays out of `--quick`. It takes about 15 s, but it's not a check.
-	- Branch: cicdflags
-	- Test case: test.bash `[Et6FC3t]` for the `--gate)` arm the hook looks for. `[Et6FC4K]`, `[Et6FC46]`, `[Et6FC31]` and `[Et6FC2n]` for `--quick`. `[EnQTPxt]` is off since 2026-10-18.
-	- Swept: the help header, history footer, README, contributing.md and config.bash comments for both flags. pre-push.bash still finds `--gate)` in the option arm. design.md names only `--gate` and is unchanged. The test.bash helpers that used `--quick` as shorthand for skipping fuzz, the demo and the remote tests now name those flags.
-	- Acceptance signoff: Signed off by jim-collier in conversation, 2026-10-19.
-	- Closed: 20261019-150000
-
-- Builds should clean up stale artifacts and side-effects when done
-	- ID: 2026101912030138
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261019-120301
-	- Opened by: jim-collier
-	- Milestone: Pre-next-cut.
-	- Requirements [Feature]:
-		- Verify or ensure that builds clean up stale artifacts and side-effects after they're done.
-			- Caches, container cruft, tmp files, etc.
-	- Progress log:
-		- 2026-10-19: Checked each kind on b23. The harnesses, release.bash and the utilities already remove their temp folders on exit. Artifacts under `cicd/artifacts/` are rotated or capped at 20. Containers run with `--rm`, a new image removes the one it replaces, and the build cache is all in use by images. The Go cache volume is kept on purpose, and Go trims its own build cache. The pre-push snapshot is kept on purpose too, for warm caches.
-		- 2026-10-19: 2 gaps were found and fixed. cicd.bash's own temp files were removed one by one, so a run stopped partway left them behind. They now sit in one folder per run, removed on exit, a TERM or Ctrl+C included. The demo's repos at `/tmp/gitsby-demo` stayed after every run off the container. Stage 6 now removes them through `demo-repo.bash --remove`, which keeps the script's ownership check.
-	- Branch: leakflags
-	- Test case: test.bash `[EtBTWt7]` for the temp folder after a pass, a stop and a TERM, and `[EtBTWtL]` for the demo's repos.
-	- Verified: Both fail against gover's cicd.bash. test.bash 1571 -> 1579, 0 failed, and `cicd.bash --gate` passes. `demo-repo.bash --remove` removed a world it built, refused a folder it didn't, and passed on one that wasn't there.
-	- Note: Needs one real full run, in the container and with `--no-container`, to see `/tmp/gitsby-demo` and the scratch folder gone.
-	- Verified: 2026-10-21 on b23. A `--no-container` full run passed every stage, and after it `/tmp/gitsby-demo`, left there by a run on 10-19, was gone, and so was its scratch folder. A full run in the container stopped in stage 3 on pip-audit (2026102113100000), and its scratch folder was still gone, as was the one from a `--quick --leakcheck` run there. No gitsby-cicd container was left, and no new untagged image. The container's `/tmp` is a tmpfs that goes with it, so its demo repos can't outlive it.
-	- Note: Reopened 2026-10-22. The container half never reached stage 6, so it still needs one full run there that passes.
-	- Verified: 2026-10-22 on b23. A full run in the container passed every stage, stage 6 and stage 7 included. After it its scratch folder was gone, `/tmp/gitsby-demo` wasn't there, no gitsby-cicd container was left, and there was no new untagged image. A `--no-container --no-remote` full run then passed too, with the same 4 checks clean. Logs: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log` and `run2.log` beside it.
-	- Acceptance signoff: Self-closed: the full run in the container passed with nothing left behind, which was all that was left.
-	- Closed: 20261021-203604
-
-- CICD gets `--leakcheck` and `--no-leakcheck` flags
-	- ID: 2026101912030152
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261019-120301
-	- Opened by: jim-collier
-	- Milestone: Pre-next-cut.
-	- Related IDs: 2026101816064793, 2026101816064794
-	- Requirements [Feature]:
-		- CICD should have both `--leakcheck` and `--no-leakcheck`.
-			- `--leakcheck` is useful to add back in for `--quick`.
-			- `--no-leakcheck` is useful to exclude it from the default, or with `--quiet`.
-	- Decisions:
-		- The leak checks run on a plain full run. `--quick` and `--no-fuzz` both turn them off, since they're part of stage 3. Either flag wins over that, in any order. Both together are refused.
-		- A plain run off the container, with no CodeQL, warns and skips CodeQL like govulncheck. `--leakcheck` asked for by name still stops there.
-		- The run in the container gets the flag as given. It gets `--quick` and `--no-fuzz` too, so it works out the same default.
-	- Branch: leakflags
-	- Test case: test.bash `[EtBTWs2]`, `[EtBTWsG]`, `[EtBTWsT]`, `[EtBTWsg]`, `[EtBTWsu]` and `[EtBTWta]`, plus `[Et9PJrE]` and `[Et9PJs6]` reworded with the same IDs.
-	- Verified: Every one fails against gover's cicd.bash. test.bash 1571 -> 1579, 0 failed, and `cicd.bash --gate` passes. `[Er1LxTW]`'s stage 3 run takes `--no-leakcheck` now, since its fixture's go stub has no soak test.
-	- Swept: the help text, stage 3's header line, README, contributing.md, config.bash comments and both history footers.
-	- Note: A full run now takes CodeQL's time, once per release OS plus Python. Needs one real full run to see it pass in the container.
-	- Verified: 2026-10-21 on b23. A plain full run in the container stopped in stage 3 on pip-audit, on new Pillow advisories (2026102113100000), before the leak checks. A `--quick --leakcheck` run there then passed: the soak test in about 15 s, and CodeQL clean on darwin, freebsd, linux and windows at about 15 s each and Python at about 45 s, so the leak checks add about 2 minutes. The rest of stage 3 took about 1.5 minutes in the stopped run. A `--no-container` full run warned and skipped CodeQL, and passed.
-	- Acceptance signoff: Self-closed: the flags and the leak checks passed in the container. The pip-audit stop is its own item.
-	- Closed: 20261021-130500
-
-- `pr` and `repo create` run `gh` by bare name, so one on PATH that is gitsby runs gitsby
-	- ID: 2026102111572785
-	- Type: Bug
-	- Status: Done
-	- Needs local test suite run?: No. test.bash ran after the fix.
-	- Needs external testing: Stage 7. Every spawn now runs by the path the PATH walk found, git included, and that walk is only cross-built for macOS, FreeBSD and Windows.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261021-115727
-	- Opened by: jim-collier
-	- Related IDs: 2026101916533300
-	- Steps to reproduce [Bug]:
-		- Put a link named `gh` to gitsby first on PATH, with no real gh after it, and run `gitsby pr` in a GitHub repo.
-	- Incorrect behavior [Bug]:
-		- It runs gitsby as `gh pr list`, which prints gitsby's own `pr` syntax help, then "'gh pr list' failed (exit 1)".
-	- Expected behavior [Bug]:
-		- The same refusal `raw` gives: "Not found in path: gh", naming the entry that is gitsby.
-	- Possible cause [Bug]:
-		- `hostToolFor`, `mustBeInPath` and the tea lookup ask `exec.LookPath`, and the runners pass the bare name. 2026101916533300 fixed only `raw`. `lookTool` in exec.go could serve them too.
-	- Reproduced [Bug]: 20261021, on the build before the fix. `pr` in a GitHub repo gave "'gh pr list' failed (exit 1)", `pr` on another host "'tea pulls list' failed (exit 1)", and `repo create` "Couldn't ask GitHub about me/proj ... Unexpected option in this context: '--json'".
-	- Actual cause [Bug]:
-		- Every spawn outside `raw` went through `exec.Command` with the bare name, and every "is it installed" asked `exec.LookPath`, both of which find the link that is gitsby.
-	- Actual fix [Bug]:
-		- One lookup for every program gitsby runs, git included: `toolCmd` and `toolCmdContext` in exec.go build the command from `findTool`, which is `lookTool` asked once per name and PATH. A name found only as gitsby gets a "Not found in path" error that names the entry, and is never started. `inPath` and `mustBeInPath` ask the same lookup, so the gh login checks, the tea probes and `hostToolFor` see a gitsby-only gh or tea as not installed. `pr` says so by name rather than suggesting an install, and `repo create` and `repo connect` refuse through `mustBeInPath`. `raw` uses the same refusal text through `notInPath`. A Go test fails if any other file calls `exec.Command`, `exec.LookPath` and the like, so a new call site can't skip it.
-		- design.md "Execution flow" has a bullet for it.
-	- Swept: every `exec.Command`, `exec.CommandContext` and `exec.LookPath` outside tests. exec.go's runners (runOut, runOutOK, runOK, inherit, inheritRC, so step and stepAs), show.go (showList, `ssh -G`), githost.go (`tea logins list`, `tea --version` through runOut, teaCommand and hostToolFor through inPath), repo.go (`gh repo view`, `git ls-remote`, `git init`, `git ls-files`, both mustBeInPath("gh")), remote.go (ssh probe, `git fetch`, `git remote set-head`, `git ls-remote`, `gh config get`), account.go (`gh auth token`, `gh api user`, `gh config get`), main.go (`git rev-parse`, mustBeInPath("git"), raw), pr.go (settlePrTool and every pr.cli run). handover still runs the path raw resolved. The frozen bash and pwsh builds were not touched.
-	- Test case: test.bash `[EtMclGb]`, `[EtMclHS]`, `[EtMclIK]`; Go `[EtMclJC]` (TestToolCmdSkipsSelf), `[EtMctyX]` (TestOneSpawnSite).
-	- Branch: round-20261021
-	- Verified: The 3 new test.bash checks fail on the build before the fix. After it, test.bash 1591 -> 1594, 0 failed. The 2 Go tests fail with toolCmd's refusal taken out and with an `exec.Command` put back in show.go. `go test ./...`, `cicd.bash --gate`, `GOOS=windows go vet ./...`, and darwin, freebsd and windows builds pass.
-	- Verified: 2026-10-21, stage 7 passed on b26, vmFreeBSD, vmDebARM64 and vm925w, so every spawn in those suites went through the PATH walk on each OS. The 3 new test.bash checks ran on the 3 Unix boxes, and `[EtMctyX]` passed on all 4. On vm925w `[EtMclJC]` skips, since it needs symlinks and the exec bit, so the self check itself is untested on Windows. test.bash 1594/0 on b23, in the container and off it.
-	- Acceptance signoff: Self-closed: stage 7 passed everywhere, which was all that was left.
-	- Closed: 20261021-132100
-
-- test.bash on b26 prints `grep: warning: stray \ before -` 22 times
-	- ID: 2026102120365577
-	- Type: Bug
-	- Status: Done
-	- Needs local test suite run?: No. test.bash ran 1661/0 on 2026-10-22.
-	- Needs external testing: No. Stage 7 passed on every box 2026-10-22.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261021-203655
-	- Opened by: jim-collier
-	- Target OS: macOS
-	- Test environment: b26
-	- Incorrect behavior [Bug]:
-		- Stage 7's b26 log has the warning 22 times, on 2026-10-21 and 2026-10-22 both. The checks still pass, but it's noise in the log, and a pattern grep warns about may not match what it should.
-	- Expected behavior [Bug]:
-		- No grep warnings. Each pattern matches the same lines on every box.
-	- Actual cause [Bug]:
-		- b26 has GNU grep 3.12, which warns about `\-` in a pattern given without `-e`. 17 `fAssertOut` patterns in test.bash escaped their leading dashes so grep wouldn't read them as options. Debian's grep 3.11 here prints nothing for the same patterns.
-		- 6 of those patterns also wrote a literal pipe as `\|`, which is undefined in an extended regex. GNU reads it as a pipe, and other greps may read it as alternation, which matches more.
-	- Actual fix [Bug]: `fAssertOut`, `fAssertNotOut`, `fAssertPlan` and `fAssertNotPlan` pass the pattern after `--`, as `fPlanRan` and `fGateSays` already did. The patterns drop the backslashes, and a literal pipe is `[|]`.
-	- Branch: round-20261023
-	- Test case: test.bash `[EtU6AcV]` fails on a backslashed dash anywhere in the 26 pipeline and installer scripts, and `[EtU6Acj]` on a backslashed pipe in a check pattern. Both sit in the `[Emq7Y6y]` loop.
-	- Verified: before the fix both new checks fail on cicd/test.bash only, `[EtU6Acj]` on 6 lines. After it all 26 scripts pass both. The 20 changed or neighboring installer and help checks pass when run alone against the real output, and `[Eq4W7zV]`'s pattern matches `repo url ftp` output. A `[|]` pattern does not match a line without the pipe. shellcheck, `test-id.bash --check` and the gate pass.
-	- Verified: 2026-10-22, a plain full run in the container on b23 passed every stage, with no grep warning anywhere in its log. `[EtU6AcV]` and `[EtU6Acj]` passed for all 26 scripts in the container and on b26, vmFreeBSD and vmDebARM64. test.bash 1660/0 in the container and 1661/0 on b23 off it, 1433/0 on b26 and 1336/0 on vmFreeBSD, each 62 more than on 10-22, and 1646/0 on vmDebARM64, 63 more. Of those, 52 are this item's and the rest are the round's glab and workflow checks. The container, b26 and vmFreeBSD skip `[EtUDfjj]`, since they have no PyYAML. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261022-19253166/run.log`.
-	- Swept: every `grep` taking a pattern variable in cicd. parity.bash's 4 `grep -E "${pattern}"` calls get fixed patterns with no leading dash, so they stay. No `\-` anywhere else in the repo. The awk `\|` at test.bash's table reader is awk, not grep, and stays.
-	- Acceptance signoff: Self-closed: stage 7 passed everywhere with no grep warning, which was all that was left.
-	- Closed: 20261022-201221
-
-- pip-audit fails every full run in the container on 8 new Pillow 12.3.0 advisories
-	- ID: 2026102113100000
-	- Type: Task
-	- Status: Done
-	- Needs local test suite run?: No. The plain full run in the container passed 2026-10-22.
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261021-131000
-	- Opened by: jim-collier
-	- Related IDs: 2026101905585018, 2026101912030152
-	- Requirements [Feature]:
-		- pip-audit in the image reports CVE-2026-112395, 112397, 112400, 112404, 112895, 112896, 112897 and 112899 against Pillow 12.3.0, all fixed in 13.0.0. Stage 3 stops there, so a plain full run in the container can't pass.
-		- Check each, then move the lock's Pillow to 13.0.0, or list on `PIP_AUDIT_IGNORE` any that can't reach the demo. A newer Pillow means rendering and comparing the gif again, as 2026101905585018 did.
-	- Progress log:
-		- 2026-10-21: Seen on a full run on b23. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-12295100/run1.log`. Stages 1 and 2 passed, test.bash 1594/0, and so did fuzz.bash 313/0, the native fuzz targets and govulncheck.
-		- 2026-10-21: Checked all 8 against PyPI's advisories. 4 are in TIFF decoding and saving (112395, 112404, 112896, 112897). The others are a PDF append (112895), a GIF seek after a decompression bomb error (112400), a zero-width PPM through ImageMorph (112397), and EPS through Ghostscript (112899). The demo opens no image file and saves only its own GIF, so none reach it.
-		- 2026-10-21: PyPI now lists 24 advisories against 12.3.0, all fixed in 13.0.0. 13.0.0 has a CPython 3.13 manylinux x86_64 wheel, and the lock's hash is the one PyPI gives. Its breaking changes touch nothing the renderer calls.
-		- 2026-10-21: The lock's Pillow is 13.0.0, and `PIP_AUDIT_IGNORE` still holds only fontTools' entry. The image's tag moved to `gitsby-cicd:6fd011f04201`.
-	- Decisions:
-		- Moved Pillow rather than listing the 8. The answer on 2026101905585018 allows it, 13.0.0 fixes them all, and a list of 24 would need its own upkeep.
-	- Branch: round-20261022
-	- Commit: 73d6a98
-	- Test case: test.bash [EtAFLx0] for the lock's Pillow, and pip-audit's [Et9PJsY] and [Et9R5lO]. The image build also stops on a Pillow other than the recorded one. No new check, since the audit in the image is what failed.
-	- Verified: Stage 3 and the demo stage in the new image. pip-audit is clean on Pillow 13.0.0 with fontTools' one entry set aside, govulncheck is clean, fuzz.bash 313/0, and the spawn counts pass. The demo gif renders byte for byte the same, so it didn't change. test.bash 1598/0, and `cicd.bash --gate` passes.
-	- Swept: `TOOL_VERSIONS`, the Dockerfile's Pillow check, which reads the ARG, and its apt comment, the lock's header, and contributing.md's demo prerequisite, which names no version. "12.3.0" is left only in the backlog and the history footer.
-	- Verified: 2026-10-22, a plain full run in the container on b23 passed every stage. Stage 3's pip-audit was clean on Pillow 13.0.0, and stage 6 rendered the demo gif unchanged. test.bash 1598/0, fuzz.bash 313/0, parity 29/0. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log`.
-	- Acceptance signoff: Self-closed: its own test, the plain full run in the container, passed.
-	- Closed: 20261021-203604
-
-- `--no-fuzz` still runs govulncheck and pip-audit
-	- ID: 2026102113100100
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261021-131001
-	- Opened by: jim-collier
-	- Related IDs: 2026102113100000
-	- Incorrect behavior [Bug]:
-		- The help says `--no-fuzz` skips the fuzz + security stage, but in cicd.bash only fuzz.bash, the native fuzz targets, the spawn counts and the leak checks look at it. govulncheck and pip-audit still run, so `--no-fuzz` doesn't get past a pip-audit stop.
-	- Reproduced [Bug]: Yes, 2026-10-21, by [EtOKpZS] against the old cicd.bash.
-	- Actual cause [Bug]:
-		- govulncheck sat outside the `--no-fuzz` gate on purpose at first (894d857, 2026-08-19). `--quick` then worked by turning fuzz off, and govulncheck ran under it anyway, "because it is a lookup rather than a workload".
-		- 81def43 (2026-10-18) made `--quick` skip it, since it reaches vuln.go.dev, and dropped that reason, but left it outside the gate. pip-audit copied its gate on 2026-10-19.
-	- Decisions:
-		- The reason for the split is gone, and the leakflags item 2026101912030152 already treats `--no-fuzz` as turning off what's in stage 3. So `--no-fuzz` skips the whole stage, as the help says, and also the help stays as it is.
-	- Actual fix [Bug]: govulncheck and pip-audit check `--no-fuzz` like the rest of stage 3.
-	- Branch: round-20261022
-	- Commit: 73d6a98
-	- Test case: test.bash [EtOKpZS]. [Et9PJsY] and [Et9R5lO] had used `--no-fuzz` to skip the rest of stage 3, so they pass `--no-leakcheck` now, with the same IDs.
-	- Verified: [EtOKpZS] fails against the old cicd.bash and passes with the fix. test.bash 1597 -> 1598, 0 failed, and `cicd.bash --gate` passes.
-	- Swept: the help's stage list and option lines, README (no mention), contributing.md, where `--leakcheck` adding the leak checks back to `--no-fuzz` still holds, config.bash's pip-audit comment, and the history footers of cicd.bash and test.bash. The run in the container already gets `--no-fuzz` as given.
-	- Closed: 20261021-194000
-
-- Check the demo's Pillow and fontTools advisories against Debian's fixes
-	- ID: 2026101905585018
-	- Type: Task
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261019-055850
-	- Opened by: jim-collier
-	- Related IDs: 2026101816064794
-	- Requirements [Feature]:
-		- pip-audit reports 17 advisories against Pillow 11.1.0 and 1 against fontTools 4.57.0. The image has Debian's builds, `11.1.0-5+deb13u4` and `4.57.0-1+deb13u1`, which carry security patches past those versions.
-		- Check each against Debian's security tracker. The ones Debian fixed stay on `PIP_AUDIT_IGNORE` in config.bash, with a note naming the fix. For the rest, move the demo to a Pillow and fontTools that fix them.
-		- A newer Pillow can change the demo gif's bytes, so the gif is rendered and compared again.
-	- Note: The demo draws only its own text, in its own fonts, so none of these reach it through outside input today.
-	- Note: Debian's Pillow fixes stopped mattering once the image had the upstream 12.3.0 in place of Debian's build, so those 6 entries came off the list with the other 11.
-	- Progress log:
-		- 2026-10-19: Checked all 18 against Debian's tracker and the changelogs of the installed builds. 7 are fixed or don't apply: fontTools' one, fixed in `4.57.0-1+deb13u1`, and 6 of Pillow's, fixed in `deb13u1` to `deb13u4` or Windows-only. Each now has a note on `PIP_AUDIT_IGNORE`.
-		- 11 Pillow advisories have no trixie fix. Debian marks most "no-dsa, minor issue", and all are fixed upstream in 12.3.0 and in sid's `12.3.0-1`. They're CVE-2026-54058, 54059, 54060, 55379, 55380, 59197, 59198, 59199, 59200, 59204, and 59205. They cover file formats and calls the demo doesn't use, plus paste and crop with coordinates near 2^31, where the demo passes only its own small ones.
-		- Moving only Pillow fixes them all, since fontTools is already fixed. That means Pillow 12.3.0 in the image, either as a hash-pinned wheel or as sid's package from the snapshot archive. The wheel brings its own FreeType, so the glyphs may change. Either way the gif gets rendered and compared again, the image's Pillow version pin changes, and a render on the host would no longer match the image's. The renderer also calls one private Pillow method, which 12.x may have changed.
-		- Question: should Pillow move to 12.3.0 now, and if so as a wheel or as sid's package? Or should it stay on Debian's build, with the 11 kept on the list until trixie fixes them?
-			- Answer (2026-10-19): "Can it be updated in a container? Otherwise OK to upgrade it."
-		- 2026-10-19: The image's Pillow is 12.3.0, the hash-pinned wheel from the container's lock, on the system python in place of Debian's. The wheel is cleaner than sid's package, which needs a newer libavif than trixie has, and that pulls in 4 more sid libraries.
-		- 2026-10-19: All 17 Pillow entries came off `PIP_AUDIT_IGNORE`. fontTools' one is left, and it's the only advisory pip-audit finds with no list at all.
-		- 2026-10-19: The demo gif renders byte for byte the same on 12.3.0, so it didn't change. The renderer's private `Image.Image()._new` call still works there.
-		- 2026-10-19: A `--no-container` run on b23, with Debian's 11.1.0, warns about Pillow's version in the lint stage, as before, and its render matches too. A render that differs where Pillow or gifsicle isn't at its recorded version is now a warning, and the committed gif stays.
-	- Branch: pyadv, pyfix
-	- Commit: 203dca3
-	- Test case: test.bash [EtAFLx0] for the lock's Pillow and no Debian one, [EtAFLxs] for a demo drawn with another Pillow, and pip-audit's [Et9PJsY] and [Et9R5lO]. The image build also stops on a Pillow other than the recorded one.
-	- Verified: pip-audit in the image passes, and finds only fontTools' advisory with no list. The demo renders the same bytes in the new image and on b23. [EtAFLx0] and [EtAFLxs] fail against gover's tree. test.bash 1561 -> 1571, 0 failed, and `cicd.bash --gate` passes.
-	- Note: [Et9PJsY] wanted at least 2 entries on the list, so its pattern takes any number now, with the same ID.
-	- Swept: `TOOL_VERSIONS`, the Dockerfile's Pillow check and apt list, the snapshot comment that named Pillow, the lock's header, and contributing.md's demo prerequisite.
-	- Acceptance signoff: Signed off by jim-collier in conversation, 2026-10-19.
-	- Closed: 20261019-094958
-
-- Run CodeQL over the demo script and its Python libraries
-	- ID: 2026101907065426
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261019-070654
-	- Opened by: jim-collier
-	- Related IDs: 2026101816064794
-	- Requirements [Feature]:
-		- `--leakcheck` runs CodeQL's Python queries over the pipeline's Python files, with the sdists of Pillow, fontTools, pycairo and PyGObject unpacked into the database's root, at the versions the image has.
-			- Changed 2026-10-19: the libraries' installed source, as the image has it, in place of the sdists.
-		- The same rules as the Go run: style findings in third-party code are dropped, and any other finding fails the run.
-			- Changed 2026-10-19: in third-party Python only findings tagged security count. Our own Python is held to the whole suite.
-		- The Python bundle is pinned in config.bash and installed in the image, like the Go one.
-	- Note: Split from 2026101816064794, which covers the Go code.
-	- Progress log:
-		- 2026-10-19: A trial run, outside the pipeline, of CodeQL 2.27.2's Python security and quality suite over the 2 pipeline scripts and the 4 libraries. Our own 2 scripts have no findings. The libraries have 648, and 331 of them aren't style by the Go rule. That's 116 in Pillow, 187 in fontTools, and 28 in PyGObject. Too many to set aside one by one, so nothing is built yet.
-		- Most of the 331 are tagged reliability only, such as cyclic imports and empty except blocks. Python's quality queries tag nearly everything reliability or maintainability, so the Go rule keeps far more here than it does for Go.
-		- Limiting the libraries to the modules the demo's library calls load still leaves 133.
-		- Only 2 are tagged security, both a regex character range in fontTools' XML module, which the demo doesn't load.
-		- Library code would be the installed Debian builds' own .py files, taken through dpkg, instead of the upstream sdists. They're what the demo runs, with Debian's security patches in, and have no test suites. Their compiled C parts are out of reach of the Python extractor either way.
-		- The Python bundle shares every common file with the Go one, byte for byte, so it adds about 66 MB to the image, without its example queries. The trial took 12 s to build the database and 37 s to analyze.
-		- Proposal: in third-party Python, count only findings tagged security, and keep the Go rule for Go. The one regex finding goes on `CODEQL_IGNORE` as not reachable. Our own scripts stay held to the whole suite.
-		- Question: OK to hold third-party Python to security findings only? The other way is to keep the Go rule and put 185 rule and file pairs on `CODEQL_IGNORE`, or 59 with only the modules the demo loads.
-			- Answer (2026-10-19): the proposal is accepted.
-		- 2026-10-19: Built. `--leakcheck` runs CodeQL's Python security and quality suite once, over a scratch copy with the pipeline's Python files and, under vendor/, the installed source of the 4 libraries. Pillow's file list comes from its wheel, and the Debian builds' from dpkg.
-		- 2026-10-19: codeql-findings.py tells a report's language from the files it extracted, and still holds all the rules. A Python report has to have taken in our files and vendor/.
-		- 2026-10-19: The image untars the Python bundle over the Go one, without its examples, checked against its own sum in config.bash.
-		- 2026-10-19: The fontTools regex finding still shows against what the image installs, so it's on `CODEQL_IGNORE` as not reachable.
-	- Branch: pyql, pyfix
-	- Commit: 203dca3
-	- Test case: test.bash [EtAFLsf] for the run, [EtAFLqv] and [EtAFLrn] for the bundle, and [EtAFLtW], [EtAFLuO], [EtAFLvG] and [EtAFLw8] for how a Python report is read. [Et9ZcLy] follows the new OK line and report list.
-	- Verified: A `--leakcheck` run in the image is clean. It took in 437 Python files, our 2 among them, and the fontTools finding is the only security one in third-party code. A planted `py/empty-except` and `py/comparison-of-identical-expressions` in codeql-findings.py failed it, and after a restore by copy it passes. The new checks fail against gover's tree, and [EtAFLw8] and [EtAFLuO] against broken copies of codeql-findings.py. test.bash 1561 -> 1571, 0 failed, and `cicd.bash --gate` passes.
-	- Swept: the `--leakcheck` help line and plan line, config.bash's CodeQL comments, the Dockerfile's, codeql-findings.py's header, README and contributing.md.
-	- Acceptance signoff: Signed off by jim-collier in conversation, 2026-10-19.
-	- Closed: 20261019-094958
-
-- Stage 7 fails b26 when a Finder window is open on the test folder
-	- ID: 2026100611181887
-	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: Avg
-	- Opened: 20261006-111818
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: The full run on 2026-10-06 failed b26 before any test ran. The tree there held only `.git` and 3 `.DS_Store` files, all from the run's minute.
-	- Expected behavior [Bug]: A Finder window on the folder doesn't stop the run.
-	- Reproduced [Bug]: Yes, on Linux, with a file in the old tree that `rm` can't remove. The copy step exits 1 and leaves the same half-removed tree.
-	- Actual cause [Bug]: Finder rewrites `.DS_Store` while `rm -rf` runs, the rmdir fails, and `set -e` ends the copy step.
-	- Actual fix [Bug]: The old tree is moved aside to `old.<pid>` before it's removed. What won't go gets a note, and another try next run.
-	- Branch: ptyguard
-	- Test case: None in a suite. Checked by hand against the old and new step.
-	- Note: Not yet run on b26, which was held by another session. The next full run there closes it.
-	- Verified: the full run on 2026-10-19 copied the tree to b26 and passed there, test.bash 1346/0.
-	- Acceptance signoff: Self-closed. The item asked for one full run on b26.
-	- Closed: 20261019-084100
-
-- Leak, memory, and correctness checks in CICD
-	- ID: 2026101816064794
-	- Type: Enhancement
-	- Status: Done
-	- Needs external testing: Done 2026-10-19. A full run passed stage 7 on b26, vmFreeBSD, vmDebARM64 and vm925w.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261018-160647
-	- Opened by: jim-collier
-	- Milestone: Pre-next-cut.
-	- Related IDs: 2026101816064793, 2026101009380628
-	- Requirements [Feature]:
-		- For all code:
-			- The checks cover first-party and third-party code. Vendored code is included.
-				- On third-party code, run the leak, memory, and correctness checks named here, not style lints. Style findings in someone else's module aren't ours to fix.
-				- CodeQL reports only on source inside the database's root. For its run, vendor the dependencies into the tree first (`go mod vendor`, unpacked sdists for Python).
-			- Any report fails the test that made it.
-			- Any leak is fixed. If the fix has to wait, it gets a backlog item, and the test that shows it turns the check off with that item's ID beside it.
-			- A `--leakcheck` flag adds the slow checks:
-				- CodeQL, from a pinned CLI run locally. No hosted service.
-				- A soak test. It loops through the program's main actions headless, and fails if the heap at round 2N is larger than at round N by more than a set margin. The heap report is kept as a pipeline artifact.
-			- Every tool is pinned and runs in the build container or lint image, never installed on the host.
-			- Each new gate is watched to fail before it's trusted, by planting the leak it's meant to catch and seeing it go red.
-			- Known-advisory scans run on every full run: `govulncheck` and `pip-audit`. They cover third-party code only, which is the point.
-		- For Go:
-			- Go leaks are goroutines that never exit, and references held too long: a map or slice that only grows, or a small slice keeping a big backing array alive.
-			- Every package's tests run `goleak.VerifyTestMain(m)` from `go.uber.org/goleak`, pinned in go.mod. A goroutine still running after the tests fails the run, whether our code or a dependency started it.
-			- Every full run runs the whole test suite with `-race`.
-			- If the code uses cgo, every full run also runs the tests with `-asan`, in a build dir of its own.
-			- Every full run runs `go vet` and `staticcheck`. `go vet`'s `lostcancel` and `copylocks` checks are the leak-related ones.
-			- The soak test reads `runtime.MemStats.HeapInuse` and `runtime.NumGoroutine()` at round N and 2N, after `runtime.GC()`. Its heap profile (`pprof`) is kept as the artifact, and `go tool pprof -base` shows what grew.
-			- Traps:
-				- `goleak.VerifyNone` per test doesn't work with `t.Parallel()`. Use `VerifyTestMain`.
-				- goleak ignores by function name. That's the only form of suppression allowed.
-				- `go test` caches a pass. Run with `-count=1`.
-				- One `runtime.GC()` can leave garbage behind. Call it twice before reading the stats, or the margin has to be wide enough to hide a real leak.
-				- `-race` needs cgo on some platforms. A job with `CGO_ENABLED=0` fails to build it or skips it, so check the job's env.
-				- `-race` is 2 to 20 times slower and uses 5 to 10 times the memory. Size the job's timeout for it.
-		- For Python:
-			- Python leaks are references held too long: module-level caches, `functools.lru_cache` on a method, closures kept in a global list, and C extensions that drop a reference count.
-			- Every full run runs the tests with `-X dev` and `-W error::ResourceWarning`, so an unclosed file or socket fails the test.
-			- Every full run runs the tests under `pytest-memray`. Each test that loops gets `@pytest.mark.limit_leaks(...)` with a margin. memray sees native allocations, so leaks in C extensions show up, third-party ones included.
-			- After the tests, `gc.collect()` runs, and `gc.garbage` must be empty.
-			- The soak test takes `tracemalloc` snapshots at round N and 2N and fails on growth past the margin. The top lines of `snapshot.compare_to()` are kept as the artifact.
-			- ruff runs `B019` (`lru_cache` on a method), `SIM115` (`open` with no context manager), and `B006` (mutable default argument).
-			- `--leakcheck` also runs the tests on a CPython built with `--with-address-sanitizer`, under `PYTHONMALLOC=malloc`, for C extensions.
-				- The interpreter's own reports are suppressed by library name, `libpython` only.
-			- Traps:
-				- Start `tracemalloc` before importing the code under test, or allocations made at import aren't traced.
-				- The first rounds fill caches: the regex cache, interned strings, freelists, and lazy imports. That's why it's round N against 2N, never 0 against N.
-				- `tracemalloc` sees only allocations made through Python's allocator. A C extension calling `malloc` directly is invisible to it. memray covers that.
-				- memray runs on Linux and macOS only. On Windows, the test exits as skipped, not passed.
-				- pytest keeps the traceback of a failed test, which keeps its frames alive. A leak count from a run with failures means nothing.
-				- `ResourceWarning` shows only in dev mode or with `-W`. A plain run hides it.
-				- Without `PYTHONMALLOC=malloc`, ASan can't see inside pymalloc's pools.
-	- Note: The Rust, C, and C++ parts of the list were left out, since there's no code in those here. The only Python is the demo gif script, which uses Pillow, cairo, Pango, and fontTools, and it has no tests yet. The Go code starts one goroutine (`startAhead` in app.go), and builds use `CGO_ENABLED=0`.
-	- Progress log:
-		- 2026-10-19: Everything but CodeQL is in, on `leakchk`. CodeQL is the part left. `fLeakCheck` in cicd.bash marks where it joins.
-		- 2026-10-19: Already there, so not added again: every full run had `go test -race`, `go vet` with its default analyzers, `lostcancel` and `copylocks` among them, and `staticcheck`. Only the builds set `CGO_ENABLED=0`. The image has gcc, so the race detector works there, and a planted data race failed it.
-		- 2026-10-19: Not applicable: `-asan`, since nothing imports "C". The test-time Python checks (`-X dev`, pytest-memray, `gc.garbage`, the tracemalloc soak, and an ASan CPython) wait until the demo script has tests to run them on.
-		- 2026-10-19: CodeQL is in, on `codeql`. `--leakcheck` runs it in the image over a scratch copy of the module, with `go mod vendor` done there. The Go extractor leaves out tests and vendor/ by default, so both are turned on. It runs once for each OS a release is built for, since the extractor sees one OS's files at a time.
-		- 2026-10-19: CodeQL found 2 problems in shcl 2.0.0, the old writer the tests use. Both are set aside until 2026101906343987.
-		- 2026-10-19: Split out: CodeQL over the demo script and its Python libraries, as 2026101907065426.
-		- 2026-10-19: A source check now stops any tracked script or Go file from running tmux, pkill or killall.
-	- Decisions:
-		- The soak test is a Go test, `TestSoak`, run in one process. It loops pullcom, br create, sync, br merge, status, br, whoami and br prune against a bare origin and a clone, 30 rounds and then 30 more. It skips unless `GITSBY_SOAK_ROUNDS` is set, so a plain `go test` doesn't run it. The heap margin is 256 KB; 2 reads differ by under 100 KB, on a heap under 2 MB.
-		- pip-audit checks the demo's libraries at the versions installed, given as pins, since they come from Debian's archive and not pip. Debian patches them without moving the upstream version, so the 18 advisories reported today are set aside in config.bash until 2026101905585018 checks them. A new one fails the run.
-		- ruff and pip-audit go into the image from a lock that pins every wheel by hash.
-		- CodeQL goes in the default image, not one of its own. The Go-only bundle adds about 400 MB on disk to a 2.6 GB image, and a second image would need its own tag, build and cleanup.
-		- On vendor/, only findings from queries tagged security, correctness or reliability count. The rest of the suite is style, such as a value assigned and never read.
-		- A finding is set aside by rule and file in `CODEQL_IGNORE`, with its backlog item beside it. An entry no report has any more fails the run.
-		- `--leakcheck --no-container` stops on a box without CodeQL rather than skipping it, since it was asked for by name.
-	- Branch: leakchk, codeql
-	- Test case: `TestMain` [Et9PJqa] runs goleak, and `TestSoak` is [Et9PJqo]. test.bash [Et9PJr1], [Et9PJrE], [Et9PJrS], [Et9PJrf], [Et9R5kx], [Et9R5lA], [Et9PJrt] and [Et9PJs6] for `--leakcheck`. [Et9PJsK] and the ruff pass of [EpsVDHv] for ruff. [Et9PJsY], [Et9R5kk] and [Et9R5lO] for pip-audit and `govulncheck -test`. [Et9R5lb] for `-count=1`, [Et9R5lo] for goleak in every Go package, and [Et9R5kW] for the image tag. [Et9ZcLy], [Et9ZcME], [Et9ZcMS], [Et9ZcMh], [Et9ZcMx] and [Et9ZcNC] for the CodeQL step, and [Et9aIeu] for its install. [Et9ZcNT], [Et9ZcNj], [Et9ZcO1], [Et9ZcOF], [Et9aIdh], [Et9aIdy], [Et9eeOv], [Et9aIeD], [Et9eeP9] and [Et9aIeR] for how its reports are read. [Et9aIeg] for tmux, pkill and killall.
-	- Verified:
-		- A goroutine left running in `startAhead` failed the unit tests through goleak. In the soak test, a goroutine left per run failed it on the count, and a 4 KB slice kept per run failed it on the heap, where `go tool pprof -base` named `run`. Each was restored by copy, and both pass after.
-		- ruff failed on a planted B019, SIM115 and B006, and `--gate` stopped on it. pip-audit failed in the image with one advisory taken off the list.
-		- test.bash 1524 -> 1540, 0 failed. The 16 new checks all failed against gover's cicd.bash and config.bash. A full container run with `--leakcheck` passed, with sync, dogfood, the demo, the remote tests and publish off.
-		- A planted `n == n` in app.go failed `--leakcheck` in the image, on CodeQL's comparison-of-identical-expressions query. Turning off the extractor's test option failed it too. Both were restored by copy, and the run passes after.
-		- test.bash 1540 -> 1560, 0 failed. The new checks all failed against gover's cicd.bash, config.bash and Dockerfile, or against a broken copy of codeql-findings.py. The kill check failed on `pkill` and `tmux` lines planted in a script, a `tmux` line in a Go file, and a `killall` line in legacy/bin/gitsby.
-		- A full container run with `--leakcheck` passed, with sync, dogfood, the demo, the remote tests and publish off: test.bash 1560/0, fuzz.bash 313/0, parity 29/0, the spawn counts, the soak test and CodeQL on all 4 OSes.
-	- Swept: The comments in cicd.bash and test.bash that said there were no third-party dependencies, the 2 "pure stdlib" lines in config.bash, the style guide's goroutine rule, the help header, both history footers, README and contributing.md. install.bash's "pure Go with no dependencies" is about what a build needs installed first, and goleak is test-only, so it stays. remote-tests.bash runs compiled test binaries, which never cache, so it needs no `-count=1`.
-		- CodeQL: the help header, the history footers of cicd.bash, config.bash, test.bash and the Dockerfile's comments, README and contributing.md. The kill check covers legacy/ too, which has none.
-	- Verified: full run 2026-10-19, publish off. test.bash 1561/0 and fuzz.bash 313/0 in the image, then test.bash 1346/0 on b26, 1249/0 on vmFreeBSD and 1546/0 on vmDebARM64, and the Go tests on all 4 boxes.
-	- Acceptance signoff: Self-closed. The open calls moved to 2026101905585018, 2026101906343987 and 2026101907065426.
-	- Closed: 20261019-084100
-
-- Run on the last Core 2 Duo, and AMD CPUs from that era.
-	- ID: 2026101301161852
-	- Type: Enhancement
-	- Status: Done
-	- Needs external testing: Yes, on an old CPU or an emulated one.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261013-011618
-	- Opened by: JC
-	- Target OS: Linux, Windows and FreeBSD on x86_64, where this project builds them. Macs that old can't run a current macOS anyway.
-	- Requirements [Feature]:
-		- Release builds run on the last Core 2 Duo (Penryn, 2008), and on AMD Phenom II and Athlon II, if that's reasonably doable.
-			- Penryn has SSSE3 and SSE4.1 but no POPCNT. The AMD ones have POPCNT but no SSSE3. So the shared floor is plain x86-64, also called x86-64-v1.
-		- If that isn't doable, the floor is the first Core i3/i5/i7 (Nehalem, 2008), which is x86-64-v2. AMD's first chip at that level is Bulldozer, 2011.
-		- Faster code for newer CPUs is still fine, but it's picked at run time by a CPU feature test, never by the build target.
-		- Tests run the release build on an emulated Penryn and Phenom II, through Intel SDE or QEMU's `-cpu Penryn` and `-cpu phenom`.
-	- Progress log:
-		- 20261013: Go builds for plain x86-64 by default (`GOAMD64=v1`), and nothing here sets it, so this may already hold. Pin `GOAMD64=v1` in the release build so a stray environment can't raise it. The standard library already picks faster code at run time.
-		- 20261019: Every build pins `GOAMD64=v1` now: release, dogfood and cross builds, the native and demo builds, the remote test builds, and the README's rebuild line. It's Go's default, so the published bytes don't change. The module has no assembly or cgo of its own, and neither does shcl.
-	- Decisions:
-		- The emulated run was a one-off, and stays out of the pipeline. The pin is what can regress, and the suite watches it. Go's own startup check refuses a CPU below the level a build was made for, so the pin decides which CPUs run it. The CPU emulator would add about 450 MB to the container image to recheck that each run. Revisit if a dependency with its own assembly comes in.
-	- Verified:
-		- The linux/amd64 release build runs on an emulated Penryn and Phenom II: `--version`, `--help`, `status`, `whoami`, `br list`, `sync` to a local origin, and `br create`. Builds for v2 and v3 are refused on both, and the v3 build runs on an emulated CPU that has v3.
-		- Every release target builds to the same bytes with the pin as without it. A `GOAMD64=v3` in the environment, or in `go env -w`, changes the amd64 bytes of an unpinned build and not of a pinned one.
-	- Swept: `cicd.bash` (native build, `fCrossBuild` for dogfood and stage 7's Mac build, demo build), `release.bash` `fpCrossBuild` (phases 1 and 3), `remote-tests.bash` `fBuildTests`, README's rebuild line. The container image builds no gitsby binary, only tools, and its stages run the cicd.bash sites above. Windows, FreeBSD and the Mac amd64 half get the same pin through those sites.
-	- Branch: oldcpu
-	- Test case: [Et9l12K] in test.bash. It fails with the pin dropped from any one build site or from the README.
-	- Acceptance signoff: Self-closed: the intent was clear, and the pin changes no published bytes.
-	- Closed: 20261019-072414
-
-- Run the lint and test stages in a pinned container
-	- ID: 2026101009380628
-	- Type: Enhancement
-	- Status: Done
-	- Priority|Severity [Feature]: Avg
-	- Opened: 2026-10-10
-	- Opened by: jim-collier
-	- Requirements [Feature]:
-		- Stages 1-4 can run in a Debian trixie image with our Go and every pinned lint and test tool, so a host update can't move a finding.
-		- The versions come from config.bash, not a second list.
-		- The demo gif renders there too, so a host update can't change its bytes either.
-		- The rest stays on the host: sync, dogfood, remote tests and publish.
-	- Done: `cicd.bash --container`, from `cicd/container/Dockerfile`. The tag hashes the recipe and the versions, and a new image replaces the old one. Go caches live in a named volume. git joined `TOOL_VERSIONS`, since trixie's 2.47 spawns 4 more processes on a fetch than the host's 2.51.
-	- Branch: ctr
-	- Test case: [EsJgeiS] to [EsJgem1] in test.bash, against the stubbed engine. The recipe guard was watched to fail by hand.
-	- Verified: a run in the container matched the host baselines, test.bash 1509/0, fuzz.bash 313/0, parity.bash 29/0 and spawn counts. With the new checks, 1514/0 both in the container and on the host. The fixture sets the container marker itself, since the suite inside the image inherited it.
-	- Done 2026-10-10: the demo gif renders in the image as well. Apt reads the snapshot the base was cut from, so Pillow, freetype and cairo can't move, and the image has the Monaspace release file the host uses. The emoji font is Debian's, not the host's build, but the demo draws no emoji. The render matched the committed gif byte for byte, and with the font hidden it didn't.
-	- Test case: [EsK1B7q] in test.bash.
-	- Done 2026-10-10: a plain run uses the container, set by `CICD_CONTAINER` in config.bash. `--no-container` runs on the box. A box without a working docker does too, with a warning, so a contributor isn't blocked, and `--container` there stops. `--gate` stays on the box.
-	- Test case: [EsK46gt] to [EsK46k5] in test.bash. 1519/0 in the container and on the host. With the default off, the 3 checks that need it failed.
-	- Closed: 20261010-100500
-
-- test.bash's `--direct` prompt check fails on FreeBSD and macOS
-	- ID: 2026100611181886
-	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: Avg
-	- Opened: 20261006-111818
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: [ErsjjF5] failed on vmFreeBSD in stage 7 on 2026-10-06, 1222/1.
-	- Reproduced [Bug]: Yes, by running test.bash again on vmFreeBSD.
-	- Actual cause [Bug]: The check answers the prompt through util-linux `script -qec`, and the BSD `script` doesn't take it. Every other prompt check sits under `hasPty`. This one, from e1cc030, didn't.
-	- Actual fix [Bug]: Put it under `hasPty`.
-	- Branch: ptyguard
-	- Verified: test.bash 1222/0 on vmFreeBSD.
-	- Closed: 20261006-111818
-
 - `repo clone` hands git a folder name taken from the URL, and git can read it as an option
 	- ID: 2026100607545802
 	- Type: Bug
@@ -603,464 +167,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: c1b10fc
 	- Test case: fuzz.bash [Ervo5NU]. Red on `gover`'s code, green here.
 	- Verified: fuzz.bash 311/0, test.bash 1491/0, parity.bash 29/0 on the branch.
-
-- Code Review 20261005 item 1: workflows.md says gitsby won't push your own work to `main` or `dev`, and it does
-	- ID: 2026100516202544
-	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: Avg
-	- Opened: 2026-10-05
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: workflows.md says "There's no command for 'push to `main` anyway'", and that gitsby won't push your own work to `main` or `dev` even with permission. `pullcom` commits there and `sync` pushes there, and the plan says nothing about it. The refusal on a dirty `main` or `dev` even suggests `gitsby pullcom` to commit there on purpose. The README's first line says the tool enforces the workflow.
-	- Expected behavior [Bug]: The docs and the tool say the same thing.
-	- Reproduced [Bug]: Yes. A clone of a bare origin, one edit on `main`, then `gitsby sync -q -m x` pushed `main -> main` and exited 0. The same on `dev`.
-	- Origin: workflows.md:96 from ab8d389 and :105 from 584e0ff, both 2026-07-28. The behavior is older. The 2.x refusal named `update` as the way to commit on a protected branch on purpose. No earlier round saw it. Confirmed.
-	- Note: 2 ways out. Reword workflows.md to say gitsby steers work onto branches and still allows a deliberate commit on `main` or `dev`. Or warn above the prompt when the push goes to `main` or `dev`. Refusing is out, since the tool's own advice and every repo with no `dev` lean on it.
-	- Note: The reword is the smaller change. A warning would show on every push in a GitHub Flow repo that commits to `main`.
-	- Progress log:
-		- 2026-10-05: The fix chosen is a warning on stderr before going ahead, with a flag to turn it off.
-		- 2026-10-05: The flag is `--direct`. `-q` without it refuses, per the UI style guide's rule for warnings, since the question about `-q` went unanswered.
-		- 2026-10-05: Warning reworded as given in review. The `-q` refusal starts with the same sentences.
-	- Decisions:
-		- A warning plus `--direct`, not a refusal and not a doc reword alone (2026-10-05).
-		- A flag for this one case, not a general `--no-warn` (2026-10-05).
-	- Actual fix [Bug]: `sync` on `main`, `dev` or the default branch warns on stderr above the prompt when it would push commits made on that branch, or commit a dirty tree there. Under `-q` it refuses and names `--direct`. A merge left for `sync` to publish doesn't count, so `br merge` offline and the hotfix back-merge still publish without it. workflows.md, the README, design.md and the UI style guide say so.
-	- Note: [ElHQEx6], [EknhbCN] and [Erg9NTg] sync on `main` to test sync itself, and now pass `--direct`. What each checks is unchanged.
-	- Branch: direct
-	- Commit: e1cc030
-	- Test case: test.bash [ErsjjDN] refuses under `-q`, [ErsjjEE] pushed nothing, [ErsjjF5] warns above the prompt on a pty, [ErsjjFy] help lists it. Each red on `gover`. [ErsjjGp] a clean re-run and [ErsjjHh] a merge published from `dev` stay quiet, each red with the merge and clean-tree tests taken out.
-	- Closed: 20261005-190835
-
-- Code Review 20261005 item 3: The help and design.md disagree on which commands are daily
-	- ID: 2026100516202618
-	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: Low
-	- Opened: 2026-10-05
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: design.md:188 and the UI style guide say commands split by how often they're typed, with `pullcom`, `sync`, `status`, `whoami` and `release` as the daily one-word verbs. The help puts `sync` and `whoami` under "Less common commands" and `release` under "Admin commands", and lists `br create` and `br switch` as common. The README tags `sync` "Do infrequently".
-	- Expected behavior [Bug]: One story about how the commands are grouped.
-	- Reproduced [Bug]: Yes, `gitsby --help` against design.md and the style guide.
-	- Origin: design.md:188 from d446496 (2026-07-26). The help's groups go back to 2.x, 3a97c0e in 2022. No round saw it. Confirmed.
-	- Note: The help's groups read true. The one-word split isn't about how often a command is typed, so the design line and the style guide should say what it is. Regrouping the help is the other choice.
-	- Actual fix [Bug]: design.md and the UI style guide now call the one-word commands the workflow steps, with everything else under the thing it acts on. The help is unchanged.
-	- Branch: direct
-	- Commit: e1cc030
-	- Test case: none, docs only.
-	- Closed: 20261005-190835
-
-- Code Review 20261005 item 4: Help says "GitHub accounts" where an account can be on any git host
-	- ID: 2026100516202655
-	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: Low
-	- Opened: 2026-10-05
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: The help's `account` line says "Show your configured GitHub accounts", right above 2 examples that use `gitea.com`. The README's `account` row says the same. design.md:249 opens with "Which GitHub account you act as".
-	- Expected behavior [Bug]: Say "accounts" where any host is meant.
-	- Reproduced [Bug]: Yes, `gitsby --help`.
-	- Origin: help.go:62 from fc0ddda (2026-08-08), before accounts took a `host`. No round saw it. Confirmed.
-	- Decisions:
-		- The README's "Multiple GitHub accounts" heading changes too (2026-10-05). It is "Multiple accounts" now, and so is accounts.md's title.
-	- Progress log:
-		- 2026-10-05: Asked what the problem is. Answered in the reply.
-		- 2026-10-05: OK'd, with the README heading changed as well.
-	- Actual fix [Bug]: "accounts" in the help's `account` line, the README's `account` row and design.md's heading. The README section and accounts.md are titled "Multiple accounts", with the TOC entry updated. The prose that says "two GitHub accounts" stays, since GitHub is the usual case.
-	- Branch: direct
-	- Commit: e1cc030
-	- Test case: none, wording only.
-	- Closed: 20261005-190835
-
-- Code Review 20261005 item 5: The README's count of subcommands is stale
-	- ID: 2026100516202693
-	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: Low
-	- Opened: 2026-10-05
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: The README says gitsby has "ten - or 24 counting subcommands". The help lists 25 since `account unset` came in.
-	- Expected behavior [Bug]: A number that a check keeps true, or wording with no number.
-	- Reproduced [Bug]: Yes, by counting the help's entries.
-	- Origin: README:64 from 4ec5fd4 (2026-08-21). `account unset` is 1ed0f3a (2026-09-28). No round saw it. Confirmed.
-	- Note: "ten" can keep its number with a check on the help's top-level commands. The subcommand count could say "about two dozen" and claim nothing exact.
-	- Actual fix [Bug]: The README says "about two dozen counting subcommands". "ten" stays, and a check holds it.
-	- Branch: docfix
-	- Commit: f4f624b, 2206206
-	- Test case: [ErsJhby] in test.bash counts the help's top-level commands and needs 10, with "Gitsby has ten" in the README. Red with the README saying eleven, green as committed.
-	- Closed: 20261005-172300
-
-- Code Review 20261005 enhancement 1: Step lines print their arguments unquoted
-	- ID: 2026100516202730
-	- Type: Enhancement
-	- Status: Done
-	- Priority|Severity [Feature]: Low
-	- Opened: 2026-10-05
-	- Opened by: jim-collier
-	- Requirements [Feature]:
-		- A step line quotes an argument the way the plan does. The plan shows `git commit -m "two words; here"`, and the step shows `[ git commit -m two words; here ... ]`. Pasted into a shell, the step line runs `here` as a command.
-		- The failure line, `gitsby: '...' failed`, quotes the same way.
-	- Origin: `step` in exec.go, from the port. 2.x printed `$*` the same way.
-	- Note: parity.bash compares this output with 2.x, so the change needs its carve-out there.
-	- Done: Step lines quote an argument that needs it, and quote a `-m` value the way the plan does. The plan's commit message and `pr create` title go through the same quoting, so a message with `"` or `$` in it now shows in single quotes there too. The demo's `sync` step line gains its quotes, so the gif changes at the next full run.
-	- Note: parity.bash needed no carve-out. It passed 29 of 29.
-	- Branch: docfix
-	- Commit: 2206206
-	- Test case: [ErsJhaE] in test.bash, a plan line and its step line must match for `-m 'two words; here'`, red on `gover` and green here. [ErsJhZM] TestShellWord has a shell read 10 awkward values back unchanged.
-	- Acceptance signoff: Self-closed 2026-10-06. Tested, and it follows the plan and the README with no open choice left.
-	- Closed: 20261005-172300
-
-- Code Review 20261005 enhancement 2: The help leaves out what the README shows
-	- ID: 2026100516202767
-	- Type: Enhancement
-	- Status: Done
-	- Priority|Severity [Feature]: Low
-	- Opened: 2026-10-05
-	- Opened by: jim-collier
-	- Requirements [Feature]:
-		- `--yes` is taken but not listed. The help shows `-q, --quiet, -y`.
-		- `repo connect [url]`, where it also takes `owner/name`. The README shows `[target]`.
-		- `account set` and `account unset` show no arguments. The README shows `<a> <k> <v>` and `<a> <k>`.
-	- Origin: help.go, various. No round saw it.
-	- Done: The help lists `--yes`, says `repo connect` takes a URL or `owner/name`, and starts the `account set` and `account unset` lines with their arguments.
-	- Branch: docfix
-	- Commit: 2206206
-	- Test case: [ErsJhb6] in test.bash, help lists `--yes`. Red on `gover`, green here. [ErwbTHe], [ErwbTHr] and [ErwbV0h] check the `repo connect`, `account set` and `account unset` lines, each red against the help before it.
-	- Acceptance signoff: Self-closed 2026-10-06. Tested, and the help now matches the README with no open choice left.
-	- Closed: 20261005-172300
-
-- `br switch HEAD` commits and pushes the working tree, then fails
-	- ID: 2026100607545807
-	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: Avg
-	- Opened: 20261006-074900
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: `origin/HEAD` was counted as a branch on origin. So `br switch HEAD` passed the check that the branch exists, parked the dirty tree with a commit and a push, then failed at `git checkout -b HEAD`.
-	- Expected behavior [Bug]: Refuse before touching anything.
-	- Reproduced [Bug]: Yes, with a dirty tree on a pushed feature branch.
-	- Actual cause [Bug]: `branchRefs` read every `refs/remotes/origin/*` as a branch, `HEAD` included.
-	- Actual fix [Bug]: `origin/HEAD` is skipped there.
-	- Swept: `branchRefs` is the one place origin's branches are read for the existence checks.
-	- Branch: fuzzwork
-	- Commit: c1b10fc
-	- Test case: fuzz.bash [Ervo5NW]. Red on `gover`'s code, green here.
-	- Verified: fuzz.bash 311/0, test.bash 1491/0, parity.bash 29/0 on the branch.
-	- Acceptance signoff: Self-closed: reproduced, red before the fix and green after.
-	- Closed: 20261006-075458
-
-- `account` prints a value with a newline in it across 2 lines
-	- ID: 2026100607545812
-	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: Low
-	- Opened: 20261006-075458
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: `account set a name $'n\nemail ..: evil@x'` saves the value quoted and safe. But `account` prints it on 2 lines, and the second one looks like a field of its own.
-	- Expected behavior [Bug]: A value prints on one line, with any control character shown escaped.
-	- Reproduced [Bug]: Yes, on `fuzzwork`, 2026-10-06. Again on `gover` the same day: the commits row printed `n`, then `email ..: evil@x <?>` on a line of its own. An ESC in a value reached the terminal as is.
-	- Actual cause [Bug]: Every display site printed the value as read. Only the plan's `add:` and `becomes:` lines escaped it, since they show the file's own spelling.
-	- Actual fix [Bug]: `printable` shows a control character the way the accounts file writes it: `\n`, `\t`, and `\u001B` style for the rest of C0, DEL and C1. Every display site of a config value goes through it. What is stored, and what goes to git config and the fragments, is unchanged. The rule is in the UI style guide under "Words and values".
-	- Against: "A path is never re-spelled for display". Only control characters change. Every printable character prints as written, a backslash included, and a byte that isn't UTF-8 passes through, so a path with none in it prints byte for byte the same.
-	- Swept: the `account` list (every row, the Account and Ignored keys lines, the shared-rule and stale-rule warnings); the status and `whoami` Account line, its notes (through `noteLines`, which refusals use too), the Config, SSH and Author lines and the loose token file warning; the `account set` and `unset` plans (`was:`, `becomes:`, `add:`, `remove:`); the `account apply` plan, its status lines and refusals, and the unused-fragment line; the `raw` "acting as" line; and the refusals that quote a typed value (account name, key, host, user, protocol, path, GIT_CONFIG_COUNT). `host`, `user` and `protocol` were already held to plain characters, and account names to letters, digits, `.`, `_` and `-`.
-	- Note: git drops a newline from an ident itself, so the Author line shows only the ESC escaped.
-	- Branch: ctlesc, escall
-	- Commit: 2be7d35, 47bcda3
-	- Test case: test.bash [ErvuMUH], [ErvuMUU] and [ErvuMUh], and Go `TestPrintableEscapesControlsOnly` [ErvuMUv], and `TestEveryLineOutIsEscaped` [ErwXroS].
-	- Verified: all 3 suite checks red on `gover`, green here. The Go test fails with the escaping taken out. test.bash 1494/0, fuzz.bash 311/0, parity.bash 29/0, `go test ./...` and the gate pass.
-	- Decisions:
-		- Anything from a file or another tool gets escaped, with no exceptions to remember. So the escaping moved into the printer's line writers and the error constructors' args, and covers the cwd, remote URL, gh and tea logins, clone folder and config path too. A usage error built from lines keeps its line breaks.
-		- A typed `\n` in a value prints the same as an escaped newline. Left that way, since a real control character in a config value is nearly always a mistake or an attack, and doubling backslashes would re-spell every Windows path.
-	- Acceptance signoff: jim-collier 2026-10-06
-	- Closed: 20261006-104500
-
-- `assets/logo.png` is 512x512 and 254 KB for a 128 px README image
-	- ID: 2026100519502150
-	- Type: Enhancement
-	- Status: Done
-	- Priority|Severity [Feature]: Low
-	- Opened: 20261005-195021
-	- Opened by: jim-collier
-	- Note: It is also what `gen-winres.bash --icon` reads for `assets/gitsby.ico`, whose largest size is 256.
-	- Progress log:
-		- 2026-10-05: Scaled to 256x256 RGBA, 84 KB. `gitsby.ico` is left as made from the 512 px original.
-		- 2026-10-06: Put back to 512 px, and the README shows it at 512.
-	- Decisions:
-		- Keep 512 px and show it at full size. It is a cool logo.
-	- Swept: README width 128, `gen-winres.bash` (largest size 256), design.md, changelog.md, trademark.md and the backlog's `.ico` note. None state the logo's size or need 512 px.
-	- Branch: logo, logo512
-	- Commit: ec2564a
-	- Test case: None, asset only.
-	- Acceptance signoff: jim-collier 2026-10-06
-	- Closed: 20261006-072500
-
-- Code Review 20261005 item 2: design.md still states decisions that were reversed or outgrown
-	- ID: 2026100516202581
-	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: Low
-	- Opened: 2026-10-05
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: design.md says it is revised in place, so what it holds is true now. 5 lines aren't.
-		- :536 says displayed paths fold the home folder back to `~`. That was reversed on 2026-09-16. Line 540 and the UI style guide both say a path is never re-spelled. From 919141f.
-		- :345 says the engine runs 7 stages. It's 8 behind a stage 0 since 2026-10-04. From fa41f83.
-		- :188 names the nouns as `repo`, `br` and `pr`. `account` and `raw` came later, and the UI style guide lists all 5. From d446496.
-		- :202 says `pullcom` and `sync` make up a message when none is given, and uses that as the reason `pr create` has a default title. They open git's editor, and make one up only under `-q`. From 0ec08bd.
-		- :512 says `gh` is needed for every `pr` form. On Gitea `pr` goes through `tea`, as "Direction decisions" and the README say. From 2835bb7.
-	- Expected behavior [Bug]: Each line says what is true now.
-	- Reproduced [Bug]: Yes, each line read against the code, the help or the line that reversed it.
-	- Origin: the commits named above, 2026-07-26 to 2026-08-20. No round saw these lines. Confirmed.
-	- Note: The 20260910 churn audit found this class twice, in its items 8 and 18. A decision reversed in one section and left standing in another. This is the third time. A reversal should grep every doc for the old rule before it merges.
-	- Note: :345 is history. Reword it so it doesn't count stages, and there's no number left to drift.
-	- Actual fix [Bug]: All 5 lines now say what is true. The run-time tools line names the git host's own tool, `gh` or `tea`, and says a later host brings its own the same way. The stage line no longer counts stages.
-	- Swept: the old wording of each line, grepped across every .md in the repo. The other hits are dated history in the changelog and the backlog.
-	- Branch: docfix
-	- Commit: f4f624b
-	- Test case: none, docs only. Nothing in the rewording is a number or a list a check could hold.
-	- Acceptance signoff: Self-closed: the item named each line, and each fix only states what the code does.
-	- Closed: 20261005-172300
-
-- `raw` runs tea and other common CLIs, not only git and gh
-	- ID: 2026100611524343
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature]: Avg
-	- Opened: 20261006-115243
-	- Opened by: jim-collier
-	- Requirements  [Feature]:
-		- `raw tea` (or `tea-cli`), `raw glab`, `raw lazygit` and `raw tig` run as the folder's account, like `raw git`.
-	- Decisions:
-		- A fixed list, not any program. An open slot would hand the token to whatever was typed there.
-		- tea and glab get the account's token in their own variables, with the host beside it. Never a GitHub token.
-		- gitui is left out. It uses libgit2, which never sees the account.
-		- tea before 0.11 ignores the token. When its own login for the host is somebody else, gitsby warns, and `-q` refuses.
-	- Note: `--any-identity` before `raw` was taken and ignored. It now applies nothing, and the "acting as" line stays quiet.
-	- Note: The "acting as" line now names a Gitea account too. It only read the GitHub login before.
-	- Branch: raw-tools
-	- Test case: test.bash, 12 new checks and 1 reworded. 10 are red on `gover`, and the other 3 went red with the fix broken. 2 Go tests, and 2 fuzz vectors.
-	- Verified: test.bash 1509/0, fuzz.bash 313/0, parity.bash 29/0, the gate. Only against stubs. No real tea 0.11 or glab here.
-	- Closed: 20261006-115243
-
-- `--staged`: commit only what is staged, and leave the rest of the tree alone
-	- ID: 2026100512025340
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature]: High
-	- Opened: 2026-10-05
-	- Opened by: jim-collier
-	- Requirements  [Feature]:
-		- A `--staged` flag on `pullcom`, `sync`, and the branch commands that commit the tree before they move: `br create` off a feature branch, `br switch` and `br merge`.
-		- With it, the commit takes the index only. Nothing is staged, and unstaged or untracked edits stay where they are.
-			- Nothing staged means nothing is committed. The command goes on with the rest.
-			- On a checkout, the leftover edits come along, the way plain git does it.
-			- Where git would refuse that checkout, the plan says so before anything runs.
-		- The plan shows which files get committed and which stay behind.
-		- Without the flag, nothing changes.
-	- Notes:
-		- Each of those commands runs `git add --all` first today. In a tree with hand edits that aren't part of the change, that sweeps them in.
-		- `br create` from `main` or `dev` already carries edits over, and stays that way.
-	- Decisions:
-		- A flag, not a new command (2026-10-05). It keeps the count of commands down.
-		- Opt-in, not switched on by finding something staged (2026-10-05). A file staged long ago would quietly make the commit smaller, and under `-q` nobody reads the plan. Most users never think about the index, and shouldn't have to.
-		- It doesn't go against design.md's line that partial staging belongs to raw git. Gitsby still stages nothing itself. It only stops undoing a `git add` that was already made. design.md gets a line saying so.
-		- Before the first Go release, since flags and aliases are permanent after it.
-	- Estimated effort: Avg
-	- Progress log:
-		- Verified: git's autostash brings staged work back unstaged, on git 2.51. A file staged and then edited again lost its staged copy. Git's current source still reapplies it that way. A plain fast-forward with no stash kept the index, and where incoming commits touched a file with edits here, git refused and changed nothing.
-		- So with `--staged` no pull uses `--autostash`. Committing the staged part before the pull was the other way, but a remote that moved ahead would then be diverged.
-		- Done: `--staged` on `pullcom`, `sync`, `br create`, `br hotfix`, `br switch` and `br merge`. The commit takes the index only, and the plan lists what is committed and what stays. Nothing staged commits nothing, and the run goes on.
-		- Done: a pull or checkout that git would refuse over the edits left in the tree is refused before the plan, with nothing done. That is the reading taken of "the plan says so before anything runs": a plan that can't finish isn't shown. A pull from a remote other than origin can't be read ahead; git refuses that one at the time.
-		- Note: `br hotfix` takes the flag too, since it is the same recipe as `br create`. `pr create` and `release` also commit the whole tree, and refuse the flag for now. Adding it there later breaks nobody.
-		- Done: help, README, workflows.md, the changelog, and design.md, with the line the Decisions ask for and the autostash finding.
-		- Verified: `go test ./...` and the gate pass. The 18 new suite checks pass on their own. With `--autostash` put back on every pull, 6 of them fail. With the read-ahead turned off, 4 fail.
-		- Verified: the full test.bash on the merged tree, 1471/0 (2026-10-05).
-		- For signoff: `br hotfix` taking the flag, `pr create` and `release` refusing it, and the plan's two list labels, "staged, so committed:" and "not staged, so left as is:".
-		- Answered 2026-10-05: `br hotfix` taking the flag is OK.
-		- Answered 2026-10-05: `pr create` and `release` take the flag too, with the same rules as the other commands.
-		- Still open: the plan's two list labels. They are being looked at in context, and stay as they are until then.
-		- Done: `--staged` on `pr create` and `release`. Their commit takes the index only, no pull uses `--autostash`, and the plan lists what is committed and what stays. Nothing staged commits nothing, and the run goes on.
-		- Done: `release` reads ahead every pull and checkout up to the default branch, and refuses before the plan where git would stop. A file that passes is the same on every branch read, so the merge, the move back to `dev` and the last checkout can't touch it. Only the index counts as work to release, so a level repo with only unstaged edits says there is nothing new, as it would with a clean tree.
-		- Done: `pr create` parks the way `sync` does. Both `gh` and `tea` are handed the branch with `--head`, and with that neither looks at the working tree. Read in their source, not run against a real host.
-		- Done: `pr ok` still refuses the flag, since it commits nothing. The old test.bash check that release refuses the flag, `[Err7W97]`, is commented out with the reason, and `[ErrG0tG]` asks the same of `repo connect`. Go test `[Err7CYY]` now expects `pr create` and `release` to take it.
-		- Done: README, the changelog and design.md list the 2 commands. Help and workflows.md name no commands for the flag, so they needed nothing.
-		- Verified: `go test ./...` and the gate pass. The 12 new suite checks and the 25 around them pass on their own. Against the build before this, 10 of the 12 fail; the other 2, a plan with no `git add` and `pr ok` refusing, pass either way and guard against a regression. With the release read-ahead turned off, 2 fail. With the nothing-new rule back on the whole tree, 3 fail.
-		- Verified: the full test.bash on the branch, 1482/0 (2026-10-05).
-		- For signoff: the plan's two list labels only.
-		- Answered 2026-10-05: the labels read "Changes to commit:" and "Changes to leave alone:". The plan prints before anything runs, so past tense read wrong.
-	- Branch: staged, stagedpr
-	- Commit: 9f53a91, 7c3281d
-	- Test case: Go tests `[Err7CYL]`, `[Err7CYY]`, `[Err7CYm]`. test.bash `[Err7W8V]` through `[Err7WAA]`, 18 checks, with `[Err7W97]` off since 2026-10-05. For `pr create` and `release`: `[ErrG0tG]` through `[ErrG0uY]` and `[ErrG0uf]` through `[ErrG0uu]`, 12 checks.
-	- Swept: every `--autostash` and `git add --all` in `src-go`. The commit and the pull in mutate.go, br create from `main` or `dev` in branchcmd.go, and both plan lines in preview.go. The file list in repo.go is for `repo create` and `repo connect`, which refuse the flag. The pulls in pr.go and release.go run on a clean tree, and those commands refuse the flag.
-	- Swept (2026-10-05, `pr create` and `release`): every step after their commit. In release.go the pulls of `dev` and the default branch, both checkouts, the merge and its back-out, the tag, both pushes, and the fast-forward of `dev`. Its nothing-new check read the whole tree as work to release, and now reads the index under the flag. In pr.go the push and the `gh` or `tea` call. `pr ok` reads the whole tree to refuse, and refuses the flag. The line above about pr.go and release.go held only while they refused the flag.
-	- Acceptance signoff: 2026-10-05, all 3 choices answered.
-	- Closed: 2026-10-05
-
-- macOS release gets a universal binary
-	- ID: 2026100313491873
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature]: Avg
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Related IDs: 2026100312571262
-	- Requirements  [Feature]:
-		- MacOS gets a universal binary for both amd64 and ARM.
-	- Notes:
-		- Dogfood already builds one with `macho-universal.bash`. Release assets still publish `darwin/amd64` and `darwin/arm64` apart.
-	- Decisions:
-		- It replaces the two `darwin/amd64` and `darwin/arm64` assets, rather than sitting beside them (2026-10-03).
-		- Published as `gitsby-darwin-universal`. On a Mac, `--arch` is noted and changes nothing.
-	- Progress log:
-		- Done: the release builds both Mac CPUs and joins them with `macho-universal.bash`, as dogfood does. Both installers ask any Mac for the one file. The release proof checks it against `SHA256SUMS` from Linux, where it can't run. README says how to rebuild it, and design.md has the decision.
-		- Verified: release.bash's own cross-build, run twice from an empty build cache each time, wrote the same `SHA256SUMS` over seven assets, with no per-CPU Mac file left beside them. `file` reads the Mac one as a universal binary holding both builds.
-		- Verified: a release dry run, the gate, and the full test.bash, 1337 passed.
-		- Verified: 9 new checks pass, and all 9 fail on the tree before.
-		- Note: the Go installer can't install v2.1.0 on any platform, before or after this. That release publishes the `gitsby` and `gitsby.ps1` scripts, not per-platform binaries.
-	- Branch: macuni
-	- Commit: 28b8f2d
-	- Test case: test.bash `[ErgCzfP]`, `[ErgCzfc]`, `[ErgCzfq]` (install.bash on a Mac), `[ErgDQ7N]` (install.ps1, pinned since pwsh can't fake a Mac), `[ErgCzeJ]`, `[ErgCzeW]`, `[ErgCzek]`, `[ErgCzey]`, `[ErgCzfB]` (release.bash).
-	- Swept: every `darwin` and `arm64` reader in the repo. release.bash, config.bash, both installers, the installer and release fixtures in test.bash, README, design.md and the changelog. cicd.bash dogfood already joins. Nothing in `src-go` reads asset names. `legacy/` is frozen.
-	- Verified: stage 7 on b26 (2026-10-04) passed the installer checks with stubbed downloads, `[ErgCzfP]`, `[ErgCzfc]` and `[ErgCzfq]` among them.
-	- Verified 2026-10-05 on b26, an Intel Mac on macOS 15.8: the real universal build, served as a stand-in pre-release in place of GitHub. install.bash piped into the stock bash 3.2, and install.ps1 under pwsh, each found the pre-release, checked the sum, installed it and ran it. `lipo` lists both CPUs, and the arm64 half keeps a valid ad-hoc signature after the join.
-	- Not run here: the download from GitHub itself. release.bash downloads and checks the Mac file from every real release. Running it on Apple silicon moved to the deferred ARM hardware item.
-	- Acceptance signoff: OK, 2026-10-05, after the b26 install.
-	- Closed: 2026-10-05
-
-- Run the windows/arm64 build somewhere
-	- ID: 2026100507345200
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature]: Avg
-	- Opened: 2026-10-05
-	- Opened by: jim-collier
-	- Related IDs: 2026100413264100
-	- Requirements  [Feature]:
-		- The release publishes `gitsby-windows-arm64.exe`, but no box runs it. Stage 7 runs Windows tests on amd64 only, on vm925w.
-	- Notes:
-		- vmDebARM64 has Wine. In theory the windows/arm64 build runs there, slowly, since that CPU is emulated.
-		- First probe: whether that Wine runs an ARM64 PE at all, with `--version` and then the Go test binary. Not run yet. The box was held by another session on 2026-10-05.
-		- If it runs, stage 7 could run the windows/arm64 Go tests there, under Wine, beside the linux/arm64 run. Wine is not Windows, so it would add to vm925w's run, not replace it.
-	- Progress log:
-		- Verified: vmDebARM64 has Debian's Wine 10.0 for arm64, with the ARM64 Windows libraries. gitsby and its Go tests both build for windows/arm64 as ARM64 PE files.
-		- Tried 2026-10-05: `gitsby.exe --version` under Wine, as the test user, over ssh with no display. It never printed anything. Wine's own first-run setup spun at full CPU for 12 minutes and wrote nothing to the new Wine folder. The Go test binary was not tried, since no Windows program gets that far.
-		- Verified: every Wine process there faults with an illegal instruction, over and over, on the first instruction of Wine's own system call entry points. That is inside Wine, before any of gitsby's code runs.
-		- Cause, inferred: branch protection. The emulated CPU has it, Debian builds Wine's library marked for it, and those entry points lack the instruction it requires. Not confirmed by turning it off, since that takes root plus a reboot or a VM change. The C library there has no per-program switch for it.
-		- Not changed: stage 7 and the docs. Nothing runs under Wine there yet.
-		- Question: run it at all? One way is to give vmDebARM64 a CPU model without branch protection, which changes its linux/arm64 runs too. Another is `arm64.nobti` on its kernel command line plus a reboot. Or leave windows/arm64 untested until a Wine fix.
-		- Answered 2026-10-05: `arm64.nobti` on vmDebARM64's kernel command line, kept across reboots.
-		- Done: the boot loader config there adds `arm64.nobti`. How to undo it is in the private notes.
-		- Verified: after the reboot the kernel line has it, the kernel no longer reports branch protection, and the CPU flags no longer list it.
-		- Verified: that was the cause. Wine's first-run setup finished in about 90 seconds, and `gitsby.exe --version` printed the version in 1 second.
-		- Verified: the windows/arm64 Go tests under Wine, first run: 171 passed, 6 failed, 22 skipped, in under a minute. All 6 make a symlink. Wine's symlink call reports success and makes nothing. That is a known Wine stub, and a small probe there showed it.
-		- Fixed: the tests check the link is there after making it, and skip or drop the link case when it isn't. Under Wine that gives 173 passed, 26 skipped, none failed. The Go tests here still pass.
-		- Verified: linux/arm64 on that box still works after the change. The native `--version` runs, and its Go tests pass, 198 with 1 skipped.
-		- Done: stage 7 runs the windows/arm64 Go tests under Wine on vmDebARM64, after its linux/arm64 ones. It adds to vm925w's run; that is unchanged. README, contributing.md and the script headers say so.
-		- Verified: stage 7's script alone, against vmDebARM64 only and without test.bash, passed both Go test runs in 3 minutes, Wine's first-run setup included.
-		- Note: Wine there has no Windows git, so the tests that need git skip under Wine. vm925w still runs those.
-		- Verified 2026-10-05: a full stage 7 run passed on every box. Under Wine, 173 passed and 26 skipped. vmDebARM64's test.bash passed 1438, b26's 1255 and vmFreeBSD's 1179, none failed. b29w ran the Windows Go tests, symlink helper included, since vm925w was held: 180 passed, 19 skipped.
-	- Branch: winebti, winenobti
-	- Commit: cda31a7
-	- Test case: stage 7's Wine run on vmDebARM64. The 6 symlink tests failed under Wine before the fix, and pass or skip after.
-	- Swept: every `os.Symlink` in the Go tests, 8 sites. Code outside the tests makes no links.
-
-- Code Review 20261003 enhancement 2: Network probes run one after another
-	- ID: 2026100313123988
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature]: Avg
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Prereq IDs: 2026100313123975
-	- Requirements  [Feature]:
-		- `status` and `whoami` in a token-file account folder wait on two `gh api user` calls and an `ssh -T`, in turn. With 300 ms each that is about 950 ms where 300 would do.
-		- `account list` starts `gh` once per account, in turn. `account apply`, `set` and `unset` pay it too, since they print the list.
-	- Decisions:
-		- Against: the public style guide allows goroutines only with a measured reason. The 950 ms against 300 above is that reason, so the fix may use them.
-		- The first probe might be replaced by a local `gh config get` read, with no goroutine at all. Try that first.
-	- Origin: account.go and accountcmd.go. The per-account `gh` call was measured in 20260909 item 19 and kept. Confirmed with injected delays.
-	- Progress log:
-		- Done: the first probe reads gh's active login from gh's own config, with no network. Only a token already in the environment still sends it to the API, since that token outranks the config.
-		- Done: the token-file check and the ssh probe start ahead, and each is read where its line prints. The token check starts when the token is exported, so it also runs alongside the fetch. `whoami` and the commands that write through gh start theirs the same way. Output order is unchanged.
-		- Done: `account list` asks gh about every login at once, up to eight at a time, then prints in the same order. The per-login cache from 20260909 item 19 stays.
-		- Done: a probe nobody read is killed when the run ends.
-		- Verified: with 300 ms injected on each round trip, best of 3 on b23: status in the ssh account folder 930 -> 319 ms, whoami there 923 -> 316, status in the https folder 624 -> 316, status with a failed fetch 628 -> 319. With 300 ms on gh's token store as well: status 1228 -> 621, account list with three accounts 917 -> 615. Output is byte for byte the same in all five.
-		- Verified: spawn counts unchanged on all 14 measures. The config read replaces one gh call one for one.
-		- Verified: `[ErkSC4L]`, `[ErkSctG]`, `[ErkSC4Z]` and the changed `[Er1LxSk]` fail on the build before this and pass after. `[ErkSC4L]` and `[ErkSctG]` also fail with only the ssh probe put back in turn. `[ErkSC48]` fails with the end-of-run kill taken out. The affected test.bash blocks pass 103/0, also on a race-enabled build with no race reported. `go test -race ./...` and the gate (lint and Go tests) are clean.
-		- Note: `[Er1LxSk]` now looks for the config read and no API call, and `[Er1LxSl]` and `[Er1LxSm]` refuse either one. `[Er1LxSn]` runs with a token already in the environment, the one case that still reaches the API. The rule they check, ask only where a block prints, is unchanged. The fake gh stubs answer `config get ... user`.
-		- Note: offline, the identity block can now name gh's active account from its config, where it said nothing before. Display only.
-	- Swept: every caller of `ghLogin`, `sshLogin` and `ghTokenFor`. The probes in `settleGh`, `selectAccount`, `identityGate` and the identity block lines all read through the same caches. `showHostLine` asks tea, which reads a local file, so it stays as it was.
-	- Branch: probes
-	- Commit: 545712a
-	- Test case: test.bash `[ErkSC4L]`, `[ErkSctG]`, `[ErkSC4Z]`, `[ErkSC4m]` (regression guard), `[Er1LxSk]`; Go `[ErkSC3h]`, `[ErkSC3v]`, `[ErkSC48]`, `[ErkTEpz]`.
-	- Verified: test.bash 1408/0, `go test ./...`, fuzz.bash 301/0 and parity 29/0 on merged gover, 2026-10-04.
-	- Acceptance signoff: Self-closed: the goroutines have the measured reason the style guide asks for, output is unchanged, and the checks fail before and pass after.
-	- Closed: 20261005-072140
-
-- Release notes group the downloads in a table
-	- ID: 2026100415020736
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature]: Avg
-	- Opened: 2026-10-04
-	- Opened by: jim-collier
-	- Requirements  [Feature]:
-		- When creating a release, use a table to group downloads.
-		- CPU architecture goes in columns, and target OS in rows.
-	- Notes:
-		- The release body is the changelog section verbatim today. GitHub lists the assets in a flat list under it.
-		- macOS is one universal file, so its row doesn't split by CPU the way the others do.
-	- Decisions:
-		- The table goes in the changelog's release section too, so the release body stays a verbatim copy of that section. release.bash writes it into the section when it cuts the release, from the actual asset list (2026-10-04).
-		- Rows are target OS (Linux, macOS, Windows, FreeBSD, whatever the release publishes). Columns are CPU (amd64, arm64). macOS is one universal file, `gitsby-darwin-universal`, so its row doesn't split by CPU. Each cell links the asset's download URL for that tag (2026-10-04).
-		- `SHA256SUMS` and the install scripts go on one line under the table (2026-10-04).
-		- The macOS file is linked under both CPU columns (2026-10-04).
-	- Progress log:
-		- Done: release.bash phase 2 adds a `### Downloads` table at the foot of the section it retitles, built from the files phase 1 made. Rows run Linux, macOS, Windows, FreeBSD, then any other OS. Columns run amd64, arm64, then any other CPU. A missing file shows `-`. One line below links `SHA256SUMS` and the tag's `install.bash` and `install.ps1`.
-		- Done: the macOS file is linked under both CPU columns, since a markdown table cell can't span two. That is one reading of "doesn't split by CPU", for signoff.
-		- Done: phase 1 refuses a vNEXT section that already has a `### Downloads` heading. Phase 3 warns when the table and the files it publishes disagree. With no binaries built, phase 2 warns and writes no table.
-		- Done: design.md and the changelog say so. The repo name is set once in release.bash.
-		- Verified: shellcheck on both scripts, `test-id.bash --check`, and markdownlint on changelog.md and design.md. A table written into a copy of the real changelog passed markdownlint.
-		- Verified: the release.bash block of test.bash, 38 passed. Against release.bash before the change, four of the five new checks fail. `[Erm33XL]` held before too, since the body was already the section.
-		- Not run: the full test.bash, the gate, and a real cut.
-	- Branch: dltable
-	- Commit: 035cb8e
-	- Test case: test.bash `[Erm33Wu]`, `[Erm33X8]`, `[Erm33XL]`, `[Erm33XZ]`, `[Erm33Xn]`.
-	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
-	- Note: the installers read `SHA256SUMS` and the release list, never the body, so they are untouched.
-	- Question: a table cell can't span two columns, so the macOS universal file is listed under both amd64 and arm64. Is that the wanted reading of "its row doesn't split by CPU"?
-		- Answer: yes, both columns. Moved to Decisions.
-	- Acceptance signoff: Self-closed: its one question is answered, and the checks fail before and pass after. The first real cut runs it against GitHub, and phase 3 warns if the table and the published files disagree.
-	- Closed: 20261005-072140
-
-- The plan shows `@{u}` where it could name the branch
-	- ID: 2026100316463300
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature]: Low
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Related IDs: 2026100313124002
-	- Requirements  [Feature]:
-		- The pull step's plan line names the upstream, such as `git merge --ff-only --autostash origin/feature`, rather than `@{u}`.
-		- The step runs with that same name, so the plan still shows exactly what runs.
-	- Decisions:
-		- The resolved name over `@{u}` (2026-10-03). It reads plainly and says which remote branch comes in.
-	- Notes:
-		- The plan already reads each branch's upstream with one `for-each-ref`, so this needs no new git call. The spawn-count limits will show if it does.
-	- Actual effort: Low
-	- Done: The pull step names the upstream the way git shortens it, such as `origin/feature`, in the plan and in the step that runs. For the current branch one `rev-parse` gives both the full and the short name. For the others, the one branch read gives them.
-	- Done: A branch the run will check out from origin names origin's copy. Where a tag also answers to the short name, git spells it out further, as `remotes/origin/feature`, and that is what shows and runs. A local upstream whose name starts with a dash goes by its full ref, so git can't read it as an option.
-	- Done: A branch with no upstream still shows `@{u}`. Its step is skipped, so there is nothing to name.
-	- Done: design.md has the rule, the plan example in style-guide_ui-ux.md shows the name, and parity's mapping of the pull line names it too.
-	- Note: No spawn count changed. The same calls ask for one more field each.
-	- Note: [ElHNo4O] and [Erg9NT0] matched `@{u}` and now match the name. What each checks is unchanged.
-	- Note: A tag named after origin's default branch breaks the default branch read. That was there before this item and is filed as 2026100411344972.
-	- Swept: `grep -n '@{u}' src-go/*.go`. Both runners and every plan line go through `pullArgsFor`. The other `@{u}` uses are reads, such as ahead and behind and the incoming list, not steps the plan shows.
-	- Verified: test.bash 1406/0, parity 29/0, `go test -race`, and `cicd.bash --gate`. On the build before this item, [Erg9NT0], [Erl2Vub], [Erl2Vup] and [Erl2Vv4] fail. [Erl2VvI] passes there too, since the old plan and step both said `@{u}`. With the step handed a different name than the plan, it fails.
-	- Branch: spawncut
-	- Commit: 7979ffb
-	- Test case: test.bash [Erl2Vub], [Erl2Vup], [Erl2Vv4], [Erl2VvI] and [Erl2eIe]. Go `TestPullArgsFor` [ErgA5KD] and `TestUpstreamNames` [Erl1x3E].
-	- Acceptance signoff: Self-closed: the rule was set by hand on 2026-10-03, and the checks fail before and pass after.
-	- Closed: 20261005-072140
 
 - test.bash removes the folder it was started from when mktemp fails
 	- ID: 2026100415391365
@@ -1149,6 +255,203 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [Erfs74j] and [Erfs75a] in test.bash. They run release.bash past its dry run, with gh, curl and gitsby stubbed. The second is the first run of the phase 3 `releases/latest` block.
 	- Acceptance signoff: Self-closed: reproduced, and the checks fail before the fix and pass after.
 	- Closed: 20261003-141520
+
+- Updates to CICD script flags
+	- ID: 2026101816064793
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261018-160647
+	- Opened by: jim-collier
+	- Milestone: Pre-next-cut. Do next.
+	- Requirements [Feature]:
+		- `--gate` keeps its name. No `--ci` alias.
+		- `--quick`:
+			- Runs whatever linting, validation, and testing steps are very quick.
+			- Cross-compiles whatever is fast; e.g. maybe skip slow arm64.
+			- Skips anything requiring an external host.
+		- No flags by default does everything.
+		- The other existing flags can stay.
+	- Note: `--gate` is also named by the pre-push hook `--install-hook` writes, and in the README and memory.
+	- Progress log:
+		- 2026-10-18: Each step was timed on b23, at a load of about 16. Every cross-build takes 4 to 6 s, arm64 included, and the lint stage about 23 s in all. The regression suite takes about 100 s, and the native fuzz targets 5 s each for 8 targets. fuzz.bash takes about 7 s, the spawn counts 3 s, parity 2 s, and go test 3 to 12 s.
+		- 2026-10-19: The leak checks join the plain full run, through 2026101912030152, so no flags does everything again.
+	- Decisions:
+		- The 30 s budget is per step. The lint stage alone is close to it, so a whole-run budget would leave nothing else.
+		- Sync and publish stay in `--quick`. They only fetch from and push to origin, the repo's own git host, and the requirement is about other hosts. `--no-sync` and `--no-publish` still turn them off.
+		- govulncheck is out of `--quick`, since it asks vuln.go.dev. That reverses the 2026-08-19 call that it runs there as a lookup.
+		- `--quick` runs fuzz.bash and the spawn counts now. Both take seconds. The native fuzz targets stay out.
+		- `--quick` dogfoods every target again, and builds the FreeBSD and Linux arm64 targets without testing them. That reverses review 20260819a item 18, whose reason was that cross-builds were the slow part. `[EnQTPxt] --quick narrows the cross-builds too` is off for that reason.
+		- The regression suite is out of `--quick`. That supersedes the 20260909 enhancement 7 call to keep it whole there. contributing.md now says to run the full pipeline before a PR.
+		- The demo gif stays out of `--quick`. It takes about 15 s, but it's not a check.
+	- Branch: cicdflags
+	- Test case: test.bash `[Et6FC3t]` for the `--gate)` arm the hook looks for. `[Et6FC4K]`, `[Et6FC46]`, `[Et6FC31]` and `[Et6FC2n]` for `--quick`. `[EnQTPxt]` is off since 2026-10-18.
+	- Swept: the help header, history footer, README, contributing.md and config.bash comments for both flags. pre-push.bash still finds `--gate)` in the option arm. design.md names only `--gate` and is unchanged. The test.bash helpers that used `--quick` as shorthand for skipping fuzz, the demo and the remote tests now name those flags.
+	- Acceptance signoff: Signed off by jim-collier in conversation, 2026-10-19.
+	- Closed: 20261019-150000
+
+- pip-audit fails every full run in the container on 8 new Pillow 12.3.0 advisories
+	- ID: 2026102113100000
+	- Type: Task
+	- Status: Done
+	- Needs local test suite run?: No. The plain full run in the container passed 2026-10-22.
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261021-131000
+	- Opened by: jim-collier
+	- Related IDs: 2026101905585018, 2026101912030152
+	- Requirements [Feature]:
+		- pip-audit in the image reports CVE-2026-112395, 112397, 112400, 112404, 112895, 112896, 112897 and 112899 against Pillow 12.3.0, all fixed in 13.0.0. Stage 3 stops there, so a plain full run in the container can't pass.
+		- Check each, then move the lock's Pillow to 13.0.0, or list on `PIP_AUDIT_IGNORE` any that can't reach the demo. A newer Pillow means rendering and comparing the gif again, as 2026101905585018 did.
+	- Progress log:
+		- 2026-10-21: Seen on a full run on b23. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-12295100/run1.log`. Stages 1 and 2 passed, test.bash 1594/0, and so did fuzz.bash 313/0, the native fuzz targets and govulncheck.
+		- 2026-10-21: Checked all 8 against PyPI's advisories. 4 are in TIFF decoding and saving (112395, 112404, 112896, 112897). The others are a PDF append (112895), a GIF seek after a decompression bomb error (112400), a zero-width PPM through ImageMorph (112397), and EPS through Ghostscript (112899). The demo opens no image file and saves only its own GIF, so none reach it.
+		- 2026-10-21: PyPI now lists 24 advisories against 12.3.0, all fixed in 13.0.0. 13.0.0 has a CPython 3.13 manylinux x86_64 wheel, and the lock's hash is the one PyPI gives. Its breaking changes touch nothing the renderer calls.
+		- 2026-10-21: The lock's Pillow is 13.0.0, and `PIP_AUDIT_IGNORE` still holds only fontTools' entry. The image's tag moved to `gitsby-cicd:6fd011f04201`.
+	- Decisions:
+		- Moved Pillow rather than listing the 8. The answer on 2026101905585018 allows it, 13.0.0 fixes them all, and a list of 24 would need its own upkeep.
+	- Branch: round-20261022
+	- Commit: 73d6a98
+	- Test case: test.bash [EtAFLx0] for the lock's Pillow, and pip-audit's [Et9PJsY] and [Et9R5lO]. The image build also stops on a Pillow other than the recorded one. No new check, since the audit in the image is what failed.
+	- Verified: Stage 3 and the demo stage in the new image. pip-audit is clean on Pillow 13.0.0 with fontTools' one entry set aside, govulncheck is clean, fuzz.bash 313/0, and the spawn counts pass. The demo gif renders byte for byte the same, so it didn't change. test.bash 1598/0, and `cicd.bash --gate` passes.
+	- Swept: `TOOL_VERSIONS`, the Dockerfile's Pillow check, which reads the ARG, and its apt comment, the lock's header, and contributing.md's demo prerequisite, which names no version. "12.3.0" is left only in the backlog and the history footer.
+	- Verified: 2026-10-22, a plain full run in the container on b23 passed every stage. Stage 3's pip-audit was clean on Pillow 13.0.0, and stage 6 rendered the demo gif unchanged. test.bash 1598/0, fuzz.bash 313/0, parity 29/0. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log`.
+	- Acceptance signoff: Self-closed: its own test, the plain full run in the container, passed.
+	- Closed: 20261021-203604
+
+- `--staged`: commit only what is staged, and leave the rest of the tree alone
+	- ID: 2026100512025340
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature]: High
+	- Opened: 2026-10-05
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- A `--staged` flag on `pullcom`, `sync`, and the branch commands that commit the tree before they move: `br create` off a feature branch, `br switch` and `br merge`.
+		- With it, the commit takes the index only. Nothing is staged, and unstaged or untracked edits stay where they are.
+			- Nothing staged means nothing is committed. The command goes on with the rest.
+			- On a checkout, the leftover edits come along, the way plain git does it.
+			- Where git would refuse that checkout, the plan says so before anything runs.
+		- The plan shows which files get committed and which stay behind.
+		- Without the flag, nothing changes.
+	- Notes:
+		- Each of those commands runs `git add --all` first today. In a tree with hand edits that aren't part of the change, that sweeps them in.
+		- `br create` from `main` or `dev` already carries edits over, and stays that way.
+	- Decisions:
+		- A flag, not a new command (2026-10-05). It keeps the count of commands down.
+		- Opt-in, not switched on by finding something staged (2026-10-05). A file staged long ago would quietly make the commit smaller, and under `-q` nobody reads the plan. Most users never think about the index, and shouldn't have to.
+		- It doesn't go against design.md's line that partial staging belongs to raw git. Gitsby still stages nothing itself. It only stops undoing a `git add` that was already made. design.md gets a line saying so.
+		- Before the first Go release, since flags and aliases are permanent after it.
+	- Estimated effort: Avg
+	- Progress log:
+		- Verified: git's autostash brings staged work back unstaged, on git 2.51. A file staged and then edited again lost its staged copy. Git's current source still reapplies it that way. A plain fast-forward with no stash kept the index, and where incoming commits touched a file with edits here, git refused and changed nothing.
+		- So with `--staged` no pull uses `--autostash`. Committing the staged part before the pull was the other way, but a remote that moved ahead would then be diverged.
+		- Done: `--staged` on `pullcom`, `sync`, `br create`, `br hotfix`, `br switch` and `br merge`. The commit takes the index only, and the plan lists what is committed and what stays. Nothing staged commits nothing, and the run goes on.
+		- Done: a pull or checkout that git would refuse over the edits left in the tree is refused before the plan, with nothing done. That is the reading taken of "the plan says so before anything runs": a plan that can't finish isn't shown. A pull from a remote other than origin can't be read ahead; git refuses that one at the time.
+		- Note: `br hotfix` takes the flag too, since it is the same recipe as `br create`. `pr create` and `release` also commit the whole tree, and refuse the flag for now. Adding it there later breaks nobody.
+		- Done: help, README, workflows.md, the changelog, and design.md, with the line the Decisions ask for and the autostash finding.
+		- Verified: `go test ./...` and the gate pass. The 18 new suite checks pass on their own. With `--autostash` put back on every pull, 6 of them fail. With the read-ahead turned off, 4 fail.
+		- Verified: the full test.bash on the merged tree, 1471/0 (2026-10-05).
+		- For signoff: `br hotfix` taking the flag, `pr create` and `release` refusing it, and the plan's two list labels, "staged, so committed:" and "not staged, so left as is:".
+		- Answered 2026-10-05: `br hotfix` taking the flag is OK.
+		- Answered 2026-10-05: `pr create` and `release` take the flag too, with the same rules as the other commands.
+		- Still open: the plan's two list labels. They are being looked at in context, and stay as they are until then.
+		- Done: `--staged` on `pr create` and `release`. Their commit takes the index only, no pull uses `--autostash`, and the plan lists what is committed and what stays. Nothing staged commits nothing, and the run goes on.
+		- Done: `release` reads ahead every pull and checkout up to the default branch, and refuses before the plan where git would stop. A file that passes is the same on every branch read, so the merge, the move back to `dev` and the last checkout can't touch it. Only the index counts as work to release, so a level repo with only unstaged edits says there is nothing new, as it would with a clean tree.
+		- Done: `pr create` parks the way `sync` does. Both `gh` and `tea` are handed the branch with `--head`, and with that neither looks at the working tree. Read in their source, not run against a real host.
+		- Done: `pr ok` still refuses the flag, since it commits nothing. The old test.bash check that release refuses the flag, `[Err7W97]`, is commented out with the reason, and `[ErrG0tG]` asks the same of `repo connect`. Go test `[Err7CYY]` now expects `pr create` and `release` to take it.
+		- Done: README, the changelog and design.md list the 2 commands. Help and workflows.md name no commands for the flag, so they needed nothing.
+		- Verified: `go test ./...` and the gate pass. The 12 new suite checks and the 25 around them pass on their own. Against the build before this, 10 of the 12 fail; the other 2, a plan with no `git add` and `pr ok` refusing, pass either way and guard against a regression. With the release read-ahead turned off, 2 fail. With the nothing-new rule back on the whole tree, 3 fail.
+		- Verified: the full test.bash on the branch, 1482/0 (2026-10-05).
+		- For signoff: the plan's two list labels only.
+		- Answered 2026-10-05: the labels read "Changes to commit:" and "Changes to leave alone:". The plan prints before anything runs, so past tense read wrong.
+	- Branch: staged, stagedpr
+	- Commit: 9f53a91, 7c3281d
+	- Test case: Go tests `[Err7CYL]`, `[Err7CYY]`, `[Err7CYm]`. test.bash `[Err7W8V]` through `[Err7WAA]`, 18 checks, with `[Err7W97]` off since 2026-10-05. For `pr create` and `release`: `[ErrG0tG]` through `[ErrG0uY]` and `[ErrG0uf]` through `[ErrG0uu]`, 12 checks.
+	- Swept: every `--autostash` and `git add --all` in `src-go`. The commit and the pull in mutate.go, br create from `main` or `dev` in branchcmd.go, and both plan lines in preview.go. The file list in repo.go is for `repo create` and `repo connect`, which refuse the flag. The pulls in pr.go and release.go run on a clean tree, and those commands refuse the flag.
+	- Swept (2026-10-05, `pr create` and `release`): every step after their commit. In release.go the pulls of `dev` and the default branch, both checkouts, the merge and its back-out, the tag, both pushes, and the fast-forward of `dev`. Its nothing-new check read the whole tree as work to release, and now reads the index under the flag. In pr.go the push and the `gh` or `tea` call. `pr ok` reads the whole tree to refuse, and refuses the flag. The line above about pr.go and release.go held only while they refused the flag.
+	- Acceptance signoff: 2026-10-05, all 3 choices answered.
+	- Closed: 2026-10-05
+
+- Stage 7 fails b26 when a Finder window is open on the test folder
+	- ID: 2026100611181887
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Avg
+	- Opened: 20261006-111818
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: The full run on 2026-10-06 failed b26 before any test ran. The tree there held only `.git` and 3 `.DS_Store` files, all from the run's minute.
+	- Expected behavior [Bug]: A Finder window on the folder doesn't stop the run.
+	- Reproduced [Bug]: Yes, on Linux, with a file in the old tree that `rm` can't remove. The copy step exits 1 and leaves the same half-removed tree.
+	- Actual cause [Bug]: Finder rewrites `.DS_Store` while `rm -rf` runs, the rmdir fails, and `set -e` ends the copy step.
+	- Actual fix [Bug]: The old tree is moved aside to `old.<pid>` before it's removed. What won't go gets a note, and another try next run.
+	- Branch: ptyguard
+	- Test case: None in a suite. Checked by hand against the old and new step.
+	- Note: Not yet run on b26, which was held by another session. The next full run there closes it.
+	- Verified: the full run on 2026-10-19 copied the tree to b26 and passed there, test.bash 1346/0.
+	- Acceptance signoff: Self-closed. The item asked for one full run on b26.
+	- Closed: 20261019-084100
+
+- test.bash's `--direct` prompt check fails on FreeBSD and macOS
+	- ID: 2026100611181886
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Avg
+	- Opened: 20261006-111818
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: [ErsjjF5] failed on vmFreeBSD in stage 7 on 2026-10-06, 1222/1.
+	- Reproduced [Bug]: Yes, by running test.bash again on vmFreeBSD.
+	- Actual cause [Bug]: The check answers the prompt through util-linux `script -qec`, and the BSD `script` doesn't take it. Every other prompt check sits under `hasPty`. This one, from e1cc030, didn't.
+	- Actual fix [Bug]: Put it under `hasPty`.
+	- Branch: ptyguard
+	- Verified: test.bash 1222/0 on vmFreeBSD.
+	- Closed: 20261006-111818
+
+- Code Review 20261005 item 1: workflows.md says gitsby won't push your own work to `main` or `dev`, and it does
+	- ID: 2026100516202544
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Avg
+	- Opened: 2026-10-05
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: workflows.md says "There's no command for 'push to `main` anyway'", and that gitsby won't push your own work to `main` or `dev` even with permission. `pullcom` commits there and `sync` pushes there, and the plan says nothing about it. The refusal on a dirty `main` or `dev` even suggests `gitsby pullcom` to commit there on purpose. The README's first line says the tool enforces the workflow.
+	- Expected behavior [Bug]: The docs and the tool say the same thing.
+	- Reproduced [Bug]: Yes. A clone of a bare origin, one edit on `main`, then `gitsby sync -q -m x` pushed `main -> main` and exited 0. The same on `dev`.
+	- Origin: workflows.md:96 from ab8d389 and :105 from 584e0ff, both 2026-07-28. The behavior is older. The 2.x refusal named `update` as the way to commit on a protected branch on purpose. No earlier round saw it. Confirmed.
+	- Note: 2 ways out. Reword workflows.md to say gitsby steers work onto branches and still allows a deliberate commit on `main` or `dev`. Or warn above the prompt when the push goes to `main` or `dev`. Refusing is out, since the tool's own advice and every repo with no `dev` lean on it.
+	- Note: The reword is the smaller change. A warning would show on every push in a GitHub Flow repo that commits to `main`.
+	- Progress log:
+		- 2026-10-05: The fix chosen is a warning on stderr before going ahead, with a flag to turn it off.
+		- 2026-10-05: The flag is `--direct`. `-q` without it refuses, per the UI style guide's rule for warnings, since the question about `-q` went unanswered.
+		- 2026-10-05: Warning reworded as given in review. The `-q` refusal starts with the same sentences.
+	- Decisions:
+		- A warning plus `--direct`, not a refusal and not a doc reword alone (2026-10-05).
+		- A flag for this one case, not a general `--no-warn` (2026-10-05).
+	- Actual fix [Bug]: `sync` on `main`, `dev` or the default branch warns on stderr above the prompt when it would push commits made on that branch, or commit a dirty tree there. Under `-q` it refuses and names `--direct`. A merge left for `sync` to publish doesn't count, so `br merge` offline and the hotfix back-merge still publish without it. workflows.md, the README, design.md and the UI style guide say so.
+	- Note: [ElHQEx6], [EknhbCN] and [Erg9NTg] sync on `main` to test sync itself, and now pass `--direct`. What each checks is unchanged.
+	- Branch: direct
+	- Commit: e1cc030
+	- Test case: test.bash [ErsjjDN] refuses under `-q`, [ErsjjEE] pushed nothing, [ErsjjF5] warns above the prompt on a pty, [ErsjjFy] help lists it. Each red on `gover`. [ErsjjGp] a clean re-run and [ErsjjHh] a merge published from `dev` stay quiet, each red with the merge and clean-tree tests taken out.
+	- Closed: 20261005-190835
+
+- `br switch HEAD` commits and pushes the working tree, then fails
+	- ID: 2026100607545807
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Avg
+	- Opened: 20261006-074900
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: `origin/HEAD` was counted as a branch on origin. So `br switch HEAD` passed the check that the branch exists, parked the dirty tree with a commit and a push, then failed at `git checkout -b HEAD`.
+	- Expected behavior [Bug]: Refuse before touching anything.
+	- Reproduced [Bug]: Yes, with a dirty tree on a pushed feature branch.
+	- Actual cause [Bug]: `branchRefs` read every `refs/remotes/origin/*` as a branch, `HEAD` included.
+	- Actual fix [Bug]: `origin/HEAD` is skipped there.
+	- Swept: `branchRefs` is the one place origin's branches are read for the existence checks.
+	- Branch: fuzzwork
+	- Commit: c1b10fc
+	- Test case: fuzz.bash [Ervo5NW]. Red on `gover`'s code, green here.
+	- Verified: fuzz.bash 311/0, test.bash 1491/0, parity.bash 29/0 on the branch.
+	- Acceptance signoff: Self-closed: reproduced, red before the fix and green after.
+	- Closed: 20261006-075458
 
 - test.bash's binary checks fail on macOS
 	- ID: 2026100409453279
@@ -1288,6 +591,322 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: dup-acct
 	- Test case: TestRepeatedAccountKeys, TestAccountSetFindsTheKeyInAnyPiece, and one account list check in test.bash.
 	- Closed: 2026-09-30
+
+- Builds should clean up stale artifacts and side-effects when done
+	- ID: 2026101912030138
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261019-120301
+	- Opened by: jim-collier
+	- Milestone: Pre-next-cut.
+	- Requirements [Feature]:
+		- Verify or ensure that builds clean up stale artifacts and side-effects after they're done.
+			- Caches, container cruft, tmp files, etc.
+	- Progress log:
+		- 2026-10-19: Checked each kind on b23. The harnesses, release.bash and the utilities already remove their temp folders on exit. Artifacts under `cicd/artifacts/` are rotated or capped at 20. Containers run with `--rm`, a new image removes the one it replaces, and the build cache is all in use by images. The Go cache volume is kept on purpose, and Go trims its own build cache. The pre-push snapshot is kept on purpose too, for warm caches.
+		- 2026-10-19: 2 gaps were found and fixed. cicd.bash's own temp files were removed one by one, so a run stopped partway left them behind. They now sit in one folder per run, removed on exit, a TERM or Ctrl+C included. The demo's repos at `/tmp/gitsby-demo` stayed after every run off the container. Stage 6 now removes them through `demo-repo.bash --remove`, which keeps the script's ownership check.
+	- Branch: leakflags
+	- Test case: test.bash `[EtBTWt7]` for the temp folder after a pass, a stop and a TERM, and `[EtBTWtL]` for the demo's repos.
+	- Verified: Both fail against gover's cicd.bash. test.bash 1571 -> 1579, 0 failed, and `cicd.bash --gate` passes. `demo-repo.bash --remove` removed a world it built, refused a folder it didn't, and passed on one that wasn't there.
+	- Note: Needs one real full run, in the container and with `--no-container`, to see `/tmp/gitsby-demo` and the scratch folder gone.
+	- Verified: 2026-10-21 on b23. A `--no-container` full run passed every stage, and after it `/tmp/gitsby-demo`, left there by a run on 10-19, was gone, and so was its scratch folder. A full run in the container stopped in stage 3 on pip-audit (2026102113100000), and its scratch folder was still gone, as was the one from a `--quick --leakcheck` run there. No gitsby-cicd container was left, and no new untagged image. The container's `/tmp` is a tmpfs that goes with it, so its demo repos can't outlive it.
+	- Note: Reopened 2026-10-22. The container half never reached stage 6, so it still needs one full run there that passes.
+	- Verified: 2026-10-22 on b23. A full run in the container passed every stage, stage 6 and stage 7 included. After it its scratch folder was gone, `/tmp/gitsby-demo` wasn't there, no gitsby-cicd container was left, and there was no new untagged image. A `--no-container --no-remote` full run then passed too, with the same 4 checks clean. Logs: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log` and `run2.log` beside it.
+	- Acceptance signoff: Self-closed: the full run in the container passed with nothing left behind, which was all that was left.
+	- Closed: 20261021-203604
+
+- CICD gets `--leakcheck` and `--no-leakcheck` flags
+	- ID: 2026101912030152
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261019-120301
+	- Opened by: jim-collier
+	- Milestone: Pre-next-cut.
+	- Related IDs: 2026101816064793, 2026101816064794
+	- Requirements [Feature]:
+		- CICD should have both `--leakcheck` and `--no-leakcheck`.
+			- `--leakcheck` is useful to add back in for `--quick`.
+			- `--no-leakcheck` is useful to exclude it from the default, or with `--quiet`.
+	- Decisions:
+		- The leak checks run on a plain full run. `--quick` and `--no-fuzz` both turn them off, since they're part of stage 3. Either flag wins over that, in any order. Both together are refused.
+		- A plain run off the container, with no CodeQL, warns and skips CodeQL like govulncheck. `--leakcheck` asked for by name still stops there.
+		- The run in the container gets the flag as given. It gets `--quick` and `--no-fuzz` too, so it works out the same default.
+	- Branch: leakflags
+	- Test case: test.bash `[EtBTWs2]`, `[EtBTWsG]`, `[EtBTWsT]`, `[EtBTWsg]`, `[EtBTWsu]` and `[EtBTWta]`, plus `[Et9PJrE]` and `[Et9PJs6]` reworded with the same IDs.
+	- Verified: Every one fails against gover's cicd.bash. test.bash 1571 -> 1579, 0 failed, and `cicd.bash --gate` passes. `[Er1LxTW]`'s stage 3 run takes `--no-leakcheck` now, since its fixture's go stub has no soak test.
+	- Swept: the help text, stage 3's header line, README, contributing.md, config.bash comments and both history footers.
+	- Note: A full run now takes CodeQL's time, once per release OS plus Python. Needs one real full run to see it pass in the container.
+	- Verified: 2026-10-21 on b23. A plain full run in the container stopped in stage 3 on pip-audit, on new Pillow advisories (2026102113100000), before the leak checks. A `--quick --leakcheck` run there then passed: the soak test in about 15 s, and CodeQL clean on darwin, freebsd, linux and windows at about 15 s each and Python at about 45 s, so the leak checks add about 2 minutes. The rest of stage 3 took about 1.5 minutes in the stopped run. A `--no-container` full run warned and skipped CodeQL, and passed.
+	- Acceptance signoff: Self-closed: the flags and the leak checks passed in the container. The pip-audit stop is its own item.
+	- Closed: 20261021-130500
+
+- Leak, memory, and correctness checks in CICD
+	- ID: 2026101816064794
+	- Type: Enhancement
+	- Status: Done
+	- Needs external testing: Done 2026-10-19. A full run passed stage 7 on b26, vmFreeBSD, vmDebARM64 and vm925w.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261018-160647
+	- Opened by: jim-collier
+	- Milestone: Pre-next-cut.
+	- Related IDs: 2026101816064793, 2026101009380628
+	- Requirements [Feature]:
+		- For all code:
+			- The checks cover first-party and third-party code. Vendored code is included.
+				- On third-party code, run the leak, memory, and correctness checks named here, not style lints. Style findings in someone else's module aren't ours to fix.
+				- CodeQL reports only on source inside the database's root. For its run, vendor the dependencies into the tree first (`go mod vendor`, unpacked sdists for Python).
+			- Any report fails the test that made it.
+			- Any leak is fixed. If the fix has to wait, it gets a backlog item, and the test that shows it turns the check off with that item's ID beside it.
+			- A `--leakcheck` flag adds the slow checks:
+				- CodeQL, from a pinned CLI run locally. No hosted service.
+				- A soak test. It loops through the program's main actions headless, and fails if the heap at round 2N is larger than at round N by more than a set margin. The heap report is kept as a pipeline artifact.
+			- Every tool is pinned and runs in the build container or lint image, never installed on the host.
+			- Each new gate is watched to fail before it's trusted, by planting the leak it's meant to catch and seeing it go red.
+			- Known-advisory scans run on every full run: `govulncheck` and `pip-audit`. They cover third-party code only, which is the point.
+		- For Go:
+			- Go leaks are goroutines that never exit, and references held too long: a map or slice that only grows, or a small slice keeping a big backing array alive.
+			- Every package's tests run `goleak.VerifyTestMain(m)` from `go.uber.org/goleak`, pinned in go.mod. A goroutine still running after the tests fails the run, whether our code or a dependency started it.
+			- Every full run runs the whole test suite with `-race`.
+			- If the code uses cgo, every full run also runs the tests with `-asan`, in a build dir of its own.
+			- Every full run runs `go vet` and `staticcheck`. `go vet`'s `lostcancel` and `copylocks` checks are the leak-related ones.
+			- The soak test reads `runtime.MemStats.HeapInuse` and `runtime.NumGoroutine()` at round N and 2N, after `runtime.GC()`. Its heap profile (`pprof`) is kept as the artifact, and `go tool pprof -base` shows what grew.
+			- Traps:
+				- `goleak.VerifyNone` per test doesn't work with `t.Parallel()`. Use `VerifyTestMain`.
+				- goleak ignores by function name. That's the only form of suppression allowed.
+				- `go test` caches a pass. Run with `-count=1`.
+				- One `runtime.GC()` can leave garbage behind. Call it twice before reading the stats, or the margin has to be wide enough to hide a real leak.
+				- `-race` needs cgo on some platforms. A job with `CGO_ENABLED=0` fails to build it or skips it, so check the job's env.
+				- `-race` is 2 to 20 times slower and uses 5 to 10 times the memory. Size the job's timeout for it.
+		- For Python:
+			- Python leaks are references held too long: module-level caches, `functools.lru_cache` on a method, closures kept in a global list, and C extensions that drop a reference count.
+			- Every full run runs the tests with `-X dev` and `-W error::ResourceWarning`, so an unclosed file or socket fails the test.
+			- Every full run runs the tests under `pytest-memray`. Each test that loops gets `@pytest.mark.limit_leaks(...)` with a margin. memray sees native allocations, so leaks in C extensions show up, third-party ones included.
+			- After the tests, `gc.collect()` runs, and `gc.garbage` must be empty.
+			- The soak test takes `tracemalloc` snapshots at round N and 2N and fails on growth past the margin. The top lines of `snapshot.compare_to()` are kept as the artifact.
+			- ruff runs `B019` (`lru_cache` on a method), `SIM115` (`open` with no context manager), and `B006` (mutable default argument).
+			- `--leakcheck` also runs the tests on a CPython built with `--with-address-sanitizer`, under `PYTHONMALLOC=malloc`, for C extensions.
+				- The interpreter's own reports are suppressed by library name, `libpython` only.
+			- Traps:
+				- Start `tracemalloc` before importing the code under test, or allocations made at import aren't traced.
+				- The first rounds fill caches: the regex cache, interned strings, freelists, and lazy imports. That's why it's round N against 2N, never 0 against N.
+				- `tracemalloc` sees only allocations made through Python's allocator. A C extension calling `malloc` directly is invisible to it. memray covers that.
+				- memray runs on Linux and macOS only. On Windows, the test exits as skipped, not passed.
+				- pytest keeps the traceback of a failed test, which keeps its frames alive. A leak count from a run with failures means nothing.
+				- `ResourceWarning` shows only in dev mode or with `-W`. A plain run hides it.
+				- Without `PYTHONMALLOC=malloc`, ASan can't see inside pymalloc's pools.
+	- Note: The Rust, C, and C++ parts of the list were left out, since there's no code in those here. The only Python is the demo gif script, which uses Pillow, cairo, Pango, and fontTools, and it has no tests yet. The Go code starts one goroutine (`startAhead` in app.go), and builds use `CGO_ENABLED=0`.
+	- Progress log:
+		- 2026-10-19: Everything but CodeQL is in, on `leakchk`. CodeQL is the part left. `fLeakCheck` in cicd.bash marks where it joins.
+		- 2026-10-19: Already there, so not added again: every full run had `go test -race`, `go vet` with its default analyzers, `lostcancel` and `copylocks` among them, and `staticcheck`. Only the builds set `CGO_ENABLED=0`. The image has gcc, so the race detector works there, and a planted data race failed it.
+		- 2026-10-19: Not applicable: `-asan`, since nothing imports "C". The test-time Python checks (`-X dev`, pytest-memray, `gc.garbage`, the tracemalloc soak, and an ASan CPython) wait until the demo script has tests to run them on.
+		- 2026-10-19: CodeQL is in, on `codeql`. `--leakcheck` runs it in the image over a scratch copy of the module, with `go mod vendor` done there. The Go extractor leaves out tests and vendor/ by default, so both are turned on. It runs once for each OS a release is built for, since the extractor sees one OS's files at a time.
+		- 2026-10-19: CodeQL found 2 problems in shcl 2.0.0, the old writer the tests use. Both are set aside until 2026101906343987.
+		- 2026-10-19: Split out: CodeQL over the demo script and its Python libraries, as 2026101907065426.
+		- 2026-10-19: A source check now stops any tracked script or Go file from running tmux, pkill or killall.
+	- Decisions:
+		- The soak test is a Go test, `TestSoak`, run in one process. It loops pullcom, br create, sync, br merge, status, br, whoami and br prune against a bare origin and a clone, 30 rounds and then 30 more. It skips unless `GITSBY_SOAK_ROUNDS` is set, so a plain `go test` doesn't run it. The heap margin is 256 KB; 2 reads differ by under 100 KB, on a heap under 2 MB.
+		- pip-audit checks the demo's libraries at the versions installed, given as pins, since they come from Debian's archive and not pip. Debian patches them without moving the upstream version, so the 18 advisories reported today are set aside in config.bash until 2026101905585018 checks them. A new one fails the run.
+		- ruff and pip-audit go into the image from a lock that pins every wheel by hash.
+		- CodeQL goes in the default image, not one of its own. The Go-only bundle adds about 400 MB on disk to a 2.6 GB image, and a second image would need its own tag, build and cleanup.
+		- On vendor/, only findings from queries tagged security, correctness or reliability count. The rest of the suite is style, such as a value assigned and never read.
+		- A finding is set aside by rule and file in `CODEQL_IGNORE`, with its backlog item beside it. An entry no report has any more fails the run.
+		- `--leakcheck --no-container` stops on a box without CodeQL rather than skipping it, since it was asked for by name.
+	- Branch: leakchk, codeql
+	- Test case: `TestMain` [Et9PJqa] runs goleak, and `TestSoak` is [Et9PJqo]. test.bash [Et9PJr1], [Et9PJrE], [Et9PJrS], [Et9PJrf], [Et9R5kx], [Et9R5lA], [Et9PJrt] and [Et9PJs6] for `--leakcheck`. [Et9PJsK] and the ruff pass of [EpsVDHv] for ruff. [Et9PJsY], [Et9R5kk] and [Et9R5lO] for pip-audit and `govulncheck -test`. [Et9R5lb] for `-count=1`, [Et9R5lo] for goleak in every Go package, and [Et9R5kW] for the image tag. [Et9ZcLy], [Et9ZcME], [Et9ZcMS], [Et9ZcMh], [Et9ZcMx] and [Et9ZcNC] for the CodeQL step, and [Et9aIeu] for its install. [Et9ZcNT], [Et9ZcNj], [Et9ZcO1], [Et9ZcOF], [Et9aIdh], [Et9aIdy], [Et9eeOv], [Et9aIeD], [Et9eeP9] and [Et9aIeR] for how its reports are read. [Et9aIeg] for tmux, pkill and killall.
+	- Verified:
+		- A goroutine left running in `startAhead` failed the unit tests through goleak. In the soak test, a goroutine left per run failed it on the count, and a 4 KB slice kept per run failed it on the heap, where `go tool pprof -base` named `run`. Each was restored by copy, and both pass after.
+		- ruff failed on a planted B019, SIM115 and B006, and `--gate` stopped on it. pip-audit failed in the image with one advisory taken off the list.
+		- test.bash 1524 -> 1540, 0 failed. The 16 new checks all failed against gover's cicd.bash and config.bash. A full container run with `--leakcheck` passed, with sync, dogfood, the demo, the remote tests and publish off.
+		- A planted `n == n` in app.go failed `--leakcheck` in the image, on CodeQL's comparison-of-identical-expressions query. Turning off the extractor's test option failed it too. Both were restored by copy, and the run passes after.
+		- test.bash 1540 -> 1560, 0 failed. The new checks all failed against gover's cicd.bash, config.bash and Dockerfile, or against a broken copy of codeql-findings.py. The kill check failed on `pkill` and `tmux` lines planted in a script, a `tmux` line in a Go file, and a `killall` line in legacy/bin/gitsby.
+		- A full container run with `--leakcheck` passed, with sync, dogfood, the demo, the remote tests and publish off: test.bash 1560/0, fuzz.bash 313/0, parity 29/0, the spawn counts, the soak test and CodeQL on all 4 OSes.
+	- Swept: The comments in cicd.bash and test.bash that said there were no third-party dependencies, the 2 "pure stdlib" lines in config.bash, the style guide's goroutine rule, the help header, both history footers, README and contributing.md. install.bash's "pure Go with no dependencies" is about what a build needs installed first, and goleak is test-only, so it stays. remote-tests.bash runs compiled test binaries, which never cache, so it needs no `-count=1`.
+		- CodeQL: the help header, the history footers of cicd.bash, config.bash, test.bash and the Dockerfile's comments, README and contributing.md. The kill check covers legacy/ too, which has none.
+	- Verified: full run 2026-10-19, publish off. test.bash 1561/0 and fuzz.bash 313/0 in the image, then test.bash 1346/0 on b26, 1249/0 on vmFreeBSD and 1546/0 on vmDebARM64, and the Go tests on all 4 boxes.
+	- Acceptance signoff: Self-closed. The open calls moved to 2026101905585018, 2026101906343987 and 2026101907065426.
+	- Closed: 20261019-084100
+
+- Run the lint and test stages in a pinned container
+	- ID: 2026101009380628
+	- Type: Enhancement
+	- Status: Done
+	- Priority|Severity [Feature]: Avg
+	- Opened: 2026-10-10
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- Stages 1-4 can run in a Debian trixie image with our Go and every pinned lint and test tool, so a host update can't move a finding.
+		- The versions come from config.bash, not a second list.
+		- The demo gif renders there too, so a host update can't change its bytes either.
+		- The rest stays on the host: sync, dogfood, remote tests and publish.
+	- Done: `cicd.bash --container`, from `cicd/container/Dockerfile`. The tag hashes the recipe and the versions, and a new image replaces the old one. Go caches live in a named volume. git joined `TOOL_VERSIONS`, since trixie's 2.47 spawns 4 more processes on a fetch than the host's 2.51.
+	- Branch: ctr
+	- Test case: [EsJgeiS] to [EsJgem1] in test.bash, against the stubbed engine. The recipe guard was watched to fail by hand.
+	- Verified: a run in the container matched the host baselines, test.bash 1509/0, fuzz.bash 313/0, parity.bash 29/0 and spawn counts. With the new checks, 1514/0 both in the container and on the host. The fixture sets the container marker itself, since the suite inside the image inherited it.
+	- Done 2026-10-10: the demo gif renders in the image as well. Apt reads the snapshot the base was cut from, so Pillow, freetype and cairo can't move, and the image has the Monaspace release file the host uses. The emoji font is Debian's, not the host's build, but the demo draws no emoji. The render matched the committed gif byte for byte, and with the font hidden it didn't.
+	- Test case: [EsK1B7q] in test.bash.
+	- Done 2026-10-10: a plain run uses the container, set by `CICD_CONTAINER` in config.bash. `--no-container` runs on the box. A box without a working docker does too, with a warning, so a contributor isn't blocked, and `--container` there stops. `--gate` stays on the box.
+	- Test case: [EsK46gt] to [EsK46k5] in test.bash. 1519/0 in the container and on the host. With the default off, the 3 checks that need it failed.
+	- Closed: 20261010-100500
+
+- `raw` runs tea and other common CLIs, not only git and gh
+	- ID: 2026100611524343
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature]: Avg
+	- Opened: 20261006-115243
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- `raw tea` (or `tea-cli`), `raw glab`, `raw lazygit` and `raw tig` run as the folder's account, like `raw git`.
+	- Decisions:
+		- A fixed list, not any program. An open slot would hand the token to whatever was typed there.
+		- tea and glab get the account's token in their own variables, with the host beside it. Never a GitHub token.
+		- gitui is left out. It uses libgit2, which never sees the account.
+		- tea before 0.11 ignores the token. When its own login for the host is somebody else, gitsby warns, and `-q` refuses.
+	- Note: `--any-identity` before `raw` was taken and ignored. It now applies nothing, and the "acting as" line stays quiet.
+	- Note: The "acting as" line now names a Gitea account too. It only read the GitHub login before.
+	- Branch: raw-tools
+	- Test case: test.bash, 12 new checks and 1 reworded. 10 are red on `gover`, and the other 3 went red with the fix broken. 2 Go tests, and 2 fuzz vectors.
+	- Verified: test.bash 1509/0, fuzz.bash 313/0, parity.bash 29/0, the gate. Only against stubs. No real tea 0.11 or glab here.
+	- Closed: 20261006-115243
+
+- macOS release gets a universal binary
+	- ID: 2026100313491873
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Related IDs: 2026100312571262
+	- Requirements  [Feature]:
+		- MacOS gets a universal binary for both amd64 and ARM.
+	- Notes:
+		- Dogfood already builds one with `macho-universal.bash`. Release assets still publish `darwin/amd64` and `darwin/arm64` apart.
+	- Decisions:
+		- It replaces the two `darwin/amd64` and `darwin/arm64` assets, rather than sitting beside them (2026-10-03).
+		- Published as `gitsby-darwin-universal`. On a Mac, `--arch` is noted and changes nothing.
+	- Progress log:
+		- Done: the release builds both Mac CPUs and joins them with `macho-universal.bash`, as dogfood does. Both installers ask any Mac for the one file. The release proof checks it against `SHA256SUMS` from Linux, where it can't run. README says how to rebuild it, and design.md has the decision.
+		- Verified: release.bash's own cross-build, run twice from an empty build cache each time, wrote the same `SHA256SUMS` over seven assets, with no per-CPU Mac file left beside them. `file` reads the Mac one as a universal binary holding both builds.
+		- Verified: a release dry run, the gate, and the full test.bash, 1337 passed.
+		- Verified: 9 new checks pass, and all 9 fail on the tree before.
+		- Note: the Go installer can't install v2.1.0 on any platform, before or after this. That release publishes the `gitsby` and `gitsby.ps1` scripts, not per-platform binaries.
+	- Branch: macuni
+	- Commit: 28b8f2d
+	- Test case: test.bash `[ErgCzfP]`, `[ErgCzfc]`, `[ErgCzfq]` (install.bash on a Mac), `[ErgDQ7N]` (install.ps1, pinned since pwsh can't fake a Mac), `[ErgCzeJ]`, `[ErgCzeW]`, `[ErgCzek]`, `[ErgCzey]`, `[ErgCzfB]` (release.bash).
+	- Swept: every `darwin` and `arm64` reader in the repo. release.bash, config.bash, both installers, the installer and release fixtures in test.bash, README, design.md and the changelog. cicd.bash dogfood already joins. Nothing in `src-go` reads asset names. `legacy/` is frozen.
+	- Verified: stage 7 on b26 (2026-10-04) passed the installer checks with stubbed downloads, `[ErgCzfP]`, `[ErgCzfc]` and `[ErgCzfq]` among them.
+	- Verified 2026-10-05 on b26, an Intel Mac on macOS 15.8: the real universal build, served as a stand-in pre-release in place of GitHub. install.bash piped into the stock bash 3.2, and install.ps1 under pwsh, each found the pre-release, checked the sum, installed it and ran it. `lipo` lists both CPUs, and the arm64 half keeps a valid ad-hoc signature after the join.
+	- Not run here: the download from GitHub itself. release.bash downloads and checks the Mac file from every real release. Running it on Apple silicon moved to the deferred ARM hardware item.
+	- Acceptance signoff: OK, 2026-10-05, after the b26 install.
+	- Closed: 2026-10-05
+
+- Run the windows/arm64 build somewhere
+	- ID: 2026100507345200
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-05
+	- Opened by: jim-collier
+	- Related IDs: 2026100413264100
+	- Requirements  [Feature]:
+		- The release publishes `gitsby-windows-arm64.exe`, but no box runs it. Stage 7 runs Windows tests on amd64 only, on vm925w.
+	- Notes:
+		- vmDebARM64 has Wine. In theory the windows/arm64 build runs there, slowly, since that CPU is emulated.
+		- First probe: whether that Wine runs an ARM64 PE at all, with `--version` and then the Go test binary. Not run yet. The box was held by another session on 2026-10-05.
+		- If it runs, stage 7 could run the windows/arm64 Go tests there, under Wine, beside the linux/arm64 run. Wine is not Windows, so it would add to vm925w's run, not replace it.
+	- Progress log:
+		- Verified: vmDebARM64 has Debian's Wine 10.0 for arm64, with the ARM64 Windows libraries. gitsby and its Go tests both build for windows/arm64 as ARM64 PE files.
+		- Tried 2026-10-05: `gitsby.exe --version` under Wine, as the test user, over ssh with no display. It never printed anything. Wine's own first-run setup spun at full CPU for 12 minutes and wrote nothing to the new Wine folder. The Go test binary was not tried, since no Windows program gets that far.
+		- Verified: every Wine process there faults with an illegal instruction, over and over, on the first instruction of Wine's own system call entry points. That is inside Wine, before any of gitsby's code runs.
+		- Cause, inferred: branch protection. The emulated CPU has it, Debian builds Wine's library marked for it, and those entry points lack the instruction it requires. Not confirmed by turning it off, since that takes root plus a reboot or a VM change. The C library there has no per-program switch for it.
+		- Not changed: stage 7 and the docs. Nothing runs under Wine there yet.
+		- Question: run it at all? One way is to give vmDebARM64 a CPU model without branch protection, which changes its linux/arm64 runs too. Another is `arm64.nobti` on its kernel command line plus a reboot. Or leave windows/arm64 untested until a Wine fix.
+		- Answered 2026-10-05: `arm64.nobti` on vmDebARM64's kernel command line, kept across reboots.
+		- Done: the boot loader config there adds `arm64.nobti`. How to undo it is in the private notes.
+		- Verified: after the reboot the kernel line has it, the kernel no longer reports branch protection, and the CPU flags no longer list it.
+		- Verified: that was the cause. Wine's first-run setup finished in about 90 seconds, and `gitsby.exe --version` printed the version in 1 second.
+		- Verified: the windows/arm64 Go tests under Wine, first run: 171 passed, 6 failed, 22 skipped, in under a minute. All 6 make a symlink. Wine's symlink call reports success and makes nothing. That is a known Wine stub, and a small probe there showed it.
+		- Fixed: the tests check the link is there after making it, and skip or drop the link case when it isn't. Under Wine that gives 173 passed, 26 skipped, none failed. The Go tests here still pass.
+		- Verified: linux/arm64 on that box still works after the change. The native `--version` runs, and its Go tests pass, 198 with 1 skipped.
+		- Done: stage 7 runs the windows/arm64 Go tests under Wine on vmDebARM64, after its linux/arm64 ones. It adds to vm925w's run; that is unchanged. README, contributing.md and the script headers say so.
+		- Verified: stage 7's script alone, against vmDebARM64 only and without test.bash, passed both Go test runs in 3 minutes, Wine's first-run setup included.
+		- Note: Wine there has no Windows git, so the tests that need git skip under Wine. vm925w still runs those.
+		- Verified 2026-10-05: a full stage 7 run passed on every box. Under Wine, 173 passed and 26 skipped. vmDebARM64's test.bash passed 1438, b26's 1255 and vmFreeBSD's 1179, none failed. b29w ran the Windows Go tests, symlink helper included, since vm925w was held: 180 passed, 19 skipped.
+	- Branch: winebti, winenobti
+	- Commit: cda31a7
+	- Test case: stage 7's Wine run on vmDebARM64. The 6 symlink tests failed under Wine before the fix, and pass or skip after.
+	- Swept: every `os.Symlink` in the Go tests, 8 sites. Code outside the tests makes no links.
+
+- Code Review 20261003 enhancement 2: Network probes run one after another
+	- ID: 2026100313123988
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Prereq IDs: 2026100313123975
+	- Requirements  [Feature]:
+		- `status` and `whoami` in a token-file account folder wait on two `gh api user` calls and an `ssh -T`, in turn. With 300 ms each that is about 950 ms where 300 would do.
+		- `account list` starts `gh` once per account, in turn. `account apply`, `set` and `unset` pay it too, since they print the list.
+	- Decisions:
+		- Against: the public style guide allows goroutines only with a measured reason. The 950 ms against 300 above is that reason, so the fix may use them.
+		- The first probe might be replaced by a local `gh config get` read, with no goroutine at all. Try that first.
+	- Origin: account.go and accountcmd.go. The per-account `gh` call was measured in 20260909 item 19 and kept. Confirmed with injected delays.
+	- Progress log:
+		- Done: the first probe reads gh's active login from gh's own config, with no network. Only a token already in the environment still sends it to the API, since that token outranks the config.
+		- Done: the token-file check and the ssh probe start ahead, and each is read where its line prints. The token check starts when the token is exported, so it also runs alongside the fetch. `whoami` and the commands that write through gh start theirs the same way. Output order is unchanged.
+		- Done: `account list` asks gh about every login at once, up to eight at a time, then prints in the same order. The per-login cache from 20260909 item 19 stays.
+		- Done: a probe nobody read is killed when the run ends.
+		- Verified: with 300 ms injected on each round trip, best of 3 on b23: status in the ssh account folder 930 -> 319 ms, whoami there 923 -> 316, status in the https folder 624 -> 316, status with a failed fetch 628 -> 319. With 300 ms on gh's token store as well: status 1228 -> 621, account list with three accounts 917 -> 615. Output is byte for byte the same in all five.
+		- Verified: spawn counts unchanged on all 14 measures. The config read replaces one gh call one for one.
+		- Verified: `[ErkSC4L]`, `[ErkSctG]`, `[ErkSC4Z]` and the changed `[Er1LxSk]` fail on the build before this and pass after. `[ErkSC4L]` and `[ErkSctG]` also fail with only the ssh probe put back in turn. `[ErkSC48]` fails with the end-of-run kill taken out. The affected test.bash blocks pass 103/0, also on a race-enabled build with no race reported. `go test -race ./...` and the gate (lint and Go tests) are clean.
+		- Note: `[Er1LxSk]` now looks for the config read and no API call, and `[Er1LxSl]` and `[Er1LxSm]` refuse either one. `[Er1LxSn]` runs with a token already in the environment, the one case that still reaches the API. The rule they check, ask only where a block prints, is unchanged. The fake gh stubs answer `config get ... user`.
+		- Note: offline, the identity block can now name gh's active account from its config, where it said nothing before. Display only.
+	- Swept: every caller of `ghLogin`, `sshLogin` and `ghTokenFor`. The probes in `settleGh`, `selectAccount`, `identityGate` and the identity block lines all read through the same caches. `showHostLine` asks tea, which reads a local file, so it stays as it was.
+	- Branch: probes
+	- Commit: 545712a
+	- Test case: test.bash `[ErkSC4L]`, `[ErkSctG]`, `[ErkSC4Z]`, `[ErkSC4m]` (regression guard), `[Er1LxSk]`; Go `[ErkSC3h]`, `[ErkSC3v]`, `[ErkSC48]`, `[ErkTEpz]`.
+	- Verified: test.bash 1408/0, `go test ./...`, fuzz.bash 301/0 and parity 29/0 on merged gover, 2026-10-04.
+	- Acceptance signoff: Self-closed: the goroutines have the measured reason the style guide asks for, output is unchanged, and the checks fail before and pass after.
+	- Closed: 20261005-072140
+
+- Release notes group the downloads in a table
+	- ID: 2026100415020736
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature]: Avg
+	- Opened: 2026-10-04
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- When creating a release, use a table to group downloads.
+		- CPU architecture goes in columns, and target OS in rows.
+	- Notes:
+		- The release body is the changelog section verbatim today. GitHub lists the assets in a flat list under it.
+		- macOS is one universal file, so its row doesn't split by CPU the way the others do.
+	- Decisions:
+		- The table goes in the changelog's release section too, so the release body stays a verbatim copy of that section. release.bash writes it into the section when it cuts the release, from the actual asset list (2026-10-04).
+		- Rows are target OS (Linux, macOS, Windows, FreeBSD, whatever the release publishes). Columns are CPU (amd64, arm64). macOS is one universal file, `gitsby-darwin-universal`, so its row doesn't split by CPU. Each cell links the asset's download URL for that tag (2026-10-04).
+		- `SHA256SUMS` and the install scripts go on one line under the table (2026-10-04).
+		- The macOS file is linked under both CPU columns (2026-10-04).
+	- Progress log:
+		- Done: release.bash phase 2 adds a `### Downloads` table at the foot of the section it retitles, built from the files phase 1 made. Rows run Linux, macOS, Windows, FreeBSD, then any other OS. Columns run amd64, arm64, then any other CPU. A missing file shows `-`. One line below links `SHA256SUMS` and the tag's `install.bash` and `install.ps1`.
+		- Done: the macOS file is linked under both CPU columns, since a markdown table cell can't span two. That is one reading of "doesn't split by CPU", for signoff.
+		- Done: phase 1 refuses a vNEXT section that already has a `### Downloads` heading. Phase 3 warns when the table and the files it publishes disagree. With no binaries built, phase 2 warns and writes no table.
+		- Done: design.md and the changelog say so. The repo name is set once in release.bash.
+		- Verified: shellcheck on both scripts, `test-id.bash --check`, and markdownlint on changelog.md and design.md. A table written into a copy of the real changelog passed markdownlint.
+		- Verified: the release.bash block of test.bash, 38 passed. Against release.bash before the change, four of the five new checks fail. `[Erm33XL]` held before too, since the body was already the section.
+		- Not run: the full test.bash, the gate, and a real cut.
+	- Branch: dltable
+	- Commit: 035cb8e
+	- Test case: test.bash `[Erm33Wu]`, `[Erm33X8]`, `[Erm33XL]`, `[Erm33XZ]`, `[Erm33Xn]`.
+	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
+	- Note: the installers read `SHA256SUMS` and the release list, never the body, so they are untouched.
+	- Question: a table cell can't span two columns, so the macOS universal file is listed under both amd64 and arm64. Is that the wanted reading of "its row doesn't split by CPU"?
+		- Answer: yes, both columns. Moved to Decisions.
+	- Acceptance signoff: Self-closed: its one question is answered, and the checks fail before and pass after. The first real cut runs it against GitHub, and phase 3 warns if the table and the published files disagree.
+	- Closed: 20261005-072140
 
 - Run the tests on a Mac and a Windows box as part of the pipeline
 	- ID: 2026100312332924
@@ -1506,23 +1125,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: TestOldFormat, TestOldFormatFileIsConverted, TestUnmarkedFileIsLeftAlone, TestOldFormatUnwritable, TestOldFormatThroughALink, TestOldFormatConvertedByAnotherRun, and three checks in test.bash.
 	- Closed: 2026-10-03
 
-- `account apply` names fragments by host and login
-	- ID: 2026093013031520
-	- Type: Enhancement
-	- Status: Done
-	- Opened: 2026-09-30
-	- Opened by: jim-collier
-	- Requirements  [Feature]:
-		- Each fragment is `<host>_<login>.gitconfig`, in lower case.
-		- An account with no login uses its own name there.
-		- Two accounts that share a host and login each add their account name.
-		- Help and doc examples name accounts the same way.
-	- Decisions:
-		- A fragment no rule uses any more is named in the output, not deleted. Nothing proves gitsby wrote it.
-	- Branch: acct-files
-	- Test case: TestFragmentNames, plus two apply checks in test.bash.
-	- Closed: 2026-09-30
-
 - Run the tests on FreeBSD and on Linux arm64 in stage 7 too
 	- ID: 2026100413264100
 	- Type: Enhancement
@@ -1566,6 +1168,198 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: stage 7's harness on gover after round 4, 2026-10-04. b26: Go tests pass, and test.bash against the universal build 1255/0. vmFreeBSD, vmDebARM64 and vm925w: Go tests pass. The Unix boxes ran Go tests only this time, since no Unix builds were passed. Their full test.bash ran earlier the same day and failed only `[Emq7Y6y]`, fixed since.
 	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
 	- Closed: 20261004-190953
+
+- `pr` and `repo create` run `gh` by bare name, so one on PATH that is gitsby runs gitsby
+	- ID: 2026102111572785
+	- Type: Bug
+	- Status: Done
+	- Needs local test suite run?: No. test.bash ran after the fix.
+	- Needs external testing: Stage 7. Every spawn now runs by the path the PATH walk found, git included, and that walk is only cross-built for macOS, FreeBSD and Windows.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261021-115727
+	- Opened by: jim-collier
+	- Related IDs: 2026101916533300
+	- Steps to reproduce [Bug]:
+		- Put a link named `gh` to gitsby first on PATH, with no real gh after it, and run `gitsby pr` in a GitHub repo.
+	- Incorrect behavior [Bug]:
+		- It runs gitsby as `gh pr list`, which prints gitsby's own `pr` syntax help, then "'gh pr list' failed (exit 1)".
+	- Expected behavior [Bug]:
+		- The same refusal `raw` gives: "Not found in path: gh", naming the entry that is gitsby.
+	- Possible cause [Bug]:
+		- `hostToolFor`, `mustBeInPath` and the tea lookup ask `exec.LookPath`, and the runners pass the bare name. 2026101916533300 fixed only `raw`. `lookTool` in exec.go could serve them too.
+	- Reproduced [Bug]: 20261021, on the build before the fix. `pr` in a GitHub repo gave "'gh pr list' failed (exit 1)", `pr` on another host "'tea pulls list' failed (exit 1)", and `repo create` "Couldn't ask GitHub about me/proj ... Unexpected option in this context: '--json'".
+	- Actual cause [Bug]:
+		- Every spawn outside `raw` went through `exec.Command` with the bare name, and every "is it installed" asked `exec.LookPath`, both of which find the link that is gitsby.
+	- Actual fix [Bug]:
+		- One lookup for every program gitsby runs, git included: `toolCmd` and `toolCmdContext` in exec.go build the command from `findTool`, which is `lookTool` asked once per name and PATH. A name found only as gitsby gets a "Not found in path" error that names the entry, and is never started. `inPath` and `mustBeInPath` ask the same lookup, so the gh login checks, the tea probes and `hostToolFor` see a gitsby-only gh or tea as not installed. `pr` says so by name rather than suggesting an install, and `repo create` and `repo connect` refuse through `mustBeInPath`. `raw` uses the same refusal text through `notInPath`. A Go test fails if any other file calls `exec.Command`, `exec.LookPath` and the like, so a new call site can't skip it.
+		- design.md "Execution flow" has a bullet for it.
+	- Swept: every `exec.Command`, `exec.CommandContext` and `exec.LookPath` outside tests. exec.go's runners (runOut, runOutOK, runOK, inherit, inheritRC, so step and stepAs), show.go (showList, `ssh -G`), githost.go (`tea logins list`, `tea --version` through runOut, teaCommand and hostToolFor through inPath), repo.go (`gh repo view`, `git ls-remote`, `git init`, `git ls-files`, both mustBeInPath("gh")), remote.go (ssh probe, `git fetch`, `git remote set-head`, `git ls-remote`, `gh config get`), account.go (`gh auth token`, `gh api user`, `gh config get`), main.go (`git rev-parse`, mustBeInPath("git"), raw), pr.go (settlePrTool and every pr.cli run). handover still runs the path raw resolved. The frozen bash and pwsh builds were not touched.
+	- Test case: test.bash `[EtMclGb]`, `[EtMclHS]`, `[EtMclIK]`; Go `[EtMclJC]` (TestToolCmdSkipsSelf), `[EtMctyX]` (TestOneSpawnSite).
+	- Branch: round-20261021
+	- Verified: The 3 new test.bash checks fail on the build before the fix. After it, test.bash 1591 -> 1594, 0 failed. The 2 Go tests fail with toolCmd's refusal taken out and with an `exec.Command` put back in show.go. `go test ./...`, `cicd.bash --gate`, `GOOS=windows go vet ./...`, and darwin, freebsd and windows builds pass.
+	- Verified: 2026-10-21, stage 7 passed on b26, vmFreeBSD, vmDebARM64 and vm925w, so every spawn in those suites went through the PATH walk on each OS. The 3 new test.bash checks ran on the 3 Unix boxes, and `[EtMctyX]` passed on all 4. On vm925w `[EtMclJC]` skips, since it needs symlinks and the exec bit, so the self check itself is untested on Windows. test.bash 1594/0 on b23, in the container and off it.
+	- Acceptance signoff: Self-closed: stage 7 passed everywhere, which was all that was left.
+	- Closed: 20261021-132100
+
+- test.bash on b26 prints `grep: warning: stray \ before -` 22 times
+	- ID: 2026102120365577
+	- Type: Bug
+	- Status: Done
+	- Needs local test suite run?: No. test.bash ran 1661/0 on 2026-10-22.
+	- Needs external testing: No. Stage 7 passed on every box 2026-10-22.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261021-203655
+	- Opened by: jim-collier
+	- Target OS: macOS
+	- Test environment: b26
+	- Incorrect behavior [Bug]:
+		- Stage 7's b26 log has the warning 22 times, on 2026-10-21 and 2026-10-22 both. The checks still pass, but it's noise in the log, and a pattern grep warns about may not match what it should.
+	- Expected behavior [Bug]:
+		- No grep warnings. Each pattern matches the same lines on every box.
+	- Actual cause [Bug]:
+		- b26 has GNU grep 3.12, which warns about `\-` in a pattern given without `-e`. 17 `fAssertOut` patterns in test.bash escaped their leading dashes so grep wouldn't read them as options. Debian's grep 3.11 here prints nothing for the same patterns.
+		- 6 of those patterns also wrote a literal pipe as `\|`, which is undefined in an extended regex. GNU reads it as a pipe, and other greps may read it as alternation, which matches more.
+	- Actual fix [Bug]: `fAssertOut`, `fAssertNotOut`, `fAssertPlan` and `fAssertNotPlan` pass the pattern after `--`, as `fPlanRan` and `fGateSays` already did. The patterns drop the backslashes, and a literal pipe is `[|]`.
+	- Branch: round-20261023
+	- Test case: test.bash `[EtU6AcV]` fails on a backslashed dash anywhere in the 26 pipeline and installer scripts, and `[EtU6Acj]` on a backslashed pipe in a check pattern. Both sit in the `[Emq7Y6y]` loop.
+	- Verified: before the fix both new checks fail on cicd/test.bash only, `[EtU6Acj]` on 6 lines. After it all 26 scripts pass both. The 20 changed or neighboring installer and help checks pass when run alone against the real output, and `[Eq4W7zV]`'s pattern matches `repo url ftp` output. A `[|]` pattern does not match a line without the pipe. shellcheck, `test-id.bash --check` and the gate pass.
+	- Verified: 2026-10-22, a plain full run in the container on b23 passed every stage, with no grep warning anywhere in its log. `[EtU6AcV]` and `[EtU6Acj]` passed for all 26 scripts in the container and on b26, vmFreeBSD and vmDebARM64. test.bash 1660/0 in the container and 1661/0 on b23 off it, 1433/0 on b26 and 1336/0 on vmFreeBSD, each 62 more than on 10-22, and 1646/0 on vmDebARM64, 63 more. Of those, 52 are this item's and the rest are the round's glab and workflow checks. The container, b26 and vmFreeBSD skip `[EtUDfjj]`, since they have no PyYAML. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261022-19253166/run.log`.
+	- Swept: every `grep` taking a pattern variable in cicd. parity.bash's 4 `grep -E "${pattern}"` calls get fixed patterns with no leading dash, so they stay. No `\-` anywhere else in the repo. The awk `\|` at test.bash's table reader is awk, not grep, and stays.
+	- Acceptance signoff: Self-closed: stage 7 passed everywhere with no grep warning, which was all that was left.
+	- Closed: 20261022-201221
+
+- `--no-fuzz` still runs govulncheck and pip-audit
+	- ID: 2026102113100100
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261021-131001
+	- Opened by: jim-collier
+	- Related IDs: 2026102113100000
+	- Incorrect behavior [Bug]:
+		- The help says `--no-fuzz` skips the fuzz + security stage, but in cicd.bash only fuzz.bash, the native fuzz targets, the spawn counts and the leak checks look at it. govulncheck and pip-audit still run, so `--no-fuzz` doesn't get past a pip-audit stop.
+	- Reproduced [Bug]: Yes, 2026-10-21, by [EtOKpZS] against the old cicd.bash.
+	- Actual cause [Bug]:
+		- govulncheck sat outside the `--no-fuzz` gate on purpose at first (894d857, 2026-08-19). `--quick` then worked by turning fuzz off, and govulncheck ran under it anyway, "because it is a lookup rather than a workload".
+		- 81def43 (2026-10-18) made `--quick` skip it, since it reaches vuln.go.dev, and dropped that reason, but left it outside the gate. pip-audit copied its gate on 2026-10-19.
+	- Decisions:
+		- The reason for the split is gone, and the leakflags item 2026101912030152 already treats `--no-fuzz` as turning off what's in stage 3. So `--no-fuzz` skips the whole stage, as the help says, and also the help stays as it is.
+	- Actual fix [Bug]: govulncheck and pip-audit check `--no-fuzz` like the rest of stage 3.
+	- Branch: round-20261022
+	- Commit: 73d6a98
+	- Test case: test.bash [EtOKpZS]. [Et9PJsY] and [Et9R5lO] had used `--no-fuzz` to skip the rest of stage 3, so they pass `--no-leakcheck` now, with the same IDs.
+	- Verified: [EtOKpZS] fails against the old cicd.bash and passes with the fix. test.bash 1597 -> 1598, 0 failed, and `cicd.bash --gate` passes.
+	- Swept: the help's stage list and option lines, README (no mention), contributing.md, where `--leakcheck` adding the leak checks back to `--no-fuzz` still holds, config.bash's pip-audit comment, and the history footers of cicd.bash and test.bash. The run in the container already gets `--no-fuzz` as given.
+	- Closed: 20261021-194000
+
+- Code Review 20261005 item 3: The help and design.md disagree on which commands are daily
+	- ID: 2026100516202618
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Low
+	- Opened: 2026-10-05
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: design.md:188 and the UI style guide say commands split by how often they're typed, with `pullcom`, `sync`, `status`, `whoami` and `release` as the daily one-word verbs. The help puts `sync` and `whoami` under "Less common commands" and `release` under "Admin commands", and lists `br create` and `br switch` as common. The README tags `sync` "Do infrequently".
+	- Expected behavior [Bug]: One story about how the commands are grouped.
+	- Reproduced [Bug]: Yes, `gitsby --help` against design.md and the style guide.
+	- Origin: design.md:188 from d446496 (2026-07-26). The help's groups go back to 2.x, 3a97c0e in 2022. No round saw it. Confirmed.
+	- Note: The help's groups read true. The one-word split isn't about how often a command is typed, so the design line and the style guide should say what it is. Regrouping the help is the other choice.
+	- Actual fix [Bug]: design.md and the UI style guide now call the one-word commands the workflow steps, with everything else under the thing it acts on. The help is unchanged.
+	- Branch: direct
+	- Commit: e1cc030
+	- Test case: none, docs only.
+	- Closed: 20261005-190835
+
+- Code Review 20261005 item 4: Help says "GitHub accounts" where an account can be on any git host
+	- ID: 2026100516202655
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Low
+	- Opened: 2026-10-05
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: The help's `account` line says "Show your configured GitHub accounts", right above 2 examples that use `gitea.com`. The README's `account` row says the same. design.md:249 opens with "Which GitHub account you act as".
+	- Expected behavior [Bug]: Say "accounts" where any host is meant.
+	- Reproduced [Bug]: Yes, `gitsby --help`.
+	- Origin: help.go:62 from fc0ddda (2026-08-08), before accounts took a `host`. No round saw it. Confirmed.
+	- Decisions:
+		- The README's "Multiple GitHub accounts" heading changes too (2026-10-05). It is "Multiple accounts" now, and so is accounts.md's title.
+	- Progress log:
+		- 2026-10-05: Asked what the problem is. Answered in the reply.
+		- 2026-10-05: OK'd, with the README heading changed as well.
+	- Actual fix [Bug]: "accounts" in the help's `account` line, the README's `account` row and design.md's heading. The README section and accounts.md are titled "Multiple accounts", with the TOC entry updated. The prose that says "two GitHub accounts" stays, since GitHub is the usual case.
+	- Branch: direct
+	- Commit: e1cc030
+	- Test case: none, wording only.
+	- Closed: 20261005-190835
+
+- Code Review 20261005 item 5: The README's count of subcommands is stale
+	- ID: 2026100516202693
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Low
+	- Opened: 2026-10-05
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: The README says gitsby has "ten - or 24 counting subcommands". The help lists 25 since `account unset` came in.
+	- Expected behavior [Bug]: A number that a check keeps true, or wording with no number.
+	- Reproduced [Bug]: Yes, by counting the help's entries.
+	- Origin: README:64 from 4ec5fd4 (2026-08-21). `account unset` is 1ed0f3a (2026-09-28). No round saw it. Confirmed.
+	- Note: "ten" can keep its number with a check on the help's top-level commands. The subcommand count could say "about two dozen" and claim nothing exact.
+	- Actual fix [Bug]: The README says "about two dozen counting subcommands". "ten" stays, and a check holds it.
+	- Branch: docfix
+	- Commit: f4f624b, 2206206
+	- Test case: [ErsJhby] in test.bash counts the help's top-level commands and needs 10, with "Gitsby has ten" in the README. Red with the README saying eleven, green as committed.
+	- Closed: 20261005-172300
+
+- `account` prints a value with a newline in it across 2 lines
+	- ID: 2026100607545812
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Low
+	- Opened: 20261006-075458
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: `account set a name $'n\nemail ..: evil@x'` saves the value quoted and safe. But `account` prints it on 2 lines, and the second one looks like a field of its own.
+	- Expected behavior [Bug]: A value prints on one line, with any control character shown escaped.
+	- Reproduced [Bug]: Yes, on `fuzzwork`, 2026-10-06. Again on `gover` the same day: the commits row printed `n`, then `email ..: evil@x <?>` on a line of its own. An ESC in a value reached the terminal as is.
+	- Actual cause [Bug]: Every display site printed the value as read. Only the plan's `add:` and `becomes:` lines escaped it, since they show the file's own spelling.
+	- Actual fix [Bug]: `printable` shows a control character the way the accounts file writes it: `\n`, `\t`, and `\u001B` style for the rest of C0, DEL and C1. Every display site of a config value goes through it. What is stored, and what goes to git config and the fragments, is unchanged. The rule is in the UI style guide under "Words and values".
+	- Against: "A path is never re-spelled for display". Only control characters change. Every printable character prints as written, a backslash included, and a byte that isn't UTF-8 passes through, so a path with none in it prints byte for byte the same.
+	- Swept: the `account` list (every row, the Account and Ignored keys lines, the shared-rule and stale-rule warnings); the status and `whoami` Account line, its notes (through `noteLines`, which refusals use too), the Config, SSH and Author lines and the loose token file warning; the `account set` and `unset` plans (`was:`, `becomes:`, `add:`, `remove:`); the `account apply` plan, its status lines and refusals, and the unused-fragment line; the `raw` "acting as" line; and the refusals that quote a typed value (account name, key, host, user, protocol, path, GIT_CONFIG_COUNT). `host`, `user` and `protocol` were already held to plain characters, and account names to letters, digits, `.`, `_` and `-`.
+	- Note: git drops a newline from an ident itself, so the Author line shows only the ESC escaped.
+	- Branch: ctlesc, escall
+	- Commit: 2be7d35, 47bcda3
+	- Test case: test.bash [ErvuMUH], [ErvuMUU] and [ErvuMUh], and Go `TestPrintableEscapesControlsOnly` [ErvuMUv], and `TestEveryLineOutIsEscaped` [ErwXroS].
+	- Verified: all 3 suite checks red on `gover`, green here. The Go test fails with the escaping taken out. test.bash 1494/0, fuzz.bash 311/0, parity.bash 29/0, `go test ./...` and the gate pass.
+	- Decisions:
+		- Anything from a file or another tool gets escaped, with no exceptions to remember. So the escaping moved into the printer's line writers and the error constructors' args, and covers the cwd, remote URL, gh and tea logins, clone folder and config path too. A usage error built from lines keeps its line breaks.
+		- A typed `\n` in a value prints the same as an escaped newline. Left that way, since a real control character in a config value is nearly always a mistake or an attack, and doubling backslashes would re-spell every Windows path.
+	- Acceptance signoff: jim-collier 2026-10-06
+	- Closed: 20261006-104500
+
+- Code Review 20261005 item 2: design.md still states decisions that were reversed or outgrown
+	- ID: 2026100516202581
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: Low
+	- Opened: 2026-10-05
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: design.md says it is revised in place, so what it holds is true now. 5 lines aren't.
+		- :536 says displayed paths fold the home folder back to `~`. That was reversed on 2026-09-16. Line 540 and the UI style guide both say a path is never re-spelled. From 919141f.
+		- :345 says the engine runs 7 stages. It's 8 behind a stage 0 since 2026-10-04. From fa41f83.
+		- :188 names the nouns as `repo`, `br` and `pr`. `account` and `raw` came later, and the UI style guide lists all 5. From d446496.
+		- :202 says `pullcom` and `sync` make up a message when none is given, and uses that as the reason `pr create` has a default title. They open git's editor, and make one up only under `-q`. From 0ec08bd.
+		- :512 says `gh` is needed for every `pr` form. On Gitea `pr` goes through `tea`, as "Direction decisions" and the README say. From 2835bb7.
+	- Expected behavior [Bug]: Each line says what is true now.
+	- Reproduced [Bug]: Yes, each line read against the code, the help or the line that reversed it.
+	- Origin: the commits named above, 2026-07-26 to 2026-08-20. No round saw these lines. Confirmed.
+	- Note: The 20260910 churn audit found this class twice, in its items 8 and 18. A decision reversed in one section and left standing in another. This is the third time. A reversal should grep every doc for the old rule before it merges.
+	- Note: :345 is history. Reword it so it doesn't count stages, and there's no number left to drift.
+	- Actual fix [Bug]: All 5 lines now say what is true. The run-time tools line names the git host's own tool, `gh` or `tea`, and says a later host brings its own the same way. The stage line no longer counts stages.
+	- Swept: the old wording of each line, grepped across every .md in the repo. The other hits are dated history in the changelog and the backlog.
+	- Branch: docfix
+	- Commit: f4f624b
+	- Test case: none, docs only. Nothing in the rewording is a number or a list a check could hold.
+	- Acceptance signoff: Self-closed: the item named each line, and each fix only states what the code does.
+	- Closed: 20261005-172300
 
 - Stage 7 names b26 as a Windows host to the lock
 	- ID: 2026100410340781
@@ -1907,6 +1701,195 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
 	- Closed: 20261003-145130
 
+- Check the demo's Pillow and fontTools advisories against Debian's fixes
+	- ID: 2026101905585018
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261019-055850
+	- Opened by: jim-collier
+	- Related IDs: 2026101816064794
+	- Requirements [Feature]:
+		- pip-audit reports 17 advisories against Pillow 11.1.0 and 1 against fontTools 4.57.0. The image has Debian's builds, `11.1.0-5+deb13u4` and `4.57.0-1+deb13u1`, which carry security patches past those versions.
+		- Check each against Debian's security tracker. The ones Debian fixed stay on `PIP_AUDIT_IGNORE` in config.bash, with a note naming the fix. For the rest, move the demo to a Pillow and fontTools that fix them.
+		- A newer Pillow can change the demo gif's bytes, so the gif is rendered and compared again.
+	- Note: The demo draws only its own text, in its own fonts, so none of these reach it through outside input today.
+	- Note: Debian's Pillow fixes stopped mattering once the image had the upstream 12.3.0 in place of Debian's build, so those 6 entries came off the list with the other 11.
+	- Progress log:
+		- 2026-10-19: Checked all 18 against Debian's tracker and the changelogs of the installed builds. 7 are fixed or don't apply: fontTools' one, fixed in `4.57.0-1+deb13u1`, and 6 of Pillow's, fixed in `deb13u1` to `deb13u4` or Windows-only. Each now has a note on `PIP_AUDIT_IGNORE`.
+		- 11 Pillow advisories have no trixie fix. Debian marks most "no-dsa, minor issue", and all are fixed upstream in 12.3.0 and in sid's `12.3.0-1`. They're CVE-2026-54058, 54059, 54060, 55379, 55380, 59197, 59198, 59199, 59200, 59204, and 59205. They cover file formats and calls the demo doesn't use, plus paste and crop with coordinates near 2^31, where the demo passes only its own small ones.
+		- Moving only Pillow fixes them all, since fontTools is already fixed. That means Pillow 12.3.0 in the image, either as a hash-pinned wheel or as sid's package from the snapshot archive. The wheel brings its own FreeType, so the glyphs may change. Either way the gif gets rendered and compared again, the image's Pillow version pin changes, and a render on the host would no longer match the image's. The renderer also calls one private Pillow method, which 12.x may have changed.
+		- Question: should Pillow move to 12.3.0 now, and if so as a wheel or as sid's package? Or should it stay on Debian's build, with the 11 kept on the list until trixie fixes them?
+			- Answer (2026-10-19): "Can it be updated in a container? Otherwise OK to upgrade it."
+		- 2026-10-19: The image's Pillow is 12.3.0, the hash-pinned wheel from the container's lock, on the system python in place of Debian's. The wheel is cleaner than sid's package, which needs a newer libavif than trixie has, and that pulls in 4 more sid libraries.
+		- 2026-10-19: All 17 Pillow entries came off `PIP_AUDIT_IGNORE`. fontTools' one is left, and it's the only advisory pip-audit finds with no list at all.
+		- 2026-10-19: The demo gif renders byte for byte the same on 12.3.0, so it didn't change. The renderer's private `Image.Image()._new` call still works there.
+		- 2026-10-19: A `--no-container` run on b23, with Debian's 11.1.0, warns about Pillow's version in the lint stage, as before, and its render matches too. A render that differs where Pillow or gifsicle isn't at its recorded version is now a warning, and the committed gif stays.
+	- Branch: pyadv, pyfix
+	- Commit: 203dca3
+	- Test case: test.bash [EtAFLx0] for the lock's Pillow and no Debian one, [EtAFLxs] for a demo drawn with another Pillow, and pip-audit's [Et9PJsY] and [Et9R5lO]. The image build also stops on a Pillow other than the recorded one.
+	- Verified: pip-audit in the image passes, and finds only fontTools' advisory with no list. The demo renders the same bytes in the new image and on b23. [EtAFLx0] and [EtAFLxs] fail against gover's tree. test.bash 1561 -> 1571, 0 failed, and `cicd.bash --gate` passes.
+	- Note: [Et9PJsY] wanted at least 2 entries on the list, so its pattern takes any number now, with the same ID.
+	- Swept: `TOOL_VERSIONS`, the Dockerfile's Pillow check and apt list, the snapshot comment that named Pillow, the lock's header, and contributing.md's demo prerequisite.
+	- Acceptance signoff: Signed off by jim-collier in conversation, 2026-10-19.
+	- Closed: 20261019-094958
+
+- Run CodeQL over the demo script and its Python libraries
+	- ID: 2026101907065426
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261019-070654
+	- Opened by: jim-collier
+	- Related IDs: 2026101816064794
+	- Requirements [Feature]:
+		- `--leakcheck` runs CodeQL's Python queries over the pipeline's Python files, with the sdists of Pillow, fontTools, pycairo and PyGObject unpacked into the database's root, at the versions the image has.
+			- Changed 2026-10-19: the libraries' installed source, as the image has it, in place of the sdists.
+		- The same rules as the Go run: style findings in third-party code are dropped, and any other finding fails the run.
+			- Changed 2026-10-19: in third-party Python only findings tagged security count. Our own Python is held to the whole suite.
+		- The Python bundle is pinned in config.bash and installed in the image, like the Go one.
+	- Note: Split from 2026101816064794, which covers the Go code.
+	- Progress log:
+		- 2026-10-19: A trial run, outside the pipeline, of CodeQL 2.27.2's Python security and quality suite over the 2 pipeline scripts and the 4 libraries. Our own 2 scripts have no findings. The libraries have 648, and 331 of them aren't style by the Go rule. That's 116 in Pillow, 187 in fontTools, and 28 in PyGObject. Too many to set aside one by one, so nothing is built yet.
+		- Most of the 331 are tagged reliability only, such as cyclic imports and empty except blocks. Python's quality queries tag nearly everything reliability or maintainability, so the Go rule keeps far more here than it does for Go.
+		- Limiting the libraries to the modules the demo's library calls load still leaves 133.
+		- Only 2 are tagged security, both a regex character range in fontTools' XML module, which the demo doesn't load.
+		- Library code would be the installed Debian builds' own .py files, taken through dpkg, instead of the upstream sdists. They're what the demo runs, with Debian's security patches in, and have no test suites. Their compiled C parts are out of reach of the Python extractor either way.
+		- The Python bundle shares every common file with the Go one, byte for byte, so it adds about 66 MB to the image, without its example queries. The trial took 12 s to build the database and 37 s to analyze.
+		- Proposal: in third-party Python, count only findings tagged security, and keep the Go rule for Go. The one regex finding goes on `CODEQL_IGNORE` as not reachable. Our own scripts stay held to the whole suite.
+		- Question: OK to hold third-party Python to security findings only? The other way is to keep the Go rule and put 185 rule and file pairs on `CODEQL_IGNORE`, or 59 with only the modules the demo loads.
+			- Answer (2026-10-19): the proposal is accepted.
+		- 2026-10-19: Built. `--leakcheck` runs CodeQL's Python security and quality suite once, over a scratch copy with the pipeline's Python files and, under vendor/, the installed source of the 4 libraries. Pillow's file list comes from its wheel, and the Debian builds' from dpkg.
+		- 2026-10-19: codeql-findings.py tells a report's language from the files it extracted, and still holds all the rules. A Python report has to have taken in our files and vendor/.
+		- 2026-10-19: The image untars the Python bundle over the Go one, without its examples, checked against its own sum in config.bash.
+		- 2026-10-19: The fontTools regex finding still shows against what the image installs, so it's on `CODEQL_IGNORE` as not reachable.
+	- Branch: pyql, pyfix
+	- Commit: 203dca3
+	- Test case: test.bash [EtAFLsf] for the run, [EtAFLqv] and [EtAFLrn] for the bundle, and [EtAFLtW], [EtAFLuO], [EtAFLvG] and [EtAFLw8] for how a Python report is read. [Et9ZcLy] follows the new OK line and report list.
+	- Verified: A `--leakcheck` run in the image is clean. It took in 437 Python files, our 2 among them, and the fontTools finding is the only security one in third-party code. A planted `py/empty-except` and `py/comparison-of-identical-expressions` in codeql-findings.py failed it, and after a restore by copy it passes. The new checks fail against gover's tree, and [EtAFLw8] and [EtAFLuO] against broken copies of codeql-findings.py. test.bash 1561 -> 1571, 0 failed, and `cicd.bash --gate` passes.
+	- Swept: the `--leakcheck` help line and plan line, config.bash's CodeQL comments, the Dockerfile's, codeql-findings.py's header, README and contributing.md.
+	- Acceptance signoff: Signed off by jim-collier in conversation, 2026-10-19.
+	- Closed: 20261019-094958
+
+- Run on the last Core 2 Duo, and AMD CPUs from that era.
+	- ID: 2026101301161852
+	- Type: Enhancement
+	- Status: Done
+	- Needs external testing: Yes, on an old CPU or an emulated one.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261013-011618
+	- Opened by: JC
+	- Target OS: Linux, Windows and FreeBSD on x86_64, where this project builds them. Macs that old can't run a current macOS anyway.
+	- Requirements [Feature]:
+		- Release builds run on the last Core 2 Duo (Penryn, 2008), and on AMD Phenom II and Athlon II, if that's reasonably doable.
+			- Penryn has SSSE3 and SSE4.1 but no POPCNT. The AMD ones have POPCNT but no SSSE3. So the shared floor is plain x86-64, also called x86-64-v1.
+		- If that isn't doable, the floor is the first Core i3/i5/i7 (Nehalem, 2008), which is x86-64-v2. AMD's first chip at that level is Bulldozer, 2011.
+		- Faster code for newer CPUs is still fine, but it's picked at run time by a CPU feature test, never by the build target.
+		- Tests run the release build on an emulated Penryn and Phenom II, through Intel SDE or QEMU's `-cpu Penryn` and `-cpu phenom`.
+	- Progress log:
+		- 20261013: Go builds for plain x86-64 by default (`GOAMD64=v1`), and nothing here sets it, so this may already hold. Pin `GOAMD64=v1` in the release build so a stray environment can't raise it. The standard library already picks faster code at run time.
+		- 20261019: Every build pins `GOAMD64=v1` now: release, dogfood and cross builds, the native and demo builds, the remote test builds, and the README's rebuild line. It's Go's default, so the published bytes don't change. The module has no assembly or cgo of its own, and neither does shcl.
+	- Decisions:
+		- The emulated run was a one-off, and stays out of the pipeline. The pin is what can regress, and the suite watches it. Go's own startup check refuses a CPU below the level a build was made for, so the pin decides which CPUs run it. The CPU emulator would add about 450 MB to the container image to recheck that each run. Revisit if a dependency with its own assembly comes in.
+	- Verified:
+		- The linux/amd64 release build runs on an emulated Penryn and Phenom II: `--version`, `--help`, `status`, `whoami`, `br list`, `sync` to a local origin, and `br create`. Builds for v2 and v3 are refused on both, and the v3 build runs on an emulated CPU that has v3.
+		- Every release target builds to the same bytes with the pin as without it. A `GOAMD64=v3` in the environment, or in `go env -w`, changes the amd64 bytes of an unpinned build and not of a pinned one.
+	- Swept: `cicd.bash` (native build, `fCrossBuild` for dogfood and stage 7's Mac build, demo build), `release.bash` `fpCrossBuild` (phases 1 and 3), `remote-tests.bash` `fBuildTests`, README's rebuild line. The container image builds no gitsby binary, only tools, and its stages run the cicd.bash sites above. Windows, FreeBSD and the Mac amd64 half get the same pin through those sites.
+	- Branch: oldcpu
+	- Test case: [Et9l12K] in test.bash. It fails with the pin dropped from any one build site or from the README.
+	- Acceptance signoff: Self-closed: the intent was clear, and the pin changes no published bytes.
+	- Closed: 20261019-072414
+
+- Code Review 20261005 enhancement 1: Step lines print their arguments unquoted
+	- ID: 2026100516202730
+	- Type: Enhancement
+	- Status: Done
+	- Priority|Severity [Feature]: Low
+	- Opened: 2026-10-05
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- A step line quotes an argument the way the plan does. The plan shows `git commit -m "two words; here"`, and the step shows `[ git commit -m two words; here ... ]`. Pasted into a shell, the step line runs `here` as a command.
+		- The failure line, `gitsby: '...' failed`, quotes the same way.
+	- Origin: `step` in exec.go, from the port. 2.x printed `$*` the same way.
+	- Note: parity.bash compares this output with 2.x, so the change needs its carve-out there.
+	- Done: Step lines quote an argument that needs it, and quote a `-m` value the way the plan does. The plan's commit message and `pr create` title go through the same quoting, so a message with `"` or `$` in it now shows in single quotes there too. The demo's `sync` step line gains its quotes, so the gif changes at the next full run.
+	- Note: parity.bash needed no carve-out. It passed 29 of 29.
+	- Branch: docfix
+	- Commit: 2206206
+	- Test case: [ErsJhaE] in test.bash, a plan line and its step line must match for `-m 'two words; here'`, red on `gover` and green here. [ErsJhZM] TestShellWord has a shell read 10 awkward values back unchanged.
+	- Acceptance signoff: Self-closed 2026-10-06. Tested, and it follows the plan and the README with no open choice left.
+	- Closed: 20261005-172300
+
+- Code Review 20261005 enhancement 2: The help leaves out what the README shows
+	- ID: 2026100516202767
+	- Type: Enhancement
+	- Status: Done
+	- Priority|Severity [Feature]: Low
+	- Opened: 2026-10-05
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- `--yes` is taken but not listed. The help shows `-q, --quiet, -y`.
+		- `repo connect [url]`, where it also takes `owner/name`. The README shows `[target]`.
+		- `account set` and `account unset` show no arguments. The README shows `<a> <k> <v>` and `<a> <k>`.
+	- Origin: help.go, various. No round saw it.
+	- Done: The help lists `--yes`, says `repo connect` takes a URL or `owner/name`, and starts the `account set` and `account unset` lines with their arguments.
+	- Branch: docfix
+	- Commit: 2206206
+	- Test case: [ErsJhb6] in test.bash, help lists `--yes`. Red on `gover`, green here. [ErwbTHe], [ErwbTHr] and [ErwbV0h] check the `repo connect`, `account set` and `account unset` lines, each red against the help before it.
+	- Acceptance signoff: Self-closed 2026-10-06. Tested, and the help now matches the README with no open choice left.
+	- Closed: 20261005-172300
+
+- `assets/logo.png` is 512x512 and 254 KB for a 128 px README image
+	- ID: 2026100519502150
+	- Type: Enhancement
+	- Status: Done
+	- Priority|Severity [Feature]: Low
+	- Opened: 20261005-195021
+	- Opened by: jim-collier
+	- Note: It is also what `gen-winres.bash --icon` reads for `assets/gitsby.ico`, whose largest size is 256.
+	- Progress log:
+		- 2026-10-05: Scaled to 256x256 RGBA, 84 KB. `gitsby.ico` is left as made from the 512 px original.
+		- 2026-10-06: Put back to 512 px, and the README shows it at 512.
+	- Decisions:
+		- Keep 512 px and show it at full size. It is a cool logo.
+	- Swept: README width 128, `gen-winres.bash` (largest size 256), design.md, changelog.md, trademark.md and the backlog's `.ico` note. None state the logo's size or need 512 px.
+	- Branch: logo, logo512
+	- Commit: ec2564a
+	- Test case: None, asset only.
+	- Acceptance signoff: jim-collier 2026-10-06
+	- Closed: 20261006-072500
+
+- The plan shows `@{u}` where it could name the branch
+	- ID: 2026100316463300
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature]: Low
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Related IDs: 2026100313124002
+	- Requirements  [Feature]:
+		- The pull step's plan line names the upstream, such as `git merge --ff-only --autostash origin/feature`, rather than `@{u}`.
+		- The step runs with that same name, so the plan still shows exactly what runs.
+	- Decisions:
+		- The resolved name over `@{u}` (2026-10-03). It reads plainly and says which remote branch comes in.
+	- Notes:
+		- The plan already reads each branch's upstream with one `for-each-ref`, so this needs no new git call. The spawn-count limits will show if it does.
+	- Actual effort: Low
+	- Done: The pull step names the upstream the way git shortens it, such as `origin/feature`, in the plan and in the step that runs. For the current branch one `rev-parse` gives both the full and the short name. For the others, the one branch read gives them.
+	- Done: A branch the run will check out from origin names origin's copy. Where a tag also answers to the short name, git spells it out further, as `remotes/origin/feature`, and that is what shows and runs. A local upstream whose name starts with a dash goes by its full ref, so git can't read it as an option.
+	- Done: A branch with no upstream still shows `@{u}`. Its step is skipped, so there is nothing to name.
+	- Done: design.md has the rule, the plan example in style-guide_ui-ux.md shows the name, and parity's mapping of the pull line names it too.
+	- Note: No spawn count changed. The same calls ask for one more field each.
+	- Note: [ElHNo4O] and [Erg9NT0] matched `@{u}` and now match the name. What each checks is unchanged.
+	- Note: A tag named after origin's default branch breaks the default branch read. That was there before this item and is filed as 2026100411344972.
+	- Swept: `grep -n '@{u}' src-go/*.go`. Both runners and every plan line go through `pullArgsFor`. The other `@{u}` uses are reads, such as ahead and behind and the incoming list, not steps the plan shows.
+	- Verified: test.bash 1406/0, parity 29/0, `go test -race`, and `cicd.bash --gate`. On the build before this item, [Erg9NT0], [Erl2Vub], [Erl2Vup] and [Erl2Vv4] fail. [Erl2VvI] passes there too, since the old plan and step both said `@{u}`. With the step handed a different name than the plan, it fails.
+	- Branch: spawncut
+	- Commit: 7979ffb
+	- Test case: test.bash [Erl2Vub], [Erl2Vup], [Erl2Vv4], [Erl2VvI] and [Erl2eIe]. Go `TestPullArgsFor` [ErgA5KD] and `TestUpstreamNames` [Erl1x3E].
+	- Acceptance signoff: Self-closed: the rule was set by hand on 2026-10-03, and the checks fail before and pass after.
+	- Closed: 20261005-072140
+
 - Code Review 20261003 enhancement 7: Go code tidy
 	- ID: 2026100313130047
 	- Type: Enhancement
@@ -2086,6 +2069,23 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Closed: 20261004-185642
 	- Branch: remote-tests-label
 	- Commit: 9049ec8
+
+- `account apply` names fragments by host and login
+	- ID: 2026093013031520
+	- Type: Enhancement
+	- Status: Done
+	- Opened: 2026-09-30
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- Each fragment is `<host>_<login>.gitconfig`, in lower case.
+		- An account with no login uses its own name there.
+		- Two accounts that share a host and login each add their account name.
+		- Help and doc examples name accounts the same way.
+	- Decisions:
+		- A fragment no rule uses any more is named in the output, not deleted. Nothing proves gitsby wrote it.
+	- Branch: acct-files
+	- Test case: TestFragmentNames, plus two apply checks in test.bash.
+	- Closed: 2026-09-30
 
 - shellcheck crashes now and then on test.bash
 	- ID: 2026100410472492
