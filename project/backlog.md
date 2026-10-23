@@ -71,8 +71,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026102306584122
 	- Type: Bug
 	- Status: Waiting on automated testing
+		- Waits only on vmDebARM64, which another session's lock held through the 2026-10-23 stage 7.
 	- Needs local test suite run?: No. test.bash ran 1667/0.
-	- Needs external testing: Stage 7 on the remote boxes, for the reworded and new raw checks in test.bash and the Go tests.
+	- Needs external testing: Stage 7 on vmDebARM64, for the reworded and new raw checks in test.bash and the Go tests. Every other box passed them.
 	- Needs hand testing: b28l, with tukzedo's wrapper and the real `gh`, after a dogfood run, together with 2026101916533300.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261023-065841
@@ -114,13 +115,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: round-20261023b
 	- Test case: test.bash `[EtMXMNv]`, `[EtMXMOn]` and `[EtMXMQW]`, reworded to reach the tool, and new `[EtX5aJ4]` (bare gh), `[EtX5aJH]` and `[EtX5aJV]` (refusal with nothing after it), `[EtX5aJj]` (whoami) and `[EtX5aJx]` (pr). Each wrapper quits past 8 starts now, since a gitsby `gh` call takes 3. Go `[EtMXfJm]`, `[EtOGJ79]` and `[EtOGJ7M]`, reworded.
 	- Verified: 2026-10-23, test.bash 1662 -> 1667, 0 failed. On the build before, the 8 reworded and new checks fail. The Go tests fail with the pass-over, the probe file match and the kept probe mark each taken out. The rig shows every one of the five commands reaching the real `gh`, where before each was refused. The hook and alias rig still passes. `GOOS=windows go vet` and the Windows test build, and darwin and freebsd builds, pass.
+	- Verified: 2026-10-23, the round's full run. The 8 reworded and new test.bash checks passed in the container, on b26 and on vmFreeBSD, and `[EtMXfJm]`, `[EtOGJ79]` and `[EtOGJ7M]` in the Go tests on b26, vmFreeBSD and vm925w. test.bash was 1438 of 1439 on b26 and 1341 of 1342 on vmFreeBSD, each 6 more than on 10-22. The one failure on each is `[EtAFLx0]`, from 2026102220133673. Go tests: b26 211 ok and 6 skipped, vmFreeBSD 213 ok and 4 skipped, vm925w 195 ok and 23 skipped. The macOS workflow, run 39970887647, passed the same checks on both runners, test.bash 1417 of 1418 with the same one failure. b29w was not reachable. Logs: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261023-07353000/run.log` for the container, `run2.log` beside it for stage 7.
 	- Swept: `rawActive` and `rawNest` have one caller, `cmdPassthrough`, which every `raw` tool shares. `findTool` and its cache are unchanged for every other spawn. README names no refusal text. design.md's `raw` bullet updated.
 
 - The workflow YAML check `[EtUDfjj]` skips in the container and on most boxes
 	- ID: 2026102220133673
 	- Type: Enhancement
 	- Status: Waiting on automated testing
-	- Needs local test suite run?: A full run in the container, the only arm that shows `[EtUDfjj]` runs there rather than skipping.
+		- Blocked: this change fails `[EtAFLx0]` everywhere. `fPillowFromLock` in test.bash still looks for the Dockerfile's old `/tmp/pil.txt` lines, which are `/tmp/sys.txt` and `^(pillow|pyyaml)==` now.
+	- Needs local test suite run?: test.bash in the container, once `[EtAFLx0]` follows the Dockerfile. `[EtUDfjj]` itself has passed there.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261022-201336
 	- Opened by: jim-collier
@@ -134,6 +137,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- No `VER_PyYAML` and no `TOOL_VERSIONS` entry. Its version changes no result, only whether the check runs, and the lock's hash pins it already.
 		- Not in `PY_AUDIT_DISTS`, which lists what the demo imports. A box without PyYAML would skip all of pip-audit.
 	- Verified: 2026-10-23, the image `gitsby-cicd:e6176a22793a` builds. In it `python3 -I -c 'import yaml'` succeeds, `[EtUDfjj]`'s check passes against the repo mounted read-only and fails on a broken workflow, and pip-audit finds nothing for `pyyaml==6.0.3`.
+	- Verified: 2026-10-23, the round's full run in the container on `gitsby-cicd:e6176a22793a`. `[EtUDfjj]` ran and passed there. test.bash was 1666 of 1667, 7 more than on 10-22: the round's 6 new checks and `[EtUDfjj]`, which skipped there before. pip-audit, fuzz 313/0, parity 29/0, CodeQL and the gif passed too. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261023-07353000/run.log`, and `run2.log` beside it for the later stages.
 	- Test case: `[EtUDfjj]` itself, plus the import check in the image build.
 	- Swept: test.bash's other `skip:` lines each stand for a group of checks, and their libraries (Pillow, python3, strace, pwsh) are in the image already.
 
@@ -188,6 +192,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: 2026-10-22, test.bash 1594 -> 1597, 0 failed, with the reworded `[EtMXMNv]` and `[EtMXMQW]`. On the build before, the 3 new checks fail. The Go tests fail with each part of `rawNest` taken out in turn: the repeat check, the probe mark, the depth limit, the folder and the separator between arguments. Outside the suite, a wrapper `gh` started once and was refused, and one adding an argument each time stopped at 16. `GOOS=windows go vet` and the Windows test build, and darwin and freebsd builds, pass.
 	- Verified: 2026-10-22, stage 7 passed on every box for the nesting change. test.bash 1371/0 on b26 and 1274/0 on vmFreeBSD, each 3 more than on 10-21, which are `[EtOGJ6U]`, `[EtOGJ6i]` and `[EtOGJ6v]`. 1583/0 on vmDebARM64, 4 more, those 3 plus `[EtOKpZS]`, which sits in the Linux-only pre-push gate block. `[EtOGJ79]` and `[EtOGJ7M]` passed in the Go tests on b26, vmFreeBSD, vmDebARM64 natively and under Wine, and vm925w, where the Go tests were 191 ok and 23 skipped, 2 more ok than on 10-21. `[EtMXfJm]` passed there too. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log`.
 	- Swept: every `raw` tool shares `cmdPassthrough`, git included. 2026-10-22: `rawActive` has one reader, `cmdPassthrough`, and the variable is unset in all 4 hermetic suites. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
+
+- A full run's container has no name or label, so a stop can't tell it from another project's
+	- ID: 2026102307533128
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261023-075331
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- The `docker run` in cicd.bash gives its container a name or label that carries the run, such as the start time, so the run can be found and stopped by it alone.
+	- Progress log:
+		- 2026-10-23: The round's full run got docker's generated names (`inspiring_kepler`, `frosty_sutherland`), next to other projects' containers on the same box.
 
 - `repo clone` hands git a folder name taken from the URL, and git can read it as an option
 	- ID: 2026100607545802
