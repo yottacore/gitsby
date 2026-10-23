@@ -381,3 +381,55 @@ func TestHostTokenEnvKeepsGitHubTokens(t *testing.T) { // [ErwoOg3]
 		t.Errorf("got GITEA_TOKEN=%q GITEA_INSTANCE_URL=%q", os.Getenv("GITEA_TOKEN"), os.Getenv("GITEA_INSTANCE_URL"))
 	}
 }
+
+// 'glab auth status' with no host walks every host glab knows, and gitlab.com
+// would see a token that belongs to another server.
+func TestGlabScopeAuth(t *testing.T) { // [EtRsVxf]
+	h := "gitlab.example.test"
+	for _, c := range []struct{ in, want string }{
+		{"auth status", "auth status --hostname gitlab.example.test"},
+		{"auth status --hostname other.test", "auth status --hostname other.test"},
+		{"auth status -h other.test", "auth status -h other.test"},
+		{"auth status --hostname=other.test", "auth status --hostname=other.test"},
+		{"mr list", "mr list"},
+		{"auth", "auth"},
+	} {
+		if got := strings.Join(glabScopeAuth(strings.Fields(c.in), h), " "); got != c.want {
+			t.Errorf("%q -> %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestServiceHost(t *testing.T) { // [EtRzPK4]
+	for in, want := range map[string]string{
+		"ssh.gitlab.gnome.org": "gitlab.gnome.org",
+		"ssh.github.com":       "github.com",
+		"gitlab.gnome.org":     "gitlab.gnome.org",
+		"ssh.local":            "ssh.local",
+		"ssh":                  "ssh",
+		"":                     "",
+	} {
+		if got := serviceHost(in); got != want {
+			t.Errorf("%q -> %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestIsGitLabHost(t *testing.T) { // [EtTo2FR]
+	t.Setenv("GITLAB_HOST", "https://code.example.test/")
+	for host, want := range map[string]bool{
+		"gitlab.com":           true,
+		"gitlab.gnome.org":     true,
+		"ssh.gitlab.gnome.org": true,
+		"GitLab.example.test":  true,
+		"code.example.test":    true,
+		"github.com":           false,
+		"git.example.test":     false,
+		"mygitlab.test":        false,
+		"":                     false,
+	} {
+		if got := isGitLabHost(host); got != want {
+			t.Errorf("%q: got %v, want %v", host, got, want)
+		}
+	}
+}

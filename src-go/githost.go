@@ -189,6 +189,20 @@ func (a *app) hostTokenEnv(tokenVar, hostVar string) (bool, error) {
 	return true, setEnv(hostVar, "https://"+a.acct.credHost)
 }
 
+// glabScopeAuth pins 'glab auth status' to the account's host. Left alone it
+// checks every host glab knows, gitlab.com included, with the one token we set.
+func glabScopeAuth(args []string, host string) []string {
+	if len(args) < 2 || args[0] != "auth" || args[1] != "status" {
+		return args
+	}
+	for _, x := range args[2:] {
+		if x == "-h" || x == "--hostname" || strings.HasPrefix(x, "--hostname=") {
+			return args
+		}
+	}
+	return append(append([]string{}, args...), "--hostname", host)
+}
+
 // teaVersionRE reads 'tea --version', once ansiRE has taken the bold off the number.
 var (
 	teaVersionRE = regexp.MustCompile(`^Version:\s*v?(\d+)\.(\d+)`)
@@ -266,7 +280,33 @@ const (
 	toolNone hostTool = iota
 	toolGh
 	toolTea
+	toolGlab
 )
+
+// isGitLabHost says whether glab is the right tool for host: gitlab.com, any name
+// that starts with a 'gitlab' label (gitlab.gnome.org), or GITLAB_HOST, which is how
+// glab itself is pointed at a self-hosted instance. A leading 'ssh.' is not part of
+// the name.
+func isGitLabHost(host string) bool {
+	host = serviceHost(host)
+	if host == "" {
+		return false
+	}
+	if strings.HasPrefix(strings.ToLower(host), "gitlab.") {
+		return true
+	}
+	env := os.Getenv("GITLAB_HOST")
+	env = strings.TrimPrefix(strings.TrimPrefix(env, "https://"), "http://")
+	return env != "" && strings.EqualFold(host, strings.TrimSuffix(env, "/"))
+}
+
+// glabRepoArg is the repo path glab is told with -R, taken from origin's URL. Its own
+// lookup matches remote host names to GITLAB_HOST, which fails for a remote on
+// ssh.<host>, and reads a nested group's path wrong.
+func (a *app) glabRepoArg() string {
+	_, path, _ := splitRemoteURL(a.originURL())
+	return strings.TrimSuffix(strings.TrimSuffix(strings.TrimPrefix(path, "/"), "/"), ".git")
+}
 
 // hostToolFor picks the CLI for a host. gh for GitHub and for nothing else: it is
 // a GitHub client, and pointing it at somebody else's git host gets an error in
@@ -278,6 +318,10 @@ func (a *app) hostToolFor(host string) (hostTool, string) {
 	case isGitHubHost(host):
 		if inPath("gh") {
 			return toolGh, "gh"
+		}
+	case isGitLabHost(host):
+		if inPath("glab") {
+			return toolGlab, "glab"
 		}
 	case host != "":
 		if tea := a.teaCommand(); tea != "" {
@@ -297,6 +341,9 @@ func (a *app) originTool() (hostTool, string) { return a.hostToolFor(a.originHos
 func (a *app) hostCLIHint() string {
 	if isGitHubHost(a.originHost()) {
 		return "Install gh (https://cli.github.com) and run 'gh auth login'."
+	}
+	if isGitLabHost(a.originHost()) {
+		return "Install glab (https://gitlab.com/gitlab-org/cli) and run 'glab auth login'."
 	}
 	return "Install Gitea's CLI (https://gitea.com/gitea/tea) and run 'tea login add'." +
 		" Some distributions install it as 'tea-cli'; either name is found."

@@ -144,6 +144,9 @@ func (a *app) showHostLine() {
 	switch {
 	case tool == toolNone:
 		line += " - no CLI installed for it here, so git works and pull requests don't"
+	case tool == toolGlab:
+		// glab runs on the account's token, so it has no login of its own to name.
+		line += " (" + cli + ")"
 	case a.isOffline():
 		line += " (" + cli + ") - offline, so who it acts as is unknown"
 	default:

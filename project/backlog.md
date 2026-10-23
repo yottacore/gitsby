@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
-	- Status: Waiting for testing
+	- Status: Waiting on UAT
 		- Waits on b28l.
 	- Needs local test suite run?: No. test.bash ran 1597/0.
 	- Needs external testing: b28l, the box that hit it, with `type -a gh` and a `gitsby raw gh auth status` there.
@@ -96,6 +96,24 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Stage 7's b26 log has the warning 22 times, on 2026-10-21 and 2026-10-22 both. The checks still pass, but it's noise in the log, and a pattern grep warns about may not match what it should.
 	- Expected behavior [Bug]:
 		- No grep warnings. Each pattern matches the same lines on every box.
+
+- gitsby should work with glab
+	- ID: 2026102209210000
+	- Type: Enhancement
+	- Status: Queued
+	- Opened: 20261022-092100
+	- Opened by: jim-collier
+	- Milestone: Pre-next-cut.
+	- Requirements [Feature]:
+		- gitsby should work with glab. (Now installed on b23.)
+	- Progress log:
+		- 2026-10-22: First real run, against gitlab.gnome.org as t00mietum (glab 1.53.0, token now in place). `raw glab api user` works and answers as t00mietum, so the account and token reach glab.
+		- 2026-10-22: `gitsby pr` in a GNOME clone runs `tea-cli pulls list`, not glab, and fails. `pr` has no glab path.
+		- 2026-10-22: `raw glab mr list` and `raw glab repo view` in a GNOME clone fail with "none of the git remotes ... point to a known GitLab host". The remote is `ssh.gitlab.gnome.org`, the API host is `gitlab.gnome.org`, and glab matches them by name. `-R t00mietum/gtk` works when `GITLAB_HOST` is set. gitsby sets `GITLAB_HOST` with an `https://` prefix.
+		- 2026-10-22: `raw glab auth status` outside a repo sent the GNOME token to gitlab.com, which answered 401. glab applies `GITLAB_TOKEN` to every host it knows. Fixed on branch glabtoken: gitsby adds `--hostname <account host>` unless one is given. Test.bash `[EtRsYMX]`, Go `[EtRsVxf]`. Inside a GNOME clone no token is passed at all, because the remote is `ssh.gitlab.gnome.org` and the account's host is `gitlab.gnome.org`.
+		- 2026-10-22: gitsby warns the token file is readable by other users.
+		- 2026-10-22: Fixed on branch glabtoken: a remote on `ssh.<host>` now counts as `<host>` for the account's token and credential helper (`serviceHost` in account.go). Test.bash `[EtRzPaH]`, Go `[EtRzPK4]`. Checked for real: `raw glab mr list -R GNOME/gtk` in a GNOME clone lists the open merge requests as t00mietum.
+		- 2026-10-22: `raw glab repo view` with no `-R` still fails in a GNOME clone. glab matches the remote's host (`ssh.gitlab.gnome.org`) to `GITLAB_HOST` itself. Still open, along with `pr`.
 
 - Updates to CICD script flags
 	- ID: 2026101816064793
@@ -4673,12 +4691,12 @@ Waiting on hardware, an upstream module, or a decision.
 
 	- The ID is the local time to the hundredth of a second. Opened is when it was written down, which may differ. (Use a keyboard macro and possibly something like project 'zuid' to generate.)
 
-	- Status values meaning: Testing means the fix is in and checks are running or still to run. Waiting on signoff means automated testing passed. Moot means something else changed that made it irrelevant. Canceled means it still applies but was decided against. Waiting for testing means the fix is in and waits on a long CI run or an outside test host. Can't reproduce means a real attempt to reproduce it failed.
+	- Status values meaning: Testing means the fix is in and checks are running or still to run. Waiting on signoff means automated testing passed. Moot means something else changed that made it irrelevant. Canceled means it still applies but was decided against. Waiting on automated testing means the fix is in and waits on a test run with no person needed. Waiting on a partial CICD run means it waits on a run of some stages, started by a person or automatically. Waiting on a full CICD run means the same for the whole pipeline, including a remote test host. Waiting on UAT means a person has to try it, such as on a box only they have. Can't reproduce means a real attempt to reproduce it failed.
 
 	- An item waiting on signoff that is hard to test by hand is closed once the fix is sure and a regression test covers it, where one can be written.
 
 	- As issues are worked, and statuses change, place them in correct sorting order within the list:
-		- First by status: Waiting for answers, Waiting on signoff, Testing, Waiting for testing, Can't reproduce, Stalled, Started, Queued, Done, Deferred, Canceled, Moot
+		- First by status: Waiting for answers, Waiting on signoff, Testing, Waiting on automated testing, Waiting on a partial CICD run, Waiting on a full CICD run, Waiting on UAT, Can't reproduce, Stalled, Started, Queued, Done, Deferred, Canceled, Moot
 		- Then by severity|priority: Critical, High, Avg, Low
 		- Then by type: Bugs, [not bugs together]
 
@@ -4689,7 +4707,7 @@ Template:
 - Title
 	- ID: YYYYmmDDHHMMSSNN
 	- Type: [Bug|Feature|Enhancement|Task]
-	- Status: [Queued|Waiting for answers|Waiting on signoff|Waiting for testing|Started|Testing|Stalled|Can't reproduce|Moot|Canceled|Deferred|Done]
+	- Status: [Queued|Waiting for answers|Waiting on signoff|Waiting on automated testing|Waiting on a partial CICD run|Waiting on a full CICD run|Waiting on UAT|Started|Testing|Stalled|Can't reproduce|Moot|Canceled|Deferred|Done]
 	- Needs local test suite run?:
 	- Needs external testing:
 	- Priority [Feature|Enhancement] | Severity [Bug]: [Critical|High|Avg|Low]
