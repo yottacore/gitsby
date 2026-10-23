@@ -795,16 +795,29 @@ fSarif(){
 }
 ## True when codeql-findings.py, given the rest of the args, exits with exactly $1.
 fFindings(){ local want="$1" rc=0; shift; python3 "${root}/cicd/utility/codeql-findings.py" "$@" >/dev/null 2>&1 || rc=$?; [[ "${rc}" == "${want}" ]] ;}
+## Whether the lock line for $1 is pinned by hash and goes to the system python: the image's own
+## patterns, run over the lock, send it to the file installed there and keep it out of the venv's.
+fSysPyFromLock(){
+	local dockerfile="${root}/cicd/container/Dockerfile" lock="${root}/cicd/container/requirements.txt" sysPat="" venvPat=""
+	sysPat="$(sed -n "s|.*grep -E '\([^']*\)' /tmp/pytools.txt > /tmp/sys.txt.*|\1|p" "${dockerfile}")"
+	venvPat="$(sed -n "s|.*grep -vE '\([^']*\)' /tmp/pytools.txt > /tmp/venv.txt.*|\1|p" "${dockerfile}")"
+	[[ -n "${sysPat}" && -n "${venvPat}" ]] && grep -qE "^$1==[^ ]+ --hash=sha256:[0-9a-f]{64}\$" "${lock}" \
+		&& grep -E -- "${sysPat}" "${lock}" | grep -q "^$1==" && grep -E -- "${venvPat}" "${lock}" | grep -q "^$1==" \
+		&& grep -qF -- "--python /usr/bin/python3 install" "${dockerfile}" && grep -qF -- "-r /tmp/sys.txt" "${dockerfile}"
+}
 ## The lock's Pillow line is the version TOOL_VERSIONS records, pinned by hash. The image installs
-## that line alone on the system python, and no Debian Pillow beside it.
+## it on the system python, and no Debian Pillow beside it.
 fPillowFromLock(){
 	local want="" dockerfile="${root}/cicd/container/Dockerfile"
 	# shellcheck source=/dev/null
 	want="$(cd "${root}" && source cicd/config.bash && printf '%s\n' "${TOOL_VERSIONS[@]}" | sed -n 's/^Pillow=//p')"
 	[[ -n "${want}" ]] && grep -qE "^pillow==${want//./\\.} --hash=sha256:[0-9a-f]{64}\$" "${root}/cicd/container/requirements.txt" \
-		&& grep -qF "grep '^pillow==' /tmp/pytools.txt > /tmp/pil.txt" "${dockerfile}" \
-		&& grep -qF -- "--python /usr/bin/python3 install" "${dockerfile}" && grep -qF -- "-r /tmp/pil.txt" "${dockerfile}" \
-		&& ! grep -qwE 'python3-pil' "${dockerfile}"
+		&& fSysPyFromLock pillow && ! grep -qwE 'python3-pil' "${dockerfile}"
+}
+## PyYAML the same way, and the build fails where test.bash's own probe would.
+fPyYamlFromLock(){
+	local dockerfile="${root}/cicd/container/Dockerfile"
+	fSysPyFromLock pyyaml && grep -qF "python3 -I -c 'import yaml'" "${dockerfile}" && ! grep -qwE 'python3-yaml' "${dockerfile}"
 }
 ## Whether the script $1 refuses a bash below its floor before running anything: a copy with the
 ## floor raised past any real bash, named as the original, has to exit 1 with the one line. A
@@ -5416,6 +5429,9 @@ GHEOF
 		bash -c "grep -qx 'ARG CODEQL_PY_SHA256' '${root}/cicd/container/Dockerfile' && grep -q 'codeql-bundle-python-linux64\.tar\.zst' '${root}/cicd/container/Dockerfile' && grep -qF 'echo \"\${CODEQL_PY_SHA256}  cqpy.tar.zst\" | sha256sum -c -' '${root}/cicd/container/Dockerfile' && grep -qF 'tar -C /opt --zstd -xf cqpy.tar.zst --exclude=codeql/qlpacks/codeql/python-examples' '${root}/cicd/container/Dockerfile' && grep -qE '^CODEQL_PY_SHA256=\"[0-9a-f]{64}\"\$' '${root}/cicd/config.bash'"
 	## The demo's Pillow is the upstream wheel, pinned in the lock, and the only one on the system python.
 	fAssert "[EtAFLx0] the lock pins the Pillow config.bash records, the image puts it on the system python, and apt installs none"  fPillowFromLock
+	## test.bash's own probe for [EtUDfjj] runs the system python, so the image's PyYAML has to be there.
+	fAssert "[EtXHtxS] the lock pins PyYAML, the image puts it on the system python and checks it imports, and apt installs none" \
+		fPyYamlFromLock
 	## What --leakcheck makes of CodeQL's report, on reports written here.
 	if command -v python3 >/dev/null 2>&1; then
 		local cqAll="main.go main_test.go vendor/x/y.go" cqMissing=""
@@ -7222,4 +7238,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261021 JC: raw passes over a tool on PATH that is gitsby itself, and refuses when started under another raw, so a gh, tea, glab, lazygit or tig that leads back can't loop. 1579 -> 1591.
 ##		- 20261021 JC: --no-fuzz leaves out govulncheck and pip-audit, and the pip-audit checks no longer lean on it to skip the rest of stage 3. 1597 -> 1598.
 ##		- 20261022 JC: The goleak check lists test folders without find's GNU-only output format, which failed it on macOS, and a check keeps that format out of the suite and the installer. 1661 -> 1662.
-##		- 20261023 JC: The workflow parse check's skip line names its test ID, and the image has PyYAML, so the check runs there.
+##		- 20261023 JC: The workflow parse check's skip line names its test ID, and the image has PyYAML, so the check runs there. The Pillow lock check reads the image's own patterns, and a check holds PyYAML to the same. 1667 -> 1668.

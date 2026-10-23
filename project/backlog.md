@@ -122,7 +122,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026102220133673
 	- Type: Enhancement
 	- Status: Waiting on automated testing
-		- Blocked: this change fails `[EtAFLx0]` everywhere. `fPillowFromLock` in test.bash still looks for the Dockerfile's old `/tmp/pil.txt` lines, which are `/tmp/sys.txt` and `^(pillow|pyyaml)==` now.
 	- Needs local test suite run?: test.bash in the container, once `[EtAFLx0]` follows the Dockerfile. `[EtUDfjj]` itself has passed there.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261022-201336
@@ -133,12 +132,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Progress log:
 		- 2026-10-22: Found by the round's test batch. The check ran only on vmDebARM64 and on b23 outside the container.
 		- 2026-10-23: PyYAML 6.0.3 is in the image's lock, on the system python beside Pillow, and the image build fails if it doesn't import. No known advisory against it. The skip line names `[EtUDfjj]`.
+		- 2026-10-23: `[EtAFLx0]` failed everywhere on the Dockerfile's new lines. It now runs the image's own split patterns over the lock, and the new `[EtXHtxS]` holds PyYAML to the same. Both fail on the old lines and on a mutated Dockerfile, and pass now. test.bash 1667 -> 1668, 0 failed on b23.
 	- Decisions:
 		- No `VER_PyYAML` and no `TOOL_VERSIONS` entry. Its version changes no result, only whether the check runs, and the lock's hash pins it already.
 		- Not in `PY_AUDIT_DISTS`, which lists what the demo imports. A box without PyYAML would skip all of pip-audit.
 	- Verified: 2026-10-23, the image `gitsby-cicd:e6176a22793a` builds. In it `python3 -I -c 'import yaml'` succeeds, `[EtUDfjj]`'s check passes against the repo mounted read-only and fails on a broken workflow, and pip-audit finds nothing for `pyyaml==6.0.3`.
 	- Verified: 2026-10-23, the round's full run in the container on `gitsby-cicd:e6176a22793a`. `[EtUDfjj]` ran and passed there. test.bash was 1666 of 1667, 7 more than on 10-22: the round's 6 new checks and `[EtUDfjj]`, which skipped there before. pip-audit, fuzz 313/0, parity 29/0, CodeQL and the gif passed too. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261023-07353000/run.log`, and `run2.log` beside it for the later stages.
-	- Test case: `[EtUDfjj]` itself, plus the import check in the image build.
+	- Test case: `[EtUDfjj]` itself, `[EtXHtxS]`, and the import check in the image build.
 	- Swept: test.bash's other `skip:` lines each stand for a group of checks, and their libraries (Pillow, python3, strace, pwsh) are in the image already.
 
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
