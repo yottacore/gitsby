@@ -33,30 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- test.bash on b26 prints `grep: warning: stray \ before -` 22 times
-	- ID: 2026102120365577
-	- Type: Bug
-	- Status: Waiting on automated testing
-	- Needs local test suite run?: test.bash, which should go 1598 -> 1650, the 26 scripts times the 2 new checks.
-	- Needs external testing: b26 stage 7 log shows no grep warning, and b26, vmFreeBSD and vmDebARM64 each count 52 more checks than on 10-22.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261021-203655
-	- Opened by: jim-collier
-	- Target OS: macOS
-	- Test environment: b26
-	- Incorrect behavior [Bug]:
-		- Stage 7's b26 log has the warning 22 times, on 2026-10-21 and 2026-10-22 both. The checks still pass, but it's noise in the log, and a pattern grep warns about may not match what it should.
-	- Expected behavior [Bug]:
-		- No grep warnings. Each pattern matches the same lines on every box.
-	- Actual cause [Bug]:
-		- b26 has GNU grep 3.12, which warns about `\-` in a pattern given without `-e`. 17 `fAssertOut` patterns in test.bash escaped their leading dashes so grep wouldn't read them as options. Debian's grep 3.11 here prints nothing for the same patterns.
-		- 6 of those patterns also wrote a literal pipe as `\|`, which is undefined in an extended regex. GNU reads it as a pipe, and other greps may read it as alternation, which matches more.
-	- Actual fix [Bug]: `fAssertOut`, `fAssertNotOut`, `fAssertPlan` and `fAssertNotPlan` pass the pattern after `--`, as `fPlanRan` and `fGateSays` already did. The patterns drop the backslashes, and a literal pipe is `[|]`.
-	- Branch: round-20261023
-	- Test case: test.bash `[EtU6AcV]` fails on a backslashed dash anywhere in the 26 pipeline and installer scripts, and `[EtU6Acj]` on a backslashed pipe in a check pattern. Both sit in the `[Emq7Y6y]` loop.
-	- Verified: before the fix both new checks fail on cicd/test.bash only, `[EtU6Acj]` on 6 lines. After it all 26 scripts pass both. The 20 changed or neighboring installer and help checks pass when run alone against the real output, and `[Eq4W7zV]`'s pattern matches `repo url ftp` output. A `[|]` pattern does not match a line without the pipe. shellcheck, `test-id.bash --check` and the gate pass.
-	- Swept: every `grep` taking a pattern variable in cicd. parity.bash's 4 `grep -E "${pattern}"` calls get fixed patterns with no leading dash, so they stay. No `\-` anywhere else in the repo. The awk `\|` at test.bash's table reader is awk, not grep, and stays.
-
 - CICD runs on GitHub's free macOS runners
 	- ID: 2026102218410000
 	- Type: Enhancement
@@ -78,6 +54,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- A push of a round branch doesn't run it. A PR from one does.
 	- Verified: 2026-10-22, the workflow lints clean. The build, `go test` and smoke steps pass as written on Linux, and the smoke step fails when it expects the wrong branch.
 	- Verified: 2026-10-22, test.bash 1661/0, 1659 -> 1661. `[EtUDegV]` fails on a tag pin, a fixed `go-version`, or no workflow at all. `[EtUDfjj]` fails on broken YAML or a workflow with no jobs.
+	- Verified: 2026-10-22, in the full run, `[EtUDegV]` passed in the container and on b26, vmFreeBSD and vmDebARM64. `[EtUDfjj]` passed on vmDebARM64 and in test.bash on b23 off the container, 1661/0. The container, b26 and vmFreeBSD skip it, since they have no PyYAML. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261022-19253166/run.log`.
 	- Test case: test.bash `[EtUDegV]` and `[EtUDfjj]` for the workflow files. The workflow itself is the test on the Macs.
 	- Branch: round-20261023
 
@@ -274,6 +251,33 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: 2026-10-21, stage 7 passed on b26, vmFreeBSD, vmDebARM64 and vm925w, so every spawn in those suites went through the PATH walk on each OS. The 3 new test.bash checks ran on the 3 Unix boxes, and `[EtMctyX]` passed on all 4. On vm925w `[EtMclJC]` skips, since it needs symlinks and the exec bit, so the self check itself is untested on Windows. test.bash 1594/0 on b23, in the container and off it.
 	- Acceptance signoff: Self-closed: stage 7 passed everywhere, which was all that was left.
 	- Closed: 20261021-132100
+
+- test.bash on b26 prints `grep: warning: stray \ before -` 22 times
+	- ID: 2026102120365577
+	- Type: Bug
+	- Status: Done
+	- Needs local test suite run?: No. test.bash ran 1661/0 on 2026-10-22.
+	- Needs external testing: No. Stage 7 passed on every box 2026-10-22.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261021-203655
+	- Opened by: jim-collier
+	- Target OS: macOS
+	- Test environment: b26
+	- Incorrect behavior [Bug]:
+		- Stage 7's b26 log has the warning 22 times, on 2026-10-21 and 2026-10-22 both. The checks still pass, but it's noise in the log, and a pattern grep warns about may not match what it should.
+	- Expected behavior [Bug]:
+		- No grep warnings. Each pattern matches the same lines on every box.
+	- Actual cause [Bug]:
+		- b26 has GNU grep 3.12, which warns about `\-` in a pattern given without `-e`. 17 `fAssertOut` patterns in test.bash escaped their leading dashes so grep wouldn't read them as options. Debian's grep 3.11 here prints nothing for the same patterns.
+		- 6 of those patterns also wrote a literal pipe as `\|`, which is undefined in an extended regex. GNU reads it as a pipe, and other greps may read it as alternation, which matches more.
+	- Actual fix [Bug]: `fAssertOut`, `fAssertNotOut`, `fAssertPlan` and `fAssertNotPlan` pass the pattern after `--`, as `fPlanRan` and `fGateSays` already did. The patterns drop the backslashes, and a literal pipe is `[|]`.
+	- Branch: round-20261023
+	- Test case: test.bash `[EtU6AcV]` fails on a backslashed dash anywhere in the 26 pipeline and installer scripts, and `[EtU6Acj]` on a backslashed pipe in a check pattern. Both sit in the `[Emq7Y6y]` loop.
+	- Verified: before the fix both new checks fail on cicd/test.bash only, `[EtU6Acj]` on 6 lines. After it all 26 scripts pass both. The 20 changed or neighboring installer and help checks pass when run alone against the real output, and `[Eq4W7zV]`'s pattern matches `repo url ftp` output. A `[|]` pattern does not match a line without the pipe. shellcheck, `test-id.bash --check` and the gate pass.
+	- Verified: 2026-10-22, a plain full run in the container on b23 passed every stage, with no grep warning anywhere in its log. `[EtU6AcV]` and `[EtU6Acj]` passed for all 26 scripts in the container and on b26, vmFreeBSD and vmDebARM64. test.bash 1660/0 in the container and 1661/0 on b23 off it, 1433/0 on b26 and 1336/0 on vmFreeBSD, each 62 more than on 10-22, and 1646/0 on vmDebARM64, 63 more. Of those, 52 are this item's and the rest are the round's glab and workflow checks. The container, b26 and vmFreeBSD skip `[EtUDfjj]`, since they have no PyYAML. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261022-19253166/run.log`.
+	- Swept: every `grep` taking a pattern variable in cicd. parity.bash's 4 `grep -E "${pattern}"` calls get fixed patterns with no leading dash, so they stay. No `\-` anywhere else in the repo. The awk `\|` at test.bash's table reader is awk, not grep, and stays.
+	- Acceptance signoff: Self-closed: stage 7 passed everywhere with no grep warning, which was all that was left.
+	- Closed: 20261022-201221
 
 - pip-audit fails every full run in the container on 8 new Pillow 12.3.0 advisories
 	- ID: 2026102113100000
