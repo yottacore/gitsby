@@ -33,6 +33,31 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- test.bash's goleak check `[Et9R5lo]` fails on macOS, since BSD find has no `-printf`
+	- ID: 2026102220274491
+	- Type: Bug
+	- Status: Waiting on automated testing
+	- Needs external testing: The macOS workflow run on GitHub after this merges to `gover`, on both runners. `[Et9R5lo]` and `[EtUUvVS]` should pass there.
+	- Priority|Severity [Bug]: Avg
+	- Opened: 20261022-202744
+	- Opened by: jim-collier
+	- Related IDs: 2026102218410000
+	- Target OS: macOS
+	- Steps to reproduce [Bug]:
+		- Run `cicd/test.bash` on a Mac whose `find` is the system one.
+	- Incorrect behavior [Bug]: `[Et9R5lo]` fails. The first macOS workflow run, 39893939993 on `macos-latest` (arm64), passed 1411 and failed only that one.
+	- Expected behavior [Bug]: It passes whenever every folder with Go tests calls `goleak.VerifyTestMain(m)`, on any OS.
+	- Reproduced [Bug]: Yes, 2026-10-22 on b23, with a stand-in `find` on PATH that refuses `-printf` the way BSD find does. The check failed.
+	- Actual cause [Bug]: The check listed test folders with `find ... -printf '%h\n'`. BSD find has no `-printf`, so it printed nothing. The loop then counted 0 folders and failed.
+	- Actual fix [Bug]: The folder is cut off the file path with `sed`, then `sort -u`. Same folders as before on b23, and the check still fails when one package lacks goleak. New check `[EtUUvVS]` fails if a `find` with `-printf` or `-fprintf` comes back into test.bash or install.bash.
+	- Swept: `find -printf`, `sed -i` without a suffix, `grep -P`, `readlink -f`, `date -d`, `date +%N`, `stat -c`, `sort -V`, `xargs -r`, `realpath -m`, `tar --transform`, `wc -l` compared as text, `\?` and `\t` in sed, in cicd/*.bash, cicd/utility/*.bash, cicd/utility/include/*.bash and install.bash. In test.bash, only `[Et9R5lo]` used one where a Mac runs it. The bare `sed -i` and `date +%N` sit in the Linux-only release and pre-push blocks, and so do the `wc -l` compares and the remote-tests checks that run `tar --transform`. `date -d` runs behind a probe for GNU date. `stat` falls back to BSD's. The rest are in Linux-only cicd.bash, in keep-build.bash's `--keep` path, which test.bash doesn't run, and in the `--help` text of backlog-check, test-id and lint-report, where BSD sed would leave the tab in the printed help.
+	- Verified: 2026-10-22, with BSD-like find, `[Et9R5lo]` fails on the old test.bash and passes on the new one. It passes on a stand-in tree and fails once one package there drops goleak. `[EtUUvVS]` fails on the old test.bash and passes on the new one. `cicd.bash --gate` and `backlog-check.bash` passed.
+	- Verified: 2026-10-22, test.bash on b23 1662/0, 1661 -> 1662.
+	- Not checked: why `[Et9R5lo]` passed in stage 7 on b26 and vmFreeBSD. Likely a GNU find first on b26's PATH, and a FreeBSD find that has `-printf`.
+	- Test case: test.bash `[Et9R5lo]` itself on the Mac runners, and `[EtUUvVS]`, which needs no Mac.
+	- Branch: fix-macos-find
+	- Commit: 0d01f82
+
 - CICD runs on GitHub's free macOS runners
 	- ID: 2026102218410000
 	- Type: Enhancement
