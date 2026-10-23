@@ -4646,32 +4646,54 @@ GHEOF
 	fAssert    "[EtOGJ6i] and its raw gets git's answer and nothing else"  bash -c "[[ \"\$(cat '${rh}.out')\" == main ]]"
 	fAssertOut "[EtOGJ6v] an alias that runs raw git under raw git works too"  '^main$'  bash -c "cd '${rh}' && env ${acEnv} '${goBin}' raw git nest"
 	## A tool on PATH that leads back to gitsby looped forever: a link to the binary, or a wrapper
-	## that runs 'raw <tool>' again. Each wrapper counts its starts and quits past 5, so a loop
-	## that comes back stays small. With only the link on PATH the shim can't find bash, so those
-	## run the build directly. No links on Windows, so it sits that one out.
+	## that runs 'raw <tool>' again. The wrapper then got refused; now it reaches the tool after it
+	## on PATH. Each wrapper counts its starts and quits past 8, so a loop that comes back stays
+	## small. A gh call of gitsby's own takes 3 behind it, and 'pr' and 'whoami' make 2. With only
+	## the link on PATH the shim can't find bash, so those run the build directly. No links on
+	## Windows, so it sits that one out.
 	if (( ! isWindows )); then
 		local rl="${ac}/rawloop" rlTool=""
-		mkdir -p "${rl}/link" "${rl}/wrap"
+		# shellcheck disable=SC2016  ## the wrapper expands these, not us
+		local rlWrap='#!%s\nn=0; [[ -f %q ]] && read -r n < %q\nn=$(( n + 1 )); echo "${n}" > %q\n(( n > 8 )) && { echo "spawn limit" >&2; exit 99; }\nexec %q raw "${0##*/}" "$@"\n'
+		mkdir -p "${rl}/link" "${rl}/wrap" "${rl}/real"
 		for rlTool in gh tea glab lazygit tig; do
 			ln -sf "${goBin}" "${rl}/link/${rlTool}"  ## the build itself; ${gitsby} is a shim
-			# shellcheck disable=SC2016  ## the wrapper expands these, not us
-			printf '#!%s\nn=0; [[ -f %q ]] && read -r n < %q\nn=$(( n + 1 )); echo "${n}" > %q\n(( n > 5 )) && { echo "spawn limit" >&2; exit 99; }\nexec %q raw "${0##*/}" "$@"\n' \
-				"$(command -v bash)" "${rl}/count" "${rl}/count" "${rl}/count" "${gitsby}" > "${rl}/wrap/${rlTool}"
+			if [[ "${rlTool}" != gh ]]; then  ## gh's is the fake in ${ac}/bin
+				printf '#!/bin/sh\necho "real %s $*"\n' "${rlTool}" > "${rl}/real/${rlTool}" && chmod +x "${rl}/real/${rlTool}"
+			fi
+			# shellcheck disable=SC2059  ## one template, two targets
+			printf "${rlWrap}" "$(command -v bash)" "${rl}/count" "${rl}/count" "${rl}/count" "${gitsby}" > "${rl}/wrap/${rlTool}"
 			chmod +x "${rl}/wrap/${rlTool}"
 		done
+		## The same gh wrapper with nothing after it, and git: the build itself, since bash isn't on PATH.
+		mkdir -p "${rl}/alone"
+		ln -sf "$(command -v git)" "${rl}/alone/git"
+		# shellcheck disable=SC2059
+		printf "${rlWrap}" "$(command -v bash)" "${rl}/count" "${rl}/count" "${rl}/count" "${goBin}" > "${rl}/alone/gh" && chmod +x "${rl}/alone/gh"
 		fAssertOut    "[EtMXMMC] a gh that is gitsby is skipped for the next one on PATH"  'gho_faketoken' \
 			bash -c "cd '${acWork}' && env ${acEnv} PATH='${rl}/link:${ac}/bin:${PATH}' '${gitsby}' -q raw gh auth token --user workacct"
 		fAssertOut    "[EtMXMN4] and with no other gh, refused naming the entry"  "Not found in path: gh\\. '.*/rawloop/link/gh' is gitsby itself" \
 			bash -c "cd '${acWork}' && env ${acEnv} PATH='${rl}/link' '${goBin}' -q raw gh auth token"
-		fAssertOut    "[EtMXMNv] a gh wrapper that runs raw gh again is refused at once, naming it"  "Looping: '.*/rawloop/wrap/gh' is already running under a 'raw gh'" \
-			bash -c "cd '${acWork}' && : > '${rl}/count' && env ${acEnv} PATH='${rl}/wrap:${ac}/bin:${PATH}' '${gitsby}' -q raw gh auth token"
-		fAssertNotOut "[EtMXMOn] and never reaches the spawn limit"  'spawn limit' \
-			bash -c "cd '${acWork}' && : > '${rl}/count' && env ${acEnv} PATH='${rl}/wrap:${ac}/bin:${PATH}' '${gitsby}' -q raw gh auth token"
+		local rlWrapEnv="${acEnv} PATH='${rl}/wrap:${rl}/real:${ac}/bin:${PATH}'"
+		fAssertOut    "[EtMXMNv] a gh wrapper that runs raw gh again reaches the gh after it on PATH"  '^gho_faketoken$' \
+			bash -c "cd '${acWork}' && : > '${rl}/count' && env ${rlWrapEnv} '${gitsby}' -q raw gh auth token --user workacct"
+		fAssert       "[EtMXMOn] and starts the wrapper at most twice, its probe's start included" \
+			bash -c "cd '${acWork}' && : > '${rl}/count' && env ${rlWrapEnv} '${gitsby}' -q raw gh auth token --user workacct && (( \$(cat '${rl}/count') <= 2 ))"
+		fAssertOut    "[EtX5aJ4] so does a bare gh, or a script calling one"  '^gho_faketoken$' \
+			bash -c "cd '${acWork}' && : > '${rl}/count' && env ${rlWrapEnv} bash -c 'gh auth token --user workacct' 2>/dev/null"
+		fAssertOut    "[EtX5aJH] and with no gh after it, refused naming it"  "Looping: '.*/rawloop/alone/gh' is already running under a 'raw gh' above this one" \
+			bash -c "cd '${acWork}' && : > '${rl}/count' && env ${acEnv} PATH='${rl}/alone' '${goBin}' -q raw gh auth token"
+		## Unsetting it would bring the loop back.
+		fAssertNotOut "[EtX5aJV] without saying to unset GITSBY_RAW_ACTIVE"  'Unset|GITSBY_RAW_ACTIVE|spawn limit' \
+			bash -c "cd '${acWork}' && : > '${rl}/count' && env ${acEnv} PATH='${rl}/alone' '${goBin}' -q raw gh auth token"
+		## gitsby's own gh calls run the wrapper too, and failed behind it as "not logged in".
+		fAssert       "[EtX5aJj] whoami behind a gh wrapper says what it says without one" \
+			bash -c "cd '${acWork}' && : > '${rl}/count' && diff <(env ${rlWrapEnv} '${gitsby}' -NoFetch whoami 2>/dev/null) <(env ${acEnv} '${gitsby}' -NoFetch whoami 2>/dev/null)"
 		for rlTool in tea glab lazygit tig; do
 			fAssertOut "[EtMXMPe] a ${rlTool} that is gitsby is refused too"  "Not found in path: ${rlTool}\\. '.*/rawloop/link/${rlTool}' is gitsby itself" \
 				bash -c "cd '${acWork}' && env ${acEnv} PATH='${rl}/link' '${goBin}' -q raw ${rlTool} --version"
-			fAssertOut "[EtMXMQW] and a ${rlTool} wrapper too"  "Looping: '.*/rawloop/wrap/${rlTool}' is already running under a 'raw ${rlTool}'" \
-				bash -c "cd '${acWork}' && : > '${rl}/count' && env ${acEnv} PATH='${rl}/wrap:${ac}/bin:${PATH}' '${gitsby}' -q raw ${rlTool} --version"
+			fAssertOut "[EtMXMQW] and a ${rlTool} wrapper reaches the ${rlTool} after it"  "^real ${rlTool} --version$" \
+				bash -c "cd '${acWork}' && : > '${rl}/count' && env ${rlWrapEnv} '${gitsby}' -q raw ${rlTool} --version"
 		done
 		## The same for the commands that run a host tool themselves: 'pr' ran the link as
 		## 'gh pr list' and printed our own syntax help. git alone sits beside the links.
@@ -4680,6 +4702,8 @@ GHEOF
 		ln -sf "$(command -v git)" "${rl}/git/git"
 		( cd "${rl}/ghrepo" && git init --quiet -b main && git remote add origin https://github.com/someone/repo.git )
 		( cd "${rl}/gitea" && git init --quiet -b main && git remote add origin https://gitea.example.com/someone/repo.git )
+		fAssertOut    "[EtX5aJx] pr behind a gh wrapper reaches gh's pr list"  '^pr list' \
+			bash -c "cd '${rl}/ghrepo' && : > '${rl}/count' && : > '${rl}/ghlog' && env ${rlWrapEnv} FAKE_GH_LOG='${rl}/ghlog' '${gitsby}' -q -NoFetch pr >/dev/null 2>&1; cat '${rl}/ghlog'"
 		fAssertOut "[EtMclGb] pr with only a gh that is gitsby is refused naming the entry"  "Not found in path: gh\\. '.*/rawloop/link/gh' is gitsby itself" \
 			bash -c "cd '${rl}/ghrepo' && env ${acEnv} PATH='${rl}/link:${rl}/git' '${goBin}' -q -NoFetch pr 2>&1"
 		fAssertOut "[EtMclHS] and so is repo create"  "Not found in path: gh\\. '.*/rawloop/link/gh' is gitsby itself" \
