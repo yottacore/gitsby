@@ -136,6 +136,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash `[EtU8Fno]` and Go `[EtU8FXc]` for the ssh host, plus the ones named above.
 	- Swept: `hostTokenEnv` has 3 callers. `raw glab` gets the new step. `pr` passes `-R`. `raw tea` was not changed: tea finds its login from the remote too, but no Gitea host seen so far puts ssh on `ssh.<host>`. Not checked against a real tea.
 
+- The workflow YAML check `[EtUDfjj]` skips in the container and on most boxes
+	- ID: 2026102220133673
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261022-201336
+	- Opened by: jim-collier
+	- Related IDs: 2026102218410000
+	- Requirements [Feature]:
+		- Add PyYAML to `cicd/container/requirements.txt` so `[EtUDfjj]` runs in the container, and name the test ID in its skip line.
+	- Progress log:
+		- 2026-10-22: Found by the round's test batch. The check ran only on vmDebARM64 and on b23 outside the container.
+
 - Updates to CICD script flags
 	- ID: 2026101816064793
 	- Type: Enhancement
