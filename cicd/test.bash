@@ -6544,7 +6544,7 @@ TEAEOF
 	fStub "${fg}/bin/glab" <<'GLEOF'
 #!/usr/bin/env bash
 [[ -n "${FAKE_GLAB_LOG:-}" ]] && echo "$*" >> "${FAKE_GLAB_LOG}"
-echo "host=${GITLAB_HOST:-} token=${GITLAB_TOKEN:-}"
+echo "host=${GITLAB_HOST:-} token=${GITLAB_TOKEN:-}${GITLAB_API_HOST:+ api=${GITLAB_API_HOST}}"
 GLEOF
 	## tig and lazygit are git underneath, so they get the account through git's own config.
 	fStub "${fg}/bin/tig" <<'TIGEOF'
@@ -6668,8 +6668,9 @@ GHEOF
 	fAssert "[EtRsYMX] raw glab auth status is pinned to the account's host" \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_GLAB_LOG='${fg}/glab.log' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw glab auth status >/dev/null && grep -qx 'auth status --hostname git.example.test' '${fg}/glab.log'"
 	## A host's ssh endpoint (ssh.gitlab.gnome.org) is the same service, so its token still applies.
+	## glab finds the repo only through a remote on GITLAB_HOST, so the account's host goes to the API.
 	git -C "${fgRepo}" remote set-url origin git@ssh.git.example.test:acme/proj.git
-	fAssertOut "[EtRzPaH] a remote on ssh.<host> still gets the account's token and host" '^host=https://git\.example\.test token=tok_ghonly$' \
+	fAssertOut "[EtRzPaH] a remote on ssh.<host> still gets the account's token and host" '^host=https://ssh\.git\.example\.test token=tok_ghonly api=git\.example\.test$' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw glab api user"
 	git -C "${fgRepo}" remote set-url origin https://git.example.test/acme/proj.git
 	## A GitLab remote is served by glab, not tea. The remote is on the ssh endpoint, and the repo is
@@ -6677,7 +6678,7 @@ GHEOF
 	mkdir -p "${fg}/glbin"
 	fStub "${fg}/glbin/glab" <<'GLEOF'
 #!/usr/bin/env bash
-[[ -n "${FAKE_GLAB_LOG:-}" ]] && echo "$* host=${GITLAB_HOST:-} token=${GITLAB_TOKEN:-}" >> "${FAKE_GLAB_LOG}"
+[[ -n "${FAKE_GLAB_LOG:-}" ]] && echo "$* api=${GITLAB_API_HOST:-} host=${GITLAB_HOST:-} token=${GITLAB_TOKEN:-}" >> "${FAKE_GLAB_LOG}"
 case "$1 $2" in
 "mr view")  echo "{\"iid\":7,\"state\":\"${FAKE_GLAB_STATE:-opened}\",\"source_branch\":\"glfeat\"}" ;;
 "mr list")  if [[ -n "${FAKE_GLAB_EXISTING:-}" ]]; then echo "[{\"iid\":${FAKE_GLAB_EXISTING}}]"; else echo "[]"; fi ;;
@@ -6709,6 +6710,10 @@ GLEOF
 	: > "${fg}/glab.log"
 	fAssert "[EtTo1kG] glab gets the account's token and host for pr" \
 		bash -c "cd '${fgGl}' && PATH='${fgGlPath}' FAKE_GLAB_LOG='${fg}/glab.log' '${gitsby}' -q -NoFetch --config '${fg}/gl-acct.shcl' pr && grep -q 'host=https://gitlab\.example\.test token=tok_ghonly\$' '${fg}/glab.log'"
+	## raw glab is left to find the repo itself, and glab takes it only from a remote on GITLAB_HOST.
+	: > "${fg}/glab.log"
+	fAssert "[EtU8Fno] raw glab names the remote's ssh host, with the API on the account's" \
+		bash -c "cd '${fgGl}' && PATH='${fgGlPath}' FAKE_GLAB_LOG='${fg}/glab.log' '${gitsby}' -q -NoFetch --config '${fg}/gl-acct.shcl' raw glab repo view && grep -qx 'repo view api=gitlab\.example\.test host=https://ssh\.gitlab\.example\.test token=tok_ghonly' '${fg}/glab.log'"
 	fAssertOut "[EtTo1qn] pr create refuses a branch that already has an open merge request" 'PR #3 is already open' \
 		bash -c "cd '${fgGl}' && PATH='${fgGlPath}' FAKE_GLAB_EXISTING=3 '${gitsby}' -q -NoFetch pr create 2>&1 || true"
 	fAssertOut "[EtTo1xK] pr ok reads glab's 'merged' as not open" 'PR #7 is merged, not open' \

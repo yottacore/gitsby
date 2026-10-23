@@ -832,6 +832,9 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 			}
 			if gave {
 				args = glabScopeAuth(args, a.acct.credHost)
+				if err := a.glabRemoteHost(); err != nil {
+					return err
+				}
 			}
 		}
 	}
