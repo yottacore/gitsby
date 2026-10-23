@@ -33,16 +33,51 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- `raw gh` loops forever behind a wrapper that clears the environment first
+	- ID: 2026102306584127
+	- Type: Bug
+	- Status: Waiting for answers
+		- Waits on its question in questions.md.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261023-065841
+	- Opened by: jim-collier
+	- Related IDs: 2026101916533300
+	- Target OS: All
+	- Steps to reproduce [Bug]:
+		- Put a `gh` first on PATH that runs `exec env -u GITSBY_RAW_ACTIVE gitsby raw gh "$@"`, or goes through `sudo`, `su -` or `env -i`, which drop it too. Run `gitsby raw gh --version`.
+	- Incorrect behavior [Bug]:
+		- Each start loses the chain, so nothing stops the loop. The rig's counter stopped it at 20.
+	- Expected behavior [Bug]:
+		- Stops after a few starts, like any other wrapper.
+	- Reproduced [Bug]: 2026-10-23 on b23, with `private/claude_simple/tools/rawloop-rig.bash`.
+	- Possible cause [Bug]:
+		- The chain lives only in the environment. A check of the parent processes would catch it, but costs a lookup per platform on every `raw`.
+
+- gitsby started under a tool's name could act as `raw` for it
+	- ID: 2026102306584132
+	- Type: Enhancement
+	- Status: Waiting for answers
+		- Waits on its question in questions.md.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261023-065841
+	- Opened by: jim-collier
+	- Related IDs: 2026101916533300, 2026102306584122
+	- Requirements [Feature]:
+		- A link to gitsby named `gh`, `tea`, `glab`, `lazygit` or `tig` runs `gitsby raw <name>`. Today it answers "Unknown command 'auth'".
+	- Progress log:
+		- 2026-10-23: From testing the b28l loop. tukzedo wanted every bare `gh` to go through gitsby, and wrote a wrapper script for it. A link would do the same with no script, and the PATH walk already passes over gitsby itself.
+
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
 	- Status: Waiting on UAT
-		- Waits on b28l.
+		- Waits on b28l, after 2026102306584122 and a dogfood run. b28l runs the synced build `9e82970` from 2026-10-19, which has neither fix.
 	- Needs local test suite run?: No. test.bash ran 1597/0.
-	- Needs external testing: b28l, the box that hit it, with `type -a gh` and a `gitsby raw gh auth status` there.
+	- Needs external testing: b28l, the box that hit it, with tukzedo's wrapper on PATH and a `gitsby raw gh auth status` there.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Critical
 	- Opened: 20261019-165333
 	- Opened by: jim-collier
+	- Prereq IDs: 2026102306584122
 	- Target OS: Linux
 	- Test environment: b28l
 	- Steps to reproduce [Bug]:
@@ -64,6 +99,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 2026-10-19: Logged from a report by another project's session on b28l. Cause is from reading the code, not from a run there. Still need the output of `type -a gh` on b28l.
 		- 2026-10-21: Fixed as the requirements ask. `raw` walks PATH itself, through `exec.LookPath` on each entry, and passes over an entry that is the running binary. It sets `GITSBY_RAW_ACTIVE` to the tool's path before anything runs the tool, the tea probes and the account's gh calls included, and a `raw` that finds it set at startup refuses and names it. The hermetic suites unset it.
 		- 2026-10-22: The guard refused every nested `raw`, hooks and aliases included. `GITSBY_RAW_ACTIVE` is now the chain of `raw` runs above, one short entry each, and a `raw` refuses only to start one already on it. While `raw` runs tools only to check them, such as the tea and gh probes, the chain ends in a probe mark, and a `raw` started under that refuses. A loop with new arguments each time stops at 16 deep.
+		- 2026-10-23: The b28l session was tukzedo's. Its memory.md says a `gh` wrapper running `exec gitsby raw gh "$@"` grew to about 15,000 processes and 56 GB in 28 minutes on 2026-10-19. Tried that wrapper on b23 against the gover build: no loop, 2 or 3 starts and a refusal. The old build loops in every case until the rig's cap. The wrapper still fails, and so do gitsby's own gh calls behind it, filed as 2026102306584122. A wrapper that clears the environment still loops, filed as 2026102306584127. Rig: `private/claude_simple/tools/rawloop-rig.bash`.
 	- Actual cause [Bug]:
 		- As the possible cause says. `raw` ran the tool by bare name and never asked what it found. Every run through a wrapper started the next.
 	- Actual fix [Bug]: `lookTool` in exec.go, used by `cmdPassthrough` for all six tools, and `rawActive` read in `newApp`. The tool still sees its own name as argv[0]. design.md's `raw` bullets say so. Since 2026-10-22, `rawNest` in exec.go builds and checks the chain.
@@ -82,6 +118,36 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: 2026-10-22, test.bash 1594 -> 1597, 0 failed, with the reworded `[EtMXMNv]` and `[EtMXMQW]`. On the build before, the 3 new checks fail. The Go tests fail with each part of `rawNest` taken out in turn: the repeat check, the probe mark, the depth limit, the folder and the separator between arguments. Outside the suite, a wrapper `gh` started once and was refused, and one adding an argument each time stopped at 16. `GOOS=windows go vet` and the Windows test build, and darwin and freebsd builds, pass.
 	- Verified: 2026-10-22, stage 7 passed on every box for the nesting change. test.bash 1371/0 on b26 and 1274/0 on vmFreeBSD, each 3 more than on 10-21, which are `[EtOGJ6U]`, `[EtOGJ6i]` and `[EtOGJ6v]`. 1583/0 on vmDebARM64, 4 more, those 3 plus `[EtOKpZS]`, which sits in the Linux-only pre-push gate block. `[EtOGJ79]` and `[EtOGJ7M]` passed in the Go tests on b26, vmFreeBSD, vmDebARM64 natively and under Wine, and vm925w, where the Go tests were 191 ok and 23 skipped, 2 more ok than on 10-21. `[EtMXfJm]` passed there too. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log`.
 	- Swept: every `raw` tool shares `cmdPassthrough`, git included. 2026-10-22: `rawActive` has one reader, `cmdPassthrough`, and the variable is unset in all 4 hermetic suites. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
+
+- A `gh` wrapper that calls `gitsby raw gh` still fails, and gitsby's own `gh` calls fail behind it
+	- ID: 2026102306584122
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261023-065841
+	- Opened by: jim-collier
+	- Related IDs: 2026101916533300
+	- Target OS: All
+	- Steps to reproduce [Bug]:
+		- Put the wrapper tukzedo used on b28l first on PATH, a `gh` that runs `exec gitsby raw gh "$@"`, with the real `gh` later on PATH.
+		- Run `gitsby raw gh --version`, a bare `gh --version`, a script that calls bare `gh`, `gitsby whoami` and `gitsby pr`.
+	- Incorrect behavior [Bug]:
+		- No loop since 2026101916533300, but every one fails. `raw` refuses with "Looping: ... Unset GITSBY_RAW_ACTIVE to run anyway." `whoami` says gh is not logged in, and `pr` says "'gh pr list' failed".
+		- The hint is wrong for a wrapper. Unsetting the variable brings the endless loop back.
+	- Expected behavior [Bug]:
+		- The wrapper does what it was written for. Every one of those reaches the real `gh`, as the account, after one extra start.
+	- Reproduced [Bug]: 2026-10-23 on b23, with `private/claude_simple/tools/rawloop-rig.bash`. 2 or 3 wrapper starts each, then the refusal. 6 for `whoami` and `pr`, from their probes.
+	- Possible cause [Bug]:
+		- `rawNest` refuses when its own entry is already on the chain. That entry means the file it found is what started it, so the file is a wrapper. Passing over that entry and going on down PATH would find the real tool.
+	- Requirements [Bug fix]:
+		- A `raw` whose entry for a PATH entry is already on the chain passes over that entry and tries the next one. It refuses only when none is left, or past the depth limit.
+		- A `raw` started under the probe mark does the same, and hands over with no account work or probes of its own, so probes can't multiply.
+		- The refusal drops the advice to unset `GITSBY_RAW_ACTIVE`, or gives it only where it can't loop.
+		- Hooks and aliases that call `raw` keep working as the 2026-10-22 decision says.
+		- Test case: the wrapper above, with each of those commands reaching the real `gh` and a counted cap on starts. Watch it fail on the current build first.
+	- Estimated effort: Avg
+	- Progress log:
+		- 2026-10-23: The item it follows set out to refuse. The 2026-10-22 answer, "What any sane human git user would expect", points at making a wrapper like this work instead. tukzedo's memory now says never to put such a wrapper on PATH.
 
 - The workflow YAML check `[EtUDfjj]` skips in the container and on most boxes
 	- ID: 2026102220133673
