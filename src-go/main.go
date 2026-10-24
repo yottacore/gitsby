@@ -12,6 +12,8 @@ package main
 import (
 	"errors"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -35,9 +37,24 @@ const (
 
 func main() {
 	out := newPrinter()
+	if err := borrowedName(os.Args[0]); err != nil {
+		os.Exit(reportExit(out, err))
+	}
 	if err := run(out, os.Args[1:]); err != nil {
 		os.Exit(reportExit(out, err))
 	}
+}
+
+// borrowedName refuses to run as a link or copy named for a tool 'raw' fronts.
+// As 'gh' it would answer every bare gh call with "Unknown command", and acting
+// as the tool instead is one more way in, which nothing needs.
+func borrowedName(argv0 string) error {
+	base := filepath.Base(argv0)
+	name := strings.TrimSuffix(strings.ToLower(base), ".exe")
+	if slices.Contains(rawTools, name) || name == "tea-cli" {
+		return usagef("Started as '%s', which is the name of a tool '%s raw %s' runs. Rename or remove that link or copy, and run %s by its own name.", base, meName, name, meName)
+	}
+	return nil
 }
 
 // reportExit turns whatever came back into the framing and the status that go

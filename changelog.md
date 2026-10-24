@@ -53,9 +53,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Every build carries a build number alongside the version: `gitsby v2.1.0 build dbrk8`. It is the number of minutes from the start of 2000 to the commit the build was made from, in Crockford base32 - five characters, and none of the letters that get misread when somebody reads one back over the phone. Taken from the commit rather than the clock, so the same source always gives the same build number and a published binary can still be rebuilt to the checksum it was published with. `--version`, the help screen and the release notes all name it.
 
+- A build between releases adds its commit's date after the build number, as `gitsby v3.0.0-beta.1-4-ga12019f build dbsh4 (2026-10-23)`. A release build shows no date.
+
 - Commands say which build produced their output, on a line of their own above it, so a report of something going wrong carries the version and build number without anyone having to ask for them. `-q` leaves the line out, and `raw git` and `raw gh` still hand their tool's output straight back with nothing added.
 
 - `raw` also runs `tea`, `glab`, `lazygit` and `tig` as the folder's account. tea and glab get the account's token for the repo's host, never a GitHub one. A tea older than 0.11 can't take it, so when its own login for the host is somebody else Gitsby warns, and `-q` refuses. `--any-identity` before `raw` works now too, and runs the tool with no account applied.
+
+- Gitsby won't run under the name of a tool `raw` runs, such as a link to it named `gh`. It used to read gh's arguments as its own and answer "Unknown command". Now it says to run it as `gitsby raw gh` instead.
 
 - `--about` prints what Gitsby is, who wrote it, the license it is under, and where it lives. `--donate` prints the sponsorship link. Both work outside a repository, and both are spelled as bare words too.
 

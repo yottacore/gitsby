@@ -120,6 +120,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 - No command shells out through `eval`. Arguments are passed as arrays, so a message or branch name is never re-parsed.
 
 - Every program gitsby runs, git included, is found by one lookup that passes over any PATH entry that is gitsby itself. A link named `gh` to gitsby would otherwise start gitsby with gh's arguments. With nothing else on PATH, the command refuses with "Not found in path" and names that entry. The program still sees its own name as argv[0].
+	- Started under the name of a tool `raw` runs, gitsby refuses and points to `gitsby raw <name>`. Acting as that tool would be one more way in, and nothing needs it. Any other name still runs, since the release files are named like `gitsby-linux-amd64`.
 
 - Any command named inside an error message, or in the built-in help, has to be one the parser still accepts. The help is the only documentation most people read, so it drifting is a defect, not a typo.
 
@@ -147,6 +148,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- Crockford's alphabet leaves out I, L, O and U, so a build number read aloud or retyped comes back as the one it was.
 	- It is derived from the commit's own date, not from the clock at build time. A clock-derived number would change on every rebuild, which would mean nobody, including us, could rebuild a published binary to its published checksum - the same property `-buildvcs=false` exists to protect. As a consequence the release cross-builds twice: once in phase 1 as a compile gate, and again in phase 3 from the tagged commit, which is where the uploaded bytes come from.
 	- A hand-run `go build` stamps nothing and reports no build number at all, rather than one invented from the clock. A number that moves every minute would say the opposite of what a build number means.
+	- A build between releases also shows the commit's date in UTC, as `build dbrk8 (2026-10-23)`, since nobody can read a date off a build number. The date comes from the same commit time, so rebuilds still match. A release is a version that is a tag's own. Anything git describe adds past a tag, a bare hash, and 0.0.0 aren't.
 	- Output starts with the build line so a bug report carries it without being asked. Not under `-q`, which is the machine-readable mode, and never on `raw`, which exists to hand a tool's output back unchanged. `--version` and the help screen already printed a version line and gained the build number there instead of a second line saying the same thing.
 
 - An account's credentials are only credentials where that account banks.

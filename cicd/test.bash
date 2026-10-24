@@ -4687,6 +4687,13 @@ GHEOF
 			bash -c "cd '${acWork}' && env ${acEnv} PATH='${rl}/link:${ac}/bin:${PATH}' '${gitsby}' -q raw gh auth token --user workacct"
 		fAssertOut    "[EtMXMN4] and with no other gh, refused naming the entry"  "Not found in path: gh\\. '.*/rawloop/link/gh' is gitsby itself" \
 			bash -c "cd '${acWork}' && env ${acEnv} PATH='${rl}/link' '${goBin}' -q raw gh auth token"
+		## Started by a tool's name, it refuses rather than read that tool's arguments as its own.
+		mkdir -p "${rl}/named"
+		for rlTool in git gh tea tea-cli glab lazygit tig; do
+			ln -sf "${goBin}" "${rl}/named/${rlTool}"
+			fAssertOut "[EtZeZfd] a link to it named ${rlTool} refuses, naming 'raw ${rlTool}'"  "Started as '${rlTool}', which is the name of a tool 'gitsby raw ${rlTool}' runs" \
+				bash -c "env ${acEnv} '${rl}/named/${rlTool}' auth status"
+		done
 		local rlWrapEnv="${acEnv} PATH='${rl}/wrap:${rl}/real:${ac}/bin:${PATH}'"
 		fAssertOut    "[EtMXMNv] a gh wrapper that runs raw gh again reaches the gh after it on PATH"  '^gho_faketoken$' \
 			bash -c "cd '${acWork}' && : > '${rl}/count' && env ${rlWrapEnv} '${gitsby}' -q raw gh auth token --user workacct"
@@ -5126,6 +5133,9 @@ GHEOF
 	## an unstamped build reports none rather than one that moves every minute.
 	fAssertOut "[Eo59IMg] an unstamped build reports no build number"  '^gitsby v9\.9\.9$' \
 		bash -c "cd '${root}/src-go' && go build -ldflags '-X main.version=9.9.9' -o '${work}/bnprobe0' . && '${work}/bnprobe0' --version"
+	## Between releases the build number alone doesn't say how old a build is.
+	fAssertOut "[EtZeZfq] a build past a tag adds the commit's date after the build number"  '^gitsby v9\.9\.9-3-gabc1234-dirty build dbd05 \(2026-08-17\)$' \
+		bash -c "cd '${root}/src-go' && go build -ldflags '-X main.version=9.9.9-3-gabc1234-dirty -X main.buildEpoch=1787000000' -o '${work}/bnprobe2' . && '${work}/bnprobe2' --version"
 	fAssertOut "[Epywvo0] and the copyright has a line of its own"  '^Copyright © [0-9-]+ Jim Collier\.$' \
 		bash -c "'${work}/bnprobe0' --version"
 	## release.bash reads the build line back out of the banner for the release notes, and used

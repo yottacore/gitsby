@@ -10,6 +10,7 @@
 package main
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -356,4 +357,21 @@ func joinArgs(args []string) string {
 		out += a + "\x00"
 	}
 	return out
+}
+
+func TestBorrowedNameRefusesRawToolNames(t *testing.T) { // [EtZeZfP]
+	for _, name := range append(slices.Clone(rawTools), "tea-cli") {
+		for _, argv0 := range []string{name, "/usr/local/bin/" + name, strings.ToUpper(name) + ".exe"} {
+			err := borrowedName(argv0)
+			if err == nil || !strings.Contains(err.Error(), "'gitsby raw "+name+"'") {
+				t.Errorf("borrowedName(%q) = %v, want a refusal naming 'gitsby raw %s'", argv0, err, name)
+			}
+		}
+	}
+	// Any other name is fine, release asset names included.
+	for _, argv0 := range []string{"gitsby", "./gitsby", "gitsby.exe", "gitsby-linux-amd64", "gitsby-windows-arm64.exe", "gitsby.test", "ghx", "git-gitsby"} {
+		if err := borrowedName(argv0); err != nil {
+			t.Errorf("borrowedName(%q) = %v, want nil", argv0, err)
+		}
+	}
 }
