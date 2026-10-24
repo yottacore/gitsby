@@ -5133,9 +5133,9 @@ GHEOF
 	## an unstamped build reports none rather than one that moves every minute.
 	fAssertOut "[Eo59IMg] an unstamped build reports no build number"  '^gitsby v9\.9\.9$' \
 		bash -c "cd '${root}/src-go' && go build -ldflags '-X main.version=9.9.9' -o '${work}/bnprobe0' . && '${work}/bnprobe0' --version"
-	## Between releases the build number alone doesn't say how old a build is.
+	## Between releases the build number alone doesn't say how old a build is. The date is local, so pin the zone.
 	fAssertOut "[EtZeZfq] a build past a tag adds the commit's date after the build number"  '^gitsby v9\.9\.9-3-gabc1234-dirty build dbd05 \(2026-08-17\)$' \
-		bash -c "cd '${root}/src-go' && go build -ldflags '-X main.version=9.9.9-3-gabc1234-dirty -X main.buildEpoch=1787000000' -o '${work}/bnprobe2' . && '${work}/bnprobe2' --version"
+		bash -c "cd '${root}/src-go' && go build -ldflags '-X main.version=9.9.9-3-gabc1234-dirty -X main.buildEpoch=1787000000' -o '${work}/bnprobe2' . && TZ=UTC '${work}/bnprobe2' --version"
 	fAssertOut "[Epywvo0] and the copyright has a line of its own"  '^Copyright © [0-9-]+ Jim Collier\.$' \
 		bash -c "'${work}/bnprobe0' --version"
 	## release.bash reads the build line back out of the banner for the release notes, and used

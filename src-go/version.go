@@ -73,7 +73,7 @@ func isReleaseVersion(v string) bool {
 }
 
 // versionText is "v2.1.0 build dbrk8", or just the version where nothing stamped a
-// build. Between releases the commit's date (UTC) follows, since a build number
+// build. Between releases the commit's date follows, in the viewer's time zone
 // can't be read as a date by eye.
 func versionText() string {
 	b := buildNumber()
@@ -84,5 +84,5 @@ func versionText() string {
 		return "v" + version + " build " + b
 	}
 	secs, _ := buildSecs()
-	return "v" + version + " build " + b + " (" + time.Unix(secs, 0).UTC().Format("2006-01-02") + ")"
+	return "v" + version + " build " + b + " (" + time.Unix(secs, 0).Local().Format("2006-01-02") + ")"
 }

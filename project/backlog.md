@@ -33,28 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- Builds between releases show their date after the build number
-	- ID: 2026102317400737
-	- Type: Enhancement
-	- Status: Waiting on signoff
-		- Waits on whether the date is UTC or local, in questions.md.
-	- Needs local test suite run?: No. test.bash ran it.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261023-174007
-	- Opened by: jim-collier
-	- Requirements [Feature]:
-		- For non-release builds, include " (YYYY-mm-DD)" after the build number.
-	- Progress log:
-		- 2026-10-23: Done. `gitsby v3.0.0-beta.1-4-ga12019f build dbsh4 (2026-10-23)`. A release build reads as before.
-	- Decisions:
-		- The date is the commit's, in UTC, from the same stamp as the build number. A rebuild still matches its checksum, and 2 boxes report one build the same way.
-		- A release build is one whose version is a tag's own, such as 2.1.0 or 3.0.0-beta.1. A version with git describe's `-N-g<hash>` or `-dirty` after it, a bare hash, or 0.0.0 gets the date.
-		- An unstamped build has no build number, so no date either.
-		- The demo is built at a tag's version, so its gif doesn't change.
-	- Branch: round-20261023c
-	- Test case: test.bash `[EtZeZfq]`. Go `[EtZeZfA]`.
-	- Verified: 2026-10-23, `[EtZeZfA]` fails with every version taken as a release. Release.bash reads the build line only from release builds, which have no date.
-
 - A `gh` wrapper that calls `gitsby raw gh` still fails, and gitsby's own `gh` calls fail behind it
 	- ID: 2026102306584122
 	- Type: Bug
@@ -1873,6 +1851,29 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [Et9l12K] in test.bash. It fails with the pin dropped from any one build site or from the README.
 	- Acceptance signoff: Self-closed: the intent was clear, and the pin changes no published bytes.
 	- Closed: 20261019-072414
+
+- Builds between releases show their date after the build number
+	- ID: 2026102317400737
+	- Type: Enhancement
+	- Status: Done
+	- Needs local test suite run?: No. test.bash ran it.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261023-174007
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- For non-release builds, include " (YYYY-mm-DD)" after the build number.
+	- Progress log:
+		- 2026-10-23: Done. `gitsby v3.0.0-beta.1-4-ga12019f build dbsh4 (2026-10-23)`. A release build reads as before.
+		- 2026-10-23: The date was UTC at first, so an evening build here read as the next day. Changed to local, as answered.
+	- Decisions:
+		- The date is the commit's, from the same stamp as the build number, so a rebuild still matches its checksum. It's shown in the local time zone of whoever views the version (answer 2026-10-23), so 2 boxes can show one build a day apart.
+		- A release build is one whose version is a tag's own, such as 2.1.0 or 3.0.0-beta.1. A version with git describe's `-N-g<hash>` or `-dirty` after it, a bare hash, or 0.0.0 gets the date.
+		- An unstamped build has no build number, so no date either.
+		- The demo is built at a tag's version, so its gif doesn't change.
+	- Branch: round-20261023c
+	- Test case: test.bash `[EtZeZfq]`. Go `[EtZeZfA]`.
+	- Verified: 2026-10-23, `[EtZeZfA]` fails with every version taken as a release, and with the date in UTC. Release.bash reads the build line only from release builds, which have no date.
+	- Closed: 20261023-180940
 
 - gitsby refuses to run under the name of a tool `raw` runs
 	- ID: 2026102306584132

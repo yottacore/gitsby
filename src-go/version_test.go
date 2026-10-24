@@ -11,6 +11,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCrockfordBase32(t *testing.T) { // [Eo59IMl]
@@ -90,9 +91,10 @@ func TestVersionTextOmitsAnUnstampedBuild(t *testing.T) { // [Eo59IMo]
 }
 
 func TestVersionTextDatesABuildBetweenReleases(t *testing.T) { // [EtZeZfA]
-	savedEpoch, savedVer := buildEpoch, version
-	defer func() { buildEpoch, version = savedEpoch, savedVer }()
-	buildEpoch = "1787000000" // 2026-08-17 UTC
+	savedEpoch, savedVer, savedLocal := buildEpoch, version, time.Local
+	defer func() { buildEpoch, version, time.Local = savedEpoch, savedVer, savedLocal }()
+	buildEpoch = "1787000000" // 2026-08-17 20:53 UTC
+	time.Local = time.UTC
 	tests := []struct {
 		ver, want string
 	}{
@@ -110,6 +112,12 @@ func TestVersionTextDatesABuildBetweenReleases(t *testing.T) { // [EtZeZfA]
 		if got := versionText(); got != tc.want {
 			t.Errorf("versionText() at %q = %q, want %q", tc.ver, got, tc.want)
 		}
+	}
+	// Read where it's already the next day.
+	time.Local = time.FixedZone("UTC+4", 4*60*60)
+	version = "2.1.0-dirty"
+	if got := versionText(); got != "v2.1.0-dirty build dbd05 (2026-08-18)" {
+		t.Errorf("versionText() at UTC+4 = %q, want the local date 2026-08-18", got)
 	}
 	// No build number, no date either.
 	buildEpoch, version = "", "2.1.0-12-ga12019f"
