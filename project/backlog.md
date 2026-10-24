@@ -33,6 +33,36 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- test.bash's remote harness checks fail when stage 7 is narrowed to one box
+	- ID: 2026102321011743
+	- Type: Bug
+	- Status: Done
+	- Needs local test suite run?: No. test.bash ran 1677/0, narrowed and not.
+	- Needs external testing: No.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261023-210117
+	- Opened by: jim-collier
+	- Related IDs: 2026102306584122
+	- Target OS: All
+	- Steps to reproduce [Bug]:
+		- In a clone, set `REMOTE_MAC_HOSTS` and `REMOTE_WINDOWS_HOSTS` empty in `cicd/config.bash`, the way memory.md says to run stage 7 on one box, and run test.bash.
+	- Incorrect behavior [Bug]:
+		- 23 checks of the Mac and Windows harness fail, from `[ErkbDUK]` to `[Erm9Pp1]`. Then the last check's setup stops the suite with "mv: cannot stat '.../remote-mac/gitsby-remote-tests'", so nothing after it runs and no totals print. Seen 2026-10-23 on vmDebARM64.
+	- Expected behavior [Bug]:
+		- The harness checks set their own host lists, so they pass whatever the tree's config.bash names.
+	- Possible cause [Bug]:
+		- The fixture copies the tree's config.bash and resets only `REMOTE_UNIX_HOSTS`. The checks expect b26, vm925w and b29w from it.
+	- Reproduced [Bug]: 2026-10-24 on b23, in a clone with the Mac and Windows lists empty and the Unix list down to vmDebARM64. 25 failed and the suite stopped at the `mv`, as above.
+	- Actual cause [Bug]:
+		- As guessed, plus a twin. The stage 7 checks in the cicd.bash fixture, `[ErkbDSi]` and `[Et6FC2n]`, read the Unix boxes and targets from the tree's config.bash too. They failed once the Unix list was narrowed.
+	- Actual fix [Bug]: `fRemoteBoxes` in test.bash appends the boxes and settings the checks expect to a fixture's config.bash. The harness fixture uses it at each of its 3 copies, and the cicd.bash fixture before its stage 7 checks. Wine is left empty there, since no check runs it.
+	- Swept: every `config.bash` copy and `source` in test.bash. The release, keep-build, shellcheck and CodeQL fixtures read no stage 7 setting.
+	- Branch: round-20261024
+	- Test case: test.bash itself, run with config.bash narrowed. No new check, since the fault is in what the tree's config holds.
+	- Verified: 2026-10-24, test.bash in the narrowed clone, 25 failed before and 1677/0 after. 1677/0 in the main tree with config.bash as committed. Gate passed.
+	- Acceptance signoff: Self-closed. Reproduced, fails before and passes after, no open choice.
+	- Closed: 20261024-064653
+
 - A `gh` wrapper that calls `gitsby raw gh` still fails, and gitsby's own `gh` calls fail behind it
 	- ID: 2026102306584122
 	- Type: Bug
@@ -85,25 +115,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: `rawActive` and `rawNest` have one caller, `cmdPassthrough`, which every `raw` tool shares. `findTool` and its cache are unchanged for every other spawn. README names no refusal text. design.md's `raw` bullet updated.
 	- Acceptance signoff: Self-closed 2026-10-24. The behavior changed from the expected "one extra start" to 2 or 3 per `gh` call. Each is a short Go start, and getting to one would change hooks under every command, against the 2026-10-22 decision.
 	- Closed: 20261024-133500
-
-- test.bash's remote harness checks fail when stage 7 is narrowed to one box
-	- ID: 2026102321011743
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261023-210117
-	- Opened by: jim-collier
-	- Related IDs: 2026102306584122
-	- Target OS: All
-	- Steps to reproduce [Bug]:
-		- In a clone, set `REMOTE_MAC_HOSTS` and `REMOTE_WINDOWS_HOSTS` empty in `cicd/config.bash`, the way memory.md says to run stage 7 on one box, and run test.bash.
-	- Incorrect behavior [Bug]:
-		- 23 checks of the Mac and Windows harness fail, from `[ErkbDUK]` to `[Erm9Pp1]`. Then the last check's setup stops the suite with "mv: cannot stat '.../remote-mac/gitsby-remote-tests'", so nothing after it runs and no totals print. Seen 2026-10-23 on vmDebARM64.
-	- Expected behavior [Bug]:
-		- The harness checks set their own host lists, so they pass whatever the tree's config.bash names.
-	- Possible cause [Bug]:
-		- The fixture copies the tree's config.bash and resets only `REMOTE_UNIX_HOSTS`. The checks expect b26, vm925w and b29w from it.
-	- Test case: a run of test.bash with the lists narrowed.
 
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300

@@ -707,6 +707,24 @@ fRemoteRun(){
 	: > "${rtLog}"; rtRc=0
 	(cd "${rt}" && HOME="${rtHome}" PATH="${rtBin}:${PATH}" X_CODE_SESSION_ID=s X_PID=$$ ./cicd/remote-tests.bash "$@") </dev/null >"${rtOut}" 2>&1 || rtRc=$?
 }
+## The boxes and settings the stage 7 checks expect, put back at the end of config.bash $1, so a
+## tree narrowed to one box for stage 7 still passes. Wine is left off, since no check runs it.
+fRemoteBoxes(){
+	cat >> "$1" <<-'EOF'
+		REMOTE_MAC_HOSTS=("b26")
+		REMOTE_WINDOWS_HOSTS=("vm925w" "b29w:b29w,b29w-wif")
+		REMOTE_MAC_GOARCH="amd64"
+		REMOTE_MAC_BASH="/usr/local/bin/bash"
+		REMOTE_MAC_DIR="gitsby-remote-tests"
+		REMOTE_UNIX_DIR="gitsby-remote-tests"
+		REMOTE_UNIX_HOSTS=("vmFreeBSD:bsdtest@vmFreeBSD" "vmDebARM64:tester@vmDebARM64")
+		declare -gA REMOTE_UNIX_TARGETS=([vmFreeBSD]="freebsd/amd64" [vmDebARM64]="linux/arm64")
+		REMOTE_UNIX_NEEDS=(bash git go)
+		declare -gA REMOTE_UNIX_WINE=()
+	EOF
+}
+## The tree's config.bash in the harness fixture, with those boxes.
+fRemoteConfig(){ cp "${root}/cicd/config.bash" "${rt}/cicd/"; fRemoteBoxes "${rt}/cicd/config.bash" ;}
 ## True when the last run made a folder under %TEMP% on the Windows box $1, and removed that one.
 fRemoteWinCleaned(){
 	local d=""
@@ -5971,6 +5989,7 @@ EOF
 			bash -c "[[ '${gateRc}' == 0 && -f '${gateDest}/gitsby' ]] && grep -qF 'WARNING: no windows/amd64 dogfood dest exists/writable' '${gateOut}' && grep -qF 'WARNING: no darwin/universal dogfood dest exists/writable' '${gateOut}'"
 		## Stage 7 hands its harness a universal Mac build joined the way dogfood joins one, and a
 		## build for each Unix box's target.
+		fRemoteBoxes "${gateDir}/cicd/config.bash"
 		fGateOnly remote
 		fAssert "[ErkbDSi] stage 7 builds the universal Mac binary and the Unix ones, hands them to the remote harness and removes them" \
 			bash -c "[[ '${gateRc}' == 0 && ! -e '${gateDir}/src-go/gitsby-darwin-universal' && ! -e '${gateDir}/src-go/gitsby-freebsd-amd64' && ! -e '${gateDir}/src-go/gitsby-linux-arm64' ]] && grep -qxF '[ 7/8  Remote tests ]' '${gateOut}' && grep -qF 'macho-universal.bash ${gateDir}/src-go/gitsby-darwin-universal ' '${gateCalls}' && grep -qxF 'remote-tests.bash --mac-bin ${gateDir}/src-go/gitsby-darwin-universal --bin freebsd/amd64 ${gateDir}/src-go/gitsby-freebsd-amd64 --bin linux/arm64 ${gateDir}/src-go/gitsby-linux-arm64' '${gateCalls}'"
@@ -6199,7 +6218,8 @@ EOF
 		local rtLog="${work}/remote-calls.log" rtFail="${work}/remote-fail" rtOut="${work}/remote-out.txt" rtRc=0 rtMacBin="${work}/remote-macbin" rtHost=""
 		local rtLock="${rtHome}/synced/0-0/common/exec/util/linux/bash/x_windows-host-lock.bash"
 		mkdir -p "${rt}/cicd/utility/include" "${rt}/src-go" "${rtBin}" "${rtMac}" "${rtFail}" "${rtLock%/*}"
-		cp "${root}/cicd/remote-tests.bash" "${root}/cicd/config.bash" "${rt}/cicd/"
+		cp "${root}/cicd/remote-tests.bash" "${rt}/cicd/"
+		fRemoteConfig
 		cp "${root}/cicd/utility/include/go-test-lines.bash" "${rt}/cicd/utility/include/"
 		## The Unix boxes have runs of their own further down, with the config put back.
 		echo 'REMOTE_UNIX_HOSTS=()' >> "${rt}/cicd/config.bash"
@@ -6319,8 +6339,8 @@ EOF
 		rm -f -- "${rtFail:?}/go-build"
 		fAssert "[ErkbduL] Go tests that do not build for the Mac fail the run before any box is taken" \
 			bash -c "[[ '${rtRc}' == 1 ]] && grep -qF 'FAIL: the Go tests do not build for darwin/amd64' '${rtOut}' && ! grep -q '^lock ' '${rtLog}'"
-		## The Unix boxes, as config.bash names them, beside the Mac and Windows ones.
-		cp "${root}/cicd/config.bash" "${rt}/cicd/"
+		## The Unix boxes, beside the Mac and Windows ones.
+		fRemoteConfig
 		local rtBsd="${work}/remote-unix-bsdtest@vmFreeBSD/gitsby-remote-tests" rtArm="${work}/remote-unix-tester@vmDebARM64/gitsby-remote-tests"
 		echo freebsd > "${work}/remote-bsdbin"; echo arm64 > "${work}/remote-armbin"
 		local rtBins=(--mac-bin "${rtMacBin}" --bin freebsd/amd64 "${work}/remote-bsdbin" --bin linux/arm64 "${work}/remote-armbin")
@@ -6350,7 +6370,7 @@ EOF
 		fAssert "[Erm9Pp1] a failing suite on a Unix box fails the run"  bash -c "[[ '${rtRc}' == 1 ]] && grep -qxF '  FAIL: vmFreeBSD test.bash' '${rtOut}' && grep -qF 'failed on: vmFreeBSD' '${rtOut}'"
 		echo 'REMOTE_UNIX_HOSTS+=("vmOther:u@vmOther")' >> "${rt}/cicd/config.bash"
 		fRemoteRun "${rtBins[@]}"
-		cp "${root}/cicd/config.bash" "${rt}/cicd/"
+		fRemoteConfig
 		fAssert "[Erm9PpE] a Unix box with no target set stops the run before anything is reached" \
 			bash -c "[[ '${rtRc}' == 2 ]] && grep -qF 'REMOTE_UNIX_TARGETS has no target like freebsd/amd64 for vmOther' '${rtOut}' && [[ ! -s '${rtLog}' ]]"
 
@@ -7259,3 +7279,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261022 JC: The goleak check lists test folders without find's GNU-only output format, which failed it on macOS, and a check keeps that format out of the suite and the installer. 1661 -> 1662.
 ##		- 20261023 JC: The workflow parse check's skip line names its test ID, and the image has PyYAML, so the check runs there. The Pillow lock check reads the image's own patterns, and a check holds PyYAML to the same. 1667 -> 1668.
 ##		- 20261023 JC: A full run's container is named and labeled for the run, and the check reads the name back from the output. 1676 -> 1677.
+##		- 20261024 JC: The stage 7 checks put back the boxes they expect, so a tree with config.bash narrowed to one box passes them. 1677 -> 1677.
