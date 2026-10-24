@@ -33,40 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- `raw gh` loops forever behind a wrapper that clears the environment first
-	- ID: 2026102306584127
-	- Type: Bug
-	- Status: Waiting for answers
-		- Waits on its question in questions.md.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261023-065841
-	- Opened by: jim-collier
-	- Related IDs: 2026101916533300
-	- Target OS: All
-	- Steps to reproduce [Bug]:
-		- Put a `gh` first on PATH that runs `exec env -u GITSBY_RAW_ACTIVE gitsby raw gh "$@"`, or goes through `sudo`, `su -` or `env -i`, which drop it too. Run `gitsby raw gh --version`.
-	- Incorrect behavior [Bug]:
-		- Each start loses the chain, so nothing stops the loop. The rig's counter stopped it at 20.
-	- Expected behavior [Bug]:
-		- Stops after a few starts, like any other wrapper.
-	- Reproduced [Bug]: 2026-10-23 on b23, with `private/claude_simple/tools/rawloop-rig.bash`.
-	- Possible cause [Bug]:
-		- The chain lives only in the environment. A check of the parent processes would catch it, but costs a lookup per platform on every `raw`.
-
-- gitsby started under a tool's name could act as `raw` for it
-	- ID: 2026102306584132
-	- Type: Enhancement
-	- Status: Waiting for answers
-		- Waits on its question in questions.md.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261023-065841
-	- Opened by: jim-collier
-	- Related IDs: 2026101916533300, 2026102306584122
-	- Requirements [Feature]:
-		- A link to gitsby named `gh`, `tea`, `glab`, `lazygit` or `tig` runs `gitsby raw <name>`. Today it answers "Unknown command 'auth'".
-	- Progress log:
-		- 2026-10-23: From testing the b28l loop. tukzedo wanted every bare `gh` to go through gitsby, and wrote a wrapper script for it. A link would do the same with no script, and the PATH walk already passes over gitsby itself.
-
 - A `gh` wrapper that calls `gitsby raw gh` still fails, and gitsby's own `gh` calls fail behind it
 	- ID: 2026102306584122
 	- Type: Bug
@@ -1886,6 +1852,50 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: Self-closed: the intent was clear, and the pin changes no published bytes.
 	- Closed: 20261019-072414
 
+- gitsby refuses to run under the name of a tool `raw` runs
+	- ID: 2026102306584132
+	- Type: Enhancement
+	- Status: Done
+	- Needs local test suite run?: No. test.bash ran it.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261023-065841
+	- Opened by: jim-collier
+	- Related IDs: 2026101916533300, 2026102306584122
+	- Requirements [Feature]:
+		- It should error if gitsby is linked to, or renamed, any name that can be reached through `gitsby raw XYZ`.
+	- Progress log:
+		- 2026-10-23: From testing the b28l loop. tukzedo wanted every bare `gh` to go through gitsby, and wrote a wrapper script for it. First asked whether a link named `gh` should act as `raw gh`. Answered no: refuse instead.
+		- 2026-10-23: Done. gitsby checks its own name before anything else and refuses as git, gh, tea, tea-cli, glab, lazygit or tig, with or without `.exe`, in any case. The error says to run `gitsby raw <name>`.
+	- Decisions:
+		- Every other name still runs. Release files are named like `gitsby-linux-amd64`, and a copy under some other name can't do anything `gitsby` can't.
+	- Branch: round-20261023c
+	- Test case: test.bash `[EtZeZfd]`, a link under each of the 7 names. Go `[EtZeZfP]`.
+	- Verified: 2026-10-23, `[EtZeZfP]` fails 27 ways with the check stubbed out. A bare `gh` through a link answered "Unknown command 'auth'" before.
+	- Swept: the names come from `rawTools` plus `tea-cli`, the same list `raw` takes. design.md and the changelog updated.
+	- Closed: 20261023-174007
+
+- Builds between releases show their date after the build number
+	- ID: 2026102317400737
+	- Type: Enhancement
+	- Status: Done
+	- Needs local test suite run?: No. test.bash ran it.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261023-174007
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- For non-release builds, include " (YYYY-mm-DD)" after the build number.
+	- Progress log:
+		- 2026-10-23: Done. `gitsby v3.0.0-beta.1-4-ga12019f build dbsh4 (2026-10-23)`. A release build reads as before.
+	- Decisions:
+		- The date is the commit's, in UTC, from the same stamp as the build number. A rebuild still matches its checksum, and 2 boxes report one build the same way.
+		- A release build is one whose version is a tag's own, such as 2.1.0 or 3.0.0-beta.1. A version with git describe's `-N-g<hash>` or `-dirty` after it, a bare hash, or 0.0.0 gets the date.
+		- An unstamped build has no build number, so no date either.
+		- The demo is built at a tag's version, so its gif doesn't change.
+	- Branch: round-20261023c
+	- Test case: test.bash `[EtZeZfq]`. Go `[EtZeZfA]`.
+	- Verified: 2026-10-23, `[EtZeZfA]` fails with every version taken as a release. Release.bash reads the build line only from release builds, which have no date.
+	- Closed: 20261023-174007
+
 - Code Review 20261005 enhancement 1: Step lines print their arguments unquoted
 	- ID: 2026100516202730
 	- Type: Enhancement
@@ -2179,6 +2189,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 2026-10-22: `pr` runs glab on a GitLab host, with the repo passed by `-R` (197677f). Test.bash `[EtTo1Qf]` to `[EtTo1xK]`, Go `[EtTo2FR]`.
 		- 2026-10-22: Fixed: when origin is on the account host's `ssh.` name, `raw glab` sets `GITLAB_HOST` to origin's host and `GITLAB_API_HOST` to the account's, glab's own setting for a git host apart from its API. `pr` is left as it was, since `-R` already works there. test.bash `[EtRzPaH]` reworded with the same ID: the token still goes, and the account's host now reaches glab as the API host.
 		- 2026-10-22: `raw glab auth status` still fails, inside a repo or out: glab checks only hosts in its own config file, and refuses one that only `GITLAB_HOST` and `GITLAB_TOKEN` name. glab's own behavior, still on its main branch. gitsby can't fix it without writing glab's config. Upstream draft: `private/claude_simple/upstream/2026102209210000/`.
+		- 2026-10-23: The upstream draft won't be filed.
 	- Verified: 2026-10-22, in the GNOME gtk clone as t00mietum, read-only: `raw glab repo view -b main`, `raw glab mr list` and `raw glab issue list` with no `-R`, `raw glab mr list -R GNOME/gtk`, `raw glab api user`, `gitsby -NoFetch pr` and `gitsby -NoFetch pr 10551`. A plain `raw glab repo view` there finds GNOME/gtk, then fails on its README, since it asks for the checked-out branch, which is only on the fork. That is glab's, and happens with any branch origin lacks.
 	- Verified: 2026-10-22, test.bash 1659/0, 1658 -> 1659, with `[EtU8Fno]` failing on a build without the new call, and nothing else failing. Go `[EtU8FXc]` fails with `glabRemoteHost` stubbed out.
 	- Test case: test.bash `[EtU8Fno]` and Go `[EtU8FXc]` for the ssh host, plus the ones named above.
@@ -2230,6 +2241,27 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: acct-files
 	- Test case: TestFragmentNames, plus two apply checks in test.bash.
 	- Closed: 2026-09-30
+
+- `raw gh` loops forever behind a wrapper that clears the environment first
+	- ID: 2026102306584127
+	- Type: Bug
+	- Status: Canceled
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261023-065841
+	- Opened by: jim-collier
+	- Related IDs: 2026101916533300
+	- Target OS: All
+	- Steps to reproduce [Bug]:
+		- Put a `gh` first on PATH that runs `exec env -u GITSBY_RAW_ACTIVE gitsby raw gh "$@"`, or goes through `sudo`, `su -` or `env -i`, which drop it too. Run `gitsby raw gh --version`.
+	- Incorrect behavior [Bug]:
+		- Each start loses the chain, so nothing stops the loop. The rig's counter stopped it at 20.
+	- Expected behavior [Bug]:
+		- Stops after a few starts, like any other wrapper.
+	- Reproduced [Bug]: 2026-10-23 on b23, with `private/claude_simple/tools/rawloop-rig.bash`.
+	- Possible cause [Bug]:
+		- The chain lives only in the environment. A check of the parent processes would catch it, but costs a lookup per platform on every `raw`.
+	- Decided against: a fix (2026-10-23). A wrapper that clears the environment first is rare. A parent process lookup needs code for 4 platforms and runs on every `raw`, and a counter file can be fooled by a stale one.
+	- Closed: 20261023-174007
 
 - shellcheck crashes now and then on test.bash
 	- ID: 2026100410472492

@@ -88,3 +88,32 @@ func TestVersionTextOmitsAnUnstampedBuild(t *testing.T) { // [Eo59IMo]
 		t.Errorf("stamped versionText() = %q, want %q", got, "v2.1.0 build dbd05")
 	}
 }
+
+func TestVersionTextDatesABuildBetweenReleases(t *testing.T) { // [EtZeZfA]
+	savedEpoch, savedVer := buildEpoch, version
+	defer func() { buildEpoch, version = savedEpoch, savedVer }()
+	buildEpoch = "1787000000" // 2026-08-17 UTC
+	tests := []struct {
+		ver, want string
+	}{
+		{"2.1.0", "v2.1.0 build dbd05"},
+		{"3.0.0-beta.1", "v3.0.0-beta.1 build dbd05"},
+		{"2.1.0-dirty", "v2.1.0-dirty build dbd05 (2026-08-17)"},
+		{"2.1.0-12-ga12019f", "v2.1.0-12-ga12019f build dbd05 (2026-08-17)"},
+		{"3.0.0-beta.1-4-ga12019f-dirty", "v3.0.0-beta.1-4-ga12019f-dirty build dbd05 (2026-08-17)"},
+		{"a12019f", "va12019f build dbd05 (2026-08-17)"}, // no tags at all
+		{"0.0.0", "v0.0.0 build dbd05 (2026-08-17)"},
+		{"0.0.0-dev", "v0.0.0-dev build dbd05 (2026-08-17)"},
+	}
+	for _, tc := range tests {
+		version = tc.ver
+		if got := versionText(); got != tc.want {
+			t.Errorf("versionText() at %q = %q, want %q", tc.ver, got, tc.want)
+		}
+	}
+	// No build number, no date either.
+	buildEpoch, version = "", "2.1.0-12-ga12019f"
+	if got := versionText(); got != "v2.1.0-12-ga12019f" {
+		t.Errorf("unstamped versionText() = %q, want no build or date", got)
+	}
+}

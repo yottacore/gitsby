@@ -9,7 +9,12 @@
 
 package main
 
-import "strconv"
+import (
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+)
 
 // Set at build time: -ldflags "-X main.buildEpoch=<unix seconds>". Empty on a hand
 // -run 'go build', which then reports no build number at all rather than inventing
@@ -27,14 +32,19 @@ const crockford32 = "0123456789abcdefghjkmnpqrstvwxyz"
 // 2000, unparseable, or unstamped gives "", which every caller reads as "no build
 // number" rather than as zero.
 func buildNumber() string {
-	if buildEpoch == "" {
-		return ""
-	}
-	secs, err := strconv.ParseInt(buildEpoch, 10, 64)
-	if err != nil || secs < epoch2000 {
+	secs, ok := buildSecs()
+	if !ok {
 		return ""
 	}
 	return crockfordBase32((secs - epoch2000) / 60)
+}
+
+func buildSecs() (int64, bool) {
+	if buildEpoch == "" {
+		return 0, false
+	}
+	secs, err := strconv.ParseInt(buildEpoch, 10, 64)
+	return secs, err == nil && secs >= epoch2000
 }
 
 func crockfordBase32(n int64) string {
@@ -53,10 +63,26 @@ func crockfordBase32(n int64) string {
 	return string(digits)
 }
 
-// versionText is "v2.1.0 build dbrk8", or just the version where nothing stamped a build.
+// What git describe adds past a tag: commits since it and the hash, or edits.
+var describeTailRE = regexp.MustCompile(`-[0-9]+-g[0-9a-f]{4,}(-dirty)?$|-dirty$`)
+
+// isReleaseVersion is true for a tag's own version, 2.1.0 or 3.0.0-beta.1. A build
+// past a tag, a bare hash from a repo with no tags, and the 0.0.0 stand-ins aren't.
+func isReleaseVersion(v string) bool {
+	return releaseVerRE.MatchString(v) && !describeTailRE.MatchString(v) && !strings.HasPrefix(v, "0.0.0")
+}
+
+// versionText is "v2.1.0 build dbrk8", or just the version where nothing stamped a
+// build. Between releases the commit's date (UTC) follows, since a build number
+// can't be read as a date by eye.
 func versionText() string {
-	if b := buildNumber(); b != "" {
+	b := buildNumber()
+	if b == "" {
+		return "v" + version
+	}
+	if isReleaseVersion(version) {
 		return "v" + version + " build " + b
 	}
-	return "v" + version
+	secs, _ := buildSecs()
+	return "v" + version + " build " + b + " (" + time.Unix(secs, 0).UTC().Format("2006-01-02") + ")"
 }
