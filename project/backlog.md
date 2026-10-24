@@ -137,28 +137,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: Hand test on b28l, run in the 2026-10-23 round as asked.
 	- Closed: 20261023-195424
 
-- A full run's container has no name or label, so a stop can't tell it from another project's
-	- ID: 2026102307533128
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261023-075331
-	- Opened by: jim-collier
-	- Requirements [Feature]:
-		- The `docker run` in cicd.bash gives its container a name or label that carries the run, such as the start time, so the run can be found and stopped by it alone.
-	- Progress log:
-		- 2026-10-23: The round's full run got docker's generated names (`inspiring_kepler`, `frosty_sutherland`), next to other projects' containers on the same box.
-		- 2026-10-23: The container is named `gitsby-cicd-<start time>-<pid>`, with the same start time as the run's log, and labeled `gitsby.cicd.run=<start time>` and `gitsby.cicd.tree=<repo root>`. The run prints the name under the "runs cicd.bash" line. contributing.md says so.
-	- Decisions:
-		- Both a name and labels. The name is what `docker stop` takes, and the tree label tells apart two worktrees' runs.
-		- The pid is in the name, since two runs started in the same second would otherwise clash on it and the second would fail to start.
-	- Branch: round-20261023d
-	- Test case: test.bash `[Eta9hUd]`.
-	- Verified: 2026-10-23, test.bash 1676 -> 1677, 0 failed. With the change taken out, `[Eta9hUd]` fails and the other 1676 pass. A real docker took the name and labels, `docker ps --filter label=gitsby.cicd.run=<start time>` found the container, and `docker stop` by name stopped it. `cicd.bash --gate` and shellcheck pass.
-	- Swept: cicd.bash has one `docker run`. The other docker calls build, inspect and remove images, and start no container.
-	- Acceptance signoff: Self-closed: its own test passed.
-	- Closed: 20261023-195210
-
 - `repo clone` hands git a folder name taken from the URL, and git can read it as an option
 	- ID: 2026100607545802
 	- Type: Bug
@@ -1738,6 +1716,28 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [Erg0LJv] and [Erg0LK9] in test.bash.
 	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
 	- Closed: 20261003-145130
+
+- A full run's container has no name or label, so a stop can't tell it from another project's
+	- ID: 2026102307533128
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261023-075331
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- The `docker run` in cicd.bash gives its container a name or label that carries the run, such as the start time, so the run can be found and stopped by it alone.
+	- Progress log:
+		- 2026-10-23: The round's full run got docker's generated names (`inspiring_kepler`, `frosty_sutherland`), next to other projects' containers on the same box.
+		- 2026-10-23: The container is named `gitsby-cicd-<start time>-<pid>`, with the same start time as the run's log, and labeled `gitsby.cicd.run=<start time>` and `gitsby.cicd.tree=<repo root>`. The run prints the name under the "runs cicd.bash" line. contributing.md says so.
+	- Decisions:
+		- Both a name and labels. The name is what `docker stop` takes, and the tree label tells apart two worktrees' runs.
+		- The pid is in the name, since two runs started in the same second would otherwise clash on it and the second would fail to start.
+	- Branch: round-20261023d
+	- Test case: test.bash `[Eta9hUd]`.
+	- Verified: 2026-10-23, test.bash 1676 -> 1677, 0 failed. With the change taken out, `[Eta9hUd]` fails and the other 1676 pass. A real docker took the name and labels, `docker ps --filter label=gitsby.cicd.run=<start time>` found the container, and `docker stop` by name stopped it. `cicd.bash --gate` and shellcheck pass.
+	- Swept: cicd.bash has one `docker run`. The other docker calls build, inspect and remove images, and start no container.
+	- Acceptance signoff: Self-closed: its own test passed.
+	- Closed: 20261023-195210
 
 - The workflow YAML check `[EtUDfjj]` skips in the container and on most boxes
 	- ID: 2026102220133673
