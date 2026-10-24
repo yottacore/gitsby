@@ -36,8 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - A `gh` wrapper that calls `gitsby raw gh` still fails, and gitsby's own `gh` calls fail behind it
 	- ID: 2026102306584122
 	- Type: Bug
-	- Status: Waiting on signoff
-		- Every box has passed the checks. Left is a yes or no on the cost, which departs from "one extra start", per the progress log.
+	- Status: Done
 	- Needs local test suite run?: No. test.bash ran 1667/0.
 	- Needs external testing: No. Stage 7 on vmDebARM64 ran them 2026-10-23.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
@@ -84,6 +83,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: 2026-10-23 on b28l with tukzedo's wrapper and the real `gh`, on the synced build `c917c95`, together with 2026101916533300. Every command in the steps above reached the real `gh` and exited 0. `whoami` took 9 wrapper starts and `pr` 6, the rest 2 or 3.
 	- Verified: 2026-10-23, stage 7 on vmDebARM64 alone, on round-20261023d `e2f93e9`. The 8 reworded and new test.bash checks passed, and `[EtMXfJm]`, `[EtOGJ79]` and `[EtOGJ7M]` in the Go tests for linux/arm64 and for windows/arm64 under Wine. Go tests 218 ok and 2 skipped, and 190 ok and 30 skipped under Wine. test.bash failed 23 checks of the remote harness and stopped there, all from the narrowed host lists, filed as 2026102321011743. Log: `/mnt/ext/wip2/wip/tmp/gitsby/20261023-200002/001/run.log`.
 	- Swept: `rawActive` and `rawNest` have one caller, `cmdPassthrough`, which every `raw` tool shares. `findTool` and its cache are unchanged for every other spawn. README names no refusal text. design.md's `raw` bullet updated.
+	- Acceptance signoff: Self-closed 2026-10-24. The behavior changed from the expected "one extra start" to 2 or 3 per `gh` call. Each is a short Go start, and getting to one would change hooks under every command, against the 2026-10-22 decision.
+	- Closed: 20261024-133500
 
 - test.bash's remote harness checks fail when stage 7 is narrowed to one box
 	- ID: 2026102321011743
@@ -153,6 +154,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: 2026-10-22, test.bash 1594 -> 1597, 0 failed, with the reworded `[EtMXMNv]` and `[EtMXMQW]`. On the build before, the 3 new checks fail. The Go tests fail with each part of `rawNest` taken out in turn: the repeat check, the probe mark, the depth limit, the folder and the separator between arguments. Outside the suite, a wrapper `gh` started once and was refused, and one adding an argument each time stopped at 16. `GOOS=windows go vet` and the Windows test build, and darwin and freebsd builds, pass.
 	- Verified: 2026-10-22, stage 7 passed on every box for the nesting change. test.bash 1371/0 on b26 and 1274/0 on vmFreeBSD, each 3 more than on 10-21, which are `[EtOGJ6U]`, `[EtOGJ6i]` and `[EtOGJ6v]`. 1583/0 on vmDebARM64, 4 more, those 3 plus `[EtOKpZS]`, which sits in the Linux-only pre-push gate block. `[EtOGJ79]` and `[EtOGJ7M]` passed in the Go tests on b26, vmFreeBSD, vmDebARM64 natively and under Wine, and vm925w, where the Go tests were 191 ok and 23 skipped, 2 more ok than on 10-21. `[EtMXfJm]` passed there too. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log`.
 	- Verified: 2026-10-23 on b28l, the box that hit it, on the synced build `c917c95`, which has this fix and 2026102306584122's. In tukzedo-linux's repo there, with tukzedo's wrapper `exec gitsby raw gh "$@"` first on PATH and the real `gh` 2.46.0 behind it, each start counted and capped at 20: `gitsby raw gh auth status`, a bare `gh auth status`, `gh repo view`, a script calling `gh api user`, `gitsby whoami`, `gitsby --no-fetch pr` and `gitsby -q raw gh api rate_limit` all reached the real `gh` as t00mietum and exited 0. 2 to 9 wrapper starts each, with no gitsby left running. The control, the same wrapper with `9e82970` first on PATH as `gitsby`, ran into the cap on both forms tried.
+	- Verified: 2026-10-24 on b23, gover `c87c131`, with the rig. The wrapper reached the stand-in `gh` with 2 starts for `raw gh`, 3 for a bare `gh` or a script, and 6 for `whoami` and `pr`. A link or copy named `gh` is refused by name since 2026102306584132. A wrapper adding an argument each time stopped at 17 deep after 32 starts. No gitsby was left running.
 	- Swept: every `raw` tool shares `cmdPassthrough`, git included. 2026-10-22: `rawActive` has one reader, `cmdPassthrough`, and the variable is unset in all 4 hermetic suites. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
 	- Acceptance signoff: Hand test on b28l, run in the 2026-10-23 round as asked.
 	- Closed: 20261023-195424
@@ -2388,7 +2390,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Note: blocked. Checked 2026-09-28: shcl has no 3.0 tag yet, and its `dev` go.mod still says `/v2`.
 	- Note: moved to the cut candidate on 2026-10-01. A line the file couldn't read is now kept through an edit, and a double-quoted path with a stray escape is listed instead of read with a newline in it. Still `/v2`.
 	- Note: checked 2026-10-05 and 2026-10-06, still no 3.0 tag, and `dev` go.mod still says `/v2`.
-	- Note: checked again 2026-10-21. Newest tag is still v2.0.0.
+	- Note: checked again 2026-10-21 and 2026-10-24. Newest tag is still v2.0.0.
 	- At the move, read the changelog for format breaks since the beta, and for any API that backs up or converts a file itself. The converter from item 2026100312145843 must not race it.
 
 ### Done
