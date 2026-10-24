@@ -377,6 +377,14 @@ fGateContainerRun(){
 		&& ! fGateCalled '^go (vet|build|test)' && ! fGateCalled '^(test|parity|fuzz|spawn-count)\.bash' \
 		&& grep -q 'lint ran in the container' "${gateOut}"
 }
+## The container carries the run's start time in its name and a label, and the output names it,
+## so one run can be found and stopped among other projects' containers.
+fGateContainerName(){
+	local name=""
+	fGateSays 0 'OK: the container run' -y --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood || return 1
+	name="$(sed -n 's/^as container \(gitsby-cicd-[0-9]\{8\}-[0-9]\{6\}-[0-9][0-9]*\)$/\1/p' "${gateOut}")"
+	[[ -n "${name}" ]] && grep -qF -- "--name ${name} --label gitsby.cicd.run=${name:12:15} --label gitsby.cicd.tree=" "${gateCalls}"
+}
 ## --quick is handed to the run in there, which is where it skips the suite.
 fGateContainerQuick(){
 	fGateSays 0 'OK: the container run' -y --quick --no-sync --no-publish --no-dogfood \
@@ -5782,6 +5790,7 @@ EOF
 		fAssert "[EsJgejN] --container with --gate is refused"  fGateSays 2 'goes with a full run' --container --gate
 		fAssert "[EsJgekF] --container inside the container is refused"  fGateNested
 		fAssert "[EsJgel8] a plain run hands stages 1-4 to the image and runs none of them here"  fGateContainerRun
+		fAssert "[Eta9hUd] its container is named and labeled for the run, and the output names it"  fGateContainerName
 		fAssert "[Et6FC46] and --quick goes in with them"  fGateContainerQuick
 		fAssert "[Et9PJrS] and --leakcheck too, and the soak test runs only in there"  fGateContainerLeak
 		fAssert "[EtBTWta] and --no-leakcheck"  fGateContainerNoLeak
@@ -7249,3 +7258,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261021 JC: --no-fuzz leaves out govulncheck and pip-audit, and the pip-audit checks no longer lean on it to skip the rest of stage 3. 1597 -> 1598.
 ##		- 20261022 JC: The goleak check lists test folders without find's GNU-only output format, which failed it on macOS, and a check keeps that format out of the suite and the installer. 1661 -> 1662.
 ##		- 20261023 JC: The workflow parse check's skip line names its test ID, and the image has PyYAML, so the check runs there. The Pillow lock check reads the image's own patterns, and a check holds PyYAML to the same. 1667 -> 1668.
+##		- 20261023 JC: A full run's container is named and labeled for the run, and the check reads the name back from the output. 1676 -> 1677.
