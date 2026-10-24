@@ -33,89 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- test.bash's remote harness checks fail when stage 7 is narrowed to one box
-	- ID: 2026102321011743
-	- Type: Bug
-	- Status: Done
-	- Needs local test suite run?: No. test.bash ran 1677/0, narrowed and not.
-	- Needs external testing: No.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261023-210117
-	- Opened by: jim-collier
-	- Related IDs: 2026102306584122
-	- Target OS: All
-	- Steps to reproduce [Bug]:
-		- In a clone, set `REMOTE_MAC_HOSTS` and `REMOTE_WINDOWS_HOSTS` empty in `cicd/config.bash`, the way memory.md says to run stage 7 on one box, and run test.bash.
-	- Incorrect behavior [Bug]:
-		- 23 checks of the Mac and Windows harness fail, from `[ErkbDUK]` to `[Erm9Pp1]`. Then the last check's setup stops the suite with "mv: cannot stat '.../remote-mac/gitsby-remote-tests'", so nothing after it runs and no totals print. Seen 2026-10-23 on vmDebARM64.
-	- Expected behavior [Bug]:
-		- The harness checks set their own host lists, so they pass whatever the tree's config.bash names.
-	- Possible cause [Bug]:
-		- The fixture copies the tree's config.bash and resets only `REMOTE_UNIX_HOSTS`. The checks expect b26, vm925w and b29w from it.
-	- Reproduced [Bug]: 2026-10-24 on b23, in a clone with the Mac and Windows lists empty and the Unix list down to vmDebARM64. 25 failed and the suite stopped at the `mv`, as above.
-	- Actual cause [Bug]:
-		- As guessed, plus a twin. The stage 7 checks in the cicd.bash fixture, `[ErkbDSi]` and `[Et6FC2n]`, read the Unix boxes and targets from the tree's config.bash too. They failed once the Unix list was narrowed.
-	- Actual fix [Bug]: `fRemoteBoxes` in test.bash appends the boxes and settings the checks expect to a fixture's config.bash. The harness fixture uses it at each of its 3 copies, and the cicd.bash fixture before its stage 7 checks. Wine is left empty there, since no check runs it.
-	- Swept: every `config.bash` copy and `source` in test.bash. The release, keep-build, shellcheck and CodeQL fixtures read no stage 7 setting.
-	- Branch: round-20261024
-	- Test case: test.bash itself, run with config.bash narrowed. No new check, since the fault is in what the tree's config holds.
-	- Verified: 2026-10-24, test.bash in the narrowed clone, 25 failed before and 1677/0 after. 1677/0 in the main tree with config.bash as committed. Gate passed.
-	- Acceptance signoff: Self-closed. Reproduced, fails before and passes after, no open choice.
-	- Closed: 20261024-064653
-
-- A `gh` wrapper that calls `gitsby raw gh` still fails, and gitsby's own `gh` calls fail behind it
-	- ID: 2026102306584122
-	- Type: Bug
-	- Status: Done
-	- Needs local test suite run?: No. test.bash ran 1667/0.
-	- Needs external testing: No. Stage 7 on vmDebARM64 ran them 2026-10-23.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261023-065841
-	- Opened by: jim-collier
-	- Related IDs: 2026101916533300
-	- Target OS: All
-	- Steps to reproduce [Bug]:
-		- Put the wrapper tukzedo used on b28l first on PATH, a `gh` that runs `exec gitsby raw gh "$@"`, with the real `gh` later on PATH.
-		- Run `gitsby raw gh --version`, a bare `gh --version`, a script that calls bare `gh`, `gitsby whoami` and `gitsby pr`.
-	- Incorrect behavior [Bug]:
-		- No loop since 2026101916533300, but every one fails. `raw` refuses with "Looping: ... Unset GITSBY_RAW_ACTIVE to run anyway." `whoami` says gh is not logged in, and `pr` says "'gh pr list' failed".
-		- The hint is wrong for a wrapper. Unsetting the variable brings the endless loop back.
-	- Expected behavior [Bug]:
-		- The wrapper does what it was written for. Every one of those reaches the real `gh`, as the account, after one extra start.
-	- Reproduced [Bug]: 2026-10-23 on b23, with `private/claude_simple/tools/rawloop-rig.bash`. 2 or 3 wrapper starts each, then the refusal. 6 for `whoami` and `pr`, from their probes.
-	- Possible cause [Bug]:
-		- `rawNest` refuses when its own entry is already on the chain. That entry means the file it found is what started it, so the file is a wrapper. Passing over that entry and going on down PATH would find the real tool.
-	- Requirements [Bug fix]:
-		- A `raw` whose entry for a PATH entry is already on the chain passes over that entry and tries the next one. It refuses only when none is left, or past the depth limit.
-		- A `raw` started under the probe mark does the same, and hands over with no account work or probes of its own, so probes can't multiply.
-		- The refusal drops the advice to unset `GITSBY_RAW_ACTIVE`, or gives it only where it can't loop.
-		- Hooks and aliases that call `raw` keep working as the 2026-10-22 decision says.
-		- Test case: the wrapper above, with each of those commands reaching the real `gh` and a counted cap on starts. Watch it fail on the current build first.
-	- Actual cause [Bug]:
-		- As guessed. `rawNest` refused a repeat instead of passing over the file that started it, and a `raw` under the probe mark refused outright, so every probe behind the wrapper failed too.
-	- Estimated effort: Avg
-	- Actual effort: Avg
-	- Progress log:
-		- 2026-10-23: The item it follows set out to refuse. The 2026-10-22 answer, "What any sane human git user would expect", points at making a wrapper like this work instead. tukzedo's memory now says never to put such a wrapper on PATH.
-		- 2026-10-23: Fixed. `raw` walks PATH per candidate and passes over a tool file whose run, same folder and arguments, is already on the chain, then takes the next one. It refuses only when none is left, or past 16 deep, and no longer says to unset `GITSBY_RAW_ACTIVE`. A `raw` that passed one over, or runs under the probe mark, hands over with no account work or probes.
-		- Cost behind the wrapper, in wrapper starts: `raw gh` 2, its probe and the handover. A bare `gh` or a script 3. Each `gh` call gitsby makes 3, so `whoami` and `pr` take 6, as before, but now reach the real `gh`. A wrapper adding an argument each time takes 2 per level and stops at 16 deep, 32 starts, the same as before.
-		- Departs from the wording: not "one extra start". Getting there would mean gitsby's own `gh` calls not starting a full `raw` behind the wrapper, for one by having every gitsby mark what it runs the way the probes are marked. That changes hooks under non-raw commands, so it isn't done here.
-	- Decisions:
-		- Under the probe mark, a tool file on the chain is passed over whatever its arguments. A probe's arguments are gitsby's own, so nothing under it has a reason to run that file again. Matching on the arguments too cost 2 starts a probe, and a drifting wrapper's probes each ran to the depth limit.
-		- A chain entry now holds a hash of the tool's path on its own as well as the one over path, folder and arguments.
-		- The entry handed over is for the arguments handed over, which `glab auth status` changes.
-	- Actual fix [Bug]:
-		- `walkTool` in exec.go is `lookTool` with a filter, and `cmdPassthrough` uses it with `rawOnChain`. `rawNest` only adds the entry and keeps the probe mark last.
-	- Branch: round-20261023b
-	- Test case: test.bash `[EtMXMNv]`, `[EtMXMOn]` and `[EtMXMQW]`, reworded to reach the tool, and new `[EtX5aJ4]` (bare gh), `[EtX5aJH]` and `[EtX5aJV]` (refusal with nothing after it), `[EtX5aJj]` (whoami) and `[EtX5aJx]` (pr). Each wrapper quits past 8 starts now, since a gitsby `gh` call takes 3. Go `[EtMXfJm]`, `[EtOGJ79]` and `[EtOGJ7M]`, reworded.
-	- Verified: 2026-10-23, test.bash 1662 -> 1667, 0 failed. On the build before, the 8 reworded and new checks fail. The Go tests fail with the pass-over, the probe file match and the kept probe mark each taken out. The rig shows every one of the five commands reaching the real `gh`, where before each was refused. The hook and alias rig still passes. `GOOS=windows go vet` and the Windows test build, and darwin and freebsd builds, pass.
-	- Verified: 2026-10-23, the round's full run. The 8 reworded and new test.bash checks passed in the container, on b26 and on vmFreeBSD, and `[EtMXfJm]`, `[EtOGJ79]` and `[EtOGJ7M]` in the Go tests on b26, vmFreeBSD and vm925w. test.bash was 1438 of 1439 on b26 and 1341 of 1342 on vmFreeBSD, each 6 more than on 10-22. The one failure on each is `[EtAFLx0]`, from 2026102220133673. Go tests: b26 211 ok and 6 skipped, vmFreeBSD 213 ok and 4 skipped, vm925w 195 ok and 23 skipped. The macOS workflow, run 39970887647, passed the same checks on both runners, test.bash 1417 of 1418 with the same one failure. b29w was not reachable. Logs: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261023-07353000/run.log` for the container, `run2.log` beside it for stage 7.
-	- Verified: 2026-10-23 on b28l with tukzedo's wrapper and the real `gh`, on the synced build `c917c95`, together with 2026101916533300. Every command in the steps above reached the real `gh` and exited 0. `whoami` took 9 wrapper starts and `pr` 6, the rest 2 or 3.
-	- Verified: 2026-10-23, stage 7 on vmDebARM64 alone, on round-20261023d `e2f93e9`. The 8 reworded and new test.bash checks passed, and `[EtMXfJm]`, `[EtOGJ79]` and `[EtOGJ7M]` in the Go tests for linux/arm64 and for windows/arm64 under Wine. Go tests 218 ok and 2 skipped, and 190 ok and 30 skipped under Wine. test.bash failed 23 checks of the remote harness and stopped there, all from the narrowed host lists, filed as 2026102321011743. Log: `/mnt/ext/wip2/wip/tmp/gitsby/20261023-200002/001/run.log`.
-	- Swept: `rawActive` and `rawNest` have one caller, `cmdPassthrough`, which every `raw` tool shares. `findTool` and its cache are unchanged for every other spawn. README names no refusal text. design.md's `raw` bullet updated.
-	- Acceptance signoff: Self-closed 2026-10-24. The behavior changed from the expected "one extra start" to 2 or 3 per `gh` call. Each is a short Go start, and getting to one would change hooks under every command, against the 2026-10-22 decision.
-	- Closed: 20261024-133500
-
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
@@ -392,6 +309,59 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept (2026-10-05, `pr create` and `release`): every step after their commit. In release.go the pulls of `dev` and the default branch, both checkouts, the merge and its back-out, the tag, both pushes, and the fast-forward of `dev`. Its nothing-new check read the whole tree as work to release, and now reads the index under the flag. In pr.go the push and the `gh` or `tea` call. `pr ok` reads the whole tree to refuse, and refuses the flag. The line above about pr.go and release.go held only while they refused the flag.
 	- Acceptance signoff: 2026-10-05, all 3 choices answered.
 	- Closed: 2026-10-05
+
+- A `gh` wrapper that calls `gitsby raw gh` still fails, and gitsby's own `gh` calls fail behind it
+	- ID: 2026102306584122
+	- Type: Bug
+	- Status: Done
+	- Needs local test suite run?: No. test.bash ran 1667/0.
+	- Needs external testing: No. Stage 7 on vmDebARM64 ran them 2026-10-23.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261023-065841
+	- Opened by: jim-collier
+	- Related IDs: 2026101916533300
+	- Target OS: All
+	- Steps to reproduce [Bug]:
+		- Put the wrapper tukzedo used on b28l first on PATH, a `gh` that runs `exec gitsby raw gh "$@"`, with the real `gh` later on PATH.
+		- Run `gitsby raw gh --version`, a bare `gh --version`, a script that calls bare `gh`, `gitsby whoami` and `gitsby pr`.
+	- Incorrect behavior [Bug]:
+		- No loop since 2026101916533300, but every one fails. `raw` refuses with "Looping: ... Unset GITSBY_RAW_ACTIVE to run anyway." `whoami` says gh is not logged in, and `pr` says "'gh pr list' failed".
+		- The hint is wrong for a wrapper. Unsetting the variable brings the endless loop back.
+	- Expected behavior [Bug]:
+		- The wrapper does what it was written for. Every one of those reaches the real `gh`, as the account, after one extra start.
+	- Reproduced [Bug]: 2026-10-23 on b23, with `private/claude_simple/tools/rawloop-rig.bash`. 2 or 3 wrapper starts each, then the refusal. 6 for `whoami` and `pr`, from their probes.
+	- Possible cause [Bug]:
+		- `rawNest` refuses when its own entry is already on the chain. That entry means the file it found is what started it, so the file is a wrapper. Passing over that entry and going on down PATH would find the real tool.
+	- Requirements [Bug fix]:
+		- A `raw` whose entry for a PATH entry is already on the chain passes over that entry and tries the next one. It refuses only when none is left, or past the depth limit.
+		- A `raw` started under the probe mark does the same, and hands over with no account work or probes of its own, so probes can't multiply.
+		- The refusal drops the advice to unset `GITSBY_RAW_ACTIVE`, or gives it only where it can't loop.
+		- Hooks and aliases that call `raw` keep working as the 2026-10-22 decision says.
+		- Test case: the wrapper above, with each of those commands reaching the real `gh` and a counted cap on starts. Watch it fail on the current build first.
+	- Actual cause [Bug]:
+		- As guessed. `rawNest` refused a repeat instead of passing over the file that started it, and a `raw` under the probe mark refused outright, so every probe behind the wrapper failed too.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 2026-10-23: The item it follows set out to refuse. The 2026-10-22 answer, "What any sane human git user would expect", points at making a wrapper like this work instead. tukzedo's memory now says never to put such a wrapper on PATH.
+		- 2026-10-23: Fixed. `raw` walks PATH per candidate and passes over a tool file whose run, same folder and arguments, is already on the chain, then takes the next one. It refuses only when none is left, or past 16 deep, and no longer says to unset `GITSBY_RAW_ACTIVE`. A `raw` that passed one over, or runs under the probe mark, hands over with no account work or probes.
+		- Cost behind the wrapper, in wrapper starts: `raw gh` 2, its probe and the handover. A bare `gh` or a script 3. Each `gh` call gitsby makes 3, so `whoami` and `pr` take 6, as before, but now reach the real `gh`. A wrapper adding an argument each time takes 2 per level and stops at 16 deep, 32 starts, the same as before.
+		- Departs from the wording: not "one extra start". Getting there would mean gitsby's own `gh` calls not starting a full `raw` behind the wrapper, for one by having every gitsby mark what it runs the way the probes are marked. That changes hooks under non-raw commands, so it isn't done here.
+	- Decisions:
+		- Under the probe mark, a tool file on the chain is passed over whatever its arguments. A probe's arguments are gitsby's own, so nothing under it has a reason to run that file again. Matching on the arguments too cost 2 starts a probe, and a drifting wrapper's probes each ran to the depth limit.
+		- A chain entry now holds a hash of the tool's path on its own as well as the one over path, folder and arguments.
+		- The entry handed over is for the arguments handed over, which `glab auth status` changes.
+	- Actual fix [Bug]:
+		- `walkTool` in exec.go is `lookTool` with a filter, and `cmdPassthrough` uses it with `rawOnChain`. `rawNest` only adds the entry and keeps the probe mark last.
+	- Branch: round-20261023b
+	- Test case: test.bash `[EtMXMNv]`, `[EtMXMOn]` and `[EtMXMQW]`, reworded to reach the tool, and new `[EtX5aJ4]` (bare gh), `[EtX5aJH]` and `[EtX5aJV]` (refusal with nothing after it), `[EtX5aJj]` (whoami) and `[EtX5aJx]` (pr). Each wrapper quits past 8 starts now, since a gitsby `gh` call takes 3. Go `[EtMXfJm]`, `[EtOGJ79]` and `[EtOGJ7M]`, reworded.
+	- Verified: 2026-10-23, test.bash 1662 -> 1667, 0 failed. On the build before, the 8 reworded and new checks fail. The Go tests fail with the pass-over, the probe file match and the kept probe mark each taken out. The rig shows every one of the five commands reaching the real `gh`, where before each was refused. The hook and alias rig still passes. `GOOS=windows go vet` and the Windows test build, and darwin and freebsd builds, pass.
+	- Verified: 2026-10-23, the round's full run. The 8 reworded and new test.bash checks passed in the container, on b26 and on vmFreeBSD, and `[EtMXfJm]`, `[EtOGJ79]` and `[EtOGJ7M]` in the Go tests on b26, vmFreeBSD and vm925w. test.bash was 1438 of 1439 on b26 and 1341 of 1342 on vmFreeBSD, each 6 more than on 10-22. The one failure on each is `[EtAFLx0]`, from 2026102220133673. Go tests: b26 211 ok and 6 skipped, vmFreeBSD 213 ok and 4 skipped, vm925w 195 ok and 23 skipped. The macOS workflow, run 39970887647, passed the same checks on both runners, test.bash 1417 of 1418 with the same one failure. b29w was not reachable. Logs: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261023-07353000/run.log` for the container, `run2.log` beside it for stage 7.
+	- Verified: 2026-10-23 on b28l with tukzedo's wrapper and the real `gh`, on the synced build `c917c95`, together with 2026101916533300. Every command in the steps above reached the real `gh` and exited 0. `whoami` took 9 wrapper starts and `pr` 6, the rest 2 or 3.
+	- Verified: 2026-10-23, stage 7 on vmDebARM64 alone, on round-20261023d `e2f93e9`. The 8 reworded and new test.bash checks passed, and `[EtMXfJm]`, `[EtOGJ79]` and `[EtOGJ7M]` in the Go tests for linux/arm64 and for windows/arm64 under Wine. Go tests 218 ok and 2 skipped, and 190 ok and 30 skipped under Wine. test.bash failed 23 checks of the remote harness and stopped there, all from the narrowed host lists, filed as 2026102321011743. Log: `/mnt/ext/wip2/wip/tmp/gitsby/20261023-200002/001/run.log`.
+	- Swept: `rawActive` and `rawNest` have one caller, `cmdPassthrough`, which every `raw` tool shares. `findTool` and its cache are unchanged for every other spawn. README names no refusal text. design.md's `raw` bullet updated.
+	- Acceptance signoff: Self-closed 2026-10-24. The behavior changed from the expected "one extra start" to 2 or 3 per `gh` call. Each is a short Go start, and getting to one would change hooks under every command, against the 2026-10-22 decision.
+	- Closed: 20261024-133500
 
 - test.bash's goleak check `[Et9R5lo]` fails on macOS, since BSD find has no `-printf`
 	- ID: 2026102220274491
@@ -1217,6 +1187,36 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: stage 7's harness on gover after round 4, 2026-10-04. b26: Go tests pass, and test.bash against the universal build 1255/0. vmFreeBSD, vmDebARM64 and vm925w: Go tests pass. The Unix boxes ran Go tests only this time, since no Unix builds were passed. Their full test.bash ran earlier the same day and failed only `[Emq7Y6y]`, fixed since.
 	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
 	- Closed: 20261004-190953
+
+- test.bash's remote harness checks fail when stage 7 is narrowed to one box
+	- ID: 2026102321011743
+	- Type: Bug
+	- Status: Done
+	- Needs local test suite run?: No. test.bash ran 1677/0, narrowed and not.
+	- Needs external testing: No.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261023-210117
+	- Opened by: jim-collier
+	- Related IDs: 2026102306584122
+	- Target OS: All
+	- Steps to reproduce [Bug]:
+		- In a clone, set `REMOTE_MAC_HOSTS` and `REMOTE_WINDOWS_HOSTS` empty in `cicd/config.bash`, the way memory.md says to run stage 7 on one box, and run test.bash.
+	- Incorrect behavior [Bug]:
+		- 23 checks of the Mac and Windows harness fail, from `[ErkbDUK]` to `[Erm9Pp1]`. Then the last check's setup stops the suite with "mv: cannot stat '.../remote-mac/gitsby-remote-tests'", so nothing after it runs and no totals print. Seen 2026-10-23 on vmDebARM64.
+	- Expected behavior [Bug]:
+		- The harness checks set their own host lists, so they pass whatever the tree's config.bash names.
+	- Possible cause [Bug]:
+		- The fixture copies the tree's config.bash and resets only `REMOTE_UNIX_HOSTS`. The checks expect b26, vm925w and b29w from it.
+	- Reproduced [Bug]: 2026-10-24 on b23, in a clone with the Mac and Windows lists empty and the Unix list down to vmDebARM64. 25 failed and the suite stopped at the `mv`, as above.
+	- Actual cause [Bug]:
+		- As guessed, plus a twin. The stage 7 checks in the cicd.bash fixture, `[ErkbDSi]` and `[Et6FC2n]`, read the Unix boxes and targets from the tree's config.bash too. They failed once the Unix list was narrowed.
+	- Actual fix [Bug]: `fRemoteBoxes` in test.bash appends the boxes and settings the checks expect to a fixture's config.bash. The harness fixture uses it at each of its 3 copies, and the cicd.bash fixture before its stage 7 checks. Wine is left empty there, since no check runs it.
+	- Swept: every `config.bash` copy and `source` in test.bash. The release, keep-build, shellcheck and CodeQL fixtures read no stage 7 setting.
+	- Branch: round-20261024
+	- Test case: test.bash itself, run with config.bash narrowed. No new check, since the fault is in what the tree's config holds.
+	- Verified: 2026-10-24, test.bash in the narrowed clone, 25 failed before and 1677/0 after. 1677/0 in the main tree with config.bash as committed. Gate passed.
+	- Acceptance signoff: Self-closed. Reproduced, fails before and passes after, no open choice.
+	- Closed: 20261024-064653
 
 - `pr` and `repo create` run `gh` by bare name, so one on PATH that is gitsby runs gitsby
 	- ID: 2026102111572785
