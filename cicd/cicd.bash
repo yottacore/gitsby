@@ -755,8 +755,13 @@ if ((container)); then
 		mkdir -p "${DEMOGIF_ARCHIVE_DIR}" || fDie "can't make ${DEMOGIF_ARCHIVE_DIR}"
 		containerMounts+=(-v "$(realpath -m -- "${DEMOGIF_ARCHIVE_DIR}"):$(realpath -s -m -- "${DEMOGIF_ARCHIVE_DIR}")")
 	fi
+	## Named for the run, so it can be found and stopped among other projects' containers.
+	## The pid keeps two runs started in the same second apart.
+	containerName="${APP_NAME}-cicd-${stamp}-$$"
 	fEcho_Clean "runs cicd.bash ${containerRun[*]}"
-	docker run --rm --init --user "$(id -u):$(id -g)" "${containerMounts[@]}" -w "${root}" \
+	fEcho_Clean "as container ${containerName}"
+	docker run --rm --init --name "${containerName}" --label "${APP_NAME}.cicd.run=${stamp}" --label "${APP_NAME}.cicd.tree=${root}" \
+		--user "$(id -u):$(id -g)" "${containerMounts[@]}" -w "${root}" \
 		"${containerImage}" bash "${root}/cicd/cicd.bash" "${containerRun[@]}" \
 		|| fDie "the run in the container failed (above)"
 	fEcho "OK: the container run"
@@ -1112,3 +1117,4 @@ fEcho_Clean
 ##		- 2026-10-19 JC: --leakcheck's CodeQL also runs Python's suite, over the pipeline's Python files and the installed source of the libraries they import. A demo gif that differs, drawn where Pillow or gifsicle isn't at its recorded version, is a warning and the committed one stays.
 ##		- 2026-10-19 JC: The leak checks run on every full run, and not under --quick or --no-fuzz. --leakcheck adds them back and --no-leakcheck leaves them out. A plain run with no CodeQL warns and goes on. The run's temp files sit in one folder that goes when it exits, and stage 6 removes the demo's repos once the gif is drawn.
 ##		- 2026-10-21 JC: --no-fuzz skips govulncheck adn pip-audit too, as its help says. They sat outside it from when govulncheck still ran under --quick, which stopped on 2026-10-18.
+##		- 2026-10-23 JC: The container run gets a name and labels carrying the run's start time and tree, so it can be found and stopped among other projects' containers.
