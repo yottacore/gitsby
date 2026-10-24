@@ -36,10 +36,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - A `gh` wrapper that calls `gitsby raw gh` still fails, and gitsby's own `gh` calls fail behind it
 	- ID: 2026102306584122
 	- Type: Bug
-	- Status: Waiting on automated testing
-		- Waits only on vmDebARM64, which another session's lock held through the 2026-10-23 stage 7, and again through a vmDebARM64-only try from 08:01 to 08:12.
+	- Status: Waiting on signoff
+		- Every box has passed the checks. Left is a yes or no on the cost, which departs from "one extra start", per the progress log.
 	- Needs local test suite run?: No. test.bash ran 1667/0.
-	- Needs external testing: Stage 7 on vmDebARM64, for the reworded and new raw checks in test.bash and the Go tests. Every other box passed them.
+	- Needs external testing: No. Stage 7 on vmDebARM64 ran them 2026-10-23.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261023-065841
 	- Opened by: jim-collier
@@ -82,7 +82,27 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: 2026-10-23, test.bash 1662 -> 1667, 0 failed. On the build before, the 8 reworded and new checks fail. The Go tests fail with the pass-over, the probe file match and the kept probe mark each taken out. The rig shows every one of the five commands reaching the real `gh`, where before each was refused. The hook and alias rig still passes. `GOOS=windows go vet` and the Windows test build, and darwin and freebsd builds, pass.
 	- Verified: 2026-10-23, the round's full run. The 8 reworded and new test.bash checks passed in the container, on b26 and on vmFreeBSD, and `[EtMXfJm]`, `[EtOGJ79]` and `[EtOGJ7M]` in the Go tests on b26, vmFreeBSD and vm925w. test.bash was 1438 of 1439 on b26 and 1341 of 1342 on vmFreeBSD, each 6 more than on 10-22. The one failure on each is `[EtAFLx0]`, from 2026102220133673. Go tests: b26 211 ok and 6 skipped, vmFreeBSD 213 ok and 4 skipped, vm925w 195 ok and 23 skipped. The macOS workflow, run 39970887647, passed the same checks on both runners, test.bash 1417 of 1418 with the same one failure. b29w was not reachable. Logs: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261023-07353000/run.log` for the container, `run2.log` beside it for stage 7.
 	- Verified: 2026-10-23 on b28l with tukzedo's wrapper and the real `gh`, on the synced build `c917c95`, together with 2026101916533300. Every command in the steps above reached the real `gh` and exited 0. `whoami` took 9 wrapper starts and `pr` 6, the rest 2 or 3.
+	- Verified: 2026-10-23, stage 7 on vmDebARM64 alone, on round-20261023d `e2f93e9`. The 8 reworded and new test.bash checks passed, and `[EtMXfJm]`, `[EtOGJ79]` and `[EtOGJ7M]` in the Go tests for linux/arm64 and for windows/arm64 under Wine. Go tests 218 ok and 2 skipped, and 190 ok and 30 skipped under Wine. test.bash failed 23 checks of the remote harness and stopped there, all from the narrowed host lists, filed as 2026102321011743. Log: `/mnt/ext/wip2/wip/tmp/gitsby/20261023-200002/001/run.log`.
 	- Swept: `rawActive` and `rawNest` have one caller, `cmdPassthrough`, which every `raw` tool shares. `findTool` and its cache are unchanged for every other spawn. README names no refusal text. design.md's `raw` bullet updated.
+
+- test.bash's remote harness checks fail when stage 7 is narrowed to one box
+	- ID: 2026102321011743
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261023-210117
+	- Opened by: jim-collier
+	- Related IDs: 2026102306584122
+	- Target OS: All
+	- Steps to reproduce [Bug]:
+		- In a clone, set `REMOTE_MAC_HOSTS` and `REMOTE_WINDOWS_HOSTS` empty in `cicd/config.bash`, the way memory.md says to run stage 7 on one box, and run test.bash.
+	- Incorrect behavior [Bug]:
+		- 23 checks of the Mac and Windows harness fail, from `[ErkbDUK]` to `[Erm9Pp1]`. Then the last check's setup stops the suite with "mv: cannot stat '.../remote-mac/gitsby-remote-tests'", so nothing after it runs and no totals print. Seen 2026-10-23 on vmDebARM64.
+	- Expected behavior [Bug]:
+		- The harness checks set their own host lists, so they pass whatever the tree's config.bash names.
+	- Possible cause [Bug]:
+		- The fixture copies the tree's config.bash and resets only `REMOTE_UNIX_HOSTS`. The checks expect b26, vm925w and b29w from it.
+	- Test case: a run of test.bash with the lists narrowed.
 
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
