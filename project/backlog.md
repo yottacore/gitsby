@@ -40,8 +40,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
-	- Prereq IDs: 2026102416313104
-		- It uses the new flags that item adds.
 	- Related IDs: 2026101009380628
 	- Requirements [Feature]:
 		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
@@ -57,8 +55,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
-	- Prereq IDs: 2026102416313104
-		- It uses the new flags that item adds.
 	- Related IDs: 2026100312332924
 	- Requirements [Feature]:
 		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
@@ -78,8 +74,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
-	- Prereq IDs: 2026102416313104
-		- It uses the new flags that item adds.
+	- Prereq IDs: 2026102506452478
+		- It uses `--keep-temp` from that item. The other new flags are in since a1c62bb.
 	- Related IDs: 2026101912030138, 2026102307533128
 	- Requirements [Feature]:
 		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
@@ -166,7 +162,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Opened: 20261025-064524
 	- Opened by: jim-collier
 	- Parent ID: 2026102416313104
-	- Prereq IDs: 2026102506452473
+	- Related IDs: 2026102506452473
+		- Builds on that item's flags, in since a1c62bb.
 	- Requirements [Feature]:
 		- `--keep-temp` keeps the run's temp folder and containers, and prints where they are.
 		- `--list` prints the steps and test IDs the other flags given would run, and runs nothing.
@@ -179,7 +176,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Opened: 20261025-064524
 	- Opened by: jim-collier
 	- Parent ID: 2026102416313104
-	- Prereq IDs: 2026102506452473
+	- Related IDs: 2026102506452473
+		- Builds on that item's flags, in since a1c62bb.
 	- Requirements [Feature]:
 		- `--quick` is what fits in about 10 minutes in all, not a 30 s budget per step, per `CICD style guide` in the shared CICD rules. The regression suite likely comes back in.
 		- Overrides the 30 s per step budget in 2026101816064793.
@@ -192,7 +190,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Opened: 20261025-064524
 	- Opened by: jim-collier
 	- Parent ID: 2026102416313104
-	- Prereq IDs: 2026102506452473
+	- Related IDs: 2026102506452473
+		- Builds on that item's flags, in since a1c62bb.
 	- Requirements [Feature]:
 		- The pre-push hook runs `--merge-gate`, every check of the default run, on a push to main. A push whose commits change only docs and the other paths listed in one place the hook reads skips it. No gate on dev or gover.
 		- A commit cut before `--merge-gate` existed keeps the gate it had.
@@ -248,8 +247,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
-	- Prereq IDs: 2026102416313104
-		- It uses the new flags that item adds.
+	- Prereq IDs: 2026102506452478
+		- It uses `--keep-temp` from that item. The other new flags are in since a1c62bb.
 	- Related IDs: 2026101912030138
 	- Requirements [Feature]:
 		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
