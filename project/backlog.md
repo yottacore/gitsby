@@ -151,10 +151,12 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: CPU and priority
 	- ID: 2026102416313103
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: One `--backlog-run-full` in the container. The soak test, the native fuzzing and CodeQL take the quarter now, and stage 7 runs each Mac and Unix box on its own budget.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
+	- Related IDs: 2026102508333054
 	- Requirements [Feature]:
 		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
 		- Per `Machine use` in the shared CICD rules. `BUILD_JOBS` in `cicd/config.bash` is already worked out once and handed to the Go tools and CodeQL.
@@ -166,6 +168,38 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The container run gets `--cpus <jobs>` and `--cpu-shares 256`, and `nice` inside too.
 			- 2026-10-25: that covers the per-build `docker run` in `fImageGo` (`cicd/utility/include/image-go.bash`, eb6aa5e) as well as `fContainerRun`.
 		- The same rules on the boxes stage 7 uses, with each box's own CPU count and load. The Go tests there run with no limit today.
+	- Progress log:
+		- Done: half the cores rounded down, or a quarter on a busy box, never under 1, worked out at the start and again at each stage header. The hard steps take a quarter.
+		- cicd.bash, release.bash and remote-tests.bash renice themselves to 19, with `ionice -c 3`, so all they start inherits it.
+		- Both `docker run` sites get `--cpus` and `--cpu-shares 256`, and go runs niced in the image. The run in there works its counts out from the box's cores and load.
+		- Each Mac and Unix box in stage 7 works out its own count from its own cores and load, and runs its Go tests and test.bash at low priority.
+		- The plan prints a "Cores" line with the counts and the load.
+		- Steps run one at a time, and the module is one package, so nothing shares a count yet.
+		- Split: the Windows box's part is 2026102508333054.
+		- 2026-10-25: [EtitOqM], [EtitOrO] and [EtitOtH] want `nice -n 19 go` after the image name, where they wanted `go`. [ErkbDVV] and [Erm9PoA] want `$lo` before the box's bash, where they wanted none.
+		- Verified: all 5 new checks fail on the tree before and pass after. [Etj7cYq] passes in the image too.
+		- Verified: `--backlog-run-quick` in the image, test.bash 1714/0, fuzz 313/0, parity 29/0, with "8 of 32" cores at a load of 25.
+	- Decisions:
+		- The budget stays in config.bash, as `fCpuBudget`, setting `BUILD_JOBS` and the new `HEAVY_JOBS`.
+		- Each script lowers its own priority once at the top, rather than a prefix on every command.
+		- The container's quota is the count at its start. `GITSBY_CICD_CPUS` hands the box's core count in, since the quota leaves nproc alone.
+	- Test case: test.bash [Etj7cY1] (the counts), [Etj7cYI] (the hard steps), [Etj7cYq] (low priority), [Etj7cYY] (the container's quota), [Etj7cZ7] (each box in stage 7).
+	- Swept: every `BUILD_JOBS` reader in cicd.bash, release.bash and remote-tests.bash, both `docker run` sites, and every remote command in remote-tests.bash. The Windows box's commands are the child. `docker build` runs only when the image changes, and is left alone.
+
+- CICD reset: CPU and priority on the Windows box
+	- ID: 2026102508333054
+	- Type: Enhancement
+	- Status: Queued
+	- Needs external testing: the Go tests on b29w or vm925w, with one failing on purpose, to show the exit code still comes back.
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-083330
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313103
+	- Requirements [Feature]:
+		- Stage 7's Go tests on the Windows box run in the `BelowNormal` priority class, with `GOMAXPROCS` at half that box's cores, rounded down and at least 1, per `Machine use`.
+		- Windows has no load average. Say on the item what stands in for the busy rule there, or that none does.
+	- Progress log:
+		- ssh lands in cmd there. `set /a` can work the count out before the marker line. `start /belownormal /wait` may not hand back the test binary's exit code. Neither can be run from here.
 
 - CICD reset: standard flags
 	- ID: 2026102416313104

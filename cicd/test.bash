@@ -389,6 +389,13 @@ fGateContainerName(){
 	name="$(sed -n 's/^as container \(gitsby-cicd-[0-9]\{8\}-[0-9]\{6\}-[0-9][0-9]*\)$/\1/p' "${gateOut}")"
 	[[ -n "${name}" ]] && grep -qF -- "--name ${name} --label gitsby.cicd.run=${name:12:15} --label gitsby.cicd.tree=" "${gateCalls}"
 }
+## nice stops at the docker client, so the run in there gets the core budget as its quota and a
+## low weight, and the box's core count to work its own budget out from.
+fGateContainerQuota(){
+	fGateSays 0 'OK: the container run' -y --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
+		&& fGateCalled '^docker run --rm --init --name gitsby-cicd-[^ ]+ --label [^ ]+ --label [^ ]+ --cpus [1-9][0-9]* --cpu-shares 256 -e GITSBY_CICD_CPUS=[1-9][0-9]* ' \
+		&& grep -qE '^Cores \.+: [1-9][0-9]* of [1-9][0-9]*, [1-9][0-9]* for the hard steps' "${gateOut}"
+}
 ## --quick is handed to the run in there, which is where it skips the suite.
 fGateContainerQuick(){
 	fGateSays 0 'OK: the container run' -y --quick --no-sync --no-publish --no-dogfood \
@@ -407,9 +414,9 @@ fGateContainerBuilds(){
 	local rc=0 img='gitsby-cicd:[0-9a-f]{12}' src="${gateDir}/src-go"
 	mkdir -p "${gateDir}/home/.local/bin"
 	fGateSays 0 'OK: Remote tests' -y --no-fuzz --no-demogif --no-sync --no-publish \
-		&& fGateCalled "^docker run --rm --init --label gitsby\.cicd\.run=[0-9]{8}-[0-9]{6} --label gitsby\.cicd\.tree=${gateDir} .* -e CGO_ENABLED=0 -e GOAMD64=v1 -e GOOS=linux -e GOARCH=amd64 -w ${src} ${img} go build .* -o ${src}/gitsby-linux-amd64 \.\$" \
-			"^docker run .* -e GOOS=darwin -e GOARCH=amd64 -w ${src} ${img} go build " "^docker run .* -e GOOS=darwin -e GOARCH=arm64 -w ${src} ${img} go build " \
-			"^docker run .* -e GOOS=freebsd -e GOARCH=amd64 -w ${src} ${img} go build " "^image=${img} run=[0-9]{8}-[0-9]{6}\$" \
+		&& fGateCalled "^docker run --rm --init --label gitsby\.cicd\.run=[0-9]{8}-[0-9]{6} --label gitsby\.cicd\.tree=${gateDir} --cpus [1-9][0-9]* --cpu-shares 256 .* -e CGO_ENABLED=0 -e GOAMD64=v1 -e GOOS=linux -e GOARCH=amd64 -w ${src} ${img} nice -n 19 go build .* -o ${src}/gitsby-linux-amd64 \.\$" \
+			"^docker run .* -e GOOS=darwin -e GOARCH=amd64 -w ${src} ${img} nice -n 19 go build " "^docker run .* -e GOOS=darwin -e GOARCH=arm64 -w ${src} ${img} nice -n 19 go build " \
+			"^docker run .* -e GOOS=freebsd -e GOARCH=amd64 -w ${src} ${img} nice -n 19 go build " "^image=${img} run=[0-9]{8}-[0-9]{6}\$" \
 		&& ! fGateCalled '^go build' && [[ -f "${gateDir}/home/.local/bin/gitsby" ]] \
 		&& grep -qF 'OK: installed (linux/amd64) -> '"${gateDir}/home/.local/bin/gitsby" "${gateOut}" || rc=1
 	rm -f -- "${gateDir:?}/home/.local/bin/gitsby"; rmdir "${gateDir}/home/.local/bin" "${gateDir}/home/.local" 2>/dev/null || true
@@ -418,7 +425,7 @@ fGateContainerBuilds(){
 ## --quick's cross-builds of the Unix boxes' targets as well.
 fGateContainerQuickBuilds(){
 	fGateSays 0 'OK: cross-built ' -y --quick --no-sync --no-publish --no-dogfood \
-		&& fGateCalled '^docker run .* -e GOOS=freebsd -e GOARCH=amd64 .* gitsby-cicd:[0-9a-f]{12} go build ' '^docker run .* -e GOOS=linux -e GOARCH=arm64 .* go build ' \
+		&& fGateCalled '^docker run .* -e GOOS=freebsd -e GOARCH=amd64 .* gitsby-cicd:[0-9a-f]{12} nice -n 19 go build ' '^docker run .* -e GOOS=linux -e GOARCH=arm64 .* go build ' \
 		&& ! fGateCalled '^go build'
 }
 ## --no-container builds them here, an image left in the caller's environment included, and
@@ -845,6 +852,25 @@ fRemoteBoxes(){
 }
 ## The tree's config.bash in the harness fixture, with those boxes.
 fRemoteConfig(){ cp "${root}/cicd/config.bash" "${rt}/cicd/"; fRemoteBoxes "${rt}/cicd/config.bash" ;}
+## The core budget a Mac or Unix box works out, with the cores $1, and the load $2 as Linux gives
+## it, or as macOS and BSD do with $3 set. Prints the count, then the low-priority prefix.
+fRemoteBudget(){
+	local budget="" stubs="${rt}/budget-bin"
+	budget="$(sed -n "/^budgetSh='/,/ionice -c 3\"; fi'\$/p" "${root}/cicd/remote-tests.bash" | sed "1s/^budgetSh='//; \$s/'\$//")"
+	mkdir -p "${stubs}"
+	printf '#!/bin/sh\necho %s\n' "$1" > "${stubs}/getconf"
+	if [[ -n "${3:-}" ]]; then printf '#!/bin/sh\nexit 1\n' > "${stubs}/cat"; printf '#!/bin/sh\necho "{ %s 0.10 0.10 }"\n' "$2" > "${stubs}/sysctl"
+	else printf '#!/bin/sh\necho "%s 0.10 0.10 1/100 1"\n' "$2" > "${stubs}/cat"; rm -f -- "${stubs:?}/sysctl"; fi
+	chmod +x "${stubs}"/*
+	PATH="${stubs}:${PATH}" sh -c "${budget}"'; echo "${GOMAXPROCS}"; echo "${lo}"'
+}
+## After a run: b26's Go tests and test.bash ran on the budget, and it comes out right.
+fRemoteBudgetUsed(){
+	grep -qE '^ssh b26 .*export GOMAXPROCS .* [$]lo [.]/gitsby-test -test[.]v$' "${rtLog}" \
+		&& grep -qE '^ssh b26 .*export GOMAXPROCS .* [$]lo [^ ]+/bash cicd/test[.]bash$' "${rtLog}" \
+		&& [[ "$(fRemoteBudget 8 3.00)" == $'4\nnice -n 19'* && "$(fRemoteBudget 8 4.50)" == $'2\n'* && "$(fRemoteBudget 1 0.00)" == $'1\n'* \
+			&& "$(fRemoteBudget 16 9.00 mac)" == $'4\nnice -n 19'* && "$(fRemoteBudget 16 7.00 mac)" == $'8\n'* ]]
+}
 ## True when the last run made a folder under %TEMP% on the Windows box $1, and removed that one.
 fRemoteWinCleaned(){
 	local d=""
@@ -5315,6 +5341,14 @@ GHEOF
 	## The compiler takes every core by default, in every build and in the eight-target
 	## release loop, which makes the machine unusable for the duration.
 	fAssert "[EnQTPxr] no build step takes every core"  bash -c "grep -q 'BUILD_JOBS=' '${root}/cicd/config.bash'"
+	## Per 'Machine use': half the cores rounded down, a quarter on a busy box and for the hard
+	## steps, never under 1. A stand-in core count is how the container gets the box's.
+	fAssert "[Etj7cY1] the core budget is half the cores, or a quarter when busy or for the hard steps, never under 1" \
+		bash -c "cd '${root}' && source cicd/config.bash && for c in '32 0.50 0 16' '32 16.00 0 16' '32 16.01 0 8' '32 1 1 8' '7 3 0 3' '7 3.6 0 1' '3 0.00 0 1' '1 9.00 1 1' '9 x 0 4'; do set -- \${c}; fCpuJobs j \"\$1\" \"\$2\" \"\$3\"; [[ \"\${j}\" == \"\$4\" ]] || exit 1; done; [[ \"\$(GITSBY_CICD_CPUS=12 bash -c 'source cicd/config.bash && echo \"\${cpuCores}\"')\" == 12 ]]"
+	fAssert "[Etj7cYI] go test -race, the native fuzzing, the soak test and CodeQL take the quarter" \
+		bash -c "hard=\$(grep -E 'go test -race|-fuzz \"|GITSBY_SOAK_OUT=|--threads=' '${root}/cicd/cicd.bash' | grep -v '^[[:space:]]*#'); [[ \$(grep -c . <<< \"\${hard}\") -ge 6 ]] && ! grep -v HEAVY_JOBS <<< \"\${hard}\" | grep -q ."
+	fAssert "[Etj7cYq] cicd.bash, release.bash and remote-tests.bash run at low priority, and so does what they start" \
+		bash -c "cd '${root}' && for f in cicd/cicd.bash cicd/release.bash cicd/remote-tests.bash; do [[ \$(grep -cx 'fLowPriority' \"\${f}\") == 1 ]] || exit 1; done; source cicd/config.bash && fLowPriority && if [[ -r /proc/\$\$/stat ]]; then read -ra n < /proc/\$\$/stat; n=\${n[18]}; else n=\$(ps -o nice= -p \$\$); fi && [[ \"\${n// /}\" == 19 ]] && { ! command -v ionice >/dev/null || ionice -p \$\$ | grep -q idle; }"
 	fAssertFail "[EnQTPxs] no go build call is missing -p" \
 		bash -c "grep -hE '^[[:space:]]*(go build|.*&& *go build)' '${root}/cicd/cicd.bash' '${root}/cicd/release.bash' | grep -qv 'BUILD_JOBS'"
 	## Same source, same bytes: the last input-derived stamp dropped, cgo off wherever those flags
@@ -5958,6 +5992,7 @@ EOF
 		fAssert "[EsJgekF] --container inside the container is refused"  fGateNested
 		fAssert "[EsJgel8] a plain run hands stages 1-4 to the image and runs none of them here"  fGateContainerRun
 		fAssert "[Eta9hUd] its container is named and labeled for the run, and the output names it"  fGateContainerName
+		fAssert "[Etj7cYY] and capped at the run's core budget, at a low weight"  fGateContainerQuota
 		fAssert "[Et6FC46] and --quick goes in with them"  fGateContainerQuick
 		fAssert "[Et9PJrS] and --leakcheck too, and the soak test runs only in there"  fGateContainerLeak
 		fAssert "[EtBTWta] and --no-leakcheck"  fGateContainerNoLeak
@@ -6452,7 +6487,9 @@ EOF
 		fAssert "[ErkbDVD] each box prints a line per Go test with its ID, and nothing from the Mac's login" \
 			bash -c "[[ \$(grep -cxF '  ok: [AAAAAAB] TestA' '${rtOut}') == 2 ]] && grep -qxF '  ok: [AAAAAAC] a check' '${rtOut}' && ! grep -qF 'bashrc' '${rtOut}'"
 		fAssert "[ErkbDVV] the Mac runs the suite in the stage's copy of the tree, under its own bash, first on PATH" \
-			bash -c "grep -qF 'cd \"\$d/tree\" && PATH=/usr/local/bin:\"\$PATH\" /usr/local/bin/bash cicd/test.bash' '${rtLog}'"
+			bash -c "grep -qF 'cd \"\$d/tree\" && PATH=/usr/local/bin:\"\$PATH\" \$lo /usr/local/bin/bash cicd/test.bash' '${rtLog}'"
+		## The tests there run with no core limit and at full priority otherwise.
+		fAssert "[Etj7cZ7] each Mac and Unix box runs its Go tests and test.bash on its own core budget, at low priority"  fRemoteBudgetUsed
 		fAssert "[ErkbDVk] that copy is marked as the stage's, and holds the git dir, both builds and the fetched modules" \
 			bash -c "cd '${rtMac}/gitsby-remote-tests' && [[ -f .gitsby-remote-tests && -f tree/src-go/gitsby-test && \"\$(cat tree/src-go/gitsby)\" == mac ]] && git -C tree ls-files --error-unmatch src-go/a_test.go >/dev/null && grep -qx 'go mod download' '${rtLog}'"
 		fAssert "[ErkbDWC] the Windows box gets a folder under %TEMP% for the run, removed after"  fRemoteWinCleaned b29w
@@ -6466,7 +6503,7 @@ EOF
 		GITSBY_CICD_IMAGE=gitsby-cicd:0123456789ab GITSBY_CICD_RUN=20261025-000000 fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtBin:?}/docker"
 		fAssert "[EtitOtH] handed the image, the harness builds each box's Go tests with its Go" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^docker run --rm --init --label gitsby\.cicd\.run=20261025-000000 .* -v [^ ]+/mac/tree/src-go:[^ ]+/mac/tree/src-go .* -e GOOS=darwin -e GOARCH=[a-z0-9]+ .* -w ${rt}/src-go gitsby-cicd:0123456789ab go test -c ' '${rtLog}' && grep -qE '^docker run .* -v [^ ]+/win/src-go:[^ ]+/win/src-go .* -e GOOS=windows -e GOARCH=amd64 .* gitsby-cicd:0123456789ab go test -c ' '${rtLog}' && ! grep -q '^go test -c' '${rtLog}' && grep -qxF '  passed on: b26 b29w' '${rtOut}'"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^docker run --rm --init --label gitsby\.cicd\.run=20261025-000000 .* -v [^ ]+/mac/tree/src-go:[^ ]+/mac/tree/src-go .* -e GOOS=darwin -e GOARCH=[a-z0-9]+ .* -w ${rt}/src-go gitsby-cicd:0123456789ab nice -n 19 go test -c ' '${rtLog}' && grep -qE '^docker run .* -v [^ ]+/win/src-go:[^ ]+/win/src-go .* -e GOOS=windows -e GOARCH=amd64 .* gitsby-cicd:0123456789ab nice -n 19 go test -c ' '${rtLog}' && ! grep -q '^go test -c' '${rtLog}' && grep -qxF '  passed on: b26 b29w' '${rtOut}'"
 		: > "${rtFail}/oldlock"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtFail:?}/oldlock"
@@ -6524,7 +6561,7 @@ EOF
 		fAssert "[Erm9Pnx] each gets the Go tests and the build for its own target, in a marked copy of the tree with the git dir" \
 			bash -c "[[ -f '${rtBsd}/.gitsby-remote-tests' && -f '${rtBsd}/tree/src-go/gitsby-test' && \"\$(cat '${rtBsd}/tree/src-go/gitsby')\" == freebsd && \"\$(cat '${rtArm}/tree/src-go/gitsby')\" == arm64 ]] && git -C '${rtBsd}/tree' ls-files --error-unmatch src-go/a_test.go >/dev/null && grep -qxF '  vmFreeBSD: go test (freebsd/amd64)' '${rtOut}' && grep -qxF '  vmDebARM64: go test (linux/arm64)' '${rtOut}'"
 		fAssert "[Erm9PoA] and runs test.bash there with the box's own bash, after fetching the modules" \
-			bash -c "grep -qE '^ssh bsdtest@vmFreeBSD echo @@gitsby-remote-tests@@; .*cd \"[\$]d/tree\" && bash cicd/test\.bash' '${rtLog}' && grep -qE '^ssh tester@vmDebARM64 echo @@gitsby-remote-tests@@; .*cd \"[\$]d/tree\" && bash cicd/test\.bash' '${rtLog}' && grep -q '^ssh bsdtest@vmFreeBSD .*tar -xf .*go mod download' '${rtLog}' && grep -qF '  vmDebARM64: test.bash against the linux/arm64 build' '${rtOut}'"
+			bash -c "grep -qE '^ssh bsdtest@vmFreeBSD echo @@gitsby-remote-tests@@; .*cd \"[\$]d/tree\" && [\$]lo bash cicd/test\.bash' '${rtLog}' && grep -qE '^ssh tester@vmDebARM64 echo @@gitsby-remote-tests@@; .*cd \"[\$]d/tree\" && [\$]lo bash cicd/test\.bash' '${rtLog}' && grep -q '^ssh bsdtest@vmFreeBSD .*tar -xf .*go mod download' '${rtLog}' && grep -qF '  vmDebARM64: test.bash against the linux/arm64 build' '${rtOut}'"
 		fAssert "[Etj35gI] each Unix box's copy goes under its temp root too, not its home" \
 			bash -c "[[ -f '${rtBsd}/.gitsby-remote-tests' && -f '${rtArm}/.gitsby-remote-tests' && ! -e '${rtBsd%/*}/home/gitsby-remote-tests' && ! -e '${rtArm%/*}/home/gitsby-remote-tests' ]]"
 		echo 'go ' > "${rtFail}/lacks-tester@vmDebARM64"
@@ -7495,3 +7532,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261025 JC: --backlog-run-quick and its areas, --merge-gate, --backlog-run-full, --long, and the two aliases. The gate checks read the new closing line, and leave the suites out of what the gate must not run. 1677 -> 1688.
 ##		- 20261025 JC: --backlog-run-quick goes into the image by default, takes --container and --no-container, and falls back here without docker. The checks of what the gate runs here say --no-container, and [EsJgejN] is off, since --container now goes with it. 1688 -> 1692.
 ##		- 20261025 JC: Stage 7 harness: b29w before vm925w, a VM through the VM state helper, each box's copy under its temp root, a Mac's tool check, and SKIP for a skipped box, in its line and the summary. The checks that read the Windows order or a skip line read the new ones. 1700 -> 1709.
+##		- 20261025 JC: The core budget, the hard steps on the quarter, low priority, the container's quota, and each box's budget in stage 7. The image-Go checks want go niced, and the remote suite checks want `$lo`. 1709 -> 1714.

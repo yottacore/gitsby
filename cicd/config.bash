@@ -81,9 +81,44 @@ TOOL_VERSIONS=(
 	"codeql=2.27.2"
 )
 
-## Half the cores, rounded up. The compiler takes all of them by default, in every build and
-## in the eight-target release loop, which makes the machine unusable for the duration.
-BUILD_JOBS=$(( ( $( nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2 ) + 1 ) / 2 ))
+## The core budget, per 'Machine use' in the shared CICD rules. The compiler takes every core by
+## default, which makes the machine unusable for the duration. BUILD_JOBS is half the cores,
+## rounded down, or a quarter on a busy box, where the 1-minute load is over half the cores.
+## HEAVY_JOBS is a quarter busy or not, for native fuzzing, go test -race, the soak test and
+## CodeQL. Never under 1. Steps run one at a time, so each one gets the whole count. cicd.bash
+## works both out again before each stage. GITSBY_CICD_CPUS stands in for the core count: the
+## run in the container gets the box's that way, since its --cpus quota leaves nproc alone.
+## fCpuJobs VAR CORES LOAD HEAVY sets VAR, with LOAD as the load average prints it.
+fCpuJobs(){
+	local -n jobs_cpuJ="$1"
+	local -i cores=1 load100=0
+	local load="${3:-0}" frac=""
+	## Checked first, since arithmetic would run what a bad one holds.
+	[[ "$2" =~ ^[1-9][0-9]{0,5}$ ]] && cores="$2"
+	frac="${load#*.}"; [[ "${load}" == *.* ]] || frac=""; frac="${frac}00"
+	if [[ "${load%%.*}" =~ ^[0-9]+$ && "${frac:0:2}" =~ ^[0-9]+$ ]]; then load100=$(( 10#${load%%.*} * 100 + 10#${frac:0:2} )); fi
+	jobs_cpuJ=$(( cores / 2 ))
+	if [[ "$4" == 1 ]] || (( load100 * 2 > cores * 100 )); then jobs_cpuJ=$(( cores / 4 )); fi
+	(( jobs_cpuJ >= 1 )) || jobs_cpuJ=1
+}
+fCpuBudget(){
+	local rest="" jobs=0
+	if [[ -z "${cpuCores:-}" ]]; then
+		cpuCores="${GITSBY_CICD_CPUS:-}"
+		[[ "${cpuCores}" =~ ^[1-9][0-9]*$ ]] || cpuCores="$( nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2 )"
+	fi
+	cpuLoad=""
+	if [[ -r /proc/loadavg ]]; then read -r cpuLoad rest < /proc/loadavg || true
+	else cpuLoad="$( sysctl -n vm.loadavg 2>/dev/null || true )"; cpuLoad="${cpuLoad#\{ }"; cpuLoad="${cpuLoad%% *}"; fi
+	fCpuJobs jobs "${cpuCores}" "${cpuLoad}" 0; BUILD_JOBS="${jobs}"
+	fCpuJobs jobs "${cpuCores}" "${cpuLoad}" 1; HEAVY_JOBS="${jobs}"
+}
+fCpuBudget
+## Low priority for the caller, and so for everything it starts.
+fLowPriority(){
+	renice 19 -p "$$" >/dev/null 2>&1 || true
+	if command -v ionice >/dev/null 2>&1; then ionice -c 3 -p "$$" >/dev/null 2>&1 || true; fi
+}
 
 ## Stage 1: lint. Go first (gofmt is the arbiter of format, vet and staticcheck gate),
 ## then every first-party shell file (globs, expanded by the engine). shellcheck is
@@ -343,3 +378,4 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-10-19 JC: Pillow 12.3.0, from the upstream wheel, and only fontTools is left on PIP_AUDIT_IGNORE. CodeQL's Python suite runs too, with its own bundle sum. DEMOGIF_TOOLS names the tools a demo render has to match.
 ##		- 2026-10-21 JC: Pillow 13.0.0, which fixes the advisories against 12.3.0. --no-fuzz skips pip-audit too.
 ##		- 2026-10-25 JC: Stage 7 tries b29w before vm925w, adds vmKt6m beside b26, and keeps each box's copy of the tree under its temp root. REMOTE_MAC_NEEDS.
+##		- 2026-10-25 JC: BUILD_JOBS rounds down, and drops to a quarter on a busy box. HEAVY_JOBS for the hard steps, and fLowPriority.

@@ -52,6 +52,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/.." && pwd)"
 # shellcheck source=/dev/null
 source "${here}/config.bash"
+fLowPriority
 # shellcheck source=/dev/null
 source "${here}/utility/include/go-test-lines.bash"
 # shellcheck source=/dev/null
@@ -84,6 +85,16 @@ sshOpts=(-o BatchMode=yes -o ConnectTimeout=8 -o LogLevel=ERROR -o ServerAliveIn
 ## The first line each remote command prints. The Mac's shell startup file prints on every ssh
 ## command, which no ssh option turns off, and it breaks rsync and scp the same way.
 mark="@@gitsby-remote-tests@@"
+## The core budget on a Mac or Unix box, from its own cores and load, by config.bash's rule:
+## half, or a quarter when the 1-minute load is over half the cores, never under 1. The Go tests
+## take it through GOMAXPROCS, which their -test.parallel follows. '$lo' runs a command at low
+## priority. POSIX sh, for whatever shell the box's ssh lands in.
+# shellcheck disable=SC2016  ## expands on the box, not here.
+budgetSh='n=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
+	l=$({ cat /proc/loadavg || sysctl -n vm.loadavg; } 2>/dev/null | tr -d "{}" | awk "{print \$1}")
+	GOMAXPROCS=$(awk -v n="$n" -v l="${l:-0}" "BEGIN { j = int(n / 2); if (l > n / 2) j = int(n / 4); if (j < 1) j = 1; print j }")
+	export GOMAXPROCS
+	lo="nice -n 19"; if ionice -c 3 true 2>/dev/null; then lo="${lo} ionice -c 3"; fi'
 ## Proves the folder on the Mac is this stage's before anything in it is removed.
 ownMark=".gitsby-remote-tests"
 
@@ -155,13 +166,13 @@ fRunPosix(){
 		## Homebrew's bash first, so the scripts the suite starts by their shebang get it too.
 		printf -v bashDir '%q' "$(dirname "${REMOTE_MAC_BASH}")"
 		printf -v macBash '%q' "${REMOTE_MAC_BASH}"
-		suiteCmd="PATH=${bashDir}:\"\$PATH\" ${REMOTE_MAC_BASH} cicd/test.bash"
+		suiteCmd="PATH=${bashDir}:\"\$PATH\" \$lo ${REMOTE_MAC_BASH} cicd/test.bash"
 		needsPre="PATH=${bashDir}:\"\$PATH\"; [ -x ${macBash} ] || printf '%s ' ${macBash}; " needs=("${REMOTE_MAC_NEEDS[@]}")
 	else
 		target="${REMOTE_UNIX_TARGETS[${lockName}]}"
 		tarFile="${work}/unix-$(fTag "${target}").tar" hasBin="${work}/has-bin-$(fTag "${target}")" binName="the ${target} build"
 		printf -v dir '%q' "${REMOTE_UNIX_DIR}"
-		suiteCmd="bash cicd/test.bash" needs=("${REMOTE_UNIX_NEEDS[@]}")
+		suiteCmd="\$lo bash cicd/test.bash" needs=("${REMOTE_UNIX_NEEDS[@]}")
 	fi
 	dirSh="$(fDirSh "${dir}")"
 	## Only the suite needs these, so a box without them still runs the Go tests. A Mac without
@@ -192,7 +203,7 @@ fRunPosix(){
 
 	fEcho_Clean "  ${lockName}: go test (${target})"
 	rc=0
-	fRemote "${sshName}" "echo ${mark}; ${dirSh}; cd \"\$d/tree/${GO_MODULE_DIR}\" && ./${EXE_NAME}-test -test.v" -n >"${log}" 2>&1 || rc=$?
+	fRemote "${sshName}" "echo ${mark}; ${budgetSh}; ${dirSh}; cd \"\$d/tree/${GO_MODULE_DIR}\" && \$lo ./${EXE_NAME}-test -test.v" -n >"${log}" 2>&1 || rc=$?
 	if ((rc == 255)); then fEcho_Clean "  SKIP: ${lockName}, lost the connection during go test"; fResult "${lockName}" lost; return 0; fi
 	fGoTestLines "${log}" "${root}/${GO_MODULE_DIR}"
 	if ((rc)); then fGoTestFailures "${log}"; fEcho_Clean "  FAIL: ${lockName} go test"; failed=1; fi
@@ -210,10 +221,10 @@ fRunPosix(){
 			## No display, and none of Wine's first-run extras. Wine spun forever here once, so it
 			## gets a limit, and wineserver -k takes down what timeout leaves.
 			rc=0
-			fRemote "${sshName}" "echo ${mark}; ${dirSh}; cd \"\$d/tree/${GO_MODULE_DIR}\" || exit 1
+			fRemote "${sshName}" "echo ${mark}; ${budgetSh}; ${dirSh}; cd \"\$d/tree/${GO_MODULE_DIR}\" || exit 1
 				unset DISPLAY WAYLAND_DISPLAY
 				export WINEPREFIX=\"\$d/wine\" WINEDEBUG=-all WINEDLLOVERRIDES='mscoree,mshtml,winemenubuilder.exe=d'
-				timeout 900 wine ./${EXE_NAME}-test-$(fTag "${wineTarget}").exe -test.v; r=\$?
+				timeout 900 \$lo wine ./${EXE_NAME}-test-$(fTag "${wineTarget}").exe -test.v; r=\$?
 				wineserver -k 2>/dev/null
 				exit \$r" -n >"${wineLog}" 2>&1 || rc=$?
 			if ((rc == 255)); then fEcho_Clean "  SKIP: ${lockName}, lost the connection during the Wine go test"; fResult "${lockName}" lost; return 0; fi
@@ -231,7 +242,7 @@ fRunPosix(){
 	else
 		fEcho_Clean "  ${lockName}: test.bash against ${binName}"
 		rc=0
-		fRemote "${sshName}" "echo ${mark}; ${dirSh}; cd \"\$d/tree\" && ${suiteCmd}" -n || rc=$?
+		fRemote "${sshName}" "echo ${mark}; ${budgetSh}; ${dirSh}; cd \"\$d/tree\" && ${suiteCmd}" -n || rc=$?
 		if ((rc == 255)); then fEcho_Clean "  SKIP: ${lockName}, lost the connection during test.bash"; fResult "${lockName}" lost; return 0; fi
 		if ((rc)); then fEcho_Clean "  FAIL: ${lockName} test.bash"; failed=1; fi
 	fi
@@ -498,3 +509,4 @@ if ((${#failed[@]})); then exit 1; fi
 ##		- 2026-10-19 JC: The test builds pin GOAMD64=v1, like the release.
 ##		- 2026-10-25 JC: The test builds use the image's Go when cicd.bash hands it the image.
 ##		- 2026-10-25 JC: A VM goes through the VM state helper, so one that is paused or off runs and is put back after. Each Mac and Unix box keeps its copy of the tree under its temp root, a Mac checks for the tools the suite needs too, and a skipped box says SKIP and is named in the summary.
+##		- 2026-10-25 JC: Each Mac and Unix box runs its Go tests and test.bash on its own core budget, at low priority, and so does this script.

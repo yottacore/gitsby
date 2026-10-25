@@ -94,6 +94,7 @@ source "${here}/config.bash"
 source "${here}/utility/include/gfs-rotate.bash"       ## gfs_rotate() for the artifact dirs
 source "${here}/utility/include/go-test-lines.bash"    ## fGoTestLines(), shared with remote-tests.bash
 source "${here}/utility/include/image-go.bash"         ## fImageGo(), shared with remote-tests.bash
+fLowPriority
 cd "${root}"
 stamp="$(date +%Y%m%d-%H%M%S)"
 
@@ -113,7 +114,7 @@ fEcho_Clean(){
 fEcho(){       if [[ -n "$*"     ]]; then fEcho_Clean "[ $* ]"; else fEcho_Clean ""; fi; }
 fEcho_Force(){ fEcho_ResetBlankCounter; fEcho "$*"; }
 __letterbox="••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••"
-fSection(){ fEcho_Clean; fEcho_Clean "${__letterbox}"; fEcho "$*"; [[ "${stagePause:-0}" == 0 ]] || sleep "${stagePause}"; }
+fSection(){ fCpuBudget; fEcho_Clean; fEcho_Clean "${__letterbox}"; fEcho "$*"; [[ "${stagePause:-0}" == 0 ]] || sleep "${stagePause}"; }
 fDie(){ { fEcho_Force "FAILED: $*"; } >&2; exit 1; }
 fUsage(){ fEcho_Clean "$*" >&2; exit 2; }
 
@@ -432,10 +433,10 @@ fStageLint(){
 fUnitTests(){
 	local log="" rc=0
 	log="$(mktemp "${runTmp}/gotest.XXXXXX")"
-	## -race costs little on a tree with one goroutine. TestMain fails the run on a goroutine
-	## still going at the end. -count=1, since a cached pass would skip both. -v is for the line
-	## per test below; the rest of what it prints is shown only when something failed.
-	(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${BUILD_JOBS}" go test -race -p "${BUILD_JOBS}" -count=1 -v ./...) >"${log}" 2>&1 || rc=$?
+	## TestMain fails the run on a goroutine still going at the end. -count=1, since a cached pass
+	## would skip both. -v is for the line per test below; the rest of what it prints is shown
+	## only when something failed. -race is one of the hard steps.
+	(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${HEAVY_JOBS}" go test -race -p "${HEAVY_JOBS}" -count=1 -v ./...) >"${log}" 2>&1 || rc=$?
 	fGoTestLines "${log}" "${root}/${GO_MODULE_DIR}"
 	if ((rc)); then
 		grep -vE '^ *(=== (RUN|PAUSE|CONT|NAME)|--- (PASS|SKIP))' "${log}" || true
@@ -468,7 +469,7 @@ fLeakCheck(){
 	soakDir="${leakDir}/soak_${stamp}"
 	mkdir -p "${soakDir}" || fDie "can't make ${soakDir}"
 	log="$(mktemp "${runTmp}/soak.XXXXXX")"
-	(cd "${root}/${GO_MODULE_DIR}" && GITSBY_SOAK_ROUNDS="${LEAKCHECK_SOAK_ROUNDS}" GITSBY_SOAK_OUT="${soakDir}" \
+	(cd "${root}/${GO_MODULE_DIR}" && GITSBY_SOAK_ROUNDS="${LEAKCHECK_SOAK_ROUNDS}" GITSBY_SOAK_OUT="${soakDir}" GOMAXPROCS="${HEAVY_JOBS}" \
 		go test -count=1 -run '^TestSoak$' -v .) >"${log}" 2>&1 || rc=$?
 	fGoTestLines "${log}" "${root}/${GO_MODULE_DIR}"
 	if ((rc)) || ! grep -q '^--- PASS: TestSoak' "${log}"; then
@@ -538,19 +539,19 @@ fCodeQL(){
 	((rc)) || (cd "${cqWork}/${GO_MODULE_DIR}" && go mod vendor) >"${log}" 2>&1 || rc=1
 	for goos in "${cqOses[@]}"; do
 		((rc)) && break
-		GOOS="${goos}" codeql database create "${cqWork}/db-${goos}" --language=go --source-root="${cqWork}/${GO_MODULE_DIR}" --threads="${BUILD_JOBS}" \
+		GOOS="${goos}" codeql database create "${cqWork}/db-${goos}" --language=go --source-root="${cqWork}/${GO_MODULE_DIR}" --threads="${HEAVY_JOBS}" \
 			-O go.extract_tests=true -O go.extract_vendor_dirs=true >>"${log}" 2>&1 || rc=1
 		((rc)) || codeql database analyze "${cqWork}/db-${goos}" "${CODEQL_SUITE}" --format=sarif-latest \
-			--output="${cqDir}/${goos}.sarif" --threads="${BUILD_JOBS}" >>"${log}" 2>&1 || rc=1
+			--output="${cqDir}/${goos}.sarif" --threads="${HEAVY_JOBS}" >>"${log}" 2>&1 || rc=1
 		sarifs+=("${cqDir}/${goos}.sarif")
 	done
 	if ((! rc)); then
 		mkdir -p "${cqWork}/py/vendor"
 		fCodeQLPySource "${cqWork}/py" >>"${log}" 2>&1 || rc=1
 	fi
-	((rc)) || codeql database create "${cqWork}/db-python" --language=python --source-root="${cqWork}/py" --threads="${BUILD_JOBS}" >>"${log}" 2>&1 || rc=1
+	((rc)) || codeql database create "${cqWork}/db-python" --language=python --source-root="${cqWork}/py" --threads="${HEAVY_JOBS}" >>"${log}" 2>&1 || rc=1
 	((rc)) || codeql database analyze "${cqWork}/db-python" "${CODEQL_PY_SUITE}" --format=sarif-latest \
-		--output="${cqDir}/python.sarif" --threads="${BUILD_JOBS}" >>"${log}" 2>&1 || rc=1
+		--output="${cqDir}/python.sarif" --threads="${HEAVY_JOBS}" >>"${log}" 2>&1 || rc=1
 	sarifs+=("${cqDir}/python.sarif")
 	((rc)) && tail -n 30 "${log}"
 	## Made by mktemp above, and checked again here, since this one is recursive.
@@ -614,6 +615,8 @@ if ((container)); then
 	containerImage="${APP_NAME}-cicd:$( { cat "${containerRecipe}" "${here}/container/requirements.txt"; printf '%s\n' "${containerArgs[@]}"; } | git hash-object --stdin | cut -c1-12 )"
 fi
 
+fCpuPlan(){ fEcho_Clean "Cores ...............: ${BUILD_JOBS} of ${cpuCores}, ${HEAVY_JOBS} for the hard steps (load ${cpuLoad:-unknown}), at low priority" ;}
+
 ## Runs cicd.bash in the image with the args given, against this same tree. It is mounted at the
 ## same path, so paths in the output and a worktree's .git file still resolve. The Go caches live
 ## in a named volume, or every run would download and build from nothing. The demo's fonts are in
@@ -647,7 +650,10 @@ fContainerRun(){
 	containerName="${APP_NAME}-cicd-${stamp}-$$"
 	fEcho_Clean "runs cicd.bash $*"
 	fEcho_Clean "as container ${containerName}"
+	## nice on the client doesn't reach in there, so the quota and the weight do, and the run
+	## in there renices itself. It works out its counts from this box's cores and load.
 	docker run --rm --init --name "${containerName}" --label "${APP_NAME}.cicd.run=${stamp}" --label "${APP_NAME}.cicd.tree=${root}" \
+		--cpus "${BUILD_JOBS}" --cpu-shares 256 -e "GITSBY_CICD_CPUS=${cpuCores}" \
 		--user "$(id -u):$(id -g)" "${containerMounts[@]}" -w "${root}" \
 		"${containerImage}" bash "${root}/cicd/cicd.bash" "$@" \
 		|| fDie "the run in the container failed (above)"
@@ -666,6 +672,7 @@ if ((gate)); then
 	fEcho_Clean
 	fEcho_Clean "${APP_NAME} backlog quick run: ${gateRun[*]}"
 	fEcho_Clean "Repo root ...........: ${root}"
+	fCpuPlan
 	if ((container)); then
 		fEcho_Clean "Container ...........: the quick run in ${containerImage}"
 		## By its own name, so the alias line isn't said twice. The areas stay as given.
@@ -726,6 +733,7 @@ else
 fi
 fEcho_Clean
 fEcho_Clean "Repo root ...........: ${root}"
+fCpuPlan
 if ((container)); then
 	fEcho_Clean "Container ...........: stages 1-4 and 6 in ${containerImage}, and the builds for 5 and 7 with its Go"
 elif [[ -n "${containerNote}" ]]; then
@@ -924,7 +932,7 @@ if ((doFuzz && quick)); then
 	fEcho_Clean "native fuzz targets skipped (--quick)"
 elif ((doFuzz)); then
 	for fuzzTarget in $(cd "${root}/${GO_MODULE_DIR}" && go test -list 'Fuzz.*' . 2>/dev/null | grep '^Fuzz' || true); do
-		(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${BUILD_JOBS}" go test -run '^$' -fuzz "^${fuzzTarget}\$" -fuzztime 5s -parallel "${BUILD_JOBS}" . >/dev/null) \
+		(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${HEAVY_JOBS}" go test -run '^$' -fuzz "^${fuzzTarget}\$" -fuzztime 5s -parallel "${HEAVY_JOBS}" . >/dev/null) \
 			|| fDie "fuzzing found a crasher in ${fuzzTarget} (reproducer under ${GO_MODULE_DIR}/testdata/fuzz/)"
 		## The test ID sits at the end of the func line, as '// [<id>]'.
 		fuzzId="$(sed -n "s|^func ${fuzzTarget}(.*// \(\[[0-9A-Za-z]*\]\)[[:space:]]*\$|\1 |p" "${root}/${GO_MODULE_DIR}"/*_test.go 2>/dev/null || true)"
@@ -1223,3 +1231,4 @@ fEcho_Clean
 ##		- 2026-10-25 JC: --backlog-run-quick takes over from --gate, which stays as another name for it, and runs the suites against a build of their own, or only the areas named. --merge-gate, with --ci as another name, and --backlog-run-full run every check of a plain run and change nothing: no sync, dogfood or publish, no prompt, and the demo gif stays as committed. --long and --slow are a plain run.
 ##		- 2026-10-25 JC: --backlog-run-quick runs in the image as well, where docker works, and --no-container keeps it here. --container goes with it now too.
 ##		- 2026-10-25 JC: Dogfood's builds, stage 7's, and the cross-builds --quick does there come from the image's Go when the run uses the image. Copying them into place and the tests on the other boxes stay here.
+##		- 2026-10-25 JC: Half the cores, rounded down, or a quarter on a busy box, worked out again before each stage, and a quarter for go test -race, the native fuzzing, the soak test and CodeQL. The run lowers its own priority, the container gets the count as its quota at a low weight, and the plan says what it got.
