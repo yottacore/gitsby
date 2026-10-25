@@ -142,6 +142,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Steps that run side by side share the count.
 		- Everything runs under `nice -n 19`, plus `ionice -c 3` where it exists.
 		- The container run gets `--cpus <jobs>` and `--cpu-shares 256`, and `nice` inside too.
+			- 2026-10-25: that covers the per-build `docker run` in `fImageGo` (`cicd/utility/include/image-go.bash`, eb6aa5e) as well as `fContainerRun`.
 		- The same rules on the boxes stage 7 uses, with each box's own CPU count and load. The Go tests there run with no limit today.
 
 - CICD reset: standard flags
