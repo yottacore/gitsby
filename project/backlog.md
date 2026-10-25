@@ -40,6 +40,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
+	- Prereq IDs: 2026102416313104
+		- It uses the new flags that item adds.
 	- Related IDs: 2026101009380628
 	- Requirements [Feature]:
 		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
@@ -55,6 +57,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
+	- Prereq IDs: 2026102416313104
+		- It uses the new flags that item adds.
 	- Related IDs: 2026100312332924
 	- Requirements [Feature]:
 		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
@@ -74,6 +78,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
+	- Prereq IDs: 2026102416313104
+		- It uses the new flags that item adds.
 	- Related IDs: 2026101912030138, 2026102307533128
 	- Requirements [Feature]:
 		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
@@ -173,6 +179,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
+	- Prereq IDs: 2026102416313104
+		- It uses the new flags that item adds.
 	- Related IDs: 2026101912030138
 	- Requirements [Feature]:
 		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
