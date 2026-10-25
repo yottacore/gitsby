@@ -88,7 +88,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: other hosts and VMs
 	- ID: 2026102416313101
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: Yes, the round's full run. test.bash ran twice here: the first run failed 5 of 1709, all new checks and since fixed. The second was cut off by its time limit at load 40, after 1585 checks with none failed, every stage 7 check among them.
+	- Needs external testing: A real stage 7, under the real lock and VM helper. b29w should run, or vm925w when it's taken. vmFreeBSD, vmDebARM64 and vmKt6m are off today, so each should be started for its run and shut down after. Each Mac and Unix box's copy should land under its temp root. vmKt6m should name any tool it lacks.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
@@ -103,6 +105,26 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- A skipped box shows as `SKIP` in its step line and in the summary at the end, and never stops a run, `--merge-gate` included.
 		- vmKt6m joins b26 for Intel macOS, where it adds something b26 doesn't.
 		- Earlier decisions this overrides: the 2026-10-04 decisions in 2026100312332924 that take vm925w first on Windows and keep the tree's copy under each box's home.
+	- Estimated effort: Avg
+	- Progress log:
+		- 2026-10-25: Windows is `b29w` then `vm925w`, and `b29w-wif` is gone from config.bash.
+		- 2026-10-25: A box the VM state helper knows as a VM runs through its `wrap`, which wakes it under the lock and puts it back after. Such a box isn't looked for over ssh until it's up. One that won't come up is skipped with the helper's reason. One that won't go back gets a warning, and its result stands. Other boxes keep the lock's own `wrap`. With no helper beside the lock, a note says so, and a sleeping VM is skipped as before.
+		- 2026-10-25: Each Mac and Unix box keeps its copy in `gitsby/remote-tests` under `HOST_TEMP`, else `TMPDIR` without its last slash, else `/tmp`. The Wine prefix sits beside it. Windows already used `%TEMP%`, and is unchanged.
+		- 2026-10-25: vmKt6m is a second Mac host, as `mactest`. A Mac now checks for its bash, git and go the way the Unix boxes do. Without them it runs the Go tests only and names what it lacks.
+		- 2026-10-25: Every skip line in the harness says `SKIP`. The summary names the skipped boxes after `SKIP:`. A skip still never fails the run.
+		- 2026-10-25: Asserts given new values for this change. `[ErkbDUa]`, `[Erm9Pnk]`: Windows list `vm925w b29w` -> `b29w vm925w`. `[ErkbDUn]`, `[EtitOtH]`, `[ErkbDWC]`, `[ErkbDYT]`, `[Erkbdu7]`: the first Windows box is b29w, not vm925w. `[ErkbDXc]`, `[ErkbDY9]`, `[ErkqZtP]`, `[ErkbDUK]`: the same order, and the summary now ends in `SKIP: <boxes>`. `[ErkbDXc]` keeps its second-name case on vm925w in the fixture, since `b29w-wif` is gone. `[ErkbDVV]`, `[Erm9PoA]`: `cd "$HOME/gitsby-remote-tests/tree"` -> `cd "$d/tree"`. `[ErkbDU2]`, `[ErkbDZ0]`, `[Erkbdts]`, `[Erm9PoN]`, `[Erm9Poa]`, `[Erm9Pon]`: `skip:` -> `SKIP:`.
+		- Verified: the 9 new checks and the changed ones pass. Run against the old remote-tests.bash and config.bash, all 9 new checks fail, and so do 14 of the existing stage 7 checks.
+		- Verified: shellcheck, `test-id.bash --check`, and `--backlog-run-quick lint unit` pass.
+		- Note: vmKt6m ignores the ACPI shutdown. A run that finds it off waits 300 s for the helper's restore, then warns and leaves it running. The fix belongs in the helper. Draft in `private/claude_simple/upstream/2026102416313101/`.
+		- Note: the old `~/gitsby-remote-tests` folders on b26, vmFreeBSD and vmDebARM64 are no longer used. Nothing removes them.
+	- Decisions:
+		- 2026-10-25: vmKt6m runs everything b26 runs. Both are Intel macOS 15.8, and the GPU difference means nothing to a CLI. What it adds is a test user who isn't an admin, with only the system on PATH.
+		- 2026-10-25: Only VMs go through the helper. Its `wrap` takes no `--why`, so the other boxes keep the lock's `wrap` and still say what they're held for.
+		- 2026-10-25: The work folder is one fixed folder per box, replaced each run, as before. Run folders with a counter, `run.pid` and the guard on removals are 2026102416313108's. The step lines are 2026102416313105's.
+	- Swept: every reader of `REMOTE_WINDOWS_HOSTS`, `REMOTE_MAC_HOSTS`, `REMOTE_MAC_DIR` and `REMOTE_UNIX_DIR`. cicd.bash only prints the host lists, and the test.bash fixture pins its own. Every `skip:` line in remote-tests.bash. README and contributing.md, which named one Mac and said nothing about VMs.
+	- Branch: round-20261025
+	- Commit: 4388d96
+	- Test case: test.bash `[Etj1UJ4]` (config order), `[Etj1UJK]` (temp root), `[Etj1UJb]` and `[Etj35gI]` (copies under it), `[Etj1UJq]` (no helper), `[Etj1UKH]`, `[Etj1UKa]` and `[Etj1UKq]` (VM wake, no wake, no restore), `[Etj1ULE]` (Mac tools), plus the changed asserts above.
 
 - CICD reset: container cleanup
 	- ID: 2026102416313102
