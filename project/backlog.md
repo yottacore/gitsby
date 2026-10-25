@@ -338,6 +338,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Each test prints `PASS <id> <name>`, `FAIL <id> <name>` or `SKIP <id> <why>`, in place of `ok: [<id>] <name>` and the rest, on this box and on the remote boxes.
 		- Earlier decisions this overrides: the private test ID rule, milliseconds in base 62.
 
+- Stage 7 can't start vm925w once it has started vmKt6m or vmFreeBSD
+	- ID: 2026102510404322
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-104043
+	- Opened by: jim-collier
+	- Related IDs: 2026102416313101
+	- Incorrect behavior [Bug]: In the round-20261025 full run, b29w was held by another job, so stage 7 went to vm925w, which was off. It didn't come up, with "Failed to reserve port 5900", and was skipped. No Windows box ran the Go tests.
+	- Expected behavior [Bug]: vm925w starts and runs the Windows Go tests when b29w is busy.
+	- Reproduced [Bug]: 2026-10-25 on b23, gover plus 4388d96. vmKt6m was started earlier in the run and ignored the ACPI shutdown, so it was still up and held the port.
+	- Possible cause [Bug]: vm925w's SPICE port is fixed at 5900, while vmFreeBSD and vmKt6m take the first free one. Starting vm925w before the other VMs, or only after they're down, would avoid it. vmKt6m also needs shutting down from inside, since it ignores the ACPI request.
+	- Estimated effort: Avg
+
 - CICD reset: temp files and safe removal
 	- ID: 2026102416313108
 	- Type: Enhancement
