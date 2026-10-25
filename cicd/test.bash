@@ -6404,7 +6404,11 @@ EOF
 		local rt="${work}/remote" rtBin="${work}/remote-bin" rtHome="${work}/remote-home" rtMac="${work}/remote-mac"
 		local rtLog="${work}/remote-calls.log" rtFail="${work}/remote-fail" rtOut="${work}/remote-out.txt" rtRc=0 rtMacBin="${work}/remote-macbin" rtHost=""
 		local rtLock="${rtHome}/synced/0-0/common/exec/util/linux/bash/x_windows-host-lock.bash"
-		mkdir -p "${rt}/cicd/utility/include" "${rt}/src-go" "${rtBin}" "${rtMac}" "${rtFail}" "${rtLock%/*}"
+		## A Mac's bare PATH, with only what the copy needs, and a Homebrew folder with go in it.
+		local rtSys="${work}/remote-sys" rtBrew="${work}/remote-brew" rtTool=""
+		mkdir -p "${rt}/cicd/utility/include" "${rt}/src-go" "${rtBin}" "${rtMac}" "${rtFail}" "${rtLock%/*}" "${rtSys}" "${rtBrew}"
+		for rtTool in bash mkdir mv rm tar; do ln -s "$(command -v "${rtTool}")" "${rtSys}/${rtTool}"; done
+		ln -s "${rtBin}/go" "${rtBrew}/go"
 		cp "${root}/cicd/remote-tests.bash" "${rt}/cicd/"
 		fRemoteConfig
 		cp "${root}/cicd/utility/include/go-test-lines.bash" "${root}/cicd/utility/include/image-go.bash" "${rt}/cicd/utility/include/"
@@ -6443,7 +6447,8 @@ EOF
 				*'/.gitsby-remote-tests'*)
 					h='${rtMac}'; [[ "\${host}" == b26 ]] || h='${work}/remote-unix-'"\${host}"
 					mkdir -p "\${h}/home"
-					if [[ "\${host}" == b26 ]]; then exec env -u HOST_TEMP HOME="\${h}/home" TMPDIR="\${h}/" PATH='${rtBin}':"\${PATH}" bash -c "\${cmd}"; fi
+					p='${rtBin}':"\${PATH}"; [[ ! -e '${rtFail}/brewgo-'"\${host}" ]] || p='${rtSys}'
+					if [[ "\${host}" == b26 ]]; then exec env -u HOST_TEMP HOME="\${h}/home" TMPDIR="\${h}/" PATH="\${p}" "\${BASH}" -c "\${cmd}"; fi
 					HOME="\${h}/home" HOST_TEMP="\${h}" PATH='${rtBin}':"\${PATH}" exec bash -c "\${cmd}" ;;
 				*'command -v'*) echo '@@gitsby-remote-tests@@'; cat '${rtFail}/lacks-'"\${host}" 2>/dev/null || true ;;
 				*mkdir*) cat > /dev/null; echo '@@gitsby-remote-tests@@'; [[ ! -e '${rtFail}/nomkdir-'"\${host}" ]] || exit 1; echo made ;;
@@ -6540,6 +6545,12 @@ EOF
 		rm -f -- "${rtFail:?}/lacks-b26"
 		fAssert "[Etj1ULE] a Mac without a tool the suite needs, its bash included, runs the Go tests only, fetches nothing, and says what it lacks" \
 			bash -c "[[ '${rtRc}' == 0 ]] && grep -qxF '  SKIP: test.bash on b26, which lacks: go' '${rtOut}' && grep -q '^ssh b26 .*-test\.v' '${rtLog}' && ! grep -q '^ssh b26 .*cicd/test\.bash' '${rtLog}' && ! grep -q '^ssh b26 .*go mod download' '${rtLog}' && grep -qF 'PATH=/usr/local/bin:\"\$PATH\"; [ -x /usr/local/bin/bash ] || printf' '${rtLog}' && grep -qE '^ssh b26 .*git[)] git --version' '${rtLog}'"
+		## vmKt6m: the tools check finds go beside Homebrew's bash, which a bare ssh PATH lacks.
+		printf 'REMOTE_MAC_BASH="%s/bash"\n' "${rtBrew}" >> "${rt}/cicd/config.bash"; : > "${rtFail}/brewgo-b26"
+		fRemoteRun --mac-bin "${rtMacBin}"
+		rm -f -- "${rtFail:?}/brewgo-b26"; echo 'REMOTE_MAC_BASH="/usr/local/bin/bash"' >> "${rt}/cicd/config.bash"
+		fAssert "[EtjavHs] a Mac whose go sits beside its Homebrew bash fetches the modules with that folder first on PATH, and runs the suite" \
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qxF 'go mod download' '${rtLog}' && grep -qxF '  b26: test.bash against the universal build' '${rtOut}' && grep -qxF '  passed on: b26 b29w' '${rtOut}'"
 		: > "${rtFail}/nomkdir-b29w"
 		fRemoteRun
 		rm -f -- "${rtFail:?}/nomkdir-b29w"

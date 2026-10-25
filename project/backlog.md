@@ -61,7 +61,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Type: Enhancement
 	- Status: Waiting on automated testing
 	- Needs local test suite run?: Yes, the round's full run. test.bash ran twice here: the first run failed 5 of 1709, all new checks and since fixed. The second was cut off by its time limit at load 40, after 1585 checks with none failed, every stage 7 check among them.
-	- Needs external testing: A real stage 7, under the real lock and VM helper. b29w should run, or vm925w when it's taken. vmFreeBSD, vmDebARM64 and vmKt6m are off today, so each should be started for its run and shut down after. Each Mac and Unix box's copy should land under its temp root. vmKt6m should name any tool it lacks.
+	- Needs external testing: A real stage 7, under the real lock and VM helper. b29w should run, or vm925w when it's taken. vmFreeBSD, vmDebARM64 and vmKt6m are off today, so each should be started for its run and shut down after. Each Mac and Unix box's copy should land under its temp root. vmKt6m should fetch the modules and run test.bash, or name any tool it lacks.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
@@ -88,14 +88,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Verified: shellcheck, `test-id.bash --check`, and `--backlog-run-quick lint unit` pass.
 		- Note: vmKt6m ignores the ACPI shutdown. A run that finds it off waits 300 s for the helper's restore, then warns and leaves it running. The fix belongs in the helper. Draft in `private/claude_simple/upstream/2026102416313101/`.
 		- Note: the old `~/gitsby-remote-tests` folders on b26, vmFreeBSD and vmDebARM64 are no longer used. Nothing removes them.
+		- 2026-10-25: In the round's full run, vmKt6m failed its copy step with `go: command not found` (exit 127). The tools check looks for go with Homebrew's bash folder first on PATH, and found it there. The module fetch ran on the bare ssh PATH. The fetch is only for the suite, so it now runs on the suite's PATH, the one the check used. A Mac with no go there still fetches nothing and names go.
+		- 2026-10-25: The Go tests step needs no go, since its binary is built here. It runs on the box's own PATH, and the Go tests that use git skip without one. Not checked: a Mac whose `/usr/bin/git` only offers to install the command line tools would fail those tests rather than skip them.
+		- Verified: test.bash 1715/0 with the fix. Against the harness before the fix, `[EtjavHs]` fails on the same exit 127, and the other 1714 pass. `--backlog-run-quick` passed in the image: test.bash 1715/0, fuzz 313/0, parity 29/0.
 	- Decisions:
 		- 2026-10-25: vmKt6m runs everything b26 runs. Both are Intel macOS 15.8, and the GPU difference means nothing to a CLI. What it adds is a test user who isn't an admin, with only the system on PATH.
 		- 2026-10-25: Only VMs go through the helper. Its `wrap` takes no `--why`, so the other boxes keep the lock's `wrap` and still say what they're held for.
-		- 2026-10-25: The work folder is one fixed folder per box, replaced each run, as before. Run folders with a counter, `run.pid` and the guard on removals are 2026102416313108's. The step lines are 2026102416313105's.
+		- 2026-10-25: The tools check, the fetch and test.bash share one PATH on a Mac, the suite's. So a Mac whose Homebrew folder has go and git runs test.bash, even when the bare ssh PATH has neither.
 	- Swept: every reader of `REMOTE_WINDOWS_HOSTS`, `REMOTE_MAC_HOSTS`, `REMOTE_MAC_DIR` and `REMOTE_UNIX_DIR`. cicd.bash only prints the host lists, and the test.bash fixture pins its own. Every `skip:` line in remote-tests.bash. README and contributing.md, which named one Mac and said nothing about VMs.
+		- 2026-10-25: every remote command in `fRunPosix`, for a tool it runs off the PATH it was checked on. Only the fetch did. The Unix boxes use the bare PATH for all of it, and the copy, Go tests and Wine steps run nothing from Homebrew.
 	- Branch: round-20261025
 	- Commit: 4388d96
-	- Test case: test.bash `[Etj1UJ4]` (config order), `[Etj1UJK]` (temp root), `[Etj1UJb]` and `[Etj35gI]` (copies under it), `[Etj1UJq]` (no helper), `[Etj1UKH]`, `[Etj1UKa]` and `[Etj1UKq]` (VM wake, no wake, no restore), `[Etj1ULE]` (Mac tools), plus the changed asserts above.
+	- Test case: test.bash `[Etj1UJ4]` (config order), `[Etj1UJK]` (temp root), `[Etj1UJb]` and `[Etj35gI]` (copies under it), `[Etj1UJq]` (no helper), `[Etj1UKH]`, `[Etj1UKa]` and `[Etj1UKq]` (VM wake, no wake, no restore), `[Etj1ULE]` (Mac tools), `[EtjavHs]` (Mac fetch on the suite's PATH), plus the changed asserts above.
 
 - CICD reset: CPU and priority
 	- ID: 2026102416313103
