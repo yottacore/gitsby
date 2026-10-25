@@ -33,23 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- CICD reset: containers
-	- ID: 2026102416313100
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261024-163131
-	- Opened by: jim-collier
-	- Related IDs: 2026101009380628
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Per `Containers` in the shared CICD rules. A full run already uses the pinned image by default, falls back to the box with a warning, and takes `--no-container`.
-		- `--gate`, and the backlog and merge gate runs that replace it, run in the image too, where docker works.
-		- The builds for dogfood, stage 7 and a release come from the image's Go, not the box's. Copying them into place and the tests on other boxes stay outside it.
-		- Earlier decisions this overrides: the line in 2026101009380628 that keeps dogfood and the remote tests' builds on the host, and the private notes, where `--gate` stays on the box.
-	- Progress log:
-		- 2026-10-25: Split in three, one per place a build or check still runs on the box: 2026102507133273 for the quick run, 2026102507133278 for the dogfood and stage 7 builds, and 2026102507133283 for the release builds. `--merge-gate` and `--backlog-run-full` are a plain run, so their stages 1-4 and 6 are in the image already, and their stage 7 builds go with the second child.
-
 - CICD reset: dogfood and stage 7 builds from the image's Go
 	- ID: 2026102507133278
 	- Type: Enhancement
@@ -72,18 +55,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash [EtitOqM], [EtitOrO], [EtitOsK] and [EtitOtH].
 	- Verified: `cicd.bash --backlog-run-quick` passed in the image: lint, go test, test.bash 1700/0, fuzz 313/0, spawn counts and parity 29/0. Against the old cicd.bash and remote-tests.bash, [EtitOqM], [EtitOrO] and [EtitOtH] fail, and [EtitOsK] fails with the `unset` taken out. With the real image, `fImageGo` built linux/amd64 and darwin/arm64 into a folder outside the tree, and the windows/amd64 Go tests into one under `/tmp`. The linux/amd64 build matched the box's byte for byte, both on Go 1.26.2.
 	- Swept: every `go build` and `go test -c` in cicd.bash and remote-tests.bash. `fCrossBuild` covers dogfood, stage 7's Mac and Unix builds and `--quick`'s cross-builds, and `fBuildTests` covers all four of the harness's builds. The native and demo builds already run in the image when the run does. release.bash is 2026102507133283. The GOAMD64 and cgo pin checks ([Et9l12K], [Er1LxT7]) still count the same sites. README, contributing.md and cicd.bash's help, plan line and warning.
-
-- CICD reset: release builds from the image's Go
-	- ID: 2026102507133283
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-071332
-	- Opened by: jim-collier
-	- Parent ID: 2026102416313100
-	- Prereq IDs: 2026102507133278
-	- Requirements [Feature]:
-		- release.bash's builds, both of the reproducibility pair included, come from the image's Go where docker works. The upload and the checks against the published assets stay on the box.
 
 - CICD reset: other hosts and VMs
 	- ID: 2026102416313101
@@ -126,28 +97,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: 4388d96
 	- Test case: test.bash `[Etj1UJ4]` (config order), `[Etj1UJK]` (temp root), `[Etj1UJb]` and `[Etj35gI]` (copies under it), `[Etj1UJq]` (no helper), `[Etj1UKH]`, `[Etj1UKa]` and `[Etj1UKq]` (VM wake, no wake, no restore), `[Etj1ULE]` (Mac tools), plus the changed asserts above.
 
-- CICD reset: container cleanup
-	- ID: 2026102416313102
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261024-163131
-	- Opened by: jim-collier
-	- Prereq IDs: 2026102506452478
-		- It uses `--keep-temp` from that item. The other new flags are in since a1c62bb.
-	- Related IDs: 2026101912030138, 2026102307533128
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Per the container bullets in `Cleanup after a run` in the shared CICD rules. Containers already run with `--rm`, under a name and labels for the run.
-		- Every container, image and volume the pipeline makes gets 2 labels, `dev.project=gitsby` and `dev.run=<run folder>`. Containers are named `gitsby-<run folder>-<step>`.
-		- At the end of a run, on failure and Ctrl+C too, the run's containers are stopped and removed by label. `--keep-temp` keeps them.
-		- Dangling images go by the project label. An older tag goes once a newer one has passed, and the current tag and the one before it stay.
-		- Then `docker builder prune -f --filter until=168h`, so a week of build cache stays warm.
-		- The `gitsby-cicd-cache` volume follows a 2 GB cap.
-		- One line at the end says what was removed and about what it freed, from `docker system df` before and after.
-		- What was built before the labels gets one pass by hand, by ID.
-		- Earlier decisions this overrides: 2026101912030138, where a new image removes the one it replaces and the cache volume is kept whole, and the label and name format from 2026102307533128.
-
 - CICD reset: CPU and priority
 	- ID: 2026102416313103
 	- Type: Enhancement
@@ -186,6 +135,84 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash [Etj7cY1] (the counts), [Etj7cYI] (the hard steps), [Etj7cYq] (low priority), [Etj7cYY] (the container's quota), [Etj7cZ7] (each box in stage 7).
 	- Swept: every `BUILD_JOBS` reader in cicd.bash, release.bash and remote-tests.bash, both `docker run` sites, and every remote command in remote-tests.bash. The Windows box's commands are the child. `docker build` runs only when the image changes, and is left alone.
 
+- CICD reset: run flags and aliases
+	- ID: 2026102506452473
+	- Type: Enhancement
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: One `--backlog-run-full` run in the container, to see a real one end to end. It can stand in for the round's full-run line.
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-064524
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313104
+	- Requirements [Feature]:
+		- `--long`, with `--slow` as another name, `--backlog-run-quick [<area>...]`, `--backlog-run-full` and `--merge-gate`. `--help` lists the areas.
+		- `--gate` and `--ci` stay as other names for `--backlog-run-quick` and `--merge-gate`, and say so in one line when used. `pre-push.bash` looks for the `--gate)` arm, so it changes with it.
+		- The backlog and merge gate flags never dogfood, publish, commit, push, install, sync, rewrite a tracked file, or prompt. That covers the demo gif.
+	- Progress log:
+		- 2026-10-25: Done in cicd.bash. `--backlog-run-quick` runs the areas `lint`, `unit`, `suite`, `fuzz` and `parity`, all of them with none named, the three suites against one build of their own. `--merge-gate` and `--backlog-run-full` are a plain run with sync, dogfood and publish off and no prompt, and stage 6 leaves a gif that differs as committed. The run in the image is told the same.
+		- 2026-10-25: [EpsVDHu] and [ErkbDTZ] read the closing line `gate: passed`, now `quick run: passed`. [EpsVDHu] no longer forbids the build and the suites under `--gate`, since `--gate` runs them now. The rest of both is as it was.
+	- Decisions:
+		- With no area named, `--backlog-run-quick` runs the suites too. A worker ran them by hand beside `--gate` anyway, and the whole thing took about 3 minutes on 8 cores at a load of 10.
+		- `--merge-gate` and `--backlog-run-full` are the same checks, the other boxes included. They take the `--no-<step>` and container flags, and refuse `-m` and `--quick`.
+		- A gif that differs under them is a warning, not a failure, since the gif isn't a check.
+		- `--long` adds nothing yet, since no step here takes hours. `--backlog-run-quick` stays on the box until 2026102416313100.
+		- pre-push.bash is unchanged. `--backlog-run-quick|--gate)` still holds `--gate)`, so a commit with the gate is told apart as before. The hook still runs `--gate`, which now runs the suites too. Moving it to `--merge-gate` is 2026102506452488.
+	- Branch: round-20261025
+	- Test case: test.bash [EtiiN6u], [EtiiN78], [EtiiN7K], [EtiiN7Y], [EtiiN7k], [EtiiN7y], [EtiiN8B], [EtiiN8O], [EtiiN8b], [EtiiN8p] and [Etiiqyb].
+	- Verified: All 11 fail against the round branch's cicd.bash, and [EtiiN7k], [EtiiN7y] and [EtiiN8B] fail with the gif and image hand-offs taken out. test.bash 1677 -> 1688, 0 failed. `cicd.bash --backlog-run-quick` passes on this tree, lint, go test, test.bash 1688/0, fuzz 313/0, spawn counts and parity 29/0, in 175 s. `test-id.bash --check` and `backlog-check.bash` pass.
+	- Swept: cicd.bash's help, option arms, refusals, container hand-off, plan and stage 6. README, contributing.md and design.md's gate bullet. pre-push.bash's arm check and its call. test.bash's gate checks that read the old closing line.
+
+- CICD reset: containers
+	- ID: 2026102416313100
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-163131
+	- Opened by: jim-collier
+	- Related IDs: 2026101009380628
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per `Containers` in the shared CICD rules. A full run already uses the pinned image by default, falls back to the box with a warning, and takes `--no-container`.
+		- `--gate`, and the backlog and merge gate runs that replace it, run in the image too, where docker works.
+		- The builds for dogfood, stage 7 and a release come from the image's Go, not the box's. Copying them into place and the tests on other boxes stay outside it.
+		- Earlier decisions this overrides: the line in 2026101009380628 that keeps dogfood and the remote tests' builds on the host, and the private notes, where `--gate` stays on the box.
+	- Progress log:
+		- 2026-10-25: Split in three, one per place a build or check still runs on the box: 2026102507133273 for the quick run, 2026102507133278 for the dogfood and stage 7 builds, and 2026102507133283 for the release builds. `--merge-gate` and `--backlog-run-full` are a plain run, so their stages 1-4 and 6 are in the image already, and their stage 7 builds go with the second child.
+
+- CICD reset: release builds from the image's Go
+	- ID: 2026102507133283
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-071332
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313100
+	- Prereq IDs: 2026102507133278
+	- Requirements [Feature]:
+		- release.bash's builds, both of the reproducibility pair included, come from the image's Go where docker works. The upload and the checks against the published assets stay on the box.
+
+- CICD reset: container cleanup
+	- ID: 2026102416313102
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-163131
+	- Opened by: jim-collier
+	- Prereq IDs: 2026102506452478
+		- It uses `--keep-temp` from that item. The other new flags are in since a1c62bb.
+	- Related IDs: 2026101912030138, 2026102307533128
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the container bullets in `Cleanup after a run` in the shared CICD rules. Containers already run with `--rm`, under a name and labels for the run.
+		- Every container, image and volume the pipeline makes gets 2 labels, `dev.project=gitsby` and `dev.run=<run folder>`. Containers are named `gitsby-<run folder>-<step>`.
+		- At the end of a run, on failure and Ctrl+C too, the run's containers are stopped and removed by label. `--keep-temp` keeps them.
+		- Dangling images go by the project label. An older tag goes once a newer one has passed, and the current tag and the one before it stay.
+		- Then `docker builder prune -f --filter until=168h`, so a week of build cache stays warm.
+		- The `gitsby-cicd-cache` volume follows a 2 GB cap.
+		- One line at the end says what was removed and about what it freed, from `docker system df` before and after.
+		- What was built before the labels gets one pass by hand, by ID.
+		- Earlier decisions this overrides: 2026101912030138, where a new image removes the one it replaces and the cache volume is kept whole, and the label and name format from 2026102307533128.
+
 - CICD reset: CPU and priority on the Windows box
 	- ID: 2026102508333054
 	- Type: Enhancement
@@ -220,33 +247,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Earlier decisions this overrides: 2026101816064793, where `--gate` gets no `--ci` alias and `--quick` has a 30 s budget per step, and the private CI/CD notes, where the gate on main runs lint and the unit tests only.
 	- Progress log:
 		- 2026-10-25: Split, too big for one pass. Children: 2026102506452473 (the new run flags and the aliases), 2026102506452478 (`--keep-temp` and `--list`), 2026102506452483 (`--quick` in about 10 minutes) and 2026102506452488 (the hook runs `--merge-gate`). The other reset items wait on the first.
-
-- CICD reset: run flags and aliases
-	- ID: 2026102506452473
-	- Type: Enhancement
-	- Status: Waiting on automated testing
-	- Needs local test suite run?: One `--backlog-run-full` run in the container, to see a real one end to end. It can stand in for the round's full-run line.
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-064524
-	- Opened by: jim-collier
-	- Parent ID: 2026102416313104
-	- Requirements [Feature]:
-		- `--long`, with `--slow` as another name, `--backlog-run-quick [<area>...]`, `--backlog-run-full` and `--merge-gate`. `--help` lists the areas.
-		- `--gate` and `--ci` stay as other names for `--backlog-run-quick` and `--merge-gate`, and say so in one line when used. `pre-push.bash` looks for the `--gate)` arm, so it changes with it.
-		- The backlog and merge gate flags never dogfood, publish, commit, push, install, sync, rewrite a tracked file, or prompt. That covers the demo gif.
-	- Progress log:
-		- 2026-10-25: Done in cicd.bash. `--backlog-run-quick` runs the areas `lint`, `unit`, `suite`, `fuzz` and `parity`, all of them with none named, the three suites against one build of their own. `--merge-gate` and `--backlog-run-full` are a plain run with sync, dogfood and publish off and no prompt, and stage 6 leaves a gif that differs as committed. The run in the image is told the same.
-		- 2026-10-25: [EpsVDHu] and [ErkbDTZ] read the closing line `gate: passed`, now `quick run: passed`. [EpsVDHu] no longer forbids the build and the suites under `--gate`, since `--gate` runs them now. The rest of both is as it was.
-	- Decisions:
-		- With no area named, `--backlog-run-quick` runs the suites too. A worker ran them by hand beside `--gate` anyway, and the whole thing took about 3 minutes on 8 cores at a load of 10.
-		- `--merge-gate` and `--backlog-run-full` are the same checks, the other boxes included. They take the `--no-<step>` and container flags, and refuse `-m` and `--quick`.
-		- A gif that differs under them is a warning, not a failure, since the gif isn't a check.
-		- `--long` adds nothing yet, since no step here takes hours. `--backlog-run-quick` stays on the box until 2026102416313100.
-		- pre-push.bash is unchanged. `--backlog-run-quick|--gate)` still holds `--gate)`, so a commit with the gate is told apart as before. The hook still runs `--gate`, which now runs the suites too. Moving it to `--merge-gate` is 2026102506452488.
-	- Branch: round-20261025
-	- Test case: test.bash [EtiiN6u], [EtiiN78], [EtiiN7K], [EtiiN7Y], [EtiiN7k], [EtiiN7y], [EtiiN8B], [EtiiN8O], [EtiiN8b], [EtiiN8p] and [Etiiqyb].
-	- Verified: All 11 fail against the round branch's cicd.bash, and [EtiiN7k], [EtiiN7y] and [EtiiN8B] fail with the gif and image hand-offs taken out. test.bash 1677 -> 1688, 0 failed. `cicd.bash --backlog-run-quick` passes on this tree, lint, go test, test.bash 1688/0, fuzz 313/0, spawn counts and parity 29/0, in 175 s. `test-id.bash --check` and `backlog-check.bash` pass.
-	- Swept: cicd.bash's help, option arms, refusals, container hand-off, plan and stage 6. README, contributing.md and design.md's gate bullet. pre-push.bash's arm check and its call. test.bash's gate checks that read the old closing line.
 
 - CICD reset: `--keep-temp` and `--list`
 	- ID: 2026102506452478
@@ -366,29 +366,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 			- One line at the end of a run saying what was removed and about what it freed, files as well as docker.
 			- Go's module cache in the volume pruned of what the current `go.sum` doesn't name.
 		- Packaging and dependabot stay deferred, per the standing decision. 20261024: kept out of this item, since nothing makes them pressing.
-
-- CICD reset: the quick run in the image
-	- ID: 2026102507133273
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-071332
-	- Opened by: jim-collier
-	- Parent ID: 2026102416313100
-	- Requirements [Feature]:
-		- `--backlog-run-quick`, and `--gate` with it, runs in the pinned image where docker works, like a full run. A box without a working docker runs it here, with the same one-line warning.
-		- `--no-container` keeps it on the box, and `--container` makes the image a must.
-	- Progress log:
-		- 2026-10-25: `--backlog-run-quick` hands itself to the image as a full run does, by its own name with the areas and `-q` as given, and prints the outer passed line once the inner one passes. The image's tag and its run are shared with the full run, so the two can't drift. The gif's archive isn't mounted for it.
-	- Decisions:
-		- `--container` and `--no-container` go with the quick run now, and only `--install-hook` refuses them. [EsJgejN], "--container with --gate is refused", is commented out in test.bash for that reason: it encoded `--gate` staying on the box, which this issue overrides. [Etip9iB] checks the new behavior in its place.
-		- The pre-push hook's `--gate` goes into the image with it, so a push to main is gated by the image's tools too.
-	- Branch: round-20261025
-	- Test case: test.bash [Etip9hi], [Etip9hw], [Etip9iB], [Etip9iR] and [Etip9if].
-	- Verified: `cicd.bash --backlog-run-quick` passed with every area in the image: lint, go test, test.bash 1688 -> 1692, 0 failed, fuzz 313/0, spawn counts and parity 29/0. Against the old cicd.bash, [Etip9hi], [Etip9hw], [Etip9iB] and [Etip9iR] fail, and [Etip9if] passes as a guard. The image sees the pre-push snapshot under the git dir and resolves it. `--no-container --backlog-run-quick lint`, `test-id.bash --check` and `backlog-check.bash` pass.
-	- Swept: cicd.bash's container decision, refusals, help, image tag and its one `docker run`, now shared by both runs. test.bash's gate checks, each of which now says `--no-container`, apart from the refusals, which stop before the choice. README, contributing.md and design.md's gate bullet. pre-push.bash still calls `--gate` and needs no change.
-	- Acceptance signoff: Self-closed: its own tests passed, and so did the real quick run in the image.
-	- Closed: 20261025-072651
 
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
@@ -550,6 +527,29 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [Erfs74j] and [Erfs75a] in test.bash. They run release.bash past its dry run, with gh, curl and gitsby stubbed. The second is the first run of the phase 3 `releases/latest` block.
 	- Acceptance signoff: Self-closed: reproduced, and the checks fail before the fix and pass after.
 	- Closed: 20261003-141520
+
+- CICD reset: the quick run in the image
+	- ID: 2026102507133273
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-071332
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313100
+	- Requirements [Feature]:
+		- `--backlog-run-quick`, and `--gate` with it, runs in the pinned image where docker works, like a full run. A box without a working docker runs it here, with the same one-line warning.
+		- `--no-container` keeps it on the box, and `--container` makes the image a must.
+	- Progress log:
+		- 2026-10-25: `--backlog-run-quick` hands itself to the image as a full run does, by its own name with the areas and `-q` as given, and prints the outer passed line once the inner one passes. The image's tag and its run are shared with the full run, so the two can't drift. The gif's archive isn't mounted for it.
+	- Decisions:
+		- `--container` and `--no-container` go with the quick run now, and only `--install-hook` refuses them. [EsJgejN], "--container with --gate is refused", is commented out in test.bash for that reason: it encoded `--gate` staying on the box, which this issue overrides. [Etip9iB] checks the new behavior in its place.
+		- The pre-push hook's `--gate` goes into the image with it, so a push to main is gated by the image's tools too.
+	- Branch: round-20261025
+	- Test case: test.bash [Etip9hi], [Etip9hw], [Etip9iB], [Etip9iR] and [Etip9if].
+	- Verified: `cicd.bash --backlog-run-quick` passed with every area in the image: lint, go test, test.bash 1688 -> 1692, 0 failed, fuzz 313/0, spawn counts and parity 29/0. Against the old cicd.bash, [Etip9hi], [Etip9hw], [Etip9iB] and [Etip9iR] fail, and [Etip9if] passes as a guard. The image sees the pre-push snapshot under the git dir and resolves it. `--no-container --backlog-run-quick lint`, `test-id.bash --check` and `backlog-check.bash` pass.
+	- Swept: cicd.bash's container decision, refusals, help, image tag and its one `docker run`, now shared by both runs. test.bash's gate checks, each of which now says `--no-container`, apart from the refusals, which stop before the choice. README, contributing.md and design.md's gate bullet. pre-push.bash still calls `--gate` and needs no change.
+	- Acceptance signoff: Self-closed: its own tests passed, and so did the real quick run in the image.
+	- Closed: 20261025-072651
 
 - Updates to CICD script flags
 	- ID: 2026101816064793
