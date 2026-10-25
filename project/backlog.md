@@ -33,6 +33,170 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- CICD reset: containers
+	- ID: 2026102416313100
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-163131
+	- Opened by: jim-collier
+	- Related IDs: 2026101009380628
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per `Containers` in the shared CICD rules. A full run already uses the pinned image by default, falls back to the box with a warning, and takes `--no-container`.
+		- `--gate`, and the backlog and merge gate runs that replace it, run in the image too, where docker works.
+		- The builds for dogfood, stage 7 and a release come from the image's Go, not the box's. Copying them into place and the tests on other boxes stay outside it.
+		- Earlier decisions this overrides: the line in 2026101009380628 that keeps dogfood and the remote tests' builds on the host, and the private notes, where `--gate` stays on the box.
+
+- CICD reset: other hosts and VMs
+	- ID: 2026102416313101
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-163131
+	- Opened by: jim-collier
+	- Related IDs: 2026100312332924
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per `Other hosts and VMs` in the shared CICD rules. Stage 7 already runs on the Mac, the Unix boxes and a Windows box, holds each through the shared host lock, and skips a box that's off or taken.
+		- Windows tries b29w first, and vm925w only when b29w is taken or down. Nothing here needs the discrete GPU.
+		- Windows tests use `b29w`, never `b29w-wif`. The Windows host list in `cicd/config.bash` still has `b29w-wif` as a second ssh name.
+		- A VM is put back the way it was found, through the VM state helper: a paused one resumed and paused again, one that was off started and powered off, a running one left running.
+		- Each box's work folder for the project is under that box's temp root. On the Mac and the Unix boxes it's in the home folder today.
+		- A skipped box shows as `SKIP` in its step line and in the summary at the end, and never stops a run, `--merge-gate` included.
+		- vmKt6m joins b26 for Intel macOS, where it adds something b26 doesn't.
+		- Earlier decisions this overrides: the 2026-10-04 decisions in 2026100312332924 that take vm925w first on Windows and keep the tree's copy under each box's home.
+
+- CICD reset: container cleanup
+	- ID: 2026102416313102
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-163131
+	- Opened by: jim-collier
+	- Related IDs: 2026101912030138, 2026102307533128
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the container bullets in `Cleanup after a run` in the shared CICD rules. Containers already run with `--rm`, under a name and labels for the run.
+		- Every container, image and volume the pipeline makes gets 2 labels, `dev.project=gitsby` and `dev.run=<run folder>`. Containers are named `gitsby-<run folder>-<step>`.
+		- At the end of a run, on failure and Ctrl+C too, the run's containers are stopped and removed by label. `--keep-temp` keeps them.
+		- Dangling images go by the project label. An older tag goes once a newer one has passed, and the current tag and the one before it stay.
+		- Then `docker builder prune -f --filter until=168h`, so a week of build cache stays warm.
+		- The `gitsby-cicd-cache` volume follows a 2 GB cap.
+		- One line at the end says what was removed and about what it freed, from `docker system df` before and after.
+		- What was built before the labels gets one pass by hand, by ID.
+		- Earlier decisions this overrides: 2026101912030138, where a new image removes the one it replaces and the cache volume is kept whole, and the label and name format from 2026102307533128.
+
+- CICD reset: CPU and priority
+	- ID: 2026102416313103
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-163131
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per `Machine use` in the shared CICD rules. `BUILD_JOBS` in `cicd/config.bash` is already worked out once and handed to the Go tools and CodeQL.
+		- At most half the cores, rounded down and at least 1. Today it rounds up.
+		- A quarter on a busy box, where the 1-minute load is over half the CPU count. Checked at the start and again before each stage.
+		- A quarter, busy or not, for the hard steps: native fuzzing, `go test -race`, the soak test and CodeQL.
+		- Steps that run side by side share the count.
+		- Everything runs under `nice -n 19`, plus `ionice -c 3` where it exists.
+		- The container run gets `--cpus <jobs>` and `--cpu-shares 256`, and `nice` inside too.
+		- The same rules on the boxes stage 7 uses, with each box's own CPU count and load. The Go tests there run with no limit today.
+
+- CICD reset: standard flags
+	- ID: 2026102416313104
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-163131
+	- Opened by: jim-collier
+	- Related IDs: 2026101816064793
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the flags in `CICD style guide` and per `Merge gate`, in the shared CICD rules.
+		- New flags: `--long`, with `--slow` as another name, `--backlog-run-quick [<area>...]`, `--backlog-run-full`, `--merge-gate`, `--keep-temp` and `--list`. `--help` lists the areas.
+		- `--gate` and `--ci` stay as other names for `--backlog-run-quick` and `--merge-gate`, and say so in one line when used. `pre-push.bash` looks for the `--gate)` arm, so it changes with it.
+		- `--quick` is what fits in about 10 minutes in all, not a 30 s budget per step.
+		- The backlog and merge gate flags never dogfood, publish, commit, push, install, sync, rewrite a tracked file, or prompt. That covers the demo gif.
+		- The pre-push hook runs `--merge-gate`, every check of the default run, on a push to main. A push whose commits change only docs and the other paths listed in one place the hook reads skips it. No gate on dev or gover.
+		- Earlier decisions this overrides: 2026101816064793, where `--gate` gets no `--ci` alias and `--quick` has a 30 s budget per step, and the private CI/CD notes, where the gate on main runs lint and the unit tests only.
+
+- CICD reset: step output
+	- ID: 2026102416313105
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-163131
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the step lines in `CICD style guide` in the shared CICD rules. Stage headers already have the blank line, the rule of `•` and the bracketed title.
+		- The rule is 79 `•` wide. Today it's 74.
+		- Each step opens with `[ <local time to the hundredth>: Step N of M; Starting <name> ]` and closes with the same line saying `PASS` or `FAIL`, in place of the `N/8` headers and the `OK:` lines.
+		- A step that's turned off isn't counted in M. The first section lists those, with the flag or reason for each.
+		- Earlier decisions this overrides: the private CI/CD notes, which number the stages 0/8 to 8/8.
+
+- CICD reset: a test for every Done item
+	- ID: 2026102416313106
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-163131
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the regression bullet in `Testing` in the shared CICD rules. Done items in the new format name their test, all but 2026100611181886. Most old-format Done items name none.
+		- Each of those gets a test where one could exist and would make sense, or a line saying why not.
+
+- CICD reset: test IDs
+	- ID: 2026102416313107
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-163131
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the ID and per-test line bullets in `Testing` in the shared CICD rules. Every test already has an ID and prints one line.
+		- An ID is whole minutes since 2000-01-01 00:00 UTC, in lowercase Crockford base 32, such as `decp8`. Today they're milliseconds in base 62.
+		- Every existing ID is converted once, from the time it already holds. When 2 come out the same, the newer one takes the next free minute.
+		- `test-id.bash`, the duplicate check in test.bash, the backlog check and the IDs named in this backlog move together.
+		- Each test prints `PASS <id> <name>`, `FAIL <id> <name>` or `SKIP <id> <why>`, in place of `ok: [<id>] <name>` and the rest, on this box and on the remote boxes.
+		- Earlier decisions this overrides: the private test ID rule, milliseconds in base 62.
+
+- CICD reset: temp files and safe removal
+	- ID: 2026102416313108
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-163131
+	- Opened by: jim-collier
+	- Related IDs: 2026101912030138
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per `Temp files` and `Safe removal` in the shared CICD rules. A run's own temp files are already in one folder that goes on exit, and the harnesses remove theirs.
+		- Each run makes one folder, `${HOST_TEMP}/gitsby/<YYYYmmDD-HHMMSS>_<NNN>/`, with a plain `mkdir` and a counter, and points `TMPDIR`, `TEMP` and `TMP` at it. The harnesses and utilities make theirs inside it.
+		- `--keep-temp` keeps it and prints where it is.
+		- Each run writes a `run.pid` in it, and removes the project's own stale run folders: over 2 days old, with no live process.
+		- Every recursive removal goes through the repo's own copy of the safe removal guard, in the pipeline, the harnesses, the utilities, release.bash, the installer and stage 7's commands on the other boxes. The checks of a folder's name and marker that some have today stay as well.
+		- 35 recursive removals in 12 files, none through the guard. File list in the private notes.
+
+- CICD reset: CICD process gaps
+	- ID: 2026102416313109
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-163131
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- What else the shared CICD rules ask for that no other reset item covers:
+			- One line at the end of a run saying what was removed and about what it freed, files as well as docker.
+			- Go's module cache in the volume pruned of what the current `go.sum` doesn't name.
+		- Packaging and dependabot stay deferred, per the standing decision. 20261024: kept out of this item, since nothing makes them pressing.
+
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
