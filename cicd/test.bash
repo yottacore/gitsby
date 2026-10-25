@@ -295,7 +295,7 @@ fMakeGateFixture(){
 	mkdir -p "${gateDir}/cicd/utility/include" "${gateDir}/cicd/utility/demo" "${gateDir}/cicd/container" "${gateDir}/bin" "${gateDir}/home" "${gateDir}/src-go" "${gateFail}"
 	cp "${root}/cicd/cicd.bash" "${root}/cicd/config.bash" "${gateDir}/cicd/"
 	cp "${root}/cicd/container/Dockerfile" "${root}/cicd/container/requirements.txt" "${gateDir}/cicd/container/"
-	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${root}/cicd/utility/include/gh-account.bash" "${root}/cicd/utility/include/go-test-lines.bash" "${root}/cicd/utility/include/image-go.bash" "${gateDir}/cicd/utility/include/"
+	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${root}/cicd/utility/include/gh-account.bash" "${root}/cicd/utility/include/go-test-lines.bash" "${root}/cicd/utility/include/image-go.bash" "${root}/cicd/utility/include/safe-rm.bash" "${gateDir}/cicd/utility/include/"
 	## Empty, so the lint globs and PY_LINT_FILES resolve, and stage 6 finds a scenario.
 	: > "${gateDir}/install.bash"; : > "${gateDir}/install.ps1"; : > "${gateDir}/cicd/utility/demo/gen-demo-gif.py"
 	: > "${gateDir}/cicd/utility/codeql-findings.py"; : > "${gateDir}/src-go/go.mod"; : > "${gateDir}/src-go/main.go"
@@ -315,7 +315,17 @@ fMakeGateFixture(){
 	fGateStub "${gateDir}/cicd/utility/n8git_backup-and-publish" n8git_backup-and-publish
 	for s in markdownlint staticcheck golangci-lint govulncheck ruff pip-audit; do fGateStub "${gateDir}/bin/${s}" "${s}"; done
 	## A build in the image leaves its -o file behind, as go's stub does, so dogfood has one to copy.
-	fGateStub "${gateDir}/bin/docker" docker "if [[ ! -e '${gateFail}/docker' ]]; then o=''; for a in \"\$@\"; do [[ \"\${o}\" != 1 ]] || : > \"\${a}\"; o=''; [[ \"\${a}\" != -o ]] || o=1; done; fi"
+	## 'docker-run' fails a run and 'docker-hang' holds one. 'images' is what it lists for the
+	## image's repo, and 'vols' the labeled volumes, as "<name> <size>". 'docker-noimage' and
+	## 'docker-novol' answer that the image or the cache volume isn't there.
+	fGateStub "${gateDir}/bin/docker" docker "if [[ ! -e '${gateFail}/docker' ]]; then o=''; for a in \"\$@\"; do [[ \"\${o}\" != 1 ]] || : > \"\${a}\"; o=''; [[ \"\${a}\" != -o ]] || o=1; done; fi
+		[[ \"\${1:-} \${2:-} \${3:-}\" != 'image ls gitsby-cicd' ]] || cat '${gateFail}/images' 2>/dev/null || true
+		[[ \"\${1:-}\" != run || ! -e '${gateFail}/docker-hang' ]] || { : > '${gateFail}/hung'; sleep 5; }
+		[[ \"\${1:-}\" != run || ! -e '${gateFail}/docker-run' ]] || exit 1
+		[[ \"\${1:-} \${2:-}\" != 'image inspect' || ! -e '${gateFail}/docker-noimage' ]] || exit 1
+		[[ \"\${1:-} \${2:-}\" != 'volume inspect' || ! -e '${gateFail}/docker-novol' ]] || exit 1
+		[[ \"\${1:-} \${2:-}\" != 'volume ls' ]] || cut -d' ' -f1 '${gateFail}/vols' 2>/dev/null || true
+		[[ \"\${1:-} \${2:-} \${3:-}\" != 'system df -v' ]] || cat '${gateFail}/vols' 2>/dev/null || true"
 	## The demo generator writes a gif header to its --out, and the optimizer, called as
 	## 'gifsicle -O3 IN -o OUT', copies IN to OUT, so stage 6 has a file to compare. py_compile
 	## passes no --out.
@@ -357,6 +367,8 @@ fMakeGateFixture(){
 ## a check asks for it.
 fGateRun(){ (
 	if [[ -n "${gateNested:-}" ]]; then export GITSBY_CICD_IN_CONTAINER=1; else unset GITSBY_CICD_IN_CONTAINER; fi
+	## A run's folder follows TMPDIR then, as each check sets it, and never the box's own.
+	if [[ -n "${gateHostTemp:-}" ]]; then export HOST_TEMP="${gateHostTemp}"; else unset HOST_TEMP; fi
 	cd "${gateDir}" && HOME="${gateDir}/home" PATH="${gateDir}/bin:${PATH}" ./cicd/cicd.bash "$@"
 ) ;}
 ## True when the run exits with exactly $1. An unknown option exits 2, so a plain nonzero test
@@ -383,19 +395,19 @@ fGateContainerRun(){
 		&& ! fGateCalled '^go (vet|build|test)' && ! fGateCalled '^(test|parity|fuzz|spawn-count)\.bash' \
 		&& grep -q 'lint ran in the container' "${gateOut}"
 }
-## The container carries the run's start time in its name and a label, and the output names it,
-## so one run can be found and stopped among other projects' containers.
+## The container carries the run's folder in its name and a label, and the output names it, so
+## one run can be found and stopped among other projects' containers.
 fGateContainerName(){
 	local name=""
 	fGateSays 0 'OK: the container run' -y --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood || return 1
-	name="$(sed -n 's/^as container \(gitsby-cicd-[0-9]\{8\}-[0-9]\{6\}-[0-9][0-9]*\)$/\1/p' "${gateOut}")"
-	[[ -n "${name}" ]] && grep -qF -- "--name ${name} --label gitsby.cicd.run=${name:12:15} --label gitsby.cicd.tree=" "${gateCalls}"
+	name="$(sed -n 's/^as container \(gitsby-[0-9]\{8\}-[0-9]\{6\}_[0-9]\{3\}-checks\)$/\1/p' "${gateOut}")"
+	[[ -n "${name}" ]] && grep -qF -- "--name ${name} --label dev.project=gitsby --label dev.run=${name:7:19} " "${gateCalls}"
 }
 ## nice stops at the docker client, so the run in there gets the core budget as its quota and a
 ## low weight, and the box's core count to work its own budget out from.
 fGateContainerQuota(){
 	fGateSays 0 'OK: the container run' -y --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
-		&& fGateCalled '^docker run --rm --init --name gitsby-cicd-[^ ]+ --label [^ ]+ --label [^ ]+ --cpus [1-9][0-9]* --cpu-shares 256 -e GITSBY_CICD_CPUS=[1-9][0-9]* ' \
+		&& fGateCalled '^docker run --rm --init --name gitsby-[^ ]+ --label [^ ]+ --label [^ ]+ --cpus [1-9][0-9]* --cpu-shares 256 -e GITSBY_CICD_CPUS=[1-9][0-9]* ' \
 		&& grep -qE '^Cores \.+: [1-9][0-9]* of [1-9][0-9]*, [1-9][0-9]* for the hard steps' "${gateOut}"
 }
 ## --quick is handed to the run in there, which is where it skips the suite.
@@ -416,9 +428,9 @@ fGateContainerBuilds(){
 	local rc=0 img='gitsby-cicd:[0-9a-f]{12}' src="${gateDir}/src-go"
 	mkdir -p "${gateDir}/home/.local/bin"
 	fGateSays 0 'OK: Remote tests' -y --no-fuzz --no-demogif --no-sync --no-publish \
-		&& fGateCalled "^docker run --rm --init --label gitsby\.cicd\.run=[0-9]{8}-[0-9]{6} --label gitsby\.cicd\.tree=${gateDir} --cpus [1-9][0-9]* --cpu-shares 256 .* -e CGO_ENABLED=0 -e GOAMD64=v1 -e GOOS=linux -e GOARCH=amd64 -w ${src} ${img} nice -n 19 go build .* -o ${src}/gitsby-linux-amd64 \.\$" \
+		&& fGateCalled "^docker run --rm --init --name gitsby-[0-9]{8}-[0-9]{6}_[0-9]{3}-go-build-[0-9]+ --label dev\.project=gitsby --label dev\.run=[0-9]{8}-[0-9]{6}_[0-9]{3} --cpus [1-9][0-9]* --cpu-shares 256 .* -e CGO_ENABLED=0 -e GOAMD64=v1 -e GOOS=linux -e GOARCH=amd64 -w ${src} ${img} nice -n 19 go build .* -o ${src}/gitsby-linux-amd64 \.\$" \
 			"^docker run .* -e GOOS=darwin -e GOARCH=amd64 -w ${src} ${img} nice -n 19 go build " "^docker run .* -e GOOS=darwin -e GOARCH=arm64 -w ${src} ${img} nice -n 19 go build " \
-			"^docker run .* -e GOOS=freebsd -e GOARCH=amd64 -w ${src} ${img} nice -n 19 go build " "^image=${img} run=[0-9]{8}-[0-9]{6}\$" \
+			"^docker run .* -e GOOS=freebsd -e GOARCH=amd64 -w ${src} ${img} nice -n 19 go build " "^image=${img} run=[0-9]{8}-[0-9]{6}_[0-9]{3}\$" \
 		&& ! fGateCalled '^go build' && [[ -f "${gateDir}/home/.local/bin/gitsby" ]] \
 		&& grep -qF 'OK: installed (linux/amd64) -> '"${gateDir}/home/.local/bin/gitsby" "${gateOut}" || rc=1
 	rm -f -- "${gateDir:?}/home/.local/bin/gitsby"; rmdir "${gateDir}/home/.local/bin" "${gateDir}/home/.local" 2>/dev/null || true
@@ -554,19 +566,19 @@ fGateRunTmp(){
 	local t="${gateDir}/tmp-run" pid="" i=0 rc=0
 	rm -rf -- "${t:?}"; mkdir -p "${t}"
 	TMPDIR="${t}" fGateStatus 0 -y --no-container --quick --no-sync --no-publish --no-dogfood || return 1
-	[[ -z "$(ls -A "${t}")" ]] || return 1
+	[[ -z "$(ls -A "${t}/gitsby")" ]] || return 1
 	: > "${gateFail}/go-test"
 	TMPDIR="${t}" fGateStatus 1 -y --no-container --quick --no-sync --no-publish --no-dogfood || rc=1
 	rm -f -- "${gateFail:?}/go-test"
-	((rc == 0)) && [[ -z "$(ls -A "${t}")" ]] || return 1
+	((rc == 0)) && [[ -z "$(ls -A "${t}/gitsby")" ]] || return 1
 	: > "${gateFail}/hang"; rm -f -- "${gateFail:?}/hung"
-	( cd "${gateDir}" && HOME="${gateDir}/home" PATH="${gateDir}/bin:${PATH}" TMPDIR="${t}" exec ./cicd/cicd.bash -y --no-container --quick --no-sync --no-publish --no-dogfood ) </dev/null >"${gateOut}" 2>&1 &
+	( cd "${gateDir}" && HOME="${gateDir}/home" PATH="${gateDir}/bin:${PATH}" TMPDIR="${t}" HOST_TEMP="" exec ./cicd/cicd.bash -y --no-container --quick --no-sync --no-publish --no-dogfood ) </dev/null >"${gateOut}" 2>&1 &
 	pid=$!
 	for ((i = 0; i < 100; i++)); do [[ -e "${gateFail}/hung" ]] && break; sleep 0.05; done
-	[[ -n "$(compgen -G "${t}/gitsby-cicd.*")" ]] || { rm -f -- "${gateFail:?}/hang"; kill "${pid}" 2>/dev/null; wait "${pid}" 2>/dev/null; return 1; }
+	[[ -n "$(compgen -G "${t}/gitsby/[0-9]*_[0-9][0-9][0-9]")" ]] || { rm -f -- "${gateFail:?}/hang"; kill "${pid}" 2>/dev/null; wait "${pid}" 2>/dev/null; return 1; }
 	kill -TERM "${pid}"; wait "${pid}" 2>/dev/null || true
 	rm -f -- "${gateFail:?}/hang"
-	[[ -z "$(ls -A "${t}")" ]]
+	[[ -z "$(ls -A "${t}/gitsby")" ]]
 }
 ## --list prints the plan and the IDs in each step that runs, from the suites and the Go tests,
 ## and runs nothing: no tool but docker's probe, and no temp folder. The suite's check and the Go
@@ -593,11 +605,11 @@ fGateKeepTemp(){
 	rm -rf -- "${t:?}"; mkdir -p "${t}"
 	TMPDIR="${t}" fGateSays 0 '^Kept the temp folder: ' --no-container --backlog-run-quick unit --keep-temp || rc=1
 	kept="$(sed -n 's/^Kept the temp folder: //p' "${gateOut}")"
-	[[ "${kept}" == "${t}"/gitsby-cicd.* && -d "${kept}" && -n "$(compgen -G "${kept}/gotest.*")" ]] || rc=1
+	[[ "${kept}" =~ ^${t}/gitsby/[0-9]{8}-[0-9]{6}_[0-9]{3}$ && -d "${kept}" && -n "$(compgen -G "${kept}/gotest.*")" ]] || rc=1
 	: > "${gateFail}/go-test"
 	TMPDIR="${t}" fGateSays 1 '^Kept the temp folder: ' --no-container --backlog-run-quick unit --keep-temp || rc=1
 	rm -f -- "${gateFail:?}/go-test"
-	[[ "$(compgen -G "${t}/gitsby-cicd.*" | wc -l)" == 2 ]] || rc=1
+	[[ "$(compgen -G "${t}/gitsby/[0-9]*_[0-9][0-9][0-9]" | wc -l)" == 2 ]] || rc=1
 	rm -rf -- "${t:?}"
 	((rc == 0))
 }
@@ -607,13 +619,90 @@ fGateKeepTempImage(){
 	local t="${gateDir}/tmp-keep" rc=0
 	rm -rf -- "${t:?}"; mkdir -p "${t}"
 	TMPDIR="${t}" fGateSays 0 '^Kept the temp folder: ' --backlog-run-quick --keep-temp \
-		&& fGateCalled "^docker run --init --name gitsby-cicd-[^ ]+ .* -v ${t}/gitsby-cicd\.[^ :]+:${t}/gitsby-cicd\.[^ ]+ -e TMPDIR=${t}/gitsby-cicd\.[^ ]+ .* --backlog-run-quick --keep-temp\$" \
-		&& fGateCalled '^docker ps -a --filter label=gitsby\.cicd\.run=[0-9]{8}-[0-9]{6} ' || rc=1
+		&& fGateCalled "^docker run --init --name gitsby-[^ ]+ .* -v ${t}/gitsby/[0-9_-]+:${t}/gitsby/[0-9_-]+ -e TMPDIR=${t}/gitsby/[0-9_-]+ .* --backlog-run-quick --keep-temp\$" \
+		&& fGateCalled '^docker ps -a --filter label=dev\.run=[0-9]{8}-[0-9]{6}_[0-9]{3} ' && ! fGateCalled '^docker (stop|rm) ' || rc=1
 	TMPDIR="${t}" fGateSays 0 'CI/CD: done\.' -y --quick --no-sync --no-publish --no-dogfood --keep-temp \
-		&& fGateCalled '^docker run --init --label gitsby\.cicd\.run=[0-9]{8}-[0-9]{6} .* go build ' && ! fGateCalled '^docker run --rm' || rc=1
+		&& fGateCalled '^docker run --init --name [^ ]+ --label dev\.project=gitsby --label dev\.run=[0-9]{8}-[0-9]{6}_[0-9]{3} .* go build ' && ! fGateCalled '^docker run --rm' || rc=1
 	rm -rf -- "${t:?}"; mkdir -p "${t}"
 	TMPDIR="${t}" fGateSays 0 'backlog quick run: passed\.' --backlog-run-quick && fGateCalled '^docker run --rm --init --name ' \
-		&& ! fGateCalled 'keep-temp' && ! fGateCalled '^docker ps' && ! grep -q '^Kept the' "${gateOut}" && [[ -z "$(ls -A "${t}")" ]] || rc=1
+		&& ! fGateCalled 'keep-temp' && ! fGateCalled '^docker ps -a --filter' && ! grep -q '^Kept the' "${gateOut}" && [[ -z "$(ls -A "${t}/gitsby")" ]] || rc=1
+	rm -rf -- "${t:?}"
+	((rc == 0))
+}
+## The run's folder is <start time>_<NNN> under ${HOST_TEMP}/gitsby, or under TMPDIR without
+## it, made with the first free counter. TMPDIR, TEMP and TMP point into it, and it holds the
+## run's pid. A name another run took is passed over, for the next few seconds' start times.
+fGateRunFolder(){
+	local t="${gateDir}/tmp-folder" rc=0 i line="" dir=""
+	rm -rf -- "${t:?}"; mkdir -p "${t}/host/gitsby" "${t}/other"
+	for i in 0 1 2 3 4 5; do mkdir -p "${t}/host/gitsby/$(date -d "+${i} seconds" +%Y%m%d-%H%M%S)_001"; done
+	fGateStub "${gateDir}/cicd/test.bash" test "printf 'tmp=%s %s %s pid=%s\\n' \"\${TMPDIR:-}\" \"\${TEMP:-}\" \"\${TMP:-}\" \"\$(cat \"\${TMPDIR:-}/run.pid\" 2>/dev/null)\" >> '${gateCalls}'"
+	gateHostTemp="${t}/host" TMPDIR="${t}/other" fGateStatus 0 --no-container --backlog-run-quick suite || rc=1
+	line="$(sed -n 's/^tmp=//p' "${gateCalls}")"
+	dir="${line%% *}"
+	[[ "${dir}" =~ ^${t}/host/gitsby/[0-9]{8}-[0-9]{6}_002$ && "${line}" =~ ^${dir}\ ${dir}\ ${dir}\ pid=[0-9]+$ ]] || rc=1
+	## Gone once the run ended, and nothing went to TMPDIR. The names taken are left alone.
+	[[ ! -e "${dir}" && -z "$(ls -A "${t}/other")" && "$(compgen -G "${t}/host/gitsby/*_001" | wc -l)" == 6 ]] || rc=1
+	fGateStub "${gateDir}/cicd/test.bash" test
+	rm -rf -- "${t:?}"
+	((rc == 0))
+}
+## A run removes the project's run folders over 2 days old whose run is gone. A live run's stays,
+## and so does a newer one, one with no run.pid, and one not named like a run's.
+fGateStaleRuns(){
+	local t="${gateDir}/tmp-stale" r="" d dead="" rc=0
+	rm -rf -- "${t:?}"; r="${t}/gitsby"; mkdir -p "${r}"
+	sleep 0 & dead=$!; wait "${dead}"
+	mkdir "${r}/20200101-000000_001" "${r}/20200101-000000_002" "${r}/20200101-000000_003" "${r}/20200101-000000_004" "${r}/not-a-run"
+	echo "${dead}" > "${r}/20200101-000000_001/run.pid"; echo "$$" > "${r}/20200101-000000_002/run.pid"
+	echo "${dead}" > "${r}/20200101-000000_004/run.pid"; echo "${dead}" > "${r}/not-a-run/run.pid"
+	for d in 20200101-000000_001 20200101-000000_002 20200101-000000_003 not-a-run; do touch -d '3 days ago' "${r}/${d}"; done
+	TMPDIR="${t}" fGateSays 0 "^removed a stale run folder: ${r}/20200101-000000_001\$" --no-container --backlog-run-quick lint || rc=1
+	[[ ! -e "${r}/20200101-000000_001" && -d "${r}/20200101-000000_002" && -d "${r}/20200101-000000_003" && -d "${r}/20200101-000000_004" && -d "${r}/not-a-run" ]] || rc=1
+	[[ "$(grep -c '^removed a stale run folder' "${gateOut}")" == 1 ]] || rc=1
+	rm -rf -- "${t:?}"
+	((rc == 0))
+}
+## A run in the image labels what it makes, and at its end removes its containers by the run's
+## label, the project's dangling images and a week's build cache, passed, failed or stopped. Only
+## a pass removes the image's older tags, keeping the one before it. One line says what went.
+fGateDockerTidy(){
+	local t="${gateDir}/tmp-tidy" run="" img="" pid="" i=0 rc=0
+	rm -rf -- "${t:?}"; mkdir -p "${t}"
+	: > "${gateFail}/docker-noimage"; : > "${gateFail}/docker-novol"
+	TMPDIR="${t}" fGateSays 0 '^Docker: nothing to remove$' --backlog-run-quick lint || rc=1
+	rm -f -- "${gateFail:?}/docker-noimage" "${gateFail:?}/docker-novol"
+	run="$(sed -n 's/^as container gitsby-\(.*\)-quick$/\1/p' "${gateOut}")"
+	img="$(sed -n 's/^building \(gitsby-cicd:[0-9a-f]*\)$/\1/p' "${gateOut}")"
+	[[ "${run}" =~ ^[0-9]{8}-[0-9]{6}_[0-9]{3}$ && -n "${img}" ]] || return 1
+	fGateCalled "^docker build -q -t ${img} .* --label dev\\.project=gitsby --label dev\\.run=${run} " \
+		"^docker volume create --label dev\\.project=gitsby --label dev\\.run=${run} gitsby-cicd-cache\$" \
+		"^docker ps -aq --filter label=dev\\.project=gitsby --filter label=dev\\.run=${run}\$" \
+		'^docker image ls -q --filter dangling=true --filter label=dev\.project=gitsby$' '^docker builder prune -f --filter until=168h$' || rc=1
+	## Newest first: one from another branch, this one, the one before it, and 2 older ones.
+	printf '%s\n' gitsby-cicd:aaaaaaaaaaaa "${img}" gitsby-cicd:bbbbbbbbbbbb gitsby-cicd:cccccccccccc gitsby-cicd:dddddddddddd > "${gateFail}/images"
+	TMPDIR="${t}" fGateSays 0 '^Docker: removed 2 image\(s\); freed about ' --backlog-run-quick lint \
+		&& fGateCalled '^docker rmi gitsby-cicd:cccccccccccc$' '^docker rmi gitsby-cicd:dddddddddddd$' \
+		&& ! fGateCalled '^docker rmi gitsby-cicd:(aaaaaaaaaaaa|bbbbbbbbbbbb)$' && ! fGateCalled "^docker rmi ${img}\$" || rc=1
+	## A cache volume over 2 GB goes, and one under it stays.
+	echo 'gitsby-cicd-cache 2.5GB' > "${gateFail}/vols"
+	TMPDIR="${t}" fGateSays 0 '^Docker: removed .*the gitsby-cicd-cache volume' --backlog-run-quick lint && fGateCalled '^docker volume rm gitsby-cicd-cache$' || rc=1
+	echo 'gitsby-cicd-cache 1.9GB' > "${gateFail}/vols"
+	TMPDIR="${t}" fGateStatus 0 --backlog-run-quick lint && ! fGateCalled '^docker volume rm' || rc=1
+	rm -f -- "${gateFail:?}/vols"
+	: > "${gateFail}/docker-run"
+	TMPDIR="${t}" fGateSays 1 '^Docker: ' --backlog-run-quick lint && fGateCalled '^docker ps -aq --filter label=dev\.project=gitsby --filter label=dev\.run=' \
+		&& ! fGateCalled '^docker rmi gitsby-cicd:' || rc=1
+	rm -f -- "${gateFail:?}/docker-run"
+	## Stopped partway, with its container still running.
+	: > "${gateFail}/docker-hang"; rm -f -- "${gateFail:?}/hung"; : > "${gateCalls}"
+	## Not the suite's own marker, when it runs in the image, or the run would take itself for inside.
+	( unset GITSBY_CICD_IN_CONTAINER; cd "${gateDir}" && HOME="${gateDir}/home" PATH="${gateDir}/bin:${PATH}" TMPDIR="${t}" HOST_TEMP="" exec ./cicd/cicd.bash --backlog-run-quick lint ) </dev/null >"${gateOut}" 2>&1 &
+	pid=$!
+	for ((i = 0; i < 100; i++)); do [[ -e "${gateFail}/hung" ]] && break; sleep 0.05; done
+	kill -TERM "${pid}"; wait "${pid}" 2>/dev/null || true
+	rm -f -- "${gateFail:?}/docker-hang" "${gateFail:?}/images"
+	fGateCalled '^docker ps -aq --filter label=dev\.project=gitsby --filter label=dev\.run=' '^docker builder prune ' && [[ -z "$(ls -A "${t}/gitsby")" ]] || rc=1
 	rm -rf -- "${t:?}"
 	((rc == 0))
 }
@@ -6027,6 +6116,9 @@ EOF
 		fAssert "[Etkvc9j] --keep-temp keeps the run's temp folder, passed or failed, and says where"  fGateKeepTemp
 		fAssert "[Etkvc9w] and keeps the containers, with the inner run's folder inside its own"  fGateKeepTempImage
 		fAssert "[EtkvcAA] --keep-temp and --list refuse --install-hook and each other"  fGateKeepListRefuse
+		fAssert "[Etl0bHp] a run's folder is <start time>_<NNN> under HOST_TEMP, with TMPDIR, TEMP and TMP pointed at it and its pid in it"  fGateRunFolder
+		fAssert "[Etl0bI3] a run removes the project's run folders over 2 days old whose run is gone, and no other"  fGateStaleRuns
+		fAssert "[Etl0bIG] a run in the image labels what it makes, and its end removes the run's containers, dangling images, older tags and week-old build cache"  fGateDockerTidy
 		fAssert "[EtBTWtL] stage 6 removes the demo's repos once the gif is drawn"  fGateDemoRemoved
 		fAssert "[Et9ZcLy] --leakcheck runs CodeQL over a copy of the module with its dependencies vendored in, once per release OS, and keeps the reports"  fGateCodeQL
 		fAssert "[Et9ZcME] a CodeQL finding stops the run"  fGateCodeQLStops codeql-findings 'CodeQL findings; the reports are in .*/codeql_[0-9]+-[0-9]+ \]'
@@ -6604,10 +6696,10 @@ EOF
 			printf 'docker %s\n' "\$*" >> '${rtLog}'
 			o=''; for a in "\$@"; do [[ "\${o}" != 1 ]] || : > "\${a}"; o=''; [[ "\${a}" != -o ]] || o=1; done
 		EOF
-		GITSBY_CICD_IMAGE=gitsby-cicd:0123456789ab GITSBY_CICD_RUN=20261025-000000 fRemoteRun --mac-bin "${rtMacBin}"
+		GITSBY_CICD_IMAGE=gitsby-cicd:0123456789ab GITSBY_CICD_RUN=20261025-000000_001 fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtBin:?}/docker"
 		fAssert "[EtitOtH] handed the image, the harness builds each box's Go tests with its Go" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^docker run --rm --init --label gitsby\.cicd\.run=20261025-000000 .* -v [^ ]+/mac/tree/src-go:[^ ]+/mac/tree/src-go .* -e GOOS=darwin -e GOARCH=[a-z0-9]+ .* -w ${rt}/src-go gitsby-cicd:0123456789ab nice -n 19 go test -c ' '${rtLog}' && grep -qE '^docker run .* -v [^ ]+/win/src-go:[^ ]+/win/src-go .* -e GOOS=windows -e GOARCH=amd64 .* gitsby-cicd:0123456789ab nice -n 19 go test -c ' '${rtLog}' && ! grep -q '^go test -c' '${rtLog}' && grep -qxF '  passed on: b26 b29w' '${rtOut}'"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^docker run --rm --init --name gitsby-20261025-000000_001-go-test-1 --label dev\.project=gitsby --label dev\.run=20261025-000000_001 .* -v [^ ]+/mac/tree/src-go:[^ ]+/mac/tree/src-go .* -e GOOS=darwin -e GOARCH=[a-z0-9]+ .* -w ${rt}/src-go gitsby-cicd:0123456789ab nice -n 19 go test -c ' '${rtLog}' && grep -qE '^docker run .* -v [^ ]+/win/src-go:[^ ]+/win/src-go .* -e GOOS=windows -e GOARCH=amd64 .* gitsby-cicd:0123456789ab nice -n 19 go test -c ' '${rtLog}' && ! grep -q '^go test -c' '${rtLog}' && grep -qxF '  passed on: b26 b29w' '${rtOut}'"
 		: > "${rtFail}/oldlock"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtFail:?}/oldlock"

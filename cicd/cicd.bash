@@ -97,6 +97,7 @@ source "${here}/config.bash"
 source "${here}/utility/include/gfs-rotate.bash"       ## gfs_rotate() for the artifact dirs
 source "${here}/utility/include/go-test-lines.bash"    ## fGoTestLines(), shared with remote-tests.bash
 source "${here}/utility/include/image-go.bash"         ## fImageGo(), shared with remote-tests.bash
+source "${here}/utility/include/safe-rm.bash"          ## fSafeRm(), the guard every recursive removal goes through
 fLowPriority
 cd "${root}"
 stamp="$(date +%Y%m%d-%H%M%S)"
@@ -226,31 +227,110 @@ unset GITSBY_CICD_IMAGE GITSBY_CICD_RUN GITSBY_CICD_KEEP_TEMP
 if [[ -n "${handsOff}" ]]; then doSync=0; DOGFOOD_TARGETS=(); GIT_PUBLISH=(); fi
 [[ -z "${aliasNote}" ]] || { fEcho_Clean; fEcho_Clean "${aliasNote}"; }
 
-## One scratch folder for the run's temp files, so a run stopped partway leaves none behind.
-## Marked, and checked again before the recursive delete. --keep-temp keeps it, and the files the
-## steps would have removed from it, and says where it is and which containers were kept. --list
-## makes none.
-runTmp=""
+## One folder for the run's temp files, ${HOST_TEMP}/<app>/<start time>_<NNN>, so a run stopped
+## partway leaves none behind. TMPDIR, TEMP and TMP point into it, so the harnesses' folders and
+## the tools' files go in it too. Its run.pid marks it as a run's, and is checked again before the
+## removal. --keep-temp keeps it, and the files the steps would have removed from it, and says
+## where it is and which containers were kept. --list makes none.
+runTmp=""; runName=""; runRe='^[0-9]{8}-[0-9]{6}_[0-9]{3}$'
+## The project's own run folders over 2 days old, whose run is gone. A folder with no run.pid
+## wasn't made by a run, so it stays.
+fSweepRuns(){
+	local d pid
+	while IFS= read -r d; do
+		[[ "${d##*/}" =~ ${runRe} && "${d}" != "${runTmp}" && -f "${d}/run.pid" && ! -L "${d}" ]] || continue
+		pid=""; read -r pid < "${d}/run.pid" || true
+		if [[ "${pid}" =~ ^[0-9]+$ ]] && kill -0 "${pid}" 2>/dev/null; then continue; fi
+		fSafeRm "${d}" >/dev/null && fEcho_Clean "removed a stale run folder: ${d}"
+	done < <(find "${runRoot}" -mindepth 1 -maxdepth 1 -type d -mtime +1 2>/dev/null || true)
+}
+## docker system df's sizes, summed in bytes. Its units are powers of 1000.
+fDockerBytes(){
+	awk '{ v = $NF; u = v; sub(/^[0-9.]+/, "", u); v += 0; m = 1
+		if (u == "kB" || u == "KB") m = 1e3; else if (u == "MB") m = 1e6; else if (u == "GB") m = 1e9; else if (u == "TB") m = 1e12
+		s += v * m } END { printf "%.0f\n", s }'
+}
+fDockerUsed(){ { docker system df --format '{{.Size}}' 2>/dev/null || true; } | fDockerBytes ;}
+## At the end of a run that used the image, passed or not: the run's containers, the project's
+## dangling images, its older image tags once a newer one has passed, a week's build cache, and
+## the Go cache volume when it's over 2 GB. Only what carries the project's label. One line says
+## what went and about what it freed.
+fDockerTidy(){
+	local passed="$1" before after ids id ref seen=0 vol="${APP_NAME}-cicd-cache" size list pruned
+	local -a gone=()
+	local -i nCont=0 nImg=0
+	before="$(fDockerUsed)"
+	if ((! keepTemp)); then
+		ids="$(docker ps -aq --filter "label=dev.project=${APP_NAME}" --filter "label=dev.run=${runName}" 2>/dev/null || true)"
+		for id in ${ids}; do
+			docker stop "${id}" >/dev/null 2>&1 || true
+			docker rm "${id}" >/dev/null 2>&1 || true   ## one run with --rm is already gone
+			nCont+=1
+		done
+	fi
+	ids="$(docker image ls -q --filter dangling=true --filter "label=dev.project=${APP_NAME}" 2>/dev/null || true)"
+	for id in ${ids}; do docker rmi "${id}" >/dev/null 2>&1 && nImg+=1; done
+	## Newest first. Tags newer than this one are another branch's, so they stay.
+	if ((passed)) && [[ -n "${containerImage:-}" ]]; then
+		while IFS= read -r ref; do
+			if ((seen == 2)); then docker rmi "${ref}" >/dev/null 2>&1 && nImg+=1
+			elif ((seen == 1)) || [[ "${ref}" == "${containerImage}" ]]; then seen=$((seen + 1)); fi
+		done < <(docker image ls "${containerImage%%:*}" --filter "label=dev.project=${APP_NAME}" --format '{{.Repository}}:{{.Tag}}' 2>/dev/null || true)
+	fi
+	## Its last line is the total it reclaimed.
+	pruned="$(docker builder prune -f --filter until=168h 2>/dev/null | tail -n 1 || true)"
+	[[ -z "${pruned}" || "${pruned##*[[:space:]]}" == 0B ]] || gone+=("build cache over a week old")
+	if [[ -n "$(docker volume ls -q --filter "label=dev.project=${APP_NAME}" --filter "name=${vol}" 2>/dev/null || true)" ]]; then
+		size="$({ docker system df -v --format '{{range .Volumes}}{{.Name}} {{.Size}}{{println}}{{end}}' 2>/dev/null || true; } | awk -v n="${vol}" '$1 == n' | fDockerBytes)"
+		if ((size > 2000000000)) && docker volume rm "${vol}" >/dev/null 2>&1; then gone+=("the ${vol} volume"); fi
+	fi
+	((nImg == 0)) || gone=("${nImg} image(s)" ${gone[@]+"${gone[@]}"})
+	((nCont == 0)) || gone=("${nCont} container(s)" ${gone[@]+"${gone[@]}"})
+	if ((! ${#gone[@]})); then fEcho_Clean "Docker: nothing to remove"; return 0; fi
+	after="$(fDockerUsed)"
+	((after < before)) || after="${before}"
+	printf -v list '%s, ' "${gone[@]}"
+	fEcho_Clean "Docker: removed ${list%, }; freed about $(numfmt --to=si --suffix=B "$((before - after))" 2>/dev/null || echo "$((before - after)) bytes")"
+}
 fRunTmpDone(){
-	local kept=""
+	local rc="${1:-0}" kept=""
 	[[ -n "${runTmp}" ]] || return 0
 	if ((keepTemp)); then
 		fEcho_Clean; fEcho_Clean "Kept the temp folder: ${runTmp}"
 		if ((container)); then
-			kept="$(docker ps -a --filter "label=${APP_NAME}.cicd.run=${stamp}" --format '{{.Names}}' 2>/dev/null | tr '\n' ' ' || true)"
+			kept="$(docker ps -a --filter "label=dev.run=${runName}" --format '{{.Names}}' 2>/dev/null | tr '\n' ' ' || true)"
 			[[ -z "${kept// /}" ]] || fEcho_Clean "Kept the containers: ${kept% }. Remove them with: docker rm ${kept% }"
 		fi
 		fEcho_Clean
-	elif [[ "${runTmp##*/}" == gitsby-cicd.* && -f "${runTmp}/.gitsby-cicd-run" ]]; then
-		rm -rf -- "${runTmp:?}"
+	fi
+	## Containers first, since one still running may write to the folder.
+	if ((container)); then fDockerTidy "$((rc == 0))"; fi
+	if ((! keepTemp)) && [[ "${runName}" =~ ${runRe} && -f "${runTmp}/run.pid" ]]; then
+		fSafeRm "${runTmp}" >/dev/null || true
 	fi
 }
 ## A file a step made in the run's folder, once the step is done with it.
 fTmpDone(){ ((keepTemp)) || rm -f -- "$@" ;}
 if ((! listOnly)); then
-	runTmp="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-cicd.XXXXXX")" || fDie "can't make a scratch folder"
-	: > "${runTmp}/.gitsby-cicd-run"
-	trap fRunTmpDone EXIT
+	## Once, so every path under it is spelled the same: macOS's temp folder sits behind a link.
+	HOST_TEMP="$(realpath -e -- "${HOST_TEMP:-${TMPDIR:-/tmp}}")" || fDie "no temp folder at ${HOST_TEMP:-${TMPDIR:-/tmp}}"
+	export HOST_TEMP
+	runRoot="${HOST_TEMP}/${APP_NAME}"
+	mkdir -p -- "${runRoot}" || fDie "can't make ${runRoot}"
+	## A plain mkdir, so a name another run took fails and the counter goes on.
+	for ((runSeq = 1; runSeq < 1000; runSeq++)); do
+		printf -v runTmp '%s/%s_%03d' "${runRoot}" "${stamp}" "${runSeq}"
+		mkdir -- "${runTmp}" 2>/dev/null && break
+		runTmp=""
+	done
+	[[ -n "${runTmp}" ]] || fDie "can't make a run folder in ${runRoot}"
+	runName="${runTmp##*/}"
+	echo "$$" > "${runTmp}/run.pid"
+	trap 'fRunTmpDone "$?"' EXIT
+	## So a stop still runs the exit trap, the container's tidy-up included.
+	trap 'exit 130' INT; trap 'exit 143' TERM
+	export TMPDIR="${runTmp}" TEMP="${runTmp}" TMP="${runTmp}"
+	fSweepRuns
 fi
 
 ## Brief beat after each stage header so the cheap fast stages stay readable.
@@ -363,10 +443,10 @@ fStageLint(){
 		## cache goes to a folder of our own, since py_compile writes one beside each file.
 		pyCache="$(mktemp -d "${runTmp}/pycache.XXXXXX")"
 		if ! PYTHONPYCACHEPREFIX="${pyCache}" python3 -m py_compile "${PY_LINT_FILES[@]}"; then
-			((keepTemp)) || rm -rf -- "${pyCache:?}"
+			((keepTemp)) || fSafeRm "${pyCache}" >/dev/null
 			fDie "py_compile"
 		fi
-		((keepTemp)) || rm -rf -- "${pyCache:?}"
+		((keepTemp)) || fSafeRm "${pyCache}" >/dev/null
 		fEcho "OK: py_compile (${#PY_LINT_FILES[@]} file(s))"
 		## Only the rules for references held too long, or never let go. --isolated, so a
 		## stray ruff config can't widen or narrow them.
@@ -589,7 +669,7 @@ fCodeQL(){
 	sarifs+=("${cqDir}/python.sarif")
 	((rc)) && tail -n 30 "${log}"
 	## Made by mktemp above, and checked again here, since this one is recursive.
-	if ((! keepTemp)) && [[ "${cqWork##*/}" == gitsby-codeql.* && -f "${log}" ]]; then rm -rf -- "${cqWork:?}"; fi
+	if ((! keepTemp)) && [[ "${cqWork##*/}" == gitsby-codeql.* && -f "${log}" ]]; then fSafeRm "${cqWork}" >/dev/null; fi
 	((rc == 0)) || fDie "CodeQL didn't finish (above)"
 	for old in ${CODEQL_IGNORE[@]+"${CODEQL_IGNORE[@]}"}; do cqIgnore+=(--ignore "${old}"); done
 	python3 "${here}/utility/codeql-findings.py" "${cqIgnore[@]}" "${sarifs[@]}" || rc=$?
@@ -645,6 +725,8 @@ if ((container)); then
 		containerArgs+=(--build-arg "${toolName}=${toolSpec#*=}")
 	done
 	containerArgs+=(--build-arg "CODEQL_SHA256=${CODEQL_SHA256}" --build-arg "CODEQL_PY_SHA256=${CODEQL_PY_SHA256}")
+	## In the tag's hash, so an image from before the labels is built again with them.
+	containerArgs+=(--label "dev.project=${APP_NAME}")
 	## The Python tools' lock is the other file the recipe copies in.
 	containerImage="${APP_NAME}-cicd:$( { cat "${containerRecipe}" "${here}/container/requirements.txt"; printf '%s\n' "${containerArgs[@]}"; } | git hash-object --stdin | cut -c1-12 )"
 fi
@@ -666,20 +748,20 @@ fListTests(){
 ## in a named volume, or every run would download and build from nothing. The demo's fonts are in
 ## the image, so its gif matches no matter what this box has installed.
 fContainerRun(){
-	local oldImage gitCommon containerName
+	local gitCommon containerName step="checks"
 	local -a containerMounts innerArgs=("$@") rmOpt=(--rm)
+	((gate)) && step="quick"
 	fSection "Container"
 	if docker image inspect "${containerImage}" >/dev/null 2>&1; then
 		fEcho_Clean "image ${containerImage}"
 	else
+		## The one it replaces goes at the end of a run that passes on this one, by fDockerTidy.
 		fEcho_Clean "building ${containerImage}"
-		docker build -q -t "${containerImage}" "${containerArgs[@]}" "${here}/container" >/dev/null || fDie "image build failed"
-		## The one it replaces is close to 2 GB nobody runs again.
-		while IFS= read -r oldImage; do
-			if [[ -z "${oldImage}" || "${oldImage}" == "${containerImage}" ]]; then continue; fi
-			if docker rmi "${oldImage}" >/dev/null 2>&1; then fEcho_Clean "removed ${oldImage}"
-			else fEcho_Clean "kept ${oldImage} (in use)"; fi
-		done < <(docker image ls "${containerImage%%:*}" --format '{{.Repository}}:{{.Tag}}' 2>/dev/null || true)
+		docker build -q -t "${containerImage}" "${containerArgs[@]}" --label "dev.run=${runName}" "${here}/container" >/dev/null || fDie "image build failed"
+	fi
+	## Made here rather than by the first run that mounts it, so it carries the labels.
+	if ! docker volume inspect "${APP_NAME}-cicd-cache" >/dev/null 2>&1; then
+		docker volume create --label "dev.project=${APP_NAME}" --label "dev.run=${runName}" "${APP_NAME}-cicd-cache" >/dev/null || fDie "can't make the ${APP_NAME}-cicd-cache volume"
 	fi
 	containerMounts=(-v "${root}:${root}" -v "${APP_NAME}-cicd-cache:/cache" --tmpfs "/tmp:rw,exec,mode=1777")
 	gitCommon="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
@@ -690,9 +772,9 @@ fContainerRun(){
 		mkdir -p "${DEMOGIF_ARCHIVE_DIR}" || fDie "can't make ${DEMOGIF_ARCHIVE_DIR}"
 		containerMounts+=(-v "$(realpath -m -- "${DEMOGIF_ARCHIVE_DIR}"):$(realpath -s -m -- "${DEMOGIF_ARCHIVE_DIR}")")
 	fi
-	## Named for the run, so it can be found and stopped among other projects' containers.
-	## The pid keeps two runs started in the same second apart.
-	containerName="${APP_NAME}-cicd-${stamp}-$$"
+	## Named for the run's folder, so it can be found and stopped among other projects' containers.
+	## The folder's counter keeps two runs started in the same second apart.
+	containerName="${APP_NAME}-${runName}-${step}"
 	## The run in there puts its own temp folder inside this one, so both are kept on the box.
 	if ((keepTemp)); then
 		rmOpt=(); innerArgs+=(--keep-temp)
@@ -702,11 +784,13 @@ fContainerRun(){
 	fEcho_Clean "as container ${containerName}"
 	## nice on the client doesn't reach in there, so the quota and the weight do, and the run
 	## in there renices itself. It works out its counts from this box's cores and load.
-	docker run ${rmOpt[@]+"${rmOpt[@]}"} --init --name "${containerName}" --label "${APP_NAME}.cicd.run=${stamp}" --label "${APP_NAME}.cicd.tree=${root}" \
+	docker run ${rmOpt[@]+"${rmOpt[@]}"} --init --name "${containerName}" --label "dev.project=${APP_NAME}" --label "dev.run=${runName}" \
 		--cpus "${BUILD_JOBS}" --cpu-shares 256 -e "GITSBY_CICD_CPUS=${cpuCores}" \
 		--user "$(id -u):$(id -g)" "${containerMounts[@]}" -w "${root}" \
-		"${containerImage}" bash "${root}/cicd/cicd.bash" "${innerArgs[@]}" \
-		|| fDie "the run in the container failed (above)"
+		"${containerImage}" bash "${root}/cicd/cicd.bash" "${innerArgs[@]}" &
+	## Waited on, not run in front: bash holds a trap until a command in front ends, and docker
+	## passes Ctrl+C on into the container rather than ending.
+	wait "$!" || fDie "the run in the container failed (above)"
 	fEcho "OK: the container run"
 }
 
@@ -924,7 +1008,7 @@ if [[ -n "${LINT_LOG_DIR:-}" && -z "${GITSBY_CICD_IN_CONTAINER:-}" ]] && mkdir -
 	## Wait for tee to drain on exit, else the shell prompt returns mid-flush and
 	## the last output lands after it (looks like the prompt "came back").
 	teePid=$!
-	trap 'fRunTmpDone; exec 1>&- 2>&-; wait "${teePid}" 2>/dev/null' EXIT
+	trap 'fRunTmpDone "$?"; exec 1>&- 2>&-; wait "${teePid}" 2>/dev/null' EXIT
 fi
 
 ## Stage 0: remote sync. The publish stage pulls too, but that is after everything
@@ -962,7 +1046,7 @@ goVersion="$(fGoVersion)"; goBuildEpoch="$(fGoBuildEpoch)"
 ## --container: stages 1-4 and the demo run in the pinned image, and stages 5 and 7 build with its Go.
 if ((container)); then
 	fContainerRun "${containerRun[@]}"
-	export GITSBY_CICD_IMAGE="${containerImage}" GITSBY_CICD_RUN="${stamp}"
+	export GITSBY_CICD_IMAGE="${containerImage}" GITSBY_CICD_RUN="${runName}"
 	if ((DO_DEMOGIF)); then demoWhere="ran in the container"; fi
 	doLint=0; doTest=0; doFuzz=0; doParity=0; DO_DEMOGIF=0; ranWhere="ran in the container"
 fi
@@ -1321,3 +1405,4 @@ fEcho_Clean
 ##		- 2026-10-25 JC: Dogfood's builds, stage 7's, and the cross-builds --quick does there come from the image's Go when the run uses the image. Copying them into place and the tests on the other boxes stay here.
 ##		- 2026-10-25 JC: Half the cores, rounded down, or a quarter on a busy box, worked out again before each stage, and a quarter for go test -race, the native fuzzing, the soak test and CodeQL. The run lowers its own priority, the container gets the count as its quota at a low weight, and the plan says what it got.
 ##		- 2026-10-25 JC: --list prints the plan and the test IDs in each step that runs, and runs nothing. --keep-temp keeps the run's temp folder, the files its steps leave there and its containers, and says where they are at the end. The run in the image puts its folder inside this one. The pre-push hook runs --merge-gate.
+##		- 2026-10-25 JC: The run's folder is ${HOST_TEMP}/gitsby/<start time>_<NNN>, with TMPDIR, TEMP and TMP pointed at it, and a run.pid. Run folders over 2 days old whose run is gone are removed, and every recursive removal here goes through fSafeRm. Containers, the image and the cache volume are labeled dev.project and dev.run, and named for the run's folder. The end of a run removes its containers, the project's dangling images and older tags, week-old build cache and a cache volume over 2 GB, and says what that freed.

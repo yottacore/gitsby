@@ -89,28 +89,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Requirements [Feature]:
 		- release.bash's builds, both of the reproducibility pair included, come from the image's Go where docker works. The upload and the checks against the published assets stay on the box.
 
-- CICD reset: container cleanup
-	- ID: 2026102416313102
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261024-163131
-	- Opened by: jim-collier
-	- Prereq IDs: 2026102506452478
-		- It uses `--keep-temp` from that item. The other new flags are in since a1c62bb.
-	- Related IDs: 2026101912030138, 2026102307533128
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Per the container bullets in `Cleanup after a run` in the shared CICD rules. Containers already run with `--rm`, under a name and labels for the run.
-		- Every container, image and volume the pipeline makes gets 2 labels, `dev.project=gitsby` and `dev.run=<run folder>`. Containers are named `gitsby-<run folder>-<step>`.
-		- At the end of a run, on failure and Ctrl+C too, the run's containers are stopped and removed by label. `--keep-temp` keeps them.
-		- Dangling images go by the project label. An older tag goes once a newer one has passed, and the current tag and the one before it stay.
-		- Then `docker builder prune -f --filter until=168h`, so a week of build cache stays warm.
-		- The `gitsby-cicd-cache` volume follows a 2 GB cap.
-		- One line at the end says what was removed and about what it freed, from `docker system df` before and after.
-		- What was built before the labels gets one pass by hand, by ID.
-		- Earlier decisions this overrides: 2026101912030138, where a new image removes the one it replaces and the cache volume is kept whole, and the label and name format from 2026102307533128.
-
 - CICD reset: CPU and priority on the Windows box
 	- ID: 2026102508333054
 	- Type: Enhancement
@@ -235,6 +213,27 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Each run writes a `run.pid` in it, and removes the project's own stale run folders: over 2 days old, with no live process.
 		- Every recursive removal goes through the repo's own copy of the safe removal guard, in the pipeline, the harnesses, the utilities, release.bash, the installer and stage 7's commands on the other boxes. The checks of a folder's name and marker that some have today stay as well.
 		- 35 recursive removals in 12 files, none through the guard. File list in the private notes.
+	- Progress log:
+		- 2026-10-25: Split. 2026102516194062 has the removals outside cicd.bash. The rest is in.
+		- 2026-10-25: A run's folder is `${HOST_TEMP}/gitsby/<start time>_<NNN>`, else under `TMPDIR`, made with a plain `mkdir` and the first free counter, with `TMPDIR`, `TEMP` and `TMP` pointed at it and a `run.pid`. The harnesses and release.bash already follow `TMPDIR`, so theirs go inside it. Each run removes the project's run folders over 2 days old whose pid is gone.
+		- 2026-10-25: `cicd/utility/include/safe-rm.bash` is the repo's copy of the guard. cicd.bash's own removals go through it, with the name and marker checks kept.
+	- Decisions:
+		- The sweep leaves a folder with no `run.pid`, since a run didn't make it.
+	- Branch: round-20261025b
+	- Test case: test.bash [Etl0bHp] and [Etl0bI3], plus [EtBTWt7], [Etkvc9j] and [Etkvc9w] for the new folder.
+	- Verified: Both fail against the round branch's cicd.bash, and pass with the change. The run in the image passed with them.
+
+- CICD reset: every other recursive removal through the guard
+	- ID: 2026102516194062
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-161940
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313108
+	- Requirements [Feature]:
+		- The parent's last requirement, outside cicd.bash: the harnesses, stage 7's commands on the other boxes, the utilities, release.bash, the installers, and the image build's own removals. Each goes through the guard in `cicd/utility/include/safe-rm.bash`, or a copy of it on the other boxes, and keeps the name and marker checks it has.
+		- The guard calls `realpath -e`. Check it on macOS and FreeBSD before stage 7 uses it there.
 
 - CICD reset: CICD process gaps
 	- ID: 2026102416313109
@@ -263,6 +262,44 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The comment above `fUnderLock` that says the helper has no `--why` goes with it.
 		- A box with no helper on the PATH still runs through the lock's `wrap`.
 	- Estimated effort: Low
+
+- CICD reset: container cleanup
+	- ID: 2026102416313102
+	- Type: Enhancement
+	- Status: Done
+	- Needs local test suite run?: No. `--backlog-run-quick` passed in the image.
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-163131
+	- Opened by: jim-collier
+	- Prereq IDs: 2026102506452478
+		- It uses `--keep-temp` from that item. The other new flags are in since a1c62bb.
+	- Related IDs: 2026101912030138, 2026102307533128
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the container bullets in `Cleanup after a run` in the shared CICD rules. Containers already run with `--rm`, under a name and labels for the run.
+		- Every container, image and volume the pipeline makes gets 2 labels, `dev.project=gitsby` and `dev.run=<run folder>`. Containers are named `gitsby-<run folder>-<step>`.
+		- At the end of a run, on failure and Ctrl+C too, the run's containers are stopped and removed by label. `--keep-temp` keeps them.
+		- Dangling images go by the project label. An older tag goes once a newer one has passed, and the current tag and the one before it stay.
+		- Then `docker builder prune -f --filter until=168h`, so a week of build cache stays warm.
+		- The `gitsby-cicd-cache` volume follows a 2 GB cap.
+		- One line at the end says what was removed and about what it freed, from `docker system df` before and after.
+		- What was built before the labels gets one pass by hand, by ID.
+		- Earlier decisions this overrides: 2026101912030138, where a new image removes the one it replaces and the cache volume is kept whole, and the label and name format from 2026102307533128.
+	- Progress log:
+		- 2026-10-25: The run's container, the image's Go builds, the image and the `gitsby-cicd-cache` volume carry `dev.project=gitsby` and `dev.run=<run folder>`. The run's container is `gitsby-<run folder>-checks`, or `-quick` for the quick run, and each build in the image `gitsby-<run folder>-go-<subcommand>-<N>`. The image's tag hashes the project label, so the first run after this builds it again with the labels.
+		- 2026-10-25: The exit trap stops and removes the run's containers by label, then removes the project's dangling images, the older tags once this one passed, and week-old build cache, and the cache volume when it's over 2 GB. One line says what went and about what it freed, or that nothing did.
+		- 2026-10-25: A stop never reached the trap before. Bash holds a trap until the command in front ends, and docker passes Ctrl+C on into the container. The container run and the image's builds are now waited on, and INT and TERM end the run through the exit trap.
+		- 2026-10-25: By hand, once the new image passed: the unlabeled `gitsby-cicd-cache` volume, 1.65 GB, so the next run made it with the labels, and the old image `gitsby-cicd:e6176a22793a` by ID.
+	- Decisions:
+		- The old `gitsby.cicd.tree` label is gone too. The run folder's counter tells two worktrees' runs apart.
+		- Image tags newer than the one that passed stay, since they're another branch's.
+		- A cache volume over the cap goes whole, and the next run makes it again.
+	- Branch: round-20261025b
+	- Test case: test.bash [Etl0bIG], plus [Eta9hUd], [Etkvc9w], [EtitOqM] and [EtitOtH] for the names and labels.
+	- Verified: [Etl0bIG] fails against the round branch's cicd.bash and image-go.bash, and so do the other 4 for the old format. `--backlog-run-quick` passed in the image: test.bash 1725 -> 1732, 0 failed, fuzz 313/0, parity 29/0. The rebuilt image and the new volume carry both labels. A real quick run in the image stopped by Ctrl+C, and another by TERM, each ended within 16 s with its container and folder gone, and said "removed 1 container(s)". Two real builds through `fImageGo` with the containers kept took `-go-version-1` and `-2`. shellcheck passes.
+	- Swept: every `docker run`, `docker build` and named volume in cicd.bash, image-go.bash and remote-tests.bash. contributing.md.
+	- Acceptance signoff: Self-closed: its test runs passed.
+	- Closed: 20261025-165449
 
 - CICD reset: `--keep-temp` and `--list`
 	- ID: 2026102506452478
