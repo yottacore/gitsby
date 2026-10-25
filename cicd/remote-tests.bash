@@ -157,7 +157,7 @@ fDirSh(){ printf 't="${HOST_TEMP:-${TMPDIR:-/tmp}}"; d="${t%%/}/%s"' "$1" ;}
 ## for them.
 fRunPosix(){
 	local kind="$1" lockName="$2" sshName="" rc=0 failed=0 dir dirSh log="${work}/gotest-$2.log" bashDir macBash
-	local target tarFile hasBin binName suiteCmd missing="" fetch="go mod download" needsPre="" needs=()
+	local target tarFile hasBin binName suiteCmd suitePath="" missing="" fetch="" needsPre="" needs=()
 	sshName="$(fReachable "${lockName}:$3")"
 	if [[ -z "${sshName}" ]]; then fEcho_Clean "  SKIP: ${lockName}, not reachable over ssh (tried $3)"; fResult "${lockName}" lost; return 0; fi
 	if [[ "${kind}" == mac ]]; then
@@ -166,8 +166,9 @@ fRunPosix(){
 		## Homebrew's bash first, so the scripts the suite starts by their shebang get it too.
 		printf -v bashDir '%q' "$(dirname "${REMOTE_MAC_BASH}")"
 		printf -v macBash '%q' "${REMOTE_MAC_BASH}"
-		suiteCmd="PATH=${bashDir}:\"\$PATH\" \$lo ${REMOTE_MAC_BASH} cicd/test.bash"
-		needsPre="PATH=${bashDir}:\"\$PATH\"; [ -x ${macBash} ] || printf '%s ' ${macBash}; " needs=("${REMOTE_MAC_NEEDS[@]}")
+		suitePath="PATH=${bashDir}:\"\$PATH\""
+		suiteCmd="${suitePath} \$lo ${REMOTE_MAC_BASH} cicd/test.bash"
+		needsPre="${suitePath}; [ -x ${macBash} ] || printf '%s ' ${macBash}; " needs=("${REMOTE_MAC_NEEDS[@]}")
 	else
 		target="${REMOTE_UNIX_TARGETS[${lockName}]}"
 		tarFile="${work}/unix-$(fTag "${target}").tar" hasBin="${work}/has-bin-$(fTag "${target}")" binName="the ${target} build"
@@ -180,6 +181,9 @@ fRunPosix(){
 	missing="$(fRemote "${sshName}" "echo ${mark}; ${needsPre}for t in ${needs[*]}; do case \"\$t\" in git) git --version ;; go) go version ;; *) command -v \"\$t\" ;; esac >/dev/null 2>&1 || printf '%s ' \"\$t\"; done" -n)" || rc=$?
 	if ((rc)); then fEcho_Clean "  SKIP: ${lockName}, lost the connection while looking for its tools"; fResult "${lockName}" lost; return 0; fi
 	read -r missing <<< "${missing}"
+	## Only for the suite, so on its PATH, which is the one the tools were looked for on. A Mac's
+	## go is often Homebrew's, off the PATH an ssh command gets.
+	fetch="${suitePath:+${suitePath}; }go mod download"
 	if [[ -n "${missing}" || ! -f "${hasBin}" ]]; then fetch=":"; fi
 	fEcho_Clean "  ${lockName}: copying the tree to ${dir}/tree under its temp root"
 	## The marker is checked again right before the removal, and a folder without it is not
