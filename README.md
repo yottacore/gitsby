@@ -316,7 +316,8 @@ cicd/cicd.bash --no-leakcheck   # everything but the soak test and CodeQL, the s
 cicd/cicd.bash                  # everything, and it prompts once for a commit message
 cicd/cicd.bash -y -m "message"  # unattended
 cicd/cicd.bash --no-container   # stages 1-4 and the demo gif on this box, not in the pinned image
-cicd/cicd.bash --gate           # every lint check and the unit tests; what the pre-push hook runs
+cicd/cicd.bash --backlog-run-quick   # lint, the unit tests and the suites, in a few minutes; name areas to run fewer, and --gate is another name
+cicd/cicd.bash --merge-gate     # every check a plain run does, changing nothing: no sync, dogfood, publish or new gif; --ci is another name
 cicd/cicd.bash --install-hook   # run --gate on the pushed commit before every push to main
 ~~~
 

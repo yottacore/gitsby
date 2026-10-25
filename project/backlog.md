@@ -128,6 +128,75 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The backlog and merge gate flags never dogfood, publish, commit, push, install, sync, rewrite a tracked file, or prompt. That covers the demo gif.
 		- The pre-push hook runs `--merge-gate`, every check of the default run, on a push to main. A push whose commits change only docs and the other paths listed in one place the hook reads skips it. No gate on dev or gover.
 		- Earlier decisions this overrides: 2026101816064793, where `--gate` gets no `--ci` alias and `--quick` has a 30 s budget per step, and the private CI/CD notes, where the gate on main runs lint and the unit tests only.
+	- Progress log:
+		- 2026-10-25: Split, too big for one pass. Children: 2026102506452473 (the new run flags and the aliases), 2026102506452478 (`--keep-temp` and `--list`), 2026102506452483 (`--quick` in about 10 minutes) and 2026102506452488 (the hook runs `--merge-gate`). The other reset items wait on the first.
+
+- CICD reset: run flags and aliases
+	- ID: 2026102506452473
+	- Type: Enhancement
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: One `--backlog-run-full` run in the container, to see a real one end to end. It can stand in for the round's full-run line.
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-064524
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313104
+	- Requirements [Feature]:
+		- `--long`, with `--slow` as another name, `--backlog-run-quick [<area>...]`, `--backlog-run-full` and `--merge-gate`. `--help` lists the areas.
+		- `--gate` and `--ci` stay as other names for `--backlog-run-quick` and `--merge-gate`, and say so in one line when used. `pre-push.bash` looks for the `--gate)` arm, so it changes with it.
+		- The backlog and merge gate flags never dogfood, publish, commit, push, install, sync, rewrite a tracked file, or prompt. That covers the demo gif.
+	- Progress log:
+		- 2026-10-25: Done in cicd.bash. `--backlog-run-quick` runs the areas `lint`, `unit`, `suite`, `fuzz` and `parity`, all of them with none named, the three suites against one build of their own. `--merge-gate` and `--backlog-run-full` are a plain run with sync, dogfood and publish off and no prompt, and stage 6 leaves a gif that differs as committed. The run in the image is told the same.
+		- 2026-10-25: [EpsVDHu] and [ErkbDTZ] read the closing line `gate: passed`, now `quick run: passed`. [EpsVDHu] no longer forbids the build and the suites under `--gate`, since `--gate` runs them now. The rest of both is as it was.
+	- Decisions:
+		- With no area named, `--backlog-run-quick` runs the suites too. A worker ran them by hand beside `--gate` anyway, and the whole thing took about 3 minutes on 8 cores at a load of 10.
+		- `--merge-gate` and `--backlog-run-full` are the same checks, the other boxes included. They take the `--no-<step>` and container flags, and refuse `-m` and `--quick`.
+		- A gif that differs under them is a warning, not a failure, since the gif isn't a check.
+		- `--long` adds nothing yet, since no step here takes hours. `--backlog-run-quick` stays on the box until 2026102416313100.
+		- pre-push.bash is unchanged. `--backlog-run-quick|--gate)` still holds `--gate)`, so a commit with the gate is told apart as before. The hook still runs `--gate`, which now runs the suites too. Moving it to `--merge-gate` is 2026102506452488.
+	- Branch: round-20261025
+	- Test case: test.bash [EtiiN6u], [EtiiN78], [EtiiN7K], [EtiiN7Y], [EtiiN7k], [EtiiN7y], [EtiiN8B], [EtiiN8O], [EtiiN8b], [EtiiN8p] and [Etiiqyb].
+	- Verified: All 11 fail against the round branch's cicd.bash, and [EtiiN7k], [EtiiN7y] and [EtiiN8B] fail with the gif and image hand-offs taken out. test.bash 1677 -> 1688, 0 failed. `cicd.bash --backlog-run-quick` passes on this tree, lint, go test, test.bash 1688/0, fuzz 313/0, spawn counts and parity 29/0, in 175 s. `test-id.bash --check` and `backlog-check.bash` pass.
+	- Swept: cicd.bash's help, option arms, refusals, container hand-off, plan and stage 6. README, contributing.md and design.md's gate bullet. pre-push.bash's arm check and its call. test.bash's gate checks that read the old closing line.
+
+- CICD reset: `--keep-temp` and `--list`
+	- ID: 2026102506452478
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-064524
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313104
+	- Prereq IDs: 2026102506452473
+	- Requirements [Feature]:
+		- `--keep-temp` keeps the run's temp folder and containers, and prints where they are.
+		- `--list` prints the steps and test IDs the other flags given would run, and runs nothing.
+
+- CICD reset: `--quick` in about 10 minutes
+	- ID: 2026102506452483
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-064524
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313104
+	- Prereq IDs: 2026102506452473
+	- Requirements [Feature]:
+		- `--quick` is what fits in about 10 minutes in all, not a 30 s budget per step, per `CICD style guide` in the shared CICD rules. The regression suite likely comes back in.
+		- Overrides the 30 s per step budget in 2026101816064793.
+
+- CICD reset: the hook runs `--merge-gate`
+	- ID: 2026102506452488
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-064524
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313104
+	- Prereq IDs: 2026102506452473
+	- Requirements [Feature]:
+		- The pre-push hook runs `--merge-gate`, every check of the default run, on a push to main. A push whose commits change only docs and the other paths listed in one place the hook reads skips it. No gate on dev or gover.
+		- A commit cut before `--merge-gate` existed keeps the gate it had.
+		- Overrides the private CI/CD notes, where the gate on main runs lint and the unit tests only.
 
 - CICD reset: step output
 	- ID: 2026102416313105

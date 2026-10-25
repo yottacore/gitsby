@@ -408,6 +408,66 @@ fGateQuickRun(){
 		&& ! grep -qE '^(test|remote-tests)\.bash|^go test .*-fuzz |^govulncheck|^python3 cicd/utility/demo/gen-demo-gif' "${gateCalls}" \
 		&& grep -qxF 'regression tests skipped (--quick)' "${gateOut}" && grep -qxF 'govulncheck skipped (--quick: it reaches vuln.go.dev)' "${gateOut}"
 }
+## --backlog-run-quick with no area runs them all, the suites against a build of their own, and
+## nothing that syncs, publishes, draws the demo or reaches another host.
+fGateBacklogQuick(){
+	fGateSays 0 'backlog quick run: passed\.' --backlog-run-quick \
+		&& fGateCalled '^shellcheck [^-]' '^gofmt -l' '^go test -race' '^go build' '^test\.bash' '^fuzz\.bash' '^spawn-count\.bash' '^parity\.bash' \
+		&& ! grep -qE '^(n8git_backup-and-publish|remote-tests\.bash|govulncheck|docker|pip-audit -r|codeql database|python3 cicd/utility/demo/gen-demo-gif)|-fuzz ' "${gateCalls}" \
+		&& ! grep -qE 'Remote sync|another name' "${gateOut}" && [[ ! -e "${gateDir}/cicd/artifacts/lint" ]]
+}
+## Areas named run alone, in the engine's order, and only a suite brings in the build.
+fGateBacklogAreas(){
+	fGateSays 0 'backlog quick run: lint unit$' --backlog-run-quick unit lint \
+		&& fGateCalled '^gofmt -l' '^go test -race' && ! grep -qE '^go build|^(test|fuzz|parity|spawn-count)\.bash' "${gateCalls}" \
+		&& fGateSays 0 'backlog quick run: parity$' --backlog-run-quick parity \
+		&& fGateCalled '^go build' '^parity\.bash' && ! grep -qE '^gofmt|^go test|^(test|fuzz)\.bash' "${gateCalls}"
+}
+## --merge-gate, or --backlog-run-full as $1, runs what a plain run checks, the other hosts
+## included, and changes nothing: no sync, dogfood or publish, and a demo gif that differs stays.
+fGateHandsOff(){
+	local rc=0 gif="${gateDir}/assets/demo.gif"
+	mkdir -p "${gif%/*}"; [[ ! -f "${gif}" ]] || cp -f -- "${gif}" "${gif}.keep"
+	printf old > "${gif}"
+	fGateSays 0 'CI/CD: done\.' "$1" --no-container \
+		&& grep -qF "gitsby ${1#--}: every check of a plain run" "${gateOut}" \
+		&& fGateCalled '^go vet' '^go build' '^go test -race' '^test\.bash' '^fuzz\.bash' '^spawn-count\.bash' '^parity\.bash' '^remote-tests\.bash' '^python3 cicd/utility/demo/gen-demo-gif' '^govulncheck' \
+		&& ! grep -qE '^n8git_backup-and-publish' "${gateCalls}" \
+		&& grep -qxF 'remote sync skipped' "${gateOut}" && grep -qxF 'dogfood disabled' "${gateOut}" && grep -qxF 'publish disabled' "${gateOut}" \
+		&& grep -qF "[ WARNING: demo gif differs; ${1} rewrites no tracked file, so the committed one stays ]" "${gateOut}" \
+		&& [[ "$(cat "${gif}")" == old && ! -e "${gif}.new" ]] || rc=1
+	if [[ -f "${gif}.keep" ]]; then mv -f -- "${gif}.keep" "${gif}"; else rm -f -- "${gif:?}"; fi
+	return "${rc}"
+}
+## The run in the image is told too, so the gif in there stays as committed.
+fGateHandsOffContainer(){
+	fGateSays 0 'OK: the container run' --merge-gate --no-remote \
+		&& fGateCalled '^docker run .* -y --no-sync --no-dogfood --no-remote --no-publish --backlog-run-full$'
+}
+fGateHelpFlags(){
+	local out="" f
+	out="$("${gateDir}/cicd/cicd.bash" --help)" || return 1
+	for f in --long --slow --backlog-run-quick --backlog-run-full --merge-gate --ci lint unit suite fuzz parity; do
+		grep -qE -- "^ +${f}( |\$)" <<< "${out}" || return 1
+	done
+}
+## The run passes with the line $1 in its output once, and no other alias line.
+fGateAliasSays(){
+	local line="$1"; shift
+	fGateStatus 0 "$@" && grep -qxF -- "${line}" "${gateOut}" && [[ "$(grep -c 'is another name for' "${gateOut}")" == 1 ]]
+}
+fGateHandsOffRefuses(){
+	fGateSays 2 'never publishes, so it takes no -m' --merge-gate -m hi && fGateSays 2 'takes no --quick' --ci --quick \
+		&& fGateSays 2 'separate runs' --merge-gate --backlog-run-full && fGateSays 2 'separate runs' --gate --merge-gate
+}
+fGateLong(){
+	local s
+	for s in --long --slow; do
+		fGateSays 0 'CI/CD: done' -y "${s}" --no-container --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
+			&& fGateCalled '^test\.bash' '^parity\.bash' || return 1
+	done
+	fGateSays 2 'opposites' --quick --long && fGateSays 2 'takes no stage options \(got: --slow\)' --backlog-run-quick --slow
+}
 ## --leakcheck adds the soak test, under --quick too, and keeps what it wrote in a folder of the run's own.
 fGateLeakRun(){
 	fGateSays 0 'OK: soak test' -y --no-container --quick --leakcheck --no-sync --no-publish --no-dogfood \
@@ -5749,9 +5809,9 @@ EOF
 		rm -f -- "${gateDir:?}/bin/strace"
 		## Tied to the gate having passed: a run that did nothing at all adds nothing either.
 		fAssert "[EpsVDHu] and nothing the full run adds" \
-			bash -c "grep -q 'gate: passed' '${gateOut}' && ! grep -qE '^go build|^test\.bash|^fuzz\.bash|^parity\.bash|^spawn-count\.bash|^n8git_backup-and-publish|^govulncheck|-fuzz' '${gateCalls}' && ! grep -q 'Remote sync' '${gateOut}' && [[ ! -e '${gateDir}/cicd/artifacts/lint' ]]"
+			bash -c "grep -q 'quick run: passed' '${gateOut}' && ! grep -qE '^n8git_backup-and-publish|^govulncheck|-fuzz' '${gateCalls}' && ! grep -q 'Remote sync' '${gateOut}' && [[ ! -e '${gateDir}/cicd/artifacts/lint' ]]"
 		fAssert "[ErkbDTZ] and not the remote tests" \
-			bash -c "grep -q 'gate: passed' '${gateOut}' && ! grep -qE '^(remote-tests|macho-universal)\.bash' '${gateCalls}' && ! grep -q 'Remote tests' '${gateOut}'"
+			bash -c "grep -q 'quick run: passed' '${gateOut}' && ! grep -qE '^(remote-tests|macho-universal)\.bash' '${gateCalls}' && ! grep -q 'Remote tests' '${gateOut}'"
 		local gateTool
 		for gateTool in shellcheck markdownlint python3 ruff pwsh gofmt go-vet staticcheck golangci-lint backlog-check go-test; do
 			: > "${gateFail}/${gateTool}"
@@ -5766,11 +5826,24 @@ EOF
 		fAssert "[EpsVDHy] --gate and --install-hook together are refused"  fGateSays 2 'separate runs' --gate --install-hook
 		## pre-push.bash tells a commit that has the gate by this text in its cicd.bash.
 		fAssert "[Et6FC3t] the gate's option arm keeps the text the hook looks for"  grep -qF -- '--gate)' "${root}/cicd/cicd.bash"
-		## Regression guard: the full run is what the two functions were carved out of.
+		fAssert "[EtiiN6u] --backlog-run-quick runs every area, the suites included, and nothing that changes anything"  fGateBacklogQuick
+		fAssert "[EtiiN78] and the areas named, alone and in the engine's order"  fGateBacklogAreas
+		fAssert "[EtiiN7K] and refuses an area it doesn't have, naming the ones it does" \
+			fGateSays 2 "no area 'lnt'\. Areas: lint unit suite fuzz parity" --backlog-run-quick lint lnt
+		fAssert "[EtiiN7Y] --gate says in one line that it's another name for --backlog-run-quick" \
+			fGateAliasSays '--gate is another name for --backlog-run-quick' --gate lint
+		fAssert "[EtiiN7k] --merge-gate runs every check of a plain run, and syncs, dogfoods, publishes and rewrites nothing"  fGateHandsOff --merge-gate
+		fAssert "[EtiiN7y] and so does --backlog-run-full"  fGateHandsOff --backlog-run-full
+		fAssert "[EtiiN8B] and the run in the image is told to leave the gif too"  fGateHandsOffContainer
+		fAssert "[EtiiN8O] --ci says in one line that it's another name for --merge-gate" \
+			fGateAliasSays '--ci is another name for --merge-gate' --ci --no-container --no-remote --no-fuzz --no-demogif
+		fAssert "[EtiiN8b] --merge-gate refuses -m, --quick and another run"  fGateHandsOffRefuses
+		fAssert "[EtiiN8p] --long and --slow are a plain run, opposite --quick, and --backlog-run-quick refuses them"  fGateLong
 		fAssert "[EpsVDHz] the full run still lints, builds and runs the suites"  fGateFullRun
 		fAssert "[Er2UM3f] a -q run still prints every regression, fuzz, parity and spawn check"  fGateQuietSuites
 		fAssert "[EpsVDI0] cicd.bash --help lists --gate and --install-hook" \
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--gate ' <<< \"\$out\" && grep -qE -- '^ +--install-hook ' <<< \"\$out\""
+		fAssert "[Etiiqyb] and every run flag, --backlog-run-quick's areas, and the aliases"  fGateHelpFlags
 		fAssert "[EpsVDI1] and contributing.md names --install-hook"  grep -qF -- '--install-hook' "${root}/contributing.md"
 		fAssert "[Et6FC4K] --quick runs the steps that take seconds, and none that take longer or reach another host"  fGateQuickRun
 		fAssert "[Et9R5kk] and leaves out pip-audit, which reaches pypi.org" \
@@ -7280,3 +7353,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261023 JC: The workflow parse check's skip line names its test ID, and the image has PyYAML, so the check runs there. The Pillow lock check reads the image's own patterns, and a check holds PyYAML to the same. 1667 -> 1668.
 ##		- 20261023 JC: A full run's container is named and labeled for the run, and the check reads the name back from the output. 1676 -> 1677.
 ##		- 20261024 JC: The stage 7 checks put back the boxes they expect, so a tree with config.bash narrowed to one box passes them. 1677 -> 1677.
+##		- 20261025 JC: --backlog-run-quick and its areas, --merge-gate, --backlog-run-full, --long, and the two aliases. The gate checks read the new closing line, and leave the suites out of what the gate must not run. 1677 -> 1688.

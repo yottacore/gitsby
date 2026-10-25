@@ -49,9 +49,24 @@
 ##	   --quick             skip the slow steps and every host but origin: the regression suite, native fuzzing, govulncheck, pip-audit, leak checks, demo gif and remote tests
 ##	   --leakcheck         run the leak checks even under --quick or --no-fuzz: a soak test of the everyday commands, and CodeQL over the Go code and its vendored dependencies for each release OS and over the pipeline's Python and the libraries it imports, with the heap profiles and CodeQL's reports kept in cicd/artifacts/leakcheck/
 ##	   --no-leakcheck      skip the leak checks
+##	   --long              everything, the slow checks included; nothing here takes hours, so the same as no flags
+##	       --slow          alias for --long
 ##	   --container         run stages 1-4 and the demo gif in the pinned image from cicd/container/Dockerfile (the default)
 ##	   --no-container      run them on this box instead
-##	   --gate              fast pre-push gate: every lint check and go test; no sync, build, suites, prompt or log
+##	   --backlog-run-quick [AREA...]
+##	                       what a backlog worker runs before it commits, in a few minutes, on this box:
+##	                       every area below, or only those named. No sync, prompt or log
+##	                         lint    every lint and format check
+##	                         unit    the Go unit tests
+##	                         suite   the build, then the regression suite
+##	                         fuzz    the build, then fuzz.bash and the spawn counts
+##	                         parity  the build, then the comparison with v2.1.0
+##	   --gate [AREA...]    alias for --backlog-run-quick
+##	   --backlog-run-full  what a backlog round runs once at its end: every check of a plain run, the other hosts included
+##	   --merge-gate        the same checks, before a merge to main
+##	       --ci            alias for --merge-gate
+##	                       None of those three dogfoods, publishes, commits, pushes, installs, syncs,
+##	                       prompts, or rewrites a tracked file. A demo gif that differs is left as committed.
 ##	   --install-hook      install the git pre-push hook that runs --gate on each commit pushed to main
 ##	   -h, --help          show this help
 ##	- If neither -q/-y nor -m is given, the run prompts once for a commit message
@@ -103,7 +118,7 @@ fUsage(){ fEcho_Clean "$*" >&2; exit 2; }
 
 ## Parse options.
 assumeYes=0; quiet=0; quick=0; leakcheck=0; leakOpt=""; doSync=1; doLint=1; doTest=1; doFuzz=1; doParity=1; doRemote=1; noRemote=0; cliMessage=""
-gate=0; installHook=0; stageOpts=(); containerOpt=""
+gate=0; installHook=0; stageOpts=(); containerOpt=""; gateAreas=(); handsOff=""; aliasNote=""
 while (($#)); do case "$1" in
 	-q|--quiet)               quiet=1; assumeYes=1; shift ;;   ## quiet + unattended; publish runs quiet too
 	-y|--yes)                 assumeYes=1; shift ;;
@@ -126,9 +141,17 @@ while (($#)); do case "$1" in
 		leakOpt="$1"; stageOpts+=("$1"); shift ;;
 	--message=*|--msg=*|-m=*) cliMessage="${1#*=}"; stageOpts+=("${1%%=*}"); shift ;;
 	-m|--message|--msg)       cliMessage="${2-}"; stageOpts+=("$1"); shift; (($#)) && shift ;;
-	## pre-push.bash looks for this arm's literal text to tell a commit that has a gate from
-	## one cut before it existed, so keep the spelling.
-	--gate)                   gate=1; assumeYes=1; shift ;;
+	--long|--slow)            stageOpts+=("$1"); shift ;;
+	## pre-push.bash looks for '--gate)' to tell a commit that has a gate from one cut before
+	## it existed, so keep the spelling.
+	--backlog-run-quick|--gate)
+		[[ "$1" == --gate ]] && aliasNote="--gate is another name for --backlog-run-quick"
+		gate=1; assumeYes=1; shift
+		while (($#)) && [[ "$1" != -* ]]; do gateAreas+=("$1"); shift; done ;;
+	--backlog-run-full|--merge-gate|--ci)
+		[[ -z "${handsOff}" || "${handsOff}" == "${1/#--ci/--merge-gate}" ]] || fUsage "--backlog-run-full and --merge-gate are separate runs; give one."
+		[[ "$1" == --ci ]] && aliasNote="--ci is another name for --merge-gate"
+		handsOff="${1/#--ci/--merge-gate}"; assumeYes=1; shift ;;
 	--install-hook)           installHook=1; shift ;;
 	--container|--no-container)
 		[[ -z "${containerOpt}" || "${containerOpt}" == "$1" ]] || fUsage "--container and --no-container are opposites; give one."
@@ -144,15 +167,31 @@ fi
 
 ## Both run a fixed thing, so a stage option beside either would read as taking effect when it
 ## cannot. Refused rather than ignored.
-if ((gate && installHook)); then fUsage "--gate and --install-hook are separate runs; give one."; fi
+gateName="--backlog-run-quick"; [[ "${aliasNote}" == --gate* ]] && gateName="--gate"
+if ((gate && installHook)); then fUsage "${gateName} and --install-hook are separate runs; give one."; fi
+if [[ -n "${handsOff}" ]] && ((gate || installHook)); then
+	other="--install-hook"; ((gate)) && other="${gateName}"
+	fUsage "${handsOff} and ${other} are separate runs; give one."
+fi
+gateAreasAll=(lint unit suite fuzz parity)
+for a in "${gateAreas[@]:-}"; do
+	[[ -z "${a}" || " ${gateAreasAll[*]} " == *" ${a} "* ]] || fUsage "${gateName}: no area '${a}'. Areas: ${gateAreasAll[*]}"
+done
+for a in "${stageOpts[@]:-}"; do
+	case "${a}" in
+		--quick)      [[ " ${stageOpts[*]} " != *" --long "* && " ${stageOpts[*]} " != *" --slow "* ]] || fUsage "--quick and --long are opposites; give one."
+		              [[ -z "${handsOff}" ]] || fUsage "${handsOff} runs every check of a plain run, so it takes no --quick." ;;
+		-m|--message|--msg) [[ -z "${handsOff}" ]] || fUsage "${handsOff} never publishes, so it takes no ${a}." ;;
+	esac
+done
 if ((${#stageOpts[@]})); then
 	if ((gate)); then
-		fUsage "--gate runs a fixed set of checks and takes no stage options (got: ${stageOpts[*]})"
+		fUsage "${gateName} runs a fixed set of checks and takes no stage options (got: ${stageOpts[*]})"
 	elif ((installHook)); then
 		fUsage "--install-hook installs the hook and takes no stage options (got: ${stageOpts[*]})"
 	fi
 fi
-if [[ -n "${containerOpt}" ]] && ((gate || installHook)); then fUsage "${containerOpt} goes with a full run, not --gate or --install-hook."; fi
+if [[ -n "${containerOpt}" ]] && ((gate || installHook)); then fUsage "${containerOpt} goes with a full run, not ${gateName} or --install-hook."; fi
 if [[ "${containerOpt}" == --container && -n "${GITSBY_CICD_IN_CONTAINER:-}" ]]; then fUsage "already in the container; --container would start another."; fi
 ## Asked for, it has to work. By default, a box with no usable docker runs everything here, and says so.
 container=0; containerNote=""
@@ -163,6 +202,10 @@ elif [[ "${CICD_CONTAINER:-0}" == 1 ]]; then
 	else containerNote="WARNING: docker isn't usable here, so stages 1-4 and the demo run on this box, with its own tool versions"; fi
 fi
 if ((installHook)); then exec "${here}/utility/pre-push.bash" --install; fi
+## Checks only: the tree, the box and origin are as they were found. Stage 6 still renders the
+## gif, and leaves a changed one as committed.
+if [[ -n "${handsOff}" ]]; then doSync=0; DOGFOOD_TARGETS=(); GIT_PUBLISH=(); fi
+[[ -z "${aliasNote}" ]] || { fEcho_Clean; fEcho_Clean "${aliasNote}"; }
 
 ## One scratch folder for the run's temp files, so a run stopped partway leaves none behind.
 ## Marked, and checked again before the recursive delete.
@@ -398,6 +441,20 @@ fUnitTests(){
 	rm -f -- "${log:?}"
 	fEcho "OK: go test"
 }
+## The version and build number stamped into this run's builds.
+fGoVersion(){ git describe --tags --always --dirty --match 'v*' 2>/dev/null || echo 0.0.0 ;}
+## Build number, as minutes since 2000 in Crockford base32 - the binary does the encoding,
+## this only hands it the seconds. Taken from the commit rather than the clock so the same
+## source builds to the same bytes; a wall-clock stamp would mean nobody, including us,
+## could ever rebuild a published asset to its published checksum.
+fGoBuildEpoch(){ git log -1 --format=%ct 2>/dev/null || echo 0 ;}
+## The native build, which the suites run against.
+fNativeBuild(){
+	(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOAMD64=v1 \
+		go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${goVersion#v} -X main.buildEpoch=${goBuildEpoch}" -o "${EXE_NAME}" .) \
+		|| fDie "go build failed"
+	fEcho "OK: go build (v${goVersion#v})"
+}
 ## --leakcheck: the checks too slow for every run. The soak test loops the everyday commands
 ## in one process and compares the heap and goroutine count at round N and 2N. Not under
 ## -race, which would swamp the heap it measures. Each run keeps its heap profiles in a
@@ -536,17 +593,35 @@ done
 fPlanOS(){ case "${1%%/*}" in darwin) echo macos ;; *) echo "${1%%/*}" ;; esac ;}
 fPlanLine(){ local -r dots="........................"; local -i n=$(( 20 - ${#1} )); ((n < 0)) && n=0; fEcho_Clean "${1} ${dots:0:n}: ${2}" ;}
 
-## --gate: what the pre-push hook runs against the commit being pushed. The stages it leaves
-## out are the slow ones, and the ones that change something: a fetch, a build, an install, a push.
+## --backlog-run-quick: what a worker runs before it commits. It leaves out the slow stages, and
+## the ones that change something: a fetch, an install, a push. Areas run in this order, whatever
+## order they were named in, so lint still fails first.
 if ((gate)); then
+	declare -A gateTitle=([lint]="Lint" [unit]="Unit tests" [suite]="Regression tests" [fuzz]="Fuzz + spawn counts" [parity]="Backwards compatibility")
+	gateRun=()
+	for a in "${gateAreasAll[@]}"; do
+		if ((! ${#gateAreas[@]})) || [[ " ${gateAreas[*]} " == *" ${a} "* ]]; then gateRun+=("${a}"); fi
+	done
 	fEcho_Clean
-	fEcho_Clean "${APP_NAME} gate: every lint check, then the unit tests"
+	fEcho_Clean "${APP_NAME} backlog quick run: ${gateRun[*]}"
 	fEcho_Clean "Repo root ...........: ${root}"
-	fSection "Gate 1/2  Lint"
-	fStageLint
-	fSection "Gate 2/2  Unit tests"
-	fUnitTests
-	fSection "${APP_NAME} gate: passed."
+	gateStep=0; gateBuilt=0
+	for a in "${gateRun[@]}"; do
+		gateStep=$((gateStep + 1))
+		fSection "Quick ${gateStep}/${#gateRun[@]}  ${gateTitle[${a}]}"
+		if [[ "${a}" == suite || "${a}" == fuzz || "${a}" == parity ]] && ((! gateBuilt)); then
+			goVersion="$(fGoVersion)"; goBuildEpoch="$(fGoBuildEpoch)"; fNativeBuild; gateBuilt=1
+		fi
+		case "${a}" in
+			lint)   fStageLint ;;
+			unit)   fUnitTests ;;
+			suite)  "${TEST_CMD[@]}"; fEcho "OK: tests passed" ;;
+			fuzz)   "${FUZZ_CMD[@]}"; fEcho "OK: fuzz + security passed"
+			        "${SPAWN_COUNT_CMD[@]}" || fDie "spawn counts regressed"; fEcho "OK: spawn counts" ;;
+			parity) "${PARITY_CMD[@]}"; fEcho "OK: this build answers as the frozen one does" ;;
+		esac
+	done
+	fSection "${APP_NAME} backlog quick run: passed."
 	fEcho_Clean
 	exit 0
 fi
@@ -569,6 +644,8 @@ if ((container)); then
 	## The same stages as here, minus everything that needs this box.
 	containerRun=(-y --no-sync --no-dogfood --no-remote --no-publish)
 	((quiet))    && containerRun[0]=-q
+	## So the gif in there is left as committed too.
+	[[ -z "${handsOff}" ]] || containerRun+=(--backlog-run-full)
 	((quick))    && containerRun+=(--quick)
 	## As given. The run in there gets --quick and --no-fuzz too, so works out the same default.
 	[[ -z "${leakOpt}" ]] || containerRun+=("${leakOpt}")
@@ -585,7 +662,11 @@ mapfile -t remoteTargets < <(printf '%s\n' "${REMOTE_UNIX_TARGETS[@]}" | sort -u
 ## Preflight: show the plan with resolved paths, then confirm.
 
 fEcho_Clean
-fEcho_Clean "${APP_NAME} local CI/CD"
+if [[ -n "${handsOff}" ]]; then
+	fEcho_Clean "${APP_NAME} ${handsOff#--}: every check of a plain run; nothing is synced, dogfooded, published or rewritten"
+else
+	fEcho_Clean "${APP_NAME} local CI/CD"
+fi
 fEcho_Clean
 fEcho_Clean "Repo root ...........: ${root}"
 if ((container)); then
@@ -643,7 +724,8 @@ else
 	fEcho_Clean "Dogfood .............: (disabled)"
 fi
 if ((DO_DEMOGIF)) && [[ -f "${DEMOGIF_SCENARIO}" ]]; then
-	fEcho_Clean "Demo gif ............: ${DEMOGIF_CMD[*]} -> ${DEMOGIF_OUT}"
+	if [[ -n "${handsOff}" ]]; then fEcho_Clean "Demo gif ............: ${DEMOGIF_CMD[*]}, compared with ${DEMOGIF_OUT} and left as committed"
+	else fEcho_Clean "Demo gif ............: ${DEMOGIF_CMD[*]} -> ${DEMOGIF_OUT}"; fi
 elif ((DO_DEMOGIF)); then
 	fEcho_Clean "Demo gif ............: (no scenario yet: ${DEMOGIF_SCENARIO})"
 else
@@ -722,12 +804,7 @@ fi
 ## Version stamped into every build this run. Dev builds carry what describe says; a
 ## release injects the clean one. Read after the sync, which can move HEAD. -dirty
 ## because a run that publishes builds source whose commit stage 8 hasn't made yet.
-goVersion="$(git describe --tags --always --dirty --match 'v*' 2>/dev/null || echo 0.0.0)"
-## Build number, as minutes since 2000 in Crockford base32 - the binary does the encoding,
-## this only hands it the seconds. Taken from the commit rather than the clock so the same
-## source builds to the same bytes; a wall-clock stamp would mean nobody, including us,
-## could ever rebuild a published asset to its published checksum.
-goBuildEpoch="$(git log -1 --format=%ct 2>/dev/null || echo 0)"
+goVersion="$(fGoVersion)"; goBuildEpoch="$(fGoBuildEpoch)"
 
 ## --container: stages 1-4 and the demo run in the pinned image, against this same tree. It is
 ## mounted at the same path, so paths in the output and a worktree's .git file still resolve.
@@ -787,10 +864,7 @@ fSection "2/8  Build + regression tests"
 if ((! doTest)); then
 	fEcho_Clean "build + tests ${ranWhere:-skipped}"
 else
-	(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOAMD64=v1 \
-		go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${goVersion#v} -X main.buildEpoch=${goBuildEpoch}" -o "${EXE_NAME}" .) \
-		|| fDie "go build failed"
-	fEcho "OK: go build (v${goVersion#v})"
+	fNativeBuild
 	## The unit tests come before the suite below: they answer in milliseconds and
 	## cover the parsing and matching the suite can only reach through a built binary.
 	fUnitTests
@@ -1001,6 +1075,9 @@ else
 			## is everywhere else.
 			rm -f -- "${demogifTmp:?}"
 			fEcho "WARNING: demo gif differs, but this box has ${demoDrift[*]}, so the committed one stays"
+		elif [[ -n "${handsOff}" ]]; then
+			rm -f -- "${demogifTmp:?}"
+			fEcho "WARNING: demo gif differs; ${handsOff} rewrites no tracked file, so the committed one stays"
 		else
 			## Keep the new original out of tree (GFS-pruned), then land it in the repo.
 			mkdir -p "${DEMOGIF_ARCHIVE_DIR}"
@@ -1118,3 +1195,4 @@ fEcho_Clean
 ##		- 2026-10-19 JC: The leak checks run on every full run, and not under --quick or --no-fuzz. --leakcheck adds them back and --no-leakcheck leaves them out. A plain run with no CodeQL warns and goes on. The run's temp files sit in one folder that goes when it exits, and stage 6 removes the demo's repos once the gif is drawn.
 ##		- 2026-10-21 JC: --no-fuzz skips govulncheck adn pip-audit too, as its help says. They sat outside it from when govulncheck still ran under --quick, which stopped on 2026-10-18.
 ##		- 2026-10-23 JC: The container run gets a name and labels carrying the run's start time and tree, so it can be found and stopped among other projects' containers.
+##		- 2026-10-25 JC: --backlog-run-quick takes over from --gate, which stays as another name for it, and runs the suites against a build of their own, or only the areas named. --merge-gate, with --ci as another name, and --backlog-run-full run every check of a plain run and change nothing: no sync, dogfood or publish, no prompt, and the demo gif stays as committed. --long and --slow are a plain run.
