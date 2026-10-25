@@ -67,7 +67,10 @@
 ##	       --ci            alias for --merge-gate
 ##	                       None of those three dogfoods, publishes, commits, pushes, installs, syncs,
 ##	                       prompts, or rewrites a tracked file. A demo gif that differs is left as committed.
-##	   --install-hook      install the git pre-push hook that runs --gate on each commit pushed to main
+##	   --keep-temp         keep the run's temp folder and containers, and say where they are at the end
+##	   --list              print the steps and the test IDs the other options given would run, and run nothing
+##	   --install-hook      install the git pre-push hook that runs --merge-gate on each commit pushed to main,
+##	                       unless it changes only the paths MERGE_GATE_SKIP in config.bash lists
 ##	   -h, --help          show this help
 ##	- If neither -q/-y nor -m is given, the run prompts once for a commit message
 ##	  (blank = git editor; Ctrl+C aborts the whole run), then finishes unattended.
@@ -120,7 +123,7 @@ fUsage(){ fEcho_Clean "$*" >&2; exit 2; }
 
 ## Parse options.
 assumeYes=0; quiet=0; quick=0; leakcheck=0; leakOpt=""; doSync=1; doLint=1; doTest=1; doFuzz=1; doParity=1; doRemote=1; noRemote=0; cliMessage=""
-gate=0; installHook=0; stageOpts=(); containerOpt=""; gateAreas=(); handsOff=""; aliasNote=""
+gate=0; installHook=0; stageOpts=(); containerOpt=""; gateAreas=(); handsOff=""; aliasNote=""; keepTemp=0; listOnly=0
 while (($#)); do case "$1" in
 	-q|--quiet)               quiet=1; assumeYes=1; shift ;;   ## quiet + unattended; publish runs quiet too
 	-y|--yes)                 assumeYes=1; shift ;;
@@ -150,11 +153,15 @@ while (($#)); do case "$1" in
 		[[ "$1" == --gate ]] && aliasNote="--gate is another name for --backlog-run-quick"
 		gate=1; assumeYes=1; shift
 		while (($#)) && [[ "$1" != -* ]]; do gateAreas+=("$1"); shift; done ;;
+	## pre-push.bash runs --merge-gate on a commit whose cicd.bash has this arm, and --gate on an
+	## older one, so keep the spelling here too.
 	--backlog-run-full|--merge-gate|--ci)
 		[[ -z "${handsOff}" || "${handsOff}" == "${1/#--ci/--merge-gate}" ]] || fUsage "--backlog-run-full and --merge-gate are separate runs; give one."
 		[[ "$1" == --ci ]] && aliasNote="--ci is another name for --merge-gate"
 		handsOff="${1/#--ci/--merge-gate}"; assumeYes=1; shift ;;
 	--install-hook)           installHook=1; shift ;;
+	--keep-temp)              keepTemp=1; shift ;;
+	--list)                   listOnly=1; shift ;;
 	--container|--no-container)
 		[[ -z "${containerOpt}" || "${containerOpt}" == "$1" ]] || fUsage "--container and --no-container are opposites; give one."
 		containerOpt="$1"; shift ;;
@@ -194,6 +201,11 @@ if ((${#stageOpts[@]})); then
 	fi
 fi
 if [[ -n "${containerOpt}" ]] && ((installHook)); then fUsage "${containerOpt} goes with a run, not --install-hook."; fi
+if ((installHook && (keepTemp || listOnly))); then
+	other="--keep-temp"; ((listOnly)) && other="--list"
+	fUsage "${other} goes with a run, not --install-hook."
+fi
+if ((keepTemp && listOnly)); then fUsage "--list runs nothing, so --keep-temp has nothing to keep; give one."; fi
 if [[ "${containerOpt}" == --container && -n "${GITSBY_CICD_IN_CONTAINER:-}" ]]; then fUsage "already in the container; --container would start another."; fi
 ## Asked for, it has to work. By default, a box with no usable docker runs everything here, and says so.
 container=0; containerNote=""
@@ -206,18 +218,40 @@ elif [[ "${CICD_CONTAINER:-0}" == 1 ]]; then
 fi
 if ((installHook)); then exec "${here}/utility/pre-push.bash" --install; fi
 ## Set once the image is there. One left in the caller's environment would say otherwise.
-unset GITSBY_CICD_IMAGE GITSBY_CICD_RUN
+unset GITSBY_CICD_IMAGE GITSBY_CICD_RUN GITSBY_CICD_KEEP_TEMP
+## fImageGo leaves its containers for --keep-temp too, here and in stage 7's harness.
+((! keepTemp)) || export GITSBY_CICD_KEEP_TEMP=1
 ## Checks only: the tree, the box and origin are as they were found. Stage 6 still renders the
 ## gif, and leaves a changed one as committed.
 if [[ -n "${handsOff}" ]]; then doSync=0; DOGFOOD_TARGETS=(); GIT_PUBLISH=(); fi
 [[ -z "${aliasNote}" ]] || { fEcho_Clean; fEcho_Clean "${aliasNote}"; }
 
 ## One scratch folder for the run's temp files, so a run stopped partway leaves none behind.
-## Marked, and checked again before the recursive delete.
-runTmp="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-cicd.XXXXXX")" || fDie "can't make a scratch folder"
-: > "${runTmp}/.gitsby-cicd-run"
-fRemoveRunTmp(){ if [[ "${runTmp##*/}" == gitsby-cicd.* && -f "${runTmp}/.gitsby-cicd-run" ]]; then rm -rf -- "${runTmp:?}"; fi ;}
-trap fRemoveRunTmp EXIT
+## Marked, and checked again before the recursive delete. --keep-temp keeps it, and the files the
+## steps would have removed from it, and says where it is and which containers were kept. --list
+## makes none.
+runTmp=""
+fRunTmpDone(){
+	local kept=""
+	[[ -n "${runTmp}" ]] || return 0
+	if ((keepTemp)); then
+		fEcho_Clean; fEcho_Clean "Kept the temp folder: ${runTmp}"
+		if ((container)); then
+			kept="$(docker ps -a --filter "label=${APP_NAME}.cicd.run=${stamp}" --format '{{.Names}}' 2>/dev/null | tr '\n' ' ' || true)"
+			[[ -z "${kept// /}" ]] || fEcho_Clean "Kept the containers: ${kept% }. Remove them with: docker rm ${kept% }"
+		fi
+		fEcho_Clean
+	elif [[ "${runTmp##*/}" == gitsby-cicd.* && -f "${runTmp}/.gitsby-cicd-run" ]]; then
+		rm -rf -- "${runTmp:?}"
+	fi
+}
+## A file a step made in the run's folder, once the step is done with it.
+fTmpDone(){ ((keepTemp)) || rm -f -- "$@" ;}
+if ((! listOnly)); then
+	runTmp="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-cicd.XXXXXX")" || fDie "can't make a scratch folder"
+	: > "${runTmp}/.gitsby-cicd-run"
+	trap fRunTmpDone EXIT
+fi
 
 ## Brief beat after each stage header so the cheap fast stages stay readable.
 ## Off for unattended runs (-q/-y) where nobody is watching.
@@ -329,10 +363,10 @@ fStageLint(){
 		## cache goes to a folder of our own, since py_compile writes one beside each file.
 		pyCache="$(mktemp -d "${runTmp}/pycache.XXXXXX")"
 		if ! PYTHONPYCACHEPREFIX="${pyCache}" python3 -m py_compile "${PY_LINT_FILES[@]}"; then
-			rm -rf -- "${pyCache:?}"
+			((keepTemp)) || rm -rf -- "${pyCache:?}"
 			fDie "py_compile"
 		fi
-		rm -rf -- "${pyCache:?}"
+		((keepTemp)) || rm -rf -- "${pyCache:?}"
 		fEcho "OK: py_compile (${#PY_LINT_FILES[@]} file(s))"
 		## Only the rules for references held too long, or never let go. --isolated, so a
 		## stray ruff config can't widen or narrow them.
@@ -440,10 +474,10 @@ fUnitTests(){
 	fGoTestLines "${log}" "${root}/${GO_MODULE_DIR}"
 	if ((rc)); then
 		grep -vE '^ *(=== (RUN|PAUSE|CONT|NAME)|--- (PASS|SKIP))' "${log}" || true
-		rm -f -- "${log:?}"
+		fTmpDone "${log:?}"
 		fDie "go test failures"
 	fi
-	rm -f -- "${log:?}"
+	fTmpDone "${log:?}"
 	fEcho "OK: go test"
 }
 ## The version and build number stamped into this run's builds.
@@ -474,10 +508,10 @@ fLeakCheck(){
 	fGoTestLines "${log}" "${root}/${GO_MODULE_DIR}"
 	if ((rc)) || ! grep -q '^--- PASS: TestSoak' "${log}"; then
 		grep -vE '^ *(=== (RUN|PAUSE|CONT|NAME)|--- (PASS|SKIP))' "${log}" || true
-		rm -f -- "${log:?}"
+		fTmpDone "${log:?}"
 		fDie "soak test failed; heap profiles in ${soakDir}"
 	fi
-	rm -f -- "${log:?}"
+	fTmpDone "${log:?}"
 	sed 's/^/  /' "${soakDir}/soak.txt"
 	fEcho "OK: soak test"
 	## Only ever the files the test writes, so no recursive delete.
@@ -555,7 +589,7 @@ fCodeQL(){
 	sarifs+=("${cqDir}/python.sarif")
 	((rc)) && tail -n 30 "${log}"
 	## Made by mktemp above, and checked again here, since this one is recursive.
-	if [[ "${cqWork##*/}" == gitsby-codeql.* && -f "${log}" ]]; then rm -rf -- "${cqWork:?}"; fi
+	if ((! keepTemp)) && [[ "${cqWork##*/}" == gitsby-codeql.* && -f "${log}" ]]; then rm -rf -- "${cqWork:?}"; fi
 	((rc == 0)) || fDie "CodeQL didn't finish (above)"
 	for old in ${CODEQL_IGNORE[@]+"${CODEQL_IGNORE[@]}"}; do cqIgnore+=(--ignore "${old}"); done
 	python3 "${here}/utility/codeql-findings.py" "${cqIgnore[@]}" "${sarifs[@]}" || rc=$?
@@ -617,13 +651,23 @@ fi
 
 fCpuPlan(){ fEcho_Clean "Cores ...............: ${BUILD_JOBS} of ${cpuCores}, ${HEAVY_JOBS} for the hard steps (load ${cpuLoad:-unknown}), at low priority" ;}
 
+## --list: $1 the step, then what test-id.bash --list takes. One line per test, "<id> <label>".
+fListTests(){
+	local title="$1" lines=""
+	shift
+	lines="$("${here}/utility/test-id.bash" --list --root "${root}" "$@")" || fDie "can't list the tests in $*"
+	fEcho_Clean
+	fEcho_Clean "${title}: $(grep -c . <<< "${lines}" || true) test(s)"
+	[[ -z "${lines}" ]] || sed 's/^/  /' <<< "${lines}"
+}
+
 ## Runs cicd.bash in the image with the args given, against this same tree. It is mounted at the
 ## same path, so paths in the output and a worktree's .git file still resolve. The Go caches live
 ## in a named volume, or every run would download and build from nothing. The demo's fonts are in
 ## the image, so its gif matches no matter what this box has installed.
 fContainerRun(){
 	local oldImage gitCommon containerName
-	local -a containerMounts
+	local -a containerMounts innerArgs=("$@") rmOpt=(--rm)
 	fSection "Container"
 	if docker image inspect "${containerImage}" >/dev/null 2>&1; then
 		fEcho_Clean "image ${containerImage}"
@@ -641,21 +685,27 @@ fContainerRun(){
 	gitCommon="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
 	if [[ -n "${gitCommon}" && "${gitCommon}" != "${root}/"* ]]; then containerMounts+=(-v "${gitCommon}:${gitCommon}"); fi
 	## The gif's out-of-tree archive, at the path the config spells, through any symlink on the way.
-	if ((DO_DEMOGIF && ! gate)); then
+	## A run that leaves the gif as committed never writes there.
+	if ((DO_DEMOGIF && ! gate)) && [[ -z "${handsOff}" ]]; then
 		mkdir -p "${DEMOGIF_ARCHIVE_DIR}" || fDie "can't make ${DEMOGIF_ARCHIVE_DIR}"
 		containerMounts+=(-v "$(realpath -m -- "${DEMOGIF_ARCHIVE_DIR}"):$(realpath -s -m -- "${DEMOGIF_ARCHIVE_DIR}")")
 	fi
 	## Named for the run, so it can be found and stopped among other projects' containers.
 	## The pid keeps two runs started in the same second apart.
 	containerName="${APP_NAME}-cicd-${stamp}-$$"
-	fEcho_Clean "runs cicd.bash $*"
+	## The run in there puts its own temp folder inside this one, so both are kept on the box.
+	if ((keepTemp)); then
+		rmOpt=(); innerArgs+=(--keep-temp)
+		containerMounts+=(-v "${runTmp}:${runTmp}" -e "TMPDIR=${runTmp}")
+	fi
+	fEcho_Clean "runs cicd.bash ${innerArgs[*]}"
 	fEcho_Clean "as container ${containerName}"
 	## nice on the client doesn't reach in there, so the quota and the weight do, and the run
 	## in there renices itself. It works out its counts from this box's cores and load.
-	docker run --rm --init --name "${containerName}" --label "${APP_NAME}.cicd.run=${stamp}" --label "${APP_NAME}.cicd.tree=${root}" \
+	docker run ${rmOpt[@]+"${rmOpt[@]}"} --init --name "${containerName}" --label "${APP_NAME}.cicd.run=${stamp}" --label "${APP_NAME}.cicd.tree=${root}" \
 		--cpus "${BUILD_JOBS}" --cpu-shares 256 -e "GITSBY_CICD_CPUS=${cpuCores}" \
 		--user "$(id -u):$(id -g)" "${containerMounts[@]}" -w "${root}" \
-		"${containerImage}" bash "${root}/cicd/cicd.bash" "$@" \
+		"${containerImage}" bash "${root}/cicd/cicd.bash" "${innerArgs[@]}" \
 		|| fDie "the run in the container failed (above)"
 	fEcho "OK: the container run"
 }
@@ -675,6 +725,24 @@ if ((gate)); then
 	fCpuPlan
 	if ((container)); then
 		fEcho_Clean "Container ...........: the quick run in ${containerImage}"
+	fi
+	if ((listOnly)); then
+		[[ -z "${containerNote}" ]] || fEcho "${containerNote}"
+		gateStep=0
+		for a in "${gateRun[@]}"; do
+			gateStep=$((gateStep + 1))
+			case "${a}" in
+				lint)   fEcho_Clean; fEcho_Clean "Quick ${gateStep}/${#gateRun[@]}  ${gateTitle[${a}]}: no test IDs" ;;
+				unit)   fListTests "Quick ${gateStep}/${#gateRun[@]}  ${gateTitle[${a}]}" go ;;
+				suite)  fListTests "Quick ${gateStep}/${#gateRun[@]}  ${gateTitle[${a}]}" "${TEST_CMD[0]}" ;;
+				fuzz)   fListTests "Quick ${gateStep}/${#gateRun[@]}  ${gateTitle[${a}]}" "${FUZZ_CMD[0]}" "${SPAWN_COUNT_CMD[0]}" ;;
+				parity) fListTests "Quick ${gateStep}/${#gateRun[@]}  ${gateTitle[${a}]}" "${PARITY_CMD[0]}" ;;
+			esac
+		done
+		fEcho_Clean
+		exit 0
+	fi
+	if ((container)); then
 		## By its own name, so the alias line isn't said twice. The areas stay as given.
 		gateInner=(--backlog-run-quick ${gateAreas[@]+"${gateAreas[@]}"}); ((quiet)) && gateInner=(-q "${gateInner[@]}")
 		fContainerRun "${gateInner[@]}"
@@ -816,6 +884,26 @@ fEcho_Clean
 fEcho_Clean "Fail-fast: any error aborts before the next stage."
 fEcho_Clean
 
+## The plan above is the steps. What follows is the test IDs in each one that runs.
+if ((listOnly)); then
+	if ((doTest)); then
+		fListTests "2/8  Go unit tests" go
+		((quick)) || [[ ! -f "${TEST_CMD[0]:-}" ]] || fListTests "2/8  Regression tests" "${TEST_CMD[0]}"
+	fi
+	if ((doFuzz)); then
+		[[ ! -f "${FUZZ_CMD[0]:-}" ]] || fListTests "3/8  Fuzz + security" "${FUZZ_CMD[0]}"
+		((quick)) || fListTests "3/8  Native fuzz targets" gofuzz
+		[[ ! -f "${SPAWN_COUNT_CMD[0]:-}" ]] || fListTests "3/8  Spawn counts" "${SPAWN_COUNT_CMD[0]}"
+	fi
+	((! doParity)) || [[ ! -f "${PARITY_CMD[0]:-}" ]] || fListTests "4/8  Backwards compatibility" "${PARITY_CMD[0]}"
+	if ((doRemote)) && [[ -f "${REMOTE_TEST_CMD[0]:-}" ]]; then
+		fEcho_Clean
+		fEcho_Clean "7/8  Remote tests: the Go unit tests above on every box, and the regression tests on ${REMOTE_MAC_HOSTS[*]%%:*} ${REMOTE_UNIX_HOSTS[*]%%:*}"
+	fi
+	fEcho_Clean
+	exit 0
+fi
+
 if ((! assumeYes)); then
 	## Capture the commit message up front so the run can finish unattended. This
 	## is the natural place to bail on the common (publish) path - Ctrl+C here
@@ -836,7 +924,7 @@ if [[ -n "${LINT_LOG_DIR:-}" && -z "${GITSBY_CICD_IN_CONTAINER:-}" ]] && mkdir -
 	## Wait for tee to drain on exit, else the shell prompt returns mid-flush and
 	## the last output lands after it (looks like the prompt "came back").
 	teePid=$!
-	trap 'fRemoveRunTmp; exec 1>&- 2>&-; wait "${teePid}" 2>/dev/null' EXIT
+	trap 'fRunTmpDone; exec 1>&- 2>&-; wait "${teePid}" 2>/dev/null' EXIT
 fi
 
 ## Stage 0: remote sync. The publish stage pulls too, but that is after everything
@@ -973,7 +1061,7 @@ else
 	## Its advice to hash the pins is for a pip install, which this isn't.
 	pip-audit -r "${pyReq}" --no-deps --disable-pip --progress-spinner off "${pyAuditArgs[@]}" 2>&1 \
 		| { grep -v '^WARNING:pip_audit._cli:' || true; } || pyRc=$?
-	rm -f -- "${pyReq:?}"
+	fTmpDone "${pyReq:?}"
 	if ((pyRc)); then
 		[[ -n "${GITSBY_CICD_IN_CONTAINER:-}" ]] && fDie "pip-audit findings"
 		fDie "pip-audit findings in this box's libraries; the container pins its own in cicd/container/requirements.txt"
@@ -1232,3 +1320,4 @@ fEcho_Clean
 ##		- 2026-10-25 JC: --backlog-run-quick runs in the image as well, where docker works, and --no-container keeps it here. --container goes with it now too.
 ##		- 2026-10-25 JC: Dogfood's builds, stage 7's, and the cross-builds --quick does there come from the image's Go when the run uses the image. Copying them into place and the tests on the other boxes stay here.
 ##		- 2026-10-25 JC: Half the cores, rounded down, or a quarter on a busy box, worked out again before each stage, and a quarter for go test -race, the native fuzzing, the soak test and CodeQL. The run lowers its own priority, the container gets the count as its quota at a low weight, and the plan says what it got.
+##		- 2026-10-25 JC: --list prints the plan and the test IDs in each step that runs, and runs nothing. --keep-temp keeps the run's temp folder, the files its steps leave there and its containers, and says where they are at the end. The run in the image puts its folder inside this one. The pre-push hook runs --merge-gate.

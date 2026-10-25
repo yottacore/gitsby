@@ -318,7 +318,9 @@ cicd/cicd.bash -y -m "message"  # unattended
 cicd/cicd.bash --no-container   # stages 1-4, the demo gif and the builds on this box, not in the pinned image
 cicd/cicd.bash --backlog-run-quick   # lint, the unit tests and the suites, in a few minutes; name areas to run fewer, and --gate is another name
 cicd/cicd.bash --merge-gate     # every check a plain run does, changing nothing: no sync, dogfood, publish or new gif; --ci is another name
-cicd/cicd.bash --install-hook   # run --gate on the pushed commit before every push to main
+cicd/cicd.bash --list           # the steps and test IDs a run with the other options would have, running nothing
+cicd/cicd.bash --keep-temp      # keep the run's temp folder and containers, and say where they are
+cicd/cicd.bash --install-hook   # run --merge-gate on the pushed commit before every push to main, unless it changes only docs
 ~~~
 
 With the hook installed, `git push --no-verify` skips the gate for one push.

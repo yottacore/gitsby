@@ -14,7 +14,7 @@
 
 fImageGo(){
 	local dir="$1" outDir="$2"
-	local -a vars=() dockerVars=() mounts=()
+	local -a vars=() dockerVars=() mounts=() rmOpt=(--rm)
 	shift 2
 	while (($#)) && [[ "$1" =~ ^[A-Z_][A-Z0-9_]*= ]]; do vars+=("$1"); dockerVars+=(-e "$1"); shift; done
 	if [[ -z "${GITSBY_CICD_IMAGE:-}" ]]; then
@@ -23,7 +23,9 @@ fImageGo(){
 	fi
 	mounts=(-v "${root:?}:${root}" -v "${APP_NAME:?}-cicd-cache:/cache" --tmpfs "/tmp:rw,exec,mode=1777")
 	[[ "${outDir}" == "${root}" || "${outDir}" == "${root}/"* ]] || mounts+=(-v "${outDir}:${outDir}")
-	docker run --rm --init --label "${APP_NAME}.cicd.run=${GITSBY_CICD_RUN:-}" --label "${APP_NAME}.cicd.tree=${root}" \
+	## cicd.bash --keep-temp sets it, and lists what it kept by the run label.
+	[[ -z "${GITSBY_CICD_KEEP_TEMP:-}" ]] || rmOpt=()
+	docker run ${rmOpt[@]+"${rmOpt[@]}"} --init --label "${APP_NAME}.cicd.run=${GITSBY_CICD_RUN:-}" --label "${APP_NAME}.cicd.tree=${root}" \
 		--cpus "${BUILD_JOBS:-1}" --cpu-shares 256 \
 		--user "$(id -u):$(id -g)" "${mounts[@]}" ${dockerVars[@]+"${dockerVars[@]}"} -w "${dir}" \
 		"${GITSBY_CICD_IMAGE}" nice -n 19 go "$@"
@@ -33,3 +35,4 @@ fImageGo(){
 ##	History:
 ##		- 2026-10-25 JC: Created. Dogfood's and stage 7's builds come from the image's Go, where the run uses the image.
 ##		- 2026-10-25 JC: The container takes the caller's core budget as its quota, at a low weight, and go runs niced in it.
+##		- 2026-10-25 JC: GITSBY_CICD_KEEP_TEMP keeps the container after the build.

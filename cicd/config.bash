@@ -51,6 +51,11 @@ GO_RELEASE_TOOLCHAIN="go1.26.2"
 ## Stages 1-4 and the demo run in the image from cicd/container/Dockerfile unless this is 0
 ## or the run says --no-container. A box without a working docker runs them here, with a warning.
 CICD_CONTAINER=1
+## The pre-push hook's --merge-gate is skipped for a push to main that changes only these: docs,
+## and files no build or check reads. Read from the commit being pushed, so a change to this list
+## is itself gated. A pattern ending in / is a folder at the top of the repo; any other is a glob
+## over the whole path, where * crosses folders.
+MERGE_GATE_SKIP=('*.md' 'project/' 'reference/' 'assets/logo.png')
 
 ## The versions the Go tools were at when this pipeline last gated a green run. Recorded,
 ## compared and warned about - never installed and never enforced. Which version passed
@@ -379,3 +384,4 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-10-21 JC: Pillow 13.0.0, which fixes the advisories against 12.3.0. --no-fuzz skips pip-audit too.
 ##		- 2026-10-25 JC: Stage 7 tries b29w before vm925w, adds vmKt6m beside b26, and keeps each box's copy of the tree under its temp root. REMOTE_MAC_NEEDS.
 ##		- 2026-10-25 JC: BUILD_JOBS rounds down, and drops to a quarter on a busy box. HEAVY_JOBS for the hard steps, and fLowPriority.
+##		- 2026-10-25 JC: MERGE_GATE_SKIP, the paths a push to main may change and still skip the pre-push hook's --merge-gate.

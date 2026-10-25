@@ -300,6 +300,8 @@ fMakeGateFixture(){
 	: > "${gateDir}/install.bash"; : > "${gateDir}/install.ps1"; : > "${gateDir}/cicd/utility/demo/gen-demo-gif.py"
 	: > "${gateDir}/cicd/utility/codeql-findings.py"; : > "${gateDir}/src-go/go.mod"; : > "${gateDir}/src-go/main.go"
 	: > "${gateDir}/cicd/utility/run-latest.ps1"
+	## --list reads the suites through it.
+	cp "${root}/cicd/utility/test-id.bash" "${gateDir}/cicd/utility/"
 	cp "${root}/PSScriptAnalyzerSettings.psd1" "${gateDir}/"
 	: > "${gateDir}/cicd/utility/demo/demo-scenario.toml"
 	echo "# Fixture" > "${gateDir}/README.md"
@@ -565,6 +567,61 @@ fGateRunTmp(){
 	kill -TERM "${pid}"; wait "${pid}" 2>/dev/null || true
 	rm -f -- "${gateFail:?}/hang"
 	[[ -z "$(ls -A "${t}")" ]]
+}
+## --list prints the plan and the IDs in each step that runs, from the suites and the Go tests,
+## and runs nothing: no tool but docker's probe, and no temp folder. The suite's check and the Go
+## test are written so this file doesn't hold them as tests of its own.
+fGateList(){
+	local t="${gateDir}/tmp-list" rc=0
+	rm -rf -- "${t:?}"; mkdir -p "${t}"
+	printf ': %s "[%s] %s"\n' fAssert AAAAAAC 'a listed check' >> "${gateDir}/cicd/test.bash"
+	printf 'package main\n\nfunc TestListed(t *testing.T) { // [%s]\n}\n' AAAAAAD > "${gateDir}/src-go/listed_test.go"
+	TMPDIR="${t}" fGateSays 0 '^2/8  Regression tests: 1 test\(s\)$' --list \
+		&& grep -qxF '  AAAAAAC a listed check' "${gateOut}" && grep -qxF '2/8  Go unit tests: 1 test(s)' "${gateOut}" \
+		&& grep -qxF '  AAAAAAD TestListed' "${gateOut}" && grep -qF 'Remote tests ........: ' "${gateOut}" \
+		&& ! grep -qv '^docker info' "${gateCalls}" && [[ -z "$(ls -A "${t}")" ]] || rc=1
+	fGateSays 0 '^4/8  Backwards compatibility: 0 test\(s\)$' --quick --list && ! grep -q 'Regression tests' "${gateOut}" || rc=1
+	fGateSays 0 '^Quick 1/1  Regression tests: 1 test\(s\)$' --backlog-run-quick suite --list \
+		&& grep -qxF '  AAAAAAC a listed check' "${gateOut}" && ! grep -qv '^docker info' "${gateCalls}" || rc=1
+	rm -f -- "${gateDir:?}/src-go/listed_test.go"; rm -rf -- "${t:?}"
+	fGateStub "${gateDir}/cicd/test.bash" test
+	((rc == 0))
+}
+## --keep-temp keeps the run's folder and the step's files in it, passed or failed, and says where.
+fGateKeepTemp(){
+	local t="${gateDir}/tmp-keep" kept="" rc=0
+	rm -rf -- "${t:?}"; mkdir -p "${t}"
+	TMPDIR="${t}" fGateSays 0 '^Kept the temp folder: ' --no-container --backlog-run-quick unit --keep-temp || rc=1
+	kept="$(sed -n 's/^Kept the temp folder: //p' "${gateOut}")"
+	[[ "${kept}" == "${t}"/gitsby-cicd.* && -d "${kept}" && -n "$(compgen -G "${kept}/gotest.*")" ]] || rc=1
+	: > "${gateFail}/go-test"
+	TMPDIR="${t}" fGateSays 1 '^Kept the temp folder: ' --no-container --backlog-run-quick unit --keep-temp || rc=1
+	rm -f -- "${gateFail:?}/go-test"
+	[[ "$(compgen -G "${t}/gitsby-cicd.*" | wc -l)" == 2 ]] || rc=1
+	rm -rf -- "${t:?}"
+	((rc == 0))
+}
+## In the image it keeps the container, puts the inner run's folder inside its own, and asks
+## docker what it kept. The image's builds keep theirs too. Without it, all go as before.
+fGateKeepTempImage(){
+	local t="${gateDir}/tmp-keep" rc=0
+	rm -rf -- "${t:?}"; mkdir -p "${t}"
+	TMPDIR="${t}" fGateSays 0 '^Kept the temp folder: ' --backlog-run-quick --keep-temp \
+		&& fGateCalled "^docker run --init --name gitsby-cicd-[^ ]+ .* -v ${t}/gitsby-cicd\.[^ :]+:${t}/gitsby-cicd\.[^ ]+ -e TMPDIR=${t}/gitsby-cicd\.[^ ]+ .* --backlog-run-quick --keep-temp\$" \
+		&& fGateCalled '^docker ps -a --filter label=gitsby\.cicd\.run=[0-9]{8}-[0-9]{6} ' || rc=1
+	TMPDIR="${t}" fGateSays 0 'CI/CD: done\.' -y --quick --no-sync --no-publish --no-dogfood --keep-temp \
+		&& fGateCalled '^docker run --init --label gitsby\.cicd\.run=[0-9]{8}-[0-9]{6} .* go build ' && ! fGateCalled '^docker run --rm' || rc=1
+	rm -rf -- "${t:?}"; mkdir -p "${t}"
+	TMPDIR="${t}" fGateSays 0 'backlog quick run: passed\.' --backlog-run-quick && fGateCalled '^docker run --rm --init --name ' \
+		&& ! fGateCalled 'keep-temp' && ! fGateCalled '^docker ps' && ! grep -q '^Kept the' "${gateOut}" && [[ -z "$(ls -A "${t}")" ]] || rc=1
+	rm -rf -- "${t:?}"
+	((rc == 0))
+}
+## Neither goes with --install-hook, and --list keeps nothing. --help names both.
+fGateKeepListRefuse(){
+	fGateSays 2 'nothing to keep' --list --keep-temp && fGateSays 2 '--keep-temp goes with a run, not --install-hook' --install-hook --keep-temp \
+		&& fGateSays 2 '--list goes with a run, not --install-hook' --list --install-hook \
+		&& fGateSays 0 '^ +--keep-temp ' --help && grep -qE -- '^ +--list ' "${gateOut}"
 }
 ## Stage 6 takes the scenario's world away once the gif is drawn, through the script that built it.
 fGateDemoRemoved(){
@@ -5929,6 +5986,7 @@ EOF
 		fAssert "[EpsVDHy] --gate and --install-hook together are refused"  fGateSays 2 'separate runs' --gate --install-hook
 		## pre-push.bash tells a commit that has the gate by this text in its cicd.bash.
 		fAssert "[Et6FC3t] the gate's option arm keeps the text the hook looks for"  grep -qF -- '--gate)' "${root}/cicd/cicd.bash"
+		fAssert "[EtkvcBS] and so does --merge-gate's"  grep -qF -- '|--merge-gate|' "${root}/cicd/cicd.bash"
 		fAssert "[EtiiN6u] --backlog-run-quick runs every area, the suites included, and nothing that changes anything"  fGateBacklogQuick
 		fAssert "[EtiiN78] and the areas named, alone and in the engine's order"  fGateBacklogAreas
 		fAssert "[EtiiN7K] and refuses an area it doesn't have, naming the ones it does" \
@@ -5965,6 +6023,10 @@ EOF
 		fAssert "[Et9PJs6] cicd.bash --help lists --leakcheck and --no-leakcheck" \
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--leakcheck ' <<< \"\$out\" && grep -qE -- '^ +--no-leakcheck ' <<< \"\$out\""
 		fAssert "[EtBTWt7] a run's temp files are gone once it ends, stopped or not"  fGateRunTmp
+		fAssert "[Etkvc9W] --list prints the steps and each one's test IDs, and runs nothing"  fGateList
+		fAssert "[Etkvc9j] --keep-temp keeps the run's temp folder, passed or failed, and says where"  fGateKeepTemp
+		fAssert "[Etkvc9w] and keeps the containers, with the inner run's folder inside its own"  fGateKeepTempImage
+		fAssert "[EtkvcAA] --keep-temp and --list refuse --install-hook and each other"  fGateKeepListRefuse
 		fAssert "[EtBTWtL] stage 6 removes the demo's repos once the gif is drawn"  fGateDemoRemoved
 		fAssert "[Et9ZcLy] --leakcheck runs CodeQL over a copy of the module with its dependencies vendored in, once per release OS, and keeps the reports"  fGateCodeQL
 		fAssert "[Et9ZcME] a CodeQL finding stops the run"  fGateCodeQLStops codeql-findings 'CodeQL findings; the reports are in .*/codeql_[0-9]+-[0-9]+ \]'
@@ -6395,6 +6457,43 @@ EOF
 		fAssert "[Epsd07Q] a gate worktree without its .git file is refused and left as it was" \
 			bash -c "[[ '${hookRc}' != 0 && -n '${hookSnapSum}' && '${hookSnapSum}' == '${hookSnapAfter}' && ! -s '${hookLog}' ]] && grep -qE 'is not this repo.s gate worktree' '${hookOut}'"
 		if [[ -f "${hookDir}/gate-dotgit-aside" && ! -e "${hookSnap}/.git" ]]; then mv "${hookDir}/gate-dotgit-aside" "${hookSnap}/.git"; fi
+
+		## A commit whose cicd.bash has the --merge-gate arm gets it, and its config.bash lists
+		## what a push may change and still skip it. Both are changes of their own, so gated.
+		git -C "${hookRepo}" checkout --quiet -b mg b16
+		mkdir -p "${hookRepo}/docs"
+		sed -i 's/--gate) ;;/--gate) ;; --backlog-run-full|--merge-gate|--ci) ;;/' "${hookRepo}/cicd/cicd.bash"
+		printf '%s\n' "MERGE_GATE_SKIP=('*.md' 'docs/')" > "${hookRepo}/cicd/config.bash"
+		git -C "${hookRepo}" add cicd/cicd.bash cicd/config.bash
+		git -C "${hookRepo}" commit --quiet -m mg
+		git -C "${hookRepo}" checkout --quiet main
+		hookRc=0; fHookPush "${hookRepo}" origin +mg:refs/heads/main || hookRc=$?
+		fAssert "[EtkvcAN] a commit whose cicd.bash has --merge-gate is gated with it" \
+			bash -c "[[ '${hookRc}' == 0 && \"\$(wc -l < '${hookLog}')\" == 1 ]] && grep -qF '${hookSnap}|--merge-gate|b16|' '${hookLog}'"
+		git -C "${hookRepo}" checkout --quiet mg
+		echo docs > "${hookRepo}/README.md"; echo docs > "${hookRepo}/docs/notes.txt"; echo docs > "${hookRepo}/sub/notes.md"
+		git -C "${hookRepo}" add README.md docs/notes.txt sub/notes.md
+		git -C "${hookRepo}" commit --quiet -m docs
+		hookRc=0; fHookPush "${hookRepo}" origin mg:refs/heads/main || hookRc=$?
+		fAssert "[EtkvcAb] a push to main that changes only the paths its config.bash lists isn't gated, and says so" \
+			bash -c "[[ '${hookRc}' == 0 && ! -s '${hookLog}' ]] && grep -qF 'changes only paths its cicd/config.bash lists in MERGE_GATE_SKIP' '${hookOut}' && [[ \"\$(git -C '${hookRepo}' ls-remote origin refs/heads/main | cut -f1)\" == \"\$(git -C '${hookRepo}' rev-parse mg)\" ]]"
+		echo docs2 > "${hookRepo}/README.md"; echo mg2 > "${hookRepo}/marker.txt"
+		git -C "${hookRepo}" commit --quiet -m mixed -- README.md marker.txt
+		hookRc=0; fHookPush "${hookRepo}" origin mg:refs/heads/main || hookRc=$?
+		fAssert "[EtkvcAo] and one that changes anything else too is gated" \
+			bash -c "[[ '${hookRc}' == 0 ]] && grep -qF '${hookSnap}|--merge-gate|mg2|' '${hookLog}'"
+		## The skip list in the working tree counts for nothing; the pushed commit's does.
+		echo docs3 > "${hookRepo}/README.md"; echo mg3 > "${hookRepo}/marker.txt"
+		git -C "${hookRepo}" commit --quiet -m mg3 -- README.md marker.txt
+		printf '%s\n' "MERGE_GATE_SKIP=('*')" > "${hookRepo}/cicd/config.bash"
+		hookRc=0; fHookPush "${hookRepo}" origin mg:refs/heads/main || hookRc=$?
+		printf '%s\n' "MERGE_GATE_SKIP=('*.md' 'docs/')" > "${hookRepo}/cicd/config.bash"
+		git -C "${hookRepo}" checkout --quiet main
+		fAssert "[EtkvcB1] the skip list is read from the pushed commit, not the working tree" \
+			bash -c "[[ '${hookRc}' == 0 ]] && grep -qF '${hookSnap}|--merge-gate|mg3|' '${hookLog}'"
+		hookRc=0; fHookPush "${hookRepo}" origin +b16:refs/heads/main || hookRc=$?
+		fAssert "[EtkvcBE] a commit from before --merge-gate keeps the --gate it had" \
+			bash -c "[[ '${hookRc}' == 0 ]] && grep -qF '${hookSnap}|--gate|b16|' '${hookLog}' && ! grep -qF -- '--merge-gate' '${hookLog}'"
 
 		## The Mac and Windows harness, against an ssh that answers per host after printing what
 		## the Mac's login prints, a lock that refuses a box when a marker says it is held, and a
@@ -7544,3 +7643,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261025 JC: --backlog-run-quick goes into the image by default, takes --container and --no-container, and falls back here without docker. The checks of what the gate runs here say --no-container, and [EsJgejN] is off, since --container now goes with it. 1688 -> 1692.
 ##		- 20261025 JC: Stage 7 harness: b29w before vm925w, a VM through the VM state helper, each box's copy under its temp root, a Mac's tool check, and SKIP for a skipped box, in its line and the summary. The checks that read the Windows order or a skip line read the new ones. 1700 -> 1709.
 ##		- 20261025 JC: The core budget, the hard steps on the quarter, low priority, the container's quota, and each box's budget in stage 7. The image-Go checks want go niced, and the remote suite checks want `$lo`. 1709 -> 1714.
+##		- 20261025 JC: --list and --keep-temp, the hook's --merge-gate on a commit that has it and --gate on one that doesn't, and MERGE_GATE_SKIP read from the pushed commit. The gate fixture has test-id.bash. 1715 -> 1725.

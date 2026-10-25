@@ -16,8 +16,12 @@
 ##	Syntax:
 ##		test-id.bash [--at DATE]
 ##		test-id.bash --check [-q] [--root DIR]
+##		test-id.bash --list [--root DIR] WHAT...
 ##		  --at DATE   mint for DATE instead of now, in any form 'date -d' reads
 ##		  --check     fail on a test with no ID, or an ID used twice
+##		  --list      print "<id> <label>" for each test in WHAT, once each: a suite script's
+##		              path from the repo root, 'go' for the Go tests and fuzz targets, or
+##		              'gofuzz' for the fuzz targets alone
 ##		  -q          print findings only
 ##		  --root DIR  tree to check (default: the repo this script sits in)
 ##	Exit: 0 clean, 1 findings, 2 bad usage.
@@ -36,16 +40,18 @@ set -Eeuo pipefail
 
 meDir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd -- "${meDir}/../.." && pwd)"
-at=""; check=0; quiet=0
+at=""; check=0; quiet=0; list=0; listWhat=()
 suites=(cicd/test.bash cicd/fuzz.bash cicd/parity.bash cicd/utility/spawn-count.bash)
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--at)      at="${2:?--at needs a date}"; shift ;;
 		--check)   check=1 ;;
+		--list)    list=1 ;;
 		-q)        quiet=1 ;;
 		--root)    root="${2:?--root needs a directory}"; shift ;;
 		-h|--help) grep -E '^##' "$0" | sed 's/^##\t\?//'; exit 0 ;;
-		*)         echo "Unknown option: $1 (try --help)" >&2; exit 2 ;;
+		-*)        echo "Unknown option: $1 (try --help)" >&2; exit 2 ;;
+		*)         ((list)) || { echo "Unknown option: $1 (try --help)" >&2; exit 2; }; listWhat+=("$1") ;;
 	esac
 	shift
 done
@@ -58,7 +64,10 @@ fBase62(){
 	printf '%s\n' "${out:-0}"
 }
 
-if ((! check)); then
+if ((check && list)); then echo "test-id: --check and --list are separate runs; give one." >&2; exit 2; fi
+if ((list && ! ${#listWhat[@]})); then echo "test-id: --list needs a suite, 'go' or 'gofuzz'" >&2; exit 2; fi
+
+if ((! check && ! list)); then
 	ms=""
 	## Now from the shell rather than date, whose %N is GNU-only. BSD date prints it literally.
 	if [[ -n "${at}" ]]; then ms="$(date -u -d "${at}" +%s%3N)" || exit 2
@@ -71,13 +80,35 @@ if ((! check)); then
 	exit 0
 fi
 
-## One line per test: "<id or -> <kind> <file>:<line>". Kind is ok or fail for the two halves
-## of a hand-written pair, and check for everything else. A label that is only the caller's
-## $desc or $label is a helper passing one through, not a test of its own.
+## One line per test: "<id or -> <kind> <file>:<line>", then a tab and its label. Kind is ok or
+## fail for the two halves of a hand-written pair, and check for everything else. A label that
+## is only the caller's $desc or $label is a helper passing one through, not a test of its own.
+## Takes what --list does, or with nothing, every suite and the Go tests.
 fSites(){
-	local f
-	for f in "${suites[@]}"; do
-		[[ -f "${root}/${f}" ]] || continue
+	local f goPat=""
+	local -a what=("$@")
+	((${#what[@]})) || what=("${suites[@]}" go)
+	for f in "${what[@]}"; do
+		case "${f}" in
+			go)     goPat='^func (Test|Fuzz)[A-Za-z0-9_]*[(]' ;;
+			gofuzz) goPat='^func Fuzz[A-Za-z0-9_]*[(]' ;;
+			*)      goPat="" ;;
+		esac
+		if [[ -n "${goPat}" ]]; then
+			[[ -d "${root}/src-go" ]] || continue
+			while IFS= read -r f; do
+				awk -v file="${f#"${root}/"}" -v pat="${goPat}" '
+					$0 ~ pat {
+						id = "-"
+						if (match($0, /\/\/ \[[0-9A-Za-z]+\][[:space:]]*$/)) { id = substr($0, RSTART + 4); sub(/\].*/, "", id) }
+						name = substr($0, 6); sub(/\(.*/, "", name)
+						print id, "check", file ":" NR "\t" name
+					}' "${f}"
+			done < <(find "${root}/src-go" -name '*_test.go' -type f | LC_ALL=C sort)
+			continue
+		fi
+		f="${f#"${root}/"}"
+		[[ -f "${root}/${f}" ]] || { ((! list)) || { echo "test-id: no suite at ${f}" >&2; return 2; }; continue; }
 		FILE="${f}" awk '
 			/^[[:space:]]*#/ { next }
 			{
@@ -90,23 +121,22 @@ fSites(){
 					kind = "check"
 					if (call ~ /fOk[[:space:]]/) kind = "ok"
 					else if (call ~ /(fFail|fBad)[[:space:]]/) kind = "fail"
-					id = "-"
-					if (match(s, /^\[[0-9A-Za-z]+\] /)) id = substr(s, 2, RLENGTH - 3)
-					print id, kind, ENVIRON["FILE"] ":" NR
+					id = "-"; label = s
+					if (match(s, /^\[[0-9A-Za-z]+\] /)) { id = substr(s, 2, RLENGTH - 3); label = substr(s, RLENGTH + 1) }
+					## Up to the closing quote, a backslashed one aside.
+					if (match(label, /^([^"\\]|\\.)*/)) label = substr(label, 1, RLENGTH)
+					print id, kind, ENVIRON["FILE"] ":" NR "\t" label
 				}
 			}' "${root}/${f}"
 	done
-	if [[ -d "${root}/src-go" ]]; then
-		while IFS= read -r f; do
-			awk -v file="${f#"${root}/"}" '
-				/^func (Test|Fuzz)[A-Za-z0-9_]*\(/ {
-					id = "-"
-					if (match($0, /\/\/ \[[0-9A-Za-z]+\][[:space:]]*$/)) { id = substr($0, RSTART + 4); sub(/\].*/, "", id) }
-					print id, "check", file ":" NR
-				}' "${f}"
-		done < <(find "${root}/src-go" -name '*_test.go' -type f | LC_ALL=C sort)
-	fi
 }
+
+## Each test once, in the order its file has them. An fOk and its fFail are one.
+if ((list)); then
+	sites="$(fSites "${listWhat[@]}")" || exit 2
+	[[ -z "${sites}" ]] || awk -F '\t' '{ split($1, a, " "); if (!seen[a[1]]++ || a[1] == "-") print a[1] " " $2 }' <<< "${sites}"
+	exit 0
+fi
 
 sites="$(fSites)"
 if [[ -z "${sites}" ]]; then echo "test-id: found no tests under ${root}"; exit 1; fi
@@ -139,3 +169,4 @@ exit 0
 ##		- 20260927 JC: spawn-count's measures are tests too.
 ##		- 20261001 JC: The current time comes from EPOCHREALTIME, so minting works with BSD date. '--at' still needs GNU date.
 ##		- 20261004 JC: Every expansion braced, and shellcheck enforces it.
+##		- 20261025 JC: --list prints each test's ID and label for the suites named, so cicd.bash --list can say what a run would check.

@@ -33,6 +33,33 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- CICD reset: the hook runs `--merge-gate`
+	- ID: 2026102506452488
+	- Type: Enhancement
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: One `--merge-gate` from the gate worktree, as the hook runs it, which can stand in for the round's `--backlog-run-full`. Put the round's tip there with `git -C .git/gitsby-gate checkout --quiet --detach --force <tip>`, or `git worktree add --detach .git/gitsby-gate <tip>` when it's missing, then run `(cd .git/gitsby-gate && env -u GIT_EDITOR -u DISPLAY cicd/cicd.bash --merge-gate)`.
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-064524
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313104
+	- Related IDs: 2026102506452473
+		- Builds on that item's flags, in since a1c62bb.
+	- Requirements [Feature]:
+		- The pre-push hook runs `--merge-gate`, every check of the default run, on a push to main. A push whose commits change only docs and the other paths listed in one place the hook reads skips it. No gate on dev or gover.
+		- A commit cut before `--merge-gate` existed keeps the gate it had.
+		- Overrides the private CI/CD notes, where the gate on main runs lint and the unit tests only.
+	- Progress log:
+		- 2026-10-25: The hook runs `--merge-gate` on a commit whose cicd.bash has its arm, and `--gate` on one cut before it. A push to main whose diff from the remote's main is all in `MERGE_GATE_SKIP`, read from the pushed commit's `cicd/config.bash`, goes out with a note and no gate. A new main, or a remote commit not here, is gated.
+		- 2026-10-25: `MERGE_GATE_SKIP` is `*.md`, `project/`, `reference/` and `assets/logo.png`. A pattern ending in `/` is a top folder, and any other is a glob over the whole path.
+		- 2026-10-25: `--merge-gate` and `--backlog-run-full` no longer make or mount the gif's archive, since they never write there. From the gate worktree it would have landed inside `.git`.
+	- Decisions:
+		- The list is read from the commit, so an edit to it is itself gated, and a working-tree edit counts for nothing.
+		- The hook still waits up to 10 minutes for a gate already running, though one now takes about 50.
+	- Branch: round-20261025b
+	- Test case: test.bash [EtkvcAN], [EtkvcAb], [EtkvcAo], [EtkvcB1], [EtkvcBE] and [EtkvcBS].
+	- Verified: [EtkvcAN], [EtkvcAb], [EtkvcAo] and [EtkvcB1] fail against the round branch's pre-push.bash and config.bash. [EtkvcBE] and [EtkvcBS] are guards and pass on both. The older hook checks pass unchanged, since their stub has only `--gate)`. test.bash 1715 -> 1725, 0 failed, with 2026102506452478's checks, in `--backlog-run-quick` in the image.
+	- Swept: pre-push.bash's header, install message, gate call and failure line. cicd.bash's help and its option arm comment. README, contributing.md and design.md's hook bullets. test.bash's hook checks, whose stub has no `--merge-gate`.
+
 - CICD reset: containers
 	- ID: 2026102416313100
 	- Type: Enhancement
@@ -119,20 +146,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Progress log:
 		- 2026-10-25: Split, too big for one pass. Children: 2026102506452473 (the new run flags and the aliases), 2026102506452478 (`--keep-temp` and `--list`), 2026102506452483 (`--quick` in about 10 minutes) and 2026102506452488 (the hook runs `--merge-gate`). The other reset items wait on the first.
 
-- CICD reset: `--keep-temp` and `--list`
-	- ID: 2026102506452478
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-064524
-	- Opened by: jim-collier
-	- Parent ID: 2026102416313104
-	- Related IDs: 2026102506452473
-		- Builds on that item's flags, in since a1c62bb.
-	- Requirements [Feature]:
-		- `--keep-temp` keeps the run's temp folder and containers, and prints where they are.
-		- `--list` prints the steps and test IDs the other flags given would run, and runs nothing.
-
 - CICD reset: `--quick` in about 10 minutes
 	- ID: 2026102506452483
 	- Type: Enhancement
@@ -146,21 +159,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Requirements [Feature]:
 		- `--quick` is what fits in about 10 minutes in all, not a 30 s budget per step, per `CICD style guide` in the shared CICD rules. The regression suite likely comes back in.
 		- Overrides the 30 s per step budget in 2026101816064793.
-
-- CICD reset: the hook runs `--merge-gate`
-	- ID: 2026102506452488
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-064524
-	- Opened by: jim-collier
-	- Parent ID: 2026102416313104
-	- Related IDs: 2026102506452473
-		- Builds on that item's flags, in since a1c62bb.
-	- Requirements [Feature]:
-		- The pre-push hook runs `--merge-gate`, every check of the default run, on a push to main. A push whose commits change only docs and the other paths listed in one place the hook reads skips it. No gate on dev or gover.
-		- A commit cut before `--merge-gate` existed keeps the gate it had.
-		- Overrides the private CI/CD notes, where the gate on main runs lint and the unit tests only.
 
 - CICD reset: step output
 	- ID: 2026102416313105
@@ -265,6 +263,34 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The comment above `fUnderLock` that says the helper has no `--why` goes with it.
 		- A box with no helper on the PATH still runs through the lock's `wrap`.
 	- Estimated effort: Low
+
+- CICD reset: `--keep-temp` and `--list`
+	- ID: 2026102506452478
+	- Type: Enhancement
+	- Status: Done
+	- Needs local test suite run?: No. `--backlog-run-quick` passed, test.bash 1725/0.
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-064524
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313104
+	- Related IDs: 2026102506452473
+		- Builds on that item's flags, in since a1c62bb.
+	- Requirements [Feature]:
+		- `--keep-temp` keeps the run's temp folder and containers, and prints where they are.
+		- `--list` prints the steps and test IDs the other flags given would run, and runs nothing.
+	- Progress log:
+		- 2026-10-25: `--list` prints the run's plan, then each step that runs with its count and one `<id> <label>` line per test, and stops before the prompt. It makes no temp folder and starts nothing but docker's probe. With `--backlog-run-quick` it lists the areas the same way. Stage 7 gets one line naming its boxes, since its IDs are the ones above.
+		- 2026-10-25: `test-id.bash --list` gives those lines, from the same scan `--check` uses.
+		- 2026-10-25: `--keep-temp` keeps the run's temp folder, and the logs and scratch files its steps would have removed from it, passed or failed, and prints the path at the end. Containers lose `--rm`, the image's builds included, and the end names what docker kept under the run's label, with the `docker rm` line. The run in the image puts its folder inside the kept one, so both are on the box.
+	- Decisions:
+		- `--keep-temp` with `--list` is refused, and so is either one with `--install-hook`.
+		- The harnesses' own temp folders still go when they finish. Moving them into the run's folder is 2026102416313108.
+	- Branch: round-20261025b
+	- Test case: test.bash [Etkvc9W], [Etkvc9j], [Etkvc9w] and [EtkvcAA].
+	- Verified: All 4 fail against the round branch's cicd.bash, image-go.bash and test-id.bash. test.bash 1715 -> 1725, 0 failed, with 2026102506452488's checks. `--backlog-run-quick` passed in the image: lint, go test, test.bash, fuzz 313/0, spawn counts and parity 29/0. A real `--backlog-run-quick unit --keep-temp` in the image kept its container and both folders, with the go test log in the inner one. `test-id.bash --check`, `backlog-check.bash` and shellcheck pass.
+	- Swept: cicd.bash's help, refusals, every removal under the run's folder, both `docker run` sites, and the exit trap before and after the run log starts. README and contributing.md.
+	- Acceptance signoff: Self-closed: its test runs passed.
+	- Closed: 20261025-160233
 
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
