@@ -33,139 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- CICD reset: dogfood and stage 7 builds from the image's Go
-	- ID: 2026102507133278
-	- Type: Enhancement
-	- Status: Waiting on automated testing
-	- Needs local test suite run?: One `--backlog-run-full` in the container, the same one 2026102506452473 asks for. Its stage 7 builds come from the image now. Dogfood's come from it too, but a round never dogfoods, so the next dogfood is their first real run.
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-071332
-	- Opened by: jim-collier
-	- Parent ID: 2026102416313100
-	- Prereq IDs: 2026102507133273
-	- Requirements [Feature]:
-		- Stage 5's cross-builds, stage 7's builds and `--quick`'s cross-builds come from the image's Go, where docker works: `fCrossBuild` in cicd.bash, and the `go test -c` binaries in remote-tests.bash.
-		- Copying a build into place, and the tests on the other boxes, stay on the box.
-	- Progress log:
-		- 2026-10-25: Both go through `fImageGo` in the new `cicd/utility/include/image-go.bash`. Once the image is there, a run that uses it exports its tag as `GITSBY_CICD_IMAGE`, and stage 7 hands that on to remote-tests.bash. Each build is its own `docker run`, with the tree and the out dir mounted at their own paths and the Go cache volume the full run uses. Without the image, `--no-container` or no docker, they build on the box as before, and the docker warning now says the builds do too. The joining of the Mac halves and the copy into place stay on the box.
-	- Decisions:
-		- remote-tests.bash run by hand builds with the box's Go unless `GITSBY_CICD_IMAGE` is set. Only cicd.bash knows the image's tag.
-		- cicd.bash clears `GITSBY_CICD_IMAGE` at the start, so a stale one in the shell can't move a `--no-container` build into an image.
-	- Branch: round-20261025
-	- Test case: test.bash [EtitOqM], [EtitOrO], [EtitOsK] and [EtitOtH].
-	- Verified: `cicd.bash --backlog-run-quick` passed in the image: lint, go test, test.bash 1700/0, fuzz 313/0, spawn counts and parity 29/0. Against the old cicd.bash and remote-tests.bash, [EtitOqM], [EtitOrO] and [EtitOtH] fail, and [EtitOsK] fails with the `unset` taken out. With the real image, `fImageGo` built linux/amd64 and darwin/arm64 into a folder outside the tree, and the windows/amd64 Go tests into one under `/tmp`. The linux/amd64 build matched the box's byte for byte, both on Go 1.26.2.
-	- Swept: every `go build` and `go test -c` in cicd.bash and remote-tests.bash. `fCrossBuild` covers dogfood, stage 7's Mac and Unix builds and `--quick`'s cross-builds, and `fBuildTests` covers all four of the harness's builds. The native and demo builds already run in the image when the run does. release.bash is 2026102507133283. The GOAMD64 and cgo pin checks ([Et9l12K], [Er1LxT7]) still count the same sites. README, contributing.md and cicd.bash's help, plan line and warning.
-
-- CICD reset: other hosts and VMs
-	- ID: 2026102416313101
-	- Type: Enhancement
-	- Status: Waiting on automated testing
-	- Needs local test suite run?: Yes, the round's full run. test.bash ran twice here: the first run failed 5 of 1709, all new checks and since fixed. The second was cut off by its time limit at load 40, after 1585 checks with none failed, every stage 7 check among them.
-	- Needs external testing: A real stage 7, under the real lock and VM helper. b29w should run, or vm925w when it's taken. vmFreeBSD, vmDebARM64 and vmKt6m are off today, so each should be started for its run and shut down after. Each Mac and Unix box's copy should land under its temp root. vmKt6m should fetch the modules and run test.bash, or name any tool it lacks.
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261024-163131
-	- Opened by: jim-collier
-	- Related IDs: 2026100312332924
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Per `Other hosts and VMs` in the shared CICD rules. Stage 7 already runs on the Mac, the Unix boxes and a Windows box, holds each through the shared host lock, and skips a box that's off or taken.
-		- Windows tries b29w first, and vm925w only when b29w is taken or down. Nothing here needs the discrete GPU.
-		- Windows tests use `b29w`, never `b29w-wif`. The Windows host list in `cicd/config.bash` still has `b29w-wif` as a second ssh name.
-		- A VM is put back the way it was found, through the VM state helper: a paused one resumed and paused again, one that was off started and powered off, a running one left running.
-		- Each box's work folder for the project is under that box's temp root. On the Mac and the Unix boxes it's in the home folder today.
-		- A skipped box shows as `SKIP` in its step line and in the summary at the end, and never stops a run, `--merge-gate` included.
-		- vmKt6m joins b26 for Intel macOS, where it adds something b26 doesn't.
-		- Earlier decisions this overrides: the 2026-10-04 decisions in 2026100312332924 that take vm925w first on Windows and keep the tree's copy under each box's home.
-	- Estimated effort: Avg
-	- Progress log:
-		- 2026-10-25: Windows is `b29w` then `vm925w`, and `b29w-wif` is gone from config.bash.
-		- 2026-10-25: A box the VM state helper knows as a VM runs through its `wrap`, which wakes it under the lock and puts it back after. Such a box isn't looked for over ssh until it's up. One that won't come up is skipped with the helper's reason. One that won't go back gets a warning, and its result stands. Other boxes keep the lock's own `wrap`. With no helper beside the lock, a note says so, and a sleeping VM is skipped as before.
-		- 2026-10-25: Each Mac and Unix box keeps its copy in `gitsby/remote-tests` under `HOST_TEMP`, else `TMPDIR` without its last slash, else `/tmp`. The Wine prefix sits beside it. Windows already used `%TEMP%`, and is unchanged.
-		- 2026-10-25: vmKt6m is a second Mac host, as `mactest`. A Mac now checks for its bash, git and go the way the Unix boxes do. Without them it runs the Go tests only and names what it lacks.
-		- 2026-10-25: Every skip line in the harness says `SKIP`. The summary names the skipped boxes after `SKIP:`. A skip still never fails the run.
-		- 2026-10-25: Asserts given new values for this change. `[ErkbDUa]`, `[Erm9Pnk]`: Windows list `vm925w b29w` -> `b29w vm925w`. `[ErkbDUn]`, `[EtitOtH]`, `[ErkbDWC]`, `[ErkbDYT]`, `[Erkbdu7]`: the first Windows box is b29w, not vm925w. `[ErkbDXc]`, `[ErkbDY9]`, `[ErkqZtP]`, `[ErkbDUK]`: the same order, and the summary now ends in `SKIP: <boxes>`. `[ErkbDXc]` keeps its second-name case on vm925w in the fixture, since `b29w-wif` is gone. `[ErkbDVV]`, `[Erm9PoA]`: `cd "$HOME/gitsby-remote-tests/tree"` -> `cd "$d/tree"`. `[ErkbDU2]`, `[ErkbDZ0]`, `[Erkbdts]`, `[Erm9PoN]`, `[Erm9Poa]`, `[Erm9Pon]`: `skip:` -> `SKIP:`.
-		- Verified: the 9 new checks and the changed ones pass. Run against the old remote-tests.bash and config.bash, all 9 new checks fail, and so do 14 of the existing stage 7 checks.
-		- Verified: shellcheck, `test-id.bash --check`, and `--backlog-run-quick lint unit` pass.
-		- Note: vmKt6m ignores the ACPI shutdown. A run that finds it off waits 300 s for the helper's restore, then warns and leaves it running. The fix belongs in the helper. Draft in `private/claude_simple/upstream/2026102416313101/`.
-		- Note: the old `~/gitsby-remote-tests` folders on b26, vmFreeBSD and vmDebARM64 are no longer used. Nothing removes them.
-		- 2026-10-25: In the round's full run, vmKt6m failed its copy step with `go: command not found` (exit 127). The tools check looks for go with Homebrew's bash folder first on PATH, and found it there. The module fetch ran on the bare ssh PATH. The fetch is only for the suite, so it now runs on the suite's PATH, the one the check used. A Mac with no go there still fetches nothing and names go.
-		- 2026-10-25: The Go tests step needs no go, since its binary is built here. It runs on the box's own PATH, and the Go tests that use git skip without one. Not checked: a Mac whose `/usr/bin/git` only offers to install the command line tools would fail those tests rather than skip them.
-		- Verified: test.bash 1715/0 with the fix. Against the harness before the fix, `[EtjavHs]` fails on the same exit 127, and the other 1714 pass. `--backlog-run-quick` passed in the image: test.bash 1715/0, fuzz 313/0, parity 29/0.
-	- Decisions:
-		- 2026-10-25: vmKt6m runs everything b26 runs. Both are Intel macOS 15.8, and the GPU difference means nothing to a CLI. What it adds is a test user who isn't an admin, with only the system on PATH.
-		- 2026-10-25: Only VMs go through the helper. Its `wrap` takes no `--why`, so the other boxes keep the lock's `wrap` and still say what they're held for.
-		- 2026-10-25: The tools check, the fetch and test.bash share one PATH on a Mac, the suite's. So a Mac whose Homebrew folder has go and git runs test.bash, even when the bare ssh PATH has neither.
-	- Swept: every reader of `REMOTE_WINDOWS_HOSTS`, `REMOTE_MAC_HOSTS`, `REMOTE_MAC_DIR` and `REMOTE_UNIX_DIR`. cicd.bash only prints the host lists, and the test.bash fixture pins its own. Every `skip:` line in remote-tests.bash. README and contributing.md, which named one Mac and said nothing about VMs.
-		- 2026-10-25: every remote command in `fRunPosix`, for a tool it runs off the PATH it was checked on. Only the fetch did. The Unix boxes use the bare PATH for all of it, and the copy, Go tests and Wine steps run nothing from Homebrew.
-	- Branch: round-20261025
-	- Commit: 4388d96, b14ae19
-	- Test case: test.bash `[Etj1UJ4]` (config order), `[Etj1UJK]` (temp root), `[Etj1UJb]` and `[Etj35gI]` (copies under it), `[Etj1UJq]` (no helper), `[Etj1UKH]`, `[Etj1UKa]` and `[Etj1UKq]` (VM wake, no wake, no restore), `[Etj1ULE]` (Mac tools), `[EtjavHs]` (Mac fetch on the suite's PATH), plus the changed asserts above.
-
-- CICD reset: CPU and priority
-	- ID: 2026102416313103
-	- Type: Enhancement
-	- Status: Waiting on automated testing
-	- Needs local test suite run?: One `--backlog-run-full` in the container. The soak test, the native fuzzing and CodeQL take the quarter now, and stage 7 runs each Mac and Unix box on its own budget.
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261024-163131
-	- Opened by: jim-collier
-	- Related IDs: 2026102508333054
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Per `Machine use` in the shared CICD rules. `BUILD_JOBS` in `cicd/config.bash` is already worked out once and handed to the Go tools and CodeQL.
-		- At most half the cores, rounded down and at least 1. Today it rounds up.
-		- A quarter on a busy box, where the 1-minute load is over half the CPU count. Checked at the start and again before each stage.
-		- A quarter, busy or not, for the hard steps: native fuzzing, `go test -race`, the soak test and CodeQL.
-		- Steps that run side by side share the count.
-		- Everything runs under `nice -n 19`, plus `ionice -c 3` where it exists.
-		- The container run gets `--cpus <jobs>` and `--cpu-shares 256`, and `nice` inside too.
-			- 2026-10-25: that covers the per-build `docker run` in `fImageGo` (`cicd/utility/include/image-go.bash`, eb6aa5e) as well as `fContainerRun`.
-		- The same rules on the boxes stage 7 uses, with each box's own CPU count and load. The Go tests there run with no limit today.
-	- Progress log:
-		- Done: half the cores rounded down, or a quarter on a busy box, never under 1, worked out at the start and again at each stage header. The hard steps take a quarter.
-		- cicd.bash, release.bash and remote-tests.bash renice themselves to 19, with `ionice -c 3`, so all they start inherits it.
-		- Both `docker run` sites get `--cpus` and `--cpu-shares 256`, and go runs niced in the image. The run in there works its counts out from the box's cores and load.
-		- Each Mac and Unix box in stage 7 works out its own count from its own cores and load, and runs its Go tests and test.bash at low priority.
-		- The plan prints a "Cores" line with the counts and the load.
-		- Steps run one at a time, and the module is one package, so nothing shares a count yet.
-		- Split: the Windows box's part is 2026102508333054.
-		- 2026-10-25: [EtitOqM], [EtitOrO] and [EtitOtH] want `nice -n 19 go` after the image name, where they wanted `go`. [ErkbDVV] and [Erm9PoA] want `$lo` before the box's bash, where they wanted none.
-		- Verified: all 5 new checks fail on the tree before and pass after. [Etj7cYq] passes in the image too.
-		- Verified: `--backlog-run-quick` in the image, test.bash 1714/0, fuzz 313/0, parity 29/0, with "8 of 32" cores at a load of 25.
-	- Decisions:
-		- The budget stays in config.bash, as `fCpuBudget`, setting `BUILD_JOBS` and the new `HEAVY_JOBS`.
-		- Each script lowers its own priority once at the top, rather than a prefix on every command.
-		- The container's quota is the count at its start. `GITSBY_CICD_CPUS` hands the box's core count in, since the quota leaves nproc alone.
-	- Test case: test.bash [Etj7cY1] (the counts), [Etj7cYI] (the hard steps), [Etj7cYq] (low priority), [Etj7cYY] (the container's quota), [Etj7cZ7] (each box in stage 7).
-	- Swept: every `BUILD_JOBS` reader in cicd.bash, release.bash and remote-tests.bash, both `docker run` sites, and every remote command in remote-tests.bash. The Windows box's commands are the child. `docker build` runs only when the image changes, and is left alone.
-
-- CICD reset: run flags and aliases
-	- ID: 2026102506452473
-	- Type: Enhancement
-	- Status: Waiting on automated testing
-	- Needs local test suite run?: One `--backlog-run-full` run in the container, to see a real one end to end. It can stand in for the round's full-run line.
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-064524
-	- Opened by: jim-collier
-	- Parent ID: 2026102416313104
-	- Requirements [Feature]:
-		- `--long`, with `--slow` as another name, `--backlog-run-quick [<area>...]`, `--backlog-run-full` and `--merge-gate`. `--help` lists the areas.
-		- `--gate` and `--ci` stay as other names for `--backlog-run-quick` and `--merge-gate`, and say so in one line when used. `pre-push.bash` looks for the `--gate)` arm, so it changes with it.
-		- The backlog and merge gate flags never dogfood, publish, commit, push, install, sync, rewrite a tracked file, or prompt. That covers the demo gif.
-	- Progress log:
-		- 2026-10-25: Done in cicd.bash. `--backlog-run-quick` runs the areas `lint`, `unit`, `suite`, `fuzz` and `parity`, all of them with none named, the three suites against one build of their own. `--merge-gate` and `--backlog-run-full` are a plain run with sync, dogfood and publish off and no prompt, and stage 6 leaves a gif that differs as committed. The run in the image is told the same.
-		- 2026-10-25: [EpsVDHu] and [ErkbDTZ] read the closing line `gate: passed`, now `quick run: passed`. [EpsVDHu] no longer forbids the build and the suites under `--gate`, since `--gate` runs them now. The rest of both is as it was.
-	- Decisions:
-		- With no area named, `--backlog-run-quick` runs the suites too. A worker ran them by hand beside `--gate` anyway, and the whole thing took about 3 minutes on 8 cores at a load of 10.
-		- `--merge-gate` and `--backlog-run-full` are the same checks, the other boxes included. They take the `--no-<step>` and container flags, and refuse `-m` and `--quick`.
-		- A gif that differs under them is a warning, not a failure, since the gif isn't a check.
-		- `--long` adds nothing yet, since no step here takes hours. `--backlog-run-quick` stays on the box until 2026102416313100.
-		- pre-push.bash is unchanged. `--backlog-run-quick|--gate)` still holds `--gate)`, so a commit with the gate is told apart as before. The hook still runs `--gate`, which now runs the suites too. Moving it to `--merge-gate` is 2026102506452488.
-	- Branch: round-20261025
-	- Test case: test.bash [EtiiN6u], [EtiiN78], [EtiiN7K], [EtiiN7Y], [EtiiN7k], [EtiiN7y], [EtiiN8B], [EtiiN8O], [EtiiN8b], [EtiiN8p] and [Etiiqyb].
-	- Verified: All 11 fail against the round branch's cicd.bash, and [EtiiN7k], [EtiiN7y] and [EtiiN8B] fail with the gif and image hand-offs taken out. test.bash 1677 -> 1688, 0 failed. `cicd.bash --backlog-run-quick` passes on this tree, lint, go test, test.bash 1688/0, fuzz 313/0, spawn counts and parity 29/0, in 175 s. `test-id.bash --check` and `backlog-check.bash` pass.
-	- Swept: cicd.bash's help, option arms, refusals, container hand-off, plan and stage 6. README, contributing.md and design.md's gate bullet. pre-push.bash's arm check and its call. test.bash's gate checks that read the old closing line.
-
 - CICD reset: containers
 	- ID: 2026102416313100
 	- Type: Enhancement
@@ -545,6 +412,154 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [Erfs74j] and [Erfs75a] in test.bash. They run release.bash past its dry run, with gh, curl and gitsby stubbed. The second is the first run of the phase 3 `releases/latest` block.
 	- Acceptance signoff: Self-closed: reproduced, and the checks fail before the fix and pass after.
 	- Closed: 20261003-141520
+
+- CICD reset: dogfood and stage 7 builds from the image's Go
+	- ID: 2026102507133278
+	- Type: Enhancement
+	- Status: Done
+	- Needs local test suite run?: Done. The round's `--backlog-run-full` at c266d62 passed in the container, with stage 7's builds from the image.
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-071332
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313100
+	- Prereq IDs: 2026102507133273
+	- Requirements [Feature]:
+		- Stage 5's cross-builds, stage 7's builds and `--quick`'s cross-builds come from the image's Go, where docker works: `fCrossBuild` in cicd.bash, and the `go test -c` binaries in remote-tests.bash.
+		- Copying a build into place, and the tests on the other boxes, stay on the box.
+	- Progress log:
+		- 2026-10-25: Both go through `fImageGo` in the new `cicd/utility/include/image-go.bash`. Once the image is there, a run that uses it exports its tag as `GITSBY_CICD_IMAGE`, and stage 7 hands that on to remote-tests.bash. Each build is its own `docker run`, with the tree and the out dir mounted at their own paths and the Go cache volume the full run uses. Without the image, `--no-container` or no docker, they build on the box as before, and the docker warning now says the builds do too. The joining of the Mac halves and the copy into place stay on the box.
+		- 2026-10-25: The round's `--backlog-run-full` at c266d62 passed stages 1-6 in the container, and stage 7 on b26 (1455/0), vmFreeBSD (1358/0) and vmDebARM64 (1699/0), against builds from the image. Dogfood was off, so its builds from the image first run at the next dogfood.
+	- Decisions:
+		- remote-tests.bash run by hand builds with the box's Go unless `GITSBY_CICD_IMAGE` is set. Only cicd.bash knows the image's tag.
+		- cicd.bash clears `GITSBY_CICD_IMAGE` at the start, so a stale one in the shell can't move a `--no-container` build into an image.
+	- Branch: round-20261025
+	- Test case: test.bash [EtitOqM], [EtitOrO], [EtitOsK] and [EtitOtH].
+	- Verified: `cicd.bash --backlog-run-quick` passed in the image: lint, go test, test.bash 1700/0, fuzz 313/0, spawn counts and parity 29/0. Against the old cicd.bash and remote-tests.bash, [EtitOqM], [EtitOrO] and [EtitOtH] fail, and [EtitOsK] fails with the `unset` taken out. With the real image, `fImageGo` built linux/amd64 and darwin/arm64 into a folder outside the tree, and the windows/amd64 Go tests into one under `/tmp`. The linux/amd64 build matched the box's byte for byte, both on Go 1.26.2.
+	- Swept: every `go build` and `go test -c` in cicd.bash and remote-tests.bash. `fCrossBuild` covers dogfood, stage 7's Mac and Unix builds and `--quick`'s cross-builds, and `fBuildTests` covers all four of the harness's builds. The native and demo builds already run in the image when the run does. release.bash is 2026102507133283. The GOAMD64 and cgo pin checks ([Et9l12K], [Er1LxT7]) still count the same sites. README, contributing.md and cicd.bash's help, plan line and warning.
+	- Acceptance signoff: Self-closed: its test runs passed.
+	- Closed: 20261025-110103
+
+- CICD reset: other hosts and VMs
+	- ID: 2026102416313101
+	- Type: Enhancement
+	- Status: Done
+	- Needs local test suite run?: Done. The round's `--backlog-run-full` at c266d62 passed stage 7 on b26, vmFreeBSD and vmDebARM64.
+	- Needs external testing: Done. vmKt6m and b29w passed at e47bd23, under the real lock and VM helper.
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-163131
+	- Opened by: jim-collier
+	- Related IDs: 2026100312332924
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per `Other hosts and VMs` in the shared CICD rules. Stage 7 already runs on the Mac, the Unix boxes and a Windows box, holds each through the shared host lock, and skips a box that's off or taken.
+		- Windows tries b29w first, and vm925w only when b29w is taken or down. Nothing here needs the discrete GPU.
+		- Windows tests use `b29w`, never `b29w-wif`. The Windows host list in `cicd/config.bash` still has `b29w-wif` as a second ssh name.
+		- A VM is put back the way it was found, through the VM state helper: a paused one resumed and paused again, one that was off started and powered off, a running one left running.
+		- Each box's work folder for the project is under that box's temp root. On the Mac and the Unix boxes it's in the home folder today.
+		- A skipped box shows as `SKIP` in its step line and in the summary at the end, and never stops a run, `--merge-gate` included.
+		- vmKt6m joins b26 for Intel macOS, where it adds something b26 doesn't.
+		- Earlier decisions this overrides: the 2026-10-04 decisions in 2026100312332924 that take vm925w first on Windows and keep the tree's copy under each box's home.
+	- Estimated effort: Avg
+	- Progress log:
+		- 2026-10-25: Windows is `b29w` then `vm925w`, and `b29w-wif` is gone from config.bash.
+		- 2026-10-25: A box the VM state helper knows as a VM runs through its `wrap`, which wakes it under the lock and puts it back after. Such a box isn't looked for over ssh until it's up. One that won't come up is skipped with the helper's reason. One that won't go back gets a warning, and its result stands. Other boxes keep the lock's own `wrap`. With no helper beside the lock, a note says so, and a sleeping VM is skipped as before.
+		- 2026-10-25: Each Mac and Unix box keeps its copy in `gitsby/remote-tests` under `HOST_TEMP`, else `TMPDIR` without its last slash, else `/tmp`. The Wine prefix sits beside it. Windows already used `%TEMP%`, and is unchanged.
+		- 2026-10-25: vmKt6m is a second Mac host, as `mactest`. A Mac now checks for its bash, git and go the way the Unix boxes do. Without them it runs the Go tests only and names what it lacks.
+		- 2026-10-25: Every skip line in the harness says `SKIP`. The summary names the skipped boxes after `SKIP:`. A skip still never fails the run.
+		- 2026-10-25: Asserts given new values for this change. `[ErkbDUa]`, `[Erm9Pnk]`: Windows list `vm925w b29w` -> `b29w vm925w`. `[ErkbDUn]`, `[EtitOtH]`, `[ErkbDWC]`, `[ErkbDYT]`, `[Erkbdu7]`: the first Windows box is b29w, not vm925w. `[ErkbDXc]`, `[ErkbDY9]`, `[ErkqZtP]`, `[ErkbDUK]`: the same order, and the summary now ends in `SKIP: <boxes>`. `[ErkbDXc]` keeps its second-name case on vm925w in the fixture, since `b29w-wif` is gone. `[ErkbDVV]`, `[Erm9PoA]`: `cd "$HOME/gitsby-remote-tests/tree"` -> `cd "$d/tree"`. `[ErkbDU2]`, `[ErkbDZ0]`, `[Erkbdts]`, `[Erm9PoN]`, `[Erm9Poa]`, `[Erm9Pon]`: `skip:` -> `SKIP:`.
+		- Verified: the 9 new checks and the changed ones pass. Run against the old remote-tests.bash and config.bash, all 9 new checks fail, and so do 14 of the existing stage 7 checks.
+		- Verified: shellcheck, `test-id.bash --check`, and `--backlog-run-quick lint unit` pass.
+		- Note: vmKt6m ignores the ACPI shutdown. A run that finds it off waits 300 s for the helper's restore, then warns and leaves it running. The fix belongs in the helper. Draft in `private/claude_simple/upstream/2026102416313101/`.
+		- Note: the old `~/gitsby-remote-tests` folders on b26, vmFreeBSD and vmDebARM64 are no longer used. Nothing removes them.
+		- 2026-10-25: In the round's full run, vmKt6m failed its copy step with `go: command not found` (exit 127). The tools check looks for go with Homebrew's bash folder first on PATH, and found it there. The module fetch ran on the bare ssh PATH. The fetch is only for the suite, so it now runs on the suite's PATH, the one the check used. A Mac with no go there still fetches nothing and names go.
+		- 2026-10-25: The Go tests step needs no go, since its binary is built here. It runs on the box's own PATH, and the Go tests that use git skip without one. Not checked: a Mac whose `/usr/bin/git` only offers to install the command line tools would fail those tests rather than skip them.
+		- Verified: test.bash 1715/0 with the fix. Against the harness before the fix, `[EtjavHs]` fails on the same exit 127, and the other 1714 pass. `--backlog-run-quick` passed in the image: test.bash 1715/0, fuzz 313/0, parity 29/0.
+		- 2026-10-25: In The round's `--backlog-run-full` at c266d62, stage 7 passed on b26 (1455/0), vmFreeBSD (1358/0) and vmDebARM64 (1699/0), each copy under its box's temp root, and both VMs went back to off. b29w was held by another job, and vm925w was skipped on "Failed to reserve port 5900", which is Bug 2026102510404322.
+		- 2026-10-25: Stage 7 on vmKt6m alone at e47bd23: it was off and came up through the helper, the copy went under its temp root, the module fetch worked, and it ran the Go tests (213 ok, 6 skipped) and test.bash 1357/0. The helper's restore went through only after a shutdown from inside, per the note above.
+		- 2026-10-25: The Windows Go tests on b29w at e47bd23, with vmKt6m down: 197 ok, 23 skipped, none failed. b29w was free, so vm925w wasn't tried.
+		- Verified: stage 7 on vmKt6m, test.bash 1357/0 and the Go tests, and on b29w, the Go tests, both passed.
+	- Decisions:
+		- 2026-10-25: vmKt6m runs everything b26 runs. Both are Intel macOS 15.8, and the GPU difference means nothing to a CLI. What it adds is a test user who isn't an admin, with only the system on PATH.
+		- 2026-10-25: Only VMs go through the helper. Its `wrap` takes no `--why`, so the other boxes keep the lock's `wrap` and still say what they're held for.
+		- 2026-10-25: The tools check, the fetch and test.bash share one PATH on a Mac, the suite's. So a Mac whose Homebrew folder has go and git runs test.bash, even when the bare ssh PATH has neither.
+	- Swept: every reader of `REMOTE_WINDOWS_HOSTS`, `REMOTE_MAC_HOSTS`, `REMOTE_MAC_DIR` and `REMOTE_UNIX_DIR`. cicd.bash only prints the host lists, and the test.bash fixture pins its own. Every `skip:` line in remote-tests.bash. README and contributing.md, which named one Mac and said nothing about VMs.
+		- 2026-10-25: every remote command in `fRunPosix`, for a tool it runs off the PATH it was checked on. Only the fetch did. The Unix boxes use the bare PATH for all of it, and the copy, Go tests and Wine steps run nothing from Homebrew.
+	- Branch: round-20261025
+	- Commit: 4388d96, b14ae19
+	- Test case: test.bash `[Etj1UJ4]` (config order), `[Etj1UJK]` (temp root), `[Etj1UJb]` and `[Etj35gI]` (copies under it), `[Etj1UJq]` (no helper), `[Etj1UKH]`, `[Etj1UKa]` and `[Etj1UKq]` (VM wake, no wake, no restore), `[Etj1ULE]` (Mac tools), `[EtjavHs]` (Mac fetch on the suite's PATH), plus the changed asserts above.
+	- Acceptance signoff: Self-closed: its test runs passed.
+	- Closed: 20261025-110103
+
+- CICD reset: CPU and priority
+	- ID: 2026102416313103
+	- Type: Enhancement
+	- Status: Done
+	- Needs local test suite run?: Done. The round's `--backlog-run-full` at c266d62 passed in the container.
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-163131
+	- Opened by: jim-collier
+	- Related IDs: 2026102508333054
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per `Machine use` in the shared CICD rules. `BUILD_JOBS` in `cicd/config.bash` is already worked out once and handed to the Go tools and CodeQL.
+		- At most half the cores, rounded down and at least 1. Today it rounds up.
+		- A quarter on a busy box, where the 1-minute load is over half the CPU count. Checked at the start and again before each stage.
+		- A quarter, busy or not, for the hard steps: native fuzzing, `go test -race`, the soak test and CodeQL.
+		- Steps that run side by side share the count.
+		- Everything runs under `nice -n 19`, plus `ionice -c 3` where it exists.
+		- The container run gets `--cpus <jobs>` and `--cpu-shares 256`, and `nice` inside too.
+			- 2026-10-25: that covers the per-build `docker run` in `fImageGo` (`cicd/utility/include/image-go.bash`, eb6aa5e) as well as `fContainerRun`.
+		- The same rules on the boxes stage 7 uses, with each box's own CPU count and load. The Go tests there run with no limit today.
+	- Progress log:
+		- Done: half the cores rounded down, or a quarter on a busy box, never under 1, worked out at the start and again at each stage header. The hard steps take a quarter.
+		- cicd.bash, release.bash and remote-tests.bash renice themselves to 19, with `ionice -c 3`, so all they start inherits it.
+		- Both `docker run` sites get `--cpus` and `--cpu-shares 256`, and go runs niced in the image. The run in there works its counts out from the box's cores and load.
+		- Each Mac and Unix box in stage 7 works out its own count from its own cores and load, and runs its Go tests and test.bash at low priority.
+		- The plan prints a "Cores" line with the counts and the load.
+		- Steps run one at a time, and the module is one package, so nothing shares a count yet.
+		- Split: the Windows box's part is 2026102508333054.
+		- 2026-10-25: [EtitOqM], [EtitOrO] and [EtitOtH] want `nice -n 19 go` after the image name, where they wanted `go`. [ErkbDVV] and [Erm9PoA] want `$lo` before the box's bash, where they wanted none.
+		- Verified: all 5 new checks fail on the tree before and pass after. [Etj7cYq] passes in the image too.
+		- Verified: `--backlog-run-quick` in the image, test.bash 1714/0, fuzz 313/0, parity 29/0, with "8 of 32" cores at a load of 25.
+		- 2026-10-25: The round's `--backlog-run-full` at c266d62 passed stages 1-6 in the container, at "8 of 32" cores and load 37.75, and stage 7 on b26, vmFreeBSD and vmDebARM64. vmKt6m and b29w passed at e47bd23.
+	- Decisions:
+		- The budget stays in config.bash, as `fCpuBudget`, setting `BUILD_JOBS` and the new `HEAVY_JOBS`.
+		- Each script lowers its own priority once at the top, rather than a prefix on every command.
+		- The container's quota is the count at its start. `GITSBY_CICD_CPUS` hands the box's core count in, since the quota leaves nproc alone.
+	- Test case: test.bash [Etj7cY1] (the counts), [Etj7cYI] (the hard steps), [Etj7cYq] (low priority), [Etj7cYY] (the container's quota), [Etj7cZ7] (each box in stage 7).
+	- Swept: every `BUILD_JOBS` reader in cicd.bash, release.bash and remote-tests.bash, both `docker run` sites, and every remote command in remote-tests.bash. The Windows box's commands are the child. `docker build` runs only when the image changes, and is left alone.
+	- Acceptance signoff: Self-closed: its test runs passed.
+	- Closed: 20261025-110103
+
+- CICD reset: run flags and aliases
+	- ID: 2026102506452473
+	- Type: Enhancement
+	- Status: Done
+	- Needs local test suite run?: Done. The round's `--backlog-run-full` at c266d62 ran end to end.
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-064524
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313104
+	- Requirements [Feature]:
+		- `--long`, with `--slow` as another name, `--backlog-run-quick [<area>...]`, `--backlog-run-full` and `--merge-gate`. `--help` lists the areas.
+		- `--gate` and `--ci` stay as other names for `--backlog-run-quick` and `--merge-gate`, and say so in one line when used. `pre-push.bash` looks for the `--gate)` arm, so it changes with it.
+		- The backlog and merge gate flags never dogfood, publish, commit, push, install, sync, rewrite a tracked file, or prompt. That covers the demo gif.
+	- Progress log:
+		- 2026-10-25: Done in cicd.bash. `--backlog-run-quick` runs the areas `lint`, `unit`, `suite`, `fuzz` and `parity`, all of them with none named, the three suites against one build of their own. `--merge-gate` and `--backlog-run-full` are a plain run with sync, dogfood and publish off and no prompt, and stage 6 leaves a gif that differs as committed. The run in the image is told the same.
+		- 2026-10-25: [EpsVDHu] and [ErkbDTZ] read the closing line `gate: passed`, now `quick run: passed`. [EpsVDHu] no longer forbids the build and the suites under `--gate`, since `--gate` runs them now. The rest of both is as it was.
+		- 2026-10-25: The round's `--backlog-run-full` at c266d62 ran end to end with sync, dogfood and publish off and no prompt, and left the gif as committed. Stages 1-6 passed in the container. Its one failure was vmKt6m in stage 7, fixed by b14ae19 and passed at e47bd23.
+	- Decisions:
+		- With no area named, `--backlog-run-quick` runs the suites too. A worker ran them by hand beside `--gate` anyway, and the whole thing took about 3 minutes on 8 cores at a load of 10.
+		- `--merge-gate` and `--backlog-run-full` are the same checks, the other boxes included. They take the `--no-<step>` and container flags, and refuse `-m` and `--quick`.
+		- A gif that differs under them is a warning, not a failure, since the gif isn't a check.
+		- `--long` adds nothing yet, since no step here takes hours. `--backlog-run-quick` stays on the box until 2026102416313100.
+		- pre-push.bash is unchanged. `--backlog-run-quick|--gate)` still holds `--gate)`, so a commit with the gate is told apart as before. The hook still runs `--gate`, which now runs the suites too. Moving it to `--merge-gate` is 2026102506452488.
+	- Branch: round-20261025
+	- Test case: test.bash [EtiiN6u], [EtiiN78], [EtiiN7K], [EtiiN7Y], [EtiiN7k], [EtiiN7y], [EtiiN8B], [EtiiN8O], [EtiiN8b], [EtiiN8p] and [Etiiqyb].
+	- Verified: All 11 fail against the round branch's cicd.bash, and [EtiiN7k], [EtiiN7y] and [EtiiN8B] fail with the gif and image hand-offs taken out. test.bash 1677 -> 1688, 0 failed. `cicd.bash --backlog-run-quick` passes on this tree, lint, go test, test.bash 1688/0, fuzz 313/0, spawn counts and parity 29/0, in 175 s. `test-id.bash --check` and `backlog-check.bash` pass.
+	- Swept: cicd.bash's help, option arms, refusals, container hand-off, plan and stage 6. README, contributing.md and design.md's gate bullet. pre-push.bash's arm check and its call. test.bash's gate checks that read the old closing line.
+	- Acceptance signoff: Self-closed: its test runs passed.
+	- Closed: 20261025-110103
 
 - CICD reset: the quick run in the image
 	- ID: 2026102507133273
