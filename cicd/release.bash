@@ -52,6 +52,7 @@ set -Eeuo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/.." && pwd)"
 source "${here}/config.bash"      ## RELEASE_TARGETS, GO_MODULE_DIR, EXE_NAME
+fLowPriority
 cd "${root}"
 
 version=""; dryRun=0; assumeYes=0; quiet=0
@@ -549,3 +550,4 @@ echo
 ##		- 20261004 JC: The output helpers print with printf, as cicd.bash does. Every expansion
 ##		  braced, and shellcheck enforces it.
 ##		- 20261019 JC: The release builds pin GOAMD64=v1, so a stray environment can't raise the CPU floor.
+##		- 20261025 JC: Runs at low priority, as cicd.bash does.

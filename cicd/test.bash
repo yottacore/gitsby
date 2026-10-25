@@ -295,7 +295,7 @@ fMakeGateFixture(){
 	mkdir -p "${gateDir}/cicd/utility/include" "${gateDir}/cicd/utility/demo" "${gateDir}/cicd/container" "${gateDir}/bin" "${gateDir}/home" "${gateDir}/src-go" "${gateFail}"
 	cp "${root}/cicd/cicd.bash" "${root}/cicd/config.bash" "${gateDir}/cicd/"
 	cp "${root}/cicd/container/Dockerfile" "${root}/cicd/container/requirements.txt" "${gateDir}/cicd/container/"
-	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${root}/cicd/utility/include/gh-account.bash" "${root}/cicd/utility/include/go-test-lines.bash" "${gateDir}/cicd/utility/include/"
+	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${root}/cicd/utility/include/gh-account.bash" "${root}/cicd/utility/include/go-test-lines.bash" "${root}/cicd/utility/include/image-go.bash" "${gateDir}/cicd/utility/include/"
 	## Empty, so the lint globs and PY_LINT_FILES resolve, and stage 6 finds a scenario.
 	: > "${gateDir}/install.bash"; : > "${gateDir}/install.ps1"; : > "${gateDir}/cicd/utility/demo/gen-demo-gif.py"
 	: > "${gateDir}/cicd/utility/codeql-findings.py"; : > "${gateDir}/src-go/go.mod"; : > "${gateDir}/src-go/main.go"
@@ -303,13 +303,17 @@ fMakeGateFixture(){
 	cp "${root}/PSScriptAnalyzerSettings.psd1" "${gateDir}/"
 	: > "${gateDir}/cicd/utility/demo/demo-scenario.toml"
 	echo "# Fixture" > "${gateDir}/README.md"
-	for s in test fuzz parity remote-tests; do fGateStub "${gateDir}/cicd/${s}.bash" "${s}"; done
+	for s in test fuzz parity; do fGateStub "${gateDir}/cicd/${s}.bash" "${s}"; done
+	## Says which image it was handed, if any.
+	fGateStub "${gateDir}/cicd/remote-tests.bash" remote-tests "[[ -z \"\${GITSBY_CICD_IMAGE:-}\" ]] || printf 'image=%s run=%s\\n' \"\${GITSBY_CICD_IMAGE}\" \"\${GITSBY_CICD_RUN:-}\" >> '${gateCalls}'"
 	for s in gen-winres backlog-check spawn-count; do fGateStub "${gateDir}/cicd/utility/${s}.bash" "${s}"; done
 	fGateStub "${gateDir}/cicd/utility/demo/demo-repo.bash" demo-repo
 	## Writes the joined file, so stage 7 has a build to remove.
 	fGateStub "${gateDir}/cicd/utility/macho-universal.bash" macho-universal ": > \"\${1:-/dev/null}\""
 	fGateStub "${gateDir}/cicd/utility/n8git_backup-and-publish" n8git_backup-and-publish
-	for s in markdownlint staticcheck golangci-lint govulncheck docker ruff pip-audit; do fGateStub "${gateDir}/bin/${s}" "${s}"; done
+	for s in markdownlint staticcheck golangci-lint govulncheck ruff pip-audit; do fGateStub "${gateDir}/bin/${s}" "${s}"; done
+	## A build in the image leaves its -o file behind, as go's stub does, so dogfood has one to copy.
+	fGateStub "${gateDir}/bin/docker" docker "if [[ ! -e '${gateFail}/docker' ]]; then o=''; for a in \"\$@\"; do [[ \"\${o}\" != 1 ]] || : > \"\${a}\"; o=''; [[ \"\${a}\" != -o ]] || o=1; done; fi"
 	## The demo generator writes a gif header to its --out, and the optimizer, called as
 	## 'gifsicle -O3 IN -o OUT', copies IN to OUT, so stage 6 has a file to compare. py_compile
 	## passes no --out.
@@ -366,7 +370,7 @@ fGateStatus(){
 ## As above, and the output matches the extended regex $2.
 fGateSays(){ local want="$1" pat="$2"; shift 2; fGateStatus "${want}" "$@" && grep -qE -- "${pat}" "${gateOut}" ;}
 ## fGateSays on --gate, for the fixture with the real pwsh. The module dir is the caller's.
-fGatePwshSays(){ PSModulePath="${gatePsModules}" fGateSays "$1" "$2" --gate ;}
+fGatePwshSays(){ PSModulePath="${gatePsModules}" fGateSays "$1" "$2" --no-container --gate ;}
 ## True when every extended regex given matches a line of the calls log.
 fGateCalled(){ local p; for p in "$@"; do grep -qE -- "${p}" "${gateCalls}" || return 1; done; return 0 ;}
 fGateNested(){ gateNested=1 fGateSays 2 'already in the container' -y --container ;}
@@ -385,6 +389,13 @@ fGateContainerName(){
 	name="$(sed -n 's/^as container \(gitsby-cicd-[0-9]\{8\}-[0-9]\{6\}-[0-9][0-9]*\)$/\1/p' "${gateOut}")"
 	[[ -n "${name}" ]] && grep -qF -- "--name ${name} --label gitsby.cicd.run=${name:12:15} --label gitsby.cicd.tree=" "${gateCalls}"
 }
+## nice stops at the docker client, so the run in there gets the core budget as its quota and a
+## low weight, and the box's core count to work its own budget out from.
+fGateContainerQuota(){
+	fGateSays 0 'OK: the container run' -y --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
+		&& fGateCalled '^docker run --rm --init --name gitsby-cicd-[^ ]+ --label [^ ]+ --label [^ ]+ --cpus [1-9][0-9]* --cpu-shares 256 -e GITSBY_CICD_CPUS=[1-9][0-9]* ' \
+		&& grep -qE '^Cores \.+: [1-9][0-9]* of [1-9][0-9]*, [1-9][0-9]* for the hard steps' "${gateOut}"
+}
 ## --quick is handed to the run in there, which is where it skips the suite.
 fGateContainerQuick(){
 	fGateSays 0 'OK: the container run' -y --quick --no-sync --no-publish --no-dogfood \
@@ -397,6 +408,33 @@ fGateContainerDemo(){
 		&& fGateCalled '^docker run .*/private/demo/gif:.* -y --no-sync --no-dogfood --no-remote --no-publish --no-fuzz$' \
 		&& ! fGateCalled '^(python3 .*gen-demo-gif|gifsicle)'
 }
+## Dogfood's builds and stage 7's come from the image's Go, and the harness is handed the image
+## for its own. Copying into place stays here. The dest is the fixture home's fallback dir.
+fGateContainerBuilds(){
+	local rc=0 img='gitsby-cicd:[0-9a-f]{12}' src="${gateDir}/src-go"
+	mkdir -p "${gateDir}/home/.local/bin"
+	fGateSays 0 'OK: Remote tests' -y --no-fuzz --no-demogif --no-sync --no-publish \
+		&& fGateCalled "^docker run --rm --init --label gitsby\.cicd\.run=[0-9]{8}-[0-9]{6} --label gitsby\.cicd\.tree=${gateDir} --cpus [1-9][0-9]* --cpu-shares 256 .* -e CGO_ENABLED=0 -e GOAMD64=v1 -e GOOS=linux -e GOARCH=amd64 -w ${src} ${img} nice -n 19 go build .* -o ${src}/gitsby-linux-amd64 \.\$" \
+			"^docker run .* -e GOOS=darwin -e GOARCH=amd64 -w ${src} ${img} nice -n 19 go build " "^docker run .* -e GOOS=darwin -e GOARCH=arm64 -w ${src} ${img} nice -n 19 go build " \
+			"^docker run .* -e GOOS=freebsd -e GOARCH=amd64 -w ${src} ${img} nice -n 19 go build " "^image=${img} run=[0-9]{8}-[0-9]{6}\$" \
+		&& ! fGateCalled '^go build' && [[ -f "${gateDir}/home/.local/bin/gitsby" ]] \
+		&& grep -qF 'OK: installed (linux/amd64) -> '"${gateDir}/home/.local/bin/gitsby" "${gateOut}" || rc=1
+	rm -f -- "${gateDir:?}/home/.local/bin/gitsby"; rmdir "${gateDir}/home/.local/bin" "${gateDir}/home/.local" 2>/dev/null || true
+	return "${rc}"
+}
+## --quick's cross-builds of the Unix boxes' targets as well.
+fGateContainerQuickBuilds(){
+	fGateSays 0 'OK: cross-built ' -y --quick --no-sync --no-publish --no-dogfood \
+		&& fGateCalled '^docker run .* -e GOOS=freebsd -e GOARCH=amd64 .* gitsby-cicd:[0-9a-f]{12} nice -n 19 go build ' '^docker run .* -e GOOS=linux -e GOARCH=arm64 .* go build ' \
+		&& ! fGateCalled '^go build'
+}
+## --no-container builds them here, an image left in the caller's environment included, and
+## hands the harness none.
+fGateHereBuilds(){
+	GITSBY_CICD_IMAGE=stale fGateSays 0 'OK: Remote tests' -y --no-container --no-fuzz --no-demogif --no-sync --no-publish --no-dogfood \
+		&& fGateCalled '^go build .* -o .*/src-go/gitsby-darwin-universal-amd64 \.$' '^go build .* -o .*/src-go/gitsby-freebsd-amd64 \.$' \
+		&& ! fGateCalled '^docker ' && ! fGateCalled '^image='
+}
 fGateFullRun(){
 	fGateSays 0 'CI/CD: done\.' -y --no-container --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
 		&& fGateCalled '^go vet' '^go build' '^go test -race' '^test\.bash' '^parity\.bash' && ! fGateCalled '^docker '
@@ -407,6 +445,66 @@ fGateQuickRun(){
 		&& fGateCalled '^go vet' '^go build' '^go test -race' '^fuzz\.bash' '^spawn-count\.bash' '^parity\.bash' \
 		&& ! grep -qE '^(test|remote-tests)\.bash|^go test .*-fuzz |^govulncheck|^python3 cicd/utility/demo/gen-demo-gif' "${gateCalls}" \
 		&& grep -qxF 'regression tests skipped (--quick)' "${gateOut}" && grep -qxF 'govulncheck skipped (--quick: it reaches vuln.go.dev)' "${gateOut}"
+}
+## --backlog-run-quick with no area runs them all, the suites against a build of their own, and
+## nothing that syncs, publishes, draws the demo or reaches another host.
+fGateBacklogQuick(){
+	fGateSays 0 'backlog quick run: passed\.' --no-container --backlog-run-quick \
+		&& fGateCalled '^shellcheck [^-]' '^gofmt -l' '^go test -race' '^go build' '^test\.bash' '^fuzz\.bash' '^spawn-count\.bash' '^parity\.bash' \
+		&& ! grep -qE '^(n8git_backup-and-publish|remote-tests\.bash|govulncheck|docker|pip-audit -r|codeql database|python3 cicd/utility/demo/gen-demo-gif)|-fuzz ' "${gateCalls}" \
+		&& ! grep -qE 'Remote sync|another name' "${gateOut}" && [[ ! -e "${gateDir}/cicd/artifacts/lint" ]]
+}
+## Areas named run alone, in the engine's order, and only a suite brings in the build.
+fGateBacklogAreas(){
+	fGateSays 0 'backlog quick run: lint unit$' --no-container --backlog-run-quick unit lint \
+		&& fGateCalled '^gofmt -l' '^go test -race' && ! grep -qE '^go build|^(test|fuzz|parity|spawn-count)\.bash' "${gateCalls}" \
+		&& fGateSays 0 'backlog quick run: parity$' --no-container --backlog-run-quick parity \
+		&& fGateCalled '^go build' '^parity\.bash' && ! grep -qE '^gofmt|^go test|^(test|fuzz)\.bash' "${gateCalls}"
+}
+## --merge-gate, or --backlog-run-full as $1, runs what a plain run checks, the other hosts
+## included, and changes nothing: no sync, dogfood or publish, and a demo gif that differs stays.
+fGateHandsOff(){
+	local rc=0 gif="${gateDir}/assets/demo.gif"
+	mkdir -p "${gif%/*}"; [[ ! -f "${gif}" ]] || cp -f -- "${gif}" "${gif}.keep"
+	printf old > "${gif}"
+	fGateSays 0 'CI/CD: done\.' "$1" --no-container \
+		&& grep -qF "gitsby ${1#--}: every check of a plain run" "${gateOut}" \
+		&& fGateCalled '^go vet' '^go build' '^go test -race' '^test\.bash' '^fuzz\.bash' '^spawn-count\.bash' '^parity\.bash' '^remote-tests\.bash' '^python3 cicd/utility/demo/gen-demo-gif' '^govulncheck' \
+		&& ! grep -qE '^n8git_backup-and-publish' "${gateCalls}" \
+		&& grep -qxF 'remote sync skipped' "${gateOut}" && grep -qxF 'dogfood disabled' "${gateOut}" && grep -qxF 'publish disabled' "${gateOut}" \
+		&& grep -qF "[ WARNING: demo gif differs; ${1} rewrites no tracked file, so the committed one stays ]" "${gateOut}" \
+		&& [[ "$(cat "${gif}")" == old && ! -e "${gif}.new" ]] || rc=1
+	if [[ -f "${gif}.keep" ]]; then mv -f -- "${gif}.keep" "${gif}"; else rm -f -- "${gif:?}"; fi
+	return "${rc}"
+}
+## The run in the image is told too, so the gif in there stays as committed.
+fGateHandsOffContainer(){
+	fGateSays 0 'OK: the container run' --merge-gate --no-remote \
+		&& fGateCalled '^docker run .* -y --no-sync --no-dogfood --no-remote --no-publish --backlog-run-full$'
+}
+fGateHelpFlags(){
+	local out="" f
+	out="$("${gateDir}/cicd/cicd.bash" --help)" || return 1
+	for f in --long --slow --backlog-run-quick --backlog-run-full --merge-gate --ci lint unit suite fuzz parity; do
+		grep -qE -- "^ +${f}( |\$)" <<< "${out}" || return 1
+	done
+}
+## The run passes with the line $1 in its output once, and no other alias line.
+fGateAliasSays(){
+	local line="$1"; shift
+	fGateStatus 0 "$@" && grep -qxF -- "${line}" "${gateOut}" && [[ "$(grep -c 'is another name for' "${gateOut}")" == 1 ]]
+}
+fGateHandsOffRefuses(){
+	fGateSays 2 'never publishes, so it takes no -m' --merge-gate -m hi && fGateSays 2 'takes no --quick' --ci --quick \
+		&& fGateSays 2 'separate runs' --merge-gate --backlog-run-full && fGateSays 2 'separate runs' --gate --merge-gate
+}
+fGateLong(){
+	local s
+	for s in --long --slow; do
+		fGateSays 0 'CI/CD: done' -y "${s}" --no-container --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
+			&& fGateCalled '^test\.bash' '^parity\.bash' || return 1
+	done
+	fGateSays 2 'opposites' --quick --long && fGateSays 2 'takes no stage options \(got: --slow\)' --backlog-run-quick --slow
 }
 ## --leakcheck adds the soak test, under --quick too, and keeps what it wrote in a folder of the run's own.
 fGateLeakRun(){
@@ -604,6 +702,34 @@ fGateLockInTag(){
 	cp "${root}/cicd/container/requirements.txt" "${gateDir}/cicd/container/requirements.txt"
 	[[ "${rc}" == 0 && -n "${before}" && -n "${after}" && "${before}" != "${after}" ]]
 }
+## The quick run goes to the image by its own name, with the areas as given and -q, and none of
+## it runs out here. The gif's archive isn't mounted, since it draws no gif.
+fGateQuickInImage(){
+	fGateSays 0 'backlog quick run: passed\.' --gate \
+		&& fGateCalled '^docker run .* --backlog-run-quick$' && ! fGateCalled '/private/demo/gif:' \
+		&& ! fGateCalled '^(go|gofmt|shellcheck|ruff) ' '^(test|parity|fuzz|spawn-count)\.bash' \
+		&& grep -qF 'Container ...........: the quick run in gitsby-cicd:' "${gateOut}" \
+		&& [[ "$(grep -c 'is another name for' "${gateOut}")" == 1 ]] \
+		&& fGateSays 0 'OK: the container run' -q --backlog-run-quick unit lint \
+		&& fGateCalled '^docker run .* -q --backlog-run-quick unit lint$' && ! fGateCalled '^go '
+}
+## --no-container keeps it here, and --container goes with it too.
+fGateQuickHere(){
+	fGateSays 0 'backlog quick run: passed\.' --no-container --backlog-run-quick lint \
+		&& fGateCalled '^gofmt -l' && ! fGateCalled '^docker ' \
+		&& fGateSays 0 'OK: the container run' --container --backlog-run-quick lint && ! fGateCalled '^gofmt '
+}
+## A box whose docker doesn't answer runs it here, says so, and --container there stops.
+fGateQuickNoDocker(){
+	: > "${gateFail}/docker"
+	local rc=0
+	fGateSays 0 "docker isn't usable here, so the quick run runs on this box" --backlog-run-quick lint && fGateCalled '^gofmt -l' || rc=1
+	fGateSays 1 'needs a working docker' --container --backlog-run-quick lint || rc=1
+	rm -f -- "${gateFail:?}/docker"
+	return "${rc}"
+}
+## Inside the container the quick run is the inner one, so it starts no other.
+fGateQuickInner(){ gateNested=1 fGateSays 0 'backlog quick run: passed\.' --backlog-run-quick lint && ! fGateCalled '^docker ' && fGateCalled '^gofmt -l' ;}
 ## A box whose docker doesn't answer runs everything here, and says why.
 fGateNoDocker(){
 	: > "${gateFail}/docker"
@@ -675,7 +801,7 @@ fGateDemoDrift(){
 }
 ## The gate passes, and says nothing about lint tool versions.
 ## Go tools only: the fixture pins those, and the rest are whatever this box has.
-fGateNoDrift(){ fGateStatus 0 --gate && ! grep -qE 'tool versions differ.* (staticcheck|golangci-lint|govulncheck|goversioninfo) ' "${gateOut}" ;}
+fGateNoDrift(){ fGateStatus 0 --no-container --gate && ! grep -qE 'tool versions differ.* (staticcheck|golangci-lint|govulncheck|goversioninfo) ' "${gateOut}" ;}
 ## One -y run with every stage skipped but those named in $1 (sync lint test fuzz parity dogfood
 ## demogif publish), the rest passed on. Its exit status lands in ${gateRc}, output in ${gateOut},
 ## and the calls log starts empty.
@@ -712,9 +838,10 @@ fRemoteRun(){
 fRemoteBoxes(){
 	cat >> "$1" <<-'EOF'
 		REMOTE_MAC_HOSTS=("b26")
-		REMOTE_WINDOWS_HOSTS=("vm925w" "b29w:b29w,b29w-wif")
+		REMOTE_WINDOWS_HOSTS=("b29w" "vm925w:vm925wa,vm925w")
 		REMOTE_MAC_GOARCH="amd64"
 		REMOTE_MAC_BASH="/usr/local/bin/bash"
+		REMOTE_MAC_NEEDS=(git go)
 		REMOTE_MAC_DIR="gitsby-remote-tests"
 		REMOTE_UNIX_DIR="gitsby-remote-tests"
 		REMOTE_UNIX_HOSTS=("vmFreeBSD:bsdtest@vmFreeBSD" "vmDebARM64:tester@vmDebARM64")
@@ -725,12 +852,40 @@ fRemoteBoxes(){
 }
 ## The tree's config.bash in the harness fixture, with those boxes.
 fRemoteConfig(){ cp "${root}/cicd/config.bash" "${rt}/cicd/"; fRemoteBoxes "${rt}/cicd/config.bash" ;}
+## The core budget a Mac or Unix box works out, with the cores $1, and the load $2 as Linux gives
+## it, or as macOS and BSD do with $3 set. Prints the count, then the low-priority prefix.
+fRemoteBudget(){
+	local budget="" stubs="${rt}/budget-bin"
+	budget="$(sed -n "/^budgetSh='/,/ionice -c 3\"; fi'\$/p" "${root}/cicd/remote-tests.bash" | sed "1s/^budgetSh='//; \$s/'\$//")"
+	mkdir -p "${stubs}"
+	printf '#!/bin/sh\necho %s\n' "$1" > "${stubs}/getconf"
+	if [[ -n "${3:-}" ]]; then printf '#!/bin/sh\nexit 1\n' > "${stubs}/cat"; printf '#!/bin/sh\necho "{ %s 0.10 0.10 }"\n' "$2" > "${stubs}/sysctl"
+	else printf '#!/bin/sh\necho "%s 0.10 0.10 1/100 1"\n' "$2" > "${stubs}/cat"; rm -f -- "${stubs:?}/sysctl"; fi
+	chmod +x "${stubs}"/*
+	PATH="${stubs}:${PATH}" sh -c "${budget}"'; echo "${GOMAXPROCS}"; echo "${lo}"'
+}
+## After a run: b26's Go tests and test.bash ran on the budget, and it comes out right.
+fRemoteBudgetUsed(){
+	grep -qE '^ssh b26 .*export GOMAXPROCS .* [$]lo [.]/gitsby-test -test[.]v$' "${rtLog}" \
+		&& grep -qE '^ssh b26 .*export GOMAXPROCS .* [$]lo [^ ]+/bash cicd/test[.]bash$' "${rtLog}" \
+		&& [[ "$(fRemoteBudget 8 3.00)" == $'4\nnice -n 19'* && "$(fRemoteBudget 8 4.50)" == $'2\n'* && "$(fRemoteBudget 1 0.00)" == $'1\n'* \
+			&& "$(fRemoteBudget 16 9.00 mac)" == $'4\nnice -n 19'* && "$(fRemoteBudget 16 7.00 mac)" == $'8\n'* ]]
+}
 ## True when the last run made a folder under %TEMP% on the Windows box $1, and removed that one.
 fRemoteWinCleaned(){
 	local d=""
 	d="$(sed -n "s/^ssh $1 .*mkdir \"\\(%TEMP%[^\"]*\\)\".*/\\1/p" "${rtLog}")"
 	d="${d%%$'\n'*}"
 	[[ "${d}" == '%TEMP%\test_gitsby_'* ]] && grep -qF "rmdir /s /q \"${d}\"" "${rtLog}"
+}
+## True when the remote shell for the stage's folder a/b puts it under HOST_TEMP, then under TMPDIR
+## less its last slash, then under /tmp.
+fRemoteDirSh(){
+	local sh="" got=""
+	eval "$(grep '^fDirSh()' "${root}/cicd/remote-tests.bash")"
+	sh="$(fDirSh a/b)"
+	got="$(env HOST_TEMP=/h TMPDIR=/t/ sh -c "${sh}; echo \"\$d\"") $(env -u HOST_TEMP TMPDIR=/t/ sh -c "${sh}; echo \"\$d\"") $(env -u HOST_TEMP -u TMPDIR sh -c "${sh}; echo \"\$d\"")"
+	[[ "${got}" == '/h/a/b /t/a/b /tmp/a/b' ]]
 }
 ## A push from $1, the rest being its arguments. Output lands in ${hookOut}; the gate log starts empty.
 fHookPush(){ local dir="$1"; shift; : > "${hookLog}"; git -C "${dir}" push "$@" >"${hookOut}" 2>&1 ;}
@@ -5186,6 +5341,14 @@ GHEOF
 	## The compiler takes every core by default, in every build and in the eight-target
 	## release loop, which makes the machine unusable for the duration.
 	fAssert "[EnQTPxr] no build step takes every core"  bash -c "grep -q 'BUILD_JOBS=' '${root}/cicd/config.bash'"
+	## Per 'Machine use': half the cores rounded down, a quarter on a busy box and for the hard
+	## steps, never under 1. A stand-in core count is how the container gets the box's.
+	fAssert "[Etj7cY1] the core budget is half the cores, or a quarter when busy or for the hard steps, never under 1" \
+		bash -c "cd '${root}' && source cicd/config.bash && for c in '32 0.50 0 16' '32 16.00 0 16' '32 16.01 0 8' '32 1 1 8' '7 3 0 3' '7 3.6 0 1' '3 0.00 0 1' '1 9.00 1 1' '9 x 0 4'; do set -- \${c}; fCpuJobs j \"\$1\" \"\$2\" \"\$3\"; [[ \"\${j}\" == \"\$4\" ]] || exit 1; done; [[ \"\$(GITSBY_CICD_CPUS=12 bash -c 'source cicd/config.bash && echo \"\${cpuCores}\"')\" == 12 ]]"
+	fAssert "[Etj7cYI] go test -race, the native fuzzing, the soak test and CodeQL take the quarter" \
+		bash -c "hard=\$(grep -E 'go test -race|-fuzz \"|GITSBY_SOAK_OUT=|--threads=' '${root}/cicd/cicd.bash' | grep -v '^[[:space:]]*#'); [[ \$(grep -c . <<< \"\${hard}\") -ge 6 ]] && ! grep -v HEAVY_JOBS <<< \"\${hard}\" | grep -q ."
+	fAssert "[Etj7cYq] cicd.bash, release.bash and remote-tests.bash run at low priority, and so does what they start" \
+		bash -c "cd '${root}' && for f in cicd/cicd.bash cicd/release.bash cicd/remote-tests.bash; do [[ \$(grep -cx 'fLowPriority' \"\${f}\") == 1 ]] || exit 1; done; source cicd/config.bash && fLowPriority && if [[ -r /proc/\$\$/stat ]]; then read -ra n < /proc/\$\$/stat; n=\${n[18]}; else n=\$(ps -o nice= -p \$\$); fi && [[ \"\${n// /}\" == 19 ]] && { ! command -v ionice >/dev/null || ionice -p \$\$ | grep -q idle; }"
 	fAssertFail "[EnQTPxs] no go build call is missing -p" \
 		bash -c "grep -hE '^[[:space:]]*(go build|.*&& *go build)' '${root}/cicd/cicd.bash' '${root}/cicd/release.bash' | grep -qv 'BUILD_JOBS'"
 	## Same source, same bytes: the last input-derived stamp dropped, cgo off wherever those flags
@@ -5720,7 +5883,7 @@ EOF
 	else
 		local gateDir="${work}/gate" gateCalls="${work}/gate-calls.log" gateFail="${work}/gate-fail" gateOut="${work}/gate-out.txt"
 		fMakeGateFixture
-		fAssert "[EpsVDHs] the gate passes a clean tree without asking anything"  fGateStatus 0 --gate
+		fAssert "[EpsVDHs] the gate passes a clean tree without asking anything"  fGateStatus 0 --no-container --gate
 		## Only the leak-shaped rules, and go test never from its cache.
 		fAssert "[Et9PJsK] and runs ruff's leak rules over the demo script" \
 			fGateCalled '^ruff check --isolated --no-cache --quiet --select B019,SIM115,B006 cicd/utility/demo/gen-demo-gif\.py cicd/utility/codeql-findings\.py$'
@@ -5734,28 +5897,28 @@ EOF
 			bash -c "[[ \$(grep -c '^pwsh ' '${gateCalls}') == 1 ]] && grep '^pwsh ' '${gateCalls}' | grep -qF \"'install.ps1','cicd/utility/run-latest.ps1'\""
 		: > "${gateFail}/pwsh-nomodule"
 		fAssert "[Erg6Rxh] a box with no PSScriptAnalyzer module skips that lint with a warning" \
-			fGateSays 0 'WARNING: PSScriptAnalyzer skipped' --gate
+			fGateSays 0 'WARNING: PSScriptAnalyzer skipped' --no-container --gate
 		rm -f -- "${gateFail:?}/pwsh-nomodule"
 		mv "${gateDir}/PSScriptAnalyzerSettings.psd1" "${gateDir}/settings.psd1.away"
-		fAssert "[Erg6Rxu] and a missing settings file fails the gate, not the rules"  fGateSays 1 'settings not found' --gate
+		fAssert "[Erg6Rxu] and a missing settings file fails the gate, not the rules"  fGateSays 1 'settings not found' --no-container --gate
 		mv "${gateDir}/settings.psd1.away" "${gateDir}/PSScriptAnalyzerSettings.psd1"
 		## This fixture's go answers 'version -m' with nothing, so every tool reads as unknown.
 		fAssert "[Er1LxTR] and warns when a lint tool's version is not the recorded one" \
-			fGateSays 0 'WARNING: tool versions differ from the recorded set: .*staticcheck unknown \(recorded v' --gate
+			fGateSays 0 'WARNING: tool versions differ from the recorded set: .*staticcheck unknown \(recorded v' --no-container --gate
 		## The tools outside Go are compared too. strace stands in for them: nothing here runs it.
 		fGateStub "${gateDir}/bin/strace" strace "echo 'strace -- version 0.1'"
 		fAssert "[ErCQOcE] and when a tool outside Go is at another version" \
-			fGateSays 0 'WARNING: tool versions differ from the recorded set: .*strace 0\.1 \(recorded ' --gate
+			fGateSays 0 'WARNING: tool versions differ from the recorded set: .*strace 0\.1 \(recorded ' --no-container --gate
 		rm -f -- "${gateDir:?}/bin/strace"
 		## Tied to the gate having passed: a run that did nothing at all adds nothing either.
 		fAssert "[EpsVDHu] and nothing the full run adds" \
-			bash -c "grep -q 'gate: passed' '${gateOut}' && ! grep -qE '^go build|^test\.bash|^fuzz\.bash|^parity\.bash|^spawn-count\.bash|^n8git_backup-and-publish|^govulncheck|-fuzz' '${gateCalls}' && ! grep -q 'Remote sync' '${gateOut}' && [[ ! -e '${gateDir}/cicd/artifacts/lint' ]]"
+			bash -c "grep -q 'quick run: passed' '${gateOut}' && ! grep -qE '^n8git_backup-and-publish|^govulncheck|-fuzz' '${gateCalls}' && ! grep -q 'Remote sync' '${gateOut}' && [[ ! -e '${gateDir}/cicd/artifacts/lint' ]]"
 		fAssert "[ErkbDTZ] and not the remote tests" \
-			bash -c "grep -q 'gate: passed' '${gateOut}' && ! grep -qE '^(remote-tests|macho-universal)\.bash' '${gateCalls}' && ! grep -q 'Remote tests' '${gateOut}'"
+			bash -c "grep -q 'quick run: passed' '${gateOut}' && ! grep -qE '^(remote-tests|macho-universal)\.bash' '${gateCalls}' && ! grep -q 'Remote tests' '${gateOut}'"
 		local gateTool
 		for gateTool in shellcheck markdownlint python3 ruff pwsh gofmt go-vet staticcheck golangci-lint backlog-check go-test; do
 			: > "${gateFail}/${gateTool}"
-			fAssert "[EpsVDHv] the gate fails when ${gateTool} finds something"  fGateStatus 1 --gate
+			fAssert "[EpsVDHv] the gate fails when ${gateTool} finds something"  fGateStatus 1 --no-container --gate
 			if [[ "${gateTool}" == gofmt ]]; then
 				fAssert "[EpsVDHw] and a lint failure stops it before the unit tests" \
 					bash -c "grep -q '^gofmt -l' '${gateCalls}' && ! grep -q '^go test' '${gateCalls}'"
@@ -5766,11 +5929,24 @@ EOF
 		fAssert "[EpsVDHy] --gate and --install-hook together are refused"  fGateSays 2 'separate runs' --gate --install-hook
 		## pre-push.bash tells a commit that has the gate by this text in its cicd.bash.
 		fAssert "[Et6FC3t] the gate's option arm keeps the text the hook looks for"  grep -qF -- '--gate)' "${root}/cicd/cicd.bash"
-		## Regression guard: the full run is what the two functions were carved out of.
+		fAssert "[EtiiN6u] --backlog-run-quick runs every area, the suites included, and nothing that changes anything"  fGateBacklogQuick
+		fAssert "[EtiiN78] and the areas named, alone and in the engine's order"  fGateBacklogAreas
+		fAssert "[EtiiN7K] and refuses an area it doesn't have, naming the ones it does" \
+			fGateSays 2 "no area 'lnt'\. Areas: lint unit suite fuzz parity" --backlog-run-quick lint lnt
+		fAssert "[EtiiN7Y] --gate says in one line that it's another name for --backlog-run-quick" \
+			fGateAliasSays '--gate is another name for --backlog-run-quick' --no-container --gate lint
+		fAssert "[EtiiN7k] --merge-gate runs every check of a plain run, and syncs, dogfoods, publishes and rewrites nothing"  fGateHandsOff --merge-gate
+		fAssert "[EtiiN7y] and so does --backlog-run-full"  fGateHandsOff --backlog-run-full
+		fAssert "[EtiiN8B] and the run in the image is told to leave the gif too"  fGateHandsOffContainer
+		fAssert "[EtiiN8O] --ci says in one line that it's another name for --merge-gate" \
+			fGateAliasSays '--ci is another name for --merge-gate' --ci --no-container --no-remote --no-fuzz --no-demogif
+		fAssert "[EtiiN8b] --merge-gate refuses -m, --quick and another run"  fGateHandsOffRefuses
+		fAssert "[EtiiN8p] --long and --slow are a plain run, opposite --quick, and --backlog-run-quick refuses them"  fGateLong
 		fAssert "[EpsVDHz] the full run still lints, builds and runs the suites"  fGateFullRun
 		fAssert "[Er2UM3f] a -q run still prints every regression, fuzz, parity and spawn check"  fGateQuietSuites
 		fAssert "[EpsVDI0] cicd.bash --help lists --gate and --install-hook" \
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--gate ' <<< \"\$out\" && grep -qE -- '^ +--install-hook ' <<< \"\$out\""
+		fAssert "[Etiiqyb] and every run flag, --backlog-run-quick's areas, and the aliases"  fGateHelpFlags
 		fAssert "[EpsVDI1] and contributing.md names --install-hook"  grep -qF -- '--install-hook' "${root}/contributing.md"
 		fAssert "[Et6FC4K] --quick runs the steps that take seconds, and none that take longer or reach another host"  fGateQuickRun
 		fAssert "[Et9R5kk] and leaves out pip-audit, which reaches pypi.org" \
@@ -5805,15 +5981,26 @@ EOF
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--no-remote ' <<< \"\$out\""
 		fAssert "[EsJgeiS] cicd.bash --help lists --container" \
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--container ' <<< \"\$out\""
-		fAssert "[EsJgejN] --container with --gate is refused"  fGateSays 2 'goes with a full run' --container --gate
+		## Off since 2026-10-25: the quick run goes in the image too (2026102507133273), so --container
+		## goes with it. [Etip9iB] checks that in its place.
+		# fAssert "[EsJgejN] --container with --gate is refused"  fGateSays 2 'goes with a full run' --container --gate
+		fAssert "[Etip9hi] --container with --install-hook is refused"  fGateSays 2 'goes with a run, not --install-hook' --container --install-hook
+		fAssert "[Etip9hw] --backlog-run-quick runs in the image by default, and none of it here"  fGateQuickInImage
+		fAssert "[Etip9iB] and --no-container keeps it here, while --container is taken too"  fGateQuickHere
+		fAssert "[Etip9iR] and a box without a working docker runs it here, with a warning"  fGateQuickNoDocker
+		fAssert "[Etip9if] and inside the container it starts no other"  fGateQuickInner
 		fAssert "[EsJgekF] --container inside the container is refused"  fGateNested
 		fAssert "[EsJgel8] a plain run hands stages 1-4 to the image and runs none of them here"  fGateContainerRun
 		fAssert "[Eta9hUd] its container is named and labeled for the run, and the output names it"  fGateContainerName
+		fAssert "[Etj7cYY] and capped at the run's core budget, at a low weight"  fGateContainerQuota
 		fAssert "[Et6FC46] and --quick goes in with them"  fGateContainerQuick
 		fAssert "[Et9PJrS] and --leakcheck too, and the soak test runs only in there"  fGateContainerLeak
 		fAssert "[EtBTWta] and --no-leakcheck"  fGateContainerNoLeak
 		fAssert "[Et9R5kW] the image's tag changes with the Python tools' lock"  fGateLockInTag
 		fAssert "[EsK1B7q] and the demo gif as well"  fGateContainerDemo
+		fAssert "[EtitOqM] dogfood and stage 7 build with the image's Go and copy here, and the harness is handed the image"  fGateContainerBuilds
+		fAssert "[EtitOrO] and so do --quick's cross-builds"  fGateContainerQuickBuilds
+		fAssert "[EtitOsK] --no-container builds them here, whatever image the environment names"  fGateHereBuilds
 		fAssert "[EsK46gt] a box without a working docker runs them here, with a warning"  fGateNoDocker
 		fAssert "[EsK46i7] but --container there stops"  fGateNoDockerAsked
 		fAssert "[EsK46j7] --container and --no-container together are refused"  fGateSays 2 'opposites' -y --container --no-container
@@ -6217,10 +6404,14 @@ EOF
 		local rt="${work}/remote" rtBin="${work}/remote-bin" rtHome="${work}/remote-home" rtMac="${work}/remote-mac"
 		local rtLog="${work}/remote-calls.log" rtFail="${work}/remote-fail" rtOut="${work}/remote-out.txt" rtRc=0 rtMacBin="${work}/remote-macbin" rtHost=""
 		local rtLock="${rtHome}/synced/0-0/common/exec/util/linux/bash/x_windows-host-lock.bash"
-		mkdir -p "${rt}/cicd/utility/include" "${rt}/src-go" "${rtBin}" "${rtMac}" "${rtFail}" "${rtLock%/*}"
+		## A Mac's bare PATH, with only what the copy needs, and a Homebrew folder with go in it.
+		local rtSys="${work}/remote-sys" rtBrew="${work}/remote-brew" rtTool=""
+		mkdir -p "${rt}/cicd/utility/include" "${rt}/src-go" "${rtBin}" "${rtMac}" "${rtFail}" "${rtLock%/*}" "${rtSys}" "${rtBrew}"
+		for rtTool in bash mkdir mv rm tar; do ln -s "$(command -v "${rtTool}")" "${rtSys}/${rtTool}"; done
+		ln -s "${rtBin}/go" "${rtBrew}/go"
 		cp "${root}/cicd/remote-tests.bash" "${rt}/cicd/"
 		fRemoteConfig
-		cp "${root}/cicd/utility/include/go-test-lines.bash" "${rt}/cicd/utility/include/"
+		cp "${root}/cicd/utility/include/go-test-lines.bash" "${root}/cicd/utility/include/image-go.bash" "${rt}/cicd/utility/include/"
 		## The Unix boxes have runs of their own further down, with the config put back.
 		echo 'REMOTE_UNIX_HOSTS=()' >> "${rt}/cicd/config.bash"
 		printf 'package main\n\nfunc TestA(t *testing.T) { // [AAAAAAB]\n}\n' > "${rt}/src-go/a_test.go"
@@ -6249,13 +6440,16 @@ EOF
 			while [[ "\${1:-}" == -* ]]; do if [[ "\$1" == -o ]]; then shift 2; else shift; fi; done
 			host="\$1"; cmd="\$2"
 			printf 'ssh %s %s\n' "\${host}" "\${cmd//\$'\n'/ }" >> '${rtLog}'
-			[[ ! -e '${rtFail}/down-'"\${host}" ]] || exit 255
+			[[ ! -e '${rtFail}/down-'"\${host}" && ! -e '${rtFail}/asleep-'"\${host}" ]] || exit 255
 			[[ "\${cmd}" != 'exit 0' ]] || exit 0
 			echo '[ ~/.bashrc ]'; echo
 			case "\${cmd}" in
 				*'/.gitsby-remote-tests'*)
 					h='${rtMac}'; [[ "\${host}" == b26 ]] || h='${work}/remote-unix-'"\${host}"
-					mkdir -p "\${h}"; HOME="\${h}" PATH='${rtBin}':"\${PATH}" exec bash -c "\${cmd}" ;;
+					mkdir -p "\${h}/home"
+					p='${rtBin}':"\${PATH}"; [[ ! -e '${rtFail}/brewgo-'"\${host}" ]] || p='${rtSys}'
+					if [[ "\${host}" == b26 ]]; then exec env -u HOST_TEMP HOME="\${h}/home" TMPDIR="\${h}/" PATH="\${p}" "\${BASH}" -c "\${cmd}"; fi
+					HOME="\${h}/home" HOST_TEMP="\${h}" PATH='${rtBin}':"\${PATH}" exec bash -c "\${cmd}" ;;
 				*'command -v'*) echo '@@gitsby-remote-tests@@'; cat '${rtFail}/lacks-'"\${host}" 2>/dev/null || true ;;
 				*mkdir*) cat > /dev/null; echo '@@gitsby-remote-tests@@'; [[ ! -e '${rtFail}/nomkdir-'"\${host}" ]] || exit 1; echo made ;;
 				*-test.v*)
@@ -6281,42 +6475,59 @@ EOF
 		fRemoteRun --mac-bin "${rtMacBin}"
 		mv "${rtLock}.away" "${rtLock}"
 		fAssert "[ErkbDU2] with no host lock script every box is skipped, none is reached, and the run passes" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'skip: every box, since there is no host lock script' '${rtOut}' && ! grep -q '^ssh ' '${rtLog}'"
-		for rtHost in b26 vm925w b29w b29w-wif; do : > "${rtFail}/down-${rtHost}"; done
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'SKIP: every box, since there is no host lock script' '${rtOut}' && ! grep -q '^ssh ' '${rtLog}'"
+		for rtHost in b26 b29w vm925wa vm925w; do : > "${rtFail}/down-${rtHost}"; done
 		fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtFail:?}"/down-*
 		fAssert "[ErkbDUK] a box that does not answer is skipped with a note and never taken, and the run passes" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'skip: b26, not reachable over ssh (tried b26)' '${rtOut}' && grep -qF 'skip: b29w, not reachable over ssh (tried b29w,b29w-wif)' '${rtOut}' && ! grep -qE '^(lock|go test)' '${rtLog}'"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'SKIP: b26, not reachable over ssh (tried b26)' '${rtOut}' && grep -qF 'SKIP: vm925w, not reachable over ssh (tried vm925wa,vm925w)' '${rtOut}' && ! grep -qE '^(lock|go test)' '${rtLog}'"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		fAssert "[ErkbDUa] the lock wraps each box with no wait, knows the Mac as one of its other hosts and only once, and is not asked as the calling session" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^lock wrap b26 --wait 0 .* -- .*remote-tests\.bash --held mac b26 b26 win=vm925w b29w other=b26 vmFreeBSD session=unset\$' '${rtLog}' && grep -qE '^lock wrap vm925w --wait 0 .* win=vm925w b29w other=b26 vmFreeBSD session=unset\$' '${rtLog}'"
-		fAssert "[ErkbDUn] and only the first free Windows box runs"  bash -c "! grep -q '^lock wrap b29w' '${rtLog}' && grep -qxF '  passed on: b26 vm925w' '${rtOut}'"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^lock wrap b26 --wait 0 .* -- .*remote-tests\.bash --held mac b26 b26 win=b29w vm925w other=b26 vmFreeBSD session=unset\$' '${rtLog}' && grep -qE '^lock wrap b29w --wait 0 .* win=b29w vm925w other=b26 vmFreeBSD session=unset\$' '${rtLog}'"
+		fAssert "[ErkbDUn] and only the first free Windows box runs"  bash -c "! grep -q '^lock wrap vm925w' '${rtLog}' && grep -qxF '  passed on: b26 b29w' '${rtOut}'"
+		fAssert "[Etj1UJq] with no VM state helper beside the lock the run says so, and looks for every box over ssh first" \
+			bash -c "grep -qF 'note: no VM state helper (${rtLock%/*}/x_vm-state.bash), so a VM that is off or paused is skipped' '${rtOut}' && grep -q '^ssh vm925wa exit' '${rtLog}'"
+		fAssert "[Etj1UJb] the Mac's copy goes under its temp root, not its home" \
+			bash -c "[[ -f '${rtMac}/gitsby-remote-tests/.gitsby-remote-tests' && ! -e '${rtMac}/home/gitsby-remote-tests' ]] && grep -qF 'b26: copying the tree to gitsby-remote-tests/tree under its temp root' '${rtOut}'"
 		fAssert "[ErkbDVD] each box prints a line per Go test with its ID, and nothing from the Mac's login" \
 			bash -c "[[ \$(grep -cxF '  ok: [AAAAAAB] TestA' '${rtOut}') == 2 ]] && grep -qxF '  ok: [AAAAAAC] a check' '${rtOut}' && ! grep -qF 'bashrc' '${rtOut}'"
 		fAssert "[ErkbDVV] the Mac runs the suite in the stage's copy of the tree, under its own bash, first on PATH" \
-			bash -c "grep -qF 'cd \"\$HOME/gitsby-remote-tests/tree\" && PATH=/usr/local/bin:\"\$PATH\" /usr/local/bin/bash cicd/test.bash' '${rtLog}'"
+			bash -c "grep -qF 'cd \"\$d/tree\" && PATH=/usr/local/bin:\"\$PATH\" \$lo /usr/local/bin/bash cicd/test.bash' '${rtLog}'"
+		## The tests there run with no core limit and at full priority otherwise.
+		fAssert "[Etj7cZ7] each Mac and Unix box runs its Go tests and test.bash on its own core budget, at low priority"  fRemoteBudgetUsed
 		fAssert "[ErkbDVk] that copy is marked as the stage's, and holds the git dir, both builds and the fetched modules" \
 			bash -c "cd '${rtMac}/gitsby-remote-tests' && [[ -f .gitsby-remote-tests && -f tree/src-go/gitsby-test && \"\$(cat tree/src-go/gitsby)\" == mac ]] && git -C tree ls-files --error-unmatch src-go/a_test.go >/dev/null && grep -qx 'go mod download' '${rtLog}'"
-		fAssert "[ErkbDWC] the Windows box gets a folder under %TEMP% for the run, removed after"  fRemoteWinCleaned vm925w
+		fAssert "[ErkbDWC] the Windows box gets a folder under %TEMP% for the run, removed after"  fRemoteWinCleaned b29w
+		## Handed an image, as stage 7 does, every box's Go tests come from its Go, with the folder
+		## the build goes in mounted at its own path. A docker that writes the -o file stands in.
+		fStub "${rtBin}/docker" <<-EOF
+			#!/usr/bin/env bash
+			printf 'docker %s\n' "\$*" >> '${rtLog}'
+			o=''; for a in "\$@"; do [[ "\${o}" != 1 ]] || : > "\${a}"; o=''; [[ "\${a}" != -o ]] || o=1; done
+		EOF
+		GITSBY_CICD_IMAGE=gitsby-cicd:0123456789ab GITSBY_CICD_RUN=20261025-000000 fRemoteRun --mac-bin "${rtMacBin}"
+		rm -f -- "${rtBin:?}/docker"
+		fAssert "[EtitOtH] handed the image, the harness builds each box's Go tests with its Go" \
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^docker run --rm --init --label gitsby\.cicd\.run=20261025-000000 .* -v [^ ]+/mac/tree/src-go:[^ ]+/mac/tree/src-go .* -e GOOS=darwin -e GOARCH=[a-z0-9]+ .* -w ${rt}/src-go gitsby-cicd:0123456789ab nice -n 19 go test -c ' '${rtLog}' && grep -qE '^docker run .* -v [^ ]+/win/src-go:[^ ]+/win/src-go .* -e GOOS=windows -e GOARCH=amd64 .* gitsby-cicd:0123456789ab nice -n 19 go test -c ' '${rtLog}' && ! grep -q '^go test -c' '${rtLog}' && grep -qxF '  passed on: b26 b29w' '${rtOut}'"
 		: > "${rtFail}/oldlock"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtFail:?}/oldlock"
 		fAssert "[ErkqZtP] a lock with no list beside its Windows one is still handed the Mac there, and the Mac is skipped with its refusal" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^lock wrap b26 .* win=vm925w b29w other=b26 session=unset\$' '${rtLog}' && grep -qF \"skip: b26, the lock would not take it (exit 2): x_windows-host-lock.bash: unknown host 'b26'\" '${rtOut}' && grep -qxF '  passed on: vm925w' '${rtOut}'"
-		: > "${rtFail}/busy-vm925w"; : > "${rtFail}/down-b29w"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^lock wrap b26 .* win=b29w vm925w other=b26 session=unset\$' '${rtLog}' && grep -qF \"SKIP: b26, the lock would not take it (exit 2): x_windows-host-lock.bash: unknown host 'b26'\" '${rtOut}' && grep -qxF '  passed on: b29w; SKIP: b26' '${rtOut}'"
+		: > "${rtFail}/busy-b29w"; : > "${rtFail}/down-vm925wa"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		fAssert "[ErkbDXc] a Windows box someone else holds is skipped, naming who, and the next one runs, on its second name" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'skip: vm925w, held by session abcd (pid 1, other/project)' '${rtOut}' && grep -q '^ssh b29w-wif .*-test\.v' '${rtLog}' && grep -qxF '  passed on: b26 b29w' '${rtOut}'"
-		: > "${rtFail}/busy-b29w"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'SKIP: b29w, held by session abcd (pid 1, other/project)' '${rtOut}' && grep -q '^ssh vm925w .*-test\.v' '${rtLog}' && grep -qxF '  passed on: b26 vm925w; SKIP: b29w' '${rtOut}'"
+		: > "${rtFail}/busy-vm925w"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtFail:?}"/busy-* "${rtFail:?}"/down-*
 		fAssert "[ErkbDY9] with every Windows box taken the run still passes, and says so" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'skip: b29w, held by' '${rtOut}' && grep -qxF '  passed on: b26' '${rtOut}'"
-		: > "${rtFail}/gofail-vm925w"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'SKIP: vm925w, held by' '${rtOut}' && grep -qxF '  passed on: b26; SKIP: b29w vm925w' '${rtOut}'"
+		: > "${rtFail}/gofail-b29w"
 		fRemoteRun --mac-bin "${rtMacBin}"
-		rm -f -- "${rtFail:?}/gofail-vm925w"
+		rm -f -- "${rtFail:?}/gofail-b29w"
 		fAssert "[ErkbDYT] a failing Go test fails the run, with its line and its output" \
-			bash -c "[[ '${rtRc}' == 1 ]] && grep -qxF '  FAIL: [AAAAAAB] TestA' '${rtOut}' && grep -qF 'a_test.go:4: boom' '${rtOut}' && grep -qxF '  passed on: b26; failed on: vm925w' '${rtOut}'"
+			bash -c "[[ '${rtRc}' == 1 ]] && grep -qxF '  FAIL: [AAAAAAB] TestA' '${rtOut}' && grep -qF 'a_test.go:4: boom' '${rtOut}' && grep -qxF '  passed on: b26; failed on: b29w' '${rtOut}'"
 		: > "${rtFail}/suitefail-b26"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtFail:?}/suitefail-b26"
@@ -6325,15 +6536,26 @@ EOF
 		fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtFail:?}/lost-b26"
 		fAssert "[ErkbDZ0] a box that drops mid-run is skipped, not failed" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'skip: b26, lost the connection during go test' '${rtOut}'"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'SKIP: b26, lost the connection during go test' '${rtOut}'"
 		fRemoteRun
 		fAssert "[Erkbdts] with no universal build the Mac runs the Go tests only, and says so" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'skip: test.bash on b26' '${rtOut}' && ! grep -qF 'cicd/test.bash' '${rtLog}' && grep -q '^ssh b26 .*-test\.v' '${rtLog}'"
-		: > "${rtFail}/nomkdir-vm925w"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'SKIP: test.bash on b26' '${rtOut}' && ! grep -qF 'cicd/test.bash' '${rtLog}' && grep -q '^ssh b26 .*-test\.v' '${rtLog}'"
+		echo 'go ' > "${rtFail}/lacks-b26"
+		fRemoteRun --mac-bin "${rtMacBin}"
+		rm -f -- "${rtFail:?}/lacks-b26"
+		fAssert "[Etj1ULE] a Mac without a tool the suite needs, its bash included, runs the Go tests only, fetches nothing, and says what it lacks" \
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qxF '  SKIP: test.bash on b26, which lacks: go' '${rtOut}' && grep -q '^ssh b26 .*-test\.v' '${rtLog}' && ! grep -q '^ssh b26 .*cicd/test\.bash' '${rtLog}' && ! grep -q '^ssh b26 .*go mod download' '${rtLog}' && grep -qF 'PATH=/usr/local/bin:\"\$PATH\"; [ -x /usr/local/bin/bash ] || printf' '${rtLog}' && grep -qE '^ssh b26 .*git[)] git --version' '${rtLog}'"
+		## vmKt6m: the tools check finds go beside Homebrew's bash, which a bare ssh PATH lacks.
+		printf 'REMOTE_MAC_BASH="%s/bash"\n' "${rtBrew}" >> "${rt}/cicd/config.bash"; : > "${rtFail}/brewgo-b26"
+		fRemoteRun --mac-bin "${rtMacBin}"
+		rm -f -- "${rtFail:?}/brewgo-b26"; echo 'REMOTE_MAC_BASH="/usr/local/bin/bash"' >> "${rt}/cicd/config.bash"
+		fAssert "[EtjavHs] a Mac whose go sits beside its Homebrew bash fetches the modules with that folder first on PATH, and runs the suite" \
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qxF 'go mod download' '${rtLog}' && grep -qxF '  b26: test.bash against the universal build' '${rtOut}' && grep -qxF '  passed on: b26 b29w' '${rtOut}'"
+		: > "${rtFail}/nomkdir-b29w"
 		fRemoteRun
-		rm -f -- "${rtFail:?}/nomkdir-vm925w"
+		rm -f -- "${rtFail:?}/nomkdir-b29w"
 		fAssert "[Erkbdu7] a Windows folder the run did not make is never removed" \
-			bash -c "[[ '${rtRc}' == 1 ]] && ! grep -q '^ssh vm925w .*rmdir' '${rtLog}' && grep -qF 'FAIL: vm925w, could not copy the Go tests' '${rtOut}'"
+			bash -c "[[ '${rtRc}' == 1 ]] && ! grep -q '^ssh b29w .*rmdir' '${rtLog}' && grep -qF 'FAIL: b29w, could not copy the Go tests' '${rtOut}'"
 		: > "${rtFail}/go-build"
 		fRemoteRun
 		rm -f -- "${rtFail:?}/go-build"
@@ -6346,24 +6568,59 @@ EOF
 		local rtBins=(--mac-bin "${rtMacBin}" --bin freebsd/amd64 "${work}/remote-bsdbin" --bin linux/arm64 "${work}/remote-armbin")
 		fRemoteRun "${rtBins[@]}"
 		fAssert "[Erm9Pnk] each Unix box is taken by name from the lock's other list, with no wait, and every one runs" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^lock wrap vmFreeBSD --wait 0 .* -- .*remote-tests\.bash --held unix vmFreeBSD bsdtest@vmFreeBSD win=vm925w b29w other=b26 vmFreeBSD vmDebARM64 session=unset\$' '${rtLog}' && grep -qE '^lock wrap vmDebARM64 --wait 0 .* --held unix vmDebARM64 tester@vmDebARM64 win=vm925w b29w other=b26 vmFreeBSD vmDebARM64 session=unset\$' '${rtLog}' && [[ \$(grep -cxF '  ok: [AAAAAAB] TestA' '${rtOut}') == 4 ]]"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^lock wrap vmFreeBSD --wait 0 .* -- .*remote-tests\.bash --held unix vmFreeBSD bsdtest@vmFreeBSD win=b29w vm925w other=b26 vmFreeBSD vmDebARM64 session=unset\$' '${rtLog}' && grep -qE '^lock wrap vmDebARM64 --wait 0 .* --held unix vmDebARM64 tester@vmDebARM64 win=b29w vm925w other=b26 vmFreeBSD vmDebARM64 session=unset\$' '${rtLog}' && [[ \$(grep -cxF '  ok: [AAAAAAB] TestA' '${rtOut}') == 4 ]]"
 		fAssert "[Erm9Pnx] each gets the Go tests and the build for its own target, in a marked copy of the tree with the git dir" \
 			bash -c "[[ -f '${rtBsd}/.gitsby-remote-tests' && -f '${rtBsd}/tree/src-go/gitsby-test' && \"\$(cat '${rtBsd}/tree/src-go/gitsby')\" == freebsd && \"\$(cat '${rtArm}/tree/src-go/gitsby')\" == arm64 ]] && git -C '${rtBsd}/tree' ls-files --error-unmatch src-go/a_test.go >/dev/null && grep -qxF '  vmFreeBSD: go test (freebsd/amd64)' '${rtOut}' && grep -qxF '  vmDebARM64: go test (linux/arm64)' '${rtOut}'"
 		fAssert "[Erm9PoA] and runs test.bash there with the box's own bash, after fetching the modules" \
-			bash -c "grep -qF 'ssh bsdtest@vmFreeBSD echo @@gitsby-remote-tests@@; cd \"\$HOME/gitsby-remote-tests/tree\" && bash cicd/test.bash' '${rtLog}' && grep -qF 'ssh tester@vmDebARM64 echo @@gitsby-remote-tests@@; cd \"\$HOME/gitsby-remote-tests/tree\" && bash cicd/test.bash' '${rtLog}' && grep -q '^ssh bsdtest@vmFreeBSD .*tar -xf .*go mod download' '${rtLog}' && grep -qF '  vmDebARM64: test.bash against the linux/arm64 build' '${rtOut}'"
+			bash -c "grep -qE '^ssh bsdtest@vmFreeBSD echo @@gitsby-remote-tests@@; .*cd \"[\$]d/tree\" && [\$]lo bash cicd/test\.bash' '${rtLog}' && grep -qE '^ssh tester@vmDebARM64 echo @@gitsby-remote-tests@@; .*cd \"[\$]d/tree\" && [\$]lo bash cicd/test\.bash' '${rtLog}' && grep -q '^ssh bsdtest@vmFreeBSD .*tar -xf .*go mod download' '${rtLog}' && grep -qF '  vmDebARM64: test.bash against the linux/arm64 build' '${rtOut}'"
+		fAssert "[Etj35gI] each Unix box's copy goes under its temp root too, not its home" \
+			bash -c "[[ -f '${rtBsd}/.gitsby-remote-tests' && -f '${rtArm}/.gitsby-remote-tests' && ! -e '${rtBsd%/*}/home/gitsby-remote-tests' && ! -e '${rtArm%/*}/home/gitsby-remote-tests' ]]"
 		echo 'go ' > "${rtFail}/lacks-tester@vmDebARM64"
 		fRemoteRun "${rtBins[@]}"
 		rm -f -- "${rtFail:?}/lacks-tester@vmDebARM64"
 		fAssert "[Erm9PoN] a Unix box without a tool the suite needs runs the Go tests only, fetches nothing, and says what it lacks" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qxF '  skip: test.bash on vmDebARM64, which lacks: go' '${rtOut}' && grep -q '^ssh tester@vmDebARM64 .*-test\.v' '${rtLog}' && ! grep -q '^ssh tester@vmDebARM64 .*cicd/test\.bash' '${rtLog}' && ! grep -q '^ssh tester@vmDebARM64 .*go mod download' '${rtLog}' && grep -q '^ssh bsdtest@vmFreeBSD .*cicd/test\.bash' '${rtLog}'"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qxF '  SKIP: test.bash on vmDebARM64, which lacks: go' '${rtOut}' && grep -q '^ssh tester@vmDebARM64 .*-test\.v' '${rtLog}' && ! grep -q '^ssh tester@vmDebARM64 .*cicd/test\.bash' '${rtLog}' && ! grep -q '^ssh tester@vmDebARM64 .*go mod download' '${rtLog}' && grep -q '^ssh bsdtest@vmFreeBSD .*cicd/test\.bash' '${rtLog}'"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		fAssert "[Erm9Poa] with no build for its target a Unix box runs the Go tests only, and says so" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qxF '  skip: test.bash on vmFreeBSD, since no freebsd/amd64 build was given (--bin)' '${rtOut}' && ! grep -q '^ssh bsdtest@vmFreeBSD .*cicd/test\.bash' '${rtLog}' && grep -q '^ssh bsdtest@vmFreeBSD .*-test\.v' '${rtLog}'"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qxF '  SKIP: test.bash on vmFreeBSD, since no freebsd/amd64 build was given (--bin)' '${rtOut}' && ! grep -q '^ssh bsdtest@vmFreeBSD .*cicd/test\.bash' '${rtLog}' && grep -q '^ssh bsdtest@vmFreeBSD .*-test\.v' '${rtLog}'"
 		: > "${rtFail}/down-bsdtest@vmFreeBSD"; : > "${rtFail}/busy-vmDebARM64"
 		fRemoteRun "${rtBins[@]}"
 		rm -f -- "${rtFail:?}"/down-* "${rtFail:?}"/busy-*
 		fAssert "[Erm9Pon] a Unix box that is off or held by someone else is skipped, and the run passes" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'skip: vmFreeBSD, not reachable over ssh (tried bsdtest@vmFreeBSD)' '${rtOut}' && ! grep -q '^lock wrap vmFreeBSD' '${rtLog}' && grep -qF 'skip: vmDebARM64, held by session abcd' '${rtOut}' && ! grep -q '^ssh tester@vmDebARM64 .*-test\.v' '${rtLog}'"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'SKIP: vmFreeBSD, not reachable over ssh (tried bsdtest@vmFreeBSD)' '${rtOut}' && ! grep -q '^lock wrap vmFreeBSD' '${rtLog}' && grep -qF 'SKIP: vmDebARM64, held by session abcd' '${rtOut}' && ! grep -q '^ssh tester@vmDebARM64 .*-test\.v' '${rtLog}'"
+		## With the VM state helper beside the lock, vmFreeBSD a VM that is off and asleep until
+		## the helper wakes it. The stub logs what it does, and fails on a marker for the host.
+		local rtVm="${rtLock%/*}/x_vm-state.bash"
+		fStub "${rtVm}" <<-EOF
+			#!/usr/bin/env bash
+			if [[ "\${1:-}" == status ]]; then
+				shift; echo 'host guest state note'
+				for h in "\$@"; do if [[ -f '${rtFail}/vm-'"\${h}" ]]; then echo "\${h} \${h} \$(cat '${rtFail}/vm-'"\${h}")"; else echo "\${h} - - not a VM here"; fi; done
+				exit 0
+			fi
+			h="\$2"; printf 'vmstate %s\n' "\$*" >> '${rtLog}'
+			[[ "\$*" == "wrap \${h} --wait 0 -- "* ]] || exit 2
+			[[ ! -e '${rtFail}/noup-'"\${h}" ]] || { echo "x_vm-state.bash: \${h}: starting, was off" >&2; echo "x_vm-state.bash: \${h}: no ssh after 600s. Run restore once it settles." >&2; exit 1; }
+			rm -f -- '${rtFail}'/asleep-*; echo "vmstate up \${h}" >> '${rtLog}'
+			shift 5; rc=0; '${rtLock}' wrap "\${h}" --wait 0 -- "\$@" || rc=\$?
+			echo "vmstate restore \${h}" >> '${rtLog}'
+			[[ ! -e '${rtFail}/norestore-'"\${h}" ]] || { echo "x_vm-state.bash: \${h}: still up after 300s, note kept" >&2; exit 1; }
+			exit "\${rc}"
+		EOF
+		echo off > "${rtFail}/vm-vmFreeBSD"; : > "${rtFail}/asleep-bsdtest@vmFreeBSD"
+		fRemoteRun "${rtBins[@]}"
+		fAssert "[Etj1UKH] a VM that is off is not looked for until the helper has woken it under the lock, and is put back after, while a box that isn't one keeps the lock's own wrap" \
+			bash -c "[[ '${rtRc}' == 0 ]] && up=\$(grep -nxF 'vmstate up vmFreeBSD' '${rtLog}' | cut -d: -f1) && back=\$(grep -nxF 'vmstate restore vmFreeBSD' '${rtLog}' | cut -d: -f1) && first=\$(grep -n '^ssh bsdtest@vmFreeBSD ' '${rtLog}' | head -n 1 | cut -d: -f1) && last=\$(grep -n '^ssh bsdtest@vmFreeBSD ' '${rtLog}' | tail -n 1 | cut -d: -f1) && (( up < first && last < back )) && grep -qE '^vmstate wrap vmFreeBSD --wait 0 -- .*remote-tests\.bash --held unix vmFreeBSD bsdtest@vmFreeBSD\$' '${rtLog}' && grep -qE '^lock wrap vmFreeBSD --wait 0 -- ' '${rtLog}' && grep -qE '^lock wrap vmDebARM64 --wait 0 --why ' '${rtLog}' && ! grep -q '^vmstate wrap vmDebARM64' '${rtLog}' && grep -qxF '  passed on: b26 b29w vmDebARM64 vmFreeBSD' '${rtOut}' && ! grep -qF 'note: no VM state helper' '${rtOut}'"
+		: > "${rtFail}/asleep-bsdtest@vmFreeBSD"; : > "${rtFail}/noup-vmFreeBSD"
+		fRemoteRun "${rtBins[@]}"
+		rm -f -- "${rtFail:?}/noup-vmFreeBSD" "${rtFail:?}"/asleep-*
+		fAssert "[Etj1UKa] a VM that does not come up is skipped with the helper's reason, named as SKIP in the summary, and the run passes" \
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qxF '  SKIP: vmFreeBSD, the VM was off and did not come up (exit 1): x_vm-state.bash: vmFreeBSD: no ssh after 600s. Run restore once it settles.' '${rtOut}' && ! grep -q '^ssh bsdtest@vmFreeBSD' '${rtLog}' && grep -qxF '  passed on: b26 b29w vmDebARM64; SKIP: vmFreeBSD' '${rtOut}'"
+		: > "${rtFail}/norestore-vmFreeBSD"
+		fRemoteRun "${rtBins[@]}"
+		rm -f -- "${rtFail:?}/norestore-vmFreeBSD" "${rtFail:?}/vm-vmFreeBSD" "${rtVm:?}"
+		fAssert "[Etj1UKq] a VM the helper could not put back is warned about, and its result stands" \
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qxF '  WARNING: vmFreeBSD was off, and may not be put back (exit 1): x_vm-state.bash: vmFreeBSD: still up after 300s, note kept' '${rtOut}' && grep -qxF '  passed on: b26 b29w vmDebARM64 vmFreeBSD' '${rtOut}'"
 		: > "${rtFail}/suitefail-bsdtest@vmFreeBSD"
 		fRemoteRun "${rtBins[@]}"
 		rm -f -- "${rtFail:?}/suitefail-bsdtest@vmFreeBSD"
@@ -6374,6 +6631,9 @@ EOF
 		fAssert "[Erm9PpE] a Unix box with no target set stops the run before anything is reached" \
 			bash -c "[[ '${rtRc}' == 2 ]] && grep -qF 'REMOTE_UNIX_TARGETS has no target like freebsd/amd64 for vmOther' '${rtOut}' && [[ ! -s '${rtLog}' ]]"
 
+		fAssert "[Etj1UJ4] Windows tries b29w before vm925w, by that name only, and vmKt6m runs beside b26" \
+			bash -c "grep -qxF 'REMOTE_WINDOWS_HOSTS=(\"b29w\" \"vm925w\")' '${root}/cicd/config.bash' && ! grep -q 'b29w-wif' '${root}/cicd/config.bash' && grep -qE '^REMOTE_MAC_HOSTS=\(\"b26\" \"vmKt6m:vmkt6m\"\)\$' '${root}/cicd/config.bash'"
+		fAssert "[Etj1UJK] a box's temp root is HOST_TEMP, then TMPDIR less its last slash, then /tmp"  fRemoteDirSh
 		## Last, since it replaces the copy the checks above looked at.
 		mv "${rtMac}/gitsby-remote-tests" "${rtMac}/ours"
 		mkdir -p "${rtMac}/gitsby-remote-tests"
@@ -7280,3 +7540,7 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261023 JC: The workflow parse check's skip line names its test ID, and the image has PyYAML, so the check runs there. The Pillow lock check reads the image's own patterns, and a check holds PyYAML to the same. 1667 -> 1668.
 ##		- 20261023 JC: A full run's container is named and labeled for the run, and the check reads the name back from the output. 1676 -> 1677.
 ##		- 20261024 JC: The stage 7 checks put back the boxes they expect, so a tree with config.bash narrowed to one box passes them. 1677 -> 1677.
+##		- 20261025 JC: --backlog-run-quick and its areas, --merge-gate, --backlog-run-full, --long, and the two aliases. The gate checks read the new closing line, and leave the suites out of what the gate must not run. 1677 -> 1688.
+##		- 20261025 JC: --backlog-run-quick goes into the image by default, takes --container and --no-container, and falls back here without docker. The checks of what the gate runs here say --no-container, and [EsJgejN] is off, since --container now goes with it. 1688 -> 1692.
+##		- 20261025 JC: Stage 7 harness: b29w before vm925w, a VM through the VM state helper, each box's copy under its temp root, a Mac's tool check, and SKIP for a skipped box, in its line and the summary. The checks that read the Windows order or a skip line read the new ones. 1700 -> 1709.
+##		- 20261025 JC: The core budget, the hard steps on the quarter, low priority, the container's quota, and each box's budget in stage 7. The image-Go checks want go niced, and the remote suite checks want `$lo`. 1709 -> 1714.

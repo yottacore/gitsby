@@ -81,9 +81,44 @@ TOOL_VERSIONS=(
 	"codeql=2.27.2"
 )
 
-## Half the cores, rounded up. The compiler takes all of them by default, in every build and
-## in the eight-target release loop, which makes the machine unusable for the duration.
-BUILD_JOBS=$(( ( $( nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2 ) + 1 ) / 2 ))
+## The core budget, per 'Machine use' in the shared CICD rules. The compiler takes every core by
+## default, which makes the machine unusable for the duration. BUILD_JOBS is half the cores,
+## rounded down, or a quarter on a busy box, where the 1-minute load is over half the cores.
+## HEAVY_JOBS is a quarter busy or not, for native fuzzing, go test -race, the soak test and
+## CodeQL. Never under 1. Steps run one at a time, so each one gets the whole count. cicd.bash
+## works both out again before each stage. GITSBY_CICD_CPUS stands in for the core count: the
+## run in the container gets the box's that way, since its --cpus quota leaves nproc alone.
+## fCpuJobs VAR CORES LOAD HEAVY sets VAR, with LOAD as the load average prints it.
+fCpuJobs(){
+	local -n jobs_cpuJ="$1"
+	local -i cores=1 load100=0
+	local load="${3:-0}" frac=""
+	## Checked first, since arithmetic would run what a bad one holds.
+	[[ "$2" =~ ^[1-9][0-9]{0,5}$ ]] && cores="$2"
+	frac="${load#*.}"; [[ "${load}" == *.* ]] || frac=""; frac="${frac}00"
+	if [[ "${load%%.*}" =~ ^[0-9]+$ && "${frac:0:2}" =~ ^[0-9]+$ ]]; then load100=$(( 10#${load%%.*} * 100 + 10#${frac:0:2} )); fi
+	jobs_cpuJ=$(( cores / 2 ))
+	if [[ "$4" == 1 ]] || (( load100 * 2 > cores * 100 )); then jobs_cpuJ=$(( cores / 4 )); fi
+	(( jobs_cpuJ >= 1 )) || jobs_cpuJ=1
+}
+fCpuBudget(){
+	local rest="" jobs=0
+	if [[ -z "${cpuCores:-}" ]]; then
+		cpuCores="${GITSBY_CICD_CPUS:-}"
+		[[ "${cpuCores}" =~ ^[1-9][0-9]*$ ]] || cpuCores="$( nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2 )"
+	fi
+	cpuLoad=""
+	if [[ -r /proc/loadavg ]]; then read -r cpuLoad rest < /proc/loadavg || true
+	else cpuLoad="$( sysctl -n vm.loadavg 2>/dev/null || true )"; cpuLoad="${cpuLoad#\{ }"; cpuLoad="${cpuLoad%% *}"; fi
+	fCpuJobs jobs "${cpuCores}" "${cpuLoad}" 0; BUILD_JOBS="${jobs}"
+	fCpuJobs jobs "${cpuCores}" "${cpuLoad}" 1; HEAVY_JOBS="${jobs}"
+}
+fCpuBudget
+## Low priority for the caller, and so for everything it starts.
+fLowPriority(){
+	renice 19 -p "$$" >/dev/null 2>&1 || true
+	if command -v ionice >/dev/null 2>&1; then ionice -c 3 -p "$$" >/dev/null 2>&1 || true; fi
+}
 
 ## Stage 1: lint. Go first (gofmt is the arbiter of format, vet and staticcheck gate),
 ## then every first-party shell file (globs, expanded by the engine). shellcheck is
@@ -270,20 +305,26 @@ DEMOGIF_OPT_CMD=(gifsicle -O3)
 ## Stage 7: Remote tests, over ssh. Each box is taken through a host lock shared with
 ## other projects, only while its run lasts and only if free right now. The lock is a script
 ## outside the repo; the first file matching REMOTE_LOCK_GLOB is it, and with none the stage
-## is skipped. The boxes are this machine's, so on anyone else's that is what happens.
+## is skipped. The boxes are this machine's, so on anyone else's that is what happens. A VM goes
+## through the VM state helper beside the lock, which wakes it and puts it back as it was found.
 REMOTE_TEST_CMD=(cicd/remote-tests.bash)
 REMOTE_LOCK_GLOB="${HOME}/synced/0-0/common/exec/util/linux/bash/*_windows-host-lock.bash"
 ## Each entry is the name the lock knows a box by, then optionally a colon and the ssh names it
-## answers to, tried in order. b29w is up on wired or on wifi, under a different name for each.
-## Every Mac in the list runs; of the Windows boxes, the first free one does.
-REMOTE_MAC_HOSTS=("b26")
-REMOTE_WINDOWS_HOSTS=("vm925w" "b29w:b29w,b29w-wif")
-## b26 is an Intel Mac. Its /bin/bash is 3.2, below the suite's floor, so the suite runs under
-## Homebrew's, which is not on the PATH an ssh command gets.
+## answers to, tried in order.
+## Every Mac in the list runs; of the Windows boxes, the first free one does. b29w goes first,
+## since it spares this box, and nothing here needs vm925w's GPU.
+REMOTE_MAC_HOSTS=("b26" "vmKt6m:vmkt6m")
+REMOTE_WINDOWS_HOSTS=("b29w" "vm925w")
+## Both Macs are Intel. /bin/bash there is 3.2, below the suite's floor, so the suite runs under
+## Homebrew's, which is not on the PATH an ssh command gets. vmKt6m runs as a test user who is
+## not an admin, with nothing but the system on PATH, which b26 doesn't cover.
 REMOTE_MAC_GOARCH="amd64"
 REMOTE_MAC_BASH="/usr/local/bin/bash"
-## The stage's own folder under the Mac's home, holding the copy of the tree the suite runs in.
-REMOTE_MAC_DIR="gitsby-remote-tests"
+## A Mac without one of these, or without REMOTE_MAC_BASH, runs the Go tests only.
+REMOTE_MAC_NEEDS=(git go)
+## The stage's own folder under each Mac's and Unix box's temp root (HOST_TEMP, else TMPDIR, else
+## /tmp), holding the copy of the tree the suite runs in.
+REMOTE_MAC_DIR="gitsby/remote-tests"
 ## Other Unix boxes, run the way the Mac is, each as its test user: the Go tests built for its
 ## target, then test.bash against the build cicd.bash makes for that target, where the box has
 ## every tool in REMOTE_UNIX_NEEDS. Every box in the list runs. The lock knows both by name.
@@ -291,7 +332,7 @@ REMOTE_UNIX_HOSTS=("vmFreeBSD:bsdtest@vmFreeBSD" "vmDebARM64:tester@vmDebARM64")
 declare -gA REMOTE_UNIX_TARGETS=([vmFreeBSD]="freebsd/amd64" [vmDebARM64]="linux/arm64")
 ## go for the suite's own builds; an older one fetches the toolchain go.mod names.
 REMOTE_UNIX_NEEDS=(bash git go)
-REMOTE_UNIX_DIR="gitsby-remote-tests"
+REMOTE_UNIX_DIR="gitsby/remote-tests"
 ## Unix boxes that also run the Go tests built for a Windows target, under Wine, after their own.
 ## Wine is not Windows, so this adds to the Windows box's run, and doesn't replace it. A box
 ## without wine skips it with a note. vmDebARM64 needs arm64.nobti on its kernel line for this.
@@ -336,3 +377,5 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-10-19 JC: Notes the GOAMD64=v1 pin beside CGO_ENABLED=0.
 ##		- 2026-10-19 JC: Pillow 12.3.0, from the upstream wheel, and only fontTools is left on PIP_AUDIT_IGNORE. CodeQL's Python suite runs too, with its own bundle sum. DEMOGIF_TOOLS names the tools a demo render has to match.
 ##		- 2026-10-21 JC: Pillow 13.0.0, which fixes the advisories against 12.3.0. --no-fuzz skips pip-audit too.
+##		- 2026-10-25 JC: Stage 7 tries b29w before vm925w, adds vmKt6m beside b26, and keeps each box's copy of the tree under its temp root. REMOTE_MAC_NEEDS.
+##		- 2026-10-25 JC: BUILD_JOBS rounds down, and drops to a quarter on a busy box. HEAVY_JOBS for the hard steps, and fLowPriority.
