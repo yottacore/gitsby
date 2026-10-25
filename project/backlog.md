@@ -252,6 +252,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 			- Go's module cache in the volume pruned of what the current `go.sum` doesn't name.
 		- Packaging and dependabot stay deferred, per the standing decision. 20261024: kept out of this item, since nothing makes them pressing.
 
+- Stage 7 takes every box through the VM state helper's wrap
+	- ID: 2026102511210617
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261025-112106
+	- Opened by: jim-collier
+	- Related IDs: 2026102416313101
+	- Requirements [Feature]:
+		- The helper's `wrap` takes `--why` and `--eta` since 2026-10-25, and leaves a box that isn't a VM alone. So stage 7 can use it for every box, with `--why "gitsby: <kind> tests"`, and drop the lock's own `wrap` branch in `fUnderLock`.
+		- The comment above `fUnderLock` that says the helper has no `--why` goes with it.
+		- A box with no helper on the PATH still runs through the lock's `wrap`.
+	- Estimated effort: Low
+
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
@@ -470,6 +484,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Verified: the 9 new checks and the changed ones pass. Run against the old remote-tests.bash and config.bash, all 9 new checks fail, and so do 14 of the existing stage 7 checks.
 		- Verified: shellcheck, `test-id.bash --check`, and `--backlog-run-quick lint unit` pass.
 		- Note: vmKt6m ignores the ACPI shutdown. A run that finds it off waits 300 s for the helper's restore, then warns and leaves it running. The fix belongs in the helper. Draft in `private/claude_simple/upstream/2026102416313101/`.
+		- 2026-10-25: The helper's `wrap` takes `--why` and `--eta` now, fixed in place. Moving stage 7 onto it for every box is 2026102511210617.
 		- Note: the old `~/gitsby-remote-tests` folders on b26, vmFreeBSD and vmDebARM64 are no longer used. Nothing removes them.
 		- 2026-10-25: In the round's full run, vmKt6m failed its copy step with `go: command not found` (exit 127). The tools check looks for go with Homebrew's bash folder first on PATH, and found it there. The module fetch ran on the bare ssh PATH. The fetch is only for the suite, so it now runs on the suite's PATH, the one the check used. A Mac with no go there still fetches nothing and names go.
 		- 2026-10-25: The Go tests step needs no go, since its binary is built here. It runs on the box's own PATH, and the Go tests that use git skip without one. Not checked: a Mac whose `/usr/bin/git` only offers to install the command line tools would fail those tests rather than skip them.
@@ -576,6 +591,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 2026-10-25: `--backlog-run-quick` hands itself to the image as a full run does, by its own name with the areas and `-q` as given, and prints the outer passed line once the inner one passes. The image's tag and its run are shared with the full run, so the two can't drift. The gif's archive isn't mounted for it.
 	- Decisions:
 		- `--container` and `--no-container` go with the quick run now, and only `--install-hook` refuses them. [EsJgejN], "--container with --gate is refused", is commented out in test.bash for that reason: it encoded `--gate` staying on the box, which this issue overrides. [Etip9iB] checks the new behavior in its place.
+		- 2026-10-25: [EsJgejN] stays commented out, with the reason above it, rather than deleted.
 		- The pre-push hook's `--gate` goes into the image with it, so a push to main is gated by the image's tools too.
 	- Branch: round-20261025
 	- Test case: test.bash [Etip9hi], [Etip9hw], [Etip9iB], [Etip9iR] and [Etip9if].
