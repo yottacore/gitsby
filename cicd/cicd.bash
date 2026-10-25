@@ -51,7 +51,7 @@
 ##	   --no-leakcheck      skip the leak checks
 ##	   --long              everything, the slow checks included; nothing here takes hours, so the same as no flags
 ##	       --slow          alias for --long
-##	   --container         run stages 1-4 and the demo gif, or the quick run, in the pinned image from cicd/container/Dockerfile (the default)
+##	   --container         run stages 1-4 and the demo gif, or the quick run, in the pinned image from cicd/container/Dockerfile, and build dogfood and stage 7 with its Go (the default)
 ##	   --no-container      run them on this box instead
 ##	   --backlog-run-quick [AREA...]
 ##	                       what a backlog worker runs before it commits, in a few minutes, in the image:
@@ -93,6 +93,7 @@ export PATH="${HOME}/.local/bin:${PATH}"   ## user-prefix npm tools (markdownlin
 source "${here}/config.bash"
 source "${here}/utility/include/gfs-rotate.bash"       ## gfs_rotate() for the artifact dirs
 source "${here}/utility/include/go-test-lines.bash"    ## fGoTestLines(), shared with remote-tests.bash
+source "${here}/utility/include/image-go.bash"         ## fImageGo(), shared with remote-tests.bash
 cd "${root}"
 stamp="$(date +%Y%m%d-%H%M%S)"
 
@@ -195,7 +196,7 @@ if [[ -n "${containerOpt}" ]] && ((installHook)); then fUsage "${containerOpt} g
 if [[ "${containerOpt}" == --container && -n "${GITSBY_CICD_IN_CONTAINER:-}" ]]; then fUsage "already in the container; --container would start another."; fi
 ## Asked for, it has to work. By default, a box with no usable docker runs everything here, and says so.
 container=0; containerNote=""
-inImage="stages 1-4 and the demo run"; ((gate)) && inImage="the quick run runs"
+inImage="stages 1-4, the demo and the builds run"; ((gate)) && inImage="the quick run runs"
 if [[ -n "${GITSBY_CICD_IN_CONTAINER:-}" || "${containerOpt}" == --no-container ]] || ((installHook)); then :
 elif [[ "${containerOpt}" == --container ]]; then container=1
 elif [[ "${CICD_CONTAINER:-0}" == 1 ]]; then
@@ -203,6 +204,8 @@ elif [[ "${CICD_CONTAINER:-0}" == 1 ]]; then
 	else containerNote="WARNING: docker isn't usable here, so ${inImage} on this box, with its own tool versions"; fi
 fi
 if ((installHook)); then exec "${here}/utility/pre-push.bash" --install; fi
+## Set once the image is there. One left in the caller's environment would say otherwise.
+unset GITSBY_CICD_IMAGE GITSBY_CICD_RUN
 ## Checks only: the tree, the box and origin are as they were found. Stage 6 still renders the
 ## gif, and leaves a changed one as committed.
 if [[ -n "${handsOff}" ]]; then doSync=0; DOGFOOD_TARGETS=(); GIT_PUBLISH=(); fi
@@ -724,7 +727,7 @@ fi
 fEcho_Clean
 fEcho_Clean "Repo root ...........: ${root}"
 if ((container)); then
-	fEcho_Clean "Container ...........: stages 1-4 and 6 in ${containerImage}"
+	fEcho_Clean "Container ...........: stages 1-4 and 6 in ${containerImage}, and the builds for 5 and 7 with its Go"
 elif [[ -n "${containerNote}" ]]; then
 	fEcho "${containerNote}"
 fi
@@ -860,9 +863,10 @@ fi
 ## because a run that publishes builds source whose commit stage 8 hasn't made yet.
 goVersion="$(fGoVersion)"; goBuildEpoch="$(fGoBuildEpoch)"
 
-## --container: stages 1-4 and the demo run in the pinned image.
+## --container: stages 1-4 and the demo run in the pinned image, and stages 5 and 7 build with its Go.
 if ((container)); then
 	fContainerRun "${containerRun[@]}"
+	export GITSBY_CICD_IMAGE="${containerImage}" GITSBY_CICD_RUN="${stamp}"
 	if ((DO_DEMOGIF)); then demoWhere="ran in the container"; fi
 	doLint=0; doTest=0; doFuzz=0; doParity=0; DO_DEMOGIF=0; ranWhere="ran in the container"
 fi
@@ -999,8 +1003,8 @@ fi
 ## warning, not an unattended privilege escalation. A cross-build failure is fatal: it means
 ## the tree stopped being portable, which is worth finding here rather than at a release.
 fSection "5/8  Dogfood"
-## Builds target $1 (goos/goarch) to the file $2. Stage 7 builds the Mac one this way too, so
-## the Mac tests run against the same build dogfood installs.
+## Builds target $1 (goos/goarch) to the file $2, with the image's Go when the run uses it. Stage 7
+## builds the Mac one this way too, so the Mac tests run against the same build dogfood installs.
 fCrossBuild(){
 	local target="$1" out="$2" arch part
 	local -a arches parts=()
@@ -1008,8 +1012,8 @@ fCrossBuild(){
 	arches=("${target##*/}"); [[ "${target}" == darwin/universal ]] && arches=(amd64 arm64)
 	for arch in "${arches[@]}"; do
 		part="${out}"; ((${#arches[@]} == 1)) || part="${out}-${arch}"
-		(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOAMD64=v1 GOOS="${target%%/*}" GOARCH="${arch}" \
-			go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${goVersion#v} -X main.buildEpoch=${goBuildEpoch}" -o "${part}" .) \
+		fImageGo "${root}/${GO_MODULE_DIR}" "${part%/*}" CGO_ENABLED=0 GOAMD64=v1 GOOS="${target%%/*}" GOARCH="${arch}" \
+			build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${goVersion#v} -X main.buildEpoch=${goBuildEpoch}" -o "${part}" . \
 			|| fDie "go build failed for ${target%%/*}/${arch}"
 		parts+=("${part}")
 	done
@@ -1218,3 +1222,4 @@ fEcho_Clean
 ##		- 2026-10-23 JC: The container run gets a name and labels carrying the run's start time and tree, so it can be found and stopped among other projects' containers.
 ##		- 2026-10-25 JC: --backlog-run-quick takes over from --gate, which stays as another name for it, and runs the suites against a build of their own, or only the areas named. --merge-gate, with --ci as another name, and --backlog-run-full run every check of a plain run and change nothing: no sync, dogfood or publish, no prompt, and the demo gif stays as committed. --long and --slow are a plain run.
 ##		- 2026-10-25 JC: --backlog-run-quick runs in the image as well, where docker works, and --no-container keeps it here. --container goes with it now too.
+##		- 2026-10-25 JC: Dogfood's builds, stage 7's, and the cross-builds --quick does there come from the image's Go when the run uses the image. Copying them into place and the tests on the other boxes stay here.

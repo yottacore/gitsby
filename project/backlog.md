@@ -53,7 +53,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: dogfood and stage 7 builds from the image's Go
 	- ID: 2026102507133278
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: One `--backlog-run-full` in the container, the same one 2026102506452473 asks for. Its stage 7 builds come from the image now. Dogfood's come from it too, but a round never dogfoods, so the next dogfood is their first real run.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261025-071332
 	- Opened by: jim-collier
@@ -62,6 +63,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Requirements [Feature]:
 		- Stage 5's cross-builds, stage 7's builds and `--quick`'s cross-builds come from the image's Go, where docker works: `fCrossBuild` in cicd.bash, and the `go test -c` binaries in remote-tests.bash.
 		- Copying a build into place, and the tests on the other boxes, stay on the box.
+	- Progress log:
+		- 2026-10-25: Both go through `fImageGo` in the new `cicd/utility/include/image-go.bash`. Once the image is there, a run that uses it exports its tag as `GITSBY_CICD_IMAGE`, and stage 7 hands that on to remote-tests.bash. Each build is its own `docker run`, with the tree and the out dir mounted at their own paths and the Go cache volume the full run uses. Without the image, `--no-container` or no docker, they build on the box as before, and the docker warning now says the builds do too. The joining of the Mac halves and the copy into place stay on the box.
+	- Decisions:
+		- remote-tests.bash run by hand builds with the box's Go unless `GITSBY_CICD_IMAGE` is set. Only cicd.bash knows the image's tag.
+		- cicd.bash clears `GITSBY_CICD_IMAGE` at the start, so a stale one in the shell can't move a `--no-container` build into an image.
+	- Branch: round-20261025
+	- Test case: test.bash [EtitOqM], [EtitOrO], [EtitOsK] and [EtitOtH].
+	- Verified: `cicd.bash --backlog-run-quick` passed in the image: lint, go test, test.bash 1700/0, fuzz 313/0, spawn counts and parity 29/0. Against the old cicd.bash and remote-tests.bash, [EtitOqM], [EtitOrO] and [EtitOtH] fail, and [EtitOsK] fails with the `unset` taken out. With the real image, `fImageGo` built linux/amd64 and darwin/arm64 into a folder outside the tree, and the windows/amd64 Go tests into one under `/tmp`. The linux/amd64 build matched the box's byte for byte, both on Go 1.26.2.
+	- Swept: every `go build` and `go test -c` in cicd.bash and remote-tests.bash. `fCrossBuild` covers dogfood, stage 7's Mac and Unix builds and `--quick`'s cross-builds, and `fBuildTests` covers all four of the harness's builds. The native and demo builds already run in the image when the run does. release.bash is 2026102507133283. The GOAMD64 and cgo pin checks ([Et9l12K], [Er1LxT7]) still count the same sites. README, contributing.md and cicd.bash's help, plan line and warning.
 
 - CICD reset: release builds from the image's Go
 	- ID: 2026102507133283

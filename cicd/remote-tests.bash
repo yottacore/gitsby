@@ -21,6 +21,8 @@
 ##		  free right now. A box that is off, unreachable or taken by someone else is skipped
 ##		  with a note, and so is the whole stage when there is no lock script. Every Mac and
 ##		  Unix box in the list runs; of the Windows boxes, the first free one does.
+##		- The Go tests are built with the image's Go when cicd.bash runs this with the image, and
+##		  with this box's otherwise.
 ##		- The boxes, the lock and the paths are in config.bash, under stage 7.
 ##	Syntax:
 ##		cicd/remote-tests.bash [--mac-bin FILE] [--bin GOOS/GOARCH FILE]...
@@ -49,6 +51,8 @@ root="$(cd "${here}/.." && pwd)"
 source "${here}/config.bash"
 # shellcheck source=/dev/null
 source "${here}/utility/include/go-test-lines.bash"
+# shellcheck source=/dev/null
+source "${here}/utility/include/image-go.bash"
 
 macBin=""; held=()
 declare -A unixBin=()
@@ -108,7 +112,7 @@ fReachable(){
 
 ## The Go tests built for $1/$2 into the file $3.
 fBuildTests(){
-	(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOAMD64=v1 GOOS="$1" GOARCH="$2" GOMAXPROCS="${BUILD_JOBS}" go test -c -p "${BUILD_JOBS}" -o "$3" .)
+	fImageGo "${root}/${GO_MODULE_DIR}" "${3%/*}" CGO_ENABLED=0 GOAMD64=v1 GOOS="$1" GOARCH="$2" GOMAXPROCS="${BUILD_JOBS}" test -c -p "${BUILD_JOBS}" -o "$3" .
 }
 
 ## NUL-separated paths in, the ones that exist out. A tracked file deleted in the tree is still
@@ -440,3 +444,4 @@ fEcho_Clean "  passed on: ${passed[*]:-none}"
 ##		- 2026-10-04 JC: Every expansion braced, and shellcheck enforces it.
 ##		- 2026-10-05 JC: A Unix box can also run the Go tests for a Windows target under Wine. The Linux arm64 box runs the windows/arm64 ones.
 ##		- 2026-10-19 JC: The test builds pin GOAMD64=v1, like the release.
+##		- 2026-10-25 JC: The test builds use the image's Go when cicd.bash hands it the image.

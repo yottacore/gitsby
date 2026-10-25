@@ -295,7 +295,7 @@ fMakeGateFixture(){
 	mkdir -p "${gateDir}/cicd/utility/include" "${gateDir}/cicd/utility/demo" "${gateDir}/cicd/container" "${gateDir}/bin" "${gateDir}/home" "${gateDir}/src-go" "${gateFail}"
 	cp "${root}/cicd/cicd.bash" "${root}/cicd/config.bash" "${gateDir}/cicd/"
 	cp "${root}/cicd/container/Dockerfile" "${root}/cicd/container/requirements.txt" "${gateDir}/cicd/container/"
-	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${root}/cicd/utility/include/gh-account.bash" "${root}/cicd/utility/include/go-test-lines.bash" "${gateDir}/cicd/utility/include/"
+	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${root}/cicd/utility/include/gh-account.bash" "${root}/cicd/utility/include/go-test-lines.bash" "${root}/cicd/utility/include/image-go.bash" "${gateDir}/cicd/utility/include/"
 	## Empty, so the lint globs and PY_LINT_FILES resolve, and stage 6 finds a scenario.
 	: > "${gateDir}/install.bash"; : > "${gateDir}/install.ps1"; : > "${gateDir}/cicd/utility/demo/gen-demo-gif.py"
 	: > "${gateDir}/cicd/utility/codeql-findings.py"; : > "${gateDir}/src-go/go.mod"; : > "${gateDir}/src-go/main.go"
@@ -303,13 +303,17 @@ fMakeGateFixture(){
 	cp "${root}/PSScriptAnalyzerSettings.psd1" "${gateDir}/"
 	: > "${gateDir}/cicd/utility/demo/demo-scenario.toml"
 	echo "# Fixture" > "${gateDir}/README.md"
-	for s in test fuzz parity remote-tests; do fGateStub "${gateDir}/cicd/${s}.bash" "${s}"; done
+	for s in test fuzz parity; do fGateStub "${gateDir}/cicd/${s}.bash" "${s}"; done
+	## Says which image it was handed, if any.
+	fGateStub "${gateDir}/cicd/remote-tests.bash" remote-tests "[[ -z \"\${GITSBY_CICD_IMAGE:-}\" ]] || printf 'image=%s run=%s\\n' \"\${GITSBY_CICD_IMAGE}\" \"\${GITSBY_CICD_RUN:-}\" >> '${gateCalls}'"
 	for s in gen-winres backlog-check spawn-count; do fGateStub "${gateDir}/cicd/utility/${s}.bash" "${s}"; done
 	fGateStub "${gateDir}/cicd/utility/demo/demo-repo.bash" demo-repo
 	## Writes the joined file, so stage 7 has a build to remove.
 	fGateStub "${gateDir}/cicd/utility/macho-universal.bash" macho-universal ": > \"\${1:-/dev/null}\""
 	fGateStub "${gateDir}/cicd/utility/n8git_backup-and-publish" n8git_backup-and-publish
-	for s in markdownlint staticcheck golangci-lint govulncheck docker ruff pip-audit; do fGateStub "${gateDir}/bin/${s}" "${s}"; done
+	for s in markdownlint staticcheck golangci-lint govulncheck ruff pip-audit; do fGateStub "${gateDir}/bin/${s}" "${s}"; done
+	## A build in the image leaves its -o file behind, as go's stub does, so dogfood has one to copy.
+	fGateStub "${gateDir}/bin/docker" docker "if [[ ! -e '${gateFail}/docker' ]]; then o=''; for a in \"\$@\"; do [[ \"\${o}\" != 1 ]] || : > \"\${a}\"; o=''; [[ \"\${a}\" != -o ]] || o=1; done; fi"
 	## The demo generator writes a gif header to its --out, and the optimizer, called as
 	## 'gifsicle -O3 IN -o OUT', copies IN to OUT, so stage 6 has a file to compare. py_compile
 	## passes no --out.
@@ -396,6 +400,33 @@ fGateContainerDemo(){
 	fGateSays 0 'demo gif ran in the container' -y --no-sync --no-publish --no-dogfood --no-remote --no-fuzz \
 		&& fGateCalled '^docker run .*/private/demo/gif:.* -y --no-sync --no-dogfood --no-remote --no-publish --no-fuzz$' \
 		&& ! fGateCalled '^(python3 .*gen-demo-gif|gifsicle)'
+}
+## Dogfood's builds and stage 7's come from the image's Go, and the harness is handed the image
+## for its own. Copying into place stays here. The dest is the fixture home's fallback dir.
+fGateContainerBuilds(){
+	local rc=0 img='gitsby-cicd:[0-9a-f]{12}' src="${gateDir}/src-go"
+	mkdir -p "${gateDir}/home/.local/bin"
+	fGateSays 0 'OK: Remote tests' -y --no-fuzz --no-demogif --no-sync --no-publish \
+		&& fGateCalled "^docker run --rm --init --label gitsby\.cicd\.run=[0-9]{8}-[0-9]{6} --label gitsby\.cicd\.tree=${gateDir} .* -e CGO_ENABLED=0 -e GOAMD64=v1 -e GOOS=linux -e GOARCH=amd64 -w ${src} ${img} go build .* -o ${src}/gitsby-linux-amd64 \.\$" \
+			"^docker run .* -e GOOS=darwin -e GOARCH=amd64 -w ${src} ${img} go build " "^docker run .* -e GOOS=darwin -e GOARCH=arm64 -w ${src} ${img} go build " \
+			"^docker run .* -e GOOS=freebsd -e GOARCH=amd64 -w ${src} ${img} go build " "^image=${img} run=[0-9]{8}-[0-9]{6}\$" \
+		&& ! fGateCalled '^go build' && [[ -f "${gateDir}/home/.local/bin/gitsby" ]] \
+		&& grep -qF 'OK: installed (linux/amd64) -> '"${gateDir}/home/.local/bin/gitsby" "${gateOut}" || rc=1
+	rm -f -- "${gateDir:?}/home/.local/bin/gitsby"; rmdir "${gateDir}/home/.local/bin" "${gateDir}/home/.local" 2>/dev/null || true
+	return "${rc}"
+}
+## --quick's cross-builds of the Unix boxes' targets as well.
+fGateContainerQuickBuilds(){
+	fGateSays 0 'OK: cross-built ' -y --quick --no-sync --no-publish --no-dogfood \
+		&& fGateCalled '^docker run .* -e GOOS=freebsd -e GOARCH=amd64 .* gitsby-cicd:[0-9a-f]{12} go build ' '^docker run .* -e GOOS=linux -e GOARCH=arm64 .* go build ' \
+		&& ! fGateCalled '^go build'
+}
+## --no-container builds them here, an image left in the caller's environment included, and
+## hands the harness none.
+fGateHereBuilds(){
+	GITSBY_CICD_IMAGE=stale fGateSays 0 'OK: Remote tests' -y --no-container --no-fuzz --no-demogif --no-sync --no-publish --no-dogfood \
+		&& fGateCalled '^go build .* -o .*/src-go/gitsby-darwin-universal-amd64 \.$' '^go build .* -o .*/src-go/gitsby-freebsd-amd64 \.$' \
+		&& ! fGateCalled '^docker ' && ! fGateCalled '^image='
 }
 fGateFullRun(){
 	fGateSays 0 'CI/CD: done\.' -y --no-container --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
@@ -5922,6 +5953,9 @@ EOF
 		fAssert "[EtBTWta] and --no-leakcheck"  fGateContainerNoLeak
 		fAssert "[Et9R5kW] the image's tag changes with the Python tools' lock"  fGateLockInTag
 		fAssert "[EsK1B7q] and the demo gif as well"  fGateContainerDemo
+		fAssert "[EtitOqM] dogfood and stage 7 build with the image's Go and copy here, and the harness is handed the image"  fGateContainerBuilds
+		fAssert "[EtitOrO] and so do --quick's cross-builds"  fGateContainerQuickBuilds
+		fAssert "[EtitOsK] --no-container builds them here, whatever image the environment names"  fGateHereBuilds
 		fAssert "[EsK46gt] a box without a working docker runs them here, with a warning"  fGateNoDocker
 		fAssert "[EsK46i7] but --container there stops"  fGateNoDockerAsked
 		fAssert "[EsK46j7] --container and --no-container together are refused"  fGateSays 2 'opposites' -y --container --no-container
@@ -6328,7 +6362,7 @@ EOF
 		mkdir -p "${rt}/cicd/utility/include" "${rt}/src-go" "${rtBin}" "${rtMac}" "${rtFail}" "${rtLock%/*}"
 		cp "${root}/cicd/remote-tests.bash" "${rt}/cicd/"
 		fRemoteConfig
-		cp "${root}/cicd/utility/include/go-test-lines.bash" "${rt}/cicd/utility/include/"
+		cp "${root}/cicd/utility/include/go-test-lines.bash" "${root}/cicd/utility/include/image-go.bash" "${rt}/cicd/utility/include/"
 		## The Unix boxes have runs of their own further down, with the config put back.
 		echo 'REMOTE_UNIX_HOSTS=()' >> "${rt}/cicd/config.bash"
 		printf 'package main\n\nfunc TestA(t *testing.T) { // [AAAAAAB]\n}\n' > "${rt}/src-go/a_test.go"
@@ -6406,6 +6440,17 @@ EOF
 		fAssert "[ErkbDVk] that copy is marked as the stage's, and holds the git dir, both builds and the fetched modules" \
 			bash -c "cd '${rtMac}/gitsby-remote-tests' && [[ -f .gitsby-remote-tests && -f tree/src-go/gitsby-test && \"\$(cat tree/src-go/gitsby)\" == mac ]] && git -C tree ls-files --error-unmatch src-go/a_test.go >/dev/null && grep -qx 'go mod download' '${rtLog}'"
 		fAssert "[ErkbDWC] the Windows box gets a folder under %TEMP% for the run, removed after"  fRemoteWinCleaned vm925w
+		## Handed an image, as stage 7 does, every box's Go tests come from its Go, with the folder
+		## the build goes in mounted at its own path. A docker that writes the -o file stands in.
+		fStub "${rtBin}/docker" <<-EOF
+			#!/usr/bin/env bash
+			printf 'docker %s\n' "\$*" >> '${rtLog}'
+			o=''; for a in "\$@"; do [[ "\${o}" != 1 ]] || : > "\${a}"; o=''; [[ "\${a}" != -o ]] || o=1; done
+		EOF
+		GITSBY_CICD_IMAGE=gitsby-cicd:0123456789ab GITSBY_CICD_RUN=20261025-000000 fRemoteRun --mac-bin "${rtMacBin}"
+		rm -f -- "${rtBin:?}/docker"
+		fAssert "[EtitOtH] handed the image, the harness builds each box's Go tests with its Go" \
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^docker run --rm --init --label gitsby\.cicd\.run=20261025-000000 .* -v [^ ]+/mac/tree/src-go:[^ ]+/mac/tree/src-go .* -e GOOS=darwin -e GOARCH=[a-z0-9]+ .* -w ${rt}/src-go gitsby-cicd:0123456789ab go test -c ' '${rtLog}' && grep -qE '^docker run .* -v [^ ]+/win/src-go:[^ ]+/win/src-go .* -e GOOS=windows -e GOARCH=amd64 .* gitsby-cicd:0123456789ab go test -c ' '${rtLog}' && ! grep -q '^go test -c' '${rtLog}' && grep -qxF '  passed on: b26 vm925w' '${rtOut}'"
 		: > "${rtFail}/oldlock"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtFail:?}/oldlock"
