@@ -98,7 +98,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: every reader of `REMOTE_WINDOWS_HOSTS`, `REMOTE_MAC_HOSTS`, `REMOTE_MAC_DIR` and `REMOTE_UNIX_DIR`. cicd.bash only prints the host lists, and the test.bash fixture pins its own. Every `skip:` line in remote-tests.bash. README and contributing.md, which named one Mac and said nothing about VMs.
 		- 2026-10-25: every remote command in `fRunPosix`, for a tool it runs off the PATH it was checked on. Only the fetch did. The Unix boxes use the bare PATH for all of it, and the copy, Go tests and Wine steps run nothing from Homebrew.
 	- Branch: round-20261025
-	- Commit: 4388d96
+	- Commit: 4388d96, b14ae19
 	- Test case: test.bash `[Etj1UJ4]` (config order), `[Etj1UJK]` (temp root), `[Etj1UJb]` and `[Etj35gI]` (copies under it), `[Etj1UJq]` (no helper), `[Etj1UKH]`, `[Etj1UKa]` and `[Etj1UKq]` (VM wake, no wake, no restore), `[Etj1ULE]` (Mac tools), `[EtjavHs]` (Mac fetch on the suite's PATH), plus the changed asserts above.
 
 - CICD reset: CPU and priority
