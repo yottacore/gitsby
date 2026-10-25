@@ -51,10 +51,10 @@
 ##	   --no-leakcheck      skip the leak checks
 ##	   --long              everything, the slow checks included; nothing here takes hours, so the same as no flags
 ##	       --slow          alias for --long
-##	   --container         run stages 1-4 and the demo gif in the pinned image from cicd/container/Dockerfile (the default)
+##	   --container         run stages 1-4 and the demo gif, or the quick run, in the pinned image from cicd/container/Dockerfile (the default)
 ##	   --no-container      run them on this box instead
 ##	   --backlog-run-quick [AREA...]
-##	                       what a backlog worker runs before it commits, in a few minutes, on this box:
+##	                       what a backlog worker runs before it commits, in a few minutes, in the image:
 ##	                       every area below, or only those named. No sync, prompt or log
 ##	                         lint    every lint and format check
 ##	                         unit    the Go unit tests
@@ -191,15 +191,16 @@ if ((${#stageOpts[@]})); then
 		fUsage "--install-hook installs the hook and takes no stage options (got: ${stageOpts[*]})"
 	fi
 fi
-if [[ -n "${containerOpt}" ]] && ((gate || installHook)); then fUsage "${containerOpt} goes with a full run, not ${gateName} or --install-hook."; fi
+if [[ -n "${containerOpt}" ]] && ((installHook)); then fUsage "${containerOpt} goes with a run, not --install-hook."; fi
 if [[ "${containerOpt}" == --container && -n "${GITSBY_CICD_IN_CONTAINER:-}" ]]; then fUsage "already in the container; --container would start another."; fi
 ## Asked for, it has to work. By default, a box with no usable docker runs everything here, and says so.
 container=0; containerNote=""
-if [[ -n "${GITSBY_CICD_IN_CONTAINER:-}" || "${containerOpt}" == --no-container ]] || ((gate || installHook)); then :
+inImage="stages 1-4 and the demo run"; ((gate)) && inImage="the quick run runs"
+if [[ -n "${GITSBY_CICD_IN_CONTAINER:-}" || "${containerOpt}" == --no-container ]] || ((installHook)); then :
 elif [[ "${containerOpt}" == --container ]]; then container=1
 elif [[ "${CICD_CONTAINER:-0}" == 1 ]]; then
 	if docker info >/dev/null 2>&1; then container=1
-	else containerNote="WARNING: docker isn't usable here, so stages 1-4 and the demo run on this box, with its own tool versions"; fi
+	else containerNote="WARNING: docker isn't usable here, so ${inImage} on this box, with its own tool versions"; fi
 fi
 if ((installHook)); then exec "${here}/utility/pre-push.bash" --install; fi
 ## Checks only: the tree, the box and origin are as they were found. Stage 6 still renders the
@@ -593,6 +594,63 @@ done
 fPlanOS(){ case "${1%%/*}" in darwin) echo macos ;; *) echo "${1%%/*}" ;; esac ;}
 fPlanLine(){ local -r dots="........................"; local -i n=$(( 20 - ${#1} )); ((n < 0)) && n=0; fEcho_Clean "${1} ${dots:0:n}: ${2}" ;}
 
+## --container: the image's versions come from config.bash, and its tag hashes the recipe plus
+## those, so a bumped version can't run on the old image.
+if ((container)); then
+	docker info >/dev/null 2>&1 || fDie "--container needs a working docker"
+	containerRecipe="${here}/container/Dockerfile"
+	[[ -f "${containerRecipe}" ]] || fDie "missing ${containerRecipe}"
+	containerArgs=(--build-arg "VER_go=${GO_RELEASE_TOOLCHAIN#go}")
+	for toolSpec in "${GO_TOOL_VERSIONS[@]}" "${TOOL_VERSIONS[@]}"; do
+		toolName="${toolSpec%%=*}"; toolName="VER_${toolName//-/_}"
+		grep -qxF "ARG ${toolName}" "${containerRecipe}" || fDie "config.bash pins ${toolSpec%%=*}, and the container recipe has no ARG ${toolName} for it"
+		containerArgs+=(--build-arg "${toolName}=${toolSpec#*=}")
+	done
+	containerArgs+=(--build-arg "CODEQL_SHA256=${CODEQL_SHA256}" --build-arg "CODEQL_PY_SHA256=${CODEQL_PY_SHA256}")
+	## The Python tools' lock is the other file the recipe copies in.
+	containerImage="${APP_NAME}-cicd:$( { cat "${containerRecipe}" "${here}/container/requirements.txt"; printf '%s\n' "${containerArgs[@]}"; } | git hash-object --stdin | cut -c1-12 )"
+fi
+
+## Runs cicd.bash in the image with the args given, against this same tree. It is mounted at the
+## same path, so paths in the output and a worktree's .git file still resolve. The Go caches live
+## in a named volume, or every run would download and build from nothing. The demo's fonts are in
+## the image, so its gif matches no matter what this box has installed.
+fContainerRun(){
+	local oldImage gitCommon containerName
+	local -a containerMounts
+	fSection "Container"
+	if docker image inspect "${containerImage}" >/dev/null 2>&1; then
+		fEcho_Clean "image ${containerImage}"
+	else
+		fEcho_Clean "building ${containerImage}"
+		docker build -q -t "${containerImage}" "${containerArgs[@]}" "${here}/container" >/dev/null || fDie "image build failed"
+		## The one it replaces is close to 2 GB nobody runs again.
+		while IFS= read -r oldImage; do
+			if [[ -z "${oldImage}" || "${oldImage}" == "${containerImage}" ]]; then continue; fi
+			if docker rmi "${oldImage}" >/dev/null 2>&1; then fEcho_Clean "removed ${oldImage}"
+			else fEcho_Clean "kept ${oldImage} (in use)"; fi
+		done < <(docker image ls "${containerImage%%:*}" --format '{{.Repository}}:{{.Tag}}' 2>/dev/null || true)
+	fi
+	containerMounts=(-v "${root}:${root}" -v "${APP_NAME}-cicd-cache:/cache" --tmpfs "/tmp:rw,exec,mode=1777")
+	gitCommon="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+	if [[ -n "${gitCommon}" && "${gitCommon}" != "${root}/"* ]]; then containerMounts+=(-v "${gitCommon}:${gitCommon}"); fi
+	## The gif's out-of-tree archive, at the path the config spells, through any symlink on the way.
+	if ((DO_DEMOGIF && ! gate)); then
+		mkdir -p "${DEMOGIF_ARCHIVE_DIR}" || fDie "can't make ${DEMOGIF_ARCHIVE_DIR}"
+		containerMounts+=(-v "$(realpath -m -- "${DEMOGIF_ARCHIVE_DIR}"):$(realpath -s -m -- "${DEMOGIF_ARCHIVE_DIR}")")
+	fi
+	## Named for the run, so it can be found and stopped among other projects' containers.
+	## The pid keeps two runs started in the same second apart.
+	containerName="${APP_NAME}-cicd-${stamp}-$$"
+	fEcho_Clean "runs cicd.bash $*"
+	fEcho_Clean "as container ${containerName}"
+	docker run --rm --init --name "${containerName}" --label "${APP_NAME}.cicd.run=${stamp}" --label "${APP_NAME}.cicd.tree=${root}" \
+		--user "$(id -u):$(id -g)" "${containerMounts[@]}" -w "${root}" \
+		"${containerImage}" bash "${root}/cicd/cicd.bash" "$@" \
+		|| fDie "the run in the container failed (above)"
+	fEcho "OK: the container run"
+}
+
 ## --backlog-run-quick: what a worker runs before it commits. It leaves out the slow stages, and
 ## the ones that change something: a fetch, an install, a push. Areas run in this order, whatever
 ## order they were named in, so lint still fails first.
@@ -605,6 +663,16 @@ if ((gate)); then
 	fEcho_Clean
 	fEcho_Clean "${APP_NAME} backlog quick run: ${gateRun[*]}"
 	fEcho_Clean "Repo root ...........: ${root}"
+	if ((container)); then
+		fEcho_Clean "Container ...........: the quick run in ${containerImage}"
+		## By its own name, so the alias line isn't said twice. The areas stay as given.
+		gateInner=(--backlog-run-quick ${gateAreas[@]+"${gateAreas[@]}"}); ((quiet)) && gateInner=(-q "${gateInner[@]}")
+		fContainerRun "${gateInner[@]}"
+		fSection "${APP_NAME} backlog quick run: passed."
+		fEcho_Clean
+		exit 0
+	fi
+	[[ -z "${containerNote}" ]] || fEcho "${containerNote}"
 	gateStep=0; gateBuilt=0
 	for a in "${gateRun[@]}"; do
 		gateStep=$((gateStep + 1))
@@ -626,21 +694,7 @@ if ((gate)); then
 	exit 0
 fi
 
-## --container: the image's versions come from config.bash, and its tag hashes the recipe plus
-## those, so a bumped version can't run on the old image.
 if ((container)); then
-	docker info >/dev/null 2>&1 || fDie "--container needs a working docker"
-	containerRecipe="${here}/container/Dockerfile"
-	[[ -f "${containerRecipe}" ]] || fDie "missing ${containerRecipe}"
-	containerArgs=(--build-arg "VER_go=${GO_RELEASE_TOOLCHAIN#go}")
-	for toolSpec in "${GO_TOOL_VERSIONS[@]}" "${TOOL_VERSIONS[@]}"; do
-		toolName="${toolSpec%%=*}"; toolName="VER_${toolName//-/_}"
-		grep -qxF "ARG ${toolName}" "${containerRecipe}" || fDie "config.bash pins ${toolSpec%%=*}, and the container recipe has no ARG ${toolName} for it"
-		containerArgs+=(--build-arg "${toolName}=${toolSpec#*=}")
-	done
-	containerArgs+=(--build-arg "CODEQL_SHA256=${CODEQL_SHA256}" --build-arg "CODEQL_PY_SHA256=${CODEQL_PY_SHA256}")
-	## The Python tools' lock is the other file the recipe copies in.
-	containerImage="${APP_NAME}-cicd:$( { cat "${containerRecipe}" "${here}/container/requirements.txt"; printf '%s\n' "${containerArgs[@]}"; } | git hash-object --stdin | cut -c1-12 )"
 	## The same stages as here, minus everything that needs this box.
 	containerRun=(-y --no-sync --no-dogfood --no-remote --no-publish)
 	((quiet))    && containerRun[0]=-q
@@ -806,42 +860,9 @@ fi
 ## because a run that publishes builds source whose commit stage 8 hasn't made yet.
 goVersion="$(fGoVersion)"; goBuildEpoch="$(fGoBuildEpoch)"
 
-## --container: stages 1-4 and the demo run in the pinned image, against this same tree. It is
-## mounted at the same path, so paths in the output and a worktree's .git file still resolve.
-## The Go caches live in a named volume, or every run would download and build from nothing.
-## The demo's fonts are in the image, so its gif matches no matter what this box has installed.
+## --container: stages 1-4 and the demo run in the pinned image.
 if ((container)); then
-	fSection "Container"
-	if docker image inspect "${containerImage}" >/dev/null 2>&1; then
-		fEcho_Clean "image ${containerImage}"
-	else
-		fEcho_Clean "building ${containerImage}"
-		docker build -q -t "${containerImage}" "${containerArgs[@]}" "${here}/container" >/dev/null || fDie "image build failed"
-		## The one it replaces is close to 2 GB nobody runs again.
-		while IFS= read -r oldImage; do
-			if [[ -z "${oldImage}" || "${oldImage}" == "${containerImage}" ]]; then continue; fi
-			if docker rmi "${oldImage}" >/dev/null 2>&1; then fEcho_Clean "removed ${oldImage}"
-			else fEcho_Clean "kept ${oldImage} (in use)"; fi
-		done < <(docker image ls "${containerImage%%:*}" --format '{{.Repository}}:{{.Tag}}' 2>/dev/null || true)
-	fi
-	containerMounts=(-v "${root}:${root}" -v "${APP_NAME}-cicd-cache:/cache" --tmpfs "/tmp:rw,exec,mode=1777")
-	gitCommon="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
-	if [[ -n "${gitCommon}" && "${gitCommon}" != "${root}/"* ]]; then containerMounts+=(-v "${gitCommon}:${gitCommon}"); fi
-	## The gif's out-of-tree archive, at the path the config spells, through any symlink on the way.
-	if ((DO_DEMOGIF)); then
-		mkdir -p "${DEMOGIF_ARCHIVE_DIR}" || fDie "can't make ${DEMOGIF_ARCHIVE_DIR}"
-		containerMounts+=(-v "$(realpath -m -- "${DEMOGIF_ARCHIVE_DIR}"):$(realpath -s -m -- "${DEMOGIF_ARCHIVE_DIR}")")
-	fi
-	## Named for the run, so it can be found and stopped among other projects' containers.
-	## The pid keeps two runs started in the same second apart.
-	containerName="${APP_NAME}-cicd-${stamp}-$$"
-	fEcho_Clean "runs cicd.bash ${containerRun[*]}"
-	fEcho_Clean "as container ${containerName}"
-	docker run --rm --init --name "${containerName}" --label "${APP_NAME}.cicd.run=${stamp}" --label "${APP_NAME}.cicd.tree=${root}" \
-		--user "$(id -u):$(id -g)" "${containerMounts[@]}" -w "${root}" \
-		"${containerImage}" bash "${root}/cicd/cicd.bash" "${containerRun[@]}" \
-		|| fDie "the run in the container failed (above)"
-	fEcho "OK: the container run"
+	fContainerRun "${containerRun[@]}"
 	if ((DO_DEMOGIF)); then demoWhere="ran in the container"; fi
 	doLint=0; doTest=0; doFuzz=0; doParity=0; DO_DEMOGIF=0; ranWhere="ran in the container"
 fi
@@ -1196,3 +1217,4 @@ fEcho_Clean
 ##		- 2026-10-21 JC: --no-fuzz skips govulncheck adn pip-audit too, as its help says. They sat outside it from when govulncheck still ran under --quick, which stopped on 2026-10-18.
 ##		- 2026-10-23 JC: The container run gets a name and labels carrying the run's start time and tree, so it can be found and stopped among other projects' containers.
 ##		- 2026-10-25 JC: --backlog-run-quick takes over from --gate, which stays as another name for it, and runs the suites against a build of their own, or only the areas named. --merge-gate, with --ci as another name, and --backlog-run-full run every check of a plain run and change nothing: no sync, dogfood or publish, no prompt, and the demo gif stays as committed. --long and --slow are a plain run.
+##		- 2026-10-25 JC: --backlog-run-quick runs in the image as well, where docker works, and --no-container keeps it here. --container goes with it now too.

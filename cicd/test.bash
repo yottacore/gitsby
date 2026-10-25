@@ -366,7 +366,7 @@ fGateStatus(){
 ## As above, and the output matches the extended regex $2.
 fGateSays(){ local want="$1" pat="$2"; shift 2; fGateStatus "${want}" "$@" && grep -qE -- "${pat}" "${gateOut}" ;}
 ## fGateSays on --gate, for the fixture with the real pwsh. The module dir is the caller's.
-fGatePwshSays(){ PSModulePath="${gatePsModules}" fGateSays "$1" "$2" --gate ;}
+fGatePwshSays(){ PSModulePath="${gatePsModules}" fGateSays "$1" "$2" --no-container --gate ;}
 ## True when every extended regex given matches a line of the calls log.
 fGateCalled(){ local p; for p in "$@"; do grep -qE -- "${p}" "${gateCalls}" || return 1; done; return 0 ;}
 fGateNested(){ gateNested=1 fGateSays 2 'already in the container' -y --container ;}
@@ -411,16 +411,16 @@ fGateQuickRun(){
 ## --backlog-run-quick with no area runs them all, the suites against a build of their own, and
 ## nothing that syncs, publishes, draws the demo or reaches another host.
 fGateBacklogQuick(){
-	fGateSays 0 'backlog quick run: passed\.' --backlog-run-quick \
+	fGateSays 0 'backlog quick run: passed\.' --no-container --backlog-run-quick \
 		&& fGateCalled '^shellcheck [^-]' '^gofmt -l' '^go test -race' '^go build' '^test\.bash' '^fuzz\.bash' '^spawn-count\.bash' '^parity\.bash' \
 		&& ! grep -qE '^(n8git_backup-and-publish|remote-tests\.bash|govulncheck|docker|pip-audit -r|codeql database|python3 cicd/utility/demo/gen-demo-gif)|-fuzz ' "${gateCalls}" \
 		&& ! grep -qE 'Remote sync|another name' "${gateOut}" && [[ ! -e "${gateDir}/cicd/artifacts/lint" ]]
 }
 ## Areas named run alone, in the engine's order, and only a suite brings in the build.
 fGateBacklogAreas(){
-	fGateSays 0 'backlog quick run: lint unit$' --backlog-run-quick unit lint \
+	fGateSays 0 'backlog quick run: lint unit$' --no-container --backlog-run-quick unit lint \
 		&& fGateCalled '^gofmt -l' '^go test -race' && ! grep -qE '^go build|^(test|fuzz|parity|spawn-count)\.bash' "${gateCalls}" \
-		&& fGateSays 0 'backlog quick run: parity$' --backlog-run-quick parity \
+		&& fGateSays 0 'backlog quick run: parity$' --no-container --backlog-run-quick parity \
 		&& fGateCalled '^go build' '^parity\.bash' && ! grep -qE '^gofmt|^go test|^(test|fuzz)\.bash' "${gateCalls}"
 }
 ## --merge-gate, or --backlog-run-full as $1, runs what a plain run checks, the other hosts
@@ -664,6 +664,34 @@ fGateLockInTag(){
 	cp "${root}/cicd/container/requirements.txt" "${gateDir}/cicd/container/requirements.txt"
 	[[ "${rc}" == 0 && -n "${before}" && -n "${after}" && "${before}" != "${after}" ]]
 }
+## The quick run goes to the image by its own name, with the areas as given and -q, and none of
+## it runs out here. The gif's archive isn't mounted, since it draws no gif.
+fGateQuickInImage(){
+	fGateSays 0 'backlog quick run: passed\.' --gate \
+		&& fGateCalled '^docker run .* --backlog-run-quick$' && ! fGateCalled '/private/demo/gif:' \
+		&& ! fGateCalled '^(go|gofmt|shellcheck|ruff) ' '^(test|parity|fuzz|spawn-count)\.bash' \
+		&& grep -qF 'Container ...........: the quick run in gitsby-cicd:' "${gateOut}" \
+		&& [[ "$(grep -c 'is another name for' "${gateOut}")" == 1 ]] \
+		&& fGateSays 0 'OK: the container run' -q --backlog-run-quick unit lint \
+		&& fGateCalled '^docker run .* -q --backlog-run-quick unit lint$' && ! fGateCalled '^go '
+}
+## --no-container keeps it here, and --container goes with it too.
+fGateQuickHere(){
+	fGateSays 0 'backlog quick run: passed\.' --no-container --backlog-run-quick lint \
+		&& fGateCalled '^gofmt -l' && ! fGateCalled '^docker ' \
+		&& fGateSays 0 'OK: the container run' --container --backlog-run-quick lint && ! fGateCalled '^gofmt '
+}
+## A box whose docker doesn't answer runs it here, says so, and --container there stops.
+fGateQuickNoDocker(){
+	: > "${gateFail}/docker"
+	local rc=0
+	fGateSays 0 "docker isn't usable here, so the quick run runs on this box" --backlog-run-quick lint && fGateCalled '^gofmt -l' || rc=1
+	fGateSays 1 'needs a working docker' --container --backlog-run-quick lint || rc=1
+	rm -f -- "${gateFail:?}/docker"
+	return "${rc}"
+}
+## Inside the container the quick run is the inner one, so it starts no other.
+fGateQuickInner(){ gateNested=1 fGateSays 0 'backlog quick run: passed\.' --backlog-run-quick lint && ! fGateCalled '^docker ' && fGateCalled '^gofmt -l' ;}
 ## A box whose docker doesn't answer runs everything here, and says why.
 fGateNoDocker(){
 	: > "${gateFail}/docker"
@@ -735,7 +763,7 @@ fGateDemoDrift(){
 }
 ## The gate passes, and says nothing about lint tool versions.
 ## Go tools only: the fixture pins those, and the rest are whatever this box has.
-fGateNoDrift(){ fGateStatus 0 --gate && ! grep -qE 'tool versions differ.* (staticcheck|golangci-lint|govulncheck|goversioninfo) ' "${gateOut}" ;}
+fGateNoDrift(){ fGateStatus 0 --no-container --gate && ! grep -qE 'tool versions differ.* (staticcheck|golangci-lint|govulncheck|goversioninfo) ' "${gateOut}" ;}
 ## One -y run with every stage skipped but those named in $1 (sync lint test fuzz parity dogfood
 ## demogif publish), the rest passed on. Its exit status lands in ${gateRc}, output in ${gateOut},
 ## and the calls log starts empty.
@@ -5780,7 +5808,7 @@ EOF
 	else
 		local gateDir="${work}/gate" gateCalls="${work}/gate-calls.log" gateFail="${work}/gate-fail" gateOut="${work}/gate-out.txt"
 		fMakeGateFixture
-		fAssert "[EpsVDHs] the gate passes a clean tree without asking anything"  fGateStatus 0 --gate
+		fAssert "[EpsVDHs] the gate passes a clean tree without asking anything"  fGateStatus 0 --no-container --gate
 		## Only the leak-shaped rules, and go test never from its cache.
 		fAssert "[Et9PJsK] and runs ruff's leak rules over the demo script" \
 			fGateCalled '^ruff check --isolated --no-cache --quiet --select B019,SIM115,B006 cicd/utility/demo/gen-demo-gif\.py cicd/utility/codeql-findings\.py$'
@@ -5794,18 +5822,18 @@ EOF
 			bash -c "[[ \$(grep -c '^pwsh ' '${gateCalls}') == 1 ]] && grep '^pwsh ' '${gateCalls}' | grep -qF \"'install.ps1','cicd/utility/run-latest.ps1'\""
 		: > "${gateFail}/pwsh-nomodule"
 		fAssert "[Erg6Rxh] a box with no PSScriptAnalyzer module skips that lint with a warning" \
-			fGateSays 0 'WARNING: PSScriptAnalyzer skipped' --gate
+			fGateSays 0 'WARNING: PSScriptAnalyzer skipped' --no-container --gate
 		rm -f -- "${gateFail:?}/pwsh-nomodule"
 		mv "${gateDir}/PSScriptAnalyzerSettings.psd1" "${gateDir}/settings.psd1.away"
-		fAssert "[Erg6Rxu] and a missing settings file fails the gate, not the rules"  fGateSays 1 'settings not found' --gate
+		fAssert "[Erg6Rxu] and a missing settings file fails the gate, not the rules"  fGateSays 1 'settings not found' --no-container --gate
 		mv "${gateDir}/settings.psd1.away" "${gateDir}/PSScriptAnalyzerSettings.psd1"
 		## This fixture's go answers 'version -m' with nothing, so every tool reads as unknown.
 		fAssert "[Er1LxTR] and warns when a lint tool's version is not the recorded one" \
-			fGateSays 0 'WARNING: tool versions differ from the recorded set: .*staticcheck unknown \(recorded v' --gate
+			fGateSays 0 'WARNING: tool versions differ from the recorded set: .*staticcheck unknown \(recorded v' --no-container --gate
 		## The tools outside Go are compared too. strace stands in for them: nothing here runs it.
 		fGateStub "${gateDir}/bin/strace" strace "echo 'strace -- version 0.1'"
 		fAssert "[ErCQOcE] and when a tool outside Go is at another version" \
-			fGateSays 0 'WARNING: tool versions differ from the recorded set: .*strace 0\.1 \(recorded ' --gate
+			fGateSays 0 'WARNING: tool versions differ from the recorded set: .*strace 0\.1 \(recorded ' --no-container --gate
 		rm -f -- "${gateDir:?}/bin/strace"
 		## Tied to the gate having passed: a run that did nothing at all adds nothing either.
 		fAssert "[EpsVDHu] and nothing the full run adds" \
@@ -5815,7 +5843,7 @@ EOF
 		local gateTool
 		for gateTool in shellcheck markdownlint python3 ruff pwsh gofmt go-vet staticcheck golangci-lint backlog-check go-test; do
 			: > "${gateFail}/${gateTool}"
-			fAssert "[EpsVDHv] the gate fails when ${gateTool} finds something"  fGateStatus 1 --gate
+			fAssert "[EpsVDHv] the gate fails when ${gateTool} finds something"  fGateStatus 1 --no-container --gate
 			if [[ "${gateTool}" == gofmt ]]; then
 				fAssert "[EpsVDHw] and a lint failure stops it before the unit tests" \
 					bash -c "grep -q '^gofmt -l' '${gateCalls}' && ! grep -q '^go test' '${gateCalls}'"
@@ -5831,7 +5859,7 @@ EOF
 		fAssert "[EtiiN7K] and refuses an area it doesn't have, naming the ones it does" \
 			fGateSays 2 "no area 'lnt'\. Areas: lint unit suite fuzz parity" --backlog-run-quick lint lnt
 		fAssert "[EtiiN7Y] --gate says in one line that it's another name for --backlog-run-quick" \
-			fGateAliasSays '--gate is another name for --backlog-run-quick' --gate lint
+			fGateAliasSays '--gate is another name for --backlog-run-quick' --no-container --gate lint
 		fAssert "[EtiiN7k] --merge-gate runs every check of a plain run, and syncs, dogfoods, publishes and rewrites nothing"  fGateHandsOff --merge-gate
 		fAssert "[EtiiN7y] and so does --backlog-run-full"  fGateHandsOff --backlog-run-full
 		fAssert "[EtiiN8B] and the run in the image is told to leave the gif too"  fGateHandsOffContainer
@@ -5878,7 +5906,14 @@ EOF
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--no-remote ' <<< \"\$out\""
 		fAssert "[EsJgeiS] cicd.bash --help lists --container" \
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--container ' <<< \"\$out\""
-		fAssert "[EsJgejN] --container with --gate is refused"  fGateSays 2 'goes with a full run' --container --gate
+		## Off since 2026-10-25: the quick run goes in the image too (2026102507133273), so --container
+		## goes with it. [Etip9iB] checks that in its place.
+		# fAssert "[EsJgejN] --container with --gate is refused"  fGateSays 2 'goes with a full run' --container --gate
+		fAssert "[Etip9hi] --container with --install-hook is refused"  fGateSays 2 'goes with a run, not --install-hook' --container --install-hook
+		fAssert "[Etip9hw] --backlog-run-quick runs in the image by default, and none of it here"  fGateQuickInImage
+		fAssert "[Etip9iB] and --no-container keeps it here, while --container is taken too"  fGateQuickHere
+		fAssert "[Etip9iR] and a box without a working docker runs it here, with a warning"  fGateQuickNoDocker
+		fAssert "[Etip9if] and inside the container it starts no other"  fGateQuickInner
 		fAssert "[EsJgekF] --container inside the container is refused"  fGateNested
 		fAssert "[EsJgel8] a plain run hands stages 1-4 to the image and runs none of them here"  fGateContainerRun
 		fAssert "[Eta9hUd] its container is named and labeled for the run, and the output names it"  fGateContainerName
@@ -7354,3 +7389,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261023 JC: A full run's container is named and labeled for the run, and the check reads the name back from the output. 1676 -> 1677.
 ##		- 20261024 JC: The stage 7 checks put back the boxes they expect, so a tree with config.bash narrowed to one box passes them. 1677 -> 1677.
 ##		- 20261025 JC: --backlog-run-quick and its areas, --merge-gate, --backlog-run-full, --long, and the two aliases. The gate checks read the new closing line, and leave the suites out of what the gate must not run. 1677 -> 1688.
+##		- 20261025 JC: --backlog-run-quick goes into the image by default, takes --container and --no-container, and falls back here without docker. The checks of what the gate runs here say --no-container, and [EsJgejN] is off, since --container now goes with it. 1688 -> 1692.

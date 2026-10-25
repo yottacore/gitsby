@@ -47,6 +47,33 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- `--gate`, and the backlog and merge gate runs that replace it, run in the image too, where docker works.
 		- The builds for dogfood, stage 7 and a release come from the image's Go, not the box's. Copying them into place and the tests on other boxes stay outside it.
 		- Earlier decisions this overrides: the line in 2026101009380628 that keeps dogfood and the remote tests' builds on the host, and the private notes, where `--gate` stays on the box.
+	- Progress log:
+		- 2026-10-25: Split in three, one per place a build or check still runs on the box: 2026102507133273 for the quick run, 2026102507133278 for the dogfood and stage 7 builds, and 2026102507133283 for the release builds. `--merge-gate` and `--backlog-run-full` are a plain run, so their stages 1-4 and 6 are in the image already, and their stage 7 builds go with the second child.
+
+- CICD reset: dogfood and stage 7 builds from the image's Go
+	- ID: 2026102507133278
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-071332
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313100
+	- Prereq IDs: 2026102507133273
+	- Requirements [Feature]:
+		- Stage 5's cross-builds, stage 7's builds and `--quick`'s cross-builds come from the image's Go, where docker works: `fCrossBuild` in cicd.bash, and the `go test -c` binaries in remote-tests.bash.
+		- Copying a build into place, and the tests on the other boxes, stay on the box.
+
+- CICD reset: release builds from the image's Go
+	- ID: 2026102507133283
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-071332
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313100
+	- Prereq IDs: 2026102507133278
+	- Requirements [Feature]:
+		- release.bash's builds, both of the reproducibility pair included, come from the image's Go where docker works. The upload and the checks against the published assets stay on the box.
 
 - CICD reset: other hosts and VMs
 	- ID: 2026102416313101
@@ -272,6 +299,29 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 			- One line at the end of a run saying what was removed and about what it freed, files as well as docker.
 			- Go's module cache in the volume pruned of what the current `go.sum` doesn't name.
 		- Packaging and dependabot stay deferred, per the standing decision. 20261024: kept out of this item, since nothing makes them pressing.
+
+- CICD reset: the quick run in the image
+	- ID: 2026102507133273
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-071332
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313100
+	- Requirements [Feature]:
+		- `--backlog-run-quick`, and `--gate` with it, runs in the pinned image where docker works, like a full run. A box without a working docker runs it here, with the same one-line warning.
+		- `--no-container` keeps it on the box, and `--container` makes the image a must.
+	- Progress log:
+		- 2026-10-25: `--backlog-run-quick` hands itself to the image as a full run does, by its own name with the areas and `-q` as given, and prints the outer passed line once the inner one passes. The image's tag and its run are shared with the full run, so the two can't drift. The gif's archive isn't mounted for it.
+	- Decisions:
+		- `--container` and `--no-container` go with the quick run now, and only `--install-hook` refuses them. [EsJgejN], "--container with --gate is refused", is commented out in test.bash for that reason: it encoded `--gate` staying on the box, which this issue overrides. [Etip9iB] checks the new behavior in its place.
+		- The pre-push hook's `--gate` goes into the image with it, so a push to main is gated by the image's tools too.
+	- Branch: round-20261025
+	- Test case: test.bash [Etip9hi], [Etip9hw], [Etip9iB], [Etip9iR] and [Etip9if].
+	- Verified: `cicd.bash --backlog-run-quick` passed with every area in the image: lint, go test, test.bash 1688 -> 1692, 0 failed, fuzz 313/0, spawn counts and parity 29/0. Against the old cicd.bash, [Etip9hi], [Etip9hw], [Etip9iB] and [Etip9iR] fail, and [Etip9if] passes as a guard. The image sees the pre-push snapshot under the git dir and resolves it. `--no-container --backlog-run-quick lint`, `test-id.bash --check` and `backlog-check.bash` pass.
+	- Swept: cicd.bash's container decision, refusals, help, image tag and its one `docker run`, now shared by both runs. test.bash's gate checks, each of which now says `--no-container`, apart from the refusals, which stop before the choice. README, contributing.md and design.md's gate bullet. pre-push.bash still calls `--gate` and needs no change.
+	- Acceptance signoff: Self-closed: its own tests passed, and so did the real quick run in the image.
+	- Closed: 20261025-072651
 
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
