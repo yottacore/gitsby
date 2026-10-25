@@ -831,9 +831,10 @@ fRemoteRun(){
 fRemoteBoxes(){
 	cat >> "$1" <<-'EOF'
 		REMOTE_MAC_HOSTS=("b26")
-		REMOTE_WINDOWS_HOSTS=("vm925w" "b29w:b29w,b29w-wif")
+		REMOTE_WINDOWS_HOSTS=("b29w" "vm925w:vm925wa,vm925w")
 		REMOTE_MAC_GOARCH="amd64"
 		REMOTE_MAC_BASH="/usr/local/bin/bash"
+		REMOTE_MAC_NEEDS=(git go)
 		REMOTE_MAC_DIR="gitsby-remote-tests"
 		REMOTE_UNIX_DIR="gitsby-remote-tests"
 		REMOTE_UNIX_HOSTS=("vmFreeBSD:bsdtest@vmFreeBSD" "vmDebARM64:tester@vmDebARM64")
@@ -850,6 +851,15 @@ fRemoteWinCleaned(){
 	d="$(sed -n "s/^ssh $1 .*mkdir \"\\(%TEMP%[^\"]*\\)\".*/\\1/p" "${rtLog}")"
 	d="${d%%$'\n'*}"
 	[[ "${d}" == '%TEMP%\test_gitsby_'* ]] && grep -qF "rmdir /s /q \"${d}\"" "${rtLog}"
+}
+## True when the remote shell for the stage's folder a/b puts it under HOST_TEMP, then under TMPDIR
+## less its last slash, then under /tmp.
+fRemoteDirSh(){
+	local sh="" got=""
+	eval "$(grep '^fDirSh()' "${root}/cicd/remote-tests.bash")"
+	sh="$(fDirSh a/b)"
+	got="$(env HOST_TEMP=/h TMPDIR=/t/ sh -c "${sh}; echo \"\$d\"") $(env -u HOST_TEMP TMPDIR=/t/ sh -c "${sh}; echo \"\$d\"") $(env -u HOST_TEMP -u TMPDIR sh -c "${sh}; echo \"\$d\"")"
+	[[ "${got}" == '/h/a/b /t/a/b /tmp/a/b' ]]
 }
 ## A push from $1, the rest being its arguments. Output lands in ${hookOut}; the gate log starts empty.
 fHookPush(){ local dir="$1"; shift; : > "${hookLog}"; git -C "${dir}" push "$@" >"${hookOut}" 2>&1 ;}
@@ -6391,13 +6401,15 @@ EOF
 			while [[ "\${1:-}" == -* ]]; do if [[ "\$1" == -o ]]; then shift 2; else shift; fi; done
 			host="\$1"; cmd="\$2"
 			printf 'ssh %s %s\n' "\${host}" "\${cmd//\$'\n'/ }" >> '${rtLog}'
-			[[ ! -e '${rtFail}/down-'"\${host}" ]] || exit 255
+			[[ ! -e '${rtFail}/down-'"\${host}" && ! -e '${rtFail}/asleep-'"\${host}" ]] || exit 255
 			[[ "\${cmd}" != 'exit 0' ]] || exit 0
 			echo '[ ~/.bashrc ]'; echo
 			case "\${cmd}" in
 				*'/.gitsby-remote-tests'*)
 					h='${rtMac}'; [[ "\${host}" == b26 ]] || h='${work}/remote-unix-'"\${host}"
-					mkdir -p "\${h}"; HOME="\${h}" PATH='${rtBin}':"\${PATH}" exec bash -c "\${cmd}" ;;
+					mkdir -p "\${h}/home"
+					if [[ "\${host}" == b26 ]]; then exec env -u HOST_TEMP HOME="\${h}/home" TMPDIR="\${h}/" PATH='${rtBin}':"\${PATH}" bash -c "\${cmd}"; fi
+					HOME="\${h}/home" HOST_TEMP="\${h}" PATH='${rtBin}':"\${PATH}" exec bash -c "\${cmd}" ;;
 				*'command -v'*) echo '@@gitsby-remote-tests@@'; cat '${rtFail}/lacks-'"\${host}" 2>/dev/null || true ;;
 				*mkdir*) cat > /dev/null; echo '@@gitsby-remote-tests@@'; [[ ! -e '${rtFail}/nomkdir-'"\${host}" ]] || exit 1; echo made ;;
 				*-test.v*)
@@ -6423,23 +6435,27 @@ EOF
 		fRemoteRun --mac-bin "${rtMacBin}"
 		mv "${rtLock}.away" "${rtLock}"
 		fAssert "[ErkbDU2] with no host lock script every box is skipped, none is reached, and the run passes" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'skip: every box, since there is no host lock script' '${rtOut}' && ! grep -q '^ssh ' '${rtLog}'"
-		for rtHost in b26 vm925w b29w b29w-wif; do : > "${rtFail}/down-${rtHost}"; done
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'SKIP: every box, since there is no host lock script' '${rtOut}' && ! grep -q '^ssh ' '${rtLog}'"
+		for rtHost in b26 b29w vm925wa vm925w; do : > "${rtFail}/down-${rtHost}"; done
 		fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtFail:?}"/down-*
 		fAssert "[ErkbDUK] a box that does not answer is skipped with a note and never taken, and the run passes" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'skip: b26, not reachable over ssh (tried b26)' '${rtOut}' && grep -qF 'skip: b29w, not reachable over ssh (tried b29w,b29w-wif)' '${rtOut}' && ! grep -qE '^(lock|go test)' '${rtLog}'"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'SKIP: b26, not reachable over ssh (tried b26)' '${rtOut}' && grep -qF 'SKIP: vm925w, not reachable over ssh (tried vm925wa,vm925w)' '${rtOut}' && ! grep -qE '^(lock|go test)' '${rtLog}'"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		fAssert "[ErkbDUa] the lock wraps each box with no wait, knows the Mac as one of its other hosts and only once, and is not asked as the calling session" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^lock wrap b26 --wait 0 .* -- .*remote-tests\.bash --held mac b26 b26 win=vm925w b29w other=b26 vmFreeBSD session=unset\$' '${rtLog}' && grep -qE '^lock wrap vm925w --wait 0 .* win=vm925w b29w other=b26 vmFreeBSD session=unset\$' '${rtLog}'"
-		fAssert "[ErkbDUn] and only the first free Windows box runs"  bash -c "! grep -q '^lock wrap b29w' '${rtLog}' && grep -qxF '  passed on: b26 vm925w' '${rtOut}'"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^lock wrap b26 --wait 0 .* -- .*remote-tests\.bash --held mac b26 b26 win=b29w vm925w other=b26 vmFreeBSD session=unset\$' '${rtLog}' && grep -qE '^lock wrap b29w --wait 0 .* win=b29w vm925w other=b26 vmFreeBSD session=unset\$' '${rtLog}'"
+		fAssert "[ErkbDUn] and only the first free Windows box runs"  bash -c "! grep -q '^lock wrap vm925w' '${rtLog}' && grep -qxF '  passed on: b26 b29w' '${rtOut}'"
+		fAssert "[Etj1UJq] with no VM state helper beside the lock the run says so, and looks for every box over ssh first" \
+			bash -c "grep -qF 'note: no VM state helper (${rtLock%/*}/x_vm-state.bash), so a VM that is off or paused is skipped' '${rtOut}' && grep -q '^ssh vm925wa exit' '${rtLog}'"
+		fAssert "[Etj1UJb] the Mac's copy goes under its temp root, not its home" \
+			bash -c "[[ -f '${rtMac}/gitsby-remote-tests/.gitsby-remote-tests' && ! -e '${rtMac}/home/gitsby-remote-tests' ]] && grep -qF 'b26: copying the tree to gitsby-remote-tests/tree under its temp root' '${rtOut}'"
 		fAssert "[ErkbDVD] each box prints a line per Go test with its ID, and nothing from the Mac's login" \
 			bash -c "[[ \$(grep -cxF '  ok: [AAAAAAB] TestA' '${rtOut}') == 2 ]] && grep -qxF '  ok: [AAAAAAC] a check' '${rtOut}' && ! grep -qF 'bashrc' '${rtOut}'"
 		fAssert "[ErkbDVV] the Mac runs the suite in the stage's copy of the tree, under its own bash, first on PATH" \
-			bash -c "grep -qF 'cd \"\$HOME/gitsby-remote-tests/tree\" && PATH=/usr/local/bin:\"\$PATH\" /usr/local/bin/bash cicd/test.bash' '${rtLog}'"
+			bash -c "grep -qF 'cd \"\$d/tree\" && PATH=/usr/local/bin:\"\$PATH\" /usr/local/bin/bash cicd/test.bash' '${rtLog}'"
 		fAssert "[ErkbDVk] that copy is marked as the stage's, and holds the git dir, both builds and the fetched modules" \
 			bash -c "cd '${rtMac}/gitsby-remote-tests' && [[ -f .gitsby-remote-tests && -f tree/src-go/gitsby-test && \"\$(cat tree/src-go/gitsby)\" == mac ]] && git -C tree ls-files --error-unmatch src-go/a_test.go >/dev/null && grep -qx 'go mod download' '${rtLog}'"
-		fAssert "[ErkbDWC] the Windows box gets a folder under %TEMP% for the run, removed after"  fRemoteWinCleaned vm925w
+		fAssert "[ErkbDWC] the Windows box gets a folder under %TEMP% for the run, removed after"  fRemoteWinCleaned b29w
 		## Handed an image, as stage 7 does, every box's Go tests come from its Go, with the folder
 		## the build goes in mounted at its own path. A docker that writes the -o file stands in.
 		fStub "${rtBin}/docker" <<-EOF
@@ -6450,26 +6466,26 @@ EOF
 		GITSBY_CICD_IMAGE=gitsby-cicd:0123456789ab GITSBY_CICD_RUN=20261025-000000 fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtBin:?}/docker"
 		fAssert "[EtitOtH] handed the image, the harness builds each box's Go tests with its Go" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^docker run --rm --init --label gitsby\.cicd\.run=20261025-000000 .* -v [^ ]+/mac/tree/src-go:[^ ]+/mac/tree/src-go .* -e GOOS=darwin -e GOARCH=[a-z0-9]+ .* -w ${rt}/src-go gitsby-cicd:0123456789ab go test -c ' '${rtLog}' && grep -qE '^docker run .* -v [^ ]+/win/src-go:[^ ]+/win/src-go .* -e GOOS=windows -e GOARCH=amd64 .* gitsby-cicd:0123456789ab go test -c ' '${rtLog}' && ! grep -q '^go test -c' '${rtLog}' && grep -qxF '  passed on: b26 vm925w' '${rtOut}'"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^docker run --rm --init --label gitsby\.cicd\.run=20261025-000000 .* -v [^ ]+/mac/tree/src-go:[^ ]+/mac/tree/src-go .* -e GOOS=darwin -e GOARCH=[a-z0-9]+ .* -w ${rt}/src-go gitsby-cicd:0123456789ab go test -c ' '${rtLog}' && grep -qE '^docker run .* -v [^ ]+/win/src-go:[^ ]+/win/src-go .* -e GOOS=windows -e GOARCH=amd64 .* gitsby-cicd:0123456789ab go test -c ' '${rtLog}' && ! grep -q '^go test -c' '${rtLog}' && grep -qxF '  passed on: b26 b29w' '${rtOut}'"
 		: > "${rtFail}/oldlock"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtFail:?}/oldlock"
 		fAssert "[ErkqZtP] a lock with no list beside its Windows one is still handed the Mac there, and the Mac is skipped with its refusal" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^lock wrap b26 .* win=vm925w b29w other=b26 session=unset\$' '${rtLog}' && grep -qF \"skip: b26, the lock would not take it (exit 2): x_windows-host-lock.bash: unknown host 'b26'\" '${rtOut}' && grep -qxF '  passed on: vm925w' '${rtOut}'"
-		: > "${rtFail}/busy-vm925w"; : > "${rtFail}/down-b29w"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^lock wrap b26 .* win=b29w vm925w other=b26 session=unset\$' '${rtLog}' && grep -qF \"SKIP: b26, the lock would not take it (exit 2): x_windows-host-lock.bash: unknown host 'b26'\" '${rtOut}' && grep -qxF '  passed on: b29w; SKIP: b26' '${rtOut}'"
+		: > "${rtFail}/busy-b29w"; : > "${rtFail}/down-vm925wa"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		fAssert "[ErkbDXc] a Windows box someone else holds is skipped, naming who, and the next one runs, on its second name" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'skip: vm925w, held by session abcd (pid 1, other/project)' '${rtOut}' && grep -q '^ssh b29w-wif .*-test\.v' '${rtLog}' && grep -qxF '  passed on: b26 b29w' '${rtOut}'"
-		: > "${rtFail}/busy-b29w"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'SKIP: b29w, held by session abcd (pid 1, other/project)' '${rtOut}' && grep -q '^ssh vm925w .*-test\.v' '${rtLog}' && grep -qxF '  passed on: b26 vm925w; SKIP: b29w' '${rtOut}'"
+		: > "${rtFail}/busy-vm925w"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtFail:?}"/busy-* "${rtFail:?}"/down-*
 		fAssert "[ErkbDY9] with every Windows box taken the run still passes, and says so" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'skip: b29w, held by' '${rtOut}' && grep -qxF '  passed on: b26' '${rtOut}'"
-		: > "${rtFail}/gofail-vm925w"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'SKIP: vm925w, held by' '${rtOut}' && grep -qxF '  passed on: b26; SKIP: b29w vm925w' '${rtOut}'"
+		: > "${rtFail}/gofail-b29w"
 		fRemoteRun --mac-bin "${rtMacBin}"
-		rm -f -- "${rtFail:?}/gofail-vm925w"
+		rm -f -- "${rtFail:?}/gofail-b29w"
 		fAssert "[ErkbDYT] a failing Go test fails the run, with its line and its output" \
-			bash -c "[[ '${rtRc}' == 1 ]] && grep -qxF '  FAIL: [AAAAAAB] TestA' '${rtOut}' && grep -qF 'a_test.go:4: boom' '${rtOut}' && grep -qxF '  passed on: b26; failed on: vm925w' '${rtOut}'"
+			bash -c "[[ '${rtRc}' == 1 ]] && grep -qxF '  FAIL: [AAAAAAB] TestA' '${rtOut}' && grep -qF 'a_test.go:4: boom' '${rtOut}' && grep -qxF '  passed on: b26; failed on: b29w' '${rtOut}'"
 		: > "${rtFail}/suitefail-b26"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtFail:?}/suitefail-b26"
@@ -6478,15 +6494,20 @@ EOF
 		fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtFail:?}/lost-b26"
 		fAssert "[ErkbDZ0] a box that drops mid-run is skipped, not failed" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'skip: b26, lost the connection during go test' '${rtOut}'"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'SKIP: b26, lost the connection during go test' '${rtOut}'"
 		fRemoteRun
 		fAssert "[Erkbdts] with no universal build the Mac runs the Go tests only, and says so" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'skip: test.bash on b26' '${rtOut}' && ! grep -qF 'cicd/test.bash' '${rtLog}' && grep -q '^ssh b26 .*-test\.v' '${rtLog}'"
-		: > "${rtFail}/nomkdir-vm925w"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'SKIP: test.bash on b26' '${rtOut}' && ! grep -qF 'cicd/test.bash' '${rtLog}' && grep -q '^ssh b26 .*-test\.v' '${rtLog}'"
+		echo 'go ' > "${rtFail}/lacks-b26"
+		fRemoteRun --mac-bin "${rtMacBin}"
+		rm -f -- "${rtFail:?}/lacks-b26"
+		fAssert "[Etj1ULE] a Mac without a tool the suite needs, its bash included, runs the Go tests only, fetches nothing, and says what it lacks" \
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qxF '  SKIP: test.bash on b26, which lacks: go' '${rtOut}' && grep -q '^ssh b26 .*-test\.v' '${rtLog}' && ! grep -q '^ssh b26 .*cicd/test\.bash' '${rtLog}' && ! grep -q '^ssh b26 .*go mod download' '${rtLog}' && grep -qF 'PATH=/usr/local/bin:\"\$PATH\"; [ -x /usr/local/bin/bash ] || printf' '${rtLog}' && grep -qE '^ssh b26 .*git[)] git --version' '${rtLog}'"
+		: > "${rtFail}/nomkdir-b29w"
 		fRemoteRun
-		rm -f -- "${rtFail:?}/nomkdir-vm925w"
+		rm -f -- "${rtFail:?}/nomkdir-b29w"
 		fAssert "[Erkbdu7] a Windows folder the run did not make is never removed" \
-			bash -c "[[ '${rtRc}' == 1 ]] && ! grep -q '^ssh vm925w .*rmdir' '${rtLog}' && grep -qF 'FAIL: vm925w, could not copy the Go tests' '${rtOut}'"
+			bash -c "[[ '${rtRc}' == 1 ]] && ! grep -q '^ssh b29w .*rmdir' '${rtLog}' && grep -qF 'FAIL: b29w, could not copy the Go tests' '${rtOut}'"
 		: > "${rtFail}/go-build"
 		fRemoteRun
 		rm -f -- "${rtFail:?}/go-build"
@@ -6499,24 +6520,59 @@ EOF
 		local rtBins=(--mac-bin "${rtMacBin}" --bin freebsd/amd64 "${work}/remote-bsdbin" --bin linux/arm64 "${work}/remote-armbin")
 		fRemoteRun "${rtBins[@]}"
 		fAssert "[Erm9Pnk] each Unix box is taken by name from the lock's other list, with no wait, and every one runs" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^lock wrap vmFreeBSD --wait 0 .* -- .*remote-tests\.bash --held unix vmFreeBSD bsdtest@vmFreeBSD win=vm925w b29w other=b26 vmFreeBSD vmDebARM64 session=unset\$' '${rtLog}' && grep -qE '^lock wrap vmDebARM64 --wait 0 .* --held unix vmDebARM64 tester@vmDebARM64 win=vm925w b29w other=b26 vmFreeBSD vmDebARM64 session=unset\$' '${rtLog}' && [[ \$(grep -cxF '  ok: [AAAAAAB] TestA' '${rtOut}') == 4 ]]"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^lock wrap vmFreeBSD --wait 0 .* -- .*remote-tests\.bash --held unix vmFreeBSD bsdtest@vmFreeBSD win=b29w vm925w other=b26 vmFreeBSD vmDebARM64 session=unset\$' '${rtLog}' && grep -qE '^lock wrap vmDebARM64 --wait 0 .* --held unix vmDebARM64 tester@vmDebARM64 win=b29w vm925w other=b26 vmFreeBSD vmDebARM64 session=unset\$' '${rtLog}' && [[ \$(grep -cxF '  ok: [AAAAAAB] TestA' '${rtOut}') == 4 ]]"
 		fAssert "[Erm9Pnx] each gets the Go tests and the build for its own target, in a marked copy of the tree with the git dir" \
 			bash -c "[[ -f '${rtBsd}/.gitsby-remote-tests' && -f '${rtBsd}/tree/src-go/gitsby-test' && \"\$(cat '${rtBsd}/tree/src-go/gitsby')\" == freebsd && \"\$(cat '${rtArm}/tree/src-go/gitsby')\" == arm64 ]] && git -C '${rtBsd}/tree' ls-files --error-unmatch src-go/a_test.go >/dev/null && grep -qxF '  vmFreeBSD: go test (freebsd/amd64)' '${rtOut}' && grep -qxF '  vmDebARM64: go test (linux/arm64)' '${rtOut}'"
 		fAssert "[Erm9PoA] and runs test.bash there with the box's own bash, after fetching the modules" \
-			bash -c "grep -qF 'ssh bsdtest@vmFreeBSD echo @@gitsby-remote-tests@@; cd \"\$HOME/gitsby-remote-tests/tree\" && bash cicd/test.bash' '${rtLog}' && grep -qF 'ssh tester@vmDebARM64 echo @@gitsby-remote-tests@@; cd \"\$HOME/gitsby-remote-tests/tree\" && bash cicd/test.bash' '${rtLog}' && grep -q '^ssh bsdtest@vmFreeBSD .*tar -xf .*go mod download' '${rtLog}' && grep -qF '  vmDebARM64: test.bash against the linux/arm64 build' '${rtOut}'"
+			bash -c "grep -qE '^ssh bsdtest@vmFreeBSD echo @@gitsby-remote-tests@@; .*cd \"[\$]d/tree\" && bash cicd/test\.bash' '${rtLog}' && grep -qE '^ssh tester@vmDebARM64 echo @@gitsby-remote-tests@@; .*cd \"[\$]d/tree\" && bash cicd/test\.bash' '${rtLog}' && grep -q '^ssh bsdtest@vmFreeBSD .*tar -xf .*go mod download' '${rtLog}' && grep -qF '  vmDebARM64: test.bash against the linux/arm64 build' '${rtOut}'"
+		fAssert "[Etj35gI] each Unix box's copy goes under its temp root too, not its home" \
+			bash -c "[[ -f '${rtBsd}/.gitsby-remote-tests' && -f '${rtArm}/.gitsby-remote-tests' && ! -e '${rtBsd%/*}/home/gitsby-remote-tests' && ! -e '${rtArm%/*}/home/gitsby-remote-tests' ]]"
 		echo 'go ' > "${rtFail}/lacks-tester@vmDebARM64"
 		fRemoteRun "${rtBins[@]}"
 		rm -f -- "${rtFail:?}/lacks-tester@vmDebARM64"
 		fAssert "[Erm9PoN] a Unix box without a tool the suite needs runs the Go tests only, fetches nothing, and says what it lacks" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qxF '  skip: test.bash on vmDebARM64, which lacks: go' '${rtOut}' && grep -q '^ssh tester@vmDebARM64 .*-test\.v' '${rtLog}' && ! grep -q '^ssh tester@vmDebARM64 .*cicd/test\.bash' '${rtLog}' && ! grep -q '^ssh tester@vmDebARM64 .*go mod download' '${rtLog}' && grep -q '^ssh bsdtest@vmFreeBSD .*cicd/test\.bash' '${rtLog}'"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qxF '  SKIP: test.bash on vmDebARM64, which lacks: go' '${rtOut}' && grep -q '^ssh tester@vmDebARM64 .*-test\.v' '${rtLog}' && ! grep -q '^ssh tester@vmDebARM64 .*cicd/test\.bash' '${rtLog}' && ! grep -q '^ssh tester@vmDebARM64 .*go mod download' '${rtLog}' && grep -q '^ssh bsdtest@vmFreeBSD .*cicd/test\.bash' '${rtLog}'"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		fAssert "[Erm9Poa] with no build for its target a Unix box runs the Go tests only, and says so" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qxF '  skip: test.bash on vmFreeBSD, since no freebsd/amd64 build was given (--bin)' '${rtOut}' && ! grep -q '^ssh bsdtest@vmFreeBSD .*cicd/test\.bash' '${rtLog}' && grep -q '^ssh bsdtest@vmFreeBSD .*-test\.v' '${rtLog}'"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qxF '  SKIP: test.bash on vmFreeBSD, since no freebsd/amd64 build was given (--bin)' '${rtOut}' && ! grep -q '^ssh bsdtest@vmFreeBSD .*cicd/test\.bash' '${rtLog}' && grep -q '^ssh bsdtest@vmFreeBSD .*-test\.v' '${rtLog}'"
 		: > "${rtFail}/down-bsdtest@vmFreeBSD"; : > "${rtFail}/busy-vmDebARM64"
 		fRemoteRun "${rtBins[@]}"
 		rm -f -- "${rtFail:?}"/down-* "${rtFail:?}"/busy-*
 		fAssert "[Erm9Pon] a Unix box that is off or held by someone else is skipped, and the run passes" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'skip: vmFreeBSD, not reachable over ssh (tried bsdtest@vmFreeBSD)' '${rtOut}' && ! grep -q '^lock wrap vmFreeBSD' '${rtLog}' && grep -qF 'skip: vmDebARM64, held by session abcd' '${rtOut}' && ! grep -q '^ssh tester@vmDebARM64 .*-test\.v' '${rtLog}'"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'SKIP: vmFreeBSD, not reachable over ssh (tried bsdtest@vmFreeBSD)' '${rtOut}' && ! grep -q '^lock wrap vmFreeBSD' '${rtLog}' && grep -qF 'SKIP: vmDebARM64, held by session abcd' '${rtOut}' && ! grep -q '^ssh tester@vmDebARM64 .*-test\.v' '${rtLog}'"
+		## With the VM state helper beside the lock, vmFreeBSD a VM that is off and asleep until
+		## the helper wakes it. The stub logs what it does, and fails on a marker for the host.
+		local rtVm="${rtLock%/*}/x_vm-state.bash"
+		fStub "${rtVm}" <<-EOF
+			#!/usr/bin/env bash
+			if [[ "\${1:-}" == status ]]; then
+				shift; echo 'host guest state note'
+				for h in "\$@"; do if [[ -f '${rtFail}/vm-'"\${h}" ]]; then echo "\${h} \${h} \$(cat '${rtFail}/vm-'"\${h}")"; else echo "\${h} - - not a VM here"; fi; done
+				exit 0
+			fi
+			h="\$2"; printf 'vmstate %s\n' "\$*" >> '${rtLog}'
+			[[ "\$*" == "wrap \${h} --wait 0 -- "* ]] || exit 2
+			[[ ! -e '${rtFail}/noup-'"\${h}" ]] || { echo "x_vm-state.bash: \${h}: starting, was off" >&2; echo "x_vm-state.bash: \${h}: no ssh after 600s. Run restore once it settles." >&2; exit 1; }
+			rm -f -- '${rtFail}'/asleep-*; echo "vmstate up \${h}" >> '${rtLog}'
+			shift 5; rc=0; '${rtLock}' wrap "\${h}" --wait 0 -- "\$@" || rc=\$?
+			echo "vmstate restore \${h}" >> '${rtLog}'
+			[[ ! -e '${rtFail}/norestore-'"\${h}" ]] || { echo "x_vm-state.bash: \${h}: still up after 300s, note kept" >&2; exit 1; }
+			exit "\${rc}"
+		EOF
+		echo off > "${rtFail}/vm-vmFreeBSD"; : > "${rtFail}/asleep-bsdtest@vmFreeBSD"
+		fRemoteRun "${rtBins[@]}"
+		fAssert "[Etj1UKH] a VM that is off is not looked for until the helper has woken it under the lock, and is put back after, while a box that isn't one keeps the lock's own wrap" \
+			bash -c "[[ '${rtRc}' == 0 ]] && up=\$(grep -nxF 'vmstate up vmFreeBSD' '${rtLog}' | cut -d: -f1) && back=\$(grep -nxF 'vmstate restore vmFreeBSD' '${rtLog}' | cut -d: -f1) && first=\$(grep -n '^ssh bsdtest@vmFreeBSD ' '${rtLog}' | head -n 1 | cut -d: -f1) && last=\$(grep -n '^ssh bsdtest@vmFreeBSD ' '${rtLog}' | tail -n 1 | cut -d: -f1) && (( up < first && last < back )) && grep -qE '^vmstate wrap vmFreeBSD --wait 0 -- .*remote-tests\.bash --held unix vmFreeBSD bsdtest@vmFreeBSD\$' '${rtLog}' && grep -qE '^lock wrap vmFreeBSD --wait 0 -- ' '${rtLog}' && grep -qE '^lock wrap vmDebARM64 --wait 0 --why ' '${rtLog}' && ! grep -q '^vmstate wrap vmDebARM64' '${rtLog}' && grep -qxF '  passed on: b26 b29w vmDebARM64 vmFreeBSD' '${rtOut}' && ! grep -qF 'note: no VM state helper' '${rtOut}'"
+		: > "${rtFail}/asleep-bsdtest@vmFreeBSD"; : > "${rtFail}/noup-vmFreeBSD"
+		fRemoteRun "${rtBins[@]}"
+		rm -f -- "${rtFail:?}/noup-vmFreeBSD" "${rtFail:?}"/asleep-*
+		fAssert "[Etj1UKa] a VM that does not come up is skipped with the helper's reason, named as SKIP in the summary, and the run passes" \
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qxF '  SKIP: vmFreeBSD, the VM was off and did not come up (exit 1): x_vm-state.bash: vmFreeBSD: no ssh after 600s. Run restore once it settles.' '${rtOut}' && ! grep -q '^ssh bsdtest@vmFreeBSD' '${rtLog}' && grep -qxF '  passed on: b26 b29w vmDebARM64; SKIP: vmFreeBSD' '${rtOut}'"
+		: > "${rtFail}/norestore-vmFreeBSD"
+		fRemoteRun "${rtBins[@]}"
+		rm -f -- "${rtFail:?}/norestore-vmFreeBSD" "${rtFail:?}/vm-vmFreeBSD" "${rtVm:?}"
+		fAssert "[Etj1UKq] a VM the helper could not put back is warned about, and its result stands" \
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qxF '  WARNING: vmFreeBSD was off, and may not be put back (exit 1): x_vm-state.bash: vmFreeBSD: still up after 300s, note kept' '${rtOut}' && grep -qxF '  passed on: b26 b29w vmDebARM64 vmFreeBSD' '${rtOut}'"
 		: > "${rtFail}/suitefail-bsdtest@vmFreeBSD"
 		fRemoteRun "${rtBins[@]}"
 		rm -f -- "${rtFail:?}/suitefail-bsdtest@vmFreeBSD"
@@ -6527,6 +6583,9 @@ EOF
 		fAssert "[Erm9PpE] a Unix box with no target set stops the run before anything is reached" \
 			bash -c "[[ '${rtRc}' == 2 ]] && grep -qF 'REMOTE_UNIX_TARGETS has no target like freebsd/amd64 for vmOther' '${rtOut}' && [[ ! -s '${rtLog}' ]]"
 
+		fAssert "[Etj1UJ4] Windows tries b29w before vm925w, by that name only, and vmKt6m runs beside b26" \
+			bash -c "grep -qxF 'REMOTE_WINDOWS_HOSTS=(\"b29w\" \"vm925w\")' '${root}/cicd/config.bash' && ! grep -q 'b29w-wif' '${root}/cicd/config.bash' && grep -qE '^REMOTE_MAC_HOSTS=\(\"b26\" \"vmKt6m:vmkt6m\"\)\$' '${root}/cicd/config.bash'"
+		fAssert "[Etj1UJK] a box's temp root is HOST_TEMP, then TMPDIR less its last slash, then /tmp"  fRemoteDirSh
 		## Last, since it replaces the copy the checks above looked at.
 		mv "${rtMac}/gitsby-remote-tests" "${rtMac}/ours"
 		mkdir -p "${rtMac}/gitsby-remote-tests"
@@ -7435,3 +7494,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261024 JC: The stage 7 checks put back the boxes they expect, so a tree with config.bash narrowed to one box passes them. 1677 -> 1677.
 ##		- 20261025 JC: --backlog-run-quick and its areas, --merge-gate, --backlog-run-full, --long, and the two aliases. The gate checks read the new closing line, and leave the suites out of what the gate must not run. 1677 -> 1688.
 ##		- 20261025 JC: --backlog-run-quick goes into the image by default, takes --container and --no-container, and falls back here without docker. The checks of what the gate runs here say --no-container, and [EsJgejN] is off, since --container now goes with it. 1688 -> 1692.
+##		- 20261025 JC: Stage 7 harness: b29w before vm925w, a VM through the VM state helper, each box's copy under its temp root, a Mac's tool check, and SKIP for a skipped box, in its line and the summary. The checks that read the Windows order or a skip line read the new ones. 1700 -> 1709.

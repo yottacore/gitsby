@@ -7,7 +7,7 @@
 ##		  full run, or run it alone.
 ##		- Mac: the Go tests, cross-built for it, then test.bash against the universal build.
 ##		  Both run in a copy of this tree, git dir included, in the stage's own folder under
-##		  the box's home, replaced each run. The suite reads the history and builds offline, so
+##		  the box's temp root, replaced each run. The suite reads the history and builds offline, so
 ##		  the box fetches the Go modules first.
 ##		- Other Unix boxes, such as FreeBSD and Linux arm64: the same as the Mac, as each box's
 ##		  test user, against the build given for its target. test.bash runs only where the box
@@ -19,15 +19,18 @@
 ##		  removed after it. There is no bash on those boxes to run the suite with.
 ##		- Each box is taken through the host lock for the length of its run, and only if it is
 ##		  free right now. A box that is off, unreachable or taken by someone else is skipped
-##		  with a note, and so is the whole stage when there is no lock script. Every Mac and
-##		  Unix box in the list runs; of the Windows boxes, the first free one does.
+##		  with SKIP, named again in the summary, and so is the whole stage when there is no lock
+##		  script. Every Mac and Unix box in the list runs; of the Windows boxes, the first free
+##		  one does.
+##		- A VM goes through the VM state helper beside the lock, which wakes one that is paused
+##		  or off for its run and puts it back after. Without the helper, such a VM is skipped.
 ##		- The Go tests are built with the image's Go when cicd.bash runs this with the image, and
 ##		  with this box's otherwise.
 ##		- The boxes, the lock and the paths are in config.bash, under stage 7.
 ##	Syntax:
 ##		cicd/remote-tests.bash [--mac-bin FILE] [--bin GOOS/GOARCH FILE]...
-##		  --mac-bin FILE  the universal build test.bash runs against on the Mac. Without it the
-##		                  Mac runs the Go tests only.
+##		  --mac-bin FILE  the universal build test.bash runs against on each Mac. Without it the
+##		                  Macs run the Go tests only.
 ##		  --bin T FILE    the same for the Unix boxes whose target is T, such as freebsd/amd64.
 ##		  (--held is how the script calls itself under the lock, and is not for use by hand.)
 ##	Exit: 0 nothing failed, skipped boxes included; 1 a test failed, or a box could not be set
@@ -132,36 +135,48 @@ fResult(){ echo "$2" > "${work}/result-$1" ;}
 ## A target's name in file names: freebsd/amd64 -> freebsd-amd64.
 fTag(){ echo "${1/\//-}" ;}
 
-## Under the lock: the Mac or other Unix box $2, reached as $3, by the kind $1. Both get a copy
-## of the tree in the stage's folder under the box's home, run the Go tests built for them there,
-## then test.bash against the build given for them.
+## Remote shell that sets d to this stage's folder $1 under the box's temp root. macOS's TMPDIR
+## ends in a slash.
+# shellcheck disable=SC2016  ## expanded on the box, not here.
+fDirSh(){ printf 't="${HOST_TEMP:-${TMPDIR:-/tmp}}"; d="${t%%/}/%s"' "$1" ;}
+
+## Under the lock: the Mac or other Unix box $2, reached as the first of the ssh names $3 that
+## answers, by the kind $1. Both get a copy of the tree in the stage's folder under the box's
+## temp root, run the Go tests built for them there, then test.bash against the build given
+## for them.
 fRunPosix(){
-	local kind="$1" lockName="$2" sshName="$3" rc=0 failed=0 dir log="${work}/gotest-$2.log" bashDir
-	local target tarFile hasBin binName suiteCmd missing="" fetch="go mod download"
+	local kind="$1" lockName="$2" sshName="" rc=0 failed=0 dir dirSh log="${work}/gotest-$2.log" bashDir macBash
+	local target tarFile hasBin binName suiteCmd missing="" fetch="go mod download" needsPre="" needs=()
+	sshName="$(fReachable "${lockName}:$3")"
+	if [[ -z "${sshName}" ]]; then fEcho_Clean "  SKIP: ${lockName}, not reachable over ssh (tried $3)"; fResult "${lockName}" lost; return 0; fi
 	if [[ "${kind}" == mac ]]; then
 		target="darwin/${REMOTE_MAC_GOARCH}" tarFile="${work}/mac.tar" hasBin="${work}/mac-has-bin" binName="the universal build"
 		printf -v dir '%q' "${REMOTE_MAC_DIR}"
 		## Homebrew's bash first, so the scripts the suite starts by their shebang get it too.
 		printf -v bashDir '%q' "$(dirname "${REMOTE_MAC_BASH}")"
+		printf -v macBash '%q' "${REMOTE_MAC_BASH}"
 		suiteCmd="PATH=${bashDir}:\"\$PATH\" ${REMOTE_MAC_BASH} cicd/test.bash"
+		needsPre="PATH=${bashDir}:\"\$PATH\"; [ -x ${macBash} ] || printf '%s ' ${macBash}; " needs=("${REMOTE_MAC_NEEDS[@]}")
 	else
 		target="${REMOTE_UNIX_TARGETS[${lockName}]}"
 		tarFile="${work}/unix-$(fTag "${target}").tar" hasBin="${work}/has-bin-$(fTag "${target}")" binName="the ${target} build"
 		printf -v dir '%q' "${REMOTE_UNIX_DIR}"
-		suiteCmd="bash cicd/test.bash"
-		## Only the suite needs these, so a box without them still runs the Go tests.
-		missing="$(fRemote "${sshName}" "echo ${mark}; for t in ${REMOTE_UNIX_NEEDS[*]}; do command -v \"\$t\" >/dev/null 2>&1 || printf '%s ' \"\$t\"; done" -n)" || rc=$?
-		if ((rc)); then fEcho_Clean "  skip: ${lockName}, lost the connection while looking for its tools"; fResult "${lockName}" lost; return 0; fi
-		read -r missing <<< "${missing}"
-		if [[ -n "${missing}" || ! -f "${hasBin}" ]]; then fetch=":"; fi
+		suiteCmd="bash cicd/test.bash" needs=("${REMOTE_UNIX_NEEDS[@]}")
 	fi
-	fEcho_Clean "  ${lockName}: copying the tree to ~/${dir}/tree"
+	dirSh="$(fDirSh "${dir}")"
+	## Only the suite needs these, so a box without them still runs the Go tests. A Mac without
+	## the command line tools has a git that only offers to install them, so each runs.
+	missing="$(fRemote "${sshName}" "echo ${mark}; ${needsPre}for t in ${needs[*]}; do case \"\$t\" in git) git --version ;; go) go version ;; *) command -v \"\$t\" ;; esac >/dev/null 2>&1 || printf '%s ' \"\$t\"; done" -n)" || rc=$?
+	if ((rc)); then fEcho_Clean "  SKIP: ${lockName}, lost the connection while looking for its tools"; fResult "${lockName}" lost; return 0; fi
+	read -r missing <<< "${missing}"
+	if [[ -n "${missing}" || ! -f "${hasBin}" ]]; then fetch=":"; fi
+	fEcho_Clean "  ${lockName}: copying the tree to ${dir}/tree under its temp root"
 	## The marker is checked again right before the removal, and a folder without it is not
 	## this stage's to touch. The old tree is moved aside first: a Finder window open on it
 	## rewrites .DS_Store mid-rm, which failed the whole copy. Leftovers get another go next run.
 	fRemote "${sshName}" "echo ${mark}
 		set -e
-		d=\"\$HOME/${dir}\"
+		${dirSh}
 		if [ -e \"\$d\" ] && [ ! -f \"\$d/${ownMark}\" ]; then echo \"\$d is not this stage's folder, so it was left alone\" >&2; exit 3; fi
 		mkdir -p \"\$d\"
 		: > \"\$d/${ownMark}\"
@@ -172,13 +187,13 @@ fRunPosix(){
 		tar -xf - -C \"\$d\"
 		cd \"\$d/tree/${GO_MODULE_DIR}\"
 		${fetch}" < "${tarFile}" || rc=$?
-	if ((rc == 255)); then fEcho_Clean "  skip: ${lockName}, lost the connection while copying the tree"; fResult "${lockName}" lost; return 0; fi
+	if ((rc == 255)); then fEcho_Clean "  SKIP: ${lockName}, lost the connection while copying the tree"; fResult "${lockName}" lost; return 0; fi
 	if ((rc)); then fEcho_Clean "  FAIL: ${lockName}, could not copy the tree or fetch the Go modules (exit ${rc})"; fResult "${lockName}" fail; return 0; fi
 
 	fEcho_Clean "  ${lockName}: go test (${target})"
 	rc=0
-	fRemote "${sshName}" "echo ${mark}; cd \"\$HOME/${dir}/tree/${GO_MODULE_DIR}\" && ./${EXE_NAME}-test -test.v" -n >"${log}" 2>&1 || rc=$?
-	if ((rc == 255)); then fEcho_Clean "  skip: ${lockName}, lost the connection during go test"; fResult "${lockName}" lost; return 0; fi
+	fRemote "${sshName}" "echo ${mark}; ${dirSh}; cd \"\$d/tree/${GO_MODULE_DIR}\" && ./${EXE_NAME}-test -test.v" -n >"${log}" 2>&1 || rc=$?
+	if ((rc == 255)); then fEcho_Clean "  SKIP: ${lockName}, lost the connection during go test"; fResult "${lockName}" lost; return 0; fi
 	fGoTestLines "${log}" "${root}/${GO_MODULE_DIR}"
 	if ((rc)); then fGoTestFailures "${log}"; fEcho_Clean "  FAIL: ${lockName} go test"; failed=1; fi
 
@@ -187,21 +202,21 @@ fRunPosix(){
 	if [[ -n "${wineTarget}" ]]; then
 		rc=0
 		hasWine="$(fRemote "${sshName}" "echo ${mark}; if command -v wine >/dev/null 2>&1; then echo yes; fi" -n)" || rc=$?
-		if ((rc)); then fEcho_Clean "  skip: ${lockName}, lost the connection while looking for wine"; fResult "${lockName}" lost; return 0; fi
+		if ((rc)); then fEcho_Clean "  SKIP: ${lockName}, lost the connection while looking for wine"; fResult "${lockName}" lost; return 0; fi
 		if [[ "${hasWine}" != yes ]]; then
-			fEcho_Clean "  skip: ${wineTarget} go test on ${lockName}, which lacks wine"
+			fEcho_Clean "  SKIP: ${wineTarget} go test on ${lockName}, which lacks wine"
 		else
 			fEcho_Clean "  ${lockName}: go test (${wineTarget} under Wine)"
 			## No display, and none of Wine's first-run extras. Wine spun forever here once, so it
 			## gets a limit, and wineserver -k takes down what timeout leaves.
 			rc=0
-			fRemote "${sshName}" "echo ${mark}; cd \"\$HOME/${dir}/tree/${GO_MODULE_DIR}\" || exit 1
+			fRemote "${sshName}" "echo ${mark}; ${dirSh}; cd \"\$d/tree/${GO_MODULE_DIR}\" || exit 1
 				unset DISPLAY WAYLAND_DISPLAY
-				export WINEPREFIX=\"\$HOME/${dir}/wine\" WINEDEBUG=-all WINEDLLOVERRIDES='mscoree,mshtml,winemenubuilder.exe=d'
+				export WINEPREFIX=\"\$d/wine\" WINEDEBUG=-all WINEDLLOVERRIDES='mscoree,mshtml,winemenubuilder.exe=d'
 				timeout 900 wine ./${EXE_NAME}-test-$(fTag "${wineTarget}").exe -test.v; r=\$?
 				wineserver -k 2>/dev/null
 				exit \$r" -n >"${wineLog}" 2>&1 || rc=$?
-			if ((rc == 255)); then fEcho_Clean "  skip: ${lockName}, lost the connection during the Wine go test"; fResult "${lockName}" lost; return 0; fi
+			if ((rc == 255)); then fEcho_Clean "  SKIP: ${lockName}, lost the connection during the Wine go test"; fResult "${lockName}" lost; return 0; fi
 			fGoTestLines "${wineLog}" "${root}/${GO_MODULE_DIR}"
 			if ((rc == 124)); then fEcho_Clean "  FAIL: ${lockName} go test (${wineTarget} under Wine) ran out of time"; failed=1
 			elif ((rc)); then fGoTestFailures "${wineLog}"; fEcho_Clean "  FAIL: ${lockName} go test (${wineTarget} under Wine)"; failed=1; fi
@@ -209,24 +224,26 @@ fRunPosix(){
 	fi
 
 	if [[ ! -f "${hasBin}" ]]; then
-		if [[ "${kind}" == mac ]]; then fEcho_Clean "  skip: test.bash on ${lockName}, since no universal build was given (--mac-bin)"
-		else fEcho_Clean "  skip: test.bash on ${lockName}, since no ${target} build was given (--bin)"; fi
+		if [[ "${kind}" == mac ]]; then fEcho_Clean "  SKIP: test.bash on ${lockName}, since no universal build was given (--mac-bin)"
+		else fEcho_Clean "  SKIP: test.bash on ${lockName}, since no ${target} build was given (--bin)"; fi
 	elif [[ -n "${missing}" ]]; then
-		fEcho_Clean "  skip: test.bash on ${lockName}, which lacks: ${missing}"
+		fEcho_Clean "  SKIP: test.bash on ${lockName}, which lacks: ${missing}"
 	else
 		fEcho_Clean "  ${lockName}: test.bash against ${binName}"
 		rc=0
-		fRemote "${sshName}" "echo ${mark}; cd \"\$HOME/${dir}/tree\" && ${suiteCmd}" -n || rc=$?
-		if ((rc == 255)); then fEcho_Clean "  skip: ${lockName}, lost the connection during test.bash"; fResult "${lockName}" lost; return 0; fi
+		fRemote "${sshName}" "echo ${mark}; ${dirSh}; cd \"\$d/tree\" && ${suiteCmd}" -n || rc=$?
+		if ((rc == 255)); then fEcho_Clean "  SKIP: ${lockName}, lost the connection during test.bash"; fResult "${lockName}" lost; return 0; fi
 		if ((rc)); then fEcho_Clean "  FAIL: ${lockName} test.bash"; failed=1; fi
 	fi
 	if ((failed)); then fResult "${lockName}" fail; else fResult "${lockName}" pass; fi
 }
 
-## Under the lock: the Windows box $1, reached as $2. The commands are cmd's, which is where
-## ssh lands there.
+## Under the lock: the Windows box $1, reached as the first of the ssh names $2 that answers.
+## The commands are cmd's, which is where ssh lands there.
 fRunWindows(){
-	local lockName="$1" sshName="$2" rc=0 log="${work}/gotest-$1.log" setupLog="${work}/setup-$1.log" dir
+	local lockName="$1" sshName="" rc=0 log="${work}/gotest-$1.log" setupLog="${work}/setup-$1.log" dir
+	sshName="$(fReachable "${lockName}:$2")"
+	if [[ -z "${sshName}" ]]; then fEcho_Clean "  SKIP: ${lockName}, not reachable over ssh (tried $2)"; fResult "${lockName}" lost; return 0; fi
 	dir="%TEMP%\\test_gitsby_$(date +%Y%m%d-%H%M%S%2N)"
 	fEcho_Clean "  ${lockName}: copying the Go tests to ${dir}"
 	## "made" says mkdir made the folder, so it is this run's to remove whatever fails after.
@@ -238,7 +255,7 @@ fRunWindows(){
 	if grep -qx made "${setupLog}"; then
 		fRemote "${sshName}" "echo ${mark}& cd /d \"%TEMP%\" && rmdir /s /q \"${dir}\"" -n >/dev/null 2>&1 || true
 	fi
-	if ((rc == 255)); then fEcho_Clean "  skip: ${lockName}, lost the connection"; fResult "${lockName}" lost; return 0; fi
+	if ((rc == 255)); then fEcho_Clean "  SKIP: ${lockName}, lost the connection"; fResult "${lockName}" lost; return 0; fi
 	if [[ ! -s "${log}" ]]; then
 		grep -vx made "${setupLog}" || true
 		fEcho_Clean "  FAIL: ${lockName}, could not copy the Go tests (exit ${rc})"; fResult "${lockName}" fail; return 0
@@ -272,7 +289,7 @@ for f in "${lockFound[@]}"; do
 	if [[ -x "${f}" ]]; then lock="${f}"; break; fi
 done
 if [[ -z "${lock}" ]]; then
-	fEcho_Clean "  skip: every box, since there is no host lock script (${REMOTE_LOCK_GLOB})"
+	fEcho_Clean "  SKIP: every box, since there is no host lock script (${REMOTE_LOCK_GLOB})"
 	exit 0
 fi
 ## The lock reads its settings from variables named after its own file. It keeps two host
@@ -283,7 +300,7 @@ fi
 ## A caller with a session id is taken to be the whole session, and one that misses keeps its
 ## place in line for minutes, holding the box back from others, so the lock is asked as a
 ## plain process, whose place goes when it exits.
-lockVar="${lock##*/}"; lockVar="${lockVar%%_*}"; lockVar="${lockVar^^}"
+lockPrefix="${lock##*/}"; lockPrefix="${lockPrefix%%_*}"; lockVar="${lockPrefix^^}"
 declare -a winNames=()
 for spec in "${REMOTE_WINDOWS_HOSTS[@]}"; do winNames+=("$(fLockName "${spec}")"); done
 lockWin="${winNames[*]}"
@@ -294,29 +311,52 @@ for spec in "${REMOTE_MAC_HOSTS[@]}" "${REMOTE_UNIX_HOSTS[@]}"; do
 	[[ "${lockOther}" == *" ${name} "* ]] || lockOther+="${name} "
 done
 read -r lockOther <<< "${lockOther}"
-fLock(){ env -u "${lockVar}_CODE_SESSION_ID" -u "${lockVar}_PID" "${lockVar}_WINDOWS_HOSTS=${lockWin}" "${lockVar}_OTHER_HOSTS=${lockOther}" "${lock}" "$@" ;}
+## The lock, or the VM state helper, run with the lock's settings and as a plain process.
+fLockEnv(){ env -u "${lockVar}_CODE_SESSION_ID" -u "${lockVar}_PID" "${lockVar}_WINDOWS_HOSTS=${lockWin}" "${lockVar}_OTHER_HOSTS=${lockOther}" "$@" ;}
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-remote.XXXXXX")"
 trap 'rm -rf -- "${work:?}"' EXIT
 
+## The helper's state for each box that is a VM here, which it wakes under the lock and puts back
+## after. A box missing from this is not a VM, or is one in a state the helper won't touch.
+vmState="${lock%/*}/${lockPrefix}_vm-state.bash"
+declare -A vmGuest=()
+if [[ -x "${vmState}" ]]; then
+	declare -a allNames=()
+	for spec in "${REMOTE_MAC_HOSTS[@]}" "${REMOTE_UNIX_HOSTS[@]}" "${REMOTE_WINDOWS_HOSTS[@]}"; do allNames+=("$(fLockName "${spec}")"); done
+	while read -r name _ st _; do
+		case "${st}" in running|paused|off|saved) vmGuest["${name}"]="${st}" ;; esac
+	done < <(fLockEnv "${vmState}" status "${allNames[@]}" 2>/dev/null || true)
+else
+	fEcho_Clean "  note: no VM state helper (${vmState}), so a VM that is off or paused is skipped"
+	vmState=""
+fi
+
+## Sets candidate to the lock name of the entry $1 and the ssh names to try under the lock, or
+## to nothing once the box is skipped. A VM may be asleep, so only a box that isn't one is
+## looked for now.
+fCandidate(){
+	local lockName="" name=""
+	lockName="$(fLockName "$1")"; candidate=""
+	if [[ -n "${vmGuest[${lockName}]:-}" ]]; then candidate="${lockName} $(fSshNames "$1")"; return 0; fi
+	name="$(fReachable "$1")"
+	if [[ -n "${name}" ]]; then candidate="${lockName} ${name}"; return 0; fi
+	fEcho_Clean "  SKIP: ${lockName}, not reachable over ssh (tried $(fSshNames "$1"))"
+	fResult "${lockName}" skip
+}
 declare -a macRun=() unixRun=() winRun=()
 declare -A unixTargets=()
+candidate=""
 for spec in "${REMOTE_MAC_HOSTS[@]}"; do
-	name="$(fReachable "${spec}")"
-	if [[ -n "${name}" ]]; then macRun+=("$(fLockName "${spec}") ${name}")
-	else fEcho_Clean "  skip: $(fLockName "${spec}"), not reachable over ssh (tried $(fSshNames "${spec}"))"; fi
+	fCandidate "${spec}"; [[ -z "${candidate}" ]] || macRun+=("${candidate}")
 done
 for spec in "${REMOTE_UNIX_HOSTS[@]}"; do
-	name="$(fReachable "${spec}")"
-	if [[ -n "${name}" ]]; then
-		unixRun+=("$(fLockName "${spec}") ${name}")
-		unixTargets["${REMOTE_UNIX_TARGETS[$(fLockName "${spec}")]}"]=1
-	else fEcho_Clean "  skip: $(fLockName "${spec}"), not reachable over ssh (tried $(fSshNames "${spec}"))"; fi
+	fCandidate "${spec}"; [[ -n "${candidate}" ]] || continue
+	unixRun+=("${candidate}")
+	unixTargets["${REMOTE_UNIX_TARGETS[$(fLockName "${spec}")]}"]=1
 done
 for spec in "${REMOTE_WINDOWS_HOSTS[@]}"; do
-	name="$(fReachable "${spec}")"
-	if [[ -n "${name}" ]]; then winRun+=("$(fLockName "${spec}") ${name}")
-	else fEcho_Clean "  skip: $(fLockName "${spec}"), not reachable over ssh (tried $(fSshNames "${spec}"))"; fi
+	fCandidate "${spec}"; [[ -z "${candidate}" ]] || winRun+=("${candidate}")
 done
 
 ## Built before any box is taken, so none is held while this compiles.
@@ -394,24 +434,35 @@ if ((${#winRun[@]})); then
 	tar -rf "${work}/win.tar" -C "${work}/win" "${GO_MODULE_DIR}/${EXE_NAME}-test.exe"
 fi
 
-## Runs the kind $1 on the box $2, reached as $3, under the lock, and prints why when the lock
-## would not have it. True when the box ran, whatever the result.
+## Runs the kind $1 on the box $2, reached by one of the ssh names $3, under the lock, and prints
+## why when the lock would not have it. True when the box ran, whatever the result. A VM's run
+## goes through the VM state helper's wrap, which takes the lock the same way and has no --why.
 exec {errFd}>&2
 fUnderLock(){
-	local kind="$1" lockName="$2" sshName="$3" rc=0 errFile="${work}/lock-$2.err" why=""
-	REMOTE_TESTS_WORK="${work}" REMOTE_TESTS_ERR_FD="${errFd}" \
-		fLock wrap "${lockName}" --wait 0 --why "gitsby: ${kind} tests" -- "${here}/${BASH_SOURCE[0]##*/}" --held "${kind}" "${lockName}" "${sshName}" 2>"${errFile}" || rc=$?
+	local kind="$1" lockName="$2" rc=0 errFile="${work}/lock-$2.err" why="" vm="${vmGuest[$2]:-}"
+	local -a heldCmd=("${here}/${BASH_SOURCE[0]##*/}" --held "${kind}" "${lockName}" "$3")
+	if [[ -n "${vm}" ]]; then
+		REMOTE_TESTS_WORK="${work}" REMOTE_TESTS_ERR_FD="${errFd}" \
+			fLockEnv "${vmState}" wrap "${lockName}" --wait 0 -- "${heldCmd[@]}" 2>"${errFile}" || rc=$?
+	else
+		REMOTE_TESTS_WORK="${work}" REMOTE_TESTS_ERR_FD="${errFd}" \
+			fLockEnv "${lock}" wrap "${lockName}" --wait 0 --why "gitsby: ${kind} tests" -- "${heldCmd[@]}" 2>"${errFile}" || rc=$?
+	fi
 	if [[ -e "${work}/started-${lockName}" ]]; then
 		[[ -e "${work}/result-${lockName}" ]] || { fEcho_Clean "  FAIL: ${lockName}, the run ended early (exit ${rc})"; fResult "${lockName}" fail; }
+		## The run's own result stands. A VM that would not go back is the helper's to retry.
+		if ((rc)) && [[ -n "${vm}" ]]; then fEcho_Clean "  WARNING: ${lockName} was ${vm}, and may not be put back (exit ${rc}): $(tail -n 1 "${errFile}")"; fi
 		[[ "$(< "${work}/result-${lockName}")" != lost ]]
 		return
 	fi
 	case "${rc}" in
 		3)  why="$(sed -n 's/^still queued: .* is held by /held by /p' "${errFile}" | head -n 1)"
-		    fEcho_Clean "  skip: ${lockName}, ${why:-taken by another session}" ;;
-		75) fEcho_Clean "  skip: ${lockName}, the lock's state is busy" ;;
-		*)  fEcho_Clean "  skip: ${lockName}, the lock would not take it (exit ${rc}): $(head -n 1 "${errFile}")" ;;
+		    fEcho_Clean "  SKIP: ${lockName}, ${why:-taken by another session}" ;;
+		75) fEcho_Clean "  SKIP: ${lockName}, the lock's state is busy" ;;
+		*)  if [[ -n "${vm}" ]]; then fEcho_Clean "  SKIP: ${lockName}, the VM was ${vm} and did not come up (exit ${rc}): $(tail -n 1 "${errFile}")"
+		    else fEcho_Clean "  SKIP: ${lockName}, the lock would not take it (exit ${rc}): $(head -n 1 "${errFile}")"; fi ;;
 	esac
+	fResult "${lockName}" skip
 	return 1
 }
 
@@ -423,19 +474,20 @@ done
 exec {errFd}>&-
 
 shopt -s nullglob
-failed=(); passed=()
+failed=(); passed=(); skipped=()
 for f in "${work}"/result-*; do
 	case "$(< "${f}")" in
-		pass) passed+=("${f##*/result-}") ;;
-		fail) failed+=("${f##*/result-}") ;;
+		pass)      passed+=("${f##*/result-}") ;;
+		fail)      failed+=("${f##*/result-}") ;;
+		skip|lost) skipped+=("${f##*/result-}") ;;
 	esac
 done
 shopt -u nullglob
-if ((${#failed[@]})); then
-	fEcho_Clean "  passed on: ${passed[*]:-none}; failed on: ${failed[*]}"
-	exit 1
-fi
-fEcho_Clean "  passed on: ${passed[*]:-none}"
+summary="  passed on: ${passed[*]:-none}"
+if ((${#failed[@]})); then summary+="; failed on: ${failed[*]}"; fi
+if ((${#skipped[@]})); then summary+="; SKIP: ${skipped[*]}"; fi
+fEcho_Clean "${summary}"
+if ((${#failed[@]})); then exit 1; fi
 
 
 ##	History:
@@ -445,3 +497,4 @@ fEcho_Clean "  passed on: ${passed[*]:-none}"
 ##		- 2026-10-05 JC: A Unix box can also run the Go tests for a Windows target under Wine. The Linux arm64 box runs the windows/arm64 ones.
 ##		- 2026-10-19 JC: The test builds pin GOAMD64=v1, like the release.
 ##		- 2026-10-25 JC: The test builds use the image's Go when cicd.bash hands it the image.
+##		- 2026-10-25 JC: A VM goes through the VM state helper, so one that is paused or off runs and is put back after. Each Mac and Unix box keeps its copy of the tree under its temp root, a Mac checks for the tools the suite needs too, and a skipped box says SKIP and is named in the summary.
