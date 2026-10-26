@@ -33,6 +33,24 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- The quick run fails staticcheck in the hook's gate worktree
+	- ID: 2026102518002917
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-180029
+	- Opened by: jim-collier
+	- Related IDs: 2026102507133273, 2026102506452488
+	- Steps to reproduce [Bug]:
+		- `git -C .git/gitsby-gate checkout --detach --force 422b8aa`
+		- `(cd .git/gitsby-gate && cicd/cicd.bash --backlog-run-quick lint)`
+	- Incorrect behavior [Bug]: Stage 1 fails with "error obtaining VCS status: exit status 128 ... Use -buildvcs=false to disable VCS stamping", then "FAILED: staticcheck findings". The same commit passes in the live checkout.
+	- Expected behavior [Bug]: The run passes in the gate worktree as it does in the checkout, so the pre-push hook can gate a push to main.
+	- Possible cause [Bug]: The gate worktree's `.git` is a file pointing at `repo/.git/worktrees/gitsby-gate`, which isn't mounted in the container, so git can't read the repo there. Since 461657d the quick run, `--gate` included, runs in the image, so every gated push to main fails this way.
+	- Test case: None yet.
+	- Progress log:
+		- 2026-10-25: Found when the round's early full run started in the gate worktree. gover 422b8aa fails the same way, so it predates the round.
+
 - CICD reset: the hook runs `--merge-gate`
 	- ID: 2026102506452488
 	- Type: Enhancement
@@ -59,6 +77,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash [EtkvcAN], [EtkvcAb], [EtkvcAo], [EtkvcB1], [EtkvcBE] and [EtkvcBS].
 	- Verified: [EtkvcAN], [EtkvcAb], [EtkvcAo] and [EtkvcB1] fail against the round branch's pre-push.bash and config.bash. [EtkvcBE] and [EtkvcBS] are guards and pass on both. The older hook checks pass unchanged, since their stub has only `--gate)`. test.bash 1715 -> 1725, 0 failed, with 2026102506452478's checks, in `--backlog-run-quick` in the image.
 	- Swept: pre-push.bash's header, install message, gate call and failure line. cicd.bash's help and its option arm comment. README, contributing.md and design.md's hook bullets. test.bash's hook checks, whose stub has no `--merge-gate`.
+	- Prereq IDs: 2026102518002917
+	- 2026-10-25: Its gate worktree run stopped in stage 1 on 2026102518002917, which gover has too. Waits on that fix.
 
 - CICD reset: containers
 	- ID: 2026102416313100
