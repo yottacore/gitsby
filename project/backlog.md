@@ -125,7 +125,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: Not found yet. vmDebARM64 passed 1699/0 on gover earlier on 2026-10-25, so it came in with this round. 6343351 is the only round commit that touches `remote-tests.bash`; it sends every box through one `fLockEnv "${vmState:-${lock}}" wrap` call. The fixture prints only FAIL lines, so the first step is to run that block on vmDebARM64 and keep `rtOut` and `rtLog`.
 	- Test case: None yet.
 	- Progress log:
-		- 2026-10-25: The run's log is `/mnt/ext/wip2/wip/tmp/gitsby/20261026-013600_002/run.log`, lines 9590 to 9810. round-20261025b stays unmerged until this is fixed.
+		- 2026-10-25: The run's log is kept as `private/claude_simple/round-20261025b_full-run.log`, lines 9590 to 9810. round-20261025b stays unmerged until this is fixed.
 
 - CICD reset: standard flags
 	- ID: 2026102416313104
@@ -463,7 +463,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: Self-closed: its test runs passed.
 	- Closed: 20261025-195133
 	- 2026-10-25: Its gate worktree run stopped in stage 1 on 2026102518002917, which gover has too. Waits on that fix.
-	- Verified 2026-10-25: `--merge-gate` ran from `.git/gitsby-gate` at 3490090 through all 8 stages, stages 1 to 6 in the image, all passing. Stage 7 failed on vmDebARM64 for 2026102519554107, which isn't this item's. Log: `/mnt/ext/wip2/wip/tmp/gitsby/20261026-013600_002/run.log`.
+	- Verified 2026-10-25: `--merge-gate` ran from `.git/gitsby-gate` at 3490090 through all 8 stages, stages 1 to 6 in the image, all passing. Stage 7 failed on vmDebARM64 for 2026102519554107, which isn't this item's. Log: `private/claude_simple/round-20261025b_full-run.log`.
 
 - CICD reset: containers
 	- ID: 2026102416313100
