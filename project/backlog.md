@@ -33,35 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- CICD reset: the hook runs `--merge-gate`
-	- ID: 2026102506452488
-	- Type: Enhancement
-	- Status: Waiting on automated testing
-	- Needs local test suite run?: One `--merge-gate` from the gate worktree, as the hook runs it, which can stand in for the round's `--backlog-run-full`. Put the round's tip there with `git -C .git/gitsby-gate checkout --quiet --detach --force <tip>`, or `git worktree add --detach .git/gitsby-gate <tip>` when it's missing, then run `(cd .git/gitsby-gate && env -u GIT_EDITOR -u DISPLAY cicd/cicd.bash --merge-gate)`.
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-064524
-	- Opened by: jim-collier
-	- Parent ID: 2026102416313104
-	- Related IDs: 2026102506452473
-		- Builds on that item's flags, in since a1c62bb.
-	- Requirements [Feature]:
-		- The pre-push hook runs `--merge-gate`, every check of the default run, on a push to main. A push whose commits change only docs and the other paths listed in one place the hook reads skips it. No gate on dev or gover.
-		- A commit cut before `--merge-gate` existed keeps the gate it had.
-		- Overrides the private CI/CD notes, where the gate on main runs lint and the unit tests only.
-	- Progress log:
-		- 2026-10-25: The hook runs `--merge-gate` on a commit whose cicd.bash has its arm, and `--gate` on one cut before it. A push to main whose diff from the remote's main is all in `MERGE_GATE_SKIP`, read from the pushed commit's `cicd/config.bash`, goes out with a note and no gate. A new main, or a remote commit not here, is gated.
-		- 2026-10-25: `MERGE_GATE_SKIP` is `*.md`, `project/`, `reference/` and `assets/logo.png`. A pattern ending in `/` is a top folder, and any other is a glob over the whole path.
-		- 2026-10-25: `--merge-gate` and `--backlog-run-full` no longer make or mount the gif's archive, since they never write there. From the gate worktree it would have landed inside `.git`.
-	- Decisions:
-		- The list is read from the commit, so an edit to it is itself gated, and a working-tree edit counts for nothing.
-		- The hook still waits up to 10 minutes for a gate already running, though one now takes about 50.
-	- Branch: round-20261025b
-	- Test case: test.bash [EtkvcAN], [EtkvcAb], [EtkvcAo], [EtkvcB1], [EtkvcBE] and [EtkvcBS].
-	- Verified: [EtkvcAN], [EtkvcAb], [EtkvcAo] and [EtkvcB1] fail against the round branch's pre-push.bash and config.bash. [EtkvcBE] and [EtkvcBS] are guards and pass on both. The older hook checks pass unchanged, since their stub has only `--gate)`. test.bash 1715 -> 1725, 0 failed, with 2026102506452478's checks, in `--backlog-run-quick` in the image.
-	- Swept: pre-push.bash's header, install message, gate call and failure line. cicd.bash's help and its option arm comment. README, contributing.md and design.md's hook bullets. test.bash's hook checks, whose stub has no `--merge-gate`.
-	- Prereq IDs: 2026102518002917
-	- 2026-10-25: Its gate worktree run stopped in stage 1 on 2026102518002917, which gover has too. Waits on that fix.
-
 - CICD reset: CPU and priority on the Windows box
 	- ID: 2026102508333054
 	- Type: Enhancement
@@ -85,6 +56,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: round-20261025b
 	- Test case: test.bash `[EtlCXkW]` (the count and class on the command line), `[EtlCXkl]` (a failing test that exits 0).
 	- Swept: every remote command in remote-tests.bash's `fRunWindows`. The copy and cleanup steps run no tests, so they keep normal priority.
+	- Prereq IDs: 2026102519554107
+	- 2026-10-25: The round's full run reached stage 7, where vmDebARM64 failed 22 harness checks (2026102519554107). Waits on that.
 
 - Stage 7 can't start vm925w once it has started vmKt6m or vmFreeBSD
 	- ID: 2026102510404322
@@ -109,6 +82,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: round-20261025b
 	- Test case: test.bash `[EtlCXkF]`.
 	- Swept: every loop over the boxes in remote-tests.bash. Only the three run loops take boxes, and the summary is sorted by name, so the order shows nowhere else. config.bash's stage 7 comment names the order.
+	- Prereq IDs: 2026102519554107
+	- 2026-10-25: The round's full run reached stage 7, where vmDebARM64 failed 22 harness checks (2026102519554107). Waits on that.
 
 - Stage 7 takes every box through the VM state helper's wrap
 	- ID: 2026102511210617
@@ -132,6 +107,25 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: round-20261025b
 	- Test case: test.bash `[EtlCXjm]` (every box through the helper, with why), `[EtlCXk1]` (no helper, the lock's own wrap with why), plus `[Etj1UKH]` as changed.
 	- Swept: every call of the lock and the helper in remote-tests.bash. `hosts` and `status` are reads, and stay as they were.
+	- Prereq IDs: 2026102519554107
+	- 2026-10-25: The round's full run reached stage 7, where vmDebARM64 failed 22 harness checks (2026102519554107). Waits on that.
+
+- test.bash's stage 7 checks fail on vmDebARM64 after round-20261025b
+	- ID: 2026102519554107
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-195541
+	- Opened by: jim-collier
+	- Related IDs: 2026102511210617, 2026102510404322, 2026102508333054
+	- Steps to reproduce [Bug]:
+		- `--merge-gate` at 3490090, stage 7, test.bash on vmDebARM64.
+	- Incorrect behavior [Bug]: 1711 passed, 22 failed, all in the block that runs `remote-tests.bash` against the fixture's stub lock. The first to fail is [ErkbDUa], the first check where the stub lock wraps a box. [ErkbDU2], [ErkbDUK] and [EtlCXk1] pass. The others include [ErkbDUn], [ErkbDVD], [Etj7cZ7], [Etj1UKH], [EtlCXkF], [EtlCXkl] and [Erm9Pp1].
+	- Expected behavior [Bug]: 0 failed, as on b26, vmFreeBSD and vmKt6m in the same run, and on b23 both in the image and on the box (1748/0).
+	- Possible cause [Bug]: Not found yet. vmDebARM64 passed 1699/0 on gover earlier on 2026-10-25, so it came in with this round. 6343351 is the only round commit that touches `remote-tests.bash`; it sends every box through one `fLockEnv "${vmState:-${lock}}" wrap` call. The fixture prints only FAIL lines, so the first step is to run that block on vmDebARM64 and keep `rtOut` and `rtLog`.
+	- Test case: None yet.
+	- Progress log:
+		- 2026-10-25: The run's log is `/mnt/ext/wip2/wip/tmp/gitsby/20261026-013600_002/run.log`, lines 9590 to 9810. round-20261025b stays unmerged until this is fixed.
 
 - CICD reset: standard flags
 	- ID: 2026102416313104
@@ -438,6 +432,38 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [Erfs74j] and [Erfs75a] in test.bash. They run release.bash past its dry run, with gh, curl and gitsby stubbed. The second is the first run of the phase 3 `releases/latest` block.
 	- Acceptance signoff: Self-closed: reproduced, and the checks fail before the fix and pass after.
 	- Closed: 20261003-141520
+
+- CICD reset: the hook runs `--merge-gate`
+	- ID: 2026102506452488
+	- Type: Enhancement
+	- Status: Done
+	- Needs local test suite run?: No
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-064524
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313104
+	- Related IDs: 2026102506452473
+		- Builds on that item's flags, in since a1c62bb.
+	- Requirements [Feature]:
+		- The pre-push hook runs `--merge-gate`, every check of the default run, on a push to main. A push whose commits change only docs and the other paths listed in one place the hook reads skips it. No gate on dev or gover.
+		- A commit cut before `--merge-gate` existed keeps the gate it had.
+		- Overrides the private CI/CD notes, where the gate on main runs lint and the unit tests only.
+	- Progress log:
+		- 2026-10-25: The hook runs `--merge-gate` on a commit whose cicd.bash has its arm, and `--gate` on one cut before it. A push to main whose diff from the remote's main is all in `MERGE_GATE_SKIP`, read from the pushed commit's `cicd/config.bash`, goes out with a note and no gate. A new main, or a remote commit not here, is gated.
+		- 2026-10-25: `MERGE_GATE_SKIP` is `*.md`, `project/`, `reference/` and `assets/logo.png`. A pattern ending in `/` is a top folder, and any other is a glob over the whole path.
+		- 2026-10-25: `--merge-gate` and `--backlog-run-full` no longer make or mount the gif's archive, since they never write there. From the gate worktree it would have landed inside `.git`.
+	- Decisions:
+		- The list is read from the commit, so an edit to it is itself gated, and a working-tree edit counts for nothing.
+		- The hook still waits up to 10 minutes for a gate already running, though one now takes about 50.
+	- Branch: round-20261025b
+	- Test case: test.bash [EtkvcAN], [EtkvcAb], [EtkvcAo], [EtkvcB1], [EtkvcBE] and [EtkvcBS].
+	- Verified: [EtkvcAN], [EtkvcAb], [EtkvcAo] and [EtkvcB1] fail against the round branch's pre-push.bash and config.bash. [EtkvcBE] and [EtkvcBS] are guards and pass on both. The older hook checks pass unchanged, since their stub has only `--gate)`. test.bash 1715 -> 1725, 0 failed, with 2026102506452478's checks, in `--backlog-run-quick` in the image.
+	- Swept: pre-push.bash's header, install message, gate call and failure line. cicd.bash's help and its option arm comment. README, contributing.md and design.md's hook bullets. test.bash's hook checks, whose stub has no `--merge-gate`.
+	- Prereq IDs: 2026102518002917
+	- Acceptance signoff: Self-closed: its test runs passed.
+	- Closed: 20261025-195133
+	- 2026-10-25: Its gate worktree run stopped in stage 1 on 2026102518002917, which gover has too. Waits on that fix.
+	- Verified 2026-10-25: `--merge-gate` ran from `.git/gitsby-gate` at 3490090 through all 8 stages, stages 1 to 6 in the image, all passing. Stage 7 failed on vmDebARM64 for 2026102519554107, which isn't this item's. Log: `/mnt/ext/wip2/wip/tmp/gitsby/20261026-013600_002/run.log`.
 
 - CICD reset: containers
 	- ID: 2026102416313100
