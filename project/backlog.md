@@ -33,24 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- The quick run fails staticcheck in the hook's gate worktree
-	- ID: 2026102518002917
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-180029
-	- Opened by: jim-collier
-	- Related IDs: 2026102507133273, 2026102506452488
-	- Steps to reproduce [Bug]:
-		- `git -C .git/gitsby-gate checkout --detach --force 422b8aa`
-		- `(cd .git/gitsby-gate && cicd/cicd.bash --backlog-run-quick lint)`
-	- Incorrect behavior [Bug]: Stage 1 fails with "error obtaining VCS status: exit status 128 ... Use -buildvcs=false to disable VCS stamping", then "FAILED: staticcheck findings". The same commit passes in the live checkout.
-	- Expected behavior [Bug]: The run passes in the gate worktree as it does in the checkout, so the pre-push hook can gate a push to main.
-	- Possible cause [Bug]: The gate worktree's `.git` is a file pointing at `repo/.git/worktrees/gitsby-gate`, which isn't mounted in the container, so git can't read the repo there. Since 461657d the quick run, `--gate` included, runs in the image, so every gated push to main fails this way.
-	- Test case: None yet.
-	- Progress log:
-		- 2026-10-25: Found when the round's early full run started in the gate worktree. gover 422b8aa fails the same way, so it predates the round.
-
 - CICD reset: the hook runs `--merge-gate`
 	- ID: 2026102506452488
 	- Type: Enhancement
@@ -266,20 +248,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 			- Go's module cache in the volume pruned of what the current `go.sum` doesn't name.
 		- Packaging and dependabot stay deferred, per the standing decision. 20261024: kept out of this item, since nothing makes them pressing.
 
-- release.bash --help prints nothing
-	- ID: 2026102517464688
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261025-174646
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]:
-		- `bash cicd/release.bash --help`
-	- Incorrect behavior [Bug]: No output, exit 0.
-	- Expected behavior [Bug]: The header's Purpose, Syntax and Notes, as `cicd.bash --help` prints its own.
-	- Possible cause [Bug]: The `--help` arm looks for a `- Purpose:` line, and release.bash's header spells it `Purpose:`.
-	- Test case: None yet.
-
 - Stage 7 takes every box through the VM state helper's wrap
 	- ID: 2026102511210617
 	- Type: Enhancement
@@ -302,6 +270,56 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: round-20261025b
 	- Test case: test.bash `[EtlCXjm]` (every box through the helper, with why), `[EtlCXk1]` (no helper, the lock's own wrap with why), plus `[Etj1UKH]` as changed.
 	- Swept: every call of the lock and the helper in remote-tests.bash. `hosts` and `status` are reads, and stay as they were.
+
+- The quick run fails staticcheck in the hook's gate worktree
+	- ID: 2026102518002917
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-180029
+	- Opened by: jim-collier
+	- Related IDs: 2026102507133273, 2026102506452488
+	- Steps to reproduce [Bug]:
+		- `git -C .git/gitsby-gate checkout --detach --force 422b8aa`
+		- `(cd .git/gitsby-gate && cicd/cicd.bash --backlog-run-quick lint)`
+	- Incorrect behavior [Bug]: Stage 1 fails with "error obtaining VCS status: exit status 128 ... Use -buildvcs=false to disable VCS stamping", then "FAILED: staticcheck findings". The same commit passes in the live checkout.
+	- Expected behavior [Bug]: The run passes in the gate worktree as it does in the checkout, so the pre-push hook can gate a push to main.
+	- Reproduced [Bug]: 2026-10-25, at the round tip 6a752d7 in the gate worktree, in the image.
+	- Possible cause [Bug]: The gate worktree's `.git` is a file pointing at `repo/.git/worktrees/gitsby-gate`, which isn't mounted in the container, so git can't read the repo there. Since 461657d the quick run, `--gate` included, runs in the image, so every gated push to main fails this way.
+	- Actual cause [Bug]:
+		- The repo's git dir is mounted, and git works there. Go takes only a `.git` folder for a repo, not a worktree's `.git` file. So from the gate worktree under `repo/.git/` it walks up and takes the main checkout for the repo.
+		- In the image the main checkout's folder is a mount point owned by root, so git refuses it as dubious ownership and exits 128. On the box it passes, and stamps the main checkout's revision into the lint builds.
+	- Actual fix [Bug]: cicd.bash exports `GOFLAGS` with `-buildvcs=false`, after any flags the caller set, so nothing go builds there stamps a revision. The `-o` builds already passed it.
+	- Progress log:
+		- 2026-10-25: Found when the round's early full run started in the gate worktree. gover 422b8aa fails the same way, so it predates the round.
+	- Branch: round-20261025b
+	- Test case: test.bash [EtlSXXt].
+	- Verified: [EtlSXXt] fails against the old cicd.bash, with the other 1740 passing. `--backlog-run-quick` passed with every area: test.bash 1740 -> 1748, 0 failed, fuzz 313/0, parity 29/0. The issue's steps, and `--backlog-run-quick unit`, passed in the gate worktree with the fix, in the image.
+	- Swept: `GO_BUILD_FLAGS` already has the flag. `fImageGo` mounts only the tree, so go finds no repo there. release.bash runs its checks through cicd.bash. test.bash, fuzz.bash and parity.bash get it from the run.
+	- Acceptance signoff: Self-closed: its test failed before and passes after, and so did the issue's own steps.
+	- Closed: 20261025-181343
+
+- release.bash --help prints nothing
+	- ID: 2026102517464688
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261025-174646
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- `bash cicd/release.bash --help`
+	- Incorrect behavior [Bug]: No output, exit 0.
+	- Expected behavior [Bug]: The header's Purpose, Syntax and Notes, as `cicd.bash --help` prints its own.
+	- Reproduced [Bug]: 2026-10-25, no output and exit 0.
+	- Possible cause [Bug]: The `--help` arm looks for a `- Purpose:` line, and release.bash's header spells it `Purpose:`.
+	- Actual cause [Bug]: As above.
+	- Actual fix [Bug]: The arm looks for `Purpose:`, as remote-tests.bash and the utility scripts do.
+	- Branch: round-20261025b
+	- Test case: test.bash [EtlSvK7], once for each script whose `--help` prints its header, 7 now.
+	- Verified: [EtlSvK7]'s command fails on the old release.bash and passes on the new one. test.bash 1748/0 in `--backlog-run-quick`.
+	- Swept: every script with a `--help` arm. cicd.bash, remote-tests.bash, pre-push.bash, gen-winres.bash, keep-build.bash and spawn-count.bash print their headers. test.bash, fuzz.bash, parity.bash and install.bash print a usage line, and backlog-check.bash, lint-report.bash, spawn-report.bash and test-id.bash print their headers their own way.
+	- Acceptance signoff: Self-closed: its test failed before and passes after.
+	- Closed: 20261025-181343
 
 - CICD reset: `--quick` in about 10 minutes
 	- ID: 2026102506452483

@@ -94,6 +94,10 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/.." && pwd)"   ## the git repo root (cicd/..)
 export PATH="${HOME}/.local/bin:${PATH}"   ## user-prefix npm tools (markdownlint) win
 source "${here}/config.bash"
+## No VCS stamps on anything go builds here, the lint and test builds too, not just the -o ones.
+## Go takes only a .git folder for a repo, so from the hook's worktree under .git it walks up to
+## the main checkout and stamps that, and in the image git won't read it and the build fails.
+export GOFLAGS="${GOFLAGS:+${GOFLAGS} }-buildvcs=false"
 source "${here}/utility/include/gfs-rotate.bash"       ## gfs_rotate() for the artifact dirs
 source "${here}/utility/include/go-test-lines.bash"    ## fGoTestLines(), shared with remote-tests.bash
 source "${here}/utility/include/image-go.bash"         ## fImageGo(), fImageRecipe() and fImageBuild(), shared with remote-tests.bash and release.bash
@@ -1381,3 +1385,4 @@ fEcho_Clean
 ##		- 2026-10-25 JC: --list prints the plan and the test IDs in each step that runs, and runs nothing. --keep-temp keeps the run's temp folder, the files its steps leave there and its containers, and says where they are at the end. The run in the image puts its folder inside this one. The pre-push hook runs --merge-gate.
 ##		- 2026-10-25 JC: The run's folder is ${HOST_TEMP}/gitsby/<start time>_<NNN>, with TMPDIR, TEMP and TMP pointed at it, and a run.pid. Run folders over 2 days old whose run is gone are removed, and every recursive removal here goes through fSafeRm. Containers, the image and the cache volume are labeled dev.project and dev.run, and named for the run's folder. The end of a run removes its containers, the project's dangling images and older tags, week-old build cache and a cache volume over 2 GB, and says what that freed.
 ##		- 2026-10-25 JC: --quick is what fits in about 10 minutes rather than each step under half a minute. The regression suite, the native fuzz targets and the soak test are back in it. CodeQL stays out unless --leakcheck, and govulncheck and pip-audit, which ask a server, stay out. The image's tag and build moved to image-go.bash, which release.bash uses too.
+##		- 2026-10-25 JC: GOFLAGS carries -buildvcs=false for every go call, so the lint tools pass in the hook's worktree under .git, in the image too.

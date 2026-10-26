@@ -66,7 +66,7 @@ while (($#)); do case "$1" in
 	-n|--dry-run) dryRun=1; shift ;;
 	-y|--yes)     assumeYes=1; shift ;;
 	-q|--quiet)   quiet=1; assumeYes=1; shift ;;
-	-h|--help)    sed -n '/^##	- Purpose:/,/^##	History:/p' "${BASH_SOURCE[0]}" | sed '$d; s/^##	\{0,1\}//'; exit 0 ;;
+	-h|--help)    sed -n '/^##	Purpose:/,/^##	History:/p' "${BASH_SOURCE[0]}" | sed '$d; s/^##	\{0,1\}//'; exit 0 ;;
 	-*)           echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
 	*)            version="$1"; shift ;;
 esac; done
@@ -584,3 +584,4 @@ echo
 ##		- 20261019 JC: The release builds pin GOAMD64=v1, so a stray environment can't raise the CPU floor.
 ##		- 20261025 JC: Runs at low priority, as cicd.bash does.
 ##		- 20261025 JC: Both release builds come from the pipeline image's Go where docker works, and from this box's with a warning where it doesn't. A stop removes the image's builds still running.
+##		- 20261025 JC: --help prints the header again. It looked for "- Purpose:", and the header says "Purpose:".

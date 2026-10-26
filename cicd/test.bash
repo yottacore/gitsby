@@ -313,7 +313,9 @@ fMakeGateFixture(){
 	## Writes the joined file, so stage 7 has a build to remove.
 	fGateStub "${gateDir}/cicd/utility/macho-universal.bash" macho-universal ": > \"\${1:-/dev/null}\""
 	fGateStub "${gateDir}/cicd/utility/n8git_backup-and-publish" n8git_backup-and-publish
-	for s in markdownlint staticcheck golangci-lint govulncheck ruff pip-audit; do fGateStub "${gateDir}/bin/${s}" "${s}"; done
+	for s in markdownlint golangci-lint govulncheck ruff pip-audit; do fGateStub "${gateDir}/bin/${s}" "${s}"; done
+	## Says what GOFLAGS it was handed.
+	fGateStub "${gateDir}/bin/staticcheck" staticcheck "printf 'staticcheck GOFLAGS=%s\\n' \"\${GOFLAGS:-}\" >> '${gateCalls}'"
 	## A build in the image leaves its -o file behind, as go's stub does, so dogfood has one to copy.
 	## 'docker-run' fails a run and 'docker-hang' holds one. 'images' is what it lists for the
 	## image's repo, and 'vols' the labeled volumes, as "<name> <size>". 'docker-noimage' and
@@ -875,6 +877,14 @@ fGateQuickNoDocker(){
 	fGateSays 1 'needs a working docker' --container --backlog-run-quick lint || rc=1
 	rm -f -- "${gateFail:?}/docker"
 	return "${rc}"
+}
+## The lint tools build with no VCS stamps, keeping any GOFLAGS the caller set. From a worktree
+## under .git, go takes the main checkout for the repo, and in the image can't read it.
+fGateNoVcsStamps(){
+	GOFLAGS='' fGateSays 0 'backlog quick run: passed\.' --no-container --backlog-run-quick lint \
+		&& fGateCalled '^staticcheck GOFLAGS=-buildvcs=false$' \
+		&& GOFLAGS='-mod=readonly' fGateSays 0 'backlog quick run: passed\.' --no-container --backlog-run-quick lint \
+		&& fGateCalled '^staticcheck GOFLAGS=-mod=readonly -buildvcs=false$'
 }
 ## Inside the container the quick run is the inner one, so it starts no other.
 fGateQuickInner(){ gateNested=1 fGateSays 0 'backlog quick run: passed\.' --backlog-run-quick lint && ! fGateCalled '^docker ' && fGateCalled '^gofmt -l' ;}
@@ -5461,6 +5471,14 @@ GHEOF
 		fAssert "[EtU6Acj] ${rmScript} has no backslashed pipe in a check pattern" \
 			bash -c '[[ -f "$1" ]] && ! grep -qE "$2" "$1"' _ "${root}/${rmScript}" '^[[:space:]]*(fAssert[A-Za-z]*|fPlanRan|fGateSays)[[:space:]].*[\][|]'
 	done
+	## A --help that prints the header from its Purpose line has to spell that line as the header
+	## does, or it prints nothing and still exits 0.
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	for rmScript in "${rmScripts[@]}"; do
+		grep -qE 'sed -n .?/\^##' "${root}/${rmScript}" 2>/dev/null || continue
+		fAssert "[EtlSvK7] ${rmScript} --help prints its header from the Purpose line on" \
+			bash -c 'out="$(bash "$1" --help </dev/null)" && [[ "${out%%$'"'"'\n'"'"'*}" == *Purpose:* && "${out}" == *Syntax:* ]]' _ "${root}/${rmScript}"
+	done
 	## This suite's own scratch folder, with mktemp failing for real: TMPDIR is a file. It runs from a
 	## folder of its own, and the canary has to survive. The folder named like the suite's empty
 	## config file makes a build without the guard fail on its next line and remove the folder at
@@ -6175,6 +6193,7 @@ EOF
 		fAssert "[Etip9iB] and --no-container keeps it here, while --container is taken too"  fGateQuickHere
 		fAssert "[Etip9iR] and a box without a working docker runs it here, with a warning"  fGateQuickNoDocker
 		fAssert "[Etip9if] and inside the container it starts no other"  fGateQuickInner
+		fAssert "[EtlSXXt] go's lint tools get -buildvcs=false through GOFLAGS, after any the caller set"  fGateNoVcsStamps
 		fAssert "[EsJgekF] --container inside the container is refused"  fGateNested
 		fAssert "[EsJgel8] a plain run hands stages 1-4 to the image and runs none of them here"  fGateContainerRun
 		fAssert "[Eta9hUd] its container is named and labeled for the run, and the output names it"  fGateContainerName
@@ -7793,3 +7812,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261025 JC: The core budget, the hard steps on the quarter, low priority, the container's quota, and each box's budget in stage 7. The image-Go checks want go niced, and the remote suite checks want `$lo`. 1709 -> 1714.
 ##		- 20261025 JC: --list and --keep-temp, the hook's --merge-gate on a commit that has it and --gate on one that doesn't, and MERGE_GATE_SKIP read from the pushed commit. The gate fixture has test-id.bash. 1715 -> 1725.
 ##		- 20261025 JC: release.bash builds with the image's Go where docker works, and the box's with a warning where it doesn't. --quick runs the suite, the native fuzzing and the soak test.
+##		- 20261025 JC: The lint tools get -buildvcs=false through GOFLAGS, and every script whose --help prints its header prints it from the Purpose line. 1740 -> 1748.
