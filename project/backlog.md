@@ -63,7 +63,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: containers
 	- ID: 2026102416313100
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
@@ -75,7 +75,11 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The builds for dogfood, stage 7 and a release come from the image's Go, not the box's. Copying them into place and the tests on other boxes stay outside it.
 		- Earlier decisions this overrides: the line in 2026101009380628 that keeps dogfood and the remote tests' builds on the host, and the private notes, where `--gate` stays on the box.
 	- Progress log:
+	- Test case: Its children's tests: 2026102507133273, 2026102507133278 and 2026102507133283.
+	- Acceptance signoff: Self-closed: every child is Done.
+	- Closed: 20261025-175831
 		- 2026-10-25: Split in three, one per place a build or check still runs on the box: 2026102507133273 for the quick run, 2026102507133278 for the dogfood and stage 7 builds, and 2026102507133283 for the release builds. `--merge-gate` and `--backlog-run-full` are a plain run, so their stages 1-4 and 6 are in the image already, and their stage 7 builds go with the second child.
+	- 2026-10-25: Closed with its last child, 2026102507133283. It had no work of its own left.
 
 - CICD reset: CPU and priority on the Windows box
 	- ID: 2026102508333054
