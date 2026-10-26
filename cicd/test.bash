@@ -6647,6 +6647,7 @@ EOF
 					echo '@@gitsby-remote-tests@@'
 					[[ ! -e '${rtFail}/lost-'"\${host}" ]] || exit 255
 					if [[ -e '${rtFail}/gofail-'"\${host}" ]]; then printf -- '--- FAIL: TestA (0.00s)\n    a_test.go:4: boom\n'; exit 1; fi
+					if [[ -e '${rtFail}/gofail0-'"\${host}" ]]; then printf -- '--- FAIL: TestA (0.00s)\n    a_test.go:4: boom\nFAIL\n'; exit 0; fi
 					printf -- '=== RUN   TestA\n--- PASS: TestA (0.00s)\n' ;;
 				*cicd/test.bash*)
 					echo '@@gitsby-remote-tests@@'
@@ -6676,6 +6677,7 @@ EOF
 		fAssert "[ErkbDUa] the lock wraps each box with no wait, knows the Mac as one of its other hosts and only once, and is not asked as the calling session" \
 			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^lock wrap b26 --wait 0 .* -- .*remote-tests\.bash --held mac b26 b26 win=b29w vm925w other=b26 vmFreeBSD session=unset\$' '${rtLog}' && grep -qE '^lock wrap b29w --wait 0 .* win=b29w vm925w other=b26 vmFreeBSD session=unset\$' '${rtLog}'"
 		fAssert "[ErkbDUn] and only the first free Windows box runs"  bash -c "! grep -q '^lock wrap vm925w' '${rtLog}' && grep -qxF '  passed on: b26 b29w' '${rtOut}'"
+		fAssert "[EtlCXk1] with no VM state helper the lock takes each box itself, and is told why"  bash -c "grep -qE '^lock wrap b26 --wait 0 --why gitsby: mac tests -- ' '${rtLog}' && grep -qE '^lock wrap b29w --wait 0 --why gitsby: windows tests -- ' '${rtLog}'"
 		fAssert "[Etj1UJq] with no VM state helper beside the lock the run says so, and looks for every box over ssh first" \
 			bash -c "grep -qF 'note: no VM state helper (${rtLock%/*}/x_vm-state.bash), so a VM that is off or paused is skipped' '${rtOut}' && grep -q '^ssh vm925wa exit' '${rtLog}'"
 		fAssert "[Etj1UJb] the Mac's copy goes under its temp root, not its home" \
@@ -6719,6 +6721,13 @@ EOF
 		rm -f -- "${rtFail:?}/gofail-b29w"
 		fAssert "[ErkbDYT] a failing Go test fails the run, with its line and its output" \
 			bash -c "[[ '${rtRc}' == 1 ]] && grep -qxF '  FAIL: [AAAAAAB] TestA' '${rtOut}' && grep -qF 'a_test.go:4: boom' '${rtOut}' && grep -qxF '  passed on: b26; failed on: b29w' '${rtOut}'"
+		fAssert "[EtlCXkW] the Windows box runs its Go tests on half its cores, never under 1, in the BelowNormal class" \
+			bash -c "grep -qF 'ssh b29w set /a GOMAXPROCS=%NUMBER_OF_PROCESSORS%/2 >nul& (if %NUMBER_OF_PROCESSORS% LSS 2 set GOMAXPROCS=1)& echo @@gitsby-remote-tests@@& cd /d ' '${rtLog}' && grep -qE '^ssh b29w .* && start \"\" /belownormal /b /wait gitsby-test\.exe -test\.v\$' '${rtLog}'"
+		: > "${rtFail}/gofail0-b29w"
+		fRemoteRun --mac-bin "${rtMacBin}"
+		rm -f -- "${rtFail:?}/gofail0-b29w"
+		fAssert "[EtlCXkl] a Windows Go test that fails still fails the box when the run exits 0, with a warning" \
+			bash -c "[[ '${rtRc}' == 1 ]] && grep -qxF \"  WARNING: b29w's go test failed a test and still exited 0\" '${rtOut}' && grep -qxF '  FAIL: [AAAAAAB] TestA' '${rtOut}' && grep -qxF '  passed on: b26; failed on: b29w' '${rtOut}'"
 		: > "${rtFail}/suitefail-b26"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtFail:?}/suitefail-b26"
@@ -6790,18 +6799,27 @@ EOF
 				exit 0
 			fi
 			h="\$2"; printf 'vmstate %s\n' "\$*" >> '${rtLog}'
-			[[ "\$*" == "wrap \${h} --wait 0 -- "* ]] || exit 2
+			[[ "\${1:-}" == wrap ]] || exit 2
+			shift 2; opts=(); while ((\$#)) && [[ "\$1" != -- ]]; do opts+=("\$1"); shift; done; shift
+			## Like the real one, it leaves a box that isn't a VM to the lock.
+			[[ -f '${rtFail}/vm-'"\${h}" ]] || exec '${rtLock}' wrap "\${h}" "\${opts[@]}" -- "\$@"
 			[[ ! -e '${rtFail}/noup-'"\${h}" ]] || { echo "x_vm-state.bash: \${h}: starting, was off" >&2; echo "x_vm-state.bash: \${h}: no ssh after 600s. Run restore once it settles." >&2; exit 1; }
+			## vm925w's SPICE port is fixed, and any other VM up takes it first.
+			if [[ "\${h}" == vm925w && -e '${rtFail}/spice-5900' ]]; then echo "x_vm-state.bash: vm925w: starting, was off" >&2; echo "error: internal error: Failed to reserve port 5900" >&2; exit 1; fi
 			rm -f -- '${rtFail}'/asleep-*; echo "vmstate up \${h}" >> '${rtLog}'
-			shift 5; rc=0; '${rtLock}' wrap "\${h}" --wait 0 -- "\$@" || rc=\$?
+			[[ "\${h}" == vm925w ]] || : > '${rtFail}/spice-5900'
+			rc=0; '${rtLock}' wrap "\${h}" "\${opts[@]}" -- "\$@" || rc=\$?
 			echo "vmstate restore \${h}" >> '${rtLog}'
 			[[ ! -e '${rtFail}/norestore-'"\${h}" ]] || { echo "x_vm-state.bash: \${h}: still up after 300s, note kept" >&2; exit 1; }
+			rm -f -- '${rtFail}/spice-5900'
 			exit "\${rc}"
 		EOF
 		echo off > "${rtFail}/vm-vmFreeBSD"; : > "${rtFail}/asleep-bsdtest@vmFreeBSD"
 		fRemoteRun "${rtBins[@]}"
-		fAssert "[Etj1UKH] a VM that is off is not looked for until the helper has woken it under the lock, and is put back after, while a box that isn't one keeps the lock's own wrap" \
-			bash -c "[[ '${rtRc}' == 0 ]] && up=\$(grep -nxF 'vmstate up vmFreeBSD' '${rtLog}' | cut -d: -f1) && back=\$(grep -nxF 'vmstate restore vmFreeBSD' '${rtLog}' | cut -d: -f1) && first=\$(grep -n '^ssh bsdtest@vmFreeBSD ' '${rtLog}' | head -n 1 | cut -d: -f1) && last=\$(grep -n '^ssh bsdtest@vmFreeBSD ' '${rtLog}' | tail -n 1 | cut -d: -f1) && (( up < first && last < back )) && grep -qE '^vmstate wrap vmFreeBSD --wait 0 -- .*remote-tests\.bash --held unix vmFreeBSD bsdtest@vmFreeBSD\$' '${rtLog}' && grep -qE '^lock wrap vmFreeBSD --wait 0 -- ' '${rtLog}' && grep -qE '^lock wrap vmDebARM64 --wait 0 --why ' '${rtLog}' && ! grep -q '^vmstate wrap vmDebARM64' '${rtLog}' && grep -qxF '  passed on: b26 b29w vmDebARM64 vmFreeBSD' '${rtOut}' && ! grep -qF 'note: no VM state helper' '${rtOut}'"
+		fAssert "[Etj1UKH] a VM that is off is not looked for until the helper has woken it under the lock, and is put back after, while a box that isn't one is left alone" \
+			bash -c "[[ '${rtRc}' == 0 ]] && up=\$(grep -nxF 'vmstate up vmFreeBSD' '${rtLog}' | cut -d: -f1) && back=\$(grep -nxF 'vmstate restore vmFreeBSD' '${rtLog}' | cut -d: -f1) && first=\$(grep -n '^ssh bsdtest@vmFreeBSD ' '${rtLog}' | head -n 1 | cut -d: -f1) && last=\$(grep -n '^ssh bsdtest@vmFreeBSD ' '${rtLog}' | tail -n 1 | cut -d: -f1) && (( up < first && last < back )) && grep -qE '^vmstate wrap vmFreeBSD --wait 0 --why gitsby: unix tests -- .*remote-tests\.bash --held unix vmFreeBSD bsdtest@vmFreeBSD\$' '${rtLog}' && grep -qE '^lock wrap vmFreeBSD --wait 0 --why gitsby: unix tests -- ' '${rtLog}' && grep -qE '^lock wrap vmDebARM64 --wait 0 --why ' '${rtLog}' && ! grep -qxF 'vmstate up vmDebARM64' '${rtLog}' && grep -qxF '  passed on: b26 b29w vmDebARM64 vmFreeBSD' '${rtOut}' && ! grep -qF 'note: no VM state helper' '${rtOut}'"
+		fAssert "[EtlCXjm] with the helper there, every box goes through its wrap, told why, and the lock is never called around it" \
+			bash -c "grep -qE '^vmstate wrap b26 --wait 0 --why gitsby: mac tests -- ' '${rtLog}' && grep -qE '^vmstate wrap b29w --wait 0 --why gitsby: windows tests -- ' '${rtLog}' && grep -qE '^vmstate wrap vmDebARM64 --wait 0 --why gitsby: unix tests -- ' '${rtLog}' && [[ \$(grep -c '^lock wrap ' '${rtLog}') == 4 && \$(grep -c '^vmstate wrap ' '${rtLog}') == 4 ]]"
 		: > "${rtFail}/asleep-bsdtest@vmFreeBSD"; : > "${rtFail}/noup-vmFreeBSD"
 		fRemoteRun "${rtBins[@]}"
 		rm -f -- "${rtFail:?}/noup-vmFreeBSD" "${rtFail:?}"/asleep-*
@@ -6809,9 +6827,15 @@ EOF
 			bash -c "[[ '${rtRc}' == 0 ]] && grep -qxF '  SKIP: vmFreeBSD, the VM was off and did not come up (exit 1): x_vm-state.bash: vmFreeBSD: no ssh after 600s. Run restore once it settles.' '${rtOut}' && ! grep -q '^ssh bsdtest@vmFreeBSD' '${rtLog}' && grep -qxF '  passed on: b26 b29w vmDebARM64; SKIP: vmFreeBSD' '${rtOut}'"
 		: > "${rtFail}/norestore-vmFreeBSD"
 		fRemoteRun "${rtBins[@]}"
-		rm -f -- "${rtFail:?}/norestore-vmFreeBSD" "${rtFail:?}/vm-vmFreeBSD" "${rtVm:?}"
+		rm -f -- "${rtFail:?}/norestore-vmFreeBSD" "${rtFail:?}/spice-5900"
 		fAssert "[Etj1UKq] a VM the helper could not put back is warned about, and its result stands" \
 			bash -c "[[ '${rtRc}' == 0 ]] && grep -qxF '  WARNING: vmFreeBSD was off, and may not be put back (exit 1): x_vm-state.bash: vmFreeBSD: still up after 300s, note kept' '${rtOut}' && grep -qxF '  passed on: b26 b29w vmDebARM64 vmFreeBSD' '${rtOut}'"
+		## b29w taken, and vm925w off: it has to be up before vmFreeBSD, which stays up after.
+		echo off > "${rtFail}/vm-vm925w"; : > "${rtFail}/busy-b29w"; : > "${rtFail}/norestore-vmFreeBSD"
+		fRemoteRun "${rtBins[@]}"
+		rm -f -- "${rtFail:?}/vm-vm925w" "${rtFail:?}/busy-b29w" "${rtFail:?}/norestore-vmFreeBSD" "${rtFail:?}/spice-5900" "${rtFail:?}/vm-vmFreeBSD" "${rtVm:?}"
+		fAssert "[EtlCXkF] the Windows box goes first, so vm925w is up before a VM that would take its port" \
+			bash -c "[[ '${rtRc}' == 0 ]] && win=\$(grep -n '^vmstate wrap vm925w ' '${rtLog}' | cut -d: -f1) && other=\$(grep -nE '^vmstate wrap (b26|vmFreeBSD|vmDebARM64) ' '${rtLog}' | head -n 1 | cut -d: -f1) && (( win < other )) && grep -qE '^ssh vm925wa? .*-test\.v' '${rtLog}' && ! grep -qF 'Failed to reserve port' '${rtOut}' && grep -qxF '  passed on: b26 vm925w vmDebARM64 vmFreeBSD; SKIP: b29w' '${rtOut}'"
 		: > "${rtFail}/suitefail-bsdtest@vmFreeBSD"
 		fRemoteRun "${rtBins[@]}"
 		rm -f -- "${rtFail:?}/suitefail-bsdtest@vmFreeBSD"

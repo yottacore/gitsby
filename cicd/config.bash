@@ -310,8 +310,9 @@ DEMOGIF_OPT_CMD=(gifsicle -O3)
 ## Stage 7: Remote tests, over ssh. Each box is taken through a host lock shared with
 ## other projects, only while its run lasts and only if free right now. The lock is a script
 ## outside the repo; the first file matching REMOTE_LOCK_GLOB is it, and with none the stage
-## is skipped. The boxes are this machine's, so on anyone else's that is what happens. A VM goes
-## through the VM state helper beside the lock, which wakes it and puts it back as it was found.
+## is skipped. The boxes are this machine's, so on anyone else's that is what happens. Each box
+## goes through the VM state helper beside the lock where there is one, which wakes a VM and puts
+## it back as it was found. The Windows box runs first.
 REMOTE_TEST_CMD=(cicd/remote-tests.bash)
 REMOTE_LOCK_GLOB="${HOME}/synced/0-0/common/exec/util/linux/bash/*_windows-host-lock.bash"
 ## Each entry is the name the lock knows a box by, then optionally a colon and the ssh names it

@@ -92,8 +92,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: CPU and priority on the Windows box
 	- ID: 2026102508333054
 	- Type: Enhancement
-	- Status: Queued
-	- Needs external testing: the Go tests on b29w or vm925w, with one failing on purpose, to show the exit code still comes back.
+	- Status: Waiting on automated testing
+	- Needs external testing: stage 7's Go tests on b29w, or vm925w, twice: as is, and with one test failing on purpose. The failing run fails the box with no `WARNING: ... still exited 0` line, which shows the exit code still comes back. While one runs, `wmic process where name="gitsby-test.exe" get Priority` there gives 6 (BelowNormal).
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261025-083330
 	- Opened by: jim-collier
@@ -103,6 +103,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Windows has no load average. Say on the item what stands in for the busy rule there, or that none does.
 	- Progress log:
 		- ssh lands in cmd there. `set /a` can work the count out before the marker line. `start /belownormal /wait` may not hand back the test binary's exit code. Neither can be run from here.
+		- 2026-10-25: The Windows command sets `GOMAXPROCS` to `%NUMBER_OF_PROCESSORS%/2`, or 1 under 2 cores, ahead of the marker, and runs the tests with `start "" /belownormal /b /wait`.
+		- 2026-10-25: A `--- FAIL` line in the output fails the box even when the exit code comes back 0, with a warning that says so.
+		- Under Wine's cmd, the same command line gave `GOMAXPROCS` 16 on 32 cores, and the test binary's exit code 3 came back through `start /wait`. Wine ignores the priority class, so BelowNormal is unchecked. Wine's `set /a` doesn't read a variable by name, so the line expands `%NUMBER_OF_PROCESSORS%`.
+		- Verified: test.bash 1737/0 on the box, and `--backlog-run-quick` in the image, with test.bash 1737/0, fuzz 313/0 and parity 29/0. Against the harness before the change, `[EtlCXkW]` and `[EtlCXkl]` fail.
+	- Decisions:
+		- Nothing stands in for the busy rule. The box always gets half its cores, and BelowNormal yields to its other work. A one-shot CPU sample was passed over, since it's not an average. Filed as a Check in questions.md.
+	- Branch: round-20261025b
+	- Test case: test.bash `[EtlCXkW]` (the count and class on the command line), `[EtlCXkl]` (a failing test that exits 0).
+	- Swept: every remote command in remote-tests.bash's `fRunWindows`. The copy and cleanup steps run no tests, so they keep normal priority.
 
 - CICD reset: standard flags
 	- ID: 2026102416313104
@@ -184,7 +193,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Stage 7 can't start vm925w once it has started vmKt6m or vmFreeBSD
 	- ID: 2026102510404322
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs external testing: stage 7 with b29w held under the lock and vm925w off. vm925w comes up before vmFreeBSD and vmKt6m, and runs the Go tests.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261025-104043
 	- Opened by: jim-collier
@@ -194,6 +204,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-10-25 on b23, gover plus 4388d96. vmKt6m was started earlier in the run and ignored the ACPI shutdown, so it was still up and held the port.
 	- Possible cause [Bug]: vm925w's SPICE port is fixed at 5900, while vmFreeBSD and vmKt6m take the first free one. Starting vm925w before the other VMs, or only after they're down, would avoid it. vmKt6m also needs shutting down from inside, since it ignores the ACPI request.
 	- Estimated effort: Avg
+	- Actual cause [Bug]: Confirmed from the guest definitions. `vm925w-iommu` has `port='5900' autoport='no'`, and vmFreeBSD and vmKt6m have `autoport='yes'`. Stage 7 took the Windows box last, after the Mac and Unix boxes, and vmKt6m stayed up after its turn.
+	- Actual fix [Bug]: Stage 7 takes the Windows box first. That covers gitsby's own VMs, not another session's. The guest's own fix, `autoport='yes'`, is outside the repo, drafted in `private/claude_simple/upstream/2026102510404322/`. The guest is unchanged.
+	- Progress log:
+		- 2026-10-25: The Windows loop in remote-tests.bash runs before the Mac and Unix ones. Every build is still made before any box is taken.
+		- 2026-10-25: The fixture's VM helper now refuses vm925w with "Failed to reserve port 5900" while another VM it woke is still up.
+		- Verified: test.bash 1737/0 on the box, and `--backlog-run-quick` in the image, with test.bash 1737/0, fuzz 313/0 and parity 29/0. Against the harness before the change, `[EtlCXkF]` fails, and so do the new checks of the other two items in this change and the changed `[Etj1UKH]`, 1732/5.
+	- Branch: round-20261025b
+	- Test case: test.bash `[EtlCXkF]`.
+	- Swept: every loop over the boxes in remote-tests.bash. Only the three run loops take boxes, and the summary is sorted by name, so the order shows nowhere else. config.bash's stage 7 comment names the order.
 
 - CICD reset: temp files and safe removal
 	- ID: 2026102416313108
@@ -252,7 +271,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Stage 7 takes every box through the VM state helper's wrap
 	- ID: 2026102511210617
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: the round's `--backlog-run-full`, stage 7, which takes b26, b29w and vmDebARM64 through the real helper's `wrap` as boxes that aren't VMs here.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261025-112106
 	- Opened by: jim-collier
@@ -262,6 +282,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The comment above `fUnderLock` that says the helper has no `--why` goes with it.
 		- A box with no helper on the PATH still runs through the lock's `wrap`.
 	- Estimated effort: Low
+	- Progress log:
+		- 2026-10-25: `fUnderLock` makes one call, to the helper's `wrap` where there is one and to the lock's otherwise, with `--wait 0 --why "gitsby: <kind> tests"` either way. Its comment, the script's Purpose and config.bash's stage 7 comment say so.
+		- The helper is still looked for beside the lock, not on the PATH, as before. With none, the lock takes each box, and a sleeping VM is skipped.
+		- 2026-10-25: Asserts given new values for this change. `[Etj1UKH]`: `vmstate wrap vmFreeBSD --wait 0 --` and `lock wrap vmFreeBSD --wait 0 --` -> the same with `--why gitsby: unix tests`, and "vmDebARM64 never goes through the helper" -> "the helper never wakes vmDebARM64". Its label's "keeps the lock's own wrap" -> "is left alone". The fixture's helper takes any options before `--` and passes them to the lock, and leaves a box that isn't a VM to it, as the real one does.
+		- Verified: test.bash 1737/0 on the box, and `--backlog-run-quick` in the image, with test.bash 1737/0, fuzz 313/0 and parity 29/0. Against the harness before the change, `[EtlCXjm]` fails. `[EtlCXk1]` passes there too, since the no-helper path didn't change.
+	- Branch: round-20261025b
+	- Test case: test.bash `[EtlCXjm]` (every box through the helper, with why), `[EtlCXk1]` (no helper, the lock's own wrap with why), plus `[Etj1UKH]` as changed.
+	- Swept: every call of the lock and the helper in remote-tests.bash. `hosts` and `status` are reads, and stay as they were.
 
 - CICD reset: container cleanup
 	- ID: 2026102416313102
