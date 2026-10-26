@@ -453,12 +453,13 @@ fGateFullRun(){
 	fGateSays 0 'CI/CD: done\.' -y --no-container --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
 		&& fGateCalled '^go vet' '^go build' '^go test -race' '^test\.bash' '^parity\.bash' && ! fGateCalled '^docker '
 }
-## --quick keeps what takes seconds and drops what takes longer or reaches a host other than origin.
+## --quick keeps what fits in about 10 minutes, the suite and the native fuzzing included, and drops
+## the gif, CodeQL and what reaches a host other than origin.
 fGateQuickRun(){
 	fGateSays 0 'CI/CD: done\.' -y --no-container --quick --no-sync --no-publish --no-dogfood \
-		&& fGateCalled '^go vet' '^go build' '^go test -race' '^fuzz\.bash' '^spawn-count\.bash' '^parity\.bash' \
-		&& ! grep -qE '^(test|remote-tests)\.bash|^go test .*-fuzz |^govulncheck|^python3 cicd/utility/demo/gen-demo-gif' "${gateCalls}" \
-		&& grep -qxF 'regression tests skipped (--quick)' "${gateOut}" && grep -qxF 'govulncheck skipped (--quick: it reaches vuln.go.dev)' "${gateOut}"
+		&& fGateCalled '^go vet' '^go build' '^go test -race' '^test\.bash' '^fuzz\.bash' '^go test -list Fuzz' '^spawn-count\.bash' '^parity\.bash' \
+		&& ! grep -qE '^remote-tests\.bash|^govulncheck|^codeql database|^python3 cicd/utility/demo/gen-demo-gif' "${gateCalls}" \
+		&& grep -qxF 'govulncheck skipped (--quick: it reaches vuln.go.dev)' "${gateOut}"
 }
 ## --backlog-run-quick with no area runs them all, the suites against a build of their own, and
 ## nothing that syncs, publishes, draws the demo or reaches another host.
@@ -527,10 +528,11 @@ fGateLeakRun(){
 		&& grep -qE '^Leak checks \.+: soak test, [0-9]+ rounds' "${gateOut}" \
 		&& compgen -G "${gateDir}/cicd/artifacts/leakcheck/soak_*-*/soak.txt" >/dev/null
 }
-## And --quick without it runs no soak test, and says how to ask for one.
+## And --quick without it runs the soak test alone, and says how to add CodeQL.
 fGateNoLeakRun(){
 	fGateSays 0 'CI/CD: done\.' -y --no-container --quick --no-sync --no-publish --no-dogfood \
-		&& ! fGateCalled 'TestSoak' && grep -qxF 'Leak checks .........: (skipped --quick), add with --leakcheck' "${gateOut}"
+		&& fGateCalled 'TestSoak' && ! fGateCalled '^codeql database' && grep -qxF 'CodeQL skipped (--quick), add with --leakcheck' "${gateOut}" \
+		&& grep -qE '^Leak checks \.+: soak test, .*; CodeQL \(skipped --quick\), add with --leakcheck$' "${gateOut}"
 }
 ## A full run does the leak checks with no flag at all.
 fGateLeakDefault(){
@@ -592,7 +594,7 @@ fGateList(){
 		&& grep -qxF '  AAAAAAC a listed check' "${gateOut}" && grep -qxF '2/8  Go unit tests: 1 test(s)' "${gateOut}" \
 		&& grep -qxF '  AAAAAAD TestListed' "${gateOut}" && grep -qF 'Remote tests ........: ' "${gateOut}" \
 		&& ! grep -qv '^docker info' "${gateCalls}" && [[ -z "$(ls -A "${t}")" ]] || rc=1
-	fGateSays 0 '^4/8  Backwards compatibility: 0 test\(s\)$' --quick --list && ! grep -q 'Regression tests' "${gateOut}" || rc=1
+	fGateSays 0 '^4/8  Backwards compatibility: 0 test\(s\)$' --quick --list && grep -qxF '2/8  Regression tests: 1 test(s)' "${gateOut}" || rc=1
 	fGateSays 0 '^Quick 1/1  Regression tests: 1 test\(s\)$' --backlog-run-quick suite --list \
 		&& grep -qxF '  AAAAAAC a listed check' "${gateOut}" && ! grep -qv '^docker info' "${gateCalls}" || rc=1
 	rm -f -- "${gateDir:?}/src-go/listed_test.go"; rm -rf -- "${t:?}"
@@ -5132,8 +5134,10 @@ GHEOF
 		mkdir -p "${rel}/bin"
 		git init --quiet --bare -b main "${rel}/origin.git"
 		git clone --quiet "${rel}/origin.git" "${relRepo}" 2>/dev/null
-		mkdir -p "${relRepo}/cicd/utility" "${relRepo}/src-go"
+		mkdir -p "${relRepo}/cicd/utility/include" "${relRepo}/cicd/container" "${relRepo}/src-go"
 		cp "${root}/cicd/release.bash" "${root}/cicd/config.bash" "${relRepo}/cicd/"
+		cp "${root}/cicd/utility/include/image-go.bash" "${relRepo}/cicd/utility/include/"
+		cp "${root}/cicd/container/Dockerfile" "${root}/cicd/container/requirements.txt" "${relRepo}/cicd/container/"
 		fStub "${rel}/stub" <<-EOF
 			#!/usr/bin/env bash
 			printf '%s\n' "\$(basename "\$0") \$*" >> '${relCalls}'
@@ -5142,6 +5146,17 @@ GHEOF
 		EOF
 		for relStub in cicd/cicd.bash cicd/utility/gen-winres.bash cicd/utility/gen-checksums.bash cicd/utility/macho-universal.bash src-go/gitsby; do cp "${rel}/stub" "${relRepo}/${relStub}"; done
 		for relStub in gh go curl; do cp "${rel}/stub" "${rel}/bin/${relStub}"; done
+		## Not usable unless docker-ok is there. Then a run starts the command after the image, with
+		## the image's variables, in its -w folder.
+		fStub "${rel}/bin/docker" <<-EOF
+			#!/usr/bin/env bash
+			printf '%s\n' "docker \$*" >> '${relCalls}'
+			[[ -e '${rel}/docker-ok' ]] || exit 1
+			[[ "\${1:-}" == run ]] || exit 0
+			vars=(); dir=""
+			while ((\$#)); do case "\$1" in -e) vars+=("\$2"); shift 2 ;; -w) dir="\$2"; shift 2 ;; gitsby-cicd:*) shift; break ;; *) shift ;; esac; done
+			cd "\${dir}" && exec env "\${vars[@]}" "\$@"
+		EOF
 		printf '%s\n' '# Changelog' '' '<!--' '## TEMPLATE_vNEXT - DATE' '' '- template' '-->' '' '## vNEXT' '' '- a change' '' '## v1.2.3 - 2090-01-01' '' '- older' > "${relRepo}/changelog.md"
 		git -C "${relRepo}" add --all
 		GIT_COMMITTER_DATE=2090-01-01T12:00:00Z git -C "${relRepo}" commit --quiet -m init
@@ -5242,6 +5257,8 @@ GHEOF
 			bash -c "[[ '${relRc}' == 0 ]] && grep -qF \"WARNING: releases/latest resolves to '', not v1.2.4.\" '${relOut}' && grep -qF 'Released v1.2.4' '${relOut}'"
 		fAssert "[Erfs76S] and its proof reads the whole --version output before matching it" \
 			grep -qF 'gitsby-linux-amd64: downloaded, checksum verified, and reports v1.2.4' "${relOut}"
+		fAssert "[EtlI5o0] release.bash builds with this box's Go, and says so, where docker isn't usable" \
+			bash -c "grep -qxF \"WARNING: docker isn't usable here, so the release builds use this box's Go\" '${relOut}' && grep -qx 'docker info' '${relCalls}' && ! grep -qv '^docker info' <(grep '^docker' '${relCalls}')"
 		## macOS is one file for both CPUs, written by the joiner rather than go build.
 		printf '%b' '\xcf\xfa\xed\xfe\x07\x00\x00\x01\x03\x00\x00\x00AMD' > "${rel}/mac-amd64"
 		printf '%b' '\xcf\xfa\xed\xfe\x0c\x00\x00\x01\x00\x00\x00\x00ARM' > "${rel}/mac-arm64"
@@ -5268,6 +5285,21 @@ GHEOF
 		# shellcheck disable=SC2016  ## the inner shell does the expanding.
 		fAssert "[Erm33XL] and the release body is that section word for word, with every published file linked" \
 			bash -c '[[ -n "$1" && "$1" == "$(sed "/^---\$/,\$d" "$2"/tmp.*)" ]] && ! grep -q "WARNING: the release notes" "$3"' _ "$(fRelSection v1.2.4)" "${rel}/published" "${relOut}"
+		git -C "${relRepo}" checkout -q -- .
+		git -C "${relRepo}" tag -d v1.2.4 >/dev/null
+		## Where docker works, both builds come from the pipeline's image: phase 1's in the tree, and
+		## the published one in the tag's export, mounted at its own path. The proof stays here.
+		: > "${rel}/docker-ok"
+		fRelRun -y
+		rm -f -- "${rel:?}/docker-ok"
+		fAssert "[EtlI5p2] release.bash builds phase 1's assets and the published ones with the pipeline image's Go, where docker works" \
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'Released v1.2.4' '${relOut}' && grep -qE '^the release builds use the Go in gitsby-cicd:[0-9a-f]{12}\$' '${relOut}' \
+				&& awk -v tree='${relRepo}/src-go' '/^docker run / && / nice -n 19 go build / && / -e GOTOOLCHAIN=go[0-9]/ && / gitsby-cicd:[0-9a-f]+ nice / {
+					match(\$0, / -w [^ ]+ gitsby-cicd:/); w = substr(\$0, RSTART + 4); sub(/ .*/, \"\", w)
+					if (w == tree) p1++; else if (index(\$0, \" -v \" w \":\" w \" \")) p3++ }
+					END { exit !(p1 > 0 && p1 == p3) }' '${relCalls}'"
+		fAssert "[EtlI5q3] and removes the image's builds a stop left, by the run's label" \
+			grep -qE '^docker ps -aq --filter label=dev\.run=release-[0-9]{8}-[0-9]{6}$' "${relCalls}"
 		git -C "${relRepo}" checkout -q -- .
 		git -C "${relRepo}" tag -d v1.2.4 >/dev/null
 		echo 'tampered' > "${rel}/served/gitsby-darwin-universal"
@@ -6095,11 +6127,11 @@ EOF
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--gate ' <<< \"\$out\" && grep -qE -- '^ +--install-hook ' <<< \"\$out\""
 		fAssert "[Etiiqyb] and every run flag, --backlog-run-quick's areas, and the aliases"  fGateHelpFlags
 		fAssert "[EpsVDI1] and contributing.md names --install-hook"  grep -qF -- '--install-hook' "${root}/contributing.md"
-		fAssert "[Et6FC4K] --quick runs the steps that take seconds, and none that take longer or reach another host"  fGateQuickRun
+		fAssert "[Et6FC4K] --quick runs what fits in about 10 minutes, and nothing that reaches another host"  fGateQuickRun
 		fAssert "[Et9R5kk] and leaves out pip-audit, which reaches pypi.org" \
 			bash -c "! grep -q '^pip-audit -r' '${gateCalls}' && grep -qxF 'pip-audit skipped (--quick: it reaches pypi.org)' '${gateOut}'"
 		fAssert "[Et9PJr1] --leakcheck adds the soak test, with its rounds and a folder of its own"  fGateLeakRun
-		fAssert "[Et9PJrE] and --quick without it has none, and says how to add them"  fGateNoLeakRun
+		fAssert "[Et9PJrE] and --quick without it runs the soak test alone, and says how to add CodeQL"  fGateNoLeakRun
 		fAssert "[EtBTWs2] a full run does the leak checks with no flag"  fGateLeakDefault
 		fAssert "[EtBTWsG] --no-leakcheck leaves them out of a full run"  fGateLeakOff --no-leakcheck '(skipped)'
 		fAssert "[EtBTWsT] and so does --no-fuzz"  fGateLeakOff --no-fuzz '(skipped), add with --leakcheck'
@@ -7760,3 +7792,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261025 JC: Stage 7 harness: b29w before vm925w, a VM through the VM state helper, each box's copy under its temp root, a Mac's tool check, and SKIP for a skipped box, in its line and the summary. The checks that read the Windows order or a skip line read the new ones. 1700 -> 1709.
 ##		- 20261025 JC: The core budget, the hard steps on the quarter, low priority, the container's quota, and each box's budget in stage 7. The image-Go checks want go niced, and the remote suite checks want `$lo`. 1709 -> 1714.
 ##		- 20261025 JC: --list and --keep-temp, the hook's --merge-gate on a commit that has it and --gate on one that doesn't, and MERGE_GATE_SKIP read from the pushed commit. The gate fixture has test-id.bash. 1715 -> 1725.
+##		- 20261025 JC: release.bash builds with the image's Go where docker works, and the box's with a warning where it doesn't. --quick runs the suite, the native fuzzing and the soak test.

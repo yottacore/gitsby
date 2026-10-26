@@ -77,18 +77,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Progress log:
 		- 2026-10-25: Split in three, one per place a build or check still runs on the box: 2026102507133273 for the quick run, 2026102507133278 for the dogfood and stage 7 builds, and 2026102507133283 for the release builds. `--merge-gate` and `--backlog-run-full` are a plain run, so their stages 1-4 and 6 are in the image already, and their stage 7 builds go with the second child.
 
-- CICD reset: release builds from the image's Go
-	- ID: 2026102507133283
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-071332
-	- Opened by: jim-collier
-	- Parent ID: 2026102416313100
-	- Prereq IDs: 2026102507133278
-	- Requirements [Feature]:
-		- release.bash's builds, both of the reproducibility pair included, come from the image's Go where docker works. The upload and the checks against the published assets stay on the box.
-
 - CICD reset: CPU and priority on the Windows box
 	- ID: 2026102508333054
 	- Type: Enhancement
@@ -132,20 +120,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Earlier decisions this overrides: 2026101816064793, where `--gate` gets no `--ci` alias and `--quick` has a 30 s budget per step, and the private CI/CD notes, where the gate on main runs lint and the unit tests only.
 	- Progress log:
 		- 2026-10-25: Split, too big for one pass. Children: 2026102506452473 (the new run flags and the aliases), 2026102506452478 (`--keep-temp` and `--list`), 2026102506452483 (`--quick` in about 10 minutes) and 2026102506452488 (the hook runs `--merge-gate`). The other reset items wait on the first.
-
-- CICD reset: `--quick` in about 10 minutes
-	- ID: 2026102506452483
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-064524
-	- Opened by: jim-collier
-	- Parent ID: 2026102416313104
-	- Related IDs: 2026102506452473
-		- Builds on that item's flags, in since a1c62bb.
-	- Requirements [Feature]:
-		- `--quick` is what fits in about 10 minutes in all, not a 30 s budget per step, per `CICD style guide` in the shared CICD rules. The regression suite likely comes back in.
-		- Overrides the 30 s per step budget in 2026101816064793.
 
 - CICD reset: step output
 	- ID: 2026102416313105
@@ -268,6 +242,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 			- Go's module cache in the volume pruned of what the current `go.sum` doesn't name.
 		- Packaging and dependabot stay deferred, per the standing decision. 20261024: kept out of this item, since nothing makes them pressing.
 
+- release.bash --help prints nothing
+	- ID: 2026102517464688
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261025-174646
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- `bash cicd/release.bash --help`
+	- Incorrect behavior [Bug]: No output, exit 0.
+	- Expected behavior [Bug]: The header's Purpose, Syntax and Notes, as `cicd.bash --help` prints its own.
+	- Possible cause [Bug]: The `--help` arm looks for a `- Purpose:` line, and release.bash's header spells it `Purpose:`.
+	- Test case: None yet.
+
 - Stage 7 takes every box through the VM state helper's wrap
 	- ID: 2026102511210617
 	- Type: Enhancement
@@ -290,6 +278,59 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: round-20261025b
 	- Test case: test.bash `[EtlCXjm]` (every box through the helper, with why), `[EtlCXk1]` (no helper, the lock's own wrap with why), plus `[Etj1UKH]` as changed.
 	- Swept: every call of the lock and the helper in remote-tests.bash. `hosts` and `status` are reads, and stay as they were.
+
+- CICD reset: `--quick` in about 10 minutes
+	- ID: 2026102506452483
+	- Type: Enhancement
+	- Status: Done
+	- Needs local test suite run?: No. A real `--quick` passed in the image, and so did `--backlog-run-quick`.
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-064524
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313104
+	- Related IDs: 2026102506452473
+		- Builds on that item's flags, in since a1c62bb.
+	- Requirements [Feature]:
+		- `--quick` is what fits in about 10 minutes in all, not a 30 s budget per step, per `CICD style guide` in the shared CICD rules. The regression suite likely comes back in.
+		- Overrides the 30 s per step budget in 2026101816064793.
+	- Progress log:
+		- 2026-10-25: `--quick` runs the regression suite, the native fuzz targets and the soak test again. It still leaves out CodeQL, which `--leakcheck` adds, govulncheck and pip-audit, which ask a server, the demo gif, and stage 7's tests, though it still cross-builds stage 7's targets. `--quick --list` lists the suite and the fuzz targets too.
+		- 2026-10-25: [Et6FC4K] wanted the suite and native fuzzing left out, and now wants them run. [Et9PJrE] wanted no soak test under `--quick`, and now wants the soak test without CodeQL. [Etkvc9W] wanted no suite in `--quick --list`, and now wants it. Each is relabeled to match; the rest of each check is as it was.
+	- Decisions:
+		- CodeQL stays out of `--quick`, since it takes about 2 minutes and more on a busy box. The soak test is the fast leak check that's in.
+		- govulncheck and pip-audit stay out, since 2026101816064793's "skips anything requiring an external host" is overridden only for its 30 s budget.
+	- Branch: round-20261025b
+	- Test case: test.bash [Et6FC4K], [Et9PJrE] and [Etkvc9W].
+	- Verified: All 3 fail against the round branch's cicd.bash and pass after. A real `cicd.bash --quick -y --no-sync --no-dogfood --no-publish` passed in the image in 222 s at a load of 14 on 32 cores: lint, go test, test.bash 1740/0, fuzz 313/0, the native fuzz targets, spawn counts, the soak test and parity, then stage 7's cross-builds. Dogfood adds 3 cross-builds of a few seconds each.
+	- Swept: every `quick` test in cicd.bash's stages 2 and 3, its plan, `--list`, help, option comment and leak check default. README, contributing.md, and test.bash's other `--quick` checks, which pass unchanged.
+	- Acceptance signoff: Self-closed: its test runs passed.
+	- Closed: 20261025-175731
+
+- CICD reset: release builds from the image's Go
+	- ID: 2026102507133283
+	- Type: Enhancement
+	- Status: Done
+	- Needs local test suite run?: No. `--backlog-run-quick` passed in the image, and a full run doesn't run release.bash.
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-071332
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313100
+	- Prereq IDs: 2026102507133278
+	- Requirements [Feature]:
+		- release.bash's builds, both of the reproducibility pair included, come from the image's Go where docker works. The upload and the checks against the published assets stay on the box.
+	- Progress log:
+		- 2026-10-25: Both of release.bash's builds go through `fImageGo`: phase 1's in the tree, and phase 3's in the tag's export, which `fImageGo` now mounts at its own path when it sits outside the tree. The image's tag and build moved out of cicd.bash into `fImageRecipe` and `fImageBuild` in `cicd/utility/include/image-go.bash`, so both scripts name the same image.
+		- 2026-10-25: Without docker the builds use the box's Go with a warning, and with `CICD_CONTAINER` off they use it with a note. A dry run probes no docker and builds no image.
+		- 2026-10-25: The exit trap stops and removes any build left under the release's run label, `release-<start time>`, and INT and TERM end the run through it.
+	- Decisions:
+		- The image is picked after phase 1's pipeline run, which builds it when it's missing, and kept for phase 3.
+		- No docker is a warning, not a refusal, since GOTOOLCHAIN pins the box's Go to the same version.
+	- Branch: round-20261025b
+	- Test case: test.bash [EtlI5o0], [EtlI5p2] and [EtlI5q3].
+	- Verified: All 3 fail against the round branch's release.bash and pass after. test.bash 1737 -> 1740, 0 failed, in `--backlog-run-quick` in the image, with lint, go test, fuzz.bash, spawn counts and parity. With the real image, linux/amd64 built from an export of HEAD outside the tree matched the box's Go 1.26.2 build byte for byte, and left no container.
+	- Swept: both `fpCrossBuild` calls, its one build line, and the build pin checks [Eo59IMh], [EnQTPxq], [Er1LxT7], [Er1LxT8] and [Et9l12K], which count the same sites. [EnQTPxs] no longer sees release.bash's build, since the line no longer starts with `go build`; `-p` is still on it. cicd.bash's image tag and `fContainerRun`. README, contributing.md, design.md's release section and release.bash's notes.
+	- Acceptance signoff: Self-closed: its test runs passed.
+	- Closed: 20261025-175731
 
 - CICD reset: container cleanup
 	- ID: 2026102416313102

@@ -23,8 +23,8 @@
 ##	- Stages (fail-fast, any error aborts before the next stage):
 ##	   0. remote sync (fast-forward from origin before anything is built or tested)
 ##	   1. lint (gofmt + go vet + staticcheck + golangci-lint, shellcheck over the pipeline's own scripts, and ruff's leak rules over the demo script)
-##	   2. build + unit tests (go test -race, failing on a goroutine left running) + regression tests (cicd/test.bash against the compiled binary; --quick skips the suite)
-##	   3. fuzz + security (cicd/fuzz.bash) + native fuzz targets + govulncheck + pip-audit + spawn counts + leak checks (a soak test and CodeQL); --quick skips the native fuzzing, both audits and the leak checks
+##	   2. build + unit tests (go test -race, failing on a goroutine left running) + regression tests (cicd/test.bash against the compiled binary)
+##	   3. fuzz + security (cicd/fuzz.bash) + native fuzz targets + govulncheck + pip-audit + spawn counts + leak checks (a soak test and CodeQL); --quick skips both audits and CodeQL
 ##	   4. backwards compatibility (cicd/parity.bash: this build vs the frozen v2.1.0 one)
 ##	   5. dogfood (cross-build every target and install each to its first existing dir)
 ##	   6. demo gif (fake-terminal render; skipped under --quick)
@@ -46,8 +46,8 @@
 ##	   --no-demogif        skip regenerating the demo gif
 ##	   --no-remote         skip the remote tests
 ##	   --no-publish        skip the git backup + publish stage
-##	   --quick             skip the slow steps and every host but origin: the regression suite, native fuzzing, govulncheck, pip-audit, leak checks, demo gif and remote tests
-##	   --leakcheck         run the leak checks even under --quick or --no-fuzz: a soak test of the everyday commands, and CodeQL over the Go code and its vendored dependencies for each release OS and over the pipeline's Python and the libraries it imports, with the heap profiles and CodeQL's reports kept in cicd/artifacts/leakcheck/
+##	   --quick             what fits in about 10 minutes, and no host but origin: skips govulncheck, pip-audit, CodeQL, the demo gif and the remote tests
+##	   --leakcheck         run every leak check even under --quick or --no-fuzz: a soak test of the everyday commands, and CodeQL over the Go code and its vendored dependencies for each release OS and over the pipeline's Python and the libraries it imports, with the heap profiles and CodeQL's reports kept in cicd/artifacts/leakcheck/
 ##	   --no-leakcheck      skip the leak checks
 ##	   --long              everything, the slow checks included; nothing here takes hours, so the same as no flags
 ##	       --slow          alias for --long
@@ -96,7 +96,7 @@ export PATH="${HOME}/.local/bin:${PATH}"   ## user-prefix npm tools (markdownlin
 source "${here}/config.bash"
 source "${here}/utility/include/gfs-rotate.bash"       ## gfs_rotate() for the artifact dirs
 source "${here}/utility/include/go-test-lines.bash"    ## fGoTestLines(), shared with remote-tests.bash
-source "${here}/utility/include/image-go.bash"         ## fImageGo(), shared with remote-tests.bash
+source "${here}/utility/include/image-go.bash"         ## fImageGo(), fImageRecipe() and fImageBuild(), shared with remote-tests.bash and release.bash
 source "${here}/utility/include/safe-rm.bash"          ## fSafeRm(), the guard every recursive removal goes through
 fLowPriority
 cd "${root}"
@@ -137,9 +137,9 @@ while (($#)); do case "$1" in
 	--no-demogif)             DO_DEMOGIF=0; stageOpts+=("$1"); shift ;;
 	--no-remote)              doRemote=0; noRemote=1; stageOpts+=("$1"); shift ;;
 	--no-publish)             GIT_PUBLISH=(); stageOpts+=("$1"); shift ;;
-	## Leaves out each step that takes over about half a minute, or reaches a host other than
-	## origin. Every cross-build is a few seconds, so they all stay. Sync and publish stay too,
-	## since origin is the repo's own host. The rest of what it skips is read off ${quick} below.
+	## What fits in about 10 minutes, and reaches no host but origin. Every cross-build is a few
+	## seconds, so they all stay. Sync and publish stay too, since origin is the repo's own host.
+	## The rest of what it skips is read off ${quick} below.
 	--quick)                  quick=1; DO_DEMOGIF=0; doRemote=0; stageOpts+=("$1"); shift ;;
 	## Either one wins over the default below, --quick included, since it was asked for by name.
 	--leakcheck|--no-leakcheck)
@@ -170,9 +170,11 @@ while (($#)); do case "$1" in
 	*) fUsage "unknown option: ${1} (try --help)" ;;
 esac; done
 
-## On for a full run, and off for --quick and --no-fuzz, which both ask for less of stage 3.
+## On for a full run, the soak test alone for --quick, since CodeQL takes minutes, and off for
+## --no-fuzz, which asks for less of stage 3.
+soakOnly=0
 if   [[ "${leakOpt}" == --leakcheck ]]; then leakcheck=1
-elif [[ -z "${leakOpt}" ]] && ((! quick && doFuzz)); then leakcheck=1
+elif [[ -z "${leakOpt}" ]] && ((doFuzz)); then leakcheck=1; soakOnly="${quick}"
 fi
 
 ## Both run a fixed thing, so a stage option beside either would read as taking effect when it
@@ -599,6 +601,7 @@ fLeakCheck(){
 		rm -f -- "${old:?}"/heap-round-*.pprof "${old:?}/soak.txt"
 		rmdir -- "${old}" 2>/dev/null || fEcho "WARNING: kept ${old}, which has more in it than the soak test wrote"
 	done < <(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'soak_[0-9]*-[0-9]*' | sort -r | tail -n +21)
+	if ((soakOnly)); then fEcho_Clean "CodeQL skipped (--quick), add with --leakcheck"; return 0; fi
 	fCodeQL
 }
 ## Python's half of the scratch copy: the pipeline's own files at their paths in the tree, and
@@ -712,23 +715,10 @@ done
 fPlanOS(){ case "${1%%/*}" in darwin) echo macos ;; *) echo "${1%%/*}" ;; esac ;}
 fPlanLine(){ local -r dots="........................"; local -i n=$(( 20 - ${#1} )); ((n < 0)) && n=0; fEcho_Clean "${1} ${dots:0:n}: ${2}" ;}
 
-## --container: the image's versions come from config.bash, and its tag hashes the recipe plus
-## those, so a bumped version can't run on the old image.
+## --container: the image's tag, from its recipe and the versions config.bash pins.
 if ((container)); then
 	docker info >/dev/null 2>&1 || fDie "--container needs a working docker"
-	containerRecipe="${here}/container/Dockerfile"
-	[[ -f "${containerRecipe}" ]] || fDie "missing ${containerRecipe}"
-	containerArgs=(--build-arg "VER_go=${GO_RELEASE_TOOLCHAIN#go}")
-	for toolSpec in "${GO_TOOL_VERSIONS[@]}" "${TOOL_VERSIONS[@]}"; do
-		toolName="${toolSpec%%=*}"; toolName="VER_${toolName//-/_}"
-		grep -qxF "ARG ${toolName}" "${containerRecipe}" || fDie "config.bash pins ${toolSpec%%=*}, and the container recipe has no ARG ${toolName} for it"
-		containerArgs+=(--build-arg "${toolName}=${toolSpec#*=}")
-	done
-	containerArgs+=(--build-arg "CODEQL_SHA256=${CODEQL_SHA256}" --build-arg "CODEQL_PY_SHA256=${CODEQL_PY_SHA256}")
-	## In the tag's hash, so an image from before the labels is built again with them.
-	containerArgs+=(--label "dev.project=${APP_NAME}")
-	## The Python tools' lock is the other file the recipe copies in.
-	containerImage="${APP_NAME}-cicd:$( { cat "${containerRecipe}" "${here}/container/requirements.txt"; printf '%s\n' "${containerArgs[@]}"; } | git hash-object --stdin | cut -c1-12 )"
+	fImageRecipe
 fi
 
 fCpuPlan(){ fEcho_Clean "Cores ...............: ${BUILD_JOBS} of ${cpuCores}, ${HEAVY_JOBS} for the hard steps (load ${cpuLoad:-unknown}), at low priority" ;}
@@ -752,17 +742,7 @@ fContainerRun(){
 	local -a containerMounts innerArgs=("$@") rmOpt=(--rm)
 	((gate)) && step="quick"
 	fSection "Container"
-	if docker image inspect "${containerImage}" >/dev/null 2>&1; then
-		fEcho_Clean "image ${containerImage}"
-	else
-		## The one it replaces goes at the end of a run that passes on this one, by fDockerTidy.
-		fEcho_Clean "building ${containerImage}"
-		docker build -q -t "${containerImage}" "${containerArgs[@]}" --label "dev.run=${runName}" "${here}/container" >/dev/null || fDie "image build failed"
-	fi
-	## Made here rather than by the first run that mounts it, so it carries the labels.
-	if ! docker volume inspect "${APP_NAME}-cicd-cache" >/dev/null 2>&1; then
-		docker volume create --label "dev.project=${APP_NAME}" --label "dev.run=${runName}" "${APP_NAME}-cicd-cache" >/dev/null || fDie "can't make the ${APP_NAME}-cicd-cache volume"
-	fi
+	fImageBuild "${runName}"
 	containerMounts=(-v "${root}:${root}" -v "${APP_NAME}-cicd-cache:/cache" --tmpfs "/tmp:rw,exec,mode=1777")
 	gitCommon="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
 	if [[ -n "${gitCommon}" && "${gitCommon}" != "${root}/"* ]]; then containerMounts+=(-v "${gitCommon}:${gitCommon}"); fi
@@ -896,9 +876,7 @@ if ((doLint)); then
 else
 	fEcho_Clean "Lint ................: (skipped)"
 fi
-if ((doTest && quick)); then
-	fEcho_Clean "Tests ...............: go test; ${TEST_CMD[*]} ${skipNote}"
-elif ((doTest)) && [[ -f "${TEST_CMD[0]:-}" ]]; then
+if ((doTest)) && [[ -f "${TEST_CMD[0]:-}" ]]; then
 	fEcho_Clean "Tests ...............: ${TEST_CMD[*]}"
 elif ((doTest)); then
 	fEcho_Clean "Tests ...............: (no harness yet: ${TEST_CMD[0]:-cicd/test.bash})"
@@ -909,7 +887,7 @@ if ((doTest)); then
 	fEcho_Clean "Go build ............: ${GO_MODULE_DIR} -> ${GO_MODULE_DIR}/${EXE_NAME} (the suite's subject)"
 fi
 if ((doFuzz && quick)) && [[ -f "${FUZZ_CMD[0]:-}" ]]; then
-	fEcho_Clean "Fuzz + security .....: ${FUZZ_CMD[*]} and spawn counts, native fuzzing, govulncheck and pip-audit ${skipNote}"
+	fEcho_Clean "Fuzz + security .....: ${FUZZ_CMD[*]}, native fuzzing and spawn counts; govulncheck and pip-audit ${skipNote}"
 elif ((doFuzz)) && [[ -f "${FUZZ_CMD[0]:-}" ]]; then
 	fEcho_Clean "Fuzz + security .....: ${FUZZ_CMD[*]}"
 elif ((doFuzz)); then
@@ -917,7 +895,9 @@ elif ((doFuzz)); then
 else
 	fEcho_Clean "Fuzz + security .....: ${skipNote}"
 fi
-if ((leakcheck)); then
+if ((soakOnly)); then
+	fEcho_Clean "Leak checks .........: soak test, ${LEAKCHECK_SOAK_ROUNDS} rounds against ${LEAKCHECK_SOAK_ROUNDS} more -> ${LEAKCHECK_DIR}/; CodeQL ${skipNote}, add with --leakcheck"
+elif ((leakcheck)); then
 	fEcho_Clean "Leak checks .........: soak test, ${LEAKCHECK_SOAK_ROUNDS} rounds against ${LEAKCHECK_SOAK_ROUNDS} more, CodeQL's ${CODEQL_SUITE##*/} for each release OS, and its ${CODEQL_PY_SUITE##*/} -> ${LEAKCHECK_DIR}/"
 elif [[ "${leakOpt}" == --no-leakcheck ]]; then
 	fEcho_Clean "Leak checks .........: (skipped)"
@@ -972,11 +952,11 @@ fEcho_Clean
 if ((listOnly)); then
 	if ((doTest)); then
 		fListTests "2/8  Go unit tests" go
-		((quick)) || [[ ! -f "${TEST_CMD[0]:-}" ]] || fListTests "2/8  Regression tests" "${TEST_CMD[0]}"
+		[[ ! -f "${TEST_CMD[0]:-}" ]] || fListTests "2/8  Regression tests" "${TEST_CMD[0]}"
 	fi
 	if ((doFuzz)); then
 		[[ ! -f "${FUZZ_CMD[0]:-}" ]] || fListTests "3/8  Fuzz + security" "${FUZZ_CMD[0]}"
-		((quick)) || fListTests "3/8  Native fuzz targets" gofuzz
+		fListTests "3/8  Native fuzz targets" gofuzz
 		[[ ! -f "${SPAWN_COUNT_CMD[0]:-}" ]] || fListTests "3/8  Spawn counts" "${SPAWN_COUNT_CMD[0]}"
 	fi
 	((! doParity)) || [[ ! -f "${PARITY_CMD[0]:-}" ]] || fListTests "4/8  Backwards compatibility" "${PARITY_CMD[0]}"
@@ -1073,10 +1053,7 @@ else
 	## The unit tests come before the suite below: they answer in milliseconds and
 	## cover the parsing and matching the suite can only reach through a built binary.
 	fUnitTests
-	## Well over a minute here, so the one slow step a quick run leaves out of this stage.
-	if ((quick)); then
-		fEcho_Clean "regression tests skipped (--quick)"
-	elif [[ -f "${TEST_CMD[0]:-}" ]]; then
+	if [[ -f "${TEST_CMD[0]:-}" ]]; then
 		"${TEST_CMD[@]}"
 		fEcho "OK: tests passed"
 	else
@@ -1085,9 +1062,8 @@ else
 fi
 
 ## Stage 3: fuzz + security (adversarial input against our parsing, plus checks
-## of what we shell out to). The harness and the spawn counts take seconds and run under
-## --quick; the native fuzzing doesn't, and govulncheck and pip-audit ask a server, so those
-## don't either. The leak checks come last. Same lands-later policy as the tests.
+## of what we shell out to). govulncheck and pip-audit ask a server, so --quick leaves them out.
+## The leak checks come last. Same lands-later policy as the tests.
 fSection "3/8  Fuzz + security"
 if ((! doFuzz)); then
 	fEcho_Clean "fuzz + security ${ranWhere:-skipped${quickNote}}"
@@ -1100,9 +1076,7 @@ fi
 ## Coverage-guided fuzzing of the pure parsers, briefly. Their seed corpus already ran
 ## with 'go test' in stage 2; this hunts a little past it each run. One target per
 ## invocation is go's rule, and a crasher lands in src-go/testdata/fuzz/ as evidence.
-if ((doFuzz && quick)); then
-	fEcho_Clean "native fuzz targets skipped (--quick)"
-elif ((doFuzz)); then
+if ((doFuzz)); then
 	for fuzzTarget in $(cd "${root}/${GO_MODULE_DIR}" && go test -list 'Fuzz.*' . 2>/dev/null | grep '^Fuzz' || true); do
 		(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${HEAVY_JOBS}" go test -run '^$' -fuzz "^${fuzzTarget}\$" -fuzztime 5s -parallel "${HEAVY_JOBS}" . >/dev/null) \
 			|| fDie "fuzzing found a crasher in ${fuzzTarget} (reproducer under ${GO_MODULE_DIR}/testdata/fuzz/)"
@@ -1406,3 +1380,4 @@ fEcho_Clean
 ##		- 2026-10-25 JC: Half the cores, rounded down, or a quarter on a busy box, worked out again before each stage, and a quarter for go test -race, the native fuzzing, the soak test and CodeQL. The run lowers its own priority, the container gets the count as its quota at a low weight, and the plan says what it got.
 ##		- 2026-10-25 JC: --list prints the plan and the test IDs in each step that runs, and runs nothing. --keep-temp keeps the run's temp folder, the files its steps leave there and its containers, and says where they are at the end. The run in the image puts its folder inside this one. The pre-push hook runs --merge-gate.
 ##		- 2026-10-25 JC: The run's folder is ${HOST_TEMP}/gitsby/<start time>_<NNN>, with TMPDIR, TEMP and TMP pointed at it, and a run.pid. Run folders over 2 days old whose run is gone are removed, and every recursive removal here goes through fSafeRm. Containers, the image and the cache volume are labeled dev.project and dev.run, and named for the run's folder. The end of a run removes its containers, the project's dangling images and older tags, week-old build cache and a cache volume over 2 GB, and says what that freed.
+##		- 2026-10-25 JC: --quick is what fits in about 10 minutes rather than each step under half a minute. The regression suite, the native fuzz targets and the soak test are back in it. CodeQL stays out unless --leakcheck, and govulncheck and pip-audit, which ask a server, stay out. The image's tag and build moved to image-go.bash, which release.bash uses too.

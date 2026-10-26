@@ -627,6 +627,8 @@ Decisions inside that shape:
 
 - **The assets are built twice.** Phase 1 compiles every target to prove none has stopped building, where the cost of a failure is nothing. Phase 3 builds them again once the tag exists, and those are the bytes that get uploaded - a build number taken from the commit can only be the tag's if the tag is already there. The second build is the price of "check out the tag, build, and get the published checksums back".
 
+- **Both builds use the pipeline image's Go**, where docker works, since 2026-10-25. That is the toolchain the checks ran with, pinned by version, so the published bytes don't depend on what the releasing box has installed. The tag's export is mounted into the container at its own path. Without docker they build with the box's Go, and the run says so. The upload and the proof against the published files stay on the box, since they need its network and its `gh` login.
+
 - **The release notes name the build number**, read out of the freshly built binary rather than computed a second time in the release script, so the notes and the download cannot disagree about it.
 
 - **The downloads table lives in the changelog.** Phase 2 writes it into the section it retitles, from the files phase 1 built, so the release body stays a verbatim copy of the section. Rows are OSes and columns are CPUs, and each cell links that file on the release. The macOS file runs on both CPUs, so it is linked under both. Phase 1 refuses a `vNEXT` section that already has one, and phase 3 warns when the files it publishes and the table disagree.
