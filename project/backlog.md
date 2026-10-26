@@ -62,27 +62,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Prereq IDs: 2026102518002917
 	- 2026-10-25: Its gate worktree run stopped in stage 1 on 2026102518002917, which gover has too. Waits on that fix.
 
-- CICD reset: containers
-	- ID: 2026102416313100
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261024-163131
-	- Opened by: jim-collier
-	- Related IDs: 2026101009380628
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Per `Containers` in the shared CICD rules. A full run already uses the pinned image by default, falls back to the box with a warning, and takes `--no-container`.
-		- `--gate`, and the backlog and merge gate runs that replace it, run in the image too, where docker works.
-		- The builds for dogfood, stage 7 and a release come from the image's Go, not the box's. Copying them into place and the tests on other boxes stay outside it.
-		- Earlier decisions this overrides: the line in 2026101009380628 that keeps dogfood and the remote tests' builds on the host, and the private notes, where `--gate` stays on the box.
-	- Progress log:
-	- Test case: Its children's tests: 2026102507133273, 2026102507133278 and 2026102507133283.
-	- Acceptance signoff: Self-closed: every child is Done.
-	- Closed: 20261025-175831
-		- 2026-10-25: Split in three, one per place a build or check still runs on the box: 2026102507133273 for the quick run, 2026102507133278 for the dogfood and stage 7 builds, and 2026102507133283 for the release builds. `--merge-gate` and `--backlog-run-full` are a plain run, so their stages 1-4 and 6 are in the image already, and their stage 7 builds go with the second child.
-	- 2026-10-25: Closed with its last child, 2026102507133283. It had no work of its own left.
-
 - CICD reset: CPU and priority on the Windows box
 	- ID: 2026102508333054
 	- Type: Enhancement
@@ -106,6 +85,53 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: round-20261025b
 	- Test case: test.bash `[EtlCXkW]` (the count and class on the command line), `[EtlCXkl]` (a failing test that exits 0).
 	- Swept: every remote command in remote-tests.bash's `fRunWindows`. The copy and cleanup steps run no tests, so they keep normal priority.
+
+- Stage 7 can't start vm925w once it has started vmKt6m or vmFreeBSD
+	- ID: 2026102510404322
+	- Type: Bug
+	- Status: Waiting on automated testing
+	- Needs external testing: stage 7 with b29w held under the lock and vm925w off. vm925w comes up before vmFreeBSD and vmKt6m, and runs the Go tests.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-104043
+	- Opened by: jim-collier
+	- Related IDs: 2026102416313101
+	- Incorrect behavior [Bug]: In the round-20261025 full run, b29w was held by another job, so stage 7 went to vm925w, which was off. It didn't come up, with "Failed to reserve port 5900", and was skipped. No Windows box ran the Go tests.
+	- Expected behavior [Bug]: vm925w starts and runs the Windows Go tests when b29w is busy.
+	- Reproduced [Bug]: 2026-10-25 on b23, gover plus 4388d96. vmKt6m was started earlier in the run and ignored the ACPI shutdown, so it was still up and held the port.
+	- Possible cause [Bug]: vm925w's SPICE port is fixed at 5900, while vmFreeBSD and vmKt6m take the first free one. Starting vm925w before the other VMs, or only after they're down, would avoid it. vmKt6m also needs shutting down from inside, since it ignores the ACPI request.
+	- Estimated effort: Avg
+	- Actual cause [Bug]: Confirmed from the guest definitions. `vm925w-iommu` has `port='5900' autoport='no'`, and vmFreeBSD and vmKt6m have `autoport='yes'`. Stage 7 took the Windows box last, after the Mac and Unix boxes, and vmKt6m stayed up after its turn.
+	- Actual fix [Bug]: Stage 7 takes the Windows box first. That covers gitsby's own VMs, not another session's. The guest's own fix, `autoport='yes'`, is outside the repo, drafted in `private/claude_simple/upstream/2026102510404322/`. The guest is unchanged.
+	- Progress log:
+		- 2026-10-25: The Windows loop in remote-tests.bash runs before the Mac and Unix ones. Every build is still made before any box is taken.
+		- 2026-10-25: The fixture's VM helper now refuses vm925w with "Failed to reserve port 5900" while another VM it woke is still up.
+		- Verified: test.bash 1737/0 on the box, and `--backlog-run-quick` in the image, with test.bash 1737/0, fuzz 313/0 and parity 29/0. Against the harness before the change, `[EtlCXkF]` fails, and so do the new checks of the other two items in this change and the changed `[Etj1UKH]`, 1732/5.
+	- Branch: round-20261025b
+	- Test case: test.bash `[EtlCXkF]`.
+	- Swept: every loop over the boxes in remote-tests.bash. Only the three run loops take boxes, and the summary is sorted by name, so the order shows nowhere else. config.bash's stage 7 comment names the order.
+
+- Stage 7 takes every box through the VM state helper's wrap
+	- ID: 2026102511210617
+	- Type: Enhancement
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: the round's `--backlog-run-full`, stage 7, which takes b26, b29w and vmDebARM64 through the real helper's `wrap` as boxes that aren't VMs here.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261025-112106
+	- Opened by: jim-collier
+	- Related IDs: 2026102416313101
+	- Requirements [Feature]:
+		- The helper's `wrap` takes `--why` and `--eta` since 2026-10-25, and leaves a box that isn't a VM alone. So stage 7 can use it for every box, with `--why "gitsby: <kind> tests"`, and drop the lock's own `wrap` branch in `fUnderLock`.
+		- The comment above `fUnderLock` that says the helper has no `--why` goes with it.
+		- A box with no helper on the PATH still runs through the lock's `wrap`.
+	- Estimated effort: Low
+	- Progress log:
+		- 2026-10-25: `fUnderLock` makes one call, to the helper's `wrap` where there is one and to the lock's otherwise, with `--wait 0 --why "gitsby: <kind> tests"` either way. Its comment, the script's Purpose and config.bash's stage 7 comment say so.
+		- The helper is still looked for beside the lock, not on the PATH, as before. With none, the lock takes each box, and a sleeping VM is skipped.
+		- 2026-10-25: Asserts given new values for this change. `[Etj1UKH]`: `vmstate wrap vmFreeBSD --wait 0 --` and `lock wrap vmFreeBSD --wait 0 --` -> the same with `--why gitsby: unix tests`, and "vmDebARM64 never goes through the helper" -> "the helper never wakes vmDebARM64". Its label's "keeps the lock's own wrap" -> "is left alone". The fixture's helper takes any options before `--` and passes them to the lock, and leaves a box that isn't a VM to it, as the real one does.
+		- Verified: test.bash 1737/0 on the box, and `--backlog-run-quick` in the image, with test.bash 1737/0, fuzz 313/0 and parity 29/0. Against the harness before the change, `[EtlCXjm]` fails. `[EtlCXk1]` passes there too, since the no-helper path didn't change.
+	- Branch: round-20261025b
+	- Test case: test.bash `[EtlCXjm]` (every box through the helper, with why), `[EtlCXk1]` (no helper, the lock's own wrap with why), plus `[Etj1UKH]` as changed.
+	- Swept: every call of the lock and the helper in remote-tests.bash. `hosts` and `status` are reads, and stay as they were.
 
 - CICD reset: standard flags
 	- ID: 2026102416313104
@@ -170,30 +196,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Each test prints `PASS <id> <name>`, `FAIL <id> <name>` or `SKIP <id> <why>`, in place of `ok: [<id>] <name>` and the rest, on this box and on the remote boxes.
 		- Earlier decisions this overrides: the private test ID rule, milliseconds in base 62.
 
-- Stage 7 can't start vm925w once it has started vmKt6m or vmFreeBSD
-	- ID: 2026102510404322
-	- Type: Bug
-	- Status: Waiting on automated testing
-	- Needs external testing: stage 7 with b29w held under the lock and vm925w off. vm925w comes up before vmFreeBSD and vmKt6m, and runs the Go tests.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-104043
-	- Opened by: jim-collier
-	- Related IDs: 2026102416313101
-	- Incorrect behavior [Bug]: In the round-20261025 full run, b29w was held by another job, so stage 7 went to vm925w, which was off. It didn't come up, with "Failed to reserve port 5900", and was skipped. No Windows box ran the Go tests.
-	- Expected behavior [Bug]: vm925w starts and runs the Windows Go tests when b29w is busy.
-	- Reproduced [Bug]: 2026-10-25 on b23, gover plus 4388d96. vmKt6m was started earlier in the run and ignored the ACPI shutdown, so it was still up and held the port.
-	- Possible cause [Bug]: vm925w's SPICE port is fixed at 5900, while vmFreeBSD and vmKt6m take the first free one. Starting vm925w before the other VMs, or only after they're down, would avoid it. vmKt6m also needs shutting down from inside, since it ignores the ACPI request.
-	- Estimated effort: Avg
-	- Actual cause [Bug]: Confirmed from the guest definitions. `vm925w-iommu` has `port='5900' autoport='no'`, and vmFreeBSD and vmKt6m have `autoport='yes'`. Stage 7 took the Windows box last, after the Mac and Unix boxes, and vmKt6m stayed up after its turn.
-	- Actual fix [Bug]: Stage 7 takes the Windows box first. That covers gitsby's own VMs, not another session's. The guest's own fix, `autoport='yes'`, is outside the repo, drafted in `private/claude_simple/upstream/2026102510404322/`. The guest is unchanged.
-	- Progress log:
-		- 2026-10-25: The Windows loop in remote-tests.bash runs before the Mac and Unix ones. Every build is still made before any box is taken.
-		- 2026-10-25: The fixture's VM helper now refuses vm925w with "Failed to reserve port 5900" while another VM it woke is still up.
-		- Verified: test.bash 1737/0 on the box, and `--backlog-run-quick` in the image, with test.bash 1737/0, fuzz 313/0 and parity 29/0. Against the harness before the change, `[EtlCXkF]` fails, and so do the new checks of the other two items in this change and the changed `[Etj1UKH]`, 1732/5.
-	- Branch: round-20261025b
-	- Test case: test.bash `[EtlCXkF]`.
-	- Swept: every loop over the boxes in remote-tests.bash. Only the three run loops take boxes, and the summary is sorted by name, so the order shows nowhere else. config.bash's stage 7 comment names the order.
-
 - CICD reset: temp files and safe removal
 	- ID: 2026102416313108
 	- Type: Enhancement
@@ -248,28 +250,59 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 			- Go's module cache in the volume pruned of what the current `go.sum` doesn't name.
 		- Packaging and dependabot stay deferred, per the standing decision. 20261024: kept out of this item, since nothing makes them pressing.
 
-- Stage 7 takes every box through the VM state helper's wrap
-	- ID: 2026102511210617
-	- Type: Enhancement
-	- Status: Waiting on automated testing
-	- Needs local test suite run?: the round's `--backlog-run-full`, stage 7, which takes b26, b29w and vmDebARM64 through the real helper's `wrap` as boxes that aren't VMs here.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261025-112106
+- `raw gh` loops forever when `gh` on PATH leads back to gitsby
+	- ID: 2026101916533300
+	- Type: Bug
+	- Status: Done
+	- Needs local test suite run?: No. test.bash ran 1597/0.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Critical
+	- Opened: 20261019-165333
 	- Opened by: jim-collier
-	- Related IDs: 2026102416313101
-	- Requirements [Feature]:
-		- The helper's `wrap` takes `--why` and `--eta` since 2026-10-25, and leaves a box that isn't a VM alone. So stage 7 can use it for every box, with `--why "gitsby: <kind> tests"`, and drop the lock's own `wrap` branch in `fUnderLock`.
-		- The comment above `fUnderLock` that says the helper has no `--why` goes with it.
-		- A box with no helper on the PATH still runs through the lock's `wrap`.
-	- Estimated effort: Low
+	- Prereq IDs: 2026102306584122
+	- Target OS: Linux
+	- Test environment: b28l
+	- Steps to reproduce [Bug]:
+		- On a box where the first `gh` on PATH is, or runs, gitsby, run `gitsby raw gh <anything>`.
+		- Not confirmed which form b28l had: a symlink or copy of gitsby named `gh`, or a wrapper script that calls `gitsby raw gh "$@"`.
+	- Incorrect behavior [Bug]:
+		- Endless loop that eats time and a lot of memory. The session that hit it got out by calling the real `gh` by full path.
+	- Expected behavior [Bug]:
+		- Stop at once with a plain error that names the PATH entry, and never start a second copy of itself.
+	- Reproduced [Bug]: 2026-10-21 on b23, with stand-ins on PATH. A wrapper `gh` that runs `gitsby raw gh "$@"` started itself until its counter stopped it at 20. A link named `gh` to the build ran gitsby as gh, which answered "Unknown command 'auth'". The link alone doesn't loop, since gitsby doesn't read its own name, so b28l most likely had a wrapper.
+	- Possible cause [Bug]:
+		- `cmdPassthrough` in main.go checks `gh` only with `mustBeInPath`, then `handover` in exec.go runs it by bare name. Nothing checks that the file found isn't gitsby itself, or something that calls it. A wrapper makes each run start the next, with no limit.
+	- Requirements [Bug fix]:
+		- Find the tool by walking PATH ourselves. Skip any entry that resolves (symlinks followed, `os.SameFile`) to the running gitsby. If nothing else is left, refuse with the usual "Not found in path" error and say a PATH entry points back at gitsby.
+		- Set an env var such as `GITSBY_RAW_ACTIVE` on the handover. If it's already set when `raw` starts, refuse with a message that names it. This catches wrappers the file check can't see. Read it at startup, before the run sets it.
+		- Cover `tea`, `glab`, `lazygit`, and `tig` the same way, since they share the path.
+		- Test case needs a stand-in `gh` that is a wrapper and one that is a symlink to the build. Watch both fail on the current build first, and put a spawn limit on the test so a regression can't eat the box.
 	- Progress log:
-		- 2026-10-25: `fUnderLock` makes one call, to the helper's `wrap` where there is one and to the lock's otherwise, with `--wait 0 --why "gitsby: <kind> tests"` either way. Its comment, the script's Purpose and config.bash's stage 7 comment say so.
-		- The helper is still looked for beside the lock, not on the PATH, as before. With none, the lock takes each box, and a sleeping VM is skipped.
-		- 2026-10-25: Asserts given new values for this change. `[Etj1UKH]`: `vmstate wrap vmFreeBSD --wait 0 --` and `lock wrap vmFreeBSD --wait 0 --` -> the same with `--why gitsby: unix tests`, and "vmDebARM64 never goes through the helper" -> "the helper never wakes vmDebARM64". Its label's "keeps the lock's own wrap" -> "is left alone". The fixture's helper takes any options before `--` and passes them to the lock, and leaves a box that isn't a VM to it, as the real one does.
-		- Verified: test.bash 1737/0 on the box, and `--backlog-run-quick` in the image, with test.bash 1737/0, fuzz 313/0 and parity 29/0. Against the harness before the change, `[EtlCXjm]` fails. `[EtlCXk1]` passes there too, since the no-helper path didn't change.
-	- Branch: round-20261025b
-	- Test case: test.bash `[EtlCXjm]` (every box through the helper, with why), `[EtlCXk1]` (no helper, the lock's own wrap with why), plus `[Etj1UKH]` as changed.
-	- Swept: every call of the lock and the helper in remote-tests.bash. `hosts` and `status` are reads, and stay as they were.
+		- 2026-10-19: Logged from a report by another project's session on b28l. Cause is from reading the code, not from a run there. Still need the output of `type -a gh` on b28l.
+		- 2026-10-21: Fixed as the requirements ask. `raw` walks PATH itself, through `exec.LookPath` on each entry, and passes over an entry that is the running binary. It sets `GITSBY_RAW_ACTIVE` to the tool's path before anything runs the tool, the tea probes and the account's gh calls included, and a `raw` that finds it set at startup refuses and names it. The hermetic suites unset it.
+		- 2026-10-22: The guard refused every nested `raw`, hooks and aliases included. `GITSBY_RAW_ACTIVE` is now the chain of `raw` runs above, one short entry each, and a `raw` refuses only to start one already on it. While `raw` runs tools only to check them, such as the tea and gh probes, the chain ends in a probe mark, and a `raw` started under that refuses. A loop with new arguments each time stops at 16 deep.
+		- 2026-10-23: The b28l session was tukzedo's. Its memory.md says a `gh` wrapper running `exec gitsby raw gh "$@"` grew to about 15,000 processes and 56 GB in 28 minutes on 2026-10-19. Tried that wrapper on b23 against the gover build: no loop, 2 or 3 starts and a refusal. The old build loops in every case until the rig's cap. The wrapper still fails, and so do gitsby's own gh calls behind it, filed as 2026102306584122. A wrapper that clears the environment still loops, filed as 2026102306584127. Rig: `private/claude_simple/tools/rawloop-rig.bash`.
+	- Actual cause [Bug]:
+		- As the possible cause says. `raw` ran the tool by bare name and never asked what it found. Every run through a wrapper started the next.
+	- Actual fix [Bug]: `lookTool` in exec.go, used by `cmdPassthrough` for all six tools, and `rawActive` read in `newApp`. The tool still sees its own name as argv[0]. design.md's `raw` bullets say so. Since 2026-10-22, `rawNest` in exec.go builds and checks the chain.
+	- Decisions:
+		- With no other copy left, the refusal is "Not found in path: gh. '<entry>' is gitsby itself.", with the entry as found.
+		- A gitsby entry ahead of a real tool is passed over without a word.
+		- A plain copy of gitsby named `gh` isn't the same file, so only the env check stops it, on its second start.
+		- 2026-10-22, from the answer "What any sane human git user would expect": whatever nesting plain git allows works the same under gitsby, with no refusal and nothing added to the output. That covers hooks under `raw git commit` or `push`, git aliases, lazygit and tig custom commands, and scripts. A loop gitsby causes still stops at once and names what looped.
+		- An entry is the tool's name and a 12-digit hash of its path, the folder and the arguments. The folder is in it so a hook that runs the same command in a submodule isn't taken for a loop. Refusing on the same tool file alone was rejected, since it refuses `raw git` under `raw git`.
+		- A `raw` started by one of gitsby's own checks of a tool is refused, since nothing a check runs has a reason to call `raw`. Without that, the tea wrapper check `[EtMXMQW]` failed, since the `--version` and `logins list` probes each started a nested `raw`.
+		- The depth limit is 16. Plain git would loop forever there.
+	- Branch: round-20261021, then round-20261022
+	- Test case: test.bash `[EtMXMMC]`, `[EtMXMN4]`, `[EtMXMNv]` and `[EtMXMOn]` for gh, and `[EtMXMPe]` and `[EtMXMQW]` for tea, glab, lazygit and tig, as a link and as a wrapper each. Each wrapper quits after 5 starts. Go `[EtMXfI7]` for the PATH walk and `[EtMXfJm]` for the refusal, reworded 2026-10-22 to a repeat on the chain. Since then test.bash `[EtOGJ6U]` and `[EtOGJ6i]` for a pre-commit hook running `raw git` under `raw git commit`, `[EtOGJ6v]` for an alias doing the same, and Go `[EtOGJ79]` for the chain and the probe mark and `[EtOGJ7M]` for the depth limit.
+	- Verified: All 12 new test.bash checks fail on the build before the fix, with the other 1579 passing. The 5 with only the link on PATH were rerun outside the suite with the same command and pattern, and fail there too. After it, test.bash 1579 -> 1591, 0 failed. Both Go tests fail with the self check and the env check taken out. `GOOS=windows go vet` and darwin and freebsd builds pass. The wrapper stand-in started once, then refused.
+	- Verified: 2026-10-21, stage 7 passed on every box. test.bash 1368/0 on b26 and 1271/0 on vmFreeBSD, each 15 more than on 10-19, all from this round, and 1579/0 on vmDebARM64, 23 more, with leakflags' 8. All 12 of this item's test.bash checks ran on each. The Go tests passed there and on vm925w, where `[EtMXfI7]` skips, since it needs symlinks and the exec bit, and `[EtMXfJm]` passed.
+	- Verified: 2026-10-22, test.bash 1594 -> 1597, 0 failed, with the reworded `[EtMXMNv]` and `[EtMXMQW]`. On the build before, the 3 new checks fail. The Go tests fail with each part of `rawNest` taken out in turn: the repeat check, the probe mark, the depth limit, the folder and the separator between arguments. Outside the suite, a wrapper `gh` started once and was refused, and one adding an argument each time stopped at 16. `GOOS=windows go vet` and the Windows test build, and darwin and freebsd builds, pass.
+	- Verified: 2026-10-22, stage 7 passed on every box for the nesting change. test.bash 1371/0 on b26 and 1274/0 on vmFreeBSD, each 3 more than on 10-21, which are `[EtOGJ6U]`, `[EtOGJ6i]` and `[EtOGJ6v]`. 1583/0 on vmDebARM64, 4 more, those 3 plus `[EtOKpZS]`, which sits in the Linux-only pre-push gate block. `[EtOGJ79]` and `[EtOGJ7M]` passed in the Go tests on b26, vmFreeBSD, vmDebARM64 natively and under Wine, and vm925w, where the Go tests were 191 ok and 23 skipped, 2 more ok than on 10-21. `[EtMXfJm]` passed there too. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log`.
+	- Verified: 2026-10-23 on b28l, the box that hit it, on the synced build `c917c95`, which has this fix and 2026102306584122's. In tukzedo-linux's repo there, with tukzedo's wrapper `exec gitsby raw gh "$@"` first on PATH and the real `gh` 2.46.0 behind it, each start counted and capped at 20: `gitsby raw gh auth status`, a bare `gh auth status`, `gh repo view`, a script calling `gh api user`, `gitsby whoami`, `gitsby --no-fetch pr` and `gitsby -q raw gh api rate_limit` all reached the real `gh` as t00mietum and exited 0. 2 to 9 wrapper starts each, with no gitsby left running. The control, the same wrapper with `9e82970` first on PATH as `gitsby`, ran into the cap on both forms tried.
+	- Verified: 2026-10-24 on b23, gover `c87c131`, with the rig. The wrapper reached the stand-in `gh` with 2 starts for `raw gh`, 3 for a bare `gh` or a script, and 6 for `whoami` and `pr`. A link or copy named `gh` is refused by name since 2026102306584132. A wrapper adding an argument each time stopped at 17 deep after 32 starts. No gitsby was left running.
+	- Swept: every `raw` tool shares `cmdPassthrough`, git included. 2026-10-22: `rawActive` has one reader, `cmdPassthrough`, and the variable is unset in all 4 hermetic suites. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
+	- Acceptance signoff: Hand test on b28l, run in the 2026-10-23 round as asked.
+	- Closed: 20261023-195424
 
 - The quick run fails staticcheck in the hook's gate worktree
 	- ID: 2026102518002917
@@ -299,27 +332,133 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: Self-closed: its test failed before and passes after, and so did the issue's own steps.
 	- Closed: 20261025-181343
 
-- release.bash --help prints nothing
-	- ID: 2026102517464688
+- `repo clone` hands git a folder name taken from the URL, and git can read it as an option
+	- ID: 2026100607545802
 	- Type: Bug
 	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261025-174646
+	- Priority|Severity [Bug]: High
+	- Opened: 20261006-074900
+	- Closed: 20261006-104608
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: With no folder given, `repo clone` names it after the URL's last part. A URL ending in `--upload-pack=<cmd>.git` put that text in git's argument list as an option. On a local or `file://` clone git runs it as a command.
+	- Expected behavior [Bug]: The URL and the folder always reach git as plain arguments.
+	- Reproduced [Bug]: Yes. A bare repo named `--upload-pack=touch CANARY;git-upload-pack.git`, then `gitsby -q repo clone file://...` made the canary file.
+	- Actual cause [Bug]: `cmdClone` ran `git clone <url> <dir>` with no `--` in front.
+	- Actual fix [Bug]: `git clone -- <url> <dir>`, and the plan line shows the same.
+	- Swept: every `a.step` call for git, gh and tea. gitsby's own parser refuses an argument that starts with a dash, `--` included, checked for `br create`, `repo connect`, `repo url` and `repo create`. So only a value gitsby builds from other input can start with one, and the clone folder was the only such value. Built URLs start with a scheme.
+	- Branch: fuzzwork
+	- Commit: c1b10fc
+	- Test case: fuzz.bash [Ervo5NU]. Red on `gover`'s code, green here.
+	- Verified: fuzz.bash 311/0, test.bash 1491/0, parity.bash 29/0 on the branch.
+
+- test.bash removes the folder it was started from when mktemp fails
+	- ID: 2026100415391365
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: High
+	- Opened: 20261004-153913
 	- Opened by: jim-collier
 	- Steps to reproduce [Bug]:
-		- `bash cicd/release.bash --help`
-	- Incorrect behavior [Bug]: No output, exit 0.
-	- Expected behavior [Bug]: The header's Purpose, Syntax and Notes, as `cicd.bash --help` prints its own.
-	- Reproduced [Bug]: 2026-10-25, no output and exit 0.
-	- Possible cause [Bug]: The `--help` arm looks for a `- Purpose:` line, and release.bash's header spells it `Purpose:`.
-	- Actual cause [Bug]: As above.
-	- Actual fix [Bug]: The arm looks for `Purpose:`, as remote-tests.bash and the utility scripts do.
-	- Branch: round-20261025b
-	- Test case: test.bash [EtlSvK7], once for each script whose `--help` prints its header, 7 now.
-	- Verified: [EtlSvK7]'s command fails on the old release.bash and passes on the new one. test.bash 1748/0 in `--backlog-run-quick`.
-	- Swept: every script with a `--help` arm. cicd.bash, remote-tests.bash, pre-push.bash, gen-winres.bash, keep-build.bash and spawn-count.bash print their headers. test.bash, fuzz.bash, parity.bash and install.bash print a usage line, and backlog-check.bash, lint-report.bash, spawn-report.bash and test-id.bash print their headers their own way.
-	- Acceptance signoff: Self-closed: its test failed before and passes after.
-	- Closed: 20261025-181343
+		- Run `cicd/test.bash` with `TMPDIR` set to something that isn't a folder, such as a file.
+	- Incorrect behavior [Bug]: `mktemp -d` fails, and `work` ends up as the current folder. The exit trap then runs `rm -rf` on it. Started from the repo root, that is the whole checkout, `.git` included.
+	- Expected behavior [Bug]: The suite stops before it sets the trap, and removes nothing.
+	- Reproduced [Bug]: Yes, 2026-10-04 on b23, against a scratch folder, which was removed. The same day it removed the gitsby checkout, which came back whole from the 15:30 ZFS snapshot.
+	- Possible cause [Bug]: test.bash line 32 is `work="$(cd "$(mktemp -d ...)" && pwd -P)"`. The mktemp failure is lost, and `cd ""` succeeds without moving.
+	- Note: a probable fix checks the mktemp result before resolving it, and refuses a `work` that isn't a `gitsby-test.*` folder before arming the trap. A grep of `cicd` and the installers finds no other `cd "$(mktemp` site.
+	- Actual cause [Bug]: The mktemp call sat inside the `cd` that resolves it, so its failure was lost. `cd ""` succeeds without moving, so `work` became the current folder, and the exit trap removed it.
+	- Actual fix [Bug]: mktemp runs on its own line and stops the suite when it fails. Before the trap is set, the resolved folder has to be the one mktemp made, named `gitsby-test.*`, and empty. A marker file goes in it, and the trap removes the folder only while the name and the marker are both there.
+	- Swept: install.bash and every script in cicd/, cicd/utility/ and cicd/utility/demo/. Only test.bash wrapped mktemp in a `cd`. The rest assign mktemp straight to a variable under `set -e`, so a failure stops them or leaves an empty value that `${x:?}` refuses before any `rm`. demo-repo.bash and remote-tests.bash already check a marker before removing. The shared files in cicd/utility/include/ have no mktemp and no recursive removal.
+	- Verified: with TMPDIR a file, the suite before the fix removed the folder it was started from, canary included, and the fixed one stopped at mktemp and left it alone. `[Erm5vXj]` fails against the old test.bash and passes against the new one, and so does `[Erm5vYa]`'s pattern on test.bash. With mktemp working, the scratch folder is still removed and the exit code kept, for a plain TMPDIR, one ending in a slash, and one reached through a link.
+	- Verified: shellcheck, `test-id.bash --check`, and `cicd.bash --gate`.
+	- Not run: the full test.bash. No run reaches the trap's refusal of a folder without the marker.
+	- Test case: test.bash `[Erm5vXj]`, a real run with mktemp failing, and `[Erm5vYa]`, no script changes into a mktemp result unchecked.
+	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
+	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it.
+	- Acceptance signoff: Self-closed. Reproduced, its test failed before the fix and passes after, and the sweep is answered.
+	- Closed: 20261004-182117
+	- Branch: tmpguard
+	- Commit: 609ccb9
+
+- The README install line fails while v2.1.0 is the newest full release
+	- ID: 2026100315501800
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: High
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Related IDs: 2026100313491873
+	- Steps to reproduce [Bug]:
+		- Run gover's install.bash with no version, against the releases as they are today.
+	- Incorrect behavior [Bug]: It picks v2.1.0 and stops with "publishes no gitsby binary for linux/amd64". v2.1.0 has only the `gitsby` and `gitsby.ps1` scripts.
+	- Expected behavior [Bug]: The install line works on the day the Go build reaches `main`.
+	- Reproduced [Bug]: Yes, 2026-10-03, against the live release list.
+	- Possible cause [Bug]: The installer takes a pre-release only when no full release exists, and the first Go release is v3.0.0-beta.1, which must not reach the install line. So the line resolves to a release the new installer can't install. This was true before item 2026100313491873.
+	- Notes:
+		- Blocks the release that merges gover to `main`.
+		- What the install line should give during the beta is a call for signoff, not a worker.
+	- Actual cause [Bug]: With no tag, both installers took the newest full release from the `releases/latest` redirect and never asked whether it had a Go binary. The release list was read only when there was no full release at all.
+	- Decisions:
+		- 2026-10-03: The install line takes the beta while no full release publishes a gitsby binary. This reverses the earlier rule that the beta must not reach the install line. A full release with a binary always wins over any pre-release, so once 3.0.0 is out, later betas stay off the line.
+		- A binary means any asset named `gitsby-<os>-<arch>`, not one for this platform. Every machine is pointed at the same release, and one it leaves out is told "publishes no gitsby binary for linux/386. It publishes: ..." rather than quietly getting an older beta that covers it.
+		- Newest is the highest version. Full releases are compared only with each other, and pre-releases only with each other, so the `sort -V` trap can't arise. Two pre-releases of one version go by list order, which is publish order.
+		- `releases/latest` is still asked first, since it has no API limit, and settles it when its SHA256SUMS lists a binary. The release list is read only otherwise, in one request, from the asset URLs it carries.
+		- The README's `--tag v3.0.0-beta.1` line is dropped, since the plain line takes that beta. The paragraph says a later pre-release needs `--tag`.
+		- Against: design.md "The proof is the contract, not the installer". Phase 3 now also runs the tag's install.bash, only to read which release it takes. The contract proof is unchanged, and design.md has a bullet for the new step.
+	- Actual fix [Bug]: Both installers, with no tag, keep the redirect's release only when its SHA256SUMS lists a gitsby binary. Otherwise they read the list and take the highest full release with one, else the highest pre-release with one, and say so. When none has one they stop and say so, and when the list can't be read they name the full release that had none. An explicit tag works as before, and `--tag v2.1.0` still stops with "publishes no gitsby binary". release.bash phase 3 runs the tag's install.bash into a throwaway home, says which release the line takes, and warns when a full release isn't taken or a pre-release loses to an older one.
+	- Swept: `releases/latest`, `pre-release`, `full release`, `beta.1` and `one-liner` across install.bash, install.ps1, release.bash, README.md, design.md and test.bash. README, design.md "Release policy" and "Automating a release", and release.bash's header and pre-release comment are updated. `legacy/` is frozen and left alone.
+	- Verified: 14 of the 21 new checks fail against gover's installers and release.bash and pass here. The other 7 pin what must not change (an explicit tag, a full release over a newer beta, no list request when the redirect's release has a binary) and pass on both. test.bash 1365/0, and `cicd.bash --gate` passes. Both installers run against the live release list stop with "No release of yottacore/gitsby publishes a gitsby binary yet", which is today's state.
+	- Note: the checks run under pwsh 7 and bash 5.2 here. Windows PowerShell 5.1 and macOS bash 3.2 were not run, as with the other installer checks.
+	- Branch: betainst
+	- Commit: 4ccd133
+	- Test case: [ErgajCd] through [ErgajEP] (install.bash), [ErgajEe] through [ErgajGU] (install.ps1) and [ErgajGi], [ErgajGw], [ErgajHA] (release.bash phase 3) in test.bash.
+	- Acceptance signoff: Self-closed: the rule was set by hand on 2026-10-03, and the checks fail before the fix and pass after.
+	- Closed: 20261003-171623
+
+- Code Review 20261003 item 1: release.bash can stop partway with no message
+	- ID: 2026100313123851
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: High
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- Have `pr create` print no github.com pull URL, or have curl fail in the proof step.
+	- Incorrect behavior [Bug]: The script exits 1 with nothing printed. The first case is after the branch, the changelog edit and the PR exist. The second is after the release is published, so the proof is skipped.
+	- Expected behavior [Bug]: The `fDie` right below each line runs and says what's left half done.
+	- Reproduced [Bug]: Yes, 2026-10-03. The first by hand, the second by simulation.
+	- Possible cause [Bug]: `x="$(... | grep ...)"` and `x="$(curl ... | sed ...)"` under `set -e` and `pipefail`, with no `|| true`. It's one of the Bash traps.
+	- Origin: release.bash:248 from 6cdfd95 (2026-08-12) and :306 from 5a2239b (2026-09-24). Neither was filed before. The :306 block is the phase 3 path that has never run. Confirmed.
+	- Actual cause [Bug]: Under `set -e`, an assignment from `$( )` takes its command's failure. The PR number grep, the `releases/latest` curl and the build line read from the native binary each ended the run there, above the message meant for it.
+	- Estimated effort: Low
+	- Actual fix [Bug]: Each of the three ends in `|| true`, so the check below it runs and says what happened.
+	- Swept: every `$( )` assignment in release.bash. The build line was the only other one that could end the run unseen. The rest end in `|| true` or `|| fDie`, or run a command that prints its own error.
+	- Verified: both checks fail on `gover` and pass here. Each of the three sites, put back alone, fails its check. test.bash passes 1280 of 1280 with both fixes in.
+	- Branch: relpipe
+	- Commit: f529e4f
+	- Test case: [Erfs74j] and [Erfs75a] in test.bash. They run release.bash past its dry run, with gh, curl and gitsby stubbed. The second is the first run of the phase 3 `releases/latest` block.
+	- Acceptance signoff: Self-closed: reproduced, and the checks fail before the fix and pass after.
+	- Closed: 20261003-141520
+
+- CICD reset: containers
+	- ID: 2026102416313100
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-163131
+	- Opened by: jim-collier
+	- Related IDs: 2026101009380628
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per `Containers` in the shared CICD rules. A full run already uses the pinned image by default, falls back to the box with a warning, and takes `--no-container`.
+		- `--gate`, and the backlog and merge gate runs that replace it, run in the image too, where docker works.
+		- The builds for dogfood, stage 7 and a release come from the image's Go, not the box's. Copying them into place and the tests on other boxes stay outside it.
+		- Earlier decisions this overrides: the line in 2026101009380628 that keeps dogfood and the remote tests' builds on the host, and the private notes, where `--gate` stays on the box.
+	- Progress log:
+	- Test case: Its children's tests: 2026102507133273, 2026102507133278 and 2026102507133283.
+	- Acceptance signoff: Self-closed: every child is Done.
+	- Closed: 20261025-175831
+		- 2026-10-25: Split in three, one per place a build or check still runs on the box: 2026102507133273 for the quick run, 2026102507133278 for the dogfood and stage 7 builds, and 2026102507133283 for the release builds. `--merge-gate` and `--backlog-run-full` are a plain run, so their stages 1-4 and 6 are in the image already, and their stage 7 builds go with the second child.
+	- 2026-10-25: Closed with its last child, 2026102507133283. It had no work of its own left.
 
 - CICD reset: `--quick` in about 10 minutes
 	- ID: 2026102506452483
@@ -439,167 +578,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: cicd.bash's help, refusals, every removal under the run's folder, both `docker run` sites, and the exit trap before and after the run log starts. README and contributing.md.
 	- Acceptance signoff: Self-closed: its test runs passed.
 	- Closed: 20261025-160233
-
-- `raw gh` loops forever when `gh` on PATH leads back to gitsby
-	- ID: 2026101916533300
-	- Type: Bug
-	- Status: Done
-	- Needs local test suite run?: No. test.bash ran 1597/0.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Critical
-	- Opened: 20261019-165333
-	- Opened by: jim-collier
-	- Prereq IDs: 2026102306584122
-	- Target OS: Linux
-	- Test environment: b28l
-	- Steps to reproduce [Bug]:
-		- On a box where the first `gh` on PATH is, or runs, gitsby, run `gitsby raw gh <anything>`.
-		- Not confirmed which form b28l had: a symlink or copy of gitsby named `gh`, or a wrapper script that calls `gitsby raw gh "$@"`.
-	- Incorrect behavior [Bug]:
-		- Endless loop that eats time and a lot of memory. The session that hit it got out by calling the real `gh` by full path.
-	- Expected behavior [Bug]:
-		- Stop at once with a plain error that names the PATH entry, and never start a second copy of itself.
-	- Reproduced [Bug]: 2026-10-21 on b23, with stand-ins on PATH. A wrapper `gh` that runs `gitsby raw gh "$@"` started itself until its counter stopped it at 20. A link named `gh` to the build ran gitsby as gh, which answered "Unknown command 'auth'". The link alone doesn't loop, since gitsby doesn't read its own name, so b28l most likely had a wrapper.
-	- Possible cause [Bug]:
-		- `cmdPassthrough` in main.go checks `gh` only with `mustBeInPath`, then `handover` in exec.go runs it by bare name. Nothing checks that the file found isn't gitsby itself, or something that calls it. A wrapper makes each run start the next, with no limit.
-	- Requirements [Bug fix]:
-		- Find the tool by walking PATH ourselves. Skip any entry that resolves (symlinks followed, `os.SameFile`) to the running gitsby. If nothing else is left, refuse with the usual "Not found in path" error and say a PATH entry points back at gitsby.
-		- Set an env var such as `GITSBY_RAW_ACTIVE` on the handover. If it's already set when `raw` starts, refuse with a message that names it. This catches wrappers the file check can't see. Read it at startup, before the run sets it.
-		- Cover `tea`, `glab`, `lazygit`, and `tig` the same way, since they share the path.
-		- Test case needs a stand-in `gh` that is a wrapper and one that is a symlink to the build. Watch both fail on the current build first, and put a spawn limit on the test so a regression can't eat the box.
-	- Progress log:
-		- 2026-10-19: Logged from a report by another project's session on b28l. Cause is from reading the code, not from a run there. Still need the output of `type -a gh` on b28l.
-		- 2026-10-21: Fixed as the requirements ask. `raw` walks PATH itself, through `exec.LookPath` on each entry, and passes over an entry that is the running binary. It sets `GITSBY_RAW_ACTIVE` to the tool's path before anything runs the tool, the tea probes and the account's gh calls included, and a `raw` that finds it set at startup refuses and names it. The hermetic suites unset it.
-		- 2026-10-22: The guard refused every nested `raw`, hooks and aliases included. `GITSBY_RAW_ACTIVE` is now the chain of `raw` runs above, one short entry each, and a `raw` refuses only to start one already on it. While `raw` runs tools only to check them, such as the tea and gh probes, the chain ends in a probe mark, and a `raw` started under that refuses. A loop with new arguments each time stops at 16 deep.
-		- 2026-10-23: The b28l session was tukzedo's. Its memory.md says a `gh` wrapper running `exec gitsby raw gh "$@"` grew to about 15,000 processes and 56 GB in 28 minutes on 2026-10-19. Tried that wrapper on b23 against the gover build: no loop, 2 or 3 starts and a refusal. The old build loops in every case until the rig's cap. The wrapper still fails, and so do gitsby's own gh calls behind it, filed as 2026102306584122. A wrapper that clears the environment still loops, filed as 2026102306584127. Rig: `private/claude_simple/tools/rawloop-rig.bash`.
-	- Actual cause [Bug]:
-		- As the possible cause says. `raw` ran the tool by bare name and never asked what it found. Every run through a wrapper started the next.
-	- Actual fix [Bug]: `lookTool` in exec.go, used by `cmdPassthrough` for all six tools, and `rawActive` read in `newApp`. The tool still sees its own name as argv[0]. design.md's `raw` bullets say so. Since 2026-10-22, `rawNest` in exec.go builds and checks the chain.
-	- Decisions:
-		- With no other copy left, the refusal is "Not found in path: gh. '<entry>' is gitsby itself.", with the entry as found.
-		- A gitsby entry ahead of a real tool is passed over without a word.
-		- A plain copy of gitsby named `gh` isn't the same file, so only the env check stops it, on its second start.
-		- 2026-10-22, from the answer "What any sane human git user would expect": whatever nesting plain git allows works the same under gitsby, with no refusal and nothing added to the output. That covers hooks under `raw git commit` or `push`, git aliases, lazygit and tig custom commands, and scripts. A loop gitsby causes still stops at once and names what looped.
-		- An entry is the tool's name and a 12-digit hash of its path, the folder and the arguments. The folder is in it so a hook that runs the same command in a submodule isn't taken for a loop. Refusing on the same tool file alone was rejected, since it refuses `raw git` under `raw git`.
-		- A `raw` started by one of gitsby's own checks of a tool is refused, since nothing a check runs has a reason to call `raw`. Without that, the tea wrapper check `[EtMXMQW]` failed, since the `--version` and `logins list` probes each started a nested `raw`.
-		- The depth limit is 16. Plain git would loop forever there.
-	- Branch: round-20261021, then round-20261022
-	- Test case: test.bash `[EtMXMMC]`, `[EtMXMN4]`, `[EtMXMNv]` and `[EtMXMOn]` for gh, and `[EtMXMPe]` and `[EtMXMQW]` for tea, glab, lazygit and tig, as a link and as a wrapper each. Each wrapper quits after 5 starts. Go `[EtMXfI7]` for the PATH walk and `[EtMXfJm]` for the refusal, reworded 2026-10-22 to a repeat on the chain. Since then test.bash `[EtOGJ6U]` and `[EtOGJ6i]` for a pre-commit hook running `raw git` under `raw git commit`, `[EtOGJ6v]` for an alias doing the same, and Go `[EtOGJ79]` for the chain and the probe mark and `[EtOGJ7M]` for the depth limit.
-	- Verified: All 12 new test.bash checks fail on the build before the fix, with the other 1579 passing. The 5 with only the link on PATH were rerun outside the suite with the same command and pattern, and fail there too. After it, test.bash 1579 -> 1591, 0 failed. Both Go tests fail with the self check and the env check taken out. `GOOS=windows go vet` and darwin and freebsd builds pass. The wrapper stand-in started once, then refused.
-	- Verified: 2026-10-21, stage 7 passed on every box. test.bash 1368/0 on b26 and 1271/0 on vmFreeBSD, each 15 more than on 10-19, all from this round, and 1579/0 on vmDebARM64, 23 more, with leakflags' 8. All 12 of this item's test.bash checks ran on each. The Go tests passed there and on vm925w, where `[EtMXfI7]` skips, since it needs symlinks and the exec bit, and `[EtMXfJm]` passed.
-	- Verified: 2026-10-22, test.bash 1594 -> 1597, 0 failed, with the reworded `[EtMXMNv]` and `[EtMXMQW]`. On the build before, the 3 new checks fail. The Go tests fail with each part of `rawNest` taken out in turn: the repeat check, the probe mark, the depth limit, the folder and the separator between arguments. Outside the suite, a wrapper `gh` started once and was refused, and one adding an argument each time stopped at 16. `GOOS=windows go vet` and the Windows test build, and darwin and freebsd builds, pass.
-	- Verified: 2026-10-22, stage 7 passed on every box for the nesting change. test.bash 1371/0 on b26 and 1274/0 on vmFreeBSD, each 3 more than on 10-21, which are `[EtOGJ6U]`, `[EtOGJ6i]` and `[EtOGJ6v]`. 1583/0 on vmDebARM64, 4 more, those 3 plus `[EtOKpZS]`, which sits in the Linux-only pre-push gate block. `[EtOGJ79]` and `[EtOGJ7M]` passed in the Go tests on b26, vmFreeBSD, vmDebARM64 natively and under Wine, and vm925w, where the Go tests were 191 ok and 23 skipped, 2 more ok than on 10-21. `[EtMXfJm]` passed there too. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log`.
-	- Verified: 2026-10-23 on b28l, the box that hit it, on the synced build `c917c95`, which has this fix and 2026102306584122's. In tukzedo-linux's repo there, with tukzedo's wrapper `exec gitsby raw gh "$@"` first on PATH and the real `gh` 2.46.0 behind it, each start counted and capped at 20: `gitsby raw gh auth status`, a bare `gh auth status`, `gh repo view`, a script calling `gh api user`, `gitsby whoami`, `gitsby --no-fetch pr` and `gitsby -q raw gh api rate_limit` all reached the real `gh` as t00mietum and exited 0. 2 to 9 wrapper starts each, with no gitsby left running. The control, the same wrapper with `9e82970` first on PATH as `gitsby`, ran into the cap on both forms tried.
-	- Verified: 2026-10-24 on b23, gover `c87c131`, with the rig. The wrapper reached the stand-in `gh` with 2 starts for `raw gh`, 3 for a bare `gh` or a script, and 6 for `whoami` and `pr`. A link or copy named `gh` is refused by name since 2026102306584132. A wrapper adding an argument each time stopped at 17 deep after 32 starts. No gitsby was left running.
-	- Swept: every `raw` tool shares `cmdPassthrough`, git included. 2026-10-22: `rawActive` has one reader, `cmdPassthrough`, and the variable is unset in all 4 hermetic suites. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
-	- Acceptance signoff: Hand test on b28l, run in the 2026-10-23 round as asked.
-	- Closed: 20261023-195424
-
-- `repo clone` hands git a folder name taken from the URL, and git can read it as an option
-	- ID: 2026100607545802
-	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: High
-	- Opened: 20261006-074900
-	- Closed: 20261006-104608
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: With no folder given, `repo clone` names it after the URL's last part. A URL ending in `--upload-pack=<cmd>.git` put that text in git's argument list as an option. On a local or `file://` clone git runs it as a command.
-	- Expected behavior [Bug]: The URL and the folder always reach git as plain arguments.
-	- Reproduced [Bug]: Yes. A bare repo named `--upload-pack=touch CANARY;git-upload-pack.git`, then `gitsby -q repo clone file://...` made the canary file.
-	- Actual cause [Bug]: `cmdClone` ran `git clone <url> <dir>` with no `--` in front.
-	- Actual fix [Bug]: `git clone -- <url> <dir>`, and the plan line shows the same.
-	- Swept: every `a.step` call for git, gh and tea. gitsby's own parser refuses an argument that starts with a dash, `--` included, checked for `br create`, `repo connect`, `repo url` and `repo create`. So only a value gitsby builds from other input can start with one, and the clone folder was the only such value. Built URLs start with a scheme.
-	- Branch: fuzzwork
-	- Commit: c1b10fc
-	- Test case: fuzz.bash [Ervo5NU]. Red on `gover`'s code, green here.
-	- Verified: fuzz.bash 311/0, test.bash 1491/0, parity.bash 29/0 on the branch.
-
-- test.bash removes the folder it was started from when mktemp fails
-	- ID: 2026100415391365
-	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: High
-	- Opened: 20261004-153913
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]:
-		- Run `cicd/test.bash` with `TMPDIR` set to something that isn't a folder, such as a file.
-	- Incorrect behavior [Bug]: `mktemp -d` fails, and `work` ends up as the current folder. The exit trap then runs `rm -rf` on it. Started from the repo root, that is the whole checkout, `.git` included.
-	- Expected behavior [Bug]: The suite stops before it sets the trap, and removes nothing.
-	- Reproduced [Bug]: Yes, 2026-10-04 on b23, against a scratch folder, which was removed. The same day it removed the gitsby checkout, which came back whole from the 15:30 ZFS snapshot.
-	- Possible cause [Bug]: test.bash line 32 is `work="$(cd "$(mktemp -d ...)" && pwd -P)"`. The mktemp failure is lost, and `cd ""` succeeds without moving.
-	- Note: a probable fix checks the mktemp result before resolving it, and refuses a `work` that isn't a `gitsby-test.*` folder before arming the trap. A grep of `cicd` and the installers finds no other `cd "$(mktemp` site.
-	- Actual cause [Bug]: The mktemp call sat inside the `cd` that resolves it, so its failure was lost. `cd ""` succeeds without moving, so `work` became the current folder, and the exit trap removed it.
-	- Actual fix [Bug]: mktemp runs on its own line and stops the suite when it fails. Before the trap is set, the resolved folder has to be the one mktemp made, named `gitsby-test.*`, and empty. A marker file goes in it, and the trap removes the folder only while the name and the marker are both there.
-	- Swept: install.bash and every script in cicd/, cicd/utility/ and cicd/utility/demo/. Only test.bash wrapped mktemp in a `cd`. The rest assign mktemp straight to a variable under `set -e`, so a failure stops them or leaves an empty value that `${x:?}` refuses before any `rm`. demo-repo.bash and remote-tests.bash already check a marker before removing. The shared files in cicd/utility/include/ have no mktemp and no recursive removal.
-	- Verified: with TMPDIR a file, the suite before the fix removed the folder it was started from, canary included, and the fixed one stopped at mktemp and left it alone. `[Erm5vXj]` fails against the old test.bash and passes against the new one, and so does `[Erm5vYa]`'s pattern on test.bash. With mktemp working, the scratch folder is still removed and the exit code kept, for a plain TMPDIR, one ending in a slash, and one reached through a link.
-	- Verified: shellcheck, `test-id.bash --check`, and `cicd.bash --gate`.
-	- Not run: the full test.bash. No run reaches the trap's refusal of a folder without the marker.
-	- Test case: test.bash `[Erm5vXj]`, a real run with mktemp failing, and `[Erm5vYa]`, no script changes into a mktemp result unchecked.
-	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
-	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it.
-	- Acceptance signoff: Self-closed. Reproduced, its test failed before the fix and passes after, and the sweep is answered.
-	- Closed: 20261004-182117
-	- Branch: tmpguard
-	- Commit: 609ccb9
-
-- The README install line fails while v2.1.0 is the newest full release
-	- ID: 2026100315501800
-	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: High
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Related IDs: 2026100313491873
-	- Steps to reproduce [Bug]:
-		- Run gover's install.bash with no version, against the releases as they are today.
-	- Incorrect behavior [Bug]: It picks v2.1.0 and stops with "publishes no gitsby binary for linux/amd64". v2.1.0 has only the `gitsby` and `gitsby.ps1` scripts.
-	- Expected behavior [Bug]: The install line works on the day the Go build reaches `main`.
-	- Reproduced [Bug]: Yes, 2026-10-03, against the live release list.
-	- Possible cause [Bug]: The installer takes a pre-release only when no full release exists, and the first Go release is v3.0.0-beta.1, which must not reach the install line. So the line resolves to a release the new installer can't install. This was true before item 2026100313491873.
-	- Notes:
-		- Blocks the release that merges gover to `main`.
-		- What the install line should give during the beta is a call for signoff, not a worker.
-	- Actual cause [Bug]: With no tag, both installers took the newest full release from the `releases/latest` redirect and never asked whether it had a Go binary. The release list was read only when there was no full release at all.
-	- Decisions:
-		- 2026-10-03: The install line takes the beta while no full release publishes a gitsby binary. This reverses the earlier rule that the beta must not reach the install line. A full release with a binary always wins over any pre-release, so once 3.0.0 is out, later betas stay off the line.
-		- A binary means any asset named `gitsby-<os>-<arch>`, not one for this platform. Every machine is pointed at the same release, and one it leaves out is told "publishes no gitsby binary for linux/386. It publishes: ..." rather than quietly getting an older beta that covers it.
-		- Newest is the highest version. Full releases are compared only with each other, and pre-releases only with each other, so the `sort -V` trap can't arise. Two pre-releases of one version go by list order, which is publish order.
-		- `releases/latest` is still asked first, since it has no API limit, and settles it when its SHA256SUMS lists a binary. The release list is read only otherwise, in one request, from the asset URLs it carries.
-		- The README's `--tag v3.0.0-beta.1` line is dropped, since the plain line takes that beta. The paragraph says a later pre-release needs `--tag`.
-		- Against: design.md "The proof is the contract, not the installer". Phase 3 now also runs the tag's install.bash, only to read which release it takes. The contract proof is unchanged, and design.md has a bullet for the new step.
-	- Actual fix [Bug]: Both installers, with no tag, keep the redirect's release only when its SHA256SUMS lists a gitsby binary. Otherwise they read the list and take the highest full release with one, else the highest pre-release with one, and say so. When none has one they stop and say so, and when the list can't be read they name the full release that had none. An explicit tag works as before, and `--tag v2.1.0` still stops with "publishes no gitsby binary". release.bash phase 3 runs the tag's install.bash into a throwaway home, says which release the line takes, and warns when a full release isn't taken or a pre-release loses to an older one.
-	- Swept: `releases/latest`, `pre-release`, `full release`, `beta.1` and `one-liner` across install.bash, install.ps1, release.bash, README.md, design.md and test.bash. README, design.md "Release policy" and "Automating a release", and release.bash's header and pre-release comment are updated. `legacy/` is frozen and left alone.
-	- Verified: 14 of the 21 new checks fail against gover's installers and release.bash and pass here. The other 7 pin what must not change (an explicit tag, a full release over a newer beta, no list request when the redirect's release has a binary) and pass on both. test.bash 1365/0, and `cicd.bash --gate` passes. Both installers run against the live release list stop with "No release of yottacore/gitsby publishes a gitsby binary yet", which is today's state.
-	- Note: the checks run under pwsh 7 and bash 5.2 here. Windows PowerShell 5.1 and macOS bash 3.2 were not run, as with the other installer checks.
-	- Branch: betainst
-	- Commit: 4ccd133
-	- Test case: [ErgajCd] through [ErgajEP] (install.bash), [ErgajEe] through [ErgajGU] (install.ps1) and [ErgajGi], [ErgajGw], [ErgajHA] (release.bash phase 3) in test.bash.
-	- Acceptance signoff: Self-closed: the rule was set by hand on 2026-10-03, and the checks fail before the fix and pass after.
-	- Closed: 20261003-171623
-
-- Code Review 20261003 item 1: release.bash can stop partway with no message
-	- ID: 2026100313123851
-	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: High
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]:
-		- Have `pr create` print no github.com pull URL, or have curl fail in the proof step.
-	- Incorrect behavior [Bug]: The script exits 1 with nothing printed. The first case is after the branch, the changelog edit and the PR exist. The second is after the release is published, so the proof is skipped.
-	- Expected behavior [Bug]: The `fDie` right below each line runs and says what's left half done.
-	- Reproduced [Bug]: Yes, 2026-10-03. The first by hand, the second by simulation.
-	- Possible cause [Bug]: `x="$(... | grep ...)"` and `x="$(curl ... | sed ...)"` under `set -e` and `pipefail`, with no `|| true`. It's one of the Bash traps.
-	- Origin: release.bash:248 from 6cdfd95 (2026-08-12) and :306 from 5a2239b (2026-09-24). Neither was filed before. The :306 block is the phase 3 path that has never run. Confirmed.
-	- Actual cause [Bug]: Under `set -e`, an assignment from `$( )` takes its command's failure. The PR number grep, the `releases/latest` curl and the build line read from the native binary each ended the run there, above the message meant for it.
-	- Estimated effort: Low
-	- Actual fix [Bug]: Each of the three ends in `|| true`, so the check below it runs and says what happened.
-	- Swept: every `$( )` assignment in release.bash. The build line was the only other one that could end the run unseen. The rest end in `|| true` or `|| fDie`, or run a command that prints its own error.
-	- Verified: both checks fail on `gover` and pass here. Each of the three sites, put back alone, fails its check. test.bash passes 1280 of 1280 with both fixes in.
-	- Branch: relpipe
-	- Commit: f529e4f
-	- Test case: [Erfs74j] and [Erfs75a] in test.bash. They run release.bash past its dry run, with gh, curl and gitsby stubbed. The second is the first run of the phase 3 `releases/latest` block.
-	- Acceptance signoff: Self-closed: reproduced, and the checks fail before the fix and pass after.
-	- Closed: 20261003-141520
 
 - CICD reset: dogfood and stage 7 builds from the image's Go
 	- ID: 2026102507133278
@@ -1767,6 +1745,28 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: stage 7's harness on gover after round 4, 2026-10-04. b26: Go tests pass, and test.bash against the universal build 1255/0. vmFreeBSD, vmDebARM64 and vm925w: Go tests pass. The Unix boxes ran Go tests only this time, since no Unix builds were passed. Their full test.bash ran earlier the same day and failed only `[Emq7Y6y]`, fixed since.
 	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
 	- Closed: 20261004-190953
+
+- release.bash --help prints nothing
+	- ID: 2026102517464688
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261025-174646
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- `bash cicd/release.bash --help`
+	- Incorrect behavior [Bug]: No output, exit 0.
+	- Expected behavior [Bug]: The header's Purpose, Syntax and Notes, as `cicd.bash --help` prints its own.
+	- Reproduced [Bug]: 2026-10-25, no output and exit 0.
+	- Possible cause [Bug]: The `--help` arm looks for a `- Purpose:` line, and release.bash's header spells it `Purpose:`.
+	- Actual cause [Bug]: As above.
+	- Actual fix [Bug]: The arm looks for `Purpose:`, as remote-tests.bash and the utility scripts do.
+	- Branch: round-20261025b
+	- Test case: test.bash [EtlSvK7], once for each script whose `--help` prints its header, 7 now.
+	- Verified: [EtlSvK7]'s command fails on the old release.bash and passes on the new one. test.bash 1748/0 in `--backlog-run-quick`.
+	- Swept: every script with a `--help` arm. cicd.bash, remote-tests.bash, pre-push.bash, gen-winres.bash, keep-build.bash and spawn-count.bash print their headers. test.bash, fuzz.bash, parity.bash and install.bash print a usage line, and backlog-check.bash, lint-report.bash, spawn-report.bash and test-id.bash print their headers their own way.
+	- Acceptance signoff: Self-closed: its test failed before and passes after.
+	- Closed: 20261025-181343
 
 - test.bash's remote harness checks fail when stage 7 is narrowed to one box
 	- ID: 2026102321011743
