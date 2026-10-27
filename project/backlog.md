@@ -180,6 +180,100 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
 		- Per the regression bullet in `Testing` in the shared CICD rules. Done items in the new format name their test, all but 2026100611181886. Most old-format Done items name none.
 		- Each of those gets a test where one could exist and would make sense, or a line saying why not.
+	- Progress log:
+		- 2026-10-26: Split, too big for one pass. 399 old-format Done items name no test, 299 bugs and 100 features. Children, by backlog section: 2026102617594206, 2026102617594208, 2026102617594210, 2026102617594212, 2026102617594214, 2026102617594216, 2026102617594218 and 2026102617594221.
+		- 2026-10-26: 2026102617594206 is done, with 2 new checks. The other 7 are Queued.
+
+- CICD reset: a test for every Done item, Code review 20260909
+	- ID: 2026102617594208
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261026-175942
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313106
+	- Requirements [Feature]:
+		- The old-format items under `Code review 20260909 - the pass against the standing directives`. 21 items.
+		- Each item there with no test row gets a `Test:` row that names its test by ID, or says in a few words why there is none.
+		- Where a test could exist and would make sense but doesn't, add it, watched to fail first.
+
+- CICD reset: a test for every Done item, the 20260812 groups and the 20260819 to 20260821 reviews
+	- ID: 2026102617594210
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261026-175942
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313106
+	- Requirements [Feature]:
+		- The old-format items under `Accounts and arguments, 20260812`, `Installers, 20260812`, `Pipeline, 20260812`, `Documentation, 20260812`, and code reviews 20260821, 20260819d, 20260819c, 20260819b and 20260819. 52 items.
+		- Each item there with no test row gets a `Test:` row that names its test by ID, or says in a few words why there is none.
+		- Where a test could exist and would make sense but doesn't, add it, watched to fail first.
+
+- CICD reset: a test for every Done item, Code review 20260819a
+	- ID: 2026102617594212
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261026-175942
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313106
+	- Requirements [Feature]:
+		- The old-format items under `Code review 20260819a`. 66 items.
+		- Each item there with no test row gets a `Test:` row that names its test by ID, or says in a few words why there is none.
+		- Where a test could exist and would make sense but doesn't, add it, watched to fail first.
+
+- CICD reset: a test for every Done item, code reviews 20260818, 20260813 and 20260812
+	- ID: 2026102617594214
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261026-175942
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313106
+	- Requirements [Feature]:
+		- The old-format items under those three reviews. 33 items.
+		- Each item there with no test row gets a `Test:` row that names its test by ID, or says in a few words why there is none.
+		- Where a test could exist and would make sense but doesn't, add it, watched to fail first.
+
+- CICD reset: a test for every Done item, code reviews 20260731 to 20260723
+	- ID: 2026102617594216
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261026-175942
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313106
+	- Requirements [Feature]:
+		- The old-format items under code reviews 20260731, 20260730, 20260727b, 20260727, 20260726, and 20260725 and 20260723. 102 items. Likely too big for one pass, so split it by review first.
+		- Each item there with no test row gets a `Test:` row that names its test by ID, or says in a few words why there is none.
+		- Where a test could exist and would make sense but doesn't, add it, watched to fail first.
+
+- CICD reset: a test for every Done item, features, first half
+	- ID: 2026102617594218
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261026-175942
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313106
+	- Requirements [Feature]:
+		- The old-format items in `Done - Features and enhancements`, from the top through `` `account set` writes one key of one account into the accounts file ``. 48 items.
+		- Each item there with no test row gets a `Test:` row that names its test by ID, or says in a few words why there is none.
+		- Where a test could exist and would make sense but doesn't, add it, watched to fail first.
+
+- CICD reset: a test for every Done item, features, second half
+	- ID: 2026102617594221
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261026-175942
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313106
+	- Requirements [Feature]:
+		- The old-format items in `Done - Features and enhancements`, from `Other Git hosts are first-class` to the end. 52 items.
+		- Each item there with no test row gets a `Test:` row that names its test by ID, or says in a few words why there is none.
+		- Where a test could exist and would make sense but doesn't, add it, watched to fail first.
 
 - CICD reset: test IDs
 	- ID: 2026102416313107
@@ -268,6 +362,32 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Keep the `golang.org/toolchain` modules for the `toolchain` line in go.mod, which `go.sum` doesn't name, and the `/go.mod`-only entries it does.
 		- test.bash builds the SHCL 2.x build offline from the cache ([ErkNuhS]), so check that every module it needs is in `go.sum`.
 		- Module paths in the cache spell capitals as `!` plus the lower case letter, and go makes the files read-only.
+
+- CICD reset: a test for every Done item, the top-level bugs
+	- ID: 2026102617594206
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261026-175942
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313106
+	- Requirements [Feature]:
+		- 2026100611181886, the one new-format Done item with no test named, and the old-format `Done - Bugs` items that sit at the top level, outside a code review group. 25 items.
+		- Each item there with no test row gets a `Test:` row that names its test by ID, or says in a few words why there is none.
+		- Where a test could exist and would make sense but doesn't, add it, watched to fail first.
+	- Progress log:
+		- 2026-10-26: Each of the 25 old-format items has a `Test:` row, found from the checks and Go tests its fix commit added. 2026100611181886 has a `Test case:` row.
+		- 2026-10-26: 2 new checks where none was: [EtrIUYR], the backlog gate's count of open review items, and [EtrJ3N0], the committed demo gif under a minute.
+	- Decisions:
+		- A Go test is named by the ID on its func line, like a suite check.
+		- A test renamed or removed since is named as it is now, with the old name. `TestDisplayPath` went with the `~` fold in 0ad1374, so that item names the Windows run of the Go tests.
+		- The gif check's bound is a minute, against design.md's "about fifty seconds", so a scene's small change in timing doesn't trip it.
+	- Branch: round-20261026
+	- Test case: test.bash [EtrIUYR] and [EtrJ3N0]. The rest name tests that already ran.
+	- Verified: `--backlog-run-quick lint suite` passed in the image, test.bash 1757/0. [EtrIUYR]'s fixture gives `(0 listed)` against backlog-check.bash from 2319e09, before the fix, and with the count's `^\t` pattern put back, and `(2 listed)` as it is. [EtrJ3N0]'s test fails on the gif before 37a4adf, 124.8 s, and passes on the committed one, 47.7 s.
+	- Swept: all 25 items, each against its fix commit's added checks and Go tests, with each ID grepped once in the suites. Each item kept its wording; only the rows were added.
+	- Closed: 20261026-180932
+	- Acceptance signoff: Self-closed, tests and backlog rows only.
 
 - CICD reset: one line at the end of a run for what it removed
 	- ID: 2026102617543861
@@ -1084,6 +1204,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: ptyguard
 	- Verified: test.bash 1222/0 on vmFreeBSD.
 	- Closed: 20261006-111818
+	- Test case: test.bash [ErsjjF5] itself, which failed on vmFreeBSD before the fix. Stage 7 runs it on vmFreeBSD and b26, where the BSD `script` is.
 
 - Code Review 20261005 item 1: workflows.md says gitsby won't push your own work to `main` or `dev`, and it does
 	- ID: 2026100516202544
@@ -3169,6 +3290,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Fixed: moved to the shcl 3.0 beta from its `dev` branch (1f88009), pinned by commit until it is tagged. A backslash outside double quotes is itself. The import moved to `yottacore` with it.
 	- Every file reads by the 3.0 rules, including one written under 2.x. A path rule the old module wrote doubled (`~\\dev`) still names its folder, since a rule reads either slash. Only a pre-release build ever wrote this layout, so there is no migration step.
 	- Verified: 1 new check in test.bash, 1028 -> 1029, and `TestConfigLoadBackslashes`. Both fail on `gover`. Go tests pass on vm925w, 143/0.
+	- Test: [Eqp3jdg] in test.bash, and `TestConfigLoadBackslashes` [Eqp3jdh] in Go.
 
 - ✅ The demo gif runs about two minutes, against a budget of twenty to thirty seconds.
 	- Closed: 20260916-140754
@@ -3179,6 +3301,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Note: the old target predates showing the confirmation. design.md now puts it at about fifty seconds.
 	- Verified: 3 new checks, 1013 -> 1016, each watched red against the code before this.
 	- Origin: 1a5a1a3, the first demo, looped in 18.4 s. 12d7d2d took it to 67 s, 7ed0e23 to 84 s and 30af5c5 to 122 s. The directives have asked for twenty to thirty seconds since at least 2026-08-22. Confirmed.
+	- Test: [Eq4UJbk], [Eq4UJbl] and [Eq4UJbm] in test.bash, for the answered confirmation. [EtrJ3N0] holds the committed gif under a minute, added 2026-10-26 and failing on the gif before the fix.
 
 - ✅ The backlog gate says nothing is listed, whatever the backlog holds.
 	- Closed: 20260916-075518
@@ -3189,6 +3312,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: 2319e09, the commit that added the gate. Confirmed.
 	- Fixed: the pattern carries a real tab, and closed items are left out of the count.
 	- Verified: 0 before and 12 after, against the same backlog. shellcheck clean.
+	- Test: [EtrIUYR] in test.bash, added 2026-10-26: two open review items out of four, one in each format. It fails on the script before the fix, and with the count's tab pattern put back.
 
 - ✅ A `core.sshCommand` holding a quote is dropped from every fetch gitsby runs.
 	- Closed: 20260915-124019
@@ -3201,6 +3325,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Fixed: a quoted ssh command is left for git to run as is, so the fetch uses the repo's key and goes without the connect timeout. Adding the timeout would mean re-shelling the value. Recorded in design.md.
 	- Sweep: `remoteEnv` is the only place gitsby exports an ssh command for git. The account's `sshkey` can't carry a quote, and a caller's own `GIT_SSH_COMMAND` was already left alone.
 	- Verified: `TestRemoteEnvLeavesAQuotedSSHCommandToGit` fails on `gover`. With the quoted command above, `status` now fetches with `-i /k y/key`.
+	- Test: `TestRemoteEnvLeavesAQuotedSSHCommandToGit` [EpyGORs] in Go.
 
 - ✅ A failing `py_compile` passes lint stage 1, and the pre-push gate with it.
 	- Closed: 20260915-121200
@@ -3212,6 +3337,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Fixed: a failed compile stops lint with `FAILED: py_compile`. The cache goes to a temporary folder that is removed after, so nothing is written beside the file.
 	- Sweep: no other lint check sits at the head of an `&&` list.
 	- Verified: 1 new check in test.bash, the gate failing when `python3` does, which fails on `gover`. 950 -> 953 with item 6's two. A real lint run leaves the tree's own cache untouched.
+	- Test: [EpsVDHv] in test.bash, on its `python3` pass, and [Er1LxTT] for the cache folder.
 
 - ✅ A folder rule with `*`, `?` or `[` in it binds repos in plain git that gitsby never matches.
 	- Closed: 20260915-120313
@@ -3224,6 +3350,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Sweep: `account apply` is the only place a rule goes to git. An include written by an earlier apply is still recognized as ours and replaced, since that match is on the fragment path.
 	- Decided against: a warning for a glob character in a rule. A `path` like `~/d*` already shows as a folder that can never match, and the `account set` help says `pathcontains` is a run of folder names.
 	- Verified: 4 new checks in test.bash, all failing on `gover`, for `path` and `pathcontains`. Each binds the folder with `[` in its name and not its twin without. `TestAccountApplyPlanEscapesGlobs` fails on `gover`. On vm925w the escaped rules bind the same folders in plain git, and the Go tests pass.
+	- Test: [Epy6SgS] to [Epy6SgV] in test.bash, and `TestAccountApplyPlanEscapesGlobs` [Epy6Sgb] in Go.
 
 - ✅ A relative `tokenfile` or `sshkey` is read from whatever folder a command runs in.
 	- Closed: 20260915-120313
@@ -3234,6 +3361,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Fixed: both keys are held to the same absolute-or-`~` test as `path`. A relative one is listed as ignored, reads no token and writes no key. `account set` writes a relative value as the file it names from where it runs. A relative `gitsby.ghTokenFile` in git config reads no token.
 	- Sweep: `account set` now checks a key for shell characters after resolving it, since the folder it was typed in can hold a space. No other stored value names a file.
 	- Verified: 5 new checks in test.bash, all failing on `gover`, 941 -> 950 with the four above. `TestConfigIgnoresARelativeKeyFile` fails on `gover`. The same results on vm925w. fuzz.bash 301/0, parity.bash 27/0.
+	- Test: [Epy6SgW] to [Epy6Sga] in test.bash, and `TestConfigIgnoresARelativeKeyFile` [Epy6Sgc] in Go.
 
 - ✅ The Go unit tests fail on Windows.
 	- Closed: 20260915-113307
@@ -3245,6 +3373,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Sweep: on Windows the accounts file never showed as `~`. The home folder and APPDATA are spelled with backslashes, and the file name goes on with `/`. Confirmed, and fixed here: either slash and any case count there now.
 	- Fixed: each fixture is spelled the way the platform running it writes that path, and every assertion checks what it did before. `TestCanonPath` also covers the MSYS drive fold.
 	- Verified: all 131 Go tests pass on vm925w, the lock tests and the lease-delete quoting tests included. The two new Windows cases in `TestDisplayPath` fail against `gover`.
+	- Test: the Go tests on the Windows box in stage 7, and `TestCanonPath` [EnQKNsM] for the drive fold. `TestDisplayPath`, with the two Windows cases, went with `displayPath` in 0ad1374, when paths stopped folding to `~`.
 
 - ✅ On Windows, `account apply` refuses to run when the accounts file is named with backslashes.
 	- Closed: 20260915-113307
@@ -3257,6 +3386,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Sweep: a `--config` named with no folder failed the same way on every platform, as `wl.shcl/accounts`. A relative include would be wrong anyway, since git reads one from its own config's folder. Confirmed on Linux, and fixed here. `account set` finds the file's folder the same way now.
 	- Fixed: the fragments go in the absolute folder holding the accounts file, however the file was named. Apply's two refusals name that folder the way the platform writes it.
 	- Verified: 2 new checks in test.bash, both failing on `gover`, 939 -> 941. `TestIncludeDir` fails on `gover` on Linux and on Windows. On vm925w, apply with the file named in backslashes writes the fragment, and plain git then uses the account's email in the rule's folder. parity.bash 27/0.
+	- Test: [EpxzLzs] and [EpxzLzt] in test.bash, and `TestIncludeDir` [EpxzLzu] in Go.
 
 - ✅ `br prune` says to run it again for origin's copies it left alone, and the second run can't see them.
 	- Closed: 20260915-111338
@@ -3270,6 +3400,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Keep: offline, prune still deletes the local branch and holds origin's copy.
 	- Verified: 5 new checks in test.bash, all failing on `gover`. The first prune's count check now expects one local delete fewer.
 	- Verified on Windows, 20260915: in pwsh 7.6 and Windows PowerShell 5.1, each printed delete reaches git as the words it names, for branch names holding quotes, `$`, `;`, `&`, parentheses, backticks, `%`, braces and dots.
+	- Test: [EpxuX5c], [EpxuX5d], [EpxuX5n], [EpxuX5o] and [EpxuX5p] in test.bash, with [EptMdz1] as changed.
 
 - ✅ A tag on origin with a branch's name stops every remote delete in `br prune`.
 	- Closed: 20260915-111338
@@ -3282,6 +3413,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Sweep: once the tag is fetched, git lists the branch here as `heads/amb`, so prune tried to delete a branch that doesn't exist. Prune's listings and the default-branch lookup now read the name whole. `br merge`'s delete names the full ref too.
 	- Fixed: every remote delete names `refs/heads/<branch>`.
 	- Verified: 3 new checks in test.bash. Two fail on `gover`; the kept tag is a regression guard.
+	- Test: [EpxuX5e], [EpxuX5f] and [EpxuX5g] in test.bash.
 
 - ✅ `br merge` merges a tag that has the branch's name, instead of the branch.
 	- Closed: 20260915-111338
@@ -3293,6 +3425,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Sweep: `release` merges `dev`, fast-forwards `dev` and checks ancestry by short name, and the hotfix back-merge merges `main` or `origin/main` the same way. All now name full refs. Checkouts stay as they are.
 	- Fixed: `br merge`, `release` and the back-merge name the full ref of what they merge.
 	- Verified: 2 new checks in test.bash, both failing on `gover`.
+	- Test: [EpxuX5h] and [EpxuX5i] in test.bash.
 
 - ✅ `br merge --no-fetch` deletes its branch on origin after someone else pushed to it.
 	- Closed: 20260915-111338
@@ -3304,6 +3437,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: `cmdMerge` since 86ca0b1 (go branch commands). No earlier round saw it. Confirmed.
 	- Fixed: `br merge` asks origin before deleting its copy, and leases the delete on the tip it merged. A copy holding commits the merge doesn't have is left alone, and the warning names the `br switch` and `br merge` that bring them in. A copy already gone is reported as gone.
 	- Verified: 4 new checks in test.bash. Three fail on `gover`, including following the advice; the merge's push is a regression guard. Across the four items test.bash went 925 -> 939, with parity.bash 27/0 and the Go tests green. Linux only.
+	- Test: [EpxuX5j] to [EpxuX5m] in test.bash, and `TestLeaseDeleteLine` [EpxuX5r] in Go.
 
 - ✅ Two `account set` runs at once on one accounts file keep only one of the two keys.
 	- Closed: 20260915-104204
@@ -3317,6 +3451,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Sweep: `account set` is the only writer of the accounts file, and the flat-file conversion saves through the same path. `account apply` writes its fragments whole, but two runs write the same text from one file, and its includeIf edits go through git, which locks its own config.
 	- Fixed: `account set` takes a lock beside the accounts file, reads the file again, and refuses if it changed since the plan read it. A create holds the same lock. A lock that stays put is waited on for three seconds, then refused by name, with the command that removes it.
 	- Verified: 3 new checks in test.bash, 922 -> 925. With the re-read taken out, two runs at once lost a key in 10 of 10 tries and both new Go tests on it fail. Go tests green, parity.bash 27/0. Linux only so far.
+	- Test: [EpxmDk0], [EpxmDk1] and [EpxmDk2] in test.bash, and `TestAccountSetKeepsBothOfTwoEditsAtOnce` [EpxmDk3] and `TestAccountSetRefusesAFileThatChanged` [EpxmDk4] in Go.
 
 - ✅ A Gitea remote's identity line says tea has no login for the host when tea failed to answer.
 	- Closed: 20260914-191247
@@ -3330,6 +3465,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Sweep: `forgeCLIWho`, which the identity check reads, already takes both as unknown, and the two `pulls list` reads in `pr` check whether tea ran. The Git host line also compared its "unknown" text with the ssh key's account, so a write with no tea login printed a NOT-the-key warning. Fixed here.
 	- Fixed: the Git host line says tea couldn't be asked and repeats tea's reason when tea fails, and keeps "has no login for this host" for a tea that answered. Only a login tea named is compared with the ssh key's account.
 	- Verified: 3 new checks in test.bash, 912 -> 915. Two fail on `gover`, and the no-login check is a regression guard. `TestShowForgeLine` fails on `gover` for the no-login row. Go tests green, parity.bash 27/0. Linux only.
+	- Test: [Epu08TQ], [Epu08TR] and [Epu08TS] in test.bash, and `TestShowHostLine` [Eq2wii5] in Go, named `TestShowForgeLine` at the time.
 
 - ✅ With `XDG_CONFIG_HOME` set, `account set` creates a new accounts file that hides one in a `~/.config/gitsby` folder it can't search.
 	- Closed: 20260914-192150
@@ -3342,6 +3478,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Sweep: reads, the create check and the refusal after a lost race all look a place up through one probe, so all three changed together. A link whose target can't be looked up read as a link to nothing, and now reads as unknown too.
 	- Fixed: a place an accounts file can live that can't be looked in no longer counts as empty. `account set` refuses to create while one is there. It names the file and the reason, and gives `chmod u+x` when the folder the file sits in is the one that can't be searched. Reads still pass over it.
 	- Verified: 5 new checks in test.bash. On `gover` the create went ahead and wrote the new file in `XDG_CONFIG_HOME`, and the new Go tests fail there. The link case fails with its half of the fix taken out. The Windows, macOS and FreeBSD builds compile. Linux only.
+	- Test: [Epu2PTM] to [Epu2PTQ] in test.bash, and `TestAccountSetRefusesAPlaceItCantLookIn` [Epu2PTT] and `TestLookupFix` [Epu2PTV] in Go.
 
 - ✅ `account set` crashes when the accounts file opens but its read fails.
 	- Closed: 20260914-192150
@@ -3354,6 +3491,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Sweep: the SSH line also checks the key file ssh names by opening it. That is display only, and ssh reports its own failure, so it stays. A token file is read in full, and a failed read already counts as no token.
 	- Fixed: a file counts as readable only once it reads to the end, and the loader records it only after the read. A named file that fails to read is refused like one that won't open. A found one is passed over by reads and refused by `account set` as a file it can't read.
 	- Verified: 2 new checks in test.bash, and with the 5 above, 915 -> 922. On `gover` the named case panics and the found one is taken up, and the new Go test fails there. Go tests green, parity.bash 27/0. Linux only, since the case needs `/proc/self/mem`.
+	- Test: [Epu2PTR] and [Epu2PTS] in test.bash, and `TestConfigThatFailsToRead` [Epu2PTU] in Go.
 
 - ✅ Code review 20260909 - the pass against the standing directives. Every defect is closed, and the enhancements are under Done too.
 	- Opened: 20260909-184419
@@ -3609,6 +3747,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Closed: 20260822-113804
 	- `strconv.Atoi` answers overflow with the clamped maximum, not zero, so the bump wrapped it negative. Found by the new fuzz targets on their first full pipeline pass; crasher committed as a regression seed.
 	- Fixed: an unreadable patch number starts the count over at zero, as the comment beside it already claimed.
+	- Test: `FuzzNextVersion` [EndU98M] in Go, which replays the committed seed `6f637a04714948cb` on every `go test`.
 
 - ✅ `account set`'s syntax block hung its indent off the `gitsby:` prefix, which is on one line only.
 	- Opened: n/a
@@ -3617,6 +3756,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Fixed: it nests two spaces at a time. The written line is under `Syntax:`, the placeholders under that, `Examples:` alongside them and the commands one deeper.
 	- Second example added, for picking an account by a run of folder names rather than an absolute path - the case a person with one employer folder full of repos actually has.
 	- That example spells `pathContains` with a plain `my-employer/github`, not a glob: the matcher takes a run of folder names, so a `*` in the example would teach a pattern language that isn't there and a rule that never fires.
+	- Test: `TestAccountSetUsageNests` [Er1LxTm] in Go, and [EncX1Q8] in test.bash for the example that is not a glob.
 
 - ✅ `account set`'s syntax line named three placeholders and defined none of them.
 	- Opened: 20260821-132716
@@ -3625,6 +3765,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- The only person who ever reads it is the one who just typed the command wrong, and it left them to work out what an account is, which keys exist, and what a value looks like.
 	- Fixed: a block. It names the line that gets written - `account.<account>.<key> = <value>` - then defines each placeholder, and lists all ten keys off the same constant the unknown-key refusal reads.
 	- The example is now two commands on one account name, a folder and a login, since that repetition is what `<account>` means.
+	- Test: [EncI7No], [EncI7Np] and [EncI7Nq] in test.bash.
 
 - ✅ `account list`'s header raised more questions than it answered.
 	- Opened: n/a
@@ -3635,6 +3776,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Fixed: `Here` is now `Current dir`, `Resolves to` is now `Account` - the label `status` already puts on the same answer - and an unconfigured folder gets `(nothing configured)`, full stop.
 	- An account that resolves but names no login no longer asserts `gh` either: it names whichever tool serves that account's own host, and names none where there is none.
 	- `status` and `whoami` said `Directory` for that same value, so they moved to `Current dir` too - one label, one constant, shared by all four places that print it.
+	- Test: [Enc14vo] to [Enc14vr], [Enc2nqq] and [Enc2nqr] in test.bash.
 
 - ✅ On Windows, `account list` printed the same directory two ways on the one screen.
 	- Opened: n/a
@@ -3643,6 +3785,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- The folder rules are held in the form paths are matched in - lower case, forward slashes - and that form was going straight to the display. Same disk, same tree, two spellings.
 	- Fixed: every path printed anywhere is spelled the platform's way, which on Windows means backslashes and an upper-case drive letter. The internal form is untouched, so nothing about matching changed.
 	- Covers the config file, `Here`, the folder rules, the machine-free `anywhere` rules, the ssh key, and a token file. No effect off Windows.
+	- Test: `TestWindowsPath` [EnbeoL3] in Go. Only Windows shows it, so the suite has no check of its own.
 
 - ✅ The Account line explained an account it could not apply in a single run-on clause nobody could act on.
 	- Opened: 20260820-160751
@@ -3654,6 +3797,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- "(no login named)" is gone from both the status line and `account list`; an account that names no login is now named by its own name, which is the thing you have to go and edit.
 	- Second pass: `(from config 'work')` is gone from the applied line too. It named neither the file nor which config, and there are two of those in play - `gitsby.ghAccount` is a git config key and the account blocks are not. Every account now gets `From:` (the variable, the git config key, or the account block) and `File:` (the accounts file), on their own lines under the answer.
 	- Displayed config paths fold a leading home directory back to `~`, so the file reads as somebody would type it rather than filling the line.
+	- Test: [EnX7v96], [EnX7v97], [EnX7v98], [EnXCRqK] and [EnXe9aK] to [EnXe9aO] in test.bash.
 
 - ✅ The account display never learned about `host` and `user`, so a Gitea account was reported as a GitHub one that had nothing set.
 	- Opened: 20260820-132706
@@ -3661,6 +3805,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Found on the first real Gitea repo: `status` named "(no GitHub account named)" and said the account was on github.com, which nothing in the config had said.
 	- Four places read `ghAccount` alone. The status line and `account list` both named only the GitHub field; the "no token" case was keyed on it too, so a correctly declared Gitea account with no token said nothing at all and read as applied.
 	- Fixed: all four ask the account's login on the account's own host. An unstated host is now reported as unstated and names the key that fixes it, and `account list` shows the host, marked `(default)` where the file never said.
+	- Test: [EnWSLMW] to [EnWSLMe] in test.bash, and `TestAccountListNamesTheHost` [EnWSLMf] and `TestAccountListHidesTheHostWithOneGitHost` [Eq2wii0] in Go.
 
 - ✅ `repo clone` resolves its account from the folder you are standing in, not the one it is cloning into.
 	- Opened: 20260819-092526
@@ -3669,6 +3814,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Three ways in, all now closed: the folder rules read the current directory, `gitsby.ghAccount` was read off the surrounding repo, and the owner of that repo's origin stood in when nothing else answered.
 	- Fixed: the destination folder decides. The surrounding repo's git config is not asked (a destination has no config yet, and an includeIf on gitdir cannot answer for a repo that does not exist), and no owner is guessed - with no rule for the destination, gh stays on its own account.
 	- Noticed while making clone accept the `owner/name` shorthand; left alone there because it changes which credentials a clone uses, not just what it accepts.
+	- Test: [EnPebrM] to [EnPebrS] in test.bash.
 
 - ✅ Accounts and arguments, 20260812.
 	- Opened: 20260812-150636

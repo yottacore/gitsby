@@ -5675,6 +5675,18 @@ GHEOF
 	else
 		fEcho_Clean "  skip: [EtUDfjj] workflow parse check (needs python3 with PyYAML)"
 	fi
+	## The backlog gate's count of open review items once read 0 whatever the file held, and
+	## would have counted closed ones too. Two of the four here are open, one in each format.
+	local blc="${work}/blc"
+	mkdir -p "${blc}/cicd/utility"
+	cp "${root}/cicd/utility/backlog-check.bash" "${blc}/cicd/utility/"
+	git init -q "${blc}"
+	printf '%s\n' '- Code Review 20260101 item 1: open' $'\t- Status: Queued' $'\t- Origin: x' \
+		'- Code Review 20260101 item 2: closed' $'\t- Status: Done' $'\t- Origin: x' \
+		'- ✅ Code review 20260102' $'\t- 🔘 Code Review 20260102 item 1: open' $'\t\t- Origin: x' \
+		$'\t- ✅ Code Review 20260102 item 2: closed' $'\t\t- Origin: x' > "${blc}/backlog.md"
+	fAssertOut "[EtrIUYR] the backlog gate counts the open review items, and only those" '\(2 listed\)$' \
+		bash "${blc}/cicd/utility/backlog-check.bash" --backlog "${blc}/backlog.md"
 	## The profiling step. A sampling profile would be a flat wall here - this program is
 	## blocked on git for all of its wall clock - so what gets measured is how often it forks.
 	fAssert "[EnQTPxv] a spawn-count step exists and gates" \
@@ -6064,6 +6076,11 @@ EOF
 		## file is the one a reader sees.
 		fAssert "[Epsq7r0] the committed demo gif ends on three seconds of black" \
 			python3 -c 'import sys; from PIL import Image; im = Image.open(sys.argv[1]); im.seek(im.n_frames - 1); sys.exit(0 if im.info.get("duration") == 3000 and im.convert("RGB").getextrema() == ((0, 0), (0, 0), (0, 0)) else 1)' "${root}/assets/demo.gif"
+		## design.md puts the loop at about fifty seconds. It once ran past two minutes.
+		fAssert "[EtrJ3N0] and loops in under a minute" \
+			python3 -c 'import sys; from PIL import Image; im = Image.open(sys.argv[1]); ms = 0
+for i in range(im.n_frames): im.seek(i); ms += im.info.get("duration", 0)
+sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 	else
 		fEcho_Clean "  skip: demo renderer checks (need python3 with Pillow, and fc-match)"
 	fi
