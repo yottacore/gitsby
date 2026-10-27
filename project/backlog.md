@@ -33,12 +33,27 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- The cleanup line says a run folder freed about 8B
+	- ID: 2026102620355012
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261026-203550
+	- Opened by: jim-collier
+	- Related IDs: 2026102617543861
+	- Steps to reproduce [Bug]:
+		- `--backlog-run-quick` or `--backlog-run-full` at 99b3120, to the end.
+	- Incorrect behavior [Bug]: Both end with `Cleanup: removed the run folder; freed about 8B`, after a full run that built and copied trees for 5 boxes.
+	- Expected behavior [Bug]: The size the run folder had before it was removed, or no size when it can't be known.
+	- Possible cause [Bug]: Not looked at yet. The size may be read after the folder's contents are already gone, or from the folder entry itself.
+
 - CICD reset: CPU and priority on the Windows box
 	- ID: 2026102508333054
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 		- 2026-10-26: Back from testing. The class and the count hold on Windows, but the exit code doesn't come back. The template has no Re-opened, so Queued.
-	- Needs external testing: once the exit code comes back, stage 7's Go tests on b29w or vm925w with one test failing on purpose. The box fails with no `WARNING: ... still exited 0` line.
+		- 2026-10-26: The exit code comes back now, so closed.
+	- Needs external testing: Done. On vm925w, 2026-10-26, as below.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261025-083330
 	- Opened by: jim-collier
@@ -55,27 +70,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 2026-10-26: Verified on vm925w, from round-20261026 at 20bdeb6: `gitsby-test.exe` ran as `BelowNormal`, base priority 6, in four polls while it ran. vm925w has no `wmic`, so `Get-Process` stood in.
 		- 2026-10-26: Verified on b29w: the command's first part gives `GOMAXPROCS=8` with `NUMBER_OF_PROCESSORS=16`.
 		- 2026-10-26: With one test failing on purpose, vm925w failed the box only through the guard: `WARNING: vm925w's go test failed a test and still exited 0`, then `FAIL: vm925w go test (exit 1)`. So `start "" /belownormal /b /wait` hands back 0 on real Windows, unlike Wine. The `--- FAIL` guard is what fails the box now. A crash with no `--- FAIL` line would pass.
+		- 2026-10-26: On vm925w, `start /wait` leaves the test's code in ERRORLEVEL, but cmd still exits 0. The command now ends with `& call exit %^ERRORLEVEL%`, which handed back 1, 3, 0 and a crash code there, and 1 for a failed `cd` ahead of it.
+		- 2026-10-26: `[dee74]` wants `& call exit %^ERRORLEVEL%` at the end of the line, where it wanted `-test.v` last.
+		- Verified: with one test failing on purpose, vm925w failed the box on the exit code, `FAIL: vm925w go test (exit 1)`, with no `WARNING` line. From round-20261026 at 65e4b54. The VM was put back to off.
+		- Verified: `--backlog-run-quick lint suite` passed, with test.bash 1770/0. Against remote-tests.bash before the fix, `[dee74]` and `[defv6]` fail, 1768/2.
+		- Not run: under Wine, and on b29w.
 	- Decisions:
 		- Nothing stands in for the busy rule. The box always gets half its cores, and BelowNormal yields to its other work. A one-shot CPU sample was passed over, since it's not an average. Filed as a Check in questions.md.
-	- Branch: round-20261025b
-	- Test case: test.bash `[dee74]` (the count and class on the command line), `[dee75]` (a failing test that exits 0).
+		- `call exit %^ERRORLEVEL%` rather than `if errorlevel 1 exit 1`, since it keeps the code, and a crash code is negative there. The `--- FAIL` guard stays, in case the code is lost some other way.
+	- Branch: round-20261025b, round-20261026
+	- Test case: test.bash `[dee74]` (the count, the class and the exit code on the command line), `[dee75]` (a failing test that exits 0), `[defv6]` (a crash with no `--- FAIL` line fails on the exit code, against a stub that drops it the way Windows does).
 	- Swept: every remote command in remote-tests.bash's `fRunWindows`. The copy and cleanup steps run no tests, so they keep normal priority.
+		- 2026-10-26: `git grep` for `/wait`, `belownormal` and `ERRORLEVEL`. The test run is the only `start` in the repo. The copy and cleanup steps don't go through `start`, so cmd's own code comes back.
 	- Prereq IDs: 2026102519554107
 	- 2026-10-25: The round's full run reached stage 7, where vmDebARM64 failed 22 harness checks (2026102519554107). Waits on that.
-
-- The cleanup line says a run folder freed about 8B
-	- ID: 2026102620355012
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261026-203550
-	- Opened by: jim-collier
-	- Related IDs: 2026102617543861
-	- Steps to reproduce [Bug]:
-		- `--backlog-run-quick` or `--backlog-run-full` at 99b3120, to the end.
-	- Incorrect behavior [Bug]: Both end with `Cleanup: removed the run folder; freed about 8B`, after a full run that built and copied trees for 5 boxes.
-	- Expected behavior [Bug]: The size the run folder had before it was removed, or no size when it can't be known.
-	- Possible cause [Bug]: Not looked at yet. The size may be read after the folder's contents are already gone, or from the folder entry itself.
+	- Acceptance signoff: Self-closed. Its new check fails before the fix and passes after, and the box check ran on vm925w.
+	- Closed: 20261026-205959
 
 - Stage 7 can't start vm925w once it has started vmKt6m or vmFreeBSD
 	- ID: 2026102510404322

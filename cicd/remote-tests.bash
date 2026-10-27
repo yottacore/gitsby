@@ -521,3 +521,4 @@ if ((${#failed[@]})); then exit 1; fi
 ##		- 2026-10-25 JC: A VM goes through the VM state helper, so one that is paused or off runs and is put back after. Each Mac and Unix box keeps its copy of the tree under its temp root, a Mac checks for the tools the suite needs too, and a skipped box says SKIP and is named in the summary.
 ##		- 2026-10-25 JC: Each Mac and Unix box runs its Go tests and test.bash on its own core budget, at low priority, and so does this script.
 ##		- 2026-10-25 JC: Every box goes through the VM state helper's wrap where there is one. The Windows box runs first, on half its cores and at BelowNormal, and a failed test that exits 0 still fails it.
+##		- 2026-10-26 JC: The Windows box hands back its Go tests' exit code, which start dropped there.
