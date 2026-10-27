@@ -36,8 +36,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: CPU and priority on the Windows box
 	- ID: 2026102508333054
 	- Type: Enhancement
-	- Status: Waiting on automated testing
-	- Needs external testing: stage 7's Go tests on b29w, or vm925w, twice: as is, and with one test failing on purpose. The failing run fails the box with no `WARNING: ... still exited 0` line, which shows the exit code still comes back. While one runs, `wmic process where name="gitsby-test.exe" get Priority` there gives 6 (BelowNormal).
+	- Status: Queued
+		- 2026-10-26: Back from testing. The class and the count hold on Windows, but the exit code doesn't come back. The template has no Re-opened, so Queued.
+	- Needs external testing: once the exit code comes back, stage 7's Go tests on b29w or vm925w with one test failing on purpose. The box fails with no `WARNING: ... still exited 0` line.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261025-083330
 	- Opened by: jim-collier
@@ -51,6 +52,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 2026-10-25: A `--- FAIL` line in the output fails the box even when the exit code comes back 0, with a warning that says so.
 		- Under Wine's cmd, the same command line gave `GOMAXPROCS` 16 on 32 cores, and the test binary's exit code 3 came back through `start /wait`. Wine ignores the priority class, so BelowNormal is unchecked. Wine's `set /a` doesn't read a variable by name, so the line expands `%NUMBER_OF_PROCESSORS%`.
 		- Verified: test.bash 1737/0 on the box, and `--backlog-run-quick` in the image, with test.bash 1737/0, fuzz 313/0 and parity 29/0. Against the harness before the change, `[dee74]` and `[dee75]` fail.
+		- 2026-10-26: Verified on vm925w, from round-20261026 at 20bdeb6: `gitsby-test.exe` ran as `BelowNormal`, base priority 6, in four polls while it ran. vm925w has no `wmic`, so `Get-Process` stood in.
+		- 2026-10-26: Verified on b29w: the command's first part gives `GOMAXPROCS=8` with `NUMBER_OF_PROCESSORS=16`.
+		- 2026-10-26: With one test failing on purpose, vm925w failed the box only through the guard: `WARNING: vm925w's go test failed a test and still exited 0`, then `FAIL: vm925w go test (exit 1)`. So `start "" /belownormal /b /wait` hands back 0 on real Windows, unlike Wine. The `--- FAIL` guard is what fails the box now. A crash with no `--- FAIL` line would pass.
 	- Decisions:
 		- Nothing stands in for the busy rule. The box always gets half its cores, and BelowNormal yields to its other work. A one-shot CPU sample was passed over, since it's not an average. Filed as a Check in questions.md.
 	- Branch: round-20261025b
@@ -76,8 +80,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Stage 7 can't start vm925w once it has started vmKt6m or vmFreeBSD
 	- ID: 2026102510404322
 	- Type: Bug
-	- Status: Waiting on automated testing
-	- Needs external testing: stage 7 with b29w held under the lock and vm925w off. vm925w comes up before vmFreeBSD and vmKt6m, and runs the Go tests.
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261025-104043
 	- Opened by: jim-collier
@@ -93,8 +96,11 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 2026-10-25: The Windows loop in remote-tests.bash runs before the Mac and Unix ones. Every build is still made before any box is taken.
 		- 2026-10-25: The fixture's VM helper now refuses vm925w with "Failed to reserve port 5900" while another VM it woke is still up.
 		- Verified: test.bash 1737/0 on the box, and `--backlog-run-quick` in the image, with test.bash 1737/0, fuzz 313/0 and parity 29/0. Against the harness before the change, `[dee73]` fails, and so do the new checks of the other two items in this change and the changed `[dedpc]`, 1732/5.
+		- 2026-10-26: Verified: stage 7 from round-20261026 at 20bdeb6, with only the two Windows boxes listed, b29w held under the lock and vm925w off. b29w was skipped as held. vm925w came up, ran the Go tests with no FAIL, and was off again after. vmFreeBSD and vmKt6m stayed off. In the round's full run at 99b3120, b29w ran before b26, vmKt6m and vmFreeBSD, and `[dee73]` passed.
 	- Branch: round-20261025b
 	- Test case: test.bash `[dee73]`.
+	- Acceptance signoff: Self-closed: vm925w ran stage 7's Go tests with b29w held, and `[dee73]` passed in the full run at 99b3120.
+	- Closed: 20261026-204511
 	- Swept: every loop over the boxes in remote-tests.bash. Only the three run loops take boxes, and the summary is sorted by name, so the order shows nowhere else. config.bash's stage 7 comment names the order.
 	- Prereq IDs: 2026102519554107
 	- 2026-10-25: The round's full run reached stage 7, where vmDebARM64 failed 22 harness checks (2026102519554107). Waits on that.
