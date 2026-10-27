@@ -172,17 +172,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `--backlog-run-quick lint` fails markdownlint MD038 on backlog.md
 	- ID: 2026102619025437
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261026-190254
 	- Opened by: jim-collier
 	- Related IDs: 2026102618140158
+	- Test case: the lint step's markdownlint check, which failed on these lines and passes now.
+	- Closed: 20261026-190553
+	- Acceptance signoff: lint passed after the fix.
 	- Steps to reproduce [Bug]:
 		- `env -u DISPLAY bash cicd/cicd.bash --backlog-run-quick lint suite` on round-20261026 at 7c87737.
 	- Incorrect behavior [Bug]: lint stops at the markdownlint step, with 9 MD038 errors, spaces inside a code span. All are in the `Asserts given new values` sub-bullets of 2026102618140158, where the old and new test lines are quoted.
 	- Expected behavior [Bug]: the backlog passes markdownlint, and lint goes on to the next step.
 	- Reproduced [Bug]: 2026-10-26, twice in the image, while working 2026102617594208.
 	- Possible cause [Bug]: the old and new test lines are quoted with their two-space indent inside backticks.
+	- 2026-10-26: Dropped the leading spaces inside the code spans on 2026102618140158's progress lines, and gave the trailing one its value. Wording unchanged.
 
 - CICD reset: a test for every Done item
 	- ID: 2026102416313106
@@ -198,6 +202,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Progress log:
 		- 2026-10-26: Split, too big for one pass. 399 old-format Done items name no test, 299 bugs and 100 features. Children, by backlog section: 2026102617594206, 2026102617594208, 2026102617594210, 2026102617594212, 2026102617594214, 2026102617594216, 2026102617594218 and 2026102617594221.
 		- 2026-10-26: 2026102617594206 is done, with 2 new checks. The other 7 are Queued.
+	- 2026-10-26: Children 2026102617594206 and 2026102617594208 are Done. The other 6 are Queued.
 
 - CICD reset: a test for every Done item, the 20260812 groups and the 20260819 to 20260821 reviews
 	- ID: 2026102617594210
@@ -328,8 +333,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 2026-10-26: The Go test lines and the native fuzz targets print the same shape, on this box and the remote ones, and a fuzz target that finds a crasher prints FAIL before the run stops.
 		- 2026-10-26: spawn-count.bash prints PASS, FAIL or SKIP and the ID, with the old verdict after the count, such as `, regressed` or `, new`. A rise that `--record` takes is a PASS. With no strace each command is a SKIP. lint-report.bash drops the new lines.
 		- 2026-10-26: Asserts given new values for this change, old -> new, and check nothing less:
-			- `[dd6vy]`, `[dd6vz]`, `[ddg8c]`, `[ddg8j]`, `[dee75]`, `[ddgm1]`: `  ok: [aaaab] TestA`, `  ok: TestC`, `  FAIL: [aaaab] TestA` -> `  PASS aaaab TestA`, `  PASS TestC`, `  FAIL aaaab TestA`. `[dd6g0]`: `  ok: [aaaaa] FuzzA` -> `  PASS aaaaa FuzzA`.
-			- `[dd5ez]` `REGRESSED  [<id>] status: 0 -> ` -> `FAIL <id> status: 0 -> <n>, regressed`. `[dd5p5]`, `[ddf82]` `ok  [<id>]` -> `PASS <id>`. `[ddf54]` `OVER LIMIT [dbftf] status: <n>, limit 3 (expected 1)` -> `FAIL dbftf status: <n>, over its limit of 3 (expected 1)`.
+			- `[dd6vy]`, `[dd6vz]`, `[ddg8c]`, `[ddg8j]`, `[dee75]`, `[ddgm1]`: `ok: [aaaab] TestA`, `ok: TestC`, `FAIL: [aaaab] TestA` -> `PASS aaaab TestA`, `PASS TestC`, `FAIL aaaab TestA`. `[dd6g0]`: `ok: [aaaaa] FuzzA` -> `PASS aaaaa FuzzA`.
+			- `[dd5ez]` `REGRESSED  [<id>] status: 0 -> <n>` -> `FAIL <id> status: 0 -> <n>, regressed`. `[dd5p5]`, `[ddf82]` `ok  [<id>]` -> `PASS <id>`. `[ddf54]` `OVER LIMIT [dbftf] status: <n>, limit 3 (expected 1)` -> `FAIL dbftf status: <n>, over its limit of 3 (expected 1)`.
 			- `[dbftb]`'s log and the remote fixture's suite lines are in the new shape.
 	- Decisions:
 		- The lines keep their two-space indent under the step, as before.
