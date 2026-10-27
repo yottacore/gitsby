@@ -60,7 +60,7 @@ func callsTo(t *testing.T, logFile, what string) int {
 	return n
 }
 
-func TestConvertibleAsksGhOnlyForSSH(t *testing.T) { // [Erl3JkJ]
+func TestConvertibleAsksGhOnlyForSSH(t *testing.T) { // [ddgbm]
 	_, clone := gitTestRepo(t)
 	t.Chdir(clone)
 	ghLog := logCalls(t, "gh", "exit 1")
@@ -83,7 +83,7 @@ func TestConvertibleAsksGhOnlyForSSH(t *testing.T) { // [Erl3JkJ]
 	}
 }
 
-func TestEnterRepoSettlesTopLevel(t *testing.T) { // [Erl3JkX]
+func TestEnterRepoSettlesTopLevel(t *testing.T) { // [ddgbn]
 	origin, clone := gitTestRepo(t)
 	gitLog := logGit(t)
 	top, err := filepath.EvalSymlinks(clone)
@@ -140,7 +140,7 @@ func TestEnterRepoSettlesTopLevel(t *testing.T) { // [Erl3JkX]
 	}
 }
 
-func TestAccountTokenAsksGitConfigOnlyWhenNeeded(t *testing.T) { // [Erl3Jkl]
+func TestAccountTokenAsksGitConfigOnlyWhenNeeded(t *testing.T) { // [ddgbp]
 	_, clone := gitTestRepo(t)
 	t.Chdir(clone)
 	gitLog := logGit(t)
@@ -174,7 +174,7 @@ func TestAccountTokenAsksGitConfigOnlyWhenNeeded(t *testing.T) { // [Erl3Jkl]
 	}
 }
 
-func TestFetchReadsOriginHeadOnce(t *testing.T) { // [Erl3Jkz]
+func TestFetchReadsOriginHeadOnce(t *testing.T) { // [ddgbq]
 	_, clone := gitTestRepo(t)
 	runGit(t, clone, "remote", "set-head", "origin", "main")
 	t.Chdir(clone)

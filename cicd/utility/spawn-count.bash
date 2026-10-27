@@ -60,7 +60,8 @@ done
 
 fEcho_Clean(){ printf '%s\n' "$*"; }
 
-command -v strace >/dev/null 2>&1 || { echo "  spawn counts skipped (no strace)"; exit 0; }
+## A SKIP for each command, named as fMeasure names it below.
+command -v strace >/dev/null 2>&1 || { sed -n 's/^fMeasure "\[\([^]]*\)\] \([^"]*\)".*/  SKIP \1 \2 (no strace)/p' "${BASH_SOURCE[0]}"; exit 0; }
 exe="${root}/${GO_MODULE_DIR}/${EXE_NAME}"
 [[ -x "${exe}" ]] || { echo "no build at ${GO_MODULE_DIR}/${EXE_NAME} - run cicd.bash stage 2, or 'go build' there" >&2; exit 1; }
 
@@ -189,7 +190,7 @@ if command -v script >/dev/null 2>&1 && script -qec true /dev/null </dev/null >/
 fHeadroom(){ local n=$(( $1 / 10 )); (( n < 2 )) && n=2; echo "${n}"; }
 declare -a ids=() labels=() counts=() expects=() limits=() skipped=()
 fMeasure(){
-	local label="${1#\[*\] }" id="${1%%\] *}]" expect="$2" how="$3" folder="$4"; shift 4
+	local label="${1#\[*\] }" id="${1%%\] *}" expect="$2" how="$3" folder="$4"; shift 4
 	local config="${noAccounts}" traceFile="${work}/trace.out" n=0 skip=""
 	[[ "${folder}" == acct* ]] && config="${accounts}"
 	fRestore
@@ -206,7 +207,7 @@ fMeasure(){
 		( cd "${work}/live/${folder}" && GITSBY_CONFIG="${config}" strace -f -e trace=execve -o "${traceFile}" "${exe}" "$@" ) >/dev/null 2>&1 || true
 	fi
 	[[ -n "${skip}" ]] || n="$(grep -c 'execve(' "${traceFile}" 2>/dev/null || true)"
-	ids+=("${id}")
+	ids+=("${id#\[}")
 	labels+=("${label}")
 	counts+=("${n}")
 	expects+=("${expect}")
@@ -220,20 +221,20 @@ fMeasure(){
 ## is one of them because its pull step only runs after a fetch, and that step used to ask
 ## origin a second time.
 ((quiet)) || fEcho_Clean "spawn counts (${exe})"
-fMeasure "[EnQTUO0] status"                              11 pipe repo        -q --no-fetch status
-fMeasure "[EnberSa] whoami"                               7 pipe repo        -q --no-fetch whoami
-fMeasure "[EnQTUe8] br list"                              7 pipe repo        -q --no-fetch br list
-fMeasure "[EnQTUuG] account list"                         7 pipe repo        -q --no-fetch account list
-fMeasure "[EnQTVAO] repo url"                             6 pipe repo        -q --no-fetch repo url
-fMeasure "[EnQTVQW] pullcom"                             21 pipe repo        -q --no-fetch pullcom "spawn count"
-fMeasure "[ErgAQyw] pullcom with a fetch"                 28 pipe repo        -q pullcom "spawn count"
-fMeasure "[EnQTVge] br switch"                           26 pipe repo        -q --no-fetch br switch main
-fMeasure "[EnQTVwm] br prune"                            31 pipe repo        -q --no-fetch br prune
-fMeasure "[Erg2KIz] status with a fetch"                 17 tty  repo        status
-fMeasure "[Erg2KJr] status in an account folder"         19 tty  acct-ssh    --no-fetch status
-fMeasure "[Erg2KKj] whoami in an account folder"         15 tty  acct-ssh    --no-fetch whoami
-fMeasure "[Erg2KLb] account list with accounts"          11 tty  acct-ssh    --no-fetch account list
-fMeasure "[Erg2KMS] status in an https account folder"   15 tty  acct-https  --no-fetch status
+fMeasure "[dbftf] status"                              11 pipe repo        -q --no-fetch status
+fMeasure "[dbjeq] whoami"                               7 pipe repo        -q --no-fetch whoami
+fMeasure "[dbftg] br list"                              7 pipe repo        -q --no-fetch br list
+fMeasure "[dbfth] account list"                         7 pipe repo        -q --no-fetch account list
+fMeasure "[dbftj] repo url"                             6 pipe repo        -q --no-fetch repo url
+fMeasure "[dbftk] pullcom"                             21 pipe repo        -q --no-fetch pullcom "spawn count"
+fMeasure "[ddf68] pullcom with a fetch"                 28 pipe repo        -q pullcom "spawn count"
+fMeasure "[dbftm] br switch"                           26 pipe repo        -q --no-fetch br switch main
+fMeasure "[dbftn] br prune"                            31 pipe repo        -q --no-fetch br prune
+fMeasure "[ddf4z] status with a fetch"                 17 tty  repo        status
+fMeasure "[ddf50] status in an account folder"         19 tty  acct-ssh    --no-fetch status
+fMeasure "[ddf51] whoami in an account folder"         15 tty  acct-ssh    --no-fetch whoami
+fMeasure "[ddf52] account list with accounts"          11 tty  acct-ssh    --no-fetch account list
+fMeasure "[ddf53] status in an https account folder"   15 tty  acct-https  --no-fetch status
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Each count against its limit, then against the newest previous run; then record this one.
@@ -244,7 +245,8 @@ baseline=""
 for f in "${countDir}"/spawn_*.tsv; do [[ -f "${f}" ]] && baseline="${f}"; done
 
 declare -i regressed=0 overLimit=0 underLimit=0
-## One line per command, whatever it did, so a -q-less run shows each count and its verdict.
+## One line per command, whatever it did, so a -q-less run shows each count and its verdict:
+## PASS, FAIL or SKIP, then its test ID, as the suites print theirs.
 if [[ -z "${baseline}" ]]; then
 	((quiet)) || fEcho_Clean "  (no baseline yet - recording this run as one)"
 else
@@ -252,27 +254,29 @@ else
 fi
 for ((i = 0; i < ${#labels[@]}; i++)); do
 	if [[ -n "${skipped[i]}" ]]; then
-		((quiet)) || fEcho_Clean "  skipped    ${ids[i]} ${labels[i]} (${skipped[i]})"
+		((quiet)) || fEcho_Clean "  SKIP ${ids[i]} ${labels[i]} (${skipped[i]})"
 		continue
 	fi
 	if (( counts[i] > limits[i] )); then
-		fEcho_Clean "  OVER LIMIT ${ids[i]} ${labels[i]}: ${counts[i]}, limit ${limits[i]} (expected ${expects[i]})"
+		fEcho_Clean "  FAIL ${ids[i]} ${labels[i]}: ${counts[i]}, over its limit of ${limits[i]} (expected ${expects[i]})"
 		overLimit=1
 		continue
 	fi
 	(( counts[i] < expects[i] )) && underLimit=$((underLimit + 1))
 	was=""
 	[[ -z "${baseline}" ]] || was="$(awk -F'\t' -v k="${labels[i]}" '$1==k{print $2}' "${baseline}" || true)"
-	[[ -n "${was}" ]] || { ((quiet)) || fEcho_Clean "  NEW        ${ids[i]} ${labels[i]}: ${counts[i]}"; continue; }
+	[[ -n "${was}" ]] || { ((quiet)) || fEcho_Clean "  PASS ${ids[i]} ${labels[i]}: ${counts[i]}, new"; continue; }
 	## Arithmetic on text from a file runs any $(...) in an array subscript, so only digits go on.
 	[[ "${was}" =~ ^[0-9]+$ ]] || { echo "spawn-count: $(basename "${baseline}") has '${was}' for ${labels[i]}, which isn't a count. Fix or delete that file." >&2; exit 1; }
 	if (( counts[i] > was + $(fHeadroom "${was}") )); then
-		fEcho_Clean "  REGRESSED  ${ids[i]} ${labels[i]}: ${was} -> ${counts[i]}"
+		## --record takes the rise as the new baseline, so the run passes, and so does the line.
+		if ((record)); then fEcho_Clean "  PASS ${ids[i]} ${labels[i]}: ${was} -> ${counts[i]}, regressed and recorded"
+		else fEcho_Clean "  FAIL ${ids[i]} ${labels[i]}: ${was} -> ${counts[i]}, regressed"; fi
 		regressed=1
 	elif (( counts[i] < was )); then
-		((quiet)) || fEcho_Clean "  improved   ${ids[i]} ${labels[i]}: ${was} -> ${counts[i]}, expected ${expects[i]}"
+		((quiet)) || fEcho_Clean "  PASS ${ids[i]} ${labels[i]}: ${was} -> ${counts[i]}, improved (expected ${expects[i]})"
 	else
-		((quiet)) || fEcho_Clean "  ok         ${ids[i]} ${labels[i]}: ${counts[i]}"
+		((quiet)) || fEcho_Clean "  PASS ${ids[i]} ${labels[i]}: ${counts[i]}"
 	fi
 done
 ((quiet)) || ((underLimit == 0)) || fEcho_Clean "  ${underLimit} under their expected count; lower those numbers in ${BASH_SOURCE[0]##*/} to keep the gain."
@@ -313,3 +317,4 @@ gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		- 20261004 JC: The pty runs get a size, as a real terminal has. Lower expected counts for the startup and token lookups that were asked twice.
 ##		- 20261004 JC: fEcho_Clean prints with printf. Every expansion braced, and shellcheck
 ##		  enforces it.
+##		- 20261026 JC: Each command prints PASS, FAIL or SKIP, then its test ID, with the verdict after the count. A rise --record takes is a PASS, and with no strace each command is a SKIP.

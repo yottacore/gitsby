@@ -32,6 +32,8 @@
 ##		- Guards that have caught real mistakes: the harnesses must carry a
 ##		  history-footer entry newer than the last release tag, and the changelog
 ##		  must have a real vNEXT section rather than the decoy template heading.
+##		- Both builds use the Go in the pipeline's image where docker works, and
+##		  this box's Go, with a warning, where it doesn't.
 ##		- A version with a semver suffix - v3.0.0-beta.1 - publishes as a pre-release.
 ##		  The installers take one by default only while no full release publishes a
 ##		  gitsby binary; past that, a pre-release is asked for with --tag.
@@ -52,15 +54,19 @@ set -Eeuo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/.." && pwd)"
 source "${here}/config.bash"      ## RELEASE_TARGETS, GO_MODULE_DIR, EXE_NAME
+source "${here}/utility/include/image-go.bash"    ## fImageGo, fImageRecipe, fImageBuild: the builds in the pipeline's image
 fLowPriority
 cd "${root}"
+## Set below once the image is there. One left in the caller's environment would say otherwise.
+unset GITSBY_CICD_IMAGE GITSBY_CICD_RUN GITSBY_CICD_KEEP_TEMP
+runName="release-$(date +%Y%m%d-%H%M%S)"; containerImage=""
 
 version=""; dryRun=0; assumeYes=0; quiet=0
 while (($#)); do case "$1" in
 	-n|--dry-run) dryRun=1; shift ;;
 	-y|--yes)     assumeYes=1; shift ;;
 	-q|--quiet)   quiet=1; assumeYes=1; shift ;;
-	-h|--help)    sed -n '/^##	- Purpose:/,/^##	History:/p' "${BASH_SOURCE[0]}" | sed '$d; s/^##	\{0,1\}//'; exit 0 ;;
+	-h|--help)    sed -n '/^##	Purpose:/,/^##	History:/p' "${BASH_SOURCE[0]}" | sed '$d; s/^##	\{0,1\}//'; exit 0 ;;
 	-*)           echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
 	*)            version="$1"; shift ;;
 esac; done
@@ -69,6 +75,29 @@ fEcho_Clean(){ printf '%s\n' "$*"; }
 fEcho(){       fEcho_Clean "[ $* ]"; }
 fDie(){        fEcho_Clean "FAILED: $*" >&2; exit 1; }
 fWould(){      ((dryRun)) && { fEcho_Clean "   would: $*"; return 0; }; return 1; }
+
+## The release builds come from the pipeline's image where docker works, so the published bytes
+## are built by the same Go as the checks, and anyone with docker can build them again. The upload
+## and the proof against the published assets stay on this box. A dry run builds no image.
+fpPickGo(){
+	if [[ "${CICD_CONTAINER:-0}" != 1 ]]; then fEcho_Clean "the release builds use this box's Go, since CICD_CONTAINER is off"; return 0; fi
+	fWould "build the release with the pipeline image's Go, where docker works" && return 0
+	if ! docker info >/dev/null 2>&1; then fEcho_Clean "WARNING: docker isn't usable here, so the release builds use this box's Go"; return 0; fi
+	fImageRecipe
+	fImageBuild "${runName}"
+	export GITSBY_CICD_IMAGE="${containerImage}" GITSBY_CICD_RUN="${runName}"
+	fEcho_Clean "the release builds use the Go in ${containerImage}"
+}
+
+## The image's builds left running by a stop, found by the run's label.
+fpImageDone(){
+	local id
+	[[ -n "${GITSBY_CICD_RUN:-}" ]] || return 0
+	for id in $(docker ps -aq --filter "label=dev.run=${GITSBY_CICD_RUN}" 2>/dev/null || true); do
+		docker stop "${id}" >/dev/null 2>&1 || true
+		docker rm "${id}" >/dev/null 2>&1 || true
+	done
+}
 
 ## Cross-build every release target into ${assets} and checksum them. Called twice: in phase 1
 ## as a compile gate, where a target that stopped building costs nothing, and again in phase 3
@@ -90,10 +119,10 @@ fpCrossBuild(){
 		parts=()
 		for arch in "${arches[@]}"; do
 			part="${assets}/${asset}"; ((${#arches[@]} == 1)) || part="${assets}/${asset}-${arch}"
-			( cd "${src}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOAMD64=v1 GOTOOLCHAIN="${GO_RELEASE_TOOLCHAIN}" GOOS="${t%%/*}" GOARCH="${arch}" \
-				go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" \
+			fImageGo "${src}/${GO_MODULE_DIR}" "${assets}" CGO_ENABLED=0 GOAMD64=v1 GOTOOLCHAIN="${GO_RELEASE_TOOLCHAIN}" GOOS="${t%%/*}" GOARCH="${arch}" \
+				build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" \
 				-ldflags "${GO_LDFLAGS_COMMON} -X main.version=${version#v} -X main.buildEpoch=${epoch}" \
-				-o "${part}" . ) \
+				-o "${part}" . \
 				|| { crossBuildFailed="${t%%/*}/${arch}"; return 1 ;}
 			parts+=("${part}")
 		done
@@ -325,7 +354,10 @@ fi
 ## release behind it. These are not the bytes that get published - phase 3 rebuilds them from
 ## the tagged commit, whose date the build number is taken from.
 assets="$(mktemp -d)"; tagTree=""; notes=""
-trap 'rm -rf -- "${assets:?}"; [[ -z "${tagTree}" ]] || rm -rf -- "${tagTree:?}"; [[ -z "${notes}" ]] || rm -f -- "${notes:?}"' EXIT
+trap 'fpImageDone; rm -rf -- "${assets:?}"; [[ -z "${tagTree}" ]] || rm -rf -- "${tagTree:?}"; [[ -z "${notes}" ]] || rm -f -- "${notes:?}"' EXIT
+## So a stop still runs the exit trap. fImageGo waits on its build rather than running it in front.
+trap 'exit 130' INT; trap 'exit 143' TERM
+fpPickGo
 if ! fWould "cross-build ${#RELEASE_TARGETS[@]} targets at ${version}"; then
 	fEcho_Clean "cross-building ${#RELEASE_TARGETS[@]} targets with ${GO_RELEASE_TOOLCHAIN} ..."
 	## The .exe files have to carry ${version}, and the committed resource still says the last
@@ -551,3 +583,5 @@ echo
 ##		  braced, and shellcheck enforces it.
 ##		- 20261019 JC: The release builds pin GOAMD64=v1, so a stray environment can't raise the CPU floor.
 ##		- 20261025 JC: Runs at low priority, as cicd.bash does.
+##		- 20261025 JC: Both release builds come from the pipeline image's Go where docker works, and from this box's with a warning where it doesn't. A stop removes the image's builds still running.
+##		- 20261025 JC: --help prints the header again. It looked for "- Purpose:", and the header says "Purpose:".

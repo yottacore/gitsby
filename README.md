@@ -308,17 +308,19 @@ cd gitsby/src-go && go build -o gitsby .
 7. Runs the Go tests on two Macs, a Windows box, a FreeBSD box and a Linux arm64 box over ssh, and the regression suite on all but Windows. The Linux arm64 box also runs the windows/arm64 Go tests under Wine.
 8. **Commits and pushes.** It ends by publishing - worth knowing before you run it on a fork.
 
-Stages 1-4 and the demo gif run in a Debian image built from `cicd/container/Dockerfile`, as does `--backlog-run-quick`, so every box lints, tests and renders with the same tool versions. The builds stage 5 installs and stage 7 tests are made with the image's Go too, then copied and sent from the box. Without a working docker they run on the box itself, with a warning. Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `gifsicle` won't stop the rest. Stage 5's destinations are one machine's paths, set in `cicd/config.bash`; on anyone else's box that stage finds nothing writable and says so, which is harmless. Stage 7's boxes are that machine's too, and a box that is off or busy is skipped the same way.
+Stages 1-4 and the demo gif run in a Debian image built from `cicd/container/Dockerfile`, as does `--backlog-run-quick`, so every box lints, tests and renders with the same tool versions. The builds stage 5 installs and stage 7 tests are made with the image's Go too, then copied and sent from the box, and so are the ones `cicd/release.bash` publishes. Without a working docker they run on the box itself, with a warning. Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `gifsicle` won't stop the rest. Stage 5's destinations are one machine's paths, set in `cicd/config.bash`; on anyone else's box that stage finds nothing writable and says so, which is harmless. Stage 7's boxes are that machine's too, and a box that is off or busy is skipped the same way.
 
 ~~~bash
-cicd/cicd.bash --quick          # skips the regression suite, native fuzzing, govulncheck, pip-audit, the leak checks, the demo gif and the remote tests; what you want while iterating
-cicd/cicd.bash --no-leakcheck   # everything but the soak test and CodeQL, the slowest part of stage 3; --leakcheck adds them back to --quick
+cicd/cicd.bash --quick          # about 10 minutes: skips govulncheck, pip-audit, CodeQL, the demo gif and the remote tests; what you want while iterating
+cicd/cicd.bash --no-leakcheck   # everything but the soak test and CodeQL, the slowest part of stage 3; --leakcheck adds CodeQL back to --quick
 cicd/cicd.bash                  # everything, and it prompts once for a commit message
 cicd/cicd.bash -y -m "message"  # unattended
 cicd/cicd.bash --no-container   # stages 1-4, the demo gif and the builds on this box, not in the pinned image
 cicd/cicd.bash --backlog-run-quick   # lint, the unit tests and the suites, in a few minutes; name areas to run fewer, and --gate is another name
 cicd/cicd.bash --merge-gate     # every check a plain run does, changing nothing: no sync, dogfood, publish or new gif; --ci is another name
-cicd/cicd.bash --install-hook   # run --gate on the pushed commit before every push to main
+cicd/cicd.bash --list           # the steps and test IDs a run with the other options would have, running nothing
+cicd/cicd.bash --keep-temp      # keep the run's temp folder and containers, and say where they are
+cicd/cicd.bash --install-hook   # run --merge-gate on the pushed commit before every push to main, unless it changes only docs
 ~~~
 
 With the hook installed, `git push --no-verify` skips the gate for one push.

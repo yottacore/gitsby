@@ -99,8 +99,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 declare -i pass=0 fail=0
-fOk(){   pass=$((pass+1)); ((quiet)) || fEcho_Clean "  ok: $*"; }
-fBad(){  fail=$((fail+1)); fEcho_Clean "  DIFFER: $*"; }
+## "PASS <id> <label>" from "[<id>] <label>", as test.bash prints them. A difference is a FAIL.
+fTestLine(){ local re='^\[([0-9A-Za-z]+)\] (.*)$' d="$2"; [[ ! "${d}" =~ ${re} ]] || d="${BASH_REMATCH[1]} ${BASH_REMATCH[2]}"; fEcho_Clean "  $1 ${d}" ;}
+fOk(){   pass=$((pass+1)); ((quiet)) || fTestLine PASS "$*"; }
+fBad(){  fail=$((fail+1)); fTestLine FAIL "$*"; }
 
 ## The subject and the reference. 'new' is whatever cicd stage 2 just built; 'ref' is the
 ## frozen script, read-only and never rebuilt.
@@ -253,7 +255,7 @@ for spelling in "${spellings[@]}"; do
 		account.s.path      = ${spelling}
 		account.s.ghAccount = spellacct
 	EOF
-	fSameLead  "[EmlpDMW] path spelled '${spelling}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${work}/spell.shcl" status
+	fSameLead  "[db5zr] path spelled '${spelling}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${work}/spell.shcl" status
 done
 
 ## 'pathContains' names folder names rather than a machine's tree, so it is the one rule meant to
@@ -268,9 +270,9 @@ cat > "${work}/seg.shcl" <<-EOF
 	account.seg.pathContains = github.com/alice
 	account.seg.ghAccount    = segacct
 EOF
-fSameLead  "[EmmDRRY] pathContains resolves the same under root A" '^Account' "${work}/mA/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
-fSameLead  "[EmmDRRZ] pathContains resolves the same under root B" '^Account' "${work}/mB/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
-fSameLead  "[EmmDRRa] and both agree it is whole folder names"     '^Account' "${work}/mA/github.com/alice-old/proj" -q -NoFetch --config "${work}/seg.shcl" status
+fSameLead  "[db62s] pathContains resolves the same under root A" '^Account' "${work}/mA/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
+fSameLead  "[db62t] pathContains resolves the same under root B" '^Account' "${work}/mB/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
+fSameLead  "[db62v] and both agree it is whole folder names"     '^Account' "${work}/mA/github.com/alice-old/proj" -q -NoFetch --config "${work}/seg.shcl" status
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Option binding. Every build parses its own arguments, and that is where the scripted pair
@@ -280,20 +282,20 @@ fSameLead  "[EmmDRRa] and both agree it is whole folder names"     '^Account' "$
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 fEcho_Clean
 fEcho_Clean "-- option forms"
-fSame     "[EmlpDMX] an unknown option is refused the same way"     "${tree}" -q --bogus status
-fSame     "[EmlpDMY] an option after the command is refused alike"  "${tree}" -q status --bogus
+fSame     "[db5zs] an unknown option is refused the same way"     "${tree}" -q --bogus status
+fSame     "[db5zt] an option after the command is refused alike"  "${tree}" -q status --bogus
 ## Both refuse, and that is the whole claim here. The frozen script counted them - "5, for max of
 ## 4" - because four was all its tokenizer took; this build takes five, for 'account set <account>
 ## <key> <value>' alone, and every other command rejects the extra a step later, by name. Naming
 ## the word is the better answer of the two, and test.bash owns that wording.
-fSameExit "[EmlpDMZ] too many positionals are refused by both"      "${tree}" -q br switch a b c
-fSameExit "[EmlpDMa] a spaced --config is accepted by both"         "${tree}" -q -NoFetch --config "${work}/no-accounts.shcl" status
-fSameExit "[EmlpDMb] an empty --config is refused by both"          "${tree}" -q -NoFetch --config "" status
-fSameExit "[EmlpDMc] a --config naming a directory is refused"      "${tree}" -q -NoFetch --config "${work}" status
-fSameExit "[EmlpDMd] a --config naming nothing there is refused"    "${tree}" -q -NoFetch --config "${work}/nope.shcl" status
-fSameExit "[EmlpDMe] -q and -y together are accepted by both"       "${tree}" -q -y -NoFetch status
-fSameExit "[EmlpDMf] -NoFetch before 'raw' is taken by both"        "${tree}" -q -NoFetch raw git rev-parse HEAD
-fSameExit "[EmlpDMg] a bad 'raw' tool is refused by both"           "${tree}" -q raw curl x
+fSameExit "[db5zv] too many positionals are refused by both"      "${tree}" -q br switch a b c
+fSameExit "[db5zw] a spaced --config is accepted by both"         "${tree}" -q -NoFetch --config "${work}/no-accounts.shcl" status
+fSameExit "[db5zx] an empty --config is refused by both"          "${tree}" -q -NoFetch --config "" status
+fSameExit "[db5zy] a --config naming a directory is refused"      "${tree}" -q -NoFetch --config "${work}" status
+fSameExit "[db5zz] a --config naming nothing there is refused"    "${tree}" -q -NoFetch --config "${work}/nope.shcl" status
+fSameExit "[db600] -q and -y together are accepted by both"       "${tree}" -q -y -NoFetch status
+fSameExit "[db601] -NoFetch before 'raw' is taken by both"        "${tree}" -q -NoFetch raw git rev-parse HEAD
+fSameExit "[db602] a bad 'raw' tool is refused by both"           "${tree}" -q raw curl x
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Renamed commands. 'update' became 'pullcom' and 'br land' became 'br merge', and both old
@@ -306,8 +308,8 @@ fEcho_Clean "-- renamed commands, old spellings"
 notRepo="${work}/not-a-repo"; mkdir -p "${notRepo}"
 
 ## Against the frozen build, which knows only the old names.
-fSame "[EnLqMsS] 'update' answers as it always did"      "${notRepo}" -q -NoFetch update
-fSame "[EnLqMsT] 'br land' answers as it always did"     "${notRepo}" -q -NoFetch br land
+fSame "[dbemz] 'update' answers as it always did"      "${notRepo}" -q -NoFetch update
+fSame "[dben0] 'br land' answers as it always did"     "${notRepo}" -q -NoFetch br land
 
 ## Against itself, since the frozen build never heard the new names. Two spellings of one
 ## command have to be one command, not merely two that are both accepted.
@@ -325,8 +327,8 @@ fSameSpelling(){
 		diff <(printf '%s\n' "${a}") <(printf '%s\n' "${b}") | sed 's/^/      /' | head -12 || true
 	fi
 }
-fSameSpelling "[EnLqMsU] 'pullcom' and 'update' are one command"   "${notRepo}" "update"   "pullcom"
-fSameSpelling "[EnLqMsV] 'br merge' and 'br land' are one command" "${notRepo}" "br land"  "br merge"
+fSameSpelling "[dben1] 'pullcom' and 'update' are one command"   "${notRepo}" "update"   "pullcom"
+fSameSpelling "[dben2] 'br merge' and 'br land' are one command" "${notRepo}" "br land"  "br merge"
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Plans. The pull step changed on purpose on 2026-10-03: the fetch at the start of the command
@@ -341,8 +343,8 @@ git init --quiet --bare -b main "${planOrigin}"
 git clone --quiet "${planOrigin}" "${planTree}" 2>/dev/null
 ( cd "${planTree}" && echo a > a.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main )
 pullStep='s/^    git (pull --ff-only --autostash|merge --ff-only --autostash origin\/main) \*$/    <pull step> */'
-fSamePlan "[ErgAC3e] pullcom plans the same steps, the pull step aside" "${pullStep}" "${planTree}" -q -NoFetch update
-fSamePlan "[ErgAC4V] sync plans the same steps, the pull step aside"    "${pullStep}" "${planTree}" -q -NoFetch sync
+fSamePlan "[ddf66] pullcom plans the same steps, the pull step aside" "${pullStep}" "${planTree}" -q -NoFetch update
+fSamePlan "[ddf67] sync plans the same steps, the pull step aside"    "${pullStep}" "${planTree}" -q -NoFetch sync
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## String case. Bash folds with '${x,,}'; Go compares byte-exact unless told otherwise. The two
@@ -359,7 +361,7 @@ for name in mixed MIXED MiXeD; do
 	## the other way this loop ran three identical commands and compared them to each other, which
 	## passes whatever either build does with the variable.
 	export GITSBY_ACCOUNT="${name}"
-	fSameLead  "[EmlpDMh] GITSBY_ACCOUNT='${name}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${work}/case.shcl" status
+	fSameLead  "[db603] GITSBY_ACCOUNT='${name}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${work}/case.shcl" status
 	unset GITSBY_ACCOUNT
 done
 
@@ -372,9 +374,9 @@ fEcho_Clean "-- file encoding"
 for f in "${root}"/legacy/bin/gitsby "${root}"/legacy/bin/gitsby.ps1 "${root}"/legacy/install*.bash "${root}"/legacy/install*.ps1; do
 	[[ -f "${f}" ]] || continue
 	if [[ "$(head -c 2 "${f}")" == "#!" ]]; then
-		fOk "[EmlpDMi] ${f##*/} starts with a shebang, not a BOM"
+		fOk "[db604] ${f##*/} starts with a shebang, not a BOM"
 	else
-		fBad "[EmlpDMi] ${f##*/} does not start with '#!' - a BOM ahead of it breaks 'irm | iex' and direct execution"
+		fBad "[db604] ${f##*/} does not start with '#!' - a BOM ahead of it breaks 'irm | iex' and direct execution"
 	fi
 done
 
@@ -396,3 +398,4 @@ fEcho_Clean "parity passed: ${pass}, differed: ${fail}"
 ##		- 20261004 JC: The pull step's merge names the upstream, so the mapping names it too.
 ##		- 20261004 JC: Prints through fEcho and fEcho_Clean, like the other pipeline scripts.
 ##		  Every expansion braced, and shellcheck enforces it.
+##		- 20261026 JC: Each check prints PASS or FAIL, then its ID and label, in place of ok and DIFFER.

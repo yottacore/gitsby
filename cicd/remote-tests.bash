@@ -22,8 +22,11 @@
 ##		  with SKIP, named again in the summary, and so is the whole stage when there is no lock
 ##		  script. Every Mac and Unix box in the list runs; of the Windows boxes, the first free
 ##		  one does.
-##		- A VM goes through the VM state helper beside the lock, which wakes one that is paused
-##		  or off for its run and puts it back after. Without the helper, such a VM is skipped.
+##		- Every box goes through the VM state helper beside the lock, which wakes a VM that is
+##		  paused or off for its run and puts it back after, and leaves the rest alone. Without
+##		  the helper, the lock takes each box itself, and a VM that is asleep is skipped.
+##		- The Windows box runs first, since vm925w can't start once another VM holds its port.
+##		- The Windows box runs its Go tests on half its cores, in the BelowNormal class.
 ##		- The Go tests are built with the image's Go when cicd.bash runs this with the image, and
 ##		  with this box's otherwise.
 ##		- The boxes, the lock and the paths are in config.bash, under stage 7.
@@ -265,7 +268,11 @@ fRunWindows(){
 	fRemote "${sshName}" "echo ${mark}& mkdir \"${dir}\" && echo made&& %SystemRoot%\\System32\\tar.exe -xf - -C \"${dir}\"" < "${work}/win.tar" >"${setupLog}" 2>&1 || rc=$?
 	if ((rc == 0)); then
 		fEcho_Clean "  ${lockName}: go test (windows/amd64)"
-		fRemote "${sshName}" "echo ${mark}& cd /d \"${dir}\\${GO_MODULE_DIR}\" && ${EXE_NAME}-test.exe -test.v" -n >"${log}" 2>&1 || rc=$?
+		## Half the cores, never under 1, in the BelowNormal class. Windows has no load average, so
+		## no busy rule. set /a echoes its answer, hence ahead of the marker. start leaves the test's
+		## code in ERRORLEVEL but cmd exits 0, so call exit passes it on. The caret keeps the line's
+		## own expansion off it, so call reads it after start is done.
+		fRemote "${sshName}" "set /a GOMAXPROCS=%NUMBER_OF_PROCESSORS%/2 >nul& (if %NUMBER_OF_PROCESSORS% LSS 2 set GOMAXPROCS=1)& echo ${mark}& cd /d \"${dir}\\${GO_MODULE_DIR}\" && start \"\" /belownormal /b /wait ${EXE_NAME}-test.exe -test.v& call exit %^ERRORLEVEL%" -n >"${log}" 2>&1 || rc=$?
 	fi
 	if grep -qx made "${setupLog}"; then
 		fRemote "${sshName}" "echo ${mark}& cd /d \"%TEMP%\" && rmdir /s /q \"${dir}\"" -n >/dev/null 2>&1 || true
@@ -276,6 +283,8 @@ fRunWindows(){
 		fEcho_Clean "  FAIL: ${lockName}, could not copy the Go tests (exit ${rc})"; fResult "${lockName}" fail; return 0
 	fi
 	fGoTestLines "${log}" "${root}/${GO_MODULE_DIR}"
+	## In case the test's exit code is ever lost on the way back anyway.
+	if ((rc == 0)) && grep -q '^--- FAIL' "${log}"; then fEcho_Clean "  WARNING: ${lockName}'s go test failed a test and still exited 0"; rc=1; fi
 	if ((rc)); then
 		fGoTestFailures "${log}"
 		fEcho_Clean "  FAIL: ${lockName} go test (exit ${rc})"
@@ -450,19 +459,15 @@ if ((${#winRun[@]})); then
 fi
 
 ## Runs the kind $1 on the box $2, reached by one of the ssh names $3, under the lock, and prints
-## why when the lock would not have it. True when the box ran, whatever the result. A VM's run
-## goes through the VM state helper's wrap, which takes the lock the same way and has no --why.
+## why when the lock would not have it. True when the box ran, whatever the result. Every box goes
+## through the VM state helper's wrap where there is one, which takes the lock the same way and
+## leaves a box that isn't a VM alone.
 exec {errFd}>&2
 fUnderLock(){
 	local kind="$1" lockName="$2" rc=0 errFile="${work}/lock-$2.err" why="" vm="${vmGuest[$2]:-}"
 	local -a heldCmd=("${here}/${BASH_SOURCE[0]##*/}" --held "${kind}" "${lockName}" "$3")
-	if [[ -n "${vm}" ]]; then
-		REMOTE_TESTS_WORK="${work}" REMOTE_TESTS_ERR_FD="${errFd}" \
-			fLockEnv "${vmState}" wrap "${lockName}" --wait 0 -- "${heldCmd[@]}" 2>"${errFile}" || rc=$?
-	else
-		REMOTE_TESTS_WORK="${work}" REMOTE_TESTS_ERR_FD="${errFd}" \
-			fLockEnv "${lock}" wrap "${lockName}" --wait 0 --why "gitsby: ${kind} tests" -- "${heldCmd[@]}" 2>"${errFile}" || rc=$?
-	fi
+	REMOTE_TESTS_WORK="${work}" REMOTE_TESTS_ERR_FD="${errFd}" \
+		fLockEnv "${vmState:-${lock}}" wrap "${lockName}" --wait 0 --why "gitsby: ${kind} tests" -- "${heldCmd[@]}" 2>"${errFile}" || rc=$?
 	if [[ -e "${work}/started-${lockName}" ]]; then
 		[[ -e "${work}/result-${lockName}" ]] || { fEcho_Clean "  FAIL: ${lockName}, the run ended early (exit ${rc})"; fResult "${lockName}" fail; }
 		## The run's own result stands. A VM that would not go back is the helper's to retry.
@@ -481,11 +486,12 @@ fUnderLock(){
 	return 1
 }
 
-for entry in "${macRun[@]}"; do fUnderLock mac "${entry% *}" "${entry#* }" || true; done
-for entry in "${unixRun[@]}"; do fUnderLock unix "${entry% *}" "${entry#* }" || true; done
+## Windows first: vm925w's SPICE port is fixed at 5900, and a VM started ahead of it may hold that.
 for entry in "${winRun[@]}"; do
 	if fUnderLock windows "${entry% *}" "${entry#* }"; then break; fi
 done
+for entry in "${macRun[@]}"; do fUnderLock mac "${entry% *}" "${entry#* }" || true; done
+for entry in "${unixRun[@]}"; do fUnderLock unix "${entry% *}" "${entry#* }" || true; done
 exec {errFd}>&-
 
 shopt -s nullglob
@@ -514,3 +520,5 @@ if ((${#failed[@]})); then exit 1; fi
 ##		- 2026-10-25 JC: The test builds use the image's Go when cicd.bash hands it the image.
 ##		- 2026-10-25 JC: A VM goes through the VM state helper, so one that is paused or off runs and is put back after. Each Mac and Unix box keeps its copy of the tree under its temp root, a Mac checks for the tools the suite needs too, and a skipped box says SKIP and is named in the summary.
 ##		- 2026-10-25 JC: Each Mac and Unix box runs its Go tests and test.bash on its own core budget, at low priority, and so does this script.
+##		- 2026-10-25 JC: Every box goes through the VM state helper's wrap where there is one. The Windows box runs first, on half its cores and at BelowNormal, and a failed test that exits 0 still fails it.
+##		- 2026-10-26 JC: The Windows box hands back its Go tests' exit code, which start dropped there.

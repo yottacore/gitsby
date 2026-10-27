@@ -16,7 +16,7 @@ import (
 	"testing"
 )
 
-func TestRemoteOwner(t *testing.T) { // [EnQKNsc]
+func TestRemoteOwner(t *testing.T) { // [dbfrn]
 	tests := []struct{ url, want string }{
 		{"https://github.com/octocat/hello.git", "octocat"},
 		{"https://github.com/octocat/hello", "octocat"},
@@ -42,7 +42,7 @@ func TestRemoteOwner(t *testing.T) { // [EnQKNsc]
 // never asks the host anything, so refusing everywhere but github.com was the
 // parser's limit showing through as a rule. remoteOwner above is the one that
 // stays GitHub-only, because what it feeds is a GitHub login.
-func TestRemoteTarget(t *testing.T) { // [EnQKNsd]
+func TestRemoteTarget(t *testing.T) { // [dbfrp]
 	tests := []struct{ url, want string }{
 		{"https://github.com/octocat/hello.git", "octocat/hello"},
 		{"git@github.com:octocat/hello.git", "octocat/hello"},
@@ -64,7 +64,7 @@ func TestRemoteTarget(t *testing.T) { // [EnQKNsd]
 	}
 }
 
-func TestSSHTarget(t *testing.T) { // [EnQKNse]
+func TestSSHTarget(t *testing.T) { // [dbfrq]
 	tests := []struct{ url, want string }{
 		{"git@github.com:octocat/hello.git", "github.com"},
 		{"github_work:octocat/hello.git", "github_work"},
@@ -83,7 +83,7 @@ func TestSSHTarget(t *testing.T) { // [EnQKNse]
 
 // sshTarget gives the alias to display; sshConnectTarget gives what to actually
 // connect as, so an explicit user in the URL is honored.
-func TestSSHConnectTarget(t *testing.T) { // [EnQKNsf]
+func TestSSHConnectTarget(t *testing.T) { // [dbfrr]
 	tests := []struct{ url, want string }{
 		{"git@github.com:octocat/hello.git", "git@github.com"},
 		{"github_work:octocat/hello.git", "github_work"},
@@ -99,7 +99,7 @@ func TestSSHConnectTarget(t *testing.T) { // [EnQKNsf]
 
 // The login answered for one remote was handed back for the next one asked about.
 // An https remote has no ssh target, so nothing here runs ssh.
-func TestSSHLoginIsPerRemote(t *testing.T) { // [Er1LxTt]
+func TestSSHLoginIsPerRemote(t *testing.T) { // [dd5gd]
 	t.Setenv("GIT_SSH_COMMAND", "ssh") // keeps the core.sshCommand lookup off this repo
 	a := newApp(newPrinter())
 	a.remote.sshLogins = map[string]string{"git@github.com:a/b.git": "alice"}
@@ -116,7 +116,7 @@ func TestSSHLoginIsPerRemote(t *testing.T) { // [Er1LxTt]
 
 // Only a mismatch both sides KNOW about counts: '?' means we couldn't tell, which
 // is not the same as being wrong.
-func TestIdentityMismatchText(t *testing.T) { // [EnQKNsg]
+func TestIdentityMismatchText(t *testing.T) { // [dbfrs]
 	if identityMismatchText("gh", "a", "b") == "" {
 		t.Error("a real mismatch went unreported")
 	}
@@ -137,7 +137,7 @@ func TestIdentityMismatchText(t *testing.T) { // [EnQKNsg]
 }
 
 // A credentialed origin would otherwise echo its token on every run.
-func TestMaskURL(t *testing.T) { // [EnQKNsh]
+func TestMaskURL(t *testing.T) { // [dbfrt]
 	tests := []struct{ in, want string }{
 		{"https://user:token@github.com/o/n.git", "https://***@github.com/o/n.git"},
 		{"https://github.com/o/n.git", "https://github.com/o/n.git"},
@@ -151,7 +151,7 @@ func TestMaskURL(t *testing.T) { // [EnQKNsh]
 	}
 }
 
-func TestShellWord(t *testing.T) { // [ErsJhZM]
+func TestShellWord(t *testing.T) { // [ddj3f]
 	tests := []struct {
 		in     string
 		always bool
@@ -181,7 +181,7 @@ func TestShellWord(t *testing.T) { // [ErsJhZM]
 	}
 }
 
-func TestGithubURL(t *testing.T) { // [EnQKNsi]
+func TestGithubURL(t *testing.T) { // [dbfrv]
 	if got := githubURL("o/n", "ssh"); got != "git@github.com:o/n.git" {
 		t.Errorf("ssh = %q", got)
 	}
@@ -193,7 +193,7 @@ func TestGithubURL(t *testing.T) { // [EnQKNsi]
 	}
 }
 
-func TestIsLocalPathAndSameRemote(t *testing.T) { // [EnQKNsj]
+func TestIsLocalPathAndSameRemote(t *testing.T) { // [dbfrw]
 	tests := []struct {
 		url   string
 		local bool
@@ -222,7 +222,7 @@ func TestIsLocalPathAndSameRemote(t *testing.T) { // [EnQKNsj]
 	}
 }
 
-func TestCloneDestDir(t *testing.T) { // [EnQKNsk]
+func TestCloneDestDir(t *testing.T) { // [dbfrx]
 	tests := []struct{ url, dir, want string }{
 		{"https://github.com/o/hello.git", "", "hello"},
 		{"https://github.com/o/hello", "", "hello"},
@@ -241,7 +241,7 @@ func TestCloneDestDir(t *testing.T) { // [EnQKNsk]
 // including when the account selector had just set it from a config sshKey. So the
 // multi-account setups the timeout was written for were the ones that lost it, and
 // an unreachable host hung every command for the full TCP wait.
-func TestRemoteEnvKeepsTheConnectTimeoutOnOurOwnSSHCommand(t *testing.T) { // [EnQsbMO]
+func TestRemoteEnvKeepsTheConnectTimeoutOnOurOwnSSHCommand(t *testing.T) { // [dbfvz]
 	t.Setenv("GIT_SSH_COMMAND", "ssh -i /keys/work -o IdentitiesOnly=yes")
 
 	ours := &app{}
@@ -260,7 +260,7 @@ func TestRemoteEnvKeepsTheConnectTimeoutOnOurOwnSSHCommand(t *testing.T) { // [E
 
 // A blank ssh command split into nothing, and the probe read its first word, which
 // crashed every push compared against an account.
-func TestGitSSHCommandBlank(t *testing.T) { // [Epy8iu2]
+func TestGitSSHCommandBlank(t *testing.T) { // [dcnp4]
 	for _, blank := range []string{" ", "\t", " \n "} {
 		t.Setenv("GIT_SSH_COMMAND", blank)
 		a := &app{}
@@ -275,7 +275,7 @@ func TestGitSSHCommandBlank(t *testing.T) { // [Epy8iu2]
 
 // The probe reads a quoted command as plain ssh, and remoteEnv exported that, which
 // outranks core.sshCommand. The fetch ran with no key and read as offline.
-func TestRemoteEnvLeavesAQuotedSSHCommandToGit(t *testing.T) { // [EpyGORs]
+func TestRemoteEnvLeavesAQuotedSSHCommandToGit(t *testing.T) { // [dcnpy]
 	t.Setenv("GIT_SSH_COMMAND", "")
 	if err := os.Unsetenv("GIT_SSH_COMMAND"); err != nil {
 		t.Fatal(err)

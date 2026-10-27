@@ -54,7 +54,7 @@ func runGit(t *testing.T, dir string, args ...string) {
 	}
 }
 
-func TestBranchReadsFollowWrites(t *testing.T) { // [Erl1x2z]
+func TestBranchReadsFollowWrites(t *testing.T) { // [ddgbd]
 	origin, clone := gitTestRepo(t)
 	other := filepath.Join(filepath.Dir(clone), "other")
 	runGit(t, filepath.Dir(clone), "clone", "-q", origin, other)
@@ -83,7 +83,7 @@ func TestBranchReadsFollowWrites(t *testing.T) { // [Erl1x2z]
 
 // The pull step names the upstream as git shortens it, and the plan reads the same
 // name for a branch it checks out later, from origin's copy when there is no local one.
-func TestUpstreamNames(t *testing.T) { // [Erl1x3E]
+func TestUpstreamNames(t *testing.T) { // [ddgbe]
 	_, clone := gitTestRepo(t)
 	runGit(t, clone, "push", "-q", "origin", "HEAD:refs/heads/far")
 	runGit(t, clone, "branch", "-q", "lone")
@@ -111,7 +111,7 @@ func TestUpstreamNames(t *testing.T) { // [Erl1x3E]
 // git shortens a ref as far as it stays unambiguous, so a tag sharing the short
 // name made origin's default read as "remotes/origin/main", and an unborn one as
 // "heads/main". The name comes from the full ref, whatever tags exist.
-func TestDefaultBranchBesideSameNamedTag(t *testing.T) { // [Erl643f]
+func TestDefaultBranchBesideSameNamedTag(t *testing.T) { // [ddgbx]
 	_, clone := gitTestRepo(t)
 	runGit(t, clone, "remote", "set-head", "origin", "main")
 	runGit(t, clone, "tag", "origin/main")

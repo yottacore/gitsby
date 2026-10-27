@@ -29,7 +29,7 @@ const shcl2Footer = "#\n" +
 // A bare '\\' was one backslash under 2.x and is two now.
 const shcl2Body = "# mine\naccount: w\n\tname: Ada\n\temail: C:\\\\new\n\n" + shcl2Footer
 
-func TestOldFormat(t *testing.T) { // [ErfO2Bg]
+func TestOldFormat(t *testing.T) { // [ddezz]
 	cases := map[string]int{
 		shcl2Body:                           2,
 		"account: w\n\tname: Ada\n":         0,
@@ -62,7 +62,7 @@ func dirEntries(t *testing.T, dir string) []string {
 // A 2.x file is kept under a dated name and replaced by one the module converted,
 // with the current banner. The values are the ones 2.x read, and the next run
 // leaves it alone.
-func TestOldFormatFileIsConverted(t *testing.T) { // [ErfO2Bt]
+func TestOldFormatFileIsConverted(t *testing.T) { // [ddf00]
 	dir := t.TempDir()
 	file := filepath.Join(dir, "config.shcl")
 	if err := os.WriteFile(file, []byte(shcl2Body), 0o600); err != nil {
@@ -125,7 +125,7 @@ func TestOldFormatFileIsConverted(t *testing.T) { // [ErfO2Bt]
 }
 
 // A file typed by hand names no format and is read as the current one, untouched.
-func TestUnmarkedFileIsLeftAlone(t *testing.T) { // [ErfO2C7]
+func TestUnmarkedFileIsLeftAlone(t *testing.T) { // [ddf01]
 	body := "account: w\n\temail: C:\\\\new\n"
 	cfg := writeConfig(t, body)
 	wantValue(t, cfg, "w", "email", `C:\\new`)
@@ -140,7 +140,7 @@ func TestUnmarkedFileIsLeftAlone(t *testing.T) { // [ErfO2C7]
 // Where the new file can't be written, nothing is: no backup, the file as it was,
 // the values still read the 2.x way, and an edit refuses rather than mixing the
 // two formats in one file.
-func TestOldFormatUnwritable(t *testing.T) { // [ErfO2CK]
+func TestOldFormatUnwritable(t *testing.T) { // [ddf02]
 	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
 		t.Skip("needs a folder this user can't write")
 	}
@@ -178,7 +178,7 @@ func TestOldFormatUnwritable(t *testing.T) { // [ErfO2CK]
 }
 
 // A linked config is converted where it lives, and the link stays a link.
-func TestOldFormatThroughALink(t *testing.T) { // [ErfO2CY]
+func TestOldFormatThroughALink(t *testing.T) { // [ddf03]
 	if runtime.GOOS == "windows" {
 		t.Skip("links need privileges there")
 	}
@@ -214,7 +214,7 @@ func TestOldFormatThroughALink(t *testing.T) { // [ErfO2CY]
 
 // Another run converted the file between this one's read and its lock. It keeps
 // what that run wrote, makes no second backup, and says nothing more.
-func TestOldFormatConvertedByAnotherRun(t *testing.T) { // [ErfO2Cl]
+func TestOldFormatConvertedByAnotherRun(t *testing.T) { // [ddf04]
 	dir := t.TempDir()
 	file := filepath.Join(dir, "config.shcl")
 	converted, _ := migrateText(shcl2Body)

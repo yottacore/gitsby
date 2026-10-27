@@ -14,7 +14,7 @@ import (
 	"testing"
 )
 
-func TestParseOriginHeads(t *testing.T) { // [EptMdzB]
+func TestParseOriginHeads(t *testing.T) { // [dcmhn]
 	a40, b40, c64 := strings.Repeat("a", 40), strings.Repeat("b", 40), strings.Repeat("c", 64)
 	lf := a40 + "\trefs/heads/foo\n" + b40 + "\trefs/heads/x/refs/heads/foo\n"
 	want := map[string]string{"refs/heads/foo": a40, "refs/heads/x/refs/heads/foo": b40}
@@ -39,7 +39,7 @@ func TestParseOriginHeads(t *testing.T) { // [EptMdzB]
 	}
 }
 
-func TestSortRemoteDeletes(t *testing.T) { // [EptMdzC]
+func TestSortRemoteDeletes(t *testing.T) { // [dcmhp]
 	tested := map[string]string{"a": "1", "b": "2", "c": "3", "d": "4"}
 	onOrigin := map[string]string{"refs/heads/a": "1", "refs/heads/b": "9", "refs/heads/d": "4", "refs/heads/e": "5"}
 	send, changed, gone := sortRemoteDeletes([]string{"a", "b", "c", "d", "e"}, tested, onOrigin)
@@ -63,7 +63,7 @@ func argListLen(args []string) int {
 	return n
 }
 
-func TestLeaseDeleteBatches(t *testing.T) { // [EptMdzD]
+func TestLeaseDeleteBatches(t *testing.T) { // [dcmhq]
 	got := leaseDeleteBatches([]string{"a", "b"}, map[string]string{"a": "va", "b": "vb"}, leasePushBudget)
 	want := []leaseBatch{{
 		branches: []string{"a", "b"},
@@ -119,7 +119,7 @@ func checkBatches(t *testing.T, name string, got []leaseBatch, tested map[string
 	}
 }
 
-func TestOriginTips(t *testing.T) { // [EptMdzE]
+func TestOriginTips(t *testing.T) { // [dcmhr]
 	got := originTips([]string{"a1 refs/remotes/origin/foo", "b2 refs/remotes/origin/feature/x", "c3 refs/heads/foo", "nospace", ""})
 	want := map[string]string{"foo": "a1", "feature/x": "b2"}
 	if !reflect.DeepEqual(got, want) {
@@ -127,7 +127,7 @@ func TestOriginTips(t *testing.T) { // [EptMdzE]
 	}
 }
 
-func TestTypedArg(t *testing.T) { // [EpxuX5q]
+func TestTypedArg(t *testing.T) { // [dcnmn]
 	for _, c := range []struct{ word, goos, want string }{
 		{"feature/x-1_2", "linux", "feature/x-1_2"},
 		{"--force-with-lease=refs/heads/a:0f", "linux", "--force-with-lease=refs/heads/a:0f"},
@@ -147,7 +147,7 @@ func TestTypedArg(t *testing.T) { // [EpxuX5q]
 	}
 }
 
-func TestLeaseDeleteLine(t *testing.T) { // [EpxuX5r]
+func TestLeaseDeleteLine(t *testing.T) { // [dcnmp]
 	if got, want := leaseDeleteLine("far", "0f", "linux"), "git push --force-with-lease=refs/heads/far:0f origin --delete refs/heads/far"; got != want {
 		t.Errorf("leaseDeleteLine = %s, want %s", got, want)
 	}

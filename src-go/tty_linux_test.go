@@ -24,7 +24,7 @@ func ioctl(t *testing.T, f *os.File, request uintptr, arg unsafe.Pointer) {
 	}
 }
 
-func TestTerminalWidthAsksTheKernel(t *testing.T) { // [Erl3JlD]
+func TestTerminalWidthAsksTheKernel(t *testing.T) { // [ddgbr]
 	ptmx, err := os.OpenFile("/dev/ptmx", os.O_RDWR, 0)
 	if err != nil {
 		t.Skipf("no pty here: %v", err)

@@ -7,9 +7,12 @@
 ##		- --install writes a small hook into the repo's hooks directory that runs this
 ##		  script on every push. It never sets core.hooksPath, and never replaces a hook
 ##		  it did not write.
-##		- As the hook, a commit pushed to main gets cicd/cicd.bash --gate, run in a detached
-##		  worktree at <git common dir>/gitsby-gate. The commit is checked as committed, never
-##		  the working tree. A failure refuses the whole push.
+##		- As the hook, a commit pushed to main gets cicd/cicd.bash --merge-gate, run in a
+##		  detached worktree at <git common dir>/gitsby-gate. The commit is checked as committed,
+##		  never the working tree. A failure refuses the whole push.
+##		- A commit whose cicd.bash has no --merge-gate yet gets the --gate it had.
+##		- A push to main that changes only paths its own cicd/config.bash lists in
+##		  MERGE_GATE_SKIP, such as docs, goes out ungated with a note.
 ##		- Other branches, deletes and tags are not gated. A commit whose cicd.bash has no
 ##		  --gate, and a box other than Linux, push with a note.
 ##	Syntax:
@@ -109,7 +112,7 @@ fInstall(){
 	chmod 0755 -- "${tmp}"
 	mv -f -- "${tmp}" "${target}"
 	fEcho_Clean "pre-push: ${verb} ${target}"
-	fEcho_Clean "Every push to main now runs cicd/cicd.bash --gate on the pushed commit first. git push --no-verify skips it once."
+	fEcho_Clean "Every push to main now runs cicd/cicd.bash --merge-gate on the pushed commit first, unless it changes only the paths MERGE_GATE_SKIP in cicd/config.bash lists. git push --no-verify skips it once."
 	exit 0
 }
 
@@ -155,9 +158,47 @@ fSnapshot(){
 	git -C "${root}" worktree add --quiet --detach "${snap}" "${commit}"
 }
 
+## The paths the commit $1 lists in MERGE_GATE_SKIP in its own cicd/config.bash, one per line.
+## Nothing when it has none, or its config doesn't load.
+fSkipList(){
+	(
+		set +Eeu
+		# shellcheck disable=SC1090  ## the commit's own config, from git.
+		source <(git -C "${root}" show "$1:cicd/config.bash" 2>/dev/null) >/dev/null 2>&1
+		printf '%s\n' ${MERGE_GATE_SKIP[@]+"${MERGE_GATE_SKIP[@]}"}
+	) || true
+}
+
+## True when going from the remote's commit $2 to $1 changes only paths $1's skip list matches.
+## A pattern ending in / is a folder at the top of the repo, and any other is a glob over the
+## whole path, where * crosses folders. A new branch, or a remote commit not here, is gated.
+fSkipsGate(){
+	local commit="$1" remote="$2" f p hit files
+	local -a skip=()
+	[[ ! "${remote}" =~ ^0+$ ]] || return 1
+	git -C "${root}" cat-file -e "${remote}^{commit}" 2>/dev/null || return 1
+	mapfile -t skip < <(fSkipList "${commit}")
+	((${#skip[@]})) || return 1
+	## A name git has to quote, such as one with a newline, matches nothing, so it is gated.
+	files="$(git -C "${root}" -c core.quotePath=false diff --name-only --no-renames "${remote}" "${commit}")" || return 1
+	while IFS= read -r f; do
+		[[ -n "${f}" ]] || continue
+		hit=0
+		for p in "${skip[@]}"; do
+			[[ -n "${p}" ]] || continue
+			## Unquoted in the second, so the pattern globs.
+			# shellcheck disable=SC2053
+			if [[ "${p}" == */ ]]; then [[ "${f}" != "${p}"* ]] || { hit=1; break; }
+			else [[ "${f}" != ${p} ]] || { hit=1; break; }; fi
+		done
+		((hit)) || return 1
+	done <<< "${files}"
+	return 0
+}
+
 fHook(){
-	local line lsha rref commit short branch cicdText rc i
-	local -a lines=() commits=() branches=()
+	local line lsha rref rsha commit short branch cicdText rc i gateOpt
+	local -a lines=() commits=() branches=() remotes=()
 	local -A seen=()
 	## git ends every line with a newline; the guard costs nothing.
 	while IFS= read -r line || [[ -n "${line}" ]]; do lines+=("${line}"); done
@@ -168,7 +209,7 @@ fHook(){
 	for line in "${lines[@]}"; do
 		[[ -n "${line}" ]] || continue
 		## <local ref> <local sha> <remote ref> <remote sha>. A delete is "(delete) 000... <ref> <sha>".
-		read -r _ lsha rref _ <<< "${line}"
+		read -r _ lsha rref rsha <<< "${line}"
 		if [[ ! "${lsha}" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]]; then
 			fEcho_Clean "pre-push: unexpected line from git: ${line}" >&2
 			exit 1
@@ -186,6 +227,7 @@ fHook(){
 			seen["${commit}"]=1
 			commits+=("${commit}")
 			branches+=("${rref#refs/heads/}")
+			remotes+=("${rsha}")
 		fi
 	done
 	((${#commits[@]})) || exit 0
@@ -214,20 +256,27 @@ fHook(){
 		## The v2.1.0 tag, and hotfixes cut from it, predate the gate. Refusing them would block
 		## every hotfix push.
 		cicdText="$(git -C "${root}" show "${commit}:cicd/cicd.bash" 2>/dev/null || true)"
-		if [[ "${cicdText}" != *'--gate)'* ]]; then
+		## A commit cut before --merge-gate keeps the gate it had.
+		if [[ "${cicdText}" == *'|--merge-gate|'* || "${cicdText}" == *'--merge-gate)'* ]]; then gateOpt=--merge-gate
+		elif [[ "${cicdText}" == *'--gate)'* ]]; then gateOpt=--gate
+		else
 			fEcho_Clean "pre-push: ${short} (${branch}) predates the gate: its cicd/cicd.bash has no --gate, so it is not gated."
+			continue
+		fi
+		if fSkipsGate "${commit}" "${remotes[i]}"; then
+			fEcho_Clean "pre-push: not gated: ${short} (${branch}) changes only paths its cicd/config.bash lists in MERGE_GATE_SKIP."
 			continue
 		fi
 		fSnapshot "${commit}"
 		fEcho "pre-push gate: ${short} for ${branch}"
 		rc=0
 		## 9>&- so nothing the gate leaves running can hold the lock after this push is done.
-		(cd "${snap}" && ./cicd/cicd.bash --gate </dev/null 9>&-) || rc=$?
+		(cd "${snap}" && ./cicd/cicd.bash "${gateOpt}" </dev/null 9>&-) || rc=$?
 		if [[ "${rc}" != 0 ]]; then
 			{
 				fEcho_Clean
 				fEcho_Clean "pre-push: the gate failed on ${short} (${branch}), so nothing was pushed."
-				fEcho_Clean "It checked that commit as committed, in ${snap}. To repeat it: (cd ${snap} && cicd/cicd.bash --gate)"
+				fEcho_Clean "It checked that commit as committed, in ${snap}. To repeat it: (cd ${snap} && cicd/cicd.bash ${gateOpt})"
 				fEcho_Clean "To push without the gate this once: git push --no-verify"
 			} >&2
 			exit 1
@@ -253,3 +302,6 @@ esac
 ##		- 20260924 JC: Only a push to main is gated. Every other branch goes out without it.
 ##		- 20261004 JC: fEcho_Clean keeps its state in a two-underscore global and reads in one
 ##		  pass. Every expansion braced, and shellcheck enforces it.
+##		- 20261025 JC: A commit whose cicd.bash has --merge-gate is gated with it, every check of a
+##		  plain run, and an older one keeps --gate. A push that changes only the paths its
+##		  config.bash lists in MERGE_GATE_SKIP goes out ungated.

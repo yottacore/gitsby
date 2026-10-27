@@ -22,7 +22,7 @@ func testPrinter() (*printer, *strings.Builder, *strings.Builder) {
 	return &printer{out: &out, err: &err}, &out, &err
 }
 
-func TestPrinterCollapsesRepeatedBlanks(t *testing.T) { // [EnQKNsP]
+func TestPrinterCollapsesRepeatedBlanks(t *testing.T) { // [dbfr8]
 	p, out, _ := testPrinter()
 	p.clean("")
 	p.clean("")
@@ -37,7 +37,7 @@ func TestPrinterCollapsesRepeatedBlanks(t *testing.T) { // [EnQKNsP]
 
 // forceClean is for the framing that has to be a fixed number of lines rather
 // than a rhythm.
-func TestPrinterForceClean(t *testing.T) { // [EnQKNsQ]
+func TestPrinterForceClean(t *testing.T) { // [dbfr9]
 	p, out, _ := testPrinter()
 	p.clean("")
 	p.forceClean("")
@@ -47,7 +47,7 @@ func TestPrinterForceClean(t *testing.T) { // [EnQKNsQ]
 	}
 }
 
-func TestPrinterStatus(t *testing.T) { // [EnQKNsR]
+func TestPrinterStatus(t *testing.T) { // [dbfra]
 	p, out, _ := testPrinter()
 	p.status("Done.")
 	p.status("")
@@ -58,7 +58,7 @@ func TestPrinterStatus(t *testing.T) { // [EnQKNsR]
 
 // Only 'y' or 'yes' is yes: a typo, a stray newline, or an EOF is a no, because
 // the fallback has to be the harmless answer.
-func TestPrinterConfirm(t *testing.T) { // [EnQKNsS]
+func TestPrinterConfirm(t *testing.T) { // [dbfrb]
 	for _, tc := range []struct {
 		answer string
 		want   bool
@@ -76,7 +76,7 @@ func TestPrinterConfirm(t *testing.T) { // [EnQKNsS]
 
 // An error ends with two blanks where success ends with one; the message itself
 // goes to stderr.
-func TestUsageErrorFraming(t *testing.T) { // [EnQKNsT]
+func TestUsageErrorFraming(t *testing.T) { // [dbfrc]
 	p, out, errOut := testPrinter()
 	code := reportExit(p, usagef("no such thing: '%s'.", "x"))
 	if code != 1 {
@@ -92,7 +92,7 @@ func TestUsageErrorFraming(t *testing.T) { // [EnQKNsT]
 
 // The errors the scripts raise inside a command substitution land with one
 // trailing blank, because the subshell swallowed the wrapping ones.
-func TestUsageSubErrorFraming(t *testing.T) { // [EnQKNsU]
+func TestUsageSubErrorFraming(t *testing.T) { // [dbfrd]
 	p, out, errOut := testPrinter()
 	if code := reportExit(p, usageSubf("bad config.")); code != 1 {
 		t.Errorf("exit code = %d, want 1", code)
@@ -107,7 +107,7 @@ func TestUsageSubErrorFraming(t *testing.T) { // [EnQKNsU]
 
 // Nothing to do is a success everywhere here; a nonzero exit would tell a calling
 // script the opposite.
-func TestErrDoneExitsZeroAndSilently(t *testing.T) { // [EnQKNsV]
+func TestErrDoneExitsZeroAndSilently(t *testing.T) { // [dbfre]
 	p, out, errOut := testPrinter()
 	if code := reportExit(p, errDone); code != 0 {
 		t.Errorf("exit code = %d, want 0", code)
@@ -117,7 +117,7 @@ func TestErrDoneExitsZeroAndSilently(t *testing.T) { // [EnQKNsV]
 	}
 }
 
-func TestStepErrorFraming(t *testing.T) { // [EnQKNsW]
+func TestStepErrorFraming(t *testing.T) { // [dbfrf]
 	p, out, errOut := testPrinter()
 	if code := reportExit(p, &stepError{disp: "git push", code: 128}); code != 1 {
 		t.Errorf("exit code = %d, want 1", code)
@@ -130,7 +130,7 @@ func TestStepErrorFraming(t *testing.T) { // [EnQKNsW]
 	}
 }
 
-func TestSilentExitSaysNothing(t *testing.T) { // [EnQKNsX]
+func TestSilentExitSaysNothing(t *testing.T) { // [dbfrg]
 	p, out, errOut := testPrinter()
 	if code := reportExit(p, silentExit(3)); code != 3 {
 		t.Errorf("exit code = %d, want 3", code)
@@ -141,7 +141,7 @@ func TestSilentExitSaysNothing(t *testing.T) { // [EnQKNsX]
 }
 
 // A wrapped error still has to be recognized as the ending it is.
-func TestWrappedErrorsKeepTheirFraming(t *testing.T) { // [EnQKNsY]
+func TestWrappedErrorsKeepTheirFraming(t *testing.T) { // [dbfrh]
 	p, _, _ := testPrinter()
 	if code := reportExit(p, errors.Join(errDone)); code != 0 {
 		t.Errorf("wrapped errDone gave %d, want 0", code)
@@ -150,7 +150,7 @@ func TestWrappedErrorsKeepTheirFraming(t *testing.T) { // [EnQKNsY]
 
 // A usage error built around a cause still answers errors.Is and errors.As for it,
 // and is still a usage error to anything asking.
-func TestUsageWrapfKeepsTheCause(t *testing.T) { // [Er1LxTs]
+func TestUsageWrapfKeepsTheCause(t *testing.T) { // [dd5gc]
 	err := usageWrapf(fs.ErrPermission, "Couldn't run '%s'", "git")
 	if !errors.Is(err, fs.ErrPermission) {
 		t.Errorf("%v lost its cause", err)
@@ -166,7 +166,7 @@ func TestUsageWrapfKeepsTheCause(t *testing.T) { // [Er1LxTs]
 
 // cached is what keeps "not asked yet" apart from "asked, and the answer is
 // nothing" - the difference between one lookup and the same five over and over.
-func TestCachedRemembersAnEmptyAnswer(t *testing.T) { // [EnQKNsZ]
+func TestCachedRemembersAnEmptyAnswer(t *testing.T) { // [dbfrj]
 	var c cached[string]
 	asked := 0
 	ask := func() string { asked++; return "" }
@@ -189,7 +189,7 @@ func TestCachedRemembersAnEmptyAnswer(t *testing.T) { // [EnQKNsZ]
 // only the very end of the string had been trimmed. 'pr ok' read the PR's head
 // branch out of a two-line answer that way, so on a host that writes CRLF the
 // branch name carried one and matched no ref anywhere.
-func TestSplitLines(t *testing.T) { // [EnR2Eul]
+func TestSplitLines(t *testing.T) { // [dbfx4]
 	tests := []struct {
 		in   string
 		want []string
@@ -208,7 +208,7 @@ func TestSplitLines(t *testing.T) { // [EnR2Eul]
 }
 
 // A path in a note is printed on one line, space and all, however long it is.
-func TestNoteKeepsAPathWhole(t *testing.T) { // [ErTHntr]
+func TestNoteKeepsAPathWhole(t *testing.T) { // [ddc2v]
 	path := "/Users/someone/Library/Application Support/gitsby/" + strings.Repeat("x", 40) + "/config.shcl"
 	got := noteLines("File", path)
 	if want := []string{"File: " + path}; !slices.Equal(got, want) {
@@ -218,7 +218,7 @@ func TestNoteKeepsAPathWhole(t *testing.T) { // [ErTHntr]
 
 // A value prints on one line, with nothing in it that drives the terminal, and a
 // printable character comes out as written - a path is never re-spelled.
-func TestPrintableEscapesControlsOnly(t *testing.T) { // [ErvuMUv]
+func TestPrintableEscapesControlsOnly(t *testing.T) { // [ddjz7]
 	cases := []struct{ in, want string }{
 		{"plain", "plain"},
 		{`C:\Users\pat\dev`, `C:\Users\pat\dev`},
@@ -253,7 +253,7 @@ func mustUsage(t *testing.T, err error) *usageError {
 
 // Every line out is escaped, wherever the value came from, while a usage error
 // built from lines keeps them.
-func TestEveryLineOutIsEscaped(t *testing.T) { // [ErwXroS]
+func TestEveryLineOutIsEscaped(t *testing.T) { // [ddk41]
 	p, out, errOut := testPrinter()
 	evil := "x\nRemote .......: y\x1b[2J"
 	p.clean("Git host .....: " + evil)

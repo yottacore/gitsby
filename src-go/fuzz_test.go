@@ -23,7 +23,7 @@ import (
 	shcl "github.com/yottacore/shcl/source/go/v2"
 )
 
-func FuzzSplitRemoteURL(f *testing.F) { // [EndU98L]
+func FuzzSplitRemoteURL(f *testing.F) { // [dbjwr]
 	for _, seed := range []string{
 		"git@github.com:owner/name.git",
 		"https://github.com/owner/name",
@@ -44,7 +44,7 @@ func FuzzSplitRemoteURL(f *testing.F) { // [EndU98L]
 	})
 }
 
-func FuzzParseTeaTable(f *testing.F) { // [Eq2wii1]
+func FuzzParseTeaTable(f *testing.F) { // [dcpv0]
 	f.Add("Index\tTitle\tState\n1\tFix the thing\topen\n")
 	f.Add("a\tb\nx\n\n")
 	f.Add("")
@@ -58,7 +58,7 @@ func FuzzParseTeaTable(f *testing.F) { // [Eq2wii1]
 
 var fuzzVersionRE = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 
-func FuzzNextVersion(f *testing.F) { // [EndU98M]
+func FuzzNextVersion(f *testing.F) { // [dbjws]
 	for _, seed := range []string{"v2.1.0", "v2.0.0-rc1", "v1.2", "v2020", "nonsense", ""} {
 		f.Add(seed)
 	}
@@ -72,7 +72,7 @@ func FuzzNextVersion(f *testing.F) { // [EndU98M]
 	})
 }
 
-func FuzzMaskURL(f *testing.F) { // [EndU98N]
+func FuzzMaskURL(f *testing.F) { // [dbjwt]
 	f.Add("https://user:token@github.com/owner/name")
 	f.Add("https://x-access-token:ghp_abc@github.com/o/n.git")
 	f.Add("git@github.com:owner/name.git")
@@ -103,7 +103,7 @@ func indentLines(body, prefix string) string {
 // reads as the key given again with the block as its value, and the last value
 // wins as it does for any repeat. Nothing under the key may reach the model, and
 // every name the module holds under any instance of it must be on the ignored list.
-func FuzzConfigLoadDoc(f *testing.F) { // [EptqIxE]
+func FuzzConfigLoadDoc(f *testing.F) { // [dcmn5]
 	// The refused account name is left out: its body is a block's, not a key's.
 	for _, row := range nestedKeyRows[:len(nestedKeyRows)-1] {
 		f.Add(row.body[strings.IndexByte(row.body, '\n')+1:])
@@ -149,7 +149,7 @@ func FuzzConfigLoadDoc(f *testing.F) { // [EptqIxE]
 	})
 }
 
-func FuzzConfigKeyValue(f *testing.F) { // [EndU98O]
+func FuzzConfigKeyValue(f *testing.F) { // [dbjwv]
 	f.Add("account.work.ghAccount", "my-login")
 	f.Add("account.a.b.c", "  spaced  ")
 	f.Add("", "\"quoted\"")
@@ -182,7 +182,7 @@ func FuzzConfigKeyValue(f *testing.F) { // [EndU98O]
 	})
 }
 
-func FuzzSetValue(f *testing.F) { // [ErUTuA8]
+func FuzzSetValue(f *testing.F) { // [ddcc1]
 	for _, seed := range []string{`C:\work\new`, `~\dev\tools`, `\\srv\share`, `C:\Bob's\new`, "C:\\a\u200bb", `a\b, c`, `x\#y`, `'q'`, `\`, "a\\\tb", "plain"} {
 		f.Add(seed)
 	}
@@ -208,7 +208,7 @@ func FuzzSetValue(f *testing.F) { // [ErUTuA8]
 // A value the 2.x module wrote reads the same after the conversion as 2.x read
 // it. The text is the 2.x writer's own, so this follows whatever it did with
 // quotes and escapes rather than a guess at it.
-func FuzzOldFormatValue(f *testing.F) { // [ErkNuhE]
+func FuzzOldFormatValue(f *testing.F) { // [ddg6e]
 	for _, seed := range []string{`C:\work\new`, `~\dev\tools`, `\\srv\share`, `C:\Bob's\new`, `%USERPROFILE%\x`, `a\tb`, `"q"`, `'q'`, `x # y`, `[a, b]`, `\`, "tab\there", "plain"} {
 		f.Add(seed)
 	}
