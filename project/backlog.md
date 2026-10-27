@@ -169,6 +169,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: `--backlog-run-quick lint suite parity` passed in the image: test.bash 1748 -> 1754, 0 failed, parity 29/0. Against HEAD's cicd.bash the 6 new checks and the 14 changed ones fail. shellcheck passes.
 	- Swept: every `fSection`, `OK:` line and skip line in cicd.bash, and every reader of them in the repo; test.bash is the only one. The other scripts' `•` rules are in comments only. pre-push.bash keys on `--gate)`, unchanged.
 
+- `--backlog-run-quick lint` fails markdownlint MD038 on backlog.md
+	- ID: 2026102619025437
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261026-190254
+	- Opened by: jim-collier
+	- Related IDs: 2026102618140158
+	- Steps to reproduce [Bug]:
+		- `env -u DISPLAY bash cicd/cicd.bash --backlog-run-quick lint suite` on round-20261026 at 7c87737.
+	- Incorrect behavior [Bug]: lint stops at the markdownlint step, with 9 MD038 errors, spaces inside a code span. All are in the `Asserts given new values` sub-bullets of 2026102618140158, where the old and new test lines are quoted.
+	- Expected behavior [Bug]: the backlog passes markdownlint, and lint goes on to the next step.
+	- Reproduced [Bug]: 2026-10-26, twice in the image, while working 2026102617594208.
+	- Possible cause [Bug]: the old and new test lines are quoted with their two-space indent inside backticks.
+
 - CICD reset: a test for every Done item
 	- ID: 2026102416313106
 	- Type: Enhancement
@@ -183,19 +198,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Progress log:
 		- 2026-10-26: Split, too big for one pass. 399 old-format Done items name no test, 299 bugs and 100 features. Children, by backlog section: 2026102617594206, 2026102617594208, 2026102617594210, 2026102617594212, 2026102617594214, 2026102617594216, 2026102617594218 and 2026102617594221.
 		- 2026-10-26: 2026102617594206 is done, with 2 new checks. The other 7 are Queued.
-
-- CICD reset: a test for every Done item, Code review 20260909
-	- ID: 2026102617594208
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261026-175942
-	- Opened by: jim-collier
-	- Parent ID: 2026102416313106
-	- Requirements [Feature]:
-		- The old-format items under `Code review 20260909 - the pass against the standing directives`. 21 items.
-		- Each item there with no test row gets a `Test:` row that names its test by ID, or says in a few words why there is none.
-		- Where a test could exist and would make sense but doesn't, add it, watched to fail first.
 
 - CICD reset: a test for every Done item, the 20260812 groups and the 20260819 to 20260821 reviews
 	- ID: 2026102617594210
@@ -412,6 +414,33 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Keep the `golang.org/toolchain` modules for the `toolchain` line in go.mod, which `go.sum` doesn't name, and the `/go.mod`-only entries it does.
 		- test.bash builds the SHCL 2.x build offline from the cache ([ddg6f]), so check that every module it needs is in `go.sum`.
 		- Module paths in the cache spell capitals as `!` plus the lower case letter, and go makes the files read-only.
+
+- CICD reset: a test for every Done item, Code review 20260909
+	- ID: 2026102617594208
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261026-175942
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313106
+	- Requirements [Feature]:
+		- The old-format items under `Code review 20260909 - the pass against the standing directives`. 21 items.
+		- Each item there with no test row gets a `Test:` row that names its test by ID, or says in a few words why there is none.
+		- Where a test could exist and would make sense but doesn't, add it, watched to fail first.
+	- Progress log:
+		- 2026-10-26: The group heading and its 20 items each have a `Test:` row, found from the checks and Go tests their fix commits added. 19 name tests that already ran. Item 4 names none with an ID, since the pipeline's own Windows resource check is what failed.
+		- 2026-10-26: 1 new check where none was: [defqn], the README's reproduce recipe against the release's flags and build number, for item 18.
+	- Decisions:
+		- A run of IDs one commit added is named as a range, such as [dcmk3] to [dcmkc], with any gap left by a later change named.
+		- A check replaced since is named as it is now, with the commit that replaced it, such as [dd44t] for item 8's respacing check in 75ce642.
+		- Item 18 is docs only past its recipe and its `account list` line. The recipe is a public claim with nothing checking it, so it got a check. The rest are one-off wording fixes, which a check would only pin.
+	- Branch: round-20261026
+	- Test case: test.bash [defqn]. The rest name tests that already ran.
+	- Verified: `--backlog-run-quick suite` passed in the image, test.bash 1769/0. [defqn] fails on the README before 53b6b7b, and on today's with the build number taken out, and passes as it is. backlog-check.bash and `test-id.bash --check` clean.
+		- `--backlog-run-quick lint` stops at markdownlint on lines that were already in the backlog, filed as 2026102619025437.
+	- Swept: all 21, each against its fix commit's added checks and Go tests, with every cited ID grepped once in the suites and Go tests. Each item kept its wording; only the rows were added.
+	- Closed: 20261026-190254
+	- Acceptance signoff: Self-closed, tests and backlog rows only.
 
 - CICD reset: a test for every Done item, the top-level bugs
 	- ID: 2026102617594206
@@ -3547,6 +3576,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Opened: 20260909-184419
 	- Fix order: by class, each class across all its sites in one group of commits. 5 with 11 (unknown is listed, unknown is not missing); 9 with 19 (preview follows command, one spawn per run); 3 and 8 without moving the decisions they sit on; 12 and 20 only once reproduced. 15 and 16 early, since the pipeline is what proves the rest.
 	- Note: about twelve of the twenty sit in code that rounds 20260819b, c, d and 20260821 declared clean. Those rounds read the Go and grepped the rest.
+	- Test: each item below names its own.
 
 	- ✅ Code Review 20260909 item 19: `account list` runs one `gh` per configured account.
 		- Closed: 20260916-080622
@@ -3556,6 +3586,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Note: gh answers about one login at a time, so twenty distinct logins still cost twenty. What is gone is asking twice for the same one - which the listing did for every account sharing a login, and `account set` did by printing the whole listing before its edit.
 		- Note: the item said the style guide states the rule this breaks. It does not; that guide covers output.
 		- Verified: 1 new check, 1012 -> 1013, watched red against the pre-fix build. Two accounts on one login ask gh once. Go tests green, fuzz 301/0, parity 27/0. Spawn counts unchanged, since that fixture configures no accounts - it guards the listing rather than proving it.
+		- Test: [dcpvb] in test.bash.
 
 	- ✅ Code Review 20260909 item 18: public documents contradict the code.
 		- Closed: 20260915-155308
@@ -3580,6 +3611,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Kept at the time: code identifiers, the two `GITSBY_FORGE_*` variables, and two suite check labels. All renamed the next day, under "The last forge names".
 		- Sweep: every first-party `.md` at the root and under `project/`, the Go sources and tests, and test.bash's comments.
 		- Verified: gofmt and vet clean, markdown checks clean, and the new `account list` line prints as written. No suite asserted the old line, and the comparison suite does not run `account list`.
+		- Test: [defqn] in test.bash holds the README's reproduce recipe to the release's flags and build number, added 2026-10-26 and failing on the README before the fix. [dd5eb], added later in 9f0a006, covers the `account list` line. The rest is docs only.
 
 	- ✅ Code Review 20260909 item 17: pipeline housekeeping.
 		- Closed: 20260915-153036
@@ -3598,6 +3630,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Decided against: committing before the builds so the stamp can name the new commit. Publishing stays after every gate, and `-dirty` says what the build is.
 		- Sweep: every reader of the banner. The two build-number checks in test.bash and the release notes were the only ones. The release and demo builds are stamped from a tag, not from describe.
 		- Verified: 5 new checks in test.bash, all failing on the tree before, 1007 -> 1012. The two build-number checks match the two-line banner. Go tests green. The report still flags the two real warnings in the oldest run log, and passes the three logs that listed errors.go. PSScriptAnalyzer is clean on `run-latest.ps1` in both passes.
+		- Test: [dcnw7] to [dcnwb] in test.bash. [dbshs] and [dbsht] took the two-line banner.
 
 	- ✅ Code Review 20260909 item 14: six flaws in install.bash, or shared by both installers.
 		- Closed: 20260915-144923
@@ -3614,6 +3647,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Sweep: both checksum readers, both help texts and both plans. install.bash lowers its own hash too, not just the file's. The help checks read the options off the Bash parser's `case` arms and the PowerShell function's parameters and aliases, so a new option can't be left out again.
 		- Changed check: "go installer refuses any other --release" matched "now takes neither", the text for refusing both values. It matches "takes only 'stable'" now, since `stable` was never refused.
 		- Verified: 17 new checks in test.bash. 15 fail on the tree before, along with the changed check. Two are regression guards: `--release stable` still installs, and a first install says nothing of replacing. The declined-prompt check needs `script`.
+		- Test: [dcntn] to [dcnv5] in test.bash, and [dbfke] as changed.
 
 	- ✅ Code Review 20260909 item 13: five more flaws in install.ps1.
 		- Closed: 20260915-144923
@@ -3627,6 +3661,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Decided against: elevating. The `iex` and script block forms have no file to start again as administrator.
 		- Sweep: the plan's "run elevated" line went, since the refusal now comes first. A user-scope install still has no write check; that is the first bullet of enhancement 10.
 		- Verified: 9 new checks in test.bash, running whole installs with the web cmdlets stubbed. Eight fail on the tree before, and a tagged install asking for no latest release is a guard. On vm925w, under Windows PowerShell 5.1 and PowerShell 7.6, the long options, both help texts and the script block form all work with the same stubs, and the script block leaves no variable behind. `gover` fails all of those. The system-scope refusal and a binary that can't start were checked on Linux only.
+		- Test: [dcnt2] to [dcnta] in test.bash.
 
 	- ✅ Code Review 20260909 item 12: install.ps1 fails on Windows PowerShell 5.1 in the default lookup.
 		- Closed: 20260915-144923
@@ -3638,6 +3673,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Fixed: the redirect is asked for without stopping on an error, which on 5.1 hands back the 302 itself. The header is read by name on either version's object, and anything unreadable falls through to the list. The list is assigned before it is wrapped.
 		- Sweep: every web call in install.ps1. The `SHA256SUMS` and asset downloads read no header and return one object.
 		- Verified: 4 new checks in test.bash, with the stubs answering the way each version does. Three fail on the tree before, and reading 7's redirect is a guard. test.bash 977 -> 1007 with items 13 and 14, the Go tests and the pre-push gate green. On vm925w, 5.1 and 7.6 both resolve v2.1.0 from the real releases and stop at its missing Windows binary, where `gover` on 5.1 stops at the joined tag.
+		- Test: [dcnsy] to [dcnt1] in test.bash.
 
 	- ✅ Code Review 20260909 item 8: three flaws in `account set`.
 		- Closed: 20260915-132814
@@ -3651,6 +3687,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Fixed: `account set` settles its plan before anything prints, so a refusal comes alone, with no plan and no prompt. The file is read once, not twice with the prompt between. When a save changes more of the file than the key, the plan adds an `also:` line saying so. `protocol` takes `https` or `ssh` in any case and writes it lower case. Any other protocol already in a file, in an account or at the top, is listed as ignored.
 		- Sweep: no other plan decides a refusal. `protocol` was the only closed-set value the loader kept unchecked.
 		- Verified: 8 new checks in test.bash, 969 -> 977. Seven fail on `gover`, and a plan for a file already in the save's layout is a regression guard. The prompt check needs `script`. Three new Go tests, which don't build on `gover`. `TestAccountSetPreviewShowsTheRefusalsFirstLine` is gone, since a plan can't show a refusal now. The fuzz target's oracle expects nothing kept for a top-level protocol other than https or ssh. fuzz.bash 301/0, parity.bash 27/0. Linux only.
+		- Test: [dcnre] to [dcnrh], [dcnrj] to [dcnrm] and [dd44t] in test.bash. [dd44t] took the respacing check's place in 75ce642. `TestAccountSetRefusesBeforeThePlan` [dcnrn], `TestAccountSetPlanSaysWhenTheFileIsReshaped` [dcnrp] and `TestAccountSetProtocol` [dcnrq] in Go.
 
 	- ✅ Code Review 20260909 item 20: the hotfix warning about changing shipped code can never fire in anyone else's repo.
 		- Closed: 20260915-131144
@@ -3661,6 +3698,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Decided against: watching a named folder, and naming the folder in config.
 		- Note: in this project a hotfix to an installer or to `cicd/` now gets the note too, though neither goes into a release asset.
 		- Verified: 3 new checks in test.bash and `TestDocsOnly`. The three older warning checks match the new wording. All six fail on `gover`, where `TestDocsOnly` doesn't build, and the docs-only check still passes. 966 -> 969.
+		- Test: [dcnqw] to [dcnqy] in test.bash, with [daenf], [daepj] and [dbfwx] in the new wording, and `TestDocsOnly` [dcnqz] in Go.
 
 	- ✅ Code Review 20260909 item 10: a conflicted `br merge` leaves the merge in progress and says nothing useful.
 		- Closed: 20260915-124817
@@ -3670,6 +3708,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Fixed: a merge stopped by conflicts is aborted, the run goes back to the branch it started on, and the refusal names the commands to settle it there. The target branch is left as it was.
 		- Sweep: `release` merges `dev` into the default branch the same way and left it mid-merge too, with nothing tagged. Same fix. The back-merge already aborted, and the other merges are fast-forward only.
 		- Verified: 7 new checks in test.bash. Four fail on `gover`: the tree left mid-merge, the branch left behind, the missing advice, and `release` left mid-merge on the default branch. Two refusals and the untouched `dev` are regression guards.
+		- Test: [dcnqa] to [dcnqg] in test.bash.
 
 	- ✅ Code Review 20260909 item 9: `repo url` previews a github.com address on every host.
 		- Closed: 20260915-124817
@@ -3679,6 +3718,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Fixed: the plan builds the address the way the command does.
 		- Sweep: every preview line against its command. No other plan names a different host, branch or command than the one run. The other `githubURL` callers take `owner/name`, which has only ever meant github.com.
 		- Verified: 1 new check in test.bash, which fails on `gover`.
+		- Test: [dcnqh] in test.bash.
 
 	- ✅ Code Review 20260909 item 7: `release` invents version 0.1.0 in a repo whose tags carry no leading `v`.
 		- Closed: 20260915-124817
@@ -3689,6 +3729,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Note: the first fix gave every new tag a `v`, the way typed versions always had. That left a repo tagged `1.4.2` going on with `v1.4.3`, and a typed `1.4.3` came out as `v1.4.3`. Changed the same day. `cicd/release.bash` always passes a version with the `v`, so this project's tags are unchanged.
 		- Sweep: `cicd/release.bash` and the demo stamp scan only this project's own tags, which all carry the `v`. The frozen bash is left as it is.
 		- Verified: 3 new checks in test.bash, all failing on `gover`, where `TestNewestReleaseTag` doesn't build. 953 -> 964 with items 9 and 10. The spelling change adds 2 checks, which fail on the first fix along with the count check they change, and `TestNextReleaseTag`, which doesn't build there. 964 -> 966.
+		- Test: [dcnq7] to [dcnq9] in test.bash, and [dcnqm] and [dcnqn] for the spelling. `TestNewestReleaseTag` [dcnqj] and `TestNextReleaseTag` [dcnqp] in Go.
 
 	- ✅ Code Review 20260909 item 1: a folder rule typed as `.` binds every repo under the home directory to that account.
 		- Closed: 20260914-155309
@@ -3702,6 +3743,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Sweep: `tokenfile`, `sshkey` and `gitsby.ghTokenFile` take paths too, and a relative one is read from wherever a command runs. Filed as its own bug. A glob character in a folder rule is the other way the two matchers disagree, also filed.
 		- Fixed: `account set` writes a relative `path` as the absolute folder it names, and refuses another user's `~`. A relative rule already in a file is listed as ignored and `account apply` never writes one. `account list` warns about one an earlier apply left behind. On Windows a rule for a folder not made yet no longer reads as `c:./work`, which apply handed to git as relative.
 		- Verified: 13 new checks in test.bash, 12 red against the tree before and green after, the last a regression guard, 863 -> 876. fuzz.bash 269 -> 301, and eight new Go tests red before and green after. On vm925w the new Go tests pass, `account set` from `C:\` writes `C:/sub`, and `account apply` writes `c:/...` where it wrote `c:./...`. A full Go run there failed eight older tests on `9a81b39`, whose `/srv/...` fixtures name no drive. With a drive in them it fails only `TestCanonPath` and `TestDisplayPath`, which fail on `gover` too. macOS and the BSDs untested.
+		- Test: [dcmer] to [dcmf4] in test.bash, [dcmep] and [dcmeq] in fuzz.bash, and eight Go tests, [dcmf5] to [dcmfc].
 
 	- ✅ Code Review 20260909 item 2: `br prune --no-fetch` deletes a branch on origin that origin has moved past.
 		- Closed: 20260914-165502
@@ -3715,6 +3757,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Decided against: checking whether origin's merge target was rewritten since the last fetch. Telling needs objects the run declined to fetch, and gitsby never rewrites a shared branch.
 		- Fixed: just before the delete push, prune asks origin where its branches point, and leases each delete on the value it checked. A branch origin has moved is left alone with a warning. One already deleted there is named as gone and left out of the push. If origin does not answer, no remote delete goes out and the existing unreachable line prints. The plan line names the lease.
 		- Verified: 13 new checks in test.bash, 876 -> 889. Ten fail on `gover`, and so does the plan check's new pattern. The other three are regression guards: the unmoved branch still goes, origin is not asked when nothing goes there, and the local delete still happens without origin. The prompt check needs `script`, so the total is 888 without it. The four new Go tests don't build on `gover` and pass on the branch. fuzz.bash 301/0, parity.bash 27/0, and the quick pipeline and the pre-push gate are green. `br prune` in the spawn-count fixture goes 35 -> 39, recorded as the new baseline. The ask is three processes, and the fourth is the `core.sshCommand` lookup a fetch would otherwise have made. On vm925w the four Go tests pass. There the `gover` build deletes a moved branch on origin, drops every delete when one branch is gone, and blames the branch when origin is away, and the branch build gets all three right. macOS and the BSDs untested.
+		- Test: [dcmh8] to [dcmhm] in test.bash, and `TestParseOriginHeads` [dcmhn], `TestSortRemoteDeletes` [dcmhp], `TestLeaseDeleteBatches` [dcmhq] and `TestOriginTips` [dcmhr] in Go.
 
 	- ✅ Code Review 20260909 item 3: a config file that exists but cannot be read is replaced instead of refused.
 		- Closed: 20260914-174903
@@ -3728,6 +3771,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Sweep: two `account set` runs at once on one file keep one key, and a file that opens but can't be read through crashes `account set`. Both filed as their own bugs.
 		- Fixed: `account set` won't create an accounts file while anything is at a place gitsby looks for one. A file it can't read, a file that turned up during the run, a link to nothing and a folder in the way each get their own refusal, naming the file, the reason and the fix, and nothing is written. The create opens the file so it can't replace anything. Reads still pass over a file they can't read.
 		- Verified: 10 new checks in test.bash, 889 -> 899. Nine fail on `gover`, and the read check is a regression guard. Nine new Go tests: the eight on new behavior fail on `gover` and pass on the branch, and the read test is a guard. Two runs creating one file at once: `gover` said "Wrote" and lost a key in 30 of 30 tries, and the branch lost none, with one run refusing each time. On vm925w the held-open Go test fails on `gover` and passes on the branch. There the branch refuses and keeps a file another program holds open, where `gover` blamed permissions, and a file with a deny-read entry, which `gover` truncated. A full Go run there fails only `TestCanonPath` and `TestDisplayPath`, which fail on `gover` too. parity.bash 27/0, and the quick pipeline and the pre-push gate are green. macOS and the BSDs untested.
+		- Test: [dcmk3] to [dcmkc] in test.bash, and nine Go tests, [dcmjt] to [dcmk2]. A tenth, `TestAccountSetPreviewShowsTheRefusalsFirstLine`, went in 703131a, when item 8 moved the refusal ahead of the plan.
 
 	- ✅ Code Review 20260909 item 4: the pipeline cannot finish, because the committed Windows resources no longer match their generator.
 		- Closed: 20260910-072019
@@ -3736,6 +3780,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Note: a release still passes its first phase, which tolerates a stale resource by design, so only ordinary runs are stopped.
 		- Note: regenerating publishes whichever marker is in the generator into the Windows file properties, where a user reads it. See enhancement 1, which has to be settled first.
 		- Fixed: the generator writes the plain copyright again, which is what both resource files already held. The check passes, and nothing needed regenerating.
+		- Test: none with an ID. The Windows resource check in the lint stage is what failed, and it passes now. [dcnwb] in test.bash, from item 17, holds the generator's copyright years to the program's.
 
 	- ✅ Code Review 20260909 item 5: a key indented one level too deep is dropped, and the line listing what was ignored does not mention it.
 		- Closed: 20260914-190531
@@ -3748,6 +3793,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Fixed: the loader lists every key it does not read, at any depth. A key indented under another key is named by the path that reaches it and the key it sits under, such as `account[w].email.sshkey (indented under email)`. The key above it still applies. A stacked list and a raw block list nothing.
 		- Verified: 6 new checks in test.bash, 899 -> 905. Four fail on `gover`, and two are regression guards: the key above still applies, and a stacked list lists nothing. Two new Go tests and a fuzz target. The table fails on `gover` for every nested row and passes there for a stacked list, a raw block and a refused name. The depth cap test and every fuzz seed fail on `gover`. `FuzzConfigLoadDoc` passes over a 60 s run. fuzz.bash 301/0, parity.bash 27/0, and the quick pipeline and the pre-push gate are green. On vm925w the same Go tests fail on `gover` and pass on the branch. macOS and the BSDs untested.
 		- Reviewed before merge: nothing found.
+		- Test: [dcmmx] to [dcmn2] in test.bash, `TestConfigLoadNestedKeys` [dcmn3] and `TestConfigLoadNestedKeysAtTheDepthCap` [dcmn4] in Go, and the fuzz target `FuzzConfigLoadDoc` [dcmn5].
 
 	- ✅ Code Review 20260909 item 6: a whitespace-only ssh command crashes the program.
 		- Closed: 20260915-121200
@@ -3757,6 +3803,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Fixed: a blank ssh command counts as none, so the probe and the fetch use plain `ssh`. The probe also falls back to `ssh` if a split ever comes back empty.
 		- Sweep: the other splits of a command line either check the length first or only loop over the words.
 		- Verified: 2 new checks in test.bash on the `sync` comparison, one per spelling, both failing on `gover`. `TestGitSSHCommandBlank` fails on `gover`.
+		- Test: [dcnp2] and [dcnp3] in test.bash, and `TestGitSSHCommandBlank` [dcnp4] in Go.
 
 	- ✅ Code Review 20260909 item 11: being offline reads as "that repo doesn't exist".
 		- Closed: 20260914-190531
@@ -3770,6 +3817,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Verified: 7 new checks in test.bash, 905 -> 912. Four fail on `gover`, and three are regression guards: it refuses, nothing is set up, and a credential in the url is not printed. The credential check stays in the suite, and a Go row covers the same case. Two new Go tests, which don't build on `gover`. fuzz.bash 301/0, parity.bash 27/0, and the quick pipeline and the pre-push gate are green. On vm925w both Go tests pass. There an unreachable https remote reads as no telling whether it exists on the branch, where `gover` names `repo create`, and a missing local path reads as missing. macOS and the BSDs untested.
 		- Reviewed before merge: an ssh key refusal reads as unknown, which is right, but the message said the remote couldn't be reached, and ssh had reached it. It now says "Couldn't get an answer from". A Go row covers the refusal, and the message check fails on the wording before. test.bash 912/0, parity.bash 27/0, Go tests green.
 		- Decided against: masking the reason git repeats. git hides a credential in its own messages, and ssh has none to print.
+		- Test: [dcmn6] to [dcmnc] in test.bash, and `TestLsRemoteFailure` [dcmnd] and `TestProbedConnectRefusesUnlessEmpty` [dcmne] in Go.
 
 	- ✅ Code Review 20260909 item 15: there is no fast gate and no pre-push hook.
 		- Closed: 20260914-134906
@@ -3779,6 +3827,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Origin: new requirement from the 2026-09-07 directives. Not a regression.
 		- Fixed: `cicd/cicd.bash --gate` runs every lint check and the unit tests, and nothing else. `--install-hook` installs a pre-push hook that runs it on each commit pushed to a branch, as committed, never on the working tree. A push from a subdirectory with a relative `--work-tree` is gated too.
 		- Verified: 42 new checks, 810 -> 852. 41 of them fail on `gover`; the full-run check is a regression guard. The relative `--work-tree` check fails against the hook as it was, and each of the five later checks fails with the path it covers broken. The pipeline is green at 852/0, with parity 27/0 and fuzz 269/0. The real gate passes in 11.6 s. In a scratch clone the hook passes a good push, 11.6 s cold and 10.3 s warm, and refuses a gofmt violation. A failing commit is refused through 22 push forms. Nothing is installed in this repo. Linux only: Windows, macOS and the BSDs are untested.
+		- Test: [dcmak] to [dcmbe], [dcmbj], and [dcmbk] to [dcmbq] in test.bash. [dcmb5] now reads that a branch other than main is not gated.
 
 	- ✅ Code Review 20260909 item 16: the demo gif is rebuilt and recommitted on nearly every commit.
 		- Closed: 20260914-144550
@@ -3791,6 +3840,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Note: the length half of the third bullet is filed as its own bug at the top of this section. This item covers the rebuild on every commit, the closing black and the quiet flag.
 		- Fixed: the demo renders from a build of its own, stamped with the newest release tag and that tag's commit time rather than the commit. The banner on camera now reads `gitsby v2.1.0 build db8ey` and stays put until the next release. `-q` reaches the generator, and the loop ends on three seconds of black. The committed gif is the new render, and the three comments and the design.md sentence name the release stamp.
 		- Verified: two builds of one source, stamped like two consecutive commits, rendered to gifs that differ. 11 new checks, 852 -> 863. Nine fail on `gover`, and the other two, `-y` alone and the repeat render, are regression guards. The two build-site pins now count four sites and fail on `gover`. With `versionsort.suffix` taken out, the release-candidate check fails. The render is 960x540 and 12412356 bytes, loops in 124.84 s on the 20 ms grid, and ends on 3 s of black. A pipeline run regenerated the gif in 47 s. The next run, on the commit holding the gif, left it unchanged in 87 s, with the suite at 863/0 and parity 27/0. Linux only: Windows, macOS and the BSDs are untested.
+		- Test: [dcmd6] to [dcmdg] in test.bash.
 
 - ✅ A release tag whose patch number is too large to hold overflowed into a negative version.
 	- Opened: n/a

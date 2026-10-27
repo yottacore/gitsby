@@ -1385,6 +1385,12 @@ fStagedChecks(){
 }
 
 ## README says "Gitsby has ten". The help's command groups start at "Common commands:".
+# shellcheck disable=SC2016  ## The recipe's $(git log ...) is matched as written, and the config is read in a child.
+fReadmeRecipeMatches(){ local line="" both="" flags="" ld=""
+	both="$(cd "${root}" && bash -c 'source cicd/config.bash && printf "%s|%s" "${GO_BUILD_FLAGS[*]}" "${GO_LDFLAGS_COMMON}"')" || return 1
+	flags="${both%%|*}"; ld="${both#*|}"
+	line="$(grep -m1 '^CGO_ENABLED=0 GOAMD64=v1 go build ' "${root}/README.md")" || return 1
+	[[ -n "${flags}" && -n "${ld}" && "${line}" == *" build ${flags} -ldflags \"${ld} -X main.version="* && "${line}" == *' -X main.buildEpoch=$(git log -1 --format=%ct)" '* ]] ;}
 fHelpCountsTen(){ local help="" n=""; help="$("${gitsby}" --help)"
 	n="$(awk '/^Options:/{exit} /^Common commands:/{f=1} f && /^  [a-z]/{print $1}' <<< "${help}" | sort -u | wc -l)"
 	[[ "${n// /}" == "10" ]] && grep -qF 'Gitsby has ten' "${here}/../README.md" ;}
@@ -5667,6 +5673,9 @@ GHEOF
 	## a Core 2 Duo or a Phenom II refuses to start it. Every build pins it, the README's too.
 	fAssert "[de56v] every build pins plain x86-64, so a Core 2 Duo still runs it" \
 		bash -c "sites=\$(cat '${root}/cicd/cicd.bash' '${root}/cicd/release.bash' '${root}/cicd/remote-tests.bash' | grep -v '^[[:space:]]*#' | grep 'CGO_ENABLED=0'); [[ \$(grep -c . <<< \"\${sites}\") -ge 5 ]] && ! grep -v 'GOAMD64=v1' <<< \"\${sites}\" | grep -q . && grep -q '^CGO_ENABLED=0 GOAMD64=v1 go build' '${root}/README.md'"
+	## The README promises its recipe gives the published bytes. A flag or stamp it leaves out
+	## gives other bytes, as the missing build number did until Code Review 20260909 item 18.
+	fAssert "[defqn] and the README's recipe links with the release's flags and build number" fReadmeRecipeMatches
 	## Every dogfood dest is a share path or a $HOME expansion. A literal home dir would name
 	## an account, and would resolve to nothing on any other box.
 	fAssertFail "[dbss7] no dogfood dest hardcodes a home directory" \
