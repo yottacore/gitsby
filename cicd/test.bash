@@ -6647,8 +6647,9 @@ EOF
 		local rtLog="${work}/remote-calls.log" rtFail="${work}/remote-fail" rtOut="${work}/remote-out.txt" rtRc=0 rtMacBin="${work}/remote-macbin" rtHost=""
 		local rtLock="${rtHome}/synced/0-0/common/exec/util/linux/bash/x_windows-host-lock.bash"
 		## A Mac's bare PATH, with only what the copy needs, and a Homebrew folder with go in it.
-		local rtSys="${work}/remote-sys" rtBrew="${work}/remote-brew" rtTool=""
-		mkdir -p "${rt}/cicd/utility/include" "${rt}/src-go" "${rtBin}" "${rtMac}" "${rtFail}" "${rtLock%/*}" "${rtSys}" "${rtBrew}"
+		## Its /usr/local/bin is an empty one of ours, since a box with go there answered for the stub.
+		local rtSys="${work}/remote-sys" rtBrew="${work}/remote-brew" rtUsrLocal="${work}/remote-usrlocal" rtTool=""
+		mkdir -p "${rt}/cicd/utility/include" "${rt}/src-go" "${rtBin}" "${rtMac}" "${rtFail}" "${rtLock%/*}" "${rtSys}" "${rtBrew}" "${rtUsrLocal}"
 		for rtTool in bash mkdir mv rm tar; do ln -s "$(command -v "${rtTool}")" "${rtSys}/${rtTool}"; done
 		ln -s "${rtBin}/go" "${rtBrew}/go"
 		cp "${root}/cicd/remote-tests.bash" "${rt}/cicd/"
@@ -6690,7 +6691,7 @@ EOF
 					h='${rtMac}'; [[ "\${host}" == b26 ]] || h='${work}/remote-unix-'"\${host}"
 					mkdir -p "\${h}/home"
 					p='${rtBin}':"\${PATH}"; [[ ! -e '${rtFail}/brewgo-'"\${host}" ]] || p='${rtSys}'
-					if [[ "\${host}" == b26 ]]; then exec env -u HOST_TEMP HOME="\${h}/home" TMPDIR="\${h}/" PATH="\${p}" "\${BASH}" -c "\${cmd}"; fi
+					if [[ "\${host}" == b26 ]]; then exec env -u HOST_TEMP HOME="\${h}/home" TMPDIR="\${h}/" PATH="\${p}" "\${BASH}" -c "\${cmd//\/usr\/local\/bin/${rtUsrLocal}}"; fi
 					HOME="\${h}/home" HOST_TEMP="\${h}" PATH='${rtBin}':"\${PATH}" exec bash -c "\${cmd}" ;;
 				*'command -v'*) echo '@@gitsby-remote-tests@@'; cat '${rtFail}/lacks-'"\${host}" 2>/dev/null || true ;;
 				*mkdir*) cat > /dev/null; echo '@@gitsby-remote-tests@@'; [[ ! -e '${rtFail}/nomkdir-'"\${host}" ]] || exit 1; echo made ;;
@@ -7813,3 +7814,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261025 JC: --list and --keep-temp, the hook's --merge-gate on a commit that has it and --gate on one that doesn't, and MERGE_GATE_SKIP read from the pushed commit. The gate fixture has test-id.bash. 1715 -> 1725.
 ##		- 20261025 JC: release.bash builds with the image's Go where docker works, and the box's with a warning where it doesn't. --quick runs the suite, the native fuzzing and the soak test.
 ##		- 20261025 JC: The lint tools get -buildvcs=false through GOFLAGS, and every script whose --help prints its header prints it from the Purpose line. 1740 -> 1748.
+##		- 20261026 JC: The stage 7 harness's Mac reads /usr/local/bin as an empty folder of its own, so a box with go there no longer answers for the stub.

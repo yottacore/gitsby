@@ -110,23 +110,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Prereq IDs: 2026102519554107
 	- 2026-10-25: The round's full run reached stage 7, where vmDebARM64 failed 22 harness checks (2026102519554107). Waits on that.
 
-- test.bash's stage 7 checks fail on vmDebARM64 after round-20261025b
-	- ID: 2026102519554107
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-195541
-	- Opened by: jim-collier
-	- Related IDs: 2026102511210617, 2026102510404322, 2026102508333054
-	- Steps to reproduce [Bug]:
-		- `--merge-gate` at 3490090, stage 7, test.bash on vmDebARM64.
-	- Incorrect behavior [Bug]: 1711 passed, 22 failed, all in the block that runs `remote-tests.bash` against the fixture's stub lock. The first to fail is [ErkbDUa], the first check where the stub lock wraps a box. [ErkbDU2], [ErkbDUK] and [EtlCXk1] pass. The others include [ErkbDUn], [ErkbDVD], [Etj7cZ7], [Etj1UKH], [EtlCXkF], [EtlCXkl] and [Erm9Pp1].
-	- Expected behavior [Bug]: 0 failed, as on b26, vmFreeBSD and vmKt6m in the same run, and on b23 both in the image and on the box (1748/0).
-	- Possible cause [Bug]: Not found yet. vmDebARM64 passed 1699/0 on gover earlier on 2026-10-25, so it came in with this round. 6343351 is the only round commit that touches `remote-tests.bash`; it sends every box through one `fLockEnv "${vmState:-${lock}}" wrap` call. The fixture prints only FAIL lines, so the first step is to run that block on vmDebARM64 and keep `rtOut` and `rtLog`.
-	- Test case: None yet.
-	- Progress log:
-		- 2026-10-25: The run's log is kept as `private/claude_simple/round-20261025b_full-run.log`, lines 9590 to 9810. round-20261025b stays unmerged until this is fixed.
-
 - CICD reset: standard flags
 	- ID: 2026102416313104
 	- Type: Enhancement
@@ -243,6 +226,34 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 			- One line at the end of a run saying what was removed and about what it freed, files as well as docker.
 			- Go's module cache in the volume pruned of what the current `go.sum` doesn't name.
 		- Packaging and dependabot stay deferred, per the standing decision. 20261024: kept out of this item, since nothing makes them pressing.
+
+- test.bash's stage 7 checks fail on vmDebARM64 after round-20261025b
+	- ID: 2026102519554107
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-195541
+	- Opened by: jim-collier
+	- Related IDs: 2026102511210617, 2026102510404322, 2026102508333054
+	- Steps to reproduce [Bug]:
+		- `--merge-gate` at 3490090, stage 7, test.bash on vmDebARM64.
+	- Incorrect behavior [Bug]: 1711 passed, 22 failed, all in the block that runs `remote-tests.bash` against the fixture's stub lock. The first to fail is [ErkbDUa], the first check where the stub lock wraps a box. [ErkbDU2], [ErkbDUK] and [EtlCXk1] pass. The others include [ErkbDUn], [ErkbDVD], [Etj7cZ7], [Etj1UKH], [EtlCXkF], [EtlCXkl] and [Erm9Pp1].
+	- Expected behavior [Bug]: 0 failed, as on b26, vmFreeBSD and vmKt6m in the same run, and on b23 both in the image and on the box (1748/0).
+	- Reproduced [Bug]: 2026-10-26 on vmDebARM64, with that block of test.bash run on its own: the same 22 failed. On b23 it passed 43/0.
+	- Possible cause [Bug]: Not found yet. vmDebARM64 passed 1699/0 on gover earlier on 2026-10-25, so it came in with this round. 6343351 is the only round commit that touches `remote-tests.bash`; it sends every box through one `fLockEnv "${vmState:-${lock}}" wrap` call. The fixture prints only FAIL lines, so the first step is to run that block on vmDebARM64 and keep `rtOut` and `rtLog`.
+	- Actual cause [Bug]: b14ae19, also in this round, runs the Mac's module fetch with Homebrew's bash folder first on PATH, which is `/usr/local/bin` in the fixture. The fixture's ssh stub runs that copy step for real. So on a box with its own `/usr/local/bin/go`, that go answered instead of the stub, and failed with "go: no modules specified". Every run that reached b26 then failed. vmDebARM64 has one, linked to `/usr/local/go/bin/go`, and b23 and the image don't. The block is Linux only, so no other stage 7 box runs it.
+	- Actual fix [Bug]: The stub's Mac reads `/usr/local/bin` as an empty folder of the fixture's. The calls log still shows the command as sent, so no assert changed.
+	- Progress log:
+		- 2026-10-25: The run's log is kept as `private/claude_simple/round-20261025b_full-run.log`, lines 9590 to 9810. round-20261025b stays unmerged until this is fixed.
+		- Verified: the block alone on vmDebARM64, held through the VM helper's wrap and put back to off: 22 failed before the fix, 43/0 after. On b23, 43/0 both ways. `--backlog-run-quick lint suite` passed in the image, with test.bash 1748/0.
+		- Not run: the whole test.bash on vmDebARM64. The round's full run covers it.
+	- Decisions:
+		- The path is mapped in the stub, rather than pointing the fixture's `REMOTE_MAC_BASH` elsewhere, since [ErkbDVV] and [Etj1ULE] check for `/usr/local/bin` in the command sent, and that's the real Mac's path.
+	- Branch: round-20261026
+	- Test case: the 22 checks above, on a box with go in `/usr/local/bin`, [ErkbDVk] first, since it needs the stub's `go mod download` in the calls log. No check on b23 can put a go under the real `/usr/local/bin`.
+	- Swept: every stub in test.bash that runs a remote command for real. Only the b26 branch of the harness's ssh puts a fixed system folder ahead of the stubs. The Unix branch's fetch has no PATH prefix.
+	- Acceptance signoff: Self-closed. Reproduced on the box, and fails before the fix and passes after.
+	- Closed: 20261026-171155
 
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
