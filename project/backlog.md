@@ -59,6 +59,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Prereq IDs: 2026102519554107
 	- 2026-10-25: The round's full run reached stage 7, where vmDebARM64 failed 22 harness checks (2026102519554107). Waits on that.
 
+- The cleanup line says a run folder freed about 8B
+	- ID: 2026102620355012
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261026-203550
+	- Opened by: jim-collier
+	- Related IDs: 2026102617543861
+	- Steps to reproduce [Bug]:
+		- `--backlog-run-quick` or `--backlog-run-full` at 99b3120, to the end.
+	- Incorrect behavior [Bug]: Both end with `Cleanup: removed the run folder; freed about 8B`, after a full run that built and copied trees for 5 boxes.
+	- Expected behavior [Bug]: The size the run folder had before it was removed, or no size when it can't be known.
+	- Possible cause [Bug]: Not looked at yet. The size may be read after the folder's contents are already gone, or from the folder entry itself.
+
 - Stage 7 can't start vm925w once it has started vmKt6m or vmFreeBSD
 	- ID: 2026102510404322
 	- Type: Bug
@@ -88,8 +102,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Stage 7 takes every box through the VM state helper's wrap
 	- ID: 2026102511210617
 	- Type: Enhancement
-	- Status: Waiting on automated testing
-	- Needs local test suite run?: the round's `--backlog-run-full`, stage 7, which takes b26, b29w and vmDebARM64 through the real helper's `wrap` as boxes that aren't VMs here.
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261025-112106
 	- Opened by: jim-collier
@@ -108,7 +121,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash `[dee71]` (every box through the helper, with why), `[dee72]` (no helper, the lock's own wrap with why), plus `[dedpc]` as changed.
 	- Swept: every call of the lock and the helper in remote-tests.bash. `hosts` and `status` are reads, and stay as they were.
 	- Prereq IDs: 2026102519554107
+	- Closed: 20261026-203438
+	- Acceptance signoff: closed on the round's full run.
 	- 2026-10-25: The round's full run reached stage 7, where vmDebARM64 failed 22 harness checks (2026102519554107). Waits on that.
+	- Verified: 2026-10-26, the round-20261026 --backlog-run-full log at 99b3120. Stage 7 ran b29w, b26, vmKt6m, vmFreeBSD and vmDebARM64 through the helper and passed. The one warning was the helper not shutting down vmKt6m in 300s, a host-side issue the helper has since fixed.
 
 - CICD reset: standard flags
 	- ID: 2026102416313104
@@ -136,8 +152,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: step output
 	- ID: 2026102416313105
 	- Type: Enhancement
-	- Status: Waiting on automated testing
-	- Needs local test suite run?: `--backlog-run-full`, to see a real run in the image number its steps after the ones out here, with the step times in this box's time.
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
@@ -168,6 +183,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash [defmr], [defms], [defmt], [defmv], [defmw], [defmx], and the 14 changed above.
 	- Verified: `--backlog-run-quick lint suite parity` passed in the image: test.bash 1748 -> 1754, 0 failed, parity 29/0. Against HEAD's cicd.bash the 6 new checks and the 14 changed ones fail. shellcheck passes.
 	- Swept: every `fSection`, `OK:` line and skip line in cicd.bash, and every reader of them in the repo; test.bash is the only one. The other scripts' `•` rules are in comments only. pre-push.bash keys on `--gate)`, unchanged.
+	- Closed: 20261026-203438
+	- Acceptance signoff: closed on the round's full run.
+	- Verified: 2026-10-26, the round-20261026 --backlog-run-full log at 99b3120. Remote sync shows skipped in the plan, the image numbers Lint through Demo gif as steps 1 to 5 of 6, and Remote tests outside it is step 6 of 6, all with this box's local times. Every step PASS.
 
 - `--backlog-run-quick lint` fails markdownlint MD038 on backlog.md
 	- ID: 2026102619025437
@@ -285,7 +303,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: test IDs
 	- ID: 2026102416313107
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
@@ -313,12 +331,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: `[defpc]`, `[defpd]`, `[defpe]`, `[ddc2j]` and `[dd5kt]` fail against the old test-id.bash and pass against the new one. `--backlog-run-quick` passed in the image: lint with `test-id.bash --check` (1857 tests) and `backlog-check.bash`, go test, test.bash 1757 -> 1760, 0 failed, fuzz 313/0, spawn counts and parity 29/0. shellcheck passes.
 	- Branch: round-20261026
 	- Swept: every pattern that reads an ID in cicd/, cicd/utility/ and its include/ folder, cicd.bash's fuzz target IDs and `go-test-lines.bash`, which take either form. backlog-check.bash, whose ID match takes either form too. README, contributing.md and design.md, which don't give the ID rule.
+	- Closed: 20261026-203438
+	- Acceptance signoff: closed with its child, on the round's full run.
+	- 2026-10-26: Child 2026102618140158 is Done, so this closes with it.
 
 - CICD reset: PASS, FAIL and SKIP test lines
 	- ID: 2026102618140158
 	- Type: Enhancement
-	- Status: Waiting on automated testing
-	- Needs local test suite run?: the round's `--backlog-run-full`, stage 7, to see test.bash's SKIP lines for its Linux-only blocks on b26, where the block is read with the Mac's awk.
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261026-181401
 	- Opened by: jim-collier
@@ -347,6 +367,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash `[defpy]` (each suite's PASS and FAIL lines), `[defpz]` (SKIP), `[defq0]` (a skipped block, either branch, nested), `[defq1]` (every skipped block names a test), `[defq2]` (lint summary), `[defq3]` (Go test lines), `[defq4]` (a rise `--record` takes), `[defq5]` (no strace), plus the 11 changed above.
 	- Verified: `--backlog-run-quick lint unit suite fuzz parity` passed in the image: test.bash 1760 -> 1768, 0 failed, fuzz 313/0, spawn counts, parity 29/0. Against HEAD's scripts every new check but `[defq1]` fails, and so does each changed one. `[defq0]` fails with the block found one tab off, and with the wrong caller line. The skipped-block fixture gives the same lines under mawk, busybox awk and gawk --posix. shellcheck and `test-id.bash --check` pass.
 	- Swept: every `ok:`, `FAIL:`, `skip:`, `skipped:`, `DIFFER:` and spawn verdict printed in cicd/, cicd/utility/ and include/, and every reader: test.bash, lint-report.bash and remote-tests.bash. cicd.bash counts nothing from the lines. README, contributing.md and design.md don't give the line shape.
+	- Closed: 20261026-203438
+	- Acceptance signoff: closed on the round's full run.
+	- Verified: 2026-10-26, the round-20261026 --backlog-run-full log at 99b3120. b26's test.bash printed 260 SKIP lines for its Linux-only blocks, read with the Mac's awk, with 0 failed. Every other box printed the same line forms.
 
 - CICD reset: temp files and safe removal
 	- ID: 2026102416313108
