@@ -269,8 +269,10 @@ fRunWindows(){
 	if ((rc == 0)); then
 		fEcho_Clean "  ${lockName}: go test (windows/amd64)"
 		## Half the cores, never under 1, in the BelowNormal class. Windows has no load average, so
-		## no busy rule. set /a echoes its answer, hence ahead of the marker.
-		fRemote "${sshName}" "set /a GOMAXPROCS=%NUMBER_OF_PROCESSORS%/2 >nul& (if %NUMBER_OF_PROCESSORS% LSS 2 set GOMAXPROCS=1)& echo ${mark}& cd /d \"${dir}\\${GO_MODULE_DIR}\" && start \"\" /belownormal /b /wait ${EXE_NAME}-test.exe -test.v" -n >"${log}" 2>&1 || rc=$?
+		## no busy rule. set /a echoes its answer, hence ahead of the marker. start leaves the test's
+		## code in ERRORLEVEL but cmd exits 0, so call exit passes it on. The caret keeps the line's
+		## own expansion off it, so call reads it after start is done.
+		fRemote "${sshName}" "set /a GOMAXPROCS=%NUMBER_OF_PROCESSORS%/2 >nul& (if %NUMBER_OF_PROCESSORS% LSS 2 set GOMAXPROCS=1)& echo ${mark}& cd /d \"${dir}\\${GO_MODULE_DIR}\" && start \"\" /belownormal /b /wait ${EXE_NAME}-test.exe -test.v& call exit %^ERRORLEVEL%" -n >"${log}" 2>&1 || rc=$?
 	fi
 	if grep -qx made "${setupLog}"; then
 		fRemote "${sshName}" "echo ${mark}& cd /d \"%TEMP%\" && rmdir /s /q \"${dir}\"" -n >/dev/null 2>&1 || true
@@ -281,7 +283,7 @@ fRunWindows(){
 		fEcho_Clean "  FAIL: ${lockName}, could not copy the Go tests (exit ${rc})"; fResult "${lockName}" fail; return 0
 	fi
 	fGoTestLines "${log}" "${root}/${GO_MODULE_DIR}"
-	## In case start ever drops the test's exit code.
+	## In case the test's exit code is ever lost on the way back anyway.
 	if ((rc == 0)) && grep -q '^--- FAIL' "${log}"; then fEcho_Clean "  WARNING: ${lockName}'s go test failed a test and still exited 0"; rc=1; fi
 	if ((rc)); then
 		fGoTestFailures "${log}"

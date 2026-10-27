@@ -6893,6 +6893,8 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 					[[ ! -e '${rtFail}/lost-'"\${host}" ]] || exit 255
 					if [[ -e '${rtFail}/gofail-'"\${host}" ]]; then printf -- '--- FAIL: TestA (0.00s)\n    a_test.go:4: boom\n'; exit 1; fi
 					if [[ -e '${rtFail}/gofail0-'"\${host}" ]]; then printf -- '--- FAIL: TestA (0.00s)\n    a_test.go:4: boom\nFAIL\n'; exit 0; fi
+					## As on real Windows, start's code comes back only through the call exit after it.
+					if [[ -e '${rtFail}/gocrash-'"\${host}" ]]; then echo 'panic: boom'; [[ "\${cmd}" != *'& call exit %^ERRORLEVEL%' ]] || exit 2; exit 0; fi
 					printf -- '=== RUN   TestA\n--- PASS: TestA (0.00s)\n' ;;
 				*cicd/test.bash*)
 					echo '@@gitsby-remote-tests@@'
@@ -6967,12 +6969,17 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[ddg8j] a failing Go test fails the run, with its line and its output" \
 			bash -c "[[ '${rtRc}' == 1 ]] && grep -qxF '  FAIL aaaab TestA' '${rtOut}' && grep -qF 'a_test.go:4: boom' '${rtOut}' && grep -qxF '  passed on: b26; failed on: b29w' '${rtOut}'"
 		fAssert "[dee74] the Windows box runs its Go tests on half its cores, never under 1, in the BelowNormal class" \
-			bash -c "grep -qF 'ssh b29w set /a GOMAXPROCS=%NUMBER_OF_PROCESSORS%/2 >nul& (if %NUMBER_OF_PROCESSORS% LSS 2 set GOMAXPROCS=1)& echo @@gitsby-remote-tests@@& cd /d ' '${rtLog}' && grep -qE '^ssh b29w .* && start \"\" /belownormal /b /wait gitsby-test\.exe -test\.v\$' '${rtLog}'"
+			bash -c "grep -qF 'ssh b29w set /a GOMAXPROCS=%NUMBER_OF_PROCESSORS%/2 >nul& (if %NUMBER_OF_PROCESSORS% LSS 2 set GOMAXPROCS=1)& echo @@gitsby-remote-tests@@& cd /d ' '${rtLog}' && grep -qE '^ssh b29w .* && start \"\" /belownormal /b /wait gitsby-test\.exe -test\.v& call exit %\^ERRORLEVEL%\$' '${rtLog}'"
 		: > "${rtFail}/gofail0-b29w"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtFail:?}/gofail0-b29w"
 		fAssert "[dee75] a Windows Go test that fails still fails the box when the run exits 0, with a warning" \
 			bash -c "[[ '${rtRc}' == 1 ]] && grep -qxF \"  WARNING: b29w's go test failed a test and still exited 0\" '${rtOut}' && grep -qxF '  FAIL aaaab TestA' '${rtOut}' && grep -qxF '  passed on: b26; failed on: b29w' '${rtOut}'"
+		: > "${rtFail}/gocrash-b29w"
+		fRemoteRun --mac-bin "${rtMacBin}"
+		rm -f -- "${rtFail:?}/gocrash-b29w"
+		fAssert "[defv6] a Windows Go test that crashes, with no FAIL line, fails the box with the test's exit code" \
+			bash -c "[[ '${rtRc}' == 1 ]] && grep -qxF '  FAIL: b29w go test (exit 2)' '${rtOut}' && grep -qxF '  passed on: b26; failed on: b29w' '${rtOut}'"
 		: > "${rtFail}/suitefail-b26"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtFail:?}/suitefail-b26"
