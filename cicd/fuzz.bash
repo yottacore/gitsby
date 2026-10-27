@@ -69,9 +69,12 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-declare -i pass=0 fail=0
-fOk(){   pass=$((pass+1)); ((quiet)) || fEcho_Clean "  ok: $*"; }
-fFail(){ fail=$((fail+1)); fEcho_Clean "  FAIL: $*"; }
+declare -i pass=0 fail=0 skips=0
+## "PASS <id> <label>" from "[<id>] <label>", as test.bash prints them.
+fTestLine(){ local re='^\[([0-9A-Za-z]+)\] (.*)$' d="$2"; [[ ! "${d}" =~ ${re} ]] || d="${BASH_REMATCH[1]} ${BASH_REMATCH[2]}"; fEcho_Clean "  $1 ${d}" ;}
+fOk(){   pass=$((pass+1)); ((quiet)) || fTestLine PASS "$*"; }
+fFail(){ fail=$((fail+1)); fTestLine FAIL "$*"; }
+fSkip(){ skips=$((skips+1)); fTestLine SKIP "$*"; }
 
 declare -i isWindows=0
 case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) isWindows=1 ;; esac
@@ -265,7 +268,7 @@ GHEOF
 	if [[ "$1" == "bash" ]] || ((! isWindows)); then
 		for t in '*' '*.txt' '?' 'v*'; do fTitleLiteral "[dadsn] pr title verbatim: '${t}'" "${repo4}" "${t}"; done
 	else
-		fEcho_Clean "  skipped: pr title verbatim (pwsh on Windows can't run the gh stub)"
+		fSkip "[dadsn] pr title verbatim (pwsh on Windows can't run the gh stub)"
 	fi
 	## Proposing from the merge target is nonsense whatever the title says.
 	( cd "${repo4}" && git checkout --quiet dev )
@@ -284,7 +287,7 @@ GHEOF
 	## guess wrong. A space is legal, so 'a b' stays.
 	if ((isWindows)); then
 		cloneDirs=( 'a b' )
-		fEcho_Clean "  skipped: clone dir verbatim '*' '?' 'v*' (Win32 forbids those characters in a path)"
+		fSkip "[dadv8] clone dir verbatim '*' '?' 'v*' (Win32 forbids those characters in a path)"
 	fi
 	for cloneDir in "${cloneDirs[@]}"; do fDirLiteral "[dadv8] clone dir verbatim: '${cloneDir}'" "${repo3}" "${repo3}.git" "${cloneDir}"; done
 
@@ -446,7 +449,7 @@ fCredentialHelperVectors
 ## value of '--upload-pack' through a shell, which is what makes the attempt observable here.
 fCloneArgInjection(){
 	if ((isWindows)); then
-		fEcho_Clean "  skipped: clone dir arg injection (path characters Win32 forbids)"
+		fSkip "[ddjyb] clone dir arg injection (path characters Win32 forbids)"
 		return
 	fi
 	local -r dir="${work}/clonearg"
@@ -566,7 +569,7 @@ else
 	fFail "[dabek] injection canary fired: $(find "${work}" -name 'CANARY*')"
 fi
 
-fEcho_Clean "passed: ${pass}, failed: ${fail}"
+fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ((fail == 0)) || exit 1
 
 
@@ -585,3 +588,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261004 JC: Prints through fEcho_Clean, like the other pipeline scripts. Variables are camelCase, and fRun hands back its output in two-underscore globals. Every expansion braced, and shellcheck enforces it.
 ##		- 20261006 JC: 'TEA' and 'gitui' join the raw tool vectors, now that raw runs tea.
 ##		- 20261006 JC: Reworked for the no-shell Go build. The surviving vectors stay as regression guards against a shell slipping back into the path, and the suite now drives the places a value still reaches a real tool: a clone directory derived from a URL tail that is option-shaped (argument injection into git), a ref that is also a revision ('br switch HEAD', which parked work before refusing), a shell-bearing 'sshkey' through a real ssh, 'account apply' escaping glob characters in a folder rule and dropping a shell-bearing host or user, and a junk GIT_CONFIG_COUNT on the credential path. 301 -> 311. Two product bugs fixed alongside (clone '--', origin/HEAD not a branch).
+##		- 20261026 JC: Each vector prints PASS, FAIL or SKIP, then its ID and label, and the total counts the skips.

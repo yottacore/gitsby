@@ -310,7 +310,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: PASS, FAIL and SKIP test lines
 	- ID: 2026102618140158
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: the round's `--backlog-run-full`, stage 7, to see test.bash's SKIP lines for its Linux-only blocks on b26, where the block is read with the Mac's awk.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261026-181401
 	- Opened by: jim-collier
@@ -319,6 +320,26 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Each test prints `PASS <id> <name>`, `FAIL <id> <name>` or `SKIP <id> <why>`, in place of `ok: [<id>] <name>` and the rest, on this box and on the remote boxes.
 		- Per the per-test line bullet in `Testing` in the shared CICD rules.
 		- Covers test.bash, fuzz.bash, parity.bash and spawn-count.bash, and whatever reads their lines: cicd.bash's counts and remote-tests.bash's summary.
+	- Progress log:
+		- 2026-10-26: test.bash, fuzz.bash and parity.bash print `PASS <id> <label>` or `FAIL <id> <label>`, from the `[<id>] <label>` they're handed. parity's `DIFFER:` is a FAIL now.
+		- 2026-10-26: A block of test.bash a box can't run, such as the Linux-only ones, prints a SKIP for each test in it, with the old skip text as the why. fuzz.bash's three skips name their test. Both totals count the skips.
+		- 2026-10-26: The Go test lines and the native fuzz targets print the same shape, on this box and the remote ones, and a fuzz target that finds a crasher prints FAIL before the run stops.
+		- 2026-10-26: spawn-count.bash prints PASS, FAIL or SKIP and the ID, with the old verdict after the count, such as `, regressed` or `, new`. A rise that `--record` takes is a PASS. With no strace each command is a SKIP. lint-report.bash drops the new lines.
+		- 2026-10-26: Asserts given new values for this change, old -> new, and check nothing less:
+			- `[dd6vy]`, `[dd6vz]`, `[ddg8c]`, `[ddg8j]`, `[dee75]`, `[ddgm1]`: `  ok: [aaaab] TestA`, `  ok: TestC`, `  FAIL: [aaaab] TestA` -> `  PASS aaaab TestA`, `  PASS TestC`, `  FAIL aaaab TestA`. `[dd6g0]`: `  ok: [aaaaa] FuzzA` -> `  PASS aaaaa FuzzA`.
+			- `[dd5ez]` `REGRESSED  [<id>] status: 0 -> ` -> `FAIL <id> status: 0 -> <n>, regressed`. `[dd5p5]`, `[ddf82]` `ok  [<id>]` -> `PASS <id>`. `[ddf54]` `OVER LIMIT [dbftf] status: <n>, limit 3 (expected 1)` -> `FAIL dbftf status: <n>, over its limit of 3 (expected 1)`.
+			- `[dbftb]`'s log and the remote fixture's suite lines are in the new shape.
+	- Decisions:
+		- The lines keep their two-space indent under the step, as before.
+		- A Go test with no ID prints `PASS TestName`, as it printed `ok: TestName`. The ID check in lint fails it anyway.
+		- A Go SKIP names the test, not why, since the log puts the reason on a line of its own that parallel tests can split from it.
+		- remote-tests.bash's `SKIP: <box>, ...` and `FAIL: <box> go test` lines keep their colon. They're about a box, not a test, and the summary reads boxes only, so it didn't change.
+		- A skipped block's tests are read from the block itself, the nearest `if` and `fi` one tab out from the skip, rather than listed by hand, so a check added to the block is skipped by name with no second edit.
+		- parity's total still says `differed`.
+	- Branch: round-20261026
+	- Test case: test.bash `[defpy]` (each suite's PASS and FAIL lines), `[defpz]` (SKIP), `[defq0]` (a skipped block, either branch, nested), `[defq1]` (every skipped block names a test), `[defq2]` (lint summary), `[defq3]` (Go test lines), `[defq4]` (a rise `--record` takes), `[defq5]` (no strace), plus the 11 changed above.
+	- Verified: `--backlog-run-quick lint unit suite fuzz parity` passed in the image: test.bash 1760 -> 1768, 0 failed, fuzz 313/0, spawn counts, parity 29/0. Against HEAD's scripts every new check but `[defq1]` fails, and so does each changed one. `[defq0]` fails with the block found one tab off, and with the wrong caller line. The skipped-block fixture gives the same lines under mawk, busybox awk and gawk --posix. shellcheck and `test-id.bash --check` pass.
+	- Swept: every `ok:`, `FAIL:`, `skip:`, `skipped:`, `DIFFER:` and spawn verdict printed in cicd/, cicd/utility/ and include/, and every reader: test.bash, lint-report.bash and remote-tests.bash. cicd.bash counts nothing from the lines. README, contributing.md and design.md don't give the line shape.
 
 - CICD reset: temp files and safe removal
 	- ID: 2026102416313108

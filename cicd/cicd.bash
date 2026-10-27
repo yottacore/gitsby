@@ -1158,11 +1158,11 @@ fi
 ## invocation is go's rule, and a crasher lands in src-go/testdata/fuzz/ as evidence.
 if ((doFuzz)); then
 	for fuzzTarget in $(cd "${root}/${GO_MODULE_DIR}" && go test -list 'Fuzz.*' . 2>/dev/null | grep '^Fuzz' || true); do
-		(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${HEAVY_JOBS}" go test -run '^$' -fuzz "^${fuzzTarget}\$" -fuzztime 5s -parallel "${HEAVY_JOBS}" . >/dev/null) \
-			|| fDie "fuzzing found a crasher in ${fuzzTarget} (reproducer under ${GO_MODULE_DIR}/testdata/fuzz/)"
 		## The test ID sits at the end of the func line, as '// [<id>]'.
-		fuzzId="$(sed -n "s|^func ${fuzzTarget}(.*// \(\[[0-9A-Za-z]*\]\)[[:space:]]*\$|\1 |p" "${root}/${GO_MODULE_DIR}"/*_test.go 2>/dev/null || true)"
-		fEcho_Clean "  ok: ${fuzzId}${fuzzTarget}"
+		fuzzId="$(sed -n "s|^func ${fuzzTarget}(.*// \[\([0-9A-Za-z]*\)\][[:space:]]*\$|\1 |p" "${root}/${GO_MODULE_DIR}"/*_test.go 2>/dev/null || true)"
+		(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${HEAVY_JOBS}" go test -run '^$' -fuzz "^${fuzzTarget}\$" -fuzztime 5s -parallel "${HEAVY_JOBS}" . >/dev/null) \
+			|| { fEcho_Clean "  FAIL ${fuzzId}${fuzzTarget}"; fDie "fuzzing found a crasher in ${fuzzTarget} (reproducer under ${GO_MODULE_DIR}/testdata/fuzz/)"; }
+		fEcho_Clean "  PASS ${fuzzId}${fuzzTarget}"
 	done
 	fEcho "OK: native fuzz targets"
 fi
@@ -1464,3 +1464,4 @@ fEcho_Clean
 ##		- 2026-10-25 JC: GOFLAGS carries -buildvcs=false for every go call, so the lint tools pass in the hook's worktree under .git, in the image too.
 ##		- 2026-10-26 JC: Each step opens with "[ <time>: Step N of M; Starting <step> ]" and closes with PASS or FAIL, in place of the N/8 headers and the OK line that only repeated the verdict. M counts the steps that run, the plan says why each other one doesn't, and the run in the image numbers its steps in the same count, in this box's time. The rule is 79 wide.
 ##		- 2026-10-26 JC: One line at the end of a run says what it removed, its own folder and the stale run folders as well as docker's, and about what that freed.
+##		- 2026-10-26 JC: The native fuzz targets and the Go tests print PASS, FAIL or SKIP, then the test ID and name, and a target that finds a crasher prints FAIL before the run stops.

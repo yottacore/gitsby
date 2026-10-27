@@ -113,9 +113,33 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-declare -i pass=0 fail=0
-fOk(){   pass=$((pass+1)); ((quiet)) || fEcho_Clean "  ok: $*"; }
-fFail(){ fail=$((fail+1)); fEcho_Clean "  FAIL: $*"; }
+declare -i pass=0 fail=0 skips=0
+## One line per test, "PASS <id> <label>", from a label written "[<id>] <label>". fuzz.bash and
+## parity.bash have the same three lines.
+fTestLine(){ local re='^\[([0-9A-Za-z]+)\] (.*)$' d="$2"; [[ ! "${d}" =~ ${re} ]] || d="${BASH_REMATCH[1]} ${BASH_REMATCH[2]}"; fEcho_Clean "  $1 ${d}" ;}
+fOk(){   pass=$((pass+1)); ((quiet)) || fTestLine PASS "$*"; }
+fFail(){ fail=$((fail+1)); fTestLine FAIL "$*"; }
+fSkip(){ skips=$((skips+1)); fTestLine SKIP "$*"; }
+## The ID of each test in the if block around line $2 of file $1, once each, in order. The block
+## is the nearest if above and fi below, one tab less indented than that line.
+fBlockIds(){ awk -v at="$2" '
+	{ line[NR] = $0; match($0, /^\t*/); tabs[NR] = RLENGTH }
+	END {
+		k = tabs[at] - 1
+		for (s = at; s > 0; s--) if (tabs[s] == k && substr(line[s], k + 1) ~ /^if /) break
+		for (e = at; e <= NR; e++) if (tabs[e] == k && substr(line[e], k + 1) ~ /^fi([[:space:];]|$)/) break
+		for (i = s; i <= e; i++) {
+			t = line[i]
+			if (t ~ /^[[:space:]]*#/) continue
+			while (match(t, /f[A-Za-z]+[[:space:]]+"\[[0-9A-Za-z]+\] /)) {
+				id = substr(t, RSTART, RLENGTH); sub(/^[^[]*\[/, "", id); sub(/\] $/, "", id)
+				t = substr(t, RSTART + RLENGTH)
+				if (!seen[id]++) print id
+			}
+		}
+	}' "$1" ;}
+## SKIP for each test in the if block around the call, which this box can't run.
+fSkipBlock(){ local id=""; while read -r id; do fSkip "[${id}] $1"; done < <(fBlockIds "${BASH_SOURCE[0]}" "${BASH_LINENO[0]}") ;}
 ## Assert the command succeeds / fails (output discarded; -q keeps gitsby promptless).
 fAssert(){     local desc="$1"; shift; if   "$@" >/dev/null 2>&1; then fOk "${desc}"; else fFail "${desc}"; fi; }
 fAssertFail(){ local desc="$1"; shift; if ! "$@" >/dev/null 2>&1; then fOk "${desc}"; else fFail "${desc}"; fi; }
@@ -5218,7 +5242,7 @@ GHEOF
 	fAssert "[dd5em] and reads a footer date written 20260819 or 2026-08-19" \
 		bash -c '[[ -n "$1" ]] && grep -qE "$1" <<< "$2" && grep -qE "$1" <<< "$3"' _ "${relFootRe}" $'##\t- 20260819 JC: x' $'##\t- 2026-08-19 JC: x'
 	if [[ "$(uname -s)" != Linux ]]; then
-		fEcho_Clean "  skip: release.bash --dry-run checks (Linux only)"
+		fSkipBlock "release.bash --dry-run checks (Linux only)"
 	else
 		## --dry-run end to end, in a clone whose pipeline, build, gh and go are stubs that log. A dry
 		## run that took one real step would push, tag or publish, so each step has to be announced in
@@ -5673,7 +5697,7 @@ GHEOF
 		fAssert "[dea4c] and each one parses, with triggers and jobs" \
 			python3 -I -c 'import glob, sys, yaml; fs = glob.glob(sys.argv[1] + "/.github/workflows/*.y*ml"); ds = [yaml.safe_load(open(f)) for f in fs]; sys.exit(0 if fs and all(isinstance(d, dict) and ("on" in d or True in d) and isinstance(d.get("jobs"), dict) and d["jobs"] for d in ds) else 1)' "${root}"
 	else
-		fEcho_Clean "  skip: [dea4c] workflow parse check (needs python3 with PyYAML)"
+		fSkipBlock "workflow parse check (needs python3 with PyYAML)"
 	fi
 	## The backlog gate's count of open review items once read 0 whatever the file held, and
 	## would have counted closed ones too. Two of the four here are open, one in each format.
@@ -5766,6 +5790,14 @@ GHEOF
 	## that says none, so every command reads as a rise. Needs strace, like the step. The stub
 	## names its shell by path: env would try each PATH entry in turn, and every try is counted,
 	## so its count would follow PATH and could pass the lowest limit.
+	## Without strace, a SKIP under its ID for each command, and nothing else.
+	mkdir -p "${work}/scn/cicd/utility/include"
+	cp "${root}/cicd/config.bash" "${work}/scn/cicd/"
+	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${work}/scn/cicd/utility/include/"
+	sed 's/command -v strace /command -v no-such-strace /' "${root}/cicd/utility/spawn-count.bash" > "${work}/scn/cicd/utility/spawn-count.bash"
+	chmod +x "${work}/scn/cicd/utility/spawn-count.bash"
+	fAssert "[defq5] spawn-count.bash with no strace prints SKIP and the test ID for each command, and passes" \
+		bash -c "out=\$('${work}/scn/cicd/utility/spawn-count.bash' 2>&1) && n=\$(grep -c '^fMeasure \"' '${root}/cicd/utility/spawn-count.bash') && [[ \$(grep -cE '^  SKIP [0-9a-z]{5} [a-z ]+ \(no strace\)\$' <<< \"\$out\") == \"\${n}\" && \$(grep -c . <<< \"\$out\") == \"\${n}\" ]]"
 	if command -v strace >/dev/null 2>&1; then
 		local sc="${work}/sc"
 		mkdir -p "${sc}/cicd/utility/include" "${sc}/src-go" "${sc}/cicd/artifacts/spawn"
@@ -5778,29 +5810,32 @@ GHEOF
 		EOF
 		sed -n 's/^fMeasure "\[[^]]*\] \([^"]*\)".*/\1\t0/p' "${root}/cicd/utility/spawn-count.bash" > "${sc}/cicd/artifacts/spawn/spawn_20260101-000000.tsv"
 		fAssert "[dd5ez] spawn-count.bash fails on a command that starts more than its baseline, and records nothing" \
-			bash -c "out=\$('${sc}/cicd/utility/spawn-count.bash' -q 2>&1); [[ \$? == 1 ]] && grep -qE 'REGRESSED  \[[0-9a-z]{5}\] status: 0 -> ' <<< \"\$out\" && [[ \$(ls '${sc}/cicd/artifacts/spawn' | grep -c '^spawn_.*\.tsv\$') == 1 ]]"
+			bash -c "out=\$('${sc}/cicd/utility/spawn-count.bash' -q 2>&1); [[ \$? == 1 ]] && grep -qE '^  FAIL [0-9a-z]{5} status: 0 -> [0-9]+, regressed$' <<< \"\$out\" && [[ \$(ls '${sc}/cicd/artifacts/spawn' | grep -c '^spawn_.*\.tsv\$') == 1 ]]"
+		cp -R "${sc}" "${work}/scr"
 		fAssert "[dd5f0] and --record accepts the rise as the new baseline" \
 			bash -c "'${sc}/cicd/utility/spawn-count.bash' -q --record && [[ \$(ls '${sc}/cicd/artifacts/spawn' | grep -c '^spawn_.*\.tsv\$') == 2 ]]"
+		fAssert "[defq4] and says PASS for each rise it records, not FAIL" \
+			bash -c "out=\$('${work}/scr/cicd/utility/spawn-count.bash' --record 2>&1) && grep -qE '^  PASS [0-9a-z]{5} status: 0 -> [0-9]+, regressed and recorded\$' <<< \"\$out\" && ! grep -q '^  FAIL ' <<< \"\$out\""
 		fAssert "[dd5p5] and without -q prints a verdict and test ID for every command, unchanged ones too" \
-			bash -c "out=\$('${sc}/cicd/utility/spawn-count.bash' 2>&1) && [[ \$(grep -cE '^  ok +\[[0-9a-z]{5}\] [a-z ]+: [0-9]+\$' <<< \"\$out\") == \$(grep -c '^fMeasure \"' '${root}/cicd/utility/spawn-count.bash') ]]"
+			bash -c "out=\$('${sc}/cicd/utility/spawn-count.bash' 2>&1) && [[ \$(grep -cE '^  PASS [0-9a-z]{5} [a-z ]+: [0-9]+\$' <<< \"\$out\") == \$(grep -c '^fMeasure \"' '${root}/cicd/utility/spawn-count.bash') ]]"
 		## A limit is the number in the source plus headroom, so --record can't lift it. A copy
 		## expecting one, so its limit of three is under the stub's four processes.
 		sed 's/^\(fMeasure "\[dbftf\] status" *\)[0-9][0-9]*/\11/' "${root}/cicd/utility/spawn-count.bash" > "${sc}/cicd/utility/spawn-count-low.bash"
 		chmod +x "${sc}/cicd/utility/spawn-count-low.bash"
 		fAssert "[ddf54] and fails a count over its limit, --record or not, and records nothing" \
-			bash -c "was=\$(ls '${sc}/cicd/artifacts/spawn'); out=\$('${sc}/cicd/utility/spawn-count-low.bash' -q --record 2>&1); [[ \$? == 1 ]] && grep -qE '^  OVER LIMIT \[dbftf\] status: [0-9]+, limit 3 \(expected 1\)\$' <<< \"\$out\" && ! grep -q 'OVER LIMIT \[dbjeq\]' <<< \"\$out\" && [[ \$(ls '${sc}/cicd/artifacts/spawn') == \"\$was\" ]]"
+			bash -c "was=\$(ls '${sc}/cicd/artifacts/spawn'); out=\$('${sc}/cicd/utility/spawn-count-low.bash' -q --record 2>&1); [[ \$? == 1 ]] && grep -qE '^  FAIL dbftf status: [0-9]+, over its limit of 3 \(expected 1\)\$' <<< \"\$out\" && ! grep -q 'FAIL dbjeq' <<< \"\$out\" && [[ \$(ls '${sc}/cicd/artifacts/spawn') == \"\$was\" ]]"
 		## The headroom is the point: one helper more than expected must not fail the gate.
 		sed 's/^\(fMeasure "\[dbftf\] status" *\)[0-9][0-9]*/\13/' "${root}/cicd/utility/spawn-count.bash" > "${sc}/cicd/utility/spawn-count-near.bash"
 		chmod +x "${sc}/cicd/utility/spawn-count-near.bash"
 		fAssert "[ddf82] and passes a count one over its expected one" \
-			bash -c "out=\$('${sc}/cicd/utility/spawn-count-near.bash' 2>&1) && grep -qE '^  ok +\[dbftf\] status: 4\$' <<< \"\$out\""
+			bash -c "out=\$('${sc}/cicd/utility/spawn-count-near.bash' 2>&1) && grep -qE '^  PASS dbftf status: 4\$' <<< \"\$out\""
 		## The baseline's counts go into arithmetic, as the report's do.
 		# shellcheck disable=SC2016  ## As above, for the script to refuse.
 		printf 'status\tBASH_VERSINFO[$(touch %s/ran)0]\n' "${sc}" > "${sc}/cicd/artifacts/spawn/spawn_20991231-000000.tsv"
 		fAssert "[ddf4p] and refuses a baseline count that isn't a number, without running it or recording" \
 			bash -c "was=\$(ls '${sc}/cicd/artifacts/spawn'); out=\$('${sc}/cicd/utility/spawn-count.bash' -q 2>&1); [[ \$? == 1 ]] && grep -qF \"spawn_20991231-000000.tsv has 'BASH_VERSINFO[\" <<< \"\$out\" && [[ ! -e '${sc}/ran' ]] && [[ \$(ls '${sc}/cicd/artifacts/spawn') == \"\$was\" ]]"
 	else
-		fEcho_Clean "  skip: spawn-count regression checks (no strace)"
+		fSkipBlock "spawn-count regression checks (no strace)"
 	fi
 	## -q reached the publisher and nothing else, so an unattended run still printed every one
 	## of 900-odd check lines and buried every stage header.
@@ -5813,8 +5848,8 @@ GHEOF
 	## words "warning" and "error", because that is what those checks are about.
 	local lrLog="${work}/lint-report"; mkdir -p "${lrLog}"
 	{
-		echo "  ok: and raises no shell error of its own"
-		echo "  ok: the offline warning names its branch"
+		echo "  PASS aaaaa and raises no shell error of its own"
+		echo "  PASS aaaab the offline warning names its branch"
 		echo "[ OK: gofmt + go vet clean ]"
 		echo "passed: 649, failed: 0"
 	} > "${lrLog}/run_20260819-000000.log"
@@ -5837,6 +5872,38 @@ GHEOF
 	} > "${lrLog}/run_20260819-000003.log"
 	fAssertOut "[dcnwa] and each tool's own format is reported"  '\(7 warning line' \
 		bash -c "'${root}/cicd/utility/lint-report.bash' --file '${lrLog}/run_20260819-000003.log'"
+	printf '%s\n' '  PASS aaaaa says WARNING: when it should' '  FAIL aaaab main.go:12:3: names a file' '  SKIP aaaac SC2086 (needs pwsh)' > "${lrLog}/run_20260819-000004.log"
+	fAssertOut "[defq2] and a PASS, FAIL or SKIP line that quotes one is not a finding"  'CLEAN' \
+		bash -c "'${root}/cicd/utility/lint-report.bash' --file '${lrLog}/run_20260819-000004.log'"
+
+	## The suites' own line helpers, lifted out of each script and run on their own.
+	fSuiteLines(){ local f="$1" bad="fFail"; [[ "${f}" != *parity.bash ]] || bad="fBad"
+		bash -c "fEcho_Clean(){ printf '%s\n' \"\$*\"; }; declare -i quiet=0 pass=0 fail=0 skips=0
+			$(grep -E '^(fTestLine|fOk|fFail|fBad|fSkip)\(\)' "${f}")
+			fOk '[aaaaa] one two'; ${bad} '[aaaab] three: crashed (exit 2)'; fOk 'no id [aaaac] here'
+			! declare -F fSkip >/dev/null || fSkip \"[aaaad] needs pwsh (Linux only)\"" ;}
+	fSuiteLinesAre(){ local f="" want=""; want="$(printf '%s\n' '  PASS aaaaa one two' '  FAIL aaaab three: crashed (exit 2)' '  PASS no id [aaaac] here')"
+		for f in test fuzz parity; do [[ "$(fSuiteLines "${root}/cicd/${f}.bash" | head -n 3)" == "${want}" ]] || return 1; done ;}
+	fAssert "[defpy] test.bash, fuzz.bash and parity.bash print PASS or FAIL, the test's ID, then its label"  fSuiteLinesAre
+	fSuiteSkips(){ local f=""; for f in test fuzz; do [[ "$(fSuiteLines "${root}/cicd/${f}.bash" | tail -n 1)" == '  SKIP aaaad needs pwsh (Linux only)' ]] || return 1; done ;}
+	fAssert "[defpz] and test.bash and fuzz.bash print SKIP, the ID, then why"  fSuiteSkips
+	## A block a box can't run names each test in it once, nested blocks too, and no test outside
+	## it. The helpers run in a script of their own, so the block they read is that script's.
+	local skipFix="${work}/skip-block.bash"
+	# shellcheck disable=SC2016  ## the fixture's own expansions.
+	{ printf '%s\n' 'fEcho_Clean(){ printf "%s\n" "$*"; }' 'declare -i skips=0'; declare -f fTestLine fSkip fBlockIds fSkipBlock
+		printf '%s\n' 'fCheck(){ :; }' 'fCheckToo(){ :; }' 'fCheck "[aaaaa] before"' 'if true; then' '	fSkipBlock "why one"' 'else' '	fCheck "[aaaab] one"' '	if y; then' '		fCheckToo "[aaaac] two"' '	fi' '	fCheck "[aaaab] one again"' 'fi' \
+			'if false; then' '	fCheck "[aaaad] three" x' 'else' '	fSkipBlock "why two"' 'fi' 'fCheck "[aaaae] after"' 'echo "${skips}"'; } > "${skipFix}"
+	fSkipFixLines(){ [[ "$(bash "${skipFix}")" == "$(printf '%s\n' '  SKIP aaaab why one' '  SKIP aaaac why one' '  SKIP aaaad why two' 3)" ]] ;}
+	fAssert "[defq0] a skipped block gives a SKIP for each test in it, whichever branch skips"  fSkipFixLines
+	fEveryBlockSkips(){ local n=""; while IFS=: read -r n _; do [[ -n "$(fBlockIds "${root}/cicd/test.bash" "${n}")" ]] || return 1; done < <(grep -n '^[[:space:]]*fSkipBlock "' "${root}/cicd/test.bash") ;}
+	fAssert "[defq1] and every one in this suite names at least one test"  fEveryBlockSkips
+	## The Go test lines cicd.bash and remote-tests.bash print, from a log and the IDs in the source.
+	mkdir -p "${work}/gtl"
+	printf 'package x\n\nfunc TestA(t *testing.T) { // [aaaaa]\n}\nfunc TestB(t *testing.T) { // [aaaab]\n}\n' > "${work}/gtl/x_test.go"
+	printf '%s\n' '=== RUN   TestA' '--- PASS: TestA (0.00s)' '    --- PASS: TestA/sub (0.00s)' '--- FAIL: TestB (0.01s)' '--- SKIP: TestC (0.00s)' > "${work}/gtl/go.log"
+	fAssert "[defq3] Go test lines say PASS, FAIL or SKIP, then the ID, then the test, and nothing for a subtest" \
+		bash -c "source '${root}/cicd/utility/include/go-test-lines.bash'; [[ \"\$(fGoTestLines '${work}/gtl/go.log' '${work}/gtl')\" == \"\$(printf '%s\n' '  PASS aaaaa TestA' '  FAIL aaaab TestB' '  SKIP TestC')\" ]]"
 	## The backlog gate, the real script in a repo of its own with no integration branch, so only
 	## the Origin rule runs. Its count read 0 whatever the backlog held: '\t' in a quoted -E
 	## pattern is not a tab.
@@ -5973,7 +6040,7 @@ GHEOF
 		fAssert "[de55v] and so does one where no query ran, or no report at all" \
 			bash -c "$(declare -f fFindings); root='${root}'; fFindings 2 '${work}/cq-norules.sarif' && fFindings 2 '${work}/cq-no-such.sarif'"
 	else
-		fEcho_Clean "  skip: CodeQL report checks (need python3)"
+		fSkipBlock "CodeQL report checks (need python3)"
 	fi
 	## Bash 4.4 is the floor the style guide sets. install.bash runs on 3.2 on purpose, a file the
 	## others source needs no check of its own, and the publish helper is shared and left as it is.
@@ -6091,7 +6158,7 @@ EOF
 for i in range(im.n_frames): im.seek(i); ms += im.info.get("duration", 0)
 sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 	else
-		fEcho_Clean "  skip: demo renderer checks (need python3 with Pillow, and fc-match)"
+		fSkipBlock "demo renderer checks (need python3 with Pillow, and fc-match)"
 	fi
 
 	## The Windows resource. Built here rather than pinned in the source, because the failure
@@ -6185,7 +6252,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 	## The pre-push gate: cicd.bash --gate against the stubbed engine above, then the hook in a
 	## throwaway clone whose cicd.bash is a stub. Linux only, like the pipeline they belong to.
 	if [[ "$(uname -s)" != Linux ]]; then
-		fEcho_Clean "  skip: pre-push gate checks (Linux only)"
+		fSkipBlock "pre-push gate checks (Linux only)"
 	else
 		local gateDir="${work}/gate" gateCalls="${work}/gate-calls.log" gateFail="${work}/gate-fail" gateOut="${work}/gate-out.txt"
 		fMakeGateFixture
@@ -6358,7 +6425,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 			printf 'if ($true) {\n  Write-Output 1\n}\n' > "${gateDir}/cicd/utility/run-latest.ps1"
 			fAssert "[ddf83] and fails one indented two spaces"  fGatePwshSays 1 'PSUseConsistentIndentation'
 		else
-			fEcho_Clean "  skip: real PowerShell lint checks (pwsh or PSScriptAnalyzer not installed)"
+			fSkipBlock "real PowerShell lint checks (pwsh or PSScriptAnalyzer not installed)"
 		fi
 		## The same rule as the .ps1 files: no BOM, nothing outside ASCII.
 		fAssert "[ddf5p] PSScriptAnalyzerSettings.psd1 is plain ASCII" \
@@ -6447,7 +6514,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		printf 'package main\n\nfunc FuzzA(f *testing.F) { // [aaaaa]\n}\nfunc TestA(t *testing.T) { // [aaaab]\n}\n' > "${gateDir}/src-go/a_test.go"
 		fGateOnly test
 		fAssert "[dd6vy] the unit tests print a line per test with its ID, and none for a subtest" \
-			bash -c "grep -qxF '  ok: [aaaab] TestA' '${gateOut}' && grep -qxF '  ok: TestC' '${gateOut}' && ! grep -qF -- '=== RUN' '${gateOut}' && ! grep -qF 'TestA/sub' '${gateOut}'"
+			bash -c "grep -qxF '  PASS aaaab TestA' '${gateOut}' && grep -qxF '  PASS TestC' '${gateOut}' && ! grep -qF -- '=== RUN' '${gateOut}' && ! grep -qF 'TestA/sub' '${gateOut}'"
 		fAssert "[dd5fm] a build names the commit it was built from, and -dirty for uncommitted source" \
 			fGateRanCalling 0 '^go build .* -X main\.version=9\.8\.7-1-g[0-9a-f]+-dirty -X main\.buildEpoch='
 		fAssert "[dd5fn] and reads that after the remote sync, which can move HEAD" \
@@ -6456,14 +6523,14 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fGateOnly test
 		rm -f -- "${gateFail:?}/go-test"
 		fAssert "[dd6vz] and a failing one stops the run, with its line and its output" \
-			bash -c "[[ '${gateRc}' == 1 ]] && grep -qxF '  FAIL: [aaaab] TestA' '${gateOut}' && grep -qF 'a_test.go:4: boom' '${gateOut}' && grep -qF 'go test failures' '${gateOut}'"
+			bash -c "[[ '${gateRc}' == 1 ]] && grep -qxF '  FAIL aaaab TestA' '${gateOut}' && grep -qF 'a_test.go:4: boom' '${gateOut}' && grep -qF 'go test failures' '${gateOut}'"
 		git -C "${gateDir}" checkout --quiet -- README.md
 		## Stage 3 without --quick. 'go test -list' failing is swallowed there, so a target list
 		## that came back empty would pass having fuzzed nothing. The leak checks have checks of their own.
 		fGateOnly fuzz --no-leakcheck
 		fAssert "[dd5fp] stage 3 runs the fuzz harness, fuzzes each target the module lists, and counts spawns" \
 			fGateRanCalling 0 '^fuzz\.bash' '^go test -run \^\$ -fuzz \^FuzzA\$ -fuzztime 5s -parallel [0-9]+ \.$' '^spawn-count\.bash'
-		fAssert "[dd6g0] and prints each target on a line of its own, with its test ID"  fGateRanSaying 0 '^  ok: \[aaaaa\] FuzzA$'
+		fAssert "[dd6g0] and prints each target on a line of its own, with its test ID"  fGateRanSaying 0 '^  PASS aaaaa FuzzA$'
 		: > "${gateFail}/go-fuzz"
 		fGateOnly fuzz
 		rm -f -- "${gateFail:?}/go-fuzz"
@@ -6820,8 +6887,8 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 					printf -- '=== RUN   TestA\n--- PASS: TestA (0.00s)\n' ;;
 				*cicd/test.bash*)
 					echo '@@gitsby-remote-tests@@'
-					if [[ -e '${rtFail}/suitefail-'"\${host}" ]]; then echo '  FAIL: [aaaac] a check'; exit 1; fi
-					echo '  ok: [aaaac] a check' ;;
+					if [[ -e '${rtFail}/suitefail-'"\${host}" ]]; then echo '  FAIL aaaac a check'; exit 1; fi
+					echo '  PASS aaaac a check' ;;
 				*) echo '@@gitsby-remote-tests@@' ;;
 			esac
 		EOF
@@ -6852,7 +6919,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dedpa] the Mac's copy goes under its temp root, not its home" \
 			bash -c "[[ -f '${rtMac}/gitsby-remote-tests/.gitsby-remote-tests' && ! -e '${rtMac}/home/gitsby-remote-tests' ]] && grep -qF 'b26: copying the tree to gitsby-remote-tests/tree under its temp root' '${rtOut}'"
 		fAssert "[ddg8c] each box prints a line per Go test with its ID, and nothing from the Mac's login" \
-			bash -c "[[ \$(grep -cxF '  ok: [aaaab] TestA' '${rtOut}') == 2 ]] && grep -qxF '  ok: [aaaac] a check' '${rtOut}' && ! grep -qF 'bashrc' '${rtOut}'"
+			bash -c "[[ \$(grep -cxF '  PASS aaaab TestA' '${rtOut}') == 2 ]] && grep -qxF '  PASS aaaac a check' '${rtOut}' && ! grep -qF 'bashrc' '${rtOut}'"
 		fAssert "[ddg8d] the Mac runs the suite in the stage's copy of the tree, under its own bash, first on PATH" \
 			bash -c "grep -qF 'cd \"\$d/tree\" && PATH=/usr/local/bin:\"\$PATH\" \$lo /usr/local/bin/bash cicd/test.bash' '${rtLog}'"
 		## The tests there run with no core limit and at full priority otherwise.
@@ -6889,14 +6956,14 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtFail:?}/gofail-b29w"
 		fAssert "[ddg8j] a failing Go test fails the run, with its line and its output" \
-			bash -c "[[ '${rtRc}' == 1 ]] && grep -qxF '  FAIL: [aaaab] TestA' '${rtOut}' && grep -qF 'a_test.go:4: boom' '${rtOut}' && grep -qxF '  passed on: b26; failed on: b29w' '${rtOut}'"
+			bash -c "[[ '${rtRc}' == 1 ]] && grep -qxF '  FAIL aaaab TestA' '${rtOut}' && grep -qF 'a_test.go:4: boom' '${rtOut}' && grep -qxF '  passed on: b26; failed on: b29w' '${rtOut}'"
 		fAssert "[dee74] the Windows box runs its Go tests on half its cores, never under 1, in the BelowNormal class" \
 			bash -c "grep -qF 'ssh b29w set /a GOMAXPROCS=%NUMBER_OF_PROCESSORS%/2 >nul& (if %NUMBER_OF_PROCESSORS% LSS 2 set GOMAXPROCS=1)& echo @@gitsby-remote-tests@@& cd /d ' '${rtLog}' && grep -qE '^ssh b29w .* && start \"\" /belownormal /b /wait gitsby-test\.exe -test\.v\$' '${rtLog}'"
 		: > "${rtFail}/gofail0-b29w"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtFail:?}/gofail0-b29w"
 		fAssert "[dee75] a Windows Go test that fails still fails the box when the run exits 0, with a warning" \
-			bash -c "[[ '${rtRc}' == 1 ]] && grep -qxF \"  WARNING: b29w's go test failed a test and still exited 0\" '${rtOut}' && grep -qxF '  FAIL: [aaaab] TestA' '${rtOut}' && grep -qxF '  passed on: b26; failed on: b29w' '${rtOut}'"
+			bash -c "[[ '${rtRc}' == 1 ]] && grep -qxF \"  WARNING: b29w's go test failed a test and still exited 0\" '${rtOut}' && grep -qxF '  FAIL aaaab TestA' '${rtOut}' && grep -qxF '  passed on: b26; failed on: b29w' '${rtOut}'"
 		: > "${rtFail}/suitefail-b26"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtFail:?}/suitefail-b26"
@@ -6937,7 +7004,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		local rtBins=(--mac-bin "${rtMacBin}" --bin freebsd/amd64 "${work}/remote-bsdbin" --bin linux/arm64 "${work}/remote-armbin")
 		fRemoteRun "${rtBins[@]}"
 		fAssert "[ddgm1] each Unix box is taken by name from the lock's other list, with no wait, and every one runs" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^lock wrap vmFreeBSD --wait 0 .* -- .*remote-tests\.bash --held unix vmFreeBSD bsdtest@vmFreeBSD win=b29w vm925w other=b26 vmFreeBSD vmDebARM64 session=unset\$' '${rtLog}' && grep -qE '^lock wrap vmDebARM64 --wait 0 .* --held unix vmDebARM64 tester@vmDebARM64 win=b29w vm925w other=b26 vmFreeBSD vmDebARM64 session=unset\$' '${rtLog}' && [[ \$(grep -cxF '  ok: [aaaab] TestA' '${rtOut}') == 4 ]]"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qE '^lock wrap vmFreeBSD --wait 0 .* -- .*remote-tests\.bash --held unix vmFreeBSD bsdtest@vmFreeBSD win=b29w vm925w other=b26 vmFreeBSD vmDebARM64 session=unset\$' '${rtLog}' && grep -qE '^lock wrap vmDebARM64 --wait 0 .* --held unix vmDebARM64 tester@vmDebARM64 win=b29w vm925w other=b26 vmFreeBSD vmDebARM64 session=unset\$' '${rtLog}' && [[ \$(grep -cxF '  PASS aaaab TestA' '${rtOut}') == 4 ]]"
 		fAssert "[ddgm2] each gets the Go tests and the build for its own target, in a marked copy of the tree with the git dir" \
 			bash -c "[[ -f '${rtBsd}/.gitsby-remote-tests' && -f '${rtBsd}/tree/src-go/gitsby-test' && \"\$(cat '${rtBsd}/tree/src-go/gitsby')\" == freebsd && \"\$(cat '${rtArm}/tree/src-go/gitsby')\" == arm64 ]] && git -C '${rtBsd}/tree' ls-files --error-unmatch src-go/a_test.go >/dev/null && grep -qxF '  vmFreeBSD: go test (freebsd/amd64)' '${rtOut}' && grep -qxF '  vmDebARM64: go test (linux/arm64)' '${rtOut}'"
 		fAssert "[ddgm3] and runs test.bash there with the box's own bash, after fetching the modules" \
@@ -7815,7 +7882,7 @@ chmod +x "${gitsby}"
 fMakeFixture "${work}/go"
 fRunSuite "go"
 
-fEcho_Clean "passed: ${pass}, failed: ${fail}"
+fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ((fail == 0)) || exit 1
 
 
@@ -7935,3 +8002,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261026 JC: The pipeline's step lines: each step opens and closes with its time and number, a failed one says FAIL, the plan names the flag for each step that's off, and the run in the image takes its place in the count, in this box's time. The checks that read the old stage headers and skip lines read the new ones. 1748 -> 1754.
 ##		- 20261026 JC: The run's one cleanup line at its end, files and docker together. The stale-folder and docker checks read it. 1754 -> 1755.
 ##		- 20261026 JC: Test IDs are minutes since 2000 in Crockford base 32, converted from the old ones. Checks for an old ID failing, a taken minute and -n. 1757 -> 1760.
+##		- 20261026 JC: Each check prints PASS, FAIL or SKIP, then its ID and label. A block a box can't run gives a SKIP for each test in it, and the total counts them. The checks that read the old lines read the new ones, plus checks for each suite's lines, the skipped blocks, the Go test lines, spawn-count's and the lint summary. 1760 -> 1768.

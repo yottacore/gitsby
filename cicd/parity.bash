@@ -99,8 +99,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 declare -i pass=0 fail=0
-fOk(){   pass=$((pass+1)); ((quiet)) || fEcho_Clean "  ok: $*"; }
-fBad(){  fail=$((fail+1)); fEcho_Clean "  DIFFER: $*"; }
+## "PASS <id> <label>" from "[<id>] <label>", as test.bash prints them. A difference is a FAIL.
+fTestLine(){ local re='^\[([0-9A-Za-z]+)\] (.*)$' d="$2"; [[ ! "${d}" =~ ${re} ]] || d="${BASH_REMATCH[1]} ${BASH_REMATCH[2]}"; fEcho_Clean "  $1 ${d}" ;}
+fOk(){   pass=$((pass+1)); ((quiet)) || fTestLine PASS "$*"; }
+fBad(){  fail=$((fail+1)); fTestLine FAIL "$*"; }
 
 ## The subject and the reference. 'new' is whatever cicd stage 2 just built; 'ref' is the
 ## frozen script, read-only and never rebuilt.
@@ -396,3 +398,4 @@ fEcho_Clean "parity passed: ${pass}, differed: ${fail}"
 ##		- 20261004 JC: The pull step's merge names the upstream, so the mapping names it too.
 ##		- 20261004 JC: Prints through fEcho and fEcho_Clean, like the other pipeline scripts.
 ##		  Every expansion braced, and shellcheck enforces it.
+##		- 20261026 JC: Each check prints PASS or FAIL, then its ID and label, in place of ok and DIFFER.
