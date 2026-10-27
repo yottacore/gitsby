@@ -6497,7 +6497,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 				"test -race") if [[ -e '${gateFail}/go-test' ]]; then printf -- '--- FAIL: TestA (0.00s)\n    a_test.go:4: boom\n'
 					else printf -- '=== RUN   TestA\n--- PASS: TestA (0.00s)\n    --- PASS: TestA/sub (0.00s)\n--- PASS: TestC (0.00s)\n'; fi ;;
 			esac
-			[[ "\$*" != *" -fuzz "* || ! -e '${gateFail}/go-fuzz' ]] || exit 1
+			[[ "\$*" != *" -fuzz "* || ! -e '${gateFail}/go-fuzz' ]] || { printf -- 'fuzz: crasher input: "x"\\n'; exit 1 ;}
 			[[ ! -e "${gateFail}/go-\${1:-}" ]] || exit 1
 			o=''; for a in "\$@"; do [[ "\${o}" != 1 ]] || : > "\${a}"; o=''; [[ "\${a}" != -o ]] || o=1; done
 		EOF
@@ -6544,6 +6544,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fGateOnly fuzz
 		rm -f -- "${gateFail:?}/go-fuzz"
 		fAssert "[dd5fq] and a crasher stops the run, naming the target"  fGateRanSaying 1 'fuzzing found a crasher in FuzzA'
+		fAssert "[deh0c] and prints what go said about it"  fGateRanSaying 1 '^fuzz: crasher input'
 		: > "${gateFail}/fuzz"
 		fGateOnly fuzz
 		rm -f -- "${gateFail:?}/fuzz"
