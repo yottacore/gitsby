@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-func TestCrockfordBase32(t *testing.T) { // [Eo59IMl]
+func TestCrockfordBase32(t *testing.T) { // [dbshz]
 	tests := []struct {
 		n    int64
 		want string
@@ -39,7 +39,7 @@ func TestCrockfordBase32(t *testing.T) { // [Eo59IMl]
 	}
 }
 
-func TestCrockfordAlphabetOmitsAmbiguousLetters(t *testing.T) { // [Eo59IMm]
+func TestCrockfordAlphabetOmitsAmbiguousLetters(t *testing.T) { // [dbsj0]
 	if len(crockford32) != 32 {
 		t.Fatalf("alphabet is %d characters, want 32", len(crockford32))
 	}
@@ -50,7 +50,7 @@ func TestCrockfordAlphabetOmitsAmbiguousLetters(t *testing.T) { // [Eo59IMm]
 	}
 }
 
-func TestBuildNumber(t *testing.T) { // [Eo59IMn]
+func TestBuildNumber(t *testing.T) { // [dbsj1]
 	tests := []struct {
 		stamp string
 		want  string
@@ -75,7 +75,7 @@ func TestBuildNumber(t *testing.T) { // [Eo59IMn]
 	}
 }
 
-func TestVersionTextOmitsAnUnstampedBuild(t *testing.T) { // [Eo59IMo]
+func TestVersionTextOmitsAnUnstampedBuild(t *testing.T) { // [dbsj2]
 	savedEpoch, savedVer := buildEpoch, version
 	defer func() { buildEpoch, version = savedEpoch, savedVer }()
 	version = "2.1.0"
@@ -90,7 +90,7 @@ func TestVersionTextOmitsAnUnstampedBuild(t *testing.T) { // [Eo59IMo]
 	}
 }
 
-func TestVersionTextDatesABuildBetweenReleases(t *testing.T) { // [EtZeZfA]
+func TestVersionTextDatesABuildBetweenReleases(t *testing.T) { // [debe5]
 	savedEpoch, savedVer, savedLocal := buildEpoch, version, time.Local
 	defer func() { buildEpoch, version, time.Local = savedEpoch, savedVer, savedLocal }()
 	buildEpoch = "1787000000" // 2026-08-17 20:53 UTC

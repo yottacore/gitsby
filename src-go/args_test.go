@@ -15,7 +15,7 @@ import (
 	"testing"
 )
 
-func TestParseArgsPositionals(t *testing.T) { // [EnQKNs4]
+func TestParseArgsPositionals(t *testing.T) { // [dbfqk]
 	opt, cmd, help, err := parseArgs([]string{"repo", "clone", "https://x/y.git", "dir"})
 	if err != nil || help != "" {
 		t.Fatalf("err=%v help=%q", err, help)
@@ -28,7 +28,7 @@ func TestParseArgsPositionals(t *testing.T) { // [EnQKNs4]
 	}
 }
 
-func TestParseArgsOptions(t *testing.T) { // [EnQKNs5]
+func TestParseArgsOptions(t *testing.T) { // [dbfqm]
 	tests := []struct {
 		name string
 		argv []string
@@ -59,7 +59,7 @@ func TestParseArgsOptions(t *testing.T) { // [EnQKNs5]
 
 // A value we are already waiting for wins over the option test - there is no
 // other way to write a commit message that starts with a dash.
-func TestParseArgsMessageMayLookLikeAnOption(t *testing.T) { // [EnQKNs6]
+func TestParseArgsMessageMayLookLikeAnOption(t *testing.T) { // [dbfqn]
 	opt, cmd, _, err := parseArgs([]string{"pullcom", "-m", "-Wall added"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -72,7 +72,7 @@ func TestParseArgsMessageMayLookLikeAnOption(t *testing.T) { // [EnQKNs6]
 	}
 }
 
-func TestParseArgsRefusals(t *testing.T) { // [EnQKNs7]
+func TestParseArgsRefusals(t *testing.T) { // [dbfqp]
 	for _, argv := range [][]string{
 		{"--offline"},
 		{"--nonsense"},
@@ -89,7 +89,7 @@ func TestParseArgsRefusals(t *testing.T) { // [EnQKNs7]
 // alone. Every other command has to keep rejecting the fifth, which is now
 // sortCommand's job rather than the tokenizer's - and the tail that does it was
 // only ever checking the fourth.
-func TestSortCommandRefusesFifthPositional(t *testing.T) { // [EnXe9ad]
+func TestSortCommandRefusesFifthPositional(t *testing.T) { // [dbhgc]
 	_, cmd, _, err := parseArgs([]string{"repo", "clone", "url", "dir", "extra"})
 	if err != nil {
 		t.Fatalf("parse: %v", err)
@@ -106,7 +106,7 @@ func TestSortCommandRefusesFifthPositional(t *testing.T) { // [EnXe9ad]
 
 // 'account set' is the one command that keeps all three of its shifted
 // positionals, and the tail that rejects a third must not eat its value.
-func TestSortCommandAccountSet(t *testing.T) { // [EnXe9ae]
+func TestSortCommandAccountSet(t *testing.T) { // [dbhgd]
 	_, cmd, _, err := parseArgs([]string{"account", "set", "work", "host", "gitea.com"})
 	if err != nil {
 		t.Fatalf("parse: %v", err)
@@ -130,7 +130,7 @@ func TestSortCommandAccountSet(t *testing.T) { // [EnXe9ae]
 
 // Two words exactly: without the key it prints the syntax, and a value after it is
 // refused, since the command removes every line of the key and not just one.
-func TestSortCommandAccountUnset(t *testing.T) { // [ErCjvod]
+func TestSortCommandAccountUnset(t *testing.T) { // [dd83n]
 	for _, tc := range []struct {
 		argv []string
 		want string
@@ -156,7 +156,7 @@ func TestSortCommandAccountUnset(t *testing.T) { // [ErCjvod]
 	}
 }
 
-func TestParseArgsHelpFromAnyPosition(t *testing.T) { // [EnQKNs8]
+func TestParseArgsHelpFromAnyPosition(t *testing.T) { // [dbfqq]
 	for _, argv := range [][]string{{"--help"}, {"br", "create", "--help"}, {"-h"}} {
 		if _, _, help, err := parseArgs(argv); help != "help" || err != nil {
 			t.Errorf("%v: help=%q err=%v", argv, help, err)
@@ -166,7 +166,7 @@ func TestParseArgsHelpFromAnyPosition(t *testing.T) { // [EnQKNs8]
 
 // The information options answer from any position, as help does. A message value
 // is still a message, and -v stays first-word only.
-func TestParseArgsInfoFromAnyPosition(t *testing.T) { // [ErCP1Ra]
+func TestParseArgsInfoFromAnyPosition(t *testing.T) { // [dd811]
 	for _, tc := range []struct {
 		argv []string
 		want string
@@ -185,7 +185,7 @@ func TestParseArgsInfoFromAnyPosition(t *testing.T) { // [ErCP1Ra]
 	}
 }
 
-func TestCollapseCommand(t *testing.T) { // [EnQKNs9]
+func TestCollapseCommand(t *testing.T) { // [dbfqr]
 	tests := []struct {
 		argv []string
 		want string
@@ -224,7 +224,7 @@ func TestCollapseCommand(t *testing.T) { // [EnQKNs9]
 }
 
 // The internal tokens carry a hyphen precisely so they cannot be typed.
-func TestCollapseCommandRefusesInternalTokens(t *testing.T) { // [EnQKNsA]
+func TestCollapseCommandRefusesInternalTokens(t *testing.T) { // [dbfqs]
 	for _, name := range []string{"br-merge", "repo-clone", "account-apply"} {
 		if _, err := collapseCommand(command{name: name}); err == nil {
 			t.Errorf("%q was accepted as typed", name)
@@ -234,7 +234,7 @@ func TestCollapseCommandRefusesInternalTokens(t *testing.T) { // [EnQKNsA]
 
 // The noun shift is what makes 'br list extra' complain about the extra rather
 // than about 'list'.
-func TestSortCommandShiftedPositionals(t *testing.T) { // [EnQKNsB]
+func TestSortCommandShiftedPositionals(t *testing.T) { // [dbfqt]
 	_, cmd, _, err := parseArgs([]string{"br", "list", "extra"})
 	if err != nil {
 		t.Fatalf("parse: %v", err)
@@ -249,7 +249,7 @@ func TestSortCommandShiftedPositionals(t *testing.T) { // [EnQKNsB]
 	}
 }
 
-func TestSortCommandMutating(t *testing.T) { // [EnQKNsC]
+func TestSortCommandMutating(t *testing.T) { // [dbfqv]
 	tests := []struct {
 		argv     []string
 		mutating bool
@@ -290,7 +290,7 @@ func TestSortCommandMutating(t *testing.T) { // [EnQKNsC]
 
 // A bare positional is the commit message when no -m was given, and -m wins when
 // both are.
-func TestSortCommandPositionalMessage(t *testing.T) { // [EnQKNsD]
+func TestSortCommandPositionalMessage(t *testing.T) { // [dbfqw]
 	opt, cmd, _, _ := parseArgs([]string{"pullcom", "typed here"})
 	cmd, _ = collapseCommand(cmd)
 	if _, err := sortCommand(cmd, &opt); err != nil {
@@ -310,7 +310,7 @@ func TestSortCommandPositionalMessage(t *testing.T) { // [EnQKNsD]
 	}
 }
 
-func TestScanPassthrough(t *testing.T) { // [EnQKNsE]
+func TestScanPassthrough(t *testing.T) { // [dbfqx]
 	tests := []struct {
 		name     string
 		argv     []string
@@ -359,7 +359,7 @@ func joinArgs(args []string) string {
 	return out
 }
 
-func TestBorrowedNameRefusesRawToolNames(t *testing.T) { // [EtZeZfP]
+func TestBorrowedNameRefusesRawToolNames(t *testing.T) { // [debe6]
 	for _, name := range append(slices.Clone(rawTools), "tea-cli") {
 		for _, argv0 := range []string{name, "/usr/local/bin/" + name, strings.ToUpper(name) + ".exe"} {
 			err := borrowedName(argv0)

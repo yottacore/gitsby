@@ -19,7 +19,7 @@ import (
 
 // A gh that is this binary, by link, comes before the real one on PATH and is
 // passed over. So is a relative entry, which LookPath would never run.
-func TestLookToolSkipsSelf(t *testing.T) { // [EtMXfI7]
+func TestLookToolSkipsSelf(t *testing.T) { // [de89d]
 	if runtime.GOOS == "windows" {
 		t.Skip("needs symlinks and the exec bit")
 	}
@@ -63,7 +63,7 @@ func TestLookToolSkipsSelf(t *testing.T) { // [EtMXfI7]
 // on PATH, and refuses naming it only when none is left. Unsetting the variable
 // would loop, so the refusal doesn't say to. The variable is read as the run
 // found it.
-func TestRawRefusesInsideRaw(t *testing.T) { // [EtMXfJm]
+func TestRawRefusesInsideRaw(t *testing.T) { // [de89e]
 	wrapDir, realDir := t.TempDir(), t.TempDir()
 	ext := ""
 	if runtime.GOOS == "windows" {
@@ -109,7 +109,7 @@ func TestRawRefusesInsideRaw(t *testing.T) { // [EtMXfJm]
 // Only a repeat is on the chain: other arguments, another folder or another tool
 // file nest, as a hook calling 'raw git' under 'raw git commit' does. Under the
 // probe mark the tool file alone is a match, and the mark stays last.
-func TestRawNestChain(t *testing.T) { // [EtOGJ79]
+func TestRawNestChain(t *testing.T) { // [de8pk]
 	t.Chdir(t.TempDir())
 	commit := []string{"commit", "-m", "x"}
 	chain, err := rawNest("", "git", rawEntry("git", "/bin/git", commit))
@@ -150,7 +150,7 @@ func TestRawNestChain(t *testing.T) { // [EtOGJ79]
 
 // A loop with new arguments each time stops at rawDepthMax, and says how deep.
 // The probe mark isn't a level.
-func TestRawNestDepth(t *testing.T) { // [EtOGJ7M]
+func TestRawNestDepth(t *testing.T) { // [de8pm]
 	chain := ""
 	for n := range rawDepthMax {
 		var err error
@@ -171,7 +171,7 @@ func TestRawNestDepth(t *testing.T) { // [EtOGJ7M]
 // Every spawn takes the same lookup: a gh that is this binary is refused rather
 // than run (never Run here, since a regression would start this test binary again), the real one runs by full path under its own name, and a name with a
 // path in it is left alone.
-func TestToolCmdSkipsSelf(t *testing.T) { // [EtMclJC]
+func TestToolCmdSkipsSelf(t *testing.T) { // [de89z]
 	if runtime.GOOS == "windows" {
 		t.Skip("needs symlinks and the exec bit")
 	}
@@ -216,7 +216,7 @@ func TestToolCmdSkipsSelf(t *testing.T) { // [EtMclJC]
 
 // No spawn outside exec.go, so none can skip toolCmd's lookup. A new call site
 // running a tool by bare name is how 2026102111572785 came back after raw's fix.
-func TestOneSpawnSite(t *testing.T) { // [EtMctyX]
+func TestOneSpawnSite(t *testing.T) { // [de8a0]
 	files, err := filepath.Glob("*.go")
 	if err != nil || len(files) < 10 {
 		t.Fatalf("found %d sources: %v", len(files), err)

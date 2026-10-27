@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-func TestParseArgsStaged(t *testing.T) { // [Err7CYL]
+func TestParseArgsStaged(t *testing.T) { // [ddht8]
 	for _, spelling := range []string{"--staged", "-staged", "--STAGED"} {
 		opt, cmd, _, err := parseArgs([]string{"pullcom", spelling})
 		if err != nil || !opt.staged || cmd.name != "pullcom" {
@@ -28,7 +28,7 @@ func TestParseArgsStaged(t *testing.T) { // [Err7CYL]
 // Every command that would commit the whole tree anyway refuses it, rather than
 // sweeping in the edits it was typed to keep out.
 // pr create and release refused it until 2026-10-05, and take it since.
-func TestCheckStagedFlag(t *testing.T) { // [Err7CYY]
+func TestCheckStagedFlag(t *testing.T) { // [ddht9]
 	staged := options{staged: true}
 	for _, cmd := range []command{{name: "pullcom"}, {name: "sync"}, {name: "br-create"}, {name: "br-hotfix"}, {name: "br-switch"}, {name: "br-merge"},
 		{name: "release"}, {name: "pr", arg: "create"}, {name: "pr", arg: "new"}, {name: "pr", arg: "Create"}} {
@@ -47,7 +47,7 @@ func TestCheckStagedFlag(t *testing.T) { // [Err7CYY]
 	}
 }
 
-func TestParseStatusZ(t *testing.T) { // [Err7CYm]
+func TestParseStatusZ(t *testing.T) { // [ddhta]
 	out := "M  staged.go\x00 M edited.go\x00MM both.go\x00A  added.go\x00AM added-then-edited.go\x00" +
 		"D  gone.go\x00 D deleted-here.go\x00?? new dir/file name.txt\x00!! ignored.o\x00UU conflict.go\x00"
 	split := parseStatusZ(out)

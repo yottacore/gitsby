@@ -220,20 +220,20 @@ fMeasure(){
 ## is one of them because its pull step only runs after a fetch, and that step used to ask
 ## origin a second time.
 ((quiet)) || fEcho_Clean "spawn counts (${exe})"
-fMeasure "[EnQTUO0] status"                              11 pipe repo        -q --no-fetch status
-fMeasure "[EnberSa] whoami"                               7 pipe repo        -q --no-fetch whoami
-fMeasure "[EnQTUe8] br list"                              7 pipe repo        -q --no-fetch br list
-fMeasure "[EnQTUuG] account list"                         7 pipe repo        -q --no-fetch account list
-fMeasure "[EnQTVAO] repo url"                             6 pipe repo        -q --no-fetch repo url
-fMeasure "[EnQTVQW] pullcom"                             21 pipe repo        -q --no-fetch pullcom "spawn count"
-fMeasure "[ErgAQyw] pullcom with a fetch"                 28 pipe repo        -q pullcom "spawn count"
-fMeasure "[EnQTVge] br switch"                           26 pipe repo        -q --no-fetch br switch main
-fMeasure "[EnQTVwm] br prune"                            31 pipe repo        -q --no-fetch br prune
-fMeasure "[Erg2KIz] status with a fetch"                 17 tty  repo        status
-fMeasure "[Erg2KJr] status in an account folder"         19 tty  acct-ssh    --no-fetch status
-fMeasure "[Erg2KKj] whoami in an account folder"         15 tty  acct-ssh    --no-fetch whoami
-fMeasure "[Erg2KLb] account list with accounts"          11 tty  acct-ssh    --no-fetch account list
-fMeasure "[Erg2KMS] status in an https account folder"   15 tty  acct-https  --no-fetch status
+fMeasure "[dbftf] status"                              11 pipe repo        -q --no-fetch status
+fMeasure "[dbjeq] whoami"                               7 pipe repo        -q --no-fetch whoami
+fMeasure "[dbftg] br list"                              7 pipe repo        -q --no-fetch br list
+fMeasure "[dbfth] account list"                         7 pipe repo        -q --no-fetch account list
+fMeasure "[dbftj] repo url"                             6 pipe repo        -q --no-fetch repo url
+fMeasure "[dbftk] pullcom"                             21 pipe repo        -q --no-fetch pullcom "spawn count"
+fMeasure "[ddf68] pullcom with a fetch"                 28 pipe repo        -q pullcom "spawn count"
+fMeasure "[dbftm] br switch"                           26 pipe repo        -q --no-fetch br switch main
+fMeasure "[dbftn] br prune"                            31 pipe repo        -q --no-fetch br prune
+fMeasure "[ddf4z] status with a fetch"                 17 tty  repo        status
+fMeasure "[ddf50] status in an account folder"         19 tty  acct-ssh    --no-fetch status
+fMeasure "[ddf51] whoami in an account folder"         15 tty  acct-ssh    --no-fetch whoami
+fMeasure "[ddf52] account list with accounts"          11 tty  acct-ssh    --no-fetch account list
+fMeasure "[ddf53] status in an https account folder"   15 tty  acct-https  --no-fetch status
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Each count against its limit, then against the newest previous run; then record this one.

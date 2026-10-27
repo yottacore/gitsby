@@ -50,11 +50,11 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 2026-10-25: The Windows command sets `GOMAXPROCS` to `%NUMBER_OF_PROCESSORS%/2`, or 1 under 2 cores, ahead of the marker, and runs the tests with `start "" /belownormal /b /wait`.
 		- 2026-10-25: A `--- FAIL` line in the output fails the box even when the exit code comes back 0, with a warning that says so.
 		- Under Wine's cmd, the same command line gave `GOMAXPROCS` 16 on 32 cores, and the test binary's exit code 3 came back through `start /wait`. Wine ignores the priority class, so BelowNormal is unchecked. Wine's `set /a` doesn't read a variable by name, so the line expands `%NUMBER_OF_PROCESSORS%`.
-		- Verified: test.bash 1737/0 on the box, and `--backlog-run-quick` in the image, with test.bash 1737/0, fuzz 313/0 and parity 29/0. Against the harness before the change, `[EtlCXkW]` and `[EtlCXkl]` fail.
+		- Verified: test.bash 1737/0 on the box, and `--backlog-run-quick` in the image, with test.bash 1737/0, fuzz 313/0 and parity 29/0. Against the harness before the change, `[dee74]` and `[dee75]` fail.
 	- Decisions:
 		- Nothing stands in for the busy rule. The box always gets half its cores, and BelowNormal yields to its other work. A one-shot CPU sample was passed over, since it's not an average. Filed as a Check in questions.md.
 	- Branch: round-20261025b
-	- Test case: test.bash `[EtlCXkW]` (the count and class on the command line), `[EtlCXkl]` (a failing test that exits 0).
+	- Test case: test.bash `[dee74]` (the count and class on the command line), `[dee75]` (a failing test that exits 0).
 	- Swept: every remote command in remote-tests.bash's `fRunWindows`. The copy and cleanup steps run no tests, so they keep normal priority.
 	- Prereq IDs: 2026102519554107
 	- 2026-10-25: The round's full run reached stage 7, where vmDebARM64 failed 22 harness checks (2026102519554107). Waits on that.
@@ -78,9 +78,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Progress log:
 		- 2026-10-25: The Windows loop in remote-tests.bash runs before the Mac and Unix ones. Every build is still made before any box is taken.
 		- 2026-10-25: The fixture's VM helper now refuses vm925w with "Failed to reserve port 5900" while another VM it woke is still up.
-		- Verified: test.bash 1737/0 on the box, and `--backlog-run-quick` in the image, with test.bash 1737/0, fuzz 313/0 and parity 29/0. Against the harness before the change, `[EtlCXkF]` fails, and so do the new checks of the other two items in this change and the changed `[Etj1UKH]`, 1732/5.
+		- Verified: test.bash 1737/0 on the box, and `--backlog-run-quick` in the image, with test.bash 1737/0, fuzz 313/0 and parity 29/0. Against the harness before the change, `[dee73]` fails, and so do the new checks of the other two items in this change and the changed `[dedpc]`, 1732/5.
 	- Branch: round-20261025b
-	- Test case: test.bash `[EtlCXkF]`.
+	- Test case: test.bash `[dee73]`.
 	- Swept: every loop over the boxes in remote-tests.bash. Only the three run loops take boxes, and the summary is sorted by name, so the order shows nowhere else. config.bash's stage 7 comment names the order.
 	- Prereq IDs: 2026102519554107
 	- 2026-10-25: The round's full run reached stage 7, where vmDebARM64 failed 22 harness checks (2026102519554107). Waits on that.
@@ -102,10 +102,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Progress log:
 		- 2026-10-25: `fUnderLock` makes one call, to the helper's `wrap` where there is one and to the lock's otherwise, with `--wait 0 --why "gitsby: <kind> tests"` either way. Its comment, the script's Purpose and config.bash's stage 7 comment say so.
 		- The helper is still looked for beside the lock, not on the PATH, as before. With none, the lock takes each box, and a sleeping VM is skipped.
-		- 2026-10-25: Asserts given new values for this change. `[Etj1UKH]`: `vmstate wrap vmFreeBSD --wait 0 --` and `lock wrap vmFreeBSD --wait 0 --` -> the same with `--why gitsby: unix tests`, and "vmDebARM64 never goes through the helper" -> "the helper never wakes vmDebARM64". Its label's "keeps the lock's own wrap" -> "is left alone". The fixture's helper takes any options before `--` and passes them to the lock, and leaves a box that isn't a VM to it, as the real one does.
-		- Verified: test.bash 1737/0 on the box, and `--backlog-run-quick` in the image, with test.bash 1737/0, fuzz 313/0 and parity 29/0. Against the harness before the change, `[EtlCXjm]` fails. `[EtlCXk1]` passes there too, since the no-helper path didn't change.
+		- 2026-10-25: Asserts given new values for this change. `[dedpc]`: `vmstate wrap vmFreeBSD --wait 0 --` and `lock wrap vmFreeBSD --wait 0 --` -> the same with `--why gitsby: unix tests`, and "vmDebARM64 never goes through the helper" -> "the helper never wakes vmDebARM64". Its label's "keeps the lock's own wrap" -> "is left alone". The fixture's helper takes any options before `--` and passes them to the lock, and leaves a box that isn't a VM to it, as the real one does.
+		- Verified: test.bash 1737/0 on the box, and `--backlog-run-quick` in the image, with test.bash 1737/0, fuzz 313/0 and parity 29/0. Against the harness before the change, `[dee71]` fails. `[dee72]` passes there too, since the no-helper path didn't change.
 	- Branch: round-20261025b
-	- Test case: test.bash `[EtlCXjm]` (every box through the helper, with why), `[EtlCXk1]` (no helper, the lock's own wrap with why), plus `[Etj1UKH]` as changed.
+	- Test case: test.bash `[dee71]` (every box through the helper, with why), `[dee72]` (no helper, the lock's own wrap with why), plus `[dedpc]` as changed.
 	- Swept: every call of the lock and the helper in remote-tests.bash. `hosts` and `status` are reads, and stay as they were.
 	- Prereq IDs: 2026102519554107
 	- 2026-10-25: The round's full run reached stage 7, where vmDebARM64 failed 22 harness checks (2026102519554107). Waits on that.
@@ -153,10 +153,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 2026-10-26: The plan names the flag or reason for each step that's off, such as `(skipped --no-sync)`, `(skipped --merge-gate)` or `(done by the run outside the container)`, and the quick run lists the areas not named. `--list` titles read `Step N of M` too.
 		- 2026-10-26: The run in the image is handed where its steps start and the run's total, so its steps take their place in the one count. It also gets this box's UTC offset for the step times, since the image runs in UTC.
 		- 2026-10-26: Asserts that read the old text now read the new, old -> new, and check nothing less:
-			- [Er1LxTh] `[ 0/8  Remote sync ]` and [ErkbDSi] `[ 7/8  Remote tests ]` -> their `Step 1 of 1; Starting` lines. [Er1LxTV] the source's `fSection "0/8  Remote sync"` -> `fStep sync`.
-			- [Etkvc9W] list titles `2/8`, `4/8`, `Quick 1/1` -> `Step 3 of 9`, `Step 5 of 8`, `Step 1 of 1`.
-			- [Er1LxTl], [EtiiN7k], [EtiiN7y], [EtOKpZS], [Et6Htmj]: `remote sync skipped`, `dogfood disabled`, `publish disabled`, `fuzz + security skipped`, `Remote tests skipped (--quick)` -> the plan's `(skipped <flag>)` line for each. [ErkbDT4] -> the plan's cross-builds line and a `Cross-builds` step.
-			- [EsJgel8], [EsK1B7q]: `lint ran in the container`, `demo gif ran in the container` -> the plan's Container line, and no such step out here. [EtitOqM], [EtitOsK]: `OK: Remote tests` -> `PASS Remote tests`.
+			- [dd5g1] `[ 0/8  Remote sync ]` and [ddg83] `[ 7/8  Remote tests ]` -> their `Step 1 of 1; Starting` lines. [dd5fn] the source's `fSection "0/8  Remote sync"` -> `fStep sync`.
+			- [dee4y] list titles `2/8`, `4/8`, `Quick 1/1` -> `Step 3 of 9`, `Step 5 of 8`, `Step 1 of 1`.
+			- [dd5g5], [dedm0], [dedm1], [de8q2], [de4c5]: `remote sync skipped`, `dogfood disabled`, `publish disabled`, `fuzz + security skipped`, `Remote tests skipped (--quick)` -> the plan's `(skipped <flag>)` line for each. [ddg84] -> the plan's cross-builds line and a `Cross-builds` step.
+			- [ddrp7], [ddrrn]: `lint ran in the container`, `demo gif ran in the container` -> the plan's Container line, and no such step out here. [dedn8], [dedna]: `OK: Remote tests` -> `PASS Remote tests`.
 	- Decisions:
 		- An `OK:` line that only repeated its step's verdict gave way to `PASS`: tests passed, fuzz + security passed, the parity line, Remote tests, published. Lines inside a step that name what passed stay, such as `OK: shellcheck clean` or `OK: soak test`.
 			- That departs from the wording, which reads as every `OK:` line. Filed as a Check in questions.md.
@@ -165,7 +165,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The image gets the offset, not the box's zone files, so the demo gif and the suites in there keep UTC. A DST change mid-run shows only in the times printed in there.
 		- The help's stage list keeps its numbers. Docs and comments name stages by them, and the output no longer prints them.
 	- Branch: round-20261026
-	- Test case: test.bash [Etr8p5b], [Etr8pLn], [Etr8pby], [Etr8ps9], [Etr8q8L], [Etr8qOW], and the 14 changed above.
+	- Test case: test.bash [defmr], [defms], [defmt], [defmv], [defmw], [defmx], and the 14 changed above.
 	- Verified: `--backlog-run-quick lint suite parity` passed in the image: test.bash 1748 -> 1754, 0 failed, parity 29/0. Against HEAD's cicd.bash the 6 new checks and the 14 changed ones fail. shellcheck passes.
 	- Swept: every `fSection`, `OK:` line and skip line in cicd.bash, and every reader of them in the repo; test.bash is the only one. The other scripts' `•` rules are in comments only. pre-push.bash keys on `--gate)`, unchanged.
 
@@ -290,6 +290,35 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- `test-id.bash`, the duplicate check in test.bash, the backlog check and the IDs named in this backlog move together.
 		- Each test prints `PASS <id> <name>`, `FAIL <id> <name>` or `SKIP <id> <why>`, in place of `ok: [<id>] <name>` and the rest, on this box and on the remote boxes.
 		- Earlier decisions this overrides: the private test ID rule, milliseconds in base 62.
+	- Progress log:
+		- 2026-10-26: Split. The ID conversion is done here, and the per-test line is 2026102618140158.
+		- 2026-10-26: All 1860 IDs converted from the times they held, the 3 commented-out checks included, in the suites, the Go tests and this backlog. 1650 of them took a later free minute, since most were minted in bursts a few ms apart. The furthest moved 145 minutes.
+		- 2026-10-26: `test-id.bash` mints the new form, moves past a minute a test already has, and takes `-n` for several. `--check` fails an ID that isn't five Crockford base 32 characters. The test fixtures' IDs are in the new form too.
+		- 2026-10-26: Asserts given new values for this change. `[ErTFcXs]`, "an ID minted for now is seven characters of base 62", is now `[ddc2j]`, "five characters of lowercase Crockford base 32". `[Er2NSAB]`, "a minted ID is milliseconds since 2000 in base 62", is now `[dd5kt]`, "whole minutes since 2000", minting for 00:32:59 rather than 00:00:00.062, still `10`. `[dd5ez]` and `[dd5p5]` match the ID in spawn-count's output as `[0-9a-z]{5}`, not `[0-9A-Za-z]{7}`.
+		- 2026-10-26: Checks relabeled on the round branches before this, now under their new IDs, so against gover they read as removed: `[Er1LxTh]` -> `[dd5g1]`, `[Et6FC4K]` -> `[de4by]`, `[Et9PJrE]` -> `[de548]`, `[Etj1UKH]` -> `[dedpc]`.
+	- Decisions:
+		- Ties go in age order: each ID, oldest first, takes its own minute or the next one no older test has. So a burst keeps its order.
+		- `--check` takes exactly five characters, which lasts until 2063, rather than any length. A leftover old ID then can't pass.
+		- Old IDs in run logs under `cicd/artifacts/`, in commit messages and in private notes are left as they were. The old-to-new table is kept outside the repo.
+		- The `ok: [<id>] <name>` lines keep their shape until 2026102618140158.
+	- Test case: test.bash `[defpc]` (an old ID fails the check), `[defpd]` (a taken minute goes to the next one), `[defpe]` (`-n`), `[ddc2j]` and `[dd5kt]` (the new form), and `[dd5kr]` (every test has its own ID, in the new form).
+	- Needs local test suite run?: No. `--backlog-run-quick` passed, with the IDs only renamed.
+	- Verified: `[defpc]`, `[defpd]`, `[defpe]`, `[ddc2j]` and `[dd5kt]` fail against the old test-id.bash and pass against the new one. `--backlog-run-quick` passed in the image: lint with `test-id.bash --check` (1857 tests) and `backlog-check.bash`, go test, test.bash 1757 -> 1760, 0 failed, fuzz 313/0, spawn counts and parity 29/0. shellcheck passes.
+	- Branch: round-20261026
+	- Swept: every pattern that reads an ID in cicd/, cicd/utility/ and its include/ folder, cicd.bash's fuzz target IDs and `go-test-lines.bash`, which take either form. backlog-check.bash, whose ID match takes either form too. README, contributing.md and design.md, which don't give the ID rule.
+
+- CICD reset: PASS, FAIL and SKIP test lines
+	- ID: 2026102618140158
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261026-181401
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313107
+	- Requirements [Feature]:
+		- Each test prints `PASS <id> <name>`, `FAIL <id> <name>` or `SKIP <id> <why>`, in place of `ok: [<id>] <name>` and the rest, on this box and on the remote boxes.
+		- Per the per-test line bullet in `Testing` in the shared CICD rules.
+		- Covers test.bash, fuzz.bash, parity.bash and spawn-count.bash, and whatever reads their lines: cicd.bash's counts and remote-tests.bash's summary.
 
 - CICD reset: temp files and safe removal
 	- ID: 2026102416313108
@@ -316,7 +345,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Decisions:
 		- The sweep leaves a folder with no `run.pid`, since a run didn't make it.
 	- Branch: round-20261025b
-	- Test case: test.bash [Etl0bHp] and [Etl0bI3], plus [EtBTWt7], [Etkvc9j] and [Etkvc9w] for the new folder.
+	- Test case: test.bash [dee5h] and [dee5j], plus [de5m8], [dee4z] and [dee50] for the new folder.
 	- Verified: Both fail against the round branch's cicd.bash, and pass with the change. The run in the image passed with them.
 
 - CICD reset: every other recursive removal through the guard
@@ -360,7 +389,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Notes:
 		- The volume is shared by every worktree's runs, and another branch's `go.sum` may name other versions. A prune could take a module from under a run in progress. Prune only when no other gitsby run's container is up, which only the run out here can see.
 		- Keep the `golang.org/toolchain` modules for the `toolchain` line in go.mod, which `go.sum` doesn't name, and the `/go.mod`-only entries it does.
-		- test.bash builds the SHCL 2.x build offline from the cache ([ErkNuhS]), so check that every module it needs is in `go.sum`.
+		- test.bash builds the SHCL 2.x build offline from the cache ([ddg6f]), so check that every module it needs is in `go.sum`.
 		- Module paths in the cache spell capitals as `!` plus the lower case letter, and go makes the files read-only.
 
 - CICD reset: a test for every Done item, the top-level bugs
@@ -377,14 +406,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Where a test could exist and would make sense but doesn't, add it, watched to fail first.
 	- Progress log:
 		- 2026-10-26: Each of the 25 old-format items has a `Test:` row, found from the checks and Go tests its fix commit added. 2026100611181886 has a `Test case:` row.
-		- 2026-10-26: 2 new checks where none was: [EtrIUYR], the backlog gate's count of open review items, and [EtrJ3N0], the committed demo gif under a minute.
+		- 2026-10-26: 2 new checks where none was: [defny], the backlog gate's count of open review items, and [defp0], the committed demo gif under a minute.
 	- Decisions:
 		- A Go test is named by the ID on its func line, like a suite check.
 		- A test renamed or removed since is named as it is now, with the old name. `TestDisplayPath` went with the `~` fold in 0ad1374, so that item names the Windows run of the Go tests.
 		- The gif check's bound is a minute, against design.md's "about fifty seconds", so a scene's small change in timing doesn't trip it.
 	- Branch: round-20261026
-	- Test case: test.bash [EtrIUYR] and [EtrJ3N0]. The rest name tests that already ran.
-	- Verified: `--backlog-run-quick lint suite` passed in the image, test.bash 1757/0. [EtrIUYR]'s fixture gives `(0 listed)` against backlog-check.bash from 2319e09, before the fix, and with the count's `^\t` pattern put back, and `(2 listed)` as it is. [EtrJ3N0]'s test fails on the gif before 37a4adf, 124.8 s, and passes on the committed one, 47.7 s.
+	- Test case: test.bash [defny] and [defp0]. The rest name tests that already ran.
+	- Verified: `--backlog-run-quick lint suite` passed in the image, test.bash 1757/0. [defny]'s fixture gives `(0 listed)` against backlog-check.bash from 2319e09, before the fix, and with the count's `^\t` pattern put back, and `(2 listed)` as it is. [defp0]'s test fails on the gif before 37a4adf, 124.8 s, and passes on the committed one, 47.7 s.
 	- Swept: all 25 items, each against its fix commit's added checks and Go tests, with each ID grepped once in the suites. Each item kept its wording; only the rows were added.
 	- Closed: 20261026-180932
 	- Acceptance signoff: Self-closed, tests and backlog rows only.
@@ -401,13 +430,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The parent's first requirement: one line at the end of a run saying what was removed and about what it freed, files as well as docker.
 	- Progress log:
 		- 2026-10-26: A run's last line is `Cleanup: removed <what>; freed about <size>`, or `Cleanup: nothing to remove`, then the closing blank line. It takes in the run's own folder and the stale run folders as well as what the docker tidy-up removed. The `Docker:` line and the line per stale folder are gone into it.
-		- 2026-10-26: Asserts given the new line, old -> new: [Etl0bI3] `removed a stale run folder: <path>` -> `Cleanup: removed 1 stale run folder(s), the run folder`. [Etl0bIG] `Docker: nothing to remove`, `Docker: removed 2 image(s)`, `Docker: removed ... volume` and a failed run's `Docker:` line -> the same as `Cleanup:` lines, with the run folder named.
+		- 2026-10-26: Asserts given the new line, old -> new: [dee5j] `removed a stale run folder: <path>` -> `Cleanup: removed 1 stale run folder(s), the run folder`. [dee5k] `Docker: nothing to remove`, `Docker: removed 2 image(s)`, `Docker: removed ... volume` and a failed run's `Docker:` line -> the same as `Cleanup:` lines, with the run folder named.
 	- Decisions:
 		- Folders count at their apparent size. ZFS reports a compressed size that lags fresh writes, and the line says "about".
 		- The run in the image prints its own line for its own folder, before the line out here.
 	- Branch: round-20261026
-	- Test case: test.bash [EtrEuz9], plus [Etl0bI3] and [Etl0bIG] changed.
-	- Verified: `--backlog-run-quick lint suite` passed in the image, test.bash 1754 -> 1755, 0 failed. Against the previous cicd.bash [EtrEuz9], [Etl0bI3] and [Etl0bIG] fail. A real quick run in the image ended with `Cleanup: removed the run folder; freed about 8B`. shellcheck passes.
+	- Test case: test.bash [defng], plus [dee5j] and [dee5k] changed.
+	- Verified: `--backlog-run-quick lint suite` passed in the image, test.bash 1754 -> 1755, 0 failed. Against the previous cicd.bash [defng], [dee5j] and [dee5k] fail. A real quick run in the image ended with `Cleanup: removed the run folder; freed about 8B`. shellcheck passes.
 	- Swept: every removal in cicd.bash that printed its own line: the stale sweep and the docker tidy-up. The soak and CodeQL report pruning keep their own warning, since they remove artifacts, not temp files.
 	- Acceptance signoff: Self-closed: its tests passed.
 	- Closed: 20261026-175508
@@ -422,7 +451,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Related IDs: 2026102511210617, 2026102510404322, 2026102508333054
 	- Steps to reproduce [Bug]:
 		- `--merge-gate` at 3490090, stage 7, test.bash on vmDebARM64.
-	- Incorrect behavior [Bug]: 1711 passed, 22 failed, all in the block that runs `remote-tests.bash` against the fixture's stub lock. The first to fail is [ErkbDUa], the first check where the stub lock wraps a box. [ErkbDU2], [ErkbDUK] and [EtlCXk1] pass. The others include [ErkbDUn], [ErkbDVD], [Etj7cZ7], [Etj1UKH], [EtlCXkF], [EtlCXkl] and [Erm9Pp1].
+	- Incorrect behavior [Bug]: 1711 passed, 22 failed, all in the block that runs `remote-tests.bash` against the fixture's stub lock. The first to fail is [ddg8a], the first check where the stub lock wraps a box. [ddg88], [ddg89] and [dee72] pass. The others include [ddg8b], [ddg8c], [dedq5], [dedpc], [dee73], [dee75] and [ddgm7].
 	- Expected behavior [Bug]: 0 failed, as on b26, vmFreeBSD and vmKt6m in the same run, and on b23 both in the image and on the box (1748/0).
 	- Reproduced [Bug]: 2026-10-26 on vmDebARM64, with that block of test.bash run on its own: the same 22 failed. On b23 it passed 43/0.
 	- Possible cause [Bug]: Not found yet. vmDebARM64 passed 1699/0 on gover earlier on 2026-10-25, so it came in with this round. 6343351 is the only round commit that touches `remote-tests.bash`; it sends every box through one `fLockEnv "${vmState:-${lock}}" wrap` call. The fixture prints only FAIL lines, so the first step is to run that block on vmDebARM64 and keep `rtOut` and `rtLog`.
@@ -433,9 +462,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Verified: the block alone on vmDebARM64, held through the VM helper's wrap and put back to off: 22 failed before the fix, 43/0 after. On b23, 43/0 both ways. `--backlog-run-quick lint suite` passed in the image, with test.bash 1748/0.
 		- Not run: the whole test.bash on vmDebARM64. The round's full run covers it.
 	- Decisions:
-		- The path is mapped in the stub, rather than pointing the fixture's `REMOTE_MAC_BASH` elsewhere, since [ErkbDVV] and [Etj1ULE] check for `/usr/local/bin` in the command sent, and that's the real Mac's path.
+		- The path is mapped in the stub, rather than pointing the fixture's `REMOTE_MAC_BASH` elsewhere, since [ddg8d] and [dedpf] check for `/usr/local/bin` in the command sent, and that's the real Mac's path.
 	- Branch: round-20261026
-	- Test case: the 22 checks above, on a box with go in `/usr/local/bin`, [ErkbDVk] first, since it needs the stub's `go mod download` in the calls log. No check on b23 can put a go under the real `/usr/local/bin`.
+	- Test case: the 22 checks above, on a box with go in `/usr/local/bin`, [ddg8e] first, since it needs the stub's `go mod download` in the calls log. No check on b23 can put a go under the real `/usr/local/bin`.
 	- Swept: every stub in test.bash that runs a remote command for real. Only the b26 branch of the harness's ssh puts a fixed system folder ahead of the stubs. The Unix branch's fetch has no PATH prefix.
 	- Acceptance signoff: Self-closed. Reproduced on the box, and fails before the fix and passes after.
 	- Closed: 20261026-171155
@@ -480,14 +509,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- A plain copy of gitsby named `gh` isn't the same file, so only the env check stops it, on its second start.
 		- 2026-10-22, from the answer "What any sane human git user would expect": whatever nesting plain git allows works the same under gitsby, with no refusal and nothing added to the output. That covers hooks under `raw git commit` or `push`, git aliases, lazygit and tig custom commands, and scripts. A loop gitsby causes still stops at once and names what looped.
 		- An entry is the tool's name and a 12-digit hash of its path, the folder and the arguments. The folder is in it so a hook that runs the same command in a submodule isn't taken for a loop. Refusing on the same tool file alone was rejected, since it refuses `raw git` under `raw git`.
-		- A `raw` started by one of gitsby's own checks of a tool is refused, since nothing a check runs has a reason to call `raw`. Without that, the tea wrapper check `[EtMXMQW]` failed, since the `--version` and `logins list` probes each started a nested `raw`.
+		- A `raw` started by one of gitsby's own checks of a tool is refused, since nothing a check runs has a reason to call `raw`. Without that, the tea wrapper check `[de89c]` failed, since the `--version` and `logins list` probes each started a nested `raw`.
 		- The depth limit is 16. Plain git would loop forever there.
 	- Branch: round-20261021, then round-20261022
-	- Test case: test.bash `[EtMXMMC]`, `[EtMXMN4]`, `[EtMXMNv]` and `[EtMXMOn]` for gh, and `[EtMXMPe]` and `[EtMXMQW]` for tea, glab, lazygit and tig, as a link and as a wrapper each. Each wrapper quits after 5 starts. Go `[EtMXfI7]` for the PATH walk and `[EtMXfJm]` for the refusal, reworded 2026-10-22 to a repeat on the chain. Since then test.bash `[EtOGJ6U]` and `[EtOGJ6i]` for a pre-commit hook running `raw git` under `raw git commit`, `[EtOGJ6v]` for an alias doing the same, and Go `[EtOGJ79]` for the chain and the probe mark and `[EtOGJ7M]` for the depth limit.
+	- Test case: test.bash `[de897]`, `[de898]`, `[de899]` and `[de89a]` for gh, and `[de89b]` and `[de89c]` for tea, glab, lazygit and tig, as a link and as a wrapper each. Each wrapper quits after 5 starts. Go `[de89d]` for the PATH walk and `[de89e]` for the refusal, reworded 2026-10-22 to a repeat on the chain. Since then test.bash `[de8pg]` and `[de8ph]` for a pre-commit hook running `raw git` under `raw git commit`, `[de8pj]` for an alias doing the same, and Go `[de8pk]` for the chain and the probe mark and `[de8pm]` for the depth limit.
 	- Verified: All 12 new test.bash checks fail on the build before the fix, with the other 1579 passing. The 5 with only the link on PATH were rerun outside the suite with the same command and pattern, and fail there too. After it, test.bash 1579 -> 1591, 0 failed. Both Go tests fail with the self check and the env check taken out. `GOOS=windows go vet` and darwin and freebsd builds pass. The wrapper stand-in started once, then refused.
-	- Verified: 2026-10-21, stage 7 passed on every box. test.bash 1368/0 on b26 and 1271/0 on vmFreeBSD, each 15 more than on 10-19, all from this round, and 1579/0 on vmDebARM64, 23 more, with leakflags' 8. All 12 of this item's test.bash checks ran on each. The Go tests passed there and on vm925w, where `[EtMXfI7]` skips, since it needs symlinks and the exec bit, and `[EtMXfJm]` passed.
-	- Verified: 2026-10-22, test.bash 1594 -> 1597, 0 failed, with the reworded `[EtMXMNv]` and `[EtMXMQW]`. On the build before, the 3 new checks fail. The Go tests fail with each part of `rawNest` taken out in turn: the repeat check, the probe mark, the depth limit, the folder and the separator between arguments. Outside the suite, a wrapper `gh` started once and was refused, and one adding an argument each time stopped at 16. `GOOS=windows go vet` and the Windows test build, and darwin and freebsd builds, pass.
-	- Verified: 2026-10-22, stage 7 passed on every box for the nesting change. test.bash 1371/0 on b26 and 1274/0 on vmFreeBSD, each 3 more than on 10-21, which are `[EtOGJ6U]`, `[EtOGJ6i]` and `[EtOGJ6v]`. 1583/0 on vmDebARM64, 4 more, those 3 plus `[EtOKpZS]`, which sits in the Linux-only pre-push gate block. `[EtOGJ79]` and `[EtOGJ7M]` passed in the Go tests on b26, vmFreeBSD, vmDebARM64 natively and under Wine, and vm925w, where the Go tests were 191 ok and 23 skipped, 2 more ok than on 10-21. `[EtMXfJm]` passed there too. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log`.
+	- Verified: 2026-10-21, stage 7 passed on every box. test.bash 1368/0 on b26 and 1271/0 on vmFreeBSD, each 15 more than on 10-19, all from this round, and 1579/0 on vmDebARM64, 23 more, with leakflags' 8. All 12 of this item's test.bash checks ran on each. The Go tests passed there and on vm925w, where `[de89d]` skips, since it needs symlinks and the exec bit, and `[de89e]` passed.
+	- Verified: 2026-10-22, test.bash 1594 -> 1597, 0 failed, with the reworded `[de899]` and `[de89c]`. On the build before, the 3 new checks fail. The Go tests fail with each part of `rawNest` taken out in turn: the repeat check, the probe mark, the depth limit, the folder and the separator between arguments. Outside the suite, a wrapper `gh` started once and was refused, and one adding an argument each time stopped at 16. `GOOS=windows go vet` and the Windows test build, and darwin and freebsd builds, pass.
+	- Verified: 2026-10-22, stage 7 passed on every box for the nesting change. test.bash 1371/0 on b26 and 1274/0 on vmFreeBSD, each 3 more than on 10-21, which are `[de8pg]`, `[de8ph]` and `[de8pj]`. 1583/0 on vmDebARM64, 4 more, those 3 plus `[de8q2]`, which sits in the Linux-only pre-push gate block. `[de8pk]` and `[de8pm]` passed in the Go tests on b26, vmFreeBSD, vmDebARM64 natively and under Wine, and vm925w, where the Go tests were 191 ok and 23 skipped, 2 more ok than on 10-21. `[de89e]` passed there too. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log`.
 	- Verified: 2026-10-23 on b28l, the box that hit it, on the synced build `c917c95`, which has this fix and 2026102306584122's. In tukzedo-linux's repo there, with tukzedo's wrapper `exec gitsby raw gh "$@"` first on PATH and the real `gh` 2.46.0 behind it, each start counted and capped at 20: `gitsby raw gh auth status`, a bare `gh auth status`, `gh repo view`, a script calling `gh api user`, `gitsby whoami`, `gitsby --no-fetch pr` and `gitsby -q raw gh api rate_limit` all reached the real `gh` as t00mietum and exited 0. 2 to 9 wrapper starts each, with no gitsby left running. The control, the same wrapper with `9e82970` first on PATH as `gitsby`, ran into the cap on both forms tried.
 	- Verified: 2026-10-24 on b23, gover `c87c131`, with the rig. The wrapper reached the stand-in `gh` with 2 starts for `raw gh`, 3 for a bare `gh` or a script, and 6 for `whoami` and `pr`. A link or copy named `gh` is refused by name since 2026102306584132. A wrapper adding an argument each time stopped at 17 deep after 32 starts. No gitsby was left running.
 	- Swept: every `raw` tool shares `cmdPassthrough`, git included. 2026-10-22: `rawActive` has one reader, `cmdPassthrough`, and the variable is unset in all 4 hermetic suites. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
@@ -516,8 +545,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Progress log:
 		- 2026-10-25: Found when the round's early full run started in the gate worktree. gover 422b8aa fails the same way, so it predates the round.
 	- Branch: round-20261025b
-	- Test case: test.bash [EtlSXXt].
-	- Verified: [EtlSXXt] fails against the old cicd.bash, with the other 1740 passing. `--backlog-run-quick` passed with every area: test.bash 1740 -> 1748, 0 failed, fuzz 313/0, parity 29/0. The issue's steps, and `--backlog-run-quick unit`, passed in the gate worktree with the fix, in the image.
+	- Test case: test.bash [dee90].
+	- Verified: [dee90] fails against the old cicd.bash, with the other 1740 passing. `--backlog-run-quick` passed with every area: test.bash 1740 -> 1748, 0 failed, fuzz 313/0, parity 29/0. The issue's steps, and `--backlog-run-quick unit`, passed in the gate worktree with the fix, in the image.
 	- Swept: `GO_BUILD_FLAGS` already has the flag. `fImageGo` mounts only the tree, so go finds no repo there. release.bash runs its checks through cicd.bash. test.bash, fuzz.bash and parity.bash get it from the run.
 	- Acceptance signoff: Self-closed: its test failed before and passes after, and so did the issue's own steps.
 	- Closed: 20261025-181343
@@ -538,7 +567,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: every `a.step` call for git, gh and tea. gitsby's own parser refuses an argument that starts with a dash, `--` included, checked for `br create`, `repo connect`, `repo url` and `repo create`. So only a value gitsby builds from other input can start with one, and the clone folder was the only such value. Built URLs start with a scheme.
 	- Branch: fuzzwork
 	- Commit: c1b10fc
-	- Test case: fuzz.bash [Ervo5NU]. Red on `gover`'s code, green here.
+	- Test case: fuzz.bash [ddjyb]. Red on `gover`'s code, green here.
 	- Verified: fuzz.bash 311/0, test.bash 1491/0, parity.bash 29/0 on the branch.
 
 - test.bash removes the folder it was started from when mktemp fails
@@ -558,12 +587,12 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual cause [Bug]: The mktemp call sat inside the `cd` that resolves it, so its failure was lost. `cd ""` succeeds without moving, so `work` became the current folder, and the exit trap removed it.
 	- Actual fix [Bug]: mktemp runs on its own line and stops the suite when it fails. Before the trap is set, the resolved folder has to be the one mktemp made, named `gitsby-test.*`, and empty. A marker file goes in it, and the trap removes the folder only while the name and the marker are both there.
 	- Swept: install.bash and every script in cicd/, cicd/utility/ and cicd/utility/demo/. Only test.bash wrapped mktemp in a `cd`. The rest assign mktemp straight to a variable under `set -e`, so a failure stops them or leaves an empty value that `${x:?}` refuses before any `rm`. demo-repo.bash and remote-tests.bash already check a marker before removing. The shared files in cicd/utility/include/ have no mktemp and no recursive removal.
-	- Verified: with TMPDIR a file, the suite before the fix removed the folder it was started from, canary included, and the fixed one stopped at mktemp and left it alone. `[Erm5vXj]` fails against the old test.bash and passes against the new one, and so does `[Erm5vYa]`'s pattern on test.bash. With mktemp working, the scratch folder is still removed and the exit code kept, for a plain TMPDIR, one ending in a slash, and one reached through a link.
+	- Verified: with TMPDIR a file, the suite before the fix removed the folder it was started from, canary included, and the fixed one stopped at mktemp and left it alone. `[ddgkk]` fails against the old test.bash and passes against the new one, and so does `[ddgkm]`'s pattern on test.bash. With mktemp working, the scratch folder is still removed and the exit code kept, for a plain TMPDIR, one ending in a slash, and one reached through a link.
 	- Verified: shellcheck, `test-id.bash --check`, and `cicd.bash --gate`.
 	- Not run: the full test.bash. No run reaches the trap's refusal of a folder without the marker.
-	- Test case: test.bash `[Erm5vXj]`, a real run with mktemp failing, and `[Erm5vYa]`, no script changes into a mktemp result unchecked.
-	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
-	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it.
+	- Test case: test.bash `[ddgkk]`, a real run with mktemp failing, and `[ddgkm]`, no script changes into a mktemp result unchecked.
+	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[db712]`, from enhancement 8.
+	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[db712]`, from enhancement 8. b26 was skipped, since another session held it.
 	- Acceptance signoff: Self-closed. Reproduced, its test failed before the fix and passes after, and the sweep is answered.
 	- Closed: 20261004-182117
 	- Branch: tmpguard
@@ -600,7 +629,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Note: the checks run under pwsh 7 and bash 5.2 here. Windows PowerShell 5.1 and macOS bash 3.2 were not run, as with the other installer checks.
 	- Branch: betainst
 	- Commit: 4ccd133
-	- Test case: [ErgajCd] through [ErgajEP] (install.bash), [ErgajEe] through [ErgajGU] (install.ps1) and [ErgajGi], [ErgajGw], [ErgajHA] (release.bash phase 3) in test.bash.
+	- Test case: [ddf98] through [ddf9g] (install.bash), [ddf9h] through [ddf9s] (install.ps1) and [ddf9t], [ddf9v], [ddf9w] (release.bash phase 3) in test.bash.
 	- Acceptance signoff: Self-closed: the rule was set by hand on 2026-10-03, and the checks fail before the fix and pass after.
 	- Closed: 20261003-171623
 
@@ -625,7 +654,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: both checks fail on `gover` and pass here. Each of the three sites, put back alone, fails its check. test.bash passes 1280 of 1280 with both fixes in.
 	- Branch: relpipe
 	- Commit: f529e4f
-	- Test case: [Erfs74j] and [Erfs75a] in test.bash. They run release.bash past its dry run, with gh, curl and gitsby stubbed. The second is the first run of the phase 3 `releases/latest` block.
+	- Test case: [ddf3q] and [ddf3r] in test.bash. They run release.bash past its dry run, with gh, curl and gitsby stubbed. The second is the first run of the phase 3 `releases/latest` block.
 	- Acceptance signoff: Self-closed: reproduced, and the checks fail before the fix and pass after.
 	- Closed: 20261003-141520
 
@@ -652,8 +681,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The list is read from the commit, so an edit to it is itself gated, and a working-tree edit counts for nothing.
 		- The hook still waits up to 10 minutes for a gate already running, though one now takes about 50.
 	- Branch: round-20261025b
-	- Test case: test.bash [EtkvcAN], [EtkvcAb], [EtkvcAo], [EtkvcB1], [EtkvcBE] and [EtkvcBS].
-	- Verified: [EtkvcAN], [EtkvcAb], [EtkvcAo] and [EtkvcB1] fail against the round branch's pre-push.bash and config.bash. [EtkvcBE] and [EtkvcBS] are guards and pass on both. The older hook checks pass unchanged, since their stub has only `--gate)`. test.bash 1715 -> 1725, 0 failed, with 2026102506452478's checks, in `--backlog-run-quick` in the image.
+	- Test case: test.bash [dee52], [dee53], [dee54], [dee55], [dee56] and [dee57].
+	- Verified: [dee52], [dee53], [dee54] and [dee55] fail against the round branch's pre-push.bash and config.bash. [dee56] and [dee57] are guards and pass on both. The older hook checks pass unchanged, since their stub has only `--gate)`. test.bash 1715 -> 1725, 0 failed, with 2026102506452478's checks, in `--backlog-run-quick` in the image.
 	- Swept: pre-push.bash's header, install message, gate call and failure line. cicd.bash's help and its option arm comment. README, contributing.md and design.md's hook bullets. test.bash's hook checks, whose stub has no `--merge-gate`.
 	- Prereq IDs: 2026102518002917
 	- Acceptance signoff: Self-closed: its test runs passed.
@@ -698,12 +727,12 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Overrides the 30 s per step budget in 2026101816064793.
 	- Progress log:
 		- 2026-10-25: `--quick` runs the regression suite, the native fuzz targets and the soak test again. It still leaves out CodeQL, which `--leakcheck` adds, govulncheck and pip-audit, which ask a server, the demo gif, and stage 7's tests, though it still cross-builds stage 7's targets. `--quick --list` lists the suite and the fuzz targets too.
-		- 2026-10-25: [Et6FC4K] wanted the suite and native fuzzing left out, and now wants them run. [Et9PJrE] wanted no soak test under `--quick`, and now wants the soak test without CodeQL. [Etkvc9W] wanted no suite in `--quick --list`, and now wants it. Each is relabeled to match; the rest of each check is as it was.
+		- 2026-10-25: [de4by] wanted the suite and native fuzzing left out, and now wants them run. [de548] wanted no soak test under `--quick`, and now wants the soak test without CodeQL. [dee4y] wanted no suite in `--quick --list`, and now wants it. Each is relabeled to match; the rest of each check is as it was.
 	- Decisions:
 		- CodeQL stays out of `--quick`, since it takes about 2 minutes and more on a busy box. The soak test is the fast leak check that's in.
 		- govulncheck and pip-audit stay out, since 2026101816064793's "skips anything requiring an external host" is overridden only for its 30 s budget.
 	- Branch: round-20261025b
-	- Test case: test.bash [Et6FC4K], [Et9PJrE] and [Etkvc9W].
+	- Test case: test.bash [de4by], [de548] and [dee4y].
 	- Verified: All 3 fail against the round branch's cicd.bash and pass after. A real `cicd.bash --quick -y --no-sync --no-dogfood --no-publish` passed in the image in 222 s at a load of 14 on 32 cores: lint, go test, test.bash 1740/0, fuzz 313/0, the native fuzz targets, spawn counts, the soak test and parity, then stage 7's cross-builds. Dogfood adds 3 cross-builds of a few seconds each.
 	- Swept: every `quick` test in cicd.bash's stages 2 and 3, its plan, `--list`, help, option comment and leak check default. README, contributing.md, and test.bash's other `--quick` checks, which pass unchanged.
 	- Acceptance signoff: Self-closed: its test runs passed.
@@ -729,9 +758,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The image is picked after phase 1's pipeline run, which builds it when it's missing, and kept for phase 3.
 		- No docker is a warning, not a refusal, since GOTOOLCHAIN pins the box's Go to the same version.
 	- Branch: round-20261025b
-	- Test case: test.bash [EtlI5o0], [EtlI5p2] and [EtlI5q3].
+	- Test case: test.bash [dee7q], [dee7r] and [dee7s].
 	- Verified: All 3 fail against the round branch's release.bash and pass after. test.bash 1737 -> 1740, 0 failed, in `--backlog-run-quick` in the image, with lint, go test, fuzz.bash, spawn counts and parity. With the real image, linux/amd64 built from an export of HEAD outside the tree matched the box's Go 1.26.2 build byte for byte, and left no container.
-	- Swept: both `fpCrossBuild` calls, its one build line, and the build pin checks [Eo59IMh], [EnQTPxq], [Er1LxT7], [Er1LxT8] and [Et9l12K], which count the same sites. [EnQTPxs] no longer sees release.bash's build, since the line no longer starts with `go build`; `-p` is still on it. cicd.bash's image tag and `fContainerRun`. README, contributing.md, design.md's release section and release.bash's notes.
+	- Swept: both `fpCrossBuild` calls, its one build line, and the build pin checks [dbshv], [dbft2], [dd5ex], [dd5ey] and [de56v], which count the same sites. [dbft4] no longer sees release.bash's build, since the line no longer starts with `go build`; `-p` is still on it. cicd.bash's image tag and `fContainerRun`. README, contributing.md, design.md's release section and release.bash's notes.
 	- Acceptance signoff: Self-closed: its test runs passed.
 	- Closed: 20261025-175731
 
@@ -767,8 +796,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Image tags newer than the one that passed stay, since they're another branch's.
 		- A cache volume over the cap goes whole, and the next run makes it again.
 	- Branch: round-20261025b
-	- Test case: test.bash [Etl0bIG], plus [Eta9hUd], [Etkvc9w], [EtitOqM] and [EtitOtH] for the names and labels.
-	- Verified: [Etl0bIG] fails against the round branch's cicd.bash and image-go.bash, and so do the other 4 for the old format. `--backlog-run-quick` passed in the image: test.bash 1725 -> 1732, 0 failed, fuzz 313/0, parity 29/0. The rebuilt image and the new volume carry both labels. A real quick run in the image stopped by Ctrl+C, and another by TERM, each ended within 16 s with its container and folder gone, and said "removed 1 container(s)". Two real builds through `fImageGo` with the containers kept took `-go-version-1` and `-2`. shellcheck passes.
+	- Test case: test.bash [dee5k], plus [debj1], [dee50], [dedn8] and [dednb] for the names and labels.
+	- Verified: [dee5k] fails against the round branch's cicd.bash and image-go.bash, and so do the other 4 for the old format. `--backlog-run-quick` passed in the image: test.bash 1725 -> 1732, 0 failed, fuzz 313/0, parity 29/0. The rebuilt image and the new volume carry both labels. A real quick run in the image stopped by Ctrl+C, and another by TERM, each ended within 16 s with its container and folder gone, and said "removed 1 container(s)". Two real builds through `fImageGo` with the containers kept took `-go-version-1` and `-2`. shellcheck passes.
 	- Swept: every `docker run`, `docker build` and named volume in cicd.bash, image-go.bash and remote-tests.bash. contributing.md.
 	- Acceptance signoff: Self-closed: its test runs passed.
 	- Closed: 20261025-165449
@@ -795,7 +824,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- `--keep-temp` with `--list` is refused, and so is either one with `--install-hook`.
 		- The harnesses' own temp folders still go when they finish. Moving them into the run's folder is 2026102416313108.
 	- Branch: round-20261025b
-	- Test case: test.bash [Etkvc9W], [Etkvc9j], [Etkvc9w] and [EtkvcAA].
+	- Test case: test.bash [dee4y], [dee4z], [dee50] and [dee51].
 	- Verified: All 4 fail against the round branch's cicd.bash, image-go.bash and test-id.bash. test.bash 1715 -> 1725, 0 failed, with 2026102506452488's checks. `--backlog-run-quick` passed in the image: lint, go test, test.bash, fuzz 313/0, spawn counts and parity 29/0. A real `--backlog-run-quick unit --keep-temp` in the image kept its container and both folders, with the go test log in the inner one. `test-id.bash --check`, `backlog-check.bash` and shellcheck pass.
 	- Swept: cicd.bash's help, refusals, every removal under the run's folder, both `docker run` sites, and the exit trap before and after the run log starts. README and contributing.md.
 	- Acceptance signoff: Self-closed: its test runs passed.
@@ -821,9 +850,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- remote-tests.bash run by hand builds with the box's Go unless `GITSBY_CICD_IMAGE` is set. Only cicd.bash knows the image's tag.
 		- cicd.bash clears `GITSBY_CICD_IMAGE` at the start, so a stale one in the shell can't move a `--no-container` build into an image.
 	- Branch: round-20261025
-	- Test case: test.bash [EtitOqM], [EtitOrO], [EtitOsK] and [EtitOtH].
-	- Verified: `cicd.bash --backlog-run-quick` passed in the image: lint, go test, test.bash 1700/0, fuzz 313/0, spawn counts and parity 29/0. Against the old cicd.bash and remote-tests.bash, [EtitOqM], [EtitOrO] and [EtitOtH] fail, and [EtitOsK] fails with the `unset` taken out. With the real image, `fImageGo` built linux/amd64 and darwin/arm64 into a folder outside the tree, and the windows/amd64 Go tests into one under `/tmp`. The linux/amd64 build matched the box's byte for byte, both on Go 1.26.2.
-	- Swept: every `go build` and `go test -c` in cicd.bash and remote-tests.bash. `fCrossBuild` covers dogfood, stage 7's Mac and Unix builds and `--quick`'s cross-builds, and `fBuildTests` covers all four of the harness's builds. The native and demo builds already run in the image when the run does. release.bash is 2026102507133283. The GOAMD64 and cgo pin checks ([Et9l12K], [Er1LxT7]) still count the same sites. README, contributing.md and cicd.bash's help, plan line and warning.
+	- Test case: test.bash [dedn8], [dedn9], [dedna] and [dednb].
+	- Verified: `cicd.bash --backlog-run-quick` passed in the image: lint, go test, test.bash 1700/0, fuzz 313/0, spawn counts and parity 29/0. Against the old cicd.bash and remote-tests.bash, [dedn8], [dedn9] and [dednb] fail, and [dedna] fails with the `unset` taken out. With the real image, `fImageGo` built linux/amd64 and darwin/arm64 into a folder outside the tree, and the windows/amd64 Go tests into one under `/tmp`. The linux/amd64 build matched the box's byte for byte, both on Go 1.26.2.
+	- Swept: every `go build` and `go test -c` in cicd.bash and remote-tests.bash. `fCrossBuild` covers dogfood, stage 7's Mac and Unix builds and `--quick`'s cross-builds, and `fBuildTests` covers all four of the harness's builds. The native and demo builds already run in the image when the run does. release.bash is 2026102507133283. The GOAMD64 and cgo pin checks ([de56v], [dd5ex]) still count the same sites. README, contributing.md and cicd.bash's help, plan line and warning.
 	- Acceptance signoff: Self-closed: its test runs passed.
 	- Closed: 20261025-110103
 
@@ -854,7 +883,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 2026-10-25: Each Mac and Unix box keeps its copy in `gitsby/remote-tests` under `HOST_TEMP`, else `TMPDIR` without its last slash, else `/tmp`. The Wine prefix sits beside it. Windows already used `%TEMP%`, and is unchanged.
 		- 2026-10-25: vmKt6m is a second Mac host, as `mactest`. A Mac now checks for its bash, git and go the way the Unix boxes do. Without them it runs the Go tests only and names what it lacks.
 		- 2026-10-25: Every skip line in the harness says `SKIP`. The summary names the skipped boxes after `SKIP:`. A skip still never fails the run.
-		- 2026-10-25: Asserts given new values for this change. `[ErkbDUa]`, `[Erm9Pnk]`: Windows list `vm925w b29w` -> `b29w vm925w`. `[ErkbDUn]`, `[EtitOtH]`, `[ErkbDWC]`, `[ErkbDYT]`, `[Erkbdu7]`: the first Windows box is b29w, not vm925w. `[ErkbDXc]`, `[ErkbDY9]`, `[ErkqZtP]`, `[ErkbDUK]`: the same order, and the summary now ends in `SKIP: <boxes>`. `[ErkbDXc]` keeps its second-name case on vm925w in the fixture, since `b29w-wif` is gone. `[ErkbDVV]`, `[Erm9PoA]`: `cd "$HOME/gitsby-remote-tests/tree"` -> `cd "$d/tree"`. `[ErkbDU2]`, `[ErkbDZ0]`, `[Erkbdts]`, `[Erm9PoN]`, `[Erm9Poa]`, `[Erm9Pon]`: `skip:` -> `SKIP:`.
+		- 2026-10-25: Asserts given new values for this change. `[ddg8a]`, `[ddgm1]`: Windows list `vm925w b29w` -> `b29w vm925w`. `[ddg8b]`, `[dednb]`, `[ddg8f]`, `[ddg8j]`, `[ddg8p]`: the first Windows box is b29w, not vm925w. `[ddg8g]`, `[ddg8h]`, `[ddga0]`, `[ddg89]`: the same order, and the summary now ends in `SKIP: <boxes>`. `[ddg8g]` keeps its second-name case on vm925w in the fixture, since `b29w-wif` is gone. `[ddg8d]`, `[ddgm3]`: `cd "$HOME/gitsby-remote-tests/tree"` -> `cd "$d/tree"`. `[ddg88]`, `[ddg8m]`, `[ddg8n]`, `[ddgm4]`, `[ddgm5]`, `[ddgm6]`: `skip:` -> `SKIP:`.
 		- Verified: the 9 new checks and the changed ones pass. Run against the old remote-tests.bash and config.bash, all 9 new checks fail, and so do 14 of the existing stage 7 checks.
 		- Verified: shellcheck, `test-id.bash --check`, and `--backlog-run-quick lint unit` pass.
 		- Note: vmKt6m ignores the ACPI shutdown. A run that finds it off waits 300 s for the helper's restore, then warns and leaves it running. The fix belongs in the helper. Draft in `private/claude_simple/upstream/2026102416313101/`.
@@ -862,7 +891,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Note: the old `~/gitsby-remote-tests` folders on b26, vmFreeBSD and vmDebARM64 are no longer used. Nothing removes them.
 		- 2026-10-25: In the round's full run, vmKt6m failed its copy step with `go: command not found` (exit 127). The tools check looks for go with Homebrew's bash folder first on PATH, and found it there. The module fetch ran on the bare ssh PATH. The fetch is only for the suite, so it now runs on the suite's PATH, the one the check used. A Mac with no go there still fetches nothing and names go.
 		- 2026-10-25: The Go tests step needs no go, since its binary is built here. It runs on the box's own PATH, and the Go tests that use git skip without one. Not checked: a Mac whose `/usr/bin/git` only offers to install the command line tools would fail those tests rather than skip them.
-		- Verified: test.bash 1715/0 with the fix. Against the harness before the fix, `[EtjavHs]` fails on the same exit 127, and the other 1714 pass. `--backlog-run-quick` passed in the image: test.bash 1715/0, fuzz 313/0, parity 29/0.
+		- Verified: test.bash 1715/0 with the fix. Against the harness before the fix, `[dedtn]` fails on the same exit 127, and the other 1714 pass. `--backlog-run-quick` passed in the image: test.bash 1715/0, fuzz 313/0, parity 29/0.
 		- 2026-10-25: In The round's `--backlog-run-full` at c266d62, stage 7 passed on b26 (1455/0), vmFreeBSD (1358/0) and vmDebARM64 (1699/0), each copy under its box's temp root, and both VMs went back to off. b29w was held by another job, and vm925w was skipped on "Failed to reserve port 5900", which is Bug 2026102510404322.
 		- 2026-10-25: Stage 7 on vmKt6m alone at e47bd23: it was off and came up through the helper, the copy went under its temp root, the module fetch worked, and it ran the Go tests (213 ok, 6 skipped) and test.bash 1357/0. The helper's restore went through only after a shutdown from inside, per the note above.
 		- 2026-10-25: The Windows Go tests on b29w at e47bd23, with vmKt6m down: 197 ok, 23 skipped, none failed. b29w was free, so vm925w wasn't tried.
@@ -875,7 +904,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 2026-10-25: every remote command in `fRunPosix`, for a tool it runs off the PATH it was checked on. Only the fetch did. The Unix boxes use the bare PATH for all of it, and the copy, Go tests and Wine steps run nothing from Homebrew.
 	- Branch: round-20261025
 	- Commit: 4388d96, b14ae19
-	- Test case: test.bash `[Etj1UJ4]` (config order), `[Etj1UJK]` (temp root), `[Etj1UJb]` and `[Etj35gI]` (copies under it), `[Etj1UJq]` (no helper), `[Etj1UKH]`, `[Etj1UKa]` and `[Etj1UKq]` (VM wake, no wake, no restore), `[Etj1ULE]` (Mac tools), `[EtjavHs]` (Mac fetch on the suite's PATH), plus the changed asserts above.
+	- Test case: test.bash `[dedp8]` (config order), `[dedp9]` (temp root), `[dedpa]` and `[dedpg]` (copies under it), `[dedpb]` (no helper), `[dedpc]`, `[dedpd]` and `[dedpe]` (VM wake, no wake, no restore), `[dedpf]` (Mac tools), `[dedtn]` (Mac fetch on the suite's PATH), plus the changed asserts above.
 	- Acceptance signoff: Self-closed: its test runs passed.
 	- Closed: 20261025-110103
 
@@ -907,15 +936,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The plan prints a "Cores" line with the counts and the load.
 		- Steps run one at a time, and the module is one package, so nothing shares a count yet.
 		- Split: the Windows box's part is 2026102508333054.
-		- 2026-10-25: [EtitOqM], [EtitOrO] and [EtitOtH] want `nice -n 19 go` after the image name, where they wanted `go`. [ErkbDVV] and [Erm9PoA] want `$lo` before the box's bash, where they wanted none.
-		- Verified: all 5 new checks fail on the tree before and pass after. [Etj7cYq] passes in the image too.
+		- 2026-10-25: [dedn8], [dedn9] and [dednb] want `nice -n 19 go` after the image name, where they wanted `go`. [ddg8d] and [ddgm3] want `$lo` before the box's bash, where they wanted none.
+		- Verified: all 5 new checks fail on the tree before and pass after. [dedq4] passes in the image too.
 		- Verified: `--backlog-run-quick` in the image, test.bash 1714/0, fuzz 313/0, parity 29/0, with "8 of 32" cores at a load of 25.
 		- 2026-10-25: The round's `--backlog-run-full` at c266d62 passed stages 1-6 in the container, at "8 of 32" cores and load 37.75, and stage 7 on b26, vmFreeBSD and vmDebARM64. vmKt6m and b29w passed at e47bd23.
 	- Decisions:
 		- The budget stays in config.bash, as `fCpuBudget`, setting `BUILD_JOBS` and the new `HEAVY_JOBS`.
 		- Each script lowers its own priority once at the top, rather than a prefix on every command.
 		- The container's quota is the count at its start. `GITSBY_CICD_CPUS` hands the box's core count in, since the quota leaves nproc alone.
-	- Test case: test.bash [Etj7cY1] (the counts), [Etj7cYI] (the hard steps), [Etj7cYq] (low priority), [Etj7cYY] (the container's quota), [Etj7cZ7] (each box in stage 7).
+	- Test case: test.bash [dedq1] (the counts), [dedq2] (the hard steps), [dedq4] (low priority), [dedq3] (the container's quota), [dedq5] (each box in stage 7).
 	- Swept: every `BUILD_JOBS` reader in cicd.bash, release.bash and remote-tests.bash, both `docker run` sites, and every remote command in remote-tests.bash. The Windows box's commands are the child. `docker build` runs only when the image changes, and is left alone.
 	- Acceptance signoff: Self-closed: its test runs passed.
 	- Closed: 20261025-110103
@@ -935,7 +964,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The backlog and merge gate flags never dogfood, publish, commit, push, install, sync, rewrite a tracked file, or prompt. That covers the demo gif.
 	- Progress log:
 		- 2026-10-25: Done in cicd.bash. `--backlog-run-quick` runs the areas `lint`, `unit`, `suite`, `fuzz` and `parity`, all of them with none named, the three suites against one build of their own. `--merge-gate` and `--backlog-run-full` are a plain run with sync, dogfood and publish off and no prompt, and stage 6 leaves a gif that differs as committed. The run in the image is told the same.
-		- 2026-10-25: [EpsVDHu] and [ErkbDTZ] read the closing line `gate: passed`, now `quick run: passed`. [EpsVDHu] no longer forbids the build and the suites under `--gate`, since `--gate` runs them now. The rest of both is as it was.
+		- 2026-10-25: [dcman] and [ddg86] read the closing line `gate: passed`, now `quick run: passed`. [dcman] no longer forbids the build and the suites under `--gate`, since `--gate` runs them now. The rest of both is as it was.
 		- 2026-10-25: The round's `--backlog-run-full` at c266d62 ran end to end with sync, dogfood and publish off and no prompt, and left the gif as committed. Stages 1-6 passed in the container. Its one failure was vmKt6m in stage 7, fixed by b14ae19 and passed at e47bd23.
 	- Decisions:
 		- With no area named, `--backlog-run-quick` runs the suites too. A worker ran them by hand beside `--gate` anyway, and the whole thing took about 3 minutes on 8 cores at a load of 10.
@@ -944,8 +973,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- `--long` adds nothing yet, since no step here takes hours. `--backlog-run-quick` stays on the box until 2026102416313100.
 		- pre-push.bash is unchanged. `--backlog-run-quick|--gate)` still holds `--gate)`, so a commit with the gate is told apart as before. The hook still runs `--gate`, which now runs the suites too. Moving it to `--merge-gate` is 2026102506452488.
 	- Branch: round-20261025
-	- Test case: test.bash [EtiiN6u], [EtiiN78], [EtiiN7K], [EtiiN7Y], [EtiiN7k], [EtiiN7y], [EtiiN8B], [EtiiN8O], [EtiiN8b], [EtiiN8p] and [Etiiqyb].
-	- Verified: All 11 fail against the round branch's cicd.bash, and [EtiiN7k], [EtiiN7y] and [EtiiN8B] fail with the gif and image hand-offs taken out. test.bash 1677 -> 1688, 0 failed. `cicd.bash --backlog-run-quick` passes on this tree, lint, go test, test.bash 1688/0, fuzz 313/0, spawn counts and parity 29/0, in 175 s. `test-id.bash --check` and `backlog-check.bash` pass.
+	- Test case: test.bash [dedkw], [dedkx], [dedky], [dedkz], [dedm0], [dedm1], [dedm2], [dedm3], [dedm4], [dedm5] and [dedm6].
+	- Verified: All 11 fail against the round branch's cicd.bash, and [dedm0], [dedm1] and [dedm2] fail with the gif and image hand-offs taken out. test.bash 1677 -> 1688, 0 failed. `cicd.bash --backlog-run-quick` passes on this tree, lint, go test, test.bash 1688/0, fuzz 313/0, spawn counts and parity 29/0, in 175 s. `test-id.bash --check` and `backlog-check.bash` pass.
 	- Swept: cicd.bash's help, option arms, refusals, container hand-off, plan and stage 6. README, contributing.md and design.md's gate bullet. pre-push.bash's arm check and its call. test.bash's gate checks that read the old closing line.
 	- Acceptance signoff: Self-closed: its test runs passed.
 	- Closed: 20261025-110103
@@ -964,12 +993,12 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Progress log:
 		- 2026-10-25: `--backlog-run-quick` hands itself to the image as a full run does, by its own name with the areas and `-q` as given, and prints the outer passed line once the inner one passes. The image's tag and its run are shared with the full run, so the two can't drift. The gif's archive isn't mounted for it.
 	- Decisions:
-		- `--container` and `--no-container` go with the quick run now, and only `--install-hook` refuses them. [EsJgejN], "--container with --gate is refused", is commented out in test.bash for that reason: it encoded `--gate` staying on the box, which this issue overrides. [Etip9iB] checks the new behavior in its place.
-		- 2026-10-25: [EsJgejN] stays commented out, with the reason above it, rather than deleted.
+		- `--container` and `--no-container` go with the quick run now, and only `--install-hook` refuses them. [ddrp5], "--container with --gate is refused", is commented out in test.bash for that reason: it encoded `--gate` staying on the box, which this issue overrides. [dedms] checks the new behavior in its place.
+		- 2026-10-25: [ddrp5] stays commented out, with the reason above it, rather than deleted.
 		- The pre-push hook's `--gate` goes into the image with it, so a push to main is gated by the image's tools too.
 	- Branch: round-20261025
-	- Test case: test.bash [Etip9hi], [Etip9hw], [Etip9iB], [Etip9iR] and [Etip9if].
-	- Verified: `cicd.bash --backlog-run-quick` passed with every area in the image: lint, go test, test.bash 1688 -> 1692, 0 failed, fuzz 313/0, spawn counts and parity 29/0. Against the old cicd.bash, [Etip9hi], [Etip9hw], [Etip9iB] and [Etip9iR] fail, and [Etip9if] passes as a guard. The image sees the pre-push snapshot under the git dir and resolves it. `--no-container --backlog-run-quick lint`, `test-id.bash --check` and `backlog-check.bash` pass.
+	- Test case: test.bash [dedmq], [dedmr], [dedms], [dedmt] and [dedmv].
+	- Verified: `cicd.bash --backlog-run-quick` passed with every area in the image: lint, go test, test.bash 1688 -> 1692, 0 failed, fuzz 313/0, spawn counts and parity 29/0. Against the old cicd.bash, [dedmq], [dedmr], [dedms] and [dedmt] fail, and [dedmv] passes as a guard. The image sees the pre-push snapshot under the git dir and resolves it. `--no-container --backlog-run-quick lint`, `test-id.bash --check` and `backlog-check.bash` pass.
 	- Swept: cicd.bash's container decision, refusals, help, image tag and its one `docker run`, now shared by both runs. test.bash's gate checks, each of which now says `--no-container`, apart from the refusals, which stop before the choice. README, contributing.md and design.md's gate bullet. pre-push.bash still calls `--gate` and needs no change.
 	- Acceptance signoff: Self-closed: its own tests passed, and so did the real quick run in the image.
 	- Closed: 20261025-072651
@@ -999,11 +1028,11 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Sync and publish stay in `--quick`. They only fetch from and push to origin, the repo's own git host, and the requirement is about other hosts. `--no-sync` and `--no-publish` still turn them off.
 		- govulncheck is out of `--quick`, since it asks vuln.go.dev. That reverses the 2026-08-19 call that it runs there as a lookup.
 		- `--quick` runs fuzz.bash and the spawn counts now. Both take seconds. The native fuzz targets stay out.
-		- `--quick` dogfoods every target again, and builds the FreeBSD and Linux arm64 targets without testing them. That reverses review 20260819a item 18, whose reason was that cross-builds were the slow part. `[EnQTPxt] --quick narrows the cross-builds too` is off for that reason.
+		- `--quick` dogfoods every target again, and builds the FreeBSD and Linux arm64 targets without testing them. That reverses review 20260819a item 18, whose reason was that cross-builds were the slow part. `[dbft5] --quick narrows the cross-builds too` is off for that reason.
 		- The regression suite is out of `--quick`. That supersedes the 20260909 enhancement 7 call to keep it whole there. contributing.md now says to run the full pipeline before a PR.
 		- The demo gif stays out of `--quick`. It takes about 15 s, but it's not a check.
 	- Branch: cicdflags
-	- Test case: test.bash `[Et6FC3t]` for the `--gate)` arm the hook looks for. `[Et6FC4K]`, `[Et6FC46]`, `[Et6FC31]` and `[Et6FC2n]` for `--quick`. `[EnQTPxt]` is off since 2026-10-18.
+	- Test case: test.bash `[de4bw]` for the `--gate)` arm the hook looks for. `[de4by]`, `[de4bx]`, `[de4bv]` and `[de4bt]` for `--quick`. `[dbft5]` is off since 2026-10-18.
 	- Swept: the help header, history footer, README, contributing.md and config.bash comments for both flags. pre-push.bash still finds `--gate)` in the option arm. design.md names only `--gate` and is unchanged. The test.bash helpers that used `--quick` as shorthand for skipping fuzz, the demo and the remote tests now name those flags.
 	- Acceptance signoff: Signed off by jim-collier in conversation, 2026-10-19.
 	- Closed: 20261019-150000
@@ -1029,7 +1058,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Moved Pillow rather than listing the 8. The answer on 2026101905585018 allows it, 13.0.0 fixes them all, and a list of 24 would need its own upkeep.
 	- Branch: round-20261022
 	- Commit: 73d6a98
-	- Test case: test.bash [EtAFLx0] for the lock's Pillow, and pip-audit's [Et9PJsY] and [Et9R5lO]. The image build also stops on a Pillow other than the recorded one. No new check, since the audit in the image is what failed.
+	- Test case: test.bash [de5av] for the lock's Pillow, and pip-audit's [de54e] and [de54k]. The image build also stops on a Pillow other than the recorded one. No new check, since the audit in the image is what failed.
 	- Verified: Stage 3 and the demo stage in the new image. pip-audit is clean on Pillow 13.0.0 with fontTools' one entry set aside, govulncheck is clean, fuzz.bash 313/0, and the spawn counts pass. The demo gif renders byte for byte the same, so it didn't change. test.bash 1598/0, and `cicd.bash --gate` passes.
 	- Swept: `TOOL_VERSIONS`, the Dockerfile's Pillow check, which reads the ARG, and its apt comment, the lock's header, and contributing.md's demo prerequisite, which names no version. "12.3.0" is left only in the backlog and the history footer.
 	- Verified: 2026-10-22, a plain full run in the container on b23 passed every stage. Stage 3's pip-audit was clean on Pillow 13.0.0, and stage 6 rendered the demo gif unchanged. test.bash 1598/0, fuzz.bash 313/0, parity 29/0. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log`.
@@ -1076,7 +1105,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Done: `--staged` on `pr create` and `release`. Their commit takes the index only, no pull uses `--autostash`, and the plan lists what is committed and what stays. Nothing staged commits nothing, and the run goes on.
 		- Done: `release` reads ahead every pull and checkout up to the default branch, and refuses before the plan where git would stop. A file that passes is the same on every branch read, so the merge, the move back to `dev` and the last checkout can't touch it. Only the index counts as work to release, so a level repo with only unstaged edits says there is nothing new, as it would with a clean tree.
 		- Done: `pr create` parks the way `sync` does. Both `gh` and `tea` are handed the branch with `--head`, and with that neither looks at the working tree. Read in their source, not run against a real host.
-		- Done: `pr ok` still refuses the flag, since it commits nothing. The old test.bash check that release refuses the flag, `[Err7W97]`, is commented out with the reason, and `[ErrG0tG]` asks the same of `repo connect`. Go test `[Err7CYY]` now expects `pr create` and `release` to take it.
+		- Done: `pr ok` still refuses the flag, since it commits nothing. The old test.bash check that release refuses the flag, `[ddhth]`, is commented out with the reason, and `[ddhvb]` asks the same of `repo connect`. Go test `[ddht9]` now expects `pr create` and `release` to take it.
 		- Done: README, the changelog and design.md list the 2 commands. Help and workflows.md name no commands for the flag, so they needed nothing.
 		- Verified: `go test ./...` and the gate pass. The 12 new suite checks and the 25 around them pass on their own. Against the build before this, 10 of the 12 fail; the other 2, a plan with no `git add` and `pr ok` refusing, pass either way and guard against a regression. With the release read-ahead turned off, 2 fail. With the nothing-new rule back on the whole tree, 3 fail.
 		- Verified: the full test.bash on the branch, 1482/0 (2026-10-05).
@@ -1084,7 +1113,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Answered 2026-10-05: the labels read "Changes to commit:" and "Changes to leave alone:". The plan prints before anything runs, so past tense read wrong.
 	- Branch: staged, stagedpr
 	- Commit: 9f53a91, 7c3281d
-	- Test case: Go tests `[Err7CYL]`, `[Err7CYY]`, `[Err7CYm]`. test.bash `[Err7W8V]` through `[Err7WAA]`, 18 checks, with `[Err7W97]` off since 2026-10-05. For `pr create` and `release`: `[ErrG0tG]` through `[ErrG0uY]` and `[ErrG0uf]` through `[ErrG0uu]`, 12 checks.
+	- Test case: Go tests `[ddht8]`, `[ddht9]`, `[ddhta]`. test.bash `[ddhtb]` through `[ddhtw]`, 18 checks, with `[ddhth]` off since 2026-10-05. For `pr create` and `release`: `[ddhvb]` through `[ddhvk]` and `[ddhvm]` through `[ddhvp]`, 12 checks.
 	- Swept: every `--autostash` and `git add --all` in `src-go`. The commit and the pull in mutate.go, br create from `main` or `dev` in branchcmd.go, and both plan lines in preview.go. The file list in repo.go is for `repo create` and `repo connect`, which refuse the flag. The pulls in pr.go and release.go run on a clean tree, and those commands refuse the flag.
 	- Swept (2026-10-05, `pr create` and `release`): every step after their commit. In release.go the pulls of `dev` and the default branch, both checkouts, the merge and its back-out, the tag, both pushes, and the fast-forward of `dev`. Its nothing-new check read the whole tree as work to release, and now reads the index under the flag. In pr.go the push and the `gh` or `tea` call. `pr ok` reads the whole tree to refuse, and refuses the flag. The line above about pr.go and release.go held only while they refused the flag.
 	- Acceptance signoff: 2026-10-05, all 3 choices answered.
@@ -1134,16 +1163,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Bug]:
 		- `walkTool` in exec.go is `lookTool` with a filter, and `cmdPassthrough` uses it with `rawOnChain`. `rawNest` only adds the entry and keeps the probe mark last.
 	- Branch: round-20261023b
-	- Test case: test.bash `[EtMXMNv]`, `[EtMXMOn]` and `[EtMXMQW]`, reworded to reach the tool, and new `[EtX5aJ4]` (bare gh), `[EtX5aJH]` and `[EtX5aJV]` (refusal with nothing after it), `[EtX5aJj]` (whoami) and `[EtX5aJx]` (pr). Each wrapper quits past 8 starts now, since a gitsby `gh` call takes 3. Go `[EtMXfJm]`, `[EtOGJ79]` and `[EtOGJ7M]`, reworded.
+	- Test case: test.bash `[de899]`, `[de89a]` and `[de89c]`, reworded to reach the tool, and new `[deatd]` (bare gh), `[deate]` and `[deatf]` (refusal with nothing after it), `[deatg]` (whoami) and `[death]` (pr). Each wrapper quits past 8 starts now, since a gitsby `gh` call takes 3. Go `[de89e]`, `[de8pk]` and `[de8pm]`, reworded.
 	- Verified: 2026-10-23, test.bash 1662 -> 1667, 0 failed. On the build before, the 8 reworded and new checks fail. The Go tests fail with the pass-over, the probe file match and the kept probe mark each taken out. The rig shows every one of the five commands reaching the real `gh`, where before each was refused. The hook and alias rig still passes. `GOOS=windows go vet` and the Windows test build, and darwin and freebsd builds, pass.
-	- Verified: 2026-10-23, the round's full run. The 8 reworded and new test.bash checks passed in the container, on b26 and on vmFreeBSD, and `[EtMXfJm]`, `[EtOGJ79]` and `[EtOGJ7M]` in the Go tests on b26, vmFreeBSD and vm925w. test.bash was 1438 of 1439 on b26 and 1341 of 1342 on vmFreeBSD, each 6 more than on 10-22. The one failure on each is `[EtAFLx0]`, from 2026102220133673. Go tests: b26 211 ok and 6 skipped, vmFreeBSD 213 ok and 4 skipped, vm925w 195 ok and 23 skipped. The macOS workflow, run 39970887647, passed the same checks on both runners, test.bash 1417 of 1418 with the same one failure. b29w was not reachable. Logs: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261023-07353000/run.log` for the container, `run2.log` beside it for stage 7.
+	- Verified: 2026-10-23, the round's full run. The 8 reworded and new test.bash checks passed in the container, on b26 and on vmFreeBSD, and `[de89e]`, `[de8pk]` and `[de8pm]` in the Go tests on b26, vmFreeBSD and vm925w. test.bash was 1438 of 1439 on b26 and 1341 of 1342 on vmFreeBSD, each 6 more than on 10-22. The one failure on each is `[de5av]`, from 2026102220133673. Go tests: b26 211 ok and 6 skipped, vmFreeBSD 213 ok and 4 skipped, vm925w 195 ok and 23 skipped. The macOS workflow, run 39970887647, passed the same checks on both runners, test.bash 1417 of 1418 with the same one failure. b29w was not reachable. Logs: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261023-07353000/run.log` for the container, `run2.log` beside it for stage 7.
 	- Verified: 2026-10-23 on b28l with tukzedo's wrapper and the real `gh`, on the synced build `c917c95`, together with 2026101916533300. Every command in the steps above reached the real `gh` and exited 0. `whoami` took 9 wrapper starts and `pr` 6, the rest 2 or 3.
-	- Verified: 2026-10-23, stage 7 on vmDebARM64 alone, on round-20261023d `e2f93e9`. The 8 reworded and new test.bash checks passed, and `[EtMXfJm]`, `[EtOGJ79]` and `[EtOGJ7M]` in the Go tests for linux/arm64 and for windows/arm64 under Wine. Go tests 218 ok and 2 skipped, and 190 ok and 30 skipped under Wine. test.bash failed 23 checks of the remote harness and stopped there, all from the narrowed host lists, filed as 2026102321011743. Log: `/mnt/ext/wip2/wip/tmp/gitsby/20261023-200002/001/run.log`.
+	- Verified: 2026-10-23, stage 7 on vmDebARM64 alone, on round-20261023d `e2f93e9`. The 8 reworded and new test.bash checks passed, and `[de89e]`, `[de8pk]` and `[de8pm]` in the Go tests for linux/arm64 and for windows/arm64 under Wine. Go tests 218 ok and 2 skipped, and 190 ok and 30 skipped under Wine. test.bash failed 23 checks of the remote harness and stopped there, all from the narrowed host lists, filed as 2026102321011743. Log: `/mnt/ext/wip2/wip/tmp/gitsby/20261023-200002/001/run.log`.
 	- Swept: `rawActive` and `rawNest` have one caller, `cmdPassthrough`, which every `raw` tool shares. `findTool` and its cache are unchanged for every other spawn. README names no refusal text. design.md's `raw` bullet updated.
 	- Acceptance signoff: Self-closed 2026-10-24. The behavior changed from the expected "one extra start" to 2 or 3 per `gh` call. Each is a short Go start, and getting to one would change hooks under every command, against the 2026-10-22 decision.
 	- Closed: 20261024-133500
 
-- test.bash's goleak check `[Et9R5lo]` fails on macOS, since BSD find has no `-printf`
+- test.bash's goleak check `[de54n]` fails on macOS, since BSD find has no `-printf`
 	- ID: 2026102220274491
 	- Type: Bug
 	- Status: Done
@@ -1155,19 +1184,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Target OS: macOS
 	- Steps to reproduce [Bug]:
 		- Run `cicd/test.bash` on a Mac whose `find` is the system one.
-	- Incorrect behavior [Bug]: `[Et9R5lo]` fails. The first macOS workflow run, 39893939993 on `macos-latest` (arm64), passed 1411 and failed only that one.
+	- Incorrect behavior [Bug]: `[de54n]` fails. The first macOS workflow run, 39893939993 on `macos-latest` (arm64), passed 1411 and failed only that one.
 	- Expected behavior [Bug]: It passes whenever every folder with Go tests calls `goleak.VerifyTestMain(m)`, on any OS.
 	- Reproduced [Bug]: Yes, 2026-10-22 on b23, with a stand-in `find` on PATH that refuses `-printf` the way BSD find does. The check failed.
 	- Actual cause [Bug]: The check listed test folders with `find ... -printf '%h\n'`. BSD find has no `-printf`, so it printed nothing. The loop then counted 0 folders and failed.
-	- Actual fix [Bug]: The folder is cut off the file path with `sed`, then `sort -u`. Same folders as before on b23, and the check still fails when one package lacks goleak. New check `[EtUUvVS]` fails if a `find` with `-printf` or `-fprintf` comes back into test.bash or install.bash.
-	- Swept: `find -printf`, `sed -i` without a suffix, `grep -P`, `readlink -f`, `date -d`, `date +%N`, `stat -c`, `sort -V`, `xargs -r`, `realpath -m`, `tar --transform`, `wc -l` compared as text, `\?` and `\t` in sed, in cicd/*.bash, cicd/utility/*.bash, cicd/utility/include/*.bash and install.bash. In test.bash, only `[Et9R5lo]` used one where a Mac runs it. The bare `sed -i` and `date +%N` sit in the Linux-only release and pre-push blocks, and so do the `wc -l` compares and the remote-tests checks that run `tar --transform`. `date -d` runs behind a probe for GNU date. `stat` falls back to BSD's. The rest are in Linux-only cicd.bash, in keep-build.bash's `--keep` path, which test.bash doesn't run, and in the `--help` text of backlog-check, test-id and lint-report, where BSD sed would leave the tab in the printed help.
-	- Verified: 2026-10-22, with BSD-like find, `[Et9R5lo]` fails on the old test.bash and passes on the new one. It passes on a stand-in tree and fails once one package there drops goleak. `[EtUUvVS]` fails on the old test.bash and passes on the new one. `cicd.bash --gate` and `backlog-check.bash` passed.
+	- Actual fix [Bug]: The folder is cut off the file path with `sed`, then `sort -u`. Same folders as before on b23, and the check still fails when one package lacks goleak. New check `[dea6f]` fails if a `find` with `-printf` or `-fprintf` comes back into test.bash or install.bash.
+	- Swept: `find -printf`, `sed -i` without a suffix, `grep -P`, `readlink -f`, `date -d`, `date +%N`, `stat -c`, `sort -V`, `xargs -r`, `realpath -m`, `tar --transform`, `wc -l` compared as text, `\?` and `\t` in sed, in cicd/*.bash, cicd/utility/*.bash, cicd/utility/include/*.bash and install.bash. In test.bash, only `[de54n]` used one where a Mac runs it. The bare `sed -i` and `date +%N` sit in the Linux-only release and pre-push blocks, and so do the `wc -l` compares and the remote-tests checks that run `tar --transform`. `date -d` runs behind a probe for GNU date. `stat` falls back to BSD's. The rest are in Linux-only cicd.bash, in keep-build.bash's `--keep` path, which test.bash doesn't run, and in the `--help` text of backlog-check, test-id and lint-report, where BSD sed would leave the tab in the printed help.
+	- Verified: 2026-10-22, with BSD-like find, `[de54n]` fails on the old test.bash and passes on the new one. It passes on a stand-in tree and fails once one package there drops goleak. `[dea6f]` fails on the old test.bash and passes on the new one. `cicd.bash --gate` and `backlog-check.bash` passed.
 	- Verified: 2026-10-22, test.bash on b23 1662/0, 1661 -> 1662.
-	- Not checked: why `[Et9R5lo]` passed in stage 7 on b26 and vmFreeBSD. Likely a GNU find first on b26's PATH, and a FreeBSD find that has `-printf`.
-	- Test case: test.bash `[Et9R5lo]` itself on the Mac runners, and `[EtUUvVS]`, which needs no Mac.
+	- Not checked: why `[de54n]` passed in stage 7 on b26 and vmFreeBSD. Likely a GNU find first on b26's PATH, and a FreeBSD find that has `-printf`.
+	- Test case: test.bash `[de54n]` itself on the Mac runners, and `[dea6f]`, which needs no Mac.
 	- Branch: fix-macos-find
 	- Commit: 0d01f82
-	- Verified: 2026-10-22, run 39895628537: `[Et9R5lo]` and `[EtUUvVS]` passed on `macos-15-intel` and `macos-latest`. Both had failed `[Et9R5lo]` in run 39893939993.
+	- Verified: 2026-10-22, run 39895628537: `[de54n]` and `[dea6f]` passed on `macos-15-intel` and `macos-latest`. Both had failed `[de54n]` in run 39893939993.
 	- Acceptance signoff: Passed its own test on both runners, no open choice.
 	- Closed: 20261022-203900
 
@@ -1197,14 +1226,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Priority|Severity [Bug]: Avg
 	- Opened: 20261006-111818
 	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: [ErsjjF5] failed on vmFreeBSD in stage 7 on 2026-10-06, 1222/1.
+	- Incorrect behavior [Bug]: [ddj6s] failed on vmFreeBSD in stage 7 on 2026-10-06, 1222/1.
 	- Reproduced [Bug]: Yes, by running test.bash again on vmFreeBSD.
 	- Actual cause [Bug]: The check answers the prompt through util-linux `script -qec`, and the BSD `script` doesn't take it. Every other prompt check sits under `hasPty`. This one, from e1cc030, didn't.
 	- Actual fix [Bug]: Put it under `hasPty`.
 	- Branch: ptyguard
 	- Verified: test.bash 1222/0 on vmFreeBSD.
 	- Closed: 20261006-111818
-	- Test case: test.bash [ErsjjF5] itself, which failed on vmFreeBSD before the fix. Stage 7 runs it on vmFreeBSD and b26, where the BSD `script` is.
+	- Test case: test.bash [ddj6s] itself, which failed on vmFreeBSD before the fix. Stage 7 runs it on vmFreeBSD and b26, where the BSD `script` is.
 
 - Code Review 20261005 item 1: workflows.md says gitsby won't push your own work to `main` or `dev`, and it does
 	- ID: 2026100516202544
@@ -1227,10 +1256,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- A warning plus `--direct`, not a refusal and not a doc reword alone (2026-10-05).
 		- A flag for this one case, not a general `--no-warn` (2026-10-05).
 	- Actual fix [Bug]: `sync` on `main`, `dev` or the default branch warns on stderr above the prompt when it would push commits made on that branch, or commit a dirty tree there. Under `-q` it refuses and names `--direct`. A merge left for `sync` to publish doesn't count, so `br merge` offline and the hotfix back-merge still publish without it. workflows.md, the README, design.md and the UI style guide say so.
-	- Note: [ElHQEx6], [EknhbCN] and [Erg9NTg] sync on `main` to test sync itself, and now pass `--direct`. What each checks is unchanged.
+	- Note: [dafrt], [da8m8] and [ddf5y] sync on `main` to test sync itself, and now pass `--direct`. What each checks is unchanged.
 	- Branch: direct
 	- Commit: e1cc030
-	- Test case: test.bash [ErsjjDN] refuses under `-q`, [ErsjjEE] pushed nothing, [ErsjjF5] warns above the prompt on a pty, [ErsjjFy] help lists it. Each red on `gover`. [ErsjjGp] a clean re-run and [ErsjjHh] a merge published from `dev` stay quiet, each red with the merge and clean-tree tests taken out.
+	- Test case: test.bash [ddj6q] refuses under `-q`, [ddj6r] pushed nothing, [ddj6s] warns above the prompt on a pty, [ddj6t] help lists it. Each red on `gover`. [ddj6v] a clean re-run and [ddj6w] a merge published from `dev` stay quiet, each red with the merge and clean-tree tests taken out.
 	- Closed: 20261005-190835
 
 - `br switch HEAD` commits and pushes the working tree, then fails
@@ -1248,7 +1277,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: `branchRefs` is the one place origin's branches are read for the existence checks.
 	- Branch: fuzzwork
 	- Commit: c1b10fc
-	- Test case: fuzz.bash [Ervo5NW]. Red on `gover`'s code, green here.
+	- Test case: fuzz.bash [ddjyc]. Red on `gover`'s code, green here.
 	- Verified: fuzz.bash 311/0, test.bash 1491/0, parity.bash 29/0 on the branch.
 	- Acceptance signoff: Self-closed: reproduced, red before the fix and green after.
 	- Closed: 20261006-075458
@@ -1262,7 +1291,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Opened by: jim-collier
 	- Related IDs: 2026100312332924
 	- Target OS: macOS
-	- Incorrect behavior [Bug]: On b26 `tr -d '\000'` stops with "Illegal byte sequence" on a binary file. So `[Er1LxTO]` and `[EnQf0UF]` fail, and `[Er1LxTP]` and `[EnQf0UH]`, which expect no match, pass without reading anything.
+	- Incorrect behavior [Bug]: On b26 `tr -d '\000'` stops with "Illegal byte sequence" on a binary file. So `[dd5fe]` and `[dbftv]` fail, and `[dd5ff]` and `[dbftx]`, which expect no match, pass without reading anything.
 	- Expected behavior [Bug]: The four checks read the file on macOS as they do on Linux.
 	- Reproduced [Bug]: Yes, 2026-10-04, in stage 7's run on b26, where ssh gets `LANG=en_US.UTF-8`, and again by hand on the `.syso` files.
 	- Possible cause [Bug]: macOS `tr` and `grep` both check bytes against the locale. With `LC_ALL=C` on both, the copyright check found its string on b26. On the `tr` alone it still failed.
@@ -1272,15 +1301,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual effort: Low
 	- Progress log:
 		- Verified: on b26 the old checks fail two and pass two without reading. The new ones pass all four.
-		- Verified: the new `[Erki5JE]` fails against the old way of reading and passes with the helper.
+		- Verified: the new `[ddg8y]` fails against the old way of reading and passes with the helper.
 		- Verified: test.bash on Linux, 1399 -> 1400, all passing.
 		- Verified: stage 7 run alone passes on b26 and vm925w. test.bash on b26 is 1216/0.
 	- Actual fix [Bug]: The four checks go through one helper in test.bash that runs `tr` and `grep` in the C locale. It tells a string not found apart from a file not read, so the two no-match checks fail when the read fails.
 	- Note: the two no-match checks moved from `fAssertFail` to `fAssert`. They keep their IDs and labels.
-	- Swept: every `tr` and `grep` in `cicd/` that reads a binary file. Only these four did. The icon check `[EnQf0UG]` already had `LC_ALL=C`, and the `od` reads of Mach-O headers don't depend on the locale.
+	- Swept: every `tr` and `grep` in `cicd/` that reads a binary file. Only these four did. The icon check `[dbftw]` already had `LC_ALL=C`, and the `od` reads of Mach-O headers don't depend on the locale.
 	- Branch: remfix
 	- Commit: 6842035
-	- Test case: test.bash `[EnQf0UF]`, `[EnQf0UH]`, `[Er1LxTO]` and `[Er1LxTP]`, plus the new `[Erki5JE]`.
+	- Test case: test.bash `[dbftv]`, `[dbftx]`, `[dd5fe]` and `[dd5ff]`, plus the new `[ddg8y]`.
 	- Acceptance signoff: Self-closed: reproduced, and the checks fail before and pass after on b26.
 	- Closed: 20261004-103900
 
@@ -1307,7 +1336,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: the five site tests fail on `gover` and pass here. The test.bash pair was run by hand against both builds. test.bash passes 1288 of 1288, and `go test ./...` and `cicd.bash --gate` pass.
 	- Branch: errmsg
 	- Commit: b64bc2e
-	- Test case: TestAccountApplyKeepsTheReasonAFragmentFailed, TestLockKeepsTheReasonItFailed, TestAccountSetKeepsTheReasonItsFolderFailed, TestLoadForEditKeepsTheReasonTheReadFailed and TestAbsPathValueKeepsTheReasonTheFolderIsGone for the sites, TestWriteRefusalNamesPermissionsOnlyWhenTheyAreTheCause for the rule, and [Erfv8YB] and [Erfv8Yu] in test.bash. The chmod and save sites have no unprivileged way to fail, so the rule test covers them.
+	- Test case: TestAccountApplyKeepsTheReasonAFragmentFailed, TestLockKeepsTheReasonItFailed, TestAccountSetKeepsTheReasonItsFolderFailed, TestLoadForEditKeepsTheReasonTheReadFailed and TestAbsPathValueKeepsTheReasonTheFolderIsGone for the sites, TestWriteRefusalNamesPermissionsOnlyWhenTheyAreTheCause for the rule, and [ddf43] and [ddf44] in test.bash. The chmod and save sites have no unprivileged way to fail, so the rule test covers them.
 	- Acceptance signoff: OK, 2026-10-03.
 	- Closed: 20261003-163955
 
@@ -1329,12 +1358,12 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Estimated effort: Low
 	- Actual fix [Bug]: A failed abort now refuses with Why, Kept and Fix lines. They say the target is still mid-merge, that nothing was committed to it, and give the commands to drop the merge and go back. git's own reason for the failed abort shows above it. The back-merge also offers finishing the merge by hand, which carries the hotfix across.
 	- Note: The back-merge now exits 1 when its abort fails, even though the hotfix landed. A clean abort there is unchanged and still ends in a warning.
-	- Note: That refusal's Kept line says the hotfix landed on the default branch and that part is done. [ErgQv90] checks it, added 2026-10-03.
+	- Note: That refusal's Kept line says the hotfix landed on the default branch and that part is done. [ddf81] checks it, added 2026-10-03.
 	- Swept: both `merge --abort` calls in src-go. `release` backs out through `backOutMerge`, so it is covered too and was run by hand. No other git step in src-go has its result discarded, apart from the listings and two best-effort calls in repo.go and remote.go whose comments say why.
 	- Verified: the same runs on `gover` said the target was as it was, and the back-merge exited 0. Here all six checks pass, and test.bash passes 1288 of 1288. `go test ./...` and `cicd.bash --gate` pass.
 	- Branch: errmsg
 	- Commit: ef2b917
-	- Test case: [ErfwTrE], [ErfwTrT] and [ErgQv90] for the back-merge, [ErfwTrh], [ErfwTrv], [ErfwTs8] and [ErfwTsM] for `br merge`, all in test.bash.
+	- Test case: [ddf4b], [ddf4c] and [ddf81] for the back-merge, [ddf4d], [ddf4e], [ddf4f] and [ddf4g] for `br merge`, all in test.bash.
 	- Acceptance signoff: OK, 2026-10-03.
 	- Closed: 20261003-163955
 
@@ -1359,7 +1388,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: all five checks fail on `gover` and pass here. test.bash passes 1280 of 1280 with both fixes in.
 	- Branch: relpipe
 	- Commit: 76675b3
-	- Test case: in test.bash, [Erfs76S] for a published binary whose `--version` outruns a pipe, [Erfs77J] and [Erfs78A] for 3000 tags, [Erfs792] for a long SHA256SUMS, and [Erfs79u] for 1000 spawn recordings.
+	- Test case: in test.bash, [ddf3s] for a published binary whose `--version` outruns a pipe, [ddf3t] and [ddf3v] for 3000 tags, [ddf3w] for a long SHA256SUMS, and [ddf3x] for 1000 spawn recordings.
 	- Acceptance signoff: Self-closed: reproduced, the checks fail before the fix and pass after, and the sweep is answered.
 	- Closed: 20261003-141543
 
@@ -1407,7 +1436,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 2026-10-19: Checked each kind on b23. The harnesses, release.bash and the utilities already remove their temp folders on exit. Artifacts under `cicd/artifacts/` are rotated or capped at 20. Containers run with `--rm`, a new image removes the one it replaces, and the build cache is all in use by images. The Go cache volume is kept on purpose, and Go trims its own build cache. The pre-push snapshot is kept on purpose too, for warm caches.
 		- 2026-10-19: 2 gaps were found and fixed. cicd.bash's own temp files were removed one by one, so a run stopped partway left them behind. They now sit in one folder per run, removed on exit, a TERM or Ctrl+C included. The demo's repos at `/tmp/gitsby-demo` stayed after every run off the container. Stage 6 now removes them through `demo-repo.bash --remove`, which keeps the script's ownership check.
 	- Branch: leakflags
-	- Test case: test.bash `[EtBTWt7]` for the temp folder after a pass, a stop and a TERM, and `[EtBTWtL]` for the demo's repos.
+	- Test case: test.bash `[de5m8]` for the temp folder after a pass, a stop and a TERM, and `[de5m9]` for the demo's repos.
 	- Verified: Both fail against gover's cicd.bash. test.bash 1571 -> 1579, 0 failed, and `cicd.bash --gate` passes. `demo-repo.bash --remove` removed a world it built, refused a folder it didn't, and passed on one that wasn't there.
 	- Note: Needs one real full run, in the container and with `--no-container`, to see `/tmp/gitsby-demo` and the scratch folder gone.
 	- Verified: 2026-10-21 on b23. A `--no-container` full run passed every stage, and after it `/tmp/gitsby-demo`, left there by a run on 10-19, was gone, and so was its scratch folder. A full run in the container stopped in stage 3 on pip-audit (2026102113100000), and its scratch folder was still gone, as was the one from a `--quick --leakcheck` run there. No gitsby-cicd container was left, and no new untagged image. The container's `/tmp` is a tmpfs that goes with it, so its demo repos can't outlive it.
@@ -1434,8 +1463,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- A plain run off the container, with no CodeQL, warns and skips CodeQL like govulncheck. `--leakcheck` asked for by name still stops there.
 		- The run in the container gets the flag as given. It gets `--quick` and `--no-fuzz` too, so it works out the same default.
 	- Branch: leakflags
-	- Test case: test.bash `[EtBTWs2]`, `[EtBTWsG]`, `[EtBTWsT]`, `[EtBTWsg]`, `[EtBTWsu]` and `[EtBTWta]`, plus `[Et9PJrE]` and `[Et9PJs6]` reworded with the same IDs.
-	- Verified: Every one fails against gover's cicd.bash. test.bash 1571 -> 1579, 0 failed, and `cicd.bash --gate` passes. `[Er1LxTW]`'s stage 3 run takes `--no-leakcheck` now, since its fixture's go stub has no soak test.
+	- Test case: test.bash `[de5m3]`, `[de5m4]`, `[de5m5]`, `[de5m6]`, `[de5m7]` and `[de5ma]`, plus `[de548]` and `[de54c]` reworded with the same IDs.
+	- Verified: Every one fails against gover's cicd.bash. test.bash 1571 -> 1579, 0 failed, and `cicd.bash --gate` passes. `[dd5fp]`'s stage 3 run takes `--no-leakcheck` now, since its fixture's go stub has no soak test.
 	- Swept: the help text, stage 3's header line, README, contributing.md, config.bash comments and both history footers.
 	- Note: A full run now takes CodeQL's time, once per release OS plus Python. Needs one real full run to see it pass in the container.
 	- Verified: 2026-10-21 on b23. A plain full run in the container stopped in stage 3 on pip-audit, on new Pillow advisories (2026102113100000), before the leak checks. A `--quick --leakcheck` run there then passed: the soak test in about 15 s, and CodeQL clean on darwin, freebsd, linux and windows at about 15 s each and Python at about 45 s, so the leak checks add about 2 minutes. The rest of stage 3 took about 1.5 minutes in the stopped run. A `--no-container` full run warned and skipped CodeQL, and passed.
@@ -1514,7 +1543,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- A finding is set aside by rule and file in `CODEQL_IGNORE`, with its backlog item beside it. An entry no report has any more fails the run.
 		- `--leakcheck --no-container` stops on a box without CodeQL rather than skipping it, since it was asked for by name.
 	- Branch: leakchk, codeql
-	- Test case: `TestMain` [Et9PJqa] runs goleak, and `TestSoak` is [Et9PJqo]. test.bash [Et9PJr1], [Et9PJrE], [Et9PJrS], [Et9PJrf], [Et9R5kx], [Et9R5lA], [Et9PJrt] and [Et9PJs6] for `--leakcheck`. [Et9PJsK] and the ruff pass of [EpsVDHv] for ruff. [Et9PJsY], [Et9R5kk] and [Et9R5lO] for pip-audit and `govulncheck -test`. [Et9R5lb] for `-count=1`, [Et9R5lo] for goleak in every Go package, and [Et9R5kW] for the image tag. [Et9ZcLy], [Et9ZcME], [Et9ZcMS], [Et9ZcMh], [Et9ZcMx] and [Et9ZcNC] for the CodeQL step, and [Et9aIeu] for its install. [Et9ZcNT], [Et9ZcNj], [Et9ZcO1], [Et9ZcOF], [Et9aIdh], [Et9aIdy], [Et9eeOv], [Et9aIeD], [Et9eeP9] and [Et9aIeR] for how its reports are read. [Et9aIeg] for tmux, pkill and killall.
+	- Test case: `TestMain` [de545] runs goleak, and `TestSoak` is [de546]. test.bash [de547], [de548], [de549], [de54a], [de54h], [de54j], [de54b] and [de54c] for `--leakcheck`. [de54d] and the ruff pass of [dcmap] for ruff. [de54e], [de54g] and [de54k] for pip-audit and `govulncheck -test`. [de54m] for `-count=1`, [de54n] for goleak in every Go package, and [de54f] for the image tag. [de55e], [de55f], [de55g], [de55h], [de55j] and [de55k] for the CodeQL step, and [de55x] for its install. [de55m], [de55n], [de55p], [de55q], [de55r], [de55s], [de562], [de55t], [de563] and [de55v] for how its reports are read. [de55w] for tmux, pkill and killall.
 	- Verified:
 		- A goroutine left running in `startAhead` failed the unit tests through goleak. In the soak test, a goroutine left per run failed it on the count, and a 4 KB slice kept per run failed it on the heap, where `go tool pprof -base` named `run`. Each was restored by copy, and both pass after.
 		- ruff failed on a planted B019, SIM115 and B006, and `--gate` stopped on it. pip-audit failed in the image with one advisory taken off the list.
@@ -1542,12 +1571,12 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The rest stays on the host: sync, dogfood, remote tests and publish.
 	- Done: `cicd.bash --container`, from `cicd/container/Dockerfile`. The tag hashes the recipe and the versions, and a new image replaces the old one. Go caches live in a named volume. git joined `TOOL_VERSIONS`, since trixie's 2.47 spawns 4 more processes on a fetch than the host's 2.51.
 	- Branch: ctr
-	- Test case: [EsJgeiS] to [EsJgem1] in test.bash, against the stubbed engine. The recipe guard was watched to fail by hand.
+	- Test case: [ddrp4] to [ddrp8] in test.bash, against the stubbed engine. The recipe guard was watched to fail by hand.
 	- Verified: a run in the container matched the host baselines, test.bash 1509/0, fuzz.bash 313/0, parity.bash 29/0 and spawn counts. With the new checks, 1514/0 both in the container and on the host. The fixture sets the container marker itself, since the suite inside the image inherited it.
 	- Done 2026-10-10: the demo gif renders in the image as well. Apt reads the snapshot the base was cut from, so Pillow, freetype and cairo can't move, and the image has the Monaspace release file the host uses. The emoji font is Debian's, not the host's build, but the demo draws no emoji. The render matched the committed gif byte for byte, and with the font hidden it didn't.
-	- Test case: [EsK1B7q] in test.bash.
+	- Test case: [ddrrn] in test.bash.
 	- Done 2026-10-10: a plain run uses the container, set by `CICD_CONTAINER` in config.bash. `--no-container` runs on the box. A box without a working docker does too, with a warning, so a contributor isn't blocked, and `--container` there stops. `--gate` stays on the box.
-	- Test case: [EsK46gt] to [EsK46k5] in test.bash. 1519/0 in the container and on the host. With the default off, the 3 checks that need it failed.
+	- Test case: [ddrs1] to [ddrs4] in test.bash. 1519/0 in the container and on the host. With the default off, the 3 checks that need it failed.
 	- Closed: 20261010-100500
 
 - `raw` runs tea and other common CLIs, not only git and gh
@@ -1594,9 +1623,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Note: the Go installer can't install v2.1.0 on any platform, before or after this. That release publishes the `gitsby` and `gitsby.ps1` scripts, not per-platform binaries.
 	- Branch: macuni
 	- Commit: 28b8f2d
-	- Test case: test.bash `[ErgCzfP]`, `[ErgCzfc]`, `[ErgCzfq]` (install.bash on a Mac), `[ErgDQ7N]` (install.ps1, pinned since pwsh can't fake a Mac), `[ErgCzeJ]`, `[ErgCzeW]`, `[ErgCzek]`, `[ErgCzey]`, `[ErgCzfB]` (release.bash).
+	- Test case: test.bash `[ddf6f]`, `[ddf6g]`, `[ddf6h]` (install.bash on a Mac), `[ddf6j]` (install.ps1, pinned since pwsh can't fake a Mac), `[ddf6a]`, `[ddf6b]`, `[ddf6c]`, `[ddf6d]`, `[ddf6e]` (release.bash).
 	- Swept: every `darwin` and `arm64` reader in the repo. release.bash, config.bash, both installers, the installer and release fixtures in test.bash, README, design.md and the changelog. cicd.bash dogfood already joins. Nothing in `src-go` reads asset names. `legacy/` is frozen.
-	- Verified: stage 7 on b26 (2026-10-04) passed the installer checks with stubbed downloads, `[ErgCzfP]`, `[ErgCzfc]` and `[ErgCzfq]` among them.
+	- Verified: stage 7 on b26 (2026-10-04) passed the installer checks with stubbed downloads, `[ddf6f]`, `[ddf6g]` and `[ddf6h]` among them.
 	- Verified 2026-10-05 on b26, an Intel Mac on macOS 15.8: the real universal build, served as a stand-in pre-release in place of GitHub. install.bash piped into the stock bash 3.2, and install.ps1 under pwsh, each found the pre-release, checked the sum, installed it and ran it. `lipo` lists both CPUs, and the arm64 half keeps a valid ad-hoc signature after the join.
 	- Not run here: the download from GitHub itself. release.bash downloads and checks the Mac file from every real release. Running it on Apple silicon moved to the deferred ARM hardware item.
 	- Acceptance signoff: OK, 2026-10-05, after the b26 install.
@@ -1661,13 +1690,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Done: a probe nobody read is killed when the run ends.
 		- Verified: with 300 ms injected on each round trip, best of 3 on b23: status in the ssh account folder 930 -> 319 ms, whoami there 923 -> 316, status in the https folder 624 -> 316, status with a failed fetch 628 -> 319. With 300 ms on gh's token store as well: status 1228 -> 621, account list with three accounts 917 -> 615. Output is byte for byte the same in all five.
 		- Verified: spawn counts unchanged on all 14 measures. The config read replaces one gh call one for one.
-		- Verified: `[ErkSC4L]`, `[ErkSctG]`, `[ErkSC4Z]` and the changed `[Er1LxSk]` fail on the build before this and pass after. `[ErkSC4L]` and `[ErkSctG]` also fail with only the ssh probe put back in turn. `[ErkSC48]` fails with the end-of-run kill taken out. The affected test.bash blocks pass 103/0, also on a race-enabled build with no race reported. `go test -race ./...` and the gate (lint and Go tests) are clean.
-		- Note: `[Er1LxSk]` now looks for the config read and no API call, and `[Er1LxSl]` and `[Er1LxSm]` refuse either one. `[Er1LxSn]` runs with a token already in the environment, the one case that still reaches the API. The rule they check, ask only where a block prints, is unchanged. The fake gh stubs answer `config get ... user`.
+		- Verified: `[ddg72]`, `[ddg75]`, `[ddg73]` and the changed `[dd5e6]` fail on the build before this and pass after. `[ddg72]` and `[ddg75]` also fail with only the ssh probe put back in turn. `[ddg71]` fails with the end-of-run kill taken out. The affected test.bash blocks pass 103/0, also on a race-enabled build with no race reported. `go test -race ./...` and the gate (lint and Go tests) are clean.
+		- Note: `[dd5e6]` now looks for the config read and no API call, and `[dd5e7]` and `[dd5e8]` refuse either one. `[dd5e9]` runs with a token already in the environment, the one case that still reaches the API. The rule they check, ask only where a block prints, is unchanged. The fake gh stubs answer `config get ... user`.
 		- Note: offline, the identity block can now name gh's active account from its config, where it said nothing before. Display only.
 	- Swept: every caller of `ghLogin`, `sshLogin` and `ghTokenFor`. The probes in `settleGh`, `selectAccount`, `identityGate` and the identity block lines all read through the same caches. `showHostLine` asks tea, which reads a local file, so it stays as it was.
 	- Branch: probes
 	- Commit: 545712a
-	- Test case: test.bash `[ErkSC4L]`, `[ErkSctG]`, `[ErkSC4Z]`, `[ErkSC4m]` (regression guard), `[Er1LxSk]`; Go `[ErkSC3h]`, `[ErkSC3v]`, `[ErkSC48]`, `[ErkTEpz]`.
+	- Test case: test.bash `[ddg72]`, `[ddg75]`, `[ddg73]`, `[ddg74]` (regression guard), `[dd5e6]`; Go `[ddg6z]`, `[ddg70]`, `[ddg71]`, `[ddg76]`.
 	- Verified: test.bash 1408/0, `go test ./...`, fuzz.bash 301/0 and parity 29/0 on merged gover, 2026-10-04.
 	- Acceptance signoff: Self-closed: the goroutines have the measured reason the style guide asks for, output is unchanged, and the checks fail before and pass after.
 	- Closed: 20261005-072140
@@ -1696,12 +1725,12 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Done: phase 1 refuses a vNEXT section that already has a `### Downloads` heading. Phase 3 warns when the table and the files it publishes disagree. With no binaries built, phase 2 warns and writes no table.
 		- Done: design.md and the changelog say so. The repo name is set once in release.bash.
 		- Verified: shellcheck on both scripts, `test-id.bash --check`, and markdownlint on changelog.md and design.md. A table written into a copy of the real changelog passed markdownlint.
-		- Verified: the release.bash block of test.bash, 38 passed. Against release.bash before the change, four of the five new checks fail. `[Erm33XL]` held before too, since the body was already the section.
+		- Verified: the release.bash block of test.bash, 38 passed. Against release.bash before the change, four of the five new checks fail. `[ddgka]` held before too, since the body was already the section.
 		- Not run: the full test.bash, the gate, and a real cut.
 	- Branch: dltable
 	- Commit: 035cb8e
-	- Test case: test.bash `[Erm33Wu]`, `[Erm33X8]`, `[Erm33XL]`, `[Erm33XZ]`, `[Erm33Xn]`.
-	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
+	- Test case: test.bash `[ddgk8]`, `[ddgk9]`, `[ddgka]`, `[ddgkb]`, `[ddgkc]`.
+	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[db712]`, from enhancement 8.
 	- Note: the installers read `SHA256SUMS` and the release list, never the body, so they are untouched.
 	- Question: a table cell can't span two columns, so the macOS universal file is listed under both amd64 and arm64. Is that the wanted reading of "its row doesn't split by CPU"?
 		- Answer: yes, both columns. Moved to Decisions.
@@ -1747,7 +1776,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Note: until those three bugs are fixed, a full run stops at stage 7.
 	- Branch: remtest
 	- Commit: 956d07b
-	- Test case: test.bash `[ErkbDSi]` to `[ErkbDTn]` for the stage in cicd.bash, and `[ErkbDU2]` to `[Erkbdua]` for the harness, 22 in all.
+	- Test case: test.bash `[ddg83]` to `[ddg87]` for the stage in cicd.bash, and `[ddg88]` to `[ddg8r]` for the harness, 22 in all.
 	- Verified: a full pipeline run on 2026-10-05 passed on every box.
 	- Acceptance signoff: OK, 2026-10-05, after the full run.
 	- Closed: 20261005-071114
@@ -1773,10 +1802,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Note: the copy is about 120 MB with the git dir, sent whole each run. That takes a few seconds on the LAN. The Mac half of a run takes about seven minutes, most of it test.bash.
 		- Verified: test.bash 1398/0 on b23, with the 22 new checks.
 		- Verified: eight faults put into a copy of the harness, one at a time, each turned its check red. The session id handed to the lock, no `--wait 0`, no skip without a lock script, no mark check, removing a Windows folder the run didn't make, no marker filter, every free Windows box run, and a dropped box counted as failed.
-		- Verified: with `--quick` no longer skipping stage 7 and the Mac build left behind in cicd.bash, test.bash failed exactly `[ErkbDSi]`, `[ErkbDT4]` and `[ErkbDTL]`. The gate (lint and Go tests) passes.
+		- Verified: with `--quick` no longer skipping stage 7 and the Mac build left behind in cicd.bash, test.bash failed exactly `[ddg83]`, `[ddg84]` and `[ddg85]`. The gate (lint and Go tests) passes.
 	- Branch: remtest
 	- Commit: 956d07b
-	- Test case: test.bash `[ErkbDSi]` to `[Erkbdua]`, as on the parent.
+	- Test case: test.bash `[ddg83]` to `[ddg8r]`, as on the parent.
 	- Verified: a full pipeline run on 2026-10-05 passed on every box.
 	- Acceptance signoff: OK, 2026-10-05, after the full run.
 	- Closed: 20261005-071114
@@ -1796,13 +1825,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Today's checks feed in hand-typed 2.x text.
 	- Progress log:
 		- Done: test.bash compiles the last gitsby build on SHCL 2.x from its commit (53a6231), and has it write an accounts file with `account set`. The current build has to convert that file, list every account the way the old build did, and keep the old file byte for byte. A fuzz target writes values through the 2.x module itself and checks each reads the same after the conversion.
-		- Note: nothing is downloaded at test time. The 2.x module is a test-only require in go.mod, so the lint and unit test stages put it in the module cache, and the old build compiles from there with the proxy off. A box whose cache lacks it fails `[ErkNuhS]` by name; `go mod download` in `src-go` fixes that.
+		- Note: nothing is downloaded at test time. The 2.x module is a test-only require in go.mod, so the lint and unit test stages put it in the module cache, and the old build compiles from there with the proxy off. A box whose cache lacks it fails `[ddg6f]` by name; `go mod download` in `src-go` fixes that.
 		- Note: 2.x is the only older format gitsby ever wrote. SHCL 1.x has no Go module and writes the same footer as 2.x, so a 1.x file is converted as a 2.x one. By shcl's 2.0.0 changelog only quoted key names changed between the two, and gitsby's keys have none. Not run.
-		- Verified: the five checks pass on their own against the current build. `[ErkNui6]` fails with the conversion taken out of `migrateText`, and all five fail with an empty module cache. `go vet ./...` from an empty module cache fetched the 2.x module, and the old build then compiled offline.
+		- Verified: the five checks pass on their own against the current build. `[ddg6j]` fails with the conversion taken out of `migrateText`, and all five fail with an empty module cache. `go vet ./...` from an empty module cache fetched the 2.x module, and the old build then compiled offline.
 		- Verified: FuzzOldFormatValue's seeds fail with the conversion taken out, 6 of 13, and 90 s of fuzzing found nothing. go test -race, vet, staticcheck, golangci-lint, shellcheck and the test ID check are clean.
 	- Branch: oldshcl
 	- Commit: af80433
-	- Test case: FuzzOldFormatValue, and test.bash `[ErkNuhS]`, `[ErkNuhf]`, `[ErkNuht]`, `[ErkNui6]`, `[ErkNuiK]`.
+	- Test case: FuzzOldFormatValue, and test.bash `[ddg6f]`, `[ddg6g]`, `[ddg6h]`, `[ddg6j]`, `[ddg6k]`.
 	- Verified: test.bash 1408/0, `go test ./...`, fuzz.bash 301/0 and parity 29/0 on merged gover, 2026-10-04.
 	- Acceptance signoff: Self-closed: tests only, the intent was clear, and every new check passes in the full suite. 30 s more of FuzzOldFormatValue found nothing.
 	- Closed: 20261004-114742
@@ -1831,7 +1860,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: the 13 counts were the same over four runs, and the first eight match the 2026-09-30 baseline. Lowering one limit below its count failed a `--record` run with nothing recorded; put back, the run passes.
 	- Branch: spawnfix
 	- Commit: e6fca88, 0073a9c
-	- Test case: The limits in spawn-count.bash, run in stage 3. [Erg2KNK] in test.bash fails a count over its limit under `--record`. It fails against the script before this change. [ErgR83a] passes a count one over the expected one, and fails against the limits with no headroom.
+	- Test case: The limits in spawn-count.bash, run in stage 3. [ddf54] in test.bash fails a count over its limit under `--record`. It fails against the script before this change. [ddf82] passes a count one over the expected one, and fails against the limits with no headroom.
 	- Acceptance signoff: OK, 2026-10-03, with headroom on the limits.
 	- Closed: 20261003-163955
 
@@ -1855,7 +1884,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: the lint went from six pwsh starts to one, and from about 5.4 s to 2.6 s on this box. `cicd.bash --gate` passes, 21.1 s before and 20.2 s after, most of it the Go tests. It fails on an alias, on 5.1-only syntax and on a parse error in run-latest.ps1, and on an alias in install.ps1, then passes again once the file is back. test.bash passes 1318 of 1318.
 	- Branch: pslint
 	- Commit: 94db0f5
-	- Test case: [Erg6RxS] counts the pwsh starts in a gate run and checks both files are in the one call. [Erg6Rxh], [Erg6Rxu], [Erg6Ry8], [Erg6RyM], [Erg6Rya] and [Erg6Ryo] cover the missing module, the missing settings file, the real lint on clean, 5.1-only and broken files, and the settings file being ASCII. Each failed against the old code or a broken settings file, except [Erg6Rxh], which the old code also passes. [ErgRMMj] fails a file indented two spaces, and fails against the settings without the rule.
+	- Test case: [ddf5g] counts the pwsh starts in a gate run and checks both files are in the one call. [ddf5h], [ddf5j], [ddf5k], [ddf5m], [ddf5n] and [ddf5p] cover the missing module, the missing settings file, the real lint on clean, 5.1-only and broken files, and the settings file being ASCII. Each failed against the old code or a broken settings file, except [ddf5h], which the old code also passes. [ddf83] fails a file indented two spaces, and fails against the settings without the rule.
 	- Acceptance signoff: OK, 2026-10-03, with the indentation rule on.
 	- Closed: 20261003-163955
 
@@ -1879,13 +1908,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Done: design.md has the rule, and the plan example in style-guide_ui-ux.md shows the new line.
 	- Note: Parity had no plan check before. It now compares the `pullcom` and `sync` plans with the frozen build, with the two spellings of the pull line mapped to one token.
 	- Note: The spawn-count `pullcom` measure runs with `--no-fetch`, so the pull step never runs there and it stays at 25. A new measure, `pullcom` with a fetch, went from 38 to 32 and its limit is 32. The measure is the gate.
-	- Note: [ElHNo4O] in test.bash matched `git pull --ff-only` in the `br switch` plan. It now matches the merge line. What it checks, that switching onto the current branch still plans the pull, is unchanged.
+	- Note: [dafrs] in test.bash matched `git pull --ff-only` in the `br switch` plan. It now matches the merge line. What it checks, that switching onto the current branch still plans the pull, is unchanged.
 	- Swept: `grep -n 'pull' src-go/*.go`. The two runners, `cmdPull` and `pullIfOnline`, and every plan line that named a pull, all in preview.go. cicd.bash's own fast-forward already used `merge --ff-only --autostash '@{u}'`.
 	- Verified: `go test ./...`, `cicd/parity.bash` 29/0, `cicd/cicd.bash --gate`, spawn-count with every count at or under its limit, and full test.bash 1328/0.
-	- Verified: against the gover build, [Erg9NT0], [Erg9NTS] and [Erg9NTw] fail, parity's two plan checks pass without the mapping, and the new spawn measure goes over its limit at 38. With the other-remote case taken out, [Erg9NUd], [Erg9NUr], [Erg9y2K] and [ErgA5KD] fail. With `--no-fetch` merging, [Erg9NUA] and [Erg9NUN] fail. With the plan guessing the target's upstream, [Erg9y2K] fails.
+	- Verified: against the gover build, [ddf5v], [ddf5x] and [ddf5z] fail, parity's two plan checks pass without the mapping, and the new spawn measure goes over its limit at 38. With the other-remote case taken out, [ddf62], [ddf63], [ddf64] and [ddf65] fail. With `--no-fetch` merging, [ddf60] and [ddf61] fail. With the plan guessing the target's upstream, [ddf64] fails.
 	- Branch: onefetch
 	- Commit: f61adb6
-	- Test case: [Erg9NT0] to [Erg9NUr] and [Erg9y2K] in test.bash, [ErgA5KD] TestPullArgsFor, [ErgAC3e] and [ErgAC4V] in parity.bash, and the [ErgAQyw] spawn-count limit.
+	- Test case: [ddf5v] to [ddf63] and [ddf64] in test.bash, [ddf65] TestPullArgsFor, [ddf66] and [ddf67] in parity.bash, and the [ddf68] spawn-count limit.
 	- Acceptance signoff: OK, 2026-10-03. The plan will name the resolved branch rather than `@{u}`, filed as its own item.
 	- Closed: 20261003-163955
 
@@ -1952,20 +1981,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Done: README and contributing.md list the new boxes.
 		- Installed on vmDebARM64 as root: Go 1.26.8 from go.dev, in `/usr/local/go`, linked from `/usr/local/bin/go` and `gofmt`. bash, git and jq were already there.
 		- Nothing installed on vmFreeBSD. bash, git, jq and Go 1.25 were already there. Go fetches the 1.26.2 toolchain go.mod names into the test user's module cache on the first run.
-		- Verified: the 8 new checks and `[ErkbDSi]` pass, and each new one fails against gover's harness. Six faults put into a copy of the harness, one at a time, each turned its check red: the Unix boxes left out of the lock's list, a missing tool ignored, the module fetch always run, no target check, one target's build sent to every box, and gover's harness. `[ErkbDSi]` fails against gover's cicd.bash and with a Unix build left behind.
+		- Verified: the 8 new checks and `[ddg83]` pass, and each new one fails against gover's harness. Six faults put into a copy of the harness, one at a time, each turned its check red: the Unix boxes left out of the lock's list, a missing tool ignored, the module fetch always run, no target check, one target's build sent to every box, and gover's harness. `[ddg83]` fails against gover's cicd.bash and with a Unix build left behind.
 		- Verified: shellcheck, `test-id.bash --check` and the gate pass.
-		- Verified: stage 7's harness run against only the two new boxes, under the lock, 2026-10-04. vmFreeBSD: test.bash 1178/0, Go tests all pass but `TestLockAccountsFile`. vmDebARM64: Go tests all pass, test.bash 1436/1, the one being `[ErkSC4L]`. Both filed as their own bugs.
+		- Verified: stage 7's harness run against only the two new boxes, under the lock, 2026-10-04. vmFreeBSD: test.bash 1178/0, Go tests all pass but `TestLockAccountsFile`. vmDebARM64: Go tests all pass, test.bash 1436/1, the one being `[ddg72]`. Both filed as their own bugs.
 		- Note: vmDebARM64 is an emulated arm64 CPU. Its test.bash took about 40 minutes, against about one on vmFreeBSD, so a full run is that much longer.
 	- Swept: every reader of the stage 7 settings. cicd.bash prints and builds from them, remote-tests.bash runs from them, and the test.bash fixture copies config.bash. The existing harness checks pin the Mac and Windows boxes, so their fixture empties `REMOTE_UNIX_HOSTS` and the new checks put it back.
-	- Note: `[ErkbDSi]` keeps its ID. It used to require only the Mac build in the harness call, and now requires the two Unix builds as well, all three removed after.
+	- Note: `[ddg83]` keeps its ID. It used to require only the Mac build in the harness call, and now requires the two Unix builds as well, all three removed after.
 	- Branch: unixrt
 	- Commit: c59ef24
-	- Test case: test.bash `[Erm9Pnk]`, `[Erm9Pnx]`, `[Erm9PoA]`, `[Erm9PoN]`, `[Erm9Poa]`, `[Erm9Pon]`, `[Erm9Pp1]`, `[Erm9PpE]`, and `[ErkbDSi]` (changed).
-	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
-	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it.
-	- Question: stage 7 is still labeled "Mac + Windows tests". Renaming it changes output text that `[ErkbDSi]`, `[ErkbDT4]` and `[ErkbDTL]` check. Rename it?
+	- Test case: test.bash `[ddgm1]`, `[ddgm2]`, `[ddgm3]`, `[ddgm4]`, `[ddgm5]`, `[ddgm6]`, `[ddgm7]`, `[ddgm8]`, and `[ddg83]` (changed).
+	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[db712]`, from enhancement 8.
+	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[db712]`, from enhancement 8. b26 was skipped, since another session held it.
+	- Question: stage 7 is still labeled "Mac + Windows tests". Renaming it changes output text that `[ddg83]`, `[ddg84]` and `[ddg85]` check. Rename it?
 		- Answer: yes, to "Remote tests". Filed as 2026100418431100.
-	- Verified: stage 7's harness on gover after round 4, 2026-10-04. b26: Go tests pass, and test.bash against the universal build 1255/0. vmFreeBSD, vmDebARM64 and vm925w: Go tests pass. The Unix boxes ran Go tests only this time, since no Unix builds were passed. Their full test.bash ran earlier the same day and failed only `[Emq7Y6y]`, fixed since.
+	- Verified: stage 7's harness on gover after round 4, 2026-10-04. b26: Go tests pass, and test.bash against the universal build 1255/0. vmFreeBSD, vmDebARM64 and vm925w: Go tests pass. The Unix boxes ran Go tests only this time, since no Unix builds were passed. Their full test.bash ran earlier the same day and failed only `[db712]`, fixed since.
 	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
 	- Closed: 20261004-190953
 
@@ -1985,8 +2014,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual cause [Bug]: As above.
 	- Actual fix [Bug]: The arm looks for `Purpose:`, as remote-tests.bash and the utility scripts do.
 	- Branch: round-20261025b
-	- Test case: test.bash [EtlSvK7], once for each script whose `--help` prints its header, 7 now.
-	- Verified: [EtlSvK7]'s command fails on the old release.bash and passes on the new one. test.bash 1748/0 in `--backlog-run-quick`.
+	- Test case: test.bash [dee92], once for each script whose `--help` prints its header, 7 now.
+	- Verified: [dee92]'s command fails on the old release.bash and passes on the new one. test.bash 1748/0 in `--backlog-run-quick`.
 	- Swept: every script with a `--help` arm. cicd.bash, remote-tests.bash, pre-push.bash, gen-winres.bash, keep-build.bash and spawn-count.bash print their headers. test.bash, fuzz.bash, parity.bash and install.bash print a usage line, and backlog-check.bash, lint-report.bash, spawn-report.bash and test-id.bash print their headers their own way.
 	- Acceptance signoff: Self-closed: its test failed before and passes after.
 	- Closed: 20261025-181343
@@ -2005,14 +2034,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Steps to reproduce [Bug]:
 		- In a clone, set `REMOTE_MAC_HOSTS` and `REMOTE_WINDOWS_HOSTS` empty in `cicd/config.bash`, the way memory.md says to run stage 7 on one box, and run test.bash.
 	- Incorrect behavior [Bug]:
-		- 23 checks of the Mac and Windows harness fail, from `[ErkbDUK]` to `[Erm9Pp1]`. Then the last check's setup stops the suite with "mv: cannot stat '.../remote-mac/gitsby-remote-tests'", so nothing after it runs and no totals print. Seen 2026-10-23 on vmDebARM64.
+		- 23 checks of the Mac and Windows harness fail, from `[ddg89]` to `[ddgm7]`. Then the last check's setup stops the suite with "mv: cannot stat '.../remote-mac/gitsby-remote-tests'", so nothing after it runs and no totals print. Seen 2026-10-23 on vmDebARM64.
 	- Expected behavior [Bug]:
 		- The harness checks set their own host lists, so they pass whatever the tree's config.bash names.
 	- Possible cause [Bug]:
 		- The fixture copies the tree's config.bash and resets only `REMOTE_UNIX_HOSTS`. The checks expect b26, vm925w and b29w from it.
 	- Reproduced [Bug]: 2026-10-24 on b23, in a clone with the Mac and Windows lists empty and the Unix list down to vmDebARM64. 25 failed and the suite stopped at the `mv`, as above.
 	- Actual cause [Bug]:
-		- As guessed, plus a twin. The stage 7 checks in the cicd.bash fixture, `[ErkbDSi]` and `[Et6FC2n]`, read the Unix boxes and targets from the tree's config.bash too. They failed once the Unix list was narrowed.
+		- As guessed, plus a twin. The stage 7 checks in the cicd.bash fixture, `[ddg83]` and `[de4bt]`, read the Unix boxes and targets from the tree's config.bash too. They failed once the Unix list was narrowed.
 	- Actual fix [Bug]: `fRemoteBoxes` in test.bash appends the boxes and settings the checks expect to a fixture's config.bash. The harness fixture uses it at each of its 3 copies, and the cicd.bash fixture before its stage 7 checks. Wine is left empty there, since no check runs it.
 	- Swept: every `config.bash` copy and `source` in test.bash. The release, keep-build, shellcheck and CodeQL fixtures read no stage 7 setting.
 	- Branch: round-20261024
@@ -2046,10 +2075,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- One lookup for every program gitsby runs, git included: `toolCmd` and `toolCmdContext` in exec.go build the command from `findTool`, which is `lookTool` asked once per name and PATH. A name found only as gitsby gets a "Not found in path" error that names the entry, and is never started. `inPath` and `mustBeInPath` ask the same lookup, so the gh login checks, the tea probes and `hostToolFor` see a gitsby-only gh or tea as not installed. `pr` says so by name rather than suggesting an install, and `repo create` and `repo connect` refuse through `mustBeInPath`. `raw` uses the same refusal text through `notInPath`. A Go test fails if any other file calls `exec.Command`, `exec.LookPath` and the like, so a new call site can't skip it.
 		- design.md "Execution flow" has a bullet for it.
 	- Swept: every `exec.Command`, `exec.CommandContext` and `exec.LookPath` outside tests. exec.go's runners (runOut, runOutOK, runOK, inherit, inheritRC, so step and stepAs), show.go (showList, `ssh -G`), githost.go (`tea logins list`, `tea --version` through runOut, teaCommand and hostToolFor through inPath), repo.go (`gh repo view`, `git ls-remote`, `git init`, `git ls-files`, both mustBeInPath("gh")), remote.go (ssh probe, `git fetch`, `git remote set-head`, `git ls-remote`, `gh config get`), account.go (`gh auth token`, `gh api user`, `gh config get`), main.go (`git rev-parse`, mustBeInPath("git"), raw), pr.go (settlePrTool and every pr.cli run). handover still runs the path raw resolved. The frozen bash and pwsh builds were not touched.
-	- Test case: test.bash `[EtMclGb]`, `[EtMclHS]`, `[EtMclIK]`; Go `[EtMclJC]` (TestToolCmdSkipsSelf), `[EtMctyX]` (TestOneSpawnSite).
+	- Test case: test.bash `[de89w]`, `[de89x]`, `[de89y]`; Go `[de89z]` (TestToolCmdSkipsSelf), `[de8a0]` (TestOneSpawnSite).
 	- Branch: round-20261021
 	- Verified: The 3 new test.bash checks fail on the build before the fix. After it, test.bash 1591 -> 1594, 0 failed. The 2 Go tests fail with toolCmd's refusal taken out and with an `exec.Command` put back in show.go. `go test ./...`, `cicd.bash --gate`, `GOOS=windows go vet ./...`, and darwin, freebsd and windows builds pass.
-	- Verified: 2026-10-21, stage 7 passed on b26, vmFreeBSD, vmDebARM64 and vm925w, so every spawn in those suites went through the PATH walk on each OS. The 3 new test.bash checks ran on the 3 Unix boxes, and `[EtMctyX]` passed on all 4. On vm925w `[EtMclJC]` skips, since it needs symlinks and the exec bit, so the self check itself is untested on Windows. test.bash 1594/0 on b23, in the container and off it.
+	- Verified: 2026-10-21, stage 7 passed on b26, vmFreeBSD, vmDebARM64 and vm925w, so every spawn in those suites went through the PATH walk on each OS. The 3 new test.bash checks ran on the 3 Unix boxes, and `[de8a0]` passed on all 4. On vm925w `[de89z]` skips, since it needs symlinks and the exec bit, so the self check itself is untested on Windows. test.bash 1594/0 on b23, in the container and off it.
 	- Acceptance signoff: Self-closed: stage 7 passed everywhere, which was all that was left.
 	- Closed: 20261021-132100
 
@@ -2073,9 +2102,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 6 of those patterns also wrote a literal pipe as `\|`, which is undefined in an extended regex. GNU reads it as a pipe, and other greps may read it as alternation, which matches more.
 	- Actual fix [Bug]: `fAssertOut`, `fAssertNotOut`, `fAssertPlan` and `fAssertNotPlan` pass the pattern after `--`, as `fPlanRan` and `fGateSays` already did. The patterns drop the backslashes, and a literal pipe is `[|]`.
 	- Branch: round-20261023
-	- Test case: test.bash `[EtU6AcV]` fails on a backslashed dash anywhere in the 26 pipeline and installer scripts, and `[EtU6Acj]` on a backslashed pipe in a check pattern. Both sit in the `[Emq7Y6y]` loop.
-	- Verified: before the fix both new checks fail on cicd/test.bash only, `[EtU6Acj]` on 6 lines. After it all 26 scripts pass both. The 20 changed or neighboring installer and help checks pass when run alone against the real output, and `[Eq4W7zV]`'s pattern matches `repo url ftp` output. A `[|]` pattern does not match a line without the pipe. shellcheck, `test-id.bash --check` and the gate pass.
-	- Verified: 2026-10-22, a plain full run in the container on b23 passed every stage, with no grep warning anywhere in its log. `[EtU6AcV]` and `[EtU6Acj]` passed for all 26 scripts in the container and on b26, vmFreeBSD and vmDebARM64. test.bash 1660/0 in the container and 1661/0 on b23 off it, 1433/0 on b26 and 1336/0 on vmFreeBSD, each 62 more than on 10-22, and 1646/0 on vmDebARM64, 63 more. Of those, 52 are this item's and the rest are the round's glab and workflow checks. The container, b26 and vmFreeBSD skip `[EtUDfjj]`, since they have no PyYAML. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261022-19253166/run.log`.
+	- Test case: test.bash `[dea3d]` fails on a backslashed dash anywhere in the 26 pipeline and installer scripts, and `[dea3e]` on a backslashed pipe in a check pattern. Both sit in the `[db712]` loop.
+	- Verified: before the fix both new checks fail on cicd/test.bash only, `[dea3e]` on 6 lines. After it all 26 scripts pass both. The 20 changed or neighboring installer and help checks pass when run alone against the real output, and `[dcq73]`'s pattern matches `repo url ftp` output. A `[|]` pattern does not match a line without the pipe. shellcheck, `test-id.bash --check` and the gate pass.
+	- Verified: 2026-10-22, a plain full run in the container on b23 passed every stage, with no grep warning anywhere in its log. `[dea3d]` and `[dea3e]` passed for all 26 scripts in the container and on b26, vmFreeBSD and vmDebARM64. test.bash 1660/0 in the container and 1661/0 on b23 off it, 1433/0 on b26 and 1336/0 on vmFreeBSD, each 62 more than on 10-22, and 1646/0 on vmDebARM64, 63 more. Of those, 52 are this item's and the rest are the round's glab and workflow checks. The container, b26 and vmFreeBSD skip `[dea4c]`, since they have no PyYAML. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261022-19253166/run.log`.
 	- Swept: every `grep` taking a pattern variable in cicd. parity.bash's 4 `grep -E "${pattern}"` calls get fixed patterns with no leading dash, so they stay. No `\-` anywhere else in the repo. The awk `\|` at test.bash's table reader is awk, not grep, and stays.
 	- Acceptance signoff: Self-closed: stage 7 passed everywhere with no grep warning, which was all that was left.
 	- Closed: 20261022-201221
@@ -2090,7 +2119,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Related IDs: 2026102113100000
 	- Incorrect behavior [Bug]:
 		- The help says `--no-fuzz` skips the fuzz + security stage, but in cicd.bash only fuzz.bash, the native fuzz targets, the spawn counts and the leak checks look at it. govulncheck and pip-audit still run, so `--no-fuzz` doesn't get past a pip-audit stop.
-	- Reproduced [Bug]: Yes, 2026-10-21, by [EtOKpZS] against the old cicd.bash.
+	- Reproduced [Bug]: Yes, 2026-10-21, by [de8q2] against the old cicd.bash.
 	- Actual cause [Bug]:
 		- govulncheck sat outside the `--no-fuzz` gate on purpose at first (894d857, 2026-08-19). `--quick` then worked by turning fuzz off, and govulncheck ran under it anyway, "because it is a lookup rather than a workload".
 		- 81def43 (2026-10-18) made `--quick` skip it, since it reaches vuln.go.dev, and dropped that reason, but left it outside the gate. pip-audit copied its gate on 2026-10-19.
@@ -2099,8 +2128,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Bug]: govulncheck and pip-audit check `--no-fuzz` like the rest of stage 3.
 	- Branch: round-20261022
 	- Commit: 73d6a98
-	- Test case: test.bash [EtOKpZS]. [Et9PJsY] and [Et9R5lO] had used `--no-fuzz` to skip the rest of stage 3, so they pass `--no-leakcheck` now, with the same IDs.
-	- Verified: [EtOKpZS] fails against the old cicd.bash and passes with the fix. test.bash 1597 -> 1598, 0 failed, and `cicd.bash --gate` passes.
+	- Test case: test.bash [de8q2]. [de54e] and [de54k] had used `--no-fuzz` to skip the rest of stage 3, so they pass `--no-leakcheck` now, with the same IDs.
+	- Verified: [de8q2] fails against the old cicd.bash and passes with the fix. test.bash 1597 -> 1598, 0 failed, and `cicd.bash --gate` passes.
 	- Swept: the help's stage list and option lines, README (no mention), contributing.md, where `--leakcheck` adding the leak checks back to `--no-fuzz` still holds, config.bash's pip-audit comment, and the history footers of cicd.bash and test.bash. The run in the container already gets `--no-fuzz` as given.
 	- Closed: 20261021-194000
 
@@ -2159,7 +2188,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Bug]: The README says "about two dozen counting subcommands". "ten" stays, and a check holds it.
 	- Branch: docfix
 	- Commit: f4f624b, 2206206
-	- Test case: [ErsJhby] in test.bash counts the help's top-level commands and needs 10, with "Gitsby has ten" in the README. Red with the README saying eleven, green as committed.
+	- Test case: [ddj3j] in test.bash counts the help's top-level commands and needs 10, with "Gitsby has ten" in the README. Red with the README saying eleven, green as committed.
 	- Closed: 20261005-172300
 
 - `account` prints a value with a newline in it across 2 lines
@@ -2179,7 +2208,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Note: git drops a newline from an ident itself, so the Author line shows only the ESC escaped.
 	- Branch: ctlesc, escall
 	- Commit: 2be7d35, 47bcda3
-	- Test case: test.bash [ErvuMUH], [ErvuMUU] and [ErvuMUh], and Go `TestPrintableEscapesControlsOnly` [ErvuMUv], and `TestEveryLineOutIsEscaped` [ErwXroS].
+	- Test case: test.bash [ddjz4], [ddjz5] and [ddjz6], and Go `TestPrintableEscapesControlsOnly` [ddjz7], and `TestEveryLineOutIsEscaped` [ddk41].
 	- Verified: all 3 suite checks red on `gover`, green here. The Go test fails with the escaping taken out. test.bash 1494/0, fuzz.bash 311/0, parity.bash 29/0, `go test ./...` and the gate pass.
 	- Decisions:
 		- Anything from a file or another tool gets escaped, with no exceptions to remember. So the escaping moved into the printer's line writers and the error constructors' args, and covers the cwd, remote URL, gh and tea logins, clone folder and config path too. A usage error built from lines keeps its line breaks.
@@ -2232,12 +2261,12 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Progress log:
 		- Verified: against the real lock, read only. Under the old setting `hosts` gives `b26 vm925w b29w b26 vmDebARM64 vmFreeBSD`. Under the new one it gives `vm925w b29w b26 vmDebARM64 vmFreeBSD`.
 		- Verified: on a private lock directory with an empty other-hosts list, `wrap b26` exits 2 with "unknown host", which the stage reports as a skip.
-		- Verified: test.bash 1401/0. With the old remote-tests.bash, `[ErkbDUa]` and `[ErkqZtP]` fail, 1399/2.
-		- Note: `[ErkbDUa]` keeps its ID. It used to require b26 in the Windows list, and now requires it once, in the other list.
+		- Verified: test.bash 1401/0. With the old remote-tests.bash, `[ddg8a]` and `[ddga0]` fail, 1399/2.
+		- Note: `[ddg8a]` keeps its ID. It used to require b26 in the Windows list, and now requires it once, in the other list.
 	- Swept: every reader of the two host settings. cicd.bash only prints them, and config.bash only sets them. The lock's prefix is still taken from its file name.
 	- Branch: lockhosts
 	- Commit: 2541492
-	- Test case: test.bash `[ErkbDUa]` (lists passed to the lock) and `[ErkqZtP]` (older lock with no other-hosts list).
+	- Test case: test.bash `[ddg8a]` (lists passed to the lock) and `[ddga0]` (older lock with no other-hosts list).
 	- Verified: a full pipeline run on 2026-10-05 passed on every box.
 	- Acceptance signoff: OK, 2026-10-05, after the full run.
 	- Closed: 20261005-071114
@@ -2263,17 +2292,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Verified: `TestUnlockLeavesALockInItsInode` fails on Linux before the fix and passes after. It writes over the lock in place, so the other run's lock keeps our inode on any filesystem.
 		- Verified: the gate and `test-id.bash --check` pass. The package vets for Windows and macOS.
 		- Note: older builds leave the lock empty, so they and this one never mistake each other's locks.
-	- Swept: `os.SameFile`, `Stat_t`, `.Ino` and `ModTime` in src-go. The lock was the only file identity check. Both callers, `account set` and the old-format conversion, only `defer unlock()`, and the signature is unchanged. test.bash's `[EpxmDk1]` makes an empty lock by hand, which still blocks the create. Not run, since it waits for the full test.bash.
+	- Swept: `os.SameFile`, `Stat_t`, `.Ino` and `ModTime` in src-go. The lock was the only file identity check. Both callers, `account set` and the old-format conversion, only `defer unlock()`, and the signature is unchanged. test.bash's `[dcnk7]` makes an empty lock by hand, which still blocks the create. Not run, since it waits for the full test.bash.
 	- Branch: lockid
 	- Commit: 0738416
-	- Test case: `TestLockAccountsFile` [EpxmDk5] on FreeBSD, and `TestUnlockLeavesALockInItsInode` [ErmLh0B] on any platform.
-	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
-	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it.
+	- Test case: `TestLockAccountsFile` [dcnkb] on FreeBSD, and `TestUnlockLeavesALockInItsInode` [ddgnj] on any platform.
+	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[db712]`, from enhancement 8.
+	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[db712]`, from enhancement 8. b26 was skipped, since another session held it.
 	- Verified: a full pipeline run on 2026-10-05 passed on every box.
 	- Acceptance signoff: OK, 2026-10-05, after the full run.
 	- Closed: 20261005-071114
 
-- `[ErkSC4L]` fails on the emulated arm64 box
+- `[ddg72]` fails on the emulated arm64 box
 	- ID: 2026100416430456
 	- Type: Bug
 	- Status: Done
@@ -2283,24 +2312,24 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Related IDs: 2026100413264100, 2026100313123988
 	- Target OS: Linux arm64
 	- Test environment: vmDebARM64, Debian 13 arm64 on an emulated CPU.
-	- Incorrect behavior [Bug]: "status in a token-file folder asks gh and ssh together" fails there. Its twin `[ErkSctG]`, for whoami, passes.
+	- Incorrect behavior [Bug]: "status in a token-file folder asks gh and ssh together" fails there. Its twin `[ddg75]`, for whoami, passes.
 	- Expected behavior [Bug]: the check passes on a slow box when the two probes do run together.
 	- Reproduced [Bug]: Once, 2026-10-04, in stage 7 on vmDebARM64. Not rerun.
 	- Possible cause [Bug]: the check wants the run under 1.7 s with each probe delayed 1 s. On an emulated CPU the rest of `status` likely takes more than the 0.7 s left. Not checked.
 	- Actual cause [Bug]: the time limit. On vmDebARM64 `status` alone takes about 0.5 s, so with the 1 s probe it came to about 1.5 s against the 1.7 s limit. Any load on the box pushed it over. `whoami` is a little faster, which is why it passed in the stage 7 run.
 	- Progress log:
-		- Verified: on vmDebARM64 with all eight CPUs kept busy, the old `[ErkSC4L]` and `[ErkSctG]` failed three runs of three. Idle, they passed three of three.
+		- Verified: on vmDebARM64 with all eight CPUs kept busy, the old `[ddg72]` and `[ddg75]` failed three runs of three. Idle, they passed three of three.
 		- Verified: the new checks passed there three of three, idle and busy.
-		- Verified: on b23 and on vmDebARM64, the new `[ErkSC4L]` and `[ErkSctG]` fail on a build that asks ssh only when its line prints. On b23 they also fail on a build that waits for the gh answer before asking ssh, and `[ErkSC4Z]` fails on one that asks gh one login at a time. All three pass on the current build.
+		- Verified: on b23 and on vmDebARM64, the new `[ddg72]` and `[ddg75]` fail on a build that asks ssh only when its line prints. On b23 they also fail on a build that waits for the gh answer before asking ssh, and `[ddg73]` fails on one that asks gh one login at a time. All three pass on the current build.
 		- Verified: the gate (lint and Go tests) and `test-id.bash --check` pass.
 		- Note: the checks were rewritten, not their rule. The probes still have to run together, per 2026100313123988.
 	- Actual fix [Bug]: the fake gh and ssh round trips log when they start and end, and each waits for the others to start before it ends. Asked together they always overlap, and asked in turn the first one ends alone after about 15 s. The checks read that log instead of timing the run.
-	- Swept: every check in test.bash that times a run. `[ErkSC4Z]` (account list) had the same kind of limit and was changed the same way. `[EpsVDIJ]` times a gate waiting on a lock, and only asks for at least 2 s, which a slow box can't break. Left alone: the Go test `[ErkSC48]`, which gives a killed probe 10 s, and the prompt polls in the `br prune` checks, which wait up to 10 s. Neither tests that work ran together.
+	- Swept: every check in test.bash that times a run. `[ddg73]` (account list) had the same kind of limit and was changed the same way. `[dcmbe]` times a gate waiting on a lock, and only asks for at least 2 s, which a slow box can't break. Left alone: the Go test `[ddg71]`, which gives a killed probe 10 s, and the prompt polls in the `br prune` checks, which wait up to 10 s. Neither tests that work ran together.
 	- Branch: probeov
 	- Commit: 773af25
-	- Test case: test.bash `[ErkSC4L]`, `[ErkSctG]`, `[ErkSC4Z]`.
-	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
-	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it. The three probe checks passed there.
+	- Test case: test.bash `[ddg72]`, `[ddg75]`, `[ddg73]`.
+	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[db712]`, from enhancement 8.
+	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[db712]`, from enhancement 8. b26 was skipped, since another session held it. The three probe checks passed there.
 	- Acceptance signoff: Self-closed. The checks failed on a busy box before and pass after, and the twins are covered.
 	- Closed: 20261004-182117
 
@@ -2324,7 +2353,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: an old and a new build run side by side on a scratch repo. The old one fails all three cases, and the new one passes all three. test.bash 1412/0, parity 29/0, `cicd.bash --gate`.
 	- Branch: fullrefs
 	- Commit: a71263d
-	- Test case: [ErlVezf], [ErlVezt], [ErlVf06] and [ErlVf0K] in test.bash.
+	- Test case: [ddgf3], [ddgf4], [ddgf5] and [ddgf6] in test.bash.
 	- Acceptance signoff: Self-closed: the approach was left to the work, and the tests fail before and pass after.
 	- Closed: 20261004-132519
 
@@ -2335,10 +2364,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Priority|Severity [Bug]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: [ErfYFrl] looks for `"darwin/universal"` anywhere in config.bash. The release list has it now as well, so the check still passes if dogfood loses that target.
+	- Incorrect behavior [Bug]: [ddf1b] looks for `"darwin/universal"` anywhere in config.bash. The release list has it now as well, so the check still passes if dogfood loses that target.
 	- Expected behavior [Bug]: The check reads the dogfood target list only.
 	- Reproduced [Bug]: Yes, 2026-10-04. With the entry taken out of `DOGFOOD_TARGETS` only, the old check still passed.
-	- Origin: [ErfYFrl] from item 2026100312571262. The release list gained the entry in item 2026100313491873. Confirmed.
+	- Origin: [ddf1b] from item 2026100312571262. The release list gained the entry in item 2026100313491873. Confirmed.
 	- Estimated effort: Low
 	- Actual cause [Bug]: The check grepped the whole file for the line, and `RELEASE_TARGETS` has the same line.
 	- Actual fix [Bug]: The check sources config.bash and looks in `DOGFOOD_TARGETS` only.
@@ -2347,7 +2376,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: the other config.bash checks in test.bash. Each looks for a setting by its own name, and none reads an entry two lists share.
 	- Branch: oldshcl
 	- Commit: bc18a24
-	- Test case: test.bash `[ErfYFrl]`.
+	- Test case: test.bash `[ddf1b]`.
 	- Verified: test.bash 1408/0, `go test ./...`, fuzz.bash 301/0 and parity 29/0 on merged gover, 2026-10-04.
 	- Acceptance signoff: Self-closed: reproduced, the check failed before and passes after.
 	- Closed: 20261004-114742
@@ -2372,7 +2401,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: Go `TestDefaultBranchBesideSameNamedTag` fails on the gover build with `remotes/origin/main` and `heads/trunkish`, and passes after. The two test.bash checks, run by hand outside the suite, fail before and pass after. `go test -race`, `test-id.bash --check`, shellcheck, and spawn-count with no count up.
 	- Branch: deftag
 	- Commit: b4b0fc1
-	- Test case: test.bash [Erl643s] and [Erl6446]. Go `TestDefaultBranchBesideSameNamedTag` [Erl643f].
+	- Test case: test.bash [ddgby] and [ddgbz]. Go `TestDefaultBranchBesideSameNamedTag` [ddgbx].
 	- Verified: test.bash 1408/0, `go test ./...`, fuzz.bash 301/0 and parity 29/0 on merged gover, 2026-10-04.
 	- Acceptance signoff: Self-closed: reproduced, the tests fail before and pass after.
 	- Closed: 20261004-114742
@@ -2396,11 +2425,11 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: Go `TestReleaseGuardBesideSameNamedTags` fails in all three cases with the old release.go and passes after. `go test -race`, `go vet`, gofmt, `test-id.bash --check` and spawn-count with no count up. A bare `release` on a scratch repo still says "Nothing new" with nothing new, and cuts v1.0.1 with tags `main` and `origin/main` beside new work.
 	- Branch: reltag
 	- Commit: 3517631
-	- Test case: Go `TestReleaseGuardBesideSameNamedTags` [Erl6xej].
+	- Test case: Go `TestReleaseGuardBesideSameNamedTags` [ddgc1].
 	- Closed: 20261004-114318
 	- Acceptance signoff: Self-closed: reproduced, the test fails before the fix and passes after, and the sweep is answered.
 
-- `[Erg9NTS]` counts git's origin/HEAD repair on git before 2.47
+- `[ddf5x]` counts git's origin/HEAD repair on git before 2.47
 	- ID: 2026100409453281
 	- Type: Bug
 	- Status: Done
@@ -2413,7 +2442,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: The check counts the pull's asks only, on any git.
 	- Reproduced [Bug]: Yes, 2026-10-04, in stage 7's run on b26, and by hand with the same fixture. A plain `git fetch` asks once there. With `git remote set-head origin main` run first the count is one.
 	- Possible cause [Bug]: The fixture's clone has no origin/HEAD, since it was cloned before origin had a commit. On git before 2.47 the fetch doesn't write one, so `fetchRemote` repairs it with `git remote set-head --auto`, which asks origin again. That repair is by design. Setting origin/HEAD in the fixture first should fix the check.
-	- Origin: `[Erg9NTS]`, from f61adb6 (2026-10-03, Code Review 20261003 enhancement 3). Never run on a git before 2.47. Confirmed.
+	- Origin: `[ddf5x]`, from f61adb6 (2026-10-03, Code Review 20261003 enhancement 3). Never run on a git before 2.47. Confirmed.
 	- Estimated effort: Low
 	- Actual cause [Bug]: As above. The fixture's clone has no origin/HEAD, and on git before 2.47 gitsby's repair of it asks origin a second time.
 	- Actual effort: Low
@@ -2422,10 +2451,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Verified: on Linux, git 2.51, the old fixture with `followRemoteHEAD` set to never counts two, and the new one counts one.
 		- Verified: stage 7 run alone passes on b26 and vm925w.
 	- Actual fix [Bug]: The fixture sets origin/HEAD on the clone before counting. It also sets `followRemoteHEAD` to never, so newer git leaves the ref alone the way old git does, and the check reads the same on any version. The repair in gitsby is unchanged.
-	- Swept: `[Erg9NTw]` counts on the same clone, so the same line covers it. No other check counts asks of origin.
+	- Swept: `[ddf5z]` counts on the same clone, so the same line covers it. No other check counts asks of origin.
 	- Branch: remfix
 	- Commit: 6842035
-	- Test case: test.bash `[Erg9NTS]`.
+	- Test case: test.bash `[ddf5x]`.
 	- Acceptance signoff: Self-closed: reproduced, and the check fails before and passes after on b26.
 	- Closed: 20261004-103900
 
@@ -2453,7 +2482,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: the other Go tests with a `/`-rooted rule all pass on vm925w. None of them matches a folder against the rule.
 	- Branch: remfix
 	- Commit: 6842035
-	- Test case: `TestConfigLoadBackslashes` `[Eqp3jdh]`.
+	- Test case: `TestConfigLoadBackslashes` `[dd2d9]`.
 	- Acceptance signoff: Self-closed: reproduced, and the test fails before and passes after on vm925w.
 	- Closed: 20261004-103900
 
@@ -2480,7 +2509,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: under a real bash 3.2.57 and 4.3.48 each of the 16 refuses with its line and exit 1, and under 4.4.23 none does. Under 3.2 on `gover` they ran on. The new checks fail 16 of 16 on `gover` and pass here.
 	- Branch: lowfix
 	- Commit: 29af32f
-	- Test case: [ErfyDHs] in test.bash, one per script, runs a copy with the floor raised and expects the refusal and nothing else. [ErfyLds] fails it if the list comes back empty.
+	- Test case: [ddf4h] in test.bash, one per script, runs a copy with the floor raised and expects the refusal and nothing else. [ddf4j] fails it if the list comes back empty.
 	- Acceptance signoff: OK, 2026-10-03, n8git_backup-and-publish included.
 	- Closed: 20261003-163955
 
@@ -2503,7 +2532,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: the three new checks fail on `gover`, where the `touch` ran each time, and pass here with nothing run.
 	- Branch: lowfix
 	- Commit: 8d4cd6c
-	- Test case: [ErfzUGl] and [ErfzUH0] for spawn-report.bash, [ErfzUHF] for spawn-count.bash, in test.bash. The last needs strace, like the other spawn-count checks. [ErgRj8P] and [ErgRj8c] for the patch bump, [ErgRj8q] and [ErgRq9b] for keep-build.bash. All but [ErgRj8q], which checks the plain case, fail against the scripts before.
+	- Test case: [ddf4m] and [ddf4n] for spawn-report.bash, [ddf4p] for spawn-count.bash, in test.bash. The last needs strace, like the other spawn-count checks. [ddf84] and [ddf85] for the patch bump, [ddf86] and [ddf87] for keep-build.bash. All but [ddf86], which checks the plain case, fail against the scripts before.
 	- Acceptance signoff: OK, 2026-10-03.
 	- Closed: 20261003-163955
 
@@ -2549,7 +2578,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: on a copy of this backlog with item 8's Origin row taken out, the gate on `gover` said "0 listed" and passed. Here it names item 8 and exits 1, and on the real backlog it lists 14 open items. The two new checks fail on `gover` and pass here.
 	- Branch: lowfix
 	- Commit: aacb723
-	- Test case: [Erg0LJv] and [Erg0LK9] in test.bash.
+	- Test case: [ddf4q] and [ddf4r] in test.bash.
 	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
 	- Closed: 20261003-145130
 
@@ -2569,13 +2598,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Both a name and labels. The name is what `docker stop` takes, and the tree label tells apart two worktrees' runs.
 		- The pid is in the name, since two runs started in the same second would otherwise clash on it and the second would fail to start.
 	- Branch: round-20261023d
-	- Test case: test.bash `[Eta9hUd]`.
-	- Verified: 2026-10-23, test.bash 1676 -> 1677, 0 failed. With the change taken out, `[Eta9hUd]` fails and the other 1676 pass. A real docker took the name and labels, `docker ps --filter label=gitsby.cicd.run=<start time>` found the container, and `docker stop` by name stopped it. `cicd.bash --gate` and shellcheck pass.
+	- Test case: test.bash `[debj1]`.
+	- Verified: 2026-10-23, test.bash 1676 -> 1677, 0 failed. With the change taken out, `[debj1]` fails and the other 1676 pass. A real docker took the name and labels, `docker ps --filter label=gitsby.cicd.run=<start time>` found the container, and `docker stop` by name stopped it. `cicd.bash --gate` and shellcheck pass.
 	- Swept: cicd.bash has one `docker run`. The other docker calls build, inspect and remove images, and start no container.
 	- Acceptance signoff: Self-closed: its own test passed.
 	- Closed: 20261023-195210
 
-- The workflow YAML check `[EtUDfjj]` skips in the container and on most boxes
+- The workflow YAML check `[dea4c]` skips in the container and on most boxes
 	- ID: 2026102220133673
 	- Type: Enhancement
 	- Status: Done
@@ -2584,20 +2613,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Opened by: jim-collier
 	- Related IDs: 2026102218410000
 	- Requirements [Feature]:
-		- Add PyYAML to `cicd/container/requirements.txt` so `[EtUDfjj]` runs in the container, and name the test ID in its skip line.
+		- Add PyYAML to `cicd/container/requirements.txt` so `[dea4c]` runs in the container, and name the test ID in its skip line.
 	- Progress log:
 		- 2026-10-22: Found by the round's test batch. The check ran only on vmDebARM64 and on b23 outside the container.
-		- 2026-10-23: PyYAML 6.0.3 is in the image's lock, on the system python beside Pillow, and the image build fails if it doesn't import. No known advisory against it. The skip line names `[EtUDfjj]`.
-		- 2026-10-23: `[EtAFLx0]` failed everywhere on the Dockerfile's new lines. It now runs the image's own split patterns over the lock, and the new `[EtXHtxS]` holds PyYAML to the same. Both fail on the old lines and on a mutated Dockerfile, and pass now. test.bash 1667 -> 1668, 0 failed on b23.
+		- 2026-10-23: PyYAML 6.0.3 is in the image's lock, on the system python beside Pillow, and the image build fails if it doesn't import. No known advisory against it. The skip line names `[dea4c]`.
+		- 2026-10-23: `[de5av]` failed everywhere on the Dockerfile's new lines. It now runs the image's own split patterns over the lock, and the new `[deavy]` holds PyYAML to the same. Both fail on the old lines and on a mutated Dockerfile, and pass now. test.bash 1667 -> 1668, 0 failed on b23.
 	- Decisions:
 		- No `VER_PyYAML` and no `TOOL_VERSIONS` entry. Its version changes no result, only whether the check runs, and the lock's hash pins it already.
 		- Not in `PY_AUDIT_DISTS`, which lists what the demo imports. A box without PyYAML would skip all of pip-audit.
-	- Verified: 2026-10-23, the image `gitsby-cicd:e6176a22793a` builds. In it `python3 -I -c 'import yaml'` succeeds, `[EtUDfjj]`'s check passes against the repo mounted read-only and fails on a broken workflow, and pip-audit finds nothing for `pyyaml==6.0.3`.
-	- Verified: 2026-10-23, the round's full run in the container on `gitsby-cicd:e6176a22793a`. `[EtUDfjj]` ran and passed there. test.bash was 1666 of 1667, 7 more than on 10-22: the round's 6 new checks and `[EtUDfjj]`, which skipped there before. pip-audit, fuzz 313/0, parity 29/0, CodeQL and the gif passed too. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261023-07353000/run.log`, and `run2.log` beside it for the later stages.
-	- Verified: 2026-10-23, test.bash in the container on `gitsby-cicd:e6176a22793a`, 1668/0, with `[EtUDfjj]`, `[EtAFLx0]` and `[EtXHtxS]` passing. The macOS workflow, run 39974608816, was 1419/0 on both runners, `[EtAFLx0]` and `[EtXHtxS]` included. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261023-08013000/run.log`.
-	- Test case: `[EtUDfjj]` itself, `[EtXHtxS]` and `[EtAFLx0]` for the image's lines, and the import check in the image build.
+	- Verified: 2026-10-23, the image `gitsby-cicd:e6176a22793a` builds. In it `python3 -I -c 'import yaml'` succeeds, `[dea4c]`'s check passes against the repo mounted read-only and fails on a broken workflow, and pip-audit finds nothing for `pyyaml==6.0.3`.
+	- Verified: 2026-10-23, the round's full run in the container on `gitsby-cicd:e6176a22793a`. `[dea4c]` ran and passed there. test.bash was 1666 of 1667, 7 more than on 10-22: the round's 6 new checks and `[dea4c]`, which skipped there before. pip-audit, fuzz 313/0, parity 29/0, CodeQL and the gif passed too. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261023-07353000/run.log`, and `run2.log` beside it for the later stages.
+	- Verified: 2026-10-23, test.bash in the container on `gitsby-cicd:e6176a22793a`, 1668/0, with `[dea4c]`, `[de5av]` and `[deavy]` passing. The macOS workflow, run 39974608816, was 1419/0 on both runners, `[de5av]` and `[deavy]` included. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261023-08013000/run.log`.
+	- Test case: `[dea4c]` itself, `[deavy]` and `[de5av]` for the image's lines, and the import check in the image build.
 	- Swept: test.bash's other `skip:` lines each stand for a group of checks, and their libraries (Pillow, python3, strace, pwsh) are in the image already.
-	- Acceptance signoff: Self-closed: `[EtUDfjj]` runs in the container now, and the checks on the image fail on the old lines and pass after.
+	- Acceptance signoff: Self-closed: `[dea4c]` runs in the container now, and the checks on the image fail on the old lines and pass after.
 	- Closed: 20261023-081155
 
 - Check the demo's Pillow and fontTools advisories against Debian's fixes
@@ -2626,9 +2655,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 2026-10-19: A `--no-container` run on b23, with Debian's 11.1.0, warns about Pillow's version in the lint stage, as before, and its render matches too. A render that differs where Pillow or gifsicle isn't at its recorded version is now a warning, and the committed gif stays.
 	- Branch: pyadv, pyfix
 	- Commit: 203dca3
-	- Test case: test.bash [EtAFLx0] for the lock's Pillow and no Debian one, [EtAFLxs] for a demo drawn with another Pillow, and pip-audit's [Et9PJsY] and [Et9R5lO]. The image build also stops on a Pillow other than the recorded one.
-	- Verified: pip-audit in the image passes, and finds only fontTools' advisory with no list. The demo renders the same bytes in the new image and on b23. [EtAFLx0] and [EtAFLxs] fail against gover's tree. test.bash 1561 -> 1571, 0 failed, and `cicd.bash --gate` passes.
-	- Note: [Et9PJsY] wanted at least 2 entries on the list, so its pattern takes any number now, with the same ID.
+	- Test case: test.bash [de5av] for the lock's Pillow and no Debian one, [de5aw] for a demo drawn with another Pillow, and pip-audit's [de54e] and [de54k]. The image build also stops on a Pillow other than the recorded one.
+	- Verified: pip-audit in the image passes, and finds only fontTools' advisory with no list. The demo renders the same bytes in the new image and on b23. [de5av] and [de5aw] fail against gover's tree. test.bash 1561 -> 1571, 0 failed, and `cicd.bash --gate` passes.
+	- Note: [de54e] wanted at least 2 entries on the list, so its pattern takes any number now, with the same ID.
 	- Swept: `TOOL_VERSIONS`, the Dockerfile's Pillow check and apt list, the snapshot comment that named Pillow, the lock's header, and contributing.md's demo prerequisite.
 	- Acceptance signoff: Signed off by jim-collier in conversation, 2026-10-19.
 	- Closed: 20261019-094958
@@ -2664,8 +2693,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 2026-10-19: The fontTools regex finding still shows against what the image installs, so it's on `CODEQL_IGNORE` as not reachable.
 	- Branch: pyql, pyfix
 	- Commit: 203dca3
-	- Test case: test.bash [EtAFLsf] for the run, [EtAFLqv] and [EtAFLrn] for the bundle, and [EtAFLtW], [EtAFLuO], [EtAFLvG] and [EtAFLw8] for how a Python report is read. [Et9ZcLy] follows the new OK line and report list.
-	- Verified: A `--leakcheck` run in the image is clean. It took in 437 Python files, our 2 among them, and the fontTools finding is the only security one in third-party code. A planted `py/empty-except` and `py/comparison-of-identical-expressions` in codeql-findings.py failed it, and after a restore by copy it passes. The new checks fail against gover's tree, and [EtAFLw8] and [EtAFLuO] against broken copies of codeql-findings.py. test.bash 1561 -> 1571, 0 failed, and `cicd.bash --gate` passes.
+	- Test case: test.bash [de5ap] for the run, [de5am] and [de5an] for the bundle, and [de5aq], [de5ar], [de5as] and [de5at] for how a Python report is read. [de55e] follows the new OK line and report list.
+	- Verified: A `--leakcheck` run in the image is clean. It took in 437 Python files, our 2 among them, and the fontTools finding is the only security one in third-party code. A planted `py/empty-except` and `py/comparison-of-identical-expressions` in codeql-findings.py failed it, and after a restore by copy it passes. The new checks fail against gover's tree, and [de5at] and [de5ar] against broken copies of codeql-findings.py. test.bash 1561 -> 1571, 0 failed, and `cicd.bash --gate` passes.
 	- Swept: the `--leakcheck` help line and plan line, config.bash's CodeQL comments, the Dockerfile's, codeql-findings.py's header, README and contributing.md.
 	- Acceptance signoff: Signed off by jim-collier in conversation, 2026-10-19.
 	- Closed: 20261019-094958
@@ -2695,7 +2724,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Every release target builds to the same bytes with the pin as without it. A `GOAMD64=v3` in the environment, or in `go env -w`, changes the amd64 bytes of an unpinned build and not of a pinned one.
 	- Swept: `cicd.bash` (native build, `fCrossBuild` for dogfood and stage 7's Mac build, demo build), `release.bash` `fpCrossBuild` (phases 1 and 3), `remote-tests.bash` `fBuildTests`, README's rebuild line. The container image builds no gitsby binary, only tools, and its stages run the cicd.bash sites above. Windows, FreeBSD and the Mac amd64 half get the same pin through those sites.
 	- Branch: oldcpu
-	- Test case: [Et9l12K] in test.bash. It fails with the pin dropped from any one build site or from the README.
+	- Test case: [de56v] in test.bash. It fails with the pin dropped from any one build site or from the README.
 	- Acceptance signoff: Self-closed: the intent was clear, and the pin changes no published bytes.
 	- Closed: 20261019-072414
 
@@ -2718,8 +2747,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- An unstamped build has no build number, so no date either.
 		- The demo is built at a tag's version, so its gif doesn't change.
 	- Branch: round-20261023c
-	- Test case: test.bash `[EtZeZfq]`. Go `[EtZeZfA]`.
-	- Verified: 2026-10-23, `[EtZeZfA]` fails with every version taken as a release, and with the date in UTC. Release.bash reads the build line only from release builds, which have no date.
+	- Test case: test.bash `[debe8]`. Go `[debe5]`.
+	- Verified: 2026-10-23, `[debe5]` fails with every version taken as a release, and with the date in UTC. Release.bash reads the build line only from release builds, which have no date.
 	- Closed: 20261023-180940
 
 - gitsby refuses to run under the name of a tool `raw` runs
@@ -2739,8 +2768,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Decisions:
 		- Every other name still runs. Release files are named like `gitsby-linux-amd64`, and a copy under some other name can't do anything `gitsby` can't.
 	- Branch: round-20261023c
-	- Test case: test.bash `[EtZeZfd]`, a link under each of the 7 names. Go `[EtZeZfP]`.
-	- Verified: 2026-10-23, `[EtZeZfP]` fails 27 ways with the check stubbed out. A bare `gh` through a link answered "Unknown command 'auth'" before.
+	- Test case: test.bash `[debe7]`, a link under each of the 7 names. Go `[debe6]`.
+	- Verified: 2026-10-23, `[debe6]` fails 27 ways with the check stubbed out. A bare `gh` through a link answered "Unknown command 'auth'" before.
 	- Swept: the names come from `rawTools` plus `tea-cli`, the same list `raw` takes. design.md and the changelog updated.
 	- Closed: 20261023-174007
 
@@ -2760,7 +2789,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Note: parity.bash needed no carve-out. It passed 29 of 29.
 	- Branch: docfix
 	- Commit: 2206206
-	- Test case: [ErsJhaE] in test.bash, a plan line and its step line must match for `-m 'two words; here'`, red on `gover` and green here. [ErsJhZM] TestShellWord has a shell read 10 awkward values back unchanged.
+	- Test case: [ddj3g] in test.bash, a plan line and its step line must match for `-m 'two words; here'`, red on `gover` and green here. [ddj3f] TestShellWord has a shell read 10 awkward values back unchanged.
 	- Acceptance signoff: Self-closed 2026-10-06. Tested, and it follows the plan and the README with no open choice left.
 	- Closed: 20261005-172300
 
@@ -2779,7 +2808,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Done: The help lists `--yes`, says `repo connect` takes a URL or `owner/name`, and starts the `account set` and `account unset` lines with their arguments.
 	- Branch: docfix
 	- Commit: 2206206
-	- Test case: [ErsJhb6] in test.bash, help lists `--yes`. Red on `gover`, green here. [ErwbTHe], [ErwbTHr] and [ErwbV0h] check the `repo connect`, `account set` and `account unset` lines, each red against the help before it.
+	- Test case: [ddj3h] in test.bash, help lists `--yes`. Red on `gover`, green here. [ddk4f], [ddk4g] and [ddk4h] check the `repo connect`, `account set` and `account unset` lines, each red against the help before it.
 	- Acceptance signoff: Self-closed 2026-10-06. Tested, and the help now matches the README with no open choice left.
 	- Closed: 20261005-172300
 
@@ -2824,13 +2853,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Done: A branch with no upstream still shows `@{u}`. Its step is skipped, so there is nothing to name.
 	- Done: design.md has the rule, the plan example in style-guide_ui-ux.md shows the name, and parity's mapping of the pull line names it too.
 	- Note: No spawn count changed. The same calls ask for one more field each.
-	- Note: [ElHNo4O] and [Erg9NT0] matched `@{u}` and now match the name. What each checks is unchanged.
+	- Note: [dafrs] and [ddf5v] matched `@{u}` and now match the name. What each checks is unchanged.
 	- Note: A tag named after origin's default branch breaks the default branch read. That was there before this item and is filed as 2026100411344972.
 	- Swept: `grep -n '@{u}' src-go/*.go`. Both runners and every plan line go through `pullArgsFor`. The other `@{u}` uses are reads, such as ahead and behind and the incoming list, not steps the plan shows.
-	- Verified: test.bash 1406/0, parity 29/0, `go test -race`, and `cicd.bash --gate`. On the build before this item, [Erg9NT0], [Erl2Vub], [Erl2Vup] and [Erl2Vv4] fail. [Erl2VvI] passes there too, since the old plan and step both said `@{u}`. With the step handed a different name than the plan, it fails.
+	- Verified: test.bash 1406/0, parity 29/0, `go test -race`, and `cicd.bash --gate`. On the build before this item, [ddf5v], [ddgbf], [ddgbg] and [ddgbh] fail. [ddgbj] passes there too, since the old plan and step both said `@{u}`. With the step handed a different name than the plan, it fails.
 	- Branch: spawncut
 	- Commit: 7979ffb
-	- Test case: test.bash [Erl2Vub], [Erl2Vup], [Erl2Vv4], [Erl2VvI] and [Erl2eIe]. Go `TestPullArgsFor` [ErgA5KD] and `TestUpstreamNames` [Erl1x3E].
+	- Test case: test.bash [ddgbf], [ddgbg], [ddgbh], [ddgbj] and [ddgbk]. Go `TestPullArgsFor` [ddf65] and `TestUpstreamNames` [ddgbe].
 	- Acceptance signoff: Self-closed: the rule was set by hand on 2026-10-03, and the checks fail before and pass after.
 	- Closed: 20261005-072140
 
@@ -2863,9 +2892,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: gotidy
 	- Commit: 0114261, 38cc756, cc2c638, 2da34ed, 9580110
 	- Test case: The existing suites cover it, since nothing should change. Run: the Go tests and spawn-count. Still to run: test.bash, fuzz.bash and parity.bash.
-	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
+	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[db712]`, from enhancement 8.
 	- Verified: fuzz.bash 301/0, parity.bash and the spawn counts all pass on gover 2026-10-04.
-	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[Emq7Y6y]`, from enhancement 8. b26 was skipped, since another session held it.
+	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[db712]`, from enhancement 8. b26 was skipped, since another session held it.
 	- Verified: a full pipeline run on 2026-10-05 passed on every box.
 	- Acceptance signoff: OK, 2026-10-05, after the full run.
 	- Closed: 20261005-071114
@@ -2898,7 +2927,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: test.bash 1406/0, parity 29/0, `go test -race`, `cicd.bash --gate`, spawn-count, and builds for linux, windows and darwin on amd64 and arm64, plus freebsd. Each of the five new Go tests fails on the build before this item and passes after.
 	- Branch: spawncut
 	- Commit: 12752d0
-	- Test case: Go `TestConvertibleAsksGhOnlyForSSH` [Erl3JkJ], `TestEnterRepoSettlesTopLevel` [Erl3JkX], `TestAccountTokenAsksGitConfigOnlyWhenNeeded` [Erl3Jkl], `TestFetchReadsOriginHeadOnce` [Erl3Jkz], and on Linux `TestTerminalWidthAsksTheKernel` [Erl3JlD]. Also the spawn-count limits.
+	- Test case: Go `TestConvertibleAsksGhOnlyForSSH` [ddgbm], `TestEnterRepoSettlesTopLevel` [ddgbn], `TestAccountTokenAsksGitConfigOnlyWhenNeeded` [ddgbp], `TestFetchReadsOriginHeadOnce` [ddgbq], and on Linux `TestTerminalWidthAsksTheKernel` [ddgbr]. Also the spawn-count limits.
 	- Verified: on b26, in a real terminal 40 columns wide, a long line in the `status` list is cut at 40, and at 120 it is not cut. A stand-in `tput` was never run, so the width came from the kernel. 2026-10-04.
 	- Acceptance signoff: Self-closed: the intent was clear, every cut has a test that fails before and passes after, and the Mac width read ran.
 	- Closed: 20261004-115346
@@ -2927,7 +2956,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: test.bash 1406/0, parity 29/0, `go test -race`, `cicd.bash --gate`, and spawn-count. `TestBranchReadsFollowWrites` fails with the fetch's drop taken out, and again with the runners' drop taken out.
 	- Branch: spawncut
 	- Commit: f9716e4
-	- Test case: Go `TestBranchReadsFollowWrites` [Erl1x2z], and the spawn-count limits.
+	- Test case: Go `TestBranchReadsFollowWrites` [ddgbd], and the spawn-count limits.
 	- Acceptance signoff: Self-closed: does what the item asked, and its test fails without the fix.
 	- Closed: 20261004-113600
 
@@ -2972,23 +3001,23 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Done: gfs-rotate.bash adopts the synced copy's printf dates, and its loop variables have real names. One of them can't be `epoch`, since `_gfs_ts` has a local of that name, and its nameref would set that instead.
 	- Done: gh-account.bash has a header, copyright and history.
 	- Done: style-guide.md's Go section takes the directive's rules, and allows an interface for a test seam. Its Bash section has the layout, naming, quoting and output rules, and a list of Bash traps. An error helper is the rule now, not banned.
-	- Swept: a parse of every pipeline script for snake_case and one-underscore names. Only namerefs, the sourced-file guards and the proxy variables are left. test.bash, fuzz.bash, parity.bash, release.bash, the utility scripts, the Go source and the docs were grepped for every renamed name. Three test.bash checks read cicd.bash's names and were changed to match: `[Eo67ohl]`, `[EnQTPxy]` and `[Er1LxTV]`.
-	- Verified: `[ErmXzJR]` fails on gover, listing all 22 scripts, and passes here. The three changed checks fail on gover's cicd.bash and pass here. A file with an unbraced expansion fails shellcheck.
+	- Swept: a parse of every pipeline script for snake_case and one-underscore names. Only namerefs, the sourced-file guards and the proxy variables are left. test.bash, fuzz.bash, parity.bash, release.bash, the utility scripts, the Go source and the docs were grepped for every renamed name. Three test.bash checks read cicd.bash's names and were changed to match: `[dbss8]`, `[dbfta]` and `[dd5fn]`.
+	- Verified: `[ddgq3]` fails on gover, listing all 22 scripts, and passes here. The three changed checks fail on gover's cicd.bash and pass here. A file with an unbraced expansion fails shellcheck.
 	- Verified: shellcheck over every pipeline script, `test-id.bash --check`, `backlog-check.bash` and `cicd.bash --gate` pass. cicd.bash's plan is the same as gover's, with and without `--quick`, and its option errors read and exit as before.
 	- Verified: old and new gfs-rotate.bash agree file for file and line for line over 25 rounds of rotation in five time zones, DST gaps included. The bad-count guard still works, and keep-build.bash still rotates with it.
-	- Test case: test.bash `[ErmXzJR]`, every pipeline script turns on shellcheck's brace rule. Renames have no behavior to test; the suites cover them. `[Emq7Y6y]` covers the guarded removal in gfs-rotate.bash.
-	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[Emq7Y6y]`, from enhancement 8.
+	- Test case: test.bash `[ddgq3]`, every pipeline script turns on shellcheck's brace rule. Renames have no behavior to test; the suites cover them. `[db712]` covers the guarded removal in gfs-rotate.bash.
+	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[db712]`, from enhancement 8.
 	- Verified: fuzz.bash 301/0, parity.bash and the spawn counts all pass on gover 2026-10-04.
-	- Note: failed in the 2026-10-04 test batch, on b23, vmFreeBSD and vmDebARM64. `[Emq7Y6y]` now finds gfs-rotate.bash's `rm -f "${file}"` in its prune loop. The old unbraced `"$file"` slipped past the check's pattern, so bracing it brought an unguarded removal into view rather than adding one. The fix is a guarded path, such as `${file:?}`, in every copy of the shared file. Left for the next round.
+	- Note: failed in the 2026-10-04 test batch, on b23, vmFreeBSD and vmDebARM64. `[db712]` now finds gfs-rotate.bash's `rm -f "${file}"` in its prune loop. The old unbraced `"$file"` slipped past the check's pattern, so bracing it brought an unguarded removal into view rather than adding one. The fix is a guarded path, such as `${file:?}`, in every copy of the shared file. Left for the next round.
 	- Done: gfs-rotate.bash refuses an empty path in its prune, and ends options before it, so a path starting with a dash is not read as a flag. That was its only removal. A history line says so in every copy.
 	- Note: the same change went to every copy listed above, patched in place, and left uncommitted outside this repo. The 17 that matched this repo's copy match it again. shcl, silkterm's `forks/shcl` and nemo-anywhere keep their own edits. The same copies were skipped.
 	- Swept: a grep of gfs-rotate.bash for `rm`, in every copy. The prune is the only one.
-	- Verified: `[Emq7Y6y]` fails on gover for gfs-rotate.bash and passes here. test.bash 1453/0.
+	- Verified: `[db712]` fails on gover for gfs-rotate.bash and passes here. test.bash 1453/0.
 	- Verified: old and new copies agree file for file and line for line over 25 rounds of rotation in five time zones, for this repo's copy and the three patched ones. keep-build.bash still rotates with it. shellcheck passes on every copy.
 	- Verified: `test-id.bash --check`, `backlog-check.bash` and `cicd.bash --gate` pass.
 	- Branch: bashstyle, gfsguard
 	- Commit: bcdf93c, 08a22c5, 1fc2982, 0fa9910
-	- Acceptance signoff: Self-closed: mechanical. The rest was done and verified earlier, and `[Emq7Y6y]` fails before this fix and passes after.
+	- Acceptance signoff: Self-closed: mechanical. The rest was done and verified earlier, and `[db712]` fails before this fix and passes after.
 	- Closed: 20261004-185001
 
 - Rename stage 7 to "Remote tests"
@@ -3001,14 +3030,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Related IDs: 2026100413264100
 	- Requirements  [Feature]:
 		- Stage 7 runs on FreeBSD and Linux arm64 boxes too, so "Mac + Windows tests" no longer fits. It becomes "Remote tests".
-	- Note: `[ErkbDSi]`, `[ErkbDT4]` and `[ErkbDTL]` read the label and change with it. They keep their IDs.
+	- Note: `[ddg83]`, `[ddg84]` and `[ddg85]` read the label and change with it. They keep their IDs.
 	- Progress log:
 		- Done: cicd.bash's usage, plan line, section, skip, failure and OK lines say "Remote tests", and so do config.bash's stage 7 comment and the README's `--quick` line. The failure line said "Mac or Windows tests failed", so it changed too. The plan line keeps its dot column.
-		- Done: `[ErkbDTZ]` and the three checks above follow the new text, with the same IDs.
+		- Done: `[ddg86]` and the three checks above follow the new text, with the same IDs.
 	- Swept: "Mac + Windows", "Mac and Windows" and "Mac or Windows" across the repo, `legacy/` aside. Left alone, since they mean the boxes and not the stage: accounts.md, remote-tests.bash's purpose line, two comments in test.bash, and the dated history footers in cicd.bash and config.bash. The vNEXT changelog doesn't describe stage 7, so it has no entry.
-	- Verified: `[ErkbDSi]`, `[ErkbDT4]` and `[ErkbDTL]` fail against gover's cicd.bash and pass against the new one. `[ErkbDTZ]` checks for the label's absence, so it passes either way.
+	- Verified: `[ddg83]`, `[ddg84]` and `[ddg85]` fail against gover's cicd.bash and pass against the new one. `[ddg86]` checks for the label's absence, so it passes either way.
 	- Verified: test.bash 1453/0, shellcheck, `test-id.bash --check`, `backlog-check.bash` and `cicd.bash --gate`.
-	- Test case: test.bash `[ErkbDSi]`, `[ErkbDT4]`, `[ErkbDTL]` and `[ErkbDTZ]`.
+	- Test case: test.bash `[ddg83]`, `[ddg84]`, `[ddg85]` and `[ddg86]`.
 	- Acceptance signoff: Self-closed: rename.
 	- Closed: 20261004-185642
 	- Branch: remote-tests-label
@@ -3030,17 +3059,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 2026-10-22: First real run, against gitlab.gnome.org as t00mietum (glab 1.53.0, token now in place). `raw glab api user` works and answers as t00mietum, so the account and token reach glab.
 		- 2026-10-22: `gitsby pr` in a GNOME clone runs `tea-cli pulls list`, not glab, and fails. `pr` has no glab path.
 		- 2026-10-22: `raw glab mr list` and `raw glab repo view` in a GNOME clone fail with "none of the git remotes ... point to a known GitLab host". The remote is `ssh.gitlab.gnome.org`, the API host is `gitlab.gnome.org`, and glab matches them by name. `-R t00mietum/gtk` works when `GITLAB_HOST` is set. gitsby sets `GITLAB_HOST` with an `https://` prefix.
-		- 2026-10-22: `raw glab auth status` outside a repo sent the GNOME token to gitlab.com, which answered 401. glab applies `GITLAB_TOKEN` to every host it knows. Fixed on branch glabtoken: gitsby adds `--hostname <account host>` unless one is given. Test.bash `[EtRsYMX]`, Go `[EtRsVxf]`. Inside a GNOME clone no token is passed at all, because the remote is `ssh.gitlab.gnome.org` and the account's host is `gitlab.gnome.org`.
+		- 2026-10-22: `raw glab auth status` outside a repo sent the GNOME token to gitlab.com, which answered 401. glab applies `GITLAB_TOKEN` to every host it knows. Fixed on branch glabtoken: gitsby adds `--hostname <account host>` unless one is given. Test.bash `[de9jb]`, Go `[de9ja]`. Inside a GNOME clone no token is passed at all, because the remote is `ssh.gitlab.gnome.org` and the account's host is `gitlab.gnome.org`.
 		- 2026-10-22: gitsby warns the token file is readable by other users.
-		- 2026-10-22: Fixed on branch glabtoken: a remote on `ssh.<host>` now counts as `<host>` for the account's token and credential helper (`serviceHost` in account.go). Test.bash `[EtRzPaH]`, Go `[EtRzPK4]`. Checked for real: `raw glab mr list -R GNOME/gtk` in a GNOME clone lists the open merge requests as t00mietum.
+		- 2026-10-22: Fixed on branch glabtoken: a remote on `ssh.<host>` now counts as `<host>` for the account's token and credential helper (`serviceHost` in account.go). Test.bash `[de9k7]`, Go `[de9k6]`. Checked for real: `raw glab mr list -R GNOME/gtk` in a GNOME clone lists the open merge requests as t00mietum.
 		- 2026-10-22: `raw glab repo view` with no `-R` still fails in a GNOME clone. glab matches the remote's host (`ssh.gitlab.gnome.org`) to `GITLAB_HOST` itself. Still open, along with `pr`.
-		- 2026-10-22: `pr` runs glab on a GitLab host, with the repo passed by `-R` (197677f). Test.bash `[EtTo1Qf]` to `[EtTo1xK]`, Go `[EtTo2FR]`.
-		- 2026-10-22: Fixed: when origin is on the account host's `ssh.` name, `raw glab` sets `GITLAB_HOST` to origin's host and `GITLAB_API_HOST` to the account's, glab's own setting for a git host apart from its API. `pr` is left as it was, since `-R` already works there. test.bash `[EtRzPaH]` reworded with the same ID: the token still goes, and the account's host now reaches glab as the API host.
+		- 2026-10-22: `pr` runs glab on a GitLab host, with the repo passed by `-R` (197677f). Test.bash `[dea15]` to `[dea1a]`, Go `[dea1b]`.
+		- 2026-10-22: Fixed: when origin is on the account host's `ssh.` name, `raw glab` sets `GITLAB_HOST` to origin's host and `GITLAB_API_HOST` to the account's, glab's own setting for a git host apart from its API. `pr` is left as it was, since `-R` already works there. test.bash `[de9k7]` reworded with the same ID: the token still goes, and the account's host now reaches glab as the API host.
 		- 2026-10-22: `raw glab auth status` still fails, inside a repo or out: glab checks only hosts in its own config file, and refuses one that only `GITLAB_HOST` and `GITLAB_TOKEN` name. glab's own behavior, still on its main branch. gitsby can't fix it without writing glab's config. Upstream draft: `private/claude_simple/upstream/2026102209210000/`.
 		- 2026-10-23: The upstream draft won't be filed.
 	- Verified: 2026-10-22, in the GNOME gtk clone as t00mietum, read-only: `raw glab repo view -b main`, `raw glab mr list` and `raw glab issue list` with no `-R`, `raw glab mr list -R GNOME/gtk`, `raw glab api user`, `gitsby -NoFetch pr` and `gitsby -NoFetch pr 10551`. A plain `raw glab repo view` there finds GNOME/gtk, then fails on its README, since it asks for the checked-out branch, which is only on the fork. That is glab's, and happens with any branch origin lacks.
-	- Verified: 2026-10-22, test.bash 1659/0, 1658 -> 1659, with `[EtU8Fno]` failing on a build without the new call, and nothing else failing. Go `[EtU8FXc]` fails with `glabRemoteHost` stubbed out.
-	- Test case: test.bash `[EtU8Fno]` and Go `[EtU8FXc]` for the ssh host, plus the ones named above.
+	- Verified: 2026-10-22, test.bash 1659/0, 1658 -> 1659, with `[dea3p]` failing on a build without the new call, and nothing else failing. Go `[dea3n]` fails with `glabRemoteHost` stubbed out.
+	- Test case: test.bash `[dea3p]` and Go `[dea3n]` for the ssh host, plus the ones named above.
 	- Swept: `hostTokenEnv` has 3 callers. `raw glab` gets the new step. `pr` passes `-R`. `raw tea` was not changed: tea finds its login from the remote too, but no Gitea host seen so far puts ssh on `ssh.<host>`. Not checked against a real tea.
 	- Acceptance signoff: Won't test. The write path (`pr create`, `pr ok`) on a GitLab repo was left untested by choice, 2026-10-23.
 	- Closed: 20261023-064239
@@ -3065,11 +3094,11 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Both CPUs, since the free tier has both. Actions are pinned by commit with the tag beside it, and Go comes from go.mod.
 		- A push of a round branch doesn't run it. A PR from one does.
 	- Verified: 2026-10-22, the workflow lints clean. The build, `go test` and smoke steps pass as written on Linux, and the smoke step fails when it expects the wrong branch.
-	- Verified: 2026-10-22, test.bash 1661/0, 1659 -> 1661. `[EtUDegV]` fails on a tag pin, a fixed `go-version`, or no workflow at all. `[EtUDfjj]` fails on broken YAML or a workflow with no jobs.
-	- Verified: 2026-10-22, in the full run, `[EtUDegV]` passed in the container and on b26, vmFreeBSD and vmDebARM64. `[EtUDfjj]` passed on vmDebARM64 and in test.bash on b23 off the container, 1661/0. The container, b26 and vmFreeBSD skip it, since they have no PyYAML. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261022-19253166/run.log`.
-	- Test case: test.bash `[EtUDegV]` and `[EtUDfjj]` for the workflow files. The workflow itself is the test on the Macs.
+	- Verified: 2026-10-22, test.bash 1661/0, 1659 -> 1661. `[dea4b]` fails on a tag pin, a fixed `go-version`, or no workflow at all. `[dea4c]` fails on broken YAML or a workflow with no jobs.
+	- Verified: 2026-10-22, in the full run, `[dea4b]` passed in the container and on b26, vmFreeBSD and vmDebARM64. `[dea4c]` passed on vmDebARM64 and in test.bash on b23 off the container, 1661/0. The container, b26 and vmFreeBSD skip it, since they have no PyYAML. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261022-19253166/run.log`.
+	- Test case: test.bash `[dea4b]` and `[dea4c]` for the workflow files. The workflow itself is the test on the Macs.
 	- Branch: round-20261023
-	- Verified: 2026-10-22, GitHub run 39895628537 on gover (`fix-macos-find` merge): `macos-15-intel` and `macos-latest` both completed with success, about 11 minutes each, test.bash and the smoke step included. The run before it, 39893939993, failed both on `[Et9R5lo]` alone (1411 passed, 1 failed), which is item 2026102220274491.
+	- Verified: 2026-10-22, GitHub run 39895628537 on gover (`fix-macos-find` merge): `macos-15-intel` and `macos-latest` both completed with success, about 11 minutes each, test.bash and the smoke step included. The run before it, 39893939993, failed both on `[de54n]` alone (1411 passed, 1 failed), which is item 2026102220274491.
 	- Acceptance signoff: Passed its own test on both runners, no open choice.
 	- Closed: 20261022-203900
 
@@ -3183,7 +3212,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Note: The live shcl module has neither.
 	- Decided against: fixing them. shcl's 2.x line is frozen, and only the tests run this writer, to make old-format files.
 	- Branch: pyfix
-	- Test case: none new. Each entry fails the run once CodeQL stops reporting it, [Et9aIdy].
+	- Test case: none new. Each entry fails the run once CodeQL stops reporting it, [de55s].
 	- Acceptance signoff: Signed off by jim-collier in conversation, 2026-10-19.
 	- Closed: 20261019-094958
 
@@ -3218,7 +3247,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Fixed: the line names the scope git reports for the key, so a fragment included from the global config reads "your global git config". It starts with "The", which keeps the key's own spelling.
 	- Swept: `acct.source` has two other readers, the `account` header and a refusal. Both put it mid-sentence, where "the ... key" reads the same.
 	- Verified: the check fails on `gover` and passes here.
-	- Test: [ErCKnBz] in test.bash, on the repo that gets the key only through the fragment.
+	- Test: [dd80c] in test.bash, on the repo that gets the key only through the fragment.
 
 - ✅ `account apply` writes `credential.https://github.com.username` from `ghAccount` for every account. An account with `host` set gets no username for its own host, so plain git there can push as whatever the credential manager holds. With both `ghAccount` and `user` set, the fragment names the first while gitsby's own runs use the second.
 	- Closed: 20260928-131013
@@ -3226,7 +3255,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: `writeAccountFragment`, read only. `selectAccount` already keys its helper on the account's host and login. Plausible.
 	- Fixed: the fragment keys the username on the account's host and gives the login gitsby's own runs use: `user`, else `ghAccount` on GitHub. `accountHost` shares the host rule.
 	- Verified: all three checks fail on `gover` and pass here. Confirmed by the same run.
-	- Test: [ErCL5PB], [ErCL5PR] and [ErCL5Pg] in test.bash: the other host gets its `user`, github.com gets nothing for it, and `user` wins over `ghAccount`.
+	- Test: [dd80d], [dd80e] and [dd80f] in test.bash: the other host gets its `user`, github.com gets nothing for it, and `user` wins over `ghAccount`.
 
 - ✅ A folder rule of `/` matches no folder, silently. The match looks for the rule plus `/`, which is `//`. `account apply` would write `gitdir/i://` for it too.
 	- Closed: 20260928-131013
@@ -3236,16 +3265,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: the two other prefix tests on a folder. The managed-includes scan now shares the matcher's test. The stale-rule warning keeps a root's slash, so a drive root is not read as a relative rule. `pathContains` drops slashes before matching, so a rule of `/` there is empty and ignored, as before.
 	- Note: the test.bash header said a `/` rule covers nothing. That line went, since it described this bug.
 	- Verified: all four fail on `gover` and pass here.
-	- Test: `TestAccountForDirRootRule` and `TestAccountApplyPlanRootRule` in Go, plus [ErCLUFY] and [ErCLUFu] in test.bash, where plain git reads the rule `account apply` wrote.
+	- Test: `TestAccountForDirRootRule` and `TestAccountApplyPlanRootRule` in Go, plus [dd80j] and [dd80k] in test.bash, where plain git reads the rule `account apply` wrote.
 
 - ✅ In `install.bash`, end of input at a terminal prompt exits 1 with no `Aborted.` and no closing blank line. The failing `read` ends the script under `set -e` before the answer is looked at. It is still a no, by accident.
 	- Closed: 20260928-131013
 	- Opened: 20260926-154915
 	- Origin: seen while adding the installer checks. Confirmed: `script -qec "bash install.bash" /dev/null </dev/null` with the stub curl on PATH.
 	- Fixed: a failed read leaves the answer empty, which is a no.
-	- Swept: install.ps1 already said "Aborted." here, pinned by [Er1LxSf]. The installer has no other `read`.
+	- Swept: install.ps1 already said "Aborted." here, pinned by [dd5e1]. The installer has no other `read`.
 	- Verified: the check fails on `gover` and passes here.
-	- Test: [ErCLcN9] in test.bash, on the same run as "go installer takes end of input at the prompt as a no".
+	- Test: [dd80m] in test.bash, on the same run as "go installer takes end of input at the prompt as a no".
 
 - ✅ `cicd/release.bash` is committed as mode 100644, though its Syntax line says to run it as `cicd/release.bash [VERSION]`. That gives "Permission denied".
 	- Closed: 20260928-131013
@@ -3253,7 +3282,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: seen while adding the dry-run checks. Confirmed.
 	- Fixed: committed as 100755. `demo-repo.bash` and `install.ps1` had the same mode and a shebang, and are executable now too.
 	- Verified: the check listed all three before and passes after.
-	- Test: [ErCM5cg] in test.bash reads every script's committed mode from `git ls-files -s`, leaving out `legacy/` and the files that are only sourced.
+	- Test: [dd80s] in test.bash reads every script's committed mode from `git ls-files -s`, leaving out `legacy/` and the files that are only sourced.
 
 - ✅ `release.bash --dry-run` still prints "tagged and pushed" and "Released v1.2.4" at the end, for steps it only announced.
 	- Closed: 20260928-131013
@@ -3261,7 +3290,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: seen while adding the dry-run checks. Confirmed.
 	- Fixed: under `--dry-run` phase 2 closes with "dry run, v1.2.4 not tagged" and the run with "Dry run done: v1.2.4 was not released".
 	- Verified: all three fail on `gover` and pass here.
-	- Test: [Er1LxSz] and [Er1LxT5] look for the dry-run wording now, and [ErCMBqv] fails on "tagged and pushed" or "Released v1.2.4".
+	- Test: [dd5en] and [dd5ev] look for the dry-run wording now, and [dd80t] fails on "tagged and pushed" or "Released v1.2.4".
 
 - ✅ `install.bash` checks a tag read from the release redirect for its characters only, so `..` segments pass. A typed `--tag` gets the path check as well. Low exposure, since curl collapses dot segments before it reports the URL.
 	- Closed: 20260928-131013
@@ -3271,7 +3300,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Fixed: the typed and the resolved tag go through one path check.
 	- Swept: install.ps1 had the same gap and fetched `download/../SHA256SUMS` on 5.1, which hands the header back as text. On 7 the header is a `[uri]`, which collapses the `..` first. Fixed the same way.
 	- Verified: all four fail on `gover` and pass here.
-	- Test: [ErCLuem] and [ErCLuf1] in test.bash for install.bash, and [ErCLufF] and [ErCLufT] for install.ps1.
+	- Test: [dd80n] and [dd80p] in test.bash for install.bash, and [dd80q] and [dd80r] for install.ps1.
 
 - ✅ Two test.bash checks on the frozen `install.ps1`, "iex form reaches the plan" and "and refuses without a tty", ask the live GitHub API for the latest release. Several suite runs inside an hour use up the anonymous rate limit, and both go red. The suite's header says it never touches the network.
 	- Closed: 20260926-202618
@@ -3290,7 +3319,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Fixed: moved to the shcl 3.0 beta from its `dev` branch (1f88009), pinned by commit until it is tagged. A backslash outside double quotes is itself. The import moved to `yottacore` with it.
 	- Every file reads by the 3.0 rules, including one written under 2.x. A path rule the old module wrote doubled (`~\\dev`) still names its folder, since a rule reads either slash. Only a pre-release build ever wrote this layout, so there is no migration step.
 	- Verified: 1 new check in test.bash, 1028 -> 1029, and `TestConfigLoadBackslashes`. Both fail on `gover`. Go tests pass on vm925w, 143/0.
-	- Test: [Eqp3jdg] in test.bash, and `TestConfigLoadBackslashes` [Eqp3jdh] in Go.
+	- Test: [dd2d8] in test.bash, and `TestConfigLoadBackslashes` [dd2d9] in Go.
 
 - ✅ The demo gif runs about two minutes, against a budget of twenty to thirty seconds.
 	- Closed: 20260916-140754
@@ -3301,7 +3330,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Note: the old target predates showing the confirmation. design.md now puts it at about fifty seconds.
 	- Verified: 3 new checks, 1013 -> 1016, each watched red against the code before this.
 	- Origin: 1a5a1a3, the first demo, looped in 18.4 s. 12d7d2d took it to 67 s, 7ed0e23 to 84 s and 30af5c5 to 122 s. The directives have asked for twenty to thirty seconds since at least 2026-08-22. Confirmed.
-	- Test: [Eq4UJbk], [Eq4UJbl] and [Eq4UJbm] in test.bash, for the answered confirmation. [EtrJ3N0] holds the committed gif under a minute, added 2026-10-26 and failing on the gif before the fix.
+	- Test: [dcq6v], [dcq6w] and [dcq6x] in test.bash, for the answered confirmation. [defp0] holds the committed gif under a minute, added 2026-10-26 and failing on the gif before the fix.
 
 - ✅ The backlog gate says nothing is listed, whatever the backlog holds.
 	- Closed: 20260916-075518
@@ -3312,7 +3341,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: 2319e09, the commit that added the gate. Confirmed.
 	- Fixed: the pattern carries a real tab, and closed items are left out of the count.
 	- Verified: 0 before and 12 after, against the same backlog. shellcheck clean.
-	- Test: [EtrIUYR] in test.bash, added 2026-10-26: two open review items out of four, one in each format. It fails on the script before the fix, and with the count's tab pattern put back.
+	- Test: [defny] in test.bash, added 2026-10-26: two open review items out of four, one in each format. It fails on the script before the fix, and with the count's tab pattern put back.
 
 - ✅ A `core.sshCommand` holding a quote is dropped from every fetch gitsby runs.
 	- Closed: 20260915-124019
@@ -3325,7 +3354,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Fixed: a quoted ssh command is left for git to run as is, so the fetch uses the repo's key and goes without the connect timeout. Adding the timeout would mean re-shelling the value. Recorded in design.md.
 	- Sweep: `remoteEnv` is the only place gitsby exports an ssh command for git. The account's `sshkey` can't carry a quote, and a caller's own `GIT_SSH_COMMAND` was already left alone.
 	- Verified: `TestRemoteEnvLeavesAQuotedSSHCommandToGit` fails on `gover`. With the quoted command above, `status` now fetches with `-i /k y/key`.
-	- Test: `TestRemoteEnvLeavesAQuotedSSHCommandToGit` [EpyGORs] in Go.
+	- Test: `TestRemoteEnvLeavesAQuotedSSHCommandToGit` [dcnpy] in Go.
 
 - ✅ A failing `py_compile` passes lint stage 1, and the pre-push gate with it.
 	- Closed: 20260915-121200
@@ -3337,7 +3366,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Fixed: a failed compile stops lint with `FAILED: py_compile`. The cache goes to a temporary folder that is removed after, so nothing is written beside the file.
 	- Sweep: no other lint check sits at the head of an `&&` list.
 	- Verified: 1 new check in test.bash, the gate failing when `python3` does, which fails on `gover`. 950 -> 953 with item 6's two. A real lint run leaves the tree's own cache untouched.
-	- Test: [EpsVDHv] in test.bash, on its `python3` pass, and [Er1LxTT] for the cache folder.
+	- Test: [dcmap] in test.bash, on its `python3` pass, and [dd5fk] for the cache folder.
 
 - ✅ A folder rule with `*`, `?` or `[` in it binds repos in plain git that gitsby never matches.
 	- Closed: 20260915-120313
@@ -3350,7 +3379,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Sweep: `account apply` is the only place a rule goes to git. An include written by an earlier apply is still recognized as ours and replaced, since that match is on the fragment path.
 	- Decided against: a warning for a glob character in a rule. A `path` like `~/d*` already shows as a folder that can never match, and the `account set` help says `pathcontains` is a run of folder names.
 	- Verified: 4 new checks in test.bash, all failing on `gover`, for `path` and `pathcontains`. Each binds the folder with `[` in its name and not its twin without. `TestAccountApplyPlanEscapesGlobs` fails on `gover`. On vm925w the escaped rules bind the same folders in plain git, and the Go tests pass.
-	- Test: [Epy6SgS] to [Epy6SgV] in test.bash, and `TestAccountApplyPlanEscapesGlobs` [Epy6Sgb] in Go.
+	- Test: [dcnnq] to [dcnnt] in test.bash, and `TestAccountApplyPlanEscapesGlobs` [dcnp0] in Go.
 
 - ✅ A relative `tokenfile` or `sshkey` is read from whatever folder a command runs in.
 	- Closed: 20260915-120313
@@ -3361,7 +3390,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Fixed: both keys are held to the same absolute-or-`~` test as `path`. A relative one is listed as ignored, reads no token and writes no key. `account set` writes a relative value as the file it names from where it runs. A relative `gitsby.ghTokenFile` in git config reads no token.
 	- Sweep: `account set` now checks a key for shell characters after resolving it, since the folder it was typed in can hold a space. No other stored value names a file.
 	- Verified: 5 new checks in test.bash, all failing on `gover`, 941 -> 950 with the four above. `TestConfigIgnoresARelativeKeyFile` fails on `gover`. The same results on vm925w. fuzz.bash 301/0, parity.bash 27/0.
-	- Test: [Epy6SgW] to [Epy6Sga] in test.bash, and `TestConfigIgnoresARelativeKeyFile` [Epy6Sgc] in Go.
+	- Test: [dcnnv] to [dcnnz] in test.bash, and `TestConfigIgnoresARelativeKeyFile` [dcnp1] in Go.
 
 - ✅ The Go unit tests fail on Windows.
 	- Closed: 20260915-113307
@@ -3373,7 +3402,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Sweep: on Windows the accounts file never showed as `~`. The home folder and APPDATA are spelled with backslashes, and the file name goes on with `/`. Confirmed, and fixed here: either slash and any case count there now.
 	- Fixed: each fixture is spelled the way the platform running it writes that path, and every assertion checks what it did before. `TestCanonPath` also covers the MSYS drive fold.
 	- Verified: all 131 Go tests pass on vm925w, the lock tests and the lease-delete quoting tests included. The two new Windows cases in `TestDisplayPath` fail against `gover`.
-	- Test: the Go tests on the Windows box in stage 7, and `TestCanonPath` [EnQKNsM] for the drive fold. `TestDisplayPath`, with the two Windows cases, went with `displayPath` in 0ad1374, when paths stopped folding to `~`.
+	- Test: the Go tests on the Windows box in stage 7, and `TestCanonPath` [dbfr5] for the drive fold. `TestDisplayPath`, with the two Windows cases, went with `displayPath` in 0ad1374, when paths stopped folding to `~`.
 
 - ✅ On Windows, `account apply` refuses to run when the accounts file is named with backslashes.
 	- Closed: 20260915-113307
@@ -3386,7 +3415,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Sweep: a `--config` named with no folder failed the same way on every platform, as `wl.shcl/accounts`. A relative include would be wrong anyway, since git reads one from its own config's folder. Confirmed on Linux, and fixed here. `account set` finds the file's folder the same way now.
 	- Fixed: the fragments go in the absolute folder holding the accounts file, however the file was named. Apply's two refusals name that folder the way the platform writes it.
 	- Verified: 2 new checks in test.bash, both failing on `gover`, 939 -> 941. `TestIncludeDir` fails on `gover` on Linux and on Windows. On vm925w, apply with the file named in backslashes writes the fragment, and plain git then uses the account's email in the rule's folder. parity.bash 27/0.
-	- Test: [EpxzLzs] and [EpxzLzt] in test.bash, and `TestIncludeDir` [EpxzLzu] in Go.
+	- Test: [dcnmt] and [dcnmv] in test.bash, and `TestIncludeDir` [dcnmw] in Go.
 
 - ✅ `br prune` says to run it again for origin's copies it left alone, and the second run can't see them.
 	- Closed: 20260915-111338
@@ -3400,7 +3429,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Keep: offline, prune still deletes the local branch and holds origin's copy.
 	- Verified: 5 new checks in test.bash, all failing on `gover`. The first prune's count check now expects one local delete fewer.
 	- Verified on Windows, 20260915: in pwsh 7.6 and Windows PowerShell 5.1, each printed delete reaches git as the words it names, for branch names holding quotes, `$`, `;`, `&`, parentheses, backticks, `%`, braces and dots.
-	- Test: [EpxuX5c], [EpxuX5d], [EpxuX5n], [EpxuX5o] and [EpxuX5p] in test.bash, with [EptMdz1] as changed.
+	- Test: [dcnm7], [dcnm8], [dcnmj], [dcnmk] and [dcnmm] in test.bash, with [dcmhb] as changed.
 
 - ✅ A tag on origin with a branch's name stops every remote delete in `br prune`.
 	- Closed: 20260915-111338
@@ -3413,7 +3442,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Sweep: once the tag is fetched, git lists the branch here as `heads/amb`, so prune tried to delete a branch that doesn't exist. Prune's listings and the default-branch lookup now read the name whole. `br merge`'s delete names the full ref too.
 	- Fixed: every remote delete names `refs/heads/<branch>`.
 	- Verified: 3 new checks in test.bash. Two fail on `gover`; the kept tag is a regression guard.
-	- Test: [EpxuX5e], [EpxuX5f] and [EpxuX5g] in test.bash.
+	- Test: [dcnm9], [dcnma] and [dcnmb] in test.bash.
 
 - ✅ `br merge` merges a tag that has the branch's name, instead of the branch.
 	- Closed: 20260915-111338
@@ -3425,7 +3454,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Sweep: `release` merges `dev`, fast-forwards `dev` and checks ancestry by short name, and the hotfix back-merge merges `main` or `origin/main` the same way. All now name full refs. Checkouts stay as they are.
 	- Fixed: `br merge`, `release` and the back-merge name the full ref of what they merge.
 	- Verified: 2 new checks in test.bash, both failing on `gover`.
-	- Test: [EpxuX5h] and [EpxuX5i] in test.bash.
+	- Test: [dcnmc] and [dcnmd] in test.bash.
 
 - ✅ `br merge --no-fetch` deletes its branch on origin after someone else pushed to it.
 	- Closed: 20260915-111338
@@ -3437,7 +3466,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: `cmdMerge` since 86ca0b1 (go branch commands). No earlier round saw it. Confirmed.
 	- Fixed: `br merge` asks origin before deleting its copy, and leases the delete on the tip it merged. A copy holding commits the merge doesn't have is left alone, and the warning names the `br switch` and `br merge` that bring them in. A copy already gone is reported as gone.
 	- Verified: 4 new checks in test.bash. Three fail on `gover`, including following the advice; the merge's push is a regression guard. Across the four items test.bash went 925 -> 939, with parity.bash 27/0 and the Go tests green. Linux only.
-	- Test: [EpxuX5j] to [EpxuX5m] in test.bash, and `TestLeaseDeleteLine` [EpxuX5r] in Go.
+	- Test: [dcnme] to [dcnmh] in test.bash, and `TestLeaseDeleteLine` [dcnmp] in Go.
 
 - ✅ Two `account set` runs at once on one accounts file keep only one of the two keys.
 	- Closed: 20260915-104204
@@ -3451,7 +3480,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Sweep: `account set` is the only writer of the accounts file, and the flat-file conversion saves through the same path. `account apply` writes its fragments whole, but two runs write the same text from one file, and its includeIf edits go through git, which locks its own config.
 	- Fixed: `account set` takes a lock beside the accounts file, reads the file again, and refuses if it changed since the plan read it. A create holds the same lock. A lock that stays put is waited on for three seconds, then refused by name, with the command that removes it.
 	- Verified: 3 new checks in test.bash, 922 -> 925. With the re-read taken out, two runs at once lost a key in 10 of 10 tries and both new Go tests on it fail. Go tests green, parity.bash 27/0. Linux only so far.
-	- Test: [EpxmDk0], [EpxmDk1] and [EpxmDk2] in test.bash, and `TestAccountSetKeepsBothOfTwoEditsAtOnce` [EpxmDk3] and `TestAccountSetRefusesAFileThatChanged` [EpxmDk4] in Go.
+	- Test: [dcnk6], [dcnk7] and [dcnk8] in test.bash, and `TestAccountSetKeepsBothOfTwoEditsAtOnce` [dcnk9] and `TestAccountSetRefusesAFileThatChanged` [dcnka] in Go.
 
 - ✅ A Gitea remote's identity line says tea has no login for the host when tea failed to answer.
 	- Closed: 20260914-191247
@@ -3465,7 +3494,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Sweep: `forgeCLIWho`, which the identity check reads, already takes both as unknown, and the two `pulls list` reads in `pr` check whether tea ran. The Git host line also compared its "unknown" text with the ssh key's account, so a write with no tea login printed a NOT-the-key warning. Fixed here.
 	- Fixed: the Git host line says tea couldn't be asked and repeats tea's reason when tea fails, and keeps "has no login for this host" for a tea that answered. Only a login tea named is compared with the ssh key's account.
 	- Verified: 3 new checks in test.bash, 912 -> 915. Two fail on `gover`, and the no-login check is a regression guard. `TestShowForgeLine` fails on `gover` for the no-login row. Go tests green, parity.bash 27/0. Linux only.
-	- Test: [Epu08TQ], [Epu08TR] and [Epu08TS] in test.bash, and `TestShowHostLine` [Eq2wii5] in Go, named `TestShowForgeLine` at the time.
+	- Test: [dcmp5], [dcmp6] and [dcmp7] in test.bash, and `TestShowHostLine` [dcpv4] in Go, named `TestShowForgeLine` at the time.
 
 - ✅ With `XDG_CONFIG_HOME` set, `account set` creates a new accounts file that hides one in a `~/.config/gitsby` folder it can't search.
 	- Closed: 20260914-192150
@@ -3478,7 +3507,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Sweep: reads, the create check and the refusal after a lost race all look a place up through one probe, so all three changed together. A link whose target can't be looked up read as a link to nothing, and now reads as unknown too.
 	- Fixed: a place an accounts file can live that can't be looked in no longer counts as empty. `account set` refuses to create while one is there. It names the file and the reason, and gives `chmod u+x` when the folder the file sits in is the one that can't be searched. Reads still pass over it.
 	- Verified: 5 new checks in test.bash. On `gover` the create went ahead and wrote the new file in `XDG_CONFIG_HOME`, and the new Go tests fail there. The link case fails with its half of the fix taken out. The Windows, macOS and FreeBSD builds compile. Linux only.
-	- Test: [Epu2PTM] to [Epu2PTQ] in test.bash, and `TestAccountSetRefusesAPlaceItCantLookIn` [Epu2PTT] and `TestLookupFix` [Epu2PTV] in Go.
+	- Test: [dcmpe] to [dcmpj] in test.bash, and `TestAccountSetRefusesAPlaceItCantLookIn` [dcmpn] and `TestLookupFix` [dcmpq] in Go.
 
 - ✅ `account set` crashes when the accounts file opens but its read fails.
 	- Closed: 20260914-192150
@@ -3491,7 +3520,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Sweep: the SSH line also checks the key file ssh names by opening it. That is display only, and ssh reports its own failure, so it stays. A token file is read in full, and a failed read already counts as no token.
 	- Fixed: a file counts as readable only once it reads to the end, and the loader records it only after the read. A named file that fails to read is refused like one that won't open. A found one is passed over by reads and refused by `account set` as a file it can't read.
 	- Verified: 2 new checks in test.bash, and with the 5 above, 915 -> 922. On `gover` the named case panics and the found one is taken up, and the new Go test fails there. Go tests green, parity.bash 27/0. Linux only, since the case needs `/proc/self/mem`.
-	- Test: [Epu2PTR] and [Epu2PTS] in test.bash, and `TestConfigThatFailsToRead` [Epu2PTU] in Go.
+	- Test: [dcmpk] and [dcmpm] in test.bash, and `TestConfigThatFailsToRead` [dcmpp] in Go.
 
 - ✅ Code review 20260909 - the pass against the standing directives. Every defect is closed, and the enhancements are under Done too.
 	- Opened: 20260909-184419
@@ -3747,7 +3776,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Closed: 20260822-113804
 	- `strconv.Atoi` answers overflow with the clamped maximum, not zero, so the bump wrapped it negative. Found by the new fuzz targets on their first full pipeline pass; crasher committed as a regression seed.
 	- Fixed: an unreadable patch number starts the count over at zero, as the comment beside it already claimed.
-	- Test: `FuzzNextVersion` [EndU98M] in Go, which replays the committed seed `6f637a04714948cb` on every `go test`.
+	- Test: `FuzzNextVersion` [dbjws] in Go, which replays the committed seed `6f637a04714948cb` on every `go test`.
 
 - ✅ `account set`'s syntax block hung its indent off the `gitsby:` prefix, which is on one line only.
 	- Opened: n/a
@@ -3756,7 +3785,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Fixed: it nests two spaces at a time. The written line is under `Syntax:`, the placeholders under that, `Examples:` alongside them and the commands one deeper.
 	- Second example added, for picking an account by a run of folder names rather than an absolute path - the case a person with one employer folder full of repos actually has.
 	- That example spells `pathContains` with a plain `my-employer/github`, not a glob: the matcher takes a run of folder names, so a `*` in the example would teach a pattern language that isn't there and a rule that never fires.
-	- Test: `TestAccountSetUsageNests` [Er1LxTm] in Go, and [EncX1Q8] in test.bash for the example that is not a glob.
+	- Test: `TestAccountSetUsageNests` [dd5g6] in Go, and [dbjnc] in test.bash for the example that is not a glob.
 
 - ✅ `account set`'s syntax line named three placeholders and defined none of them.
 	- Opened: 20260821-132716
@@ -3765,7 +3794,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- The only person who ever reads it is the one who just typed the command wrong, and it left them to work out what an account is, which keys exist, and what a value looks like.
 	- Fixed: a block. It names the line that gets written - `account.<account>.<key> = <value>` - then defines each placeholder, and lists all ten keys off the same constant the unknown-key refusal reads.
 	- The example is now two commands on one account name, a folder and a login, since that repetition is what `<account>` means.
-	- Test: [EncI7No], [EncI7Np] and [EncI7Nq] in test.bash.
+	- Test: [dbjkh], [dbjkj] and [dbjkk] in test.bash.
 
 - ✅ `account list`'s header raised more questions than it answered.
 	- Opened: n/a
@@ -3776,7 +3805,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Fixed: `Here` is now `Current dir`, `Resolves to` is now `Account` - the label `status` already puts on the same answer - and an unconfigured folder gets `(nothing configured)`, full stop.
 	- An account that resolves but names no login no longer asserts `gh` either: it names whichever tool serves that account's own host, and names none where there is none.
 	- `status` and `whoami` said `Directory` for that same value, so they moved to `Current dir` too - one label, one constant, shared by all four places that print it.
-	- Test: [Enc14vo] to [Enc14vr], [Enc2nqq] and [Enc2nqr] in test.bash.
+	- Test: [dbjhe] to [dbjhh], [dbjhm] and [dbjhn] in test.bash.
 
 - ✅ On Windows, `account list` printed the same directory two ways on the one screen.
 	- Opened: n/a
@@ -3785,7 +3814,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- The folder rules are held in the form paths are matched in - lower case, forward slashes - and that form was going straight to the display. Same disk, same tree, two spellings.
 	- Fixed: every path printed anywhere is spelled the platform's way, which on Windows means backslashes and an upper-case drive letter. The internal form is untouched, so nothing about matching changed.
 	- Covers the config file, `Here`, the folder rules, the machine-free `anywhere` rules, the ssh key, and a token file. No effect off Windows.
-	- Test: `TestWindowsPath` [EnbeoL3] in Go. Only Windows shows it, so the suite has no check of its own.
+	- Test: `TestWindowsPath` [dbjep] in Go. Only Windows shows it, so the suite has no check of its own.
 
 - ✅ The Account line explained an account it could not apply in a single run-on clause nobody could act on.
 	- Opened: 20260820-160751
@@ -3797,7 +3826,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- "(no login named)" is gone from both the status line and `account list`; an account that names no login is now named by its own name, which is the thing you have to go and edit.
 	- Second pass: `(from config 'work')` is gone from the applied line too. It named neither the file nor which config, and there are two of those in play - `gitsby.ghAccount` is a git config key and the account blocks are not. Every account now gets `From:` (the variable, the git config key, or the account block) and `File:` (the accounts file), on their own lines under the answer.
 	- Displayed config paths fold a leading home directory back to `~`, so the file reads as somebody would type it rather than filling the line.
-	- Test: [EnX7v96], [EnX7v97], [EnX7v98], [EnXCRqK] and [EnXe9aK] to [EnXe9aO] in test.bash.
+	- Test: [dbhbs], [dbhbt], [dbhbv], [dbhcb] and [dbhfs] to [dbhfx] in test.bash.
 
 - ✅ The account display never learned about `host` and `user`, so a Gitea account was reported as a GitHub one that had nothing set.
 	- Opened: 20260820-132706
@@ -3805,7 +3834,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Found on the first real Gitea repo: `status` named "(no GitHub account named)" and said the account was on github.com, which nothing in the config had said.
 	- Four places read `ghAccount` alone. The status line and `account list` both named only the GitHub field; the "no token" case was keyed on it too, so a correctly declared Gitea account with no token said nothing at all and read as applied.
 	- Fixed: all four ask the account's login on the account's own host. An unstated host is now reported as unstated and names the key that fixes it, and `account list` shows the host, marked `(default)` where the file never said.
-	- Test: [EnWSLMW] to [EnWSLMe] in test.bash, and `TestAccountListNamesTheHost` [EnWSLMf] and `TestAccountListHidesTheHostWithOneGitHost` [Eq2wii0] in Go.
+	- Test: [dbh6m] to [dbh6w] in test.bash, and `TestAccountListNamesTheHost` [dbh6x] and `TestAccountListHidesTheHostWithOneGitHost` [dcptz] in Go.
 
 - ✅ `repo clone` resolves its account from the folder you are standing in, not the one it is cloning into.
 	- Opened: 20260819-092526
@@ -3814,7 +3843,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Three ways in, all now closed: the folder rules read the current directory, `gitsby.ghAccount` was read off the surrounding repo, and the owner of that repo's origin stood in when nothing else answered.
 	- Fixed: the destination folder decides. The surrounding repo's git config is not asked (a destination has no config yet, and an includeIf on gitdir cannot answer for a repo that does not exist), and no owner is guessed - with no rule for the destination, gh stays on its own account.
 	- Noticed while making clone accept the `owner/name` shorthand; left alone there because it changes which credentials a clone uses, not just what it accepts.
-	- Test: [EnPebrM] to [EnPebrS] in test.bash.
+	- Test: [dbfj9] to [dbfjf] in test.bash.
 
 - ✅ Accounts and arguments, 20260812.
 	- Opened: 20260812-150636
@@ -5040,7 +5069,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Done: two product bugs the new vectors caught, fixed in the same branch. 'repo clone' now passes '--' before the derived directory, so a URL tail like '--upload-pack=...' can't reach git as an option. origin/HEAD is no longer counted as a branch, so 'br switch HEAD' refuses up front instead of committing and pushing the working tree to park it and then failing.
 	- Decided against: deleting any existing vector. With no shell in the path most are inert, but each still guards against a regression to a shell-out, so none was removed and backlog-check needs no deletion entry. Also against duplicating the native Go fuzz targets, which already cover the pure parsers.
 	- Note: a config value with a newline in it is quoted safely in the file and never injects, but `account` prints it across lines. Filed as its own item, 2026100607545812.
-	- Test case: new checks [Ervo5NU] clone-dir argument injection, [Ervo5NW] 'br switch HEAD' leaves the repo untouched, [Ervo5Nd] shell-bearing sshkey never reaches ssh, [Ervo5NY] apply escapes folder-rule globs, [Ervo5Nb] apply drops a shell-bearing host or user, [Ervo5Ng] junk GIT_CONFIG_COUNT refused - all in fuzz.bash.
+	- Test case: new checks [ddjyb] clone-dir argument injection, [ddjyc] 'br switch HEAD' leaves the repo untouched, [ddjyf] shell-bearing sshkey never reaches ssh, [ddjyd] apply escapes folder-rule globs, [ddjye] apply drops a shell-bearing host or user, [ddjyg] junk GIT_CONFIG_COUNT refused - all in fuzz.bash.
 	- Swept: the git/gh call sites that take a user-controlled leading argument - clone dir, refs into checkout/switch, sshkey and host/user into the credential helper key and the includeIf fragments, and GIT_CONFIG_COUNT. The helper reads its username from the environment, so nothing is interpolated into the shell string git runs.
 	- Verified: fuzz.bash 311/0, test.bash 1491/0, parity.bash 29/0 on the branch. Each new check was watched red by breaking the Go code it guards. `go test ./...` and the gate pass.
 	- Note: the 2 product fixes are filed as their own items, 2026100607545802 and 2026100607545807.
@@ -5050,7 +5079,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Opened: 20260928-132933
 	- Closed: 20260928-132933
 	- Done: the plan's "Clone into" line and the "Cloned into" status showed the folder as typed, or as worked out from the URL, relative. Both print it in full now, per the path rule in the UI style guide. The git command keeps the typed form.
-	- Test: [ErCS7c0] and [ErCS7cF] in test.bash.
+	- Test: [dd81f] and [dd81g] in test.bash.
 	- Verified: both fail against `gover`.
 
 - ✅ Code review 20260909 - enhancements from the same pass.
@@ -5062,7 +5091,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Closed: 20260928-144045
 		- Done: `account unset <account> <key>` removes every line of the key from every block of that name, and the plan lists each one. A key nothing reads can go where the block has one. A key or account that isn't there is nothing to do, exit 0. A value after the key is refused, since it would read as removing only that one.
 		- Note: it never needed the shcl 3.0 move. The pinned module already had `Remove`, and it keeps lines on save.
-		- Test: [ErCjvos] to [ErCkAkZ] in test.bash, and `TestAccountUnset*` and `TestSortCommandAccountUnset` in Go.
+		- Test: [dd83p] to [dd83v] in test.bash, and `TestAccountUnset*` and `TestSortCommandAccountUnset` in Go.
 		- Verified: five of the six suite checks fail against `gover`. "The rest of the file is as typed" is a regression guard.
 		- Swept: every site that names `account-set` by command name, in main.go, mutate.go, preview.go and show.go, takes `account-unset` too.
 
@@ -5070,14 +5099,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Origin: new. Confirmed.
 		- Closed: 20260928-132933
 		- Done: they work at any position after the command, as `--help` does. A value after `-m` is still a message, and `-v` still counts only as the first word, so it cannot turn a mutating command into a no-op.
-		- Test: [ErCP1Qd], [ErCP1Qu], [ErCP1R9] and [ErCP1RM] in test.bash, and `TestParseArgsInfoFromAnyPosition` in Go.
+		- Test: [dd80x], [dd80y], [dd80z] and [dd810] in test.bash, and `TestParseArgsInfoFromAnyPosition` in Go.
 		- Verified: the three that print fail against `gover`. "And the command does nothing" is a regression guard, since `gover` refused the option.
 
 	- ✅ Code Review 20260909 enhancement 4: two of the six README badges are shields the repo grants itself and assert nothing outside the README. The language badge names no version.
 		- Origin: new.
 		- Closed: 20260928-132933
 		- Done: "Lifecycle: Stable" went, and "Support: Maintained" became a last-commit badge. The Go badge reads the version from `src-go/go.mod`. It errors on `main` until the Go build is released there, which is when this README reaches `main`.
-		- Test: [ErCP9Yz] in test.bash. It fails on the old README.
+		- Test: [dd812] in test.bash. It fails on the old README.
 
 	- ✅ Code Review 20260909 enhancement 5: three things the README leaves out.
 		- The build number, which every command prints and which comes from the commit rather than the clock.
@@ -5105,14 +5134,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Origin: the 2026-09-07 directives.
 		- Closed: 20260928-132933
 		- Done: the Go tools are found where `go install` puts them, as gen-winres finds goversioninfo. On b23 goversioninfo is under GOPATH and not on PATH, so its version was never compared. `TOOL_VERSIONS` records shellcheck, markdownlint, PSScriptAnalyzer, gifsicle, Pillow and strace, compared and warned about the same way.
-		- Test: [ErCQOcE] and [ErCQVGY] in test.bash. [Er1LxTR] now matches the wider warning.
+		- Test: [dd813] and [dd814] in test.bash. [dd5fh] now matches the wider warning.
 		- Verified: both fail against `gover`.
 
 	- ✅ Code Review 20260909 enhancement 9: the release's final build compiles the working tree rather than a checkout of the tag. The two match in the ordinary case, and the comment above it claims the stronger thing.
 		- Origin: new. Plausible: read.
 		- Closed: 20260928-132933
 		- Done: phase 3 exports the tag with `git archive` and builds that. The temp folders now go on any exit.
-		- Test: [ErCQl7V] in test.bash pins it in the source, since no dry run reaches phase 3.
+		- Test: [dd815] in test.bash pins it in the source, since no dry run reaches phase 3.
 
 	- ✅ Code Review 20260909 enhancement 10: smaller points in the installers.
 		- No writability check for a user-scope install, so it fails after the download the way the system scope does.
@@ -5126,7 +5155,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Closed: 20260928-132933
 		- Done: both installers check a user install can write its folder before the plan. The Bash one checks sudo exists before promising it. The PowerShell one installs 755, and its plan names the folder it creates and the leftovers it clears. The README shows `bash -s --` with a flag.
 		- Decided against: a real tie-break between pre-releases. The newer-listed one wins a tie, and release.bash publishes in order, so both sorter comments now say that instead.
-		- Test: [ErCRQbq], [ErCRQc5], [ErCRQcM], [ErCRQcb], [ErCRQcr], [ErCRQd6] and [ErCRQdL] in test.bash, plus [ErCRFkF] for the tie.
+		- Test: [dd817], [dd818], [dd819], [dd81a], [dd81b], [dd81c] and [dd81d] in test.bash, plus [dd816] for the tie.
 		- Verified: all but the tie check fail against `gover`. That one is a regression guard.
 
 	- ✅ Code Review 20260909 enhancement 11: preallocate the slices whose size is already known, about fourteen of them. The style guide could also use a Go performance section, and its package-variable rule needs widening: five variables that Go cannot express as constants currently read as standing violations.
@@ -5139,7 +5168,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Origin: the 2026-09-07 directives.
 		- Closed: 20260928-132933
 		- Done: `.gitignore` covers OS files, editor swap files and folders, and go test output.
-		- Test: [ErCRneY] in test.bash, which also fails if the repo tracks anything ignored.
+		- Test: [dd81e] in test.bash, which also fails if the repo tracks anything ignored.
 
 - ✅ The Go unit tests print a line per test, with its test ID.
 	- Opened: 20260927-112000

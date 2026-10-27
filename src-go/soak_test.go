@@ -35,7 +35,7 @@ type soakReading struct {
 	goroutines int
 }
 
-func TestSoak(t *testing.T) { // [Et9PJqo]
+func TestSoak(t *testing.T) { // [de546]
 	rounds, err := strconv.Atoi(os.Getenv("GITSBY_SOAK_ROUNDS"))
 	if err != nil || rounds < 1 {
 		t.Skip("set GITSBY_SOAK_ROUNDS to run it")

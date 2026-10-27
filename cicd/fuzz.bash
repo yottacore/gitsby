@@ -194,42 +194,42 @@ GHEOF
 	## Command slot: garbage first tokens are refused, never crash.
 	local repo="${base}/cmd"; fMakeRepo "${repo}"
 	local c
-	for c in "${badCommands[@]}"; do fRefuse "[EkzQ7gG] command refused: '${c}'" "${repo}" -q "${c}"; done
+	for c in "${badCommands[@]}"; do fRefuse "[dabe3] command refused: '${c}'" "${repo}" -q "${c}"; done
 
 	## Subcommand slot: garbage after a valid noun is refused the same way, and never reaches git.
 	local sub
 	for sub in "${badSubcommands[@]}"; do
-		fRefuse "[El9QuEa] br subcommand refused: '${sub}'"   "${repo}" -q br   "${sub}"
-		fRefuse "[El9QuEb] repo subcommand refused: '${sub}'" "${repo}" -q repo "${sub}"
+		fRefuse "[dadv5] br subcommand refused: '${sub}'"   "${repo}" -q br   "${sub}"
+		fRefuse "[dadv6] repo subcommand refused: '${sub}'" "${repo}" -q repo "${sub}"
 	done
 
 	## Options: unknown ones refused in either slot; valid combos accepted.
 	local o
 	for o in "${badOptions[@]}"; do
-		fRefuse "[EkzQ7gH] option refused (slot 1): '${o}'" "${repo}" -q "${o}" status
-		fRefuse "[EkzQ7gI] option refused (slot 2): '${o}'" "${repo}" -q status "${o}"
+		fRefuse "[dabe4] option refused (slot 1): '${o}'" "${repo}" -q "${o}" status
+		fRefuse "[dabe5] option refused (slot 2): '${o}'" "${repo}" -q status "${o}"
 	done
 	## -NoFetch is the spelling both ports take; bash also lowercases '--no-fetch', pwsh rejects it.
-	fAccept "[EkzQ7gJ] valid combo -q -y status"          "${repo}" -q -y status
-	fAccept "[EkzQ7gK] valid combo -q -NoFetch status"    "${repo}" -q -NoFetch status
-	fAccept "[EkzQ7gL] valid combo -y -q br list"         "${repo}" -y -q br list
-	[[ "$1" == "bash" ]] && fAccept "[EkzQ7gM] valid combo -q --no-fetch status"  "${repo}" -q --no-fetch status
+	fAccept "[dabe6] valid combo -q -y status"          "${repo}" -q -y status
+	fAccept "[dabe7] valid combo -q -NoFetch status"    "${repo}" -q -NoFetch status
+	fAccept "[dabe8] valid combo -y -q br list"         "${repo}" -y -q br list
+	[[ "$1" == "bash" ]] && fAccept "[dabe9] valid combo -q --no-fetch status"  "${repo}" -q --no-fetch status
 
 	## Branch names: injection + malformed refs are refused before any action.
 	local b
 	for b in "${badBranch[@]}"; do
-		fRefuse "[EkzQ7gN] br create refuses: '${b}'" "${repo}" -q br create "${b}"
-		fRefuse "[EkzQ7gO] br switch refuses: '${b}'" "${repo}" -q br switch "${b}"
+		fRefuse "[dabea] br create refuses: '${b}'" "${repo}" -q br create "${b}"
+		fRefuse "[dabeb] br switch refuses: '${b}'" "${repo}" -q br switch "${b}"
 	done
 
 	## br prune takes no argument at all, so that slot is a refusal - and an injection
 	## vector parked there must die at the parser, well before anything is deleted.
 	local p
 	for p in "${inject[@]}"; do
-		fRefuse "[El9kLkW] br prune refuses an argument: '${p}'" "${repo}" -q br prune "${p}"
+		fRefuse "[dadxj] br prune refuses an argument: '${p}'" "${repo}" -q br prune "${p}"
 	done
-	fRefuse "[El9kLkX] br prune refuses a branch name"     "${repo}" -q br prune main
-	fRefuse "[El9kLkY] internal br-prune token refused"    "${repo}" -q br-prune
+	fRefuse "[dadxk] br prune refuses a branch name"     "${repo}" -q br prune main
+	fRefuse "[dadxm] internal br-prune token refused"    "${repo}" -q br-prune
 
 	## Commit messages: anything goes in a message, but it stays inert data. Each
 	## needs a real change to reach 'git commit'; unique content guarantees one.
@@ -238,19 +238,19 @@ GHEOF
 	local -i i=0 m
 	for m in "${!inject[@]}"; do
 		echo "change ${i}" > "${repo2}/seed.txt"; i=$((i + 1))
-		fSurvive "[EkzQ7gP] commit message inert: '${inject[m]}'" "${repo2}" -q update "${inject[m]}"
+		fSurvive "[dabec] commit message inert: '${inject[m]}'" "${repo2}" -q update "${inject[m]}"
 	done
 	## ...and a bare-glob message must land verbatim, not expand to filenames. The
 	## repo has files, so '*' and '*.txt' would glob if the message weren't literal.
 	local gm
-	for gm in '*' '*.txt' '?' 'v*'; do fMsgLiteral "[EkzUx6m] commit message verbatim: '${gm}'" "${repo2}" "${gm}"; done
+	for gm in '*' '*.txt' '?' 'v*'; do fMsgLiteral "[dabep] commit message verbatim: '${gm}'" "${repo2}" "${gm}"; done
 
 	## Versions and PR numbers: malformed values refused (release fetches first,
 	## which is local here; pr rejects before any network).
 	local repo3="${base}/ver"; fMakeRepo "${repo3}"
 	local v p
-	for v in "${badVersion[@]}"; do fRefuse "[EkzQ7gQ] release refuses version: '${v}'" "${repo3}" -q release "${v}"; done
-	for p in "${badPr[@]}";      do fRefuse "[EkzQ7gR] pr refuses: '${p}'"              "${repo3}" -q pr "${p}"; done
+	for v in "${badVersion[@]}"; do fRefuse "[dabed] release refuses version: '${v}'" "${repo3}" -q release "${v}"; done
+	for p in "${badPr[@]}";      do fRefuse "[dabee] pr refuses: '${p}'"              "${repo3}" -q pr "${p}"; done
 
 	## PR titles: free text like a commit message, and it must reach gh as data, not code.
 	## Needs a branch that isn't the merge target, which is what 'pr create' proposes from.
@@ -258,24 +258,24 @@ GHEOF
 	( cd "${repo4}" && git checkout --quiet -b dev && git push --quiet -u origin dev \
 		&& git checkout --quiet -b feat && echo f > f.txt && git add --all && git commit --quiet -m feat )
 	local t
-	for t in "${inject[@]}"; do fSurvive "[El9Ej20] pr title inert: '${t}'" "${repo4}" -q pr create "${t}"; done
+	for t in "${inject[@]}"; do fSurvive "[dadsm] pr title inert: '${t}'" "${repo4}" -q pr create "${t}"; done
 	## Reading what gh received needs the stub to actually run, which on Windows the PowerShell
 	## build can't do - a shebang file is not something it can start, and the .cmd sibling that
 	## would fix it re-parses these very arguments. Say so rather than pass on a stub that no-oped.
 	if [[ "$1" == "bash" ]] || ((! isWindows)); then
-		for t in '*' '*.txt' '?' 'v*'; do fTitleLiteral "[El9Ej21] pr title verbatim: '${t}'" "${repo4}" "${t}"; done
+		for t in '*' '*.txt' '?' 'v*'; do fTitleLiteral "[dadsn] pr title verbatim: '${t}'" "${repo4}" "${t}"; done
 	else
 		fEcho_Clean "  skipped: pr title verbatim (pwsh on Windows can't run the gh stub)"
 	fi
 	## Proposing from the merge target is nonsense whatever the title says.
 	( cd "${repo4}" && git checkout --quiet dev )
-	fRefuse "[El9Ej22] pr create refuses from the merge target" "${repo4}" -q pr create 'anything'
+	fRefuse "[dadsp] pr create refuses from the merge target" "${repo4}" -q pr create 'anything'
 	( cd "${repo4}" && git checkout --quiet feat )
 
 	## Clone url and directory are user values that reach native git. A junk url is refused
 	## (none of these is cloneable); a glob-shaped directory has to stay literal.
 	local u
-	for u in "${inject[@]}"; do fRefuse "[El9QuEc] clone url refused: '${u}'" "${repo3}" -q repo clone "${u}"; done
+	for u in "${inject[@]}"; do fRefuse "[dadv7] clone url refused: '${u}'" "${repo3}" -q repo clone "${u}"; done
 	local cloneDir
 	local -a cloneDirs=( '*' '?' 'v*' 'a b' )
 	## Win32 forbids '*' and '?' in a path, so native git can't create such a work tree at all
@@ -286,23 +286,23 @@ GHEOF
 		cloneDirs=( 'a b' )
 		fEcho_Clean "  skipped: clone dir verbatim '*' '?' 'v*' (Win32 forbids those characters in a path)"
 	fi
-	for cloneDir in "${cloneDirs[@]}"; do fDirLiteral "[El9QuEd] clone dir verbatim: '${cloneDir}'" "${repo3}" "${repo3}.git" "${cloneDir}"; done
+	for cloneDir in "${cloneDirs[@]}"; do fDirLiteral "[dadv8] clone dir verbatim: '${cloneDir}'" "${repo3}" "${repo3}.git" "${cloneDir}"; done
 
 	## Long and odd input: must not crash. Branch is refused, message accepted.
 	local long; long="$(printf 'x%.0s' {1..5000})"
-	fRefuse  "[EkzQ7gS] long branch refused"  "${repo3}" -q br create "${long}"
+	fRefuse  "[dabef] long branch refused"  "${repo3}" -q br create "${long}"
 	echo odd > "${repo2}/seed.txt"
-	fSurvive "[EkzQ7gT] long message survives" "${repo2}" -q update "${long}"
+	fSurvive "[dabeg] long message survives" "${repo2}" -q update "${long}"
 	echo odd2 > "${repo2}/seed.txt"
-	fSurvive "[EkzQ7gU] unicode/emoji message" "${repo2}" -q update $'café \u{1F600} ‮ rtl'
+	fSurvive "[dabeh] unicode/emoji message" "${repo2}" -q update $'café \u{1F600} ‮ rtl'
 
 	## The new argument slots. 'raw' fronts a fixed few tools, so anything else in that position is
 	## refused rather than run - the one place a wrong answer would execute an arbitrary program.
 	local rawTool
 	for rawTool in "${badCommands[@]}" "${inject[@]}" 'rm' 'sh' 'GIT' 'TEA' 'gitui'; do
-		fRefuse "[EmMuR5U] raw tool refused: '${rawTool}'" "${repo3}" -q raw "${rawTool}" --version
+		fRefuse "[db000] raw tool refused: '${rawTool}'" "${repo3}" -q raw "${rawTool}" --version
 	done
-	fRefuse "[EmMuR5V] raw with no tool refused" "${repo3}" -q raw
+	fRefuse "[db001] raw with no tool refused" "${repo3}" -q raw
 	## Deliberately NOT fuzzed: the arguments after 'git' or 'gh'. Reaching the tool verbatim is
 	## the whole contract, so an injection vector there is gitsby doing its job, and the canary
 	## would fire on a pass. What is checked above is that nothing but git and gh can be reached.
@@ -310,28 +310,28 @@ GHEOF
 	## repo url takes one of two words and nothing else.
 	local urlArg
 	for urlArg in "${badSubcommands[@]}" "${inject[@]}" 'HTTPS ' 'https extra'; do
-		fRefuse "[EmMuR5W] repo url arg refused: '${urlArg}'" "${repo3}" -q repo url "${urlArg}"
+		fRefuse "[db002] repo url arg refused: '${urlArg}'" "${repo3}" -q repo url "${urlArg}"
 	done
 
 	## account has two subcommands, and neither takes an argument.
 	local acctSub
 	for acctSub in "${badSubcommands[@]}" "${inject[@]}"; do
-		fRefuse "[EmMuR5X] account subcommand refused: '${acctSub}'" "${repo3}" -q account "${acctSub}"
+		fRefuse "[db003] account subcommand refused: '${acctSub}'" "${repo3}" -q account "${acctSub}"
 	done
-	fRefuse "[EmMuR5Y] account list takes no argument"  "${repo3}" -q account list junk
-	fRefuse "[EmMuR5Z] account apply takes no argument" "${repo3}" -q account apply junk
+	fRefuse "[db004] account list takes no argument"  "${repo3}" -q account list junk
+	fRefuse "[db005] account apply takes no argument" "${repo3}" -q account apply junk
 
 	## --config names a file. One that isn't there is refused; the value never reaches a shell.
 	local cfg
 	for cfg in "${inject[@]}" '/nonexistent/gitsby.shcl' ''; do
-		fRefuse "[EmMuR5a] bad --config refused: '${cfg}'" "${repo3}" -q --config "${cfg}" status
+		fRefuse "[db006] bad --config refused: '${cfg}'" "${repo3}" -q --config "${cfg}" status
 	done
 
 	## GITSBY_ACCOUNT reaches 'gh auth token --user' as a value. It must stay inert there, and an
 	## account nobody holds a token for is simply not selected - never an error, never a canary.
 	local acct
 	for acct in "${inject[@]}" '-x' '--user root'; do
-		GITSBY_ACCOUNT="${acct}" fSurvive "[EmMuR5b] GITSBY_ACCOUNT inert: '${acct}'" "${repo2}" -q --no-fetch status
+		GITSBY_ACCOUNT="${acct}" fSurvive "[db007] GITSBY_ACCOUNT inert: '${acct}'" "${repo2}" -q --no-fetch status
 	done
 	unset GITSBY_ACCOUNT
 
@@ -340,8 +340,8 @@ GHEOF
 	local pathCfg="${work}/path-fuzz.shcl" pathVal
 	for pathVal in "${inject[@]}" '.' '..' './x' 'dev/work' '~' '~nobody/x' 'C:work' '\work'; do
 		{ printf 'account.f.path = %s\n' "${pathVal}"; printf 'account.f.ghAccount = fuzzacct\n'; } > "${pathCfg}"
-		fSurvive "[Ept2CIC] path inert: '${pathVal}'" "${repo2}" -q --no-fetch --config "${pathCfg}" status
-		fSurvive "[Ept2CID] path inert in account: '${pathVal}'" "${repo2}" -q --no-fetch --config "${pathCfg}" account
+		fSurvive "[dcmep] path inert: '${pathVal}'" "${repo2}" -q --no-fetch --config "${pathCfg}" status
+		fSurvive "[dcmeq] path inert in account: '${pathVal}'" "${repo2}" -q --no-fetch --config "${pathCfg}" account
 	done
 
 	## 'pathContains' is a config VALUE that reaches a native command twice over: it is compared
@@ -351,8 +351,8 @@ GHEOF
 	local segCfg="${work}/seg-fuzz.shcl" seg
 	for seg in "${inject[@]}" '../..' '/' '**' '.'; do
 		{ printf 'account.f.pathContains = %s\n' "${seg}"; printf 'account.f.ghAccount = fuzzacct\n'; } > "${segCfg}"
-		fSurvive "[EmmNC1Q] pathContains inert: '${seg}'" "${repo2}" -q --no-fetch --config "${segCfg}" status
-		fSurvive "[EmmNC1R] pathContains inert in account: '${seg}'" "${repo2}" -q --no-fetch --config "${segCfg}" account
+		fSurvive "[db63z] pathContains inert: '${seg}'" "${repo2}" -q --no-fetch --config "${segCfg}" status
+		fSurvive "[db640] pathContains inert in account: '${seg}'" "${repo2}" -q --no-fetch --config "${segCfg}" account
 	done
 
 	## No-mutate: a refused command leaves HEAD and branch exactly as they were.
@@ -362,9 +362,9 @@ GHEOF
 	fRun "${repo}" -q br create 'bad:name'   ## refused
 	if [[ "$(cd "${repo}" && git rev-parse HEAD)" == "${headBefore}" \
 		&& "$(cd "${repo}" && git branch --show-current)" == "${branchBefore}" ]]; then
-		fOk "[EkzQ7gV] refused command left the repo unchanged"
+		fOk "[dabej] refused command left the repo unchanged"
 	else
-		fFail "[EkzQ7gV] refused command mutated the repo"
+		fFail "[dabej] refused command mutated the repo"
 	fi
 }
 
@@ -422,8 +422,8 @@ fCredentialHelperVectors(){
 		GIT_CONFIG_COUNT="${badCount}" fRun "${ch}/proj" -q -NoFetch --config "${ch}/v.shcl" raw git credential fill
 		why=""
 		if fIsCrash; then why="crashed (exit ${__runCode})"; elif ((__runCode == 0)); then why="accepted"; fi
-		if [[ -z "${why}" ]]; then fOk "[Ervo5Ng] junk GIT_CONFIG_COUNT refused: '${badCount}'"
-		else fFail "[Ervo5Ng] junk GIT_CONFIG_COUNT '${badCount}': ${why}"; fi
+		if [[ -z "${why}" ]]; then fOk "[ddjyg] junk GIT_CONFIG_COUNT refused: '${badCount}'"
+		else fFail "[ddjyg] junk GIT_CONFIG_COUNT '${badCount}': ${why}"; fi
 	done
 
 	## The helper git holds must carry no login text at all - the name is read from the
@@ -432,9 +432,9 @@ fCredentialHelperVectors(){
 	helper="$( cd "${ch}/proj" && "${gitsby}" -q -NoFetch --config "${ch}/v.shcl" raw git config --get credential.https://github.com.helper 2>/dev/null )"
 	# shellcheck disable=SC2016  ## matching the literal variable reference, not its value
 	if [[ "${helper}" == *'${GITSBY_HOST_USER}'* && "${helper}" != *touch* ]]; then
-		fOk "[EnSFBNI] the credential helper reads its username from the environment"
+		fOk "[dbg6e] the credential helper reads its username from the environment"
 	else
-		fFail "[EnSFBNI] the credential helper carries interpolated text: ${helper}"
+		fFail "[dbg6e] the credential helper carries interpolated text: ${helper}"
 	fi
 }
 fCredentialHelperVectors
@@ -463,8 +463,8 @@ fCloneArgInjection(){
 	local why=""
 	if fIsCrash; then why="crashed (exit ${__runCode})"
 	elif [[ -e "${dir}/CANARY-clonearg" ]]; then why="it reached git as an option"; fi
-	if [[ -z "${why}" ]]; then fOk "[Ervo5NU] a derived clone directory cannot reach git as an option"
-	else fFail "[Ervo5NU] derived clone directory: ${why}"; fi
+	if [[ -z "${why}" ]]; then fOk "[ddjyb] a derived clone directory cannot reach git as an option"
+	else fFail "[ddjyb] derived clone directory: ${why}"; fi
 }
 fCloneArgInjection
 
@@ -490,8 +490,8 @@ fSwitchUntouched(){
 	if fIsCrash; then why="crashed (exit ${__runCode})"
 	elif ((__runCode == 0)); then why="accepted, should refuse"
 	elif [[ "${headAfter}" != "${headBefore}" || "${remoteAfter}" != "${remoteBefore}" ]]; then why="changed the repo before refusing"; fi
-	if [[ -z "${why}" ]]; then fOk "[Ervo5NW] br switch HEAD refuses and leaves the repo untouched"
-	else fFail "[Ervo5NW] br switch HEAD: ${why}"; fi
+	if [[ -z "${why}" ]]; then fOk "[ddjyc] br switch HEAD refuses and leaves the repo untouched"
+	else fFail "[ddjyc] br switch HEAD: ${why}"; fi
 }
 fSwitchUntouched
 
@@ -522,8 +522,8 @@ fSshKeyInert(){
 		why=""
 		if grep -qE "${crashRe}" <<< "${__runOut}"; then why="crashed"
 		elif [[ -e "${dir}/CANARY-sshkey" ]]; then why="reached ssh"; fi
-		if [[ -z "${why}" ]]; then fOk "[Ervo5Nd] shell-bearing sshKey never reaches ssh: '${key}'"
-		else fFail "[Ervo5Nd] shell-bearing sshKey '${key}': ${why}"; fi
+		if [[ -z "${why}" ]]; then fOk "[ddjyf] shell-bearing sshKey never reaches ssh: '${key}'"
+		else fFail "[ddjyf] shell-bearing sshKey '${key}': ${why}"; fi
 	done
 }
 fSshKeyInert
@@ -549,21 +549,21 @@ EOF
 	local why=""
 	if fIsCrash; then why="crashed (exit ${__runCode})"
 	elif ! grep -qF 'd\*e' <<< "${__runOut}"; then why="left a glob character unescaped"; fi
-	if [[ -z "${why}" ]]; then fOk "[Ervo5NY] account apply escapes glob characters in a folder rule"
-	else fFail "[Ervo5NY] account apply folder rule: ${why}"; fi
+	if [[ -z "${why}" ]]; then fOk "[ddjyd] account apply escapes glob characters in a folder rule"
+	else fFail "[ddjyd] account apply folder rule: ${why}"; fi
 	## The shell-bearing host and the spaced user must not appear in any fragment.
 	local hit=""
 	hit="$(grep -rlF -e 'a;touch' -e 'a b' "${dir}/accounts" 2>/dev/null || true)"
-	if [[ -z "${hit}" ]]; then fOk "[Ervo5Nb] account apply drops a shell-bearing host and a spaced user"
-	else fFail "[Ervo5Nb] a shell-bearing host or spaced user reached an account fragment"; fi
+	if [[ -z "${hit}" ]]; then fOk "[ddjye] account apply drops a shell-bearing host and a spaced user"
+	else fFail "[ddjye] a shell-bearing host or spaced user reached an account fragment"; fi
 }
 fAccountApplyVectors
 
 ## The security assertion: no vector ever caused a side-effect to run.
 if [[ -z "$(find "${work}" -name 'CANARY*' -print -quit)" ]]; then
-	fOk "[EkzQ7gW] no injection canary fired"
+	fOk "[dabek] no injection canary fired"
 else
-	fFail "[EkzQ7gW] injection canary fired: $(find "${work}" -name 'CANARY*')"
+	fFail "[dabek] injection canary fired: $(find "${work}" -name 'CANARY*')"
 fi
 
 fEcho_Clean "passed: ${pass}, failed: ${fail}"

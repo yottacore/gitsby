@@ -30,7 +30,7 @@ func fakeTool(t *testing.T, name, body string) {
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
-func TestGhLoginAskedAheadAnswersForItsOwnToken(t *testing.T) { // [ErkSC3h]
+func TestGhLoginAskedAheadAnswersForItsOwnToken(t *testing.T) { // [ddg6z]
 	fakeTool(t, "gh", `echo "${GH_TOKEN#tok_}"`)
 	t.Setenv("GH_TOKEN", "tok_first")
 	a := newApp(newPrinter())
@@ -49,7 +49,7 @@ func TestGhLoginAskedAheadAnswersForItsOwnToken(t *testing.T) { // [ErkSC3h]
 	}
 }
 
-func TestSSHLoginAskedAheadIsReadBack(t *testing.T) { // [ErkSC3v]
+func TestSSHLoginAskedAheadIsReadBack(t *testing.T) { // [ddg70]
 	fakeTool(t, "ssh", `echo "Hi bob! You've successfully authenticated."; exit 1`)
 	t.Setenv("GIT_SSH_COMMAND", "ssh")
 	a := newApp(newPrinter())
@@ -71,7 +71,7 @@ func TestSSHLoginAskedAheadIsReadBack(t *testing.T) { // [ErkSC3v]
 	}
 }
 
-func TestEndProbesKillsAProbeNobodyRead(t *testing.T) { // [ErkSC48]
+func TestEndProbesKillsAProbeNobodyRead(t *testing.T) { // [ddg71]
 	fakeTool(t, "ssh", "exec sleep 30")
 	t.Setenv("GIT_SSH_COMMAND", "ssh")
 	a := newApp(newPrinter())
@@ -88,7 +88,7 @@ func TestEndProbesKillsAProbeNobodyRead(t *testing.T) { // [ErkSC48]
 	}
 }
 
-func TestAskGhTokensAsksEachLoginOnce(t *testing.T) { // [ErkTEpz]
+func TestAskGhTokensAsksEachLoginOnce(t *testing.T) { // [ddg76]
 	asked := filepath.Join(t.TempDir(), "asked")
 	fakeTool(t, "gh", `echo "$4" >> '`+asked+`'; case "$4" in two) echo tok_two ;; *) exit 1 ;; esac`)
 	a := newApp(newPrinter())

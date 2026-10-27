@@ -14,7 +14,7 @@ import (
 	"testing"
 )
 
-func TestDocsOnly(t *testing.T) { // [EpyNqT5]
+func TestDocsOnly(t *testing.T) { // [dcnqz]
 	tests := []struct {
 		files []string
 		want  bool
@@ -38,7 +38,7 @@ func TestDocsOnly(t *testing.T) { // [EpyNqT5]
 // none of the usual names, and guessing "main" there named a branch that did not
 // exist. A lone branch is the default by elimination, and an unborn one by the
 // name HEAD already carries.
-func TestResolveDefaultBranchWithoutOrigin(t *testing.T) { // [Er1LxTo]
+func TestResolveDefaultBranchWithoutOrigin(t *testing.T) { // [dd5g8]
 	if !inPath("git") {
 		t.Skip("no git")
 	}

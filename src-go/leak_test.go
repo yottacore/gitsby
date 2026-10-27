@@ -15,6 +15,6 @@ import (
 )
 
 // Suppressions go here by function name only, with the backlog ID beside each.
-func TestMain(m *testing.M) { // [Et9PJqa]
+func TestMain(m *testing.M) { // [de545]
 	goleak.VerifyTestMain(m)
 }

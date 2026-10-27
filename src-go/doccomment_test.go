@@ -23,7 +23,7 @@ import (
 // the thing below it. One that opens with prose is left alone. A later line that
 // opens with another function's camelCase name and a colon is a second comment
 // stacked on.
-func TestDocCommentsNameWhatTheySitOn(t *testing.T) { // [Erfyvj9]
+func TestDocCommentsNameWhatTheySitOn(t *testing.T) { // [ddf4k]
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
