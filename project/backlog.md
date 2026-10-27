@@ -113,7 +113,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: standard flags
 	- ID: 2026102416313104
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
@@ -129,6 +129,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Earlier decisions this overrides: 2026101816064793, where `--gate` gets no `--ci` alias and `--quick` has a 30 s budget per step, and the private CI/CD notes, where the gate on main runs lint and the unit tests only.
 	- Progress log:
 		- 2026-10-25: Split, too big for one pass. Children: 2026102506452473 (the new run flags and the aliases), 2026102506452478 (`--keep-temp` and `--list`), 2026102506452483 (`--quick` in about 10 minutes) and 2026102506452488 (the hook runs `--merge-gate`). The other reset items wait on the first.
+	- Test case: the children's tests: 2026102506452473, 2026102506452478, 2026102506452483 and 2026102506452488, all in test.bash.
+	- Closed: 20261026-171340
+	- Acceptance signoff: closed with its 4 children.
 
 - CICD reset: step output
 	- ID: 2026102416313105
