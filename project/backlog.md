@@ -250,6 +250,47 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 			- One line at the end of a run saying what was removed and about what it freed, files as well as docker.
 			- Go's module cache in the volume pruned of what the current `go.sum` doesn't name.
 		- Packaging and dependabot stay deferred, per the standing decision. 20261024: kept out of this item, since nothing makes them pressing.
+	- Progress log:
+		- 2026-10-26: Split. Children: 2026102617543861 (the line at the end of a run, done) and 2026102617543961 (the module cache).
+
+- CICD reset: prune Go's module cache in the volume
+	- ID: 2026102617543961
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261026-175439
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313109
+	- Requirements [Feature]:
+		- The parent's second requirement: Go's module cache in the `gitsby-cicd-cache` volume pruned of what the current `go.sum` doesn't name.
+	- Notes:
+		- The volume is shared by every worktree's runs, and another branch's `go.sum` may name other versions. A prune could take a module from under a run in progress. Prune only when no other gitsby run's container is up, which only the run out here can see.
+		- Keep the `golang.org/toolchain` modules for the `toolchain` line in go.mod, which `go.sum` doesn't name, and the `/go.mod`-only entries it does.
+		- test.bash builds the SHCL 2.x build offline from the cache ([ErkNuhS]), so check that every module it needs is in `go.sum`.
+		- Module paths in the cache spell capitals as `!` plus the lower case letter, and go makes the files read-only.
+
+- CICD reset: one line at the end of a run for what it removed
+	- ID: 2026102617543861
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261026-175438
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313109
+	- Requirements [Feature]:
+		- The parent's first requirement: one line at the end of a run saying what was removed and about what it freed, files as well as docker.
+	- Progress log:
+		- 2026-10-26: A run's last line is `Cleanup: removed <what>; freed about <size>`, or `Cleanup: nothing to remove`, then the closing blank line. It takes in the run's own folder and the stale run folders as well as what the docker tidy-up removed. The `Docker:` line and the line per stale folder are gone into it.
+		- 2026-10-26: Asserts given the new line, old -> new: [Etl0bI3] `removed a stale run folder: <path>` -> `Cleanup: removed 1 stale run folder(s), the run folder`. [Etl0bIG] `Docker: nothing to remove`, `Docker: removed 2 image(s)`, `Docker: removed ... volume` and a failed run's `Docker:` line -> the same as `Cleanup:` lines, with the run folder named.
+	- Decisions:
+		- Folders count at their apparent size. ZFS reports a compressed size that lags fresh writes, and the line says "about".
+		- The run in the image prints its own line for its own folder, before the line out here.
+	- Branch: round-20261026
+	- Test case: test.bash [EtrEuz9], plus [Etl0bI3] and [Etl0bIG] changed.
+	- Verified: `--backlog-run-quick lint suite` passed in the image, test.bash 1754 -> 1755, 0 failed. Against the previous cicd.bash [EtrEuz9], [Etl0bI3] and [Etl0bIG] fail. A real quick run in the image ended with `Cleanup: removed the run folder; freed about 8B`. shellcheck passes.
+	- Swept: every removal in cicd.bash that printed its own line: the stale sweep and the docker tidy-up. The soak and CodeQL report pruning keep their own warning, since they remove artifacts, not temp files.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261026-175508
 
 - test.bash's stage 7 checks fail on vmDebARM64 after round-20261025b
 	- ID: 2026102519554107

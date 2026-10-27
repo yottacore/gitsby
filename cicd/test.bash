@@ -664,9 +664,24 @@ fGateStaleRuns(){
 	echo "${dead}" > "${r}/20200101-000000_001/run.pid"; echo "$$" > "${r}/20200101-000000_002/run.pid"
 	echo "${dead}" > "${r}/20200101-000000_004/run.pid"; echo "${dead}" > "${r}/not-a-run/run.pid"
 	for d in 20200101-000000_001 20200101-000000_002 20200101-000000_003 not-a-run; do touch -d '3 days ago' "${r}/${d}"; done
-	TMPDIR="${t}" fGateSays 0 "^removed a stale run folder: ${r}/20200101-000000_001\$" --no-container --backlog-run-quick lint || rc=1
+	TMPDIR="${t}" fGateSays 0 '^Cleanup: removed 1 stale run folder\(s\), the run folder; freed about ' --no-container --backlog-run-quick lint || rc=1
 	[[ ! -e "${r}/20200101-000000_001" && -d "${r}/20200101-000000_002" && -d "${r}/20200101-000000_003" && -d "${r}/20200101-000000_004" && -d "${r}/not-a-run" ]] || rc=1
-	[[ "$(grep -c '^removed a stale run folder' "${gateOut}")" == 1 ]] || rc=1
+	[[ "$(grep -c '^Cleanup: ' "${gateOut}")" == 1 ]] || rc=1
+	rm -rf -- "${t:?}"
+	((rc == 0))
+}
+## One line at the end of a run says what it removed, files as well as docker, and about what that
+## freed. A 2 MB stale run folder counts. With --keep-temp nothing goes, and it says so.
+fGateTidyLine(){
+	local t="${gateDir}/tmp-tidyline" r="" dead="" rc=0
+	rm -rf -- "${t:?}"; r="${t}/gitsby"; mkdir -p "${r}/20200101-000000_001"
+	sleep 0 & dead=$!; wait "${dead}"
+	echo "${dead}" > "${r}/20200101-000000_001/run.pid"
+	head -c 2000000 /dev/urandom > "${r}/20200101-000000_001/blob"
+	touch -d '3 days ago' "${r}/20200101-000000_001"
+	TMPDIR="${t}" fGateSays 0 '^Cleanup: removed 1 stale run folder\(s\), the run folder; freed about 2(\.[0-9])?MB$' --no-container --backlog-run-quick lint || rc=1
+	[[ "$(grep -c '^Cleanup: ' "${gateOut}")" == 1 && "$(tail -n 2 "${gateOut}" | head -n 1)" == Cleanup:* && -z "$(tail -n 1 "${gateOut}")" ]] || rc=1
+	TMPDIR="${t}" fGateSays 0 '^Cleanup: nothing to remove$' --no-container --backlog-run-quick lint --keep-temp || rc=1
 	rm -rf -- "${t:?}"
 	((rc == 0))
 }
@@ -677,7 +692,7 @@ fGateDockerTidy(){
 	local t="${gateDir}/tmp-tidy" run="" img="" pid="" i=0 rc=0
 	rm -rf -- "${t:?}"; mkdir -p "${t}"
 	: > "${gateFail}/docker-noimage"; : > "${gateFail}/docker-novol"
-	TMPDIR="${t}" fGateSays 0 '^Docker: nothing to remove$' --backlog-run-quick lint || rc=1
+	TMPDIR="${t}" fGateSays 0 '^Cleanup: removed the run folder; freed about ' --backlog-run-quick lint || rc=1
 	rm -f -- "${gateFail:?}/docker-noimage" "${gateFail:?}/docker-novol"
 	run="$(sed -n 's/^as container gitsby-\(.*\)-quick$/\1/p' "${gateOut}")"
 	img="$(sed -n 's/^building \(gitsby-cicd:[0-9a-f]*\)$/\1/p' "${gateOut}")"
@@ -688,17 +703,17 @@ fGateDockerTidy(){
 		'^docker image ls -q --filter dangling=true --filter label=dev\.project=gitsby$' '^docker builder prune -f --filter until=168h$' || rc=1
 	## Newest first: one from another branch, this one, the one before it, and 2 older ones.
 	printf '%s\n' gitsby-cicd:aaaaaaaaaaaa "${img}" gitsby-cicd:bbbbbbbbbbbb gitsby-cicd:cccccccccccc gitsby-cicd:dddddddddddd > "${gateFail}/images"
-	TMPDIR="${t}" fGateSays 0 '^Docker: removed 2 image\(s\); freed about ' --backlog-run-quick lint \
+	TMPDIR="${t}" fGateSays 0 '^Cleanup: removed 2 image\(s\), the run folder; freed about ' --backlog-run-quick lint \
 		&& fGateCalled '^docker rmi gitsby-cicd:cccccccccccc$' '^docker rmi gitsby-cicd:dddddddddddd$' \
 		&& ! fGateCalled '^docker rmi gitsby-cicd:(aaaaaaaaaaaa|bbbbbbbbbbbb)$' && ! fGateCalled "^docker rmi ${img}\$" || rc=1
 	## A cache volume over 2 GB goes, and one under it stays.
 	echo 'gitsby-cicd-cache 2.5GB' > "${gateFail}/vols"
-	TMPDIR="${t}" fGateSays 0 '^Docker: removed .*the gitsby-cicd-cache volume' --backlog-run-quick lint && fGateCalled '^docker volume rm gitsby-cicd-cache$' || rc=1
+	TMPDIR="${t}" fGateSays 0 '^Cleanup: removed .*the gitsby-cicd-cache volume' --backlog-run-quick lint && fGateCalled '^docker volume rm gitsby-cicd-cache$' || rc=1
 	echo 'gitsby-cicd-cache 1.9GB' > "${gateFail}/vols"
 	TMPDIR="${t}" fGateStatus 0 --backlog-run-quick lint && ! fGateCalled '^docker volume rm' || rc=1
 	rm -f -- "${gateFail:?}/vols"
 	: > "${gateFail}/docker-run"
-	TMPDIR="${t}" fGateSays 1 '^Docker: ' --backlog-run-quick lint && fGateCalled '^docker ps -aq --filter label=dev\.project=gitsby --filter label=dev\.run=' \
+	TMPDIR="${t}" fGateSays 1 '^Cleanup: ' --backlog-run-quick lint && fGateCalled '^docker ps -aq --filter label=dev\.project=gitsby --filter label=dev\.run=' \
 		&& ! fGateCalled '^docker rmi gitsby-cicd:' || rc=1
 	rm -f -- "${gateFail:?}/docker-run"
 	## Stopped partway, with its container still running.
@@ -6243,6 +6258,7 @@ EOF
 		fAssert "[EtkvcAA] --keep-temp and --list refuse --install-hook and each other"  fGateKeepListRefuse
 		fAssert "[Etl0bHp] a run's folder is <start time>_<NNN> under HOST_TEMP, with TMPDIR, TEMP and TMP pointed at it and its pid in it"  fGateRunFolder
 		fAssert "[Etl0bI3] a run removes the project's run folders over 2 days old whose run is gone, and no other"  fGateStaleRuns
+		fAssert "[EtrEuz9] one line at the end of a run says what it removed, files and docker, and about what that freed"  fGateTidyLine
 		fAssert "[Etl0bIG] a run in the image labels what it makes, and its end removes the run's containers, dangling images, older tags and week-old build cache"  fGateDockerTidy
 		fAssert "[EtBTWtL] stage 6 removes the demo's repos once the gif is drawn"  fGateDemoRemoved
 		fAssert "[Et9ZcLy] --leakcheck runs CodeQL over a copy of the module with its dependencies vendored in, once per release OS, and keeps the reports"  fGateCodeQL
@@ -7891,3 +7907,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261025 JC: The lint tools get -buildvcs=false through GOFLAGS, and every script whose --help prints its header prints it from the Purpose line. 1740 -> 1748.
 ##		- 20261026 JC: The stage 7 harness's Mac reads /usr/local/bin as an empty folder of its own, so a box with go there no longer answers for the stub.
 ##		- 20261026 JC: The pipeline's step lines: each step opens and closes with its time and number, a failed one says FAIL, the plan names the flag for each step that's off, and the run in the image takes its place in the count, in this box's time. The checks that read the old stage headers and skip lines read the new ones. 1748 -> 1754.
+##		- 20261026 JC: The run's one cleanup line at its end, files and docker together. The stale-folder and docker checks read it. 1754 -> 1755.

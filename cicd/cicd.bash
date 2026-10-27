@@ -267,16 +267,23 @@ if [[ -n "${handsOff}" ]]; then doSync=0; DOGFOOD_TARGETS=(); GIT_PUBLISH=(); fi
 ## removal. --keep-temp keeps it, and the files the steps would have removed from it, and says
 ## where it is and which containers were kept. --list makes none.
 runTmp=""; runName=""; runRe='^[0-9]{8}-[0-9]{6}_[0-9]{3}$'
+## What the run removed, for the one line at its end, and about how many bytes that freed.
+tidyGone=(); declare -i tidyFreed=0
+## Apparent size: what ZFS reports on disk is compressed, and lags fresh writes.
+fDirBytes(){ local out=""; out="$(du -sbx -- "$1" 2>/dev/null)" || out=0; echo "${out%%[[:space:]]*}" ;}
 ## The project's own run folders over 2 days old, whose run is gone. A folder with no run.pid
 ## wasn't made by a run, so it stays.
 fSweepRuns(){
-	local d pid
+	local d pid size
+	local -i nStale=0
 	while IFS= read -r d; do
 		[[ "${d##*/}" =~ ${runRe} && "${d}" != "${runTmp}" && -f "${d}/run.pid" && ! -L "${d}" ]] || continue
 		pid=""; read -r pid < "${d}/run.pid" || true
 		if [[ "${pid}" =~ ^[0-9]+$ ]] && kill -0 "${pid}" 2>/dev/null; then continue; fi
-		fSafeRm "${d}" >/dev/null && fEcho_Clean "removed a stale run folder: ${d}"
+		size="$(fDirBytes "${d}")"
+		if fSafeRm "${d}" >/dev/null; then nStale+=1; tidyFreed+=size; fi
 	done < <(find "${runRoot}" -mindepth 1 -maxdepth 1 -type d -mtime +1 2>/dev/null || true)
+	((nStale == 0)) || tidyGone+=("${nStale} stale run folder(s)")
 }
 ## docker system df's sizes, summed in bytes. Its units are powers of 1000.
 fDockerBytes(){
@@ -287,10 +294,10 @@ fDockerBytes(){
 fDockerUsed(){ { docker system df --format '{{.Size}}' 2>/dev/null || true; } | fDockerBytes ;}
 ## At the end of a run that used the image, passed or not: the run's containers, the project's
 ## dangling images, its older image tags once a newer one has passed, a week's build cache, and
-## the Go cache volume when it's over 2 GB. Only what carries the project's label. One line says
-## what went and about what it freed.
+## the Go cache volume when it's over 2 GB. Only what carries the project's label. The run's end
+## line says what went and about what it freed.
 fDockerTidy(){
-	local passed="$1" before after ids id ref seen=0 vol="${APP_NAME}-cicd-cache" size list pruned
+	local passed="$1" before after ids id ref seen=0 vol="${APP_NAME}-cicd-cache" size pruned
 	local -a gone=()
 	local -i nCont=0 nImg=0
 	before="$(fDockerUsed)"
@@ -320,14 +327,13 @@ fDockerTidy(){
 	fi
 	((nImg == 0)) || gone=("${nImg} image(s)" ${gone[@]+"${gone[@]}"})
 	((nCont == 0)) || gone=("${nCont} container(s)" ${gone[@]+"${gone[@]}"})
-	if ((! ${#gone[@]})); then fEcho_Clean "Docker: nothing to remove"; return 0; fi
+	((${#gone[@]})) || return 0
 	after="$(fDockerUsed)"
 	((after < before)) || after="${before}"
-	printf -v list '%s, ' "${gone[@]}"
-	fEcho_Clean "Docker: removed ${list%, }; freed about $(numfmt --to=si --suffix=B "$((before - after))" 2>/dev/null || echo "$((before - after)) bytes")"
+	tidyGone+=("${gone[@]}"); tidyFreed+=$((before - after))
 }
 fRunTmpDone(){
-	local rc="${1:-0}" kept=""
+	local rc="${1:-0}" kept="" size="" list=""
 	((rc == 0)) || fStepEnd FAIL
 	[[ -n "${runTmp}" ]] || return 0
 	if ((keepTemp)); then
@@ -341,8 +347,13 @@ fRunTmpDone(){
 	## Containers first, since one still running may write to the folder.
 	if ((container)); then fDockerTidy "$((rc == 0))"; fi
 	if ((! keepTemp)) && [[ "${runName}" =~ ${runRe} && -f "${runTmp}/run.pid" ]]; then
-		fSafeRm "${runTmp}" >/dev/null || true
+		size="$(fDirBytes "${runTmp}")"
+		if fSafeRm "${runTmp}" >/dev/null; then tidyGone+=("the run folder"); tidyFreed+=size; fi
 	fi
+	if ((! ${#tidyGone[@]})); then fEcho_Clean "Cleanup: nothing to remove"; fEcho_Clean; return 0; fi
+	printf -v list '%s, ' "${tidyGone[@]}"
+	fEcho_Clean "Cleanup: removed ${list%, }; freed about $(numfmt --to=si --suffix=B "${tidyFreed}" 2>/dev/null || echo "${tidyFreed} bytes")"
+	fEcho_Clean
 }
 ## A file a step made in the run's folder, once the step is done with it.
 fTmpDone(){ ((keepTemp)) || rm -f -- "$@" ;}
@@ -1452,3 +1463,4 @@ fEcho_Clean
 ##		- 2026-10-25 JC: --quick is what fits in about 10 minutes rather than each step under half a minute. The regression suite, the native fuzz targets and the soak test are back in it. CodeQL stays out unless --leakcheck, and govulncheck and pip-audit, which ask a server, stay out. The image's tag and build moved to image-go.bash, which release.bash uses too.
 ##		- 2026-10-25 JC: GOFLAGS carries -buildvcs=false for every go call, so the lint tools pass in the hook's worktree under .git, in the image too.
 ##		- 2026-10-26 JC: Each step opens with "[ <time>: Step N of M; Starting <step> ]" and closes with PASS or FAIL, in place of the N/8 headers and the OK line that only repeated the verdict. M counts the steps that run, the plan says why each other one doesn't, and the run in the image numbers its steps in the same count, in this box's time. The rule is 79 wide.
+##		- 2026-10-26 JC: One line at the end of a run says what it removed, its own folder and the stale run folders as well as docker's, and about what that freed.
