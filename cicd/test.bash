@@ -395,7 +395,8 @@ fGateContainerRun(){
 	fGateSays 0 'OK: the container run' -y --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
 		&& fGateCalled '^docker run .* -y --no-sync --no-dogfood --no-remote --no-publish --no-fuzz --no-demogif$' \
 		&& ! fGateCalled '^go (vet|build|test)' && ! fGateCalled '^(test|parity|fuzz|spawn-count)\.bash' \
-		&& grep -q 'lint ran in the container' "${gateOut}"
+		&& grep -qF 'Container ...........: lint, tests, fuzz, compatibility and the demo gif in ' "${gateOut}" \
+		&& ! grep -qE 'Starting (Lint|Build|Fuzz|Backwards)' "${gateOut}"
 }
 ## The container carries the run's folder in its name and a label, and the output names it, so
 ## one run can be found and stopped among other projects' containers.
@@ -420,7 +421,8 @@ fGateContainerQuick(){
 }
 ## The demo renders in there too, with the gif's archive mounted, and never out here.
 fGateContainerDemo(){
-	fGateSays 0 'demo gif ran in the container' -y --no-sync --no-publish --no-dogfood --no-remote --no-fuzz \
+	fGateSays 0 '^Container \.+: .*the demo gif in ' -y --no-sync --no-publish --no-dogfood --no-remote --no-fuzz \
+		&& ! grep -qF 'Starting Demo gif' "${gateOut}" \
 		&& fGateCalled '^docker run .*/private/demo/gif:.* -y --no-sync --no-dogfood --no-remote --no-publish --no-fuzz$' \
 		&& ! fGateCalled '^(python3 .*gen-demo-gif|gifsicle)'
 }
@@ -429,7 +431,7 @@ fGateContainerDemo(){
 fGateContainerBuilds(){
 	local rc=0 img='gitsby-cicd:[0-9a-f]{12}' src="${gateDir}/src-go"
 	mkdir -p "${gateDir}/home/.local/bin"
-	fGateSays 0 'OK: Remote tests' -y --no-fuzz --no-demogif --no-sync --no-publish \
+	fGateSays 0 'Step [0-9]+ of [0-9]+; PASS Remote tests \]$' -y --no-fuzz --no-demogif --no-sync --no-publish \
 		&& fGateCalled "^docker run --rm --init --name gitsby-[0-9]{8}-[0-9]{6}_[0-9]{3}-go-build-[0-9]+ --label dev\.project=gitsby --label dev\.run=[0-9]{8}-[0-9]{6}_[0-9]{3} --cpus [1-9][0-9]* --cpu-shares 256 .* -e CGO_ENABLED=0 -e GOAMD64=v1 -e GOOS=linux -e GOARCH=amd64 -w ${src} ${img} nice -n 19 go build .* -o ${src}/gitsby-linux-amd64 \.\$" \
 			"^docker run .* -e GOOS=darwin -e GOARCH=amd64 -w ${src} ${img} nice -n 19 go build " "^docker run .* -e GOOS=darwin -e GOARCH=arm64 -w ${src} ${img} nice -n 19 go build " \
 			"^docker run .* -e GOOS=freebsd -e GOARCH=amd64 -w ${src} ${img} nice -n 19 go build " "^image=${img} run=[0-9]{8}-[0-9]{6}_[0-9]{3}\$" \
@@ -447,7 +449,7 @@ fGateContainerQuickBuilds(){
 ## --no-container builds them here, an image left in the caller's environment included, and
 ## hands the harness none.
 fGateHereBuilds(){
-	GITSBY_CICD_IMAGE=stale fGateSays 0 'OK: Remote tests' -y --no-container --no-fuzz --no-demogif --no-sync --no-publish --no-dogfood \
+	GITSBY_CICD_IMAGE=stale fGateSays 0 'Step [0-9]+ of [0-9]+; PASS Remote tests \]$' -y --no-container --no-fuzz --no-demogif --no-sync --no-publish --no-dogfood \
 		&& fGateCalled '^go build .* -o .*/src-go/gitsby-darwin-universal-amd64 \.$' '^go build .* -o .*/src-go/gitsby-freebsd-amd64 \.$' \
 		&& ! fGateCalled '^docker ' && ! fGateCalled '^image='
 }
@@ -488,7 +490,8 @@ fGateHandsOff(){
 		&& grep -qF "gitsby ${1#--}: every check of a plain run" "${gateOut}" \
 		&& fGateCalled '^go vet' '^go build' '^go test -race' '^test\.bash' '^fuzz\.bash' '^spawn-count\.bash' '^parity\.bash' '^remote-tests\.bash' '^python3 cicd/utility/demo/gen-demo-gif' '^govulncheck' \
 		&& ! grep -qE '^n8git_backup-and-publish' "${gateCalls}" \
-		&& grep -qxF 'remote sync skipped' "${gateOut}" && grep -qxF 'dogfood disabled' "${gateOut}" && grep -qxF 'publish disabled' "${gateOut}" \
+		&& grep -qxF "Remote sync .........: (skipped ${1})" "${gateOut}" && grep -qxF "Dogfood .............: (skipped ${1})" "${gateOut}" \
+		&& grep -qxF "Publish (last) ......: (skipped ${1})" "${gateOut}" && ! grep -qE 'Starting (Remote sync|Dogfood|Backup)' "${gateOut}" \
 		&& grep -qF "[ WARNING: demo gif differs; ${1} rewrites no tracked file, so the committed one stays ]" "${gateOut}" \
 		&& [[ "$(cat "${gif}")" == old && ! -e "${gif}.new" ]] || rc=1
 	if [[ -f "${gif}.keep" ]]; then mv -f -- "${gif}.keep" "${gif}"; else rm -f -- "${gif:?}"; fi
@@ -592,12 +595,12 @@ fGateList(){
 	rm -rf -- "${t:?}"; mkdir -p "${t}"
 	printf ': %s "[%s] %s"\n' fAssert AAAAAAC 'a listed check' >> "${gateDir}/cicd/test.bash"
 	printf 'package main\n\nfunc TestListed(t *testing.T) { // [%s]\n}\n' AAAAAAD > "${gateDir}/src-go/listed_test.go"
-	TMPDIR="${t}" fGateSays 0 '^2/8  Regression tests: 1 test\(s\)$' --list \
-		&& grep -qxF '  AAAAAAC a listed check' "${gateOut}" && grep -qxF '2/8  Go unit tests: 1 test(s)' "${gateOut}" \
+	TMPDIR="${t}" fGateSays 0 '^Step 3 of 9  Regression tests: 1 test\(s\)$' --list \
+		&& grep -qxF '  AAAAAAC a listed check' "${gateOut}" && grep -qxF 'Step 3 of 9  Go unit tests: 1 test(s)' "${gateOut}" \
 		&& grep -qxF '  AAAAAAD TestListed' "${gateOut}" && grep -qF 'Remote tests ........: ' "${gateOut}" \
 		&& ! grep -qv '^docker info' "${gateCalls}" && [[ -z "$(ls -A "${t}")" ]] || rc=1
-	fGateSays 0 '^4/8  Backwards compatibility: 0 test\(s\)$' --quick --list && grep -qxF '2/8  Regression tests: 1 test(s)' "${gateOut}" || rc=1
-	fGateSays 0 '^Quick 1/1  Regression tests: 1 test\(s\)$' --backlog-run-quick suite --list \
+	fGateSays 0 '^Step 5 of 8  Backwards compatibility: 0 test\(s\)$' --quick --list && grep -qxF 'Step 3 of 8  Regression tests: 1 test(s)' "${gateOut}" || rc=1
+	fGateSays 0 '^Step 1 of 1  Regression tests: 1 test\(s\)$' --backlog-run-quick suite --list \
 		&& grep -qxF '  AAAAAAC a listed check' "${gateOut}" && ! grep -qv '^docker info' "${gateCalls}" || rc=1
 	rm -f -- "${gateDir:?}/src-go/listed_test.go"; rm -rf -- "${t:?}"
 	fGateStub "${gateDir}/cicd/test.bash" test
@@ -839,7 +842,7 @@ fGatePipAuditFinds(){
 fGateNoFuzz(){
 	fGateSays 0 'CI/CD: done\.' -y --no-container --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
 		&& ! grep -qE '^(govulncheck -test|pip-audit -r|fuzz\.bash|spawn-count\.bash)( |$)|^go test .*-fuzz ' "${gateCalls}" \
-		&& grep -qxF 'fuzz + security skipped' "${gateOut}"
+		&& grep -qxF 'Fuzz + security .....: (skipped --no-fuzz)' "${gateOut}" && ! grep -qF 'Starting Fuzz' "${gateOut}"
 }
 ## The image's tag follows the Python tools' lock as well as the recipe.
 fGateLockInTag(){
@@ -956,6 +959,72 @@ fGateDemoDrift(){
 	((rc)) || { fGateDemoRun -y && grep -qF 'OK: demo gif regenerated' "${gateOut}" && [[ "$(cat "${gateDir}/assets/demo.gif")" == GIF89a ]] ;} || rc=1
 	rm -f -- "${gateFail:?}/pillow"
 	return "${rc}"
+}
+## The step lines in the order printed, without their time: "Step N of M; <verdict> <name>".
+fGateStepLines(){ sed -n 's/^\[ [0-9]\{8\}-[0-9]\{6\}\.[0-9]\{2\}: \(Step [0-9]* of [0-9]*; .*\) \]$/\1/p' "${gateOut}" ;}
+## Each step that runs opens and closes with a line that has the time, numbered out of only the
+## steps that run, under a rule 79 wide.
+fGateSteps(){
+	local rule="" want="Step 1 of 3; Starting Lint
+Step 1 of 3; PASS Lint
+Step 2 of 3; Starting Build + regression tests
+Step 2 of 3; PASS Build + regression tests
+Step 3 of 3; Starting Backwards compatibility
+Step 3 of 3; PASS Backwards compatibility"
+	printf -v rule '%.0s•' {1..79}
+	fGateSays 0 'CI/CD: done\.' -y --no-container --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
+		&& [[ "$(fGateStepLines)" == "${want}" && "$(grep -cxF "${rule}" "${gateOut}")" == 4 ]] \
+		&& ! grep -F '••' "${gateOut}" | grep -qvxF "${rule}"
+}
+## A step that fails closes with FAIL, and none after it starts.
+fGateStepFail(){
+	local rc=0
+	: > "${gateFail}/go-test"
+	fGateSays 1 'go test failures' -y --no-container --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
+		&& [[ "$(fGateStepLines | tail -n 2)" == "Step 2 of 3; Starting Build + regression tests"$'\n'"Step 2 of 3; FAIL Build + regression tests" ]] || rc=1
+	rm -f -- "${gateFail:?}/go-test"
+	return "${rc}"
+}
+## The plan names the flag that turned each step off, and --quick for the gif.
+fGateStepsOff(){
+	local line
+	fGateSays 0 'CI/CD: done\.' -y --no-container --no-sync --no-test --no-fuzz --no-parity --no-dogfood --no-demogif --no-remote --no-publish || return 1
+	[[ "$(fGateStepLines)" == "Step 1 of 1; Starting Lint"$'\n'"Step 1 of 1; PASS Lint" ]] || return 1
+	for line in "Remote sync .........: (skipped --no-sync)" "Tests ...............: (skipped --no-test)" "Fuzz + security .....: (skipped --no-fuzz)" \
+		"Compatibility .......: (skipped --no-parity)" "Dogfood .............: (skipped --no-dogfood)" "Demo gif ............: (skipped --no-demogif)" \
+		"Remote tests ........: (skipped --no-remote)" "Publish (last) ......: (skipped --no-publish)"; do
+		grep -qxF "${line}" "${gateOut}" || return 1
+	done
+	fGateSays 0 'CI/CD: done\.' -y --no-container --quick --no-sync --no-publish --no-dogfood && grep -qxF 'Demo gif ............: (skipped --quick)' "${gateOut}"
+}
+## The run in the image is told where its steps start and how many the run has, numbers its own
+## from there, and the steps out here come after them.
+fGateStepsBox(){
+	fGateSays 0 'Step 7 of 7; PASS Remote tests \]$' -y --no-sync --no-publish \
+		&& fGateCalled '^docker run .* -e GITSBY_CICD_STEPS=0/7 .* -y --no-sync --no-dogfood --no-remote --no-publish$' \
+		&& grep -qE 'Step 6 of 7; Starting Dogfood \]$' "${gateOut}" \
+		&& GITSBY_CICD_STEPS=1/9 gateNested=1 fGateSays 0 'CI/CD: done\.' -y --no-sync --no-dogfood --no-remote --no-publish --no-fuzz \
+		&& [[ "$(fGateStepLines | head -n 1)" == "Step 2 of 9; Starting Lint" && "$(fGateStepLines | tail -n 1)" == "Step 5 of 9; PASS Demo gif" ]] \
+		&& grep -qxF 'Dogfood .............: (done by the run outside the container)' "${gateOut}"
+}
+## The image runs in UTC, so the run in there is handed this box's offset, and its step lines
+## follow it. +14:00 puts them on another day from UTC's for most of it.
+fGateStepsTz(){
+	local before="" after="" got="" off="" tz='<+1400>-14:00'
+	printf -v off '%(%z)T' -1
+	fGateSays 0 'OK: the container run' --backlog-run-quick unit && fGateCalled "^docker run .* -e GITSBY_CICD_TZ=<[${off:0:1}]${off:1:4}>[-+]${off:1:2}:${off:3:2} " || return 1
+	before="$(TZ="${tz}" date +%Y%m%d-%H%M)"
+	TZ=UTC GITSBY_CICD_TZ="${tz}" gateNested=1 fGateSays 0 'quick run: passed' --backlog-run-quick unit || return 1
+	after="$(TZ="${tz}" date +%Y%m%d-%H%M)"
+	got="$(sed -n 's/^\[ \([0-9]\{8\}-[0-9]\{4\}\)[0-9][0-9]\.[0-9][0-9]: Step 1 of 1; Starting Unit tests \]$/\1/p' "${gateOut}")"
+	[[ -n "${got}" && ( "${got}" == "${before}" || "${got}" == "${after}" ) ]]
+}
+## The quick run's steps are the areas it runs, and the plan lists the ones left out.
+fGateStepsGate(){
+	fGateSays 0 'backlog quick run: passed\.' --no-container --backlog-run-quick parity lint \
+		&& [[ "$(fGateStepLines)" == "Step 1 of 2; Starting Lint"$'\n'"Step 1 of 2; PASS Lint"$'\n'"Step 2 of 2; Starting Backwards compatibility"$'\n'"Step 2 of 2; PASS Backwards compatibility" ]] \
+		&& grep -qxF 'Left out ............: unit suite fuzz (not named)' "${gateOut}" \
+		&& fGateSays 0 'OK: the container run' --backlog-run-quick unit && fGateCalled '^docker run .* -e GITSBY_CICD_STEPS=0/1 .* --backlog-run-quick unit$'
 }
 ## The gate passes, and says nothing about lint tool versions.
 ## Go tools only: the fixture pins those, and the rest are whatever this box has.
@@ -6163,6 +6232,12 @@ EOF
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--leakcheck ' <<< \"\$out\" && grep -qE -- '^ +--no-leakcheck ' <<< \"\$out\""
 		fAssert "[EtBTWt7] a run's temp files are gone once it ends, stopped or not"  fGateRunTmp
 		fAssert "[Etkvc9W] --list prints the steps and each one's test IDs, and runs nothing"  fGateList
+		fAssert "[Etr8p5b] each step opens and closes with its time, numbered out of the steps that run, under a rule 79 wide"  fGateSteps
+		fAssert "[Etr8pLn] a step that fails closes with FAIL"  fGateStepFail
+		fAssert "[Etr8pby] the plan names the flag that turned each step off"  fGateStepsOff
+		fAssert "[Etr8ps9] the run in the image numbers its steps from where the run out here left off"  fGateStepsBox
+		fAssert "[Etr8q8L] the quick run's steps are its areas, and the plan lists those left out"  fGateStepsGate
+		fAssert "[Etr8qOW] and the run in the image gives its step times in this box's time"  fGateStepsTz
 		fAssert "[Etkvc9j] --keep-temp keeps the run's temp folder, passed or failed, and says where"  fGateKeepTemp
 		fAssert "[Etkvc9w] and keeps the containers, with the inner run's folder inside its own"  fGateKeepTempImage
 		fAssert "[EtkvcAA] --keep-temp and --list refuse --install-hook and each other"  fGateKeepListRefuse
@@ -6334,7 +6409,7 @@ EOF
 		fAssert "[Er1LxTU] a build names the commit it was built from, and -dirty for uncommitted source" \
 			fGateRanCalling 0 '^go build .* -X main\.version=9\.8\.7-1-g[0-9a-f]+-dirty -X main\.buildEpoch='
 		fAssert "[Er1LxTV] and reads that after the remote sync, which can move HEAD" \
-			awk '/^fSection "0\/8  Remote sync"/{s=NR} /^goVersion=/{g=NR} END{exit !(s && g > s)}' "${root}/cicd/cicd.bash"
+			awk '/^\tfStep sync$/{s=NR} /^goVersion=/{g=NR} END{exit !(s && g > s)}' "${root}/cicd/cicd.bash"
 		: > "${gateFail}/go-test"
 		fGateOnly test
 		rm -f -- "${gateFail:?}/go-test"
@@ -6384,16 +6459,16 @@ EOF
 		fRemoteBoxes "${gateDir}/cicd/config.bash"
 		fGateOnly remote
 		fAssert "[ErkbDSi] stage 7 builds the universal Mac binary and the Unix ones, hands them to the remote harness and removes them" \
-			bash -c "[[ '${gateRc}' == 0 && ! -e '${gateDir}/src-go/gitsby-darwin-universal' && ! -e '${gateDir}/src-go/gitsby-freebsd-amd64' && ! -e '${gateDir}/src-go/gitsby-linux-arm64' ]] && grep -qxF '[ 7/8  Remote tests ]' '${gateOut}' && grep -qF 'macho-universal.bash ${gateDir}/src-go/gitsby-darwin-universal ' '${gateCalls}' && grep -qxF 'remote-tests.bash --mac-bin ${gateDir}/src-go/gitsby-darwin-universal --bin freebsd/amd64 ${gateDir}/src-go/gitsby-freebsd-amd64 --bin linux/arm64 ${gateDir}/src-go/gitsby-linux-arm64' '${gateCalls}'"
+			bash -c "[[ '${gateRc}' == 0 && ! -e '${gateDir}/src-go/gitsby-darwin-universal' && ! -e '${gateDir}/src-go/gitsby-freebsd-amd64' && ! -e '${gateDir}/src-go/gitsby-linux-arm64' ]] && grep -qE '^\\[ [0-9]{8}-[0-9]{6}\\.[0-9]{2}: Step 1 of 1; Starting Remote tests \\]\$' '${gateOut}' && grep -qF 'macho-universal.bash ${gateDir}/src-go/gitsby-darwin-universal ' '${gateCalls}' && grep -qxF 'remote-tests.bash --mac-bin ${gateDir}/src-go/gitsby-darwin-universal --bin freebsd/amd64 ${gateDir}/src-go/gitsby-freebsd-amd64 --bin linux/arm64 ${gateDir}/src-go/gitsby-linux-arm64' '${gateCalls}'"
 		fGateOnly remote --quick
 		fAssert "[ErkbDT4] and --quick leaves it out, saying so" \
-			bash -c "[[ '${gateRc}' == 0 ]] && ! grep -qE '^(remote-tests|macho-universal)\.bash' '${gateCalls}' && grep -qxF 'Remote tests skipped (--quick)' '${gateOut}'"
+			bash -c "[[ '${gateRc}' == 0 ]] && ! grep -qE '^(remote-tests|macho-universal)\.bash' '${gateCalls}' && grep -qF 'Remote tests ........: (skipped --quick), cross-builds only: ' '${gateOut}' && grep -qE 'Step 1 of 1; Starting Cross-builds \\]\$' '${gateOut}'"
 		fAssert "[Et6FC2n] but still cross-builds the Unix boxes' targets, and removes each build" \
 			bash -c "[[ '${gateRc}' == 0 && ! -e '${gateDir}/src-go/gitsby-freebsd-amd64' && ! -e '${gateDir}/src-go/gitsby-linux-arm64' ]] && grep -qE '^go build .* -o ${gateDir}/src-go/gitsby-freebsd-amd64( |\$)' '${gateCalls}' && grep -qE '^go build .* -o ${gateDir}/src-go/gitsby-linux-arm64( |\$)' '${gateCalls}' && grep -qxF '[ OK: cross-built freebsd/amd64 linux/arm64 ]' '${gateOut}'"
 		## The run in the container gets --no-remote, and the builds are done out here.
 		fGateOnly remote --quick --no-remote
 		fAssert "[Et6Htmj] and with --no-remote as well, builds nothing there" \
-			bash -c "[[ '${gateRc}' == 0 ]] && ! grep -qE '^go build ' '${gateCalls}' && grep -qxF 'Remote tests skipped (--quick)' '${gateOut}'"
+			bash -c "[[ '${gateRc}' == 0 ]] && ! grep -qE '^go build ' '${gateCalls}' && grep -qxF 'Remote tests ........: (skipped --no-remote)' '${gateOut}' && ! grep -qF 'Starting Cross-builds' '${gateOut}'"
 		: > "${gateFail}/remote-tests"
 		fGateOnly remote
 		rm -f -- "${gateFail:?}/remote-tests"
@@ -6412,7 +6487,7 @@ EOF
 		fGateOnly sync
 		fAssert "[Er1LxTg] stage 0 fast-forwards a tree that is only behind" \
 			bash -c "[[ '${gateRc}' == 0 && \"\$(git -C '${gateDir}' rev-parse HEAD)\" == \"\$(git -C '${gateOther}' rev-parse HEAD)\" ]] && grep -qF 'fast-forwarding 1 commit(s) from origin' '${gateOut}'"
-		fAssert "[Er1LxTh] under the 0/8 header"  grep -qxF '[ 0/8  Remote sync ]' "${gateOut}"
+		fAssert "[Er1LxTh] under its step line"  grep -qE '^\[ [0-9]{8}-[0-9]{6}\.[0-9]{2}: Step 1 of 1; Starting Remote sync \]$' "${gateOut}"
 		## The same file on both sides, far enough apart to merge. Without --autostash git refuses.
 		fGateUpstream two notes.txt
 		sed -i.bak 's/^1$/edited/' "${gateDir}/notes.txt" && rm -f "${gateDir:?}/notes.txt.bak"
@@ -6427,7 +6502,7 @@ EOF
 		fGateOnly sync
 		fAssert "[Er1LxTk] an origin it can't reach is a warning, not a stop"  fGateRanSaying 0 "WARNING: can't reach origin"
 		fGateOnly ''
-		fAssert "[Er1LxTl] --no-sync skips it, and says so"  fGateRanSaying 0 '^remote sync skipped$'
+		fAssert "[Er1LxTl] --no-sync skips it, and says so"  fGateRanSaying 0 '^Remote sync \.+: \(skipped --no-sync\)$'
 		gateDir="${work}/gate"
 
 		## The hook. Its stub cicd.bash logs where it ran, what it was given, the marker file it saw
@@ -7815,3 +7890,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}"
 ##		- 20261025 JC: release.bash builds with the image's Go where docker works, and the box's with a warning where it doesn't. --quick runs the suite, the native fuzzing and the soak test.
 ##		- 20261025 JC: The lint tools get -buildvcs=false through GOFLAGS, and every script whose --help prints its header prints it from the Purpose line. 1740 -> 1748.
 ##		- 20261026 JC: The stage 7 harness's Mac reads /usr/local/bin as an empty folder of its own, so a box with go there no longer answers for the stub.
+##		- 20261026 JC: The pipeline's step lines: each step opens and closes with its time and number, a failed one says FAIL, the plan names the flag for each step that's off, and the run in the image takes its place in the count, in this box's time. The checks that read the old stage headers and skip lines read the new ones. 1748 -> 1754.

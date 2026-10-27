@@ -136,7 +136,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: step output
 	- ID: 2026102416313105
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: `--backlog-run-full`, to see a real run in the image number its steps after the ones out here, with the step times in this box's time.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
@@ -147,6 +148,26 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Each step opens with `[ <local time to the hundredth>: Step N of M; Starting <name> ]` and closes with the same line saying `PASS` or `FAIL`, in place of the `N/8` headers and the `OK:` lines.
 		- A step that's turned off isn't counted in M. The first section lists those, with the flag or reason for each.
 		- Earlier decisions this overrides: the private CI/CD notes, which number the stages 0/8 to 8/8.
+	- Progress log:
+		- 2026-10-26: The rule is 79 wide. Each step opens with `[ <time>: Step N of M; Starting <step> ]` and closes with `PASS`, or `FAIL` from the exit trap, Ctrl+C included. M counts only the steps that run. The quick run's areas are its steps.
+		- 2026-10-26: The plan names the flag or reason for each step that's off, such as `(skipped --no-sync)`, `(skipped --merge-gate)` or `(done by the run outside the container)`, and the quick run lists the areas not named. `--list` titles read `Step N of M` too.
+		- 2026-10-26: The run in the image is handed where its steps start and the run's total, so its steps take their place in the one count. It also gets this box's UTC offset for the step times, since the image runs in UTC.
+		- 2026-10-26: Asserts that read the old text now read the new, old -> new, and check nothing less:
+			- [Er1LxTh] `[ 0/8  Remote sync ]` and [ErkbDSi] `[ 7/8  Remote tests ]` -> their `Step 1 of 1; Starting` lines. [Er1LxTV] the source's `fSection "0/8  Remote sync"` -> `fStep sync`.
+			- [Etkvc9W] list titles `2/8`, `4/8`, `Quick 1/1` -> `Step 3 of 9`, `Step 5 of 8`, `Step 1 of 1`.
+			- [Er1LxTl], [EtiiN7k], [EtiiN7y], [EtOKpZS], [Et6Htmj]: `remote sync skipped`, `dogfood disabled`, `publish disabled`, `fuzz + security skipped`, `Remote tests skipped (--quick)` -> the plan's `(skipped <flag>)` line for each. [ErkbDT4] -> the plan's cross-builds line and a `Cross-builds` step.
+			- [EsJgel8], [EsK1B7q]: `lint ran in the container`, `demo gif ran in the container` -> the plan's Container line, and no such step out here. [EtitOqM], [EtitOsK]: `OK: Remote tests` -> `PASS Remote tests`.
+	- Decisions:
+		- An `OK:` line that only repeated its step's verdict gave way to `PASS`: tests passed, fuzz + security passed, the parity line, Remote tests, published. Lines inside a step that name what passed stay, such as `OK: shellcheck clean` or `OK: soak test`.
+			- That departs from the wording, which reads as every `OK:` line. Filed as a Check in questions.md.
+		- The `Container` section stays as a plain section with its `OK: the container run` line, since the steps it runs are numbered in there.
+		- Under `--quick` the remote step is named `Cross-builds`, since that's all it does then.
+		- The image gets the offset, not the box's zone files, so the demo gif and the suites in there keep UTC. A DST change mid-run shows only in the times printed in there.
+		- The help's stage list keeps its numbers. Docs and comments name stages by them, and the output no longer prints them.
+	- Branch: round-20261026
+	- Test case: test.bash [Etr8p5b], [Etr8pLn], [Etr8pby], [Etr8ps9], [Etr8q8L], [Etr8qOW], and the 14 changed above.
+	- Verified: `--backlog-run-quick lint suite parity` passed in the image: test.bash 1748 -> 1754, 0 failed, parity 29/0. Against HEAD's cicd.bash the 6 new checks and the 14 changed ones fail. shellcheck passes.
+	- Swept: every `fSection`, `OK:` line and skip line in cicd.bash, and every reader of them in the repo; test.bash is the only one. The other scripts' `•` rules are in comments only. pre-push.bash keys on `--gate)`, unchanged.
 
 - CICD reset: a test for every Done item
 	- ID: 2026102416313106
