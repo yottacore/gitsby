@@ -33,6 +33,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- The pipeline prunes every project's docker build cache
+	- ID: 2026110311291903
+	- Type: Bug
+	- Status: Queued
+	- Priority|Severity [Bug]: High
+	- Opened: 20261103-112919
+	- Opened by: JC
+	- Related IDs: common 2026110311291900
+	- Incorrect behavior: The pipeline runs `docker builder prune` after a run, in `cicd/cicd.bash` and `cicd/test.bash`. That prunes docker's default builder, which every project shares, so a run here drops any other project's cache once it's a week unused. common's `Cleanup after a run` rule said to do it.
+	- Expected behavior: The pipeline doesn't prune docker's build cache at all. Docker trims the cache itself on b23, through `builder.gc` in `/etc/docker/daemon.json`. Cache unused for a week goes first, then the rest is cut to 120 GB, or further when the disk is under 10% free, but never below 20 GB. The label cleanup of this project's containers, dangling images and old tags stays.
+		- Do it once b23's `/etc/docker/daemon.json` has the `builder.gc` block. `grep -q '"gc"' /etc/docker/daemon.json` checks. Until then the prune stays.
+	- Decisions:
+		- Don't move to a buildx builder of the project's own instead. shcl tried that on 2026-11-02. A cold build of a 2 GB image took 299 s against 266 s on the default builder, and the builder kept a second 3 GB copy of the layers for a week. shcl is going back to the default builder. (JC, me)
+	- Estimated effort: Low
+
 - The cleanup line says a run folder freed about 8B
 	- ID: 2026102620355012
 	- Type: Bug
