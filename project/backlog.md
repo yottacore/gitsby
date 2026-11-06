@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `--backlog-run-quick lint` fails markdownlint MD038 on backlog.md, again
 	- ID: 2026110611063063
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261106-110630
 	- Opened by: jim-collier
@@ -45,6 +45,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Incorrect behavior [Bug]: lint stops at markdownlint, MD038 at backlog.md line 100. That is a progress log line of 2026102620355012, which quotes an old check line ending in a space inside a code span.
 	- Expected behavior [Bug]: lint passes.
 	- Reproduced [Bug]: 2026-11-06, in the image, while working 2026102617594210.
+	- Test case: the lint step's markdownlint run, which is clean again
+	- 2026-11-06: The code span in 2026102620355012's log ended in a space. It now reads `freed about <size>`.
 
 - The Pillow lock check fails on FreeBSD
 	- ID: 2026110610343700
@@ -110,7 +112,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Not a peak size over the run. It would mean measuring every step's files before they go, for a line that only says "about".
 	- Branch: round-20261106
 	- Test case: test.bash [deysa], plus [dee5j] and [dee5k] changed.
-		- 2026-11-06: [dee5j] expected `...the run folder; freed about ` and now `...the run folder` at the end of the line. [dee5k] the same for `removed the run folder` and `removed 2 image(s), the run folder`, where its docker stub reports no sizes.
+		- 2026-11-06: [dee5j] expected `...the run folder; freed about <size>` and now `...the run folder` at the end of the line. [dee5k] the same for `removed the run folder` and `removed 2 image(s), the run folder`, where its docker stub reports no sizes.
 	- Verified: [deysa] fails against the previous cicd.bash and passes after. A real quick run in the image ended with `Cleanup: removed the run folder`, inside and out. [defng]'s 2 MB stale folder still shows `freed about 2.0MB`.
 	- Swept: the one place the line is printed, `fRunTmpDone` in cicd.bash. No other script reads it.
 	- Acceptance signoff: Self-closed: its test passed.
