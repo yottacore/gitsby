@@ -2509,6 +2509,11 @@ fRunSuite(){
 	## Healing asks origin a second time, so a clone that already has the ref is left alone.
 	fAssert    "[dd5ce] and a clone that has one isn't asked again" \
 		bash -c "cd '${oh}/c' && GIT_TRACE='${oh}/trace' '${gitsby}' -q status >/dev/null 2>&1; [[ -s '${oh}/trace' ]] && ! grep -qF 'remote set-head' '${oh}/trace'"
+	## A branch deleted on origin leaves its origin/ ref behind unless the fetch prunes, and the
+	## checks for whether a branch is on origin read that ref.
+	( cd "${oh}/seed" && git push --quiet origin trunk2:refs/heads/gone && git -C "${oh}/c" fetch --quiet origin && git push --quiet origin --delete gone )
+	fAssert    "[deyva] the pre-command fetch drops a ref origin no longer has" \
+		bash -c "cd '${oh}/c' && { git show-ref --verify --quiet refs/remotes/origin/gone || exit 1; }; '${gitsby}' -q status >/dev/null 2>&1; ! git show-ref --verify --quiet refs/remotes/origin/gone"
 	## A tag named like origin's default made git spell it 'remotes/origin/trunk2', and branch
 	## commands then refused, saying that branch was nowhere.
 	git clone --quiet "${oh}/origin.git" "${oh}/t" 2>/dev/null
@@ -3151,6 +3156,7 @@ GHEOF
 	## scp-style url while every push and fetch lands in a local bare.
 	fStub "${id}/bin/ssh" <<-'EOF'
 		#!/usr/bin/env bash
+		[[ -n "${FAKE_SSH_LOG:-}" ]] && echo "$*" >> "${FAKE_SSH_LOG}"
 		[[ "$1" == "-G" ]] && { printf 'user git\nhostname github.com\n'; exit 0; }
 		if [[ "$1" == "-T" ]]; then
 			## No FAKE_SSH_LOGIN = no usable key, which is the 'unknown' case.
@@ -3200,6 +3206,11 @@ GHEOF
 		bash -c "cd '${idc}' && ${idEnv} FAKE_GH_LOGIN=alice FAKE_SSH_LOGIN=bob '${gitsby}' -q -NoFetch ${anyIdFlag} pr create 'T'"
 	fAssertOut  "[dae5p] and the mismatch is still on the identity line"  "NOT the ssh key's account" \
 		bash -c "cd '${idc}' && ${idEnv} FAKE_GH_LOGIN=alice FAKE_SSH_LOGIN=bob '${gitsby}' -q -NoFetch ${anyIdFlag} pr create 'T' 2>&1"
+	## The identity line, the gh line and the push gate each ask who the key is. One round trip
+	## answers all three, on a link that may be slow or dead.
+	: > "${id}/probe.log"
+	fAssert     "[deytz] a write asks the ssh identity once"  \
+		bash -c "cd '${idc}' && ${idEnv} FAKE_SSH_LOG='${id}/probe.log' FAKE_GH_LOGIN=alice FAKE_SSH_LOGIN=bob '${gitsby}' -q -NoFetch ${anyIdFlag} pr create 'T' >/dev/null 2>&1; [[ \"\$(grep -c -- '^-T ' '${id}/probe.log')\" == 1 ]]"
 	## Read-only pr never pays for the ssh probe, so a mismatch can't block looking.
 	fAssert     "[dae5q] a mismatch does not block read-only pr"  \
 		bash -c "cd '${idc}' && ${idEnv} FAKE_GH_LOGIN=alice FAKE_SSH_LOGIN=bob '${gitsby}' -q -NoFetch pr"
@@ -3660,6 +3671,9 @@ GHEOF
 	local eu="${work}/instcase"; mkdir -p "${eu}"
 	fAssertNotOut "[dcntt] and says nothing of replacing on a first install"  'replacing' \
 		bash -c "env HOME='${eu}/fresh' PATH='${ei}/bin:${PATH}' FAKE_SUMS='${ei}/SHA256SUMS' FAKE_ASSET='${ei}/asset' bash '${goInst}' -y 2>&1"
+	## A folder that isn't there yet is created on the way, and the plan says so first.
+	fAssert    "[deyv0] go installer's plan says it creates a missing folder, and installs into it" \
+		bash -c "out=\$(env HOME='${eu}/nobin' PATH='${ei}/bin:${PATH}' FAKE_SUMS='${ei}/SHA256SUMS' FAKE_ASSET='${ei}/asset' bash '${goInst}' -y 2>&1); grep -q 'Create .*/nobin/\.local/bin (it doesn.t exist yet)' <<< \"\${out}\" && [[ -x '${eu}/nobin/.local/bin/gitsby' ]]"
 	## An upper-case hash read as no binary for this platform, and then named none that was
 	## published. sha256sum -c and the PowerShell installer both take one, and CRLF too.
 	awk '{ print toupper($1) "  " $2 }' "${ei}/SHA256SUMS" > "${eu}/upper"
@@ -8084,3 +8098,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261026 JC: Each check prints PASS, FAIL or SKIP, then its ID and label. A block a box can't run gives a SKIP for each test in it, and the total counts them. The checks that read the old lines read the new ones, plus checks for each suite's lines, the skipped blocks, the Go test lines, spawn-count's and the lint summary. 1760 -> 1768.
 ##		- 20261106 JC: Fixtures in shcl 3.0 beta1 syntax, lists in brackets and dash items. The control character checks feed escapes the format reads, since a backslash is text now. Checks for the commit-pin refusal in release.bash. 1771 -> 1773.
 ##		- 20261106 JC: No pipe into head or grep -q under pipefail. BSD grep writes a line at a time, so the Pillow lock check failed on FreeBSD. A check lists any that come back.
+##		- 20261106 JC: Checks for a write asking the ssh identity once, the Go installer creating a missing folder, and the pre-command fetch dropping a ref origin deleted. 1779 -> 1782.
