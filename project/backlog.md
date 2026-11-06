@@ -649,8 +649,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: the harnesses, utilities and release.bash through the guard
 	- ID: 2026110612393817
 	- Type: Enhancement
-	- Status: Waiting on automated testing
-	- Needs external testing: stage 7 on b26 and vmFreeBSD. test.bash passes there, and leaves no `gitsby-test.*` folder in the box's temp root.
+	- Status: Done
+	- Needs external testing: Done 2026-11-06. Stage 7 on b26 and vmFreeBSD passed at 2508656, as below.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261106-123938
 	- Opened by: jim-collier
@@ -671,6 +671,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: [deywq] fails against the old guard and passes with the new one. [deywr] fails on the old fuzz.bash, test.bash, release.bash and gen-winres.bash. `--backlog-run-quick` passed, with test.bash 1809/0, fuzz 313/0 and parity 30/0.
 	- Verified: run on its own here, demo-repo.bash built and removed a world under /tmp, and the scratch folder came out as `/tmp`, or `${HOST_TEMP}/gitsby` with `TMPDIR` set to `HOST_TEMP`.
 	- Swept: every `rm -r`, `rmdir /s` and `Remove-Item -Recurse` outside legacy/. What's left is in the other children.
+	- Verified: stage 7 on b26 and vmFreeBSD at 2508656, go test and test.bash on each. test.bash passed 1515/0 on b26 and 1412/0 on vmFreeBSD, [deywq] and [deywr] included. Afterwards neither box had a `gitsby-test.*` folder in `TMPDIR`, `/tmp` or `/var/tmp`, while the stage's own `gitsby` folder there showed the run.
+	- Closed: 20261106-131309
+	- Acceptance signoff: Self-closed: stage 7 passed on b26 and vmFreeBSD, and no scratch was left on either.
 
 - CICD reset: stage 7's removals on the boxes through a guard
 	- ID: 2026110612393822
@@ -689,8 +692,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: the installer's removal through a guard
 	- ID: 2026110612551903
 	- Type: Enhancement
-	- Status: Waiting on automated testing
-	- Needs external testing: an install through install.ps1 on vm925w, in Windows PowerShell 5.1 and in pwsh, takes its folder out of `%TEMP%` again.
+	- Status: Done
+	- Needs external testing: Done 2026-11-06 on vm925w, as below.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261106-125519
 	- Opened by: jim-collier
@@ -704,7 +707,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: round-20261106
 	- Test case: test.bash [deyx8] (a whole install takes its temp folder away) and [deyx9] (the removal sits behind the guard).
 	- Verified: [deyx9] fails against the old install.ps1. Under pwsh here, the guard left a link and a folder one level down, and removed a folder right under the temp folder. `--backlog-run-quick` passed, with test.bash 1811/0, fuzz 313/0 and parity 30/0.
-	- Not run: on Windows. pwsh on Linux stood in.
+	- Verified: on vm925w as `wintest`, a whole install from 2508656's install.ps1, with only the download stood in, in Windows PowerShell 5.1.26100 and in pwsh 7.6.6. Each installed and ran gitsby.exe, and left no new folder in `%TEMP%`.
+	- Closed: 20261106-131309
+	- Acceptance signoff: Self-closed: the install passed on vm925w in 5.1 and in pwsh, and took its temp folder away.
 
 - CICD reset: the image build's removals through a guard
 	- ID: 2026110612595461
