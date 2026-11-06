@@ -56,7 +56,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - The pipeline prunes every project's docker build cache
 	- ID: 2026110311291903
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority|Severity [Bug]: High
 	- Opened: 20261103-112919
 	- Opened by: JC
@@ -66,12 +66,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Do it once b23's `/etc/docker/daemon.json` has the `builder.gc` block. `grep -q '"gc"' /etc/docker/daemon.json` checks. Until then the prune stays.
 	- Decisions:
 		- Don't move to a buildx builder of the project's own instead. shcl tried that on 2026-11-02. A cold build of a 2 GB image took 299 s against 266 s on the default builder, and the builder kept a second 3 GB copy of the layers for a week. shcl is going back to the default builder. (JC, me)
+		- The run no longer reports build cache in its end line, since it removes none.
 	- Estimated effort: Low
+	- Actual fix [Bug]: The end of a run no longer runs `docker builder prune`. b23's `daemon.json` has the `builder.gc` block, so the condition to do it was met. contributing.md says the cache is left to docker.
+	- Branch: round-20261106
+	- Test case: test.bash [dee5k] changed: a run in the image calls no `docker builder` command, passed or stopped.
+		- 2026-11-06: [dee5k] asserted `docker builder prune -f --filter until=168h` was called, and now asserts no `docker builder` call at all. Its title says the build cache is left to docker.
+	- Verified: [dee5k] fails against the previous cicd.bash and passes after. `--backlog-run-quick` passed with every area, test.bash 1775/0, fuzz 313/0, parity 29/0.
+	- Swept: every `docker builder`, `buildx`, `system prune` and `image prune` in the tree. Only cicd.bash had one.
+	- Acceptance signoff: Self-closed: its test passed.
+	- Closed: 20261106-105627
 
 - The cleanup line says a run folder freed about 8B
 	- ID: 2026102620355012
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261026-203550
 	- Opened by: jim-collier
@@ -81,6 +90,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Incorrect behavior [Bug]: Both end with `Cleanup: removed the run folder; freed about 8B`, after a full run that built and copied trees for 5 boxes.
 	- Expected behavior [Bug]: The size the run folder had before it was removed, or no size when it can't be known.
 	- Possible cause [Bug]: Not looked at yet. The size may be read after the folder's contents are already gone, or from the folder entry itself.
+	- Actual cause [Bug]: The size was read right. By the end the run folder holds only its `run.pid`, a 7-digit pid and a newline: 8 bytes. The steps remove their own files as they finish, and the run in the image keeps its folder on the container's tmpfs.
+	- Actual fix [Bug]: The end line leaves out the size when it's under 1 MB, which also covers a size that couldn't be read. It reads `Cleanup: removed the run folder`.
+	- Decisions:
+		- Departs from the wording: the size before removal was 8 bytes, so showing it would still read as a bug. A size under a megabyte says nothing about the disk, so the line drops it.
+		- Not a peak size over the run. It would mean measuring every step's files before they go, for a line that only says "about".
+	- Branch: round-20261106
+	- Test case: test.bash [deysa], plus [dee5j] and [dee5k] changed.
+		- 2026-11-06: [dee5j] expected `...the run folder; freed about ` and now `...the run folder` at the end of the line. [dee5k] the same for `removed the run folder` and `removed 2 image(s), the run folder`, where its docker stub reports no sizes.
+	- Verified: [deysa] fails against the previous cicd.bash and passes after. A real quick run in the image ended with `Cleanup: removed the run folder`, inside and out. [defng]'s 2 MB stale folder still shows `freed about 2.0MB`.
+	- Swept: the one place the line is printed, `fRunTmpDone` in cicd.bash. No other script reads it.
+	- Acceptance signoff: Self-closed: its test passed.
+	- Closed: 20261106-105627
 
 - CICD reset: CPU and priority on the Windows box
 	- ID: 2026102508333054

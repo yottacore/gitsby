@@ -688,7 +688,7 @@ fGateStaleRuns(){
 	echo "${dead}" > "${r}/20200101-000000_001/run.pid"; echo "$$" > "${r}/20200101-000000_002/run.pid"
 	echo "${dead}" > "${r}/20200101-000000_004/run.pid"; echo "${dead}" > "${r}/not-a-run/run.pid"
 	for d in 20200101-000000_001 20200101-000000_002 20200101-000000_003 not-a-run; do touch -d '3 days ago' "${r}/${d}"; done
-	TMPDIR="${t}" fGateSays 0 '^Cleanup: removed 1 stale run folder\(s\), the run folder; freed about ' --no-container --backlog-run-quick lint || rc=1
+	TMPDIR="${t}" fGateSays 0 '^Cleanup: removed 1 stale run folder\(s\), the run folder$' --no-container --backlog-run-quick lint || rc=1
 	[[ ! -e "${r}/20200101-000000_001" && -d "${r}/20200101-000000_002" && -d "${r}/20200101-000000_003" && -d "${r}/20200101-000000_004" && -d "${r}/not-a-run" ]] || rc=1
 	[[ "$(grep -c '^Cleanup: ' "${gateOut}")" == 1 ]] || rc=1
 	rm -rf -- "${t:?}"
@@ -709,14 +709,24 @@ fGateTidyLine(){
 	rm -rf -- "${t:?}"
 	((rc == 0))
 }
+## A run folder that holds only its run.pid by the end frees a few bytes, which the line leaves out
+## rather than saying "freed about 8B".
+fGateTidySmall(){
+	local t="${gateDir}/tmp-tidysmall" rc=0
+	rm -rf -- "${t:?}"; mkdir -p "${t}"
+	TMPDIR="${t}" fGateSays 0 '^Cleanup: removed the run folder$' --no-container --backlog-run-quick lint && ! grep -q 'freed about' "${gateOut}" || rc=1
+	rm -rf -- "${t:?}"
+	((rc == 0))
+}
 ## A run in the image labels what it makes, and at its end removes its containers by the run's
-## label, the project's dangling images and a week's build cache, passed, failed or stopped. Only
-## a pass removes the image's older tags, keeping the one before it. One line says what went.
+## label and the project's dangling images, passed, failed or stopped. Only a pass removes the
+## image's older tags, keeping the one before it. The build cache is every project's, so it's
+## left to the daemon's builder.gc. One line says what went.
 fGateDockerTidy(){
 	local t="${gateDir}/tmp-tidy" run="" img="" pid="" i=0 rc=0
 	rm -rf -- "${t:?}"; mkdir -p "${t}"
 	: > "${gateFail}/docker-noimage"; : > "${gateFail}/docker-novol"
-	TMPDIR="${t}" fGateSays 0 '^Cleanup: removed the run folder; freed about ' --backlog-run-quick lint || rc=1
+	TMPDIR="${t}" fGateSays 0 '^Cleanup: removed the run folder$' --backlog-run-quick lint || rc=1
 	rm -f -- "${gateFail:?}/docker-noimage" "${gateFail:?}/docker-novol"
 	run="$(sed -n 's/^as container gitsby-\(.*\)-quick$/\1/p' "${gateOut}")"
 	img="$(sed -n 's/^building \(gitsby-cicd:[0-9a-f]*\)$/\1/p' "${gateOut}")"
@@ -724,10 +734,10 @@ fGateDockerTidy(){
 	fGateCalled "^docker build -q -t ${img} .* --label dev\\.project=gitsby --label dev\\.run=${run} " \
 		"^docker volume create --label dev\\.project=gitsby --label dev\\.run=${run} gitsby-cicd-cache\$" \
 		"^docker ps -aq --filter label=dev\\.project=gitsby --filter label=dev\\.run=${run}\$" \
-		'^docker image ls -q --filter dangling=true --filter label=dev\.project=gitsby$' '^docker builder prune -f --filter until=168h$' || rc=1
+		'^docker image ls -q --filter dangling=true --filter label=dev\.project=gitsby$' && ! fGateCalled '^docker builder ' || rc=1
 	## Newest first: one from another branch, this one, the one before it, and 2 older ones.
 	printf '%s\n' gitsby-cicd:aaaaaaaaaaaa "${img}" gitsby-cicd:bbbbbbbbbbbb gitsby-cicd:cccccccccccc gitsby-cicd:dddddddddddd > "${gateFail}/images"
-	TMPDIR="${t}" fGateSays 0 '^Cleanup: removed 2 image\(s\), the run folder; freed about ' --backlog-run-quick lint \
+	TMPDIR="${t}" fGateSays 0 '^Cleanup: removed 2 image\(s\), the run folder$' --backlog-run-quick lint \
 		&& fGateCalled '^docker rmi gitsby-cicd:cccccccccccc$' '^docker rmi gitsby-cicd:dddddddddddd$' \
 		&& ! fGateCalled '^docker rmi gitsby-cicd:(aaaaaaaaaaaa|bbbbbbbbbbbb)$' && ! fGateCalled "^docker rmi ${img}\$" || rc=1
 	## A cache volume over 2 GB goes, and one under it stays.
@@ -748,7 +758,7 @@ fGateDockerTidy(){
 	for ((i = 0; i < 100; i++)); do [[ -e "${gateFail}/hung" ]] && break; sleep 0.05; done
 	kill -TERM "${pid}"; wait "${pid}" 2>/dev/null || true
 	rm -f -- "${gateFail:?}/docker-hang" "${gateFail:?}/images"
-	fGateCalled '^docker ps -aq --filter label=dev\.project=gitsby --filter label=dev\.run=' '^docker builder prune ' && [[ -z "$(ls -A "${t}/gitsby")" ]] || rc=1
+	fGateCalled '^docker ps -aq --filter label=dev\.project=gitsby --filter label=dev\.run=' && ! fGateCalled '^docker builder ' && [[ -z "$(ls -A "${t}/gitsby")" ]] || rc=1
 	rm -rf -- "${t:?}"
 	((rc == 0))
 }
@@ -6394,7 +6404,8 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dee5h] a run's folder is <start time>_<NNN> under HOST_TEMP, with TMPDIR, TEMP and TMP pointed at it and its pid in it"  fGateRunFolder
 		fAssert "[dee5j] a run removes the project's run folders over 2 days old whose run is gone, and no other"  fGateStaleRuns
 		fAssert "[defng] one line at the end of a run says what it removed, files and docker, and about what that freed"  fGateTidyLine
-		fAssert "[dee5k] a run in the image labels what it makes, and its end removes the run's containers, dangling images, older tags and week-old build cache"  fGateDockerTidy
+		fAssert "[deysa] the end line leaves out a size under a megabyte"  fGateTidySmall
+		fAssert "[dee5k] a run in the image labels what it makes, and its end removes the run's containers, dangling images and older tags, and leaves the build cache to docker"  fGateDockerTidy
 		fAssert "[de5m9] stage 6 removes the demo's repos once the gif is drawn"  fGateDemoRemoved
 		fAssert "[de55e] --leakcheck runs CodeQL over a copy of the module with its dependencies vendored in, once per release OS, and keeps the reports"  fGateCodeQL
 		fAssert "[de55f] a CodeQL finding stops the run"  fGateCodeQLStops codeql-findings 'CodeQL findings; the reports are in .*/codeql_[0-9]+-[0-9]+ \]'
