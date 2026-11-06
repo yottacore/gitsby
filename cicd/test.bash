@@ -3517,6 +3517,10 @@ GHEOF
 		bash -c "PATH='${lk}/bin:${PATH}' bash '${goInst}' -y"
 	fAssertOut  "[dcntq] go installer still takes --release stable"   'work out the latest release' \
 		bash -c "PATH='${lk}/bin:${PATH}' bash '${goInst}' --release stable -y"
+	## Rate limiting is one cause of a failed lookup, not the cause. The way past any of them
+	## is a named release.
+	fAssertOut  "[deyt2] and names rate limiting as one possible cause, pointing at --tag" 'GitHub may be unreachable, or rate-limiting.*A specific release always works: --tag TAG' \
+		bash -c "PATH='${lk}/bin:${PATH}' bash '${goInst}' -y"
 	## wget-only box: wget answers a declined redirect with exit 8 even though the header it was
 	## sent for is right there, so success looked like failure. curl has to be genuinely absent
 	## to reach that arm, hence a PATH of just the tools the installer gets that far on.
@@ -3930,6 +3934,7 @@ GHEOF
 				function Invoke-RestMethod {
 					param($Uri, [switch]$UseBasicParsing)
 					Add-Content -LiteralPath "$env:FAKE_DIR/calls" -Value $Uri
+					if ($env:FAKE_SHAPE -eq 'nolist') { throw 'no network in the suite' }
 					# The whole array as one object, the way 5.1 sends it.
 					$pre = $env:FAKE_SHAPE -eq 'pre'
 					$assets = @([pscustomobject]@{ name = 'gitsby-linux-amd64' })
@@ -3951,6 +3956,10 @@ GHEOF
 				bash -c "grep -q '/download/v1\.2\.3/' '${psi}/calls' && ! grep -q '/download/v1\.2\.2/' '${psi}/calls'"
 			fAssertOut "[dcnt1] go ps installer still reads 7's redirect"  'gitsby v1\.2\.3 \(stand-in\)' \
 				fPsInstall "${psi}" "${psi}/h7" 7 "${goInstPs}" -Yes
+			## The same lookup failure as [deyt2], with neither the redirect nor the list answering.
+			fAssertOut "[deyt3] go ps installer names rate limiting as one possible cause of a failed lookup, pointing at -Tag" \
+				'GitHub may be unreachable, or rate-limiting.*A specific release always works: -Tag TAG' \
+				fPsInstall "${psi}" "${psi}/hnolist" nolist "${goInstPs}" -Yes
 			## A system install promised write access, checked nothing, and failed at the copy
 			## after the download with PowerShell's own error.
 			if [[ ! -w /usr/local/bin ]]; then
@@ -5599,6 +5608,12 @@ GHEOF
 	# shellcheck disable=SC2016
 	fAssert "[db70z] and the same test rejects the filesystem root" \
 		grep -qF '"${root}" != "/"' "${demoRepo}"
+	## The demo shows the folder rules supplying the commit identity, so one inherited from the
+	## shell that renders it must not reach the scenario's steps.
+	bash "${demoRepo}" "${rmWork}/demo" >/dev/null 2>&1 || true
+	fAssert "[deyt4] the demo's env drops an inherited commit identity" \
+		env GIT_AUTHOR_NAME=leak GIT_AUTHOR_EMAIL=leak@example.com GIT_COMMITTER_NAME=leak GIT_COMMITTER_EMAIL=leak@example.com \
+		bash -c ". '${rmWork}/demo/demo.env' && [[ -z \"\${GIT_AUTHOR_NAME:-}\${GIT_AUTHOR_EMAIL:-}\${GIT_COMMITTER_NAME:-}\${GIT_COMMITTER_EMAIL:-}\" ]]"
 	fAssert "[db710] the publish probe's dir is removed on the way out, not only in the happy path" \
 		grep -q '_probeDir' "${root}/legacy/bin/gitsby"
 	# shellcheck disable=SC2016
