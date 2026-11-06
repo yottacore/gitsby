@@ -3855,6 +3855,9 @@ GHEOF
 		## bakes %USERPROFILE%-style entries in as literals for good.
 		fAssert "[dbfmr] go install.ps1 reads PATH raw before rewriting it" \
 			bash -c "grep -q 'DoNotExpandEnvironmentNames' '${goInstPs}'"
+		## The portal check looks at one byte, and once read the whole download for it.
+		fAssert "[deysn] go install.ps1 reads one byte of the download for the portal check" \
+			bash -c "n=\$(grep -cE 'Get-Content -LiteralPath \\\$tmpFile ' '${goInstPs}'); [[ \${n} -ge 1 && \$(grep -cE 'Get-Content -LiteralPath \\\$tmpFile .*-TotalCount 1( |\$)' '${goInstPs}') == \"\${n}\" ]] && ! grep -q 'ReadAllBytes' '${goInstPs}'"
 		## The README documents --help for both installers, and this one had no such parameter -
 		## PowerShell's binder could only report it as one nobody had heard of.
 		fAssertOut "[dbfss] go ps installer answers --help"  'Usage: install\.ps1' \

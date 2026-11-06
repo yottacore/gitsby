@@ -33,6 +33,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- `--backlog-run-quick lint` fails markdownlint MD038 on backlog.md, again
+	- ID: 2026110611063063
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261106-110630
+	- Opened by: jim-collier
+	- Related IDs: 2026102619025437, 2026102620355012
+	- Steps to reproduce [Bug]: `--backlog-run-quick lint` at 22634a9.
+	- Incorrect behavior [Bug]: lint stops at markdownlint, MD038 at backlog.md line 100. That is a progress log line of 2026102620355012, which quotes an old check line ending in a space inside a code span.
+	- Expected behavior [Bug]: lint passes.
+	- Reproduced [Bug]: 2026-11-06, in the image, while working 2026102617594210.
+
 - The Pillow lock check fails on FreeBSD
 	- ID: 2026110610343700
 	- Type: Bug
@@ -297,7 +310,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: a test for every Done item, the 20260812 groups and the 20260819 to 20260821 reviews
 	- ID: 2026102617594210
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261026-175942
 	- Opened by: jim-collier
@@ -306,6 +319,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The old-format items under `Accounts and arguments, 20260812`, `Installers, 20260812`, `Pipeline, 20260812`, `Documentation, 20260812`, and code reviews 20260821, 20260819d, 20260819c, 20260819b and 20260819. 52 items.
 		- Each item there with no test row gets a `Test:` row that names its test by ID, or says in a few words why there is none.
 		- Where a test could exist and would make sense but doesn't, add it, watched to fail first.
+	- Progress log:
+		- 2026-11-06: The 9 group headings and their 43 items each have a `Test:` row, found from the checks and Go tests their fix commits added. 37 items name tests that already ran. 4 are docs only, and 20260819d item 1 names the suite's poisoned config setup, which has no ID.
+		- 2026-11-06: 1 new check where none was: [deysn], install.ps1's portal check reading one byte of the download, for 20260819 item 6.
+	- Decisions:
+		- The 20260812 items were fixed in the bash and PowerShell builds, now frozen at v2.1.0. They name the checks as they run now, against the Go build. A PowerShell-only part names no test, since that build takes no changes.
+		- A Go test renamed since is named as it is now, with the old name and the commit that renamed it.
+		- The 20260812 design.md and README items and the 20260821 docs sweep are docs only. A check would only pin the wording.
+	- Branch: round-20261106
+	- Test case: test.bash [deysn]. The rest name tests that already ran.
+	- Verified: `--backlog-run-quick unit suite fuzz parity` passed in the image, test.bash 1776/0, fuzz 313/0, parity 29/0. [deysn] fails on install.ps1 from before 37b7445 and on a copy with either read put back to the whole file, and passes as it is. backlog-check.bash and `test-id.bash --check` clean.
+		- `--backlog-run-quick lint` stops at markdownlint on a line already at HEAD, filed as 2026110611063063.
+	- Swept: all 52, each against its fix commit's added checks and Go tests, with every cited ID grepped once in the suites and Go tests. Each item kept its wording; only the rows were added.
+	- Closed: 20261106-110700
+	- Acceptance signoff: Self-closed, tests and backlog rows only.
 
 - CICD reset: a test for every Done item, Code review 20260819a
 	- ID: 2026102617594212
@@ -4005,114 +4032,142 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - ✅ Accounts and arguments, 20260812.
 	- Opened: 20260812-150636
 	- Closed: 20260812-181826
+	- Test: each item below names its own, as the suite runs them now, against the Go build. The bash and PowerShell builds are frozen at v2.1.0.
 
 	- ✅ `account apply` ordered its rules the opposite way from the way gitsby matches them.
 		- Cause: gitsby takes the longest matching folder; git applies includes in file order and the last match wins. The rules were written grouped by account, in declaration order.
 		- Note: so a tree nested inside another account's tree got whichever account happened to be declared later, and plain git and gitsby then disagreed about one directory - the single thing `apply` exists to prevent.
 		- Fixed: shortest path first, so the longest match is written last and wins in git too. Folder is the tie-break, so the order is deterministic.
 		- Verified both ways: with the old build, plain git in the nested folder used the outer account's email while gitsby resolved the inner account. Both now say inner.
+		- Test: [db5y7] and [db5y8] in test.bash.
 
 	- ✅ Bash accepted `--config` naming a directory: shell error, no accounts, exit 0. PowerShell's matching hole was an unreadable file, passed over silently.
 		- Fixed: both now require a readable regular file, and refuse by name. A *discovered* config is still skipped rather than refused - nobody asserted that one was there.
 		- Note: PowerShell has no readable bit, so the test is opening the file.
+		- Test: [db5y5] and [db5y6] in test.bash. PowerShell's unreadable-file case stays with that frozen build.
 
 	- ✅ `GITSBY_ACCOUNT` matched an account name case-sensitively in Bash, case-insensitively in PowerShell.
 		- Cause: Bash's loader lowercases the whole key on the way in, but the lookup lowercased only the key half and left the account name as typed - so it could miss what it had just stored.
 		- Fixed: lowercase both halves, which makes Bash self-consistent and matches PowerShell.
+		- Test: [db5y4] in test.bash.
 
 	- ✅ Only `-q`, `-y` and `--config` could precede `raw`, and the error blamed the wrong thing.
 		- Note: worse than recorded - the message was "Unknown command 'raw'", which is false. Only the passthrough's own scan runs before `raw`, so an option it didn't take left the main parser looking at a command by that name.
 		- Fixed: the scan takes gitsby's whole option vocabulary, spelled and normalized the same way the main parser does it. The ones with nothing to act on in a passthrough are inert. `-h` and `-v` still fall through to the main parser, and a genuinely unknown option is refused by its own name.
+		- Test: [db5yb] and [db5yc] in test.bash.
 
 	- ✅ PowerShell `raw` could not pass `--`, git's pathspec separator.
 		- Cause is not what was recorded, and matters: PowerShell's binder reads a bare `--` as an empty parameter name and fails *before the script runs at all*. Nothing in the passthrough can intercept it. Five param-block shapes were tested; a script with no `param()` block receives `--` fine.
 		- Fixed as far as it can be: `` `-- `` survives binding, and is handed to the tool as `--`. Documented in `accounts.md`.
 		- Note: dropping the `param()` block would fix this and the joined-option binding together. Not taken - it is a large change to a documented option surface.
+		- Test: [db5yd] and [db5ye] in test.bash, for Go's `raw`. The binder limit stays with the frozen PowerShell build.
 
 	- ✅ `account apply` ended in a raw operating-system error, a different one in each build.
 		- Note: not the no-config case, which already reports itself properly. The trigger is the include directory being unusable - something else already at that path.
 		- Fixed: check the directory before writing anything, and fail in gitsby's own voice. Nothing partial was ever written, and still isn't.
+		- Test: [db5y9] and [db5ya] in test.bash.
 
 - ✅ Installers, 20260812.
 	- Opened: 20260812-150636
 	- Closed: 20260812-160521
+	- Test: each item below names its own.
 
 	- ✅ A Windows install finished with the program not on `PATH`.
 		- Fixed: the PowerShell installer adds the install directory to the account (or system) PATH, and says so in the plan before you agree. Idempotent, and it leaves the current shell alone.
 		- `PATHEXT` deliberately left alone, and the original reasoning for it was wrong. PowerShell already resolves a bare `gitsby` to `gitsby.ps1` on `PATH` without it - verified with `PATHEXT` cut back to `.COM;.EXE;.BAT;.CMD`. It would only affect `cmd.exe`, which still cannot run a `.ps1` even with the entry, because that needs a file association - and the default association opens the script in an editor rather than running it. Adding it buys nothing and risks that.
+		- Test: [db5xm] in test.bash, for the plan line, and [dbfmr] for the raw PATH read. The PATH write itself needs a Windows box.
 
 	- ✅ Both installers installed anyway when `SHA256SUMS` was absent, and said nothing at all on the `--release dev` path.
 		- Fixed: the plan states which of the two you are about to get, before the confirmation.
 		- Fixed: where the plan promised verification and it can't happen, the install now stops instead of noting it in passing - separately naming the two causes, no published checksum and no sha256 tool here. `--ref TAG` takes it unverified, as an explicit choice.
 		- Note: the release-asset fallback to the tagged tree was the same broken promise and stops the same way.
 		- Verified against the real v2.0.2 release, both installers: plan promises verification, checksum verifies, correct version installed.
+		- Test: [db5xj] and [db5xk] in test.bash for the dev plan, [dd5d8], [dd5d9], [dd5dr] and [dd5ds] for a release with no SHA256SUMS, and [dd5db] for no sha256 tool.
 
 - ✅ Pipeline, 20260812.
 	- Opened: 20260812-150636
 	- Closed: 20260812-153506
+	- Test: the item below names its own.
 
 	- ✅ The pipeline had no remote-sync stage, so the pull at publish time could carry in changes nothing had tested.
 		- Cause: the only pull was in the publish stage, which runs last - after lint, tests and fuzz have all passed against the older tree.
 		- Fixed: stage 0 in both engines. Fetch, fast-forward when only behind, and stop when diverged. No upstream or an unreachable origin warns and carries on; `--no-sync` (`-NoSync`) skips it. Publish keeps its own pull as the late guard.
 		- Note: the fast-forward is `--autostash`, so a dirty tree rides over it. Verified against throwaway repos in all five states, both engines.
+		- Test: [dd5g0] to [dd5g5] in test.bash.
 
 - ✅ Documentation, 20260812.
 	- Opened: 20260812-150636
 	- Closed: 20260812-152949
+	- Test: each item below names its own. All but the badge are docs only.
 
 	- ✅ `design.md` stated the opposite of itself in two places, each time because a later decision was added without revising the earlier one.
 		- Fixed: the Architecture bullet now says no *state* of its own, and names the accounts config as the one read-only exception. The `--no-fetch` bullet no longer calls itself offline, which is what the code and the offline rule below it already said.
+		- Test: none, docs only. A check would only pin the wording.
 
 	- ✅ The `Status: Passing` badge was a fixed image wired to nothing, so it read the same on a broken branch.
 		- Fixed: removed. The pipeline is local, so there is no build to report; the remaining badges all resolve to something real.
+		- Test: [dd812] in test.bash, every README badge but the license and sponsor ones reads what it shows from the repo.
 
 	- ✅ README was about four times the length it should be, and the first runnable example was well over half way down.
 		- Fixed: 535 lines to 273. Install and a worked example are now the first two sections, above the fold.
 		- Fixed: the headline names folder-based accounts, which is the strongest thing in the release and went unmentioned.
 		- Fixed: the long material moved to `accounts.md` and `workflows.md` rather than being deleted, so the README reads as a landing page and the depth is one click away.
+		- Test: none, docs only. The layout is a judgment a check would only pin.
 
 	- ✅ README wording: a missing verb and a doubled letter in the workflow comparison, and a bullet with no full stop in Compatibility.
 		- Fixed: all three, in the moved text.
+		- Test: none, wording fixes.
 
 - ✅ Code review 20260821 - a full pass over the whole tree, docs and installers included. Suite 773 -> 776, fuzz 269/0, parity 27/0, all green; every new check fails against the build or file that preceded its fix.
 	- Opened: 20260821-174646
 	- Closed: 20260821-182749
+	- Test: each item below names its own.
 
 	- ✅ Code Review 20260821 item 1: the installers trusted GitHub's list order in the fallback release lookup.
 		- The list is ordered by publish date, so a fix backported after a newer release would have resolved as latest and installed a downgrade. Both installers now take the highest version among the candidates; a numeric tie keeps the newer-listed one.
 		- The bash one also stopped depending on GitHub pretty-printing the JSON - the scrape was line-anchored, and a packed payload matched nothing and then blamed rate limiting.
 		- The new suite check runs the backport case against a stub serving a one-line payload; the previous installer fails it both ways.
+		- Test: [dbjwq] in test.bash.
 
 	- ✅ Code Review 20260821 item 2: `Get-Help` on install.ps1 showed an auto-generated stub.
 		- Comment help was binding to the first function. A blank line under the shebang and two above the function fix the binding, and a comment says to keep them.
 		- Also gone: the one `+=`-in-a-loop, and the `iex` one-liner's inability to take flags is now documented in the README with the script-block form.
+		- Test: [dcnt4] in test.bash, comment help naming every option, which help bound to the function fails. The `+=` and the README's script-block form are style and docs.
 
 	- ✅ Code Review 20260821 item 3: `br prune`'s delete-time re-check forked git once per branch.
 		- Now one `for-each-ref --merged` survey, same as the plan-time one, asked per target ref only while a candidate is still unconfirmed - so one branch costs one call and eight branches cost the same. The first cut cost one extra call at n=1, and the spawn counts caught it before it landed.
+		- Test: [dbftn] in spawn-count.bash, the `br prune` count.
 
 	- ✅ Code Review 20260821 item 4: no native Go fuzz targets existed.
 		- Five now cover the pure parsers (remote URLs, forge tables, tags, config keys, URL masking); the pipeline hunts briefly past the seed corpus each full pass, capped like the builds.
 		- They paid immediately: a "host" carrying whitespace was matched against account rules instead of reading as unparseable, and `account.<name>.` with no key half-parsed instead of landing with the ignored lines. Both fixed; the crashers are committed as regression seeds.
+		- Test: `FuzzSplitRemoteURL` [dbjwr], `FuzzParseTeaTable` [dcpv0] (`FuzzParseForgeTable` until 6ddb349), `FuzzNextVersion` [dbjws], `FuzzMaskURL` [dbjwt] and `FuzzConfigKeyValue` [dbjwv] in Go, with the crashers kept as seeds.
 
 	- ✅ Code Review 20260821 item 5: error chains were stringified at the two places a usage error carries a cause.
 		- `usageWrapf` keeps the cause on the chain for `errors.Is`/`As`, message text unchanged. `errorlint` and revive's `early-return` now gate what was until now only convention, and the dozen bare `_` discards each carry a one-line reason.
+		- Test: `TestUsageWrapfKeepsTheCause` [dd5gc] in Go, and [dd5fa] and [dd5fb] in test.bash for `errorlint` and `early-return` in the linter set.
 
 	- ✅ Code Review 20260821 item 6: three pipeline steps ignored the half-the-cores budget the builds keep.
 		- `go test`, `golangci-lint` and vet/staticcheck now run under `BUILD_JOBS`; `go test` also gained `-race`, cheap on a tree with no goroutines and armed for the day one appears.
+		- Test: [dbft3], [dedq1] and [dedq2] in test.bash, and [de54m] for `go test -race -p N`.
 
 	- ✅ Code Review 20260821 item 7: `-q` and `-y` behaved identically, against their own help text.
 		- The quiet variable was set and never read. Harness quieting now keys on `-q`; `-y` is unattended and full-volume, as documented. release.bash gained `-q` and hands it to the pipeline. Stage 0 also printed "0/6" in an eight-header run; it says 0/7 now.
+		- Test: [dcmde] and [dcmdf] in test.bash for the demo generator, and [dd5ej] for release.bash's `-q`. Stage 0's count went with the 2026-10-24 engine, and [dd5g1] checks its step line.
 
 	- ✅ Code Review 20260821 item 8: nothing existed to run the newest build the way the pipeline dogfoods it.
 		- `cicd/utility/run-latest.ps1`: pooled timestamped copies outside PATH, week-long age-out, args forwarded, exit code returned. A rebuild never fights a running copy.
 		- `cicd/utility/spawn-report.bash`: the newest recorded spawn counts with deltas, `--check` marker-gated like lint-report's, so the startup look at profiler output has a tool to call.
+		- Test: [dbjww] and [dbjwx] in test.bash.
 
 	- ✅ Code Review 20260821 item 9: docs swept.
 		- Backlog: completed items moved out of Future, empty headings gone, older round numbering unified, example names and paths anonymized. README: sponsor badge and a short support section, the `br prune` exactness paragraph, install subsections in the TOC, the script-block install form, stage numbering matched to what the run prints, count fixes. design.md: table of contents, one duplicated sentence deduplicated. style-guide.md: a Go section for the conventions gofmt can't see. Remaining British spellings fixed, code_of_conduct.md matched back to its upstream text.
+		- Test: none, docs only.
 
 - ✅ Code review 20260819d - a third adversarial pass, aimed at what a run inherits from the machine it runs on.
 	- Opened: 20260819-174102
 	- Closed: 20260819-180413
+	- Test: each item below names its own.
 
 	- Three defects, all in account selection or in what proves it. The first was found by the third: the suite went red on this machine the day it grew a real config of its own, which is what exposed the other two. Four new suite checks (699 -> 703) and two Go tests. Suite 703/0, fuzz 268/0, parity 27/0, spawn counts unchanged.
 
@@ -4121,21 +4176,25 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Note: harmless until this machine had a gitsby config of its own, at which point thirty checks failed against it. Not a false alarm to wave through either - it is the block that would catch an account regression.
 		- Note: same shape as the symlink rule the round before - one side of a pair normalized and the other left alone.
 		- Fixed: every discovery input emptied in one place, so `HOME` stays the candidate under test. Six env strings went through it. The thirty failures clear with no product change.
+		- Test: the suite's own setup, with no ID. Since 20260926 it runs with `XDG_CONFIG_HOME` and `APPDATA` pointed at a config whose account covers every folder it makes, so a block that reads the real accounts fails on any box.
 
 	- ✅ Code Review 20260819d item 2: an account named through `GITSBY_ACCOUNT` applies nothing unless it names a GitHub login.
 		- Cause: the test was whether the account had a `ghAccount` key, not whether the file defined the account at all.
 		- Note: an account can be a commit identity and an ssh key and nothing else, and a folder rule has always applied one - so asking for the same account by name got you less than not asking. The key fell back to whichever one ssh picks, which is the wrong-person push the feature exists to stop.
 		- Note: it also reported the account's own name as the GitHub login the run acts as, which the push-identity gate would then compare against the real one and refuse on.
 		- Fixed: a name the file defines is a configured account either way. Same correction where a repository sets `gitsby.ghAccount` itself - an account naming no login disagrees with nothing, and was being dropped along with its key.
+		- Test: [dbg1y] and [dbg1z] in test.bash, and `TestKnowsAccountWithoutGhAccount` [dbg23] in Go.
 
 	- ✅ Code Review 20260819d item 3: a byte-order mark eats the config file's first key.
 		- Cause: the mark was left on the front of the first line, so the key it belonged to parsed as one nothing understands.
 		- Note: the ignored-keys line printed the mark as part of the name, so the one diagnostic meant to explain the loss named a key that looks perfectly valid. Windows editors write a mark by default.
 		- Fixed: stripped on the way in. One Go test and two suite checks.
+		- Test: [dbg20] and [dbg21] in test.bash, and `TestConfigLoadStripsBOM` [dbg22] in Go.
 
 - ✅ Code review 20260819c - a fresh adversarial pass over the rewritten Go, after the refactor settled.
 	- Opened: 20260819-150417
 	- Closed: 20260819-152223
+	- Test: each item below names its own.
 
 	- Went in over the same ground as the round before it, looking for what a whole-file rewrite could have carried across unchanged rather than for anything the linters would see. gofmt, vet, staticcheck, golangci-lint and govulncheck were clean and the suite was 694/0 going in, so none of the four defects below is tool-visible. Five new suite checks (694 -> 699) and three Go tests, every one of them run against the build that preceded its fix.
 
@@ -4146,28 +4205,33 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Note: this is the failure the whole feature exists to prevent - the run acts as the wrong account while the listing looks right. `account list` made it worse: the folder is real, so its "this rule can never match" note stayed quiet and gave a false all-clear.
 		- Note: a synced folder, a stable name pointing at a dated one, a home that is itself a link - all ordinary ways to write a rule.
 		- Fixed: resolution through the nearest ancestor that exists now runs on every platform, not just Windows. A destination that does not exist yet still canonicalizes, which is what `repo clone` needs. Two Go tests and two suite checks.
+		- Test: [dbfx0] and [dbfx1] in test.bash, and `TestAccountForDirThroughSymlink` [dbfx2] and `TestCanonPathKeepsMissingTail` [dbfx3] in Go.
 
 	- ✅ Code Review 20260819c item 2: the hotfix "changes shipped code" warning goes missing unless you run it from the top of the tree.
 		- Cause: the pathspec naming the shipped source was written bare, and git reads one relative to the current directory.
 		- Note: from anywhere else it matched nothing, git exited 0 with no output, and the warning simply did not appear. Every existing check ran from the repo root, so all of them passed.
 		- Fixed: anchored at the repo root with `:(top)`. Suite check added that runs the whole thing from a subdirectory.
+		- Test: [dbfwx] in test.bash.
 
 	- ✅ Code Review 20260819c item 3: an account's commit name replaces one the repo had pinned for itself.
 		- Cause: both identity keys were gated on a single question about `user.email`, so a repo that set only `user.name` locally passed the gate and had that name overridden.
 		- Note: these entries reach git the way `-c` does, which outranks the local config - so the override was silent, and it contradicted the rule the same code states.
 		- Note: transcribed from the 2.1.0 script, which has it too. Not a hotfix: the name is display, the email is what attributes a commit, and that half was already right.
 		- Fixed: asked per key, in one call rather than two. A repo-local value is honored and the account fills in only what the repo left unset. Two suite checks.
+		- Test: [dbfwy] and [dbfwz] in test.bash.
 
 	- ✅ Code Review 20260819c item 4: a two-line answer read as one string kept the interior carriage return.
 		- Cause: `runOut` trims the end of the whole capture; only `runLines` trimmed each line. Four places split a capture themselves and skipped it - `pr ok` reading the PR's head branch among them, where the branch name would then match no ref anywhere.
 		- Note: hardening rather than a reproduced failure - the tools involved write LF today. It was already the reason `runLines` exists, applied in some places and not others.
 		- Fixed: one `splitLines` helper, used by `runLines` and by all four. Go test added.
+		- Test: `TestSplitLines` [dbfx4] in Go.
 
 	- Nothing came out of the rest. Naming, comments, the linter set, the optimization levels, the pipeline stages, the demo and both installers were gone over in the three rounds before this one and needed no change. Two housecleaning items did: a code-review bullet still filed under features, and a block of generator boilerplate left in `contributing.md`.
 
 - ✅ Code review 20260819b - a full adversarial pass over the rewritten Go, plus a re-check of the ground the earlier rounds covered.
 	- Opened: 20260819-120120
 	- Closed: 20260819-145236
+	- Test: each item below names its own.
 
 	- The rewrite of 20260818 moved every command onto one run struct and gave every failure an error to return, so this went looking for what that shifted rather than for what it left behind. gofmt, vet, staticcheck, golangci-lint and govulncheck are clean and the suite was 684/0 going in, so none of the five defects below is tool-visible. Ten new suite checks (684 -> 694) and two Go tests; seven of the twelve fail against the build or the tree that preceded them.
 
@@ -4177,38 +4241,46 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Cause: the timeout was added only when `GIT_SSH_COMMAND` was unset, so a caller's own choice would be left alone. The account selector sets that same variable a moment earlier, from the config file's `sshKey` - so the test saw a value and stood down.
 		- Note: it goes missing for exactly the setups it exists for. An unreachable host then hangs for the full TCP wait rather than three seconds, on every command that starts with a fetch, which is nearly all of them.
 		- Fixed: the run records whether the variable was already set when it started, and one helper builds the environment for both places that reach origin - the fetch, and `repo connect`'s probe. A value the caller chose is still left exactly as typed.
+		- Test: `TestRemoteEnvKeepsTheConnectTimeoutOnOurOwnSSHCommand` [dbfvz] in Go.
 
 	- ✅ Code Review 20260819b item 2: on macOS and the BSDs, `/dev/null` passes for a terminal.
 		- Cause: only Linux and Windows asked the real question. Everything else fell back to "is this a character device", which `/dev/null` is.
 		- Note: that test decides the fail-closed rule - with no terminal to confirm on, a mutating command refuses rather than prompt into the void. The end state stays safe, since the prompt reads end-of-file and aborts, but the message is the wrong one. macOS and FreeBSD are published targets now rather than someday ones.
 		- Fixed: `tty_bsd.go` asks the same ioctl the Linux file asks, under this family's name for it. Still nothing installed. The character-device fallback now covers only platforms nothing here is built for.
+		- Test: [dbfvw] and [dbfvx] in test.bash.
 
 	- ✅ Code Review 20260819b item 3: `~` in a config value expands to nothing on native Windows.
 		- Cause: four places resolved it through `HOME`, which a shell sets and Windows does not.
 		- Note: a `tokenFile = ~/...` then reads no token and falls back to gh's own account, and a `path = ~/...` folder rule matches nothing - which reads exactly like no rule at all. `accounts.md` says the `~/.config` location works on Windows too, and it did not.
 		- Fixed: one helper, `HOME` first so a shell that sets one still wins. What it cannot resolve is left as typed, rather than turned into a path that names somewhere real.
+		- Test: [dbfvy] in test.bash, and `TestExpandHome` [dcq9y] in Go, `TestExpandTilde` until 0ad1374. `TestExpandHomeWithNoHome` [dd5g9] covers no home at all.
 
 	- ✅ Code Review 20260819b item 4: one branch git won't delete stops the whole of `br prune`.
 		- Cause: the deletes go out in a single call, which is what made prune cheap. Git deletes the branches it can and still exits nonzero for the rest - one checked out in another worktree, most often - and that status was returned.
 		- Note: the run then ended with some branches already deleted, origin untouched and no count printed, on the one command whose whole answer is a count.
 		- Fixed: non-fatal, the way the remote half beside it already was. It counts what actually went, names what it could not delete, and holds that branch's remote copy back so nothing is left here with nothing behind it on origin.
+		- Test: [dbfvq] to [dbfvt] in test.bash.
 
 	- ✅ Code Review 20260819b item 5: an account fragment left readable stays readable through every re-apply.
 		- Cause: the file is written 0600, but a mode only applies where the write creates the file.
 		- Note: the fragment names the account and points at the token file, and `account apply` is the command someone re-runs after tightening permissions.
 		- Fixed: the mode is set explicitly.
+		- Test: [dbfvv] in test.bash.
 
 	- ✅ Code Review 20260819b item 6: the lint and audit tools gate at whatever version this machine happens to have.
 		- Note: a finding that appears - or stops appearing - on a tree nobody touched is usually a tool that moved rather than code that did.
 		- Fixed: `GO_TOOL_VERSIONS` in `config.bash` records the four, read back with `go version -m` since they spell `--version` four different ways and one has no such flag at all. Stage 1 warns on drift. Not a gate and not an installer - this pipeline installs nothing.
+		- Test: [dd5fh], [dd5fj] and [dd814] in test.bash.
 
 	- ✅ Code Review 20260819b item 7: nothing published says the builds are reproducible.
 		- Note: a checksum is worth having because anyone can rebuild the bytes it covers, and that was recorded in a comment in `config.bash` and nowhere a reader would look.
 		- Fixed: a short Install subsection with the command, verified to produce the same bytes as the pipeline's own build.
+		- Test: [defqn] in test.bash, added 2026-10-26, the README's reproduce recipe against the release's flags and build number.
 
 - ✅ Code review 20260819 - the installers, back at the repo root. Six findings, none of which reach the binary.
 	- Opened: 20260819-103518
 	- Closed: 20260819-111554
+	- Test: each item below names its own.
 
 	- Pass over the installers that came back to the repo root. All six findings are in the two new files; none of them reach the binary. The first two are the serious ones - they end a default install with no output at all.
 
@@ -4216,28 +4288,35 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Cause: the latest-release lookup declines the redirect and reads the tag out of the header, and wget answers a declined redirect with exit 8 whether or not it printed what was asked for. Under `set -e` an assignment carries its command's status, so the run ended there - after the lookup had already succeeded.
 		- Note: the one-liner printed nothing and exited 8. No message, no fallback, nothing to go on.
 		- Fixed: `|| true` on the lookup, which is the only thing that ever wanted the status.
+		- Test: [dbfmp] in test.bash.
 
 	- ✅ Code Review 20260819 item 2: any curl failure did the same thing, and hid the fallback.
 		- Cause: same assignment rule. DNS, a proxy, a rate limit - anything that made curl exit nonzero ended the run, so neither the API fallback nor the message that names rate-limiting could be reached.
 		- Fixed: `|| true` on both, and on the API fallback beside them.
+		- Test: [dbfmn] in test.bash.
 
 	- ✅ Code Review 20260819 item 3: `-Arch` refused the machines it was written to explain itself to.
 		- Cause: detection assigned back to the parameter, and assigning to a parameter re-runs its own `ValidateSet`. On x86 or 32-bit ARM the detected value isn't in the set, so the binder error arrived instead of the message naming what the release does publish.
 		- Fixed: detection lands in its own variable.
+		- Test: [dbfmq] in test.bash, a pin in the source, since reaching it needs the hardware.
 
 	- ✅ Code Review 20260819 item 4: `-Tag` had the same shape, one layer deeper.
 		- Cause: the scraped tag assigned back to `$Tag` re-ran its `ValidatePattern`, which made the explicit check below it dead code. Through the API fallback the throw was caught and reported as rate-limiting, which it wasn't.
 		- Fixed: resolved into its own variable, so the check that was written for it is the one that runs.
+		- Test: [dbfmq] in test.bash, which pins `$Tag` the same way.
 
 	- ✅ Code Review 20260819 item 5: persisting PATH on Windows flattened it.
 		- Cause: `[Environment]::GetEnvironmentVariable` hands back the expanded PATH. Reading that and writing it back turned entries like `%USERPROFILE%\bin` into literals - permanently, on a PATH we only meant to append one directory to. Worse under `-System`, where the whole machine's PATH goes through it.
 		- Fixed: read raw from the registry with `DoNotExpandEnvironmentNames`, written back with the kind it already had.
+		- Test: [dbfmr] in test.bash, a pin in the source.
 
 	- ✅ Code Review 20260819 item 6: the captive-portal check read the whole binary to look at one byte.
 		- Fixed: one byte off the stream.
+		- Test: [deysn] in test.bash, added 2026-11-06, a pin in the source. [dd5dv] and [dd5dw] run the portal check itself.
 
 	- ✅ Code Review 20260819, coverage: nothing exercised the release lookup, which is why items 1 and 2 got through green.
 		- Fixed: two checks stand the network up as stubs - a curl that always fails, and a wget-only PATH where the stub prints the header and exits 8. Both fail against the build before the fix. The two PowerShell findings need the hardware or the network to reproduce, so they are pinned in the source the way the SHA256SUMS decode already is. Suite 613 -> 617.
+		- Test: [dbfmn] and [dbfmp] in test.bash.
 
 - ✅ Code review 20260819a - the whole tree, top to bottom. Forty-three numbered items, plus the pass that preceded them.
 	- Opened: 20260819-105954
