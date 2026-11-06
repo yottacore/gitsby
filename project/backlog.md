@@ -349,7 +349,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: a test for every Done item
 	- ID: 2026102416313106
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
@@ -360,6 +360,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Progress log:
 		- 2026-10-26: Split, too big for one pass. 399 old-format Done items name no test, 299 bugs and 100 features. Children, by backlog section: 2026102617594206, 2026102617594208, 2026102617594210, 2026102617594212, 2026102617594214, 2026102617594216, 2026102617594218 and 2026102617594221.
 		- 2026-10-26: 2026102617594206 is done, with 2 new checks. The other 7 are Queued.
+		- 2026-11-06: All 6 children done in round-20261106, so every Done item now has a Test row. 13 new checks came with them.
+	- Test case: each child's own Test case row; the children are 2026102617594210, 2026102617594212, 2026102617594214, 2026102617594216, 2026102617594218 and 2026102617594221
 	- 2026-10-26: Children 2026102617594206 and 2026102617594208 are Done. The other 6 are Queued.
 
 - CICD reset: a test for every Done item, the 20260812 groups and the 20260819 to 20260821 reviews
