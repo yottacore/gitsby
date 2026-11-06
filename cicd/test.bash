@@ -1500,6 +1500,8 @@ fRunSuite(){
 	fAssert     "[dadv9] 'branch' spells out 'br'"        bash -c "cd '${cloneA}' && '${gitsby}' -q branch list"
 	fAssert     "[dadva] 'br new' aliases 'br create'"    bash -c "cd '${cloneA}' && '${gitsby}' -q br new grammar1 && git -C '${cloneA}' branch --show-current | grep -qx grammar1"
 	fAssert     "[dadvb] 'br go' aliases 'br switch'"     bash -c "cd '${cloneA}' && '${gitsby}' -q br go main && git -C '${cloneA}' branch --show-current | grep -qx main"
+	## Both stay off the help, so it teaches one verb per noun.
+	fAssert     "[deyw6] and the help names neither"       bash -c "cd '${cloneA}' && out=\"\$('${gitsby}' --help 2>&1)\" && grep -qF 'br create' <<< \"\${out}\" && ! grep -qE 'br (new|go)( |\$)' <<< \"\${out}\""
 	fAssertFail "[dadvc] unknown br subcommand rejected"   bash -c "cd '${cloneA}' && '${gitsby}' -q br frobnicate"
 	fAssertFail "[dadvd] unknown repo subcommand rejected" bash -c "cd '${cloneA}' && '${gitsby}' -q repo frobnicate"
 	fAssertFail "[dadve] bare 'repo' rejected"             bash -c "cd '${cloneA}' && '${gitsby}' -q repo"

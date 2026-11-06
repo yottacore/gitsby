@@ -506,7 +506,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: a test for every Done item, features, second half
 	- ID: 2026102617594221
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261026-175942
 	- Opened by: jim-collier
@@ -515,6 +515,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The old-format items in `Done - Features and enhancements`, from `Other Git hosts are first-class` to the end. 52 items.
 		- Each item there with no test row gets a `Test:` row that names its test by ID, or says in a few words why there is none.
 		- Where a test could exist and would make sense but doesn't, add it, watched to fail first.
+	- Progress log:
+		- 2026-11-06: The range holds 43 items and 20 nested under them, 63 in all, none with a row. Each has a `Test:` row now, found from the checks and Go tests their fix commits added. 2 group headings name their items'. 47 name tests. 14 name none: the docs-only one-liners item, the frozen PowerShell port and the retired Windows pipeline and leg, the Go leg that became the whole suite, the bash refactor and its 4 parts, and 4 that were repo housekeeping.
+		- 2026-11-06: 2 new checks where none was: [deyw6], the help naming neither `br new` nor `br go`, for the noun grouping item. And [deyw8] in parity.bash, `pull` and `pullcom` answering as one command, for the item that dropped the bare `pull`.
+	- Decisions:
+		- Rows follow 2026102617594218's. A check renamed since is named as it is now, and an item a later change reversed, such as the pre-release lookup of 20260916, names the checks for what holds now.
+		- A group whose nested items are separate pieces of work says each item below names its own. A heading with work of its own, such as the bash refactor, names that and points at its items.
+		- [deyw6] reads `--help`, since a `-q` ahead of the bare `help` word is an unknown command in both builds.
+		- `pull` came back as a spelling of `pullcom` after the item dropped it, which pulls and commits, so the item's reason still holds. [deyw8] pins that, rather than the item's original refusal.
+	- Branch: round-20261106
+	- Test case: test.bash [deyw6] and parity.bash [deyw8]. The rest name tests that already ran.
+	- Verified: `--backlog-run-quick` passed with every area, lint included, test.bash 1784/0, fuzz 313/0, parity 30/0, spawn counts clean. [deyw6] fails on a build whose help shows `br switch` as `br go`, and [deyw8] on one with `pull` taken out of pullcom's spellings. Each passes as it is. backlog-check.bash and `test-id.bash --check` clean.
+	- Swept: all 63 rows, each against its fix commit's added checks and Go tests, with every cited ID grepped once in the suites, spawn-count.bash and the Go tests. Each item kept its wording; only the rows were added.
+	- Closed: 20261106-123018
+	- Acceptance signoff: Self-closed, tests and backlog rows only.
 
 - CICD reset: test IDs
 	- ID: 2026102416313107
@@ -6030,6 +6044,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- The tea path is written against tea's real command surface but has not been exercised against a live Gitea instance; the suite drives it through a stub.
 	- Defect found and fixed before dogfooding: giving the credential helper a username interpolated the login into a string Git hands to a shell, so a `;`, a backtick or a `$()` in `ghAccount`/`GITSBY_ACCOUNT` ran as a command the moment an HTTPS push needed credentials. Both the token and the username now come from the environment. Fuzz gained four vectors driven through a real `git credential fill`; three of four fired on the pre-fix build.
 	- Follow-up done: the identity gate covers non-GitHub hosts too. A tea write is compared against the ssh key like a gh write, and the push-side check reads the account's login on the host rather than `ghAccount`. Both were verified against the pre-fix build - a mismatched `pr create` went through and pushed.
+	- Test: [dbg5d] to [dbg5y] in test.bash, Go tests [dbg5z] to [dbg64], and [dbg6e] in fuzz.bash for the credential helper. The identity gate follow-up is [dbg65], [dbg66], [dbg69] and [dbg6a] to [dbg6c], with Go test [dbg6d].
 
 Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. Work top to bottom; everything happens on branches off `gover`, nothing touches the scripted implementations yet.
 
@@ -6039,6 +6054,7 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- Module, `src-go/` tree, builds from the Linux cicd engine.
 	- Version is a build-time value, not a line in the source.
 	- Done: stub binary that owns only `version`; test stage builds it fresh each run, dev builds carry the git-describe version.
+	- Test: [dbshq] in test.bash and Go test [dbsj2], for the version stamped at build time. Every gate builds the binary fresh.
 
 - ✅ Third suite leg in test.bash for the Go binary.
 	- Opened: 20260817-115833
@@ -6046,12 +6062,14 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- Mirrors the pwsh leg: a shim path, same fixture, same checks.
 	- Skipped when no binary exists; failures don't fail cicd until the leg is expected to pass everything. Pass counts print either way so progress is visible per run.
 	- Done: leg prints its own counts and stays out of the totals and the exit code. First run 162/279 - the passing side is mostly refusals a stub satisfies, so the failed count is the real distance.
+	- Test: none of its own. The Go leg became the whole suite when the scripted builds froze, so test.bash runs its command checks against the Go build alone now.
 
 - ✅ Go tooling in the lint stage.
 	- Opened: 20260817-170407
 	- Closed: 20260817-201711
 	- gofmt, go vet, staticcheck. Shellcheck and PSScriptAnalyzer keep covering the pipeline and installers.
 	- Done: stage 1 runs gofmt (list mode) and go vet as gates, staticcheck when installed. Keyed off `src-go/` existing, no globs, so nothing to mirror in the Windows settings yet. Verified the gate fails a misformatted file by name.
+	- Test: [dcmap] in test.bash, the gate failing when gofmt, go vet, staticcheck or golangci-lint finds something, and [dcmaq], gofmt's failure stopping it before the unit tests. [dd5f9] to [dd5fb] check the golangci-lint set.
 
 - ✅ Port the shared layer first.
 	- Opened: 20260817-170407
@@ -6059,6 +6077,7 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- Argument parsing, output helpers, and the process runner. Commands run from an argument list, no shell between.
 	- Config read (`.shcl` stays flat and hand-parsed for now) and account resolution, same order and same env-only application.
 	- Done: one file per concern in `src-go/`. `raw git`/`raw gh` shipped with it as the layer's first consumer, proving the whole chain - prescan, config, resolution, env-only application, hand-over - against the real suite. Verified side by side with the bash build: same messages, same credential helper, same commit identity. Leg moved 162/279 -> 182/259; the one new-code failure is the `--` check handing the go leg the PowerShell spelling, which is the known leg-name sweep in the command-slice item.
+	- Test: Go tests [dbfqk] to [dbfqq] for argument parsing, [dbfr0] for the config read, [dbfr8] to [dbfrh] for the output helpers, and [de8a0] for the one spawn site. [db019] to [db01j] in test.bash for `raw git` and `raw gh`.
 
 - ✅ Port a first command slice: `version`, `help`, `status`, `br list`.
 	- Opened: 20260817-201711
@@ -6066,45 +6085,55 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- Read-only commands, so the suite leg starts passing real checks with no mutation risk.
 	- Note: any command named in an error message or help must be one the parser accepts.
 	- Done: help/version/status/br list, plus the full command-sort validation so every known command refuses bad arguments with the script's own message before saying it isn't built yet. Status carries the whole identity block (account, config-ignored, SSH probe, author) and the capped change/incoming lists. Verified byte-identical against the bash build across status, br list, help, and every refusal path. test.bash leg-name branches now split pwsh from everyone else; the leg moved 182/259 -> 236/202, and every remaining failure in this area is prep leaning on a command from the next slice.
+	- Test: [da8kx], [da8ky], [da8m3] and [da8m4] in test.bash, [dakp5] for the identity block, and [dd5bx] for the capped change list.
 
 - ✅ Port the remaining read paths: `br prune` preview, `pr list`, default-branch resolution.
 	- Opened: 20260818-055519
 	- Closed: 20260818-090334
 	- Done: `br prune` runs its whole survey and shows the real plan (including the empty-plan answers and the keep reasons); only the deleting half still says it isn't built. Bare `pr` lists and `pr <n>` views with diff; create/ok wait for the writers, and pr's argument shapes refuse with the script's messages. Default-branch resolution itself landed with the previous slice - what this adds is the refusal gate for commands that need a confirmable branch. Config-file errors now match the scripts' one-trailing-blank shape (they throw inside a command substitution there). All verified byte-identical against the bash build; the leg moved 236/202 -> 249/189, and every remaining failure in these areas needs the mutating half.
+	- Test: [dadxn] and [dadxx] in test.bash for the `br prune` plan, [death] and [dbg5e] for a bare `pr` listing, [dd5cg] for `pr <n>`, and Go test [dd5g8] for default-branch resolution.
 
 - ✅ Accounts, parity and release automation, 20260812.
 	- Opened: 20260812-150636
 	- Closed: 20260812-181826
+	- Test: each item below names its own.
 
 	- ✅ On Windows a folder rule spelled the way this shell spells paths resolved in one build and not the other.
 		- Cause: the PowerShell build folded the drive letter *after* asking the filesystem, and .NET reads a `/c/...` path against the current drive - which never exists. So nothing resolved, and short names and junctions were left as written.
 		- Fixed: fold the drive letter first. All four spellings now resolve identically in both builds, short names included.
 		- Known limit, and now visible rather than silent: an MSYS *mount* path such as `/tmp/...` has no meaning to the native build and never can, since only the shell knows its own mount table. `account` marks any folder rule that resolves to no directory, which shows that up along with ordinary typos.
+		- Test: [db5zr] in parity.bash for the spellings, [db60b] in test.bash for the canonical one, and [dd5ec] for the mark on a rule that names no folder. The drive-letter fix itself was PowerShell only, in a frozen build.
 
 	- ✅ The identity lines reported the account that was resolved, not the one that was applied.
 		- Fixed: an account with no token available now says so on the line. It is still resolved, but gh goes on using its own account - and the block whose whole job is answering "who does this go out as" was naming the wrong one.
 		- Only for a configured or explicitly asked-for account; one inferred from the remote's owner is not a claim that we can act as it.
+		- Test: [db60c], [db60d] and [db5wg] in test.bash.
 
 	- ✅ `sync` compared no identities before it pushed.
 		- Fixed: the commands that push with git, rather than writing through gh, now ask whether the folder's account is the one origin will actually authenticate as. A warning interactively, a refusal unattended, and `--any-identity` says it was intended.
 		- The https half is covered by the item above: gitsby supplies the token itself, so the push goes out as the resolved account or says it could not.
+		- Test: [db605] to [db60a] in test.bash.
 
 	- ✅ `account apply` wrote identity and key but nothing about credentials.
 		- Fixed: the fragment now sets `credential.https://github.com.username`, so a credential manager looks up that account's entry rather than any entry for the host.
+		- Test: [dd5ee] in test.bash.
 
 	- ✅ Added a parity suite: `cicd/parity.bash`, wired into the test stage of both engines.
 		- It asks whether the two builds *answer the same* for one input, where `test.bash` asks whether each behaves correctly. A behavioral check written per implementation passes on both while they quietly disagree - which is what every port defect that reached users actually was.
 		- Covers path spellings, option forms, string case and file encoding: 23 comparisons.
 		- It earned its place while being written, finding two real divergences: the `/tmp` mount limitation above, and PowerShell answering an unknown option with the entire help text - and under `-q` with nothing at all but an exit code - where Bash named the option.
+		- Test: parity.bash as a whole, [db5zr] to [db604] for the first comparisons.
 
 	- ✅ `br prune` asked about one branch at a time.
 		- Fixed: `git for-each-ref --merged` answers for every branch in one call per target ref, instead of two ancestry questions per branch. The delete-time re-check stays per branch, deliberately: that one is the safety net, not the survey.
 		- Verified on a 33-branch repo - the same 30 merged branches pruned, the same 3 unmerged kept.
+		- Test: spawn counts [dbftn] and [deytk], one survey whatever the branch count, and [dadxn] to [dadxt] in test.bash for what it prunes and keeps.
 
 	- ✅ Fully automated releases, end to end: `cicd/release.bash`, to the three-phase shape in `design.md`.
 		- Phase 1 verifies and changes nothing, phase 2 is the only one that pushes, and phase 3 publishes and then proves the result the way a user meets it - by running the documented installer against the published release.
 		- Both guards exist because the thing they check has already gone wrong: the two builds' version strings drifting apart, and the history footers going a whole release with no entry.
 		- `--dry-run` says what each phase would do and changes nothing. Writing it that way immediately caught a bug in the script itself: a loose version match picked a version-shaped string out of a comment, which phase 2 would then have rewritten instead of the real declaration.
+		- Test: [db6y6], [db6y8], [dd5ek], [dd5et] and [dd5en] in test.bash, the changelog read, the pipeline first, the footer guard and the dry run.
 
 - ✅ Multiple GitHub accounts, chosen by which folder you are in, for both git and gh.
 	- Opened: n/a
@@ -6115,6 +6144,7 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- `repo url [https|ssh]` converts an existing remote, which is the only thing between an ssh repo and a token.
 	- `account` explains what is configured and which account applies here. `account apply` writes the same rules into the global git config, so plain `git` matches.
 	- `raw git` and `raw gh` run either tool as the folder's account, verbatim, so scripts can use gitsby as a drop-in prefix.
+	- Test: [db008] to [db01j] in test.bash, and [db01m] to [db01q] for the https offer.
 
 - ✅ A Windows-native CI/CD pipeline, so the whole thing can be run from Windows and not only from Linux.
 	- Opened: n/a
@@ -6124,6 +6154,7 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- The demo gif is compared, never regenerated. Reproducing it byte for byte depends on fontconfig, the installed fonts and the pinned optimizer, none of which Windows matches - a render here would land a file the next Linux run flips straight back.
 	- Stages whose tool is missing warn and skip, as they already do on Linux. On a stock Windows box that is markdownlint and the demo gif.
 	- Settings are carried in the script rather than read from `config.bash`; only the dogfood destinations genuinely differ.
+	- Test: none. cicd-win.ps1 went in 1928f35 (2026-08-18), when the pipeline moved to the Go build, and cicd.bash is the one engine.
 
 - ✅ Run the PowerShell leg of both suites on Windows, not just on Linux.
 	- Opened: n/a
@@ -6132,6 +6163,7 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- Two things blocked it. PowerShell finds a shebang stub on PATH but starts nothing and reads the silence as empty output, so every stub gained a `.cmd` sibling that hands the body back to bash. And the confirmation checks needed `setsid`, which Windows has none of - unnecessary there, since PowerShell reads redirected stdin and never reaches for a terminal.
 	- Fuzz keeps a plain stub and skips four checks on that leg instead. Its arguments are hostile on purpose, and `cmd.exe` re-parses an unquoted `&` or `>`: a vector would partly run for real, and be reported as an injection gitsby never had. A skip that says so beats a pass that isn't one.
 	- The ssh probe now starts the ssh PowerShell itself resolves rather than letting `ProcessStartInfo` search PATH its own way - which on Windows reached the real `ssh.exe` and would have gone to github.com, against the suite's promise never to touch the network.
+	- Test: none of its own. The PowerShell leg ended with the frozen build. Go test [de8a0] covers the same class in the Go build: every process it starts resolves through one PATH walk.
 
 - ✅ Say what a branch is branched from, wherever a branch is named.
 	- Opened: 20260731-080041
@@ -6141,12 +6173,14 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- `br create` and `br hotfix` gained a `New branch` line naming what they will make and its base, so the answer is on screen before the plan is read. Pre-flight only - after the run the branch exists and the question is gone.
 	- The repo's default branch moved to its own line instead of riding along in parentheses, and `br list` now states it too.
 	- The base shown is where the branch lands. Git records no fork point, and for anything gitsby made the two are the same by construction.
+	- Test: [dams0] to [damsa] in test.bash, and [dafqm] for the default branch line.
 
 - ✅ Show the file list before first publication (`repo create`, `repo connect` from a plain directory).
 	- Opened: n/a
 	- Closed: 20260728-073221
 	- Every other command shows what it is about to touch; the one that hands a whole directory over for the first time did not.
 	- The list is what `git add --all` will really add, asked through a throwaway git dir outside the work tree - so `.gitignore` and `core.excludesFile` are honored, and answering "n" leaves the directory exactly as it was found.
+	- Test: [daggp] to [daggv] in test.bash.
 
 - ✅ `br hotfix <name>`: a branch that targets the default branch instead of `dev`, for corrections to published material.
 	- Opened: n/a
@@ -6158,6 +6192,7 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- Landing warns when the branch touched `bin/`: the default branch would then carry code no tag contains, so the latest release's downloads no longer match it.
 	- Implemented as `fBranchTarget` / `Get-BranchTarget` alongside the existing merge target, rather than by changing `fMergeTarget` - "where new branches come from" and "where this branch lands" are different questions, and only the second one varies.
 	- 30 new checks across both implementations. Verified the pre-feature build rejects `br hotfix` outright.
+	- Test: [daen8] to [daenp] in test.bash, with [daenf], [daepj] and [dbfwx] for the shipped-code warning.
 
 - ✅ Release-prep sweep over the docs and the built-in help.
 	- Opened: 20260726-125534
@@ -6165,6 +6200,7 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- The help still described `sync` as commit-then-pull. That order changed when the bare `pull` command was dropped, and this line was missed. The README already had it right.
 	- A regression check pins the wording, so the same drift can't come back quietly.
 	- Also two stale references in the project notes: a command name that was renamed, and a description of argument parsing from before the noun grouping.
+	- Test: [dae0j] in test.bash, the check that pins the help's order.
 
 - ✅ `br prune`: delete branches already merged into the merge target, local + remote.
 	- Opened: 20260726-110940
@@ -6175,23 +6211,27 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- Verified the safety gates discriminate: a version with the ancestry check removed deletes an unmerged branch, and one without the origin-side check deletes origin's only ref to unpushed work.
 	- Deletes with `git branch -D` behind our own check. Deferring to `git branch -d` was tried first and was wrong both ways: it warns about HEAD on every branch when pruning from anywhere but the target, and it flatly refuses a merged branch that was never pushed, so the plan promised a deletion that silently didn't happen.
 	- Closes with a count (`Pruned 3 local, 3 on origin`) and names what it kept, so a wall of git output still ends in a plain answer.
+	- Test: [dadxn] to [dady3] and [dadyd] to [dadyf] in test.bash, and [dadyv] for the reason it gives.
 
 - ✅ Drop the bare `commit` and `pull` commands - both work around the opinionated workflow.
 	- Opened: 20260726-101513
 	- Closed: 20260726-102919
 	- `commit` alone leaves work committed but unshared. `pull` alone was the only place the tool took upstream changes without parking your own, unlike every other command.
 	- Reversible in one direction only: dropping now is free, adding back later breaks nobody, removing later would.
+	- Test: [dadvv] in test.bash. `pull` came back later as a spelling of `pullcom`, which pulls and commits, and [deyw8] in parity.bash, new, checks the two are one command.
 
 - ✅ `update`/`sync` pull before they commit (bug this exposed, present on dev).
 	- Opened: 20260726-101513
 	- Closed: 20260726-102919
 	- Committing first guaranteed divergence whenever the remote had moved, so the ff-only pull refused - in the most ordinary case there is. `pull` had been the accidental workaround.
 	- Verified against the pre-fix build: it fails, the fixed one lands the work on top and keeps history linear.
+	- Test: [da8ma] to [da8md] and [dadvw] in test.bash.
 
 - ✅ An unreachable remote warns and skips the pull instead of failing; `--no-fetch` means offline and skips the pull too.
 	- Opened: n/a
 	- Closed: 20260726-102919
 	- Needed because `update` is now the only way to commit; a genuine non-fast-forward still fails hard.
+	- Test: [dadvx] to [dadw0] in test.bash, and [dab6a] and [dab6b] for a non-fast-forward still failing.
 
 - ✅ Group the infrequent commands under nouns: `repo clone|create|connect`, `br list|create|switch|land`, `pr create|<n>|ok <n>`.
 	- Opened: 20260726-095211
@@ -6199,17 +6239,20 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- Daily verbs stay one word. The extra word only lands where you type it rarely, and it buys a discoverable set instead of a flat list of abbreviations.
 	- One verb across all three nouns (`create`, never `new` in some places). `new` and `go` still work but aren't published.
 	- Landed before v2.0.0 on purpose: every name being changed was unreleased, so it cost nothing now and would have cost a permanent alias later.
+	- Test: [dadv9] to [dadvg] in test.bash, with [deyw6], new, for `br new` and `br go` staying off the help. [dadv5] and [dadv6] in fuzz.bash.
 
 - ✅ Split the old `connect` into `repo create` and `repo connect`.
 	- Opened: 20260726-095211
 	- Closed: 20260726-100901
 	- Creating a remote is the one irreversible, outward-facing step, so it gets its own verb instead of happening as a side effect.
 	- Each refuses the other's case and names it, so a wrong guess costs one line of output.
+	- Test: [dadvk] to [dadvt] in test.bash.
 
 - ✅ Drop every pre-2.0 command alias (`scommit`, `spull`, `scompul`, `saveup`, `spush`, `mkbranch`, `chbranch`, `mtm`, `list`).
 	- Opened: 20260726-095211
 	- Closed: 20260726-100901
 	- v2 is a clean break under a new tool name, and not all of the old commands worked. The suite now asserts they're rejected, so none creeps back.
+	- Test: [dadvh], [da8sy], [dadvj] and [dd5by] in test.bash.
 
 - ✅ `pr new [title]` opens a pull request, so the whole PR round trip lives in gitsby instead of half in `gh`.
 	- Opened: n/a
@@ -6218,12 +6261,14 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- Targets `dev` when the repo has one, else the default branch. Refuses from that branch, since there is nothing to propose.
 	- No title given: the last commit subject, which is already a description of the work. The preview shows it before anything happens.
 	- An already-open PR for the branch reports its number instead of letting `gh` error.
+	- Test: [dadsq] to [dadsx] in test.bash, under the name `pr create` since d446496.
 
 - ✅ `pr ok <n>` refuses while the current branch has uncommitted changes or unpushed commits.
 	- Opened: n/a
 	- Closed: 20260726-092038
 	- Merging deletes the branch local and remote, so work that never reached origin was outside both the PR and the merge.
 	- Every other mutating command already parked work first; this was the one that did not.
+	- Test: [dadsy] to [dadt2] and [dafqd] in test.bash.
 
 - ✅ The installers' default "latest release" lookup skips anything flagged as a pre-release on GitHub.
 	- Opened: n/a
@@ -6232,36 +6277,45 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- Decided: publish releases as full releases rather than adding a `--pre` flag. The semver suffix still marks a candidate for anyone reading the tag, and the one-liner installs keep working with no extra arguments.
 	- `--ref`/`-Ref` remains the way to install a specific tag or branch, and is already documented.
 	- Reversed 20260916: a tag with a semver suffix publishes as a pre-release. Both installers read the release list now instead of the `releases/latest` redirect, so the reason this decision existed is gone. See enhancement 5 and design.md's release policy.
+	- Test: [dd5es] in test.bash for a suffixed tag publishing as a pre-release, and [ddf98] to [ddf9a] and [ddf9h] to [ddf9k] for the installers reading the release list, since the 20260916 reversal.
 
 - ✅ CICD process (full spec in private notes):
 	- Opened: 20260724-142509
 	- Closed: 20260726-082146
+	- Test: each item below names its own.
 
 	- Done: every stage below is live and runs on each publish. The pipeline is local by design - no cloud service, no account to pay for.
 
 	- ✅ `cicd.bash`: `-q|--quiet`, `-m|--msg|--message`, prompt for commit message when neither given (CTRL+C aborts); silkterm output style; `fEcho`/`fParseArgs` conventions.
+		- Test: [dd5fy] in test.bash for `-m`, and [dd5mm] for a `-q` run.
 
 	- ✅ Linting stage: shellcheck (+ markdownlint), no auto-format for Bash; output GFS-rotated to `cicd/artifacts/lint/`; zero-error goal.
 		- Everything gates clean now, including `bin/gitsby` (the refactor cleared its ~80 legacy findings; report-only list emptied). PSScriptAnalyzer gates the three `.ps1` files.
+		- Test: [dd5f4] to [dd5f7] in test.bash for the lint globs, [dcmap] for each linter failing the gate, and [dbftb] for the summary.
 
 	- ✅ Dogfood install stage: copy to first existing preferred dir (bash + pwsh lists).
 		- Both legs live since the pwsh port landed.
+		- Test: [dd5fv], [dbss7], [dbss8] and [de4bv] in test.bash.
 
 	- ✅ Regression tests; keep updated as features/bugs land.
 		- `cicd/test.bash`: throwaway repos (bare origin + two clones), every command plus failure guards, run once per implementation - 140 checks.
+		- Test: test.bash as a whole, and [defpy] for its one line per check.
 
 	- ✅ Adversarial fuzz/security testing (our input surface + what we depend on).
 		- Done: `cicd/fuzz.bash` - bombards the command slot, options, and branch/message/version/pr args with malformed + injection vectors, per implementation (bash + pwsh). Asserts three invariants: no internal crash (bash/pwsh error-dump signatures), no shell/command injection (a canary side-effect never fires), and inputs-that-must-refuse exit nonzero leaving the repo unchanged. 191 checks. Found + fixed two real pwsh-port bugs (see next items). Scope is gitsby's own input, not upstream git.
 		- Fuzz-found bug (fixed here): the pwsh port passed user-supplied values to native git UNquoted, so PowerShell wildcard-expanded `*`/`?` against the filesystem before git saw them - `newbr '*'` slipped past `check-ref-format` and created a branch named after a file. Quoted the user values in the direct git/gh calls (branch validation, clone-dir, gh target), mirroring the bash port. bash was never affected (always quoted).
+		- Test: fuzz.bash as a whole, [dabe3] to [dabek] for the vectors and the three invariants, and [dadv8] for the clone directory that the wildcard fix covered.
 
 	- ✅ pwsh: `Invoke-Git` splatted an argument array (`git @GitArgs`), and PowerShell wildcard-expands any element that is a bare `*`/`?`/`[...]` matching files in the cwd - so a commit message of exactly `*` globbed to filenames.
 		- Done: `Invoke-Git` now runs git via `System.Diagnostics.ProcessStartInfo` + `ArgumentList` (a literal argv - no PowerShell reshell or globbing), `UseShellExecute=$false` with no redirection so git output still shows inline. Tried and rejected: quoting splat elements (splat drops quoting), `[WildcardPattern]::Escape` (git receives the backtick), `Start-Process -ArgumentList` (re-splits multi-word elements like a spaced message). Verified messages with `*`, spaces, `?`, `[ab]`, `;$(...)`, quotes, and emoji all land verbatim; exit codes propagate; no injection. Locked with `fMsgLiteral` verbatim-message vectors in `cicd/fuzz.bash` (both implementations). Fuzz 183 -> 191; test.bash still 269/0; PSSA clean.
+		- Test: [dabep] in fuzz.bash, the verbatim message vectors, now against the Go build. The fix itself was PowerShell only, in a frozen build.
 
 	- ✅ Automated demo GIF (fake terminal, `--quick` skips); copy `gen-demo-gif.py` from convert-base-v2; embed `assets/demo.gif` in README.
 		- Done: scenario `cicd/demo-scenario.toml` + repo builder `cicd/utility/demo-repo.bash`; embedded in README top with a commented YouTube placeholder. Single hero `land` command (state block + full plan + commit/push/merge/cleanup) in an anonymized throwaway repo built offline; runs real gitsby so it can't go stale. 960x540 (the tool's default, a blessed alternative in the private note; not 640x360, and the tool has no fixed-fps knob). Pinned commit dates make it byte-deterministic so cicd only regenerates on real change. 18.4s loop, 823 KiB.
 		- Follow-up: one command was too thin a story, so the scenario now runs a whole feature end to end - `status`, `newbr`, `update`, a real edit typed at the prompt, `sync`, `land` - with a short comment line introducing each. Two generator fixes came out of it: stderr now shares the stdout pipe (git writes its progress there, so it was all landing after the program's own output instead of under the step that produced it), and the palette pads to the next power of two rather than a flat 256 (same pixels, ~12% smaller file).
 		- Follow-up: the smooth scroll and the cursor glide were never actually running. Both stepped once per 80ms frame, and a line of scroll is 21px, so any scroll rate over ~275 px/s finished a line in a single frame - a hard jump, and the rate knob did nothing (325, 520 and 820 all rendered byte-identical). Frame interval is now 20ms (50 fps) and the cursor glide follows it, so both move as intended. A smooth scroll redraws the whole text block every frame, which is expensive, so a new per-step `clear = true` starts each command on a fresh screen and roughly halves how far the view ever travels. 60.0s loop, still byte-deterministic.
 		- Follow-up: cicd now runs the render through `gifsicle -O3` when it is installed, before the compare, so the committed file is the optimized one (`DEMOGIF_OPT_CMD` in config.bash; silently skipped when absent). Worth about 9% - 7.3 -> 6.6 MiB. Less than it sounds like it should be: the renderer already crops each frame to what changed, so most of the win was banked, and the lossy modes buy almost nothing on a 35-color text demo.
+		- Test: [dcmd6] to [dcmdb] in test.bash, and [dbftd] and [dbfte] for the scenario.
 
 - ✅ New commands for getting connected: `clone` (get an existing repo) and `connect` (publish work that only exists locally to a new or empty remote).
 	- Opened: 20260724-133000
@@ -6270,6 +6324,7 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- `connect [target]`: init if needed, commit, push. URL to an existing empty remote, or `owner/name` creates the GitHub repo via gh (`--public`/`--private`). Refuses remotes with history and won't change an existing origin.
 	- Done: both implementations, previewed + confirmed like the rest; tests 207 -> 241.
 	- Follow-up: logically validated (no bugs) and exhaustively tested. Closed the "gh paths untested offline" gap with a hermetic fake gh (create / add https+ssh / refuse-nonempty), plus clone edges (no-dev, pre-existing empty dir, different-url refuse) and connect edges (empty inited repo, matching-url re-connect). Tests 241 -> 269, both implementations.
+	- Test: [dab8a] to [dab8t] and [dab8w] to [dab99] in test.bash.
 
 - ✅ One-liner installers for Bash and PowerShell: download the release, verify the checksum, install the script. Idempotent, and they state the plan and ask before touching anything. Documented in README under "Installation", including a "Direct" subsection with the commands and the install locations.
 	- Opened: n/a
@@ -6281,20 +6336,25 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 
 	- Note on install paths: gitsby is a single file, so it goes straight to `~/.local/bin` or `/usr/local/bin` rather than into a program directory with a symlink.
 
+	- Test: [dbfk5] to [dbfm3] in test.bash for the installers as they are now, with [dd5d1] and [dd5d8] for `SHA256SUMS`.
+
 - ✅ Rename `saveup` to `update`.
 	- Opened: 20260723-140731
 	- Closed: 20260723-141405
 	- Done in both implementations; `saveup` stays as a hidden alias like the other old names. Docs and changelog swept.
+	- Test: [da8m5] to [da8m7] and [da9vs] in test.bash. The `saveup` alias went later, and [dadvj] checks it's refused.
 
 - ✅ Script output starts and ends with a blank line (breathing room between prompt text).
 	- Opened: n/a
 	- Closed: 20260723-141405
 	- Trailing blanks already existed on every exit path; added the leading one (both implementations). Error paths were already blank-wrapped.
+	- Test: Go tests [dbfr8] to [dbfrh], the blank-line framing, and test.bash's whole-transcript checks.
 
 - ✅ After `release` merges dev to main, bring dev up to include the release merge and tag.
 	- Opened: n/a
 	- Closed: 20260723-141405
 	- Done via `git merge --ff-only main` on dev (then push), not `git branch -f dev main`: same result normally, but if dev gained commits mid-release it skips with a warning instead of discarding work. Previews updated; tests cover it.
+	- Test: [da9vv] and [da9vw] in test.bash.
 
 - ✅ 'git_notes_and_oneliners.md': Move the current commands under a "Bash" section, and add a "PowerShell" section below it, with pwsh v7 parity versions of the same one-liners.
 	- Opened: 20260723-133000
@@ -6303,6 +6363,7 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- The PowerShell section opens with the three gotchas that bite when translating from Bash: `&&`/`||` need pwsh 7, `@{u}` has to be quoted, and staged-change tests read `$LASTEXITCODE`.
 	- Every pwsh one-liner was run against throwaway repos, not just eyeballed. Two spots deviate on purpose: no `less` (git pages its own diff), and `Remove-Item` deletes outright since there is no cross-platform `trash`.
 	- Also swapped the stale sister-tool reference in the Bash "push local changes" one-liner for `gitsby update`.
+	- Test: none, docs only. A check would only pin the wording.
 
 - ✅ All potentially destructive or conflict-producing commands - or anything that will reveal a user identity on the remote - should:
 	- Opened: n/a
@@ -6312,6 +6373,7 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- Every mutating command already previewed its plan and prompted; this added the identity and change detail. `status` shows the same block.
 	- SSH line resolves the remote URL through `ssh -G`, so a `~/.ssh/config` host alias shows the real host and key behind it - the point being to catch acting as the wrong account before you push. (It later grew the account itself, which is the part that actually answers that; see the bug above.) Author line shows what git will actually stamp on the commit.
 	- Changes list one file per line (short form), truncated to the terminal width and capped at 25 with an "and N more" tail - the `less -FX` idea without depending on a pager. Incoming section lists what a pull would change, and the branch line carries ahead/behind.
+	- Test: [da9tz] to [da9v5] in test.bash, [dakp5] to [dakp7] for the ssh line, and [dd5bx] for the 25-file cap.
 
 - ✅ Better command names; dev-aware merging; PR and release commands (both implementations).
 	- Opened: 20260722-200007
@@ -6319,24 +6381,29 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 	- Renames: scompul->saveup, spush->sync, scommit->commit, spull->pull, mkbranch->newbr, chbranch->gobr, list->listbr, mtm->land. Old names still work as hidden aliases.
 	- newbr/gobr/land now branch off / land on dev when the repo has one, else main/master. land refuses to run from the default branch.
 	- New: pr (bare = list, n = view + diff, ok n = approve + merge, via gh), release (merge dev into main --no-ff, tag, push; no version = patch bump on the latest v* tag).
+	- Test: [da8sz] to [da8t4] and [da8n1] in test.bash for dev-aware merging, [da8td], [da8te] and [dd5cg] for `pr`, and [da8t5] to [da8tc] for `release`. The old names went later, and [dd5by] checks they're refused.
 
 - ✅ PowerShell port of gitsby (style guide already covers pwsh; dogfood pwsh leg activates when it lands).
 	- Opened: 20260722-182703
 	- Closed: 20260722-183557
 	- `bin/gitsby.ps1`: same commands, checks, and flow as the bash version. Regression suite now runs once per implementation (78 checks total); PSScriptAnalyzer joined the lint stage (gates all three .ps1 files); dogfood pwsh leg live. Not in a release yet - README says to use `-Ref dev` until one is cut.
+	- Test: none. The PowerShell build is frozen at v2.1.0 and takes no changes.
 
 - ✅ Create a release-install script per platform (`bash` and \[`pwsh` or `cmd`\]), runnable via a single `curl`/`wget` (etc.) and documented under "how to install". Downloads, installs, and runs the latest release, with an option to abort. Update README.md with one-liner for both local and system-level installs.
 	- Opened: n/a
 	- Closed: 20260722-181311
+	- Test: [dbfk5] to [dbfm3] in test.bash for the installers as they are now, and [dafr4] to [dafrf] for `--ref` and the `iex` form. The item below names its own.
 	- `install.bash` + `install.ps1` at repo root; plan-then-confirm, `--system`/`-y`/`--ref`; README Installation one-liners filled in (user + system, curl and wget). Resolves the latest release tag, prefers a release asset, falls back to the tagged tree. The 2022-era releases predate the `bin/` layout so the release path activates for real once a v2 release is cut (`--ref main`/`--ref dev` works today); the pwsh installer says the port hasn't shipped and points at the bash one until then.
 
 	- ✅ Do the same thing for a dev-branch install script (Linux bash, macOS sh, Windows PowerShell), runnable via a single `curl`/`wget` and documented under "how to develop". Clones main, installs dependencies, and states what it will do with an option to abort. Update README.md with one-liner for both local and system-level installs.
 		- `install-dev.bash` + `install-dev.ps1`: clone, check out `dev`, check tooling (offers package-manager install where one is found), verify, print next steps. Documented in README "How to develop" + contributing.md "Your First Code Contribution". Bash installers run on macOS stock bash 3.2.
+		- Test: [dafrg] in test.bash, on the frozen install-dev.ps1, and [deyvs] for both scripts still in `legacy/`.
 
 - ✅ Get original commands and options working. At some point some just kind of broke (pre-git), and were never fixed.
 	- Opened: n/a
 	- Closed: 20260722-165821
 	- All commands work and are regression-tested; the commit/save/sync/land family takes -m or a positional message, newbr/gobr validate their branch argument.
+	- Test: [da8kx] to [da8n3] in test.bash.
 
 - ✅ Integrate these rules and ideals: `reference/git.txt` (in this repo), including:
 	- Opened: n/a
@@ -6357,6 +6424,8 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 		git push
 		~~~
 
+	- Test: [da8ma] to [da8md], [da8mw] and [dab64] in test.bash.
+
 - ✅ Make sure everything done with git:
 	- Opened: n/a
 	- Closed: 20260722-165821
@@ -6368,36 +6437,47 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 
 	- Everything must be idempotent.
 
+	- Test: [da8m7], [dab8c], [dab8k] and [dadxx] in test.bash for re-runs doing nothing, [da8md] for the stash, [da8n2] for a detached HEAD, and [dafqm] and [dd5cc] for the default branch read from origin.
+
 - ✅ Refactor the bash script:
 	- Opened: n/a
 	- Closed: 20260722-165821
+	- Test: none. A rewrite of the bash build, now frozen in `legacy/`, which the suite ran against whole. [daeps] to [daepx] still check it there. The items below name theirs.
 	- Rewritten 2142 -> ~620 lines on the current template generation (same one as `n8git_backup-and-publish`): strict mode, trap suite, arg parser, minified header trio.
 
 	- ✅ Use newer, easier-to-maintain Bash template/boilerplate/common functions. (E.g. from sister project silkterm.) But even those examples need to be cleaner (don't change anything outside of repo.)
+		- Test: none, code structure only.
 
 	- ✅ Modernize function and variable naming convention. Be descriptive with names, but not too long. Use of one-letter variables in small loop structures is OK.
+		- Test: none, naming only.
 
 	- ✅ Remove dead code.
 		- Dropped the unused ~1400-line generic library (ping, symlink, editor pickers, sudo plumbing, glob-permutation engine, platform detection).
+		- Test: none, removed code only.
 
 	- ✅ Refactor to maximize usefulness of idiomatic Bash 5 features.
 		- Argument arrays instead of eval (which also retired the curly-quote message mangling), `[[ -v ]]`, parameter transforms, arithmetic conditionals.
+		- Test: none, code structure only. [da8n3], a message with quotes, covers the curly-quote fix, now against the Go build.
 
 - ✅ Work on dev branch. Push releases to main.
 	- Opened: n/a
 	- Closed: 20260722-165821
+	- Test: none, how this repo works. The item below names its own.
 
 	- ✅ `dev` branch created from `main` and pushed; feature branches now merge to `dev`, `main` is release-only.
+		- Test: none, a branch on the git host.
 
 - ✅ Create PRs rather than pushing directly (for this project).
 	- Opened: n/a
 	- Closed: 20260722-165821
 	- Feature branches now go up as PRs to `dev` and land via merge commit; direct local merges retired.
+	- Test: none, how this repo works.
 
 - ✅ Delete stale branch from 2020.
 	- Opened: n/a
 	- Closed: 20260722-165821
 	- `20201003-074416_jc_rewrite-in-golang` (abandoned golang rewrite) deleted from origin.
+	- Test: none, a one-off branch deletion.
 
 ### Deferred
 

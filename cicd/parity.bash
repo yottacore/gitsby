@@ -329,6 +329,7 @@ fSameSpelling(){
 }
 fSameSpelling "[dben1] 'pullcom' and 'update' are one command"   "${notRepo}" "update"   "pullcom"
 fSameSpelling "[dben2] 'br merge' and 'br land' are one command" "${notRepo}" "br land"  "br merge"
+fSameSpelling "[deyw8] 'pull' and 'pullcom' are one command"     "${notRepo}" "pull"     "pullcom"
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Plans. The pull step changed on purpose on 2026-10-03: the fetch at the start of the command
