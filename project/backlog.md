@@ -366,7 +366,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: a test for every Done item, code reviews 20260818, 20260813 and 20260812
 	- ID: 2026102617594214
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261026-175942
 	- Opened by: jim-collier
@@ -375,6 +375,35 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The old-format items under those three reviews. 33 items.
 		- Each item there with no test row gets a `Test:` row that names its test by ID, or says in a few words why there is none.
 		- Where a test could exist and would make sense but doesn't, add it, watched to fail first.
+	- Progress log:
+		- 2026-11-06: The 3 group headings and their 30 items each have a `Test:` row, found from the checks and Go tests their fix commits added. 28 items name tests. 2 name none: the 20260813 README and changelog items, which are docs only.
+		- 2026-11-06: 2 new tests where none was: [deyth], a Go test that the fetch's connect timeout goes onto the repo's own `core.sshCommand`, for 20260812 item 4. And [deytk], a spawn count of `br prune` over five landed branches, for 20260818 item 16, since the count over one branch can't see a spawn per branch.
+		- 2026-11-06: Filed 2026110611364366, from reading spawn-count.bash: its fixture's origin isn't restored between commands, as its header says.
+	- Decisions:
+		- Rows follow 2026102617594210's. A check added since is named with the commit that added it, 9f0a006 for most.
+		- 20260812 item 4 was a PowerShell-only fix, in a frozen build. The Go build adds the same timeout to the same command, so it gets a Go test rather than none.
+		- 20260818 items 14 to 16 name spawn counts. [deytk] has a world and origin of its own, so no other count moved.
+		- 20260813 items 1 and 2 are docs only. A check would only pin the wording.
+	- Branch: round-20261106
+	- Test case: Go test [deyth] and spawn count [deytk]. The rest name tests that already ran.
+	- Verified: `--backlog-run-quick` passed with every area, test.bash 1779/0, fuzz 313/0, parity 29/0, spawn counts with [deytk] at 31. [deyth] fails with remoteEnv's timeout put in place of the repo's ssh command. [deytk] fails at 36, over its limit of 34, with a spawn per branch put back in prune's survey, where [dbftn] still passes at 32. Each passes as it is. backlog-check.bash and `test-id.bash --check` clean.
+	- Swept: all 30, each against its fix commit's added checks and Go tests, with every cited ID grepped once in the suites, spawn-count.bash and the Go tests. Each item kept its wording; only the rows were added.
+	- Closed: 20261106-113716
+	- Acceptance signoff: Self-closed, tests and backlog rows only.
+
+- spawn-count.bash says it restores each command's origin, and doesn't
+	- ID: 2026110611364366
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261106-113643
+	- Opened by: jim-collier
+	- Related IDs: 2026102617594214
+	- Steps to reproduce [Bug]: read `fRestore` and the fixture setup in cicd/utility/spawn-count.bash.
+	- Incorrect behavior [Bug]: the header says the work tree and the origin are restored between runs. `fRestore` copies the pristine folder, but each clone's origin url is the pristine bare repo's absolute path, which `cp -a` keeps. So `pullcom`, `br switch` and `br prune` push to the pristine origin, and later commands are measured against what they left.
+	- Expected behavior [Bug]: each command runs against an untouched origin, so its count doesn't depend on the commands before it.
+	- Reproduced [Bug]: by reading, while working 2026102617594214. Control: a clone made by `git clone` from a relative path also stores the absolute path as its url.
+	- Possible cause [Bug]: nothing points the live clones at the live origins after the copy. A `remote set-url` in `fRestore` would.
 
 - CICD reset: a test for every Done item, code reviews 20260731 to 20260723
 	- ID: 2026102617594216
@@ -4749,6 +4778,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - ✅ Code review 20260818 - the first full review of the Go code. Eighteen items: thirteen defects, five of shape and speed.
 	- Opened: 20260818-181424
 	- Closed: 20260819-124128
+	- Test: each item below names its own.
 
 	- From a full review of the Go code, 20260818. gofmt, vet, staticcheck and the suite (530/0) are clean; these are what the tools don't see. Several are inherited from the frozen bash build - latent there, but live in the shipping binary.
 
@@ -4757,75 +4787,91 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The stronger per-branch check only runs when standing somewhere else.
 		- Inherited from the bash build.
 		- Asked of the PR's own branch by name wherever you are standing. `@{u}` answers nothing at all for a branch pushed without `-u`, which is the one arrangement that lost the commits.
+		- Test: [dbfgn] to [dbfgr] in test.bash.
 
 	- ✅ Code Review 20260818 item 2: `repo create`/`repo connect` never actually select the target account.
 		- The late re-selection is a no-op behind the already-applied guard, so publishing happens as gh's active account, silently. The comment at the call site says the opposite.
 		- Inherited from the bash build.
 		- The target named on the command line resolves the account, ahead of the validation that itself talks to gh. The late re-selection behind the already-applied guard is gone.
+		- Test: [dbfgg] in test.bash.
 
 	- ✅ Code Review 20260818 item 3: the "gh's active account is 'X'" identity line can never print truthfully.
 		- The token is exported before the probe that asks who was active, so the probe answers as the new account and the line stays dark. With a tokenFile whose token belongs to a different login, it prints a wrong name instead.
 		- Inherited from the bash build.
 		- The probe runs before the token is exported, so it can still answer with the account being replaced.
+		- Test: [dbfgy] in test.bash.
 
 	- ✅ Code Review 20260818 item 4: `account apply` can't clean up rules under folder paths with a space.
 		- The managed-includes scan splits each config line at the first space, so such keys are never recognized as ours. Re-runs append duplicates, and a rule removed from the config file keeps applying forever.
 		- Inherited from the bash build.
 		- Reads the rules with `--null`, so a key holding a folder path with a space comes back whole.
+		- Test: [dbfh0] to [dbfh2] in test.bash.
 
 	- ✅ Code Review 20260818 item 5: `account apply` reports success no matter what.
 		- The fragment truncate error is discarded and every `git config` exit code is ignored; "Wrote ..." and "Done." print regardless, exit 0.
 		- The one command that writes outside the repo is the one that can silently no-op.
 		- Every write is checked; the first failure stops the run and names what was left incomplete.
+		- Test: [dbfh3] to [dbfh5] in test.bash.
 
 	- ✅ Code Review 20260818 item 6: `pr ok` with a dead PR number sails through preflight.
 		- A failed `gh pr view` silently falls back to the current branch, so the plan is confidently about the wrong thing and the run dies after confirmation - the shape preflight exists to prevent.
 		- Head branch and state come back in one call. A number gh can't resolve is refused, and so is a PR that is no longer open.
+		- Test: [dbfgh] to [dbfgm] in test.bash.
 
 	- ✅ Code Review 20260818 item 7: offline reads as "repo doesn't exist" in `repo connect`/`repo create`.
 		- Any `gh repo view` failure is taken as absence and stated as fact, with advice that derails further. These two skip the pre-command fetch (no origin yet), so offline is never discovered for them.
 		- gh's stderr tells a name that resolves to nothing apart from an API it couldn't reach; the second is repeated back rather than stated as absence.
+		- Test: [dbfgb] to [dbfgf] in test.bash.
 
 	- ✅ Code Review 20260818 item 8: `--offline` is a hidden third spelling of `--no-fetch` - and pushes still go out.
 		- Contradicts the design rule that offline is a discovered state, never a flag. `sync --offline` publishes work.
 		- Call to make: drop the alias, or make that one spelling refuse outgoing traffic too. Inherited from the bash build, undocumented in help.
 		- Dropped, and refused by name with a pointer to `--no-fetch`. A flag that also stopped the pushes would only simulate a state the fetch already discovers, and nothing outside the source ever documented the spelling. Reasoning in design.md.
+		- Test: [dbfhe] to [dbfhj] in test.bash.
 
 	- ✅ Code Review 20260818 item 9: the `sshkey` config value reaches shell-executed strings unquoted.
 		- Concatenated into `GIT_SSH_COMMAND` and written into `core.sshCommand`; git hands both to a shell. The config is trusted input, but the file is redirectable by flag/env, and the repo-local sshCommand path already refuses quoting tricks - this path should match it.
 		- A key path carrying whitespace or a shell character is dropped and listed as unusable, rather than quietly falling back to whatever key ssh picks.
+		- Test: [dbfh6] to [dbfh8] in test.bash.
 
 	- ✅ Code Review 20260818 item 10: branch names from a cloned repo can reach git as leading options.
 		- A repo whose default branch is named `-something` makes checkout/merge/branch/push parse it as flags. Bounded to breakage, not code execution. `--` separators fix it; the ssh probe paths already have them.
 		- A dash-led name is refused before it reaches git in a leading argument position - checkout, merge, branch delete.
+		- Test: [dbfgs] to [dbfgw] in test.bash.
 
 	- ✅ Code Review 20260818 item 11: a handed-over repo's own `.git/config` can pick gitsby's identity and token file.
 		- `gitsby.ghAccount`/`gitsby.ghTokenFile` are honored from local config, so a foreign repo can have an arbitrary readable file loaded into the token env for child processes. No exfiltration channel exists - the credential helper is host-scoped - so this is identity confusion plus file read, not theft. Consider honoring tokenFile from global/folder config only.
 		- `gitsby.ghTokenFile` is honored from global/system scope only. `gitsby.ghAccount` still reads repo-local: naming a login there is an ordinary thing to do, and the account still has to be one you hold.
+		- Test: [dbfgx] in test.bash.
 
 	- ✅ Code Review 20260818 item 12: the wrong-account warning talks about pull requests on commands with no gh involvement.
 		- The ssh-key-mismatch case appends the "gh does the pull request work..." sentence to plain push commands, and can name '?' when gh is absent - right at the y/n moment.
 		- The gh sentence prints only where gh is the one acting.
+		- Test: [dd5cs], [dd5ct] and [dd5cv] in test.bash, added later in 9f0a006. They need a pty.
 
 	- ✅ Code Review 20260818 item 13: the push-identity gate fires for commands that push nothing.
 		- Keyed on mutating, not pushing, so `pullcom -q` under a mismatched key is refused outright and pays a live ssh probe, for a local-only commit.
 		- Keyed on whether the command pushes, named by exception so a mutating command added later stays covered until it says otherwise.
+		- Test: [dbfgz] in test.bash.
 
 	- ✅ Code Review 20260818 item 14: skip the identity network probe when no identity block will print.
 		- Every token-configured run paid a live `gh api user` round trip; `br list`, `account list` and bare `pr` never show what it feeds.
 		- One predicate now answers "does this run reach the identity block", and both the probe and the later prime read it.
 		- Measured with an account configured: `br list` 12 -> 11 spawns, `account list` 14 -> 11, `repo url` 13 -> 10. The one dropped from each is the network call.
+		- Test: [dd5e6] to [dd5e8] in test.bash, added later in 9f0a006, and the spawn count [ddf52] for `account list` with accounts.
 
 	- ✅ Code Review 20260818 item 15: cache the handful of git answers asked repeatedly per run.
 		- Origin's url, the current branch, upstream state, ahead/behind, git's ssh command, the context directory and the terminal width are each asked once now.
 		- Ahead and behind came from two separate calls asking git the same thing; one call answers both.
 		- Invalidated centrally by the runners that execute a step, not by each writer by hand - a step is exactly what can make an answer stale, and a future one gets it for free.
 		- Measured: `status` 20 -> 17 spawns, `sync` 32 -> 25, `pullcom` 28 -> 24.
+		- Test: the spawn counts [dbftf] for `status`, and [dbftk] and [ddf68] for `pullcom`. `sync` has no count.
 
 	- ✅ Code Review 20260818 item 16: two per-branch spawn loops left in `br prune`.
 		- The survey's remote-existence check was already answered by the merged map beside it, and the delete loop re-verified the same target refs once per branch.
 		- Dropping the verify costs nothing: merge-base against a ref that has gone fails, which is the same answer.
 		- Measured on five merged branches: 69 -> 52 spawns, and the gap widens with the branch count.
+		- Test: the spawn counts [dbftn] over one merged branch, and [deytk] over five, where a spawn per branch goes over the limit.
 
 	- ✅ Code Review 20260818 item 17: least-surprise paper cuts, one sweep.
 		- `release` with nothing new exits 1 where every sibling's nothing-to-do exits 0 - and the About text promises idempotent re-runs.
@@ -4837,15 +4883,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- An option typed between `raw` and the tool is called an unknown subcommand.
 		- All seven fixed. Nothing-to-do is a success for `release` too; a command list answers a bare option; `pr` refuses its trailing argument and hints at quoting; `repo clone` takes `owner/name` before the plan, not after; `yes` is a yes; an option before the tool says where ours go.
 		- The overflow message picked up the quote-it hint as well - the ceiling is four slots, so an unquoted message of three words or more never reached the per-command hint.
+		- Test: [dafrk] to [dafrn], [dbfhk], [dbfhm] and [dbfhp] to [dbfhv] in test.bash.
 
 	- ✅ Code Review 20260818 item 18: dead code and stale comments, one sweep.
 		- Unreachable option-value arm plus its dead variable in the parser; two dead branches in the prompt helper; an empty-message fallback nobody passes; a handover error message a preceding check makes unreachable; a comment describing a superseded key-splitting contract; a near-verbatim duplicated comment in main. (The prune survey's redundant re-check went with item 16.)
 		- All six gone. The handover kept its branch but not its claim: it named a cause the preceding check had already ruled out, so it reports what actually failed.
 		- Also found: the three help printers each returned early under `-q`, which is why `-q --help` printed nothing. Removed with item 17's bare-option fix.
+		- Test: [dbfhn] in test.bash for `-q --help`. The rest was dead code, with no output to check.
 
 - ✅ Code review 20260813 - the folder-name rules, the release script and the removal audit.
 	- Opened: 20260813-121029
 	- Closed: 20260813-164625
+	- Test: each item below names its own.
 
 	- Light pass over the folder-name rules, the release script, the changelog template guard and the removal audit, plus what they knocked loose elsewhere. Nothing wrong with the changes themselves; all four findings are things around them that went stale or were missed.
 
@@ -4853,23 +4902,28 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Cause: the section was folded down to two one-liners so they could be pasted and run as-is. Dropping the flag table was the point; the locations and the checksum went with it by accident. The sentence left behind also had a stray plural and said "options" twice.
 		- Note: both are reasons to trust the installer, and neither is visible until you have already run it.
 		- Fixed: restored in the same place, without the flags - what you need Git and a shell for, what gets checked, a small table of the four install locations, the PATH note on Windows, and a pointer to `--help` for the rest.
+		- Test: none, docs only.
 
 	- ✅ Code Review 20260813 item 2: the changelog described a README that no longer exists.
 		- Cause: it claimed install and the worked example are the first two sections. Both have since moved down, below the commands and the accounts material.
 		- Fixed: the entry names the order the page actually has.
+		- Test: none, changelog wording only.
 
 	- ✅ Code Review 20260813 item 3: markdown under `project/design_docs/` was not linted.
 		- Cause: both engines list `*.md` and `project/*.md`, and the directory is a level below that. It arrived after the globs were last set.
 		- Fixed: the directory added to both engines. The file in it was already clean.
+		- Test: [dd5f4] in test.bash, every tracked markdown file in a lint glob, added later in 9f0a006.
 
 	- ✅ Code Review 20260813 item 4: the PowerShell installer read its own temp path as a wildcard when cleaning up.
 		- Cause: the removal took the path positionally. Every other removal in the tree names it literally, and this one was missed when they were hardened.
 		- Note: only bites on a temp path containing a bracket, so nothing to reproduce in ordinary use.
 		- Fixed: named literally, and skipped outright when the path was never set.
+		- Test: [dd5e3] and [dd5e4] in test.bash, a temp path with brackets, added later in 9f0a006.
 
 - ✅ Code review 20260812 - against the coding, performance, pipeline, housecleaning, marketing and installer standards.
 	- Opened: 20260812-150636
 	- Closed: 20260812-181826
+	- Test: each item below names its own.
 
 	- Full review against the coding, performance, pipeline, housecleaning, marketing and installer standards. What is fixed here is listed below; the rest is filed above as open items.
 
@@ -4877,37 +4931,45 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Cause: the token was supplied only when it replaced a different active account, while the helper that reads it was installed either way. The helper sets aside any credential manager configured ahead of it, so nothing was left to answer.
 		- Note: worst on the setup needing no configuration - one account, logged in to gh, pushing over https.
 		- Fixed: supply the token whenever one is found.
+		- Test: [db5wk] in test.bash.
 
 	- ✅ Code Review 20260812 item 2: a trailing comment in the config file became part of the value.
 		- Cause: `#` started a comment only at the start of a line, and the documented example writes them at the end of one.
 		- Note: a folder rule carrying a comment could never match, and a rule that never matches reads exactly like no rule at all.
 		- Fixed: a `#` after whitespace ends the value. Quote the value to keep a literal one.
+		- Test: [db5wh] and [db5wj] in test.bash.
 
 	- ✅ Code Review 20260812 item 3: an account name could name a file outside the include directory.
 		- Cause: the name went into a path with nothing checking it, so a name containing a path sent `account apply` elsewhere - as far as the global git config.
 		- Fixed: hold the name to letters, digits, dot, dash and underscore, and report anything else as an unread key.
+		- Test: [db5wm] and [db5wn] in test.bash.
 
 	- ✅ Code Review 20260812 item 4: PowerShell read a repo with its own ssh key configured using the default key instead.
 		- Cause: the fetch and the probe replaced git's ssh command to add a connect timeout, rather than adding to it.
 		- Note: a private repo only the account's key can reach reported as unreachable, and the publishing commands then refused.
 		- Fixed: add the timeout to git's own command, as the Bash build already did.
+		- Test: [deyth], a Go test of the same composition in the Go build. The PowerShell fix is frozen.
 
 	- ✅ Code Review 20260812 item 5: `origin/HEAD` was healed after every fetch, at the cost of a second query to the remote.
 		- Fixed: only when there is nothing to read locally. git 2.47 and newer write one at clone.
+		- Test: [dd5cc] to [dd5ce] in test.bash, added later in 9f0a006.
 
 	- ✅ Code Review 20260812 item 6: the passthrough asked gh which account was active, over the network, on every call.
 		- Note: the answer only named the account being replaced, on a line the passthrough does not print.
 		- Fixed: skip it where no identity block is shown.
+		- Test: [dd5e8] in test.bash, added later in 9f0a006.
 
 	- ✅ Code Review 20260812 item 7: a bare GitHub login got no identity line, in the command that exists to answer who a push goes out as.
 		- Cause: the line asked whether some configured value had been used. A bare login names no account and sets no key, so it satisfied none of those tests - though it does select the token git authenticates with.
 		- Note: `GITSBY_ACCOUNT` documents the bare-login spelling, and `raw` already reported it on stderr, so the two disagreed.
 		- Fixed: an account asked for by name is enough on its own. One merely inferred from the remote's owner still prints nothing, so a single-account machine sees no change.
+		- Test: [db5wf] and [db5wg] in test.bash.
 
 	- ✅ Code Review 20260812 item 8: the test suite read whatever accounts the person running it had configured.
 		- Cause: it isolates git config and the commit identity, but not gitsby's own config file, which decides the account a command acts as.
 		- Note: found by running it - a single `protocol = ssh` line in a real config failed three checks per implementation, because the repo commands then built a different remote URL than the check expected.
 		- Fixed: point `GITSBY_CONFIG` at an empty file for the whole run. The account block, where discovery through `HOME` is the thing being tested, opts back out.
+		- Test: [dd5fg] in test.bash, each suite pinning its own accounts file, added later in 9f0a006.
 
 - ✅ Code review 20260731.
 	- Opened: 20260731-104703

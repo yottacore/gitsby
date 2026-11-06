@@ -289,6 +289,21 @@ func TestRemoteEnvLeavesAQuotedSSHCommandToGit(t *testing.T) { // [dcnpy]
 	}
 }
 
+// The timeout goes onto the repo's own ssh command, not in place of it. The
+// PowerShell build replaced it, so a repo that needed its own key fetched with the
+// default one and read as unreachable.
+func TestRemoteEnvAddsTheConnectTimeoutToTheRepoSSHCommand(t *testing.T) { // [deyth]
+	t.Setenv("GIT_SSH_COMMAND", "")
+	if err := os.Unsetenv("GIT_SSH_COMMAND"); err != nil {
+		t.Fatal(err)
+	}
+	a := &app{}
+	a.git.coreSSHCommand.set("ssh -i /keys/repo -o IdentitiesOnly=yes")
+	if !hasEnv(a.remoteEnv(), "GIT_SSH_COMMAND=ssh -i /keys/repo -o IdentitiesOnly=yes -o ConnectTimeout=3") {
+		t.Errorf("remoteEnv() dropped the repo's own ssh command from the fetch")
+	}
+}
+
 func hasEnv(env []string, want string) bool {
 	for _, entry := range env {
 		if entry == want {

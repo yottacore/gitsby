@@ -134,6 +134,21 @@ git clone --quiet "${pristine}/origin.git" "${pristine}/repo" 2>/dev/null
 	git checkout --quiet dev
 )
 
+## A second world with five landed branches, on both sides, and its own origin. With one, a
+## spawn per branch fits in the headroom; with five it doesn't.
+git init --quiet --bare -b main "${pristine}/prune5.git"
+git clone --quiet "${pristine}/prune5.git" "${pristine}/prune5" 2>/dev/null
+(
+	cd "${pristine}/prune5"
+	echo one > file.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main
+	git checkout --quiet -b dev && git push --quiet -u origin dev
+	for b in landed1 landed2 landed3 landed4 landed5; do
+		git checkout --quiet -b "${b}" dev && echo "${b}" > "${b}.txt" && git add --all && git commit --quiet -m "${b}"
+		git push --quiet -u origin "${b}"
+		git checkout --quiet dev && git merge --quiet --no-ff "${b}" -m "merge ${b}" && git push --quiet
+	done
+)
+
 ## Two copies of that clone whose origin is on github.com, one over ssh and one over https, each
 ## covered by an account's folder rule. The Account line prints only for an account picked like
 ## that, never for one guessed from the remote's owner, so this is the path a configured user
@@ -230,6 +245,7 @@ fMeasure "[dbftk] pullcom"                             21 pipe repo        -q --
 fMeasure "[ddf68] pullcom with a fetch"                 28 pipe repo        -q pullcom "spawn count"
 fMeasure "[dbftm] br switch"                           26 pipe repo        -q --no-fetch br switch main
 fMeasure "[dbftn] br prune"                            31 pipe repo        -q --no-fetch br prune
+fMeasure "[deytk] br prune of five branches"           31 pipe prune5      -q --no-fetch br prune
 fMeasure "[ddf4z] status with a fetch"                 17 tty  repo        status
 fMeasure "[ddf50] status in an account folder"         19 tty  acct-ssh    --no-fetch status
 fMeasure "[ddf51] whoami in an account folder"         15 tty  acct-ssh    --no-fetch whoami
@@ -318,3 +334,4 @@ gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		- 20261004 JC: fEcho_Clean prints with printf. Every expansion braced, and shellcheck
 ##		  enforces it.
 ##		- 20261026 JC: Each command prints PASS, FAIL or SKIP, then its test ID, with the verdict after the count. A rise --record takes is a PASS, and with no strace each command is a SKIP.
+##		- 20261106 JC: br prune of five landed branches, in a world with its own origin. A spawn per branch fits the headroom over one branch, and not over five.
