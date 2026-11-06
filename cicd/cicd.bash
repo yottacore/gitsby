@@ -293,11 +293,12 @@ fDockerBytes(){
 }
 fDockerUsed(){ { docker system df --format '{{.Size}}' 2>/dev/null || true; } | fDockerBytes ;}
 ## At the end of a run that used the image, passed or not: the run's containers, the project's
-## dangling images, its older image tags once a newer one has passed, a week's build cache, and
-## the Go cache volume when it's over 2 GB. Only what carries the project's label. The run's end
-## line says what went and about what it freed.
+## dangling images, its older image tags once a newer one has passed, and the Go cache volume when
+## it's over 2 GB. Only what carries the project's label. The build cache is docker's default
+## builder, which every project shares, so the daemon's builder.gc trims it, not a run here. The
+## run's end line says what went and about what it freed.
 fDockerTidy(){
-	local passed="$1" before after ids id ref seen=0 vol="${APP_NAME}-cicd-cache" size pruned
+	local passed="$1" before after ids id ref seen=0 vol="${APP_NAME}-cicd-cache" size
 	local -a gone=()
 	local -i nCont=0 nImg=0
 	before="$(fDockerUsed)"
@@ -318,9 +319,6 @@ fDockerTidy(){
 			elif ((seen == 1)) || [[ "${ref}" == "${containerImage}" ]]; then seen=$((seen + 1)); fi
 		done < <(docker image ls "${containerImage%%:*}" --filter "label=dev.project=${APP_NAME}" --format '{{.Repository}}:{{.Tag}}' 2>/dev/null || true)
 	fi
-	## Its last line is the total it reclaimed.
-	pruned="$(docker builder prune -f --filter until=168h 2>/dev/null | tail -n 1 || true)"
-	[[ -z "${pruned}" || "${pruned##*[[:space:]]}" == 0B ]] || gone+=("build cache over a week old")
 	if [[ -n "$(docker volume ls -q --filter "label=dev.project=${APP_NAME}" --filter "name=${vol}" 2>/dev/null || true)" ]]; then
 		size="$({ docker system df -v --format '{{range .Volumes}}{{.Name}} {{.Size}}{{println}}{{end}}' 2>/dev/null || true; } | awk -v n="${vol}" '$1 == n' | fDockerBytes)"
 		if ((size > 2000000000)) && docker volume rm "${vol}" >/dev/null 2>&1; then gone+=("the ${vol} volume"); fi
@@ -352,6 +350,10 @@ fRunTmpDone(){
 	fi
 	if ((! ${#tidyGone[@]})); then fEcho_Clean "Cleanup: nothing to remove"; fEcho_Clean; return 0; fi
 	printf -v list '%s, ' "${tidyGone[@]}"
+	## The steps remove their own files as they finish, and the run in the image keeps its folder
+	## on the container's tmpfs, so the run folder is mostly just its run.pid by now. A size under
+	## a megabyte, or one docker didn't give, says nothing about the disk.
+	if ((tidyFreed < 1000000)); then fEcho_Clean "Cleanup: removed ${list%, }"; fEcho_Clean; return 0; fi
 	fEcho_Clean "Cleanup: removed ${list%, }; freed about $(numfmt --to=si --suffix=B "${tidyFreed}" 2>/dev/null || echo "${tidyFreed} bytes")"
 	fEcho_Clean
 }
@@ -1466,3 +1468,4 @@ fEcho_Clean
 ##		- 2026-10-26 JC: Each step opens with "[ <time>: Step N of M; Starting <step> ]" and closes with PASS or FAIL, in place of the N/8 headers and the OK line that only repeated the verdict. M counts the steps that run, the plan says why each other one doesn't, and the run in the image numbers its steps in the same count, in this box's time. The rule is 79 wide.
 ##		- 2026-10-26 JC: One line at the end of a run says what it removed, its own folder and the stale run folders as well as docker's, and about what that freed.
 ##		- 2026-10-26 JC: The native fuzz targets and the Go tests print PASS, FAIL or SKIP, then the test ID and name, and a target that finds a crasher prints FAIL before the run stops.
+##		- 2026-11-06 JC: The end of a run no longer prunes docker's build cache, which every project's builds share. The daemon's builder.gc trims it. The end line leaves out a size under a megabyte, since by then the run folder holds little more than its run.pid.

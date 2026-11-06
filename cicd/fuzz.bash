@@ -27,8 +27,13 @@ set -Eeuo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/.." && pwd)"
-work="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-fuzz.XXXXXX")"
-trap 'rm -rf -- "${work:?}"' EXIT
+# shellcheck source=/dev/null
+source "${here}/utility/include/safe-rm.bash"
+# shellcheck source=/dev/null
+APP_NAME="$(source "${here}/config.bash" && printf '%s' "${APP_NAME}")"
+fSafeRm_Init || exit 1; safeTmp="$(fSafeRm_Tmp)" || exit 1
+work="$(mktemp -d "${safeTmp}/gitsby-fuzz.XXXXXX")"
+trap 'fSafeRm "${work:?}" >/dev/null' EXIT
 
 ## Hermetic: no reliance on (or writes to) the user's git config, no prompts.
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
@@ -123,7 +128,7 @@ fMsgLiteral(){ local -r desc="$1"; local -r dir="$2"; local -r msg="$3"
 ## Clone into a glob-shaped directory name: the name must land verbatim, not expand
 ## against the cwd. Same bug class as fMsgLiteral, one slot deeper.
 fDirLiteral(){ local -r desc="$1"; local -r dir="$2"; local -r url="$3"; local -r name="$4"
-	rm -rf "${dir:?}/${name}"
+	fSafeRm_IfThere "${dir:?}/${name}"
 	fRun "${dir}" -q repo clone "${url}" "${name}"
 	if fIsCrash;                         then fFail "${desc}: crashed (exit ${__runCode})"
 	elif [[ -d "${dir}/${name}/.git" ]]; then fOk "${desc}"
@@ -589,3 +594,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261006 JC: 'TEA' and 'gitui' join the raw tool vectors, now that raw runs tea.
 ##		- 20261006 JC: Reworked for the no-shell Go build. The surviving vectors stay as regression guards against a shell slipping back into the path, and the suite now drives the places a value still reaches a real tool: a clone directory derived from a URL tail that is option-shaped (argument injection into git), a ref that is also a revision ('br switch HEAD', which parked work before refusing), a shell-bearing 'sshkey' through a real ssh, 'account apply' escaping glob characters in a folder rule and dropping a shell-bearing host or user, and a junk GIT_CONFIG_COUNT on the credential path. 301 -> 311. Two product bugs fixed alongside (clone '--', origin/HEAD not a branch).
 ##		- 20261026 JC: Each vector prints PASS, FAIL or SKIP, then its ID and label, and the total counts the skips.
+##		- 20261106 JC: Its scratch folder goes through fSafeRm, made where the guard takes it.
