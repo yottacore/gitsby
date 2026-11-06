@@ -480,7 +480,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: a test for every Done item, features, first half
 	- ID: 2026102617594218
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261026-175942
 	- Opened by: jim-collier
@@ -489,6 +489,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The old-format items in `Done - Features and enhancements`, from the top through `` `account set` writes one key of one account into the accounts file ``. 48 items.
 		- Each item there with no test row gets a `Test:` row that names its test by ID, or says in a few words why there is none.
 		- Where a test could exist and would make sense but doesn't, add it, watched to fail first.
+	- Progress log:
+		- 2026-11-06: 3 items and the 10 under the first 20260909 heading already had a row. The other 2 group headings, 31 items and the port item's 4 slices each have a `Test:` row now, found from the checks and Go tests their fix commits added. 4 name none: 3 are docs only, and the design.md release item changed nothing.
+		- 2026-11-06: 1 new check where none was: [deyvs], `legacy/` holding the six frozen deliverables and its README and nothing else, for the item that retired the scripted builds.
+	- Decisions:
+		- Rows follow 2026102617594210's. A check renamed since, such as `identity` to `whoami`, is named as it is now.
+		- The port slices added no checks, since the whole suite ran against the Go build as its Go leg. Each slice names a few that cover its commands.
+		- [deyvs] checks the file list only. The files differ from the v2.1.0 tag by their copyright lines, so a byte check against the tag would fail.
+	- Branch: round-20261106
+	- Test case: test.bash [deyvs]. The rest name tests that already ran.
+	- Verified: `--backlog-run-quick` passed with every area, lint included, test.bash 1783/0, fuzz 313/0, parity 29/0. [deyvs]'s test fails on an index with a file added under `legacy/`, and on one with a file taken out, and passes as it is. backlog-check.bash and `test-id.bash --check` clean.
+	- Swept: all 37 rows, each against its fix commit's added checks and Go tests, with every cited ID grepped once in the suites, spawn-count.bash and the Go tests. Each item kept its wording; only the rows were added.
+	- Closed: 20261106-121624
+	- Acceptance signoff: Self-closed, tests and backlog rows only.
 
 - CICD reset: a test for every Done item, features, second half
 	- ID: 2026102617594221
@@ -5651,6 +5664,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - ✅ Code review 20260909 - enhancements from the same pass.
 	- Opened: 20260909-184419
 	- Closed: 20260928-144045
+	- Test: each item below names its own.
 
 	- ✅ Code Review 20260909 enhancement 2: there is no `account unset`. Setting a key to an empty value prints the syntax block, so the only way back is the hand edit that `account set` exists to avoid.
 		- Origin: new. Confirmed.
@@ -5682,6 +5696,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Closed: 20260916-132641
 		- Decided 20260916: the first Go publication is v3.0.0-beta.1, published as a pre-release. release.bash reads that off the tag's semver suffix, so there is no flag to pass. design.md's release policy is rewritten rather than amended, since it argued the other way.
 		- Counts measured on gover, not carried over: 1013 regression, 301 fuzz, 27 comparison.
+		- Test: none, docs only. A check would only pin the wording.
 
 	- ✅ Code Review 20260909 enhancement 6: record that goreleaser is not being adopted, and why, so the question stops coming back. The hand-rolled build is already byte-identical from one flag set, goreleaser would have to be talked out of its own stamps, and packaging is the only thing it would add.
 		- Origin: the 2026-09-07 directives ask for the decision to be recorded.
@@ -5741,6 +5756,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Closed: 20260927-114500
 	- They showed as one `OK: go test` line. A full run and `--gate` now print one line per top-level test, and nothing for subtests. The rest of `go test -v`'s output shows only when a test fails.
 	- Verified: test.bash 1220 -> 1222. Both new checks fail against the old pipeline. The real gate printed 153 lines on Linux, one per test. The one Windows-only test doesn't run here.
+	- Test: [dd6vy] and [dd6vz] in test.bash.
 
 - ✅ Every check line in a pipeline run shows its test ID.
 	- Opened: 20260927-105500
@@ -5748,6 +5764,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- The suites already printed them. Native fuzz targets now print the ID from their func line. Spawn counts had none, so each command got one, dated from when it was first measured, and test-id.bash checks them.
 	- The baseline file keeps plain labels, so older baselines still match.
 	- Verified: test.bash 1219 -> 1220. Five checks fail against the old scripts. test-id.bash flags a measure with its ID taken out.
+	- Test: [dd5p5] and [dd6g0] in test.bash, and [dd5kr], `test-id.bash --check` over every suite, spawn-count measures included.
 
 - ✅ A pipeline run shows every regression, fuzz, parity and spawn check, one line each.
 	- Opened: 20260926-204500
@@ -5755,6 +5772,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Fixed: a `-q` run passed `-q` on to the suites, so only the totals showed. The pipeline no longer passes it to any of them. Each native fuzz target gets a line too. Only the demo generator still takes `-q`.
 	- spawn-count printed bare counts, and a verdict only for a change. Each command now gets one line with its count and verdict, `ok` included.
 	- Verified: test.bash 1217 -> 1219. Both new checks fail against the old scripts. A `-q` run printed 1561 check lines, all passing.
+	- Test: [dd5mm] and [dd5p5] in test.bash. [dd5p5] is the spawn-count check added here, relabeled in d4573b2 to name the test ID too.
 
 - ✅ Every closed backlog item has a regression check, where one makes sense.
 	- Opened: 20260926-144000
@@ -5764,6 +5782,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- The suite now runs with a poisoned `XDG_CONFIG_HOME` and `APPDATA`, so a block that fakes HOME and forgets to clear them goes red on any box.
 	- "option typo prints no call stack" looked for text only the bash build printed. It now looks for a Go panic.
 	- Verified: test.bash 1031 -> 1208, every new check seen to fail against its fault. Seven bugs found on the way are filed under Bugs.
+	- Test: the checks 9f0a006 added, each named on the item it covers. [dafva] is the call stack check. The poisoned `XDG_CONFIG_HOME` and `APPDATA` are the suite's own setup, with no ID.
 
 - ✅ The pre-push gate runs on every branch push, not just `main`.
 	- Opened: 20260924-092200
@@ -5771,6 +5790,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Fixed: only a push to `main` is gated. Other branches, deletes and tags go out without it.
 	- Verified: test.bash 1027 -> 1028. The new check fails against the old hook.
 	- Removed: "a branch pushed from elsewhere is gated at its own commit" and "one commit under two branch names is gated once". Both assumed any branch was gated. They are now "main pushed from another branch is gated at that commit" and "main pushed beside another branch is gated once".
+	- Test: [dcmb5], [dd25y] and [dcmb8] in test.bash.
 
 - ✅ Paths are spelled more than one way between the config file and the screen.
 	- Opened: 20260916-110027
@@ -5782,6 +5802,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Note: the guide states the new rule already, so it and the program disagree until this is done. Closing that is what this item is.
 	- 20260916: built on `pathspell`, all Linux suites green. Go tests pass on b29w with and without HOME, and a real `account list` and `account apply` there take all three spellings.
 	- Either slash does not hold yet for a backslash before `t` or `n`. Filed under Bugs, since it predates this item.
+	- Test: [dcq9q] to [dcq9w] in test.bash, and Go tests [dcq9x], [dcq9y] and [dcq9z].
 
 - ✅ Bring the output into line with the UI and UX style guide.
 	- Opened: 20260915-154529
@@ -5791,6 +5812,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- `(none)`: the token line says `(none)` like the github line.
 	- Warnings: no code change. Every warning a step prints as it runs is already bracketed, and every one inside a plan or a listing already is not. The guide says so now.
 	- Verified: suite 1016 -> 1021, all green, and the five new checks fail on the tree before. Gate clean. Linux only.
+	- Test: [dcq72] to [dcq76] in test.bash.
 
 - ✅ The last forge names, in the code and the suite.
 	- Opened: 20260916-074956
@@ -5801,34 +5823,41 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Relabeled: "a Gitea remote with no forge CLI refuses" is now "a Gitea remote with no host CLI refuses", and "but a config with one forge in it is never shown the key" is now "but a config with one git host in it is never shown the key".
 	- The style guide file is `project/style-guide_ui-ux.md`, titled to match, with every link to it followed.
 	- Verified: suite 1012/0, Go tests green, gofmt, vet and markdownlint clean. Both relabeled checks pass, and so does the one that watches for the word in the identity block. Linux only.
+	- Test: [dbg5h], [dbh6v] and [dbhg6] in test.bash, Go tests [dcptz] and [dcpv1] to [dcpv4], and fuzz target [dcpv0].
 
 - ✅ No UI and UX style guide exists, and README points at none.
 	- Opened: 20260914-122353
 	- Closed: 20260915-154529
 	- Done: `project/style-guide_ui-ux.md` holds the output, prompt and error rules from design.md, the diagnostics decisions, and what the program does today. README, contributing.md and design.md's UI section link to it.
+	- Test: none, docs only. A check would only pin the wording.
 
 - ✅ Code review 20260909 - the closed enhancements from the same pass. The rest are still open under Features and enhancements.
 	- Opened: 20260909-184419
+	- Test: the item below names its own.
 
 	- ✅ Code Review 20260909 enhancement 1: decide whether the identity marker belongs in the Windows file properties.
 		- Closed: 20260910-072019
 		- The copyright change put it into the string Windows shows on the Properties tab of the executable, which is a product-facing string rather than a source header. The standing rules exempt two other projects' Windows version strings and keep the plain form there.
 		- Bug item 4 waits on this: regenerating the resource files publishes whichever answer is given.
 		- Kept out. The Properties tab shows the plain copyright, and the source headers keep the ID.
+		- Test: [dd5fd] in test.bash on the script that writes the resource, and [dd5ff] on the committed resource.
 
 - ✅ macOS builds no longer need a Mac or an SDK.
 	- Opened: 20260817-115422
 	- Closed: 20260818-181424
 	- `darwin/amd64` and `darwin/arm64` cross-compile from this box, so both are in the release matrix. Signing and quarantine on real hardware are a separate question, still open.
+	- Test: [ddf6a] and [ddf1b] in test.bash, the release's and dogfood's macOS builds.
 
 - ✅ `.shcl` goes hierarchical via a real module, replacing the hand parse.
 	- Opened: 20260826-152000
 	- Closed: 20260826-153701
 	- The file is read and written through the shcl Go module: one block per account, folders as a list, the old flat layout still read and converted by the first `account set`. A created file carries a key header and the format's footer.
+	- Test: [dbsrd] to [dbsrw] in test.bash, and Go tests [dbsrx] to [dbss6].
 
 - ✅ Dogfood destinations tidied. The Linux fallback is `~/.local/bin`, the same dir the installer defaults to, and it only applies to the target matching the box doing the build. Dropped a second macOS entry that spelled out a home directory.
 	- Opened: 20260826-155615
 	- Closed: 20260826-160101
+	- Test: [dbss7] and [dbss8] in test.bash, and [dd5fv] for the `~/.local/bin` fallback.
 
 - ✅ `--about` and `--donate`.
 	- Opened: 20260826-122906
@@ -5836,6 +5865,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- `--about` is the copyright block, the description the help screen carries, and a link to the project. `--donate` is the build line, two sentences, and the sponsorship link.
 	- Both answer outside a repository, both take a bare word as well as the flag, and neither reads any configuration.
 	- Help lists both on the line that already names `--help` and `--version`.
+	- Test: [dbsjp] to [dbsjv] in test.bash.
 
 - ✅ A build number, printed next to the version and on every command's output.
 	- Opened: 20260826-114339
@@ -5845,14 +5875,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commands print `gitsby <version> build <build>` above their output. Not under `-q`, and never on `raw git`/`raw gh`, which hand their tool's output back untouched. `--version` and the help screen gained the build number on the version line they already had, rather than a second line repeating it.
 	- The release cross-builds twice as a result: phase 1 as a compile gate, phase 3 from the tagged commit for the bytes that get uploaded. The release notes name the build number, read out of the built binary so the two cannot disagree.
 	- An unstamped build (a hand-run `go build`) reports no build number at all.
+	- Test: [dbshm] to [dbshy] in test.bash, and Go tests [dbshz] to [dbsj2].
 
 - ✅ Port the mutating commands (`update`/`sync`, `br create`/`land`/`prune`, `pr`, `repo`, `account apply`). Four slices, one branch each.
 	- Opened: 20260818-090334
 	- Closed: 20260818-140234
+	- Test: test.bash as a whole, which ran against the Go build as its Go leg, 438/0 after the last slice. The slices added no checks of their own, so each names a few that cover it.
 	- ✅ The mutating frame plus `update`, `sync`, `br prune`. The frame is the shared part: state, plan, confirm, run, state again, "Done." - and the commit/pull/push core the rest compose from. `br prune` now deletes rather than stopping at its plan. Go leg 249/189 -> 285/153.
+		- Test: [da8ma] and [da8m8] for `update` and `sync`, and [dadxn] and [dadxx] for `br prune`.
 	- ✅ `br create` / `hotfix` / `switch` / `land`, with the hotfix back-merge and the shipped-code warning. Also the up-front branch-name and dirty-protected-branch refusals, and the `New branch ...:` state line. Go leg 285/153 -> 345/93.
+		- Test: [da8me] to [da8mm] for `br create`, [dab65] for the dirty-branch refusal, [daktz] for the hotfix back-merge, and [da8mt] for `br land`.
 	- ✅ `pr create` / `pr ok`, and `release` with its version resolution and the nothing-new guard. Also the `GitHub (gh)` identity line, which only gh-backed commands print, and the gh-write account comparison behind it. Go leg 345/93 -> 385/53.
+		- Test: [dacyp] and [dacyq] for `pr ok`, [da8t5] and [da8tc] for `release`, [dafrk] for the nothing-new guard, and [dae5m] for the gh identity line.
 	- ✅ `repo clone` / `create` / `connect` / `url`, and `account list` / `apply` - the includeIf writer, the fragment files, and the smaller no-repo headers (clone, connect-from-plain-dir, files-to-publish). With this the whole command surface is ported. Go leg 385/53 -> 438/0.
+		- Test: [dab8a], [dab91], [dab8g] and [db011] for `repo clone`, `create`, `connect` and `url`, and [db630] for `account apply`.
 
 - ✅ Rename `update` -> `pullcom` and `br land` -> `br merge`, keeping the old spellings as aliases. After slice four.
 	- Opened: 20260818-144709
@@ -5863,6 +5899,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Go build only. The scripts keep their current spelling and stand as the reference.
 	- The old spellings still work, so the demo gif stays correct - regenerate it once the Go build is release quality, not for this.
 	- Done: renamed in the parser, the help, the four messages that named a command, and the internal tokens. The offline `sync` refusal now says the pull is the half that gets skipped. Run output is byte-identical to the frozen build under either spelling. The suite's go leg carries the checks for the new names and the aliases; two shared checks that pinned the old wording now take either. Go leg 438/0 -> 455/0.
+	- Test: [dbefw], [dbefx] and [dbefz] to [dbeg2] in test.bash, and [dbemz] to [dben2] in parity.bash.
 
 - ✅ New command: `identity`.
 	- Opened: 20260818-144709
@@ -5871,6 +5908,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Same lines, same code as `status`, so the two can't drift. Answers outside a repository too, which is where you ask it before cloning or creating.
 	- Read-only, so no confirmation and no plan. No alias; `whoami` and `who` were left alone rather than spent, since every alias is permanent.
 	- Superseded 2026-08-21: the command is now `whoami`, with `who` and `identity` as permanent spellings of it. The two names that were held back were held back for this.
+	- Test: [dbefy] and [dbeg3] to [dbeg7] in test.bash, under the name `whoami` since 2fcc6c0, and [dbjen] for the other spellings.
 
 - ✅ Sweep the published docs for the renamed commands, and add `identity` to them.
 	- Opened: n/a
@@ -5880,6 +5918,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Historical changelog entries keep the names they shipped with; only vNEXT gets the new ones.
 	- The `identity` row became `whoami` in the same docs on 2026-08-21; nothing else in the sweep changed.
 	- `demo-scenario.toml` deliberately left on the old spellings. The aliases keep it correct, and changing text the scenario prints makes the committed gif stale, which the pipeline compares byte for byte. It rides along with the gif regeneration at release.
+	- Test: none, docs only. A check would only pin the wording.
 
 - ✅ Per-platform release artifacts with a checksum each.
 	- Opened: n/a
@@ -5887,6 +5926,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Six targets: linux, windows and macOS, amd64 and arm64 each. Published as `gitsby-<goos>-<goarch>` (`.exe` on Windows) with one `SHA256SUMS` over the set. The list lives in `cicd/config.bash`.
 	- Free because the module is pure stdlib with no cgo, so every target cross-builds from one box - macOS included, with no SDK and no Mac.
 	- `--arch` becoming real belongs to the installer, which does not exist yet. See the installer item below.
+	- Test: [dd5d1] in test.bash for `SHA256SUMS`, [dbfkn] for the installer's per-platform asset, and [ddf6a] for the macOS asset.
 
 - ✅ Retire the scripted implementations, and make the pipeline Go-specific.
 	- Opened: 20260818-165649
@@ -5897,6 +5937,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- `parity.bash` kept and repointed, rather than dropped as originally planned. Comparing this build against the frozen one is exactly the backwards-compatibility question worth asking, and the harness for it already existed. It is stage 4 of the pipeline now, and it also checks that `update` and `br land` still route where they always did.
 	- The suite runs one leg. The 58 checks that were never about an implementation - the installers, the frozen builds' own platform gates, the source pins on this pipeline's files - stayed, repointed at `legacy/`; they had only ever ridden the Bash leg because that was the leg that always ran. Counted before and after so none went missing: 530 pass, against 513 + 455 across the old three legs.
 	- Pipeline is seven stages now: lint, build + test, fuzz, backwards compatibility, dogfood, demo gif, publish. The Go toolchain is required rather than probed.
+	- Test: [deyvs] in test.bash, new, for what `legacy/` holds. [daeps] to [daepx] are the frozen build's checks, repointed at `legacy/`, and [dbemz] and [dben0] in parity.bash check that `update` and `br land` still route where they did.
 
 - ✅ Installer for the Go build, and the README install section that documents it.
 	- Opened: 20260819-095014
@@ -5910,27 +5951,32 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- README: badges, "Compatibility" and "Install" rewritten for one binary and no runtime. The stale paragraph about the PowerShell build's option spellings is gone, replaced by a short note for anyone coming from 2.x.
 	- Suite 582 -> 613. The new checks stop at the network: parsing, every refusal, the Windows hand-off, and pins on what a live run would reach. Verified end to end by hand against a fake release served locally - both installers, plus the tampered, intercepted, missing-release and wrong-architecture paths.
 	- Left stale on purpose: design.md "Automating a release" still describes writing a version into two builds. That predates the Go round, not this one - filed below.
+	- Test: [dbfk5] to [dbfm3] in test.bash, with [daf7a] and [daf7b] for the options it kept.
 
 - ✅ design.md "Automating a release" still described the two-script era: a version written into both builds, footers in `bin/gitsby` and `bin/gitsby.ps1`, and phase 1 comparing two version strings.
 	- Opened: n/a
 	- Closed: 20260819-103518
 	- Already current when this was checked. The section describes the three phases as they run, and says outright that the version lives in the tag and nowhere else - naming the two-build design as what it replaced, and why.
+	- Test: none. It was already current, so nothing changed.
 
 - ✅ Regenerate the demo gif. Stale twice over: the renamed commands moved text the scenario prints, and the pipeline now renders it from the Go build rather than the dogfooded script.
 	- Opened: n/a
 	- Closed: 20260821-181037
 	- Done, and it needed the fixture fixed first: the real `gh` was answering as the rendering machine's own login, and the fake tokens' permissions put a warning on every scene. Both were on camera.
+	- Test: [dbftr] and [dbfts] in test.bash, for the fixture's tokens and its own gh.
 
 - ✅ Dogfood location change.
 	- Opened: n/a
 	- Closed: 20260821-181037
 	- Three targets built and placed every run: linux to `util/linux/bin`, windows to `util/mswin/cli/by-self/win64`, macOS to `util/macos/bin`. Windows and macOS each carry a second spelling of the same share, for when the run is happening on that platform instead.
 	- The old bash build is still sitting in `util/linux/bash` and nothing removes it. Worth clearing by hand.
+	- Test: [dd5fv], [dd6g0] and [de4bv] in test.bash, and [dbss7] for no home directory in a destination.
 
 - ✅ Release ordering: the build matrix runs before the release is cut, so a failed build never leaves a half-published release.
 	- Opened: n/a
 	- Closed: 20260821-181037
 	- All six binaries are built in phase 1, alongside the pipeline gate. A target that stops compiling fails where nothing has been changed; found in phase 3 it would have left a pushed tag with no release behind it.
+	- Test: [dd5ep] in test.bash, the cross-build announced before the tag and the release, and [db6y8].
 
 - ✅ The accounts file now lives where each platform keeps one.
 	- Opened: 20260821-125351
@@ -5940,6 +5986,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Each platform's variable is read on that platform alone: `XDG_CONFIG_HOME` on Linux and the BSDs, `APPDATA` on Windows. Both used to be read everywhere, which let an MSYS session answer for a Windows run, and put a name Wine or Samba can leave set on a Linux run's credential search path.
 	- `~/.config` is a Linux spelling too, so neither Windows nor macOS reads it any more - only where the native location can't be worked out at all. Users upgrading on either have a one-line move, called out in the changelog.
 	- One ordered list now answers both "where do we look" and "where does a new file go", instead of three copies of the order in three files.
+	- Test: [dbjjh], [dbjjk], [dbjjm] and [ddc2k] in test.bash, and Go test [dbjjn].
 
 - ✅ `identity` is now `whoami`, and its help line says what it shows.
 	- Opened: 20260821-104756
@@ -5948,6 +5995,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- `who` and `identity` both still work, permanently. Those were the two names held back when the command was added.
 	- The help line was "Who commands here act as: ..." - a sentence fragment where every other line starts with a verb. Now "Show account, ssh key, commit author, git host login."
 	- The block it prints is still the identity block; only the command changed.
+	- Test: [dbefy], [dbeg3], [dbeg6], [dbeg7] and [dbjen] in test.bash.
 
 - ✅ The account diagnostic answers its own questions, and offers the fix as a command.
 	- Opened: 20260820-174958
@@ -5959,6 +6007,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- `Kept:` names only the lines actually on screen. It said "the SSH and Author lines" whichever half applied, sending readers after an SSH line that was never printed.
 	- `Fix:` names one command instead of a config line to copy: `gitsby account set <account> <key> <value>`, new, which makes the edit itself.
 	- It stops short of making the edit unasked, and says why: all it knows is that the file never named a host, which is not the same as knowing the account belongs to this one - and guessing wrong hands one host's token to another.
+	- Test: [db60c], [dbh6m], [dbhbs], [dbhfs], [dbhft] and [dbhfv] to [dbhfx] in test.bash, and [dbhg5] and [dbhg6] for the word.
 
 - ✅ `account set` writes one key of one account into the accounts file.
 	- Opened: 20260820-174958
@@ -5967,6 +6016,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Refuses a key nothing reads, and a value the loader would drop - a line written past either lands in the file and is ignored on every load, so the file says one thing and every command does another.
 	- Everything else in the file comes back byte for byte: comments, spacing, a Windows byte-order mark, CRLF endings.
 	- A key already present twice is refused rather than guessed at. `path` is repeatable by design.
+	- Test: [dbhfy] and [dbhg0] to [dbhg4] in test.bash, and Go tests [dbhg7] to [dbhgb], with [dcnrp] keeping a byte-order mark, CRLF and comment spacing.
 
 - ✅ Other Git hosts are first-class; `gh` is reached for only when the remote is actually GitHub's.
 	- Opened: 20260819-193000

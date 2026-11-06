@@ -3367,6 +3367,9 @@ GHEOF
 	done
 	## macOS pins /bin/bash at 3.2 forever, so installing a newer one only helps via PATH.
 	fAssert "[daepx] gitsby resolves bash through PATH, not /bin/bash"  bash -c "head -1 '${root}/legacy/bin/gitsby' | grep -qx '#!/usr/bin/env bash'"
+	## A hotfix starts from the v2.1.0 tag, so anything else added here would never ship.
+	fAssert "[deyvs] legacy/ holds the six frozen deliverables and its README, and nothing else" \
+		test "$(cd "${root}" && git ls-files legacy | tr '\n' ' ')" = 'legacy/README.md legacy/bin/gitsby legacy/bin/gitsby.ps1 legacy/install-dev.bash legacy/install-dev.ps1 legacy/install.bash legacy/install.ps1 '
 
 	## Installer options. These run once, not per implementation, and never reach the network:
 	## every check either exits during argument parsing, or uses --release (which names the ref
