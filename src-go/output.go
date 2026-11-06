@@ -105,9 +105,10 @@ func escArgs(a []any) []any {
 }
 
 // printable escapes the control characters in a value for display, the way the
-// accounts file writes them: \n, \t, and \uXXXX for the rest. A newline split one
-// field into two, and an ESC drives the terminal. Everything else, a backslash
-// included, prints as written, so a path never comes out re-spelled.
+// accounts file writes them: by name between two marks, such as ◉NEWLINE◉, and
+// ◉U+XXXX◉ for the rest. A newline split one field into two, and an ESC drives
+// the terminal. Everything else, a backslash included, prints as written, so a
+// path never comes out re-spelled.
 func printable(s string) string {
 	if !strings.ContainsFunc(s, unicode.IsControl) {
 		return s
@@ -116,12 +117,13 @@ func printable(s string) string {
 	for i := 0; i < len(s); {
 		r, size := utf8.DecodeRuneInString(s[i:])
 		switch {
-		case r == '\n':
-			b.WriteString(`\n`)
-		case r == '\t':
-			b.WriteString(`\t`)
+		case r == '\r' && strings.HasPrefix(s[i+1:], "\n"):
+			b.WriteString("◉CRLF◉")
+			size = 2
+		case ctrlNames[r] != "":
+			b.WriteString("◉" + ctrlNames[r] + "◉")
 		case unicode.IsControl(r):
-			fmt.Fprintf(&b, `\u%04X`, r)
+			fmt.Fprintf(&b, "◉U+%04X◉", r)
 		default:
 			// Byte for byte, so a byte that isn't UTF-8 isn't turned into U+FFFD.
 			b.WriteString(s[i : i+size])
@@ -129,6 +131,12 @@ func printable(s string) string {
 		i += size
 	}
 	return b.String()
+}
+
+// The controls shcl writes by name. Spec: "Escapes".
+var ctrlNames = map[rune]string{
+	0x00: "NUL", 0x07: "BEL", 0x08: "BACKSPACE", '\t': "TAB", '\n': "NEWLINE",
+	0x0b: "VT", 0x0c: "FF", '\r': "CR", 0x1b: "ESC", 0x7f: "DEL",
 }
 
 // confirm gates every mutation. Only 'y' or 'yes' is yes: a typo, a stray

@@ -22,7 +22,7 @@ import (
 	"strings"
 	"syscall"
 
-	shcl "github.com/yottacore/shcl/source/go/v2"
+	shcl "github.com/yottacore/shcl/source/go/v3"
 )
 
 type acctRule struct {

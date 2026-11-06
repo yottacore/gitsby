@@ -20,7 +20,7 @@ import (
 	"unicode"
 
 	shcl2 "github.com/jim-collier/shcl/source/go/v2"
-	shcl "github.com/yottacore/shcl/source/go/v2"
+	shcl "github.com/yottacore/shcl/source/go/v3"
 )
 
 func FuzzSplitRemoteURL(f *testing.F) { // [dbjwr]
@@ -113,8 +113,8 @@ func FuzzConfigLoadDoc(f *testing.F) { // [dcmn5]
 			doc, key, disp, parent, value string
 			accounts                      []string
 		}{
-			{"account: w\n\temail: e@x\n" + indentLines(body, "\t\t"), "account[#0].email", "account[w].email", "email", "e@x", []string{"w"}},
-			{"account.w.email: e@x\n" + indentLines(body, "\t"), "account[#0].w.email", "account.w.email", "email", "e@x", []string{"w"}},
+			{"account: w\n\temail: e@x\n" + indentLines(body, "\t\t"), "account(0).email", "account[w].email", "email", "e@x", []string{"w"}},
+			{"account.w.email: e@x\n" + indentLines(body, "\t"), "account(0).w.email", "account.w.email", "email", "e@x", []string{"w"}},
 			{"protocol: https\n" + indentLines(body, "\t"), "protocol", "protocol", "protocol", "https", nil},
 		}
 		for _, s := range shapes {
@@ -122,7 +122,7 @@ func FuzzConfigLoadDoc(f *testing.F) { // [dcmn5]
 			oracle := shcl.Parse(s.doc)
 			want := s.value
 			if n := oracle.Count(s.key); n != 1 {
-				want = oracle.GetStringOr(fmt.Sprintf("%s[#%d]", s.key, n-1), "")
+				want = oracle.GetStringOr(fmt.Sprintf("%s(%d)", s.key, n-1), "")
 			}
 			// A protocol other than the two gitsby uses is listed, not kept.
 			if s.accounts == nil && !protocolOK(want) {
@@ -139,7 +139,7 @@ func FuzzConfigLoadDoc(f *testing.F) { // [dcmn5]
 				t.Errorf("%q: rules %v %v, accounts %v, want no rules and accounts %v", s.doc, cfg.paths, cfg.segments, cfg.accountNames(), s.accounts)
 			}
 			for j := range oracle.Count(s.key) {
-				for _, name := range oracle.Children(fmt.Sprintf("%s[#%d]", s.key, j)) {
+				for _, name := range oracle.Children(fmt.Sprintf("%s(%d)", s.key, j)) {
 					if entry := s.disp + "." + name + " (indented under " + s.parent + ")"; !slices.Contains(cfg.unknown, entry) {
 						t.Errorf("%q: unknown = %q, missing %q", s.doc, cfg.unknown, entry)
 					}
@@ -187,20 +187,17 @@ func FuzzSetValue(f *testing.F) { // [ddcc1]
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, value string) {
-		// What the plan shows and the file holds must read back as the value typed,
-		// whichever quotes it went in.
+		// What the plan shows and the file holds must read back as the value typed.
 		doc := shcl.New()
-		if !setValue(doc, "v", value) {
+		if doc.SetString("v", value) != shcl.SetOk {
 			return
 		}
 		back := shcl.Parse(doc.ToCanonical())
 		if got, status := back.GetString("v"); status == shcl.Good && got != value {
-			t.Errorf("setValue(%q) wrote %q, read back %q", value, doc.ToCanonical(), got)
+			t.Errorf("SetString(%q) wrote %q, read back %q", value, doc.ToCanonical(), got)
 		}
-		// A line break goes in a raw block, which has no quotes to check.
-		spelled := shclValue(value)
-		if strings.Contains(value, `\`) && !strings.ContainsAny(value, "\r\n") && !strings.HasPrefix(spelled, "'") && !strings.HasPrefix(spelled, `"`) {
-			t.Errorf("setValue(%q) wrote a backslash value bare: %s", value, spelled)
+		if line := "v: " + shclValue(value); !strings.Contains(doc.ToCanonical(), line) {
+			t.Errorf("shclValue(%q) = %q, the file holds %q", value, line, doc.ToCanonical())
 		}
 	})
 }

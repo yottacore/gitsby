@@ -16,7 +16,7 @@ import (
 	"slices"
 	"strings"
 
-	shcl "github.com/yottacore/shcl/source/go/v2"
+	shcl "github.com/yottacore/shcl/source/go/v3"
 )
 
 // configHeader opens a file 'account set' creates. The keys are listed here
@@ -24,7 +24,7 @@ import (
 // it, and a list in the docs is a list they have to go and find.
 const configHeader = "# " + meName + ` accounts: which login, key and author to use under which folder.
 # One block per account. Every key is optional:
-#   path          an absolute folder this account owns; more than one: a, b
+#   path          an absolute folder this account owns; more than one: [a, b]
 #   pathcontains  a run of folder names found anywhere in a path
 #   ghaccount     the GitHub login to act as
 #   tokenfile     a file holding that login's token, absolute
@@ -62,7 +62,7 @@ func isFlatConfig(text string) bool {
 // acctBlock is where one account lives in the document.
 type acctBlock struct {
 	name string // lower case, the way every lookup spells it
-	path string // the block's lookup path: account[#1], or account[#0].work for the dotted form
+	path string // the block's lookup path: account(1), or account(0).work for the dotted form
 	disp string // how the ignored list and the plan name it: account[work], account.work
 }
 
@@ -72,7 +72,7 @@ type acctBlock struct {
 // folds every name.
 func acctBlocks(doc *shcl.Document) (blocks []acctBlock, stray []string) {
 	for i := range doc.Count("account") {
-		base := fmt.Sprintf("account[#%d]", i)
+		base := fmt.Sprintf("account(%d)", i)
 		if name, status := doc.GetString(base); status == shcl.Good && name != "" {
 			blocks = append(blocks, acctBlock{strings.ToLower(name), base, "account[" + name + "]"})
 			continue
@@ -171,7 +171,7 @@ func bindings(doc *shcl.Document, path, disp string) []binding {
 	lines := doc.Lines(path)
 	out := make([]binding, 0, len(lines))
 	for j := range doc.Count(path) {
-		out = append(out, binding{doc.GetStringOr(fmt.Sprintf("%s[#%d]", path, j), ""), disp, lines[j]})
+		out = append(out, binding{doc.GetStringOr(fmt.Sprintf("%s(%d)", path, j), ""), disp, lines[j]})
 	}
 	return out
 }
@@ -212,7 +212,7 @@ func (c *config) listNested(doc *shcl.Document, at, disp, parent string) {
 func allStrings(doc *shcl.Document, path string) []string {
 	var out []string
 	for j := range doc.Count(path) {
-		out = append(out, doc.GetStringArrayOr(fmt.Sprintf("%s[#%d]", path, j), nil)...)
+		out = append(out, doc.GetStringArrayOr(fmt.Sprintf("%s(%d)", path, j), nil)...)
 	}
 	return out
 }
@@ -234,36 +234,8 @@ func dedupe(names []string) []string {
 // line on disk cannot disagree.
 func shclValue(value string) string {
 	doc := shcl.New()
-	setValue(doc, "v", value)
-	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(doc.ToCanonical()), "v:"))
-}
-
-// setValue writes a value with a backslash in single quotes, where every
-// backslash is itself. The module writes some Windows paths bare, and the file
-// should show the spelling that is safe to copy for the next path typed by hand.
-// Single quotes can't hold an apostrophe or a line break, so those values, and
-// ones with a character the module writes as a \u escape to make it seen, keep
-// the module's double quotes, with each backslash doubled.
-func setValue(doc *shcl.Document, path, value string) bool {
-	if strings.Contains(value, `\`) && !strings.ContainsAny(value, "'\r\n") && !hasUEscape(value) && doc.SetLiteral(path, "'"+value+"'") {
-		if got, status := doc.GetString(path); status == shcl.Good && got == value {
-			return true
-		}
-	}
-	return doc.SetString(path, value)
-}
-
-// hasUEscape: the module spells value with a \u or \U escape. Only double quotes
-// hold escapes, and a doubled backslash is not the start of one.
-func hasUEscape(value string) bool {
-	doc := shcl.New()
 	doc.SetString("v", value)
-	spelled := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(doc.ToCanonical()), "v:"))
-	if !strings.HasPrefix(spelled, `"`) {
-		return false
-	}
-	spelled = strings.ReplaceAll(spelled, `\\`, "")
-	return strings.Contains(spelled, `\u`) || strings.Contains(spelled, `\U`)
+	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(doc.ToCanonical()), "v:"))
 }
 
 // flatToSHCL respells the old layout in the current one, so the comments and

@@ -224,9 +224,10 @@ func TestPrintableEscapesControlsOnly(t *testing.T) { // [ddjz7]
 		{`C:\Users\pat\dev`, `C:\Users\pat\dev`},
 		{`a\nb`, `a\nb`},
 		{"/srv/caf\u00e9 \u2028x/\u00a0", "/srv/caf\u00e9 \u2028x/\u00a0"},
-		{"n\nemail ..: evil@x", `n\nemail ..: evil@x`},
-		{"a\tb\rc\x1b[31md\x7fe\x00f\u0085g", `a\tb\u000Dc\u001B[31md\u007Fe\u0000f\u0085g`},
-		{"\xff\n", "\xff" + `\n`},
+		{"n\nemail ..: evil@x", "n◉NEWLINE◉email ..: evil@x"},
+		{"a\tb\rc\x1b[31md\x7fe\x00f\u0085g", "a◉TAB◉b◉CR◉c◉ESC◉[31md◉DEL◉e◉NUL◉f◉U+0085◉g"},
+		{"a\r\nb\x01", "a◉CRLF◉b◉U+0001◉"},
+		{"\xff\n", "\xff◉NEWLINE◉"},
 	}
 	for _, c := range cases {
 		if got := printable(c.in); got != c.want {
@@ -235,7 +236,7 @@ func TestPrintableEscapesControlsOnly(t *testing.T) { // [ddjz7]
 	}
 	// The same spelling the accounts file gives each one, so the listing and the
 	// file read alike.
-	for _, v := range []string{"a\nb", "a\tb", "a\rb", "a\x1bb", "a\x7fb", "a\x01b", "a\u0085b"} {
+	for _, v := range []string{"a\nb", "a\tb", "a\rb", "a\r\nb", "a\x1bb", "a\x7fb", "a\x01b", "a\u0085b", "a\x00b", "a\x07b", "a\x08b", "a\x0bb", "a\x0cb"} {
 		if got, file := printable(v), shclValue(v); `"`+got+`"` != file {
 			t.Errorf("printable(%q) = %q, the file writes %s", v, got, file)
 		}

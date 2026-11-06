@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	shcl "github.com/yottacore/shcl/source/go/v2"
+	shcl "github.com/yottacore/shcl/source/go/v3"
 )
 
 func planFor(t *testing.T, body string) *config {
@@ -1032,12 +1032,27 @@ func TestAccountSetKeepsALineItCouldntRead(t *testing.T) { // [ddcbm]
 		t.Errorf("unset got:\n%q\nwant:\n%q", got, want)
 	}
 
-	// A key added under a dotted line rewrites the file.
+	// A key added under a dotted line rewrites the file, and the rewrite keeps a
+	// line it couldn't read. One past the depth cap it can't keep, so that's refused.
 	a, file = setApp(t, "account.work.email: a@x\n* stray\n", "work", "name", "N")
+	if err := a.preflight(); err != nil || !a.set.reshapes {
+		t.Fatalf("rewrite over a kept line: err = %v, reshapes = %v", err, a.set.reshapes)
+	}
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("rewrite over a kept line: %v", err)
+	}
+	if got := readBack(t, file); !strings.Contains(got, "\n* stray\n") || !strings.Contains(got, "name: N") {
+		t.Errorf("rewrite over a kept line:\n%q", got)
+	}
+	deep := "account.work.email: a@x\nd:\n"
+	for i := 1; i <= shcl.MaxDepth+1; i++ {
+		deep += strings.Repeat("\t", i) + "d:\n"
+	}
+	a, file = setApp(t, deep, "work", "name", "N")
 	if err := a.preflight(); err == nil || !strings.Contains(err.Error(), "Edit it by hand") {
 		t.Errorf("rewrite over a lost line: err = %v", err)
 	}
-	if got := readBack(t, file); got != "account.work.email: a@x\n* stray\n" {
+	if got := readBack(t, file); got != deep {
 		t.Errorf("refused edit changed the file:\n%q", got)
 	}
 }

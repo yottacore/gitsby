@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	shcl "github.com/yottacore/shcl/source/go/v2"
+	shcl "github.com/yottacore/shcl/source/go/v3"
 )
 
 // The footer shcl 2.x wrote, as it sits in files gitsby made before 3.0.

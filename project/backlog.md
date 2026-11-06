@@ -3331,20 +3331,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ### Features and enhancements
 
-- 🔘 Move the shcl module from its pinned `dev` commit to the tagged 3.0 release.
-	- Status: Stalled
-		- Waits on shcl tagging 3.0 with a `/v3` module path.
-	- Opened: 20260924-132324
-	- The pin is `v2.0.0-20261001214152-b10c2009d36c` since 2026-10-01, shcl `dev` at what will be the beta cut. Go sorts it below v2.0.0. Nothing asks for v2.0.0 on the new import path, so nothing picks it over the pin.
-	- Go refuses a v3 tag on a module named `.../v2`, so the tag should bring a `/v3` import path. Move the imports in the same commit.
-	- `release.bash` should refuse a pseudo-version for shcl, so a release cannot go out on a commit pin.
-	- shcl plans the `/v3` path for its 3.0.0 cut, so nothing to report there.
-	- Note: blocked. Checked 2026-09-28: shcl has no 3.0 tag yet, and its `dev` go.mod still says `/v2`.
-	- Note: moved to the cut candidate on 2026-10-01. A line the file couldn't read is now kept through an edit, and a double-quoted path with a stray escape is listed instead of read with a newline in it. Still `/v2`.
-	- Note: checked 2026-10-05 and 2026-10-06, still no 3.0 tag, and `dev` go.mod still says `/v2`.
-	- Note: checked again 2026-10-21 and 2026-10-24. Newest tag is still v2.0.0.
-	- At the move, read the changelog for format breaks since the beta, and for any API that backs up or converts a file itself. The converter from item 2026100312145843 must not race it.
-
 ### Done
 
 #### Done - Bugs
@@ -5191,6 +5177,30 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Added next to the bash badge in the header block, linking to the PowerShell docs.
 
 #### Done - Features and enhancements
+
+- ✅ Move the shcl module from its pinned `dev` commit to the tagged 3.0 release.
+	- Closed: 20261106-085637
+	- Opened: 20260924-132324
+	- The pin is `v2.0.0-20261001214152-b10c2009d36c` since 2026-10-01, shcl `dev` at what will be the beta cut. Go sorts it below v2.0.0. Nothing asks for v2.0.0 on the new import path, so nothing picks it over the pin.
+	- Go refuses a v3 tag on a module named `.../v2`, so the tag should bring a `/v3` import path. Move the imports in the same commit.
+	- `release.bash` should refuse a pseudo-version for shcl, so a release cannot go out on a commit pin.
+	- shcl plans the `/v3` path for its 3.0.0 cut, so nothing to report there.
+	- Note: blocked. Checked 2026-09-28: shcl has no 3.0 tag yet, and its `dev` go.mod still says `/v2`.
+	- Note: moved to the cut candidate on 2026-10-01. A line the file couldn't read is now kept through an edit, and a double-quoted path with a stray escape is listed instead of read with a newline in it. Still `/v2`.
+	- Note: checked 2026-10-05 and 2026-10-06, still no 3.0 tag, and `dev` go.mod still says `/v2`.
+	- Note: checked again 2026-10-21 and 2026-10-24. Newest tag is still v2.0.0.
+	- At the move, read the changelog for format breaks since the beta, and for any API that backs up or converts a file itself. The converter from item 2026100312145843 must not race it.
+	- Note: shcl tagged `v3.0.0-beta1` on 2026-11-05, with the `/v3` import path.
+	- Fixed: moved to `github.com/yottacore/shcl/source/go/v3` at `v3.0.0-beta1`. The beta changed the format again after the pin, still as Format 3:
+		- A list is `[a, b]`, or one item per line after a `-`. `path: a, b` and `*` items are listed as ignored, with the fix in the message. The file header and accounts.md say `[a, b]`.
+		- A backslash is plain text in either quote. `account set` writes the module's own quoting, so the single-quote rule for backslash paths went.
+		- Escapes are names between `◉` marks. `printable` shows a control the same way, `◉NEWLINE◉` and `◉U+0001◉`, so the listing and the file still read alike.
+		- Index paths are `account(0)`, not `account[#0]`.
+		- A rewrite now keeps a line the file couldn't read, so `account set` refuses only where a line is past the depth cap.
+	- A file the pinned build wrote names Format 3 too, so nothing tells it from a beta1 one. Not converted: gover never went out, b23's file reads clean, and a pin-era list line is listed rather than dropped.
+	- Done: `release.bash` refuses a go.mod with any module pinned to a commit.
+	- Acceptance signoff: Self-closed. Go tests and test.bash pass, and the new and changed checks fail with the fix taken out.
+	- Test: [deynj] [deynk] in test.bash for the pin refusal. [ddjz4] [ddjz6] now feed real escapes; before, v3 read them as plain text and they passed on nothing. [ddcbm] [ddcby] [ddcbn] [ddjz7] in the Go tests.
 
 - ✅ Rework the fuzz suite. Much of what it proves becomes structurally impossible with no shell in the path; figure out what remains meaningful.
 	- Opened: 20260817-115422
