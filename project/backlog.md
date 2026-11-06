@@ -643,7 +643,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The parent's last requirement, outside cicd.bash: the harnesses, stage 7's commands on the other boxes, the utilities, release.bash, the installers, and the image build's own removals. Each goes through the guard in `cicd/utility/include/safe-rm.bash`, or a copy of it on the other boxes, and keeps the name and marker checks it has.
 		- The guard calls `realpath -e`. Check it on macOS and FreeBSD before stage 7 uses it there.
 	- Progress log:
-		- 2026-11-06: Split in three. 2026110612393817 has the harnesses, the utilities and release.bash, and is in. 2026110612393822 has stage 7's commands on the boxes, and 2026110612551903 the installer and the image build.
+		- 2026-11-06: Split in four. 2026110612393817 has the harnesses, the utilities and release.bash, and 2026110612551903 the installer. Both are in. 2026110612393822 has stage 7's commands on the boxes, and 2026110612595461 the image build.
 		- 2026-11-06: The guard no longer calls `realpath -e`, so the second requirement is answered in 2026110612393817.
 
 - CICD reset: the harnesses, utilities and release.bash through the guard
@@ -670,7 +670,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash [deywq] (the guard with no realpath on PATH) and [deywr] (no script removes a folder another way), plus [ddgkk] and [db70t] to [db70y].
 	- Verified: [deywq] fails against the old guard and passes with the new one. [deywr] fails on the old fuzz.bash, test.bash, release.bash and gen-winres.bash. `--backlog-run-quick` passed, with test.bash 1809/0, fuzz 313/0 and parity 30/0.
 	- Verified: run on its own here, demo-repo.bash built and removed a world under /tmp, and the scratch folder came out as `/tmp`, or `${HOST_TEMP}/gitsby` with `TMPDIR` set to `HOST_TEMP`.
-	- Swept: every `rm -r`, `rmdir /s` and `Remove-Item -Recurse` outside legacy/. What's left is in the other two children.
+	- Swept: every `rm -r`, `rmdir /s` and `Remove-Item -Recurse` outside legacy/. What's left is in the other children.
 
 - CICD reset: stage 7's removals on the boxes through a guard
 	- ID: 2026110612393822
@@ -686,18 +686,37 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- POSIX sh on the Mac and Unix boxes, with no `realpath -e` or `rm --one-file-system`, as in the repo's guard.
 		- Then [deywr] in test.bash drops its `old.*` exemption.
 
-- CICD reset: the installer's and the image build's removals through a guard
+- CICD reset: the installer's removal through a guard
 	- ID: 2026110612551903
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs external testing: an install through install.ps1 on vm925w, in Windows PowerShell 5.1 and in pwsh, takes its folder out of `%TEMP%` again.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261106-125519
 	- Opened by: jim-collier
 	- Parent ID: 2026102516194062
 	- Requirements [Feature]:
 		- install.ps1's `Remove-Item -Recurse` of its temp folder goes through a guard of the same kind.
-		- The Dockerfile's removals of its folders under /tmp go through the guard, copied into the build. `/var/lib/apt/lists/*` isn't under a tmp folder, so it gets a guard that names that one parent, or a reason on this item to leave it.
-		- A Dockerfile change gives the image a new tag, so the next run rebuilds it.
+	- Progress log:
+		- 2026-11-06: The folder is removed only when it's a real folder, not a link, right under the temp folder. Anything else is left, with a warning. Both sides of the parent check are spelled by `Get-Item`, so a short 8.3 temp path compares the same.
+	- Decisions:
+		- The guard sits inline in the `finally` block. It's the installer's only recursive removal, and the installer is one file a person downloads.
+	- Branch: round-20261106
+	- Test case: test.bash [deyx8] (a whole install takes its temp folder away) and [deyx9] (the removal sits behind the guard).
+	- Verified: [deyx9] fails against the old install.ps1. Under pwsh here, the guard left a link and a folder one level down, and removed a folder right under the temp folder. `--backlog-run-quick` passed, with test.bash 1811/0, fuzz 313/0 and parity 30/0.
+	- Not run: on Windows. pwsh on Linux stood in.
+
+- CICD reset: the image build's removals through a guard
+	- ID: 2026110612595461
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261106-125954
+	- Opened by: jim-collier
+	- Parent ID: 2026102516194062
+	- Requirements [Feature]:
+		- The Dockerfile's removals of its folders under /tmp go through the guard, copied into the build. `/var/lib/apt/lists/*` and the PSScriptAnalyzer package files aren't under a tmp folder, so they get a guard that names that one parent, or a reason on this item to leave them.
+		- A Dockerfile change gives the image a new tag, so the next run rebuilds it. Leave time for that.
 
 - CICD reset: CICD process gaps
 	- ID: 2026102416313109

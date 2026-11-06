@@ -441,7 +441,15 @@ function Install-Gitsby {
     } finally {
         ## LiteralPath, like every other removal in the tree: the temp path is ours, but a bracket
         ## anywhere in it would otherwise be read as a wildcard rather than as a character.
-        if ($tmpDir -and (Test-Path -LiteralPath $tmpDir)) { Remove-Item -LiteralPath $tmpDir -Recurse -Force }
+        ## Only a real folder right under the temp folder, so a link or a stray path goes nowhere.
+        if ($tmpDir -and $tmpDir -notmatch '\.\.' -and (Test-Path -LiteralPath $tmpDir -PathType Container)) {
+            $tmpItem = Get-Item -LiteralPath $tmpDir -Force
+            ## Both spelled by Get-Item, so a short 8.3 temp path compares the same on each side.
+            $tmpRoot = (Get-Item -LiteralPath ([IO.Path]::GetTempPath()) -Force).FullName.TrimEnd('\', '/')
+            if (-not ($tmpItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -and $tmpItem.Parent.FullName.TrimEnd('\', '/') -eq $tmpRoot) {
+                Remove-Item -LiteralPath $tmpDir -Recurse -Force
+            } else { Write-Warning "Left the temp folder in place, since it isn't one this installer made: $tmpDir" }
+        }
     }
 }
 
@@ -547,3 +555,5 @@ try {
 #     while none does, the newest pre-release that does. v2.1.0 publishes only the old
 #     scripts, so until 3.0.0 the install line found nothing to install. releases/latest is
 #     still asked first, and the release list only when its SHA256SUMS names no binary.
+#   - 20261106 JC: The temp folder is removed only when it's a real folder right under the
+#     temp folder, and otherwise left with a warning.

@@ -4087,6 +4087,13 @@ GHEOF
 			fAssert    "[dd81d] and downloads nothing"  bash -c "! grep -q '/gitsby-' '${psi}/calls'"
 			chmod 755 "${psi}/hro/.local"
 			fAssert    "[dd5e5] go install.ps1 names its temp dir at random"  bash -c "grep -q 'tmpDir = Join-Path.*GetRandomFileName' '${goInstPs}'"
+			local psTmp="${psi}/tmpdir"; mkdir -p "${psTmp}"
+			TMPDIR="${psTmp}" fPsInstall "${psi}" "${psi}/htmp" 7 "${goInstPs}" -Yes >/dev/null 2>&1 || true
+			# shellcheck disable=SC2016  ## the inner shell does the expanding.
+			fAssert    "[deyx8] go install.ps1 installs and takes its temp folder away" \
+				bash -c '[[ -x "$1/.local/bin/gitsby" && -z "$(ls -A -- "$2")" ]]' _ "${psi}/htmp" "${psTmp}"
+			fAssert    "[deyx9] and removes it only as a real folder right under the temp folder" \
+				bash -c "grep -q 'ReparsePoint) -and \$tmpItem.Parent.FullName' '${goInstPs}' && [[ \$(grep -c -- '-Recurse' '${goInstPs}') == 1 ]]"
 			## The install line with no -Tag, against the release lists the Bash installer's checks
 			## use. FAKE_LATEST names the tag the redirect goes to, FAKE_LIST the list file, and
 			## each tag's SHA256SUMS comes from FAKE_SUMS_DIR; an empty one fails.
