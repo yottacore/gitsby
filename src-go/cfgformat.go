@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	shcl "github.com/yottacore/shcl/source/go/v2"
+	shcl "github.com/yottacore/shcl/source/go/v3"
 )
 
 // The second line of the banner shcl 2.x put under a file it generated. 3.0's

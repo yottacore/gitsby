@@ -4581,7 +4581,7 @@ GHEOF
 		# blocks
 		protocol: https
 		account: hw
-		    path: ${acCanon}/trees/work, ${acCanon}/trees/away
+		    path: [${acCanon}/trees/work, ${acCanon}/trees/away]
 		    ghAccount: hieracct
 		    nonsense: 1
 		account.hh.path: ${acCanon}/trees/home
@@ -4611,7 +4611,7 @@ GHEOF
 		    sshkey: ~/.ssh/id_proto
 		account: hn
 		    path:
-		        * ${acCanon}/trees/work
+		        - ${acCanon}/trees/work
 		    name: Nested Person
 		    email: nested@example.com
 		        sshkey: ~/.ssh/id_nested
@@ -4797,13 +4797,13 @@ GHEOF
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/twice.shcl' account list"
 	## A value holding a newline printed across 2 lines, the second looking like a field of its own,
 	## and an ESC in one reached the terminal as is.
-	printf 'account: esc\n\tpath: %s/trees/work\n\tname: "n\\nemail ..: evil@x\\u001B[31m"\n\temail: e@example.com\n' "${acCanon}" > "${ac}/esc.shcl"
-	fAssertOut "[ddjz4] account list shows a control character in a value escaped, on one line"  'commits \.+: n\\nemail \.\.: evil@x\\u001B\[31m <e@example\.com>$' \
+	printf 'account: esc\n\tpath: %s/trees/work\n\tname: "n◉NEWLINE◉email ..: evil@x◉ESC◉[31m"\n\temail: e@example.com\n' "${acCanon}" > "${ac}/esc.shcl"
+	fAssertOut "[ddjz4] account list shows a control character in a value escaped, on one line"  'commits \.+: n◉NEWLINE◉email \.\.: evil@x◉ESC◉\[31m <e@example\.com>$' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/esc.shcl' account list"
 	fAssertNotOut "[ddjz5] and no line of it starts a field of its own, or holds a raw ESC"  $'^email \\.\\.|\x1b' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/esc.shcl' account list"
 	## git drops the newline from an ident itself, so the Author line has only the ESC to show.
-	fAssertOut "[ddjz6] whoami's Author line shows the ESC escaped too"  '^Author \.+: [^ ]*email \.\.: evil@x\\u001B\[31m <e@example\.com>$' \
+	fAssertOut "[ddjz6] whoami's Author line shows the ESC escaped too"  '^Author \.+: [^ ]*email \.\.: evil@x◉ESC◉\[31m <e@example\.com>$' \
 		bash -c "cd '${acWork}' && env ${acEnvIdent} '${gitsby}' -q -NoFetch --config '${ac}/esc.shcl' whoami"
 	## An entry written by hand has to survive; ours have to refresh rather than accumulate.
 	( cd "${acWork}" && env HOME="${ac}/home" GIT_CONFIG_GLOBAL="${ac}/home/.gitconfig" git config --global includeIf.gitdir:/hand/written/.path /keep/me.gitconfig )
@@ -5259,6 +5259,7 @@ GHEOF
 		git init --quiet --bare -b main "${rel}/origin.git"
 		git clone --quiet "${rel}/origin.git" "${relRepo}" 2>/dev/null
 		mkdir -p "${relRepo}/cicd/utility/include" "${relRepo}/cicd/container" "${relRepo}/src-go"
+		printf '%s\n' 'module x' '' 'require example.com/m v1.2.0' > "${relRepo}/src-go/go.mod"
 		cp "${root}/cicd/release.bash" "${root}/cicd/config.bash" "${relRepo}/cicd/"
 		cp "${root}/cicd/utility/include/image-go.bash" "${relRepo}/cicd/utility/include/"
 		cp "${root}/cicd/container/Dockerfile" "${root}/cicd/container/requirements.txt" "${relRepo}/cicd/container/"
@@ -5503,6 +5504,19 @@ GHEOF
 		fAssert "[ddf85] and refuses to bump a tag whose patch isn't digits" \
 			bash -c "[[ '${relRc}' == 1 ]] && grep -qF \"can't work out the version after v1.3.0rc1\" '${relOut}'"
 		git -C "${relRepo}" tag -d v1.3.0rc1 >/dev/null
+		## The shcl move sat on a commit pin for weeks, waiting on its tag.
+		printf '%s\n' 'module x' '' 'require (' '	example.com/m v1.2.0' '	example.com/n/v3 v3.0.0-20261001214152-b10c2009d36c' ')' > "${relRepo}/src-go/go.mod"
+		git -C "${relRepo}" commit --quiet -am 'pin'
+		git -C "${relRepo}" push --quiet 2>/dev/null
+		fRelRun --dry-run
+		fAssert "[deynj] release.bash refuses a go.mod with a module pinned to a commit" \
+			bash -c "[[ '${relRc}' == 1 ]] && grep -qF 'pins a module to a commit rather than a tag: example.com/n/v3 v3.0.0-20261001214152-b10c2009d36c' '${relOut}'"
+		printf '%s\n' 'module x' '' 'require example.com/m v1.2.0-beta1' > "${relRepo}/src-go/go.mod"
+		git -C "${relRepo}" commit --quiet -am 'tag'
+		git -C "${relRepo}" push --quiet 2>/dev/null
+		fRelRun --dry-run
+		fAssert "[deynk] and takes a pre-release tag" \
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'Phase 1 OK: v1.2.3 -> v1.2.4' '${relOut}'"
 		## Phase 2 writes the downloads table, so one already under vNEXT is stale.
 		sed -i 's/^- a change$/- a change\n\n### Downloads\n\n- stale/' "${relRepo}/changelog.md"
 		git -C "${relRepo}" commit --quiet -am 'stale table'
@@ -8020,3 +8034,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261026 JC: The run's one cleanup line at its end, files and docker together. The stale-folder and docker checks read it. 1754 -> 1755.
 ##		- 20261026 JC: Test IDs are minutes since 2000 in Crockford base 32, converted from the old ones. Checks for an old ID failing, a taken minute and -n. 1757 -> 1760.
 ##		- 20261026 JC: Each check prints PASS, FAIL or SKIP, then its ID and label. A block a box can't run gives a SKIP for each test in it, and the total counts them. The checks that read the old lines read the new ones, plus checks for each suite's lines, the skipped blocks, the Go test lines, spawn-count's and the lint summary. 1760 -> 1768.
+##		- 20261106 JC: Fixtures in shcl 3.0 beta1 syntax, lists in brackets and dash items. The control character checks feed escapes the format reads, since a backslash is text now. Checks for the commit-pin refusal in release.bash. 1771 -> 1773.

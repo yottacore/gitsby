@@ -37,7 +37,7 @@ account: github.com_my-personal-login
 	email: ada@home.example
 ~~~
 
-The format is [SHCL](https://github.com/yottacore/shcl): `key: value`, blocks by indentation, tabs or spaces. Key names are case-insensitive and settle on lower case. A value holding a `#`, a comma or a colon goes in quotes (`path: 'C:/work'`). A backslash is just a character, except inside double quotes, where it starts an escape. So a Windows path goes in single quotes (`path: 'C:\dev\work'`), or is written with forward slashes. Gitsby reads either slash, and writes a backslash path in single quotes. A path holding an apostrophe can't go in single quotes, so it goes in double quotes with each backslash doubled (`path: "C:\\Bob's\\work"`).
+The format is [SHCL](https://github.com/yottacore/shcl): `key: value`, blocks by indentation, tabs or spaces. Key names are case-insensitive and settle on lower case. A value holding a `#` goes in quotes, and so does one with a comma or a colon followed by a space. A backslash is just a character, quoted or not, so a Windows path is typed as it is (`path: C:\dev\work`). Gitsby reads either slash.
 
 A file written for the 2.x scripts - flat `account.work.path = ~/dev/work` lines - is still read as it is. The first `account set` rewrites it in the layout above, comments included.
 
@@ -59,7 +59,7 @@ Per-account keys, all optional except a `path` to match on:
 
 | Key             | What it does
 | :--             | :--
-| `path`          | A folder tree this account owns, as an absolute path or one starting at the home folder: `~`, `${HOME}` and `%USERPROFILE%` all mean it, on every platform, with either slash. No other variable is expanded, and a rule starting with one is listed as ignored. More than one: `path: ~/dev/work, ~/dev/other`, or repeat the key. The longest match wins, so a tree nested inside another account's tree belongs to the inner one. A relative path is listed as ignored, since a file cannot say what it was relative to; `account set` turns one into the folder it names from where you run it.
+| `path`          | A folder tree this account owns, as an absolute path or one starting at the home folder: `~`, `${HOME}` and `%USERPROFILE%` all mean it, on every platform, with either slash. No other variable is expanded, and a rule starting with one is listed as ignored. More than one: `path: [~/dev/work, ~/dev/other]`, one item per line under `path:`, each after a `-`, or repeat the key. The longest match wins, so a tree nested inside another account's tree belongs to the inner one. A relative path is listed as ignored, since a file cannot say what it was relative to; `account set` turns one into the folder it names from where you run it.
 | `pathcontains`  | A run of folder names that appears anywhere in the path, so the same rule works on machines whose roots differ. Whole names only - `alice` never matches `alice-old`. Repeatable.
 | `ghaccount`  | The GitHub login to act as.
 | `tokenfile`  | A file holding that account's token, for a machine where `gh` was never logged in as it.

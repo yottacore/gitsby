@@ -336,6 +336,9 @@ branch="$(git rev-parse --abbrev-ref HEAD)"
 target="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
 [[ -n "${target}" ]] || fDie "branch '${branch}' has no upstream."
 [[ -z "$(git log '@{u}..HEAD' --oneline)" ]] || fDie "branch '${branch}' has unpushed commits."
+## Tagged modules only. A pseudo-version is a commit on somebody's branch, picked by hand.
+pinned="$(grep -oE '[^[:space:]]+ v[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.]*[0-9]{14}-[0-9a-f]{12}' "${root}/${GO_MODULE_DIR}/go.mod" 2>/dev/null | paste -sd ' ' || true)"
+[[ -z "${pinned}" ]] || fDie "go.mod pins a module to a commit rather than a tag: ${pinned}"
 
 ## One pipeline, everywhere. It used to be two engines picked by platform; the Windows one was a
 ## port of this file rather than a wrapper around it, and it retired with the scripts it mirrored.
@@ -585,3 +588,4 @@ echo
 ##		- 20261025 JC: Runs at low priority, as cicd.bash does.
 ##		- 20261025 JC: Both release builds come from the pipeline image's Go where docker works, and from this box's with a warning where it doesn't. A stop removes the image's builds still running.
 ##		- 20261025 JC: --help prints the header again. It looked for "- Purpose:", and the header says "Purpose:".
+##		- 20261106 JC: Refuses a go.mod with a module pinned to a commit rather than a tag.

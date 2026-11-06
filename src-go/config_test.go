@@ -19,7 +19,7 @@ import (
 	"strings"
 	"testing"
 
-	shcl "github.com/yottacore/shcl/source/go/v2"
+	shcl "github.com/yottacore/shcl/source/go/v3"
 )
 
 func TestParseConfigValue(t *testing.T) { // [dbfqy]
@@ -523,7 +523,7 @@ stray: 1
 account.dotted.path: /srv/dotted
 account.dotted.ghAccount: dottedlogin
 account: Block
-	path: /srv/a, "/srv/b c"
+	path: [/srv/a, "/srv/b c"]
 	path: /srv/d
 	pathContains: github.com/alice
 	nonsense: x
@@ -619,7 +619,7 @@ var nestedKeyRows = []struct {
 		}},
 	{"under a top-level key nothing reads", "stray: 1\n\tx: 2\n",
 		[]string{"stray", "stray.x (indented under stray)"}, nil},
-	{"a stacked list", "account: w\n\tpath:\n\t\t* /srv/a\n\t\t* /srv/b\n",
+	{"a stacked list", "account: w\n\tpath:\n\t\t- /srv/a\n\t\t- /srv/b\n",
 		nil,
 		func(t *testing.T, cfg *config) { wantFolders(t, cfg, "w", driveRule("/srv/a"), driveRule("/srv/b")) }},
 	{"a raw block", "account: w\n\tname:\n\t\t~~~\n\t\tJim\n\t\t  sshkey: k\n\t\t~~~\n",
@@ -696,7 +696,7 @@ func TestConfigLoadNestedKeysAtTheDepthCap(t *testing.T) { // [dcmn4]
 	wantValue(t, cfg, "w", "email", "e@x")
 	doc := shcl.Parse(body.String())
 	kept := 0
-	for at := "account[#0].email[#0]"; len(doc.Children(at)) > 0; at += fmt.Sprintf(".k%d[#0]", kept) {
+	for at := "account(0).email(0)"; len(doc.Children(at)) > 0; at += fmt.Sprintf(".k%d(0)", kept) {
 		kept++
 	}
 	if kept == 0 || kept >= chain {
@@ -768,7 +768,7 @@ func TestShclValue(t *testing.T) { // [dbss6]
 		"plain":    "plain",
 		"Ada #1":   `"Ada #1"`,
 		"":         `""`,
-		`C:\x`:     `'C:\x'`,
+		`C:\x`:     `"C:\x"`,
 		"a, b":     `"a, b"`,
 		"C:/work":  `"C:/work"`,
 		"~/dev/w":  "~/dev/w",
@@ -781,11 +781,11 @@ func TestShclValue(t *testing.T) { // [dbss6]
 	}
 }
 
-// A backslash outside double quotes is itself, so a Windows path typed by hand
-// keeps its '\t' and '\n'. SHCL 2.x read those as escapes. A path rule written
-// doubled under 2.x still names its folder, since a rule reads either slash.
+// A backslash is itself, quoted or not, so a Windows path typed by hand keeps its
+// '\t' and '\n'. SHCL 2.x read those as escapes. A path rule written doubled
+// under 2.x still names its folder, since a rule reads either slash.
 func TestConfigLoadBackslashes(t *testing.T) { // [dd2d9]
-	cfg := writeConfig(t, "account: w\n\tname: ~\\dev\\tools\n\temail: \"C:\\\\new\"\n")
+	cfg := writeConfig(t, "account: w\n\tname: ~\\dev\\tools\n\temail: \"C:\\new\"\n")
 	wantValue(t, cfg, "w", "name", `~\dev\tools`)
 	wantValue(t, cfg, "w", "email", `C:\new`)
 	// Through driveFolder: '/srv' is not absolute on Windows, so the rule would be
@@ -796,17 +796,17 @@ func TestConfigLoadBackslashes(t *testing.T) { // [dd2d9]
 	}
 }
 
-// A backslash value is written in single quotes, never bare, so the file shows
-// how to type the next Windows path. One with an apostrophe can't be, and goes in
-// double quotes with the backslashes doubled. Every spelling reads back as given.
-func TestBackslashValuesGoInSingleQuotes(t *testing.T) { // [ddcby]
+// A backslash value goes in as typed, since no quote kind reads a backslash as
+// an escape. The module quotes it only for its other characters. Every spelling
+// reads back as given.
+func TestBackslashValuesReadBack(t *testing.T) { // [ddcby]
 	cases := map[string]string{
-		`~\dev\tools`:     `'~\dev\tools'`,
-		`\\srv\share`:     `'\\srv\share'`,
-		`%USERPROFILE%\x`: `'%USERPROFILE%\x'`,
-		`C:\work\new`:     `'C:\work\new'`,
-		`C:\Bob's\new`:    `"C:\\Bob's\\new"`,
-		"C:\\a\u200bb":    `"C:\\a\u200Bb"`,
+		`~\dev\tools`:     `~\dev\tools`,
+		`\\srv\share`:     `\\srv\share`,
+		`%USERPROFILE%\x`: `%USERPROFILE%\x`,
+		`C:\work\new`:     `"C:\work\new"`,
+		`C:\Bob's\new`:    `"C:\Bob's\new"`,
+		"C:\\a\u200bb":    `"C:\a◉U+200B◉b"`,
 	}
 	for in, want := range cases {
 		if got := shclValue(in); got != want {
@@ -832,16 +832,16 @@ func TestBackslashValuesGoInSingleQuotes(t *testing.T) { // [ddcby]
 	}
 }
 
-// Inside double quotes '\w' is no escape, and the line is listed rather than read
-// with a newline where '\n' was. The shcl beta pinned before 2026-10-01 loaded the
-// rule as 'C:\work', a newline and 'ew', which on Windows matched nothing.
+// An escape name the format doesn't have is listed rather than read as text. The
+// shcl beta pinned before 2026-10-01 loaded a '\n' in such a rule as a newline,
+// which on Windows matched nothing.
 func TestConfigListsAnUnknownEscape(t *testing.T) { // [ddcbn]
-	cfg := writeConfig(t, "account: w\n\tpath: \"C:\\work\\new\"\n\temail: e@x\n")
+	cfg := writeConfig(t, "account: w\n\tpath: \"C:\\work◉NEWLINEX◉new\"\n\temail: e@x\n")
 	wantValue(t, cfg, "w", "email", "e@x")
 	if len(cfg.paths) != 0 {
 		t.Errorf("the line was read as a rule: %+v", cfg.paths)
 	}
-	if got := strings.Join(cfg.unknown, " | "); !strings.Contains(got, "line 2 (unknown escape") {
+	if got := strings.Join(cfg.unknown, " | "); !strings.Contains(got, "line 2 (") {
 		t.Errorf("ignored = %q, want line 2 named", got)
 	}
 }
@@ -929,7 +929,7 @@ func TestConfigIgnoresARelativePath(t *testing.T) { // [dcmfa]
 		folders    []string
 	}{
 		{"flat", "account.work.path = .\naccount.work.email = w@example.com\n", []string{"account.work.path (not an absolute folder: .)"}, nil},
-		{"block", "account: work\n\tpath: dev/work, \"" + abs + "\"\n\temail: w@example.com\n", []string{"account[work].path (not an absolute folder: dev/work)"}, []string{canonPath(abs)}},
+		{"block", "account: work\n\tpath: [dev/work, \"" + abs + "\"]\n\temail: w@example.com\n", []string{"account[work].path (not an absolute folder: dev/work)"}, []string{canonPath(abs)}},
 	}
 	for _, tc := range cases {
 		cfg := writeConfig(t, tc.body)

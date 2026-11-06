@@ -26,7 +26,7 @@ import (
 	"time"
 	"unicode"
 
-	shcl "github.com/yottacore/shcl/source/go/v2"
+	shcl "github.com/yottacore/shcl/source/go/v3"
 )
 
 // anyHostStated: whether any account in this config names a git host. What makes the
@@ -1108,7 +1108,7 @@ func (a *app) accountSetPlan() (accountSetTarget, error) {
 	}
 	if t.base == "" {
 		// Quoted, so a name that happens to be a number is not read as an index.
-		t.base = `account["` + name + `"]`
+		t.base = `account("` + name + `")`
 	}
 	// 'path' and 'pathcontains' are repeatable by design, and any key at all can be
 	// in there twice by accident. Replacing the first and leaving the rest would
@@ -1126,8 +1126,8 @@ func (a *app) accountSetPlan() (accountSetTarget, error) {
 	// before the plan, and the plan knows whether the rest of the file comes back
 	// as written. A few edits can't keep it, such as a key added under a dotted
 	// line; those save the whole file in the module's own layout.
-	if !setValue(t.doc, t.path(), t.value) {
-		return t, usagef("'%s' isn't a setting the file can hold (%s).", t.disp+"."+t.field, t.doc.WriteReason(t.path()))
+	if status := t.doc.SetString(t.path(), t.value); status != shcl.SetOk {
+		return t, usagef("'%s' isn't a setting the file can hold (%s).", t.disp+"."+t.field, status)
 	}
 	_, kept := t.doc.ToTextKeepLines()
 	if err := lostRefusal(t, kept); err != nil {
@@ -1245,7 +1245,7 @@ func (a *app) accountUnsetPlan() (t accountSetTarget, done bool, err error) {
 	for i, p := range paths {
 		paths[i] = p + "." + shcl.QuoteSegment(t.field)
 		for j := range t.doc.Count(paths[i]) {
-			read := t.doc.ReadString(fmt.Sprintf("%s[#%d]", paths[i], j))
+			read := t.doc.ReadString(fmt.Sprintf("%s(%d)", paths[i], j))
 			line := goneLine{num: read.Line, text: t.field + ":"}
 			if read.Raw != nil && *read.Raw != "" {
 				line.text += " " + *read.Raw
