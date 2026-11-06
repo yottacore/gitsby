@@ -33,16 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- backlog_sort.py exits 1 after a sort that moves items
-	- ID: 2026110613150884
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261106-131508
-	- Opened by:
-	- Progress log:
-		- 2026-11-06: The plain run sorted the backlog and exited 1, so the round's chained check after it never ran. A check run after it exited 0. The contract wants 0 from a sort that worked.
-
 - CICD reset: temp files and safe removal
 	- ID: 2026102416313108
 	- Type: Enhancement
@@ -143,6 +133,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Keep the `golang.org/toolchain` modules for the `toolchain` line in go.mod, which `go.sum` doesn't name, and the `/go.mod`-only entries it does.
 		- test.bash builds the SHCL 2.x build offline from the cache ([ddg6f]), so check that every module it needs is in `go.sum`.
 		- Module paths in the cache spell capitals as `!` plus the lower case letter, and go makes the files read-only.
+
+- backlog_sort.py exits 1 after a sort that moves items
+	- ID: 2026110613150884
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261106-131508
+	- Opened by:
+	- Progress log:
+		- 2026-11-06: The plain run sorted the backlog and exited 1, so the round's chained check after it never ran. A check run after it exited 0. The contract wants 0 from a sort that worked.
+		- 2026-11-06: The helper's file put this item where the sort then moved it, so a filed item can leave the backlog unsorted.
 
 - spawn-count.bash says it restores each command's origin, and doesn't
 	- ID: 2026110611364366
