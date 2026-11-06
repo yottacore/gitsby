@@ -5199,6 +5199,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- A rewrite now keeps a line the file couldn't read, so `account set` refuses only where a line is past the depth cap.
 	- A file the pinned build wrote names Format 3 too, so nothing tells it from a beta1 one. Not converted: gover never went out, b23's file reads clean, and a pin-era list line is listed rather than dropped.
 	- Done: `release.bash` refuses a go.mod with any module pinned to a commit.
+	- shcl friction, silent wrong answer: the pre-beta `dev` build and `v3.0.0-beta1` both stamp `Format 3` with the same banner, though the syntax changed between them. Smallest case: the pin wrote `name: "C:\\Bob's\\new"` for `C:\Bob's\new`, and beta1 reads it back with both backslashes doubled, with no diagnostic. A list line errors instead, so only quoted backslashes go wrong without a word.
 	- Acceptance signoff: Self-closed. Go tests and test.bash pass, and the new and changed checks fail with the fix taken out.
 	- Test: [deynj] [deynk] in test.bash for the pin refusal. [ddjz4] [ddjz6] now feed real escapes; before, v3 read them as plain text and they passed on nothing. [ddcbm] [ddcby] [ddcbn] [ddjz7] in the Go tests.
 
