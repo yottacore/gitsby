@@ -476,7 +476,7 @@ fUnderLock(){
 		return
 	fi
 	case "${rc}" in
-		3)  why="$(sed -n 's/^still queued: .* is held by /held by /p' "${errFile}" | head -n 1)"
+		3)  why="$(sed -n 's/^still queued: .* is held by /held by /p' "${errFile}" | sed -n 1p)"
 		    fEcho_Clean "  SKIP: ${lockName}, ${why:-taken by another session}" ;;
 		75) fEcho_Clean "  SKIP: ${lockName}, the lock's state is busy" ;;
 		*)  if [[ -n "${vm}" ]]; then fEcho_Clean "  SKIP: ${lockName}, the VM was ${vm} and did not come up (exit ${rc}): $(tail -n 1 "${errFile}")"
@@ -522,3 +522,4 @@ if ((${#failed[@]})); then exit 1; fi
 ##		- 2026-10-25 JC: Each Mac and Unix box runs its Go tests and test.bash on its own core budget, at low priority, and so does this script.
 ##		- 2026-10-25 JC: Every box goes through the VM state helper's wrap where there is one. The Windows box runs first, on half its cores and at BelowNormal, and a failed test that exits 0 still fails it.
 ##		- 2026-10-26 JC: The Windows box hands back its Go tests' exit code, which start dropped there.
+##		- 2026-11-06 JC: The lock's queue note takes its first line through sed, not head.

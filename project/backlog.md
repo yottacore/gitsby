@@ -33,6 +33,26 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- The Pillow lock check fails on FreeBSD
+	- ID: 2026110610343700
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261106-103437
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- `--backlog-run-full` at 4e39d4a, to stage 7.
+	- Incorrect behavior [Bug]: vmFreeBSD's test.bash fails `[de5av]`, so the remote tests fail, while every other box passes it.
+	- Expected behavior [Bug]: `[de5av]` passes on every box.
+	- Actual cause [Bug]: `grep ... | grep -q "^pillow=="` under pipefail. Pillow is the first of 2 lines the left grep prints, and BSD grep writes a line at a time, so `grep -q` quits before the second write and the left grep exits 141. 9 runs in 10 on vmFreeBSD. GNU grep writes once at exit, so Linux never saw it. PyYAML is the last line, so `[deavy]` passed.
+	- Actual fix [Bug]: The 2 pipes in `fSysPyFromLock` grep a capture instead. The other pipes into `head` or `grep -q` that run under pipefail read with `sed -n` or a capture too, 9 more in test.bash and 1 in remote-tests.bash. None of those failed yet.
+	- Swept: every tracked bash file outside legacy/. A pipe inside a `bash -c` string runs without pipefail, and one ending in `|| true` drops the code, so those stay.
+	- Branch: pipe-drain
+	- Test case: test.bash `[deyrt]` lists any pipe into `head`, `grep -q` or an awk `exit` that pipefail would see, and fails on one. It flagged all 11 lines before the fix, and a line added to parity.bash after it.
+	- Verified: test.bash 1774/0 on b23 and 1380/0 on vmFreeBSD, where it was 1378/1.
+	- Acceptance signoff: Self-closed. The new check fails before the fix, and vmFreeBSD passes `[de5av]` after it.
+	- Closed: 20261106-104500
+
 - The pipeline prunes every project's docker build cache
 	- ID: 2026110311291903
 	- Type: Bug
