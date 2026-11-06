@@ -1160,8 +1160,9 @@ if ((doFuzz)); then
 	for fuzzTarget in $(cd "${root}/${GO_MODULE_DIR}" && go test -list 'Fuzz.*' . 2>/dev/null | grep '^Fuzz' || true); do
 		## The test ID sits at the end of the func line, as '// [<id>]'.
 		fuzzId="$(sed -n "s|^func ${fuzzTarget}(.*// \[\([0-9A-Za-z]*\)\][[:space:]]*\$|\1 |p" "${root}/${GO_MODULE_DIR}"/*_test.go 2>/dev/null || true)"
-		(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${HEAVY_JOBS}" go test -run '^$' -fuzz "^${fuzzTarget}\$" -fuzztime 5s -parallel "${HEAVY_JOBS}" . >/dev/null) \
-			|| { fEcho_Clean "  FAIL ${fuzzId}${fuzzTarget}"; fDie "fuzzing found a crasher in ${fuzzTarget} (reproducer under ${GO_MODULE_DIR}/testdata/fuzz/)"; }
+		## Kept so a failure shows what go said: a crasher's input, or a worker that died under load.
+		fuzzOut="$(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${HEAVY_JOBS}" go test -run '^$' -fuzz "^${fuzzTarget}\$" -fuzztime 5s -parallel "${HEAVY_JOBS}" . 2>&1)" \
+			|| { fEcho_Clean "$(tail -n 40 <<< "${fuzzOut}")"; fEcho_Clean "  FAIL ${fuzzId}${fuzzTarget}"; fDie "fuzzing found a crasher in ${fuzzTarget} (reproducer under ${GO_MODULE_DIR}/testdata/fuzz/)"; }
 		fEcho_Clean "  PASS ${fuzzId}${fuzzTarget}"
 	done
 	fEcho "OK: native fuzz targets"
