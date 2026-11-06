@@ -33,6 +33,391 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- backlog_sort.py exits 1 after a sort that moves items
+	- ID: 2026110613150884
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261106-131508
+	- Opened by:
+	- Progress log:
+		- 2026-11-06: The plain run sorted the backlog and exited 1, so the round's chained check after it never ran. A check run after it exited 0. The contract wants 0 from a sort that worked.
+
+- CICD reset: temp files and safe removal
+	- ID: 2026102416313108
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-163131
+	- Opened by: jim-collier
+	- Prereq IDs: 2026102506452478
+		- It uses `--keep-temp` from that item. The other new flags are in since a1c62bb.
+	- Related IDs: 2026101912030138
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per `Temp files` and `Safe removal` in the shared CICD rules. A run's own temp files are already in one folder that goes on exit, and the harnesses remove theirs.
+		- Each run makes one folder, `${HOST_TEMP}/gitsby/<YYYYmmDD-HHMMSS>_<NNN>/`, with a plain `mkdir` and a counter, and points `TMPDIR`, `TEMP` and `TMP` at it. The harnesses and utilities make theirs inside it.
+		- `--keep-temp` keeps it and prints where it is.
+		- Each run writes a `run.pid` in it, and removes the project's own stale run folders: over 2 days old, with no live process.
+		- Every recursive removal goes through the repo's own copy of the safe removal guard, in the pipeline, the harnesses, the utilities, release.bash, the installer and stage 7's commands on the other boxes. The checks of a folder's name and marker that some have today stay as well.
+		- 35 recursive removals in 12 files, none through the guard. File list in the private notes.
+	- Progress log:
+		- 2026-10-25: Split. 2026102516194062 has the removals outside cicd.bash. The rest is in.
+		- 2026-10-25: A run's folder is `${HOST_TEMP}/gitsby/<start time>_<NNN>`, else under `TMPDIR`, made with a plain `mkdir` and the first free counter, with `TMPDIR`, `TEMP` and `TMP` pointed at it and a `run.pid`. The harnesses and release.bash already follow `TMPDIR`, so theirs go inside it. Each run removes the project's run folders over 2 days old whose pid is gone.
+		- 2026-10-25: `cicd/utility/include/safe-rm.bash` is the repo's copy of the guard. cicd.bash's own removals go through it, with the name and marker checks kept.
+	- Decisions:
+		- The sweep leaves a folder with no `run.pid`, since a run didn't make it.
+	- Branch: round-20261025b
+	- Test case: test.bash [dee5h] and [dee5j], plus [de5m8], [dee4z] and [dee50] for the new folder.
+	- Verified: Both fail against the round branch's cicd.bash, and pass with the change. The run in the image passed with them.
+
+- CICD reset: every other recursive removal through the guard
+	- ID: 2026102516194062
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-161940
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313108
+	- Requirements [Feature]:
+		- The parent's last requirement, outside cicd.bash: the harnesses, stage 7's commands on the other boxes, the utilities, release.bash, the installers, and the image build's own removals. Each goes through the guard in `cicd/utility/include/safe-rm.bash`, or a copy of it on the other boxes, and keeps the name and marker checks it has.
+		- The guard calls `realpath -e`. Check it on macOS and FreeBSD before stage 7 uses it there.
+	- Progress log:
+		- 2026-11-06: Split in four. 2026110612393817 has the harnesses, the utilities and release.bash, and 2026110612551903 the installer. Both are in. 2026110612393822 has stage 7's commands on the boxes, and 2026110612595461 the image build.
+		- 2026-11-06: The guard no longer calls `realpath -e`, so the second requirement is answered in 2026110612393817.
+
+- CICD reset: stage 7's removals on the boxes through a guard
+	- ID: 2026110612393822
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261106-123938
+	- Opened by: jim-collier
+	- Parent ID: 2026102516194062
+	- Prereq IDs: 2026110612393817
+	- Requirements [Feature]:
+		- The copy step's removal of `old.*` on the Mac and Unix boxes, and the Windows box's `rmdir /s /q`, go through a copy of the guard on the box. The marker check stays.
+		- POSIX sh on the Mac and Unix boxes, with no `realpath -e` or `rm --one-file-system`, as in the repo's guard.
+		- Then [deywr] in test.bash drops its `old.*` exemption.
+
+- CICD reset: the image build's removals through a guard
+	- ID: 2026110612595461
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261106-125954
+	- Opened by: jim-collier
+	- Parent ID: 2026102516194062
+	- Requirements [Feature]:
+		- The Dockerfile's removals of its folders under /tmp go through the guard, copied into the build. `/var/lib/apt/lists/*` and the PSScriptAnalyzer package files aren't under a tmp folder, so they get a guard that names that one parent, or a reason on this item to leave them.
+		- A Dockerfile change gives the image a new tag, so the next run rebuilds it. Leave time for that.
+
+- CICD reset: CICD process gaps
+	- ID: 2026102416313109
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-163131
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- What else the shared CICD rules ask for that no other reset item covers:
+			- One line at the end of a run saying what was removed and about what it freed, files as well as docker.
+			- Go's module cache in the volume pruned of what the current `go.sum` doesn't name.
+		- Packaging and dependabot stay deferred, per the standing decision. 20261024: kept out of this item, since nothing makes them pressing.
+	- Progress log:
+		- 2026-10-26: Split. Children: 2026102617543861 (the line at the end of a run, done) and 2026102617543961 (the module cache).
+
+- CICD reset: prune Go's module cache in the volume
+	- ID: 2026102617543961
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261026-175439
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313109
+	- Requirements [Feature]:
+		- The parent's second requirement: Go's module cache in the `gitsby-cicd-cache` volume pruned of what the current `go.sum` doesn't name.
+	- Notes:
+		- The volume is shared by every worktree's runs, and another branch's `go.sum` may name other versions. A prune could take a module from under a run in progress. Prune only when no other gitsby run's container is up, which only the run out here can see.
+		- Keep the `golang.org/toolchain` modules for the `toolchain` line in go.mod, which `go.sum` doesn't name, and the `/go.mod`-only entries it does.
+		- test.bash builds the SHCL 2.x build offline from the cache ([ddg6f]), so check that every module it needs is in `go.sum`.
+		- Module paths in the cache spell capitals as `!` plus the lower case letter, and go makes the files read-only.
+
+- spawn-count.bash says it restores each command's origin, and doesn't
+	- ID: 2026110611364366
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261106-113643
+	- Opened by: jim-collier
+	- Related IDs: 2026102617594214
+	- Steps to reproduce [Bug]: read `fRestore` and the fixture setup in cicd/utility/spawn-count.bash.
+	- Incorrect behavior [Bug]: the header says the work tree and the origin are restored between runs. `fRestore` copies the pristine folder, but each clone's origin url is the pristine bare repo's absolute path, which `cp -a` keeps. So `pullcom`, `br switch` and `br prune` push to the pristine origin, and later commands are measured against what they left.
+	- Expected behavior [Bug]: each command runs against an untouched origin, so its count doesn't depend on the commands before it.
+	- Reproduced [Bug]: by reading, while working 2026102617594214. Control: a clone made by `git clone` from a relative path also stores the absolute path as its url.
+	- Possible cause [Bug]: nothing points the live clones at the live origins after the copy. A `remote set-url` in `fRestore` would.
+
+- `raw gh` loops forever when `gh` on PATH leads back to gitsby
+	- ID: 2026101916533300
+	- Type: Bug
+	- Status: Done
+	- Needs local test suite run?: No. test.bash ran 1597/0.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Critical
+	- Opened: 20261019-165333
+	- Opened by: jim-collier
+	- Prereq IDs: 2026102306584122
+	- Target OS: Linux
+	- Test environment: b28l
+	- Steps to reproduce [Bug]:
+		- On a box where the first `gh` on PATH is, or runs, gitsby, run `gitsby raw gh <anything>`.
+		- Not confirmed which form b28l had: a symlink or copy of gitsby named `gh`, or a wrapper script that calls `gitsby raw gh "$@"`.
+	- Incorrect behavior [Bug]:
+		- Endless loop that eats time and a lot of memory. The session that hit it got out by calling the real `gh` by full path.
+	- Expected behavior [Bug]:
+		- Stop at once with a plain error that names the PATH entry, and never start a second copy of itself.
+	- Reproduced [Bug]: 2026-10-21 on b23, with stand-ins on PATH. A wrapper `gh` that runs `gitsby raw gh "$@"` started itself until its counter stopped it at 20. A link named `gh` to the build ran gitsby as gh, which answered "Unknown command 'auth'". The link alone doesn't loop, since gitsby doesn't read its own name, so b28l most likely had a wrapper.
+	- Possible cause [Bug]:
+		- `cmdPassthrough` in main.go checks `gh` only with `mustBeInPath`, then `handover` in exec.go runs it by bare name. Nothing checks that the file found isn't gitsby itself, or something that calls it. A wrapper makes each run start the next, with no limit.
+	- Requirements [Bug fix]:
+		- Find the tool by walking PATH ourselves. Skip any entry that resolves (symlinks followed, `os.SameFile`) to the running gitsby. If nothing else is left, refuse with the usual "Not found in path" error and say a PATH entry points back at gitsby.
+		- Set an env var such as `GITSBY_RAW_ACTIVE` on the handover. If it's already set when `raw` starts, refuse with a message that names it. This catches wrappers the file check can't see. Read it at startup, before the run sets it.
+		- Cover `tea`, `glab`, `lazygit`, and `tig` the same way, since they share the path.
+		- Test case needs a stand-in `gh` that is a wrapper and one that is a symlink to the build. Watch both fail on the current build first, and put a spawn limit on the test so a regression can't eat the box.
+	- Progress log:
+		- 2026-10-19: Logged from a report by another project's session on b28l. Cause is from reading the code, not from a run there. Still need the output of `type -a gh` on b28l.
+		- 2026-10-21: Fixed as the requirements ask. `raw` walks PATH itself, through `exec.LookPath` on each entry, and passes over an entry that is the running binary. It sets `GITSBY_RAW_ACTIVE` to the tool's path before anything runs the tool, the tea probes and the account's gh calls included, and a `raw` that finds it set at startup refuses and names it. The hermetic suites unset it.
+		- 2026-10-22: The guard refused every nested `raw`, hooks and aliases included. `GITSBY_RAW_ACTIVE` is now the chain of `raw` runs above, one short entry each, and a `raw` refuses only to start one already on it. While `raw` runs tools only to check them, such as the tea and gh probes, the chain ends in a probe mark, and a `raw` started under that refuses. A loop with new arguments each time stops at 16 deep.
+		- 2026-10-23: The b28l session was tukzedo's. Its memory.md says a `gh` wrapper running `exec gitsby raw gh "$@"` grew to about 15,000 processes and 56 GB in 28 minutes on 2026-10-19. Tried that wrapper on b23 against the gover build: no loop, 2 or 3 starts and a refusal. The old build loops in every case until the rig's cap. The wrapper still fails, and so do gitsby's own gh calls behind it, filed as 2026102306584122. A wrapper that clears the environment still loops, filed as 2026102306584127. Rig: `private/claude_simple/tools/rawloop-rig.bash`.
+	- Actual cause [Bug]:
+		- As the possible cause says. `raw` ran the tool by bare name and never asked what it found. Every run through a wrapper started the next.
+	- Actual fix [Bug]: `lookTool` in exec.go, used by `cmdPassthrough` for all six tools, and `rawActive` read in `newApp`. The tool still sees its own name as argv[0]. design.md's `raw` bullets say so. Since 2026-10-22, `rawNest` in exec.go builds and checks the chain.
+	- Decisions:
+		- With no other copy left, the refusal is "Not found in path: gh. '<entry>' is gitsby itself.", with the entry as found.
+		- A gitsby entry ahead of a real tool is passed over without a word.
+		- A plain copy of gitsby named `gh` isn't the same file, so only the env check stops it, on its second start.
+		- 2026-10-22, from the answer "What any sane human git user would expect": whatever nesting plain git allows works the same under gitsby, with no refusal and nothing added to the output. That covers hooks under `raw git commit` or `push`, git aliases, lazygit and tig custom commands, and scripts. A loop gitsby causes still stops at once and names what looped.
+		- An entry is the tool's name and a 12-digit hash of its path, the folder and the arguments. The folder is in it so a hook that runs the same command in a submodule isn't taken for a loop. Refusing on the same tool file alone was rejected, since it refuses `raw git` under `raw git`.
+		- A `raw` started by one of gitsby's own checks of a tool is refused, since nothing a check runs has a reason to call `raw`. Without that, the tea wrapper check `[de89c]` failed, since the `--version` and `logins list` probes each started a nested `raw`.
+		- The depth limit is 16. Plain git would loop forever there.
+	- Branch: round-20261021, then round-20261022
+	- Test case: test.bash `[de897]`, `[de898]`, `[de899]` and `[de89a]` for gh, and `[de89b]` and `[de89c]` for tea, glab, lazygit and tig, as a link and as a wrapper each. Each wrapper quits after 5 starts. Go `[de89d]` for the PATH walk and `[de89e]` for the refusal, reworded 2026-10-22 to a repeat on the chain. Since then test.bash `[de8pg]` and `[de8ph]` for a pre-commit hook running `raw git` under `raw git commit`, `[de8pj]` for an alias doing the same, and Go `[de8pk]` for the chain and the probe mark and `[de8pm]` for the depth limit.
+	- Verified: All 12 new test.bash checks fail on the build before the fix, with the other 1579 passing. The 5 with only the link on PATH were rerun outside the suite with the same command and pattern, and fail there too. After it, test.bash 1579 -> 1591, 0 failed. Both Go tests fail with the self check and the env check taken out. `GOOS=windows go vet` and darwin and freebsd builds pass. The wrapper stand-in started once, then refused.
+	- Verified: 2026-10-21, stage 7 passed on every box. test.bash 1368/0 on b26 and 1271/0 on vmFreeBSD, each 15 more than on 10-19, all from this round, and 1579/0 on vmDebARM64, 23 more, with leakflags' 8. All 12 of this item's test.bash checks ran on each. The Go tests passed there and on vm925w, where `[de89d]` skips, since it needs symlinks and the exec bit, and `[de89e]` passed.
+	- Verified: 2026-10-22, test.bash 1594 -> 1597, 0 failed, with the reworded `[de899]` and `[de89c]`. On the build before, the 3 new checks fail. The Go tests fail with each part of `rawNest` taken out in turn: the repeat check, the probe mark, the depth limit, the folder and the separator between arguments. Outside the suite, a wrapper `gh` started once and was refused, and one adding an argument each time stopped at 16. `GOOS=windows go vet` and the Windows test build, and darwin and freebsd builds, pass.
+	- Verified: 2026-10-22, stage 7 passed on every box for the nesting change. test.bash 1371/0 on b26 and 1274/0 on vmFreeBSD, each 3 more than on 10-21, which are `[de8pg]`, `[de8ph]` and `[de8pj]`. 1583/0 on vmDebARM64, 4 more, those 3 plus `[de8q2]`, which sits in the Linux-only pre-push gate block. `[de8pk]` and `[de8pm]` passed in the Go tests on b26, vmFreeBSD, vmDebARM64 natively and under Wine, and vm925w, where the Go tests were 191 ok and 23 skipped, 2 more ok than on 10-21. `[de89e]` passed there too. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log`.
+	- Verified: 2026-10-23 on b28l, the box that hit it, on the synced build `c917c95`, which has this fix and 2026102306584122's. In tukzedo-linux's repo there, with tukzedo's wrapper `exec gitsby raw gh "$@"` first on PATH and the real `gh` 2.46.0 behind it, each start counted and capped at 20: `gitsby raw gh auth status`, a bare `gh auth status`, `gh repo view`, a script calling `gh api user`, `gitsby whoami`, `gitsby --no-fetch pr` and `gitsby -q raw gh api rate_limit` all reached the real `gh` as t00mietum and exited 0. 2 to 9 wrapper starts each, with no gitsby left running. The control, the same wrapper with `9e82970` first on PATH as `gitsby`, ran into the cap on both forms tried.
+	- Verified: 2026-10-24 on b23, gover `c87c131`, with the rig. The wrapper reached the stand-in `gh` with 2 starts for `raw gh`, 3 for a bare `gh` or a script, and 6 for `whoami` and `pr`. A link or copy named `gh` is refused by name since 2026102306584132. A wrapper adding an argument each time stopped at 17 deep after 32 starts. No gitsby was left running.
+	- Swept: every `raw` tool shares `cmdPassthrough`, git included. 2026-10-22: `rawActive` has one reader, `cmdPassthrough`, and the variable is unset in all 4 hermetic suites. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
+	- Acceptance signoff: Hand test on b28l, run in the 2026-10-23 round as asked.
+	- Closed: 20261023-195424
+
+- The pipeline prunes every project's docker build cache
+	- ID: 2026110311291903
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: High
+	- Opened: 20261103-112919
+	- Opened by: JC
+	- Related IDs: common 2026110311291900
+	- Incorrect behavior: The pipeline runs `docker builder prune` after a run, in `cicd/cicd.bash` and `cicd/test.bash`. That prunes docker's default builder, which every project shares, so a run here drops any other project's cache once it's a week unused. common's `Cleanup after a run` rule said to do it.
+	- Expected behavior: The pipeline doesn't prune docker's build cache at all. Docker trims the cache itself on b23, through `builder.gc` in `/etc/docker/daemon.json`. Cache unused for a week goes first, then the rest is cut to 120 GB, or further when the disk is under 10% free, but never below 20 GB. The label cleanup of this project's containers, dangling images and old tags stays.
+		- Do it once b23's `/etc/docker/daemon.json` has the `builder.gc` block. `grep -q '"gc"' /etc/docker/daemon.json` checks. Until then the prune stays.
+	- Decisions:
+		- Don't move to a buildx builder of the project's own instead. shcl tried that on 2026-11-02. A cold build of a 2 GB image took 299 s against 266 s on the default builder, and the builder kept a second 3 GB copy of the layers for a week. shcl is going back to the default builder. (JC, me)
+		- The run no longer reports build cache in its end line, since it removes none.
+	- Estimated effort: Low
+	- Actual fix [Bug]: The end of a run no longer runs `docker builder prune`. b23's `daemon.json` has the `builder.gc` block, so the condition to do it was met. contributing.md says the cache is left to docker.
+	- Branch: round-20261106
+	- Test case: test.bash [dee5k] changed: a run in the image calls no `docker builder` command, passed or stopped.
+		- 2026-11-06: [dee5k] asserted `docker builder prune -f --filter until=168h` was called, and now asserts no `docker builder` call at all. Its title says the build cache is left to docker.
+	- Verified: [dee5k] fails against the previous cicd.bash and passes after. `--backlog-run-quick` passed with every area, test.bash 1775/0, fuzz 313/0, parity 29/0.
+	- Swept: every `docker builder`, `buildx`, `system prune` and `image prune` in the tree. Only cicd.bash had one.
+	- Acceptance signoff: Self-closed: its test passed.
+	- Closed: 20261106-105627
+
+- `--backlog-run-quick lint` fails markdownlint MD038 on backlog.md
+	- ID: 2026102619025437
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261026-190254
+	- Opened by: jim-collier
+	- Related IDs: 2026102618140158
+	- Test case: the lint step's markdownlint check, which failed on these lines and passes now.
+	- Closed: 20261026-190553
+	- Acceptance signoff: lint passed after the fix.
+	- Steps to reproduce [Bug]:
+		- `env -u DISPLAY bash cicd/cicd.bash --backlog-run-quick lint suite` on round-20261026 at 7c87737.
+	- Incorrect behavior [Bug]: lint stops at the markdownlint step, with 9 MD038 errors, spaces inside a code span. All are in the `Asserts given new values` sub-bullets of 2026102618140158, where the old and new test lines are quoted.
+	- Expected behavior [Bug]: the backlog passes markdownlint, and lint goes on to the next step.
+	- Reproduced [Bug]: 2026-10-26, twice in the image, while working 2026102617594208.
+	- Possible cause [Bug]: the old and new test lines are quoted with their two-space indent inside backticks.
+	- 2026-10-26: Dropped the leading spaces inside the code spans on 2026102618140158's progress lines, and gave the trailing one its value. Wording unchanged.
+
+- test.bash's stage 7 checks fail on vmDebARM64 after round-20261025b
+	- ID: 2026102519554107
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-195541
+	- Opened by: jim-collier
+	- Related IDs: 2026102511210617, 2026102510404322, 2026102508333054
+	- Steps to reproduce [Bug]:
+		- `--merge-gate` at 3490090, stage 7, test.bash on vmDebARM64.
+	- Incorrect behavior [Bug]: 1711 passed, 22 failed, all in the block that runs `remote-tests.bash` against the fixture's stub lock. The first to fail is [ddg8a], the first check where the stub lock wraps a box. [ddg88], [ddg89] and [dee72] pass. The others include [ddg8b], [ddg8c], [dedq5], [dedpc], [dee73], [dee75] and [ddgm7].
+	- Expected behavior [Bug]: 0 failed, as on b26, vmFreeBSD and vmKt6m in the same run, and on b23 both in the image and on the box (1748/0).
+	- Reproduced [Bug]: 2026-10-26 on vmDebARM64, with that block of test.bash run on its own: the same 22 failed. On b23 it passed 43/0.
+	- Possible cause [Bug]: Not found yet. vmDebARM64 passed 1699/0 on gover earlier on 2026-10-25, so it came in with this round. 6343351 is the only round commit that touches `remote-tests.bash`; it sends every box through one `fLockEnv "${vmState:-${lock}}" wrap` call. The fixture prints only FAIL lines, so the first step is to run that block on vmDebARM64 and keep `rtOut` and `rtLog`.
+	- Actual cause [Bug]: b14ae19, also in this round, runs the Mac's module fetch with Homebrew's bash folder first on PATH, which is `/usr/local/bin` in the fixture. The fixture's ssh stub runs that copy step for real. So on a box with its own `/usr/local/bin/go`, that go answered instead of the stub, and failed with "go: no modules specified". Every run that reached b26 then failed. vmDebARM64 has one, linked to `/usr/local/go/bin/go`, and b23 and the image don't. The block is Linux only, so no other stage 7 box runs it.
+	- Actual fix [Bug]: The stub's Mac reads `/usr/local/bin` as an empty folder of the fixture's. The calls log still shows the command as sent, so no assert changed.
+	- Progress log:
+		- 2026-10-25: The run's log is kept as `private/claude_simple/round-20261025b_full-run.log`, lines 9590 to 9810. round-20261025b stays unmerged until this is fixed.
+		- Verified: the block alone on vmDebARM64, held through the VM helper's wrap and put back to off: 22 failed before the fix, 43/0 after. On b23, 43/0 both ways. `--backlog-run-quick lint suite` passed in the image, with test.bash 1748/0.
+		- Not run: the whole test.bash on vmDebARM64. The round's full run covers it.
+	- Decisions:
+		- The path is mapped in the stub, rather than pointing the fixture's `REMOTE_MAC_BASH` elsewhere, since [ddg8d] and [dedpf] check for `/usr/local/bin` in the command sent, and that's the real Mac's path.
+	- Branch: round-20261026
+	- Test case: the 22 checks above, on a box with go in `/usr/local/bin`, [ddg8e] first, since it needs the stub's `go mod download` in the calls log. No check on b23 can put a go under the real `/usr/local/bin`.
+	- Swept: every stub in test.bash that runs a remote command for real. Only the b26 branch of the harness's ssh puts a fixed system folder ahead of the stubs. The Unix branch's fetch has no PATH prefix.
+	- Acceptance signoff: Self-closed. Reproduced on the box, and fails before the fix and passes after.
+	- Closed: 20261026-171155
+
+- The quick run fails staticcheck in the hook's gate worktree
+	- ID: 2026102518002917
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-180029
+	- Opened by: jim-collier
+	- Related IDs: 2026102507133273, 2026102506452488
+	- Steps to reproduce [Bug]:
+		- `git -C .git/gitsby-gate checkout --detach --force 422b8aa`
+		- `(cd .git/gitsby-gate && cicd/cicd.bash --backlog-run-quick lint)`
+	- Incorrect behavior [Bug]: Stage 1 fails with "error obtaining VCS status: exit status 128 ... Use -buildvcs=false to disable VCS stamping", then "FAILED: staticcheck findings". The same commit passes in the live checkout.
+	- Expected behavior [Bug]: The run passes in the gate worktree as it does in the checkout, so the pre-push hook can gate a push to main.
+	- Reproduced [Bug]: 2026-10-25, at the round tip 6a752d7 in the gate worktree, in the image.
+	- Possible cause [Bug]: The gate worktree's `.git` is a file pointing at `repo/.git/worktrees/gitsby-gate`, which isn't mounted in the container, so git can't read the repo there. Since 461657d the quick run, `--gate` included, runs in the image, so every gated push to main fails this way.
+	- Actual cause [Bug]:
+		- The repo's git dir is mounted, and git works there. Go takes only a `.git` folder for a repo, not a worktree's `.git` file. So from the gate worktree under `repo/.git/` it walks up and takes the main checkout for the repo.
+		- In the image the main checkout's folder is a mount point owned by root, so git refuses it as dubious ownership and exits 128. On the box it passes, and stamps the main checkout's revision into the lint builds.
+	- Actual fix [Bug]: cicd.bash exports `GOFLAGS` with `-buildvcs=false`, after any flags the caller set, so nothing go builds there stamps a revision. The `-o` builds already passed it.
+	- Progress log:
+		- 2026-10-25: Found when the round's early full run started in the gate worktree. gover 422b8aa fails the same way, so it predates the round.
+	- Branch: round-20261025b
+	- Test case: test.bash [dee90].
+	- Verified: [dee90] fails against the old cicd.bash, with the other 1740 passing. `--backlog-run-quick` passed with every area: test.bash 1740 -> 1748, 0 failed, fuzz 313/0, parity 29/0. The issue's steps, and `--backlog-run-quick unit`, passed in the gate worktree with the fix, in the image.
+	- Swept: `GO_BUILD_FLAGS` already has the flag. `fImageGo` mounts only the tree, so go finds no repo there. release.bash runs its checks through cicd.bash. test.bash, fuzz.bash and parity.bash get it from the run.
+	- Acceptance signoff: Self-closed: its test failed before and passes after, and so did the issue's own steps.
+	- Closed: 20261025-181343
+
+- `repo clone` hands git a folder name taken from the URL, and git can read it as an option
+	- ID: 2026100607545802
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: High
+	- Opened: 20261006-074900
+	- Closed: 20261006-104608
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: With no folder given, `repo clone` names it after the URL's last part. A URL ending in `--upload-pack=<cmd>.git` put that text in git's argument list as an option. On a local or `file://` clone git runs it as a command.
+	- Expected behavior [Bug]: The URL and the folder always reach git as plain arguments.
+	- Reproduced [Bug]: Yes. A bare repo named `--upload-pack=touch CANARY;git-upload-pack.git`, then `gitsby -q repo clone file://...` made the canary file.
+	- Actual cause [Bug]: `cmdClone` ran `git clone <url> <dir>` with no `--` in front.
+	- Actual fix [Bug]: `git clone -- <url> <dir>`, and the plan line shows the same.
+	- Swept: every `a.step` call for git, gh and tea. gitsby's own parser refuses an argument that starts with a dash, `--` included, checked for `br create`, `repo connect`, `repo url` and `repo create`. So only a value gitsby builds from other input can start with one, and the clone folder was the only such value. Built URLs start with a scheme.
+	- Branch: fuzzwork
+	- Commit: c1b10fc
+	- Test case: fuzz.bash [ddjyb]. Red on `gover`'s code, green here.
+	- Verified: fuzz.bash 311/0, test.bash 1491/0, parity.bash 29/0 on the branch.
+
+- test.bash removes the folder it was started from when mktemp fails
+	- ID: 2026100415391365
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: High
+	- Opened: 20261004-153913
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- Run `cicd/test.bash` with `TMPDIR` set to something that isn't a folder, such as a file.
+	- Incorrect behavior [Bug]: `mktemp -d` fails, and `work` ends up as the current folder. The exit trap then runs `rm -rf` on it. Started from the repo root, that is the whole checkout, `.git` included.
+	- Expected behavior [Bug]: The suite stops before it sets the trap, and removes nothing.
+	- Reproduced [Bug]: Yes, 2026-10-04 on b23, against a scratch folder, which was removed. The same day it removed the gitsby checkout, which came back whole from the 15:30 ZFS snapshot.
+	- Possible cause [Bug]: test.bash line 32 is `work="$(cd "$(mktemp -d ...)" && pwd -P)"`. The mktemp failure is lost, and `cd ""` succeeds without moving.
+	- Note: a probable fix checks the mktemp result before resolving it, and refuses a `work` that isn't a `gitsby-test.*` folder before arming the trap. A grep of `cicd` and the installers finds no other `cd "$(mktemp` site.
+	- Actual cause [Bug]: The mktemp call sat inside the `cd` that resolves it, so its failure was lost. `cd ""` succeeds without moving, so `work` became the current folder, and the exit trap removed it.
+	- Actual fix [Bug]: mktemp runs on its own line and stops the suite when it fails. Before the trap is set, the resolved folder has to be the one mktemp made, named `gitsby-test.*`, and empty. A marker file goes in it, and the trap removes the folder only while the name and the marker are both there.
+	- Swept: install.bash and every script in cicd/, cicd/utility/ and cicd/utility/demo/. Only test.bash wrapped mktemp in a `cd`. The rest assign mktemp straight to a variable under `set -e`, so a failure stops them or leaves an empty value that `${x:?}` refuses before any `rm`. demo-repo.bash and remote-tests.bash already check a marker before removing. The shared files in cicd/utility/include/ have no mktemp and no recursive removal.
+	- Verified: with TMPDIR a file, the suite before the fix removed the folder it was started from, canary included, and the fixed one stopped at mktemp and left it alone. `[ddgkk]` fails against the old test.bash and passes against the new one, and so does `[ddgkm]`'s pattern on test.bash. With mktemp working, the scratch folder is still removed and the exit code kept, for a plain TMPDIR, one ending in a slash, and one reached through a link.
+	- Verified: shellcheck, `test-id.bash --check`, and `cicd.bash --gate`.
+	- Not run: the full test.bash. No run reaches the trap's refusal of a folder without the marker.
+	- Test case: test.bash `[ddgkk]`, a real run with mktemp failing, and `[ddgkm]`, no script changes into a mktemp result unchecked.
+	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[db712]`, from enhancement 8.
+	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[db712]`, from enhancement 8. b26 was skipped, since another session held it.
+	- Acceptance signoff: Self-closed. Reproduced, its test failed before the fix and passes after, and the sweep is answered.
+	- Closed: 20261004-182117
+	- Branch: tmpguard
+	- Commit: 609ccb9
+
+- The README install line fails while v2.1.0 is the newest full release
+	- ID: 2026100315501800
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: High
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Related IDs: 2026100313491873
+	- Steps to reproduce [Bug]:
+		- Run gover's install.bash with no version, against the releases as they are today.
+	- Incorrect behavior [Bug]: It picks v2.1.0 and stops with "publishes no gitsby binary for linux/amd64". v2.1.0 has only the `gitsby` and `gitsby.ps1` scripts.
+	- Expected behavior [Bug]: The install line works on the day the Go build reaches `main`.
+	- Reproduced [Bug]: Yes, 2026-10-03, against the live release list.
+	- Possible cause [Bug]: The installer takes a pre-release only when no full release exists, and the first Go release is v3.0.0-beta.1, which must not reach the install line. So the line resolves to a release the new installer can't install. This was true before item 2026100313491873.
+	- Notes:
+		- Blocks the release that merges gover to `main`.
+		- What the install line should give during the beta is a call for signoff, not a worker.
+	- Actual cause [Bug]: With no tag, both installers took the newest full release from the `releases/latest` redirect and never asked whether it had a Go binary. The release list was read only when there was no full release at all.
+	- Decisions:
+		- 2026-10-03: The install line takes the beta while no full release publishes a gitsby binary. This reverses the earlier rule that the beta must not reach the install line. A full release with a binary always wins over any pre-release, so once 3.0.0 is out, later betas stay off the line.
+		- A binary means any asset named `gitsby-<os>-<arch>`, not one for this platform. Every machine is pointed at the same release, and one it leaves out is told "publishes no gitsby binary for linux/386. It publishes: ..." rather than quietly getting an older beta that covers it.
+		- Newest is the highest version. Full releases are compared only with each other, and pre-releases only with each other, so the `sort -V` trap can't arise. Two pre-releases of one version go by list order, which is publish order.
+		- `releases/latest` is still asked first, since it has no API limit, and settles it when its SHA256SUMS lists a binary. The release list is read only otherwise, in one request, from the asset URLs it carries.
+		- The README's `--tag v3.0.0-beta.1` line is dropped, since the plain line takes that beta. The paragraph says a later pre-release needs `--tag`.
+		- Against: design.md "The proof is the contract, not the installer". Phase 3 now also runs the tag's install.bash, only to read which release it takes. The contract proof is unchanged, and design.md has a bullet for the new step.
+	- Actual fix [Bug]: Both installers, with no tag, keep the redirect's release only when its SHA256SUMS lists a gitsby binary. Otherwise they read the list and take the highest full release with one, else the highest pre-release with one, and say so. When none has one they stop and say so, and when the list can't be read they name the full release that had none. An explicit tag works as before, and `--tag v2.1.0` still stops with "publishes no gitsby binary". release.bash phase 3 runs the tag's install.bash into a throwaway home, says which release the line takes, and warns when a full release isn't taken or a pre-release loses to an older one.
+	- Swept: `releases/latest`, `pre-release`, `full release`, `beta.1` and `one-liner` across install.bash, install.ps1, release.bash, README.md, design.md and test.bash. README, design.md "Release policy" and "Automating a release", and release.bash's header and pre-release comment are updated. `legacy/` is frozen and left alone.
+	- Verified: 14 of the 21 new checks fail against gover's installers and release.bash and pass here. The other 7 pin what must not change (an explicit tag, a full release over a newer beta, no list request when the redirect's release has a binary) and pass on both. test.bash 1365/0, and `cicd.bash --gate` passes. Both installers run against the live release list stop with "No release of yottacore/gitsby publishes a gitsby binary yet", which is today's state.
+	- Note: the checks run under pwsh 7 and bash 5.2 here. Windows PowerShell 5.1 and macOS bash 3.2 were not run, as with the other installer checks.
+	- Branch: betainst
+	- Commit: 4ccd133
+	- Test case: [ddf98] through [ddf9g] (install.bash), [ddf9h] through [ddf9s] (install.ps1) and [ddf9t], [ddf9v], [ddf9w] (release.bash phase 3) in test.bash.
+	- Acceptance signoff: Self-closed: the rule was set by hand on 2026-10-03, and the checks fail before the fix and pass after.
+	- Closed: 20261003-171623
+
+- Code Review 20261003 item 1: release.bash can stop partway with no message
+	- ID: 2026100313123851
+	- Type: Bug
+	- Status: Done
+	- Priority|Severity [Bug]: High
+	- Opened: 2026-10-03
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- Have `pr create` print no github.com pull URL, or have curl fail in the proof step.
+	- Incorrect behavior [Bug]: The script exits 1 with nothing printed. The first case is after the branch, the changelog edit and the PR exist. The second is after the release is published, so the proof is skipped.
+	- Expected behavior [Bug]: The `fDie` right below each line runs and says what's left half done.
+	- Reproduced [Bug]: Yes, 2026-10-03. The first by hand, the second by simulation.
+	- Possible cause [Bug]: `x="$(... | grep ...)"` and `x="$(curl ... | sed ...)"` under `set -e` and `pipefail`, with no `|| true`. It's one of the Bash traps.
+	- Origin: release.bash:248 from 6cdfd95 (2026-08-12) and :306 from 5a2239b (2026-09-24). Neither was filed before. The :306 block is the phase 3 path that has never run. Confirmed.
+	- Actual cause [Bug]: Under `set -e`, an assignment from `$( )` takes its command's failure. The PR number grep, the `releases/latest` curl and the build line read from the native binary each ended the run there, above the message meant for it.
+	- Estimated effort: Low
+	- Actual fix [Bug]: Each of the three ends in `|| true`, so the check below it runs and says what happened.
+	- Swept: every `$( )` assignment in release.bash. The build line was the only other one that could end the run unseen. The rest end in `|| true` or `|| fDie`, or run a command that prints its own error.
+	- Verified: both checks fail on `gover` and pass here. Each of the three sites, put back alone, fails its check. test.bash passes 1280 of 1280 with both fixes in.
+	- Branch: relpipe
+	- Commit: f529e4f
+	- Test case: [ddf3q] and [ddf3r] in test.bash. They run release.bash past its dry run, with gh, curl and gitsby stubbed. The second is the first run of the phase 3 `releases/latest` block.
+	- Acceptance signoff: Self-closed: reproduced, and the checks fail before the fix and pass after.
+	- Closed: 20261003-141520
+
 - CICD reset: a test for every Done item, code reviews 20260726, 20260725 and 20260723
 	- ID: 2026110611410037
 	- Type: Enhancement
@@ -86,91 +471,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Closed: 20261106-120232
 	- Acceptance signoff: Self-closed, tests and backlog rows only.
 
-- `--backlog-run-quick lint` fails markdownlint MD038 on backlog.md, again
-	- ID: 2026110611063063
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261106-110630
-	- Opened by: jim-collier
-	- Related IDs: 2026102619025437, 2026102620355012
-	- Steps to reproduce [Bug]: `--backlog-run-quick lint` at 22634a9.
-	- Incorrect behavior [Bug]: lint stops at markdownlint, MD038 at backlog.md line 100. That is a progress log line of 2026102620355012, which quotes an old check line ending in a space inside a code span.
-	- Expected behavior [Bug]: lint passes.
-	- Reproduced [Bug]: 2026-11-06, in the image, while working 2026102617594210.
-	- Test case: the lint step's markdownlint run, which is clean again
-	- 2026-11-06: The code span in 2026102620355012's log ended in a space. It now reads `freed about <size>`.
-
-- The Pillow lock check fails on FreeBSD
-	- ID: 2026110610343700
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261106-103437
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]:
-		- `--backlog-run-full` at 4e39d4a, to stage 7.
-	- Incorrect behavior [Bug]: vmFreeBSD's test.bash fails `[de5av]`, so the remote tests fail, while every other box passes it.
-	- Expected behavior [Bug]: `[de5av]` passes on every box.
-	- Actual cause [Bug]: `grep ... | grep -q "^pillow=="` under pipefail. Pillow is the first of 2 lines the left grep prints, and BSD grep writes a line at a time, so `grep -q` quits before the second write and the left grep exits 141. 9 runs in 10 on vmFreeBSD. GNU grep writes once at exit, so Linux never saw it. PyYAML is the last line, so `[deavy]` passed.
-	- Actual fix [Bug]: The 2 pipes in `fSysPyFromLock` grep a capture instead. The other pipes into `head` or `grep -q` that run under pipefail read with `sed -n` or a capture too, 9 more in test.bash and 1 in remote-tests.bash. None of those failed yet.
-	- Swept: every tracked bash file outside legacy/. A pipe inside a `bash -c` string runs without pipefail, and one ending in `|| true` drops the code, so those stay.
-	- Branch: pipe-drain
-	- Test case: test.bash `[deyrt]` lists any pipe into `head`, `grep -q` or an awk `exit` that pipefail would see, and fails on one. It flagged all 11 lines before the fix, and a line added to parity.bash after it.
-	- Verified: test.bash 1774/0 on b23 and 1380/0 on vmFreeBSD, where it was 1378/1.
-	- Acceptance signoff: Self-closed. The new check fails before the fix, and vmFreeBSD passes `[de5av]` after it.
-	- Closed: 20261106-104500
-
-- The pipeline prunes every project's docker build cache
-	- ID: 2026110311291903
-	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: High
-	- Opened: 20261103-112919
-	- Opened by: JC
-	- Related IDs: common 2026110311291900
-	- Incorrect behavior: The pipeline runs `docker builder prune` after a run, in `cicd/cicd.bash` and `cicd/test.bash`. That prunes docker's default builder, which every project shares, so a run here drops any other project's cache once it's a week unused. common's `Cleanup after a run` rule said to do it.
-	- Expected behavior: The pipeline doesn't prune docker's build cache at all. Docker trims the cache itself on b23, through `builder.gc` in `/etc/docker/daemon.json`. Cache unused for a week goes first, then the rest is cut to 120 GB, or further when the disk is under 10% free, but never below 20 GB. The label cleanup of this project's containers, dangling images and old tags stays.
-		- Do it once b23's `/etc/docker/daemon.json` has the `builder.gc` block. `grep -q '"gc"' /etc/docker/daemon.json` checks. Until then the prune stays.
-	- Decisions:
-		- Don't move to a buildx builder of the project's own instead. shcl tried that on 2026-11-02. A cold build of a 2 GB image took 299 s against 266 s on the default builder, and the builder kept a second 3 GB copy of the layers for a week. shcl is going back to the default builder. (JC, me)
-		- The run no longer reports build cache in its end line, since it removes none.
-	- Estimated effort: Low
-	- Actual fix [Bug]: The end of a run no longer runs `docker builder prune`. b23's `daemon.json` has the `builder.gc` block, so the condition to do it was met. contributing.md says the cache is left to docker.
-	- Branch: round-20261106
-	- Test case: test.bash [dee5k] changed: a run in the image calls no `docker builder` command, passed or stopped.
-		- 2026-11-06: [dee5k] asserted `docker builder prune -f --filter until=168h` was called, and now asserts no `docker builder` call at all. Its title says the build cache is left to docker.
-	- Verified: [dee5k] fails against the previous cicd.bash and passes after. `--backlog-run-quick` passed with every area, test.bash 1775/0, fuzz 313/0, parity 29/0.
-	- Swept: every `docker builder`, `buildx`, `system prune` and `image prune` in the tree. Only cicd.bash had one.
-	- Acceptance signoff: Self-closed: its test passed.
-	- Closed: 20261106-105627
-
-- The cleanup line says a run folder freed about 8B
-	- ID: 2026102620355012
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261026-203550
-	- Opened by: jim-collier
-	- Related IDs: 2026102617543861
-	- Steps to reproduce [Bug]:
-		- `--backlog-run-quick` or `--backlog-run-full` at 99b3120, to the end.
-	- Incorrect behavior [Bug]: Both end with `Cleanup: removed the run folder; freed about 8B`, after a full run that built and copied trees for 5 boxes.
-	- Expected behavior [Bug]: The size the run folder had before it was removed, or no size when it can't be known.
-	- Possible cause [Bug]: Not looked at yet. The size may be read after the folder's contents are already gone, or from the folder entry itself.
-	- Actual cause [Bug]: The size was read right. By the end the run folder holds only its `run.pid`, a 7-digit pid and a newline: 8 bytes. The steps remove their own files as they finish, and the run in the image keeps its folder on the container's tmpfs.
-	- Actual fix [Bug]: The end line leaves out the size when it's under 1 MB, which also covers a size that couldn't be read. It reads `Cleanup: removed the run folder`.
-	- Decisions:
-		- Departs from the wording: the size before removal was 8 bytes, so showing it would still read as a bug. A size under a megabyte says nothing about the disk, so the line drops it.
-		- Not a peak size over the run. It would mean measuring every step's files before they go, for a line that only says "about".
-	- Branch: round-20261106
-	- Test case: test.bash [deysa], plus [dee5j] and [dee5k] changed.
-		- 2026-11-06: [dee5j] expected `...the run folder; freed about <size>` and now `...the run folder` at the end of the line. [dee5k] the same for `removed the run folder` and `removed 2 image(s), the run folder`, where its docker stub reports no sizes.
-	- Verified: [deysa] fails against the previous cicd.bash and passes after. A real quick run in the image ended with `Cleanup: removed the run folder`, inside and out. [defng]'s 2 MB stale folder still shows `freed about 2.0MB`.
-	- Swept: the one place the line is printed, `fRunTmpDone` in cicd.bash. No other script reads it.
-	- Acceptance signoff: Self-closed: its test passed.
-	- Closed: 20261106-105627
-
 - CICD reset: CPU and priority on the Windows box
 	- ID: 2026102508333054
 	- Type: Enhancement
@@ -210,61 +510,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- 2026-10-25: The round's full run reached stage 7, where vmDebARM64 failed 22 harness checks (2026102519554107). Waits on that.
 	- Acceptance signoff: Self-closed. Its new check fails before the fix and passes after, and the box check ran on vm925w.
 	- Closed: 20261026-205959
-
-- Stage 7 can't start vm925w once it has started vmKt6m or vmFreeBSD
-	- ID: 2026102510404322
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-104043
-	- Opened by: jim-collier
-	- Related IDs: 2026102416313101
-	- Incorrect behavior [Bug]: In the round-20261025 full run, b29w was held by another job, so stage 7 went to vm925w, which was off. It didn't come up, with "Failed to reserve port 5900", and was skipped. No Windows box ran the Go tests.
-	- Expected behavior [Bug]: vm925w starts and runs the Windows Go tests when b29w is busy.
-	- Reproduced [Bug]: 2026-10-25 on b23, gover plus 4388d96. vmKt6m was started earlier in the run and ignored the ACPI shutdown, so it was still up and held the port.
-	- Possible cause [Bug]: vm925w's SPICE port is fixed at 5900, while vmFreeBSD and vmKt6m take the first free one. Starting vm925w before the other VMs, or only after they're down, would avoid it. vmKt6m also needs shutting down from inside, since it ignores the ACPI request.
-	- Estimated effort: Avg
-	- Actual cause [Bug]: Confirmed from the guest definitions. `vm925w-iommu` has `port='5900' autoport='no'`, and vmFreeBSD and vmKt6m have `autoport='yes'`. Stage 7 took the Windows box last, after the Mac and Unix boxes, and vmKt6m stayed up after its turn.
-	- Actual fix [Bug]: Stage 7 takes the Windows box first. That covers gitsby's own VMs, not another session's. The guest's own fix, `autoport='yes'`, is outside the repo, drafted in `private/claude_simple/upstream/2026102510404322/`. The guest is unchanged.
-	- Progress log:
-		- 2026-10-25: The Windows loop in remote-tests.bash runs before the Mac and Unix ones. Every build is still made before any box is taken.
-		- 2026-10-25: The fixture's VM helper now refuses vm925w with "Failed to reserve port 5900" while another VM it woke is still up.
-		- Verified: test.bash 1737/0 on the box, and `--backlog-run-quick` in the image, with test.bash 1737/0, fuzz 313/0 and parity 29/0. Against the harness before the change, `[dee73]` fails, and so do the new checks of the other two items in this change and the changed `[dedpc]`, 1732/5.
-		- 2026-10-26: Verified: stage 7 from round-20261026 at 20bdeb6, with only the two Windows boxes listed, b29w held under the lock and vm925w off. b29w was skipped as held. vm925w came up, ran the Go tests with no FAIL, and was off again after. vmFreeBSD and vmKt6m stayed off. In the round's full run at 99b3120, b29w ran before b26, vmKt6m and vmFreeBSD, and `[dee73]` passed.
-	- Branch: round-20261025b
-	- Test case: test.bash `[dee73]`.
-	- Acceptance signoff: Self-closed: vm925w ran stage 7's Go tests with b29w held, and `[dee73]` passed in the full run at 99b3120.
-	- Closed: 20261026-204511
-	- Swept: every loop over the boxes in remote-tests.bash. Only the three run loops take boxes, and the summary is sorted by name, so the order shows nowhere else. config.bash's stage 7 comment names the order.
-	- Prereq IDs: 2026102519554107
-	- 2026-10-25: The round's full run reached stage 7, where vmDebARM64 failed 22 harness checks (2026102519554107). Waits on that.
-
-- Stage 7 takes every box through the VM state helper's wrap
-	- ID: 2026102511210617
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261025-112106
-	- Opened by: jim-collier
-	- Related IDs: 2026102416313101
-	- Requirements [Feature]:
-		- The helper's `wrap` takes `--why` and `--eta` since 2026-10-25, and leaves a box that isn't a VM alone. So stage 7 can use it for every box, with `--why "gitsby: <kind> tests"`, and drop the lock's own `wrap` branch in `fUnderLock`.
-		- The comment above `fUnderLock` that says the helper has no `--why` goes with it.
-		- A box with no helper on the PATH still runs through the lock's `wrap`.
-	- Estimated effort: Low
-	- Progress log:
-		- 2026-10-25: `fUnderLock` makes one call, to the helper's `wrap` where there is one and to the lock's otherwise, with `--wait 0 --why "gitsby: <kind> tests"` either way. Its comment, the script's Purpose and config.bash's stage 7 comment say so.
-		- The helper is still looked for beside the lock, not on the PATH, as before. With none, the lock takes each box, and a sleeping VM is skipped.
-		- 2026-10-25: Asserts given new values for this change. `[dedpc]`: `vmstate wrap vmFreeBSD --wait 0 --` and `lock wrap vmFreeBSD --wait 0 --` -> the same with `--why gitsby: unix tests`, and "vmDebARM64 never goes through the helper" -> "the helper never wakes vmDebARM64". Its label's "keeps the lock's own wrap" -> "is left alone". The fixture's helper takes any options before `--` and passes them to the lock, and leaves a box that isn't a VM to it, as the real one does.
-		- Verified: test.bash 1737/0 on the box, and `--backlog-run-quick` in the image, with test.bash 1737/0, fuzz 313/0 and parity 29/0. Against the harness before the change, `[dee71]` fails. `[dee72]` passes there too, since the no-helper path didn't change.
-	- Branch: round-20261025b
-	- Test case: test.bash `[dee71]` (every box through the helper, with why), `[dee72]` (no helper, the lock's own wrap with why), plus `[dedpc]` as changed.
-	- Swept: every call of the lock and the helper in remote-tests.bash. `hosts` and `status` are reads, and stay as they were.
-	- Prereq IDs: 2026102519554107
-	- Closed: 20261026-203438
-	- Acceptance signoff: closed on the round's full run.
-	- 2026-10-25: The round's full run reached stage 7, where vmDebARM64 failed 22 harness checks (2026102519554107). Waits on that.
-	- Verified: 2026-10-26, the round-20261026 --backlog-run-full log at 99b3120. Stage 7 ran b29w, b26, vmKt6m, vmFreeBSD and vmDebARM64 through the helper and passed. The one warning was the helper not shutting down vmKt6m in 300s, a host-side issue the helper has since fixed.
 
 - CICD reset: standard flags
 	- ID: 2026102416313104
@@ -326,25 +571,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Closed: 20261026-203438
 	- Acceptance signoff: closed on the round's full run.
 	- Verified: 2026-10-26, the round-20261026 --backlog-run-full log at 99b3120. Remote sync shows skipped in the plan, the image numbers Lint through Demo gif as steps 1 to 5 of 6, and Remote tests outside it is step 6 of 6, all with this box's local times. Every step PASS.
-
-- `--backlog-run-quick lint` fails markdownlint MD038 on backlog.md
-	- ID: 2026102619025437
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261026-190254
-	- Opened by: jim-collier
-	- Related IDs: 2026102618140158
-	- Test case: the lint step's markdownlint check, which failed on these lines and passes now.
-	- Closed: 20261026-190553
-	- Acceptance signoff: lint passed after the fix.
-	- Steps to reproduce [Bug]:
-		- `env -u DISPLAY bash cicd/cicd.bash --backlog-run-quick lint suite` on round-20261026 at 7c87737.
-	- Incorrect behavior [Bug]: lint stops at the markdownlint step, with 9 MD038 errors, spaces inside a code span. All are in the `Asserts given new values` sub-bullets of 2026102618140158, where the old and new test lines are quoted.
-	- Expected behavior [Bug]: the backlog passes markdownlint, and lint goes on to the next step.
-	- Reproduced [Bug]: 2026-10-26, twice in the image, while working 2026102617594208.
-	- Possible cause [Bug]: the old and new test lines are quoted with their two-space indent inside backticks.
-	- 2026-10-26: Dropped the leading spaces inside the code spans on 2026102618140158's progress lines, and gave the trailing one its value. Wording unchanged.
 
 - CICD reset: a test for every Done item
 	- ID: 2026102416313106
@@ -445,20 +671,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: all 30, each against its fix commit's added checks and Go tests, with every cited ID grepped once in the suites, spawn-count.bash and the Go tests. Each item kept its wording; only the rows were added.
 	- Closed: 20261106-113716
 	- Acceptance signoff: Self-closed, tests and backlog rows only.
-
-- spawn-count.bash says it restores each command's origin, and doesn't
-	- ID: 2026110611364366
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261106-113643
-	- Opened by: jim-collier
-	- Related IDs: 2026102617594214
-	- Steps to reproduce [Bug]: read `fRestore` and the fixture setup in cicd/utility/spawn-count.bash.
-	- Incorrect behavior [Bug]: the header says the work tree and the origin are restored between runs. `fRestore` copies the pristine folder, but each clone's origin url is the pristine bare repo's absolute path, which `cp -a` keeps. So `pullcom`, `br switch` and `br prune` push to the pristine origin, and later commands are measured against what they left.
-	- Expected behavior [Bug]: each command runs against an untouched origin, so its count doesn't depend on the commands before it.
-	- Reproduced [Bug]: by reading, while working 2026102617594214. Control: a clone made by `git clone` from a relative path also stores the absolute path as its url.
-	- Possible cause [Bug]: nothing points the live clones at the live origins after the copy. A `remote set-url` in `fRestore` would.
 
 - CICD reset: a test for every Done item, code reviews 20260731 to 20260723
 	- ID: 2026102617594216
@@ -603,158 +815,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: closed on the round's full run.
 	- Verified: 2026-10-26, the round-20261026 --backlog-run-full log at 99b3120. b26's test.bash printed 260 SKIP lines for its Linux-only blocks, read with the Mac's awk, with 0 failed. Every other box printed the same line forms.
 
-- CICD reset: temp files and safe removal
-	- ID: 2026102416313108
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261024-163131
-	- Opened by: jim-collier
-	- Prereq IDs: 2026102506452478
-		- It uses `--keep-temp` from that item. The other new flags are in since a1c62bb.
-	- Related IDs: 2026101912030138
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Per `Temp files` and `Safe removal` in the shared CICD rules. A run's own temp files are already in one folder that goes on exit, and the harnesses remove theirs.
-		- Each run makes one folder, `${HOST_TEMP}/gitsby/<YYYYmmDD-HHMMSS>_<NNN>/`, with a plain `mkdir` and a counter, and points `TMPDIR`, `TEMP` and `TMP` at it. The harnesses and utilities make theirs inside it.
-		- `--keep-temp` keeps it and prints where it is.
-		- Each run writes a `run.pid` in it, and removes the project's own stale run folders: over 2 days old, with no live process.
-		- Every recursive removal goes through the repo's own copy of the safe removal guard, in the pipeline, the harnesses, the utilities, release.bash, the installer and stage 7's commands on the other boxes. The checks of a folder's name and marker that some have today stay as well.
-		- 35 recursive removals in 12 files, none through the guard. File list in the private notes.
-	- Progress log:
-		- 2026-10-25: Split. 2026102516194062 has the removals outside cicd.bash. The rest is in.
-		- 2026-10-25: A run's folder is `${HOST_TEMP}/gitsby/<start time>_<NNN>`, else under `TMPDIR`, made with a plain `mkdir` and the first free counter, with `TMPDIR`, `TEMP` and `TMP` pointed at it and a `run.pid`. The harnesses and release.bash already follow `TMPDIR`, so theirs go inside it. Each run removes the project's run folders over 2 days old whose pid is gone.
-		- 2026-10-25: `cicd/utility/include/safe-rm.bash` is the repo's copy of the guard. cicd.bash's own removals go through it, with the name and marker checks kept.
-	- Decisions:
-		- The sweep leaves a folder with no `run.pid`, since a run didn't make it.
-	- Branch: round-20261025b
-	- Test case: test.bash [dee5h] and [dee5j], plus [de5m8], [dee4z] and [dee50] for the new folder.
-	- Verified: Both fail against the round branch's cicd.bash, and pass with the change. The run in the image passed with them.
-
-- CICD reset: every other recursive removal through the guard
-	- ID: 2026102516194062
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-161940
-	- Opened by: jim-collier
-	- Parent ID: 2026102416313108
-	- Requirements [Feature]:
-		- The parent's last requirement, outside cicd.bash: the harnesses, stage 7's commands on the other boxes, the utilities, release.bash, the installers, and the image build's own removals. Each goes through the guard in `cicd/utility/include/safe-rm.bash`, or a copy of it on the other boxes, and keeps the name and marker checks it has.
-		- The guard calls `realpath -e`. Check it on macOS and FreeBSD before stage 7 uses it there.
-	- Progress log:
-		- 2026-11-06: Split in four. 2026110612393817 has the harnesses, the utilities and release.bash, and 2026110612551903 the installer. Both are in. 2026110612393822 has stage 7's commands on the boxes, and 2026110612595461 the image build.
-		- 2026-11-06: The guard no longer calls `realpath -e`, so the second requirement is answered in 2026110612393817.
-
-- CICD reset: the harnesses, utilities and release.bash through the guard
-	- ID: 2026110612393817
-	- Type: Enhancement
-	- Status: Done
-	- Needs external testing: Done 2026-11-06. Stage 7 on b26 and vmFreeBSD passed at 2508656, as below.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261106-123938
-	- Opened by: jim-collier
-	- Parent ID: 2026102516194062
-	- Requirements [Feature]:
-		- fuzz.bash, parity.bash, test.bash, remote-tests.bash's own scratch, spawn-count.bash, keep-build.bash, gen-winres.bash, demo-repo.bash and release.bash remove a folder only through the guard. The name and marker checks they have stay.
-		- The guard works on macOS and FreeBSD.
-	- Progress log:
-		- 2026-11-06: Every recursive removal in those scripts goes through the guard. test.bash keeps its name and marker checks ahead of it, and demo-repo.bash its ROOT checks.
-		- 2026-11-06: The guard resolves the parent folder with `cd -P` in place of `realpath -e`, which BSD's realpath lacks and older macOS has no realpath for. It uses `rm -x` where rm has no `--one-file-system`.
-		- 2026-11-06: A script run on its own resolves `HOST_TEMP` itself. Its scratch goes in `TMPDIR`, unless the guard wouldn't take it there, as with macOS's temp folder, and then in `${HOST_TEMP}/gitsby/`.
-		- 2026-11-06: The guard also refuses `HOST_TEMP` and a project's whole folder right under it, as the shared one has since 2026-10-28.
-	- Decisions:
-		- Scratch moves only where the guard couldn't remove it. Under cicd.bash `TMPDIR` is the run's folder, so nothing moves there.
-		- demo-repo.bash's ROOT has to sit under a tmp folder now. Its default, `/tmp/gitsby-demo`, does.
-	- Branch: round-20261106
-	- Test case: test.bash [deywq] (the guard with no realpath on PATH) and [deywr] (no script removes a folder another way), plus [ddgkk] and [db70t] to [db70y].
-	- Verified: [deywq] fails against the old guard and passes with the new one. [deywr] fails on the old fuzz.bash, test.bash, release.bash and gen-winres.bash. `--backlog-run-quick` passed, with test.bash 1809/0, fuzz 313/0 and parity 30/0.
-	- Verified: run on its own here, demo-repo.bash built and removed a world under /tmp, and the scratch folder came out as `/tmp`, or `${HOST_TEMP}/gitsby` with `TMPDIR` set to `HOST_TEMP`.
-	- Swept: every `rm -r`, `rmdir /s` and `Remove-Item -Recurse` outside legacy/. What's left is in the other children.
-	- Verified: stage 7 on b26 and vmFreeBSD at 2508656, go test and test.bash on each. test.bash passed 1515/0 on b26 and 1412/0 on vmFreeBSD, [deywq] and [deywr] included. Afterwards neither box had a `gitsby-test.*` folder in `TMPDIR`, `/tmp` or `/var/tmp`, while the stage's own `gitsby` folder there showed the run.
-	- Closed: 20261106-131309
-	- Acceptance signoff: Self-closed: stage 7 passed on b26 and vmFreeBSD, and no scratch was left on either.
-
-- CICD reset: stage 7's removals on the boxes through a guard
-	- ID: 2026110612393822
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261106-123938
-	- Opened by: jim-collier
-	- Parent ID: 2026102516194062
-	- Prereq IDs: 2026110612393817
-	- Requirements [Feature]:
-		- The copy step's removal of `old.*` on the Mac and Unix boxes, and the Windows box's `rmdir /s /q`, go through a copy of the guard on the box. The marker check stays.
-		- POSIX sh on the Mac and Unix boxes, with no `realpath -e` or `rm --one-file-system`, as in the repo's guard.
-		- Then [deywr] in test.bash drops its `old.*` exemption.
-
-- CICD reset: the installer's removal through a guard
-	- ID: 2026110612551903
-	- Type: Enhancement
-	- Status: Done
-	- Needs external testing: Done 2026-11-06 on vm925w, as below.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261106-125519
-	- Opened by: jim-collier
-	- Parent ID: 2026102516194062
-	- Requirements [Feature]:
-		- install.ps1's `Remove-Item -Recurse` of its temp folder goes through a guard of the same kind.
-	- Progress log:
-		- 2026-11-06: The folder is removed only when it's a real folder, not a link, right under the temp folder. Anything else is left, with a warning. Both sides of the parent check are spelled by `Get-Item`, so a short 8.3 temp path compares the same.
-	- Decisions:
-		- The guard sits inline in the `finally` block. It's the installer's only recursive removal, and the installer is one file a person downloads.
-	- Branch: round-20261106
-	- Test case: test.bash [deyx8] (a whole install takes its temp folder away) and [deyx9] (the removal sits behind the guard).
-	- Verified: [deyx9] fails against the old install.ps1. Under pwsh here, the guard left a link and a folder one level down, and removed a folder right under the temp folder. `--backlog-run-quick` passed, with test.bash 1811/0, fuzz 313/0 and parity 30/0.
-	- Verified: on vm925w as `wintest`, a whole install from 2508656's install.ps1, with only the download stood in, in Windows PowerShell 5.1.26100 and in pwsh 7.6.6. Each installed and ran gitsby.exe, and left no new folder in `%TEMP%`.
-	- Closed: 20261106-131309
-	- Acceptance signoff: Self-closed: the install passed on vm925w in 5.1 and in pwsh, and took its temp folder away.
-
-- CICD reset: the image build's removals through a guard
-	- ID: 2026110612595461
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261106-125954
-	- Opened by: jim-collier
-	- Parent ID: 2026102516194062
-	- Requirements [Feature]:
-		- The Dockerfile's removals of its folders under /tmp go through the guard, copied into the build. `/var/lib/apt/lists/*` and the PSScriptAnalyzer package files aren't under a tmp folder, so they get a guard that names that one parent, or a reason on this item to leave them.
-		- A Dockerfile change gives the image a new tag, so the next run rebuilds it. Leave time for that.
-
-- CICD reset: CICD process gaps
-	- ID: 2026102416313109
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261024-163131
-	- Opened by: jim-collier
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- What else the shared CICD rules ask for that no other reset item covers:
-			- One line at the end of a run saying what was removed and about what it freed, files as well as docker.
-			- Go's module cache in the volume pruned of what the current `go.sum` doesn't name.
-		- Packaging and dependabot stay deferred, per the standing decision. 20261024: kept out of this item, since nothing makes them pressing.
-	- Progress log:
-		- 2026-10-26: Split. Children: 2026102617543861 (the line at the end of a run, done) and 2026102617543961 (the module cache).
-
-- CICD reset: prune Go's module cache in the volume
-	- ID: 2026102617543961
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261026-175439
-	- Opened by: jim-collier
-	- Parent ID: 2026102416313109
-	- Requirements [Feature]:
-		- The parent's second requirement: Go's module cache in the `gitsby-cicd-cache` volume pruned of what the current `go.sum` doesn't name.
-	- Notes:
-		- The volume is shared by every worktree's runs, and another branch's `go.sum` may name other versions. A prune could take a module from under a run in progress. Prune only when no other gitsby run's container is up, which only the run out here can see.
-		- Keep the `golang.org/toolchain` modules for the `toolchain` line in go.mod, which `go.sum` doesn't name, and the `/go.mod`-only entries it does.
-		- test.bash builds the SHCL 2.x build offline from the cache ([ddg6f]), so check that every module it needs is in `go.sum`.
-		- Module paths in the cache spell capitals as `!` plus the lower case letter, and go makes the files read-only.
-
 - CICD reset: a test for every Done item, Code review 20260909
 	- ID: 2026102617594208
 	- Type: Enhancement
@@ -807,246 +867,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: all 25 items, each against its fix commit's added checks and Go tests, with each ID grepped once in the suites. Each item kept its wording; only the rows were added.
 	- Closed: 20261026-180932
 	- Acceptance signoff: Self-closed, tests and backlog rows only.
-
-- CICD reset: one line at the end of a run for what it removed
-	- ID: 2026102617543861
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261026-175438
-	- Opened by: jim-collier
-	- Parent ID: 2026102416313109
-	- Requirements [Feature]:
-		- The parent's first requirement: one line at the end of a run saying what was removed and about what it freed, files as well as docker.
-	- Progress log:
-		- 2026-10-26: A run's last line is `Cleanup: removed <what>; freed about <size>`, or `Cleanup: nothing to remove`, then the closing blank line. It takes in the run's own folder and the stale run folders as well as what the docker tidy-up removed. The `Docker:` line and the line per stale folder are gone into it.
-		- 2026-10-26: Asserts given the new line, old -> new: [dee5j] `removed a stale run folder: <path>` -> `Cleanup: removed 1 stale run folder(s), the run folder`. [dee5k] `Docker: nothing to remove`, `Docker: removed 2 image(s)`, `Docker: removed ... volume` and a failed run's `Docker:` line -> the same as `Cleanup:` lines, with the run folder named.
-	- Decisions:
-		- Folders count at their apparent size. ZFS reports a compressed size that lags fresh writes, and the line says "about".
-		- The run in the image prints its own line for its own folder, before the line out here.
-	- Branch: round-20261026
-	- Test case: test.bash [defng], plus [dee5j] and [dee5k] changed.
-	- Verified: `--backlog-run-quick lint suite` passed in the image, test.bash 1754 -> 1755, 0 failed. Against the previous cicd.bash [defng], [dee5j] and [dee5k] fail. A real quick run in the image ended with `Cleanup: removed the run folder; freed about 8B`. shellcheck passes.
-	- Swept: every removal in cicd.bash that printed its own line: the stale sweep and the docker tidy-up. The soak and CodeQL report pruning keep their own warning, since they remove artifacts, not temp files.
-	- Acceptance signoff: Self-closed: its tests passed.
-	- Closed: 20261026-175508
-
-- test.bash's stage 7 checks fail on vmDebARM64 after round-20261025b
-	- ID: 2026102519554107
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-195541
-	- Opened by: jim-collier
-	- Related IDs: 2026102511210617, 2026102510404322, 2026102508333054
-	- Steps to reproduce [Bug]:
-		- `--merge-gate` at 3490090, stage 7, test.bash on vmDebARM64.
-	- Incorrect behavior [Bug]: 1711 passed, 22 failed, all in the block that runs `remote-tests.bash` against the fixture's stub lock. The first to fail is [ddg8a], the first check where the stub lock wraps a box. [ddg88], [ddg89] and [dee72] pass. The others include [ddg8b], [ddg8c], [dedq5], [dedpc], [dee73], [dee75] and [ddgm7].
-	- Expected behavior [Bug]: 0 failed, as on b26, vmFreeBSD and vmKt6m in the same run, and on b23 both in the image and on the box (1748/0).
-	- Reproduced [Bug]: 2026-10-26 on vmDebARM64, with that block of test.bash run on its own: the same 22 failed. On b23 it passed 43/0.
-	- Possible cause [Bug]: Not found yet. vmDebARM64 passed 1699/0 on gover earlier on 2026-10-25, so it came in with this round. 6343351 is the only round commit that touches `remote-tests.bash`; it sends every box through one `fLockEnv "${vmState:-${lock}}" wrap` call. The fixture prints only FAIL lines, so the first step is to run that block on vmDebARM64 and keep `rtOut` and `rtLog`.
-	- Actual cause [Bug]: b14ae19, also in this round, runs the Mac's module fetch with Homebrew's bash folder first on PATH, which is `/usr/local/bin` in the fixture. The fixture's ssh stub runs that copy step for real. So on a box with its own `/usr/local/bin/go`, that go answered instead of the stub, and failed with "go: no modules specified". Every run that reached b26 then failed. vmDebARM64 has one, linked to `/usr/local/go/bin/go`, and b23 and the image don't. The block is Linux only, so no other stage 7 box runs it.
-	- Actual fix [Bug]: The stub's Mac reads `/usr/local/bin` as an empty folder of the fixture's. The calls log still shows the command as sent, so no assert changed.
-	- Progress log:
-		- 2026-10-25: The run's log is kept as `private/claude_simple/round-20261025b_full-run.log`, lines 9590 to 9810. round-20261025b stays unmerged until this is fixed.
-		- Verified: the block alone on vmDebARM64, held through the VM helper's wrap and put back to off: 22 failed before the fix, 43/0 after. On b23, 43/0 both ways. `--backlog-run-quick lint suite` passed in the image, with test.bash 1748/0.
-		- Not run: the whole test.bash on vmDebARM64. The round's full run covers it.
-	- Decisions:
-		- The path is mapped in the stub, rather than pointing the fixture's `REMOTE_MAC_BASH` elsewhere, since [ddg8d] and [dedpf] check for `/usr/local/bin` in the command sent, and that's the real Mac's path.
-	- Branch: round-20261026
-	- Test case: the 22 checks above, on a box with go in `/usr/local/bin`, [ddg8e] first, since it needs the stub's `go mod download` in the calls log. No check on b23 can put a go under the real `/usr/local/bin`.
-	- Swept: every stub in test.bash that runs a remote command for real. Only the b26 branch of the harness's ssh puts a fixed system folder ahead of the stubs. The Unix branch's fetch has no PATH prefix.
-	- Acceptance signoff: Self-closed. Reproduced on the box, and fails before the fix and passes after.
-	- Closed: 20261026-171155
-
-- `raw gh` loops forever when `gh` on PATH leads back to gitsby
-	- ID: 2026101916533300
-	- Type: Bug
-	- Status: Done
-	- Needs local test suite run?: No. test.bash ran 1597/0.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Critical
-	- Opened: 20261019-165333
-	- Opened by: jim-collier
-	- Prereq IDs: 2026102306584122
-	- Target OS: Linux
-	- Test environment: b28l
-	- Steps to reproduce [Bug]:
-		- On a box where the first `gh` on PATH is, or runs, gitsby, run `gitsby raw gh <anything>`.
-		- Not confirmed which form b28l had: a symlink or copy of gitsby named `gh`, or a wrapper script that calls `gitsby raw gh "$@"`.
-	- Incorrect behavior [Bug]:
-		- Endless loop that eats time and a lot of memory. The session that hit it got out by calling the real `gh` by full path.
-	- Expected behavior [Bug]:
-		- Stop at once with a plain error that names the PATH entry, and never start a second copy of itself.
-	- Reproduced [Bug]: 2026-10-21 on b23, with stand-ins on PATH. A wrapper `gh` that runs `gitsby raw gh "$@"` started itself until its counter stopped it at 20. A link named `gh` to the build ran gitsby as gh, which answered "Unknown command 'auth'". The link alone doesn't loop, since gitsby doesn't read its own name, so b28l most likely had a wrapper.
-	- Possible cause [Bug]:
-		- `cmdPassthrough` in main.go checks `gh` only with `mustBeInPath`, then `handover` in exec.go runs it by bare name. Nothing checks that the file found isn't gitsby itself, or something that calls it. A wrapper makes each run start the next, with no limit.
-	- Requirements [Bug fix]:
-		- Find the tool by walking PATH ourselves. Skip any entry that resolves (symlinks followed, `os.SameFile`) to the running gitsby. If nothing else is left, refuse with the usual "Not found in path" error and say a PATH entry points back at gitsby.
-		- Set an env var such as `GITSBY_RAW_ACTIVE` on the handover. If it's already set when `raw` starts, refuse with a message that names it. This catches wrappers the file check can't see. Read it at startup, before the run sets it.
-		- Cover `tea`, `glab`, `lazygit`, and `tig` the same way, since they share the path.
-		- Test case needs a stand-in `gh` that is a wrapper and one that is a symlink to the build. Watch both fail on the current build first, and put a spawn limit on the test so a regression can't eat the box.
-	- Progress log:
-		- 2026-10-19: Logged from a report by another project's session on b28l. Cause is from reading the code, not from a run there. Still need the output of `type -a gh` on b28l.
-		- 2026-10-21: Fixed as the requirements ask. `raw` walks PATH itself, through `exec.LookPath` on each entry, and passes over an entry that is the running binary. It sets `GITSBY_RAW_ACTIVE` to the tool's path before anything runs the tool, the tea probes and the account's gh calls included, and a `raw` that finds it set at startup refuses and names it. The hermetic suites unset it.
-		- 2026-10-22: The guard refused every nested `raw`, hooks and aliases included. `GITSBY_RAW_ACTIVE` is now the chain of `raw` runs above, one short entry each, and a `raw` refuses only to start one already on it. While `raw` runs tools only to check them, such as the tea and gh probes, the chain ends in a probe mark, and a `raw` started under that refuses. A loop with new arguments each time stops at 16 deep.
-		- 2026-10-23: The b28l session was tukzedo's. Its memory.md says a `gh` wrapper running `exec gitsby raw gh "$@"` grew to about 15,000 processes and 56 GB in 28 minutes on 2026-10-19. Tried that wrapper on b23 against the gover build: no loop, 2 or 3 starts and a refusal. The old build loops in every case until the rig's cap. The wrapper still fails, and so do gitsby's own gh calls behind it, filed as 2026102306584122. A wrapper that clears the environment still loops, filed as 2026102306584127. Rig: `private/claude_simple/tools/rawloop-rig.bash`.
-	- Actual cause [Bug]:
-		- As the possible cause says. `raw` ran the tool by bare name and never asked what it found. Every run through a wrapper started the next.
-	- Actual fix [Bug]: `lookTool` in exec.go, used by `cmdPassthrough` for all six tools, and `rawActive` read in `newApp`. The tool still sees its own name as argv[0]. design.md's `raw` bullets say so. Since 2026-10-22, `rawNest` in exec.go builds and checks the chain.
-	- Decisions:
-		- With no other copy left, the refusal is "Not found in path: gh. '<entry>' is gitsby itself.", with the entry as found.
-		- A gitsby entry ahead of a real tool is passed over without a word.
-		- A plain copy of gitsby named `gh` isn't the same file, so only the env check stops it, on its second start.
-		- 2026-10-22, from the answer "What any sane human git user would expect": whatever nesting plain git allows works the same under gitsby, with no refusal and nothing added to the output. That covers hooks under `raw git commit` or `push`, git aliases, lazygit and tig custom commands, and scripts. A loop gitsby causes still stops at once and names what looped.
-		- An entry is the tool's name and a 12-digit hash of its path, the folder and the arguments. The folder is in it so a hook that runs the same command in a submodule isn't taken for a loop. Refusing on the same tool file alone was rejected, since it refuses `raw git` under `raw git`.
-		- A `raw` started by one of gitsby's own checks of a tool is refused, since nothing a check runs has a reason to call `raw`. Without that, the tea wrapper check `[de89c]` failed, since the `--version` and `logins list` probes each started a nested `raw`.
-		- The depth limit is 16. Plain git would loop forever there.
-	- Branch: round-20261021, then round-20261022
-	- Test case: test.bash `[de897]`, `[de898]`, `[de899]` and `[de89a]` for gh, and `[de89b]` and `[de89c]` for tea, glab, lazygit and tig, as a link and as a wrapper each. Each wrapper quits after 5 starts. Go `[de89d]` for the PATH walk and `[de89e]` for the refusal, reworded 2026-10-22 to a repeat on the chain. Since then test.bash `[de8pg]` and `[de8ph]` for a pre-commit hook running `raw git` under `raw git commit`, `[de8pj]` for an alias doing the same, and Go `[de8pk]` for the chain and the probe mark and `[de8pm]` for the depth limit.
-	- Verified: All 12 new test.bash checks fail on the build before the fix, with the other 1579 passing. The 5 with only the link on PATH were rerun outside the suite with the same command and pattern, and fail there too. After it, test.bash 1579 -> 1591, 0 failed. Both Go tests fail with the self check and the env check taken out. `GOOS=windows go vet` and darwin and freebsd builds pass. The wrapper stand-in started once, then refused.
-	- Verified: 2026-10-21, stage 7 passed on every box. test.bash 1368/0 on b26 and 1271/0 on vmFreeBSD, each 15 more than on 10-19, all from this round, and 1579/0 on vmDebARM64, 23 more, with leakflags' 8. All 12 of this item's test.bash checks ran on each. The Go tests passed there and on vm925w, where `[de89d]` skips, since it needs symlinks and the exec bit, and `[de89e]` passed.
-	- Verified: 2026-10-22, test.bash 1594 -> 1597, 0 failed, with the reworded `[de899]` and `[de89c]`. On the build before, the 3 new checks fail. The Go tests fail with each part of `rawNest` taken out in turn: the repeat check, the probe mark, the depth limit, the folder and the separator between arguments. Outside the suite, a wrapper `gh` started once and was refused, and one adding an argument each time stopped at 16. `GOOS=windows go vet` and the Windows test build, and darwin and freebsd builds, pass.
-	- Verified: 2026-10-22, stage 7 passed on every box for the nesting change. test.bash 1371/0 on b26 and 1274/0 on vmFreeBSD, each 3 more than on 10-21, which are `[de8pg]`, `[de8ph]` and `[de8pj]`. 1583/0 on vmDebARM64, 4 more, those 3 plus `[de8q2]`, which sits in the Linux-only pre-push gate block. `[de8pk]` and `[de8pm]` passed in the Go tests on b26, vmFreeBSD, vmDebARM64 natively and under Wine, and vm925w, where the Go tests were 191 ok and 23 skipped, 2 more ok than on 10-21. `[de89e]` passed there too. Log: `/mnt/ext/wip2/wip/tmp/test_gitsby_20261021-19403500/run1.log`.
-	- Verified: 2026-10-23 on b28l, the box that hit it, on the synced build `c917c95`, which has this fix and 2026102306584122's. In tukzedo-linux's repo there, with tukzedo's wrapper `exec gitsby raw gh "$@"` first on PATH and the real `gh` 2.46.0 behind it, each start counted and capped at 20: `gitsby raw gh auth status`, a bare `gh auth status`, `gh repo view`, a script calling `gh api user`, `gitsby whoami`, `gitsby --no-fetch pr` and `gitsby -q raw gh api rate_limit` all reached the real `gh` as t00mietum and exited 0. 2 to 9 wrapper starts each, with no gitsby left running. The control, the same wrapper with `9e82970` first on PATH as `gitsby`, ran into the cap on both forms tried.
-	- Verified: 2026-10-24 on b23, gover `c87c131`, with the rig. The wrapper reached the stand-in `gh` with 2 starts for `raw gh`, 3 for a bare `gh` or a script, and 6 for `whoami` and `pr`. A link or copy named `gh` is refused by name since 2026102306584132. A wrapper adding an argument each time stopped at 17 deep after 32 starts. No gitsby was left running.
-	- Swept: every `raw` tool shares `cmdPassthrough`, git included. 2026-10-22: `rawActive` has one reader, `cmdPassthrough`, and the variable is unset in all 4 hermetic suites. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
-	- Acceptance signoff: Hand test on b28l, run in the 2026-10-23 round as asked.
-	- Closed: 20261023-195424
-
-- The quick run fails staticcheck in the hook's gate worktree
-	- ID: 2026102518002917
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-180029
-	- Opened by: jim-collier
-	- Related IDs: 2026102507133273, 2026102506452488
-	- Steps to reproduce [Bug]:
-		- `git -C .git/gitsby-gate checkout --detach --force 422b8aa`
-		- `(cd .git/gitsby-gate && cicd/cicd.bash --backlog-run-quick lint)`
-	- Incorrect behavior [Bug]: Stage 1 fails with "error obtaining VCS status: exit status 128 ... Use -buildvcs=false to disable VCS stamping", then "FAILED: staticcheck findings". The same commit passes in the live checkout.
-	- Expected behavior [Bug]: The run passes in the gate worktree as it does in the checkout, so the pre-push hook can gate a push to main.
-	- Reproduced [Bug]: 2026-10-25, at the round tip 6a752d7 in the gate worktree, in the image.
-	- Possible cause [Bug]: The gate worktree's `.git` is a file pointing at `repo/.git/worktrees/gitsby-gate`, which isn't mounted in the container, so git can't read the repo there. Since 461657d the quick run, `--gate` included, runs in the image, so every gated push to main fails this way.
-	- Actual cause [Bug]:
-		- The repo's git dir is mounted, and git works there. Go takes only a `.git` folder for a repo, not a worktree's `.git` file. So from the gate worktree under `repo/.git/` it walks up and takes the main checkout for the repo.
-		- In the image the main checkout's folder is a mount point owned by root, so git refuses it as dubious ownership and exits 128. On the box it passes, and stamps the main checkout's revision into the lint builds.
-	- Actual fix [Bug]: cicd.bash exports `GOFLAGS` with `-buildvcs=false`, after any flags the caller set, so nothing go builds there stamps a revision. The `-o` builds already passed it.
-	- Progress log:
-		- 2026-10-25: Found when the round's early full run started in the gate worktree. gover 422b8aa fails the same way, so it predates the round.
-	- Branch: round-20261025b
-	- Test case: test.bash [dee90].
-	- Verified: [dee90] fails against the old cicd.bash, with the other 1740 passing. `--backlog-run-quick` passed with every area: test.bash 1740 -> 1748, 0 failed, fuzz 313/0, parity 29/0. The issue's steps, and `--backlog-run-quick unit`, passed in the gate worktree with the fix, in the image.
-	- Swept: `GO_BUILD_FLAGS` already has the flag. `fImageGo` mounts only the tree, so go finds no repo there. release.bash runs its checks through cicd.bash. test.bash, fuzz.bash and parity.bash get it from the run.
-	- Acceptance signoff: Self-closed: its test failed before and passes after, and so did the issue's own steps.
-	- Closed: 20261025-181343
-
-- `repo clone` hands git a folder name taken from the URL, and git can read it as an option
-	- ID: 2026100607545802
-	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: High
-	- Opened: 20261006-074900
-	- Closed: 20261006-104608
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: With no folder given, `repo clone` names it after the URL's last part. A URL ending in `--upload-pack=<cmd>.git` put that text in git's argument list as an option. On a local or `file://` clone git runs it as a command.
-	- Expected behavior [Bug]: The URL and the folder always reach git as plain arguments.
-	- Reproduced [Bug]: Yes. A bare repo named `--upload-pack=touch CANARY;git-upload-pack.git`, then `gitsby -q repo clone file://...` made the canary file.
-	- Actual cause [Bug]: `cmdClone` ran `git clone <url> <dir>` with no `--` in front.
-	- Actual fix [Bug]: `git clone -- <url> <dir>`, and the plan line shows the same.
-	- Swept: every `a.step` call for git, gh and tea. gitsby's own parser refuses an argument that starts with a dash, `--` included, checked for `br create`, `repo connect`, `repo url` and `repo create`. So only a value gitsby builds from other input can start with one, and the clone folder was the only such value. Built URLs start with a scheme.
-	- Branch: fuzzwork
-	- Commit: c1b10fc
-	- Test case: fuzz.bash [ddjyb]. Red on `gover`'s code, green here.
-	- Verified: fuzz.bash 311/0, test.bash 1491/0, parity.bash 29/0 on the branch.
-
-- test.bash removes the folder it was started from when mktemp fails
-	- ID: 2026100415391365
-	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: High
-	- Opened: 20261004-153913
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]:
-		- Run `cicd/test.bash` with `TMPDIR` set to something that isn't a folder, such as a file.
-	- Incorrect behavior [Bug]: `mktemp -d` fails, and `work` ends up as the current folder. The exit trap then runs `rm -rf` on it. Started from the repo root, that is the whole checkout, `.git` included.
-	- Expected behavior [Bug]: The suite stops before it sets the trap, and removes nothing.
-	- Reproduced [Bug]: Yes, 2026-10-04 on b23, against a scratch folder, which was removed. The same day it removed the gitsby checkout, which came back whole from the 15:30 ZFS snapshot.
-	- Possible cause [Bug]: test.bash line 32 is `work="$(cd "$(mktemp -d ...)" && pwd -P)"`. The mktemp failure is lost, and `cd ""` succeeds without moving.
-	- Note: a probable fix checks the mktemp result before resolving it, and refuses a `work` that isn't a `gitsby-test.*` folder before arming the trap. A grep of `cicd` and the installers finds no other `cd "$(mktemp` site.
-	- Actual cause [Bug]: The mktemp call sat inside the `cd` that resolves it, so its failure was lost. `cd ""` succeeds without moving, so `work` became the current folder, and the exit trap removed it.
-	- Actual fix [Bug]: mktemp runs on its own line and stops the suite when it fails. Before the trap is set, the resolved folder has to be the one mktemp made, named `gitsby-test.*`, and empty. A marker file goes in it, and the trap removes the folder only while the name and the marker are both there.
-	- Swept: install.bash and every script in cicd/, cicd/utility/ and cicd/utility/demo/. Only test.bash wrapped mktemp in a `cd`. The rest assign mktemp straight to a variable under `set -e`, so a failure stops them or leaves an empty value that `${x:?}` refuses before any `rm`. demo-repo.bash and remote-tests.bash already check a marker before removing. The shared files in cicd/utility/include/ have no mktemp and no recursive removal.
-	- Verified: with TMPDIR a file, the suite before the fix removed the folder it was started from, canary included, and the fixed one stopped at mktemp and left it alone. `[ddgkk]` fails against the old test.bash and passes against the new one, and so does `[ddgkm]`'s pattern on test.bash. With mktemp working, the scratch folder is still removed and the exit code kept, for a plain TMPDIR, one ending in a slash, and one reached through a link.
-	- Verified: shellcheck, `test-id.bash --check`, and `cicd.bash --gate`.
-	- Not run: the full test.bash. No run reaches the trap's refusal of a folder without the marker.
-	- Test case: test.bash `[ddgkk]`, a real run with mktemp failing, and `[ddgkm]`, no script changes into a mktemp result unchecked.
-	- Verified: the 2026-10-04 test batch. test.bash on b23 passed 1452 and failed 1, which is 1412 plus this round's 41 new checks. The one failure is `[db712]`, from enhancement 8.
-	- Verified: stage 7 on 2026-10-04. vm925w passed its Go tests. vmFreeBSD and vmDebARM64 passed their Go tests, and their test.bash failed only `[db712]`, from enhancement 8. b26 was skipped, since another session held it.
-	- Acceptance signoff: Self-closed. Reproduced, its test failed before the fix and passes after, and the sweep is answered.
-	- Closed: 20261004-182117
-	- Branch: tmpguard
-	- Commit: 609ccb9
-
-- The README install line fails while v2.1.0 is the newest full release
-	- ID: 2026100315501800
-	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: High
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Related IDs: 2026100313491873
-	- Steps to reproduce [Bug]:
-		- Run gover's install.bash with no version, against the releases as they are today.
-	- Incorrect behavior [Bug]: It picks v2.1.0 and stops with "publishes no gitsby binary for linux/amd64". v2.1.0 has only the `gitsby` and `gitsby.ps1` scripts.
-	- Expected behavior [Bug]: The install line works on the day the Go build reaches `main`.
-	- Reproduced [Bug]: Yes, 2026-10-03, against the live release list.
-	- Possible cause [Bug]: The installer takes a pre-release only when no full release exists, and the first Go release is v3.0.0-beta.1, which must not reach the install line. So the line resolves to a release the new installer can't install. This was true before item 2026100313491873.
-	- Notes:
-		- Blocks the release that merges gover to `main`.
-		- What the install line should give during the beta is a call for signoff, not a worker.
-	- Actual cause [Bug]: With no tag, both installers took the newest full release from the `releases/latest` redirect and never asked whether it had a Go binary. The release list was read only when there was no full release at all.
-	- Decisions:
-		- 2026-10-03: The install line takes the beta while no full release publishes a gitsby binary. This reverses the earlier rule that the beta must not reach the install line. A full release with a binary always wins over any pre-release, so once 3.0.0 is out, later betas stay off the line.
-		- A binary means any asset named `gitsby-<os>-<arch>`, not one for this platform. Every machine is pointed at the same release, and one it leaves out is told "publishes no gitsby binary for linux/386. It publishes: ..." rather than quietly getting an older beta that covers it.
-		- Newest is the highest version. Full releases are compared only with each other, and pre-releases only with each other, so the `sort -V` trap can't arise. Two pre-releases of one version go by list order, which is publish order.
-		- `releases/latest` is still asked first, since it has no API limit, and settles it when its SHA256SUMS lists a binary. The release list is read only otherwise, in one request, from the asset URLs it carries.
-		- The README's `--tag v3.0.0-beta.1` line is dropped, since the plain line takes that beta. The paragraph says a later pre-release needs `--tag`.
-		- Against: design.md "The proof is the contract, not the installer". Phase 3 now also runs the tag's install.bash, only to read which release it takes. The contract proof is unchanged, and design.md has a bullet for the new step.
-	- Actual fix [Bug]: Both installers, with no tag, keep the redirect's release only when its SHA256SUMS lists a gitsby binary. Otherwise they read the list and take the highest full release with one, else the highest pre-release with one, and say so. When none has one they stop and say so, and when the list can't be read they name the full release that had none. An explicit tag works as before, and `--tag v2.1.0` still stops with "publishes no gitsby binary". release.bash phase 3 runs the tag's install.bash into a throwaway home, says which release the line takes, and warns when a full release isn't taken or a pre-release loses to an older one.
-	- Swept: `releases/latest`, `pre-release`, `full release`, `beta.1` and `one-liner` across install.bash, install.ps1, release.bash, README.md, design.md and test.bash. README, design.md "Release policy" and "Automating a release", and release.bash's header and pre-release comment are updated. `legacy/` is frozen and left alone.
-	- Verified: 14 of the 21 new checks fail against gover's installers and release.bash and pass here. The other 7 pin what must not change (an explicit tag, a full release over a newer beta, no list request when the redirect's release has a binary) and pass on both. test.bash 1365/0, and `cicd.bash --gate` passes. Both installers run against the live release list stop with "No release of yottacore/gitsby publishes a gitsby binary yet", which is today's state.
-	- Note: the checks run under pwsh 7 and bash 5.2 here. Windows PowerShell 5.1 and macOS bash 3.2 were not run, as with the other installer checks.
-	- Branch: betainst
-	- Commit: 4ccd133
-	- Test case: [ddf98] through [ddf9g] (install.bash), [ddf9h] through [ddf9s] (install.ps1) and [ddf9t], [ddf9v], [ddf9w] (release.bash phase 3) in test.bash.
-	- Acceptance signoff: Self-closed: the rule was set by hand on 2026-10-03, and the checks fail before the fix and pass after.
-	- Closed: 20261003-171623
-
-- Code Review 20261003 item 1: release.bash can stop partway with no message
-	- ID: 2026100313123851
-	- Type: Bug
-	- Status: Done
-	- Priority|Severity [Bug]: High
-	- Opened: 2026-10-03
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]:
-		- Have `pr create` print no github.com pull URL, or have curl fail in the proof step.
-	- Incorrect behavior [Bug]: The script exits 1 with nothing printed. The first case is after the branch, the changelog edit and the PR exist. The second is after the release is published, so the proof is skipped.
-	- Expected behavior [Bug]: The `fDie` right below each line runs and says what's left half done.
-	- Reproduced [Bug]: Yes, 2026-10-03. The first by hand, the second by simulation.
-	- Possible cause [Bug]: `x="$(... | grep ...)"` and `x="$(curl ... | sed ...)"` under `set -e` and `pipefail`, with no `|| true`. It's one of the Bash traps.
-	- Origin: release.bash:248 from 6cdfd95 (2026-08-12) and :306 from 5a2239b (2026-09-24). Neither was filed before. The :306 block is the phase 3 path that has never run. Confirmed.
-	- Actual cause [Bug]: Under `set -e`, an assignment from `$( )` takes its command's failure. The PR number grep, the `releases/latest` curl and the build line read from the native binary each ended the run there, above the message meant for it.
-	- Estimated effort: Low
-	- Actual fix [Bug]: Each of the three ends in `|| true`, so the check below it runs and says what happened.
-	- Swept: every `$( )` assignment in release.bash. The build line was the only other one that could end the run unseen. The rest end in `|| true` or `|| fDie`, or run a command that prints its own error.
-	- Verified: both checks fail on `gover` and pass here. Each of the three sites, put back alone, fails its check. test.bash passes 1280 of 1280 with both fixes in.
-	- Branch: relpipe
-	- Commit: f529e4f
-	- Test case: [ddf3q] and [ddf3r] in test.bash. They run release.bash past its dry run, with gh, curl and gitsby stubbed. The second is the first run of the phase 3 `releases/latest` block.
-	- Acceptance signoff: Self-closed: reproduced, and the checks fail before the fix and pass after.
-	- Closed: 20261003-141520
 
 - CICD reset: the hook runs `--merge-gate`
 	- ID: 2026102506452488
@@ -1509,6 +1329,69 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: 2026-10-05, all 3 choices answered.
 	- Closed: 2026-10-05
 
+- `--backlog-run-quick lint` fails markdownlint MD038 on backlog.md, again
+	- ID: 2026110611063063
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261106-110630
+	- Opened by: jim-collier
+	- Related IDs: 2026102619025437, 2026102620355012
+	- Steps to reproduce [Bug]: `--backlog-run-quick lint` at 22634a9.
+	- Incorrect behavior [Bug]: lint stops at markdownlint, MD038 at backlog.md line 100. That is a progress log line of 2026102620355012, which quotes an old check line ending in a space inside a code span.
+	- Expected behavior [Bug]: lint passes.
+	- Reproduced [Bug]: 2026-11-06, in the image, while working 2026102617594210.
+	- Test case: the lint step's markdownlint run, which is clean again
+	- 2026-11-06: The code span in 2026102620355012's log ended in a space. It now reads `freed about <size>`.
+
+- The Pillow lock check fails on FreeBSD
+	- ID: 2026110610343700
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261106-103437
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- `--backlog-run-full` at 4e39d4a, to stage 7.
+	- Incorrect behavior [Bug]: vmFreeBSD's test.bash fails `[de5av]`, so the remote tests fail, while every other box passes it.
+	- Expected behavior [Bug]: `[de5av]` passes on every box.
+	- Actual cause [Bug]: `grep ... | grep -q "^pillow=="` under pipefail. Pillow is the first of 2 lines the left grep prints, and BSD grep writes a line at a time, so `grep -q` quits before the second write and the left grep exits 141. 9 runs in 10 on vmFreeBSD. GNU grep writes once at exit, so Linux never saw it. PyYAML is the last line, so `[deavy]` passed.
+	- Actual fix [Bug]: The 2 pipes in `fSysPyFromLock` grep a capture instead. The other pipes into `head` or `grep -q` that run under pipefail read with `sed -n` or a capture too, 9 more in test.bash and 1 in remote-tests.bash. None of those failed yet.
+	- Swept: every tracked bash file outside legacy/. A pipe inside a `bash -c` string runs without pipefail, and one ending in `|| true` drops the code, so those stay.
+	- Branch: pipe-drain
+	- Test case: test.bash `[deyrt]` lists any pipe into `head`, `grep -q` or an awk `exit` that pipefail would see, and fails on one. It flagged all 11 lines before the fix, and a line added to parity.bash after it.
+	- Verified: test.bash 1774/0 on b23 and 1380/0 on vmFreeBSD, where it was 1378/1.
+	- Acceptance signoff: Self-closed. The new check fails before the fix, and vmFreeBSD passes `[de5av]` after it.
+	- Closed: 20261106-104500
+
+- Stage 7 can't start vm925w once it has started vmKt6m or vmFreeBSD
+	- ID: 2026102510404322
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-104043
+	- Opened by: jim-collier
+	- Related IDs: 2026102416313101
+	- Incorrect behavior [Bug]: In the round-20261025 full run, b29w was held by another job, so stage 7 went to vm925w, which was off. It didn't come up, with "Failed to reserve port 5900", and was skipped. No Windows box ran the Go tests.
+	- Expected behavior [Bug]: vm925w starts and runs the Windows Go tests when b29w is busy.
+	- Reproduced [Bug]: 2026-10-25 on b23, gover plus 4388d96. vmKt6m was started earlier in the run and ignored the ACPI shutdown, so it was still up and held the port.
+	- Possible cause [Bug]: vm925w's SPICE port is fixed at 5900, while vmFreeBSD and vmKt6m take the first free one. Starting vm925w before the other VMs, or only after they're down, would avoid it. vmKt6m also needs shutting down from inside, since it ignores the ACPI request.
+	- Estimated effort: Avg
+	- Actual cause [Bug]: Confirmed from the guest definitions. `vm925w-iommu` has `port='5900' autoport='no'`, and vmFreeBSD and vmKt6m have `autoport='yes'`. Stage 7 took the Windows box last, after the Mac and Unix boxes, and vmKt6m stayed up after its turn.
+	- Actual fix [Bug]: Stage 7 takes the Windows box first. That covers gitsby's own VMs, not another session's. The guest's own fix, `autoport='yes'`, is outside the repo, drafted in `private/claude_simple/upstream/2026102510404322/`. The guest is unchanged.
+	- Progress log:
+		- 2026-10-25: The Windows loop in remote-tests.bash runs before the Mac and Unix ones. Every build is still made before any box is taken.
+		- 2026-10-25: The fixture's VM helper now refuses vm925w with "Failed to reserve port 5900" while another VM it woke is still up.
+		- Verified: test.bash 1737/0 on the box, and `--backlog-run-quick` in the image, with test.bash 1737/0, fuzz 313/0 and parity 29/0. Against the harness before the change, `[dee73]` fails, and so do the new checks of the other two items in this change and the changed `[dedpc]`, 1732/5.
+		- 2026-10-26: Verified: stage 7 from round-20261026 at 20bdeb6, with only the two Windows boxes listed, b29w held under the lock and vm925w off. b29w was skipped as held. vm925w came up, ran the Go tests with no FAIL, and was off again after. vmFreeBSD and vmKt6m stayed off. In the round's full run at 99b3120, b29w ran before b26, vmKt6m and vmFreeBSD, and `[dee73]` passed.
+	- Branch: round-20261025b
+	- Test case: test.bash `[dee73]`.
+	- Acceptance signoff: Self-closed: vm925w ran stage 7's Go tests with b29w held, and `[dee73]` passed in the full run at 99b3120.
+	- Closed: 20261026-204511
+	- Swept: every loop over the boxes in remote-tests.bash. Only the three run loops take boxes, and the summary is sorted by name, so the order shows nowhere else. config.bash's stage 7 comment names the order.
+	- Prereq IDs: 2026102519554107
+	- 2026-10-25: The round's full run reached stage 7, where vmDebARM64 failed 22 harness checks (2026102519554107). Waits on that.
+
 - A `gh` wrapper that calls `gitsby raw gh` still fails, and gitsby's own `gh` calls fail behind it
 	- ID: 2026102306584122
 	- Type: Bug
@@ -1810,6 +1693,80 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: dup-acct
 	- Test case: TestRepeatedAccountKeys, TestAccountSetFindsTheKeyInAnyPiece, and one account list check in test.bash.
 	- Closed: 2026-09-30
+
+- CICD reset: the harnesses, utilities and release.bash through the guard
+	- ID: 2026110612393817
+	- Type: Enhancement
+	- Status: Done
+	- Needs external testing: Done 2026-11-06. Stage 7 on b26 and vmFreeBSD passed at 2508656, as below.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261106-123938
+	- Opened by: jim-collier
+	- Parent ID: 2026102516194062
+	- Requirements [Feature]:
+		- fuzz.bash, parity.bash, test.bash, remote-tests.bash's own scratch, spawn-count.bash, keep-build.bash, gen-winres.bash, demo-repo.bash and release.bash remove a folder only through the guard. The name and marker checks they have stay.
+		- The guard works on macOS and FreeBSD.
+	- Progress log:
+		- 2026-11-06: Every recursive removal in those scripts goes through the guard. test.bash keeps its name and marker checks ahead of it, and demo-repo.bash its ROOT checks.
+		- 2026-11-06: The guard resolves the parent folder with `cd -P` in place of `realpath -e`, which BSD's realpath lacks and older macOS has no realpath for. It uses `rm -x` where rm has no `--one-file-system`.
+		- 2026-11-06: A script run on its own resolves `HOST_TEMP` itself. Its scratch goes in `TMPDIR`, unless the guard wouldn't take it there, as with macOS's temp folder, and then in `${HOST_TEMP}/gitsby/`.
+		- 2026-11-06: The guard also refuses `HOST_TEMP` and a project's whole folder right under it, as the shared one has since 2026-10-28.
+	- Decisions:
+		- Scratch moves only where the guard couldn't remove it. Under cicd.bash `TMPDIR` is the run's folder, so nothing moves there.
+		- demo-repo.bash's ROOT has to sit under a tmp folder now. Its default, `/tmp/gitsby-demo`, does.
+	- Branch: round-20261106
+	- Test case: test.bash [deywq] (the guard with no realpath on PATH) and [deywr] (no script removes a folder another way), plus [ddgkk] and [db70t] to [db70y].
+	- Verified: [deywq] fails against the old guard and passes with the new one. [deywr] fails on the old fuzz.bash, test.bash, release.bash and gen-winres.bash. `--backlog-run-quick` passed, with test.bash 1809/0, fuzz 313/0 and parity 30/0.
+	- Verified: run on its own here, demo-repo.bash built and removed a world under /tmp, and the scratch folder came out as `/tmp`, or `${HOST_TEMP}/gitsby` with `TMPDIR` set to `HOST_TEMP`.
+	- Swept: every `rm -r`, `rmdir /s` and `Remove-Item -Recurse` outside legacy/. What's left is in the other children.
+	- Verified: stage 7 on b26 and vmFreeBSD at 2508656, go test and test.bash on each. test.bash passed 1515/0 on b26 and 1412/0 on vmFreeBSD, [deywq] and [deywr] included. Afterwards neither box had a `gitsby-test.*` folder in `TMPDIR`, `/tmp` or `/var/tmp`, while the stage's own `gitsby` folder there showed the run.
+	- Closed: 20261106-131309
+	- Acceptance signoff: Self-closed: stage 7 passed on b26 and vmFreeBSD, and no scratch was left on either.
+
+- CICD reset: the installer's removal through a guard
+	- ID: 2026110612551903
+	- Type: Enhancement
+	- Status: Done
+	- Needs external testing: Done 2026-11-06 on vm925w, as below.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261106-125519
+	- Opened by: jim-collier
+	- Parent ID: 2026102516194062
+	- Requirements [Feature]:
+		- install.ps1's `Remove-Item -Recurse` of its temp folder goes through a guard of the same kind.
+	- Progress log:
+		- 2026-11-06: The folder is removed only when it's a real folder, not a link, right under the temp folder. Anything else is left, with a warning. Both sides of the parent check are spelled by `Get-Item`, so a short 8.3 temp path compares the same.
+	- Decisions:
+		- The guard sits inline in the `finally` block. It's the installer's only recursive removal, and the installer is one file a person downloads.
+	- Branch: round-20261106
+	- Test case: test.bash [deyx8] (a whole install takes its temp folder away) and [deyx9] (the removal sits behind the guard).
+	- Verified: [deyx9] fails against the old install.ps1. Under pwsh here, the guard left a link and a folder one level down, and removed a folder right under the temp folder. `--backlog-run-quick` passed, with test.bash 1811/0, fuzz 313/0 and parity 30/0.
+	- Verified: on vm925w as `wintest`, a whole install from 2508656's install.ps1, with only the download stood in, in Windows PowerShell 5.1.26100 and in pwsh 7.6.6. Each installed and ran gitsby.exe, and left no new folder in `%TEMP%`.
+	- Closed: 20261106-131309
+	- Acceptance signoff: Self-closed: the install passed on vm925w in 5.1 and in pwsh, and took its temp folder away.
+
+- CICD reset: one line at the end of a run for what it removed
+	- ID: 2026102617543861
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261026-175438
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313109
+	- Requirements [Feature]:
+		- The parent's first requirement: one line at the end of a run saying what was removed and about what it freed, files as well as docker.
+	- Progress log:
+		- 2026-10-26: A run's last line is `Cleanup: removed <what>; freed about <size>`, or `Cleanup: nothing to remove`, then the closing blank line. It takes in the run's own folder and the stale run folders as well as what the docker tidy-up removed. The `Docker:` line and the line per stale folder are gone into it.
+		- 2026-10-26: Asserts given the new line, old -> new: [dee5j] `removed a stale run folder: <path>` -> `Cleanup: removed 1 stale run folder(s), the run folder`. [dee5k] `Docker: nothing to remove`, `Docker: removed 2 image(s)`, `Docker: removed ... volume` and a failed run's `Docker:` line -> the same as `Cleanup:` lines, with the run folder named.
+	- Decisions:
+		- Folders count at their apparent size. ZFS reports a compressed size that lags fresh writes, and the line says "about".
+		- The run in the image prints its own line for its own folder, before the line out here.
+	- Branch: round-20261026
+	- Test case: test.bash [defng], plus [dee5j] and [dee5k] changed.
+	- Verified: `--backlog-run-quick lint suite` passed in the image, test.bash 1754 -> 1755, 0 failed. Against the previous cicd.bash [defng], [dee5j] and [dee5k] fail. A real quick run in the image ended with `Cleanup: removed the run folder; freed about 8B`. shellcheck passes.
+	- Swept: every removal in cicd.bash that printed its own line: the stale sweep and the docker tidy-up. The soak and CodeQL report pruning keep their own warning, since they remove artifacts, not temp files.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261026-175508
 
 - Builds should clean up stale artifacts and side-effects when done
 	- ID: 2026101912030138
@@ -2387,6 +2344,32 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: stage 7's harness on gover after round 4, 2026-10-04. b26: Go tests pass, and test.bash against the universal build 1255/0. vmFreeBSD, vmDebARM64 and vm925w: Go tests pass. The Unix boxes ran Go tests only this time, since no Unix builds were passed. Their full test.bash ran earlier the same day and failed only `[db712]`, fixed since.
 	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
 	- Closed: 20261004-190953
+
+- The cleanup line says a run folder freed about 8B
+	- ID: 2026102620355012
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261026-203550
+	- Opened by: jim-collier
+	- Related IDs: 2026102617543861
+	- Steps to reproduce [Bug]:
+		- `--backlog-run-quick` or `--backlog-run-full` at 99b3120, to the end.
+	- Incorrect behavior [Bug]: Both end with `Cleanup: removed the run folder; freed about 8B`, after a full run that built and copied trees for 5 boxes.
+	- Expected behavior [Bug]: The size the run folder had before it was removed, or no size when it can't be known.
+	- Possible cause [Bug]: Not looked at yet. The size may be read after the folder's contents are already gone, or from the folder entry itself.
+	- Actual cause [Bug]: The size was read right. By the end the run folder holds only its `run.pid`, a 7-digit pid and a newline: 8 bytes. The steps remove their own files as they finish, and the run in the image keeps its folder on the container's tmpfs.
+	- Actual fix [Bug]: The end line leaves out the size when it's under 1 MB, which also covers a size that couldn't be read. It reads `Cleanup: removed the run folder`.
+	- Decisions:
+		- Departs from the wording: the size before removal was 8 bytes, so showing it would still read as a bug. A size under a megabyte says nothing about the disk, so the line drops it.
+		- Not a peak size over the run. It would mean measuring every step's files before they go, for a line that only says "about".
+	- Branch: round-20261106
+	- Test case: test.bash [deysa], plus [dee5j] and [dee5k] changed.
+		- 2026-11-06: [dee5j] expected `...the run folder; freed about <size>` and now `...the run folder` at the end of the line. [dee5k] the same for `removed the run folder` and `removed 2 image(s), the run folder`, where its docker stub reports no sizes.
+	- Verified: [deysa] fails against the previous cicd.bash and passes after. A real quick run in the image ended with `Cleanup: removed the run folder`, inside and out. [defng]'s 2 MB stale folder still shows `freed about 2.0MB`.
+	- Swept: the one place the line is printed, `fRunTmpDone` in cicd.bash. No other script reads it.
+	- Acceptance signoff: Self-closed: its test passed.
+	- Closed: 20261106-105627
 
 - release.bash --help prints nothing
 	- ID: 2026102517464688
@@ -2971,6 +2954,33 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [ddf4q] and [ddf4r] in test.bash.
 	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
 	- Closed: 20261003-145130
+
+- Stage 7 takes every box through the VM state helper's wrap
+	- ID: 2026102511210617
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261025-112106
+	- Opened by: jim-collier
+	- Related IDs: 2026102416313101
+	- Requirements [Feature]:
+		- The helper's `wrap` takes `--why` and `--eta` since 2026-10-25, and leaves a box that isn't a VM alone. So stage 7 can use it for every box, with `--why "gitsby: <kind> tests"`, and drop the lock's own `wrap` branch in `fUnderLock`.
+		- The comment above `fUnderLock` that says the helper has no `--why` goes with it.
+		- A box with no helper on the PATH still runs through the lock's `wrap`.
+	- Estimated effort: Low
+	- Progress log:
+		- 2026-10-25: `fUnderLock` makes one call, to the helper's `wrap` where there is one and to the lock's otherwise, with `--wait 0 --why "gitsby: <kind> tests"` either way. Its comment, the script's Purpose and config.bash's stage 7 comment say so.
+		- The helper is still looked for beside the lock, not on the PATH, as before. With none, the lock takes each box, and a sleeping VM is skipped.
+		- 2026-10-25: Asserts given new values for this change. `[dedpc]`: `vmstate wrap vmFreeBSD --wait 0 --` and `lock wrap vmFreeBSD --wait 0 --` -> the same with `--why gitsby: unix tests`, and "vmDebARM64 never goes through the helper" -> "the helper never wakes vmDebARM64". Its label's "keeps the lock's own wrap" -> "is left alone". The fixture's helper takes any options before `--` and passes them to the lock, and leaves a box that isn't a VM to it, as the real one does.
+		- Verified: test.bash 1737/0 on the box, and `--backlog-run-quick` in the image, with test.bash 1737/0, fuzz 313/0 and parity 29/0. Against the harness before the change, `[dee71]` fails. `[dee72]` passes there too, since the no-helper path didn't change.
+	- Branch: round-20261025b
+	- Test case: test.bash `[dee71]` (every box through the helper, with why), `[dee72]` (no helper, the lock's own wrap with why), plus `[dedpc]` as changed.
+	- Swept: every call of the lock and the helper in remote-tests.bash. `hosts` and `status` are reads, and stay as they were.
+	- Prereq IDs: 2026102519554107
+	- Closed: 20261026-203438
+	- Acceptance signoff: closed on the round's full run.
+	- 2026-10-25: The round's full run reached stage 7, where vmDebARM64 failed 22 harness checks (2026102519554107). Waits on that.
+	- Verified: 2026-10-26, the round-20261026 --backlog-run-full log at 99b3120. Stage 7 ran b29w, b26, vmKt6m, vmFreeBSD and vmDebARM64 through the helper and passed. The one warning was the helper not shutting down vmKt6m in 300s, a host-side issue the helper has since fixed.
 
 - A full run's container has no name or label, so a stop can't tell it from another project's
 	- ID: 2026102307533128
