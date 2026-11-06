@@ -47,6 +47,8 @@ root="$(cd "${here}/.." && pwd)"; root="$(cd "${root}/.." && pwd)"
 source "${root}/cicd/config.bash"
 # shellcheck source=/dev/null
 source "${here}/include/gfs-rotate.bash"
+# shellcheck source=/dev/null
+source "${here}/include/safe-rm.bash"
 
 declare -i quiet=0 record=0
 while [[ $# -gt 0 ]]; do
@@ -65,8 +67,9 @@ command -v strace >/dev/null 2>&1 || { sed -n 's/^fMeasure "\[\([^]]*\)\] \([^"]
 exe="${root}/${GO_MODULE_DIR}/${EXE_NAME}"
 [[ -x "${exe}" ]] || { echo "no build at ${GO_MODULE_DIR}/${EXE_NAME} - run cicd.bash stage 2, or 'go build' there" >&2; exit 1; }
 
-work="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-spawn.XXXXXX")"
-trap 'rm -rf -- "${work:?}"' EXIT
+fSafeRm_Init || exit 1; safeTmp="$(fSafeRm_Tmp)" || exit 1
+work="$(mktemp -d "${safeTmp}/gitsby-spawn.XXXXXX")"
+trap 'fSafeRm "${work:?}" >/dev/null' EXIT
 
 ## Hermetic, for the same reasons the suites are: an inherited config decides which account a
 ## command acts as, and that changes how many processes it starts. HOME and the two other
@@ -183,7 +186,7 @@ account: gamma
 EOF
 
 fRestore(){
-	rm -rf -- "${work:?}/live"
+	fSafeRm_IfThere "${work:?}/live"
 	mkdir -p "${work}/live"
 	cp -a "${pristine}/." "${work}/live/"
 }
@@ -335,3 +338,4 @@ gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		  enforces it.
 ##		- 20261026 JC: Each command prints PASS, FAIL or SKIP, then its test ID, with the verdict after the count. A rise --record takes is a PASS, and with no strace each command is a SKIP.
 ##		- 20261106 JC: br prune of five landed branches, in a world with its own origin. A spawn per branch fits the headroom over one branch, and not over five.
+##		- 20261106 JC: Its scratch folder goes through fSafeRm.

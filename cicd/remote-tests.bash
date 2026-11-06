@@ -60,6 +60,8 @@ fLowPriority
 source "${here}/utility/include/go-test-lines.bash"
 # shellcheck source=/dev/null
 source "${here}/utility/include/image-go.bash"
+# shellcheck source=/dev/null
+source "${here}/utility/include/safe-rm.bash"
 
 macBin=""; held=()
 declare -A unixBin=()
@@ -338,8 +340,9 @@ read -r lockOther <<< "${lockOther}"
 ## The lock, or the VM state helper, run with the lock's settings and as a plain process.
 fLockEnv(){ env -u "${lockVar}_CODE_SESSION_ID" -u "${lockVar}_PID" "${lockVar}_WINDOWS_HOSTS=${lockWin}" "${lockVar}_OTHER_HOSTS=${lockOther}" "$@" ;}
 
-work="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-remote.XXXXXX")"
-trap 'rm -rf -- "${work:?}"' EXIT
+fSafeRm_Init || exit 1; safeTmp="$(fSafeRm_Tmp)" || exit 1
+work="$(mktemp -d "${safeTmp}/gitsby-remote.XXXXXX")"
+trap 'fSafeRm "${work:?}" >/dev/null' EXIT
 
 ## The helper's state for each box that is a VM here, which it wakes under the lock and puts back
 ## after. A box missing from this is not a VM, or is one in a state the helper won't touch.
@@ -523,3 +526,4 @@ if ((${#failed[@]})); then exit 1; fi
 ##		- 2026-10-25 JC: Every box goes through the VM state helper's wrap where there is one. The Windows box runs first, on half its cores and at BelowNormal, and a failed test that exits 0 still fails it.
 ##		- 2026-10-26 JC: The Windows box hands back its Go tests' exit code, which start dropped there.
 ##		- 2026-11-06 JC: The lock's queue note takes its first line through sed, not head.
+##		- 2026-11-06 JC: Its own scratch folder goes through fSafeRm. The commands on the boxes are unchanged.

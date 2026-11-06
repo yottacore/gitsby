@@ -43,8 +43,13 @@ set -Eeuo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/.." && pwd)"
-work="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-parity.XXXXXX")"
-trap 'rm -rf -- "${work:?}"' EXIT
+# shellcheck source=/dev/null
+source "${here}/utility/include/safe-rm.bash"
+# shellcheck source=/dev/null
+APP_NAME="$(source "${here}/config.bash" && printf '%s' "${APP_NAME}")"
+fSafeRm_Init || exit 1; safeTmp="$(fSafeRm_Tmp)" || exit 1
+work="$(mktemp -d "${safeTmp}/gitsby-parity.XXXXXX")"
+trap 'fSafeRm "${work:?}" >/dev/null' EXIT
 ## The same directory in the spelling native Windows understands. A folder rule has to be written
 ## in a spelling BOTH builds can resolve, and an MSYS mount path such as '/tmp/...' is not one:
 ## only this shell knows its own mount table, and the PowerShell build must not need Git Bash to
@@ -400,3 +405,4 @@ fEcho_Clean "parity passed: ${pass}, differed: ${fail}"
 ##		- 20261004 JC: Prints through fEcho and fEcho_Clean, like the other pipeline scripts.
 ##		  Every expansion braced, and shellcheck enforces it.
 ##		- 20261026 JC: Each check prints PASS or FAIL, then its ID and label, in place of ok and DIFFER.
+##		- 20261106 JC: Its scratch folder goes through fSafeRm, made where the guard takes it.

@@ -44,6 +44,8 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/../.." && pwd)"
 # shellcheck source=/dev/null
 source "${root}/cicd/config.bash"
+# shellcheck source=/dev/null
+source "${here}/include/safe-rm.bash"
 
 ## Where 'go install' would have put it, in the order go itself resolves them.
 goversioninfo="$(command -v goversioninfo 2>/dev/null || true)"
@@ -82,8 +84,9 @@ fDie(){ printf '%s\n' "gen-winres: $*" >&2; exit 1; }
 if ((iconOnly)); then
 	for tool in magick icotool optipng; do command -v "${tool}" >/dev/null 2>&1 || fDie "--icon needs ${tool}."; done
 	[[ -f "${logo}" ]] || fDie "no logo at assets/$(basename "${logo}")."
-	tmp="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-ico.XXXXXX")"
-	trap 'rm -rf -- "${tmp:?}"' EXIT
+	fSafeRm_Init || exit 1; safeTmp="$(fSafeRm_Tmp)" || exit 1
+	tmp="$(mktemp -d "${safeTmp}/gitsby-ico.XXXXXX")"
+	trap 'fSafeRm "${tmp:?}" >/dev/null' EXIT
 	## A touch of unsharp on the small ones, or the portrait turns to mush at 16 px.
 	for s in 16 32 48; do magick "${logo}" -filter Lanczos -resize "${s}x${s}" -unsharp 0x0.5+0.6+0.02 -strip "${tmp}/i${s}.png"; done
 	for s in 64 128 256; do
@@ -181,8 +184,9 @@ done
 ((${#arches[@]})) || fDie "no windows targets in RELEASE_TARGETS."
 
 out="${root}/${GO_MODULE_DIR}"
-scratch="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-winres.XXXXXX")"
-trap 'rm -rf -- "${scratch:?}"' EXIT
+fSafeRm_Init || exit 1; safeTmp="$(fSafeRm_Tmp)" || exit 1
+scratch="$(mktemp -d "${safeTmp}/gitsby-winres.XXXXXX")"
+trap 'fSafeRm "${scratch:?}" >/dev/null' EXIT
 ## --check generates beside nothing and compares; writing generates in place.
 work="${out}"; ((check)) && work="${scratch}"
 
@@ -218,3 +222,4 @@ exit 0
 ##		- 20261003 JC: The newest tag is cut from the whole list. A head that quit at the first line failed git's write once there were a few thousand tags.
 ##		- 20261004 JC: fSay is fEcho_Clean, like the other pipeline scripts, and prints with
 ##		  printf. Every expansion braced, and shellcheck enforces it.
+##		- 20261106 JC: Its scratch folders go through fSafeRm.

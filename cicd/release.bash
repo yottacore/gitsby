@@ -55,6 +55,9 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/.." && pwd)"
 source "${here}/config.bash"      ## RELEASE_TARGETS, GO_MODULE_DIR, EXE_NAME
 source "${here}/utility/include/image-go.bash"    ## fImageGo, fImageRecipe, fImageBuild: the builds in the pipeline's image
+# shellcheck source=/dev/null
+source "${here}/utility/include/safe-rm.bash"     ## fSafeRm, every recursive removal here
+fSafeRm_Init || exit 1; safeTmp="$(fSafeRm_Tmp)" || exit 1
 fLowPriority
 cd "${root}"
 ## Set below once the image is there. One left in the caller's environment would say otherwise.
@@ -156,7 +159,7 @@ fpProve(){
 	local asset="$1" run="$2" attempt dir out ok=0
 	for attempt in 1 2 3; do
 		((attempt > 1)) && { fEcho_Clean "not downloadable yet; giving GitHub a moment to serve the assets (attempt ${attempt}) ..."; sleep 20; }
-		dir="$(mktemp -d)"
+		dir="$(mktemp -d "${safeTmp}/gitsby-prove.XXXXXX")"
 		if curl -fsSL -o "${dir}/${asset}" "${base}/${asset}" \
 			&& curl -fsSL -o "${dir}/SHA256SUMS" "${base}/SHA256SUMS" \
 			&& ( cd "${dir}" && grep -F " ${asset}" SHA256SUMS | sha256sum --check --status ) \
@@ -165,7 +168,7 @@ fpProve(){
 				&& [[ "${out}" == *"v${version#v}"* ]] ;} ;}; then
 			ok=1
 		fi
-		rm -rf -- "${dir:?}"
+		fSafeRm "${dir:?}" >/dev/null
 		((ok)) && break
 	done
 	((ok))
@@ -356,8 +359,8 @@ fi
 ## failure, which costs nothing; discovered in phase 3 it would leave a pushed tag with no
 ## release behind it. These are not the bytes that get published - phase 3 rebuilds them from
 ## the tagged commit, whose date the build number is taken from.
-assets="$(mktemp -d)"; tagTree=""; notes=""
-trap 'fpImageDone; rm -rf -- "${assets:?}"; [[ -z "${tagTree}" ]] || rm -rf -- "${tagTree:?}"; [[ -z "${notes}" ]] || rm -f -- "${notes:?}"' EXIT
+assets="$(mktemp -d "${safeTmp}/gitsby-assets.XXXXXX")"; tagTree=""; notes=""
+trap 'fpImageDone; fSafeRm "${assets:?}" >/dev/null; [[ -z "${tagTree}" ]] || fSafeRm "${tagTree:?}" >/dev/null; [[ -z "${notes}" ]] || rm -f -- "${notes:?}"' EXIT
 ## So a stop still runs the exit trap. fImageGo waits on its build rather than running it in front.
 trap 'exit 130' INT; trap 'exit 143' TERM
 fpPickGo
@@ -440,7 +443,7 @@ if ! fWould "rebuild ${#RELEASE_TARGETS[@]} targets from the ${version} commit";
 	fEcho_Clean "rebuilding ${#RELEASE_TARGETS[@]} targets from ${version} ..."
 	## From the tag's own files, not the working tree. The two match when nothing has moved
 	## since phase 2, and nothing here checks that it hasn't.
-	tagTree="$(mktemp -d)"
+	tagTree="$(mktemp -d "${safeTmp}/gitsby-tag.XXXXXX")"
 	git -C "${root}" archive "${version}^{commit}" | tar -x -C "${tagTree}" \
 		|| fDie "couldn't export ${version} to build from; the tag is pushed but nothing is published."
 	fpCrossBuild "$(git -C "${root}" log -1 --format=%ct "${version}^{commit}")" "${tagTree}" \
@@ -523,9 +526,9 @@ if ! fWould "verify releases/latest, download and run this platform's published 
 	## A pre-release is taken while no full release has a binary, and passed over for one that
 	## does; any other pick means the list it read was not the one just published.
 	if [[ -f "${tagTree}/install.bash" ]]; then
-		lineHome="$(mktemp -d)"
+		lineHome="$(mktemp -d "${safeTmp}/gitsby-line.XXXXXX")"
 		lineOut="$(HOME="${lineHome}" bash "${tagTree}/install.bash" -y 2>&1 </dev/null || true)"
-		rm -rf -- "${lineHome:?}"
+		fSafeRm "${lineHome:?}" >/dev/null
 		lineTag="$(printf '%s\n' "${lineOut}" | sed -n 's/^  - Download [^ ]* (\(.*\)) from .*/\1/p' | sed -n '1p')"
 		if [[ -z "${lineTag}" ]]; then
 			fEcho_Clean "WARNING: the install line stopped before naming a release: $(printf '%s\n' "${lineOut}" | sed -n 's/^Error: //p' | sed -n '1p')"
@@ -589,3 +592,4 @@ echo
 ##		- 20261025 JC: Both release builds come from the pipeline image's Go where docker works, and from this box's with a warning where it doesn't. A stop removes the image's builds still running.
 ##		- 20261025 JC: --help prints the header again. It looked for "- Purpose:", and the header says "Purpose:".
 ##		- 20261106 JC: Refuses a go.mod with a module pinned to a commit rather than a tag.
+##		- 20261106 JC: Every recursive removal goes through fSafeRm, and the temp folders are made where the guard takes them.

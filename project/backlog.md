@@ -642,6 +642,62 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Requirements [Feature]:
 		- The parent's last requirement, outside cicd.bash: the harnesses, stage 7's commands on the other boxes, the utilities, release.bash, the installers, and the image build's own removals. Each goes through the guard in `cicd/utility/include/safe-rm.bash`, or a copy of it on the other boxes, and keeps the name and marker checks it has.
 		- The guard calls `realpath -e`. Check it on macOS and FreeBSD before stage 7 uses it there.
+	- Progress log:
+		- 2026-11-06: Split in three. 2026110612393817 has the harnesses, the utilities and release.bash, and is in. 2026110612393822 has stage 7's commands on the boxes, and 2026110612551903 the installer and the image build.
+		- 2026-11-06: The guard no longer calls `realpath -e`, so the second requirement is answered in 2026110612393817.
+
+- CICD reset: the harnesses, utilities and release.bash through the guard
+	- ID: 2026110612393817
+	- Type: Enhancement
+	- Status: Waiting on automated testing
+	- Needs external testing: stage 7 on b26 and vmFreeBSD. test.bash passes there, and leaves no `gitsby-test.*` folder in the box's temp root.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261106-123938
+	- Opened by: jim-collier
+	- Parent ID: 2026102516194062
+	- Requirements [Feature]:
+		- fuzz.bash, parity.bash, test.bash, remote-tests.bash's own scratch, spawn-count.bash, keep-build.bash, gen-winres.bash, demo-repo.bash and release.bash remove a folder only through the guard. The name and marker checks they have stay.
+		- The guard works on macOS and FreeBSD.
+	- Progress log:
+		- 2026-11-06: Every recursive removal in those scripts goes through the guard. test.bash keeps its name and marker checks ahead of it, and demo-repo.bash its ROOT checks.
+		- 2026-11-06: The guard resolves the parent folder with `cd -P` in place of `realpath -e`, which BSD's realpath lacks and older macOS has no realpath for. It uses `rm -x` where rm has no `--one-file-system`.
+		- 2026-11-06: A script run on its own resolves `HOST_TEMP` itself. Its scratch goes in `TMPDIR`, unless the guard wouldn't take it there, as with macOS's temp folder, and then in `${HOST_TEMP}/gitsby/`.
+		- 2026-11-06: The guard also refuses `HOST_TEMP` and a project's whole folder right under it, as the shared one has since 2026-10-28.
+	- Decisions:
+		- Scratch moves only where the guard couldn't remove it. Under cicd.bash `TMPDIR` is the run's folder, so nothing moves there.
+		- demo-repo.bash's ROOT has to sit under a tmp folder now. Its default, `/tmp/gitsby-demo`, does.
+	- Branch: round-20261106
+	- Test case: test.bash [deywq] (the guard with no realpath on PATH) and [deywr] (no script removes a folder another way), plus [ddgkk] and [db70t] to [db70y].
+	- Verified: [deywq] fails against the old guard and passes with the new one. [deywr] fails on the old fuzz.bash, test.bash, release.bash and gen-winres.bash. `--backlog-run-quick` passed, with test.bash 1809/0, fuzz 313/0 and parity 30/0.
+	- Verified: run on its own here, demo-repo.bash built and removed a world under /tmp, and the scratch folder came out as `/tmp`, or `${HOST_TEMP}/gitsby` with `TMPDIR` set to `HOST_TEMP`.
+	- Swept: every `rm -r`, `rmdir /s` and `Remove-Item -Recurse` outside legacy/. What's left is in the other two children.
+
+- CICD reset: stage 7's removals on the boxes through a guard
+	- ID: 2026110612393822
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261106-123938
+	- Opened by: jim-collier
+	- Parent ID: 2026102516194062
+	- Prereq IDs: 2026110612393817
+	- Requirements [Feature]:
+		- The copy step's removal of `old.*` on the Mac and Unix boxes, and the Windows box's `rmdir /s /q`, go through a copy of the guard on the box. The marker check stays.
+		- POSIX sh on the Mac and Unix boxes, with no `realpath -e` or `rm --one-file-system`, as in the repo's guard.
+		- Then [deywr] in test.bash drops its `old.*` exemption.
+
+- CICD reset: the installer's and the image build's removals through a guard
+	- ID: 2026110612551903
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261106-125519
+	- Opened by: jim-collier
+	- Parent ID: 2026102516194062
+	- Requirements [Feature]:
+		- install.ps1's `Remove-Item -Recurse` of its temp folder goes through a guard of the same kind.
+		- The Dockerfile's removals of its folders under /tmp go through the guard, copied into the build. `/var/lib/apt/lists/*` isn't under a tmp folder, so it gets a guard that names that one parent, or a reason on this item to leave it.
+		- A Dockerfile change gives the image a new tag, so the next run rebuilds it.
 
 - CICD reset: CICD process gaps
 	- ID: 2026102416313109

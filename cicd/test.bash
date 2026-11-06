@@ -32,7 +32,12 @@ root="$(cd "${here}/.." && pwd)"
 ## under /var, a link to /private/var, and with a doubled slash when TMPDIR ends in one.
 ## mktemp gets its own line. Inside the cd its failure was lost, 'cd ""' stayed put, and the trap
 ## removed the folder the suite was started from, a whole checkout once.
-workMade="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-test.XXXXXX")" || exit 1
+# shellcheck source=/dev/null
+source "${here}/utility/include/safe-rm.bash"
+# shellcheck source=/dev/null
+APP_NAME="$(source "${here}/config.bash" && printf '%s' "${APP_NAME}")"
+fSafeRm_Init || exit 1; safeTmp="$(fSafeRm_Tmp)" || exit 1
+workMade="$(mktemp -d "${safeTmp}/gitsby-test.XXXXXX")" || exit 1
 work="$(cd -- "${workMade:?}" && pwd -P)" || exit 1
 workMark="${work}/.gitsby-test-scratch"
 if [[ "${work##*/}" != gitsby-test.* || ! "${work}" -ef "${workMade}" || -n "$(ls -A -- "${work}")" ]]; then
@@ -41,7 +46,7 @@ fi
 : > "${workMark}"
 ## Checked again at exit, so only the folder made above is ever removed. An if, not &&: a false
 ## test as the trap's last command would become the suite's exit status.
-fRemoveWork(){ if [[ "${work##*/}" == gitsby-test.* && -f "${workMark}" ]]; then rm -rf -- "${work:?}"; fi ;}
+fRemoveWork(){ if [[ "${work##*/}" == gitsby-test.* && -f "${workMark}" ]]; then fSafeRm "${work:?}" >/dev/null || true; fi ;}
 trap fRemoveWork EXIT
 
 ## Keep test commits hermetic (no reliance on the user's git config).
@@ -595,7 +600,7 @@ fGateNoCodeQLDefault(){
 ## a stop, and after a TERM partway through.
 fGateRunTmp(){
 	local t="${gateDir}/tmp-run" pid="" i=0 rc=0
-	rm -rf -- "${t:?}"; mkdir -p "${t}"
+	fSafeRm_IfThere "${t:?}"; mkdir -p "${t}"
 	TMPDIR="${t}" fGateStatus 0 -y --no-container --quick --no-sync --no-publish --no-dogfood || return 1
 	[[ -z "$(ls -A "${t}/gitsby")" ]] || return 1
 	: > "${gateFail}/go-test"
@@ -616,7 +621,7 @@ fGateRunTmp(){
 ## test are written so this file doesn't hold them as tests of its own.
 fGateList(){
 	local t="${gateDir}/tmp-list" rc=0
-	rm -rf -- "${t:?}"; mkdir -p "${t}"
+	fSafeRm_IfThere "${t:?}"; mkdir -p "${t}"
 	printf ': %s "[%s] %s"\n' fAssert aaaac 'a listed check' >> "${gateDir}/cicd/test.bash"
 	printf 'package main\n\nfunc TestListed(t *testing.T) { // [%s]\n}\n' aaaad > "${gateDir}/src-go/listed_test.go"
 	TMPDIR="${t}" fGateSays 0 '^Step 3 of 9  Regression tests: 1 test\(s\)$' --list \
@@ -626,14 +631,14 @@ fGateList(){
 	fGateSays 0 '^Step 5 of 8  Backwards compatibility: 0 test\(s\)$' --quick --list && grep -qxF 'Step 3 of 8  Regression tests: 1 test(s)' "${gateOut}" || rc=1
 	fGateSays 0 '^Step 1 of 1  Regression tests: 1 test\(s\)$' --backlog-run-quick suite --list \
 		&& grep -qxF '  aaaac a listed check' "${gateOut}" && ! grep -qv '^docker info' "${gateCalls}" || rc=1
-	rm -f -- "${gateDir:?}/src-go/listed_test.go"; rm -rf -- "${t:?}"
+	rm -f -- "${gateDir:?}/src-go/listed_test.go"; fSafeRm_IfThere "${t:?}"
 	fGateStub "${gateDir}/cicd/test.bash" test
 	((rc == 0))
 }
 ## --keep-temp keeps the run's folder and the step's files in it, passed or failed, and says where.
 fGateKeepTemp(){
 	local t="${gateDir}/tmp-keep" kept="" rc=0
-	rm -rf -- "${t:?}"; mkdir -p "${t}"
+	fSafeRm_IfThere "${t:?}"; mkdir -p "${t}"
 	TMPDIR="${t}" fGateSays 0 '^Kept the temp folder: ' --no-container --backlog-run-quick unit --keep-temp || rc=1
 	kept="$(sed -n 's/^Kept the temp folder: //p' "${gateOut}")"
 	[[ "${kept}" =~ ^${t}/gitsby/[0-9]{8}-[0-9]{6}_[0-9]{3}$ && -d "${kept}" && -n "$(compgen -G "${kept}/gotest.*")" ]] || rc=1
@@ -641,23 +646,23 @@ fGateKeepTemp(){
 	TMPDIR="${t}" fGateSays 1 '^Kept the temp folder: ' --no-container --backlog-run-quick unit --keep-temp || rc=1
 	rm -f -- "${gateFail:?}/go-test"
 	[[ "$(compgen -G "${t}/gitsby/[0-9]*_[0-9][0-9][0-9]" | wc -l)" == 2 ]] || rc=1
-	rm -rf -- "${t:?}"
+	fSafeRm_IfThere "${t:?}"
 	((rc == 0))
 }
 ## In the image it keeps the container, puts the inner run's folder inside its own, and asks
 ## docker what it kept. The image's builds keep theirs too. Without it, all go as before.
 fGateKeepTempImage(){
 	local t="${gateDir}/tmp-keep" rc=0
-	rm -rf -- "${t:?}"; mkdir -p "${t}"
+	fSafeRm_IfThere "${t:?}"; mkdir -p "${t}"
 	TMPDIR="${t}" fGateSays 0 '^Kept the temp folder: ' --backlog-run-quick --keep-temp \
 		&& fGateCalled "^docker run --init --name gitsby-[^ ]+ .* -v ${t}/gitsby/[0-9_-]+:${t}/gitsby/[0-9_-]+ -e TMPDIR=${t}/gitsby/[0-9_-]+ .* --backlog-run-quick --keep-temp\$" \
 		&& fGateCalled '^docker ps -a --filter label=dev\.run=[0-9]{8}-[0-9]{6}_[0-9]{3} ' && ! fGateCalled '^docker (stop|rm) ' || rc=1
 	TMPDIR="${t}" fGateSays 0 'CI/CD: done\.' -y --quick --no-sync --no-publish --no-dogfood --keep-temp \
 		&& fGateCalled '^docker run --init --name [^ ]+ --label dev\.project=gitsby --label dev\.run=[0-9]{8}-[0-9]{6}_[0-9]{3} .* go build ' && ! fGateCalled '^docker run --rm' || rc=1
-	rm -rf -- "${t:?}"; mkdir -p "${t}"
+	fSafeRm_IfThere "${t:?}"; mkdir -p "${t}"
 	TMPDIR="${t}" fGateSays 0 'backlog quick run: passed\.' --backlog-run-quick && fGateCalled '^docker run --rm --init --name ' \
 		&& ! fGateCalled 'keep-temp' && ! fGateCalled '^docker ps -a --filter' && ! grep -q '^Kept the' "${gateOut}" && [[ -z "$(ls -A "${t}/gitsby")" ]] || rc=1
-	rm -rf -- "${t:?}"
+	fSafeRm_IfThere "${t:?}"
 	((rc == 0))
 }
 ## The run's folder is <start time>_<NNN> under ${HOST_TEMP}/gitsby, or under TMPDIR without
@@ -665,7 +670,7 @@ fGateKeepTempImage(){
 ## run's pid. A name another run took is passed over, for the next few seconds' start times.
 fGateRunFolder(){
 	local t="${gateDir}/tmp-folder" rc=0 i line="" dir=""
-	rm -rf -- "${t:?}"; mkdir -p "${t}/host/gitsby" "${t}/other"
+	fSafeRm_IfThere "${t:?}"; mkdir -p "${t}/host/gitsby" "${t}/other"
 	for i in 0 1 2 3 4 5; do mkdir -p "${t}/host/gitsby/$(date -d "+${i} seconds" +%Y%m%d-%H%M%S)_001"; done
 	fGateStub "${gateDir}/cicd/test.bash" test "printf 'tmp=%s %s %s pid=%s\\n' \"\${TMPDIR:-}\" \"\${TEMP:-}\" \"\${TMP:-}\" \"\$(cat \"\${TMPDIR:-}/run.pid\" 2>/dev/null)\" >> '${gateCalls}'"
 	gateHostTemp="${t}/host" TMPDIR="${t}/other" fGateStatus 0 --no-container --backlog-run-quick suite || rc=1
@@ -675,14 +680,14 @@ fGateRunFolder(){
 	## Gone once the run ended, and nothing went to TMPDIR. The names taken are left alone.
 	[[ ! -e "${dir}" && -z "$(ls -A "${t}/other")" && "$(compgen -G "${t}/host/gitsby/*_001" | wc -l)" == 6 ]] || rc=1
 	fGateStub "${gateDir}/cicd/test.bash" test
-	rm -rf -- "${t:?}"
+	fSafeRm_IfThere "${t:?}"
 	((rc == 0))
 }
 ## A run removes the project's run folders over 2 days old whose run is gone. A live run's stays,
 ## and so does a newer one, one with no run.pid, and one not named like a run's.
 fGateStaleRuns(){
 	local t="${gateDir}/tmp-stale" r="" d dead="" rc=0
-	rm -rf -- "${t:?}"; r="${t}/gitsby"; mkdir -p "${r}"
+	fSafeRm_IfThere "${t:?}"; r="${t}/gitsby"; mkdir -p "${r}"
 	sleep 0 & dead=$!; wait "${dead}"
 	mkdir "${r}/20200101-000000_001" "${r}/20200101-000000_002" "${r}/20200101-000000_003" "${r}/20200101-000000_004" "${r}/not-a-run"
 	echo "${dead}" > "${r}/20200101-000000_001/run.pid"; echo "$$" > "${r}/20200101-000000_002/run.pid"
@@ -691,14 +696,14 @@ fGateStaleRuns(){
 	TMPDIR="${t}" fGateSays 0 '^Cleanup: removed 1 stale run folder\(s\), the run folder$' --no-container --backlog-run-quick lint || rc=1
 	[[ ! -e "${r}/20200101-000000_001" && -d "${r}/20200101-000000_002" && -d "${r}/20200101-000000_003" && -d "${r}/20200101-000000_004" && -d "${r}/not-a-run" ]] || rc=1
 	[[ "$(grep -c '^Cleanup: ' "${gateOut}")" == 1 ]] || rc=1
-	rm -rf -- "${t:?}"
+	fSafeRm_IfThere "${t:?}"
 	((rc == 0))
 }
 ## One line at the end of a run says what it removed, files as well as docker, and about what that
 ## freed. A 2 MB stale run folder counts. With --keep-temp nothing goes, and it says so.
 fGateTidyLine(){
 	local t="${gateDir}/tmp-tidyline" r="" dead="" rc=0
-	rm -rf -- "${t:?}"; r="${t}/gitsby"; mkdir -p "${r}/20200101-000000_001"
+	fSafeRm_IfThere "${t:?}"; r="${t}/gitsby"; mkdir -p "${r}/20200101-000000_001"
 	sleep 0 & dead=$!; wait "${dead}"
 	echo "${dead}" > "${r}/20200101-000000_001/run.pid"
 	head -c 2000000 /dev/urandom > "${r}/20200101-000000_001/blob"
@@ -706,16 +711,16 @@ fGateTidyLine(){
 	TMPDIR="${t}" fGateSays 0 '^Cleanup: removed 1 stale run folder\(s\), the run folder; freed about 2(\.[0-9])?MB$' --no-container --backlog-run-quick lint || rc=1
 	[[ "$(grep -c '^Cleanup: ' "${gateOut}")" == 1 && "$(tail -n 2 "${gateOut}" | sed -n 1p)" == Cleanup:* && -z "$(tail -n 1 "${gateOut}")" ]] || rc=1
 	TMPDIR="${t}" fGateSays 0 '^Cleanup: nothing to remove$' --no-container --backlog-run-quick lint --keep-temp || rc=1
-	rm -rf -- "${t:?}"
+	fSafeRm_IfThere "${t:?}"
 	((rc == 0))
 }
 ## A run folder that holds only its run.pid by the end frees a few bytes, which the line leaves out
 ## rather than saying "freed about 8B".
 fGateTidySmall(){
 	local t="${gateDir}/tmp-tidysmall" rc=0
-	rm -rf -- "${t:?}"; mkdir -p "${t}"
+	fSafeRm_IfThere "${t:?}"; mkdir -p "${t}"
 	TMPDIR="${t}" fGateSays 0 '^Cleanup: removed the run folder$' --no-container --backlog-run-quick lint && ! grep -q 'freed about' "${gateOut}" || rc=1
-	rm -rf -- "${t:?}"
+	fSafeRm_IfThere "${t:?}"
 	((rc == 0))
 }
 ## A run in the image labels what it makes, and at its end removes its containers by the run's
@@ -724,7 +729,7 @@ fGateTidySmall(){
 ## left to the daemon's builder.gc. One line says what went.
 fGateDockerTidy(){
 	local t="${gateDir}/tmp-tidy" run="" img="" pid="" i=0 rc=0
-	rm -rf -- "${t:?}"; mkdir -p "${t}"
+	fSafeRm_IfThere "${t:?}"; mkdir -p "${t}"
 	: > "${gateFail}/docker-noimage"; : > "${gateFail}/docker-novol"
 	TMPDIR="${t}" fGateSays 0 '^Cleanup: removed the run folder$' --backlog-run-quick lint || rc=1
 	rm -f -- "${gateFail:?}/docker-noimage" "${gateFail:?}/docker-novol"
@@ -759,7 +764,7 @@ fGateDockerTidy(){
 	kill -TERM "${pid}"; wait "${pid}" 2>/dev/null || true
 	rm -f -- "${gateFail:?}/docker-hang" "${gateFail:?}/images"
 	fGateCalled '^docker ps -aq --filter label=dev\.project=gitsby --filter label=dev\.run=' && ! fGateCalled '^docker builder ' && [[ -z "$(ls -A "${t}/gitsby")" ]] || rc=1
-	rm -rf -- "${t:?}"
+	fSafeRm_IfThere "${t:?}"
 	((rc == 0))
 }
 ## Neither goes with --install-hook, and --list keeps nothing. --help names both.
@@ -792,7 +797,7 @@ fGateLeakStops(){
 fGateLeakPrune(){
 	local leakDir="${gateDir}/cicd/artifacts/leakcheck" i d
 	## Earlier checks' runs, possibly from this same second, would shift the count.
-	rm -rf -- "${leakDir:?}"
+	fSafeRm_IfThere "${leakDir:?}"
 	for i in $(seq 10 31); do
 		d="${leakDir}/soak_20200101-0000${i}"; mkdir -p "${d}"; : > "${d}/soak.txt"; : > "${d}/heap-round-030.pprof"
 	done
@@ -852,7 +857,7 @@ fGateNoCodeQL(){
 ## newest 20 are left, plus that one, which is kept and named.
 fGateCodeQLPrune(){
 	local leakDir="${gateDir}/cicd/artifacts/leakcheck" i d
-	rm -rf -- "${leakDir:?}"
+	fSafeRm_IfThere "${leakDir:?}"
 	for i in $(seq 10 31); do d="${leakDir}/codeql_20200101-0000${i}"; mkdir -p "${d}"; : > "${d}/linux.sarif"; : > "${d}/windows.sarif"; done
 	: > "${leakDir}/codeql_20200101-000010/notes.txt"
 	fGateSays 0 'WARNING: kept .*/codeql_20200101-000010, which has more in it' -y --no-container --quick --leakcheck --no-sync --no-publish --no-dogfood \
@@ -2379,11 +2384,11 @@ fRunSuite(){
 	## The list itself, line by line, on a fresh copy of the same tree: the stray dotfile is the
 	## point of the feature, and an ignored file appearing would make the whole list untrustworthy.
 	local pub2="${cn}/publish2"
-	mkdir -p "${pub2}"; cp -r "${pubDir}/." "${pub2}/"; rm -rf -- "${pub2:?}/.git"
+	mkdir -p "${pub2}"; cp -r "${pubDir}/." "${pub2}/"; fSafeRm "${pub2:?}/.git" >/dev/null
 	git init --quiet --bare -b main "${cn}/remote4.git"
 	fAssertOut    "[daggt] the listing names a stray dotfile"  '^    \.env$'  bash -c "cd '${pub2}' && '${gitsby}' -q repo connect '${cn}/remote4.git' 2>&1"
 	local pub3="${cn}/publish3"
-	mkdir -p "${pub3}"; cp -r "${pubDir}/." "${pub3}/"; rm -rf -- "${pub3:?}/.git"
+	mkdir -p "${pub3}"; cp -r "${pubDir}/." "${pub3}/"; fSafeRm "${pub3:?}/.git" >/dev/null
 	git init --quiet --bare -b main "${cn}/remote5.git"
 	fAssertNotOut "[daggv] the listing honors .gitignore"  'skipme\.log|skipdir'  bash -c "cd '${pub3}' && '${gitsby}' -q repo connect '${cn}/remote5.git' 2>&1"
 
@@ -5319,7 +5324,7 @@ GHEOF
 		mkdir -p "${relRepo}/cicd/utility/include" "${relRepo}/cicd/container" "${relRepo}/src-go"
 		printf '%s\n' 'module x' '' 'require example.com/m v1.2.0' > "${relRepo}/src-go/go.mod"
 		cp "${root}/cicd/release.bash" "${root}/cicd/config.bash" "${relRepo}/cicd/"
-		cp "${root}/cicd/utility/include/image-go.bash" "${relRepo}/cicd/utility/include/"
+		cp "${root}/cicd/utility/include/image-go.bash" "${root}/cicd/utility/include/safe-rm.bash" "${relRepo}/cicd/utility/include/"
 		cp "${root}/cicd/container/Dockerfile" "${root}/cicd/container/requirements.txt" "${relRepo}/cicd/container/"
 		fStub "${rel}/stub" <<-EOF
 			#!/usr/bin/env bash
@@ -5681,6 +5686,20 @@ GHEOF
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[ddgkk] test.bash stops when mktemp fails, and leaves the folder it ran from" \
 		bash -c '[[ "$1" == 1 && -f "$2/canary.txt" && -d "$2/no-accounts.shcl" ]]' _ "${selfRc}" "${selfRun}/start"
+	## The guard on a box with no realpath, or none that takes -e, as on the Mac and BSD boxes.
+	local srWork="${work}/saferm" srBin="${work}/saferm-bin" srBash
+	srBash="$(command -v bash)"
+	mkdir -p "${srWork}/gone/sub" "${srWork}/kept/sub" "${srBin}"; ln -s "$(command -v rm)" "${srBin}/rm"; ln -s "${srWork}/kept" "${srWork}/link"
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssert "[deywq] the guard removes a temp folder with no realpath on PATH, and refuses a link and a path through one" \
+		env PATH="${srBin}" APP_NAME="${APP_NAME}" "${srBash}" -c 'source "$1" && fSafeRm "$2/gone" && [[ ! -e "$2/gone" ]] && ! fSafeRm "$2/link" && ! fSafeRm "$2/link/sub" && [[ -d "$2/kept/sub" ]]' _ "${root}/cicd/utility/include/safe-rm.bash" "${srWork}"
+	## Stage 7's own commands on the boxes are left to their own item, hence old.*.
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	for rmScript in "${rmScripts[@]}"; do
+		[[ "${rmScript}" == legacy/* || "${rmScript}" == cicd/utility/include/safe-rm.bash ]] && continue
+		fAssert "[deywr] ${rmScript} removes a folder only through the guard" \
+			bash -c '[[ -f "$1" ]] && ! grep -vE "$3" "$1" | grep -qE "$2"' _ "${root}/${rmScript}" '(^|[^-[:alnum:]_])rm +(-[[:alpha:]]*[rR]|--recursive)' '^[[:space:]]*#|git rm|raw rm|old\.\*'
+	done
 	## ------------------------------------------------------------------------------------
 	## The pipeline itself, after the directive review. Where a check would need a whole run
 	## to exercise, it pins the thing in the source and says so.
@@ -5809,7 +5828,7 @@ GHEOF
 	mkdir -p "${kb}/cicd/utility/include" "${kb}/cicd/artifacts/builds"
 	cp "${root}/cicd/config.bash" "${kb}/cicd/"
 	cp "${root}/cicd/utility/keep-build.bash" "${kb}/cicd/utility/"
-	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${kb}/cicd/utility/include/"
+	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${root}/cicd/utility/include/safe-rm.bash" "${kb}/cicd/utility/include/"
 	fStub "${kb}/cicd/artifacts/builds/build_20260101-000000.gitsby" <<-'EOF'
 		#!/bin/sh
 		echo "kept build ran"
@@ -5880,7 +5899,7 @@ GHEOF
 	## Without strace, a SKIP under its ID for each command, and nothing else.
 	mkdir -p "${work}/scn/cicd/utility/include"
 	cp "${root}/cicd/config.bash" "${work}/scn/cicd/"
-	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${work}/scn/cicd/utility/include/"
+	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${root}/cicd/utility/include/safe-rm.bash" "${work}/scn/cicd/utility/include/"
 	sed 's/command -v strace /command -v no-such-strace /' "${root}/cicd/utility/spawn-count.bash" > "${work}/scn/cicd/utility/spawn-count.bash"
 	chmod +x "${work}/scn/cicd/utility/spawn-count.bash"
 	fAssert "[defq5] spawn-count.bash with no strace prints SKIP and the test ID for each command, and passes" \
@@ -5890,7 +5909,7 @@ GHEOF
 		mkdir -p "${sc}/cicd/utility/include" "${sc}/src-go" "${sc}/cicd/artifacts/spawn"
 		cp "${root}/cicd/config.bash" "${sc}/cicd/"
 		cp "${root}/cicd/utility/spawn-count.bash" "${sc}/cicd/utility/"
-		cp "${root}/cicd/utility/include/gfs-rotate.bash" "${sc}/cicd/utility/include/"
+		cp "${root}/cicd/utility/include/gfs-rotate.bash" "${root}/cicd/utility/include/safe-rm.bash" "${sc}/cicd/utility/include/"
 		fStub "${sc}/src-go/gitsby" <<-'EOF'
 			#!/bin/sh
 			/bin/sh -c :; /bin/sh -c :; /bin/sh -c :
@@ -6929,7 +6948,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		ln -s "${rtBin}/go" "${rtBrew}/go"
 		cp "${root}/cicd/remote-tests.bash" "${rt}/cicd/"
 		fRemoteConfig
-		cp "${root}/cicd/utility/include/go-test-lines.bash" "${root}/cicd/utility/include/image-go.bash" "${rt}/cicd/utility/include/"
+		cp "${root}/cicd/utility/include/go-test-lines.bash" "${root}/cicd/utility/include/image-go.bash" "${root}/cicd/utility/include/safe-rm.bash" "${rt}/cicd/utility/include/"
 		## The Unix boxes have runs of their own further down, with the config put back.
 		echo 'REMOTE_UNIX_HOSTS=()' >> "${rt}/cicd/config.bash"
 		printf 'package main\n\nfunc TestA(t *testing.T) { // [aaaab]\n}\n' > "${rt}/src-go/a_test.go"
@@ -7311,7 +7330,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		git checkout --quiet -b landed && git push --quiet -u origin landed
 		git checkout --quiet main && git merge --quiet --no-ff landed -m merge && git push --quiet
 	)
-	rm -rf -- "${dr:?}/p-origin.git"
+	fSafeRm "${dr:?}/p-origin.git" >/dev/null
 	fAssertOut "[dbfs3] br prune offline leaves origin's copies alone"  "left origin's copies" \
 		bash -c "cd '${dr}/prune' && '${gitsby}' -q br prune 2>&1"
 	fAssert    "[dbfs4] but still deletes the local branch"    bash -c "cd '${dr}/prune' && [[ -z \"\$(git branch --list landed)\" ]]"
@@ -8104,3 +8123,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261106 JC: Fixtures in shcl 3.0 beta1 syntax, lists in brackets and dash items. The control character checks feed escapes the format reads, since a backslash is text now. Checks for the commit-pin refusal in release.bash. 1771 -> 1773.
 ##		- 20261106 JC: No pipe into head or grep -q under pipefail. BSD grep writes a line at a time, so the Pillow lock check failed on FreeBSD. A check lists any that come back.
 ##		- 20261106 JC: Checks for a write asking the ssh identity once, the Go installer creating a missing folder, and the pre-command fetch dropping a ref origin deleted. 1779 -> 1782.
+##		- 20261106 JC: The scratch folder and every fixture folder go through fSafeRm, still behind the name and marker checks. Checks that the guard works with no realpath, and that no script removes a folder another way.

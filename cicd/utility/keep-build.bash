@@ -35,6 +35,8 @@ root="$(cd "${here}/../.." && pwd)"
 source "${root}/cicd/config.bash"
 # shellcheck source=/dev/null
 source "${here}/include/gfs-rotate.bash"
+# shellcheck source=/dev/null
+source "${here}/include/safe-rm.bash"
 
 keepDir="${root}/${KEEP_BUILD_DIR}"
 exe="${root}/${GO_MODULE_DIR}/${EXE_NAME}"
@@ -73,8 +75,9 @@ case "${1:-}" in
 		[[ $# -ge 2 ]] || fDie "--diff needs a number (see --list)."
 		which="$(fNth "$2")"; shift 2
 		[[ -x "${exe}" ]] || fDie "no current build at ${GO_MODULE_DIR}/${EXE_NAME}."
-		tmp="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-keep.XXXXXX")"
-		trap 'rm -rf -- "${tmp:?}"' EXIT
+		fSafeRm_Init || exit 1; safeTmp="$(fSafeRm_Tmp)" || exit 1
+		tmp="$(mktemp -d "${safeTmp}/gitsby-keep.XXXXXX")"
+		trap 'fSafeRm "${tmp:?}" >/dev/null' EXIT
 		"${which}" "$@" > "${tmp}/old" 2>&1 || true
 		"${exe}"   "$@" > "${tmp}/new" 2>&1 || true
 		## diff exits 1 on a difference, and this script runs under -e - so the status is
@@ -105,3 +108,4 @@ esac
 ##		  wanted is last week's binary, and a diff of the two on the same arguments.
 ##		- 20261003 JC: A build number that is not digits is refused before arithmetic sees it.
 ##		- 20261004 JC: fDie prints with printf. Every expansion braced, and shellcheck enforces it.
+##		- 20261106 JC: Its scratch folder goes through fSafeRm.
