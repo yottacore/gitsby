@@ -704,7 +704,7 @@ fGateTidyLine(){
 	head -c 2000000 /dev/urandom > "${r}/20200101-000000_001/blob"
 	touch -d '3 days ago' "${r}/20200101-000000_001"
 	TMPDIR="${t}" fGateSays 0 '^Cleanup: removed 1 stale run folder\(s\), the run folder; freed about 2(\.[0-9])?MB$' --no-container --backlog-run-quick lint || rc=1
-	[[ "$(grep -c '^Cleanup: ' "${gateOut}")" == 1 && "$(tail -n 2 "${gateOut}" | head -n 1)" == Cleanup:* && -z "$(tail -n 1 "${gateOut}")" ]] || rc=1
+	[[ "$(grep -c '^Cleanup: ' "${gateOut}")" == 1 && "$(tail -n 2 "${gateOut}" | sed -n 1p)" == Cleanup:* && -z "$(tail -n 1 "${gateOut}")" ]] || rc=1
 	TMPDIR="${t}" fGateSays 0 '^Cleanup: nothing to remove$' --no-container --backlog-run-quick lint --keep-temp || rc=1
 	rm -rf -- "${t:?}"
 	((rc == 0))
@@ -804,7 +804,7 @@ fGateCodeQL(){
 		&& for goos in darwin freebsd linux windows; do fGateCalled "^GOOS=${goos}\$" "^codeql database create [^ ]+/db-${goos} " || return 1; done \
 		&& [[ ! -e "${gateDir}/src-go/vendor" ]] \
 		&& compgen -G "${gateDir}/cicd/artifacts/leakcheck/codeql_*-*/linux.sarif" >/dev/null \
-		&& scratch="$(grep -oE -- '--source-root=[^ ]+/src-go' "${gateCalls}" | head -n1)" && scratch="${scratch#--source-root=}" \
+		&& scratch="$(grep -oE -- '--source-root=[^ ]+/src-go' "${gateCalls}" | sed -n 1p)" && scratch="${scratch#--source-root=}" \
 		&& [[ -n "${scratch}" && ! -e "${scratch%/src-go}" ]]
 }
 ## Python's run is one database over a scratch copy of its own: the pipeline's Python files at their
@@ -854,10 +854,10 @@ fGateCodeQLPrune(){
 fGateCodeQLSumInTag(){
 	local before="" after="" rc=0
 	fGateSays 0 'OK: the container run' -y --quick --no-sync --no-publish --no-dogfood || return 1
-	before="$(grep -oE 'gitsby-cicd:[0-9a-f]+' "${gateOut}" | head -n1)"
+	before="$(grep -oE 'gitsby-cicd:[0-9a-f]+' "${gateOut}" | sed -n 1p)"
 	printf '%s="%s"\n' "${1:-CODEQL_SHA256}" 0000 >> "${gateDir}/cicd/config.bash"
 	fGateSays 0 'OK: the container run' -y --quick --no-sync --no-publish --no-dogfood || rc=1
-	after="$(grep -oE 'gitsby-cicd:[0-9a-f]+' "${gateOut}" | head -n1)"
+	after="$(grep -oE 'gitsby-cicd:[0-9a-f]+' "${gateOut}" | sed -n 1p)"
 	cp "${root}/cicd/config.bash" "${gateDir}/cicd/config.bash"
 	[[ "${rc}" == 0 && -n "${before}" && -n "${after}" && "${before}" != "${after}" ]]
 }
@@ -887,10 +887,10 @@ fGateNoFuzz(){
 fGateLockInTag(){
 	local before="" after="" rc=0
 	fGateSays 0 'OK: the container run' -y --quick --no-sync --no-publish --no-dogfood || return 1
-	before="$(grep -oE 'gitsby-cicd:[0-9a-f]+' "${gateOut}" | head -n1)"
+	before="$(grep -oE 'gitsby-cicd:[0-9a-f]+' "${gateOut}" | sed -n 1p)"
 	echo "# changed" >> "${gateDir}/cicd/container/requirements.txt"
 	fGateSays 0 'OK: the container run' -y --quick --no-sync --no-publish --no-dogfood || rc=1
-	after="$(grep -oE 'gitsby-cicd:[0-9a-f]+' "${gateOut}" | head -n1)"
+	after="$(grep -oE 'gitsby-cicd:[0-9a-f]+' "${gateOut}" | sed -n 1p)"
 	cp "${root}/cicd/container/requirements.txt" "${gateDir}/cicd/container/requirements.txt"
 	[[ "${rc}" == 0 && -n "${before}" && -n "${after}" && "${before}" != "${after}" ]]
 }
@@ -1013,7 +1013,7 @@ Step 3 of 3; PASS Backwards compatibility"
 	printf -v rule '%.0s•' {1..79}
 	fGateSays 0 'CI/CD: done\.' -y --no-container --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
 		&& [[ "$(fGateStepLines)" == "${want}" && "$(grep -cxF "${rule}" "${gateOut}")" == 4 ]] \
-		&& ! grep -F '••' "${gateOut}" | grep -qvxF "${rule}"
+		&& ! grep -qvxF "${rule}" <<< "$(grep -F '••' "${gateOut}")"
 }
 ## A step that fails closes with FAIL, and none after it starts.
 fGateStepFail(){
@@ -1043,7 +1043,7 @@ fGateStepsBox(){
 		&& fGateCalled '^docker run .* -e GITSBY_CICD_STEPS=0/7 .* -y --no-sync --no-dogfood --no-remote --no-publish$' \
 		&& grep -qE 'Step 6 of 7; Starting Dogfood \]$' "${gateOut}" \
 		&& GITSBY_CICD_STEPS=1/9 gateNested=1 fGateSays 0 'CI/CD: done\.' -y --no-sync --no-dogfood --no-remote --no-publish --no-fuzz \
-		&& [[ "$(fGateStepLines | head -n 1)" == "Step 2 of 9; Starting Lint" && "$(fGateStepLines | tail -n 1)" == "Step 5 of 9; PASS Demo gif" ]] \
+		&& [[ "$(fGateStepLines | sed -n 1p)" == "Step 2 of 9; Starting Lint" && "$(fGateStepLines | tail -n 1)" == "Step 5 of 9; PASS Demo gif" ]] \
 		&& grep -qxF 'Dogfood .............: (done by the run outside the container)' "${gateOut}"
 }
 ## The image runs in UTC, so the run in there is handed this box's offset, and its step lines
@@ -1209,6 +1209,23 @@ fTrackedBash(){
 		if [[ "${f}" == *.bash || "${first}" =~ ^#!.*[/[:space:]]bash([[:space:]]|$) ]]; then printf '%s\n' "${f}"; fi
 	done
 }
+## Pipes into a reader that quits early, as file:line, in tracked bash outside legacy/. Under
+## pipefail the writer's SIGPIPE fails the line, and BSD grep writes a line at a time, so a
+## check passed on Linux and failed on FreeBSD. A bash -c string runs without pipefail, and
+## '|| true' takes the code. The brackets keep this file from matching itself.
+fEarlyClose(){
+	local f="" n=0
+	while IFS= read -r f; do
+		((++n))
+		awk -v f="${f}" '
+			/^[ \t]*#/ { next }
+			{ if (!len) start = FNR; line = line $0; len++ }
+			/\\$/ { next }
+			{ if (line !~ /bash -c/ && line !~ /\|\| *true/ && line ~ /(^|[^|])[|][ \t]*(h[e]ad([ \t]|$)|g[r]ep[ \t]+-[A-Za-z]*q|a[w]k[^|]*exit)/) print f ":" start
+			  line = ""; len = 0 }' "${root}/${f}"
+	done < <(fTrackedBash)
+	((n)) || echo "(no files)"
+}
 ## Tracked scripts and Go files, legacy/ too, that name a terminal multiplexer or a kill by process
 ## name. A file with no extension counts when it starts with #!.
 fKillByName(){
@@ -1249,7 +1266,7 @@ fSysPyFromLock(){
 	sysPat="$(sed -n "s|.*grep -E '\([^']*\)' /tmp/pytools.txt > /tmp/sys.txt.*|\1|p" "${dockerfile}")"
 	venvPat="$(sed -n "s|.*grep -vE '\([^']*\)' /tmp/pytools.txt > /tmp/venv.txt.*|\1|p" "${dockerfile}")"
 	[[ -n "${sysPat}" && -n "${venvPat}" ]] && grep -qE "^$1==[^ ]+ --hash=sha256:[0-9a-f]{64}\$" "${lock}" \
-		&& grep -E -- "${sysPat}" "${lock}" | grep -q "^$1==" && grep -E -- "${venvPat}" "${lock}" | grep -q "^$1==" \
+		&& grep -q "^$1==" <<< "$(grep -E -- "${sysPat}" "${lock}")" && grep -q "^$1==" <<< "$(grep -E -- "${venvPat}" "${lock}")" \
 		&& grep -qF -- "--python /usr/bin/python3 install" "${dockerfile}" && grep -qF -- "-r /tmp/sys.txt" "${dockerfile}"
 }
 ## The lock's Pillow line is the version TOOL_VERSIONS records, pinned by hash. The image installs
@@ -5906,7 +5923,7 @@ GHEOF
 			fOk '[aaaaa] one two'; ${bad} '[aaaab] three: crashed (exit 2)'; fOk 'no id [aaaac] here'
 			! declare -F fSkip >/dev/null || fSkip \"[aaaad] needs pwsh (Linux only)\"" ;}
 	fSuiteLinesAre(){ local f="" want=""; want="$(printf '%s\n' '  PASS aaaaa one two' '  FAIL aaaab three: crashed (exit 2)' '  PASS no id [aaaac] here')"
-		for f in test fuzz parity; do [[ "$(fSuiteLines "${root}/cicd/${f}.bash" | head -n 3)" == "${want}" ]] || return 1; done ;}
+		for f in test fuzz parity; do [[ "$(fSuiteLines "${root}/cicd/${f}.bash" | sed -n 1,3p)" == "${want}" ]] || return 1; done ;}
 	fAssert "[defpy] test.bash, fuzz.bash and parity.bash print PASS or FAIL, the test's ID, then its label"  fSuiteLinesAre
 	fSuiteSkips(){ local f=""; for f in test fuzz; do [[ "$(fSuiteLines "${root}/cicd/${f}.bash" | tail -n 1)" == '  SKIP aaaad needs pwsh (Linux only)' ]] || return 1; done ;}
 	fAssert "[defpz] and test.bash and fuzz.bash print SKIP, the ID, then why"  fSuiteSkips
@@ -6012,6 +6029,8 @@ GHEOF
 	## run's. A kill goes to a PID the script started. The brackets keep this file from matching itself.
 	fAssert "[de55w] no tracked script or Go file runs a terminal multiplexer or kills by process name" \
 		test -z "$(fKillByName)"
+	fAssert "[deyrt] no tracked bash outside legacy/ pipes into head or grep -q where pipefail would see the writer's SIGPIPE" \
+		test -z "$(fEarlyClose)"
 	## CodeQL comes from the image, checked against the sum config.bash keeps beside its version.
 	fAssert "[de55x] the image installs CodeQL's Go bundle and checks it against config.bash's sum" \
 		bash -c "grep -qx 'ARG CODEQL_SHA256' '${root}/cicd/container/Dockerfile' && grep -q 'codeql-bundle-go-linux64\.tar\.zst' '${root}/cicd/container/Dockerfile' && grep -qF 'echo \"\${CODEQL_SHA256}  cq.tar.zst\" | sha256sum -c -' '${root}/cicd/container/Dockerfile' && grep -qE '^CODEQL_SHA256=\"[0-9a-f]{64}\"\$' '${root}/cicd/config.bash'"
@@ -8035,3 +8054,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261026 JC: Test IDs are minutes since 2000 in Crockford base 32, converted from the old ones. Checks for an old ID failing, a taken minute and -n. 1757 -> 1760.
 ##		- 20261026 JC: Each check prints PASS, FAIL or SKIP, then its ID and label. A block a box can't run gives a SKIP for each test in it, and the total counts them. The checks that read the old lines read the new ones, plus checks for each suite's lines, the skipped blocks, the Go test lines, spawn-count's and the lint summary. 1760 -> 1768.
 ##		- 20261106 JC: Fixtures in shcl 3.0 beta1 syntax, lists in brackets and dash items. The control character checks feed escapes the format reads, since a backslash is text now. Checks for the commit-pin refusal in release.bash. 1771 -> 1773.
+##		- 20261106 JC: No pipe into head or grep -q under pipefail. BSD grep writes a line at a time, so the Pillow lock check failed on FreeBSD. A check lists any that come back.
