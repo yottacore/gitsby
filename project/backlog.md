@@ -33,30 +33,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- On macOS the config conversion notice names the old file by its resolved path
-	- ID: 2026110715250050
+- On macOS test.bash df05h and df05k compare a padded wc -l count to 1
+	- ID: 2026110715412517
 	- Type: Bug
-	- Status: Waiting on automated testing
-	- Needs local test suite run?: No
-	- Needs external testing: macOS hosted run (macos.yml), one run
+	- Status: Queued
+	- Needs local test suite run?: Yes
+	- Needs external testing: macOS hosted run (macos.yml)
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261107-152500
-	- Opened by: hosted macOS run 42410549170 on gover at ebfd4b5
-	- Target OS: macOS, any OS where the config folder sits under a link
-	- Steps to reproduce [Bug]: go test -run 'TestFlatFileIsConverted|TestOldPinFileIsConverted' on macOS, where t.TempDir() is under /var, a link to /private/var
-	- Incorrect behavior [Bug]: the notice's File: line shows the path as given, but its From: line shows /private/var/... Both tests fail on macos-latest and macos-15-intel since 300128a (first in run 42406165808).
-	- Expected behavior [Bug]: both lines name the folder the same way, the way the config path was given
-	- Reproduced [Bug]: in the hosted runs only; a Linux stand-in is a config folder reached through a symlink
-	- Possible cause [Bug]: the backup name is built from filepath.EvalSymlinks(file) in cfgformat.go, near line 251
+	- Opened: 20261107-154125
+	- Opened by: hosted macOS run 42425749711 on round-20261107c at ef5b637
+	- Related IDs: 2026110715250050, 2026110707345868
+	- Target OS: macOS, FreeBSD
+	- Incorrect behavior [Bug]: FAIL df05h --version is exactly 1 line, and FAIL df05k and is the same 1 line there, on macos-latest and macos-15-intel. The go test step before it passed.
+	- Expected behavior [Bug]: both pass where gitsby prints 1 line
+	- Reproduced [Bug]: in the hosted run only. It was on gover before the round, hidden since 300128a because go test failed first.
+	- Possible cause [Bug]: BSD wc -l pads its count with spaces, so the [[ ... == 1 ]] string test in cicd/test.bash never matches. Check the rest of the suites for the same shape.
 	- Estimated effort: Low
-	- Actual cause [Bug]: replaceOldFormat resolved the file's whole path with EvalSymlinks, so a config folder under a link got its backup named under the resolved folder, while the File line kept the given one.
-	- Actual fix [Bug]: replaceOldFormat resolves the path only when the file itself is a link, which is converted where it lives, as before. A folder reached through a link keeps the name it was given, so File and From agree.
-	- Test case: Go `[df0ex]` a config folder reached through a link is converted, backed up and named as given. TestFlatFileIsConverted `[df065]` and TestOldPinFileIsConverted `[df08m]` cover the macOS /var case.
-	- Verified: `[df0ex]` fails on the previous cfgformat.go on Linux and passes after. A darwin/amd64 test binary of the previous code on vmKt6m fails `[df0ex]`, `[df065]` and `[df08m]`, and the fixed one passes them and every TestOldFormat test. go test and the quick lint and unit areas pass.
-	- Swept: the other EvalSymlinks uses are lockAccountsFile (lock name only) and config.go's rule path check, neither names a file in a notice.
-	- Progress log:
-		- Fixed on round-20261107c. Hosted macOS run left to the orchestrator.
-		- Filed at round start from the gover hosted run's failure; no earlier item covers it.
 
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
@@ -1228,6 +1220,34 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept (2026-10-05, `pr create` and `release`): every step after their commit. In release.go the pulls of `dev` and the default branch, both checkouts, the merge and its back-out, the tag, both pushes, and the fast-forward of `dev`. Its nothing-new check read the whole tree as work to release, and now reads the index under the flag. In pr.go the push and the `gh` or `tea` call. `pr ok` reads the whole tree to refuse, and refuses the flag. The line above about pr.go and release.go held only while they refused the flag.
 	- Acceptance signoff: 2026-10-05, all 3 choices answered.
 	- Closed: 2026-10-05
+
+- On macOS the config conversion notice names the old file by its resolved path
+	- ID: 2026110715250050
+	- Type: Bug
+	- Status: Done
+	- Needs local test suite run?: No
+	- Needs external testing: No
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261107-152500
+	- Opened by: hosted macOS run 42410549170 on gover at ebfd4b5
+	- Target OS: macOS, any OS where the config folder sits under a link
+	- Steps to reproduce [Bug]: go test -run 'TestFlatFileIsConverted|TestOldPinFileIsConverted' on macOS, where t.TempDir() is under /var, a link to /private/var
+	- Incorrect behavior [Bug]: the notice's File: line shows the path as given, but its From: line shows /private/var/... Both tests fail on macos-latest and macos-15-intel since 300128a (first in run 42406165808).
+	- Expected behavior [Bug]: both lines name the folder the same way, the way the config path was given
+	- Reproduced [Bug]: in the hosted runs only; a Linux stand-in is a config folder reached through a symlink
+	- Possible cause [Bug]: the backup name is built from filepath.EvalSymlinks(file) in cfgformat.go, near line 251
+	- Estimated effort: Low
+	- Actual cause [Bug]: replaceOldFormat resolved the file's whole path with EvalSymlinks, so a config folder under a link got its backup named under the resolved folder, while the File line kept the given one.
+	- Actual fix [Bug]: replaceOldFormat resolves the path only when the file itself is a link, which is converted where it lives, as before. A folder reached through a link keeps the name it was given, so File and From agree.
+	- Test case: Go `[df0ex]` a config folder reached through a link is converted, backed up and named as given. TestFlatFileIsConverted `[df065]` and TestOldPinFileIsConverted `[df08m]` cover the macOS /var case.
+	- Verified: `[df0ex]` fails on the previous cfgformat.go on Linux and passes after. A darwin/amd64 test binary of the previous code on vmKt6m fails `[df0ex]`, `[df065]` and `[df08m]`, and the fixed one passes them and every TestOldFormat test. go test and the quick lint and unit areas pass.
+	- Verified: 2026-11-07, hosted macOS run 42425749711 on round-20261107c at ef5b637: the go test step passed on macos-latest and macos-15-intel. The quick gate passed with df0ex, df065 and df08m.
+	- Swept: the other EvalSymlinks uses are lockAccountsFile (lock name only) and config.go's rule path check, neither names a file in a notice.
+	- Progress log:
+		- Fixed on round-20261107c. Hosted macOS run left to the orchestrator.
+		- Filed at round start from the gover hosted run's failure; no earlier item covers it.
+	- Acceptance signoff: closed on the hosted run and the vmKt6m run, per the standing rule
+	- Closed: 20261107-154700
 
 - Code Review 20261107 item 3: The release check for history footers skips both PowerShell scripts
 	- ID: 2026110708000103
