@@ -33,241 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- test.bash [dd5e4] fails on the macOS workflow: install.ps1 leaves its bracketed temp dir
-	- ID: 2026110617122394
-	- Type: Bug
-	- Status: Done
-	- Needs external testing: No
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261106-171223
-	- Opened by:
-	- Target OS: macOS
-	- Reproduced [Bug]: Yes, 2026-11-07 on b26, with pwsh 7.6.9 from its tarball: the real install.ps1 and the suite's stubs, a fresh HOME and TMPDIR `pstmp[1]`. It installs, and TMPDIR still holds `.dotnet`.
-	- Actual cause [Bug]: Not install.ps1, and not the link. pwsh 7.6.9's first run in a fresh HOME, as it writes `telemetry.uuid`, leaves the runtime's `.dotnet/shm` and `.dotnet/lockfiles` in TMPDIR on macOS. [dd5e3] is the first run in its HOME, and [dd5e4] wants TMPDIR empty.
-	- Progress log:
-		- 2026-11-07: [dd5e4] is the only FAIL on macos-latest in runs 42254437886, 42257775761, 42273158689 and 42295283425. [dd5e3] passes, so the install works and only the cleanup of the temp dir under TMPDIR=<work>/pstmp[1] fails. Linux passes.
-		- Guess to check first: the macOS temp path goes through the /var -> /private/var link, and the newer real-folder-under-temp guard refuses a path through a link.
-		- 2026-11-07: Ruled out the link: test.bash's work folder is resolved with `pwd -P`. Ruled out the guard: the first red, 2505356, predates it, with install.ps1 the same as at the last green.
-		- 2026-11-07: What changed is the image. macos-latest went from pwsh 7.6.6 (.NET 10.0.12) to 7.6.9 (.NET 10.0.14). The Intel job's macOS 15 image didn't, and passes.
-		- 2026-11-07: On b26, a bare `pwsh -Command 1` in a fresh HOME leaves `.dotnet` under 7.6.9, but not under 7.6.6, not with `POWERSHELL_TELEMETRY_OPTOUT=1`, and not on a second run in the same HOME. install.ps1's own cleanup works under both versions, bracket or not.
-	- Actual fix [Bug]: fPsInstall runs pwsh with `POWERSHELL_TELEMETRY_OPTOUT=1`. [dd5e4] still wants TMPDIR empty.
-	- Decisions:
-		- The opt-out goes in fPsInstall, rather than [dd5e4] skipping `.dotnet`. A suite run has no reason to send telemetry, and the check stays strict for anything else left in TMPDIR.
-		- No change to install.ps1. `.dotnet` is the runtime's state, shared across processes, and a user's first pwsh run leaves it whatever is run.
-	- Swept: every pwsh call in test.bash. Only fPsInstall runs with a fresh HOME and checks TMPDIR afterwards. The rest use the box's HOME.
-	- Verified: [dez8c] fails with the opt-out taken out, and the other 1825 checks pass. `--backlog-run-quick` passed, with test.bash 1826/0, fuzz 313/0 and parity 30/0.
-	- Verified: on b26 under pwsh 7.6.9, the [dd5e3] install with a bracketed TMPDIR leaves `.dotnet` without the opt-out and nothing with it. b26 is an Intel Mac on macOS 15.8, so macOS 26 on Apple silicon is left to the workflow.
-	- Verified: 2026-11-07, macOS workflow run 42332925745 on round-20261107: [dd5e3], [dd5e4] and [dez8c] passed on macos-latest and macos-15-intel, with no FAIL on either.
-	- Branch: round-20261107
-	- Test case: test.bash [dez8c] (pwsh runs with telemetry off), plus [dd5e4] on macos-latest.
-	- Origin: gover's macOS workflow, first red at run 42254437886 (Merge fuzz-log, 2026-11-06), red since on every gover push; last green 40447463125 (Merge round-20261026)
-	- Closed: 20261106-192147
-	- Acceptance signoff: Self-closed: the hosted macOS run passed on both runners.
-
-- CICD reset: temp files and safe removal
-	- ID: 2026102416313108
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261024-163131
-	- Opened by: jim-collier
-	- Prereq IDs: 2026102506452478
-		- It uses `--keep-temp` from that item. The other new flags are in since a1c62bb.
-	- Related IDs: 2026101912030138
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Per `Temp files` and `Safe removal` in the shared CICD rules. A run's own temp files are already in one folder that goes on exit, and the harnesses remove theirs.
-		- Each run makes one folder, `${HOST_TEMP}/gitsby/<YYYYmmDD-HHMMSS>_<NNN>/`, with a plain `mkdir` and a counter, and points `TMPDIR`, `TEMP` and `TMP` at it. The harnesses and utilities make theirs inside it.
-		- `--keep-temp` keeps it and prints where it is.
-		- Each run writes a `run.pid` in it, and removes the project's own stale run folders: over 2 days old, with no live process.
-		- Every recursive removal goes through the repo's own copy of the safe removal guard, in the pipeline, the harnesses, the utilities, release.bash, the installer and stage 7's commands on the other boxes. The checks of a folder's name and marker that some have today stay as well.
-		- 35 recursive removals in 12 files, none through the guard. File list in the private notes.
-	- Progress log:
-		- 2026-10-25: Split. 2026102516194062 has the removals outside cicd.bash. The rest is in.
-		- 2026-10-25: A run's folder is `${HOST_TEMP}/gitsby/<start time>_<NNN>`, else under `TMPDIR`, made with a plain `mkdir` and the first free counter, with `TMPDIR`, `TEMP` and `TMP` pointed at it and a `run.pid`. The harnesses and release.bash already follow `TMPDIR`, so theirs go inside it. Each run removes the project's run folders over 2 days old whose pid is gone.
-		- 2026-10-25: `cicd/utility/include/safe-rm.bash` is the repo's copy of the guard. cicd.bash's own removals go through it, with the name and marker checks kept.
-		- 2026-11-07: The last child, 2026102516194062, closed, so this closes too.
-	- Decisions:
-		- The sweep leaves a folder with no `run.pid`, since a run didn't make it.
-	- Branch: round-20261025b
-	- Test case: test.bash [dee5h] and [dee5j], plus [de5m8], [dee4z] and [dee50] for the new folder, and the tests of child 2026102516194062.
-	- Verified: Both fail against the round branch's cicd.bash, and pass with the change. The run in the image passed with them.
-	- Closed: 20261106-181541
-	- Acceptance signoff: Self-closed: every child is closed with its tests passing.
-
-- CICD reset: every other recursive removal through the guard
-	- ID: 2026102516194062
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-161940
-	- Opened by: jim-collier
-	- Parent ID: 2026102416313108
-	- Requirements [Feature]:
-		- The parent's last requirement, outside cicd.bash: the harnesses, stage 7's commands on the other boxes, the utilities, release.bash, the installers, and the image build's own removals. Each goes through the guard in `cicd/utility/include/safe-rm.bash`, or a copy of it on the other boxes, and keeps the name and marker checks it has.
-		- The guard calls `realpath -e`. Check it on macOS and FreeBSD before stage 7 uses it there.
-	- Progress log:
-		- 2026-11-06: Split in four. 2026110612393817 has the harnesses, the utilities and release.bash, and 2026110612551903 the installer. Both are in. 2026110612393822 has stage 7's commands on the boxes, and 2026110612595461 the image build. Both are in.
-		- 2026-11-06: The guard no longer calls `realpath -e`, so the second requirement is answered in 2026110612393817.
-		- 2026-11-07: All 4 children are in, so it closes.
-	- Closed: 20261106-181541
-	- Test case: its children's tests: test.bash [deywq], [deywr], [ddgkk], [db70t] to [db70y], [deyx8], [deyx9], [dez5f], [dez5g], [dez5h], [ddg8f], [ddg8p] and [dez69].
-	- Verified: 2026-11-07, all 4 children closed with those tests passing; the round's quick runs passed test.bash 1816/0.
-	- Acceptance signoff: Self-closed: every child is closed with its tests passing.
-
-- CICD reset: stage 7's removals on the boxes through a guard
-	- ID: 2026110612393822
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261106-123938
-	- Opened by: jim-collier
-	- Parent ID: 2026102516194062
-	- Prereq IDs: 2026110612393817
-	- Requirements [Feature]:
-		- The copy step's removal of `old.*` on the Mac and Unix boxes, and the Windows box's `rmdir /s /q`, go through a copy of the guard on the box. The marker check stays.
-		- POSIX sh on the Mac and Unix boxes, with no `realpath -e` or `rm --one-file-system`, as in the repo's guard.
-		- Then [deywr] in test.bash drops its `old.*` exemption.
-	- Progress log:
-		- 2026-11-06: The Mac and Unix boxes' copy step removes each `old.*` through `cicd/utility/include/safe-rm.sh`, a POSIX sh copy of the guard, sent ahead of the command. It gets the box's temp root resolved, since macOS's sits behind `/var`. The marker check stays.
-		- 2026-11-06: The Windows box's folder goes through `cicd/utility/include/safe-rm.ps1`, sent with `-EncodedCommand`. It checks the folder, then runs the same `rmdir /s /q`. The `made` check stays. A folder it keeps gets a note in the stage's output.
-		- 2026-11-06: [deywr] has no `old.*` exemption.
-		- 2026-11-06: Asserts given new values, old -> new: [ddg8f] wanted `rmdir /s /q "<folder>"` in the calls log, and now wants the guard's call on that folder in the script sent. [ddg8p] looked for no `rmdir` there, and now for no `EncodedCommand`.
-	- Decisions:
-		- The Windows guard takes only a `test_gitsby_*` folder right under `%TEMP%`. The repo guard refuses any folder right under the temp root, but the Windows box's run folder has always sat there, one per run.
-		- rmdir still does the removal on Windows, after the guard's checks, since it removes a link inside the folder rather than follow it.
-		- The guards are files in the repo, sent with the commands that use them, rather than copied to the box first. That adds no ssh step and leaves no copy on the box to go stale.
-	- Branch: round-20261107
-	- Commit: da39cf8
-	- Test case: test.bash [dez5f] (the sh guard), [dez5g] (the Windows guard under pwsh), [dez5h] (the Mac's copy step leaves an `old.*` that is a link), plus [deywr], [ddg8f] and [ddg8p].
-	- Verified: [dez5g], [dez5h] and [ddg8f] fail against the old remote-tests.bash, and [ddg8p] fails with the `made` check taken out. [dez5f] passes under dash, bash, zsh and busybox sh, and fails with the link check taken out. `--backlog-run-quick` passed, with test.bash 1814/0, fuzz 313/0 and parity 30/0.
-	- Verified: stage 7 on vm925w, b26 and vmFreeBSD at da39cf8. Each copy step and the Windows removal ran with no note, and test.bash passed 1516/0 on b26 and 1413/0 on vmFreeBSD, [dez5f] included.
-	- Swept: every `rm -r`, `rmdir /s` and `Remove-Item -Recurse` outside legacy/. What's left is the image build's, in 2026110612595461, and install.ps1's, which has its own checks.
-	- Closed: 20261106-173828
-	- Acceptance signoff: Self-closed: its new checks fail before the change, and stage 7 passed on all three kinds of box.
-
-- CICD reset: the image build's removals through a guard
-	- ID: 2026110612595461
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261106-125954
-	- Opened by: jim-collier
-	- Parent ID: 2026102516194062
-	- Requirements [Feature]:
-		- The Dockerfile's removals of its folders under /tmp go through the guard, copied into the build. `/var/lib/apt/lists/*` and the PSScriptAnalyzer package files aren't under a tmp folder, so they get a guard that names that one parent, or a reason on this item to leave them.
-		- A Dockerfile change gives the image a new tag, so the next run rebuilds it. Leave time for that.
-	- Progress log:
-		- 2026-11-06: Each step that makes a folder works in its own under `/tmp/gitsby`, and removes it through `cicd/utility/include/safe-rm.sh`, copied into the image. Apt's lists go in the step's folder too, so they leave the same way. PSScriptAnalyzer's package files are left out of the unzip, so nothing removes them.
-		- 2026-11-06: The image builds from `cicd/`, so the recipe can copy the guard in, and the tag hashes the guard too.
-		- 2026-11-06: The empty `/tmp/cq` and `/tmp/dl` the old image kept are gone. The build had made them again for the next step's working folder.
-	- Decisions:
-		- No guard for an outside parent. Apt's lists and the module's package files no longer need a removal outside a tmp folder.
-		- The POSIX sh guard, since a build step runs in dash.
-		- The build's context is `cicd/` rather than a second copy of the guard in `cicd/container/`, which could drift.
-	- Branch: round-20261107
-	- Commit: 4efe296
-	- Test case: test.bash [deywr] for the Dockerfile, and [dez69] for the tag.
-	- Verified: [deywr] fails on the old Dockerfile, and [dez69] against the old image-go.bash. The image built, with the same PSScriptAnalyzer files, no apt lists and nothing left under `/tmp/gitsby`. `--backlog-run-quick` passed in it, with test.bash 1816/0, fuzz 313/0 and parity 30/0.
-	- Swept: every `rm -r` and `WORKDIR` in the Dockerfile, the image's tag and build in image-go.bash, which cicd.bash and release.bash share, and both test.bash fixtures that copy the recipe.
-	- Closed: 20261106-181443
-	- Acceptance signoff: Self-closed: its new checks fail before the change, and the image built and passed the quick run.
-
-- CICD reset: CICD process gaps
-	- ID: 2026102416313109
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261024-163131
-	- Opened by: jim-collier
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- What else the shared CICD rules ask for that no other reset item covers:
-			- One line at the end of a run saying what was removed and about what it freed, files as well as docker.
-			- Go's module cache in the volume pruned of what the current `go.sum` doesn't name.
-		- Packaging and dependabot stay deferred, per the standing decision. 20261024: kept out of this item, since nothing makes them pressing.
-	- Progress log:
-		- 2026-10-26: Split. Children: 2026102617543861 (the line at the end of a run, done) and 2026102617543961 (the module cache, done).
-		- 2026-11-07: Both children are in, so it closes.
-	- Closed: 20261106-184427
-	- Test case: its children's tests: test.bash [defng] for the end-of-run line, and [dez7d], [dez7e] and [dez7f] for the module cache.
-	- Acceptance signoff: Self-closed: both children are closed with their tests passing.
-
-- CICD reset: prune Go's module cache in the volume
-	- ID: 2026102617543961
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261026-175439
-	- Opened by: jim-collier
-	- Parent ID: 2026102416313109
-	- Requirements [Feature]:
-		- The parent's second requirement: Go's module cache in the `gitsby-cicd-cache` volume pruned of what the current `go.sum` doesn't name.
-	- Notes:
-		- The volume is shared by every worktree's runs, and another branch's `go.sum` may name other versions. A prune could take a module from under a run in progress. Prune only when no other gitsby run's container is up, which only the run out here can see.
-		- Keep the `golang.org/toolchain` modules for the `toolchain` line in go.mod, which `go.sum` doesn't name, and the `/go.mod`-only entries it does.
-		- test.bash builds the SHCL 2.x build offline from the cache ([ddg6f]), so check that every module it needs is in `go.sum`.
-		- Module paths in the cache spell capitals as `!` plus the lower case letter, and go makes the files read-only.
-	- Progress log:
-		- 2026-11-06: At the end of a run in the image that passed, with no gitsby run's container up, a container of its own with no network takes every module version `src-go/go.sum` doesn't name out of the volume's module cache, downloads and extracted trees both. It keeps the toolchain for go.mod's `toolchain` line, or its `go` line where there's none. The end line counts the versions that went. The first run took out the old `yottacore/shcl/source/go/v2` pseudo-version.
-	- Decisions:
-		- Only after a pass, as with the older image tags. A failed run may have failed on a fetch.
-		- Any running container with the project's label holds it off. The run's own are gone by then. A run that starts in the second between the check and the prune can lose only versions this `go.sum` doesn't name, which go fetches again.
-		- A volume over 2 GB still goes whole, and then there's nothing to prune.
-		- The checksum db's cache stays. It isn't a module, and it's small.
-		- The removal goes through a new guard in `safe-rm.bash` that names the module cache as the one folder it removes under, since the volume is under no temp folder. A link in the cache stops the prune whole.
-	- Branch: round-20261107
-	- Test case: test.bash [dez7d] for the run's end, [dez7e] for the prune on a cache laid out as go leaves it, [dez7f] for `go.sum` naming all [ddg6f] builds from.
-	- Verified: [dez7d] fails against the previous cicd.bash, and [dez7e] against a prune that doesn't spell capitals as the cache does. Its link case fails with the guard's link check taken out. [dez7f] fails on a `go.sum` without the SHCL 2.x module. `--backlog-run-quick` passed with every area, test.bash 1825/0, fuzz 313/0, parity 30/0, and [ddg6f] passed after the real prune.
-	- Swept: every mount of the cache volume, in cicd.bash and image-go.bash, and through it release.bash and remote-tests.bash. Only the end of a cicd.bash run prunes. A run on the box never touches the box's own module cache.
-	- Acceptance signoff: Self-closed: its tests passed.
-	- Closed: 20261106-184200
-
-- backlog_sort.py exits 1 after a sort that moves items
-	- ID: 2026110613150884
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261106-131508
-	- Opened by:
-	- Progress log:
-		- 2026-11-06: The plain run sorted the backlog and exited 1, so the round's chained check after it never ran. A check run after it exited 0. The contract wants 0 from a sort that worked.
-		- 2026-11-06: The helper's file put this item where the sort then moved it, so a filed item can leave the backlog unsorted.
-	- Actual cause: the plain run returned 1 whenever the file changed, the same code as --check's "would move".
-	- Actual fix: a plain run that writes the file exits 0. Only --check exits 1 when items would move, and 2 is still an error. The usage text and header say so.
-	- Decisions: the second progress note is the helper's insert position, not the sort script, so it is left to the helper (reported to the orchestrator).
-	- Test case: none in the suites, since the script is a tool outside the repo. Run by hand on a scratch backlog: --check exit 1, plain exit 0, --check after exit 0, bad path exit 2.
-	- Swept: the other exit paths in backlog_sort.py (help, die, nothing-moves).
-	- Closed: 20261106-190500
-	- Acceptance signoff: Self-closed, mechanical fix.
-
-- spawn-count.bash says it restores each command's origin, and doesn't
-	- ID: 2026110611364366
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261106-113643
-	- Opened by: jim-collier
-	- Related IDs: 2026102617594214
-	- Steps to reproduce [Bug]: read `fRestore` and the fixture setup in cicd/utility/spawn-count.bash.
-	- Incorrect behavior [Bug]: the header says the work tree and the origin are restored between runs. `fRestore` copies the pristine folder, but each clone's origin url is the pristine bare repo's absolute path, which `cp -a` keeps. So `pullcom`, `br switch` and `br prune` push to the pristine origin, and later commands are measured against what they left.
-	- Expected behavior [Bug]: each command runs against an untouched origin, so its count doesn't depend on the commands before it.
-	- Reproduced [Bug]: by reading, while working 2026102617594214. Control: a clone made by `git clone` from a relative path also stores the absolute path as its url.
-	- Possible cause [Bug]: nothing points the live clones at the live origins after the copy. A `remote set-url` in `fRestore` would.
-	- Actual cause [Bug]: as above. `pullcom` pushed its commit to the pristine origin, so each later command ran against an origin ahead of its clone.
-	- Actual effort: Low
-	- Decisions:
-		- The pristine clones are pointed at the live origins once, after the fixture is built, rather than in `fRestore`. `cp -a` then brings the right url along, with no git call per command.
-		- A check after the measures, [dez8s], compares both pristine origins' refs with what they held when built, and fails the run with nothing recorded if one moved. It catches any later command that writes there, not only this one.
-		- With no strace the script still prints only the SKIP lines of its measures. [dez8s] runs on the fixture, which isn't built then.
-	- Actual fix [Bug]: `remote set-url` on the two pristine clones, to their live origins. No count changed today.
-	- Branch: round-20261107
-	- Test case: [dez8s] in spawn-count.bash.
-	- Verified: [dez8s] fails against the script before the fix, on a copy of it run against the real build, and passes after, with every count the same. `--backlog-run-quick` passed with every area, test.bash 1826/0, fuzz 313/0, parity 30/0, spawn counts with [dez8s]. `test-id.bash --check` and shellcheck clean.
-	- Swept: the other copies in the fixture. acct-ssh and acct-https are set to github.com urls, and the measures in them don't fetch or push. The other `cp -a`, `-r` and `-R` calls in cicd/ copy no clone with its `.git`.
-	- Closed: 20261106-190905
-	- Acceptance signoff: Self-closed, test fixture only.
-
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
@@ -1439,6 +1204,37 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: 2026-10-05, all 3 choices answered.
 	- Closed: 2026-10-05
 
+- test.bash [dd5e4] fails on the macOS workflow: install.ps1 leaves its bracketed temp dir
+	- ID: 2026110617122394
+	- Type: Bug
+	- Status: Done
+	- Needs external testing: No
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261106-171223
+	- Opened by:
+	- Target OS: macOS
+	- Reproduced [Bug]: Yes, 2026-11-07 on b26, with pwsh 7.6.9 from its tarball: the real install.ps1 and the suite's stubs, a fresh HOME and TMPDIR `pstmp[1]`. It installs, and TMPDIR still holds `.dotnet`.
+	- Actual cause [Bug]: Not install.ps1, and not the link. pwsh 7.6.9's first run in a fresh HOME, as it writes `telemetry.uuid`, leaves the runtime's `.dotnet/shm` and `.dotnet/lockfiles` in TMPDIR on macOS. [dd5e3] is the first run in its HOME, and [dd5e4] wants TMPDIR empty.
+	- Progress log:
+		- 2026-11-07: [dd5e4] is the only FAIL on macos-latest in runs 42254437886, 42257775761, 42273158689 and 42295283425. [dd5e3] passes, so the install works and only the cleanup of the temp dir under TMPDIR=<work>/pstmp[1] fails. Linux passes.
+		- Guess to check first: the macOS temp path goes through the /var -> /private/var link, and the newer real-folder-under-temp guard refuses a path through a link.
+		- 2026-11-07: Ruled out the link: test.bash's work folder is resolved with `pwd -P`. Ruled out the guard: the first red, 2505356, predates it, with install.ps1 the same as at the last green.
+		- 2026-11-07: What changed is the image. macos-latest went from pwsh 7.6.6 (.NET 10.0.12) to 7.6.9 (.NET 10.0.14). The Intel job's macOS 15 image didn't, and passes.
+		- 2026-11-07: On b26, a bare `pwsh -Command 1` in a fresh HOME leaves `.dotnet` under 7.6.9, but not under 7.6.6, not with `POWERSHELL_TELEMETRY_OPTOUT=1`, and not on a second run in the same HOME. install.ps1's own cleanup works under both versions, bracket or not.
+	- Actual fix [Bug]: fPsInstall runs pwsh with `POWERSHELL_TELEMETRY_OPTOUT=1`. [dd5e4] still wants TMPDIR empty.
+	- Decisions:
+		- The opt-out goes in fPsInstall, rather than [dd5e4] skipping `.dotnet`. A suite run has no reason to send telemetry, and the check stays strict for anything else left in TMPDIR.
+		- No change to install.ps1. `.dotnet` is the runtime's state, shared across processes, and a user's first pwsh run leaves it whatever is run.
+	- Swept: every pwsh call in test.bash. Only fPsInstall runs with a fresh HOME and checks TMPDIR afterwards. The rest use the box's HOME.
+	- Verified: [dez8c] fails with the opt-out taken out, and the other 1825 checks pass. `--backlog-run-quick` passed, with test.bash 1826/0, fuzz 313/0 and parity 30/0.
+	- Verified: on b26 under pwsh 7.6.9, the [dd5e3] install with a bracketed TMPDIR leaves `.dotnet` without the opt-out and nothing with it. b26 is an Intel Mac on macOS 15.8, so macOS 26 on Apple silicon is left to the workflow.
+	- Verified: 2026-11-07, macOS workflow run 42332925745 on round-20261107: [dd5e3], [dd5e4] and [dez8c] passed on macos-latest and macos-15-intel, with no FAIL on either.
+	- Branch: round-20261107
+	- Test case: test.bash [dez8c] (pwsh runs with telemetry off), plus [dd5e4] on macos-latest.
+	- Origin: gover's macOS workflow, first red at run 42254437886 (Merge fuzz-log, 2026-11-06), red since on every gover push; last green 40447463125 (Merge round-20261026)
+	- Closed: 20261106-192147
+	- Acceptance signoff: Self-closed: the hosted macOS run passed on both runners.
+
 - `--backlog-run-quick lint` fails markdownlint MD038 on backlog.md, again
 	- ID: 2026110611063063
 	- Type: Bug
@@ -1803,6 +1599,165 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: dup-acct
 	- Test case: TestRepeatedAccountKeys, TestAccountSetFindsTheKeyInAnyPiece, and one account list check in test.bash.
 	- Closed: 2026-09-30
+
+- CICD reset: temp files and safe removal
+	- ID: 2026102416313108
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-163131
+	- Opened by: jim-collier
+	- Prereq IDs: 2026102506452478
+		- It uses `--keep-temp` from that item. The other new flags are in since a1c62bb.
+	- Related IDs: 2026101912030138
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per `Temp files` and `Safe removal` in the shared CICD rules. A run's own temp files are already in one folder that goes on exit, and the harnesses remove theirs.
+		- Each run makes one folder, `${HOST_TEMP}/gitsby/<YYYYmmDD-HHMMSS>_<NNN>/`, with a plain `mkdir` and a counter, and points `TMPDIR`, `TEMP` and `TMP` at it. The harnesses and utilities make theirs inside it.
+		- `--keep-temp` keeps it and prints where it is.
+		- Each run writes a `run.pid` in it, and removes the project's own stale run folders: over 2 days old, with no live process.
+		- Every recursive removal goes through the repo's own copy of the safe removal guard, in the pipeline, the harnesses, the utilities, release.bash, the installer and stage 7's commands on the other boxes. The checks of a folder's name and marker that some have today stay as well.
+		- 35 recursive removals in 12 files, none through the guard. File list in the private notes.
+	- Progress log:
+		- 2026-10-25: Split. 2026102516194062 has the removals outside cicd.bash. The rest is in.
+		- 2026-10-25: A run's folder is `${HOST_TEMP}/gitsby/<start time>_<NNN>`, else under `TMPDIR`, made with a plain `mkdir` and the first free counter, with `TMPDIR`, `TEMP` and `TMP` pointed at it and a `run.pid`. The harnesses and release.bash already follow `TMPDIR`, so theirs go inside it. Each run removes the project's run folders over 2 days old whose pid is gone.
+		- 2026-10-25: `cicd/utility/include/safe-rm.bash` is the repo's copy of the guard. cicd.bash's own removals go through it, with the name and marker checks kept.
+		- 2026-11-07: The last child, 2026102516194062, closed, so this closes too.
+	- Decisions:
+		- The sweep leaves a folder with no `run.pid`, since a run didn't make it.
+	- Branch: round-20261025b
+	- Test case: test.bash [dee5h] and [dee5j], plus [de5m8], [dee4z] and [dee50] for the new folder, and the tests of child 2026102516194062.
+	- Verified: Both fail against the round branch's cicd.bash, and pass with the change. The run in the image passed with them.
+	- Closed: 20261106-181541
+	- Acceptance signoff: Self-closed: every child is closed with its tests passing.
+
+- CICD reset: every other recursive removal through the guard
+	- ID: 2026102516194062
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-161940
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313108
+	- Requirements [Feature]:
+		- The parent's last requirement, outside cicd.bash: the harnesses, stage 7's commands on the other boxes, the utilities, release.bash, the installers, and the image build's own removals. Each goes through the guard in `cicd/utility/include/safe-rm.bash`, or a copy of it on the other boxes, and keeps the name and marker checks it has.
+		- The guard calls `realpath -e`. Check it on macOS and FreeBSD before stage 7 uses it there.
+	- Progress log:
+		- 2026-11-06: Split in four. 2026110612393817 has the harnesses, the utilities and release.bash, and 2026110612551903 the installer. Both are in. 2026110612393822 has stage 7's commands on the boxes, and 2026110612595461 the image build. Both are in.
+		- 2026-11-06: The guard no longer calls `realpath -e`, so the second requirement is answered in 2026110612393817.
+		- 2026-11-07: All 4 children are in, so it closes.
+	- Closed: 20261106-181541
+	- Test case: its children's tests: test.bash [deywq], [deywr], [ddgkk], [db70t] to [db70y], [deyx8], [deyx9], [dez5f], [dez5g], [dez5h], [ddg8f], [ddg8p] and [dez69].
+	- Verified: 2026-11-07, all 4 children closed with those tests passing; the round's quick runs passed test.bash 1816/0.
+	- Acceptance signoff: Self-closed: every child is closed with its tests passing.
+
+- CICD reset: stage 7's removals on the boxes through a guard
+	- ID: 2026110612393822
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261106-123938
+	- Opened by: jim-collier
+	- Parent ID: 2026102516194062
+	- Prereq IDs: 2026110612393817
+	- Requirements [Feature]:
+		- The copy step's removal of `old.*` on the Mac and Unix boxes, and the Windows box's `rmdir /s /q`, go through a copy of the guard on the box. The marker check stays.
+		- POSIX sh on the Mac and Unix boxes, with no `realpath -e` or `rm --one-file-system`, as in the repo's guard.
+		- Then [deywr] in test.bash drops its `old.*` exemption.
+	- Progress log:
+		- 2026-11-06: The Mac and Unix boxes' copy step removes each `old.*` through `cicd/utility/include/safe-rm.sh`, a POSIX sh copy of the guard, sent ahead of the command. It gets the box's temp root resolved, since macOS's sits behind `/var`. The marker check stays.
+		- 2026-11-06: The Windows box's folder goes through `cicd/utility/include/safe-rm.ps1`, sent with `-EncodedCommand`. It checks the folder, then runs the same `rmdir /s /q`. The `made` check stays. A folder it keeps gets a note in the stage's output.
+		- 2026-11-06: [deywr] has no `old.*` exemption.
+		- 2026-11-06: Asserts given new values, old -> new: [ddg8f] wanted `rmdir /s /q "<folder>"` in the calls log, and now wants the guard's call on that folder in the script sent. [ddg8p] looked for no `rmdir` there, and now for no `EncodedCommand`.
+	- Decisions:
+		- The Windows guard takes only a `test_gitsby_*` folder right under `%TEMP%`. The repo guard refuses any folder right under the temp root, but the Windows box's run folder has always sat there, one per run.
+		- rmdir still does the removal on Windows, after the guard's checks, since it removes a link inside the folder rather than follow it.
+		- The guards are files in the repo, sent with the commands that use them, rather than copied to the box first. That adds no ssh step and leaves no copy on the box to go stale.
+	- Branch: round-20261107
+	- Commit: da39cf8
+	- Test case: test.bash [dez5f] (the sh guard), [dez5g] (the Windows guard under pwsh), [dez5h] (the Mac's copy step leaves an `old.*` that is a link), plus [deywr], [ddg8f] and [ddg8p].
+	- Verified: [dez5g], [dez5h] and [ddg8f] fail against the old remote-tests.bash, and [ddg8p] fails with the `made` check taken out. [dez5f] passes under dash, bash, zsh and busybox sh, and fails with the link check taken out. `--backlog-run-quick` passed, with test.bash 1814/0, fuzz 313/0 and parity 30/0.
+	- Verified: stage 7 on vm925w, b26 and vmFreeBSD at da39cf8. Each copy step and the Windows removal ran with no note, and test.bash passed 1516/0 on b26 and 1413/0 on vmFreeBSD, [dez5f] included.
+	- Swept: every `rm -r`, `rmdir /s` and `Remove-Item -Recurse` outside legacy/. What's left is the image build's, in 2026110612595461, and install.ps1's, which has its own checks.
+	- Closed: 20261106-173828
+	- Acceptance signoff: Self-closed: its new checks fail before the change, and stage 7 passed on all three kinds of box.
+
+- CICD reset: the image build's removals through a guard
+	- ID: 2026110612595461
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261106-125954
+	- Opened by: jim-collier
+	- Parent ID: 2026102516194062
+	- Requirements [Feature]:
+		- The Dockerfile's removals of its folders under /tmp go through the guard, copied into the build. `/var/lib/apt/lists/*` and the PSScriptAnalyzer package files aren't under a tmp folder, so they get a guard that names that one parent, or a reason on this item to leave them.
+		- A Dockerfile change gives the image a new tag, so the next run rebuilds it. Leave time for that.
+	- Progress log:
+		- 2026-11-06: Each step that makes a folder works in its own under `/tmp/gitsby`, and removes it through `cicd/utility/include/safe-rm.sh`, copied into the image. Apt's lists go in the step's folder too, so they leave the same way. PSScriptAnalyzer's package files are left out of the unzip, so nothing removes them.
+		- 2026-11-06: The image builds from `cicd/`, so the recipe can copy the guard in, and the tag hashes the guard too.
+		- 2026-11-06: The empty `/tmp/cq` and `/tmp/dl` the old image kept are gone. The build had made them again for the next step's working folder.
+	- Decisions:
+		- No guard for an outside parent. Apt's lists and the module's package files no longer need a removal outside a tmp folder.
+		- The POSIX sh guard, since a build step runs in dash.
+		- The build's context is `cicd/` rather than a second copy of the guard in `cicd/container/`, which could drift.
+	- Branch: round-20261107
+	- Commit: 4efe296
+	- Test case: test.bash [deywr] for the Dockerfile, and [dez69] for the tag.
+	- Verified: [deywr] fails on the old Dockerfile, and [dez69] against the old image-go.bash. The image built, with the same PSScriptAnalyzer files, no apt lists and nothing left under `/tmp/gitsby`. `--backlog-run-quick` passed in it, with test.bash 1816/0, fuzz 313/0 and parity 30/0.
+	- Swept: every `rm -r` and `WORKDIR` in the Dockerfile, the image's tag and build in image-go.bash, which cicd.bash and release.bash share, and both test.bash fixtures that copy the recipe.
+	- Closed: 20261106-181443
+	- Acceptance signoff: Self-closed: its new checks fail before the change, and the image built and passed the quick run.
+
+- CICD reset: CICD process gaps
+	- ID: 2026102416313109
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-163131
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- What else the shared CICD rules ask for that no other reset item covers:
+			- One line at the end of a run saying what was removed and about what it freed, files as well as docker.
+			- Go's module cache in the volume pruned of what the current `go.sum` doesn't name.
+		- Packaging and dependabot stay deferred, per the standing decision. 20261024: kept out of this item, since nothing makes them pressing.
+	- Progress log:
+		- 2026-10-26: Split. Children: 2026102617543861 (the line at the end of a run, done) and 2026102617543961 (the module cache, done).
+		- 2026-11-07: Both children are in, so it closes.
+	- Closed: 20261106-184427
+	- Test case: its children's tests: test.bash [defng] for the end-of-run line, and [dez7d], [dez7e] and [dez7f] for the module cache.
+	- Acceptance signoff: Self-closed: both children are closed with their tests passing.
+
+- CICD reset: prune Go's module cache in the volume
+	- ID: 2026102617543961
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261026-175439
+	- Opened by: jim-collier
+	- Parent ID: 2026102416313109
+	- Requirements [Feature]:
+		- The parent's second requirement: Go's module cache in the `gitsby-cicd-cache` volume pruned of what the current `go.sum` doesn't name.
+	- Notes:
+		- The volume is shared by every worktree's runs, and another branch's `go.sum` may name other versions. A prune could take a module from under a run in progress. Prune only when no other gitsby run's container is up, which only the run out here can see.
+		- Keep the `golang.org/toolchain` modules for the `toolchain` line in go.mod, which `go.sum` doesn't name, and the `/go.mod`-only entries it does.
+		- test.bash builds the SHCL 2.x build offline from the cache ([ddg6f]), so check that every module it needs is in `go.sum`.
+		- Module paths in the cache spell capitals as `!` plus the lower case letter, and go makes the files read-only.
+	- Progress log:
+		- 2026-11-06: At the end of a run in the image that passed, with no gitsby run's container up, a container of its own with no network takes every module version `src-go/go.sum` doesn't name out of the volume's module cache, downloads and extracted trees both. It keeps the toolchain for go.mod's `toolchain` line, or its `go` line where there's none. The end line counts the versions that went. The first run took out the old `yottacore/shcl/source/go/v2` pseudo-version.
+	- Decisions:
+		- Only after a pass, as with the older image tags. A failed run may have failed on a fetch.
+		- Any running container with the project's label holds it off. The run's own are gone by then. A run that starts in the second between the check and the prune can lose only versions this `go.sum` doesn't name, which go fetches again.
+		- A volume over 2 GB still goes whole, and then there's nothing to prune.
+		- The checksum db's cache stays. It isn't a module, and it's small.
+		- The removal goes through a new guard in `safe-rm.bash` that names the module cache as the one folder it removes under, since the volume is under no temp folder. A link in the cache stops the prune whole.
+	- Branch: round-20261107
+	- Test case: test.bash [dez7d] for the run's end, [dez7e] for the prune on a cache laid out as go leaves it, [dez7f] for `go.sum` naming all [ddg6f] builds from.
+	- Verified: [dez7d] fails against the previous cicd.bash, and [dez7e] against a prune that doesn't spell capitals as the cache does. Its link case fails with the guard's link check taken out. [dez7f] fails on a `go.sum` without the SHCL 2.x module. `--backlog-run-quick` passed with every area, test.bash 1825/0, fuzz 313/0, parity 30/0, and [ddg6f] passed after the real prune.
+	- Swept: every mount of the cache volume, in cicd.bash and image-go.bash, and through it release.bash and remote-tests.bash. Only the end of a cicd.bash run prunes. A run on the box never touches the box's own module cache.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261106-184200
 
 - CICD reset: the harnesses, utilities and release.bash through the guard
 	- ID: 2026110612393817
@@ -2454,6 +2409,51 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: stage 7's harness on gover after round 4, 2026-10-04. b26: Go tests pass, and test.bash against the universal build 1255/0. vmFreeBSD, vmDebARM64 and vm925w: Go tests pass. The Unix boxes ran Go tests only this time, since no Unix builds were passed. Their full test.bash ran earlier the same day and failed only `[db712]`, fixed since.
 	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
 	- Closed: 20261004-190953
+
+- backlog_sort.py exits 1 after a sort that moves items
+	- ID: 2026110613150884
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261106-131508
+	- Opened by:
+	- Progress log:
+		- 2026-11-06: The plain run sorted the backlog and exited 1, so the round's chained check after it never ran. A check run after it exited 0. The contract wants 0 from a sort that worked.
+		- 2026-11-06: The helper's file put this item where the sort then moved it, so a filed item can leave the backlog unsorted.
+	- Actual cause: the plain run returned 1 whenever the file changed, the same code as --check's "would move".
+	- Actual fix: a plain run that writes the file exits 0. Only --check exits 1 when items would move, and 2 is still an error. The usage text and header say so.
+	- Decisions: the second progress note is the helper's insert position, not the sort script, so it is left to the helper (reported to the orchestrator).
+	- Test case: none in the suites, since the script is a tool outside the repo. Run by hand on a scratch backlog: --check exit 1, plain exit 0, --check after exit 0, bad path exit 2.
+	- Swept: the other exit paths in backlog_sort.py (help, die, nothing-moves).
+	- Closed: 20261106-190500
+	- Acceptance signoff: Self-closed, mechanical fix.
+
+- spawn-count.bash says it restores each command's origin, and doesn't
+	- ID: 2026110611364366
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261106-113643
+	- Opened by: jim-collier
+	- Related IDs: 2026102617594214
+	- Steps to reproduce [Bug]: read `fRestore` and the fixture setup in cicd/utility/spawn-count.bash.
+	- Incorrect behavior [Bug]: the header says the work tree and the origin are restored between runs. `fRestore` copies the pristine folder, but each clone's origin url is the pristine bare repo's absolute path, which `cp -a` keeps. So `pullcom`, `br switch` and `br prune` push to the pristine origin, and later commands are measured against what they left.
+	- Expected behavior [Bug]: each command runs against an untouched origin, so its count doesn't depend on the commands before it.
+	- Reproduced [Bug]: by reading, while working 2026102617594214. Control: a clone made by `git clone` from a relative path also stores the absolute path as its url.
+	- Possible cause [Bug]: nothing points the live clones at the live origins after the copy. A `remote set-url` in `fRestore` would.
+	- Actual cause [Bug]: as above. `pullcom` pushed its commit to the pristine origin, so each later command ran against an origin ahead of its clone.
+	- Actual effort: Low
+	- Decisions:
+		- The pristine clones are pointed at the live origins once, after the fixture is built, rather than in `fRestore`. `cp -a` then brings the right url along, with no git call per command.
+		- A check after the measures, [dez8s], compares both pristine origins' refs with what they held when built, and fails the run with nothing recorded if one moved. It catches any later command that writes there, not only this one.
+		- With no strace the script still prints only the SKIP lines of its measures. [dez8s] runs on the fixture, which isn't built then.
+	- Actual fix [Bug]: `remote set-url` on the two pristine clones, to their live origins. No count changed today.
+	- Branch: round-20261107
+	- Test case: [dez8s] in spawn-count.bash.
+	- Verified: [dez8s] fails against the script before the fix, on a copy of it run against the real build, and passes after, with every count the same. `--backlog-run-quick` passed with every area, test.bash 1826/0, fuzz 313/0, parity 30/0, spawn counts with [dez8s]. `test-id.bash --check` and shellcheck clean.
+	- Swept: the other copies in the fixture. acct-ssh and acct-https are set to github.com urls, and the measures in them don't fetch or push. The other `cp -a`, `-r` and `-R` calls in cicd/ copy no clone with its `.git`.
+	- Closed: 20261106-190905
+	- Acceptance signoff: Self-closed, test fixture only.
 
 - The cleanup line says a run folder freed about 8B
 	- ID: 2026102620355012
