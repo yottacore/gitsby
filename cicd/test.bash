@@ -6032,6 +6032,22 @@ GHEOF
 		bash -c "out=\$(bash '${kb}/cicd/utility/keep-build.bash' --run 'BASH_VERSINFO[\$(touch ${kb}/ran)0]' 2>&1); [[ \$? == 1 ]] && grep -qF \"isn't a build number\" <<< \"\$out\" && [[ ! -e '${kb}/ran' ]]"
 	fAssert "[dbjww] and a pooled-copy runner exists for driving the newest build" \
 		bash -c "[[ -x '${root}/cicd/utility/run-latest.ps1' ]]"
+	## The copy's name sorts by date, so a culture with another calendar named a 2026 build
+	## 2569 and it ran ahead of every later one.
+	if ! command -v pwsh >/dev/null 2>&1; then
+		fSkipBlock "run-latest.ps1 runs (no pwsh)"
+	else
+		local rlTree="${work}/runlatest"
+		mkdir -p "${rlTree}/cicd/utility" "${rlTree}/src-go" "${rlTree}/home"
+		cp "${root}/cicd/utility/run-latest.ps1" "${rlTree}/cicd/utility/"
+		fAssertOut "[df06h] and run-latest.ps1 exits 1 with no build to run" '^rc=1$' \
+			bash -c "HOME='${rlTree}/home' pwsh -NoProfile -NonInteractive -File '${rlTree}/cicd/utility/run-latest.ps1' >/dev/null 2>&1; echo \"rc=\$?\""
+		printf '#!/bin/sh\necho "pooled build ran $*"\n' > "${rlTree}/src-go/gitsby"
+		chmod +x "${rlTree}/src-go/gitsby"
+		touch -d '2026-01-02 03:04:05' "${rlTree}/src-go/gitsby"
+		fAssertOut "[df06j] and it names its copy by the Gregorian date under th-TH" '^gitsby_20260102-030405$' \
+			bash -c "[[ \$(HOME='${rlTree}/home' pwsh -NoProfile -NonInteractive -Command \"[cultureinfo]::CurrentCulture = 'th-TH'; & '${rlTree}/cicd/utility/run-latest.ps1' a b\") == 'pooled build ran a b' ]] && ls '${rlTree}/home/.cache/gitsby-runs'"
+	fi
 	fAssert "[dbjwx] and a spawn report exists for the startup look, marker-gated like lint's" \
 		bash -c "[[ -x '${root}/cicd/utility/spawn-report.bash' ]] && grep -q 'spawn-seen' '${root}/cicd/utility/spawn-report.bash'"
 	## A head reading the sorted list quit after two lines, and sort died writing the rest once
@@ -8426,3 +8442,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261107 JC: --version is its one line. [dcnw7] pins that line in place of the copyright line, and keep-build --list reads it. 1850 -> 1854.
 ##		- 20261107 JC: A v2.1.0 flat accounts file converts on first read, found in ~/.config too. [db00e], [db010], [dbfh2] and [dcmey] are off for [df05t], [df05w], [df05x] and [df05v]. 1854 -> 1861.
 ##		- 20261107 JC: The gate fixture has ruff.toml, and [df06k] checks lint runs ruff under it. 1861 -> 1862.
+##		- 20261107 JC: run-latest.ps1 runs once with no build and once under th-TH, [df06h] and [df06j]. 1862 -> 1864.

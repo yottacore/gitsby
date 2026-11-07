@@ -81,20 +81,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: 4918b5b and cfb6d90, 2026-08-18 to 08-19, through 47bcda3, 2026-10-06. The 20261003 round's enhancement 7 covered the duplicates in other files. Confirmed by reading and `git log -G`.
 	- Estimated effort: Avg
 
-- Code Review 20261107 enhancement 7: run-latest.ps1 names its copies in the current culture
-	- ID: 2026110708000118
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Requirements [Feature]:
-		- run-latest.ps1:57 formats `LastWriteTime` with `yyyyMMdd-HHmmss` in the current culture, then runs the copy that sorts last by name. A copy made under `th-TH` is named `2569...` and sorts above every later build.
-		- Format with `[Globalization.CultureInfo]::InvariantCulture`.
-		- Lines 71 and 72: under `$ErrorActionPreference = 'Stop'`, `Write-Error` already ends the script, so `exit 1` never runs.
-	- Origin: 7825434, 2026-08-21. Filed under the PowerShell traps rule, new in the directives after 2026-10-03. Confirmed with a pwsh probe of both cultures.
-	- Estimated effort: Low
-
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
@@ -3491,6 +3477,27 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [ddf4q] and [ddf4r] in test.bash.
 	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
 	- Closed: 20261003-145130
+
+- Code Review 20261107 enhancement 7: run-latest.ps1 names its copies in the current culture
+	- ID: 2026110708000118
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- run-latest.ps1:57 formats `LastWriteTime` with `yyyyMMdd-HHmmss` in the current culture, then runs the copy that sorts last by name. A copy made under `th-TH` is named `2569...` and sorts above every later build.
+		- Format with `[Globalization.CultureInfo]::InvariantCulture`.
+		- Lines 71 and 72: under `$ErrorActionPreference = 'Stop'`, `Write-Error` already ends the script, so `exit 1` never runs.
+	- Origin: 7825434, 2026-08-21. Filed under the PowerShell traps rule, new in the directives after 2026-10-03. Confirmed with a pwsh probe of both cultures.
+	- Estimated effort: Low
+	- Actual fix [Feature]: run-latest.ps1 formats the copy's name with `[Globalization.CultureInfo]::InvariantCulture`, and the 2 dead `exit 1` lines after `Write-Error` are gone. A comment says `Write-Error` ends the script there with exit code 1.
+	- Branch: round-20261107b
+	- Test case: test.bash [df06h]: run-latest.ps1 with no build exits 1. [df06j]: under th-TH a build dated 2026-01-02 03:04:05 is copied as `gitsby_20260102-030405` and runs with its args.
+	- Verified: [df06j] failed before the fix, with the copy named `gitsby_25690102-030405`, and passes after. [df06h] passed before and after, since the `exit 1` never ran. PSScriptAnalyzer passed 5.1-compatible. test.bash 1864/0.
+	- Swept: every `.ToString(`, `Get-Date -Format` and `-UFormat` in the .ps1 files. The only other one is the frozen legacy/bin/gitsby.ps1:1717, a commit message that nothing sorts, so it stays.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-111500
 
 - Code Review 20261107 enhancement 6: The Python helpers don't follow the Python rules, and nothing checks them
 	- ID: 2026110708000117
