@@ -33,21 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- Code Review 20261107 item 3: The release check for history footers skips both PowerShell scripts
-	- ID: 2026110708000103
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: release.bash:329 greps for `^##` footers. install.ps1 and run-latest.ps1 write them with one `#`, so no date is found and the file is skipped without a warning. go-test-lines.bash has no footer and is skipped the same way.
-	- Expected behavior [Bug]: Every pipeline or installer script that changed since the last tag is checked, as the comment above the loop says.
-	- Reproduced [Bug]: 2026-11-07. The grep finds 0 footers in install.ps1, against 16 written `#   - 2026...`, and 14 in install.bash. Both .ps1 files changed since v2.1.0.
-	- Origin: release.bash:329 from 0cd9050, 2026-09-15. Not seen by an earlier round. Confirmed.
-	- Notes:
-		- A file in that list with no footer at all should warn too, not pass silently.
-	- Estimated effort: Low
-
 - Code Review 20261107 enhancement 1: `encoding/json` costs 344 KB for 2 glab reads
 	- ID: 2026110708000112
 	- Type: Enhancement
@@ -130,53 +115,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Notes:
 		- test.bash `[dakpb]`, `[dafqx]` and `[damxv]` pin the bare `unknown`, so they change with it.
 	- Estimated effort: Avg
-
-- Code Review 20261107 item 9: `safe-rm.ps1` can report a failed removal as done
-	- ID: 2026110708000109
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: Any stdout line from `cmd.exe /d /c rmdir` at safe-rm.ps1:23 joins the function's output, so `-not (fSafeRm ...)` in remote-tests.bash:294 reads a `$false` as success.
-	- Expected behavior [Bug]: The function returns only its boolean. `$null = & cmd.exe ...` does it.
-	- Reproduced [Bug]: In part. A pwsh function that writes one line and returns `$false` gives `-not (f)` as `False`. Whether `rmdir /s /q` ever writes to stdout wasn't checked on a Windows box.
-	- Origin: safe-rm.ps1:23 from da39cf8, 2026-11-06. Plausible.
-	- Notes:
-		- `fSafeRm` isn't Verb-Noun either, which the PowerShell rules ask for. It matches the Bash guard's name on purpose, so leave it unless the fix touches it anyway.
-	- Estimated effort: Low
-
-- Code Review 20261107 item 10: install.bash says the module has no dependencies
-	- ID: 2026110708000110
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: install.bash:215 tells a user with no release binary to build it, since "the module is pure Go with no dependencies". go.mod requires shcl v3.
-	- Expected behavior [Bug]: The message says what's true. `go build` fetches shcl itself, so dropping the claim is enough.
-	- Reproduced [Bug]: 2026-11-07, read against src-go/go.mod.
-	- Origin: install.bash:215. It was already wrong at the 20261003 round, with shcl v2, and the 2026-10 sweep for "no third-party dependencies" missed it. Confirmed.
-	- Estimated effort: Low
-
-- Code Review 20261107 item 11: Newer cicd scripts miss the header, shellcheck and error helper rules
-	- ID: 2026110708000111
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]:
-		- No copyright or license header: go-test-lines.bash, which has no History either, image-go.bash, safe-rm.bash, safe-rm.sh and safe-rm.ps1.
-		- shellcheck disables with no reason: fuzz.bash:428 and test.bash:5274. Three at fuzz.bash:464, :523 and :548 suppress nothing.
-		- Errors through a bare `echo >&2` rather than `fDie` or `fUsage`: remote-tests.bash 10 sites, spawn-count.bash 9, test-id.bash 5, backlog-check.bash 3, demo-repo.bash 3.
-		- remote-tests.bash:30 and :508 say vm925w's SPICE port is fixed at 5900. It's 5999 since 2026-11-03.
-	- Expected behavior [Bug]: The Bash rules in style-guide.md and the directives: a `##` header with Purpose, copyright and license, a reason on each disable, and errors through the script's error helper with `printf`.
-	- Reproduced [Bug]: 2026-11-07. The 3 dead disables were each removed in a copy, and shellcheck 0.11.0 stayed clean. The rest by reading.
-	- Origin: all after the 20261003 round, from 956d07b, 2026-10-04, through da39cf8, 2026-11-06. gh-account.bash got its header for the same reason in the 20261004 round. Confirmed.
-	- Notes:
-		- lint-report.bash and spawn-report.bash keep their echo output lines, per the earlier decision.
-	- Estimated effort: Low
 
 - Code Review 20261107 enhancement 3: `br merge` and `release` talk to origin more often than they need to
 	- ID: 2026110708000114
@@ -1426,6 +1364,29 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept (2026-10-05, `pr create` and `release`): every step after their commit. In release.go the pulls of `dev` and the default branch, both checkouts, the merge and its back-out, the tag, both pushes, and the fast-forward of `dev`. Its nothing-new check read the whole tree as work to release, and now reads the index under the flag. In pr.go the push and the `gh` or `tea` call. `pr ok` reads the whole tree to refuse, and refuses the flag. The line above about pr.go and release.go held only while they refused the flag.
 	- Acceptance signoff: 2026-10-05, all 3 choices answered.
 	- Closed: 2026-10-05
+
+- Code Review 20261107 item 3: The release check for history footers skips both PowerShell scripts
+	- ID: 2026110708000103
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: release.bash:329 greps for `^##` footers. install.ps1 and run-latest.ps1 write them with one `#`, so no date is found and the file is skipped without a warning. go-test-lines.bash has no footer and is skipped the same way.
+	- Expected behavior [Bug]: Every pipeline or installer script that changed since the last tag is checked, as the comment above the loop says.
+	- Reproduced [Bug]: 2026-11-07. The grep finds 0 footers in install.ps1, against 16 written `#   - 2026...`, and 14 in install.bash. Both .ps1 files changed since v2.1.0.
+	- Origin: release.bash:329 from 0cd9050, 2026-09-15. Not seen by an earlier round. Confirmed.
+	- Notes:
+		- A file in that list with no footer at all should warn too, not pass silently.
+	- Estimated effort: Low
+
+	- Actual fix [Bug]: The footer grep takes one or more # before the dash, so the .ps1 files' entries count. A changed script with no footer at all, by shebang or a .ps1 name, gets its own warning; a Dockerfile or data file is still passed over. run-latest.ps1's entries have the dash now, since they had none.
+	- Branch: round-20261107b
+	- Test case: test.bash [dd5em] now matches the .ps1 form and refuses a line with no dash; [df02z] a changed script with no footer warns; [df030] a changed data file doesn't.
+	- Verified: [dd5em] and [df02z] fail on the previous release.bash and pass after. test.bash 1840/0, lint passed.
+	- Swept: every file git diff lists under cicd and the installers was checked for its footer form. Only the 2 .ps1 files use one #, and only go-test-lines.bash had none; it has one now.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-093500
 
 - Code Review 20261107 item 1: Two small crypto imports made the binary 25% bigger and slower to start
 	- ID: 2026110708000101
@@ -2694,6 +2655,81 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: stage 7's harness on gover after round 4, 2026-10-04. b26: Go tests pass, and test.bash against the universal build 1255/0. vmFreeBSD, vmDebARM64 and vm925w: Go tests pass. The Unix boxes ran Go tests only this time, since no Unix builds were passed. Their full test.bash ran earlier the same day and failed only `[db712]`, fixed since.
 	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
 	- Closed: 20261004-190953
+
+- Code Review 20261107 item 9: `safe-rm.ps1` can report a failed removal as done
+	- ID: 2026110708000109
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: Any stdout line from `cmd.exe /d /c rmdir` at safe-rm.ps1:23 joins the function's output, so `-not (fSafeRm ...)` in remote-tests.bash:294 reads a `$false` as success.
+	- Expected behavior [Bug]: The function returns only its boolean. `$null = & cmd.exe ...` does it.
+	- Reproduced [Bug]: In part. A pwsh function that writes one line and returns `$false` gives `-not (f)` as `False`. Whether `rmdir /s /q` ever writes to stdout wasn't checked on a Windows box.
+	- Origin: safe-rm.ps1:23 from da39cf8, 2026-11-06. Plausible.
+	- Notes:
+		- `fSafeRm` isn't Verb-Noun either, which the PowerShell rules ask for. It matches the Bash guard's name on purpose, so leave it unless the fix touches it anyway.
+	- Estimated effort: Low
+
+	- Actual fix [Bug]: `$null = & cmd.exe ...`, so the function's output is its boolean alone.
+	- Branch: round-20261107b
+	- Test case: test.bash [df031] runs the guard under pwsh with a cmd.exe on PATH that writes a line and removes nothing, and reads the caller's `-not (fSafeRm ...)` as a failure. Skips where there's no pwsh.
+	- Verified: [df031] fails on the previous safe-rm.ps1 and passes after, on b23's pwsh. Not run on a Windows box yet; the next stage 7 run covers that.
+	- Swept: safe-rm.sh and safe-rm.bash answer through the shell's exit status, so nothing joins theirs. `fSafeRm` keeps its name.
+	- Acceptance signoff: Self-closed: its test passed.
+	- Closed: 20261107-093500
+
+- Code Review 20261107 item 10: install.bash says the module has no dependencies
+	- ID: 2026110708000110
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: install.bash:215 tells a user with no release binary to build it, since "the module is pure Go with no dependencies". go.mod requires shcl v3.
+	- Expected behavior [Bug]: The message says what's true. `go build` fetches shcl itself, so dropping the claim is enough.
+	- Reproduced [Bug]: 2026-11-07, read against src-go/go.mod.
+	- Origin: install.bash:215. It was already wrong at the 20261003 round, with shcl v2, and the 2026-10 sweep for "no third-party dependencies" missed it. Confirmed.
+	- Estimated effort: Low
+
+	- Actual fix [Bug]: The 2 messages in install.bash and the 2 in install.ps1 say "Build it instead" and give the commands, with no claim about dependencies.
+	- Branch: round-20261107b
+	- Test case: test.bash [df032] fails on "no dependencies" in either installer.
+	- Verified: [df032] fails on the previous installers and passes after.
+	- Swept: README.md and the other docs have no such claim; the earlier sweep took those.
+	- Acceptance signoff: Self-closed: its test passed.
+	- Closed: 20261107-093500
+
+- Code Review 20261107 item 11: Newer cicd scripts miss the header, shellcheck and error helper rules
+	- ID: 2026110708000111
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]:
+		- No copyright or license header: go-test-lines.bash, which has no History either, image-go.bash, safe-rm.bash, safe-rm.sh and safe-rm.ps1.
+		- shellcheck disables with no reason: fuzz.bash:428 and test.bash:5274. Three at fuzz.bash:464, :523 and :548 suppress nothing.
+		- Errors through a bare `echo >&2` rather than `fDie` or `fUsage`: remote-tests.bash 10 sites, spawn-count.bash 9, test-id.bash 5, backlog-check.bash 3, demo-repo.bash 3.
+		- remote-tests.bash:30 and :508 say vm925w's SPICE port is fixed at 5900. It's 5999 since 2026-11-03.
+	- Expected behavior [Bug]: The Bash rules in style-guide.md and the directives: a `##` header with Purpose, copyright and license, a reason on each disable, and errors through the script's error helper with `printf`.
+	- Reproduced [Bug]: 2026-11-07. The 3 dead disables were each removed in a copy, and shellcheck 0.11.0 stayed clean. The rest by reading.
+	- Origin: all after the 20261003 round, from 956d07b, 2026-10-04, through da39cf8, 2026-11-06. gh-account.bash got its header for the same reason in the 20261004 round. Confirmed.
+	- Notes:
+		- lint-report.bash and spawn-report.bash keep their echo output lines, per the earlier decision.
+	- Estimated effort: Low
+
+	- Actual fix [Bug]:
+		- Headers with the copyright and license on go-test-lines.bash, which has a History now too, image-go.bash, safe-rm.bash, safe-rm.sh and safe-rm.ps1. The last takes the ASCII form, as every .ps1 file does. The change to safe-rm.sh changes the image tag, so the next full run rebuilds the image.
+		- Every shellcheck disable in the pipeline scripts says why: 13 got a reason, in fuzz.bash, test.bash, parity.bash, pre-push.bash and demo-repo.bash. The 5 that silenced nothing are gone: 3 in fuzz.bash, 1 in test.bash and 1 in gfs-rotate.bash, whose file-level disable covered it.
+		- remote-tests.bash, spawn-count.bash, test-id.bash, backlog-check.bash and demo-repo.bash have fDie or fUsage, printing with printf, and every error goes through them with the exit code it had. A message inside a stub, or in a command sent to a box, prints with printf. release.bash, gen-winres.bash and gen-checksums.bash had the same bare echo and got the same.
+		- remote-tests.bash's Windows note says 5999.
+	- Branch: round-20261107b
+	- Test case: test.bash [df033] no disable without a reason in any linted script outside legacy; [df034] no `echo ... >&2` in the pipeline scripts, leaving out install.bash, test.bash, the 2 report scripts and n8git_backup-and-publish; [df035] every script under cicd and both installers have the SPDX line.
+	- Verified: All 3 fail on the previous scripts and pass after. shellcheck is clean on every changed script, the quick lint area passed, test.bash 1840/0, and each script's bad-option path exits 2 with its message.
+	- Swept: every `shellcheck disable` under cicd and in install.bash, every `echo ... >&2` in the linted scripts, and every script under cicd for the SPDX line.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-093500
 
 - Code Review 20261107 item 5: Messages for every git host still say GitHub or gh
 	- ID: 2026110708000105

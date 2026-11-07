@@ -187,7 +187,7 @@ fSkipsGate(){
 		for p in "${skip[@]}"; do
 			[[ -n "${p}" ]] || continue
 			## Unquoted in the second, so the pattern globs.
-			# shellcheck disable=SC2053
+			# shellcheck disable=SC2053  ## the * after the quoted folder is the point: everything under it.
 			if [[ "${p}" == */ ]]; then [[ "${f}" != "${p}"* ]] || { hit=1; break; }
 			else [[ "${f}" != ${p} ]] || { hit=1; break; }; fi
 		done
@@ -305,3 +305,4 @@ esac
 ##		- 20261025 JC: A commit whose cicd.bash has --merge-gate is gated with it, every check of a
 ##		  plain run, and an older one keeps --gate. A push that changes only the paths its
 ##		  config.bash lists in MERGE_GATE_SKIP goes out ungated.
+##		- 20261107 JC: The shellcheck disable says why.

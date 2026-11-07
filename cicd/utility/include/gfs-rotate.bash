@@ -170,7 +170,6 @@ gfs_rotate(){
 	local -A role; role["${items[0]}"]="first"
 	local spec rn cnt nk i
 	for spec in "year perYear ${kYear}" "month perMonth ${kMonth}" "week perWeek ${kWeek}" "day perDay ${kDay}" "hour perHour ${kHour}"; do
-		# shellcheck disable=SC2086
 		set -- ${spec}; rn="$1"; cnt="$3"; local -n arr="$2"
 		local -a keys=("${!arr[@]}")
 		if ((${#keys[@]})); then
@@ -224,3 +223,4 @@ declare -i isSourced_t6wq5=0; [[ "${BASH_SOURCE[0]}" == "${0}" ]] || isSourced_t
 ##		- 2026-10-04: Every expansion braced, and shellcheck enforces it. The loop
 ##		  variables in gfs_rotate have real names. No change in behavior.
 ##		- 2026-10-04: The prune refuses an empty path, and ends options before it.
+##		- 2026-11-07: Dropped a line disable of 2086 that the file-level one already covered.

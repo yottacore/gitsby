@@ -42,6 +42,7 @@ set -Eeuo pipefail
 
 meDir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd -- "${meDir}/../.." && pwd)"
+fUsage(){ printf '%s\n' "$*" >&2; exit 2; }
 at=""; check=0; quiet=0; list=0; listWhat=(); count=1
 suites=(cicd/test.bash cicd/fuzz.bash cicd/parity.bash cicd/utility/spawn-count.bash)
 while [[ $# -gt 0 ]]; do
@@ -53,8 +54,8 @@ while [[ $# -gt 0 ]]; do
 		-n)        count="${2:?-n needs a count}"; shift ;;
 		--root)    root="${2:?--root needs a directory}"; shift ;;
 		-h|--help) grep -E '^##' "$0" | sed 's/^##\t\?//'; exit 0 ;;
-		-*)        echo "Unknown option: $1 (try --help)" >&2; exit 2 ;;
-		*)         ((list)) || { echo "Unknown option: $1 (try --help)" >&2; exit 2; }; listWhat+=("$1") ;;
+		-*)        fUsage "Unknown option: $1 (try --help)" ;;
+		*)         ((list)) || fUsage "Unknown option: $1 (try --help)"; listWhat+=("$1") ;;
 	esac
 	shift
 done
@@ -67,8 +68,8 @@ fBase32(){
 	printf '%s\n' "${out:-0}"
 }
 
-if ((check && list)); then echo "test-id: --check and --list are separate runs; give one." >&2; exit 2; fi
-if ((list && ! ${#listWhat[@]})); then echo "test-id: --list needs a suite, 'go' or 'gofuzz'" >&2; exit 2; fi
+if ((check && list)); then fUsage "test-id: --check and --list are separate runs; give one."; fi
+if ((list && ! ${#listWhat[@]})); then fUsage "test-id: --list needs a suite, 'go' or 'gofuzz'"; fi
 
 ## One line per test: "<id or -> <kind> <file>:<line>", then a tab and its label. Kind is ok or
 ## fail for the two halves of a hand-written pair, and check for everything else. A label that
@@ -98,7 +99,7 @@ fSites(){
 			continue
 		fi
 		f="${f#"${root}/"}"
-		[[ -f "${root}/${f}" ]] || { ((! list)) || { echo "test-id: no suite at ${f}" >&2; return 2; }; continue; }
+		[[ -f "${root}/${f}" ]] || { ((! list)) || { printf '%s\n' "test-id: no suite at ${f}" >&2; return 2; }; continue; }
 		FILE="${f}" awk '
 			/^[[:space:]]*#/ { next }
 			{
@@ -122,14 +123,14 @@ fSites(){
 }
 
 if ((! check && ! list)); then
-	[[ "${count}" =~ ^[1-9][0-9]*$ ]] || { echo "test-id: -n takes a count of 1 or more" >&2; exit 2; }
+	[[ "${count}" =~ ^[1-9][0-9]*$ ]] || fUsage "test-id: -n takes a count of 1 or more"
 	sec=""
 	## Now from the shell rather than date, whose %N is GNU-only. BSD date prints it literally.
 	if [[ -n "${at}" ]]; then sec="$(date -u -d "${at}" +%s)" || exit 2
 	else sec="${EPOCHREALTIME%[.,]*}"; fi
 	## Checked before the arithmetic: a bad number there aborts this whole block, and the
 	## script would carry on into --check.
-	if [[ ! "${sec}" =~ ^[0-9]+$ ]] || ((10#${sec} < 946684800)); then echo "test-id: ${at} is before 2000" >&2; exit 2; fi
+	if [[ ! "${sec}" =~ ^[0-9]+$ ]] || ((10#${sec} < 946684800)); then fUsage "test-id: ${at} is before 2000"; fi
 	declare -A taken=()
 	while read -r id _; do [[ "${id}" == "-" ]] || taken["${id}"]=1; done < <(fSites)
 	min=$(( (10#${sec} - 946684800) / 60 ))
@@ -182,3 +183,4 @@ exit 0
 ##		- 20261004 JC: Every expansion braced, and shellcheck enforces it.
 ##		- 20261025 JC: --list prints each test's ID and label for the suites named, so cicd.bash --list can say what a run would check.
 ##		- 20261026 JC: IDs are minutes since 2000 in Crockford base 32, and every old one was converted from the time it held. A taken minute goes to the next free one. -n mints several.
+##		- 20261107 JC: Errors go through fUsage.

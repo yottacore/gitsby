@@ -50,13 +50,16 @@ source "${here}/include/gfs-rotate.bash"
 # shellcheck source=/dev/null
 source "${here}/include/safe-rm.bash"
 
+fDie(){   printf '%s\n' "$*" >&2; exit 1; }
+fUsage(){ printf '%s\n' "$*" >&2; exit 2; }
+
 declare -i quiet=0 record=0
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		-q|--quiet) quiet=1; shift ;;
 		--record)   record=1; shift ;;
 		-h|--help)  sed -n '/^##	Purpose:/,/^##	History:/p' "${BASH_SOURCE[0]}" | sed '$d; s/^##	\{0,1\}//'; exit 0 ;;
-		*)          echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
+		*)          fUsage "unknown option: $1 (try --help)" ;;
 	esac
 done
 
@@ -68,7 +71,7 @@ fFail(){ local id="${1%%\] *}"; fEcho_Clean "  FAIL ${id#\[} ${1#*\] }"; }
 ## A SKIP for each command, named as fMeasure names it below.
 command -v strace >/dev/null 2>&1 || { sed -n 's/^fMeasure "\[\([^]]*\)\] \([^"]*\)".*/  SKIP \1 \2 (no strace)/p' "${BASH_SOURCE[0]}"; exit 0; }
 exe="${root}/${GO_MODULE_DIR}/${EXE_NAME}"
-[[ -x "${exe}" ]] || { echo "no build at ${GO_MODULE_DIR}/${EXE_NAME} - run cicd.bash stage 2, or 'go build' there" >&2; exit 1; }
+[[ -x "${exe}" ]] || fDie "no build at ${GO_MODULE_DIR}/${EXE_NAME} - run cicd.bash stage 2, or 'go build' there"
 
 fSafeRm_Init || exit 1; safeTmp="$(fSafeRm_Tmp)" || exit 1
 work="$(mktemp -d "${safeTmp}/gitsby-spawn.XXXXXX")"
@@ -102,7 +105,7 @@ case "\$1 \$2" in
 	"api user")   if [[ -n "\${GH_TOKEN:-}" ]]; then echo "\${GH_TOKEN#tok_}"; else echo ghuser; fi ;;
 	"auth token") exit 1 ;;
 	"config get") case " \$* " in *" user "*) echo ghuser ;; *) echo https ;; esac ;;
-	*)            echo "fake gh: unhandled: \$*" >&2; exit 2 ;;
+	*)            printf '%s\n' "fake gh: unhandled: \$*" >&2; exit 2 ;;
 esac
 EOF
 cat > "${work}/bin/ssh" <<EOF
@@ -300,7 +303,7 @@ for ((i = 0; i < ${#labels[@]}; i++)); do
 	[[ -z "${baseline}" ]] || was="$(awk -F'\t' -v k="${labels[i]}" '$1==k{print $2}' "${baseline}" || true)"
 	[[ -n "${was}" ]] || { ((quiet)) || fEcho_Clean "  PASS ${ids[i]} ${labels[i]}: ${counts[i]}, new"; continue; }
 	## Arithmetic on text from a file runs any $(...) in an array subscript, so only digits go on.
-	[[ "${was}" =~ ^[0-9]+$ ]] || { echo "spawn-count: $(basename "${baseline}") has '${was}' for ${labels[i]}, which isn't a count. Fix or delete that file." >&2; exit 1; }
+	[[ "${was}" =~ ^[0-9]+$ ]] || fDie "spawn-count: $(basename "${baseline}") has '${was}' for ${labels[i]}, which isn't a count. Fix or delete that file."
 	if (( counts[i] > was + $(fHeadroom "${was}") )); then
 		## --record takes the rise as the new baseline, so the run passes, and so does the line.
 		if ((record)); then fEcho_Clean "  PASS ${ids[i]} ${labels[i]}: ${was} -> ${counts[i]}, regressed and recorded"
@@ -319,18 +322,13 @@ if [[ "$(fOriginRefs)" == "${originRefs}" ]]; then fOk "[dez8s] the fixture's or
 else fFail "[dez8s] the fixture's origins are as built, after every command"; originMoved=1; fi
 
 if ((originMoved)); then
-	echo "spawn counts ran against an origin a command had changed; nothing recorded." >&2
-	exit 1
+	fDie "spawn counts ran against an origin a command had changed; nothing recorded."
 fi
 if ((overLimit)); then
-	echo "spawn counts went over their limits; nothing recorded." >&2
-	echo "  A deliberate rise raises the expected count beside the command in ${BASH_SOURCE[0]##*/}." >&2
-	exit 1
+	fDie "spawn counts went over their limits; nothing recorded."$'\n'"  A deliberate rise raises the expected count beside the command in ${BASH_SOURCE[0]##*/}."
 fi
 if ((regressed)) && ((! record)); then
-	echo "spawn counts regressed against $(basename "${baseline}"); nothing recorded." >&2
-	echo "  Re-run with --record to accept the new counts as the baseline." >&2
-	exit 1
+	fDie "spawn counts regressed against $(basename "${baseline}"); nothing recorded."$'\n'"  Re-run with --record to accept the new counts as the baseline."
 fi
 
 stamp="$(date +%Y%m%d-%H%M%S)"
@@ -362,3 +360,4 @@ gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		- 20261106 JC: br prune of five landed branches, in a world with its own origin. A spawn per branch fits the headroom over one branch, and not over five.
 ##		- 20261106 JC: Its scratch folder goes through fSafeRm.
 ##		- 20261106 JC: Each live clone's origin is its live copy, not the pristine one, which a pushing command changed for every command after it. A check after the measures fails the run if a pristine origin moved.
+##		- 20261107 JC: Errors go through fDie and fUsage.

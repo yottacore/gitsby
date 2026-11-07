@@ -41,20 +41,21 @@ backlog="${root}/project/backlog.md"
 base=""; quiet=0
 suites=(cicd/test.bash cicd/parity.bash cicd/fuzz.bash)
 
+fUsage(){ printf '%s\n' "$*" >&2; exit 2; }
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		-q)        quiet=1 ;;
 		--base)    base="${2:?--base needs a ref}"; shift ;;
 		--backlog) backlog="${2:?--backlog needs a file}"; shift ;;
 		-h|--help) grep -E '^##' "$0" | sed 's/^##\t\?//'; exit 0 ;;
-		*)         echo "Unknown option: $1 (try --help)" >&2; exit 2 ;;
+		*)         fUsage "Unknown option: $1 (try --help)" ;;
 	esac
 	shift
 done
 
 fEcho_Clean(){ ((quiet)) || printf '%s\n' "$*"; }
-[[ -r "${backlog}" ]] || { echo "backlog-check: no backlog at ${backlog}" >&2; exit 2; }
-git -C "${root}" rev-parse --git-dir >/dev/null 2>&1 || { echo "backlog-check: ${root} is not a git repo" >&2; exit 2; }
+[[ -r "${backlog}" ]] || fUsage "backlog-check: no backlog at ${backlog}"
+git -C "${root}" rev-parse --git-dir >/dev/null 2>&1 || fUsage "backlog-check: ${root} is not a git repo"
 
 findings=0
 
@@ -150,3 +151,4 @@ exit "${findings}"
 ##		- 20260926 JC: Reads the test ID at the front of a label. A check whose ID or label is still there was edited, and the backlog can name a removed one by either.
 ##		- 20261004 JC: fEcho_Clean prints with printf. Every expansion braced, and shellcheck
 ##		  enforces it.
+##		- 20261107 JC: Errors go through fUsage.

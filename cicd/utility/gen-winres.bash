@@ -59,6 +59,7 @@ icon="${root}/assets/gitsby.ico"
 logo="${root}/assets/logo.png"
 
 declare -i quiet=0 check=0 iconOnly=0
+fUsage(){ printf '%s\n' "$*" >&2; exit 2; }
 version=""
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -66,7 +67,7 @@ while [[ $# -gt 0 ]]; do
 		--check)    check=1; shift ;;
 		--icon)     iconOnly=1; shift ;;
 		-h|--help)  sed -n '/^##	Purpose:/,/^##	History:/p' "${BASH_SOURCE[0]}" | sed '$d; s/^##	\{0,1\}//'; exit 0 ;;
-		-*)         echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
+		-*)         fUsage "unknown option: $1 (try --help)" ;;
 		*)          version="$1"; shift ;;
 	esac
 done
@@ -201,7 +202,7 @@ for arch in "${arches[@]}"; do
 	"${goversioninfo}" ${flags} -o "${work}/${name}" "${json}" || fDie "goversioninfo failed for windows/${arch}."
 	if ((check)); then
 		if ! cmp -s "${work}/${name}" "${out}/${name}"; then
-			echo "  ${GO_MODULE_DIR}/${name} is not what ${version} generates - run cicd/utility/gen-winres.bash" >&2
+			printf '%s\n' "  ${GO_MODULE_DIR}/${name} is not what ${version} generates - run cicd/utility/gen-winres.bash" >&2
 			differed=1
 		fi
 	else
@@ -223,3 +224,4 @@ exit 0
 ##		- 20261004 JC: fSay is fEcho_Clean, like the other pipeline scripts, and prints with
 ##		  printf. Every expansion braced, and shellcheck enforces it.
 ##		- 20261106 JC: Its scratch folders go through fSafeRm.
+##		- 20261107 JC: Errors go through fUsage and printf.

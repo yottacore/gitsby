@@ -323,7 +323,7 @@ fSameSpelling(){
 	local a="" b=""
 	# shellcheck disable=SC2086  ## deliberate word-split: these carry multi-word commands ('br land').
 	a="$(fRunNew "${dir}" -q -NoFetch ${old})"
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086  ## ${new} is a list of arguments, split on purpose.
 	b="$(fRunNew "${dir}" -q -NoFetch ${new})"
 	if [[ "${a}" == "${b}" ]]; then
 		fOk "${label}"
@@ -406,3 +406,4 @@ fEcho_Clean "parity passed: ${pass}, differed: ${fail}"
 ##		  Every expansion braced, and shellcheck enforces it.
 ##		- 20261026 JC: Each check prints PASS or FAIL, then its ID and label, in place of ok and DIFFER.
 ##		- 20261106 JC: Its scratch folder goes through fSafeRm, made where the guard takes it.
+##		- 20261107 JC: The shellcheck disable says why.

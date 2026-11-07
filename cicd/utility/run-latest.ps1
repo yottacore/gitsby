@@ -85,5 +85,6 @@ exit $LASTEXITCODE
 
 
 # History:
-#   20260821 JC: Created. The pooled-copy runner: newest build, timestamped copies,
-#   week-long age-out, args forwarded.
+#   - 20260821 JC: Created. The pooled-copy runner: newest build, timestamped copies,
+#     week-long age-out, args forwarded.
+#   - 20261107 JC: The history entries start with a dash, the form the release check reads.

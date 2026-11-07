@@ -212,7 +212,7 @@ if [[ -z "${tag}" ]]; then
 		fi
 	fi
 	if [[ -z "${tag}" ]]; then
-		[[ -z "${releaseFacts}" ]] || fErr "No release of ${repo} publishes a gitsby binary yet, so there is nothing to install. Build it instead - the module is pure Go with no dependencies: git clone https://github.com/${repo}.git && cd gitsby/src-go && go build -o gitsby ."
+		[[ -z "${releaseFacts}" ]] || fErr "No release of ${repo} publishes a gitsby binary yet, so there is nothing to install. Build it instead: git clone https://github.com/${repo}.git && cd gitsby/src-go && go build -o gitsby ."
 		[[ -z "${noBinary}" ]] || fErr "${noBinary}, the latest full release, has no gitsby binary, and the release list that would name one couldn't be read. GitHub may be unreachable, or rate-limiting this address (60 requests an hour, unauthenticated). A specific release always works: --tag TAG."
 		fErr "Couldn't work out the latest release of ${repo}. GitHub may be unreachable, or rate-limiting this address (60 requests an hour, unauthenticated). A specific release always works: --tag TAG."
 	fi
@@ -237,7 +237,7 @@ if [[ -z "${want}" ]]; then
 		echo
 		echo "Error: release ${tag} publishes no gitsby binary for ${goOs}/${arch}."
 		[[ -z "${published}" ]] || echo "  It publishes: ${published}"
-		echo "  Build it for yours instead - the module is pure Go with no dependencies:"
+		echo "  Build it for yours instead:"
 		echo "    git clone https://github.com/${repo}.git && cd gitsby/src-go && go build -o gitsby ."
 		echo
 	} >&2
@@ -348,3 +348,4 @@ echo
 ##		- 20261003 JC: A Mac takes gitsby-darwin-universal, one binary for both CPUs, in place of one per CPU. --arch there is noted and changes nothing.
 ##		- 20261003 JC: With no --tag, the newest full release that publishes a gitsby binary, or while none does, the newest pre-release that does. v2.1.0 publishes only the old scripts, so until 3.0.0 the install line found nothing to install. releases/latest is still asked first, and the release list only when its SHA256SUMS names no binary.
 ##		- 20261004 JC: Every expansion braced, and shellcheck enforces it.
+##		- 20261107 JC: The build-it-yourself message no longer claims there is nothing for go build to fetch.

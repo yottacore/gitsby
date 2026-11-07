@@ -9,6 +9,12 @@
 ## never HOST_TEMP itself nor a folder right under it, and not a link or through one. The caller
 ## sets HOST_TEMP to the box's temp root, resolved, and APP_NAME to the stage's folder under it.
 ## No realpath, and rm's -x where it has no --one-file-system, as in safe-rm.bash.
+##	History: At bottom of script.
+
+##	Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
+##	Licensed under The MIT License (MIT). Full text at:
+##		https://mit-license.org/
+##	SPDX-License-Identifier: MIT
 
 fSafeRm(){
 	if [ "$#" -ne 1 ] || [ -z "${1}" ] || [ -z "${HOST_TEMP:-}" ] || [ -z "${APP_NAME:-}" ]; then
@@ -32,3 +38,4 @@ fSafeRm(){
 ##	History:
 ##		- 2026-11-06 JC: Created, from safe-rm.bash, for stage 7's old trees on the Mac and Unix boxes.
 ##		- 2026-11-06 JC: The image build's folders go through it too.
+##		- 2026-11-07 JC: Header with copyright and license.

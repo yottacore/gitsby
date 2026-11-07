@@ -35,7 +35,7 @@ fSums(){
 		[[ "${f}" == "SHA256SUMS" ]] && continue
 		files+=("${f}")
 	done
-	((${#files[@]})) || { echo "no files to checksum in $(pwd)" >&2; return 1; }
+	((${#files[@]})) || { printf '%s\n' "no files to checksum in $(pwd)" >&2; return 1; }
 	sha256sum -- "${files[@]}"
 }
 
@@ -51,3 +51,4 @@ fi
 ##		- 20260724: Created.
 ##		- 20260818: Checksums the directory it is run in rather than a hard-coded bin/ holding two scripts. A release is now one binary per platform, and the set changes with the target list.
 ##		- 20261004 JC: fEcho prints with printf. Every expansion braced, and shellcheck enforces it.
+##		- 20261107 JC: The error prints with printf.

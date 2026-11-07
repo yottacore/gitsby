@@ -13,6 +13,12 @@
 ## the caller's nice stops at the docker client. Uses the caller's root and APP_NAME. The
 ## container is labeled and named for the run's folder, GITSBY_CICD_RUN, so cicd.bash can remove
 ## what a stopped run left.
+##	History: At bottom of script.
+
+##	Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
+##	Licensed under The MIT License (MIT). Full text at:
+##		https://mit-license.org/
+##	SPDX-License-Identifier: MIT
 
 fImageGo(){
 	local dir="$1" outDir="$2" name="" n=0
@@ -87,3 +93,4 @@ fImageBuild(){
 ##		- 2026-10-25 JC: Labeled dev.project and dev.run, and named for the run's folder.
 ##		- 2026-10-25 JC: fImageRecipe and fImageBuild, moved here from cicd.bash so release.bash builds with the same image. A build folder outside the tree is mounted too.
 ##		- 2026-11-06 JC: The image builds from cicd/, so the recipe can copy safe-rm.sh in, and the tag hashes it.
+##		- 2026-11-07 JC: Header with copyright and license.

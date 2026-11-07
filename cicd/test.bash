@@ -5278,7 +5278,7 @@ GHEOF
 		## The same gh wrapper with nothing after it, and git: the build itself, since bash isn't on PATH.
 		mkdir -p "${rl}/alone"
 		ln -sf "$(command -v git)" "${rl}/alone/git"
-		# shellcheck disable=SC2059
+		# shellcheck disable=SC2059  ## one template, two targets
 		printf "${rlWrap}" "$(command -v bash)" "${rl}/count" "${rl}/count" "${rl}/count" "${goBin}" > "${rl}/alone/gh" && chmod +x "${rl}/alone/gh"
 		fAssertOut    "[de897] a gh that is gitsby is skipped for the next one on PATH"  'gho_faketoken' \
 			bash -c "cd '${acWork}' && env ${acEnv} PATH='${rl}/link:${ac}/bin:${PATH}' '${gitsby}' -q raw gh auth token --user workacct"
@@ -5378,19 +5378,19 @@ GHEOF
 	fAssert "[db6y9] and treats a failing pipeline as fatal" \
 		grep -q 'the pipeline did not pass' "${relBash}"
 	## -y alone is unattended but not quiet, and would print every check line of the phase 1 run.
-	# shellcheck disable=SC2016
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[dd5ej] and release.bash -q runs it quiet" \
 		grep -qF '((quiet)) && pipeline=("${here}/cicd.bash" --no-publish -q ' "${relBash}"
 	## The footer check read two harnesses once, and three pipeline files went a month without an
 	## entry. A footer date is written either way.
-	# shellcheck disable=SC2016
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[dd5ek] release.bash checks the history footer of every pipeline and installer script" \
 		grep -qF 'git diff --name-only "${lastTag}" HEAD -- cicd install.bash install.ps1)' "${relBash}"
 	local relFootRe=""
 	relFootRe="$(sed -n "s/^[[:space:]]*newest=\"\$(grep -oE '\([^']*\)'.*/\1/p" "${relBash}")"
-	# shellcheck disable=SC2016
-	fAssert "[dd5em] and reads a footer date written 20260819 or 2026-08-19" \
-		bash -c '[[ -n "$1" ]] && grep -qE "$1" <<< "$2" && grep -qE "$1" <<< "$3"' _ "${relFootRe}" $'##\t- 20260819 JC: x' $'##\t- 2026-08-19 JC: x'
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssert "[dd5em] and reads a footer date written 20260819 or 2026-08-19, after ## or a .ps1 file's one #" \
+		bash -c '[[ -n "$1" ]] && grep -qE "$1" <<< "$2" && grep -qE "$1" <<< "$3" && grep -qE "$1" <<< "$4" && ! grep -qE "$1" <<< "$5"' _ "${relFootRe}" $'##\t- 20260819 JC: x' $'##\t- 2026-08-19 JC: x' '#   - 20260915 JC: x' '#   20260821 JC: x'
 	if [[ "$(uname -s)" != Linux ]]; then
 		fSkipBlock "release.bash --dry-run checks (Linux only)"
 	else
@@ -5462,6 +5462,20 @@ GHEOF
 		fRelRun --dry-run
 		fAssert "[dd5ev] and a dashed footer date newer than the tag answers it" \
 			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'Dry run done: v1.2.4 was not released' '${relOut}' && ! grep -qF 'has no history entry' '${relOut}'"
+		## A changed script with no footer at all was passed over without a word. A data file still is.
+		printf '#!/usr/bin/env bash\n' > "${relRepo}/cicd/utility/nofoot.bash"
+		printf 'x\n' > "${relRepo}/cicd/container/nofoot.txt"
+		git -C "${relRepo}" add cicd/utility/nofoot.bash cicd/container/nofoot.txt
+		git -C "${relRepo}" commit --quiet -m 'no footer'
+		git -C "${relRepo}" push --quiet 2>/dev/null
+		fRelRun --dry-run
+		fAssert "[df02z] a changed script with no history footer at all is warned about" \
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'WARNING: cicd/utility/nofoot.bash has no history footer; add one before releasing.' '${relOut}'"
+		fAssert "[df030] and a changed data file with none is passed over" \
+			bash -c "! grep -qF 'nofoot.txt' '${relOut}'"
+		git -C "${relRepo}" rm --quiet cicd/utility/nofoot.bash cicd/container/nofoot.txt
+		git -C "${relRepo}" commit --quiet -m 'no footer gone'
+		git -C "${relRepo}" push --quiet 2>/dev/null
 		## Past the dry run. Phase 2 read the PR number through a grep that exits 1 on no match, and
 		## under set -e that ended the run before the message written for it. The stub prints no URL.
 		: > "${relRepo}/src-go/resource_windows_amd64.syso"
@@ -5710,7 +5724,7 @@ GHEOF
 		bash "${demoRepo}" "${rmWork}/a/../b"
 	## Deliberately NOT run: passing '/' to a build that lacks the guard is 'rm -rf /'. It is
 	## one clause of the same test the two checks above exercise for real, so it is pinned.
-	# shellcheck disable=SC2016
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[db70z] and the same test rejects the filesystem root" \
 		grep -qF '"${root}" != "/"' "${demoRepo}"
 	## The demo shows the folder rules supplying the commit identity, so one inherited from the
@@ -5721,7 +5735,7 @@ GHEOF
 		bash -c ". '${rmWork}/demo/demo.env' && [[ -z \"\${GIT_AUTHOR_NAME:-}\${GIT_AUTHOR_EMAIL:-}\${GIT_COMMITTER_NAME:-}\${GIT_COMMITTER_EMAIL:-}\" ]]"
 	fAssert "[db710] the publish probe's dir is removed on the way out, not only in the happy path" \
 		grep -q '_probeDir' "${root}/legacy/bin/gitsby"
-	# shellcheck disable=SC2016
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[db711] and its pwsh counterpart tests the path before removing it" \
 		grep -q 'if ($probeDir) { Remove-Item' "${root}/legacy/bin/gitsby.ps1"
 	## By glob, so a script added later is covered without being listed. A glob that stopped
@@ -5781,6 +5795,43 @@ GHEOF
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[dez5f] the guard on a Mac or Unix box removes an old tree in the stage's folder, and refuses the rest" \
 		env PATH="${srBin}" HOST_TEMP="${srRoot}" APP_NAME=stage "$(command -v sh)" -c '. "$1" && fSafeRm "$2/stage/old.1" && [ ! -e "$2/stage/old.1" ] && ! fSafeRm "$2/stage/old.link" && ! fSafeRm "$2/stage/old.link/sub" && ! fSafeRm "$2/stage" && ! fSafeRm "$2" && ! fSafeRm "$2/stage/../other" && ! fSafeRm /etc/x && ! HOST_TEMP= fSafeRm "$2/stage/kept" && [ -d "$2/stage/kept/sub" ] && [ -d "$2/other" ]' _ "${root}/cicd/utility/include/safe-rm.sh" "${srRoot}"
+	## The Windows copy, run by pwsh here with a cmd.exe that removes nothing and writes a line.
+	## That line joined the boolean, so remote-tests.bash read a folder still there as removed.
+	if ! command -v pwsh >/dev/null 2>&1; then
+		fSkipBlock "the Windows guard under pwsh (no pwsh)"
+	else
+		local srPs="${work}/saferm-ps" srPsOut=""
+		mkdir -p "${srPs}/bin" "${srPs}/temp/test_gitsby_20261107-1"
+		fStub "${srPs}/bin/cmd.exe" <<-'EOF'
+			#!/usr/bin/env bash
+			echo "rmdir says hi"
+		EOF
+		srPsOut="$(env PATH="${srPs}/bin:${PATH}" TEMP="${srPs}/temp" POWERSHELL_TELEMETRY_OPTOUT=1 "${noTty[@]}" pwsh -NoProfile -Command ". '${root}/cicd/utility/include/safe-rm.ps1'; if (-not (fSafeRm '${srPs}/temp/test_gitsby_20261107-1')) { 'left' } else { 'gone' }" </dev/null 2>&1 || true)"
+		# shellcheck disable=SC2016  ## the inner shell does the expanding.
+		fAssert "[df031] the Windows guard's caller reads a folder rmdir left as a failure, whatever rmdir wrote" \
+			bash -c '[[ "$1" == *left* && "$1" == *"would not go"* && "$1" != *gone* ]]' _ "${srPsOut}"
+	fi
+	## The Bash rules the newer scripts missed: a reason on every disable, errors through the
+	## script's helper, and a license line. The installers say the module has shcl to fetch.
+	local -a liveScripts=() helperScripts=()
+	for rmScript in "${rmScripts[@]}"; do
+		[[ "${rmScript}" != legacy/* ]] || continue
+		liveScripts+=("${rmScript}")
+		case "${rmScript}" in install.bash|cicd/test.bash|cicd/utility/lint-report.bash|cicd/utility/spawn-report.bash|cicd/utility/n8git_backup-and-publish) continue ;; esac
+		helperScripts+=("${rmScript}")
+	done
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssert "[df033] every shellcheck disable in the linted scripts says why" \
+		bash -c 'cd "$1" && [[ -z "$(grep -nE "^[[:space:]]*#[[:space:]]*shellcheck disable=[0-9A-Za-z,]+[[:space:]]*$" "${@:2}")" ]]' _ "${root}" "${liveScripts[@]}"
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssert "[df034] the pipeline scripts' errors go through fDie or fUsage, never a bare echo to stderr" \
+		bash -c 'cd "$1" && [[ -z "$(grep -nE "echo .*>&2" "${@:2}")" ]]' _ "${root}" "${helperScripts[@]}"
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssert "[df035] every pipeline script and installer has its license line" \
+		bash -c 'cd "$1" && [[ -z "$(grep -L "SPDX-License-Identifier" install.bash install.ps1 $(find cicd -type f \( -name "*.bash" -o -name "*.sh" -o -name "*.ps1" -o -name "*.py" \)))" ]]' _ "${root}"
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssert "[df032] the installers no longer call the module dependency-free" \
+		bash -c 'cd "$1" && [[ -z "$(grep -n "no dependencies" install.bash install.ps1)" ]]' _ "${root}"
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	for rmScript in "${rmScripts[@]}" cicd/container/Dockerfile; do
 		[[ "${rmScript}" == legacy/* || "${rmScript}" == cicd/utility/include/safe-rm.bash ]] && continue
@@ -5857,7 +5908,7 @@ GHEOF
 	fAssert "[dd5ew] the link flags drop the build id"  grep -qE '^GO_LDFLAGS_COMMON=.*-buildid=' "${root}/cicd/config.bash"
 	fAssert "[dd5ex] and every build that links with them turns cgo off" \
 		bash -c "cgo=\$(cat '${root}/cicd/cicd.bash' '${root}/cicd/release.bash' | grep -v '^[[:space:]]*#' | grep -c 'CGO_ENABLED=0'); ld=\$(cat '${root}/cicd/cicd.bash' '${root}/cicd/release.bash' | grep -v '^[[:space:]]*#' | grep -c 'GO_LDFLAGS_COMMON'); [[ \${ld} -gt 0 && \${cgo} == \${ld} ]]"
-	# shellcheck disable=SC2016
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[dd5ey] and the release assets are built by the pinned toolchain" \
 		grep -qF 'GOTOOLCHAIN="${GO_RELEASE_TOOLCHAIN}"' "${root}/cicd/release.bash"
 	## Go builds for plain x86-64 unless a GOAMD64 in the environment says otherwise, and then
@@ -5950,7 +6001,7 @@ GHEOF
 	printf 'status\t5\n' > "${srBad}/previous/spawn_20260101-000002.tsv"
 	# shellcheck disable=SC2016  ## The fixture's own substitution, left for the script to refuse.
 	printf 'status\tBASH_VERSINFO[$(touch %s/ran)0]\n' "${srBad}/newest" > "${srBad}/newest/spawn_20260101-000002.tsv"
-	# shellcheck disable=SC2016
+	# shellcheck disable=SC2016  ## the $(...) is the bad baseline's text, not for this shell.
 	printf 'status\tBASH_VERSINFO[$(touch %s/ran)0]\n' "${srBad}/previous" > "${srBad}/previous/spawn_20260101-000001.tsv"
 	fAssert "[ddf4m] and refuses a count that isn't a number, without running it" \
 		bash -c "out=\$('${root}/cicd/utility/spawn-report.bash' --dir '${srBad}/newest' 2>&1); [[ \$? == 1 ]] && grep -qF \"spawn_20260101-000002.tsv has 'BASH_VERSINFO[\" <<< \"\$out\" && [[ ! -e '${srBad}/newest/ran' ]]"
@@ -6448,7 +6499,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 	## clean machine they pass just as well against a harness that isolates nothing.
 	# shellcheck disable=SC2016  ## the inner shell has to do the expanding, not this one.
 	fAssert "[db7gq] this run carries no env-injected git config"  bash -c '[[ -z "${GIT_CONFIG_COUNT:-}" ]]'
-	# shellcheck disable=SC2016
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[db7gr] and no inherited gh token"                    bash -c '[[ -z "${GH_TOKEN:-}" ]]'
 
 	## The pre-push gate: cicd.bash --gate against the stubbed engine above, then the hook in a
@@ -6762,7 +6813,6 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 			bash -c "[[ '${gateRc}' == 0 && -f '${gateDir}/home/.local/bin/gitsby' && ! -e '${gateDir}/home/.local/bin/gitsby.exe' ]]"
 		fAssert "[dd5fw] and says the other targets have nowhere to go" \
 			bash -c "grep -qF 'WARNING: no windows/amd64 dogfood dest exists/writable' '${gateOut}' && grep -qF 'WARNING: no darwin/universal dogfood dest exists/writable' '${gateOut}'"
-		# shellcheck disable=SC2016
 		gateDest="$(cd "${gateDir}" && HOME="${gateDir}/home" bash -c 'source cicd/config.bash && echo "${DOGFOOD_DESTS_LINUX_AMD64[0]}"')"
 		mkdir -p "${gateDest}"
 		rm -f -- "${gateDir:?}/home/.local/bin/gitsby"
@@ -8261,3 +8311,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261106 JC: Checks for a write asking the ssh identity once, the Go installer creating a missing folder, and the pre-command fetch dropping a ref origin deleted. 1779 -> 1782.
 ##		- 20261106 JC: The scratch folder and every fixture folder go through fSafeRm, still behind the name and marker checks. Checks that the guard works with no realpath, and that no script removes a folder another way.
 ##		- 20261107 JC: The install.ps1 checks run pwsh with telemetry off. From 7.6.9 on macOS, a first run in a fresh HOME left .dotnet in TMPDIR, which failed the temp folder check. 1825 -> 1826.
+##		- 20261107 JC: Checks for the footer check's .ps1 and no-footer cases, the Windows guard's return value under pwsh, and the Bash header, disable and error helper rules.
