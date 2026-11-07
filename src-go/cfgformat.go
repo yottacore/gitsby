@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	shcl "github.com/yottacore/shcl/source/go/v3"
 )
@@ -24,10 +25,18 @@ import (
 // starts '##', and comes with a Format line, which is asked first anyway.
 const shcl2Banner = "# This config file format is SHCL."
 
+// oldPinCutover is when the installed build moved to shcl v3.0.0-beta1. The
+// module before it stamped the same Format 3 line but read a backslash in
+// double quotes as an escape, where v3 reads it as text, so the two can't be
+// told apart by content. A file last written before this came from the earlier
+// module. Nobody else had a build from it.
+var oldPinCutover = time.Date(2026, 11, 7, 3, 37, 0, 0, time.UTC)
+
 // formatMigration is what the load did with a file in an older format.
 type formatMigration struct {
 	from     int    // the format major the file was in
 	flat     bool   // the file was in v2.1.0's flat 'key = value' layout instead
+	escapes  bool   // the file was Format 3 from the earlier module, escapes and all
 	backup   string // where the file as it was went; empty when nothing was written
 	changed  int    // lines re-spelled so they mean what they did
 	lost     int    // lines that set something under the old rules and set nothing now
@@ -109,25 +118,129 @@ func changedLines(before, after string) int {
 	return n
 }
 
+// oldPinRespelled re-spells the double-quoted values the earlier module wrote
+// with escapes, so they read the same under the current rules. Only a value
+// with a backslash in it changes, and the count is the lines that did. A line
+// that module couldn't have read is left as it is. Arrays are not looked for:
+// the earlier build wrote none.
+func oldPinRespelled(text string) (string, int) {
+	lines := strings.Split(text, "\n")
+	changed := 0
+	var tok shcl.Tokens
+	for i, line := range lines {
+		body := strings.TrimLeft(line, " \t")
+		if body == "" || body[0] == '#' {
+			continue
+		}
+		shcl.Tokenize(body, ':', false, shcl.RulesCurrent, &tok)
+		if tok.Sep < 0 {
+			continue
+		}
+		start := tok.Sep + 1
+		for start < len(body) && (body[start] == ' ' || body[start] == '\t') {
+			start++
+		}
+		if start >= len(body) || body[start] != '"' {
+			continue
+		}
+		value, end, ok := oldPinUnquote(body, start)
+		if !ok {
+			continue
+		}
+		spelled, ok := shcl.FormatValue(value)
+		if !ok {
+			continue
+		}
+		lines[i] = line[:len(line)-len(body)] + body[:start] + spelled + body[end:]
+		changed++
+	}
+	return strings.Join(lines, "\n"), changed
+}
+
+// oldPinUnquote reads the double-quoted value at s[at] by the earlier module's
+// rules: a backslash escapes t, n, \, ", ', uXXXX and UXXXXXXXX. end is just past
+// the closing quote. ok is false where there is no escape to re-spell, or where
+// the value isn't one that module read.
+func oldPinUnquote(s string, at int) (value string, end int, ok bool) {
+	var b strings.Builder
+	escaped := false
+	for i := at + 1; i < len(s); i++ {
+		switch c := s[i]; {
+		case c == '"':
+			return b.String(), i + 1, escaped
+		case c != '\\':
+			b.WriteByte(c)
+			continue
+		}
+		escaped = true
+		i++
+		if i >= len(s) {
+			return "", 0, false
+		}
+		switch s[i] {
+		case 't':
+			b.WriteByte('\t')
+		case 'n':
+			b.WriteByte('\n')
+		case '\\', '"', '\'':
+			b.WriteByte(s[i])
+		case 'u', 'U':
+			n := 4
+			if s[i] == 'U' {
+				n = 8
+			}
+			if i+n >= len(s) {
+				return "", 0, false
+			}
+			r, err := strconv.ParseUint(s[i+1:i+1+n], 16, 32)
+			if err != nil || !utf8.ValidRune(rune(r)) {
+				return "", 0, false
+			}
+			b.WriteRune(rune(r))
+			i += n
+		default:
+			return "", 0, false
+		}
+	}
+	return "", 0, false
+}
+
 // backupName is where the old file goes: beside it, named for when and which
-// format, e.g. config_backup_20261003-142233_format-v2.shcl, or _format-flat for
-// v2.1.0's layout.
+// format, e.g. config_backup_20261003-142233_format-v2.shcl, _format-flat for
+// v2.1.0's layout, or _format-v3old for the earlier module's spelling.
 func backupName(file string, mig *formatMigration, now time.Time) string {
 	base := filepath.Base(file)
 	base = strings.TrimSuffix(base, filepath.Ext(base))
 	format := "v" + strconv.Itoa(mig.from)
-	if mig.flat {
+	switch {
+	case mig.flat:
 		format = "flat"
+	case mig.escapes:
+		format = "v3old"
 	}
 	return filepath.Join(filepath.Dir(file), base+"_backup_"+now.Format("20060102-150405")+"_format-"+format+".shcl")
 }
 
 // formatName names the old format for a notice.
 func (mig *formatMigration) formatName() string {
-	if mig.flat {
+	switch {
+	case mig.flat:
 		return "flat 'key = value' layout of v2.1.0"
+	case mig.escapes:
+		return "earlier SHCL 3 spelling"
 	}
 	return "SHCL " + strconv.Itoa(mig.from) + ".x format"
+}
+
+// readAs names what read the file that way, for the notice that it still does.
+func (mig *formatMigration) readAs() string {
+	switch {
+	case mig.flat:
+		return "v2.1.0"
+	case mig.escapes:
+		return "the earlier module"
+	}
+	return strconv.Itoa(mig.from) + ".x"
 }
 
 // replaceOldFormat keeps the file as read under its backup name, then writes the
@@ -186,20 +299,18 @@ func (a *app) reportMigration() {
 	mig.reported = true
 	file := nativePath(a.cfg.file)
 	notes := noteLines("File", file)
-	if !mig.done && mig.flat {
-		a.out.errorf("The accounts file is in the %s and couldn't be converted. This run read it the way v2.1.0 did. 'account set' and 'account unset' refuse until it is converted.", mig.formatName())
-		a.out.notes(append(notes, noteLines("Why", mig.why+".")...))
-		return
-	}
 	if !mig.done {
-		a.out.errorf("The accounts file is in the SHCL %d.x format and couldn't be converted. This run read it the way %d.x did. 'account set' and 'account unset' refuse until it is converted.", mig.from, mig.from)
+		a.out.errorf("The accounts file is in the %s and couldn't be converted. This run read it the way %s did. 'account set' and 'account unset' refuse until it is converted.", mig.formatName(), mig.readAs())
 		a.out.notes(append(notes, noteLines("Why", mig.why+".")...))
 		return
 	}
 	notes = append(notes, noteLines("From", nativePath(mig.backup))...)
 	msg := "Converted the accounts file from the SHCL " + strconv.Itoa(mig.from) + ".x format, which reads some values differently. The old file is kept."
-	if mig.flat {
+	switch {
+	case mig.flat:
 		msg = "Converted the accounts file from the " + mig.formatName() + " to SHCL. The old file is kept."
+	case mig.escapes:
+		msg = "Converted the accounts file from the " + mig.formatName() + ", which read a backslash in double quotes as an escape. The old file is kept."
 	}
 	if mig.changed > 0 {
 		msg += " " + strconv.Itoa(mig.changed) + " line(s) were re-spelled to keep their values."

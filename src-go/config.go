@@ -580,6 +580,18 @@ func (c *config) load(o options) error {
 		}
 		// Read as converted either way, so the values are the ones the file meant.
 		data = []byte(converted)
+	} else if fi, err := os.Stat(file); err == nil && fi.ModTime().Before(oldPinCutover) {
+		// A Format 3 file last written before the move to v3.0.0-beta1 is from
+		// the earlier module, whose double-quoted escapes v3 reads as text. The
+		// time is read before anything writes the file, since a write moves it.
+		if converted, n := oldPinRespelled(string(data)); n > 0 {
+			c.migration = &formatMigration{escapes: true, changed: n}
+			replaceOldFormat(file, string(data), converted, c.migration)
+			if c.migration.done {
+				c.raw = converted
+			}
+			data = []byte(converted)
+		}
 	}
 	// The whole file, mark and all: the module takes the mark off for the read and
 	// keeps the text, so 'account set' writes back every line it didn't edit.
