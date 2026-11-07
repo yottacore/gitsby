@@ -36,14 +36,29 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - test.bash [dd5e4] fails on the macOS workflow: install.ps1 leaves its bracketed temp dir
 	- ID: 2026110617122394
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs external testing: the macOS workflow on macos-latest, after the round merges to gover. [dd5e4] and [dez8c] pass there.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261106-171223
 	- Opened by:
 	- Target OS: macOS
+	- Reproduced [Bug]: Yes, 2026-11-07 on b26, with pwsh 7.6.9 from its tarball: the real install.ps1 and the suite's stubs, a fresh HOME and TMPDIR `pstmp[1]`. It installs, and TMPDIR still holds `.dotnet`.
+	- Actual cause [Bug]: Not install.ps1, and not the link. pwsh 7.6.9's first run in a fresh HOME, as it writes `telemetry.uuid`, leaves the runtime's `.dotnet/shm` and `.dotnet/lockfiles` in TMPDIR on macOS. [dd5e3] is the first run in its HOME, and [dd5e4] wants TMPDIR empty.
 	- Progress log:
 		- 2026-11-07: [dd5e4] is the only FAIL on macos-latest in runs 42254437886, 42257775761, 42273158689 and 42295283425. [dd5e3] passes, so the install works and only the cleanup of the temp dir under TMPDIR=<work>/pstmp[1] fails. Linux passes.
 		- Guess to check first: the macOS temp path goes through the /var -> /private/var link, and the newer real-folder-under-temp guard refuses a path through a link.
+		- 2026-11-07: Ruled out the link: test.bash's work folder is resolved with `pwd -P`. Ruled out the guard: the first red, 2505356, predates it, with install.ps1 the same as at the last green.
+		- 2026-11-07: What changed is the image. macos-latest went from pwsh 7.6.6 (.NET 10.0.12) to 7.6.9 (.NET 10.0.14). The Intel job's macOS 15 image didn't, and passes.
+		- 2026-11-07: On b26, a bare `pwsh -Command 1` in a fresh HOME leaves `.dotnet` under 7.6.9, but not under 7.6.6, not with `POWERSHELL_TELEMETRY_OPTOUT=1`, and not on a second run in the same HOME. install.ps1's own cleanup works under both versions, bracket or not.
+	- Actual fix [Bug]: fPsInstall runs pwsh with `POWERSHELL_TELEMETRY_OPTOUT=1`. [dd5e4] still wants TMPDIR empty.
+	- Decisions:
+		- The opt-out goes in fPsInstall, rather than [dd5e4] skipping `.dotnet`. A suite run has no reason to send telemetry, and the check stays strict for anything else left in TMPDIR.
+		- No change to install.ps1. `.dotnet` is the runtime's state, shared across processes, and a user's first pwsh run leaves it whatever is run.
+	- Swept: every pwsh call in test.bash. Only fPsInstall runs with a fresh HOME and checks TMPDIR afterwards. The rest use the box's HOME.
+	- Verified: [dez8c] fails with the opt-out taken out, and the other 1825 checks pass. `--backlog-run-quick` passed, with test.bash 1826/0, fuzz 313/0 and parity 30/0.
+	- Verified: on b26 under pwsh 7.6.9, the [dd5e3] install with a bracketed TMPDIR leaves `.dotnet` without the opt-out and nothing with it. b26 is an Intel Mac on macOS 15.8, so macOS 26 on Apple silicon is left to the workflow.
+	- Branch: round-20261107
+	- Test case: test.bash [dez8c] (pwsh runs with telemetry off), plus [dd5e4] on macos-latest.
 	- Origin: gover's macOS workflow, first red at run 42254437886 (Merge fuzz-log, 2026-11-06), red since on every gover push; last green 40447463125 (Merge round-20261026)
 
 - CICD reset: temp files and safe removal

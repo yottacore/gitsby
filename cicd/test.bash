@@ -206,9 +206,10 @@ fPwshText(){ "${noTty[@]}" pwsh -NoProfile -Command "$1" </dev/null 2>&1 ;}
 ## which PowerShell finds before a cmdlet of the same name. <shape> picks how releases/latest
 ## answers: as 7 or 5.1 answer a redirect, nofull as 5.1 answers the 404 of a repo with no full
 ## release, or pre, which is nofull with only pre-releases listed. Each URL asked for goes to
-## <dir>/calls.
+## <dir>/calls. Telemetry is off: pwsh 7.6.9 on macOS, writing telemetry.uuid into a fresh HOME,
+## leaves the runtime's .dotnet mutex folder in TMPDIR, which reads as install.ps1's leftover.
 fPsInstall(){ local dir="$1" home="$2" shape="$3" inst="$4"; shift 4; : > "${dir}/calls"; mkdir -p "${home}"
-	env HOME="${home}" FAKE_DIR="${dir}" FAKE_SHAPE="${shape}" "${noTty[@]}" pwsh -NoProfile -Command ". '${dir}/stubs.ps1'; & '${inst}' $*" </dev/null 2>&1 ;}
+	env HOME="${home}" FAKE_DIR="${dir}" FAKE_SHAPE="${shape}" POWERSHELL_TELEMETRY_OPTOUT=1 "${noTty[@]}" pwsh -NoProfile -Command ". '${dir}/stubs.ps1'; & '${inst}' $*" </dev/null 2>&1 ;}
 ## Succeeds when a help text for install.ps1 names every parameter and alias of the function that
 ## does the work. <which> is -Help for the installer's own, or get-help for its comment help.
 # shellcheck disable=SC2016  ## pwsh's own variables; pwsh does the expanding.
@@ -4155,6 +4156,11 @@ GHEOF
 				bash -c '[[ -x "$1/.local/bin/gitsby" && -z "$(ls -A -- "$2")" ]]' _ "${psi}/htmp" "${psTmp}"
 			fAssert    "[deyx9] and removes it only as a real folder right under the temp folder" \
 				bash -c "grep -q 'ReparsePoint) -and \$tmpItem.Parent.FullName' '${goInstPs}' && [[ \$(grep -c -- '-Recurse' '${goInstPs}') == 1 ]]"
+			## With telemetry on, [dd5e4] failed on macOS from pwsh 7.6.9, on the runtime's .dotnet folder.
+			# shellcheck disable=SC2016  ## pwsh does the expanding.
+			printf '"telemetry opt-out: $env:POWERSHELL_TELEMETRY_OPTOUT"\n' > "${psi}/tele.ps1"
+			fAssertOut "[dez8c] go ps installer checks run pwsh with telemetry off"  '^telemetry opt-out: 1$' \
+				fPsInstall "${psi}" "${psi}/htele" 7 "${psi}/tele.ps1"
 			## The install line with no -Tag, against the release lists the Bash installer's checks
 			## use. FAKE_LATEST names the tag the redirect goes to, FAKE_LIST the list file, and
 			## each tag's SHA256SUMS comes from FAKE_SUMS_DIR; an empty one fails.
@@ -8231,3 +8237,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261106 JC: No pipe into head or grep -q under pipefail. BSD grep writes a line at a time, so the Pillow lock check failed on FreeBSD. A check lists any that come back.
 ##		- 20261106 JC: Checks for a write asking the ssh identity once, the Go installer creating a missing folder, and the pre-command fetch dropping a ref origin deleted. 1779 -> 1782.
 ##		- 20261106 JC: The scratch folder and every fixture folder go through fSafeRm, still behind the name and marker checks. Checks that the guard works with no realpath, and that no script removes a folder another way.
+##		- 20261107 JC: The install.ps1 checks run pwsh with telemetry off. From 7.6.9 on macOS, a first run in a fresh HOME left .dotnet in TMPDIR, which failed the temp folder check. 1825 -> 1826.
