@@ -348,7 +348,8 @@ fMakeGateFixture(){
 	## A build in the image leaves its -o file behind, as go's stub does, so dogfood has one to copy.
 	## 'docker-run' fails a run and 'docker-hang' holds one. 'images' is what it lists for the
 	## image's repo, and 'vols' the labeled volumes, as "<name> <size>". 'docker-noimage' and
-	## 'docker-novol' answer that the image or the cache volume isn't there.
+	## 'docker-novol' answer that the image or the cache volume isn't there. 'running' is what it
+	## lists as up, and 'modprune' what the module cache prune prints.
 	fGateStub "${gateDir}/bin/docker" docker "if [[ ! -e '${gateFail}/docker' ]]; then o=''; for a in \"\$@\"; do [[ \"\${o}\" != 1 ]] || : > \"\${a}\"; o=''; [[ \"\${a}\" != -o ]] || o=1; done; fi
 		[[ \"\${1:-} \${2:-} \${3:-}\" != 'image ls gitsby-cicd' ]] || cat '${gateFail}/images' 2>/dev/null || true
 		[[ \"\${1:-}\" != run || ! -e '${gateFail}/docker-hang' ]] || { : > '${gateFail}/hung'; sleep 5; }
@@ -356,7 +357,9 @@ fMakeGateFixture(){
 		[[ \"\${1:-} \${2:-}\" != 'image inspect' || ! -e '${gateFail}/docker-noimage' ]] || exit 1
 		[[ \"\${1:-} \${2:-}\" != 'volume inspect' || ! -e '${gateFail}/docker-novol' ]] || exit 1
 		[[ \"\${1:-} \${2:-}\" != 'volume ls' ]] || cut -d' ' -f1 '${gateFail}/vols' 2>/dev/null || true
-		[[ \"\${1:-} \${2:-} \${3:-}\" != 'system df -v' ]] || cat '${gateFail}/vols' 2>/dev/null || true"
+		[[ \"\${1:-} \${2:-} \${3:-}\" != 'system df -v' ]] || cat '${gateFail}/vols' 2>/dev/null || true
+		[[ \"\${1:-} \${2:-}\" != 'ps -q' ]] || cat '${gateFail}/running' 2>/dev/null || true
+		[[ \"\${1:-}\" != run || \" \$* \" != *-modprune\ * ]] || cat '${gateFail}/modprune' 2>/dev/null || true"
 	## The demo generator writes a gif header to its --out, and the optimizer, called as
 	## 'gifsicle -O3 IN -o OUT', copies IN to OUT, so stage 6 has a file to compare. py_compile
 	## passes no --out.
@@ -765,6 +768,57 @@ fGateDockerTidy(){
 	rm -f -- "${gateFail:?}/docker-hang" "${gateFail:?}/images"
 	fGateCalled '^docker ps -aq --filter label=dev\.project=gitsby --filter label=dev\.run=' && ! fGateCalled '^docker builder ' && [[ -z "$(ls -A "${t}/gitsby")" ]] || rc=1
 	fSafeRm_IfThere "${t:?}"
+	((rc == 0))
+}
+## A run that passed in the image cuts the cache volume's module cache to what go.sum names, in a
+## container of its own with no network, and the end line counts what went. Not while any run's
+## container is up, since every worktree's runs share the volume, and not after a failed run.
+fGateModPrune(){
+	local t="${gateDir}/tmp-modprune" rc=0
+	fSafeRm_IfThere "${t:?}"; mkdir -p "${t}"
+	: > "${gateDir}/src-go/go.sum"; echo 3 > "${gateFail}/modprune"; echo 'gitsby-cicd-cache 1.0GB' > "${gateFail}/vols"
+	TMPDIR="${t}" fGateSays 0 '^Cleanup: removed 3 Go module version\(s\), the run folder$' --backlog-run-quick lint \
+		&& fGateCalled "^docker run --rm --init --name gitsby-[0-9]{8}-[0-9]{6}_[0-9]{3}-modprune --label dev\\.project=gitsby --label dev\\.run=[0-9_-]+ --network none .*-v gitsby-cicd-cache:/cache -v ${gateDir}:${gateDir}:ro gitsby-cicd:[0-9a-f]+ nice -n 19 bash ${gateDir}/cicd/utility/go-modcache-prune\\.bash /cache/home/go/pkg/mod ${gateDir}/src-go/go\\.mod ${gateDir}/src-go/go\\.sum\$" || rc=1
+	echo 0 > "${gateFail}/modprune"
+	TMPDIR="${t}" fGateSays 0 '^Cleanup: removed the run folder$' --backlog-run-quick lint && fGateCalled '/go-modcache-prune\.bash ' || rc=1
+	echo 3 > "${gateFail}/modprune"; echo 0123abcd > "${gateFail}/running"
+	TMPDIR="${t}" fGateSays 0 '^Cleanup: removed the run folder$' --backlog-run-quick lint && fGateCalled '^docker ps -q --filter label=dev\.project=gitsby$' \
+		&& ! fGateCalled 'modprune' || rc=1
+	rm -f -- "${gateFail:?}/running"; : > "${gateFail}/docker-run"
+	TMPDIR="${t}" fGateStatus 1 --backlog-run-quick lint && ! fGateCalled 'modprune' || rc=1
+	rm -f -- "${gateFail:?}/docker-run" "${gateFail:?}/modprune" "${gateFail:?}/vols" "${gateDir:?}/src-go/go.sum"
+	fSafeRm_IfThere "${t:?}"
+	((rc == 0))
+}
+## The prune itself, on a module cache laid out as go leaves it, extracted trees read-only.
+## Kept: what go.sum names, capitals spelled "!" and lower case, and the toolchain go.mod's go
+## line names. The rest goes, download files and trees both, and the folders it leaves empty.
+## A link in the cache stops it.
+fModPruneOnCache(){
+	local t="${gateDir}/tmp-modcache" m="" rc=0 out="" v e d
+	fSafeRm_IfThere "${t:?}"; m="${t}/mod"
+	for v in 'github.com/!burnt!sushi/toml@v1.4.0' 'github.com/!burnt!sushi/toml@v1.3.0' 'example.com/a/b@v0.1.0' 'golang.org/toolchain@v0.0.1-go1.26.2.linux-amd64' 'golang.org/toolchain@v0.0.1-go1.25.0.linux-amd64'; do
+		d="${m}/${v}"; mkdir -p "${d}/sub"; : > "${d}/sub/x.go"
+		mkdir -p "${m}/cache/download/${v%@*}/@v"; for e in info mod zip ziphash lock; do : > "${m}/cache/download/${v%@*}/@v/${v#*@}.${e}"; done
+		echo "${v#*@}" >> "${m}/cache/download/${v%@*}/@v/list"
+	done
+	: > "${m}/example.com/a/b@v0.2.0.partial"; mkdir -p "${m}/cache/download/sumdb/sum.golang.org/lookup/example.com/a"; : > "${m}/cache/download/sumdb/sum.golang.org/lookup/example.com/a/b@v0.1.0"
+	chmod -R a-w "${m}/github.com/!burnt!sushi/toml@v1.4.0" "${m}/github.com/!burnt!sushi/toml@v1.3.0" "${m}/example.com/a/b@v0.1.0" "${m}/golang.org/toolchain@"*
+	printf 'module x\n\ngo 1.26.2\n' > "${t}/go.mod"
+	printf 'github.com/BurntSushi/toml v1.4.0 h1:x=\ngithub.com/BurntSushi/toml v1.4.0/go.mod h1:y=\nexample.com/c v1.0.0/go.mod h1:z=\n' > "${t}/go.sum"
+	out="$(bash "${root}/cicd/utility/go-modcache-prune.bash" "${m}" "${t}/go.mod" "${t}/go.sum" 2>&1)" || rc=1
+	[[ "${out}" == 4 ]] || rc=1
+	[[ -d "${m}/github.com/!burnt!sushi/toml@v1.4.0/sub" && -f "${m}/cache/download/github.com/!burnt!sushi/toml/@v/v1.4.0.zip" && -f "${m}/cache/download/github.com/!burnt!sushi/toml/@v/list" ]] || rc=1
+	[[ -d "${m}/golang.org/toolchain@v0.0.1-go1.26.2.linux-amd64" && -f "${m}/cache/download/golang.org/toolchain/@v/v0.0.1-go1.26.2.linux-amd64.zip" ]] || rc=1
+	[[ ! -e "${m}/github.com/!burnt!sushi/toml@v1.3.0" && -z "$(compgen -G "${m}/cache/download/github.com/!burnt!sushi/toml/@v/v1.3.0.*")" ]] || rc=1
+	[[ ! -e "${m}/golang.org/toolchain@v0.0.1-go1.25.0.linux-amd64" && -z "$(compgen -G "${m}/cache/download/golang.org/toolchain/@v/v0.0.1-go1.25.0.*")" ]] || rc=1
+	[[ ! -e "${m}/example.com" && ! -e "${m}/cache/download/example.com" && -f "${m}/cache/download/sumdb/sum.golang.org/lookup/example.com/a/b@v0.1.0" ]] || rc=1
+	[[ "$(bash "${root}/cicd/utility/go-modcache-prune.bash" "${m}" "${t}/go.mod" "${t}/go.sum" 2>&1)" == 0 ]] || rc=1
+	## go never leaves a link there, so one stops the prune whole, and what it points at stays.
+	mkdir -p "${t}/outside/sub" "${m}/example.org" "${m}/github.com/!burnt!sushi/toml@v1.2.0"; : > "${t}/outside/sub/x.go"; ln -s "${t}/outside" "${m}/example.org/l@v1.0.0"
+	! bash "${root}/cicd/utility/go-modcache-prune.bash" "${m}" "${t}/go.mod" "${t}/go.sum" >/dev/null 2>&1 \
+		&& [[ -f "${t}/outside/sub/x.go" && -d "${m}/github.com/!burnt!sushi/toml@v1.2.0" ]] || rc=1
+	chmod -R u+w "${m}"; fSafeRm_IfThere "${t:?}"
 	((rc == 0))
 }
 ## Neither goes with --install-hook, and --list keeps nothing. --help names both.
@@ -6482,6 +6536,11 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[defng] one line at the end of a run says what it removed, files and docker, and about what that freed"  fGateTidyLine
 		fAssert "[deysa] the end line leaves out a size under a megabyte"  fGateTidySmall
 		fAssert "[dee5k] a run in the image labels what it makes, and its end removes the run's containers, dangling images and older tags, and leaves the build cache to docker"  fGateDockerTidy
+		fAssert "[dez7d] a run that passed in the image cuts the cache volume's Go module cache to what go.sum names, unless another run's container is up"  fGateModPrune
+		fAssert "[dez7e] the module cache prune keeps what go.sum names and the toolchain, and takes out the rest"  fModPruneOnCache
+		fAssert "[dez7f] go.sum names every module the SHCL 2.x build needs, so the prune leaves [ddg6f] what it builds from" \
+			bash -c "git -C '${root}' show 53a62316dd3440cffada0c938b4cd8ad7351c36b:src-go/go.sum | awk '{ print \$1, \$2 }' | sort -u > '${gateDir}/sum-2x' \
+				&& [[ -s '${gateDir}/sum-2x' && -z \"\$(awk '{ print \$1, \$2 }' '${root}/src-go/go.sum' | sort -u | comm -23 '${gateDir}/sum-2x' -)\" ]]"
 		fAssert "[de5m9] stage 6 removes the demo's repos once the gif is drawn"  fGateDemoRemoved
 		fAssert "[de55e] --leakcheck runs CodeQL over a copy of the module with its dependencies vendored in, once per release OS, and keeps the reports"  fGateCodeQL
 		fAssert "[de55f] a CodeQL finding stops the run"  fGateCodeQLStops codeql-findings 'CodeQL findings; the reports are in .*/codeql_[0-9]+-[0-9]+ \]'

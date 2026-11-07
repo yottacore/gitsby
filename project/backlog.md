@@ -169,12 +169,12 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 			- Go's module cache in the volume pruned of what the current `go.sum` doesn't name.
 		- Packaging and dependabot stay deferred, per the standing decision. 20261024: kept out of this item, since nothing makes them pressing.
 	- Progress log:
-		- 2026-10-26: Split. Children: 2026102617543861 (the line at the end of a run, done) and 2026102617543961 (the module cache).
+		- 2026-10-26: Split. Children: 2026102617543861 (the line at the end of a run, done) and 2026102617543961 (the module cache, done).
 
 - CICD reset: prune Go's module cache in the volume
 	- ID: 2026102617543961
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261026-175439
 	- Opened by: jim-collier
@@ -186,6 +186,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Keep the `golang.org/toolchain` modules for the `toolchain` line in go.mod, which `go.sum` doesn't name, and the `/go.mod`-only entries it does.
 		- test.bash builds the SHCL 2.x build offline from the cache ([ddg6f]), so check that every module it needs is in `go.sum`.
 		- Module paths in the cache spell capitals as `!` plus the lower case letter, and go makes the files read-only.
+	- Progress log:
+		- 2026-11-06: At the end of a run in the image that passed, with no gitsby run's container up, a container of its own with no network takes every module version `src-go/go.sum` doesn't name out of the volume's module cache, downloads and extracted trees both. It keeps the toolchain for go.mod's `toolchain` line, or its `go` line where there's none. The end line counts the versions that went. The first run took out the old `yottacore/shcl/source/go/v2` pseudo-version.
+	- Decisions:
+		- Only after a pass, as with the older image tags. A failed run may have failed on a fetch.
+		- Any running container with the project's label holds it off. The run's own are gone by then. A run that starts in the second between the check and the prune can lose only versions this `go.sum` doesn't name, which go fetches again.
+		- A volume over 2 GB still goes whole, and then there's nothing to prune.
+		- The checksum db's cache stays. It isn't a module, and it's small.
+		- The removal goes through a new guard in `safe-rm.bash` that names the module cache as the one folder it removes under, since the volume is under no temp folder. A link in the cache stops the prune whole.
+	- Branch: round-20261107
+	- Test case: test.bash [dez7d] for the run's end, [dez7e] for the prune on a cache laid out as go leaves it, [dez7f] for `go.sum` naming all [ddg6f] builds from.
+	- Verified: [dez7d] fails against the previous cicd.bash, and [dez7e] against a prune that doesn't spell capitals as the cache does. Its link case fails with the guard's link check taken out. [dez7f] fails on a `go.sum` without the SHCL 2.x module. `--backlog-run-quick` passed with every area, test.bash 1825/0, fuzz 313/0, parity 30/0, and [ddg6f] passed after the real prune.
+	- Swept: every mount of the cache volume, in cicd.bash and image-go.bash, and through it release.bash and remote-tests.bash. Only the end of a cicd.bash run prunes. A run on the box never touches the box's own module cache.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261106-184200
 
 - backlog_sort.py exits 1 after a sort that moves items
 	- ID: 2026110613150884

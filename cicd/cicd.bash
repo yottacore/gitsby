@@ -292,9 +292,23 @@ fDockerBytes(){
 		s += v * m } END { printf "%.0f\n", s }'
 }
 fDockerUsed(){ { docker system df --format '{{.Size}}' 2>/dev/null || true; } | fDockerBytes ;}
+## The volume's module cache, cut to what this go.sum names. Every worktree's runs share the
+## volume, and another branch's go.sum may name other versions, so not while any run's container
+## is up. Only out here can see that. GOMODCACHE is under the image's HOME. Uses fDockerTidy's gone.
+fModCachePrune(){
+	local up n
+	up="$(docker ps -q --filter "label=dev.project=${APP_NAME}" 2>/dev/null)" || return 0
+	[[ -z "${up}" ]] || return 0
+	n="$(docker run --rm --init --name "${APP_NAME}-${runName}-modprune" --label "dev.project=${APP_NAME}" --label "dev.run=${runName}" \
+		--network none --cpus 1 --cpu-shares 256 --user "$(id -u):$(id -g)" -v "${APP_NAME}-cicd-cache:/cache" -v "${root}:${root}:ro" \
+		"${containerImage}" nice -n 19 bash "${root}/cicd/utility/go-modcache-prune.bash" /cache/home/go/pkg/mod \
+		"${root}/src-go/go.mod" "${root}/src-go/go.sum" 2>/dev/null)" || return 0
+	[[ ! "${n}" =~ ^[1-9][0-9]*$ ]] || gone+=("${n} Go module version(s)")
+}
 ## At the end of a run that used the image, passed or not: the run's containers, the project's
 ## dangling images, its older image tags once a newer one has passed, and the Go cache volume when
-## it's over 2 GB. Only what carries the project's label. The build cache is docker's default
+## it's over 2 GB, or else on a pass its module cache's versions go.sum doesn't name. Only what
+## carries the project's label. The build cache is docker's default
 ## builder, which every project shares, so the daemon's builder.gc trims it, not a run here. The
 ## run's end line says what went and about what it freed.
 fDockerTidy(){
@@ -321,7 +335,8 @@ fDockerTidy(){
 	fi
 	if [[ -n "$(docker volume ls -q --filter "label=dev.project=${APP_NAME}" --filter "name=${vol}" 2>/dev/null || true)" ]]; then
 		size="$({ docker system df -v --format '{{range .Volumes}}{{.Name}} {{.Size}}{{println}}{{end}}' 2>/dev/null || true; } | awk -v n="${vol}" '$1 == n' | fDockerBytes)"
-		if ((size > 2000000000)) && docker volume rm "${vol}" >/dev/null 2>&1; then gone+=("the ${vol} volume"); fi
+		if ((size > 2000000000)) && docker volume rm "${vol}" >/dev/null 2>&1; then gone+=("the ${vol} volume")
+		elif ((passed)) && [[ -n "${containerImage:-}" && -f "${root}/src-go/go.sum" ]]; then fModCachePrune; fi
 	fi
 	((nImg == 0)) || gone=("${nImg} image(s)" ${gone[@]+"${gone[@]}"})
 	((nCont == 0)) || gone=("${nCont} container(s)" ${gone[@]+"${gone[@]}"})
@@ -1469,3 +1484,4 @@ fEcho_Clean
 ##		- 2026-10-26 JC: One line at the end of a run says what it removed, its own folder and the stale run folders as well as docker's, and about what that freed.
 ##		- 2026-10-26 JC: The native fuzz targets and the Go tests print PASS, FAIL or SKIP, then the test ID and name, and a target that finds a crasher prints FAIL before the run stops.
 ##		- 2026-11-06 JC: The end of a run no longer prunes docker's build cache, which every project's builds share. The daemon's builder.gc trims it. The end line leaves out a size under a megabyte, since by then the run folder holds little more than its run.pid.
+##		- 2026-11-06 JC: A run that passed in the image cuts the cache volume's Go module cache to what go.sum names, when no other run's container is up.
