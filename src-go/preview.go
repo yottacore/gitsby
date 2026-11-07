@@ -15,7 +15,8 @@ import (
 	"strings"
 )
 
-const pad = "    "
+// planPad indents each step of a plan under its heading.
+const planPad = "    "
 
 func (a *app) preview(what string) {
 	switch what {
@@ -25,20 +26,20 @@ func (a *app) preview(what string) {
 			msgDisp = "git commit -m " + shellWord(a.opt.message, true)
 		}
 		if a.opt.staged {
-			a.out.clean(pad + msgDisp + " *")
+			a.out.clean(planPad + msgDisp + " *")
 			a.previewSplit()
 			return
 		}
-		a.out.clean(pad + "git add --all")
-		a.out.clean(pad + msgDisp + " *")
+		a.out.clean(planPad + "git add --all")
+		a.out.clean(planPad + msgDisp + " *")
 	case "pull":
-		a.out.clean(pad + a.pullDisp(a.currentBranch(), a.autostash()...))
+		a.out.clean(planPad + a.pullDisp(a.currentBranch(), a.autostash()...))
 	case "pullcom":
 		a.preview("pull")
 		a.preview("commit")
 	case "sync":
 		a.preview("pullcom")
-		a.out.clean(pad + "git push (branch '" + a.currentBranch() + "') *")
+		a.out.clean(planPad + "git push (branch '" + a.currentBranch() + "') *")
 	case "br-create":
 		// From main/dev the dirty tree rides along to the new branch, so there's no
 		// commit here.
@@ -49,24 +50,21 @@ func (a *app) preview(what string) {
 	case "br-switch":
 		// Already on the target: nothing is parked and no checkout happens, so the plan
 		// must not promise an add/commit/push it will not do.
-		target := a.cmd.arg
-		if target == "" {
-			target = a.mergeTarget()
-		}
+		target := a.switchTarget()
 		if a.currentBranch() != target {
 			a.preview("sync")
-			a.out.clean(pad + a.checkoutDisp(target))
+			a.out.clean(planPad + a.checkoutDisp(target))
 		}
-		a.out.clean(pad + a.pullDisp(target))
+		a.out.clean(planPad + a.pullDisp(target))
 	case "br-merge":
 		a.preview("sync")
-		a.out.clean(pad + a.checkoutDisp(a.branchTarget("")))
-		a.out.clean(pad + a.pullDisp(a.branchTarget("")))
-		a.out.clean(pad + "git merge --no-ff " + a.currentBranch())
-		a.out.clean(pad + "git push *")
-		a.out.clean(pad + "git branch -d " + a.currentBranch() + " *")
-		a.out.clean(pad + "git push --force-with-lease origin --delete " + a.currentBranch() + " *")
-		a.out.clean(pad + a.pullDisp(a.branchTarget("")))
+		a.out.clean(planPad + a.checkoutDisp(a.branchTarget("")))
+		a.out.clean(planPad + a.pullDisp(a.branchTarget("")))
+		a.out.clean(planPad + "git merge --no-ff " + a.currentBranch())
+		a.out.clean(planPad + "git push *")
+		a.out.clean(planPad + "git branch -d " + a.currentBranch() + " *")
+		a.out.clean(planPad + "git push --force-with-lease origin --delete " + a.currentBranch() + " *")
+		a.out.clean(planPad + a.pullDisp(a.branchTarget("")))
 		// A hotfix owes dev the same change, or the next release undoes it.
 		if a.isHotfixBranch("") {
 			a.previewBackMerge()
@@ -78,10 +76,10 @@ func (a *app) preview(what string) {
 	case "release":
 		a.previewRelease()
 	case "repo-clone":
-		a.out.clean(pad + "git clone -- " + maskURL(a.tgt.cloneURL) + " " + a.tgt.cloneDir)
-		a.out.clean(pad + "git -C " + a.tgt.cloneDir + " checkout dev *")
+		a.out.clean(planPad + "git clone -- " + maskURL(a.tgt.cloneURL) + " " + a.tgt.cloneDir)
+		a.out.clean(planPad + "git -C " + a.tgt.cloneDir + " checkout dev *")
 	case "repo-url":
-		a.out.clean(pad + "git remote set-url origin " + hostURL(a.originHost(), remoteTarget(a.originURL()), a.cmd.arg))
+		a.out.clean(planPad + "git remote set-url origin " + hostURL(a.originHost(), remoteTarget(a.originURL()), a.cmd.arg))
 	case "account-set", "account-unset":
 		// Names the file and both versions of the line, because this is the one
 		// command that edits the accounts file for you - and a config file you did
@@ -94,24 +92,24 @@ func (a *app) preview(what string) {
 		}
 		switch {
 		case t.creates:
-			a.out.clean(pad + "create " + nativePath(t.file))
+			a.out.clean(planPad + "create " + nativePath(t.file))
 		case t.converts:
 			// The whole file changes shape, so no line number: the one it has now
 			// is not the one the key ends up on.
-			a.out.clean(pad + "rewrite " + nativePath(t.file) + " in the current layout - it is in the old flat one")
+			a.out.clean(planPad + "rewrite " + nativePath(t.file) + " in the current layout - it is in the old flat one")
 		case t.lineNum > 0:
-			a.out.clean(pad + "edit " + nativePath(t.file) + ", line " + strconv.Itoa(t.lineNum))
+			a.out.clean(planPad + "edit " + nativePath(t.file) + ", line " + strconv.Itoa(t.lineNum))
 		default:
-			a.out.clean(pad + "edit " + nativePath(t.file))
+			a.out.clean(planPad + "edit " + nativePath(t.file))
 		}
 		if t.exists {
-			a.out.clean(pad + "  was:     " + t.field + ": " + t.old)
-			a.out.clean(pad + "  becomes: " + t.field + ": " + shclValue(t.value))
+			a.out.clean(planPad + "  was:     " + t.field + ": " + t.old)
+			a.out.clean(planPad + "  becomes: " + t.field + ": " + shclValue(t.value))
 		} else {
-			a.out.clean(pad + "  add:     " + t.disp + "." + t.field + ": " + shclValue(t.value))
+			a.out.clean(planPad + "  add:     " + t.disp + "." + t.field + ": " + shclValue(t.value))
 		}
 		if t.reshapes {
-			a.out.clean(pad + "  also:    the rest of the file comes out in the layout every save writes (tabs, lower-case keys)")
+			a.out.clean(planPad + "  also:    the rest of the file comes out in the layout every save writes (tabs, lower-case keys)")
 		}
 	case "account-apply":
 		// Names every file and every condition, because this is the one command
@@ -120,27 +118,27 @@ func (a *app) preview(what string) {
 		applyDir := a.cfg.includeDir()
 		files := a.cfg.fragmentNames()
 		for _, name := range a.cfg.accountNames() {
-			a.out.clean(pad + "write " + applyDir + "/" + files[name])
+			a.out.clean(planPad + "write " + applyDir + "/" + files[name])
 		}
 		for _, key := range a.cfg.accountManagedIncludes() {
-			a.out.clean(pad + "git config --global --unset-all " + key)
+			a.out.clean(planPad + "git config --global --unset-all " + key)
 		}
 		for _, rule := range a.cfg.accountApplyPlan() {
-			a.out.clean(pad + "git config --global --add " + (rule.cond + " " + rule.target))
+			a.out.clean(planPad + "git config --global --add " + rule.cond + " " + rule.target)
 		}
 	case "repo-create", "repo-connect":
 		if !a.inRepo {
-			a.out.clean(pad + "git init -b main")
+			a.out.clean(planPad + "git init -b main")
 		}
 		a.preview("commit")
 		switch a.tgt.connectMode {
 		case "create":
-			a.out.clean(pad + "gh repo create " + a.tgt.ghTarget + " --" + a.opt.visibility + " --source . --push --remote origin")
+			a.out.clean(planPad + "gh repo create " + a.tgt.ghTarget + " --" + a.opt.visibility + " --source . --push --remote origin")
 		case "add":
-			a.out.clean(pad + "git remote add origin " + maskURL(a.tgt.connectURL))
-			a.out.clean(pad + "git push -u origin HEAD")
+			a.out.clean(planPad + "git remote add origin " + maskURL(a.tgt.connectURL))
+			a.out.clean(planPad + "git push -u origin HEAD")
 		case "push":
-			a.out.clean(pad + "git push -u origin HEAD *")
+			a.out.clean(planPad + "git push -u origin HEAD *")
 		}
 	}
 }
@@ -152,21 +150,21 @@ func (a *app) previewUnset() {
 	numbered := !t.converts && len(t.gone) > 1
 	switch {
 	case t.converts:
-		a.out.clean(pad + "rewrite " + nativePath(t.file) + " in the current layout - it is in the old flat one")
+		a.out.clean(planPad + "rewrite " + nativePath(t.file) + " in the current layout - it is in the old flat one")
 	case len(t.gone) == 1 && t.gone[0].num > 0:
-		a.out.clean(pad + "edit " + nativePath(t.file) + ", line " + strconv.Itoa(t.gone[0].num))
+		a.out.clean(planPad + "edit " + nativePath(t.file) + ", line " + strconv.Itoa(t.gone[0].num))
 	default:
-		a.out.clean(pad + "edit " + nativePath(t.file))
+		a.out.clean(planPad + "edit " + nativePath(t.file))
 	}
 	for _, g := range t.gone {
 		if numbered {
-			a.out.clean(pad + "  remove:  line " + strconv.Itoa(g.num) + ", " + g.text)
+			a.out.clean(planPad + "  remove:  line " + strconv.Itoa(g.num) + ", " + g.text)
 		} else {
-			a.out.clean(pad + "  remove:  " + g.text)
+			a.out.clean(planPad + "  remove:  " + g.text)
 		}
 	}
 	if t.reshapes {
-		a.out.clean(pad + "  also:    the rest of the file comes out in the layout every save writes (tabs, lower-case keys)")
+		a.out.clean(planPad + "  also:    the rest of the file comes out in the layout every save writes (tabs, lower-case keys)")
 	}
 }
 
@@ -174,15 +172,15 @@ func (a *app) previewUnset() {
 // base.
 func (a *app) previewNewBranch(baseBranch string) {
 	if a.isProtectedBranch("") {
-		a.out.clean(pad + a.checkoutDisp(baseBranch) + " *")
-		a.out.clean(pad + a.pullDisp(baseBranch, a.autostash()...))
+		a.out.clean(planPad + a.checkoutDisp(baseBranch) + " *")
+		a.out.clean(planPad + a.pullDisp(baseBranch, a.autostash()...))
 	} else {
 		a.preview("sync")
-		a.out.clean(pad + a.checkoutDisp(baseBranch) + " *")
-		a.out.clean(pad + a.pullDisp(baseBranch))
+		a.out.clean(planPad + a.checkoutDisp(baseBranch) + " *")
+		a.out.clean(planPad + a.pullDisp(baseBranch))
 	}
-	a.out.clean(pad + "git checkout -b " + a.cmd.arg)
-	a.out.clean(pad + "git push -u origin HEAD *")
+	a.out.clean(planPad + "git checkout -b " + a.cmd.arg)
+	a.out.clean(planPad + "git push -u origin HEAD *")
 }
 
 // pullDisp is the plan's pull line for a branch, said the way the step will run
@@ -195,9 +193,9 @@ func (a *app) pullDisp(branch string, extra ...string) string {
 // previewBackMerge is the tail every hotfix path shares: dev has to receive what
 // landed on the default branch.
 func (a *app) previewBackMerge() {
-	a.out.clean(pad + a.checkoutDisp(a.mergeTarget()))
-	a.out.clean(pad + "git merge " + a.backMergeRef())
-	a.out.clean(pad + "git push *")
+	a.out.clean(planPad + a.checkoutDisp(a.mergeTarget()))
+	a.out.clean(planPad + "git merge " + a.backMergeRef())
+	a.out.clean(planPad + "git push *")
 }
 
 // previewPr reads the same spellings the commands run, so a plan on a Gitea host
@@ -206,19 +204,19 @@ func (a *app) previewBackMerge() {
 func (a *app) previewPr() {
 	if a.pr.sub == "create" {
 		a.preview("sync")
-		a.out.clean(pad + a.prCreateDisp(a.branchTarget("")))
+		a.out.clean(planPad + a.prCreateDisp(a.branchTarget("")))
 		return
 	}
-	a.out.clean(pad + a.prDisp(a.prApproveArgs()) + " *")
-	a.out.clean(pad + a.prDisp(a.prMergeArgs()))
+	a.out.clean(planPad + a.prDisp(a.prApproveArgs()) + " *")
+	a.out.clean(planPad + a.prDisp(a.prMergeArgs()))
 	if clean := a.prCleanArgs(); clean != nil {
-		a.out.clean(pad + a.prDisp(clean) + " *")
+		a.out.clean(planPad + a.prDisp(clean) + " *")
 	}
 	if a.opt.fetch {
-		a.out.clean(pad + "git fetch --prune origin")
+		a.out.clean(planPad + "git fetch --prune origin")
 	}
-	a.out.clean(pad + a.checkoutDisp(a.branchTarget(a.pr.headBranch)) + " *")
-	a.out.clean(pad + a.pullDisp(a.branchTarget(a.pr.headBranch)))
+	a.out.clean(planPad + a.checkoutDisp(a.branchTarget(a.pr.headBranch)) + " *")
+	a.out.clean(planPad + a.pullDisp(a.branchTarget(a.pr.headBranch)))
 	if a.isHotfixBranch(a.pr.headBranch) {
 		a.previewBackMerge()
 	}
@@ -228,21 +226,21 @@ func (a *app) previewRelease() {
 	a.preview("sync")
 	hasDev := a.mergeTarget() == "dev"
 	if hasDev {
-		a.out.clean(pad + a.checkoutDisp("dev") + " *")
-		a.out.clean(pad + a.pullDisp("dev"))
+		a.out.clean(planPad + a.checkoutDisp("dev") + " *")
+		a.out.clean(planPad + a.pullDisp("dev"))
 	}
-	a.out.clean(pad + a.checkoutDisp(a.defaultBranch()) + " *")
-	a.out.clean(pad + a.pullDisp(a.defaultBranch()))
+	a.out.clean(planPad + a.checkoutDisp(a.defaultBranch()) + " *")
+	a.out.clean(planPad + a.pullDisp(a.defaultBranch()))
 	if hasDev {
-		a.out.clean(pad + "git merge --no-ff dev")
+		a.out.clean(planPad + "git merge --no-ff dev")
 	}
-	a.out.clean(pad + "git tag -a " + a.rel.tag)
-	a.out.clean(pad + "git push *")
-	a.out.clean(pad + "git push origin tag " + a.rel.tag + " *")
+	a.out.clean(planPad + "git tag -a " + a.rel.tag)
+	a.out.clean(planPad + "git push *")
+	a.out.clean(planPad + "git push origin tag " + a.rel.tag + " *")
 	if hasDev {
-		a.out.clean(pad + a.checkoutDisp("dev") + " *")
-		a.out.clean(pad + "git merge --ff-only " + a.defaultBranch() + " *")
-		a.out.clean(pad + "git push *")
+		a.out.clean(planPad + a.checkoutDisp("dev") + " *")
+		a.out.clean(planPad + "git merge --ff-only " + a.defaultBranch() + " *")
+		a.out.clean(planPad + "git push *")
 	}
-	a.out.clean(pad + a.checkoutDisp(a.currentBranch()) + " *")
+	a.out.clean(planPad + a.checkoutDisp(a.currentBranch()) + " *")
 }

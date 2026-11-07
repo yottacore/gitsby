@@ -93,7 +93,7 @@ func syntaxUsage(lead, syntax string, defs ...placeholder) error {
 	}
 	for _, def := range defs {
 		cont := strings.Repeat(" ", 2+width+2)
-		for i, text := range wrapWords(def.means, 56) {
+		for i, text := range wrapWords(def.means, noteWidth) {
 			if i == 0 {
 				lines = append(lines, "  "+def.name+strings.Repeat(" ", width-len(def.name)+2)+text)
 			} else {
@@ -129,3 +129,8 @@ type silentExit int
 func (e silentExit) Error() string { return fmt.Sprintf("exit %d", int(e)) }
 
 func (e silentExit) report(*printer) int { return int(e) }
+
+// errDetached refuses a command that needs a current branch.
+func errDetached() error {
+	return usagef("Detached HEAD (no current branch); resolve that manually first.")
+}

@@ -431,7 +431,7 @@ func headBranchName(head string) string {
 func (a *app) prPreflight() error {
 	prBranch := a.currentBranch()
 	if prBranch == "" {
-		return usagef("Detached HEAD (no current branch); resolve that manually first.")
+		return errDetached()
 	}
 	if a.pr.sub == "ok" {
 		return a.prAcceptPreflight(prBranch)

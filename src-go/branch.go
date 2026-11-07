@@ -233,6 +233,14 @@ func (a *app) resolveDefaultBranch() string {
 	return ""
 }
 
+// switchTarget is where br switch goes: the branch named, or the merge target.
+func (a *app) switchTarget() string {
+	if a.cmd.arg != "" {
+		return a.cmd.arg
+	}
+	return a.mergeTarget()
+}
+
 // mergeTarget: feature branches come off of - and land on - dev when the repo
 // has one; else the default branch.
 func (a *app) mergeTarget() string {

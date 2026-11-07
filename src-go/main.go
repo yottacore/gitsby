@@ -451,11 +451,7 @@ func (a *app) preflightBranch() error {
 		}
 		// Refusing a dirty protected branch belongs here too, before the plan is shown
 		// and confirmed.
-		switchTarget := a.cmd.arg
-		if switchTarget == "" {
-			switchTarget = a.mergeTarget()
-		}
-		if a.currentBranch() != switchTarget && a.isProtectedBranch("") && runOut("git", "status", "--porcelain") != "" {
+		if a.currentBranch() != a.switchTarget() && a.isProtectedBranch("") && runOut("git", "status", "--porcelain") != "" {
 			return usagef("Working tree has changes on '%s'; won't auto-commit to a protected branch. Carry them to a new branch (%s br create <name>), or commit them here deliberately (%s pullcom) first.", a.currentBranch(), meName, meName)
 		}
 	}
@@ -482,7 +478,7 @@ func (a *app) settleTarget() (bool, error) {
 		// Work out what goes before anything is shown, so the plan names every branch
 		// by name. An empty plan is a plain read-only answer.
 		if a.currentBranch() == "" {
-			return false, usagef("Detached HEAD (no current branch); resolve that manually first.")
+			return false, errDetached()
 		}
 		if err := a.resolvePrune(); err != nil {
 			return false, err
@@ -732,11 +728,7 @@ func (a *app) showBeforeState() error {
 		// to be standing in.
 		a.cmdAccountList()
 	case a.cmd.name == "repo-clone":
-		// As in the show printers: an unnameable cwd prints as empty.
-		wd, _ := os.Getwd()
-		a.out.clean("")
-		a.out.clean(dirLabel + wd)
-		a.out.clean("Remote .......: " + maskURL(a.tgt.cloneURL))
+		a.showDirRemote(maskURL(a.tgt.cloneURL))
 		a.showIdentity(a.tgt.cloneURL)
 		a.out.clean("Clone into ...: " + a.cloneDirShown())
 	case !a.inRepo:
@@ -746,17 +738,13 @@ func (a *app) showBeforeState() error {
 		} else {
 			remoteDisp = "github.com/" + a.tgt.ghTarget + " (to be created)"
 		}
-		// As in the show printers: an unnameable cwd prints as empty.
-		wd, _ := os.Getwd()
-		a.out.clean("")
-		a.out.clean(dirLabel + wd)
-		a.out.clean("Remote .......: " + remoteDisp)
+		a.showDirRemote(remoteDisp)
 		a.showIdentity(a.tgt.connectURL)
 		a.out.clean("Current branch: (not a git repository yet)")
 		a.showFilesToPublish()
 	default:
 		if a.currentBranch() == "" {
-			return usagef("Detached HEAD (no current branch); resolve that manually first.")
+			return errDetached()
 		}
 		a.showStatus(true)
 	}
@@ -774,7 +762,7 @@ func (a *app) dispatch() error {
 	case "br-hotfix":
 		return a.cmdNewBranch(a.cmd.arg, a.defaultBranch())
 	case "br-switch":
-		return a.cmdGoBranch(a.cmd.arg)
+		return a.cmdGoBranch()
 	case "br-merge":
 		return a.cmdMerge()
 	case "br-prune":
@@ -890,7 +878,7 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 		who = a.accountWho(a.acct.credHost)
 	}
 	if !a.opt.quiet && !a.acct.bypassed && !warned && who != "" && a.accountDecidedSomething() {
-		a.out.errorf("acting as %s (from %s)", who, a.accountSourceText(false))
+		a.out.errorf("acting as %s (from %s)", who, a.accountSourceText())
 	}
 	// For the arguments handed over, which glab's may not be, so a wrapper's raw
 	// finds its run on the chain.

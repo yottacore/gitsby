@@ -64,10 +64,8 @@ func (a *app) cmdNewBranch(newBranch, baseBranch string) error {
 	return a.publishBranch(newBranch)
 }
 
-func (a *app) cmdGoBranch(targetBranch string) error {
-	if targetBranch == "" {
-		targetBranch = a.mergeTarget()
-	}
+func (a *app) cmdGoBranch() error {
+	targetBranch := a.switchTarget()
 	if a.currentBranch() == targetBranch {
 		a.out.status("Already on '" + targetBranch + "'.")
 		return a.pullIfOnline()
@@ -187,7 +185,7 @@ func (a *app) mergeDeleteRemote(branch, mergedTip string) {
 	if !asked {
 		a.out.status("WARNING: couldn't ask origin about its '" + branch + "'; left it alone.")
 		a.out.clean("  Once origin can be reached, this deletes it. It stops if that branch has moved:")
-		a.out.clean(pad + leaseDeleteLine(branch, mergedTip, runtime.GOOS))
+		a.out.clean(planPad + leaseDeleteLine(branch, mergedTip, runtime.GOOS))
 		return
 	}
 	send, changed, gone := sortRemoteDeletes([]string{branch}, tested, onOrigin)

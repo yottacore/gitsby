@@ -203,9 +203,26 @@ const (
 	acctCont  = "              : "
 )
 
-// dirLabel is the current-directory line, shared by every command that prints one
-// so the tool cannot end up calling the same thing two names on two screens.
-const dirLabel = "Current dir ..: "
+// dirLabel and remoteLabel lead the current-directory and remote lines, shared by
+// every command that prints them so the tool cannot end up calling the same thing
+// two names on two screens.
+const (
+	dirLabel    = "Current dir ..: "
+	remoteLabel = "Remote .......: "
+)
+
+// noteWidth is the body width of a labeled note and of a usage line's meaning: 78
+// columns with the label.
+const noteWidth = 56
+
+// showDirRemote leads a header with the current directory and the remote. A cwd
+// nothing can name prints as empty; not worth stopping a display over.
+func (a *app) showDirRemote(remoteDisp string) {
+	wd, _ := os.Getwd()
+	a.out.clean("")
+	a.out.clean(dirLabel + wd)
+	a.out.clean(remoteLabel + remoteDisp)
+}
 
 // accountFile names the accounts file, for advice that tells somebody to edit it.
 // The discovered path where there is one, the default location where there isn't:
@@ -247,12 +264,8 @@ func (a *app) accountSubject() string {
 // accountSourceText says where this run's account came from, in terms somebody can
 // go and look at. "(from config 'acme')" named neither the file nor which config -
 // and there are two configs in play here, since 'gitsby.ghAccount' is a git config
-// key and the account blocks are not. withFile spells out the accounts file too,
-// for the one caller that has not already put it on screen.
-func (a *app) accountSourceText(withFile bool) string {
-	if a.acct.fromFile && withFile {
-		return a.acct.source + " in " + a.accountFile()
-	}
+// key and the account blocks are not.
+func (a *app) accountSourceText() string {
 	return a.acct.source
 }
 
@@ -300,25 +313,25 @@ func (a *app) showAccountNote(label string, lines ...string) {
 // the identity block without printing through it. A line that is one absolute path
 // goes out whole: a path can hold a space, and macOS's own config folder does.
 func noteLines(label string, lines ...string) []string {
-	const labelWidth, bodyWidth = 4, 56 // 'Kept', the longest label; 78 columns in all
+	const labelWidth = 4 // 'Kept', the longest label
 	head := label + ":" + strings.Repeat(" ", labelWidth-len(label)) + " "
-	pad := strings.Repeat(" ", len(head))
+	indent := strings.Repeat(" ", len(head))
 	prefix := head
 	var out []string
 	for _, line := range lines {
 		line = printable(line)
 		if strings.HasPrefix(line, " ") {
-			out = append(out, pad+line)
+			out = append(out, indent+line)
 			continue
 		}
 		if filepath.IsAbs(line) || strings.HasPrefix(line, "/") {
 			out = append(out, prefix+line)
-			prefix = pad
+			prefix = indent
 			continue
 		}
-		for _, wrapped := range wrapWords(line, bodyWidth) {
+		for _, wrapped := range wrapWords(line, noteWidth) {
 			out = append(out, prefix+wrapped)
-			prefix = pad
+			prefix = indent
 		}
 	}
 	return out
@@ -372,11 +385,11 @@ func (a *app) showAccountUnapplied() bool {
 		a.out.clean(acctLabel + "nothing applied - " + meName + " was run with --any-identity")
 		a.showAccountNote("Why", "--any-identity leaves the token, the SSH key and the commit author exactly as they already were.")
 	case a.acct.otherHost:
-		a.out.clean(acctLabel + (a.accountSubject() + a.noTokenText()))
+		a.out.clean(acctLabel + a.accountSubject() + a.noTokenText())
 		a.showAccountFrom()
 		a.showAccountOtherHost()
 	case a.acct.noToken:
-		a.out.clean(acctLabel + (a.accountSubject() + a.noTokenText()))
+		a.out.clean(acctLabel + a.accountSubject() + a.noTokenText())
 		a.showAccountFrom()
 		a.showAccountNoToken()
 	default:
@@ -641,7 +654,7 @@ func (a *app) showSSHLine(remoteURL string) {
 			account = resolved
 		}
 	}
-	a.out.clean("SSH ..........: " + (account + " (" + line + ")"))
+	a.out.clean("SSH ..........: " + account + " (" + line + ")")
 }
 
 // showGhLine: gh-backed commands act as gh's account, not the ssh key's - so name
@@ -685,11 +698,7 @@ func (a *app) cmdWhoami() {
 	if remoteDisp == "" {
 		remoteDisp = "(none)"
 	}
-	// A cwd nothing can name prints as empty; not worth stopping a display over.
-	wd, _ := os.Getwd()
-	a.out.clean("")
-	a.out.clean(dirLabel + wd)
-	a.out.clean("Remote .......: " + remoteDisp)
+	a.showDirRemote(remoteDisp)
 	a.showIdentity(remoteURL)
 	a.out.resetBlank()
 }
@@ -702,11 +711,7 @@ func (a *app) showStatus(withIdentity bool) {
 	if remoteDisp == "" {
 		remoteDisp = "(none)"
 	}
-	a.out.clean("")
-	// Same as cmdWhoami: an unnameable cwd prints as empty rather than refusing.
-	wd, _ := os.Getwd()
-	a.out.clean(dirLabel + wd)
-	a.out.clean("Remote .......: " + remoteDisp)
+	a.showDirRemote(remoteDisp)
 	if withIdentity {
 		a.showIdentity(remoteURL)
 	}

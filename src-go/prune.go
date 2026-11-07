@@ -247,20 +247,20 @@ func (a *app) pruneNothingToDo() {
 func (a *app) prunePreview() {
 	// -D is what runs, so -D is what the plan says. The line above it is the reason
 	// that's safe: gitsby checks containment itself, against the branch that matters.
-	a.out.clean(pad + "(each verified contained in " + a.mergeTarget() + ", and re-checked at delete time)")
+	a.out.clean(planPad + "(each verified contained in " + a.mergeTarget() + ", and re-checked at delete time)")
 	// One line per call, and there is one call - which is what the command runs.
 	// The lease values are left out, and so is a split of a push too long for one
 	// command line: neither changes what happens.
 	if len(a.prune.local) > 0 {
-		a.out.clean(pad + "git branch -D " + strings.Join(a.prune.local, " "))
+		a.out.clean(planPad + "git branch -D " + strings.Join(a.prune.local, " "))
 	}
 	if len(a.prune.remote) > 0 {
-		a.out.clean(pad + "git push --force-with-lease origin --delete " + strings.Join(a.prune.remote, " "))
+		a.out.clean(planPad + "git push --force-with-lease origin --delete " + strings.Join(a.prune.remote, " "))
 	}
 	if a.prune.currentMerged != "" {
-		a.out.clean(pad + "Keeping '" + a.prune.currentMerged + "' - merged, but it's the current branch.")
+		a.out.clean(planPad + "Keeping '" + a.prune.currentMerged + "' - merged, but it's the current branch.")
 	}
 	if len(a.prune.keep) > 0 {
-		a.out.clean(pad + "Keeping (not merged yet): " + strings.Join(a.prune.keep, ", "))
+		a.out.clean(planPad + "Keeping (not merged yet): " + strings.Join(a.prune.keep, ", "))
 	}
 }

@@ -309,7 +309,7 @@ func (a *app) cmdAccountList() {
 	switch {
 	case resolvedLine != "":
 		if a.acct.source != "" {
-			resolvedLine += " (from " + a.accountSourceText(false) + ")"
+			resolvedLine += " (from " + a.accountSourceText() + ")"
 		}
 	case a.acct.name != "":
 		resolvedLine = "'" + a.acct.name + "' - it names no login" + a.accountFallbackNote()
@@ -435,7 +435,7 @@ func (a *app) showAccount(name string, isHere bool) {
 		if acctEmail == "" {
 			acctEmail = "?"
 		}
-		a.out.clean("     commits .: " + (acctUser + " <" + acctEmail + ">"))
+		a.out.clean("     commits .: " + acctUser + " <" + acctEmail + ">")
 	}
 	if proto := a.cfg.value(name, "protocol"); proto != "" {
 		a.out.clean("     protocol : " + proto)

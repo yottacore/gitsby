@@ -63,24 +63,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: the `ls-remote` from df38db0, 2026-09-15. The push order and the pull came from the frozen bash, 86ca0b1, 2026-08-18. Counts Confirmed by strace against local bare origins, the time saved Plausible.
 	- Estimated effort: Avg
 
-- Code Review 20261107 enhancement 4: The Go files the last rounds didn't read have duplicates and leftovers
-	- ID: 2026110708000115
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Requirements [Feature]:
-		- br switch's target is worked out 4 times: main.go:449, preview.go:52, staged.go:152 and branchcmd.go:68.
-		- The "Detached HEAD" refusal is written 3 times: main.go:480, :753 and pr.go:252.
-		- The Current dir and Remote header is written 4 times, at main.go:730, :744, show.go:650 and :668, and `"Remote .......: "` is a literal beside the `dirLabel` constant made to stop that.
-		- The 56-column note width is 2 literals, errors.go:96 and show.go:290. `termCols` is the same in tty_linux.go and tty_bsd.go.
-		- `accountSourceText(withFile bool)` at show.go:239 has never had a `true` caller, so its file branch never runs.
-		- Parentheses left over from when `printable()` wrapped these values: show.go:125, :362, :366, :605, accountcmd.go:438 and preview.go:129.
-		- `const pad` at preview.go:18 is a package-level name too short to search for, and show.go:292 shadows it.
-	- Origin: 4918b5b and cfb6d90, 2026-08-18 to 08-19, through 47bcda3, 2026-10-06. The 20261003 round's enhancement 7 covered the duplicates in other files. Confirmed by reading and `git log -G`.
-	- Estimated effort: Avg
-
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
@@ -3477,6 +3459,31 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [ddf4q] and [ddf4r] in test.bash.
 	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
 	- Closed: 20261003-145130
+
+- Code Review 20261107 enhancement 4: The Go files the last rounds didn't read have duplicates and leftovers
+	- ID: 2026110708000115
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- br switch's target is worked out 4 times: main.go:449, preview.go:52, staged.go:152 and branchcmd.go:68.
+		- The "Detached HEAD" refusal is written 3 times: main.go:480, :753 and pr.go:252.
+		- The Current dir and Remote header is written 4 times, at main.go:730, :744, show.go:650 and :668, and `"Remote .......: "` is a literal beside the `dirLabel` constant made to stop that.
+		- The 56-column note width is 2 literals, errors.go:96 and show.go:290. `termCols` is the same in tty_linux.go and tty_bsd.go.
+		- `accountSourceText(withFile bool)` at show.go:239 has never had a `true` caller, so its file branch never runs.
+		- Parentheses left over from when `printable()` wrapped these values: show.go:125, :362, :366, :605, accountcmd.go:438 and preview.go:129.
+		- `const pad` at preview.go:18 is a package-level name too short to search for, and show.go:292 shadows it.
+	- Origin: 4918b5b and cfb6d90, 2026-08-18 to 08-19, through 47bcda3, 2026-10-06. The 20261003 round's enhancement 7 covered the duplicates in other files. Confirmed by reading and `git log -G`.
+	- Estimated effort: Avg
+	- Actual fix [Feature]: `switchTarget()` in branch.go is br switch's target, called by preflight, the preview, the staged check and `cmdGoBranch`, which takes no argument now. `errDetached()` in errors.go is the 1 "Detached HEAD" refusal. `showDirRemote()` in show.go prints the blank, Current dir and Remote lines for whoami, showStatus and the clone and connect headers, with a `remoteLabel` constant beside `dirLabel`. `noteWidth` is the 56 in errors.go and noteLines. termCols moved to a new tty_unix.go, built for Linux and the BSDs. `accountSourceText()` lost its `withFile` branch. The 6 leftover parentheses are gone. The package-level `pad` is `planPad`, and noteLines' local is `indent`.
+	- Branch: round-20261107b
+	- Test case: none. Dedupe only, with the same output, so the suites staying green is the test.
+	- Verified: go test, vet and the builds for windows, darwin, freebsd, netbsd, openbsd, dragonfly and linux/arm64 passed. test.bash 1864/0, fuzz 313/0, parity 30/0.
+	- Swept: other `"Remote .......: "` and `"Current dir ..: "` literals, other `56` widths, and other `a.cmd.arg` fallbacks to `mergeTarget()`. None left.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-110800
 
 - Code Review 20261107 enhancement 7: run-latest.ps1 names its copies in the current culture
 	- ID: 2026110708000118
