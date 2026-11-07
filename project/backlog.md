@@ -36,8 +36,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - test.bash [dd5e4] fails on the macOS workflow: install.ps1 leaves its bracketed temp dir
 	- ID: 2026110617122394
 	- Type: Bug
-	- Status: Waiting on automated testing
-	- Needs external testing: the macOS workflow on macos-latest, after the round merges to gover. [dd5e4] and [dez8c] pass there.
+	- Status: Done
+	- Needs external testing: No
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261106-171223
 	- Opened by:
@@ -57,9 +57,12 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: every pwsh call in test.bash. Only fPsInstall runs with a fresh HOME and checks TMPDIR afterwards. The rest use the box's HOME.
 	- Verified: [dez8c] fails with the opt-out taken out, and the other 1825 checks pass. `--backlog-run-quick` passed, with test.bash 1826/0, fuzz 313/0 and parity 30/0.
 	- Verified: on b26 under pwsh 7.6.9, the [dd5e3] install with a bracketed TMPDIR leaves `.dotnet` without the opt-out and nothing with it. b26 is an Intel Mac on macOS 15.8, so macOS 26 on Apple silicon is left to the workflow.
+	- Verified: 2026-11-07, macOS workflow run 42332925745 on round-20261107: [dd5e3], [dd5e4] and [dez8c] passed on macos-latest and macos-15-intel, with no FAIL on either.
 	- Branch: round-20261107
 	- Test case: test.bash [dez8c] (pwsh runs with telemetry off), plus [dd5e4] on macos-latest.
 	- Origin: gover's macOS workflow, first red at run 42254437886 (Merge fuzz-log, 2026-11-06), red since on every gover push; last green 40447463125 (Merge round-20261026)
+	- Closed: 20261106-192147
+	- Acceptance signoff: Self-closed: the hosted macOS run passed on both runners.
 
 - CICD reset: temp files and safe removal
 	- ID: 2026102416313108
