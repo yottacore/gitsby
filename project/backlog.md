@@ -36,8 +36,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - On macOS test.bash df05h and df05k compare a padded wc -l count to 1
 	- ID: 2026110715412517
 	- Type: Bug
-	- Status: Queued
-	- Needs local test suite run?: Yes
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: No
 	- Needs external testing: macOS hosted run (macos.yml)
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261107-154125
@@ -49,6 +49,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: in the hosted run only. It was on gover before the round, hidden since 300128a because go test failed first.
 	- Possible cause [Bug]: BSD wc -l pads its count with spaces, so the [[ ... == 1 ]] string test in cicd/test.bash never matches. Check the rest of the suites for the same shape.
 	- Estimated effort: Low
+	- Actual cause [Bug]: As the possible cause says. test.bash compared `wc -l` output as text, and BSD wc pads the count.
+	- Actual fix [Bug]: `| tr -d ' '` after the `wc -l` in the 8 compares that read a count as text: `[df05h]`, `[df05k]`, 2 spawn-count folder counts, the 2 leak-soak folder counts and 2 hook-log line counts.
+	- Test case: test.bash `[df05h]` and `[df05k]` on a Mac. No new test: the checks are the regression.
+	- Verified: stage7-one-box.bash on vmKt6m through the host lock at 7f2a8a6: test.bash 1455 passed, 0 failed, 277 skipped, `[df05h]` and `[df05k]` PASS. The old test.bash was not run there.
+	- Swept: every `wc -l` in cicd/*.bash, cicd/utility, its include folder and install.bash. `fHelpCountsTen` already strips the padding. The pc2/pc6 git.log compare has the same padding on both sides. The `status=` count at test.bash 6973 is hook output in the Linux-only block and is not compared as text.
+	- Branch: round-20261107d
+	- Commit: 7f2a8a6
 
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
