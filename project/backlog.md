@@ -223,13 +223,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - backlog_sort.py exits 1 after a sort that moves items
 	- ID: 2026110613150884
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261106-131508
 	- Opened by:
 	- Progress log:
 		- 2026-11-06: The plain run sorted the backlog and exited 1, so the round's chained check after it never ran. A check run after it exited 0. The contract wants 0 from a sort that worked.
 		- 2026-11-06: The helper's file put this item where the sort then moved it, so a filed item can leave the backlog unsorted.
+	- Actual cause: the plain run returned 1 whenever the file changed, the same code as --check's "would move".
+	- Actual fix: a plain run that writes the file exits 0. Only --check exits 1 when items would move, and 2 is still an error. The usage text and header say so.
+	- Decisions: the second progress note is the helper's insert position, not the sort script, so it is left to the helper (reported to the orchestrator).
+	- Test case: none in the suites, since the script is a tool outside the repo. Run by hand on a scratch backlog: --check exit 1, plain exit 0, --check after exit 0, bad path exit 2.
+	- Swept: the other exit paths in backlog_sort.py (help, die, nothing-moves).
+	- Closed: 20261106-190500
+	- Acceptance signoff: Self-closed, mechanical fix.
 
 - spawn-count.bash says it restores each command's origin, and doesn't
 	- ID: 2026110611364366
