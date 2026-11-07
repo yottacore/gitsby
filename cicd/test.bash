@@ -5866,6 +5866,9 @@ GHEOF
 		bash -c "go tool nm -size '${work}/vcsprobe' | awk '\$3==\"D\"{s+=\$2} END{exit !(s>0 && s<2000000)}'"
 	fAssert "[df025] nothing in the build pulls in Go's crypto module" \
 		bash -c "cd '${root}/src-go' && ! grep -q '^crypto/' <<< \"\$(go list -deps .)\""
+	## encoding/json was 344 KB of the binary for the 3 fields read from glab.
+	fAssert "[df04r] nothing in the build imports encoding/json" \
+		bash -c "cd '${root}/src-go' && ! grep -qx 'encoding/json' <<< \"\$(go list -deps .)\""
 	## The build number is minutes since 2000, Crockford base32, lower case. Built here with a
 	## fixed stamp: the suite's own binary carries whatever the last build gave it.
 	fAssertOut "[dbshs] a stamped build reports minutes since 2000 in Crockford base32"  '^gitsby v9\.9\.9 build dbd05$' \
@@ -7790,7 +7793,7 @@ GHEOF
 #!/usr/bin/env bash
 [[ -n "${FAKE_GLAB_LOG:-}" ]] && echo "$* api=${GITLAB_API_HOST:-} host=${GITLAB_HOST:-} token=${GITLAB_TOKEN:-}" >> "${FAKE_GLAB_LOG}"
 case "$1 $2" in
-"mr view")  echo "{\"iid\":7,\"state\":\"${FAKE_GLAB_STATE:-opened}\",\"source_branch\":\"glfeat\"}" ;;
+"mr view")  if [[ -n "${FAKE_GLAB_VIEW:-}" ]]; then printf '%s\n' "${FAKE_GLAB_VIEW}"; else echo "{\"iid\":7,\"state\":\"${FAKE_GLAB_STATE:-opened}\",\"source_branch\":\"glfeat\"}"; fi ;;
 "mr list")  if [[ -n "${FAKE_GLAB_EXISTING:-}" ]]; then echo "[{\"iid\":${FAKE_GLAB_EXISTING}}]"; else echo "[]"; fi ;;
 esac
 exit 0
@@ -7828,6 +7831,16 @@ GLEOF
 		bash -c "cd '${fgGl}' && PATH='${fgGlPath}' FAKE_GLAB_EXISTING=3 '${gitsby}' -q -NoFetch pr create 2>&1 || true"
 	fAssertOut "[dea1a] pr ok reads glab's 'merged' as not open" 'PR #7 is merged, not open' \
 		bash -c "cd '${fgGl}' && PATH='${fgGlPath}' FAKE_GLAB_STATE=merged '${gitsby}' -q -NoFetch pr ok 7 2>&1 || true"
+	## glab's JSON is read by hand. The author's own state comes first and must not count, and the
+	## branch name keeps its escaped quote and its comma.
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssertOut "[df04p] pr ok reads glab's state past a nested one, in any key order" 'PR #7 is merged, not open' \
+		bash -c 'cd "$1" && PATH="$2" FAKE_GLAB_VIEW="$3" "$4" -q -NoFetch pr ok 7 2>&1 || true' _ "${fgGl}" "${fgGlPath}" \
+		'{ "author": {"state": "active", "id": 3}, "title": "a \"b\", c", "source_branch": "glfeat", "state": "merged" }' "${gitsby}"
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssertOut "[df04q] and a branch name with an escaped quote and a comma whole" "Branch '-gl\"x,y' starts with a dash" \
+		bash -c 'cd "$1" && PATH="$2" FAKE_GLAB_VIEW="$3" "$4" -q -NoFetch pr ok 7 2>&1 || true' _ "${fgGl}" "${fgGlPath}" \
+		'{"source_branch":"-gl\"x,y","iid":7,"state":"opened"}' "${gitsby}"
 	fAssertOut "[ddk66] --any-identity hands tea nothing"  '^url= token=$' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_ENV=1 '${gitsby}' -q -NoFetch --any-identity --config '${fg}/tea-acct.shcl' raw tea whoami"
 	: > "${fg}/rawdeb.log"
@@ -8327,3 +8340,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261107 JC: The install.ps1 checks run pwsh with telemetry off. From 7.6.9 on macOS, a first run in a fresh HOME left .dotnet in TMPDIR, which failed the temp folder check. 1825 -> 1826.
 ##		- 20261107 JC: Checks for the footer check's .ps1 and no-footer cases, the Windows guard's return value under pwsh, and the Bash header, disable and error helper rules.
 ##		- 20261107 JC: The config, default branch, SSH, token file and tea lines say why a value is unknown, and name a path on a File line.
+##		- 20261107 JC: glab's JSON is read by hand. Checks for a state past a nested one, a branch name with an escaped quote and a comma, and no encoding/json in the build. 1847 -> 1850.

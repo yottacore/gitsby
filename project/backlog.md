@@ -33,21 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- Code Review 20261107 enhancement 1: `encoding/json` costs 344 KB for 2 glab reads
-	- ID: 2026110708000112
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Requirements [Feature]:
-		- pr.go:285 and :314 decode `glab mr list` and `glab mr view` with `encoding/json`. Stubbing those 2 calls takes 344,064 bytes off linux/amd64, 8.2% of the binary, and about the same on Windows and macOS. Start time doesn't change.
-		- Read the 3 fields some other way, or ask glab for an output format that needs no JSON parser.
-	- Origin: pr.go:13 from 197677f, 2026-10-22, the glab path. After the 20261003 round. Confirmed, measured on top of item 1's change.
-	- Notes:
-		- With item 1, this accounts for 507,904 of the 847,872 bytes the binary grew since 2026-10-03. Most of the rest is the shcl v3 module.
-	- Estimated effort: Avg
-
 - Code Review 20261107 enhancement 2: Every non-GitHub ssh remote costs an extra `ssh -G`
 	- ID: 2026110708000113
 	- Type: Enhancement
@@ -1826,6 +1811,34 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: dup-acct
 	- Test case: TestRepeatedAccountKeys, TestAccountSetFindsTheKeyInAnyPiece, and one account list check in test.bash.
 	- Closed: 2026-09-30
+
+- Code Review 20261107 enhancement 1: `encoding/json` costs 344 KB for 2 glab reads
+	- ID: 2026110708000112
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- pr.go:285 and :314 decode `glab mr list` and `glab mr view` with `encoding/json`. Stubbing those 2 calls takes 344,064 bytes off linux/amd64, 8.2% of the binary, and about the same on Windows and macOS. Start time doesn't change.
+		- Read the 3 fields some other way, or ask glab for an output format that needs no JSON parser.
+	- Origin: pr.go:13 from 197677f, 2026-10-22, the glab path. After the 20261003 round. Confirmed, measured on top of item 1's change.
+	- Notes:
+		- With item 1, this accounts for 507,904 of the 847,872 bytes the binary grew since 2026-10-03. Most of the rest is the shcl v3 module.
+	- Estimated effort: Avg
+	- Actual fix [Enhancement]: A small reader in pr.go takes `iid`, `state` and `source_branch` from glab's JSON, at the top level only, in any key order, with spacing and escapes decoded. Nested values are stepped over, so the author's `state` never counts. Invalid JSON reads as no answer, as before. linux/amd64 with the pipeline's flags went from 4,022,398 to 3,686,526 bytes, 335,872 or 8.4% less. windows/amd64 4,226,560 to 3,890,176, darwin/amd64 4,013,216 to 3,671,440.
+	- Decisions:
+		- The hand reader, over glab's text output. glab 1.53 takes only `text` or `json` for `mr list` and `mr view`. `mr view`'s text form has had `source_branch` only in recent releases, and `mr list`'s is a table for people. The JSON is the GitLab API's own object, the stable choice.
+		- An `iid` that is missing or not a whole number now reads as no PR. encoding/json gave 0 for a missing one, so `pr create` could have said PR #0 was open.
+	- Branch: round-20261107b
+	- Test case:
+		- Go `[df04m]` TestReadGlabMR: key order, spacing, a nested state, escaped quotes and commas, `\u` escapes and a surrogate pair, the first of a list, an empty list, and 15 kinds of bad input, deep nesting among them.
+		- Go `[df04n]` FuzzReadGlabMR: encoding/json is the reference in the test, and both agree on whether an object reads and on the 3 fields.
+		- test.bash `[df04p]` pr ok reads glab's state past a nested author state, keys out of order. `[df04q]` a source branch with an escaped quote and a comma comes through whole. `[df04r]` no encoding/json in `go list -deps`, in the style of `[df025]`.
+	- Verified: `[df04r]` fails on a copy of src-go with HEAD's pr.go and passes after. The fuzz target ran 60 s with no difference found. Every existing glab check passes. Go tests pass, test.bash 1847 -> 1850 with 0 failed, fuzz 313/0, parity 30/0, lint passed.
+	- Swept: `go list -deps` for other encoding packages and reflect-heavy ones. Only encoding/hex is left, and reflect comes in through fmt. No other non-test Go file imported encoding/json.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-101500
 
 - CICD reset: temp files and safe removal
 	- ID: 2026102416313108
