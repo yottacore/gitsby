@@ -341,7 +341,10 @@ func (a *app) protocolFor(host string) string {
 // a remote in the other transport without asking the network - which is pure text
 // work on any host, and was refused everywhere but github.com for no better reason
 // than that the parser behind it only knew the one.
-func remoteTarget(url string) string { return parseRemote(url).target() }
+func remoteTarget(url string) string {
+	ref, _ := parseRemoteText(url)
+	return ref.target()
+}
 
 // convertibleToHTTPS is true when this repo is on ssh but the account it belongs
 // to could authenticate with a token instead - the one case where saying so is

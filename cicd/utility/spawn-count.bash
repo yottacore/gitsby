@@ -112,13 +112,22 @@ cat > "${work}/bin/ssh" <<EOF
 #!${BASH}
 for arg in "\$@"; do
 	case "\${arg}" in
-		-G) printf 'user git\nhostname github.com\n'; exit 0 ;;
+		-G) target="\${*: -1}"; printf 'user git\nhostname %s\n' "\${target#*@}"; exit 0 ;;
 		-T) echo "Hi acme! You've successfully authenticated, but GitHub does not provide shell access."; exit 1 ;;
 	esac
 done
 exit 255
 EOF
-chmod +x "${work}/bin/gh" "${work}/bin/ssh"
+## tea holds one login, for the Gitea folder's host.
+cat > "${work}/bin/tea" <<EOF
+#!${BASH}
+case "\$1 \$2" in
+	"--version ") echo "Version: 0.10.1	golang: 1.24.4" ;;
+	"logins list") printf '"Name"\t"URL"\t"SSHHost"\t"User"\t"Default"\n"work"\t"https://gitea.example.test"\t""\t"acme"\t"true"\n' ;;
+	*)             printf '%s\n' "fake tea: unhandled: \$*" >&2; exit 2 ;;
+esac
+EOF
+chmod +x "${work}/bin/gh" "${work}/bin/ssh" "${work}/bin/tea"
 export PATH="${work}/bin:${PATH}"
 export HTTPS_PROXY=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 HTTP_PROXY=http://127.0.0.1:9 http_proxy=http://127.0.0.1:9 ALL_PROXY=http://127.0.0.1:9 all_proxy=http://127.0.0.1:9
 unset NO_PROXY no_proxy
@@ -176,9 +185,17 @@ git -C "${pristine}/acct-ssh"   remote set-url origin git@github.com:acme/proj.g
 git -C "${pristine}/acct-https" remote set-url origin https://github.com/beta/proj.git
 echo four >> "${pristine}/acct-ssh/file.txt"
 echo four >> "${pristine}/acct-https/file.txt"
+## And one on a Gitea host over ssh, where each alias lookup costs an 'ssh -G'. On a branch
+## a PR can come from, and pushing to the live origin, so pr create and pullcom get past the push.
+cp -a "${pristine}/repo" "${pristine}/acct-gitea"
+git -C "${pristine}/acct-gitea" checkout --quiet open-work
+git -C "${pristine}/acct-gitea" remote set-url origin git@gitea.example.test:acme/proj.git
+git -C "${pristine}/acct-gitea" remote set-url --push origin "${work}/live/origin.git"
+echo four >> "${pristine}/acct-gitea/file.txt"
 printf 'tok_acme\n' > "${work}/home/acme.token"
 printf 'tok_beta\n' > "${work}/home/beta.token"
-chmod 600 "${work}/home/acme.token" "${work}/home/beta.token"
+printf 'tok_delta\n' > "${work}/home/delta.token"
+chmod 600 "${work}/home/acme.token" "${work}/home/beta.token" "${work}/home/delta.token"
 accounts="${work}/accounts.shcl"
 cat > "${accounts}" <<EOF
 account: acme
@@ -195,6 +212,12 @@ account: gamma
 	ghaccount: gamma
 	sshkey: ${work}/home/id_gamma
 	email: gamma@example.com
+account: delta
+	path: ${work}/live/acct-gitea
+	host: gitea.example.test
+	user: acme
+	tokenfile: ${work}/home/delta.token
+	email: delta@example.com
 EOF
 
 ## What both origins hold as built. Nothing measured may write to these, or the next command
@@ -271,6 +294,11 @@ fMeasure "[ddf50] status in an account folder"         19 tty  acct-ssh    --no-
 fMeasure "[ddf51] whoami in an account folder"         15 tty  acct-ssh    --no-fetch whoami
 fMeasure "[ddf52] account list with accounts"          11 tty  acct-ssh    --no-fetch account list
 fMeasure "[ddf53] status in an https account folder"   15 tty  acct-https  --no-fetch status
+fMeasure "[df04s] status in a tea ssh folder"          16 tty  acct-gitea  --no-fetch status
+fMeasure "[df04t] whoami in a tea ssh folder"          12 tty  acct-gitea  --no-fetch whoami
+fMeasure "[df04v] repo url in a tea ssh folder"         8 pipe acct-gitea  -q --no-fetch repo url
+fMeasure "[df051] pullcom in a tea ssh folder"         27 pipe acct-gitea  -q --no-fetch pullcom "spawn count"
+fMeasure "[df052] pr create in a tea ssh folder"       37 pipe acct-gitea  -q --no-fetch pr create
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Each count against its limit, then against the newest previous run; then record this one.
@@ -361,3 +389,4 @@ gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		- 20261106 JC: Its scratch folder goes through fSafeRm.
 ##		- 20261106 JC: Each live clone's origin is its live copy, not the pristine one, which a pushing command changed for every command after it. A check after the measures fails the run if a pristine origin moved.
 ##		- 20261107 JC: Errors go through fDie and fUsage.
+##		- 20261107 JC: A Gitea folder over ssh, with a fake tea, for status, whoami, repo url, pullcom and pr create. The fake ssh names the target's own host.

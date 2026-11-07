@@ -44,18 +44,25 @@ func (r remoteRef) target() string {
 // written literally and ssh has no say in it, so asking would spend a process to
 // be told what we were already looking at.
 func parseRemote(url string) remoteRef {
-	host, path, viaSSH := splitRemoteURL(url)
-	if host == "" {
-		return remoteRef{}
-	}
+	ref, viaSSH := parseRemoteText(url)
 	// A host gh already serves is a real hostname, not an alias, so asking ssh about
 	// it spends a process to be told what we started with. That skip is why the
 	// ordinary 'git@github.com:owner/name' remote costs no ssh call at all - dropping
 	// it put one into the spawn count of every command on every GitHub repo.
-	if viaSSH && !isGitHubHost(host) {
-		host = resolveSSHHost(host)
+	if viaSSH && !isGitHubHost(ref.host) {
+		ref.host = resolveSSHHost(ref.host, sshConnectTarget(url))
 	}
-	ref := remoteRef{host: host}
+	return ref
+}
+
+// parseRemoteText is parseRemote with the host as written, for callers that want
+// only the owner and name. It resolves no alias, so it starts no process.
+func parseRemoteText(url string) (ref remoteRef, viaSSH bool) {
+	host, path, viaSSH := splitRemoteURL(url)
+	if host == "" {
+		return remoteRef{}, false
+	}
+	ref.host = host
 	path = strings.TrimSuffix(strings.TrimSuffix(path, "/"), ".git")
 	// Everything before the last segment is the owner: a Gitea instance served
 	// under a subpath, and GitHub's own 'owner/name', both land here correctly.
@@ -67,7 +74,7 @@ func parseRemote(url string) remoteRef {
 			ref.owner = ref.owner[deeper+1:]
 		}
 	}
-	return ref
+	return ref, viaSSH
 }
 
 // splitRemoteURL is the pure text half: the host as written, the path after it,

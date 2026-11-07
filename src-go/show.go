@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // showList indents and prints a command's output, truncated to the terminal so
@@ -520,9 +521,7 @@ type sshConfig struct {
 // believed. '--': an option-shaped host must not parse as an option.
 func readSSHConfig(target string) sshConfig {
 	var cfg sshConfig
-	// No ssh, or a target it refuses, reads as no config: every field stays unknown.
-	out, _ := toolCmd("ssh", "-G", "--", target).Output()
-	for _, line := range splitLines(string(out)) {
+	for _, line := range splitLines(sshConfigText(target)) {
 		key, value, found := strings.Cut(line, " ")
 		if !found || value == "" {
 			continue
@@ -545,6 +544,30 @@ func readSSHConfig(target string) sshConfig {
 		}
 	}
 	return cfg
+}
+
+// sshConfigCache holds 'ssh -G' answers by target. PATH is in the key, since a
+// test may change it in one process. Locked, since look-ahead goroutines read
+// remotes too.
+var sshConfigCache = struct {
+	sync.Mutex
+	text map[[2]string]string
+}{text: map[[2]string]string{}}
+
+// sshConfigText is what 'ssh -G' says about target, asked once per run. No ssh,
+// or a target it refuses, reads as no config, so every field stays unknown.
+// '--': an option-shaped host must not parse as an option.
+func sshConfigText(target string) string {
+	key := [2]string{target, os.Getenv("PATH")}
+	sshConfigCache.Lock()
+	defer sshConfigCache.Unlock()
+	text, asked := sshConfigCache.text[key]
+	if !asked {
+		out, _ := toolCmd("ssh", "-G", "--", target).Output()
+		text = string(out)
+		sshConfigCache.text[key] = text
+	}
+	return text
 }
 
 // sshLineAsks: whether the SSH line will ask the host who the key is, so the

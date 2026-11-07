@@ -2540,8 +2540,12 @@ fRunSuite(){
 	git -C "${sid}/proj" remote set-url origin git@gh-acme:acme/api.git
 	fAssertOut "[dakpa] an ssh config alias is named alongside the real host"  "via alias 'gh-acme'"  bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
 	: > "${sid}/dd.log"
-	fAssert "[dd5cb] and the alias lookup ends options before it too" \
-		bash -c "${sidRun} FAKE_SSH_LOG='${sid}/dd.log' '${gitsby}' -q -NoFetch status >/dev/null 2>&1; grep -qx -- '-G -- gh-acme' '${sid}/dd.log'"
+	## Off since 20261107: the alias lookup asks about the connect target now, git@gh-acme, so the
+	## SSH line's read answers it too. [df054] checks the one read and its '--'.
+	# fAssert "[dd5cb] and the alias lookup ends options before it too" \
+	# 	bash -c "${sidRun} FAKE_SSH_LOG='${sid}/dd.log' '${gitsby}' -q -NoFetch status >/dev/null 2>&1; grep -qx -- '-G -- gh-acme' '${sid}/dd.log'"
+	fAssert "[df054] and an aliased remote asks ssh -G once, options ended before the target" \
+		bash -c "${sidRun} FAKE_SSH_LOG='${sid}/dd.log' '${gitsby}' -q -NoFetch status >/dev/null 2>&1; [[ \"\$(grep -c -- '^-G ' '${sid}/dd.log')\" == 1 ]] && grep -qx -- '-G -- git@gh-acme' '${sid}/dd.log'"
 	git -C "${sid}/proj" remote set-url origin git@github.com:acme/api.git
 	## Offline (the fetch failed): say we don't know rather than guess, and don't spend the
 	## round trip finding out. Asserting the log is what proves the probe was actually skipped.
@@ -8341,3 +8345,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261107 JC: Checks for the footer check's .ps1 and no-footer cases, the Windows guard's return value under pwsh, and the Bash header, disable and error helper rules.
 ##		- 20261107 JC: The config, default branch, SSH, token file and tea lines say why a value is unknown, and name a path on a File line.
 ##		- 20261107 JC: glab's JSON is read by hand. Checks for a state past a nested one, a branch name with an escaped quote and a comma, and no encoding/json in the build. 1847 -> 1850.
+##		- 20261107 JC: An aliased remote asks ssh -G once, about its connect target. [dd5cb] is off, since the bare alias is no longer asked. 1850 -> 1850.

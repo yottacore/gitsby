@@ -33,22 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- Code Review 20261107 enhancement 2: Every non-GitHub ssh remote costs an extra `ssh -G`
-	- ID: 2026110708000113
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Requirements [Feature]:
-		- `remoteTarget` at remote.go:338 calls `parseRemote`, which resolves the ssh alias, when it only needs owner and name. It runs from the status and whoami Account line through `convertibleToHTTPS`.
-		- Parsing the text alone takes 1 spawn off each of status 18, whoami 14, pr create 34, repo url 9 and sync 29, with status output byte for byte the same.
-		- `resolveSSHHost` and `readSSHConfig` also ask `ssh -G` separately about the same host. One cached read could answer both.
-	- Origin: remote.go:338 from 3d22222, 2026-08-17. The 20261003 round measured no non-GitHub remote. Confirmed for the first, Plausible for the second.
-	- Notes:
-		- A fix lowers the spawn-count limits for these commands in the same commit, adding rows for a Gitea ssh folder if there are none.
-	- Estimated effort: Low
-
 - `--version` prints only its first line
 	- ID: 2026110707345868
 	- Type: Enhancement
@@ -1811,6 +1795,38 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: dup-acct
 	- Test case: TestRepeatedAccountKeys, TestAccountSetFindsTheKeyInAnyPiece, and one account list check in test.bash.
 	- Closed: 2026-09-30
+
+- Code Review 20261107 enhancement 2: Every non-GitHub ssh remote costs an extra `ssh -G`
+	- ID: 2026110708000113
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- `remoteTarget` at remote.go:338 calls `parseRemote`, which resolves the ssh alias, when it only needs owner and name. It runs from the status and whoami Account line through `convertibleToHTTPS`.
+		- Parsing the text alone takes 1 spawn off each of status 18, whoami 14, pr create 34, repo url 9 and sync 29, with status output byte for byte the same.
+		- `resolveSSHHost` and `readSSHConfig` also ask `ssh -G` separately about the same host. One cached read could answer both.
+	- Origin: remote.go:338 from 3d22222, 2026-08-17. The 20261003 round measured no non-GitHub remote. Confirmed for the first, Plausible for the second.
+	- Notes:
+		- A fix lowers the spawn-count limits for these commands in the same commit, adding rows for a Gitea ssh folder if there are none.
+	- Estimated effort: Low
+	- Actual fix [Enhancement]: `remoteTarget` reads owner and name from the text alone, through the new `parseRemoteText`, and asks ssh nothing. `parseRemote` resolves the alias by asking about the connect target, `git@gh-acme` in place of `gh-acme`, the same target the SSH line reads. `sshConfigText` keeps each `ssh -G` answer for the run, keyed by target and PATH and locked like `toolCache`, so `resolveSSHHost` and `readSSHConfig` share one read.
+		- Spawn counts, before and after, in a new Gitea ssh folder with an account, a fake tea and a push URL on the local origin: status 18 -> 16, whoami 14 -> 12, repo url 9 -> 8, pullcom 29 -> 27, pr create 39 -> 37. Every GitHub row is the same as before: status 11, whoami 7, repo url 6, pullcom 21, status in an account folder 19, whoami there 15, the https folder 15.
+	- Decisions:
+		- The alias lookup asks about `user@host`, as git connects. `ssh -G` gives the same hostname for both unless a `Match user` block applies, and then the connect target is the right answer.
+		- The cache is package level, like `toolCache`, since both callers are plain functions and nothing in a run writes ssh_config. HOME is left out of the key: ssh reads its config from the passwd home, and `[dbfvy]` allows one HOME read.
+		- test.bash `[dd5cb]` is commented out. It pinned the bare alias in the lookup, `-G -- gh-acme`, which this change drops on purpose. `[df054]` checks the one read and its `--`.
+		- The new spawn-count rows have the after counts as their limits. A rise of 2 is inside the headroom, so the Go test and `[df054]` are what fail on the old code.
+	- Branch: round-20261107b
+	- Test case:
+		- Go `[df053]` TestSSHConfigAskedOnce: with a logging fake ssh, `remoteTarget` asks ssh nothing, and `parseRemote` twice plus `readSSHConfig` ask `ssh -G` once.
+		- test.bash `[df054]`: status on an aliased remote asks `ssh -G` once, as `-G -- git@gh-acme`.
+		- spawn-count.bash `[df04s]`, `[df04t]`, `[df04v]`, `[df051]`, `[df052]`: status, whoami, repo url, pullcom and pr create in the tea ssh folder.
+	- Verified: `[df053]` fails on HEAD's githost.go, remote.go, account.go and show.go, with 1 call from `remoteTarget` and 4 in all, and passes after. The old build asks `ssh -G` 3 times for status on the aliased remote, the new one once, so `[df054]` fails then passes. Status output is byte for byte the same between the 2 builds for `git@github.com` and for the alias. Go tests pass, test.bash 1850/0, fuzz 313/0, parity 30/0, lint passed, spawn-count passed.
+	- Swept: every `ssh -G` and every `parseRemote` caller. `remoteOwner`, `authHost` and the tea login match need the resolved host, and keep it. `sshLineAsks` and `sshTarget` start no process.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-102500
 
 - Code Review 20261107 enhancement 1: `encoding/json` costs 344 KB for 2 glab reads
 	- ID: 2026110708000112
