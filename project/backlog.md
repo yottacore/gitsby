@@ -158,7 +158,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: CICD process gaps
 	- ID: 2026102416313109
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
@@ -170,6 +170,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Packaging and dependabot stay deferred, per the standing decision. 20261024: kept out of this item, since nothing makes them pressing.
 	- Progress log:
 		- 2026-10-26: Split. Children: 2026102617543861 (the line at the end of a run, done) and 2026102617543961 (the module cache, done).
+		- 2026-11-07: Both children are in, so it closes.
+	- Closed: 20261106-184427
+	- Test case: its children's tests: test.bash [defng] for the end-of-run line, and [dez7d], [dez7e] and [dez7f] for the module cache.
+	- Acceptance signoff: Self-closed: both children are closed with their tests passing.
 
 - CICD reset: prune Go's module cache in the volume
 	- ID: 2026102617543961
