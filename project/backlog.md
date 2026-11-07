@@ -49,7 +49,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: temp files and safe removal
 	- ID: 2026102416313108
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
@@ -68,16 +68,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 2026-10-25: Split. 2026102516194062 has the removals outside cicd.bash. The rest is in.
 		- 2026-10-25: A run's folder is `${HOST_TEMP}/gitsby/<start time>_<NNN>`, else under `TMPDIR`, made with a plain `mkdir` and the first free counter, with `TMPDIR`, `TEMP` and `TMP` pointed at it and a `run.pid`. The harnesses and release.bash already follow `TMPDIR`, so theirs go inside it. Each run removes the project's run folders over 2 days old whose pid is gone.
 		- 2026-10-25: `cicd/utility/include/safe-rm.bash` is the repo's copy of the guard. cicd.bash's own removals go through it, with the name and marker checks kept.
+		- 2026-11-07: The last child, 2026102516194062, closed, so this closes too.
 	- Decisions:
 		- The sweep leaves a folder with no `run.pid`, since a run didn't make it.
 	- Branch: round-20261025b
-	- Test case: test.bash [dee5h] and [dee5j], plus [de5m8], [dee4z] and [dee50] for the new folder.
+	- Test case: test.bash [dee5h] and [dee5j], plus [de5m8], [dee4z] and [dee50] for the new folder, and the tests of child 2026102516194062.
 	- Verified: Both fail against the round branch's cicd.bash, and pass with the change. The run in the image passed with them.
+	- Closed: 20261106-181541
 
 - CICD reset: every other recursive removal through the guard
 	- ID: 2026102516194062
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261025-161940
 	- Opened by: jim-collier
@@ -88,6 +90,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Progress log:
 		- 2026-11-06: Split in four. 2026110612393817 has the harnesses, the utilities and release.bash, and 2026110612551903 the installer. Both are in. 2026110612393822 has stage 7's commands on the boxes, and 2026110612595461 the image build. Both are in.
 		- 2026-11-06: The guard no longer calls `realpath -e`, so the second requirement is answered in 2026110612393817.
+		- 2026-11-07: All 4 children are in, so it closes.
+	- Closed: 20261106-181541
+	- Test case: its children's tests: test.bash [deywq], [deywr], [ddgkk], [db70t] to [db70y], [deyx8], [deyx9], [dez5f], [dez5g], [dez5h], [ddg8f], [ddg8p] and [dez69].
+	- Verified: 2026-11-07, all 4 children closed with those tests passing; the round's quick runs passed test.bash 1816/0.
 
 - CICD reset: stage 7's removals on the boxes through a guard
 	- ID: 2026110612393822
