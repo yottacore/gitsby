@@ -88,6 +88,8 @@ func TestSSHConnectTarget(t *testing.T) { // [dbfrr]
 		{"git@github.com:octocat/hello.git", "git@github.com"},
 		{"github_work:octocat/hello.git", "github_work"},
 		{"ssh://git@github.com/octocat/hello.git", "git@github.com"},
+		{"ssh://host/team@x/r.git", "host"},
+		{"ssh://git@host:2222/team@x/r.git", "git@host"},
 		{"https://github.com/octocat/hello.git", ""},
 	}
 	for _, tc := range tests {

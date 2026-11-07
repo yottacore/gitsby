@@ -79,7 +79,7 @@ func (a *app) printSyntax() {
 	a.out.clean("  -m, --message MSG ....: Commit or merge message (or give it positionally).")
 	a.out.clean("  -q, -y, --quiet, --yes: Assume yes - no prompts; if committing with no message, one is generated.")
 	a.out.clean("  --public / --private .: Visibility for the repo 'repo create' makes (default: private).")
-	a.out.clean("  --any-identity .......: Act as gh's active account, and proceed when it differs from the remote's ssh key.")
+	a.out.clean("  --any-identity .......: Act as the git host CLI's active account, and proceed when it differs from the remote's ssh key.")
 	a.out.clean("  --direct .............: Let sync push straight to main, dev or the default branch, with no warning.")
 	a.out.clean("  --no-fetch ...........: Skip the pre-command fetch, and the pull. (Pushes still go out.)")
 	a.out.clean("  --staged .............: Commit only what is staged, and leave the rest of the tree as it is.")

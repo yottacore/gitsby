@@ -359,7 +359,7 @@ func (a *app) prAcceptPreflight(prBranch string) error {
 	if err := refuseOptionShapedRefs(a.pr.headBranch); err != nil {
 		return err
 	}
-	// gh merges what origin already has, then deletes the branch local and remote.
+	// The git host merges what origin already has, then the branch goes local and remote.
 	// Work that never reached origin is outside the PR and outside the merge -
 	// refuse, don't lose it.
 	if runOut("git", "status", "--porcelain") != "" || isAhead() {
@@ -397,7 +397,7 @@ func (a *app) cmdPrView() error {
 }
 
 func (a *app) cmdPrCreate() error {
-	// GitHub can only diff what origin has, so park the work first - same as br merge
+	// The git host can only diff what origin has, so park the work first - same as br merge
 	// and release do.
 	if err := a.cmdPush(); err != nil {
 		return err
@@ -456,7 +456,11 @@ func (a *app) cmdPrAccept() error {
 	// The merge removes the PR's branch on the remote but leaves our origin/* copy
 	// behind, so an upstream still looks present. Prune first; if ours is the branch
 	// that just went away, pulling it can only fail - land on the merge target instead.
-	a.fetchRemote()
+	// Under --no-fetch origin isn't asked, and the pull below is skipped with it.
+	if a.opt.fetch {
+		a.out.status("git fetch --prune origin ...")
+		a.fetchRemote()
+	}
 	if !a.hasUpstream() {
 		if err := a.checkout(targetBranch); err != nil {
 			return err

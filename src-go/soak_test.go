@@ -75,7 +75,7 @@ func TestSoak(t *testing.T) { // [de546]
 	os.Stdin, os.Stdout, os.Stderr = devNull, devNull, devNull
 	t.Cleanup(func() {
 		os.Stdin, os.Stdout, os.Stderr = oldIn, oldOut, oldErr
-		_ = devNull.Close()
+		_ = devNull.Close() // nothing was written to it, so Close has nothing to say
 	})
 
 	var out bytes.Buffer

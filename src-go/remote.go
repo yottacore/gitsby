@@ -99,9 +99,15 @@ func sshConnectTarget(url string) string {
 	}
 	user := ""
 	switch {
-	case strings.HasPrefix(url, "ssh://") && strings.Contains(url, "@"):
-		user = url[len("ssh://"):]
-		user = user[:strings.Index(user, "@")]
+	case strings.HasPrefix(url, "ssh://"):
+		// The user part ends at the authority; an '@' in the path is just a path.
+		authority := url[len("ssh://"):]
+		if slash := strings.IndexByte(authority, '/'); slash >= 0 {
+			authority = authority[:slash]
+		}
+		if at := strings.LastIndexByte(authority, '@'); at >= 0 {
+			user = authority[:at]
+		}
 	case strings.Contains(url, "://"):
 	default:
 		if at := strings.Index(url, "@"); at >= 0 && strings.Contains(url[at:], ":") {
@@ -261,7 +267,7 @@ func (a *app) fetchRemote() {
 	if a.originHead() == "" {
 		setHead := toolCmd("git", "remote", "set-head", "origin", "--auto")
 		setHead.Env = env
-		_ = setHead.Run()
+		_ = setHead.Run() // best effort: with nothing written, the default branch reads as unknown
 		a.git.originHead.forget()
 	}
 }

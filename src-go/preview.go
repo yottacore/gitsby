@@ -214,6 +214,9 @@ func (a *app) previewPr() {
 	if clean := a.prCleanArgs(); clean != nil {
 		a.out.clean(pad + a.prDisp(clean) + " *")
 	}
+	if a.opt.fetch {
+		a.out.clean(pad + "git fetch --prune origin")
+	}
 	a.out.clean(pad + a.checkoutDisp(a.branchTarget(a.pr.headBranch)) + " *")
 	a.out.clean(pad + a.pullDisp(a.branchTarget(a.pr.headBranch)))
 	if a.isHotfixBranch(a.pr.headBranch) {

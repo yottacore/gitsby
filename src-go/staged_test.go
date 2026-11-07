@@ -20,7 +20,11 @@ func TestParseArgsStaged(t *testing.T) { // [ddht8]
 			t.Errorf("%s: staged=%v cmd=%q err=%v", spelling, opt.staged, cmd.name, err)
 		}
 	}
-	if opt, _, _, _ := parseArgs([]string{"pullcom"}); opt.staged {
+	opt, _, _, err := parseArgs([]string{"pullcom"})
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if opt.staged {
 		t.Error("staged is on without the flag")
 	}
 }

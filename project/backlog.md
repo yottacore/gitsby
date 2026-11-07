@@ -33,40 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- Code Review 20261107 item 1: Two small crypto imports made the binary 25% bigger and slower to start
-	- ID: 2026110708000101
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Related IDs: 2026100416430451, 2026101916533300
-	- Incorrect behavior [Bug]: `crypto/sha256` in `rawHash` and `crypto/rand` for the accounts lock token pull in Go's whole FIPS crypto module. BSS went from 0.2 MB to 33.8 MB. Max RSS is about 9.3 MB, start time about 2.1 ms.
-	- Expected behavior [Bug]: Size and speed are the top 2 priorities for the binary. Neither value needs crypto strength.
-	- Reproduced [Bug]: 2026-11-07 on b23, go1.26.2 linux/amd64. With `hash/fnv` and `math/rand/v2` in their place, the binary is 163,840 bytes smaller, RSS about 7.2 MB, and `--version` starts about 19% faster. Removing only one of the two saves almost nothing.
-	- Possible cause [Bug]: Both imports came in with fixes, the lock token and the raw nesting chain.
-	- Origin: accountcmd.go:969 from 0738416, 2026-10-04, the fix for 2026100416430451. exec.go:277 from 8e403d5, 2026-10-21, for 2026101916533300. Both after the 20261003 round. A regression in size and speed from 2 correct fixes. Confirmed.
-	- Notes:
-		- A new hash changes the `GITSBY_RAW_ACTIVE` entries, so a chain that mixes old and new builds won't match. That's acceptable before the first Go release.
-		- Needs a numeric gate, such as a cap on binary size and BSS, watched to fail with the imports put back.
-	- Estimated effort: Low
-
-- Code Review 20261107 item 2: The wrong-account warning names gh and its GitHub login on a Gitea remote
-	- ID: 2026110708000102
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]:
-		- Gitea origin, tea logged in as one account, the ssh key answering as another. Run a writing `pr` command without `-q`.
-	- Incorrect behavior [Bug]: After `tea acts as 'alice', but this remote's key authenticates as 'bob'.`, it prints `gh does the GitHub side of this, so it happens as 'octocat'.` It also runs `gh api user` to get that name.
-	- Expected behavior [Bug]: The gh line shows only when gh is the tool acting, and gh isn't asked otherwise.
-	- Reproduced [Bug]: 2026-11-07, built binary with a temp HOME and fake tea, ssh and gh.
-	- Possible cause [Bug]: main.go:603 sets `viaGh` for every host CLI, not only gh.
-	- Origin: main.go:603 from 4918b5b, 2026-08-19, before tea and glab support. No round had read main.go. `[dd5cv]` covers gh only. Confirmed.
-	- Estimated effort: Low
-
 - Code Review 20261107 item 3: The release check for history footers skips both PowerShell scripts
 	- ID: 2026110708000103
 	- Type: Bug
@@ -80,19 +46,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: release.bash:329 from 0cd9050, 2026-09-15. Not seen by an earlier round. Confirmed.
 	- Notes:
 		- A file in that list with no footer at all should warn too, not pass silently.
-	- Estimated effort: Low
-
-- Code Review 20261107 item 4: `pr ok` fetches mid-run without showing it in the plan, even with `--no-fetch`
-	- ID: 2026110708000104
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: pr.go:459 calls `fetchRemote`, a `git fetch --prune origin`, after the merge. `previewPr` has no fetch line, and `fetchRemote` never reads `--no-fetch`. A failed fetch prints its warning partway through.
-	- Expected behavior [Bug]: The UI guide says a plan that differs from what runs is a bug. design.md says `--no-fetch` declines the incoming round trip.
-	- Reproduced [Bug]: No. Read only.
-	- Origin: pr.go:459 from 4918b5b, 2026-08-19. Not seen by an earlier round. Plausible.
 	- Estimated effort: Low
 
 - Code Review 20261107 enhancement 1: `encoding/json` costs 344 KB for 2 glab reads
@@ -159,20 +112,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- v2.1.0 looked in `XDG_CONFIG_HOME`, then `~/.config`, then `%APPDATA%`, on every OS. The Go build looks only in `%APPDATA%` on Windows and `~/Library/Application Support` on macOS, so an old file in `~/.config` there isn't found. details.md calls that an accepted cost. This item reverses it.
 		- A file from the old shcl 3 pseudo-version pin also says Format 3, so it can't be told apart. Check whether anything it wrote reads differently now.
 
-- Code Review 20261107 item 5: Messages for every git host still say GitHub or gh
-	- ID: 2026110708000105
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: Offline, `pr create` on a Gitea origin says "The pull request lives on GitHub; there is no local half to do first." `--help` says `--any-identity` acts as "gh's active account".
-	- Expected behavior [Bug]: The UI guide says to say "git host", or name the host.
-	- Reproduced [Bug]: 2026-11-07, the first with a Gitea origin and a failing fetch. The second by reading `--help`.
-	- Origin: main.go:382 and help.go:82 from 4918b5b, 2026-08-19, before tea and glab. Confirmed.
-	- Sweep: comments that assume gh only, pr.go:362, :400 and :437.
-	- Estimated effort: Low
-
 - Code Review 20261107 item 6: Output in show.go, main.go, accountcmd.go and cfgformat.go breaks 4 UI guide rules
 	- ID: 2026110708000106
 	- Type: Bug
@@ -191,32 +130,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Notes:
 		- test.bash `[dakpb]`, `[dafqx]` and `[damxv]` pin the bare `unknown`, so they change with it.
 	- Estimated effort: Avg
-
-- Code Review 20261107 item 7: Go errors discarded with `_` and no comment
-	- ID: 2026110708000107
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: githost.go:237 and :238, config.go:579, remote.go:264, accountcmd.go:975 and :982, show.go:24 and :519. In tests, args_test.go:294, :295, :303 and :304, staged_test.go:23, and soak_test.go:78.
-	- Expected behavior [Bug]: The Go rule is never to discard an error with `_` unless a comment says why. release.go:116 and config.go:451 show the house form.
-	- Reproduced [Bug]: 2026-11-07, grep over every Go file.
-	- Origin: from 4918b5b, 2026-08-19, through 483ebc5, 2026-10-06. The 20261003 round swept `_` discards and missed these. Confirmed.
-	- Estimated effort: Low
-
-- Code Review 20261107 item 8: `sshConnectTarget` mangles a URL with `@` in its path
-	- ID: 2026110708000108
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: `ssh://host/team@x/r.git` gives the connect target `host/team@host`.
-	- Expected behavior [Bug]: `host`, since the user part ends at the first `/` after the scheme.
-	- Reproduced [Bug]: 2026-11-07, on a copy of the function. Rare in practice.
-	- Origin: remote.go:102 from 3d22222, 2026-08-17. Not seen before. Confirmed.
-	- Estimated effort: Low
 
 - Code Review 20261107 item 9: `safe-rm.ps1` can report a failed removal as done
 	- ID: 2026110708000109
@@ -1514,6 +1427,68 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: 2026-10-05, all 3 choices answered.
 	- Closed: 2026-10-05
 
+- Code Review 20261107 item 1: Two small crypto imports made the binary 25% bigger and slower to start
+	- ID: 2026110708000101
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Related IDs: 2026100416430451, 2026101916533300
+	- Incorrect behavior [Bug]: `crypto/sha256` in `rawHash` and `crypto/rand` for the accounts lock token pull in Go's whole FIPS crypto module. BSS went from 0.2 MB to 33.8 MB. Max RSS is about 9.3 MB, start time about 2.1 ms.
+	- Expected behavior [Bug]: Size and speed are the top 2 priorities for the binary. Neither value needs crypto strength.
+	- Reproduced [Bug]: 2026-11-07 on b23, go1.26.2 linux/amd64. With `hash/fnv` and `math/rand/v2` in their place, the binary is 163,840 bytes smaller, RSS about 7.2 MB, and `--version` starts about 19% faster. Removing only one of the two saves almost nothing.
+	- Possible cause [Bug]: Both imports came in with fixes, the lock token and the raw nesting chain.
+	- Origin: accountcmd.go:969 from 0738416, 2026-10-04, the fix for 2026100416430451. exec.go:277 from 8e403d5, 2026-10-21, for 2026101916533300. Both after the 20261003 round. A regression in size and speed from 2 correct fixes. Confirmed.
+	- Notes:
+		- A new hash changes the `GITSBY_RAW_ACTIVE` entries, so a chain that mixes old and new builds won't match. That's acceptable before the first Go release.
+		- Needs a numeric gate, such as a cap on binary size and BSS, watched to fail with the imports put back.
+	- Estimated effort: Low
+	- Actual fix [Bug]: `rawHash` uses `hash/fnv` (64a, same 12 hex characters) and the lock token is 2 words from `math/rand/v2`. No `crypto/` package is left in the build. Unstripped data and BSS went from 33.8 MB to 254 KB, the plain build from 6,063,994 to 5,839,550 bytes.
+	- Branch: round-20261107b
+	- Test case: test.bash `[df024]`, the data and BSS of the unstripped probe build under 2 MB by `go tool nm`, and `[df025]`, no `crypto/` package in `go list -deps`.
+	- Verified: both fail on gover's source and pass after. Go tests, test.bash 1826 -> 1833, 0 failed.
+	- Closed: 20261107-084700
+
+- Code Review 20261107 item 2: The wrong-account warning names gh and its GitHub login on a Gitea remote
+	- ID: 2026110708000102
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- Gitea origin, tea logged in as one account, the ssh key answering as another. Run a writing `pr` command without `-q`.
+	- Incorrect behavior [Bug]: After `tea acts as 'alice', but this remote's key authenticates as 'bob'.`, it prints `gh does the GitHub side of this, so it happens as 'octocat'.` It also runs `gh api user` to get that name.
+	- Expected behavior [Bug]: The gh line shows only when gh is the tool acting, and gh isn't asked otherwise.
+	- Reproduced [Bug]: 2026-11-07, built binary with a temp HOME and fake tea, ssh and gh.
+	- Possible cause [Bug]: main.go:603 sets `viaGh` for every host CLI, not only gh.
+	- Origin: main.go:603 from 4918b5b, 2026-08-19, before tea and glab support. No round had read main.go. `[dd5cv]` covers gh only. Confirmed.
+	- Estimated effort: Low
+	- Actual fix [Bug]: `viaGh` is set only when the tool acting is gh, so the gh line and its `gh api user` call stay out of a tea or glab write.
+	- Branch: round-20261107b
+	- Test case: test.bash `[df026]`, an interactive tea pr create mismatch with a gh login on PATH prints no gh line.
+	- Verified: fails on the gover build, passes after. `[dd5cv]` still passes for gh.
+	- Closed: 20261107-084700
+
+- Code Review 20261107 item 4: `pr ok` fetches mid-run without showing it in the plan, even with `--no-fetch`
+	- ID: 2026110708000104
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: pr.go:459 calls `fetchRemote`, a `git fetch --prune origin`, after the merge. `previewPr` has no fetch line, and `fetchRemote` never reads `--no-fetch`. A failed fetch prints its warning partway through.
+	- Expected behavior [Bug]: The UI guide says a plan that differs from what runs is a bug. design.md says `--no-fetch` declines the incoming round trip.
+	- Reproduced [Bug]: No. Read only.
+	- Origin: pr.go:459 from 4918b5b, 2026-08-19. Not seen by an earlier round. Plausible.
+	- Estimated effort: Low
+	- Actual fix [Bug]: the plan shows `git fetch --prune origin` after the branch delete, the run announces it the same way, and `--no-fetch` skips it. Without the fetch the pull is skipped too, as it always was under `--no-fetch`, so a deleted upstream can't fail the run.
+	- Branch: round-20261107b
+	- Test case: test.bash `[df027]`, the plan line is announced when it runs, and `[df028]`, `--no-fetch` leaves it out of the plan.
+	- Verified: `[df027]` fails on the gover build, passes after. `[df028]` passes on both, since the old plan had no fetch line; it guards the flag.
+	- Closed: 20261107-084700
+
 - test.bash [dd5e4] fails on the macOS workflow: install.ps1 leaves its bracketed temp dir
 	- ID: 2026110617122394
 	- Type: Bug
@@ -2719,6 +2694,62 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: stage 7's harness on gover after round 4, 2026-10-04. b26: Go tests pass, and test.bash against the universal build 1255/0. vmFreeBSD, vmDebARM64 and vm925w: Go tests pass. The Unix boxes ran Go tests only this time, since no Unix builds were passed. Their full test.bash ran earlier the same day and failed only `[db712]`, fixed since.
 	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
 	- Closed: 20261004-190953
+
+- Code Review 20261107 item 5: Messages for every git host still say GitHub or gh
+	- ID: 2026110708000105
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: Offline, `pr create` on a Gitea origin says "The pull request lives on GitHub; there is no local half to do first." `--help` says `--any-identity` acts as "gh's active account".
+	- Expected behavior [Bug]: The UI guide says to say "git host", or name the host.
+	- Reproduced [Bug]: 2026-11-07, the first with a Gitea origin and a failing fetch. The second by reading `--help`.
+	- Origin: main.go:382 and help.go:82 from 4918b5b, 2026-08-19, before tea and glab. Confirmed.
+	- Sweep: comments that assume gh only, pr.go:362, :400 and :437.
+	- Estimated effort: Low
+	- Actual fix [Bug]: the offline refusal says "the git host", `--help` says "the git host CLI's active account", and the 2 comments say the git host. pr.go:437 already said both hosts.
+	- Branch: round-20261107b
+	- Test case: test.bash `[df029]`, the offline refusal on a non-GitHub origin, and `[df02a]`, `--help`.
+	- Verified: both fail on the gover build, pass after.
+	- Swept: every `GitHub` left in an output string belongs to `repo create`, which is a GitHub command by design, or to the gh line of the wrong-account warning, now shown only for gh.
+	- Closed: 20261107-084700
+
+- Code Review 20261107 item 7: Go errors discarded with `_` and no comment
+	- ID: 2026110708000107
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: githost.go:237 and :238, config.go:579, remote.go:264, accountcmd.go:975 and :982, show.go:24 and :519. In tests, args_test.go:294, :295, :303 and :304, staged_test.go:23, and soak_test.go:78.
+	- Expected behavior [Bug]: The Go rule is never to discard an error with `_` unless a comment says why. release.go:116 and config.go:451 show the house form.
+	- Reproduced [Bug]: 2026-11-07, grep over every Go file.
+	- Origin: from 4918b5b, 2026-08-19, through 483ebc5, 2026-10-06. The 20261003 round swept `_` discards and missed these. Confirmed.
+	- Estimated effort: Low
+	- Actual fix [Bug]: each of the 8 sites in the program has a one-line reason. The config parse can't fail at Standard strictness, which shcl's doc says. The 3 tests that discarded `parseArgs` and `collapseCommand` errors now fail on one; the `/dev/null` close has a reason.
+	- Branch: round-20261107b
+	- Test case: Not applicable; comments and test strictness.
+	- Verified: Go tests pass, `go vet` clean.
+	- Closed: 20261107-084700
+
+- Code Review 20261107 item 8: `sshConnectTarget` mangles a URL with `@` in its path
+	- ID: 2026110708000108
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: `ssh://host/team@x/r.git` gives the connect target `host/team@host`.
+	- Expected behavior [Bug]: `host`, since the user part ends at the first `/` after the scheme.
+	- Reproduced [Bug]: 2026-11-07, on a copy of the function. Rare in practice.
+	- Origin: remote.go:102 from 3d22222, 2026-08-17. Not seen before. Confirmed.
+	- Estimated effort: Low
+	- Actual fix [Bug]: the user part is read from the authority alone, the text before the first `/` after the scheme, as `sshTarget` already did.
+	- Branch: round-20261107b
+	- Test case: Go `[dbfrr]`, 2 new rows: `ssh://host/team@x/r.git` and `ssh://git@host:2222/team@x/r.git`.
+	- Verified: the first row fails on gover's code, both pass after.
+	- Closed: 20261107-084700
 
 - backlog_sort.py exits 1 after a sort that moves items
 	- ID: 2026110613150884

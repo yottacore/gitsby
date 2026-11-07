@@ -1418,6 +1418,7 @@ fStagedChecks(){
 	# fAssertOut     "[ddhth] --staged is refused where the whole tree would be committed"  'staged works with pullcom, sync'  bash -c "cd '${stA}' && '${gitsby}' -q release --staged 2>&1"
 	fAssertOut     "[ddhvb] --staged is refused where the whole tree would be committed"  'staged works with pullcom, sync, .*, pr create and release\.'  bash -c "cd '${stA}' && '${gitsby}' -q repo connect '${work}/$1-staged-nowhere.git' --staged 2>&1"
 	fAssertOut     "[ddhtj] help lists --staged"  '^  --staged \.+: Commit only what is staged'  "${gitsby}" --help
+	fAssertNotOut  "[df02a] help names the git host CLI for --any-identity, not gh"  "gh's active account"  "${gitsby}" --help
 
 	## origin changes the file with an unstaged edit here: no stash, so git would refuse the pull.
 	( cd "${stB}" && git pull --quiet --ff-only && echo x2 > f2 && git add f2 && git commit --quiet -m "f2 from B" && git push --quiet )
@@ -3414,6 +3415,12 @@ GHEOF
 	)
 	fAssertNotPlan "[daepr] a feature PR accepted from a hotfix branch plans no back-merge"  'git merge origin/main' \
 		bash -c "cd '${pkc}' && PATH='${ghp}' FAKE_GH_HEAD=pkfeat FAKE_GH_BASE=dev '${gitsby}' -q pr ok 8 2>&1"
+	## The prune fetch after the merge is a round trip like any other: in the plan, announced when
+	## it runs, and declined by --no-fetch along with the pull it feeds.
+	fAssert        "[df027] pr ok plans the prune fetch after the merge, and runs it as planned" \
+		fPlanRan 'git fetch --prune origin' bash -c "cd '${pkc}' && PATH='${ghp}' FAKE_GH_HEAD=pkfeat FAKE_GH_BASE=dev '${gitsby}' -q pr ok 8 2>&1"
+	fAssertNotPlan "[df028] and --no-fetch leaves it out"  'git fetch' \
+		bash -c "cd '${pkc}' && PATH='${ghp}' FAKE_GH_HEAD=pkfeat FAKE_GH_BASE=dev '${gitsby}' -q -NoFetch pr ok 8 2>&1"
 
 	## The bash version gate. Bash build only - the PowerShell one needs no bash at all.
 	local vg="${work}/vgate"
@@ -5793,6 +5800,13 @@ GHEOF
 	## hand-run 'go build', which legitimately carries the stamps.
 	fAssert "[dbft1] and a build with them carries no revision stamp" \
 		bash -c "cd '${root}/src-go' && go build -trimpath -buildvcs=false -o '${work}/vcsprobe' . && ! go version -m '${work}/vcsprobe' | grep -q 'vcs\.revision'"
+	## Size and start time come first for the binary. One crypto import pulls in Go's FIPS module,
+	## whose random generator alone is 32 MiB of BSS, and the data today is about 250 KB. nm counts
+	## BSS as D, and reads the probe above, which keeps its symbols.
+	fAssert "[df024] the build's data and bss stay under 2 MB" \
+		bash -c "go tool nm -size '${work}/vcsprobe' | awk '\$3==\"D\"{s+=\$2} END{exit !(s>0 && s<2000000)}'"
+	fAssert "[df025] nothing in the build pulls in Go's crypto module" \
+		bash -c "cd '${root}/src-go' && ! grep -q '^crypto/' <<< \"\$(go list -deps .)\""
 	## The build number is minutes since 2000, Crockford base32, lower case. Built here with a
 	## fixed stamp: the suite's own binary carries whatever the last build gave it.
 	fAssertOut "[dbshs] a stamped build reports minutes since 2000 in Crockford base32"  '^gitsby v9\.9\.9 build dbd05$' \
@@ -8077,6 +8091,15 @@ SSHEOF
 		bash -c "cd '${fgSsh}' && PATH='${fgPath}' FAKE_TEA_USER=gitfriend FAKE_SSH_LOGIN=keyowner '${gitsby}' -q -NoFetch pr create 'T' 2>&1"
 	fAssertNotOut "[dbg6c] and agreeing logins do not fire"  'acts as' \
 		bash -c "cd '${fgSsh}' && PATH='${fgPath}' FAKE_TEA_USER=keyowner FAKE_SSH_LOGIN=keyowner '${gitsby}' -q -NoFetch pr create 'T' 2>&1 || true"
+	## The interactive warning's gh line is for a write through gh. Here tea is the one acting, so
+	## naming gh's GitHub login would point at a tool that has no part in this.
+	if ((hasPty)); then
+		fAssertNotOut "[df026] the interactive tea warning does not name gh's account"  'gh does the GitHub side' \
+			fAnswerPrompt n "cd '${fgSsh}' && PATH='${fgPath}' FAKE_TEA_USER=gitfriend FAKE_SSH_LOGIN=keyowner FAKE_GH_LOGIN=octocat '${gitsby}' -NoFetch pr create 'T'"
+	fi
+	## Offline, the refusal names the git host, which here isn't GitHub.
+	fAssertOut "[df029] the offline pr refusal says git host, not GitHub"  'lives on the git host' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q pr create 'T' 2>&1 || true"
 	( cd "${fgSsh}" && git checkout --quiet main )
 
 	## An unparseable remote is not a git host we ruled out - it is one we could not name. The standing

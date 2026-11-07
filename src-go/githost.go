@@ -234,6 +234,7 @@ func teaVersionReadsEnv(text string) bool {
 	if m == nil {
 		return false
 	}
+	// Digits only, from the pattern; Atoi clamps on overflow, which still compares right.
 	major, _ := strconv.Atoi(m[1])
 	minor, _ := strconv.Atoi(m[2])
 	return major > 0 || minor >= 11

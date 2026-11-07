@@ -576,6 +576,7 @@ func (c *config) load(o options) error {
 	}
 	// The whole file, mark and all: the module takes the mark off for the read and
 	// keeps the text, so 'account set' writes back every line it didn't edit.
+	// Only Strict can fail: Standard skips and diagnoses a bad line, keeping the rest.
 	doc, _ := shcl.ParseKeepLines(string(data), shcl.Standard)
 	c.loadDoc(doc)
 	return nil

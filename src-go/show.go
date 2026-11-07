@@ -21,6 +21,7 @@ import (
 // off-screen - the 'less -FX' idea without a pager.
 func (a *app) showList(name string, args ...string) {
 	var outLines []string
+	// A tool that fails or is missing lists nothing, which is what the display shows.
 	if out, _ := toolCmd(name, args...).Output(); len(out) > 0 {
 		outLines = strings.Split(strings.TrimRight(string(out), "\n"), "\n")
 	}
@@ -516,6 +517,7 @@ type sshConfig struct {
 // believed. '--': an option-shaped host must not parse as an option.
 func readSSHConfig(target string) sshConfig {
 	var cfg sshConfig
+	// No ssh, or a target it refuses, reads as no config: every field stays unknown.
 	out, _ := toolCmd("ssh", "-G", "--", target).Output()
 	for _, line := range splitLines(string(out)) {
 		key, value, found := strings.Cut(line, " ")

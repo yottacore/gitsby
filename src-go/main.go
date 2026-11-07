@@ -379,7 +379,7 @@ func (a *app) preflight() error {
 		}
 	case "pr":
 		if a.pr.sub != "" {
-			if err := a.requireOnline("pr "+a.pr.sub, "The pull request lives on GitHub; there is no local half to do first."); err != nil {
+			if err := a.requireOnline("pr "+a.pr.sub, "The pull request lives on the git host; there is no local half to do first."); err != nil {
 				return err
 			}
 		}
@@ -600,7 +600,8 @@ func (a *app) identityGate() (identityMismatch, error) {
 	var found identityMismatch
 	if a.remote.isWrite && !a.opt.anyIdentity {
 		found.text = identityMismatchText(a.remote.cli, a.hostCLIWho(), a.sshLogin(a.remote.probeURL))
-		found.viaGh = found.text != ""
+		// Only gh has a GitHub side to name; tea and glab were already named in the text.
+		found.viaGh = found.text != "" && a.remote.tool == toolGh
 		// Up front, like every other refusal: don't show a plan we won't run.
 		if found.text != "" && a.opt.quiet {
 			return found, usagef("%s Nothing was done. Re-run with --any-identity if that is intended.", found.text)

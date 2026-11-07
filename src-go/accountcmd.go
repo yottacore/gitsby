@@ -13,11 +13,11 @@ package main
 
 import (
 	"cmp"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -966,20 +966,22 @@ func lockAccountsFile(file string, wait time.Duration) (func(), error) {
 		target = resolved
 	}
 	lock := target + ".lock"
-	token := rand.Text()
+	// math/rand, seeded by the runtime from the OS: the token only tells our lock
+	// from a later run's, and crypto/rand costs 32 MiB of BSS for the FIPS module.
+	token := fmt.Sprintf("%016x%016x", rand.Uint64(), rand.Uint64())
 	deadline := time.Now().Add(wait)
 	for {
 		opened, err := createNew(lock, token, 0o600)
 		if opened {
 			if err != nil {
-				_ = os.Remove(lock)
+				_ = os.Remove(lock) // the write's error is the one to report; a leftover reads as held next run
 				return nil, writeRefusal("Couldn't make the lock beside the accounts file.", "Writing it", err,
 					"Nothing was written.", "Make the folder it is in writable, then run this again.",
 					noteLines("File", nativePath(file)), noteLines("Lock", nativePath(lock)))
 			}
 			return func() {
 				if now, err := os.ReadFile(lock); err == nil && string(now) == token {
-					_ = os.Remove(lock)
+					_ = os.Remove(lock) // the edit is saved; a lock that stays times out as held next run
 				}
 			}, nil
 		}
