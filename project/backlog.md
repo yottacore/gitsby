@@ -241,7 +241,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - spawn-count.bash says it restores each command's origin, and doesn't
 	- ID: 2026110611364366
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261106-113643
 	- Opened by: jim-collier
@@ -251,6 +251,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: each command runs against an untouched origin, so its count doesn't depend on the commands before it.
 	- Reproduced [Bug]: by reading, while working 2026102617594214. Control: a clone made by `git clone` from a relative path also stores the absolute path as its url.
 	- Possible cause [Bug]: nothing points the live clones at the live origins after the copy. A `remote set-url` in `fRestore` would.
+	- Actual cause [Bug]: as above. `pullcom` pushed its commit to the pristine origin, so each later command ran against an origin ahead of its clone.
+	- Actual effort: Low
+	- Decisions:
+		- The pristine clones are pointed at the live origins once, after the fixture is built, rather than in `fRestore`. `cp -a` then brings the right url along, with no git call per command.
+		- A check after the measures, [dez8s], compares both pristine origins' refs with what they held when built, and fails the run with nothing recorded if one moved. It catches any later command that writes there, not only this one.
+		- With no strace the script still prints only the SKIP lines of its measures. [dez8s] runs on the fixture, which isn't built then.
+	- Actual fix [Bug]: `remote set-url` on the two pristine clones, to their live origins. No count changed today.
+	- Branch: round-20261107
+	- Test case: [dez8s] in spawn-count.bash.
+	- Verified: [dez8s] fails against the script before the fix, on a copy of it run against the real build, and passes after, with every count the same. `--backlog-run-quick` passed with every area, test.bash 1826/0, fuzz 313/0, parity 30/0, spawn counts with [dez8s]. `test-id.bash --check` and shellcheck clean.
+	- Swept: the other copies in the fixture. acct-ssh and acct-https are set to github.com urls, and the measures in them don't fetch or push. The other `cp -a`, `-r` and `-R` calls in cicd/ copy no clone with its `.git`.
+	- Closed: 20261106-190905
+	- Acceptance signoff: Self-closed, test fixture only.
 
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
