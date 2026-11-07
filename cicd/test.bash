@@ -4373,7 +4373,9 @@ GHEOF
 	fAssertNotOut "[db00b] and not to the first"                  "workacct"                    bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	fAssertNotOut "[db00c] a folder no rule covers gets no account line"  "Account \.+:"        bash -c "cd '${acAway}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	fAssertOut "[db00d] the commit identity comes from the account too"  'Work Person <work@example\.com>'  bash -c "cd '${acWork}' && env ${acEnvIdent} '${gitsby}' -q -NoFetch status"
-	fAssertOut "[db00e] a key nothing reads is reported, not ignored"    'account\.work\.notakey'           bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	## Off since 2026-11-07: a v2.1.0 flat file is converted on first read, so the key is named the way the converted file spells it.
+	# fAssertOut "[db00e] a key nothing reads is reported, not ignored"    'account\.work\.notakey'           bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	fAssertOut "[df05t] a key nothing reads is reported, not ignored"    'account\[work\]\.notakey'        bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	## Holding the token is what lets git authenticate over https with no ssh key at all. Only the
 	## work account has one in the stub, so only it says so.
 	fAssertOut    "[db00f] the held token is what enables https auth"  'git over https'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
@@ -4588,9 +4590,14 @@ GHEOF
 	EOF
 	fAssertOut "[db62y] more folder names is the more specific rule"  'narrowacct' \
 		bash -c "cd '${ac}/mA/github.com/alice/proj' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/segprec.shcl' status"
+	## Off since 2026-11-07: a v2.1.0 flat file is converted on first read, so the file is SHCL by now, and a flat line added to it reads as neither.
+	# cat >> "${ac}/segprec.shcl" <<-EOF
+	# 	account.exact.path      = ${acCanon}/mA/github.com/alice
+	# 	account.exact.ghAccount = exactacct
+	# EOF
 	cat >> "${ac}/segprec.shcl" <<-EOF
-		account.exact.path      = ${acCanon}/mA/github.com/alice
-		account.exact.ghAccount = exactacct
+		account.exact.path: ${acCanon}/mA/github.com/alice
+		account.exact.ghaccount: exactacct
 	EOF
 	fAssertOut "[db62z] an absolute path beats a pathContains"  'exactacct' \
 		bash -c "cd '${ac}/mA/github.com/alice/proj' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/segprec.shcl' status"
@@ -4982,7 +4989,9 @@ GHEOF
 	fAssert "[db00y] re-applying does not duplicate the rules"  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(grep -c 'gitsby/accounts' '${ac}/home/.gitconfig')\" == 2 ]]"
 	fAssert "[db00z] and leaves a hand-written includeIf alone"  bash -c "grep -q 'hand/written' '${ac}/home/.gitconfig'"
 	## Removing an account from the config has to remove its rule, or it silently keeps applying.
-	fAssert "[db010] dropping an account drops its rule"  bash -c "cd '${acWork}' && sed -i.bak '/^account\.home\./d' '${ac}/home/${confRel}/config.shcl' && rm -f '${ac}/home/${confRel}/config.shcl.bak' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(grep -c 'gitsby/accounts' '${ac}/home/.gitconfig')\" == 1 ]]"
+	## Off since 2026-11-07: a v2.1.0 flat file is converted on first read, so the account to drop is a block by then.
+	# fAssert "[db010] dropping an account drops its rule"  bash -c "cd '${acWork}' && sed -i.bak '/^account\.home\./d' '${ac}/home/${confRel}/config.shcl' && rm -f '${ac}/home/${confRel}/config.shcl.bak' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(grep -c 'gitsby/accounts' '${ac}/home/.gitconfig')\" == 1 ]]"
+	fAssert "[df05w] dropping an account drops its rule"  bash -c "cd '${acWork}' && sed -i.bak '/^account: home$/,/^$/d' '${ac}/home/${confRel}/config.shcl' && rm -f '${ac}/home/${confRel}/config.shcl.bak' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(grep -c 'gitsby/accounts' '${ac}/home/.gitconfig')\" == 1 ]]"
 	## Fragments are named by host and login, so a renamed account leaves its old file behind. It is
 	## named, not deleted, since nothing proves gitsby wrote it.
 	fAssertOut "[ddate] and names the fragment no rule uses any more"  'Not used any more, safe to remove: .*/accounts/github\.com_homeacct\.gitconfig' \
@@ -5012,8 +5021,11 @@ GHEOF
 		bash -c "cd '${ac}/my trees/work' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && [[ \"\$(grep -c 'spacct\.gitconfig' '${ac}/spacehome/.gitconfig')\" == 1 ]]"
 	fAssert "[dbfh1] and re-applying refreshes it instead of duplicating it" \
 		bash -c "cd '${ac}/my trees/work' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && [[ \"\$(grep -c 'spacct\.gitconfig' '${ac}/spacehome/.gitconfig')\" == 1 ]]"
-	fAssert "[dbfh2] and dropping that account drops its rule" \
-		bash -c "cd '${ac}/my trees/work' && sed -i.bak '/^account\.sp\./d' '${ac}/spaced.shcl' && rm -f '${ac}/spaced.shcl.bak' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && ! grep -q 'spacct\.gitconfig' '${ac}/spacehome/.gitconfig'"
+	## Off since 2026-11-07: a v2.1.0 flat file is converted on first read, so the account to drop is a block by then.
+	# fAssert "[dbfh2] and dropping that account drops its rule" \
+	# bash -c "cd '${ac}/my trees/work' && sed -i.bak '/^account\.sp\./d' '${ac}/spaced.shcl' && rm -f '${ac}/spaced.shcl.bak' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && ! grep -q 'spacct\.gitconfig' '${ac}/spacehome/.gitconfig'"
+	fAssert "[df05x] and dropping that account drops its rule" \
+		bash -c "cd '${ac}/my trees/work' && sed -i.bak '/^account: sp$/,/^$/d' '${ac}/spaced.shcl' && rm -f '${ac}/spaced.shcl.bak' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && ! grep -q 'spacct\.gitconfig' '${ac}/spacehome/.gitconfig'"
 	## The username plain git asks with has to be for the account's own host, and the same login
 	## gitsby's own runs give the helper. It was always github.com and always ghAccount, so an
 	## account on another host got none, and one with both keys set named the other login.
@@ -5074,7 +5086,10 @@ GHEOF
 		bash -c "${acRelRun} '${acRel}/cfg/hand.shcl' account list"
 	fAssertOut "[dcmex] and the identity block names it"  'Ignored keys \.: account\[hand\]\.path \(not an absolute folder: \.\)' \
 		bash -c "${acRelRun} '${acRel}/cfg/hand.shcl' status"
-	fAssertOut "[dcmey] a relative path in a 2.x flat file is ignored the same way"  'account\.flat\.path \(not an absolute folder: dev/work\)' \
+	## Off since 2026-11-07: a v2.1.0 flat file is converted on first read, so the key is named the way the converted file spells it.
+	# fAssertOut "[dcmey] a relative path in a 2.x flat file is ignored the same way"  'account\.flat\.path \(not an absolute folder: dev/work\)' \
+	# bash -c "${acRelRun} '${acRel}/cfg/flat.shcl' account list"
+	fAssertOut "[df05v] a relative path in a 2.x flat file is ignored the same way"  'account\[flat\]\.path \(not an absolute folder: dev/work\)' \
 		bash -c "${acRelRun} '${acRel}/cfg/flat.shcl' account list"
 	fAssert "[dcmez] account apply writes no rule for a relative path" \
 		bash -c ": > '${acRel}/home/.gitconfig' && ${acRelRun} '${acRel}/cfg/hand.shcl' account apply >/dev/null && ! grep -qi includeif '${acRel}/home/.gitconfig'"
@@ -5243,7 +5258,9 @@ GHEOF
 	fAssertNotOut "[db01p] converting it silences the offer"  "repo url https' switches it"  bash -c "cd '${acSsh}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	## Saying you want ssh is an answer, and answered advice must stop.
 	( cd "${acSsh}" && git remote set-url origin git@github.com:workacct/thing.git )
-	echo "account.work.protocol = ssh" >> "${ac}/home/${confRel}/config.shcl"
+	## Off since 2026-11-07: a v2.1.0 flat file is converted on first read, so the line added is in the SHCL spelling.
+	# echo "account.work.protocol = ssh" >> "${ac}/home/${confRel}/config.shcl"
+	echo "account.work.protocol: ssh" >> "${ac}/home/${confRel}/config.shcl"
 	fAssertNotOut "[db01q] and 'protocol = ssh' silences it too"  "repo url https' switches it"  bash -c "cd '${acSsh}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	sed -i.bak '/^account\.work\.protocol/d' "${ac}/home/${confRel}/config.shcl" && rm -f "${ac:?}/home/${confRel}/config.shcl.bak"
 
@@ -8009,6 +8026,48 @@ GLEOF
 		bash -c "grep -qx '   work' '${og}/old.txt' && grep -qx '   home' '${og}/old.txt' && cmp -s '${og}/old.txt' '${og}/new.txt'"
 	fAssert "[ddg6k] and keeps the file that build wrote, byte for byte, under a dated name" \
 		bash -c "set -- '${ogDir}'/config_backup_*_format-v2.shcl; [[ \$# == 1 && -f \"\$1\" ]] && cmp -s \"\$1\" '${og}/written.shcl'"
+	## A v2.1.0 accounts file: flat 'key = value' lines, as that version's accounts.md showed them,
+	## in ~/.config, where it looked on every platform. That build reads it first, then this one
+	## converts it on its first read and keeps the old one under a dated name.
+	local fl="${fg}/flat21" flFile flDir
+	local flEnv="GITSBY_CONFIG= XDG_CONFIG_HOME= APPDATA= HOME='${fl}/home' GIT_CONFIG_GLOBAL='${fl}/home/.gitconfig'"
+	flDir="${fl}/home/.config/gitsby"; flFile="${flDir}/config.shcl"
+	mkdir -p "${flDir}"
+	cat > "${flFile}" <<-'EOF'
+		# accounts, the way v2.1.0 showed them
+		protocol = https                            # how new remotes are set up
+
+		account.work.path       = ~/dev/work        # the folder tree this account owns
+		account.work.ghAccount  = my-work-login
+		account.work.name       = "O'Brien # x"
+		account.work.email      = ada@work.example
+
+		account.personal.pathContains = github.com/my-personal-login
+		account.personal.ghAccount    = my-personal-login
+		account.personal.email        = 'ada@home.example'
+	EOF
+	cp "${flFile}" "${fl}/written.shcl"
+	(cd "${fl}" && env GITSBY_CONFIG= XDG_CONFIG_HOME= APPDATA= HOME="${fl}/home" GIT_CONFIG_GLOBAL="${fl}/home/.gitconfig" bash "${root}/legacy/bin/gitsby" account list) </dev/null 2>/dev/null | sed -n '/^Accounts:/,$p' > "${fl}/old.txt" || true
+	(cd "${fl}" && env GITSBY_CONFIG= XDG_CONFIG_HOME= APPDATA= HOME="${fl}/home" GIT_CONFIG_GLOBAL="${fl}/home/.gitconfig" "${gitsby}" account list) </dev/null 2>"${fl}/new.err" | sed -n '/^Accounts:/,$p' > "${fl}/new.txt" || true
+	fAssert "[df05y] a v2.1.0 flat accounts file in ~/.config is converted on first read, and says which files" \
+		bash -c "grep -qF \"Converted the accounts file from the flat 'key = value' layout of v2.1.0 to SHCL.\" '${fl}/new.err' && grep -qx '  File: .*/home/\.config/gitsby/config\.shcl' '${fl}/new.err' && grep -qEx '  From: .*/config_backup_[0-9]{8}-[0-9]{6}_format-flat\.shcl' '${fl}/new.err'"
+	fAssert "[df05z] and keeps the old one, byte for byte, under a dated name" \
+		bash -c "set -- '${flDir}'/config_backup_*_format-flat.shcl; [[ \$# == 1 && -f \"\$1\" ]] && cmp -s \"\$1\" '${fl}/written.shcl'"
+	fAssertOut "[df060] and the new one names the format"  '^##    Format   3' cat "${flFile}"
+	## The two builds word the token and folder lines differently, so the names, logins and
+	## authors are what is compared.
+	fAssert "[df061] and reads every account the way v2.1.0 did" \
+		bash -c "grep -Ev 'token|folder|anywhere' '${fl}/old.txt' > '${fl}/old.cut' && grep -Ev 'token|folder|anywhere' '${fl}/new.txt' > '${fl}/new.cut' && grep -qx '   work' '${fl}/old.cut' && grep -qF \"commits .: O'Brien # x <ada@work.example>\" '${fl}/old.cut' && grep -qx '   personal' '${fl}/old.cut' && cmp -s '${fl}/old.cut' '${fl}/new.cut'"
+	fAssert "[df062] and a second run converts nothing more" \
+		bash -c "cd '${fl}' && env ${flEnv} '${gitsby}' account list </dev/null >/dev/null 2>'${fl}/again.err'; ! grep -q 'Converted' '${fl}/again.err' && set -- '${flDir}'/config_backup_*; [[ \$# == 1 && -f \"\$1\" ]]"
+	## A line v2.1.0 couldn't read either keeps the file as it is, and the ignored list names it.
+	mkdir -p "${fl}/part"
+	printf 'account.work.ghAccount = my-work-login\nnot a setting\n' > "${fl}/part/config.shcl"
+	cp "${fl}/part/config.shcl" "${fl}/part.shcl"
+	fAssertOut "[df063] a flat file with a line v2.1.0 couldn't read is read as it is, and names the line"  'Ignored keys .*not a setting' \
+		bash -c "cd '${fl}' && env ${flEnv} '${gitsby}' --config '${fl}/part/config.shcl' account list </dev/null 2>&1"
+	fAssert "[df064] and is left alone" \
+		bash -c "set -- '${fl}/part'/*; [[ \$# == 1 ]] && cmp -s '${fl}/part/config.shcl' '${fl}/part.shcl'"
 	## A key the loader ignores, written past this command, lands in the file and is dropped on every
 	## read - so the file says one thing and every command does another. Refuse it at the door, and
 	## name the keys that ARE read while refusing.
@@ -8363,3 +8422,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261107 JC: glab's JSON is read by hand. Checks for a state past a nested one, a branch name with an escaped quote and a comma, and no encoding/json in the build. 1847 -> 1850.
 ##		- 20261107 JC: An aliased remote asks ssh -G once, about its connect target. [dd5cb] is off, since the bare alias is no longer asked. 1850 -> 1850.
 ##		- 20261107 JC: --version is its one line. [dcnw7] pins that line in place of the copyright line, and keep-build --list reads it. 1850 -> 1854.
+##		- 20261107 JC: A v2.1.0 flat accounts file converts on first read, found in ~/.config too. [db00e], [db010], [dbfh2] and [dcmey] are off for [df05t], [df05w], [df05x] and [df05v]. 1854 -> 1861.

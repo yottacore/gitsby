@@ -27,6 +27,7 @@ const shcl2Banner = "# This config file format is SHCL."
 // formatMigration is what the load did with a file in an older format.
 type formatMigration struct {
 	from     int    // the format major the file was in
+	flat     bool   // the file was in v2.1.0's flat 'key = value' layout instead
 	backup   string // where the file as it was went; empty when nothing was written
 	changed  int    // lines re-spelled so they mean what they did
 	lost     int    // lines that set something under the old rules and set nothing now
@@ -109,11 +110,24 @@ func changedLines(before, after string) int {
 }
 
 // backupName is where the old file goes: beside it, named for when and which
-// format, e.g. config_backup_20261003-142233_format-v2.shcl.
-func backupName(file string, from int, now time.Time) string {
+// format, e.g. config_backup_20261003-142233_format-v2.shcl, or _format-flat for
+// v2.1.0's layout.
+func backupName(file string, mig *formatMigration, now time.Time) string {
 	base := filepath.Base(file)
 	base = strings.TrimSuffix(base, filepath.Ext(base))
-	return filepath.Join(filepath.Dir(file), base+"_backup_"+now.Format("20060102-150405")+"_format-v"+strconv.Itoa(from)+".shcl")
+	format := "v" + strconv.Itoa(mig.from)
+	if mig.flat {
+		format = "flat"
+	}
+	return filepath.Join(filepath.Dir(file), base+"_backup_"+now.Format("20060102-150405")+"_format-"+format+".shcl")
+}
+
+// formatName names the old format for a notice.
+func (mig *formatMigration) formatName() string {
+	if mig.flat {
+		return "flat 'key = value' layout of v2.1.0"
+	}
+	return "SHCL " + strconv.Itoa(mig.from) + ".x format"
 }
 
 // replaceOldFormat keeps the file as read under its backup name, then writes the
@@ -147,7 +161,7 @@ func replaceOldFormat(file, read, converted string, mig *formatMigration) {
 		mig.why = causeText(err)
 		return
 	}
-	backup := backupName(target, mig.from, time.Now())
+	backup := backupName(target, mig, time.Now())
 	if _, err := createNew(backup, read, fi.Mode().Perm()); err != nil {
 		mig.why = "the old copy couldn't be written: " + causeText(err)
 		return
@@ -172,6 +186,11 @@ func (a *app) reportMigration() {
 	mig.reported = true
 	file := nativePath(a.cfg.file)
 	notes := noteLines("File", file)
+	if !mig.done && mig.flat {
+		a.out.errorf("The accounts file is in the %s and couldn't be converted. This run read it the way v2.1.0 did. 'account set' and 'account unset' refuse until it is converted.", mig.formatName())
+		a.out.notes(append(notes, noteLines("Why", mig.why+".")...))
+		return
+	}
 	if !mig.done {
 		a.out.errorf("The accounts file is in the SHCL %d.x format and couldn't be converted. This run read it the way %d.x did. 'account set' and 'account unset' refuse until it is converted.", mig.from, mig.from)
 		a.out.notes(append(notes, noteLines("Why", mig.why+".")...))
@@ -179,6 +198,9 @@ func (a *app) reportMigration() {
 	}
 	notes = append(notes, noteLines("From", nativePath(mig.backup))...)
 	msg := "Converted the accounts file from the SHCL " + strconv.Itoa(mig.from) + ".x format, which reads some values differently. The old file is kept."
+	if mig.flat {
+		msg = "Converted the accounts file from the " + mig.formatName() + " to SHCL. The old file is kept."
+	}
 	if mig.changed > 0 {
 		msg += " " + strconv.Itoa(mig.changed) + " line(s) were re-spelled to keep their values."
 	}

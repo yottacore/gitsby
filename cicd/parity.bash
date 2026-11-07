@@ -188,9 +188,11 @@ fSameLead(){
 	## script says where an account came from and why it could not be applied in one long clause on
 	## the line, this build says both underneath, and which reads better is not what these ask.
 	local -r label="${1}"; local -r pattern="${2}"; local -r dir="${3}"; shift 3
+	## The frozen one first: this build converts a flat accounts file on first read, which the
+	## frozen one can't read after.
 	local a="" b=""
-	a="$(fRunNew "${dir}" "${@}" | grep -E "${pattern}" | sed -e 's/ - .*//' -e 's/ (from .*//' || true)"
 	b="$(fRunRef "${dir}" "${@}" | grep -E "${pattern}" | sed -e 's/ - .*//' -e 's/ (from .*//' || true)"
+	a="$(fRunNew "${dir}" "${@}" | grep -E "${pattern}" | sed -e 's/ - .*//' -e 's/ (from .*//' || true)"
 	if [[ "${a}" == "${b}" ]]; then
 		fOk "${label}"
 	else
@@ -271,12 +273,18 @@ mkdir -p "${work}/mA/github.com/alice/proj" "${work}/mB/github.com/alice/proj" "
 for d in "${work}/mA/github.com/alice/proj" "${work}/mB/github.com/alice/proj" "${work}/mA/github.com/alice-old/proj"; do
 	git init --quiet -b main "${d}"
 done
-cat > "${work}/seg.shcl" <<-EOF
-	account.seg.pathContains = github.com/alice
-	account.seg.ghAccount    = segacct
-EOF
+## Written again for each check, since this build converts it on the first read.
+fSegConfig(){
+	cat > "${work}/seg.shcl" <<-EOF
+		account.seg.pathContains = github.com/alice
+		account.seg.ghAccount    = segacct
+	EOF
+}
+fSegConfig
 fSameLead  "[db62s] pathContains resolves the same under root A" '^Account' "${work}/mA/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
+fSegConfig
 fSameLead  "[db62t] pathContains resolves the same under root B" '^Account' "${work}/mB/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
+fSegConfig
 fSameLead  "[db62v] and both agree it is whole folder names"     '^Account' "${work}/mA/github.com/alice-old/proj" -q -NoFetch --config "${work}/seg.shcl" status
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
@@ -358,11 +366,11 @@ fSamePlan "[ddf67] sync plans the same steps, the pull step aside"    "${pullSte
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 fEcho_Clean
 fEcho_Clean "-- string case"
-cat > "${work}/case.shcl" <<-EOF
-	account.mixed.path      = ${spellings[0]}
-	account.mixed.ghAccount = caseacct
-EOF
 for name in mixed MIXED MiXeD; do
+	cat > "${work}/case.shcl" <<-EOF
+		account.mixed.path      = ${spellings[0]}
+		account.mixed.ghAccount = caseacct
+	EOF
 	## Exported around the call, not named only in the label: both builds have to SEE it. Written
 	## the other way this loop ran three identical commands and compared them to each other, which
 	## passes whatever either build does with the variable.
@@ -407,3 +415,4 @@ fEcho_Clean "parity passed: ${pass}, differed: ${fail}"
 ##		- 20261026 JC: Each check prints PASS or FAIL, then its ID and label, in place of ok and DIFFER.
 ##		- 20261106 JC: Its scratch folder goes through fSafeRm, made where the guard takes it.
 ##		- 20261107 JC: The shellcheck disable says why.
+##		- 20261107 JC: The frozen build reads first in fSameLead, and the flat fixtures are written again per check, since this build converts a flat accounts file on its first read.

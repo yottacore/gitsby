@@ -33,23 +33,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- Convert config files from every earlier version
-	- ID: 2026110707345874
-	- Type: Task
+- A value with an apostrophe and a backslash, written under the old shcl 3 pin, reads with its backslashes doubled
+	- ID: 2026110710480989
+	- Type: Bug
 	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261107-073458
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-104809
 	- Opened by: jim-collier
-	- Milestone: Pre-next-cut.
-	- Related IDs: 2026100312145843, 2026100313483664
-	- Requirements [Feature]:
-		- Make sure this executable version can import their config files to the new shcl version format, from all previous versions, even the old scripts.
-		- Rename the old one or ones and leave them in place.
-	- Notes:
-		- 2026100312145843 converts SHCL 2.x files and renames the old one. A 1.x file is read as 2.x, which wasn't run.
-		- The v2.1.0 bash and pwsh scripts hand-parse flat `key = value` lines from a file with the same name. It has no `Format` line and no 2.x footer, so the Go build reads it as current and doesn't convert it. Not tried yet.
-		- v2.1.0 looked in `XDG_CONFIG_HOME`, then `~/.config`, then `%APPDATA%`, on every OS. The Go build looks only in `%APPDATA%` on Windows and `~/Library/Application Support` on macOS, so an old file in `~/.config` there isn't found. details.md calls that an accepted cost. This item reverses it.
-		- A file from the old shcl 3 pseudo-version pin also says Format 3, so it can't be told apart. Check whether anything it wrote reads differently now.
+	- Related IDs: 2026110707345874
+	- Steps to reproduce [Bug]: Build src-go at 958fac2^, on shcl b10c200. Run `account set work name "O'Brien \ x"` with it, then `account list` with the current build.
+	- Incorrect behavior [Bug]: The commits line says `O'Brien \\ x`. The file holds `name: "O'Brien \\ x"`, and v3.0.0-beta1 reads a backslash as text in any quote.
+	- Expected behavior [Bug]: `O'Brien \ x`, as the old build read it.
+	- Reproduced [Bug]: 2026-11-07, by hand. A Windows path with an apostrophe, such as `C:\Users\O'Brien\dev`, is the likely real case.
+	- Possible cause [Bug]: The old pin's file says Format 3, like the new one, so nothing tells them apart. Only a double-quoted value holding `\\` is affected. Respelling `\\` to `\` there would fix those files and change a value that meant 2 backslashes. Needs a choice.
 
 - Code Review 20261107 enhancement 3: `br merge` and `release` talk to origin more often than they need to
 	- ID: 2026110708000114
@@ -1780,6 +1776,38 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: dup-acct
 	- Test case: TestRepeatedAccountKeys, TestAccountSetFindsTheKeyInAnyPiece, and one account list check in test.bash.
 	- Closed: 2026-09-30
+
+- Convert config files from every earlier version
+	- ID: 2026110707345874
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261107-073458
+	- Opened by: jim-collier
+	- Milestone: Pre-next-cut.
+	- Related IDs: 2026100312145843, 2026100313483664
+	- Requirements [Feature]:
+		- Make sure this executable version can import their config files to the new shcl version format, from all previous versions, even the old scripts.
+		- Rename the old one or ones and leave them in place.
+	- Notes:
+		- 2026100312145843 converts SHCL 2.x files and renames the old one. A 1.x file is read as 2.x, which wasn't run.
+		- The v2.1.0 bash and pwsh scripts hand-parse flat `key = value` lines from a file with the same name. It has no `Format` line and no 2.x footer, so the Go build reads it as current and doesn't convert it. Not tried yet.
+		- v2.1.0 looked in `XDG_CONFIG_HOME`, then `~/.config`, then `%APPDATA%`, on every OS. The Go build looks only in `%APPDATA%` on Windows and `~/Library/Application Support` on macOS, so an old file in `~/.config` there isn't found. details.md calls that an accepted cost. This item reverses it.
+		- A file from the old shcl 3 pseudo-version pin also says Format 3, so it can't be told apart. Check whether anything it wrote reads differently now.
+	- Actual fix [Task]: `load` in config.go converts a flat file whose every line v2.1.0 could read, through `flatToSHCL` and `replaceOldFormat`, the path a 2.x file takes. The old file is kept as `config_backup_<date>-<time>_format-flat.shcl`, and `reportMigration` names both on File and From lines. `configCandidatesFor` adds `~/.config/gitsby/config.shcl` last on Windows and macOS. accounts.md, design.md, README.md and the vNEXT changelog say so. parity.bash runs the frozen build first in `fSameLead` and writes its flat fixtures again per check.
+	- Decisions:
+		- A v2.1.0 file has no `Format` line and no 2.x footer, and every line is blank, a comment, or `key = value` with `protocol` or an `account.<name>.<key>` key v2.1.0 took. That is `wholeFlat` in config.go. A key it refused, such as `account.../x.path`, or a line with no `=`, keeps the file as it is. The ignored list names that line, and the first `account set` rewrites the file, as before.
+		- The backup is named `_format-flat`, since the layout had no SHCL format number.
+		- Where the file can't be replaced, the run reads it the v2.1.0 way and `account set` refuses, as for a 2.x file.
+		- On Windows and macOS, `~/.config` is read after the platform's own place, so a new file still goes in the platform's place. A file found in `~/.config` is converted where it is and stays there. This reverses the accepted cost in details.md and in design.md's "lives where the platform in hand keeps one". Both now say so. `XDG_CONFIG_HOME` stays Linux and BSD only, per design.md.
+		- A file from the old shcl 3 pin reads differently in 1 case. Built at 958fac2^, on shcl b10c200, `account set work name "O'Brien \ x"` wrote `name: "O'Brien \\ x"`, since a value with an apostrophe goes in double quotes with each backslash doubled. v3.0.0-beta1 reads both backslashes as text. Plain, single-quoted, `#` and space values read the same. Both say Format 3, so it isn't converted here. Filed as 2026110710480989.
+		- The flat fixtures of other checks now convert on first read. test.bash `[db00e]` and `[dcmey]` named keys the flat way, and `[db010]` and `[dbfh2]` dropped an account by its flat lines. All 4 are commented out, with replacements below. The fixtures `[db62z]` and `[db01q]` add to are written in the SHCL spelling. In the Go tests, 4 cases of `[dbjjn]`, a case each of `[dcmfa]` and `[ddav1]`, and the plan's `converts` check in `[dd83m]` and `[dbss1]` are commented out, with the new expectations beside them.
+	- Branch: round-20261107b
+	- Test case: Go `[df05s]` the candidate list for Windows and macOS, `~/.config` last. `[df065]` a whole v2.1.0 file, with a mark and CRLF, is converted, kept byte for byte as `_format-flat`, named on File and From lines, and read the same after. `[df066]` a stray line, a refused account name or an empty key keeps the file as it is. `[df067]` an unwritable folder reads it the v2.1.0 way, and `account set` refuses. test.bash `[df05y]` a v2.1.0 file in `~/.config`, found through HOME, is converted with the File and From lines. `[df05z]` the old file is kept byte for byte. `[df060]` the new one names Format 3. `[df061]` `account list` gives the names, logins and authors legacy/bin/gitsby gives for the old file. `[df062]` a second run converts nothing more. `[df063]` and `[df064]` a file with a line v2.1.0 couldn't read is read as it is, names the line, and is left alone. Replacements: `[df05t]` for `[db00e]`, `[df05v]` for `[dcmey]`, `[df05w]` for `[db010]`, `[df05x]` for `[dbfh2]`.
+	- Verified: On the build before, 1db5aec, test.bash fails `[df05y]`, `[df05z]`, `[df060]` and the 4 replacements, and `[ddate]` after `[df05w]`; 1853 passed. `[df062]` failed there only once its glob was fixed, run by hand on both builds. `[df061]`, `[df063]` and `[df064]` pass on both, as guards. Go `[df05s]`, `[df065]` and `[df067]` fail on the old config.go, cfgformat.go and accountcmd.go, and `[df066]` passes on both. parity was 24/6 with the conversion in and the old order. After: test.bash 1854 -> 1861, 0 failed. go test ok, fuzz 313/0, parity 30/0, lint stage passed, `GOOS=windows go vet` and darwin and freebsd builds pass.
+	- Swept: every flat fixture in test.bash, parity.bash and fuzz.bash, and every Go test that loads one. fuzz.bash has none. The other test.bash flat fixtures read the same once converted. `configCandidates` has 4 callers; `configInTheWay` now also checks `~/.config` on Windows and macOS before a create, which is right, since a read finds a file there.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-105000
 
 - `--version` prints only its first line
 	- ID: 2026110707345868

@@ -349,11 +349,11 @@ func (o options) resolveConfigFile() (string, error) {
 // both jobs - the file a run looks for and the file a run creates - so the place
 // 'account set' writes is the place the next command finds.
 //
-// Each platform is asked in its own terms and nobody else's - '~/.config' included,
-// which is a Linux spelling and not a Windows or Mac one. XDG_CONFIG_HOME is a
-// Linux and BSD variable, set there by a desktop session rather than by the person
-// running gitsby, so reading it on Windows let an MSYS shell's leftovers decide
-// where a Windows run looks for credentials.
+// Each platform is asked in its own terms first. XDG_CONFIG_HOME is a Linux and
+// BSD variable, set there by a desktop session rather than by the person running
+// gitsby, so reading it on Windows let an MSYS shell's leftovers decide where a
+// Windows run looks for credentials. '~/.config' comes last everywhere: v2.1.0
+// looked there on every platform, and its file has to keep being found.
 func configCandidates() []string {
 	return configCandidatesFor(runtime.GOOS, os.Getenv("XDG_CONFIG_HOME"), os.Getenv("APPDATA"), homeDir())
 }
@@ -364,18 +364,12 @@ func configCandidatesFor(goos, xdgConfigHome, appData, home string) []string {
 	var out []string
 	switch goos {
 	case "windows":
-		// %APPDATA% and nothing else. A '.config' folder in a Windows profile is an
-		// MSYS habit, not a Windows convention, so it is reached for only where
-		// APPDATA is somehow unset - and then as the last thing left to try, same as
-		// a Mac with no home directory.
 		if appData != "" {
-			return []string{appData + "/gitsby/config.shcl"}
+			out = append(out, appData+"/gitsby/config.shcl")
 		}
 	case "darwin":
-		// Application Support and nothing else, same rule as Windows. macOS is a Unix
-		// underneath, but '~/.config' is a Linux spelling rather than a Mac one.
 		if home != "" {
-			return []string{home + "/Library/Application Support/gitsby/config.shcl"}
+			out = append(out, home+"/Library/Application Support/gitsby/config.shcl")
 		}
 	default:
 		if xdgConfigHome != "" {
@@ -560,6 +554,19 @@ func (c *config) load(o options) error {
 	// key that looks perfectly valid.
 	text := strings.TrimPrefix(string(data), utf8BOM)
 	if isFlatConfig(text) {
+		// A v2.1.0 file is converted the way a 2.x one is. Read as it is where
+		// that can't be done, or where a line is not one v2.1.0 could read.
+		if wholeFlat(text) {
+			converted := flatToSHCL(text)
+			c.migration = &formatMigration{flat: true}
+			replaceOldFormat(file, string(data), converted, c.migration)
+			if c.migration.done {
+				c.raw = converted
+				doc, _ := shcl.ParseKeepLines(converted, shcl.Standard)
+				c.loadDoc(doc)
+				return nil
+			}
+		}
 		c.flat = true
 		c.loadFlat(text)
 		return nil
@@ -616,6 +623,24 @@ func flatLines(text string) []flatLine {
 		})
 	}
 	return out
+}
+
+// wholeFlat is true for a file v2.1.0 could read whole: every line blank, a
+// comment, or 'key = value' with a key it took, and no Format line or 2.x footer.
+// Any other line keeps the file as it is, where the ignored list names that line.
+func wholeFlat(text string) bool {
+	if _, ok := shcl.FormatVersion(text); ok || oldFormat(text) > 0 {
+		return false
+	}
+	for _, line := range flatLines(text) {
+		if line.note {
+			continue
+		}
+		if _, _, ok := splitAccountKey(line.key); !line.setting || (!ok && line.key != "protocol") {
+			return false
+		}
+	}
+	return true
 }
 
 // acctKey is one single-valued setting of one account, which either layout may

@@ -239,3 +239,117 @@ func TestOldFormatConvertedByAnotherRun(t *testing.T) { // [ddf04]
 		t.Errorf("%+v", mig)
 	}
 }
+
+// What v2.1.0 read: flat lines, a comment, quotes and a trailing comment.
+const flatBody = "# mine\r\naccount.w.name = \"O'Brien # x\"\r\naccount.w.email = 'C:\\new'  # work\r\nprotocol = ssh\r\n"
+
+// A whole v2.1.0 file is kept under a dated name and replaced by the same values
+// in SHCL, with a notice naming both files. The next run leaves it alone.
+func TestFlatFileIsConverted(t *testing.T) { // [df065]
+	dir := t.TempDir()
+	file := filepath.Join(dir, "config.shcl")
+	if err := os.WriteFile(file, []byte(utf8BOM+flatBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	p := newPrinter()
+	p.out, p.err = &bytes.Buffer{}, &stderr
+	a := newApp(p)
+	a.opt.configFile, a.opt.configGiven, a.opt.quiet = file, true, true
+	if err := a.resolveAccount(dir, ""); err != nil {
+		t.Fatal(err)
+	}
+	wantValue(t, a.cfg, "w", "name", "O'Brien # x")
+	wantValue(t, a.cfg, "w", "email", `C:\new`)
+	if a.cfg.values["protocol"] != "ssh" || a.cfg.flat {
+		t.Errorf("protocol %q, flat %v", a.cfg.values["protocol"], a.cfg.flat)
+	}
+	names := dirEntries(t, dir)
+	if len(names) != 2 {
+		t.Fatalf("want the file and one backup, got %v", names)
+	}
+	backup := filepath.Join(dir, names[0])
+	if names[0] == "config.shcl" {
+		backup = filepath.Join(dir, names[1])
+	}
+	if !strings.HasPrefix(filepath.Base(backup), "config_backup_"+time.Now().Format("20060102")+"-") || !strings.HasSuffix(backup, "_format-flat.shcl") {
+		t.Errorf("backup name %q", filepath.Base(backup))
+	}
+	if got := readBack(t, backup); got != utf8BOM+flatBody {
+		t.Errorf("backup holds %q", got)
+	}
+	got := readBack(t, file)
+	if v, ok := shcl.FormatVersion(got); !ok || v != shcl.FormatMajor || !strings.HasPrefix(got, "# mine\n") {
+		t.Errorf("converted file:\n%s", got)
+	}
+	msg := stderr.String()
+	for _, want := range []string{"flat 'key = value' layout of v2.1.0", "File: " + nativePath(file), "From: " + nativePath(backup)} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("notice is missing %q: %q", want, msg)
+		}
+	}
+	again := writeConfig(t, got)
+	wantValue(t, again, "w", "name", "O'Brien # x")
+	wantValue(t, again, "w", "email", `C:\new`)
+	if again.migration != nil || again.flat {
+		t.Errorf("a converted file was converted again: %+v", again.migration)
+	}
+}
+
+// A line v2.1.0 couldn't read, or a key it refused, keeps the file as it is. The
+// flat reader lists that line, as it always has.
+func TestPartlyFlatFileIsLeftAlone(t *testing.T) { // [df066]
+	for _, body := range []string{
+		"account.w.email = a@x\nnot a setting\n",
+		"account.w.email = a@x\naccount.../x.path = /srv\n",
+		"account.w.email = a@x\n= x\n",
+	} {
+		cfg := writeConfig(t, body)
+		wantValue(t, cfg, "w", "email", "a@x")
+		if !cfg.flat || cfg.migration != nil {
+			t.Errorf("%q: flat %v, migration %+v", body, cfg.flat, cfg.migration)
+		}
+		if names := dirEntries(t, filepath.Dir(cfg.file)); len(names) != 1 || readBack(t, cfg.file) != body {
+			t.Errorf("%q: file touched: %v", body, names)
+		}
+	}
+}
+
+// Where the new file can't be written, the flat file is read as v2.1.0 read it,
+// and an edit refuses rather than writing past the conversion.
+func TestFlatFileUnwritable(t *testing.T) { // [df067]
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a folder this user can't write")
+	}
+	dir := t.TempDir()
+	file := filepath.Join(dir, "config.shcl")
+	if err := os.WriteFile(file, []byte(flatBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	var stderr bytes.Buffer
+	p := newPrinter()
+	p.out, p.err = &bytes.Buffer{}, &stderr
+	a := newApp(p)
+	a.opt.configFile, a.opt.configGiven, a.opt.quiet = file, true, true
+	if err := a.resolveAccount(dir, ""); err != nil {
+		t.Fatal(err)
+	}
+	wantValue(t, a.cfg, "w", "email", `C:\new`)
+	if names := dirEntries(t, dir); len(names) != 1 || readBack(t, file) != flatBody {
+		t.Errorf("left behind: %v", names)
+	}
+	if !strings.Contains(stderr.String(), "flat 'key = value' layout of v2.1.0 and couldn't be converted") {
+		t.Errorf("notice: %q", stderr.String())
+	}
+	a.cmd = command{name: "account-set", arg: "w", arg2: "name", arg3: "Bob", mutating: true}
+	if err := a.cmdAccountSet(); err == nil || !strings.Contains(err.Error(), "still in the flat 'key = value' layout") {
+		t.Errorf("set: %v", err)
+	}
+	if readBack(t, file) != flatBody {
+		t.Error("set wrote the file")
+	}
+}

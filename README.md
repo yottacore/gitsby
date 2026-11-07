@@ -286,7 +286,7 @@ Every command prints that version and build number above its output, so a bug re
 
 ### Coming from 2.x
 
-Back then Gitsby was a Bash script and a PowerShell one: install over the top and delete the old `gitsby` or `gitsby.ps1` by hand. Every 2.x command still works, and `update` and `br land` are still accepted alongside their current names, `pullcom` and `br merge`. The scripts themselves are retired - the v2.1.0 tag is where they live.
+Back then Gitsby was a Bash script and a PowerShell one: install over the top and delete the old `gitsby` or `gitsby.ps1` by hand. Every 2.x command still works, and `update` and `br land` are still accepted alongside their current names, `pullcom` and `br merge`. The scripts themselves are retired - the v2.1.0 tag is where they live. Your accounts file is converted on the first run that reads it, and the old one stays beside it under a dated name. See [accounts.md](accounts.md).
 
 ## How to develop
 

@@ -1175,7 +1175,7 @@ func (a *app) loadForEdit(t *accountSetTarget) error {
 	// Saved as it stands, the file would mix the two formats' spellings, and the
 	// next run would convert lines that were already right.
 	if mig := a.cfg.migration; mig != nil && !mig.done {
-		return refusalBlock(fmt.Sprintf("The accounts file is still in the SHCL %d.x format.", mig.from), [][]string{
+		return refusalBlock("The accounts file is still in the "+mig.formatName()+".", [][]string{
 			noteLines("File", nativePath(t.file)),
 			noteLines("Why", "It couldn't be converted: "+mig.why+"."),
 			noteLines("Kept", "Nothing was written."),
