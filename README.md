@@ -286,7 +286,7 @@ Every command prints that version and build number above its output, so a bug re
 
 ### Coming from 2.x
 
-Back then Gitsby was a Bash script and a PowerShell one: install over the top and delete the old `gitsby` or `gitsby.ps1` by hand. Every 2.x command still works, and `update` and `br land` are still accepted alongside their current names, `pullcom` and `br merge`. The scripts themselves are retired - the v2.1.0 tag is where they live.
+Back then Gitsby was a Bash script and a PowerShell one: install over the top and delete the old `gitsby` or `gitsby.ps1` by hand. Every 2.x command still works, and `update` and `br land` are still accepted alongside their current names, `pullcom` and `br merge`. The scripts themselves are retired - the v2.1.0 tag is where they live. Your accounts file is converted on the first run that reads it, and the old one stays beside it under a dated name. See [accounts.md](accounts.md).
 
 ## How to develop
 
@@ -299,7 +299,7 @@ cd gitsby/src-go && go build -o gitsby .
 
 `cicd/cicd.bash` is the local pipeline and the one command to know. Run it before opening a PR. Eight stages, numbered as the run prints them, behind a stage 0 that fast-forwards from origin so everything after it tests the tree that is actually going out:
 
-1. Lints (gofmt, vet, staticcheck, golangci-lint, shellcheck, and ruff on the demo script).
+1. Lints (gofmt, vet, staticcheck, golangci-lint, shellcheck, and ruff on the Python helpers).
 2. Builds, runs the unit tests under the race detector, and runs the regression suite of over 1000 checks against the binary it just built. A goroutine still running when the unit tests end fails them.
 3. Runs about 300 fuzz vectors and the native Go fuzz targets, checks the standard library and the Go and Python libraries it uses for known problems, and counts the processes each command spawns. Then the leak checks: a soak test, the everyday commands in a loop that fails if the heap or the goroutine count keeps growing, and CodeQL over the Go code, the pipeline's Python, and the libraries both use.
 4. Compares the build against the frozen v2.1.0 one across a few dozen checks, for backwards compatibility.

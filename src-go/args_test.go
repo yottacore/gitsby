@@ -291,8 +291,13 @@ func TestSortCommandMutating(t *testing.T) { // [dbfqv]
 // A bare positional is the commit message when no -m was given, and -m wins when
 // both are.
 func TestSortCommandPositionalMessage(t *testing.T) { // [dbfqw]
-	opt, cmd, _, _ := parseArgs([]string{"pullcom", "typed here"})
-	cmd, _ = collapseCommand(cmd)
+	opt, cmd, _, err := parseArgs([]string{"pullcom", "typed here"})
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if cmd, err = collapseCommand(cmd); err != nil {
+		t.Fatalf("collapse: %v", err)
+	}
 	if _, err := sortCommand(cmd, &opt); err != nil {
 		t.Fatalf("sort: %v", err)
 	}
@@ -300,8 +305,12 @@ func TestSortCommandPositionalMessage(t *testing.T) { // [dbfqw]
 		t.Errorf("message = %q", opt.message)
 	}
 
-	opt, cmd, _, _ = parseArgs([]string{"pullcom", "positional", "-m", "flag"})
-	cmd, _ = collapseCommand(cmd)
+	if opt, cmd, _, err = parseArgs([]string{"pullcom", "positional", "-m", "flag"}); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if cmd, err = collapseCommand(cmd); err != nil {
+		t.Fatalf("collapse: %v", err)
+	}
 	if _, err := sortCommand(cmd, &opt); err != nil {
 		t.Fatalf("sort: %v", err)
 	}

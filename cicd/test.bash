@@ -332,7 +332,7 @@ fMakeGateFixture(){
 	: > "${gateDir}/cicd/utility/run-latest.ps1"
 	## --list reads the suites through it.
 	cp "${root}/cicd/utility/test-id.bash" "${gateDir}/cicd/utility/"
-	cp "${root}/PSScriptAnalyzerSettings.psd1" "${gateDir}/"
+	cp "${root}/PSScriptAnalyzerSettings.psd1" "${root}/ruff.toml" "${gateDir}/"
 	: > "${gateDir}/cicd/utility/demo/demo-scenario.toml"
 	echo "# Fixture" > "${gateDir}/README.md"
 	for s in test fuzz parity; do fGateStub "${gateDir}/cicd/${s}.bash" "${s}"; done
@@ -1418,6 +1418,7 @@ fStagedChecks(){
 	# fAssertOut     "[ddhth] --staged is refused where the whole tree would be committed"  'staged works with pullcom, sync'  bash -c "cd '${stA}' && '${gitsby}' -q release --staged 2>&1"
 	fAssertOut     "[ddhvb] --staged is refused where the whole tree would be committed"  'staged works with pullcom, sync, .*, pr create and release\.'  bash -c "cd '${stA}' && '${gitsby}' -q repo connect '${work}/$1-staged-nowhere.git' --staged 2>&1"
 	fAssertOut     "[ddhtj] help lists --staged"  '^  --staged \.+: Commit only what is staged'  "${gitsby}" --help
+	fAssertNotOut  "[df02a] help names the git host CLI for --any-identity, not gh"  "gh's active account"  "${gitsby}" --help
 
 	## origin changes the file with an unstaged edit here: no stash, so git would refuse the pull.
 	( cd "${stB}" && git pull --quiet --ff-only && echo x2 > f2 && git add f2 && git commit --quiet -m "f2 from B" && git push --quiet )
@@ -1529,6 +1530,11 @@ fRunSuite(){
 	## line that repeats it.
 	fAssert "[dbshq] --version names the build once"  \
 		bash -c "[[ \"\$(cd '${cloneA}' && '${gitsby}' --version | grep -cE '^gitsby v[0-9]')\" == 1 ]]"
+	## Scripts and installers read it back, so it is the version line and nothing else.
+	fAssert "[df05h] --version is exactly 1 line"  \
+		bash -c "[[ \"\$(cd '${cloneA}' && '${gitsby}' --version | wc -l)\" == 1 ]]"
+	fAssert "[df05j] and -v, --ver and version give the same line"  \
+		bash -c "cd '${cloneA}' && want=\"\$('${gitsby}' --version; echo .)\" && for w in -v --ver version; do [[ \"\$('${gitsby}' \"\${w}\"; echo .)\" == \"\${want}\" ]] || exit 1; done"
 	fAssert "[dbshr] --help names the build once"     \
 		bash -c "[[ \"\$(cd '${cloneA}' && '${gitsby}' --help | grep -cE '^gitsby v[0-9]')\" == 1 ]]"
 	## --about and --donate are the two informational flags. Both answer outside a repo, and each
@@ -1547,6 +1553,8 @@ fRunSuite(){
 	## Help lists all four on one line, and only --help worked past the first word.
 	fAssertOut  "[dd80x] --version works after a command, as --help does"  '^gitsby v[0-9]' \
 		bash -c "cd '${cloneA}' && '${gitsby}' br create infoflag --version"
+	fAssert     "[df05k] and is the same 1 line there"  \
+		bash -c "cd '${cloneA}' && [[ \"\$('${gitsby}' status --version; echo .)\" == \"\$('${gitsby}' --version; echo .)\" ]] && [[ \"\$('${gitsby}' status --version | wc -l)\" == 1 ]]"
 	fAssert     "[dd80y] and the command does nothing"  bash -c "cd '${cloneA}' && ! git rev-parse --verify -q refs/heads/infoflag"
 	fAssertOut  "[dd80z] and --about"   'github\.com/yottacore/gitsby'      bash -c "cd '${cloneA}' && '${gitsby}' status --about"
 	fAssertOut  "[dd810] and --donate"  'github\.com/sponsors/jim-collier'  bash -c "cd '${cloneA}' && '${gitsby}' sync --donate"
@@ -2265,6 +2273,19 @@ fRunSuite(){
 		bash -c "git -C '${pnOrigin}' merge-base --is-ancestor \"\$(cat '${work}/$1-pn7tip')\" refs/heads/dev"
 	fAssert    "[dcnmd] and deletes origin's copy, leased on the tip it merged" \
 		bash -c "! git -C '${pnOrigin}' show-ref --verify --quiet refs/heads/tagged && grep -qF -- \"--force-with-lease=refs/heads/tagged:\$(cat '${work}/$1-pn7tip')\" '${work}/$1-pn7.trace'"
+	## The merge push and origin's delete go as 1 atomic push, leased on the merged tip, and origin
+	## isn't asked first.
+	(
+		cd "${pnA}"
+		git checkout --quiet -b atom dev; echo atom > atom.txt; git add --all
+		git commit --quiet -m atom; git push --quiet -u origin atom
+		git rev-parse refs/heads/atom > "${work}/$1-pn11tip"
+	)
+	( cd "${pnA}" && GIT_TRACE="${work}/$1-pn11.trace" "${gitsby}" -q br merge "merge atom" ) > "${work}/$1-pn11.out" 2>&1 || true
+	fAssert    "[df06m] br merge pushes the merge and deletes origin's copy in 1 atomic push" \
+		bash -c "! git -C '${pnOrigin}' show-ref --verify --quiet refs/heads/atom && git -C '${pnOrigin}' log -1 --format=%s refs/heads/dev | grep -qx 'merge atom' && [[ \$(grep -c 'built-in: git push' '${work}/$1-pn11.trace') == 1 ]] && grep -qF -- \"push --atomic --force-with-lease=refs/heads/atom:\$(cat '${work}/$1-pn11tip')\" '${work}/$1-pn11.trace'"
+	fAssert    "[df06n] and doesn't ask origin about the branch first"  bash -c "[[ -s '${work}/$1-pn11.trace' ]] && ! grep -qF 'ls-remote' '${work}/$1-pn11.trace'"
+	fAssertOut "[df06p] and its plan names the 1 push"  "^ +git push --atomic \\(the merge, and the leased delete of origin's 'atom'\\) \\*\$"  cat "${work}/$1-pn11.out"
 	## Someone else pushes to the branch, and br merge --no-fetch never pulls it in. Origin's copy
 	## is then the only ref to that commit.
 	(
@@ -2539,12 +2560,16 @@ fRunSuite(){
 	git -C "${sid}/proj" remote set-url origin git@gh-acme:acme/api.git
 	fAssertOut "[dakpa] an ssh config alias is named alongside the real host"  "via alias 'gh-acme'"  bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
 	: > "${sid}/dd.log"
-	fAssert "[dd5cb] and the alias lookup ends options before it too" \
-		bash -c "${sidRun} FAKE_SSH_LOG='${sid}/dd.log' '${gitsby}' -q -NoFetch status >/dev/null 2>&1; grep -qx -- '-G -- gh-acme' '${sid}/dd.log'"
+	## Off since 20261107: the alias lookup asks about the connect target now, git@gh-acme, so the
+	## SSH line's read answers it too. [df054] checks the one read and its '--'.
+	# fAssert "[dd5cb] and the alias lookup ends options before it too" \
+	# 	bash -c "${sidRun} FAKE_SSH_LOG='${sid}/dd.log' '${gitsby}' -q -NoFetch status >/dev/null 2>&1; grep -qx -- '-G -- gh-acme' '${sid}/dd.log'"
+	fAssert "[df054] and an aliased remote asks ssh -G once, options ended before the target" \
+		bash -c "${sidRun} FAKE_SSH_LOG='${sid}/dd.log' '${gitsby}' -q -NoFetch status >/dev/null 2>&1; [[ \"\$(grep -c -- '^-G ' '${sid}/dd.log')\" == 1 ]] && grep -qx -- '-G -- git@gh-acme' '${sid}/dd.log'"
 	git -C "${sid}/proj" remote set-url origin git@github.com:acme/api.git
 	## Offline (the fetch failed): say we don't know rather than guess, and don't spend the
 	## round trip finding out. Asserting the log is what proves the probe was actually skipped.
-	fAssertOut "[dakpb] an unreachable remote leaves the account unknown"  "SSH \.+: unknown \(git@github\.com"  bash -c "${sidRun} '${gitsby}' -q status"
+	fAssertOut "[dakpb] an unreachable remote leaves the account unknown"  "SSH \.+: \(unknown - offline, so .* wasn't asked\) \(git@github\.com"  bash -c "${sidRun} '${gitsby}' -q status"
 	fAssert    "[dakpc] and no identity round trip was attempted"  bash -c "${sidRun} FAKE_SSH_LOG='${sid}/log' '${gitsby}' -q status >/dev/null 2>&1; ! grep -q -- '-T' '${sid}/log'"
 
 	## The pre-command fetch must never sit and ask for credentials: it runs before any of our
@@ -3414,6 +3439,12 @@ GHEOF
 	)
 	fAssertNotPlan "[daepr] a feature PR accepted from a hotfix branch plans no back-merge"  'git merge origin/main' \
 		bash -c "cd '${pkc}' && PATH='${ghp}' FAKE_GH_HEAD=pkfeat FAKE_GH_BASE=dev '${gitsby}' -q pr ok 8 2>&1"
+	## The prune fetch after the merge is a round trip like any other: in the plan, announced when
+	## it runs, and declined by --no-fetch along with the pull it feeds.
+	fAssert        "[df027] pr ok plans the prune fetch after the merge, and runs it as planned" \
+		fPlanRan 'git fetch --prune origin' bash -c "cd '${pkc}' && PATH='${ghp}' FAKE_GH_HEAD=pkfeat FAKE_GH_BASE=dev '${gitsby}' -q pr ok 8 2>&1"
+	fAssertNotPlan "[df028] and --no-fetch leaves it out"  'git fetch' \
+		bash -c "cd '${pkc}' && PATH='${ghp}' FAKE_GH_HEAD=pkfeat FAKE_GH_BASE=dev '${gitsby}' -q -NoFetch pr ok 8 2>&1"
 
 	## The bash version gate. Bash build only - the PowerShell one needs no bash at all.
 	local vg="${work}/vgate"
@@ -4269,9 +4300,9 @@ GHEOF
 	fAssert     "[dafqw] and committed nothing"  bash -c "cd '${tu}' && [[ \"\$(git rev-list --count mainline)\" == 1 ]]"
 	## status is the command you run to find out what is wrong, so it must still work - and must
 	## not print a name it couldn't resolve.
-	fAssertOut  "[dafqx] status still runs and admits it doesn't know"  'Default branch: unknown'  bash -c "cd '${tu}' && '${gitsby}' -q status"
+	fAssertOut  "[dafqx] status still runs and admits it doesn't know, and why"  'Default branch: \(unknown - no origin/HEAD, no main, master or trunk, and more than one local branch\)'  bash -c "cd '${tu}' && '${gitsby}' -q status"
 	fAssert     "[damxt] br list still runs there too"  bash -c "cd '${tu}' && '${gitsby}' -q br list >/dev/null 2>&1"
-	fAssertOut  "[damxv] and lists the branches with the same admission"  'Default branch: unknown'  bash -c "cd '${tu}' && '${gitsby}' -q br list"
+	fAssertOut  "[damxv] and lists the branches with the same admission"  'Default branch: \(unknown - no origin/HEAD'  bash -c "cd '${tu}' && '${gitsby}' -q br list"
 	fAssertOut  "[damxw] including the ambiguous ones"  '(^|[ /])other'  bash -c "cd '${tu}' && '${gitsby}' -q br list"
 
 	## Folder accounts. Which GitHub account a command acts as is decided by where the repo lives,
@@ -4355,7 +4386,9 @@ GHEOF
 	fAssertNotOut "[db00b] and not to the first"                  "workacct"                    bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	fAssertNotOut "[db00c] a folder no rule covers gets no account line"  "Account \.+:"        bash -c "cd '${acAway}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	fAssertOut "[db00d] the commit identity comes from the account too"  'Work Person <work@example\.com>'  bash -c "cd '${acWork}' && env ${acEnvIdent} '${gitsby}' -q -NoFetch status"
-	fAssertOut "[db00e] a key nothing reads is reported, not ignored"    'account\.work\.notakey'           bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	## Off since 2026-11-07: a v2.1.0 flat file is converted on first read, so the key is named the way the converted file spells it.
+	# fAssertOut "[db00e] a key nothing reads is reported, not ignored"    'account\.work\.notakey'           bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	fAssertOut "[df05t] a key nothing reads is reported, not ignored"    'account\[work\]\.notakey'        bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	## Holding the token is what lets git authenticate over https with no ssh key at all. Only the
 	## work account has one in the stub, so only it says so.
 	fAssertOut    "[db00f] the held token is what enables https auth"  'git over https'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
@@ -4570,9 +4603,14 @@ GHEOF
 	EOF
 	fAssertOut "[db62y] more folder names is the more specific rule"  'narrowacct' \
 		bash -c "cd '${ac}/mA/github.com/alice/proj' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/segprec.shcl' status"
+	## Off since 2026-11-07: a v2.1.0 flat file is converted on first read, so the file is SHCL by now, and a flat line added to it reads as neither.
+	# cat >> "${ac}/segprec.shcl" <<-EOF
+	# 	account.exact.path      = ${acCanon}/mA/github.com/alice
+	# 	account.exact.ghAccount = exactacct
+	# EOF
 	cat >> "${ac}/segprec.shcl" <<-EOF
-		account.exact.path      = ${acCanon}/mA/github.com/alice
-		account.exact.ghAccount = exactacct
+		account.exact.path: ${acCanon}/mA/github.com/alice
+		account.exact.ghaccount: exactacct
 	EOF
 	fAssertOut "[db62z] an absolute path beats a pathContains"  'exactacct' \
 		bash -c "cd '${ac}/mA/github.com/alice/proj' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/segprec.shcl' status"
@@ -4651,7 +4689,7 @@ GHEOF
 	fAssertOut "[db5y8] and plain git then agrees with gitsby about the nested folder"  'inner@example\.com' \
 		bash -c "cd '${ac}/trees/work/nested' && env ${acNestEnv} git config user.email"
 	fAssertFail "[db5y9] account apply refuses a blocked include directory"  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/blocked/config.shcl' account apply"
-	fAssertOut  "[db5ya] and names it rather than dumping an OS error"  "isn't a directory" \
+	fAssertOut  "[db5ya] and names it rather than dumping an OS error"  "isn't a folder is where the account fragments go" \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/blocked/config.shcl' account apply 2>&1"
 	## A config named with no folder put the fragments under the file itself, 'rel.shcl/accounts', and
 	## apply refused. A relative include would be wrong anyway: git reads one from its own config's folder.
@@ -4732,6 +4770,11 @@ GHEOF
 		bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier.shcl' status"
 	fAssertOut "[dbsrg] a key nothing reads is named by the path that reaches it"  'Ignored keys \.+:.*account\[hw\]\.nonsense' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier.shcl' account"
+	## status used one line for the file and the keys, under a label of its own.
+	fAssertOut "[df044] status names the file under the label account list uses"  '^Config file \.\.: .*hier\.shcl$' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier.shcl' status"
+	fAssertOut "[df045] and the ignored keys on their own line"  '^Ignored keys \.: .*account\[hw\]\.nonsense' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier.shcl' status"
 	## A bare backslash is itself, so '\trees' is not a tab and 'rees'. A rule reads either slash.
 	cat > "${ac}/backslash.shcl" <<-EOF
 		account: hb
@@ -4761,7 +4804,7 @@ GHEOF
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/nested.shcl' account"
 	fAssertOut "[dcmmz] and one under protocol"  'protocol\.sshkey \(indented under protocol\)' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/nested.shcl' account"
-	fAssertOut "[dcmn0] and the identity block names the nested key"  'ignored: .*account\[hn\]\.email\.sshkey' \
+	fAssertOut "[dcmn0] and the identity block names the nested key"  'Ignored keys \.: .*account\[hn\]\.email\.sshkey' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/nested.shcl' status"
 	fAssertOut "[dcmn1] the key it sits under still applies"  'commits .*<nested@example\.com>' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/nested.shcl' account"
@@ -4836,7 +4879,7 @@ GHEOF
 		## Put back to 0200 whatever cmp says, so the checks after this one still see it unreadable.
 		fAssert "[dcmk7] and leaves the file as it was" \
 			bash -c "chmod 600 '${acUnrFile}'; cmp -s '${acUnrFile}' '${acUnr}/body.shcl'; rc=\$?; chmod 200 '${acUnrFile}'; exit \${rc}"
-		fAssertOut "[dcmk8] reads still pass over a file they can't read"  'Config file \.+: \(none found\)' \
+		fAssertOut "[dcmk8] reads still pass over a file they can't read"  'Config file \.+: \(none\)' \
 			bash -c "cd '${acWork}' && env ${acUnrEnv} '${gitsby}' -q -NoFetch account 2>&1"
 		fAssert "[dcmk9] and no file is created ahead of it in XDG_CONFIG_HOME" \
 			bash -c "cd '${acWork}' && ! env ${acNoDiscovery} XDG_CONFIG_HOME='${acUnr}/xdg' HOME='${acUnr}/home' PATH='${ac}/bin:${PATH}' ${acUnrSet} >/dev/null 2>&1 && [[ ! -e '${acUnr}/xdg/gitsby/config.shcl' ]]"
@@ -4863,7 +4906,9 @@ GHEOF
 			bash -c "cd '${acWork}' && env ${acShutEnv} '${gitsby}' -q -NoFetch account 2>&1"
 		## A file that opens and then fails to read, which /proc/self/mem is on Linux.
 		if [[ -f /proc/self/mem ]]; then
-			fAssertOut "[dcmpk] a named accounts file that fails to read is refused"  "GITSBY_CONFIG names '/proc/self/mem', which can't be read" \
+			fAssertOut "[dcmpk] a named accounts file that fails to read is refused"  "GITSBY_CONFIG names a file that can't be read" \
+				bash -c "cd '${acWork}' && env ${acNoDiscovery} GITSBY_CONFIG=/proc/self/mem HOME='${acUnr}/home' PATH='${ac}/bin:${PATH}' ${acUnrSet} 2>&1"
+			fAssertOut "[df042] and names it on a File line"  "^  File: /proc/self/mem$" \
 				bash -c "cd '${acWork}' && env ${acNoDiscovery} GITSBY_CONFIG=/proc/self/mem HOME='${acUnr}/home' PATH='${ac}/bin:${PATH}' ${acUnrSet} 2>&1"
 			mkdir -p "${acUnr}/memhome/${confRel}"; ln -sf /proc/self/mem "${acUnr}/memhome/${confRel}/config.shcl"
 			fAssertOut "[dcmpm] and a found one is refused by 'account set' as a file it can't read"  "is already there, and it can't be read" \
@@ -4874,6 +4919,7 @@ GHEOF
 	## A named file that isn't there is a typo, not a reason to fall back silently.
 	fAssertFail "[db00m] a named config that isn't there is refused"        bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/nope.shcl' status"
 	fAssertOut  "[db00n] and says which file"  'No readable config file'    bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/nope.shcl' status 2>&1"
+	fAssertOut  "[df043] on a File line of its own"  '^  File: .*/nope\.shcl$'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/nope.shcl' status 2>&1"
 	## An empty value is a mistake too - a script expanding a variable that turned out empty. Falling
 	## back to the default file would pick an account nobody asked for, so it is refused by name.
 	fAssertFail "[db1sa] --config with an empty value is refused"     bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '' status"
@@ -4956,7 +5002,9 @@ GHEOF
 	fAssert "[db00y] re-applying does not duplicate the rules"  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(grep -c 'gitsby/accounts' '${ac}/home/.gitconfig')\" == 2 ]]"
 	fAssert "[db00z] and leaves a hand-written includeIf alone"  bash -c "grep -q 'hand/written' '${ac}/home/.gitconfig'"
 	## Removing an account from the config has to remove its rule, or it silently keeps applying.
-	fAssert "[db010] dropping an account drops its rule"  bash -c "cd '${acWork}' && sed -i.bak '/^account\.home\./d' '${ac}/home/${confRel}/config.shcl' && rm -f '${ac}/home/${confRel}/config.shcl.bak' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(grep -c 'gitsby/accounts' '${ac}/home/.gitconfig')\" == 1 ]]"
+	## Off since 2026-11-07: a v2.1.0 flat file is converted on first read, so the account to drop is a block by then.
+	# fAssert "[db010] dropping an account drops its rule"  bash -c "cd '${acWork}' && sed -i.bak '/^account\.home\./d' '${ac}/home/${confRel}/config.shcl' && rm -f '${ac}/home/${confRel}/config.shcl.bak' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(grep -c 'gitsby/accounts' '${ac}/home/.gitconfig')\" == 1 ]]"
+	fAssert "[df05w] dropping an account drops its rule"  bash -c "cd '${acWork}' && sed -i.bak '/^account: home$/,/^$/d' '${ac}/home/${confRel}/config.shcl' && rm -f '${ac}/home/${confRel}/config.shcl.bak' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(grep -c 'gitsby/accounts' '${ac}/home/.gitconfig')\" == 1 ]]"
 	## Fragments are named by host and login, so a renamed account leaves its old file behind. It is
 	## named, not deleted, since nothing proves gitsby wrote it.
 	fAssertOut "[ddate] and names the fragment no rule uses any more"  'Not used any more, safe to remove: .*/accounts/github\.com_homeacct\.gitconfig' \
@@ -4986,8 +5034,11 @@ GHEOF
 		bash -c "cd '${ac}/my trees/work' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && [[ \"\$(grep -c 'spacct\.gitconfig' '${ac}/spacehome/.gitconfig')\" == 1 ]]"
 	fAssert "[dbfh1] and re-applying refreshes it instead of duplicating it" \
 		bash -c "cd '${ac}/my trees/work' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && [[ \"\$(grep -c 'spacct\.gitconfig' '${ac}/spacehome/.gitconfig')\" == 1 ]]"
-	fAssert "[dbfh2] and dropping that account drops its rule" \
-		bash -c "cd '${ac}/my trees/work' && sed -i.bak '/^account\.sp\./d' '${ac}/spaced.shcl' && rm -f '${ac}/spaced.shcl.bak' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && ! grep -q 'spacct\.gitconfig' '${ac}/spacehome/.gitconfig'"
+	## Off since 2026-11-07: a v2.1.0 flat file is converted on first read, so the account to drop is a block by then.
+	# fAssert "[dbfh2] and dropping that account drops its rule" \
+	# bash -c "cd '${ac}/my trees/work' && sed -i.bak '/^account\.sp\./d' '${ac}/spaced.shcl' && rm -f '${ac}/spaced.shcl.bak' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && ! grep -q 'spacct\.gitconfig' '${ac}/spacehome/.gitconfig'"
+	fAssert "[df05x] and dropping that account drops its rule" \
+		bash -c "cd '${ac}/my trees/work' && sed -i.bak '/^account: sp$/,/^$/d' '${ac}/spaced.shcl' && rm -f '${ac}/spaced.shcl.bak' && env ${acSpaceEnv} '${gitsby}' -q -NoFetch --config '${ac}/spaced.shcl' account apply >/dev/null && ! grep -q 'spacct\.gitconfig' '${ac}/spacehome/.gitconfig'"
 	## The username plain git asks with has to be for the account's own host, and the same login
 	## gitsby's own runs give the helper. It was always github.com and always ghAccount, so an
 	## account on another host got none, and one with both keys set named the other login.
@@ -5046,9 +5097,12 @@ GHEOF
 		bash -c "${acRelRun} '${acRel}/cfg/hand.shcl' account list"
 	fAssertNotOut "[dcmew] and is not shown as a folder"  'folder \.\.: \.$' \
 		bash -c "${acRelRun} '${acRel}/cfg/hand.shcl' account list"
-	fAssertOut "[dcmex] and the identity block names it"  'ignored: account\[hand\]\.path \(not an absolute folder: \.\)' \
+	fAssertOut "[dcmex] and the identity block names it"  'Ignored keys \.: account\[hand\]\.path \(not an absolute folder: \.\)' \
 		bash -c "${acRelRun} '${acRel}/cfg/hand.shcl' status"
-	fAssertOut "[dcmey] a relative path in a 2.x flat file is ignored the same way"  'account\.flat\.path \(not an absolute folder: dev/work\)' \
+	## Off since 2026-11-07: a v2.1.0 flat file is converted on first read, so the key is named the way the converted file spells it.
+	# fAssertOut "[dcmey] a relative path in a 2.x flat file is ignored the same way"  'account\.flat\.path \(not an absolute folder: dev/work\)' \
+	# bash -c "${acRelRun} '${acRel}/cfg/flat.shcl' account list"
+	fAssertOut "[df05v] a relative path in a 2.x flat file is ignored the same way"  'account\[flat\]\.path \(not an absolute folder: dev/work\)' \
 		bash -c "${acRelRun} '${acRel}/cfg/flat.shcl' account list"
 	fAssert "[dcmez] account apply writes no rule for a relative path" \
 		bash -c ": > '${acRel}/home/.gitconfig' && ${acRelRun} '${acRel}/cfg/hand.shcl' account apply >/dev/null && ! grep -qi includeif '${acRel}/home/.gitconfig'"
@@ -5217,7 +5271,9 @@ GHEOF
 	fAssertNotOut "[db01p] converting it silences the offer"  "repo url https' switches it"  bash -c "cd '${acSsh}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	## Saying you want ssh is an answer, and answered advice must stop.
 	( cd "${acSsh}" && git remote set-url origin git@github.com:workacct/thing.git )
-	echo "account.work.protocol = ssh" >> "${ac}/home/${confRel}/config.shcl"
+	## Off since 2026-11-07: a v2.1.0 flat file is converted on first read, so the line added is in the SHCL spelling.
+	# echo "account.work.protocol = ssh" >> "${ac}/home/${confRel}/config.shcl"
+	echo "account.work.protocol: ssh" >> "${ac}/home/${confRel}/config.shcl"
 	fAssertNotOut "[db01q] and 'protocol = ssh' silences it too"  "repo url https' switches it"  bash -c "cd '${acSsh}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	sed -i.bak '/^account\.work\.protocol/d' "${ac}/home/${confRel}/config.shcl" && rm -f "${ac:?}/home/${confRel}/config.shcl.bak"
 
@@ -5271,7 +5327,7 @@ GHEOF
 		## The same gh wrapper with nothing after it, and git: the build itself, since bash isn't on PATH.
 		mkdir -p "${rl}/alone"
 		ln -sf "$(command -v git)" "${rl}/alone/git"
-		# shellcheck disable=SC2059
+		# shellcheck disable=SC2059  ## one template, two targets
 		printf "${rlWrap}" "$(command -v bash)" "${rl}/count" "${rl}/count" "${rl}/count" "${goBin}" > "${rl}/alone/gh" && chmod +x "${rl}/alone/gh"
 		fAssertOut    "[de897] a gh that is gitsby is skipped for the next one on PATH"  'gho_faketoken' \
 			bash -c "cd '${acWork}' && env ${acEnv} PATH='${rl}/link:${ac}/bin:${PATH}' '${gitsby}' -q raw gh auth token --user workacct"
@@ -5371,19 +5427,19 @@ GHEOF
 	fAssert "[db6y9] and treats a failing pipeline as fatal" \
 		grep -q 'the pipeline did not pass' "${relBash}"
 	## -y alone is unattended but not quiet, and would print every check line of the phase 1 run.
-	# shellcheck disable=SC2016
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[dd5ej] and release.bash -q runs it quiet" \
 		grep -qF '((quiet)) && pipeline=("${here}/cicd.bash" --no-publish -q ' "${relBash}"
 	## The footer check read two harnesses once, and three pipeline files went a month without an
 	## entry. A footer date is written either way.
-	# shellcheck disable=SC2016
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[dd5ek] release.bash checks the history footer of every pipeline and installer script" \
 		grep -qF 'git diff --name-only "${lastTag}" HEAD -- cicd install.bash install.ps1)' "${relBash}"
 	local relFootRe=""
 	relFootRe="$(sed -n "s/^[[:space:]]*newest=\"\$(grep -oE '\([^']*\)'.*/\1/p" "${relBash}")"
-	# shellcheck disable=SC2016
-	fAssert "[dd5em] and reads a footer date written 20260819 or 2026-08-19" \
-		bash -c '[[ -n "$1" ]] && grep -qE "$1" <<< "$2" && grep -qE "$1" <<< "$3"' _ "${relFootRe}" $'##\t- 20260819 JC: x' $'##\t- 2026-08-19 JC: x'
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssert "[dd5em] and reads a footer date written 20260819 or 2026-08-19, after ## or a .ps1 file's one #" \
+		bash -c '[[ -n "$1" ]] && grep -qE "$1" <<< "$2" && grep -qE "$1" <<< "$3" && grep -qE "$1" <<< "$4" && ! grep -qE "$1" <<< "$5"' _ "${relFootRe}" $'##\t- 20260819 JC: x' $'##\t- 2026-08-19 JC: x' '#   - 20260915 JC: x' '#   20260821 JC: x'
 	if [[ "$(uname -s)" != Linux ]]; then
 		fSkipBlock "release.bash --dry-run checks (Linux only)"
 	else
@@ -5455,6 +5511,20 @@ GHEOF
 		fRelRun --dry-run
 		fAssert "[dd5ev] and a dashed footer date newer than the tag answers it" \
 			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'Dry run done: v1.2.4 was not released' '${relOut}' && ! grep -qF 'has no history entry' '${relOut}'"
+		## A changed script with no footer at all was passed over without a word. A data file still is.
+		printf '#!/usr/bin/env bash\n' > "${relRepo}/cicd/utility/nofoot.bash"
+		printf 'x\n' > "${relRepo}/cicd/container/nofoot.txt"
+		git -C "${relRepo}" add cicd/utility/nofoot.bash cicd/container/nofoot.txt
+		git -C "${relRepo}" commit --quiet -m 'no footer'
+		git -C "${relRepo}" push --quiet 2>/dev/null
+		fRelRun --dry-run
+		fAssert "[df02z] a changed script with no history footer at all is warned about" \
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'WARNING: cicd/utility/nofoot.bash has no history footer; add one before releasing.' '${relOut}'"
+		fAssert "[df030] and a changed data file with none is passed over" \
+			bash -c "! grep -qF 'nofoot.txt' '${relOut}'"
+		git -C "${relRepo}" rm --quiet cicd/utility/nofoot.bash cicd/container/nofoot.txt
+		git -C "${relRepo}" commit --quiet -m 'no footer gone'
+		git -C "${relRepo}" push --quiet 2>/dev/null
 		## Past the dry run. Phase 2 read the PR number through a grep that exits 1 on no match, and
 		## under set -e that ended the run before the message written for it. The stub prints no URL.
 		: > "${relRepo}/src-go/resource_windows_amd64.syso"
@@ -5703,7 +5773,7 @@ GHEOF
 		bash "${demoRepo}" "${rmWork}/a/../b"
 	## Deliberately NOT run: passing '/' to a build that lacks the guard is 'rm -rf /'. It is
 	## one clause of the same test the two checks above exercise for real, so it is pinned.
-	# shellcheck disable=SC2016
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[db70z] and the same test rejects the filesystem root" \
 		grep -qF '"${root}" != "/"' "${demoRepo}"
 	## The demo shows the folder rules supplying the commit identity, so one inherited from the
@@ -5714,7 +5784,7 @@ GHEOF
 		bash -c ". '${rmWork}/demo/demo.env' && [[ -z \"\${GIT_AUTHOR_NAME:-}\${GIT_AUTHOR_EMAIL:-}\${GIT_COMMITTER_NAME:-}\${GIT_COMMITTER_EMAIL:-}\" ]]"
 	fAssert "[db710] the publish probe's dir is removed on the way out, not only in the happy path" \
 		grep -q '_probeDir' "${root}/legacy/bin/gitsby"
-	# shellcheck disable=SC2016
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[db711] and its pwsh counterpart tests the path before removing it" \
 		grep -q 'if ($probeDir) { Remove-Item' "${root}/legacy/bin/gitsby.ps1"
 	## By glob, so a script added later is covered without being listed. A glob that stopped
@@ -5774,6 +5844,43 @@ GHEOF
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[dez5f] the guard on a Mac or Unix box removes an old tree in the stage's folder, and refuses the rest" \
 		env PATH="${srBin}" HOST_TEMP="${srRoot}" APP_NAME=stage "$(command -v sh)" -c '. "$1" && fSafeRm "$2/stage/old.1" && [ ! -e "$2/stage/old.1" ] && ! fSafeRm "$2/stage/old.link" && ! fSafeRm "$2/stage/old.link/sub" && ! fSafeRm "$2/stage" && ! fSafeRm "$2" && ! fSafeRm "$2/stage/../other" && ! fSafeRm /etc/x && ! HOST_TEMP= fSafeRm "$2/stage/kept" && [ -d "$2/stage/kept/sub" ] && [ -d "$2/other" ]' _ "${root}/cicd/utility/include/safe-rm.sh" "${srRoot}"
+	## The Windows copy, run by pwsh here with a cmd.exe that removes nothing and writes a line.
+	## That line joined the boolean, so remote-tests.bash read a folder still there as removed.
+	if ! command -v pwsh >/dev/null 2>&1; then
+		fSkipBlock "the Windows guard under pwsh (no pwsh)"
+	else
+		local srPs="${work}/saferm-ps" srPsOut=""
+		mkdir -p "${srPs}/bin" "${srPs}/temp/test_gitsby_20261107-1"
+		fStub "${srPs}/bin/cmd.exe" <<-'EOF'
+			#!/usr/bin/env bash
+			echo "rmdir says hi"
+		EOF
+		srPsOut="$(env PATH="${srPs}/bin:${PATH}" TEMP="${srPs}/temp" POWERSHELL_TELEMETRY_OPTOUT=1 "${noTty[@]}" pwsh -NoProfile -Command ". '${root}/cicd/utility/include/safe-rm.ps1'; if (-not (fSafeRm '${srPs}/temp/test_gitsby_20261107-1')) { 'left' } else { 'gone' }" </dev/null 2>&1 || true)"
+		# shellcheck disable=SC2016  ## the inner shell does the expanding.
+		fAssert "[df031] the Windows guard's caller reads a folder rmdir left as a failure, whatever rmdir wrote" \
+			bash -c '[[ "$1" == *left* && "$1" == *"would not go"* && "$1" != *gone* ]]' _ "${srPsOut}"
+	fi
+	## The Bash rules the newer scripts missed: a reason on every disable, errors through the
+	## script's helper, and a license line. The installers say the module has shcl to fetch.
+	local -a liveScripts=() helperScripts=()
+	for rmScript in "${rmScripts[@]}"; do
+		[[ "${rmScript}" != legacy/* ]] || continue
+		liveScripts+=("${rmScript}")
+		case "${rmScript}" in install.bash|cicd/test.bash|cicd/utility/lint-report.bash|cicd/utility/spawn-report.bash|cicd/utility/n8git_backup-and-publish) continue ;; esac
+		helperScripts+=("${rmScript}")
+	done
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssert "[df033] every shellcheck disable in the linted scripts says why" \
+		bash -c 'cd "$1" && [[ -z "$(grep -nE "^[[:space:]]*#[[:space:]]*shellcheck disable=[0-9A-Za-z,]+[[:space:]]*$" "${@:2}")" ]]' _ "${root}" "${liveScripts[@]}"
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssert "[df034] the pipeline scripts' errors go through fDie or fUsage, never a bare echo to stderr" \
+		bash -c 'cd "$1" && [[ -z "$(grep -nE "echo .*>&2" "${@:2}")" ]]' _ "${root}" "${helperScripts[@]}"
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssert "[df035] every pipeline script and installer has its license line" \
+		bash -c 'cd "$1" && [[ -z "$(grep -L "SPDX-License-Identifier" install.bash install.ps1 $(find cicd -type f \( -name "*.bash" -o -name "*.sh" -o -name "*.ps1" -o -name "*.py" \)))" ]]' _ "${root}"
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssert "[df032] the installers no longer call the module dependency-free" \
+		bash -c 'cd "$1" && [[ -z "$(grep -n "no dependencies" install.bash install.ps1)" ]]' _ "${root}"
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	for rmScript in "${rmScripts[@]}" cicd/container/Dockerfile; do
 		[[ "${rmScript}" == legacy/* || "${rmScript}" == cicd/utility/include/safe-rm.bash ]] && continue
@@ -5793,6 +5900,16 @@ GHEOF
 	## hand-run 'go build', which legitimately carries the stamps.
 	fAssert "[dbft1] and a build with them carries no revision stamp" \
 		bash -c "cd '${root}/src-go' && go build -trimpath -buildvcs=false -o '${work}/vcsprobe' . && ! go version -m '${work}/vcsprobe' | grep -q 'vcs\.revision'"
+	## Size and start time come first for the binary. One crypto import pulls in Go's FIPS module,
+	## whose random generator alone is 32 MiB of BSS, and the data today is about 250 KB. nm counts
+	## BSS as D, and reads the probe above, which keeps its symbols.
+	fAssert "[df024] the build's data and bss stay under 2 MB" \
+		bash -c "go tool nm -size '${work}/vcsprobe' | awk '\$3==\"D\"{s+=\$2} END{exit !(s>0 && s<2000000)}'"
+	fAssert "[df025] nothing in the build pulls in Go's crypto module" \
+		bash -c "cd '${root}/src-go' && ! grep -q '^crypto/' <<< \"\$(go list -deps .)\""
+	## encoding/json was 344 KB of the binary for the 3 fields read from glab.
+	fAssert "[df04r] nothing in the build imports encoding/json" \
+		bash -c "cd '${root}/src-go' && ! grep -qx 'encoding/json' <<< \"\$(go list -deps .)\""
 	## The build number is minutes since 2000, Crockford base32, lower case. Built here with a
 	## fixed stamp: the suite's own binary carries whatever the last build gave it.
 	fAssertOut "[dbshs] a stamped build reports minutes since 2000 in Crockford base32"  '^gitsby v9\.9\.9 build dbd05$' \
@@ -5804,8 +5921,10 @@ GHEOF
 	## Between releases the build number alone doesn't say how old a build is. The date is local, so pin the zone.
 	fAssertOut "[debe8] a build past a tag adds the commit's date after the build number"  '^gitsby v9\.9\.9-3-gabc1234-dirty build dbd05 \(2026-08-17\)$' \
 		bash -c "cd '${root}/src-go' && go build -ldflags '-X main.version=9.9.9-3-gabc1234-dirty -X main.buildEpoch=1787000000' -o '${work}/bnprobe2' . && TZ=UTC '${work}/bnprobe2' --version"
-	fAssertOut "[dcnw7] and the copyright has a line of its own"  '^Copyright © [0-9-]+ Jim Collier\.$' \
-		bash -c "'${work}/bnprobe0' --version"
+	## Was the copyright on a line of its own after the build line. --version is that line alone now,
+	## and the copyright stays in --help and --about.
+	fAssert "[dcnw7] and the build line is all --version prints"  \
+		bash -c "[[ \"\$('${work}/bnprobe0' --version; echo .)\" == 'gitsby v9.9.9'\$'\\n'. ]]"
 	## release.bash reads the build line back out of the banner for the release notes, and used
 	## to cut it at the comma that came before the copyright.
 	fAssertFail "[dcnw8] and release.bash no longer cuts the build line at a comma" \
@@ -5843,7 +5962,7 @@ GHEOF
 	fAssert "[dd5ew] the link flags drop the build id"  grep -qE '^GO_LDFLAGS_COMMON=.*-buildid=' "${root}/cicd/config.bash"
 	fAssert "[dd5ex] and every build that links with them turns cgo off" \
 		bash -c "cgo=\$(cat '${root}/cicd/cicd.bash' '${root}/cicd/release.bash' | grep -v '^[[:space:]]*#' | grep -c 'CGO_ENABLED=0'); ld=\$(cat '${root}/cicd/cicd.bash' '${root}/cicd/release.bash' | grep -v '^[[:space:]]*#' | grep -c 'GO_LDFLAGS_COMMON'); [[ \${ld} -gt 0 && \${cgo} == \${ld} ]]"
-	# shellcheck disable=SC2016
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[dd5ey] and the release assets are built by the pinned toolchain" \
 		grep -qF 'GOTOOLCHAIN="${GO_RELEASE_TOOLCHAIN}"' "${root}/cicd/release.bash"
 	## Go builds for plain x86-64 unless a GOAMD64 in the environment says otherwise, and then
@@ -5913,12 +6032,35 @@ GHEOF
 		#!/bin/sh
 		echo "kept build ran"
 	EOF
+	## --list showed the second line of --version, the build line while a blank came first.
+	fStub "${kb}/cicd/artifacts/builds/build_20251231-000000.gitsby" <<-'EOF'
+		#!/bin/sh
+		echo "gitsby v1.2.3 build dbd05"
+	EOF
+	fAssertOut "[df05m] and its list names each kept build's version" '^ 2  build_20251231-000000\.gitsby  gitsby v1\.2\.3 build dbd05$' \
+		bash "${kb}/cicd/utility/keep-build.bash" --list
 	fAssertOut "[ddf86] and it runs a kept build by number" '^kept build ran$' bash "${kb}/cicd/utility/keep-build.bash" --run 1
 	# shellcheck disable=SC2016  ## The substitution is the input, for the script to refuse.
 	fAssert "[ddf87] and refuses one that isn't digits, without running it" \
 		bash -c "out=\$(bash '${kb}/cicd/utility/keep-build.bash' --run 'BASH_VERSINFO[\$(touch ${kb}/ran)0]' 2>&1); [[ \$? == 1 ]] && grep -qF \"isn't a build number\" <<< \"\$out\" && [[ ! -e '${kb}/ran' ]]"
 	fAssert "[dbjww] and a pooled-copy runner exists for driving the newest build" \
 		bash -c "[[ -x '${root}/cicd/utility/run-latest.ps1' ]]"
+	## The copy's name sorts by date, so a culture with another calendar named a 2026 build
+	## 2569 and it ran ahead of every later one.
+	if ! command -v pwsh >/dev/null 2>&1; then
+		fSkipBlock "run-latest.ps1 runs (no pwsh)"
+	else
+		local rlTree="${work}/runlatest"
+		mkdir -p "${rlTree}/cicd/utility" "${rlTree}/src-go" "${rlTree}/home"
+		cp "${root}/cicd/utility/run-latest.ps1" "${rlTree}/cicd/utility/"
+		fAssertOut "[df06h] and run-latest.ps1 exits 1 with no build to run" '^rc=1$' \
+			bash -c "HOME='${rlTree}/home' pwsh -NoProfile -NonInteractive -File '${rlTree}/cicd/utility/run-latest.ps1' >/dev/null 2>&1; echo \"rc=\$?\""
+		printf '#!/bin/sh\necho "pooled build ran $*"\n' > "${rlTree}/src-go/gitsby"
+		chmod +x "${rlTree}/src-go/gitsby"
+		touch -d '2026-01-02 03:04:05' "${rlTree}/src-go/gitsby"
+		fAssertOut "[df06j] and it names its copy by the Gregorian date under th-TH" '^gitsby_20260102-030405$' \
+			bash -c "[[ \$(HOME='${rlTree}/home' pwsh -NoProfile -NonInteractive -Command \"[cultureinfo]::CurrentCulture = 'th-TH'; & '${rlTree}/cicd/utility/run-latest.ps1' a b\") == 'pooled build ran a b' ]] && ls '${rlTree}/home/.cache/gitsby-runs'"
+	fi
 	fAssert "[dbjwx] and a spawn report exists for the startup look, marker-gated like lint's" \
 		bash -c "[[ -x '${root}/cicd/utility/spawn-report.bash' ]] && grep -q 'spawn-seen' '${root}/cicd/utility/spawn-report.bash'"
 	## A head reading the sorted list quit after two lines, and sort died writing the rest once
@@ -5936,7 +6078,7 @@ GHEOF
 	printf 'status\t5\n' > "${srBad}/previous/spawn_20260101-000002.tsv"
 	# shellcheck disable=SC2016  ## The fixture's own substitution, left for the script to refuse.
 	printf 'status\tBASH_VERSINFO[$(touch %s/ran)0]\n' "${srBad}/newest" > "${srBad}/newest/spawn_20260101-000002.tsv"
-	# shellcheck disable=SC2016
+	# shellcheck disable=SC2016  ## the $(...) is the bad baseline's text, not for this shell.
 	printf 'status\tBASH_VERSINFO[$(touch %s/ran)0]\n' "${srBad}/previous" > "${srBad}/previous/spawn_20260101-000001.tsv"
 	fAssert "[ddf4m] and refuses a count that isn't a number, without running it" \
 		bash -c "out=\$('${root}/cicd/utility/spawn-report.bash' --dir '${srBad}/newest' 2>&1); [[ \$? == 1 ]] && grep -qF \"spawn_20260101-000002.tsv has 'BASH_VERSINFO[\" <<< \"\$out\" && [[ ! -e '${srBad}/newest/ran' ]]"
@@ -6434,7 +6576,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 	## clean machine they pass just as well against a harness that isolates nothing.
 	# shellcheck disable=SC2016  ## the inner shell has to do the expanding, not this one.
 	fAssert "[db7gq] this run carries no env-injected git config"  bash -c '[[ -z "${GIT_CONFIG_COUNT:-}" ]]'
-	# shellcheck disable=SC2016
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[db7gr] and no inherited gh token"                    bash -c '[[ -z "${GH_TOKEN:-}" ]]'
 
 	## The pre-push gate: cicd.bash --gate against the stubbed engine above, then the hook in a
@@ -6448,6 +6590,8 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		## Only the leak-shaped rules, and go test never from its cache.
 		fAssert "[de54d] and runs ruff's leak rules over the demo script" \
 			fGateCalled '^ruff check --isolated --no-cache --quiet --select B019,SIM115,B006 cicd/utility/demo/gen-demo-gif\.py cicd/utility/codeql-findings\.py$'
+		fAssert "[df06k] and then ruff under the project's ruff.toml" \
+			fGateCalled '^ruff check --no-cache --quiet cicd/utility/demo/gen-demo-gif\.py cicd/utility/codeql-findings\.py$'
 		fAssert "[de54m] and runs go test with -count=1"  fGateCalled '^go test -race -p [0-9]+ -count=1 '
 		## go vet, golangci-lint and go test on the build's core budget.
 		fAssert "[dcmam] and runs every lint check and the unit tests" \
@@ -6748,7 +6892,6 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 			bash -c "[[ '${gateRc}' == 0 && -f '${gateDir}/home/.local/bin/gitsby' && ! -e '${gateDir}/home/.local/bin/gitsby.exe' ]]"
 		fAssert "[dd5fw] and says the other targets have nowhere to go" \
 			bash -c "grep -qF 'WARNING: no windows/amd64 dogfood dest exists/writable' '${gateOut}' && grep -qF 'WARNING: no darwin/universal dogfood dest exists/writable' '${gateOut}'"
-		# shellcheck disable=SC2016
 		gateDest="$(cd "${gateDir}" && HOME="${gateDir}/home" bash -c 'source cicd/config.bash && echo "${DOGFOOD_DESTS_LINUX_AMD64[0]}"')"
 		mkdir -p "${gateDest}"
 		rm -f -- "${gateDir:?}/home/.local/bin/gitsby"
@@ -7540,6 +7683,10 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		chmod 644 "${dr}/token"
 		fAssertOut "[dbfsf] a token file other users can read is called out"  'readable by other users' \
 			bash -c "cd '${dr}/tree/proj' && env ${drEnv} '${gitsby}' -q -NoFetch --config '${dr}/token.shcl' identity 2>&1"
+		fAssertOut "[df046] with the file on its own line"  "^ +: +File: .*/token$" \
+			bash -c "cd '${dr}/tree/proj' && env ${drEnv} '${gitsby}' -q -NoFetch --config '${dr}/token.shcl' identity 2>&1"
+		fAssertOut "[df048] and the chmod to run"  "^ +: +chmod 600 '.*/token'$" \
+			bash -c "cd '${dr}/tree/proj' && env ${drEnv} '${gitsby}' -q -NoFetch --config '${dr}/token.shcl' identity 2>&1"
 		fAssert "[dbfsg] the account fragments are yours alone" \
 			bash -c "[[ \"\$(fMode '${dr}/home/${confRel}/accounts')\" == 700 ]] && [[ \"\$(fMode '${dr}/home/${confRel}/accounts/github.com_abe.gitconfig')\" == 600 ]]"
 	fi
@@ -7714,7 +7861,7 @@ GHEOF
 #!/usr/bin/env bash
 [[ -n "${FAKE_GLAB_LOG:-}" ]] && echo "$* api=${GITLAB_API_HOST:-} host=${GITLAB_HOST:-} token=${GITLAB_TOKEN:-}" >> "${FAKE_GLAB_LOG}"
 case "$1 $2" in
-"mr view")  echo "{\"iid\":7,\"state\":\"${FAKE_GLAB_STATE:-opened}\",\"source_branch\":\"glfeat\"}" ;;
+"mr view")  if [[ -n "${FAKE_GLAB_VIEW:-}" ]]; then printf '%s\n' "${FAKE_GLAB_VIEW}"; else echo "{\"iid\":7,\"state\":\"${FAKE_GLAB_STATE:-opened}\",\"source_branch\":\"glfeat\"}"; fi ;;
 "mr list")  if [[ -n "${FAKE_GLAB_EXISTING:-}" ]]; then echo "[{\"iid\":${FAKE_GLAB_EXISTING}}]"; else echo "[]"; fi ;;
 esac
 exit 0
@@ -7752,6 +7899,16 @@ GLEOF
 		bash -c "cd '${fgGl}' && PATH='${fgGlPath}' FAKE_GLAB_EXISTING=3 '${gitsby}' -q -NoFetch pr create 2>&1 || true"
 	fAssertOut "[dea1a] pr ok reads glab's 'merged' as not open" 'PR #7 is merged, not open' \
 		bash -c "cd '${fgGl}' && PATH='${fgGlPath}' FAKE_GLAB_STATE=merged '${gitsby}' -q -NoFetch pr ok 7 2>&1 || true"
+	## glab's JSON is read by hand. The author's own state comes first and must not count, and the
+	## branch name keeps its escaped quote and its comma.
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssertOut "[df04p] pr ok reads glab's state past a nested one, in any key order" 'PR #7 is merged, not open' \
+		bash -c 'cd "$1" && PATH="$2" FAKE_GLAB_VIEW="$3" "$4" -q -NoFetch pr ok 7 2>&1 || true' _ "${fgGl}" "${fgGlPath}" \
+		'{ "author": {"state": "active", "id": 3}, "title": "a \"b\", c", "source_branch": "glfeat", "state": "merged" }' "${gitsby}"
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssertOut "[df04q] and a branch name with an escaped quote and a comma whole" "Branch '-gl\"x,y' starts with a dash" \
+		bash -c 'cd "$1" && PATH="$2" FAKE_GLAB_VIEW="$3" "$4" -q -NoFetch pr ok 7 2>&1 || true' _ "${fgGl}" "${fgGlPath}" \
+		'{"source_branch":"-gl\"x,y","iid":7,"state":"opened"}' "${gitsby}"
 	fAssertOut "[ddk66] --any-identity hands tea nothing"  '^url= token=$' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_ENV=1 '${gitsby}' -q -NoFetch --any-identity --config '${fg}/tea-acct.shcl' raw tea whoami"
 	: > "${fg}/rawdeb.log"
@@ -7774,6 +7931,8 @@ GLEOF
 	fAssert "[ddk6c] and -q refuses the older one, before tea runs" \
 		bash -c "cd '${fgRepo}' && ! PATH='${fgPath}' FAKE_TEA_USER=someoneelse FAKE_TEA_LOG='${fg}/refused.log' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami 2>/dev/null && ! grep -q '^whoami' '${fg}/refused.log'"
 	fAssertOut "[ddk6d] saying which login it would have used"  "its own login for git\.example\.test, not as 'giteauser'" \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_USER=someoneelse '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami 2>&1"
+	fAssertOut "[df047] with the reason and the fix as notes under it"  "^  Fix:  Update tea, or run it anyway with --any-identity\.$" \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_USER=someoneelse '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami 2>&1"
 
 	## An account that never named a host is TAKEN to be a github.com one, which is right for every
@@ -7898,6 +8057,48 @@ GLEOF
 		bash -c "grep -qx '   work' '${og}/old.txt' && grep -qx '   home' '${og}/old.txt' && cmp -s '${og}/old.txt' '${og}/new.txt'"
 	fAssert "[ddg6k] and keeps the file that build wrote, byte for byte, under a dated name" \
 		bash -c "set -- '${ogDir}'/config_backup_*_format-v2.shcl; [[ \$# == 1 && -f \"\$1\" ]] && cmp -s \"\$1\" '${og}/written.shcl'"
+	## A v2.1.0 accounts file: flat 'key = value' lines, as that version's accounts.md showed them,
+	## in ~/.config, where it looked on every platform. That build reads it first, then this one
+	## converts it on its first read and keeps the old one under a dated name.
+	local fl="${fg}/flat21" flFile flDir
+	local flEnv="GITSBY_CONFIG= XDG_CONFIG_HOME= APPDATA= HOME='${fl}/home' GIT_CONFIG_GLOBAL='${fl}/home/.gitconfig'"
+	flDir="${fl}/home/.config/gitsby"; flFile="${flDir}/config.shcl"
+	mkdir -p "${flDir}"
+	cat > "${flFile}" <<-'EOF'
+		# accounts, the way v2.1.0 showed them
+		protocol = https                            # how new remotes are set up
+
+		account.work.path       = ~/dev/work        # the folder tree this account owns
+		account.work.ghAccount  = my-work-login
+		account.work.name       = "O'Brien # x"
+		account.work.email      = ada@work.example
+
+		account.personal.pathContains = github.com/my-personal-login
+		account.personal.ghAccount    = my-personal-login
+		account.personal.email        = 'ada@home.example'
+	EOF
+	cp "${flFile}" "${fl}/written.shcl"
+	(cd "${fl}" && env GITSBY_CONFIG= XDG_CONFIG_HOME= APPDATA= HOME="${fl}/home" GIT_CONFIG_GLOBAL="${fl}/home/.gitconfig" bash "${root}/legacy/bin/gitsby" account list) </dev/null 2>/dev/null | sed -n '/^Accounts:/,$p' > "${fl}/old.txt" || true
+	(cd "${fl}" && env GITSBY_CONFIG= XDG_CONFIG_HOME= APPDATA= HOME="${fl}/home" GIT_CONFIG_GLOBAL="${fl}/home/.gitconfig" "${gitsby}" account list) </dev/null 2>"${fl}/new.err" | sed -n '/^Accounts:/,$p' > "${fl}/new.txt" || true
+	fAssert "[df05y] a v2.1.0 flat accounts file in ~/.config is converted on first read, and says which files" \
+		bash -c "grep -qF \"Converted the accounts file from the flat 'key = value' layout of v2.1.0 to SHCL.\" '${fl}/new.err' && grep -qx '  File: .*/home/\.config/gitsby/config\.shcl' '${fl}/new.err' && grep -qEx '  From: .*/config_backup_[0-9]{8}-[0-9]{6}_format-flat\.shcl' '${fl}/new.err'"
+	fAssert "[df05z] and keeps the old one, byte for byte, under a dated name" \
+		bash -c "set -- '${flDir}'/config_backup_*_format-flat.shcl; [[ \$# == 1 && -f \"\$1\" ]] && cmp -s \"\$1\" '${fl}/written.shcl'"
+	fAssertOut "[df060] and the new one names the format"  '^##    Format   3' cat "${flFile}"
+	## The two builds word the token and folder lines differently, so the names, logins and
+	## authors are what is compared.
+	fAssert "[df061] and reads every account the way v2.1.0 did" \
+		bash -c "grep -Ev 'token|folder|anywhere' '${fl}/old.txt' > '${fl}/old.cut' && grep -Ev 'token|folder|anywhere' '${fl}/new.txt' > '${fl}/new.cut' && grep -qx '   work' '${fl}/old.cut' && grep -qF \"commits .: O'Brien # x <ada@work.example>\" '${fl}/old.cut' && grep -qx '   personal' '${fl}/old.cut' && cmp -s '${fl}/old.cut' '${fl}/new.cut'"
+	fAssert "[df062] and a second run converts nothing more" \
+		bash -c "cd '${fl}' && env ${flEnv} '${gitsby}' account list </dev/null >/dev/null 2>'${fl}/again.err'; ! grep -q 'Converted' '${fl}/again.err' && set -- '${flDir}'/config_backup_*; [[ \$# == 1 && -f \"\$1\" ]]"
+	## A line v2.1.0 couldn't read either keeps the file as it is, and the ignored list names it.
+	mkdir -p "${fl}/part"
+	printf 'account.work.ghAccount = my-work-login\nnot a setting\n' > "${fl}/part/config.shcl"
+	cp "${fl}/part/config.shcl" "${fl}/part.shcl"
+	fAssertOut "[df063] a flat file with a line v2.1.0 couldn't read is read as it is, and names the line"  'Ignored keys .*not a setting' \
+		bash -c "cd '${fl}' && env ${flEnv} '${gitsby}' --config '${fl}/part/config.shcl' account list </dev/null 2>&1"
+	fAssert "[df064] and is left alone" \
+		bash -c "set -- '${fl}/part'/*; [[ \$# == 1 ]] && cmp -s '${fl}/part/config.shcl' '${fl}/part.shcl'"
 	## A key the loader ignores, written past this command, lands in the file and is dropped on every
 	## read - so the file says one thing and every command does another. Refuse it at the door, and
 	## name the keys that ARE read while refusing.
@@ -8077,6 +8278,15 @@ SSHEOF
 		bash -c "cd '${fgSsh}' && PATH='${fgPath}' FAKE_TEA_USER=gitfriend FAKE_SSH_LOGIN=keyowner '${gitsby}' -q -NoFetch pr create 'T' 2>&1"
 	fAssertNotOut "[dbg6c] and agreeing logins do not fire"  'acts as' \
 		bash -c "cd '${fgSsh}' && PATH='${fgPath}' FAKE_TEA_USER=keyowner FAKE_SSH_LOGIN=keyowner '${gitsby}' -q -NoFetch pr create 'T' 2>&1 || true"
+	## The interactive warning's gh line is for a write through gh. Here tea is the one acting, so
+	## naming gh's GitHub login would point at a tool that has no part in this.
+	if ((hasPty)); then
+		fAssertNotOut "[df026] the interactive tea warning does not name gh's account"  'gh does the GitHub side' \
+			fAnswerPrompt n "cd '${fgSsh}' && PATH='${fgPath}' FAKE_TEA_USER=gitfriend FAKE_SSH_LOGIN=keyowner FAKE_GH_LOGIN=octocat '${gitsby}' -NoFetch pr create 'T'"
+	fi
+	## Offline, the refusal names the git host, which here isn't GitHub.
+	fAssertOut "[df029] the offline pr refusal says git host, not GitHub"  'lives on the git host' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q pr create 'T' 2>&1 || true"
 	( cd "${fgSsh}" && git checkout --quiet main )
 
 	## An unparseable remote is not a git host we ruled out - it is one we could not name. The standing
@@ -8238,3 +8448,12 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261106 JC: Checks for a write asking the ssh identity once, the Go installer creating a missing folder, and the pre-command fetch dropping a ref origin deleted. 1779 -> 1782.
 ##		- 20261106 JC: The scratch folder and every fixture folder go through fSafeRm, still behind the name and marker checks. Checks that the guard works with no realpath, and that no script removes a folder another way.
 ##		- 20261107 JC: The install.ps1 checks run pwsh with telemetry off. From 7.6.9 on macOS, a first run in a fresh HOME left .dotnet in TMPDIR, which failed the temp folder check. 1825 -> 1826.
+##		- 20261107 JC: Checks for the footer check's .ps1 and no-footer cases, the Windows guard's return value under pwsh, and the Bash header, disable and error helper rules.
+##		- 20261107 JC: The config, default branch, SSH, token file and tea lines say why a value is unknown, and name a path on a File line.
+##		- 20261107 JC: glab's JSON is read by hand. Checks for a state past a nested one, a branch name with an escaped quote and a comma, and no encoding/json in the build. 1847 -> 1850.
+##		- 20261107 JC: An aliased remote asks ssh -G once, about its connect target. [dd5cb] is off, since the bare alias is no longer asked. 1850 -> 1850.
+##		- 20261107 JC: --version is its one line. [dcnw7] pins that line in place of the copyright line, and keep-build --list reads it. 1850 -> 1854.
+##		- 20261107 JC: A v2.1.0 flat accounts file converts on first read, found in ~/.config too. [db00e], [db010], [dbfh2] and [dcmey] are off for [df05t], [df05w], [df05x] and [df05v]. 1854 -> 1861.
+##		- 20261107 JC: The gate fixture has ruff.toml, and [df06k] checks lint runs ruff under it. 1861 -> 1862.
+##		- 20261107 JC: run-latest.ps1 runs once with no build and once under th-TH, [df06h] and [df06j]. 1862 -> 1864.
+##		- 20261107 JC: br merge pushes the merge and deletes origin's copy in 1 atomic push, [df06m], [df06n] and [df06p]. 1864 -> 1867.

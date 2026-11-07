@@ -149,10 +149,7 @@ func (a *app) stagedPreflight() error {
 		}
 		return a.stagedPullCheck(base, all)
 	case "br-switch":
-		target := a.cmd.arg
-		if target == "" {
-			target = a.mergeTarget()
-		}
+		target := a.switchTarget()
 		if current == target {
 			return nil
 		}
@@ -295,13 +292,13 @@ func (a *app) previewSplit() {
 		a.split = &split
 	}
 	if len(a.split.staged) == 0 {
-		a.out.clean(pad + "  nothing is staged, so nothing is committed")
+		a.out.clean(planPad + "  nothing is staged, so nothing is committed")
 	} else {
-		a.out.clean(pad + "  Changes to commit:")
-		a.showLinesAt(pad+"    ", a.split.staged)
+		a.out.clean(planPad + "  Changes to commit:")
+		a.showLinesAt(planPad+"    ", a.split.staged)
 	}
 	if len(a.split.left) > 0 {
-		a.out.clean(pad + "  Changes to leave alone:")
-		a.showLinesAt(pad+"    ", a.split.left)
+		a.out.clean(planPad + "  Changes to leave alone:")
+		a.showLinesAt(planPad+"    ", a.split.left)
 	}
 }

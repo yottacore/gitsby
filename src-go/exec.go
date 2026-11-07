@@ -13,9 +13,9 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"hash/fnv"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -273,8 +273,10 @@ func rawEntry(name, path string, args []string) string {
 	return name + ":" + rawHash(path) + ":" + rawHash(append([]string{path, cwd}, args...)...)
 }
 
+// FNV, not a crypto hash: the chain only tells one run from another, and
+// crypto/sha256 alone pulled in Go's whole FIPS module, 32 MiB of BSS.
 func rawHash(parts ...string) string {
-	sum := sha256.New()
+	sum := fnv.New64a()
 	for _, part := range parts {
 		sum.Write([]byte(part))
 		sum.Write([]byte{0})

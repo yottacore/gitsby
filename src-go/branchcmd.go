@@ -64,10 +64,8 @@ func (a *app) cmdNewBranch(newBranch, baseBranch string) error {
 	return a.publishBranch(newBranch)
 }
 
-func (a *app) cmdGoBranch(targetBranch string) error {
-	if targetBranch == "" {
-		targetBranch = a.mergeTarget()
-	}
+func (a *app) cmdGoBranch() error {
+	targetBranch := a.switchTarget()
 	if a.currentBranch() == targetBranch {
 		a.out.status("Already on '" + targetBranch + "'.")
 		return a.pullIfOnline()
@@ -120,9 +118,21 @@ func (a *app) cmdMerge() error {
 		return a.backOutMerge(err, workBranch, targetBranch, workBranch,
 			"git merge "+targetBranch+", then '"+meName+" br merge'")
 	}
+	// Read before the push and the local delete: whether origin has a copy, and the tip that was
+	// merged, which is all origin's copy may hold when it goes.
+	mergedTip, tracked := "", false
+	for _, line := range runLines("git", "for-each-ref", "--format=%(objectname) %(refname)", "refs/heads/"+workBranch, "refs/remotes/origin/"+workBranch) {
+		object, ref, _ := strings.Cut(line, " ")
+		switch ref {
+		case "refs/heads/" + workBranch:
+			mergedTip = object
+		case "refs/remotes/origin/" + workBranch:
+			tracked = true
+		}
+	}
 	// The merge must reach origin before the remote work branch goes away, or origin
 	// loses its only ref to those commits. Publish an upstream-less target first.
-	mergePublished := false
+	mergePublished, remoteGone := false, false
 	switch {
 	case !a.hasOrigin():
 	case a.isOffline():
@@ -136,22 +146,17 @@ func (a *app) cmdMerge() error {
 			a.out.status("WARNING: remote unreachable; the merge to '" + targetBranch + "' is local only - '" + meName + " sync' publishes it.")
 		}
 	default:
-		if err := a.step("git", a.pushArgs()...); err != nil {
-			return err
+		// Where origin has the branch and the target pushes to its own name, one atomic
+		// push sends the merge and the leased delete: both land or neither does.
+		if tracked && a.atomicMergeFits(targetBranch) {
+			remoteGone = a.atomicMergePush(targetBranch, workBranch, mergedTip)
+		}
+		if !remoteGone {
+			if err := a.step("git", a.pushArgs()...); err != nil {
+				return err
+			}
 		}
 		mergePublished = true
-	}
-	// Read before the local delete: whether origin has a copy, and the tip that was
-	// merged, which is all origin's copy may hold when it goes.
-	mergedTip, tracked := "", false
-	for _, line := range runLines("git", "for-each-ref", "--format=%(objectname) %(refname)", "refs/heads/"+workBranch, "refs/remotes/origin/"+workBranch) {
-		object, ref, _ := strings.Cut(line, " ")
-		switch ref {
-		case "refs/heads/" + workBranch:
-			mergedTip = object
-		case "refs/remotes/origin/" + workBranch:
-			tracked = true
-		}
 	}
 	if tracked && !mergePublished {
 		// The same rule as above, from the other side: with the merge still
@@ -163,7 +168,7 @@ func (a *app) cmdMerge() error {
 		if err := a.step("git", "branch", "-d", workBranch); err != nil {
 			return err
 		}
-		if tracked {
+		if tracked && !remoteGone {
 			a.mergeDeleteRemote(workBranch, mergedTip)
 		}
 	}
@@ -177,6 +182,25 @@ func (a *app) cmdMerge() error {
 	return nil
 }
 
+// atomicMergeFits: whether br merge's push can be named in full, the target to
+// its own name on origin. Only then do the merge and the delete go as 1 push.
+func (a *app) atomicMergeFits(target string) bool {
+	return a.branchRefs().local[target].full == "refs/remotes/origin/"+target
+}
+
+// atomicMergePush pushes the merged target and deletes origin's copy of the
+// branch in 1 connection, the delete leased on the merged tip. A refusal sends
+// nothing, and the caller falls back to 2 pushes, where the ask before the delete
+// names why.
+func (a *app) atomicMergePush(target, branch, mergedTip string) bool {
+	args := []string{"push", "--atomic", leaseArg(branch, mergedTip), "origin", "refs/heads/" + target + ":refs/heads/" + target, ":refs/heads/" + branch}
+	if a.stepAs("git "+strings.Join(args, " "), "", "git", args...) == nil {
+		return true
+	}
+	a.out.status("Origin refused that push as a whole; pushing the merge alone.")
+	return false
+}
+
 // mergeDeleteRemote deletes origin's copy of the branch br merge just merged, the
 // way br prune does. With --no-fetch the pull before the merge is skipped, and
 // anyone can push while the prompt waits, so origin may hold commits the merge
@@ -187,7 +211,7 @@ func (a *app) mergeDeleteRemote(branch, mergedTip string) {
 	if !asked {
 		a.out.status("WARNING: couldn't ask origin about its '" + branch + "'; left it alone.")
 		a.out.clean("  Once origin can be reached, this deletes it. It stops if that branch has moved:")
-		a.out.clean(pad + leaseDeleteLine(branch, mergedTip, runtime.GOOS))
+		a.out.clean(planPad + leaseDeleteLine(branch, mergedTip, runtime.GOOS))
 		return
 	}
 	send, changed, gone := sortRemoteDeletes([]string{branch}, tested, onOrigin)

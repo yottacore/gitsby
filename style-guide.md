@@ -22,6 +22,7 @@ Scope: the product itself is Go now. Go's *formatting* is `gofmt` - the lint sta
 - [Bash](#bash)
 	- [Bash traps](#bash-traps)
 - [PowerShell](#powershell)
+- [Python](#python)
 - [Performance](#performance)
 	- [Go performance](#go-performance)
 	- [Bash performance](#bash-performance)
@@ -166,6 +167,16 @@ Each of these has cost this pipeline or a sister one a silent failure.
 - Must pass PSScriptAnalyzer clean (settings, if any, live in `PSScriptAnalyzerSettings.psd1`).
 
 - 4 spaces per indent (PowerShell convention; unlike the Bash side of this repo).
+
+## Python
+
+- Python is for cicd helpers only. Target Python 3.11, the first with `tomllib`.
+
+- 4 spaces per indent, `snake_case` names, one import per line, and type hints on every function. A file older than these rules keeps its own indent and names, so `gen-demo-gif.py` stays on tabs and `fCamelCase`.
+
+- One statement per line. No `;`.
+
+- Must pass `ruff check` clean under `ruff.toml` at the repo root, and `py_compile`. cicd.bash runs both, and ruff's leak rules in `PY_LINT_RULES`.
 
 ## Performance
 

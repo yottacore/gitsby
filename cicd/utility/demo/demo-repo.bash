@@ -28,6 +28,7 @@ if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
 	printf '%s\n' "${0##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
 fi
 set -eu; set -o pipefail
+fDie(){ printf '%s\n' "$*" >&2; exit 1; }
 
 removeOnly=0; if [[ "${1:-}" == --remove ]]; then removeOnly=1; shift; fi
 root="${1:-/tmp/gitsby-demo}"
@@ -71,7 +72,7 @@ sideName="Mika Rivers";  sideEmail="mika@example.com"
 ##	inherited ROOT costs an error message instead of whatever was living there.
 stamp="${root}/.gitsby-demo-root"
 [[ -n "${root}" && "${root}" == /* && "${root}" != "/" && "${root}" != */.. && "${root}" != *..* ]] \
-	|| { echo "demo-repo: ROOT must be a plain absolute path below the filesystem root; got '${root}'." >&2; exit 1; }
+	|| fDie "demo-repo: ROOT must be a plain absolute path below the filesystem root; got '${root}'."
 if [[ -e "${root}" ]]; then
 	##	A root built before the stamp existed is still recognizably ours - nothing else puts a
 	##	demo.env beside an acme-api-origin.git. Without that second reading, the first run after
@@ -83,8 +84,7 @@ if [[ -e "${root}" ]]; then
 		fi
 	fi
 	if ((ours == 0)); then
-		echo "demo-repo: '${root}' exists and this script did not build it; remove it by hand if that is what you meant." >&2
-		exit 1
+		fDie "demo-repo: '${root}' exists and this script did not build it; remove it by hand if that is what you meant."
 	fi
 	fSafeRm "${root:?}" >/dev/null
 fi
@@ -131,7 +131,7 @@ cat > "${root}/bin/gh" <<-'EOF'
 				*)            exit 1 ;;
 			esac ;;
 		"config get -h github.com git_protocol") echo https ;;
-		*) echo "demo gh stub: no answer for 'gh $*'" >&2; exit 1 ;;
+		*) printf '%s\n' "demo gh stub: no answer for 'gh $*'" >&2; exit 1 ;;
 	esac
 EOF
 chmod 755 "${root}/bin/gh"
@@ -189,7 +189,7 @@ GIT_COMMITTER_NAME="${sideName}" GIT_COMMITTER_EMAIL="${sideEmail}" \
 ##	the identity the demo claims the folder rules are supplying.
 ##	The single quotes below are the point: these lines are written verbatim into demo.env and
 ##	expanded when the scenario sources it, not here.
-# shellcheck disable=SC2016
+# shellcheck disable=SC2016  ## written verbatim into demo.env, for the scenario's shell.
 {
 	echo "export PATH='${root}/bin':\"\${PATH}\""
 	echo "export HOME='${HOME}'"
@@ -215,3 +215,4 @@ GIT_COMMITTER_NAME="${sideName}" GIT_COMMITTER_EMAIL="${sideEmail}" \
 ##		- 20261004 JC: Every expansion braced, and shellcheck enforces it.
 ##		- 20261019 JC: --remove, so cicd can take the world away once the gif is drawn.
 ##		- 20261106 JC: ROOT goes through fSafeRm after its own checks, so it has to sit under a tmp folder.
+##		- 20261107 JC: Errors go through fDie, and the shellcheck disable says why.

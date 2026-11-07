@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // showList indents and prints a command's output, truncated to the terminal so
@@ -21,6 +22,7 @@ import (
 // off-screen - the 'less -FX' idea without a pager.
 func (a *app) showList(name string, args ...string) {
 	var outLines []string
+	// A tool that fails or is missing lists nothing, which is what the display shows.
 	if out, _ := toolCmd(name, args...).Output(); len(out) > 0 {
 		outLines = strings.Split(strings.TrimRight(string(out), "\n"), "\n")
 	}
@@ -98,13 +100,23 @@ func (a *app) showIncoming() {
 	a.showList("git", "diff", "--name-status", "HEAD..@{u}")
 }
 
+// writesAccounts: account apply, set and unset write config files and touch no
+// repo, so they show neither the repo state nor the identity block.
+func (a *app) writesAccounts() bool {
+	switch a.cmd.name {
+	case "account-apply", "account-set", "account-unset":
+		return true
+	}
+	return false
+}
+
 // identityWillPrint: whether this run reaches showIdentity at all. Every mutating
-// command previews the block, bar 'account apply', which shows the account list
-// instead; among the read-only ones only status and whoami do. It gates the live
-// probes that feed the block and nothing else, so being over-broad costs a round
-// trip and never an answer.
+// command previews the block, bar the 3 that write accounts, which show the
+// account list instead; among the read-only ones only status and whoami do. It
+// gates the live probes that feed the block and nothing else, so being over-broad
+// costs a round trip and never an answer.
 func (a *app) identityWillPrint() bool {
-	if a.cmd.name == "account-apply" || a.cmd.name == "account-set" || a.cmd.name == "account-unset" {
+	if a.writesAccounts() {
 		return false
 	}
 	if a.cmd.mutating {
@@ -122,7 +134,8 @@ func (a *app) showIdentity(remoteURL string) {
 	// believing you configured it, so say so - once, here, rather than failing or
 	// staying quiet.
 	if len(a.cfg.unknown) > 0 {
-		a.out.clean("Config .......: " + (a.cfg.file + " - ignored: " + strings.Join(a.cfg.unknown, ", ")))
+		a.out.clean("Config file ..: " + nativePath(a.cfg.file))
+		a.out.clean("Ignored keys .: " + strings.Join(a.cfg.unknown, ", "))
 	}
 	a.showSSHLine(remoteURL)
 	a.out.clean("Author .......: " + commitIdentity())
@@ -190,9 +203,26 @@ const (
 	acctCont  = "              : "
 )
 
-// dirLabel is the current-directory line, shared by every command that prints one
-// so the tool cannot end up calling the same thing two names on two screens.
-const dirLabel = "Current dir ..: "
+// dirLabel and remoteLabel lead the current-directory and remote lines, shared by
+// every command that prints them so the tool cannot end up calling the same thing
+// two names on two screens.
+const (
+	dirLabel    = "Current dir ..: "
+	remoteLabel = "Remote .......: "
+)
+
+// noteWidth is the body width of a labeled note and of a usage line's meaning: 78
+// columns with the label.
+const noteWidth = 56
+
+// showDirRemote leads a header with the current directory and the remote. A cwd
+// nothing can name prints as empty; not worth stopping a display over.
+func (a *app) showDirRemote(remoteDisp string) {
+	wd, _ := os.Getwd()
+	a.out.clean("")
+	a.out.clean(dirLabel + wd)
+	a.out.clean(remoteLabel + remoteDisp)
+}
 
 // accountFile names the accounts file, for advice that tells somebody to edit it.
 // The discovered path where there is one, the default location where there isn't:
@@ -234,12 +264,8 @@ func (a *app) accountSubject() string {
 // accountSourceText says where this run's account came from, in terms somebody can
 // go and look at. "(from config 'acme')" named neither the file nor which config -
 // and there are two configs in play here, since 'gitsby.ghAccount' is a git config
-// key and the account blocks are not. withFile spells out the accounts file too,
-// for the one caller that has not already put it on screen.
-func (a *app) accountSourceText(withFile bool) string {
-	if a.acct.fromFile && withFile {
-		return a.acct.source + " in " + a.accountFile()
-	}
+// key and the account blocks are not.
+func (a *app) accountSourceText() string {
 	return a.acct.source
 }
 
@@ -287,25 +313,25 @@ func (a *app) showAccountNote(label string, lines ...string) {
 // the identity block without printing through it. A line that is one absolute path
 // goes out whole: a path can hold a space, and macOS's own config folder does.
 func noteLines(label string, lines ...string) []string {
-	const labelWidth, bodyWidth = 4, 56 // 'Kept', the longest label; 78 columns in all
+	const labelWidth = 4 // 'Kept', the longest label
 	head := label + ":" + strings.Repeat(" ", labelWidth-len(label)) + " "
-	pad := strings.Repeat(" ", len(head))
+	indent := strings.Repeat(" ", len(head))
 	prefix := head
 	var out []string
 	for _, line := range lines {
 		line = printable(line)
 		if strings.HasPrefix(line, " ") {
-			out = append(out, pad+line)
+			out = append(out, indent+line)
 			continue
 		}
 		if filepath.IsAbs(line) || strings.HasPrefix(line, "/") {
 			out = append(out, prefix+line)
-			prefix = pad
+			prefix = indent
 			continue
 		}
-		for _, wrapped := range wrapWords(line, bodyWidth) {
+		for _, wrapped := range wrapWords(line, noteWidth) {
 			out = append(out, prefix+wrapped)
-			prefix = pad
+			prefix = indent
 		}
 	}
 	return out
@@ -359,11 +385,11 @@ func (a *app) showAccountUnapplied() bool {
 		a.out.clean(acctLabel + "nothing applied - " + meName + " was run with --any-identity")
 		a.showAccountNote("Why", "--any-identity leaves the token, the SSH key and the commit author exactly as they already were.")
 	case a.acct.otherHost:
-		a.out.clean(acctLabel + (a.accountSubject() + a.noTokenText()))
+		a.out.clean(acctLabel + a.accountSubject() + a.noTokenText())
 		a.showAccountFrom()
 		a.showAccountOtherHost()
 	case a.acct.noToken:
-		a.out.clean(acctLabel + (a.accountSubject() + a.noTokenText()))
+		a.out.clean(acctLabel + a.accountSubject() + a.noTokenText())
 		a.showAccountFrom()
 		a.showAccountNoToken()
 	default:
@@ -453,7 +479,9 @@ func (a *app) showAccountLine() {
 		a.showAccountApplied()
 	}
 	if a.acct.looseTokenFile != "" {
-		a.out.clean(acctCont + "WARNING: " + a.acct.looseTokenFile + " is readable by other users on this machine; chmod 600 it.")
+		a.out.clean(acctCont + "WARNING: the token file is readable by other users on this machine.")
+		a.showAccountNote("File", nativePath(a.acct.looseTokenFile))
+		a.showAccountFix("Keep it to yourself:", "  chmod 600 '"+a.acct.looseTokenFile+"'")
 	}
 	// This repo could authenticate with the account's token instead of a key, and
 	// doesn't. Worth one line, because it is the whole point of configuring accounts
@@ -516,8 +544,7 @@ type sshConfig struct {
 // believed. '--': an option-shaped host must not parse as an option.
 func readSSHConfig(target string) sshConfig {
 	var cfg sshConfig
-	out, _ := toolCmd("ssh", "-G", "--", target).Output()
-	for _, line := range splitLines(string(out)) {
+	for _, line := range splitLines(sshConfigText(target)) {
 		key, value, found := strings.Cut(line, " ")
 		if !found || value == "" {
 			continue
@@ -540,6 +567,30 @@ func readSSHConfig(target string) sshConfig {
 		}
 	}
 	return cfg
+}
+
+// sshConfigCache holds 'ssh -G' answers by target. PATH is in the key, since a
+// test may change it in one process. Locked, since look-ahead goroutines read
+// remotes too.
+var sshConfigCache = struct {
+	sync.Mutex
+	text map[[2]string]string
+}{text: map[[2]string]string{}}
+
+// sshConfigText is what 'ssh -G' says about target, asked once per run. No ssh,
+// or a target it refuses, reads as no config, so every field stays unknown.
+// '--': an option-shaped host must not parse as an option.
+func sshConfigText(target string) string {
+	key := [2]string{target, os.Getenv("PATH")}
+	sshConfigCache.Lock()
+	defer sshConfigCache.Unlock()
+	text, asked := sshConfigCache.text[key]
+	if !asked {
+		out, _ := toolCmd("ssh", "-G", "--", target).Output()
+		text = string(out)
+		sshConfigCache.text[key] = text
+	}
+	return text
 }
 
 // sshLineAsks: whether the SSH line will ask the host who the key is, so the
@@ -596,13 +647,14 @@ func (a *app) showSSHLine(remoteURL string) {
 	// user is 'git' for every GitHub account, and the key is only ssh's first
 	// readable candidate, not necessarily the one that authenticates. So ask the
 	// host who we actually are. Offline it stays unknown - the fetch already said why.
-	account := "unknown"
+	account := "(unknown - offline, so " + ssh.host + " wasn't asked)"
 	if !a.isOffline() {
+		account = "(unknown - " + ssh.host + " didn't answer with a login)"
 		if resolved := a.sshLogin(remoteURL); resolved != "?" {
 			account = resolved
 		}
 	}
-	a.out.clean("SSH ..........: " + (account + " (" + line + ")"))
+	a.out.clean("SSH ..........: " + account + " (" + line + ")")
 }
 
 // showGhLine: gh-backed commands act as gh's account, not the ssh key's - so name
@@ -646,11 +698,7 @@ func (a *app) cmdWhoami() {
 	if remoteDisp == "" {
 		remoteDisp = "(none)"
 	}
-	// A cwd nothing can name prints as empty; not worth stopping a display over.
-	wd, _ := os.Getwd()
-	a.out.clean("")
-	a.out.clean(dirLabel + wd)
-	a.out.clean("Remote .......: " + remoteDisp)
+	a.showDirRemote(remoteDisp)
 	a.showIdentity(remoteURL)
 	a.out.resetBlank()
 }
@@ -663,22 +711,14 @@ func (a *app) showStatus(withIdentity bool) {
 	if remoteDisp == "" {
 		remoteDisp = "(none)"
 	}
-	a.out.clean("")
-	// Same as cmdWhoami: an unnameable cwd prints as empty rather than refusing.
-	wd, _ := os.Getwd()
-	a.out.clean(dirLabel + wd)
-	a.out.clean("Remote .......: " + remoteDisp)
+	a.showDirRemote(remoteDisp)
 	if withIdentity {
 		a.showIdentity(remoteURL)
 	}
 	// Say "unknown" rather than assert a name we couldn't resolve - this is the one
 	// command that still runs when the default branch can't be told, so it must not
 	// fabricate one.
-	dflt := a.defaultBranch()
-	if dflt == "" {
-		dflt = "unknown"
-	}
-	a.out.clean("Default branch: " + dflt)
+	a.out.clean("Default branch: " + a.defaultBranchDisp())
 	a.out.clean("Current branch: " + strings.TrimRight(a.branchDisp("")+" "+a.branchSync(), " "))
 	// Pre-flight only, and only for the two commands that make a branch: the line
 	// above is where you ARE, which is exactly what misled here - it says 'dev'

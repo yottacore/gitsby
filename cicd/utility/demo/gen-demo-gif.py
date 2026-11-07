@@ -30,16 +30,26 @@
 ##	SPDX-License-Identifier: MIT
 
 
-import argparse, os, random, re, shlex, subprocess, sys, time, unicodedata
+import argparse
+import os
+import random
+import re
+import shlex
+import subprocess
+import sys
+import time
+import unicodedata
 
 try:
 	import tomllib
 except ImportError:
-	sys.stderr.write("gen-demo-gif: needs python 3.11+ (tomllib)\n"); sys.exit(2)
+	sys.stderr.write("gen-demo-gif: needs python 3.11+ (tomllib)\n")
+	sys.exit(2)
 try:
 	from PIL import Image, ImageDraw, ImageFont
 except ImportError:
-	sys.stderr.write("gen-demo-gif: Pillow not installed\n"); sys.exit(2)
+	sys.stderr.write("gen-demo-gif: Pillow not installed\n")
+	sys.exit(2)
 
 
 ##	Canvas and window chrome. 960x540 total; the window fills the whole view
@@ -94,7 +104,8 @@ def fEmojiInit():
 	##	if any piece is missing the chars just draw through the monochrome
 	##	fallback like before.
 	try:
-		import gi, cairo
+		import gi
+		import cairo
 		gi.require_version("Pango", "1.0")
 		gi.require_version("PangoCairo", "1.0")
 		from gi.repository import Pango, PangoCairo
@@ -209,7 +220,8 @@ def fRunAsked(cmd, ask, answer):
 	##	The answer goes in here to unblock the command; drawing it is the render
 	##	loop's job, from this same string, so what runs and what is on screen cannot
 	##	disagree.
-	import pty, select      # local: no ptys off Unix, and only this path needs one
+	import pty      # local: no ptys off Unix, and only this path needs one
+	import select
 	master, slave = pty.openpty()
 	proc = subprocess.Popen(["bash", "-c", cmd], stdin=slave,
 	                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -796,6 +808,7 @@ if __name__ == "__main__":
 
 
 ##	History:
+##		- 20261107: One import per line, no `;` statements.
 ##		- 20260916: type_notes = false shows each caption whole instead of typing
 ##			it out. Typing them was 12.9s of a 67.4s loop - more screen time than
 ##			the commands they introduce, spent on narration.

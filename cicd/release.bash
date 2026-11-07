@@ -64,13 +64,14 @@ cd "${root}"
 unset GITSBY_CICD_IMAGE GITSBY_CICD_RUN GITSBY_CICD_KEEP_TEMP
 runName="release-$(date +%Y%m%d-%H%M%S)"; containerImage=""
 
+fUsage(){ printf '%s\n' "$*" >&2; exit 2; }
 version=""; dryRun=0; assumeYes=0; quiet=0
 while (($#)); do case "$1" in
 	-n|--dry-run) dryRun=1; shift ;;
 	-y|--yes)     assumeYes=1; shift ;;
 	-q|--quiet)   quiet=1; assumeYes=1; shift ;;
 	-h|--help)    sed -n '/^##	Purpose:/,/^##	History:/p' "${BASH_SOURCE[0]}" | sed '$d; s/^##	\{0,1\}//'; exit 0 ;;
-	-*)           echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
+	-*)           fUsage "unknown option: $1 (try --help)" ;;
 	*)            version="$1"; shift ;;
 esac; done
 
@@ -321,13 +322,17 @@ fi
 
 ## The history footers are maintained by hand and are missed most rounds, so check rather than
 ## trust. Every pipeline or installer script that keeps one and has changed since the last
-## release; a footer's dates are written 20260819 or 2026-08-19.
+## release; a footer's dates are written 20260819 or 2026-08-19, after ## or the .ps1 files'
+## one #. A script with no footer at all is warned about too; a Dockerfile or data file isn't.
 if [[ -n "${lastTag}" ]]; then
 	tagDate="$(git log -1 --format=%cd --date=format:%Y%m%d "${lastTag}" 2>/dev/null || echo 0)"
 	while IFS= read -r f; do
 		[[ -f "${f}" ]] || continue
-		newest="$(grep -oE '^##[[:space:]]+- 20[0-9]{2}-?[0-9]{2}-?[0-9]{2}' "${f}" | grep -oE '20[0-9-]+' | tr -d - | sort | tail -n 1 || true)"
-		[[ -n "${newest}" ]] || continue
+		newest="$(grep -oE '^#+[[:space:]]+- 20[0-9]{2}-?[0-9]{2}-?[0-9]{2}' "${f}" | grep -oE '20[0-9-]+' | tr -d - | sort | tail -n 1 || true)"
+		if [[ -z "${newest}" ]]; then
+			[[ "$(head -c 2 "${f}")" != '#!' && "${f}" != *.ps1 ]] || fEcho_Clean "WARNING: ${f} has no history footer; add one before releasing."
+			continue
+		fi
 		[[ "${newest}" -ge "${tagDate}" ]] \
 			|| fEcho_Clean "WARNING: ${f} has no history entry since ${lastTag} (${tagDate}); add one before releasing."
 	done < <(git diff --name-only "${lastTag}" HEAD -- cicd install.bash install.ps1)
@@ -419,10 +424,10 @@ if ! fWould "branch ${relBranch}, retitle the changelog's vNEXT as '${version} -
 	"${winres[@]}" -q "${version}" || fDie "couldn't stamp the Windows resource; the branch is created but nothing is pushed."
 	## gitsby's own 'pr create' rather than gh directly: it already knows this repo's merge target,
 	## which is the one thing a hand-written --base can get wrong.
-	prOut="$("${gitsby}" -q pr create "${version}" 2>&1)" || { echo "${prOut}" >&2; fDie "couldn't open the version-bump PR."; }
+	prOut="$("${gitsby}" -q pr create "${version}" 2>&1)" || { printf '%s\n' "${prOut}" >&2; fDie "couldn't open the version-bump PR."; }
 	prNum="$(printf '%s\n' "${prOut}" | grep -oE 'https://github\.com/[^ ]+/pull/[0-9]+' | tail -n 1 || true)"
 	prNum="${prNum##*/}"
-	[[ "${prNum}" =~ ^[0-9]+$ ]] || { echo "${prOut}" >&2; fDie "couldn't read a PR number out of 'pr create' output."; }
+	[[ "${prNum}" =~ ^[0-9]+$ ]] || { printf '%s\n' "${prOut}" >&2; fDie "couldn't read a PR number out of 'pr create' output."; }
 	fEcho_Clean "opened PR #${prNum} for the version bump"
 	"${gitsby}" -q pr ok "${prNum}" || fDie "couldn't merge PR #${prNum}; the bump is pushed but nothing is tagged."
 fi
@@ -593,3 +598,4 @@ echo
 ##		- 20261025 JC: --help prints the header again. It looked for "- Purpose:", and the header says "Purpose:".
 ##		- 20261106 JC: Refuses a go.mod with a module pinned to a commit rather than a tag.
 ##		- 20261106 JC: Every recursive removal goes through fSafeRm, and the temp folders are made where the guard takes them.
+##		- 20261107 JC: The footer check reads the .ps1 files' one-# entries, and warns about a changed script with no footer at all.

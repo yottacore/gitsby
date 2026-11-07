@@ -8,6 +8,12 @@
 ##
 ## cicd.bash prints its own unit tests this way, and remote-tests.bash the ones it runs on other
 ## boxes. One copy, so the two can't drift apart.
+##	History: At bottom of script.
+
+##	Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
+##	Licensed under The MIT License (MIT). Full text at:
+##		https://mit-license.org/
+##	SPDX-License-Identifier: MIT
 
 fGoTestLines(){
 	local ids=""
@@ -17,3 +23,8 @@ fGoTestLines(){
 		BEGIN { n = split(ENVIRON["IDS"], l, "\n"); for (i = 1; i <= n; i++) { split(l[i], f, " "); id[f[1]] = f[2] " " } }
 		/^--- (PASS|FAIL|SKIP): / { print "  " substr($2, 1, 4) " " id[$3] $3 }' "$1"
 }
+
+
+##	History:
+##		- 2026-10-04 JC: Created, one copy of the test-line format for cicd.bash and remote-tests.bash.
+##		- 2026-11-07 JC: Header with copyright and license, and this history.

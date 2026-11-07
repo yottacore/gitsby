@@ -51,10 +51,11 @@ $poolDir = if ($IsWindows) {
 $null = New-Item -ItemType Directory -Force -Path $poolDir
 
 # The build's own mtime names the copy, so one build is copied exactly once and a
-# rebuild gets a fresh name a running copy can't be holding open.
+# rebuild gets a fresh name a running copy can't be holding open. The invariant
+# culture keeps the Gregorian year, since the newest name is the one that runs.
 $ext = if ($IsWindows) { '.exe' } else { '' }
 if (Test-Path -LiteralPath $buildPath) {
-    $stamp = (Get-Item -LiteralPath $buildPath).LastWriteTime.ToString('yyyyMMdd-HHmmss')
+    $stamp = (Get-Item -LiteralPath $buildPath).LastWriteTime.ToString('yyyyMMdd-HHmmss', [Globalization.CultureInfo]::InvariantCulture)
     $pooled = Join-Path -Path $poolDir -ChildPath "gitsby_${stamp}${ext}"
     if (-not (Test-Path -LiteralPath $pooled)) {
         # Staged and renamed, so an interrupt can't leave a half-written copy under a
@@ -68,8 +69,8 @@ if (Test-Path -LiteralPath $buildPath) {
 
 $copies = @(Get-ChildItem -LiteralPath $poolDir -Filter "gitsby_*${ext}" -File | Sort-Object -Property Name)
 if (-not $copies) {
+    # Under 'Stop' this ends the script, with exit code 1.
     Write-Error "No build to run: nothing pooled in ${poolDir} and no build at ${buildPath} - run cicd/cicd.bash, or 'go build' in src-go."
-    exit 1
 }
 
 # Age-out: a week, except the newest, which stays however old it is. A running
@@ -85,5 +86,7 @@ exit $LASTEXITCODE
 
 
 # History:
-#   20260821 JC: Created. The pooled-copy runner: newest build, timestamped copies,
-#   week-long age-out, args forwarded.
+#   - 20260821 JC: Created. The pooled-copy runner: newest build, timestamped copies,
+#     week-long age-out, args forwarded.
+#   - 20261107 JC: The history entries start with a dash, the form the release check reads.
+#   - 20261107 JC: The copy's name is formatted in the invariant culture. No dead exit after Write-Error.

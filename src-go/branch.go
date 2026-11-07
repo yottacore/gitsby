@@ -189,6 +189,14 @@ func (a *app) defaultBranch() string {
 	return a.git.defaultBranch.get(a.resolveDefaultBranch)
 }
 
+// defaultBranchDisp is the default branch for a listing, or why there isn't one.
+func (a *app) defaultBranchDisp() string {
+	if dflt := a.defaultBranch(); dflt != "" {
+		return dflt
+	}
+	return "(unknown - no origin/HEAD, no main, master or trunk, and more than one local branch)"
+}
+
 // originHead is origin/HEAD's target as a full ref, "" when there is none. The
 // fetch reads it to decide whether to heal it, and the default branch comes from
 // the same answer. Never --short: git lengthens that to 'remotes/origin/main'
@@ -223,6 +231,14 @@ func (a *app) resolveDefaultBranch() string {
 		return "main"
 	}
 	return ""
+}
+
+// switchTarget is where br switch goes: the branch named, or the merge target.
+func (a *app) switchTarget() string {
+	if a.cmd.arg != "" {
+		return a.cmd.arg
+	}
+	return a.mergeTarget()
 }
 
 // mergeTarget: feature branches come off of - and land on - dev when the repo

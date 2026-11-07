@@ -258,7 +258,7 @@ function Install-Gitsby {
                 Write-Host ''
                 Write-Host "[ No full release has a gitsby binary yet; taking the newest pre-release, ${tagName}. ]"
             } else {
-                throw "No release of ${repo} publishes a gitsby binary yet, so there is nothing to install. Build it instead - the module is pure Go with no dependencies: git clone https://github.com/${repo}.git; cd gitsby/src-go; go build -o gitsby ."
+                throw "No release of ${repo} publishes a gitsby binary yet, so there is nothing to install. Build it instead: git clone https://github.com/${repo}.git; cd gitsby/src-go; go build -o gitsby ."
             }
         }
     }
@@ -278,7 +278,7 @@ function Install-Gitsby {
     }
     if (-not $want) {
         $alsoRan = if ($published) { " It publishes: $($published -join ', ')." } else { '' }
-        throw "Release ${tagName} publishes no gitsby binary for ${goOs}/${goArch}.${alsoRan} Build it for yours instead - the module is pure Go with no dependencies: git clone https://github.com/${repo}.git; cd gitsby/src-go; go build -o gitsby ."
+        throw "Release ${tagName} publishes no gitsby binary for ${goOs}/${goArch}.${alsoRan} Build it for yours instead: git clone https://github.com/${repo}.git; cd gitsby/src-go; go build -o gitsby ."
     }
 
     # Destination: per-user by default; -System needs elevation (sudo / admin shell).
@@ -557,3 +557,4 @@ try {
 #     still asked first, and the release list only when its SHA256SUMS names no binary.
 #   - 20261106 JC: The temp folder is removed only when it's a real folder right under the
 #     temp folder, and otherwise left with a warning.
+#   - 20261107 JC: The build-it-yourself message no longer claims there is nothing for go build to fetch.

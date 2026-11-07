@@ -188,3 +188,26 @@ func TestFetchReadsOriginHeadOnce(t *testing.T) { // [ddgbq]
 		t.Errorf("origin/HEAD was read %d times, want 1", n)
 	}
 }
+
+// Owner and name are text work, and the alias lookup and the SSH line ask ssh -G
+// about the same target, so a non-GitHub ssh remote costs 1 read.
+func TestSSHConfigAskedOnce(t *testing.T) { // [df053]
+	sshLog := logCalls(t, "ssh", `[ "$1" = -G ] && printf 'user git\nhostname gitea.example.test\n'`)
+	url := "git@gitea-work:acme/proj.git"
+	if got := remoteTarget(url); got != "acme/proj" {
+		t.Errorf("remoteTarget(%q) = %q, want acme/proj", url, got)
+	}
+	if n := callsTo(t, sshLog, "-G"); n != 0 {
+		t.Errorf("remoteTarget asked ssh -G %d times", n)
+	}
+	if got := parseRemote(url).host; got != "gitea.example.test" {
+		t.Errorf("parseRemote(%q).host = %q, want the alias resolved", url, got)
+	}
+	if got := readSSHConfig(sshConnectTarget(url)); got.user != "git" || got.host != "gitea.example.test" {
+		t.Errorf("readSSHConfig = %+v, want git at gitea.example.test", got)
+	}
+	parseRemote(url)
+	if n := callsTo(t, sshLog, "-G"); n != 1 {
+		t.Errorf("ssh -G was asked %d times, want 1", n)
+	}
+}

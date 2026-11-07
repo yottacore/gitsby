@@ -402,6 +402,6 @@ func (a *app) pruneHeldOffline(branches []string) {
 	a.out.status("WARNING: remote unreachable; left origin's copies of " + strings.Join(branches, ", ") + " alone.")
 	a.out.clean("  Once origin can be reached, these delete them. Each one stops if that branch has moved:")
 	for _, branch := range branches {
-		a.out.clean(pad + leaseDeleteLine(branch, a.prune.remoteTip[branch], runtime.GOOS))
+		a.out.clean(planPad + leaseDeleteLine(branch, a.prune.remoteTip[branch], runtime.GOOS))
 	}
 }

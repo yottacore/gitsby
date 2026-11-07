@@ -155,7 +155,7 @@ fMakeRepo(){
 ## back in gitsby's output can't self-trip the crash check.
 ## The single quotes are the point: these must reach gitsby as literal text, not
 ## expand here - that's what proves gitsby keeps them inert.
-# shellcheck disable=SC2016
+# shellcheck disable=SC2016  ## single quotes on purpose: gitsby gets each $ as typed.
 {
 ## Commands are matched case-insensitively (forgiving by design), so 'STATUS' is a
 ## valid alias of 'status' and doesn't belong here.
@@ -405,7 +405,7 @@ fCredentialHelperVectors(){
 	echo tok_fuzz > "${ch}/token"; chmod 600 "${ch}/token" 2>/dev/null || true
 	local vector=""
 	## Single quotes throughout: these are the literal text of an attack, not something to expand.
-	# shellcheck disable=SC2016
+	# shellcheck disable=SC2016  ## the vectors are literal text, by design.
 	for vector in '; touch '"${ch}"'/CANARY-ghaccount; echo x' \
 	              '`touch '"${ch}"'/CANARY-backtick`' \
 	              '$(touch '"${ch}"'/CANARY-subshell)' \
@@ -425,7 +425,7 @@ fCredentialHelperVectors(){
 	## substitution must stay text, never be evaluated. Driven on the same path that
 	## actually adds config (the credential helper), which is where the count is read.
 	local badCount="" why=""
-	# shellcheck disable=SC2016
+	# shellcheck disable=SC2016  ## the $(...) is the attack text, not for this shell.
 	for badCount in 'x[$(touch '"${ch}"'/CANARY-count)]' '-1' '1e3'; do
 		GIT_CONFIG_COUNT="${badCount}" fRun "${ch}/proj" -q -NoFetch --config "${ch}/v.shcl" raw git credential fill
 		why=""
@@ -461,7 +461,6 @@ fCloneArgInjection(){
 	mkdir -p "${dir}"
 	## The bare repo's own folder name is the option string. The canary is a bare name, so the
 	## command it is smuggled into would create it in whatever directory the clone runs from.
-	# shellcheck disable=SC2016
 	local -r evil='--upload-pack=touch CANARY-clonearg;git-upload-pack'
 	git init --quiet --bare -b main "${dir}/${evil}.git"
 	( git init --quiet -b main "${dir}/seed" && cd "${dir}/seed" \
@@ -520,7 +519,6 @@ fSshKeyInert(){
 	## comment - so a redirect and a substitution carry the canary instead, each firing whatever
 	## trails them on the reconstructed command line.
 	local key="" why=""
-	# shellcheck disable=SC2016
 	for key in "${dir}/k;>${dir}/CANARY-sshkey" "${dir}/k\$(touch ${dir}/CANARY-sshkey)" "${dir}/k\`touch ${dir}/CANARY-sshkey\`"; do
 		printf 'account.s.path = %s\naccount.s.sshKey = %s\n' "${dir}/proj" "${key}" > "${dir}/s.shcl"
 		## ls-remote against an unreachable host exits nonzero by design, so the exit code says
@@ -545,7 +543,6 @@ fAccountApplyVectors(){
 	mkdir -p "${dir}/covered"
 	git init --quiet -b main "${dir}/covered" >/dev/null 2>&1
 	: > "${dir}/global"
-	# shellcheck disable=SC2016
 	cat > "${dir}/a.shcl" <<EOF
 account.a.path         = ${dir}/covered
 account.a.pathContains = d*e
@@ -595,3 +592,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261006 JC: Reworked for the no-shell Go build. The surviving vectors stay as regression guards against a shell slipping back into the path, and the suite now drives the places a value still reaches a real tool: a clone directory derived from a URL tail that is option-shaped (argument injection into git), a ref that is also a revision ('br switch HEAD', which parked work before refusing), a shell-bearing 'sshkey' through a real ssh, 'account apply' escaping glob characters in a folder rule and dropping a shell-bearing host or user, and a junk GIT_CONFIG_COUNT on the credential path. 301 -> 311. Two product bugs fixed alongside (clone '--', origin/HEAD not a branch).
 ##		- 20261026 JC: Each vector prints PASS, FAIL or SKIP, then its ID and label, and the total counts the skips.
 ##		- 20261106 JC: Its scratch folder goes through fSafeRm, made where the guard takes it.
+##		- 20261107 JC: Each shellcheck disable says why, and 3 that silenced nothing are gone.

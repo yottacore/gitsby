@@ -3,7 +3,14 @@
 ## every box has. One folder right under %TEMP%, named for a stage 7 run, and not a link. Both
 ## sides spelled by Get-Item, so a short 8.3 temp path compares the same, as in install.ps1.
 ## rmdir still does the removal, as before the guard, since it removes a link inside the folder
-## rather than follow it. Its exit code says little, so the folder still there is the failure.
+## rather than follow it. Its exit code says little, so the folder still there is the failure,
+## and its output goes nowhere, since anything written would join the boolean. History at the
+## bottom.
+##
+## Copyright (C) 2026 Jim Collier
+## Licensed under The MIT License (MIT). Full text at:
+##     https://mit-license.org/
+## SPDX-License-Identifier: MIT
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -20,7 +27,7 @@ function fSafeRm([string]$p) {
         elseif ($item.Parent.FullName.TrimEnd('\', '/') -ne $root -or $item.Name -notmatch '^test_gitsby_[0-9-]+$') { $why = 'not a stage 7 folder right under the temp folder' }
     }
     if ($why) { [Console]::Error.WriteLine("safe-rm: refused, ${why}: $p"); return $false }
-    & cmd.exe /d /c rmdir /s /q $item.FullName
+    $null = & cmd.exe /d /c rmdir /s /q $item.FullName
     if (Test-Path -LiteralPath $item.FullName) { [Console]::Error.WriteLine("safe-rm: some of $p would not go"); return $false }
     [Console]::Out.WriteLine("removed $p")
     return $true
@@ -29,3 +36,4 @@ function fSafeRm([string]$p) {
 
 ##	History:
 ##		- 2026-11-06 JC: Created, for stage 7's rmdir on the Windows box.
+##		- 2026-11-07 JC: rmdir's output stays out of the return value, and the header has the copyright and license.

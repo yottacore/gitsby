@@ -39,17 +39,17 @@ account: github.com_my-personal-login
 
 The format is [SHCL](https://github.com/yottacore/shcl): `key: value`, blocks by indentation, tabs or spaces. Key names are case-insensitive and settle on lower case. A value holding a `#` goes in quotes, and so does one with a comma or a colon followed by a space. A backslash is just a character, quoted or not, so a Windows path is typed as it is (`path: C:\dev\work`). Gitsby reads either slash.
 
-A file written for the 2.x scripts - flat `account.work.path = ~/dev/work` lines - is still read as it is. The first `account set` rewrites it in the layout above, comments included.
+A file written for the 2.x scripts - flat `account.work.path = ~/dev/work` lines - is converted to the layout above on the first run that reads it, comments included. The old file stays beside it as `config_backup_<date>-<time>_format-flat.shcl`, and the run says so on stderr. A file with a line the 2.x scripts couldn't read is read as it is instead, and the ignored list names that line. The first `account set` rewrites it.
 
 Gitsby reads the first of these it can read, and `account set` creates the first one when none of them is there:
 
 | Platform | Where it looks
 | :--      | :--
 | Linux, FreeBSD | `$XDG_CONFIG_HOME/gitsby/config.shcl`, then `~/.config/gitsby/config.shcl`
-| macOS    | `~/Library/Application Support/gitsby/config.shcl`
-| Windows  | `%APPDATA%\gitsby\config.shcl`
+| macOS    | `~/Library/Application Support/gitsby/config.shcl`, then `~/.config/gitsby/config.shcl`
+| Windows  | `%APPDATA%\gitsby\config.shcl`, then `~/.config/gitsby/config.shcl`
 
-Each platform is asked in its own terms and nobody else's, `~/.config` included - that is a Linux spelling, not a Mac or Windows one. `XDG_CONFIG_HOME` is a Linux and BSD variable, set by a desktop session rather than by you, so it is read there alone; `%APPDATA%` likewise is read on Windows alone. macOS and Windows each have exactly one location, and fall back to `~/.config` only in the odd case where the native one can't be worked out at all.
+Each platform is asked in its own terms first. `XDG_CONFIG_HOME` is a Linux and BSD variable, set by a desktop session rather than by you, so it is read there alone; `%APPDATA%` likewise is read on Windows alone. `~/.config` comes last on every platform, since v2.1.0 looked there everywhere and a file it found has to keep being found. A new file on macOS or Windows goes in the platform's own place.
 
 `--config FILE` (`-Config FILE`) overrides all of them, and so does the `GITSBY_CONFIG` environment variable.
 

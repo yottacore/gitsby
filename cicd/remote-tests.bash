@@ -65,23 +65,25 @@ source "${here}/utility/include/image-go.bash"
 # shellcheck source=/dev/null
 source "${here}/utility/include/safe-rm.bash"
 
+fUsage(){ printf '%s\n' "$*" >&2; exit 2; }
+
 macBin=""; held=()
 declare -A unixBin=()
 while (($#)); do case "$1" in
-	--mac-bin) [[ -n "${2:-}" ]] || { echo "--mac-bin needs a file" >&2; exit 2; }; macBin="$2"; shift 2 ;;
-	--bin)     [[ "${2:-}" == */* && -n "${3:-}" ]] || { echo "--bin needs a target like freebsd/amd64, then a file" >&2; exit 2; }
-	           [[ -f "$3" ]] || { echo "--bin: no such file: $3" >&2; exit 2; }
+	--mac-bin) [[ -n "${2:-}" ]] || fUsage "--mac-bin needs a file"; macBin="$2"; shift 2 ;;
+	--bin)     [[ "${2:-}" == */* && -n "${3:-}" ]] || fUsage "--bin needs a target like freebsd/amd64, then a file"
+	           [[ -f "$3" ]] || fUsage "--bin: no such file: $3"
 	           unixBin["$2"]="$3"; shift 3 ;;
-	--held)    (($# >= 4)) || { echo "--held needs a kind, a lock name and an ssh name" >&2; exit 2; }; held=("$2" "$3" "$4"); shift 4 ;;
+	--held)    (($# >= 4)) || fUsage "--held needs a kind, a lock name and an ssh name"; held=("$2" "$3" "$4"); shift 4 ;;
 	-h|--help) sed -n '/^##	Purpose:/,/^##	History:/p' "${BASH_SOURCE[0]}" | sed '$d; s/^##	\{0,1\}//'; exit 0 ;;
-	*)         echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
+	*)         fUsage "unknown option: $1 (try --help)" ;;
 esac; done
-[[ -z "${macBin}" || -f "${macBin}" ]] || { echo "--mac-bin: no such file: ${macBin}" >&2; exit 2; }
+[[ -z "${macBin}" || -f "${macBin}" ]] || fUsage "--mac-bin: no such file: ${macBin}"
 for spec in "${REMOTE_UNIX_HOSTS[@]}"; do
-	[[ "${REMOTE_UNIX_TARGETS[${spec%%:*}]:-}" == */* ]] || { echo "config.bash: REMOTE_UNIX_TARGETS has no target like freebsd/amd64 for ${spec%%:*}" >&2; exit 2; }
+	[[ "${REMOTE_UNIX_TARGETS[${spec%%:*}]:-}" == */* ]] || fUsage "config.bash: REMOTE_UNIX_TARGETS has no target like freebsd/amd64 for ${spec%%:*}"
 done
 for name in "${!REMOTE_UNIX_WINE[@]}"; do
-	[[ "${REMOTE_UNIX_WINE[${name}]}" == windows/* ]] || { echo "config.bash: REMOTE_UNIX_WINE for ${name} is not a target like windows/arm64" >&2; exit 2; }
+	[[ "${REMOTE_UNIX_WINE[${name}]}" == windows/* ]] || fUsage "config.bash: REMOTE_UNIX_WINE for ${name} is not a target like windows/arm64"
 done
 
 fEcho_Clean(){ printf '%s\n' "$*"; }
@@ -206,14 +208,14 @@ fRunPosix(){
 		set -e
 		${safeRmSh}
 		${dirSh}
-		if [ -e \"\$d\" ] && [ ! -f \"\$d/${ownMark}\" ]; then echo \"\$d is not this stage's folder, so it was left alone\" >&2; exit 3; fi
+		if [ -e \"\$d\" ] && [ ! -f \"\$d/${ownMark}\" ]; then printf '%s\n' \"\$d is not this stage's folder, so it was left alone\" >&2; exit 3; fi
 		mkdir -p \"\$d\"
 		HOST_TEMP=\"\$(cd -P -- \"\$t\" && pwd -P)\" APP_NAME=${dir}
 		: > \"\$d/${ownMark}\"
 		if [ -f \"\$d/${ownMark}\" ]; then
 			if [ -e \"\$d/tree\" ]; then mv \"\$d/tree\" \"\$d/old.\$\$\"; fi
 			for o in \"\${HOST_TEMP%/}/\${APP_NAME}\"/old.*; do
-				if [ -e \"\$o\" ] || [ -L \"\$o\" ]; then fSafeRm \"\$o\" >/dev/null || echo \"note: \$o would not go\" >&2; fi
+				if [ -e \"\$o\" ] || [ -L \"\$o\" ]; then fSafeRm \"\$o\" >/dev/null || printf '%s\n' \"note: \$o would not go\" >&2; fi
 			done
 		fi
 		tar -xf - -C \"\$d\"
@@ -320,7 +322,7 @@ if ((${#held[@]})); then
 	case "${held[0]}" in
 		mac|unix) fRunPosix "${held[0]}" "${held[1]}" "${held[2]}" ;;
 		windows)  fRunWindows "${held[1]}" "${held[2]}" ;;
-		*)        echo "--held: unknown kind '${held[0]}'" >&2; exit 2 ;;
+		*)        fUsage "--held: unknown kind '${held[0]}'" ;;
 	esac
 	exit 0
 fi
@@ -505,7 +507,7 @@ fUnderLock(){
 	return 1
 }
 
-## Windows first: vm925w's SPICE port is fixed at 5900, and a VM started ahead of it may hold that.
+## Windows first: vm925w's SPICE port is fixed at 5999, and a VM started ahead of it may hold that.
 for entry in "${winRun[@]}"; do
 	if fUnderLock windows "${entry% *}" "${entry#* }"; then break; fi
 done
@@ -544,3 +546,4 @@ if ((${#failed[@]})); then exit 1; fi
 ##		- 2026-11-06 JC: The lock's queue note takes its first line through sed, not head.
 ##		- 2026-11-06 JC: Its own scratch folder goes through fSafeRm. The commands on the boxes are unchanged.
 ##		- 2026-11-06 JC: The old trees on the Mac and Unix boxes, and the Windows box's folder, go through a copy of the guard on the box: safe-rm.sh and safe-rm.ps1, sent with the command. The marker and made checks stay.
+##		- 2026-11-07 JC: Errors go through fUsage, and the Windows note has vm925w's port as it is now.

@@ -457,3 +457,45 @@ func TestIsGitLabHost(t *testing.T) { // [dea1b]
 		}
 	}
 }
+
+// glab's JSON is read by hand, so key order, spacing, escapes and nesting are
+// all the reader's to get right. A nested "state" is the author's, not the MR's.
+func TestReadGlabMR(t *testing.T) { // [df04m]
+	for _, c := range []struct {
+		in   string
+		list bool
+		ok   bool
+		want glabMR
+	}{
+		{`{"iid":7,"state":"opened","source_branch":"feat"}`, false, true, glabMR{"7", "opened", "feat"}},
+		{"\n {\n\t\"source_branch\" : \"feat\" ,\r\n \"state\":\"merged\", \"iid\" : 12 }\n", false, true, glabMR{"12", "merged", "feat"}},
+		{`{"author":{"state":"active","id":3},"labels":["a","b"],"state":"opened","source_branch":"feat"}`, false, true, glabMR{"", "opened", "feat"}},
+		{`{"title":"a \"quoted\", title}","source_branch":"x\"y,z","state":"opened"}`, false, true, glabMR{"", "opened", `x"y,z`}},
+		{`{"source_branch":"café\/\\ 😀","state":"opened"}`, false, true, glabMR{"", "opened", "café/\\ \U0001F600"}},
+		{`{"draft":false,"merged_at":null,"x":-1.5e3,"state":"closed","source_branch":"b"}`, false, true, glabMR{"", "closed", "b"}},
+		{`[{"iid":3,"source_branch":"a"},{"iid":4}]`, true, true, glabMR{"3", "", "a"}},
+		{`[]`, true, false, glabMR{}},
+		{` [ ] `, true, false, glabMR{}},
+		{`{}`, false, true, glabMR{}},
+		{``, false, false, glabMR{}},
+		{`[{"iid":3}]`, false, false, glabMR{}},
+		{`{"iid":3}`, true, false, glabMR{}},
+		{`{"iid":3,}`, false, false, glabMR{}},
+		{`{"iid":3}x`, false, false, glabMR{}},
+		{`{"iid":"3"}`, false, false, glabMR{}},
+		{`{"iid":3.5}`, false, false, glabMR{}},
+		{`{"state":null}`, false, false, glabMR{}},
+		{`{"x":tru,"state":"opened"}`, false, false, glabMR{}},
+		{`{"x":[1,],"state":"opened"}`, false, false, glabMR{}},
+		{`{"source_branch":"a` + "\n" + `b"}`, false, false, glabMR{}},
+		{`{"source_branch":"a\qb"}`, false, false, glabMR{}},
+		{`{"source_branch":"a\u00"}`, false, false, glabMR{}},
+		{`{"source_branch":"a`, false, false, glabMR{}},
+		{`{"x":` + strings.Repeat("[", 2000) + strings.Repeat("]", 2000) + `}`, false, false, glabMR{}},
+	} {
+		got, ok := readGlabMR(c.in, c.list)
+		if ok != c.ok || got != c.want {
+			t.Errorf("readGlabMR(%q, %v) = %+v, %v; want %+v, %v", c.in, c.list, got, ok, c.want, c.ok)
+		}
+	}
+}

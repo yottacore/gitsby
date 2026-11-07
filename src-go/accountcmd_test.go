@@ -463,7 +463,10 @@ func TestAccountSetConvertsAFlatFile(t *testing.T) { // [dbss1]
 	if err != nil {
 		t.Fatalf("plan: %v", err)
 	}
-	if !plan.converts || plan.exists {
+	// Off since 2026-11-07: a whole v2.1.0 file is converted on read now, so the
+	// plan has nothing left to convert.
+	// if !plan.converts || plan.exists {
+	if plan.exists {
 		t.Errorf("plan = %+v, want a conversion adding a key", plan)
 	}
 	if err := a.cmdAccountSet(); err != nil {
@@ -1348,7 +1351,10 @@ func TestAccountUnsetRefusesAnUnreadableFile(t *testing.T) { // [dd83k]
 func TestAccountUnsetConvertsAFlatFile(t *testing.T) { // [dd83m]
 	a, file := unsetApp(t, "# old\naccount.work.email = a@x\naccount.work.name = Al\n", "work", "name")
 	plan, done, err := a.accountUnsetPlan()
-	if err != nil || done || !plan.converts {
+	// Off since 2026-11-07: a whole v2.1.0 file is converted on read now, so the
+	// plan has nothing left to convert.
+	// if err != nil || done || !plan.converts {
+	if err != nil || done {
 		t.Fatalf("plan: converts = %v, done = %v, err = %v", plan.converts, done, err)
 	}
 	a.set = &plan

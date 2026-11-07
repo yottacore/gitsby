@@ -44,18 +44,25 @@ func (r remoteRef) target() string {
 // written literally and ssh has no say in it, so asking would spend a process to
 // be told what we were already looking at.
 func parseRemote(url string) remoteRef {
-	host, path, viaSSH := splitRemoteURL(url)
-	if host == "" {
-		return remoteRef{}
-	}
+	ref, viaSSH := parseRemoteText(url)
 	// A host gh already serves is a real hostname, not an alias, so asking ssh about
 	// it spends a process to be told what we started with. That skip is why the
 	// ordinary 'git@github.com:owner/name' remote costs no ssh call at all - dropping
 	// it put one into the spawn count of every command on every GitHub repo.
-	if viaSSH && !isGitHubHost(host) {
-		host = resolveSSHHost(host)
+	if viaSSH && !isGitHubHost(ref.host) {
+		ref.host = resolveSSHHost(ref.host, sshConnectTarget(url))
 	}
-	ref := remoteRef{host: host}
+	return ref
+}
+
+// parseRemoteText is parseRemote with the host as written, for callers that want
+// only the owner and name. It resolves no alias, so it starts no process.
+func parseRemoteText(url string) (ref remoteRef, viaSSH bool) {
+	host, path, viaSSH := splitRemoteURL(url)
+	if host == "" {
+		return remoteRef{}, false
+	}
+	ref.host = host
 	path = strings.TrimSuffix(strings.TrimSuffix(path, "/"), ".git")
 	// Everything before the last segment is the owner: a Gitea instance served
 	// under a subpath, and GitHub's own 'owner/name', both land here correctly.
@@ -67,7 +74,7 @@ func parseRemote(url string) remoteRef {
 			ref.owner = ref.owner[deeper+1:]
 		}
 	}
-	return ref
+	return ref, viaSSH
 }
 
 // splitRemoteURL is the pure text half: the host as written, the path after it,
@@ -234,6 +241,7 @@ func teaVersionReadsEnv(text string) bool {
 	if m == nil {
 		return false
 	}
+	// Digits only, from the pattern; Atoi clamps on overflow, which still compares right.
 	major, _ := strconv.Atoi(m[1])
 	minor, _ := strconv.Atoi(m[2])
 	return major > 0 || minor >= 11
@@ -258,14 +266,18 @@ func (a *app) teaAsAccount(cli string) (bool, error) {
 	if failure != "" || got == "" || strings.EqualFold(got, want) {
 		return false, nil
 	}
-	why, fix := "this tea is older than 0.11 and ignores the account's token", "Update tea"
+	why := "This tea is older than 0.11 and ignores the account's token."
+	fix := noteLines("Fix", "Update tea, or run it anyway with --any-identity.")
 	if !gave {
-		why, fix = "the account has no token for "+a.acct.credHost, "Give the account a tokenfile"
+		why = "The account has no token for " + a.acct.credHost + "."
+		fix = noteLines("Fix", "Point the account at a file holding a "+a.acct.credHost+" token, or run it anyway with --any-identity:",
+			"  "+meName+" account set "+a.acct.name+" tokenFile <file>")
 	}
 	if a.opt.quiet {
-		return false, usagef("tea would act as '%s', its own login for %s, not as '%s', since %s. %s, or run it anyway with --any-identity.", got, a.acct.credHost, want, why, fix)
+		return false, refusalBlock("tea would act as '"+printable(got)+"', its own login for "+a.acct.credHost+", not as '"+printable(want)+"'.", [][]string{noteLines("Why", why), fix}, nil)
 	}
-	a.out.warn("WARNING: tea acts as '" + got + "', its own login for " + a.acct.credHost + ", not as '" + want + "', since " + why + ".")
+	a.out.warn("WARNING: tea acts as '" + got + "', its own login for " + a.acct.credHost + ", not as '" + want + "'.")
+	a.out.notes(append(noteLines("Why", why), fix...))
 	return true, nil
 }
 

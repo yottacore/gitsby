@@ -10,10 +10,11 @@
 package main
 
 import (
-	"encoding/json"
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf16"
+	"unicode/utf8"
 )
 
 // prRequest is which pull request this run is about, settled before any plan is
@@ -186,11 +187,192 @@ func (a *app) prCleanArgs() []string {
 	return nil
 }
 
-// glabMR is the part of glab's JSON for a merge request that we read.
+// glabMR is the part of glab's JSON for a merge request that we read. A small
+// reader takes the 3 fields: encoding/json cost 344 KB of binary for them.
 type glabMR struct {
-	IID    int    `json:"iid"`
-	State  string `json:"state"`
-	Source string `json:"source_branch"`
+	IID    string
+	State  string
+	Source string
+}
+
+// readGlabMR reads one merge request from glab's JSON: the object itself, or the
+// first one in a list. Only top-level members count, so the author's "state"
+// never reads as the merge request's.
+func readGlabMR(out string, list bool) (glabMR, bool) {
+	j := &jsonScan{s: out}
+	if list && (!j.eat('[') || j.eat(']')) {
+		return glabMR{}, false
+	}
+	var mr glabMR
+	read := j.eat('{') && j.items('}', func() bool {
+		key, ok := j.str()
+		if !ok || !j.eat(':') {
+			return false
+		}
+		switch key {
+		case "iid":
+			mr.IID = j.lit()
+			ok = jsonNumberRE.MatchString(mr.IID) && strings.Trim(mr.IID, "0123456789") == ""
+		case "state":
+			mr.State, ok = j.str()
+		case "source_branch":
+			mr.Source, ok = j.str()
+		default:
+			ok = j.skip(0)
+		}
+		return ok
+	})
+	// The rest of a list goes unread; a lone object has nothing after it.
+	if !list {
+		j.ws()
+		read = read && j.i == len(j.s)
+	}
+	if !read {
+		return glabMR{}, false
+	}
+	return mr, true
+}
+
+var jsonNumberRE = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?$`)
+
+// jsonScan walks JSON text by hand, for readers that want a few fields.
+type jsonScan struct {
+	s string
+	i int
+}
+
+func (j *jsonScan) ws() {
+	for j.i < len(j.s) && strings.IndexByte(" \t\r\n", j.s[j.i]) >= 0 {
+		j.i++
+	}
+}
+
+// peek says whether c comes next, after any whitespace.
+func (j *jsonScan) peek(c byte) bool {
+	j.ws()
+	return j.i < len(j.s) && j.s[j.i] == c
+}
+
+// eat steps over c if it comes next.
+func (j *jsonScan) eat(c byte) bool {
+	if !j.peek(c) {
+		return false
+	}
+	j.i++
+	return true
+}
+
+// items reads the members of an object or array whose opener was just read,
+// one call of item each, with the commas between and the closer.
+func (j *jsonScan) items(end byte, item func() bool) bool {
+	if j.eat(end) {
+		return true
+	}
+	for {
+		if !item() {
+			return false
+		}
+		if j.eat(end) {
+			return true
+		}
+		if !j.eat(',') {
+			return false
+		}
+	}
+}
+
+// lit is a number, true, false or null, as written.
+func (j *jsonScan) lit() string {
+	j.ws()
+	start := j.i
+	for j.i < len(j.s) && strings.IndexByte("+-.0123456789Eaeflnrstu", j.s[j.i]) >= 0 {
+		j.i++
+	}
+	return j.s[start:j.i]
+}
+
+// str reads a string with its escapes decoded.
+func (j *jsonScan) str() (string, bool) {
+	if !j.eat('"') {
+		return "", false
+	}
+	var b strings.Builder
+	for j.i < len(j.s) {
+		c := j.s[j.i]
+		j.i++
+		switch {
+		case c == '"':
+			return b.String(), true
+		case c < 0x20:
+			return "", false
+		case c != '\\':
+			b.WriteByte(c)
+		case j.i < len(j.s) && strings.IndexByte(`"\/`, j.s[j.i]) >= 0:
+			b.WriteByte(j.s[j.i])
+			j.i++
+		case j.i < len(j.s) && strings.IndexByte("bfnrt", j.s[j.i]) >= 0:
+			b.WriteByte("\b\f\n\r\t"[strings.IndexByte("bfnrt", j.s[j.i])])
+			j.i++
+		default:
+			r, ok := j.hex4()
+			if !ok {
+				return "", false
+			}
+			// A pair of escapes stands for one rune past U+FFFF.
+			if utf16.IsSurrogate(r) && strings.HasPrefix(j.s[j.i:], `\u`) {
+				back := j.i
+				j.i++
+				if low, ok := j.hex4(); ok && utf16.DecodeRune(r, low) != utf8.RuneError {
+					r = utf16.DecodeRune(r, low)
+				} else {
+					j.i = back
+				}
+			}
+			b.WriteRune(r)
+		}
+	}
+	return "", false
+}
+
+// hex4 reads 'u' and 4 hex digits, the tail of a \u escape.
+func (j *jsonScan) hex4() (rune, bool) {
+	if j.i+5 > len(j.s) || j.s[j.i] != 'u' {
+		return 0, false
+	}
+	n, err := strconv.ParseUint(j.s[j.i+1:j.i+5], 16, 16)
+	if err != nil {
+		return 0, false
+	}
+	j.i += 5
+	return rune(n), true
+}
+
+// skip steps over one value of any kind. The depth bound keeps hostile nesting
+// off the stack.
+func (j *jsonScan) skip(depth int) bool {
+	switch {
+	case depth > 1000:
+		return false
+	case j.peek('"'):
+		_, ok := j.str()
+		return ok
+	case j.peek('{'), j.peek('['):
+		end := byte('}')
+		if j.s[j.i] == '[' {
+			end = ']'
+		}
+		j.i++
+		return j.items(end, func() bool {
+			if end == '}' {
+				if _, ok := j.str(); !ok || !j.eat(':') {
+					return false
+				}
+			}
+			return j.skip(depth + 1)
+		})
+	}
+	v := j.lit()
+	return v == "true" || v == "false" || v == "null" || jsonNumberRE.MatchString(v)
 }
 
 // prDisp is one call written out the way the preview shows it.
@@ -249,7 +431,7 @@ func headBranchName(head string) string {
 func (a *app) prPreflight() error {
 	prBranch := a.currentBranch()
 	if prBranch == "" {
-		return usagef("Detached HEAD (no current branch); resolve that manually first.")
+		return errDetached()
 	}
 	if a.pr.sub == "ok" {
 		return a.prAcceptPreflight(prBranch)
@@ -281,11 +463,11 @@ func (a *app) openPrForBranch(prBranch string) string {
 		if !ok {
 			return ""
 		}
-		var list []glabMR
-		if json.Unmarshal([]byte(out), &list) != nil || len(list) == 0 {
+		mr, ok := readGlabMR(out, true)
+		if !ok {
 			return ""
 		}
-		return strconv.Itoa(list[0].IID)
+		return mr.IID
 	}
 	if a.pr.tool == toolTea {
 		out, ok := runOutOK(a.pr.cli, "pulls", "list", "--state", "open", "--fields", "index,head", "--output", "tsv")
@@ -310,8 +492,8 @@ func (a *app) openPrForBranch(prBranch string) string {
 func (a *app) readPr() (head, state string, ok bool) {
 	if a.pr.tool == toolGlab {
 		out, ran := runOutOK(a.pr.cli, a.glabArgs("mr", "view", a.pr.num, "--output", "json")...)
-		var mr glabMR
-		if !ran || json.Unmarshal([]byte(out), &mr) != nil || mr.Source == "" {
+		mr, read := readGlabMR(out, false)
+		if !ran || !read || mr.Source == "" {
 			return "", "", false
 		}
 		// glab says 'opened' where gh and tea say open.
@@ -359,7 +541,7 @@ func (a *app) prAcceptPreflight(prBranch string) error {
 	if err := refuseOptionShapedRefs(a.pr.headBranch); err != nil {
 		return err
 	}
-	// gh merges what origin already has, then deletes the branch local and remote.
+	// The git host merges what origin already has, then the branch goes local and remote.
 	// Work that never reached origin is outside the PR and outside the merge -
 	// refuse, don't lose it.
 	if runOut("git", "status", "--porcelain") != "" || isAhead() {
@@ -397,7 +579,7 @@ func (a *app) cmdPrView() error {
 }
 
 func (a *app) cmdPrCreate() error {
-	// GitHub can only diff what origin has, so park the work first - same as br merge
+	// The git host can only diff what origin has, so park the work first - same as br merge
 	// and release do.
 	if err := a.cmdPush(); err != nil {
 		return err
@@ -456,7 +638,11 @@ func (a *app) cmdPrAccept() error {
 	// The merge removes the PR's branch on the remote but leaves our origin/* copy
 	// behind, so an upstream still looks present. Prune first; if ours is the branch
 	// that just went away, pulling it can only fail - land on the merge target instead.
-	a.fetchRemote()
+	// Under --no-fetch origin isn't asked, and the pull below is skipped with it.
+	if a.opt.fetch {
+		a.out.status("git fetch --prune origin ...")
+		a.fetchRemote()
+	}
 	if !a.hasUpstream() {
 		if err := a.checkout(targetBranch); err != nil {
 			return err

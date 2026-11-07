@@ -7,6 +7,12 @@
 ## caller's, resolved once at its start, since a temp folder can sit behind a link (macOS's
 ## /var). Uses the caller's APP_NAME. A copy of the box-wide guard, since a clone or another box
 ## has none. No realpath: BSD's has no -e, and older macOS has none at all.
+##	History: At bottom of script.
+
+##	Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
+##	Licensed under The MIT License (MIT). Full text at:
+##		https://mit-license.org/
+##	SPDX-License-Identifier: MIT
 
 ## BSD rm spells --one-file-system -x.
 __safeRmOneFs='--one-file-system'; rm --version >/dev/null 2>&1 || __safeRmOneFs='-x'
@@ -85,3 +91,4 @@ fSafeRm_Tmp(){
 ##		- 2026-10-25 JC: Created, from the shared safe removal guard.
 ##		- 2026-11-06 JC: No realpath, and rm's -x where it has no --one-file-system, so the harnesses can use it on the Mac and BSD boxes. fSafeRm_IfThere, fSafeRm_Init and fSafeRm_Tmp for the harnesses and utilities. Refuses HOST_TEMP and a project's whole folder under it, as the shared guard has since 2026-10-28.
 ##		- 2026-11-06 JC: fSafeRm_Under, for the Go module cache in the cache volume.
+##		- 2026-11-07 JC: Header with copyright and license.

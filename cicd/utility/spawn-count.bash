@@ -50,13 +50,16 @@ source "${here}/include/gfs-rotate.bash"
 # shellcheck source=/dev/null
 source "${here}/include/safe-rm.bash"
 
+fDie(){   printf '%s\n' "$*" >&2; exit 1; }
+fUsage(){ printf '%s\n' "$*" >&2; exit 2; }
+
 declare -i quiet=0 record=0
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		-q|--quiet) quiet=1; shift ;;
 		--record)   record=1; shift ;;
 		-h|--help)  sed -n '/^##	Purpose:/,/^##	History:/p' "${BASH_SOURCE[0]}" | sed '$d; s/^##	\{0,1\}//'; exit 0 ;;
-		*)          echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
+		*)          fUsage "unknown option: $1 (try --help)" ;;
 	esac
 done
 
@@ -68,7 +71,7 @@ fFail(){ local id="${1%%\] *}"; fEcho_Clean "  FAIL ${id#\[} ${1#*\] }"; }
 ## A SKIP for each command, named as fMeasure names it below.
 command -v strace >/dev/null 2>&1 || { sed -n 's/^fMeasure "\[\([^]]*\)\] \([^"]*\)".*/  SKIP \1 \2 (no strace)/p' "${BASH_SOURCE[0]}"; exit 0; }
 exe="${root}/${GO_MODULE_DIR}/${EXE_NAME}"
-[[ -x "${exe}" ]] || { echo "no build at ${GO_MODULE_DIR}/${EXE_NAME} - run cicd.bash stage 2, or 'go build' there" >&2; exit 1; }
+[[ -x "${exe}" ]] || fDie "no build at ${GO_MODULE_DIR}/${EXE_NAME} - run cicd.bash stage 2, or 'go build' there"
 
 fSafeRm_Init || exit 1; safeTmp="$(fSafeRm_Tmp)" || exit 1
 work="$(mktemp -d "${safeTmp}/gitsby-spawn.XXXXXX")"
@@ -102,20 +105,29 @@ case "\$1 \$2" in
 	"api user")   if [[ -n "\${GH_TOKEN:-}" ]]; then echo "\${GH_TOKEN#tok_}"; else echo ghuser; fi ;;
 	"auth token") exit 1 ;;
 	"config get") case " \$* " in *" user "*) echo ghuser ;; *) echo https ;; esac ;;
-	*)            echo "fake gh: unhandled: \$*" >&2; exit 2 ;;
+	*)            printf '%s\n' "fake gh: unhandled: \$*" >&2; exit 2 ;;
 esac
 EOF
 cat > "${work}/bin/ssh" <<EOF
 #!${BASH}
 for arg in "\$@"; do
 	case "\${arg}" in
-		-G) printf 'user git\nhostname github.com\n'; exit 0 ;;
+		-G) target="\${*: -1}"; printf 'user git\nhostname %s\n' "\${target#*@}"; exit 0 ;;
 		-T) echo "Hi acme! You've successfully authenticated, but GitHub does not provide shell access."; exit 1 ;;
 	esac
 done
 exit 255
 EOF
-chmod +x "${work}/bin/gh" "${work}/bin/ssh"
+## tea holds one login, for the Gitea folder's host.
+cat > "${work}/bin/tea" <<EOF
+#!${BASH}
+case "\$1 \$2" in
+	"--version ") echo "Version: 0.10.1	golang: 1.24.4" ;;
+	"logins list") printf '"Name"\t"URL"\t"SSHHost"\t"User"\t"Default"\n"work"\t"https://gitea.example.test"\t""\t"acme"\t"true"\n' ;;
+	*)             printf '%s\n' "fake tea: unhandled: \$*" >&2; exit 2 ;;
+esac
+EOF
+chmod +x "${work}/bin/gh" "${work}/bin/ssh" "${work}/bin/tea"
 export PATH="${work}/bin:${PATH}"
 export HTTPS_PROXY=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 HTTP_PROXY=http://127.0.0.1:9 http_proxy=http://127.0.0.1:9 ALL_PROXY=http://127.0.0.1:9 all_proxy=http://127.0.0.1:9
 unset NO_PROXY no_proxy
@@ -173,9 +185,17 @@ git -C "${pristine}/acct-ssh"   remote set-url origin git@github.com:acme/proj.g
 git -C "${pristine}/acct-https" remote set-url origin https://github.com/beta/proj.git
 echo four >> "${pristine}/acct-ssh/file.txt"
 echo four >> "${pristine}/acct-https/file.txt"
+## And one on a Gitea host over ssh, where each alias lookup costs an 'ssh -G'. On a branch
+## a PR can come from, and pushing to the live origin, so pr create and pullcom get past the push.
+cp -a "${pristine}/repo" "${pristine}/acct-gitea"
+git -C "${pristine}/acct-gitea" checkout --quiet open-work
+git -C "${pristine}/acct-gitea" remote set-url origin git@gitea.example.test:acme/proj.git
+git -C "${pristine}/acct-gitea" remote set-url --push origin "${work}/live/origin.git"
+echo four >> "${pristine}/acct-gitea/file.txt"
 printf 'tok_acme\n' > "${work}/home/acme.token"
 printf 'tok_beta\n' > "${work}/home/beta.token"
-chmod 600 "${work}/home/acme.token" "${work}/home/beta.token"
+printf 'tok_delta\n' > "${work}/home/delta.token"
+chmod 600 "${work}/home/acme.token" "${work}/home/beta.token" "${work}/home/delta.token"
 accounts="${work}/accounts.shcl"
 cat > "${accounts}" <<EOF
 account: acme
@@ -192,6 +212,12 @@ account: gamma
 	ghaccount: gamma
 	sshkey: ${work}/home/id_gamma
 	email: gamma@example.com
+account: delta
+	path: ${work}/live/acct-gitea
+	host: gitea.example.test
+	user: acme
+	tokenfile: ${work}/home/delta.token
+	email: delta@example.com
 EOF
 
 ## What both origins hold as built. Nothing measured may write to these, or the next command
@@ -268,6 +294,11 @@ fMeasure "[ddf50] status in an account folder"         19 tty  acct-ssh    --no-
 fMeasure "[ddf51] whoami in an account folder"         15 tty  acct-ssh    --no-fetch whoami
 fMeasure "[ddf52] account list with accounts"          11 tty  acct-ssh    --no-fetch account list
 fMeasure "[ddf53] status in an https account folder"   15 tty  acct-https  --no-fetch status
+fMeasure "[df04s] status in a tea ssh folder"          16 tty  acct-gitea  --no-fetch status
+fMeasure "[df04t] whoami in a tea ssh folder"          12 tty  acct-gitea  --no-fetch whoami
+fMeasure "[df04v] repo url in a tea ssh folder"         8 pipe acct-gitea  -q --no-fetch repo url
+fMeasure "[df051] pullcom in a tea ssh folder"         27 pipe acct-gitea  -q --no-fetch pullcom "spawn count"
+fMeasure "[df052] pr create in a tea ssh folder"       37 pipe acct-gitea  -q --no-fetch pr create
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Each count against its limit, then against the newest previous run; then record this one.
@@ -300,7 +331,7 @@ for ((i = 0; i < ${#labels[@]}; i++)); do
 	[[ -z "${baseline}" ]] || was="$(awk -F'\t' -v k="${labels[i]}" '$1==k{print $2}' "${baseline}" || true)"
 	[[ -n "${was}" ]] || { ((quiet)) || fEcho_Clean "  PASS ${ids[i]} ${labels[i]}: ${counts[i]}, new"; continue; }
 	## Arithmetic on text from a file runs any $(...) in an array subscript, so only digits go on.
-	[[ "${was}" =~ ^[0-9]+$ ]] || { echo "spawn-count: $(basename "${baseline}") has '${was}' for ${labels[i]}, which isn't a count. Fix or delete that file." >&2; exit 1; }
+	[[ "${was}" =~ ^[0-9]+$ ]] || fDie "spawn-count: $(basename "${baseline}") has '${was}' for ${labels[i]}, which isn't a count. Fix or delete that file."
 	if (( counts[i] > was + $(fHeadroom "${was}") )); then
 		## --record takes the rise as the new baseline, so the run passes, and so does the line.
 		if ((record)); then fEcho_Clean "  PASS ${ids[i]} ${labels[i]}: ${was} -> ${counts[i]}, regressed and recorded"
@@ -319,18 +350,13 @@ if [[ "$(fOriginRefs)" == "${originRefs}" ]]; then fOk "[dez8s] the fixture's or
 else fFail "[dez8s] the fixture's origins are as built, after every command"; originMoved=1; fi
 
 if ((originMoved)); then
-	echo "spawn counts ran against an origin a command had changed; nothing recorded." >&2
-	exit 1
+	fDie "spawn counts ran against an origin a command had changed; nothing recorded."
 fi
 if ((overLimit)); then
-	echo "spawn counts went over their limits; nothing recorded." >&2
-	echo "  A deliberate rise raises the expected count beside the command in ${BASH_SOURCE[0]##*/}." >&2
-	exit 1
+	fDie "spawn counts went over their limits; nothing recorded."$'\n'"  A deliberate rise raises the expected count beside the command in ${BASH_SOURCE[0]##*/}."
 fi
 if ((regressed)) && ((! record)); then
-	echo "spawn counts regressed against $(basename "${baseline}"); nothing recorded." >&2
-	echo "  Re-run with --record to accept the new counts as the baseline." >&2
-	exit 1
+	fDie "spawn counts regressed against $(basename "${baseline}"); nothing recorded."$'\n'"  Re-run with --record to accept the new counts as the baseline."
 fi
 
 stamp="$(date +%Y%m%d-%H%M%S)"
@@ -362,3 +388,5 @@ gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		- 20261106 JC: br prune of five landed branches, in a world with its own origin. A spawn per branch fits the headroom over one branch, and not over five.
 ##		- 20261106 JC: Its scratch folder goes through fSafeRm.
 ##		- 20261106 JC: Each live clone's origin is its live copy, not the pristine one, which a pushing command changed for every command after it. A check after the measures fails the run if a pristine origin moved.
+##		- 20261107 JC: Errors go through fDie and fUsage.
+##		- 20261107 JC: A Gitea folder over ssh, with a fake tea, for status, whoami, repo url, pullcom and pr create. The fake ssh names the target's own host.

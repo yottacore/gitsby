@@ -88,7 +88,7 @@ func run(out *printer, argv []string) error {
 		a.printHelp()
 		return nil
 	case "-v", "--ver", "--version", "version":
-		a.printCopyright()
+		a.printVersion()
 		return nil
 	case "--about", "about":
 		a.printAbout()
@@ -107,6 +107,13 @@ func run(out *printer, argv []string) error {
 	}
 	if tool != "" {
 		return a.cmdPassthrough(tool, ptArgs)
+	}
+
+	// --version after a command is the same one line, so it answers ahead of the
+	// blank below.
+	if _, _, info, err := parseArgs(argv); err == nil && info == "version" {
+		a.printVersion()
+		return nil
 	}
 
 	// Breathing room after the shell prompt (the matching trailing blank is at each
@@ -166,8 +173,6 @@ func (a *app) settleCommand(argv []string) error {
 		switch info {
 		case "help":
 			a.printHelp()
-		case "version":
-			a.printCopyright()
 		case "about":
 			a.printAbout()
 		case "donate":
@@ -347,10 +352,6 @@ func (a *app) needsConfirmableBranch() bool {
 // commands that exist to publish and can't, the ones whose argument is wrong, and
 // the ones whose work is decided up front.
 func (a *app) preflight() error {
-	// Commands that exist to publish, refused here rather than halfway through on
-	// raw git text - and far better than "succeeding" having sent nothing. The rest
-	// degrade instead: they mean something locally, so they run and say what they
-	// skipped.
 	// Which git host this repo lives on, and which CLI can speak to it - settled before
 	// any pr refusal, so the reason a pr command can't run is the real one rather
 	// than whichever tool happened to be missing.
@@ -359,6 +360,10 @@ func (a *app) preflight() error {
 			return err
 		}
 	}
+	// Commands that exist to publish, refused here rather than halfway through on
+	// raw git text - and far better than "succeeding" having sent nothing. The rest
+	// degrade instead: they mean something locally, so they run and say what they
+	// skipped.
 	switch a.cmd.name {
 	case "sync":
 		if err := a.requireOnline("sync", "Offline, '"+meName+" pullcom' skips the pull and just commits; run '"+meName+" sync' when you are back online."); err != nil {
@@ -379,7 +384,7 @@ func (a *app) preflight() error {
 		}
 	case "pr":
 		if a.pr.sub != "" {
-			if err := a.requireOnline("pr "+a.pr.sub, "The pull request lives on GitHub; there is no local half to do first."); err != nil {
+			if err := a.requireOnline("pr "+a.pr.sub, "The pull request lives on the git host; there is no local half to do first."); err != nil {
 				return err
 			}
 		}
@@ -446,11 +451,7 @@ func (a *app) preflightBranch() error {
 		}
 		// Refusing a dirty protected branch belongs here too, before the plan is shown
 		// and confirmed.
-		switchTarget := a.cmd.arg
-		if switchTarget == "" {
-			switchTarget = a.mergeTarget()
-		}
-		if a.currentBranch() != switchTarget && a.isProtectedBranch("") && runOut("git", "status", "--porcelain") != "" {
+		if a.currentBranch() != a.switchTarget() && a.isProtectedBranch("") && runOut("git", "status", "--porcelain") != "" {
 			return usagef("Working tree has changes on '%s'; won't auto-commit to a protected branch. Carry them to a new branch (%s br create <name>), or commit them here deliberately (%s pullcom) first.", a.currentBranch(), meName, meName)
 		}
 	}
@@ -477,7 +478,7 @@ func (a *app) settleTarget() (bool, error) {
 		// Work out what goes before anything is shown, so the plan names every branch
 		// by name. An empty plan is a plain read-only answer.
 		if a.currentBranch() == "" {
-			return false, usagef("Detached HEAD (no current branch); resolve that manually first.")
+			return false, errDetached()
 		}
 		if err := a.resolvePrune(); err != nil {
 			return false, err
@@ -600,7 +601,8 @@ func (a *app) identityGate() (identityMismatch, error) {
 	var found identityMismatch
 	if a.remote.isWrite && !a.opt.anyIdentity {
 		found.text = identityMismatchText(a.remote.cli, a.hostCLIWho(), a.sshLogin(a.remote.probeURL))
-		found.viaGh = found.text != ""
+		// Only gh has a GitHub side to name; tea and glab were already named in the text.
+		found.viaGh = found.text != "" && a.remote.tool == toolGh
 		// Up front, like every other refusal: don't show a plan we won't run.
 		if found.text != "" && a.opt.quiet {
 			return found, usagef("%s Nothing was done. Re-run with --any-identity if that is intended.", found.text)
@@ -699,11 +701,11 @@ func (a *app) runMutating(mismatch identityMismatch) error {
 		return err
 	}
 	a.out.clean("")
-	switch a.cmd.name {
-	case "account-apply", "account-set", "account-unset":
+	switch {
+	case a.writesAccounts():
 		// every file it wrote was named as it was written; a repo status would add
 		// nothing
-	case "repo-clone":
+	case a.cmd.name == "repo-clone":
 		// the after-status would show the wrong (current) directory
 		a.out.status("Cloned into '" + a.cloneDirShown() + "'.")
 	default:
@@ -720,17 +722,13 @@ func (a *app) runMutating(mismatch identityMismatch) error {
 // stands in.
 func (a *app) showBeforeState() error {
 	switch {
-	case a.cmd.name == "account-apply" || a.cmd.name == "account-set" || a.cmd.name == "account-unset":
+	case a.writesAccounts():
 		// Nothing about a repo is involved: these write config files, and showing
 		// branch state here would suggest they do something to the repo you happen
 		// to be standing in.
 		a.cmdAccountList()
 	case a.cmd.name == "repo-clone":
-		// As in the show printers: an unnameable cwd prints as empty.
-		wd, _ := os.Getwd()
-		a.out.clean("")
-		a.out.clean(dirLabel + wd)
-		a.out.clean("Remote .......: " + maskURL(a.tgt.cloneURL))
+		a.showDirRemote(maskURL(a.tgt.cloneURL))
 		a.showIdentity(a.tgt.cloneURL)
 		a.out.clean("Clone into ...: " + a.cloneDirShown())
 	case !a.inRepo:
@@ -740,17 +738,13 @@ func (a *app) showBeforeState() error {
 		} else {
 			remoteDisp = "github.com/" + a.tgt.ghTarget + " (to be created)"
 		}
-		// As in the show printers: an unnameable cwd prints as empty.
-		wd, _ := os.Getwd()
-		a.out.clean("")
-		a.out.clean(dirLabel + wd)
-		a.out.clean("Remote .......: " + remoteDisp)
+		a.showDirRemote(remoteDisp)
 		a.showIdentity(a.tgt.connectURL)
 		a.out.clean("Current branch: (not a git repository yet)")
 		a.showFilesToPublish()
 	default:
 		if a.currentBranch() == "" {
-			return usagef("Detached HEAD (no current branch); resolve that manually first.")
+			return errDetached()
 		}
 		a.showStatus(true)
 	}
@@ -768,7 +762,7 @@ func (a *app) dispatch() error {
 	case "br-hotfix":
 		return a.cmdNewBranch(a.cmd.arg, a.defaultBranch())
 	case "br-switch":
-		return a.cmdGoBranch(a.cmd.arg)
+		return a.cmdGoBranch()
 	case "br-merge":
 		return a.cmdMerge()
 	case "br-prune":
@@ -884,7 +878,7 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 		who = a.accountWho(a.acct.credHost)
 	}
 	if !a.opt.quiet && !a.acct.bypassed && !warned && who != "" && a.accountDecidedSomething() {
-		a.out.errorf("acting as %s (from %s)", who, a.accountSourceText(false))
+		a.out.errorf("acting as %s (from %s)", who, a.accountSourceText())
 	}
 	// For the arguments handed over, which glab's may not be, so a wrapper's raw
 	// finds its run on the chain.
@@ -898,12 +892,8 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 }
 
 func (a *app) cmdBrList() {
-	dflt := a.defaultBranch()
-	if dflt == "" {
-		dflt = "unknown"
-	}
 	a.out.clean("")
-	a.out.clean("Default branch: " + dflt)
+	a.out.clean("Default branch: " + a.defaultBranchDisp())
 	a.out.status("git branch -a -vv")
 	a.inherit("git", "branch", "-a", "-vv")
 	a.out.resetBlank()

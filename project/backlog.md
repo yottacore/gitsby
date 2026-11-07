@@ -33,315 +33,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- Code Review 20261107 item 1: Two small crypto imports made the binary 25% bigger and slower to start
-	- ID: 2026110708000101
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Related IDs: 2026100416430451, 2026101916533300
-	- Incorrect behavior [Bug]: `crypto/sha256` in `rawHash` and `crypto/rand` for the accounts lock token pull in Go's whole FIPS crypto module. BSS went from 0.2 MB to 33.8 MB. Max RSS is about 9.3 MB, start time about 2.1 ms.
-	- Expected behavior [Bug]: Size and speed are the top 2 priorities for the binary. Neither value needs crypto strength.
-	- Reproduced [Bug]: 2026-11-07 on b23, go1.26.2 linux/amd64. With `hash/fnv` and `math/rand/v2` in their place, the binary is 163,840 bytes smaller, RSS about 7.2 MB, and `--version` starts about 19% faster. Removing only one of the two saves almost nothing.
-	- Possible cause [Bug]: Both imports came in with fixes, the lock token and the raw nesting chain.
-	- Origin: accountcmd.go:969 from 0738416, 2026-10-04, the fix for 2026100416430451. exec.go:277 from 8e403d5, 2026-10-21, for 2026101916533300. Both after the 20261003 round. A regression in size and speed from 2 correct fixes. Confirmed.
-	- Notes:
-		- A new hash changes the `GITSBY_RAW_ACTIVE` entries, so a chain that mixes old and new builds won't match. That's acceptable before the first Go release.
-		- Needs a numeric gate, such as a cap on binary size and BSS, watched to fail with the imports put back.
-	- Estimated effort: Low
-
-- Code Review 20261107 item 2: The wrong-account warning names gh and its GitHub login on a Gitea remote
-	- ID: 2026110708000102
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]:
-		- Gitea origin, tea logged in as one account, the ssh key answering as another. Run a writing `pr` command without `-q`.
-	- Incorrect behavior [Bug]: After `tea acts as 'alice', but this remote's key authenticates as 'bob'.`, it prints `gh does the GitHub side of this, so it happens as 'octocat'.` It also runs `gh api user` to get that name.
-	- Expected behavior [Bug]: The gh line shows only when gh is the tool acting, and gh isn't asked otherwise.
-	- Reproduced [Bug]: 2026-11-07, built binary with a temp HOME and fake tea, ssh and gh.
-	- Possible cause [Bug]: main.go:603 sets `viaGh` for every host CLI, not only gh.
-	- Origin: main.go:603 from 4918b5b, 2026-08-19, before tea and glab support. No round had read main.go. `[dd5cv]` covers gh only. Confirmed.
-	- Estimated effort: Low
-
-- Code Review 20261107 item 3: The release check for history footers skips both PowerShell scripts
-	- ID: 2026110708000103
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: release.bash:329 greps for `^##` footers. install.ps1 and run-latest.ps1 write them with one `#`, so no date is found and the file is skipped without a warning. go-test-lines.bash has no footer and is skipped the same way.
-	- Expected behavior [Bug]: Every pipeline or installer script that changed since the last tag is checked, as the comment above the loop says.
-	- Reproduced [Bug]: 2026-11-07. The grep finds 0 footers in install.ps1, against 16 written `#   - 2026...`, and 14 in install.bash. Both .ps1 files changed since v2.1.0.
-	- Origin: release.bash:329 from 0cd9050, 2026-09-15. Not seen by an earlier round. Confirmed.
-	- Notes:
-		- A file in that list with no footer at all should warn too, not pass silently.
-	- Estimated effort: Low
-
-- Code Review 20261107 item 4: `pr ok` fetches mid-run without showing it in the plan, even with `--no-fetch`
-	- ID: 2026110708000104
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: pr.go:459 calls `fetchRemote`, a `git fetch --prune origin`, after the merge. `previewPr` has no fetch line, and `fetchRemote` never reads `--no-fetch`. A failed fetch prints its warning partway through.
-	- Expected behavior [Bug]: The UI guide says a plan that differs from what runs is a bug. design.md says `--no-fetch` declines the incoming round trip.
-	- Reproduced [Bug]: No. Read only.
-	- Origin: pr.go:459 from 4918b5b, 2026-08-19. Not seen by an earlier round. Plausible.
-	- Estimated effort: Low
-
-- Code Review 20261107 enhancement 1: `encoding/json` costs 344 KB for 2 glab reads
-	- ID: 2026110708000112
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Requirements [Feature]:
-		- pr.go:285 and :314 decode `glab mr list` and `glab mr view` with `encoding/json`. Stubbing those 2 calls takes 344,064 bytes off linux/amd64, 8.2% of the binary, and about the same on Windows and macOS. Start time doesn't change.
-		- Read the 3 fields some other way, or ask glab for an output format that needs no JSON parser.
-	- Origin: pr.go:13 from 197677f, 2026-10-22, the glab path. After the 20261003 round. Confirmed, measured on top of item 1's change.
-	- Notes:
-		- With item 1, this accounts for 507,904 of the 847,872 bytes the binary grew since 2026-10-03. Most of the rest is the shcl v3 module.
-	- Estimated effort: Avg
-
-- Code Review 20261107 enhancement 2: Every non-GitHub ssh remote costs an extra `ssh -G`
-	- ID: 2026110708000113
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Requirements [Feature]:
-		- `remoteTarget` at remote.go:338 calls `parseRemote`, which resolves the ssh alias, when it only needs owner and name. It runs from the status and whoami Account line through `convertibleToHTTPS`.
-		- Parsing the text alone takes 1 spawn off each of status 18, whoami 14, pr create 34, repo url 9 and sync 29, with status output byte for byte the same.
-		- `resolveSSHHost` and `readSSHConfig` also ask `ssh -G` separately about the same host. One cached read could answer both.
-	- Origin: remote.go:338 from 3d22222, 2026-08-17. The 20261003 round measured no non-GitHub remote. Confirmed for the first, Plausible for the second.
-	- Notes:
-		- A fix lowers the spawn-count limits for these commands in the same commit, adding rows for a Gitea ssh folder if there are none.
-	- Estimated effort: Low
-
-- `--version` prints only its first line
-	- ID: 2026110707345868
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261107-073458
-	- Opened by: jim-collier
-	- Milestone: Pre-next-cut.
-	- Requirements [Feature]:
-		- `--version` should only show the first line that is shown currently, and no empty lines.
-			- Today that's `gitsby v2.1.0-723-g4617c5f build dez9a (2026-11-06)`, then the copyright and license lines, and a blank line.
-	- Notes:
-		- `-v`, `--ver` and `version` are the same command in main.go, so all of them change.
-		- The installers and spawn-report.bash take only the first line already. release.bash's proof step matches the whole output, so check it and the suites for anything that pins the rest.
-
-- Convert config files from every earlier version
-	- ID: 2026110707345874
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261107-073458
-	- Opened by: jim-collier
-	- Milestone: Pre-next-cut.
-	- Related IDs: 2026100312145843, 2026100313483664
-	- Requirements [Feature]:
-		- Make sure this executable version can import their config files to the new shcl version format, from all previous versions, even the old scripts.
-		- Rename the old one or ones and leave them in place.
-	- Notes:
-		- 2026100312145843 converts SHCL 2.x files and renames the old one. A 1.x file is read as 2.x, which wasn't run.
-		- The v2.1.0 bash and pwsh scripts hand-parse flat `key = value` lines from a file with the same name. It has no `Format` line and no 2.x footer, so the Go build reads it as current and doesn't convert it. Not tried yet.
-		- v2.1.0 looked in `XDG_CONFIG_HOME`, then `~/.config`, then `%APPDATA%`, on every OS. The Go build looks only in `%APPDATA%` on Windows and `~/Library/Application Support` on macOS, so an old file in `~/.config` there isn't found. details.md calls that an accepted cost. This item reverses it.
-		- A file from the old shcl 3 pseudo-version pin also says Format 3, so it can't be told apart. Check whether anything it wrote reads differently now.
-
-- Code Review 20261107 item 5: Messages for every git host still say GitHub or gh
-	- ID: 2026110708000105
+- A value with an apostrophe and a backslash, written under the old shcl 3 pin, reads with its backslashes doubled
+	- ID: 2026110710480989
 	- Type: Bug
 	- Status: Queued
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
+	- Opened: 20261107-104809
 	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: Offline, `pr create` on a Gitea origin says "The pull request lives on GitHub; there is no local half to do first." `--help` says `--any-identity` acts as "gh's active account".
-	- Expected behavior [Bug]: The UI guide says to say "git host", or name the host.
-	- Reproduced [Bug]: 2026-11-07, the first with a Gitea origin and a failing fetch. The second by reading `--help`.
-	- Origin: main.go:382 and help.go:82 from 4918b5b, 2026-08-19, before tea and glab. Confirmed.
-	- Sweep: comments that assume gh only, pr.go:362, :400 and :437.
-	- Estimated effort: Low
-
-- Code Review 20261107 item 6: Output in show.go, main.go, accountcmd.go and cfgformat.go breaks 4 UI guide rules
-	- ID: 2026110708000106
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]:
-		- A value that couldn't be found prints as a bare `unknown`, with no reason: show.go:599, the SSH line, show.go:679, Default branch, and main.go:903, br list. accountcmd.go:298 prints `(none found)`.
-		- Paths sit inside sentences: cfgformat.go:175 and :178, accountcmd.go:475, :1117, :1181 and :1355, show.go:456, and the `usageSubf` calls in config.go:317 to :332 and :548 to :550.
-		- The config file is `Config .......:` in status and whoami, but `Config file ..:` and `Ignored keys .:` in `account list`. show.go:125 also prints it without `nativePath`, so a Windows path keeps its forward slash.
-		- `raw tea` with no token file says "Give the account a tokenfile", at githost.go:265, and the interactive warning at :268 gives no fix.
-	- Expected behavior [Bug]: `(unknown - <reason>)` and `(none)`, a path on its own labeled line, one label per thing, a path in its platform's spelling, and a fix given as a command such as `gitsby account set <name> tokenfile <file>`.
-	- Reproduced [Bug]: 2026-11-07. The SSH line printed `unknown (git@gitea.invalid)`. The rest by reading the literal strings.
-	- Origin: mostly 4918b5b and 3d22222, 2026-08-17 to 08-19, and 0ad1374 and 1ed0f3a, 2026-09. cfgformat.go from 37f4843, 2026-10-03, and githost.go:265 from 483ebc5, 2026-10-06, both after the 20261003 round. The 20261005 round left the refusal wording unread. Confirmed.
-	- Notes:
-		- test.bash `[dakpb]`, `[dafqx]` and `[damxv]` pin the bare `unknown`, so they change with it.
-	- Estimated effort: Avg
-
-- Code Review 20261107 item 7: Go errors discarded with `_` and no comment
-	- ID: 2026110708000107
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: githost.go:237 and :238, config.go:579, remote.go:264, accountcmd.go:975 and :982, show.go:24 and :519. In tests, args_test.go:294, :295, :303 and :304, staged_test.go:23, and soak_test.go:78.
-	- Expected behavior [Bug]: The Go rule is never to discard an error with `_` unless a comment says why. release.go:116 and config.go:451 show the house form.
-	- Reproduced [Bug]: 2026-11-07, grep over every Go file.
-	- Origin: from 4918b5b, 2026-08-19, through 483ebc5, 2026-10-06. The 20261003 round swept `_` discards and missed these. Confirmed.
-	- Estimated effort: Low
-
-- Code Review 20261107 item 8: `sshConnectTarget` mangles a URL with `@` in its path
-	- ID: 2026110708000108
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: `ssh://host/team@x/r.git` gives the connect target `host/team@host`.
-	- Expected behavior [Bug]: `host`, since the user part ends at the first `/` after the scheme.
-	- Reproduced [Bug]: 2026-11-07, on a copy of the function. Rare in practice.
-	- Origin: remote.go:102 from 3d22222, 2026-08-17. Not seen before. Confirmed.
-	- Estimated effort: Low
-
-- Code Review 20261107 item 9: `safe-rm.ps1` can report a failed removal as done
-	- ID: 2026110708000109
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: Any stdout line from `cmd.exe /d /c rmdir` at safe-rm.ps1:23 joins the function's output, so `-not (fSafeRm ...)` in remote-tests.bash:294 reads a `$false` as success.
-	- Expected behavior [Bug]: The function returns only its boolean. `$null = & cmd.exe ...` does it.
-	- Reproduced [Bug]: In part. A pwsh function that writes one line and returns `$false` gives `-not (f)` as `False`. Whether `rmdir /s /q` ever writes to stdout wasn't checked on a Windows box.
-	- Origin: safe-rm.ps1:23 from da39cf8, 2026-11-06. Plausible.
-	- Notes:
-		- `fSafeRm` isn't Verb-Noun either, which the PowerShell rules ask for. It matches the Bash guard's name on purpose, so leave it unless the fix touches it anyway.
-	- Estimated effort: Low
-
-- Code Review 20261107 item 10: install.bash says the module has no dependencies
-	- ID: 2026110708000110
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: install.bash:215 tells a user with no release binary to build it, since "the module is pure Go with no dependencies". go.mod requires shcl v3.
-	- Expected behavior [Bug]: The message says what's true. `go build` fetches shcl itself, so dropping the claim is enough.
-	- Reproduced [Bug]: 2026-11-07, read against src-go/go.mod.
-	- Origin: install.bash:215. It was already wrong at the 20261003 round, with shcl v2, and the 2026-10 sweep for "no third-party dependencies" missed it. Confirmed.
-	- Estimated effort: Low
-
-- Code Review 20261107 item 11: Newer cicd scripts miss the header, shellcheck and error helper rules
-	- ID: 2026110708000111
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]:
-		- No copyright or license header: go-test-lines.bash, which has no History either, image-go.bash, safe-rm.bash, safe-rm.sh and safe-rm.ps1.
-		- shellcheck disables with no reason: fuzz.bash:428 and test.bash:5274. Three at fuzz.bash:464, :523 and :548 suppress nothing.
-		- Errors through a bare `echo >&2` rather than `fDie` or `fUsage`: remote-tests.bash 10 sites, spawn-count.bash 9, test-id.bash 5, backlog-check.bash 3, demo-repo.bash 3.
-		- remote-tests.bash:30 and :508 say vm925w's SPICE port is fixed at 5900. It's 5999 since 2026-11-03.
-	- Expected behavior [Bug]: The Bash rules in style-guide.md and the directives: a `##` header with Purpose, copyright and license, a reason on each disable, and errors through the script's error helper with `printf`.
-	- Reproduced [Bug]: 2026-11-07. The 3 dead disables were each removed in a copy, and shellcheck 0.11.0 stayed clean. The rest by reading.
-	- Origin: all after the 20261003 round, from 956d07b, 2026-10-04, through da39cf8, 2026-11-06. gh-account.bash got its header for the same reason in the 20261004 round. Confirmed.
-	- Notes:
-		- lint-report.bash and spawn-report.bash keep their echo output lines, per the earlier decision.
-	- Estimated effort: Low
-
-- Code Review 20261107 enhancement 3: `br merge` and `release` talk to origin more often than they need to
-	- ID: 2026110708000114
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Requirements [Feature]:
-		- `br merge` with a fetch opens 4 connections: fetch, push, `ls-remote --heads`, and the leased branch delete. The delete is already leased on the merged tip, so the `ls-remote` only picks the message. One `git push --atomic` with the lease could do the push and the delete together.
-		- `release` opens 3 receive-pack connections. The main push and the tag push could be one.
-		- The pull at the end of `br merge`, branchcmd.go:170, can only print "Already up to date" once the merge is pushed. It matters only where the upstream isn't the pushed branch.
-	- Decisions:
-		- Against: the merge reaches origin before the branch goes. An atomic push keeps that. Dropping the last pull needs the odd-upstream case settled first.
-	- Origin: the `ls-remote` from df38db0, 2026-09-15. The push order and the pull came from the frozen bash, 86ca0b1, 2026-08-18. Counts Confirmed by strace against local bare origins, the time saved Plausible.
-	- Estimated effort: Avg
-
-- Code Review 20261107 enhancement 4: The Go files the last rounds didn't read have duplicates and leftovers
-	- ID: 2026110708000115
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Requirements [Feature]:
-		- br switch's target is worked out 4 times: main.go:449, preview.go:52, staged.go:152 and branchcmd.go:68.
-		- The "Detached HEAD" refusal is written 3 times: main.go:480, :753 and pr.go:252.
-		- The Current dir and Remote header is written 4 times, at main.go:730, :744, show.go:650 and :668, and `"Remote .......: "` is a literal beside the `dirLabel` constant made to stop that.
-		- The 56-column note width is 2 literals, errors.go:96 and show.go:290. `termCols` is the same in tty_linux.go and tty_bsd.go.
-		- `accountSourceText(withFile bool)` at show.go:239 has never had a `true` caller, so its file branch never runs.
-		- Parentheses left over from when `printable()` wrapped these values: show.go:125, :362, :366, :605, accountcmd.go:438 and preview.go:129.
-		- `const pad` at preview.go:18 is a package-level name too short to search for, and show.go:292 shadows it.
-	- Origin: 4918b5b and cfb6d90, 2026-08-18 to 08-19, through 47bcda3, 2026-10-06. The 20261003 round's enhancement 7 covered the duplicates in other files. Confirmed by reading and `git log -G`.
-	- Estimated effort: Avg
-
-- Code Review 20261107 enhancement 5: Stale, misplaced and garbled Go comments
-	- ID: 2026110708000116
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Requirements [Feature]:
-		- version.go:76 and :77 have words missing: "in the viewer's time zone can't be read as a date by eye."
-		- show.go:102 says "bar 'account apply'", but :107 also leaves out `account-set` and `account-unset`. The same 3 commands are typed out again at main.go:703 and :723. One shared check would keep them in step.
-		- main.go:350 to :353 explain the publish refusal at :362, with the `settlePrTool` block put in between later.
-	- Origin: b33bb16 and e4f824b, 2026-10-23, 1ed0f3a, 2026-09-28, and cfb6d90 with 9333159, 2026-08-18 and 08-19. Confirmed by reading.
-	- Estimated effort: Low
-
-- Code Review 20261107 enhancement 6: The Python helpers don't follow the Python rules, and nothing checks them
-	- ID: 2026110708000117
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Requirements [Feature]:
-		- codeql-findings.py, new on 2026-10-19, is indented with tabs where the directives say 4 spaces for Python. It has no type hints and uses `import json, sys`.
-		- gen-demo-gif.py imports 10 modules on one line at :33, uses `; sys.exit(2)` at :38 and :42, and has no type hints. It's older, so its indent stays.
-		- No `pyproject.toml` sets ruff or black, and style-guide.md has no Python section. ruff runs `--isolated` on 3 leak rules only.
-	- Decisions:
-		- Against: "match the existing style of the file". The 2 files both use tabs today. Reindent only the newer one, or neither.
-	- Origin: 5d65fcf, 2026-10-19, after the 20261003 round. The Python names rule, new since that round, passes. gen-demo-gif.py keeps `fCamelCase` as an owner script. Confirmed by reading.
-	- Estimated effort: Low
-
-- Code Review 20261107 enhancement 7: run-latest.ps1 names its copies in the current culture
-	- ID: 2026110708000118
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Requirements [Feature]:
-		- run-latest.ps1:57 formats `LastWriteTime` with `yyyyMMdd-HHmmss` in the current culture, then runs the copy that sorts last by name. A copy made under `th-TH` is named `2569...` and sorts above every later build.
-		- Format with `[Globalization.CultureInfo]::InvariantCulture`.
-		- Lines 71 and 72: under `$ErrorActionPreference = 'Stop'`, `Write-Error` already ends the script, so `exit 1` never runs.
-	- Origin: 7825434, 2026-08-21. Filed under the PowerShell traps rule, new in the directives after 2026-10-03. Confirmed with a pwsh probe of both cultures.
-	- Estimated effort: Low
+	- Related IDs: 2026110707345874
+	- Steps to reproduce [Bug]: Build src-go at 958fac2^, on shcl b10c200. Run `account set work name "O'Brien \ x"` with it, then `account list` with the current build.
+	- Incorrect behavior [Bug]: The commits line says `O'Brien \\ x`. The file holds `name: "O'Brien \\ x"`, and v3.0.0-beta1 reads a backslash as text in any quote.
+	- Expected behavior [Bug]: `O'Brien \ x`, as the old build read it.
+	- Reproduced [Bug]: 2026-11-07, by hand. A Windows path with an apostrophe, such as `C:\Users\O'Brien\dev`, is the likely real case.
+	- Possible cause [Bug]: The old pin's file says Format 3, like the new one, so nothing tells them apart. Only a double-quoted value holding `\\` is affected. Respelling `\\` to `\` there would fix those files and change a value that meant 2 backslashes. Needs a choice.
 
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
@@ -1514,6 +1218,91 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: 2026-10-05, all 3 choices answered.
 	- Closed: 2026-10-05
 
+- Code Review 20261107 item 3: The release check for history footers skips both PowerShell scripts
+	- ID: 2026110708000103
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: release.bash:329 greps for `^##` footers. install.ps1 and run-latest.ps1 write them with one `#`, so no date is found and the file is skipped without a warning. go-test-lines.bash has no footer and is skipped the same way.
+	- Expected behavior [Bug]: Every pipeline or installer script that changed since the last tag is checked, as the comment above the loop says.
+	- Reproduced [Bug]: 2026-11-07. The grep finds 0 footers in install.ps1, against 16 written `#   - 2026...`, and 14 in install.bash. Both .ps1 files changed since v2.1.0.
+	- Origin: release.bash:329 from 0cd9050, 2026-09-15. Not seen by an earlier round. Confirmed.
+	- Notes:
+		- A file in that list with no footer at all should warn too, not pass silently.
+	- Estimated effort: Low
+
+	- Actual fix [Bug]: The footer grep takes one or more # before the dash, so the .ps1 files' entries count. A changed script with no footer at all, by shebang or a .ps1 name, gets its own warning; a Dockerfile or data file is still passed over. run-latest.ps1's entries have the dash now, since they had none.
+	- Branch: round-20261107b
+	- Test case: test.bash [dd5em] now matches the .ps1 form and refuses a line with no dash; [df02z] a changed script with no footer warns; [df030] a changed data file doesn't.
+	- Verified: [dd5em] and [df02z] fail on the previous release.bash and pass after. test.bash 1840/0, lint passed.
+	- Swept: every file git diff lists under cicd and the installers was checked for its footer form. Only the 2 .ps1 files use one #, and only go-test-lines.bash had none; it has one now.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-093500
+
+- Code Review 20261107 item 1: Two small crypto imports made the binary 25% bigger and slower to start
+	- ID: 2026110708000101
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Related IDs: 2026100416430451, 2026101916533300
+	- Incorrect behavior [Bug]: `crypto/sha256` in `rawHash` and `crypto/rand` for the accounts lock token pull in Go's whole FIPS crypto module. BSS went from 0.2 MB to 33.8 MB. Max RSS is about 9.3 MB, start time about 2.1 ms.
+	- Expected behavior [Bug]: Size and speed are the top 2 priorities for the binary. Neither value needs crypto strength.
+	- Reproduced [Bug]: 2026-11-07 on b23, go1.26.2 linux/amd64. With `hash/fnv` and `math/rand/v2` in their place, the binary is 163,840 bytes smaller, RSS about 7.2 MB, and `--version` starts about 19% faster. Removing only one of the two saves almost nothing.
+	- Possible cause [Bug]: Both imports came in with fixes, the lock token and the raw nesting chain.
+	- Origin: accountcmd.go:969 from 0738416, 2026-10-04, the fix for 2026100416430451. exec.go:277 from 8e403d5, 2026-10-21, for 2026101916533300. Both after the 20261003 round. A regression in size and speed from 2 correct fixes. Confirmed.
+	- Notes:
+		- A new hash changes the `GITSBY_RAW_ACTIVE` entries, so a chain that mixes old and new builds won't match. That's acceptable before the first Go release.
+		- Needs a numeric gate, such as a cap on binary size and BSS, watched to fail with the imports put back.
+	- Estimated effort: Low
+	- Actual fix [Bug]: `rawHash` uses `hash/fnv` (64a, same 12 hex characters) and the lock token is 2 words from `math/rand/v2`. No `crypto/` package is left in the build. Unstripped data and BSS went from 33.8 MB to 254 KB, the plain build from 6,063,994 to 5,839,550 bytes.
+	- Branch: round-20261107b
+	- Test case: test.bash `[df024]`, the data and BSS of the unstripped probe build under 2 MB by `go tool nm`, and `[df025]`, no `crypto/` package in `go list -deps`.
+	- Verified: both fail on gover's source and pass after. Go tests, test.bash 1826 -> 1833, 0 failed.
+	- Closed: 20261107-084700
+
+- Code Review 20261107 item 2: The wrong-account warning names gh and its GitHub login on a Gitea remote
+	- ID: 2026110708000102
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- Gitea origin, tea logged in as one account, the ssh key answering as another. Run a writing `pr` command without `-q`.
+	- Incorrect behavior [Bug]: After `tea acts as 'alice', but this remote's key authenticates as 'bob'.`, it prints `gh does the GitHub side of this, so it happens as 'octocat'.` It also runs `gh api user` to get that name.
+	- Expected behavior [Bug]: The gh line shows only when gh is the tool acting, and gh isn't asked otherwise.
+	- Reproduced [Bug]: 2026-11-07, built binary with a temp HOME and fake tea, ssh and gh.
+	- Possible cause [Bug]: main.go:603 sets `viaGh` for every host CLI, not only gh.
+	- Origin: main.go:603 from 4918b5b, 2026-08-19, before tea and glab support. No round had read main.go. `[dd5cv]` covers gh only. Confirmed.
+	- Estimated effort: Low
+	- Actual fix [Bug]: `viaGh` is set only when the tool acting is gh, so the gh line and its `gh api user` call stay out of a tea or glab write.
+	- Branch: round-20261107b
+	- Test case: test.bash `[df026]`, an interactive tea pr create mismatch with a gh login on PATH prints no gh line.
+	- Verified: fails on the gover build, passes after. `[dd5cv]` still passes for gh.
+	- Closed: 20261107-084700
+
+- Code Review 20261107 item 4: `pr ok` fetches mid-run without showing it in the plan, even with `--no-fetch`
+	- ID: 2026110708000104
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: pr.go:459 calls `fetchRemote`, a `git fetch --prune origin`, after the merge. `previewPr` has no fetch line, and `fetchRemote` never reads `--no-fetch`. A failed fetch prints its warning partway through.
+	- Expected behavior [Bug]: The UI guide says a plan that differs from what runs is a bug. design.md says `--no-fetch` declines the incoming round trip.
+	- Reproduced [Bug]: No. Read only.
+	- Origin: pr.go:459 from 4918b5b, 2026-08-19. Not seen by an earlier round. Plausible.
+	- Estimated effort: Low
+	- Actual fix [Bug]: the plan shows `git fetch --prune origin` after the branch delete, the run announces it the same way, and `--no-fetch` skips it. Without the fetch the pull is skipped too, as it always was under `--no-fetch`, so a deleted upstream can't fail the run.
+	- Branch: round-20261107b
+	- Test case: test.bash `[df027]`, the plan line is announced when it runs, and `[df028]`, `--no-fetch` leaves it out of the plan.
+	- Verified: `[df027]` fails on the gover build, passes after. `[df028]` passes on both, since the old plan had no fetch line; it guards the flag.
+	- Closed: 20261107-084700
+
 - test.bash [dd5e4] fails on the macOS workflow: install.ps1 leaves its bracketed temp dir
 	- ID: 2026110617122394
 	- Type: Bug
@@ -1909,6 +1698,124 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: dup-acct
 	- Test case: TestRepeatedAccountKeys, TestAccountSetFindsTheKeyInAnyPiece, and one account list check in test.bash.
 	- Closed: 2026-09-30
+
+- Convert config files from every earlier version
+	- ID: 2026110707345874
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261107-073458
+	- Opened by: jim-collier
+	- Milestone: Pre-next-cut.
+	- Related IDs: 2026100312145843, 2026100313483664
+	- Requirements [Feature]:
+		- Make sure this executable version can import their config files to the new shcl version format, from all previous versions, even the old scripts.
+		- Rename the old one or ones and leave them in place.
+	- Notes:
+		- 2026100312145843 converts SHCL 2.x files and renames the old one. A 1.x file is read as 2.x, which wasn't run.
+		- The v2.1.0 bash and pwsh scripts hand-parse flat `key = value` lines from a file with the same name. It has no `Format` line and no 2.x footer, so the Go build reads it as current and doesn't convert it. Not tried yet.
+		- v2.1.0 looked in `XDG_CONFIG_HOME`, then `~/.config`, then `%APPDATA%`, on every OS. The Go build looks only in `%APPDATA%` on Windows and `~/Library/Application Support` on macOS, so an old file in `~/.config` there isn't found. details.md calls that an accepted cost. This item reverses it.
+		- A file from the old shcl 3 pseudo-version pin also says Format 3, so it can't be told apart. Check whether anything it wrote reads differently now.
+	- Actual fix [Task]: `load` in config.go converts a flat file whose every line v2.1.0 could read, through `flatToSHCL` and `replaceOldFormat`, the path a 2.x file takes. The old file is kept as `config_backup_<date>-<time>_format-flat.shcl`, and `reportMigration` names both on File and From lines. `configCandidatesFor` adds `~/.config/gitsby/config.shcl` last on Windows and macOS. accounts.md, design.md, README.md and the vNEXT changelog say so. parity.bash runs the frozen build first in `fSameLead` and writes its flat fixtures again per check.
+	- Decisions:
+		- A v2.1.0 file has no `Format` line and no 2.x footer, and every line is blank, a comment, or `key = value` with `protocol` or an `account.<name>.<key>` key v2.1.0 took. That is `wholeFlat` in config.go. A key it refused, such as `account.../x.path`, or a line with no `=`, keeps the file as it is. The ignored list names that line, and the first `account set` rewrites the file, as before.
+		- The backup is named `_format-flat`, since the layout had no SHCL format number.
+		- Where the file can't be replaced, the run reads it the v2.1.0 way and `account set` refuses, as for a 2.x file.
+		- On Windows and macOS, `~/.config` is read after the platform's own place, so a new file still goes in the platform's place. A file found in `~/.config` is converted where it is and stays there. This reverses the accepted cost in details.md and in design.md's "lives where the platform in hand keeps one". Both now say so. `XDG_CONFIG_HOME` stays Linux and BSD only, per design.md.
+		- A file from the old shcl 3 pin reads differently in 1 case. Built at 958fac2^, on shcl b10c200, `account set work name "O'Brien \ x"` wrote `name: "O'Brien \\ x"`, since a value with an apostrophe goes in double quotes with each backslash doubled. v3.0.0-beta1 reads both backslashes as text. Plain, single-quoted, `#` and space values read the same. Both say Format 3, so it isn't converted here. Filed as 2026110710480989.
+		- The flat fixtures of other checks now convert on first read. test.bash `[db00e]` and `[dcmey]` named keys the flat way, and `[db010]` and `[dbfh2]` dropped an account by its flat lines. All 4 are commented out, with replacements below. The fixtures `[db62z]` and `[db01q]` add to are written in the SHCL spelling. In the Go tests, 4 cases of `[dbjjn]`, a case each of `[dcmfa]` and `[ddav1]`, and the plan's `converts` check in `[dd83m]` and `[dbss1]` are commented out, with the new expectations beside them.
+	- Branch: round-20261107b
+	- Test case: Go `[df05s]` the candidate list for Windows and macOS, `~/.config` last. `[df065]` a whole v2.1.0 file, with a mark and CRLF, is converted, kept byte for byte as `_format-flat`, named on File and From lines, and read the same after. `[df066]` a stray line, a refused account name or an empty key keeps the file as it is. `[df067]` an unwritable folder reads it the v2.1.0 way, and `account set` refuses. test.bash `[df05y]` a v2.1.0 file in `~/.config`, found through HOME, is converted with the File and From lines. `[df05z]` the old file is kept byte for byte. `[df060]` the new one names Format 3. `[df061]` `account list` gives the names, logins and authors legacy/bin/gitsby gives for the old file. `[df062]` a second run converts nothing more. `[df063]` and `[df064]` a file with a line v2.1.0 couldn't read is read as it is, names the line, and is left alone. Replacements: `[df05t]` for `[db00e]`, `[df05v]` for `[dcmey]`, `[df05w]` for `[db010]`, `[df05x]` for `[dbfh2]`.
+	- Verified: On the build before, 1db5aec, test.bash fails `[df05y]`, `[df05z]`, `[df060]` and the 4 replacements, and `[ddate]` after `[df05w]`; 1853 passed. `[df062]` failed there only once its glob was fixed, run by hand on both builds. `[df061]`, `[df063]` and `[df064]` pass on both, as guards. Go `[df05s]`, `[df065]` and `[df067]` fail on the old config.go, cfgformat.go and accountcmd.go, and `[df066]` passes on both. parity was 24/6 with the conversion in and the old order. After: test.bash 1854 -> 1861, 0 failed. go test ok, fuzz 313/0, parity 30/0, lint stage passed, `GOOS=windows go vet` and darwin and freebsd builds pass.
+	- Swept: every flat fixture in test.bash, parity.bash and fuzz.bash, and every Go test that loads one. fuzz.bash has none. The other test.bash flat fixtures read the same once converted. `configCandidates` has 4 callers; `configInTheWay` now also checks `~/.config` on Windows and macOS before a create, which is right, since a read finds a file there.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-105000
+
+- `--version` prints only its first line
+	- ID: 2026110707345868
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261107-073458
+	- Opened by: jim-collier
+	- Milestone: Pre-next-cut.
+	- Requirements [Feature]:
+		- `--version` should only show the first line that is shown currently, and no empty lines.
+			- Today that's `gitsby v2.1.0-723-g4617c5f build dez9a (2026-11-06)`, then the copyright and license lines, and a blank line.
+	- Notes:
+		- `-v`, `--ver` and `version` are the same command in main.go, so all of them change.
+		- The installers and spawn-report.bash take only the first line already. release.bash's proof step matches the whole output, so check it and the suites for anything that pins the rest.
+	- Actual fix [Enhancement]: `printVersion` in help.go prints the build line alone, for `-v`, `--ver`, `--version` and `version`. `--version` after a command gives the same line, answered in `run` before the opening blank. `--help` and `--about` keep the copyright block. keep-build.bash `--list` takes the first line that isn't blank, since it took the second, which went blank with this change. changelog.md has a line under vNEXT.
+	- Decisions:
+		- `--version` after a command, such as `status --version`, is the same 1 line, with no blanks around it. It no longer needs git on PATH, as the first-word form never did.
+		- test.bash `[dcnw7]` pinned the copyright on a line of its own in the `--version` output. It changes with this item and now pins the build line as the whole output.
+		- release.bash's proof step matches the version anywhere in the output, so it needs no change. README.md has no `--version` sample, and design.md's build-line bullet still holds.
+	- Branch: round-20261107b
+	- Test case: test.bash `[df05h]` `--version` is exactly 1 line. `[df05j]` `-v`, `--ver` and `version` give the same output as `--version`. `[df05k]` `status --version` is the same 1 line. `[dcnw7]` rewritten: an unstamped build's `--version` is `gitsby v9.9.9` and nothing else. `[df05m]` keep-build.bash `--list` names each kept build's version line.
+	- Verified: On a build of the old main.go and help.go, `[df05h]`, `[df05k]` and the new `[dcnw7]` fail, and the old keep-build.bash fails `[df05m]` with an empty version column. `[df05j]` passes on both, since the 4 words were one command already; it pins that. After: test.bash 1850 -> 1854, 0 failed. fuzz 313/0, parity 30/0, go test ok, `GOOS=windows go vet` and darwin and freebsd builds pass, lint stage passed.
+	- Swept: every `--version` read in cicd/, the installers and the suites. install.bash, install.ps1 and spawn-report.bash read only the first line. release.bash's `buildLine` takes the first line starting `gitsby v`. keep-build.bash took line 2, fixed here. The `--version` reads in test.bash and fuzz.bash are of stand-ins or other tools, or match the first line.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-103300
+
+- Code Review 20261107 enhancement 2: Every non-GitHub ssh remote costs an extra `ssh -G`
+	- ID: 2026110708000113
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- `remoteTarget` at remote.go:338 calls `parseRemote`, which resolves the ssh alias, when it only needs owner and name. It runs from the status and whoami Account line through `convertibleToHTTPS`.
+		- Parsing the text alone takes 1 spawn off each of status 18, whoami 14, pr create 34, repo url 9 and sync 29, with status output byte for byte the same.
+		- `resolveSSHHost` and `readSSHConfig` also ask `ssh -G` separately about the same host. One cached read could answer both.
+	- Origin: remote.go:338 from 3d22222, 2026-08-17. The 20261003 round measured no non-GitHub remote. Confirmed for the first, Plausible for the second.
+	- Notes:
+		- A fix lowers the spawn-count limits for these commands in the same commit, adding rows for a Gitea ssh folder if there are none.
+	- Estimated effort: Low
+	- Actual fix [Enhancement]: `remoteTarget` reads owner and name from the text alone, through the new `parseRemoteText`, and asks ssh nothing. `parseRemote` resolves the alias by asking about the connect target, `git@gh-acme` in place of `gh-acme`, the same target the SSH line reads. `sshConfigText` keeps each `ssh -G` answer for the run, keyed by target and PATH and locked like `toolCache`, so `resolveSSHHost` and `readSSHConfig` share one read.
+		- Spawn counts, before and after, in a new Gitea ssh folder with an account, a fake tea and a push URL on the local origin: status 18 -> 16, whoami 14 -> 12, repo url 9 -> 8, pullcom 29 -> 27, pr create 39 -> 37. Every GitHub row is the same as before: status 11, whoami 7, repo url 6, pullcom 21, status in an account folder 19, whoami there 15, the https folder 15.
+	- Decisions:
+		- The alias lookup asks about `user@host`, as git connects. `ssh -G` gives the same hostname for both unless a `Match user` block applies, and then the connect target is the right answer.
+		- The cache is package level, like `toolCache`, since both callers are plain functions and nothing in a run writes ssh_config. HOME is left out of the key: ssh reads its config from the passwd home, and `[dbfvy]` allows one HOME read.
+		- test.bash `[dd5cb]` is commented out. It pinned the bare alias in the lookup, `-G -- gh-acme`, which this change drops on purpose. `[df054]` checks the one read and its `--`.
+		- The new spawn-count rows have the after counts as their limits. A rise of 2 is inside the headroom, so the Go test and `[df054]` are what fail on the old code.
+	- Branch: round-20261107b
+	- Test case:
+		- Go `[df053]` TestSSHConfigAskedOnce: with a logging fake ssh, `remoteTarget` asks ssh nothing, and `parseRemote` twice plus `readSSHConfig` ask `ssh -G` once.
+		- test.bash `[df054]`: status on an aliased remote asks `ssh -G` once, as `-G -- git@gh-acme`.
+		- spawn-count.bash `[df04s]`, `[df04t]`, `[df04v]`, `[df051]`, `[df052]`: status, whoami, repo url, pullcom and pr create in the tea ssh folder.
+	- Verified: `[df053]` fails on HEAD's githost.go, remote.go, account.go and show.go, with 1 call from `remoteTarget` and 4 in all, and passes after. The old build asks `ssh -G` 3 times for status on the aliased remote, the new one once, so `[df054]` fails then passes. Status output is byte for byte the same between the 2 builds for `git@github.com` and for the alias. Go tests pass, test.bash 1850/0, fuzz 313/0, parity 30/0, lint passed, spawn-count passed.
+	- Swept: every `ssh -G` and every `parseRemote` caller. `remoteOwner`, `authHost` and the tea login match need the resolved host, and keep it. `sshLineAsks` and `sshTarget` start no process.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-102500
+
+- Code Review 20261107 enhancement 1: `encoding/json` costs 344 KB for 2 glab reads
+	- ID: 2026110708000112
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- pr.go:285 and :314 decode `glab mr list` and `glab mr view` with `encoding/json`. Stubbing those 2 calls takes 344,064 bytes off linux/amd64, 8.2% of the binary, and about the same on Windows and macOS. Start time doesn't change.
+		- Read the 3 fields some other way, or ask glab for an output format that needs no JSON parser.
+	- Origin: pr.go:13 from 197677f, 2026-10-22, the glab path. After the 20261003 round. Confirmed, measured on top of item 1's change.
+	- Notes:
+		- With item 1, this accounts for 507,904 of the 847,872 bytes the binary grew since 2026-10-03. Most of the rest is the shcl v3 module.
+	- Estimated effort: Avg
+	- Actual fix [Enhancement]: A small reader in pr.go takes `iid`, `state` and `source_branch` from glab's JSON, at the top level only, in any key order, with spacing and escapes decoded. Nested values are stepped over, so the author's `state` never counts. Invalid JSON reads as no answer, as before. linux/amd64 with the pipeline's flags went from 4,022,398 to 3,686,526 bytes, 335,872 or 8.4% less. windows/amd64 4,226,560 to 3,890,176, darwin/amd64 4,013,216 to 3,671,440.
+	- Decisions:
+		- The hand reader, over glab's text output. glab 1.53 takes only `text` or `json` for `mr list` and `mr view`. `mr view`'s text form has had `source_branch` only in recent releases, and `mr list`'s is a table for people. The JSON is the GitLab API's own object, the stable choice.
+		- An `iid` that is missing or not a whole number now reads as no PR. encoding/json gave 0 for a missing one, so `pr create` could have said PR #0 was open.
+	- Branch: round-20261107b
+	- Test case:
+		- Go `[df04m]` TestReadGlabMR: key order, spacing, a nested state, escaped quotes and commas, `\u` escapes and a surrogate pair, the first of a list, an empty list, and 15 kinds of bad input, deep nesting among them.
+		- Go `[df04n]` FuzzReadGlabMR: encoding/json is the reference in the test, and both agree on whether an object reads and on the 3 fields.
+		- test.bash `[df04p]` pr ok reads glab's state past a nested author state, keys out of order. `[df04q]` a source branch with an escaped quote and a comma comes through whole. `[df04r]` no encoding/json in `go list -deps`, in the style of `[df025]`.
+	- Verified: `[df04r]` fails on a copy of src-go with HEAD's pr.go and passes after. The fuzz target ran 60 s with no difference found. Every existing glab check passes. Go tests pass, test.bash 1847 -> 1850 with 0 failed, fuzz 313/0, parity 30/0, lint passed.
+	- Swept: `go list -deps` for other encoding packages and reflect-heavy ones. Only encoding/hex is left, and reflect comes in through fmt. No other non-test Go file imported encoding/json.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-101500
 
 - CICD reset: temp files and safe removal
 	- ID: 2026102416313108
@@ -2720,6 +2627,168 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
 	- Closed: 20261004-190953
 
+- Code Review 20261107 item 6: Output in show.go, main.go, accountcmd.go and cfgformat.go breaks 4 UI guide rules
+	- ID: 2026110708000106
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]:
+		- A value that couldn't be found prints as a bare `unknown`, with no reason: show.go:599, the SSH line, show.go:679, Default branch, and main.go:903, br list. accountcmd.go:298 prints `(none found)`.
+		- Paths sit inside sentences: cfgformat.go:175 and :178, accountcmd.go:475, :1117, :1181 and :1355, show.go:456, and the `usageSubf` calls in config.go:317 to :332 and :548 to :550.
+		- The config file is `Config .......:` in status and whoami, but `Config file ..:` and `Ignored keys .:` in `account list`. show.go:125 also prints it without `nativePath`, so a Windows path keeps its forward slash.
+		- `raw tea` with no token file says "Give the account a tokenfile", at githost.go:265, and the interactive warning at :268 gives no fix.
+	- Expected behavior [Bug]: `(unknown - <reason>)` and `(none)`, a path on its own labeled line, one label per thing, a path in its platform's spelling, and a fix given as a command such as `gitsby account set <name> tokenfile <file>`.
+	- Reproduced [Bug]: 2026-11-07. The SSH line printed `unknown (git@gitea.invalid)`. The rest by reading the literal strings.
+	- Origin: mostly 4918b5b and 3d22222, 2026-08-17 to 08-19, and 0ad1374 and 1ed0f3a, 2026-09. cfgformat.go from 37f4843, 2026-10-03, and githost.go:265 from 483ebc5, 2026-10-06, both after the 20261003 round. The 20261005 round left the refusal wording unread. Confirmed.
+	- Notes:
+		- test.bash `[dakpb]`, `[dafqx]` and `[damxv]` pin the bare `unknown`, so they change with it.
+	- Estimated effort: Avg
+	- Actual fix [Bug]:
+		- `(unknown - <reason>)` on the SSH line, offline or when the host answered with no login, and on Default branch in status and `br list`, through one `defaultBranchDisp`. `account list` says `(none)`.
+		- Paths on File lines: the account fragments folder refusal, the key-twice refusal, the 2 lost-lines refusals through one `lostLinesRefusal`, the `--config` and GITSBY_CONFIG refusals through `configFileRefusal`, the token file warning in the identity block with the chmod as its Fix, and the conversion notices, with the old file on a From line. Notes under an error or warning print through `printer.notes`.
+		- status and whoami print `Config file ..:` and `Ignored keys .:`, the labels `account list` uses, with the path in its platform's spelling.
+		- The tea refusal and warning give the reason as Why and the fix as Fix: `gitsby account set <name> tokenFile <file>` where the account has no token, "Update tea" where tea is too old.
+	- Branch: round-20261107b
+	- Test case: test.bash [dakpb], [dafqx], [damxv], [dcmk8], [dcmpk], [db5ya], [dcmn0] and [dcmex] pin the new text. New: [df042] and [df043] the File line under the GITSBY_CONFIG and --config refusals; [df044] and [df045] status's Config file and Ignored keys lines; [df046] and [df048] the token warning's File line and chmod; [df047] the Fix note under the tea refusal.
+	- Verified: All 12 changed or new checks fail on the build before the change, with the other 1835 passing, and test.bash is 1847/0 after. fuzz 313/0, parity 30/0, go test, `GOOS=windows go vet`, darwin and freebsd builds, and the lint area pass.
+		- The no-token tea Fix line, with the account set command, was checked by reading: the fixtures give tea a token, so [df047] covers the older-tea text of the same note.
+	- Swept: every `"unknown"` literal in src-go, `(none found)`, and every `usagef` with a path or file argument. Left as they are: the `raw` refusal naming a PATH entry, settled on 2026101916533300, and the `account set` value refusals in accountcmd.go:679 to :691, which quote back a value just typed on the command line.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-095500
+
+- Code Review 20261107 item 9: `safe-rm.ps1` can report a failed removal as done
+	- ID: 2026110708000109
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: Any stdout line from `cmd.exe /d /c rmdir` at safe-rm.ps1:23 joins the function's output, so `-not (fSafeRm ...)` in remote-tests.bash:294 reads a `$false` as success.
+	- Expected behavior [Bug]: The function returns only its boolean. `$null = & cmd.exe ...` does it.
+	- Reproduced [Bug]: In part. A pwsh function that writes one line and returns `$false` gives `-not (f)` as `False`. Whether `rmdir /s /q` ever writes to stdout wasn't checked on a Windows box.
+	- Origin: safe-rm.ps1:23 from da39cf8, 2026-11-06. Plausible.
+	- Notes:
+		- `fSafeRm` isn't Verb-Noun either, which the PowerShell rules ask for. It matches the Bash guard's name on purpose, so leave it unless the fix touches it anyway.
+	- Estimated effort: Low
+
+	- Actual fix [Bug]: `$null = & cmd.exe ...`, so the function's output is its boolean alone.
+	- Branch: round-20261107b
+	- Test case: test.bash [df031] runs the guard under pwsh with a cmd.exe on PATH that writes a line and removes nothing, and reads the caller's `-not (fSafeRm ...)` as a failure. Skips where there's no pwsh.
+	- Verified: [df031] fails on the previous safe-rm.ps1 and passes after, on b23's pwsh. Not run on a Windows box yet; the next stage 7 run covers that.
+	- Swept: safe-rm.sh and safe-rm.bash answer through the shell's exit status, so nothing joins theirs. `fSafeRm` keeps its name.
+	- Acceptance signoff: Self-closed: its test passed.
+	- Closed: 20261107-093500
+
+- Code Review 20261107 item 10: install.bash says the module has no dependencies
+	- ID: 2026110708000110
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: install.bash:215 tells a user with no release binary to build it, since "the module is pure Go with no dependencies". go.mod requires shcl v3.
+	- Expected behavior [Bug]: The message says what's true. `go build` fetches shcl itself, so dropping the claim is enough.
+	- Reproduced [Bug]: 2026-11-07, read against src-go/go.mod.
+	- Origin: install.bash:215. It was already wrong at the 20261003 round, with shcl v2, and the 2026-10 sweep for "no third-party dependencies" missed it. Confirmed.
+	- Estimated effort: Low
+
+	- Actual fix [Bug]: The 2 messages in install.bash and the 2 in install.ps1 say "Build it instead" and give the commands, with no claim about dependencies.
+	- Branch: round-20261107b
+	- Test case: test.bash [df032] fails on "no dependencies" in either installer.
+	- Verified: [df032] fails on the previous installers and passes after.
+	- Swept: README.md and the other docs have no such claim; the earlier sweep took those.
+	- Acceptance signoff: Self-closed: its test passed.
+	- Closed: 20261107-093500
+
+- Code Review 20261107 item 11: Newer cicd scripts miss the header, shellcheck and error helper rules
+	- ID: 2026110708000111
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]:
+		- No copyright or license header: go-test-lines.bash, which has no History either, image-go.bash, safe-rm.bash, safe-rm.sh and safe-rm.ps1.
+		- shellcheck disables with no reason: fuzz.bash:428 and test.bash:5274. Three at fuzz.bash:464, :523 and :548 suppress nothing.
+		- Errors through a bare `echo >&2` rather than `fDie` or `fUsage`: remote-tests.bash 10 sites, spawn-count.bash 9, test-id.bash 5, backlog-check.bash 3, demo-repo.bash 3.
+		- remote-tests.bash:30 and :508 say vm925w's SPICE port is fixed at 5900. It's 5999 since 2026-11-03.
+	- Expected behavior [Bug]: The Bash rules in style-guide.md and the directives: a `##` header with Purpose, copyright and license, a reason on each disable, and errors through the script's error helper with `printf`.
+	- Reproduced [Bug]: 2026-11-07. The 3 dead disables were each removed in a copy, and shellcheck 0.11.0 stayed clean. The rest by reading.
+	- Origin: all after the 20261003 round, from 956d07b, 2026-10-04, through da39cf8, 2026-11-06. gh-account.bash got its header for the same reason in the 20261004 round. Confirmed.
+	- Notes:
+		- lint-report.bash and spawn-report.bash keep their echo output lines, per the earlier decision.
+	- Estimated effort: Low
+
+	- Actual fix [Bug]:
+		- Headers with the copyright and license on go-test-lines.bash, which has a History now too, image-go.bash, safe-rm.bash, safe-rm.sh and safe-rm.ps1. The last takes the ASCII form, as every .ps1 file does. The change to safe-rm.sh changes the image tag, so the next full run rebuilds the image.
+		- Every shellcheck disable in the pipeline scripts says why: 13 got a reason, in fuzz.bash, test.bash, parity.bash, pre-push.bash and demo-repo.bash. The 5 that silenced nothing are gone: 3 in fuzz.bash, 1 in test.bash and 1 in gfs-rotate.bash, whose file-level disable covered it.
+		- remote-tests.bash, spawn-count.bash, test-id.bash, backlog-check.bash and demo-repo.bash have fDie or fUsage, printing with printf, and every error goes through them with the exit code it had. A message inside a stub, or in a command sent to a box, prints with printf. release.bash, gen-winres.bash and gen-checksums.bash had the same bare echo and got the same.
+		- remote-tests.bash's Windows note says 5999.
+	- Branch: round-20261107b
+	- Test case: test.bash [df033] no disable without a reason in any linted script outside legacy; [df034] no `echo ... >&2` in the pipeline scripts, leaving out install.bash, test.bash, the 2 report scripts and n8git_backup-and-publish; [df035] every script under cicd and both installers have the SPDX line.
+	- Verified: All 3 fail on the previous scripts and pass after. shellcheck is clean on every changed script, the quick lint area passed, test.bash 1840/0, and each script's bad-option path exits 2 with its message.
+	- Swept: every `shellcheck disable` under cicd and in install.bash, every `echo ... >&2` in the linted scripts, and every script under cicd for the SPDX line.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-093500
+
+- Code Review 20261107 item 5: Messages for every git host still say GitHub or gh
+	- ID: 2026110708000105
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: Offline, `pr create` on a Gitea origin says "The pull request lives on GitHub; there is no local half to do first." `--help` says `--any-identity` acts as "gh's active account".
+	- Expected behavior [Bug]: The UI guide says to say "git host", or name the host.
+	- Reproduced [Bug]: 2026-11-07, the first with a Gitea origin and a failing fetch. The second by reading `--help`.
+	- Origin: main.go:382 and help.go:82 from 4918b5b, 2026-08-19, before tea and glab. Confirmed.
+	- Sweep: comments that assume gh only, pr.go:362, :400 and :437.
+	- Estimated effort: Low
+	- Actual fix [Bug]: the offline refusal says "the git host", `--help` says "the git host CLI's active account", and the 2 comments say the git host. pr.go:437 already said both hosts.
+	- Branch: round-20261107b
+	- Test case: test.bash `[df029]`, the offline refusal on a non-GitHub origin, and `[df02a]`, `--help`.
+	- Verified: both fail on the gover build, pass after.
+	- Swept: every `GitHub` left in an output string belongs to `repo create`, which is a GitHub command by design, or to the gh line of the wrong-account warning, now shown only for gh.
+	- Closed: 20261107-084700
+
+- Code Review 20261107 item 7: Go errors discarded with `_` and no comment
+	- ID: 2026110708000107
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: githost.go:237 and :238, config.go:579, remote.go:264, accountcmd.go:975 and :982, show.go:24 and :519. In tests, args_test.go:294, :295, :303 and :304, staged_test.go:23, and soak_test.go:78.
+	- Expected behavior [Bug]: The Go rule is never to discard an error with `_` unless a comment says why. release.go:116 and config.go:451 show the house form.
+	- Reproduced [Bug]: 2026-11-07, grep over every Go file.
+	- Origin: from 4918b5b, 2026-08-19, through 483ebc5, 2026-10-06. The 20261003 round swept `_` discards and missed these. Confirmed.
+	- Estimated effort: Low
+	- Actual fix [Bug]: each of the 8 sites in the program has a one-line reason. The config parse can't fail at Standard strictness, which shcl's doc says. The 3 tests that discarded `parseArgs` and `collapseCommand` errors now fail on one; the `/dev/null` close has a reason.
+	- Branch: round-20261107b
+	- Test case: Not applicable; comments and test strictness.
+	- Verified: Go tests pass, `go vet` clean.
+	- Closed: 20261107-084700
+
+- Code Review 20261107 item 8: `sshConnectTarget` mangles a URL with `@` in its path
+	- ID: 2026110708000108
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: `ssh://host/team@x/r.git` gives the connect target `host/team@host`.
+	- Expected behavior [Bug]: `host`, since the user part ends at the first `/` after the scheme.
+	- Reproduced [Bug]: 2026-11-07, on a copy of the function. Rare in practice.
+	- Origin: remote.go:102 from 3d22222, 2026-08-17. Not seen before. Confirmed.
+	- Estimated effort: Low
+	- Actual fix [Bug]: the user part is read from the authority alone, the text before the first `/` after the scheme, as `sshTarget` already did.
+	- Branch: round-20261107b
+	- Test case: Go `[dbfrr]`, 2 new rows: `ssh://host/team@x/r.git` and `ssh://git@host:2222/team@x/r.git`.
+	- Verified: the first row fails on gover's code, both pass after.
+	- Closed: 20261107-084700
+
 - backlog_sort.py exits 1 after a sort that moves items
 	- ID: 2026110613150884
 	- Type: Bug
@@ -3374,6 +3443,129 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [ddf4q] and [ddf4r] in test.bash.
 	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
 	- Closed: 20261003-145130
+
+- Code Review 20261107 enhancement 3: `br merge` and `release` talk to origin more often than they need to
+	- ID: 2026110708000114
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- `br merge` with a fetch opens 4 connections: fetch, push, `ls-remote --heads`, and the leased branch delete. The delete is already leased on the merged tip, so the `ls-remote` only picks the message. One `git push --atomic` with the lease could do the push and the delete together.
+		- `release` opens 3 receive-pack connections. The main push and the tag push could be one.
+		- The pull at the end of `br merge`, branchcmd.go:170, can only print "Already up to date" once the merge is pushed. It matters only where the upstream isn't the pushed branch.
+	- Decisions:
+		- Against: the merge reaches origin before the branch goes. An atomic push keeps that. Dropping the last pull needs the odd-upstream case settled first.
+	- Origin: the `ls-remote` from df38db0, 2026-09-15. The push order and the pull came from the frozen bash, 86ca0b1, 2026-08-18. Counts Confirmed by strace against local bare origins, the time saved Plausible.
+	- Estimated effort: Avg
+	- Actual fix [Feature]: When origin has the work branch and the target pushes to its own name there, br merge sends `git push --atomic --force-with-lease=refs/heads/<branch>:<merged tip> origin refs/heads/<target>:refs/heads/<target> :refs/heads/<branch>`, then deletes the branch here. Both refs land or neither does, so the merge still reaches origin before the branch goes. The `ls-remote` ask is skipped on that path. A refusal sends nothing, prints "Origin refused that push as a whole; pushing the merge alone.", and falls back to the 2 pushes and the ask, which name why. The plan shows 1 line for the push, `git push --atomic (the merge, and the leased delete of origin's '<branch>') *`, then `git branch -d`.
+	- Decisions:
+		- The atomic push names the target's ref, so it runs only where the target's upstream is `origin/<target>`. Any other upstream keeps the old `git push`, since that is the odd-upstream case the Against row leaves open.
+		- The pull at the end stays, per the Against row. On this path it is a local `git merge --ff-only`, with no connection.
+		- release's main and tag pushes stay 2. Joining them names main's ref the same way, so it waits on the same odd-upstream question. Not asked for this round.
+		- spawn-count.bash has no br merge or release row, so no count changed.
+	- Branch: round-20261107b
+	- Test case: test.bash [df06m]: br merge with a fetch on a branch origin has makes 1 `git push`, the atomic one leased on the merged tip, and origin ends with the merge on dev and no branch. [df06n]: no `ls-remote` runs. [df06p]: the plan's push line. The fallbacks were already covered: [dcnme] to [dcnmh] for a branch origin moved, [dd5c1] to [dd5c3] for one already gone.
+	- Verified: [df06m] and [df06n] failed against the previous build, test.bash 1864/2, and pass after. [df06p] failed on that build's output. Counted with GIT_TRACE against a local bare origin, br merge with a fetch now opens 2 connections, the fetch and the atomic push, where it opened 4. test.bash 1867/0, fuzz 313/0, parity 30/0.
+	- Swept: the other pushes that pair with a delete. br prune's deletes are already 1 batched push. pr ok deletes no branch on origin itself.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-112100
+
+- Code Review 20261107 enhancement 4: The Go files the last rounds didn't read have duplicates and leftovers
+	- ID: 2026110708000115
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- br switch's target is worked out 4 times: main.go:449, preview.go:52, staged.go:152 and branchcmd.go:68.
+		- The "Detached HEAD" refusal is written 3 times: main.go:480, :753 and pr.go:252.
+		- The Current dir and Remote header is written 4 times, at main.go:730, :744, show.go:650 and :668, and `"Remote .......: "` is a literal beside the `dirLabel` constant made to stop that.
+		- The 56-column note width is 2 literals, errors.go:96 and show.go:290. `termCols` is the same in tty_linux.go and tty_bsd.go.
+		- `accountSourceText(withFile bool)` at show.go:239 has never had a `true` caller, so its file branch never runs.
+		- Parentheses left over from when `printable()` wrapped these values: show.go:125, :362, :366, :605, accountcmd.go:438 and preview.go:129.
+		- `const pad` at preview.go:18 is a package-level name too short to search for, and show.go:292 shadows it.
+	- Origin: 4918b5b and cfb6d90, 2026-08-18 to 08-19, through 47bcda3, 2026-10-06. The 20261003 round's enhancement 7 covered the duplicates in other files. Confirmed by reading and `git log -G`.
+	- Estimated effort: Avg
+	- Actual fix [Feature]: `switchTarget()` in branch.go is br switch's target, called by preflight, the preview, the staged check and `cmdGoBranch`, which takes no argument now. `errDetached()` in errors.go is the 1 "Detached HEAD" refusal. `showDirRemote()` in show.go prints the blank, Current dir and Remote lines for whoami, showStatus and the clone and connect headers, with a `remoteLabel` constant beside `dirLabel`. `noteWidth` is the 56 in errors.go and noteLines. termCols moved to a new tty_unix.go, built for Linux and the BSDs. `accountSourceText()` lost its `withFile` branch. The 6 leftover parentheses are gone. The package-level `pad` is `planPad`, and noteLines' local is `indent`.
+	- Branch: round-20261107b
+	- Test case: none. Dedupe only, with the same output, so the suites staying green is the test.
+	- Verified: go test, vet and the builds for windows, darwin, freebsd, netbsd, openbsd, dragonfly and linux/arm64 passed. test.bash 1864/0, fuzz 313/0, parity 30/0.
+	- Swept: other `"Remote .......: "` and `"Current dir ..: "` literals, other `56` widths, and other `a.cmd.arg` fallbacks to `mergeTarget()`. None left.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-110800
+
+- Code Review 20261107 enhancement 7: run-latest.ps1 names its copies in the current culture
+	- ID: 2026110708000118
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- run-latest.ps1:57 formats `LastWriteTime` with `yyyyMMdd-HHmmss` in the current culture, then runs the copy that sorts last by name. A copy made under `th-TH` is named `2569...` and sorts above every later build.
+		- Format with `[Globalization.CultureInfo]::InvariantCulture`.
+		- Lines 71 and 72: under `$ErrorActionPreference = 'Stop'`, `Write-Error` already ends the script, so `exit 1` never runs.
+	- Origin: 7825434, 2026-08-21. Filed under the PowerShell traps rule, new in the directives after 2026-10-03. Confirmed with a pwsh probe of both cultures.
+	- Estimated effort: Low
+	- Actual fix [Feature]: run-latest.ps1 formats the copy's name with `[Globalization.CultureInfo]::InvariantCulture`, and the 2 dead `exit 1` lines after `Write-Error` are gone. A comment says `Write-Error` ends the script there with exit code 1.
+	- Branch: round-20261107b
+	- Test case: test.bash [df06h]: run-latest.ps1 with no build exits 1. [df06j]: under th-TH a build dated 2026-01-02 03:04:05 is copied as `gitsby_20260102-030405` and runs with its args.
+	- Verified: [df06j] failed before the fix, with the copy named `gitsby_25690102-030405`, and passes after. [df06h] passed before and after, since the `exit 1` never ran. PSScriptAnalyzer passed 5.1-compatible. test.bash 1864/0.
+	- Swept: every `.ToString(`, `Get-Date -Format` and `-UFormat` in the .ps1 files. The only other one is the frozen legacy/bin/gitsby.ps1:1717, a commit message that nothing sorts, so it stays.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-110645
+
+- Code Review 20261107 enhancement 6: The Python helpers don't follow the Python rules, and nothing checks them
+	- ID: 2026110708000117
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- codeql-findings.py, new on 2026-10-19, is indented with tabs where the directives say 4 spaces for Python. It has no type hints and uses `import json, sys`.
+		- gen-demo-gif.py imports 10 modules on one line at :33, uses `; sys.exit(2)` at :38 and :42, and has no type hints. It's older, so its indent stays.
+		- No `pyproject.toml` sets ruff or black, and style-guide.md has no Python section. ruff runs `--isolated` on 3 leak rules only.
+	- Decisions:
+		- Against: "match the existing style of the file". The 2 files both use tabs today. Reindent only the newer one, or neither.
+	- Origin: 5d65fcf, 2026-10-19, after the 20261003 round. The Python names rule, new since that round, passes. gen-demo-gif.py keeps `fCamelCase` as an owner script. Confirmed by reading.
+	- Estimated effort: Low
+	- Actual fix [Feature]: codeql-findings.py is on 4 spaces, with type hints and one import per line. It passes `mypy --strict`. gen-demo-gif.py has one import per line and no `;` statements. A new `ruff.toml` at the repo root selects E4, E7, E9, F, B, SIM, UP and ANN, with ANN off for gen-demo-gif.py. cicd.bash lint runs ruff under it after the leak rules, when the file is there. style-guide.md has a Python section. README.md and contributing.md say ruff checks the Python helpers.
+	- Decisions:
+		- Only codeql-findings.py is reindented, per the Against row. gen-demo-gif.py keeps its tabs, its `fCamelCase` names and no type hints, since it is older than the rules.
+		- No black config. black has no tab mode, so it would reindent gen-demo-gif.py. No ruff format check either, for the same reason.
+		- `ruff.toml` in place of `pyproject.toml`. The repo is no Python package, and ruff reads either one.
+		- The leak rules stay under `--isolated`, so the new config can't widen or narrow them.
+	- Branch: round-20261107b
+	- Test case: test.bash [df06k]: the gate's lint runs `ruff check` under the fixture's ruff.toml over both files. The gate fixture now copies ruff.toml.
+	- Verified: [df06k] failed against the previous cicd.bash and passes after. `ruff check` under ruff.toml, py_compile and `mypy --strict` on codeql-findings.py pass, and codeql-findings.py gives the same exit codes and messages for a bad `--ignore` and no args. The lint area passed. test.bash 1864/0 with enhancement 7's checks.
+	- Swept: every .py file outside legacy/. There are only these 2.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-110700
+
+- Code Review 20261107 enhancement 5: Stale, misplaced and garbled Go comments
+	- ID: 2026110708000116
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- version.go:76 and :77 have words missing: "in the viewer's time zone can't be read as a date by eye."
+		- show.go:102 says "bar 'account apply'", but :107 also leaves out `account-set` and `account-unset`. The same 3 commands are typed out again at main.go:703 and :723. One shared check would keep them in step.
+		- main.go:350 to :353 explain the publish refusal at :362, with the `settlePrTool` block put in between later.
+	- Origin: b33bb16 and e4f824b, 2026-10-23, 1ed0f3a, 2026-09-28, and cfb6d90 with 9333159, 2026-08-18 and 08-19. Confirmed by reading.
+	- Estimated effort: Low
+	- Actual fix [Feature]: version.go's comment says the date follows in the viewer's time zone, since a build number can't be read as a date by eye. `writesAccounts()` in show.go names account apply, set and unset once, and identityWillPrint, the after-status and showBeforeState call it. The identityWillPrint comment says "the 3 that write accounts". In preflight the publish comment moved down to the switch it explains, below the `settlePrTool` block.
+	- Branch: round-20261107b
+	- Test case: none. Comments and one shared check with the same answers, so the suites staying green is the test.
+	- Verified: go test, the cross-builds and vet passed. test.bash 1861/0.
+	- Swept: every place that names `account-apply`, `account-set` and `account-unset` together. mutate.go:180 lists them with other commands for another reason, so it stays.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-110030
 
 - Stage 7 takes every box through the VM state helper's wrap
 	- ID: 2026102511210617
