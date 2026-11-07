@@ -137,6 +137,7 @@ SHELL_LINT_GLOBS=(
 	"cicd/utility/*.bash"
 	"cicd/utility/n8git_backup-and-publish"
 	"cicd/utility/include/*.bash"
+	"cicd/utility/include/*.sh"
 	"cicd/utility/demo/*.bash"
 )
 ## Report-only (findings warn, never gate). Empty since the bin/gitsby refactor.
@@ -172,6 +173,7 @@ PIP_AUDIT_IGNORE=(
 PS_LINT_GLOBS=(
 	"install.ps1"
 	"cicd/utility/run-latest.ps1"
+	"cicd/utility/include/safe-rm.ps1"
 )
 ## Its rules, in the file editors find on their own.
 PS_LINT_SETTINGS="PSScriptAnalyzerSettings.psd1"

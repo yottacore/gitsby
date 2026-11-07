@@ -17,6 +17,8 @@
 ##		  the Windows box's run; Wine is not Windows.
 ##		- Windows: the Go tests, cross-built, in a folder under %TEMP% made for the run and
 ##		  removed after it. There is no bash on those boxes to run the suite with.
+##		- What it removes on a box goes through a copy of the guard sent with the command:
+##		  include/safe-rm.sh on a Mac or Unix box, and include/safe-rm.ps1 on Windows.
 ##		- Each box is taken through the host lock for the length of its run, and only if it is
 ##		  free right now. A box that is off, unreachable or taken by someone else is skipped
 ##		  with SKIP, named again in the summary, and so is the whole stage when there is no lock
@@ -102,6 +104,11 @@ budgetSh='n=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/
 	lo="nice -n 19"; if ionice -c 3 true 2>/dev/null; then lo="${lo} ionice -c 3"; fi'
 ## Proves the folder on the Mac is this stage's before anything in it is removed.
 ownMark=".gitsby-remote-tests"
+## The guards the boxes remove through, sent with the commands that use them, less comments.
+safeRmSh="$(grep -v '^[[:space:]]*#' "${here}/utility/include/safe-rm.sh")"
+safeRmPs="$(grep -v '^[[:space:]]*#' "${here}/utility/include/safe-rm.ps1")"
+## A PowerShell script the way -EncodedCommand takes it: UTF-16LE, then base64.
+fPsEncode(){ printf '%s' "$1" | iconv -f UTF-8 -t UTF-16LE | base64 | tr -d '\n' ;}
 
 ## Runs the command $2 on $1, printing only what follows the marker it must echo first. The
 ## rest of the arguments go to ssh before the host. Returns ssh's status, which is the
@@ -194,15 +201,20 @@ fRunPosix(){
 	## The marker is checked again right before the removal, and a folder without it is not
 	## this stage's to touch. The old tree is moved aside first: a Finder window open on it
 	## rewrites .DS_Store mid-rm, which failed the whole copy. Leftovers get another go next run.
+	## The guard takes the temp root resolved, since macOS's sits behind the /var link.
 	fRemote "${sshName}" "echo ${mark}
 		set -e
+		${safeRmSh}
 		${dirSh}
 		if [ -e \"\$d\" ] && [ ! -f \"\$d/${ownMark}\" ]; then echo \"\$d is not this stage's folder, so it was left alone\" >&2; exit 3; fi
 		mkdir -p \"\$d\"
+		HOST_TEMP=\"\$(cd -P -- \"\$t\" && pwd -P)\" APP_NAME=${dir}
 		: > \"\$d/${ownMark}\"
 		if [ -f \"\$d/${ownMark}\" ]; then
 			if [ -e \"\$d/tree\" ]; then mv \"\$d/tree\" \"\$d/old.\$\$\"; fi
-			rm -rf \"\$d\"/old.* 2>/dev/null || echo \"note: some of \$d/old.* would not go\" >&2
+			for o in \"\${HOST_TEMP%/}/\${APP_NAME}\"/old.*; do
+				if [ -e \"\$o\" ] || [ -L \"\$o\" ]; then fSafeRm \"\$o\" >/dev/null || echo \"note: \$o would not go\" >&2; fi
+			done
 		fi
 		tar -xf - -C \"\$d\"
 		cd \"\$d/tree/${GO_MODULE_DIR}\"
@@ -261,10 +273,10 @@ fRunPosix(){
 ## Under the lock: the Windows box $1, reached as the first of the ssh names $2 that answers.
 ## The commands are cmd's, which is where ssh lands there.
 fRunWindows(){
-	local lockName="$1" sshName="" rc=0 log="${work}/gotest-$1.log" setupLog="${work}/setup-$1.log" dir
+	local lockName="$1" sshName="" rc=0 log="${work}/gotest-$1.log" setupLog="${work}/setup-$1.log" cleanLog="${work}/cleanup-$1.log" dir leaf
 	sshName="$(fReachable "${lockName}:$2")"
 	if [[ -z "${sshName}" ]]; then fEcho_Clean "  SKIP: ${lockName}, not reachable over ssh (tried $2)"; fResult "${lockName}" lost; return 0; fi
-	dir="%TEMP%\\test_gitsby_$(date +%Y%m%d-%H%M%S%2N)"
+	leaf="test_gitsby_$(date +%Y%m%d-%H%M%S%2N)" dir="%TEMP%\\${leaf}"
 	fEcho_Clean "  ${lockName}: copying the Go tests to ${dir}"
 	## "made" says mkdir made the folder, so it is this run's to remove whatever fails after.
 	fRemote "${sshName}" "echo ${mark}& mkdir \"${dir}\" && echo made&& %SystemRoot%\\System32\\tar.exe -xf - -C \"${dir}\"" < "${work}/win.tar" >"${setupLog}" 2>&1 || rc=$?
@@ -276,8 +288,12 @@ fRunWindows(){
 		## own expansion off it, so call reads it after start is done.
 		fRemote "${sshName}" "set /a GOMAXPROCS=%NUMBER_OF_PROCESSORS%/2 >nul& (if %NUMBER_OF_PROCESSORS% LSS 2 set GOMAXPROCS=1)& echo ${mark}& cd /d \"${dir}\\${GO_MODULE_DIR}\" && start \"\" /belownormal /b /wait ${EXE_NAME}-test.exe -test.v& call exit %^ERRORLEVEL%" -n >"${log}" 2>&1 || rc=$?
 	fi
+	## Through the guard, and only a folder this run made. The guard reads %TEMP% itself.
 	if grep -qx made "${setupLog}"; then
-		fRemote "${sshName}" "echo ${mark}& cd /d \"%TEMP%\" && rmdir /s /q \"${dir}\"" -n >/dev/null 2>&1 || true
+		if ! fRemote "${sshName}" "echo ${mark}& cd /d \"%TEMP%\" && powershell -NoProfile -NonInteractive -EncodedCommand $(fPsEncode "${safeRmPs}
+if (-not (fSafeRm (Join-Path \$env:TEMP '${leaf}'))) { exit 1 }")" -n >"${cleanLog}" 2>&1; then
+			fEcho_Clean "  note: ${lockName} kept ${dir}"; grep '^safe-rm: ' "${cleanLog}" || true
+		fi
 	fi
 	if ((rc == 255)); then fEcho_Clean "  SKIP: ${lockName}, lost the connection"; fResult "${lockName}" lost; return 0; fi
 	if [[ ! -s "${log}" ]]; then
@@ -527,3 +543,4 @@ if ((${#failed[@]})); then exit 1; fi
 ##		- 2026-10-26 JC: The Windows box hands back its Go tests' exit code, which start dropped there.
 ##		- 2026-11-06 JC: The lock's queue note takes its first line through sed, not head.
 ##		- 2026-11-06 JC: Its own scratch folder goes through fSafeRm. The commands on the boxes are unchanged.
+##		- 2026-11-06 JC: The old trees on the Mac and Unix boxes, and the Windows box's folder, go through a copy of the guard on the box: safe-rm.sh and safe-rm.ps1, sent with the command. The marker and made checks stay.

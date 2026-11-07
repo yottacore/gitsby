@@ -1152,12 +1152,19 @@ fRemoteBudgetUsed(){
 		&& [[ "$(fRemoteBudget 8 3.00)" == $'4\nnice -n 19'* && "$(fRemoteBudget 8 4.50)" == $'2\n'* && "$(fRemoteBudget 1 0.00)" == $'1\n'* \
 			&& "$(fRemoteBudget 16 9.00 mac)" == $'4\nnice -n 19'* && "$(fRemoteBudget 16 7.00 mac)" == $'8\n'* ]]
 }
-## True when the last run made a folder under %TEMP% on the Windows box $1, and removed that one.
+## True when the last run made a folder under %TEMP% on the Windows box $1, and removed that one
+## through the guard.
 fRemoteWinCleaned(){
-	local d=""
+	local d="" leaf=""
 	d="$(sed -n "s/^ssh $1 .*mkdir \"\\(%TEMP%[^\"]*\\)\".*/\\1/p" "${rtLog}")"
-	d="${d%%$'\n'*}"
-	[[ "${d}" == '%TEMP%\test_gitsby_'* ]] && grep -qF "rmdir /s /q \"${d}\"" "${rtLog}"
+	d="${d%%$'\n'*}" leaf="${d##*\\}"
+	[[ "${d}" == '%TEMP%\test_gitsby_'* ]] && grep -qxF "if (-not (fSafeRm (Join-Path \$env:TEMP '${leaf}'))) { exit 1 }" <<< "$(fRemoteWinGuard "$1")"
+}
+## The script the last run sent the Windows box $1 to remove its folder with, decoded.
+fRemoteWinGuard(){
+	local b=""
+	b="$(sed -n "s/^ssh $1 .*powershell -NoProfile -NonInteractive -EncodedCommand \\([A-Za-z0-9+\/=]*\\)\$/\\1/p" "${rtLog}")"
+	base64 -d <<< "${b%%$'\n'*}" | iconv -f UTF-16LE -t UTF-8
 }
 ## True when the remote shell for the stage's folder a/b puts it under HOST_TEMP, then under TMPDIR
 ## less its last slash, then under /tmp.
@@ -5700,12 +5707,18 @@ GHEOF
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[deywq] the guard removes a temp folder with no realpath on PATH, and refuses a link and a path through one" \
 		env PATH="${srBin}" APP_NAME="${APP_NAME}" "${srBash}" -c 'source "$1" && fSafeRm "$2/gone" && [[ ! -e "$2/gone" ]] && ! fSafeRm "$2/link" && ! fSafeRm "$2/link/sub" && [[ -d "$2/kept/sub" ]]' _ "${root}/cicd/utility/include/safe-rm.bash" "${srWork}"
-	## Stage 7's own commands on the boxes are left to their own item, hence old.*.
+	## The copy on the boxes, in POSIX sh: it removes under the stage's folder, and refuses the
+	## temp root, a folder right under it, a link, a path through one, and one outside.
+	local srRoot="${work}/saferm-sh/root"
+	mkdir -p "${srRoot}/stage/old.1/sub" "${srRoot}/stage/kept/sub" "${srRoot}/other"; ln -s "${srRoot}/stage/kept" "${srRoot}/stage/old.link"
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssert "[dez5f] the guard on a Mac or Unix box removes an old tree in the stage's folder, and refuses the rest" \
+		env PATH="${srBin}" HOST_TEMP="${srRoot}" APP_NAME=stage "$(command -v sh)" -c '. "$1" && fSafeRm "$2/stage/old.1" && [ ! -e "$2/stage/old.1" ] && ! fSafeRm "$2/stage/old.link" && ! fSafeRm "$2/stage/old.link/sub" && ! fSafeRm "$2/stage" && ! fSafeRm "$2" && ! fSafeRm "$2/stage/../other" && ! fSafeRm /etc/x && ! HOST_TEMP= fSafeRm "$2/stage/kept" && [ -d "$2/stage/kept/sub" ] && [ -d "$2/other" ]' _ "${root}/cicd/utility/include/safe-rm.sh" "${srRoot}"
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	for rmScript in "${rmScripts[@]}"; do
 		[[ "${rmScript}" == legacy/* || "${rmScript}" == cicd/utility/include/safe-rm.bash ]] && continue
 		fAssert "[deywr] ${rmScript} removes a folder only through the guard" \
-			bash -c '[[ -f "$1" ]] && ! grep -vE "$3" "$1" | grep -qE "$2"' _ "${root}/${rmScript}" '(^|[^-[:alnum:]_])rm +(-[[:alpha:]]*[rR]|--recursive)' '^[[:space:]]*#|git rm|raw rm|old\.\*'
+			bash -c '[[ -f "$1" ]] && ! grep -vE "$3" "$1" | grep -qE "$2"' _ "${root}/${rmScript}" '(^|[^-[:alnum:]_])rm +(-[[:alpha:]]*[rR]|--recursive)' '^[[:space:]]*#|git rm|raw rm'
 	done
 	## ------------------------------------------------------------------------------------
 	## The pipeline itself, after the directive review. Where a check would need a whole run
@@ -6955,7 +6968,8 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		ln -s "${rtBin}/go" "${rtBrew}/go"
 		cp "${root}/cicd/remote-tests.bash" "${rt}/cicd/"
 		fRemoteConfig
-		cp "${root}/cicd/utility/include/go-test-lines.bash" "${root}/cicd/utility/include/image-go.bash" "${root}/cicd/utility/include/safe-rm.bash" "${rt}/cicd/utility/include/"
+		cp "${root}/cicd/utility/include/go-test-lines.bash" "${root}/cicd/utility/include/image-go.bash" "${root}/cicd/utility/include/safe-rm.bash" \
+		   "${root}/cicd/utility/include/safe-rm.sh" "${root}/cicd/utility/include/safe-rm.ps1" "${rt}/cicd/utility/include/"
 		## The Unix boxes have runs of their own further down, with the config put back.
 		echo 'REMOTE_UNIX_HOSTS=()' >> "${rt}/cicd/config.bash"
 		printf 'package main\n\nfunc TestA(t *testing.T) { // [aaaab]\n}\n' > "${rt}/src-go/a_test.go"
@@ -7046,6 +7060,32 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[ddg8e] that copy is marked as the stage's, and holds the git dir, both builds and the fetched modules" \
 			bash -c "cd '${rtMac}/gitsby-remote-tests' && [[ -f .gitsby-remote-tests && -f tree/src-go/gitsby-test && \"\$(cat tree/src-go/gitsby)\" == mac ]] && git -C tree ls-files --error-unmatch src-go/a_test.go >/dev/null && grep -qx 'go mod download' '${rtLog}'"
 		fAssert "[ddg8f] the Windows box gets a folder under %TEMP% for the run, removed after"  fRemoteWinCleaned b29w
+		## The Mac's old trees go through the guard there, so an old.* that is a link is left, with a note.
+		local rtStage="${rtMac}/gitsby-remote-tests"
+		mkdir -p "${rtStage}/old.99/sub" "${rtMac}/kept"; echo keepme > "${rtMac}/kept/canary.txt"; ln -s "${rtMac}/kept" "${rtStage}/old.link"
+		fRemoteRun --mac-bin "${rtMacBin}"
+		fAssert "[dez5h] the Mac's copy step removes its old trees through the guard, and leaves an old.* that is a link" \
+			bash -c "[[ '${rtRc}' == 0 && ! -e '${rtStage}/old.99' && -L '${rtStage}/old.link' && -f '${rtMac}/kept/canary.txt' ]] && grep -qF 'safe-rm: refused, a link: ${rtStage}/old.link' '${rtOut}' && grep -qF 'note: ${rtStage}/old.link would not go' '${rtOut}' && grep -qxF '  passed on: b26 b29w' '${rtOut}'"
+		rm -f -- "${rtStage:?}/old.link"
+		## The script the Windows box got, run under pwsh, with a cmd.exe that moves the folder aside.
+		if command -v pwsh >/dev/null 2>&1; then
+			local rtWinTemp="${work}/remote-wintemp" rtWinBin="${work}/remote-winbin" rtGuard="${work}/remote-guard.ps1" rtLeaf=""
+			mkdir -p "${rtWinTemp}" "${rtWinBin}"
+			fStub "${rtWinBin}/cmd.exe" <<-'EOF'
+				#!/bin/sh
+				[ "$*" = "/d /c rmdir /s /q $6" ] && mv -- "$6" "$6.gone"
+			EOF
+			fRemoteWinGuard b29w > "${rtGuard}"; sed '$d' "${rtGuard}" > "${rtGuard}.fn.ps1"
+			rtLeaf="$(sed -n "s/^if (-not (fSafeRm (Join-Path [$]env:TEMP '\(test_gitsby_[0-9-]*\)'))) { exit 1 }\$/\1/p" "${rtGuard}")"
+			# shellcheck disable=SC2016  ## the inner shell does the expanding.
+			fAssert "[dez5g] the Windows box's guard removes the run's folder under %TEMP%, and refuses a link, another name, a .. and one not there" \
+				env TEMP="${rtWinTemp}" PATH="${rtWinBin}:${PATH}" bash -c '[[ -n "$2" ]] && mkdir -p "${TEMP}/$2/sub" "${TEMP}/other_1" "${TEMP}/kept" && ln -s "${TEMP}/kept" "${TEMP}/test_gitsby_2" \
+					&& out="$(pwsh -NoProfile -NonInteractive -File "$1" </dev/null)" && [[ "${out}" == "removed ${TEMP}/$2" && ! -e "${TEMP}/$2" && -d "${TEMP}/$2.gone/sub" ]] \
+					&& pwsh -NoProfile -NonInteractive -Command ". \"$1.fn.ps1\"; if ((fSafeRm \"${TEMP}/test_gitsby_2\") -or (fSafeRm \"${TEMP}/other_1\") -or (fSafeRm \"${TEMP}/test_gitsby_3\") -or (fSafeRm \"${TEMP}/kept/../$2.gone\")) { exit 1 }" </dev/null \
+					&& [[ -L "${TEMP}/test_gitsby_2" && -d "${TEMP}/other_1" && -d "${TEMP}/kept" && -d "${TEMP}/$2.gone" ]]' _ "${rtGuard}" "${rtLeaf}"
+		else
+			fSkip "[dez5g] needs pwsh"
+		fi
 		## Handed an image, as stage 7 does, every box's Go tests come from its Go, with the folder
 		## the build goes in mounted at its own path. A docker that writes the -o file stands in.
 		fStub "${rtBin}/docker" <<-EOF
@@ -7115,7 +7155,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fRemoteRun
 		rm -f -- "${rtFail:?}/nomkdir-b29w"
 		fAssert "[ddg8p] a Windows folder the run did not make is never removed" \
-			bash -c "[[ '${rtRc}' == 1 ]] && ! grep -q '^ssh b29w .*rmdir' '${rtLog}' && grep -qF 'FAIL: b29w, could not copy the Go tests' '${rtOut}'"
+			bash -c "[[ '${rtRc}' == 1 ]] && ! grep -q '^ssh b29w .*EncodedCommand' '${rtLog}' && grep -qF 'FAIL: b29w, could not copy the Go tests' '${rtOut}'"
 		: > "${rtFail}/go-build"
 		fRemoteRun
 		rm -f -- "${rtFail:?}/go-build"
