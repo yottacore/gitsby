@@ -352,10 +352,6 @@ func (a *app) needsConfirmableBranch() bool {
 // commands that exist to publish and can't, the ones whose argument is wrong, and
 // the ones whose work is decided up front.
 func (a *app) preflight() error {
-	// Commands that exist to publish, refused here rather than halfway through on
-	// raw git text - and far better than "succeeding" having sent nothing. The rest
-	// degrade instead: they mean something locally, so they run and say what they
-	// skipped.
 	// Which git host this repo lives on, and which CLI can speak to it - settled before
 	// any pr refusal, so the reason a pr command can't run is the real one rather
 	// than whichever tool happened to be missing.
@@ -364,6 +360,10 @@ func (a *app) preflight() error {
 			return err
 		}
 	}
+	// Commands that exist to publish, refused here rather than halfway through on
+	// raw git text - and far better than "succeeding" having sent nothing. The rest
+	// degrade instead: they mean something locally, so they run and say what they
+	// skipped.
 	switch a.cmd.name {
 	case "sync":
 		if err := a.requireOnline("sync", "Offline, '"+meName+" pullcom' skips the pull and just commits; run '"+meName+" sync' when you are back online."); err != nil {
@@ -705,11 +705,11 @@ func (a *app) runMutating(mismatch identityMismatch) error {
 		return err
 	}
 	a.out.clean("")
-	switch a.cmd.name {
-	case "account-apply", "account-set", "account-unset":
+	switch {
+	case a.writesAccounts():
 		// every file it wrote was named as it was written; a repo status would add
 		// nothing
-	case "repo-clone":
+	case a.cmd.name == "repo-clone":
 		// the after-status would show the wrong (current) directory
 		a.out.status("Cloned into '" + a.cloneDirShown() + "'.")
 	default:
@@ -726,7 +726,7 @@ func (a *app) runMutating(mismatch identityMismatch) error {
 // stands in.
 func (a *app) showBeforeState() error {
 	switch {
-	case a.cmd.name == "account-apply" || a.cmd.name == "account-set" || a.cmd.name == "account-unset":
+	case a.writesAccounts():
 		// Nothing about a repo is involved: these write config files, and showing
 		// branch state here would suggest they do something to the repo you happen
 		// to be standing in.

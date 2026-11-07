@@ -81,20 +81,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: 4918b5b and cfb6d90, 2026-08-18 to 08-19, through 47bcda3, 2026-10-06. The 20261003 round's enhancement 7 covered the duplicates in other files. Confirmed by reading and `git log -G`.
 	- Estimated effort: Avg
 
-- Code Review 20261107 enhancement 5: Stale, misplaced and garbled Go comments
-	- ID: 2026110708000116
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Requirements [Feature]:
-		- version.go:76 and :77 have words missing: "in the viewer's time zone can't be read as a date by eye."
-		- show.go:102 says "bar 'account apply'", but :107 also leaves out `account-set` and `account-unset`. The same 3 commands are typed out again at main.go:703 and :723. One shared check would keep them in step.
-		- main.go:350 to :353 explain the publish refusal at :362, with the `settlePrTool` block put in between later.
-	- Origin: b33bb16 and e4f824b, 2026-10-23, 1ed0f3a, 2026-09-28, and cfb6d90 with 9333159, 2026-08-18 and 08-19. Confirmed by reading.
-	- Estimated effort: Low
-
 - Code Review 20261107 enhancement 6: The Python helpers don't follow the Python rules, and nothing checks them
 	- ID: 2026110708000117
 	- Type: Enhancement
@@ -3521,6 +3507,27 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [ddf4q] and [ddf4r] in test.bash.
 	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
 	- Closed: 20261003-145130
+
+- Code Review 20261107 enhancement 5: Stale, misplaced and garbled Go comments
+	- ID: 2026110708000116
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- version.go:76 and :77 have words missing: "in the viewer's time zone can't be read as a date by eye."
+		- show.go:102 says "bar 'account apply'", but :107 also leaves out `account-set` and `account-unset`. The same 3 commands are typed out again at main.go:703 and :723. One shared check would keep them in step.
+		- main.go:350 to :353 explain the publish refusal at :362, with the `settlePrTool` block put in between later.
+	- Origin: b33bb16 and e4f824b, 2026-10-23, 1ed0f3a, 2026-09-28, and cfb6d90 with 9333159, 2026-08-18 and 08-19. Confirmed by reading.
+	- Estimated effort: Low
+	- Actual fix [Feature]: version.go's comment says the date follows in the viewer's time zone, since a build number can't be read as a date by eye. `writesAccounts()` in show.go names account apply, set and unset once, and identityWillPrint, the after-status and showBeforeState call it. The identityWillPrint comment says "the 3 that write accounts". In preflight the publish comment moved down to the switch it explains, below the `settlePrTool` block.
+	- Branch: round-20261107b
+	- Test case: none. Comments and one shared check with the same answers, so the suites staying green is the test.
+	- Verified: go test, the cross-builds and vet passed. test.bash 1861/0.
+	- Swept: every place that names `account-apply`, `account-set` and `account-unset` together. mutate.go:180 lists them with other commands for another reason, so it stays.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-110030
 
 - Stage 7 takes every box through the VM state helper's wrap
 	- ID: 2026102511210617

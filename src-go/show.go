@@ -100,13 +100,23 @@ func (a *app) showIncoming() {
 	a.showList("git", "diff", "--name-status", "HEAD..@{u}")
 }
 
+// writesAccounts: account apply, set and unset write config files and touch no
+// repo, so they show neither the repo state nor the identity block.
+func (a *app) writesAccounts() bool {
+	switch a.cmd.name {
+	case "account-apply", "account-set", "account-unset":
+		return true
+	}
+	return false
+}
+
 // identityWillPrint: whether this run reaches showIdentity at all. Every mutating
-// command previews the block, bar 'account apply', which shows the account list
-// instead; among the read-only ones only status and whoami do. It gates the live
-// probes that feed the block and nothing else, so being over-broad costs a round
-// trip and never an answer.
+// command previews the block, bar the 3 that write accounts, which show the
+// account list instead; among the read-only ones only status and whoami do. It
+// gates the live probes that feed the block and nothing else, so being over-broad
+// costs a round trip and never an answer.
 func (a *app) identityWillPrint() bool {
-	if a.cmd.name == "account-apply" || a.cmd.name == "account-set" || a.cmd.name == "account-unset" {
+	if a.writesAccounts() {
 		return false
 	}
 	if a.cmd.mutating {

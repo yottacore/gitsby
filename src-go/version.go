@@ -73,8 +73,8 @@ func isReleaseVersion(v string) bool {
 }
 
 // versionText is "v2.1.0 build dbrk8", or just the version where nothing stamped a
-// build. Between releases the commit's date follows, in the viewer's time zone
-// can't be read as a date by eye.
+// build. Between releases the commit's date follows in the viewer's time zone,
+// since a build number can't be read as a date by eye.
 func versionText() string {
 	b := buildNumber()
 	if b == "" {
