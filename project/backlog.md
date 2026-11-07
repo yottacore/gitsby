@@ -36,9 +36,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - On macOS the config conversion notice names the old file by its resolved path
 	- ID: 2026110715250050
 	- Type: Bug
-	- Status: Queued
-	- Needs local test suite run?: Yes
-	- Needs external testing: macOS hosted run (macos.yml), or go test on b26 or vmKt6m
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: No
+	- Needs external testing: macOS hosted run (macos.yml), one run
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261107-152500
 	- Opened by: hosted macOS run 42410549170 on gover at ebfd4b5
@@ -49,7 +49,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: in the hosted runs only; a Linux stand-in is a config folder reached through a symlink
 	- Possible cause [Bug]: the backup name is built from filepath.EvalSymlinks(file) in cfgformat.go, near line 251
 	- Estimated effort: Low
+	- Actual cause [Bug]: replaceOldFormat resolved the file's whole path with EvalSymlinks, so a config folder under a link got its backup named under the resolved folder, while the File line kept the given one.
+	- Actual fix [Bug]: replaceOldFormat resolves the path only when the file itself is a link, which is converted where it lives, as before. A folder reached through a link keeps the name it was given, so File and From agree.
+	- Test case: Go `[df0ex]` a config folder reached through a link is converted, backed up and named as given. TestFlatFileIsConverted `[df065]` and TestOldPinFileIsConverted `[df08m]` cover the macOS /var case.
+	- Verified: `[df0ex]` fails on the previous cfgformat.go on Linux and passes after. A darwin/amd64 test binary of the previous code on vmKt6m fails `[df0ex]`, `[df065]` and `[df08m]`, and the fixed one passes them and every TestOldFormat test. go test and the quick lint and unit areas pass.
+	- Swept: the other EvalSymlinks uses are lockAccountsFile (lock name only) and config.go's rule path check, neither names a file in a notice.
 	- Progress log:
+		- Fixed on round-20261107c. Hosted macOS run left to the orchestrator.
 		- Filed at round start from the gover hosted run's failure; no earlier item covers it.
 
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby

@@ -247,9 +247,13 @@ func (mig *formatMigration) readAs() string {
 // converted text over it. Under the same lock 'account set' takes, and only while
 // the file still holds what was read: another run may have converted it already.
 func replaceOldFormat(file, read, converted string, mig *formatMigration) {
+	// Only a link as the file itself moves the work to its target. A folder reached
+	// through a link keeps the name it was given, which the notice shows.
 	target := file
-	if resolved, err := filepath.EvalSymlinks(file); err == nil {
-		target = resolved
+	if fi, err := os.Lstat(file); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		if resolved, err := filepath.EvalSymlinks(file); err == nil {
+			target = resolved
+		}
 	}
 	unlock, err := lockAccountsFile(target, accountLockWait)
 	if err != nil {
