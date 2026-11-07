@@ -226,6 +226,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 			- Each delete is leased on the value that passed the containment check, so origin refuses a branch that moves after it was asked. It names the full ref, since origin matches a short name against its tags too.
 			- Asking is part of the push, so `--no-fetch` still sends it. If origin does not answer, nothing is deleted there, the same as when the fetch finds origin unreachable. The local branches still go, and another prune could not find those copies, so prune prints the leased delete for each one. Decided 2026-09-15.
 			- `br merge` deletes origin's copy of the branch it merged the same way, leased on the tip it merged. A copy with commits the merge doesn't have is left alone.
+				- Where the target pushes to its own name on origin, the merge push and that delete are 1 atomic push, and origin isn't asked first. Both land or neither does, so the merge still reaches origin before the branch goes. A refused push falls back to pushing the merge alone, then asking. (2026-11-07)
 	- It takes no arguments at all. Choosing branches by name is what raw git is for, and an argument slot would invite exactly the "delete this one specific thing" use that the ancestry gate cannot vouch for.
 
 - The pre-2.0 command names were dropped outright rather than kept as hidden aliases. Version 2 is a deliberate break, the tool is invoked by a different name than it was, and not all of the old commands worked. Carrying dead spellings forward would have been the worst of both.

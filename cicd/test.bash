@@ -2273,6 +2273,19 @@ fRunSuite(){
 		bash -c "git -C '${pnOrigin}' merge-base --is-ancestor \"\$(cat '${work}/$1-pn7tip')\" refs/heads/dev"
 	fAssert    "[dcnmd] and deletes origin's copy, leased on the tip it merged" \
 		bash -c "! git -C '${pnOrigin}' show-ref --verify --quiet refs/heads/tagged && grep -qF -- \"--force-with-lease=refs/heads/tagged:\$(cat '${work}/$1-pn7tip')\" '${work}/$1-pn7.trace'"
+	## The merge push and origin's delete go as 1 atomic push, leased on the merged tip, and origin
+	## isn't asked first.
+	(
+		cd "${pnA}"
+		git checkout --quiet -b atom dev; echo atom > atom.txt; git add --all
+		git commit --quiet -m atom; git push --quiet -u origin atom
+		git rev-parse refs/heads/atom > "${work}/$1-pn11tip"
+	)
+	( cd "${pnA}" && GIT_TRACE="${work}/$1-pn11.trace" "${gitsby}" -q br merge "merge atom" ) > "${work}/$1-pn11.out" 2>&1 || true
+	fAssert    "[df06m] br merge pushes the merge and deletes origin's copy in 1 atomic push" \
+		bash -c "! git -C '${pnOrigin}' show-ref --verify --quiet refs/heads/atom && git -C '${pnOrigin}' log -1 --format=%s refs/heads/dev | grep -qx 'merge atom' && [[ \$(grep -c 'built-in: git push' '${work}/$1-pn11.trace') == 1 ]] && grep -qF -- \"push --atomic --force-with-lease=refs/heads/atom:\$(cat '${work}/$1-pn11tip')\" '${work}/$1-pn11.trace'"
+	fAssert    "[df06n] and doesn't ask origin about the branch first"  bash -c "[[ -s '${work}/$1-pn11.trace' ]] && ! grep -qF 'ls-remote' '${work}/$1-pn11.trace'"
+	fAssertOut "[df06p] and its plan names the 1 push"  "^ +git push --atomic \\(the merge, and the leased delete of origin's 'atom'\\) \\*\$"  cat "${work}/$1-pn11.out"
 	## Someone else pushes to the branch, and br merge --no-fetch never pulls it in. Origin's copy
 	## is then the only ref to that commit.
 	(
@@ -8443,3 +8456,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261107 JC: A v2.1.0 flat accounts file converts on first read, found in ~/.config too. [db00e], [db010], [dbfh2] and [dcmey] are off for [df05t], [df05w], [df05x] and [df05v]. 1854 -> 1861.
 ##		- 20261107 JC: The gate fixture has ruff.toml, and [df06k] checks lint runs ruff under it. 1861 -> 1862.
 ##		- 20261107 JC: run-latest.ps1 runs once with no build and once under th-TH, [df06h] and [df06j]. 1862 -> 1864.
+##		- 20261107 JC: br merge pushes the merge and deletes origin's copy in 1 atomic push, [df06m], [df06n] and [df06p]. 1864 -> 1867.

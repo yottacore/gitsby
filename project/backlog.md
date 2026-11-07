@@ -47,22 +47,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-07, by hand. A Windows path with an apostrophe, such as `C:\Users\O'Brien\dev`, is the likely real case.
 	- Possible cause [Bug]: The old pin's file says Format 3, like the new one, so nothing tells them apart. Only a double-quoted value holding `\\` is affected. Respelling `\\` to `\` there would fix those files and change a value that meant 2 backslashes. Needs a choice.
 
-- Code Review 20261107 enhancement 3: `br merge` and `release` talk to origin more often than they need to
-	- ID: 2026110708000114
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Requirements [Feature]:
-		- `br merge` with a fetch opens 4 connections: fetch, push, `ls-remote --heads`, and the leased branch delete. The delete is already leased on the merged tip, so the `ls-remote` only picks the message. One `git push --atomic` with the lease could do the push and the delete together.
-		- `release` opens 3 receive-pack connections. The main push and the tag push could be one.
-		- The pull at the end of `br merge`, branchcmd.go:170, can only print "Already up to date" once the merge is pushed. It matters only where the upstream isn't the pushed branch.
-	- Decisions:
-		- Against: the merge reaches origin before the branch goes. An atomic push keeps that. Dropping the last pull needs the odd-upstream case settled first.
-	- Origin: the `ls-remote` from df38db0, 2026-09-15. The push order and the pull came from the frozen bash, 86ca0b1, 2026-08-18. Counts Confirmed by strace against local bare origins, the time saved Plausible.
-	- Estimated effort: Avg
-
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
@@ -3460,6 +3444,34 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
 	- Closed: 20261003-145130
 
+- Code Review 20261107 enhancement 3: `br merge` and `release` talk to origin more often than they need to
+	- ID: 2026110708000114
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- `br merge` with a fetch opens 4 connections: fetch, push, `ls-remote --heads`, and the leased branch delete. The delete is already leased on the merged tip, so the `ls-remote` only picks the message. One `git push --atomic` with the lease could do the push and the delete together.
+		- `release` opens 3 receive-pack connections. The main push and the tag push could be one.
+		- The pull at the end of `br merge`, branchcmd.go:170, can only print "Already up to date" once the merge is pushed. It matters only where the upstream isn't the pushed branch.
+	- Decisions:
+		- Against: the merge reaches origin before the branch goes. An atomic push keeps that. Dropping the last pull needs the odd-upstream case settled first.
+	- Origin: the `ls-remote` from df38db0, 2026-09-15. The push order and the pull came from the frozen bash, 86ca0b1, 2026-08-18. Counts Confirmed by strace against local bare origins, the time saved Plausible.
+	- Estimated effort: Avg
+	- Actual fix [Feature]: When origin has the work branch and the target pushes to its own name there, br merge sends `git push --atomic --force-with-lease=refs/heads/<branch>:<merged tip> origin refs/heads/<target>:refs/heads/<target> :refs/heads/<branch>`, then deletes the branch here. Both refs land or neither does, so the merge still reaches origin before the branch goes. The `ls-remote` ask is skipped on that path. A refusal sends nothing, prints "Origin refused that push as a whole; pushing the merge alone.", and falls back to the 2 pushes and the ask, which name why. The plan shows 1 line for the push, `git push --atomic (the merge, and the leased delete of origin's '<branch>') *`, then `git branch -d`.
+	- Decisions:
+		- The atomic push names the target's ref, so it runs only where the target's upstream is `origin/<target>`. Any other upstream keeps the old `git push`, since that is the odd-upstream case the Against row leaves open.
+		- The pull at the end stays, per the Against row. On this path it is a local `git merge --ff-only`, with no connection.
+		- release's main and tag pushes stay 2. Joining them names main's ref the same way, so it waits on the same odd-upstream question. Not asked for this round.
+		- spawn-count.bash has no br merge or release row, so no count changed.
+	- Branch: round-20261107b
+	- Test case: test.bash [df06m]: br merge with a fetch on a branch origin has makes 1 `git push`, the atomic one leased on the merged tip, and origin ends with the merge on dev and no branch. [df06n]: no `ls-remote` runs. [df06p]: the plan's push line. The fallbacks were already covered: [dcnme] to [dcnmh] for a branch origin moved, [dd5c1] to [dd5c3] for one already gone.
+	- Verified: [df06m] and [df06n] failed against the previous build, test.bash 1864/2, and pass after. [df06p] failed on that build's output. Counted with GIT_TRACE against a local bare origin, br merge with a fetch now opens 2 connections, the fetch and the atomic push, where it opened 4. test.bash 1867/0, fuzz 313/0, parity 30/0.
+	- Swept: the other pushes that pair with a delete. br prune's deletes are already 1 batched push. pr ok deletes no branch on origin itself.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-112100
+
 - Code Review 20261107 enhancement 4: The Go files the last rounds didn't read have duplicates and leftovers
 	- ID: 2026110708000115
 	- Type: Enhancement
@@ -3504,7 +3516,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: [df06j] failed before the fix, with the copy named `gitsby_25690102-030405`, and passes after. [df06h] passed before and after, since the `exit 1` never ran. PSScriptAnalyzer passed 5.1-compatible. test.bash 1864/0.
 	- Swept: every `.ToString(`, `Get-Date -Format` and `-UFormat` in the .ps1 files. The only other one is the frozen legacy/bin/gitsby.ps1:1717, a commit message that nothing sorts, so it stays.
 	- Acceptance signoff: Self-closed: its tests passed.
-	- Closed: 20261107-111500
+	- Closed: 20261107-110645
 
 - Code Review 20261107 enhancement 6: The Python helpers don't follow the Python rules, and nothing checks them
 	- ID: 2026110708000117
@@ -3532,7 +3544,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: [df06k] failed against the previous cicd.bash and passes after. `ruff check` under ruff.toml, py_compile and `mypy --strict` on codeql-findings.py pass, and codeql-findings.py gives the same exit codes and messages for a bad `--ignore` and no args. The lint area passed. test.bash 1864/0 with enhancement 7's checks.
 	- Swept: every .py file outside legacy/. There are only these 2.
 	- Acceptance signoff: Self-closed: its tests passed.
-	- Closed: 20261107-111500
+	- Closed: 20261107-110700
 
 - Code Review 20261107 enhancement 5: Stale, misplaced and garbled Go comments
 	- ID: 2026110708000116
