@@ -19,6 +19,11 @@ func (a *app) printCopyright() {
 	a.out.clean("")
 }
 
+// printVersion is the whole of --version: one line, for a script to read back.
+func (a *app) printVersion() {
+	a.out.cleanf("%s %s", meName, versionText())
+}
+
 func (a *app) printBlurb() {
 	a.out.clean("")
 	a.out.clean("Safer, state-checked wrappers for everyday git. Every command verifies the")

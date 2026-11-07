@@ -1530,6 +1530,11 @@ fRunSuite(){
 	## line that repeats it.
 	fAssert "[dbshq] --version names the build once"  \
 		bash -c "[[ \"\$(cd '${cloneA}' && '${gitsby}' --version | grep -cE '^gitsby v[0-9]')\" == 1 ]]"
+	## Scripts and installers read it back, so it is the version line and nothing else.
+	fAssert "[df05h] --version is exactly 1 line"  \
+		bash -c "[[ \"\$(cd '${cloneA}' && '${gitsby}' --version | wc -l)\" == 1 ]]"
+	fAssert "[df05j] and -v, --ver and version give the same line"  \
+		bash -c "cd '${cloneA}' && want=\"\$('${gitsby}' --version; echo .)\" && for w in -v --ver version; do [[ \"\$('${gitsby}' \"\${w}\"; echo .)\" == \"\${want}\" ]] || exit 1; done"
 	fAssert "[dbshr] --help names the build once"     \
 		bash -c "[[ \"\$(cd '${cloneA}' && '${gitsby}' --help | grep -cE '^gitsby v[0-9]')\" == 1 ]]"
 	## --about and --donate are the two informational flags. Both answer outside a repo, and each
@@ -1548,6 +1553,8 @@ fRunSuite(){
 	## Help lists all four on one line, and only --help worked past the first word.
 	fAssertOut  "[dd80x] --version works after a command, as --help does"  '^gitsby v[0-9]' \
 		bash -c "cd '${cloneA}' && '${gitsby}' br create infoflag --version"
+	fAssert     "[df05k] and is the same 1 line there"  \
+		bash -c "cd '${cloneA}' && [[ \"\$('${gitsby}' status --version; echo .)\" == \"\$('${gitsby}' --version; echo .)\" ]] && [[ \"\$('${gitsby}' status --version | wc -l)\" == 1 ]]"
 	fAssert     "[dd80y] and the command does nothing"  bash -c "cd '${cloneA}' && ! git rev-parse --verify -q refs/heads/infoflag"
 	fAssertOut  "[dd80z] and --about"   'github\.com/yottacore/gitsby'      bash -c "cd '${cloneA}' && '${gitsby}' status --about"
 	fAssertOut  "[dd810] and --donate"  'github\.com/sponsors/jim-collier'  bash -c "cd '${cloneA}' && '${gitsby}' sync --donate"
@@ -5884,8 +5891,10 @@ GHEOF
 	## Between releases the build number alone doesn't say how old a build is. The date is local, so pin the zone.
 	fAssertOut "[debe8] a build past a tag adds the commit's date after the build number"  '^gitsby v9\.9\.9-3-gabc1234-dirty build dbd05 \(2026-08-17\)$' \
 		bash -c "cd '${root}/src-go' && go build -ldflags '-X main.version=9.9.9-3-gabc1234-dirty -X main.buildEpoch=1787000000' -o '${work}/bnprobe2' . && TZ=UTC '${work}/bnprobe2' --version"
-	fAssertOut "[dcnw7] and the copyright has a line of its own"  '^Copyright © [0-9-]+ Jim Collier\.$' \
-		bash -c "'${work}/bnprobe0' --version"
+	## Was the copyright on a line of its own after the build line. --version is that line alone now,
+	## and the copyright stays in --help and --about.
+	fAssert "[dcnw7] and the build line is all --version prints"  \
+		bash -c "[[ \"\$('${work}/bnprobe0' --version; echo .)\" == 'gitsby v9.9.9'\$'\\n'. ]]"
 	## release.bash reads the build line back out of the banner for the release notes, and used
 	## to cut it at the comma that came before the copyright.
 	fAssertFail "[dcnw8] and release.bash no longer cuts the build line at a comma" \
@@ -5993,6 +6002,13 @@ GHEOF
 		#!/bin/sh
 		echo "kept build ran"
 	EOF
+	## --list showed the second line of --version, the build line while a blank came first.
+	fStub "${kb}/cicd/artifacts/builds/build_20251231-000000.gitsby" <<-'EOF'
+		#!/bin/sh
+		echo "gitsby v1.2.3 build dbd05"
+	EOF
+	fAssertOut "[df05m] and its list names each kept build's version" '^ 2  build_20251231-000000\.gitsby  gitsby v1\.2\.3 build dbd05$' \
+		bash "${kb}/cicd/utility/keep-build.bash" --list
 	fAssertOut "[ddf86] and it runs a kept build by number" '^kept build ran$' bash "${kb}/cicd/utility/keep-build.bash" --run 1
 	# shellcheck disable=SC2016  ## The substitution is the input, for the script to refuse.
 	fAssert "[ddf87] and refuses one that isn't digits, without running it" \
@@ -8346,3 +8362,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261107 JC: The config, default branch, SSH, token file and tea lines say why a value is unknown, and name a path on a File line.
 ##		- 20261107 JC: glab's JSON is read by hand. Checks for a state past a nested one, a branch name with an escaped quote and a comma, and no encoding/json in the build. 1847 -> 1850.
 ##		- 20261107 JC: An aliased remote asks ssh -G once, about its connect target. [dd5cb] is off, since the bare alias is no longer asked. 1850 -> 1850.
+##		- 20261107 JC: --version is its one line. [dcnw7] pins that line in place of the copyright line, and keep-build --list reads it. 1850 -> 1854.

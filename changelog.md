@@ -75,6 +75,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `--version`, `--about` and `--donate` work after a command, as `--help` always has. `-v` still counts only as the first word, so it can't turn a command into a silent no-op.
 
+- `--version` prints its one version line and nothing else, with no blank lines. The copyright and license lines stay in `--help` and `--about`.
+
 - `repo clone` names the folder it clones into in full, in the plan and after. The git command it runs keeps the folder as typed.
 
 - The accounts file is in [SHCL](https://github.com/yottacore/shcl) now - `key: value`, one indented block per account - read and written through that format's own module rather than a parser of Gitsby's own. Several folders for one account are a list: `path: [~/dev/work, ~/dev/other]`. Key names settle on lower case (`ghaccount`, `tokenfile`, `sshkey`, `pathcontains`); the file takes any casing. A file in the old flat `key = value` layout is still read as it is, and the first `account set` rewrites it in the new layout with its comments kept. A file `account set` creates ends with a footer naming the format and where its syntax is written down. A backslash is plain text, quoted or not, so a Windows path is typed as it is: `path: C:\dev\work`.

@@ -88,7 +88,7 @@ func run(out *printer, argv []string) error {
 		a.printHelp()
 		return nil
 	case "-v", "--ver", "--version", "version":
-		a.printCopyright()
+		a.printVersion()
 		return nil
 	case "--about", "about":
 		a.printAbout()
@@ -107,6 +107,13 @@ func run(out *printer, argv []string) error {
 	}
 	if tool != "" {
 		return a.cmdPassthrough(tool, ptArgs)
+	}
+
+	// --version after a command is the same one line, so it answers ahead of the
+	// blank below.
+	if _, _, info, err := parseArgs(argv); err == nil && info == "version" {
+		a.printVersion()
+		return nil
 	}
 
 	// Breathing room after the shell prompt (the matching trailing blank is at each
@@ -166,8 +173,6 @@ func (a *app) settleCommand(argv []string) error {
 		switch info {
 		case "help":
 			a.printHelp()
-		case "version":
-			a.printCopyright()
 		case "about":
 			a.printAbout()
 		case "donate":

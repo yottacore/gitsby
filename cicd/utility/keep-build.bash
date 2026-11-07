@@ -63,7 +63,7 @@ case "${1:-}" in
 		mapfile -t kept < <(fKept)
 		((${#kept[@]})) || { echo "nothing kept yet."; exit 0; }
 		for (( i = ${#kept[@]} - 1, n = 1; i >= 0; i--, n++ )); do
-			printf '%2d  %s  %s\n' "${n}" "$(basename "${kept[i]}")" "$("${kept[i]}" --version 2>/dev/null | sed -n '2p' || true)"
+			printf '%2d  %s  %s\n' "${n}" "$(basename "${kept[i]}")" "$("${kept[i]}" --version 2>/dev/null | awk 'NF && !seen {print; seen = 1}' || true)"
 		done
 		;;
 	--run)
@@ -109,3 +109,4 @@ esac
 ##		- 20261003 JC: A build number that is not digits is refused before arithmetic sees it.
 ##		- 20261004 JC: fDie prints with printf. Every expansion braced, and shellcheck enforces it.
 ##		- 20261106 JC: Its scratch folder goes through fSafeRm.
+##		- 20261107 JC: --list shows the first line of --version that isn't blank. It took the second, which went blank once --version was one line.

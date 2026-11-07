@@ -33,21 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- `--version` prints only its first line
-	- ID: 2026110707345868
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261107-073458
-	- Opened by: jim-collier
-	- Milestone: Pre-next-cut.
-	- Requirements [Feature]:
-		- `--version` should only show the first line that is shown currently, and no empty lines.
-			- Today that's `gitsby v2.1.0-723-g4617c5f build dez9a (2026-11-06)`, then the copyright and license lines, and a blank line.
-	- Notes:
-		- `-v`, `--ver` and `version` are the same command in main.go, so all of them change.
-		- The installers and spawn-report.bash take only the first line already. release.bash's proof step matches the whole output, so check it and the suites for anything that pins the rest.
-
 - Convert config files from every earlier version
 	- ID: 2026110707345874
 	- Type: Task
@@ -1795,6 +1780,32 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: dup-acct
 	- Test case: TestRepeatedAccountKeys, TestAccountSetFindsTheKeyInAnyPiece, and one account list check in test.bash.
 	- Closed: 2026-09-30
+
+- `--version` prints only its first line
+	- ID: 2026110707345868
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261107-073458
+	- Opened by: jim-collier
+	- Milestone: Pre-next-cut.
+	- Requirements [Feature]:
+		- `--version` should only show the first line that is shown currently, and no empty lines.
+			- Today that's `gitsby v2.1.0-723-g4617c5f build dez9a (2026-11-06)`, then the copyright and license lines, and a blank line.
+	- Notes:
+		- `-v`, `--ver` and `version` are the same command in main.go, so all of them change.
+		- The installers and spawn-report.bash take only the first line already. release.bash's proof step matches the whole output, so check it and the suites for anything that pins the rest.
+	- Actual fix [Enhancement]: `printVersion` in help.go prints the build line alone, for `-v`, `--ver`, `--version` and `version`. `--version` after a command gives the same line, answered in `run` before the opening blank. `--help` and `--about` keep the copyright block. keep-build.bash `--list` takes the first line that isn't blank, since it took the second, which went blank with this change. changelog.md has a line under vNEXT.
+	- Decisions:
+		- `--version` after a command, such as `status --version`, is the same 1 line, with no blanks around it. It no longer needs git on PATH, as the first-word form never did.
+		- test.bash `[dcnw7]` pinned the copyright on a line of its own in the `--version` output. It changes with this item and now pins the build line as the whole output.
+		- release.bash's proof step matches the version anywhere in the output, so it needs no change. README.md has no `--version` sample, and design.md's build-line bullet still holds.
+	- Branch: round-20261107b
+	- Test case: test.bash `[df05h]` `--version` is exactly 1 line. `[df05j]` `-v`, `--ver` and `version` give the same output as `--version`. `[df05k]` `status --version` is the same 1 line. `[dcnw7]` rewritten: an unstamped build's `--version` is `gitsby v9.9.9` and nothing else. `[df05m]` keep-build.bash `--list` names each kept build's version line.
+	- Verified: On a build of the old main.go and help.go, `[df05h]`, `[df05k]` and the new `[dcnw7]` fail, and the old keep-build.bash fails `[df05m]` with an empty version column. `[df05j]` passes on both, since the 4 words were one command already; it pins that. After: test.bash 1850 -> 1854, 0 failed. fuzz 313/0, parity 30/0, go test ok, `GOOS=windows go vet` and darwin and freebsd builds pass, lint stage passed.
+	- Swept: every `--version` read in cicd/, the installers and the suites. install.bash, install.ps1 and spawn-report.bash read only the first line. release.bash's `buildLine` takes the first line starting `gitsby v`. keep-build.bash took line 2, fixed here. The `--version` reads in test.bash and fuzz.bash are of stand-ins or other tools, or match the first line.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-103300
 
 - Code Review 20261107 enhancement 2: Every non-GitHub ssh remote costs an extra `ssh -G`
 	- ID: 2026110708000113
