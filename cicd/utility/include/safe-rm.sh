@@ -3,12 +3,12 @@
 #  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
 
 ## fSafeRm PATH: safe-rm.bash's guard in POSIX sh, for stage 7's commands on a Mac or Unix box,
-## whatever shell ssh lands in there. remote-tests.bash sends it ahead of the command that uses
-## it, less these comments. The same checks: one absolute path, under a folder named tmp or
-## under ${HOST_TEMP}/${APP_NAME}/, never HOST_TEMP itself nor a folder right under it, and not
-## a link or through one. The caller sets HOST_TEMP to the box's temp root, resolved, and
-## APP_NAME to the stage's folder under it. No realpath, and rm's -x where it has no
-## --one-file-system, as in safe-rm.bash.
+## whatever shell ssh lands in there, and for the image build's steps. remote-tests.bash sends
+## it ahead of the command that uses it, less these comments, and the recipe copies it in. The
+## same checks: one absolute path, under a folder named tmp or under ${HOST_TEMP}/${APP_NAME}/,
+## never HOST_TEMP itself nor a folder right under it, and not a link or through one. The caller
+## sets HOST_TEMP to the box's temp root, resolved, and APP_NAME to the stage's folder under it.
+## No realpath, and rm's -x where it has no --one-file-system, as in safe-rm.bash.
 
 fSafeRm(){
 	if [ "$#" -ne 1 ] || [ -z "${1}" ] || [ -z "${HOST_TEMP:-}" ] || [ -z "${APP_NAME:-}" ]; then
@@ -31,3 +31,4 @@ fSafeRm(){
 
 ##	History:
 ##		- 2026-11-06 JC: Created, from safe-rm.bash, for stage 7's old trees on the Mac and Unix boxes.
+##		- 2026-11-06 JC: The image build's folders go through it too.

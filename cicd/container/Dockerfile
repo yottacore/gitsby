@@ -2,8 +2,8 @@
 # and the demo gif don't depend on what the host has installed. Sync, dogfood, remote
 # tests and publish stay on the host.
 #
-# The versions come from config.bash as build args, and the tag hashes this file
-# plus those args. A version bump without its checksum here fails the build.
+# The versions come from config.bash as build args, and the tag hashes this file,
+# the two it copies in, plus those args. It builds from cicd/. A version bump without its checksum here fails the build.
 #
 # Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 # SPDX-License-Identifier: MIT
@@ -18,17 +18,24 @@ RUN sed -i -e "s|^URIs: http://deb.debian.org/debian-security|URIs: http://snaps
 		-e 's|^Signed-By:|Check-Valid-Until: no\nSigned-By:|' /etc/apt/sources.list.d/debian.sources \
 	&& ! grep -q deb.debian.org /etc/apt/sources.list.d/debian.sources
 
+# The repo's guard, for the steps' folders. Each step works in a folder of its own under
+# /tmp/gitsby, the build's own temp root and project folder, and removes it through the guard.
+ARG HOST_TEMP=/tmp
+ARG APP_NAME=gitsby
+COPY utility/include/safe-rm.sh /usr/local/lib/gitsby/safe-rm.sh
+
 # gcc is for go test -race, libicu and libgssapi for pwsh. The python and font
 # packages are what the demo renderer draws with, and python3-venv holds ruff and pip-audit.
 # Pillow isn't among them. It comes from the lock below, since trixie's has advisories
-# fixed only upstream.
-RUN apt-get update \
-	&& apt-get install -y --no-install-recommends \
+# fixed only upstream. Apt's lists go in the step's folder, so they leave through the guard.
+RUN mkdir -p /tmp/gitsby/apt/partial \
+	&& apt-get -o Dir::State::Lists=/tmp/gitsby/apt update \
+	&& apt-get -o Dir::State::Lists=/tmp/gitsby/apt install -y --no-install-recommends \
 		bash ca-certificates curl openssl xz-utils zstd unzip gcc libc6-dev \
 		python3 python3-fonttools python3-gi python3-gi-cairo gir1.2-pango-1.0 python3-venv \
 		fontconfig fonts-dejavu-core fonts-noto-color-emoji gifsicle \
 		libicu76 libgssapi-krb5-2 \
-	&& rm -rf /var/lib/apt/lists/*
+	&& . /usr/local/lib/gitsby/safe-rm.sh && fSafeRm /tmp/gitsby/apt && rmdir /tmp/gitsby
 
 # The demo's face. The emoji font above is Debian's, a different build from the one on
 # b23, but the demo draws no emoji today, so the gif's bytes don't see it.
@@ -50,7 +57,7 @@ ARG VER_ruff
 ARG VER_pip_audit
 ARG VER_Pillow
 ARG VER_gifsicle
-COPY requirements.txt /tmp/pytools.txt
+COPY container/requirements.txt /tmp/pytools.txt
 RUN : "${VER_ruff:?}${VER_pip_audit:?}${VER_Pillow:?}${VER_gifsicle:?}" \
 	&& grep -vE '^(pillow|pyyaml)==' /tmp/pytools.txt > /tmp/venv.txt \
 	&& grep -E '^(pillow|pyyaml)==' /tmp/pytools.txt > /tmp/sys.txt \
@@ -75,17 +82,17 @@ ARG GIT_SHA256=f2e71e4d52cb2eb9d0b81119cd22d43c1aea4612d9cbd74efa634beebca49fc5
 ARG GITMAN_SHA256=f13c223498607e18bc22121e4cbc3829d4a589a2711d6cf25a6848711180ca4b
 ARG STRACE_SNAP=20260125T203410Z
 ARG STRACE_SHA256=b0050028a886224ad1eba4d5f063443c5762e9503b18e13a13151c6961af9325
-WORKDIR /tmp/deb
+WORKDIR /tmp/gitsby/deb
 RUN : "${VER_git:?}${VER_strace:?}" \
 	&& snap=https://snapshot.debian.org/archive/debian \
 	&& curl -fsSLo git.deb "${snap}/${GIT_SNAP}/pool/main/g/git/git_${VER_git}-1_amd64.deb" \
 	&& curl -fsSLo git-man.deb "${snap}/${GIT_SNAP}/pool/main/g/git/git-man_${VER_git}-1_all.deb" \
 	&& curl -fsSLo strace.deb "${snap}/${STRACE_SNAP}/pool/main/s/strace/strace_${VER_strace}+ds-2_amd64.deb" \
 	&& printf '%s  %s\n' "${GIT_SHA256}" git.deb "${GITMAN_SHA256}" git-man.deb "${STRACE_SHA256}" strace.deb | sha256sum -c - \
-	&& apt-get update \
-	&& apt-get install -y --no-install-recommends ./git-man.deb ./git.deb ./strace.deb \
-	&& rm -rf /var/lib/apt/lists/* \
-	&& cd / && rm -rf /tmp/deb
+	&& mkdir -p lists/partial \
+	&& apt-get -o Dir::State::Lists=/tmp/gitsby/deb/lists update \
+	&& apt-get -o Dir::State::Lists=/tmp/gitsby/deb/lists install -y --no-install-recommends ./git-man.deb ./git.deb ./strace.deb \
+	&& cd / && . /usr/local/lib/gitsby/safe-rm.sh && fSafeRm /tmp/gitsby/deb && rmdir /tmp/gitsby
 
 ARG VER_go
 ARG VER_shellcheck
@@ -107,7 +114,7 @@ ARG NODE_SHA256=d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307
 ARG PWSH_VER=7.6.6
 ARG PWSH_SHA256=ddbc4a2d113bbd46d283cfedcbcd117a70caefd7673f41f2b4e0000badf103bc
 
-WORKDIR /tmp/dl
+WORKDIR /tmp/gitsby/dl
 RUN : "${VER_go:?}${VER_shellcheck:?}${VER_markdownlint:?}${VER_PSScriptAnalyzer:?}" \
 	&& curl -fsSLo go.tgz "https://go.dev/dl/go${VER_go}.linux-amd64.tar.gz" \
 	&& echo "${GO_SHA256}  go.tgz" | sha256sum -c - \
@@ -126,18 +133,18 @@ RUN : "${VER_go:?}${VER_shellcheck:?}${VER_markdownlint:?}${VER_PSScriptAnalyzer
 	&& curl -fsSLo psa.nupkg "https://www.powershellgallery.com/api/v2/package/PSScriptAnalyzer/${VER_PSScriptAnalyzer}" \
 	&& echo "${PSA_SHA256}  psa.nupkg" | sha256sum -c - \
 	&& psa="/usr/local/share/powershell/Modules/PSScriptAnalyzer/${VER_PSScriptAnalyzer}" \
-	&& mkdir -p "${psa}" && unzip -q psa.nupkg -d "${psa}" \
-	&& rm -rf "${psa}/_rels" "${psa}/package" "${psa}/[Content_Types].xml" "${psa}/PSScriptAnalyzer.nuspec" \
-	&& cd / && rm -rf /tmp/dl
+	&& mkdir -p "${psa}" && unzip -q psa.nupkg -d "${psa}" -x '_rels/*' 'package/*' '[[]Content_Types].xml' PSScriptAnalyzer.nuspec \
+	&& cd / && . /usr/local/lib/gitsby/safe-rm.sh && fSafeRm /tmp/gitsby/dl && rmdir /tmp/gitsby
 
 # Built by the toolchain above, from the module proxy and its checksum db.
+WORKDIR /tmp/gitsby/go
 RUN : "${VER_staticcheck:?}${VER_golangci_lint:?}${VER_govulncheck:?}${VER_goversioninfo:?}" \
-	&& export GOTOOLCHAIN=local GOBIN=/usr/local/bin GOPATH=/tmp/gopath GOCACHE=/tmp/gocache \
+	&& export GOTOOLCHAIN=local GOBIN=/usr/local/bin GOPATH=/tmp/gitsby/go/path GOCACHE=/tmp/gitsby/go/cache \
 	&& /opt/go/bin/go install "honnef.co/go/tools/cmd/staticcheck@${VER_staticcheck}" \
 	&& /opt/go/bin/go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${VER_golangci_lint}" \
 	&& /opt/go/bin/go install "golang.org/x/vuln/cmd/govulncheck@${VER_govulncheck}" \
 	&& /opt/go/bin/go install "github.com/josephspurrier/goversioninfo/cmd/goversioninfo@${VER_goversioninfo}" \
-	&& rm -rf /tmp/gopath /tmp/gocache
+	&& cd / && . /usr/local/lib/gitsby/safe-rm.sh && fSafeRm /tmp/gitsby/go && rmdir /tmp/gitsby
 
 # --leakcheck's CodeQL: the Go-only bundle, CLI and query packs in one file. It adds about
 # 400 MB to a 2.6 GB image, and stays here rather than in an image of its own, which would
@@ -147,7 +154,7 @@ RUN : "${VER_staticcheck:?}${VER_golangci_lint:?}${VER_govulncheck:?}${VER_gover
 ARG VER_codeql
 ARG CODEQL_SHA256
 ARG CODEQL_PY_SHA256
-WORKDIR /tmp/cq
+WORKDIR /tmp/gitsby/cq
 RUN : "${VER_codeql:?}${CODEQL_SHA256:?}${CODEQL_PY_SHA256:?}" \
 	&& curl -fsSLo cq.tar.zst "https://github.com/github/codeql-action/releases/download/codeql-bundle-v${VER_codeql}/codeql-bundle-go-linux64.tar.zst" \
 	&& curl -fsSLo cqpy.tar.zst "https://github.com/github/codeql-action/releases/download/codeql-bundle-v${VER_codeql}/codeql-bundle-python-linux64.tar.zst" \
@@ -157,7 +164,10 @@ RUN : "${VER_codeql:?}${CODEQL_SHA256:?}${CODEQL_PY_SHA256:?}" \
 	&& tar -C /opt --zstd -xf cqpy.tar.zst --exclude=codeql/qlpacks/codeql/python-examples \
 	&& ln -s /opt/codeql/codeql /usr/local/bin/codeql \
 	&& codeql version --format=terse | awk -v want="${VER_codeql}" '{ if ($1 != want) { print "codeql " $1; exit 1 } }' \
-	&& cd / && rm -rf /tmp/cq
+	&& cd / && . /usr/local/lib/gitsby/safe-rm.sh && fSafeRm /tmp/gitsby/cq && rmdir /tmp/gitsby
+
+# Out of the last step's folder first, or the build makes it again.
+WORKDIR /
 
 # Runs as the caller's uid, which has no passwd entry. /cache takes the named volume,
 # which copies this dir's mode when new, so anyone can write.
@@ -169,4 +179,3 @@ ENV PATH=/opt/go/bin:/opt/node/bin:${PATH} \
 	POWERSHELL_TELEMETRY_OPTOUT=1 \
 	POWERSHELL_UPDATECHECK=Off \
 	DOTNET_CLI_TELEMETRY_OPTOUT=1
-WORKDIR /

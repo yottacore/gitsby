@@ -324,7 +324,7 @@ fMakeGateFixture(){
 	mkdir -p "${gateDir}/cicd/utility/include" "${gateDir}/cicd/utility/demo" "${gateDir}/cicd/container" "${gateDir}/bin" "${gateDir}/home" "${gateDir}/src-go" "${gateFail}"
 	cp "${root}/cicd/cicd.bash" "${root}/cicd/config.bash" "${gateDir}/cicd/"
 	cp "${root}/cicd/container/Dockerfile" "${root}/cicd/container/requirements.txt" "${gateDir}/cicd/container/"
-	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${root}/cicd/utility/include/gh-account.bash" "${root}/cicd/utility/include/go-test-lines.bash" "${root}/cicd/utility/include/image-go.bash" "${root}/cicd/utility/include/safe-rm.bash" "${gateDir}/cicd/utility/include/"
+	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${root}/cicd/utility/include/gh-account.bash" "${root}/cicd/utility/include/go-test-lines.bash" "${root}/cicd/utility/include/image-go.bash" "${root}/cicd/utility/include/safe-rm.bash" "${root}/cicd/utility/include/safe-rm.sh" "${gateDir}/cicd/utility/include/"
 	## Empty, so the lint globs and PY_LINT_FILES resolve, and stage 6 finds a scenario.
 	: > "${gateDir}/install.bash"; : > "${gateDir}/install.ps1"; : > "${gateDir}/cicd/utility/demo/gen-demo-gif.py"
 	: > "${gateDir}/cicd/utility/codeql-findings.py"; : > "${gateDir}/src-go/go.mod"; : > "${gateDir}/src-go/main.go"
@@ -898,15 +898,15 @@ fGateNoFuzz(){
 		&& ! grep -qE '^(govulncheck -test|pip-audit -r|fuzz\.bash|spawn-count\.bash)( |$)|^go test .*-fuzz ' "${gateCalls}" \
 		&& grep -qxF 'Fuzz + security .....: (skipped --no-fuzz)' "${gateOut}" && ! grep -qF 'Starting Fuzz' "${gateOut}"
 }
-## The image's tag follows the Python tools' lock as well as the recipe.
-fGateLockInTag(){
+## The image's tag follows the file $1, under cicd/, that the recipe copies in, as well as the recipe.
+fGateFileInTag(){
 	local before="" after="" rc=0
 	fGateSays 0 'OK: the container run' -y --quick --no-sync --no-publish --no-dogfood || return 1
 	before="$(grep -oE 'gitsby-cicd:[0-9a-f]+' "${gateOut}" | sed -n 1p)"
-	echo "# changed" >> "${gateDir}/cicd/container/requirements.txt"
+	echo "# changed" >> "${gateDir}/cicd/$1"
 	fGateSays 0 'OK: the container run' -y --quick --no-sync --no-publish --no-dogfood || rc=1
 	after="$(grep -oE 'gitsby-cicd:[0-9a-f]+' "${gateOut}" | sed -n 1p)"
-	cp "${root}/cicd/container/requirements.txt" "${gateDir}/cicd/container/requirements.txt"
+	cp "${root}/cicd/$1" "${gateDir}/cicd/$1"
 	[[ "${rc}" == 0 && -n "${before}" && -n "${after}" && "${before}" != "${after}" ]]
 }
 ## The quick run goes to the image by its own name, with the areas as given and -q, and none of
@@ -5338,7 +5338,7 @@ GHEOF
 		mkdir -p "${relRepo}/cicd/utility/include" "${relRepo}/cicd/container" "${relRepo}/src-go"
 		printf '%s\n' 'module x' '' 'require example.com/m v1.2.0' > "${relRepo}/src-go/go.mod"
 		cp "${root}/cicd/release.bash" "${root}/cicd/config.bash" "${relRepo}/cicd/"
-		cp "${root}/cicd/utility/include/image-go.bash" "${root}/cicd/utility/include/safe-rm.bash" "${relRepo}/cicd/utility/include/"
+		cp "${root}/cicd/utility/include/image-go.bash" "${root}/cicd/utility/include/safe-rm.bash" "${root}/cicd/utility/include/safe-rm.sh" "${relRepo}/cicd/utility/include/"
 		cp "${root}/cicd/container/Dockerfile" "${root}/cicd/container/requirements.txt" "${relRepo}/cicd/container/"
 		fStub "${rel}/stub" <<-EOF
 			#!/usr/bin/env bash
@@ -5715,7 +5715,7 @@ GHEOF
 	fAssert "[dez5f] the guard on a Mac or Unix box removes an old tree in the stage's folder, and refuses the rest" \
 		env PATH="${srBin}" HOST_TEMP="${srRoot}" APP_NAME=stage "$(command -v sh)" -c '. "$1" && fSafeRm "$2/stage/old.1" && [ ! -e "$2/stage/old.1" ] && ! fSafeRm "$2/stage/old.link" && ! fSafeRm "$2/stage/old.link/sub" && ! fSafeRm "$2/stage" && ! fSafeRm "$2" && ! fSafeRm "$2/stage/../other" && ! fSafeRm /etc/x && ! HOST_TEMP= fSafeRm "$2/stage/kept" && [ -d "$2/stage/kept/sub" ] && [ -d "$2/other" ]' _ "${root}/cicd/utility/include/safe-rm.sh" "${srRoot}"
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
-	for rmScript in "${rmScripts[@]}"; do
+	for rmScript in "${rmScripts[@]}" cicd/container/Dockerfile; do
 		[[ "${rmScript}" == legacy/* || "${rmScript}" == cicd/utility/include/safe-rm.bash ]] && continue
 		fAssert "[deywr] ${rmScript} removes a folder only through the guard" \
 			bash -c '[[ -f "$1" ]] && ! grep -vE "$3" "$1" | grep -qE "$2"' _ "${root}/${rmScript}" '(^|[^-[:alnum:]_])rm +(-[[:alpha:]]*[rR]|--recursive)' '^[[:space:]]*#|git rm|raw rm'
@@ -6514,7 +6514,8 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[de4bx] and --quick goes in with them"  fGateContainerQuick
 		fAssert "[de549] and --leakcheck too, and the soak test runs only in there"  fGateContainerLeak
 		fAssert "[de5ma] and --no-leakcheck"  fGateContainerNoLeak
-		fAssert "[de54f] the image's tag changes with the Python tools' lock"  fGateLockInTag
+		fAssert "[de54f] the image's tag changes with the Python tools' lock"  fGateFileInTag container/requirements.txt
+		fAssert "[dez69] and with the guard it copies in"  fGateFileInTag utility/include/safe-rm.sh
 		fAssert "[ddrrn] and the demo gif as well"  fGateContainerDemo
 		fAssert "[dedn8] dogfood and stage 7 build with the image's Go and copy here, and the harness is handed the image"  fGateContainerBuilds
 		fAssert "[dedn9] and so do --quick's cross-builds"  fGateContainerQuickBuilds
