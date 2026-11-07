@@ -295,7 +295,7 @@ func (a *app) cmdAccountList() {
 	a.out.clean("")
 	configDisp := nativePath(a.cfg.file)
 	if configDisp == "" {
-		configDisp = "(none found)"
+		configDisp = "(none)"
 	}
 	a.out.clean("Config file ..: " + configDisp)
 	a.out.clean(dirLabel + nativePath(a.contextDir()))
@@ -472,7 +472,10 @@ func (a *app) cmdAccountApply() error {
 		return usagef("No config file, so there is nowhere to write the account fragments.")
 	}
 	if pathExists(dir) && !isDir(dir) {
-		return usagef("'%s' is where the account fragments go, and it isn't a directory. Move or remove it, then re-run.", nativePath(dir))
+		return refusalBlock("Something that isn't a folder is where the account fragments go.", [][]string{
+			noteLines("File", nativePath(dir)),
+			noteLines("Fix", "Move or remove it, then run this again."),
+		}, nil)
 	}
 	// 0700, not 0777-and-hope-for-umask: these fragments name your accounts and
 	// point at your token file, and they sit under your own config directory.
@@ -836,15 +839,20 @@ func configRefusal(file string, state candidateState, fi os.FileInfo, cause erro
 	return refusalBlock(head, notes, cause)
 }
 
-// refusalBlock lays a refusal out as its first line with the labeled notes under it.
+// refusalBlock is a refusal laid out by refusalText.
 func refusalBlock(head string, notes [][]string, cause error) error {
+	return &usageError{msg: refusalText(head, notes), cause: cause}
+}
+
+// refusalText lays a refusal out as its first line with the labeled notes under it.
+func refusalText(head string, notes [][]string) string {
 	lines := []string{head}
 	for _, note := range notes {
 		for _, l := range note {
 			lines = append(lines, "  "+l)
 		}
 	}
-	return &usageError{msg: strings.Join(lines, "\n"), cause: cause}
+	return strings.Join(lines, "\n")
 }
 
 // writeRefusal says a step that writes was turned down, with the reason the OS
@@ -1116,7 +1124,10 @@ func (a *app) accountSetPlan() (accountSetTarget, error) {
 	// in there twice by accident. Replacing the first and leaving the rest would
 	// look like it worked and change nothing, so say so rather than guess.
 	if n > 1 {
-		return t, usagef("'%s' is in %s %d times. Edit it by hand - there is no telling which one you meant.", t.disp+"."+t.field, nativePath(t.file), n)
+		return t, refusalBlock(fmt.Sprintf("'%s' is in the accounts file %d times.", printable(t.disp+"."+t.field), n), [][]string{
+			noteLines("File", nativePath(t.file)),
+			noteLines("Fix", "Edit it by hand - there is no telling which one you meant."),
+		}, nil)
 	}
 	if read := t.doc.ReadString(t.path()); read.Status != shcl.NotFound {
 		t.exists, t.lineNum = true, read.Line
@@ -1174,13 +1185,22 @@ func (a *app) loadForEdit(t *accountSetTarget) error {
 	return nil
 }
 
+// lostLinesRefusal: the save would drop lines the read couldn't keep.
+func lostLinesRefusal(file string, lost int) error {
+	return refusalBlock(fmt.Sprintf("%d line(s) of the accounts file couldn't be read, and a rewrite would drop them.", lost), [][]string{
+		noteLines("File", nativePath(file)),
+		noteLines("Kept", "Nothing was written."),
+		noteLines("Fix", "Edit it by hand."),
+	}, nil)
+}
+
 // lostRefusal: a line the read dropped comes back where it was when the rest of
 // the file does. Only an edit that rewrites the whole file would lose it, and the
 // module refuses that save. Said before the plan rather than after the
 // confirmation.
 func lostRefusal(t accountSetTarget, kept bool) error {
 	if lost := t.doc.LostCount(); lost > 0 && !kept {
-		return usagef("%d line(s) of %s couldn't be read, and a rewrite would drop them. Edit it by hand.", lost, nativePath(t.file))
+		return lostLinesRefusal(t.file, lost)
 	}
 	return nil
 }
@@ -1354,7 +1374,7 @@ func (a *app) cmdAccountSet() error {
 	if _, err := t.doc.SaveFileKeepLines(t.file); err != nil {
 		var refused *shcl.SaveRefused
 		if errors.As(err, &refused) {
-			return usagef("%d line(s) of %s couldn't be read, and a rewrite would drop them. Edit it by hand.", refused.Lost, nativePath(t.file))
+			return lostLinesRefusal(t.file, refused.Lost)
 		}
 		// The save writes a new file beside it and renames it over, so a permissions
 		// error is the folder's, not the file's.

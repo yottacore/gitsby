@@ -314,22 +314,22 @@ func (o options) resolveConfigFile() (string, error) {
 		case o.configFile == "":
 			return "", usageSubf("--config was given an empty file name.")
 		case !pathExists(o.configFile):
-			return "", usageSubf("No readable config file at '%s'.", o.configFile)
+			return "", configFileRefusal("No readable config file.", o.configFile)
 		case !isRegularFile(o.configFile):
-			return "", usageSubf("--config names '%s', which isn't a file.", o.configFile)
+			return "", configFileRefusal("--config names something that isn't a file.", o.configFile)
 		case readsThrough(o.configFile) != nil:
-			return "", usageSubf("No readable config file at '%s'.", o.configFile)
+			return "", configFileRefusal("No readable config file.", o.configFile)
 		}
 		return o.configFile, nil
 	}
 	if env := os.Getenv("GITSBY_CONFIG"); env != "" {
 		switch {
 		case !pathExists(env):
-			return "", usageSubf("GITSBY_CONFIG names '%s', which can't be read.", env)
+			return "", configFileRefusal("GITSBY_CONFIG names a file that can't be read.", env)
 		case !isRegularFile(env):
-			return "", usageSubf("GITSBY_CONFIG names '%s', which isn't a file.", env)
+			return "", configFileRefusal("GITSBY_CONFIG names something that isn't a file.", env)
 		case readsThrough(env) != nil:
-			return "", usageSubf("GITSBY_CONFIG names '%s', which can't be read.", env)
+			return "", configFileRefusal("GITSBY_CONFIG names a file that can't be read.", env)
 		}
 		return env, nil
 	}
@@ -545,9 +545,9 @@ func (c *config) load(o options) error {
 	if err != nil {
 		switch {
 		case o.configGiven:
-			return usageSubf("No readable config file at '%s'.", file)
+			return configFileRefusal("No readable config file.", file)
 		case os.Getenv("GITSBY_CONFIG") != "":
-			return usageSubf("GITSBY_CONFIG names '%s', which can't be read.", file)
+			return configFileRefusal("GITSBY_CONFIG names a file that can't be read.", file)
 		}
 		return nil
 	}
@@ -922,4 +922,10 @@ func topOrWorkingDir(top string) string {
 	// to every rule that matches against it.
 	wd, _ := os.Getwd()
 	return wd
+}
+
+// configFileRefusal: a --config or GITSBY_CONFIG file that can't be used, with
+// the path as typed on its own line. sub, like the other errors raised here.
+func configFileRefusal(head, file string) error {
+	return &usageError{msg: refusalText(head, [][]string{noteLines("File", file)}), sub: true}
 }

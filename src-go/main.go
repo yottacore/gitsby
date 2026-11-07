@@ -899,12 +899,8 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 }
 
 func (a *app) cmdBrList() {
-	dflt := a.defaultBranch()
-	if dflt == "" {
-		dflt = "unknown"
-	}
 	a.out.clean("")
-	a.out.clean("Default branch: " + dflt)
+	a.out.clean("Default branch: " + a.defaultBranchDisp())
 	a.out.status("git branch -a -vv")
 	a.inherit("git", "branch", "-a", "-vv")
 	a.out.resetBlank()

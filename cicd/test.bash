@@ -2545,7 +2545,7 @@ fRunSuite(){
 	git -C "${sid}/proj" remote set-url origin git@github.com:acme/api.git
 	## Offline (the fetch failed): say we don't know rather than guess, and don't spend the
 	## round trip finding out. Asserting the log is what proves the probe was actually skipped.
-	fAssertOut "[dakpb] an unreachable remote leaves the account unknown"  "SSH \.+: unknown \(git@github\.com"  bash -c "${sidRun} '${gitsby}' -q status"
+	fAssertOut "[dakpb] an unreachable remote leaves the account unknown"  "SSH \.+: \(unknown - offline, so .* wasn't asked\) \(git@github\.com"  bash -c "${sidRun} '${gitsby}' -q status"
 	fAssert    "[dakpc] and no identity round trip was attempted"  bash -c "${sidRun} FAKE_SSH_LOG='${sid}/log' '${gitsby}' -q status >/dev/null 2>&1; ! grep -q -- '-T' '${sid}/log'"
 
 	## The pre-command fetch must never sit and ask for credentials: it runs before any of our
@@ -4276,9 +4276,9 @@ GHEOF
 	fAssert     "[dafqw] and committed nothing"  bash -c "cd '${tu}' && [[ \"\$(git rev-list --count mainline)\" == 1 ]]"
 	## status is the command you run to find out what is wrong, so it must still work - and must
 	## not print a name it couldn't resolve.
-	fAssertOut  "[dafqx] status still runs and admits it doesn't know"  'Default branch: unknown'  bash -c "cd '${tu}' && '${gitsby}' -q status"
+	fAssertOut  "[dafqx] status still runs and admits it doesn't know, and why"  'Default branch: \(unknown - no origin/HEAD, no main, master or trunk, and more than one local branch\)'  bash -c "cd '${tu}' && '${gitsby}' -q status"
 	fAssert     "[damxt] br list still runs there too"  bash -c "cd '${tu}' && '${gitsby}' -q br list >/dev/null 2>&1"
-	fAssertOut  "[damxv] and lists the branches with the same admission"  'Default branch: unknown'  bash -c "cd '${tu}' && '${gitsby}' -q br list"
+	fAssertOut  "[damxv] and lists the branches with the same admission"  'Default branch: \(unknown - no origin/HEAD'  bash -c "cd '${tu}' && '${gitsby}' -q br list"
 	fAssertOut  "[damxw] including the ambiguous ones"  '(^|[ /])other'  bash -c "cd '${tu}' && '${gitsby}' -q br list"
 
 	## Folder accounts. Which GitHub account a command acts as is decided by where the repo lives,
@@ -4658,7 +4658,7 @@ GHEOF
 	fAssertOut "[db5y8] and plain git then agrees with gitsby about the nested folder"  'inner@example\.com' \
 		bash -c "cd '${ac}/trees/work/nested' && env ${acNestEnv} git config user.email"
 	fAssertFail "[db5y9] account apply refuses a blocked include directory"  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/blocked/config.shcl' account apply"
-	fAssertOut  "[db5ya] and names it rather than dumping an OS error"  "isn't a directory" \
+	fAssertOut  "[db5ya] and names it rather than dumping an OS error"  "isn't a folder is where the account fragments go" \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/blocked/config.shcl' account apply 2>&1"
 	## A config named with no folder put the fragments under the file itself, 'rel.shcl/accounts', and
 	## apply refused. A relative include would be wrong anyway: git reads one from its own config's folder.
@@ -4739,6 +4739,11 @@ GHEOF
 		bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier.shcl' status"
 	fAssertOut "[dbsrg] a key nothing reads is named by the path that reaches it"  'Ignored keys \.+:.*account\[hw\]\.nonsense' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier.shcl' account"
+	## status used one line for the file and the keys, under a label of its own.
+	fAssertOut "[df044] status names the file under the label account list uses"  '^Config file \.\.: .*hier\.shcl$' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier.shcl' status"
+	fAssertOut "[df045] and the ignored keys on their own line"  '^Ignored keys \.: .*account\[hw\]\.nonsense' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier.shcl' status"
 	## A bare backslash is itself, so '\trees' is not a tab and 'rees'. A rule reads either slash.
 	cat > "${ac}/backslash.shcl" <<-EOF
 		account: hb
@@ -4768,7 +4773,7 @@ GHEOF
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/nested.shcl' account"
 	fAssertOut "[dcmmz] and one under protocol"  'protocol\.sshkey \(indented under protocol\)' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/nested.shcl' account"
-	fAssertOut "[dcmn0] and the identity block names the nested key"  'ignored: .*account\[hn\]\.email\.sshkey' \
+	fAssertOut "[dcmn0] and the identity block names the nested key"  'Ignored keys \.: .*account\[hn\]\.email\.sshkey' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/nested.shcl' status"
 	fAssertOut "[dcmn1] the key it sits under still applies"  'commits .*<nested@example\.com>' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/nested.shcl' account"
@@ -4843,7 +4848,7 @@ GHEOF
 		## Put back to 0200 whatever cmp says, so the checks after this one still see it unreadable.
 		fAssert "[dcmk7] and leaves the file as it was" \
 			bash -c "chmod 600 '${acUnrFile}'; cmp -s '${acUnrFile}' '${acUnr}/body.shcl'; rc=\$?; chmod 200 '${acUnrFile}'; exit \${rc}"
-		fAssertOut "[dcmk8] reads still pass over a file they can't read"  'Config file \.+: \(none found\)' \
+		fAssertOut "[dcmk8] reads still pass over a file they can't read"  'Config file \.+: \(none\)' \
 			bash -c "cd '${acWork}' && env ${acUnrEnv} '${gitsby}' -q -NoFetch account 2>&1"
 		fAssert "[dcmk9] and no file is created ahead of it in XDG_CONFIG_HOME" \
 			bash -c "cd '${acWork}' && ! env ${acNoDiscovery} XDG_CONFIG_HOME='${acUnr}/xdg' HOME='${acUnr}/home' PATH='${ac}/bin:${PATH}' ${acUnrSet} >/dev/null 2>&1 && [[ ! -e '${acUnr}/xdg/gitsby/config.shcl' ]]"
@@ -4870,7 +4875,9 @@ GHEOF
 			bash -c "cd '${acWork}' && env ${acShutEnv} '${gitsby}' -q -NoFetch account 2>&1"
 		## A file that opens and then fails to read, which /proc/self/mem is on Linux.
 		if [[ -f /proc/self/mem ]]; then
-			fAssertOut "[dcmpk] a named accounts file that fails to read is refused"  "GITSBY_CONFIG names '/proc/self/mem', which can't be read" \
+			fAssertOut "[dcmpk] a named accounts file that fails to read is refused"  "GITSBY_CONFIG names a file that can't be read" \
+				bash -c "cd '${acWork}' && env ${acNoDiscovery} GITSBY_CONFIG=/proc/self/mem HOME='${acUnr}/home' PATH='${ac}/bin:${PATH}' ${acUnrSet} 2>&1"
+			fAssertOut "[df042] and names it on a File line"  "^  File: /proc/self/mem$" \
 				bash -c "cd '${acWork}' && env ${acNoDiscovery} GITSBY_CONFIG=/proc/self/mem HOME='${acUnr}/home' PATH='${ac}/bin:${PATH}' ${acUnrSet} 2>&1"
 			mkdir -p "${acUnr}/memhome/${confRel}"; ln -sf /proc/self/mem "${acUnr}/memhome/${confRel}/config.shcl"
 			fAssertOut "[dcmpm] and a found one is refused by 'account set' as a file it can't read"  "is already there, and it can't be read" \
@@ -4881,6 +4888,7 @@ GHEOF
 	## A named file that isn't there is a typo, not a reason to fall back silently.
 	fAssertFail "[db00m] a named config that isn't there is refused"        bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/nope.shcl' status"
 	fAssertOut  "[db00n] and says which file"  'No readable config file'    bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/nope.shcl' status 2>&1"
+	fAssertOut  "[df043] on a File line of its own"  '^  File: .*/nope\.shcl$'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/nope.shcl' status 2>&1"
 	## An empty value is a mistake too - a script expanding a variable that turned out empty. Falling
 	## back to the default file would pick an account nobody asked for, so it is refused by name.
 	fAssertFail "[db1sa] --config with an empty value is refused"     bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '' status"
@@ -5053,7 +5061,7 @@ GHEOF
 		bash -c "${acRelRun} '${acRel}/cfg/hand.shcl' account list"
 	fAssertNotOut "[dcmew] and is not shown as a folder"  'folder \.\.: \.$' \
 		bash -c "${acRelRun} '${acRel}/cfg/hand.shcl' account list"
-	fAssertOut "[dcmex] and the identity block names it"  'ignored: account\[hand\]\.path \(not an absolute folder: \.\)' \
+	fAssertOut "[dcmex] and the identity block names it"  'Ignored keys \.: account\[hand\]\.path \(not an absolute folder: \.\)' \
 		bash -c "${acRelRun} '${acRel}/cfg/hand.shcl' status"
 	fAssertOut "[dcmey] a relative path in a 2.x flat file is ignored the same way"  'account\.flat\.path \(not an absolute folder: dev/work\)' \
 		bash -c "${acRelRun} '${acRel}/cfg/flat.shcl' account list"
@@ -7604,6 +7612,10 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		chmod 644 "${dr}/token"
 		fAssertOut "[dbfsf] a token file other users can read is called out"  'readable by other users' \
 			bash -c "cd '${dr}/tree/proj' && env ${drEnv} '${gitsby}' -q -NoFetch --config '${dr}/token.shcl' identity 2>&1"
+		fAssertOut "[df046] with the file on its own line"  "^ +: +File: .*/token$" \
+			bash -c "cd '${dr}/tree/proj' && env ${drEnv} '${gitsby}' -q -NoFetch --config '${dr}/token.shcl' identity 2>&1"
+		fAssertOut "[df048] and the chmod to run"  "^ +: +chmod 600 '.*/token'$" \
+			bash -c "cd '${dr}/tree/proj' && env ${drEnv} '${gitsby}' -q -NoFetch --config '${dr}/token.shcl' identity 2>&1"
 		fAssert "[dbfsg] the account fragments are yours alone" \
 			bash -c "[[ \"\$(fMode '${dr}/home/${confRel}/accounts')\" == 700 ]] && [[ \"\$(fMode '${dr}/home/${confRel}/accounts/github.com_abe.gitconfig')\" == 600 ]]"
 	fi
@@ -7838,6 +7850,8 @@ GLEOF
 	fAssert "[ddk6c] and -q refuses the older one, before tea runs" \
 		bash -c "cd '${fgRepo}' && ! PATH='${fgPath}' FAKE_TEA_USER=someoneelse FAKE_TEA_LOG='${fg}/refused.log' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami 2>/dev/null && ! grep -q '^whoami' '${fg}/refused.log'"
 	fAssertOut "[ddk6d] saying which login it would have used"  "its own login for git\.example\.test, not as 'giteauser'" \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_USER=someoneelse '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami 2>&1"
+	fAssertOut "[df047] with the reason and the fix as notes under it"  "^  Fix:  Update tea, or run it anyway with --any-identity\.$" \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_USER=someoneelse '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami 2>&1"
 
 	## An account that never named a host is TAKEN to be a github.com one, which is right for every
@@ -8312,3 +8326,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261106 JC: The scratch folder and every fixture folder go through fSafeRm, still behind the name and marker checks. Checks that the guard works with no realpath, and that no script removes a folder another way.
 ##		- 20261107 JC: The install.ps1 checks run pwsh with telemetry off. From 7.6.9 on macOS, a first run in a fresh HOME left .dotnet in TMPDIR, which failed the temp folder check. 1825 -> 1826.
 ##		- 20261107 JC: Checks for the footer check's .ps1 and no-footer cases, the Windows guard's return value under pwsh, and the Bash header, disable and error helper rules.
+##		- 20261107 JC: The config, default branch, SSH, token file and tea lines say why a value is unknown, and name a path on a File line.

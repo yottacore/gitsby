@@ -259,14 +259,18 @@ func (a *app) teaAsAccount(cli string) (bool, error) {
 	if failure != "" || got == "" || strings.EqualFold(got, want) {
 		return false, nil
 	}
-	why, fix := "this tea is older than 0.11 and ignores the account's token", "Update tea"
+	why := "This tea is older than 0.11 and ignores the account's token."
+	fix := noteLines("Fix", "Update tea, or run it anyway with --any-identity.")
 	if !gave {
-		why, fix = "the account has no token for "+a.acct.credHost, "Give the account a tokenfile"
+		why = "The account has no token for " + a.acct.credHost + "."
+		fix = noteLines("Fix", "Point the account at a file holding a "+a.acct.credHost+" token, or run it anyway with --any-identity:",
+			"  "+meName+" account set "+a.acct.name+" tokenFile <file>")
 	}
 	if a.opt.quiet {
-		return false, usagef("tea would act as '%s', its own login for %s, not as '%s', since %s. %s, or run it anyway with --any-identity.", got, a.acct.credHost, want, why, fix)
+		return false, refusalBlock("tea would act as '"+printable(got)+"', its own login for "+a.acct.credHost+", not as '"+printable(want)+"'.", [][]string{noteLines("Why", why), fix}, nil)
 	}
-	a.out.warn("WARNING: tea acts as '" + got + "', its own login for " + a.acct.credHost + ", not as '" + want + "', since " + why + ".")
+	a.out.warn("WARNING: tea acts as '" + got + "', its own login for " + a.acct.credHost + ", not as '" + want + "'.")
+	a.out.notes(append(noteLines("Why", why), fix...))
 	return true, nil
 }
 

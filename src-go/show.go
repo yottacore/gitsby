@@ -123,7 +123,8 @@ func (a *app) showIdentity(remoteURL string) {
 	// believing you configured it, so say so - once, here, rather than failing or
 	// staying quiet.
 	if len(a.cfg.unknown) > 0 {
-		a.out.clean("Config .......: " + (a.cfg.file + " - ignored: " + strings.Join(a.cfg.unknown, ", ")))
+		a.out.clean("Config file ..: " + nativePath(a.cfg.file))
+		a.out.clean("Ignored keys .: " + strings.Join(a.cfg.unknown, ", "))
 	}
 	a.showSSHLine(remoteURL)
 	a.out.clean("Author .......: " + commitIdentity())
@@ -454,7 +455,9 @@ func (a *app) showAccountLine() {
 		a.showAccountApplied()
 	}
 	if a.acct.looseTokenFile != "" {
-		a.out.clean(acctCont + "WARNING: " + a.acct.looseTokenFile + " is readable by other users on this machine; chmod 600 it.")
+		a.out.clean(acctCont + "WARNING: the token file is readable by other users on this machine.")
+		a.showAccountNote("File", nativePath(a.acct.looseTokenFile))
+		a.showAccountFix("Keep it to yourself:", "  chmod 600 '"+a.acct.looseTokenFile+"'")
 	}
 	// This repo could authenticate with the account's token instead of a key, and
 	// doesn't. Worth one line, because it is the whole point of configuring accounts
@@ -598,8 +601,9 @@ func (a *app) showSSHLine(remoteURL string) {
 	// user is 'git' for every GitHub account, and the key is only ssh's first
 	// readable candidate, not necessarily the one that authenticates. So ask the
 	// host who we actually are. Offline it stays unknown - the fetch already said why.
-	account := "unknown"
+	account := "(unknown - offline, so " + ssh.host + " wasn't asked)"
 	if !a.isOffline() {
+		account = "(unknown - " + ssh.host + " didn't answer with a login)"
 		if resolved := a.sshLogin(remoteURL); resolved != "?" {
 			account = resolved
 		}
@@ -676,11 +680,7 @@ func (a *app) showStatus(withIdentity bool) {
 	// Say "unknown" rather than assert a name we couldn't resolve - this is the one
 	// command that still runs when the default branch can't be told, so it must not
 	// fabricate one.
-	dflt := a.defaultBranch()
-	if dflt == "" {
-		dflt = "unknown"
-	}
-	a.out.clean("Default branch: " + dflt)
+	a.out.clean("Default branch: " + a.defaultBranchDisp())
 	a.out.clean("Current branch: " + strings.TrimRight(a.branchDisp("")+" "+a.branchSync(), " "))
 	// Pre-flight only, and only for the two commands that make a branch: the line
 	// above is where you ARE, which is exactly what misled here - it says 'dev'

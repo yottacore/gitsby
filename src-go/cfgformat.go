@@ -171,11 +171,14 @@ func (a *app) reportMigration() {
 	}
 	mig.reported = true
 	file := nativePath(a.cfg.file)
+	notes := noteLines("File", file)
 	if !mig.done {
-		a.out.errorf("'%s' is in the SHCL %d.x format and couldn't be converted (%s). This run read it the way %d.x did. 'account set' and 'account unset' refuse until it is converted.", file, mig.from, mig.why, mig.from)
+		a.out.errorf("The accounts file is in the SHCL %d.x format and couldn't be converted. This run read it the way %d.x did. 'account set' and 'account unset' refuse until it is converted.", mig.from, mig.from)
+		a.out.notes(append(notes, noteLines("Why", mig.why+".")...))
 		return
 	}
-	msg := "Converted '" + file + "' from the SHCL " + strconv.Itoa(mig.from) + ".x format, which reads some values differently. The old file is '" + nativePath(mig.backup) + "'."
+	notes = append(notes, noteLines("From", nativePath(mig.backup))...)
+	msg := "Converted the accounts file from the SHCL " + strconv.Itoa(mig.from) + ".x format, which reads some values differently. The old file is kept."
 	if mig.changed > 0 {
 		msg += " " + strconv.Itoa(mig.changed) + " line(s) were re-spelled to keep their values."
 	}
@@ -183,4 +186,5 @@ func (a *app) reportMigration() {
 		msg += " " + strconv.Itoa(mig.lost) + " line(s) set something the new format can't, and now set nothing."
 	}
 	a.out.errorf("%s", msg)
+	a.out.notes(notes)
 }

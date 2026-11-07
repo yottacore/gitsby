@@ -74,6 +74,13 @@ func (p *printer) warn(s string) {
 	p.lastBlank = false
 }
 
+// notes writes labeled note lines under an error or warning already on stderr.
+func (p *printer) notes(lines []string) {
+	for _, l := range lines {
+		p.warn("  " + l)
+	}
+}
+
 // errorf writes to stderr, prefixed the way every message from here is. The
 // args are escaped and the format isn't, so a message can still run to more
 // than one line on purpose.

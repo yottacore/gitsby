@@ -97,25 +97,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- v2.1.0 looked in `XDG_CONFIG_HOME`, then `~/.config`, then `%APPDATA%`, on every OS. The Go build looks only in `%APPDATA%` on Windows and `~/Library/Application Support` on macOS, so an old file in `~/.config` there isn't found. details.md calls that an accepted cost. This item reverses it.
 		- A file from the old shcl 3 pseudo-version pin also says Format 3, so it can't be told apart. Check whether anything it wrote reads differently now.
 
-- Code Review 20261107 item 6: Output in show.go, main.go, accountcmd.go and cfgformat.go breaks 4 UI guide rules
-	- ID: 2026110708000106
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]:
-		- A value that couldn't be found prints as a bare `unknown`, with no reason: show.go:599, the SSH line, show.go:679, Default branch, and main.go:903, br list. accountcmd.go:298 prints `(none found)`.
-		- Paths sit inside sentences: cfgformat.go:175 and :178, accountcmd.go:475, :1117, :1181 and :1355, show.go:456, and the `usageSubf` calls in config.go:317 to :332 and :548 to :550.
-		- The config file is `Config .......:` in status and whoami, but `Config file ..:` and `Ignored keys .:` in `account list`. show.go:125 also prints it without `nativePath`, so a Windows path keeps its forward slash.
-		- `raw tea` with no token file says "Give the account a tokenfile", at githost.go:265, and the interactive warning at :268 gives no fix.
-	- Expected behavior [Bug]: `(unknown - <reason>)` and `(none)`, a path on its own labeled line, one label per thing, a path in its platform's spelling, and a fix given as a command such as `gitsby account set <name> tokenfile <file>`.
-	- Reproduced [Bug]: 2026-11-07. The SSH line printed `unknown (git@gitea.invalid)`. The rest by reading the literal strings.
-	- Origin: mostly 4918b5b and 3d22222, 2026-08-17 to 08-19, and 0ad1374 and 1ed0f3a, 2026-09. cfgformat.go from 37f4843, 2026-10-03, and githost.go:265 from 483ebc5, 2026-10-06, both after the 20261003 round. The 20261005 round left the refusal wording unread. Confirmed.
-	- Notes:
-		- test.bash `[dakpb]`, `[dafqx]` and `[damxv]` pin the bare `unknown`, so they change with it.
-	- Estimated effort: Avg
-
 - Code Review 20261107 enhancement 3: `br merge` and `release` talk to origin more often than they need to
 	- ID: 2026110708000114
 	- Type: Enhancement
@@ -2655,6 +2636,37 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: stage 7's harness on gover after round 4, 2026-10-04. b26: Go tests pass, and test.bash against the universal build 1255/0. vmFreeBSD, vmDebARM64 and vm925w: Go tests pass. The Unix boxes ran Go tests only this time, since no Unix builds were passed. Their full test.bash ran earlier the same day and failed only `[db712]`, fixed since.
 	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
 	- Closed: 20261004-190953
+
+- Code Review 20261107 item 6: Output in show.go, main.go, accountcmd.go and cfgformat.go breaks 4 UI guide rules
+	- ID: 2026110708000106
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]:
+		- A value that couldn't be found prints as a bare `unknown`, with no reason: show.go:599, the SSH line, show.go:679, Default branch, and main.go:903, br list. accountcmd.go:298 prints `(none found)`.
+		- Paths sit inside sentences: cfgformat.go:175 and :178, accountcmd.go:475, :1117, :1181 and :1355, show.go:456, and the `usageSubf` calls in config.go:317 to :332 and :548 to :550.
+		- The config file is `Config .......:` in status and whoami, but `Config file ..:` and `Ignored keys .:` in `account list`. show.go:125 also prints it without `nativePath`, so a Windows path keeps its forward slash.
+		- `raw tea` with no token file says "Give the account a tokenfile", at githost.go:265, and the interactive warning at :268 gives no fix.
+	- Expected behavior [Bug]: `(unknown - <reason>)` and `(none)`, a path on its own labeled line, one label per thing, a path in its platform's spelling, and a fix given as a command such as `gitsby account set <name> tokenfile <file>`.
+	- Reproduced [Bug]: 2026-11-07. The SSH line printed `unknown (git@gitea.invalid)`. The rest by reading the literal strings.
+	- Origin: mostly 4918b5b and 3d22222, 2026-08-17 to 08-19, and 0ad1374 and 1ed0f3a, 2026-09. cfgformat.go from 37f4843, 2026-10-03, and githost.go:265 from 483ebc5, 2026-10-06, both after the 20261003 round. The 20261005 round left the refusal wording unread. Confirmed.
+	- Notes:
+		- test.bash `[dakpb]`, `[dafqx]` and `[damxv]` pin the bare `unknown`, so they change with it.
+	- Estimated effort: Avg
+	- Actual fix [Bug]:
+		- `(unknown - <reason>)` on the SSH line, offline or when the host answered with no login, and on Default branch in status and `br list`, through one `defaultBranchDisp`. `account list` says `(none)`.
+		- Paths on File lines: the account fragments folder refusal, the key-twice refusal, the 2 lost-lines refusals through one `lostLinesRefusal`, the `--config` and GITSBY_CONFIG refusals through `configFileRefusal`, the token file warning in the identity block with the chmod as its Fix, and the conversion notices, with the old file on a From line. Notes under an error or warning print through `printer.notes`.
+		- status and whoami print `Config file ..:` and `Ignored keys .:`, the labels `account list` uses, with the path in its platform's spelling.
+		- The tea refusal and warning give the reason as Why and the fix as Fix: `gitsby account set <name> tokenFile <file>` where the account has no token, "Update tea" where tea is too old.
+	- Branch: round-20261107b
+	- Test case: test.bash [dakpb], [dafqx], [damxv], [dcmk8], [dcmpk], [db5ya], [dcmn0] and [dcmex] pin the new text. New: [df042] and [df043] the File line under the GITSBY_CONFIG and --config refusals; [df044] and [df045] status's Config file and Ignored keys lines; [df046] and [df048] the token warning's File line and chmod; [df047] the Fix note under the tea refusal.
+	- Verified: All 12 changed or new checks fail on the build before the change, with the other 1835 passing, and test.bash is 1847/0 after. fuzz 313/0, parity 30/0, go test, `GOOS=windows go vet`, darwin and freebsd builds, and the lint area pass.
+		- The no-token tea Fix line, with the account set command, was checked by reading: the fixtures give tea a token, so [df047] covers the older-tea text of the same note.
+	- Swept: every `"unknown"` literal in src-go, `(none found)`, and every `usagef` with a path or file argument. Left as they are: the `raw` refusal naming a PATH entry, settled on 2026101916533300, and the `account set` value refusals in accountcmd.go:679 to :691, which quote back a value just typed on the command line.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-095500
 
 - Code Review 20261107 item 9: `safe-rm.ps1` can report a failed removal as done
 	- ID: 2026110708000109
