@@ -33,6 +33,25 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- On macOS the config conversion notice names the old file by its resolved path
+	- ID: 2026110715250050
+	- Type: Bug
+	- Status: Queued
+	- Needs local test suite run?: Yes
+	- Needs external testing: macOS hosted run (macos.yml), or go test on b26 or vmKt6m
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261107-152500
+	- Opened by: hosted macOS run 42410549170 on gover at ebfd4b5
+	- Target OS: macOS, any OS where the config folder sits under a link
+	- Steps to reproduce [Bug]: go test -run 'TestFlatFileIsConverted|TestOldPinFileIsConverted' on macOS, where t.TempDir() is under /var, a link to /private/var
+	- Incorrect behavior [Bug]: the notice's File: line shows the path as given, but its From: line shows /private/var/... Both tests fail on macos-latest and macos-15-intel since 300128a (first in run 42406165808).
+	- Expected behavior [Bug]: both lines name the folder the same way, the way the config path was given
+	- Reproduced [Bug]: in the hosted runs only; a Linux stand-in is a config folder reached through a symlink
+	- Possible cause [Bug]: the backup name is built from filepath.EvalSymlinks(file) in cfgformat.go, near line 251
+	- Estimated effort: Low
+	- Progress log:
+		- Filed at round start from the gover hosted run's failure; no earlier item covers it.
+
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
