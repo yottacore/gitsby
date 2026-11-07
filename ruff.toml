@@ -1,0 +1,10 @@
+## Lint rules for the cicd Python helpers. cicd.bash runs these, and its leak rules
+## separately under --isolated. No formatter: the older demo script keeps its tabs.
+target-version = "py311"
+
+[lint]
+select = ["E4", "E7", "E9", "F", "B", "SIM", "UP", "ANN"]
+
+[lint.per-file-ignores]
+## Older owner script, untyped.
+"cicd/utility/demo/gen-demo-gif.py" = ["ANN"]

@@ -166,7 +166,7 @@ That binary is the whole product. The rest of the tooling below is for running t
 
 - `python3` with Pillow, and optionally `gifsicle`, to regenerate the demo. Only needed for a full pipeline run. A render made with a Pillow or gifsicle other than the version `cicd/config.bash` records is compared, but never replaces the committed gif, since the tool can change its bytes. The container has the recorded ones.
 
-- `ruff` (`pipx install ruff`), to check the demo script for references it holds too long or never lets go. Warns and skips when absent.
+- `ruff` (`pipx install ruff`), to check the Python helpers for references they hold too long or never let go, then by the rules in `ruff.toml`. Warns and skips when absent.
 
 - `pip-audit` (`pipx install pip-audit`), to check the demo's Python libraries for known problems. Warns and skips when absent, like govulncheck.
 

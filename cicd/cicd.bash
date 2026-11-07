@@ -517,6 +517,11 @@ fStageLint(){
 		elif command -v ruff >/dev/null 2>&1; then
 			ruff check --isolated --no-cache --quiet --select "$(IFS=,; echo "${PY_LINT_RULES[*]}")" "${PY_LINT_FILES[@]}" || fDie "ruff findings"
 			fEcho "OK: ruff ${PY_LINT_RULES[*]} clean (${#PY_LINT_FILES[@]} file(s))"
+			## Then the project's own rules, where it has a ruff config.
+			if [[ -f ruff.toml ]]; then
+				ruff check --no-cache --quiet "${PY_LINT_FILES[@]}" || fDie "ruff findings (ruff.toml)"
+				fEcho "OK: ruff ruff.toml rules clean (${#PY_LINT_FILES[@]} file(s))"
+			fi
 		else
 			fEcho "WARNING: ruff skipped (not installed: pipx install ruff)"
 		fi
@@ -1485,3 +1490,4 @@ fEcho_Clean
 ##		- 2026-10-26 JC: The native fuzz targets and the Go tests print PASS, FAIL or SKIP, then the test ID and name, and a target that finds a crasher prints FAIL before the run stops.
 ##		- 2026-11-06 JC: The end of a run no longer prunes docker's build cache, which every project's builds share. The daemon's builder.gc trims it. The end line leaves out a size under a megabyte, since by then the run folder holds little more than its run.pid.
 ##		- 2026-11-06 JC: A run that passed in the image cuts the cache volume's Go module cache to what go.sum names, when no other run's container is up.
+##		- 2026-11-07 JC: Lint runs ruff with the project's ruff.toml too, after the leak rules.

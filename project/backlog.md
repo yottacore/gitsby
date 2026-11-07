@@ -81,22 +81,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: 4918b5b and cfb6d90, 2026-08-18 to 08-19, through 47bcda3, 2026-10-06. The 20261003 round's enhancement 7 covered the duplicates in other files. Confirmed by reading and `git log -G`.
 	- Estimated effort: Avg
 
-- Code Review 20261107 enhancement 6: The Python helpers don't follow the Python rules, and nothing checks them
-	- ID: 2026110708000117
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-080001
-	- Opened by: jim-collier
-	- Requirements [Feature]:
-		- codeql-findings.py, new on 2026-10-19, is indented with tabs where the directives say 4 spaces for Python. It has no type hints and uses `import json, sys`.
-		- gen-demo-gif.py imports 10 modules on one line at :33, uses `; sys.exit(2)` at :38 and :42, and has no type hints. It's older, so its indent stays.
-		- No `pyproject.toml` sets ruff or black, and style-guide.md has no Python section. ruff runs `--isolated` on 3 leak rules only.
-	- Decisions:
-		- Against: "match the existing style of the file". The 2 files both use tabs today. Reindent only the newer one, or neither.
-	- Origin: 5d65fcf, 2026-10-19, after the 20261003 round. The Python names rule, new since that round, passes. gen-demo-gif.py keeps `fCamelCase` as an owner script. Confirmed by reading.
-	- Estimated effort: Low
-
 - Code Review 20261107 enhancement 7: run-latest.ps1 names its copies in the current culture
 	- ID: 2026110708000118
 	- Type: Enhancement
@@ -3507,6 +3491,34 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [ddf4q] and [ddf4r] in test.bash.
 	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
 	- Closed: 20261003-145130
+
+- Code Review 20261107 enhancement 6: The Python helpers don't follow the Python rules, and nothing checks them
+	- ID: 2026110708000117
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-080001
+	- Opened by: jim-collier
+	- Requirements [Feature]:
+		- codeql-findings.py, new on 2026-10-19, is indented with tabs where the directives say 4 spaces for Python. It has no type hints and uses `import json, sys`.
+		- gen-demo-gif.py imports 10 modules on one line at :33, uses `; sys.exit(2)` at :38 and :42, and has no type hints. It's older, so its indent stays.
+		- No `pyproject.toml` sets ruff or black, and style-guide.md has no Python section. ruff runs `--isolated` on 3 leak rules only.
+	- Decisions:
+		- Against: "match the existing style of the file". The 2 files both use tabs today. Reindent only the newer one, or neither.
+	- Origin: 5d65fcf, 2026-10-19, after the 20261003 round. The Python names rule, new since that round, passes. gen-demo-gif.py keeps `fCamelCase` as an owner script. Confirmed by reading.
+	- Estimated effort: Low
+	- Actual fix [Feature]: codeql-findings.py is on 4 spaces, with type hints and one import per line. It passes `mypy --strict`. gen-demo-gif.py has one import per line and no `;` statements. A new `ruff.toml` at the repo root selects E4, E7, E9, F, B, SIM, UP and ANN, with ANN off for gen-demo-gif.py. cicd.bash lint runs ruff under it after the leak rules, when the file is there. style-guide.md has a Python section. README.md and contributing.md say ruff checks the Python helpers.
+	- Decisions:
+		- Only codeql-findings.py is reindented, per the Against row. gen-demo-gif.py keeps its tabs, its `fCamelCase` names and no type hints, since it is older than the rules.
+		- No black config. black has no tab mode, so it would reindent gen-demo-gif.py. No ruff format check either, for the same reason.
+		- `ruff.toml` in place of `pyproject.toml`. The repo is no Python package, and ruff reads either one.
+		- The leak rules stay under `--isolated`, so the new config can't widen or narrow them.
+	- Branch: round-20261107b
+	- Test case: test.bash [df06k]: the gate's lint runs `ruff check` under the fixture's ruff.toml over both files. The gate fixture now copies ruff.toml.
+	- Verified: [df06k] failed against the previous cicd.bash and passes after. `ruff check` under ruff.toml, py_compile and `mypy --strict` on codeql-findings.py pass, and codeql-findings.py gives the same exit codes and messages for a bad `--ignore` and no args. The lint area passed. test.bash 1864/0 with enhancement 7's checks.
+	- Swept: every .py file outside legacy/. There are only these 2.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261107-111500
 
 - Code Review 20261107 enhancement 5: Stale, misplaced and garbled Go comments
 	- ID: 2026110708000116

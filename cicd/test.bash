@@ -332,7 +332,7 @@ fMakeGateFixture(){
 	: > "${gateDir}/cicd/utility/run-latest.ps1"
 	## --list reads the suites through it.
 	cp "${root}/cicd/utility/test-id.bash" "${gateDir}/cicd/utility/"
-	cp "${root}/PSScriptAnalyzerSettings.psd1" "${gateDir}/"
+	cp "${root}/PSScriptAnalyzerSettings.psd1" "${root}/ruff.toml" "${gateDir}/"
 	: > "${gateDir}/cicd/utility/demo/demo-scenario.toml"
 	echo "# Fixture" > "${gateDir}/README.md"
 	for s in test fuzz parity; do fGateStub "${gateDir}/cicd/${s}.bash" "${s}"; done
@@ -6561,6 +6561,8 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		## Only the leak-shaped rules, and go test never from its cache.
 		fAssert "[de54d] and runs ruff's leak rules over the demo script" \
 			fGateCalled '^ruff check --isolated --no-cache --quiet --select B019,SIM115,B006 cicd/utility/demo/gen-demo-gif\.py cicd/utility/codeql-findings\.py$'
+		fAssert "[df06k] and then ruff under the project's ruff.toml" \
+			fGateCalled '^ruff check --no-cache --quiet cicd/utility/demo/gen-demo-gif\.py cicd/utility/codeql-findings\.py$'
 		fAssert "[de54m] and runs go test with -count=1"  fGateCalled '^go test -race -p [0-9]+ -count=1 '
 		## go vet, golangci-lint and go test on the build's core budget.
 		fAssert "[dcmam] and runs every lint check and the unit tests" \
@@ -8423,3 +8425,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261107 JC: An aliased remote asks ssh -G once, about its connect target. [dd5cb] is off, since the bare alias is no longer asked. 1850 -> 1850.
 ##		- 20261107 JC: --version is its one line. [dcnw7] pins that line in place of the copyright line, and keep-build --list reads it. 1850 -> 1854.
 ##		- 20261107 JC: A v2.1.0 flat accounts file converts on first read, found in ~/.config too. [db00e], [db010], [dbfh2] and [dcmey] are off for [df05t], [df05w], [df05x] and [df05v]. 1854 -> 1861.
+##		- 20261107 JC: The gate fixture has ruff.toml, and [df06k] checks lint runs ruff under it. 1861 -> 1862.
