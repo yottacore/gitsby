@@ -212,6 +212,41 @@ func TestOldFormatThroughALink(t *testing.T) { // [ddf03]
 	}
 }
 
+// A config folder reached through a link is named the way it was given, on the
+// File and From lines alike. macOS keeps t.TempDir() under /var, a link to /private/var.
+func TestOldFormatThroughAFolderLink(t *testing.T) { // [df0ex]
+	if runtime.GOOS == "windows" {
+		t.Skip("links need privileges there")
+	}
+	realDir, linkParent := t.TempDir(), t.TempDir()
+	linkDir := filepath.Join(linkParent, "cfg")
+	if err := madeSymlink(realDir, linkDir); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(linkDir, "config.shcl")
+	if err := os.WriteFile(file, []byte(shcl2Body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	p := newPrinter()
+	p.out, p.err = &bytes.Buffer{}, &stderr
+	a := newApp(p)
+	a.opt.configFile, a.opt.configGiven = file, true
+	if err := a.resolveAccount(t.TempDir(), ""); err != nil {
+		t.Fatal(err)
+	}
+	a.reportMigration()
+	if a.cfg.migration == nil || a.cfg.migration.backup == "" {
+		t.Fatalf("not converted: %+v", a.cfg.migration)
+	}
+	if got := filepath.Dir(a.cfg.migration.backup); got != linkDir {
+		t.Errorf("backup in %q, want the folder as given, %q", got, linkDir)
+	}
+	if want := "From: " + nativePath(a.cfg.migration.backup); !strings.Contains(stderr.String(), want) || strings.Contains(stderr.String(), realDir) {
+		t.Errorf("notice %q", stderr.String())
+	}
+}
+
 // Another run converted the file between this one's read and its lock. It keeps
 // what that run wrote, makes no second backup, and says nothing more.
 func TestOldFormatConvertedByAnotherRun(t *testing.T) { // [ddf04]
