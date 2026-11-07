@@ -86,7 +86,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The parent's last requirement, outside cicd.bash: the harnesses, stage 7's commands on the other boxes, the utilities, release.bash, the installers, and the image build's own removals. Each goes through the guard in `cicd/utility/include/safe-rm.bash`, or a copy of it on the other boxes, and keeps the name and marker checks it has.
 		- The guard calls `realpath -e`. Check it on macOS and FreeBSD before stage 7 uses it there.
 	- Progress log:
-		- 2026-11-06: Split in four. 2026110612393817 has the harnesses, the utilities and release.bash, and 2026110612551903 the installer. Both are in. 2026110612393822 has stage 7's commands on the boxes, and 2026110612595461 the image build. 2026110612393822 is in.
+		- 2026-11-06: Split in four. 2026110612393817 has the harnesses, the utilities and release.bash, and 2026110612551903 the installer. Both are in. 2026110612393822 has stage 7's commands on the boxes, and 2026110612595461 the image build. Both are in.
 		- 2026-11-06: The guard no longer calls `realpath -e`, so the second requirement is answered in 2026110612393817.
 
 - CICD reset: stage 7's removals on the boxes through a guard
@@ -123,7 +123,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: the image build's removals through a guard
 	- ID: 2026110612595461
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261106-125954
 	- Opened by: jim-collier
@@ -131,6 +131,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Requirements [Feature]:
 		- The Dockerfile's removals of its folders under /tmp go through the guard, copied into the build. `/var/lib/apt/lists/*` and the PSScriptAnalyzer package files aren't under a tmp folder, so they get a guard that names that one parent, or a reason on this item to leave them.
 		- A Dockerfile change gives the image a new tag, so the next run rebuilds it. Leave time for that.
+	- Progress log:
+		- 2026-11-06: Each step that makes a folder works in its own under `/tmp/gitsby`, and removes it through `cicd/utility/include/safe-rm.sh`, copied into the image. Apt's lists go in the step's folder too, so they leave the same way. PSScriptAnalyzer's package files are left out of the unzip, so nothing removes them.
+		- 2026-11-06: The image builds from `cicd/`, so the recipe can copy the guard in, and the tag hashes the guard too.
+		- 2026-11-06: The empty `/tmp/cq` and `/tmp/dl` the old image kept are gone. The build had made them again for the next step's working folder.
+	- Decisions:
+		- No guard for an outside parent. Apt's lists and the module's package files no longer need a removal outside a tmp folder.
+		- The POSIX sh guard, since a build step runs in dash.
+		- The build's context is `cicd/` rather than a second copy of the guard in `cicd/container/`, which could drift.
+	- Branch: round-20261107
+	- Commit: 4efe296
+	- Test case: test.bash [deywr] for the Dockerfile, and [dez69] for the tag.
+	- Verified: [deywr] fails on the old Dockerfile, and [dez69] against the old image-go.bash. The image built, with the same PSScriptAnalyzer files, no apt lists and nothing left under `/tmp/gitsby`. `--backlog-run-quick` passed in it, with test.bash 1816/0, fuzz 313/0 and parity 30/0.
+	- Swept: every `rm -r` and `WORKDIR` in the Dockerfile, the image's tag and build in image-go.bash, which cicd.bash and release.bash share, and both test.bash fixtures that copy the recipe.
+	- Closed: 20261106-181443
+	- Acceptance signoff: Self-closed: its new checks fail before the change, and the image built and passed the quick run.
 
 - CICD reset: CICD process gaps
 	- ID: 2026102416313109
