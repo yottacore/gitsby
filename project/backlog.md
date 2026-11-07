@@ -33,20 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- A value with an apostrophe and a backslash, written under the old shcl 3 pin, reads with its backslashes doubled
-	- ID: 2026110710480989
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261107-104809
-	- Opened by: jim-collier
-	- Related IDs: 2026110707345874
-	- Steps to reproduce [Bug]: Build src-go at 958fac2^, on shcl b10c200. Run `account set work name "O'Brien \ x"` with it, then `account list` with the current build.
-	- Incorrect behavior [Bug]: The commits line says `O'Brien \\ x`. The file holds `name: "O'Brien \\ x"`, and v3.0.0-beta1 reads a backslash as text in any quote.
-	- Expected behavior [Bug]: `O'Brien \ x`, as the old build read it.
-	- Reproduced [Bug]: 2026-11-07, by hand. A Windows path with an apostrophe, such as `C:\Users\O'Brien\dev`, is the likely real case.
-	- Possible cause [Bug]: The old pin's file says Format 3, like the new one, so nothing tells them apart. Only a double-quoted value holding `\\` is affected. Respelling `\\` to `\` there would fix those files and change a value that meant 2 backslashes. Needs a choice.
-
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
@@ -2626,6 +2612,28 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: stage 7's harness on gover after round 4, 2026-10-04. b26: Go tests pass, and test.bash against the universal build 1255/0. vmFreeBSD, vmDebARM64 and vm925w: Go tests pass. The Unix boxes ran Go tests only this time, since no Unix builds were passed. Their full test.bash ran earlier the same day and failed only `[db712]`, fixed since.
 	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
 	- Closed: 20261004-190953
+
+- A value with an apostrophe and a backslash, written under the old shcl 3 pin, reads with its backslashes doubled
+	- ID: 2026110710480989
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-104809
+	- Opened by: jim-collier
+	- Related IDs: 2026110707345874
+	- Steps to reproduce [Bug]: Build src-go at 958fac2^, on shcl b10c200. Run `account set work name "O'Brien \ x"` with it, then `account list` with the current build.
+	- Incorrect behavior [Bug]: The commits line says `O'Brien \\ x`. The file holds `name: "O'Brien \\ x"`, and v3.0.0-beta1 reads a backslash as text in any quote.
+	- Expected behavior [Bug]: `O'Brien \ x`, as the old build read it.
+	- Reproduced [Bug]: 2026-11-07, by hand. A Windows path with an apostrophe, such as `C:\Users\O'Brien\dev`, is the likely real case.
+	- Possible cause [Bug]: The old pin's file says Format 3, like the new one, so nothing tells them apart. Only a double-quoted value holding `\\` is affected. Respelling `\\` to `\` there would fix those files and change a value that meant 2 backslashes. Needs a choice.
+	- Decision: 2026-11-07, jim-collier: "I'm the only one using this utility for now. So when converting the file, go by mtime of the shcl file (before doing any writes to it), and use that as the basis for deciding how to interpret."
+	- Actual fix [Bug]: A Format 3 file whose time, read before anything writes it, is from before the installed build moved to v3.0.0-beta1 (2026-11-06 19:37 PST) came from the old pin. Its double-quoted values with an escape are read by that pin's rules and written the way v3 spells them. The file as it was is kept as `config_backup_<date>-<time>_format-v3old.shcl`, and the run says so, as the 2.x and flat conversions do. A newer file, or an old one with no such value, is left as it is. The cutover is a constant in cfgformat.go.
+	- Branch: oldpin
+	- Test case: Go `[df08m]` an old file is converted, backed up, reported, and left alone on the next read; `[df08n]` the same text with a current time reads as v3 text; `[df08p]` an old file with no escape is not touched, time included; `[df08q]` each escape the old pin read, and the lines it didn't. test.bash `[df08w]`, `[df08x]` and `[df08y]`: the same through the binary, with `touch -d`.
+	- Verified: `[df08m]` fails on the previous config.go, and the binary built from it leaves the fixture file alone where `[df08w]` and `[df08x]` want the notice and the backup. go test, test.bash 1870/0 and the quick lint area pass.
+	- Swept: the old pin wrote no arrays and quoted with double quotes only where the text had an apostrophe, so a scalar value is the whole case. `\t`, `\n`, `\"`, `\'`, `\u` and `\U` are read with it. A file from the old pin that `account set` already rewrote under v3 has a new time and is not converted; nobody but me had one.
+	- Acceptance signoff: Self-closed: the choice was answered, and its tests passed.
+	- Closed: 20261107-122000
 
 - Code Review 20261107 item 6: Output in show.go, main.go, accountcmd.go and cfgformat.go breaks 4 UI guide rules
 	- ID: 2026110708000106

@@ -8032,6 +8032,18 @@ GLEOF
 		ls "${fg}/old2x"
 	fAssertOut "[ddf07] and the new one names the format"  '^##    Format   3' \
 		cat "${fg}/old2x/config.shcl"
+	## A Format 3 file from the module before v3.0.0-beta1, which wrote a backslash in double quotes
+	## as \\. Its content says nothing: only its time, from before the move, tells it from a v3 file.
+	mkdir -p "${fg}/oldpin" "${fg}/newpin"
+	printf 'account: work\n\tname: "O%sBrien \\\\ x"\n##\n##    Format   3\n##\n' "'" > "${fg}/oldpin/config.shcl"
+	cp "${fg}/oldpin/config.shcl" "${fg}/newpin/config.shcl"
+	touch -d '2026-11-01 12:00:00' "${fg}/oldpin/config.shcl"
+	fAssertOut "[df08w] a Format 3 accounts file last written before the move to v3.0.0-beta1 has its escapes re-spelled"  'Converted the accounts file from the earlier SHCL 3 spelling.* 1 line\(s\) were re-spelled' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/oldpin/config.shcl' identity 2>&1"
+	fAssertOut "[df08x] so the value reads as that module read it, and the old file sits beside it"  "^	name: \"O'Brien \\\\ x\"\$" \
+		bash -c "set -- '${fg}/oldpin'/config_backup_*_format-v3old.shcl; [[ \$# == 1 && -f \"\$1\" ]] && cat '${fg}/oldpin/config.shcl'"
+	fAssertNotOut "[df08y] and the same text written since the move is read as it is"  'Converted' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/newpin/config.shcl' identity 2>&1; ls '${fg}/newpin'"
 	## The same on a file the last build on shcl 2.x wrote itself, compiled here from its commit.
 	## Nothing may be downloaded in this suite, so its shcl module has to be in the module cache
 	## already. go.mod lists it for the Go tests, so the lint and unit test stages fetch it.
@@ -8457,3 +8469,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261107 JC: The gate fixture has ruff.toml, and [df06k] checks lint runs ruff under it. 1861 -> 1862.
 ##		- 20261107 JC: run-latest.ps1 runs once with no build and once under th-TH, [df06h] and [df06j]. 1862 -> 1864.
 ##		- 20261107 JC: br merge pushes the merge and deletes origin's copy in 1 atomic push, [df06m], [df06n] and [df06p]. 1864 -> 1867.
+##		- 20261107 JC: A Format 3 file from before the move to v3.0.0-beta1 has its escapes re-spelled, [df08w], [df08x] and [df08y]. 1867 -> 1870.

@@ -353,3 +353,140 @@ func TestFlatFileUnwritable(t *testing.T) { // [df067]
 		t.Error("set wrote the file")
 	}
 }
+
+// What the earlier Format 3 module wrote for O'Brien \ x, a tab, and a file name
+// with no escape in it. Same text whichever module reads it.
+const oldPinBody = "account: work\n\tname: \"O'Brien \\\\ x\"  # me\n\tghaccount: \"a\\tb'c\"\n\temail: 'C:\\new'\n" + shcl.GenBanner
+
+func writeOldPin(t *testing.T, body string, old bool) (dir, file string) {
+	t.Helper()
+	dir = t.TempDir()
+	file = filepath.Join(dir, "config.shcl")
+	if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if old {
+		was := oldPinCutover.Add(-time.Hour)
+		if err := os.Chtimes(file, was, was); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir, file
+}
+
+// A Format 3 file last written before the move to v3.0.0-beta1 came from the
+// earlier module, so its double-quoted escapes are re-spelled, the file as it was
+// is kept beside it, and the run says so. The next run leaves it alone.
+func TestOldPinFileIsConverted(t *testing.T) { // [df08m]
+	dir, file := writeOldPin(t, oldPinBody, true)
+	var stderr bytes.Buffer
+	p := newPrinter()
+	p.out, p.err = &bytes.Buffer{}, &stderr
+	a := newApp(p)
+	a.opt.configFile, a.opt.configGiven, a.opt.quiet = file, true, true
+	if err := a.resolveAccount(dir, ""); err != nil {
+		t.Fatal(err)
+	}
+	wantValue(t, a.cfg, "work", "name", `O'Brien \ x`)
+	wantValue(t, a.cfg, "work", "ghaccount", "a\tb'c")
+	wantValue(t, a.cfg, "work", "email", `C:\new`)
+	names := dirEntries(t, dir)
+	if len(names) != 2 {
+		t.Fatalf("want the file and one backup, got %v", names)
+	}
+	backup := filepath.Join(dir, names[0])
+	if names[0] == "config.shcl" {
+		backup = filepath.Join(dir, names[1])
+	}
+	if !strings.HasPrefix(filepath.Base(backup), "config_backup_"+time.Now().Format("20060102")+"-") || !strings.HasSuffix(backup, "_format-v3old.shcl") {
+		t.Errorf("backup name %q", filepath.Base(backup))
+	}
+	if got := readBack(t, backup); got != oldPinBody {
+		t.Errorf("backup holds %q", got)
+	}
+	got := readBack(t, file)
+	if !strings.Contains(got, "\tname: \"O'Brien \\ x\"  # me\n") || !strings.Contains(got, "\tghaccount: \"a◉TAB◉b'c\"\n") || !strings.Contains(got, "\temail: 'C:\\new'\n") {
+		t.Errorf("converted file:\n%s", got)
+	}
+	msg := stderr.String()
+	for _, want := range []string{"from the earlier SHCL 3 spelling, which read a backslash in double quotes as an escape.", "2 line(s) were re-spelled", "File: " + nativePath(file), "From: " + nativePath(backup)} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("notice is missing %q: %q", want, msg)
+		}
+	}
+	again := writeConfig(t, got)
+	wantValue(t, again, "work", "name", `O'Brien \ x`)
+	if again.migration != nil {
+		t.Errorf("a converted file was converted again: %+v", again.migration)
+	}
+}
+
+// The same text written since the move was written by v3, where a backslash is
+// text, so it is read as it is. The file's time is the only way to tell the two
+// apart: both stamp Format 3.
+func TestNewFileEscapesAreText(t *testing.T) { // [df08n]
+	dir, file := writeOldPin(t, oldPinBody, false)
+	cfg := &config{values: map[string]string{}}
+	opt := defaultOptions()
+	opt.configFile, opt.configGiven = file, true
+	if err := cfg.load(opt); err != nil {
+		t.Fatal(err)
+	}
+	wantValue(t, cfg, "work", "name", `O'Brien \\ x`)
+	if cfg.migration != nil || len(dirEntries(t, dir)) != 1 || readBack(t, file) != oldPinBody {
+		t.Errorf("a v3 file was converted: %+v", cfg.migration)
+	}
+}
+
+// An old file with nothing to re-spell is left as it is, time and all, with no
+// backup and no notice.
+func TestOldPinFileWithoutEscapesIsLeftAlone(t *testing.T) { // [df08p]
+	body := "account: work\n\tname: \"O'Brien x\"\n\temail: 'C:\\new'\n" + shcl.GenBanner
+	dir, file := writeOldPin(t, body, true)
+	before, err := os.Stat(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config{values: map[string]string{}}
+	opt := defaultOptions()
+	opt.configFile, opt.configGiven = file, true
+	if err := cfg.load(opt); err != nil {
+		t.Fatal(err)
+	}
+	wantValue(t, cfg, "work", "email", `C:\new`)
+	after, err := os.Stat(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.migration != nil || len(dirEntries(t, dir)) != 1 || !after.ModTime().Equal(before.ModTime()) {
+		t.Errorf("an old file with no escapes was touched: %+v, %v", cfg.migration, dirEntries(t, dir))
+	}
+}
+
+// The earlier module's escapes, and the lines it couldn't have read, which stay.
+func TestOldPinRespelling(t *testing.T) { // [df08q]
+	for _, tc := range []struct {
+		line, want string
+		changed    int
+	}{
+		{`k: "a\\b"`, `k: a\b`, 1}, // bare where nothing needs a quote
+		{`k: "a\"b"`, `k: 'a"b'`, 1},
+		{`k: "a\'b"`, `k: "a'b"`, 1},
+		{`k: "a\nb" # c`, `k: "a◉NEWLINE◉b" # c`, 1},
+		{`k: "\u00e9\U0001F600"`, `k: é😀`, 1},
+		{"\tk:\t\"a\\tb\"", "\tk:\t\"a◉TAB◉b\"", 1},
+		{`k: "a\qb"`, `k: "a\qb"`, 0},              // not an escape that module read
+		{`k: "a\\b`, `k: "a\\b`, 0},                // never closed
+		{`k: 'a\\b'`, `k: 'a\\b'`, 0},              // single quotes read a backslash as text there too
+		{`k: a\\b`, `k: a\\b`, 0},                  // and so did a bare value
+		{`k: "ab"`, `k: "ab"`, 0},                  // nothing to re-spell
+		{`# "a\\b"`, `# "a\\b"`, 0},                // a comment
+		{`"a\\b": x`, `"a\\b": x`, 0},              // a key
+		{`k: "a\\b", "c\\d"`, `k: a\b, "c\\d"`, 1}, // only the first piece, since that build wrote one
+	} {
+		got, n := oldPinRespelled(tc.line + "\n")
+		if got != tc.want+"\n" || n != tc.changed {
+			t.Errorf("%q -> %q (%d); want %q (%d)", tc.line, got, n, tc.want, tc.changed)
+		}
+	}
+}
