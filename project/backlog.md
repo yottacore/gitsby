@@ -86,13 +86,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The parent's last requirement, outside cicd.bash: the harnesses, stage 7's commands on the other boxes, the utilities, release.bash, the installers, and the image build's own removals. Each goes through the guard in `cicd/utility/include/safe-rm.bash`, or a copy of it on the other boxes, and keeps the name and marker checks it has.
 		- The guard calls `realpath -e`. Check it on macOS and FreeBSD before stage 7 uses it there.
 	- Progress log:
-		- 2026-11-06: Split in four. 2026110612393817 has the harnesses, the utilities and release.bash, and 2026110612551903 the installer. Both are in. 2026110612393822 has stage 7's commands on the boxes, and 2026110612595461 the image build.
+		- 2026-11-06: Split in four. 2026110612393817 has the harnesses, the utilities and release.bash, and 2026110612551903 the installer. Both are in. 2026110612393822 has stage 7's commands on the boxes, and 2026110612595461 the image build. 2026110612393822 is in.
 		- 2026-11-06: The guard no longer calls `realpath -e`, so the second requirement is answered in 2026110612393817.
 
 - CICD reset: stage 7's removals on the boxes through a guard
 	- ID: 2026110612393822
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261106-123938
 	- Opened by: jim-collier
@@ -102,6 +102,23 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- The copy step's removal of `old.*` on the Mac and Unix boxes, and the Windows box's `rmdir /s /q`, go through a copy of the guard on the box. The marker check stays.
 		- POSIX sh on the Mac and Unix boxes, with no `realpath -e` or `rm --one-file-system`, as in the repo's guard.
 		- Then [deywr] in test.bash drops its `old.*` exemption.
+	- Progress log:
+		- 2026-11-06: The Mac and Unix boxes' copy step removes each `old.*` through `cicd/utility/include/safe-rm.sh`, a POSIX sh copy of the guard, sent ahead of the command. It gets the box's temp root resolved, since macOS's sits behind `/var`. The marker check stays.
+		- 2026-11-06: The Windows box's folder goes through `cicd/utility/include/safe-rm.ps1`, sent with `-EncodedCommand`. It checks the folder, then runs the same `rmdir /s /q`. The `made` check stays. A folder it keeps gets a note in the stage's output.
+		- 2026-11-06: [deywr] has no `old.*` exemption.
+		- 2026-11-06: Asserts given new values, old -> new: [ddg8f] wanted `rmdir /s /q "<folder>"` in the calls log, and now wants the guard's call on that folder in the script sent. [ddg8p] looked for no `rmdir` there, and now for no `EncodedCommand`.
+	- Decisions:
+		- The Windows guard takes only a `test_gitsby_*` folder right under `%TEMP%`. The repo guard refuses any folder right under the temp root, but the Windows box's run folder has always sat there, one per run.
+		- rmdir still does the removal on Windows, after the guard's checks, since it removes a link inside the folder rather than follow it.
+		- The guards are files in the repo, sent with the commands that use them, rather than copied to the box first. That adds no ssh step and leaves no copy on the box to go stale.
+	- Branch: round-20261107
+	- Commit: da39cf8
+	- Test case: test.bash [dez5f] (the sh guard), [dez5g] (the Windows guard under pwsh), [dez5h] (the Mac's copy step leaves an `old.*` that is a link), plus [deywr], [ddg8f] and [ddg8p].
+	- Verified: [dez5g], [dez5h] and [ddg8f] fail against the old remote-tests.bash, and [ddg8p] fails with the `made` check taken out. [dez5f] passes under dash, bash, zsh and busybox sh, and fails with the link check taken out. `--backlog-run-quick` passed, with test.bash 1814/0, fuzz 313/0 and parity 30/0.
+	- Verified: stage 7 on vm925w, b26 and vmFreeBSD at da39cf8. Each copy step and the Windows removal ran with no note, and test.bash passed 1516/0 on b26 and 1413/0 on vmFreeBSD, [dez5f] included.
+	- Swept: every `rm -r`, `rmdir /s` and `Remove-Item -Recurse` outside legacy/. What's left is the image build's, in 2026110612595461, and install.ps1's, which has its own checks.
+	- Closed: 20261106-173828
+	- Acceptance signoff: Self-closed: its new checks fail before the change, and stage 7 passed on all three kinds of box.
 
 - CICD reset: the image build's removals through a guard
 	- ID: 2026110612595461
