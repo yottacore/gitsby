@@ -75,6 +75,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash [dee5h] and [dee5j], plus [de5m8], [dee4z] and [dee50] for the new folder, and the tests of child 2026102516194062.
 	- Verified: Both fail against the round branch's cicd.bash, and pass with the change. The run in the image passed with them.
 	- Closed: 20261106-181541
+	- Acceptance signoff: Self-closed: every child is closed with its tests passing.
 
 - CICD reset: every other recursive removal through the guard
 	- ID: 2026102516194062
@@ -94,6 +95,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Closed: 20261106-181541
 	- Test case: its children's tests: test.bash [deywq], [deywr], [ddgkk], [db70t] to [db70y], [deyx8], [deyx9], [dez5f], [dez5g], [dez5h], [ddg8f], [ddg8p] and [dez69].
 	- Verified: 2026-11-07, all 4 children closed with those tests passing; the round's quick runs passed test.bash 1816/0.
+	- Acceptance signoff: Self-closed: every child is closed with its tests passing.
 
 - CICD reset: stage 7's removals on the boxes through a guard
 	- ID: 2026110612393822
