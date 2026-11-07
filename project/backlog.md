@@ -33,6 +33,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- test.bash [dd5e4] fails on the macOS workflow: install.ps1 leaves its bracketed temp dir
+	- ID: 2026110617122394
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261106-171223
+	- Opened by:
+	- Target OS: macOS
+	- Progress log:
+		- 2026-11-07: [dd5e4] is the only FAIL on macos-latest in runs 42254437886, 42257775761, 42273158689 and 42295283425. [dd5e3] passes, so the install works and only the cleanup of the temp dir under TMPDIR=<work>/pstmp[1] fails. Linux passes.
+		- Guess to check first: the macOS temp path goes through the /var -> /private/var link, and the newer real-folder-under-temp guard refuses a path through a link.
+	- Origin: gover's macOS workflow, first red at run 42254437886 (Merge fuzz-log, 2026-11-06), red since on every gover push; last green 40447463125 (Merge round-20261026)
+
 - CICD reset: temp files and safe removal
 	- ID: 2026102416313108
 	- Type: Enhancement
