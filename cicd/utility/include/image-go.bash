@@ -57,8 +57,8 @@ fImageRecipe(){
 	containerArgs+=(--build-arg "CODEQL_SHA256=${CODEQL_SHA256}" --build-arg "CODEQL_PY_SHA256=${CODEQL_PY_SHA256}")
 	## In the tag's hash, so an image from before the labels is built again with them.
 	containerArgs+=(--label "dev.project=${APP_NAME}")
-	## The Python tools' lock is the other file the recipe copies in.
-	containerImage="${APP_NAME}-cicd:$( { cat "${recipe}" "${here}/container/requirements.txt"; printf '%s\n' "${containerArgs[@]}"; } | git hash-object --stdin | cut -c1-12 )"
+	## The Python tools' lock and the guard are the other files the recipe copies in.
+	containerImage="${APP_NAME}-cicd:$( { cat "${recipe}" "${here}/container/requirements.txt" "${here}/utility/include/safe-rm.sh"; printf '%s\n' "${containerArgs[@]}"; } | git hash-object --stdin | cut -c1-12 )"
 }
 
 ## fImageBuild RUN: builds the image fImageRecipe named when it isn't there yet, and makes the Go
@@ -70,7 +70,8 @@ fImageBuild(){
 	else
 		## The one it replaces goes at the end of a cicd.bash run that passes on this one.
 		fEcho_Clean "building ${containerImage}"
-		docker build -q -t "${containerImage}" "${containerArgs[@]}" --label "dev.run=${run}" "${here}/container" >/dev/null || fDie "image build failed"
+		## From cicd/, so the recipe can copy the guard in.
+		docker build -q -t "${containerImage}" -f "${here}/container/Dockerfile" "${containerArgs[@]}" --label "dev.run=${run}" "${here}" >/dev/null || fDie "image build failed"
 	fi
 	## Made here rather than by the first run that mounts it, so it carries the labels.
 	if ! docker volume inspect "${APP_NAME}-cicd-cache" >/dev/null 2>&1; then
@@ -85,3 +86,4 @@ fImageBuild(){
 ##		- 2026-10-25 JC: GITSBY_CICD_KEEP_TEMP keeps the container after the build.
 ##		- 2026-10-25 JC: Labeled dev.project and dev.run, and named for the run's folder.
 ##		- 2026-10-25 JC: fImageRecipe and fImageBuild, moved here from cicd.bash so release.bash builds with the same image. A build folder outside the tree is mounted too.
+##		- 2026-11-06 JC: The image builds from cicd/, so the recipe can copy safe-rm.sh in, and the tag hashes it.

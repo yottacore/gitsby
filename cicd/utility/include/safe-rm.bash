@@ -33,6 +33,33 @@ fSafeRm(){
 	rm -r -f "${__safeRmOneFs}" -- "${p}" && printf 'removed %s\n' "${p}"
 }
 
+## fSafeRm_Under PARENT PATH...: the guard for a folder outside any temp root, such as a module
+## cache in a volume. Each PATH is strictly under PARENT, which has no link in it, and neither
+## PATH nor anything between is a link. All or none: one refused, nothing goes. Made writable
+## first, since go leaves what it extracts read-only. Quiet on success.
+fSafeRm_Under(){
+	local parent="${1:-}" p cur rel
+	shift || true
+	parent="${parent%/}"
+	if [[ "${parent}" != /?* || "${parent}" == *..* || "${parent}" == *//* || "${parent}" == *$'\n'* || ! -d "${parent}" ]] \
+		|| [[ "$(cd -P -- "${parent}" 2> /dev/null && pwd -P)" != "${parent}" ]]; then
+		printf 'safe-rm: refused, bad parent or one through a link: "%s"\n' "${parent}" >&2; return 1
+	fi
+	(($#)) || return 0
+	for p in "$@"; do
+		if [[ "${p}" != "${parent}"/?* || "${p}" == *..* || "${p}" == *//* || "${p}" == *$'\n'* || "${p}" == */ ]]; then
+			printf 'safe-rm: refused, not under %s: "%s"\n' "${parent}" "${p}" >&2; return 1
+		fi
+		cur="${parent}"; rel="${p#"${parent}"/}/"
+		while [[ -n "${rel}" ]]; do
+			cur+="/${rel%%/*}"; rel="${rel#*/}"
+			if [[ -L "${cur}" ]]; then printf 'safe-rm: refused, a link or through one: %s\n' "${p}" >&2; return 1; fi
+		done
+	done
+	chmod -R u+w -- "$@" 2> /dev/null || true
+	rm -r -f "${__safeRmOneFs}" -- "$@"
+}
+
 ## The same, for a path that may not be there yet. Quiet on success.
 fSafeRm_IfThere(){ if [[ -e "${1:-}" || -L "${1:-}" ]]; then fSafeRm "${1:-}" >/dev/null; fi ;}
 
@@ -57,3 +84,4 @@ fSafeRm_Tmp(){
 ##	History:
 ##		- 2026-10-25 JC: Created, from the shared safe removal guard.
 ##		- 2026-11-06 JC: No realpath, and rm's -x where it has no --one-file-system, so the harnesses can use it on the Mac and BSD boxes. fSafeRm_IfThere, fSafeRm_Init and fSafeRm_Tmp for the harnesses and utilities. Refuses HOST_TEMP and a project's whole folder under it, as the shared guard has since 2026-10-28.
+##		- 2026-11-06 JC: fSafeRm_Under, for the Go module cache in the cache volume.

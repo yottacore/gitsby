@@ -61,6 +61,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 fEcho_Clean(){ printf '%s\n' "$*"; }
+## A check of the fixture itself, "[<id>] label", printed the way a measure's verdict is.
+fOk(){   local id="${1%%\] *}"; ((quiet)) || fEcho_Clean "  PASS ${id#\[} ${1#*\] }"; }
+fFail(){ local id="${1%%\] *}"; fEcho_Clean "  FAIL ${id#\[} ${1#*\] }"; }
 
 ## A SKIP for each command, named as fMeasure names it below.
 command -v strace >/dev/null 2>&1 || { sed -n 's/^fMeasure "\[\([^]]*\)\] \([^"]*\)".*/  SKIP \1 \2 (no strace)/p' "${BASH_SOURCE[0]}"; exit 0; }
@@ -152,6 +155,12 @@ git clone --quiet "${pristine}/prune5.git" "${pristine}/prune5" 2>/dev/null
 	done
 )
 
+## A clone keeps its origin's absolute path, and cp -a copies it as it is, so each live clone
+## would push to the pristine origin. Pointing them at the live copies once, here, means every
+## restore brings a matching pair.
+git -C "${pristine}/repo"   remote set-url origin "${work}/live/origin.git"
+git -C "${pristine}/prune5" remote set-url origin "${work}/live/prune5.git"
+
 ## Two copies of that clone whose origin is on github.com, one over ssh and one over https, each
 ## covered by an account's folder rule. The Account line prints only for an account picked like
 ## that, never for one guessed from the remote's owner, so this is the path a configured user
@@ -184,6 +193,11 @@ account: gamma
 	sshkey: ${work}/home/id_gamma
 	email: gamma@example.com
 EOF
+
+## What both origins hold as built. Nothing measured may write to these, or the next command
+## runs against what the last one left; the check after the measures says so.
+fOriginRefs(){ local o; for o in "${pristine}/origin.git" "${pristine}/prune5.git"; do git -C "${o}" for-each-ref --format='%(refname) %(objectname)'; done; }
+originRefs="$(fOriginRefs)"
 
 fRestore(){
 	fSafeRm_IfThere "${work:?}/live"
@@ -300,6 +314,14 @@ for ((i = 0; i < ${#labels[@]}; i++)); do
 done
 ((quiet)) || ((underLimit == 0)) || fEcho_Clean "  ${underLimit} under their expected count; lower those numbers in ${BASH_SOURCE[0]##*/} to keep the gain."
 
+declare -i originMoved=0
+if [[ "$(fOriginRefs)" == "${originRefs}" ]]; then fOk "[dez8s] the fixture's origins are as built, after every command"
+else fFail "[dez8s] the fixture's origins are as built, after every command"; originMoved=1; fi
+
+if ((originMoved)); then
+	echo "spawn counts ran against an origin a command had changed; nothing recorded." >&2
+	exit 1
+fi
 if ((overLimit)); then
 	echo "spawn counts went over their limits; nothing recorded." >&2
 	echo "  A deliberate rise raises the expected count beside the command in ${BASH_SOURCE[0]##*/}." >&2
@@ -339,3 +361,4 @@ gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		- 20261026 JC: Each command prints PASS, FAIL or SKIP, then its test ID, with the verdict after the count. A rise --record takes is a PASS, and with no strace each command is a SKIP.
 ##		- 20261106 JC: br prune of five landed branches, in a world with its own origin. A spawn per branch fits the headroom over one branch, and not over five.
 ##		- 20261106 JC: Its scratch folder goes through fSafeRm.
+##		- 20261106 JC: Each live clone's origin is its live copy, not the pristine one, which a pushing command changed for every command after it. A check after the measures fails the run if a pristine origin moved.

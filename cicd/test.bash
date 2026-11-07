@@ -206,9 +206,10 @@ fPwshText(){ "${noTty[@]}" pwsh -NoProfile -Command "$1" </dev/null 2>&1 ;}
 ## which PowerShell finds before a cmdlet of the same name. <shape> picks how releases/latest
 ## answers: as 7 or 5.1 answer a redirect, nofull as 5.1 answers the 404 of a repo with no full
 ## release, or pre, which is nofull with only pre-releases listed. Each URL asked for goes to
-## <dir>/calls.
+## <dir>/calls. Telemetry is off: pwsh 7.6.9 on macOS, writing telemetry.uuid into a fresh HOME,
+## leaves the runtime's .dotnet mutex folder in TMPDIR, which reads as install.ps1's leftover.
 fPsInstall(){ local dir="$1" home="$2" shape="$3" inst="$4"; shift 4; : > "${dir}/calls"; mkdir -p "${home}"
-	env HOME="${home}" FAKE_DIR="${dir}" FAKE_SHAPE="${shape}" "${noTty[@]}" pwsh -NoProfile -Command ". '${dir}/stubs.ps1'; & '${inst}' $*" </dev/null 2>&1 ;}
+	env HOME="${home}" FAKE_DIR="${dir}" FAKE_SHAPE="${shape}" POWERSHELL_TELEMETRY_OPTOUT=1 "${noTty[@]}" pwsh -NoProfile -Command ". '${dir}/stubs.ps1'; & '${inst}' $*" </dev/null 2>&1 ;}
 ## Succeeds when a help text for install.ps1 names every parameter and alias of the function that
 ## does the work. <which> is -Help for the installer's own, or get-help for its comment help.
 # shellcheck disable=SC2016  ## pwsh's own variables; pwsh does the expanding.
@@ -324,7 +325,7 @@ fMakeGateFixture(){
 	mkdir -p "${gateDir}/cicd/utility/include" "${gateDir}/cicd/utility/demo" "${gateDir}/cicd/container" "${gateDir}/bin" "${gateDir}/home" "${gateDir}/src-go" "${gateFail}"
 	cp "${root}/cicd/cicd.bash" "${root}/cicd/config.bash" "${gateDir}/cicd/"
 	cp "${root}/cicd/container/Dockerfile" "${root}/cicd/container/requirements.txt" "${gateDir}/cicd/container/"
-	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${root}/cicd/utility/include/gh-account.bash" "${root}/cicd/utility/include/go-test-lines.bash" "${root}/cicd/utility/include/image-go.bash" "${root}/cicd/utility/include/safe-rm.bash" "${gateDir}/cicd/utility/include/"
+	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${root}/cicd/utility/include/gh-account.bash" "${root}/cicd/utility/include/go-test-lines.bash" "${root}/cicd/utility/include/image-go.bash" "${root}/cicd/utility/include/safe-rm.bash" "${root}/cicd/utility/include/safe-rm.sh" "${gateDir}/cicd/utility/include/"
 	## Empty, so the lint globs and PY_LINT_FILES resolve, and stage 6 finds a scenario.
 	: > "${gateDir}/install.bash"; : > "${gateDir}/install.ps1"; : > "${gateDir}/cicd/utility/demo/gen-demo-gif.py"
 	: > "${gateDir}/cicd/utility/codeql-findings.py"; : > "${gateDir}/src-go/go.mod"; : > "${gateDir}/src-go/main.go"
@@ -348,7 +349,8 @@ fMakeGateFixture(){
 	## A build in the image leaves its -o file behind, as go's stub does, so dogfood has one to copy.
 	## 'docker-run' fails a run and 'docker-hang' holds one. 'images' is what it lists for the
 	## image's repo, and 'vols' the labeled volumes, as "<name> <size>". 'docker-noimage' and
-	## 'docker-novol' answer that the image or the cache volume isn't there.
+	## 'docker-novol' answer that the image or the cache volume isn't there. 'running' is what it
+	## lists as up, and 'modprune' what the module cache prune prints.
 	fGateStub "${gateDir}/bin/docker" docker "if [[ ! -e '${gateFail}/docker' ]]; then o=''; for a in \"\$@\"; do [[ \"\${o}\" != 1 ]] || : > \"\${a}\"; o=''; [[ \"\${a}\" != -o ]] || o=1; done; fi
 		[[ \"\${1:-} \${2:-} \${3:-}\" != 'image ls gitsby-cicd' ]] || cat '${gateFail}/images' 2>/dev/null || true
 		[[ \"\${1:-}\" != run || ! -e '${gateFail}/docker-hang' ]] || { : > '${gateFail}/hung'; sleep 5; }
@@ -356,7 +358,9 @@ fMakeGateFixture(){
 		[[ \"\${1:-} \${2:-}\" != 'image inspect' || ! -e '${gateFail}/docker-noimage' ]] || exit 1
 		[[ \"\${1:-} \${2:-}\" != 'volume inspect' || ! -e '${gateFail}/docker-novol' ]] || exit 1
 		[[ \"\${1:-} \${2:-}\" != 'volume ls' ]] || cut -d' ' -f1 '${gateFail}/vols' 2>/dev/null || true
-		[[ \"\${1:-} \${2:-} \${3:-}\" != 'system df -v' ]] || cat '${gateFail}/vols' 2>/dev/null || true"
+		[[ \"\${1:-} \${2:-} \${3:-}\" != 'system df -v' ]] || cat '${gateFail}/vols' 2>/dev/null || true
+		[[ \"\${1:-} \${2:-}\" != 'ps -q' ]] || cat '${gateFail}/running' 2>/dev/null || true
+		[[ \"\${1:-}\" != run || \" \$* \" != *-modprune\ * ]] || cat '${gateFail}/modprune' 2>/dev/null || true"
 	## The demo generator writes a gif header to its --out, and the optimizer, called as
 	## 'gifsicle -O3 IN -o OUT', copies IN to OUT, so stage 6 has a file to compare. py_compile
 	## passes no --out.
@@ -767,6 +771,57 @@ fGateDockerTidy(){
 	fSafeRm_IfThere "${t:?}"
 	((rc == 0))
 }
+## A run that passed in the image cuts the cache volume's module cache to what go.sum names, in a
+## container of its own with no network, and the end line counts what went. Not while any run's
+## container is up, since every worktree's runs share the volume, and not after a failed run.
+fGateModPrune(){
+	local t="${gateDir}/tmp-modprune" rc=0
+	fSafeRm_IfThere "${t:?}"; mkdir -p "${t}"
+	: > "${gateDir}/src-go/go.sum"; echo 3 > "${gateFail}/modprune"; echo 'gitsby-cicd-cache 1.0GB' > "${gateFail}/vols"
+	TMPDIR="${t}" fGateSays 0 '^Cleanup: removed 3 Go module version\(s\), the run folder$' --backlog-run-quick lint \
+		&& fGateCalled "^docker run --rm --init --name gitsby-[0-9]{8}-[0-9]{6}_[0-9]{3}-modprune --label dev\\.project=gitsby --label dev\\.run=[0-9_-]+ --network none .*-v gitsby-cicd-cache:/cache -v ${gateDir}:${gateDir}:ro gitsby-cicd:[0-9a-f]+ nice -n 19 bash ${gateDir}/cicd/utility/go-modcache-prune\\.bash /cache/home/go/pkg/mod ${gateDir}/src-go/go\\.mod ${gateDir}/src-go/go\\.sum\$" || rc=1
+	echo 0 > "${gateFail}/modprune"
+	TMPDIR="${t}" fGateSays 0 '^Cleanup: removed the run folder$' --backlog-run-quick lint && fGateCalled '/go-modcache-prune\.bash ' || rc=1
+	echo 3 > "${gateFail}/modprune"; echo 0123abcd > "${gateFail}/running"
+	TMPDIR="${t}" fGateSays 0 '^Cleanup: removed the run folder$' --backlog-run-quick lint && fGateCalled '^docker ps -q --filter label=dev\.project=gitsby$' \
+		&& ! fGateCalled 'modprune' || rc=1
+	rm -f -- "${gateFail:?}/running"; : > "${gateFail}/docker-run"
+	TMPDIR="${t}" fGateStatus 1 --backlog-run-quick lint && ! fGateCalled 'modprune' || rc=1
+	rm -f -- "${gateFail:?}/docker-run" "${gateFail:?}/modprune" "${gateFail:?}/vols" "${gateDir:?}/src-go/go.sum"
+	fSafeRm_IfThere "${t:?}"
+	((rc == 0))
+}
+## The prune itself, on a module cache laid out as go leaves it, extracted trees read-only.
+## Kept: what go.sum names, capitals spelled "!" and lower case, and the toolchain go.mod's go
+## line names. The rest goes, download files and trees both, and the folders it leaves empty.
+## A link in the cache stops it.
+fModPruneOnCache(){
+	local t="${gateDir}/tmp-modcache" m="" rc=0 out="" v e d
+	fSafeRm_IfThere "${t:?}"; m="${t}/mod"
+	for v in 'github.com/!burnt!sushi/toml@v1.4.0' 'github.com/!burnt!sushi/toml@v1.3.0' 'example.com/a/b@v0.1.0' 'golang.org/toolchain@v0.0.1-go1.26.2.linux-amd64' 'golang.org/toolchain@v0.0.1-go1.25.0.linux-amd64'; do
+		d="${m}/${v}"; mkdir -p "${d}/sub"; : > "${d}/sub/x.go"
+		mkdir -p "${m}/cache/download/${v%@*}/@v"; for e in info mod zip ziphash lock; do : > "${m}/cache/download/${v%@*}/@v/${v#*@}.${e}"; done
+		echo "${v#*@}" >> "${m}/cache/download/${v%@*}/@v/list"
+	done
+	: > "${m}/example.com/a/b@v0.2.0.partial"; mkdir -p "${m}/cache/download/sumdb/sum.golang.org/lookup/example.com/a"; : > "${m}/cache/download/sumdb/sum.golang.org/lookup/example.com/a/b@v0.1.0"
+	chmod -R a-w "${m}/github.com/!burnt!sushi/toml@v1.4.0" "${m}/github.com/!burnt!sushi/toml@v1.3.0" "${m}/example.com/a/b@v0.1.0" "${m}/golang.org/toolchain@"*
+	printf 'module x\n\ngo 1.26.2\n' > "${t}/go.mod"
+	printf 'github.com/BurntSushi/toml v1.4.0 h1:x=\ngithub.com/BurntSushi/toml v1.4.0/go.mod h1:y=\nexample.com/c v1.0.0/go.mod h1:z=\n' > "${t}/go.sum"
+	out="$(bash "${root}/cicd/utility/go-modcache-prune.bash" "${m}" "${t}/go.mod" "${t}/go.sum" 2>&1)" || rc=1
+	[[ "${out}" == 4 ]] || rc=1
+	[[ -d "${m}/github.com/!burnt!sushi/toml@v1.4.0/sub" && -f "${m}/cache/download/github.com/!burnt!sushi/toml/@v/v1.4.0.zip" && -f "${m}/cache/download/github.com/!burnt!sushi/toml/@v/list" ]] || rc=1
+	[[ -d "${m}/golang.org/toolchain@v0.0.1-go1.26.2.linux-amd64" && -f "${m}/cache/download/golang.org/toolchain/@v/v0.0.1-go1.26.2.linux-amd64.zip" ]] || rc=1
+	[[ ! -e "${m}/github.com/!burnt!sushi/toml@v1.3.0" && -z "$(compgen -G "${m}/cache/download/github.com/!burnt!sushi/toml/@v/v1.3.0.*")" ]] || rc=1
+	[[ ! -e "${m}/golang.org/toolchain@v0.0.1-go1.25.0.linux-amd64" && -z "$(compgen -G "${m}/cache/download/golang.org/toolchain/@v/v0.0.1-go1.25.0.*")" ]] || rc=1
+	[[ ! -e "${m}/example.com" && ! -e "${m}/cache/download/example.com" && -f "${m}/cache/download/sumdb/sum.golang.org/lookup/example.com/a/b@v0.1.0" ]] || rc=1
+	[[ "$(bash "${root}/cicd/utility/go-modcache-prune.bash" "${m}" "${t}/go.mod" "${t}/go.sum" 2>&1)" == 0 ]] || rc=1
+	## go never leaves a link there, so one stops the prune whole, and what it points at stays.
+	mkdir -p "${t}/outside/sub" "${m}/example.org" "${m}/github.com/!burnt!sushi/toml@v1.2.0"; : > "${t}/outside/sub/x.go"; ln -s "${t}/outside" "${m}/example.org/l@v1.0.0"
+	! bash "${root}/cicd/utility/go-modcache-prune.bash" "${m}" "${t}/go.mod" "${t}/go.sum" >/dev/null 2>&1 \
+		&& [[ -f "${t}/outside/sub/x.go" && -d "${m}/github.com/!burnt!sushi/toml@v1.2.0" ]] || rc=1
+	chmod -R u+w "${m}"; fSafeRm_IfThere "${t:?}"
+	((rc == 0))
+}
 ## Neither goes with --install-hook, and --list keeps nothing. --help names both.
 fGateKeepListRefuse(){
 	fGateSays 2 'nothing to keep' --list --keep-temp && fGateSays 2 '--keep-temp goes with a run, not --install-hook' --install-hook --keep-temp \
@@ -898,15 +953,15 @@ fGateNoFuzz(){
 		&& ! grep -qE '^(govulncheck -test|pip-audit -r|fuzz\.bash|spawn-count\.bash)( |$)|^go test .*-fuzz ' "${gateCalls}" \
 		&& grep -qxF 'Fuzz + security .....: (skipped --no-fuzz)' "${gateOut}" && ! grep -qF 'Starting Fuzz' "${gateOut}"
 }
-## The image's tag follows the Python tools' lock as well as the recipe.
-fGateLockInTag(){
+## The image's tag follows the file $1, under cicd/, that the recipe copies in, as well as the recipe.
+fGateFileInTag(){
 	local before="" after="" rc=0
 	fGateSays 0 'OK: the container run' -y --quick --no-sync --no-publish --no-dogfood || return 1
 	before="$(grep -oE 'gitsby-cicd:[0-9a-f]+' "${gateOut}" | sed -n 1p)"
-	echo "# changed" >> "${gateDir}/cicd/container/requirements.txt"
+	echo "# changed" >> "${gateDir}/cicd/$1"
 	fGateSays 0 'OK: the container run' -y --quick --no-sync --no-publish --no-dogfood || rc=1
 	after="$(grep -oE 'gitsby-cicd:[0-9a-f]+' "${gateOut}" | sed -n 1p)"
-	cp "${root}/cicd/container/requirements.txt" "${gateDir}/cicd/container/requirements.txt"
+	cp "${root}/cicd/$1" "${gateDir}/cicd/$1"
 	[[ "${rc}" == 0 && -n "${before}" && -n "${after}" && "${before}" != "${after}" ]]
 }
 ## The quick run goes to the image by its own name, with the areas as given and -q, and none of
@@ -1152,12 +1207,19 @@ fRemoteBudgetUsed(){
 		&& [[ "$(fRemoteBudget 8 3.00)" == $'4\nnice -n 19'* && "$(fRemoteBudget 8 4.50)" == $'2\n'* && "$(fRemoteBudget 1 0.00)" == $'1\n'* \
 			&& "$(fRemoteBudget 16 9.00 mac)" == $'4\nnice -n 19'* && "$(fRemoteBudget 16 7.00 mac)" == $'8\n'* ]]
 }
-## True when the last run made a folder under %TEMP% on the Windows box $1, and removed that one.
+## True when the last run made a folder under %TEMP% on the Windows box $1, and removed that one
+## through the guard.
 fRemoteWinCleaned(){
-	local d=""
+	local d="" leaf=""
 	d="$(sed -n "s/^ssh $1 .*mkdir \"\\(%TEMP%[^\"]*\\)\".*/\\1/p" "${rtLog}")"
-	d="${d%%$'\n'*}"
-	[[ "${d}" == '%TEMP%\test_gitsby_'* ]] && grep -qF "rmdir /s /q \"${d}\"" "${rtLog}"
+	d="${d%%$'\n'*}" leaf="${d##*\\}"
+	[[ "${d}" == '%TEMP%\test_gitsby_'* ]] && grep -qxF "if (-not (fSafeRm (Join-Path \$env:TEMP '${leaf}'))) { exit 1 }" <<< "$(fRemoteWinGuard "$1")"
+}
+## The script the last run sent the Windows box $1 to remove its folder with, decoded.
+fRemoteWinGuard(){
+	local b=""
+	b="$(sed -n "s/^ssh $1 .*powershell -NoProfile -NonInteractive -EncodedCommand \\([A-Za-z0-9+\/=]*\\)\$/\\1/p" "${rtLog}")"
+	base64 -d <<< "${b%%$'\n'*}" | iconv -f UTF-16LE -t UTF-8
 }
 ## True when the remote shell for the stage's folder a/b puts it under HOST_TEMP, then under TMPDIR
 ## less its last slash, then under /tmp.
@@ -4094,6 +4156,11 @@ GHEOF
 				bash -c '[[ -x "$1/.local/bin/gitsby" && -z "$(ls -A -- "$2")" ]]' _ "${psi}/htmp" "${psTmp}"
 			fAssert    "[deyx9] and removes it only as a real folder right under the temp folder" \
 				bash -c "grep -q 'ReparsePoint) -and \$tmpItem.Parent.FullName' '${goInstPs}' && [[ \$(grep -c -- '-Recurse' '${goInstPs}') == 1 ]]"
+			## With telemetry on, [dd5e4] failed on macOS from pwsh 7.6.9, on the runtime's .dotnet folder.
+			# shellcheck disable=SC2016  ## pwsh does the expanding.
+			printf '"telemetry opt-out: $env:POWERSHELL_TELEMETRY_OPTOUT"\n' > "${psi}/tele.ps1"
+			fAssertOut "[dez8c] go ps installer checks run pwsh with telemetry off"  '^telemetry opt-out: 1$' \
+				fPsInstall "${psi}" "${psi}/htele" 7 "${psi}/tele.ps1"
 			## The install line with no -Tag, against the release lists the Bash installer's checks
 			## use. FAKE_LATEST names the tag the redirect goes to, FAKE_LIST the list file, and
 			## each tag's SHA256SUMS comes from FAKE_SUMS_DIR; an empty one fails.
@@ -5331,7 +5398,7 @@ GHEOF
 		mkdir -p "${relRepo}/cicd/utility/include" "${relRepo}/cicd/container" "${relRepo}/src-go"
 		printf '%s\n' 'module x' '' 'require example.com/m v1.2.0' > "${relRepo}/src-go/go.mod"
 		cp "${root}/cicd/release.bash" "${root}/cicd/config.bash" "${relRepo}/cicd/"
-		cp "${root}/cicd/utility/include/image-go.bash" "${root}/cicd/utility/include/safe-rm.bash" "${relRepo}/cicd/utility/include/"
+		cp "${root}/cicd/utility/include/image-go.bash" "${root}/cicd/utility/include/safe-rm.bash" "${root}/cicd/utility/include/safe-rm.sh" "${relRepo}/cicd/utility/include/"
 		cp "${root}/cicd/container/Dockerfile" "${root}/cicd/container/requirements.txt" "${relRepo}/cicd/container/"
 		fStub "${rel}/stub" <<-EOF
 			#!/usr/bin/env bash
@@ -5700,12 +5767,18 @@ GHEOF
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[deywq] the guard removes a temp folder with no realpath on PATH, and refuses a link and a path through one" \
 		env PATH="${srBin}" APP_NAME="${APP_NAME}" "${srBash}" -c 'source "$1" && fSafeRm "$2/gone" && [[ ! -e "$2/gone" ]] && ! fSafeRm "$2/link" && ! fSafeRm "$2/link/sub" && [[ -d "$2/kept/sub" ]]' _ "${root}/cicd/utility/include/safe-rm.bash" "${srWork}"
-	## Stage 7's own commands on the boxes are left to their own item, hence old.*.
+	## The copy on the boxes, in POSIX sh: it removes under the stage's folder, and refuses the
+	## temp root, a folder right under it, a link, a path through one, and one outside.
+	local srRoot="${work}/saferm-sh/root"
+	mkdir -p "${srRoot}/stage/old.1/sub" "${srRoot}/stage/kept/sub" "${srRoot}/other"; ln -s "${srRoot}/stage/kept" "${srRoot}/stage/old.link"
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
-	for rmScript in "${rmScripts[@]}"; do
+	fAssert "[dez5f] the guard on a Mac or Unix box removes an old tree in the stage's folder, and refuses the rest" \
+		env PATH="${srBin}" HOST_TEMP="${srRoot}" APP_NAME=stage "$(command -v sh)" -c '. "$1" && fSafeRm "$2/stage/old.1" && [ ! -e "$2/stage/old.1" ] && ! fSafeRm "$2/stage/old.link" && ! fSafeRm "$2/stage/old.link/sub" && ! fSafeRm "$2/stage" && ! fSafeRm "$2" && ! fSafeRm "$2/stage/../other" && ! fSafeRm /etc/x && ! HOST_TEMP= fSafeRm "$2/stage/kept" && [ -d "$2/stage/kept/sub" ] && [ -d "$2/other" ]' _ "${root}/cicd/utility/include/safe-rm.sh" "${srRoot}"
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	for rmScript in "${rmScripts[@]}" cicd/container/Dockerfile; do
 		[[ "${rmScript}" == legacy/* || "${rmScript}" == cicd/utility/include/safe-rm.bash ]] && continue
 		fAssert "[deywr] ${rmScript} removes a folder only through the guard" \
-			bash -c '[[ -f "$1" ]] && ! grep -vE "$3" "$1" | grep -qE "$2"' _ "${root}/${rmScript}" '(^|[^-[:alnum:]_])rm +(-[[:alpha:]]*[rR]|--recursive)' '^[[:space:]]*#|git rm|raw rm|old\.\*'
+			bash -c '[[ -f "$1" ]] && ! grep -vE "$3" "$1" | grep -qE "$2"' _ "${root}/${rmScript}" '(^|[^-[:alnum:]_])rm +(-[[:alpha:]]*[rR]|--recursive)' '^[[:space:]]*#|git rm|raw rm'
 	done
 	## ------------------------------------------------------------------------------------
 	## The pipeline itself, after the directive review. Where a check would need a whole run
@@ -6469,6 +6542,11 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[defng] one line at the end of a run says what it removed, files and docker, and about what that freed"  fGateTidyLine
 		fAssert "[deysa] the end line leaves out a size under a megabyte"  fGateTidySmall
 		fAssert "[dee5k] a run in the image labels what it makes, and its end removes the run's containers, dangling images and older tags, and leaves the build cache to docker"  fGateDockerTidy
+		fAssert "[dez7d] a run that passed in the image cuts the cache volume's Go module cache to what go.sum names, unless another run's container is up"  fGateModPrune
+		fAssert "[dez7e] the module cache prune keeps what go.sum names and the toolchain, and takes out the rest"  fModPruneOnCache
+		fAssert "[dez7f] go.sum names every module the SHCL 2.x build needs, so the prune leaves [ddg6f] what it builds from" \
+			bash -c "git -C '${root}' show 53a62316dd3440cffada0c938b4cd8ad7351c36b:src-go/go.sum | awk '{ print \$1, \$2 }' | sort -u > '${gateDir}/sum-2x' \
+				&& [[ -s '${gateDir}/sum-2x' && -z \"\$(awk '{ print \$1, \$2 }' '${root}/src-go/go.sum' | sort -u | comm -23 '${gateDir}/sum-2x' -)\" ]]"
 		fAssert "[de5m9] stage 6 removes the demo's repos once the gif is drawn"  fGateDemoRemoved
 		fAssert "[de55e] --leakcheck runs CodeQL over a copy of the module with its dependencies vendored in, once per release OS, and keeps the reports"  fGateCodeQL
 		fAssert "[de55f] a CodeQL finding stops the run"  fGateCodeQLStops codeql-findings 'CodeQL findings; the reports are in .*/codeql_[0-9]+-[0-9]+ \]'
@@ -6501,7 +6579,8 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[de4bx] and --quick goes in with them"  fGateContainerQuick
 		fAssert "[de549] and --leakcheck too, and the soak test runs only in there"  fGateContainerLeak
 		fAssert "[de5ma] and --no-leakcheck"  fGateContainerNoLeak
-		fAssert "[de54f] the image's tag changes with the Python tools' lock"  fGateLockInTag
+		fAssert "[de54f] the image's tag changes with the Python tools' lock"  fGateFileInTag container/requirements.txt
+		fAssert "[dez69] and with the guard it copies in"  fGateFileInTag utility/include/safe-rm.sh
 		fAssert "[ddrrn] and the demo gif as well"  fGateContainerDemo
 		fAssert "[dedn8] dogfood and stage 7 build with the image's Go and copy here, and the harness is handed the image"  fGateContainerBuilds
 		fAssert "[dedn9] and so do --quick's cross-builds"  fGateContainerQuickBuilds
@@ -6955,7 +7034,8 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		ln -s "${rtBin}/go" "${rtBrew}/go"
 		cp "${root}/cicd/remote-tests.bash" "${rt}/cicd/"
 		fRemoteConfig
-		cp "${root}/cicd/utility/include/go-test-lines.bash" "${root}/cicd/utility/include/image-go.bash" "${root}/cicd/utility/include/safe-rm.bash" "${rt}/cicd/utility/include/"
+		cp "${root}/cicd/utility/include/go-test-lines.bash" "${root}/cicd/utility/include/image-go.bash" "${root}/cicd/utility/include/safe-rm.bash" \
+		   "${root}/cicd/utility/include/safe-rm.sh" "${root}/cicd/utility/include/safe-rm.ps1" "${rt}/cicd/utility/include/"
 		## The Unix boxes have runs of their own further down, with the config put back.
 		echo 'REMOTE_UNIX_HOSTS=()' >> "${rt}/cicd/config.bash"
 		printf 'package main\n\nfunc TestA(t *testing.T) { // [aaaab]\n}\n' > "${rt}/src-go/a_test.go"
@@ -7046,6 +7126,32 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[ddg8e] that copy is marked as the stage's, and holds the git dir, both builds and the fetched modules" \
 			bash -c "cd '${rtMac}/gitsby-remote-tests' && [[ -f .gitsby-remote-tests && -f tree/src-go/gitsby-test && \"\$(cat tree/src-go/gitsby)\" == mac ]] && git -C tree ls-files --error-unmatch src-go/a_test.go >/dev/null && grep -qx 'go mod download' '${rtLog}'"
 		fAssert "[ddg8f] the Windows box gets a folder under %TEMP% for the run, removed after"  fRemoteWinCleaned b29w
+		## The Mac's old trees go through the guard there, so an old.* that is a link is left, with a note.
+		local rtStage="${rtMac}/gitsby-remote-tests"
+		mkdir -p "${rtStage}/old.99/sub" "${rtMac}/kept"; echo keepme > "${rtMac}/kept/canary.txt"; ln -s "${rtMac}/kept" "${rtStage}/old.link"
+		fRemoteRun --mac-bin "${rtMacBin}"
+		fAssert "[dez5h] the Mac's copy step removes its old trees through the guard, and leaves an old.* that is a link" \
+			bash -c "[[ '${rtRc}' == 0 && ! -e '${rtStage}/old.99' && -L '${rtStage}/old.link' && -f '${rtMac}/kept/canary.txt' ]] && grep -qF 'safe-rm: refused, a link: ${rtStage}/old.link' '${rtOut}' && grep -qF 'note: ${rtStage}/old.link would not go' '${rtOut}' && grep -qxF '  passed on: b26 b29w' '${rtOut}'"
+		rm -f -- "${rtStage:?}/old.link"
+		## The script the Windows box got, run under pwsh, with a cmd.exe that moves the folder aside.
+		if command -v pwsh >/dev/null 2>&1; then
+			local rtWinTemp="${work}/remote-wintemp" rtWinBin="${work}/remote-winbin" rtGuard="${work}/remote-guard.ps1" rtLeaf=""
+			mkdir -p "${rtWinTemp}" "${rtWinBin}"
+			fStub "${rtWinBin}/cmd.exe" <<-'EOF'
+				#!/bin/sh
+				[ "$*" = "/d /c rmdir /s /q $6" ] && mv -- "$6" "$6.gone"
+			EOF
+			fRemoteWinGuard b29w > "${rtGuard}"; sed '$d' "${rtGuard}" > "${rtGuard}.fn.ps1"
+			rtLeaf="$(sed -n "s/^if (-not (fSafeRm (Join-Path [$]env:TEMP '\(test_gitsby_[0-9-]*\)'))) { exit 1 }\$/\1/p" "${rtGuard}")"
+			# shellcheck disable=SC2016  ## the inner shell does the expanding.
+			fAssert "[dez5g] the Windows box's guard removes the run's folder under %TEMP%, and refuses a link, another name, a .. and one not there" \
+				env TEMP="${rtWinTemp}" PATH="${rtWinBin}:${PATH}" bash -c '[[ -n "$2" ]] && mkdir -p "${TEMP}/$2/sub" "${TEMP}/other_1" "${TEMP}/kept" && ln -s "${TEMP}/kept" "${TEMP}/test_gitsby_2" \
+					&& out="$(pwsh -NoProfile -NonInteractive -File "$1" </dev/null)" && [[ "${out}" == "removed ${TEMP}/$2" && ! -e "${TEMP}/$2" && -d "${TEMP}/$2.gone/sub" ]] \
+					&& pwsh -NoProfile -NonInteractive -Command ". \"$1.fn.ps1\"; if ((fSafeRm \"${TEMP}/test_gitsby_2\") -or (fSafeRm \"${TEMP}/other_1\") -or (fSafeRm \"${TEMP}/test_gitsby_3\") -or (fSafeRm \"${TEMP}/kept/../$2.gone\")) { exit 1 }" </dev/null \
+					&& [[ -L "${TEMP}/test_gitsby_2" && -d "${TEMP}/other_1" && -d "${TEMP}/kept" && -d "${TEMP}/$2.gone" ]]' _ "${rtGuard}" "${rtLeaf}"
+		else
+			fSkip "[dez5g] needs pwsh"
+		fi
 		## Handed an image, as stage 7 does, every box's Go tests come from its Go, with the folder
 		## the build goes in mounted at its own path. A docker that writes the -o file stands in.
 		fStub "${rtBin}/docker" <<-EOF
@@ -7115,7 +7221,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fRemoteRun
 		rm -f -- "${rtFail:?}/nomkdir-b29w"
 		fAssert "[ddg8p] a Windows folder the run did not make is never removed" \
-			bash -c "[[ '${rtRc}' == 1 ]] && ! grep -q '^ssh b29w .*rmdir' '${rtLog}' && grep -qF 'FAIL: b29w, could not copy the Go tests' '${rtOut}'"
+			bash -c "[[ '${rtRc}' == 1 ]] && ! grep -q '^ssh b29w .*EncodedCommand' '${rtLog}' && grep -qF 'FAIL: b29w, could not copy the Go tests' '${rtOut}'"
 		: > "${rtFail}/go-build"
 		fRemoteRun
 		rm -f -- "${rtFail:?}/go-build"
@@ -8131,3 +8237,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261106 JC: No pipe into head or grep -q under pipefail. BSD grep writes a line at a time, so the Pillow lock check failed on FreeBSD. A check lists any that come back.
 ##		- 20261106 JC: Checks for a write asking the ssh identity once, the Go installer creating a missing folder, and the pre-command fetch dropping a ref origin deleted. 1779 -> 1782.
 ##		- 20261106 JC: The scratch folder and every fixture folder go through fSafeRm, still behind the name and marker checks. Checks that the guard works with no realpath, and that no script removes a folder another way.
+##		- 20261107 JC: The install.ps1 checks run pwsh with telemetry off. From 7.6.9 on macOS, a first run in a fresh HOME left .dotnet in TMPDIR, which failed the temp folder check. 1825 -> 1826.
