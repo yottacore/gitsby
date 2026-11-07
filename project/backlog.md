@@ -33,6 +33,39 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- `--version` prints only its first line
+	- ID: 2026110707345868
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261107-073458
+	- Opened by: jim-collier
+	- Milestone: Pre-next-cut.
+	- Requirements [Feature]:
+		- `--version` should only show the first line that is shown currently, and no empty lines.
+			- Today that's `gitsby v2.1.0-723-g4617c5f build dez9a (2026-11-06)`, then the copyright and license lines, and a blank line.
+	- Notes:
+		- `-v`, `--ver` and `version` are the same command in main.go, so all of them change.
+		- The installers and spawn-report.bash take only the first line already. release.bash's proof step matches the whole output, so check it and the suites for anything that pins the rest.
+
+- Convert config files from every earlier version
+	- ID: 2026110707345874
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261107-073458
+	- Opened by: jim-collier
+	- Milestone: Pre-next-cut.
+	- Related IDs: 2026100312145843, 2026100313483664
+	- Requirements [Feature]:
+		- Make sure this executable version can import their config files to the new shcl version format, from all previous versions, even the old scripts.
+		- Rename the old one or ones and leave them in place.
+	- Notes:
+		- 2026100312145843 converts SHCL 2.x files and renames the old one. A 1.x file is read as 2.x, which wasn't run.
+		- The v2.1.0 bash and pwsh scripts hand-parse flat `key = value` lines from a file with the same name. It has no `Format` line and no 2.x footer, so the Go build reads it as current and doesn't convert it. Not tried yet.
+		- v2.1.0 looked in `XDG_CONFIG_HOME`, then `~/.config`, then `%APPDATA%`, on every OS. The Go build looks only in `%APPDATA%` on Windows and `~/Library/Application Support` on macOS, so an old file in `~/.config` there isn't found. details.md calls that an accepted cost. This item reverses it.
+		- A file from the old shcl 3 pseudo-version pin also says Format 3, so it can't be told apart. Check whether anything it wrote reads differently now.
+
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
