@@ -193,7 +193,7 @@ func oldPinUnquote(s string, at int) (value string, end int, ok bool) {
 				return "", 0, false
 			}
 			r, err := strconv.ParseUint(s[i+1:i+1+n], 16, 32)
-			if err != nil || !utf8.ValidRune(rune(r)) {
+			if err != nil || r > utf8.MaxRune || !utf8.ValidRune(rune(r)) {
 				return "", 0, false
 			}
 			b.WriteRune(rune(r))

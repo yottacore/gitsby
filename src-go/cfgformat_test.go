@@ -510,14 +510,17 @@ func TestOldPinRespelling(t *testing.T) { // [df08q]
 		{`k: "a\nb" # c`, `k: "a◉NEWLINE◉b" # c`, 1},
 		{`k: "\u00e9\U0001F600"`, `k: é😀`, 1},
 		{"\tk:\t\"a\\tb\"", "\tk:\t\"a◉TAB◉b\"", 1},
-		{`k: "a\qb"`, `k: "a\qb"`, 0},              // not an escape that module read
-		{`k: "a\\b`, `k: "a\\b`, 0},                // never closed
-		{`k: 'a\\b'`, `k: 'a\\b'`, 0},              // single quotes read a backslash as text there too
-		{`k: a\\b`, `k: a\\b`, 0},                  // and so did a bare value
-		{`k: "ab"`, `k: "ab"`, 0},                  // nothing to re-spell
-		{`# "a\\b"`, `# "a\\b"`, 0},                // a comment
-		{`"a\\b": x`, `"a\\b": x`, 0},              // a key
-		{`k: "a\\b", "c\\d"`, `k: a\b, "c\\d"`, 1}, // only the first piece, since that build wrote one
+		{`k: "a\qb"`, `k: "a\qb"`, 0},                 // not an escape that module read
+		{`k: "a\U00110000b"`, `k: "a\U00110000b"`, 0}, // past the last rune
+		{`k: "a\UFFFFFFFFb"`, `k: "a\UFFFFFFFFb"`, 0}, // too big for a rune
+		{`k: "a\uD800b"`, `k: "a\uD800b"`, 0},         // a surrogate
+		{`k: "a\\b`, `k: "a\\b`, 0},                   // never closed
+		{`k: 'a\\b'`, `k: 'a\\b'`, 0},                 // single quotes read a backslash as text there too
+		{`k: a\\b`, `k: a\\b`, 0},                     // and so did a bare value
+		{`k: "ab"`, `k: "ab"`, 0},                     // nothing to re-spell
+		{`# "a\\b"`, `# "a\\b"`, 0},                   // a comment
+		{`"a\\b": x`, `"a\\b": x`, 0},                 // a key
+		{`k: "a\\b", "c\\d"`, `k: a\b, "c\\d"`, 1},    // only the first piece, since that build wrote one
 	} {
 		got, n := oldPinRespelled(tc.line + "\n")
 		if got != tc.want+"\n" || n != tc.changed {
