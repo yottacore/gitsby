@@ -2668,6 +2668,27 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
 	- Closed: 20261004-190953
 
+- CodeQL flags the old-pin unquote's rune conversion
+	- ID: 2026110717545261
+	- Type: Bug
+	- Status: Done
+	- Needs local test suite run?: No
+	- Needs external testing: No
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261107-175452
+	- Opened by: a quick run with --leakcheck on gover at 53e76b1
+	- Related IDs: 2026110710480989
+	- Incorrect behavior [Bug]: stage 3 fails on go/incorrect-integer-conversion at cfgformat.go:196 and 199. `oldPinUnquote` parses a `\U` escape as 32 bits and converts it to a rune with no upper bound.
+	- Expected behavior [Bug]: no CodeQL findings
+	- Actual cause [Bug]: not a wrong answer. A value over the int32 range wraps negative, and `utf8.ValidRune` refuses it. CodeQL can't see that.
+	- Actual fix [Bug]: refuse a value over `utf8.MaxRune` before the conversion.
+	- Test case: Go `TestOldPinRespelling` `[df08q]`, 3 new rows: past the last rune, too big for a rune, and a surrogate. CodeQL in stage 3 is the regression check.
+	- Swept: every `ParseUint` and `ParseInt` in src-go. pr.go parses 16 bits, and version.go keeps 64.
+	- Verified: 2026-11-07, stage 3 with --leakcheck in the image: CodeQL clean on darwin, freebsd, linux and windows. The same run on 53e76b1 failed on the 2 findings.
+	- Branch: codeql-rune
+	- Acceptance signoff: closed on the CodeQL run, per the standing rule
+	- Closed: 20261107-180200
+
 - A value with an apostrophe and a backslash, written under the old shcl 3 pin, reads with its backslashes doubled
 	- ID: 2026110710480989
 	- Type: Bug
