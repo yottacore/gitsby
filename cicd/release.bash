@@ -23,6 +23,8 @@
 ##		  -n, --dry-run    Say what each phase would do, change nothing. Use this.
 ##		  -y, --yes        Don't ask before phase 2.
 ##		  -q, --quiet      -y, and the pipeline run in phase 1 runs quiet too.
+##		  --publish        Phase 3 only, for a VERSION already tagged and pushed. For
+##		                   when phase 2 got the tag out by hand after a stop.
 ##		  -h, --help       This.
 ##	Notes:
 ##		- Refuses unless the tree is clean and you are on the merge target.
@@ -65,11 +67,12 @@ unset GITSBY_CICD_IMAGE GITSBY_CICD_RUN GITSBY_CICD_KEEP_TEMP
 runName="release-$(date +%Y%m%d-%H%M%S)"; containerImage=""
 
 fUsage(){ printf '%s\n' "$*" >&2; exit 2; }
-version=""; dryRun=0; assumeYes=0; quiet=0
+version=""; dryRun=0; assumeYes=0; quiet=0; publishOnly=0
 while (($#)); do case "$1" in
 	-n|--dry-run) dryRun=1; shift ;;
 	-y|--yes)     assumeYes=1; shift ;;
 	-q|--quiet)   quiet=1; assumeYes=1; shift ;;
+	--publish)    publishOnly=1; shift ;;
 	-h|--help)    sed -n '/^##	Purpose:/,/^##	History:/p' "${BASH_SOURCE[0]}" | sed '$d; s/^##	\{0,1\}//'; exit 0 ;;
 	-*)           fUsage "unknown option: $1 (try --help)" ;;
 	*)            version="$1"; shift ;;
@@ -289,13 +292,15 @@ lastTag="${lastTags%%$'\n'*}"
 
 ## The changelog has to have something to release. 'vNEXT' is this project's convention for
 ## "landed but not cut", and releasing with no such section means the notes would be empty.
-[[ -n "$(fpChangelogVnext)" ]] || fDie "changelog has no '## vNEXT' section, so there is nothing to release."
+## Already retitled when only publishing.
+((publishOnly)) || [[ -n "$(fpChangelogVnext)" ]] || fDie "changelog has no '## vNEXT' section, so there is nothing to release."
 ## Phase 2 writes the downloads table from the files it built, so one already there is stale.
-if awk -v at="$(fpChangelogVnext)" 'NR > at && /^## /{exit} NR > at && /^### Downloads[[:space:]]*$/{found = 1; exit} END{exit !found}' "${changelog}"; then
+if ((! publishOnly)) && awk -v at="$(fpChangelogVnext)" 'NR > at && /^## /{exit} NR > at && /^### Downloads[[:space:]]*$/{found = 1; exit} END{exit !found}' "${changelog}"; then
 	fDie "the changelog's vNEXT section already has a '### Downloads' heading. Take it out; the release writes that table itself."
 fi
 
 ## Where the version comes from: the argument, else the same bump 'gitsby release' would choose.
+((publishOnly)) && [[ -z "${version}" ]] && fDie "--publish needs the version to publish."
 if [[ -z "${version}" ]]; then
 	[[ -n "${lastTag}" ]] || fDie "no v* tag to bump from; pass a version explicitly."
 	if [[ "${lastTag}" == *-* ]]; then
@@ -310,7 +315,12 @@ if [[ -z "${version}" ]]; then
 	fEcho_Clean "no version given; the next one after ${lastTag} is ${version}"
 fi
 [[ "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([A-Za-z0-9.-]+)?$ ]] || fDie "'${version}' is not a vX.Y.Z version."
-git rev-parse -q --verify "refs/tags/${version}" >/dev/null && fDie "tag ${version} already exists."
+if ((publishOnly)); then
+	git rev-parse -q --verify "refs/tags/${version}" >/dev/null || fDie "--publish: there is no tag ${version} here."
+	[[ -n "$(git ls-remote --tags origin "refs/tags/${version}" 2>/dev/null || true)" ]] || fDie "--publish: origin has no tag ${version}; push it first."
+else
+	git rev-parse -q --verify "refs/tags/${version}" >/dev/null && fDie "tag ${version} already exists."
+fi
 
 ## A suffixed version is a candidate, and GitHub is told so. The tag decides it, because the tag
 ## is already the only place a version is written. Once a full release publishes a gitsby binary,
@@ -355,7 +365,9 @@ pipeline=("${here}/cicd.bash" --no-publish -y -m "pre-release check")
 pipelineName="cicd/cicd.bash --no-publish"
 
 ## The whole pipeline, against the tree as it stands. This is the gate.
-if ! fWould "run ${pipelineName}"; then
+if ((publishOnly)); then
+	fEcho_Clean "--publish: the pipeline ran when ${version} was cut, so it is skipped."
+elif ! fWould "run ${pipelineName}"; then
 	fEcho_Clean "running the full pipeline before touching anything ..."
 	"${pipeline[@]}" || fDie "the pipeline did not pass; nothing was changed."
 fi
@@ -369,7 +381,9 @@ trap 'fpImageDone; fSafeRm "${assets:?}" >/dev/null; [[ -z "${tagTree}" ]] || fS
 ## So a stop still runs the exit trap. fImageGo waits on its build rather than running it in front.
 trap 'exit 130' INT; trap 'exit 143' TERM
 fpPickGo
-if ! fWould "cross-build ${#RELEASE_TARGETS[@]} targets at ${version}"; then
+if ((publishOnly)); then
+	:
+elif ! fWould "cross-build ${#RELEASE_TARGETS[@]} targets at ${version}"; then
 	fEcho_Clean "cross-building ${#RELEASE_TARGETS[@]} targets with ${GO_RELEASE_TOOLCHAIN} ..."
 	## The .exe files have to carry ${version}, and the committed resource still says the last
 	## one. Stamp it, build, then restore - phase 1 is the phase that changes nothing, and phase
@@ -391,50 +405,54 @@ fEcho "Phase 1 OK: ${lastTag:-(no previous tag)} -> ${version}"
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 echo
 fEcho "Phase 2: land ${version}"
-if ((! dryRun)) && ((! assumeYes)); then
-	read -r -p "Cut ${version}? This pushes. [y/N] " answer < /dev/tty || answer=""
-	[[ "${answer}" =~ ^([yY]|[yY][eE][sS])$ ]] || fDie "Aborted."
-fi
-
-today="$(date +%Y-%m-%d)"
-relBranch="rel-${version#v}"
-## The version bump goes in through a branch and a pull request, like everything else. Committing
-## it straight to the merge target would be the one place this project pushes its own work there -
-## exactly what the tool refuses to do for you, so the thing that cuts the release must not do it
-## either. 'gitsby release' below is the only push to the default branch, and that push IS the
-## release rather than a shortcut around one.
-if ! fWould "branch ${relBranch}, retitle the changelog's vNEXT as '${version} - ${today}', add its downloads table, and land it through a PR"; then
-	"${gitsby}" -q br create "${relBranch}" || fDie "couldn't create ${relBranch}."
-	## The changelog heading and the downloads table under it are the whole of it. Nothing in the
-	## tree records the version any more - the build injects it from the tag - so this is the only
-	## file a release edits.
-	## By line number, so the substitution cannot wander to a heading somewhere else in the file.
-	clLine="$(fpChangelogVnext)"
-	[[ -n "${clLine}" ]] || fDie "the changelog's '## vNEXT' heading went missing after phase 1."
-	sed -i.bak "${clLine}s/^## vNEXT.*$/## ${version} - ${today}/" "${changelog}" && rm -f "${changelog:?}.bak"
-	## From the files phase 1 built. Phase 3 builds the same set again from the tag.
-	dlTable="$(fpDownloadsTable)"
-	if [[ -z "${dlTable}" ]]; then
-		fEcho_Clean "WARNING: phase 1 built no binaries to link, so the changelog gets no downloads table."
-	else
-		fpChangelogAddDownloads "${clLine}" "${dlTable}" || fDie "couldn't add the downloads table to the changelog; the branch is created but nothing is pushed."
+if ((publishOnly)); then
+	fEcho "Phase 2 skipped: --publish, ${version} is already tagged and pushed"
+else
+	if ((! dryRun)) && ((! assumeYes)); then
+		read -r -p "Cut ${version}? This pushes. [y/N] " answer < /dev/tty || answer=""
+		[[ "${answer}" =~ ^([yY]|[yY][eE][sS])$ ]] || fDie "Aborted."
 	fi
-	## And the Windows resource, which is the other thing in the tree that names a version. It
-	## goes in the same commit, so the tag it is reachable from is the one it claims.
-	"${winres[@]}" -q "${version}" || fDie "couldn't stamp the Windows resource; the branch is created but nothing is pushed."
-	## gitsby's own 'pr create' rather than gh directly: it already knows this repo's merge target,
-	## which is the one thing a hand-written --base can get wrong.
-	prOut="$("${gitsby}" -q pr create "${version}" 2>&1)" || { printf '%s\n' "${prOut}" >&2; fDie "couldn't open the version-bump PR."; }
-	prNum="$(printf '%s\n' "${prOut}" | grep -oE 'https://github\.com/[^ ]+/pull/[0-9]+' | tail -n 1 || true)"
-	prNum="${prNum##*/}"
-	[[ "${prNum}" =~ ^[0-9]+$ ]] || { printf '%s\n' "${prOut}" >&2; fDie "couldn't read a PR number out of 'pr create' output."; }
-	fEcho_Clean "opened PR #${prNum} for the version bump"
-	"${gitsby}" -q pr ok "${prNum}" || fDie "couldn't merge PR #${prNum}; the bump is pushed but nothing is tagged."
+
+	today="$(date +%Y-%m-%d)"
+	relBranch="rel-${version#v}"
+	## The version bump goes in through a branch and a pull request, like everything else. Committing
+	## it straight to the merge target would be the one place this project pushes its own work there -
+	## exactly what the tool refuses to do for you, so the thing that cuts the release must not do it
+	## either. 'gitsby release' below is the only push to the default branch, and that push IS the
+	## release rather than a shortcut around one.
+	if ! fWould "branch ${relBranch}, retitle the changelog's vNEXT as '${version} - ${today}', add its downloads table, and land it through a PR"; then
+		"${gitsby}" -q br create "${relBranch}" || fDie "couldn't create ${relBranch}."
+		## The changelog heading and the downloads table under it are the whole of it. Nothing in the
+		## tree records the version any more - the build injects it from the tag - so this is the only
+		## file a release edits.
+		## By line number, so the substitution cannot wander to a heading somewhere else in the file.
+		clLine="$(fpChangelogVnext)"
+		[[ -n "${clLine}" ]] || fDie "the changelog's '## vNEXT' heading went missing after phase 1."
+		sed -i.bak "${clLine}s/^## vNEXT.*$/## ${version} - ${today}/" "${changelog}" && rm -f "${changelog:?}.bak"
+		## From the files phase 1 built. Phase 3 builds the same set again from the tag.
+		dlTable="$(fpDownloadsTable)"
+		if [[ -z "${dlTable}" ]]; then
+			fEcho_Clean "WARNING: phase 1 built no binaries to link, so the changelog gets no downloads table."
+		else
+			fpChangelogAddDownloads "${clLine}" "${dlTable}" || fDie "couldn't add the downloads table to the changelog; the branch is created but nothing is pushed."
+		fi
+		## And the Windows resource, which is the other thing in the tree that names a version. It
+		## goes in the same commit, so the tag it is reachable from is the one it claims.
+		"${winres[@]}" -q "${version}" || fDie "couldn't stamp the Windows resource; the branch is created but nothing is pushed."
+		## gitsby's own 'pr create' rather than gh directly: it already knows this repo's merge target,
+		## which is the one thing a hand-written --base can get wrong.
+		prOut="$("${gitsby}" -q pr create "${version}" 2>&1)" || { printf '%s\n' "${prOut}" >&2; fDie "couldn't open the version-bump PR."; }
+		prNum="$(printf '%s\n' "${prOut}" | grep -oE 'https://github\.com/[^ ]+/pull/[0-9]+' | tail -n 1 || true)"
+		prNum="${prNum##*/}"
+		[[ "${prNum}" =~ ^[0-9]+$ ]] || { printf '%s\n' "${prOut}" >&2; fDie "couldn't read a PR number out of 'pr create' output."; }
+		fEcho_Clean "opened PR #${prNum} for the version bump"
+		"${gitsby}" -q pr ok "${prNum}" || fDie "couldn't merge PR #${prNum}; the bump is pushed but nothing is tagged."
+	fi
+	if ! fWould "gitsby release ${version}"; then
+		"${gitsby}" -q release "${version}" || fDie "'gitsby release' failed; the version commit is pushed but no tag was cut."
+	fi
+	if ((dryRun)); then fEcho "Phase 2 OK: dry run, ${version} not tagged"; else fEcho "Phase 2 OK: ${version} tagged and pushed"; fi
 fi
-if ! fWould "gitsby release ${version}"; then
-	"${gitsby}" -q release "${version}" || fDie "'gitsby release' failed; the version commit is pushed but no tag was cut."
-fi
-if ((dryRun)); then fEcho "Phase 2 OK: dry run, ${version} not tagged"; else fEcho "Phase 2 OK: ${version} tagged and pushed"; fi
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Phase 3: publish and prove. A failure here is recoverable by hand and corrupts nothing.
@@ -599,3 +617,4 @@ echo
 ##		- 20261106 JC: Refuses a go.mod with a module pinned to a commit rather than a tag.
 ##		- 20261106 JC: Every recursive removal goes through fSafeRm, and the temp folders are made where the guard takes them.
 ##		- 20261107 JC: The footer check reads the .ps1 files' one-# entries, and warns about a changed script with no footer at all.
+##		- 20261108 JC: --publish runs phase 3 alone, for a tag pushed by hand after phase 2 stopped. The v3.0.0-beta.1 cut stopped at the gated push to main.

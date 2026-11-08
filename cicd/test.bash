@@ -5414,8 +5414,9 @@ GHEOF
 	local relBash="${root}/cicd/release.bash" clMd="${root}/changelog.md"
 	fAssertFail "[db6y4] the changelog's template heading can't pass for a real one" \
 		grep -qE '^## vNEXT - DATE' "${clMd}"
-	fAssert "[db6y5] and the real vNEXT section is still findable below the template" \
-		awk '/^-->/{p=1; next} p && /^## vNEXT$/{n=1} END{exit !n}' "${clMd}"
+	## A release commit has the dated heading there instead, and the gate runs on that commit too.
+	fAssert "[db6y5] and the real vNEXT section, or the release just cut, is the first heading below the template" \
+		awk '/^-->/{p=1; next} p && /^## /{n = /^## (vNEXT|v[0-9]+\.[0-9]+\.[0-9]+[-.0-9A-Za-z]* - [0-9]{4}-[0-9]{2}-[0-9]{2})$/; exit} END{exit !n}' "${clMd}"
 	fAssert "[db6y6] release.bash reads the changelog from past the template" \
 		grep -q 'fpChangelogStart' "${relBash}"
 	fAssertFail "[db6y7] and retitles by line number, not by first match" \
@@ -5495,6 +5496,19 @@ GHEOF
 		fRelRun --dry-run v1.3.0-beta.1
 		fAssert "[dd5es] a suffixed version says it publishes as a pre-release" \
 			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'v1.3.0-beta.1 carries a semver suffix, so it publishes as a pre-release.' '${relOut}' && grep -qF 'would: gh release create v1.3.0-beta.1 as a pre-release with ' '${relOut}'"
+		## v3.0.0-beta.1 stopped at the gated push to main, with the bump already merged. --publish
+		## picks up from a tag pushed by hand.
+		fRelRun --dry-run --publish v1.2.3
+		# shellcheck disable=SC2016  ## the inner shell does the expanding.
+		fAssert "[df1mr] release.bash --publish runs on a tag already pushed, and changes nothing" \
+			bash -c '[[ "$1" == 0 ]] && grep -qF "Dry run done: v1.2.3 was not released" "$2" && [[ "$3" == "$4" ]]' _ "${relRc}" "${relOut}" "${relState}" "$(fRelState)"
+		fAssert "[df1ms] and goes straight to the rebuild and the publish, with no pipeline, cross-build or tag" \
+			bash -c "grep -qF 'would: rebuild ' '${relOut}' && grep -qF 'would: gh release create v1.2.3 with ' '${relOut}' && ! grep -qE 'would: (run cicd|cross-build|branch rel-|gitsby release)' '${relOut}'"
+		fAssert "[df1mt] and finds the tag's dated changelog section for the release body" \
+			bash -c "grep -qF 'would: gh release create v1.2.3 with ' '${relOut}' && ! grep -qF 'no changelog section found' '${relOut}'"
+		fRelRun --dry-run --publish v1.2.4
+		fAssert "[df1mv] release.bash --publish refuses a version with no tag" \
+			bash -c "[[ '${relRc}' != 0 ]] && grep -qF 'there is no tag v1.2.4 here' '${relOut}'"
 		## A pipeline file changed since the tag, first with its footer as it was, then with an entry
 		## newer than the tag, written the dashed way.
 		echo '## fixture' >> "${relRepo}/cicd/config.bash"
