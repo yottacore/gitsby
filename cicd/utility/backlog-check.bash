@@ -19,7 +19,7 @@
 ##	Syntax:
 ##		backlog-check.bash [-q] [--base REF] [--backlog FILE]
 ##		  -q              print findings only
-##		  --base REF      branch to diff the suites against (default: first of gover, dev, main that exists)
+##		  --base REF      branch to diff the suites against (default: first of dev, main that exists)
 ##		  --backlog FILE  backlog to read (default: project/backlog.md at the repo root)
 ##	Exit: 0 clean, 1 findings, 2 cannot run (no backlog, not a git repo).
 ##	History: At bottom of script.
@@ -101,7 +101,7 @@ fi
 ## so it sees the branch as it is about to be committed. A label that was removed
 ## and added back is an edit, not a removal.
 if [[ -z "${base}" ]]; then
-	for c in gover dev main; do
+	for c in dev main; do
 		if git -C "${root}" rev-parse --verify -q "refs/heads/${c}" >/dev/null; then base="${c}"; break; fi
 	done
 fi
@@ -152,3 +152,4 @@ exit "${findings}"
 ##		- 20261004 JC: fEcho_Clean prints with printf. Every expansion braced, and shellcheck
 ##		  enforces it.
 ##		- 20261107 JC: Errors go through fUsage.
+##		- 20261108 JC: gover retired, so the default base is dev.
