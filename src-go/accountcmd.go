@@ -564,6 +564,11 @@ func (a *app) writeAccountFragment(dir, file, name string) error {
 		{"credential.https://" + a.cfg.hostOf(name) + ".username", a.cfg.loginOf(name)},
 		// Expanded, since git knows none of the home spellings the accounts file takes.
 		{"gitsby.ghTokenFile", expandHome(a.cfg.value(name, "tokenFile"))},
+		// gh's own helper answers only for its active account, so plain git over
+		// https had nothing to push with in another account's folder. Added after
+		// any helper the global config already lists, so a credential manager set
+		// up there is still asked first.
+		{"credential.https://" + a.cfg.hostOf(name) + ".helper", a.fragmentHelperFor(name)},
 	}
 	for _, e := range entries {
 		if e.value == "" {
@@ -580,6 +585,45 @@ func (a *app) writeAccountFragment(dir, file, name string) error {
 	}
 	a.out.status("Wrote " + fragment)
 	return nil
+}
+
+// fragmentHelperFor is an account's helper, or nothing for one with no way to a
+// token on its own host, such as an ssh-only account: a helper that can never
+// answer only costs every https request a few processes.
+func (a *app) fragmentHelperFor(name string) string {
+	onGitHub := isGitHubHost(a.cfg.hostOf(name))
+	if a.cfg.value(name, "tokenFile") == "" && (!onGitHub || a.cfg.value(name, "ghAccount") == "") {
+		return ""
+	}
+	return fragmentHelper(onGitHub)
+}
+
+// fragmentHelper is the credential helper an account fragment gives plain git. The
+// text is the same for every account on a kind of host: it reads the login and
+// the token file out of git config when git runs it, so nothing from the accounts
+// file is pasted into a line a shell runs, and the token is fetched each time
+// rather than written down. gh is asked only on a host gh serves, since tea has no
+// 'auth token'. The token file is read from the global config only, the scope
+// the fragment is included from, because a repo's own config is not yours, and a
+// relative one is no file, as readTokenFile has it. A username git already holds
+// is left alone; 'x' stands in where there is none, as in gitsby's own runs.
+func fragmentHelper(onGitHub bool) string {
+	steps := []string{
+		`test "$1" = get || return 0`,
+		`n= t=`,
+		`while IFS= read -r l && test -n "$l"; do case $l in username=*) n=1 ;; esac; done`,
+	}
+	if onGitHub {
+		steps = append(steps,
+			`u=$(git config --get gitsby.ghAccount)`,
+			`test -z "$u" || t=$(gh auth token --user "$u" 2>/dev/null)`)
+	}
+	steps = append(steps,
+		`if test -z "$t"; then f=$(git config --global --includes --get gitsby.ghTokenFile); case $f in /*|?:*) ;; *) f= ;; esac; test -r "$f" && t=$(tr -d '[:space:]' < "$f"); fi`,
+		`test -n "$t" || return 0`,
+		`test -n "$n" || echo username=x`,
+		`echo "password=$t"`)
+	return "!f(){ " + strings.Join(steps, "; ") + "; }; f"
 }
 
 // accountSetFields: the per-account keys 'account set' will write, spelled the way
