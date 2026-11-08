@@ -1,0 +1,251 @@
+// The plan display. A static per-command recipe; the command functions do the
+// real state checks at run time, which is what the '*' marks. 'commit' and 'pull'
+// are not commands of their own - they stay here as the fragments the real ones
+// compose their plans from.
+
+// Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
+// Licensed under The MIT License (MIT). Full text at:
+//	https://mit-license.org/
+// SPDX-License-Identifier: MIT
+
+package main
+
+import (
+	"strconv"
+	"strings"
+)
+
+// planPad indents each step of a plan under its heading.
+const planPad = "    "
+
+func (a *app) preview(what string) {
+	switch what {
+	case "commit":
+		msgDisp := "git commit"
+		if a.opt.message != "" {
+			msgDisp = "git commit -m " + shellWord(a.opt.message, true)
+		}
+		if a.opt.staged {
+			a.out.clean(planPad + msgDisp + " *")
+			a.previewSplit()
+			return
+		}
+		a.out.clean(planPad + "git add --all")
+		a.out.clean(planPad + msgDisp + " *")
+	case "pull":
+		a.out.clean(planPad + a.pullDisp(a.currentBranch(), a.autostash()...))
+	case "pullcom":
+		a.preview("pull")
+		a.preview("commit")
+	case "sync":
+		a.preview("pullcom")
+		a.out.clean(planPad + "git push (branch '" + a.currentBranch() + "') *")
+	case "br-create":
+		// From main/dev the dirty tree rides along to the new branch, so there's no
+		// commit here.
+		a.previewNewBranch(a.mergeTarget())
+	case "br-hotfix":
+		// Off the default branch, not dev: this corrects what is already published.
+		a.previewNewBranch(a.defaultBranch())
+	case "br-switch":
+		// Already on the target: nothing is parked and no checkout happens, so the plan
+		// must not promise an add/commit/push it will not do.
+		target := a.switchTarget()
+		if a.currentBranch() != target {
+			a.preview("sync")
+			a.out.clean(planPad + a.checkoutDisp(target))
+		}
+		a.out.clean(planPad + a.pullDisp(target))
+	case "br-merge":
+		a.preview("sync")
+		a.out.clean(planPad + a.checkoutDisp(a.branchTarget("")))
+		a.out.clean(planPad + a.pullDisp(a.branchTarget("")))
+		a.out.clean(planPad + "git merge --no-ff " + a.currentBranch())
+		if a.atomicMergeFits(a.branchTarget("")) {
+			a.out.clean(planPad + "git push --atomic (the merge, and the leased delete of origin's '" + a.currentBranch() + "') *")
+			a.out.clean(planPad + "git branch -d " + a.currentBranch() + " *")
+		} else {
+			a.out.clean(planPad + "git push *")
+			a.out.clean(planPad + "git branch -d " + a.currentBranch() + " *")
+			a.out.clean(planPad + "git push --force-with-lease origin --delete " + a.currentBranch() + " *")
+		}
+		a.out.clean(planPad + a.pullDisp(a.branchTarget("")))
+		// A hotfix owes dev the same change, or the next release undoes it.
+		if a.isHotfixBranch("") {
+			a.previewBackMerge()
+		}
+	case "br-prune":
+		a.prunePreview()
+	case "pr":
+		a.previewPr()
+	case "release":
+		a.previewRelease()
+	case "repo-clone":
+		a.out.clean(planPad + "git clone -- " + maskURL(a.tgt.cloneURL) + " " + a.tgt.cloneDir)
+		a.out.clean(planPad + "git -C " + a.tgt.cloneDir + " checkout dev *")
+	case "repo-url":
+		a.out.clean(planPad + "git remote set-url origin " + hostURL(a.originHost(), remoteTarget(a.originURL()), a.cmd.arg))
+	case "account-set", "account-unset":
+		// Names the file and both versions of the line, because this is the one
+		// command that edits the accounts file for you - and a config file you did
+		// not type yourself is only trustworthy if it showed you the edit first.
+		// Settled before the plan, so a refusal never prints as one.
+		t := a.set
+		if t.unset {
+			a.previewUnset()
+			return
+		}
+		switch {
+		case t.creates:
+			a.out.clean(planPad + "create " + nativePath(t.file))
+		case t.converts:
+			// The whole file changes shape, so no line number: the one it has now
+			// is not the one the key ends up on.
+			a.out.clean(planPad + "rewrite " + nativePath(t.file) + " in the current layout - it is in the old flat one")
+		case t.lineNum > 0:
+			a.out.clean(planPad + "edit " + nativePath(t.file) + ", line " + strconv.Itoa(t.lineNum))
+		default:
+			a.out.clean(planPad + "edit " + nativePath(t.file))
+		}
+		if t.exists {
+			a.out.clean(planPad + "  was:     " + t.field + ": " + t.old)
+			a.out.clean(planPad + "  becomes: " + t.field + ": " + shclValue(t.value))
+		} else {
+			a.out.clean(planPad + "  add:     " + t.disp + "." + t.field + ": " + shclValue(t.value))
+		}
+		if t.reshapes {
+			a.out.clean(planPad + "  also:    the rest of the file comes out in the layout every save writes (tabs, lower-case keys)")
+		}
+	case "account-apply":
+		// Names every file and every condition, because this is the one command
+		// that writes outside the repo you are standing in - into your own global
+		// git config.
+		applyDir := a.cfg.includeDir()
+		files := a.cfg.fragmentNames()
+		for _, name := range a.cfg.accountNames() {
+			a.out.clean(planPad + "write " + applyDir + "/" + files[name])
+		}
+		for _, key := range a.cfg.accountManagedIncludes() {
+			a.out.clean(planPad + "git config --global --unset-all " + key)
+		}
+		for _, rule := range a.cfg.accountApplyPlan() {
+			a.out.clean(planPad + "git config --global --add " + rule.cond + " " + rule.target)
+		}
+	case "repo-create", "repo-connect":
+		if !a.inRepo {
+			a.out.clean(planPad + "git init -b main")
+		}
+		a.preview("commit")
+		switch a.tgt.connectMode {
+		case "create":
+			a.out.clean(planPad + "gh repo create " + a.tgt.ghTarget + " --" + a.opt.visibility + " --source . --push --remote origin")
+		case "add":
+			a.out.clean(planPad + "git remote add origin " + maskURL(a.tgt.connectURL))
+			a.out.clean(planPad + "git push -u origin HEAD")
+		case "push":
+			a.out.clean(planPad + "git push -u origin HEAD *")
+		}
+	}
+}
+
+// previewUnset lists every line 'account unset' takes out. One line puts its
+// number in the header, the way a set does; several number each their own.
+func (a *app) previewUnset() {
+	t := a.set
+	numbered := !t.converts && len(t.gone) > 1
+	switch {
+	case t.converts:
+		a.out.clean(planPad + "rewrite " + nativePath(t.file) + " in the current layout - it is in the old flat one")
+	case len(t.gone) == 1 && t.gone[0].num > 0:
+		a.out.clean(planPad + "edit " + nativePath(t.file) + ", line " + strconv.Itoa(t.gone[0].num))
+	default:
+		a.out.clean(planPad + "edit " + nativePath(t.file))
+	}
+	for _, g := range t.gone {
+		if numbered {
+			a.out.clean(planPad + "  remove:  line " + strconv.Itoa(g.num) + ", " + g.text)
+		} else {
+			a.out.clean(planPad + "  remove:  " + g.text)
+		}
+	}
+	if t.reshapes {
+		a.out.clean(planPad + "  also:    the rest of the file comes out in the layout every save writes (tabs, lower-case keys)")
+	}
+}
+
+// previewNewBranch is br create and br hotfix - the same recipe off a different
+// base.
+func (a *app) previewNewBranch(baseBranch string) {
+	if a.isProtectedBranch("") {
+		a.out.clean(planPad + a.checkoutDisp(baseBranch) + " *")
+		a.out.clean(planPad + a.pullDisp(baseBranch, a.autostash()...))
+	} else {
+		a.preview("sync")
+		a.out.clean(planPad + a.checkoutDisp(baseBranch) + " *")
+		a.out.clean(planPad + a.pullDisp(baseBranch))
+	}
+	a.out.clean(planPad + "git checkout -b " + a.cmd.arg)
+	a.out.clean(planPad + "git push -u origin HEAD *")
+}
+
+// pullDisp is the plan's pull line for a branch, said the way the step will run
+// it there: pullArgs, read from that branch's upstream rather than the current
+// one's.
+func (a *app) pullDisp(branch string, extra ...string) string {
+	return "git " + strings.Join(pullArgsFor(a.upstreamOf(branch), extra...), " ") + " *"
+}
+
+// previewBackMerge is the tail every hotfix path shares: dev has to receive what
+// landed on the default branch.
+func (a *app) previewBackMerge() {
+	a.out.clean(planPad + a.checkoutDisp(a.mergeTarget()))
+	a.out.clean(planPad + "git merge " + a.backMergeRef())
+	a.out.clean(planPad + "git push *")
+}
+
+// previewPr reads the same spellings the commands run, so a plan on a Gitea host
+// names tea's vocabulary rather than promising gh commands that were never going
+// to be the ones issued.
+func (a *app) previewPr() {
+	if a.pr.sub == "create" {
+		a.preview("sync")
+		a.out.clean(planPad + a.prCreateDisp(a.branchTarget("")))
+		return
+	}
+	a.out.clean(planPad + a.prDisp(a.prApproveArgs()) + " *")
+	a.out.clean(planPad + a.prDisp(a.prMergeArgs()))
+	if clean := a.prCleanArgs(); clean != nil {
+		a.out.clean(planPad + a.prDisp(clean) + " *")
+	}
+	if a.opt.fetch {
+		a.out.clean(planPad + "git fetch --prune origin")
+	}
+	a.out.clean(planPad + a.checkoutDisp(a.branchTarget(a.pr.headBranch)) + " *")
+	a.out.clean(planPad + a.pullDisp(a.branchTarget(a.pr.headBranch)))
+	if a.isHotfixBranch(a.pr.headBranch) {
+		a.previewBackMerge()
+	}
+}
+
+func (a *app) previewRelease() {
+	a.preview("sync")
+	hasDev := a.mergeTarget() == "dev"
+	if hasDev {
+		a.out.clean(planPad + a.checkoutDisp("dev") + " *")
+		a.out.clean(planPad + a.pullDisp("dev"))
+	}
+	a.out.clean(planPad + a.checkoutDisp(a.defaultBranch()) + " *")
+	a.out.clean(planPad + a.pullDisp(a.defaultBranch()))
+	if hasDev {
+		a.out.clean(planPad + "git merge --no-ff dev")
+	}
+	a.out.clean(planPad + "git tag -a " + a.rel.tag)
+	a.out.clean(planPad + "git push *")
+	a.out.clean(planPad + "git push origin tag " + a.rel.tag + " *")
+	if hasDev {
+		a.out.clean(planPad + a.checkoutDisp("dev") + " *")
+		a.out.clean(planPad + "git merge --ff-only " + a.defaultBranch() + " *")
+		a.out.clean(planPad + "git push *")
+	}
+	a.out.clean(planPad + a.checkoutDisp(a.currentBranch()) + " *")
+}

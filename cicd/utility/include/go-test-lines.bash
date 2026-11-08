@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+#  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
+
+## fGoTestLines LOG MODULE_DIR: one line per top-level test in a 'go test -v' log, as
+## "  PASS <id> TestName", or FAIL or SKIP, with the ID from the end of that test's func line in
+## MODULE_DIR.
+##
+## cicd.bash prints its own unit tests this way, and remote-tests.bash the ones it runs on other
+## boxes. One copy, so the two can't drift apart.
+##	History: At bottom of script.
+
+##	Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
+##	Licensed under The MIT License (MIT). Full text at:
+##		https://mit-license.org/
+##	SPDX-License-Identifier: MIT
+
+fGoTestLines(){
+	local ids=""
+	ids="$(find "$2" -name '*_test.go' -type f -exec sed -nE 's#^func ((Test|Fuzz)[A-Za-z0-9_]*)\(.*// \[([0-9A-Za-z]+)\][[:space:]]*$#\1 \3#p' {} + 2>/dev/null || true)"
+	## Subtests are indented in the log, so they don't match.
+	IDS="${ids}" awk '
+		BEGIN { n = split(ENVIRON["IDS"], l, "\n"); for (i = 1; i <= n; i++) { split(l[i], f, " "); id[f[1]] = f[2] " " } }
+		/^--- (PASS|FAIL|SKIP): / { print "  " substr($2, 1, 4) " " id[$3] $3 }' "$1"
+}
+
+
+##	History:
+##		- 2026-10-04 JC: Created, one copy of the test-line format for cicd.bash and remote-tests.bash.
+##		- 2026-11-07 JC: Header with copyright and license, and this history.

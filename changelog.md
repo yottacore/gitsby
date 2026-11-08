@@ -14,17 +14,188 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Removed
 
 ### Other work
+
 -->
 
 ## vNEXT
 
+### Notes
+
+- This release was stalled for a while waiting on [SHCL](https://github.com/yottacore/shcl) v3, the format the accounts file is now written in. SHCL v3.0.0-beta1 is finally out, so this release could go out with it.
+
+- The Bash and PowerShell builds are frozen at v2.1.0 and will not gain features. Development continues in a single Go build, which keeps every command that works today - where a command is renamed, the old name keeps working. The two scripts stay in the repository as a reference, and would be reopened only for a production fix.
+
+### Added
+
+- The installers install the binary this machine needs, chosen by platform and architecture, and check it against the release's published `SHA256SUMS` before it lands. There is no unverified route left: where the checksum can't be fetched or can't be computed, the install stops instead of carrying on. Where a release publishes nothing for a platform, it says which ones it did publish and how to build the rest.
+
+- FreeBSD joins the published platforms, amd64 and arm64 both, alongside Linux, Windows and macOS.
+
+- `--staged` commits only what is already staged, on `pullcom`, `sync`, `br create`, `br hotfix`, `br switch`, `br merge`, `pr create` and `release`. Unstaged edits and untracked files stay where they are, and come along on a branch switch the way plain `git` carries them. The plan lists which files get committed and which stay behind. Where git would refuse a pull or a checkout over the edits left behind, the run stops before its plan, with nothing done.
+
+- macOS gets one universal binary that runs on Intel and Apple silicon alike, in place of one per CPU. Both installers take it on any Mac.
+
+- `whoami` shows who commands in this folder act as - the account, the ssh key and who it authenticates as, the commit author, and the git host login - without the branch and working-tree state `status` prints around it. It answers outside a repository too, which is where the question comes up before a `repo clone` or `repo create`. `who` and `identity` are accepted spellings of it.
+
+- Other Git hosts are first-class. Gitsby looks at where `origin` actually points and picks the tool that serves it: `gh` on GitHub, `tea` on Gitea and Forgejo (found under `tea-cli` too, which is how some distributions ship it). Everything that is only Git - branching, committing, pulling, pushing, merging, pruning, releasing, and re-spelling a remote between HTTPS and SSH - now works on any host with no host-specific client installed at all.
+
+- Accounts can say which git host they are on, with `host` and `user`. An account's token is only applied where it can be used, so a GitHub token is never handed to a push at somebody else's host, and the identity block says which two hosts disagreed. A non-GitHub token is exported under its own variable rather than as `GH_TOKEN`, which `gh` would otherwise pick up. `account list` shows the host each account is on, marked as the default where the file never said, and both it and the identity block name the account's own login instead of looking only for a GitHub one.
+
+- The credential helper reads both the token and the username from the environment, so nothing from your config file or `GITSBY_ACCOUNT` is ever part of a command Git runs.
+
+- The identity gate covers every host, not just GitHub's. A pull request opened through `tea` while `git` pushes as a different key is refused the same way the `gh` version always was, and the refusal names the tool that would have acted. The check on commands that push with plain Git - `sync` above all - now reads the account's login on the host in question, so an account identified by `user` rather than `ghAccount` is compared instead of skipped.
+
+- The identity block has a `Git host` line for hosts `gh` does not serve, naming the host and who its CLI holds a login for. Previously it simply printed nothing there.
+
+- `account set <account> <key> <value>` writes one key into an account's block of the accounts file, so the fixes the identity block suggests can be typed as a command rather than made by hand. It shows the edit before making it, refuses a key nothing reads instead of leaving a line that is silently dropped, and keeps every other line of the file as it was, spacing and comments included. It creates the file if there isn't one yet, with a header naming the keys.
+
+- `account unset <account> <key>` removes a key from an account's block, every line of it, and shows each line before asking. It takes out a key nothing reads as well, where the block has one. A key already gone is nothing to do.
+
+- The Windows binaries carry an icon and version details. Explorer shows the gitsby logo instead of the blank default, and Properties reads a version, description, copyright and file name off the file itself.
+
+- Every build carries a build number alongside the version: `gitsby v2.1.0 build dbrk8`. It is the number of minutes from the start of 2000 to the commit the build was made from, in Crockford base32 - five characters, and none of the letters that get misread when somebody reads one back over the phone. Taken from the commit rather than the clock, so the same source always gives the same build number and a published binary can still be rebuilt to the checksum it was published with. `--version`, the help screen and the release notes all name it.
+
+- A build between releases adds its commit's date after the build number, as `gitsby v3.0.0-beta.1-4-ga12019f build dbsh4 (2026-10-23)`. A release build shows no date.
+
+- Commands say which build produced their output, on a line of their own above it, so a report of something going wrong carries the version and build number without anyone having to ask for them. `-q` leaves the line out, and `raw git` and `raw gh` still hand their tool's output straight back with nothing added.
+
+- `raw` also runs `tea`, `glab`, `lazygit` and `tig` as the folder's account. tea and glab get the account's token for the repo's host, never a GitHub one. A tea older than 0.11 can't take it, so when its own login for the host is somebody else Gitsby warns, and `-q` refuses. `--any-identity` before `raw` works now too, and runs the tool with no account applied.
+
+- Gitsby won't run under the name of a tool `raw` runs, such as a link to it named `gh`. It used to read gh's arguments as its own and answer "Unknown command". Now it says to run it as `gitsby raw gh` instead.
+
+- `--about` prints what Gitsby is, who wrote it, the license it is under, and where it lives. `--donate` prints the sponsorship link. Both work outside a repository, and both are spelled as bare words too.
+
+- The accounts file takes `~`, `${HOME}` and `%USERPROFILE%` as the home folder on every platform, with either slash, so one file synced between Windows and Linux applies on both. No other variable is expanded, and a rule that starts with one is listed as ignored.
+
+- The release notes list the downloads in a table, one row per OS and one column per CPU, with each cell linking its file. macOS has one file for both CPUs, so it sits under both. The checksums and the two installers are on a line below the table.
+
 ### Changed
 
-- `account apply` now adds a credential helper for each account. With two accounts logged in to gh, plain `git push` in the folder of the one that isn't active used to fail, because gh's own helper only answers for the active account. The helper asks gh for that account's token when git needs it, then tries its `tokenFile`. No token is written to disk. Re-run `gitsby account apply` to get it.
+- `status`, `whoami` and every command's identity block ask gh and ssh who you are at the same time, not one after the other, and read gh's active account from gh's own config instead of asking GitHub. In an account folder on a slow network that waits about a third as long. `account list` asks gh about every account at once.
+
+- `account apply` names each account's git config file for its host and login, such as `accounts/gitea.com_ada.gitconfig`, so the same login on two hosts no longer looks like one account. Two accounts that share both also carry their own names. A file left from an older name is listed in the output and kept.
+
+- `--version`, `--about` and `--donate` work after a command, as `--help` always has. `-v` still counts only as the first word, so it can't turn a command into a silent no-op.
+
+- `--version` prints its one version line and nothing else, with no blank lines. The copyright and license lines stay in `--help` and `--about`.
+
+- `repo clone` names the folder it clones into in full, in the plan and after. The git command it runs keeps the folder as typed.
+
+- The accounts file is in [SHCL](https://github.com/yottacore/shcl) now - `key: value`, one indented block per account - read and written through that format's own module rather than a parser of Gitsby's own. Several folders for one account are a list: `path: [~/dev/work, ~/dev/other]`. Key names settle on lower case (`ghaccount`, `tokenfile`, `sshkey`, `pathcontains`); the file takes any casing. A file in the old flat `key = value` layout is converted on the first run that reads it, with its comments kept, and the old file stays beside it under a dated name. A file `account set` creates ends with a footer naming the format and where its syntax is written down. A backslash is plain text, quoted or not, so a Windows path is typed as it is: `path: C:\dev\work`.
+
+- The accounts file lives where each platform keeps one, and each platform is asked in its own terms. Windows reads `%APPDATA%\gitsby\config.shcl`; macOS reads `~/Library/Application Support/gitsby/config.shcl`; Linux and FreeBSD read `$XDG_CONFIG_HOME/gitsby/config.shcl`, then `~/.config/gitsby/config.shcl`. The first of those is also where `account set` creates a file when there is none, and where the identity block points you when it has advice about one.
+
+- `XDG_CONFIG_HOME` is read on Linux and FreeBSD only, and `APPDATA` on Windows only. Each is one platform's variable and means nothing on the others: reading `APPDATA` under Linux put a name that a Wine or Samba install can leave set on the list of places Gitsby looks for credentials, and reading `XDG_CONFIG_HOME` under Windows let an MSYS shell's session answer for a Windows one. `~/.config` is still read last on Windows and macOS, where earlier versions left their file.
+
+- `update` is now `pullcom`, which names both halves in the order they run rather than reading like it updates gitsby itself. It also answers to `update`, `pull`, and every partial spelling from `pullc` through `pullcommit`. `sync` is unchanged; the pair was the unclear part, not either word alone.
+
+- `br land` is now `br merge`, the word most people reach for first. `br land` still works.
+
+- On Windows, every path Gitsby works out itself is spelled the Windows way - backslashes and an upper-case drive letter. `account list` prints each rule the way the config file writes it. It was showing folder rules in the internal form paths are matched in, lower case with links resolved, so the folder on screen was one nobody had typed.
+
+- One word per thing, across every screen. The current directory is `Current dir` everywhere; `status` and `whoami` called it `Directory` and `account list` called it `Here`. `account list`'s `Resolves to` is now `Account`, which is what `status` already called the same answer - the old label named no actor, so the first question it raised was who was doing the resolving. A folder with nothing configured gets `(nothing configured)` and nothing further; it used to go on to name `gh`, which is wrong on every host `gh` does not serve and answers a question about Git's own fallback that nobody asked. An account that resolves but names no login no longer assumes `gh` either - it names whichever tool serves that account's own host, and names none where there is none.
+
+- The identity display now says where the account it is using came from, and which file that is, on their own lines: `From: An account block named 'acme', because its folder rule covers this directory.` and `File: /home/pat/.config/gitsby/config.shcl`. The old `(from config 'acme')` named neither, and "config" is ambiguous here - `gitsby.ghAccount` is a Git config key and the account blocks are not.
+
+- Where an account resolves but cannot be applied, that block goes on to explain it rather than trailing one long clause off the end of the line. It says which half of the account did still apply - an SSH key and a commit identity go in whether or not a token does - why the rest didn't, and the `account set` command that fixes it.
+
+- The identity block says `Git host` rather than `Forge`, there and everywhere else it appears. "Forge" is a word for people who already knew the answer, and this block exists for the people who don't.
+
+- `pr` no longer requires `gh` to be installed before it will look at your arguments. It establishes the host first, so a repository on another host is told which tool it needs rather than told to install a GitHub client it would never use. `pr` on a repository with no remote at all now says so outright instead of failing further in.
+
+- `repo url` re-spells a remote between HTTPS and SSH on any host. It only ever rewrote text - it asks the host nothing - and refusing everywhere but github.com was a limitation of the URL parser rather than a rule.
+
+- The ssh identity probe understands Gitea's greeting as well as GitHub's, so the SSH line names the account on a Gitea remote instead of reporting it unknown.
+
+- The old spellings are permanent, not a deprecation period. Nothing that works today stops working, and no script needs editing.
+
+- `repo clone` takes `owner/name` as well as a full URL, the way `repo create` and `repo connect` already did - and takes it before showing you the plan, rather than failing on it afterwards.
+
+- `release` with nothing new to release now exits 0 and says so. Every other command treats nothing-to-do as success, and re-running one is meant to be safe.
+
+- `yes` at a confirmation prompt is a yes. Only a bare `y` counted before, so the word most people type aborted the command.
+
+- Options with no command - `gitsby -q`, `gitsby -q --help` - print the command list. The first reported an unknown empty command; the second printed nothing, because `-q` was silencing help somebody had explicitly asked for.
+
+- Trailing arguments are refused everywhere now. `pr <number> extra` was the one place an extra word was silently dropped, and `pr create` with an unquoted title now gives the same quote-your-message hint the other commands give.
+
+- An option typed between `raw` and the tool says where gitsby's own options go, instead of calling it a subcommand nobody has heard of.
+
+- The installers' `--arch` (`-Arch`) picks the binary now. It was accepted and ignored while the product was one script that ran everywhere. `--ref` became `--tag` (`-Ref` became `-Tag`), because what it names is a published release rather than any git ref; both old spellings still bind.
+
+- Installing on Windows through the Bash installer now points at the PowerShell one, which is the one that also puts the install directory on PATH.
+
+### Fixed
+
+- A path with a space in it is printed on one line, however long. On macOS the accounts file is under `~/Library/Application Support/`, and a long path was broken at that space, so it couldn't be copied.
+
+- A doubled slash in a folder rule is folded even when the folder doesn't exist yet, such as a clone target. Only a folder already on disk had it folded.
+
+- A key given two different values for one account, such as two blocks with the same name, is listed as ignored with its line number. The last value was read and the rest dropped without a word, so a GitHub block and a Gitea block under one name mixed their host and email. `account set` now edits the key in whichever block holds it; it always edited the first block, which could leave a later block's value as the one read. A repeated top-level `protocol` is listed the same way, and so is a repeat in a 2.x flat file.
+
+- `account set` no longer replaces an accounts file it can't read. It names the file, says why and what to do, and writes nothing. It also refuses when a file turns up while it runs, or when a link where the file goes points at nothing.
+
+- `br prune` no longer deletes a branch on origin that has moved since your last fetch. It asks origin just before deleting, leaves a moved branch alone, and reports one already deleted there instead of abandoning the rest. This happened with `--no-fetch`, or when someone pushed while the prompt waited. With `--no-fetch` and origin unreachable, it now says so instead of guessing the branches were already gone.
+
+- A folder rule has to be absolute or start at the home folder. A relative one is listed as ignored and `account apply` no longer writes it, since git read `path: .` as the whole home folder, in 2.1.0 as well. `account set` turns a relative path into the folder it names from where you run it, and `account list` warns about a relative rule an earlier `account apply` left in your global git config.
+
+- `repo clone` picks its account from the folder the clone lands in, not the folder you launched it from. Cloning into your personal tree while standing in a work repository used the work account - the one case where the folder that decides is not the one you are in. A `gitsby.ghAccount` set on the surrounding repository no longer follows the clone out of it either, and the owner of a repository being cloned is not taken as evidence that it is yours: with no rule for the destination, gh stays on its own account.
+
+- A folder rule written through a symlink now claims the folder. A path that goes through a link - a synced folder, a stable name pointing at a dated one, a home directory that is itself a link - was compared against the folder's real name and matched nothing, so the account silently never applied. `account list` looked right while this was happening; it now marks the account in force either way.
+
+- A repository that sets its own commit name or email keeps it. An account naming both used to replace whichever one the repository had set, if the repository had left the other alone. The account still fills in the half that isn't set.
+
+- The note that a hotfix changes shipped code appears wherever you run `br merge` from. It only appeared from the top of the repository, and was silently missing from any subdirectory.
+
+- `GITSBY_ACCOUNT` naming a configured account applies that account. Where the account named no GitHub login of its own - a commit identity and an ssh key and nothing else - the name was read as a bare login instead: none of the account applied, the key fell back to whichever one ssh picked, and the account's own name was reported as the GitHub login the run was acting as. A folder rule had always applied such an account, so asking for one by name got you less than not asking. The same account is also kept now when a repository sets `gitsby.ghAccount` itself; an account that names no login disagrees with nothing.
+
+- A config file saved with a byte-order mark keeps its first line. The mark landed on the first key, which was then read as one gitsby doesn't understand and dropped - and the line that reports those printed the mark along with the name, so the only warning named a key that looks exactly right. Windows editors write a mark by default.
+
+- A tag no longer breaks a checkout or a push that shares its name. Checking out a branch only origin has failed beside a tag named `origin/<branch>`, and a new branch or a release tag failed to push beside a ref of the same name. The plan now shows `--track refs/remotes/origin/<branch>`, `git push -u origin HEAD` and `git push origin tag <tag>`.
+
+- `gitsby.ghTokenFile` is read from your global or system git config only, never from a repository's own. A cloned repository could name any file you can read and have it loaded as a token. `gitsby.ghAccount` is still read from a repository, since it only picks among your own accounts.
+
+- `status` names the git config a `gitsby.ghAccount` key came from. It always said "this repo's git config", even for the key `account apply` sets through your global config, and it spelled the key with a capital G.
+
+- `account apply` tells plain git which login to use on the account's own host. It always named github.com and the `ghAccount` login, so an account on another host got nothing, and one setting both `user` and `ghAccount` named a different login than gitsby itself uses.
+
+- A folder rule of `/`, or a bare drive on Windows, covers every folder. It covered none, and `account apply` gave git a rule that matched nothing either.
+
+- The installers find out before the plan, not after the download, when they can't write the folder they install to. The Bash one also checks that `sudo` exists before promising it. The PowerShell one installs the binary as 755 whatever the umask, as the Bash one does, and its plan says when it creates the folder or clears copies an earlier install left behind.
+
+- The installers check a release tag read from GitHub's redirect for `..` the same way they check a typed `--tag`. The Bash installer also says "Aborted." when the prompt gets end of input, instead of exiting with no word.
+
+### Removed
+
+- The installers no longer take `--release dev` (`-Release dev`). It installed the tip of a branch, which was possible while the product was a script in the tree; a branch has no published build behind it now. Typing it says so and names the two routes that exist - a release by tag, or a one-command build from source. The contributor setup scripts went with it: a Go checkout needs only Go, and the three commands are in the README.
+
+- `--offline` is no longer accepted as a spelling of `--no-fetch`. It was undocumented, and it never did what the word says - pushes went out regardless. Typing it now says so and names `--no-fetch`, which skips the pre-command fetch. Being offline is still handled on its own: gitsby finds out by trying, and each command degrades or refuses accordingly.
 
 ### Other work
 
+- `cicd/release.bash` builds the published binaries from an export of the tag rather than the working tree. The pipeline also records the versions of the six tools outside Go that can change a result, and warns when one differs. It compared the Go tools only, and missed one installed under `GOPATH` and not on `PATH`.
+
+- The README's badges read what they show from the repo, the Go version included, and `.gitignore` covers what an OS or an editor leaves beside the files.
+
+- `cicd/release.bash` is committed executable, as its usage line assumes, and a dry run no longer ends by saying it tagged and released the version.
+
+- The demo gif runs about forty-seven seconds instead of just over two minutes, and is less than half the size. Five scenes rather than nine, and one of them stops on its confirmation and is answered on camera - the tool showing its Git and asking first is the first thing the README claims, and the demo had never shown it happening. Captions now appear whole instead of arriving a letter at a time, which had been taking more screen time than the commands they introduce.
+
+- The installers' fallback release lookup - the path taken when the newest publication is a pre-release - now takes the highest-versioned release rather than the newest-published one, so a fix backported to an older line can never install over a newer release. The lookup also stopped depending on how GitHub formats the list, and `Get-Help` on `install.ps1` shows the real help instead of an auto-generated stub.
+
+- `br prune` re-checks its delete candidates in one git call instead of one per branch, so pruning many branches costs the same handful of processes as pruning one.
+
+- The remote-URL and accounts-file parsers refuse a little more nonsense: a "host" containing whitespace is treated as unparseable rather than matched against account rules, and `account.<name>.` with no key after the final dot is an ignored line rather than a half-parsed account. Both were found by the module's new native fuzz targets, which the pipeline now runs briefly every full pass.
+
+- PSScriptAnalyzer is back in the lint stage. The Windows installer is the one piece of PowerShell that still ships, and it had been going out unlinted since the scripted build was frozen.
+
 - `cicd/release.bash` retries the installer it runs against the freshly published release before reporting that the release isn't installable. Cutting v2.1.0 warned that it wasn't when it was: GitHub serves the tag a little ahead of its assets, and the installer stops rather than quietly skip checksum verification. A warning that fires on a good release is worse than no warning at all.
+
+- The Bash and PowerShell builds and their installers moved to `legacy/`, and the pipeline became Go-specific: one engine instead of two, seven stages, and the Go toolchain required rather than probed. `cicd/parity.bash` was kept and repointed - it compares this build against the frozen v2.1.0 one, which is the backwards-compatibility question, and checks that `update` and `br land` still route where they always did.
+
+- A release is now one binary per platform - linux, windows and FreeBSD, amd64 and arm64 each, and one universal macOS binary - with a single `SHA256SUMS` over the set. They are built before the tag is cut, so a target that stops compiling fails while nothing has been changed. The version comes from the tag alone; no file in the tree records it.
+
+- `cicd/test.bash`, `cicd/parity.bash`, `cicd/release.bash` and the Go unit tests run on macOS. They assumed GNU `sed -i`, `stat -c`, `grep -P` and `date +%N`, and `~/.config` as the accounts folder. The parity check also put raw paths into a sed pattern, and `cicd/utility/test-id.bash` mints IDs without GNU date.
 
 ## v2.1.0 - 2026-08-14
 

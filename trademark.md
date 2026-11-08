@@ -12,12 +12,11 @@ That said, asking is free - and we'd prefer to say yes. Forks that credibly carr
 
 ## 1. Marks covered
 
-"Gitsby", the Gitsby logo, and any stylized variants (the "Marks") are trademarks of Jim Collier (CryptogID: ѳ6ᴚ℈𐀘𐇦ɛ𐊁¥Mﾏb϶Δ𐌞). We claim these Marks under common law and use them in commerce as Gitsby™.
+"Gitsby", the Gitsby logo, and any stylized variants (the "Marks") are trademarks of Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]. We claim these Marks under common law and use them in commerce as Gitsby™.
 
 ## 2. Relationship to the software license
 
-Gitsby is distributed under MIT. That license grants rights in **copyright** only. It does not grant, and must not be read as granting, any
-license or right to use the Marks. Trademark rights are expressly reserved.
+Gitsby is distributed under MIT. That license grants rights in **copyright** only. It does not grant, and must not be read as granting, any license or right to use the Marks. Trademark rights are expressly reserved.
 
 ## 3. Uses that are always permitted
 
@@ -61,7 +60,7 @@ When using the Marks under Section 3:
 
 ## 7. Enforcement and changes
 
-**We may revoke permission for any use that damages the Marks or misleads users**. We may revise this policy at any time; the current version lives at <https://github.com/jim-collier/gitsby/>. Requests for permission, and reports of misuse, go to gitsbyⒶubx9.com.
+**We may revoke permission for any use that damages the Marks or misleads users**. We may revise this policy at any time; the current version lives at <https://github.com/yottacore/gitsby/>. Requests for permission, and reports of misuse, go to <gitsby@ubx9.com>.
 
 ---
 

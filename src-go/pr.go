@@ -1,0 +1,664 @@
+// pr's argument shape, the read-only views, and the two writers. What a PR lands
+// on - and whether it is a hotfix - are properties of the PR, not of the branch
+// you happen to be standing on, so 'pr ok' asks gh rather than reading HEAD.
+
+// Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
+// Licensed under The MIT License (MIT). Full text at:
+//	https://mit-license.org/
+// SPDX-License-Identifier: MIT
+
+package main
+
+import (
+	"regexp"
+	"strconv"
+	"strings"
+	"unicode/utf16"
+	"unicode/utf8"
+)
+
+// prRequest is which pull request this run is about, settled before any plan is
+// shown.
+type prRequest struct {
+	sub        string // "create" or "ok"; empty for the bare list and the numeric view
+	num        string
+	title      string
+	headBranch string
+	tool       hostTool // which CLI answers for this repo's host
+	cli        string   // that tool as this machine spells it
+}
+
+var prNumRE = regexp.MustCompile(`^[0-9]+$`)
+
+// sortPr validates pr's own arguments - before the repo gate, same as the
+// scripts: a malformed pr call is wrong anywhere, in a repo or not.
+func (a *app) sortPr() error {
+	// Shape only. Which tool can answer used to be settled here, as 'is gh
+	// installed' - but that is a question about the HOST, and the host is not known
+	// until we are in a repo with a remote. Asked here it told a Gitea user to
+	// install a GitHub client, and told a GitHub user with no gh that their
+	// perfectly well-formed command was a syntax problem.
+	switch strings.ToLower(a.cmd.arg) {
+	case "ok":
+		a.pr.sub, a.pr.num = "ok", a.cmd.arg2
+		if !prNumRE.MatchString(a.pr.num) {
+			return syntaxUsage("", "pr ok <number>", prNumberDef())
+		}
+	case "create", "new":
+		a.pr.sub = "create"
+		a.pr.title = a.opt.message // -m wins, same as everywhere else
+		if a.pr.title == "" {
+			a.pr.title = a.cmd.arg2
+		}
+	case "":
+	default:
+		a.pr.num = a.cmd.arg
+		if !prNumRE.MatchString(a.pr.num) {
+			return syntaxUsage("", "pr [create [title] | <number> | ok <number>]",
+				placeholder{"[title]", "The new pull request's title. Without it, the last commit's subject."},
+				prNumberDef())
+		}
+	}
+	return nil
+}
+
+// settlePrTool works out which CLI can answer for this repo, and refuses with the
+// real reason when none can. Ordered deliberately - host first, tool second: asked
+// the other way round, a Gitea repo was told to install a GitHub client it would
+// never use, and the answer never mentioned the host that decided it.
+func (a *app) settlePrTool() error {
+	if !a.hasOrigin() {
+		return usagef("No 'origin' remote, so there is nowhere to open a pull request. Connect one first: %s repo connect <url | owner/name>", meName)
+	}
+	a.pr.tool, a.pr.cli = a.originTool()
+	if a.pr.tool == toolGlab && !a.acct.bypassed {
+		// The account's token and host, so glab needs no login of its own.
+		if _, err := a.hostTokenEnv("GITLAB_TOKEN", "GITLAB_HOST"); err != nil {
+			return err
+		}
+	}
+	if a.pr.tool != toolNone {
+		return nil
+	}
+	// A host we could name, and nothing here that speaks to it. When the tool's
+	// name on PATH is only this binary, that is the thing to say, not "install it".
+	if host := a.originHost(); host != "" {
+		want := teaNames
+		if isGitHubHost(host) {
+			want = []string{"gh"}
+		} else if isGitLabHost(host) {
+			want = []string{"glab"}
+		}
+		if err := shadowed(want...); err != nil {
+			return err
+		}
+		return usagef("Nothing installed here can talk to %s. %s", host, a.hostCLIHint())
+	}
+	// No host to name at all - a local path, or a URL shape we don't parse. Not a
+	// refusal: this codebase's standing rule is that a remote we don't understand
+	// never triggers one, because "we couldn't tell" and "it definitely isn't
+	// GitHub" are different answers and only one of them is ours to assert. gh gets
+	// the last word, exactly as it did before any of this existed, and explains
+	// itself in its own words if the remote turns out not to be one it serves.
+	if inPath("gh") {
+		a.pr.tool, a.pr.cli = toolGh, "gh"
+		return nil
+	}
+	if err := shadowed("gh"); err != nil {
+		return err
+	}
+	return usagef("Can't tell which git host '%s' is, and no CLI for one is installed to ask. %s",
+		maskURL(a.originURL()), a.hostCLIHint())
+}
+
+// The pull-request vocabulary, per tool. Every caller - the preview and the
+// command alike - spells its operation through these, so the plan and the run
+// cannot describe different things.
+
+// teaDetailFields is what 'pr <n>' shows on Gitea. gh answers the same question
+// with two commands, view then diff; tea carries the diff as a field of the detail
+// view, so one call covers both.
+const teaDetailFields = "index,title,state,author,base,head,url,body,diff"
+
+// glabArgs adds the repo, for the reason glabRepoArg gives.
+func (a *app) glabArgs(args ...string) []string {
+	return append(args, "-R", a.glabRepoArg())
+}
+
+func (a *app) prListArgs() []string {
+	if a.pr.tool == toolGlab {
+		return a.glabArgs("mr", "list")
+	}
+	if a.pr.tool == toolTea {
+		return []string{"pulls", "list"}
+	}
+	return []string{"pr", "list"}
+}
+
+// prViewArgs is a list of calls, not one: what gh needs two commands for, tea does
+// in a single detail view.
+func (a *app) prViewArgs() [][]string {
+	if a.pr.tool == toolGlab {
+		return [][]string{a.glabArgs("mr", "view", a.pr.num), a.glabArgs("mr", "diff", a.pr.num)}
+	}
+	if a.pr.tool == toolTea {
+		return [][]string{{"pulls", a.pr.num, "--fields", teaDetailFields}}
+	}
+	return [][]string{{"pr", "view", a.pr.num}, {"pr", "diff", a.pr.num}}
+}
+
+func (a *app) prCreateArgs(base string) []string {
+	if a.pr.tool == toolGlab {
+		return a.glabArgs("mr", "create", "--target-branch", base, "--source-branch", a.currentBranch(), "--title", a.pr.title, "--description", "", "--yes")
+	}
+	if a.pr.tool == toolTea {
+		return []string{"pulls", "create", "--base", base, "--head", a.currentBranch(), "--title", a.pr.title}
+	}
+	return []string{"pr", "create", "--base", base, "--head", a.currentBranch(), "--title", a.pr.title, "--body", ""}
+}
+
+func (a *app) prApproveArgs() []string {
+	if a.pr.tool == toolGlab {
+		return a.glabArgs("mr", "approve", a.pr.num)
+	}
+	if a.pr.tool == toolTea {
+		return []string{"pulls", "approve", a.pr.num}
+	}
+	return []string{"pr", "review", a.pr.num, "--approve"}
+}
+
+func (a *app) prMergeArgs() []string {
+	if a.pr.tool == toolGlab {
+		return a.glabArgs("mr", "merge", a.pr.num, "--remove-source-branch", "--yes")
+	}
+	if a.pr.tool == toolTea {
+		return []string{"pulls", "merge", a.pr.num, "--style", "merge"}
+	}
+	return []string{"pr", "merge", a.pr.num, "--merge", "--delete-branch"}
+}
+
+// prCleanArgs is the branch delete gh folds into its own merge and tea does not.
+// Without it 'pr ok' merges and leaves both feature branches standing on a Gitea
+// host - the same command tidying up on one git host and not the other.
+func (a *app) prCleanArgs() []string {
+	if a.pr.tool == toolTea {
+		return []string{"pulls", "clean", a.pr.num}
+	}
+	return nil
+}
+
+// glabMR is the part of glab's JSON for a merge request that we read. A small
+// reader takes the 3 fields: encoding/json cost 344 KB of binary for them.
+type glabMR struct {
+	IID    string
+	State  string
+	Source string
+}
+
+// readGlabMR reads one merge request from glab's JSON: the object itself, or the
+// first one in a list. Only top-level members count, so the author's "state"
+// never reads as the merge request's.
+func readGlabMR(out string, list bool) (glabMR, bool) {
+	j := &jsonScan{s: out}
+	if list && (!j.eat('[') || j.eat(']')) {
+		return glabMR{}, false
+	}
+	var mr glabMR
+	read := j.eat('{') && j.items('}', func() bool {
+		key, ok := j.str()
+		if !ok || !j.eat(':') {
+			return false
+		}
+		switch key {
+		case "iid":
+			mr.IID = j.lit()
+			ok = jsonNumberRE.MatchString(mr.IID) && strings.Trim(mr.IID, "0123456789") == ""
+		case "state":
+			mr.State, ok = j.str()
+		case "source_branch":
+			mr.Source, ok = j.str()
+		default:
+			ok = j.skip(0)
+		}
+		return ok
+	})
+	// The rest of a list goes unread; a lone object has nothing after it.
+	if !list {
+		j.ws()
+		read = read && j.i == len(j.s)
+	}
+	if !read {
+		return glabMR{}, false
+	}
+	return mr, true
+}
+
+var jsonNumberRE = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?$`)
+
+// jsonScan walks JSON text by hand, for readers that want a few fields.
+type jsonScan struct {
+	s string
+	i int
+}
+
+func (j *jsonScan) ws() {
+	for j.i < len(j.s) && strings.IndexByte(" \t\r\n", j.s[j.i]) >= 0 {
+		j.i++
+	}
+}
+
+// peek says whether c comes next, after any whitespace.
+func (j *jsonScan) peek(c byte) bool {
+	j.ws()
+	return j.i < len(j.s) && j.s[j.i] == c
+}
+
+// eat steps over c if it comes next.
+func (j *jsonScan) eat(c byte) bool {
+	if !j.peek(c) {
+		return false
+	}
+	j.i++
+	return true
+}
+
+// items reads the members of an object or array whose opener was just read,
+// one call of item each, with the commas between and the closer.
+func (j *jsonScan) items(end byte, item func() bool) bool {
+	if j.eat(end) {
+		return true
+	}
+	for {
+		if !item() {
+			return false
+		}
+		if j.eat(end) {
+			return true
+		}
+		if !j.eat(',') {
+			return false
+		}
+	}
+}
+
+// lit is a number, true, false or null, as written.
+func (j *jsonScan) lit() string {
+	j.ws()
+	start := j.i
+	for j.i < len(j.s) && strings.IndexByte("+-.0123456789Eaeflnrstu", j.s[j.i]) >= 0 {
+		j.i++
+	}
+	return j.s[start:j.i]
+}
+
+// str reads a string with its escapes decoded.
+func (j *jsonScan) str() (string, bool) {
+	if !j.eat('"') {
+		return "", false
+	}
+	var b strings.Builder
+	for j.i < len(j.s) {
+		c := j.s[j.i]
+		j.i++
+		switch {
+		case c == '"':
+			return b.String(), true
+		case c < 0x20:
+			return "", false
+		case c != '\\':
+			b.WriteByte(c)
+		case j.i < len(j.s) && strings.IndexByte(`"\/`, j.s[j.i]) >= 0:
+			b.WriteByte(j.s[j.i])
+			j.i++
+		case j.i < len(j.s) && strings.IndexByte("bfnrt", j.s[j.i]) >= 0:
+			b.WriteByte("\b\f\n\r\t"[strings.IndexByte("bfnrt", j.s[j.i])])
+			j.i++
+		default:
+			r, ok := j.hex4()
+			if !ok {
+				return "", false
+			}
+			// A pair of escapes stands for one rune past U+FFFF.
+			if utf16.IsSurrogate(r) && strings.HasPrefix(j.s[j.i:], `\u`) {
+				back := j.i
+				j.i++
+				if low, ok := j.hex4(); ok && utf16.DecodeRune(r, low) != utf8.RuneError {
+					r = utf16.DecodeRune(r, low)
+				} else {
+					j.i = back
+				}
+			}
+			b.WriteRune(r)
+		}
+	}
+	return "", false
+}
+
+// hex4 reads 'u' and 4 hex digits, the tail of a \u escape.
+func (j *jsonScan) hex4() (rune, bool) {
+	if j.i+5 > len(j.s) || j.s[j.i] != 'u' {
+		return 0, false
+	}
+	n, err := strconv.ParseUint(j.s[j.i+1:j.i+5], 16, 16)
+	if err != nil {
+		return 0, false
+	}
+	j.i += 5
+	return rune(n), true
+}
+
+// skip steps over one value of any kind. The depth bound keeps hostile nesting
+// off the stack.
+func (j *jsonScan) skip(depth int) bool {
+	switch {
+	case depth > 1000:
+		return false
+	case j.peek('"'):
+		_, ok := j.str()
+		return ok
+	case j.peek('{'), j.peek('['):
+		end := byte('}')
+		if j.s[j.i] == '[' {
+			end = ']'
+		}
+		j.i++
+		return j.items(end, func() bool {
+			if end == '}' {
+				if _, ok := j.str(); !ok || !j.eat(':') {
+					return false
+				}
+			}
+			return j.skip(depth + 1)
+		})
+	}
+	v := j.lit()
+	return v == "true" || v == "false" || v == "null" || jsonNumberRE.MatchString(v)
+}
+
+// prDisp is one call written out the way the preview shows it.
+func (a *app) prDisp(args []string) string { return a.pr.cli + " " + strings.Join(args, " ") }
+
+// parseTeaTable reads tea's tabular output: one header line naming the fields,
+// then a row per record. Anything that doesn't have both comes back empty, and
+// every caller treats empty as "couldn't tell" rather than as "no such thing" -
+// the two are not the same answer, and acting on the wrong one is how a plan ends
+// up confidently about a pull request nobody asked for.
+func parseTeaTable(out string) []map[string]string {
+	lines := splitLines(out)
+	if len(lines) < 2 {
+		return nil
+	}
+	header := strings.Split(lines[0], "\t")
+	records := make([]map[string]string, 0, len(lines)-1)
+	for _, line := range lines[1:] {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		cells := strings.Split(line, "\t")
+		record := map[string]string{}
+		for i, name := range header {
+			if i < len(cells) {
+				record[strings.ToLower(unquoteCell(name))] = unquoteCell(cells[i])
+			}
+		}
+		records = append(records, record)
+	}
+	return records
+}
+
+// unquoteCell strips the double quotes tea's tsv writer puts around every field,
+// header names included. Left on, every lookup misses and every value carries them
+// into whatever it was compared against.
+func unquoteCell(cell string) string {
+	cell = strings.TrimSpace(cell)
+	if len(cell) >= 2 && strings.HasPrefix(cell, `"`) && strings.HasSuffix(cell, `"`) {
+		cell = cell[1 : len(cell)-1]
+	}
+	return strings.TrimSpace(cell)
+}
+
+// headBranchName drops the 'owner:' a git host puts in front of a head branch that
+// lives on a fork. What we compare against, and later hand git, is the branch.
+func headBranchName(head string) string {
+	if colon := strings.LastIndex(head, ":"); colon >= 0 {
+		return head[colon+1:]
+	}
+	return head
+}
+
+// prPreflight is everything the writers need settled before a plan is shown, so
+// nothing can fail after it was confirmed.
+func (a *app) prPreflight() error {
+	prBranch := a.currentBranch()
+	if prBranch == "" {
+		return errDetached()
+	}
+	if a.pr.sub == "ok" {
+		return a.prAcceptPreflight(prBranch)
+	}
+	if prBranch == a.mergeTarget() || prBranch == a.defaultBranch() {
+		return usagef("'%s' is what pull requests merge into; there is nothing to propose. Start a branch first: %s br create <name>", prBranch, meName)
+	}
+	// No title given: the last commit subject is what the work is called already.
+	if a.pr.title == "" {
+		a.pr.title = runOut("git", "log", "-1", "--pretty=%s")
+	}
+	if a.pr.title == "" {
+		return usagef("No commits on '%s' yet; nothing to propose.", prBranch)
+	}
+	// An open PR for this branch already is the answer to 'pr create' - say so
+	// instead of letting the git host error.
+	if existing := a.openPrForBranch(prBranch); existing != "" {
+		return usagef("PR #%s is already open for '%s'. View it: %s pr %s", existing, prBranch, meName, existing)
+	}
+	return nil
+}
+
+// openPrForBranch is the number of the open PR proposing this branch, or nothing -
+// which covers both "there isn't one" and "we couldn't ask". Only a courtesy
+// message hangs off it, so the two collapsing into one answer costs nothing.
+func (a *app) openPrForBranch(prBranch string) string {
+	if a.pr.tool == toolGlab {
+		out, ok := runOutOK(a.pr.cli, a.glabArgs("mr", "list", "--source-branch", prBranch, "--output", "json")...)
+		if !ok {
+			return ""
+		}
+		mr, ok := readGlabMR(out, true)
+		if !ok {
+			return ""
+		}
+		return mr.IID
+	}
+	if a.pr.tool == toolTea {
+		out, ok := runOutOK(a.pr.cli, "pulls", "list", "--state", "open", "--fields", "index,head", "--output", "tsv")
+		if !ok {
+			return ""
+		}
+		for _, record := range parseTeaTable(out) {
+			if headBranchName(record["head"]) == prBranch {
+				return record["index"]
+			}
+		}
+		return ""
+	}
+	return runOut("gh", "pr", "list", "--head", prBranch, "--state", "open", "--json", "number", "--jq", ".[0].number // empty")
+}
+
+// readPr asks the git host which branch a PR proposes and whether it is still open.
+// The bool is "we got an answer", kept apart from the answer itself: a tool that
+// cannot say must not be read as saying the PR is closed, or as agreeing with
+// whatever branch we happen to be standing on. The caller refuses on !ok, which is
+// the whole reason this is settled before a plan rather than during one.
+func (a *app) readPr() (head, state string, ok bool) {
+	if a.pr.tool == toolGlab {
+		out, ran := runOutOK(a.pr.cli, a.glabArgs("mr", "view", a.pr.num, "--output", "json")...)
+		mr, read := readGlabMR(out, false)
+		if !ran || !read || mr.Source == "" {
+			return "", "", false
+		}
+		// glab says 'opened' where gh and tea say open.
+		state = strings.ToLower(mr.State)
+		if state == "opened" {
+			state = "open"
+		}
+		return mr.Source, state, true
+	}
+	if a.pr.tool == toolTea {
+		out, ran := runOutOK(a.pr.cli, "pulls", a.pr.num, "--fields", "index,head,state", "--output", "tsv")
+		if !ran {
+			return "", "", false
+		}
+		records := parseTeaTable(out)
+		if len(records) != 1 {
+			return "", "", false
+		}
+		return headBranchName(records[0]["head"]), records[0]["state"], true
+	}
+	info, ran := runOutOK("gh", "pr", "view", a.pr.num, "--json", "headRefName,state", "--jq", ".headRefName, .state")
+	fields := splitLines(info)
+	if !ran || len(fields) != 2 {
+		return "", "", false
+	}
+	return fields[0], fields[1], true
+}
+
+// prAcceptPreflight is 'pr ok <n>', which can be run from anywhere: ask gh which
+// branch the PR proposes and whether it is still open. A gh that cannot answer
+// used to fall back to the current branch, which made the plan confidently about
+// the wrong thing and killed the run after it was confirmed - the exact shape
+// preflight exists to prevent.
+func (a *app) prAcceptPreflight(prBranch string) error {
+	head, state, ok := a.readPr()
+	if !ok || head == "" {
+		return usagef("Can't read PR #%s; check the number, and that %s can see this repo.", a.pr.num, a.pr.cli)
+	}
+	a.pr.headBranch = head
+	// Case-insensitively: gh answers 'OPEN' and tea answers 'open', and comparing
+	// against one spelling makes every PR on the other git host read as already closed.
+	if !strings.EqualFold(state, "open") {
+		return usagef("PR #%s is %s, not open; there is nothing to accept.", a.pr.num, strings.ToLower(state))
+	}
+	if err := refuseOptionShapedRefs(a.pr.headBranch); err != nil {
+		return err
+	}
+	// The git host merges what origin already has, then the branch goes local and remote.
+	// Work that never reached origin is outside the PR and outside the merge -
+	// refuse, don't lose it.
+	if runOut("git", "status", "--porcelain") != "" || isAhead() {
+		if prBranch == a.pr.headBranch {
+			return usagef("'%s' has changes that aren't on origin, so PR #%s can't include them. Run '%s sync' first.", prBranch, a.pr.num, meName)
+		}
+		return usagef("'%s' has changes that aren't on origin. Park them first: %s sync", prBranch, meName)
+	}
+	// Asked of the PR's own branch by name, wherever we are standing: gh deletes it
+	// with 'branch -D' either way, and '@{u}' above answers nothing at all for a
+	// branch that was pushed without -u - so standing on that one, the guard passed
+	// and the commits went with the branch.
+	if a.branchExistsLocal(a.pr.headBranch) {
+		if !a.branchExistsRemote(a.pr.headBranch) {
+			return usagef("'%s' is here but not on origin, so PR #%s holds none of it - and it would be deleted. Push it first: git push -u origin %s", a.pr.headBranch, a.pr.num, a.pr.headBranch)
+		}
+		if branchHasUnpushed(a.pr.headBranch) {
+			return usagef("'%s' has commits that never reached origin, so PR #%s can't include them - and it would be deleted. Push them first: git push origin %s", a.pr.headBranch, a.pr.num, a.pr.headBranch)
+		}
+	}
+	return nil
+}
+
+// cmdPrView: bare lists open PRs; a number views one plus its diff.
+func (a *app) cmdPrView() error {
+	if a.pr.num == "" {
+		return a.step(a.pr.cli, a.prListArgs()...)
+	}
+	for _, call := range a.prViewArgs() {
+		if err := a.step(a.pr.cli, call...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *app) cmdPrCreate() error {
+	// The git host can only diff what origin has, so park the work first - same as br merge
+	// and release do.
+	if err := a.cmdPush(); err != nil {
+		return err
+	}
+	// Announced by hand rather than through step, like the approve below: step would
+	// print --head and --body too, which the preview doesn't, so the two lines would
+	// disagree.
+	base := a.branchTarget("")
+	return a.stepAs(a.prCreateDisp(base), a.pr.cli+" "+a.prCreateVerb(), a.pr.cli, a.prCreateArgs(base)...)
+}
+
+func (a *app) prCreateVerb() string {
+	switch a.pr.tool {
+	case toolTea:
+		return "pulls create"
+	case toolGlab:
+		return "mr create"
+	}
+	return "pr create"
+}
+
+// prCreateDisp is the one line the preview and the run both show for a create -
+// the title and the base, without the flags neither of them promised.
+func (a *app) prCreateDisp(base string) string {
+	return a.pr.cli + " " + a.prCreateVerb() + " --base " + base + " --title " + shellWord(a.pr.title, true)
+}
+
+func (a *app) cmdPrAccept() error {
+	// Resolve both before gh deletes the branch out from under us, and off the PR's
+	// own head branch (resolved up front) rather than the current one - they need not
+	// be the same.
+	targetBranch := a.branchTarget(a.pr.headBranch)
+	wasHotfixPr := a.isHotfixBranch(a.pr.headBranch)
+	a.out.clean("")
+	approve := a.prApproveArgs()
+	a.out.status(a.prDisp(approve) + " ...")
+	// Best-effort: both git hosts refuse to approve your own PR; merging is the part
+	// that matters.
+	if !a.inheritOK(a.pr.cli, approve...) {
+		a.out.status("Could not approve (own PR?); merging anyway.")
+	}
+	a.out.resetBlank()
+	if err := a.step(a.pr.cli, a.prMergeArgs()...); err != nil {
+		return err
+	}
+	// The branch delete gh folds into its merge, for the tool that doesn't. Best
+	// effort: the merge is what was asked for, and a branch somebody already removed
+	// is not a failure worth ending the run on.
+	if clean := a.prCleanArgs(); clean != nil {
+		a.out.status(a.prDisp(clean) + " ...")
+		if !a.inheritOK(a.pr.cli, clean...) {
+			a.out.status("Could not delete the merged branch; it may already be gone.")
+		}
+		a.out.resetBlank()
+	}
+	// The merge removes the PR's branch on the remote but leaves our origin/* copy
+	// behind, so an upstream still looks present. Prune first; if ours is the branch
+	// that just went away, pulling it can only fail - land on the merge target instead.
+	// Under --no-fetch origin isn't asked, and the pull below is skipped with it.
+	if a.opt.fetch {
+		a.out.status("git fetch --prune origin ...")
+		a.fetchRemote()
+	}
+	if !a.hasUpstream() {
+		if err := a.checkout(targetBranch); err != nil {
+			return err
+		}
+	}
+	if err := a.pullIfOnline(); err != nil {
+		return err
+	}
+	// Same rule as merge: a hotfix that reached the default branch still owes dev a
+	// merge.
+	if wasHotfixPr {
+		return a.backMergeToDev()
+	}
+	return nil
+}
+
+func prNumberDef() placeholder {
+	return placeholder{"<number>", "The pull request's number, e.g. 42. A bare 'pr' lists them."}
+}

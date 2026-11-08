@@ -1,0 +1,383 @@
+// The branch writers: create, hotfix, switch and merge. Every one of them parks
+// whatever is in the tree before it moves, so changing where you stand can't
+// strand work - and merge carries a hotfix on to dev, because the next release
+// would otherwise undo it.
+
+// Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
+// Licensed under The MIT License (MIT). Full text at:
+//	https://mit-license.org/
+// SPDX-License-Identifier: MIT
+
+package main
+
+import (
+	"path"
+	"runtime"
+	"strings"
+)
+
+// checkNewBranchName vets the name given to br create/hotfix. Git owns the rules
+// for what a ref may be called, so ask git rather than keep a second copy of them.
+func (a *app) checkNewBranchName(name string) error {
+	if !runOK("git", "check-ref-format", "--branch", name) {
+		return usagef("'%s' is not a valid branch name.", name)
+	}
+	if a.branchExistsLocal(name) {
+		return usagef("Branch '%s' already exists; use: %s br switch %s", name, meName, name)
+	}
+	if a.branchExistsRemote(name) {
+		return usagef("Branch '%s' already exists on origin; use: %s br switch %s", name, meName, name)
+	}
+	return nil
+}
+
+// cmdNewBranch is both 'br create' and 'br hotfix' - one recipe, different base.
+// A hotfix comes off the default branch because it corrects what is already
+// published; feature work still goes through dev. Branch-name validation already
+// happened up front in main.
+func (a *app) cmdNewBranch(newBranch, baseBranch string) error {
+	if a.isProtectedBranch("") {
+		// Don't commit WIP to main/dev; a dirty tree survives checkout -b, so carry it
+		// to the new branch.
+		if a.currentBranch() != baseBranch {
+			if err := a.checkout(baseBranch); err != nil {
+				return err
+			}
+		}
+		if err := a.pullIfOnline(a.autostash()...); err != nil {
+			return err
+		}
+	} else {
+		if err := a.cmdPush(); err != nil { // park current work safely first
+			return err
+		}
+		if err := a.checkout(baseBranch); err != nil {
+			return err
+		}
+		if err := a.pullIfOnline(); err != nil {
+			return err
+		}
+	}
+	if err := a.step("git", "checkout", "-b", newBranch); err != nil {
+		return err
+	}
+	return a.publishBranch(newBranch)
+}
+
+func (a *app) cmdGoBranch() error {
+	targetBranch := a.switchTarget()
+	if a.currentBranch() == targetBranch {
+		a.out.status("Already on '" + targetBranch + "'.")
+		return a.pullIfOnline()
+	}
+	// The dirty-protected-branch refusal happens up front in main, before the plan
+	// is shown.
+	if err := a.cmdPush(); err != nil { // park current work safely first
+		return err
+	}
+	if err := a.checkout(targetBranch); err != nil {
+		return err
+	}
+	return a.pullIfOnline()
+}
+
+// cmdMerge merges the current branch into dev (or main/master) - backwards from
+// 'git merge', but it saves a step.
+func (a *app) cmdMerge() error {
+	workBranch := a.currentBranch()
+	targetBranch := a.branchTarget(workBranch)
+	if workBranch == targetBranch {
+		return usagef("Already on '%s'. Run this from the branch to merge in: %s br switch <branch>, then %s br merge", targetBranch, meName, meName)
+	}
+	if workBranch == a.defaultBranch() {
+		return usagef("'%s' is the default branch; landing it on '%s' is backwards. To cut a release: %s release", workBranch, targetBranch, meName)
+	}
+	mergeMessage := a.opt.message
+	if mergeMessage == "" {
+		mergeMessage = "Merge " + workBranch
+	}
+	wasHotfix := a.isHotfixBranch(workBranch)
+	if err := a.cmdPush(); err != nil {
+		return err
+	}
+	// After the push, not before: the warning reads the branch tip, and uncommitted
+	// work only becomes part of it here. Checking first missed a hotfix whose
+	// shipped-code edit was still in the working tree - the ordinary way of doing one.
+	if wasHotfix {
+		a.warnHotfixTouchedCode(workBranch, targetBranch)
+	}
+	if err := a.checkout(targetBranch); err != nil {
+		return err
+	}
+	if err := a.pullIfOnline(); err != nil {
+		return err
+	}
+	// By full ref: git merge reads a tag of the same name ahead of the branch, and the
+	// remote delete below is leased on the branch's tip.
+	if err := a.step("git", "merge", "--no-ff", "refs/heads/"+workBranch, "-m", mergeMessage); err != nil {
+		return a.backOutMerge(err, workBranch, targetBranch, workBranch,
+			"git merge "+targetBranch+", then '"+meName+" br merge'")
+	}
+	// Read before the push and the local delete: whether origin has a copy, and the tip that was
+	// merged, which is all origin's copy may hold when it goes.
+	mergedTip, tracked := "", false
+	for _, line := range runLines("git", "for-each-ref", "--format=%(objectname) %(refname)", "refs/heads/"+workBranch, "refs/remotes/origin/"+workBranch) {
+		object, ref, _ := strings.Cut(line, " ")
+		switch ref {
+		case "refs/heads/" + workBranch:
+			mergedTip = object
+		case "refs/remotes/origin/" + workBranch:
+			tracked = true
+		}
+	}
+	// The merge must reach origin before the remote work branch goes away, or origin
+	// loses its only ref to those commits. Publish an upstream-less target first.
+	mergePublished, remoteGone := false, false
+	switch {
+	case !a.hasOrigin():
+	case a.isOffline():
+		// A hotfix ends on dev after the back-merge, so a bare 'sync' from there would
+		// publish dev and leave the default branch - the branch the hotfix exists to fix
+		// - stale on origin. The switch's park push publishes dev on the way, so two
+		// commands cover both.
+		if wasHotfix {
+			a.out.status("WARNING: remote unreachable; the merge to '" + targetBranch + "' is local only - once online, '" + meName + " br switch " + targetBranch + "' then '" + meName + " sync' publishes it.")
+		} else {
+			a.out.status("WARNING: remote unreachable; the merge to '" + targetBranch + "' is local only - '" + meName + " sync' publishes it.")
+		}
+	default:
+		// Where origin has the branch and the target pushes to its own name, one atomic
+		// push sends the merge and the leased delete: both land or neither does.
+		if tracked && a.atomicMergeFits(targetBranch) {
+			remoteGone = a.atomicMergePush(targetBranch, workBranch, mergedTip)
+		}
+		if !remoteGone {
+			if err := a.step("git", a.pushArgs()...); err != nil {
+				return err
+			}
+		}
+		mergePublished = true
+	}
+	if tracked && !mergePublished {
+		// The same rule as above, from the other side: with the merge still
+		// unpublished, origin's copy of the branch is its only ref to those commits.
+		// The branch stays here too, since br prune looks for what to clear among
+		// local branches.
+		a.out.status("Leaving origin's '" + workBranch + "' alone until the merge is pushed, and the branch here with it; '" + meName + " br prune' deletes both after that.")
+	} else {
+		if err := a.step("git", "branch", "-d", workBranch); err != nil {
+			return err
+		}
+		if tracked && !remoteGone {
+			a.mergeDeleteRemote(workBranch, mergedTip)
+		}
+	}
+	if err := a.pullIfOnline(); err != nil {
+		return err
+	}
+	// The hotfix now has to reach dev too, or the next release undoes it.
+	if wasHotfix {
+		return a.backMergeToDev()
+	}
+	return nil
+}
+
+// atomicMergeFits: whether br merge's push can be named in full, the target to
+// its own name on origin. Only then do the merge and the delete go as 1 push.
+func (a *app) atomicMergeFits(target string) bool {
+	return a.branchRefs().local[target].full == "refs/remotes/origin/"+target
+}
+
+// atomicMergePush pushes the merged target and deletes origin's copy of the
+// branch in 1 connection, the delete leased on the merged tip. A refusal sends
+// nothing, and the caller falls back to 2 pushes, where the ask before the delete
+// names why.
+func (a *app) atomicMergePush(target, branch, mergedTip string) bool {
+	args := []string{"push", "--atomic", leaseArg(branch, mergedTip), "origin", "refs/heads/" + target + ":refs/heads/" + target, ":refs/heads/" + branch}
+	if a.stepAs("git "+strings.Join(args, " "), "", "git", args...) == nil {
+		return true
+	}
+	a.out.status("Origin refused that push as a whole; pushing the merge alone.")
+	return false
+}
+
+// mergeDeleteRemote deletes origin's copy of the branch br merge just merged, the
+// way br prune does. With --no-fetch the pull before the merge is skipped, and
+// anyone can push while the prompt waits, so origin may hold commits the merge
+// doesn't have. It is asked first, and the delete is leased on the merged tip.
+func (a *app) mergeDeleteRemote(branch, mergedTip string) {
+	tested := map[string]string{branch: mergedTip}
+	onOrigin, asked := a.askOriginHeads()
+	if !asked {
+		a.out.status("WARNING: couldn't ask origin about its '" + branch + "'; left it alone.")
+		a.out.clean("  Once origin can be reached, this deletes it. It stops if that branch has moved:")
+		a.out.clean(planPad + leaseDeleteLine(branch, mergedTip, runtime.GOOS))
+		return
+	}
+	send, changed, gone := sortRemoteDeletes([]string{branch}, tested, onOrigin)
+	switch {
+	case len(gone) > 0:
+		a.out.status("Already gone from origin: " + branch + ".")
+	case len(changed) > 0:
+		fetch := ""
+		if !a.opt.fetch {
+			fetch = " without --no-fetch"
+		}
+		a.out.status("WARNING: origin's '" + branch + "' has commits this merge doesn't; left it alone - '" + meName + " br switch " + typedArg(branch, runtime.GOOS) + "'" + fetch + ", then '" + meName + " br merge', brings them in.")
+	case len(send) > 0:
+		a.out.clean("")
+		a.out.status("git push --force-with-lease origin --delete " + branch + " ...")
+		// Non-fatal: the lease can still refuse, if the branch moved after the ask.
+		if !a.inheritOK("git", leaseDeleteBatches(send, tested, leasePushBudget)[0].args...) {
+			a.out.status("WARNING: couldn't delete origin's '" + branch + "'; left it alone.")
+		}
+		a.out.resetBlank()
+	}
+}
+
+// backOutMerge answers a merge step that failed. One stopped by conflicts is
+// aborted, so the tree isn't left mid-merge, and the run goes back to where it
+// started. Settling the conflict is raw git's, so the refusal names the commands.
+// Any other failure is returned as it came.
+func (a *app) backOutMerge(stepErr error, from, into, returnTo, settle string) error {
+	if !runOK("git", "rev-parse", "-q", "--verify", "MERGE_HEAD") {
+		return stepErr
+	}
+	// Not quietly: when it fails, git's own reason is the one that says what to fix.
+	if !a.inheritOK("git", "merge", "--abort") {
+		a.out.resetBlank()
+		fix := []string{"Drop the merge:", "  git merge --abort"}
+		if returnTo != "" && returnTo != into {
+			fix = []string{"Drop the merge, then go back to '" + returnTo + "':", "  git merge --abort", "  git checkout " + typedArg(returnTo, runtime.GOOS)}
+		}
+		fix = append(fix, "Then settle the conflict by hand, and run it again:", "  "+settle)
+		return refusalBlock("'"+from+"' would not merge cleanly into '"+into+"', and backing the merge out failed.", [][]string{
+			noteLines("Why", "'git merge --abort' failed, so '"+into+"' is still mid-merge."),
+			noteLines("Kept", "Nothing was committed to '"+into+"'."),
+			noteLines("Fix", fix...),
+		}, stepErr)
+	}
+	a.out.resetBlank()
+	a.out.status("Backed out: '" + from + "' would not merge cleanly into '" + into + "', which is as it was.")
+	if returnTo != "" && returnTo != a.currentBranch() {
+		if err := a.checkout(returnTo); err != nil {
+			return err
+		}
+	}
+	return usagef("Stopped with nothing merged. Settle the conflict by hand, then run it again: %s", settle)
+}
+
+// backMergeRef is what the back-merge actually merges. 'pr ok' lands the hotfix on
+// the server, so the LOCAL default branch never sees it and merging that is a
+// silent no-op; the fetched remote-tracking ref is the one holding it. After 'br
+// merge' the two are the same commit, so this is right either way - and it falls
+// back to the local branch when there's no remote at all. Offline flips it back:
+// merge's push was skipped, so origin's copy is the stale one, and merging it would
+// carry the hotfix nowhere. ('pr ok' can't run offline at all.)
+func (a *app) backMergeRef() string {
+	mainBranch := a.defaultBranch()
+	if !a.isOffline() && a.branchExistsRemote(mainBranch) {
+		return "origin/" + mainBranch
+	}
+	return mainBranch
+}
+
+// backMergeToDev: after a hotfix lands on the default branch, dev has to receive
+// it. Skipping this is how the next release conflicts on the same file, or quietly
+// reinstates the text the hotfix replaced. A conflict here is raw-git territory:
+// abort so the tree is left clean, and say so plainly.
+func (a *app) backMergeToDev() error {
+	mainBranch := a.defaultBranch()
+	devBranch := a.mergeTarget()
+	if devBranch == mainBranch { // no dev in this repo: nothing to carry back
+		return nil
+	}
+	if !a.branchExistsLocal(devBranch) && !a.branchExistsRemote(devBranch) {
+		return nil
+	}
+	mergeRef := a.backMergeRef()
+	a.out.clean("")
+	if err := a.checkout(devBranch); err != nil {
+		return err
+	}
+	if err := a.pullIfOnline(); err != nil {
+		return err
+	}
+	a.out.status("git merge " + mergeRef + " ...")
+	// By full ref, so a tag of the same name isn't merged in its place.
+	fullRef := "refs/heads/" + mergeRef
+	if remote, ok := strings.CutPrefix(mergeRef, "origin/"); ok {
+		fullRef = "refs/remotes/origin/" + remote
+	}
+	if a.inheritOK("git", "merge", fullRef, "-m", "Merge "+mainBranch) {
+		a.out.resetBlank()
+		return a.pushIfOnline()
+	}
+	// A failed abort leaves the tree mid-merge, which no later command should
+	// stumble on unwarned, so the run fails even though the hotfix itself is done.
+	if !a.inheritOK("git", "merge", "--abort") {
+		a.out.resetBlank()
+		return refusalBlock("'"+mainBranch+"' would not merge cleanly into '"+devBranch+"', and backing the merge out failed.", [][]string{
+			noteLines("Why", "'git merge --abort' failed, so '"+devBranch+"' is still mid-merge."),
+			noteLines("Kept", "The hotfix landed on '"+mainBranch+"' - that part is done. Nothing was committed to '"+devBranch+"'."),
+			noteLines("Fix", "Settle the conflict by hand and commit it, which carries the hotfix across. Or drop the merge for now:", "  git merge --abort",
+				"Then carry it across by hand later:", "  git merge "+mergeRef),
+		}, nil)
+	}
+	a.out.resetBlank()
+	a.out.status("WARNING: '" + mainBranch + "' would not merge cleanly into '" + devBranch + "'; left '" + devBranch + "' untouched.")
+	a.out.clean("  The hotfix landed on '" + mainBranch + "' - that part is done.")
+	a.out.clean("  Carry it across by hand: git checkout " + devBranch + " && git merge " + mergeRef)
+	return nil
+}
+
+// warnHotfixTouchedCode: a hotfix that changes more than documentation leaves the
+// default branch carrying something no tag contains, so the latest release may
+// stop matching it. Documentation is read from the branch and needs no release.
+// It used to watch this project's own source folder, which no other repo has.
+func (a *app) warnHotfixTouchedCode(workBranch, targetBranch string) {
+	// A repo that never tagged a release has none to fall out of step with.
+	if newestReleaseTag(runLines("git", "tag", "--list", "v[0-9]*", "[0-9]*")) == "" {
+		return
+	}
+	// Full refs, since a tag of the same name wins over the branch.
+	base := "refs/heads/" + targetBranch
+	if !a.branchExistsLocal(targetBranch) {
+		base = "refs/remotes/origin/" + targetBranch
+	}
+	// Paths come back from the top of the tree, wherever this runs from.
+	out, ok := runOutOK("git", "diff", "--name-only", base+"...refs/heads/"+workBranch)
+	switch {
+	case !ok:
+		a.out.clean("")
+		a.out.status("NOTE: couldn't tell whether this hotfix changes more than documentation.")
+		a.out.clean("  If it does, '" + targetBranch + "' will carry changes that no tag contains.")
+		a.out.clean("  Cut a patch release when you're ready: " + meName + " release")
+	case !docsOnly(splitLines(out)):
+		a.out.clean("")
+		a.out.status("NOTE: this hotfix changes more than documentation.")
+		a.out.clean("  '" + targetBranch + "' will carry changes that no tag contains, so the latest release's")
+		a.out.clean("  downloads may no longer match it. Cut a patch release when you're ready: " + meName + " release")
+	}
+}
+
+// docsOnly guesses from the names alone whether every changed file is
+// documentation. A wrong guess costs one note too many or too few.
+func docsOnly(files []string) bool {
+	for _, file := range files {
+		lower := strings.ToLower(file)
+		if lower == "" || strings.HasPrefix(lower, "docs/") || strings.HasPrefix(lower, "doc/") {
+			continue
+		}
+		switch path.Ext(lower) {
+		case ".md", ".markdown", ".txt", ".rst", ".adoc":
+			continue
+		}
+		switch path.Base(lower) {
+		case "license", "copying", "notice":
+			continue
+		}
+		return false
+	}
+	return true
+}

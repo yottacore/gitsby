@@ -1,31 +1,42 @@
 #!/usr/bin/env pwsh
+
 <#
 .SYNOPSIS
-    Downloads and installs the latest gitsby release (PowerShell edition).
+    Downloads and installs the gitsby binary for this platform.
 .DESCRIPTION
-    Shows the plan and asks first. Requires PowerShell 7+. Meant for one-liner use:
-        irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1 | iex
-    With options:
-        & ([scriptblock]::Create((irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install.ps1))) -System -Yes
-.PARAMETER Release
-    Which build: 'stable' (the latest release, default) or 'dev' (the tip of the dev branch).
-.PARAMETER Target
-    'user' for a per-user install (default), or 'system' for all users.
-.PARAMETER Arch
-    Accepted for consistency with other installers, and has no effect here: gitsby is a
-    script, so the same file runs on every architecture.
-.PARAMETER System
-    Install for all users. The same thing as -Target system.
-.PARAMETER Yes
-    Don't ask for confirmation.
-.PARAMETER Ref
-    Install from a specific branch/tag/commit instead of the latest release.
+    Shows the plan and asks first. Runs on Windows PowerShell 5.1 as well as PowerShell 7+,
+    since 5.1 is what a fresh Windows install has; what it installs is a static binary and
+    needs no PowerShell at all.
+
+    Options:
+        -Target user|system   Install for you (default) or for all users.
+        -System               The same thing as -Target system.
+        -Arch amd64|arm64     Which binary to fetch. Detected from this machine by default.
+                              macOS has one binary for both.
+        -Tag TAG              A published release tag (default: the latest release).
+        -Ref TAG              The older name for -Tag.
+        -Yes                  Don't ask for confirmation.
+        -Help                 Show the options and exit. '--help' works too.
+        -Release stable       The older name for the default. -Release dev is gone.
+    The Bash installer's spellings work as well, such as --target=system and --yes.
+
+    The options are listed here rather than as parameter help. They belong to the function
+    inside, since a script-level param() block breaks the iex one-liner.
+.EXAMPLE
+    irm https://raw.githubusercontent.com/yottacore/gitsby/main/install.ps1 | iex
+.EXAMPLE
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/yottacore/gitsby/main/install.ps1))) -System -Yes
 .NOTES
-    Copyright © 2026 Jim Collier (CryptogID: ѳ6ᴚ℈𐀘𐇦ɛ𐊁¥Mﾏb϶Δ𐌞)
+    Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
     Licensed under The MIT License (MIT). Full text at: https://mit-license.org/
     SPDX-License-Identifier: MIT
     History: at bottom of script.
 #>
+
+
+# The blank line under the shebang and the two above this are load-bearing: without them the
+# comment help binds to the first function rather than the script, and Get-Help on the file
+# shows an auto-generated stub instead.
 function Install-Gitsby {
     # Attribute lives inside the function, not at file scope: the file is also read as text
     # and evaluated (iex / scriptblock), where a top-level attribute is a parse error.
@@ -33,85 +44,291 @@ function Install-Gitsby {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Interactive installer; console text is the point.')]
     [CmdletBinding()]
     param(
-        [ValidateSet('dev', 'stable')][string]$Release,
         [ValidateSet('user', 'system')][string]$Target,
         [ValidateSet('x64', 'x86_64', 'amd64', 'arm64', 'aarch64')][string]$Arch,
         [switch]$System,
         [switch]$Yes,
-        [ValidatePattern('^[A-Za-z0-9._/-]+$')][string]$Ref
+        # -Ref was this parameter's name while gitsby was a script installed from a tree. It
+        # names a published release now, and the old spelling stays as an alias for good.
+        [Alias('Ref')][ValidatePattern('^[A-Za-z0-9._/-]+$')][string]$Tag,
+        # Took 'dev' or 'stable' when a branch could be installed from its tree. Bound rather
+        # than dropped, so a familiar flag gets an explanation instead of a binder error.
+        [string]$Release,
+        [switch]$Help
     )
 
-    # Windows PowerShell 5.1 is still 'powershell' on Windows and has no $IsWindows, which
-    # StrictMode turns into an undefined-variable error further down - so say it plainly here.
-    if ($PSVersionTable.PSVersion.Major -lt 7) {
-        throw "This installer needs PowerShell 7+; this is $($PSVersionTable.PSVersion). Install it: 'winget install --id Microsoft.PowerShell' on Windows, or see https://aka.ms/powershell."
-    }
     Set-StrictMode -Version Latest
     $ErrorActionPreference = 'Stop'
 
-    $repo = 'jim-collier/gitsby'
-
-    # -Release is the friendly spelling; -Ref is the escape hatch. Both at once is ambiguous.
-    if ($Release -and $Ref) { throw 'Use -Release or -Ref, not both.' }
-    if ($Release -eq 'dev') { $Ref = 'dev' }
-    # The ref lands in a download URL, so a path-shaped one walks out of this repo and installs
-    # somebody else's script while the plan on screen still names ours. ValidatePattern admits
-    # '..' and a leading '/', so both are checked here. Reads as a harmless branch selector,
-    # which is exactly why the confirm prompt is no protection.
-    if ($Ref -and ($Ref -match '(^|/)\.\.(/|$)' -or $Ref -match '^/' -or $Ref -match '//')) {
-        throw "-Ref names a branch, tag or commit, not a path (got '${Ref}')."
+    # Windows PowerShell 5.1 is what a fresh Windows install actually has, and that is the
+    # machine most likely to be running this for the first time - so the documented one-liner
+    # has to work there. The syntax in here is 5.1-clean already; what 5.1 lacks is these
+    # three variables (7 defines them; 5.1 only ever runs on Windows), TLS 1.2 switched on,
+    # and the response parser -UseBasicParsing selects. Nothing else below is conditional.
+    $isPS7 = $PSVersionTable.PSVersion.Major -ge 6
+    $onWindows = if ($isPS7) { [bool]$IsWindows } else { $true }
+    $onMac = if ($isPS7) { [bool]$IsMacOS } else { $false }
+    if (-not $isPS7) {
+        # 5.1 offers SSL3 and TLS 1.0 by default, and github.com accepts neither.
+        try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 }
+        catch { Write-Verbose 'Could not raise the TLS version; the download may fail.' }
     }
-    $isRelease = -not $Ref
+
+    if ($Help) {
+        Write-Host ''
+        Write-Host 'Usage: install.ps1 [OPTIONS]'
+        Write-Host 'Downloads and installs gitsby (with confirmation).'
+        Write-Host 'Options:'
+        Write-Host '  -Target user|system   Install for you (default) or for all users.'
+        Write-Host '  -System               The same thing as -Target system.'
+        Write-Host '  -Arch amd64|arm64     Which binary to fetch. Detected from this machine by default.'
+        Write-Host '                        macOS has one binary for both.'
+        Write-Host '  -Tag TAG              A published release tag (default: the latest release).'
+        Write-Host '  -Ref TAG              The older name for -Tag.'
+        Write-Host '  -Yes                  Do not ask for confirmation.'
+        Write-Host '  -Help                 This.'
+        Write-Host "  -Release stable       The older name for the default. '-Release dev' is gone."
+        Write-Host ''
+        return
+    }
+
+    $repo = 'yottacore/gitsby'
+
+    # '-Release dev' installed the tip of a branch, which meant downloading a script. There is
+    # no script to download now, and a branch has no build behind it.
+    if ($Release -eq 'dev') {
+        throw "There is no '-Release dev' any more: gitsby is a compiled binary, and a branch has no published build. Take a release with '-Tag TAG', or build the tip yourself: git clone https://github.com/${repo}.git; cd gitsby/src-go; go build -o gitsby ."
+    }
+    if ($Release -and $Release -ne 'stable') {
+        throw "-Release takes only 'stable' now, which is the default; use '-Tag TAG' for a specific release."
+    }
+    # The tag lands in a download URL, so a path-shaped one walks out of this repo and installs
+    # somebody else's binary while the plan on screen still names ours. ValidatePattern admits
+    # '..' and a leading '/', so both are checked here. Reads as a harmless version selector,
+    # which is exactly why the confirm prompt is no protection.
+    function Test-PathTag([string]$name) {
+        return ($name -match '(^|/)\.\.(/|$)' -or $name -match '^/' -or $name -match '//')
+    }
+    if ($Tag -and (Test-PathTag $Tag)) {
+        throw "-Tag names a published release, not a path (got '${Tag}')."
+    }
     $installSystemWide = $System.IsPresent -or ($Target -eq 'system')
 
-    # No -Ref: resolve the latest release tag from the releases/latest redirect (no auth, no
-    # API rate limit); unauthenticated API only as fallback (60 req/hr per IP).
-    if (-not $Ref) {
+    # Which asset belongs to this machine. Go's own spelling, since that is what the release
+    # is named by. Anything else falls through to the SHA256SUMS lookup below, which is the
+    # authority on what this release actually published.
+    $goOs = if ($onWindows) { 'windows' } elseif ($onMac) { 'darwin' } else { 'linux' }
+    # Detection lands in its own variable rather than back in $Arch: assigning to a parameter
+    # re-runs its ValidateSet, so an x86 or 32-bit ARM box would die with a binder error
+    # instead of being told what this release does publish.
+    $archName = if ($Arch) { $Arch } else {
+        # RuntimeInformation arrived in .NET Framework 4.7.1, so an older 5.1 box falls back to
+        # the environment. Both spellings land on the same two names below.
+        $osArch = try { [string][Runtime.InteropServices.RuntimeInformation]::OSArchitecture }
+        catch { [string]$env:PROCESSOR_ARCHITECTURE }
+        switch ($osArch) {
+            'X64'   { 'amd64' }
+            'Arm64' { 'arm64' }
+            default { "$_".ToLowerInvariant() }
+        }
+    }
+    # -Arch used to be accepted and ignored, back when the product was one script that ran
+    # everywhere. It picks the binary now, so spell the two the release actually publishes.
+    $goArch = switch ($archName) {
+        { $_ -in 'x64', 'x86_64', 'amd64' } { 'amd64'; break }
+        { $_ -in 'arm64', 'aarch64' }       { 'arm64'; break }
+        default                             { $archName }
+    }
+    # One universal binary runs on both Mac CPUs, so there is nothing to pick.
+    if ($onMac) {
+        if ($Arch) {
+            Write-Host ''
+            Write-Host "[ The macOS binary runs on both CPUs, so -Arch ${Arch} changes nothing here. ]"
+        }
+        $goArch = 'universal'
+    }
+    $asset = "gitsby-${goOs}-${goArch}"
+    if ($onWindows) { $asset += '.exe' }
+
+    # Whatever names a release reaches a download URL, so it is checked the same way as a typed tag.
+    function Assert-PlainTag([string]$name) {
+        if ($name -notmatch '^[A-Za-z0-9._/-]+$' -or (Test-PathTag $name)) { throw "The resolved release tag ('${name}') isn't a plain git tag; aborting." }
+    }
+    # SHA256SUMS decides two things at once, and it is a few hundred bytes: whether a release
+    # publishes a binary for this platform, and what that binary should hash to. It is fetched
+    # before the plan, so the plan can promise a specific file before anything large is
+    # downloaded. Every install path here is a release asset, so every one is verified - there
+    # is no unverified route left to fall back to.
+    function Get-ChecksumText([string]$name) {
+        try {
+            # GitHub serves SHA256SUMS as application/octet-stream, and Invoke-WebRequest returns
+            # .Content as bytes for anything it doesn't consider text. Splitting those into lines
+            # matched nothing, so every default install skipped verification and said there was no
+            # SHA256SUMS - which wasn't true.
+            $body = (Invoke-WebRequest -Uri "https://github.com/${repo}/releases/download/${name}/SHA256SUMS" -UseBasicParsing).Content
+            if ($body -is [byte[]]) { return [Text.Encoding]::UTF8.GetString($body) }
+            return [string]$body
+        } catch { return '' }
+    }
+    # A binary is an asset named gitsby-<os>-<arch>, for any platform. v2.1.0 and older publish
+    # the scripts that came before them, so they don't count. Any platform rather than this one,
+    # so every machine is pointed at the same release, and one it leaves out is told what it does
+    # publish.
+    function Test-GitsbyBinary([string]$sumsText) {
+        return [bool]($sumsText -match '(?m)^[0-9a-fA-F]{64}\s+\*?gitsby-\S+\r?$')
+    }
+
+    # No -Tag: the newest full release that publishes a gitsby binary, or while none does, the
+    # newest pre-release that does.
+    # Resolved into its own variable for the same reason as $archName: a scraped tag assigned
+    # back to $Tag re-runs its ValidatePattern, which turns the check below into dead code and
+    # reports a malformed tag as whatever the surrounding catch happens to say.
+    $tagName = $Tag
+    $sums = ''
+    $sumsFor = ''
+    if (-not $tagName) {
+        # releases/latest first: a redirect, so no auth and no API rate limit. It is the newest
+        # full release, and when its SHA256SUMS lists a binary that is the answer.
+        # 7's headers have Location as a property and no string indexer. 5.1's are a
+        # WebHeaderCollection, where the indexer works and the property is an error under strict
+        # mode. Anything unreadable counts as no answer, so the list lookup below still runs.
+        function Read-LocationHeader($response) {
+            try {
+                $headers = $response.Headers
+                if ($headers -is [Collections.IDictionary] -or $headers -is [Collections.Specialized.NameValueCollection]) {
+                    return [string]@($headers['Location'])[0]
+                }
+                return [string]$headers.Location
+            } catch { return '' }
+        }
         $location = ''
         try {
-            $resp = Invoke-WebRequest -Uri "https://github.com/${repo}/releases/latest" -MaximumRedirection 0 -ErrorAction Stop
-            $location = [string]$resp.Headers.Location
+            # Not Stop. On 5.1 that turns the redirect into an error with no response attached, and
+            # only carrying on hands back the 302 itself. 7 throws either way, response and all.
+            $resp = Invoke-WebRequest -Uri "https://github.com/${repo}/releases/latest" -MaximumRedirection 0 -UseBasicParsing -ErrorAction SilentlyContinue
+            $location = Read-LocationHeader $resp
         } catch {
-            if ($_.Exception.PSObject.Properties['Response'] -and $_.Exception.Response) { $location = [string]$_.Exception.Response.Headers.Location }
+            if ($_.Exception.PSObject.Properties['Response'] -and $_.Exception.Response) { $location = Read-LocationHeader $_.Exception.Response }
         }
-        if ($location -match '/releases/tag/([^/\s]+)') { $Ref = $Matches[1] }
-    }
-    if (-not $Ref) {
-        try {
-            $Ref = (Invoke-RestMethod -Uri "https://api.github.com/repos/${repo}/releases/latest").tag_name
-        } catch {
-            throw "Couldn't determine the latest release; pass e.g. -Ref main. GitHub may be rate-limiting; try again later. ($($_.Exception.Message))"
+        $noBinary = ''
+        if ($location -match '/releases/tag/([^/\s]+)') {
+            $tagName = $Matches[1]
+            # Scraped from a redirect header, so checked before it reaches a URL.
+            Assert-PlainTag $tagName
+            $sums = Get-ChecksumText $tagName
+            $sumsFor = $tagName
+            # A full release with only the old scripts in it. One with no SHA256SUMS at all stays
+            # put, for the check below to name.
+            if ($sums -and -not (Test-GitsbyBinary $sums)) {
+                $noBinary = $tagName
+                $tagName = ''
+            }
+        }
+        if (-not $tagName) {
+            # The list says what each release published, so one request settles it.
+            # releases/latest skips pre-releases, and that is the other case this is for.
+            try {
+                $releaseList = Invoke-RestMethod -Uri "https://api.github.com/repos/${repo}/releases" -UseBasicParsing
+            } catch {
+                if ($noBinary) {
+                    throw "${noBinary}, the latest full release, has no gitsby binary, and the release list that would name one couldn't be read. GitHub may be unreachable, or rate-limiting this address (60 requests an hour, unauthenticated). A specific release always works: -Tag TAG. ($($_.Exception.Message))"
+                }
+                throw "Couldn't work out the latest release of ${repo}. GitHub may be unreachable, or rate-limiting this address (60 requests an hour, unauthenticated). A specific release always works: -Tag TAG. ($($_.Exception.Message))"
+            }
+            # Wrapped only once assigned. 5.1 sends the whole array down the pipeline as one object,
+            # so @() around the call made a list of one, and every tag name came out as one tag.
+            $releases = @($releaseList)
+            $withBinary = @($releases | Where-Object { @($_.assets | Where-Object { [string]$_.name -like 'gitsby-*' }).Count -gt 0 })
+            # Highest version wins, not newest-listed: the list is ordered by publish date, so a
+            # backported fix cut after a newer release would otherwise be taken. The numeric
+            # fields decide; Sort-Object is stable, so a tie keeps the newer-listed entry. Two
+            # pre-releases of one version tie, and release.bash publishes them in order. A full
+            # release is never weighed against a pre-release.
+            $tagVersion = {
+                $v = ($_.tag_name -replace '^[vV]', '') -replace '[-+].*$', ''
+                $parsed = [version]'0.0'
+                if ([version]::TryParse($v, [ref]$parsed)) { $parsed } else { [version]'0.0' }
+            }
+            $newestFull = $withBinary | Where-Object { -not $_.prerelease } | Sort-Object -Property @{Expression = $tagVersion} -Descending | Select-Object -First 1
+            $newestPre = $withBinary | Where-Object { $_.prerelease } | Sort-Object -Property @{Expression = $tagVersion} -Descending | Select-Object -First 1
+            if ($newestFull) {
+                $tagName = [string]$newestFull.tag_name
+            } elseif ($newestPre) {
+                $tagName = [string]$newestPre.tag_name
+                Write-Host ''
+                Write-Host "[ No full release has a gitsby binary yet; taking the newest pre-release, ${tagName}. ]"
+            } else {
+                throw "No release of ${repo} publishes a gitsby binary yet, so there is nothing to install. Build it instead: git clone https://github.com/${repo}.git; cd gitsby/src-go; go build -o gitsby ."
+            }
         }
     }
-    # Scraped from a redirect header, so check it the same way as a typed one before it reaches a URL.
-    if ($Ref -notmatch '^[A-Za-z0-9._/-]+$') { throw "The resolved release tag ('${Ref}') isn't a plain git ref; aborting." }
+    Assert-PlainTag $tagName
+
+    $base = "https://github.com/${repo}/releases/download/${tagName}"
+    if ($sumsFor -ne $tagName) { $sums = Get-ChecksumText $tagName }
+    if (-not $sums) {
+        throw "Release ${tagName} publishes no SHA256SUMS, so nothing here can be verified. (A release published seconds ago may not be servable yet; try again shortly.)"
+    }
+    $want = ''
+    $published = foreach ($sumLine in ($sums -split "`r?`n")) {
+        if ($sumLine -match '^([0-9a-fA-F]{64})\s+\*?(gitsby-\S+)$') {
+            if ($Matches[2] -eq $asset) { $want = $Matches[1] }
+            $Matches[2] -replace '^gitsby-', '' -replace '\.exe$', ''
+        }
+    }
+    if (-not $want) {
+        $alsoRan = if ($published) { " It publishes: $($published -join ', ')." } else { '' }
+        throw "Release ${tagName} publishes no gitsby binary for ${goOs}/${goArch}.${alsoRan} Build it for yours instead: git clone https://github.com/${repo}.git; cd gitsby/src-go; go build -o gitsby ."
+    }
 
     # Destination: per-user by default; -System needs elevation (sudo / admin shell).
-    if ($IsWindows) {
+    if ($onWindows) {
         $destDir = if ($installSystemWide) { Join-Path -Path $env:ProgramFiles -ChildPath 'gitsby' } else { Join-Path -Path $env:LOCALAPPDATA -ChildPath 'Programs/gitsby' }
+        $destPath = Join-Path -Path $destDir -ChildPath 'gitsby.exe'
     } else {
         $destDir = if ($installSystemWide) { '/usr/local/bin' } else { Join-Path -Path $HOME -ChildPath '.local/bin' }
+        $destPath = Join-Path -Path $destDir -ChildPath 'gitsby'
     }
-    $destPath = Join-Path -Path $destDir -ChildPath 'gitsby.ps1'
+
+    # Found out here rather than at the copy, after the download. Elevating was passed over:
+    # the iex and scriptblock forms have no file to start again as administrator.
+    function Test-Writable([string]$dir) {
+        $probeDir = $dir
+        while ($probeDir -and -not (Test-Path -LiteralPath $probeDir -PathType Container)) { $probeDir = Split-Path -Path $probeDir -Parent }
+        if (-not $probeDir) { return $false }
+        try {
+            $probe = [IO.File]::Create((Join-Path -Path $probeDir -ChildPath ('.gitsby.probe.' + [IO.Path]::GetRandomFileName())), 1, [IO.FileOptions]::DeleteOnClose)
+            $probe.Dispose()
+            return $true
+        } catch { return $false }
+    }
+    if (-not (Test-Writable $destDir)) {
+        if ($installSystemWide) {
+            $elevate = if ($onWindows) { 'Run PowerShell as administrator' } else { 'Run it with sudo' }
+            throw "Installing for all users needs write access to ${destDir}, which this shell doesn't have. ${elevate}, or install for this account alone, which is the default."
+        }
+        throw "Can't install to ${destDir}: this account can't write there. Check its owner and permissions."
+    }
 
     Write-Host ''
     Write-Host '[ gitsby installer (PowerShell) ]'
     Write-Host 'This will:'
-    Write-Host "  - Download gitsby.ps1 (${Ref}) from github.com/${repo}"
-    if ($Arch) { Write-Host "  - Ignore -Arch ${Arch}: gitsby is a script, so the same file runs on every architecture" }
-    Write-Host "  - Install it to ${destPath}"
-    if ($installSystemWide) { Write-Host '  - Need write access to that directory (run elevated / via sudo)' }
-    # Whether the download gets checked is the one thing worth knowing BEFORE agreeing to it.
-    # It used to be reported afterwards, and on the dev path not at all.
-    if ($isRelease) { Write-Host '  - Verify the download against the release''s published SHA256SUMS' }
-    else            { Write-Host "  - NOT verify the download: ${Ref} is a branch or tag, which has no published checksum" }
+    Write-Host "  - Download ${asset} (${tagName}) from github.com/${repo}"
+    Write-Host '  - Verify it against the release''s published SHA256SUMS'
+    if (Test-Path -LiteralPath $destPath) { Write-Host "  - Install it to ${destPath}, replacing the one already there" }
+    else { Write-Host "  - Install it to ${destPath}" }
+    if (-not (Test-Path -LiteralPath $destDir -PathType Container)) { Write-Host "  - Create ${destDir} (it doesn't exist yet)" }
+    # What an earlier install on Windows had to leave behind, because the old copy was running.
+    if ($onWindows -and (Test-Path -LiteralPath $destPath) -and (Get-ChildItem -LiteralPath $destDir -Filter 'gitsby.exe.replaced-*' -ErrorAction SilentlyContinue)) {
+        Write-Host "  - Remove the old copies an earlier install left in ${destDir}"
+    }
     # Windows puts nothing on PATH for you, so without this the install finishes with a program
     # that cannot be run by name. On *nix the destination is a conventional bin dir already.
-    if ($IsWindows -and (($env:PATH -split [IO.Path]::PathSeparator) -notcontains $destDir)) {
+    if ($onWindows -and (($env:PATH -split [IO.Path]::PathSeparator) -notcontains $destDir)) {
         $pathScopeLabel = if ($installSystemWide) { 'system' } else { 'account' }
         Write-Host "  - Add ${destDir} to your ${pathScopeLabel} PATH (new shells only; this one is unchanged)"
     }
-    Write-Host "  - Run 'gitsby.ps1 --version' to verify"
+    Write-Host "  - Run 'gitsby --version' to verify"
     if (-not $Yes) {
         $answer = Read-Host 'Continue? [y/N]'
         # Cast: Read-Host returns AutomationNull at EOF, and -notmatch on that yields an empty
@@ -120,90 +337,94 @@ function Install-Gitsby {
         if ("${answer}" -notmatch '^(y|yes)$') { throw 'Aborted.' }
     }
 
-    # Prefer the release asset; fall back to the file in the tagged tree.
     Write-Host ''
     Write-Host '[ Downloading ... ]'
     # Private random subdirectory, not a predictable name in shared temp.
     $tmpDir = Join-Path -Path ([IO.Path]::GetTempPath()) -ChildPath ([IO.Path]::GetRandomFileName())
     New-Item -ItemType Directory -Path $tmpDir | Out-Null
-    $tmpFile = Join-Path -Path $tmpDir -ChildPath 'gitsby.ps1'
-    $downloaded = $false
-    $fromReleaseAsset = $false
-    foreach ($url in @(
-            "https://github.com/${repo}/releases/download/${Ref}/gitsby.ps1",
-            "https://raw.githubusercontent.com/${repo}/${Ref}/bin/gitsby.ps1")) {
-        if ($downloaded) { break }
-        if (-not $isRelease -and $url -like '*releases/download*') { continue }
-        try {
-            Invoke-WebRequest -Uri $url -OutFile $tmpFile
-            $downloaded = $true
-            $fromReleaseAsset = ($url -like '*releases/download*')
-        } catch {
-            Write-Verbose "Fetch failed, trying next source: ${url}"
-        }
-    }
-    if (-not $downloaded) {
-        throw "Couldn't download gitsby.ps1 at '${Ref}'. (Releases before v2 predate the current layout; try '-Release dev'.)"
-    }
-    # Only the release asset can be checked against SHA256SUMS, so falling back to the tree here
-    # would quietly deliver the unverified copy the plan promised to check. Asking for a release
-    # and getting that is not what was agreed, so it stops instead.
-    if ($isRelease -and -not $fromReleaseAsset) {
-        throw "Release ${Ref} publishes no gitsby.ps1 asset, so only an unverified copy of the tagged tree is available. Re-run with -Ref ${Ref} to take it."
-    }
-    # Wrong-content 200s happen (captive portals, truncation); a script starts with a shebang.
-    if ((Get-Content -LiteralPath $tmpFile -First 1) -notmatch '^#!') { throw "Downloaded file doesn't look like a script; aborting." }
-
-    # Verify against the release's SHA256SUMS when there is one. Only the release-asset
-    # path can be verified; -Ref installs pull straight from the tree, unverified.
-    if ($fromReleaseAsset) {
-        $sums = ''
-        # GitHub serves SHA256SUMS as application/octet-stream, and Invoke-WebRequest returns
-        # .Content as bytes for anything it doesn't consider text. Splitting those into lines
-        # matched nothing, so every default install skipped verification and said there was no
-        # SHA256SUMS - which wasn't true.
-        try {
-            $body = (Invoke-WebRequest -Uri "https://github.com/${repo}/releases/download/${Ref}/SHA256SUMS").Content
-            $sums = if ($body -is [byte[]]) { [Text.Encoding]::UTF8.GetString($body) } else { [string]$body }
-        } catch { $sums = '' }
-        $want = ''
-        foreach ($sumLine in ($sums -split "`r?`n")) {
-            if ($sumLine -match '^([0-9a-fA-F]{64})\s+\*?gitsby\.ps1$') { $want = $Matches[1]; break }
-        }
-        if ($want) {
-            $got = (Get-FileHash -Algorithm SHA256 -LiteralPath $tmpFile).Hash
-            if ($got -ne $want) { throw 'Checksum mismatch for the downloaded gitsby.ps1; aborting. (Corrupted download or tampering.)' }
-            Write-Host '[ Checksum verified. ]'
-        } else {
-            # The plan said this download would be checked, so not checking it is a broken
-            # promise rather than a note in passing. Taking it unverified stays available, but
-            # as an explicit choice rather than the quiet default.
-            throw "Release ${Ref} publishes no SHA256SUMS entry for gitsby.ps1, so the download can't be verified. Re-run with -Ref ${Ref} to take it unverified."
-        }
-    }
-
     try {
+        $tmpFile = Join-Path -Path $tmpDir -ChildPath $asset
+        try {
+            Invoke-WebRequest -Uri "${base}/${asset}" -OutFile $tmpFile -UseBasicParsing
+        } catch {
+            throw "Couldn't download ${asset} from release ${tagName}. ($($_.Exception.Message))"
+        }
+        if ((Get-Item -LiteralPath $tmpFile).Length -eq 0) { throw "Downloaded ${asset} is empty; aborting." }
+        # A captive portal or a proxy answers with a page, not a binary. It would fail the
+        # checksum anyway, but as tampering rather than as the network problem it is.
+        # -AsByteStream is 7's spelling of what 5.1 calls -Encoding Byte; each is an error on
+        # the other's parser, so the branch is on the version rather than on a try/catch.
+        $firstByte = if ($isPS7) { Get-Content -LiteralPath $tmpFile -AsByteStream -TotalCount 1 }
+        else { Get-Content -LiteralPath $tmpFile -Encoding Byte -TotalCount 1 }
+        if ($firstByte -eq [byte][char]'<') {
+            throw 'The download came back as a web page, not a binary - something between here and GitHub is intercepting it.'
+        }
+
+        $got = (Get-FileHash -Algorithm SHA256 -LiteralPath $tmpFile).Hash
+        # Get-FileHash answers in upper case and SHA256SUMS is written in lower.
+        if ($got.ToLowerInvariant() -cne $want.ToLowerInvariant()) { throw "Checksum mismatch for ${asset}; aborting. (Corrupted download or tampering.)" }
+        Write-Host '[ Checksum verified. ]'
+
+        Write-Host ''
         Write-Host "[ Installing to ${destPath} ... ]"
         New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-        Move-Item -Force -Path $tmpFile -Destination $destPath
-        if (-not $IsWindows) { chmod +x $destPath }
+        # Staged in the destination directory and renamed over the target, never written in
+        # place. Move-Item from the system temp is only atomic within one filesystem, and the
+        # temp dir and the install dir usually are not the same one - so an interrupt mid-copy
+        # left a truncated executable where the real one should be, one that had passed its
+        # checksum under another name.
+        $staged = Join-Path -Path $destDir -ChildPath ('.gitsby.install.' + [IO.Path]::GetRandomFileName())
+        try {
+            Copy-Item -LiteralPath $tmpFile -Destination $staged -Force
+            # 755 whatever the umask, the same as the Bash installer.
+            if (-not $onWindows) { chmod 755 $staged }
+            # Windows will not delete or overwrite a running executable, but it will rename one:
+            # move the incumbent aside, then put the new one in its place. What it leaves behind
+            # goes at the next install, once nothing is holding it open.
+            if ($onWindows -and (Test-Path -LiteralPath $destPath)) {
+                Get-ChildItem -LiteralPath $destDir -Filter 'gitsby.exe.replaced-*' -ErrorAction SilentlyContinue |
+                    ForEach-Object { Remove-Item -Force -LiteralPath $_.FullName -ErrorAction SilentlyContinue }
+                $retired = "${destPath}.replaced-" + [IO.Path]::GetRandomFileName()
+                Move-Item -Force -LiteralPath $destPath -Destination $retired
+                Remove-Item -Force -LiteralPath $retired -ErrorAction SilentlyContinue
+            }
+            Move-Item -Force -LiteralPath $staged -Destination $destPath
+        } catch {
+            if (Test-Path -LiteralPath $staged) { Remove-Item -Force -LiteralPath $staged }
+            throw
+        }
 
+        Write-Host ''
         Write-Host '[ Verifying ... ]'
-        & $destPath --version
+        # Two ways to fail here. A binary that can't start at all throws, and one that starts and
+        # fails only sets $LASTEXITCODE, which $ErrorActionPreference never sees.
+        $startError = ''
+        try { & $destPath --version } catch { $startError = $_.Exception.Message }
+        if ($startError -or $LASTEXITCODE -ne 0) {
+            $how = if ($startError) { $startError } else { "exit ${LASTEXITCODE}" }
+            throw "Installed ${destPath}, but it would not run (${how}). The download verified against the release checksum, so this is the binary not being runnable on this machine rather than a bad download."
+        }
 
         $pathSep = [IO.Path]::PathSeparator
         if (($env:PATH -split $pathSep) -notcontains $destDir) {
-            if ($IsWindows) {
-                # Persist it, as promised in the plan. Only PATHEXT is left alone: PowerShell already
-                # resolves a bare 'gitsby' to gitsby.ps1 from PATH without it, and adding .PS1 there
-                # would only affect cmd.exe - which still cannot run one, because it needs a file
-                # association, and the default association opens .ps1 in an editor rather than running it.
+            if ($onWindows) {
+                # Persist it, as promised in the plan.
                 $pathScope = if ($installSystemWide) { 'Machine' } else { 'User' }
+                # Straight at the registry rather than [Environment]::GetEnvironmentVariable,
+                # which hands back the EXPANDED PATH: writing that back would bake entries like
+                # %USERPROFILE%\bin in as literals, permanently, for a PATH we only meant to
+                # append to. Reading it raw and putting back the kind it already had leaves
+                # every other entry exactly as it was.
+                $pathKeyPath = if ($installSystemWide) { 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment' } else { 'HKCU:\Environment' }
                 try {
-                    $stored = [Environment]::GetEnvironmentVariable('PATH', $pathScope)
+                    $pathKey = Get-Item -LiteralPath $pathKeyPath
+                    $stored = [string]$pathKey.GetValue('PATH', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
                     if (($stored -split $pathSep) -notcontains $destDir) {
                         $joined = if ([string]::IsNullOrEmpty($stored)) { $destDir } else { $stored.TrimEnd($pathSep) + $pathSep + $destDir }
-                        [Environment]::SetEnvironmentVariable('PATH', $joined, $pathScope)
+                        $storedKind = if ($stored) { $pathKey.GetValueKind('PATH') }
+                        elseif ($joined -match '%') { [Microsoft.Win32.RegistryValueKind]::ExpandString }
+                        else { [Microsoft.Win32.RegistryValueKind]::String }
+                        Set-ItemProperty -LiteralPath $pathKeyPath -Name 'PATH' -Value $joined -Type $storedKind
                     }
                     $env:PATH = $env:PATH.TrimEnd($pathSep) + $pathSep + $destDir
                     Write-Host "[ Added ${destDir} to your ${pathScope} PATH. Open a new shell to pick it up. ]"
@@ -220,22 +441,58 @@ function Install-Gitsby {
     } finally {
         ## LiteralPath, like every other removal in the tree: the temp path is ours, but a bracket
         ## anywhere in it would otherwise be read as a wildcard rather than as a character.
-        if ($tmpDir -and (Test-Path -LiteralPath $tmpDir)) { Remove-Item -LiteralPath $tmpDir -Recurse -Force }
+        ## Only a real folder right under the temp folder, so a link or a stray path goes nowhere.
+        if ($tmpDir -and $tmpDir -notmatch '\.\.' -and (Test-Path -LiteralPath $tmpDir -PathType Container)) {
+            $tmpItem = Get-Item -LiteralPath $tmpDir -Force
+            ## Both spelled by Get-Item, so a short 8.3 temp path compares the same on each side.
+            $tmpRoot = (Get-Item -LiteralPath ([IO.Path]::GetTempPath()) -Force).FullName.TrimEnd('\', '/')
+            if (-not ($tmpItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -and $tmpItem.Parent.FullName.TrimEnd('\', '/') -eq $tmpRoot) {
+                Remove-Item -LiteralPath $tmpDir -Recurse -Force
+            } else { Write-Warning "Left the temp folder in place, since it isn't one this installer made: $tmpDir" }
+        }
     }
 }
 
 # A function, not top-level script text: 'iex' evaluates a top-level param() block in the
 # caller's scope, where [ValidateSet] validates against its own empty default and dies before
 # anything runs - so the documented one-liner never worked. Splatting $args keeps every
-# documented shape binding: -Ref after the scriptblock form, and pwsh -File install.ps1 -Yes.
+# documented shape binding: -Tag after the scriptblock form, and pwsh -File install.ps1 -Yes.
 try {
-    Install-Gitsby @args
+    # '--help' is what the README documents for both installers, and what anyone types out of
+    # habit. PowerShell's binder would only ever report it as a parameter nobody has heard of.
+    if (@($args) | Where-Object { $_ -in '--help', '-h', '/?', '-?' }) { Install-Gitsby -Help }
+    else {
+        # The Bash installer's long options, with the value joined by '=' or apart. In a child
+        # scope, since under iex a variable set at this level is set in the caller's session.
+        & {
+            $named = @{}
+            $rest = @()
+            for ($i = 0; $i -lt $args.Count; $i++) {
+                $word = $args[$i]
+                if ($word -is [string] -and $word -match '^--(target|arch|tag|ref|release)(=(.*))?$') {
+                    $name = $Matches[1]
+                    if ($Matches[2]) { $named[$name] = $Matches[3] }
+                    elseif ($i + 1 -lt $args.Count) { $i++; $named[$name] = [string]$args[$i] }
+                    else { throw "--${name} needs a value." }
+                } elseif ($word -is [string] -and $word -match '^--(system|yes)$') {
+                    $named[$Matches[1]] = $true
+                } else {
+                    $rest += $word
+                }
+            }
+            Install-Gitsby @named @rest
+        } @args
+    }
 } catch {
     # Run from a file: report plainly and exit nonzero, so callers and CI see the failure -
     # a parameter-binding error against @args would otherwise leave the exit code at 0.
     # Evaluated as text (iex / scriptblock): rethrow, because 'exit' would end the session.
+    # A blank line either side, like every other block of output. Rethrown, PowerShell prints
+    # the error itself, so only the line before it is ours.
+    [Console]::Error.WriteLine('')
     if ($PSCommandPath) {
         [Console]::Error.WriteLine("install.ps1: $($_.Exception.Message)")
+        [Console]::Error.WriteLine('')
         exit 1
     }
     throw
@@ -258,8 +515,46 @@ try {
 #   - 20260731 JC: SHA256SUMS is decoded from bytes before it's read. GitHub serves it as
 #     octet-stream, so the response body arrived as a byte array and no checksum was ever
 #     found - the default install path had been unverified since the check was added.
-#   - 20260812 JC: The plan says whether the download will be checked, and on Windows that the
-#     install directory is about to be added to PATH - which it now is. Nothing else on Windows
-#     puts it there, so the install used to finish with a program that could not be run by name.
-#     PATHEXT is deliberately left alone: PowerShell resolves a bare name to a .ps1 on PATH
-#     without it, and it would only affect cmd.exe, which cannot run one regardless.
+#   - 20260819 JC: Installs the binary for this platform, as gitsby.exe on Windows. -Arch is
+#     real (it picks the asset) and -Ref is now -Tag, naming a release rather than any git
+#     ref. -Release is bound only to explain itself. Every route is a release asset now, so
+#     every route is verified and the unverified branch of the plan no longer exists.
+#     SHA256SUMS is fetched before the plan is printed, because it is what says whether this
+#     platform has a binary at all - and it names the ones that do when this one doesn't.
+#   - 20260819 JC: Detection no longer lands back in -Arch and -Tag. Assigning to a parameter
+#     re-runs its own validation, so an x86 box and a malformed scraped tag each died in the
+#     binder instead of reaching the message written for them. PATH is now read raw from the
+#     registry before it is rewritten - the expanded copy would have baked %USERPROFILE%-style
+#     entries in as literals, for good, on a PATH we only meant to append to.
+#   - 20260819 JC: Runs on Windows PowerShell 5.1: the three platform variables get a fallback,
+#     TLS 1.2 is switched on, every web request asks for basic parsing, and the byte read is
+#     spelled the way each version spells it. A fresh Windows box has 5.1 and nothing else, so
+#     the documented one-liner could not work on the machine most likely to be running it.
+#   - 20260819 JC: -Help, and '--help' with it - the README documented an option that did not
+#     exist. The verification step reads $LASTEXITCODE, which nothing did: a native command's
+#     nonzero exit does not trip $ErrorActionPreference, so a binary that would not run at all
+#     was reported as installed. The binary is staged in the destination directory and renamed
+#     over the target, since a move from the system temp is only atomic within one filesystem.
+#   - 20260819 JC: The release fallback is one. Both routes asked releases/latest, which is
+#     defined as the newest release that is NOT a pre-release - so on a repo whose newest
+#     publication is one, the fallback failed exactly as the primary had, and blamed rate
+#     limiting for it.
+#   - 20260915 JC: The latest release is found on Windows PowerShell 5.1. There the redirect
+#     came back as an error with no response, and the list behind it arrived as one item, so
+#     every tag name made one tag. A system install that can't write its folder is refused
+#     before the plan. The comment help lists the options, the Bash installer's long options
+#     work, and a binary that can't start gets the "would not run" message. -Help lists -Ref,
+#     errors have a blank line either side, and the plan says when it replaces a copy.
+#   - 20260928 JC: A tag read from the release redirect gets the same path check as a typed
+#     one. A user install checks it can write its folder before the plan. The binary is
+#     installed 755 whatever the umask. The plan says when it creates the folder, and when it
+#     clears copies an earlier install left behind.
+#   - 20261003 JC: A Mac takes gitsby-darwin-universal, one binary for both CPUs, in place of
+#     one per CPU. -Arch there is noted and changes nothing.
+#   - 20261003 JC: With no -Tag, the newest full release that publishes a gitsby binary, or
+#     while none does, the newest pre-release that does. v2.1.0 publishes only the old
+#     scripts, so until 3.0.0 the install line found nothing to install. releases/latest is
+#     still asked first, and the release list only when its SHA256SUMS names no binary.
+#   - 20261106 JC: The temp folder is removed only when it's a real folder right under the
+#     temp folder, and otherwise left with a warning.
+#   - 20261107 JC: The build-it-yourself message no longer claims there is nothing for go build to fetch.

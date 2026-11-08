@@ -1,0 +1,1517 @@
+// The includeIf ordering, which is the whole reason 'account apply' exists: git
+// takes the LAST rule that matches and gitsby takes the most specific, so the two
+// only agree if the plan runs least specific to most.
+
+// Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
+// Licensed under The MIT License (MIT). Full text at:
+//	https://mit-license.org/
+// SPDX-License-Identifier: MIT
+
+package main
+
+import (
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"runtime"
+	"slices"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	shcl "github.com/yottacore/shcl/source/go/v3"
+)
+
+func planFor(t *testing.T, body string) *config {
+	t.Helper()
+	cfg := writeConfig(t, body)
+	return cfg
+}
+
+func TestAccountApplyPlanOrder(t *testing.T) { // [dbfqf]
+	cfg := planFor(t, driveFixture(`
+account.inner.path = /srv/code/client
+account.outer.path = /srv/code
+account.anywhere.pathContains = a/b
+account.broad.pathContains = b
+`))
+	plan := cfg.accountApplyPlan()
+	var conds []string
+	for _, r := range plan {
+		conds = append(conds, strings.TrimSuffix(strings.TrimPrefix(r.cond, "includeIf.gitdir/i:"), ".path"))
+	}
+	want := []string{"**/b/**", "**/a/b/**", driveRule("/srv/code") + "/", driveRule("/srv/code/client") + "/"}
+	if len(conds) != len(want) {
+		t.Fatalf("plan = %v, want %v", conds, want)
+	}
+	for i := range want {
+		if conds[i] != want[i] {
+			t.Fatalf("plan = %v, want %v", conds, want)
+		}
+	}
+}
+
+// gitsby reads a rule as plain text and git reads an includeIf as a pattern, so
+// 'lit[x]' bound 'litx' in plain git and 'acme-*' bound 'acme-x'.
+func TestAccountApplyPlanEscapesGlobs(t *testing.T) { // [dcnp0]
+	cfg := planFor(t, driveFixture("account.a.path = /srv/lit[x]\naccount.b.pathContains = acme-*/q?\n"))
+	var conds []string
+	for _, r := range cfg.accountApplyPlan() {
+		conds = append(conds, strings.TrimSuffix(strings.TrimPrefix(r.cond, "includeIf.gitdir/i:"), ".path"))
+	}
+	want := []string{`**/acme-\*/q\?/**`, driveRule("/srv/lit") + `\[x]/`}
+	if !slices.Equal(conds, want) {
+		t.Errorf("plan = %q, want %q", conds, want)
+	}
+	if got := globLiteral(`a\b`); got != `a\\b` {
+		t.Errorf("globLiteral(a\\b) = %q", got)
+	}
+}
+
+// Every rule points at the fragment for its own account, beside the config file
+// that declared it.
+func TestAccountApplyPlanTargets(t *testing.T) { // [dbfqg]
+	cfg := planFor(t, driveFixture("account.work.path = /srv/work\n"))
+	plan := cfg.accountApplyPlan()
+	if len(plan) != 1 {
+		t.Fatalf("plan = %v", plan)
+	}
+	if want := cfg.includeDir() + "/github.com_work.gitconfig"; plan[0].target != want {
+		t.Errorf("target = %q, want %q", plan[0].target, want)
+	}
+	if !strings.HasSuffix(cfg.includeDir(), "/accounts") {
+		t.Errorf("includeDir = %q", cfg.includeDir())
+	}
+}
+
+// A fragment is named for the host and the login, so the same login on two hosts
+// gets two files. Sharing both falls back to the account name as well.
+func TestFragmentNames(t *testing.T) { // [ddatd]
+	cfg := planFor(t, `
+account.a.host = gitea.com
+account.a.user = t00mietum
+account.b.ghAccount = t00mietum
+account.c.ghAccount = Ada/../x
+account.d.email = d@example.com
+account.e.ghAccount = shared
+account.f.ghAccount = shared
+`)
+	want := map[string]string{
+		"a": "gitea.com_t00mietum.gitconfig",
+		"b": "github.com_t00mietum.gitconfig",
+		"c": "github.com_ada-..-x.gitconfig",
+		"d": "github.com_d.gitconfig",
+		"e": "github.com_shared_e.gitconfig",
+		"f": "github.com_shared_f.gitconfig",
+	}
+	got := cfg.fragmentNames()
+	for name, file := range want {
+		if got[name] != file {
+			t.Errorf("fragment for %s = %q, want %q", name, got[name], file)
+		}
+	}
+	if len(got) != len(want) {
+		t.Errorf("fragments = %v", got)
+	}
+}
+
+// However the accounts file is named, the fragments go in the folder holding it.
+// Joined with backslashes on Windows, or named with no folder, they went under
+// the file itself and apply refused.
+func TestIncludeDir(t *testing.T) { // [dcnmw]
+	dir := t.TempDir()
+	t.Chdir(dir)
+	want := filepath.ToSlash(dir) + "/accounts"
+	for _, file := range []string{filepath.Join(dir, "wl.shcl"), filepath.ToSlash(dir) + "/wl.shcl", "wl.shcl"} {
+		if got := (&config{file: file}).includeDir(); got != want {
+			t.Errorf("includeDir for %q = %q, want %q", file, got, want)
+		}
+	}
+	root, rootWant := "/wl.shcl", "/accounts"
+	if isWindows() {
+		root, rootWant = `C:\wl.shcl`, "C:/accounts"
+	}
+	if got := (&config{file: root}).includeDir(); got != rootWant {
+		t.Errorf("includeDir for %q = %q, want %q", root, got, rootWant)
+	}
+}
+
+// An account declared by its keys alone has no folder rule, so there is nothing
+// to teach plain git.
+func TestAccountApplyPlanEmptyWithoutFolderRules(t *testing.T) { // [dbfqh]
+	cfg := planFor(t, "account.work.ghAccount = octocat\n")
+	if plan := cfg.accountApplyPlan(); plan != nil {
+		t.Errorf("plan = %v, want none", plan)
+	}
+}
+
+// Least specific first, and equal specificity backwards: gitsby keeps the FIRST
+// rule declared, so that one has to be written LAST for git to keep it too.
+func TestSortIncludesTieBreaks(t *testing.T) { // [dbfqj]
+	list := []includeCandidate{
+		{weight: 2, order: 0, pattern: "/same/", account: "first"},
+		{weight: 1, order: 1, pattern: "/short/", account: "second"},
+		{weight: 2, order: 2, pattern: "/same/", account: "third"},
+	}
+	sortIncludes(list)
+	want := []string{"second", "third", "first"}
+	for i, name := range want {
+		if list[i].account != name {
+			t.Fatalf("sorted = %v, want accounts %v", list, want)
+		}
+	}
+}
+
+// The tie-break that matters: whichever account gitsby resolves a folder to has to
+// be the one git resolves it to, and git takes the last rule written.
+func TestAccountApplyPlanAgreesWithAccountForDir(t *testing.T) { // [dbfsh]
+	cfg := planFor(t, driveFixture(`
+account.abe.path = /srv/shared
+account.zed.path = /srv/shared
+`))
+	plan := cfg.accountApplyPlan()
+	if len(plan) != 2 {
+		t.Fatalf("plan = %v", plan)
+	}
+	lastWins := plan[len(plan)-1].target
+	want := cfg.includeDir() + "/" + cfg.fragmentNames()[cfg.accountForDir(driveFolder("/srv/shared/x"))]
+	if lastWins != want {
+		t.Errorf("git would keep %q, gitsby resolves to %q", lastWins, want)
+	}
+}
+
+// git adds '**' to a pattern that ends in a slash, so the root's pattern is the
+// root itself. Given one more slash, '//' matched no repo while gitsby's own
+// matcher covered them all.
+func TestAccountApplyPlanRootRule(t *testing.T) { // [dd80h]
+	cfg := planFor(t, "account.all.path = "+driveFolder("/")+"\n")
+	plan := cfg.accountApplyPlan()
+	want := "includeIf.gitdir/i:" + driveRule("/") + ".path"
+	if len(plan) != 1 || plan[0].cond != want {
+		t.Fatalf("plan = %v, want one rule %q", plan, want)
+	}
+}
+
+// Two accounts on one folder is a mistake with no right answer, so it gets said
+// out loud rather than settled silently.
+func TestContestedRules(t *testing.T) { // [dbfsj]
+	cfg := planFor(t, driveFixture(`
+account.abe.path = /srv/shared
+account.zed.path = /srv/shared
+account.abe.pathContains = w/x
+account.zed.pathContains = w/x
+account.solo.path = /srv/mine
+`))
+	got := cfg.contestedRules()
+	// Named as the file writes it, not in the lower case it is matched in.
+	want := []string{driveFolder("/srv/shared") + ": abe, zed", "w/x: abe, zed"}
+	if len(got) != len(want) {
+		t.Fatalf("contestedRules = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("contestedRules = %v, want %v", got, want)
+		}
+	}
+}
+
+// What 'account list' says about an account, which is where you go when a command
+// did not act as the one you expected. The host key decides whether any of the
+// credentials below it apply at all, so leaving it off the listing meant the
+// command that always says was silent about the only field that had refused.
+func TestAccountListNamesTheHost(t *testing.T) { // [dbh6x]
+	a := newApp(newPrinter())
+	var buf strings.Builder
+	a.out.out = &buf
+	a.cfg = writeConfig(t, `
+account.gitea.host = git.example.test
+account.gitea.user = giteauser
+account.hub.ghAccount = hublogin
+`)
+	a.showAccount("gitea", false)
+	a.showAccount("hub", false)
+	got := buf.String()
+	for _, want := range []string{
+		"host ....: git.example.test",      // stated
+		"login ...: giteauser",             // the host-neutral login, shown where there is one
+		"host ....: github.com  (default)", // unstated, and marked as the assumption it is
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("account list is missing %q:\n%s", want, got)
+		}
+	}
+	// 'login' is the 'user' key, not a second spelling of the GitHub one - printing it
+	// for an account that never set it would invent a login for every existing config.
+	if strings.Contains(got, "login ...: hublogin") {
+		t.Errorf("the GitHub login was printed as 'login':\n%s", got)
+	}
+}
+
+// The host line is a comparison, so it appears only where there is something to
+// compare. A machine that only ever talks to github.com reads exactly as it did
+// before the key existed - the same rule the Account status line follows, which
+// stays quiet unless an account was explicitly selected.
+func TestAccountListHidesTheHostWithOneGitHost(t *testing.T) { // [dcptz]
+	a := newApp(newPrinter())
+	var buf strings.Builder
+	a.out.out = &buf
+	a.cfg = writeConfig(t, `
+account.work.ghAccount = worklogin
+account.home.ghAccount = homelogin
+`)
+	a.showAccount("work", false)
+	if strings.Contains(buf.String(), "host") {
+		t.Errorf("a single-host config was shown the host key:\n%s", buf.String())
+	}
+}
+
+// A rule prints as the file writes it. The listing used to print the form it was
+// matched in - lower case on Windows, links resolved - so the folder on screen was
+// one nobody had typed, and on Windows a '~' fold spelled home a second way.
+func TestAccountListPrintsRulesAsWritten(t *testing.T) { // [dcq9x]
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, "Dev"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "Linked")
+	linked := filepath.ToSlash(link)
+	if err := madeSymlink(filepath.Join(home, "Dev"), link); err != nil {
+		linked = "" // no symlinks for this user on Windows
+	}
+	body := "account: work\n\tpath: ~/Dev\n\tpath: ${HOME}\\Dev\n\tpath: %UserProfile%/Dev\n\tpathcontains: /Acme/Code/\n\ttokenfile: ~/tok\n\tsshkey: ${HOME}/.ssh/id\n"
+	if linked != "" {
+		body += "\tpath: " + linked + "\n"
+	}
+	a := newApp(newPrinter())
+	var buf strings.Builder
+	a.out.out = &buf
+	a.cfg = writeConfig(t, body)
+	if err := os.WriteFile(filepath.Join(home, "tok"), []byte("t0k"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.showAccount("work", false)
+	got := buf.String()
+	wants := []string{
+		"folder ..: ~/Dev\n",
+		`folder ..: ${HOME}\Dev` + "\n",
+		"folder ..: %UserProfile%/Dev\n",
+		"anywhere : .../Acme/Code/...",
+		"token ...: ~/tok",
+		"ssh key .: ${HOME}/.ssh/id",
+	}
+	if linked != "" {
+		wants = append(wants, "folder ..: "+linked+"\n")
+	}
+	for _, want := range wants {
+		if !strings.Contains(got, want) {
+			t.Errorf("account list is missing %q:\n%s", want, got)
+		}
+	}
+	if len(a.cfg.unknown) != 0 {
+		t.Errorf("every home spelling should be a rule, got ignored: %v", a.cfg.unknown)
+	}
+}
+
+// setApp builds a run pointed at a real accounts file, for the writer below.
+func setApp(t *testing.T, body, name, key, value string) (*app, string) {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "config.shcl")
+	if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := newApp(newPrinter())
+	a.opt.configFile, a.opt.configGiven, a.opt.quiet = file, true, true
+	if err := a.cfg.load(a.opt); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	a.cmd = command{name: "account-set", arg: name, arg2: key, arg3: value, mutating: true}
+	return a, file
+}
+
+func readBack(t *testing.T, file string) string {
+	t.Helper()
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(got)
+}
+
+// A file that isn't there yet is created with a header naming the keys, the one
+// block asked for, and the footer naming the format - and closed to everyone
+// else, since it names accounts and points at token files.
+func TestAccountSetCreatesTheFile(t *testing.T) { // [dbsrx]
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("APPDATA", "")
+	a := newApp(newPrinter())
+	a.opt.quiet = true
+	if err := a.cfg.load(a.opt); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	folder := driveFolder("/srv/work")
+	a.cmd = command{name: "account-set", arg: "work", arg2: "path", arg3: folder, mutating: true}
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	file := defaultConfigFile()
+	got := readBack(t, file)
+	block := "\naccount: work\n\tpath: /srv/work\n"
+	if isWindows() {
+		block = "\naccount: work\n\tpath: \"C:/srv/work\"\n" // the format quotes a drive path
+	}
+	for _, want := range []string{"# " + meName + " accounts", block} {
+		if !strings.Contains(got, want) {
+			t.Errorf("created file is missing %q:\n%s", want, got)
+		}
+	}
+	if !strings.HasSuffix(got, "\n\n"+shcl.GenBanner) {
+		t.Errorf("created file does not end with the format footer:\n%s", got)
+	}
+	if !strings.HasPrefix(got, "#") {
+		t.Errorf("the header is not at the top:\n%s", got)
+	}
+	if fi, err := os.Stat(file); err == nil && !isWindows() && fi.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %v, want 0600", fi.Mode().Perm())
+	}
+	cfg := writeConfig(t, got)
+	if cfg.accountForDir(driveFolder("/srv/work/x")) != "work" {
+		t.Errorf("the created file does not read back: %+v", cfg)
+	}
+}
+
+// One key changes; every other line comes back as it was, spacing included.
+func TestAccountSetReplacesOneKey(t *testing.T) { // [dbsry]
+	body := "# mine\n\naccount: work\n\tpath: /srv/work   # the tree\n\thost: github.com\n\temail: a@b.c\n\n" + shcl.GenBanner
+	a, file := setApp(t, body, "work", "host", "gitea.com")
+	plan, err := a.accountSetPlan()
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if !plan.exists || plan.lineNum != 5 || plan.old != "github.com" {
+		t.Errorf("plan = %+v, want the existing key on line 5", plan)
+	}
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	want := strings.Replace(body, "github.com", "gitea.com", 1)
+	if got := readBack(t, file); got != want {
+		t.Errorf("got:\n%q\nwant:\n%q", got, want)
+	}
+}
+
+// An account in two pieces has its key edited where the key is. Edited in the
+// first piece regardless, the second one's value was still the one read.
+func TestAccountSetFindsTheKeyInAnyPiece(t *testing.T) { // [ddav2]
+	body := "account: tt\n\temail: a@x\n\naccount: TT\n\thost: github.com\n"
+	a, file := setApp(t, body, "tt", "host", "gitea.com")
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if got, want := readBack(t, file), strings.Replace(body, "github.com", "gitea.com", 1); got != want {
+		t.Errorf("got:\n%q\nwant:\n%q", got, want)
+	}
+	body = "account: tt\n\thost: gitea.com\n\naccount: TT\n\thost: github.com\n"
+	a, _ = setApp(t, body, "tt", "host", "codeberg.org")
+	if _, err := a.accountSetPlan(); err == nil || !strings.Contains(err.Error(), "2 times") {
+		t.Errorf("a key in both pieces: err = %v, want a refusal", err)
+	}
+}
+
+// A key the block doesn't have goes on the end of it; an account the file doesn't
+// have gets a block of its own.
+func TestAccountSetAddsKeysAndBlocks(t *testing.T) { // [dbsrz]
+	a, file := setApp(t, "account: work\n\tpath: /srv/work\n", "work", "host", "gitea.com")
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if got, want := readBack(t, file), "account: work\n\tpath: /srv/work\n\thost: gitea.com\n"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	a, file = setApp(t, "account: work\n\tpath: /srv/work\n", "home", "ghaccount", "homelogin")
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if got := readBack(t, file); !strings.Contains(got, "\naccount: home\n\tghaccount: homelogin\n") {
+		t.Errorf("got %q", got)
+	}
+}
+
+// The dotted spelling is what a hand conversion of the old layout produces, and a
+// key set into such an account has to go into that block, not open a second one.
+func TestAccountSetKeepsTheDottedForm(t *testing.T) { // [dbss0]
+	a, file := setApp(t, "account.work.path: /srv/work\n", "work", "host", "gitea.com")
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	got := readBack(t, file)
+	if strings.Count(got, "\twork:\n") != 1 || strings.Contains(got, "account: work") || !strings.Contains(got, "\t\thost: gitea.com\n") {
+		t.Errorf("got %q", got)
+	}
+}
+
+// A file in the old layout is rewritten in the current one on its first edit,
+// comments and all. The mark a Windows editor wrote and its line endings go, since
+// the module writes one shape.
+func TestAccountSetConvertsAFlatFile(t *testing.T) { // [dbss1]
+	body := utf8BOM + "# mine\r\naccount.work.path = C:/work   # tree\r\naccount.work.ghAccount = \"a#b\"\r\nprotocol = https\r\n"
+	a, file := setApp(t, body, "work", "host", "gitea.com")
+	plan, err := a.accountSetPlan()
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	// Off since 2026-11-07: a whole v2.1.0 file is converted on read now, so the
+	// plan has nothing left to convert.
+	// if !plan.converts || plan.exists {
+	if plan.exists {
+		t.Errorf("plan = %+v, want a conversion adding a key", plan)
+	}
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	got := readBack(t, file)
+	if strings.Contains(got, utf8BOM) || strings.Contains(got, "\r") || strings.Contains(got, " = ") {
+		t.Errorf("the old layout is still in there: %q", got)
+	}
+	for _, want := range []string{"# mine\n\naccount: work\n", "  # tree\n", "\thost: gitea.com\n", "\nprotocol: https\n", shcl.GenBanner} {
+		if !strings.Contains(got, want) {
+			t.Errorf("converted file is missing %q:\n%s", want, got)
+		}
+	}
+	cfg := writeConfig(t, got)
+	if cfg.flat || cfg.value("work", "host") != "gitea.com" || cfg.value("work", "ghAccount") != "a#b" || cfg.values["protocol"] != "https" {
+		t.Errorf("read back wrong: %+v", cfg.values)
+	}
+	// A drive path is a folder on Windows alone; anywhere else it is listed as ignored.
+	if isWindows() {
+		if got := cfg.foldersOf("work"); len(got) != 1 || got[0] != "c:/work" {
+			t.Errorf("folders = %v", got)
+		}
+		return
+	}
+	if got := cfg.foldersOf("work"); len(got) != 0 {
+		t.Errorf("folders = %v, want none off Windows", got)
+	}
+	if want := "account[work].path (not an absolute folder: C:/work)"; !slices.Contains(cfg.unknown, want) {
+		t.Errorf("unknown = %q, missing %q", cfg.unknown, want)
+	}
+}
+
+// A relative path on the command line means the folder the command runs in, as
+// it does for any command. The file can never say that later, so it is written
+// absolute, and the plan shows that value.
+func TestAccountSetResolvesARelativePath(t *testing.T) { // [dcmf5]
+	t.Setenv("HOME", t.TempDir())
+	dir := t.TempDir()
+	t.Chdir(dir)
+	want, err := filepath.Abs(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = filepath.ToSlash(want)
+	abs := filepath.ToSlash(t.TempDir())
+	cases := map[string]string{
+		".":      want,
+		"sub/..": want,
+		"sub":    want + "/sub",
+		"~/dev":  "~/dev",
+		abs:      abs,
+		"":       "",
+	}
+	for in, out := range cases {
+		a, _ := setApp(t, "", "work", "path", in)
+		plan, err := a.accountSetPlan()
+		if err != nil {
+			t.Errorf("plan for %q: %v", in, err)
+			continue
+		}
+		if plan.value != out {
+			t.Errorf("plan for %q writes %q, want %q", in, plan.value, out)
+		}
+	}
+	a, file := setApp(t, "", "work", "path", ".")
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if got := readBack(t, file); !strings.Contains(got, "path: "+shclValue(want)) {
+		t.Errorf("file does not hold the absolute folder %q:\n%s", want, got)
+	}
+}
+
+// gitsby expands only a bare '~' and git expands another user's too, so the two
+// would read such a rule differently. Refused before anything is written.
+func TestAccountSetRefusesAnotherUsersHome(t *testing.T) { // [dcmf6]
+	body := "account: work\n\temail: w@example.com\n"
+	a, file := setApp(t, body, "work", "path", "~nobody/x")
+	if err := a.cmdAccountSet(); err == nil || !strings.Contains(err.Error(), "another user's home folder") {
+		t.Errorf("err = %v, want a refusal naming another user's home folder", err)
+	}
+	if got := readBack(t, file); got != body {
+		t.Errorf("file changed:\n%s", got)
+	}
+	if isWindows() {
+		return
+	}
+	t.Setenv("HOME", "")
+	a, file = setApp(t, body, "work", "path", "~/x")
+	if err := a.cmdAccountSet(); err == nil || !strings.Contains(err.Error(), "this machine names none") {
+		t.Errorf("err = %v, want a refusal naming no home folder", err)
+	}
+	if got := readBack(t, file); got != body {
+		t.Errorf("file changed:\n%s", got)
+	}
+}
+
+func TestManagedIncludePattern(t *testing.T) { // [dcmf7]
+	cases := []struct {
+		key, want string
+		ok        bool
+	}{
+		{"includeIf.gitdir/i:./.path", "./", true},
+		{"includeIf.gitdir:dev/work/.path", "dev/work/", true},
+		{"includeIf.gitdir/i:**/a/b/**.path", "**/a/b/**", true},
+		{"includeIf.gitdir/i:/srv/a.b/.path", "/srv/a.b/", true},
+		{"includeif.GITDIR/I:/Srv/X/.PATH", "/Srv/X/", true},
+		{"includeIf.onbranch:main.path", "", false},
+	}
+	for _, tc := range cases {
+		got, ok := managedIncludePattern(tc.key)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("managedIncludePattern(%q) = %q, %v; want %q, %v", tc.key, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
+// 'path' is repeatable by design and any key can be in there twice by accident.
+// Replacing the first and leaving the rest looks like it worked and changes
+// nothing that is read. Both layouts.
+func TestAccountSetRefusesADuplicatedKey(t *testing.T) { // [dbhg7]
+	for _, body := range []string{"account.work.path = /a\naccount.work.path = /b\n", "account: work\n\tpath: /a\n\tpath: /b\n"} {
+		a, _ := setApp(t, body, "work", "path", "/c")
+		if err := a.cmdAccountSet(); err == nil {
+			t.Errorf("a key present twice was written anyway: %q", body)
+		}
+	}
+}
+
+// A key the loader ignores, written past this command, lands in the file and is
+// dropped on every read: the file says one thing and every command does another.
+func TestAccountSetRefusesAKeyNothingReads(t *testing.T) { // [dbhg8]
+	a, _ := setApp(t, "account: work\n\tpath: /a\n", "work", "hostname", "gitea.com")
+	if err := a.cmdAccountSet(); err == nil {
+		t.Error("an unread key was accepted")
+	}
+}
+
+// The syntax block nests two spaces a level. The suite matches its text with no
+// anchor on the leading spaces, so a flat wall of indent would still pass there.
+func TestAccountSetUsageNests(t *testing.T) { // [dd5g6]
+	depths := []struct {
+		prefix string
+		want   int
+	}{
+		{"Syntax:", 0},
+		{"Writes '<key>", 2},
+		{"<account>", 4},
+		{"<key>", 4},
+		{"<value>", 4},
+		{"Examples:", 2},
+		{"Bind an account", 4},
+		{"Or by a run", 4},
+		{meName + " account set ", 6},
+	}
+	seen := map[string]int{}
+	for _, line := range strings.Split(accountSetUsage().Error(), "\n") {
+		text := strings.TrimLeft(line, " ")
+		got, want, prefix := len(line)-len(text), 15, "" // unmatched is the key list, under the description column
+		for _, d := range depths {
+			if strings.HasPrefix(text, d.prefix) {
+				want, prefix = d.want, d.prefix
+				break
+			}
+		}
+		seen[prefix]++
+		if got != want {
+			t.Errorf("%q is indented %d, want %d", line, got, want)
+		}
+	}
+	for _, d := range depths {
+		if seen[d.prefix] == 0 {
+			t.Errorf("no line starts %q", d.prefix)
+		}
+	}
+	if seen[meName+" account set "] != 3 || seen[""] == 0 {
+		t.Errorf("example and key-list line counts = %v", seen)
+	}
+}
+
+// 'host' and 'user' are interpolated into the credential helper, which git hands
+// to a shell. The loader drops one carrying a shell character; refusing to WRITE
+// it is what stops the file and the behavior disagreeing.
+func TestAccountSetRefusesAShellCharacterInHost(t *testing.T) { // [dbhg9]
+	a, _ := setApp(t, "account: work\n\tpath: /a\n", "work", "host", "gitea.com; id")
+	if err := a.cmdAccountSet(); err == nil {
+		t.Error("a shell character reached the file")
+	}
+}
+
+// The casing typed is not the casing written: the format folds key names to lower
+// case, so that is the spelling every file settles on.
+func TestAccountSetWritesTheDocumentedSpelling(t *testing.T) { // [dbhga]
+	a, file := setApp(t, "account: work\n\tpath: /a\n", "WORK", "TOKENFILE", "/t")
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if got := readBack(t, file); !strings.Contains(got, "\ttokenfile: /t\n") {
+		t.Errorf("got %q", got)
+	}
+}
+
+// A value carrying ' #' is a comment from that point on when it is read back, so
+// it has to go in quoted or the account silently gets a truncated value.
+func TestAccountSetQuotesAValueThatWouldBeReparsed(t *testing.T) { // [dbhgb]
+	a, file := setApp(t, "account: work\n\tpath: /a\n", "work", "name", "Ada #1")
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	got := readBack(t, file)
+	if !strings.Contains(got, "\tname: \"Ada #1\"\n") {
+		t.Fatalf("got %q", got)
+	}
+	// The round trip is the actual claim: it has to read back as what was typed.
+	cfg := writeConfig(t, got)
+	if cfg.value("work", "name") != "Ada #1" {
+		t.Errorf("read back as %q", cfg.value("work", "name"))
+	}
+}
+
+const keptBody = "account: work\n\tghaccount: keepme\n"
+
+// createApp is a run with no accounts file anywhere it looks, about to create one.
+// Nothing is loaded, so a test can put something in the way first.
+func createApp(t *testing.T, out *printer) *app {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("APPDATA", "")
+	t.Setenv("GITSBY_CONFIG", "")
+	a := newApp(out)
+	a.opt.quiet = true
+	a.cmd = command{name: "account-set", arg: "work", arg2: "email", arg3: "x@example.com", mutating: true}
+	return a
+}
+
+// putDefaultConfig writes body where a new accounts file would go.
+func putDefaultConfig(t *testing.T, body string) string {
+	t.Helper()
+	file := defaultConfigFile()
+	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return file
+}
+
+// The create opens so it cannot replace anything: a file already there keeps every
+// byte, and a missing one is made 0600 with the text in it.
+func TestCreateAccountsFileNeverReplaces(t *testing.T) { // [dcmjt]
+	file := filepath.Join(t.TempDir(), "config.shcl")
+	if err := os.WriteFile(file, []byte(keptBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	opened, err := createNew(file, "new", 0o600)
+	if opened || !errors.Is(err, fs.ErrExist) {
+		t.Errorf("over a file: opened = %v, err = %v, want not opened and an exists error", opened, err)
+	}
+	if got := readBack(t, file); got != keptBody {
+		t.Errorf("the file already there changed:\n%q", got)
+	}
+	fresh := filepath.Join(t.TempDir(), "fresh.shcl")
+	if opened, err = createNew(fresh, "new", 0o600); !opened || err != nil {
+		t.Errorf("where nothing is: opened = %v, err = %v, want opened and no error", opened, err)
+	}
+	if got := readBack(t, fresh); got != "new" {
+		t.Errorf("created file holds %q, want %q", got, "new")
+	}
+	if fi, err := os.Stat(fresh); err == nil && !isWindows() && fi.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %v, want 0600", fi.Mode().Perm())
+	}
+}
+
+// The item's case: a discovered file this user can write and can't read. Reads
+// pass over it, and the create refuses by name instead of truncating it.
+func TestAccountSetRefusesAnUnreadableFile(t *testing.T) { // [dcmjv]
+	if isWindows() || os.Geteuid() == 0 {
+		t.Skip("needs a file this user can't read: Windows has no 0200, and root reads through one")
+	}
+	a := createApp(t, newPrinter())
+	file := putDefaultConfig(t, keptBody)
+	if err := os.Chmod(file, 0o200); err != nil {
+		t.Fatal(err)
+	}
+	// Put back so nothing left over is unreadable; a failed restore changes no result.
+	t.Cleanup(func() { _ = os.Chmod(file, 0o600) })
+	if err := a.cfg.load(a.opt); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if a.cfg.file != "" {
+		t.Errorf("reads took up the unreadable file: %q", a.cfg.file)
+	}
+	if _, err := a.accountSetPlan(); err == nil || !strings.HasPrefix(err.Error(), "An accounts file is already there, and it can't be read.") {
+		t.Errorf("plan: err = %v, want the unreadable refusal", err)
+	}
+	err := a.cmdAccountSet()
+	if err == nil {
+		t.Fatal("set: no refusal")
+	}
+	for _, want := range []string{"File: " + nativePath(file), "permission denied", "Kept: Nothing was written.", "chmod u+r '" + file + "'"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal is missing %q:\n%s", want, err)
+		}
+	}
+	if err := os.Chmod(file, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := readBack(t, file); got != keptBody {
+		t.Errorf("the unreadable file changed:\n%q", got)
+	}
+}
+
+// A place reads look in that can't be looked in may hold an accounts file, and a
+// new one ahead of it would hide it from every later command.
+func TestAccountSetRefusesAPlaceItCantLookIn(t *testing.T) { // [dcmpn]
+	if isWindows() || os.Geteuid() == 0 {
+		t.Skip("needs a folder this user can't search: Windows has no mode bits for it, and root searches through one")
+	}
+	a := createApp(t, newPrinter())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	c := configCandidates()
+	if len(c) < 2 {
+		t.Skip("this platform looks in one place only")
+	}
+	hidden := c[1]
+	dir := filepath.Dir(hidden)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(hidden, []byte(keptBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	if err := a.cfg.load(a.opt); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	err := a.cmdAccountSet()
+	if err == nil {
+		t.Fatal("set: no refusal")
+	}
+	for _, want := range []string{"File: " + nativePath(hidden), "permission denied", "Kept: Nothing was written.", "chmod u+x '" + dir + "'"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal is missing %q:\n%s", want, err)
+		}
+	}
+	if _, err := os.Lstat(c[0]); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("a file was made ahead of it: %v", err)
+	}
+}
+
+// A file that opens and then fails to read. Named, it is refused like one that
+// won't open. Found, reads pass over it and 'account set' refuses it. It was
+// recorded before the read, and the edit then worked from no document at all.
+func TestConfigThatFailsToRead(t *testing.T) { // [dcmpp]
+	const mem = "/proc/self/mem"
+	if !isRegularFile(mem) {
+		t.Skip("needs a file that opens and then fails to read, which " + mem + " is on Linux")
+	}
+	named := createApp(t, newPrinter())
+	t.Setenv("GITSBY_CONFIG", mem)
+	if err := named.cfg.load(named.opt); err == nil || !strings.Contains(err.Error(), "can't be read") {
+		t.Errorf("named: load err = %v, want the can't-be-read refusal", err)
+	}
+	found := createApp(t, newPrinter())
+	file := defaultConfigFile()
+	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := madeSymlink(mem, file); err != nil {
+		t.Skipf("no symlink here: %v", err)
+	}
+	if err := found.cfg.load(found.opt); err != nil {
+		t.Fatalf("found: load: %v", err)
+	}
+	if found.cfg.file != "" {
+		t.Fatalf("reads took up a file that fails to read: %q", found.cfg.file)
+	}
+	if _, err := found.accountSetPlan(); err == nil || !strings.HasPrefix(err.Error(), "An accounts file is already there, and it can't be read.") {
+		t.Errorf("found: plan err = %v, want the unreadable refusal", err)
+	}
+}
+
+// A file that arrives between the load and the write is refused and kept, not
+// replaced by the one this run planned from nothing.
+func TestAccountSetRefusesAFileThatAppeared(t *testing.T) { // [dcmjw]
+	a := createApp(t, newPrinter())
+	if err := a.cfg.load(a.opt); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	file := putDefaultConfig(t, keptBody)
+	if err := a.cmdAccountSet(); err == nil || !strings.Contains(err.Error(), "turned up while this ran") {
+		t.Errorf("set: err = %v, want the turned-up refusal", err)
+	}
+	if got := readBack(t, file); got != keptBody {
+		t.Errorf("the file that turned up changed:\n%q", got)
+	}
+}
+
+// A link to a missing file is refused, and nothing is made where it points: that
+// is often a synced or unmounted folder that will come back.
+func TestAccountSetRefusesALinkToNothing(t *testing.T) { // [dcmjx]
+	a := createApp(t, newPrinter())
+	file := defaultConfigFile()
+	target := filepath.Join(homeDir(), "dot", "config.shcl")
+	for _, dir := range []string{filepath.Dir(file), filepath.Dir(target)} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := madeSymlink(target, file); err != nil {
+		t.Skipf("no symlink here: %v", err)
+	}
+	if err := a.cfg.load(a.opt); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	err := a.cmdAccountSet()
+	if err == nil {
+		t.Fatal("set: no refusal")
+	}
+	for _, want := range []string{"is a link to something that isn't there", "Link: "} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal is missing %q:\n%s", want, err)
+		}
+	}
+	if _, err := os.Lstat(target); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("something was made where the link points: %v", err)
+	}
+}
+
+// A folder where the file goes is named as a folder, not blamed on permissions.
+func TestAccountSetRefusesSomethingElseInTheWay(t *testing.T) { // [dcmjy]
+	a := createApp(t, newPrinter())
+	if err := os.MkdirAll(defaultConfigFile(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.cfg.load(a.opt); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	_, err := a.accountSetPlan()
+	if err == nil {
+		t.Fatal("plan: no refusal")
+	}
+	for _, want := range []string{"isn't a file", "It is a folder"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal is missing %q:\n%s", want, err)
+		}
+	}
+}
+
+func TestUnreadableFix(t *testing.T) { // [dcmjz]
+	tests := []struct {
+		goos, file string
+		cause      error
+		want       []string
+	}{
+		{"linux", "/h/c.shcl", fs.ErrPermission, []string{"Make it readable, then run this again:", "  chmod u+r '/h/c.shcl'"}},
+		{"linux", "/h/it's.shcl", fs.ErrPermission, []string{"Make it readable, then run this again."}},
+		{"windows", "C:/c.shcl", fs.ErrPermission, []string{"Give your account read access to it, then run this again."}},
+		{"linux", "/h/c.shcl", errors.New("input/output error"), []string{"Run this again once it can be read."}},
+	}
+	for _, tt := range tests {
+		if got := unreadableFix(tt.goos, tt.file, tt.cause); !slices.Equal(got, tt.want) {
+			t.Errorf("unreadableFix(%q, %q, %v) = %q, want %q", tt.goos, tt.file, tt.cause, got, tt.want)
+		}
+	}
+}
+
+// A refusal comes out of preflight, ahead of the plan and the prompt, and nothing
+// is left for the plan to show.
+func TestAccountSetRefusesBeforeThePlan(t *testing.T) { // [dcnrn]
+	for _, tc := range []struct{ body, key, value, want string }{
+		{keptBody, "protocol", "git", "isn't a protocol gitsby uses"},
+		{keptBody, "host", "a b", "isn't a plain host name"},
+		{"account: work\n\tpath: /a\n\tpath: /b\n", "path", driveFolder("/c"), "Edit it by hand"},
+	} {
+		a, _ := setApp(t, tc.body, "work", tc.key, tc.value)
+		err := a.preflight()
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s %s: preflight err = %v, want %q", tc.key, tc.value, err, tc.want)
+		}
+		if a.set != nil {
+			t.Errorf("%s %s: a refused plan was kept", tc.key, tc.value)
+		}
+	}
+}
+
+// The save keeps every line it didn't edit, however it was typed. The plan says
+// when it can't, which is when the module writes the whole file in its own layout.
+func TestAccountSetPlanSaysWhenTheFileIsReshaped(t *testing.T) { // [dcnrp]
+	canon := "account: work\n\thost: github.com\n"
+	for _, tc := range []struct {
+		name, body string
+		want       bool
+	}{
+		{"canonical", canon, false},
+		{"spaces", "account: work\n    host: github.com\n", false},
+		{"key case", "account: work\n\tHost: github.com\n", false},
+		{"line ends", "account: work\r\n\thost: github.com\r\n", false},
+		{"mark", utf8BOM + canon, false},
+		{"comment spacing", "account: work\n\thost: github.com    # old\n", false},
+		// A key added under a dotted line is one the module can't keep lines for.
+		{"dotted, added", "account.work.email: a@b.c\n", true},
+		{"dotted, changed", "account.work.host: github.com\n", false},
+	} {
+		p, out, _ := testPrinter()
+		a, file := setApp(t, tc.body, "work", "host", "gitea.com")
+		a.out = p
+		if err := a.preflight(); err != nil {
+			t.Fatalf("%s: preflight: %v", tc.name, err)
+		}
+		if a.set.reshapes != tc.want {
+			t.Errorf("%s: reshapes = %v, want %v", tc.name, a.set.reshapes, tc.want)
+		}
+		a.preview("account-set")
+		if got := strings.Contains(out.String(), "also:    the rest of the file"); got != tc.want {
+			t.Errorf("%s: plan line shown = %v, want %v:\n%s", tc.name, got, tc.want, out)
+		}
+		if err := a.cmdAccountSet(); err != nil {
+			t.Fatalf("%s: set: %v", tc.name, err)
+		}
+		got := readBack(t, file)
+		if want := strings.Replace(tc.body, "github.com", "gitea.com", 1); !tc.want && got != want {
+			t.Errorf("%s: got:\n%q\nwant:\n%q", tc.name, got, want)
+		}
+		if tc.want && got != "account:\n\twork:\n\t\temail: a@b.c\n\t\thost: gitea.com\n" {
+			t.Errorf("%s: got:\n%q", tc.name, got)
+		}
+	}
+}
+
+// A line the read dropped comes back as it was when the edit keeps the rest of
+// the file. An edit that rewrites the file would lose it, and that is refused
+// ahead of the plan.
+func TestAccountSetKeepsALineItCouldntRead(t *testing.T) { // [ddcbm]
+	body := "account: work\n\temail: a@x\n* stray\naccount: home\n\temail: h@x\n\tname: H\n"
+	a, file := setApp(t, body, "home", "email", "n@x")
+	if err := a.preflight(); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	if a.set.reshapes {
+		t.Errorf("plan says the file is reshaped")
+	}
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if got, want := readBack(t, file), strings.Replace(body, "h@x", "n@x", 1); got != want {
+		t.Errorf("got:\n%q\nwant:\n%q", got, want)
+	}
+
+	a, file = unsetApp(t, body, "home", "name")
+	plan, done, err := a.accountUnsetPlan()
+	if err != nil || done {
+		t.Fatalf("unset plan: done = %v, err = %v", done, err)
+	}
+	a.set = &plan
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("unset: %v", err)
+	}
+	if got, want := readBack(t, file), strings.Replace(body, "\tname: H\n", "", 1); got != want {
+		t.Errorf("unset got:\n%q\nwant:\n%q", got, want)
+	}
+
+	// A key added under a dotted line rewrites the file, and the rewrite keeps a
+	// line it couldn't read. One past the depth cap it can't keep, so that's refused.
+	a, file = setApp(t, "account.work.email: a@x\n* stray\n", "work", "name", "N")
+	if err := a.preflight(); err != nil || !a.set.reshapes {
+		t.Fatalf("rewrite over a kept line: err = %v, reshapes = %v", err, a.set.reshapes)
+	}
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("rewrite over a kept line: %v", err)
+	}
+	if got := readBack(t, file); !strings.Contains(got, "\n* stray\n") || !strings.Contains(got, "name: N") {
+		t.Errorf("rewrite over a kept line:\n%q", got)
+	}
+	deep := "account.work.email: a@x\nd:\n"
+	for i := 1; i <= shcl.MaxDepth+1; i++ {
+		deep += strings.Repeat("\t", i) + "d:\n"
+	}
+	a, file = setApp(t, deep, "work", "name", "N")
+	if err := a.preflight(); err == nil || !strings.Contains(err.Error(), "Edit it by hand") {
+		t.Errorf("rewrite over a lost line: err = %v", err)
+	}
+	if got := readBack(t, file); got != deep {
+		t.Errorf("refused edit changed the file:\n%q", got)
+	}
+}
+
+// protocol takes the two values gitsby acts on, in any case, and writes them lower.
+func TestAccountSetProtocol(t *testing.T) { // [dcnrq]
+	a, file := setApp(t, keptBody, "work", "protocol", "SSH")
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if got := readBack(t, file); !strings.Contains(got, "\tprotocol: ssh\n") {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestLookupFix(t *testing.T) { // [dcmpq]
+	tests := []struct {
+		goos, file string
+		cause      error
+		want       string
+	}{
+		{"linux", "/h/c.shcl", errors.New("input/output error"), "Run this again once it can be looked up."},
+		{"windows", "C:/h/c.shcl", fs.ErrPermission, "Give your account access to the folder it is in, then run this again."},
+		{"linux", "/h/it's/c.shcl", fs.ErrPermission, "Make the folder it is in searchable, then run this again."},
+		{"linux", "/nonexistent-top/h/c.shcl", fs.ErrPermission, "Make the folders above it searchable, then run this again."},
+	}
+	for _, tc := range tests {
+		if got := lookupFix(tc.goos, tc.file, tc.cause); len(got) != 1 || got[0] != tc.want {
+			t.Errorf("lookupFix(%s, %s, %v) = %q, want %q", tc.goos, tc.file, tc.cause, got, tc.want)
+		}
+	}
+}
+
+// The item's case: two edits of one file at once, each saving the file whole. A
+// run that says it wrote keeps its key, and at most one of the two refuses.
+func TestAccountSetKeepsBothOfTwoEditsAtOnce(t *testing.T) { // [dcnk9]
+	for try := range 20 {
+		first, file := setApp(t, keptBody, "work", "email", "x@example.com")
+		second := newApp(newPrinter())
+		second.opt = first.opt
+		if err := second.cfg.load(second.opt); err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		second.cmd = command{name: "account-set", arg: "work", arg2: "name", arg3: "Ada", mutating: true}
+		errs := make([]error, 2)
+		var wg sync.WaitGroup
+		for i, a := range []*app{first, second} {
+			wg.Go(func() { errs[i] = a.cmdAccountSet() })
+		}
+		wg.Wait()
+		got := readBack(t, file)
+		if errs[0] != nil && errs[1] != nil {
+			t.Fatalf("try %d: both refused: %v; %v", try, errs[0], errs[1])
+		}
+		for i, want := range []string{"email: x@example.com", "name: Ada"} {
+			switch {
+			case errs[i] == nil && !strings.Contains(got, want):
+				t.Fatalf("try %d: a run wrote %q and the file lacks it:\n%s", try, want, got)
+			case errs[i] != nil && !strings.HasPrefix(errs[i].Error(), "The accounts file changed while this ran."):
+				t.Fatalf("try %d: err = %v, want the changed refusal", try, errs[i])
+			}
+		}
+	}
+}
+
+// A file written after the load is refused and kept, not saved over with what the
+// plan read. The lock goes with the run.
+func TestAccountSetRefusesAFileThatChanged(t *testing.T) { // [dcnka]
+	a, file := setApp(t, keptBody, "work", "email", "x@example.com")
+	const since = "account: work\n\tghaccount: keepme\n\tname: Ada\n"
+	if err := os.WriteFile(file, []byte(since), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := a.cmdAccountSet()
+	if err == nil {
+		t.Fatal("set: no refusal")
+	}
+	for _, want := range []string{"The accounts file changed while this ran.", "File: " + nativePath(file), "Kept: Nothing was written."} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal is missing %q:\n%s", want, err)
+		}
+	}
+	if got := readBack(t, file); got != since {
+		t.Errorf("the changed file was saved over:\n%q", got)
+	}
+	if _, err := os.Lstat(file + ".lock"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the lock was left behind: %v", err)
+	}
+}
+
+// A held lock is waited on and then refused by name. Unlocking removes this run's
+// own lock, and leaves alone one another run made in its place.
+func TestLockAccountsFile(t *testing.T) { // [dcnkb]
+	file := filepath.Join(t.TempDir(), "config.shcl")
+	lock := file + ".lock"
+	unlock, err := lockAccountsFile(file, 0)
+	if err != nil {
+		t.Fatalf("lock: %v", err)
+	}
+	if _, err := lockAccountsFile(file, 60*time.Millisecond); err == nil || !strings.Contains(err.Error(), "Lock: "+nativePath(lock)) {
+		t.Errorf("second lock: err = %v, want the refusal naming the lock", err)
+	}
+	unlock()
+	if _, err := os.Lstat(lock); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("unlock left the lock: %v", err)
+	}
+	if unlock, err = lockAccountsFile(file, 0); err != nil {
+		t.Fatalf("relock: %v", err)
+	}
+	if err := os.Remove(lock); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+	if _, err := os.Lstat(lock); err != nil {
+		t.Errorf("unlock removed a lock it didn't make: %v", err)
+	}
+}
+
+// Another run's lock can keep the device and inode ours had, as on UFS, where a
+// freed inode number goes straight to the next new file. Writing over ours in
+// place gives the same on any filesystem.
+func TestUnlockLeavesALockInItsInode(t *testing.T) { // [ddgnj]
+	lock := filepath.Join(t.TempDir(), "config.shcl") + ".lock"
+	unlock, err := lockAccountsFile(strings.TrimSuffix(lock, ".lock"), 0)
+	if err != nil {
+		t.Fatalf("lock: %v", err)
+	}
+	before, err := os.Lstat(lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Lstat(lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(before, after) {
+		t.Fatal("the lock written over lost its identity, so this tests nothing")
+	}
+	unlock()
+	if _, err := os.Lstat(lock); err != nil {
+		t.Errorf("unlock removed a lock it didn't make: %v", err)
+	}
+}
+
+func TestLockFix(t *testing.T) { // [dcnkc]
+	tests := []struct {
+		goos, lock string
+		want       []string
+	}{
+		{"linux", "/h/c.shcl.lock", []string{"If no other gitsby is running, a run that was stopped left it behind. Remove it, then run this again:", "  rm '/h/c.shcl.lock'"}},
+		{"windows", "C:/h/c.shcl.lock", []string{"If no other gitsby is running, a run that was stopped left it behind. Remove it, then run this again."}},
+		{"linux", "/h/it's/c.shcl.lock", []string{"If no other gitsby is running, a run that was stopped left it behind. Remove it, then run this again."}},
+	}
+	for _, tc := range tests {
+		if got := lockFix(tc.goos, tc.lock); !slices.Equal(got, tc.want) {
+			t.Errorf("lockFix(%s, %s) = %q, want %q", tc.goos, tc.lock, got, tc.want)
+		}
+	}
+}
+
+// Every variable set here decides which account the rest of the run acts as, so
+// one that can't be set stops the run rather than leaving half an account applied.
+// A NUL byte is a value no process environment can hold.
+func TestSettingTheAccountEnvStopsOnFailure(t *testing.T) { // [dd5g7]
+	for _, name := range []string{"GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GITSBY_TEST_ENV"} {
+		t.Setenv(name, "")
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var ue *usageError
+	if err := setEnv("GITSBY_TEST_ENV", "a\x00b"); !errors.As(err, &ue) || !strings.Contains(err.Error(), "Couldn't set GITSBY_TEST_ENV") {
+		t.Errorf("setEnv with a NUL = %v, want a usage error naming it", err)
+	}
+	if err := gitConfigEnv("user.name", "a\x00b"); err == nil {
+		t.Error("gitConfigEnv with a NUL went on as if it had worked")
+	}
+	if count, set := os.LookupEnv("GIT_CONFIG_COUNT"); set {
+		t.Errorf("GIT_CONFIG_COUNT = %q after its value failed to set, so git reads a half-written entry", count)
+	}
+}
+
+// unsetApp is setApp for 'account unset': a run pointed at a real accounts file.
+func unsetApp(t *testing.T, body, name, key string) (*app, string) {
+	t.Helper()
+	a, file := setApp(t, body, name, key, "")
+	a.cmd = command{name: "account-unset", arg: name, arg2: key, mutating: true}
+	return a, file
+}
+
+// Every line of the key goes, a repeated one included, and every other line of the
+// file stays as typed: its spacing, its comments, the other block's key of the same
+// name. A blank line above a removed one goes with it.
+func TestAccountUnsetRemovesEveryLine(t *testing.T) { // [dd83g]
+	body := "# mine\naccount: work\n    email: a@x   # trailing\n    path: /srv/w\n\n    path: /srv/w2\naccount: home\n    path: /srv/h\n"
+	a, file := unsetApp(t, body, "Work", "PATH")
+	plan, done, err := a.accountUnsetPlan()
+	if err != nil || done {
+		t.Fatalf("plan: done = %v, err = %v", done, err)
+	}
+	want := []goneLine{{4, "path: /srv/w"}, {6, "path: /srv/w2"}}
+	if !slices.Equal(plan.gone, want) || plan.reshapes {
+		t.Errorf("plan: gone = %v, reshapes = %v; want %v and no reshape", plan.gone, plan.reshapes, want)
+	}
+	a.set = &plan
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("unset: %v", err)
+	}
+	if got := readBack(t, file); got != "# mine\naccount: work\n    email: a@x   # trailing\naccount: home\n    path: /srv/h\n" {
+		t.Errorf("file after unset:\n%s", got)
+	}
+}
+
+// A key nothing reads can go where the block has one, which is how the listing's
+// ignored line gets cleared. One the block lacks is refused, so a typo on the
+// command line isn't answered with "nothing to do".
+func TestAccountUnsetTakesAKeyNothingReads(t *testing.T) { // [dd83h]
+	body := "account: work\n\temial: a@x\n\temail: b@x\n"
+	a, file := unsetApp(t, body, "work", "emial")
+	plan, done, err := a.accountUnsetPlan()
+	if err != nil || done || len(plan.gone) != 1 {
+		t.Fatalf("plan: gone = %v, done = %v, err = %v", plan.gone, done, err)
+	}
+	a.set = &plan
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("unset: %v", err)
+	}
+	if got := readBack(t, file); got != "account: work\n\temail: b@x\n" {
+		t.Errorf("file after unset:\n%s", got)
+	}
+	a, _ = unsetApp(t, body, "work", "emali")
+	if _, _, err := a.accountUnsetPlan(); err == nil || !strings.Contains(err.Error(), "has no such line") {
+		t.Errorf("an unknown key the block lacks: err = %v, want a refusal", err)
+	}
+}
+
+// Nothing to take out is a finished run, not a refusal, and the file is left alone.
+func TestAccountUnsetNothingToDo(t *testing.T) { // [dd83j]
+	for _, tc := range []struct{ name, key string }{{"work", "host"}, {"wrok", "email"}} {
+		a, file := unsetApp(t, keptBody, tc.name, tc.key)
+		if _, done, err := a.accountUnsetPlan(); !done || err != nil {
+			t.Errorf("%s %s: done = %v, err = %v; want done", tc.name, tc.key, done, err)
+		}
+		if got := readBack(t, file); got != keptBody {
+			t.Errorf("%s %s: the file changed:\n%s", tc.name, tc.key, got)
+		}
+	}
+	a := createApp(t, newPrinter())
+	a.cmd = command{name: "account-unset", arg: "work", arg2: "email", mutating: true}
+	if err := a.cfg.load(a.opt); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if _, done, err := a.accountUnsetPlan(); !done || err != nil {
+		t.Errorf("no file at all: done = %v, err = %v; want done", done, err)
+	}
+}
+
+// Unreadable is not absent: with a discovered file that can't be read, nothing
+// loaded, and the key may be in it.
+func TestAccountUnsetRefusesAnUnreadableFile(t *testing.T) { // [dd83k]
+	if isWindows() || os.Geteuid() == 0 {
+		t.Skip("needs a file this user can't read: Windows has no 0200, and root reads through one")
+	}
+	a := createApp(t, newPrinter())
+	a.cmd = command{name: "account-unset", arg: "work", arg2: "ghaccount", mutating: true}
+	file := putDefaultConfig(t, keptBody)
+	if err := os.Chmod(file, 0o200); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(file, 0o600) })
+	if err := a.cfg.load(a.opt); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	_, done, err := a.accountUnsetPlan()
+	if done || err == nil {
+		t.Fatalf("plan: done = %v, err = %v; want a refusal", done, err)
+	}
+	for _, want := range []string{"can't be read", "File: " + nativePath(file), "permission denied", "chmod u+r '" + file + "'"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal is missing %q:\n%s", want, err)
+		}
+	}
+}
+
+// A flat file comes out in the current layout without the key, as a set would
+// leave it.
+func TestAccountUnsetConvertsAFlatFile(t *testing.T) { // [dd83m]
+	a, file := unsetApp(t, "# old\naccount.work.email = a@x\naccount.work.name = Al\n", "work", "name")
+	plan, done, err := a.accountUnsetPlan()
+	// Off since 2026-11-07: a whole v2.1.0 file is converted on read now, so the
+	// plan has nothing left to convert.
+	// if err != nil || done || !plan.converts {
+	if err != nil || done {
+		t.Fatalf("plan: converts = %v, done = %v, err = %v", plan.converts, done, err)
+	}
+	a.set = &plan
+	if err := a.cmdAccountSet(); err != nil {
+		t.Fatalf("unset: %v", err)
+	}
+	got := readBack(t, file)
+	if !strings.HasPrefix(got, "# old\n\naccount: work\n\temail: a@x\n") || strings.Contains(got, "Al") {
+		t.Errorf("file after unset:\n%s", got)
+	}
+}
+
+// A write that fails keeps the OS's reason, and only a permissions error gets the
+// permissions fix. Every write in the account commands refused with "check
+// permissions", a full disk and a read-only filesystem included.
+func TestWriteRefusalNamesPermissionsOnlyWhenTheyAreTheCause(t *testing.T) { // [ddf45]
+	const permFix = "Make the folder it is in writable, then run this again."
+	causes := []struct {
+		err  error
+		perm bool
+	}{
+		{&fs.PathError{Op: "open", Path: "/h/c.shcl", Err: fs.ErrPermission}, true},
+		{&fs.PathError{Op: "open", Path: "/h/c.shcl", Err: errors.New("read-only file system")}, false},
+		{&fs.PathError{Op: "write", Path: "/h/c.shcl", Err: errors.New("no space left on device")}, false},
+		{&fs.PathError{Op: "open", Path: "/h/c.shcl", Err: errors.New("is a directory")}, false},
+		{errors.New("/h/c.shcl: not a regular file"), false},
+	}
+	for _, c := range causes {
+		err := writeRefusal("Couldn't save the accounts file.", "Saving it", c.err, "Nothing was written.", permFix, noteLines("File", "/h/c.shcl"))
+		msg := err.Error()
+		if !strings.Contains(msg, "Why:  Saving it failed with: "+causeText(c.err)+".") {
+			t.Errorf("%v: the reason is missing:\n%s", c.err, msg)
+		}
+		if got := strings.Contains(msg, "writable"); got != c.perm {
+			t.Errorf("%v: permissions fix shown = %v, want %v:\n%s", c.err, got, c.perm, msg)
+		}
+		if !errors.Is(err, c.err) {
+			t.Errorf("%v: the cause is not on the chain", c.err)
+		}
+		// The module's own refusals carry their path in the text, and come through as is.
+		var pe *fs.PathError
+		if errors.As(c.err, &pe) && strings.Count(msg, "/h/c.shcl") != 1 {
+			t.Errorf("%v: the path should be on its File line only:\n%s", c.err, msg)
+		}
+	}
+}
+
+// The review's case through 'account apply': a folder where a fragment goes. It
+// said to check permissions on the folder above and dropped "is a directory".
+func TestAccountApplyKeepsTheReasonAFragmentFailed(t *testing.T) { // [ddf46]
+	if isWindows() {
+		t.Skip("Windows refuses a write to a folder as access denied, which is a permissions error")
+	}
+	cfg := writeConfig(t, "account: b\n\tpath: /srv/b\n\tghaccount: bacct\n")
+	a := newApp(newPrinter())
+	a.cfg = cfg
+	fragment := filepath.Join(filepath.FromSlash(cfg.includeDir()), cfg.fragmentNames()["b"])
+	if err := os.MkdirAll(fragment, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	err := a.cmdAccountApply()
+	if err == nil {
+		t.Fatal("apply: no refusal")
+	}
+	for _, want := range []string{"File: " + nativePath(fragment), "Why:  Writing it failed with: is a directory.", "Your global git config"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal is missing %q:\n%s", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "ermission") {
+		t.Errorf("refusal blames permissions:\n%s", err)
+	}
+}
+
+// A lock name past the filesystem's limit said to check permissions on the folder.
+func TestLockKeepsTheReasonItFailed(t *testing.T) { // [ddf47]
+	if isWindows() {
+		t.Skip("needs a 255-byte name limit on one path part")
+	}
+	// 251 bytes is a name the folder takes, and its lock name at 256 is not.
+	file := filepath.Join(t.TempDir(), strings.Repeat("z", 246)+".shcl")
+	_, err := lockAccountsFile(file, 0)
+	if err == nil {
+		t.Fatal("lock: no refusal")
+	}
+	for _, want := range []string{"Lock: " + nativePath(file+".lock"), "Why:  Creating it failed with: file name too long.", "Kept: Nothing was written."} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal is missing %q:\n%s", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "writable") || strings.Contains(err.Error(), "ermission") {
+		t.Errorf("refusal blames permissions:\n%s", err)
+	}
+}
+
+// A plain file where the accounts file's folders go. The refusal named the folder
+// and nothing else.
+func TestAccountSetKeepsTheReasonItsFolderFailed(t *testing.T) { // [ddf48]
+	a := createApp(t, newPrinter())
+	blocker := filepath.Dir(filepath.Dir(defaultConfigFile()))
+	if err := os.MkdirAll(filepath.Dir(blocker), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(blocker, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.cfg.load(a.opt); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	err := a.cmdAccountSet()
+	if err == nil {
+		t.Fatal("set: no refusal")
+	}
+	for _, want := range []string{"Couldn't create the folder the accounts file goes in.", "Why:  Creating it failed with: ", "Kept: Nothing was written."} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal is missing %q:\n%s", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "writable") {
+		t.Errorf("refusal blames permissions:\n%s", err)
+	}
+	if !isWindows() && !strings.Contains(err.Error(), "File: "+nativePath(blocker)+"\n  Why:  Creating it failed with: not a directory.") {
+		t.Errorf("refusal should name the file in the way and why:\n%s", err)
+	}
+}
+
+// The flat file is read again to convert it, and a failure there dropped its reason.
+func TestLoadForEditKeepsTheReasonTheReadFailed(t *testing.T) { // [ddf49]
+	a := newApp(newPrinter())
+	a.cfg.flat, a.cfg.file = true, t.TempDir()
+	err := a.loadForEdit(&accountSetTarget{})
+	if err == nil {
+		t.Fatal("no refusal")
+	}
+	for _, want := range []string{"File: " + nativePath(a.cfg.file), "Why:  Reading it failed with: ", "Fix:  Run this again once it can be read."} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal is missing %q:\n%s", want, err)
+		}
+	}
+}
+
+// A relative path with no current folder to be relative to. It said only that it
+// couldn't work the path out.
+func TestAbsPathValueKeepsTheReasonTheFolderIsGone(t *testing.T) { // [ddf4a]
+	if runtime.GOOS != "linux" {
+		t.Skip("needs a current folder that can be removed out from under the run")
+	}
+	dir := filepath.Join(t.TempDir(), "gone")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	if err := os.Remove(dir); err != nil {
+		t.Fatal(err)
+	}
+	_, err := absPathValue("tok.txt", "file")
+	if err == nil || !strings.Contains(err.Error(), "since finding the current folder failed with: getwd: no such file or directory") {
+		t.Errorf("err = %v, want the reason the current folder couldn't be found", err)
+	}
+}

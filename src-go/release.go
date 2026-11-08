@@ -1,0 +1,264 @@
+// Cutting a release: work out the version, refuse the ones that would strand a
+// tag, then merge dev into the default branch, tag it, and push both. The version
+// settles up front so the plan and the command can't disagree about it.
+
+// Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
+// Licensed under The MIT License (MIT). Full text at:
+//	https://mit-license.org/
+// SPDX-License-Identifier: MIT
+
+package main
+
+import (
+	"regexp"
+	"strconv"
+	"strings"
+)
+
+// releasePlan is the version this run cuts, and whether we invented it - the
+// guards below only speak for the invented ones.
+type releasePlan struct {
+	tag    string
+	bumped bool
+}
+
+var (
+	releaseVerRE = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$`)
+	releaseTagRE = regexp.MustCompile(`^v?([0-9]+)(\.([0-9]+))?(\.([0-9]+))?(.*)$`)
+)
+
+// nextVersion is the version that follows a tag. A candidate's own version is
+// what comes next: v2.0.0-rc1 -> v2.0.0, not v2.0.1 - promoting a candidate is a
+// deliberate version rather than an invented one, and the bool says which. Short
+// tags like v1.2 or v2020 pad out, and an unreadable one starts the numbering.
+func nextVersion(latest string) (version string, bumped bool) {
+	m := releaseTagRE.FindStringSubmatch(latest)
+	if m == nil {
+		return "0.1.0", true // first release ever, or an unreadable tag
+	}
+	major, minor := m[1], m[3]
+	if minor == "" {
+		minor = "0"
+	}
+	// m[5] already matched [0-9]+, so Atoi only fails on overflow - it answers
+	// with the clamped max, which the bump below would wrap negative; 0 starts over.
+	patch, err := strconv.Atoi(m[5])
+	if err != nil {
+		patch = 0
+	}
+	bumped = m[6] == ""
+	if bumped {
+		patch++
+	}
+	return major + "." + minor + "." + strconv.Itoa(patch), bumped
+}
+
+// resolveRelease settles the tag this run cuts, from the argument or from the
+// latest tag in the repo.
+func (a *app) resolveRelease() error {
+	if ver := strings.TrimPrefix(a.cmd.arg, "v"); ver != "" {
+		if !releaseVerRE.MatchString(ver) {
+			return syntaxUsage("'"+ver+"' is not a version.", "release [version]",
+				placeholder{"[version]", "X.Y.Z, with an optional -suffix such as 1.4.0-beta.1, and an optional leading v. Without it, the next patch version after the latest tag."})
+		}
+		a.rel.tag = a.cmd.arg
+		return nil
+	}
+	// versionsort.suffix=- ranks v2.0.0 above its own v2.0.0-rc1; the default sort
+	// inverts them.
+	tags := runLines("git", "-c", "versionsort.suffix=-", "tag", "--list", "v[0-9]*", "[0-9]*", "--sort=-v:refname")
+	a.rel.tag, a.rel.bumped = nextReleaseTag(newestReleaseTag(tags))
+	return nil
+}
+
+// nextReleaseTag is the tag after latest, spelled the same way, so a repo tagged
+// without the 'v' goes on without it. The first tag gets the 'v'.
+func nextReleaseTag(latest string) (tag string, bumped bool) {
+	ver, bumped := nextVersion(latest)
+	if latest != "" && !strings.HasPrefix(latest, "v") {
+		return ver, bumped
+	}
+	return "v" + ver, bumped
+}
+
+// newestReleaseTag picks the tag to count on from tags git sorted newest first.
+// A tag with no 'v' counts only as a whole X.Y.Z, so a date or a build number
+// can't restart the numbering. The two spellings don't sort against each other,
+// so the newest of each is compared.
+func newestReleaseTag(sorted []string) string {
+	newestV, newestBare := "", ""
+	for _, tag := range sorted {
+		switch {
+		case strings.HasPrefix(tag, "v"):
+			if newestV == "" {
+				newestV = tag
+			}
+		case newestBare == "" && releaseVerRE.MatchString(tag):
+			newestBare = tag
+		}
+		if newestV != "" && newestBare != "" {
+			break
+		}
+	}
+	if newestV == "" || (newestBare != "" && tagNewer(newestBare, newestV)) {
+		return newestBare
+	}
+	return newestV
+}
+
+// tagNewer: by number, then a full release over a candidate of the same number.
+func tagNewer(tag, than string) bool {
+	m, n := releaseTagRE.FindStringSubmatch(tag), releaseTagRE.FindStringSubmatch(than)
+	if m == nil || n == nil {
+		return n == nil && m != nil
+	}
+	for _, i := range []int{1, 3, 5} {
+		// Atoi clamps on overflow, which still compares the right way.
+		mi, _ := strconv.Atoi(m[i])
+		ni, _ := strconv.Atoi(n[i])
+		if mi != ni {
+			return mi > ni
+		}
+	}
+	return m[6] == "" && n[6] != ""
+}
+
+// releasePreflight refuses up front rather than mid-command: by the time
+// cmdRelease runs it has already committed and pushed.
+func (a *app) releasePreflight() error {
+	// Either spelling, or 'release 1.2.3' in a repo tagged v1.2.3 cuts a second tag
+	// for the same version.
+	ver := strings.TrimPrefix(a.rel.tag, "v")
+	if have := runLines("git", "tag", "--list", "v"+ver, ver); len(have) > 0 {
+		return usagef("Tag '%s' already exists.", have[0])
+	}
+	// An invented version on a target that would gain nothing cuts a tag for no
+	// release, and the natural re-run after a failed push cuts a second one on the
+	// same commit - so the first is stranded forever. A version you typed, and
+	// promoting a candidate, are deliberate and stay allowed. Fails open: if we
+	// can't tell, the release goes ahead. 'release' parks first, so uncommitted work
+	// or unpushed commits ARE something to release even when the branches currently
+	// look level - the guard only speaks for a settled repo. Under --staged only
+	// the index is parked, so edits left out of it are nothing to release.
+	parks := runOut("git", "status", "--porcelain") != ""
+	if a.opt.staged {
+		parks = !runOK("git", "diff", "--cached", "--quiet")
+	}
+	if !a.rel.bumped || parks || isAhead() {
+		return nil
+	}
+	// Full refs throughout, since git reads a tag of the same name ahead of a branch.
+	relMain := a.defaultBranch()
+	relTarget := "refs/heads/" + relMain
+	if !a.branchExistsLocal(relMain) {
+		relTarget = "refs/remotes/origin/" + relMain
+	}
+	// The local branch is what gets tagged and pushed, so it is what "nothing new"
+	// is about. Stand down if origin holds commits we don't: the pull would bring
+	// them in.
+	if a.branchExistsLocal(relMain) && a.branchExistsRemote(relMain) {
+		if !runOK("git", "merge-base", "--is-ancestor", "refs/remotes/origin/"+relMain, relTarget) {
+			return nil
+		}
+	}
+	relSource := ""
+	if a.branchExistsRemote("dev") {
+		relSource = "refs/remotes/origin/dev"
+	} else if a.branchExistsLocal("dev") {
+		relSource = "refs/heads/dev"
+	}
+	if relSource != "" && !runOK("git", "merge-base", "--is-ancestor", relSource, relTarget) {
+		return nil
+	}
+	if relExisting := runOut("git", "describe", "--exact-match", "--tags", relTarget); relExisting != "" {
+		a.out.status("Nothing new to release since " + relExisting + ".")
+		a.out.clean("  If that tag never reached origin, push it: git push origin tag " + relExisting)
+		a.out.clean("")
+		return errDone
+	}
+	return nil
+}
+
+// cmdRelease merges dev into main/master --no-ff (if the repo has a dev), tags,
+// and pushes both.
+func (a *app) cmdRelease() error {
+	mainBranch := a.defaultBranch()
+	// The same answer the plan read, so the run can't take a dev the plan never showed.
+	devBranch := ""
+	if a.mergeTarget() == "dev" {
+		devBranch = "dev"
+	}
+	startBranch := a.currentBranch()
+	if err := a.cmdPush(); err != nil { // park current work safely first
+		return err
+	}
+	if devBranch != "" && a.currentBranch() != devBranch {
+		// Freshen dev so the release has all of it.
+		if err := a.checkout(devBranch); err != nil {
+			return err
+		}
+		if err := a.pullIfOnline(); err != nil {
+			return err
+		}
+	}
+	if a.currentBranch() != mainBranch {
+		if err := a.checkout(mainBranch); err != nil {
+			return err
+		}
+	}
+	if err := a.pullIfOnline(); err != nil {
+		return err
+	}
+	if devBranch != "" {
+		mergeMessage := a.opt.message
+		if mergeMessage == "" {
+			mergeMessage = "Release " + a.rel.tag
+		}
+		// By full ref: git merge reads a tag of the same name ahead of the branch.
+		if err := a.step("git", "merge", "--no-ff", "refs/heads/"+devBranch, "-m", mergeMessage); err != nil {
+			return a.backOutMerge(err, devBranch, mainBranch, startBranch,
+				"git checkout "+devBranch+" && git merge "+mainBranch+", then '"+meName+" release'")
+		}
+	}
+	if err := a.step("git", "tag", "-a", a.rel.tag, "-m", a.rel.tag); err != nil {
+		return err
+	}
+	// The branch has to reach origin, not just the tag - otherwise origin gets the
+	// commits as tag payload while its main still points at the old release. Same
+	// trap as merge's.
+	if a.hasOrigin() {
+		if err := a.step("git", a.pushArgs()...); err != nil {
+			return err
+		}
+		// 'tag' names refs/tags only, so a branch with the tag's name can't make the
+		// push ambiguous.
+		if err := a.step("git", "push", "origin", "tag", a.rel.tag); err != nil {
+			return err
+		}
+	}
+	// Fast-forward dev to include the release merge and tag, so dev isn't left a
+	// commit behind. ff-only (not branch -f): if dev moved mid-release, skip rather
+	// than discard work.
+	if devBranch != "" {
+		if !runOK("git", "merge-base", "--is-ancestor", "refs/heads/"+devBranch, "refs/heads/"+mainBranch) {
+			a.out.status("WARNING: '" + devBranch + "' gained commits during the release; leaving it as-is.")
+		} else {
+			if err := a.checkout(devBranch); err != nil {
+				return err
+			}
+			if err := a.step("git", "merge", "--ff-only", "refs/heads/"+mainBranch); err != nil {
+				return err
+			}
+			if a.hasUpstream() {
+				if err := a.step("git", "push"); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	// Don't leave the user parked on main.
+	if startBranch != "" && startBranch != a.currentBranch() && startBranch != mainBranch {
+		return a.checkout(startBranch)
+	}
+	return nil
+}

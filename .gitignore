@@ -2,3 +2,25 @@
 cicd/artifacts/
 *.gif.new
 __pycache__/
+
+## Go build output: the native build (cicd stage 2, or by hand), and the per-target
+## cross-builds the dogfood stage makes on its way to a destination.
+src-go/gitsby
+src-go/gitsby.exe
+src-go/gitsby-*
+
+## What an OS or an editor drops beside the files it touches.
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+## go test's compiled test binaries and profiles.
+*.test
+*.prof
+cover.out
+coverage.out

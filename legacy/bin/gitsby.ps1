@@ -29,7 +29,7 @@
 .EXAMPLE
     gitsby.ps1 br create featx
 .NOTES
-    History at bottom of script. Copyright © 2014-2026 Jim Collier (CryptogID: ѳ6ᴚ℈𐀘𐇦ɛ𐊁¥Mﾏb϶Δ𐌞).
+    History at bottom of script. Copyright © 2014-2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ].
     Licensed under The MIT License (MIT): https://mit-license.org/
     SPDX-License-Identifier: MIT
 #>
@@ -872,19 +872,6 @@ function Get-TokenFromFile {
     if ($File.StartsWith('~/') -or $File -eq '~') { $File = (Get-HomeDir) + $File.Substring(1) }
     if (-not (Test-Path -LiteralPath $File -PathType Leaf)) { return '' }
     try { return ((Get-Content -LiteralPath $File -Raw -ErrorAction Stop) -replace '\s', '') } catch { return '' }
-}
-
-function Get-AccountCredentialHelper {
-    ## Same string as the Bash build. Asks gh for the token when git needs it, so no token is ever
-    ## written down. Git runs it with its own sh, Windows included, so anything needing quotes is refused.
-    param([string]$Who, [string]$File)
-    if ($Who -cnotmatch '^[A-Za-z0-9-]+$') { return '' }
-    $fromFile = ''
-    if ($File) {
-        if ($File.StartsWith('~/') -or $File -eq '~') { $File = (Get-HomeDir) + $File.Substring(1) }
-        if (-not $File.Contains("'")) { $fromFile = "; [ -n `"`$t`" ] || t=`"`$(tr -d `"[:space:]`" < '${File}' 2>/dev/null)`"" }
-    }
-    return "!f(){ test `"`$1`" = get || return 0; t=`"`$(gh auth token --user ${Who} 2>/dev/null)`"${fromFile}; [ -n `"`$t`" ] || return 0; echo username=${Who}; echo `"password=`$t`"; }; f"
 }
 
 function Resolve-GitsbyAccount {
@@ -2151,9 +2138,6 @@ function Invoke-GitsbyAccountApply {
         if ($ghWho) { git config --file $fragment 'credential.https://github.com.username' $ghWho }
         $tokenFile = Get-AccountValue -Name $name -Key 'tokenFile'
         if ($tokenFile) { git config --file $fragment gitsby.ghTokenFile $tokenFile }
-        ## gh's own helper only answers for its active account, so plain git needs one per account.
-        $helper = Get-AccountCredentialHelper -Who $ghWho -File $tokenFile
-        if ($helper) { git config --file $fragment --add 'credential.https://github.com.helper' $helper }
         $sshKey = Get-AccountValue -Name $name -Key 'sshKey'
         if ($sshKey) { git config --file $fragment core.sshCommand "ssh -i $sshKey -o IdentitiesOnly=yes" }
         Write-StatusLine "Wrote ${fragment}"
@@ -3051,4 +3035,3 @@ try {
 ##      - 20260812 JC: 'account.<name>.pathContains' - in step with bin/gitsby.
 ##      - 20260813 JC: The publish preview's throwaway git dir is tested before it is removed - in step
 ##        with bin/gitsby, whose cleanup moved to the exit path.
-##      - 20260930 JC: 'account apply' writes a per-account credential helper - in step with bin/gitsby.

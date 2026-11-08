@@ -5,25 +5,32 @@
 <!-- markdownlint-disable MD041 -- First line in a file should be a top-level heading -->
 # Style guide
 
-Canonical coding style for this project's Bash and PowerShell. For contribution process, see [contributing.md](contributing.md).
+Canonical coding style for this project's Go, Bash, and PowerShell. For contribution process, see [contributing.md](contributing.md).
+
+Scope: the product itself is Go now. Go's *formatting* is `gofmt` - the lint stage runs it in list mode and gates on any file it would reformat, so layout is not written down here - but the conventions the formatter can't see are, below. The Bash and PowerShell sections govern the frozen, read-only scripts in `legacy/` and the pipeline's own scripts under `cicd/`.
 
 <!-- TOC ignore:true -->
 ## Table of contents
+
 <!-- TOC -->
 
-- [Both languages](#both-languages)
+- [All languages](#all-languages)
 	- [Naming](#naming)
 	- [Comments and headers](#comments-and-headers)
 	- [Misc](#misc)
+- [Go](#go)
 - [Bash](#bash)
+	- [Bash traps](#bash-traps)
 - [PowerShell](#powershell)
+- [Python](#python)
 - [Performance](#performance)
+	- [Go performance](#go-performance)
 	- [Bash performance](#bash-performance)
 	- [PowerShell performance](#powershell-performance)
 
 <!-- /TOC -->
 
-## Both languages
+## All languages
 
 ### Naming
 
@@ -49,19 +56,87 @@ Canonical coding style for this project's Bash and PowerShell. For contribution 
 
 - Output should be "friendly", with a blank line to start, a blank line after the end, and never two blank lines in a row (except if beyond script control e.g. in the middle of external command output). The custom bash fEcho*() family of functions help with that.
 
+## Go
+
+`gofmt` settles everything it has an opinion on. The rest:
+
+- Simple over clever. Write the plain, obvious version, the one a newcomer can follow at a glance.
+
+- Errors return; they don't exit. One `os.Exit` at the top of `main`, no `panic` or `log.Fatal` in library code. A command's failure is a value the caller decides what to do with.
+
+- Add context when passing an error up, and wrap with `%w` (`fmt.Errorf("reading config: %w", err)`) so the chain stays inspectable with `errors.Is`/`As`. Stringifying the cause with `%s`/`%v` throws that away.
+
+- Never discard an error silently. Handle it, return it, or discard it with a one-line comment saying why discarding is correct there.
+
+- Return early. Handle the error or the edge case and get out; the happy path stays at the lowest indent. No `else` after a `return`.
+
+- No goroutines or channels without a measured reason. This program's life is spent waiting on `git`; concurrency here buys latency bugs, not speed. Where a measurement does call for it, as with the account probes that each wait on the network, guard shared state with a `sync.Mutex` rather than a channel. Every goroutine gets a clear way out, through a `context.Context` where it can be cancelled, and the tests run with `-race` and fail on one still running when they end.
+
+- Package-level variables are for what Go can't make a constant: compiled regexps, `errors.New` sentinels, read-only lookup tables, and strings the linker sets with `-X`. Nothing at package level changes after startup. Run state lives on the struct that owns the run.
+
+- Keep interfaces small and define them where they are consumed. Accept an interface, return a concrete type. Don't introduce one until a second implementation exists or a test needs a seam.
+
+- Compose with struct embedding. No inheritance-shaped designs.
+
+- Make the zero value useful where it can be, so a type works without a constructor. Use a pointer to mutate, for a large struct, or where nil means something, and not otherwise.
+
+- The standard library first. A dependency has to earn its place.
+
+- Short names in a small scope, descriptive ones in a package's API. An exported name gets a doc comment that starts with the name. No stutter: `config.Load`, not `config.LoadConfig`.
+
+- When a slice's or map's final size is knowable, allocate it up front: `make([]T, 0, n)`, `make(map[K]V, n)`.
+
+- `.golangci.yml` at the module root is the gate, beside `go vet` and staticcheck. A finding from any of them is a defect, not advice.
+
 ## Bash
 
-- Bash 4.4 is the floor, and the script refuses to run below it. Write to Bash 5 idioms otherwise, rather than portable-but-clunky POSIX-only workarounds. (The installers are the exception: they run on macOS stock bash 3.2, so that they can report what to do about it.)
+- Bash 4.4 is the floor, and each script in `cicd/` refuses to run below it, as its first command. A file that is only sourced leaves the check to the script sourcing it, and `n8git_backup-and-publish` is shared with other projects and has none. Write to Bash 5 idioms otherwise, rather than portable-but-clunky POSIX-only workarounds. (`install.bash` is the exception: it runs on macOS stock bash 3.2, since the one-line install pipes it to whatever `bash` is there. What it installs needs no shell.)
 
-- Must pass shellcheck. Per-file disables go at the top, each with a short reason (see the top of `bin/gitsby`).
+- Files end in `.bash`. The shebang comes first, then the file's shellcheck lines, then a `##` header with the purpose, copyright and license. History goes at the bottom. `cicd/utility/keep-build.bash` shows the layout.
+
+- Must pass shellcheck. Per-file disables go at the top, each with a short reason (see the top of `cicd/test.bash`). Each script but the shared `n8git_backup-and-publish` also turns on shellcheck's `require-variable-braces` there, so an unbraced expansion fails the lint stage. There is no formatter.
+
+- Functions are `fCamelCase`, with an underscore to group a family: `fEcho`, `fEcho_Clean`. Variables are camelCase. A global that only one function or family uses starts with two underscores, such as `__wasLastEchoBlank`. The settings in `cicd/config.bash` are the exception. They are UPPER_SNAKE, since they are sourced and read like environment variables.
 
 - Tabs for indentation, spaces for alignment.
 
-- Reuse the script's existing output helpers (`fEcho`, `fEcho_Clean`). Don't add new echo/printf wrapper functions.
+- Compact is the house style. A short function can sit on one line, and a run of similar lines can be lined up in columns. A line that has to be read twice gets split.
+
+- `[[ ]]`, never `[ ]`. Brace and quote every expansion: `"${var}"`. Use `${1:-}` for an argument that may be missing, since the scripts run under `set -u`.
+
+- `local` for every variable a function owns. Pass a large string or array by name, with `local -n`. A nameref gets an odd suffix, such as `epoch_x5q`, so it can't collide with a name the caller passes in. Keep the suffix.
+
+- Output goes through the script's own `fEcho` family, and errors go to stderr through its error helper: `fDie` to stop, `fUsage` for a bad command line. They print with `printf`, not `echo`. A script that has none gets them rather than a bare `echo`. Don't add a second general-purpose wrapper beside them.
 
 - Avoid shelling out unless necessary (e.g. for `git` commands).
 
-	- For regex matching, `[[ $string =~ $pattern ]]` with `BASH_REMATCH` does the job without forking `grep`.
+	- For regex matching, `[[ "${string}" =~ ${pattern} ]]` with `BASH_REMATCH` does the job without forking `grep`.
+
+### Bash traps
+
+Each of these has cost this pipeline or a sister one a silent failure.
+
+- A function that ends on a failed `&&` list returns 1, and under `set -e` the caller stops with no message. Only the last line matters. End it with an `if`, or with `return 0`.
+
+- `((n++))` returns the value from before the increment, so the first one from zero fails under `set -e`. Write `n=$((n + 1))`.
+
+- `[[ ${var} -eq 1 ]]` reads both sides as arithmetic, and bash arithmetic runs a command substitution hidden in an array subscript. Compare strings, or check for plain digits first.
+
+- `local x="$(f)"` hides the exit status of `f`. Split it: `local x; x="$(f)" || exit 1`.
+
+- `x="$(cmd)"` under `set -e` stops the script when `cmd` fails. For an optional lookup, such as a `grep` that may find nothing, put `|| true` inside the substitution.
+
+- `diff`, `cmp` and `grep` exit 1 on a difference or no match, and `read` returns 1 on a last line with no newline. Under `set -e` a diagnostic step then ends the script at its first finding.
+
+- A reader that quits early, such as `grep -q` or `head`, must not follow a writer in the same pipeline. The writer dies of SIGPIPE, and `pipefail` stops the script without a word. Use a here-string.
+
+- A counter that a function bumps is lost when the caller reads the function through `$( )`, since that runs it in a subshell.
+
+- A `<<-` heredoc strips every leading tab, so a fixture whose meaning is its indentation uses `<<`.
+
+- A nameref looks its target up from inside the function. If the function has a local with the same name as the caller's variable, the value goes to the local, and the caller never sees it.
+
+- Never edit a script while a run of it is going. Bash reads the file as it runs and picks up the new text partway through.
 
 ## PowerShell
 
@@ -93,6 +168,16 @@ Canonical coding style for this project's Bash and PowerShell. For contribution 
 
 - 4 spaces per indent (PowerShell convention; unlike the Bash side of this repo).
 
+## Python
+
+- Python is for cicd helpers only. Target Python 3.11, the first with `tomllib`.
+
+- 4 spaces per indent, `snake_case` names, one import per line, and type hints on every function. A file older than these rules keeps its own indent and names, so `gen-demo-gif.py` stays on tabs and `fCamelCase`.
+
+- One statement per line. No `;`.
+
+- Must pass `ruff check` clean under `ruff.toml` at the repo root, and `py_compile`. cicd.bash runs both, and ruff's leak rules in `PY_LINT_RULES`.
+
 ## Performance
 
 Correctness comes first. What follows costs nothing extra to write, so it is habit rather than optimization. Measuring and tuning a hot path is a separate exercise, and it needs a number to justify it.
@@ -104,6 +189,16 @@ Correctness comes first. What follows costs nothing extra to write, so it is hab
 - Hoist what cannot change during a run. The default branch, the merge target, and the account probes are resolved once and kept in a variable, not asked for again at each use.
 
 - Don't make every run pay for what few runs need. Probes that cost a round trip belong to the commands that actually use them.
+
+### Go performance
+
+- A `git` process costs milliseconds, and everything done in memory costs microseconds. Count processes first. The pipeline's spawn-count step fails a command that starts more of them than its recorded baseline.
+
+- Ask once and keep the answer. A value the run needs in several places is memoized on the run's state. The step runners clear it after a step that could change it, rather than each writer doing so.
+
+- Build strings with `strings.Builder` or `strings.Join`, not `+=` in a loop.
+
+- Preallocate where the final size is known, per the Go section. Where it isn't, a plain `append` is fine.
 
 ### Bash performance
 

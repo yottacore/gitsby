@@ -1,0 +1,1187 @@
+// The config parser and folder matching. Every case here came from something
+// that once read as "no rule at all" - the failure mode that makes you act as the
+// wrong account while believing you configured it.
+
+// Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
+// Licensed under The MIT License (MIT). Full text at:
+//	https://mit-license.org/
+// SPDX-License-Identifier: MIT
+
+package main
+
+import (
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+
+	shcl "github.com/yottacore/shcl/source/go/v3"
+)
+
+func TestParseConfigValue(t *testing.T) { // [dbfqy]
+	tests := []struct{ in, want string }{
+		{"plain", "plain"},
+		{"trailing   ", "trailing"},
+		{"value # a comment", "value"},
+		{"value\t# a comment", "value"},
+		{"#whole line", ""},
+		{`"kept # hash"`, "kept # hash"},
+		{`'kept trailing  '`, "kept trailing  "},
+		{"no#comment", "no#comment"}, // a '#' needs whitespace in front to start one
+		{"", ""},
+	}
+	for _, tc := range tests {
+		if got := parseConfigValue(tc.in); got != tc.want {
+			t.Errorf("parseConfigValue(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestSplitAccountKey(t *testing.T) { // [dbfqz]
+	tests := []struct {
+		key         string
+		acct, field string
+		ok          bool
+	}{
+		{"account.work.ghaccount", "work", "ghaccount", true},
+		{"account.a-b_c.2.sshkey", "a-b_c.2", "sshkey", true},
+		{"protocol", "", "", false},
+		{"account.work", "", "", false},
+		{"account.bad/name.path", "", "", false},
+		{"account..path", "", "", false},
+	}
+	for _, tc := range tests {
+		acct, field, ok := splitAccountKey(tc.key)
+		if ok != tc.ok || acct != tc.acct || field != tc.field {
+			t.Errorf("splitAccountKey(%q) = %q,%q,%v; want %q,%q,%v", tc.key, acct, field, ok, tc.acct, tc.field, tc.ok)
+		}
+	}
+}
+
+func writeConfig(t *testing.T, body string) *config {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "config.shcl")
+	if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config{values: map[string]string{}}
+	opt := defaultOptions()
+	opt.configFile, opt.configGiven = file, true
+	if err := cfg.load(opt); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	return cfg
+}
+
+// madeSymlink is os.Symlink, then a look for the link. Wine says yes and makes
+// nothing, so a test there would run its link case against no link.
+func madeSymlink(oldname, newname string) error {
+	if err := os.Symlink(oldname, newname); err != nil {
+		return err
+	}
+	if _, err := os.Lstat(newname); err != nil {
+		return fmt.Errorf("the link was reported made but isn't there: %w", err)
+	}
+	return nil
+}
+
+// driveFolder spells a made-up folder such as '/srv/work' as an absolute path on
+// the platform running the test. On Windows it names no drive, so it is
+// root-relative there, and a rule spelled that way is ignored.
+func driveFolder(p string) string {
+	if isWindows() {
+		return "C:" + p
+	}
+	return p
+}
+
+// driveFixture puts the drive on every /srv folder in a config body.
+func driveFixture(body string) string {
+	return strings.ReplaceAll(body, "/srv/", driveFolder("/srv/"))
+}
+
+// driveRule is the rule gitsby holds for driveFolder(p), lower case on Windows.
+func driveRule(p string) string {
+	return canonPath(driveFolder(p))
+}
+
+func TestConfigLoad(t *testing.T) { // [dbfr0]
+	cfg := writeConfig(t, driveFixture(`
+# a comment
+account.work.ghAccount = octocat
+account.work.path = /srv/work
+account.work.email = o@example.com
+account.play.pathContains = personal/code
+account.play.ghAccount = playful
+protocol = https
+account.work.nonsense = 1
+just-a-key
+`))
+	if got := cfg.value("work", "ghAccount"); got != "octocat" {
+		t.Errorf("ghAccount = %q", got)
+	}
+	// Keys are lowercased on the way in, so the lookup has to be too.
+	if got := cfg.value("WORK", "GHACCOUNT"); got != "octocat" {
+		t.Errorf("case-insensitive lookup failed: %q", got)
+	}
+	if cfg.values["protocol"] != "https" {
+		t.Errorf("bare protocol = %q", cfg.values["protocol"])
+	}
+	if want := []string{"work", "play"}; !slices.Equal(cfg.accountNames(), want) {
+		t.Errorf("accountNames = %v, want %v", cfg.accountNames(), want)
+	}
+	// A key nothing reads is reported, never silently dropped.
+	if len(cfg.unknown) != 2 {
+		t.Errorf("unknown = %v, want the nonsense key and the bare line", cfg.unknown)
+	}
+}
+
+// git hands core.sshCommand to a shell, so a key path carrying shell characters
+// is dropped rather than used - quietly falling back to whatever key ssh picks is
+// how you push as the wrong person.
+func TestConfigDropsShellCharactersInSSHKey(t *testing.T) { // [dbfr1]
+	cfg := writeConfig(t, "account.work.sshKey = /keys/id; rm -rf /\n")
+	if got := cfg.value("work", "sshKey"); got != "" {
+		t.Errorf("sshKey = %q, want it dropped", got)
+	}
+	if len(cfg.unknown) != 1 {
+		t.Errorf("the drop was not reported: %v", cfg.unknown)
+	}
+}
+
+func TestConfigFileMustExistWhenNamed(t *testing.T) { // [dbfr2]
+	opt := defaultOptions()
+	opt.configFile, opt.configGiven = filepath.Join(t.TempDir(), "nope.shcl"), true
+	if _, err := opt.resolveConfigFile(); err == nil {
+		t.Error("a config file that isn't there was accepted")
+	}
+	// '--config ""' is a mistake, not a fallback: falling back to the default file
+	// would act as the wrong identity, quietly.
+	opt.configFile = ""
+	if _, err := opt.resolveConfigFile(); err == nil {
+		t.Error("an empty --config was accepted")
+	}
+}
+
+func TestAccountForDir(t *testing.T) { // [dbfr3]
+	cfg := writeConfig(t, driveFixture(`
+account.outer.path = /srv/code
+account.inner.path = /srv/code/client
+account.anywhere.pathContains = shared/lib
+`))
+	tests := []struct{ dir, want string }{
+		{"/srv/code", "outer"},
+		{"/srv/code/other", "outer"},
+		{"/srv/code/client", "inner"}, // the more specific path wins
+		{"/srv/code/client/deep", "inner"},
+		{"/srv/codex", ""}, // whole folder names only
+		{"/elsewhere/shared/lib/x", "anywhere"},
+		{"/elsewhere/shared/library", ""}, // ditto, for a segment run
+		{"/nothing/here", ""},
+	}
+	for _, tc := range tests {
+		dir := driveFolder(tc.dir)
+		if got := cfg.accountForDir(dir); got != tc.want {
+			t.Errorf("accountForDir(%q) = %q, want %q", dir, got, tc.want)
+		}
+	}
+}
+
+// A rule for the root claims every folder. Matching on the rule plus a slash
+// looked for '//', so it claimed none.
+func TestAccountForDirRootRule(t *testing.T) { // [dd80g]
+	cfg := writeConfig(t, "account.all.path = "+driveFolder("/")+"\naccount.inner.path = "+driveFolder("/srv/code")+"\n")
+	for _, tc := range []struct{ dir, want string }{
+		{"/", "all"},
+		{"/anywhere/at/all", "all"},
+		{"/srv/code/x", "inner"}, // still the most specific
+	} {
+		dir := driveFolder(tc.dir)
+		if got := cfg.accountForDir(dir); got != tc.want {
+			t.Errorf("accountForDir(%q) = %q, want %q", dir, got, tc.want)
+		}
+	}
+}
+
+// An absolute claim on this machine's own tree beats a folder-name run, even a
+// longer one.
+func TestAccountForDirPathBeatsSegment(t *testing.T) { // [dbfr4]
+	cfg := writeConfig(t, `
+account.byname.pathContains = a/b/c
+account.bypath.path = /a/b/c
+`)
+	if got := cfg.accountForDir("/a/b/c/d"); got != "bypath" {
+		t.Errorf("got %q, want bypath", got)
+	}
+}
+
+func TestCanonPath(t *testing.T) { // [dbfr5]
+	// A home nothing on this machine has, so no link under it changes the answer.
+	// macOS's /home is one, to /System/Volumes/Data/home.
+	t.Setenv("HOME", "/gitsby-no-such-home/someone")
+	// Windows reads '/c/x' as the MSYS spelling of drive c:, and folds case.
+	ab, cxy, msys := "/a/b", "C:/x/y", "/c/x"
+	if isWindows() {
+		ab, cxy, msys = "c:/a/b", "c:/x/y", "c:/x"
+	}
+	tests := []struct{ in, want string }{
+		{"", ""},
+		{driveFolder("/a/b/"), ab},
+		{driveFolder("/a/b///"), ab},
+		{"/", "/"},
+		{`C:\x\y`, cxy},
+		{"/c/x", msys},
+		{"~", "/gitsby-no-such-home/someone"},
+		{"~/code", "/gitsby-no-such-home/someone/code"},
+		{"~notme/code", "~notme/code"}, // only our own '~' expands
+	}
+	for _, tc := range tests {
+		if got := canonPath(tc.in); got != tc.want {
+			t.Errorf("canonPath(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestCanonSegment(t *testing.T) { // [dbfr6]
+	for _, tc := range []struct{ in, want string }{
+		{"/a/b/", "a/b"},
+		{`a\b`, "a/b"},
+		{"", ""},
+	} {
+		if got := canonSegment(tc.in); got != tc.want {
+			t.Errorf("canonSegment(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// '..' has to go before a rule sees it, or a destination reached by climbing out
+// of one tree still reads as a folder inside it.
+func TestAbsDirResolvesDotDot(t *testing.T) { // [dbfr7]
+	dir := t.TempDir()
+	t.Chdir(dir)
+	got := absDir("sub/../../elsewhere")
+	if want := canonPath(filepath.Dir(dir) + "/elsewhere"); got != want {
+		t.Errorf("absDir = %q, want %q", got, want)
+	}
+}
+
+// '~' resolved through HOME alone, which nothing sets on native Windows - so every
+// tilde path there expanded to nothing and quietly matched no folder and read no
+// token. One helper answers it now, and leaves anything it cannot resolve as typed.
+// '~', '${HOME}' and '%USERPROFILE%' are one thing on every platform, so a file
+// synced between Windows and Linux applies on both. Nothing else is a variable.
+func TestExpandHome(t *testing.T) { // [dcq9y]
+	t.Setenv("HOME", "/home/ada")
+	tests := []struct{ in, want string }{
+		{"~", "/home/ada"},
+		{"~/dev/work", "/home/ada/dev/work"},
+		{`~\dev\work`, `/home/ada\dev\work`},
+		{"${HOME}", "/home/ada"},
+		{"${HOME}/dev", "/home/ada/dev"},
+		{`%USERPROFILE%\dev`, `/home/ada\dev`},
+		{"%userprofile%/dev", "/home/ada/dev"},
+		{"~work/dev", "~work/dev"}, // not a home reference; a shell wouldn't expand it either
+		{"${HOME}x/dev", "${HOME}x/dev"},
+		{"${home}/dev", "${home}/dev"},
+		{"$HOME/dev", "$HOME/dev"},
+		{"%APPDATA%/dev", "%APPDATA%/dev"},
+		{"/dev/~/work", "/dev/~/work"},
+		{"/dev/${HOME}", "/dev/${HOME}"},
+		{"", ""},
+	}
+	for _, tc := range tests {
+		if got := expandHome(tc.in); got != tc.want {
+			t.Errorf("expandHome(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// With no home to be found, a '~' path became one rooted at the filesystem top.
+// USERPROFILE is where Windows looks once HOME is empty.
+func TestExpandHomeWithNoHome(t *testing.T) { // [dd5g9]
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	if home := homeDir(); home != "" {
+		t.Skipf("a home is still found here: %q", home)
+	}
+	for _, in := range []string{"~", "~/dev", "${HOME}/x", `%USERPROFILE%\x`} {
+		if got := expandHome(in); got != in {
+			t.Errorf("expandHome(%q) = %q, want it as typed", in, got)
+		}
+	}
+}
+
+// The key goes to a shell, so a home spelling goes in as the one the shell expands,
+// and a backslash as the slash the shell would otherwise eat.
+func TestSSHKeyArg(t *testing.T) { // [dcq9z]
+	tests := []struct{ in, want string }{
+		{"~/.ssh/id", "~/.ssh/id"},
+		{"${HOME}/.ssh/id", "~/.ssh/id"},
+		{`%USERPROFILE%\.ssh\id`, "~/.ssh/id"},
+		{`C:\Users\ada\.ssh\id`, "C:/Users/ada/.ssh/id"},
+		{"/keys/${HOME}", "/keys/${HOME}"},
+	}
+	for _, tc := range tests {
+		if got := sshKeyArg(tc.in); got != tc.want {
+			t.Errorf("sshKeyArg(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// A rule written through a symlink - a synced folder, a stable name pointing at a
+// dated one, a home that is itself a link - matched nothing, because git answers
+// with the tree's real path and only the Windows build resolved the other side.
+// Nothing said so either: the folder exists, so the "can never match" note in
+// 'account list' stayed quiet while runs acted as the wrong account.
+func TestAccountForDirThroughSymlink(t *testing.T) { // [dbfx2]
+	root := t.TempDir()
+	realDir := filepath.Join(root, "real", "proj")
+	if err := os.MkdirAll(realDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link")
+	if err := madeSymlink(filepath.Join(root, "real"), link); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	cfg := writeConfig(t, "account.work.ghAccount = octocat\naccount.work.path = "+filepath.ToSlash(link)+"/proj\n")
+	// The rule is spelled through the link; the folder is asked about by its real
+	// path, which is the only spelling git ever hands back.
+	if got := cfg.accountForDir(filepath.ToSlash(realDir)); got != "work" {
+		t.Errorf("accountForDir(real path) = %q, want %q", got, "work")
+	}
+	// And still by the spelling it was written with.
+	if got := cfg.accountForDir(filepath.ToSlash(filepath.Join(link, "proj"))); got != "work" {
+		t.Errorf("accountForDir(link path) = %q, want %q", got, "work")
+	}
+}
+
+// A destination that does not exist yet still has to canonicalize - 'repo clone'
+// resolves its account against a folder git has never seen - so resolution stops
+// at the nearest ancestor that is really there and puts the rest back on.
+func TestCanonPathKeepsMissingTail(t *testing.T) { // [dbfx3]
+	root := t.TempDir()
+	if err := madeSymlink(root, filepath.Join(root, "self")); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	got := canonPath(filepath.ToSlash(filepath.Join(root, "self", "not", "there", "yet")))
+	if want := canonPath(filepath.ToSlash(root)) + "/not/there/yet"; got != want {
+		t.Errorf("canonPath = %q, want %q", got, want)
+	}
+}
+
+// A rule for a folder that isn't there yet climbs to the drive to settle links,
+// and a bare 'C:' is that drive's current directory, not its root. The rule came
+// out as 'c:./work', which 'account apply' handed to git as a relative pattern.
+func TestCanonPathStopsAtTheDriveRoot(t *testing.T) { // [dcmfc]
+	if !isWindows() {
+		t.Skip("drive letters are Windows only")
+	}
+	vol := filepath.VolumeName(t.TempDir())
+	p := vol + "/gitsby-no-such-folder-" + filepath.Base(t.TempDir()) + "/x"
+	if got, want := canonPath(p), strings.ToLower(p); got != want {
+		t.Errorf("canonPath(%q) = %q, want %q", p, got, want)
+	}
+}
+
+// A byte-order mark is what a Windows editor writes by default, and it lands on
+// the first key in the file. Read as part of the name, that key became one
+// nothing understands - and the line reporting those printed the mark with it,
+// so the only diagnostic named a key that looks exactly right.
+func TestConfigLoadStripsBOM(t *testing.T) { // [dbg22]
+	cfg := writeConfig(t, "\ufeff"+"account.work.ghAccount = octocat\naccount.work.email = o@example.com\n")
+	if got := cfg.value("work", "ghAccount"); got != "octocat" {
+		t.Errorf("first key after a BOM = %q, want %q", got, "octocat")
+	}
+	if len(cfg.unknown) != 0 {
+		t.Errorf("unknown keys = %v, want none", cfg.unknown)
+	}
+}
+
+// An account is configured when the file names it, whether or not it names a
+// GitHub login of its own: a commit identity and an ssh key are a whole way of
+// using one. Asked the other way, GITSBY_ACCOUNT read such a name as a bare
+// login and applied none of it.
+func TestKnowsAccountWithoutGhAccount(t *testing.T) { // [dbg23]
+	cfg := writeConfig(t, "account.sshonly.email = s@example.com\naccount.byrule.path = /srv/x\n")
+	for _, name := range []string{"sshonly", "SshOnly", "byrule"} {
+		if !cfg.knowsAccount(name) {
+			t.Errorf("knowsAccount(%q) = false, want true", name)
+		}
+	}
+	for _, name := range []string{"", "nobody"} {
+		if cfg.knowsAccount(name) {
+			t.Errorf("knowsAccount(%q) = true, want false", name)
+		}
+	}
+}
+
+// Folder rules are matched in one canonical spelling - lower case, forward
+// slashes - and a listing printed that beside a 'Here' line straight from
+// Windows. Same tree, two spellings, on the one screen that exists to say which
+// tree a rule claims.
+func TestWindowsPath(t *testing.T) { // [dbjep]
+	cases := map[string]string{
+		"c:/opt/dev/github.com/someone": `C:\opt\dev\github.com\someone`,
+		`C:\opt\dev`:                    `C:\opt\dev`,
+		"~/.config/gitsby/config.shcl":  `~\.config\gitsby\config.shcl`,
+		".../github.com/...":            `...\github.com\...`,
+		"c:/":                           `C:\`,
+		"":                              "",
+	}
+	for in, want := range cases {
+		if got := windowsPath(in); got != want {
+			t.Errorf("windowsPath(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// v2.1.0 looked in ~/.config on every platform, so Windows and macOS still find a
+// file there, after their own place. A new file goes in their own place.
+func TestConfigCandidatesKeepDotConfig(t *testing.T) { // [df05s]
+	cases := []struct {
+		name                     string
+		goos, xdg, appData, home string
+		want                     []string
+	}{
+		{"windows is APPDATA, then dot-config", "windows", "", `C:\App`, `C:\Users\jc`,
+			[]string{`C:\App/gitsby/config.shcl`, `C:\Users\jc/.config/gitsby/config.shcl`}},
+		{"windows ignores XDG_CONFIG_HOME an MSYS shell left set", "windows", "/c/msys/home/jc/.config", `C:\App`, `C:\Users\jc`,
+			[]string{`C:\App/gitsby/config.shcl`, `C:\Users\jc/.config/gitsby/config.shcl`}},
+		{"macOS is Application Support, then dot-config", "darwin", "", "", "/Users/jc",
+			[]string{"/Users/jc/Library/Application Support/gitsby/config.shcl", "/Users/jc/.config/gitsby/config.shcl"}},
+		{"macOS ignores XDG_CONFIG_HOME and APPDATA", "darwin", "/x", `C:\App`, "/Users/jc",
+			[]string{"/Users/jc/Library/Application Support/gitsby/config.shcl", "/Users/jc/.config/gitsby/config.shcl"}},
+	}
+	for _, tc := range cases {
+		if got := configCandidatesFor(tc.goos, tc.xdg, tc.appData, tc.home); !slices.Equal(got, tc.want) {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// Where the accounts file lives is per-platform, and only one of the three orders
+// can be produced on the machine running this. The list is also what decides where
+// a new file is created, so an order that is wrong writes somewhere nothing reads.
+func TestConfigCandidatesFor(t *testing.T) { // [dbjjn]
+	cases := []struct {
+		name                     string
+		goos, xdg, appData, home string
+		want                     []string
+	}{
+		{
+			name: "linux is xdg then dot-config",
+			goos: "linux", xdg: "/x", appData: `C:\App`, home: "/h",
+			want: []string{"/x/gitsby/config.shcl", "/h/.config/gitsby/config.shcl"},
+		},
+		{
+			name: "linux ignores APPDATA entirely",
+			goos: "linux", appData: `C:\App`, home: "/h",
+			want: []string{"/h/.config/gitsby/config.shcl"},
+		},
+		{
+			name: "freebsd reads XDG_CONFIG_HOME like linux does",
+			goos: "freebsd", xdg: "/x", home: "/h",
+			want: []string{"/x/gitsby/config.shcl", "/h/.config/gitsby/config.shcl"},
+		},
+		// Off since 2026-11-07: Windows and macOS look in ~/.config last too, where v2.1.0
+		// left its file. TestConfigCandidatesKeepDotConfig has these 4 as they are now.
+		// {
+		// 	name: "windows is APPDATA and nothing else",
+		// 	goos: "windows", appData: `C:\App`, home: `C:\Users\jc`,
+		// 	want: []string{`C:\App/gitsby/config.shcl`},
+		// },
+		// {
+		// 	name: "windows ignores XDG_CONFIG_HOME an MSYS shell left set",
+		// 	goos: "windows", xdg: "/c/msys/home/jc/.config", appData: `C:\App`, home: `C:\Users\jc`,
+		// 	want: []string{`C:\App/gitsby/config.shcl`},
+		// },
+		{
+			name: "windows with no APPDATA falls back to the Unix spelling",
+			goos: "windows", xdg: "/c/msys/home/jc/.config", home: `C:\Users\jc`,
+			want: []string{`C:\Users\jc/.config/gitsby/config.shcl`},
+		},
+		// {
+		// 	name: "macOS is Application Support and nothing else",
+		// 	goos: "darwin", home: "/Users/jc",
+		// 	want: []string{"/Users/jc/Library/Application Support/gitsby/config.shcl"},
+		// },
+		// {
+		// 	name: "macOS ignores XDG_CONFIG_HOME, APPDATA and dot-config alike",
+		// 	goos: "darwin", xdg: "/x", appData: `C:\App`, home: "/Users/jc",
+		// 	want: []string{"/Users/jc/Library/Application Support/gitsby/config.shcl"},
+		// },
+		{
+			name: "a Mac with no home directory has nowhere at all",
+			goos: "darwin", xdg: "/x",
+			want: nil,
+		},
+		{
+			name: "nowhere at all is empty, not a guess",
+			goos: "linux",
+			want: nil,
+		},
+	}
+	for _, tc := range cases {
+		got := configCandidatesFor(tc.goos, tc.xdg, tc.appData, tc.home)
+		if len(got) != len(tc.want) {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("%s: candidate %d = %q, want %q", tc.name, i, got[i], tc.want[i])
+			}
+		}
+	}
+}
+
+// The current layout, in every shape the reader takes: one block per account,
+// the dotted spelling a hand conversion produces, a folder given as an array and
+// as a repeated key, a key typed in camel case, and the things it reports.
+func TestConfigLoadHierarchical(t *testing.T) { // [dbss2]
+	cfg := writeConfig(t, driveFixture(`# top
+protocol: ssh
+stray: 1
+account.dotted.path: /srv/dotted
+account.dotted.ghAccount: dottedlogin
+account: Block
+	path: [/srv/a, "/srv/b c"]
+	path: /srv/d
+	pathContains: github.com/alice
+	nonsense: x
+	email: b@example.com
+account: 2024
+	host: gitea.example
+bad = line
+`))
+	if cfg.flat {
+		t.Fatal("read as the flat layout")
+	}
+	if cfg.values["protocol"] != "ssh" {
+		t.Errorf("protocol = %q", cfg.values["protocol"])
+	}
+	if want := []string{"dotted", "block", "2024"}; !slices.Equal(cfg.accountNames(), want) {
+		t.Errorf("accountNames = %v, want %v", cfg.accountNames(), want)
+	}
+	if got := cfg.value("Dotted", "ghAccount"); got != "dottedlogin" {
+		t.Errorf("dotted ghAccount = %q", got)
+	}
+	if got := cfg.foldersOf("block"); !slices.Equal(got, []string{driveRule("/srv/a"), driveRule("/srv/b c"), driveRule("/srv/d")}) {
+		t.Errorf("block folders = %v", got)
+	}
+	if got := cfg.segmentsOf("block"); !slices.Equal(got, []string{"github.com/alice"}) {
+		t.Errorf("block segments = %v", got)
+	}
+	if got := cfg.value("2024", "host"); got != "gitea.example" {
+		t.Errorf("numeric account host = %q", got)
+	}
+	// Named by the path that reaches them, so the reader can find the line.
+	for _, want := range []string{"stray", "account[Block].nonsense", "line 14 "} {
+		if !slices.ContainsFunc(cfg.unknown, func(s string) bool { return strings.HasPrefix(s, want) }) {
+			t.Errorf("unknown = %v, missing %q", cfg.unknown, want)
+		}
+	}
+	if len(cfg.unknown) != 3 {
+		t.Errorf("unknown = %v, want three", cfg.unknown)
+	}
+}
+
+// An account block with no keys is still an account: it can be named through
+// GITSBY_ACCOUNT, and a name that could climb out of the include directory is
+// reported, not used.
+func TestConfigLoadHierarchicalNames(t *testing.T) { // [dbss3]
+	cfg := writeConfig(t, "account: bare\naccount: ../../evil\n\tpath: /x\n")
+	if !cfg.knowsAccount("bare") {
+		t.Error("a block with no keys is not an account")
+	}
+	if cfg.knowsAccount("../../evil") || len(cfg.foldersOf("../../evil")) != 0 {
+		t.Error("a traversal name became an account")
+	}
+	if !slices.Contains(cfg.unknown, "account[../../evil]") {
+		t.Errorf("unknown = %v", cfg.unknown)
+	}
+}
+
+// nestedKeyRows are files with a key indented under another key, which SHCL reads
+// as that key's child and nothing in gitsby reads at all. Each lists what the
+// ignored list must name, and checks that the key above still applies.
+var nestedKeyRows = []struct {
+	name  string
+	body  string
+	want  []string
+	still func(t *testing.T, cfg *config)
+}{
+	{"under a field", "account: w\n\temail: e@x\n\t\tsshkey: k\n",
+		[]string{"account[w].email.sshkey (indented under email)"},
+		func(t *testing.T, cfg *config) { wantValue(t, cfg, "w", "email", "e@x") }},
+	{"under a key nothing reads", "account: w\n\tnonsense: 1\n\t\ttokenfile: /t\n",
+		[]string{"account[w].nonsense", "account[w].nonsense.tokenfile (indented under nonsense)"}, nil},
+	{"under protocol", "protocol: https\n\tsshkey: k\n",
+		[]string{"protocol.sshkey (indented under protocol)"},
+		func(t *testing.T, cfg *config) { wantProtocol(t, cfg, "https") }},
+	{"under a dotted field", "account.w.email: e@x\n\tsshkey: k\n",
+		[]string{"account.w.email.sshkey (indented under email)"},
+		func(t *testing.T, cfg *config) { wantValue(t, cfg, "w", "email", "e@x") }},
+	{"two levels deeper", "account: w\n\tpath: /srv/a\n\t\t\tsshkey: k\n",
+		[]string{"account[w].path.sshkey (indented under path)"},
+		func(t *testing.T, cfg *config) { wantFolders(t, cfg, "w", driveRule("/srv/a")) }},
+	{"a chain", "account: w\n\temail: e@x\n\t\tsshkey: k\n\t\t\tx: y\n",
+		[]string{"account[w].email.sshkey (indented under email)", "account[w].email.sshkey.x (indented under sshkey)"},
+		func(t *testing.T, cfg *config) { wantValue(t, cfg, "w", "email", "e@x") }},
+	{"under a repeated field", "account: w\n\temail: e@x\n\t\tsshkey: k1\n\temail: f@x\n\t\tsshkey: k2\n",
+		[]string{"account[w].email.sshkey (indented under email)", "account[w].email: e@x (line 2; line 4 gives it again, and that one is read)"},
+		func(t *testing.T, cfg *config) { wantValue(t, cfg, "w", "email", "f@x") }},
+	{"a block under protocol", "protocol: https\n\taccount: w\n\t\tpath: /srv/a\n",
+		[]string{"protocol.account (indented under protocol)", "protocol.account.path (indented under account)"},
+		func(t *testing.T, cfg *config) {
+			wantProtocol(t, cfg, "https")
+			if len(cfg.accountNames()) != 0 || len(cfg.paths) != 0 {
+				t.Errorf("accounts = %v, rules = %v, want none", cfg.accountNames(), cfg.paths)
+			}
+		}},
+	{"under a top-level key nothing reads", "stray: 1\n\tx: 2\n",
+		[]string{"stray", "stray.x (indented under stray)"}, nil},
+	{"a stacked list", "account: w\n\tpath:\n\t\t- /srv/a\n\t\t- /srv/b\n",
+		nil,
+		func(t *testing.T, cfg *config) { wantFolders(t, cfg, "w", driveRule("/srv/a"), driveRule("/srv/b")) }},
+	{"a raw block", "account: w\n\tname:\n\t\t~~~\n\t\tJim\n\t\t  sshkey: k\n\t\t~~~\n",
+		nil,
+		func(t *testing.T, cfg *config) { wantValue(t, cfg, "w", "name", "Jim\n  sshkey: k") }},
+	{"inside a refused account name", "account: ../../evil\n\tpath: /x\n\t\tsshkey: k\n",
+		[]string{"account[../../evil]"},
+		func(t *testing.T, cfg *config) {
+			if cfg.knowsAccount("../../evil") {
+				t.Error("a traversal name became an account")
+			}
+		}},
+}
+
+func wantValue(t *testing.T, cfg *config, acct, key, want string) {
+	t.Helper()
+	if got := cfg.value(acct, key); got != want {
+		t.Errorf("%s = %q, want %q", key, got, want)
+	}
+}
+
+func wantProtocol(t *testing.T, cfg *config, want string) {
+	t.Helper()
+	if got := cfg.values["protocol"]; got != want {
+		t.Errorf("protocol = %q, want %q", got, want)
+	}
+}
+
+func wantFolders(t *testing.T, cfg *config, acct string, want ...string) {
+	t.Helper()
+	if got := cfg.foldersOf(acct); !slices.Equal(got, want) {
+		t.Errorf("folders = %v, want %v", got, want)
+	}
+}
+
+// A key indented one level too far became the child of the key above it, and the
+// loader never asked a key for its children. The account applied without it, and
+// the line that lists what was ignored left it out.
+func TestConfigLoadNestedKeys(t *testing.T) { // [dcmn3]
+	for _, row := range nestedKeyRows {
+		t.Run(row.name, func(t *testing.T) {
+			cfg := writeConfig(t, driveFixture(row.body))
+			for _, want := range row.want {
+				if !slices.Contains(cfg.unknown, want) {
+					t.Errorf("unknown = %q, missing %q", cfg.unknown, want)
+				}
+			}
+			if len(cfg.unknown) != len(row.want) {
+				t.Errorf("unknown = %q, want exactly %q", cfg.unknown, row.want)
+			}
+			if row.still != nil {
+				row.still(t, cfg)
+			}
+		})
+	}
+	// The key nothing reads comes first, then what sits under it.
+	cfg := writeConfig(t, nestedKeyRows[1].body)
+	if parent, child := slices.Index(cfg.unknown, nestedKeyRows[1].want[0]), slices.Index(cfg.unknown, nestedKeyRows[1].want[1]); parent < 0 || child < parent {
+		t.Errorf("unknown = %q, want the parent ahead of its child", cfg.unknown)
+	}
+}
+
+// A chain deeper than the parser keeps still loads, lists every level it kept,
+// and names every line it skipped. The kept depth is the module's answer, so a
+// module that moves its cap moves this test with it.
+func TestConfigLoadNestedKeysAtTheDepthCap(t *testing.T) { // [dcmn4]
+	const chain = 520
+	var body strings.Builder
+	body.WriteString("account: w\n\temail: e@x\n")
+	for n := 1; n <= chain; n++ {
+		fmt.Fprintf(&body, "%sk%d: v\n", strings.Repeat("\t", n+1), n)
+	}
+	cfg := writeConfig(t, body.String())
+	wantValue(t, cfg, "w", "email", "e@x")
+	doc := shcl.Parse(body.String())
+	kept := 0
+	for at := "account(0).email(0)"; len(doc.Children(at)) > 0; at += fmt.Sprintf(".k%d(0)", kept) {
+		kept++
+	}
+	if kept == 0 || kept >= chain {
+		t.Fatalf("the module kept %d of %d levels, so the cap is not under test", kept, chain)
+	}
+	disp, parent := "account[w].email", "email"
+	for n := 1; n <= kept; n++ {
+		key := fmt.Sprintf("k%d", n)
+		if want := disp + "." + key + " (indented under " + parent + ")"; !slices.Contains(cfg.unknown, want) {
+			t.Fatalf("level %d is not listed", n)
+		}
+		disp, parent = disp+"."+key, key
+	}
+	// The first line past the cap says so; each one under it was skipped with it.
+	for n := kept + 1; n <= chain; n++ {
+		why := "parent line was skipped; line skipped"
+		if n == kept+1 {
+			why = fmt.Sprintf("nesting deeper than %d levels; line skipped", shcl.MaxDepth)
+		}
+		if want := fmt.Sprintf("line %d (%s)", n+2, why); !slices.Contains(cfg.unknown, want) {
+			t.Errorf("line %d is not listed as skipped", n+2)
+		}
+	}
+	if len(cfg.unknown) != chain {
+		t.Errorf("%d entries, want %d: one per level kept and one per line skipped", len(cfg.unknown), chain)
+	}
+}
+
+// Which layout a file is in is decided by its own lines, never by its extension.
+func TestIsFlatConfig(t *testing.T) { // [dbss4]
+	cases := map[string]bool{
+		"":                                       false,
+		"# only comments\n":                      false,
+		"account.work.path = /x\n":               true,
+		"account.work.path = C:/x  # c: d\n":     true,
+		"account: work\n\tpath: /x\n":            false,
+		"account.work.path: /x\n":                false,
+		"k: a=b\n":                               false,
+		"account.w.path = /x\naccount: w\n":      false, // one current-layout line means the file is in it
+		"\ufeffaccount.work.path = /x\r\n":       true,
+		"just-a-key\naccount.work.ghAccount = x": true,
+	}
+	for in, want := range cases {
+		if got := isFlatConfig(in); got != want {
+			t.Errorf("isFlatConfig(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+// The conversion writes blocks, so a comment above an account's first line stays
+// above the block, one between two keys stays between them, and one above the
+// end - or above a top-level key - is not pulled into the block before it.
+func TestFlatToSHCL(t *testing.T) { // [dbss5]
+	in := "# header\n\n# about work\naccount.work.path = /srv/work   # tree\n# between\naccount.work.ghAccount = \"a#b\"\n\n# above protocol\nprotocol = https\naccount.home.email = h@x.y\njust-a-key\n"
+	want := "# header\n\n# about work\n\naccount: work\n\tpath: /srv/work  # tree\n\t# between\n\tghaccount: \"a#b\"\n\n# above protocol\nprotocol: https\n\naccount: home\n\temail: h@x.y\njust-a-key\n\n" + shcl.GenBanner
+	if got := flatToSHCL(in); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+	cfg := writeConfig(t, flatToSHCL(in))
+	if cfg.value("work", "ghAccount") != "a#b" || cfg.value("home", "email") != "h@x.y" || cfg.values["protocol"] != "https" {
+		t.Errorf("converted file reads back wrong: %v", cfg.values)
+	}
+}
+
+// What the plan shows is what the file gets, so the spelling comes from the
+// module rather than from a second quoting rule that could drift from it.
+func TestShclValue(t *testing.T) { // [dbss6]
+	cases := map[string]string{
+		"plain":    "plain",
+		"Ada #1":   `"Ada #1"`,
+		"":         `""`,
+		`C:\x`:     `"C:\x"`,
+		"a, b":     `"a, b"`,
+		"C:/work":  `"C:/work"`,
+		"~/dev/w":  "~/dev/w",
+		"trail   ": `"trail   "`,
+	}
+	for in, want := range cases {
+		if got := shclValue(in); got != want {
+			t.Errorf("shclValue(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// A backslash is itself, quoted or not, so a Windows path typed by hand keeps its
+// '\t' and '\n'. SHCL 2.x read those as escapes. A path rule written doubled
+// under 2.x still names its folder, since a rule reads either slash.
+func TestConfigLoadBackslashes(t *testing.T) { // [dd2d9]
+	cfg := writeConfig(t, "account: w\n\tname: ~\\dev\\tools\n\temail: \"C:\\new\"\n")
+	wantValue(t, cfg, "w", "name", `~\dev\tools`)
+	wantValue(t, cfg, "w", "email", `C:\new`)
+	// Through driveFolder: '/srv' is not absolute on Windows, so the rule would be
+	// ignored there by design.
+	cfg = writeConfig(t, "account: w\n\tpath: "+driveFolder("/srv")+"\\\\work\n\n#\n# This config file format is SHCL.\n#\n")
+	if got := cfg.accountForDir(driveFolder("/srv/work/x")); got != "w" {
+		t.Errorf("a doubled path rule names %q, want w: %+v", got, cfg)
+	}
+}
+
+// A backslash value goes in as typed, since no quote kind reads a backslash as
+// an escape. The module quotes it only for its other characters. Every spelling
+// reads back as given.
+func TestBackslashValuesReadBack(t *testing.T) { // [ddcby]
+	cases := map[string]string{
+		`~\dev\tools`:     `~\dev\tools`,
+		`\\srv\share`:     `\\srv\share`,
+		`%USERPROFILE%\x`: `%USERPROFILE%\x`,
+		`C:\work\new`:     `"C:\work\new"`,
+		`C:\Bob's\new`:    `"C:\Bob's\new"`,
+		"C:\\a\u200bb":    `"C:\a◉U+200B◉b"`,
+	}
+	for in, want := range cases {
+		if got := shclValue(in); got != want {
+			t.Errorf("shclValue(%q) = %q, want %q", in, got, want)
+		}
+		a, file := setApp(t, "account: work\n\temail: a@x\n", "work", "name", in)
+		if err := a.preflight(); err != nil {
+			t.Fatalf("%q: preflight: %v", in, err)
+		}
+		if err := a.cmdAccountSet(); err != nil {
+			t.Fatalf("%q: set: %v", in, err)
+		}
+		if got := readBack(t, file); got != "account: work\n\temail: a@x\n\tname: "+want+"\n" {
+			t.Errorf("%q: file:\n%q", in, got)
+		}
+		cfg := &config{values: map[string]string{}}
+		opt := defaultOptions()
+		opt.configFile, opt.configGiven = file, true
+		if err := cfg.load(opt); err != nil {
+			t.Fatalf("%q: load: %v", in, err)
+		}
+		wantValue(t, cfg, "work", "name", in)
+	}
+}
+
+// An escape name the format doesn't have is listed rather than read as text. The
+// shcl beta pinned before 2026-10-01 loaded a '\n' in such a rule as a newline,
+// which on Windows matched nothing.
+func TestConfigListsAnUnknownEscape(t *testing.T) { // [ddcbn]
+	cfg := writeConfig(t, "account: w\n\tpath: \"C:\\work◉NEWLINEX◉new\"\n\temail: e@x\n")
+	wantValue(t, cfg, "w", "email", "e@x")
+	if len(cfg.paths) != 0 {
+		t.Errorf("the line was read as a rule: %+v", cfg.paths)
+	}
+	if got := strings.Join(cfg.unknown, " | "); !strings.Contains(got, "line 2 (") {
+		t.Errorf("ignored = %q, want line 2 named", got)
+	}
+}
+
+// A folder rule is absolute or it is nothing. Both platforms' answers, whatever
+// this machine is: 'C:work' and '/work' change meaning with the current drive on
+// Windows, and 'C:/work' is no folder on Linux.
+func TestIsAbsFolderFor(t *testing.T) { // [dcmf8]
+	cases := []struct {
+		goos string
+		in   string
+		want bool
+	}{
+		{"linux", "/", true},
+		{"linux", "/a", true},
+		{"linux", "//srv/share", true},
+		{"linux", "", false},
+		{"linux", ".", false},
+		{"linux", "./a", false},
+		{"linux", "..", false},
+		{"linux", "dev/work", false},
+		{"linux", "C:/work", false},
+		{"linux", "~/x", false},
+		{"windows", "c:/", true},
+		{"windows", "C:/work", true},
+		{"windows", "//srv/share/x", true},
+		{"windows", "", false},
+		{"windows", "C:", false},
+		{"windows", "C:work", false},
+		{"windows", "/work", false},
+		{"windows", ".", false},
+		{"windows", "dev/work", false},
+	}
+	for _, tc := range cases {
+		if got := isAbsFolderFor(tc.goos, tc.in); got != tc.want {
+			t.Errorf("isAbsFolderFor(%q, %q) = %v, want %v", tc.goos, tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestFolderRuleProblem(t *testing.T) { // [dcmf9]
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cases := map[string]string{
+		filepath.ToSlash(t.TempDir()): "",
+		"~":                           "",
+		"~/dev":                       "",
+		".":                           "not an absolute folder",
+		"./x":                         "not an absolute folder",
+		"..":                          "not an absolute folder",
+		"dev/work":                    "not an absolute folder",
+		"~nobody/x":                   "only a bare '~' is expanded",
+		"${HOME}/dev":                 "",
+		`%USERPROFILE%\dev`:           "",
+		"$HOME/dev":                   "only '~', '${HOME}' and '%USERPROFILE%' are expanded",
+		"${NOPE}/dev":                 "only '~', '${HOME}' and '%USERPROFILE%' are expanded",
+		"%APPDATA%/dev":               "only '~', '${HOME}' and '%USERPROFILE%' are expanded",
+	}
+	for in, want := range cases {
+		if got := folderRuleProblem(in); got != want {
+			t.Errorf("folderRuleProblem(%q) = %q, want %q", in, got, want)
+		}
+	}
+	// os.UserHomeDir reads USERPROFILE on Windows, so an empty HOME proves nothing there.
+	if isWindows() {
+		return
+	}
+	t.Setenv("HOME", "")
+	for _, in := range []string{"~/dev", "${HOME}/dev", "%USERPROFILE%/dev"} {
+		if got, want := folderRuleProblem(in), "no home folder on this machine"; got != want {
+			t.Errorf("folderRuleProblem(%s) with no home = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// 'path: .' became 'gitdir/i:./' in the global git config, which git measures from
+// the folder holding that file - home - so every repo under home took the account,
+// while gitsby matched it nowhere. A file cannot say where a relative value was
+// typed, so the loader lists one instead of guessing, and keeps the account.
+func TestConfigIgnoresARelativePath(t *testing.T) { // [dcmfa]
+	abs := filepath.ToSlash(t.TempDir())
+	cases := []struct {
+		name, body string
+		unknown    []string
+		folders    []string
+	}{
+		// Off since 2026-11-07: a whole v2.1.0 file is converted on read, so the key
+		// is named the way the converted file spells it. The case below has that.
+		// {"flat", "account.work.path = .\naccount.work.email = w@example.com\n", []string{"account.work.path (not an absolute folder: .)"}, nil},
+		{"flat", "account.work.path = .\naccount.work.email = w@example.com\n", []string{"account[work].path (not an absolute folder: .)"}, nil},
+		{"block", "account: work\n\tpath: [dev/work, \"" + abs + "\"]\n\temail: w@example.com\n", []string{"account[work].path (not an absolute folder: dev/work)"}, []string{canonPath(abs)}},
+	}
+	for _, tc := range cases {
+		cfg := writeConfig(t, tc.body)
+		if !slices.Equal(cfg.unknown, tc.unknown) {
+			t.Errorf("%s: unknown = %q, want %q", tc.name, cfg.unknown, tc.unknown)
+		}
+		if got := cfg.foldersOf("work"); !slices.Equal(got, tc.folders) {
+			t.Errorf("%s: folders = %q, want %q", tc.name, got, tc.folders)
+		}
+		if !cfg.knowsAccount("work") || !slices.Contains(cfg.accountNames(), "work") {
+			t.Errorf("%s: the account went with its ignored path: %v", tc.name, cfg.accountNames())
+		}
+		if got := cfg.contestedRules(); len(got) != 0 {
+			t.Errorf("%s: contested = %v", tc.name, got)
+		}
+		here := t.TempDir()
+		t.Chdir(here)
+		if got := cfg.accountForDir(here); got != "" {
+			t.Errorf("%s: accountForDir(cwd) = %q, want none", tc.name, got)
+		}
+	}
+	cfg := writeConfig(t, "account.only.path = .\n")
+	if !slices.Contains(cfg.accountNames(), "only") {
+		t.Errorf("an account whose only key is an ignored path is gone: %v", cfg.accountNames())
+	}
+}
+
+// A relative token file was read from whatever folder a command ran in, and ssh
+// read a relative key from each repo's own folder, so a file in a cloned repo
+// could pick either.
+func TestConfigIgnoresARelativeKeyFile(t *testing.T) { // [dcnp1]
+	t.Setenv("HOME", t.TempDir())
+	abs := filepath.ToSlash(filepath.Join(t.TempDir(), "tok"))
+	cfg := writeConfig(t, "account: work\n\ttokenfile: tok.txt\n\tsshkey: .ssh/id_work\n\temail: w@example.com\n"+
+		"account: home\n\ttokenfile: \""+abs+"\"\n\tsshkey: ~/.ssh/id_home\n")
+	want := []string{"account[work].tokenfile (not an absolute path: tok.txt)", "account[work].sshkey (not an absolute path: .ssh/id_work)"}
+	if !slices.Equal(cfg.unknown, want) {
+		t.Errorf("unknown = %q, want %q", cfg.unknown, want)
+	}
+	if got := cfg.value("work", "tokenFile") + cfg.value("work", "sshKey"); got != "" {
+		t.Errorf("relative values kept: %q", got)
+	}
+	if cfg.value("home", "tokenFile") != abs || cfg.value("home", "sshKey") != "~/.ssh/id_home" {
+		t.Errorf("home = %q, %q", cfg.value("home", "tokenFile"), cfg.value("home", "sshKey"))
+	}
+	t.Chdir(t.TempDir())
+	if err := os.WriteFile("tok.txt", []byte("secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := readTokenFile("tok.txt"); got != "" {
+		t.Errorf("readTokenFile(tok.txt) = %q, want nothing", got)
+	}
+}
+
+func TestAccountApplyPlanSkipsARelativePath(t *testing.T) { // [dcmfb]
+	abs := filepath.ToSlash(t.TempDir())
+	cfg := writeConfig(t, "account.a.path = .\naccount.b.path = dev/work\naccount.c.path = ~nobody/x\naccount.d.path = "+abs+"\n")
+	plan := cfg.accountApplyPlan()
+	if want := "includeIf.gitdir/i:" + canonPath(abs) + "/.path"; len(plan) != 1 || plan[0].cond != want {
+		t.Errorf("plan = %+v, want the one rule %q", plan, want)
+	}
+}
+
+// Each shape at a candidate comes back as itself, not as "no file": a create may
+// go only where nothing is.
+func TestProbeConfigCandidate(t *testing.T) { // [dcmk1]
+	dir := t.TempDir()
+	if state, _, _ := probeConfigCandidate(filepath.Join(dir, "none.shcl")); state != candidateAbsent {
+		t.Errorf("missing: state = %d, want absent", state)
+	}
+	file := filepath.Join(dir, "file.shcl")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if state, _, err := probeConfigCandidate(file); state != candidateUsable || err != nil {
+		t.Errorf("readable file: state = %d, err = %v, want usable", state, err)
+	}
+	folder := filepath.Join(dir, "d.shcl")
+	if err := os.Mkdir(folder, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if state, fi, _ := probeConfigCandidate(folder); state != candidateNotFile || fi == nil || !fi.IsDir() {
+		t.Errorf("folder: state = %d, want not a file, and a FileInfo saying folder", state)
+	}
+	link := filepath.Join(dir, "link.shcl")
+	if err := madeSymlink(filepath.Join(dir, "nowhere"), link); err != nil {
+		t.Logf("no symlink here, so the link case is not run: %v", err)
+	} else if state, _, _ := probeConfigCandidate(link); state != candidateBrokenLink {
+		t.Errorf("link to nothing: state = %d, want a broken link", state)
+	}
+	// A path through a file is "not a folder", which is as good as nothing there.
+	if state, _, _ := probeConfigCandidate(filepath.Join(file, "config.shcl")); state != candidateAbsent {
+		t.Errorf("under a file: state = %d, want absent", state)
+	}
+	// Opens, then fails to read. Linux has one to hand.
+	if mem := "/proc/self/mem"; isRegularFile(mem) {
+		if state, _, err := probeConfigCandidate(mem); state != candidateUnreadable || err == nil {
+			t.Errorf("opens and fails to read: state = %d, err = %v, want unreadable", state, err)
+		}
+	}
+	// Windows has no 0200, and root reads through one.
+	if isWindows() || os.Geteuid() == 0 {
+		return
+	}
+	shut := filepath.Join(dir, "shut")
+	if err := os.Mkdir(shut, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(shut, "config.shcl"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(shut, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(shut, 0o700) })
+	if state, _, err := probeConfigCandidate(filepath.Join(shut, "config.shcl")); state != candidateUnknown || !errors.Is(err, fs.ErrPermission) {
+		t.Errorf("in a folder that can't be searched: state = %d, err = %v, want unknown, with a permission error", state, err)
+	}
+	// A link into that folder points at something that may well be there.
+	through := filepath.Join(dir, "through.shcl")
+	if err := madeSymlink(filepath.Join(shut, "config.shcl"), through); err == nil {
+		if state, _, _ := probeConfigCandidate(through); state != candidateUnknown {
+			t.Errorf("link into a folder that can't be searched: state = %d, want unknown", state)
+		}
+	}
+	unreadable := filepath.Join(dir, "unreadable.shcl")
+	if err := os.WriteFile(unreadable, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(unreadable, 0o200); err != nil {
+		t.Fatal(err)
+	}
+	// Put back so nothing left over is unreadable; a failed restore changes no result.
+	t.Cleanup(func() { _ = os.Chmod(unreadable, 0o600) })
+	if state, _, err := probeConfigCandidate(unreadable); state != candidateUnreadable || !errors.Is(err, fs.ErrPermission) {
+		t.Errorf("mode 0200: state = %d, err = %v, want unreadable with a permission error", state, err)
+	}
+}
+
+// Reads pass over a candidate that is there and can't be read, and still find a
+// readable one behind it. Only 'account set' refuses on it.
+func TestResolveConfigFileSkipsAnUnreadableCandidate(t *testing.T) { // [dcmk2]
+	if isWindows() || os.Geteuid() == 0 {
+		t.Skip("needs a file this user can't read: Windows has no 0200, and root reads through one")
+	}
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("GITSBY_CONFIG", "")
+	t.Setenv("APPDATA", "")
+	c := configCandidates()
+	if len(c) < 2 {
+		t.Skip("this platform looks in one place only")
+	}
+	unreadable, readable := c[0], c[1]
+	for _, f := range []string{unreadable, readable} {
+		if err := os.MkdirAll(filepath.Dir(f), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(f, []byte("account: work\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Chmod(unreadable, 0o200); err != nil {
+		t.Fatal(err)
+	}
+	// Put back so nothing left over is unreadable; a failed restore changes no result.
+	t.Cleanup(func() { _ = os.Chmod(unreadable, 0o600) })
+	if got, err := defaultOptions().resolveConfigFile(); got != readable || err != nil {
+		t.Errorf("with a readable file behind it: got %q, %v, want %q", got, err, readable)
+	}
+	if err := os.Remove(readable); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := defaultOptions().resolveConfigFile(); got != "" || err != nil {
+		t.Errorf("with only the unreadable file: got %q, %v, want no file and no error", got, err)
+	}
+}
+
+// One key given twice to one account - in a block opened again, in blocks whose
+// names differ only in case, or in a dotted line beside a block - was read last
+// wins without a word, so two accounts written as one went unnoticed. The last is
+// still read, and each earlier one that said something else is listed. Pieces
+// that don't disagree are just one account.
+func TestRepeatedAccountKeys(t *testing.T) { // [ddav1]
+	const read = " gives it again, and that one is read)"
+	for _, tc := range []struct {
+		label, body, host, email string
+		ignored                  []string
+	}{
+		{"two blocks, one name", "account: tt\n\thost: gitea.com\n\temail: a@x\n\naccount: tt\n\thost: github.com\n\temail: b@y\n",
+			"github.com", "b@y", []string{"account[tt].host: gitea.com (line 2; line 6" + read, "account[tt].email: a@x (line 3; line 7" + read}},
+		{"names differing in case", "account: tt\n\temail: a@x\n\naccount: TT\n\temail: b@y\n",
+			"github.com", "b@y", []string{"account[tt].email: a@x (line 2; line 5" + read}},
+		{"a block, then a dotted line", "account: tt\n\temail: a@x\naccount.tt.email: b@y\n",
+			"github.com", "b@y", []string{"account[tt].email: a@x (line 2; line 3" + read}},
+		{"dotted lines around another block", "account.tt.email: a@x\naccount: other\n\temail: o@x\naccount.tt.host: gitea.com\n",
+			"gitea.com", "a@x", nil},
+		{"a block opened again to add a key", "account: tt\n\temail: a@x\naccount: other\n\temail: o@x\naccount: tt\n\thost: gitea.com\n",
+			"gitea.com", "a@x", nil},
+		{"the same value twice", "account: tt\n\temail: a@x\n\naccount: tt\n\temail: a@x\n",
+			"github.com", "a@x", nil},
+		// Off since 2026-11-07: a whole v2.1.0 file is converted on read, so the lines
+		// named are the converted file's. The case below has that.
+		// {"2.x flat lines", "account.tt.host = gitea.com\naccount.tt.email = a@x\naccount.TT.host = github.com\n",
+		// 	"github.com", "a@x", []string{"account.tt.host: gitea.com (line 1; line 3" + read}},
+		{"2.x flat lines", "account.tt.host = gitea.com\naccount.tt.email = a@x\naccount.TT.host = github.com\n",
+			"github.com", "a@x", []string{"account[tt].host: gitea.com (line 2; line 4" + read}},
+	} {
+		cfg := writeConfig(t, tc.body)
+		if got := cfg.hostOf("tt"); got != tc.host {
+			t.Errorf("%s: host = %q, want %q", tc.label, got, tc.host)
+		}
+		if got := cfg.value("tt", "email"); got != tc.email {
+			t.Errorf("%s: email = %q, want %q", tc.label, got, tc.email)
+		}
+		if !slices.Equal(cfg.unknown, tc.ignored) {
+			t.Errorf("%s: ignored = %q, want %q", tc.label, cfg.unknown, tc.ignored)
+		}
+	}
+	for _, body := range []string{"protocol: ssh\nprotocol: https\n", "protocol = ssh\nprotocol = https\n"} {
+		cfg := writeConfig(t, body)
+		if got, want := cfg.unknown, []string{"protocol: ssh (line 1; line 2" + read}; cfg.values["protocol"] != "https" || !slices.Equal(got, want) {
+			t.Errorf("%q: protocol = %q, ignored = %q, want https and %q", body, cfg.values["protocol"], got, want)
+		}
+	}
+}

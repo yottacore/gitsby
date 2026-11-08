@@ -1,8 +1,6 @@
 <!-- omit in toc -->
 # Contributing
 
-*This file was generated via [https://contributing.md/generator/](https://contributing.md/generator/)*
-
 First off, thanks for taking the time to contribute!
 
 All types of contributions are encouraged and valued. See the [Table of Contents](#table-of-contents) for different ways to help and details about how this project handles them. Please make sure to read the relevant section before making your contribution. It will make it a lot easier for us maintainers and smooth out the experience for all involved. The community looks forward to your contributions.
@@ -29,35 +27,22 @@ All types of contributions are encouraged and valued. See the [Table of Contents
 ## Code of Conduct
 
 This project and everyone participating in it is governed by the
-[gitsby Code of Conduct](https://github.com/jim-collier/gitsby/blob/main/code_of_conduct.md).
+[gitsby Code of Conduct](https://github.com/yottacore/gitsby/blob/main/code_of_conduct.md).
 By participating, you are expected to uphold this code. Please report unacceptable behavior to <gitsby@ubx9.com>.
 
 ## I Have a Question
 
-Before you ask a question, it is best to search for existing [Issues](https://github.com/jim-collier/gitsby/issues) that might help you. In case you have found a suitable issue and still need clarification, you can write your question in this issue. It is also advisable to search the internet for answers first.
+Before you ask a question, it is best to search for existing [Issues](https://github.com/yottacore/gitsby/issues) that might help you. In case you have found a suitable issue and still need clarification, you can write your question in this issue. It is also advisable to search the internet for answers first.
 
 If you then still feel the need to ask a question and need clarification, we recommend the following:
 
-- Open an [Issue](https://github.com/jim-collier/gitsby/issues/new).
+- Open an [Issue](https://github.com/yottacore/gitsby/issues/new).
+
 - Provide as much context as you can about what you're running into.
+
 - Provide project and platform versions, depending on what seems relevant.
 
 We will then take care of the issue as soon as possible.
-
-<!--
-You might want to create a separate issue tag for questions and include it in this description. People should then tag their issues accordingly.
-
-Depending on how large the project is, you may want to outsource the questioning, e.g. to Stack Overflow or Gitter. You may add additional contact and information possibilities:
-- IRC
-- Slack
-- Gitter
-- Stack Overflow tag
-- Blog
-- FAQ
-- Roadmap
-- E-Mail List
-- Forum
--->
 
 ## I Want To Contribute
 
@@ -73,12 +58,16 @@ Depending on how large the project is, you may want to outsource the questioning
 A good bug report shouldn't leave others needing to chase you up for more information. Therefore, we ask you to investigate carefully, collect information and describe the issue in detail in your report. Please complete the following steps in advance to help us fix any potential bug as fast as possible.
 
 - Make sure that you are using the latest version.
-- Determine if your bug is really a bug and not an error on your side e.g. using incompatible environment components/versions (Make sure that you have read the [documentation](https://github.com/jim-collier/gitsby/blob/main/README.md). If you are looking for support, you might want to check [this section](#i-have-a-question)).
-- To see if other users have experienced (and potentially already solved) the same issue you are having, check if there is not already a bug report existing for your bug or error in the [bug tracker](https://github.com/jim-collier/gitsby/issues?q=label%3Abug).
+
+- Determine if your bug is really a bug and not an error on your side e.g. using incompatible environment components/versions (Make sure that you have read the [documentation](https://github.com/yottacore/gitsby/blob/main/README.md). If you are looking for support, you might want to check [this section](#i-have-a-question)).
+
+- To see if other users have experienced (and potentially already solved) the same issue you are having, check if there is not already a bug report existing for your bug or error in the [bug tracker](https://github.com/yottacore/gitsby/issues?q=label%3Abug).
+
 - Also search the internet, including Stack Overflow, to see if users outside the GitHub community have discussed the issue.
+
 - Collect information about the bug:
 	- OS, platform, and version (Windows, Linux, macOS, x86_64, ARM64).
-	- Which implementation, Bash or PowerShell, and its version.
+	- Which version, from `gitsby --version`, and which platform.
 	- Your `git` version, and `gitsby -v`.
 	- Your input and the output.
 	- Can you reliably reproduce it? Can you reproduce it with older versions?
@@ -92,15 +81,20 @@ A good bug report shouldn't leave others needing to chase you up for more inform
 
 We use GitHub issues to track bugs and errors. If you run into an issue with the project:
 
-- Open an [Issue](https://github.com/jim-collier/gitsby/issues/new). (Since we can't be sure at this point whether it is a bug or not, we ask you not to talk about a bug yet and not to label the issue.)
+- Open an [Issue](https://github.com/yottacore/gitsby/issues/new). (Since we can't be sure at this point whether it is a bug or not, we ask you not to talk about a bug yet and not to label the issue.)
+
 - Explain the behavior you would expect and the actual behavior.
+
 - Please provide as much context as possible and describe the *reproduction steps* that someone else can follow to recreate the issue on their own. This usually includes your code. For good bug reports you should isolate the problem and create a reduced test case.
+
 - Provide the information you collected in the previous section.
 
 Once it's filed:
 
 - The project team will label the issue accordingly.
+
 - A team member will try to reproduce the issue with your provided steps. If there are no reproduction steps or no obvious way to reproduce the issue, the team will ask you for those steps and mark the issue as `needs-repro`. Bugs with the `needs-repro` tag will not be addressed until they are reproduced.
+
 - If the team is able to reproduce the issue, it will be marked `needs-fix`, as well as possibly other tags (such as `critical`), and the issue will be left to be implemented by someone.
 
 <!-- You might want to create an issue template for bugs and errors that can be used as a guide and that defines the structure of the information to be included. If you do so, reference it here in the description. -->
@@ -113,18 +107,24 @@ This covers both new features and small improvements to what's already there. Fo
 #### Before Submitting an Enhancement
 
 - Make sure that you are using the latest version.
-- Read the [documentation](https://github.com/jim-collier/gitsby/blob/main/README.md) carefully and find out if the functionality is already covered, maybe by an individual configuration.
-- Perform a [search](https://github.com/jim-collier/gitsby/issues) to see if the enhancement has already been suggested. If it has, add a comment to the existing issue instead of opening a new one.
+
+- Read the [documentation](https://github.com/yottacore/gitsby/blob/main/README.md) carefully and find out if the functionality is already covered, maybe by an individual configuration.
+
+- Perform a [search](https://github.com/yottacore/gitsby/issues) to see if the enhancement has already been suggested. If it has, add a comment to the existing issue instead of opening a new one.
+
 - Find out whether your idea fits with the scope and aims of the project. It's up to you to make a strong case to convince the project's developers of the merits of this feature. Keep in mind that we want features that will be useful to the majority of our users and not just a small subset. If you're just targeting a minority of users, consider writing an add-on/plugin library.
 
 <!-- omit in toc -->
 #### How Do I Submit a Good Enhancement Suggestion?
 
-Enhancement suggestions are tracked as [GitHub issues](https://github.com/jim-collier/gitsby/issues).
+Enhancement suggestions are tracked as [GitHub issues](https://github.com/yottacore/gitsby/issues).
 
 - Use a clear and descriptive title.
+
 - Describe the suggestion step by step, in as much detail as you can.
+
 - Say what the current behavior is, what you expected instead, and why. Mention any alternatives that don't work for you.
+
 - Explain why it would be useful to most gitsby users. Pointing at another project that solved it well helps.
 
 <!-- You might want to create an issue template for enhancement suggestions that can be used as a guide and that defines the structure of the information to be included. If you do so, reference it here in the description. -->
@@ -134,69 +134,123 @@ Enhancement suggestions are tracked as [GitHub issues](https://github.com/jim-co
 <!-- omit in toc -->
 #### Set up
 
-One-liner setup. It clones the repo, checks out the `dev` branch, and checks the tooling, offering to install what's missing. It shows the plan and asks before doing anything.
+Clone it and build it. There is no setup script any more, because there is nothing to set up beyond Go itself.
 
-- Linux / macOS:
+~~~bash
+git clone https://github.com/yottacore/gitsby.git
+cd gitsby/src-go && go build -o gitsby .
+~~~
 
-	~~~bash
-	curl -fsSL https://raw.githubusercontent.com/jim-collier/gitsby/main/install-dev.bash | bash
-	~~~
-
-- Windows (PowerShell 7+):
-
-	~~~pwsh
-	irm https://raw.githubusercontent.com/jim-collier/gitsby/main/install-dev.ps1 | iex
-	~~~
-
-Or clone it yourself and install the tooling by hand.
+That binary is the whole product. The rest of the tooling below is for running the checks, and every piece of it is optional except Go.
 
 <!-- omit in toc -->
 #### What you need
 
-- `git`, and `bash` 4.4 or newer. (The two installers themselves also run on macOS stock bash 3.2.)
-- `shellcheck`, to lint the Bash side.
-- `pwsh` 7+ and its `PSScriptAnalyzer` module, if you touch the PowerShell side. Without them, those stages report themselves absent and skip.
+- `git`, and the Go toolchain. Nothing else is required to build.
+
+- `bash` 4.4 or newer, to run the pipeline. The product does not need it; the pipeline is written in it.
+
+- `staticcheck` (`go install honnef.co/go/tools/cmd/staticcheck@latest`), for the lint stage. Without it that check warns and skips; `gofmt` and `go vet` ship with Go and always gate.
+
+- `golangci-lint` (`go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`), for the rest of the Go lint set. Configured in `src-go/.golangci.yml`; warns and skips when absent.
+
+- `govulncheck` (`go install golang.org/x/vuln/cmd/govulncheck@latest`), to check the standard library and every module in `go.mod`, the test-only ones included, for known problems. Same treatment.
+
+- `goversioninfo` (`go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.5.0`), to check the committed Windows resource against the newest tag. Warns and skips when absent; a release refuses without it.
+
+- `strace`, for the spawn counts. Linux only; the step skips itself elsewhere.
+
+- `shellcheck`, to lint the pipeline's own scripts.
+
 - `markdownlint` (`npm install -g markdownlint-cli`), to lint the docs.
-- `python3` with Pillow, and optionally `gifsicle`, to regenerate the demo. Only needed for a full pipeline run.
+
+- `python3` with Pillow, and optionally `gifsicle`, to regenerate the demo. Only needed for a full pipeline run. A render made with a Pillow or gifsicle other than the version `cicd/config.bash` records is compared, but never replaces the committed gif, since the tool can change its bytes. The container has the recorded ones.
+
+- `ruff` (`pipx install ruff`), to check the Python helpers for references they hold too long or never let go, then by the rules in `ruff.toml`. Warns and skips when absent.
+
+- `pip-audit` (`pipx install pip-audit`), to check the demo's Python libraries for known problems. Warns and skips when absent, like govulncheck.
+
 - `gh`, if you want to exercise the `pr` command.
 
 <!-- omit in toc -->
 #### Where things are
 
-- `bin/gitsby` and `bin/gitsby.ps1` - the two implementations. They are ports of each other, so a change to one nearly always belongs in the other.
+- `src-go/` - the implementation. One file per concern, package `main`.
+
+- `legacy/` - the Bash and PowerShell builds, frozen at v2.1.0, plus the installers of that era. Read them, compare against them, never edit them.
+
 - `cicd/` - the local pipeline and its config.
+
+- `src-go/resource_windows_*.syso` - the icon and version details Windows shows for the `.exe`. Generated by `cicd/utility/gen-winres.bash` and committed, because they are linked into binaries whose checksums are published; the script's header explains why they carry the last released version rather than the working tree's.
+
 - `cicd/utility/demo/` - everything the demo gif is built from. Start at `script.txt`, which describes scene by scene what the demo shows; the scenario file beside it is the same thing in the form the renderer reads.
+
 - `project/` - design notes and the backlog.
 
 <!-- omit in toc -->
 #### Run the checks
 
-- `cicd/cicd.bash --quick` - the whole pipeline, minus the slow stages. Run this before you push.
-- `cicd/cicd.bash` - everything, including the fuzz suite and the demo.
+- `cicd/cicd.bash --quick` - what fits in about 10 minutes, and reaches no host but origin. It runs the regression suite, the native fuzz targets and the soak test, and leaves out govulncheck, pip-audit, CodeQL, the demo, and the remote tests. What you want while iterating; run the full pipeline before you open a PR.
 
-- `cicd/parity.bash` - just the parity suite: whether the two builds *answer the same* for one input, rather than whether each behaves correctly. Runs inside the test stage too.
-- `cicd/release.bash --dry-run` - what cutting a release would do, changing nothing.
+- `cicd/cicd.bash` - everything, including the fuzz suite, the demo, and the tests on two Macs, a Windows box and other Unix boxes.
+
+- `cicd/cicd.bash --no-leakcheck` - everything but the leak checks, the slowest part of stage 3. A full run does them, `--quick` does the soak test alone, and `--leakcheck` adds them all to `--quick` or `--no-fuzz`. First a soak test: the everyday commands, round after round in one process against a throwaway repo, failing if the heap grows past a margin or a goroutine is left behind between round N and round 2N. Each run's heap profiles land in `cicd/artifacts/leakcheck/`, and the summary names the `go tool pprof -base` command that shows what grew. Then CodeQL runs its security and quality queries over the Go code, once for each OS a release is built for, with the dependencies vendored into a scratch copy so they get checked too. It runs Python's over the pipeline's Python files the same way, with the installed source of the libraries the demo imports. Any finding fails the run, except in someone else's code, where only security, correctness and reliability findings count in Go, and only security ones in Python. A few more are set aside in `cicd/config.bash`, each with its backlog item. Its reports land beside the heap profiles. CodeQL comes with the container image, so `--leakcheck` with `--no-container` stops on a box without it, and a plain run there skips CodeQL with a warning. The unit tests catch a goroutine left running on every run, with or without the flag.
+
+- `cicd/cicd.bash --backlog-run-quick [<area>...]` - every lint check, the unit tests, then a build and the regression, fuzz and compatibility suites against it, in a few minutes. No sync, no prompt and no run log. Name areas to run only those: `lint`, `unit`, `suite`, `fuzz` and `parity`. `--gate` is another name for it. It runs in the container image as a full run does, and `--no-container` keeps it on your machine.
+
+- `cicd/cicd.bash --merge-gate` - every check a plain run does, the other boxes included, without changing anything: no sync, dogfood or publish, no prompt, and a demo gif that came out different is left as committed. `--backlog-run-full` runs the same checks at the end of a backlog round, and `--ci` is another name for `--merge-gate`. It is what the pre-push hook runs. `--long`, or `--slow`, is the same as a plain run, since nothing here takes hours.
+
+- `cicd/cicd.bash --no-container` - runs everything on your machine. By default stages 1 to 4 and the demo gif, or the whole of `--backlog-run-quick`, run in a Debian image built from `cicd/container/Dockerfile`, with Go, every lint and test tool and the demo's font at the versions `cicd/config.bash` and the recipe record. Without a working docker a run falls back to your machine and warns, and `--container` refuses. The image is built on first use, and again whenever the recipe or a version changes. Each run has one temp folder, `<YYYYmmDD-HHMMSS>_<NNN>` under `${HOST_TEMP}/gitsby/`, else under `${TMPDIR:-/tmp}/gitsby/`, and removes it at the end. Its containers are named `gitsby-<run folder>-<step>` and labeled `dev.project=gitsby` and `dev.run=<run folder>`, so `docker stop` can find them. At the end the run removes its own containers, the project's dangling images, older image tags once a newer one has passed, and the Go cache volume when it's over 2 GB. A run that passed also takes out of that volume's Go module cache every module version `src-go/go.sum` doesn't name, unless another gitsby run's container is up, since every worktree's runs share the volume. It leaves docker's build cache, which other projects share, for docker to trim with `builder.gc` in its `daemon.json`. It says in one line what went and about what that freed. Dogfood's builds and stage 7's are made with the image's Go as well. Sync, the copy into place, the remote tests and publishing still run on your machine, so that way they keep its install dirs and ssh keys.
+
+- `cicd/cicd.bash --list` - prints the steps a run with the other options given would do, and the ID and name of each test in them, and runs nothing. `--keep-temp` keeps a run's temp folder, with the logs its steps leave there, and its containers, and says at the end where they are.
+
+- `cicd/cicd.bash --install-hook` - install a git pre-push hook that runs `--merge-gate` before every push to `main`, on the commit being pushed. That takes as long as a full run, the other boxes included. A push that changes only the paths `MERGE_GATE_SKIP` in that commit's `cicd/config.bash` lists, the docs among them, goes out without it, and a commit from before `--merge-gate` gets the `--gate` it had. It checks the commit as committed, in a separate worktree at `.git/gitsby-gate`, and never your working tree, so an uncommitted edit neither fails a push nor passes one. That worktree shows in `git worktree list`. Other branches, deletes and tags are not gated, and `git push --no-verify` skips the gate for one push. The install refuses to replace a pre-push hook it did not write, and writes nothing while `core.hooksPath` is set.
+
+- To remove the hook, run `rm .git/hooks/pre-push` and then `git worktree remove --force .git/gitsby-gate`.
+
+- `cicd/parity.bash` - just the compatibility comparison: whether this build *answers the same* as the frozen v2.1.0 one for a given input, rather than whether either behaves correctly on its own. It has its own pipeline stage.
+
+- `cicd/release.bash --dry-run` - what cutting a release would do, changing nothing. A release builds its binaries with the image's Go where docker works, both the build that checks every target compiles and the one from the tag that gets published, so anyone with docker can build the same bytes again. Without docker it builds with your Go, and says so. The upload and also the checks against the published files run on your machine.
+
 - `cicd/test.bash` - just the regression suite. It builds throwaway repos under a temp directory and never touches the network or your real repos.
+
 - `cicd/fuzz.bash` - just the fuzz suite.
 
-The pipeline fast-forwards from `origin` before it builds anything, so the checks run against the tree that will actually be pushed. It stops if your branch has diverged, warns and carries on if you're offline or the branch has no upstream, and `--no-sync` (`-NoSync`) skips it.
+- `cicd/remote-tests.bash` - just the tests on other boxes: the Go tests on each, over ssh, and the regression suite on each Mac when given a universal build with `--mac-bin`, as the pipeline does. The FreeBSD and Linux arm64 boxes run the suite too when given their builds with `--bin`, if they have bash, git and Go. The Linux arm64 box also runs the windows/arm64 Go tests under Wine, in addition to the Windows box's run. Each box is taken through a shared host lock for its run, and one that is off or busy is skipped, shown as `SKIP`. A VM that is paused or off is woken for its run and put back the way it was found after. Each Mac and Unix box keeps its copy of the tree under its temp folder. The boxes and the lock are one machine's, set in `cicd/config.bash`, so elsewhere it skips them all and says why.
 
-Both suites run once per implementation, so a Bash-only change still has to keep the PowerShell side green.
+- `cicd/utility/spawn-count.bash` - how many processes each command starts, against the newest previous run. This is the profiling step: the program is blocked on git for effectively all of its wall clock, so a sampling profile has no leaders in it.
+
+- `cicd/utility/keep-build.bash` - archive the current binary, list what is kept, run one, or diff one against the current build on the same arguments. For bisecting a behavior change.
+
+- `cicd/utility/run-latest.ps1` - run the newest build, any arguments forwarded, from a pool of timestamped copies outside PATH. The pool means a rebuild never fights a copy that is still running, and week-old copies age out on their own. PowerShell 7, all platforms.
+
+- `cicd/utility/spawn-report.bash` - print the newest recorded spawn counts with deltas; `--check` reports only what arrived since it last looked, the same marker pattern as `lint-report.bash --check`.
+
+All three suites take `-q`, which drops the per-check line and keeps the failures and the total. The pipeline passes it on an unattended run.
+
+The pipeline fast-forwards from `origin` before it builds anything, so the checks run against the tree that will actually be pushed. It stops if your branch has diverged, warns and carries on if you're offline or the branch has no upstream, and `--no-sync` skips it.
+
+The regression and fuzz suites both run against the compiled binary, so build before you run them - or let the pipeline do it, which is what its second stage is for.
 
 <!-- omit in toc -->
 #### Then
 
-Work on a short-named feature branch off `dev`, and open a PR back to `dev`. `main` is release-only. Coding style is in [style-guide.md](style-guide.md).
+Work on a short-named feature branch, open a PR back to `dev`, and leave `main` release-only. Coding style is in [style-guide.md](style-guide.md).
+
+> While the Go port is in flight, all of it lives on the `gover` integration branch, and day-to-day branches come off that rather than off `dev`. `git switch gover` is the only difference; everything else is the same. This note goes when the port lands.
 
 <!-- TODO
 ### Improving The Documentation
+
 Updating, improving and correcting the documentation
 
 -->
 
 ## Styleguides
 
-Code (Bash and PowerShell) follows the project [style guide](style-guide.md).
+Go code follows `gofmt`, which the lint stage enforces. The [style guide](style-guide.md) covers the Bash and PowerShell in `legacy/` and the pipeline's own scripts.
+
+What the program prints, and how it asks and refuses, follows the [UI and UX style guide](project/style-guide_ui-ux.md). A new message or option starts there.
 
 ### Commit Messages
 
@@ -204,9 +258,5 @@ Short and plain. A few words about what changed is enough, and that is what the 
 
 <!-- TODO
 ## Join The Project Team
+
 -->
-
-<!-- omit in toc -->
-## Attribution
-
-This guide is based on the [contributing.md generator](https://contributing.md/generator)!
