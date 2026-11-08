@@ -33,6 +33,27 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- The pre-push gate fails every release merge to main, on a check that wants a vNEXT heading
+	- ID: 2026110811340000
+	- Type: Bug
+	- Status: Done
+	- Needs local test suite run?: No. test.bash ran 1874/0.
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261108-113400
+	- Opened by: jim-collier
+	- Target OS: Linux
+	- Steps to reproduce [Bug]:
+		- Cut a release with `cicd/release.bash`.
+	- Incorrect behavior [Bug]:
+		- Phase 2 retitles vNEXT, merges the bump, and `gitsby release` pushes main. The gate on that push fails `[db6y5]`, since no `## vNEXT` is left, so nothing is tagged on origin. release.bash can't be run again either: it wants a vNEXT section.
+	- Expected behavior [Bug]:
+		- The gate passes a release commit, and a cut that stops after the tag can be finished.
+	- Actual cause [Bug]:
+		- `[db6y5]` only looked for `## vNEXT`. It never ran on a release commit before v3.0.0-beta.1.
+	- Closed: 2026-11-08
+	- Acceptance signoff: Closed on tests.
+	- Test case: `[db6y5]` takes vNEXT or a dated release heading as the first one below the template. `[df1mr]` `[df1ms]` `[df1mt]` `[df1mv]` cover the new `release.bash --publish`, which runs phase 3 alone for a tag already pushed. All 4 failed on the old release.bash.
+
 - `account apply` writes no credential helper per account, so plain `git push` over https fails in the folder of an account gh isn't active as
 	- ID: 2026110810100400
 	- Type: Feature
