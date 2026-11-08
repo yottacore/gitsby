@@ -21,6 +21,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Notes
 
+- This release was stalled for a while waiting on [SHCL](https://github.com/yottacore/shcl) v3, the format the accounts file is now written in. SHCL v3.0.0-beta1 is finally out, so this release could go out with it.
+
 - The Bash and PowerShell builds are frozen at v2.1.0 and will not gain features. Development continues in a single Go build, which keeps every command that works today - where a command is renamed, the old name keeps working. The two scripts stay in the repository as a reference, and would be reopened only for a production fix.
 
 ### Added
