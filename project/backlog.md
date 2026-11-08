@@ -33,6 +33,24 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- `account apply` writes no credential helper per account, so plain `git push` over https fails in the folder of an account gh isn't active as
+	- ID: 2026110810100400
+	- Type: Feature
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261108-101004
+	- Opened by: jim-collier
+	- Target OS: All
+	- Requirements [Feature]:
+		- Port dev's 13dbf98 (2026-09-30, bash build only) to Go. Each account's fragment gets a credential helper for its host.
+		- The helper text is the same for every account. It reads `gitsby.ghAccount` and `gitsby.ghTokenFile` from git config when it runs, so no login or path is pasted into a string a shell runs.
+		- On GitHub it asks `gh auth token --user <login>`, then the `tokenFile`. On other hosts only the `tokenFile`, since tea has no `auth token`.
+		- No token written to disk. A credential manager already set up still gets asked first.
+		- Tested through real `git credential fill`, with gh active as a different account.
+		- Doc it in accounts.md and the changelog.
+	- Progress log:
+		- 2026-11-08: Found while merging dev into gover for v3.0.0-beta.1. dev's bash and doc changes were dropped in that merge, since the Go build has none of it yet. Not in any release, so nothing regresses.
+
 - The pre-push gate fails every release merge to main, on a check that wants a vNEXT heading
 	- ID: 2026110811340000
 	- Type: Bug
@@ -53,21 +71,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Closed: 2026-11-08
 	- Acceptance signoff: Closed on tests.
 	- Test case: `[db6y5]` takes vNEXT or a dated release heading as the first one below the template. `[df1mr]` `[df1ms]` `[df1mt]` `[df1mv]` cover the new `release.bash --publish`, which runs phase 3 alone for a tag already pushed. All 4 failed on the old release.bash.
-
-- `account apply` writes no credential helper per account, so plain `git push` over https fails in the folder of an account gh isn't active as
-	- ID: 2026110810100400
-	- Type: Feature
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261108-101004
-	- Opened by: jim-collier
-	- Target OS: All
-	- Requirements [Feature]:
-		- Port dev's 13dbf98 (2026-09-30, bash build only) to Go. Each account's fragment gets a helper that asks gh for that account's token by name, then tries its `tokenFile`.
-		- No token written to disk. A credential manager already set up still gets asked first.
-		- Doc it in accounts.md and the changelog, as dev did.
-	- Progress log:
-		- 2026-11-08: Found while merging dev into gover for v3.0.0-beta.1. dev's bash and doc changes were dropped in that merge, since gover's Go build has none of it yet. Not in any release, so nothing regresses.
 
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
