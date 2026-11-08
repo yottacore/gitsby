@@ -17,7 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 -->
 
-## vNEXT
+## v3.0.0-beta.1 - 2026-11-08
 
 ### Notes
 
@@ -196,6 +196,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A release is now one binary per platform - linux, windows and FreeBSD, amd64 and arm64 each, and one universal macOS binary - with a single `SHA256SUMS` over the set. They are built before the tag is cut, so a target that stops compiling fails while nothing has been changed. The version comes from the tag alone; no file in the tree records it.
 
 - `cicd/test.bash`, `cicd/parity.bash`, `cicd/release.bash` and the Go unit tests run on macOS. They assumed GNU `sed -i`, `stat -c`, `grep -P` and `date +%N`, and `~/.config` as the accounts folder. The parity check also put raw paths into a sed pattern, and `cicd/utility/test-id.bash` mints IDs without GNU date.
+
+### Downloads
+
+| OS      | amd64                                                                                                                    | arm64
+| :---    | :---                                                                                                                     | :---
+| Linux   | [gitsby-linux-amd64](https://github.com/yottacore/gitsby/releases/download/v3.0.0-beta.1/gitsby-linux-amd64)             | [gitsby-linux-arm64](https://github.com/yottacore/gitsby/releases/download/v3.0.0-beta.1/gitsby-linux-arm64)
+| macOS   | [gitsby-darwin-universal](https://github.com/yottacore/gitsby/releases/download/v3.0.0-beta.1/gitsby-darwin-universal)   | [gitsby-darwin-universal](https://github.com/yottacore/gitsby/releases/download/v3.0.0-beta.1/gitsby-darwin-universal)
+| Windows | [gitsby-windows-amd64.exe](https://github.com/yottacore/gitsby/releases/download/v3.0.0-beta.1/gitsby-windows-amd64.exe) | [gitsby-windows-arm64.exe](https://github.com/yottacore/gitsby/releases/download/v3.0.0-beta.1/gitsby-windows-arm64.exe)
+| FreeBSD | [gitsby-freebsd-amd64](https://github.com/yottacore/gitsby/releases/download/v3.0.0-beta.1/gitsby-freebsd-amd64)         | [gitsby-freebsd-arm64](https://github.com/yottacore/gitsby/releases/download/v3.0.0-beta.1/gitsby-freebsd-arm64)
+
+Checksums: [SHA256SUMS](https://github.com/yottacore/gitsby/releases/download/v3.0.0-beta.1/SHA256SUMS). Installers: [install.bash](https://raw.githubusercontent.com/yottacore/gitsby/v3.0.0-beta.1/install.bash), [install.ps1](https://raw.githubusercontent.com/yottacore/gitsby/v3.0.0-beta.1/install.ps1).
 
 ## v2.1.0 - 2026-08-14
 
