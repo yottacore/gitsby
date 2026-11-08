@@ -6273,18 +6273,18 @@ GHEOF
 	local bi="${work}/bl-ids" chk=fAssert
 	mkdir -p "${bi}/cicd/utility" "${bi}/project"
 	cp "${root}/cicd/utility/backlog-check.bash" "${bi}/cicd/utility/"
-	git init --quiet -b gover "${bi}"
+	git init --quiet -b dev "${bi}"
 	printf '%s "[aaaaa] one" true\n%s "[aaaab] two" true\n' "${chk}" "${chk}" > "${bi}/cicd/test.bash"
 	printf '# Backlog\n' > "${bi}/project/backlog.md"
 	( cd "${bi}" && git add --all && git commit --quiet -m base && git checkout --quiet -b feat )
 	sed -i.bak 's/\[aaaaa\] one/[aaaaa] one, reworded/' "${bi}/cicd/test.bash" && rm -f "${bi:?}/cicd/test.bash.bak"
-	fAssertOut "[dd5kv] the backlog gate reads a relabeled check as edited, by its ID"  '\(0 removed since gover\)' \
+	fAssertOut "[dd5kv] the backlog gate reads a relabeled check as edited, by its ID"  '\(0 removed since dev\)' \
 		"${bi}/cicd/utility/backlog-check.bash"
 	sed -i.bak '/aaaab/d' "${bi}/cicd/test.bash" && rm -f "${bi:?}/cicd/test.bash.bak"
 	fAssertOut "[dd5kw] and still fails one that was removed"  '^  "\[aaaab\] two"$' \
 		"${bi}/cicd/utility/backlog-check.bash"
 	echo 'aaaab went with the command it tested.' >> "${bi}/project/backlog.md"
-	fAssertOut "[dd5kx] and passes once the backlog names it by ID"  '\(1 removed since gover\)' \
+	fAssertOut "[dd5kx] and passes once the backlog names it by ID"  '\(1 removed since dev\)' \
 		"${bi}/cicd/utility/backlog-check.bash"
 	## Every check and Go test carries an ID, dated from when it was written, and no two share one.
 	fAssert "[dd5kr] every suite check and Go test carries its own ID"  "${root}/cicd/utility/test-id.bash" --check -q

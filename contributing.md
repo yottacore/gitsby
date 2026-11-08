@@ -237,8 +237,6 @@ The regression and fuzz suites both run against the compiled binary, so build be
 
 Work on a short-named feature branch, open a PR back to `dev`, and leave `main` release-only. Coding style is in [style-guide.md](style-guide.md).
 
-> While the Go port is in flight, all of it lives on the `gover` integration branch, and day-to-day branches come off that rather than off `dev`. `git switch gover` is the only difference; everything else is the same. This note goes when the port lands.
-
 <!-- TODO
 ### Improving The Documentation
 

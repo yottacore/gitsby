@@ -372,7 +372,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- git hands a hook the checkout it pushes from, through `GIT_DIR`, `GIT_WORK_TREE` and `GIT_PREFIX`. The hook drops them before anything else, or its git calls and the unit tests would act on that checkout instead of the gate worktree.
 	- Accepted cost: the gate runs the pushed commit's own pipeline and unit tests, as running the pipeline on that commit would. A push to `main` takes as long as a full run, about 50 minutes. `git push --no-verify` is how to push to `main` without running it.
 
-- A GitHub Actions workflow, `.github/workflows/macos.yml`, builds and tests on GitHub's hosted Macs, Intel and Apple silicon, on each push to `gover`, `dev` and `main` and on each pull request.
+- A GitHub Actions workflow, `.github/workflows/macos.yml`, builds and tests on GitHub's hosted Macs, Intel and Apple silicon, on each push to `dev` and `main` and on each pull request.
 	- It is an extra check, not a gate. Nothing waits on it, and nothing is published from it. `cicd/cicd.bash` stays the one pipeline, and its stage 7 still tests a real Mac over ssh.
 	- Hosted runners otherwise stay out, so the project leans on any one git host as little as possible. This one was asked for on 2026-10-22, for macOS only. No Apple silicon Mac is on hand to test on, and the hosted one costs nothing for a public repo.
 	- It runs what stage 7 runs on a Mac, `go test` and `cicd/test.bash` against the build, plus a smoke test of the binary. It uses nothing from `cicd/` but the suite, so it can't grow into a second pipeline.
