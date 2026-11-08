@@ -49,62 +49,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: test.bash pins GIT_TERMINAL_PROMPT=0 for these checks but never unsets SSH_ASKPASS or GIT_ASKPASS, and git asks an askpass ahead of that check. Unsetting both in test.bash's env pins fixed it there.
 	- Estimated effort: Low
 
-- `account apply` writes no credential helper per account, so plain `git push` over https fails in the folder of an account gh isn't active as
-	- ID: 2026110810100400
-	- Type: Feature
-	- Status: Done
-	- Needs external testing: No. The same checks ran on vm925w, below. Stage 7 runs only the Go tests on a Windows box, not test.bash.
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261108-101004
-	- Opened by: jim-collier
-	- Target OS: All
-	- Requirements [Feature]:
-		- Port dev's 13dbf98 (2026-09-30, bash build only) to Go. Each account's fragment gets a credential helper for its host.
-		- The helper text is the same for every account. It reads `gitsby.ghAccount` and `gitsby.ghTokenFile` from git config when it runs, so no login or path is pasted into a string a shell runs.
-		- On GitHub it asks `gh auth token --user <login>`, then the `tokenFile`. On other hosts only the `tokenFile`, since tea has no `auth token`.
-		- No token written to disk. A credential manager already set up still gets asked first.
-		- Tested through real `git credential fill`, with gh active as a different account.
-		- Doc it in accounts.md and the changelog.
-	- Progress log:
-		- 2026-11-08: Found while merging dev into gover for v3.0.0-beta.1. dev's bash and doc changes were dropped in that merge, since the Go build has none of it yet. Not in any release, so nothing regresses.
-		- 2026-11-08: Ported. `account apply` writes `credential.https://<host>.helper` into each account's fragment, one fixed text per kind of host, built by `fragmentHelper` in accountcmd.go. Doc in accounts.md and the changelog.
-	- Decisions:
-		- No helper for an account with no way to a token on its own host: no `tokenFile`, and no `ghAccount` on GitHub, such as an ssh-only account. Departs from "each account's fragment". A helper that can never answer only adds processes to every https request.
-		- The token file is read from the global config only, with `--includes`, the scope the fragment is included from. Same rule as `configOwnScope`: a repo's own config doesn't get to name a token file. A relative path is no file, as in `readTokenFile`. `gitsby.ghAccount` is read from any scope, as gitsby's own runs read it.
-		- A username git already holds is left alone, and `x` stands in where there is none, as `accountLogin` does. A username that differs from the login isn't refused the way gh's helper refuses one, since `user` and `ghAccount` may differ on purpose.
-		- `gh auth token --user` with no `--hostname`, the same call `probeGhToken` makes, so `GH_HOST` picks an Enterprise host for both.
-		- `gh auth setup-git` run after `apply` clears the helpers ahead of its own, which takes out ours too. Checked with git 2.51. Documented: run `apply` again, which moves the includes back to the end.
-		- Changelog under Added, since no release has had this.
-	- Branch: round-20261108
-	- Test case: [df1s0] to [df1s8] and [df1sa] in test.bash, all through real `git credential fill` with the fake gh active as another account.
-		- Verified: with no helper written, [df1s0] to [df1s3] and [df1s5] fail. With gh asked on every host, a helper for every account, and the token file read from any scope, [df1s3], [df1s4], [df1s7] and [df1sa] fail. All pass on the change: test.bash 1884/0, quick gate passed (lint, go test, fuzz 313/0, parity 30/0).
-		- Not watched red: [df1s6], since the order is git's own, and [df1s8], since the helper has no interpolated text to break.
-		- Swept: the other place that writes a helper, `selectAccount`, resets the list for gitsby's own runs, so the two don't stack. [db5wk] still passes.
-		- Verified on vm925w, Git for Windows 2.55.0, with the windows/amd64 build of 08e7452: [df1s0] to [df1s8], [df1sa] and [dd80d], run the same way as in test.bash, all pass, with every token file named by a `C:/` path. So does a `~/` token file under a backslash HOME, which the helper's sh reads as `C:\...\tildehome/tilde.tok`. With the 53fcc0b build, [df1s0] to [df1s3], [df1s5] and that `~/` check fail.
-	- Acceptance signoff: Self-closed: 08e7452 passed on b23 (test.bash 1884/0) and on vm925w (12/0).
-	- Closed: 20261108-142139
-
-- The pre-push gate fails every release merge to main, on a check that wants a vNEXT heading
-	- ID: 2026110811340000
-	- Type: Bug
-	- Status: Done
-	- Needs local test suite run?: No. test.bash ran 1874/0.
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261108-113400
-	- Opened by: jim-collier
-	- Target OS: Linux
-	- Steps to reproduce [Bug]:
-		- Cut a release with `cicd/release.bash`.
-	- Incorrect behavior [Bug]:
-		- Phase 2 retitles vNEXT, merges the bump, and `gitsby release` pushes main. The gate on that push fails `[db6y5]`, since no `## vNEXT` is left, so nothing is tagged on origin. release.bash can't be run again either: it wants a vNEXT section.
-	- Expected behavior [Bug]:
-		- The gate passes a release commit, and a cut that stops after the tag can be finished.
-	- Actual cause [Bug]:
-		- `[db6y5]` only looked for `## vNEXT`. It never ran on a release commit before v3.0.0-beta.1.
-	- Closed: 2026-11-08
-	- Acceptance signoff: Closed on tests.
-	- Test case: `[db6y5]` takes vNEXT or a dated release heading as the first one below the template. `[df1mr]` `[df1ms]` `[df1mt]` `[df1mv]` cover the new `release.bash --publish`, which runs phase 3 alone for a tag already pushed. All 4 failed on the old release.bash.
-
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
@@ -158,6 +102,27 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: every `raw` tool shares `cmdPassthrough`, git included. 2026-10-22: `rawActive` has one reader, `cmdPassthrough`, and the variable is unset in all 4 hermetic suites. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
 	- Acceptance signoff: Hand test on b28l, run in the 2026-10-23 round as asked.
 	- Closed: 20261023-195424
+
+- The pre-push gate fails every release merge to main, on a check that wants a vNEXT heading
+	- ID: 2026110811340000
+	- Type: Bug
+	- Status: Done
+	- Needs local test suite run?: No. test.bash ran 1874/0.
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261108-113400
+	- Opened by: jim-collier
+	- Target OS: Linux
+	- Steps to reproduce [Bug]:
+		- Cut a release with `cicd/release.bash`.
+	- Incorrect behavior [Bug]:
+		- Phase 2 retitles vNEXT, merges the bump, and `gitsby release` pushes main. The gate on that push fails `[db6y5]`, since no `## vNEXT` is left, so nothing is tagged on origin. release.bash can't be run again either: it wants a vNEXT section.
+	- Expected behavior [Bug]:
+		- The gate passes a release commit, and a cut that stops after the tag can be finished.
+	- Actual cause [Bug]:
+		- `[db6y5]` only looked for `## vNEXT`. It never ran on a release commit before v3.0.0-beta.1.
+	- Closed: 2026-11-08
+	- Acceptance signoff: Closed on tests.
+	- Test case: `[db6y5]` takes vNEXT or a dated release heading as the first one below the template. `[df1mr]` `[df1ms]` `[df1mt]` `[df1mv]` cover the new `release.bash --publish`, which runs phase 3 alone for a tag already pushed. All 4 failed on the old release.bash.
 
 - The pipeline prunes every project's docker build cache
 	- ID: 2026110311291903
@@ -364,6 +329,41 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [ddf3q] and [ddf3r] in test.bash. They run release.bash past its dry run, with gh, curl and gitsby stubbed. The second is the first run of the phase 3 `releases/latest` block.
 	- Acceptance signoff: Self-closed: reproduced, and the checks fail before the fix and pass after.
 	- Closed: 20261003-141520
+
+- `account apply` writes no credential helper per account, so plain `git push` over https fails in the folder of an account gh isn't active as
+	- ID: 2026110810100400
+	- Type: Feature
+	- Status: Done
+	- Needs external testing: No. The same checks ran on vm925w, below. Stage 7 runs only the Go tests on a Windows box, not test.bash.
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261108-101004
+	- Opened by: jim-collier
+	- Target OS: All
+	- Requirements [Feature]:
+		- Port dev's 13dbf98 (2026-09-30, bash build only) to Go. Each account's fragment gets a credential helper for its host.
+		- The helper text is the same for every account. It reads `gitsby.ghAccount` and `gitsby.ghTokenFile` from git config when it runs, so no login or path is pasted into a string a shell runs.
+		- On GitHub it asks `gh auth token --user <login>`, then the `tokenFile`. On other hosts only the `tokenFile`, since tea has no `auth token`.
+		- No token written to disk. A credential manager already set up still gets asked first.
+		- Tested through real `git credential fill`, with gh active as a different account.
+		- Doc it in accounts.md and the changelog.
+	- Progress log:
+		- 2026-11-08: Found while merging dev into gover for v3.0.0-beta.1. dev's bash and doc changes were dropped in that merge, since the Go build has none of it yet. Not in any release, so nothing regresses.
+		- 2026-11-08: Ported. `account apply` writes `credential.https://<host>.helper` into each account's fragment, one fixed text per kind of host, built by `fragmentHelper` in accountcmd.go. Doc in accounts.md and the changelog.
+	- Decisions:
+		- No helper for an account with no way to a token on its own host: no `tokenFile`, and no `ghAccount` on GitHub, such as an ssh-only account. Departs from "each account's fragment". A helper that can never answer only adds processes to every https request.
+		- The token file is read from the global config only, with `--includes`, the scope the fragment is included from. Same rule as `configOwnScope`: a repo's own config doesn't get to name a token file. A relative path is no file, as in `readTokenFile`. `gitsby.ghAccount` is read from any scope, as gitsby's own runs read it.
+		- A username git already holds is left alone, and `x` stands in where there is none, as `accountLogin` does. A username that differs from the login isn't refused the way gh's helper refuses one, since `user` and `ghAccount` may differ on purpose.
+		- `gh auth token --user` with no `--hostname`, the same call `probeGhToken` makes, so `GH_HOST` picks an Enterprise host for both.
+		- `gh auth setup-git` run after `apply` clears the helpers ahead of its own, which takes out ours too. Checked with git 2.51. Documented: run `apply` again, which moves the includes back to the end.
+		- Changelog under Added, since no release has had this.
+	- Branch: round-20261108
+	- Test case: [df1s0] to [df1s8] and [df1sa] in test.bash, all through real `git credential fill` with the fake gh active as another account.
+		- Verified: with no helper written, [df1s0] to [df1s3] and [df1s5] fail. With gh asked on every host, a helper for every account, and the token file read from any scope, [df1s3], [df1s4], [df1s7] and [df1sa] fail. All pass on the change: test.bash 1884/0, quick gate passed (lint, go test, fuzz 313/0, parity 30/0).
+		- Not watched red: [df1s6], since the order is git's own, and [df1s8], since the helper has no interpolated text to break.
+		- Swept: the other place that writes a helper, `selectAccount`, resets the list for gitsby's own runs, so the two don't stack. [db5wk] still passes.
+		- Verified on vm925w, Git for Windows 2.55.0, with the windows/amd64 build of 08e7452: [df1s0] to [df1s8], [df1sa] and [dd80d], run the same way as in test.bash, all pass, with every token file named by a `C:/` path. So does a `~/` token file under a backslash HOME, which the helper's sh reads as `C:\...\tildehome/tilde.tok`. With the 53fcc0b build, [df1s0] to [df1s3], [df1s5] and that `~/` check fail.
+	- Acceptance signoff: Self-closed: 08e7452 passed on b23 (test.bash 1884/0) and on vm925w (12/0).
+	- Closed: 20261108-142139
 
 - CICD reset: a test for every Done item, code reviews 20260726, 20260725 and 20260723
 	- ID: 2026110611410037
