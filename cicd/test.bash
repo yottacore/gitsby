@@ -649,7 +649,7 @@ fGateKeepTemp(){
 	: > "${gateFail}/go-test"
 	TMPDIR="${t}" fGateSays 1 '^Kept the temp folder: ' --no-container --backlog-run-quick unit --keep-temp || rc=1
 	rm -f -- "${gateFail:?}/go-test"
-	[[ "$(compgen -G "${t}/gitsby/[0-9]*_[0-9][0-9][0-9]" | wc -l)" == 2 ]] || rc=1
+	[[ "$(compgen -G "${t}/gitsby/[0-9]*_[0-9][0-9][0-9]" | wc -l | tr -d ' ')" == 2 ]] || rc=1
 	fSafeRm_IfThere "${t:?}"
 	((rc == 0))
 }
@@ -682,7 +682,7 @@ fGateRunFolder(){
 	dir="${line%% *}"
 	[[ "${dir}" =~ ^${t}/host/gitsby/[0-9]{8}-[0-9]{6}_002$ && "${line}" =~ ^${dir}\ ${dir}\ ${dir}\ pid=[0-9]+$ ]] || rc=1
 	## Gone once the run ended, and nothing went to TMPDIR. The names taken are left alone.
-	[[ ! -e "${dir}" && -z "$(ls -A "${t}/other")" && "$(compgen -G "${t}/host/gitsby/*_001" | wc -l)" == 6 ]] || rc=1
+	[[ ! -e "${dir}" && -z "$(ls -A "${t}/other")" && "$(compgen -G "${t}/host/gitsby/*_001" | wc -l | tr -d ' ')" == 6 ]] || rc=1
 	fGateStub "${gateDir}/cicd/test.bash" test
 	fSafeRm_IfThere "${t:?}"
 	((rc == 0))
@@ -858,7 +858,7 @@ fGateLeakPrune(){
 	done
 	: > "${leakDir}/soak_20200101-000010/notes.txt"
 	fGateSays 0 'WARNING: kept .*/soak_20200101-000010, which has more in it' -y --no-container --quick --leakcheck --no-sync --no-publish --no-dogfood \
-		&& [[ "$(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'soak_*' | wc -l)" == 21 ]] \
+		&& [[ "$(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'soak_*' | wc -l | tr -d ' ')" == 21 ]] \
 		&& [[ -f "${leakDir}/soak_20200101-000010/notes.txt" && ! -e "${leakDir}/soak_20200101-000011" && -d "${leakDir}/soak_20200101-000013" ]]
 }
 ## CodeQL runs over a scratch copy of the module with its dependencies vendored in, tests and
@@ -916,7 +916,7 @@ fGateCodeQLPrune(){
 	for i in $(seq 10 31); do d="${leakDir}/codeql_20200101-0000${i}"; mkdir -p "${d}"; : > "${d}/linux.sarif"; : > "${d}/windows.sarif"; done
 	: > "${leakDir}/codeql_20200101-000010/notes.txt"
 	fGateSays 0 'WARNING: kept .*/codeql_20200101-000010, which has more in it' -y --no-container --quick --leakcheck --no-sync --no-publish --no-dogfood \
-		&& [[ "$(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'codeql_*' | wc -l)" == 21 ]] \
+		&& [[ "$(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'codeql_*' | wc -l | tr -d ' ')" == 21 ]] \
 		&& [[ -f "${leakDir}/codeql_20200101-000010/notes.txt" && ! -e "${leakDir}/codeql_20200101-000011" && -d "${leakDir}/codeql_20200101-000013" ]]
 }
 ## The image's tag follows CodeQL's sum, which reaches the recipe as a build arg. $1 names the sum,
@@ -1532,7 +1532,7 @@ fRunSuite(){
 		bash -c "[[ \"\$(cd '${cloneA}' && '${gitsby}' --version | grep -cE '^gitsby v[0-9]')\" == 1 ]]"
 	## Scripts and installers read it back, so it is the version line and nothing else.
 	fAssert "[df05h] --version is exactly 1 line"  \
-		bash -c "[[ \"\$(cd '${cloneA}' && '${gitsby}' --version | wc -l)\" == 1 ]]"
+		bash -c "[[ \"\$(cd '${cloneA}' && '${gitsby}' --version | wc -l | tr -d ' ')\" == 1 ]]"
 	fAssert "[df05j] and -v, --ver and version give the same line"  \
 		bash -c "cd '${cloneA}' && want=\"\$('${gitsby}' --version; echo .)\" && for w in -v --ver version; do [[ \"\$('${gitsby}' \"\${w}\"; echo .)\" == \"\${want}\" ]] || exit 1; done"
 	fAssert "[dbshr] --help names the build once"     \
@@ -1554,7 +1554,7 @@ fRunSuite(){
 	fAssertOut  "[dd80x] --version works after a command, as --help does"  '^gitsby v[0-9]' \
 		bash -c "cd '${cloneA}' && '${gitsby}' br create infoflag --version"
 	fAssert     "[df05k] and is the same 1 line there"  \
-		bash -c "cd '${cloneA}' && [[ \"\$('${gitsby}' status --version; echo .)\" == \"\$('${gitsby}' --version; echo .)\" ]] && [[ \"\$('${gitsby}' status --version | wc -l)\" == 1 ]]"
+		bash -c "cd '${cloneA}' && [[ \"\$('${gitsby}' status --version; echo .)\" == \"\$('${gitsby}' --version; echo .)\" ]] && [[ \"\$('${gitsby}' status --version | wc -l | tr -d ' ')\" == 1 ]]"
 	fAssert     "[dd80y] and the command does nothing"  bash -c "cd '${cloneA}' && ! git rev-parse --verify -q refs/heads/infoflag"
 	fAssertOut  "[dd80z] and --about"   'github\.com/yottacore/gitsby'      bash -c "cd '${cloneA}' && '${gitsby}' status --about"
 	fAssertOut  "[dd810] and --donate"  'github\.com/sponsors/jim-collier'  bash -c "cd '${cloneA}' && '${gitsby}' sync --donate"
@@ -7040,7 +7040,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		## A delete on its own leaves nothing to see, so one goes out beside a branch that is gated.
 		hookRc=0; fHookPush "${hookRepo}" origin :side +main~1:refs/heads/main || hookRc=$?
 		fAssert "[dcmb6] a branch delete runs no gate" \
-			bash -c "[[ '${hookRc}' == 0 && \"\$(wc -l < '${hookLog}')\" == 1 ]] && grep -qF '|--gate|good2|' '${hookLog}'"
+			bash -c "[[ '${hookRc}' == 0 && \"\$(wc -l < '${hookLog}' | tr -d ' ')\" == 1 ]] && grep -qF '|--gate|good2|' '${hookLog}'"
 		git -C "${hookRepo}" tag t1 main
 		hookRc=0; fHookPush "${hookRepo}" origin t1 || hookRc=$?
 		fAssert "[dcmb7] a tag push runs no gate" \
@@ -7135,7 +7135,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		git -C "${hookRepo}" checkout --quiet main
 		hookRc=0; fHookPush "${hookRepo}" origin +mg:refs/heads/main || hookRc=$?
 		fAssert "[dee52] a commit whose cicd.bash has --merge-gate is gated with it" \
-			bash -c "[[ '${hookRc}' == 0 && \"\$(wc -l < '${hookLog}')\" == 1 ]] && grep -qF '${hookSnap}|--merge-gate|b16|' '${hookLog}'"
+			bash -c "[[ '${hookRc}' == 0 && \"\$(wc -l < '${hookLog}' | tr -d ' ')\" == 1 ]] && grep -qF '${hookSnap}|--merge-gate|b16|' '${hookLog}'"
 		git -C "${hookRepo}" checkout --quiet mg
 		echo docs > "${hookRepo}/README.md"; echo docs > "${hookRepo}/docs/notes.txt"; echo docs > "${hookRepo}/sub/notes.md"
 		git -C "${hookRepo}" add README.md docs/notes.txt sub/notes.md
