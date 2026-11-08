@@ -1,0 +1,88 @@
+# An extra check on GitHub's hosted Macs, Intel and Apple silicon. Not a gate: the pipeline is
+# cicd/cicd.bash. Why it exists is in project/design.md, "Direction decisions".
+
+name: macOS
+
+on:
+  push:
+    branches: [gover, dev, main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15-intel, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # test.bash builds an older commit out of the history.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: src-go/go.mod
+          cache-dependency-path: src-go/go.sum
+
+      # macOS ships bash 3.2. The suite needs 4.4 or newer, and starts its scripts by shebang,
+      # so Homebrew's goes first on PATH.
+      - name: Bash 5
+        run: |
+          prefix="$(brew --prefix)"
+          [[ -x "${prefix}/bin/bash" ]] || brew install bash
+          echo "${prefix}/bin" >> "${GITHUB_PATH}"
+
+      - name: Versions
+        run: |
+          sw_vers
+          echo "bash ${BASH_VERSION}"
+          git --version
+          go version
+
+      # test.bash runs whatever sits at src-go/gitsby, and builds offline from the module cache.
+      - name: Build
+        working-directory: src-go
+        run: |
+          go mod download
+          CGO_ENABLED=0 GOAMD64=v1 go build -trimpath -buildvcs=false -o gitsby .
+
+      - name: go test
+        working-directory: src-go
+        run: go test -race -count=1 ./...
+
+      - name: Smoke test
+        run: |
+          bin="${PWD}/src-go/gitsby"
+          "${bin}" --version
+          "${bin}" --help >/dev/null
+          export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
+          scratch="$(mktemp -d)"
+          export GITSBY_CONFIG="${scratch}/none.shcl"
+          : > "${GITSBY_CONFIG}"
+          git init -q -b main "${scratch}/r"
+          git -C "${scratch}/r" -c user.name=t -c user.email=t@t.test commit -q --allow-empty -m init
+          head="$(git -C "${scratch}/r" rev-parse HEAD)"
+          out="$(cd "${scratch}/r" && "${bin}" status </dev/null 2>&1)"
+          printf '%s\n' "${out}"
+          grep -q 'Current branch: main' <<< "${out}"
+          [[ "$(git -C "${scratch}/r" rev-parse HEAD)" == "${head}" && -z "$(git -C "${scratch}/r" status --porcelain)" ]]
+
+      - name: test.bash
+        run: bash cicd/test.bash

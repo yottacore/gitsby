@@ -1,0 +1,392 @@
+#!/usr/bin/env bash
+
+#  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
+
+##	Purpose:
+##		- Counts the processes gitsby spawns per command, and fails when a count grows.
+##		- This is the profiling step, and it is deliberately not a sampling profiler: the
+##		  program spends its whole life blocked waiting on git, so a flamegraph is a flat
+##		  wall of Execve and Wait with no self-time in it and no leaders. What costs
+##		  anything here is how many times we fork git, so that is what gets measured.
+##		- Each command runs against a pristine throwaway repo with its own bare origin.
+##		  The work tree AND the origin are restored between runs: prune deletes branches
+##		  on both sides, and leaving either behind makes the next command's count a
+##		  different question.
+##		- Some commands run again in a folder an account's rule covers, with a fake gh
+##		  and ssh, and on a pty with no -q, the way someone at a terminal runs them.
+##		  Those are the paths that ask gh and ssh who you are.
+##		- Each command has an expected count, written beside it below. Its limit is
+##		  that plus 2, or a tenth again, whichever is larger. A count over the limit
+##		  fails, --record or not. A fix that lowers a count lowers the number too.
+##		- Baseline is the newest previous run in the artifact dir, GFS-rotated like the
+##		  lint logs. No baseline yet means the first run records one and passes.
+##	Syntax:
+##		cicd/utility/spawn-count.bash [-q|--quiet] [--record]
+##		  --record   Write the counts even when they rose against the baseline (accept a
+##		             deliberate rise). It does not lift a limit.
+##	Requires:
+##		- strace. Linux only; the step self-skips anywhere else, which is the same
+##		  treatment every other probe-gated tool gets.
+##		- script, from util-linux, for the pty runs. Without it those are skipped and say so.
+##	History: At bottom of script.
+
+##	Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
+##	Licensed under The MIT License (MIT). Full text at:
+##		https://mit-license.org/
+##	SPDX-License-Identifier: MIT
+
+
+if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
+	printf '%s\n' "${0##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
+fi
+set -Eeuo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "${here}/.." && pwd)"; root="$(cd "${root}/.." && pwd)"
+# shellcheck source=/dev/null
+source "${root}/cicd/config.bash"
+# shellcheck source=/dev/null
+source "${here}/include/gfs-rotate.bash"
+# shellcheck source=/dev/null
+source "${here}/include/safe-rm.bash"
+
+fDie(){   printf '%s\n' "$*" >&2; exit 1; }
+fUsage(){ printf '%s\n' "$*" >&2; exit 2; }
+
+declare -i quiet=0 record=0
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		-q|--quiet) quiet=1; shift ;;
+		--record)   record=1; shift ;;
+		-h|--help)  sed -n '/^##	Purpose:/,/^##	History:/p' "${BASH_SOURCE[0]}" | sed '$d; s/^##	\{0,1\}//'; exit 0 ;;
+		*)          fUsage "unknown option: $1 (try --help)" ;;
+	esac
+done
+
+fEcho_Clean(){ printf '%s\n' "$*"; }
+## A check of the fixture itself, "[<id>] label", printed the way a measure's verdict is.
+fOk(){   local id="${1%%\] *}"; ((quiet)) || fEcho_Clean "  PASS ${id#\[} ${1#*\] }"; }
+fFail(){ local id="${1%%\] *}"; fEcho_Clean "  FAIL ${id#\[} ${1#*\] }"; }
+
+## A SKIP for each command, named as fMeasure names it below.
+command -v strace >/dev/null 2>&1 || { sed -n 's/^fMeasure "\[\([^]]*\)\] \([^"]*\)".*/  SKIP \1 \2 (no strace)/p' "${BASH_SOURCE[0]}"; exit 0; }
+exe="${root}/${GO_MODULE_DIR}/${EXE_NAME}"
+[[ -x "${exe}" ]] || fDie "no build at ${GO_MODULE_DIR}/${EXE_NAME} - run cicd.bash stage 2, or 'go build' there"
+
+fSafeRm_Init || exit 1; safeTmp="$(fSafeRm_Tmp)" || exit 1
+work="$(mktemp -d "${safeTmp}/gitsby-spawn.XXXXXX")"
+trap 'fSafeRm "${work:?}" >/dev/null' EXIT
+
+## Hermetic, for the same reasons the suites are: an inherited config decides which account a
+## command acts as, and that changes how many processes it starts. HOME and the two other
+## places gitsby looks for its config are emptied or moved, so a measure that drops the pin
+## still can't read the real user's accounts.
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
+export GIT_AUTHOR_NAME=spawn GIT_AUTHOR_EMAIL=spawn@test
+export GIT_COMMITTER_NAME=spawn GIT_COMMITTER_EMAIL=spawn@test
+noAccounts="${work}/no-accounts.shcl"; : > "${noAccounts}"
+export GITSBY_CONFIG="${noAccounts}"
+mkdir -p "${work}/home"
+export HOME="${work}/home" XDG_CONFIG_HOME="" APPDATA=""
+for ((i = 0; i < ${GIT_CONFIG_COUNT:-0}; i++)); do unset "GIT_CONFIG_KEY_${i}" "GIT_CONFIG_VALUE_${i}"; done
+unset GIT_CONFIG_COUNT
+unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT GITSBY_RAW_ACTIVE GIT_SSH_COMMAND GIT_SSH
+
+## Nothing here reaches the network. The account folders' origins name github.com, so a fake gh
+## and ssh answer what gitsby asks, and a proxy on a closed port fails anything that still tries
+## https. The fakes run under this bash by full path: '#!/usr/bin/env bash' would add env's own
+## exec and one failed one per PATH entry ahead of bash, and those would be counted as ours.
+mkdir -p "${work}/bin"
+cat > "${work}/bin/gh" <<EOF
+#!${BASH}
+## gh holds no account, so a token comes from the account's file; 'api user' answers for the
+## token gitsby exported, or for gh's own login without one.
+case "\$1 \$2" in
+	"api user")   if [[ -n "\${GH_TOKEN:-}" ]]; then echo "\${GH_TOKEN#tok_}"; else echo ghuser; fi ;;
+	"auth token") exit 1 ;;
+	"config get") case " \$* " in *" user "*) echo ghuser ;; *) echo https ;; esac ;;
+	*)            printf '%s\n' "fake gh: unhandled: \$*" >&2; exit 2 ;;
+esac
+EOF
+cat > "${work}/bin/ssh" <<EOF
+#!${BASH}
+for arg in "\$@"; do
+	case "\${arg}" in
+		-G) target="\${*: -1}"; printf 'user git\nhostname %s\n' "\${target#*@}"; exit 0 ;;
+		-T) echo "Hi acme! You've successfully authenticated, but GitHub does not provide shell access."; exit 1 ;;
+	esac
+done
+exit 255
+EOF
+## tea holds one login, for the Gitea folder's host.
+cat > "${work}/bin/tea" <<EOF
+#!${BASH}
+case "\$1 \$2" in
+	"--version ") echo "Version: 0.10.1	golang: 1.24.4" ;;
+	"logins list") printf '"Name"\t"URL"\t"SSHHost"\t"User"\t"Default"\n"work"\t"https://gitea.example.test"\t""\t"acme"\t"true"\n' ;;
+	*)             printf '%s\n' "fake tea: unhandled: \$*" >&2; exit 2 ;;
+esac
+EOF
+chmod +x "${work}/bin/gh" "${work}/bin/ssh" "${work}/bin/tea"
+export PATH="${work}/bin:${PATH}"
+export HTTPS_PROXY=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 HTTP_PROXY=http://127.0.0.1:9 http_proxy=http://127.0.0.1:9 ALL_PROXY=http://127.0.0.1:9 all_proxy=http://127.0.0.1:9
+unset NO_PROXY no_proxy
+
+##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+## The world: a bare origin and a clone, with a merged branch and an unmerged one, so prune
+## has something to survey and merge has something to leave alone.
+##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+pristine="${work}/pristine"
+mkdir -p "${pristine}"
+git init --quiet --bare -b main "${pristine}/origin.git"
+git clone --quiet "${pristine}/origin.git" "${pristine}/repo" 2>/dev/null
+(
+	cd "${pristine}/repo"
+	echo one > file.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main
+	git checkout --quiet -b dev && git push --quiet -u origin dev
+	git checkout --quiet -b landed && echo two >> file.txt && git add --all && git commit --quiet -m landed
+	git push --quiet -u origin landed
+	git checkout --quiet dev && git merge --quiet --no-ff landed -m merge && git push --quiet
+	git checkout --quiet -b open-work && echo three >> file.txt && git add --all && git commit --quiet -m wip
+	git push --quiet -u origin open-work
+	git checkout --quiet dev
+)
+
+## A second world with five landed branches, on both sides, and its own origin. With one, a
+## spawn per branch fits in the headroom; with five it doesn't.
+git init --quiet --bare -b main "${pristine}/prune5.git"
+git clone --quiet "${pristine}/prune5.git" "${pristine}/prune5" 2>/dev/null
+(
+	cd "${pristine}/prune5"
+	echo one > file.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main
+	git checkout --quiet -b dev && git push --quiet -u origin dev
+	for b in landed1 landed2 landed3 landed4 landed5; do
+		git checkout --quiet -b "${b}" dev && echo "${b}" > "${b}.txt" && git add --all && git commit --quiet -m "${b}"
+		git push --quiet -u origin "${b}"
+		git checkout --quiet dev && git merge --quiet --no-ff "${b}" -m "merge ${b}" && git push --quiet
+	done
+)
+
+## A clone keeps its origin's absolute path, and cp -a copies it as it is, so each live clone
+## would push to the pristine origin. Pointing them at the live copies once, here, means every
+## restore brings a matching pair.
+git -C "${pristine}/repo"   remote set-url origin "${work}/live/origin.git"
+git -C "${pristine}/prune5" remote set-url origin "${work}/live/prune5.git"
+
+## Two copies of that clone whose origin is on github.com, one over ssh and one over https, each
+## covered by an account's folder rule. The Account line prints only for an account picked like
+## that, never for one guessed from the remote's owner, so this is the path a configured user
+## takes. The token comes from a file, since the fake gh holds none: that is the case that reads
+## gh's own login before the token is exported, and asks who the token belongs to after. A
+## changed file gives status a list to print. Three logins, so the listing asks gh about each.
+cp -a "${pristine}/repo" "${pristine}/acct-ssh"
+cp -a "${pristine}/repo" "${pristine}/acct-https"
+git -C "${pristine}/acct-ssh"   remote set-url origin git@github.com:acme/proj.git
+git -C "${pristine}/acct-https" remote set-url origin https://github.com/beta/proj.git
+echo four >> "${pristine}/acct-ssh/file.txt"
+echo four >> "${pristine}/acct-https/file.txt"
+## And one on a Gitea host over ssh, where each alias lookup costs an 'ssh -G'. On a branch
+## a PR can come from, and pushing to the live origin, so pr create and pullcom get past the push.
+cp -a "${pristine}/repo" "${pristine}/acct-gitea"
+git -C "${pristine}/acct-gitea" checkout --quiet open-work
+git -C "${pristine}/acct-gitea" remote set-url origin git@gitea.example.test:acme/proj.git
+git -C "${pristine}/acct-gitea" remote set-url --push origin "${work}/live/origin.git"
+echo four >> "${pristine}/acct-gitea/file.txt"
+printf 'tok_acme\n' > "${work}/home/acme.token"
+printf 'tok_beta\n' > "${work}/home/beta.token"
+printf 'tok_delta\n' > "${work}/home/delta.token"
+chmod 600 "${work}/home/acme.token" "${work}/home/beta.token" "${work}/home/delta.token"
+accounts="${work}/accounts.shcl"
+cat > "${accounts}" <<EOF
+account: acme
+	path: ${work}/live/acct-ssh
+	ghaccount: acme
+	tokenfile: ${work}/home/acme.token
+	email: acme@example.com
+account: beta
+	path: ${work}/live/acct-https
+	ghaccount: beta
+	tokenfile: ${work}/home/beta.token
+	email: beta@example.com
+account: gamma
+	ghaccount: gamma
+	sshkey: ${work}/home/id_gamma
+	email: gamma@example.com
+account: delta
+	path: ${work}/live/acct-gitea
+	host: gitea.example.test
+	user: acme
+	tokenfile: ${work}/home/delta.token
+	email: delta@example.com
+EOF
+
+## What both origins hold as built. Nothing measured may write to these, or the next command
+## runs against what the last one left; the check after the measures says so.
+fOriginRefs(){ local o; for o in "${pristine}/origin.git" "${pristine}/prune5.git"; do git -C "${o}" for-each-ref --format='%(refname) %(objectname)'; done; }
+originRefs="$(fOriginRefs)"
+
+fRestore(){
+	fSafeRm_IfThere "${work:?}/live"
+	mkdir -p "${work}/live"
+	cp -a "${pristine}/." "${work}/live/"
+}
+
+hasPty=0
+if command -v script >/dev/null 2>&1 && script -qec true /dev/null </dev/null >/dev/null 2>&1; then hasPty=1; fi
+
+##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+## The measurement. -f follows the children, so a git that forks its own helper is counted
+## where it happens; execve is the event that costs, since that is a new program image.
+##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+## The label starts with the test ID, which is printed but kept out of the baseline file, so
+## an older baseline still matches. Then the expected count, how it runs, and the folder:
+##   pipe  stdout to /dev/null, the way the pipeline and a script see it
+##   tty   on a pty with stdin at end of input, which is a terminal to gitsby
+## A folder starting 'acct' runs with the accounts file, and any other with the empty one.
+## Room for a git version that adds or drops a helper of its own: two more processes, or a
+## tenth again, whichever is larger. A real regression costs more than that.
+fHeadroom(){ local n=$(( $1 / 10 )); (( n < 2 )) && n=2; echo "${n}"; }
+declare -a ids=() labels=() counts=() expects=() limits=() skipped=()
+fMeasure(){
+	local label="${1#\[*\] }" id="${1%%\] *}" expect="$2" how="$3" folder="$4"; shift 4
+	local config="${noAccounts}" traceFile="${work}/trace.out" n=0 skip=""
+	[[ "${folder}" == acct* ]] && config="${accounts}"
+	fRestore
+	: > "${traceFile}"
+	if [[ "${how}" == tty ]] && ((! hasPty)); then
+		skip="no pty"
+	elif [[ "${how}" == tty ]]; then
+		local traced=""
+		printf -v traced '%q ' strace -f -e trace=execve -o "${traceFile}" "${exe}" "$@"
+		## The pty gets a size outside the trace, as a real terminal's has. A pty nobody sized
+		## reads as width 0, and gitsby then asks tput. TERM is set so tput has an answer.
+		( cd "${work}/live/${folder}" && GITSBY_CONFIG="${config}" TERM=xterm SHELL="${BASH}" script -qec "stty cols 120 rows 40 2>/dev/null; ${traced}" /dev/null </dev/null ) >/dev/null 2>&1 || true
+	else
+		( cd "${work}/live/${folder}" && GITSBY_CONFIG="${config}" strace -f -e trace=execve -o "${traceFile}" "${exe}" "$@" ) >/dev/null 2>&1 || true
+	fi
+	[[ -n "${skip}" ]] || n="$(grep -c 'execve(' "${traceFile}" 2>/dev/null || true)"
+	ids+=("${id#\[}")
+	labels+=("${label}")
+	counts+=("${n}")
+	expects+=("${expect}")
+	limits+=("$(( expect + $(fHeadroom "${expect}") ))")
+	skipped+=("${skip}")
+}
+
+## Expected counts are today's. --no-fetch on all but two: a fetch's cost is
+## mostly git's own (upload-pack, a maintenance run), and a github.com origin can't be fetched
+## here at all. The two with a fetch run against the local origin, restored before each. pullcom
+## is one of them because its pull step only runs after a fetch, and that step used to ask
+## origin a second time.
+((quiet)) || fEcho_Clean "spawn counts (${exe})"
+fMeasure "[dbftf] status"                              11 pipe repo        -q --no-fetch status
+fMeasure "[dbjeq] whoami"                               7 pipe repo        -q --no-fetch whoami
+fMeasure "[dbftg] br list"                              7 pipe repo        -q --no-fetch br list
+fMeasure "[dbfth] account list"                         7 pipe repo        -q --no-fetch account list
+fMeasure "[dbftj] repo url"                             6 pipe repo        -q --no-fetch repo url
+fMeasure "[dbftk] pullcom"                             21 pipe repo        -q --no-fetch pullcom "spawn count"
+fMeasure "[ddf68] pullcom with a fetch"                 28 pipe repo        -q pullcom "spawn count"
+fMeasure "[dbftm] br switch"                           26 pipe repo        -q --no-fetch br switch main
+fMeasure "[dbftn] br prune"                            31 pipe repo        -q --no-fetch br prune
+fMeasure "[deytk] br prune of five branches"           31 pipe prune5      -q --no-fetch br prune
+fMeasure "[ddf4z] status with a fetch"                 17 tty  repo        status
+fMeasure "[ddf50] status in an account folder"         19 tty  acct-ssh    --no-fetch status
+fMeasure "[ddf51] whoami in an account folder"         15 tty  acct-ssh    --no-fetch whoami
+fMeasure "[ddf52] account list with accounts"          11 tty  acct-ssh    --no-fetch account list
+fMeasure "[ddf53] status in an https account folder"   15 tty  acct-https  --no-fetch status
+fMeasure "[df04s] status in a tea ssh folder"          16 tty  acct-gitea  --no-fetch status
+fMeasure "[df04t] whoami in a tea ssh folder"          12 tty  acct-gitea  --no-fetch whoami
+fMeasure "[df04v] repo url in a tea ssh folder"         8 pipe acct-gitea  -q --no-fetch repo url
+fMeasure "[df051] pullcom in a tea ssh folder"         27 pipe acct-gitea  -q --no-fetch pullcom "spawn count"
+fMeasure "[df052] pr create in a tea ssh folder"       37 pipe acct-gitea  -q --no-fetch pr create
+
+##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+## Each count against its limit, then against the newest previous run; then record this one.
+##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+countDir="${root}/${SPAWN_COUNT_DIR}"
+mkdir -p "${countDir}"
+baseline=""
+for f in "${countDir}"/spawn_*.tsv; do [[ -f "${f}" ]] && baseline="${f}"; done
+
+declare -i regressed=0 overLimit=0 underLimit=0
+## One line per command, whatever it did, so a -q-less run shows each count and its verdict:
+## PASS, FAIL or SKIP, then its test ID, as the suites print theirs.
+if [[ -z "${baseline}" ]]; then
+	((quiet)) || fEcho_Clean "  (no baseline yet - recording this run as one)"
+else
+	((quiet)) || fEcho_Clean "  baseline: $(basename "${baseline}")"
+fi
+for ((i = 0; i < ${#labels[@]}; i++)); do
+	if [[ -n "${skipped[i]}" ]]; then
+		((quiet)) || fEcho_Clean "  SKIP ${ids[i]} ${labels[i]} (${skipped[i]})"
+		continue
+	fi
+	if (( counts[i] > limits[i] )); then
+		fEcho_Clean "  FAIL ${ids[i]} ${labels[i]}: ${counts[i]}, over its limit of ${limits[i]} (expected ${expects[i]})"
+		overLimit=1
+		continue
+	fi
+	(( counts[i] < expects[i] )) && underLimit=$((underLimit + 1))
+	was=""
+	[[ -z "${baseline}" ]] || was="$(awk -F'\t' -v k="${labels[i]}" '$1==k{print $2}' "${baseline}" || true)"
+	[[ -n "${was}" ]] || { ((quiet)) || fEcho_Clean "  PASS ${ids[i]} ${labels[i]}: ${counts[i]}, new"; continue; }
+	## Arithmetic on text from a file runs any $(...) in an array subscript, so only digits go on.
+	[[ "${was}" =~ ^[0-9]+$ ]] || fDie "spawn-count: $(basename "${baseline}") has '${was}' for ${labels[i]}, which isn't a count. Fix or delete that file."
+	if (( counts[i] > was + $(fHeadroom "${was}") )); then
+		## --record takes the rise as the new baseline, so the run passes, and so does the line.
+		if ((record)); then fEcho_Clean "  PASS ${ids[i]} ${labels[i]}: ${was} -> ${counts[i]}, regressed and recorded"
+		else fEcho_Clean "  FAIL ${ids[i]} ${labels[i]}: ${was} -> ${counts[i]}, regressed"; fi
+		regressed=1
+	elif (( counts[i] < was )); then
+		((quiet)) || fEcho_Clean "  PASS ${ids[i]} ${labels[i]}: ${was} -> ${counts[i]}, improved (expected ${expects[i]})"
+	else
+		((quiet)) || fEcho_Clean "  PASS ${ids[i]} ${labels[i]}: ${counts[i]}"
+	fi
+done
+((quiet)) || ((underLimit == 0)) || fEcho_Clean "  ${underLimit} under their expected count; lower those numbers in ${BASH_SOURCE[0]##*/} to keep the gain."
+
+declare -i originMoved=0
+if [[ "$(fOriginRefs)" == "${originRefs}" ]]; then fOk "[dez8s] the fixture's origins are as built, after every command"
+else fFail "[dez8s] the fixture's origins are as built, after every command"; originMoved=1; fi
+
+if ((originMoved)); then
+	fDie "spawn counts ran against an origin a command had changed; nothing recorded."
+fi
+if ((overLimit)); then
+	fDie "spawn counts went over their limits; nothing recorded."$'\n'"  A deliberate rise raises the expected count beside the command in ${BASH_SOURCE[0]##*/}."
+fi
+if ((regressed)) && ((! record)); then
+	fDie "spawn counts regressed against $(basename "${baseline}"); nothing recorded."$'\n'"  Re-run with --record to accept the new counts as the baseline."
+fi
+
+stamp="$(date +%Y%m%d-%H%M%S)"
+out="${countDir}/spawn_${stamp}.tsv"
+: > "${out}"
+for ((i = 0; i < ${#labels[@]}; i++)); do
+	[[ -n "${skipped[i]}" ]] || printf '%s\t%s\n' "${labels[i]}" "${counts[i]}" >> "${out}"
+done
+gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
+((quiet)) || fEcho_Clean "  recorded $(basename "${out}")"
+
+
+##	History:
+##		- 20260819 JC: Created. The profiling step, as spawn counting rather than as a sampling
+##		  profile: this program is blocked on git for effectively all of its wall clock, so a
+##		  flamegraph has no leaders in it. Each command is measured against a restored fixture,
+##		  origin included - prune deletes on both sides, and a leftover makes the next count a
+##		  different question.
+##		- 20260926 JC: One line per command with its verdict, ok included, in place of the bare counts. The pipeline no longer passes -q.
+##		- 20260927 JC: Each command carries a test ID, printed on its line.
+##		- 20261003 JC: A limit per command that fails at any rise, --record or not. An account folder with a fake gh and ssh, a pty run with no -q, and a status that fetches, for status, whoami and the account listing.
+##		- 20261003 JC: pullcom with a fetch, so the pull step is counted.
+##		- 20261003 JC: The number beside each command is the expected count, and its limit adds the same headroom the baseline compare allows, so a git update that starts one more helper doesn't fail the gate.
+##		- 20261004 JC: Lower expected counts, now that one read answers every branch check.
+##		- 20261004 JC: The pty runs get a size, as a real terminal has. Lower expected counts for the startup and token lookups that were asked twice.
+##		- 20261004 JC: fEcho_Clean prints with printf. Every expansion braced, and shellcheck
+##		  enforces it.
+##		- 20261026 JC: Each command prints PASS, FAIL or SKIP, then its test ID, with the verdict after the count. A rise --record takes is a PASS, and with no strace each command is a SKIP.
+##		- 20261106 JC: br prune of five landed branches, in a world with its own origin. A spawn per branch fits the headroom over one branch, and not over five.
+##		- 20261106 JC: Its scratch folder goes through fSafeRm.
+##		- 20261106 JC: Each live clone's origin is its live copy, not the pristine one, which a pushing command changed for every command after it. A check after the measures fails the run if a pristine origin moved.
+##		- 20261107 JC: Errors go through fDie and fUsage.
+##		- 20261107 JC: A Gitea folder over ssh, with a fake tea, for status, whoami, repo url, pullcom and pr create. The fake ssh names the target's own host.

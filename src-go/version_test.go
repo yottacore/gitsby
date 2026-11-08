@@ -1,0 +1,127 @@
+// The build number. What matters is that it never invents one from a clock and
+// never quietly reports zero for a stamp it could not read.
+
+// Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
+// Licensed under The MIT License (MIT). Full text at:
+//	https://mit-license.org/
+// SPDX-License-Identifier: MIT
+
+package main
+
+import (
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestCrockfordBase32(t *testing.T) { // [dbshz]
+	tests := []struct {
+		n    int64
+		want string
+	}{
+		{0, "0"},
+		{1, "1"},
+		{9, "9"},
+		{10, "a"},
+		{17, "h"},
+		{18, "j"}, // I is skipped
+		{19, "k"},
+		{20, "m"}, // L is skipped
+		{31, "z"},
+		{32, "10"},
+		{14018084, "dbsh4"},
+		{52596000, "1j5390"}, // year 2100
+	}
+	for _, tc := range tests {
+		if got := crockfordBase32(tc.n); got != tc.want {
+			t.Errorf("crockfordBase32(%d) = %q, want %q", tc.n, got, tc.want)
+		}
+	}
+}
+
+func TestCrockfordAlphabetOmitsAmbiguousLetters(t *testing.T) { // [dbsj0]
+	if len(crockford32) != 32 {
+		t.Fatalf("alphabet is %d characters, want 32", len(crockford32))
+	}
+	for _, c := range "ilou" {
+		if strings.ContainsRune(crockford32, c) {
+			t.Errorf("alphabet contains %q, which Crockford leaves out", c)
+		}
+	}
+}
+
+func TestBuildNumber(t *testing.T) { // [dbsj1]
+	tests := []struct {
+		stamp string
+		want  string
+	}{
+		{"", ""},                     // a hand-run 'go build'
+		{"not a number", ""},         //
+		{"946684800", "0"},           // the epoch itself
+		{"946684859", "0"},           // seconds round down
+		{"946684860", "1"},           //
+		{"0", ""},                    // before 2000: no answer, not zero
+		{"-1", ""},                   //
+		{"1787000000", "dbd05"},      //
+		{"99999999999999999999", ""}, // overflows int64
+	}
+	saved := buildEpoch
+	defer func() { buildEpoch = saved }()
+	for _, tc := range tests {
+		buildEpoch = tc.stamp
+		if got := buildNumber(); got != tc.want {
+			t.Errorf("buildNumber() with stamp %q = %q, want %q", tc.stamp, got, tc.want)
+		}
+	}
+}
+
+func TestVersionTextOmitsAnUnstampedBuild(t *testing.T) { // [dbsj2]
+	savedEpoch, savedVer := buildEpoch, version
+	defer func() { buildEpoch, version = savedEpoch, savedVer }()
+	version = "2.1.0"
+
+	buildEpoch = ""
+	if got := versionText(); got != "v2.1.0" {
+		t.Errorf("unstamped versionText() = %q, want %q", got, "v2.1.0")
+	}
+	buildEpoch = "1787000000"
+	if got := versionText(); got != "v2.1.0 build dbd05" {
+		t.Errorf("stamped versionText() = %q, want %q", got, "v2.1.0 build dbd05")
+	}
+}
+
+func TestVersionTextDatesABuildBetweenReleases(t *testing.T) { // [debe5]
+	savedEpoch, savedVer, savedLocal := buildEpoch, version, time.Local
+	defer func() { buildEpoch, version, time.Local = savedEpoch, savedVer, savedLocal }()
+	buildEpoch = "1787000000" // 2026-08-17 20:53 UTC
+	time.Local = time.UTC
+	tests := []struct {
+		ver, want string
+	}{
+		{"2.1.0", "v2.1.0 build dbd05"},
+		{"3.0.0-beta.1", "v3.0.0-beta.1 build dbd05"},
+		{"2.1.0-dirty", "v2.1.0-dirty build dbd05 (2026-08-17)"},
+		{"2.1.0-12-ga12019f", "v2.1.0-12-ga12019f build dbd05 (2026-08-17)"},
+		{"3.0.0-beta.1-4-ga12019f-dirty", "v3.0.0-beta.1-4-ga12019f-dirty build dbd05 (2026-08-17)"},
+		{"a12019f", "va12019f build dbd05 (2026-08-17)"}, // no tags at all
+		{"0.0.0", "v0.0.0 build dbd05 (2026-08-17)"},
+		{"0.0.0-dev", "v0.0.0-dev build dbd05 (2026-08-17)"},
+	}
+	for _, tc := range tests {
+		version = tc.ver
+		if got := versionText(); got != tc.want {
+			t.Errorf("versionText() at %q = %q, want %q", tc.ver, got, tc.want)
+		}
+	}
+	// Read where it's already the next day.
+	time.Local = time.FixedZone("UTC+4", 4*60*60)
+	version = "2.1.0-dirty"
+	if got := versionText(); got != "v2.1.0-dirty build dbd05 (2026-08-18)" {
+		t.Errorf("versionText() at UTC+4 = %q, want the local date 2026-08-18", got)
+	}
+	// No build number, no date either.
+	buildEpoch, version = "", "2.1.0-12-ga12019f"
+	if got := versionText(); got != "v2.1.0-12-ga12019f" {
+		t.Errorf("unstamped versionText() = %q, want no build or date", got)
+	}
+}

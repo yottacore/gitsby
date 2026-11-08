@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 
+#  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
+
 ##	Purpose:
-##		- Compares the two builds against each other, rather than each against a
-##		  spec. cicd/test.bash asks "does this behave correctly?" once per
-##		  implementation; this asks "do the two answer the SAME?" for one input.
-##		- Aimed at the defect class the behavioural suite is blind to by
+##		- Backwards compatibility. Compares this build against the frozen v2.1.0
+##		  script under legacy/, rather than each against a spec. cicd/test.bash
+##		  asks "does this behave correctly?" of one build; this asks "does the new
+##		  one ANSWER as the shipped one did?" for the same input.
+##		- Aimed at the defect class the behavioral suite is blind to by
 ##		  construction: every port bug that has reached users here was a language
-##		  mechanism differing - file encoding, parameter binding, return types,
+##		  mechanism differing - file encoding, argument parsing, return types,
 ##		  path resolution, string case - not a rule either build got wrong on
 ##		  purpose. A check written per implementation passes on both while they
 ##		  quietly disagree about the same input.
@@ -14,25 +17,39 @@
 ##	Syntax:
 ##		cicd/parity.bash
 ##	Notes:
-##		- Skips itself where pwsh is absent: there is nothing to compare to.
-##		- Output is normalized only for the program's own name ('gitsby' vs
-##		  'gitsby.ps1') and for the option spellings the two builds document
-##		  differently. Anything else that differs is a finding.
+##		- The reference is legacy/bin/gitsby, the Bash build. The PowerShell one is
+##		  not a third leg: the two scripts were proven identical to each other at
+##		  v2.1.0, so agreeing with one is agreeing with both, and a pwsh leg would
+##		  only add an interpreter this has to find.
+##		- Skips itself once legacy/ is gone: there is then nothing to compare to,
+##		  and that is the intended end state, not a failure.
+##		- Output is normalized only for the program's own name and for the absolute
+##		  path of whichever build produced a line. Commands the new build renamed on
+##		  purpose are compared under BOTH spellings, since the old one still has to
+##		  work - anything else that differs is a finding.
 
 ##	History: At bottom of script.
 
-##	Copyright © 2026 Jim Collier (CryptogID: ѳ6ᴚ℈𐀘𐇦ɛ𐊁¥Mﾏb϶Δ𐌞)
+##	Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 ##	Licensed under The MIT License (MIT). Full text at:
 ##		https://mit-license.org/
 ##	SPDX-License-Identifier: MIT
 
 
+if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
+	printf '%s\n' "${0##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
+fi
 set -Eeuo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/.." && pwd)"
-work="$(mktemp -d "${TMPDIR:-/tmp}/gitsby-parity.XXXXXX")"
-trap 'rm -rf -- "${work:?}"' EXIT
+# shellcheck source=/dev/null
+source "${here}/utility/include/safe-rm.bash"
+# shellcheck source=/dev/null
+APP_NAME="$(source "${here}/config.bash" && printf '%s' "${APP_NAME}")"
+fSafeRm_Init || exit 1; safeTmp="$(fSafeRm_Tmp)" || exit 1
+work="$(mktemp -d "${safeTmp}/gitsby-parity.XXXXXX")"
+trap 'fSafeRm "${work:?}" >/dev/null' EXIT
 ## The same directory in the spelling native Windows understands. A folder rule has to be written
 ## in a spelling BOTH builds can resolve, and an MSYS mount path such as '/tmp/...' is not one:
 ## only this shell knows its own mount table, and the PowerShell build must not need Git Bash to
@@ -41,8 +58,13 @@ trap 'rm -rf -- "${work:?}"' EXIT
 workNative="${work}"
 command -v cygpath >/dev/null 2>&1 && workNative="$(cygpath -m "${work}")"
 workBack="${workNative//\//\\}"
+## Escaped for sed. The backslash spelling of '/var/folders/4g/...' has '\4' in it, which sed
+## reads as a backreference.
+fSedLiteral(){ printf '%s\n' "${1}" | sed -e 's/[]\.*[^$|]/\\&/g' ;}
+reRoot="$(fSedLiteral "${root}")"; reWork="$(fSedLiteral "${work}")"
+reWorkNative="$(fSedLiteral "${workNative}")"; reWorkBack="$(fSedLiteral "${workBack}")"
 
-## Same hermeticity as the behavioural suite, and for the same reasons.
+## Same hermeticity as the behavioral suite, and for the same reasons.
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@test
 export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@test
@@ -57,17 +79,47 @@ fUnsetInheritedGitConfig(){
 	unset GIT_CONFIG_COUNT
 }
 fUnsetInheritedGitConfig
-unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT
+unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT GITSBY_RAW_ACTIVE
+
+## Output helpers, the same family as cicd.bash's: fEcho_Clean prints a line as given and
+## collapses repeated blanks, fEcho prints a "[ ... ]" status line, and fUsage refuses the
+## command line.
+declare -i __wasLastEchoBlank=0
+fEcho_Clean(){
+	if [[ -n "${1:-}" ]]; then printf '%s\n' "$*"; __wasLastEchoBlank=0
+	elif ((! __wasLastEchoBlank)); then echo; __wasLastEchoBlank=1; fi
+}
+fEcho(){  if [[ -n "$*" ]]; then fEcho_Clean "[ $* ]"; else fEcho_Clean ""; fi; }
+fUsage(){ fEcho_Clean "$*" >&2; exit 2; }
+
+## -q silences the per-check line and leaves the header, the failures and the total. The
+## pipeline doesn't pass it, even on its own -q runs.
+declare -i quiet=0
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		-q|--quiet) quiet=1; shift ;;
+		-h|--help)  fEcho_Clean "Usage: $(basename "${BASH_SOURCE[0]}") [-q|--quiet]"; exit 0 ;;
+		*)          fUsage "unknown option: ${1} (try --help)" ;;
+	esac
+done
 
 declare -i pass=0 fail=0
-fOk(){   pass=$((pass+1)); echo "  ok: $*"; }
-fBad(){  fail=$((fail+1)); echo "  DIFFER: $*"; }
+## "PASS <id> <label>" from "[<id>] <label>", as test.bash prints them. A difference is a FAIL.
+fTestLine(){ local re='^\[([0-9A-Za-z]+)\] (.*)$' d="$2"; [[ ! "${d}" =~ ${re} ]] || d="${BASH_REMATCH[1]} ${BASH_REMATCH[2]}"; fEcho_Clean "  $1 ${d}" ;}
+fOk(){   pass=$((pass+1)); ((quiet)) || fTestLine PASS "$*"; }
+fBad(){  fail=$((fail+1)); fTestLine FAIL "$*"; }
 
-bashBuild="${root}/bin/gitsby"
-pwshBuild="${root}/bin/gitsby.ps1"
+## The subject and the reference. 'new' is whatever cicd stage 2 just built; 'ref' is the
+## frozen script, read-only and never rebuilt.
+newBuild="${root}/src-go/gitsby"; [[ -x "${newBuild}" ]] || newBuild="${newBuild}.exe"
+refBuild="${root}/legacy/bin/gitsby"
 
-if ! command -v pwsh >/dev/null 2>&1; then
-	echo "parity: pwsh not installed - nothing to compare against, skipping."
+if [[ ! -x "${newBuild}" ]]; then
+	fEcho_Clean "parity: no build at src-go/gitsby - nothing to compare, skipping."
+	exit 0
+fi
+if [[ ! -f "${refBuild}" ]]; then
+	fEcho_Clean "parity: no frozen build at legacy/bin/gitsby - nothing to compare against, skipping."
 	exit 0
 fi
 
@@ -77,40 +129,92 @@ fNormalize(){
 	## everything else differing is the point of this file.
 	## Every spelling of the work directory folds to one token: the two shells legitimately echo a
 	## path the way their own runtime spells it, and that is not a parity finding.
-	sed -e 's/gitsby\.ps1/gitsby/g' -e "s|${root}|<root>|g" \
-		-e "s|${workBack}|<work>|gI" -e "s|${workNative}|<work>|gI" -e "s|${work}|<work>|g"
+	sed -e 's/gitsby\.ps1/gitsby/g' -e "s|${reRoot}|<root>|g" \
+		-e "s|${reWorkBack}|<work>|gI" -e "s|${reWorkNative}|<work>|gI" -e "s|${reWork}|<work>|g"
 }
 
-fRunBash(){ local -r d="${1}"; shift; ( cd "${d}" || exit 1; "${bashBuild}" "${@}" 2>&1 || true ) | fNormalize ;}
-fRunPwsh(){ local -r d="${1}"; shift; ( cd "${d}" || exit 1; pwsh -NoProfile -File "${pwshBuild}" "${@}" 2>&1 || true ) | fNormalize ;}
+fRunNew(){ local -r d="${1}"; shift; ( cd "${d}" || exit 1; "${newBuild}" "${@}" 2>&1 || true ) | fNormalize ;}
+fRunRef(){ local -r d="${1}"; shift; ( cd "${d}" || exit 1; bash "${refBuild}" "${@}" 2>&1 || true ) | fNormalize ;}
 
 fSame(){
 	## One input, both builds, byte-identical answers after normalization.
 	local -r label="${1}"; local -r dir="${2}"; shift 2
 	local a="" b=""
-	a="$(fRunBash "${dir}" "${@}")"
-	b="$(fRunPwsh "${dir}" "${@}")"
+	a="$(fRunNew "${dir}" "${@}")"
+	b="$(fRunRef "${dir}" "${@}")"
 	if [[ "${a}" == "${b}" ]]; then
 		fOk "${label}"
 	else
 		fBad "${label}"
-		diff <(printf '%s\n' "${a}") <(printf '%s\n' "${b}") | sed 's/^/      /' | head -12
+		diff <(printf '%s\n' "${a}") <(printf '%s\n' "${b}") | sed 's/^/      /' | head -12 || true
+	fi
+}
+
+## Same as fSame, with one deliberate difference removed from both sides first. Used where this
+## build says something the frozen one never did and the rest of the line still has to match; the
+## removal is spelled out at the call site so it cannot quietly widen.
+fSameStripped(){
+	local -r label="${1}"; local -r drop="${2}"; local -r dir="${3}"; shift 3
+	local a="" b=""
+	a="$(fRunNew "${dir}" "${@}" | sed -E "${drop}")"
+	b="$(fRunRef "${dir}" "${@}" | sed -E "${drop}")"
+	if [[ "${a}" == "${b}" ]]; then
+		fOk "${label}"
+	else
+		fBad "${label}"
+		diff <(printf '%s\n' "${a}") <(printf '%s\n' "${b}") | sed 's/^/      /' | head -12 || true
 	fi
 }
 
 fSameField(){
-	## One labelled line out of each build's output, compared. Used where the surrounding block
+	## One labeled line out of each build's output, compared. Used where the surrounding block
 	## legitimately differs: each runtime echoes a path the way it spells one, and 'C:\x' against
 	## '/c/x' is not a finding - what the two must agree on is what they RESOLVED from it.
 	local -r label="${1}"; local -r pattern="${2}"; local -r dir="${3}"; shift 3
 	local a="" b=""
-	a="$(fRunBash "${dir}" "${@}" | grep -E "${pattern}" || true)"
-	b="$(fRunPwsh "${dir}" "${@}" | grep -E "${pattern}" || true)"
+	a="$(fRunNew "${dir}" "${@}" | grep -E "${pattern}" || true)"
+	b="$(fRunRef "${dir}" "${@}" | grep -E "${pattern}" || true)"
 	if [[ "${a}" == "${b}" ]]; then
 		fOk "${label}"
 	else
 		fBad "${label}"
-		printf '      bash: %s\n      pwsh: %s\n' "${a:-(no such line)}" "${b:-(no such line)}"
+		printf '      this build: %s\n      frozen:     %s\n' "${a:-(no such line)}" "${b:-(no such line)}"
+	fi
+}
+
+fSameLead(){
+	## The labeled line with its trailing explanation cut off, compared. Used where what the two
+	## builds must agree on is the value the line reports and not the prose after it: the frozen
+	## script says where an account came from and why it could not be applied in one long clause on
+	## the line, this build says both underneath, and which reads better is not what these ask.
+	local -r label="${1}"; local -r pattern="${2}"; local -r dir="${3}"; shift 3
+	## The frozen one first: this build converts a flat accounts file on first read, which the
+	## frozen one can't read after.
+	local a="" b=""
+	b="$(fRunRef "${dir}" "${@}" | grep -E "${pattern}" | sed -e 's/ - .*//' -e 's/ (from .*//' || true)"
+	a="$(fRunNew "${dir}" "${@}" | grep -E "${pattern}" | sed -e 's/ - .*//' -e 's/ (from .*//' || true)"
+	if [[ "${a}" == "${b}" ]]; then
+		fOk "${label}"
+	else
+		fBad "${label}"
+		printf '      this build: %s\n      frozen:     %s\n' "${a:-(no such line)}" "${b:-(no such line)}"
+	fi
+}
+
+## The plan block alone, compared. The state block above it words its labels differently in this
+## build, which test.bash owns; the plan is the git each build runs, in order. One deliberate
+## difference may be mapped to a single spelling on both sides, spelled out at the call site.
+fPlanBlock(){ awk '/^Going to do/{p=1;next} /^\[/{p=0} p' ;}
+fSamePlan(){
+	local -r label="${1}"; local -r drop="${2}"; local -r dir="${3}"; shift 3
+	local a="" b=""
+	a="$(fRunNew "${dir}" "${@}" | fPlanBlock | sed -E "${drop}")"
+	b="$(fRunRef "${dir}" "${@}" | fPlanBlock | sed -E "${drop}")"
+	if [[ -n "${a}" && "${a}" == "${b}" ]]; then
+		fOk "${label}"
+	else
+		fBad "${label}"
+		diff <(printf '%s\n' "${a}") <(printf '%s\n' "${b}") | sed 's/^/      /' | head -12 || true
 	fi
 }
 
@@ -119,29 +223,35 @@ fSameExit(){
 	## must agree on whether the input is valid at all.
 	local -r label="${1}"; local -r dir="${2}"; shift 2
 	local -i ra=0 rb=0
-	( cd "${dir}" && "${bashBuild}" "${@}" >/dev/null 2>&1 ) || ra=$?
-	( cd "${dir}" && pwsh -NoProfile -File "${pwshBuild}" "${@}" >/dev/null 2>&1 ) || rb=$?
+	( cd "${dir}" && "${newBuild}" "${@}" >/dev/null 2>&1 ) || ra=$?
+	( cd "${dir}" && bash "${refBuild}" "${@}" >/dev/null 2>&1 ) || rb=$?
 	## Only the verdict, not the code: the two runtimes number their own failures differently.
-	if [[ $((ra == 0)) -eq $((rb == 0)) ]]; then fOk "${label}"; else fBad "${label} (bash exit ${ra}, pwsh exit ${rb})"; fi
+	if [[ $((ra == 0)) -eq $((rb == 0)) ]]; then fOk "${label}"; else fBad "${label} (this build exit ${ra}, frozen exit ${rb})"; fi
 }
 
-echo
-echo "[ gitsby parity: comparing the two builds against each other ]"
-echo
+fEcho_Clean
+fEcho "gitsby parity: this build vs the frozen v2.1.0 script"
+fEcho_Clean
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Path spelling. The folder rule is the feature most exposed to path handling, and this is where
-## the builds diverged for real: one resolved a spelling through the filesystem and the other did
-## not, so the same rule matched in one and not the other. Silently, which is the worst kind.
+## the scripted builds diverged for real: one resolved a spelling through the filesystem and the
+## other did not, so the same rule matched in one and not the other. Silently, which is the worst
+## kind. Go resolves paths its own third way, so the question is live again.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-echo "-- folder rules, however the path is spelled"
+fEcho_Clean "-- folder rules, however the path is spelled"
 tree="${work}/tree"
 mkdir -p "${tree}"
 git init --quiet -b main "${tree}"
 ( cd "${tree}" && echo a > a.txt && git add --all && git commit --quiet -m init )
 
 declare -a spellings=("${workNative}/tree")
-if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]]; then
+if [[ "${OSTYPE:-}" != msys* && "${OSTYPE:-}" != cygwin* ]]; then
+	## Symlinks resolved, because the frozen script never resolves them and this build does on
+	## purpose. On macOS the temp dir is under /var, a link to /private/var, so the typed spelling
+	## only ever matched in this build.
+	spellings=("$(cd "${tree}" && pwd -P)")
+else
 	winPath="$( cd "${tree}" && pwd -W )"
 	spellings+=("${winPath}")
 	spellings+=("${winPath//\//\\}")
@@ -152,59 +262,120 @@ for spelling in "${spellings[@]}"; do
 		account.s.path      = ${spelling}
 		account.s.ghAccount = spellacct
 	EOF
-	fSameField "path spelled '${spelling}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${work}/spell.shcl" status
+	fSameLead  "[db5zr] path spelled '${spelling}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${work}/spell.shcl" status
 done
 
 ## 'pathContains' names folder names rather than a machine's tree, so it is the one rule meant to
 ## be identical everywhere - which makes any divergence between the builds worth more here, not less.
-echo
-echo "-- pathContains rules"
+fEcho_Clean
+fEcho_Clean "-- pathContains rules"
 mkdir -p "${work}/mA/github.com/alice/proj" "${work}/mB/github.com/alice/proj" "${work}/mA/github.com/alice-old/proj"
 for d in "${work}/mA/github.com/alice/proj" "${work}/mB/github.com/alice/proj" "${work}/mA/github.com/alice-old/proj"; do
 	git init --quiet -b main "${d}"
 done
-cat > "${work}/seg.shcl" <<-EOF
-	account.seg.pathContains = github.com/alice
-	account.seg.ghAccount    = segacct
-EOF
-fSameField "pathContains resolves the same under root A" '^Account' "${work}/mA/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
-fSameField "pathContains resolves the same under root B" '^Account' "${work}/mB/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
-fSameField "and both agree it is whole folder names"     '^Account' "${work}/mA/github.com/alice-old/proj" -q -NoFetch --config "${work}/seg.shcl" status
+## Written again for each check, since this build converts it on the first read.
+fSegConfig(){
+	cat > "${work}/seg.shcl" <<-EOF
+		account.seg.pathContains = github.com/alice
+		account.seg.ghAccount    = segacct
+	EOF
+}
+fSegConfig
+fSameLead  "[db62s] pathContains resolves the same under root A" '^Account' "${work}/mA/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
+fSegConfig
+fSameLead  "[db62t] pathContains resolves the same under root B" '^Account' "${work}/mB/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
+fSegConfig
+fSameLead  "[db62v] and both agree it is whole folder names"     '^Account' "${work}/mA/github.com/alice-old/proj" -q -NoFetch --config "${work}/seg.shcl" status
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-## Option binding. PowerShell's parameter binder is a whole mechanism the Bash build does not have,
-## and it has produced three separate defects: options claimed out of a passthrough, a joined
-## '-Config=FILE' binding nothing, and a bare '--' killing the process before any code ran.
+## Option binding. Every build parses its own arguments, and that is where the scripted pair
+## produced three separate defects: options claimed out of a passthrough, a joined '-Config=FILE'
+## binding nothing, and a bare '--' killing the process before any code ran. The Go build parses
+## by hand for exactly this reason, which is worth proving rather than assuming.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-echo
-echo "-- option forms"
-fSame     "an unknown option is refused the same way"     "${tree}" -q --bogus status
-fSame     "an option after the command is refused alike"  "${tree}" -q status --bogus
-fSame     "too many positionals are counted alike"        "${tree}" -q br switch a b c
-fSameExit "a spaced --config is accepted by both"         "${tree}" -q -NoFetch --config "${work}/no-accounts.shcl" status
-fSameExit "an empty --config is refused by both"          "${tree}" -q -NoFetch --config "" status
-fSameExit "a --config naming a directory is refused"      "${tree}" -q -NoFetch --config "${work}" status
-fSameExit "a --config naming nothing there is refused"    "${tree}" -q -NoFetch --config "${work}/nope.shcl" status
-fSameExit "-q and -y together are accepted by both"       "${tree}" -q -y -NoFetch status
-fSameExit "-NoFetch before 'raw' is taken by both"        "${tree}" -q -NoFetch raw git rev-parse HEAD
-fSameExit "a bad 'raw' tool is refused by both"           "${tree}" -q raw curl x
+fEcho_Clean
+fEcho_Clean "-- option forms"
+fSame     "[db5zs] an unknown option is refused the same way"     "${tree}" -q --bogus status
+fSame     "[db5zt] an option after the command is refused alike"  "${tree}" -q status --bogus
+## Both refuse, and that is the whole claim here. The frozen script counted them - "5, for max of
+## 4" - because four was all its tokenizer took; this build takes five, for 'account set <account>
+## <key> <value>' alone, and every other command rejects the extra a step later, by name. Naming
+## the word is the better answer of the two, and test.bash owns that wording.
+fSameExit "[db5zv] too many positionals are refused by both"      "${tree}" -q br switch a b c
+fSameExit "[db5zw] a spaced --config is accepted by both"         "${tree}" -q -NoFetch --config "${work}/no-accounts.shcl" status
+fSameExit "[db5zx] an empty --config is refused by both"          "${tree}" -q -NoFetch --config "" status
+fSameExit "[db5zy] a --config naming a directory is refused"      "${tree}" -q -NoFetch --config "${work}" status
+fSameExit "[db5zz] a --config naming nothing there is refused"    "${tree}" -q -NoFetch --config "${work}/nope.shcl" status
+fSameExit "[db600] -q and -y together are accepted by both"       "${tree}" -q -y -NoFetch status
+fSameExit "[db601] -NoFetch before 'raw' is taken by both"        "${tree}" -q -NoFetch raw git rev-parse HEAD
+fSameExit "[db602] a bad 'raw' tool is refused by both"           "${tree}" -q raw curl x
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-## String case. Bash folds with '${x,,}' and PowerShell compares case-insensitively by default, so
-## the two drift apart wherever one is applied and the other is assumed.
+## Renamed commands. 'update' became 'pullcom' and 'br land' became 'br merge', and both old
+## spellings are permanent aliases - so the rename must have moved the name and nothing else.
+## Run outside a repository, where both builds refuse for a reason that has nothing to do with
+## the rename: what is being compared is that the old name still ROUTES, and to the same place.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-echo
-echo "-- string case"
-cat > "${work}/case.shcl" <<-EOF
-	account.mixed.path      = ${spellings[0]}
-	account.mixed.ghAccount = caseacct
-EOF
+fEcho_Clean
+fEcho_Clean "-- renamed commands, old spellings"
+notRepo="${work}/not-a-repo"; mkdir -p "${notRepo}"
+
+## Against the frozen build, which knows only the old names.
+fSame "[dbemz] 'update' answers as it always did"      "${notRepo}" -q -NoFetch update
+fSame "[dben0] 'br land' answers as it always did"     "${notRepo}" -q -NoFetch br land
+
+## Against itself, since the frozen build never heard the new names. Two spellings of one
+## command have to be one command, not merely two that are both accepted.
+fSameSpelling(){
+	local -r label="${1}"; local -r dir="${2}"; local -r old="${3}"; local -r new="${4}"; shift 4
+	local a="" b=""
+	# shellcheck disable=SC2086  ## deliberate word-split: these carry multi-word commands ('br land').
+	a="$(fRunNew "${dir}" -q -NoFetch ${old})"
+	# shellcheck disable=SC2086  ## ${new} is a list of arguments, split on purpose.
+	b="$(fRunNew "${dir}" -q -NoFetch ${new})"
+	if [[ "${a}" == "${b}" ]]; then
+		fOk "${label}"
+	else
+		fBad "${label}"
+		diff <(printf '%s\n' "${a}") <(printf '%s\n' "${b}") | sed 's/^/      /' | head -12 || true
+	fi
+}
+fSameSpelling "[dben1] 'pullcom' and 'update' are one command"   "${notRepo}" "update"   "pullcom"
+fSameSpelling "[dben2] 'br merge' and 'br land' are one command" "${notRepo}" "br land"  "br merge"
+fSameSpelling "[deyw8] 'pull' and 'pullcom' are one command"     "${notRepo}" "pull"     "pullcom"
+
+##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+## Plans. The pull step changed on purpose on 2026-10-03: the fetch at the start of the command
+## already has origin's branches, so this build merges the upstream rather than pulling, which
+## asked origin again, and names it. Both spellings of that one line map to one token; every
+## other line still has to match the frozen build.
+##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+fEcho_Clean
+fEcho_Clean "-- plans"
+planOrigin="${work}/plan-origin.git"; planTree="${work}/plan-tree"
+git init --quiet --bare -b main "${planOrigin}"
+git clone --quiet "${planOrigin}" "${planTree}" 2>/dev/null
+( cd "${planTree}" && echo a > a.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main )
+pullStep='s/^    git (pull --ff-only --autostash|merge --ff-only --autostash origin\/main) \*$/    <pull step> */'
+fSamePlan "[ddf66] pullcom plans the same steps, the pull step aside" "${pullStep}" "${planTree}" -q -NoFetch update
+fSamePlan "[ddf67] sync plans the same steps, the pull step aside"    "${pullStep}" "${planTree}" -q -NoFetch sync
+
+##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+## String case. Bash folds with '${x,,}'; Go compares byte-exact unless told otherwise. The two
+## drift apart wherever one is applied and the other is assumed.
+##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+fEcho_Clean
+fEcho_Clean "-- string case"
 for name in mixed MIXED MiXeD; do
+	cat > "${work}/case.shcl" <<-EOF
+		account.mixed.path      = ${spellings[0]}
+		account.mixed.ghAccount = caseacct
+	EOF
 	## Exported around the call, not named only in the label: both builds have to SEE it. Written
 	## the other way this loop ran three identical commands and compared them to each other, which
 	## passes whatever either build does with the variable.
 	export GITSBY_ACCOUNT="${name}"
-	fSameField "GITSBY_ACCOUNT='${name}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${work}/case.shcl" status
+	fSameLead  "[db603] GITSBY_ACCOUNT='${name}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${work}/case.shcl" status
 	unset GITSBY_ACCOUNT
 done
 
@@ -212,23 +383,36 @@ done
 ## File encoding. A BOM is invisible in an editor and in 'Get-Content', and has broken both the
 ## documented one-liner installs and direct execution of the script. Bytes, not text.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-echo
-echo "-- file encoding"
-for f in "${root}/bin/gitsby" "${root}/bin/gitsby.ps1" "${root}/install.bash" "${root}/install.ps1" "${root}/install-dev.bash" "${root}/install-dev.ps1"; do
+fEcho_Clean
+fEcho_Clean "-- file encoding"
+for f in "${root}"/legacy/bin/gitsby "${root}"/legacy/bin/gitsby.ps1 "${root}"/legacy/install*.bash "${root}"/legacy/install*.ps1; do
 	[[ -f "${f}" ]] || continue
 	if [[ "$(head -c 2 "${f}")" == "#!" ]]; then
-		fOk "${f##*/} starts with a shebang, not a BOM"
+		fOk "[db604] ${f##*/} starts with a shebang, not a BOM"
 	else
-		fBad "${f##*/} does not start with '#!' - a BOM ahead of it breaks 'irm | iex' and direct execution"
+		fBad "[db604] ${f##*/} does not start with '#!' - a BOM ahead of it breaks 'irm | iex' and direct execution"
 	fi
 done
 
-echo
-echo "parity passed: ${pass}, differed: ${fail}"
+fEcho_Clean
+fEcho_Clean "parity passed: ${pass}, differed: ${fail}"
 ((fail == 0)) || exit 1
 
 ##	History:
 ##		- 20260812 JC: Created. Compares the two builds against each other rather than each against
-##		  a spec, for the defect class the behavioural suite cannot see: every port bug that reached
+##		  a spec, for the defect class the behavioral suite cannot see: every port bug that reached
 ##		  users was a language mechanism differing, not a rule either build got wrong.
-##		- 20260813 JC: Same environment isolation the behavioural suite grew: env-injected git config and an inherited gh token.
+##		- 20260813 JC: Same environment isolation the behavioral suite grew: env-injected git config and an inherited gh token.
+##		- 20260818 JC: Repointed. The pair used to be the two scripts; it is now this build against the frozen v2.1.0 one under legacy/, which is the question that still has an answer worth having. No pwsh leg: the two scripts were proven identical at v2.1.0, so agreeing with one is agreeing with both. The renamed commands are checked under both spellings, since the old name has to keep working.
+##		- 20260819 JC: A difference used to end the run. diff exits 1, and under pipefail with -e that killed the script at the FIRST finding, so every later one went unreported - the totals line never printed either. Also a helper for comparing a line with one deliberate difference removed, spelled out per call so it cannot quietly widen.
+##		- 20260926 JC: Every check carries a test ID at the front of its label.
+##		- 20260926 JC: The pipeline no longer passes -q, so every check prints a line.
+##		- 20261001 JC: Paths are escaped before going into a sed pattern. Off Windows the folder rule is written with symlinks resolved, since the frozen script never resolves them.
+##		- 20261003 JC: Compares the pullcom and sync plans, with the pull step's new spelling mapped to one token on both sides.
+##		- 20261004 JC: The pull step's merge names the upstream, so the mapping names it too.
+##		- 20261004 JC: Prints through fEcho and fEcho_Clean, like the other pipeline scripts.
+##		  Every expansion braced, and shellcheck enforces it.
+##		- 20261026 JC: Each check prints PASS or FAIL, then its ID and label, in place of ok and DIFFER.
+##		- 20261106 JC: Its scratch folder goes through fSafeRm, made where the guard takes it.
+##		- 20261107 JC: The shellcheck disable says why.
+##		- 20261107 JC: The frozen build reads first in fSameLead, and the flat fixtures are written again per check, since this build converts a flat accounts file on its first read.

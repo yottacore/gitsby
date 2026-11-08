@@ -16,17 +16,23 @@
 #  shellcheck disable=2178  ## 'Variable was used as an array but is now assigned a string.' False hits on associative arrays with e.g. 'local -n assocArray=$1'.
 #  shellcheck disable=2181  ## 'Check exit code directly, not indirectly with $?.'
 #  shellcheck disable=2317  ## 'Can't reach.' (I.e. an 'exit' is used for debugging - and makes an unusable visual mess.)
+#  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
 
-##	- Purpose: Local CI/CD pipeline. Generic engine for a Bash-script project;
+##	- Purpose: Local CI/CD pipeline. Generic engine for a Go project;
 ##	  per-project settings live in config.bash.
 ##	- Stages (fail-fast, any error aborts before the next stage):
 ##	   0. remote sync (fast-forward from origin before anything is built or tested)
-##	   1. lint (bash -n + shellcheck gating; markdownlint + py_compile + PSScriptAnalyzer if available)
-##	   2. regression tests (cicd/test.bash, once it exists)
-##	   3. fuzz + security (cicd/fuzz.bash, once it exists; skipped under --quick)
-##	   4. dogfood (install the script(s) to the first existing preferred dir)
-##	   5. demo gif (fake-terminal render; skipped under --quick)
-##	   6. backup + publish to git (runs from repo root)
+##	   1. lint (gofmt + go vet + staticcheck + golangci-lint, shellcheck over the pipeline's own scripts, and ruff's leak rules over the demo script)
+##	   2. build + unit tests (go test -race, failing on a goroutine left running) + regression tests (cicd/test.bash against the compiled binary)
+##	   3. fuzz + security (cicd/fuzz.bash) + native fuzz targets + govulncheck + pip-audit + spawn counts + leak checks (a soak test and CodeQL); --quick skips both audits and CodeQL
+##	   4. backwards compatibility (cicd/parity.bash: this build vs the frozen v2.1.0 one)
+##	   5. dogfood (cross-build every target and install each to its first existing dir)
+##	   6. demo gif (fake-terminal render; skipped under --quick)
+##	   7. Remote tests (cicd/remote-tests.bash, over ssh on the Mac, the Unix boxes and whichever Windows box is free; --quick only cross-builds the Unix boxes' targets)
+##	   8. backup + publish to git (runs from repo root)
+##	- Each step that runs opens with "[ <local time>: Step N of M; Starting <step> ]" and closes
+##	  with the same line saying PASS or FAIL. M counts only the steps that run, and the plan
+##	  at the top names the flag or reason for each one that doesn't.
 ##	- Syntax:
 ##	  cicd/cicd.bash [options]
 ##	  Options:
@@ -38,10 +44,36 @@
 ##	   --no-lint           skip the lint stage
 ##	   --no-test           skip the regression test stage
 ##	   --no-fuzz           skip the fuzz + security stage
-##	   --no-dogfood        skip installing the script(s) locally
+##	   --no-parity         skip the backwards-compatibility comparison
+##	   --no-dogfood        skip installing the build(s) locally
 ##	   --no-demogif        skip regenerating the demo gif
+##	   --no-remote         skip the remote tests
 ##	   --no-publish        skip the git backup + publish stage
-##	   --quick             skip the slow stages (fuzz, demo gif)
+##	   --quick             what fits in about 10 minutes, and no host but origin: skips govulncheck, pip-audit, CodeQL, the demo gif and the remote tests
+##	   --leakcheck         run every leak check even under --quick or --no-fuzz: a soak test of the everyday commands, and CodeQL over the Go code and its vendored dependencies for each release OS and over the pipeline's Python and the libraries it imports, with the heap profiles and CodeQL's reports kept in cicd/artifacts/leakcheck/
+##	   --no-leakcheck      skip the leak checks
+##	   --long              everything, the slow checks included; nothing here takes hours, so the same as no flags
+##	       --slow          alias for --long
+##	   --container         run stages 1-4 and the demo gif, or the quick run, in the pinned image from cicd/container/Dockerfile, and build dogfood and stage 7 with its Go (the default)
+##	   --no-container      run them on this box instead
+##	   --backlog-run-quick [AREA...]
+##	                       what a backlog worker runs before it commits, in a few minutes, in the image:
+##	                       every area below, or only those named. No sync, prompt or log
+##	                         lint    every lint and format check
+##	                         unit    the Go unit tests
+##	                         suite   the build, then the regression suite
+##	                         fuzz    the build, then fuzz.bash and the spawn counts
+##	                         parity  the build, then the comparison with v2.1.0
+##	   --gate [AREA...]    alias for --backlog-run-quick
+##	   --backlog-run-full  what a backlog round runs once at its end: every check of a plain run, the other hosts included
+##	   --merge-gate        the same checks, before a merge to main
+##	       --ci            alias for --merge-gate
+##	                       None of those three dogfoods, publishes, commits, pushes, installs, syncs,
+##	                       prompts, or rewrites a tracked file. A demo gif that differs is left as committed.
+##	   --keep-temp         keep the run's temp folder and containers, and say where they are at the end
+##	   --list              print the steps and the test IDs the other options given would run, and run nothing
+##	   --install-hook      install the git pre-push hook that runs --merge-gate on each commit pushed to main,
+##	                       unless it changes only the paths MERGE_GATE_SKIP in config.bash lists
 ##	   -h, --help          show this help
 ##	- If neither -q/-y nor -m is given, the run prompts once for a commit message
 ##	  (blank = git editor; Ctrl+C aborts the whole run), then finishes unattended.
@@ -49,12 +81,15 @@
 
 ##	History: At bottom of script.
 
-##	Copyright © 2026 Jim Collier (CryptogID: ѳ6ᴚ℈𐀘𐇦ɛ𐊁¥Mﾏb϶Δ𐌞)
+##	Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 ##	Licensed under The MIT License (MIT). Full text at:
 ##		https://mit-license.org/
 ##	SPDX-License-Identifier: MIT
 
 
+if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
+	printf '%s\n' "${0##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
+fi
 set -Eeuo pipefail
 
 ## Find the repo root and load project config.
@@ -62,351 +97,1342 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/.." && pwd)"   ## the git repo root (cicd/..)
 export PATH="${HOME}/.local/bin:${PATH}"   ## user-prefix npm tools (markdownlint) win
 source "${here}/config.bash"
+## No VCS stamps on anything go builds here, the lint and test builds too, not just the -o ones.
+## Go takes only a .git folder for a repo, so from the hook's worktree under .git it walks up to
+## the main checkout and stamps that, and in the image git won't read it and the build fails.
+export GOFLAGS="${GOFLAGS:+${GOFLAGS} }-buildvcs=false"
 source "${here}/utility/include/gfs-rotate.bash"       ## gfs_rotate() for the artifact dirs
+source "${here}/utility/include/go-test-lines.bash"    ## fGoTestLines(), shared with remote-tests.bash
+source "${here}/utility/include/image-go.bash"         ## fImageGo(), fImageRecipe() and fImageBuild(), shared with remote-tests.bash and release.bash
+source "${here}/utility/include/safe-rm.bash"          ## fSafeRm(), the guard every recursive removal goes through
+fLowPriority
 cd "${root}"
 stamp="$(date +%Y%m%d-%H%M%S)"
-
-## Parse options.
-assume_yes=0; quiet=0; quick=0; do_sync=1; do_lint=1; do_test=1; do_fuzz=1; cli_message=""
-while (($#)); do case "$1" in
-	-q|--quiet)               quiet=1; assume_yes=1; shift ;;   ## quiet + unattended; publish runs quiet too
-	-y|--yes)                 assume_yes=1; shift ;;
-	--no-sync)                do_sync=0; shift ;;
-	--no-lint)                do_lint=0; shift ;;
-	--no-test)                do_test=0; shift ;;
-	--no-fuzz)                do_fuzz=0; shift ;;
-	--no-dogfood)             DOGFOOD_BASH_DESTS=(); DOGFOOD_PWSH_DESTS=(); shift ;;
-	--no-demogif)             DO_DEMOGIF=0; shift ;;
-	--no-publish)             GIT_PUBLISH=(); shift ;;
-	--quick)                  quick=1; do_fuzz=0; DO_DEMOGIF=0; shift ;;
-	--message=*|--msg=*|-m=*) cli_message="${1#*=}"; shift ;;
-	-m|--message|--msg)       cli_message="${2-}"; shift; (($#)) && shift ;;
-	-h|--help)                sed -n '/^##	- Purpose:/,/^##	History:/p' "${BASH_SOURCE[0]}" | sed '$d; s/^##	\{0,1\}//'; exit 0 ;;
-	*) echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
-esac; done
-
-## Brief beat after each stage header so the cheap fast stages stay readable.
-## Off for unattended runs (-q/-y) where nobody is watching.
-stage_pause=0.4; ((assume_yes)) && stage_pause=0
-
-## Publish commit message: -m wins, then config, then a default when unattended.
-## Empty -> publish interactively (git commit opens an editor); when interactive
-## we offer to capture a message at the preflight prompt below.
-publish_msg=""
-if   [[ -n "$cli_message" ]];              then publish_msg="$cli_message"
-elif [[ -n "${PUBLISH_AUTO_MESSAGE:-}" ]]; then publish_msg="$PUBLISH_AUTO_MESSAGE"
-elif ((assume_yes));                       then publish_msg="${APP_NAME} CI/CD ${stamp}"
-fi
 
 ## Output helpers: fEcho / fEcho_Clean, blank-collapsing.
 ## fEcho "msg" -> "[ msg ]" status line; fEcho_Clean "msg" -> plain line, and a
 ## bare call collapses repeated blanks. fSection draws the leading-blank + rule
-## letterbox before a major stage header; fDie prints a fatal line and exits.
+## letterbox before a major stage header; fDie prints a fatal line and exits, and
+## fUsage refuses the command line.
 ## printf, not 'echo -e': a commit message the user typed passes through here, and echo -e
 ## would animate any backslash escape or ANSI sequence in it. bin/gitsby does the same.
-declare -i _wasLastEchoBlank=0
-fEcho_ResetBlankCounter(){ _wasLastEchoBlank=0; }
-fEcho_Clean(){ if [[ -n "${1:-}" ]]; then printf '%s\n' "$*"; _wasLastEchoBlank=0; elif [[ $_wasLastEchoBlank -eq 0 ]] && echo; then _wasLastEchoBlank=1; fi; }
+declare -i __wasLastEchoBlank=0
+fEcho_ResetBlankCounter(){ __wasLastEchoBlank=0; }
+fEcho_Clean(){
+	if [[ -n "${1:-}" ]]; then printf '%s\n' "$*"; __wasLastEchoBlank=0
+	elif ((! __wasLastEchoBlank)); then echo; __wasLastEchoBlank=1; fi
+}
 fEcho(){       if [[ -n "$*"     ]]; then fEcho_Clean "[ $* ]"; else fEcho_Clean ""; fi; }
 fEcho_Force(){ fEcho_ResetBlankCounter; fEcho "$*"; }
-_letterbox="••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••"
-fSection(){ fEcho_Clean; fEcho_Clean "${_letterbox}"; fEcho "$*"; [[ "${stage_pause:-0}" == 0 ]] || sleep "${stage_pause}"; }
+__letterbox="•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••"
+fSection(){ fCpuBudget; fEcho_Clean; fEcho_Clean "${__letterbox}"; fEcho "$*"; [[ "${stagePause:-0}" == 0 ]] || sleep "${stagePause}"; }
+## Steps. stepList holds the ones this run takes, in order, by key, and stepTitle their names. Off
+## steps aren't in it, so they aren't counted. The run in the container numbers its own steps from
+## where the run out here left off (stepBase), out of the whole run's total.
+declare -A stepTitle=([sync]="Remote sync" [lint]="Lint" [test]="Build + regression tests" [fuzz]="Fuzz + security"
+	[parity]="Backwards compatibility" [dogfood]="Dogfood" [demogif]="Demo gif" [remote]="Remote tests" [publish]="Backup + publish")
+stepList=(); stepBase=0; stepTotal=0; stepName=""; stepWhere=""; stepTz=""
+## Local time to the hundredth, with no fork where bash has EPOCHREALTIME. The image runs in UTC,
+## so the run in there is handed this box's offset (stepTz) for these lines alone.
+fStepTime(){
+	[[ -z "${stepTz}" ]] || local -x TZ="${stepTz}"
+	if [[ "${EPOCHREALTIME:-}" =~ ^([0-9]+)[.,]([0-9]{2}) ]]; then printf '%(%Y%m%d-%H%M%S)T.%s' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+	else printf '%(%Y%m%d-%H%M%S)T.00' -1; fi
+}
+fStepOf(){ local i; for i in "${!stepList[@]}"; do [[ "${stepList[i]}" != "$1" ]] || { printf 'Step %s of %s' "$((stepBase + i + 1))" "${stepTotal}"; return 0; }; done ;}
+fStep(){ stepName="${stepTitle[$1]:-$1}"; stepWhere="$(fStepOf "$1")"; fSection "$(fStepTime): ${stepWhere}; Starting ${stepName}" ;}
+## PASS, or FAIL from the exit trap for a step a failure left open.
+fStepEnd(){ [[ -n "${stepName}" ]] || return 0; fEcho "$(fStepTime): ${stepWhere}; ${1:-PASS} ${stepName}"; stepName="" ;}
 fDie(){ { fEcho_Force "FAILED: $*"; } >&2; exit 1; }
-trap 'rc=$?; printf "\n[ CICD ABORTED (exit %s) at line %s: %s ]\n" "$rc" "$LINENO" "$BASH_COMMAND" >&2; exit $rc' ERR
+fUsage(){ fEcho_Clean "$*" >&2; exit 2; }
+
+## Parse options.
+assumeYes=0; quiet=0; quick=0; leakcheck=0; leakOpt=""; doSync=1; doLint=1; doTest=1; doFuzz=1; doParity=1; doRemote=1; noRemote=0; cliMessage=""
+gate=0; installHook=0; stageOpts=(); containerOpt=""; gateAreas=(); handsOff=""; aliasNote=""; keepTemp=0; listOnly=0
+while (($#)); do case "$1" in
+	-q|--quiet)               quiet=1; assumeYes=1; shift ;;   ## quiet + unattended; publish runs quiet too
+	-y|--yes)                 assumeYes=1; shift ;;
+	--no-sync)                doSync=0; stageOpts+=("$1"); shift ;;
+	--no-lint)                doLint=0; stageOpts+=("$1"); shift ;;
+	--no-test)                doTest=0; stageOpts+=("$1"); shift ;;
+	--no-fuzz)                doFuzz=0; stageOpts+=("$1"); shift ;;
+	--no-parity)              doParity=0; stageOpts+=("$1"); shift ;;
+	--no-dogfood)             DOGFOOD_TARGETS=(); stageOpts+=("$1"); shift ;;
+	--no-demogif)             DO_DEMOGIF=0; stageOpts+=("$1"); shift ;;
+	--no-remote)              doRemote=0; noRemote=1; stageOpts+=("$1"); shift ;;
+	--no-publish)             GIT_PUBLISH=(); stageOpts+=("$1"); shift ;;
+	## What fits in about 10 minutes, and reaches no host but origin. Every cross-build is a few
+	## seconds, so they all stay. Sync and publish stay too, since origin is the repo's own host.
+	## The rest of what it skips is read off ${quick} below.
+	--quick)                  quick=1; DO_DEMOGIF=0; doRemote=0; stageOpts+=("$1"); shift ;;
+	## Either one wins over the default below, --quick included, since it was asked for by name.
+	--leakcheck|--no-leakcheck)
+		[[ -z "${leakOpt}" || "${leakOpt}" == "$1" ]] || fUsage "--leakcheck and --no-leakcheck are opposites; give one."
+		leakOpt="$1"; stageOpts+=("$1"); shift ;;
+	--message=*|--msg=*|-m=*) cliMessage="${1#*=}"; stageOpts+=("${1%%=*}"); shift ;;
+	-m|--message|--msg)       cliMessage="${2-}"; stageOpts+=("$1"); shift; (($#)) && shift ;;
+	--long|--slow)            stageOpts+=("$1"); shift ;;
+	## pre-push.bash looks for '--gate)' to tell a commit that has a gate from one cut before
+	## it existed, so keep the spelling.
+	--backlog-run-quick|--gate)
+		[[ "$1" == --gate ]] && aliasNote="--gate is another name for --backlog-run-quick"
+		gate=1; assumeYes=1; shift
+		while (($#)) && [[ "$1" != -* ]]; do gateAreas+=("$1"); shift; done ;;
+	## pre-push.bash runs --merge-gate on a commit whose cicd.bash has this arm, and --gate on an
+	## older one, so keep the spelling here too.
+	--backlog-run-full|--merge-gate|--ci)
+		[[ -z "${handsOff}" || "${handsOff}" == "${1/#--ci/--merge-gate}" ]] || fUsage "--backlog-run-full and --merge-gate are separate runs; give one."
+		[[ "$1" == --ci ]] && aliasNote="--ci is another name for --merge-gate"
+		handsOff="${1/#--ci/--merge-gate}"; assumeYes=1; shift ;;
+	--install-hook)           installHook=1; shift ;;
+	--keep-temp)              keepTemp=1; shift ;;
+	--list)                   listOnly=1; shift ;;
+	--container|--no-container)
+		[[ -z "${containerOpt}" || "${containerOpt}" == "$1" ]] || fUsage "--container and --no-container are opposites; give one."
+		containerOpt="$1"; shift ;;
+	-h|--help)                sed -n '/^##	- Purpose:/,/^##	History:/p' "${BASH_SOURCE[0]}" | sed '$d; s/^##	\{0,1\}//'; exit 0 ;;
+	*) fUsage "unknown option: ${1} (try --help)" ;;
+esac; done
+
+## On for a full run, the soak test alone for --quick, since CodeQL takes minutes, and off for
+## --no-fuzz, which asks for less of stage 3.
+soakOnly=0
+if   [[ "${leakOpt}" == --leakcheck ]]; then leakcheck=1
+elif [[ -z "${leakOpt}" ]] && ((doFuzz)); then leakcheck=1; soakOnly="${quick}"
+fi
+
+## Both run a fixed thing, so a stage option beside either would read as taking effect when it
+## cannot. Refused rather than ignored.
+gateName="--backlog-run-quick"; [[ "${aliasNote}" == --gate* ]] && gateName="--gate"
+if ((gate && installHook)); then fUsage "${gateName} and --install-hook are separate runs; give one."; fi
+if [[ -n "${handsOff}" ]] && ((gate || installHook)); then
+	other="--install-hook"; ((gate)) && other="${gateName}"
+	fUsage "${handsOff} and ${other} are separate runs; give one."
+fi
+gateAreasAll=(lint unit suite fuzz parity)
+for a in "${gateAreas[@]:-}"; do
+	[[ -z "${a}" || " ${gateAreasAll[*]} " == *" ${a} "* ]] || fUsage "${gateName}: no area '${a}'. Areas: ${gateAreasAll[*]}"
+done
+for a in "${stageOpts[@]:-}"; do
+	case "${a}" in
+		--quick)      [[ " ${stageOpts[*]} " != *" --long "* && " ${stageOpts[*]} " != *" --slow "* ]] || fUsage "--quick and --long are opposites; give one."
+		              [[ -z "${handsOff}" ]] || fUsage "${handsOff} runs every check of a plain run, so it takes no --quick." ;;
+		-m|--message|--msg) [[ -z "${handsOff}" ]] || fUsage "${handsOff} never publishes, so it takes no ${a}." ;;
+	esac
+done
+if ((${#stageOpts[@]})); then
+	if ((gate)); then
+		fUsage "${gateName} runs a fixed set of checks and takes no stage options (got: ${stageOpts[*]})"
+	elif ((installHook)); then
+		fUsage "--install-hook installs the hook and takes no stage options (got: ${stageOpts[*]})"
+	fi
+fi
+if [[ -n "${containerOpt}" ]] && ((installHook)); then fUsage "${containerOpt} goes with a run, not --install-hook."; fi
+if ((installHook && (keepTemp || listOnly))); then
+	other="--keep-temp"; ((listOnly)) && other="--list"
+	fUsage "${other} goes with a run, not --install-hook."
+fi
+if ((keepTemp && listOnly)); then fUsage "--list runs nothing, so --keep-temp has nothing to keep; give one."; fi
+if [[ "${containerOpt}" == --container && -n "${GITSBY_CICD_IN_CONTAINER:-}" ]]; then fUsage "already in the container; --container would start another."; fi
+## Asked for, it has to work. By default, a box with no usable docker runs everything here, and says so.
+container=0; containerNote=""
+inImage="stages 1-4, the demo and the builds run"; ((gate)) && inImage="the quick run runs"
+if [[ -n "${GITSBY_CICD_IN_CONTAINER:-}" || "${containerOpt}" == --no-container ]] || ((installHook)); then :
+elif [[ "${containerOpt}" == --container ]]; then container=1
+elif [[ "${CICD_CONTAINER:-0}" == 1 ]]; then
+	if docker info >/dev/null 2>&1; then container=1
+	else containerNote="WARNING: docker isn't usable here, so ${inImage} on this box, with its own tool versions"; fi
+fi
+if ((installHook)); then exec "${here}/utility/pre-push.bash" --install; fi
+## Set once the image is there. One left in the caller's environment would say otherwise.
+## Where the run outside left off, as "<steps before this run's>/<total>".
+## And its UTC offset, as a POSIX zone, which needs no zone files: "<-0700>+07:00".
+stepsOutside=""
+if [[ -n "${GITSBY_CICD_IN_CONTAINER:-}" ]]; then
+	stepsOutside="${GITSBY_CICD_STEPS:-}"
+	tzRe='^<[-+][0-9]{4}>[-+][0-9]{2}:[0-9]{2}$'
+	[[ ! "${GITSBY_CICD_TZ:-}" =~ ${tzRe} ]] || stepTz="${GITSBY_CICD_TZ}"
+fi
+unset GITSBY_CICD_IMAGE GITSBY_CICD_RUN GITSBY_CICD_KEEP_TEMP GITSBY_CICD_STEPS GITSBY_CICD_TZ
+## fImageGo leaves its containers for --keep-temp too, here and in stage 7's harness.
+((! keepTemp)) || export GITSBY_CICD_KEEP_TEMP=1
+## Checks only: the tree, the box and origin are as they were found. Stage 6 still renders the
+## gif, and leaves a changed one as committed.
+if [[ -n "${handsOff}" ]]; then doSync=0; DOGFOOD_TARGETS=(); GIT_PUBLISH=(); fi
+[[ -z "${aliasNote}" ]] || { fEcho_Clean; fEcho_Clean "${aliasNote}"; }
+
+## One folder for the run's temp files, ${HOST_TEMP}/<app>/<start time>_<NNN>, so a run stopped
+## partway leaves none behind. TMPDIR, TEMP and TMP point into it, so the harnesses' folders and
+## the tools' files go in it too. Its run.pid marks it as a run's, and is checked again before the
+## removal. --keep-temp keeps it, and the files the steps would have removed from it, and says
+## where it is and which containers were kept. --list makes none.
+runTmp=""; runName=""; runRe='^[0-9]{8}-[0-9]{6}_[0-9]{3}$'
+## What the run removed, for the one line at its end, and about how many bytes that freed.
+tidyGone=(); declare -i tidyFreed=0
+## Apparent size: what ZFS reports on disk is compressed, and lags fresh writes.
+fDirBytes(){ local out=""; out="$(du -sbx -- "$1" 2>/dev/null)" || out=0; echo "${out%%[[:space:]]*}" ;}
+## The project's own run folders over 2 days old, whose run is gone. A folder with no run.pid
+## wasn't made by a run, so it stays.
+fSweepRuns(){
+	local d pid size
+	local -i nStale=0
+	while IFS= read -r d; do
+		[[ "${d##*/}" =~ ${runRe} && "${d}" != "${runTmp}" && -f "${d}/run.pid" && ! -L "${d}" ]] || continue
+		pid=""; read -r pid < "${d}/run.pid" || true
+		if [[ "${pid}" =~ ^[0-9]+$ ]] && kill -0 "${pid}" 2>/dev/null; then continue; fi
+		size="$(fDirBytes "${d}")"
+		if fSafeRm "${d}" >/dev/null; then nStale+=1; tidyFreed+=size; fi
+	done < <(find "${runRoot}" -mindepth 1 -maxdepth 1 -type d -mtime +1 2>/dev/null || true)
+	((nStale == 0)) || tidyGone+=("${nStale} stale run folder(s)")
+}
+## docker system df's sizes, summed in bytes. Its units are powers of 1000.
+fDockerBytes(){
+	awk '{ v = $NF; u = v; sub(/^[0-9.]+/, "", u); v += 0; m = 1
+		if (u == "kB" || u == "KB") m = 1e3; else if (u == "MB") m = 1e6; else if (u == "GB") m = 1e9; else if (u == "TB") m = 1e12
+		s += v * m } END { printf "%.0f\n", s }'
+}
+fDockerUsed(){ { docker system df --format '{{.Size}}' 2>/dev/null || true; } | fDockerBytes ;}
+## The volume's module cache, cut to what this go.sum names. Every worktree's runs share the
+## volume, and another branch's go.sum may name other versions, so not while any run's container
+## is up. Only out here can see that. GOMODCACHE is under the image's HOME. Uses fDockerTidy's gone.
+fModCachePrune(){
+	local up n
+	up="$(docker ps -q --filter "label=dev.project=${APP_NAME}" 2>/dev/null)" || return 0
+	[[ -z "${up}" ]] || return 0
+	n="$(docker run --rm --init --name "${APP_NAME}-${runName}-modprune" --label "dev.project=${APP_NAME}" --label "dev.run=${runName}" \
+		--network none --cpus 1 --cpu-shares 256 --user "$(id -u):$(id -g)" -v "${APP_NAME}-cicd-cache:/cache" -v "${root}:${root}:ro" \
+		"${containerImage}" nice -n 19 bash "${root}/cicd/utility/go-modcache-prune.bash" /cache/home/go/pkg/mod \
+		"${root}/src-go/go.mod" "${root}/src-go/go.sum" 2>/dev/null)" || return 0
+	[[ ! "${n}" =~ ^[1-9][0-9]*$ ]] || gone+=("${n} Go module version(s)")
+}
+## At the end of a run that used the image, passed or not: the run's containers, the project's
+## dangling images, its older image tags once a newer one has passed, and the Go cache volume when
+## it's over 2 GB, or else on a pass its module cache's versions go.sum doesn't name. Only what
+## carries the project's label. The build cache is docker's default
+## builder, which every project shares, so the daemon's builder.gc trims it, not a run here. The
+## run's end line says what went and about what it freed.
+fDockerTidy(){
+	local passed="$1" before after ids id ref seen=0 vol="${APP_NAME}-cicd-cache" size
+	local -a gone=()
+	local -i nCont=0 nImg=0
+	before="$(fDockerUsed)"
+	if ((! keepTemp)); then
+		ids="$(docker ps -aq --filter "label=dev.project=${APP_NAME}" --filter "label=dev.run=${runName}" 2>/dev/null || true)"
+		for id in ${ids}; do
+			docker stop "${id}" >/dev/null 2>&1 || true
+			docker rm "${id}" >/dev/null 2>&1 || true   ## one run with --rm is already gone
+			nCont+=1
+		done
+	fi
+	ids="$(docker image ls -q --filter dangling=true --filter "label=dev.project=${APP_NAME}" 2>/dev/null || true)"
+	for id in ${ids}; do docker rmi "${id}" >/dev/null 2>&1 && nImg+=1; done
+	## Newest first. Tags newer than this one are another branch's, so they stay.
+	if ((passed)) && [[ -n "${containerImage:-}" ]]; then
+		while IFS= read -r ref; do
+			if ((seen == 2)); then docker rmi "${ref}" >/dev/null 2>&1 && nImg+=1
+			elif ((seen == 1)) || [[ "${ref}" == "${containerImage}" ]]; then seen=$((seen + 1)); fi
+		done < <(docker image ls "${containerImage%%:*}" --filter "label=dev.project=${APP_NAME}" --format '{{.Repository}}:{{.Tag}}' 2>/dev/null || true)
+	fi
+	if [[ -n "$(docker volume ls -q --filter "label=dev.project=${APP_NAME}" --filter "name=${vol}" 2>/dev/null || true)" ]]; then
+		size="$({ docker system df -v --format '{{range .Volumes}}{{.Name}} {{.Size}}{{println}}{{end}}' 2>/dev/null || true; } | awk -v n="${vol}" '$1 == n' | fDockerBytes)"
+		if ((size > 2000000000)) && docker volume rm "${vol}" >/dev/null 2>&1; then gone+=("the ${vol} volume")
+		elif ((passed)) && [[ -n "${containerImage:-}" && -f "${root}/src-go/go.sum" ]]; then fModCachePrune; fi
+	fi
+	((nImg == 0)) || gone=("${nImg} image(s)" ${gone[@]+"${gone[@]}"})
+	((nCont == 0)) || gone=("${nCont} container(s)" ${gone[@]+"${gone[@]}"})
+	((${#gone[@]})) || return 0
+	after="$(fDockerUsed)"
+	((after < before)) || after="${before}"
+	tidyGone+=("${gone[@]}"); tidyFreed+=$((before - after))
+}
+fRunTmpDone(){
+	local rc="${1:-0}" kept="" size="" list=""
+	((rc == 0)) || fStepEnd FAIL
+	[[ -n "${runTmp}" ]] || return 0
+	if ((keepTemp)); then
+		fEcho_Clean; fEcho_Clean "Kept the temp folder: ${runTmp}"
+		if ((container)); then
+			kept="$(docker ps -a --filter "label=dev.run=${runName}" --format '{{.Names}}' 2>/dev/null | tr '\n' ' ' || true)"
+			[[ -z "${kept// /}" ]] || fEcho_Clean "Kept the containers: ${kept% }. Remove them with: docker rm ${kept% }"
+		fi
+		fEcho_Clean
+	fi
+	## Containers first, since one still running may write to the folder.
+	if ((container)); then fDockerTidy "$((rc == 0))"; fi
+	if ((! keepTemp)) && [[ "${runName}" =~ ${runRe} && -f "${runTmp}/run.pid" ]]; then
+		size="$(fDirBytes "${runTmp}")"
+		if fSafeRm "${runTmp}" >/dev/null; then tidyGone+=("the run folder"); tidyFreed+=size; fi
+	fi
+	if ((! ${#tidyGone[@]})); then fEcho_Clean "Cleanup: nothing to remove"; fEcho_Clean; return 0; fi
+	printf -v list '%s, ' "${tidyGone[@]}"
+	## The steps remove their own files as they finish, and the run in the image keeps its folder
+	## on the container's tmpfs, so the run folder is mostly just its run.pid by now. A size under
+	## a megabyte, or one docker didn't give, says nothing about the disk.
+	if ((tidyFreed < 1000000)); then fEcho_Clean "Cleanup: removed ${list%, }"; fEcho_Clean; return 0; fi
+	fEcho_Clean "Cleanup: removed ${list%, }; freed about $(numfmt --to=si --suffix=B "${tidyFreed}" 2>/dev/null || echo "${tidyFreed} bytes")"
+	fEcho_Clean
+}
+## A file a step made in the run's folder, once the step is done with it.
+fTmpDone(){ ((keepTemp)) || rm -f -- "$@" ;}
+if ((! listOnly)); then
+	## Once, so every path under it is spelled the same: macOS's temp folder sits behind a link.
+	HOST_TEMP="$(realpath -e -- "${HOST_TEMP:-${TMPDIR:-/tmp}}")" || fDie "no temp folder at ${HOST_TEMP:-${TMPDIR:-/tmp}}"
+	export HOST_TEMP
+	runRoot="${HOST_TEMP}/${APP_NAME}"
+	mkdir -p -- "${runRoot}" || fDie "can't make ${runRoot}"
+	## A plain mkdir, so a name another run took fails and the counter goes on.
+	for ((runSeq = 1; runSeq < 1000; runSeq++)); do
+		printf -v runTmp '%s/%s_%03d' "${runRoot}" "${stamp}" "${runSeq}"
+		mkdir -- "${runTmp}" 2>/dev/null && break
+		runTmp=""
+	done
+	[[ -n "${runTmp}" ]] || fDie "can't make a run folder in ${runRoot}"
+	runName="${runTmp##*/}"
+	echo "$$" > "${runTmp}/run.pid"
+	trap 'fRunTmpDone "$?"' EXIT
+	## So a stop still runs the exit trap, the container's tidy-up included.
+	trap 'exit 130' INT; trap 'exit 143' TERM
+	export TMPDIR="${runTmp}" TEMP="${runTmp}" TMP="${runTmp}"
+	fSweepRuns
+fi
+
+## Brief beat after each stage header so the cheap fast stages stay readable.
+## Off for unattended runs (-q/-y) where nobody is watching.
+stagePause=0.4; ((assumeYes)) && stagePause=0
+
+## The same reasoning, passed on to the demo generator. Keyed on -q, not on unattended: -y is
+## documented as unattended-but-not-quiet. The suites, parity and spawn counts never get it. One
+## line per check is how a failure's neighbors get read, and -q runs are the usual ones.
+declare -a harnessQuiet=(); ((quiet)) && harnessQuiet=("-q")
+
+## What the plan and the stage lines say about a stage that --quick skipped.
+skipNote="(skipped)"; ((! quick)) || skipNote="(skipped --quick)"
+
+## Publish commit message: -m wins, then config, then a default when unattended.
+## Empty -> publish interactively (git commit opens an editor); when interactive
+## we offer to capture a message at the preflight prompt below.
+publishMsg=""
+if   [[ -n "${cliMessage}" ]];              then publishMsg="${cliMessage}"
+elif [[ -n "${PUBLISH_AUTO_MESSAGE:-}" ]]; then publishMsg="${PUBLISH_AUTO_MESSAGE}"
+elif ((assumeYes));                       then publishMsg="${APP_NAME} CI/CD ${stamp}"
+fi
+
+trap 'rc=$?; printf "\n[ CICD ABORTED (exit %s) at line %s: %s ]\n" "${rc}" "${LINENO}" "${BASH_COMMAND}" >&2; exit "${rc}"' ERR
 
 ## Expand the configured shell-file globs once (nullglob, restored after).
-shell_files=(); shell_warn_files=()
-_ng=0; shopt -q nullglob && _ng=1; shopt -s nullglob
-for g in "${SHELL_LINT_GLOBS[@]}"; do for f in $g; do [[ -f "$f" ]] && shell_files+=("$f"); done; done
-for g in "${SHELL_LINT_WARN_GLOBS[@]:-}"; do for f in $g; do [[ -f "$f" ]] && shell_warn_files+=("$f"); done; done
-((_ng)) || shopt -u nullglob
+shellFiles=(); shellWarnFiles=()
+hadNullglob=0; shopt -q nullglob && hadNullglob=1; shopt -s nullglob
+for g in "${SHELL_LINT_GLOBS[@]}"; do for f in ${g}; do [[ -f "${f}" ]] && shellFiles+=("${f}"); done; done
+for g in "${SHELL_LINT_WARN_GLOBS[@]:-}"; do for f in ${g}; do [[ -f "${f}" ]] && shellWarnFiles+=("${f}"); done; done
+((hadNullglob)) || shopt -u nullglob
+
+## Stage 1's body and stage 2's unit tests, as functions so that --gate runs the same code a
+## full run does. Two copies would drift, and the hook would pass what the pipeline stops.
+## Where 'go install' puts a tool, in the order go resolves them. gen-winres looks the same way,
+## so a tool one of them finds is not skipped by the other.
+fGoToolPath(){ local found="" dir="" goPath=""
+	found="$( command -v "$1" 2>/dev/null || true )"
+	goPath="$(go env GOPATH 2>/dev/null || true)"
+	for dir in "$(go env GOBIN 2>/dev/null || true)" "${goPath:+${goPath%%:*}/bin}"; do
+		if [[ -z "${found}" && -n "${dir}" && -x "${dir}/$1" ]]; then found="${dir}/$1"; fi
+	done
+	echo "${found}"
+}
+## The version of each tool in TOOL_VERSIONS, however it spells it. Nothing when it is missing.
+fToolVersion(){
+	case "$1" in
+		shellcheck)       shellcheck --version 2>/dev/null | awk '$1=="version:"{print $2}' ;;
+		markdownlint)     markdownlint --version 2>/dev/null || npx --no-install markdownlint --version 2>/dev/null ;;
+		## Stage 1's lint already asked, so pwsh need not start again.
+		PSScriptAnalyzer) if [[ -n "${psaAsked:-}" ]]; then echo "${psaVersion}"; else pwsh -NoProfile -Command '$m = Get-Module -ListAvailable PSScriptAnalyzer | Sort-Object Version -Descending | Select-Object -First 1; if ($m) { $m.Version.ToString() }' 2>/dev/null; fi ;;
+		gifsicle)         gifsicle --version 2>/dev/null | awk 'NR==1{print $NF}' ;;
+		Pillow)           python3 -c 'import PIL; print(PIL.__version__)' 2>/dev/null ;;
+		strace)           strace -V 2>/dev/null | awk 'NR==1{print $NF}' ;;
+		git)              git --version 2>/dev/null | awk '{print $3}' ;;
+		ruff)             ruff --version 2>/dev/null | awk '{print $2}' ;;
+		pip-audit)        pip-audit --version 2>/dev/null | awk '{print $2}' ;;
+		codeql)           codeql version --format=terse 2>/dev/null ;;
+	esac
+}
+## "name have (recorded want)" for each tool named that isn't at its version in TOOL_VERSIONS. A
+## missing one isn't listed, since the step that needs it says so.
+fToolDrift(){ local toolName="" toolSpec="" toolHave=""
+	for toolName in "$@"; do
+		for toolSpec in "${TOOL_VERSIONS[@]}"; do
+			[[ "${toolSpec%%=*}" == "${toolName}" ]] || continue
+			toolHave="$(fToolVersion "${toolName}" || true)"
+			[[ -z "${toolHave}" || "${toolHave}" == "${toolSpec#*=}" ]] || printf '%s\n' "${toolName} ${toolHave} (recorded ${toolSpec#*=})"
+		done
+	done
+}
+
+fStageLint(){
+	local f g hadNullglob n mdFiles psFiles psList psScript psRc psOut q pyCache toolDrift toolSpec toolName toolWant toolPath toolHave unformatted winresStatus
+	((${#shellFiles[@]})) || fDie "no shell files matched SHELL_LINT_GLOBS"
+	for f in "${shellFiles[@]}"; do
+		bash -n "${f}" || fDie "syntax error: ${f}"
+	done
+	fEcho "OK: bash -n (${#shellFiles[@]} file(s))"
+	shellcheck --version >/dev/null 2>&1 || fDie "shellcheck not installed"
+	shellcheck "${shellFiles[@]}"
+	fEcho "OK: shellcheck clean"
+	## Legacy files: report findings without gating (the refactor retires this list).
+	if ((${#shellWarnFiles[@]})); then
+		for f in "${shellWarnFiles[@]}"; do
+			bash -n "${f}" || fDie "syntax error: ${f}"
+			n="$(shellcheck "${f}" 2>/dev/null | grep -c "^In " || true)"
+			if ((n)); then fEcho "WARNING: ${n} shellcheck finding(s) in legacy ${f} (report-only until the refactor)"
+			else fEcho "OK: legacy ${f} clean"; fi
+		done
+	fi
+	if ((${#MD_LINT_GLOBS[@]})); then
+		mdFiles=()
+		hadNullglob=0; shopt -q nullglob && hadNullglob=1; shopt -s nullglob
+		for g in "${MD_LINT_GLOBS[@]}"; do for f in ${g}; do [[ -f "${f}" ]] && mdFiles+=("${f}"); done; done
+		((hadNullglob)) || shopt -u nullglob
+		if command -v markdownlint >/dev/null 2>&1; then
+			markdownlint "${mdFiles[@]}"
+			fEcho "OK: markdownlint clean (${#mdFiles[@]} file(s))"
+		elif npx --no-install markdownlint --version >/dev/null 2>&1; then
+			npx --no-install markdownlint "${mdFiles[@]}"
+			fEcho "OK: markdownlint clean (${#mdFiles[@]} file(s))"
+		else
+			fEcho "WARNING: markdownlint skipped (not installed: npm install -g markdownlint-cli)"
+		fi
+	fi
+	if [[ -n "${PY_LINT_FILES+x}" ]] && ((${#PY_LINT_FILES[@]})); then
+		## At the head of an && list a failure neither stopped the run nor fired the trap. The
+		## cache goes to a folder of our own, since py_compile writes one beside each file.
+		pyCache="$(mktemp -d "${runTmp}/pycache.XXXXXX")"
+		if ! PYTHONPYCACHEPREFIX="${pyCache}" python3 -m py_compile "${PY_LINT_FILES[@]}"; then
+			((keepTemp)) || fSafeRm "${pyCache}" >/dev/null
+			fDie "py_compile"
+		fi
+		((keepTemp)) || fSafeRm "${pyCache}" >/dev/null
+		fEcho "OK: py_compile (${#PY_LINT_FILES[@]} file(s))"
+		## Only the rules for references held too long, or never let go. --isolated, so a
+		## stray ruff config can't widen or narrow them.
+		if [[ -z "${PY_LINT_RULES+x}" ]] || ((! ${#PY_LINT_RULES[@]})); then
+			:
+		elif command -v ruff >/dev/null 2>&1; then
+			ruff check --isolated --no-cache --quiet --select "$(IFS=,; echo "${PY_LINT_RULES[*]}")" "${PY_LINT_FILES[@]}" || fDie "ruff findings"
+			fEcho "OK: ruff ${PY_LINT_RULES[*]} clean (${#PY_LINT_FILES[@]} file(s))"
+			## Then the project's own rules, where it has a ruff config.
+			if [[ -f ruff.toml ]]; then
+				ruff check --no-cache --quiet "${PY_LINT_FILES[@]}" || fDie "ruff findings (ruff.toml)"
+				fEcho "OK: ruff ruff.toml rules clean (${#PY_LINT_FILES[@]} file(s))"
+			fi
+		else
+			fEcho "WARNING: ruff skipped (not installed: pipx install ruff)"
+		fi
+	fi
+	if [[ -n "${PS_LINT_GLOBS+x}" ]] && ((${#PS_LINT_GLOBS[@]})); then
+		psFiles=()
+		hadNullglob=0; shopt -q nullglob && hadNullglob=1; shopt -s nullglob
+		for g in "${PS_LINT_GLOBS[@]}"; do for f in ${g}; do [[ -f "${f}" ]] && psFiles+=("${f}"); done; done
+		((hadNullglob)) || shopt -u nullglob
+		if ((${#psFiles[@]})); then
+			## One pwsh for every file, the module probe and its version: each start costs about a
+			## second. A file that fails to parse is reported from ParseFile and not analyzed, so
+			## a Severity filter in the settings can't hide it. Exit 3 is a missing module.
+			psList=""; q="'"
+			for f in "${psFiles[@]}"; do psList+="${psList:+,}${q}${f//${q}/${q}${q}}${q}"; done
+			psScript="\$ErrorActionPreference = 'Stop'; \$m = Get-Module -ListAvailable PSScriptAnalyzer | Sort-Object Version -Descending | Select-Object -First 1; if (-not \$m) { exit 3 }; 'PSScriptAnalyzer-version ' + \$m.Version; \$bad = 0"
+			psScript+="; foreach (\$f in @(${psList})) { \$parseErrors = \$null; [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path \$PWD \$f), [ref]\$null, [ref]\$parseErrors)"
+			psScript+="; if (\$parseErrors) { \$bad++; \$parseErrors | Select-Object @{Name='ScriptName'; Expression={\$f}}, @{Name='Line'; Expression={\$_.Extent.StartLineNumber}}, ErrorId, Message | Format-Table -AutoSize | Out-String -Width 200 | Write-Host; continue }"
+			psScript+="; \$r = Invoke-ScriptAnalyzer -Path \$f -Settings ${q}${PS_LINT_SETTINGS//${q}/${q}${q}}${q}; if (\$r) { \$bad++; \$r | Format-Table -AutoSize | Out-String -Width 200 | Write-Host } }; exit [int](\$bad -gt 0)"
+			psRc=0
+			if ! command -v pwsh >/dev/null 2>&1; then psRc=3
+			else
+				[[ -f "${PS_LINT_SETTINGS}" ]] || fDie "PSScriptAnalyzer settings not found: ${PS_LINT_SETTINGS}"
+				psOut="$(pwsh -NoProfile -NonInteractive -Command "${psScript}" </dev/null)" || psRc=$?
+				psaVersion="$(sed -n 's/^PSScriptAnalyzer-version //p' <<< "${psOut}")"; psaAsked=1
+				[[ -z "${psOut}" ]] || sed '/^PSScriptAnalyzer-version /d' <<< "${psOut}"
+			fi
+			case "${psRc}" in
+				0) fEcho "OK: PSScriptAnalyzer clean, 5.1-compatible (${#psFiles[@]} file(s))" ;;
+				3) fEcho "WARNING: PSScriptAnalyzer skipped (pwsh + PSScriptAnalyzer module not both installed)" ;;
+				*) fDie "PSScriptAnalyzer findings, listed above" ;;
+			esac
+		fi
+	fi
+	## gofmt is the arbiter of format, vet gates, staticcheck gates when installed.
+	## Keyed off the module, not a glob - the tools walk it themselves. A missing
+	## toolchain is fatal now rather than a warning: it is what builds the product.
+	command -v go >/dev/null 2>&1 || fDie "go toolchain not installed - nothing in this pipeline can run without it"
+	## Which version of each tool is about to gate this run. A tool that moved on its own is
+	## the usual reason a finding appears - or stops appearing - on a tree nobody touched.
+	## Warned about only: this pipeline installs nothing, and a version skew is a thing to
+	## know rather than a reason to refuse to build.
+	## A tool that is missing altogether is warned about by the step that needs it.
+	toolDrift=()
+	for toolSpec in "${GO_TOOL_VERSIONS[@]}"; do
+		toolName="${toolSpec%%=*}"; toolWant="${toolSpec#*=}"
+		toolPath="$(fGoToolPath "${toolName}")"
+		[[ -n "${toolPath}" ]] || continue
+		toolHave="$( go version -m "${toolPath}" 2>/dev/null | awk '$1=="mod"{print $3; exit}' || true )"
+		[[ "${toolHave}" == "${toolWant}" ]] || toolDrift+=( "${toolName} ${toolHave:-unknown} (recorded ${toolWant})" )
+	done
+	mapfile -t -O "${#toolDrift[@]}" toolDrift < <(fToolDrift "${TOOL_VERSIONS[@]%%=*}")
+	((${#toolDrift[@]} == 0)) || fEcho "WARNING: tool versions differ from the recorded set: ${toolDrift[*]}"
+	unformatted="$(cd "${root}/${GO_MODULE_DIR}" && gofmt -l .)"
+	[[ -z "${unformatted}" ]] || fDie "gofmt wants to reformat: ${unformatted}"
+	## Same core budget as the builds: BUILD_JOBS caps the go tool's workers, and
+	## GOMAXPROCS caps the analysis threads inside each one.
+	(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${BUILD_JOBS}" go vet -p "${BUILD_JOBS}" ./...) || fDie "go vet findings"
+	fEcho "OK: gofmt + go vet clean"
+	if command -v staticcheck >/dev/null 2>&1; then
+		(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${BUILD_JOBS}" staticcheck ./...) || fDie "staticcheck findings"
+		fEcho "OK: staticcheck clean"
+	else
+		fEcho "WARNING: staticcheck skipped (not installed: go install honnef.co/go/tools/cmd/staticcheck@latest)"
+	fi
+	## The rest of the set - dropped errors, shadowed builtins, naming - configured in
+	## src-go/.golangci.yml. Gates when installed, like staticcheck above.
+	if command -v golangci-lint >/dev/null 2>&1; then
+		(cd "${root}/${GO_MODULE_DIR}" && golangci-lint run --concurrency "${BUILD_JOBS}" ./...) || fDie "golangci-lint findings"
+		fEcho "OK: golangci-lint clean"
+	else
+		fEcho "WARNING: golangci-lint skipped (not installed: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest)"
+	fi
+	## The committed Windows resource, against what the newest tag would generate. It is linked
+	## into published bytes, so an edited icon or description that nobody regenerated would ship
+	## silently. Probe-gated like the two above.
+	winresStatus=0
+	"${WINRES_CMD[@]}" --check -q || winresStatus=$?
+	case "${winresStatus}" in
+		0) fEcho "OK: windows resource current" ;;
+		3) fEcho "WARNING: windows resource check skipped (not installed: go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.5.0)" ;;
+		*) fDie "windows resource is stale" ;;
+	esac
+	## Two backlog rules the review rounds kept leaking through: every open review item
+	## names where it came from, and a suite check removed on this branch is named in the
+	## backlog. Both were broken by hand before, and neither showed anywhere.
+	"${BACKLOG_CHECK_CMD[@]}" -q || fDie "backlog check failed (see above)"
+	fEcho "OK: backlog check"
+}
+fUnitTests(){
+	local log="" rc=0
+	log="$(mktemp "${runTmp}/gotest.XXXXXX")"
+	## TestMain fails the run on a goroutine still going at the end. -count=1, since a cached pass
+	## would skip both. -v is for the line per test below; the rest of what it prints is shown
+	## only when something failed. -race is one of the hard steps.
+	(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${HEAVY_JOBS}" go test -race -p "${HEAVY_JOBS}" -count=1 -v ./...) >"${log}" 2>&1 || rc=$?
+	fGoTestLines "${log}" "${root}/${GO_MODULE_DIR}"
+	if ((rc)); then
+		grep -vE '^ *(=== (RUN|PAUSE|CONT|NAME)|--- (PASS|SKIP))' "${log}" || true
+		fTmpDone "${log:?}"
+		fDie "go test failures"
+	fi
+	fTmpDone "${log:?}"
+	fEcho "OK: go test"
+}
+## The version and build number stamped into this run's builds.
+fGoVersion(){ git describe --tags --always --dirty --match 'v*' 2>/dev/null || echo 0.0.0 ;}
+## Build number, as minutes since 2000 in Crockford base32 - the binary does the encoding,
+## this only hands it the seconds. Taken from the commit rather than the clock so the same
+## source builds to the same bytes; a wall-clock stamp would mean nobody, including us,
+## could ever rebuild a published asset to its published checksum.
+fGoBuildEpoch(){ git log -1 --format=%ct 2>/dev/null || echo 0 ;}
+## The native build, which the suites run against.
+fNativeBuild(){
+	(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOAMD64=v1 \
+		go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${goVersion#v} -X main.buildEpoch=${goBuildEpoch}" -o "${EXE_NAME}" .) \
+		|| fDie "go build failed"
+	fEcho "OK: go build (v${goVersion#v})"
+}
+## --leakcheck: the checks too slow for every run. The soak test loops the everyday commands
+## in one process and compares the heap and goroutine count at round N and 2N. Not under
+## -race, which would swamp the heap it measures. Each run keeps its heap profiles in a
+## folder of its own; the newest 20 stay.
+fLeakCheck(){
+	local leakDir="${root}/${LEAKCHECK_DIR}" soakDir="" log="" rc=0 old=""
+	soakDir="${leakDir}/soak_${stamp}"
+	mkdir -p "${soakDir}" || fDie "can't make ${soakDir}"
+	log="$(mktemp "${runTmp}/soak.XXXXXX")"
+	(cd "${root}/${GO_MODULE_DIR}" && GITSBY_SOAK_ROUNDS="${LEAKCHECK_SOAK_ROUNDS}" GITSBY_SOAK_OUT="${soakDir}" GOMAXPROCS="${HEAVY_JOBS}" \
+		go test -count=1 -run '^TestSoak$' -v .) >"${log}" 2>&1 || rc=$?
+	fGoTestLines "${log}" "${root}/${GO_MODULE_DIR}"
+	if ((rc)) || ! grep -q '^--- PASS: TestSoak' "${log}"; then
+		grep -vE '^ *(=== (RUN|PAUSE|CONT|NAME)|--- (PASS|SKIP))' "${log}" || true
+		fTmpDone "${log:?}"
+		fDie "soak test failed; heap profiles in ${soakDir}"
+	fi
+	fTmpDone "${log:?}"
+	sed 's/^/  /' "${soakDir}/soak.txt"
+	fEcho "OK: soak test"
+	## Only ever the files the test writes, so no recursive delete.
+	while IFS= read -r old; do
+		rm -f -- "${old:?}"/heap-round-*.pprof "${old:?}/soak.txt"
+		rmdir -- "${old}" 2>/dev/null || fEcho "WARNING: kept ${old}, which has more in it than the soak test wrote"
+	done < <(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'soak_[0-9]*-[0-9]*' | sort -r | tail -n +21)
+	if ((soakOnly)); then fEcho_Clean "CodeQL skipped (--quick), add with --leakcheck"; return 0; fi
+	fCodeQL
+}
+## Python's half of the scratch copy: the pipeline's own files at their paths in the tree, and
+## under vendor/ the installed source of the libraries they import. That's a wheel's own file
+## list, or, for a Debian build, which has none, dpkg's list for the package that installed it.
+fCodeQLPySource(){
+	(cd "${root}" && tar -cf - -- "${PY_LINT_FILES[@]}") | tar -C "$1" -xf - || return 1
+	python3 -c '
+import importlib.metadata as md, pathlib, re, shutil, subprocess, sys
+dest = pathlib.Path(sys.argv[1])
+norm = lambda name: re.sub(r"[-_.]+", "_", name).lower()
+for name in sys.argv[2:]:
+    dist = md.distribution(name)
+    site = pathlib.Path(dist.locate_file("")).resolve()
+    if dist.files is not None:
+        files = [pathlib.Path(dist.locate_file(f)).resolve() for f in dist.files]
+    else:
+        meta = next(p for p in site.glob("*-info") if norm(p.name.split("-")[0]) == norm(name))
+        pkg = subprocess.run(["dpkg-query", "-S", str(meta)], capture_output=True, text=True, check=True).stdout.split(":")[0]
+        files = [pathlib.Path(f) for f in subprocess.run(["dpkg-query", "-L", pkg], capture_output=True, text=True, check=True).stdout.splitlines()]
+    files = [f for f in files if f.suffix == ".py" and f.is_relative_to(site)]
+    if not files:
+        sys.exit(f"found no installed source for {name}")
+    for f in files:
+        (dest / f.relative_to(site)).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(f, dest / f.relative_to(site))
+' "$1/vendor" "${PY_AUDIT_DISTS[@]}"
+}
+## CodeQL reports only on source under the database's root, so it runs over a scratch copy of the
+## module with its dependencies vendored in, the tree left as it was. Tests and vendor/ are both
+## off by default in the Go extractor. It sees one OS's files at a time, so it runs once for each
+## OS a release is built for. Python's run is one more, over a scratch copy of its own. The
+## reports are kept beside the soak runs, newest 20.
+fCodeQL(){
+	local leakDir="${root}/${LEAKCHECK_DIR}" cqDir="" cqWork="" log="" rc=0 goos="" old=""
+	local -a cqFiles=() cqOses=() sarifs=() cqIgnore=()
+	## Asked for, it has to work. As part of a plain run it's probe-gated like govulncheck.
+	if ! command -v codeql >/dev/null 2>&1; then
+		[[ "${leakOpt}" == --leakcheck ]] && fDie "CodeQL isn't installed here. It comes with the container image, so run without --no-container"
+		fEcho "WARNING: CodeQL skipped (not installed here; the container image has it)"
+		return 0
+	fi
+	mapfile -t cqOses < <(printf '%s\n' "${RELEASE_TARGETS[@]%%/*}" | sort -u)
+	cqDir="${leakDir}/codeql_${stamp}"
+	mkdir -p "${cqDir}" || fDie "can't make ${cqDir}"
+	cqWork="$(mktemp -d "${runTmp}/gitsby-codeql.XXXXXX")" || fDie "can't make a scratch folder for CodeQL"
+	log="${cqWork}/codeql.log"; : > "${log}"
+	## The source alone, not the builds beside it.
+	mapfile -t cqFiles < <(cd "${root}" && find "${GO_MODULE_DIR}" -type f \( -name '*.go' -o -name go.mod -o -name go.sum \))
+	((${#cqFiles[@]})) || fDie "found no files under ${GO_MODULE_DIR} for CodeQL"
+	(cd "${root}" && tar -cf - -- "${cqFiles[@]}") | tar -C "${cqWork}" -xf - || rc=1
+	((rc)) || (cd "${cqWork}/${GO_MODULE_DIR}" && go mod vendor) >"${log}" 2>&1 || rc=1
+	for goos in "${cqOses[@]}"; do
+		((rc)) && break
+		GOOS="${goos}" codeql database create "${cqWork}/db-${goos}" --language=go --source-root="${cqWork}/${GO_MODULE_DIR}" --threads="${HEAVY_JOBS}" \
+			-O go.extract_tests=true -O go.extract_vendor_dirs=true >>"${log}" 2>&1 || rc=1
+		((rc)) || codeql database analyze "${cqWork}/db-${goos}" "${CODEQL_SUITE}" --format=sarif-latest \
+			--output="${cqDir}/${goos}.sarif" --threads="${HEAVY_JOBS}" >>"${log}" 2>&1 || rc=1
+		sarifs+=("${cqDir}/${goos}.sarif")
+	done
+	if ((! rc)); then
+		mkdir -p "${cqWork}/py/vendor"
+		fCodeQLPySource "${cqWork}/py" >>"${log}" 2>&1 || rc=1
+	fi
+	((rc)) || codeql database create "${cqWork}/db-python" --language=python --source-root="${cqWork}/py" --threads="${HEAVY_JOBS}" >>"${log}" 2>&1 || rc=1
+	((rc)) || codeql database analyze "${cqWork}/db-python" "${CODEQL_PY_SUITE}" --format=sarif-latest \
+		--output="${cqDir}/python.sarif" --threads="${HEAVY_JOBS}" >>"${log}" 2>&1 || rc=1
+	sarifs+=("${cqDir}/python.sarif")
+	((rc)) && tail -n 30 "${log}"
+	## Made by mktemp above, and checked again here, since this one is recursive.
+	if ((! keepTemp)) && [[ "${cqWork##*/}" == gitsby-codeql.* && -f "${log}" ]]; then fSafeRm "${cqWork}" >/dev/null; fi
+	((rc == 0)) || fDie "CodeQL didn't finish (above)"
+	for old in ${CODEQL_IGNORE[@]+"${CODEQL_IGNORE[@]}"}; do cqIgnore+=(--ignore "${old}"); done
+	python3 "${here}/utility/codeql-findings.py" "${cqIgnore[@]}" "${sarifs[@]}" || rc=$?
+	((rc == 0)) || fDie "CodeQL findings; the reports are in ${cqDir}"
+	fEcho "OK: CodeQL clean (${CODEQL_SUITE##*/} on ${cqOses[*]}, and ${CODEQL_PY_SUITE##*/}, ${#CODEQL_IGNORE[@]} set aside)"
+	## Only ever the reports, so no recursive delete.
+	while IFS= read -r old; do
+		rm -f -- "${old:?}"/*.sarif
+		rmdir -- "${old}" 2>/dev/null || fEcho "WARNING: kept ${old}, which has more in it than CodeQL's reports"
+	done < <(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'codeql_[0-9]*-[0-9]*' | sort -r | tail -n +21)
+}
+
+## Dogfood destinations, resolved once. Per target, the first configured dir that exists and
+## is writable; empty means the stage will skip that target with a warning. The dest array is
+## found by name (DOGFOOD_DESTS_<GOOS>_<GOARCH>, upper-cased), so adding a target is a config
+## edit and nothing here.
+case "${OSTYPE:-}" in
+	linux*)          hostGoos="linux"   ;;
+	darwin*)         hostGoos="darwin"  ;;
+	msys*|cygwin*)   hostGoos="windows" ;;
+	freebsd*)        hostGoos="freebsd" ;;
+	*)               hostGoos=""        ;;
+esac
+declare -A dogfoodDest=() dogfoodAll=()
+for t in "${DOGFOOD_TARGETS[@]:-}"; do
+	[[ -n "${t}" ]] || continue
+	destVar="DOGFOOD_DESTS_${t^^}"; destVar="${destVar//\//_}"
+	declare -n _dests="${destVar}"
+	destCands=("${_dests[@]:-}")
+	## The fallback belongs to whichever target this box could actually run.
+	if [[ -n "${DOGFOOD_FALLBACK_DIR:-}" && "${t%%/*}" == "${hostGoos}" ]]; then destCands+=("${DOGFOOD_FALLBACK_DIR}"); fi
+	foundDest=""; for cand in "${destCands[@]:-}"; do [[ -d "${cand}" && -w "${cand}" ]] && { foundDest="${cand}"; break; }; done
+	dogfoodDest["${t}"]="${foundDest}"
+	dogfoodAll["${t}"]="${destCands[*]:-}"
+	unset -n _dests
+done
+
+## Display helpers for the plan block: 'linux/amd64' -> 'linux', and the dotted leader that
+## lines every value up on the same column as the fixed labels below.
+fPlanOS(){ case "${1%%/*}" in darwin) echo macos ;; *) echo "${1%%/*}" ;; esac ;}
+fPlanLine(){ local -r dots="........................"; local -i n=$(( 20 - ${#1} )); ((n < 0)) && n=0; fEcho_Clean "${1} ${dots:0:n}: ${2}" ;}
+
+## --container: the image's tag, from its recipe and the versions config.bash pins.
+if ((container)); then
+	docker info >/dev/null 2>&1 || fDie "--container needs a working docker"
+	fImageRecipe
+fi
+
+fCpuPlan(){ fEcho_Clean "Cores ...............: ${BUILD_JOBS} of ${cpuCores}, ${HEAVY_JOBS} for the hard steps (load ${cpuLoad:-unknown}), at low priority" ;}
+
+## --list: $1 the step, then what test-id.bash --list takes. One line per test, "<id> <label>".
+fListTests(){
+	local title="$1" lines=""
+	shift
+	lines="$("${here}/utility/test-id.bash" --list --root "${root}" "$@")" || fDie "can't list the tests in $*"
+	fEcho_Clean
+	fEcho_Clean "${title}: $(grep -c . <<< "${lines}" || true) test(s)"
+	[[ -z "${lines}" ]] || sed 's/^/  /' <<< "${lines}"
+}
+
+## Runs cicd.bash in the image with the args given, against this same tree. It is mounted at the
+## same path, so paths in the output and a worktree's .git file still resolve. The Go caches live
+## in a named volume, or every run would download and build from nothing. The demo's fonts are in
+## the image, so its gif matches no matter what this box has installed.
+fContainerRun(){
+	local gitCommon containerName step="checks" tzOff="" tzSign="-"
+	local -a containerMounts innerArgs=("$@") rmOpt=(--rm)
+	((gate)) && step="quick"
+	fSection "Container"
+	fImageBuild "${runName}"
+	containerMounts=(-v "${root}:${root}" -v "${APP_NAME}-cicd-cache:/cache" --tmpfs "/tmp:rw,exec,mode=1777")
+	gitCommon="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+	if [[ -n "${gitCommon}" && "${gitCommon}" != "${root}/"* ]]; then containerMounts+=(-v "${gitCommon}:${gitCommon}"); fi
+	## The gif's out-of-tree archive, at the path the config spells, through any symlink on the way.
+	## A run that leaves the gif as committed never writes there.
+	if ((DO_DEMOGIF && ! gate)) && [[ -z "${handsOff}" ]]; then
+		mkdir -p "${DEMOGIF_ARCHIVE_DIR}" || fDie "can't make ${DEMOGIF_ARCHIVE_DIR}"
+		containerMounts+=(-v "$(realpath -m -- "${DEMOGIF_ARCHIVE_DIR}"):$(realpath -s -m -- "${DEMOGIF_ARCHIVE_DIR}")")
+	fi
+	## Named for the run's folder, so it can be found and stopped among other projects' containers.
+	## The folder's counter keeps two runs started in the same second apart.
+	containerName="${APP_NAME}-${runName}-${step}"
+	## The run in there puts its own temp folder inside this one, so both are kept on the box.
+	if ((keepTemp)); then
+		rmOpt=(); innerArgs+=(--keep-temp)
+		containerMounts+=(-v "${runTmp}:${runTmp}" -e "TMPDIR=${runTmp}")
+	fi
+	## POSIX counts west of UTC as plus.
+	printf -v tzOff '%(%z)T' -1; [[ "${tzOff}" != -* ]] || tzSign="+"
+	fEcho_Clean "runs cicd.bash ${innerArgs[*]}"
+	fEcho_Clean "as container ${containerName}"
+	## nice on the client doesn't reach in there, so the quota and the weight do, and the run
+	## in there renices itself. It works out its counts from this box's cores and load.
+	docker run ${rmOpt[@]+"${rmOpt[@]}"} --init --name "${containerName}" --label "dev.project=${APP_NAME}" --label "dev.run=${runName}" \
+		--cpus "${BUILD_JOBS}" --cpu-shares 256 -e "GITSBY_CICD_CPUS=${cpuCores}" -e "GITSBY_CICD_STEPS=${stepsBeforeBox}/${stepTotal}" \
+		-e "GITSBY_CICD_TZ=<${tzOff}>${tzSign}${tzOff:1:2}:${tzOff:3:2}" \
+		--user "$(id -u):$(id -g)" "${containerMounts[@]}" -w "${root}" \
+		"${containerImage}" bash "${root}/cicd/cicd.bash" "${innerArgs[@]}" &
+	## Waited on, not run in front: bash holds a trap until a command in front ends, and docker
+	## passes Ctrl+C on into the container rather than ending.
+	wait "$!" || fDie "the run in the container failed (above)"
+	fEcho "OK: the container run"
+}
+
+## --backlog-run-quick: what a worker runs before it commits. It leaves out the slow stages, and
+## the ones that change something: a fetch, an install, a push. Areas run in this order, whatever
+## order they were named in, so lint still fails first.
+if ((gate)); then
+	stepTitle=([lint]="Lint" [unit]="Unit tests" [suite]="Regression tests" [fuzz]="Fuzz + spawn counts" [parity]="Backwards compatibility")
+	gateOff=()
+	for a in "${gateAreasAll[@]}"; do
+		if ((! ${#gateAreas[@]})) || [[ " ${gateAreas[*]} " == *" ${a} "* ]]; then stepList+=("${a}"); else gateOff+=("${a}"); fi
+	done
+	stepTotal="${#stepList[@]}"; stepsBeforeBox=0
+	if [[ "${stepsOutside}" =~ ^([0-9]+)/([0-9]+)$ ]]; then stepBase="${BASH_REMATCH[1]}"; stepTotal="${BASH_REMATCH[2]}"; fi
+	fEcho_Clean
+	fEcho_Clean "${APP_NAME} backlog quick run: ${stepList[*]}"
+	fEcho_Clean "Repo root ...........: ${root}"
+	fCpuPlan
+	if ((container)); then
+		fEcho_Clean "Container ...........: the quick run in ${containerImage}"
+	fi
+	((! ${#gateOff[@]})) || fEcho_Clean "Left out ............: ${gateOff[*]} (not named)"
+	if ((listOnly)); then
+		[[ -z "${containerNote}" ]] || fEcho "${containerNote}"
+		for a in "${stepList[@]}"; do
+			case "${a}" in
+				lint)   fEcho_Clean; fEcho_Clean "$(fStepOf "${a}")  ${stepTitle[${a}]}: no test IDs" ;;
+				unit)   fListTests "$(fStepOf "${a}")  ${stepTitle[${a}]}" go ;;
+				suite)  fListTests "$(fStepOf "${a}")  ${stepTitle[${a}]}" "${TEST_CMD[0]}" ;;
+				fuzz)   fListTests "$(fStepOf "${a}")  ${stepTitle[${a}]}" "${FUZZ_CMD[0]}" "${SPAWN_COUNT_CMD[0]}" ;;
+				parity) fListTests "$(fStepOf "${a}")  ${stepTitle[${a}]}" "${PARITY_CMD[0]}" ;;
+			esac
+		done
+		fEcho_Clean
+		exit 0
+	fi
+	if ((container)); then
+		## By its own name, so the alias line isn't said twice. The areas stay as given.
+		gateInner=(--backlog-run-quick ${gateAreas[@]+"${gateAreas[@]}"}); ((quiet)) && gateInner=(-q "${gateInner[@]}")
+		fContainerRun "${gateInner[@]}"
+		fSection "${APP_NAME} backlog quick run: passed."
+		fEcho_Clean
+		exit 0
+	fi
+	[[ -z "${containerNote}" ]] || fEcho "${containerNote}"
+	gateBuilt=0
+	for a in "${stepList[@]}"; do
+		fStep "${a}"
+		if [[ "${a}" == suite || "${a}" == fuzz || "${a}" == parity ]] && ((! gateBuilt)); then
+			goVersion="$(fGoVersion)"; goBuildEpoch="$(fGoBuildEpoch)"; fNativeBuild; gateBuilt=1
+		fi
+		case "${a}" in
+			lint)   fStageLint ;;
+			unit)   fUnitTests ;;
+			suite)  "${TEST_CMD[@]}" ;;
+			fuzz)   "${FUZZ_CMD[@]}"
+			        "${SPAWN_COUNT_CMD[@]}" || fDie "spawn counts regressed"; fEcho "OK: spawn counts" ;;
+			parity) "${PARITY_CMD[@]}" ;;
+		esac
+		fStepEnd
+	done
+	fSection "${APP_NAME} backlog quick run: passed."
+	fEcho_Clean
+	exit 0
+fi
+
+if ((container)); then
+	## The same stages as here, minus everything that needs this box.
+	containerRun=(-y --no-sync --no-dogfood --no-remote --no-publish)
+	((quiet))    && containerRun[0]=-q
+	## So the gif in there is left as committed too.
+	[[ -z "${handsOff}" ]] || containerRun+=(--backlog-run-full)
+	((quick))    && containerRun+=(--quick)
+	## As given. The run in there gets --quick and --no-fuzz too, so works out the same default.
+	[[ -z "${leakOpt}" ]] || containerRun+=("${leakOpt}")
+	((doLint))   || containerRun+=(--no-lint)
+	((doTest))   || containerRun+=(--no-test)
+	((doFuzz))   || containerRun+=(--no-fuzz)
+	((doParity)) || containerRun+=(--no-parity)
+	((DO_DEMOGIF)) || containerRun+=(--no-demogif)
+fi
+
+## The Unix boxes' targets, once each. Stage 7 builds them, under --quick too.
+mapfile -t remoteTargets < <(printf '%s\n' "${REMOTE_UNIX_TARGETS[@]}" | sort -u)
+
+## The steps, in the order they run. In the container, lint through the demo gif run in there,
+## before dogfood. --quick keeps only the cross-builds of the remote tests.
+boxSteps=()
+((! doSync))   || stepList+=(sync)
+((! doLint))   || boxSteps+=(lint)
+((! doTest))   || boxSteps+=(test)
+## The leak checks are part of it, and --leakcheck runs them under --no-fuzz too.
+((! doFuzz && ! leakcheck)) || boxSteps+=(fuzz)
+((! doParity)) || boxSteps+=(parity)
+stepsBeforeBox="${#stepList[@]}"
+if ((container)); then
+	((! DO_DEMOGIF)) || boxSteps+=(demogif)
+	stepList+=(${boxSteps[@]+"${boxSteps[@]}"})
+	((! ${#DOGFOOD_TARGETS[@]})) || stepList+=(dogfood)
+else
+	stepList+=(${boxSteps[@]+"${boxSteps[@]}"})
+	((! ${#DOGFOOD_TARGETS[@]})) || stepList+=(dogfood)
+	((! DO_DEMOGIF)) || stepList+=(demogif)
+fi
+((doRemote)) || stepTitle[remote]="Cross-builds"
+((! doRemote && (! quick || noRemote))) || stepList+=(remote)
+((! ${#GIT_PUBLISH[@]})) || stepList+=(publish)
+stepTotal="${#stepList[@]}"
+if [[ "${stepsOutside}" =~ ^([0-9]+)/([0-9]+)$ ]]; then stepBase="${BASH_REMATCH[1]}"; stepTotal="${BASH_REMATCH[2]}"; fi
+## Why a step is off, for the plan: the flag that turned it off, or what did.
+fOffWhy(){
+	if [[ -n "${GITSBY_CICD_IN_CONTAINER:-}" && " sync dogfood remote publish " == *" $1 "* ]]; then echo "(done by the run outside the container)"
+	elif [[ " ${stageOpts[*]:-} " == *" --no-$1 "* ]]; then echo "(skipped --no-$1)"
+	elif [[ -n "${handsOff}" && " sync dogfood publish " == *" $1 "* ]]; then echo "(skipped ${handsOff})"
+	elif ((quick)) && [[ " demogif remote " == *" $1 "* ]]; then echo "(skipped --quick)"
+	else echo "(disabled)"; fi
+}
 
 ## Preflight: show the plan with resolved paths, then confirm.
-bash_dest=""; for d in "${DOGFOOD_BASH_DESTS[@]:-}"; do [[ -d "$d" && -w "$d" ]] && { bash_dest="$d"; break; }; done
-pwsh_dest=""; for d in "${DOGFOOD_PWSH_DESTS[@]:-}"; do [[ -d "$d" && -w "$d" ]] && { pwsh_dest="$d"; break; }; done
 
 fEcho_Clean
-fEcho_Clean "${APP_NAME} local CI/CD"
+if [[ -n "${handsOff}" ]]; then
+	fEcho_Clean "${APP_NAME} ${handsOff#--}: every check of a plain run; nothing is synced, dogfooded, published or rewritten"
+else
+	fEcho_Clean "${APP_NAME} local CI/CD"
+fi
 fEcho_Clean
 fEcho_Clean "Repo root ...........: ${root}"
-if ((do_lint)); then
-	fEcho_Clean "Lint ................: shellcheck on ${#shell_files[@]} shell file(s) + ${#shell_warn_files[@]} legacy report-only  (+ markdownlint, py_compile, PSScriptAnalyzer if available)"
-else
-	fEcho_Clean "Lint ................: (skipped)"
+fCpuPlan
+if ((container)); then
+	fEcho_Clean "Container ...........: lint, tests, fuzz, compatibility and the demo gif in ${containerImage}, and the builds for dogfood and the remote tests with its Go"
+elif [[ -n "${containerNote}" ]]; then
+	fEcho "${containerNote}"
 fi
-if ((do_test)) && [[ -f "${TEST_CMD[0]:-}" ]]; then
+if ((doSync)); then
+	fEcho_Clean "Remote sync .........: fast-forward from origin first"
+else
+	fEcho_Clean "Remote sync .........: $(fOffWhy sync)"
+fi
+if ((doLint)); then
+	fEcho_Clean "Lint ................: gofmt + go vet + staticcheck, shellcheck on ${#shellFiles[@]} shell file(s)  (+ golangci-lint, markdownlint, py_compile, ruff, PSScriptAnalyzer, windows resource if available)"
+else
+	fEcho_Clean "Lint ................: $(fOffWhy lint)"
+fi
+if ((doTest)) && [[ -f "${TEST_CMD[0]:-}" ]]; then
 	fEcho_Clean "Tests ...............: ${TEST_CMD[*]}"
-elif ((do_test)); then
+elif ((doTest)); then
 	fEcho_Clean "Tests ...............: (no harness yet: ${TEST_CMD[0]:-cicd/test.bash})"
 else
-	fEcho_Clean "Tests ...............: (skipped)"
+	fEcho_Clean "Tests ...............: $(fOffWhy test)"
 fi
-if ((do_fuzz)) && [[ -f "${FUZZ_CMD[0]:-}" ]]; then
+if ((doTest)); then
+	fEcho_Clean "Go build ............: ${GO_MODULE_DIR} -> ${GO_MODULE_DIR}/${EXE_NAME} (the suite's subject)"
+fi
+if ((doFuzz && quick)) && [[ -f "${FUZZ_CMD[0]:-}" ]]; then
+	fEcho_Clean "Fuzz + security .....: ${FUZZ_CMD[*]}, native fuzzing and spawn counts; govulncheck and pip-audit ${skipNote}"
+elif ((doFuzz)) && [[ -f "${FUZZ_CMD[0]:-}" ]]; then
 	fEcho_Clean "Fuzz + security .....: ${FUZZ_CMD[*]}"
-elif ((do_fuzz)); then
+elif ((doFuzz)); then
 	fEcho_Clean "Fuzz + security .....: (no harness yet: ${FUZZ_CMD[0]:-cicd/fuzz.bash})"
 else
-	fEcho_Clean "Fuzz + security .....: $( ((quick)) && echo '(skipped --quick)' || echo '(skipped)')"
+	fEcho_Clean "Fuzz + security .....: $(fOffWhy fuzz)"
 fi
-if ((${#DOGFOOD_BASH_DESTS[@]})); then
-	if [[ -n "$bash_dest" ]]; then fEcho_Clean "Dogfood (bash) ......: overwrite ${bash_dest}/${EXE_NAME}"
-	else fEcho_Clean "Dogfood (bash) ......: <none of: ${DOGFOOD_BASH_DESTS[*]} exists - will skip>"; fi
+if ((soakOnly)); then
+	fEcho_Clean "Leak checks .........: soak test, ${LEAKCHECK_SOAK_ROUNDS} rounds against ${LEAKCHECK_SOAK_ROUNDS} more -> ${LEAKCHECK_DIR}/; CodeQL ${skipNote}, add with --leakcheck"
+elif ((leakcheck)); then
+	fEcho_Clean "Leak checks .........: soak test, ${LEAKCHECK_SOAK_ROUNDS} rounds against ${LEAKCHECK_SOAK_ROUNDS} more, CodeQL's ${CODEQL_SUITE##*/} for each release OS, and its ${CODEQL_PY_SUITE##*/} -> ${LEAKCHECK_DIR}/"
+elif [[ "${leakOpt}" == --no-leakcheck ]]; then
+	fEcho_Clean "Leak checks .........: (skipped)"
 else
-	fEcho_Clean "Dogfood (bash) ......: (disabled)"
+	fEcho_Clean "Leak checks .........: ${skipNote}, add with --leakcheck"
 fi
-if [[ -n "${DOGFOOD_PWSH_SRC:-}" ]]; then
-	if [[ -n "$pwsh_dest" ]]; then fEcho_Clean "Dogfood (pwsh) ......: overwrite ${pwsh_dest}/$(basename "${DOGFOOD_PWSH_SRC}")"
-	else fEcho_Clean "Dogfood (pwsh) ......: <none of: ${DOGFOOD_PWSH_DESTS[*]} exists - will skip>"; fi
+if ((! doParity)); then
+	fEcho_Clean "Compatibility .......: $(fOffWhy parity)"
+elif [[ -f "${PARITY_CMD[0]:-}" ]]; then
+	fEcho_Clean "Compatibility .......: ${PARITY_CMD[*]} (this build vs legacy/bin)"
 else
-	fEcho_Clean "Dogfood (pwsh) ......: (no pwsh port yet)"
+	fEcho_Clean "Compatibility .......: (no comparison harness: ${PARITY_CMD[0]:-cicd/parity.bash})"
+fi
+if ((${#DOGFOOD_TARGETS[@]})); then
+	for t in "${DOGFOOD_TARGETS[@]}"; do
+		exe="${EXE_NAME}"; [[ "${t}" == windows/* ]] && exe="${EXE_NAME}.exe"
+		if [[ -n "${dogfoodDest[${t}]}" ]]; then fPlanLine "Dogfood ($(fPlanOS "${t}"))" "build ${t} -> ${dogfoodDest[${t}]}/${exe}"
+		else fPlanLine "Dogfood ($(fPlanOS "${t}"))" "<none of: ${dogfoodAll[${t}]} exists - will skip>"; fi
+	done
+else
+	fEcho_Clean "Dogfood .............: $(fOffWhy dogfood)"
 fi
 if ((DO_DEMOGIF)) && [[ -f "${DEMOGIF_SCENARIO}" ]]; then
-	fEcho_Clean "Demo gif ............: ${DEMOGIF_CMD[*]} -> ${DEMOGIF_OUT}"
+	if [[ -n "${handsOff}" ]]; then fEcho_Clean "Demo gif ............: ${DEMOGIF_CMD[*]}, compared with ${DEMOGIF_OUT} and left as committed"
+	else fEcho_Clean "Demo gif ............: ${DEMOGIF_CMD[*]} -> ${DEMOGIF_OUT}"; fi
 elif ((DO_DEMOGIF)); then
 	fEcho_Clean "Demo gif ............: (no scenario yet: ${DEMOGIF_SCENARIO})"
 else
-	fEcho_Clean "Demo gif ............: $( ((quick)) && echo '(skipped --quick)' || echo '(skipped)')"
+	fEcho_Clean "Demo gif ............: $(fOffWhy demogif)"
+fi
+if ((doRemote)) && [[ -f "${REMOTE_TEST_CMD[0]:-}" ]]; then
+	fEcho_Clean "Remote tests ........: ${REMOTE_TEST_CMD[*]} (${REMOTE_MAC_HOSTS[*]%%:*} ${REMOTE_UNIX_HOSTS[*]%%:*}; first free of ${REMOTE_WINDOWS_HOSTS[*]%%:*})"
+elif ((doRemote)); then
+	fEcho_Clean "Remote tests ........: (no harness yet: ${REMOTE_TEST_CMD[0]:-cicd/remote-tests.bash})"
+elif ((quick && ! noRemote)); then
+	fEcho_Clean "Remote tests ........: ${skipNote}, cross-builds only: ${remoteTargets[*]}"
+else
+	fEcho_Clean "Remote tests ........: $(fOffWhy remote)"
 fi
 if ((${#GIT_PUBLISH[@]} == 0)); then
-	fEcho_Clean "Publish (last) ......: (disabled)"
-elif [[ -n "$publish_msg" ]]; then
-	fEcho_Clean "Publish (last) ......: ${GIT_PUBLISH[*]} (hands-off: \"${publish_msg}\")"
+	fEcho_Clean "Publish (last) ......: $(fOffWhy publish)"
+elif [[ -n "${publishMsg}" ]]; then
+	fEcho_Clean "Publish (last) ......: ${GIT_PUBLISH[*]} (hands-off: \"${publishMsg}\")"
 else
 	fEcho_Clean "Publish (last) ......: ${GIT_PUBLISH[*]} (will prompt for message; blank = editor)"
 fi
 fEcho_Clean
-fEcho_Clean "Fail-fast: any error aborts before the next stage."
+fEcho_Clean "Fail-fast: any error aborts before the next step."
 fEcho_Clean
 
-if ((! assume_yes)); then
+## The plan above is the steps. What follows is the test IDs in each one that runs.
+if ((listOnly)); then
+	if ((doTest)); then
+		fListTests "$(fStepOf test)  Go unit tests" go
+		[[ ! -f "${TEST_CMD[0]:-}" ]] || fListTests "$(fStepOf test)  Regression tests" "${TEST_CMD[0]}"
+	fi
+	if ((doFuzz)); then
+		[[ ! -f "${FUZZ_CMD[0]:-}" ]] || fListTests "$(fStepOf fuzz)  Fuzz + security" "${FUZZ_CMD[0]}"
+		fListTests "$(fStepOf fuzz)  Native fuzz targets" gofuzz
+		[[ ! -f "${SPAWN_COUNT_CMD[0]:-}" ]] || fListTests "$(fStepOf fuzz)  Spawn counts" "${SPAWN_COUNT_CMD[0]}"
+	fi
+	((! doParity)) || [[ ! -f "${PARITY_CMD[0]:-}" ]] || fListTests "$(fStepOf parity)  Backwards compatibility" "${PARITY_CMD[0]}"
+	if ((doRemote)) && [[ -f "${REMOTE_TEST_CMD[0]:-}" ]]; then
+		fEcho_Clean
+		fEcho_Clean "$(fStepOf remote)  Remote tests: the Go unit tests above on every box, and the regression tests on ${REMOTE_MAC_HOSTS[*]%%:*} ${REMOTE_UNIX_HOSTS[*]%%:*}"
+	fi
+	fEcho_Clean
+	exit 0
+fi
+
+if ((! assumeYes)); then
 	## Capture the commit message up front so the run can finish unattended. This
 	## is the natural place to bail on the common (publish) path - Ctrl+C here
 	## aborts; there is no separate "Proceed? [y/N]" (removed to cut friction).
-	if ((${#GIT_PUBLISH[@]})) && [[ -z "$publish_msg" ]]; then
-		read -r -p "Publish commit message (blank = editor; Ctrl+C aborts): " m
+	if ((${#GIT_PUBLISH[@]})) && [[ -z "${publishMsg}" ]]; then
+		read -r -p "Publish commit message (blank = editor; Ctrl+C aborts): " typedMessage
 		fEcho_ResetBlankCounter
-		[[ -n "$m" ]] && publish_msg="$m"
+		[[ -n "${typedMessage}" ]] && publishMsg="${typedMessage}"
 	fi
 fi
 
 ## Tee the rest of the run (all stages) to a gitignored log so warnings from any
 ## stage can be reviewed after the fact. Rotate the prior (closed) logs first.
-if [[ -n "${LINT_LOG_DIR:-}" ]] && mkdir -p "${root}/${LINT_LOG_DIR}" 2>/dev/null; then
+## Inside the container the outer run's log already has all of it.
+if [[ -n "${LINT_LOG_DIR:-}" && -z "${GITSBY_CICD_IN_CONTAINER:-}" ]] && mkdir -p "${root}/${LINT_LOG_DIR}" 2>/dev/null; then
 	gfs_rotate "${root}/${LINT_LOG_DIR}" run log >/dev/null 2>&1 || true
 	exec > >(tee "${root}/${LINT_LOG_DIR}/run_${stamp}.log") 2>&1
 	## Wait for tee to drain on exit, else the shell prompt returns mid-flush and
 	## the last output lands after it (looks like the prompt "came back").
-	tee_pid=$!
-	trap 'exec 1>&- 2>&-; wait "${tee_pid}" 2>/dev/null' EXIT
+	teePid=$!
+	trap 'fRunTmpDone "$?"; exec 1>&- 2>&-; wait "${teePid}" 2>/dev/null' EXIT
 fi
 
 ## Stage 0: remote sync. The publish stage pulls too, but that is after everything
 ## has been built and tested - so a change merged upstream meanwhile would be pushed
 ## having been validated by nothing. Refreshing first means the rest of the run tests
 ## the tree that is actually going out. Publish keeps its own pull as the late guard.
-fSection "0/6  Remote sync"
-if ((! do_sync)); then
-	fEcho_Clean "remote sync skipped"
-elif ! git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
-	## No upstream is an ordinary state for a brand-new branch, not a reason to stop.
-	fEcho_Clean "no upstream for this branch - nothing to sync"
-elif ! git fetch --quiet 2>/dev/null; then
-	## Offline is the other ordinary state. Warn and build what is here.
-	fEcho_Clean "WARNING: can't reach origin - building without refreshing"
-else
-	## Left is behind, right is ahead: what origin has that we don't, and the reverse.
-	counts="$(git rev-list --left-right --count '@{u}...HEAD' 2>/dev/null || echo "0	0")"
-	behind="${counts%%[[:space:]]*}"; ahead="${counts##*[[:space:]]}"
-	if   ((behind == 0)); then fEcho_Clean "up to date with origin (${ahead} to publish)"
-	elif ((ahead > 0));   then fDie "diverged from origin: ${ahead} local, ${behind} remote. Reconcile before building."
+if ((doSync)); then
+	fStep sync
+	if ! git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+		## No upstream is an ordinary state for a brand-new branch, not a reason to stop.
+		fEcho_Clean "no upstream for this branch - nothing to sync"
+	elif ! git fetch --quiet 2>/dev/null; then
+		## Offline is the other ordinary state. Warn and build what is here.
+		fEcho_Clean "WARNING: can't reach origin - building without refreshing"
 	else
-		## Only behind, so this can only be a fast-forward. --autostash carries a dirty
-		## tree over it rather than refusing, and puts it back afterward.
-		fEcho_Clean "fast-forwarding ${behind} commit(s) from origin"
-		git merge --ff-only --autostash '@{u}' || fDie "fast-forward from origin failed"
-	fi
-fi
-
-## Stage 1: lint. bash -n then shellcheck over every first-party shell file
-## (gating - never an auto-formatter: bash is hand-formatted on purpose).
-## markdownlint and py_compile are probe-gated extras.
-fSection "1/6  Lint"
-if ((! do_lint)); then
-	fEcho_Clean "lint skipped"
-else
-	((${#shell_files[@]})) || fDie "no shell files matched SHELL_LINT_GLOBS"
-	for f in "${shell_files[@]}"; do
-		bash -n "$f" || fDie "syntax error: $f"
-	done
-	fEcho "OK: bash -n (${#shell_files[@]} file(s))"
-	shellcheck --version >/dev/null 2>&1 || fDie "shellcheck not installed"
-	shellcheck "${shell_files[@]}"
-	fEcho "OK: shellcheck clean"
-	## Legacy files: report findings without gating (the refactor retires this list).
-	if ((${#shell_warn_files[@]})); then
-		for f in "${shell_warn_files[@]}"; do
-			bash -n "$f" || fDie "syntax error: $f"
-			n="$(shellcheck "$f" 2>/dev/null | grep -c "^In " || true)"
-			if ((n)); then fEcho "WARNING: ${n} shellcheck finding(s) in legacy ${f} (report-only until the refactor)"
-			else fEcho "OK: legacy ${f} clean"; fi
-		done
-	fi
-	if ((${#MD_LINT_GLOBS[@]})); then
-		md_files=()
-		_ng=0; shopt -q nullglob && _ng=1; shopt -s nullglob
-		for g in "${MD_LINT_GLOBS[@]}"; do for f in $g; do [[ -f "$f" ]] && md_files+=("$f"); done; done
-		((_ng)) || shopt -u nullglob
-		if command -v markdownlint >/dev/null 2>&1; then
-			markdownlint "${md_files[@]}"
-			fEcho "OK: markdownlint clean (${#md_files[@]} file(s))"
-		elif npx --no-install markdownlint --version >/dev/null 2>&1; then
-			npx --no-install markdownlint "${md_files[@]}"
-			fEcho "OK: markdownlint clean (${#md_files[@]} file(s))"
+		## Left is behind, right is ahead: what origin has that we don't, and the reverse.
+		counts="$(git rev-list --left-right --count '@{u}...HEAD' 2>/dev/null || echo "0	0")"
+		behind="${counts%%[[:space:]]*}"; ahead="${counts##*[[:space:]]}"
+		if   ((behind == 0)); then fEcho_Clean "up to date with origin (${ahead} to publish)"
+		elif ((ahead > 0));   then fDie "diverged from origin: ${ahead} local, ${behind} remote. Reconcile before building."
 		else
-			fEcho "WARNING: markdownlint skipped (not installed: npm install -g markdownlint-cli)"
+			## Only behind, so this can only be a fast-forward. --autostash carries a dirty
+			## tree over it rather than refusing, and puts it back afterward.
+			fEcho_Clean "fast-forwarding ${behind} commit(s) from origin"
+			git merge --ff-only --autostash '@{u}' || fDie "fast-forward from origin failed"
 		fi
 	fi
-	if [[ -n "${PY_LINT_FILES+x}" ]] && ((${#PY_LINT_FILES[@]})); then
-		python3 -m py_compile "${PY_LINT_FILES[@]}" && rm -rf -- "${root:?}/cicd/utility/__pycache__"
-		fEcho "OK: py_compile (${#PY_LINT_FILES[@]} file(s))"
-	fi
-	if [[ -n "${PS_LINT_GLOBS+x}" ]] && ((${#PS_LINT_GLOBS[@]})); then
-		ps_files=()
-		_ng=0; shopt -q nullglob && _ng=1; shopt -s nullglob
-		for g in "${PS_LINT_GLOBS[@]}"; do for f in $g; do [[ -f "$f" ]] && ps_files+=("$f"); done; done
-		((_ng)) || shopt -u nullglob
-		if ((${#ps_files[@]})); then
-			if pwsh -NoProfile -Command "Get-Command Invoke-ScriptAnalyzer" >/dev/null 2>&1; then
-				for f in "${ps_files[@]}"; do
-					pwsh -NoProfile -Command "\$r = Invoke-ScriptAnalyzer -Path '${f}' -Severity Error,Warning,Information; \$r | Format-Table -AutoSize | Out-String -Width 200 | Write-Host; exit @(\$r).Count" || fDie "PSScriptAnalyzer findings in ${f}"
-				done
-				fEcho "OK: PSScriptAnalyzer clean (${#ps_files[@]} file(s))"
-			else
-				fEcho "WARNING: PSScriptAnalyzer skipped (pwsh + PSScriptAnalyzer module not both installed)"
-			fi
-		fi
-	fi
+	fStepEnd
 fi
 
-## Stage 2: regression tests. The harness lands with the bin/gitsby refactor;
-## until then this stage reports itself absent rather than pretending to pass.
-fSection "2/6  Regression tests"
-if ((! do_test)); then
-	fEcho_Clean "tests skipped"
-elif [[ -f "${TEST_CMD[0]:-}" ]]; then
-	"${TEST_CMD[@]}"
-	fEcho "OK: tests passed"
-	## The behavioural suite runs the same checks once per build, so it passes on both while the two
-	## quietly disagree about the same input - which is what every port defect that reached users
-	## actually was. This asks the other question: do they ANSWER the same? Skips itself with a
-	## reason where pwsh is absent, since there is then nothing to compare against.
-	if [[ -f "${root}/cicd/parity.bash" ]]; then
-		fEcho_Clean ""
-		bash "${root}/cicd/parity.bash"
-		fEcho "OK: builds agree"
+## Version stamped into every build this run. Dev builds carry what describe says; a
+## release injects the clean one. Read after the sync, which can move HEAD. -dirty
+## because a run that publishes builds source whose commit stage 8 hasn't made yet.
+goVersion="$(fGoVersion)"; goBuildEpoch="$(fGoBuildEpoch)"
+
+## --container: stages 1-4 and the demo run in the pinned image, and stages 5 and 7 build with its Go.
+if ((container)); then
+	fContainerRun "${containerRun[@]}"
+	export GITSBY_CICD_IMAGE="${containerImage}" GITSBY_CICD_RUN="${runName}"
+	doLint=0; doTest=0; doFuzz=0; leakcheck=0; doParity=0; DO_DEMOGIF=0
+fi
+
+## Stage 1: lint. gofmt/vet/staticcheck over the module, then bash -n and shellcheck
+## over the pipeline's own scripts and the installer (gating - never an auto-formatter:
+## those are hand-formatted on purpose). markdownlint, py_compile and PSScriptAnalyzer
+## are probe-gated extras.
+if ((doLint)); then
+	fStep lint
+	fStageLint
+	fStepEnd
+fi
+
+## Stage 2: build, then the regression suite against what was just built. The build is
+## the native one; the cross-builds happen at dogfood, where they have somewhere to go.
+## Dev builds carry the describe version; release builds inject the clean one.
+if ((doTest)); then
+	fStep test
+	fNativeBuild
+	## The unit tests come before the suite below: they answer in milliseconds and
+	## cover the parsing and matching the suite can only reach through a built binary.
+	fUnitTests
+	if [[ -f "${TEST_CMD[0]:-}" ]]; then
+		"${TEST_CMD[@]}"
+	else
+		fEcho_Clean "no test harness (${TEST_CMD[0]:-cicd/test.bash})"
 	fi
-else
-	fEcho_Clean "no test harness yet (${TEST_CMD[0]:-cicd/test.bash} - lands with the bin/gitsby refactor)"
+	fStepEnd
 fi
 
 ## Stage 3: fuzz + security (adversarial input against our parsing, plus checks
-## of what we shell out to). Slow, so skipped under --quick. Same lands-later
+## of what we shell out to). govulncheck and pip-audit ask a server, so --quick leaves them out.
+## The leak checks come last, and --leakcheck runs them under --no-fuzz too. Same lands-later
 ## policy as the tests.
-fSection "3/6  Fuzz + security"
-if ((! do_fuzz)); then
-	fEcho_Clean "fuzz + security skipped$( ((quick)) && echo ' (--quick)')"
-elif [[ -f "${FUZZ_CMD[0]:-}" ]]; then
+if ((doFuzz || leakcheck)); then fStep fuzz; fi
+if ((doFuzz)) && [[ -f "${FUZZ_CMD[0]:-}" ]]; then
 	"${FUZZ_CMD[@]}"
-	fEcho "OK: fuzz + security passed"
-else
+elif ((doFuzz)); then
 	fEcho_Clean "no fuzz harness (${FUZZ_CMD[0]:-cicd/fuzz.bash})"
 fi
-
-## Stage 4: dogfood. A script project's "release build" is the script itself;
-## copy it over the first existing preferred dir. No sudo fallback on purpose -
-## an unwritable dest is a warning, not an unattended privilege escalation.
-fSection "4/6  Dogfood"
-df_did=0
-if ((${#DOGFOOD_BASH_DESTS[@]})); then
-	if [[ -n "$bash_dest" ]]; then
-		cp -f "${DOGFOOD_BASH_SRC}" "${bash_dest}/${EXE_NAME}"
-		chmod +x "${bash_dest}/${EXE_NAME}"
-		fEcho "OK: installed (bash) -> ${bash_dest}/${EXE_NAME}"
-		df_did=1
-	else
-		fEcho "WARNING: no bash dogfood dest exists/writable (${DOGFOOD_BASH_DESTS[*]}); skipping"
-	fi
+## Coverage-guided fuzzing of the pure parsers, briefly. Their seed corpus already ran
+## with 'go test' in stage 2; this hunts a little past it each run. One target per
+## invocation is go's rule, and a crasher lands in src-go/testdata/fuzz/ as evidence.
+if ((doFuzz)); then
+	for fuzzTarget in $(cd "${root}/${GO_MODULE_DIR}" && go test -list 'Fuzz.*' . 2>/dev/null | grep '^Fuzz' || true); do
+		## The test ID sits at the end of the func line, as '// [<id>]'.
+		fuzzId="$(sed -n "s|^func ${fuzzTarget}(.*// \[\([0-9A-Za-z]*\)\][[:space:]]*\$|\1 |p" "${root}/${GO_MODULE_DIR}"/*_test.go 2>/dev/null || true)"
+		## Kept so a failure shows what go said: a crasher's input, or a worker that died under load.
+		fuzzOut="$(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${HEAVY_JOBS}" go test -run '^$' -fuzz "^${fuzzTarget}\$" -fuzztime 5s -parallel "${HEAVY_JOBS}" . 2>&1)" \
+			|| { fEcho_Clean "$(tail -n 40 <<< "${fuzzOut}")"; fEcho_Clean "  FAIL ${fuzzId}${fuzzTarget}"; fDie "fuzzing found a crasher in ${fuzzTarget} (reproducer under ${GO_MODULE_DIR}/testdata/fuzz/)"; }
+		fEcho_Clean "  PASS ${fuzzId}${fuzzTarget}"
+	done
+	fEcho "OK: native fuzz targets"
 fi
-if [[ -n "${DOGFOOD_PWSH_SRC:-}" ]]; then
-	if [[ -n "$pwsh_dest" ]]; then
-		cp -f "${DOGFOOD_PWSH_SRC}" "${pwsh_dest}/"
-		fEcho "OK: installed (pwsh) -> ${pwsh_dest}/$(basename "${DOGFOOD_PWSH_SRC}")"
-		df_did=1
-	else
-		fEcho "WARNING: no pwsh dogfood dest exists/writable (${DOGFOOD_PWSH_DESTS[*]}); skipping"
-	fi
+## The standard library and every module in go.mod, the test-only ones too (-test). The
+## library code is linked into every binary we publish. Probe-gated liek staticcheck.
+if ((! doFuzz)); then
+	:
+elif ((quick)); then
+	fEcho_Clean "govulncheck skipped (--quick: it reaches vuln.go.dev)"
+elif command -v govulncheck >/dev/null 2>&1; then
+	(cd "${root}/${GO_MODULE_DIR}" && govulncheck -test ./...) || fDie "govulncheck findings"
+	fEcho "OK: govulncheck clean"
 else
-	fEcho_Clean "pwsh: no port yet"
+	fEcho "WARNING: govulncheck skipped (not installed: go install golang.org/x/vuln/cmd/govulncheck@latest)"
 fi
-((df_did)) || fEcho_Clean "dogfood: nothing installed"
+## The demo's Python libraries, at the versions installed here. Most come from Debian's archive
+## rather than pip, so pip-audit gets a list of pins, not an environment. Debian patches a hole
+## without moving the upstream version, so it can report one already fixed; PIP_AUDIT_IGNORE in
+## config.bash lists those, each with the backlog item that checks it. Off the container a box's
+## own old Pillow fails here on purpose; it is the copy that box renders with.
+if [[ -z "${PY_AUDIT_DISTS+x}" ]] || ((! doFuzz || ! ${#PY_AUDIT_DISTS[@]})); then
+	:
+elif ((quick)); then
+	fEcho_Clean "pip-audit skipped (--quick: it reaches pypi.org)"
+elif ! command -v pip-audit >/dev/null 2>&1; then
+	fEcho "WARNING: pip-audit skipped (not installed: pipx install pip-audit)"
+elif ! pyPins="$(python3 -c 'import importlib.metadata as m, sys; [print(f"{d}=={m.version(d)}") for d in sys.argv[1:]]' "${PY_AUDIT_DISTS[@]}" 2>/dev/null)"; then
+	fEcho "WARNING: pip-audit skipped (the demo's libraries aren't all installed here: ${PY_AUDIT_DISTS[*]})"
+else
+	pyAuditArgs=(); for f in ${PIP_AUDIT_IGNORE[@]+"${PIP_AUDIT_IGNORE[@]}"}; do pyAuditArgs+=(--ignore-vuln "${f}"); done
+	pyReq="$(mktemp "${runTmp}/pyreq.XXXXXX")"
+	printf '%s\n' "${pyPins}" >"${pyReq}"
+	pyRc=0
+	## Its advice to hash the pins is for a pip install, which this isn't.
+	pip-audit -r "${pyReq}" --no-deps --disable-pip --progress-spinner off "${pyAuditArgs[@]}" 2>&1 \
+		| { grep -v '^WARNING:pip_audit._cli:' || true; } || pyRc=$?
+	fTmpDone "${pyReq:?}"
+	if ((pyRc)); then
+		[[ -n "${GITSBY_CICD_IN_CONTAINER:-}" ]] && fDie "pip-audit findings"
+		fDie "pip-audit findings in this box's libraries; the container pins its own in cicd/container/requirements.txt"
+	fi
+	fEcho "OK: pip-audit clean (${pyPins//$'\n'/, })"
+fi
+## The profiling half, and deliberately not a sampling profile: this program is blocked on
+## git for effectively all of its wall clock, so a flamegraph has no leaders in it. What
+## costs anything is how often we fork git, and that is what regresses silently.
+if ((doFuzz)) && [[ -f "${SPAWN_COUNT_CMD[0]:-}" ]]; then
+	"${SPAWN_COUNT_CMD[@]}" || fDie "spawn counts regressed"
+	fEcho "OK: spawn counts"
+fi
+if ((leakcheck)); then
+	fLeakCheck
+fi
+fStepEnd
 
-## Stage 5: demo gif. Types the scenario into a fake terminal, runs each command
-## against the dogfooded script, renders the animated loop. A failure is a
-## warning, never a stop. When the render differs from the committed copy, a
-## timestamped original is kept (GFS-pruned) out of tree, then landed in-repo.
-fSection "5/6  Demo gif"
+## Stage 4: backwards compatibility. The behavioral suite asks "is this correct?" of one
+## build at a time, so it passes while this build and the frozen one quietly disagree about
+## the same input - which is what every port defect that reached users actually was. This
+## asks the other question: do they ANSWER the same? Self-skips once legacy/ is gone.
+if ((doParity)); then
+	fStep parity
+	if [[ -f "${PARITY_CMD[0]:-}" ]]; then
+		"${PARITY_CMD[@]}"
+	else
+		fEcho_Clean "no comparison harness (${PARITY_CMD[0]:-cicd/parity.bash})"
+	fi
+	fStepEnd
+fi
+
+## Stage 5: dogfood. Cross-build each configured target and copy it to the first existing,
+## writable dir in that target's list. No sudo fallback on purpose - an unwritable dest is a
+## warning, not an unattended privilege escalation. A cross-build failure is fatal: it means
+## the tree stopped being portable, which is worth finding here rather than at a release.
+## Builds target $1 (goos/goarch) to the file $2, with the image's Go when the run uses it. Stage 7
+## builds the Mac one this way too, so the Mac tests run against the same build dogfood installs.
+fCrossBuild(){
+	local target="$1" out="$2" arch part
+	local -a arches parts=()
+	## darwin/universal is both Mac CPUs, built apart and joined.
+	arches=("${target##*/}"); [[ "${target}" == darwin/universal ]] && arches=(amd64 arm64)
+	for arch in "${arches[@]}"; do
+		part="${out}"; ((${#arches[@]} == 1)) || part="${out}-${arch}"
+		fImageGo "${root}/${GO_MODULE_DIR}" "${part%/*}" CGO_ENABLED=0 GOAMD64=v1 GOOS="${target%%/*}" GOARCH="${arch}" \
+			build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${goVersion#v} -X main.buildEpoch=${goBuildEpoch}" -o "${part}" . \
+			|| fDie "go build failed for ${target%%/*}/${arch}"
+		parts+=("${part}")
+	done
+	if ((${#parts[@]} > 1)); then
+		"${root}/cicd/utility/macho-universal.bash" "${out}" "${parts[@]}" || fDie "could not join the ${target} builds"
+		rm -f -- "${parts[@]}"
+	fi
+}
+dogfoodDone=0
+if ((${#DOGFOOD_TARGETS[@]})); then
+	fStep dogfood
+	for t in "${DOGFOOD_TARGETS[@]}"; do
+		exe="${EXE_NAME}"; [[ "${t}" == windows/* ]] && exe="${EXE_NAME}.exe"
+		if [[ -z "${dogfoodDest[${t}]}" ]]; then
+			fEcho "WARNING: no ${t} dogfood dest exists/writable (${dogfoodAll[${t}]}); skipping"
+			continue
+		fi
+		## Built into the module dir under the target's own name, so the native binary the
+		## suite just ran against is not overwritten by a build that cannot run here.
+		out="${root}/${GO_MODULE_DIR}/${EXE_NAME}-${t//\//-}"
+		fCrossBuild "${t}" "${out}"
+		cp -f "${out}" "${dogfoodDest[${t}]}/${exe}"
+		chmod +x "${dogfoodDest[${t}]}/${exe}"
+		rm -f -- "${out:?}"
+		fEcho "OK: installed (${t}) -> ${dogfoodDest[${t}]}/${exe}"
+		dogfoodDone=1
+	done
+	((dogfoodDone)) || fEcho_Clean "dogfood: nothing installed"
+	fStepEnd
+fi
+
+## Stage 6: demo gif. Types the scenario into a fake terminal, runs each command
+## against a build of its own, stamped with the newest release, renders the
+## animated loop. A failure is a warning, never a stop. When the render differs
+## from the committed copy, a timestamped original is kept (GFS-pruned) out of
+## tree, then landed in-repo.
+((! DO_DEMOGIF)) || fStep demogif
 if ((! DO_DEMOGIF)); then
-	fEcho_Clean "demo gif skipped$( ((quick)) && echo ' (--quick)')"
+	:
 elif [[ ! -f "${DEMOGIF_SCENARIO}" ]]; then
 	fEcho_Clean "no demo scenario (${DEMOGIF_SCENARIO})"
 else
-	demogif_out="${root}/${DEMOGIF_OUT}"
-	demogif_tmp="${demogif_out}.new"
-	mkdir -p "$(dirname "${demogif_out}")"
-	if (cd "${root}" && python3 "${DEMOGIF_CMD[@]}" --out "${demogif_tmp}" --bin "${root}/${DOGFOOD_BASH_SRC}"); then
+	demogifOut="${root}/${DEMOGIF_OUT}"
+	demogifTmp="${demogifOut}.new"
+	mkdir -p "$(dirname "${demogifOut}")"
+	## Every command prints a banner naming its build, and a build stamped with the commit put a
+	## new one on camera at every commit, so the whole gif was replaced on every run. The demo's
+	## own build carries the newest release instead - the version and build number that release's
+	## published binary prints - so the gif changes only when what it shows does.
+	demoVersion="0.0.0"; demoBuildEpoch=""
+	demoTags="$(git -c versionsort.suffix=- tag --sort=-v:refname --list 'v*' 2>/dev/null || true)"
+	demoTag="${demoTags%%$'\n'*}"
+	if [[ "${demoTag}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([A-Za-z0-9.-]+)?$ ]]; then
+		demoVersion="${demoTag#v}"
+		demoBuildEpoch="$(git log -1 --format=%ct "${demoTag}^{commit}" 2>/dev/null || true)"
+	elif [[ -n "${demoTag}" ]]; then
+		fEcho "WARNING: the newest v* tag '${demoTag}' is not a version, so the demo build is stamped 0.0.0"
+	fi
+	demogifBin="${root}/${GO_MODULE_DIR}/${EXE_NAME}-demo"
+	if ! (cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOAMD64=v1 \
+		go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${demoVersion} -X main.buildEpoch=${demoBuildEpoch}" -o "${demogifBin}" .); then
+		fEcho "WARNING: demo build failed, so no demo gif was rendered (continuing)"
+	elif (cd "${root}" && python3 "${DEMOGIF_CMD[@]}" ${harnessQuiet[@]+"${harnessQuiet[@]}"} --out "${demogifTmp}" --bin "${demogifBin}"); then
 		if [[ -n "${DEMOGIF_OPT_CMD[*]:-}" ]] && command -v "${DEMOGIF_OPT_CMD[0]}" >/dev/null 2>&1; then
-			demogif_was=$(stat -c%s "${demogif_tmp}")
-			if "${DEMOGIF_OPT_CMD[@]}" "${demogif_tmp}" -o "${demogif_tmp}.opt" 2>/dev/null; then
-				mv -f "${demogif_tmp}.opt" "${demogif_tmp}"
-				fEcho_Clean "optimized: $((demogif_was / 1024)) -> $(( $(stat -c%s "${demogif_tmp}") / 1024 )) KiB"
+			demogifWas=$(stat -c%s "${demogifTmp}")
+			if "${DEMOGIF_OPT_CMD[@]}" "${demogifTmp}" -o "${demogifTmp}.opt" 2>/dev/null; then
+				mv -f "${demogifTmp}.opt" "${demogifTmp}"
+				fEcho_Clean "optimized: $((demogifWas / 1024)) -> $(( $(stat -c%s "${demogifTmp}") / 1024 )) KiB"
 			else
-				rm -f -- "${demogif_tmp:?}.opt"
+				rm -f -- "${demogifTmp:?}.opt"
 				fEcho_Clean "${DEMOGIF_OPT_CMD[0]}: failed, keeping the raw render"
 			fi
 		fi
-		if [[ -f "${demogif_out}" ]] && cmp -s "${demogif_tmp}" "${demogif_out}"; then
-			rm -f -- "${demogif_tmp:?}"
+		demoDrift=()
+		if [[ -f "${demogifOut}" ]] && ! cmp -s "${demogifTmp}" "${demogifOut}"; then
+			mapfile -t demoDrift < <(fToolDrift ${DEMOGIF_TOOLS[@]+"${DEMOGIF_TOOLS[@]}"})
+		fi
+		if [[ -f "${demogifOut}" ]] && cmp -s "${demogifTmp}" "${demogifOut}"; then
+			rm -f -- "${demogifTmp:?}"
 			fEcho "OK: demo gif unchanged"
+		elif ((${#demoDrift[@]})); then
+			## Drawn with another version of a tool that shapes its bytes, as on a box running
+			## --no-container, so the difference may be the tool's. A warning, as a tool version
+			## is everywhere else.
+			rm -f -- "${demogifTmp:?}"
+			fEcho "WARNING: demo gif differs, but this box has ${demoDrift[*]}, so the committed one stays"
+		elif [[ -n "${handsOff}" ]]; then
+			rm -f -- "${demogifTmp:?}"
+			fEcho "WARNING: demo gif differs; ${handsOff} rewrites no tracked file, so the committed one stays"
 		else
 			## Keep the new original out of tree (GFS-pruned), then land it in the repo.
 			mkdir -p "${DEMOGIF_ARCHIVE_DIR}"
-			cp -f "${demogif_tmp}" "${DEMOGIF_ARCHIVE_DIR}/demo_${stamp}.gif"
+			cp -f "${demogifTmp}" "${DEMOGIF_ARCHIVE_DIR}/demo_${stamp}.gif"
 			gfs_rotate "${DEMOGIF_ARCHIVE_DIR}" demo gif >/dev/null 2>&1 || true
-			mv -f "${demogif_tmp}" "${demogif_out}"
+			mv -f "${demogifTmp}" "${demogifOut}"
 			fEcho "OK: demo gif regenerated"
 		fi
 	else
-		rm -f -- "${demogif_tmp:?}"
+		rm -f -- "${demogifTmp:?}"
 		fEcho "WARNING: demo gif generation failed (continuing)"
 	fi
+	rm -f -- "${demogifBin:?}"
+	## The scenario builds its world at a fixed path, since the path is on camera.
+	bash "${root}/cicd/utility/demo/demo-repo.bash" --remove || fEcho "WARNING: left the demo's repos in place"
 fi
+fStepEnd
 
-## Stage 6: backup + publish.
-fSection "6/6  Backup + publish"
+## Stage 7: the Go tests on a Mac, a Windows box and the other Unix boxes, and the regression
+## suite on the Mac and the Unix boxes against the build for each. The Linux arm64 box also runs
+## the windows/arm64 Go tests under Wine. Nothing else runs the tests on
+## those platforms, and Windows-only breaks went unnoticed for weeks before this. A box that is off, unreachable or taken by someone else
+## is skipped with a note rather than waited for. Slow, and on other hosts, so --quick only
+## builds the Unix boxes' targets, which takes seconds and finds one that stopped compiling.
+## --no-remote leaves those out too, and the run in the container always gets it.
+if ((doRemote || (quick && ! noRemote))); then fStep remote; fi
+if ((! doRemote)); then
+	if ((quick && ! noRemote)); then
+		quickBuilt=()
+		for t in "${remoteTargets[@]}"; do
+			[[ -n "${t}" ]] || continue
+			out="${root}/${GO_MODULE_DIR}/${EXE_NAME}-${t/\//-}"
+			fCrossBuild "${t}" "${out}"
+			rm -f -- "${out:?}"
+			quickBuilt+=("${t}")
+		done
+		((${#quickBuilt[@]} == 0)) || fEcho "OK: cross-built ${quickBuilt[*]}"
+	fi
+elif [[ ! -f "${REMOTE_TEST_CMD[0]:-}" ]]; then
+	fEcho_Clean "no remote test harness (${REMOTE_TEST_CMD[0]:-cicd/remote-tests.bash})"
+else
+	remoteBin="${root}/${GO_MODULE_DIR}/${EXE_NAME}-darwin-universal"
+	fCrossBuild darwin/universal "${remoteBin}"
+	remoteArgs=(--mac-bin "${remoteBin}"); remoteBins=("${remoteBin}")
+	for t in "${remoteTargets[@]}"; do
+		[[ -n "${t}" ]] || continue
+		remoteBins+=("${root}/${GO_MODULE_DIR}/${EXE_NAME}-${t/\//-}")
+		fCrossBuild "${t}" "${remoteBins[-1]}"
+		remoteArgs+=(--bin "${t}" "${remoteBins[-1]}")
+	done
+	remoteRc=0
+	"${REMOTE_TEST_CMD[@]}" "${remoteArgs[@]}" || remoteRc=$?
+	rm -f -- "${remoteBins[@]}"
+	((remoteRc == 0)) || fDie "Remote tests failed (see above)"
+fi
+fStepEnd
+
+## Stage 8: backup + publish.
 ## Always run the publisher quiet: cicd already gave the initial prompt, so skip
 ## its redundant continue-prompt. With no message it still lets git open the editor.
-pub_flags=(--quiet)
+pubFlags=(--quiet)
 if ((${#GIT_PUBLISH[@]} == 0)); then
-	fEcho_Clean "publish disabled"
-elif [[ -n "$publish_msg" ]]; then
+	:
+elif [[ -n "${publishMsg}" ]]; then
+	fStep publish
 	## Hands-off: the publisher fills the empty commit message from -m so `git
 	## commit` won't open an editor.
-	fEcho_Clean "hands-off publish (commit message: \"${publish_msg}\")"
-	"${GIT_PUBLISH[@]}" "${pub_flags[@]}" -m "${publish_msg}"
-	fEcho "OK: published"
+	fEcho_Clean "hands-off publish (commit message: \"${publishMsg}\")"
+	"${GIT_PUBLISH[@]}" "${pubFlags[@]}" -m "${publishMsg}"
+	fStepEnd
 else
-	"${GIT_PUBLISH[@]}" "${pub_flags[@]}"
-	fEcho "OK: published"
+	fStep publish
+	"${GIT_PUBLISH[@]}" "${pubFlags[@]}"
+	fStepEnd
 fi
 
 fSection "${APP_NAME} CI/CD: done."
@@ -415,3 +1441,53 @@ fEcho_Clean
 
 ##	History:
 ##		- 2026-07-22 JC: Created. Generic engine + config.bash for a Bash-script project, adapted from the sister pipeline; lint/tests/fuzz/dogfood/demo-gif/publish stages, -q/-m/--quick flags, tee'd run log.
+##		- 2026-08-17 JC: Stage 2 builds the go port before the tests, so the suite's go leg runs against this tree; dev builds carry the git-describe version via -ldflags. A missing toolchain warns and lets the leg skip itself.
+##		- 2026-08-17 JC: Stage 1 lints the go tree: gofmt (list mode, gating) and go vet, plus staticcheck when installed. Keyed off src-go existing rather than globs, so there is nothing to mirror in the Windows settings yet.
+##		- 2026-08-18 JC: Go-specific, seven stages. The go toolchain is required rather than probed, the build gates, and the PowerShell lint block is gone with the scripts. Backwards compatibility became its own stage instead of a tail on the tests, and dogfood cross-builds every configured target rather than copying one script.
+##		- 2026-08-19 JC: PSScriptAnalyzer is back in stage 1, probe-gated as before. The installer for Windows is the one piece of PowerShell that still ships, and it was going out unlinted.
+##		- 2026-08-19 JC: golangci-lint joins stage 1 and go test joins stage 2, both alongside what was already there. The unit tests cover the parsing and matching that previously needed a built binary and a throwaway repo to reach.
+##		- 2026-08-19 JC: PSScriptAnalyzer also checks the installer against Windows PowerShell 5.1 syntax. The installer supports 5.1 now, and nothing gated that.
+##		- 2026-08-19 JC: Stage 1 checks the committed Windows resource against the newest tag. The .exe carries an icon and version details now, and the resource that gives it them is a checked-in file that nothing else would notice going stale.
+##		- 2026-08-19 JC: --quick narrows dogfood to the native target, which is the slow part it was supposed to be skipping. Every build site shares one set of flags (-buildvcs=false above all, without which the published assets can never be rebuilt to their published checksums) and half the cores. Stage 3 gained govulncheck and the spawn counts; the three harnesses take -q from the engine.
+##		- 2026-08-21 JC: The harnesses get -q only when the run is quiet, since -y is unattended but not quiet. go vet, staticcheck and golangci-lint keep to the build's core budget, go test runs with -race, and stage 3 fuzzes the pure parsers for a few seconds each.
+##		- 2026-08-26 JC: Every build carries a build number taken from the commit date. Dogfood falls back to ~/.local/bin, for the target this box can run, when no shared dir exists.
+##		- 2026-09-10 JC: Stage 1 runs backlog-check.bash: open review items carry an Origin line, and a suite check removed on the branch has to be named in the backlog. Two decisions had been reversed by deleting the check that encoded them, with nothing written down.
+##		- 2026-09-14 JC: --gate runs every lint check and the unit tests and nothing else, for the pre-push hook that --install-hook puts in place. Stage 1 and the unit tests became functions, so the gate and a full run share one copy of each.
+##		- 2026-09-14 JC: The demo gif renders from a build of its own, stamped with the newest release rather than the commit, and -q reaches its generator. The banner every command prints had put a new version on camera at every commit, so the gif was replaced on nearly every run.
+##		- 2026-09-15 JC: A failed py_compile stops the run. At the head of an && list it neither stopped the run nor fired the trap.
+##		- 2026-09-15 JC: The build version is read after the remote sync, and says -dirty for uncommitted source. Read at startup, it could name the commit before a fast-forward, and a publishing run's builds named the commit before the one holding their source.
+##		- 2026-09-26 JC: The regression and fuzz suites print a line per check under -q too, and each native fuzz target gets one.
+##		- 2026-09-26 JC: Parity and spawn counts print a line per check under -q too.
+##		- 2026-09-27 JC: Each native fuzz target's line carries its test ID.
+##		- 2026-09-27 JC: The Go unit tests print a line per test, with its test ID. Their full output shows only on a failure.
+##		- 2026-09-28 JC: The tool version check covers six tools outside Go, and finds a Go tool where go install put it when that is not on PATH.
+##		- 2026-10-03 JC: macOS dogfood is a universal binary, both Mac CPUs built and joined, so Intel Macs can run it too.
+##		- 2026-10-03 JC: PowerShell lint is one pwsh for every file, with its rules in PSScriptAnalyzerSettings.psd1. A file that fails to parse fails the lint on its own.
+##		- 2026-10-04 JC: Stage 7 runs the Go tests on a Mac and a Windows box, and the regression suite on the Mac against the universal build, through cicd/remote-tests.bash. A box that is off or taken is skipped, not waited for. Full runs only. Publish is stage 8.
+##		- 2026-10-04 JC: Stage 7 also builds for each Unix box's target in config.bash, FreeBSD amd64 and Linux arm64 to start, and hands those builds to the harness.
+##		- 2026-10-04 JC: Variables are camelCase, and the output helpers keep their state in two-underscore globals. The helpers come before the option loop, so a bad option goes through fUsage too. Every expansion braced, and shellcheck enforces it.
+##		- 2026-10-10 JC: --container runs stages 1-4 in an image built from cicd/container/Dockerfile, with the versions config.bash pins. A pinned tool the recipe doesn't take stops the run. The tool version check knows git.
+##		- 2026-10-10 JC: --container renders the demo gif in the image too, with its font pinned there.
+##		- 2026-10-10 JC: The container is the default, set by CICD_CONTAINER in config.bash. --no-container runs on this box, and so does a box without docker, with a warning.
+##		- 2026-10-18 JC: --quick leaves out each step over about half a minute and anything that reaches a host other than origin: the regression suite, the native fuzz targets, govulncheck, the demo gif and the remote tests. It now runs fuzz.bash and the spawn counts, dogfoods every target, and cross-builds the Unix boxes' targets without testing them.
+##		- 2026-10-19 JC: --leakcheck adds a soak test of the everyday commands to stage 3, run in the container like the rest, with each run's heap profiles kept under cicd/artifacts/leakcheck/. go test runs -count=1, and its TestMain fails on a goroutine left running. Stage 1 runs ruff's leak rules over the demo script, and stage 3 runs pip-audit over its libraries. govulncheck takes in the test-only modules. The image tag covers the Python tools' lock.
+##		- 2026-10-19 JC: --leakcheck runs CodeQL as well, in the image, over a scratch copy of the module with its dependencies vendored in, once for each release OS. Any finding fails, except style findings in vendored code and those config.bash sets aside, and the reports are kept with the soak runs.
+##		- 2026-10-19 JC: Every build pins GOAMD64=v1, so a stray environment can't raise the CPU floor.
+##		- 2026-10-19 JC: --leakcheck's CodeQL also runs Python's suite, over the pipeline's Python files and the installed source of the libraries they import. A demo gif that differs, drawn where Pillow or gifsicle isn't at its recorded version, is a warning and the committed one stays.
+##		- 2026-10-19 JC: The leak checks run on every full run, and not under --quick or --no-fuzz. --leakcheck adds them back and --no-leakcheck leaves them out. A plain run with no CodeQL warns and goes on. The run's temp files sit in one folder that goes when it exits, and stage 6 removes the demo's repos once the gif is drawn.
+##		- 2026-10-21 JC: --no-fuzz skips govulncheck adn pip-audit too, as its help says. They sat outside it from when govulncheck still ran under --quick, which stopped on 2026-10-18.
+##		- 2026-10-23 JC: The container run gets a name and labels carrying the run's start time and tree, so it can be found and stopped among other projects' containers.
+##		- 2026-10-25 JC: --backlog-run-quick takes over from --gate, which stays as another name for it, and runs the suites against a build of their own, or only the areas named. --merge-gate, with --ci as another name, and --backlog-run-full run every check of a plain run and change nothing: no sync, dogfood or publish, no prompt, and the demo gif stays as committed. --long and --slow are a plain run.
+##		- 2026-10-25 JC: --backlog-run-quick runs in the image as well, where docker works, and --no-container keeps it here. --container goes with it now too.
+##		- 2026-10-25 JC: Dogfood's builds, stage 7's, and the cross-builds --quick does there come from the image's Go when the run uses the image. Copying them into place and the tests on the other boxes stay here.
+##		- 2026-10-25 JC: Half the cores, rounded down, or a quarter on a busy box, worked out again before each stage, and a quarter for go test -race, the native fuzzing, the soak test and CodeQL. The run lowers its own priority, the container gets the count as its quota at a low weight, and the plan says what it got.
+##		- 2026-10-25 JC: --list prints the plan and the test IDs in each step that runs, and runs nothing. --keep-temp keeps the run's temp folder, the files its steps leave there and its containers, and says where they are at the end. The run in the image puts its folder inside this one. The pre-push hook runs --merge-gate.
+##		- 2026-10-25 JC: The run's folder is ${HOST_TEMP}/gitsby/<start time>_<NNN>, with TMPDIR, TEMP and TMP pointed at it, and a run.pid. Run folders over 2 days old whose run is gone are removed, and every recursive removal here goes through fSafeRm. Containers, the image and the cache volume are labeled dev.project and dev.run, and named for the run's folder. The end of a run removes its containers, the project's dangling images and older tags, week-old build cache and a cache volume over 2 GB, and says what that freed.
+##		- 2026-10-25 JC: --quick is what fits in about 10 minutes rather than each step under half a minute. The regression suite, the native fuzz targets and the soak test are back in it. CodeQL stays out unless --leakcheck, and govulncheck and pip-audit, which ask a server, stay out. The image's tag and build moved to image-go.bash, which release.bash uses too.
+##		- 2026-10-25 JC: GOFLAGS carries -buildvcs=false for every go call, so the lint tools pass in the hook's worktree under .git, in the image too.
+##		- 2026-10-26 JC: Each step opens with "[ <time>: Step N of M; Starting <step> ]" and closes with PASS or FAIL, in place of the N/8 headers and the OK line that only repeated the verdict. M counts the steps that run, the plan says why each other one doesn't, and the run in the image numbers its steps in the same count, in this box's time. The rule is 79 wide.
+##		- 2026-10-26 JC: One line at the end of a run says what it removed, its own folder and the stale run folders as well as docker's, and about what that freed.
+##		- 2026-10-26 JC: The native fuzz targets and the Go tests print PASS, FAIL or SKIP, then the test ID and name, and a target that finds a crasher prints FAIL before the run stops.
+##		- 2026-11-06 JC: The end of a run no longer prunes docker's build cache, which every project's builds share. The daemon's builder.gc trims it. The end line leaves out a size under a megabyte, since by then the run folder holds little more than its run.pid.
+##		- 2026-11-06 JC: A run that passed in the image cuts the cache volume's Go module cache to what go.sum names, when no other run's container is up.
+##		- 2026-11-07 JC: Lint runs ruff with the project's ruff.toml too, after the leak rules.
