@@ -33,12 +33,27 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- test.bash hangs on Windows at [df1s7]: Git for Windows' askpass opens a password dialog
+	- ID: 2026110814215941
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261108-142159
+	- Opened by: jim-collier
+	- Related IDs: 2026110810100400
+	- Target OS: Windows
+	- Steps to reproduce [Bug]: Run test.bash on Windows from Git for Windows' login bash, over ssh.
+	- Incorrect behavior [Bug]: [df1s7] never returns. Its git credential fill gets no answer, and git starts git-askpass.exe, which waits for a password in session 0.
+	- Expected behavior [Bug]: The fill fails with no prompt, as on Linux and macOS.
+	- Reproduced [Bug]: 20261108 on vm925w, Git for Windows 2.55.0, with the same checks run outside test.bash. That login shell sets SSH_ASKPASS=/mingw64/bin/git-askpass.exe.
+	- Possible cause [Bug]: test.bash pins GIT_TERMINAL_PROMPT=0 for these checks but never unsets SSH_ASKPASS or GIT_ASKPASS, and git asks an askpass ahead of that check. Unsetting both in test.bash's env pins fixed it there.
+	- Estimated effort: Low
+
 - `account apply` writes no credential helper per account, so plain `git push` over https fails in the folder of an account gh isn't active as
 	- ID: 2026110810100400
 	- Type: Feature
-	- Status: Waiting on automated testing
-		- Waits on the Windows run below. Everything else passed on b23.
-	- Needs external testing: test.bash on a Windows box (stage 7), for [df1s0] to [df1s8] and [df1sa]. Git for Windows runs the helper under its own sh, and reads the token file through a `C:/` path.
+	- Status: Done
+	- Needs external testing: No. The same checks ran on vm925w, below. Stage 7 runs only the Go tests on a Windows box, not test.bash.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261108-101004
 	- Opened by: jim-collier
@@ -65,6 +80,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Verified: with no helper written, [df1s0] to [df1s3] and [df1s5] fail. With gh asked on every host, a helper for every account, and the token file read from any scope, [df1s3], [df1s4], [df1s7] and [df1sa] fail. All pass on the change: test.bash 1884/0, quick gate passed (lint, go test, fuzz 313/0, parity 30/0).
 		- Not watched red: [df1s6], since the order is git's own, and [df1s8], since the helper has no interpolated text to break.
 		- Swept: the other place that writes a helper, `selectAccount`, resets the list for gitsby's own runs, so the two don't stack. [db5wk] still passes.
+		- Verified on vm925w, Git for Windows 2.55.0, with the windows/amd64 build of 08e7452: [df1s0] to [df1s8], [df1sa] and [dd80d], run the same way as in test.bash, all pass, with every token file named by a `C:/` path. So does a `~/` token file under a backslash HOME, which the helper's sh reads as `C:\...\tildehome/tilde.tok`. With the 53fcc0b build, [df1s0] to [df1s3], [df1s5] and that `~/` check fail.
+	- Acceptance signoff: Self-closed: 08e7452 passed on b23 (test.bash 1884/0) and on vm925w (12/0).
+	- Closed: 20261108-142139
 
 - The pre-push gate fails every release merge to main, on a check that wants a vNEXT heading
 	- ID: 2026110811340000
