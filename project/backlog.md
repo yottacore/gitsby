@@ -36,7 +36,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `account apply` writes no credential helper per account, so plain `git push` over https fails in the folder of an account gh isn't active as
 	- ID: 2026110810100400
 	- Type: Feature
-	- Status: Queued
+	- Status: Waiting on automated testing
+		- Waits on the Windows run below. Everything else passed on b23.
+	- Needs external testing: test.bash on a Windows box (stage 7), for [df1s0] to [df1s8] and [df1sa]. Git for Windows runs the helper under its own sh, and reads the token file through a `C:/` path.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261108-101004
 	- Opened by: jim-collier
@@ -50,6 +52,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Doc it in accounts.md and the changelog.
 	- Progress log:
 		- 2026-11-08: Found while merging dev into gover for v3.0.0-beta.1. dev's bash and doc changes were dropped in that merge, since the Go build has none of it yet. Not in any release, so nothing regresses.
+		- 2026-11-08: Ported. `account apply` writes `credential.https://<host>.helper` into each account's fragment, one fixed text per kind of host, built by `fragmentHelper` in accountcmd.go. Doc in accounts.md and the changelog.
+	- Decisions:
+		- No helper for an account with no way to a token on its own host: no `tokenFile`, and no `ghAccount` on GitHub, such as an ssh-only account. Departs from "each account's fragment". A helper that can never answer only adds processes to every https request.
+		- The token file is read from the global config only, with `--includes`, the scope the fragment is included from. Same rule as `configOwnScope`: a repo's own config doesn't get to name a token file. A relative path is no file, as in `readTokenFile`. `gitsby.ghAccount` is read from any scope, as gitsby's own runs read it.
+		- A username git already holds is left alone, and `x` stands in where there is none, as `accountLogin` does. A username that differs from the login isn't refused the way gh's helper refuses one, since `user` and `ghAccount` may differ on purpose.
+		- `gh auth token --user` with no `--hostname`, the same call `probeGhToken` makes, so `GH_HOST` picks an Enterprise host for both.
+		- `gh auth setup-git` run after `apply` clears the helpers ahead of its own, which takes out ours too. Checked with git 2.51. Documented: run `apply` again, which moves the includes back to the end.
+		- Changelog under Added, since no release has had this.
+	- Branch: round-20261108
+	- Test case: [df1s0] to [df1s8] and [df1sa] in test.bash, all through real `git credential fill` with the fake gh active as another account.
+		- Verified: with no helper written, [df1s0] to [df1s3] and [df1s5] fail. With gh asked on every host, a helper for every account, and the token file read from any scope, [df1s3], [df1s4], [df1s7] and [df1sa] fail. All pass on the change: test.bash 1884/0, quick gate passed (lint, go test, fuzz 313/0, parity 30/0).
+		- Not watched red: [df1s6], since the order is git's own, and [df1s8], since the helper has no interpolated text to break.
+		- Swept: the other place that writes a helper, `selectAccount`, resets the list for gitsby's own runs, so the two don't stack. [db5wk] still passes.
 
 - The pre-push gate fails every release merge to main, on a check that wants a vNEXT heading
 	- ID: 2026110811340000

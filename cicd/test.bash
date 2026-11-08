@@ -5060,6 +5060,41 @@ GHEOF
 		bash -c "cd '${acWork}' && env ${acHostEnv} git config credential.https://github.com.username"
 	fAssert "[dd80f] and user wins over ghAccount, as it does for gitsby's own runs" \
 		bash -c "cd '${acHome}' && env ${acHostEnv} git config credential.https://github.com.username | grep -qx bothuser"
+	## gt names no token file, and gh is not asked about another host, so a helper would never answer.
+	fAssertFail "[df1sa] and no credential helper for an account with no token to give" \
+		bash -c "cd '${acWork}' && env ${acHostEnv} git config credential.https://gitea.example.com.helper"
+	## Plain git over https after 'account apply'. gh's own helper only answers for its active
+	## account, so a bare push in another account's folder had nothing to push with. The fake gh is
+	## active as otheracct and holds a token for workacct only.
+	mkdir -p "${ac}/credhome"
+	: > "${ac}/credhome/.gitconfig"
+	git init --quiet "${ac}/trees/work/credproj"
+	git init --quiet "${ac}/trees/away/credproj"
+	printf 'tok_home_file\n' > "${ac}/credhome/home.tok"
+	printf 'tok_gitea_file\n' > "${ac}/credhome/gitea.tok"
+	printf 'tok_repo_local\n' > "${ac}/credhome/repo.tok"
+	printf 'account: cw\n\tpath: %s/trees/work\n\tghaccount: workacct\n\naccount: ch\n\tpath: %s/trees/home\n\tghaccount: homeacct\n\ttokenfile: %s/credhome/home.tok\n\naccount: cg\n\tpath: %s/trees/away\n\thost: gitea.example.com\n\tghaccount: workacct\n\ttokenfile: %s/credhome/gitea.tok\n' \
+		"${acCanon}" "${acCanon}" "${acCanon}" "${acCanon}" "${acCanon}" > "${ac}/cred.shcl"
+	local acCredEnv="${acNoDiscovery} HOME='${ac}/credhome' GIT_CONFIG_GLOBAL='${ac}/credhome/.gitconfig' PATH='${ac}/bin:${PATH}' GIT_TERMINAL_PROMPT=0 FAKE_GH_LOG='${ac}/credhome/gh.log'"
+	local acFillGh="printf 'protocol=https\nhost=github.com\n\n' | env ${acCredEnv} git credential fill"
+	local acFillGt="printf 'protocol=https\nhost=gitea.example.com\n\n' | env ${acCredEnv} git credential fill"
+	fAssertOut "[df1s0] after apply, plain git gets the folder account's token from gh"  '^password=gho_faketoken$' \
+		bash -c "cd '${acWork}' && env ${acCredEnv} '${gitsby}' -q -NoFetch --config '${ac}/cred.shcl' account apply >/dev/null && ${acFillGh}"
+	fAssertOut "[df1s1] as that account"  '^username=workacct$'  bash -c "cd '${acWork}' && ${acFillGh}"
+	fAssertOut "[df1s2] and from its token file where gh holds none for it"  '^password=tok_home_file$'  bash -c "cd '${acHome}' && ${acFillGh}"
+	: > "${ac}/credhome/gh.log"
+	fAssertOut "[df1s3] on another host, the token file"  '^password=tok_gitea_file$'  bash -c "cd '${ac}/trees/away/credproj' && ${acFillGt}"
+	fAssertFail "[df1s4] and gh is not asked, though it holds that account's ghAccount"  grep -q 'auth token' "${ac}/credhome/gh.log"
+	fAssertOut "[df1s5] with a stand-in username where the account names none"  '^username=x$'  bash -c "cd '${ac}/trees/away/credproj' && ${acFillGt}"
+	## A credential manager the global config already lists answers ahead of ours.
+	{ printf '[credential]\n\thelper = "!f(){ echo password=mgrtok; }; f"\n'; cat "${ac}/credhome/.gitconfig"; } > "${ac}/credhome/mgr.gitconfig"
+	fAssertOut "[df1s6] a credential manager set up before it is still asked first"  '^password=mgrtok$' \
+		bash -c "cd '${acWork}' && printf 'protocol=https\nhost=github.com\n\n' | env ${acCredEnv} GIT_CONFIG_GLOBAL='${ac}/credhome/mgr.gitconfig' git credential fill"
+	## The helper reads the login and the token file out of git config, so a repo's own config is
+	## input: its token file is not read, and its login stays text.
+	( cd "${ac}/trees/work/credproj" && git config --local gitsby.ghAccount "\$(touch '${ac}/credhome/CANARY')" && git config --local gitsby.ghTokenFile "${acCanon}/credhome/repo.tok" )
+	fAssertNotOut "[df1s7] a repo's own token file is not read"  'tok_repo_local'  bash -c "cd '${ac}/trees/work/credproj' && ${acFillGh}"
+	fAssertFail "[df1s8] and a login holding shell text runs nothing"  test -e "${ac}/credhome/CANARY"
 	## A rule for the root covers every folder. It looked for the rule plus a slash, '//', and
 	## covered none, and the includeIf git got had the same extra slash.
 	mkdir -p "${ac}/roothome"
@@ -8484,3 +8519,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261107 JC: run-latest.ps1 runs once with no build and once under th-TH, [df06h] and [df06j]. 1862 -> 1864.
 ##		- 20261107 JC: br merge pushes the merge and deletes origin's copy in 1 atomic push, [df06m], [df06n] and [df06p]. 1864 -> 1867.
 ##		- 20261107 JC: A Format 3 file from before the move to v3.0.0-beta1 has its escapes re-spelled, [df08w], [df08x] and [df08y]. 1867 -> 1870.
+##		- 20261108 JC: account apply gives each account a credential helper for plain git over https, [df1s0] to [df1s8] and [df1sa]. 1874 -> 1884.

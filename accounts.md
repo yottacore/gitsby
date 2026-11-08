@@ -146,6 +146,8 @@ With no rule covering the destination, gh stays on its own account. The owner of
 
 `gitsby account apply` writes the same folder rules into your global git config, as ordinary `includeIf` blocks pointing at one small file per account. Each file is named for the host and the login, such as `accounts/gitea.com_ada.gitconfig`, so one login on two hosts gets two files. A file left from an account since renamed is named in the output, not deleted. After that a bare `git commit` or `git push` in one of those folders uses the right identity and the right key, with Gitsby nowhere in the picture.
 
+Over https, each account's file also gets a credential helper. gh's own helper only answers for its active account, so this one asks gh for the folder's account by name, then tries its `tokenFile`. On a host gh doesn't serve it tries only the `tokenFile`. An account with neither gets no helper. No token is written to disk, and any credential manager already set up still gets asked first. `gh auth setup-git` clears the helpers listed ahead of its own, so run `gitsby account apply` again after it.
+
 It is safe to re-run: it replaces only the entries it wrote before, leaves any you wrote by hand alone, and drops rules for accounts you have since removed.
 
 ## Scripts
