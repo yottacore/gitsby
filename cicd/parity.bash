@@ -114,9 +114,11 @@ fBad(){  fail=$((fail+1)); fTestLine FAIL "$*"; }
 newBuild="${root}/src-go/gitsby"; [[ -x "${newBuild}" ]] || newBuild="${newBuild}.exe"
 refBuild="${root}/legacy/bin/gitsby"
 
+## A missing build is a step that compared nothing, unlike a missing frozen one, which is the end
+## state the header names.
 if [[ ! -x "${newBuild}" ]]; then
-	fEcho_Clean "parity: no build at src-go/gitsby - nothing to compare, skipping."
-	exit 0
+	fEcho_Clean "parity: no build at src-go/gitsby - run 'go build' there, or cicd.bash's test step" >&2
+	exit 1
 fi
 if [[ ! -f "${refBuild}" ]]; then
 	fEcho_Clean "parity: no frozen build at legacy/bin/gitsby - nothing to compare against, skipping."
@@ -416,3 +418,4 @@ fEcho_Clean "parity passed: ${pass}, differed: ${fail}"
 ##		- 20261106 JC: Its scratch folder goes through fSafeRm, made where the guard takes it.
 ##		- 20261107 JC: The shellcheck disable says why.
 ##		- 20261107 JC: The frozen build reads first in fSameLead, and the flat fixtures are written again per check, since this build converts a flat accounts file on its first read.
+##		- 20261109 JC: No build at src-go/gitsby fails, as in fuzz.bash, rather than skipping.

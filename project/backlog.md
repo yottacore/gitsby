@@ -80,7 +80,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 item 3: Two pipeline steps can pass having checked nothing
 	- ID: 2026110912215203
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -92,6 +92,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: parity's skip from 1928f35, 2026-08-18. The fuzz list from c943c5a, 2026-08-21. No earlier round saw them. Confirmed for the fuzz list, Plausible for the `--no-test` run end to end.
 	- Sweep: every cicd.bash step that takes its input from a list or a build that may be missing.
 	- Estimated effort: Low
+	- Actual cause [Bug]: Only the test step and the quick run built, so a full run with `--no-test` left fuzz.bash, the spawn counts and parity on whatever build was on disk. parity.bash passed with no build at all. The native fuzz loop threw away `go test -list`'s exit code and errors, so a failed or empty list ran no target and printed OK.
+	- Actual fix [Bug]: The fuzz and parity steps build first when no earlier step in the run did, and a run with all three builds once. parity.bash fails with no build, as fuzz.bash and spawn-count.bash already did. The native fuzzing fails, with what go said, when `go test -list` fails, and fails when it lists no target. The plan's "Go build" line shows whenever a step that runs the build is on.
+	- Decisions:
+		- No build fails parity rather than printing SKIP. A missing build means the run went wrong, and the other two suites already fail on it. A missing frozen build still skips, since the header names that as the end state.
+		- An empty fuzz list fails rather than skips. The module has 9 targets, and `[dd5ft]` already wants at least 5.
+		- The quick run's `gateBuilt` became the same `nativeBuilt` flag, set by `fNativeBuild`.
+	- Swept: every cicd.bash step that reads a list or a build. test.bash, fuzz.bash and spawn-count.bash exit 1 with no build. Lint dies on an empty shell file list, and `[dd5f4]` and `[dd5f6]` pin the markdown and PowerShell globs to the tracked files. CodeQL dies on an empty file list. Dogfood, the demo and the remote tests make their own builds. The leak checks alone, under `--no-fuzz`, need no build.
+	- Verified: `--backlog-run-quick`, every area, test.bash 1895/0, fuzz 313/0, parity 30/0. Against the old cicd.bash and parity.bash, `[df340]`, `[df341]`, `[df343]`, `[df344]` and `[df345]` fail and pass after. `[df342]` passes both ways, since it guards against a second build.
+	- Verified: a real `--quick --no-test` run with only the fuzz step built first, then fuzzed all 9 targets.
+	- Test case: test.bash `[df340]` `[df341]` (the fuzz and parity steps build under `--no-test`), `[df342]` (one build for all three), `[df343]` `[df344]` (a failed or empty fuzz list fails), `[df345]` (parity.bash with no build fails).
+	- Branch: round-20261109
+	- Acceptance signoff: Self-closed. Its new checks fail before the fix and pass after, and the sweep is answered.
+	- Closed: 20261109-125809
 
 - Code Review 20261109 item 4: The test harnesses run a command hidden in an inherited GIT_CONFIG_COUNT
 	- ID: 2026110912215204

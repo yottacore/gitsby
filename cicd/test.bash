@@ -394,8 +394,9 @@ fMakeGateFixture(){
 	## passing build leaves its -o file behind, so the demo stage has a build to remove. The soak
 	## test passes only when it was handed its rounds, and leaves its summary where it was told;
 	## 'soak' fails it, and 'soak-skip' skips it. 'hang' holds go vet for a few seconds, so a
-	## check can stop the run partway.
+	## check can stop the run partway. 'test -list' names one fuzz target.
 	fGateStub "${gateDir}/bin/go" "go-\${1:-}" "[[ \"\${1:-}\" != version ]] || exit 0
+		[[ \"\${1:-} \${2:-}\" != 'test -list' ]] || echo FuzzA
 		[[ \"\${1:-}\" != vet || ! -e '${gateFail}/hang' ]] || { : > '${gateFail}/hung'; sleep 5; }
 		if [[ ! -e \"${gateFail}/go-\${1:-}\" ]]; then o=''; for a in \"\$@\"; do [[ \"\${o}\" != 1 ]] || : > \"\${a}\"; o=''; [[ \"\${a}\" != -o ]] || o=1; done; fi
 		if [[ -n \"\${GITSBY_SOAK_ROUNDS:-}\" ]]; then
@@ -6950,7 +6951,8 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 			case "\${1:-} \${2:-}" in
 				"version -m") for s in ${gatePipeTools}; do [[ "\${s%%=*}" != "\$(basename "\${3:-}")" ]] || printf 'mod\tx\t%s\th1:x\n' "\${s#*=}"; done; exit 0 ;;
 				"env GOPATH") echo '${gateDir}/gopath'; exit 0 ;;
-				"test -list") echo FuzzA; exit 0 ;;
+				"test -list") [[ ! -e '${gateFail}/go-testlist' ]] || { echo 'a_test.go:3:1: syntax error' >&2; exit 1; }
+					[[ -e '${gateFail}/go-testlist-none' ]] || echo FuzzA; printf 'ok  \tgitsby\t0.01s\n'; exit 0 ;;
 				"test -race") if [[ -e '${gateFail}/go-test' ]]; then printf -- '--- FAIL: TestA (0.00s)\n    a_test.go:4: boom\n'
 					else printf -- '=== RUN   TestA\n--- PASS: TestA (0.00s)\n    --- PASS: TestA/sub (0.00s)\n--- PASS: TestC (0.00s)\n'; fi ;;
 			esac
@@ -6997,6 +6999,33 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dd5fp] stage 3 runs the fuzz harness, fuzzes each target the module lists, and counts spawns" \
 			fGateRanCalling 0 '^fuzz\.bash' '^go test -run \^\$ -fuzz \^FuzzA\$ -fuzztime 5s -parallel [0-9]+ \.$' '^spawn-count\.bash'
 		fAssert "[dd6g0] and prints each target on a line of its own, with its test ID"  fGateRanSaying 0 '^  PASS aaaaa FuzzA$'
+		## With no test step, fuzz.bash and the spawn counts ran whatever build was on disk.
+		fAssert "[df340] and builds first when the test step is off" \
+			awk '/^go build /{b=NR} /^fuzz\.bash/{f=NR} /^spawn-count\.bash/{c=NR} END{exit !(b && f > b && c > b)}' "${gateCalls}"
+		fGateOnly parity
+		fAssert "[df341] the parity step builds first when the test step is off" \
+			bash -c "[[ '${gateRc}' == 0 ]] && awk '/^go build /{b=NR} /^parity\\.bash/{p=NR} END{exit !(b && p > b)}' '${gateCalls}'"
+		fGateOnly "test fuzz parity" --no-leakcheck
+		fAssert "[df342] and a run with all three steps builds once" \
+			bash -c "[[ '${gateRc}' == 0 && \"\$(grep -c '^go build ' '${gateCalls}')\" == 1 ]]"
+		## Its failure and an empty list both went to a loop of no passes, which printed OK.
+		: > "${gateFail}/go-testlist"
+		fGateOnly fuzz --no-leakcheck
+		rm -f -- "${gateFail:?}/go-testlist"
+		fAssert "[df343] the native fuzzing fails when go test -list fails, with what go said" \
+			bash -c "[[ '${gateRc}' == 1 ]] && grep -qF 'go test -list failed' '${gateOut}' && grep -qF 'a_test.go:3:1: syntax error' '${gateOut}' && ! grep -qF 'OK: native fuzz targets' '${gateOut}'"
+		: > "${gateFail}/go-testlist-none"
+		fGateOnly fuzz --no-leakcheck
+		rm -f -- "${gateFail:?}/go-testlist-none"
+		fAssert "[df344] and when it lists no target"  fGateRanSaying 1 'go test -list found no fuzz targets'
+		## With no build to run, parity.bash said it was skipping, and passed.
+		local parNo="${work}/parity-nobuild"
+		mkdir -p "${parNo}/cicd/utility/include" "${parNo}/legacy/bin" "${parNo}/src-go"
+		cp "${root}/cicd/parity.bash" "${root}/cicd/config.bash" "${parNo}/cicd/"
+		cp "${root}/cicd/utility/include/safe-rm.bash" "${parNo}/cicd/utility/include/"
+		: > "${parNo}/legacy/bin/gitsby"
+		fAssert "[df345] parity.bash fails when there is no build to compare" \
+			bash -c "out=\$('${parNo}/cicd/parity.bash' 2>&1); [[ \$? == 1 ]] && grep -qF 'parity: no build at src-go/gitsby' <<< \"\${out}\""
 		: > "${gateFail}/go-fuzz"
 		fGateOnly fuzz
 		rm -f -- "${gateFail:?}/go-fuzz"

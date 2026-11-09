@@ -652,12 +652,15 @@ fGoVersion(){ git describe --tags --always --dirty --match 'v*' 2>/dev/null || e
 ## source builds to the same bytes; a wall-clock stamp would mean nobody, including us,
 ## could ever rebuild a published asset to its published checksum.
 fGoBuildEpoch(){ git log -1 --format=%ct 2>/dev/null || echo 0 ;}
-## The native build, which the suites run against.
+## The native build, which the suites run against. They take whatever sits at that path, so
+## each step that runs one builds first, unless an earlier step in this run already did.
+nativeBuilt=0
 fNativeBuild(){
 	(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOAMD64=v1 \
 		go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${goVersion#v} -X main.buildEpoch=${goBuildEpoch}" -o "${EXE_NAME}" .) \
 		|| fDie "go build failed"
 	fEcho "OK: go build (v${goVersion#v})"
+	nativeBuilt=1
 }
 ## --leakcheck: the checks too slow for every run. The soak test loops the everyday commands
 ## in one process and compares the heap and goroutine count at round N and 2N. Not under
@@ -902,11 +905,10 @@ if ((gate)); then
 		exit 0
 	fi
 	[[ -z "${containerNote}" ]] || fEcho "${containerNote}"
-	gateBuilt=0
 	for a in "${stepList[@]}"; do
 		fStep "${a}"
-		if [[ "${a}" == suite || "${a}" == fuzz || "${a}" == parity ]] && ((! gateBuilt)); then
-			goVersion="$(fGoVersion)"; goBuildEpoch="$(fGoBuildEpoch)"; fNativeBuild; gateBuilt=1
+		if [[ "${a}" == suite || "${a}" == fuzz || "${a}" == parity ]] && ((! nativeBuilt)); then
+			goVersion="$(fGoVersion)"; goBuildEpoch="$(fGoBuildEpoch)"; fNativeBuild
 		fi
 		case "${a}" in
 			lint)   fStageLint ;;
@@ -1008,8 +1010,8 @@ elif ((doTest)); then
 else
 	fEcho_Clean "Tests ...............: $(fOffWhy test)"
 fi
-if ((doTest)); then
-	fEcho_Clean "Go build ............: ${GO_MODULE_DIR} -> ${GO_MODULE_DIR}/${EXE_NAME} (the suite's subject)"
+if ((doTest || doFuzz || doParity)); then
+	fEcho_Clean "Go build ............: ${GO_MODULE_DIR} -> ${GO_MODULE_DIR}/${EXE_NAME} (the suites' subject)"
 fi
 if ((doFuzz && quick)) && [[ -f "${FUZZ_CMD[0]:-}" ]]; then
 	fEcho_Clean "Fuzz + security .....: ${FUZZ_CMD[*]}, native fuzzing and spawn counts; govulncheck and pip-audit ${skipNote}"
@@ -1190,6 +1192,8 @@ fi
 ## The leak checks come last, and --leakcheck runs them under --no-fuzz too. Same lands-later
 ## policy as the tests.
 if ((doFuzz || leakcheck)); then fStep fuzz; fi
+## fuzz.bash and the spawn counts run the build, which --no-test left unmade.
+((! doFuzz || nativeBuilt)) || fNativeBuild
 if ((doFuzz)) && [[ -f "${FUZZ_CMD[0]:-}" ]]; then
 	"${FUZZ_CMD[@]}"
 elif ((doFuzz)); then
@@ -1198,8 +1202,13 @@ fi
 ## Coverage-guided fuzzing of the pure parsers, briefly. Their seed corpus already ran
 ## with 'go test' in stage 2; this hunts a little past it each run. One target per
 ## invocation is go's rule, and a crasher lands in src-go/testdata/fuzz/ as evidence.
+## A list that failed or came back empty would fuzz nothing and still pass.
 if ((doFuzz)); then
-	for fuzzTarget in $(cd "${root}/${GO_MODULE_DIR}" && go test -list 'Fuzz.*' . 2>/dev/null | grep '^Fuzz' || true); do
+	fuzzList="$(cd "${root}/${GO_MODULE_DIR}" && go test -list 'Fuzz.*' . 2>&1)" \
+		|| { fEcho_Clean "$(tail -n 40 <<< "${fuzzList}")"; fDie "go test -list failed, so no fuzz target could run"; }
+	mapfile -t fuzzTargets < <(grep '^Fuzz' <<< "${fuzzList}" || true)
+	((${#fuzzTargets[@]})) || fDie "go test -list found no fuzz targets in ${GO_MODULE_DIR}"
+	for fuzzTarget in "${fuzzTargets[@]}"; do
 		## The test ID sits at the end of the func line, as '// [<id>]'.
 		fuzzId="$(sed -n "s|^func ${fuzzTarget}(.*// \[\([0-9A-Za-z]*\)\][[:space:]]*\$|\1 |p" "${root}/${GO_MODULE_DIR}"/*_test.go 2>/dev/null || true)"
 		## Kept so a failure shows what go said: a crasher's input, or a worker that died under load.
@@ -1267,6 +1276,7 @@ fStepEnd
 ## asks the other question: do they ANSWER the same? Self-skips once legacy/ is gone.
 if ((doParity)); then
 	fStep parity
+	((nativeBuilt)) || fNativeBuild
 	if [[ -f "${PARITY_CMD[0]:-}" ]]; then
 		"${PARITY_CMD[@]}"
 	else
@@ -1513,3 +1523,4 @@ fEcho_Clean
 ##		- 2026-11-07 JC: Lint runs ruff with the project's ruff.toml too, after the leak rules.
 ##		- 2026-11-09 JC: A memory cap with no swap, CICD_MEM_CAP, on every container a run starts, first in line for the OOM killer, and on the run itself in a user scope.
 ##		- 2026-11-09 JC: The run log's tee ignores INT and TERM, so Ctrl+C still runs the exit trap's cleanup.
+##		- 2026-11-09 JC: Under --no-test the fuzz and parity steps build first, rather than run whatever build was on disk. The native fuzzing fails when go test -list fails or lists no target.
