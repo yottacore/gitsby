@@ -33,6 +33,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- Native fuzz step fails on a fuzz deadline, not a crasher
+	- ID: 2026110915475544
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261109-154755
+	- Opened by:
+	- Incorrect behavior [Bug]: The native fuzz step stopped with `--- FAIL: FuzzParseTeaTable (5.42s) context deadline exceeded` and printed `fuzzing found a crasher`, with no reproducer under src-go/testdata/fuzz/. Load was about 14 on b23, in the image, during a --backlog-run-full on round-20261109 at 4e70dce.
+	- Expected behavior [Bug]: A fuzz run that ends on its own deadline with no reproducer passes, or retries once. Only a saved reproducer counts as a crasher.
+	- Estimated effort: Low
+	- Origin: Seen 2026-11-09 in the gate step's security run. 3 reruns alone with the same flags (-fuzztime 5s, 8 workers) passed. The round didn't change parseTeaTable.
+
 - spawn-count.bash names its records in local time, and the run in the image in UTC
 	- ID: 2026110914575286
 	- Type: Bug
