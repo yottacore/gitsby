@@ -613,7 +613,7 @@ These 4 output rules came back after 2 sweeps, each time at sites the sweep's gr
 
 ### Release policy
 
-A version whose tag carries a semver suffix - `v3.0.0-beta.1` - is published as a pre-release. A plain `vX.Y.Z` is published as a full release. The tag decides it, with no flag to pass and nothing to remember, because the tag is already the only place a version is written.
+A version whose tag has a semver suffix - `v3.0.0-beta.1` - is published as a pre-release. A plain `vX.Y.Z` is published as a full release. The tag decides it, with no flag to pass and nothing to remember, because the tag is already the only place a version is written.
 
 GitHub's `releases/latest` returns the newest release not flagged as a pre-release. A candidate sits beside the full release without displacing it.
 

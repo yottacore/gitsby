@@ -372,7 +372,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 item 10: Output text and comments use words the writing rules ban
 	- ID: 2026110912215210
 	- Type: Bug
-	- Status: Started
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -397,15 +397,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- design.md:616 says "carries a semver suffix". Docs are outside this item.
 	- Actual fix [Bug]: the output lines above, about 75 Go comments, and about 80 script comments, in cicd/, the installers, and ruff.toml.
 	- Branch: round-20261109
-	- Test case: [ddf81] `The hotfix is in 'main'`, [dafqx] the Oxford comma, and [dd5es] `has a semver suffix`. The rest is comments.
+	- Test case: its children's: 2026110914395015: none. Comments and check labels only; no check pattern changed, so the suites staying green is the test.
 		- 20261109: [ddf81] `The hotfix landed on 'main'` -> `The hotfix is in 'main'`, [dafqx] `no main, master or trunk` -> `no main, master, or trunk`, [dd5es] `carries a semver suffix` -> `has a semver suffix`.
 	- Verified: gofmt, go vet and go test passed. The quick gate passed: test.bash 1916/0, fuzz 314/0, parity 30/0.
-	- Swept: Go comments, cicd/, install.bash, install.ps1 and ruff.toml for land, carry, ship, surface, honest, holds, just and owner. test.bash is left to the child.
+	- Swept: Go comments, cicd/, install.bash, install.ps1 and ruff.toml for each word on the list. test.bash was swept in child 2026110914395015, which is done.
+	- Closed: 20261109-144810
 
 - Code Review 20261109 item 10, part 2: test.bash comments and check labels
 	- ID: 2026110914395015
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-143950
 	- Opened by: jim-collier
@@ -417,6 +418,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- `br land` and the branch names `landed` and `offland` stay. So does what a check greps for in gitsby's output.
 	- Estimated effort: Avg
 	- Origin: same as the parent. Split off 2026-11-09, since test.bash is half the hits.
+	- Actual fix [Bug]: 135 comments and check labels in test.bash reworded, each to has, goes to, merges into, ends up, released code, not only, or showed up, with filler and recency uses of the word dropped. design.md:616 says has a semver suffix.
+	- Decisions: Kept the verb for moving uncommitted work to another branch, since it is gitsby's own term in help and in the Go the parent left, and the idioms for continuing and performing. Kept holds for a lock, the base verb hold, surface as a noun, and owner in owner/name. Kept br land, the land command named in comments, and the branch names landed and offland. Kept 4 comments from 2026-07-22 (lines 1591, 1801, 1811, 1932) as possibly written by hand, and the History footer.
+	- Branch: round-20261109
+	- Test case: none. Comments and check labels only; no check pattern changed, so the suites staying green is the test.
+	- Verified: the quick gate with every area passed: test.bash 1916/0, fuzz 314/0, parity 30/0. mdcheck on design.md clean.
+	- Swept: test.bash for each word on the parent's list, after the parent swept the other scripts, Go and ruff.toml.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261109-144810
 
 - Code Review 20261109 item 11: config.bash's sourced-only guard prints its error to stdout with `echo -e`
 	- ID: 2026110912215211
