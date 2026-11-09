@@ -22,7 +22,7 @@
 ##	  per-project settings live in config.bash.
 ##	- Stages (fail-fast, any error aborts before the next stage):
 ##	   0. remote sync (fast-forward from origin before anything is built or tested)
-##	   1. lint (gofmt + go vet + staticcheck + golangci-lint, shellcheck over the pipeline's own scripts, and ruff's leak rules over the demo script)
+##	   1. lint (gofmt + go vet + staticcheck + golangci-lint, shellcheck over the pipeline's own scripts, and ruff over the Python files: its leak rules, then ruff.toml's)
 ##	   2. build + unit tests (go test -race, failing on a goroutine left running) + regression tests (cicd/test.bash against the compiled binary)
 ##	   3. fuzz + security (cicd/fuzz.bash) + native fuzz targets + govulncheck + pip-audit + spawn counts + leak checks (a soak test and CodeQL); --quick skips both audits and CodeQL
 ##	   4. backwards compatibility (cicd/parity.bash: this build vs the frozen v2.1.0 one)

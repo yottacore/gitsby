@@ -165,7 +165,7 @@ fMemCap(){
 ## then every first-party shell file (globs, expanded by the engine). shellcheck is
 ## gating; there is deliberately NO bash formatter stage - the pipeline's own scripts are
 ## hand-formatted on purpose. Markdown is probe-gated (markdownlint if installed); the Python
-## files get a compile check and ruff's leak rules. legacy/ is deliberately absent from every glob: it is frozen,
+## files get a compile check, ruff's leak rules, then ruff.toml's rules. legacy/ is deliberately absent from every glob: it is frozen,
 ## so a newer shellcheck finding there is noise nobody is allowed to fix.
 SHELL_LINT_GLOBS=(
 	"install.bash"
@@ -188,8 +188,9 @@ PY_LINT_FILES=(
 	"cicd/utility/demo/gen-demo-gif.py"
 	"cicd/utility/codeql-findings.py"
 )
-## ruff over the same files, these rules only: lru_cache on a method (B019), open() with no
-## 'with' (SIM115), and a mutable default argument (B006). Probe-gated.
+## ruff over the same files, first these rules in isolation: lru_cache on a method (B019), open()
+## with no 'with' (SIM115), and a mutable default argument (B006). Then ruff.toml's own rules.
+## Probe-gated.
 PY_LINT_RULES=(B019 SIM115 B006)
 ## Stage 3: pip-audit over the third-party libraries those files import, as installed. Skipped
 ## by --quick and --no-fuzz, like govulncheck. The leak checks' CodeQL reads their installed source too.
@@ -225,12 +226,11 @@ WINRES_CMD=(cicd/utility/gen-winres.bash)
 BACKLOG_CHECK_CMD=(cicd/utility/backlog-check.bash)
 
 ## Stage 2: build + regression tests. The suite runs against the compiled binary and gates.
-## Skipped by --quick, which keeps only the build and go test here.
 TEST_CMD=(cicd/test.bash)
 
 ## Stage 3: fuzz + security (adversarial input against gitsby's own command/option/
-## arg surface, with an injection canary). Runs under --quick too; the native fuzz
-## targets and govulncheck don't.
+## arg surface, with an injection canary). Runs under --quick too, and so do the native
+## fuzz targets; govulncheck doesn't.
 FUZZ_CMD=(cicd/fuzz.bash)
 
 ## Stage 4: backwards compatibility. Same input to the Go build and to the frozen v2.1.0

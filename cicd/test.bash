@@ -6795,7 +6795,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fMakeGateFixture
 		fAssert "[dcmak] the gate passes a clean tree without asking anything"  fGateStatus 0 --no-container --gate
 		## Only the leak-shaped rules, and go test never from its cache.
-		fAssert "[de54d] and runs ruff's leak rules over the demo script" \
+		fAssert "[de54d] and runs ruff's leak rules over the Python files" \
 			fGateCalled '^ruff check --isolated --no-cache --quiet --select B019,SIM115,B006 cicd/utility/demo/gen-demo-gif\.py cicd/utility/codeql-findings\.py$'
 		fAssert "[df06k] and then ruff under the project's ruff.toml" \
 			fGateCalled '^ruff check --no-cache --quiet cicd/utility/demo/gen-demo-gif\.py cicd/utility/codeql-findings\.py$'

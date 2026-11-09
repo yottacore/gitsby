@@ -537,7 +537,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 enhancement 3: Some comments no longer match the code
 	- ID: 2026110912215214
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -547,6 +547,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- prune.go:43-45 names a per-branch re-check at delete time. `cmdPrune` replaced it with a `for-each-ref --merged` survey in c943c5a, 2026-08-21.
 	- Origin: config.bash from 81def43, 60ee294 and 5d65fcf (2026-10-19), stale since 2026-10-25 and 2026-11-07. prune.go from c5ac62c (2026-08-18), which the 20261003 round read and passed. Confirmed by reading.
 	- Estimated effort: Low
+	- Actual effort: Low
+	- Decisions:
+		- The [de54d] label in test.bash said the demo script too, so it now says the Python files. Its ID and what it checks are unchanged.
+		- Swept: config.bash, cicd.bash, test.bash, src-go, README.md and project/*.md for "leak rules", "Skipped by --quick", "these rules only" and the per-branch re-check.
+	- Branch: round-20261109
+	- Test case: none, comments and one test label only.
+	- Closed: 20261109-152208
 
 - Code Review 20261109 enhancement 4: fuzz.bash's config vectors are in the v2.1.0 flat layout, which the build converts on first read
 	- ID: 2026110912215215

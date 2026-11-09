@@ -40,9 +40,8 @@ func (a *app) resolvePrune() error {
 	current := a.currentBranch()
 	// Ask once per target ref, not once per branch: 'for-each-ref --merged' answers
 	// "which branches are contained in this ref" for all of them in a single call.
-	// The delete-time per-branch re-check stays with the deleting half, deliberately:
-	// the confirmation prompt can sit a while, and that one is the safety net rather
-	// than the survey.
+	// cmdPrune surveys again the same way at delete time, since the confirmation
+	// prompt can sit a while; that one is the safety net, this one the plan.
 	mergedLocal := map[string]bool{}
 	for _, ref := range a.prune.targetRefs {
 		for _, branch := range runLines("git", "for-each-ref", "--format=%(refname:lstrip=2)", "--merged", ref, "refs/heads/") {
