@@ -1,8 +1,5 @@
-// The account commands: 'list' shows what is configured and which rule this
-// folder matches - the command you run when a push went out as the wrong person
-// and you want to know why - and 'apply' teaches plain git the same folder
-// rules, so a bare 'git push' in one of these folders behaves the same as it
-// does through us.
+// The account commands: 'list' shows what is configured and which rule this folder
+// matches, and 'apply' gives plain git the same folder rules.
 
 // Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 // Licensed under The MIT License (MIT). Full text at:
@@ -76,12 +73,8 @@ func rulesOf(rules []acctRule, name string) []acctRule {
 	return out
 }
 
-// includeDir: where the per-account git config fragments live - beside the config
-// file that describes them, so the two travel together and 'account apply' has an
-// unambiguous set of files it owns. A cut at the last '/' found none in a Windows
-// path typed with backslashes, or in a bare file name, and put the folder under
-// the file. Absolute, since git reads a relative include from its own config's
-// folder.
+// includeDir: where the per-account fragments live, beside the config file. Absolute,
+// since git reads a relative include from its own config's folder.
 func (c *config) includeDir() string {
 	if c.file == "" {
 		return ""
@@ -94,11 +87,8 @@ func (c *config) includeDir() string {
 	return strings.TrimSuffix(filepath.ToSlash(dir), "/") + "/accounts"
 }
 
-// fragmentNames maps each account to its fragment's file name: the host, then the
-// login it goes out as. One login on two hosts then gets two files, and a look in
-// the folder says which is which. An account with no login uses its own name in
-// that slot. Two accounts sharing a host and a login each add their own name too,
-// since the accounts file can hold both.
+// fragmentNames maps each account to its fragment's file name: host, then login, or the
+// account's own name with no login. 2 accounts sharing both add their names.
 func (c *config) fragmentNames() map[string]string {
 	names := c.accountNames()
 	base := make(map[string]string, len(names))
@@ -150,11 +140,8 @@ type includeCandidate struct {
 	account string
 }
 
-// sortIncludes orders candidates the way the two matchers have to agree: git takes
-// the LAST rule that matches and gitsby the most specific, so least specific comes
-// first. Equal specificity is the case that used to disagree - gitsby keeps the
-// FIRST rule declared, so that one has to be written LAST for git to keep it too,
-// which is why the order runs backwards here.
+// sortIncludes puts least specific first: git takes the last rule that matches, gitsby
+// the most specific. On a tie gitsby keeps the first declared, so it goes last.
 func sortIncludes(list []includeCandidate) {
 	slices.SortFunc(list, func(x, y includeCandidate) int {
 		return cmp.Or(
@@ -164,13 +151,8 @@ func sortIncludes(list []includeCandidate) {
 	})
 }
 
-// accountApplyPlan: the includeIf conditions 'account apply' would write.
-// gitdir/i, not gitdir: a path compares case-insensitively on Windows and macOS,
-// and a rule that silently misses because of a capital letter is worse than no
-// rule. 'pathContains' maps onto git's own gitdir globbing, so plain git gets the
-// same rule rather than an approximation of it. Fewest folder names
-// first, and all of them ahead of the absolute rules; within the absolute rules,
-// shortest path first, so a tree nested inside another account's tree comes last.
+// accountApplyPlan: the includeIf conditions 'account apply' would write. gitdir/i,
+// since a path ignores case on Windows and macOS.
 func (c *config) accountApplyPlan() []includeRule {
 	dir := c.includeDir()
 	if dir == "" {
@@ -234,11 +216,8 @@ func (c *config) accountManagedIncludes() []string {
 	}
 	canonDir := canonPath(dir)
 	var keys []string
-	// --null, not the plain form: that one separates the key from the value with a
-	// space, and the key has a folder path which can contain one. Every such rule
-	// came back truncated, so it was never recognized as ours - which made each
-	// re-run append a duplicate, and left a rule dropped from the config file
-	// applying forever. -z ends each record with a NUL and the key with a newline.
+	// --null, since the key holds a folder path that can have a space, where the plain
+	// form splits key from value.
 	for _, record := range strings.Split(runOut("git", "config", "--global", "--get-regexp", "--null", `^includeIf\..*\.path$`), "\x00") {
 		key, value, found := strings.Cut(record, "\n")
 		if !found {
@@ -277,11 +256,8 @@ func (a *app) cmdAccountList() {
 	a.out.clean("Config file ..: " + configDisp)
 	a.out.clean(dirLabel + nativePath(a.contextDir()))
 	hereAccount := a.cfg.accountForDir(a.contextDir())
-	// An account that resolved and simply names no login is not the same as no
-	// account at all - reported as "nothing configured" it contradicted the source
-	// printed in the same sentence. Named as "(no login named)" it said nothing
-	// anybody could act on either: the account is what the reader has to go and
-	// edit, so name that instead.
+	// An account with no login is still an account. Name it, since it's what the reader
+	// has to edit.
 	resolvedLine := a.accountWho(a.accountHost())
 	switch {
 	case resolvedLine != "":
@@ -370,13 +346,8 @@ func (a *app) showAccount(name string, isHere bool) {
 		marker = "->"
 	}
 	a.out.clean(marker + " " + name)
-	// The host leads, because it decides whether anything under it applies at all.
-	// Leaving the deciding field off the listing made 'account list' - the command
-	// that always says - silent about the one key that had refused an account.
-	// Shown only once some account names a git host, and then for every account,
-	// including the ones that never said: it is the comparison that answers "why did
-	// this one apply and that one not", and it is meaningless where every account is
-	// on the same host. A config with one git host in it reads exactly as it always did.
+	// The host leads, since it decides whether the rest applies. Shown for every account
+	// once any names a git host, so the list says why one applied and another didn't.
 	if host := a.cfg.value(name, "host"); host != "" {
 		a.out.clean("     host ....: " + host)
 	} else if a.cfg.anyHostStated() {
@@ -420,11 +391,8 @@ func (a *app) showAccount(name string, isHere bool) {
 	// Each rule as the file writes it. The canonical form is lower case on Windows
 	// with every link resolved, so printing that named a folder nobody had typed.
 	for _, r := range rulesOf(a.cfg.paths, name) {
-		// A rule pointing at nothing matches nothing, and reads exactly like no rule
-		// at all - which is how you end up acting as the wrong account while believing
-		// you configured it. Usually a typo; on Windows it is also how a shell-only
-		// path spelling such as '/tmp/...' looks, since only the shell build can
-		// resolve one.
+		// A rule pointing at no folder matches nothing. Usually a typo; on Windows also
+		// a shell-only spelling such as '/tmp/...'.
 		if isDir(r.match) {
 			a.out.clean("     folder ..: " + r.written)
 		} else {
@@ -437,12 +405,8 @@ func (a *app) showAccount(name string, isHere bool) {
 	}
 }
 
-// cmdAccountApply writes one fragment per account, and an includeIf per folder
-// rule pointing at it - with 'git config', never by editing the file ourselves,
-// so git's own parser decides what a valid entry looks like. The directory is
-// checked BEFORE writing anything: left to mkdir and the redirect, a blocked
-// path showed up as a raw tooling error part way through the run, which reads as
-// a crash rather than as something you can act on.
+// cmdAccountApply writes one fragment per account and an includeIf per folder rule,
+// through 'git config' so git decides what's valid. The folder is checked first.
 func (a *app) cmdAccountApply() error {
 	dir := a.cfg.includeDir()
 	if dir == "" {
@@ -499,11 +463,8 @@ func (a *app) cmdAccountApply() error {
 	return nil
 }
 
-// writeAccountFragment writes one account's git config fragment. Every write is
-// checked and every failure stops the run: this is the one command that writes
-// outside the repo you are standing in, so it is the one place where a discarded
-// exit code turns into a silent no-op - it said "Wrote" and exited 0 whatever
-// happened.
+// writeAccountFragment writes one account's git config fragment. Every write is checked,
+// since this is the one command that writes outside the repo.
 func (a *app) writeAccountFragment(dir, file, name string) (err error) {
 	fragment := dir + "/" + file
 	// Nothing goes into the global config until every fragment is written, and the
@@ -545,13 +506,8 @@ func (a *app) writeAccountFragment(dir, file, name string) (err error) {
 		{"user.name", a.cfg.value(name, "name")},
 		{"user.email", a.cfg.value(name, "email")},
 		{"gitsby.ghAccount", a.cfg.value(name, "ghAccount")},
-		// Which account plain git should ASK for over https. Without it the fragment
-		// covered the ssh half and left the https half to whichever credential the
-		// helper happened to hold first - so a bare 'git push' in a configured folder
-		// could still go out as someone else, which is the gap 'apply' exists to close.
-		// Naming the user is what makes a credential manager look up that account's
-		// entry rather than any entry for the host. Keyed on the account's own host
-		// and login, the same pair gitsby's own runs hand the helper.
+		// Which account plain git asks for over https, so a credential manager looks up
+		// that account's entry and not any for the host.
 		{"credential.https://" + a.cfg.hostOf(name) + ".username", a.cfg.loginOf(name)},
 		// Expanded, since git knows none of the home spellings the accounts file takes.
 		{"gitsby.ghTokenFile", expandHome(a.cfg.value(name, "tokenFile"))},
@@ -594,15 +550,9 @@ func (a *app) fragmentHelperFor(name string) string {
 	return fragmentHelper(onGitHub)
 }
 
-// fragmentHelper is the credential helper an account fragment gives plain git. The
-// text is the same for every account on a kind of host: it reads the login and
-// the token file out of git config when git runs it, so nothing from the accounts
-// file is pasted into a line a shell runs, and the token is fetched each time
-// rather than written down. gh is asked only on a host gh serves, since tea has no
-// 'auth token'. The token file is read from the global config only, the scope
-// the fragment is included from, because a repo's own config is not yours, and a
-// relative one is no file, as readTokenFile has it. A username git already has
-// is left alone; 'x' stands in where there is none, as in gitsby's own runs.
+// fragmentHelper is the credential helper a fragment gives plain git. It reads the login
+// and token file from git config when it runs, so nothing from the accounts file goes
+// into a shell line. Detail: backlog 2026110810100400.
 func fragmentHelper(onGitHub bool) string {
 	steps := []string{
 		`test "$1" = get || return 0`,
@@ -638,12 +588,8 @@ const (
 	accountSetCont   = "               "
 )
 
-// accountSetUsage spells out the three words 'account set' takes, and what each one
-// is. A reader being told the syntax is a reader who did not know it, so the closed
-// list of keys belongs here rather than one command further on, and the examples
-// use one account name twice - that repetition IS what '<account>' means. The value
-// forms are the ones the matcher reads: 'pathContains' is a run of folder names, not
-// a glob, so an example with '*' in it would teach a rule that never fires.
+// accountSetUsage spells out the 3 words 'account set' takes, with the closed list of
+// keys. No '*' in the examples, since 'pathContains' is folder names, not a glob.
 func accountSetUsage() error {
 	lines := []string{
 		"Syntax: " + meName + " account set <account> <key> <value>",
@@ -702,13 +648,9 @@ func canonAccountField(field string) string {
 	return ""
 }
 
-// absPathValue is the 'path', 'tokenfile' or 'sshkey' value 'account set' writes;
-// what is "folder" or "file", for the refusal. A relative one means the folder the
-// command runs in, as it would for any command, and the file can never say that
-// later - so it goes in absolute. Spelled the way the platform spells it rather
-// than in canonical form, since the file is edited by hand, and with forward
-// slashes, since a backslash in a bare value is an escape. A value starting at
-// home is written as typed, so one file still works where home differs.
+// absPathValue is the 'path', 'tokenfile' or 'sshkey' value 'account set' writes,
+// absolute since the file can't say where it was typed. Forward slashes, since a
+// backslash in a bare value is an escape. One starting at home stays as typed.
 func absPathValue(value, what string) (string, error) {
 	// filepath.Abs("") is the current directory, which nobody typed.
 	if value == "" {
@@ -751,11 +693,8 @@ func managedIncludePattern(key string) (string, bool) {
 	return "", false
 }
 
-// relativeManagedIncludes names our includeIf patterns in the global git config
-// whose folder is not absolute. An 'account apply' from before such a rule was
-// ignored wrote them, and plain git goes on reading one far from where it was
-// typed until the next apply removes it. A '**/' pattern is a 'pathcontains' rule,
-// which names no folder by design.
+// relativeManagedIncludes names our includeIf patterns in the global git config with a
+// relative folder, left by an older apply. A '**/' one is a pathcontains rule.
 func (c *config) relativeManagedIncludes() []string {
 	var out []string
 	for _, key := range c.accountManagedIncludes() {
@@ -938,11 +877,8 @@ func causeText(err error) string {
 	return strings.TrimSuffix(text, ".")
 }
 
-// unreadableFix is the Fix for a file that can't be read. A command only where the
-// answer is known: gitsby makes this file 0600 as you, so off Windows a missing
-// read bit is the usual cause, and chmod says so itself when the file is somebody
-// else's. On Windows it is an ACL entry or a program holding the file, and no one
-// command is right. Takes the platform, so both are testable from either.
+// unreadableFix is the Fix for a file that can't be read: chmod off Windows, where
+// gitsby made it 0600, and no one command on Windows. Takes goos, so both are testable.
 func unreadableFix(goos, file string, cause error) []string {
 	switch {
 	case !errors.Is(cause, fs.ErrPermission):
@@ -972,14 +908,9 @@ func lookupFix(goos, file string, cause error) []string {
 	return []string{"Make the folder it is in searchable, then run this again:", "  chmod u+x " + shellQuote(dir)}
 }
 
-// createNew makes a file that must not exist yet and writes it through one
-// handle: the accounts file, the old copy a conversion keeps, and the lock. The
-// open fails on anything already at the path, a link included, so it can never
-// truncate - and writing through that same handle means no empty file sits there
-// for another run to load in between. The mode is set from the first byte, since
-// each of these names accounts and token files. opened says whether the file now
-// exists because of this call, which a failed write leaves in place: removing it
-// by name could delete a file another run has since renamed over it.
+// createNew makes a file that must not exist yet, a link included, and writes it through
+// the same handle at its mode, so no empty file is ever there to load. opened says this
+// call made it. A failed write leaves it, since another run may own the name by then.
 func createNew(file, text string, mode fs.FileMode) (opened bool, err error) {
 	f, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
 	if err != nil {
@@ -998,14 +929,9 @@ func createNew(file, text string, mode fs.FileMode) (opened bool, err error) {
 // A run holds the lock only from its re-read to its save, which is milliseconds.
 const accountLockWait = 3 * time.Second
 
-// lockAccountsFile keeps two runs from saving over each other. Each reads the
-// whole file and saves it whole, so the later save dropped what the earlier one
-// wrote. The lock goes beside the file, not on it: the save renames a new file
-// over the name, and a lock on the old one guards nothing. An exclusive create is
-// the one lock every platform has. The func it returns removes the lock, but only
-// while it is still the one this run made. That is told by a random token written
-// into it, not by device and inode: UFS hands a freed inode number straight to the
-// next new file, so another run's lock made after ours went can look like ours.
+// lockAccountsFile keeps 2 runs from saving over each other, by an exclusive create
+// beside the file, since the save renames over the name. The unlock checks a random
+// token in it, not the inode, which UFS hands straight to the next file.
 func lockAccountsFile(file string, wait time.Duration) (func(), error) {
 	// The save writes through a link, so two names for one file take one lock.
 	target := file
@@ -1113,11 +1039,8 @@ func (a *app) accountSetPlan() (accountSetTarget, error) {
 	if err != nil {
 		return t, err
 	}
-	// The same checks the loader makes, made here where they can still be answered.
-	// Written past them the line ends up in the file and is then dropped on every
-	// read, so the file says one thing and every command does another. The key is
-	// checked as it will be written, since the folder a relative one was typed in
-	// can have a space.
+	// The loader's checks, made where they can still be answered, or the line is written
+	// and then dropped on every read. The key is checked as it will be written.
 	if t.field == "sshkey" && strings.ContainsAny(sshKeyArg(t.value), sshKeyShellChars) {
 		return t, usagef("git hands a key path to a shell, so one with whitespace or a shell character is re-parsed rather than used. Move the key somewhere plainer.")
 	}
@@ -1253,11 +1176,8 @@ func lostRefusal(t accountSetTarget, kept bool) error {
 	return nil
 }
 
-// accountUnsetPlan resolves what 'account unset' would take out, off one read the
-// way the set plan does. Every line of the key goes, from every block of that
-// name: the loader merges blocks that share a name, so a line left in a second
-// one would keep the setting in force after the plan said it was gone. done means
-// there was nothing to take out, and that has been said.
+// accountUnsetPlan resolves what 'account unset' would take out: every line of the key
+// in every block of that name, since the loader merges them.
 func (a *app) accountUnsetPlan() (t accountSetTarget, done bool, err error) {
 	name, err := a.accountNameArg()
 	if err != nil {
@@ -1362,12 +1282,8 @@ func unsetUnreadable(file string, state candidateState, cause error) error {
 	}, cause)
 }
 
-// cmdAccountSet writes one key into one account block of the accounts file and
-// saves it through the module. Every line the edit didn't touch comes back as it
-// was. Where the module can't manage that, it writes the whole file in its own
-// layout - tabs, lower-case keys, one blank line at most between blocks - and the
-// plan has said so. 'account unset' saves through here too, with its lines already
-// out of the document.
+// cmdAccountSet writes one key into one account block and saves it through the module,
+// keeping untouched lines where it can. 'account unset' saves through here too.
 func (a *app) cmdAccountSet() error {
 	if a.set == nil {
 		t, err := a.accountSetPlan()
