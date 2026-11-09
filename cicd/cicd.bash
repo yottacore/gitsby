@@ -111,7 +111,8 @@ source "${here}/utility/include/image-go.bash"         ## fImageGo(), fImageReci
 source "${here}/utility/include/safe-rm.bash"          ## fSafeRm(), the guard every recursive removal goes through
 fLowPriority
 cd "${root}"
-stamp="$(date +%Y%m%d-%H%M%S)"
+## UTC, since the image runs in UTC and its records share folders with the box's.
+stamp="$(date -u +%Y%m%d-%H%M%S)"
 
 ## Output helpers: fEcho / fEcho_Clean, blank-collapsing.
 ## fEcho "msg" -> "[ msg ]" status line; fEcho_Clean "msg" -> plain line, and a
@@ -1112,7 +1113,7 @@ fi
 ## stage can be reviewed after the fact. Rotate the prior (closed) logs first.
 ## Inside the container the outer run's log already has all of it.
 if [[ -n "${LINT_LOG_DIR:-}" && -z "${GITSBY_CICD_IN_CONTAINER:-}" ]] && mkdir -p "${root}/${LINT_LOG_DIR}" 2>/dev/null; then
-	gfs_rotate "${root}/${LINT_LOG_DIR}" run log >/dev/null 2>&1 || true
+	TZ=UTC0 gfs_rotate "${root}/${LINT_LOG_DIR}" run log >/dev/null 2>&1 || true
 	## tee ignores INT and TERM: Ctrl+C reaches the whole group, and with tee gone the exit
 	## trap's first line would take SIGPIPE before any cleanup ran.
 	exec > >(trap '' INT TERM; exec tee "${root}/${LINT_LOG_DIR}/run_${stamp}.log") 2>&1
@@ -1395,7 +1396,7 @@ else
 			## Keep the new original out of tree (GFS-pruned), then move it into the repo.
 			mkdir -p "${DEMOGIF_ARCHIVE_DIR}"
 			cp -f "${demogifTmp}" "${DEMOGIF_ARCHIVE_DIR}/demo_${stamp}.gif"
-			gfs_rotate "${DEMOGIF_ARCHIVE_DIR}" demo gif >/dev/null 2>&1 || true
+			TZ=UTC0 gfs_rotate "${DEMOGIF_ARCHIVE_DIR}" demo gif >/dev/null 2>&1 || true
 			mv -f "${demogifTmp}" "${demogifOut}"
 			fEcho "OK: demo gif regenerated"
 		fi
@@ -1527,3 +1528,4 @@ fEcho_Clean
 ##		- 2026-11-09 JC: The run log's tee ignores INT and TERM, so Ctrl+C still runs the exit trap's cleanup.
 ##		- 2026-11-09 JC: Under --no-test the fuzz and parity steps build first, rather than run whatever build was on disk. The native fuzzing fails when go test -list fails or lists no target.
 ##		- 2026-11-09 JC: The memory scope's probe passes the same properties as the run, so a systemd that doesn't know one runs as before.
+##		- 2026-11-09 JC: The run's stamp, which names its log, temp folder, soak and CodeQL folders and archived demo gif, is in UTC, and the rotations read it so. The image named them in UTC and the box in its own time.

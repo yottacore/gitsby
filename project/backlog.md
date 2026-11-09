@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - spawn-count.bash names its records in local time, and the run in the image in UTC
 	- ID: 2026110914575286
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Opened: 20261109-145752
 	- Opened by: jim-collier
 	- Related IDs: 2026110912215212
@@ -46,6 +46,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-09 on b23 (PST). Two box runs in a row both read the image's spawn_20261109-224726 as baseline, and neither record was left.
 	- Possible cause [Bug]: stamp="$(date +%Y%m%d-%H%M%S)" is local time, and the image stays in UTC. lint-report.bash may stamp the same way.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Actual cause [Bug]: spawn-count.bash and cicd.bash took their stamps in local time, and the image runs in UTC. gfs-rotate reads a name in the zone it runs in, so it misread the other side's records too.
+	- Estimated effort: Low
+	- Actual fix [Bug]: Both stamp in UTC, with `date -u`, and run gfs_rotate under `TZ=UTC0`. In cicd.bash that one stamp names the run log, the temp folder, the soak and CodeQL folders and the archived demo gif.
+	- Decisions:
+		- UTC, not the box's zone passed into the image. The image already runs in UTC, a record run by hand in the image gets no zone from outside, and UTC has no repeated hour at the fall-back.
+		- cicd.bash's stamp too, since the soak and CodeQL folders and the demo archive are written by the image and by --no-container runs alike, and are pruned by name. Its run log is written only on the box, so it was never mixed, but it shares the one stamp.
+		- lint-report.bash stamps nothing. It reads cicd.bash's run log names, which only the box writes, so it needed no change.
+		- Old records keep their names. West of UTC they sort before every new one. East of UTC, a local name can sort after a new one for a few hours, once.
+	- Swept: every `date +%Y` in cicd/. keep-build.bash, release.bash's run name and remote-tests.bash's folder run only on the box, and nothing compares them with an image run's name.
+	- Branch: round-20261109
+	- Test case: test.bash [df385] (spawn-count.bash) and [df386] (cicd.bash's soak folder), both under TZ='<-08>8'.
+	- Verified: [df385]'s case, by hand on the script before, left the image's record as latest and the new one stamped 8 hours earlier. [df386] fails against cicd.bash before. Both pass after. cicd.bash --backlog-run-quick passes, test.bash 1918/0.
+	- Acceptance signoff: Self-closed: its test runs passed.
+	- Closed: 20261109-151048
 
 - `account apply` still puts paths inside its Wrote and safe-to-remove lines
 	- ID: 2026110914151101

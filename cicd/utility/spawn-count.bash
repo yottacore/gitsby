@@ -392,13 +392,14 @@ if ((regressed)) && ((! record)); then
 	fDie "spawn counts regressed against $(basename "${baseline}"); nothing recorded."$'\n'"  Re-run with --record to accept the new counts as the baseline."
 fi
 
-stamp="$(date +%Y%m%d-%H%M%S)"
+## UTC, as the run in the image is, so the newest record is the newest run on any box.
+stamp="$(date -u +%Y%m%d-%H%M%S)"
 out="${countDir}/spawn_${stamp}.tsv"
 : > "${out}"
 for ((i = 0; i < ${#labels[@]}; i++)); do
 	[[ -n "${skipped[i]}" ]] || printf '%s\t%s\n' "${labels[i]}" "${counts[i]}" >> "${out}"
 done
-gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
+TZ=UTC0 gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ((quiet)) || fEcho_Clean "  recorded $(basename "${out}")"
 
 
@@ -425,3 +426,4 @@ gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		- 20261107 JC: A Gitea folder over ssh, with a fake tea, for status, whoami, repo url, pullcom and pr create. The fake ssh names the target's own host.
 ##		- 20261109 JC: Inherited git config is dropped by name, not by a loop on GIT_CONFIG_COUNT, whose arithmetic ran a command hidden in a subscript.
 ##		- 20261109 JC: br merge, with and without a fetch, br switch with --staged, and pr create in a GitLab folder over ssh, with a fake glab.
+##		- 20261109 JC: Records are named and rotated in UTC. The box named them in its own time and the image in UTC, so west of UTC a box run took the image's older record as its baseline, and rotation dropped its own.

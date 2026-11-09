@@ -957,6 +957,16 @@ fGateLeakPrune(){
 		&& [[ "$(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'soak_*' | wc -l | tr -d ' ')" == 21 ]] \
 		&& [[ -f "${leakDir}/soak_20200101-000010/notes.txt" && ! -e "${leakDir}/soak_20200101-000011" && -d "${leakDir}/soak_20200101-000013" ]]
 }
+## A run west of UTC names its soak folder in UTC, as the image does.
+fGateStampUtc(){
+	local leakDir="${gateDir}/cicd/artifacts/leakcheck" before="" after="" d=""
+	fSafeRm_IfThere "${leakDir:?}"
+	before="$(date -u +%Y%m%d-%H%M%S)"
+	TZ='<-08>8' fGateSays 0 'OK: soak test' -y --no-container --quick --leakcheck --no-lint --no-test --no-fuzz --no-parity --no-demogif --no-remote --no-sync --no-publish --no-dogfood || return 1
+	after="$(date -u +%Y%m%d-%H%M%S)"
+	d="$(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'soak_*')"; d="${d##*/soak_}"
+	[[ -n "${d}" && ! "${d}" < "${before}" && ! "${d}" > "${after}" ]]
+}
 ## CodeQL runs over a scratch copy of the module with its dependencies vendored in, tests and
 ## vendor/ extracted, once for each OS a release is built for, and the reports are kept. The tree
 ## never gets a vendor/, and the copy is gone.
@@ -6334,6 +6344,14 @@ GHEOF
 		chmod +x "${sc}/cicd/utility/spawn-count-near.bash"
 		fAssert "[ddf82] and passes a count one over its expected one" \
 			bash -c "out=\$('${sc}/cicd/utility/spawn-count-near.bash' 2>&1) && grep -qE '^  PASS dbftf status: 4\$' <<< \"\$out\""
+		## A record from the image an hour ago, in UTC. A run on a box west of UTC is newer, so it's
+		## the one left as latest, not named hours before the image's.
+		cp -R "${sc}" "${work}/sctz"
+		find "${work}/sctz/cicd/artifacts/spawn" -mindepth 1 -delete
+		local tzImage; tzImage="$(date -u -d '-1 hour' +%Y%m%d-%H%M%S)"
+		sed -n 's/^fMeasure "\[[^]]*\] \([^"]*\)".*/\1\t0/p' "${root}/cicd/utility/spawn-count.bash" > "${work}/sctz/cicd/artifacts/spawn/spawn_${tzImage}.tsv"
+		fAssert "[df385] and names its record in UTC, so a run west of UTC is newer than the image's before it" \
+			bash -c "TZ='<-08>8' '${work}/sctz/cicd/utility/spawn-count.bash' -q --record && last=\$(ls '${work}/sctz/cicd/artifacts/spawn' | tail -n 1) && [[ \"\${last}\" == spawn_*_latest.tsv && \"\${last}\" > 'spawn_${tzImage}' && \$(ls '${work}/sctz/cicd/artifacts/spawn' | wc -l | tr -d ' ') == 2 ]]"
 		## The baseline's counts go into arithmetic, as the report's do.
 		# shellcheck disable=SC2016  ## As above, for the script to refuse.
 		printf 'status\tBASH_VERSINFO[$(touch %s/ran)0]\n' "${sc}" > "${sc}/cicd/artifacts/spawn/spawn_20991231-000000.tsv"
@@ -6856,6 +6874,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[de54a] a soak test that fails stops the run"  fGateLeakStops soak
 		fAssert "[de54h] and so does one that skipped, since it measured nothing"  fGateLeakStops soak-skip
 		fAssert "[de54j] the newest 20 soak runs are kept, and a folder with anything else in it is left alone"  fGateLeakPrune
+		fAssert "[df386] a run west of UTC names its soak folder in UTC"  fGateStampUtc
 		fAssert "[de54b] --gate refuses --leakcheck"  fGateSays 2 'takes no stage options \(got: --leakcheck\)' --gate --leakcheck
 		fAssert "[de54c] cicd.bash --help lists --leakcheck and --no-leakcheck" \
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--leakcheck ' <<< \"\$out\" && grep -qE -- '^ +--no-leakcheck ' <<< \"\$out\""
@@ -8700,3 +8719,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261109 JC: Ctrl+C with the run log on, [df33r]. config.bash run directly, [df33s].
 ##		- 20261109 JC: Inherited git config is dropped by name, not by a loop on GIT_CONFIG_COUNT, whose arithmetic ran a command hidden in a subscript. [df34d] runs each harness's lines against such a count. 1896 -> 1899.
 ##		- 20261109 JC: CICD_MEM_CAP needs a unit and 1g at least, [df350]. The memory scope's probe passes the run's properties, [df351].
+##		- 20261109 JC: spawn-count.bash and cicd.bash name their records in UTC, [df385] [df386].
