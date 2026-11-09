@@ -287,6 +287,26 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: 2dfde3e, 2026-11-09. systemd-run's refusal of an unknown property confirmed on b23, systemd 257. No box this project uses has an older systemd, so Plausible.
 	- Estimated effort: Low
 
+- Code Review 20261109 enhancement 6: Cut long code comments down to a line or 2
+	- ID: 2026110912215217
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261109-132000
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- A comment that runs to several lines is cut to a line or 2. Where the reason needs more, it points to a backlog item, design.md, or `details.md` instead.
+		- Go: 119 comment blocks of 5 lines or more in the non-test files, 15 of them 8 or more. The longest are 10 lines, at remote.go:149, config.go:228 and account.go:515.
+		- Scripts: 88 blocks of 5 lines or more in 12 files, 10 of them 8 or more, leaving out file headers and History footers. The longest are test.bash:4618 (14), spawn-count.bash:237 (11), lint-report.bash:88 and config.bash:127 (10 each).
+		- Doc comments on exported Go names keep their first line, as Go style asks.
+	- Notes:
+		- Writing style, Code and commits: "Be brutally brief, and sloppy, with code comments. If one runs to several lines, reference an issue#, a design document, or a section in design.md instead."
+		- Comments written by hand stay as they are. Check each block's author with `git log -S` before cutting it.
+		- A comment that explains an order or a reason the code doesn't show keeps that reason, per the review fix rules. Cut the history and the narration around it.
+		- Work file by file, 1 commit per file or 2, so a later round can tell a cut from a change in behavior.
+	- Origin: many commits since 2026-07-22. The 20261003 and 20261107 rounds passed over it, and this round first put it under "Decided against". Confirmed by counting comment blocks with a script, 2026-11-09.
+	- Estimated effort: High
+
 - test.bash hangs on Windows at [df1s7]: Git for Windows' askpass opens a password dialog
 	- ID: 2026110814215941
 	- Type: Bug
