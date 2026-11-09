@@ -3266,7 +3266,7 @@ GHEOF
 	fAssertOut "[ddf4b] a back-merge whose abort fails says dev is still mid-merge"  "^  Why:  'git merge --abort' failed, so 'dev' is still mid-merge\.$" \
 		bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix clash2 >/dev/null 2>&1 && echo hf2text > README.md && '${gitsby}' -q -NoFetch update wip >/dev/null 2>&1 && env PATH='${abortShim}':\"\${PATH}\" '${gitsby}' -q -NoFetch br land Clash2 > '${abortShim}/back.out' 2>&1; echo \"rc=\$?\" >> '${abortShim}/back.out'; cat '${abortShim}/back.out'"
 	fAssertOut "[ddf4c] and fails rather than ending in Done"  '^rc=1$'  cat "${abortShim}/back.out"
-	fAssertOut "[ddf81] but says the hotfix itself landed"  "^  Kept: The hotfix landed on 'main' - that part is done\." cat "${abortShim}/back.out"
+	fAssertOut "[ddf81] but says the hotfix itself is in"  "^  Kept: The hotfix is in 'main' - that part is done\." cat "${abortShim}/back.out"
 	( cd "${hfc}" || exit 1; git merge --abort 2>/dev/null || true )
 	## The forward merge left the tree in conflict and the merge open, on a bare step failure.
 	local fm="${work}/$1-mergeclash"
@@ -4411,7 +4411,7 @@ GHEOF
 	fAssert     "[dafqw] and committed nothing"  bash -c "cd '${tu}' && [[ \"\$(git rev-list --count mainline)\" == 1 ]]"
 	## status is the command you run to find out what is wrong, so it must still work - and must
 	## not print a name it couldn't resolve.
-	fAssertOut  "[dafqx] status still runs and admits it doesn't know, and why"  'Default branch: \(unknown - no origin/HEAD, no main, master or trunk, and more than one local branch\)'  bash -c "cd '${tu}' && '${gitsby}' -q status"
+	fAssertOut  "[dafqx] status still runs and admits it doesn't know, and why"  'Default branch: \(unknown - no origin/HEAD, no main, master, or trunk, and more than one local branch\)'  bash -c "cd '${tu}' && '${gitsby}' -q status"
 	fAssert     "[damxt] br list still runs there too"  bash -c "cd '${tu}' && '${gitsby}' -q br list >/dev/null 2>&1"
 	fAssertOut  "[damxv] and lists the branches with the same admission"  'Default branch: \(unknown - no origin/HEAD'  bash -c "cd '${tu}' && '${gitsby}' -q br list"
 	fAssertOut  "[damxw] including the ambiguous ones"  '(^|[ /])other'  bash -c "cd '${tu}' && '${gitsby}' -q br list"
@@ -5654,7 +5654,7 @@ GHEOF
 		fAssert "[dd5er] and HEAD, the tags and origin are as they were"  test "${relState}" = "$(fRelState)"
 		fRelRun --dry-run v1.3.0-beta.1
 		fAssert "[dd5es] a suffixed version says it publishes as a pre-release" \
-			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'v1.3.0-beta.1 carries a semver suffix, so it publishes as a pre-release.' '${relOut}' && grep -qF 'would: gh release create v1.3.0-beta.1 as a pre-release with ' '${relOut}'"
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'v1.3.0-beta.1 has a semver suffix, so it publishes as a pre-release.' '${relOut}' && grep -qF 'would: gh release create v1.3.0-beta.1 as a pre-release with ' '${relOut}'"
 		## v3.0.0-beta.1 stopped at the gated push to main, with the bump already merged. --publish
 		## picks up from a tag pushed by hand.
 		fRelRun --dry-run --publish v1.2.3

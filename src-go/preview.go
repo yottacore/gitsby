@@ -196,7 +196,7 @@ func (a *app) pullDisp(branch string, extra ...string) string {
 }
 
 // previewBackMerge is the tail every hotfix path shares: dev has to receive what
-// landed on the default branch.
+// was merged into the default branch.
 func (a *app) previewBackMerge() {
 	a.out.clean(planPad + a.checkoutDisp(a.mergeTarget()))
 	a.out.clean(planPad + "git merge " + a.backMergeRef())

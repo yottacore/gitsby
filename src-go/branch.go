@@ -183,7 +183,7 @@ func (a *app) isProtectedBranch(branch string) bool {
 // defaultBranch prefers origin's HEAD; falls back to whichever of main/master
 // exists locally. A repo whose default is neither (git init -b trunk,
 // init.defaultBranch) and that was never cloned has no origin/HEAD to read, so a
-// sole local branch is the honest answer there. Guessing "main" at the end would
+// sole local branch is the true answer there. Guessing "main" at the end would
 // name a branch that doesn't exist - the caller refuses instead.
 func (a *app) defaultBranch() string {
 	return a.git.defaultBranch.get(a.resolveDefaultBranch)
@@ -194,7 +194,7 @@ func (a *app) defaultBranchDisp() string {
 	if dflt := a.defaultBranch(); dflt != "" {
 		return dflt
 	}
-	return "(unknown - no origin/HEAD, no main, master or trunk, and more than one local branch)"
+	return "(unknown - no origin/HEAD, no main, master, or trunk, and more than one local branch)"
 }
 
 // originHead is origin/HEAD's target as a full ref, "" when there is none. The
@@ -223,7 +223,7 @@ func (a *app) resolveDefaultBranch() string {
 	if len(locals) == 1 {
 		return locals[0]
 	}
-	// Unborn HEAD: nothing exists yet, so the name it will get is the honest answer.
+	// Unborn HEAD: nothing exists yet, so the name it will get is the true answer.
 	if len(locals) == 0 {
 		if head, ok := strings.CutPrefix(runOut("git", "symbolic-ref", "--quiet", "HEAD"), "refs/heads/"); ok && head != "" {
 			return head
@@ -262,8 +262,8 @@ func (a *app) isHotfixBranch(branch string) bool {
 	return strings.HasPrefix(branch, "hotfix/")
 }
 
-// branchTarget is where THIS branch lands, which is not always where new feature
-// branches come from - a hotfix lands on the default branch.
+// branchTarget is where THIS branch merges into, which is not always where new feature
+// branches come from - a hotfix merges into the default branch.
 func (a *app) branchTarget(branch string) string {
 	if branch == "" {
 		branch = a.currentBranch()
@@ -275,9 +275,9 @@ func (a *app) branchTarget(branch string) string {
 }
 
 // branchDisp: "base :: branch" for work branches; a bare name for main/master/dev,
-// which are off nothing. The base is where the branch LANDS - for anything gitsby
+// which are off nothing. The base is where the branch MERGES - for anything gitsby
 // made that's also where it came from, and git records no fork point to read, so
-// the land target is the honest answer either way.
+// the merge target is the true answer either way.
 func (a *app) branchDisp(branch string) string {
 	if branch == "" {
 		branch = a.currentBranch()

@@ -51,7 +51,7 @@ func runOK(name string, args ...string) bool {
 
 // splitLines cuts captured output into lines. The trailing '\r' comes off every
 // one of them: trimming only the end of the whole capture leaves the interior
-// ones in place, so the first line of a two-line answer carried a stray carriage
+// ones in place, so the first line of a two-line answer had a stray carriage
 // return that no later comparison could match.
 func splitLines(out string) []string {
 	lines := strings.Split(out, "\n")
@@ -139,13 +139,13 @@ func shellWord(s string, always bool) string {
 }
 
 // shellQuote single-quotes a word for sh, apostrophes included, so a path in a
-// Fix line pastes as one word whatever it holds.
+// Fix line pastes as one word whatever is in it.
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // stepAs announces one thing and runs another, for the gh calls whose real
-// argument list carries flags the plan never showed - echoing it verbatim would
+// argument list has flags the plan never showed - echoing it verbatim would
 // contradict the preview. The failure names the command, not the arguments.
 func (a *app) stepAs(announce, label, name string, args ...string) error {
 	a.out.clean("")
@@ -230,7 +230,7 @@ func named(cmd *exec.Cmd, name string, missing error) *exec.Cmd {
 	return cmd
 }
 
-// toolCache holds findTool's answers. PATH is part of the key, since a test may
+// toolCache keeps findTool's answers. PATH is part of the key, since a test may
 // change it between runs in one process. Locked, since look-ahead goroutines spawn too.
 var toolCache = struct {
 	sync.Mutex
@@ -255,7 +255,7 @@ func findTool(name string) (string, []string) {
 	return hit.path, hit.ours
 }
 
-// rawActiveVar holds the chain of 'raw' runs above this one, for everything 'raw'
+// rawActiveVar has the chain of 'raw' runs above this one, for everything 'raw'
 // starts. A 'raw' passes over a tool file whose run is already on it and takes
 // the next one on PATH, so a hook or alias calling 'gitsby raw' works, and so does
 // a wrapper on PATH that calls us back (2026101916533300, 2026102306584122).

@@ -208,7 +208,7 @@ func (a *app) publishBranch(branch string) error {
 // cmdCommitPull pulls BEFORE committing. Committing first mints a local commit,
 // so a remote that merely moved ahead is now diverged and --ff-only refuses -
 // which is the everyday case, not an edge one. Pulling first fast-forwards (the
-// dirty tree rides over on --autostash) and the commit lands on top, so history
+// dirty tree rides over on --autostash) and the commit goes on top, so history
 // stays linear and --ff-only stays satisfiable.
 func (a *app) cmdCommitPull() error {
 	if err := a.cmdPull(); err != nil {
@@ -346,7 +346,7 @@ func (a *app) cmdPrune() error {
 // pruneRemote deletes br prune's remote half and says how many went. The plan was
 // decided from the local copy of origin, which is only as new as the last fetch:
 // --no-fetch, or a prompt left waiting, leaves it older, and a plain delete push
-// removes whatever origin holds by then. So cmdPrune asks origin before deleting
+// removes whatever origin has by then. So cmdPrune asks origin before deleting
 // anything, and each delete is leased on the value that passed the containment
 // check, which covers the moment between the answer and the push. asked is false
 // when origin couldn't be asked, which says nothing about any branch.

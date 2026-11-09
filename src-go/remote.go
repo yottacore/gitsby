@@ -100,7 +100,7 @@ func sshConnectTarget(url string) string {
 	user := ""
 	switch {
 	case strings.HasPrefix(url, "ssh://"):
-		// The user part ends at the authority; an '@' in the path is just a path.
+		// The user part ends at the authority; an '@' in the path is part of the path.
 		authority := url[len("ssh://"):]
 		if slash := strings.IndexByte(authority, '/'); slash >= 0 {
 			authority = authority[:slash]

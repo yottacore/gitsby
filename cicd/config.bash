@@ -17,7 +17,7 @@
 
 
 ## Only allow running 'sourced'. A plain printf, not an error helper: one defined here would
-## land in the script that sources this.
+## end up in the script that sources this.
 declare -i isSourced_t6wqf=0; [[ "${BASH_SOURCE[0]}" == "${0}" ]] || isSourced_t6wqf=1
 ((isSourced_t6wqf)) || { printf '\nError in %s: This script is meant to be sourced from within another script.\n\n' "${BASH_SOURCE[0]##*/}" >&2; exit 1; }
 
@@ -33,7 +33,7 @@ GO_MODULE_DIR="src-go"
 ## Build flags, in one place because four build sites have to agree on them.
 ##   -trimpath      keeps the build machine's directory names out of the binary.
 ##   -buildvcs=false keeps the repository's revision and dirty flag out of it. Without this
-##                  the published assets carry whatever commit preceded the tag they claim -
+##                  the published assets have whatever commit preceded the tag they claim -
 ##                  so nobody, including us, can rebuild them to the checksums we publish.
 ##   -buildid=      drops the last input-derived stamp, so identical source gives identical
 ##                  bytes on any machine with the same toolchain (pinned in go.mod).
@@ -99,7 +99,7 @@ fCpuJobs(){
 	local -n jobs_cpuJ="$1"
 	local -i cores=1 load100=0
 	local load="${3:-0}" frac=""
-	## Checked first, since arithmetic would run what a bad one holds.
+	## Checked first, since arithmetic would run what a bad one has in it.
 	[[ "$2" =~ ^[1-9][0-9]{0,5}$ ]] && cores="$2"
 	frac="${load#*.}"; [[ "${load}" == *.* ]] || frac=""; frac="${frac}00"
 	if [[ "${load%%.*}" =~ ^[0-9]+$ && "${frac:0:2}" =~ ^[0-9]+$ ]]; then load100=$(( 10#${load%%.*} * 100 + 10#${frac:0:2} )); fi
@@ -195,7 +195,7 @@ PY_LINT_RULES=(B019 SIM115 B006)
 ## by --quick and --no-fuzz, like govulncheck. The leak checks' CodeQL reads their installed source too.
 PY_AUDIT_DISTS=(Pillow fonttools pycairo PyGObject)
 ## Advisories against the upstream versions of the Debian builds the demo runs on. Debian's
-## builds carry security patches past those versions, so each one names the Debian build
+## builds have security patches past those versions, so each one names the Debian build
 ## that fixed it: backlog 2026101905585018. Pillow is the upstream wheel, so it needs none.
 ## A new advisory fails the run.
 PIP_AUDIT_IGNORE=(
@@ -220,7 +220,7 @@ PS_LINT_SETTINGS="PSScriptAnalyzerSettings.psd1"
 ## Probe-gated on goversioninfo; release.bash regenerates it with the version bump.
 WINRES_CMD=(cicd/utility/gen-winres.bash)
 
-## Stage 1: backlog rules. Open review items carry an "Origin:" line, and a suite check
+## Stage 1: backlog rules. Open review items have an "Origin:" line, and a suite check
 ## removed on the branch is named in the backlog. See the script's header for why.
 BACKLOG_CHECK_CMD=(cicd/utility/backlog-check.bash)
 

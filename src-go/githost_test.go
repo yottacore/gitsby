@@ -92,7 +92,7 @@ func TestHostURL(t *testing.T) { // [dcpv1]
 }
 
 // tea's tsv writer quotes every cell, header names included. Left quoted, every
-// lookup misses and every value carries the quotes into whatever it is compared
+// lookup misses and every value takes the quotes into whatever it is compared
 // against - which reads as "no such pull request" rather than as a parse problem.
 func TestParseTeaTable(t *testing.T) { // [dcpv2]
 	out := "\"index\"\t\"head\"\t\"state\"\n\"7\"\t\"feature-x\"\t\"open\"\n\"9\"\t\"acct:forked\"\t\"closed\"\n"
@@ -162,7 +162,7 @@ func TestAccountServesHost(t *testing.T) { // [dbg62]
 	}
 }
 
-// The variable a token is exported under. A Gitea token must never land in
+// The variable a token is exported under. A Gitea token must never end up in
 // GH_TOKEN: gh reads that one, and every child process would inherit a credential
 // for a host gh will happily try to use it on.
 func TestTokenEnvVar(t *testing.T) { // [dbg63]
@@ -211,7 +211,7 @@ func TestPrArgsPerTool(t *testing.T) { // [dbg64]
 }
 
 // 'pr <n>' is the PR and its diff. gh takes a call for each; tea's detail view
-// carries the diff in one.
+// has the diff in one.
 func TestPrViewArgsPerTool(t *testing.T) { // [dd5ga]
 	for _, tc := range []struct {
 		name string

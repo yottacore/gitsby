@@ -5,7 +5,7 @@
 #  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
 
 ##	Purpose:
-##		Surface warnings from the newest cicd run log. cicd tees each run to
+##		Show warnings from the newest cicd run log. cicd tees each run to
 ##		cicd/artifacts/lint/run_<ts>.log (gitignored); this greps out the warning /
 ##		vet / staticcheck / vuln lines so they can be addressed. Two modes: plain
 ##		(print warnings from the newest log) and --check (print only when that log

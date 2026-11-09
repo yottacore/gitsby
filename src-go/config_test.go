@@ -104,7 +104,7 @@ func driveFixture(body string) string {
 	return strings.ReplaceAll(body, "/srv/", driveFolder("/srv/"))
 }
 
-// driveRule is the rule gitsby holds for driveFolder(p), lower case on Windows.
+// driveRule is the rule gitsby keeps for driveFolder(p), lower case on Windows.
 func driveRule(p string) string {
 	return canonPath(driveFolder(p))
 }
@@ -140,7 +140,7 @@ just-a-key
 	}
 }
 
-// git hands core.sshCommand to a shell, so a key path carrying shell characters
+// git hands core.sshCommand to a shell, so a key path with shell characters
 // is dropped rather than used - quietly falling back to whatever key ssh picks is
 // how you push as the wrong person.
 func TestConfigDropsShellCharactersInSSHKey(t *testing.T) { // [dbfr1]
@@ -387,7 +387,7 @@ func TestCanonPathStopsAtTheDriveRoot(t *testing.T) { // [dcmfc]
 	}
 }
 
-// A byte-order mark is what a Windows editor writes by default, and it lands on
+// A byte-order mark is what a Windows editor writes by default, and it ends up on
 // the first key in the file. Read as part of the name, that key became one
 // nothing understands - and the line reporting those printed the mark with it,
 // so the only diagnostic named a key that looks exactly right.
@@ -1142,7 +1142,7 @@ func TestResolveConfigFileSkipsAnUnreadableCandidate(t *testing.T) { // [dcmk2]
 // names differ only in case, or in a dotted line beside a block - was read last
 // wins without a word, so two accounts written as one went unnoticed. The last is
 // still read, and each earlier one that said something else is listed. Pieces
-// that don't disagree are just one account.
+// that don't disagree are one account.
 func TestRepeatedAccountKeys(t *testing.T) { // [ddav1]
 	const read = " gives it again, and that one is read)"
 	for _, tc := range []struct {

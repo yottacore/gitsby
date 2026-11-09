@@ -11,7 +11,7 @@
 ##		   1. Prepare and verify. Runs the pipeline and cross-builds every release
 ##		      binary. Changes nothing outside the working tree, and nothing here
 ##		      needs undoing if it stops.
-##		   2. Land. Writes the version, lands it through a PR, and calls
+##		   2. Merge. Writes the version, merges it through a PR, and calls
 ##		      'gitsby release'. The only phase that pushes.
 ##		   3. Publish and prove. Creates the GitHub release, uploads the binaries
 ##		      built in phase 1 and their checksums, then fetches one back and runs
@@ -28,10 +28,10 @@
 ##		  -h, --help       This.
 ##	Notes:
 ##		- Refuses unless the tree is clean and you are on the merge target.
-##		- The version lives in the tag and nowhere else. The binary carries it
+##		- The version lives in the tag and nowhere else. The binary has it
 ##		  because the release build injects it, so there is no in-source version
 ##		  to bump and nothing that can disagree with the tag.
-##		- Guards that have caught real mistakes: the harnesses must carry a
+##		- Guards that have caught real mistakes: the harnesses must have a
 ##		  history-footer entry newer than the last release tag, and the changelog
 ##		  must have a real vNEXT section rather than the decoy template heading.
 ##		- Both builds use the Go in the pipeline's image where docker works, and
@@ -190,7 +190,7 @@ ghRepo="yottacore/gitsby"
 ## empty release body and warned about none of it. Two independent guards now: the template's
 ## heading is spelled TEMPLATE_vNEXT, and everything below starts reading past the '-->'.
 fpChangelogStart(){
-	## First line of the real changelog, just past the commented-out template.
+	## First line of the real changelog, right past the commented-out template.
 	## awk rather than grep piped into head - a pipe would leave pipefail at the mercy of SIGPIPE.
 	local -i end=0
 	end="$(awk '/^-->/{print NR; exit}' "${changelog}")"
@@ -291,7 +291,7 @@ lastTags="$(git -c versionsort.suffix=- tag --sort=-v:refname --list 'v*')" || f
 lastTag="${lastTags%%$'\n'*}"
 
 ## The changelog has to have something to release. 'vNEXT' is this project's convention for
-## "landed but not cut", and releasing with no such section means the notes would be empty.
+## "merged but not cut", and releasing with no such section means the notes would be empty.
 ## Already retitled when only publishing.
 ((publishOnly)) || [[ -n "$(fpChangelogVnext)" ]] || fDie "changelog has no '## vNEXT' section, so there is nothing to release."
 ## Phase 2 writes the downloads table from the files it built, so one already there is stale.
@@ -327,7 +327,7 @@ fi
 ## that flag is what keeps later candidates off the install line in the README.
 prerelease=0; [[ "${version}" == *-* ]] && prerelease=1
 if ((prerelease)); then
-	fEcho_Clean "${version} carries a semver suffix, so it publishes as a pre-release."
+	fEcho_Clean "${version} has a semver suffix, so it publishes as a pre-release."
 fi
 
 ## The history footers are maintained by hand and are missed most rounds, so check rather than
@@ -385,7 +385,7 @@ if ((publishOnly)); then
 	:
 elif ! fWould "cross-build ${#RELEASE_TARGETS[@]} targets at ${version}"; then
 	fEcho_Clean "cross-building ${#RELEASE_TARGETS[@]} targets with ${GO_RELEASE_TOOLCHAIN} ..."
-	## The .exe files have to carry ${version}, and the committed resource still says the last
+	## The .exe files have to be stamped with ${version}, and the committed resource still says the last
 	## one. Stamp it, build, then restore - phase 1 is the phase that changes nothing, and phase
 	## 2 regenerates it for real, on the release branch, next to the changelog edit.
 	"${winres[@]}" -q "${version}" || fDie "couldn't stamp the Windows resource; nothing has been changed."
@@ -401,10 +401,10 @@ fi
 fEcho "Phase 1 OK: ${lastTag:-(no previous tag)} -> ${version}"
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-## Phase 2: land. The only phase that pushes.
+## Phase 2: merge. The only phase that pushes.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 echo
-fEcho "Phase 2: land ${version}"
+fEcho "Phase 2: merge ${version}"
 if ((publishOnly)); then
 	fEcho "Phase 2 skipped: --publish, ${version} is already tagged and pushed"
 else
@@ -420,7 +420,7 @@ else
 	## exactly what the tool refuses to do for you, so the thing that cuts the release must not do it
 	## either. 'gitsby release' below is the only push to the default branch, and that push IS the
 	## release rather than a shortcut around one.
-	if ! fWould "branch ${relBranch}, retitle the changelog's vNEXT as '${version} - ${today}', add its downloads table, and land it through a PR"; then
+	if ! fWould "branch ${relBranch}, retitle the changelog's vNEXT as '${version} - ${today}', add its downloads table, and merge it through a PR"; then
 		"${gitsby}" -q br create "${relBranch}" || fDie "couldn't create ${relBranch}."
 		## The changelog heading and the downloads table under it are the whole of it. Nothing in the
 		## tree records the version any more - the build injects it from the tag - so this is the only
@@ -474,7 +474,7 @@ if ! fWould "rebuild ${#RELEASE_TARGETS[@]} targets from the ${version} commit";
 	fEcho_Clean "built: $(cd "${assets}" && echo *)"
 fi
 
-## The release body is the changelog section, verbatim - the same words the repo already carries,
+## The release body is the changelog section, verbatim - the same words the repo already has,
 ## plus the line the binary itself prints, so the notes and the download cannot disagree.
 notes="$(mktemp)"
 awk -v ver="## ${version} " -v start="$(fpChangelogStart)" \
@@ -544,10 +544,10 @@ if ! fWould "verify releases/latest, download and run this platform's published 
 		fi
 	fi
 	## Which release the install line in the README now takes. That depends on what GitHub
-	## holds, which no suite can reach, so the installer from the tag - what main now serves -
+	## has, which no suite can reach, so the installer from the tag - what main now serves -
 	## runs into a throwaway home and its plan says. A full release has to be the one it takes.
 	## A pre-release is taken while no full release has a binary, and passed over for one that
-	## does; any other pick means the list it read was not the one just published.
+	## does; any other pick means the list it read was not the one published.
 	if [[ -f "${tagTree}/install.bash" ]]; then
 		lineHome="$(mktemp -d "${safeTmp}/gitsby-line.XXXXXX")"
 		lineOut="$(HOME="${lineHome}" bash "${tagTree}/install.bash" -y 2>&1 </dev/null || true)"

@@ -6,7 +6,7 @@
 ##		- Backwards compatibility. Compares this build against the frozen v2.1.0
 ##		  script under legacy/, rather than each against a spec. cicd/test.bash
 ##		  asks "does this behave correctly?" of one build; this asks "does the new
-##		  one ANSWER as the shipped one did?" for the same input.
+##		  one ANSWER as the released one did?" for the same input.
 ##		- Aimed at the defect class the behavioral suite is blind to by
 ##		  construction: every port bug that has reached users here was a language
 ##		  mechanism differing - file encoding, argument parsing, return types,
@@ -107,7 +107,7 @@ fTestLine(){ local re='^\[([0-9A-Za-z]+)\] (.*)$' d="$2"; [[ ! "${d}" =~ ${re} ]
 fOk(){   pass=$((pass+1)); ((quiet)) || fTestLine PASS "$*"; }
 fBad(){  fail=$((fail+1)); fTestLine FAIL "$*"; }
 
-## The subject and the reference. 'new' is whatever cicd stage 2 just built; 'ref' is the
+## The subject and the reference. 'new' is whatever cicd stage 2 built; 'ref' is the
 ## frozen script, read-only and never rebuilt.
 newBuild="${root}/src-go/gitsby"; [[ -x "${newBuild}" ]] || newBuild="${newBuild}.exe"
 refBuild="${root}/legacy/bin/gitsby"
@@ -337,7 +337,7 @@ fSame "[dben0] 'br land' answers as it always did"     "${notRepo}" -q -NoFetch 
 fSameSpelling(){
 	local -r label="${1}"; local -r dir="${2}"; local -r old="${3}"; local -r new="${4}"; shift 4
 	local a="" b=""
-	# shellcheck disable=SC2086  ## deliberate word-split: these carry multi-word commands ('br land').
+	# shellcheck disable=SC2086  ## deliberate word-split: these are multi-word commands ('br land').
 	a="$(fRunNew "${dir}" -q -NoFetch ${old})"
 	# shellcheck disable=SC2086  ## ${new} is a list of arguments, split on purpose.
 	b="$(fRunNew "${dir}" -q -NoFetch ${new})"

@@ -158,7 +158,7 @@ func (a *app) stagedPreflight() error {
 		if err := a.stagedMoveCheck(a.branchTarget(current), all, left); err != nil {
 			return err
 		}
-		// The back-merge checks dev out too. What main holds by then is read as
+		// The back-merge checks dev out too. What main has by then is read as
 		// the index, which is right unless the merge itself touches one of these.
 		dev := a.mergeTarget()
 		if a.isHotfixBranch("") && dev != a.defaultBranch() && (a.branchExistsLocal(dev) || a.branchExistsRemote(dev)) {

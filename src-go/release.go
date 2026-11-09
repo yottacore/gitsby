@@ -155,7 +155,7 @@ func (a *app) releasePreflight() error {
 		relTarget = "refs/remotes/origin/" + relMain
 	}
 	// The local branch is what gets tagged and pushed, so it is what "nothing new"
-	// is about. Stand down if origin holds commits we don't: the pull would bring
+	// is about. Stand down if origin has commits we don't: the pull would bring
 	// them in.
 	if a.branchExistsLocal(relMain) && a.branchExistsRemote(relMain) {
 		if !runOK("git", "merge-base", "--is-ancestor", "refs/remotes/origin/"+relMain, relTarget) {

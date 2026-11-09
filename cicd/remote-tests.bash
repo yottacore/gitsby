@@ -27,7 +27,7 @@
 ##		- Every box goes through the VM state helper beside the lock, which wakes a VM that is
 ##		  paused or off for its run and puts it back after, and leaves the rest alone. Without
 ##		  the helper, the lock takes each box itself, and a VM that is asleep is skipped.
-##		- The Windows box runs first, since vm925w can't start once another VM holds its port.
+##		- The Windows box runs first, since vm925w can't start once another VM has its port.
 ##		- The Windows box runs its Go tests on half its cores, in the BelowNormal class.
 ##		- The Go tests are built with the image's Go when cicd.bash runs this with the image, and
 ##		  with this box's otherwise.
@@ -97,7 +97,7 @@ mark="@@gitsby-remote-tests@@"
 ## The core budget on a Mac or Unix box, from its own cores and load, by config.bash's rule:
 ## half, or a quarter when the 1-minute load is over half the cores, never under 1. The Go tests
 ## take it through GOMAXPROCS, which their -test.parallel follows. '$lo' runs a command at low
-## priority. POSIX sh, for whatever shell the box's ssh lands in.
+## priority. POSIX sh, for whatever shell the box's ssh starts.
 # shellcheck disable=SC2016  ## expands on the box, not here.
 budgetSh='n=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
 	l=$({ cat /proc/loadavg || sysctl -n vm.loadavg; } 2>/dev/null | tr -d "{}" | awk "{print \$1}")
@@ -273,7 +273,7 @@ fRunPosix(){
 }
 
 ## Under the lock: the Windows box $1, reached as the first of the ssh names $2 that answers.
-## The commands are cmd's, which is where ssh lands there.
+## The commands are cmd's, which is what ssh starts there.
 fRunWindows(){
 	local lockName="$1" sshName="" rc=0 log="${work}/gotest-$1.log" setupLog="${work}/setup-$1.log" cleanLog="${work}/cleanup-$1.log" dir leaf
 	sshName="$(fReachable "${lockName}:$2")"
@@ -314,7 +314,7 @@ if (-not (fSafeRm (Join-Path \$env:TEMP '${leaf}'))) { exit 1 }")" -n >"${cleanL
 	fi
 }
 
-## The second half of a run: this script again, started by the lock's wrap once it holds the box.
+## The second half of a run: this script again, started by the lock's wrap once it has the box.
 if ((${#held[@]})); then
 	work="${REMOTE_TESTS_WORK:?--held runs only under the lock, started by this script}"
 	if [[ -n "${REMOTE_TESTS_ERR_FD:-}" ]]; then exec 2>&"${REMOTE_TESTS_ERR_FD}"; fi

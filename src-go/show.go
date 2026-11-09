@@ -174,7 +174,7 @@ func (a *app) showHostLine() {
 		}
 		// Only a write can act as the wrong account, so only a write gets the
 		// comparison - the same rule the gh line above follows, and the reason this
-		// block exists at all rather than just naming the host.
+		// block exists at all rather than only naming the host.
 		if a.remote.isWrite {
 			keyWho := a.sshLogin(a.remote.probeURL)
 			if identityMismatchText(cli, who, keyWho) != "" {
@@ -270,7 +270,7 @@ func (a *app) accountSourceText() string {
 }
 
 // showAccountFrom names where the account came from, and which file that is, under
-// the line they explain. Their own lines rather than a parenthetical: the honest
+// the line they explain. Their own lines rather than a parenthetical: the true
 // answer names a path, and a path is what makes a line wrap. Printed even when the
 // source repeats the name on the line above - what the reader is missing there is
 // not the string, it is what KIND of thing the string is and who chose it.
@@ -377,8 +377,8 @@ func (a *app) showAccountKept() {
 // showAccountUnapplied covers the cases where the account did not authenticate this
 // run, and reports whether it printed. Separate from the applied line because the
 // two answer different questions: the applied line says who, and this says what
-// happened instead, why, and what to type to fix it. One line carries the first.
-// It cannot carry the other three, and the attempt read as a paragraph.
+// happened instead, why, and what to type to fix it. One line fits the first.
+// It cannot fit the other three, and the attempt read as a paragraph.
 func (a *app) showAccountUnapplied() bool {
 	switch {
 	case a.acct.bypassed:
@@ -442,7 +442,7 @@ func (a *app) showAccountOtherHost() {
 	}
 }
 
-// showAccountNoToken explains the account gitsby resolved but holds no credential
+// showAccountNoToken explains the account gitsby resolved but has no credential
 // for. gh is what goes on acting as itself where gh is the tool; anywhere else there
 // is no second identity to fall back to, and git pushes with whatever it already had.
 func (a *app) showAccountNoToken() {
@@ -569,7 +569,7 @@ func readSSHConfig(target string) sshConfig {
 	return cfg
 }
 
-// sshConfigCache holds 'ssh -G' answers by target. PATH is in the key, since a
+// sshConfigCache keeps 'ssh -G' answers by target. PATH is in the key, since a
 // test may change it in one process. Locked, since look-ahead goroutines read
 // remotes too.
 var sshConfigCache = struct {

@@ -213,10 +213,10 @@ func (a *app) settleRepoURL() (bool, error) {
 	return false, nil
 }
 
-// cloneDestDir names where a clone will land, from the arguments alone. Asked
+// cloneDestDir names where a clone will go, from the arguments alone. Asked
 // before the account is resolved as well as when the clone is settled: the folder
 // rules that pick the account are the destination's, and nothing has touched the
-// disk by then. Empty means the URL carried no name to derive one from.
+// disk by then. Empty means the URL had no name to derive one from.
 func cloneDestDir(url, dir string) string {
 	if dir != "" {
 		return dir
@@ -399,7 +399,7 @@ func (a *app) cmdConnect() error {
 		}
 		return a.step("git", "push", "-u", "origin", "HEAD")
 	case "push":
-		// origin already set - just make sure everything is published
+		// origin already set - make sure everything is published
 		switch {
 		case !a.hasUpstream() || isAhead():
 			return a.step("git", a.pushArgs()...)

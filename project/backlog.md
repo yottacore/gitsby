@@ -372,7 +372,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 item 10: Output text and comments use words the writing rules ban
 	- ID: 2026110912215210
 	- Type: Bug
-	- Status: Queued
+	- Status: Started
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -387,6 +387,36 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- `holds`, about 40, and the filler `just`, about 14, are on the same list and go in the same pass.
 	- Sweep: the greps in details.md -> "Code review 20261109".
 	- Estimated effort: Avg
+	- Progress log:
+		- 20261109: Output, Go comments and every script but test.bash done. test.bash is in child 2026110914395015.
+	- Decisions:
+		- Output: "merging it into", "The hotfix is in 'main'", "Merge it by hand", "will have changes", "one with whitespace", "no main, master, or trunk", and release.bash's "Phase 2: merge", "merge it through a PR" and "has a semver suffix".
+		- `carry` stays where it means move, such as "carry it to the new branch" or "carries on". `holds` stays for a lock, an open handle, or "holds X to Y". `just` stays where it means only or a moment ago.
+		- Left as possibly written by hand: branch.go's mergeTarget comment and main.go's "No tty" line (both 2026-07-22), gen-demo-gif.py, fuzz.bash's header, and n8git_backup-and-publish. History footers stay, since they are dated records.
+		- Left for cost: safe-rm.sh and the Dockerfile, since a comment edit there changes the image tag and forces a full rebuild. The demo script and scenario, which the pipeline compares byte for byte.
+		- design.md:616 says "carries a semver suffix". Docs are outside this item.
+	- Actual fix [Bug]: the output lines above, about 75 Go comments, and about 80 script comments, in cicd/, the installers, and ruff.toml.
+	- Branch: round-20261109
+	- Test case: [ddf81] `The hotfix is in 'main'`, [dafqx] the Oxford comma, and [dd5es] `has a semver suffix`. The rest is comments.
+		- 20261109: [ddf81] `The hotfix landed on 'main'` -> `The hotfix is in 'main'`, [dafqx] `no main, master or trunk` -> `no main, master, or trunk`, [dd5es] `carries a semver suffix` -> `has a semver suffix`.
+	- Verified: gofmt, go vet and go test passed. The quick gate passed: test.bash 1916/0, fuzz 314/0, parity 30/0.
+	- Swept: Go comments, cicd/, install.bash, install.ps1 and ruff.toml for land, carry, ship, surface, honest, holds, just and owner. test.bash is left to the child.
+
+- Code Review 20261109 item 10, part 2: test.bash comments and check labels
+	- ID: 2026110914395015
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261109-143950
+	- Opened by: jim-collier
+	- Parent ID: 2026110912215210
+	- Incorrect behavior [Bug]: test.bash has about 200 hits for the words the parent lists, in comments and in check labels.
+	- Expected behavior [Bug]: Same as the parent. A check label may change, since its test ID stays.
+	- Origin: same as the parent. Split off 2026-11-09, since test.bash is half the hits.
+	- Notes:
+		- `br land` and the branch names `landed` and `offland` stay. So does what a check greps for in gitsby's output.
+	- Estimated effort: Avg
+	- Origin: same as the parent. Split off 2026-11-09, since test.bash is half the hits.
 
 - Code Review 20261109 item 11: config.bash's sourced-only guard prints its error to stdout with `echo -e`
 	- ID: 2026110912215211

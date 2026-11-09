@@ -38,7 +38,7 @@ func FuzzSplitRemoteURL(f *testing.F) { // [dbjwr]
 	}
 	f.Fuzz(func(t *testing.T, url string) {
 		host, _, _ := splitRemoteURL(url)
-		// The host is matched against config rules and account hosts; one carrying
+		// The host is matched against config rules and account hosts; one with
 		// the separators it was split on would mean the split misfired.
 		if strings.ContainsFunc(host, unicode.IsSpace) {
 			t.Errorf("splitRemoteURL(%q) host %q carries whitespace", url, host)
@@ -98,7 +98,7 @@ func FuzzNextVersion(f *testing.F) { // [dbjws]
 	f.Fuzz(func(t *testing.T, latest string) {
 		version, _ := nextVersion(latest)
 		// Whatever the tag looked like, what comes out is a plain three-part version:
-		// it lands in the next tag name and in the release plan.
+		// it goes in the next tag name and in the release plan.
 		if !fuzzVersionRE.MatchString(version) {
 			t.Errorf("nextVersion(%q) = %q, not a three-part version", latest, version)
 		}
@@ -135,7 +135,7 @@ func indentLines(body, prefix string) string {
 // puts it beneath the key or skips it - except a raw block fence, which SHCL
 // reads as the key given again with the block as its value, and the last value
 // wins as it does for any repeat. Nothing under the key may reach the model, and
-// every name the module holds under any instance of it must be on the ignored list.
+// every name the module has under any instance of it must be on the ignored list.
 func FuzzConfigLoadDoc(f *testing.F) { // [dcmn5]
 	// The refused account name is left out: its body is a block's, not a key's.
 	for _, row := range nestedKeyRows[:len(nestedKeyRows)-1] {
@@ -220,7 +220,7 @@ func FuzzSetValue(f *testing.F) { // [ddcc1]
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, value string) {
-		// What the plan shows and the file holds must read back as the value typed.
+		// What the plan shows and the file has must read back as the value typed.
 		doc := shcl.New()
 		if doc.SetString("v", value) != shcl.SetOk {
 			return

@@ -101,7 +101,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/.." && pwd)"   ## the git repo root (cicd/..)
 export PATH="${HOME}/.local/bin:${PATH}"   ## user-prefix npm tools (markdownlint) win
 source "${here}/config.bash"
-## No VCS stamps on anything go builds here, the lint and test builds too, not just the -o ones.
+## No VCS stamps on anything go builds here, the lint and test builds too, not only the -o ones.
 ## Go takes only a .git folder for a repo, so from the hook's worktree under .git it walks up to
 ## the main checkout and stamps that, and in the image git won't read it and the build fails.
 export GOFLAGS="${GOFLAGS:+${GOFLAGS} }-buildvcs=false"
@@ -130,7 +130,7 @@ fEcho(){       if [[ -n "$*"     ]]; then fEcho_Clean "[ $* ]"; else fEcho_Clean
 fEcho_Force(){ fEcho_ResetBlankCounter; fEcho "$*"; }
 __letterbox="•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••"
 fSection(){ fCpuBudget; fEcho_Clean; fEcho_Clean "${__letterbox}"; fEcho "$*"; [[ "${stagePause:-0}" == 0 ]] || sleep "${stagePause}"; }
-## Steps. stepList holds the ones this run takes, in order, by key, and stepTitle their names. Off
+## Steps. stepList has the ones this run takes, in order, by key, and stepTitle their names. Off
 ## steps aren't in it, so they aren't counted. The run in the container numbers its own steps from
 ## where the run out here left off (stepBase), out of the whole run's total.
 declare -A stepTitle=([sync]="Remote sync" [lint]="Lint" [test]="Build + regression tests" [fuzz]="Fuzz + security"
@@ -328,7 +328,7 @@ fModCachePrune(){
 ## At the end of a run that used the image, passed or not: the run's containers, the project's
 ## dangling images, its older image tags once a newer one has passed, and the Go cache volume when
 ## it's over 2 GB, or else on a pass its module cache's versions go.sum doesn't name. Only what
-## carries the project's label. The build cache is docker's default
+## has the project's label. The build cache is docker's default
 ## builder, which every project shares, so the daemon's builder.gc trims it, not a run here. The
 ## run's end line says what went and about what it freed.
 fDockerTidy(){
@@ -386,7 +386,7 @@ fRunTmpDone(){
 	if ((! ${#tidyGone[@]})); then fEcho_Clean "Cleanup: nothing to remove"; fEcho_Clean; return 0; fi
 	printf -v list '%s, ' "${tidyGone[@]}"
 	## The steps remove their own files as they finish, and the run in the image keeps its folder
-	## on the container's tmpfs, so the run folder is mostly just its run.pid by now. A size under
+	## on the container's tmpfs, so the run folder is mostly its run.pid by now. A size under
 	## a megabyte, or one docker didn't give, says nothing about the disk.
 	if ((tidyFreed < 1000000)); then fEcho_Clean "Cleanup: removed ${list%, }"; fEcho_Clean; return 0; fi
 	fEcho_Clean "Cleanup: removed ${list%, }; freed about $(numfmt --to=si --suffix=B "${tidyFreed}" 2>/dev/null || echo "${tidyFreed} bytes")"
@@ -616,7 +616,7 @@ fStageLint(){
 		fEcho "WARNING: golangci-lint skipped (not installed: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest)"
 	fi
 	## The committed Windows resource, against what the newest tag would generate. It is linked
-	## into published bytes, so an edited icon or description that nobody regenerated would ship
+	## into published bytes, so an edited icon or description that nobody regenerated would go out
 	## silently. Probe-gated like the two above.
 	winresStatus=0
 	"${WINRES_CMD[@]}" --check -q || winresStatus=$?
@@ -859,7 +859,7 @@ fContainerRun(){
 		-e "GITSBY_CICD_TZ=<${tzOff}>${tzSign}${tzOff:1:2}:${tzOff:3:2}" ${memArgs[@]+"${memArgs[@]}"} \
 		--user "$(id -u):$(id -g)" "${containerMounts[@]}" -w "${root}" \
 		"${containerImage}" bash "${root}/cicd/cicd.bash" "${innerArgs[@]}" &
-	## Waited on, not run in front: bash holds a trap until a command in front ends, and docker
+	## Waited on, not run in front: bash defers a trap until a command in front ends, and docker
 	## passes Ctrl+C on into the container rather than ending.
 	wait "$!" || fDie "the run in the container failed (above)"
 	fEcho "OK: the container run"
@@ -1117,7 +1117,7 @@ if [[ -n "${LINT_LOG_DIR:-}" && -z "${GITSBY_CICD_IN_CONTAINER:-}" ]] && mkdir -
 	## trap's first line would take SIGPIPE before any cleanup ran.
 	exec > >(trap '' INT TERM; exec tee "${root}/${LINT_LOG_DIR}/run_${stamp}.log") 2>&1
 	## Wait for tee to drain on exit, else the shell prompt returns mid-flush and
-	## the last output lands after it (looks like the prompt "came back").
+	## the last output prints after it (looks like the prompt "came back").
 	teePid=$!
 	trap 'fRunTmpDone "$?"; exec 1>&- 2>&-; wait "${teePid}" 2>/dev/null' EXIT
 fi
@@ -1150,7 +1150,7 @@ if ((doSync)); then
 	fStepEnd
 fi
 
-## Version stamped into every build this run. Dev builds carry what describe says; a
+## Version stamped into every build this run. Dev builds have what describe says; a
 ## release injects the clean one. Read after the sync, which can move HEAD. -dirty
 ## because a run that publishes builds source whose commit stage 8 hasn't made yet.
 goVersion="$(fGoVersion)"; goBuildEpoch="$(fGoBuildEpoch)"
@@ -1172,9 +1172,9 @@ if ((doLint)); then
 	fStepEnd
 fi
 
-## Stage 2: build, then the regression suite against what was just built. The build is
+## Stage 2: build, then the regression suite against what was built. The build is
 ## the native one; the cross-builds happen at dogfood, where they have somewhere to go.
-## Dev builds carry the describe version; release builds inject the clean one.
+## Dev builds have the describe version; release builds inject the clean one.
 if ((doTest)); then
 	fStep test
 	fNativeBuild
@@ -1191,7 +1191,7 @@ fi
 
 ## Stage 3: fuzz + security (adversarial input against our parsing, plus checks
 ## of what we shell out to). govulncheck and pip-audit ask a server, so --quick leaves them out.
-## The leak checks come last, and --leakcheck runs them under --no-fuzz too. Same lands-later
+## The leak checks come last, and --leakcheck runs them under --no-fuzz too. Same comes-later
 ## policy as the tests.
 if ((doFuzz || leakcheck)); then fStep fuzz; fi
 ## fuzz.bash and the spawn counts run the build, which --no-test left unmade.
@@ -1203,7 +1203,7 @@ elif ((doFuzz)); then
 fi
 ## Coverage-guided fuzzing of the pure parsers, briefly. Their seed corpus already ran
 ## with 'go test' in stage 2; this hunts a little past it each run. One target per
-## invocation is go's rule, and a crasher lands in src-go/testdata/fuzz/ as evidence.
+## invocation is go's rule, and a crasher goes in src-go/testdata/fuzz/ as evidence.
 ## A list that failed or came back empty would fuzz nothing and still pass.
 if ((doFuzz)); then
 	fuzzList="$(cd "${root}/${GO_MODULE_DIR}" && go test -list 'Fuzz.*' . 2>&1)" \
@@ -1320,7 +1320,7 @@ if ((${#DOGFOOD_TARGETS[@]})); then
 			continue
 		fi
 		## Built into the module dir under the target's own name, so the native binary the
-		## suite just ran against is not overwritten by a build that cannot run here.
+		## suite ran against is not overwritten by a build that cannot run here.
 		out="${root}/${GO_MODULE_DIR}/${EXE_NAME}-${t//\//-}"
 		fCrossBuild "${t}" "${out}"
 		cp -f "${out}" "${dogfoodDest[${t}]}/${exe}"
@@ -1337,7 +1337,7 @@ fi
 ## against a build of its own, stamped with the newest release, renders the
 ## animated loop. A failure is a warning, never a stop. When the render differs
 ## from the committed copy, a timestamped original is kept (GFS-pruned) out of
-## tree, then landed in-repo.
+## tree, then moved in-repo.
 ((! DO_DEMOGIF)) || fStep demogif
 if ((! DO_DEMOGIF)); then
 	:
@@ -1349,7 +1349,7 @@ else
 	mkdir -p "$(dirname "${demogifOut}")"
 	## Every command prints a banner naming its build, and a build stamped with the commit put a
 	## new one on camera at every commit, so the whole gif was replaced on every run. The demo's
-	## own build carries the newest release instead - the version and build number that release's
+	## own build has the newest release instead - the version and build number that release's
 	## published binary prints - so the gif changes only when what it shows does.
 	demoVersion="0.0.0"; demoBuildEpoch=""
 	demoTags="$(git -c versionsort.suffix=- tag --sort=-v:refname --list 'v*' 2>/dev/null || true)"
@@ -1392,7 +1392,7 @@ else
 			rm -f -- "${demogifTmp:?}"
 			fEcho "WARNING: demo gif differs; ${handsOff} rewrites no tracked file, so the committed one stays"
 		else
-			## Keep the new original out of tree (GFS-pruned), then land it in the repo.
+			## Keep the new original out of tree (GFS-pruned), then move it into the repo.
 			mkdir -p "${DEMOGIF_ARCHIVE_DIR}"
 			cp -f "${demogifTmp}" "${DEMOGIF_ARCHIVE_DIR}/demo_${stamp}.gif"
 			gfs_rotate "${DEMOGIF_ARCHIVE_DIR}" demo gif >/dev/null 2>&1 || true

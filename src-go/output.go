@@ -35,7 +35,7 @@ func newPrinter() *printer {
 
 func (p *printer) resetBlank() { p.lastBlank = false }
 
-// clean prints a plain line; an empty one only lands when the previous line was
+// clean prints a plain line; an empty one only prints when the previous line was
 // not already blank.
 func (p *printer) clean(s string) {
 	if s != "" {
@@ -51,7 +51,7 @@ func (p *printer) clean(s string) {
 
 func (p *printer) cleanf(format string, a ...any) { p.clean(fmt.Sprintf(format, a...)) }
 
-// forceClean lands a blank even directly after another one, for the framing that
+// forceClean prints a blank even directly after another one, for the framing that
 // has to be a fixed number of lines rather than a rhythm.
 func (p *printer) forceClean(s string) {
 	p.resetBlank()

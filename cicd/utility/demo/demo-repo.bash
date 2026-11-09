@@ -76,7 +76,7 @@ stamp="${root}/.gitsby-demo-root"
 if [[ -e "${root}" ]]; then
 	##	A root built before the stamp existed is still recognizably ours - nothing else puts a
 	##	demo.env beside an acme-api-origin.git. Without that second reading, the first run after
-	##	this guard landed would refuse the directory the previous run had made itself.
+	##	this guard went in would refuse the directory the previous run had made itself.
 	ours=0
 	if [[ -d "${root}" && ! -L "${root}" ]]; then
 		if   [[ -f "${stamp}" ]]; then                             ours=1
@@ -114,8 +114,8 @@ printf 'gho_demo111111111111111111111111111111111\n' > "${XDG_CONFIG_HOME}/gitsb
 chmod 600 "${XDG_CONFIG_HOME}/gitsby"/*.token
 
 ##	A stub gh, first on PATH. Two reasons, and the second is the important one:
-##	  - gitsby asks GitHub whose token a tokenFile holds. A made-up token gets no answer, so
-##	    every scene carried a line saying the token could not be checked.
+##	  - gitsby asks GitHub whose token a tokenFile has. A made-up token gets no answer, so
+##	    every scene had a line saying the token could not be checked.
 ##	  - the real gh would have answered as whoever is logged in on the rendering machine, which
 ##	    is a real name in a deliberately anonymized demo.
 ##	It answers only the two calls the scenario reaches and fails everything else, so a command

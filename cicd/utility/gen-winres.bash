@@ -3,12 +3,12 @@
 #  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
 
 ##	Purpose:
-##		- Writes the Windows resource (.syso) the Go linker picks up, so the .exe carries an
+##		- Writes the Windows resource (.syso) the Go linker picks up, so the .exe has an
 ##		  icon and the version details Explorer's Properties tab reads.
 ##		- The .syso files are COMMITTED, not built on demand. They are linked into the bytes
 ##		  we publish checksums for, so a rebuild from the tag has to produce them without
 ##		  needing a tool installed - the same reason -buildvcs=false is on.
-##		- Which means they carry the LAST RELEASED version, not the working tree's describe
+##		- Which means they have the LAST RELEASED version, not the working tree's describe
 ##		  output: a resource that changed every commit could not be committed at all.
 ##		  release.bash regenerates them as part of the version bump, next to the changelog.
 ##		- --check is what the pipeline runs: regenerate to a temp dir and compare. It catches
@@ -119,7 +119,7 @@ IFS='.' read -r verMajor verMinor verPatch <<< "${verStr%%-*}"
 [[ -f "${icon}" ]] || fDie "no icon at assets/$(basename "${icon}") - run with --icon."
 
 if [[ -z "${goversioninfo}" ]]; then
-	## Refused where it would silently ship the wrong bytes. --check answers 3 instead, which is
+	## Refused where it would silently publish the wrong bytes. --check answers 3 instead, which is
 	## how the callers tell "not installed" from "stale" without probing for the tool themselves.
 	((check)) || fDie "goversioninfo isn't installed (see --help)."
 	fEcho_Clean "  windows resource check skipped (no goversioninfo)"

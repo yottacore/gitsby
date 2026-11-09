@@ -119,7 +119,7 @@ fRefuse(){ local -r desc="$1"; local -r dir="$2"; shift 2; fRun "${dir}" "$@"
 	if fIsCrash; then fFail "${desc}: crashed (exit ${__runCode})"
 	elif ((__runCode == 0)); then fFail "${desc}: accepted, should refuse"
 	else fOk "${desc}"; fi; }
-## Commit a message and confirm it lands in the log verbatim - catches a shell
+## Commit a message and confirm it reaches the log verbatim - catches a shell
 ## glob-expanding a bare '*'/'?' message into filenames before git sees it.
 fMsgLiteral(){ local -r desc="$1"; local -r dir="$2"; local -r msg="$3"
 	echo "chg ${RANDOM}" > "${dir}/seed.txt"
@@ -131,7 +131,7 @@ fMsgLiteral(){ local -r desc="$1"; local -r dir="$2"; local -r msg="$3"
 
 ## Confirm a PR title reaches gh verbatim - same class of bug as fMsgLiteral, on the
 ## other user-controlled value that gets handed to a native command.
-## Clone into a glob-shaped directory name: the name must land verbatim, not expand
+## Clone into a glob-shaped directory name: the name must come through verbatim, not expand
 ## against the cwd. Same bug class as fMsgLiteral, one slot deeper.
 fDirLiteral(){ local -r desc="$1"; local -r dir="$2"; local -r url="$3"; local -r name="$4"
 	fSafeRm_IfThere "${dir:?}/${name}"
@@ -192,7 +192,7 @@ fRunFuzz(){
 	## No .cmd sibling here, unlike test.bash: on Windows that would route the stub through cmd.exe,
 	## which splits an unquoted '&' or '>' in an argument - turning a vector this suite hands gitsby
 	## into a real command, and reporting an injection that gitsby never had. The pwsh leg's gh
-	## coverage is skipped on Windows instead (see below), which is the honest answer.
+	## coverage is skipped on Windows instead (see below), which is the true answer.
 	cat > "${base}/bin/gh" <<'GHEOF'
 #!/usr/bin/env bash
 case "$1 $2" in
@@ -254,7 +254,7 @@ GHEOF
 		echo "change ${i}" > "${repo2}/seed.txt"; i=$((i + 1))
 		fSurvive "[dabec] commit message inert: '${inject[m]}'" "${repo2}" -q update "${inject[m]}"
 	done
-	## ...and a bare-glob message must land verbatim, not expand to filenames. The
+	## ...and a bare-glob message must come through verbatim, not expand to filenames. The
 	## repo has files, so '*' and '*.txt' would glob if the message weren't literal.
 	local gm
 	for gm in '*' '*.txt' '?' 'v*'; do fMsgLiteral "[dabep] commit message verbatim: '${gm}'" "${repo2}" "${gm}"; done
@@ -342,7 +342,7 @@ GHEOF
 	done
 
 	## GITSBY_ACCOUNT reaches 'gh auth token --user' as a value. It must stay inert there, and an
-	## account nobody holds a token for is simply not selected - never an error, never a canary.
+	## account nobody has a token for is simply not selected - never an error, never a canary.
 	local acct
 	for acct in "${inject[@]}" '-x' '--user root'; do
 		GITSBY_ACCOUNT="${acct}" fSurvive "[db007] GITSBY_ACCOUNT inert: '${acct}'" "${repo2}" -q --no-fetch status
@@ -429,7 +429,7 @@ fCredentialHelperVectors(){
 	done
 	## GIT_CONFIG_COUNT is the one environment value gitsby reads and numbers its own
 	## config entries on from, so a junk count must be refused rather than treated as
-	## zero and numbered over the caller's entries - and a count carrying a command
+	## zero and numbered over the caller's entries - and a count with a command
 	## substitution must stay text, never be evaluated. Driven on the same path that
 	## actually adds config (the credential helper), which is where the count is read.
 	local badCount="" why=""
@@ -443,7 +443,7 @@ fCredentialHelperVectors(){
 		else fFail "[ddjyg] junk GIT_CONFIG_COUNT '${badCount}': ${why}"; fi
 	done
 
-	## The helper git holds must carry no login text at all - the name is read from the
+	## The helper git keeps must have no login text at all - the name is read from the
 	## environment when it runs, the same way the token is.
 	local helper=""
 	fCredCfg
@@ -452,7 +452,7 @@ fCredentialHelperVectors(){
 	if [[ "${helper}" == *'${GITSBY_HOST_USER}'* && "${helper}" != *touch* ]]; then
 		fOk "[dbg6e] the credential helper reads its username from the environment"
 	else
-		fFail "[dbg6e] the credential helper carries interpolated text: ${helper}"
+		fFail "[dbg6e] the credential helper has interpolated text: ${helper}"
 	fi
 }
 fCredentialHelperVectors
@@ -512,7 +512,7 @@ fSwitchUntouched(){
 }
 fSwitchUntouched
 
-## A config 'sshkey' becomes GIT_SSH_COMMAND, which git hands to a shell - so a key path carrying
+## A config 'sshkey' becomes GIT_SSH_COMMAND, which git hands to a shell - so a key path with
 ## a shell character would be re-parsed there and run. The value is dropped on load; proven by a
 ## real command that would use the key, with a fake ssh on PATH so nothing reaches the network.
 ## The canary is inside the key value: it fires only if the shell ever sees the string, which it
@@ -525,8 +525,8 @@ fSshKeyInert(){
 		&& git remote add origin ssh://git@example.invalid/acme/proj.git ) >/dev/null 2>&1
 	printf '#!/usr/bin/env bash\nexit 1\n' > "${dir}/bin/ssh"; chmod +x "${dir}/bin/ssh"
 	## Each value is an absolute path (so the "must be absolute" rule doesn't drop it first)
-	## carrying a shell metacharacter. A '#' can't appear - the config format reads it as a
-	## comment - so a redirect and a substitution carry the canary instead, each firing whatever
+	## with a shell metacharacter. A '#' can't appear - the config format reads it as a
+	## comment - so a redirect and a substitution hold the canary instead, each firing whatever
 	## trails them on the reconstructed command line.
 	local key="" why=""
 	for key in "${dir}/k;>${dir}/CANARY-sshkey" "${dir}/k\$(touch ${dir}/CANARY-sshkey)" "${dir}/k\`touch ${dir}/CANARY-sshkey\`"; do

@@ -6,13 +6,13 @@
 .DESCRIPTION
     The dogfood answer to "is the binary I am running the one I just built?", and
     independent of the pipeline: each run copies the newest build (src-go/gitsby,
-    the one every cicd pass refreshes) into a pool directory under a name carrying
+    the one every cicd pass refreshes) into a pool directory under a name with
     the build's own mtime, ages out stale copies, then launches the newest copy
     with every argument forwarded and its exit code returned.
 
     The pool lives outside PATH and the names can't collide with an installed
     gitsby, so this never shadows the real one. Copying by build-mtime means a
-    given build lands in the pool once, and a copy that is currently running never
+    given build goes in the pool once, and a copy that is currently running never
     blocks the next one - Windows will not overwrite a running executable, but a
     new build gets a new name.
 

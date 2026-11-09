@@ -36,7 +36,7 @@ func afterEq(arg string) string { return arg[strings.Index(arg, "=")+1:] }
 
 // parseArgs fills the option and positional state. 'info' names an information
 // option - help, version, about or donate - asked for from any position: '<noun>
-// <verb> --help' is the reflex every git user has, and slot 1 always holds a real
+// <verb> --help' is the reflex every git user has, and slot 1 always has a real
 // command, so nothing can be shadowed. -v is deliberately not an option here - it
 // must not turn a mutating command into a silent no-op.
 func parseArgs(argv []string) (opt options, cmd command, info string, err error) {
@@ -209,7 +209,7 @@ func collapseCommand(cmd command) (command, error) {
 func sortCommand(cmd command, opt *options) (command, error) {
 	switch cmd.name {
 	case "status", "whoami", "br-list":
-		// br list's extra lands in cmd.arg too, after the noun shift, so one test
+		// br list's extra goes in cmd.arg too, after the noun shift, so one test
 		// covers both.
 		cmd.mutating = false
 		if cmd.arg != "" {

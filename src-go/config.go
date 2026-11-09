@@ -118,7 +118,7 @@ func sshKeyArg(value string) string {
 
 // sshKeyCommand is the ssh command for an account's key, for GIT_SSH_COMMAND and
 // for core.sshCommand alike. IdentitiesOnly, or ssh offers every key the agent
-// holds and the server picks the first that authenticates - on a two-account
+// has and the server picks the first that authenticates - on a two-account
 // machine a coin toss.
 func sshKeyCommand(value string) string {
 	return "ssh -i " + sshKeyArg(value) + " -o IdentitiesOnly=yes"
@@ -227,7 +227,7 @@ func canonPath(p string) string {
 
 // resolveLinks settles symlink and junction spellings through the nearest
 // ancestor that exists, then puts the rest of the path back on - a clone target
-// need not exist yet, which is why it can't just resolve the whole thing.
+// need not exist yet, which is why it can't resolve the whole thing at once.
 //
 // Every platform, not just Windows. 'git rev-parse --show-toplevel' answers with
 // the tree's real path, so a rule written the way you type it - through a
@@ -548,7 +548,7 @@ func (c *config) load(o options) error {
 	// Only once read: a file recorded with no document behind it crashed the edit.
 	c.file, c.raw = file, string(data)
 	// The byte-order mark a Windows editor writes by default, off the front of the
-	// first line. Left on, it landed on the first key in the file, which then read
+	// first line. Left on, it ended up on the first key in the file, which then read
 	// as one nothing understands - and the line that reports those printed the mark
 	// as part of the name, so the one diagnostic meant to explain the loss named a
 	// key that looks perfectly valid.
@@ -719,7 +719,7 @@ func (c *config) absorb(acct, field, value, key string) {
 		if value == "" {
 			break
 		}
-		// Listed, not guessed at: the file holds no record of where a relative value
+		// Listed, not guessed at: the file has no record of where a relative value
 		// was typed. The account stays defined, so its key and author still apply
 		// when it is named.
 		if problem := folderRuleProblem(value); problem != "" {
@@ -736,7 +736,7 @@ func (c *config) absorb(acct, field, value, key string) {
 		}
 	case "ghaccount", "tokenfile", "sshkey", "name", "email", "protocol", "host", "user":
 		// git hands GIT_SSH_COMMAND and core.sshCommand to a shell, so a key
-		// path carrying whitespace or a shell character is re-parsed there
+		// path with whitespace or a shell character is re-parsed there
 		// rather than used - and this file is redirectable by flag and by
 		// environment variable. Drop it and say so: quietly falling back to
 		// whatever key ssh picks is how you push as the wrong person.
@@ -758,7 +758,7 @@ func (c *config) absorb(acct, field, value, key string) {
 		}
 		// 'host' and 'user' are interpolated into the credential helper, which
 		// git hands to a shell exactly as it hands one core.sshCommand. Neither
-		// has any business carrying a character a shell would act on, so hold
+		// has any business having a character a shell would act on, so hold
 		// them to what a hostname and a login can actually contain rather than
 		// trust the file - it is redirectable by flag and by environment variable.
 		if (field == "host" || field == "user") && value != "" && !hostWordOK.MatchString(value) {
@@ -807,7 +807,7 @@ func splitAccountKey(key string) (acct, field string, ok bool) {
 	}
 	acct, field = rest[:dot], rest[dot+1:]
 	// An empty field ('account.work.') is not an account key either; the whole line
-	// lands with the other ignored ones instead of half-parsing.
+	// goes with the other ignored ones instead of half-parsing.
 	if field == "" || !acctNameOK.MatchString(acct) {
 		return "", "", false
 	}

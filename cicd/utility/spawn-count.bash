@@ -100,7 +100,7 @@ unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST 
 mkdir -p "${work}/bin"
 cat > "${work}/bin/gh" <<EOF
 #!${BASH}
-## gh holds no account, so a token comes from the account's file; 'api user' answers for the
+## gh has no account, so a token comes from the account's file; 'api user' answers for the
 ## token gitsby exported, or for gh's own login without one.
 case "\$1 \$2" in
 	"api user")   if [[ -n "\${GH_TOKEN:-}" ]]; then echo "\${GH_TOKEN#tok_}"; else echo ghuser; fi ;;
@@ -119,7 +119,7 @@ for arg in "\$@"; do
 done
 exit 255
 EOF
-## tea holds one login, for the Gitea folder's host.
+## tea has one login, for the Gitea folder's host.
 cat > "${work}/bin/tea" <<EOF
 #!${BASH}
 case "\$1 \$2" in
@@ -177,7 +177,7 @@ git -C "${pristine}/prune5" remote set-url origin "${work}/live/prune5.git"
 ## Two copies of that clone whose origin is on github.com, one over ssh and one over https, each
 ## covered by an account's folder rule. The Account line prints only for an account picked like
 ## that, never for one guessed from the remote's owner, so this is the path a configured user
-## takes. The token comes from a file, since the fake gh holds none: that is the case that reads
+## takes. The token comes from a file, since the fake gh has none: that is the case that reads
 ## gh's own login before the token is exported, and asks who the token belongs to after. A
 ## changed file gives status a list to print. Three logins, so the listing asks gh about each.
 cp -a "${pristine}/repo" "${pristine}/acct-ssh"

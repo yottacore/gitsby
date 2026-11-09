@@ -6,5 +6,5 @@ target-version = "py311"
 select = ["E4", "E7", "E9", "F", "B", "SIM", "UP", "ANN"]
 
 [lint.per-file-ignores]
-## Older owner script, untyped.
+## Older hand-written script, untyped.
 "cicd/utility/demo/gen-demo-gif.py" = ["ANN"]

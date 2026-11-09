@@ -35,7 +35,7 @@ type usageError struct {
 	msg string
 	// sub marks the errors the scripts raise inside a command substitution: that
 	// subshell swallows the wrapping stdout blanks, so only the message escapes
-	// and the parent's own exit adds the single blank that lands.
+	// and the parent's own exit adds the single blank that prints.
 	sub bool
 	// cause keeps the underlying error inspectable (errors.Is/As) when one exists;
 	// its text is already part of msg.
@@ -63,14 +63,14 @@ func usagef(format string, a ...any) error {
 	return &usageError{msg: fmt.Sprintf(format, escArgs(a)...)}
 }
 
-// usageWrapf is usagef over an underlying error: the cause's text lands in the
+// usageWrapf is usagef over an underlying error: the cause's text goes in the
 // message, and the cause itself stays on the chain for errors.Is/As.
 func usageWrapf(cause error, format string, a ...any) error {
 	return &usageError{msg: fmt.Sprintf(format, escArgs(a)...) + ": " + printable(cause.Error()), cause: cause}
 }
 
 // usageSubf is usagef for the errors the scripts raise inside a command
-// substitution, which land with one trailing blank instead of two.
+// substitution, which print with one trailing blank instead of two.
 func usageSubf(format string, a ...any) error {
 	return &usageError{msg: fmt.Sprintf(format, escArgs(a)...), sub: true}
 }

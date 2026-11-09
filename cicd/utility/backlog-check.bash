@@ -6,14 +6,14 @@
 ##		Two backlog rules that review rounds kept leaking through, checked in cicd
 ##		stage 1 instead of by hand:
 ##		1. Every open code-review item (not ✅ ✋ 🚫, or in the new format not Done,
-##		   Canceled, Moot or Deferred) carries an "Origin:" sub-bullet -
+##		   Canceled, Moot, or Deferred) has an "Origin:" sub-bullet -
 ##		   the commit or round that introduced it, whether an earlier round saw it,
 ##		   and Confirmed (reproduced) or Plausible (read only).
 ##		2. A suite check removed on this branch, against the integration branch, is
 ##		   named in the backlog. Two decisions were reversed by deleting the check
 ##		   that encoded them, with nothing written down; this makes that a stop.
 ##		The removed-check match is a fixed-string grep for the check's ID or its
-##		label, so a label carrying a shell variable has to be quoted in the backlog
+##		label, so a label with a shell variable has to be quoted in the backlog
 ##		as written. A check that keeps its ID under a new label was edited, not
 ##		removed.
 ##	Syntax:

@@ -598,7 +598,7 @@ func TestAccountSetRefusesADuplicatedKey(t *testing.T) { // [dbhg7]
 	}
 }
 
-// A key the loader ignores, written past this command, lands in the file and is
+// A key the loader ignores, written past this command, ends up in the file and is
 // dropped on every read: the file says one thing and every command does another.
 func TestAccountSetRefusesAKeyNothingReads(t *testing.T) { // [dbhg8]
 	a, _ := setApp(t, "account: work\n\tpath: /a\n", "work", "hostname", "gitea.com")
@@ -650,7 +650,7 @@ func TestAccountSetUsageNests(t *testing.T) { // [dd5g6]
 }
 
 // 'host' and 'user' are interpolated into the credential helper, which git hands
-// to a shell. The loader drops one carrying a shell character; refusing to WRITE
+// to a shell. The loader drops one with a shell character; refusing to WRITE
 // it is what stops the file and the behavior disagreeing.
 func TestAccountSetRefusesAShellCharacterInHost(t *testing.T) { // [dbhg9]
 	a, _ := setApp(t, "account: work\n\tpath: /a\n", "work", "host", "gitea.com; id")
@@ -671,7 +671,7 @@ func TestAccountSetWritesTheDocumentedSpelling(t *testing.T) { // [dbhga]
 	}
 }
 
-// A value carrying ' #' is a comment from that point on when it is read back, so
+// A value with ' #' is a comment from that point on when it is read back, so
 // it has to go in quoted or the account silently gets a truncated value.
 func TestAccountSetQuotesAValueThatWouldBeReparsed(t *testing.T) { // [dbhgb]
 	a, file := setApp(t, "account: work\n\tpath: /a\n", "work", "name", "Ada #1")
@@ -1401,7 +1401,7 @@ func TestWriteRefusalNamesPermissionsOnlyWhenTheyAreTheCause(t *testing.T) { // 
 		if !errors.Is(err, c.err) {
 			t.Errorf("%v: the cause is not on the chain", c.err)
 		}
-		// The module's own refusals carry their path in the text, and come through as is.
+		// The module's own refusals have their path in the text, and come through as is.
 		var pe *fs.PathError
 		if errors.As(c.err, &pe) && strings.Count(msg, "/h/c.shcl") != 1 {
 			t.Errorf("%v: the path should be on its File line only:\n%s", c.err, msg)
@@ -1637,7 +1637,7 @@ func shWord(s string) (word string, ok bool) {
 	return b.String(), true
 }
 
-// A Fix command pastes as shown, whatever the path holds. An apostrophe in one
+// A Fix command pastes as shown, whatever the path has in it. An apostrophe in one
 // closed the quote early, or the command was left out. 2026110912215206.
 func TestFixLiteralsPaste(t *testing.T) { // [df35x]
 	base := t.TempDir()

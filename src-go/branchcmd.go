@@ -90,7 +90,7 @@ func (a *app) cmdMerge() error {
 		return usagef("Already on '%s'. Run this from the branch to merge in: %s br switch <branch>, then %s br merge", targetBranch, meName, meName)
 	}
 	if workBranch == a.defaultBranch() {
-		return usagef("'%s' is the default branch; landing it on '%s' is backwards. To cut a release: %s release", workBranch, targetBranch, meName)
+		return usagef("'%s' is the default branch; merging it into '%s' is backwards. To cut a release: %s release", workBranch, targetBranch, meName)
 	}
 	mergeMessage := a.opt.message
 	if mergeMessage == "" {
@@ -102,7 +102,7 @@ func (a *app) cmdMerge() error {
 	}
 	// After the push, not before: the warning reads the branch tip, and uncommitted
 	// work only becomes part of it here. Checking first missed a hotfix whose
-	// shipped-code edit was still in the working tree - the ordinary way of doing one.
+	// released-code edit was still in the working tree - the ordinary way of doing one.
 	if wasHotfix {
 		a.warnHotfixTouchedCode(workBranch, targetBranch)
 	}
@@ -147,7 +147,7 @@ func (a *app) cmdMerge() error {
 		}
 	default:
 		// Where origin has the branch and the target pushes to its own name, one atomic
-		// push sends the merge and the leased delete: both land or neither does.
+		// push sends the merge and the leased delete: both go through or neither does.
 		if tracked && a.atomicMergeFits(targetBranch) {
 			remoteGone = a.atomicMergePush(targetBranch, workBranch, mergedTip)
 		}
@@ -282,7 +282,7 @@ func literalLines(cmds ...string) []string {
 	return out
 }
 
-// backMergeRef is what the back-merge actually merges. 'pr ok' lands the hotfix on
+// backMergeRef is what the back-merge actually merges. 'pr ok' merges the hotfix on
 // the server, so the LOCAL default branch never sees it and merging that is a
 // silent no-op; the fetched remote-tracking ref is the one holding it. After 'br
 // merge' the two are the same commit, so this is right either way - and it falls
@@ -297,7 +297,7 @@ func (a *app) backMergeRef() string {
 	return mainBranch
 }
 
-// backMergeToDev: after a hotfix lands on the default branch, dev has to receive
+// backMergeToDev: after a hotfix merges into the default branch, dev has to receive
 // it. Skipping this is how the next release conflicts on the same file, or quietly
 // reinstates the text the hotfix replaced. A conflict here is raw-git territory:
 // abort so the tree is left clean, and say so plainly.
@@ -334,22 +334,22 @@ func (a *app) backMergeToDev() error {
 		a.out.resetBlank()
 		return refusalBlock("'"+mainBranch+"' would not merge cleanly into '"+devBranch+"', and backing the merge out failed.", [][]string{
 			noteLines("Why", "'git merge --abort' failed, so '"+devBranch+"' is still mid-merge."),
-			noteLines("Kept", "The hotfix landed on '"+mainBranch+"' - that part is done. Nothing was committed to '"+devBranch+"'."),
-			noteLines("Fix", "Settle the conflict by hand and commit it, which carries the hotfix across. Or drop the merge for now:", "  git merge --abort",
-				"Then carry it across by hand later:", "  git merge "+typedArg(mergeRef, runtime.GOOS)),
+			noteLines("Kept", "The hotfix is in '"+mainBranch+"' - that part is done. Nothing was committed to '"+devBranch+"'."),
+			noteLines("Fix", "Settle the conflict by hand and commit it, which brings the hotfix over. Or drop the merge for now:", "  git merge --abort",
+				"Then merge it by hand later:", "  git merge "+typedArg(mergeRef, runtime.GOOS)),
 		}, nil)
 	}
 	a.out.resetBlank()
 	a.out.status("WARNING: '" + mainBranch + "' would not merge cleanly into '" + devBranch + "'; left '" + devBranch + "' untouched.")
-	a.out.clean("  The hotfix landed on '" + mainBranch + "' - that part is done.")
-	a.out.clean("  Carry it across by hand:")
+	a.out.clean("  The hotfix is in '" + mainBranch + "' - that part is done.")
+	a.out.clean("  Merge it by hand:")
 	a.out.clean("    git checkout " + typedArg(devBranch, runtime.GOOS))
 	a.out.clean("    git merge " + typedArg(mergeRef, runtime.GOOS))
 	return nil
 }
 
 // warnHotfixTouchedCode: a hotfix that changes more than documentation leaves the
-// default branch carrying something no tag contains, so the latest release may
+// default branch with something no tag contains, so the latest release may
 // stop matching it. Documentation is read from the branch and needs no release.
 // It used to watch this project's own source folder, which no other repo has.
 func (a *app) warnHotfixTouchedCode(workBranch, targetBranch string) {
@@ -368,12 +368,12 @@ func (a *app) warnHotfixTouchedCode(workBranch, targetBranch string) {
 	case !ok:
 		a.out.clean("")
 		a.out.status("NOTE: couldn't tell whether this hotfix changes more than documentation.")
-		a.out.clean("  If it does, '" + targetBranch + "' will carry changes that no tag contains.")
+		a.out.clean("  If it does, '" + targetBranch + "' will have changes that no tag contains.")
 		a.out.clean("  Cut a patch release when you're ready: " + meName + " release")
 	case !docsOnly(splitLines(out)):
 		a.out.clean("")
 		a.out.status("NOTE: this hotfix changes more than documentation.")
-		a.out.clean("  '" + targetBranch + "' will carry changes that no tag contains, so the latest release's")
+		a.out.clean("  '" + targetBranch + "' will have changes that no tag contains, so the latest release's")
 		a.out.clean("  downloads may no longer match it. Cut a patch release when you're ready: " + meName + " release")
 	}
 }

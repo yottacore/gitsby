@@ -1,5 +1,5 @@
 // gitsby, compiled. Built out against cicd/test.bash from the first commit, and now
-// carrying the whole command surface. Argument parsing, the gates every command passes
+// has the whole command surface. Argument parsing, the gates every command passes
 // through, and the state -> plan -> confirm -> run -> state frame the mutating ones share.
 
 // Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
@@ -273,7 +273,7 @@ func (a *app) settleAccount() error {
 	acctDir, acctURL := a.contextDir(), a.originURL()
 	switch {
 	case a.cmd.name == "repo-clone":
-		// The clone lands somewhere else, and it is that folder's rules that pick the
+		// The clone goes somewhere else, and it is that folder's rules that pick the
 		// account - not the rules for whatever repo the cwd happens to sit inside.
 		// Nothing stands in for them here: the owner of the repo being cloned is no
 		// evidence it is ours, which is the whole difference between fetching a copy
@@ -348,7 +348,7 @@ func (a *app) needsConfirmableBranch() bool {
 	return !strings.HasPrefix(a.cmd.name, "repo-") && !strings.HasPrefix(a.cmd.name, "account-")
 }
 
-// preflight is every refusal that has to land before a plan is shown: the
+// preflight is every refusal that has to come before a plan is shown: the
 // commands that exist to publish and can't, the ones whose argument is wrong, and
 // the ones whose work is decided up front.
 func (a *app) preflight() error {

@@ -92,7 +92,7 @@ case "${releaseChannel}" in
 	*)   fErr "--release takes only 'stable' now, which is the default; use '--tag TAG' for a specific release." ;;
 esac
 
-## The tag lands in a download URL, so a path-shaped one walks out of this repo and installs
+## The tag goes in a download URL, so a path-shaped one walks out of this repo and installs
 ## somebody else's binary while the plan on screen still names ours. Reads as a harmless
 ## version selector, which is exactly why the confirm prompt is no protection here.
 fIsPathTag(){ case "$1" in */../*|../*|*/..|..|/*|*//*) return 0 ;; esac; return 1 ;}
@@ -154,7 +154,7 @@ sums=""; sumsFor=""; published=""
 if [[ -z "${tag}" ]]; then
 	## releases/latest first: a redirect, so no auth and no API rate limit. It is the newest full
 	## release, and when its SHA256SUMS lists a binary that is the answer.
-	## Every lookup here needs '|| true': under 'set -e' an assignment carries its command's
+	## Every lookup here needs '|| true': under 'set -e' an assignment takes its command's
 	## status, so a failed one takes the whole run out silently - past the fallback below and
 	## past the message that explains it. wget is the surprising one: it answers a declined
 	## redirect with exit 8 even though the header it was sent for is right there in the output.
@@ -181,7 +181,7 @@ if [[ -z "${tag}" ]]; then
 		## Commas and braces become newlines first, so every key sits on its own line whether
 		## GitHub pretty-prints or packs the JSON on one line. Neither character can appear in
 		## a tag name (checked below) or a boolean. Two BRE substitutions rather than one
-		## alternation: '\|' is a GNU extension and this has to run under the sed macOS ships.
+		## alternation: '\|' is a GNU extension and this has to run under the sed macOS comes with.
 		## A binary is known by its download URL, which names the release it belongs to.
 		#  shellcheck disable=2020  ## 'tr replaces sets of chars' - the duplicate newlines are deliberate: all three go to newline.
 		releaseFacts="$(printf '%s\n' "${releaseList}" | tr ',{[' '\n\n\n' \

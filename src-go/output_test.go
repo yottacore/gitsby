@@ -1,6 +1,6 @@
 // The blank-line rhythm and the framing each ending prints. Both are contracts:
 // the suite compares whole transcripts, so a blank that collapses where it used
-// to land is a visible change.
+// to print is a visible change.
 
 // Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 // Licensed under The MIT License (MIT). Full text at:
@@ -90,7 +90,7 @@ func TestUsageErrorFraming(t *testing.T) { // [dbfrc]
 	}
 }
 
-// The errors the scripts raise inside a command substitution land with one
+// The errors the scripts raise inside a command substitution print with one
 // trailing blank, because the subshell swallowed the wrapping ones.
 func TestUsageSubErrorFraming(t *testing.T) { // [dbfrd]
 	p, out, errOut := testPrinter()
@@ -188,7 +188,7 @@ func TestCachedRemembersAnEmptyAnswer(t *testing.T) { // [dbfrj]
 // A capture read as a whole and then split kept the interior carriage returns:
 // only the very end of the string had been trimmed. 'pr ok' read the PR's head
 // branch out of a two-line answer that way, so on a host that writes CRLF the
-// branch name carried one and matched no ref anywhere.
+// branch name had one and matched no ref anywhere.
 func TestSplitLines(t *testing.T) { // [dbfx4]
 	tests := []struct {
 		in   string

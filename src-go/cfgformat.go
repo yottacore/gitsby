@@ -41,7 +41,7 @@ type formatMigration struct {
 	changed  int    // lines re-spelled so they mean what they did
 	lost     int    // lines that set something under the old rules and set nothing now
 	why      string // why the file couldn't be replaced, when it couldn't
-	done     bool   // the converted text is what the file holds now
+	done     bool   // the converted text is what the file has now
 	reported bool
 }
 
@@ -234,7 +234,7 @@ func (mig *formatMigration) formatName() string {
 
 // replaceOldFormat keeps the file as read under its backup name, then writes the
 // converted text over it. Under the same lock 'account set' takes, and only while
-// the file still holds what was read: another run may have converted it already.
+// the file still has what was read: another run may have converted it already.
 func replaceOldFormat(file, read, converted string, mig *formatMigration) {
 	// Only a link as the file itself moves the work to its target. A folder reached
 	// through a link keeps the name it was given, which the notice shows.

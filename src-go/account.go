@@ -26,7 +26,7 @@ import (
 // the ordinary single-account case: gh's own account is left alone.
 //
 // 'dir' is where we are standing for every command but clone, which resolves for
-// the folder its new repo lands in instead. An empty 'url' declines the last step.
+// the folder its new repo goes in instead. An empty 'url' declines the last step.
 func (a *app) resolveAccount(dir, url string) error {
 	if err := a.cfg.load(a.opt); err != nil {
 		return err
@@ -77,8 +77,8 @@ func (a *app) resolveAccount(dir, url string) error {
 	}
 	a.acct.name = a.cfg.accountForDir(dir)
 	if a.acct.name != "" {
-		// A folder rule with no account named still carries a key and a commit
-		// identity, worth applying on their own - it just says nothing about gh.
+		// A folder rule with no account named still has a key and a commit
+		// identity, worth applying on their own - it says nothing about gh.
 		a.acct.ghWho = a.cfg.value(a.acct.name, "ghAccount")
 		// Named as what it IS, not just what it is called: "account 'work'" read
 		// back as a bare repeat of the name already on the line above, so the one
@@ -153,7 +153,7 @@ func resolveSSHHost(alias, target string) string {
 	return alias
 }
 
-// ghTokenFor reads the stored token for an account gh already holds, or nothing.
+// ghTokenFor reads the stored token for an account gh already has, or nothing.
 // Asked once per login: gh answers about one account at a time, so the listing
 // spent a process on every account it printed, twice over for 'account set'.
 func (a *app) ghTokenFor(who string) string {
@@ -217,7 +217,7 @@ func (a *app) accountHost() string {
 	return a.cfg.hostOf(a.acct.name)
 }
 
-// accountServesHost: whether the account we resolved holds credentials for this
+// accountServesHost: whether the account we resolved has credentials for this
 // host. A token is a credential for the git host that ISSUED it and for nowhere else,
 // so handing a GitHub token to a Gitea push authenticates nothing - and does it
 // while looking thoroughly configured, which is the part that costs an afternoon.
@@ -374,7 +374,7 @@ func (a *app) accountToken(host string) (string, tokenSource, string) {
 // worldReadable names a token file other users on this machine can read, or
 // nothing. ssh and gh both refuse or complain about one; loading it without a word
 // is how a token ends up shared with everyone who has an account here. Windows
-// carries no mode bits worth reading, so it is left out of this.
+// has no mode bits worth reading, so it is left out of this.
 func worldReadable(file string) string {
 	if file == "" || isWindows() {
 		return ""
@@ -476,7 +476,7 @@ func (a *app) selectAccount(skipGhProbe bool) error {
 	onGitHubHost := isGitHubHost(credHost)
 	switch {
 	case token != "":
-		// Asked BEFORE the token lands: where the answer comes from the API, it would
+		// Asked BEFORE the token is exported: where the answer comes from the API, it would
 		// otherwise come back as the token we are about to export, and the line could
 		// only ever say what it already knows. Naming the account this one replaces is
 		// display only, so it skips a run that prints no block. '?' means gh held no

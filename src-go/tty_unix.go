@@ -13,7 +13,7 @@ import (
 	"unsafe"
 )
 
-// termCols is the terminal's width as the kernel holds it, 0 when it can't say.
+// termCols is the terminal's width as the kernel has it, 0 when it can't say.
 // A pty nobody sized reports 0 too, and tput then answers from terminfo.
 func termCols(f *os.File) int {
 	var size struct{ rows, cols, xpixel, ypixel uint16 }

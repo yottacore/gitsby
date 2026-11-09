@@ -21,14 +21,14 @@ import (
 
 // remoteRef is a remote URL taken apart: where it lives and what it is called.
 // Every field empty is the ordinary answer for a local path - a directory is a
-// perfectly good remote, it just has no host to ask anything about.
+// perfectly good remote, it has no host to ask anything about.
 type remoteRef struct {
 	host  string // canonical hostname, after any ssh_config alias is resolved
 	owner string
 	name  string
 }
 
-// target is 'owner/name', or nothing when the URL carried only a host.
+// target is 'owner/name', or nothing when the URL had only a host.
 func (r remoteRef) target() string {
 	if r.owner == "" || r.name == "" {
 		return ""
@@ -65,7 +65,7 @@ func parseRemoteText(url string) (ref remoteRef, viaSSH bool) {
 	ref.host = host
 	path = strings.TrimSuffix(strings.TrimSuffix(path, "/"), ".git")
 	// Everything before the last segment is the owner: a Gitea instance served
-	// under a subpath, and GitHub's own 'owner/name', both land here correctly.
+	// under a subpath, and GitHub's own 'owner/name', both come out right here.
 	if slash := strings.LastIndex(path, "/"); slash > 0 {
 		ref.owner, ref.name = path[:slash], path[slash+1:]
 		// Only the segment immediately above the repo names the owner; anything
@@ -101,7 +101,7 @@ func splitRemoteURL(url string) (host, path string, viaSSH bool) {
 		}
 		return hostOrNothing(host, strings.TrimPrefix(path, "/"), viaSSH)
 	}
-	// The two '://' forms both carry the path after the first slash.
+	// The two '://' forms both have the path after the first slash.
 	if slash := strings.Index(host, "/"); slash >= 0 {
 		host, path = host[:slash], host[slash+1:]
 	}
@@ -115,8 +115,8 @@ func splitRemoteURL(url string) (host, path string, viaSSH bool) {
 }
 
 // hostOrNothing refuses a "host" no host could be: whitespace means some other
-// colon-bearing string landed in the split, and "couldn't tell" (empty) is the
-// honest answer rather than a name for rules to match against.
+// colon-bearing string ended up in the split, and "couldn't tell" (empty) is the
+// true answer rather than a name for rules to match against.
 func hostOrNothing(host, path string, viaSSH bool) (string, string, bool) {
 	if strings.ContainsFunc(host, unicode.IsSpace) {
 		return "", "", false
@@ -163,7 +163,7 @@ func (a *app) hostName() string {
 	return "origin"
 }
 
-// teaNames: upstream installs Gitea's CLI as 'tea', and Debian ships the same
+// teaNames: upstream installs Gitea's CLI as 'tea', and Debian packages the same
 // program as 'tea-cli' because the name was already taken there. Looking for one
 // spelling finds it on the machines that happen to use that one.
 var teaNames = []string{"tea", "tea-cli"}
@@ -376,14 +376,14 @@ func (a *app) hostCLIHint() string {
 		" Some distributions install it as 'tea-cli'; either name is found."
 }
 
-// hostAnswer is what tea said about a host: the login it holds, or why it could
-// not be asked. Both empty means it was asked and holds none there.
+// hostAnswer is what tea said about a host: the login it has, or why it could
+// not be asked. Both empty means it was asked and has none there.
 type hostAnswer struct {
 	user    string
 	failure string
 }
 
-// hostLogin names the account tea holds for a host, or nothing, plus tea's reason
+// hostLogin names the account tea has for a host, or nothing, plus tea's reason
 // when it failed to answer. Read from the login list rather than from 'tea whoami'
 // for two reasons: whoami reports the DEFAULT login, which on a machine with two
 // instances configured is as likely as not to be the other one; and with no login

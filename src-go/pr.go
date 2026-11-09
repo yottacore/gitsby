@@ -1,5 +1,5 @@
-// pr's argument shape, the read-only views, and the two writers. What a PR lands
-// on - and whether it is a hotfix - are properties of the PR, not of the branch
+// pr's argument shape, the read-only views, and the two writers. What a PR merges
+// into - and whether it is a hotfix - are properties of the PR, not of the branch
 // you happen to be standing on, so 'pr ok' asks gh rather than reading HEAD.
 
 // Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
@@ -117,7 +117,7 @@ func (a *app) settlePrTool() error {
 // cannot describe different things.
 
 // teaDetailFields is what 'pr <n>' shows on Gitea. gh answers the same question
-// with two commands, view then diff; tea carries the diff as a field of the detail
+// with two commands, view then diff; tea has the diff as a field of the detail
 // view, so one call covers both.
 const teaDetailFields = "index,title,state,author,base,head,url,body,diff"
 
@@ -408,7 +408,7 @@ func parseTeaTable(out string) []map[string]string {
 }
 
 // unquoteCell strips the double quotes tea's tsv writer puts around every field,
-// header names included. Left on, every lookup misses and every value carries them
+// header names included. Left on, every lookup misses and every value takes them
 // into whatever it was compared against.
 func unquoteCell(cell string) string {
 	cell = strings.TrimSpace(cell)
@@ -638,7 +638,7 @@ func (a *app) cmdPrAccept() error {
 	}
 	// The merge removes the PR's branch on the remote but leaves our origin/* copy
 	// behind, so an upstream still looks present. Prune first; if ours is the branch
-	// that just went away, pulling it can only fail - land on the merge target instead.
+	// that just went away, pulling it can only fail - switch to the merge target instead.
 	// Under --no-fetch origin isn't asked, and the pull below is skipped with it.
 	if a.opt.fetch {
 		a.out.status("git fetch --prune origin ...")

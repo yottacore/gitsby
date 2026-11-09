@@ -1,5 +1,5 @@
 // br prune's survey and plan. All read-only: the survey decides, the plan shows
-// every branch by name, and the deleting half lands with the other writers.
+// every branch by name, and the deleting half sits with the other writers.
 
 // Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 // Licensed under The MIT License (MIT). Full text at:
@@ -23,9 +23,9 @@ type prunePlan struct {
 
 func (p prunePlan) empty() bool { return len(p.local) == 0 && len(p.remote) == 0 }
 
-// resolvePrune sorts local branches into what's already landed and what isn't.
-// Ancestry is an exact test here only because gitsby always lands with a real
-// merge commit - a squash- or rebase-landed branch never looks contained, and is
+// resolvePrune sorts local branches into what's already merged and what isn't.
+// Ancestry is an exact test here only because gitsby always merges with a real
+// merge commit - a squash- or rebase-merged branch never looks contained, and is
 // kept rather than guessed at.
 func (a *app) resolvePrune() error {
 	target := a.mergeTarget()
@@ -57,7 +57,7 @@ func (a *app) resolvePrune() error {
 	// branch that shares its name with a tag.
 	for _, branch := range a.localBranchNames() {
 		// The branch we're standing on can't be deleted, and protected ones never are.
-		// But if it WOULD have qualified, say so - otherwise it just vanishes from
+		// But if it WOULD have qualified, say so - otherwise it vanishes from
 		// every list.
 		if branch == current {
 			if !a.isProtectedBranch(branch) && mergedLocal[branch] {
@@ -78,7 +78,7 @@ func (a *app) resolvePrune() error {
 			return err
 		}
 		a.prune.local = append(a.prune.local, branch)
-		// The remote copy goes only when origin has the merge too: a landing that
+		// The remote copy goes only when origin has the merge too: a merge that
 		// hasn't been pushed yet leaves origin holding the only ref to that work.
 		// The map was built by listing refs/remotes/origin, so being in it already
 		// says the remote branch is there - no second ref lookup per branch. The

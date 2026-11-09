@@ -193,7 +193,7 @@ func sortIncludes(list []includeCandidate) {
 // rule. 'pathContains' maps onto git's own gitdir globbing, so plain git gets the
 // same rule rather than an approximation of it. Fewest folder names
 // first, and all of them ahead of the absolute rules; within the absolute rules,
-// shortest path first, so a tree nested inside another account's tree lands last.
+// shortest path first, so a tree nested inside another account's tree comes last.
 func (c *config) accountApplyPlan() []includeRule {
 	dir := c.includeDir()
 	if dir == "" {
@@ -258,7 +258,7 @@ func (c *config) accountManagedIncludes() []string {
 	canonDir := canonPath(dir)
 	var keys []string
 	// --null, not the plain form: that one separates the key from the value with a
-	// space, and the key holds a folder path which can contain one. Every such rule
+	// space, and the key has a folder path which can contain one. Every such rule
 	// came back truncated, so it was never recognized as ours - which made each
 	// re-run append a duplicate, and left a rule dropped from the config file
 	// applying forever. -z ends each record with a NUL and the key with a newline.
@@ -464,7 +464,7 @@ func (a *app) showAccount(name string, isHere bool) {
 // rule pointing at it - with 'git config', never by editing the file ourselves,
 // so git's own parser decides what a valid entry looks like. The directory is
 // checked BEFORE writing anything: left to mkdir and the redirect, a blocked
-// path surfaced as a raw tooling error part way through the run, which reads as
+// path showed up as a raw tooling error part way through the run, which reads as
 // a crash rather than as something you can act on.
 func (a *app) cmdAccountApply() error {
 	dir := a.cfg.includeDir()
@@ -624,7 +624,7 @@ func (a *app) fragmentHelperFor(name string) string {
 // rather than written down. gh is asked only on a host gh serves, since tea has no
 // 'auth token'. The token file is read from the global config only, the scope
 // the fragment is included from, because a repo's own config is not yours, and a
-// relative one is no file, as readTokenFile has it. A username git already holds
+// relative one is no file, as readTokenFile has it. A username git already has
 // is left alone; 'x' stands in where there is none, as in gitsby's own runs.
 func fragmentHelper(onGitHub bool) string {
 	steps := []string{
@@ -812,7 +812,7 @@ type accountSetTarget struct {
 	creates  bool   // the file itself does not exist yet
 	converts bool   // the file is in the old flat layout, and comes out in the current one
 	reshapes bool   // the save changes more of the file than the key: spacing, key case, line ends
-	read     string // the file as the plan read it; the save refuses once it holds anything else
+	read     string // the file as the plan read it; the save refuses once it has anything else
 	unset    bool   // 'account unset': the key comes out rather than going in
 	gone     []goneLine
 }
@@ -1086,7 +1086,7 @@ func lockFix(goos, lock string) []string {
 	return []string{stale + ":", "  rm " + shellQuote(lock)}
 }
 
-// changedRefusal: the file no longer holds what the plan read. Saving would put
+// changedRefusal: the file no longer has what the plan read. Saving would put
 // back what it held then, and drop whatever went in since.
 func changedRefusal(file string, cause error) error {
 	why := "Something wrote it after this command read it, and saving now would undo that."
@@ -1126,12 +1126,12 @@ func (a *app) accountSetPlan() (accountSetTarget, error) {
 		return t, err
 	}
 	// The same checks the loader makes, made here where they can still be answered.
-	// Written past them the line lands in the file and is then dropped on every
+	// Written past them the line ends up in the file and is then dropped on every
 	// read, so the file says one thing and every command does another. The key is
 	// checked as it will be written, since the folder a relative one was typed in
-	// can carry a space.
+	// can have a space.
 	if t.field == "sshkey" && strings.ContainsAny(sshKeyArg(t.value), sshKeyShellChars) {
-		return t, usagef("git hands a key path to a shell, so one carrying whitespace or a shell character is re-parsed rather than used. Move the key somewhere plainer.")
+		return t, usagef("git hands a key path to a shell, so one with whitespace or a shell character is re-parsed rather than used. Move the key somewhere plainer.")
 	}
 	if (t.field == "host" || t.field == "user") && !hostWordOK.MatchString(t.value) {
 		return t, usagef("'%s' isn't a plain %s name; letters, digits, '.', '_' and '-' only.", t.value, t.field)
@@ -1160,7 +1160,7 @@ func (a *app) accountSetPlan() (accountSetTarget, error) {
 	// Taken before the edit, so only what the save changes besides the key counts.
 	tidy := t.doc.ToCanonical() == t.read
 	// One account can be in pieces: blocks whose names differ only in case, or
-	// dotted lines beside a block. The key is edited in whichever piece holds it,
+	// dotted lines beside a block. The key is edited in whichever piece has it,
 	// and added to the first when none does. Editing the first regardless left a
 	// later piece's value as the one read.
 	blocks, _ := acctBlocks(t.doc)
@@ -1397,7 +1397,7 @@ func (a *app) cmdAccountSet() error {
 				noteLines("File", nativePath(failedAt(err, dir))))
 		}
 	}
-	// Over a create too: one between its open and its write holds an empty file,
+	// Over a create too: one between its open and its write sees an empty file,
 	// which an edit would read and save over.
 	unlock, err := lockAccountsFile(t.file, accountLockWait)
 	if err != nil {
@@ -1407,7 +1407,7 @@ func (a *app) cmdAccountSet() error {
 	if t.creates {
 		// 0600 from the first byte: this file names your accounts and points at your
 		// token files. Opened so it cannot replace anything, since a file already
-		// there - even one this run could not read - holds someone's accounts.
+		// there - even one this run could not read - has someone's accounts.
 		opened, err := createNew(t.file, t.doc.ToCanonical(), 0o600)
 		switch {
 		case err == nil:

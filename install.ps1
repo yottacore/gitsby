@@ -102,7 +102,7 @@ function Install-Gitsby {
     if ($Release -and $Release -ne 'stable') {
         throw "-Release takes only 'stable' now, which is the default; use '-Tag TAG' for a specific release."
     }
-    # The tag lands in a download URL, so a path-shaped one walks out of this repo and installs
+    # The tag goes in a download URL, so a path-shaped one walks out of this repo and installs
     # somebody else's binary while the plan on screen still names ours. ValidatePattern admits
     # '..' and a leading '/', so both are checked here. Reads as a harmless version selector,
     # which is exactly why the confirm prompt is no protection.
@@ -118,12 +118,12 @@ function Install-Gitsby {
     # is named by. Anything else falls through to the SHA256SUMS lookup below, which is the
     # authority on what this release actually published.
     $goOs = if ($onWindows) { 'windows' } elseif ($onMac) { 'darwin' } else { 'linux' }
-    # Detection lands in its own variable rather than back in $Arch: assigning to a parameter
+    # Detection goes in its own variable rather than back in $Arch: assigning to a parameter
     # re-runs its ValidateSet, so an x86 or 32-bit ARM box would die with a binder error
     # instead of being told what this release does publish.
     $archName = if ($Arch) { $Arch } else {
         # RuntimeInformation arrived in .NET Framework 4.7.1, so an older 5.1 box falls back to
-        # the environment. Both spellings land on the same two names below.
+        # the environment. Both spellings end up as the same two names below.
         $osArch = try { [string][Runtime.InteropServices.RuntimeInformation]::OSArchitecture }
         catch { [string]$env:PROCESSOR_ARCHITECTURE }
         switch ($osArch) {
