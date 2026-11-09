@@ -146,18 +146,13 @@ fPublished(){ printf '%s\n' "$1" | sed -n 's/^[0-9a-fA-F]\{64\}[[:space:]]*\*\{0
 ## before the plan, so the plan can promise a specific file before anything large is downloaded.
 sums=""; sumsFor=""; published=""
 
-## No --tag: the newest full release that publishes a gitsby binary, or while none does, the
-## newest pre-release that does. A binary is an asset named gitsby-<os>-<arch>, for any
-## platform. v2.1.0 and older publish the scripts that came before them, so they don't count.
-## Any platform rather than this one, so every machine is pointed at the same release, and one
-## it leaves out is told what it does publish.
+## No --tag: the newest full release with a gitsby-<os>-<arch> binary for any platform, or while
+## none has one, the newest such pre-release. Any platform, so every machine is pointed at the
+## same one.
 if [[ -z "${tag}" ]]; then
-	## releases/latest first: a redirect, so no auth and no API rate limit. It is the newest full
-	## release, and when its SHA256SUMS lists a binary that is the answer.
-	## Every lookup here needs '|| true': under 'set -e' an assignment takes its command's
-	## status, so a failed one takes the whole run out silently - past the fallback below and
-	## past the message that explains it. wget is the surprising one: it answers a declined
-	## redirect with exit 8 even though the header it was sent for is right there in the output.
+	## releases/latest first: a redirect, so no auth and no rate limit. Every lookup needs '||
+	## true', since under 'set -e' a failed assignment ends the run silently. wget answers a
+	## declined redirect with exit 8.
 	if command -v curl >/dev/null 2>&1; then
 		tag="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/${repo}/releases/latest" 2>/dev/null | sed -n 's|.*/releases/tag/||p' || true)"
 	elif command -v wget >/dev/null 2>&1; then
@@ -188,11 +183,9 @@ if [[ -z "${tag}" ]]; then
 			| sed -n -e 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/T \1/p' \
 			         -e 's/^[[:space:]]*"prerelease":[[:space:]]*\([a-z]*\).*/P \1/p' \
 			         -e 's|^[[:space:]]*"browser_download_url":[[:space:]]*"[^"]*/releases/download/\(.*\)/gitsby-[^/"]*".*|B \1|p' || true)"
-		## Highest version wins, not newest-listed: the list is ordered by publish date, so a
-		## backported fix cut after a newer release would otherwise be taken. The first three
-		## numeric fields decide; a tie keeps the earlier-listed (newer) entry. Two pre-releases
-		## of one version tie, and release.bash publishes them in order. A full release is never
-		## weighed against a pre-release, which is where sort -V would put 1.0.0-rc1 above 1.0.0.
+		## Highest version wins, not newest listed, so a backported fix isn't taken. A tie keeps
+		## the newer listed. A full release is never weighed against a pre-release, where sort -V
+		## puts 1.0.0-rc1 first.
 		fPickTag(){
 			awk -v wantPre="$1" '
 				function vkey(t,  v,n,a,i,k) { v=t; sub(/^[vV]/,"",v); n=split(v,a,"[._-]"); k=""
@@ -302,11 +295,8 @@ fEcho "Checksum verified."
 
 echo
 fEcho "Installing to ${destDir}/gitsby ..."
-## Staged beside the target and renamed over it, never written in place. Two things that
-## buys: an interrupt mid-copy leaves the staged file half-written rather than the real one,
-## and a rename replaces a copy that is currently running, where a write to it fails. The
-## staging file has to be in the destination directory - a rename is only atomic within one
-## filesystem, and the temp dir is usually on another.
+## Staged beside the target and renamed over it, so an interrupt leaves the real one whole and a
+## running copy can be replaced. Same folder, since a rename is atomic only on one filesystem.
 staged="${destDir}/.gitsby.install.$$"
 if [[ ${needSudo} -eq 1 ]]; then
 	## mkdir -p, not 'install -d': on a directory that already exists, install resets its mode,
