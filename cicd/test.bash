@@ -28,10 +28,9 @@ set -Eeuo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/.." && pwd)"
-## Resolved, because the build reports a folder with its links resolved. On macOS mktemp answers
-## under /var, a link to /private/var, and with a doubled slash when TMPDIR ends in one.
-## mktemp gets its own line. Inside the cd its failure was lost, 'cd ""' stayed put, and the trap
-## removed the folder the suite was started from, a whole checkout once.
+## Resolved, since the build reports folders with links resolved, and macOS mktemp answers under
+## /var. mktemp on its own line, so a failure can't leave the trap removing the folder the suite
+## started in.
 # shellcheck source=/dev/null
 source "${here}/utility/include/safe-rm.bash"
 # shellcheck source=/dev/null
@@ -60,12 +59,8 @@ export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@test
 ## account block below sets its own HOME and opts back out of this with an empty value.
 export GITSBY_CONFIG="${work}/no-accounts.shcl"; : > "${GITSBY_CONFIG}"
 
-## The blocks that test config DISCOVERY opt out of the pin above and fake HOME instead, so they
-## have to neutralize the other two candidates by hand: XDG_CONFIG_HOME is tried before HOME and
-## APPDATA after it, and on a machine where either is set it answers for the real user. Emptied
-## rather than pointed somewhere, so HOME stays the candidate under test. Without this those
-## blocks quietly read whatever accounts the person running the suite had configured, and went
-## red the day they configured any.
+## The config discovery blocks fake HOME instead of the pin above, so XDG_CONFIG_HOME and APPDATA
+## are emptied, or they answer for the real user.
 acNoDiscovery="GITSBY_CONFIG= XDG_CONFIG_HOME= APPDATA="
 ## So every run behaves like one on a machine with accounts configured: a block that drops the
 ## pin and forgets the line above finds an account covering every folder the suite makes, under
@@ -82,16 +77,9 @@ export XDG_CONFIG_HOME="${work}/poison-config" APPDATA="${work}/poison-config"
 export HTTPS_PROXY=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 HTTP_PROXY=http://127.0.0.1:9 http_proxy=http://127.0.0.1:9 ALL_PROXY=http://127.0.0.1:9 all_proxy=http://127.0.0.1:9
 unset NO_PROXY no_proxy
 
-## Two more inputs the lines above do NOT cover, both of which reach us from an ordinary
-## working terminal rather than from a config file:
-##   - GIT_CONFIG_COUNT/KEY_n/VALUE_n outrank every config FILE, including a repo-local one
-##     and the GIT_CONFIG_GLOBAL set above - so pinning the files is not isolation on its own.
-##   - GH_TOKEN and friends are what the fake gh reports back, so an inherited one makes every
-##     "gh was left alone" check read as "gh was handed a token".
-## Neither shows up as a failure you can act on: the suite reports checks that were never
-## about the thing they name.
-## By name rather than by GIT_CONFIG_COUNT, since arithmetic on an inherited count runs a
-## command hidden in an array subscript.
+## GIT_CONFIG_COUNT/KEY_n/VALUE_n outrank every config file, and an inherited GH_TOKEN is what the
+## fake gh reports, so either makes checks lie. By name, since arithmetic on an inherited count
+## can run a command.
 fUnsetInheritedGitConfig(){ unset GIT_CONFIG_COUNT "${!GIT_CONFIG_KEY_@}" "${!GIT_CONFIG_VALUE_@}"; }
 fUnsetInheritedGitConfig
 unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT GITSBY_RAW_ACTIVE
@@ -178,11 +166,9 @@ fStub(){ cat > "$1"; chmod +x "$1"; fStubShim "$1" ;}
 ## needs the platform's own spelling, or the statement fails and the check reports on nothing.
 fWinPath(){ if ((isWindows)); then cygpath -m "$1"; else printf '%s' "$1"; fi ;}
 
-## Checks that reach a confirmation need it to refuse rather than wait: stdin at EOF, and nothing
-## for the prompt to fall back to. setsid guarantees that. Windows has no setsid, but PowerShell
-## only ever reads redirected stdin, so </dev/null alone is enough there - which is why the pwsh
-## one-liners below run either way. install.bash does fall back to /dev/tty, so its plan checks
-## additionally need that open to fail.
+## Checks that reach a confirmation need it to refuse, not wait: stdin at EOF and no tty, by
+## setsid. PowerShell reads only redirected stdin, so the redirect is enough on Windows.
+## install.bash falls back to /dev/tty.
 declare -a noTty=()
 canNoTty=0 shNoTty=0
 if command -v setsid >/dev/null 2>&1; then noTty=(setsid); canNoTty=1; shNoTty=1
@@ -203,12 +189,9 @@ export -f fMode fInode
 ## Runs PowerShell source TEXT the way the documented one-liners do (iex / scriptblock), with
 ## stdin at EOF so a confirmation prompt refuses instead of blocking.
 fPwshText(){ "${noTty[@]}" pwsh -NoProfile -Command "$1" </dev/null 2>&1 ;}
-## install.ps1 as a script file, with the web cmdlets replaced by the functions in <dir>/stubs.ps1,
-## which PowerShell finds before a cmdlet of the same name. <shape> picks how releases/latest
-## answers: as 7 or 5.1 answer a redirect, nofull as 5.1 answers the 404 of a repo with no full
-## release, or pre, which is nofull with only pre-releases listed. Each URL asked for goes to
-## <dir>/calls. Telemetry is off: pwsh 7.6.9 on macOS, writing telemetry.uuid into a fresh HOME,
-## leaves the runtime's .dotnet mutex folder in TMPDIR, which reads as install.ps1's leftover.
+## install.ps1 as a script file, with the web cmdlets replaced by <dir>/stubs.ps1. <shape> is how
+## releases/latest answers: 7, 5.1, nofull (a 404) or pre. URLs asked go to <dir>/calls. Telemetry
+## off, or pwsh 7.6.9 on macOS leaves a .dotnet folder in TMPDIR.
 fPsInstall(){ local dir="$1" home="$2" shape="$3" inst="$4"; shift 4; : > "${dir}/calls"; mkdir -p "${home}"
 	env HOME="${home}" FAKE_DIR="${dir}" FAKE_SHAPE="${shape}" POWERSHELL_TELEMETRY_OPTOUT=1 "${noTty[@]}" pwsh -NoProfile -Command ". '${dir}/stubs.ps1'; & '${inst}' $*" </dev/null 2>&1 ;}
 ## Succeeds when a help text for install.ps1 names every parameter and alias of the function that
@@ -347,11 +330,9 @@ fMakeGateFixture(){
 	for s in markdownlint golangci-lint govulncheck ruff pip-audit; do fGateStub "${gateDir}/bin/${s}" "${s}"; done
 	## Says what GOFLAGS it was handed.
 	fGateStub "${gateDir}/bin/staticcheck" staticcheck "printf 'staticcheck GOFLAGS=%s\\n' \"\${GOFLAGS:-}\" >> '${gateCalls}'"
-	## A build in the image leaves its -o file behind, as go's stub does, so dogfood has one to copy.
-	## 'docker-run' fails a run and 'docker-hang' stalls one. 'images' is what it lists for the
-	## image's repo, and 'vols' the labeled volumes, as "<name> <size>". 'docker-noimage' and
-	## 'docker-novol' answer that the image or the cache volume isn't there. 'running' is what it
-	## lists as up, and 'modprune' what the module cache prune prints.
+	## A build leaves its -o file. 'docker-run' fails a run, 'docker-hang' stalls one. 'images',
+	## 'vols' and 'running' are what it lists, 'modprune' what the prune prints; 'docker-noimage'
+	## and 'docker-novol' say none.
 	fGateStub "${gateDir}/bin/docker" docker "if [[ ! -e '${gateFail}/docker' ]]; then o=''; for a in \"\$@\"; do [[ \"\${o}\" != 1 ]] || : > \"\${a}\"; o=''; [[ \"\${a}\" != -o ]] || o=1; done; fi
 		[[ \"\${1:-} \${2:-} \${3:-}\" != 'image ls gitsby-cicd' ]] || cat '${gateFail}/images' 2>/dev/null || true
 		[[ \"\${1:-}\" != run || ! -e '${gateFail}/docker-hang' ]] || { : > '${gateFail}/hung'; sleep 5; }
@@ -362,11 +343,9 @@ fMakeGateFixture(){
 		[[ \"\${1:-} \${2:-} \${3:-}\" != 'system df -v' ]] || cat '${gateFail}/vols' 2>/dev/null || true
 		[[ \"\${1:-} \${2:-}\" != 'ps -q' ]] || cat '${gateFail}/running' 2>/dev/null || true
 		[[ \"\${1:-}\" != run || \" \$* \" != *-modprune\ * ]] || cat '${gateFail}/modprune' 2>/dev/null || true"
-	## The demo generator writes a gif header to its --out, and the optimizer, called as
-	## 'gifsicle -O3 IN -o OUT', copies IN to OUT, so stage 6 has a file to compare. py_compile
-	## passes no --out.
-	## Asked for Pillow's version, it answers with what the 'pillow' marker has, and nothing
-	## without one. Asked to copy the demo's libraries for CodeQL, it leaves one file in place.
+	## The demo generator writes a gif header to its --out, and 'gifsicle -O3 IN -o OUT' copies.
+	## Pillow's version is the 'pillow' marker's. Copying the demo's libraries for CodeQL leaves
+	## one file.
 	fGateStub "${gateDir}/bin/python3" python3 "o=''; for a in \"\$@\"; do [[ \"\${o}\" != 1 ]] || printf GIF89a > \"\${a}\"; o=''; [[ \"\${a}\" != --out ]] || o=1; done
 		[[ \"\${1:-}\" != -c || \"\${2:-}\" != *PIL.__version__* ]] || cat '${gateFail}/pillow' 2>/dev/null || true
 		[[ \"\${1:-}\" != -c || \"\${2:-}\" != *dpkg-query* ]] || { mkdir -p \"\${3}/PIL\" && : > \"\${3}/PIL/Image.py\"; }
@@ -390,11 +369,9 @@ fMakeGateFixture(){
 	fGateStub "${gateDir}/bin/pwsh" pwsh "[[ ! -e '${gateFail}/pwsh-nomodule' ]] || exit 3"
 	## gofmt reports by listing files, exiting 0 either way; the engine reads the list.
 	fGateStub "${gateDir}/bin/gofmt" gofmt "if [[ -e '${gateFail}/gofmt' ]]; then echo main.go; fi; exit 0"
-	## go fails by subcommand (go-vet, go-test, go-build), and 'version -m' names no module. A
-	## passing build leaves its -o file behind, so the demo stage has a build to remove. The soak
-	## test passes only when it was handed its rounds, and leaves its summary where it was told;
-	## 'soak' fails it, and 'soak-skip' skips it. 'hang' stalls go vet for a few seconds, so a
-	## check can stop the run partway. 'test -list' names one fuzz target.
+	## go fails by subcommand (go-vet, go-test, go-build); 'version -m' names no module; a build
+	## leaves its -o file. The soak needs its rounds ('soak' fails, 'soak-skip' skips). 'hang'
+	## stalls go vet. 'test -list' names one fuzz target.
 	fGateStub "${gateDir}/bin/go" "go-\${1:-}" "[[ \"\${1:-}\" != version ]] || exit 0
 		[[ \"\${1:-} \${2:-}\" != 'test -list' ]] || echo FuzzA
 		[[ \"\${1:-}\" != vet || ! -e '${gateFail}/hang' ]] || { : > '${gateFail}/hung'; sleep 5; }
@@ -2056,13 +2033,9 @@ fRunSuite(){
 	fAssert     "[ddgbk] and it brings in origin's commit"  bash -c "cd '${nameA}' && [[ -f g.txt ]]"
 	fStagedChecks "$1"
 
-	## A command that still means something locally runs offline and says what it skipped; a
-	## command that exists to publish refuses up front, before the plan promises a push.
-	## Same bogus-path trick, on its own clone so the shared fixture keeps its history.
-	## Own throwaway origin: by this point the shared one has a dev branch and release history, so
-	## the merge target would not be main and these checks would be reading a different repo shape.
-	## 'offland' is made and published while the remote still works, so the land below has a real
-	## origin copy to leave alone; everything after the set-url is offline.
+	## A command that still means something locally runs offline and says what it skipped; one
+	## that exists to publish refuses before the plan. Its own throwaway origin, so the target is
+	## main. 'offland' is published before the set-url, so it has an origin copy.
 	local offOrigin="${work}/$1-offo.git"; local offb="${work}/$1-offlinebr"
 	git init --quiet --bare -b main "${offOrigin}"
 	git clone --quiet "${offOrigin}" "${offb}" 2>/dev/null
@@ -2103,11 +2076,8 @@ fRunSuite(){
 	fAssert    "[daggm] and the merge was made locally"     bash -c "cd '${offb}' && git log -1 --format=%s main | grep -q 'Off land'"
 	fAssert    "[daggn] and the remote-tracking ref survived"  bash -c "cd '${offb}' && git show-ref --verify --quiet refs/remotes/origin/offland"
 
-	## Offline messages have to be true. A park with nothing to push says so instead of claiming
-	## committed work awaits; the warning names the branch it means, since the command may move
-	## off it next and a 'sync' from wherever you end up would publish that branch instead; and a
-	## hotfix land names the recovery that publishes the default branch - a bare 'sync' runs
-	## from dev after the back-merge and would leave origin's default branch stale.
+	## Offline messages have to be true: no claim of committed work with nothing to push, the
+	## branch named, and a hotfix merge naming the recovery for the default branch.
 	local om="${work}/$1-offmsg.git"; local omw="${work}/$1-offmsgw"
 	git init --quiet --bare -b main "${om}"
 	git clone --quiet "${om}" "${omw}" 2>/dev/null
@@ -2624,11 +2594,9 @@ fRunSuite(){
 	fAssertFail "[dab8z] repo connect an empty inited repo rejected"  bash -c "cd '${cn}/bare-repo' && '${gitsby}' -q repo connect '${cn}/remote.git'"
 	fAssert "[dab90] repo connect accepts a matching explicit url"    bash -c "cd '${cn}/proj' && '${gitsby}' -q repo connect '${cn}/remote.git'"
 
-	## The SSH identity line. Every other check here uses a local-path origin, which has no ssh
-	## identity at all - so this whole line went out untested and went out naming the OS login.
-	## A fake ssh gives it an scp-like origin to read without leaving the box: -G defaults 'user'
-	## to the OS login when the target has none (the real behavior, and the whole bug),
-	## -T greets as the key's account, and anything else fails so git's own fetch reports offline.
+	## The SSH identity line, through a fake ssh with an scp-like origin: -G defaults 'user' to
+	## the OS login, -T greets as the key's account, anything else fails so the fetch reads
+	## offline.
 	local sid="${work}/$1-sshid"
 	mkdir -p "${sid}/bin"
 	fStub "${sid}/bin/ssh" <<-'EOF'
@@ -2875,11 +2843,8 @@ GHEOF
 	fAssertOut  "[dadvn] and points at repo create"  'repo create me/proj'      bash -c "cd '${gh}/split' && PATH='${ghp}' FAKE_GH_VIEW=notfound '${gitsby}' -q repo connect me/proj 2>&1 || true"
 	fAssertFail "[dadvp] repo create refuses an existing empty repo"            bash -c "cd '${gh}/split' && PATH='${ghp}' FAKE_GH_VIEW=empty '${gitsby}' -q repo create me/proj"
 	fAssertOut  "[dadvq] and points at repo connect"  'repo connect me/proj'    bash -c "cd '${gh}/split' && PATH='${ghp}' FAKE_GH_VIEW=empty '${gitsby}' -q repo create me/proj 2>&1 || true"
-	## gh exits nonzero for a name that resolves to nothing and for an API it can't reach alike.
-	## Taking the second as the first sent you off to create a repo you already have - and these two
-	## commands skip the pre-command fetch (no origin yet), so this is where offline shows up.
-	## Its own directory: a build that does NOT refuse here would create a remote and set an origin,
-	## and every check after it would then be about a connected repo instead.
+	## gh exits nonzero alike for no repo and no network, and these 2 skip the fetch, so offline
+	## shows up here. Its own folder, since a build that doesn't refuse would connect it.
 	mkdir -p "${gh}/offl"; echo x > "${gh}/offl/x.txt"
 	fAssertFail "[dbfgb] repo create refuses when it can't reach GitHub"   bash -c "cd '${gh}/offl' && PATH='${ghp}' FAKE_GH_VIEW=offline '${gitsby}' -q repo create me/proj"
 	fAssertOut  "[dbfgc] and says that, not that the repo is missing"  'no telling whether it exists' \
@@ -2890,12 +2855,9 @@ GHEOF
 	fAssertNotOut "[dbfgf] and does not point at repo create"  'repo create me/proj' \
 		bash -c "cd '${gh}/offl' && PATH='${ghp}' FAKE_GH_VIEW=offline '${gitsby}' -q repo connect me/proj 2>&1"
 	fAssertFail "[dadvr] repo create refuses a plain url"                       bash -c "cd '${gh}/split' && PATH='${ghp}' '${gitsby}' -q repo create '${gh}/backing-https.git'"
-	## Keep the insteadOf rewrite: this dir's origin is a real github.com URL, and the
-	## pre-command fetch runs before the refusal we're testing for.
-	## The account is resolved from origin, and these two have none yet - but the repo they are
-	## about to publish to is on the command line, and it is that owner's account that should do the
-	## publishing. The late re-selection was a no-op behind the already-applied guard, so it went
-	## out as gh's own account instead, silently.
+	## Keep the insteadOf rewrite: origin is a real github.com URL, and the fetch runs before the
+	## refusal. These 2 have no origin yet, so the account comes from the owner on the command
+	## line.
 	mkdir -p "${gh}/rc-acct"; echo x > "${gh}/rc-acct/x.txt"
 	fAssert "[dbfgg] repo create publishes as the account that owns the target" \
 		bash -c "cd '${gh}/rc-acct' && PATH='${ghp}' FAKE_GH_VIEW=notfound FAKE_GH_PROTO=https FAKE_GH_LOGIN=other FAKE_GH_ACCOUNTS='other acme' FAKE_GH_LOG='${gh}/rc-acct.log' FAKE_GH_REMOTE='${gh}/rc-acct.git' '${gitsby}' -q repo create acme/proj && grep -q 'repo create.*GH_TOKEN=tok_acme' '${gh}/rc-acct.log'"
@@ -3046,12 +3008,8 @@ GHEOF
 	fAssertOut  "[dbfgv] and says why"  'reads it as an option'  bash -c "cd '${dsh}/c' && '${gitsby}' -q pullcom 'x' 2>&1"
 	fAssert     "[dbfgw] but status still reports the repo it is wrong about"  bash -c "cd '${dsh}/c' && '${gitsby}' -q status >/dev/null"
 
-	## Identity: which account a remote-touching command acts as. gh keeps one active account for the
-	## whole host, so against a remote owned by somebody else it acts as the wrong one.
-	## The origin really is a github.com url here, because the owner is parsed from what
-	## 'git remote get-url' returns and that applies url.*.insteadOf - pointing it at a local bare to
-	## stay offline would hand gitsby a local path and test nothing. --no-fetch keeps it off the
-	## network instead: gh is stubbed, and a read never probes ssh, so nothing reaches github.com.
+	## Identity: which account a remote-touching command acts as. A real github.com origin, since
+	## the owner is parsed after insteadOf. --no-fetch and a stub gh keep it off the network.
 	local idn="${gh}/ident"
 	mkdir -p "${idn}"
 	git init --quiet --bare -b main "${idn}/backing.git"
@@ -3081,12 +3039,8 @@ GHEOF
 	)
 	fAssert "[dayqr] a configured account wins over the remote's owner" \
 		bash -c "cd '${idn}/cfg' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse acme configured' FAKE_GH_LOG='${idn}/cfg.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=tok_configured' '${idn}/cfg.log'"
-	## No origin at all: nothing to parse an owner from, so only the configured account can answer.
-	## Asked through 'raw gh' rather than 'pr': a repo with no remote has nowhere to propose a pull
-	## request to, and pr now says so before it selects anything. Which is the right answer, and
-	## makes it the wrong vehicle for a question about account selection. 'identity' is no good
-	## either - its gh probe deliberately runs BEFORE the token is set, so the log never sees one.
-	## 'raw gh' is the documented scripted surface and runs as whatever was selected.
+	## No origin, so only the configured account can answer. Asked through 'raw gh', since pr
+	## refuses with no remote and whoami probes before the token is set.
 	mkdir -p "${idn}/noremote"
 	(
 		cd "${idn}/noremote" || exit 1
@@ -3098,12 +3052,8 @@ GHEOF
 	## And the refusal itself, which is what makes the line above the right shape.
 	fAssertOut "[dbg5d] pr refuses outright with no remote to propose to"  'No .origin. remote' \
 		bash -c "cd '${idn}/noremote' && ${idEnv} '${gitsby}' -q -NoFetch pr 2>&1"
-	## The token file covers a box where that account was never logged in to gh. Absent, unreadable
-	## and empty must all fall back to gh's own account rather than fail - a checkout that was never
-	## set up this way still has to work.
-	## Written into the GLOBAL config, which is where 'account apply' puts it and the only scope
-	## gitsby reads it from: the value names any readable file, and its contents go into GH_TOKEN
-	## for every child - so a repo you cloned from a stranger does not get to choose it.
+	## The token file: absent, unreadable and empty fall back to gh's own account. In the global
+	## config, the only scope gitsby reads it from.
 	local idnGlobal="${idn}/gcfg"; : > "${idnGlobal}"
 	local idTok="GIT_CONFIG_GLOBAL='${idnGlobal}'"
 	printf 'tok_fromfile\n' > "${idn}/token.txt"
@@ -3437,11 +3387,9 @@ GHEOF
 	fAssertOut  "[daepm] and it still names both accounts"  "acts as 'alice'.*authenticates as 'bob'" \
 		bash -c "cd '${idc}' && ${idEnv} FAKE_SSH_NOISE=1 FAKE_GH_LOGIN=alice FAKE_SSH_LOGIN=bob '${gitsby}' -q -NoFetch pr create 'T' 2>&1 || true"
 
-	## repo create has no origin yet, but the one gh is about to set IS knowable - gh never uses a
-	## host alias, so it is 'git@github.com:owner/name.git'. Check it before creating anything.
-	## Note this runs from a plain directory, where the preceding repo probe fails: the gh login
-	## must not be read from a stale exit status (the PowerShell port got this wrong once).
-	## ssh protocol, or gh would hand git an https url and there would be no ssh identity at all.
+	## repo create has no origin yet, but gh's is knowable: 'git@github.com:owner/name.git'. Run
+	## from a plain folder, so a stale exit status can't stand in for the login. ssh protocol, or
+	## there'd be no ssh identity.
 	local rcEnv="PATH='${idp}' FAKE_GH_VIEW=notfound FAKE_GH_PROTO=ssh"
 	mkdir -p "${id}/rc-bad"; echo x > "${id}/rc-bad/x.txt"
 	fAssertFail "[dae9d] repo create refuses a mismatched identity before creating anything" \
@@ -3651,12 +3599,9 @@ GHEOF
 		## prefix keeps the -File path converting as normal. Ignored off Windows.
 		fAssertOut  "[dafr8] ps installer refuses an absolute -Ref"    'not a path' \
 			env MSYS2_ARG_CONV_EXCL='/etc' pwsh -NoProfile -File "${instPs}" -Yes -Ref '/etc/passwd'
-		## The documented one-liners are 'iex' and a scriptblock, neither of which is a script
-		## file - so -File coverage alone says nothing about them. Both must bind their
-		## parameters, refuse without a tty, and leave the calling session alive and unaltered.
-		## These reach the confirmation prompt, so it has to REFUSE rather than wait: stdin at
-		## EOF, and nothing to fall back to - setsid where there is one, and on Windows only the
-		## redirect, since Read-Host reads that and never reaches for a terminal.
+		## The documented one-liners, 'iex' and a scriptblock, aren't script files. Both must
+		## bind, refuse without a tty and leave the session alive. setsid where there is one; on
+		## Windows the redirect is enough.
 		if ((canNoTty)); then
 			local instDev="${root}/legacy/install-dev.ps1"
 			## These paths are read by .NET, not by the shell, so they need native spelling.
@@ -3668,12 +3613,8 @@ GHEOF
 			## still discriminates - a user-target plan names AppData\Local\Programs instead.
 			local sysBinPat='/usr/local/bin'
 			((isWindows)) && sysBinPat='Program Files'
-			## Decode the bytes ourselves rather than Get-Content, which quietly drops a BOM.
-			## irm doesn't, so a BOM'd file reaches iex with U+FEFF glued to the shebang and
-			## the first line stops being a comment - which is how a BOM sat here undetected.
-			## With no -Ref the installer looks up the latest release first. The stubs answer the
-			## redirect with a tag, the way github.com did before the repo moved to the org. Now
-			## it redirects to the org's URL instead, so the real lookup always fell back to the API.
+			## Decode the bytes, since Get-Content drops a BOM and irm doesn't. With no -Ref the
+			## installer looks up the latest release; the stubs answer the redirect with a tag.
 			local readInst="function Invoke-WebRequest { [pscustomobject]@{ Headers = @{ Location = 'https://github.com/jim-collier/gitsby/releases/tag/v2.1.0' } } }; function Invoke-RestMethod { throw 'no network in the suite' }; \$t = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes('${instPsNative}'))"
 			fAssertOut "[dafr9] iex form reaches the plan"          'gitsby installer'  fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
 			fAssertOut "[dafra] and refuses without a tty"          'CAUGHT: Aborted'   fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
@@ -3699,11 +3640,9 @@ GHEOF
 			bash -c "grep -q 'byte\[\]' '${instPs}'"
 	fi
 
-	## The published installers, at the repo root. What they fetch is a per-platform binary, so
-	## everything below the argument parse - the release lookup, SHA256SUMS, the plan - needs the
-	## network. These checks stop short of it: parsing, the refusals, and the pins on the parts a
-	## live run would have to reach. The download-checksum-run contract itself is proved by
-	## release.bash phase 3, against a real published release.
+	## The published installers. Past the argument parse they need the network, so these stop
+	## short: parsing, refusals and pins. release.bash phase 3 proves the download against a real
+	## release.
 	local goInst="${root}/install.bash"
 	fAssert     "[dbfk5] go installer --help works"                   bash -c "bash '${goInst}' --help"
 	fAssertOut  "[dbfk6] and documents --target"                      '--target user[|]system'   bash -c "bash '${goInst}' --help"
@@ -4426,13 +4365,9 @@ GHEOF
 	fAssertOut  "[damxv] and lists the branches with the same admission"  'Default branch: \(unknown - no origin/HEAD'  bash -c "cd '${tu}' && '${gitsby}' -q br list"
 	fAssertOut  "[damxw] including the ambiguous ones"  '(^|[ /])other'  bash -c "cd '${tu}' && '${gitsby}' -q br list"
 
-	## Folder accounts. Which GitHub account a command acts as is decided by where the repo lives,
-	## so the whole block turns on one config file and two directory trees. HOME is faked, and a
-	## stub gh has a token for exactly one of the two accounts - no network, no real credentials.
-	## Note on what the checks below can and cannot prove: every "must NOT say X" check passes
-	## trivially against a build predating accounts, since that build says nothing at all. Same for
-	## a bare exit-code refusal - that build refuses the whole command as unknown. Those are kept as
-	## regression guards and each is paired with a check on the message, which is what discriminates.
+	## Folder accounts: one config file and 2 trees, a fake HOME, and a stub gh with a token for
+	## one account. A "must NOT say" check passes on a build with no accounts, so each is paired
+	## with a message check.
 	local ac="${work}/$1-acct"
 	mkdir -p "${ac}/home/${confRel}" "${ac}/bin" "${ac}/trees/work" "${ac}/trees/home"
 	fStub "${ac}/bin/gh" <<-'EOF'
@@ -4446,12 +4381,8 @@ GHEOF
 		esac
 		exit 1
 	EOF
-	## The rules go in written the way a user on this platform would write them. That matters on
-	## Windows: '/tmp' is an entry in THIS shell's mount table, so the Bash build resolves it and
-	## the PowerShell build - which has no such table - cannot, and never could. A rule spelled
-	## that way would match on one leg only, and the block would look like a port bug instead of
-	## a fixture that named a path half of it can't see. The drive forms a user would actually
-	## type ('C:/x', '/c/x') already resolve the same in both.
+	## The rules are written the way a user here would, since '/tmp' on Windows is this shell's
+	## mount and only the bash build could resolve it.
 	local acCanon="${ac}"
 	((isWindows)) && acCanon="$( cd "${ac}" && pwd -W )"
 	cat > "${ac}/home/${confRel}/config.shcl" <<-EOF
@@ -4471,14 +4402,9 @@ GHEOF
 		git init --quiet -b main "${acRepo}"
 		( cd "${acRepo}" && echo a > a.txt && git add --all && git commit --quiet -m init )
 	done
-	## Every check runs with the fake HOME and the stub gh in front. GIT_CONFIG_GLOBAL is pointed at
-	## a real file rather than /dev/null, because 'account apply' writes to exactly that.
-	## PATH is expanded HERE, not left for the inner shell: single quotes are what stop a path with
-	## a space in it from splitting when 'bash -c' re-parses the line, and they would equally stop
-	## a '${PATH}' left in place from ever expanding - which silently empties PATH and fails every
-	## check in this block for want of git.
-	## acNoDiscovery empties every config-file input the file scope pinned: this block is where
-	## discovery through HOME is the thing under test.
+	## Fake HOME and stub gh first, and GIT_CONFIG_GLOBAL a real file, since 'account apply'
+	## writes it. PATH is expanded here, since the quotes would stop it in 'bash -c'.
+	## acNoDiscovery, since discovery through HOME is under test.
 	local acEnv="${acNoDiscovery} HOME='${ac}/home' GIT_CONFIG_GLOBAL='${ac}/home/.gitconfig' PATH='${ac}/bin:${PATH}'"
 	## The two identity checks below need one more thing: this file exports GIT_AUTHOR_NAME/EMAIL
 	## for hermeticity, and 'git var GIT_AUTHOR_IDENT' - what the Author line reads - takes those
@@ -4496,11 +4422,8 @@ GHEOF
 	## physical lines and no plain grep can see it whole.
 	fAssertOut "[db009] and which rule chose it"                  'because its folder rule covers this directory' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status | sed 's/^ *: *//' | tr '\\n' ' ' | tr -s ' '"
-	## "(from config 'work')" named neither the file nor which config - and there are two in play,
-	## since 'gitsby.ghAccount' is a git config key and the account blocks are not. An account that
-	## applied cleanly says where to go and look, same as one that didn't.
-	## In full, never folded back to '~': the folder rules under it print in full, and one screen
-	## spelling home two ways reads as two places.
+	## The account's source names the file, in full and never as '~', since the folder rules under
+	## it print in full.
 	fAssertOut "[dbhcb] and names the file that rule is written in"  "File: ${ac//./\\.}/home/${confRe}/config\\.shcl" \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	fAssertOut "[db00a] a sibling tree resolves to the other one" "Account \.+: homeacct"       bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
@@ -4567,12 +4490,8 @@ GHEOF
 		fAssertOut "[dbjjj] and with none set, ~/.config is still found"  'Account \.+: workacct' \
 			bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	fi
-	## APPDATA is Windows' own answer to this question and means nothing anywhere else, as
-	## XDG_CONFIG_HOME means nothing on Windows. Each used to be tried on every platform, which put
-	## a variable a Wine or Samba setup can leave lying around on the list of places a Linux run
-	## reads credentials from, and let an MSYS shell answer for a Windows one. Asked with a home
-	## that has no config, so the answer is APPDATA's file or nothing - with the usual one still
-	## in place both platforms would read that instead and the check could not tell them apart.
+	## APPDATA only on Windows, XDG_CONFIG_HOME only off it. Asked with a home that has no config,
+	## so the answer is APPDATA's file or nothing.
 	mkdir -p "${ac}/nohome"
 	: > "${ac}/nohome/.gitconfig"
 	local acAppdataEnv="${acNoDiscovery} HOME='${ac}/nohome' GIT_CONFIG_GLOBAL='${ac}/nohome/.gitconfig'"
@@ -4608,11 +4527,8 @@ GHEOF
 	## command whose job is to say who a push will go out as.
 	fAssertOut "[db5wf] a bare login still gets an identity line"  '^Account .*barelogin' \
 		bash -c "cd '${acAway}' && env ${acEnv} GITSBY_ACCOUNT=barelogin '${gitsby}' -q -NoFetch status"
-	## An account the file defines but that names no GitHub login of its own - a commit identity
-	## and an ssh key and nothing else, which is a whole way of holding a second one. A folder rule
-	## has always applied such an account; naming the same one through GITSBY_ACCOUNT read it as a
-	## bare login instead, so none of it applied and the ACCOUNT's own name was reported as the
-	## GitHub login the run acts as - asking for it by name got you less than not asking.
+	## An account the file defines with no GitHub login, only an identity and an ssh key. Through
+	## GITSBY_ACCOUNT it must apply as the folder rule does, not read as a bare login.
 	cat > "${ac}/keysonly.shcl" <<-EOF
 		account.keysonly.name  = Keys Only
 		account.keysonly.email = keys@example.com
@@ -4683,20 +4599,10 @@ GHEOF
 	## case simply missed, silently, and the run went out as gh's own identity.
 	fAssertOut "[db5y4] an account name matches whatever case you type"  'altacct' \
 		bash -c "cd '${acWork}' && env ${acEnv} GITSBY_ACCOUNT=ALT '${gitsby}' -q -NoFetch --config '${ac}/alt.shcl' status"
-	## A folder rule has to resolve to the same tree whichever build reads it, and whichever way the
-	## path was spelled. On Windows the PowerShell build resolved the drive letter only AFTER asking
-	## the filesystem - and .NET reads this shell's '/c/...' against the current drive, so nothing
-	## resolved, short names and junctions were left as written, and the same rule matched in one
-	## build and not the other. Silently: a rule that does not match reads exactly like no rule.
-	## Only spellings BOTH builds can express. The harness works under a temp directory, which this
-	## shell reaches through its own mount table as '/tmp/...' - a spelling with no meaning to the
-	## native build, and none it could be given without depending on Git Bash existing. That is a
-	## documented limit, not a defect, and 'account' marks such a rule rather than letting it look
-	## like no rule at all. cicd/parity.bash covers the drive-letter spellings across both builds.
-	## 'pathContains' names a run of folder names rather than a tree on this machine, so one config
-	## file can be synced between machines whose roots differ. Two fake "machines" here, same
-	## trailing structure under different roots, and one decoy: whole folder names only, so
-	## 'jim-collier' must never match a directory called 'jim-collier-old'.
+	## A folder rule has to resolve to the same tree in either build, however spelled, but only in
+	## spellings both can use; '/tmp/...' isn't one, and 'account' marks it. parity.bash covers
+	## drive letters. 'pathContains' is a run of whole folder names, so 'jim-collier' never
+	## matches 'jim-collier-old'.
 	local acRoot=""
 	for acRoot in mA mB; do
 		mkdir -p "${ac}/${acRoot}/github.com/alice/proj"
@@ -4786,13 +4692,9 @@ GHEOF
 		account.b.ghAccount = bacct
 	EOF
 	: > "${ac}/blocked/accounts"
-	## git applies includes in file order and the LAST match wins; gitsby takes the LONGEST matching
-	## folder. Written in declaration order, a tree nested inside another account's tree got
-	## whichever account was declared later - so plain git and gitsby disagreed about one directory,
-	## which is the whole thing 'apply' exists to prevent. 'outer' is declared second on purpose.
-	## A real repo, not only a directory: 'includeIf.gitdir' matches on where the .git is, so in a
-	## plain folder no include fires at all and 'git config user.email' answers nothing - which
-	## would fail this check for a reason that has nothing to do with rule ordering.
+	## git takes the last include that matches and gitsby the longest folder, so 'outer' is
+	## declared second on purpose. A real repo, since 'includeIf.gitdir' matches on where the .git
+	## is.
 	mkdir -p "${ac}/nesthome"
 	git init --quiet -b main "${ac}/trees/work/nested"
 	cat > "${ac}/nested.shcl" <<-EOF
@@ -4851,11 +4753,8 @@ GHEOF
 		bash -c "env ${acVarEnv} git config --global --get-regexp '^includeif\.'"
 	fAssertOut "[dcq9w] and gives the ssh command a key its shell expands"  '^ssh -i ~/\.ssh/id_var -o IdentitiesOnly=yes$' \
 		bash -c "cd '${ac}/varhome/trees/varproj' && env ${acVarEnv} git config core.sshCommand"
-	## A trailing '# ...' is a comment, not part of the value - the documented example config writes
-	## them. Folded in, a path became a rule that could never match any directory, and a rule that
-	## never matches reads exactly like no rule at all: the command went out as gh's own account.
-	## Ahead of 'account apply' on purpose - that writes gitsby.ghAccount into the repo, which
-	## outranks any folder rule, so after it this check can no longer see what it is asking about.
+	## A trailing '# ...' is a comment, not part of the value. Ahead of 'account apply', since
+	## that writes gitsby.ghAccount into the repo, which outranks any folder rule.
 	cat > "${ac}/trailing.shcl" <<-EOF
 		account.cmt.path      = ${acCanon}/trees/work   # the tree this one owns
 		account.cmt.ghAccount = cmtacct                 # who to act as
@@ -5141,11 +5040,8 @@ GHEOF
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply 2>&1"
 	fAssert "[ddatf] and leaves it there"  bash -c "[[ -f '${ac}/home/${confRel}/accounts/github.com_homeacct.gitconfig' ]]"
 
-	## The helper git is handed has to have the token even when gh is ALREADY that account. The
-	## export used to sit inside the "this replaces a different account" branch while the helper
-	## install sat outside it, so git got an empty password - and the reset ahead of the helper had
-	## already evicted whatever credential manager would otherwise have answered. Every https push
-	## by a single-account user went out that way, which is the case needing no configuration.
+	## The helper has to have the token even when gh is already that account, the case needing no
+	## config.
 	fAssertOut "[db5wk] the credential helper has a token when gh is already that account"  'password=gho_faketoken' \
 		bash -c "cd '${acWork}' && printf 'protocol=https\nhost=github.com\n\n' | env FAKE_GH_ACTIVE=workacct ${acEnv} '${gitsby}' -q raw git credential fill"
 
@@ -5238,11 +5134,9 @@ GHEOF
 	fAssert "[dd80k] and account apply gives plain git the same rule" \
 		bash -c "cd '${acAway}' && env ${acRootEnv} '${gitsby}' -q -NoFetch --config '${ac}/root.shcl' account apply >/dev/null && env ${acRootEnv} git config gitsby.ghAccount | grep -qx rootacct"
 
-	## A folder rule typed relative. 'path: .' went out as 'gitdir/i:./', which git measures from
-	## the folder holding the global git config, so every repo under home took the account while
-	## gitsby matched it nowhere. That base is GIT_CONFIG_GLOBAL's folder, so the repo that would
-	## show the leak sits under it and the bound one outside it. The hand-written files use printf:
-	## the block layout needs its tabs, and a <<- heredoc strips them.
+	## A folder rule typed relative: git measures 'gitdir/i:./' from GIT_CONFIG_GLOBAL's folder,
+	## so the leak shows in a repo under it. printf, since the blocks need tabs and <<- strips
+	## them.
 	local acRel="${ac}/rel"
 	mkdir -p "${acRel}/home/other" "${acRel}/trees/work/proj" "${acRel}/cfg"
 	git init --quiet -b main "${acRel}/home/other"
@@ -5473,12 +5367,9 @@ GHEOF
 		bash -c "cd '${rh}' && env ${acEnv} '${goBin}' raw git -c user.name=t -c user.email=t@example.com commit -q -m one"
 	fAssert    "[de8ph] and its raw gets git's answer and nothing else"  bash -c "[[ \"\$(cat '${rh}.out')\" == main ]]"
 	fAssertOut "[de8pj] an alias that runs raw git under raw git works too"  '^main$'  bash -c "cd '${rh}' && env ${acEnv} '${goBin}' raw git nest"
-	## A tool on PATH that leads back to gitsby looped forever: a link to the binary, or a wrapper
-	## that runs 'raw <tool>' again. The wrapper then got refused; now it reaches the tool after it
-	## on PATH. Each wrapper counts its starts and quits past 8, so a loop that comes back stays
-	## small. A gh call of gitsby's own takes 3 behind it, and 'pr' and 'whoami' make 2. With only
-	## the link on PATH the shim can't find bash, so those run the build directly. No links on
-	## Windows, so it sits that one out.
+	## A tool on PATH that leads back to gitsby, by link or by a 'raw <tool>' wrapper, must reach
+	## the next one, not loop. Each wrapper quits past 8 starts. With only the link on PATH the
+	## build runs directly. No links on Windows.
 	if (( ! isWindows )); then
 		local rl="${ac}/rawloop" rlTool=""
 		# shellcheck disable=SC2016  ## the wrapper expands these, not us
@@ -5562,24 +5453,16 @@ GHEOF
 	## An option that really is unknown must still be refused - and by its own name.
 	fAssertOut "[db5yc] an unknown option before raw names itself"  'bogus' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q --bogus raw git status 2>&1"
-	## '--' is git's pathspec separator, so 'raw git log -- path' has to work. Bash takes it
-	## directly; PowerShell's binder reads a bare '--' as an empty parameter name and dies before
-	## the script runs at all, so there it is spelled '`--' and unescaped on the way to git.
-	## Asserted against a path that does NOT exist: a separator that was dropped would still list
-	## the commit, so only the empty result proves git actually received one.
+	## '--' is git's pathspec separator. PowerShell's binder dies on a bare '--', so there it's
+	## '`--'. A path that doesn't exist, so only an empty result proves git got it.
 	local sep="--"
 	fAssertOut    "[db5yd] raw passes a pathspec separator through"  '^init$' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git log --format=%s '${sep}' a.txt 2>/dev/null"
 	fAssertNotOut "[db5ye] and it really separates - an absent path lists nothing"  'init' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git log --format=%s '${sep}' nosuchfile.txt 2>/dev/null"
 
-	## How release.bash reads the changelog, which nothing else here reaches. changelog.md opens
-	## with a commented-out template whose headings are shaped exactly like real ones, and a
-	## first-match search has stopped on that decoy three times now. The last one would have
-	## retitled the template, left the real section saying vNEXT, published the empty template as
-	## the release body, and warned about none of it. Two independent guards, either enough on its
-	## own. Pinned in the source because exercising it for real means cutting a release; bash leg
-	## only, since neither file belongs to an implementation.
+	## How release.bash reads the changelog, past its commented-out template. Pinned in the
+	## source, since running it means cutting a release.
 	local relBash="${root}/cicd/release.bash" clMd="${root}/changelog.md"
 	fAssertFail "[db6y4] the changelog's template heading can't pass for a real one" \
 		grep -qE '^## vNEXT - DATE' "${clMd}"
@@ -5932,13 +5815,9 @@ GHEOF
 	fAssert "[dd815] release.bash builds the published bytes from an export of the tag" \
 		bash -c 'grep -qF -- "$1" "$3" && grep -qF -- "$2" "$3"' _ "${relPinExport}" "${relPinBuild}" "${root}/cicd/release.bash"
 
-	## Recursive removal. demo-repo.bash is the only script here that removes a path someone else
-	## named, so it gets real checks; the rest only ever remove what mktemp handed them, and
-	## that is pinned in the source. None of these files belong to an implementation, which is why
-	## they outlived the leg they used to ride. A Ctrl-C mid-probe can't be staged on every platform
-	## (a native child defers the signal), so the probe's own cleanup is asserted where it lives.
-	## The single quotes in the searches below are the point - they look for literal source text,
-	## so each one turns off the expansion warning for itself.
+	## Recursive removal. demo-repo.bash removes a path someone else named, so it gets real
+	## checks; the rest remove only what mktemp gave, pinned in the source. The single quotes look
+	## for literal source text.
 	local demoRepo="${root}/cicd/utility/demo/demo-repo.bash" rmWork="${work}/rmsafe"
 	mkdir -p "${rmWork}/notmine/keep"; echo keepme > "${rmWork}/notmine/keep/file.txt"
 	## On the message, not only the exit code: a build that refuses for some unrelated reason
@@ -6301,11 +6180,9 @@ GHEOF
 	## and the sponsor links, each one reads what it shows from the repo, the Go version included.
 	fAssert "[dd812] the README's badges read what they show from the repo" \
 		bash -c "grep -q 'shields\.io/github/go-mod/go-version/yottacore/gitsby?filename=src-go%2Fgo\.mod' '${root}/README.md' && ! grep 'img\.shields\.io/badge/' '${root}/README.md' | grep -vE 'badge/(License|Sponsor|Ko--fi)-'"
-	## The step itself, against a build that starts three processes per command and a baseline
-	## that says none, so every command reads as a rise. Needs strace, like the step. The stub
-	## names its shell by path: env would try each PATH entry in turn, and every try is counted,
-	## so its count would follow PATH and could pass the lowest limit.
-	## Without strace, a SKIP under its ID for each command, and nothing else.
+	## The step, against a build that starts 3 processes per command and a baseline of none. Needs
+	## strace. The stub names its shell by path, since env's PATH walk would count. No strace: a
+	## SKIP per command.
 	mkdir -p "${work}/scn/cicd/utility/include"
 	cp "${root}/cicd/config.bash" "${work}/scn/cicd/"
 	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${root}/cicd/utility/include/safe-rm.bash" "${work}/scn/cicd/utility/include/"
@@ -6698,11 +6575,8 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dbftw] and an icon" \
 			bash -c "LC_ALL=C grep -aq \$'\x89PNG' '${work}/winres-${winExe}.exe'"
 	done
-	## The terminal test is per-platform, and the fallback that answered for everything but Linux
-	## and Windows was a character-device test - which passes for /dev/null, the one case the
-	## no-terminal rule exists for. macOS and FreeBSD are published targets, so they get the real
-	## query. Built rather than pinned: a build constraint that excludes the wrong set compiles
-	## two isTTY into one package, or none.
+	## The terminal test is per platform; a character-device test passes for /dev/null. Built
+	## rather than pinned, since a wrong build constraint compiles 2 isTTY or none.
 	local bsdTarget=""
 	for bsdTarget in darwin/arm64 darwin/amd64 freebsd/amd64; do
 		fAssert "[dbfvw] ${bsdTarget} builds with its own terminal test" \
@@ -6751,13 +6625,8 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 	fAssert "[dbfv3] and phase 1 puts it back afterwards" \
 		bash -c "grep -q 'checkout -q -- \"\${GO_MODULE_DIR}\"/\*.syso' '${root}/cicd/release.bash'"
 
-	## Hermeticity, the half that pinning the config FILES does not cover. Two inputs reach a
-	## harness from an ordinary working terminal and outrank everything it does set:
-	## GIT_CONFIG_COUNT/KEY_n beat every config file including a repo-local one, and an
-	## inherited GH_TOKEN is what the fake gh reports back. A run with either still reports
-	## a count and a list of names - the checks are simply no longer about what they say.
-	## The bracketed last letter keeps the pattern from matching this line when the file being
-	## searched is this one, which would pass against a harness that dropped the isolation.
+	## Hermeticity: an inherited GIT_CONFIG_COUNT/KEY_n or GH_TOKEN outranks what a harness sets.
+	## The bracketed last letter keeps the pattern from matching this line.
 	local hermScript
 	for hermScript in cicd/test.bash cicd/fuzz.bash cicd/parity.bash; do
 		fAssert "[db7gn] ${hermScript} drops env-injected git config" \
@@ -7402,11 +7271,9 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dee56] a commit from before --merge-gate keeps the --gate it had" \
 			bash -c "[[ '${hookRc}' == 0 ]] && grep -qF '${hookSnap}|--gate|b16|' '${hookLog}' && ! grep -qF -- '--merge-gate' '${hookLog}'"
 
-		## The Mac and Windows harness, against an ssh that answers per host after printing what
-		## the Mac's login prints, a lock that refuses a box when a marker says it is held, and a
-		## go that writes what it is asked to build. Each stub fails on a marker named for what it
-		## stands in for and the host. The Mac's setup command runs for real, in a home of its
-		## own, since it is what removes the old copy there.
+		## The Mac and Windows harness, against an ssh that answers per host, a lock that refuses
+		## a box on a marker, and a go that writes what it builds. Each stub fails on a marker for
+		## what it stands in for and the host. The Mac setup runs for real.
 		local rt="${work}/remote" rtBin="${work}/remote-bin" rtHome="${work}/remote-home" rtMac="${work}/remote-mac"
 		local rtLog="${work}/remote-calls.log" rtFail="${work}/remote-fail" rtOut="${work}/remote-out.txt" rtRc=0 rtMacBin="${work}/remote-macbin" rtHost=""
 		local rtLock="${rtHome}/synced/0-0/common/exec/util/linux/bash/x_windows-host-lock.bash"
@@ -7933,11 +7800,8 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 	fi
 
 	##••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-	## Other git hosts. gitsby was a GitHub program that reached for gh whenever it wanted anything from
-	## a remote; most of what it does is git, and git does not care whose server it is. What is
-	## covered here is the seam: the host decides the tool, the tool is only reached for once the
-	## host is known to be one it serves, and everything that never needed a git host CLI keeps working
-	## without one. A '.test' host is reserved and resolves nowhere, so -NoFetch keeps it all local.
+	## Other git hosts. The host decides the tool, the tool is reached only for a host it serves,
+	## and what never needed a host CLI works without one. A '.test' host resolves nowhere.
 	##••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 	local fg="${work}/$1-githost"
 	mkdir -p "${fg}/bin" "${fg}/debbin"
@@ -7989,11 +7853,8 @@ GHEOF
 	)
 	local fgPath="${fg}/bin:${PATH}"
 	local fgDeb="${fg}/debbin:${PATH}"
-	## A path with git on it and no git host CLI at all. Not an empty directory: that takes git away
-	## too, and then 'Not found in path: git' comes first and the refusal under test never runs -
-	## the exit-code check passes for a reason that has nothing to do with what it is checking.
-	## Linked, not wrapped: a '#!/usr/bin/env bash' wrapper needs bash found on the very PATH we are
-	## emptying, so it fails to start and the run reads as "not a git repository" instead.
+	## A path with git and no host CLI. Not empty, or git is missing first. Linked, not wrapped,
+	## since an env bash wrapper can't find bash here.
 	mkdir -p "${fg}/gitonly"
 	local fgBare="${fg}/gitonly"
 	## bash as well as git: ${gitsby} is itself a '#!/usr/bin/env bash' shim, so emptying the PATH of
@@ -8176,12 +8037,8 @@ GLEOF
 	fAssertOut "[df047] with the reason and the fix as notes under it"  "^  Fix:  Update tea, or run it anyway with --any-identity\.$" \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_USER=someoneelse '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami 2>&1"
 
-	## An account that never named a host is TAKEN to be a github.com one, which is right for every
-	## config written before the key existed - but it is an assumption, not something the file said.
-	## Reported in the same words as a host somebody actually typed, it sends them through the config
-	## looking for a line that was never there. This account also names no GitHub login, which is the
-	## ordinary shape of a Gitea one: reading 'ghAccount' alone reported it as "(no GitHub account
-	## named)" - true, and no answer at all to the question the line asks.
+	## An account with no host is taken to be github.com, and must say so apart from a typed host.
+	## It also names no GitHub login, as a Gitea one wouldn't.
 	cat > "${fg}/nohost.shcl" <<-EOF
 		account.work.path = $(fWinPath "${fgRepo}")
 		account.work.user = giteauser
@@ -8463,11 +8320,8 @@ GLEOF
 	fAssertOut "[dbh6w] and prints the host-neutral login beside the GitHub one"  'login \.+: giteauser' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' account list 2>&1"
 
-	## The identity gate, on a host that is not GitHub. Two accounts disagreeing about who you are is
-	## the same outward-facing mistake wherever it happens, and keying the check on 'ghAccount' - a
-	## GitHub login, which says nothing about who you are anywhere else - left it silently uncovered.
-	## The ssh stub answers with GITEA's greeting, not GitHub's: close enough to look handled by the
-	## existing pattern and different enough not to be.
+	## The identity gate on a host that isn't GitHub. The ssh stub greets as Gitea does, close to
+	## GitHub's but not the same.
 	fStub "${fg}/bin/ssh" <<'SSHEOF'
 #!/usr/bin/env bash
 mode=""
