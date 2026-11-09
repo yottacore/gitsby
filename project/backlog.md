@@ -306,7 +306,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 enhancement 4: fuzz.bash's config vectors are in the v2.1.0 flat layout, which the build converts on first read
 	- ID: 2026110912215215
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -316,8 +316,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- parity.bash got this fix in 4971b6c and rewrites the file before each check.
 	- Notes:
 		- The checks only assert no crash, so there's no false pass.
+		- parity.bash had the same clash: it wrote the file again per check, but at the same path, so a second conversion in one second still kept it flat. 4971b6c was not that change.
 	- Origin: the conversion from 14750db, 2026-11-07. Confirmed with a probe build.
 	- Estimated effort: Low
+	- Actual effort: Low
+	- Decisions:
+		- The vectors stay in the flat layout, and each check writes its own file, named by a counter. Every run is then a first read, which converts the vector, so each check reads it the same way whatever the clock. A v2.1.0 file is still a live input, and writing the vectors in SHCL would drop the conversion from the injection path.
+		- The credential helper checks `[ddjyg]` and `[dbg6e]` get a file each too. `[ddjyd]` keeps `a.shcl` in its own folder, since `account apply` puts the fragments beside the config file and `[ddjye]` reads them there. It is read once.
+		- parity.bash's 3 fixtures (`[db5zr]`, `[db62s]` to `[db62v]`, `[db603]`) get the same file per check.
+	- Actual fix: `fNewCfg` in fuzz.bash and parity.bash hands each check a new file. fuzz.bash's `fRun` counts runs that say the file "couldn't be converted", and `[df34q]` fails on any.
+	- Branch: round-20261109
+	- Commit: 20e9fee
+	- Test case: fuzz.bash `[df34q]` no config vector was kept flat by a conversion clash.
+	- Verified: with `fNewCfg` pointed at one path, the old behavior, `[df34q]` failed with 60 clashing runs, 313/1. After: fuzz.bash 314/0, parity 30/0, and the quick gate with every area passed (test.bash 1899/0).
+	- Swept: every `.shcl` written in test.bash, parity.bash, fuzz.bash and spawn-count.bash. test.bash writes each flat fixture once and reads it again after, which is a converted read every time. `nested.shcl` is written twice, about 100 checks apart, and was left as it is.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261109-131744
 
 - Code Review 20261109 enhancement 5: The memory cap's probe and size check are looser than the run
 	- ID: 2026110912215216
