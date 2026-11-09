@@ -336,7 +336,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 enhancement 5: The memory cap's probe and size check are looser than the run
 	- ID: 2026110912215216
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -345,6 +345,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- `fMemCap` (config.bash:148) takes a number with no unit, such as 512, which docker and MemoryMax both read as bytes. Docker refuses under 6 MB, and the scope kills the run at once.
 	- Origin: 2dfde3e, 2026-11-09. systemd-run's refusal of an unknown property confirmed on b23, systemd 257. No box this project uses has an older systemd, so Plausible.
 	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 2026-11-09: The probe and the re-exec share one `memScope` array in cicd.bash, so the probe passes the same properties. `fMemCap` needs a unit, k, m or g, and refuses under 1g with its own message. The help and config.bash comment say so.
+		- 2026-11-09: `[df2tm]` updated for the new probe line: the probe regex is now the probe with its properties, and the count of `MemoryMax=` calls (was 1, now 2 with the probe) counts only the re-exec. Nothing else it checks changed.
+	- Decisions:
+		- The floor is 1g, checked per unit with no multiplying. Docker's own floor, 6m, would still let a run be killed at once. Nothing under 1g gets through a build, and the default never goes under 4g.
+		- No `b` or `t` unit. `k`, `m` and `g` are what docker and MemoryMax both read, as before.
+		- A bare number keeps the old message. Under 1g gets "is under 1g, too little for a run", so the fix is plain.
+	- Branch: round-20261109
+	- Test case: test.bash `[df350]` (no unit, under 1g in each unit, 1024M and 1048576k pass) and `[df351]` (a systemd-run that refuses any property: the run passes uncapped). `[df2tm]` updated.
+	- Verified: `[df350]` and `[df351]` fail on the code before, test.bash 1898/3 with `[df2tm]` reworded. After, the quick gate with every area passed, test.bash 1901/0, fuzz 314/0. The real probe with its properties passes on b23, systemd 257.
+	- Swept: every `systemd-run` and `fMemCap` call in cicd/, image-go.bash included, which shares `fMemCap`.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261109-133127
 
 - Code Review 20261109 enhancement 6: Cut long code comments down to a line or 2
 	- ID: 2026110912215217

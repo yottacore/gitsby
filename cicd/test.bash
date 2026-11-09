@@ -377,8 +377,10 @@ fMakeGateFixture(){
 		for a in \"\$@\"; do [[ \"\${a}\" != --source-root=* ]] || (cd \"\${a#--source-root=}\" && find . -name '*.py' | sort | sed 's/^/py: /') >> '${gateCalls}'; done"
 	fGateStub "${gateDir}/bin/gifsicle" gifsicle "cp -f -- \"\${2:-}\" \"\${4:-}\""
 	## The memory scope runs what follows its options, and choom what follows --. 'systemd-run'
-	## fails it, as on a box without a user systemd.
+	## fails it, as on a box without a user systemd, and 'systemd-run-props' fails any call with a
+	## property, as an older systemd does with one it doesn't know.
 	fGateStub "${gateDir}/bin/systemd-run" systemd-run "[[ ! -e '${gateFail}/systemd-run' ]] || exit 1
+		[[ ! -e '${gateFail}/systemd-run-props' || \" \$* \" != *' -p '* ]] || { echo 'Unknown assignment: OOMPolicy=continue' >&2; exit 1; }
 		while ((\$#)); do case \"\$1\" in -p) shift 2 ;; -*) shift ;; *) break ;; esac; done; exec \"\$@\""
 	fGateStub "${gateDir}/bin/choom" choom "while ((\$#)); do case \"\$1\" in -n) shift 2 ;; --) shift; break ;; *) break ;; esac; done; exec \"\$@\""
 	## The probe answers yes whatever the marker says, so a failure is the tool's finding and
@@ -486,16 +488,42 @@ fGateMemCap(){
 fGateMemScope(){
 	local rc=0 q=(--no-container --backlog-run-quick lint)
 	local want="^systemd-run --user --scope --quiet -p MemoryMax=7G -p MemorySwapMax=0 -p OOMPolicy=continue choom -n 1000 -- bash ${gateDir}/cicd/cicd\.bash --no-container --backlog-run-quick lint\$"
+	local probe='^systemd-run --user --scope --quiet -p MemoryMax=7G -p MemorySwapMax=0 -p OOMPolicy=continue true$'
 	gateScope=1 gateMemCap=7g fGateSays 0 'backlog quick run: passed\.' "${q[@]}" \
-		&& fGateCalled '^systemd-run --user --scope --quiet true$' "${want}" '^choom -n 1000 -- bash ' \
-		&& [[ "$(grep -c '^systemd-run .*MemoryMax=' "${gateCalls}")" == 1 ]] || rc=1
+		&& fGateCalled "${probe}" "${want}" '^choom -n 1000 -- bash ' \
+		&& [[ "$(grep -c '^systemd-run .*MemoryMax=.* choom ' "${gateCalls}")" == 1 ]] || rc=1
 	: > "${gateFail}/systemd-run"
 	gateScope=1 gateMemCap=7g fGateSays 0 'backlog quick run: passed\.' "${q[@]}" \
-		&& fGateCalled '^systemd-run --user --scope --quiet true$' && ! fGateCalled '^choom ' || rc=1
+		&& fGateCalled "${probe}" && ! fGateCalled '^choom ' || rc=1
 	rm -f -- "${gateFail:?}/systemd-run"
 	gateScope=1 gateMemCap=none fGateSays 0 'backlog quick run: passed\.' "${q[@]}" && ! fGateCalled '^(systemd-run|choom) ' || rc=1
 	gateScope=1 gateNested=1 fGateSays 0 'backlog quick run: passed\.' --backlog-run-quick lint && ! fGateCalled '^(systemd-run|choom) ' || rc=1
 	gateScope=1 fGateStatus 0 --list && ! fGateCalled '^(systemd-run|choom) ' || rc=1
+	((rc == 0))
+}
+## The probe passes the run's properties, so a systemd that refuses one runs as before, uncapped,
+## rather than failing at the re-exec.
+fGateMemScopeProbe(){
+	local rc=0 q=(--no-container --backlog-run-quick lint)
+	: > "${gateFail}/systemd-run-props"
+	gateScope=1 gateMemCap=7g fGateSays 0 'backlog quick run: passed\.' "${q[@]}" \
+		&& fGateCalled '^systemd-run .* -p OOMPolicy=continue true$' && ! fGateCalled '^choom ' || rc=1
+	rm -f -- "${gateFail:?}/systemd-run-props"
+	((rc == 0))
+}
+## A size with no unit is bytes to docker and MemoryMax, and one under 1g can't hold a build, so
+## both stop the run before it starts anything. The floor is the same in each unit.
+fGateMemCapUnit(){
+	local rc=0 bad="" args=(-y --no-fuzz --no-demogif --no-sync --no-publish)
+	mkdir -p "${gateDir}/home/.local/bin"
+	gateMemCap=512 fGateSays 1 "^\[ FAILED: CICD_MEM_CAP '512' isn't a size like 24g, or none \]\$" "${args[@]}" \
+		&& ! fGateCalled '^docker run ' '^(systemd-run|choom) ' || rc=1
+	for bad in 1023m 1048575k 512M; do
+		gateMemCap="${bad}" fGateSays 1 "^\[ FAILED: CICD_MEM_CAP '${bad}' is under 1g, too little for a run \]\$" "${args[@]}" \
+			&& ! fGateCalled '^docker run ' '^(systemd-run|choom) ' || rc=1
+	done
+	gateMemCap=1024M fGateSays 0 'PASS Remote tests \]$' "${args[@]}" && fGateMemCapCalls 1024m || rc=1
+	gateMemCap=1048576k fGateSays 0 'PASS Remote tests \]$' "${args[@]}" && fGateMemCapCalls 1048576k || rc=1
 	((rc == 0))
 }
 ## --quick is handed to the run in there, which is where it skips the suite.
@@ -6858,6 +6886,8 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dedq3] and capped at the run's core budget, at a low weight"  fGateContainerQuota
 		fAssert "[df2tk] every container a run starts is capped at a third of the RAM or CICD_MEM_CAP, with no swap, first in line for the OOM killer"  fGateMemCap
 		fAssert "[df2tm] the run goes in a user scope with the same cap, once, where systemd-run --user works"  fGateMemScope
+		fAssert "[df350] a CICD_MEM_CAP with no unit, or under 1g, stops the run before it starts anything"  fGateMemCapUnit
+		fAssert "[df351] the scope's probe passes the run's properties, so a systemd that refuses one runs as before"  fGateMemScopeProbe
 		fAssert "[de4bx] and --quick goes in with them"  fGateContainerQuick
 		fAssert "[de549] and --leakcheck too, and the soak test runs only in there"  fGateContainerLeak
 		fAssert "[de5ma] and --no-leakcheck"  fGateContainerNoLeak
@@ -8639,3 +8669,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261108 JC: account apply gives each account a credential helper for plain git over https, [df1s0] to [df1s8] and [df1sa]. 1874 -> 1884.
 ##		- 20261109 JC: Ctrl+C with the run log on, [df33r]. config.bash run directly, [df33s].
 ##		- 20261109 JC: Inherited git config is dropped by name, not by a loop on GIT_CONFIG_COUNT, whose arithmetic ran a command hidden in a subscript. [df34d] runs each harness's lines against such a count. 1896 -> 1899.
+##		- 20261109 JC: CICD_MEM_CAP needs a unit and 1g at least, [df350]. The memory scope's probe passes the run's properties, [df351].

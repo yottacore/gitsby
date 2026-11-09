@@ -76,8 +76,9 @@
 ##	                       unless it changes only the paths MERGE_GATE_SKIP in config.bash lists
 ##	   -h, --help          show this help
 ##	- Memory: every container a run starts is capped with no swap, and so is the run itself, in a
-##	  user scope where systemd-run --user works. CICD_MEM_CAP sets the cap, a docker size such
-##	  as 24g, or none. The default is a third of the RAM, 4g to 32g. A step over it exits 137.
+##	  user scope where systemd-run --user works. CICD_MEM_CAP sets the cap, a size with its unit,
+##	  k, m or g, such as 24g, and 1g at least, or none. The default is a third of the RAM, 4g to
+##	  32g. A step over it exits 137.
 ##	- If neither -q/-y nor -m is given, the run prompts once for a commit message
 ##	  (blank = git editor; Ctrl+C aborts the whole run), then finishes unattended.
 ##	- Reuse: copy the cicd/ directory into another project and edit config.bash.
@@ -251,16 +252,17 @@ if ((installHook)); then exec "${here}/utility/pre-push.bash" --install; fi
 ## The memory cap, from config.bash's fMemCap: memArgs goes on every docker run. Then the whole run
 ## goes in a user scope with the same cap, once, so the steps it runs here are capped too. The
 ## containers are dockerd's children, not this run's, so they're capped apart. Not in the image,
-## and not where systemd-run --user doesn't work, such as a bare CI runner; it runs as before
-## there. OOMPolicy continue, so a step the kernel kills fails, and the cleanup still runs. A step
-## killed at the cap exits 137.
+## and not where systemd-run --user doesn't work, such as a bare CI runner, or where its systemd
+## doesn't know one of the properties; it runs as before there. The probe passes the same ones,
+## since systemd-run refuses one it doesn't know. OOMPolicy continue, so a step the kernel kills
+## fails, and the cleanup still runs. A step killed at the cap exits 137.
 memCap=""; memArgs=()
 fMemCap || exit 1
+memScope=(systemd-run --user --scope --quiet -p "MemoryMax=${memCap^^}" -p MemorySwapMax=0 -p OOMPolicy=continue)
 if [[ -n "${memCap}" && -z "${GITSBY_CICD_MEM_SCOPE:-}" && -z "${GITSBY_CICD_IN_CONTAINER:-}" ]] && ((! listOnly)) \
-	&& command -v choom >/dev/null 2>&1 && systemd-run --user --scope --quiet true >/dev/null 2>&1; then
+	&& command -v choom >/dev/null 2>&1 && "${memScope[@]}" true >/dev/null 2>&1; then
 	export GITSBY_CICD_MEM_SCOPE="${memCap}"
-	exec systemd-run --user --scope --quiet -p "MemoryMax=${memCap^^}" -p MemorySwapMax=0 -p OOMPolicy=continue \
-		choom -n 1000 -- bash "${here}/${BASH_SOURCE[0]##*/}" ${cliArgs[@]+"${cliArgs[@]}"}
+	exec "${memScope[@]}" choom -n 1000 -- bash "${here}/${BASH_SOURCE[0]##*/}" ${cliArgs[@]+"${cliArgs[@]}"}
 fi
 ## Set once the image is there. One left in the caller's environment would say otherwise.
 ## Where the run outside left off, as "<steps before this run's>/<total>".
@@ -1524,3 +1526,4 @@ fEcho_Clean
 ##		- 2026-11-09 JC: A memory cap with no swap, CICD_MEM_CAP, on every container a run starts, first in line for the OOM killer, and on the run itself in a user scope.
 ##		- 2026-11-09 JC: The run log's tee ignores INT and TERM, so Ctrl+C still runs the exit trap's cleanup.
 ##		- 2026-11-09 JC: Under --no-test the fuzz and parity steps build first, rather than run whatever build was on disk. The native fuzzing fails when go test -list fails or lists no target.
+##		- 2026-11-09 JC: The memory scope's probe passes the same properties as the run, so a systemd that doesn't know one runs as before.
