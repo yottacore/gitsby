@@ -36,9 +36,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - test.bash hangs on Windows at [df1s7]: Git for Windows' askpass opens a password dialog
 	- ID: 2026110814215941
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261108-142159
+	- Closed: 20261109
 	- Opened by: jim-collier
 	- Related IDs: 2026110810100400
 	- Target OS: Windows
@@ -48,6 +49,12 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 20261108 on vm925w, Git for Windows 2.55.0, with the same checks run outside test.bash. That login shell sets SSH_ASKPASS=/mingw64/bin/git-askpass.exe.
 	- Possible cause [Bug]: test.bash pins GIT_TERMINAL_PROMPT=0 for these checks but never unsets SSH_ASKPASS or GIT_ASKPASS, and git asks an askpass ahead of that check. Unsetting both in test.bash's env pins fixed it there.
 	- Estimated effort: Low
+	- Progress log:
+		- 2026-11-09: test.bash unsets GIT_ASKPASS and SSH_ASKPASS with its other inherited env, so no git call in the suite can reach an askpass, not only [df1s7].
+	- Branch: askpass
+	- Test case: [df31s] in test.bash, a `git credential fill` no helper answers must fail.
+		- Verified: run with SSH_ASKPASS exported and the unset removed, [df31s] fails, since git takes the askpass's answer. With the unset, test.bash 1887/0 with the same SSH_ASKPASS exported.
+	- Acceptance signoff: Self-closed. The unset was shown to clear the hang on vm925w when the bug was filed.
 
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
@@ -6490,6 +6497,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 #### Done - Features and enhancements
 
+- ✅ macOS signing and quarantine on real ARM hardware: does a terminal download need either?
+	- Closed: 20261109
+	- Opened: 20260817-115422
+	- All that is left of the old macOS item. The build half is settled and filed under done.
+	- Also untested on Apple silicon: the universal binary running at all. Its arm64 half has a valid ad-hoc signature, checked on b26 2026-10-05, but b26 is Intel.
+	- 2026-11-09: Neither is needed. The macOS workflow now installs the newest release with install.bash under the stock bash 3.2, on both hosted Macs. On macOS 26.7.2 arm64, v3.0.0-beta.1's universal binary came down with no quarantine flag, its arm64 half's ad-hoc signature verified, and it ran. The Intel half has no signature and needs none.
+	- Test case: the macOS workflow's "Release binary" step, run 42687499808 on PR #62.
+
+- ✅ The repo's blurb, homepage and topics still describe the Bash and PowerShell product.
+	- Closed: 20261109
+	- Opened: 20260819-142046
+	- They name both scripts and give the old command count, and the topics say `bash` rather than `go`.
+	- Deferred until the Go build is released on `main`. Until then the description would be ahead of what a visitor can actually download, which is worse than being behind.
+	- One command when the time comes: `gh repo edit --description ... --homepage ... --add-topic go --remove-topic bash`.
+	- 2026-11-09: Done after v3.0.0-beta.1. The description says ten commands, as the README does. Topics gained `go`, `gitlab` and `gitea`, and lost `bash` and `powershell`. No homepage, since there is none to name.
+
 - ✅ Move the shcl module from its pinned `dev` commit to the tagged 3.0 release.
 	- Closed: 20261106-085637
 	- Opened: 20260924-132324
@@ -7342,17 +7365,6 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 ### Deferred
 
 Waiting on hardware, an upstream module, or a decision.
-
-- ✋ The repo's blurb, homepage and topics still describe the Bash and PowerShell product.
-	- Opened: 20260819-142046
-	- They name both scripts and give the old command count, and the topics say `bash` rather than `go`.
-	- Deferred until the Go build is released on `main`. Until then the description would be ahead of what a visitor can actually download, which is worse than being behind.
-	- One command when the time comes: `gh repo edit --description ... --homepage ... --add-topic go --remove-topic bash`.
-
-- ✋ macOS signing and quarantine on real ARM hardware: does a terminal download need either?
-	- Opened: 20260817-115422
-	- All that is left of the old macOS item. The build half is settled and filed under done.
-	- Also untested on Apple silicon: the universal binary running at all. Its arm64 half has a valid ad-hoc signature, checked on b26 2026-10-05, but b26 is Intel.
 
 - ✋ GitHub Actions and platform packaging (.deb/.rpm/.exe installer), deferred to the port by decision.
 	- Opened: 20260817-115422
